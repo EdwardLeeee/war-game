@@ -14,7 +14,7 @@
 - `AGENTS.md` 的「模擬與 AI 規則」：只用整數或定點數、三角函數查表、亂數用固定種子、迭代依 ID 排序、每秒 20 tick。
 - 目標實機是使用者的 iPhone 14 Pro Max。使用者沒有 Android 手機（2026-09-30），Android 只在 CI 的模擬器上預檢。
 - 可參考的既有經驗（repo `EdwardLeeee/connect4-web2`，本機在 `/home/oraclelee/Desktop/connect4-web2`）：
-  - Capacitor 8.5.2 app 內可以跑 WASM 和 Web Worker，iOS 18.7 模擬器與 Android API 36 模擬器都成功。
+  - Capacitor 8.5.2 app 內可以跑 WASM 和 Web Worker，iOS 模擬器（當時從 userAgent 讀到「18.7」；iOS 26 起 userAgent 的系統版本號是凍結的，實際版本未確認）與 Android API 36 模擬器都成功。
   - 重算放 Worker，不放主執行緒。曾經在主執行緒解題，iOS 畫面空白了 60 秒。
   - 驗證頁要把結果一步一步寫進 DOM 和 log，這樣卡住時 XCUITest 也讀得到做到哪裡。
   - iOS 與 Android 模擬器在 CI 上的冒煙測試，可以參考該 repo 的 `.github/workflows/ci.yml`。

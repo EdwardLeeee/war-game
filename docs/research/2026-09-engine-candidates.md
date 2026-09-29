@@ -61,7 +61,7 @@
   - Ionic 部落格舉的例子是 Vampire Survivors。
   - 官方文件沒有寫 WKWebView 裡的 WebGL 效能，所以要實測。
 - **Capacitor 9**：官方預計 11 月底推出（[road-to-capacitor-9](https://ionic.io/blog/the-road-to-capacitor-9)）。spike 先用 8.5.2。
-- **已知經驗**：connect4-web2 在 Capacitor 8.5.2 app 內跑 WASM 加 Web Worker，iOS 18.7 模擬器與 Android API 36 模擬器都成功。
+- **已知經驗**：connect4-web2 在 Capacitor 8.5.2 app 內跑 WASM 加 Web Worker，iOS 模擬器（當時從 userAgent 讀到「18.7」；iOS 26 起 userAgent 的系統版本號是凍結的，實際版本未確認）與 Android API 36 模擬器都成功。
   重算一律放 Worker，不放主執行緒，這點可以直接沿用。
 
 ## 2. 確定性：JavaScript 規格原文
