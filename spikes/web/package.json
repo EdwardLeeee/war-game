@@ -9,7 +9,8 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/*.test.ts\"",
-    "headless": "node src/headless.ts"
+    "headless": "node src/headless.ts",
+    "browser": "node scripts/browser-run.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",
@@ -20,6 +21,7 @@
   "devDependencies": {
     "@capacitor/cli": "8.5.2",
     "@types/node": "26.6.3",
+    "playwright": "1.63.0",
     "typescript": "7.0.2",
     "vite": "8.3.1"
   },

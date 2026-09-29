@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>引擎 spike：PixiJS</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1d2320;
+        color: #f2eee4;
+        font: 13px/1.35 -apple-system, "Noto Sans TC", sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
+      #stage,
+      #stage canvas {
+        position: fixed;
+        inset: 0;
+        touch-action: none;
+      }
+      #hud {
+        position: fixed;
+        top: calc(env(safe-area-inset-top) + 6px);
+        left: calc(env(safe-area-inset-left) + 6px);
+        right: calc(env(safe-area-inset-right) + 6px);
+        pointer-events: none;
+      }
+      #panel {
+        display: inline-block;
+        background: rgba(10, 12, 11, 0.72);
+        border-radius: 8px;
+        padding: 6px 9px;
+        pointer-events: auto;
+        max-width: calc(100vw - 24px);
+      }
+      #panel b {
+        font-size: 14px;
+      }
+      button {
+        font: inherit;
+        font-size: 15px;
+        min-height: 44px;
+        min-width: 44px;
+        margin: 6px 6px 0 0;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 8px;
+        background: #e7c35a;
+        color: #1b1a17;
+        font-weight: 600;
+      }
+      button.secondary {
+        background: #cfd6d2;
+      }
+      #result {
+        display: none;
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(92vw, 440px);
+        background: rgba(12, 14, 13, 0.93);
+        border: 2px solid #e7c35a;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 16px;
+      }
+      #result h2 {
+        margin: 0 0 6px;
+      }
+      #result p {
+        margin: 4px 0;
+      }
+      #result .small {
+        font-size: 11px;
+        opacity: 0.75;
+        word-break: break-all;
+      }
+      #log {
+        position: fixed;
+        left: calc(env(safe-area-inset-left) + 6px);
+        bottom: calc(env(safe-area-inset-bottom) + 6px);
+        max-width: calc(100vw - 24px);
+        max-height: 22vh;
+        overflow: hidden;
+        font: 10px/1.3 ui-monospace, Menlo, monospace;
+        background: rgba(10, 12, 11, 0.55);
+        border-radius: 6px;
+        padding: 3px 6px;
+        pointer-events: none;
+        word-break: break-all;
+      }
+      #marquee {
+        display: none;
+        position: fixed;
+        border: 1.5px solid #fff;
+        background: rgba(255, 255, 255, 0.12);
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="marquee"></div>
+    <div id="hud">
+      <div id="panel">
+        <b>PixiJS 候選</b> <a href="../" style="color: #e7c35a">回首頁</a>
+        <div id="fps">fps：量測中…</div>
+        <div id="sim">模擬：量測中…</div>
+        <div id="tick">載入中…</div>
+        <button id="measure">開始量測</button><button id="determinism" class="secondary">確定性檢查</button>
+      </div>
+    </div>
+    <div id="result"></div>
+    <div id="log"></div>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>
