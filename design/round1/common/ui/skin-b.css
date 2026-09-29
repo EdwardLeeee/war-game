@@ -1,0 +1,39 @@
+/* B 立體微縮: dark bronze and slate panels with gilt edges, serif lettering. */
+body { font-family: "Noto Serif CJK TC", serif; color: #f3e6c6; font-weight: 700; }
+.panel {
+  background: linear-gradient(180deg, rgba(52, 46, 42, .92), rgba(26, 23, 22, .92));
+  border: 1.5px solid #b89350;
+  box-shadow: inset 0 1px 0 rgba(255, 236, 190, .35), inset 0 -1px 0 rgba(0, 0, 0, .5),
+              0 2px 5px rgba(0, 0, 0, .45);
+}
+.res { border-radius: 8px; font-size: 14px; }
+.res .sep { background: rgba(184, 147, 80, .5); }
+.res small { font-size: 10px; opacity: .8; }
+.c-food { color: #f0cf6a; } .c-wood { color: #c9854a; --wood-end: #f0cf9a; }
+.c-gold { color: #ffd24a; --coin-hole: #7a5410; } .c-crystal { color: #6ff2ff; } .c-pop { color: #e9dcc0; }
+.res .v { color: #f6ecd2; }
+.ui-btn {
+  border-radius: 10px; color: #f1dca8;
+  background: radial-gradient(circle at 50% 30%, #5a4b3a, #2a221c 70%);
+  border: 1.5px solid #b89350;
+  box-shadow: inset 0 1px 0 rgba(255, 236, 190, .4), inset 0 -2px 3px rgba(0, 0, 0, .6), 0 2px 4px rgba(0, 0, 0, .5);
+}
+.ui-btn .spd { font-size: 15px; line-height: 1; }
+.grp.on { border-color: #ffe39a; box-shadow: 0 0 0 1.5px #ffe39a55, inset 0 1px 0 rgba(255, 236, 190, .5), 0 2px 4px rgba(0,0,0,.5); color: #fff4cf; }
+.btn .badge { background: #b3321f; color: #fff; border: 1px solid #ffd6a0; }
+.mini { border-radius: 10px; padding: 3px; }
+.mini img { border-radius: 7px; }
+.sel { border-radius: 10px; }
+.sel .pt { border-radius: 8px; border: 1.5px solid #b89350; background: #1a2426; }
+.sel .name small { color: #d9c7a0; font-weight: 400; }
+.bar { background: rgba(0, 0, 0, .55); border-radius: 3px; }
+.bar i { border-radius: 3px; }
+.bar.shield i { background: linear-gradient(90deg, #3fd8f0, #b8fbff); box-shadow: 0 0 6px #6ff2ff; }
+.bar.hp i { background: linear-gradient(90deg, #5aa83c, #a6d85a); }
+.bars b { color: #e9dcc0; }
+.sel .state { color: #9ff6ff; }
+.sel .state .p { background: rgba(0, 0, 0, .55); border-radius: 2px; }
+.sel .state .p i { background: #6ff2ff; box-shadow: 0 0 5px #6ff2ff; border-radius: 2px; }
+.cmd-on { color: #0b2226; background: radial-gradient(circle at 50% 35%, #d8fdff, #45d6ee 70%);
+          border-color: #e9ffff; box-shadow: 0 0 10px #6ff2ffaa, inset 0 -2px 3px rgba(0,0,0,.35); }
+.toggle { color: #f1dca8; }

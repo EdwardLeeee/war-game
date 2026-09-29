@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<!-- Round 1 HUD draft. Layout is shared by every option (GDD §10); only the skin changes.
+     1 CSS px = 1 pt (rendered at device scale 3). Round 2 refines positions and details. -->
+<style>
+  html, body { margin: 0; width: 932px; height: 430px; background: transparent; overflow: hidden; }
+  body { position: relative; }
+  .abs { position: absolute; }
+  svg.i { width: 18px; height: 18px; flex: none; }
+  /* safe area: left/right 59, bottom 21 */
+  .res { left: 67px; top: 6px; height: 30px; display: flex; align-items: center; gap: 2px; padding: 0 10px; }
+  .res .it { display: flex; align-items: center; gap: 4px; padding: 0 7px; height: 30px; }
+  .res .v { font-variant-numeric: tabular-nums; }
+  .res .sep { width: 1px; height: 16px; }
+  .tr { right: 67px; top: 6px; display: flex; gap: 6px; }
+  .btn { width: 44px; height: 44px; display: flex; flex-direction: column; align-items: center;
+         justify-content: center; box-sizing: border-box; position: relative; }
+  .btn .lb { font-size: 9px; line-height: 1; margin-top: 2px; white-space: nowrap; }
+  .btn .badge { position: absolute; right: -4px; top: -4px; min-width: 16px; height: 16px; border-radius: 8px;
+                font-size: 10px; line-height: 16px; text-align: center; padding: 0 3px; box-sizing: border-box; }
+  .groups { right: 67px; top: 60px; display: flex; flex-direction: column; gap: 4px; }
+  .groups .btn .n { font-size: 17px; line-height: 1; }
+  .groups .btn .c { font-size: 9px; line-height: 1; margin-top: 2px; }
+  .idle { left: 67px; top: 226px; }
+  .mini { left: 67px; top: 279px; width: 122px; height: 122px; box-sizing: border-box; overflow: hidden; }
+  .mini img { width: 100%; height: 100%; display: block; }
+  .sel { left: 197px; top: 345px; width: 322px; height: 56px; box-sizing: border-box; display: flex; gap: 8px;
+         padding: 5px 8px 5px 5px; align-items: center; }
+  .sel .pt { width: 46px; height: 46px; flex: none; box-sizing: border-box; overflow: hidden; }
+  .sel .pt img { width: 100%; height: 100%; object-fit: cover; }
+  .sel .info { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .sel .name { font-size: 13px; line-height: 1.1; display: flex; gap: 6px; align-items: baseline; }
+  .sel .name small { font-size: 9px; }
+  .bar { height: 6px; position: relative; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; display: block; }
+  .bars { display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; align-items: center; }
+  .bars b { font-size: 8px; line-height: 8px; font-weight: normal; white-space: nowrap; }
+  .sel .state { font-size: 9px; display: flex; gap: 6px; align-items: center; }
+  .sel .state .p { flex: 1; height: 4px; position: relative; }
+  .sel .state .p i { position: absolute; left: 0; top: 0; bottom: 0; width: 72%; display: block; }
+  .cmd { right: 67px; top: 305px; display: grid; grid-template-columns: repeat(3, 44px); gap: 8px 6px; }
+</style>
+<link rel="stylesheet" href="$skin">
+</head>
+<body class="$body_class">
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="food" viewBox="0 0 24 24"><path d="M12 22V6M12 9c-3-1-4-4-4-6 3 0 4 2 4 4M12 9c3-1 4-4 4-6-3 0-4 2-4 4M12 14c-3-1-5-3-5-6 3 0 5 2 5 4M12 14c3-1 5-3 5-6-3 0-5 2-5 4M12 19c-3-1-5-3-5-6 3 0 5 2 5 4M12 19c3-1 5-3 5-6-3 0-5 2-5 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="wood" viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2" fill="currentColor"/><ellipse cx="19" cy="12" rx="3" ry="5" fill="var(--wood-end, #e8c48a)" stroke="currentColor" stroke-width="1.5"/><path d="M6 10h8M6 14h6" stroke="var(--wood-end, #e8c48a)" stroke-width="1.2" opacity=".6"/></symbol>
+    <symbol id="gold" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="currentColor"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="var(--coin-in, #fff3)" stroke-width="1.6"/><rect x="10.3" y="10.3" width="3.4" height="3.4" fill="var(--coin-hole, #0006)"/></symbol>
+    <symbol id="crystal" viewBox="0 0 24 24"><path d="M12 2l5 7-5 13-5-13z" fill="currentColor"/><path d="M12 2l-5 7h10z" fill="#fff" opacity=".55"/><path d="M4 12l3-3 2 6zM20 12l-3-3-2 6z" fill="currentColor" opacity=".7"/></symbol>
+    <symbol id="pop" viewBox="0 0 24 24"><path d="M5 20c0-5 3-7 7-7s7 2 7 7z" fill="currentColor"/><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M8 7h8l-1-3H9z" fill="currentColor"/></symbol>
+    <symbol id="pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></symbol>
+    <symbol id="menu" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+    <symbol id="farmer" viewBox="0 0 24 24"><path d="M2 11l10-6 10 6z" fill="currentColor"/><circle cx="12" cy="13" r="3" fill="currentColor"/><path d="M6 22c0-4 2.5-6 6-6s6 2 6 6z" fill="currentColor"/></symbol>
+    <symbol id="army" viewBox="0 0 24 24"><path d="M4 20L18 6M6 20L20 6" stroke="currentColor" stroke-width="1.6"/><path d="M18 6l2-3 1 1-3 2zM4 4l16 16" stroke="currentColor" stroke-width="1.6"/><path d="M2 3l4 1-1 1z" fill="currentColor"/><path d="M6 3l-1 3M3 6l3-1" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="cannon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4M4 4l3 3M20 20l-3-3M20 4l-3 3M4 20l3-3" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="auto" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2-5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M17 2v5h-5" fill="none" stroke="currentColor" stroke-width="2"/><text x="12" y="16" font-size="8" text-anchor="middle" fill="currentColor" font-family="sans-serif" font-weight="bold">A</text></symbol>
+    <symbol id="advance" viewBox="0 0 24 24"><path d="M4 12h13M12 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="retreat" viewBox="0 0 24 24"><path d="M20 12H7M12 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 7v10" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="hold" viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3 9-8 11-5-2-8-6-8-11V5z" fill="currentColor"/></symbol>
+    <symbol id="stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></symbol>
+  </defs>
+</svg>
+
+<div class="abs res panel">
+  <div class="it c-food"><svg class="i"><use href="#food"/></svg><span class="v">1,240</span></div><span class="sep"></span>
+  <div class="it c-wood"><svg class="i"><use href="#wood"/></svg><span class="v">860</span></div><span class="sep"></span>
+  <div class="it c-gold"><svg class="i"><use href="#gold"/></svg><span class="v">615</span></div><span class="sep"></span>
+  <div class="it c-crystal"><svg class="i"><use href="#crystal"/></svg><span class="v">145</span></div><span class="sep"></span>
+  <div class="it c-pop"><svg class="i"><use href="#pop"/></svg><span class="v">64<small>/100</small></span></div>
+</div>
+
+<div class="abs tr">
+  <div class="btn ui-btn"><span class="spd">1×</span><span class="lb">速度</span></div>
+  <div class="btn ui-btn"><svg class="i"><use href="#pause"/></svg><span class="lb">暫停</span></div>
+  <div class="btn ui-btn"><svg class="i"><use href="#menu"/></svg><span class="lb">選單</span></div>
+</div>
+
+<div class="abs groups">
+  <div class="btn ui-btn grp on"><span class="n">1</span><span class="c">槍 12</span></div>
+  <div class="btn ui-btn grp"><span class="n">2</span><span class="c">弩 8</span></div>
+  <div class="btn ui-btn grp"><span class="n">3</span><span class="c">騎 6</span></div>
+  <div class="btn ui-btn grp"><span class="n">4</span><span class="c">術 1</span></div>
+  <div class="btn ui-btn grp all"><svg class="i"><use href="#army"/></svg><span class="lb">全軍</span></div>
+</div>
+
+<div class="abs idle"><div class="btn ui-btn"><svg class="i"><use href="#farmer"/></svg><span class="lb">閒置</span><span class="badge">1</span></div></div>
+
+<div class="abs mini panel"><img src="$minimap" alt=""></div>
+
+<div class="abs sel panel">
+  <div class="pt"><img src="$portrait" alt=""></div>
+  <div class="info">
+    <div class="name">術士 <small>南溟 · 法師 · 晶砲 −5 魔晶</small></div>
+    <div class="bars">
+      <div class="bar shield"><i style="width:100%"></i></div><b>防護罩 60/60</b>
+      <div class="bar hp"><i style="width:100%"></i></div><b>生命 30/30</b>
+    </div>
+    <div class="state"><span>晶砲校準中</span><span class="p"><i></i></span><span>1.1 / 1.5 秒</span></div>
+  </div>
+</div>
+
+<div class="abs cmd">
+  <div class="btn ui-btn cmd-on"><svg class="i"><use href="#cannon"/></svg><span class="lb">晶砲</span></div>
+  <div class="btn ui-btn toggle"><svg class="i"><use href="#auto"/></svg><span class="lb">自動施放</span></div>
+  <div class="btn ui-btn"><svg class="i"><use href="#advance"/></svg><span class="lb">前進</span></div>
+  <div class="btn ui-btn"><svg class="i"><use href="#retreat"/></svg><span class="lb">撤退</span></div>
+  <div class="btn ui-btn"><svg class="i"><use href="#hold"/></svg><span class="lb">堅守</span></div>
+  <div class="btn ui-btn"><svg class="i"><use href="#stop"/></svg><span class="lb">停止</span></div>
+</div>
+</body>
+</html>
