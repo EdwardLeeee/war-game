@@ -3,7 +3,8 @@ name: Spike Pages
 # Publishes the engine spike test pages to GitHub Pages (Actions source; the docs/ folder
 # is never published). Every deployment replaces the whole site, so each run builds both
 # candidates: web/ (PixiJS) and godot/ (Godot single-threaded web export, when present).
-# The github-pages environment accepts main and spike/* only.
+# The github-pages environment accepts main and spike/* only. A branch without the Godot
+# project builds but does not deploy, so it never replaces a site that has both pages.
 on:
   push:
     branches: [main, "spike/**"]
@@ -26,6 +27,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      complete: ${{ steps.godot.outputs.present }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -46,7 +49,10 @@ jobs:
           cp -R dist ../../site/web
       - name: Is there a Godot project?
         id: godot
-        run: echo "present=$([ -f spikes/godot/project.godot ] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
+        run: |
+          present="$([ -f spikes/godot/project.godot ] && echo true || echo false)"
+          echo "present=${present}" >> "${GITHUB_OUTPUT}"
+          [ "${present}" = true ] || echo "::notice::no Godot project on this ref: building only, not deploying"
       - if: steps.godot.outputs.present == 'true'
         uses: actions/cache@v6
         with:
@@ -81,6 +87,7 @@ jobs:
 
   deploy:
     needs: build
+    if: needs.build.outputs.complete == 'true'
     runs-on: ubuntu-latest
     permissions:
       pages: write
