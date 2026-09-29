@@ -1,0 +1,21 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+.godot/
+*.log
+
+# OS and editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Secrets: never commit (see AGENTS.md)
+.env
+.env.*
+*.keystore
+*.jks
+*.p12
+*.p8
+*.pem
+*.mobileprovision
