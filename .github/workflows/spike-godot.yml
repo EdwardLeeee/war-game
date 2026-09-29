@@ -1,0 +1,147 @@
+name: Spike Godot
+
+# Engine spike, Godot candidate (docs/briefs/2026-10-core-engine-spike.md). Not a required
+# check: the path filter would leave unrelated pull requests waiting.
+on:
+  push:
+    branches: ["spike/**"]
+    paths:
+      - "spikes/godot/**"
+      - "spikes/tools/**"
+      - ".github/workflows/spike-godot.yml"
+  pull_request:
+    paths:
+      - "spikes/godot/**"
+      - "spikes/tools/**"
+      - ".github/workflows/spike-godot.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-godot-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2
+  ANDROID_COMPONENT: com.oraclelee.wargame.spikegodot/com.godot.game.GodotApp
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-linux-v1
+      - run: spikes/godot/ci/install-godot.sh web_nothreads_release.zip web_nothreads_debug.zip android_debug.apk android_release.apk
+      - name: Import
+        working-directory: spikes/godot
+        run: ${GODOT} --headless --import
+      - name: Headless run
+        working-directory: spikes/godot
+        run: |
+          set -o pipefail
+          ${GODOT} --headless 2>&1 | tee "${RUNNER_TEMP}/headless.txt"
+          grep -q "SPIKE probe hash e460b666" "${RUNNER_TEMP}/headless.txt"
+      - name: Web export (single-threaded)
+        working-directory: spikes/godot
+        run: |
+          mkdir -p ../../build/godot-web
+          ${GODOT} --headless --export-release "Web" ../../build/godot-web/index.html
+          ls -la ../../build/godot-web
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android export
+        working-directory: spikes/godot
+        run: |
+          set -euo pipefail
+          # The SDK and JDK paths are editor settings, not export options.
+          for v in 4 4.7; do
+            mkdir -p ~/.config/godot
+            printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\n' \
+              "${ANDROID_HOME}" "${JAVA_HOME}" > ~/.config/godot/editor_settings-${v}.tres
+          done
+          # A throwaway debug keystore for this run only; nothing secret.
+          keytool -genkeypair -keystore "${RUNNER_TEMP}/debug.keystore" -storepass android -keypass android \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Spike Debug,O=Spike,C=US"
+          export GODOT_ANDROID_KEYSTORE_DEBUG_PATH="${RUNNER_TEMP}/debug.keystore"
+          export GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey
+          export GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android
+          mkdir -p ../../build/godot-android
+          ${GODOT} --headless --export-debug "Android" ../../build/godot-android/spike.apk
+          ls -la ../../build/godot-android
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android emulator run
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash spikes/tools/android-run.sh build/godot-android/spike.apk ${{ env.ANDROID_COMPONENT }} "^SPIKE probe hash" 180 android-out
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-linux
+          path: |
+            build/godot-web/
+            android-out/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: ~/Library/Application Support/Godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-macos-v1
+      - run: spikes/godot/ci/install-godot.sh ios.zip
+      - name: Import
+        working-directory: spikes/godot
+        run: ${GODOT} --headless --import
+      - name: Headless run (macOS arm64)
+        working-directory: spikes/godot
+        run: |
+          set -o pipefail
+          ${GODOT} --headless 2>&1 | tee "${RUNNER_TEMP}/headless.txt"
+          grep -q "SPIKE probe hash e460b666" "${RUNNER_TEMP}/headless.txt"
+      - name: iOS export (Xcode project only)
+        working-directory: spikes/godot
+        run: |
+          mkdir -p ../../build/godot-ios
+          ${GODOT} --headless --export-debug "iOS" ../../build/godot-ios/spike.ipa
+          ls -la ../../build/godot-ios
+      - name: Build for the simulator
+        working-directory: build/godot-ios
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -list -project spike.xcodeproj
+          xcodebuild -project spike.xcodeproj -scheme spike -configuration Debug \
+            -sdk iphonesimulator -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "${RUNNER_TEMP}/dd" CODE_SIGNING_ALLOWED=NO build | tail -n 40
+          find "${RUNNER_TEMP}/dd/Build/Products" -maxdepth 2 -name "*.app"
+      - name: Simulator run
+        run: |
+          app="$(find "${RUNNER_TEMP}/dd/Build/Products" -maxdepth 2 -name "*.app" | head -n 1)"
+          bash spikes/tools/ios-run.sh "${app}" com.oraclelee.wargame.spikegodot spike "^SPIKE probe hash" 180 ios-out
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-ios
+          path: ios-out/
+          retention-days: 14
+          if-no-files-found: ignore
