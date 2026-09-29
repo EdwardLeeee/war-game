@@ -12,7 +12,7 @@
 - 使用者 2026-09-30 核准的第一階段計畫：`docs/decisions/log.md` D-008。第一版要支援最多 4 方混戰（D-011），所以規模從計畫原本的 300 單位提高到 400。
 - 研究筆記：`docs/research/2026-09-engine-candidates.md`，裡面有官方文件原文、版本和通過標準。
 - `AGENTS.md` 的「模擬與 AI 規則」：只用整數或定點數、三角函數查表、亂數用固定種子、迭代依 ID 排序、每秒 20 tick。
-- 目標實機是使用者的 iPhone 14 Pro Max。
+- 目標實機是使用者的 iPhone 14 Pro Max。使用者沒有 Android 手機（2026-09-30），Android 只在 CI 的模擬器上預檢。
 - 可參考的既有經驗（repo `EdwardLeeee/connect4-web2`，本機在 `/home/oraclelee/Desktop/connect4-web2`）：
   - Capacitor 8.5.2 app 內可以跑 WASM 和 Web Worker，iOS 18.7 模擬器與 Android API 36 模擬器都成功。
   - 重算放 Worker，不放主執行緒。曾經在主執行緒解題，iOS 畫面空白了 60 秒。
