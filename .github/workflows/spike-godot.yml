@@ -132,8 +132,10 @@ jobs:
           set -euo pipefail
           xcodebuild -version
           uname -m
-          for fw in spike/*.xcframework; do
-            echo "${fw}"; plutil -extract AvailableLibraries json -o - "${fw}/Info.plist" | python3 -m json.tool | grep -E '"(LibraryIdentifier|SupportedPlatformVariant)"|"(arm64|x86_64)"'
+          find . -maxdepth 3 -name "*.xcframework" | while read -r fw; do
+            echo "${fw}: $(plutil -extract AvailableLibraries json -o - "${fw}/Info.plist" | python3 -c '
+          import json, sys
+          print("; ".join(l["LibraryIdentifier"] + " " + ",".join(l["SupportedArchitectures"]) for l in json.load(sys.stdin)))' || true)"
           done
           /usr/bin/pgrep -q oahd && echo "Rosetta running" || softwareupdate --install-rosetta --agree-to-license
           xcodebuild -project spike.xcodeproj -scheme spike -configuration Debug \
