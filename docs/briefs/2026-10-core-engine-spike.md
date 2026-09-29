@@ -22,7 +22,7 @@
 ## 實驗規格（兩個候選相同）
 
 - **地圖**：
-  - 128×128 格，約 20% 是障礙，用固定種子產生。
+  - 176×176 格，也就是混戰地圖的大小（GDD 第 12 節），約 20% 是障礙，用固定種子產生。
   - 地形用 tile 貼圖。
 - **單位**：
   - 400 個，四隊各 100。四隊都是敵人，互相攻擊。
@@ -69,7 +69,8 @@
 - 要改：
   - `spikes/godot/`、`spikes/web/`
   - 只跑 spike 的 CI 工作，例如 `.github/workflows/spike-*.yml`
-  - GitHub Pages 上的 spike 測試頁
+  - GitHub Pages 上的 spike 測試頁。用 GitHub Actions 部署 Pages，不要設定成直接發布 `main` 的 `/docs`，
+    因為 `docs/` 是專案文件，不該變成網站。
   - 研究筆記第 7 節，以及原始數據資料夾 `docs/research/2026-09-engine-candidates/`
 - 不做：正式遊戲程式、正式美術、GDD。spike 程式是丟棄式的，之後不直接沿用，只借用做法。
 
