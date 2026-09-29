@@ -25,7 +25,7 @@ concurrency:
 
 env:
   GODOT_VERSION: 4.7.2
-  ANDROID_COMPONENT: com.oraclelee.wargame.spikegodot/com.godot.game.GodotApp
+  ANDROID_PACKAGE: com.oraclelee.wargame.spikegodot
 
 jobs:
   linux:
@@ -88,7 +88,7 @@ jobs:
           target: google_apis
           arch: x86_64
           disable-animations: true
-          script: bash spikes/tools/android-run.sh build/godot-android/spike.apk ${{ env.ANDROID_COMPONENT }} "^SPIKE probe hash" 180 android-out
+          script: bash spikes/tools/android-run.sh build/godot-android/spike.apk ${{ env.ANDROID_PACKAGE }} "^SPIKE probe hash" 180 android-out
       - if: always()
         uses: actions/upload-artifact@v7
         with:
