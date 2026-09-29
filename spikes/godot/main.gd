@@ -56,6 +56,7 @@ var _measure_frames: Array[float] = []
 var _measure_ticks: Array[float] = []
 var _measure_done: Callable
 
+var _det_running := false
 var _det_queue: Array[String] = []
 var _det_game: Scenarios.Game
 var _det_tick_ms: Array[float] = []
@@ -147,7 +148,7 @@ func _process(_delta: float) -> void:
 	_last_usec = now
 	_frame_no += 1
 
-	if not _det_queue.is_empty() or _det_game != null:
+	if _det_running:
 		_run_determinism_slice()
 	elif not _paused:
 		_acc_usec += int(dt_ms * 1000.0)
@@ -448,6 +449,7 @@ func _env() -> Dictionary:
 func start_determinism(done: Callable) -> void:
 	_det_queue = ["scripted", "ai"]
 	_det_done = done
+	_det_running = true
 	_paused = true
 	_log("確定性檢查開始")
 
@@ -457,6 +459,7 @@ func _run_determinism_slice() -> void:
 	while Time.get_ticks_usec() < budget_end:
 		if _det_game == null:
 			if _det_queue.is_empty():
+				_det_running = false
 				_paused = false
 				_acc_usec = 0
 				_det_done.call()
