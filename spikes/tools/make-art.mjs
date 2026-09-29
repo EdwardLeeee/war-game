@@ -5,6 +5,7 @@
 //            8-11 attack. Units face right; the renderer mirrors them to face left.
 //            Row 12 holds extras: 0 selection ring, 1 white square (health bars).
 // tiles.png: 8 tiles of 16 x 16 px: 0-3 grass, 4-5 rock, 6-7 trees.
+// godot/icon.png: 1024 x 1024 app icon (the iOS export requires one).
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -201,9 +202,23 @@ for (let v = 0; v < 2; v++) {
   tiles.circle(ox + 6, 12, 4, [40, 90, 46]);
 }
 
+// App icon (opaque, as iOS wants): a spear across a bow on a dark field.
+const icon = new Canvas(1024, 1024);
+icon.rect(0, 0, 1024, 1024, [40, 52, 44]);
+icon.circle(512, 512, 330, DARK);
+icon.circle(512, 512, 300, [236, 226, 200]);
+icon.line(300, 730, 730, 300, 44, WOOD);
+icon.poly([[700, 250], [790, 230], [770, 320]], STEEL);
+icon.fill(420, 250, 760, 780, WOOD, (x, y) => {
+  const d = Math.hypot(x - 430, y - 512);
+  return x >= 470 && d <= 270 && d >= 238;
+});
+icon.line(470, 260, 470, 764, 10, DARK);
+
 for (const dir of OUTPUTS) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "units.png"), units.png());
   writeFileSync(join(dir, "tiles.png"), tiles.png());
 }
+writeFileSync(join(ROOT, "godot", "icon.png"), icon.png());
 console.log(`wrote units.png (${units.w}x${units.h}) and tiles.png (${tiles.w}x${tiles.h}) to ${OUTPUTS.join(", ")}`);
