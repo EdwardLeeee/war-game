@@ -1,0 +1,42 @@
+name: Spike Live Check
+
+# Walks the user's iPhone test steps on the published GitHub Pages test pages (WebKit,
+# iPhone-sized touch viewport): open, press 開始量測, wait for the result box.
+on:
+  push:
+    branches: ["spike/**"]
+    paths:
+      - ".github/workflows/spike-live.yml"
+      - "spikes/web/scripts/live-check.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: spikes/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: spikes/web/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps webkit
+      - run: >-
+          node scripts/live-check.mjs "${GITHUB_WORKSPACE}/live"
+          https://edwardleeee.github.io/war-game/web/
+          https://edwardleeee.github.io/war-game/godot/
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-check
+          path: live/
+          retention-days: 30
+          if-no-files-found: ignore
