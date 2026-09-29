@@ -124,15 +124,23 @@ jobs:
           mkdir -p ../../build/godot-ios
           ${GODOT} --headless --export-debug "iOS" ../../build/godot-ios/spike.ipa
           ls -la ../../build/godot-ios
-      - name: Build for the simulator
+      # The official 4.7.2 templates ship an x86_64-only simulator slice (the arm64 runner
+      # cannot link it natively), so build x86_64 and let Rosetta run it in the simulator.
+      - name: Build for the simulator (x86_64)
         working-directory: build/godot-ios
         run: |
           set -euo pipefail
           xcodebuild -version
-          xcodebuild -list -project spike.xcodeproj
+          uname -m
+          for fw in spike/*.xcframework; do
+            echo "${fw}"; plutil -extract AvailableLibraries json -o - "${fw}/Info.plist" | python3 -m json.tool | grep -E '"(LibraryIdentifier|SupportedPlatformVariant)"|"(arm64|x86_64)"'
+          done
+          /usr/bin/pgrep -q oahd && echo "Rosetta running" || softwareupdate --install-rosetta --agree-to-license
           xcodebuild -project spike.xcodeproj -scheme spike -configuration Debug \
             -sdk iphonesimulator -destination "generic/platform=iOS Simulator" \
-            -derivedDataPath "${RUNNER_TEMP}/dd" CODE_SIGNING_ALLOWED=NO build | tail -n 40
+            -derivedDataPath "${RUNNER_TEMP}/dd" ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 40
+          lipo -info "$(find "${RUNNER_TEMP}/dd/Build/Products" -maxdepth 3 -path "*.app/spike" | head -n 1)"
           find "${RUNNER_TEMP}/dd/Build/Products" -maxdepth 2 -name "*.app"
       - name: Simulator run
         run: |
