@@ -59,10 +59,11 @@ jobs:
           path: ~/.local/share/godot/export_templates
           key: godot-templates-${{ env.GODOT_VERSION }}-linux-v1
       - if: steps.godot.outputs.present == 'true'
+        run: spikes/godot/ci/install-godot.sh web_nothreads_release.zip web_nothreads_debug.zip android_debug.apk android_release.apk
+      - if: steps.godot.outputs.present == 'true'
         name: Godot page (single-threaded web export)
         run: |
           set -euo pipefail
-          spikes/godot/ci/install-godot.sh web_nothreads_release.zip web_nothreads_debug.zip android_debug.apk android_release.apk
           cd spikes/godot
           ${GODOT} --headless --import
           if [ -f ci/pages.sh ]; then bash ci/pages.sh "${GITHUB_WORKSPACE}/site/godot"; else
