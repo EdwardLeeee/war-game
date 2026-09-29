@@ -1,0 +1,227 @@
+name: Spike Web
+
+# Engine spike, TypeScript + PixiJS + Capacitor candidate
+# (docs/briefs/2026-10-core-engine-spike.md). Not a required check: the path filter would
+# leave unrelated pull requests waiting.
+on:
+  push:
+    branches: ["spike/**"]
+    paths:
+      - "spikes/web/**"
+      - "spikes/tools/**"
+      - ".github/workflows/spike-web.yml"
+  pull_request:
+    paths:
+      - "spikes/web/**"
+      - "spikes/tools/**"
+      - ".github/workflows/spike-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-web-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_ID: com.oraclelee.wargame.spikeweb
+
+jobs:
+  # Desktop headless: unit tests, both games timed, replay of the AI game's command log.
+  headless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: spikes/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: spikes/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Scripted game, 20-minute AI game, replay of the AI game
+        run: |
+          set -euo pipefail
+          out="${GITHUB_WORKSPACE}/desktop"
+          lscpu | grep -E "Model name|^CPU\(s\)" | tee "${out}.cpu.txt" || true
+          node src/headless.ts --mode scripted --out "${out}"
+          node src/headless.ts --mode ai --out "${out}"
+          node src/headless.ts --mode ai --replay "${out}/ai.commands.jsonl" --out "${out}"
+          diff "${out}/ai.hashes.txt" "${out}/ai-replay.hashes.txt"
+          cmp "${out}/ai.state.txt" "${out}/ai-replay.state.txt"
+          echo "replay: every hash and the end state match the original AI game"
+          mv "${out}.cpu.txt" "${out}/cpu.txt"
+          (cd "${out}" && sha256sum ./*.state.txt | tee state.sha256)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-desktop
+          path: desktop/
+          retention-days: 30
+
+  # Desktop browsers (software GPU): fps is a smoke test only, the hashes are extra environments.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: spikes/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: spikes/web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_AUTORUN: "1"
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Chromium and WebKit
+        run: |
+          npx vite preview --port 4173 --strictPort &
+          for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:4173/ && break; sleep 1; done
+          status=0
+          for b in chromium webkit; do
+            node scripts/browser-run.mjs http://127.0.0.1:4173/ "${b}" 420 "${GITHUB_WORKSPACE}/browser-${b}" || status=1
+          done
+          exit "${status}"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-browser
+          path: |
+            browser-chromium/
+            browser-webkit/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: spikes/web/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build the app (native project generated here, not committed)
+        working-directory: spikes/web
+        env:
+          VITE_AUTORUN: "1"
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npx cap add android
+          npx cap sync android
+          (cd android && ./gradlew --no-daemon assembleDebug)
+          ls -la android/app/build/outputs/apk/debug/
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android emulator run
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash spikes/tools/android-run.sh spikes/web/android/app/build/outputs/apk/debug/app-debug.apk ${{ env.APP_ID }} "^SPIKE done" 900 android-out
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-android
+          path: android-out/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: spikes/web/package-lock.json
+      - name: Headless games on macOS arm64 (extra environment)
+        working-directory: spikes/web
+        run: |
+          set -euo pipefail
+          npm ci
+          sysctl -n machdep.cpu.brand_string
+          node src/headless.ts --mode scripted --out "${GITHUB_WORKSPACE}/macos-desktop"
+          node src/headless.ts --mode ai --out "${GITHUB_WORKSPACE}/macos-desktop"
+      - name: Build the app for the simulator (native project generated here, not committed)
+        working-directory: spikes/web
+        env:
+          VITE_AUTORUN: "1"
+        run: |
+          set -euo pipefail
+          npm run build
+          npx cap add ios
+          npx cap sync ios
+          cd ios/App
+          xcodebuild -version
+          if [ -d App.xcworkspace ]; then src=(-workspace App.xcworkspace); else src=(-project App.xcodeproj); fi
+          xcodebuild "${src[@]}" -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "${RUNNER_TEMP}/dd" CODE_SIGNING_ALLOWED=NO build | tail -n 20
+      - name: iOS simulator run
+        run: bash spikes/tools/ios-run.sh "${RUNNER_TEMP}/dd/Build/Products/Debug-iphonesimulator/App.app" "${APP_ID}" App "^SPIKE done" 900 ios-out
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-ios
+          path: |
+            ios-out/
+            macos-desktop/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # Same hashes everywhere? The first environment is the reference.
+  report:
+    needs: [headless, browser, android, ios]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - run: find artifacts -maxdepth 3 | sort
+      - name: Compare hashes and collect the numbers
+        run: >-
+          node spikes/tools/report.mjs --games scripted,ai --json report.json
+          desktop-linux=artifacts/web-desktop
+          ios-simulator=artifacts/web-ios/ios-out/spike.txt
+          android-emulator=artifacts/web-android/spike.txt
+          macos-node=artifacts/web-ios/macos-desktop
+          chromium=artifacts/web-browser/browser-chromium/spike.txt
+          webkit=artifacts/web-browser/browser-webkit/spike.txt
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-report
+          path: report.json
+          retention-days: 90
+          if-no-files-found: ignore

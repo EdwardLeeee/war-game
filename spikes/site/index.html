@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>war-game 引擎 spike</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f2ea;
+        --fg: #1e1c18;
+        --card: #fffdf8;
+        --line: #d8d0bf;
+        --accent: #8a5a12;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1a1d1b;
+          --fg: #efebe2;
+          --card: #242826;
+          --line: #3a403c;
+          --accent: #e7c35a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 17px/1.55 -apple-system, "Noto Sans TC", sans-serif;
+      }
+      main {
+        max-width: 620px;
+        margin: 0 auto;
+        padding: calc(env(safe-area-inset-top) + 20px) 16px 40px;
+      }
+      h1 {
+        font-size: 24px;
+        margin: 0 0 6px;
+      }
+      a.card {
+        display: block;
+        margin: 14px 0;
+        padding: 16px 18px;
+        min-height: 44px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        color: inherit;
+        text-decoration: none;
+      }
+      a.card b {
+        color: var(--accent);
+        font-size: 19px;
+      }
+      p.note {
+        font-size: 14px;
+        opacity: 0.8;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>war-game 引擎 spike</h1>
+      <p>兩個引擎候選的測試頁：400 個單位、4 方混戰。這是丟棄式的小實驗，圖形是暫代的幾何圖形。</p>
+      <a class="card" href="web/"><b>PixiJS 候選</b><br />TypeScript + PixiJS（WebGL），模擬在 Web Worker。</a>
+      <a class="card" href="godot/"><b>Godot 候選</b><br />Godot 單執行緒網頁版（實機數字的下限）。第一次載入約數十 MB，請用 Wi-Fi。</a>
+      <p class="note">量測前請關閉低耗電模式（開著時 Safari 的畫面更新上限是 30 fps）。每一頁按「開始量測」，約 35 秒後會出現結果框。</p>
+      <p class="note"><a href="licenses.html">第三方授權聲明</a></p>
+    </main>
+  </body>
+</html>
