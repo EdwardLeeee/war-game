@@ -1,6 +1,6 @@
 # war-game 專案指南
 
-中古魔法世界的手機即時戰略遊戲（iOS／Android）。第一版是單機對電腦 AI。
+東西並存、群雄割據的中古魔法亂世，手機即時戰略遊戲（iOS／Android）。第一版是單機對電腦 AI（1 對 1，或最多 4 方混戰）。
 設計以 `docs/design/gdd.md` 為準，世界觀以 `docs/world/bible.md` 為準，決策與使用者原話記在 `docs/decisions/log.md`。
 
 ## 角色與負責路徑
