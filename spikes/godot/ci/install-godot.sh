@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Installs the Godot editor and only the export templates the spike needs, checking every
 # download against the release's SHA512-SUMS.txt. Used by .github/workflows/spike-godot.yml.
-#   spikes/godot/ci/install-godot.sh <template file>...   (e.g. web_nothreads_release.zip ios.zip)
+#   spikes/godot/ci/install-godot.sh [<template file>...]   (e.g. web_nothreads_release.zip ios.zip)
+# With no template files, only the editor is installed (enough for --headless runs).
 # Writes GODOT=<editor binary> to $GITHUB_ENV when it is set.
 set -euo pipefail
 
@@ -44,7 +45,7 @@ missing=()
 for f in "$@"; do
     [ -f "${templates}/${f}" ] || missing+=("templates/${f}")
 done
-if [ "${#missing[@]}" -gt 0 ] || [ ! -f "${templates}/version.txt" ]; then
+if [ "$#" -gt 0 ] && { [ "${#missing[@]}" -gt 0 ] || [ ! -f "${templates}/version.txt" ]; }; then
     tpz="Godot_v${ver}-stable_export_templates.tpz"
     fetch "${tpz}"
     mkdir -p "${templates}"
@@ -52,7 +53,7 @@ if [ "${#missing[@]}" -gt 0 ] || [ ! -f "${templates}/version.txt" ]; then
     unzip -q -o -j "${tpz}" "templates/version.txt" ${missing[@]+"${missing[@]}"} -d "${templates}"
     rm "${tpz}"
 fi
-ls -la "${templates}"
+[ "$#" -eq 0 ] || ls -la "${templates}"
 
 if [ -n "${GITHUB_ENV:-}" ]; then
     echo "GODOT=${editor_bin}" >>"${GITHUB_ENV}"
