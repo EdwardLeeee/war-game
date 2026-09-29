@@ -127,6 +127,8 @@
 Godot 的實機數字用它的單執行緒網頁版在 iPhone Safari 上量，當成下限：網頁版通過就代表原生版也會通過，
 依據是上面「native … will always perform better by a significant margin」這句。網頁版沒通過就無法下結論，要改用 TestFlight 再測。
 
+**更正（2026-09-30，war-game-core 指出、ceo 查證原文）**：原本寫「GitHub Pages 不能設 COOP/COEP 標頭，所以多執行緒版跑不起來」，這不完整。Godot 網頁匯出的 PWA 選項寫：「Ensure cross-origin isolation headers are always present, even if the web server hasn't been configured to send them. This allows exports with threads enabled to work when hosted on any website」（[exporting_for_web](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_web.html)）。所以多執行緒版也能放在 Pages 上。spike 仍先用單執行緒版當下限，沒通過時再測多執行緒版。
+
 ## 7. 實測結果
 
 （由 war-game-core 在 spike 完成後補上：環境與版本、樣本數、中位數與最慢值、CI run 連結。）

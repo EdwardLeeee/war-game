@@ -59,9 +59,8 @@
 
 **Godot 的實機數字怎麼量**：
 - 用 Godot 的單執行緒網頁版，在 iPhone Safari 上量，當成下限。
-- 這樣做有兩個原因：
-  - GitHub Pages 不能設定 COOP/COEP 標頭，多執行緒版跑不起來。
-  - Godot 文件寫原生版「will always perform better by a significant margin」，所以網頁版通過，原生版一定也會通過。
+- 這樣做的原因：Godot 文件寫原生版「will always perform better by a significant margin」，所以網頁版通過，原生版一定也會通過。
+- 更正：原本這裡寫「GitHub Pages 不能設 COOP/COEP 標頭，多執行緒版跑不起來」，這不完整。Godot 的 PWA 選項可以用 service worker 補上這些標頭（研究筆記第 6 節有原文），所以多執行緒版也能放在 Pages 上。先用單執行緒版當下限，沒通過時再測多執行緒版。
 - 網頁版沒通過就無法下結論。這時回報 ceo，由 ceo 決定要不要改走 TestFlight；那需要使用者操作 App Store Connect。
 
 ## 範圍
