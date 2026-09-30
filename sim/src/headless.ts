@@ -93,7 +93,14 @@ const timing = {
   ticks: g.tick,
   winner: g.w.winner,
   totalMs: Math.round(totalMs),
-  tickMicros: { median: pick(50), p95: pick(95), max: sorted.at(-1) ?? 0, mean: sorted.length ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length) : 0 },
+  tickMicros: {
+    median: pick(50),
+    p95: pick(95),
+    max: sorted.at(-1) ?? 0,
+    /** The first ticks include the JIT warming up; this is the max from tick 100 on. */
+    maxAfter100: micros.slice(100).reduce((a, b) => Math.max(a, b), 0),
+    mean: sorted.length ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length) : 0,
+  },
   fieldBuilds: g.fields.builds,
   fieldHits: g.fields.hits,
   fieldStaleUses: g.fields.staleUses,
@@ -134,7 +141,8 @@ if (expected !== "") {
 }
 console.log(
   `SIM ${scenario} seed ${seed}${replay ? " (replay)" : ""}: ${g.tick} ticks in ${(totalMs / 1000).toFixed(2)} s; ` +
-    `tick median ${timing.tickMicros.median} us, p95 ${timing.tickMicros.p95} us, max ${timing.tickMicros.max} us; ` +
+    `tick median ${timing.tickMicros.median} us, p95 ${timing.tickMicros.p95} us, max ${timing.tickMicros.max} us ` +
+    `(${timing.tickMicros.maxAfter100} us from tick 100); ` +
     `fields built ${timing.fieldBuilds}, hit rate ${timing.fieldHitRate}; ` +
     `final ${hex8(g.hash())}, winner ${g.w.winner}, commands ${g.log.length}`,
 );
