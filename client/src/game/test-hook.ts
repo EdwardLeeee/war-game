@@ -14,7 +14,7 @@ import {
   UNIT_STRIDE,
   UnitField as U,
 } from "../sim.ts";
-import { TILE_PX } from "../tuning.ts";
+import { HIT_RADIUS_PT, TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX } from "../view/view.ts";
 import { MockPort } from "../mock/mock-port.ts";
 import type { Game } from "./game.ts";
@@ -55,6 +55,8 @@ export interface GameHook {
   inject(ev: SimEvent): void;
   /** Control groups 1–4 as stored by the interface. */
   groups(): number[][];
+  /** What a tap at this screen point would hit (unit, building, node, town), or null for open ground. */
+  pickAt(sx: number, sy: number): string | null;
   /** Every town on the map (size 0 small, 1 large): state, holder and militia as last seen (-1 before it is explored). */
   towns(): { id: number; size: number; state: number; owner: number; cx: number; cy: number; radius: number; militia: number }[];
 }
@@ -150,6 +152,13 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.inject(ev);
     },
     groups: () => game.hud.groups.map((g) => [...g]),
+    pickAt: (sx, sy) => {
+      const cam = game.camera;
+      const view = game.view;
+      if (cam === null || view === null) return null;
+      const w = cam.screenToWorld(sx, sy);
+      return view.pick(w.x, w.y, HIT_RADIUS_PT / cam.scale)?.kind ?? null;
+    },
     towns: () => {
       const view = game.view;
       const t = view?.curr?.snap.towns;

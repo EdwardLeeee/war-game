@@ -111,9 +111,24 @@ test("主要流程：開局 → 選農民 → 蓋房子 → 訓練 → 框選 �
   expect(squad.length).toBeGreaterThanOrEqual(10);
   const xs = squad.map((u) => u.sx);
   const ys = squad.map((u) => u.sy);
-  const from = { x: Math.min(...xs) - 30, y: Math.min(...ys) - 30 };
-  const to = { x: Math.max(...xs) + 30, y: Math.max(...ys) + 30 };
-  expect((await units(page)).some((u) => Math.hypot(u.sx - from.x, u.sy - from.y) < 25), "the long press starts on empty ground").toBe(false);
+  const [x0, x1, y0, y1] = [Math.min(...xs) - 30, Math.max(...xs) + 30, Math.min(...ys) - 30, Math.max(...ys) + 30];
+  // A long press on a resource (the forest north of the squad) does nothing, so start the
+  // box from a corner that is open ground and drag to the opposite one.
+  let from: { x: number; y: number } | null = null;
+  let to: { x: number; y: number } | null = null;
+  for (const [a, b] of [
+    [{ x: x0, y: y1 }, { x: x1, y: y0 }],
+    [{ x: x1, y: y1 }, { x: x0, y: y0 }],
+    [{ x: x0, y: y0 }, { x: x1, y: y1 }],
+    [{ x: x1, y: y0 }, { x: x0, y: y1 }],
+  ]) {
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? "none", [a.x, a.y] as const)) === null) {
+      from = a;
+      to = b;
+      break;
+    }
+  }
+  if (from === null || to === null) throw new Error("no open corner around the squad");
   await longPress(page, from, to);
   const squadIds = squad.map((u) => u.id).sort((a, b) => a - b);
   await expect.poll(async () => (await selection(page))?.units).toEqual(squadIds);
