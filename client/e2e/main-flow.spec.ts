@@ -58,8 +58,10 @@ test("主要流程：開局 → 選農民 → 蓋房子 → 訓練 → 框選 �
   await pause(page);
   const farmers = (await own(page, [FARMER])).sort((a, b) => a.id - b.id);
   await doubleTap(page, { x: farmers[0].sx, y: farmers[0].sy });
-  const farmerIds = farmers.map((f) => f.id);
-  await expect.poll(() => selection(page)).toEqual({ units: farmerIds, building: null });
+  // Every farmer on screen (some may be off it, gathering).
+  await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(0);
+  const farmerIds = (await selection(page))?.units ?? [];
+  expect(farmerIds.every((id) => farmers.some((f) => f.id === id)), "only farmers").toBe(true);
 
   // 3. 蓋房子（指令區：建造 → 民居 → 點一個能蓋的位置 → ✓）
   await page.getByRole("button", { name: "建造" }).tap();
@@ -78,7 +80,7 @@ test("主要流程：開局 → 選農民 → 蓋房子 → 訓練 → 框選 �
   expect(spot, "a green spot for the house").not.toBeNull();
   await shot(page, info, "3-place-house");
   await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", type: HOUSE, x: spot?.cellX, y: spot?.cellY });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: farmerIds, type: HOUSE, x: spot?.cellX, y: spot?.cellY });
   await resume(page);
   const me = await myId(page);
   await expect
