@@ -57,6 +57,12 @@ const BY_COMMAND: Partial<Record<number, Partial<Record<CommandKind, string>>>> 
   },
 };
 
+/**
+ * Farmers sent to repair the own main city while it is locked (hit in the last 10 s): the
+ * order is accepted and they wait beside it, so this only tells the player why nothing happens yet.
+ */
+export const REPAIR_LOCKED_TEXT = "主城剛被攻擊，暫時不能修理：農民會在旁邊等，10 秒內沒再被打就開始修";
+
 /** What to tell the player when a command comes back rejected. */
 export function rejectText(reason: number, cmd: CommandBody | undefined): string {
   const specific = cmd === undefined ? undefined : BY_COMMAND[reason]?.[cmd.c];

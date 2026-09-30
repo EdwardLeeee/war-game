@@ -43,7 +43,7 @@ import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.
 import { BUILDING_NAME, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
-import { type PromptButton, Overlays, rejectText } from "../ui/overlays.ts";
+import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
 import { Placement } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import type { SimPort } from "./port.ts";
@@ -469,6 +469,7 @@ export class Game implements GestureHost {
         case "command":
           this.command(it.cmd);
           this.markCommand(it.cmd);
+          if (it.cmd.c === "repair" && view.buildingRepairLocked(it.cmd.building)) this.overlays.toast(REPAIR_LOCKED_TEXT);
           break;
         case "endMode":
           this.setMode("normal");
