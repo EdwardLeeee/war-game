@@ -7,17 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       round:
-        description: "round2 or round3"
-        default: "round3"
+        description: "round2, round3 or round4"
+        default: "round4"
       targets:
-        description: 'JSON list: round2 levels ["0","A","B","C"]; round3 targets ["mage0","mageA","mageB","mageC","legs"]'
-        default: '["mage0", "mageA", "mageB", "mageC", "legs"]'
+        description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]'
+        default: '["mageTA", "mageTB", "mageTC", "farmer"]'
   push:
     branches: ["design/**"]
     paths:
       # only when the render code changes, not when finished images are committed
-      - "design/round3/blender/**"
-      - "design/round3/common/config.py"
+      - "design/round4/blender/**"
+      - "design/round4/common/config.py"
 
 permissions:
   contents: read
@@ -29,7 +29,7 @@ concurrency:
 env:
   BLENDER_VERSION: "5.2.2"
   BLENDER_SERIES: "5.2"
-  ROUND: ${{ github.event.inputs.round || 'round3' }}
+  ROUND: ${{ github.event.inputs.round || 'round4' }}
 
 jobs:
   render:
@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(github.event.inputs.targets || '["mage0", "mageA", "mageB", "mageC", "legs"]') }}
+        target: ${{ fromJSON(github.event.inputs.targets || '["mageTA", "mageTB", "mageTC", "farmer"]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -77,11 +77,11 @@ jobs:
           BLENDER: ${{ github.workspace }}/../blender-bin
         run: |
           ln -sf ~/blender/blender "$BLENDER"
-          if [ "$ROUND" = "round2" ]; then
-            /usr/bin/python3 blender/render_r2.py --level "${{ matrix.target }}"
-          else
-            /usr/bin/python3 blender/render_r3.py --target "${{ matrix.target }}"
-          fi
+          case "$ROUND" in
+            round2) /usr/bin/python3 blender/render_r2.py --level "${{ matrix.target }}" ;;
+            round3) /usr/bin/python3 blender/render_r3.py --target "${{ matrix.target }}" ;;
+            *)      /usr/bin/python3 blender/render_r4.py --target "${{ matrix.target }}" ;;
+          esac
 
       - name: Upload renders
         if: always()
