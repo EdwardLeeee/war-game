@@ -68,6 +68,10 @@ jobs:
       - run: npm run build
       - name: Hashes the page's determinism check compares against (headless run of the same game)
         run: bash scripts/expected-hashes.sh dist/expected-hashes.json
+      # Same as sim.yml (core, 3ba971f): apt gives up on a download that stalls for 30 s and
+      # tries it again, up to 5 times, inside one try below.
+      - name: Let apt retry stalled downloads
+        run: printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries
       # WebKit's system libraries (about 130 MB from the Ubuntu mirror) took 12–18 minutes to
       # download on some runners (#44, 2026-10-01; normally under a minute). Each try gets
       # 5 minutes, up to 3 tries. Stopping a try leaves its apt-get running under sudo, holding
