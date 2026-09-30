@@ -42,17 +42,19 @@ export class LabPanel {
   private lastLive = 0;
   private lastTick = -1;
 
-  /** The toggle button goes into `toggleHost` (the top-right row), the panel into `root`. */
-  constructor(root: HTMLElement, hooks: LabHooks, toggleHost: HTMLElement = root) {
+  /** A 量測 toggle goes into `toggleHost` when given; otherwise the page opens it with show(). */
+  constructor(root: HTMLElement, hooks: LabHooks, toggleHost: HTMLElement | null = root) {
     this.hooks = hooks;
-    const toggle = make("button", toggleHost, "lab-toggle secondary", "量測");
-    toggle.type = "button";
     this.panel = make("section", root, "lab");
     this.panel.hidden = true;
     this.panel.setAttribute("aria-label", "量測與確定性檢查");
-    toggle.addEventListener("click", () => {
-      this.panel.hidden = !this.panel.hidden;
-    });
+    if (toggleHost !== null) {
+      const toggle = make("button", toggleHost, "lab-toggle secondary", "量測");
+      toggle.type = "button";
+      toggle.addEventListener("click", () => {
+        this.panel.hidden = !this.panel.hidden;
+      });
+    }
     const head = make("div", this.panel, "lab-head");
     make("b", head, "", "量測與確定性檢查");
     const close = make("button", head, "secondary", "關閉");
@@ -87,6 +89,10 @@ export class LabPanel {
       );
     });
     this.refreshButtons();
+  }
+
+  show(): void {
+    this.panel.hidden = false;
   }
 
   get open(): boolean {

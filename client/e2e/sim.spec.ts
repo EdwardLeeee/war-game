@@ -4,7 +4,7 @@
 // hashes CI computed with the headless runner (dist/expected-hashes.json).
 
 import { expect, type Page, test } from "@playwright/test";
-import { shot, watchErrors } from "./helpers.ts";
+import { openLab, shot, watchErrors } from "./helpers.ts";
 import { doubleTap, tap } from "./touch.ts";
 
 const FARMER = 0;
@@ -166,6 +166,56 @@ test("沒選農民時點資源點：顯示它是什麼、剩多少，並提示�
   await expect(page.getByRole("status").filter({ hasText: /野果（糧）剩 \d+：先選農民再點它，就會去採/ })).toBeVisible();
 });
 
+test("介面：資源列是模擬的數字；選主城 → 訓練農民 → 佇列顯示 → 農民出生、人口增加", async ({ page }, info) => {
+  await start(page, "?test=1&tps=60");
+  await pause(page);
+  const h = await page.evaluate(() => window.__proto?.game?.header());
+  expect(h).toBeDefined();
+  await expect(page.locator(".res-bar")).toContainText(/糧 \d+　木 \d+　金 \d+　晶 \d+　人口 \d+\/\d+/);
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
+  if (city === undefined) throw new Error("no main city");
+  const centre = { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) };
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y), [centre.x, centre.y] as const);
+  await tap(page, await toScreen(page, centre));
+  await expect(page.locator(".sel-info")).toContainText("主城");
+  const before = (await farmers(page)).length;
+  await page.getByRole("button", { name: /^訓練農民/ }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "train", building: city.id, type: 0, n: 1 });
+  await page.getByRole("button", { name: "繼續" }).tap();
+  await expect(page.getByRole("button", { name: /取消訓練第 1 個：農民/ })).toBeVisible();
+  await shot(page, info, "train-farmer");
+  await expect.poll(async () => (await farmers(page)).length, { timeout: 30_000 }).toBe(before + 1);
+});
+
+test("介面：選農民 → 建造 → 民居 → 找到能蓋的位置 → ✓ → 工地出現", async ({ page }, info) => {
+  await start(page, "?test=1&tps=60");
+  await pause(page);
+  const ids = await selectFarmers(page);
+  await page.getByRole("button", { name: "建造" }).tap();
+  await page.getByRole("button", { name: /^民居/ }).tap();
+  // Try open cells around the farmers until the preview turns green.
+  let placed: { cellX: number; cellY: number } | null = null;
+  for (const [dx, dy] of [[4, -3], [5, -2], [3, -4], [6, -3], [4, -5], [7, -1]]) {
+    const cell = await groundNearFarmers(page, dx, dy);
+    await tap(page, await toScreen(page, cell));
+    const p = await page.evaluate(() => window.__proto?.game?.placement());
+    if (p?.valid === true) {
+      placed = p;
+      break;
+    }
+  }
+  expect(placed, "a green spot near the farmers").not.toBeNull();
+  await shot(page, info, "place-house");
+  await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: ids, type: 1, x: placed?.cellX, y: placed?.cellY });
+  await page.getByRole("button", { name: "繼續" }).tap();
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).some((b) => b.owner === me && b.type === 1 && b.cx === placed?.cellX && b.cy === placed?.cellY), { timeout: 20_000 })
+    .toBe(true);
+});
+
 test("速度：正常 → 快 1.5× → 慢 0.75× → 正常（每秒 20、30、15 tick）", async ({ page }) => {
   await start(page);
   await expect.poll(async () => (await header(page)).speed).toBe(2000);
@@ -222,7 +272,7 @@ test("轉成直向或切到背景會自動暫停；回來後維持暫停，要�
 test("確定性檢查：瀏覽器算出的一局和 CI 的無畫面執行完全相同；檢查時不能量測", async ({ page }, info) => {
   test.setTimeout(240_000);
   await start(page);
-  await page.getByRole("button", { name: "量測", exact: true }).tap();
+  await openLab(page);
   const check = page.getByRole("button", { name: "確定性檢查" });
   const measure = page.getByRole("button", { name: "開始量測" });
   await expect(check).toBeEnabled();

@@ -34,6 +34,7 @@ const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false };
 if (params.test) window.__proto = hook;
 
 let app: Application | null = null;
+let game: Game | null = null;
 
 const env = () => ({
   commit: __COMMIT__,
@@ -46,27 +47,52 @@ const env = () => ({
 
 $("commit").textContent = `commit ${__COMMIT__}`;
 $("start-game").addEventListener("click", () => {
-  void startGame().catch(showError);
+  void (game === null ? newGame() : continueGame()).catch(showError);
+});
+$("restart-game").addEventListener("click", () => {
+  void newGame().catch(showError);
 });
 
-async function startGame(): Promise<void> {
+/** Start a game, ending the one on screen if there is one (開始, 重來). */
+async function newGame(): Promise<void> {
   $("start").hidden = true;
   hook.screen = "battle";
-  if (app !== null) return;
-  app = await createStage($("stage"));
+  hook.ready = false;
+  if (app === null) app = await createStage($("stage"));
+  game?.destroy();
   const port = params.mock ? new MockPort() : createSimPort(showError);
-  const game = new Game(app, port, $("hud"), {
+  const g = new Game(app, port, $("hud"), {
     seed: newSeed(),
     scenario: "standard",
     tps: params.tps ?? SPEED_TPS.normal,
     fake: params.mock,
     env,
     checkPort: params.mock ? null : () => createSimPort(showError),
+    life: {
+      restart: () => void newGame().catch(showError),
+      toStart: showStart,
+    },
   });
-  if (params.test) hook.game = gameHook(game);
-  game.start();
-  await game.whenReady();
-  hook.ready = true;
+  game = g;
+  if (params.test) hook.game = gameHook(g);
+  g.start();
+  await g.whenReady();
+  if (game === g) hook.ready = true;
+}
+
+/** Back from the start screen to the game in progress; it stays paused until 繼續. */
+async function continueGame(): Promise<void> {
+  $("start").hidden = true;
+  hook.screen = "battle";
+}
+
+/** 回開局畫面: pause the game and offer 繼續這局 or 重來. */
+function showStart(): void {
+  game?.pause();
+  hook.screen = "start";
+  $("start-game").textContent = "繼續這局";
+  $("restart-game").hidden = false;
+  $("start").hidden = false;
 }
 
 /** A new game's seed. It is an input to the simulation (recorded in the command log), not simulation state. */

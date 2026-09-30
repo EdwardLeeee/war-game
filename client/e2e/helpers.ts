@@ -57,3 +57,9 @@ export async function shot(page: Page, info: TestInfo, name: string): Promise<vo
   await page.screenshot({ path });
   await info.attach(name, { path, contentType: "image/png" });
 }
+
+/** The lab panel opens from the menu: 選單 → 量測與確定性檢查. */
+export async function openLab(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "量測與確定性檢查" }).tap();
+}

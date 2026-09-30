@@ -60,7 +60,19 @@ function shape(renderer: Renderer, size: number, draw: (g: Graphics) => void): T
 
 const outline = { width: 1.6, color: INK };
 
-export function buildAtlas(renderer: Renderer): Atlas {
+const atlases = new WeakMap<Renderer, Atlas>();
+
+/** The shapes for this renderer, drawn once and shared by every game on the page. */
+export function atlasFor(renderer: Renderer): Atlas {
+  let a = atlases.get(renderer);
+  if (a === undefined) {
+    a = buildAtlas(renderer);
+    atlases.set(renderer, a);
+  }
+  return a;
+}
+
+function buildAtlas(renderer: Renderer): Atlas {
   const units: Texture[] = [];
   // Farmer: small round body.
   units[UnitType.Farmer] = shape(renderer, 32, (g) => g.circle(16, 16, 7).fill(0xffffff).stroke(outline));

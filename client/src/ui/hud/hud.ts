@@ -48,7 +48,6 @@ interface Alert {
 
 export class Hud {
   private readonly game: Game;
-  private readonly root: HTMLElement;
   private readonly life: HudLifecycle;
   private readonly res: ResourceBar;
   private readonly minimap: Minimap;
@@ -67,7 +66,6 @@ export class Hud {
   private readonly cleanups: (() => void)[] = [];
 
   constructor(root: HTMLElement, game: Game, controlsBar: HTMLElement, life: HudLifecycle) {
-    this.root = root;
     this.game = game;
     this.life = life;
     this.res = new ResourceBar(root);

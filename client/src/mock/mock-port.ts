@@ -122,7 +122,13 @@ interface MBuilding {
   flags: number;
   rallyX: number;
   rallyY: number;
+  queue: UnitType[];
+  /** Head of the queue, permille done. */
+  queueProgress: number;
 }
+
+/** The fake world trains a unit in 3 seconds, so tests do not wait. */
+const MOCK_TRAIN_TICKS = 60;
 
 interface MTown {
   id: number;
@@ -157,6 +163,14 @@ export class MockPort implements SimPort {
   private readonly sentNode = new Map<number, string>();
   private events: SimEvent[] = [];
   private warningTicks = 0;
+  private ratio = { food: 40, wood: 35, gold: 25, on: true };
+  private recall = false;
+  private over = false;
+
+  /** Tests: deliver an event with the next snapshot (an attack, a captured town...). */
+  inject(ev: SimEvent): void {
+    this.events.push(ev);
+  }
 
   postMessage(msg: ToWorker): void {
     switch (msg.type) {
@@ -201,7 +215,7 @@ export class MockPort implements SimPort {
 
   private schedule(): void {
     this.timer = setTimeout(() => {
-      if (!this.paused) this.step();
+      if (!this.paused && !this.over) this.step();
       this.schedule();
     }, 1000 / this.tps);
   }
@@ -272,7 +286,7 @@ export class MockPort implements SimPort {
   }
 
   private building(owner: number, type: BuildingType, cx: number, cy: number): MBuilding {
-    const b: MBuilding = { id: this.nextId++, owner, type, cx, cy, hp: MOCK_RULES.buildings[type].hp, progress: 1000, flags: 0, rallyX: -1, rallyY: -1 };
+    const b: MBuilding = { id: this.nextId++, owner, type, cx, cy, hp: MOCK_RULES.buildings[type].hp, progress: 1000, flags: 0, rallyX: -1, rallyY: -1, queue: [], queueProgress: 0 };
     this.buildings.push(b);
     return b;
   }
@@ -311,7 +325,23 @@ export class MockPort implements SimPort {
       }
       if (u.type === UnitType.Mage && u.cast > 0) u.cast = u.cast >= 30 ? 1 : u.cast + 1;
     }
-    for (const b of this.buildings) if (b.progress < 1000) b.progress = Math.min(1000, b.progress + 2);
+    for (const b of this.buildings) {
+      if (b.progress < 1000) b.progress = Math.min(1000, b.progress + 2);
+      if (b.queue.length > 0) {
+        b.queueProgress += Math.ceil(1000 / MOCK_TRAIN_TICKS);
+        if (b.queueProgress >= 1000) {
+          const type = b.queue.shift() as UnitType;
+          b.queueProgress = 0;
+          const info = MOCK_RULES.units[type];
+          const u: MUnit = {
+            id: this.nextId++, owner: b.owner, type, x: centre(b.cx - 1), y: centre(b.cy), hp: info.hp, shield: info.shield,
+            facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Farmer ? UnitFlag.IdleFarmer : 0, target: null, order: Order.None, cast: 0,
+          };
+          this.units.push(u);
+          this.events.push({ k: "unit_trained", id: u.id, type, building: b.id });
+        }
+      }
+    }
     for (const t of this.towns) if (t.timer > 0) t.timer = t.timer <= 1 ? t.timerTotal : t.timer - 1;
     this.warningTicks = this.warningTicks <= 0 ? 60 : this.warningTicks - 1;
     if (this.tick % FOG_EVERY === 0) this.updateFog();
@@ -367,10 +397,12 @@ export class MockPort implements SimPort {
     header[H.populationCap] = 20;
     header[H.mages] = 2;
     header[H.mageCap] = 6;
-    header[H.ratioFood] = 40;
-    header[H.ratioWood] = 35;
-    header[H.ratioGold] = 25;
-    header[H.ratioOn] = 1;
+    header[H.ratioFood] = this.ratio.food;
+    header[H.ratioWood] = this.ratio.wood;
+    header[H.ratioGold] = this.ratio.gold;
+    header[H.ratioOn] = this.ratio.on ? 1 : 0;
+    header[H.recall] = this.recall ? 1 : 0;
+    header[H.gameState] = this.over ? 2 : 0;
     header[H.fogTick] = this.tick - (this.tick % FOG_EVERY);
 
     const seen = this.units.filter((u) => u.owner === ME || this.visible(u.x >> 10, u.y >> 10));
@@ -405,6 +437,9 @@ export class MockPort implements SimPort {
       buildings[o + B.cellY] = b.cy;
       buildings[o + B.hp] = b.hp;
       buildings[o + B.progress] = b.progress;
+      buildings[o + B.queueLength] = b.owner === ME ? b.queue.length : 0;
+      buildings[o + B.queuePacked] = b.owner === ME ? b.queue.reduce<number>((acc, t, i) => acc | (t << (i * 4)), 0) : 0;
+      buildings[o + B.queueProgress] = b.owner === ME ? b.queueProgress : 0;
       buildings[o + B.rallyX] = b.rallyX;
       buildings[o + B.rallyY] = b.rallyY;
       buildings[o + B.flags] = b.owner !== ME && !this.visible(b.cx, b.cy) ? 1 : 0;
@@ -526,6 +561,50 @@ export class MockPort implements SimPort {
           b.rallyX = centre(cmd.x);
           b.rallyY = centre(cmd.y);
         }
+        break;
+      }
+      case "train": {
+        const b = this.buildings.find((v) => v.id === cmd.building && v.owner === ME);
+        if (b === undefined) reject(Reject.NotOwner);
+        else if (!MOCK_RULES.buildings[b.type].trains.includes(cmd.type)) reject(Reject.NotAvailable);
+        else if (b.queue.length + cmd.n > MOCK_RULES.queueMax) reject(Reject.QueueFull);
+        else for (let i = 0; i < cmd.n; i++) b.queue.push(cmd.type);
+        break;
+      }
+      case "cancel_train": {
+        const b = this.buildings.find((v) => v.id === cmd.building && v.owner === ME);
+        if (b === undefined || cmd.index >= b.queue.length) reject(Reject.InvalidTarget);
+        else {
+          b.queue.splice(cmd.index, 1);
+          if (cmd.index === 0) b.queueProgress = 0;
+        }
+        break;
+      }
+      case "eco_ratio":
+        this.ratio = { food: cmd.food, wood: cmd.wood, gold: cmd.gold, on: cmd.on };
+        break;
+      case "recall":
+        this.recall = cmd.on;
+        break;
+      case "town_choice": {
+        const t = this.towns.find((v) => v.id === cmd.town);
+        if (t === undefined) reject(Reject.InvalidTarget);
+        else {
+          t.owner = ME;
+          t.state = cmd.choice === 0 ? TownState.Plundering : TownState.Repairing;
+          t.timer = t.timerTotal = t.size === TownSize.Large ? 500 : 300;
+        }
+        break;
+      }
+      case "repair":
+        break;
+      case "surrender": {
+        this.over = true;
+        const zero = { food: 0, wood: 0, gold: 0, crystal: 0 };
+        const player = { gathered: { ...zero }, unitsTrained: [0, 0, 0, 0], unitsLost: [0, 0, 0, 0], magesTrained: 0, magesLost: 0, townsPlundered: 0, townsGoverned: 0 };
+        this.events.push({ k: "game_over", winner: FOE, reason: 1 });
+        this.emit(this.snapshot(false));
+        this.emit({ type: "game_over", winner: FOE, reason: 1, stats: { ticks: this.tick, winner: FOE, reason: 1, perPlayer: [player, { ...player }] } });
         break;
       }
       default:

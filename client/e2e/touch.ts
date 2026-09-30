@@ -32,11 +32,11 @@ interface RunResult {
   cameraX: number;
 }
 
-/** Dispatch the steps in the page, optionally watching for the hold cue for some ms after one step. */
-async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: number } | null = null): Promise<RunResult> {
+/** Dispatch the steps in the page (on `target`), optionally watching for the hold cue for some ms after one step. */
+async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: number } | null = null, target = "#stage canvas"): Promise<RunResult> {
   return page.evaluate(
-    async ({ steps, probe }) => {
-      const canvas = document.querySelector("#stage canvas") as HTMLCanvasElement;
+    async ({ steps, probe, target }) => {
+      const canvas = document.querySelector(target) as HTMLElement;
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
       let cue = false;
       const cueEl = document.querySelector(".press-cue") as HTMLElement | null;
@@ -67,8 +67,31 @@ async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: 
       watch.disconnect();
       return { cue, cameraX: window.__proto?.game?.camera().x ?? 0 };
     },
-    { steps, probe },
+    { steps, probe, target },
   );
+}
+
+/** Centre of an element, or a point inside it given as fractions of its size. */
+async function pointIn(page: Page, selector: string, fx = 0.5, fy = 0.5): Promise<Pt> {
+  const box = await page.locator(selector).first().boundingBox();
+  if (box === null) throw new Error(`${selector} is not on screen`);
+  return { x: box.x + box.width * fx, y: box.y + box.height * fy };
+}
+
+/** Tap, double tap or long press on an interface element (buttons with gestures, the minimap). */
+export async function tapOn(page: Page, selector: string, fx = 0.5, fy = 0.5): Promise<void> {
+  const p = await pointIn(page, selector, fx, fy);
+  await run(page, [step("pointerdown", p), step("pointerup", p)], null, selector);
+}
+
+export async function doubleTapOn(page: Page, selector: string, fx = 0.5, fy = 0.5): Promise<void> {
+  const p = await pointIn(page, selector, fx, fy);
+  await run(page, [step("pointerdown", p), step("pointerup", p), step("pointerdown", p), step("pointerup", p)], null, selector);
+}
+
+export async function longPressOn(page: Page, selector: string, fx = 0.5, fy = 0.5, holdMs = 450): Promise<void> {
+  const p = await pointIn(page, selector, fx, fy);
+  await run(page, [step("pointerdown", p), step("pointerup", p, holdMs)], null, selector);
 }
 
 // Taps go down and up in one task, with no timer in between. Right after the page starts,
