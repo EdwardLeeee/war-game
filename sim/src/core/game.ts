@@ -4,7 +4,7 @@
 // the previous tick. step() then: 1. applies this tick's commands in queue order;
 // 2. hands idle farmers work (every ECO_EVERY ticks); 3. unit decisions (farmers at work
 // by the economy); 4. movement; 5. attacks, then gathering, building, repairing, hiding;
-// 6. deaths; 7. training; 8. towns (PR-4); 9. tick + 1, then fog every FOG_EVERY ticks;
+// 6. deaths (a mage's killer picks up crystal); 7. training; 8. towns; 9. tick + 1, then fog every FOG_EVERY ticks;
 // 10. time limit. The hash covers all state.
 
 import {
@@ -24,6 +24,7 @@ import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { FieldCache } from "./paths.ts";
 import { START_REVEAL } from "./rules.ts";
+import { TownSystem } from "./towns.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
 import { UnitSystem } from "./units.ts";
 import { World } from "./world.ts";
@@ -49,6 +50,7 @@ export class Game {
   readonly fog: Fog;
   readonly fields = new FieldCache();
   readonly econ: Economy;
+  private readonly towns: TownSystem;
   private readonly units: UnitSystem;
   private readonly ctx: CommandContext;
   private queue: Command[] = [];
@@ -68,6 +70,7 @@ export class Game {
     this.fog.update(this.w);
     this.units = new UnitSystem(this.w.size);
     this.econ = new Economy(this.w, this.fog, (to, ev) => this.events.push({ to, ev }));
+    this.towns = new TownSystem(this.fog, (to, ev) => this.events.push({ to, ev }));
     this.ctx = { w: this.w, fog: this.fog, econ: this.econ, nextGroup: { value: 0 } };
     const perRow = Math.ceil(this.w.size / (1 << ATTACK_BLOCK));
     const blocks = perRow * perRow;
@@ -107,9 +110,11 @@ export class Game {
     // 3-6. Decide, move, attack, work, deaths.
     const hurt = this.units.run(w, this.fog, this.fields, this.econ);
     this.econ.workTick(w);
-    this.units.removeDead(w, (s) => this.econ.release(w, s));
+    this.units.removeDead(w, (s) => this.econ.release(w, s), (to, ev) => this.events.push({ to, ev }));
     // 7. Training.
     this.econ.produce(w);
+    // 8. Towns.
+    this.towns.step(w);
     const n = w.size;
     const perRow = Math.ceil(n / (1 << ATTACK_BLOCK));
     for (const h of hurt) {
@@ -157,7 +162,9 @@ export class Game {
     for (const a of [w.gathered, w.trained, w.lost]) h = fnvInt32(h, a);
     h = fnvBytes(h, w.grid);
     h = fnvInt32(h, w.nodeAmount);
-    for (const a of [w.townState, w.townOwner, w.townTimer, w.townTimerTotal, w.townRevolt]) h = fnvInt32(h, a);
+    for (const a of [w.townState, w.townOwner, w.townTimer, w.townTimerTotal, w.townRevolt, w.townContested, w.townAcc]) h = fnvInt32(h, a);
+    h = fnvInt32(h, w.plundered);
+    h = fnvInt32(h, w.governed);
     h = fnvWord(h, w.units.count);
     for (const name of w.units.names) h = fnvInt32(h, w.units.col[name], w.units.count);
     h = fnvWord(h, w.buildings.count);

@@ -8,11 +8,15 @@ import {
   BuildingType,
   type Command,
   CELL_SHIFT,
+  GameOverReason,
   Order,
   PlaceBit,
   Reject,
   Resource,
   Stance,
+  TownChoice,
+  TownState,
+  UnitFlag,
   UnitType,
 } from "../protocol.ts";
 import { checkPlacement } from "../placement.ts";
@@ -20,7 +24,8 @@ import { type Economy, nodeOpen, shiftQueue } from "./economy.ts";
 import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
 import { nearestWalkable } from "./paths.ts";
-import { BUILDINGS, FARMLAND_REACH, FORMATION_SPACING, MAGE_CAP, QUEUE_MAX, UNITS } from "./rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, FORMATION_SPACING, MAGE_CAP, QUEUE_MAX, TOWNS, UNITS } from "./rules.ts";
+import { startCast } from "./units.ts";
 import type { World } from "./world.ts";
 
 export interface CommandContext {
@@ -280,6 +285,61 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
     case "recall": {
       if (typeof cmd.on !== "boolean") return Reject.InvalidTarget;
       ctx.econ.setRecall(w, p, cmd.on);
+      return 0;
+    }
+    case "cast": {
+      const s = Number.isInteger(cmd.u) ? w.unit(cmd.u) : -1;
+      const u = w.units.col;
+      if (s < 0 || u.owner[s] !== p) return Reject.NotOwner;
+      if (u.type[s] !== UnitType.Mage) return Reject.NotAvailable;
+      const max = w.size << CELL_SHIFT;
+      if (!Number.isInteger(cmd.fx) || !Number.isInteger(cmd.fy) || cmd.fx < 0 || cmd.fy < 0 || cmd.fx >= max || cmd.fy >= max) {
+        return Reject.InvalidTarget;
+      }
+      const dx = cmd.fx - u.x[s];
+      const dy = cmd.fy - u.y[s];
+      if (dx * dx + dy * dy > CANNON.range * CANNON.range) return Reject.OutOfRange;
+      if (u.castCooldown[s] > 0) return Reject.Cooldown;
+      if (w.res[p * 4 + Resource.Crystal] < CANNON.crystal) return Reject.NoCrystal;
+      startCast(w, s, cmd.fx, cmd.fy, false);
+      return 0;
+    }
+    case "autocast": {
+      const slots = ownUnits(w, p, cmd.u);
+      if (slots.length === 0) return Reject.NotOwner;
+      if (typeof cmd.on !== "boolean") return Reject.InvalidTarget;
+      const u = w.units.col;
+      const mageSlots = slots.filter((s) => u.type[s] === UnitType.Mage);
+      if (mageSlots.length === 0) return Reject.NotAvailable;
+      for (const s of mageSlots) {
+        if (cmd.on) u.flags[s] |= UnitFlag.Autocast;
+        else u.flags[s] &= ~UnitFlag.Autocast;
+      }
+      return 0;
+    }
+    case "town_choice": {
+      const t = cmd.town;
+      if (!Number.isInteger(t) || t < 0 || t >= w.townSize.length) return Reject.InvalidTarget;
+      if (cmd.choice !== TownChoice.Plunder && cmd.choice !== TownChoice.Govern) return Reject.InvalidTarget;
+      if (w.townOwner[t] !== p) return Reject.TownNotYours;
+      if (w.townState[t] !== TownState.AwaitingChoice) return Reject.TownChoiceMade;
+      const rule = TOWNS[w.townSize[t]];
+      if (cmd.choice === TownChoice.Plunder) {
+        w.townState[t] = TownState.Plundering;
+        w.townTimer[t] = rule.plunderTicks;
+        w.townTimerTotal[t] = rule.plunderTicks;
+        return 0;
+      }
+      if (!afford(w, p, rule.governCost, 1)) return Reject.CannotAfford;
+      pay(w, p, rule.governCost, 1);
+      w.townState[t] = TownState.Repairing;
+      w.townTimer[t] = rule.repairTicks;
+      w.townTimerTotal[t] = rule.repairTicks;
+      return 0;
+    }
+    case "surrender": {
+      w.winner = 1 - p;
+      w.endReason = GameOverReason.Surrender;
       return 0;
     }
     default:

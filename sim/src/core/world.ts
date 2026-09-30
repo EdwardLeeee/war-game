@@ -5,7 +5,7 @@
 
 import { BuildingType, NEUTRAL, PLAYER_COUNT, TownState, UnitType } from "../protocol.ts";
 import type { GameMap } from "./map.ts";
-import { BUILDINGS, ECO_DEFAULT, MAX_POPULATION, UNITS } from "./rules.ts";
+import { BUILDINGS, ECO_DEFAULT, MAX_POPULATION, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -20,6 +20,9 @@ export const UNIT_COLS = [
   // waits there and automatic work (auto-repair, the economy ratio) leaves it alone, until
   // the player gives it work (gather, build, repair). Recall still takes it (GDD section 4).
   "stay",
+  // Mages (units.ts): the cannon's aim point, the last tick this unit dealt damage (shield
+  // regeneration waits for both), and the owner of the last thing that hit it (bounty).
+  "castX", "castY", "lastDealt", "hitBy",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 
@@ -107,6 +110,10 @@ export class World {
   townTimer: Int32Array;
   townTimerTotal: Int32Array;
   townRevolt: Int32Array;
+  /** 1 while both players have military inside the radius (state frozen). */
+  townContested: Int32Array;
+  /** Per-minute production accumulators [town * 3 + food|gold|crystal] (towns.ts). */
+  townAcc: Int32Array;
 
   /** Resources per player: [player * 4 + Resource]. Neutral has a row too. */
   res = new Int32Array((PLAYER_COUNT + 1) * 4);
@@ -132,6 +139,8 @@ export class World {
   gathered = new Int32Array(PLAYER_COUNT * 4);
   trained = new Int32Array(PLAYER_COUNT * 5);
   lost = new Int32Array(PLAYER_COUNT * 5);
+  plundered = new Int32Array(PLAYER_COUNT);
+  governed = new Int32Array(PLAYER_COUNT);
   /** Winner once the game is over (-1 = draw), or -2 while running. */
   winner = -2;
   endReason = -1;
@@ -170,6 +179,8 @@ export class World {
     this.townTimer = new Int32Array(t);
     this.townTimerTotal = new Int32Array(t);
     this.townRevolt = new Int32Array(t);
+    this.townContested = new Int32Array(t);
+    this.townAcc = new Int32Array(t * 3);
     map.towns.forEach((s, i) => {
       this.townSize[i] = s.size;
       this.townX[i] = s.cellX;
@@ -204,6 +215,7 @@ export class World {
     c.x[s] = x;
     c.y[s] = y;
     c.hp[s] = hp;
+    c.shield[s] = UNITS[type].shield;
     c.carryKind[s] = -1;
     c.orderTarget[s] = -1;
     c.target[s] = -1;
@@ -213,6 +225,8 @@ export class World {
     c.lastHurt[s] = -100000;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
+    c.lastDealt[s] = -100000;
+    c.hitBy[s] = -1;
     return id;
   }
 
@@ -283,12 +297,15 @@ export class World {
     return pop;
   }
 
-  /** Population cap: finished buildings (governed towns from PR-4), at most MAX_POPULATION. */
+  /** Population cap: finished buildings and governed towns, at most MAX_POPULATION. */
   populationCap(p: number): number {
     const b = this.buildings.col;
     let cap = 0;
     for (let s = 0; s < this.buildings.count; s++) {
       if (b.owner[s] === p && b.progress[s] >= 1000) cap += BUILDINGS[b.type[s]].populationCap;
+    }
+    for (let t = 0; t < this.townSize.length; t++) {
+      if (this.townOwner[t] === p && this.townState[t] === TownState.Governed) cap += TOWNS[this.townSize[t]].populationCap;
     }
     return Math.min(cap, MAX_POPULATION);
   }

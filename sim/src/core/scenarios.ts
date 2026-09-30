@@ -2,17 +2,14 @@
 // mirror images (x <-> y) of player 0's, so neither side starts with a better layout.
 // "skirmish" is internal (tests and headless benchmarks), not part of the protocol.
 
-import { BuildingType, CELL_SHIFT, NEUTRAL, Resource, type ScenarioName, TownSize, UnitType } from "../protocol.ts";
+import { BuildingType, CELL_SHIFT, NEUTRAL, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
 import { BUILDINGS, START, TOWNS, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
 
-/** Which PR brings each protocol scenario (before that, init fails with this message). */
-const NOT_YET: Partial<Record<ScenarioKey, string>> = {
-  perf: "the perf scenario arrives with PR-4",
-};
+const SCENARIOS: readonly string[] = ["standard", "e2e", "perf", "skirmish"];
 
 /** e2e: resources per side, and the squad placed beside the small town. */
 export const E2E = {
@@ -26,11 +23,11 @@ export const E2E = {
 const center = (c: number) => (c << CELL_SHIFT) + 512;
 
 export function setupScenario(w: World, scenario: ScenarioKey): void {
-  const missing = NOT_YET[scenario];
-  if (missing !== undefined) throw new Error(missing);
+  if (!SCENARIOS.includes(scenario)) throw new Error(`unknown scenario ${String(scenario)}`);
   standard(w);
   if (scenario === "skirmish") skirmish(w);
   if (scenario === "e2e") e2e(w);
+  if (scenario === "perf") perf(w);
 }
 
 function standard(w: World): void {
@@ -79,12 +76,12 @@ export function placeTownGuards(w: World): void {
   }
 }
 
+/** Militia at the town's posts (the nearest open cell if a post has been built over). */
 export function spawnMilitia(w: World, town: number, count: number): void {
   const militia = UNITS[UnitType.Militia];
   for (let k = 0; k < count && k < POSTS.length; k++) {
-    const x = w.townX[town] + POSTS[k][0];
-    const y = w.townY[town] + POSTS[k][1];
-    const id = w.addUnit(NEUTRAL, UnitType.Militia, center(x), center(y), militia.hp);
+    const c = nearestWalkable(w, w.townX[town] + POSTS[k][0], w.townY[town] + POSTS[k][1]);
+    const id = w.addUnit(NEUTRAL, UnitType.Militia, center(c % w.size), center(Math.trunc(c / w.size)), militia.hp);
     w.units.col.home[w.unit(id)] = town;
   }
 }
@@ -158,4 +155,56 @@ function freeSpot(w: World, size: number, cx: number, cy: number): { x: number; 
     }
   }
   throw new Error("e2e: no free spot");
+}
+
+/** perf: every system running, for the iPhone measurement (PROTOCOL.md section 8). */
+export const PERF = {
+  resources: { food: 3000, wood: 3000, gold: 3000, crystal: 500 },
+  houses: 22,
+  farmers: 40,
+  spearmen: 34,
+  ranged: 34,
+  mages: 6,
+  /** Top-left of player 0's army block (10 wide, spearmen nearest the big city). */
+  army: { x: 40, y: 51 },
+};
+
+/**
+ * perf: both sides at 114 / 120 population. 22 houses by each main city; 40 farmers working
+ * under the economy ratio; 34 spearmen, 34 ranged and 6 mages on autocast in a block beside
+ * the big city, within reach of its militia, its tower and each other, so the battle starts
+ * by itself. Fog is on as always. Player 1 gets the mirror image.
+ */
+function perf(w: World): void {
+  const n = w.size;
+  for (let p = 0; p < 2; p++) {
+    w.res[p * 4 + Resource.Food] = PERF.resources.food;
+    w.res[p * 4 + Resource.Wood] = PERF.resources.wood;
+    w.res[p * 4 + Resource.Gold] = PERF.resources.gold;
+    w.res[p * 4 + Resource.Crystal] = PERF.resources.crystal;
+  }
+  const s0 = w.map.spawns[0];
+  const house = BUILDINGS[BuildingType.House];
+  for (let k = 0; k < PERF.houses; k++) {
+    const spot = freeSpot(w, house.size, s0.cellX, s0.cellY);
+    w.addBuilding(0, BuildingType.House, spot.x, spot.y, house.hp, 1000);
+    w.addBuilding(1, BuildingType.House, spot.y, spot.x, house.hp, 1000);
+  }
+  const both = (type: UnitType, x: number, y: number): number => {
+    const c = nearestWalkable(w, x, y);
+    const cx = c % n;
+    const cy = Math.trunc(c / n);
+    w.addUnit(0, type, center(cx), center(cy), UNITS[type].hp);
+    const id1 = w.addUnit(1, type, center(cy), center(cx), UNITS[type].hp);
+    return id1;
+  };
+  // Farmers beside the base (the start's five are already there).
+  for (let k = 0; k < PERF.farmers - START.farmers; k++) both(UnitType.Farmer, s0.cellX + 3 + (k % 7), s0.cellY - 6 + Math.trunc(k / 7));
+  const army: UnitType[] = [];
+  for (let k = 0; k < PERF.spearmen; k++) army.push(UnitType.Spearman);
+  for (let k = 0; k < PERF.ranged; k++) army.push(UnitType.Ranged);
+  for (let k = 0; k < PERF.mages; k++) army.push(UnitType.Mage);
+  army.forEach((type, k) => both(type, PERF.army.x + (k % 10), PERF.army.y + Math.trunc(k / 10)));
+  const u = w.units.col;
+  for (let s = 0; s < w.units.count; s++) if (u.type[s] === UnitType.Mage) u.flags[s] |= UnitFlag.Autocast;
 }

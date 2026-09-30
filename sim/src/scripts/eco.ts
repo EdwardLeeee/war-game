@@ -15,8 +15,13 @@ import {
   NodeKind,
   Order,
   PlaceBit,
+  TOWN_STRIDE,
+  TownChoice,
+  TownField,
+  TownState,
   UNIT_STRIDE,
   UnitField,
+  UnitFlag,
   UnitType,
 } from "../protocol.ts";
 import { BUILDINGS } from "../core/rules.ts";
@@ -72,6 +77,7 @@ export function ecoScript(view: PlayerView, spawn: { cellX: number; cellY: numbe
   const food = h[HeaderField.food];
   let wood = h[HeaderField.wood];
   const gold = h[HeaderField.gold];
+  const crystal = h[HeaderField.crystal];
   const pop = h[HeaderField.population];
   const cap = h[HeaderField.populationCap];
   const out: CommandBody[] = [];
@@ -95,6 +101,7 @@ export function ecoScript(view: PlayerView, spawn: { cellX: number; cellY: numbe
   const done = (t: number) => own.filter((b) => b.type === t && b.progress >= 1000);
   const gatherers: number[] = [];
   const army: number[] = [];
+  const quietMages: number[] = [];
   let farmers = 0;
   for (let r = 0; r < view.units.length; r += UNIT_STRIDE) {
     if (view.units[r + UnitField.owner] !== p) continue;
@@ -104,6 +111,7 @@ export function ecoScript(view: PlayerView, spawn: { cellX: number; cellY: numbe
       if (view.units[r + UnitField.order] === Order.Gather) gatherers.push(view.units[r + UnitField.id]);
     } else {
       army.push(view.units[r + UnitField.id]);
+      if (type === UnitType.Mage && (view.units[r + UnitField.flags] & UnitFlag.Autocast) === 0) quietMages.push(view.units[r + UnitField.id]);
     }
   }
   const nearestNode = (kind: number): { x: number; y: number } | null => {
@@ -136,6 +144,7 @@ export function ecoScript(view: PlayerView, spawn: { cellX: number; cellY: numbe
       plan = { type: BuildingType.Farm, at: { x: granary.x + 1, y: granary.y + 1 } };
     } else if (!has(BuildingType.Barracks) && wood >= 120) plan = { type: BuildingType.Barracks, at: { x: spawn.cellX, y: spawn.cellY } };
     else if (!has(BuildingType.Range) && wood >= 120) plan = { type: BuildingType.Range, at: { x: spawn.cellX, y: spawn.cellY } };
+    else if (!has(BuildingType.MageHall) && wood >= 150 && gold >= 100) plan = { type: BuildingType.MageHall, at: { x: spawn.cellX, y: spawn.cellY } };
     if (plan !== null && plan.at !== null) {
       const at = spotNear(view, plan.type, plan.at.x, plan.at.y);
       if (at !== null) {
@@ -161,7 +170,13 @@ export function ecoScript(view: PlayerView, spawn: { cellX: number; cellY: numbe
   const range = done(BuildingType.Range)[0];
   if (range && range.queue < 2 && wood >= 40 && gold >= 30 && room > 0) {
     out.push({ c: "train", building: range.id, type: UnitType.Ranged, n: 1 });
+    room--;
   }
+  const hall = done(BuildingType.MageHall)[0];
+  if (hall && hall.queue < 1 && gold >= 90 && crystal >= 50 && room > 0 && h[HeaderField.mages] < h[HeaderField.mageCap]) {
+    out.push({ c: "train", building: hall.id, type: UnitType.Mage, n: 1 });
+  }
+  if (quietMages.length > 0) out.push({ c: "autocast", u: quietMages, on: true });
 
   // Fixed moments: cancel, change the ratio, recall and back, send the army out.
   if (tick >= 3000 && tick < 3000 + ECO_SCRIPT_EVERY && main && main.queue > 0) {
@@ -170,6 +185,25 @@ export function ecoScript(view: PlayerView, spawn: { cellX: number; cellY: numbe
   if (tick >= 8000 && tick < 8000 + ECO_SCRIPT_EVERY) out.push({ c: "eco_ratio", food: 30, wood: 40, gold: 30, on: true });
   if (tick >= 6000 && tick < 6000 + ECO_SCRIPT_EVERY) out.push({ c: "recall", on: true });
   if (tick >= 6400 && tick < 6400 + ECO_SCRIPT_EVERY) out.push({ c: "recall", on: false });
-  if (tick >= 15000 && tick % 3000 < ECO_SCRIPT_EVERY && army.length >= 10) out.push({ c: "move", u: army, x: 48, y: 48 });
+  // Towns: take the small town and govern it, then the big city and plunder it. Taking the
+  // whole army to the big city leaves the small town without its garrison (a revolt).
+  for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+    if (view.towns[r + TownField.owner] !== p || view.towns[r + TownField.state] !== TownState.AwaitingChoice) continue;
+    const town = view.towns[r + TownField.id];
+    out.push({ c: "town_choice", town, choice: town === 0 ? TownChoice.Govern : TownChoice.Plunder });
+  }
+  if (tick >= 12000 && tick % 2000 < ECO_SCRIPT_EVERY && army.length >= 10) {
+    const small = townState(view, 0);
+    const target = small !== null && small.owner === p && small.state !== TownState.Neutral ? 1 : 0;
+    const at = target === 0 ? { x: 29, y: 29 } : { x: 48, y: 48 };
+    out.push({ c: "move", u: army, x: at.x, y: at.y });
+  }
   return out;
+}
+
+function townState(view: PlayerView, id: number): { owner: number; state: number } | null {
+  for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+    if (view.towns[r + TownField.id] === id) return { owner: view.towns[r + TownField.owner], state: view.towns[r + TownField.state] };
+  }
+  return null;
 }

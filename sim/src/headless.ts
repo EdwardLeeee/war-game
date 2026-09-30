@@ -1,5 +1,5 @@
 // Headless runner (Node; no build step, types are stripped).
-//   node src/headless.ts [--scenario standard|e2e|skirmish] [--seed N] [--ticks N] [--ai 1,1]
+//   node src/headless.ts [--scenario standard|e2e|perf|skirmish] [--seed N] [--ticks N] [--ai 1,1]
 //                        [--script demo|eco] [--replay FILE] [--out DIR] [--expected FILE]
 // Writes into --out: hashes.txt ("tick hash" per HASH_EVERY), commands.jsonl (LogHeader,
 // then one command per line), timing.json. --expected writes ExpectedHashes JSON for the
@@ -116,6 +116,8 @@ const timing = {
     trained: Array.from(g.w.trained.subarray(p * 5, p * 5 + 5)),
     lost: Array.from(g.w.lost.subarray(p * 5, p * 5 + 5)),
     buildings: g.w.buildings.col.owner.subarray(0, g.w.buildings.count).filter((o) => o === p).length,
+    townsPlundered: g.w.plundered[p],
+    townsGoverned: g.w.governed[p],
   })),
 };
 const final = runner.hashes.at(-1)!;

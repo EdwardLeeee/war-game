@@ -14,7 +14,10 @@ import {
   NEUTRAL,
   Order,
   PLAYER_COUNT,
+  Resource,
+  type SimEvent,
   Stance,
+  TICKS_PER_SECOND,
   UnitFlag,
   UnitType,
 } from "../protocol.ts";
@@ -25,6 +28,10 @@ import {
   AGGRO_RANGE,
   ARRIVE_DISTANCE,
   BUILDINGS,
+  CANNON,
+  MAGE_BOUNTY,
+  SHIELD,
+  SHIELD_REGEN,
   DIRECT_STEER,
   LEASH,
   MAIN_ARROW,
@@ -40,6 +47,8 @@ import {
 } from "./rules.ts";
 import { steerDirect, steerTo } from "./steer.ts";
 import type { World } from "./world.ts";
+
+const TICKS = TICKS_PER_SECOND;
 
 /** Decides a farmer that carries an economy order (Gather, Build, Repair, Recall). */
 export interface FarmerDecider {
@@ -65,6 +74,8 @@ export class UnitSystem {
   private cellNext = new Int32Array(256);
   private attacking = new Uint8Array(256);
   private unitDamage = new Int32Array(256);
+  /** The same hits counted against a mage's shield (its own multipliers). */
+  private shieldDamage = new Int32Array(256);
   private buildingDamage = new Int32Array(64);
   private newX = new Int32Array(256);
   private newY = new Int32Array(256);
@@ -81,6 +92,7 @@ export class UnitSystem {
       this.cellNext = new Int32Array(c);
       this.attacking = new Uint8Array(c);
       this.unitDamage = new Int32Array(c);
+      this.shieldDamage = new Int32Array(c);
       this.newX = new Int32Array(c);
       this.newY = new Int32Array(c);
       this.deadUnits = new Uint8Array(c);
@@ -166,6 +178,57 @@ export class UnitSystem {
     return bestId;
   }
 
+  /**
+   * Autocast (D1): among the enemy units the mage's owner sees within cannon range, the one
+   * whose position would hit the most enemies (at least CANNON.autocastMinTargets) within
+   * the blast radius; ties to the lower id. Returns a unit slot or -1.
+   */
+  private autocastAim(w: World, fog: Fog, i: number): number {
+    const u = w.units.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const range2 = CANNON.range * CANNON.range;
+    const r2 = CANNON.radius * CANNON.radius;
+    const hostile = (j: number) =>
+      u.owner[j] !== me && u.action[j] !== Action.Garrisoned && this.sees(fog, me, u.x[j], u.y[j], n);
+    const reach = (CANNON.range >> CELL_SHIFT) + 1;
+    const blast = (CANNON.radius >> CELL_SHIFT) + 1;
+    const cx = u.x[i] >> CELL_SHIFT;
+    const cy = u.y[i] >> CELL_SHIFT;
+    let best = -1;
+    let bestCount = CANNON.autocastMinTargets - 1;
+    let bestId = 0;
+    for (let y = Math.max(cy - reach, 0); y <= Math.min(cy + reach, n - 1); y++) {
+      for (let x = Math.max(cx - reach, 0); x <= Math.min(cx + reach, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (!hostile(j)) continue;
+          const dx = u.x[j] - u.x[i];
+          const dy = u.y[j] - u.y[i];
+          if (dx * dx + dy * dy > range2) continue;
+          let count = 0;
+          const jx = u.x[j] >> CELL_SHIFT;
+          const jy = u.y[j] >> CELL_SHIFT;
+          for (let yy = Math.max(jy - blast, 0); yy <= Math.min(jy + blast, n - 1); yy++) {
+            for (let xx = Math.max(jx - blast, 0); xx <= Math.min(jx + blast, n - 1); xx++) {
+              for (let k = this.cellHead[yy * n + xx]; k >= 0; k = this.cellNext[k]) {
+                if (!hostile(k)) continue;
+                const ex = u.x[k] - u.x[j];
+                const ey = u.y[k] - u.y[j];
+                if (ex * ex + ey * ey <= r2) count++;
+              }
+            }
+          }
+          if (count > bestCount || (count === bestCount && best >= 0 && u.id[j] < bestId)) {
+            best = j;
+            bestCount = count;
+            bestId = u.id[j];
+          }
+        }
+      }
+    }
+    return best;
+  }
+
   // --- decide ----------------------------------------------------------------------------
 
   private decide(w: World, fog: Fog, fields: FieldCache, farmers: FarmerDecider, i: number): void {
@@ -184,6 +247,30 @@ export class UnitSystem {
       return;
     }
     const farmer = u.type[i] === UnitType.Farmer;
+
+    // Crystal cannon: a calibrating mage stands still; any other order has cancelled it.
+    if (order !== Order.Cast && u.castProgress[i] > 0) u.castProgress[i] = 0;
+    if (order === Order.Cast) {
+      u.target[i] = -1;
+      u.action[i] = Action.Calibrate;
+      u.facing[i] = dir16(u.castX[i] - u.x[i], u.castY[i] - u.y[i]);
+      return;
+    }
+    if (
+      u.type[i] === UnitType.Mage &&
+      (u.flags[i] & UnitFlag.Autocast) !== 0 &&
+      order !== Order.Retreat &&
+      u.castCooldown[i] === 0 &&
+      (w.tick + u.id[i]) % RETARGET_EVERY === 0 &&
+      w.res[u.owner[i] * 4 + Resource.Crystal] >= CANNON.crystal
+    ) {
+      const aim = this.autocastAim(w, fog, i);
+      if (aim >= 0) {
+        startCast(w, i, u.x[aim], u.y[aim], true);
+        u.action[i] = Action.Calibrate;
+        return;
+      }
+    }
 
     // Drop a target that died, hid in a building, or (for player units) walked into the fog.
     const gone = (id: number) => {
@@ -377,19 +464,27 @@ export class UnitSystem {
     const b = w.buildings.col;
     const count = w.units.count;
     this.unitDamage.fill(0, 0, count);
+    this.shieldDamage.fill(0, 0, count);
     this.buildingDamage.fill(0, 0, w.buildings.count);
     for (let i = 0; i < count; i++) {
       if (u.cooldown[i] > 0) u.cooldown[i]--;
+      if (u.castCooldown[i] > 0) u.castCooldown[i]--;
+      if (u.order[i] === Order.Cast) {
+        u.castProgress[i]++;
+        if (u.castProgress[i] >= CANNON.calibrateTicks) this.fireCannon(w, i);
+        continue;
+      }
       if (this.attacking[i] === 0 || u.cooldown[i] > 0) continue;
       const tid = u.target[i];
       const info = UNITS[u.type[i]];
       const ts = w.unit(tid);
       if (ts >= 0) {
-        this.unitDamage[ts] += damage(info.attack, u.type[i], u.type[ts]);
+        this.hit(w, ts, info.attack, u.type[i], u.owner[i]);
       } else {
         const bs = w.building(tid);
         if (bs >= 0) this.buildingDamage[bs] += info.attack;
       }
+      u.lastDealt[i] = w.tick;
       u.cooldown[i] = info.cooldown;
     }
     // Arrows from main cities and the big city's tower.
@@ -417,6 +512,8 @@ export class UnitSystem {
       if (bestSlot < 0) continue;
       const arrows = type === BuildingType.MainCity ? 1 + Math.min(b.garrisoned[s], MAIN_ARROW.extraMax) : 1;
       this.unitDamage[bestSlot] += arrow.damage * arrows;
+      this.shieldDamage[bestSlot] += arrow.damage * arrows;
+      u.hitBy[bestSlot] = b.owner[s];
       b.target[s] = u.id[bestSlot];
       b.cooldown[s] = arrow.cooldown;
     }
@@ -425,9 +522,29 @@ export class UnitSystem {
     for (let i = 0; i < count; i++) {
       const dmg = this.unitDamage[i];
       if (dmg === 0) continue;
-      u.hp[i] -= dmg;
+      // A shield takes this tick's hits whole, however much they exceed it.
+      if (u.shield[i] > 0) u.shield[i] = Math.max(0, u.shield[i] - this.shieldDamage[i]);
+      else u.hp[i] -= dmg;
       u.lastHurt[i] = w.tick;
       hurt.push({ owner: u.owner[i], x: u.x[i], y: u.y[i], id: u.id[i] });
+    }
+    // Shields regenerate after SHIELD_REGEN.afterTicks without taking or dealing damage.
+    for (let i = 0; i < count; i++) {
+      const max = UNITS[u.type[i]].shield;
+      if (max === 0) continue;
+      if (w.tick - Math.max(u.lastHurt[i], u.lastDealt[i]) < SHIELD_REGEN.afterTicks || u.shield[i] >= max) {
+        u.acc[i] = 0;
+        continue;
+      }
+      u.acc[i] += SHIELD_REGEN.perSecond;
+      while (u.acc[i] >= TICKS) {
+        u.acc[i] -= TICKS;
+        u.shield[i]++;
+      }
+      if (u.shield[i] >= max) {
+        u.shield[i] = max;
+        u.acc[i] = 0;
+      }
     }
     for (let s = 0; s < w.buildings.count; s++) {
       const dmg = this.buildingDamage[s];
@@ -445,13 +562,61 @@ export class UnitSystem {
     return hurt;
   }
 
+  /** One hit on unit slot ts: hp damage and shield damage with their multipliers. */
+  private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number): void {
+    const u = w.units.col;
+    this.unitDamage[ts] += damage(attack, attackerType, u.type[ts]);
+    this.shieldDamage[ts] += damage(attack, attackerType, SHIELD);
+    u.hitBy[ts] = attackerOwner;
+  }
+
+  /**
+   * The cannon fires at (castX, castY) if the owner still has the crystal: every unit not
+   * the mage owner's within the radius is hit (never own units). Then cooldown; an autocast
+   * returns to the order it interrupted.
+   */
+  private fireCannon(w: World, i: number): void {
+    const u = w.units.col;
+    const n = w.size;
+    const p = u.owner[i];
+    const o = p * 4 + Resource.Crystal;
+    if (w.res[o] >= CANNON.crystal) {
+      w.res[o] -= CANNON.crystal;
+      const r2 = CANNON.radius * CANNON.radius;
+      const blast = (CANNON.radius >> CELL_SHIFT) + 1;
+      const cx = u.castX[i] >> CELL_SHIFT;
+      const cy = u.castY[i] >> CELL_SHIFT;
+      for (let y = Math.max(cy - blast, 0); y <= Math.min(cy + blast, n - 1); y++) {
+        for (let x = Math.max(cx - blast, 0); x <= Math.min(cx + blast, n - 1); x++) {
+          for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+            if (u.owner[j] === p || u.action[j] === Action.Garrisoned) continue;
+            const dx = u.x[j] - u.castX[i];
+            const dy = u.y[j] - u.castY[i];
+            if (dx * dx + dy * dy <= r2) this.hit(w, j, CANNON.damage, UnitType.Mage, p);
+          }
+        }
+      }
+      u.lastDealt[i] = w.tick;
+      u.castCooldown[i] = CANNON.cooldownTicks;
+    }
+    u.castProgress[i] = 0;
+    u.order[i] = u.prevOrder[i];
+    u.orderTarget[i] = u.prevTarget[i];
+    u.prevOrder[i] = Order.None;
+    u.prevTarget[i] = -1;
+    if (u.order[i] === Order.None) {
+      u.anchorX[i] = u.x[i];
+      u.anchorY[i] = u.y[i];
+    }
+  }
+
   // --- deaths ----------------------------------------------------------------------------
 
   /**
    * Removes units and buildings at 0 hp. A fallen building lets out the farmers hidden in it
    * (`release`), no longer blocks its cells, and a fallen main city ends the game.
    */
-  removeDead(w: World, release: (slot: number) => void): void {
+  removeDead(w: World, release: (slot: number) => void, emit: (to: number, ev: SimEvent) => void): void {
     const u = w.units.col;
     const b = w.buildings.col;
     let anyUnit = false;
@@ -461,6 +626,15 @@ export class UnitSystem {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * 5 + u.type[i]]++;
+        if (u.type[i] === UnitType.Mage) {
+          // The killer's side picks up the bounty (none for the neutral side).
+          const killer = u.hitBy[i];
+          const bounty = killer >= 0 && killer < PLAYER_COUNT && killer !== u.owner[i] ? MAGE_BOUNTY : 0;
+          if (bounty > 0) w.res[killer * 4 + Resource.Crystal] += bounty;
+          const ev: SimEvent = { k: "mage_killed", id: u.id[i], owner: u.owner[i], killer, crystal: bounty };
+          emit(u.owner[i], ev);
+          if (killer !== u.owner[i] && killer >= 0 && killer < PLAYER_COUNT) emit(killer, ev);
+        }
       }
     }
     if (anyUnit) {
@@ -502,6 +676,23 @@ export class UnitSystem {
 }
 
 /** Damage after the attacker-vs-target multiplier (integer, at least 1). */
+/** Starts a cannon calibration at the fixed-point point (x, y); an autocast remembers the order it interrupts. */
+export function startCast(w: World, i: number, x: number, y: number, auto: boolean): void {
+  const u = w.units.col;
+  if (u.order[i] !== Order.Cast) {
+    u.prevOrder[i] = auto ? u.order[i] : Order.None;
+    u.prevTarget[i] = auto ? u.orderTarget[i] : -1;
+  }
+  u.order[i] = Order.Cast;
+  u.orderTarget[i] = -1;
+  u.castX[i] = x;
+  u.castY[i] = y;
+  u.castProgress[i] = 0;
+  u.target[i] = -1;
+  u.vx[i] = 0;
+  u.vy[i] = 0;
+}
+
 export function damage(attack: number, attacker: number, target: number): number {
   return Math.max(1, idiv(attack * MULT_NUM[attacker][target], MULT_DEN[attacker][target]));
 }

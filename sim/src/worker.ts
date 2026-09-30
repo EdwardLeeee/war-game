@@ -58,7 +58,7 @@ function sendSnapshot(stepMicros: number): void {
   post(snap, transferables(snap));
 }
 
-/** End-of-game statistics (towns from PR-4). unitsTrained / unitsLost are by UnitType: farmer, spearman, ranged, mage. */
+/** End-of-game statistics. unitsTrained / unitsLost are by UnitType: farmer, spearman, ranged, mage. */
 function stats(): GameStats {
   const w = runner!.game.w;
   return {
@@ -76,8 +76,8 @@ function stats(): GameStats {
       unitsLost: Array.from(w.lost.subarray(p * 5, p * 5 + 4)),
       magesTrained: w.trained[p * 5 + UnitType.Mage],
       magesLost: w.lost[p * 5 + UnitType.Mage],
-      townsPlundered: 0,
-      townsGoverned: 0,
+      townsPlundered: w.plundered[p],
+      townsGoverned: w.governed[p],
     })),
   };
 }

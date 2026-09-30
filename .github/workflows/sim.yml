@@ -57,7 +57,7 @@ jobs:
           cache: npm
           cache-dependency-path: sim/package-lock.json
       - run: npm ci
-      - name: Skirmish, economy and standard games, replayed
+      - name: Skirmish, economy, e2e, perf and standard games, replayed
         run: |
           set -euo pipefail
           out="${GITHUB_WORKSPACE}/headless"
@@ -71,8 +71,9 @@ jobs:
           diff "${out}/eco/hashes.txt" "${out}/eco-replay/hashes.txt"
           echo "economy replay: every hash matches ($(wc -l < "${out}/eco/hashes.txt") checkpoints)"
           node src/headless.ts --scenario e2e --ai 0,0 --ticks 6000 --out "${out}/e2e"
+          node src/headless.ts --scenario perf --ai 0,0 --ticks 6000 --out "${out}/perf"
           node src/headless.ts --scenario standard --ai 0,0 --out "${out}/standard" --expected "${out}/expected-standard.json"
-          { echo "### Headless"; for d in skirmish skirmish-replay eco eco-replay e2e standard; do echo "- ${d}: \`$(tr -d '\n' < "${out}/${d}/timing.json" | tr -s ' ')\`"; done; } >> "${GITHUB_STEP_SUMMARY}"
+          { echo "### Headless"; for d in skirmish skirmish-replay eco eco-replay e2e perf standard; do echo "- ${d}: \`$(tr -d '\n' < "${out}/${d}/timing.json" | tr -s ' ')\`"; done; } >> "${GITHUB_STEP_SUMMARY}"
       - uses: actions/upload-artifact@v7
         with:
           name: sim-headless
