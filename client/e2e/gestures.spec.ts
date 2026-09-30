@@ -1,6 +1,7 @@
 // GDD §10 gestures on the battlefield, in WebKit and Chromium at iPhone landscape size, on
-// the fake world (mock/) until the simulation is connected. Each test names its gesture-table
-// row. Positions come from the test hook (cell -> screen), commands from what the page posted.
+// the fake world (?test=1&mock=1): its layout is fixed, while the real game's units move.
+// Each test names its gesture-table row. Positions come from the test hook (cell -> screen),
+// commands from what the page posted. sim.spec.ts runs the real simulation.
 
 import { expect, type Page, test } from "@playwright/test";
 import { INTERACTIVE, IPHONE_SAFE, injectSafeArea, shot, visibleBoxes, watchErrors } from "./helpers.ts";
@@ -19,7 +20,7 @@ let checkErrors: () => void;
 
 test.beforeEach(async ({ page }) => {
   checkErrors = watchErrors(page);
-  await page.goto("./?test=1");
+  await page.goto("./?test=1&mock=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   await centre(page, 22, 71);

@@ -7,15 +7,16 @@ test("game speeds are 15, 20 and 30 ticks per second", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false });
 });
 
-test("tps is ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200"), { test: false, tps: null });
+test("tps and mock are ignored without test=1", () => {
+  assert.deepEqual(parseParams("?tps=200&mock=1"), { test: false, tps: null, mock: false });
 });
 
-test("test=1 turns on the hook and allows a faster tick rate", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200 });
+test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false });
+  assert.equal(parseParams("?test=1&mock=1").mock, true);
 });
 
 test("tps is capped and must be a positive whole number", () => {

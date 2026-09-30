@@ -1,6 +1,6 @@
 // Read-only view of a game for the Playwright tests, on window.__proto.game with ?test=1 only.
 
-import { type BuildingType, UNIT_STRIDE, UnitField as U } from "../sim.ts";
+import { BUILDING_STRIDE, BuildingField as B, type BuildingType, HeaderField as H, NodeField as N, Terrain, UNIT_STRIDE, UnitField as U } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX } from "../view/view.ts";
 import type { Game } from "./game.ts";
@@ -18,12 +18,19 @@ export interface GameHook {
   centerOn(cx: number, cy: number, scale?: number): void;
   /** Screen position (CSS px) of a cell's centre. */
   cellToScreen(cx: number, cy: number): { x: number; y: number };
-  /** Units in the latest snapshot, with screen positions. */
-  units(): { id: number; owner: number; type: number; sx: number; sy: number }[];
+  /** Units in the latest snapshot, with screen positions and cells. */
+  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number }[];
   startPlacement(type: number): void;
   placement(): { cellX: number; cellY: number; valid: boolean; phase: string } | null;
   labPhase(): string;
   log(line: string): void;
+  /** Latest snapshot header values. */
+  header(): { tick: number; paused: boolean; speed: number };
+  /** Resource nodes the player knows about, with cells. */
+  nodes(): { id: number; kind: number; cx: number; cy: number; amount: number }[];
+  /** Nearest open, explored cell to (cx, cy) with no node or building on it, for "tap the ground". */
+  openCellNear(cx: number, cy: number): { x: number; y: number } | null;
+  lastCheck(): unknown;
 }
 
 export function gameHook(game: Game): GameHook {
@@ -50,7 +57,7 @@ export function gameHook(game: Game): GameHook {
       const out = [];
       for (let o = 0; o < u.length; o += UNIT_STRIDE) {
         const s = cam.worldToScreen(u[o + U.x] * FIXED_TO_PX, u[o + U.y] * FIXED_TO_PX);
-        out.push({ id: u[o + U.id], owner: u[o + U.owner], type: u[o + U.type], sx: s.x, sy: s.y });
+        out.push({ id: u[o + U.id], owner: u[o + U.owner], type: u[o + U.type], sx: s.x, sy: s.y, cx: u[o + U.x] >> 10, cy: u[o + U.y] >> 10 });
       }
       return out;
     },
@@ -58,5 +65,35 @@ export function gameHook(game: Game): GameHook {
     placement: () => (game.placement === null ? null : { cellX: game.placement.cellX, cellY: game.placement.cellY, valid: game.placement.valid, phase: game.placement.phase }),
     labPhase: () => game.lab.lab.phase,
     log: (line) => game.lab.log.add(line),
+    header: () => {
+      const h = game.view?.header;
+      return { tick: h?.[H.tick] ?? -1, paused: h?.[H.paused] === 1, speed: h?.[H.speed] ?? 0 };
+    },
+    nodes: () => [...(game.view?.nodes.values() ?? [])].map((r) => ({ id: r[N.id], kind: r[N.kind], cx: r[N.cellX], cy: r[N.cellY], amount: r[N.amount] })),
+    openCellNear: (cx, cy) => {
+      const view = game.view;
+      if (view === null || view.fog === null) return null;
+      const size = view.map.size;
+      const taken = new Uint8Array(size * size);
+      const b = view.curr?.snap.buildings ?? new Int32Array(0);
+      for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+        const s = view.rules.buildings[b[o + B.type]]?.size ?? 1;
+        for (let y = b[o + B.cellY] - 1; y <= b[o + B.cellY] + s; y++) {
+          for (let x = b[o + B.cellX] - 1; x <= b[o + B.cellX] + s; x++) if (x >= 0 && y >= 0 && x < size && y < size) taken[y * size + x] = 1;
+        }
+      }
+      for (let r = 0; r < size; r++) {
+        for (let y = cy - r; y <= cy + r; y++) {
+          for (let x = cx - r; x <= cx + r; x++) {
+            if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r || x < 1 || y < 1 || x >= size - 1 || y >= size - 1) continue;
+            const i = y * size + x;
+            if (view.map.terrain[i] !== Terrain.Open || view.nodeAt[i] >= 0 || taken[i] === 1 || view.fog[i] === 0) continue;
+            return { x, y };
+          }
+        }
+      }
+      return null;
+    },
+    lastCheck: () => game.lastCheck,
   };
 }

@@ -316,11 +316,32 @@ a {
 
 /* --- lab (measurement) panel --------------------------------------------------------- */
 
-.lab-toggle {
+/* Top-right controls: speed, pause, lab. */
+.top-right {
   position: absolute;
   top: calc(var(--safe-t) + 4px);
   right: calc(var(--safe-r) + 4px);
-  background: #cfd6d2;
+  display: flex;
+  gap: 6px;
+}
+
+.top-right button {
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.paused-banner {
+  position: absolute;
+  top: calc(var(--safe-t) + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  background: rgba(231, 195, 90, 0.92);
+  color: var(--on-accent);
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 .lab {

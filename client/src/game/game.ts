@@ -17,11 +17,14 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
+import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { LabPanel } from "../lab/panel.ts";
+import { SPEED_TPS } from "../params.ts";
 import { buildAtlas } from "../render/atlas.ts";
 import { WorldRenderer } from "../render/world.ts";
 import { type BuildingType, type CommandBody, type FromWorker, HeaderField as H, PROTOCOL_VERSION, type ScenarioName, Stance, UnitType } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX } from "../tuning.ts";
+import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { type PromptButton, Overlays, REJECT_TEXT } from "../ui/overlays.ts";
 import { Placement } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
@@ -34,6 +37,8 @@ export interface GameOptions {
   /** The port is the fake world (mock/), not the simulation. */
   fake: boolean;
   env: () => Record<string, unknown>;
+  /** A fresh simulation Worker for the determinism check, or null (the fake world has none). */
+  checkPort: (() => SimPort) | null;
 }
 
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
@@ -50,6 +55,11 @@ export class Game implements GestureHost {
   /** Commands posted, newest last (the test hook reads them). */
   readonly sent: (CommandBody & { seq: number })[] = [];
   readonly lab: LabPanel;
+  paused = false;
+  speed: SpeedName = "normal";
+  /** The last determinism check's result (the test hook reads it). */
+  lastCheck: CheckResult | null = null;
+  private readonly controls: Controls;
   private readonly app: Application;
   private readonly port: SimPort;
   private readonly overlays: Overlays;
@@ -65,7 +75,13 @@ export class Game implements GestureHost {
     this.port = port;
     this.options = options;
     this.overlays = new Overlays(hud);
-    this.lab = new LabPanel(hud, { env: options.env, check: null, fake: () => options.fake });
+    this.controls = new Controls(hud, { togglePause: () => (this.paused ? this.resume() : this.pause()), cycleSpeed: () => this.setSpeed(nextSpeed(this.speed)) });
+    const checkPort = options.checkPort;
+    this.lab = new LabPanel(
+      hud,
+      { env: options.env, check: checkPort === null ? null : () => this.determinism(checkPort), fake: () => options.fake },
+      this.controls.bar,
+    );
     this.recognizer = new GestureRecognizer(this);
     port.onmessage = (e) => this.receive(e.data);
     attachPointer(app.canvas, this.recognizer, () => {
@@ -84,9 +100,51 @@ export class Game implements GestureHost {
       { passive: false },
     );
     app.ticker.add(() => this.frame());
+    // GDD §11 (ceo 2026-09-30): going to the background or turning the phone upright pauses
+    // the game; coming back leaves it paused until the player presses 繼續.
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden) this.lab.lab.spoil("量測期間頁面切到背景");
+      if (!document.hidden) return;
+      this.lab.lab.spoil("量測期間頁面切到背景");
+      this.pause();
     });
+    const portrait = window.matchMedia("(orientation: portrait)");
+    portrait.addEventListener("change", () => {
+      if (portrait.matches) this.pause();
+    });
+  }
+
+  pause(): void {
+    if (this.paused) return;
+    this.paused = true;
+    this.port.postMessage({ type: "pause" });
+    this.controls.setPaused(true);
+  }
+
+  resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    this.port.postMessage({ type: "resume" });
+    this.controls.setPaused(false);
+  }
+
+  setSpeed(s: SpeedName): void {
+    this.speed = s;
+    this.port.postMessage({ type: "speed", tps: SPEED_TPS[s] });
+    this.controls.setSpeed(s);
+  }
+
+  /** 確定性檢查: a separate Worker replays CI's AI-vs-AI game; every hash is compared. */
+  private async determinism(makePort: () => SimPort): Promise<void> {
+    const log = (line: string) => this.lab.log.add(line);
+    const expected = await loadExpected();
+    log(expected === null ? "沒有 CI 對照檔，只列出雜湊" : `對照 CI：${expected.scenario}、種子 ${expected.seed}、最多 ${expected.maxTicks} tick`);
+    const r = await runCheck(makePort(), expected, (p) => {
+      if (p.tick % 6000 === 0) log(`… tick ${p.tick} ${p.hash}`);
+    });
+    this.lastCheck = r;
+    const verdict = r.same === null ? "沒有對照檔" : r.same ? `✓ 與 CI 相同（比對 ${r.compared} 個）` : `✗ 與 CI 不同（${r.mismatches} 處，第一處在 tick ${r.firstMismatchTick}）`;
+    log(`確定性檢查 ${r.ticks} tick、${Math.round(r.totalMs)} ms、最終 ${r.finalHash}：${verdict}`);
+    this.lab.showCheck(r);
   }
 
   start(): void {
@@ -133,7 +191,7 @@ export class Game implements GestureHost {
         };
         this.renderer = new WorldRenderer(this.app, this.view, buildAtlas(this.app.renderer));
         this.app.renderer.on("resize", (w: number, h: number) => cam.resize(w, h));
-        this.lab.log.add(`ready ${JSON.stringify(this.options.env())}`);
+        this.lab.log.add(`ready seed ${this.options.seed} ${JSON.stringify(this.options.env())}`);
         break;
       }
       case "snapshot": {
@@ -153,6 +211,11 @@ export class Game implements GestureHost {
       }
       case "error":
         this.lab.log.add(`error ${msg.message}`);
+        this.overlays.toast(`模擬回報錯誤：${msg.message}`);
+        break;
+      case "game_over":
+        this.lab.log.add(`game_over winner ${msg.winner} reason ${msg.reason} tick ${msg.stats.ticks}`);
+        this.overlays.toast("這局結束了");
         break;
       default:
         break;

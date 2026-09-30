@@ -2,7 +2,7 @@ name: Client
 
 # Phase 2 prototype client (docs/briefs/2026-10-client-prototype.md): type check and unit
 # tests, then the Playwright flows in WebKit and Chromium at iPhone 14 Pro Max landscape
-# size with touch. Also runs when sim/ changes, so an interface change that breaks the
+# size with touch, including the determinism check against a headless run of the same game. Also runs when sim/ changes, so an interface change that breaks the
 # client shows up on that pull request. Not a required check: the path filter would leave
 # unrelated pull requests waiting.
 on:
@@ -63,6 +63,8 @@ jobs:
           cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Hashes the page's determinism check compares against (headless run of the same game)
+        run: bash scripts/expected-hashes.sh dist/expected-hashes.json
       - run: npx playwright install --with-deps ${{ matrix.browser }}
       - run: npx playwright test --project=${{ matrix.browser }}
       - if: always()

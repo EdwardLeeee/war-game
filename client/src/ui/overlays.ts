@@ -27,7 +27,8 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.Cooldown]: "晶砲還在冷卻",
   [Reject.BadPlacement]: "這裡不能蓋",
   [Reject.QueueFull]: "訓練佇列已滿",
-  [Reject.NotAvailable]: "現在不能這樣做",
+  // Also what not-yet-built rules answer (ceo 2026-09-30: say so, do not treat it as an error).
+  [Reject.NotAvailable]: "原型尚未開放",
   [Reject.TownNotYours]: "不是你攻下的城鎮",
   [Reject.TownChoiceMade]: "這座城鎮已經選過了",
   [Reject.GameOver]: "這局已經結束",
