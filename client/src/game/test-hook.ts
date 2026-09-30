@@ -1,6 +1,6 @@
 // Read-only view of a game for the Playwright tests, on window.__proto.game with ?test=1 only.
 
-import { BUILDING_STRIDE, BuildingField as B, type BuildingType, HeaderField as H, NodeField as N, Terrain, UNIT_STRIDE, UnitField as U } from "../sim.ts";
+import { BUILDING_STRIDE, BuildingField as B, type BuildingType, type CommandBody, HeaderField as H, NodeField as N, Terrain, UNIT_STRIDE, UnitField as U } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX } from "../view/view.ts";
 import type { Game } from "./game.ts";
@@ -26,11 +26,15 @@ export interface GameHook {
   log(line: string): void;
   /** Latest snapshot header values. */
   header(): { tick: number; paused: boolean; speed: number };
+  /** Buildings in the latest snapshot: top-left cell and footprint size. */
+  buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number }[];
   /** Resource nodes the player knows about, with cells. */
   nodes(): { id: number; kind: number; cx: number; cy: number; amount: number }[];
   /** Nearest open, explored cell to (cx, cy) with no node or building on it, for "tap the ground". */
   openCellNear(cx: number, cy: number): { x: number; y: number } | null;
   lastCheck(): unknown;
+  /** Post a command as the player (tests of commands the interface has no button for yet). */
+  send(cmd: CommandBody): void;
 }
 
 export function gameHook(game: Game): GameHook {
@@ -69,6 +73,15 @@ export function gameHook(game: Game): GameHook {
       const h = game.view?.header;
       return { tick: h?.[H.tick] ?? -1, paused: h?.[H.paused] === 1, speed: h?.[H.speed] ?? 0 };
     },
+    buildings: () => {
+      const b = game.view?.curr?.snap.buildings;
+      if (b === undefined || game.view === null) return [];
+      const out = [];
+      for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+        out.push({ id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type], cx: b[o + B.cellX], cy: b[o + B.cellY], size: game.view.rules.buildings[b[o + B.type]]?.size ?? 1 });
+      }
+      return out;
+    },
     nodes: () => [...(game.view?.nodes.values() ?? [])].map((r) => ({ id: r[N.id], kind: r[N.kind], cx: r[N.cellX], cy: r[N.cellY], amount: r[N.amount] })),
     openCellNear: (cx, cy) => {
       const view = game.view;
@@ -95,5 +108,6 @@ export function gameHook(game: Game): GameHook {
       return null;
     },
     lastCheck: () => game.lastCheck,
+    send: (cmd) => game.command(cmd),
   };
 }

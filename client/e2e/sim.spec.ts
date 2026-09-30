@@ -1,6 +1,6 @@
 // The page on core's real simulation Worker (standard scenario), in WebKit and Chromium at
 // iPhone landscape size: the game runs, units follow orders, pause and speed, orders given
-// while paused, not-yet-built rules, automatic pause, and the determinism check against the
+// while paused, rejected commands, automatic pause, and the determinism check against the
 // hashes CI computed with the headless runner (dist/expected-hashes.json).
 
 import { expect, type Page, test } from "@playwright/test";
@@ -113,22 +113,18 @@ test("速度：正常 → 快 1.5× → 慢 0.75× → 正常（每秒 20、30�
   await expect.poll(async () => (await header(page)).speed).toBe(2000);
 });
 
-test("還沒開放的規則（採集）顯示「原型尚未開放」，不當成錯誤", async ({ page }) => {
+test("模擬還沒做的指令（投降）顯示「原型尚未開放」；已經有的規則被拒時說明原因", async ({ page }) => {
   await start(page);
-  await selectFarmers(page);
-  const f = (await farmers(page))[0];
-  const nodes = await page.evaluate(() => window.__proto?.game?.nodes() ?? []);
-  expect(nodes.length).toBeGreaterThan(0);
-  // The nearest resource node with no unit standing on or next to it (a tap there must hit the node).
-  const all = await units(page);
-  const clear = (n: { cx: number; cy: number }) => all.every((u) => Math.hypot(u.cx - n.cx, u.cy - n.cy) >= 2);
-  const near = nodes
-    .filter((n) => n.amount > 0 && clear(n))
-    .sort((a, b) => Math.hypot(a.cx - f.cx, a.cy - f.cy) - Math.hypot(b.cx - f.cx, b.cy - f.cy))[0];
-  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y), [near.cx, near.cy] as const);
-  await tap(page, await toScreen(page, { x: near.cx, y: near.cy }));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "gather", node: near.id });
+  await page.evaluate(() => window.__proto?.game?.send({ c: "surrender" }));
   await expect(page.getByRole("status").filter({ hasText: "原型尚未開放" })).toBeVisible();
+  // Farmers tapping their own undamaged main city: repair is a real rule, so it says why.
+  const ids = await selectFarmers(page);
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
+  if (city === undefined) throw new Error("no main city");
+  await tap(page, await toScreen(page, { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) }));
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "repair", u: ids, building: city.id });
+  await expect(page.getByRole("status").filter({ hasText: "不需要農民" })).toBeVisible();
 });
 
 test("轉成直向或切到背景會自動暫停；回來後維持暫停，要自己按繼續", async ({ page }) => {

@@ -25,7 +25,7 @@ import { WorldRenderer } from "../render/world.ts";
 import { type BuildingType, type CommandBody, type FromWorker, HeaderField as H, PROTOCOL_VERSION, type ScenarioName, Stance, UnitType } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX } from "../tuning.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
-import { type PromptButton, Overlays, REJECT_TEXT } from "../ui/overlays.ts";
+import { type PromptButton, Overlays, rejectText } from "../ui/overlays.ts";
 import { Placement } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import type { SimPort } from "./port.ts";
@@ -201,7 +201,10 @@ export class Game implements GestureHost {
         view.push(msg, now);
         this.lab.snapshot(msg.header, now);
         for (const ev of msg.events) {
-          if (ev.k === "rejected") this.overlays.toast(REJECT_TEXT[ev.reason] ?? "指令沒有執行");
+          if (ev.k === "rejected") {
+            const cmd = this.sent.find((c) => c.seq === ev.seq);
+            this.overlays.toast(rejectText(ev.reason, cmd));
+          }
         }
         if (this.placement !== null) {
           this.placement.revalidate(view.placement);
