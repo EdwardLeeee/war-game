@@ -9,6 +9,7 @@ import { MOCK_RULES } from "../src/mock/mock-port.ts";
 import {
   BUILDING_STRIDE,
   BuildingField as B,
+  BuildingFlag,
   BuildingType,
   CELL,
   HEADER_LENGTH,
@@ -24,11 +25,11 @@ import { GameView } from "../src/view/view.ts";
 const SIZE = 32;
 const map: MapInfo = { seed: 1, size: SIZE, terrain: new Uint8Array(SIZE * SIZE), spawns: [], towns: [] };
 
-/** [id, type, cellX, cellY, hp, progress] per building, all owned by player 0. */
-function view(buildings: [number, BuildingType, number, number, number, number][]): GameView {
+/** [id, type, cellX, cellY, hp, progress, flags?] per building, all owned by player 0. */
+function view(buildings: [number, BuildingType, number, number, number, number, number?][]): GameView {
   const v = new GameView(0, map, MOCK_RULES);
   const b = new Int32Array(buildings.length * BUILDING_STRIDE);
-  buildings.forEach(([id, type, cx, cy, hp, progress], i) => {
+  buildings.forEach(([id, type, cx, cy, hp, progress, flags], i) => {
     const o = i * BUILDING_STRIDE;
     b[o + B.id] = id;
     b[o + B.owner] = 0;
@@ -37,6 +38,7 @@ function view(buildings: [number, BuildingType, number, number, number, number][
     b[o + B.cellY] = cy;
     b[o + B.hp] = hp;
     b[o + B.progress] = progress;
+    b[o + B.flags] = flags ?? 0;
   });
   // One farmer, far from the buildings.
   const u = new Int32Array(UNIT_STRIDE);
@@ -87,4 +89,11 @@ test("完好的主城、民居、兵營 → 改選那棟建築", () => {
     assert.equal(v.buildingNeedsFarmers(10), false, String(type));
     assert.deepEqual(tapCell(v, 2, 2), [{ kind: "selectBuilding", id: 10 }], String(type));
   }
+});
+
+test("主城剛被攻擊（RepairLocked）：照樣派農民去修（模擬會讓他們等），畫面另外說明", () => {
+  const v = view([[10, BuildingType.MainCity, 2, 2, full(BuildingType.MainCity) - 100, 1000, BuildingFlag.RepairLocked]]);
+  assert.equal(v.buildingRepairLocked(10), true);
+  assert.deepEqual(tapCell(v, 3, 3), [{ kind: "command", cmd: { c: "repair", u: [1], building: 10 } }]);
+  assert.equal(view([[10, BuildingType.MainCity, 2, 2, full(BuildingType.MainCity) - 100, 1000]]).buildingRepairLocked(10), false);
 });

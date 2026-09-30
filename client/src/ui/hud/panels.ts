@@ -5,6 +5,7 @@
 import type { Mode } from "../../input/intent.ts";
 import {
   BuildingField as B,
+  BuildingFlag,
   BuildingType,
   type CommandBody,
   HeaderField as H,
@@ -203,8 +204,9 @@ export class SelectionInfo {
       hpBar(building ? b[o + B.progress] / 1000 : max > 0 ? b[o + B.hp] / max : 0);
       hpText.textContent = building ? `建造中 ${Math.floor(b[o + B.progress] / 10)}%` : `生命 ${b[o + B.hp]}/${max}`;
       const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名農民` : "";
-      const remembered = (b[o + B.flags] & 1) !== 0 ? "（上次看到的樣子）" : "";
-      status.textContent = `${own ? "" : remembered}${inside}`;
+      const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
+      const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
+      status.textContent = `${own ? locked : remembered}${inside}`;
       headBar?.(b[o + B.queueProgress] / 1000);
     });
   }

@@ -8,6 +8,7 @@ import {
   Action,
   BuildingField as B,
   BUILDING_STRIDE,
+  BuildingFlag,
   BuildingType,
   CELL,
   HeaderField as H,
@@ -201,6 +202,13 @@ export class GameView implements IntentWorld {
     const type = b[o + B.type];
     const max = this.rules.buildings[type]?.hp ?? 0;
     return b[o + B.progress] < 1000 || b[o + B.hp] < max || type === BuildingType.Farm;
+  }
+
+  /** Own main city hit in the last 10 s: repairs wait until the lock ends (sim/PROTOCOL.md 3.1, D-022). */
+  buildingRepairLocked(id: number): boolean {
+    const o = this.buildingRow(id);
+    const b = this.curr?.snap.buildings;
+    return o >= 0 && b !== undefined && (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0;
   }
 
   pickNode(wx: number, wy: number, r: number): Pick | null {
