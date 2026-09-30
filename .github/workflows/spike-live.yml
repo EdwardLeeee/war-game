@@ -2,6 +2,9 @@ name: Spike Live Check
 
 # Walks the user's iPhone test steps on the published GitHub Pages test pages (WebKit,
 # iPhone-sized touch viewport): open, press 開始量測, wait for the result box.
+# A push that changes spikes/ also redeploys Pages; while the site swaps versions the
+# page can reference a module that is not there yet (run 36658729206), so this waits for
+# this commit's Pages deployment to finish first.
 on:
   push:
     branches: ["spike/**"]
@@ -12,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  deployments: read
 
 jobs:
   pages:
@@ -29,6 +33,25 @@ jobs:
           cache-dependency-path: spikes/web/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps webkit
+      - name: Wait for this commit's Pages deployment, if there is one
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 60); do
+            id="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${GITHUB_SHA}&environment=github-pages" --jq '.[0].id // empty')"
+            if [ -z "${id}" ]; then
+              # Spike Pages starts with this run; give it 3 minutes to create the deployment.
+              if [ "${i}" -ge 12 ]; then echo "no Pages deployment for ${GITHUB_SHA}: testing the site as it is"; break; fi
+            else
+              state="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses" --jq '.[0].state // "pending"')"
+              echo "Pages deployment ${id}: ${state}"
+              case "${state}" in
+                success) break ;;
+                failure | error | inactive) echo "::warning::Pages deployment ${state}"; break ;;
+              esac
+            fi
+            sleep 15
+          done
       - run: >-
           node scripts/live-check.mjs "${GITHUB_WORKSPACE}/live"
           https://edwardleeee.github.io/war-game/web/

@@ -19,7 +19,14 @@ for (const url of urls) {
   page.on("console", (m) => m.text().startsWith("SPIKE") && lines.push(m.text()));
   page.on("pageerror", (e) => lines.push(`SPIKE pageerror ${e.message}`));
   await page.goto(url);
-  const ready = await waitFor(() => lines.some((l) => l.startsWith("SPIKE ready")), 180);
+  let ready = await waitFor(() => lines.some((l) => l.startsWith("SPIKE ready") || l.startsWith("SPIKE error")), 180);
+  if (!lines.some((l) => l.startsWith("SPIKE ready"))) {
+    // One reload: a module can be missing for a moment while Pages swaps site versions.
+    lines.push("SPIKE reload after: " + (lines.find((l) => l.startsWith("SPIKE error")) ?? "no ready line"));
+    await page.reload();
+    ready = await waitFor(() => lines.some((l) => l.startsWith("SPIKE ready")), 180);
+  }
+  ready = lines.some((l) => l.startsWith("SPIKE ready"));
   await page.screenshot({ path: join(out, `${name}-1-battle.png`) });
   const button = page.locator("#measure, #spike-measure");
   await button.first().tap();
