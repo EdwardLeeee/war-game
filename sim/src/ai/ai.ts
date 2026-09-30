@@ -19,11 +19,14 @@
 //   with plunders, a town it has plundered counts toward governing it next time, and it
 //   leaves a town it plundered alone for 6 minutes;
 // - crystal: two farmers to the vein (by hand) once there is a mage hall and the vein is known;
-// - attack: with enough soldiers, or once the towns are taken, marches on the enemy main city;
-//   from minute 22 it takes no more towns and gathers for one assault (goes with 15, or from
-//   minute 24 with 8), from minute 26 the garrisons go too and it no longer goes back to
-//   finish a plunder, and it does not give up on an enemy main city that is down to 40% of
-//   its hp.
+// - attack: with enough soldiers, or once the towns are taken, marches on the enemy main city,
+//   and does not give up on an enemy main city that is down to 40% of its hp. In a game with
+//   a time limit (AI against AI), counted back from the limit: 8 minutes before it, it takes
+//   no more towns and gathers for one assault (goes with 15, or from 6 minutes before with
+//   8); in the last 4 minutes the garrisons go too and it no longer goes back to finish a
+//   plunder. Without a limit (a person plays) none of that: it also marches once its
+//   population is full;
+// - difficulty (LEVELS): "easy" holds itself back and gets nothing extra.
 //
 // Every spatial choice is made in the canonical frame (frame.ts): player 1 on the mirrored
 // 1 v 1 map sees the same picture as player 0, ties included.
@@ -31,6 +34,7 @@
 import { type Frame, fromCanon, rectFromCanon, toCanon } from "../frame.ts";
 import { checkPlacement } from "../placement.ts";
 import {
+  type AiDifficulty,
   BUILDING_STRIDE,
   BuildingField,
   BuildingType,
@@ -70,7 +74,58 @@ export interface AiKnowledge {
   map: Pick<MapInfo, "size" | "spawns" | "towns">;
   rules: Rules;
   frame: Frame;
+  /**
+   * The game's time limit in ticks, 0 = none (a game a person plays, D-024). The end-of-game
+   * rules (the assault) only apply with a limit, counted back from it.
+   */
+  maxTicks: number;
+  /** How this AI plays (absent: "normal"). */
+  difficulty?: AiDifficulty;
 }
+
+/**
+ * What each difficulty does (GDD section 13). "normal" is the AI of the first play test;
+ * "easy" only holds itself back: fewer farmers, one barracks and one range, no farmers on
+ * the crystal vein, and it waits longer before its first town and its first march on the
+ * enemy base, with fewer soldiers. Nothing is ever added. Both draw the same random numbers,
+ * so "normal" plays exactly as before.
+ */
+interface Level {
+  /** Farmers it trains: base + a random 0..span-1 (per game). */
+  farmers: [number, number];
+  /** Barracks plus ranges at most (the plan adds more when food and wood pile up). */
+  production: number;
+  /** Farmers on the crystal vein once there is a mage hall. */
+  veinCrew: number;
+  /** Soldiers that set off for a town, the earliest game minute of that, and of a second trip. */
+  townArmy: [number, number];
+  townMinute: number;
+  secondTownMinute: number;
+  /** Soldiers that march on the enemy base, and the earliest game minute of that. */
+  baseArmy: [number, number];
+  baseMinute: number;
+  /** Most soldiers outside garrisons (with those in training) from each game minute on; none: no limit. */
+  armyCap: [number, number][];
+}
+const LEVELS: Record<AiDifficulty, Level> = {
+  normal: { farmers: [28, 9], production: 6, veinCrew: 2, townArmy: [10, 8], townMinute: 0, secondTownMinute: 0, baseArmy: [26, 12], baseMinute: 0, armyCap: [] },
+  easy: {
+    farmers: [18, 5],
+    production: 2,
+    veinCrew: 0,
+    townArmy: [8, 4],
+    // The player needs about 18 game minutes for a first town (D-024: 12 real minutes at
+    // normal speed): easy goes for the small town from minute 18 and leaves the big one
+    // alone until minute 24 (ceo 2026-10-01).
+    townMinute: 18,
+    secondTownMinute: 24,
+    baseArmy: [10, 3],
+    baseMinute: 20,
+    // Without a cap its two buildings bank soldiers while it waits (41 at its first town in
+    // the first measurement, 67 at its first march on the base).
+    armyCap: [[0, 8], [15, 12], [25, 16]],
+  },
+};
 
 /** GDD section 13: plunderer, governor, balanced. It only shifts the plunder-or-govern choice. */
 export const AI_STYLES = ["plunder", "govern", "balanced"] as const;
@@ -106,16 +161,21 @@ interface Town {
 type Mode = "gather" | "town" | "base" | "defend";
 
 const TICKS_PER_MINUTE = 1200;
-// The assault at the end of a 30-minute prototype game (later: from the game's own time limit).
-/** From this minute no new town expeditions: the army gathers for one assault on the enemy main city. */
-const ASSAULT_MINUTE = 22;
+// The end of a game with a time limit, counted back from the limit (in a 30-minute game these
+// are minutes 20, 22, 24 and 26). A game without a limit has none of it.
+/** From here the army it takes to march on the enemy base shrinks by 3 a minute. */
+const LATE_TO_GO = 10 * TICKS_PER_MINUTE;
+/** From here no new town expeditions: the army gathers for one assault on the enemy main city. */
+const ASSAULT_TO_GO = 8 * TICKS_PER_MINUTE;
 /** It sets off with this many (in round 9, 15-19 attackers took the city 76% of the time). */
 const ASSAULT_ARMY = 15;
-/** From this minute it sets off with ENDGAME_ARMY, so it arrives with minutes to spare. */
-const ASSAULT_LATEST = 24;
-/** From this minute the garrisons join, and it goes and stays with ENDGAME_ARMY or more. */
-const ENDGAME_MINUTE = 26;
+/** From here it sets off with ENDGAME_ARMY, so it arrives with minutes to spare. */
+const LATEST_TO_GO = 6 * TICKS_PER_MINUTE;
+/** From here the garrisons join, it no longer finishes plunders, and goes and stays with ENDGAME_ARMY or more. */
+const ENDGAME_TO_GO = 4 * TICKS_PER_MINUTE;
 const ENDGAME_ARMY = 8;
+/** Without a time limit it also marches when its population is full (it cannot grow any more). */
+const FULL_MARGIN = 2;
 /** An enemy main city at or below this share of its hp (percent) is not given up on. */
 const PRESS_ON_HP = 40;
 /** Govern costs (GDD appendix A), for the choice. */
@@ -141,10 +201,11 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   const real = (u: number, v: number) => fromCanon(know.frame, u, v);
   const frame = (x: number, y: number) => toCanon(know.frame, x, y);
   // Per-game style (from the personality's Rng): farmers, army mix, when to go out.
-  const farmerTarget = 28 + rng.below(9);
+  const level = LEVELS[know.difficulty ?? "normal"];
+  const farmerTarget = level.farmers[0] + rng.below(level.farmers[1]);
   const spearShare = 35 + rng.below(31);
-  const townArmy = 10 + rng.below(8);
-  const baseArmy = 26 + rng.below(12);
+  const townArmy = level.townArmy[0] + rng.below(level.townArmy[1]);
+  const baseArmy = level.baseArmy[0] + rng.below(level.baseArmy[1]);
   // A gathering point about 6 cells from the main city toward the map centre, jittered.
   const mid = n >> 1;
   const homeF = frame(home.cellX, home.cellY);
@@ -158,6 +219,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let targetTown = -1;
   let lastMove = -100000;
   let armyAtStart = 0;
+  /** Town expeditions started (the difficulty may wait before the second). */
+  let townTrips = 0;
   let ratioSet = "";
   let recalled = false;
   /** Soldier ids kept as the garrison of a governed or repairing town, per town. */
@@ -213,6 +276,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const out: CommandBody[] = [];
       const h = view.header;
       const tick = view.tick;
+      // Ticks to the time limit, or -1 without one.
+      const toGo = know.maxTicks > 0 ? know.maxTicks - tick : -1;
       const res: Cost = { food: h[HeaderField.food], wood: h[HeaderField.wood], gold: h[HeaderField.gold], crystal: h[HeaderField.crystal] };
       const pop = h[HeaderField.population];
       const cap = h[HeaderField.populationCap];
@@ -350,7 +415,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         // Spare food and wood: more places to train (one building trains one unit at a time).
-        if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < 6) {
+        if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < level.production) {
           add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
         for (const plan of plans) {
@@ -374,15 +439,23 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       }
 
       // --- army production --------------------------------------------------------------------
+      // The difficulty's cap on soldiers (those in training count too).
+      let armyCap = Infinity;
+      for (const [minute, most] of level.armyCap) if (tick >= minute * TICKS_PER_MINUTE) armyCap = most;
+      const training = own.filter((b) => b.type === BuildingType.Barracks || b.type === BuildingType.Range || b.type === BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
+      // Garrisons do not count: they keep the towns, not the field army.
+      const guarding = [...garrison.values()].reduce((a, ids) => a + ids.filter((id) => soldiers.some((u) => u.id === id)).length, 0);
+      let armyRoom = armyCap - (soldiers.length - guarding) - training;
       const spear = soldiers.filter((u) => u.type === UnitType.Spearman).length;
       const ranged = soldiers.filter((u) => u.type === UnitType.Ranged).length;
       const mages = soldiers.filter((u) => u.type === UnitType.Mage).length;
       const trainAt = (t: number, type: UnitType) => {
         for (const b of done(t)) {
-          if (b.queue >= 2 || room <= 0 || !afford(rules.units[type].cost)) continue;
+          if (b.queue >= 2 || room <= 0 || armyRoom <= 0 || !afford(rules.units[type].cost)) continue;
           out.push({ c: "train", building: b.id, type, n: 1 });
           spend(rules.units[type].cost);
           room--;
+          armyRoom--;
         }
       };
       if (mages < rules.mageCap && res.crystal >= rules.units[UnitType.Mage].cost.crystal) trainAt(BuildingType.MageHall, UnitType.Mage);
@@ -396,8 +469,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       // Crystal: once there is a mage hall and the vein is known, two farmers go there (by hand).
       veinCrew = veinCrew.filter((id) => farmers.some((f) => f.id === id && f.order === Order.Gather));
       const vein = nearestNode(NodeKind.CrystalVein);
-      if (vein !== null && has(BuildingType.MageHall) && veinCrew.length < 2) {
-        const pick = gatherers.filter((id) => !veinCrew.includes(id)).slice(-(2 - veinCrew.length));
+      if (vein !== null && has(BuildingType.MageHall) && veinCrew.length < level.veinCrew) {
+        const pick = gatherers.filter((id) => !veinCrew.includes(id)).slice(-(level.veinCrew - veinCrew.length));
         if (pick.length > 0) {
           out.push({ c: "gather", u: pick, node: vein.id });
           veinCrew.push(...pick);
@@ -445,16 +518,16 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (spare >= t.needed + 6) score += 2;
         if (foesNear(t.x, t.y, 14) >= 3) score -= 3;
         if (tick < 15 * TICKS_PER_MINUTE) score += 1;
-        if (tick > 24 * TICKS_PER_MINUTE) score -= 3;
+        // Too close to the time limit to pay governing back.
+        if (toGo >= 0 && toGo < LATEST_TO_GO) score -= 3;
         // A town already plundered is better kept this time; and the style leans one way.
         score += 2 * (plunders.get(id)?.count ?? 0) + STYLE_BIAS[myStyle];
         const govern = score >= 3 && affordAll(cost);
         out.push({ c: "town_choice", town: id, choice: govern ? TownChoice.Govern : TownChoice.Plunder });
         if (govern) spend(cost);
       }
-      // The clock (see ASSAULT_MINUTE and the rest).
-      const minute = Math.trunc(tick / TICKS_PER_MINUTE);
-      const endgame = minute >= ENDGAME_MINUTE;
+      // The clock: the end-of-game rules count back from the time limit, if there is one.
+      const endgame = toGo >= 0 && toGo <= ENDGAME_TO_GO;
       // Garrisons: the soldiers nearest each held town (not mages), topped up as they fall;
       // in the endgame they join the assault.
       if (endgame) garrison.clear();
@@ -513,11 +586,18 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         send(busy[1].x, busy[1].y, "town");
         return out;
       }
-      // From 20 minutes the army it takes to march on the enemy base shrinks; from 22 it
-      // gathers for the assault; in the last minutes it goes with what it has and does not
-      // fall back.
-      const assault = minute >= ASSAULT_MINUTE;
-      const baseNeed = minute < 20 ? baseArmy : Math.max(townArmy, baseArmy - (minute - 19) * 3);
+      // Near a time limit: from 10 minutes before it the army it takes to march on the enemy
+      // base shrinks by 3 a minute; from 8 it gathers for the assault; in the last 4 it goes
+      // with what it has and does not fall back.
+      const assault = toGo >= 0 && toGo <= ASSAULT_TO_GO;
+      const latest = toGo >= 0 && toGo <= LATEST_TO_GO;
+      const lateMinutes = toGo >= 0 && toGo <= LATE_TO_GO ? Math.trunc((tick - (know.maxTicks - LATE_TO_GO)) / TICKS_PER_MINUTE) + 1 : 0;
+      const baseNeed = lateMinutes === 0 ? baseArmy : Math.max(townArmy, baseArmy - lateMinutes * 3);
+      // Without a limit it also marches once it cannot grow (population at the rules' maximum).
+      const popFull = toGo < 0 && cap >= rules.maxPopulation && pop >= cap - FULL_MARGIN;
+      // The difficulty's earliest first town and first march on the enemy base.
+      const townTime = tick >= (townTrips === 0 ? level.townMinute : level.secondTownMinute) * TICKS_PER_MINUTE;
+      const baseTime = tick >= level.baseMinute * TICKS_PER_MINUTE;
       // Weighing up: the most enemy soldiers seen at once in the last 2 minutes, and those
       // near the army now. It goes out only when clearly stronger (1.3 x), and pulls back
       // when outnumbered where it stands, so even armies do not just grind each other down.
@@ -561,15 +641,16 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const go = endgame
           ? army.length >= ENDGAME_ARMY
           : assault
-            ? army.length >= ASSAULT_ARMY || (minute >= ASSAULT_LATEST && army.length >= ENDGAME_ARMY)
-            : strongEnough && (army.length >= baseNeed || (open.length === 0 && army.length >= townArmy + 6));
+            ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
+            : baseTime && strongEnough && (army.length >= baseNeed || ((open.length === 0 || popFull) && army.length >= townArmy + 6));
         if (go) {
           armyAtStart = army.length;
           send(enemyHome.cellX, enemyHome.cellY, "base");
-        } else if (!assault && army.length >= townArmy && open.length > 0 && strongEnough) {
+        } else if (!assault && townTime && army.length >= townArmy && open.length > 0 && strongEnough) {
           const pick = army.length >= 24 || open.length === 1 ? open[open.length - 1] : open[0];
           targetTown = pick[0];
           armyAtStart = army.length;
+          townTrips++;
           send(pick[1].x, pick[1].y, "town");
         } else {
           send(rally.x, rally.y, "gather");

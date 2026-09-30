@@ -46,7 +46,7 @@ export class Runner {
     this.difficulty = Array.from({ length: PLAYER_COUNT }, (_, p) => cfg.difficulty?.[p] ?? "normal");
     for (let p = 0; p < PLAYER_COUNT; p++) {
       const slot = cfg.swap === true ? 1 - p : p;
-      const know = { map: this.game.w.map, rules: rules(), frame: this.game.w.map.frames[p] };
+      const know = { map: this.game.w.map, rules: rules(), frame: this.game.w.map.frames[p], maxTicks: this.maxTicks, difficulty: this.difficulty[p] };
       this.ais.push(cfg.replay === undefined && cfg.ai[p] ? createAi(p, cfg.seed, know, slot, cfg.styles?.[slot]) : null);
     }
     if (cfg.replay !== undefined) for (const c of cfg.replay) this.game.push(c);

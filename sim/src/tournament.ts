@@ -10,7 +10,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
-import { type LogHeader, MAX_TICKS, UnitType } from "./protocol.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, type LogHeader, MAX_TICKS, UnitType } from "./protocol.ts";
 import { AI_STYLES, type AiStyle } from "./ai/ai.ts";
 import { Runner } from "./runner.ts";
 
@@ -26,6 +26,9 @@ const games = Number(arg("games", "100"));
 const shard = Number(arg("shard", "0"));
 const shards = Number(arg("shards", "1"));
 const maxTicks = Number(arg("ticks", String(MAX_TICKS)));
+/** The difficulty of slot 0 and slot 1 (they swap spawns with the styles), e.g. normal,easy. */
+const slotDifficulty = arg("difficulty", "normal,normal").split(",") as AiDifficulty[];
+if (slotDifficulty.length !== 2 || !slotDifficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad --difficulty ${slotDifficulty}`);
 const out = arg("out", "tournament");
 mkdirSync(out, { recursive: true });
 
@@ -35,6 +38,8 @@ export interface GameResult {
   swap: boolean;
   /** The style each spawn's AI played. */
   styles: string[];
+  /** The difficulty each spawn's AI played. */
+  difficulty: string[];
   ticks: number;
   /** 0 or 1 (the spawn that won), -1 for a draw. */
   winner: number;
@@ -153,7 +158,8 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
   const seed = 1 + (i >> 1);
   const swap = (i & 1) === 1;
   const start = performance.now();
-  const r = new Runner({ seed, scenario: "standard", ai: [true, true], swap, styles: STYLE_PAIRS[(seed - 1) % STYLE_PAIRS.length], maxTicks });
+  const difficulty = [0, 1].map((p) => slotDifficulty[swap ? 1 - p : p]);
+  const r = new Runner({ seed, scenario: "standard", ai: [true, true], swap, styles: STYLE_PAIRS[(seed - 1) % STYLE_PAIRS.length], maxTicks, difficulty });
   const g = r.game;
   const micros: number[] = [];
   const timeline: Sample[] = [];
@@ -177,6 +183,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
     seed,
     swap,
     styles: r.styles.map((s) => s ?? "none"),
+    difficulty,
     ticks: g.tick,
     winner: w.over ? w.winner : -1,
     reason: w.endReason,
@@ -212,7 +219,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
   const head: LogHeader = r.header([true, true]);
   writeFileSync(join(out, `game-${i}.jsonl`), [JSON.stringify(head), ...g.log.map((c) => JSON.stringify(c))].join("\n") + "\n");
   console.log(
-    `game ${i} seed ${seed}${swap ? " swap" : ""} ${result.styles.join("/")}: ${result.winner === -1 ? "draw" : `player ${result.winner} wins`} at tick ${g.tick}` +
+    `game ${i} seed ${seed}${swap ? " swap" : ""} ${result.styles.join("/")}${difficulty[0] === difficulty[1] ? "" : ` ${difficulty.join("/")}`}: ${result.winner === -1 ? "draw" : `player ${result.winner} wins`} at tick ${g.tick}` +
       ` (${(g.tick / 1200).toFixed(1)} min); replay ${same ? "matches" : "DIFFERS"} (${r.hashes.length} checkpoints); ${wallMs} ms;` +
       ` plunder ${result.perPlayer.map((p) => p.plundered).join("/")}, govern ${result.perPlayer.map((p) => p.governed).join("/")},` +
       ` mages ${result.perPlayer.map((p) => p.magesTrained).join("/")}`,

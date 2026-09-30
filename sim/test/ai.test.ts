@@ -5,7 +5,7 @@ import test from "node:test";
 import { type AiStyle, createAi } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
 import { rules } from "../src/core/rules.ts";
-import { BuildingType, type CommandBody, NO_OWNER, TownChoice, TownState, UnitType } from "../src/protocol.ts";
+import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
 import { emptyGame, put } from "./helpers.ts";
@@ -25,7 +25,7 @@ function units(g: Game, p: number): string {
 test("two identical AIs on the mirrored spawns play mirror images of each other", () => {
   const g = new Game({ seed: 7, scenario: "standard" });
   const w = g.w;
-  const ais = [0, 1].map((p) => createAi(p, 7, { map: w.map, rules: rules(), frame: w.map.frames[p] }, 0, "balanced"));
+  const ais = [0, 1].map((p) => createAi(p, 7, { map: w.map, rules: rules(), frame: w.map.frames[p], maxTicks: MAX_TICKS }, 0, "balanced"));
   let seq = 0;
   for (let t = 0; t < 3000; t++) {
     if (g.tick % 10 === 0) {
@@ -45,7 +45,7 @@ function choice(style: AiStyle): CommandBody | undefined {
   w.res.set([1000, 1000, 1000, 0], 0);
   for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, w.townX[0] + (k % 3), w.townY[0] + 1 + Math.trunc(k / 3));
   g.fog.update(w);
-  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, style);
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: MAX_TICKS }, 0, style);
   return ai.think(buildView(g, 0)).find((c) => c.c === "town_choice");
 }
 
@@ -82,7 +82,7 @@ function firstMove(foes: number): CommandBody | undefined {
   for (let k = 0; k < 18; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 8 - Math.trunc(k / 6));
   for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 13 - Math.trunc(k / 6));
   g.fog.update(w);
-  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: MAX_TICKS }, 0, "balanced");
   return ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= 18);
 }
 
@@ -99,7 +99,7 @@ test("an army sent to a town moves on once the town lies in ruins, instead of wa
   const [small, big] = w.map.towns;
   for (let k = 0; k < 18; k++) put(g, 0, UnitType.Spearman, small.cellX + 2 + (k % 6), small.cellY + 3 + Math.trunc(k / 6));
   g.fog.update(w);
-  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "plunder");
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: MAX_TICKS }, 0, "plunder");
   const bigMove = () => {
     const m = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= 18) as { x: number; y: number } | undefined;
     return m && { x: m.x, y: m.y };
@@ -112,16 +112,25 @@ test("an army sent to a town moves on once the town lies in ruins, instead of wa
   assert.deepEqual(bigMove(), { x: big.cellX, y: big.cellY }, "then on to the big town, not waiting in the ruins");
 });
 
-/** Where the first big move of an AI with `n` spearmen out from home goes at `minute` (no enemy in view). */
-function goesAt(n: number, minute: number): string {
+/**
+ * Where the first big move of an AI with `n` spearmen out from home goes at `minute` (no enemy
+ * in view): in a 30-minute game unless `maxTicks` says otherwise; `full`: population at 120 / 120.
+ */
+function goesAt(n: number, minute: number, opt: { maxTicks?: number; difficulty?: AiDifficulty; full?: boolean } = {}): string {
   const g = emptyGame();
   const w = g.w;
   w.tick = minute * 1200;
   const s0 = w.map.spawns[0];
   for (let k = 0; k < n; k++) put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6));
   g.fog.update(w);
-  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
-  const m = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= n) as { x: number; y: number } | undefined;
+  const know = { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: opt.maxTicks ?? MAX_TICKS, difficulty: opt.difficulty };
+  const ai = createAi(0, 1, know, 0, "balanced");
+  const view = buildView(g, 0);
+  if (opt.full === true) {
+    view.header[HeaderField.population] = 120;
+    view.header[HeaderField.populationCap] = 120;
+  }
+  const m = ai.think(view).find((c) => c.c === "move" && c.u.length >= n) as { x: number; y: number } | undefined;
   if (m === undefined) return "none";
   const s1 = w.map.spawns[1];
   if (m.x === s1.cellX && m.y === s1.cellY) return "enemy base";
@@ -146,7 +155,7 @@ function atEnemyCity() {
   const ids: number[] = [];
   for (let k = 0; k < 20; k++) ids.push(put(g, 0, UnitType.Spearman, s1.cellX - 6 + (k % 5), s1.cellY + 3 + Math.trunc(k / 5)));
   g.fog.update(w);
-  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: MAX_TICKS }, 0, "balanced");
   const first = ai.think(buildView(g, 0));
   assert.ok(first.some((c) => c.c === "move" && c.u.length === 20 && c.x === s1.cellX && c.y === s1.cellY), "marches on the city");
   let city = -1;
@@ -186,7 +195,7 @@ test("from minute 26 the garrison of a governed town joins the assault", () => {
   // A small town keeps garrisonNeeded (1) + 1 soldiers: these two, the nearest.
   const guards = [0, 1].map((k) => put(g, 0, UnitType.Spearman, small.cellX + k, small.cellY + 1));
   for (let k = 0; k < 16; k++) put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6));
-  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: MAX_TICKS }, 0, "balanced");
   const orders = (minute: number) => {
     w.tick = minute * 1200;
     g.fog.update(w);
@@ -209,7 +218,7 @@ test("from minute 26 it no longer goes back to finish a plunder", () => {
     const s0 = w.map.spawns[0];
     for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 5), s0.cellY - 14 - Math.trunc(k / 5));
     g.fog.update(w);
-    const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
+    const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: MAX_TICKS }, 0, "balanced");
     const m = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 11) as { x: number; y: number } | undefined;
     return m && (m.x === small.cellX && m.y === small.cellY ? "town" : m.x === w.map.spawns[1].cellX && m.y === w.map.spawns[1].cellY ? "enemy base" : "other");
   };
@@ -217,3 +226,84 @@ test("from minute 26 it no longer goes back to finish a plunder", () => {
   assert.equal(where(26), "enemy base", "minute 26: straight for the enemy main city");
 });
 
+
+test("without a time limit (a person plays) there is no end game: towns as ever, no march at a fixed minute", () => {
+  const none = { maxTicks: 0 };
+  assert.equal(goesAt(18, 22, none), "town", "minute 22: still takes towns");
+  assert.equal(goesAt(18, 40, none), "town", "minute 40: still takes towns");
+  assert.equal(goesAt(9, 24, none), "rally", "minute 24: no small army sent off to die");
+  assert.equal(goesAt(9, 60, none), "rally", "minute 60: nor later");
+  // The limit is counted back from: in a 40-minute game, minute 32 is what minute 22 is in 30.
+  assert.equal(goesAt(18, 31, { maxTicks: 40 * 1200 }), "town");
+  assert.equal(goesAt(18, 32, { maxTicks: 40 * 1200 }), "enemy base");
+});
+
+test("without a time limit it also marches once its population is full", () => {
+  assert.equal(goesAt(24, 12, { maxTicks: 0 }), "town", "can still grow: a town first");
+  assert.equal(goesAt(24, 12, { maxTicks: 0, full: true }), "enemy base", "120 of 120: it goes");
+  assert.equal(goesAt(24, 12, { full: true }), "town", "with a time limit the old rules stand");
+});
+
+test("easy waits: no town before minute 18, no march on the enemy base before minute 20", () => {
+  const easy = { maxTicks: 0, difficulty: "easy" as const };
+  assert.equal(goesAt(18, 17, easy), "rally");
+  assert.equal(goesAt(18, 18, easy), "town");
+  assert.equal(goesAt(24, 19, { ...easy, full: true }), "town", "full, but too early for the base");
+  assert.equal(goesAt(24, 20, { ...easy, full: true }), "enemy base");
+  assert.equal(goesAt(18, 14, { maxTicks: 0 }), "town", "normal does not wait");
+});
+
+test("easy holds back: fewer farmers, one barracks and one range, nobody on the crystal vein", () => {
+  const r = new Runner({ seed: 4, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "easy"] });
+  while (r.game.tick < 16000) r.tick();
+  const w = r.game.w;
+  const u = w.units.col;
+  let farmers = 0;
+  let onVein = 0;
+  for (let s = 0; s < w.units.count; s++) {
+    if (u.owner[s] !== 1 || u.type[s] !== UnitType.Farmer) continue;
+    farmers++;
+    if (u.order[s] === Order.Gather && u.onFarm[s] === 0 && w.nodeKind[u.orderTarget[s]] === NodeKind.CrystalVein) onVein++;
+  }
+  let production = 0;
+  for (let s = 0; s < w.buildings.count; s++) {
+    const t = w.buildings.col.type[s];
+    if (w.buildings.col.owner[s] === 1 && (t === BuildingType.Barracks || t === BuildingType.Range)) production++;
+  }
+  assert.ok(farmers <= 22, `${farmers} farmers`);
+  assert.ok(production <= 2, `${production} barracks and ranges`);
+  assert.equal(onVein, 0);
+});
+
+test("easy leaves the second town alone for a while (normal does not)", () => {
+  for (const difficulty of ["easy", "normal"] as const) {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    for (let k = 0; k < 12; k++) put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6));
+    const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
+    const [small, big] = w.map.towns;
+    const s1 = w.map.spawns[1];
+    // A lookout by the small town, so the AI sees what becomes of it.
+    put(g, 0, UnitType.Spearman, small.cellX + 3, small.cellY + 3);
+    const at = (minute: number) => {
+      w.tick = minute * 1200;
+      g.fog.update(w);
+      const m = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= 10) as { x: number; y: number } | undefined;
+      if (m === undefined) return "none";
+      if (m.x === small.cellX && m.y === small.cellY) return "small";
+      if (m.x === big.cellX && m.y === big.cellY) return "big";
+      return m.x === s1.cellX && m.y === s1.cellY ? "base" : "rally";
+    };
+    assert.equal(at(18), "small", `${difficulty}: the first trip`);
+    // Taken (plundered: ruins); the army comes back.
+    w.townState[small.id] = TownState.Ruins;
+    w.townOwner[small.id] = NO_OWNER;
+    if (difficulty === "easy") {
+      assert.equal(at(19), "rally", "easy: not yet for the big town");
+      assert.equal(at(20), "base", "easy: from minute 20 the enemy base, if it has the soldiers");
+    } else {
+      assert.equal(at(19), "big", "normal: straight on to the big town");
+    }
+  }
+});
