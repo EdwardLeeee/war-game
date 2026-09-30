@@ -1,0 +1,16 @@
+ready=true result=true
+未通過
+
+✗ fps 中位數：16.67（標準 ≥ 55）
+
+✗ 最慢 5% 的 fps：14.71（標準 ≥ 30）
+
+✓ 每 tick 模擬中位數：4 ms（標準 ≤ 5）
+
+✓ 每 tick 模擬最大值：12 ms
+
+樣本：499 幀、600 tick；commit 208838e；Godot 4.7.2-stable (official), WebKit WebGL；Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15
+SPIKE ready godot {"commit":"208838e","device":"GenericDevice","engine":"Godot 4.7.2-stable (official), WebKit WebGL","os":"Web ","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15","viewport":"1290x2796"}
+SPIKE 暖機 5 秒
+SPIKE 量測開始（30 秒）
+SPIKE measure {"commit":"208838e","device":"GenericDevice","engine":"Godot 4.7.2-stable (official), WebKit WebGL","fpsLow5":14.71,"fpsMedian":16.67,"frameMsMedian":60.0,"frameMsP95":68.0,"frames":499,"os":"Web ","pass":false,"tickMsMax":12.0,"tickMsMean":4.61,"tickMsMedian":4.0,"ticks":600,"timerResolutionMs":2.0,"userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15","viewport":"1290x2796"}

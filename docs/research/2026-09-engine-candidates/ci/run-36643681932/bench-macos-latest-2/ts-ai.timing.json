@@ -1,0 +1,23 @@
+{
+  "engine": "node 24.20.0 (V8 13.6.233.17-node.53)",
+  "platform": "darwin arm64",
+  "mode": "ai",
+  "replay": false,
+  "ticks": 24000,
+  "setupMs": 10.2,
+  "totalMs": 3426,
+  "tickMs": {
+    "samples": 24000,
+    "median": 0.10125000000016371,
+    "p95": 0.27633300000002237,
+    "max": 13.575999999999993,
+    "mean": 0.14190578116666427
+  },
+  "flowFieldBuilds": 4,
+  "alive": [
+    89,
+    94,
+    93,
+    96
+  ]
+}
