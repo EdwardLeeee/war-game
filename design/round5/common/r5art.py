@@ -7,6 +7,7 @@ Inputs: build/r5/<target>/ (CI artifacts via common/fetch_ci.py), option 0 from
 design/round3/build/r3/mage0, the East 劍修 from design/round4/build/r4/mageTB, and the
 R2/R3 level-C spearmen, cavalry and knights for the battle-line vignette.
 """
+import json
 import subprocess
 import sys
 import tempfile
@@ -35,28 +36,48 @@ COS30 = 0.8660254
 OPTIONS = {
     "0": dict(dir=R3M0, kind="mage_e", name="現況",
               sub="選項 0：目前遊戲裡的術士（R2 的 C 級白袍術士）。西陸還沒有自己的模型，兩邊共用這一個；當對照",
-              lines=[("東陸已經改用劍修（D-019），西陸需要自己的晶術師。", "n")]),
+              lines=[("東陸已經改用劍修（D-019），西陸需要自己的晶術師。", "n"),
+                     ("白袍在實際大小下很醒目，但換色區只有袍子下緣一小圈，敵我不好分。", "r")]),
     "A": dict(dir=R5 / "mageWA", kind="mage_w", name="晶劍士",
               sub="選項 A：年輕的晶劍士，和東陸劍修成對。及膝皮外套、淺色襯衫、玩家色大披肩和腰帶；"
-                  "法杖就是他的劍：一人高的長柄，頂端是發光的晶刃",
-              lines=[]),
+                  "背著晶刃長劍（劍柄在左肩），手上是一人高、頂端嵌發光晶刃的長杖",
+              lines=[("和東陸劍修成對：一樣年輕、背一把長劍；劍修用劍指施法，晶劍士用晶刃杖。", "g"),
+                     ("實際大小下玩家色面積最大（整片肩披風），敵我最好分。", "g"),
+                     ("但紅色肩披風加直立長杖，在實際大小下和長弓兵、長矛兵的紅色外衣有點像；"
+                      "要靠頭頂發光的晶刃、沒戴帽子和棕色長外套分辨，三款裡最容易混。", "r"),
+                     ("背上的劍在實際大小下只剩一條細線，要放大才看得出來。", "n")]),
     "B": dict(dir=R5 / "mageWB", kind="mage_w", name="學院大師",
               sub="選項 B：晶術學院的年長大師。深色學院長袍配米白寬袖口、玩家色披肩、米白聖帶、灰長鬚、軟圓帽"
                   "（不戴兜帽，兜帽留給長弓兵）、腰間書本；多節木杖頂端抱著一簇晶石",
-              lines=[]),
+              lines=[("深色長袍拖到腳，是三款裡剪影最特別的：實際大小下一眼就和穿及膝外衣的長弓兵、長矛兵分開。", "g"),
+                     ("玩家色披肩在胸口和肩上，實際大小下是清楚的色塊。", "g"),
+                     ("杖頭晶石是三款裡最小的，主要靠光暈看出來。", "n"),
+                     ("深色長袍遠看和東陸槍兵的深色甲接近；靠杖頭的光和玩家色披肩分辨。", "n")]),
     "C": dict(dir=R5 / "mageWC", kind="mage_w", name="女晶術師",
               sub="選項 C：女晶術師。辮子盤成髮冠、石板灰長裙、寬袖，玩家色披肩在胸前交叉；"
                   "細長淺色木杖頂端是晶球，外圍繞三片小晶片",
-              lines=[]),
+              lines=[("灰色長裙到腳，剪影和長弓兵、長矛兵的及膝外衣不同；晶球加三片小晶片在實際大小下是一團亮點。", "g"),
+                     ("玩家色披肩在胸前交叉，實際大小下是清楚的色塊。", "g"),
+                     ("灰裙和防護罩的淡青色接近，施法開罩時人會變淡；玩家色在身前，敵我還分得出。", "n")]),
 }
 COMPARE_NOTE = "長弓兵、長矛兵暫用 R1 模型（只比外形）；C 精緻度版在 R5-02 兵種總表再比一次。"
 
 
-def crystal_mask(img):
-    """Pixels of the glowing crystal (bright cyan) in a beauty render."""
+def crystal_mask(img, d=None, key=None):
+    """Pixels of the glowing staff crystal in a beauty render.
+    The emissive crystal renders almost white with a cool tint (blue and green above red); cloth,
+    skin, wood and the untinted player-colour parts are warm or neutral. Option 0's white robe has
+    cool highlights too, so with the render's metadata only the part above the head counts
+    (every staff head, and option 0's floating crystal, is up there)."""
     a = np.asarray(img, np.int16)
     r, g, b, al = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
-    return (al > 128) & (b >= 185) & (g >= 170) & (b - r >= 35)
+    m = (al > 128) & (r >= 185) & (g - r >= 10) & (b - r >= 10) & (r + g + b >= 640)
+    if d is not None and (Path(d) / f"{key}.json").exists():
+        meta = json.loads((Path(d) / f"{key}.json").read_text())
+        ppm = meta["px_per_m"]
+        head_top = meta["anchor"][1] - meta["body_top_m"] * COS30 * ppm
+        m[max(0, int(head_top + 0.06 * ppm)):] = False
+    return m
 
 
 def sprite(d, name, scale, fx=True, team="w", glow=True):
@@ -64,7 +85,7 @@ def sprite(d, name, scale, fx=True, team="w", glow=True):
     key = f"{name}_{scale}"
     b = compose.load(d, key, "beauty")
     img = b.img
-    crystal = crystal_mask(img) if glow else None
+    crystal = crystal_mask(img, d, key) if glow else None
     if (d / f"{key}_ao.png").exists():
         ao = np.asarray(Image.open(d / f"{key}_ao.png").convert("L"), np.float32) / 255.0
         a = np.asarray(img, np.float32)
@@ -101,11 +122,11 @@ def staff_numbers(opt):
     d = Path(o["dir"])
     key = f"{o['kind']}_f7_idle03_x3"
     b = compose.load(d, key, "beauty")
-    m = crystal_mask(b.img)
+    m = crystal_mask(b.img, d, key)
     ys, xs = np.nonzero(m)
     if len(ys) == 0:
         return None
-    meta = __import__("json").loads((d / f"{key}.json").read_text())
+    meta = json.loads((d / f"{key}.json").read_text())
     head_top = b.anchor[1] - meta["body_top_m"] * COS30 * PPM_X3
     return dict(w=(xs.max() - xs.min() + 1) / 3, h=(ys.max() - ys.min() + 1) / 3,
                 above=(head_top - ys.min()) / 3, px=int(m.sum()))
@@ -169,8 +190,10 @@ def artboard_01(opt):
     if s:
         yy += 14
         dr.text((x0, yy), "量測（實際大小，1 pt = 1 px）", font=artboard.font(26), fill=INK)
-        yy = r2art._wrap(dr, x0, yy + 44, f"發光晶石約 {s['w']:.0f} × {s['h']:.0f} pt，頂端高出頭頂約 {s['above']:.0f} pt。",
-                         GREY, 24, 780)
+        what = "頭頂的浮空魔晶" if opt == "0" else "杖頭的發光晶石"
+        yy = r2art._wrap(dr, x0, yy + 44, f"{what}約 {s['w']:.0f} × {s['h']:.0f} pt，頂端高出頭頂約 {s['above']:.0f} pt"
+                         "（沒算外圍光暈）。杖身約 1 pt 粗。" if opt != "0" else
+                         f"{what}約 {s['w']:.0f} × {s['h']:.0f} pt，頂端高出頭頂約 {s['above']:.0f} pt。", GREY, 24, 780)
     art.save(OUT / f"{label}.png")
     print("wrote", label)
 
@@ -238,12 +261,13 @@ def overview(notes):
     M = 70
     W = 2 * M + 4 * cw + 3 * 40
     body_h = max(z.height + v.height for _, z, v in cells)
-    H = 270 + body_h + 12 + 420 + 90 + three.height + 60 * (len(notes) + 1) + 80
+    H = 270 + body_h + 12 + 900 + 90 + three.height + 60 * (len(notes) + 1) + 80     # cropped at the end
     art = Image.new("RGB", (W, H), BG)
     dr = ImageDraw.Draw(art)
     dr.text((M, 40), "R5-99-總覽對照", font=artboard.font(64), fill=INK)
     r2art._wrap(dr, M, 126, "第 5 輪：R5-01 西陸晶術師。上排：放大後的造型（左邊待機不含防護罩、右邊晶砲施法）；"
                 "下排：混在隊伍裡（西陸在右邊，紅色）。最下面是實際大小下和長弓兵、長矛兵的比較。", GREY, 28, W - 2 * M)
+    y_text = 0
     for i, (o, z, v) in enumerate(cells):
         x = M + i * (cw + 40)
         dr.text((x, 200), f"{o}  {OPTIONS[o]['name']}", font=artboard.font(44), fill=INK)
@@ -253,7 +277,8 @@ def overview(notes):
         for t, c in OPTIONS[o]["lines"]:
             yy = r2art._wrap(dr, x, yy, t, r2art._col(c), 24, cw)
         dr.text((x, yy + 10), f"R5-01-西陸晶術師-{o}-{OPTIONS[o]['name']}-mobile.png", font=artboard.font(22), fill=INK)
-    y = 270 + body_h + 12 + 420
+        y_text = max(y_text, yy + 50)
+    y = y_text + 50
     dr.text((M, y), "分不分得出來（由左到右：長弓兵、長矛兵、0 現況、A 晶劍士、B 學院大師、C 女晶術師）："
             "左 實際大小 1 pt = 1 px，右 手機像素 1 pt = 3 px", font=artboard.font(28), fill=INK)
     art.paste(one.convert("RGB"), (M, y + 50))
@@ -261,11 +286,16 @@ def overview(notes):
     yy = y + 50 + three.height + 30
     for text, col in notes:
         yy = r2art._wrap(dr, M, yy, text, r2art._col(col), 26, W - 2 * M)
+    art = art.crop((0, 0, W, min(H, yy + 60)))
     art.save(OUT / "R5-99-總覽對照.png")
     print("wrote R5-99-總覽對照")
 
 
-NOTES = [(COMPARE_NOTE, "n")]
+NOTES = [(COMPARE_NOTE, "n"),
+         ("B、C 穿到腳的長袍，和長弓兵、長矛兵的及膝外衣，在實際大小下剪影明顯不同。", "g"),
+         ("A 的紅色肩披風和長弓兵、長矛兵的紅色外衣最像；靠頭頂發光的晶刃、沒戴帽子和棕色長外套分辨。", "r"),
+         ("三款的杖頭晶石都高出頭頂 3–6 pt，加上光暈，在實際大小下看得到。", "g"),
+         ("杖身只有約 1 pt 粗，實際大小下是一條細線；認得出「拿著杖」，但看不出杖的造型。", "n")]
 
 
 if __name__ == "__main__":
