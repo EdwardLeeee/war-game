@@ -23,19 +23,20 @@ import config  # noqa: E402
 
 MAGE_STILLS = [(7, "idle", 3), (0, "idle", 3), (7, "cast", 20), (5, "idle", 3)]
 MAGE_FRAME = [3.4, 3.6, 0.5, 0.74]
-# R5-02 roster: (kind, frame metres, action (anim, frame), extra job keys); East faces 0, West faces 4
+# R5-02 roster: (kind, frame metres, action (anim, frame), extra job keys); East faces 0, West faces 4.
+# Frames are wide enough for spears, lances, the hoe and the raised axe in the side views.
 ROSTER = {
-    "rosterE1": [("farmer_e", [2.6, 2.6, 0.5, 0.78], ("attack", 4), {}),
-                 ("spear_e", [4.6, 3.4, 0.5, 0.72], ("attack", 4), {}),
+    "rosterE1": [("farmer_e", [3.0, 3.2, 0.5, 0.8], ("attack", 4), {}),
+                 ("spear_e", [6.4, 3.6, 0.5, 0.72], ("attack", 4), {}),
                  ("xbow_e", [2.6, 3.2, 0.5, 0.72], ("attack", 1), {})],
-    "rosterE2": [("hcav_e", [5.6, 4.2, 0.5, 0.75], ("walk", 2), {}),
+    "rosterE2": [("hcav_e", [7.2, 4.4, 0.5, 0.75], ("walk", 2), {}),
                  ("siege_e", [5.6, 6.4, 0.5, 0.8], ("attack", 3), {}),
                  ("mage_e", MAGE_FRAME, ("cast", 20), {"mage_style": "TB"})],
-    "rosterW1": [("farmer_w", [2.6, 2.8, 0.5, 0.78], ("attack", 4), {}),
-                 ("pike_w", [6.0, 3.6, 0.5, 0.72], ("attack", 4), {}),
+    "rosterW1": [("farmer_w", [3.8, 3.4, 0.5, 0.8], ("attack", 4), {}),
+                 ("pike_w", [8.0, 4.4, 0.5, 0.62], ("attack", 4), {}),
                  ("bow_w", [2.8, 3.2, 0.5, 0.74], ("attack", 4), {})],
-    "rosterW2": [("knight_w", [6.0, 4.2, 0.5, 0.75], ("walk", 2), {}),
-                 ("siege_w", [4.4, 4.2, 0.5, 0.72], ("attack", 2), {})],
+    "rosterW2": [("knight_w", [7.6, 4.4, 0.5, 0.75], ("walk", 2), {}),
+                 ("siege_w", [5.6, 4.4, 0.5, 0.72], ("attack", 2), {})],
     # the West mage chosen in R5-01 (使用者 2026-09-30：「b 學院大師」)
     "rosterW3": [("mage_w", MAGE_FRAME, ("cast", 20), {"mage_style": "WB"})],
 }
