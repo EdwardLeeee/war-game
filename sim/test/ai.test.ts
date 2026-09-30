@@ -8,7 +8,7 @@ import { rules } from "../src/core/rules.ts";
 import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
-import { emptyGame, put } from "./helpers.ts";
+import { emptyGame, put, slotOf } from "./helpers.ts";
 
 /** Units of a player as sortable strings in player 0's frame (x <-> y for player 1). */
 function units(g: Game, p: number): string {
@@ -306,4 +306,89 @@ test("easy leaves the second town alone for a while (normal does not)", () => {
       assert.equal(at(19), "big", "normal: straight on to the big town");
     }
   }
+});
+
+/**
+ * No time limit, both towns in ruins (nothing to take): an AI whose 30 spearmen, out from
+ * home, march on the enemy base. Returns the game, the AI and the 30 ids.
+ */
+function marchOnBase() {
+  const g = emptyGame();
+  const w = g.w;
+  for (const t of w.map.towns) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    w.townTimer[t.id] = 4800; // ruins for 4 minutes
+    // A farmer by each town, so the AI sees the ruins (farmers are not part of the army).
+    put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+  }
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  const ids: number[] = [];
+  for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6)));
+  g.fog.update(w);
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0 }, 0, "balanced");
+  const s1 = w.map.spawns[1];
+  const first = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
+  assert.deepEqual(first && [first.x, first.y], [s1.cellX, s1.cellY], "marches on the enemy base");
+  return { g, w, ai, ids, s0, s1 };
+}
+
+/** Removes these units (hp 0, then one step takes the dead away). */
+function kill(g: Game, ids: number[]): void {
+  for (const id of ids) g.w.units.col.hp[slotOf(g, id)] = 0;
+  g.step();
+  g.fog.update(g.w);
+}
+
+test("an attack breaks off once the soldiers that set out are ground down, however many newcomers follow", () => {
+  const { g, ai, ids, s0 } = marchOnBase();
+  // 20 of the 30 fall while 25 newcomers are on their way: 35 soldiers, 10 of those that set out.
+  for (let k = 0; k < 25; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
+  kill(g, ids.slice(0, 20));
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "breaks off and gathers again");
+});
+
+test("after a broken-off attack on the enemy base it goes again only with the full army for the base", () => {
+  // 24 soldiers, towns done: enough for the shortcut (town army + 6 is at most 23), not for the
+  // full army for the base (at least 26).
+  const fresh = marchOnBase();
+  kill(fresh.g, fresh.ids.slice(0, 6));
+  const again = marchOnBase();
+  kill(again.g, again.ids.slice(0, 20)); // ground down: breaks off
+  assert.ok(again.ai.think(buildView(again.g, 0)).some((c) => c.c === "retreat"));
+  for (let k = 0; k < 14; k++) put(again.g, 0, UnitType.Spearman, again.s0.cellX + 4 + (k % 5), again.s0.cellY - 4 - Math.trunc(k / 5));
+  again.g.fog.update(again.g.w);
+  const toBase = (orders: CommandBody[], s1: { cellX: number; cellY: number }) =>
+    orders.some((c) => c.c === "move" && c.u.length >= 24 && c.x === s1.cellX && c.y === s1.cellY);
+  // The fresh AI (never broken off) is already marching; a new AI with the same 24 would go.
+  const other = marchOnBase();
+  kill(other.g, other.ids.slice(0, 6));
+  const newcomer = createAi(0, 1, { map: other.w.map, rules: rules(), frame: other.w.map.frames[0], maxTicks: 0 }, 0, "balanced");
+  assert.ok(toBase(newcomer.think(buildView(other.g, 0)), other.s1), "24 go on the shortcut");
+  assert.equal(toBase(again.ai.think(buildView(again.g, 0)), again.s1), false, "after breaking off: 24 wait for more");
+});
+
+test("marching on a known enemy main city it keeps together until it is there, then attacks", () => {
+  const { g, w, ai, ids, s1 } = marchOnBase();
+  // A farmer by the enemy main city: the city is in view (farmers are not part of the army).
+  put(g, 0, UnitType.Farmer, s1.cellX - 5, s1.cellY + 5);
+  g.fog.update(w);
+  const orders = (ticks: number) => {
+    w.tick += ticks;
+    g.fog.update(w);
+    return ai.think(buildView(g, 0));
+  };
+  const on = orders(200);
+  assert.equal(on.some((c) => c.c === "attack"), false, "far from the city: no attack order (it would stream in one by one)");
+  const regroup = orders(200).find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
+  assert.deepEqual(regroup && [regroup.x, regroup.y], [s1.cellX, s1.cellY], "the march goes on as a group");
+  // There: the 30 stand by the enemy main city, no defenders in view.
+  ids.forEach((id, k) => {
+    const s = slotOf(g, id);
+    w.units.col.x[s] = ((s1.cellX - 7 + (k % 6)) << 10) + 512;
+    w.units.col.y[s] = ((s1.cellY + 5 + Math.trunc(k / 6)) << 10) + 512;
+  });
+  const at = orders(200).find((c) => c.c === "attack") as { u: number[] } | undefined;
+  assert.ok(at !== undefined && at.u.length === 30, "attacks the city");
 });

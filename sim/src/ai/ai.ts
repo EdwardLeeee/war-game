@@ -19,8 +19,10 @@
 //   with plunders, a town it has plundered counts toward governing it next time, and it
 //   leaves a town it plundered alone for 6 minutes;
 // - crystal: two farmers to the vein (by hand) once there is a mage hall and the vein is known;
-// - attack: with enough soldiers, or once the towns are taken, marches on the enemy main city,
-//   and does not give up on an enemy main city that is down to 40% of its hp. In a game with
+// - attack: with enough soldiers, or once the towns are taken, marches on the enemy main city
+//   as a group, fights the defenders there before the city, breaks off when those that set out
+//   are ground down (reinforcements do not count) and then waits for the full army for the
+//   base; it does not give up on an enemy main city that is down to 40% of its hp. In a game with
 //   a time limit (AI against AI), counted back from the limit: 8 minutes before it, it takes
 //   no more towns and gathers for one assault (goes with 15, or from 6 minutes before with
 //   8); in the last 4 minutes the garrisons go too and it no longer goes back to finish a
@@ -219,6 +221,13 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let targetTown = -1;
   let lastMove = -100000;
   let armyAtStart = 0;
+  /** The soldiers that set out on the current expedition (reinforcements are not counted). */
+  const marched = new Set<number>();
+  /**
+   * An attack on the enemy base was broken off: from then on it goes again only with the full
+   * army for the base (baseNeed), not with the smaller one it may take once the towns are done.
+   */
+  let baseBroken = false;
   /** Town expeditions started (the difficulty may wait before the second). */
   let townTrips = 0;
   let ratioSet = "";
@@ -610,9 +619,14 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const outnumbered = foesNear(cx, cy, 12) > army.length;
       // An enemy main city this low would be repaired to full within minutes if left alone.
       const cityLow = enemyCityHp >= 0 && enemyCityHp * 100 <= rules.buildings[BuildingType.MainCity].hp * PRESS_ON_HP;
+      // Ground down: fewer than 40% of the soldiers that set out still stand. Reinforcements do
+      // not count: sent on one by one, they kept a failed attack going for minutes while every
+      // newcomer died on its own (normal against easy, 2026-10-01: 35 of 45 draws).
+      const standing = soldiers.filter((u) => marched.has(u.id)).length;
       if (mode === "town" || mode === "base") {
-        if (!endgame && !(mode === "base" && cityLow) && (army.length * 5 < armyAtStart * 2 || outnumbered)) {
+        if (!endgame && !(mode === "base" && cityLow) && (standing * 5 < armyAtStart * 2 || outnumbered)) {
           // Ground down or outnumbered: break off (retreat ignores enemies) and rebuild.
+          if (mode === "base") baseBroken = true;
           out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
           lastMove = tick;
           mode = "gather";
@@ -625,11 +639,25 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           const t = towns.get(targetTown);
           if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "gather";
           else send(t.x, t.y, "town");
-        } else if (enemyCity >= 0 && tick - lastMove >= 200) {
-          out.push({ c: "attack", u: armyIds, target: enemyCity });
-          lastMove = tick;
         } else {
-          send(enemyHome.cellX, enemyHome.cellY, "base");
+          // March together (a group move keeps to the slowest and in formation) until those that
+          // set out stand by the enemy main city; then fight the defenders there first (a move
+          // fights what it meets) and the city once they are down. Told to attack the city from
+          // afar, the soldiers streamed in one by one, ignored the defenders and were picked off
+          // (normal against easy, 2026-10-01).
+          const front = soldiers.filter((u) => marched.has(u.id));
+          const fx = front.length === 0 ? cx : Math.trunc(front.reduce((a, u) => a + u.x, 0) / front.length);
+          const fy = front.length === 0 ? cy : Math.trunc(front.reduce((a, u) => a + u.y, 0) / front.length);
+          const there = dist2(fx, fy, enemyHome.cellX, enemyHome.cellY) <= 12 * 12;
+          if (enemyCity >= 0 && there) {
+            if (tick - lastMove >= 200) {
+              if (foesNear(enemyHome.cellX, enemyHome.cellY, 12) > 0) out.push({ c: "move", u: armyIds, x: enemyHome.cellX, y: enemyHome.cellY });
+              else out.push({ c: "attack", u: armyIds, target: enemyCity });
+              lastMove = tick;
+            }
+          } else {
+            send(enemyHome.cellX, enemyHome.cellY, "base");
+          }
         }
       }
       if (mode === "gather" || mode === "defend") {
@@ -642,14 +670,18 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           ? army.length >= ENDGAME_ARMY
           : assault
             ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
-            : baseTime && strongEnough && (army.length >= baseNeed || ((open.length === 0 || popFull) && army.length >= townArmy + 6));
+            : baseTime && strongEnough && (army.length >= baseNeed || (((open.length === 0 && !baseBroken) || popFull) && army.length >= townArmy + 6));
         if (go) {
           armyAtStart = army.length;
+          marched.clear();
+          for (const id of armyIds) marched.add(id);
           send(enemyHome.cellX, enemyHome.cellY, "base");
         } else if (!assault && townTime && army.length >= townArmy && open.length > 0 && strongEnough) {
           const pick = army.length >= 24 || open.length === 1 ? open[open.length - 1] : open[0];
           targetTown = pick[0];
           armyAtStart = army.length;
+          marched.clear();
+          for (const id of armyIds) marched.add(id);
           townTrips++;
           send(pick[1].x, pick[1].y, "town");
         } else {
