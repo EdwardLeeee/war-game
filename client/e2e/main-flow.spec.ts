@@ -122,15 +122,24 @@ test("主要流程：開局 → 選農民 → 蓋房子 → 訓練 → 框選 �
     [{ x: x0, y: y0 }, { x: x1, y: y1 }],
     [{ x: x1, y: y0 }, { x: x0, y: y1 }],
   ]) {
-    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? "none", [a.x, a.y] as const)) === null) {
+    const hit = await page.evaluate(([x, y]) => {
+      const g = window.__proto?.game;
+      return g == null ? "no hook" : g.pickAt(x, y);
+    }, [a.x, a.y] as const);
+    if (hit === null) {
       from = a;
       to = b;
       break;
     }
   }
   if (from === null || to === null) throw new Error("no open corner around the squad");
+  // The box takes every own soldier inside it (soldiers before farmers), not only the squad.
+  const squadIds = (await units(page))
+    .filter((u) => u.owner === me && u.type !== FARMER && u.sx >= x0 && u.sx <= x1 && u.sy >= y0 && u.sy <= y1)
+    .map((u) => u.id)
+    .sort((a, b) => a - b);
+  expect(squad.every((u) => squadIds.includes(u.id)), "the squad is inside the box").toBe(true);
   await longPress(page, from, to);
-  const squadIds = squad.map((u) => u.id).sort((a, b) => a - b);
   await expect.poll(async () => (await selection(page))?.units).toEqual(squadIds);
   await shot(page, info, "5-box");
 
