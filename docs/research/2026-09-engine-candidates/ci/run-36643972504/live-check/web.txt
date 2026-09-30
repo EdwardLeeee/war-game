@@ -1,0 +1,16 @@
+ready=true result=true
+未通過
+
+✗ fps 中位數：22.73（標準 ≥ 55）
+
+✗ 最慢 5% 的 fps：20.83（標準 ≥ 30）
+
+✓ 每 tick 模擬中位數：0 ms（標準 ≤ 5）
+
+✓ 每 tick 模擬最大值：3 ms
+
+樣本：677 幀、601 tick；commit 208838e；PixiJS 8.21.0 WebGL；Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15
+SPIKE ready web {"commit":"208838e","engine":"PixiJS 8.21.0 WebGL","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15","dpr":3,"viewport":"430x932"}
+SPIKE 暖機 5 秒
+SPIKE 量測開始（30 秒）
+SPIKE measure {"commit":"208838e","engine":"PixiJS 8.21.0 WebGL","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15","dpr":3,"viewport":"430x932","frames":677,"fpsMedian":22.73,"fpsLow5":20.83,"frameMsMedian":44,"frameMsP95":48,"ticks":601,"tickMsMedian":0,"tickMsMax":3,"tickMsMean":0.39,"timerResolutionMs":1,"pass":false}

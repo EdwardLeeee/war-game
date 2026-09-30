@@ -1,0 +1,256 @@
+{
+  "games": {
+    "scripted": {
+      "desktop-linux": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "ios-simulator": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "android-emulator": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "macos-headless": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "chromium-wasm": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "webkit-wasm": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      }
+    },
+    "ai": {
+      "desktop-linux": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "ios-simulator": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "android-emulator": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "macos-headless": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "chromium-wasm": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "webkit-wasm": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      }
+    }
+  },
+  "envs": {
+    "desktop-linux": {
+      "lines": [],
+      "timing": {
+        "scripted": {
+          "alive": [
+            0,
+            0,
+            0,
+            17
+          ],
+          "engine": "godot 4.7.2-stable (official)",
+          "flowFieldBuilds": 2,
+          "mode": "scripted",
+          "platform": "Linux x86_64",
+          "replay": false,
+          "setupMs": 26.2,
+          "tickMs": {
+            "max": 148.796,
+            "mean": 1.1469641350211,
+            "median": 0.656,
+            "p95": 3.516,
+            "samples": 2370
+          },
+          "ticks": 2370,
+          "totalMs": 2745
+        },
+        "ai": {
+          "alive": [
+            89,
+            94,
+            93,
+            96
+          ],
+          "engine": "godot 4.7.2-stable (official)",
+          "flowFieldBuilds": 4,
+          "mode": "ai",
+          "platform": "Linux x86_64",
+          "replay": false,
+          "setupMs": 32.2,
+          "tickMs": {
+            "max": 144.356,
+            "mean": 1.9823345,
+            "median": 1.877,
+            "p95": 2.604,
+            "samples": 24000
+          },
+          "ticks": 24000,
+          "totalMs": 47702
+        }
+      }
+    },
+    "ios-simulator": {
+      "lines": [
+        "SPIKE device iPhone 16e (A3615395-EDA9-4A60-982A-D428BCC5719B) (Shutdown)",
+        "SPIKE size app_bytes 98111488",
+        "SPIKE coldstart run 1 ready_ms 55179",
+        "SPIKE coldstart run 2 ready_ms 34283",
+        "SPIKE coldstart run 3 ready_ms 29222",
+        "SPIKE ready godot {\"commit\":\"bef64bb\",\"device\":\"x86_64\",\"engine\":\"Godot 4.7.2-stable (official), Apple Software Renderer\",\"os\":\"iOS 26.2.0\",\"userAgent\":\"\",\"viewport\":\"1170x2532\"}",
+        "SPIKE game scripted 2370 ticks 49692 ms final af824f2c tick_median_ms 1.821 tick_max_ms 516.74",
+        "SPIKE game ai 24000 ticks 771350 ms final 77af0e0a tick_median_ms 4.385 tick_max_ms 484.73",
+        "SPIKE measure {\"commit\":\"bef64bb\",\"device\":\"x86_64\",\"engine\":\"Godot 4.7.2-stable (official), Apple Software Renderer\",\"fpsLow5\":4.59,\"fpsMedian\":6.06,\"frameMsMedian\":165.09,\"frameMsP95\":217.8,\"frames\":180,\"os\":\"iOS 26.2.0\",\"pass\":false,\"tickMsMax\":24.77,\"tickMsMean\":8.33,\"tickMsMedian\":7.65,\"ticks\":601,\"timerResolutionMs\":3.707,\"userAgent\":\"\",\"viewport\":\"1170x2532\"}"
+      ],
+      "timing": {}
+    },
+    "android-emulator": {
+      "lines": [
+        "SPIKE device sdk_gphone64_x86_64 android 16 api 36 abi x86_64",
+        "SPIKE size apk_bytes 57112301",
+        "SPIKE coldstart run 1 ready_ms 12070 activity_total_ms 2240",
+        "SPIKE coldstart run 2 ready_ms 7151 activity_total_ms 2381",
+        "SPIKE coldstart run 3 ready_ms 7514 activity_total_ms 1994",
+        "SPIKE ready godot {\"commit\":\"bef64bb\",\"device\":\"sdk_gphone64_x86_64\",\"engine\":\"Godot 4.7.2-stable (official), Android Emulator OpenGL ES Translator (Google SwiftShader)\",\"os\":\"Android 36.13894323\",\"userAgent\":\"\",\"viewport\":\"320x640\"}",
+        "SPIKE game scripted 2370 ticks 11508 ms final af824f2c tick_median_ms 1.193 tick_max_ms 681.34",
+        "SPIKE game ai 24000 ticks 105235 ms final 77af0e0a tick_median_ms 2.368 tick_max_ms 371.78",
+        "SPIKE measure {\"commit\":\"bef64bb\",\"device\":\"sdk_gphone64_x86_64\",\"engine\":\"Godot 4.7.2-stable (official), Android Emulator OpenGL ES Translator (Google SwiftShader)\",\"fpsLow5\":52.59,\"fpsMedian\":59.87,\"frameMsMedian\":16.7,\"frameMsP95\":19.02,\"frames\":1796,\"os\":\"Android 36.13894323\",\"pass\":true,\"tickMsMax\":19.62,\"tickMsMean\":4.27,\"tickMsMedian\":3.74,\"ticks\":600,\"timerResolutionMs\":2.099,\"userAgent\":\"\",\"viewport\":\"320x640\"}"
+      ],
+      "timing": {}
+    },
+    "macos-headless": {
+      "lines": [],
+      "timing": {
+        "scripted": {
+          "alive": [
+            0,
+            0,
+            0,
+            17
+          ],
+          "engine": "godot 4.7.2-stable (official)",
+          "flowFieldBuilds": 2,
+          "mode": "scripted",
+          "platform": "macOS arm64",
+          "replay": false,
+          "setupMs": 34.1,
+          "tickMs": {
+            "max": 222.814,
+            "mean": 1.52892573839662,
+            "median": 0.726,
+            "p95": 4.574,
+            "samples": 2370
+          },
+          "ticks": 2370,
+          "totalMs": 3676
+        },
+        "ai": {
+          "alive": [
+            89,
+            94,
+            93,
+            96
+          ],
+          "engine": "godot 4.7.2-stable (official)",
+          "flowFieldBuilds": 4,
+          "mode": "ai",
+          "platform": "macOS arm64",
+          "replay": false,
+          "setupMs": 24,
+          "tickMs": {
+            "max": 211.414,
+            "mean": 2.412086875,
+            "median": 1.968,
+            "p95": 4.429,
+            "samples": 24000
+          },
+          "ticks": 24000,
+          "totalMs": 58146
+        }
+      }
+    },
+    "chromium-wasm": {
+      "lines": [
+        "SPIKE device chromium 153.0.8010.12",
+        "SPIKE ready godot {\"commit\":\"bef64bb\",\"device\":\"GenericDevice\",\"engine\":\"Godot 4.7.2-stable (official), WebKit WebGL\",\"os\":\"Web \",\"userAgent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36\",\"viewport\":\"1280x720\"}",
+        "SPIKE game scripted 2370 ticks 11649 ms final af824f2c tick_median_ms 0.500 tick_max_ms 163.30",
+        "SPIKE game ai 24000 ticks 212100 ms final 77af0e0a tick_median_ms 1.400 tick_max_ms 111.50",
+        "SPIKE measure {\"commit\":\"bef64bb\",\"device\":\"GenericDevice\",\"engine\":\"Godot 4.7.2-stable (official), WebKit WebGL\",\"fpsLow5\":7.24,\"fpsMedian\":7.82,\"frameMsMedian\":127.9,\"frameMsP95\":138.1,\"frames\":235,\"os\":\"Web \",\"pass\":false,\"tickMsMax\":5.6,\"tickMsMean\":2.23,\"tickMsMedian\":2.2,\"ticks\":602,\"timerResolutionMs\":1.3,\"userAgent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36\",\"viewport\":\"1280x720\"}"
+      ],
+      "timing": {}
+    },
+    "webkit-wasm": {
+      "lines": [
+        "SPIKE device webkit 26.6",
+        "SPIKE ready godot {\"commit\":\"bef64bb\",\"device\":\"GenericDevice\",\"engine\":\"Godot 4.7.2-stable (official), WebKit WebGL\",\"os\":\"Web \",\"userAgent\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15\",\"viewport\":\"1280x720\"}",
+        "SPIKE game scripted 2370 ticks 3543 ms final af824f2c tick_median_ms 1.000 tick_max_ms 103.00",
+        "SPIKE game ai 24000 ticks 62631 ms final 77af0e0a tick_median_ms 1.000 tick_max_ms 108.00",
+        "SPIKE measure {\"commit\":\"bef64bb\",\"device\":\"GenericDevice\",\"engine\":\"Godot 4.7.2-stable (official), WebKit WebGL\",\"fpsLow5\":45.45,\"fpsMedian\":55.56,\"frameMsMedian\":18.0,\"frameMsP95\":22.0,\"frames\":1634,\"os\":\"Web \",\"pass\":true,\"tickMsMax\":5.0,\"tickMsMean\":3.13,\"tickMsMedian\":3.0,\"ticks\":600,\"timerResolutionMs\":1.0,\"userAgent\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15\",\"viewport\":\"1280x720\"}"
+      ],
+      "timing": {}
+    }
+  }
+}

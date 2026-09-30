@@ -1,0 +1,144 @@
+{
+  "games": {
+    "scripted": {
+      "typescript-node": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "godot-linux": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      }
+    },
+    "ai": {
+      "typescript-node": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "godot-linux": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      }
+    }
+  },
+  "envs": {
+    "typescript-node": {
+      "lines": [],
+      "timing": {
+        "scripted": {
+          "engine": "node 24.21.0 (V8 13.6.233.17-node.53)",
+          "platform": "linux x64",
+          "mode": "scripted",
+          "replay": false,
+          "ticks": 2370,
+          "setupMs": 8.4,
+          "totalMs": 163,
+          "tickMs": {
+            "samples": 2370,
+            "median": 0.021991999999954714,
+            "p95": 0.21834499999999935,
+            "max": 18.281802,
+            "mean": 0.06730709324894542
+          },
+          "flowFieldBuilds": 2,
+          "alive": [
+            0,
+            0,
+            0,
+            17
+          ]
+        },
+        "ai": {
+          "engine": "node 24.21.0 (V8 13.6.233.17-node.53)",
+          "platform": "linux x64",
+          "mode": "ai",
+          "replay": false,
+          "ticks": 24000,
+          "setupMs": 10.4,
+          "totalMs": 2206,
+          "tickMs": {
+            "samples": 24000,
+            "median": 0.08269900000004782,
+            "p95": 0.14270699999997305,
+            "max": 12.689903000000001,
+            "mean": 0.09156847983333263
+          },
+          "flowFieldBuilds": 4,
+          "alive": [
+            89,
+            94,
+            93,
+            96
+          ]
+        }
+      }
+    },
+    "godot-linux": {
+      "lines": [],
+      "timing": {
+        "scripted": {
+          "alive": [
+            0,
+            0,
+            0,
+            17
+          ],
+          "engine": "godot 4.7.2-stable (official)",
+          "flowFieldBuilds": 2,
+          "mode": "scripted",
+          "platform": "Linux x86_64",
+          "replay": false,
+          "setupMs": 15.9,
+          "tickMs": {
+            "max": 79.673,
+            "mean": 0.610281856540084,
+            "median": 0.361,
+            "p95": 1.879,
+            "samples": 2370
+          },
+          "ticks": 2370,
+          "totalMs": 1461
+        },
+        "ai": {
+          "alive": [
+            89,
+            94,
+            93,
+            96
+          ],
+          "engine": "godot 4.7.2-stable (official)",
+          "flowFieldBuilds": 4,
+          "mode": "ai",
+          "platform": "Linux x86_64",
+          "replay": false,
+          "setupMs": 15.6,
+          "tickMs": {
+            "max": 80.237,
+            "mean": 1.15018904166667,
+            "median": 1.087,
+            "p95": 1.513,
+            "samples": 24000
+          },
+          "ticks": 24000,
+          "totalMs": 27674
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,3 @@
+CPU(s):                                  4
+Model name:                              Intel(R) Xeon(R) 6973P-C
+CPU(s) scaling MHz:                      161%

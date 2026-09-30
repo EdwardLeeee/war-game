@@ -1,0 +1,7 @@
+Starting: Intent { cmp=com.oraclelee.wargame.spikeweb/.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.oraclelee.wargame.spikeweb/.MainActivity
+TotalTime: 4605
+WaitTime: 4647
+Complete

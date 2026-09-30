@@ -1,0 +1,23 @@
+{
+  "engine": "node 24.21.0 (V8 13.6.233.17-node.53)",
+  "platform": "linux x64",
+  "mode": "scripted",
+  "replay": false,
+  "ticks": 2370,
+  "setupMs": 17.3,
+  "totalMs": 253,
+  "tickMs": {
+    "samples": 2370,
+    "median": 0.027351000000010117,
+    "p95": 0.3179980000000455,
+    "max": 20.479491999999993,
+    "mean": 0.10395027805907125
+  },
+  "flowFieldBuilds": 2,
+  "alive": [
+    0,
+    0,
+    0,
+    17
+  ]
+}

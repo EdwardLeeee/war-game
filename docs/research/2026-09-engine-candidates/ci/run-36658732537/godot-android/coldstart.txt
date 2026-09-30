@@ -1,0 +1,3 @@
+SPIKE coldstart run 1 ready_ms 7409 activity_total_ms 1790
+SPIKE coldstart run 2 ready_ms 12950 activity_total_ms 5715
+SPIKE coldstart run 3 ready_ms 6780 activity_total_ms 2392
