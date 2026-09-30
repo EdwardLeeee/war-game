@@ -124,17 +124,20 @@ test("選了農民點野果、點金礦（旁邊有農民在採）→ 送出採�
   const ids = (await farmers(page)).map((f) => f.id).sort((a, b) => a - b);
   await page.evaluate((u) => window.__proto?.game?.select(u), ids);
 
-  for (const [name, list] of [
-    ["berries", berries],
-    ["gold", gold],
+  // Berries zoomed out to 0.6, where the old 22 pt pick radius (36.7 px, 1.15 cells) reaches a
+  // farmer working the next cell: the failing case, checked below. Gold at the default zoom.
+  for (const [name, list, scale] of [
+    ["berries", berries, 0.6],
+    ["gold", gold, 1],
   ] as const) {
     // The resource cell with a farmer closest to it: the case that used to re-select the farmer.
     const all = await farmers(page);
-    const target = [...list].sort((a, b) => {
-      const d = (n: (typeof list)[number]) => Math.min(...all.map((f) => Math.hypot(f.fx - (n.cx + 0.5), f.fy - (n.cy + 0.5))));
-      return d(a) - d(b);
-    })[0];
-    await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y), [target.cx, target.cy] as const);
+    const nearest = (n: (typeof list)[number]) => Math.min(...all.map((f) => Math.hypot(f.fx - (n.cx + 0.5), f.fy - (n.cy + 0.5))));
+    const target = [...list].sort((a, b) => nearest(a) - nearest(b))[0];
+    if (name === "berries") {
+      expect(nearest(target), "a farmer is inside the old pick radius, so the old rule would have re-selected it").toBeLessThan(22 / scale / 32);
+    }
+    await page.evaluate(([x, y, z]) => window.__proto?.game?.centerOn(x, y, z), [target.cx, target.cy, scale] as const);
     await tap(page, await toScreen(page, { x: target.cx, y: target.cy }));
     await expect.poll(() => lastSent(page), { message: name }).toMatchObject({ c: "gather", u: ids, node: target.id });
     expect(await selection(page), `${name}: the selection stays the farmers`).toEqual({ units: ids, building: null });
