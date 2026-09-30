@@ -15,12 +15,14 @@ on:
     branches: [main]
     paths:
       - "client/**"
+      - "!client/docs/**"
       - "sim/**"
       - "spikes/**"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
       - "client/**"
+      - "!client/docs/**"
       - "sim/**"
       - "spikes/**"
       - ".github/workflows/pages.yml"

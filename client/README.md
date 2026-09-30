@@ -45,7 +45,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 - `?test=1&tps=N`：模擬每秒跑 N 個 tick（上限 400），CI 用來加快流程。遊戲裡的速度只有慢 15、正常 20、快 30。
 - `?test=1&mock=1`：用假世界代替模擬（`e2e/gestures.spec.ts`、`e2e/hud.spec.ts` 用；版面固定）。
 
-量測與確定性檢查在「選單 → 量測與確定性檢查」。「開始量測」會開一局 `perf` 場景（所有系統都開著），鏡頭對準交戰部隊，暖機 5 秒後量 30 秒。
+量測與確定性檢查在「選單 → 量測與確定性檢查」。「開始量測」會開一局 `perf` 場景（所有系統都開著），鏡頭對準交戰部隊，暖機 5 秒後量 30 秒。結果和 log 會附上手機的貼圖上限（最大貼圖、一次繪製幾張、有沒有 ASTC），給精靈圖集用。
 
 ## e2e 怎麼模擬觸控
 
@@ -58,6 +58,7 @@ Chromium 在 CI 上用裝置倍率 1（沒有 GPU，倍率 3 會拖慢到手勢�
 - `index.html`、`src/`：原型頁。
 - `site/`：Pages 首頁與第三方授權頁（整個網站的，不只原型）。
 - `e2e/`、`playwright.config.ts`：Playwright 測試。
+- `docs/`：client 的規格文件，例如兵種精靈圖集規格 `docs/sprite-atlas.md`。只改這裡不會觸發 CI 和 Pages 部署。
 - `scripts/live-check.ts`：部署後檢查公開的網站。
 - `scripts/expected-hashes.sh`：產生確定性檢查的對照檔。
 - `test/`：單元測試。

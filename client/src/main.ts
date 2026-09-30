@@ -10,7 +10,7 @@ import { MockPort } from "./mock/mock-port.ts";
 import { createSimPort } from "./game/port.ts";
 import { parseParams, SPEED_TPS } from "./params.ts";
 import type { ScenarioName } from "./sim.ts";
-import { createStage } from "./stage.ts";
+import { createStage, gpuLimits } from "./stage.ts";
 
 declare const __COMMIT__: string;
 
@@ -45,6 +45,7 @@ const env = (scenario: ScenarioName) => () => ({
   userAgent: navigator.userAgent,
   dpr: window.devicePixelRatio,
   viewport: `${window.innerWidth}x${window.innerHeight}`,
+  gpu: app === null ? "" : gpuLimits(app),
 });
 
 $("commit").textContent = `commit ${__COMMIT__}`;
