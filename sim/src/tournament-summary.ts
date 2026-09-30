@@ -11,9 +11,9 @@ import type { GameResult } from "./tournament.ts";
 
 /**
  * drawsMax is relaxed to 25% for now (ceo 2026-09-30): win rate by spawn, replays and
- * browser determinism pass and the two plunder / govern paths are balanced; the remaining
- * draws happen between two identical AIs (a person breaks the symmetry). Round 8 (AI
- * thresholds per style) aims at 10% (D5) and restores this gate.
+ * browser determinism pass. Most draws of rounds 7 and 8 were armies parked at ruins (an AI
+ * bug, fixed); what is left (21% in round 9) is mostly a late attack that reaches the enemy
+ * main city but cannot finish it. ceo decides the next step toward 10% (D5).
  */
 export const GATES = { winRateMin: 0.35, winRateMax: 0.65, drawsMax: 0.25 };
 

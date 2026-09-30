@@ -5,7 +5,7 @@ import test from "node:test";
 import { type AiStyle, createAi } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
 import { rules } from "../src/core/rules.ts";
-import { BuildingType, type CommandBody, TownChoice, TownState, UnitType } from "../src/protocol.ts";
+import { BuildingType, type CommandBody, NO_OWNER, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
 import { emptyGame, put } from "./helpers.ts";
@@ -92,4 +92,22 @@ test("the AI weighs up: it goes for a town when stronger, not when the enemy in 
   assert.ok(alone !== undefined && towns.has(`${alone.x},${alone.y}`), "no enemy in sight: off to a town");
   const outnumbered = firstMove(24) as { x: number; y: number } | undefined;
   assert.ok(outnumbered === undefined || !towns.has(`${outnumbered.x},${outnumbered.y}`), "24 enemies in sight: stays");
+});
+test("an army sent to a town moves on once the town lies in ruins, instead of waiting there", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const [small, big] = w.map.towns;
+  for (let k = 0; k < 18; k++) put(g, 0, UnitType.Spearman, small.cellX + 2 + (k % 6), small.cellY + 3 + Math.trunc(k / 6));
+  g.fog.update(w);
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "plunder");
+  const bigMove = () => {
+    const m = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= 18) as { x: number; y: number } | undefined;
+    return m && { x: m.x, y: m.y };
+  };
+  assert.deepEqual(bigMove(), { x: small.cellX, y: small.cellY }, "off to the small town first");
+  // Plundered (by anyone): ruins belong to no one until they turn neutral again.
+  w.townState[small.id] = TownState.Ruins;
+  w.townOwner[small.id] = NO_OWNER;
+  g.fog.update(w);
+  assert.deepEqual(bigMove(), { x: big.cellX, y: big.cellY }, "then on to the big town, not waiting in the ruins");
 });

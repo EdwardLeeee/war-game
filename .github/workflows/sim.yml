@@ -135,8 +135,8 @@ jobs:
           { echo "### ${{ matrix.browser }}"; node src/browser-check.ts --browser ${{ matrix.browser }} --games 3; } | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # Win rate of each spawn within 35-65% (draws left out), draws at most 10% (D5).
-  # For now draws may reach 25% (ceo 2026-09-30, see src/tournament-summary.ts); round 8
-  # aims at 10% and restores the gate.
+  # For now draws may reach 25% (ceo 2026-09-30, see src/tournament-summary.ts) until a
+  # later round brings them back to 10%.
   ai-summary:
     needs: ai-vs-ai
     if: always()
