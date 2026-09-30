@@ -1,0 +1,7 @@
+Starting: Intent { cmp=com.oraclelee.wargame.spikegodot/com.godot.game.GodotAppLauncher }
+Status: ok
+LaunchState: COLD
+Activity: com.oraclelee.wargame.spikegodot/com.godot.game.GodotApp
+TotalTime: 5715
+WaitTime: 5934
+Complete

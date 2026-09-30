@@ -1,0 +1,23 @@
+{
+  "alive": [
+    89,
+    94,
+    93,
+    96
+  ],
+  "engine": "godot 4.7.2-stable (official)",
+  "flowFieldBuilds": 4,
+  "mode": "ai",
+  "platform": "macOS arm64",
+  "replay": false,
+  "setupMs": 41.2,
+  "tickMs": {
+    "max": 186.033,
+    "mean": 2.2664545,
+    "median": 1.727,
+    "p95": 4.686,
+    "samples": 24000
+  },
+  "ticks": 24000,
+  "totalMs": 54594
+}

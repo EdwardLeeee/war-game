@@ -67,6 +67,9 @@
 | 36643977278 | Spike Godot | pull_request #4 | 856c45c | 成功 | 同上 |
 | 36643681932 | Spike Bench | push spike/engine-godot | ea59206 | 成功 | 5 台 Linux、3 台 macOS 各跑兩個候選的 20 分鐘 AI 對局 |
 | 36643972504 | Spike Live Check | push spike/engine-godot | 856c45c | 成功 | WebKit、iPhone 尺寸走一次使用者的測試步驟（只證明步驟可行） |
+| 36658732332 | Spike Web | pull_request #4（rebase 到 main 後） | b57a954 | 成功 | PixiJS 全套 |
+| 36658732537 | Spike Godot | pull_request #4（rebase 到 main 後） | b57a954 | 成功 | Godot 全套 |
+| 36658729326 | Spike Bench | push spike/engine-godot | b57a954 | 成功 | 第二輪：5 台 Linux、3 台 macOS |
 
 模擬器環境：
 - iOS：iPhone 16e 模擬器、iOS 26.2（macos-26-arm64 映像 20260907.0351.1、Xcode 26.6）。
@@ -80,34 +83,45 @@
 - 「同機 TS」：同一台機器上跑同一局 TypeScript 的秒數。
 - Godot 工作裡的 `ts-reference` 和 Godot 跑在同一台機器；macOS 那幾列在 Godot workflow 裡沒有跑 TS，所以留空。
 
-| run | 位置 | CPU | Godot | Godot 每 tick 中位數 | 同機 TS |
+| run | runner | CPU | Godot | Godot 每 tick 中位數 | 同機 TS |
 |---|---|---|---|---|---|
-| 36636173230 | Linux | Intel Xeon 6973P-C | 27.67 s | 1.087 ms | 2.21 s |
-| 36642203634 | Linux | AMD EPYC 7763 | 51.94 s | 2.039 ms | 2.83 s |
-| 36643977278 | Linux | AMD EPYC 7763 | 47.70 s | 1.877 ms | 2.60 s |
-| 36643681932 | Linux | Intel Xeon Platinum 8370C | 41.17 s | 1.623 ms | 2.96 s |
-| 36643681932 | Linux | AMD EPYC 9V74 | 36.81 s | 1.448 ms | 2.16 s |
-| 36643681932 | Linux | AMD EPYC 9V74 | 36.99 s | 1.455 ms | 2.17 s |
-| 36643681932 | Linux | AMD EPYC 9V74 | 47.50 s | 1.868 ms | 2.79 s |
-| 36643681932 | Linux | Intel Xeon Platinum 8573C | 32.66 s | 1.281 ms | 2.59 s |
-| 36636173230 | macOS | Apple M1（虛擬機） | **61.40 s** | 1.936 ms | |
-| 36642203634 | macOS | Apple M1（虛擬機） | 40.85 s | 1.577 ms | |
-| 36643977278 | macOS | Apple M1（虛擬機） | 58.15 s | 1.968 ms | |
-| 36643681932 | macOS | Apple M1（虛擬機） | 43.31 s | 1.627 ms | 2.18 s |
-| 36643681932 | macOS | Apple M1（虛擬機） | **67.74 s** | 2.201 ms | 3.43 s |
-| 36643681932 | macOS | Apple M1（虛擬機） | 54.93 s | 1.705 ms | 3.25 s |
+| [36636173230](https://github.com/EdwardLeeee/war-game/actions/runs/36636173230) | ubuntu-latest | Intel Xeon 6973P-C | 27.67 s | 1.087 ms | 2.21 s |
+| [36642203634](https://github.com/EdwardLeeee/war-game/actions/runs/36642203634) | ubuntu-latest | AMD EPYC 7763 | 51.94 s | 2.039 ms | 2.83 s |
+| [36643681932](https://github.com/EdwardLeeee/war-game/actions/runs/36643681932) | ubuntu-latest | Intel Xeon Platinum 8573C | 32.66 s | 1.281 ms | 2.59 s |
+| [36643681932](https://github.com/EdwardLeeee/war-game/actions/runs/36643681932) | ubuntu-latest | AMD EPYC 9V74 | 36.81 s | 1.448 ms | 2.16 s |
+| [36643681932](https://github.com/EdwardLeeee/war-game/actions/runs/36643681932) | ubuntu-latest | AMD EPYC 9V74 | 36.99 s | 1.455 ms | 2.17 s |
+| [36643681932](https://github.com/EdwardLeeee/war-game/actions/runs/36643681932) | ubuntu-latest | Intel Xeon Platinum 8370C | 41.17 s | 1.623 ms | 2.96 s |
+| [36643681932](https://github.com/EdwardLeeee/war-game/actions/runs/36643681932) | ubuntu-latest | AMD EPYC 9V74 | 47.50 s | 1.868 ms | 2.79 s |
+| [36643977278](https://github.com/EdwardLeeee/war-game/actions/runs/36643977278) | ubuntu-latest | AMD EPYC 7763 | 47.70 s | 1.877 ms | 2.60 s |
+| [36658729326](https://github.com/EdwardLeeee/war-game/actions/runs/36658729326) | ubuntu-latest | AMD EPYC 9V45 | 26.44 s | 1.045 ms | 1.71 s |
+| [36658729326](https://github.com/EdwardLeeee/war-game/actions/runs/36658729326) | ubuntu-latest | Intel Xeon 6973P-C | 27.51 s | 1.080 ms | 2.26 s |
+| [36658729326](https://github.com/EdwardLeeee/war-game/actions/runs/36658729326) | ubuntu-latest | AMD EPYC 9V74 | 38.63 s | 1.517 ms | 2.25 s |
+| [36658729326](https://github.com/EdwardLeeee/war-game/actions/runs/36658729326) | ubuntu-latest | AMD EPYC 7763 | 50.91 s | 1.999 ms | 2.78 s |
+| [36658729326](https://github.com/EdwardLeeee/war-game/actions/runs/36658729326) | ubuntu-latest | AMD EPYC 7763 | 51.61 s | 2.026 ms | 2.79 s |
+| [36658732537](https://github.com/EdwardLeeee/war-game/actions/runs/36658732537) | ubuntu-latest | AMD EPYC 7763 | 51.44 s | 2.023 ms | 2.74 s |
+| [36636173230](https://github.com/EdwardLeeee/war-game/actions/runs/36636173230) | macos-latest | Apple M1（虛擬機） | **61.40 s** | 1.936 ms |  |
+| [36642203634](https://github.com/EdwardLeeee/war-game/actions/runs/36642203634) | macos-latest | Apple M1（虛擬機） | 40.84 s | 1.577 ms |  |
+| [36643681932](https://github.com/EdwardLeeee/war-game/actions/runs/36643681932) | macos-latest | Apple M1（虛擬機） | 43.31 s | 1.627 ms | 2.17 s |
+| [36643681932](https://github.com/EdwardLeeee/war-game/actions/runs/36643681932) | macos-latest | Apple M1（虛擬機） | 54.93 s | 1.705 ms | 3.25 s |
+| [36643681932](https://github.com/EdwardLeeee/war-game/actions/runs/36643681932) | macos-latest | Apple M1（虛擬機） | **67.74 s** | 2.201 ms | 3.43 s |
+| [36643977278](https://github.com/EdwardLeeee/war-game/actions/runs/36643977278) | macos-latest | Apple M1（虛擬機） | 58.15 s | 1.968 ms |  |
+| [36658729326](https://github.com/EdwardLeeee/war-game/actions/runs/36658729326) | macos-latest | Apple M1（虛擬機） | 40.21 s | 1.573 ms | 2.12 s |
+| [36658729326](https://github.com/EdwardLeeee/war-game/actions/runs/36658729326) | macos-latest | Apple M1（虛擬機） | 41.05 s | 1.593 ms | 2.23 s |
+| [36658729326](https://github.com/EdwardLeeee/war-game/actions/runs/36658729326) | macos-latest | Apple M1（虛擬機） | 54.59 s | 1.727 ms | 3.52 s |
+| [36658732537](https://github.com/EdwardLeeee/war-game/actions/runs/36658732537) | macos-latest | Apple M1（虛擬機） | **62.78 s** | 2.063 ms |  |
 
-- Godot：Linux 8 次全部 ≤ 60 s（27.7–51.9 s）；macOS 6 次有 2 次超過（61.4、67.7 s）。所以是「在部分 runner 上未通過」。
-- TypeScript：全部 15 次都在 2.16–3.43 s。其中 4 次不在上表：Spike Web 兩輪各有一次 Linux、一次 macOS 的單獨執行（2.75、3.29、2.84、3.28 s）。
-- 同一台機器上，Godot 約是 TypeScript 的 13–20 倍時間。
-- 每一台上兩個候選的最終狀態都相同。
+- Godot：Linux 14 次全部 ≤ 60 s（26.4–51.9 s，中位數 39.9 s）；macOS 10 次有 3 次超過（61.40、62.78、67.74 s，中位數 54.8 s）。所以是「在部分 runner 上未通過」。
+- TypeScript：全部 26 次都在 1.71–3.52 s。其中 6 次不在上表：PixiJS 的 CI 三輪各有一次 Linux、一次 macOS 的單獨執行（Linux 2.75、2.84、2.73 s；macOS 3.29、3.28、2.74 s）。
+- 有同機比對的 20 組裡，Godot 是 TypeScript 的 12.2–19.9 倍。
+- 測速的 16 台上，兩個候選的最終狀態都相同。
+- 表格由 `ci/run-*/**/*ai*.timing.json` 與同資料夾的 `cpu.txt` 產生。macOS 工作沒有 `cpu.txt`，CPU 取自該工作的 log（都是 Apple M1 虛擬機）。
 
 ## 4. 檔案
 
 - `device/`：實機截圖。
 - `ai-commands.typescript.jsonl`、`ai-commands.godot.jsonl`：20 分鐘 AI 對局的指令紀錄，480 道指令。
   - 兩份解析後內容完全相同，只是 JSON 欄位順序不一樣（Godot 會把鍵排序）。
-  - 各輪 CI 產生的 13 份，各自跟這兩份之一逐位元相同。
+  - 前 7 輪 CI 產生的 13 份，各自跟這兩份之一逐位元相同。後 3 輪沒有另外收錄。
 - `ci/run-<run id>/<artifact>/`：各輪 CI 產物的節錄（完整產物在 Actions 上保留 30–90 天）。
   - `*.hashes.txt`：每 100 tick 一行，格式是「tick 雜湊 單位數」。
   - `*.timing.json`：無畫面執行的環境、總時間與每 tick 統計。

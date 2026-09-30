@@ -1,0 +1,23 @@
+{
+  "alive": [
+    89,
+    94,
+    93,
+    96
+  ],
+  "engine": "godot 4.7.2-stable (official)",
+  "flowFieldBuilds": 4,
+  "mode": "ai",
+  "platform": "Linux x86_64",
+  "replay": false,
+  "setupMs": 28.5,
+  "tickMs": {
+    "max": 154.785,
+    "mean": 2.11559320833333,
+    "median": 1.999,
+    "p95": 2.769,
+    "samples": 24000
+  },
+  "ticks": 24000,
+  "totalMs": 50913
+}

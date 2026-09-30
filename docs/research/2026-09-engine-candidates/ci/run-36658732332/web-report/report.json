@@ -1,0 +1,256 @@
+{
+  "games": {
+    "scripted": {
+      "desktop-linux": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "ios-simulator": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "android-emulator": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "macos-node": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "chromium": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      },
+      "webkit": {
+        "status": "same",
+        "same": 25,
+        "checkpoints": 25,
+        "lastTick": 2370,
+        "final": "af824f2c 17",
+        "firstDiff": null
+      }
+    },
+    "ai": {
+      "desktop-linux": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "ios-simulator": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "android-emulator": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "macos-node": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "chromium": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      },
+      "webkit": {
+        "status": "same",
+        "same": 241,
+        "checkpoints": 241,
+        "lastTick": 24000,
+        "final": "77af0e0a 372",
+        "firstDiff": null
+      }
+    }
+  },
+  "envs": {
+    "desktop-linux": {
+      "lines": [],
+      "timing": {
+        "scripted": {
+          "engine": "node 24.21.0 (V8 13.6.233.17-node.53)",
+          "platform": "linux x64",
+          "mode": "scripted",
+          "replay": false,
+          "ticks": 2370,
+          "setupMs": 12.4,
+          "totalMs": 209,
+          "tickMs": {
+            "samples": 2370,
+            "median": 0.02620900000005122,
+            "p95": 0.2822779999999909,
+            "max": 20.955127000000005,
+            "mean": 0.08631522953586507
+          },
+          "flowFieldBuilds": 2,
+          "alive": [
+            0,
+            0,
+            0,
+            17
+          ]
+        },
+        "ai": {
+          "engine": "node 24.21.0 (V8 13.6.233.17-node.53)",
+          "platform": "linux x64",
+          "mode": "ai",
+          "replay": false,
+          "ticks": 24000,
+          "setupMs": 11.4,
+          "totalMs": 2732,
+          "tickMs": {
+            "samples": 24000,
+            "median": 0.1047360000000026,
+            "p95": 0.1531760000000304,
+            "max": 14.84348,
+            "mean": 0.11341899941666558
+          },
+          "flowFieldBuilds": 4,
+          "alive": [
+            89,
+            94,
+            93,
+            96
+          ]
+        }
+      }
+    },
+    "ios-simulator": {
+      "lines": [
+        "SPIKE device iPhone 16e (A3615395-EDA9-4A60-982A-D428BCC5719B) (Shutdown)",
+        "SPIKE size app_bytes 6021120",
+        "SPIKE coldstart run 1 ready_ms 26865",
+        "SPIKE coldstart run 2 ready_ms 9525",
+        "SPIKE coldstart run 3 ready_ms 6462",
+        "SPIKE ready web {\"commit\":\"7210267\",\"engine\":\"PixiJS 8.21.0 WebGL\",\"userAgent\":\"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148\",\"dpr\":3,\"viewport\":\"390x844\"}",
+        "SPIKE game scripted 2370 ticks 378 ms final af824f2c",
+        "SPIKE game ai 24000 ticks 3315 ms final 77af0e0a",
+        "SPIKE measure {\"commit\":\"7210267\",\"engine\":\"PixiJS 8.21.0 WebGL\",\"userAgent\":\"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148\",\"dpr\":3,\"viewport\":\"390x844\",\"frames\":1330,\"fpsMedian\":58.82,\"fpsLow5\":25,\"frameMsMedian\":17,\"frameMsP95\":40,\"ticks\":601,\"tickMsMedian\":0,\"tickMsMax\":145,\"tickMsMean\":0.91,\"timerResolutionMs\":1,\"pass\":false}"
+      ],
+      "timing": {}
+    },
+    "android-emulator": {
+      "lines": [
+        "SPIKE device sdk_gphone64_x86_64 android 16 api 36 abi x86_64",
+        "SPIKE size apk_bytes 4362107",
+        "SPIKE coldstart run 1 ready_ms 7577 activity_total_ms 3180",
+        "SPIKE coldstart run 2 ready_ms 10207 activity_total_ms 3458",
+        "SPIKE coldstart run 3 ready_ms 9281 activity_total_ms 2998",
+        "SPIKE ready web {\"commit\":\"7210267\",\"engine\":\"PixiJS 8.21.0 WebGL\",\"userAgent\":\"Mozilla/5.0 (Linux; Android 16; sdk_gphone64_x86_64 Build/BE2A.250530.026.F3; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/133.0.6943.137 Mobile Safari/537.36\",\"dpr\":1,\"viewport\":\"320x592\"}",
+        "SPIKE game scripted 2370 ticks 2052 ms final af824f2c",
+        "SPIKE game ai 24000 ticks 27625 ms final 77af0e0a",
+        "SPIKE measure {\"commit\":\"7210267\",\"engine\":\"PixiJS 8.21.0 WebGL\",\"userAgent\":\"Mozilla/5.0 (Linux; Android 16; sdk_gphone64_x86_64 Build/BE2A.250530.026.F3; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/133.0.6943.137 Mobile Safari/537.36\",\"dpr\":1,\"viewport\":\"320x592\",\"frames\":1223,\"fpsMedian\":51.02,\"fpsLow5\":19.38,\"frameMsMedian\":19.6,\"frameMsP95\":51.6,\"ticks\":601,\"tickMsMedian\":0.3,\"tickMsMax\":43.6,\"tickMsMean\":1.53,\"timerResolutionMs\":0.1,\"pass\":false}"
+      ],
+      "timing": {}
+    },
+    "macos-node": {
+      "lines": [],
+      "timing": {
+        "scripted": {
+          "engine": "node 24.20.0 (V8 13.6.233.17-node.53)",
+          "platform": "darwin arm64",
+          "mode": "scripted",
+          "replay": false,
+          "ticks": 2370,
+          "setupMs": 22.5,
+          "totalMs": 220,
+          "tickMs": {
+            "samples": 2370,
+            "median": 0.02075000000002092,
+            "p95": 0.20733300000000554,
+            "max": 28.483666999999997,
+            "mean": 0.08087879957805917
+          },
+          "flowFieldBuilds": 2,
+          "alive": [
+            0,
+            0,
+            0,
+            17
+          ]
+        },
+        "ai": {
+          "engine": "node 24.20.0 (V8 13.6.233.17-node.53)",
+          "platform": "darwin arm64",
+          "mode": "ai",
+          "replay": false,
+          "ticks": 24000,
+          "setupMs": 6.9,
+          "totalMs": 2736,
+          "tickMs": {
+            "samples": 24000,
+            "median": 0.08624999999983629,
+            "p95": 0.14645800000002396,
+            "max": 115.73445800000013,
+            "mean": 0.11347705637500038
+          },
+          "flowFieldBuilds": 4,
+          "alive": [
+            89,
+            94,
+            93,
+            96
+          ]
+        }
+      }
+    },
+    "chromium": {
+      "lines": [
+        "SPIKE device chromium 153.0.8010.12",
+        "SPIKE ready web {\"commit\":\"7210267\",\"engine\":\"PixiJS 8.21.0 WebGL\",\"userAgent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36\",\"dpr\":1,\"viewport\":\"1280x720\"}",
+        "SPIKE game scripted 2370 ticks 196 ms final af824f2c",
+        "SPIKE game ai 24000 ticks 2968 ms final 77af0e0a",
+        "SPIKE measure {\"commit\":\"7210267\",\"engine\":\"PixiJS 8.21.0 WebGL\",\"userAgent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36\",\"dpr\":1,\"viewport\":\"1280x720\",\"frames\":887,\"fpsMedian\":31.15,\"fpsLow5\":24.15,\"frameMsMedian\":32.1,\"frameMsP95\":41.4,\"ticks\":601,\"tickMsMedian\":0.2,\"tickMsMax\":2.6,\"tickMsMean\":0.2,\"timerResolutionMs\":0.1,\"pass\":false}"
+      ],
+      "timing": {}
+    },
+    "webkit": {
+      "lines": [
+        "SPIKE device webkit 26.6",
+        "SPIKE ready web {\"commit\":\"7210267\",\"engine\":\"PixiJS 8.21.0 WebGL\",\"userAgent\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15\",\"dpr\":1,\"viewport\":\"1280x720\"}",
+        "SPIKE game scripted 2370 ticks 152 ms final af824f2c",
+        "SPIKE game ai 24000 ticks 2208 ms final 77af0e0a",
+        "SPIKE measure {\"commit\":\"7210267\",\"engine\":\"PixiJS 8.21.0 WebGL\",\"userAgent\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15\",\"dpr\":1,\"viewport\":\"1280x720\",\"frames\":1866,\"fpsMedian\":62.5,\"fpsLow5\":58.82,\"frameMsMedian\":16,\"frameMsP95\":17,\"ticks\":600,\"tickMsMedian\":0,\"tickMsMax\":2,\"tickMsMean\":0.16,\"timerResolutionMs\":1,\"pass\":true}"
+      ],
+      "timing": {}
+    }
+  }
+}
