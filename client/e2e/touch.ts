@@ -67,13 +67,17 @@ async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: 
   );
 }
 
-export async function tap(page: Page, p: Pt, holdMs = 40): Promise<void> {
-  await run(page, [step("pointerdown", p), step("pointerup", p, holdMs)]);
+// Taps go down and up in one task, with no timer in between. Right after the page starts,
+// a busy main thread can delay in-page timers by hundreds of ms, which turned a 90 ms double
+// tap into two single taps (run 36681468292). The 350 ms and 300 ms windows themselves are
+// covered by the unit tests; these tests check the wiring.
+export async function tap(page: Page, p: Pt): Promise<void> {
+  await run(page, [step("pointerdown", p), step("pointerup", p)]);
 }
 
-/** Two quick taps, well inside the 300 ms double-tap window. */
+/** Two taps in quick succession. */
 export async function doubleTap(page: Page, p: Pt): Promise<void> {
-  await run(page, [step("pointerdown", p), step("pointerup", p, 30), step("pointerdown", p, 60), step("pointerup", p, 30)]);
+  await run(page, [step("pointerdown", p), step("pointerup", p), step("pointerdown", p), step("pointerup", p)]);
 }
 
 /** Finger down, `steps` moves over `ms`, finger up `holdMs` after the last move. Returns the camera x at the lift. */
