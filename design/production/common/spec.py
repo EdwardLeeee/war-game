@@ -38,9 +38,23 @@ def _farmer():
 
 
 def _mage():
-    return [("idle", 12, "idle", False), ("walk", 12, "walk", False), ("cast", 30, "cast", False),
-            ("hit", 6, "idle", True), ("shatter", 8, "idle", True), ("fall", 12, "idle", True),
-            ("dead", 4, "idle", True)]
+    # attack = the basic 晶彈 shot (sim: every 20 ticks); until its pose is approved it is the
+    # first 10 frames of the cast, the same stand-in the client uses (client/docs/sprite-atlas.md)
+    return [("idle", 12, "idle", False), ("walk", 12, "walk", False), ("attack", 10, "cast", True),
+            ("cast", 30, "cast", False), ("hit", 6, "idle", True), ("shatter", 8, "idle", True),
+            ("fall", 12, "idle", True), ("dead", 4, "idle", True)]
+
+
+# playback speed (frames per second of sim time) per animation, client/docs/sprite-atlas.md section 7
+FPS = {"idle": 8, "walk": 12, "attack": 20, "death": 12, "cast": 20, "hit": 20, "shatter": 16, "fall": 12,
+       "dead": 12, "work_chop": 10, "work_mine": 10, "work_farm": 10, "work_build": 10}
+
+# the attack frame (from 0) where the blow lands or the shot leaves, read off the attack curves:
+# spear/pike thrust peaks at t 0.5; crossbow recoil at t 0.4; longbow loose at t 0.6; tool strikes at t 0.7;
+# trebuchet releases near the top of its swing (t 0.4), catapult arm stops at t 0.35; riders have no strike
+# motion yet (lance held couched), mages: stand-in
+HIT = {"farmer_e": 7, "spear_e": 5, "xbow_e": 4, "hcav_e": 5, "siege_e": 4, "mage_e": 4,
+       "farmer_w": 7, "pike_w": 5, "bow_w": 6, "knight_w": 5, "siege_w": 3, "mage_w": 4}
 
 
 # key: kind, variant, mage style, frame (w, h metres, anchor x, y fractions), animations

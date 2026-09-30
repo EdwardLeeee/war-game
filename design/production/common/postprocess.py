@@ -1,22 +1,24 @@
-"""Post-processing: 3x source renders -> trimmed frames packed into atlas pages (draft format).
+"""Post-processing: 3x source renders -> trimmed frames packed into atlas pages.
 
-python3 common/postprocess.py --target farmer_e [--scale 3] [--page 2048] [--astc 4x4]
+python3 common/postprocess.py --target farmer_e [--scale 3] [--page 2048] [--team-gain 1.0] [--astc 4x4]
 -> build/prod/<unit>/atlas_x<scale>/<unit>_color_<k>.png   RGBA8, AO baked in, player-colour parts grey
-                                    <unit>_mask_<k>.png    L8, same layout as colour (player-colour weight)
-                                    <unit>_shadow_<k>.png  L8 alpha, own layout, half the colour resolution
+                                    <unit>_team_<k>.png    RGBA8 player-colour layer (own trim and layout)
+                                    <unit>_shadow_<k>.png  black + alpha (LA), half the colour resolution
                                     <unit>_fx_<k>.png      RGBA8 (mages: shield and magic circle)
-                                    <unit>.json            frames, anchors, mirrored facings
-                                    memory.json            runtime bytes per layer
+                                    <unit>.json            format "war-game atlas 1"
+                                    memory.json            runtime bytes (the GPU keeps every PNG as RGBA8)
+
+Format: client/docs/sprite-atlas.md (war-game-client, first draft 2026-09-30).
+- colour: straight alpha; the client draws it normally.
+- team: RGB = the colour layer at that point (x --team-gain, clipped), A = mask weight x colour alpha;
+  the client draws it over the colour layer tinted with the player colour (a multiply in effect).
+- shadow: rendered for all eight facings, stored at half resolution, the client scales it by 2.
+- frames/team/fx list the rendered facings only; mirrored facings are drawn flipped (scale.x = -1
+  about the anchor). shadows list all eight.
 
 The scale and the compression are parameters: the renders stay at 3x, and when the client has
 measured on the iPhone (D-017 is provisional) only this step is run again. --astc runs astcenc
-if it is installed (not in this repo); without it the PNG pages are written and the ASTC size
-is computed (8 bits per pixel for 4x4 blocks).
-
-Draft atlas format, to be aligned with war-game-client's spec:
-  frames[name] = {page, x, y, w, h, ax, ay}   ax, ay: ground anchor inside the trimmed rect
-  facings.mirrored = {"3": 1, "4": 0, "5": 7}: draw the source facing flipped horizontally,
-  anchor x becomes w - ax; colour and mask only, shadows exist for every facing.
+if it is installed (not in this repo); without it only the PNG pages are written.
 """
 import argparse
 import json
@@ -33,10 +35,12 @@ sys.path.insert(0, str(HERE))
 import config  # noqa: E402
 import spec    # noqa: E402
 
+TRIM = 4               # alpha above this counts as part of the frame
+SHADOW_FLOOR = 20      # shadow alpha below this (under ~7% darkening) is render noise: cleared, so frames trim
 
-def _trim(img, thr=4):
-    bb = img.getchannel("A").point(lambda v: 255 if v > thr else 0).getbbox() if img.mode == "RGBA" else img.getbbox()
-    return bb
+
+def _bbox(alpha, thr=TRIM):
+    return alpha.point(lambda v: 255 if v > thr else 0).getbbox()
 
 
 def _colour(raw, base):
@@ -50,22 +54,25 @@ def _colour(raw, base):
     return b
 
 
-def _mask(raw, base, alpha):
+def _team(raw, base, colour, gain):
+    """Player-colour layer: the colour layer's pixels, alpha = mask weight x colour alpha."""
     m = np.asarray(Image.open(raw / f"{base}_x3_mask.png").convert("RGBA"), np.float32)
-    w = (m[..., 0] / 255.0) * (m[..., 3] / 255.0) * (np.asarray(alpha, np.float32) / 255.0)
-    return Image.fromarray(np.clip(w * 255, 0, 255).astype(np.uint8), "L")
-
-
-SHADOW_FLOOR = 20      # shadow alpha below this (under ~7% darkening) is render noise: cleared, so frames trim
+    c = np.asarray(colour, np.float32)
+    w = (m[..., 0] / 255.0) * (m[..., 3] / 255.0) * (c[..., 3] / 255.0)
+    out = np.zeros_like(c)
+    out[..., :3] = np.clip(c[..., :3] * gain, 0, 255)
+    out[..., 3] = w * 255
+    return Image.fromarray(out.astype(np.uint8), "RGBA")
 
 
 def _shadow(raw, base):
-    s = Image.open(raw / f"{base}_x3_shadow.png").convert("RGBA").getchannel("A")
-    return s.point(lambda v: v if v >= SHADOW_FLOOR else 0)
+    a = Image.open(raw / f"{base}_x3_shadow.png").convert("RGBA").getchannel("A")
+    a = a.point(lambda v: v if v >= SHADOW_FLOOR else 0)
+    return Image.merge("LA", (Image.new("L", a.size, 0), a))       # black + alpha
 
 
 class Packer:
-    """Shelf packing into square pages."""
+    """Shelf packing into pages of a fixed width; frames are added tallest first."""
 
     def __init__(self, page):
         self.page = page
@@ -97,7 +104,11 @@ def _scaled(img, f):
     return img.resize((max(1, round(img.width * f)), max(1, round(img.height * f))), Image.LANCZOS)
 
 
-def run(target, scale=3.0, page=2048, astc=None, facings=None, preview=False):
+def _anchor(ax, ay, bb, f, div=1):
+    return dict(ax=round((ax / div - bb[0]) * f, 2), ay=round((ay / div - bb[1]) * f, 2))
+
+
+def run(target, scale=3.0, page=2048, team_gain=1.0, astc=None, facings=None, preview=False):
     u = spec.UNITS[target]
     raw = config.BUILD / "prod" / target / "raw"
     out = config.BUILD / "prod" / target / f"atlas_x{scale:g}"
@@ -105,96 +116,83 @@ def run(target, scale=3.0, page=2048, astc=None, facings=None, preview=False):
     out.mkdir(parents=True)
     f = scale / 3.0
     mage = u["kind"].startswith("mage")
-    col, sha, fx = Packer(page), Packer(page), Packer(page)
-    frames, shadows, fxs = {}, {}, {}
-    mask_items = []
-    todo_c, todo_s, todo_f = [], [], []        # packed after sorting by height: far less empty page area
+    todo = {"color": [], "team": [], "shadow": [], "fx": []}
     for name, n, _, _ in u["anims"]:
         for fc in (facings or spec.ALL_FACINGS):
             for i in ([0] if preview else range(n)):
                 base = spec.frame_name(target, name, fc, i)
-                meta = json.loads((raw / f"{base}_x3.json").read_text())
-                ax, ay = meta["anchor"]
-                # shadow: every facing; stays at half the colour resolution
+                meta_p = raw / f"{base}_x3.json"
+                if not meta_p.exists():
+                    continue            # an animation added to the spec after these renders
+                ax, ay = json.loads(meta_p.read_text())["anchor"]
                 s = _shadow(raw, base)
-                sbb = _trim(s.convert("L"))
+                sbb = _bbox(s.getchannel("A"))
                 if sbb:
-                    s_c = _scaled(s.crop(sbb), f)
-                    todo_s.append((base, s_c, dict(ax=round((ax / 2 - sbb[0]) * f, 2),
-                                                   ay=round((ay / 2 - sbb[1]) * f, 2), half_res=True)))
+                    todo["shadow"].append((base, _scaled(s.crop(sbb), f), dict(_anchor(ax, ay, sbb, f, 2), half_res=True)))
                 if fc in spec.MIRRORED:
                     continue
                 c = _colour(raw, base)
-                bb = _trim(c)
-                c_c = _scaled(c.crop(bb), f)
-                m_c = _scaled(_mask(raw, base, c.getchannel("A")).crop(bb), f)
-                todo_c.append((base, c_c, dict(ax=round((ax - bb[0]) * f, 2), ay=round((ay - bb[1]) * f, 2)), m_c))
+                bb = _bbox(c.getchannel("A"))
+                todo["color"].append((base, _scaled(c.crop(bb), f), _anchor(ax, ay, bb, f)))
+                t = _team(raw, base, c, team_gain)
+                tbb = _bbox(t.getchannel("A"))
+                if tbb:                   # frames with no visible player colour are not listed
+                    todo["team"].append((base, _scaled(t.crop(tbb), f), _anchor(ax, ay, tbb, f)))
                 if mage and (raw / f"{base}_x3_fx.png").exists():
                     e = Image.open(raw / f"{base}_x3_fx.png").convert("RGBA")
-                    ebb = _trim(e)
+                    ebb = _bbox(e.getchannel("A"))
                     if ebb:
-                        e_c = _scaled(e.crop(ebb), f)
-                        todo_f.append((base, e_c, dict(ax=round((ax - ebb[0]) * f, 2), ay=round((ay - ebb[1]) * f, 2))))
+                        todo["fx"].append((base, _scaled(e.crop(ebb), f), _anchor(ax, ay, ebb, f)))
 
-    def pack(todo, packer, table, masks=None):
-        for item in sorted(todo, key=lambda t: (-t[1].height, -t[1].width, t[0])):
-            base, im, anc = item[0], item[1], item[2]
+    tables, pages, px = {}, {}, {}
+    for layer, items in todo.items():
+        packer, table = Packer(page), {}
+        for base, im, anc in sorted(items, key=lambda t: (-t[1].height, -t[1].width, t[0])):
             k, x, y = packer.add(im)
             table[base] = dict(page=k, x=x, y=y, w=im.width, h=im.height, **anc)
-            if masks is not None:
-                masks.append((k, x, y, item[3]))
-
-    pack(todo_c, col, frames, mask_items)
-    pack(todo_s, sha, shadows)
-    pack(todo_f, fx, fxs)
-    mem = {}
-
-    def write(packer, kind, mode):
-        total = 0
-        files = []
-        for k in range(len(packer.pages)):
-            if not packer.pages[k]:
+        files, area = [], 0
+        for k, content in enumerate(packer.pages):
+            if not content:
                 continue
             # height rounded up to a multiple of 4 (ASTC blocks); WebGL2 and iPhone GPUs take
             # non-power-of-two textures, and rounding to a power of two left a third of the page empty
-            h = (packer.used_height(k) + 3) // 4 * 4
-            pg = Image.new(mode, (packer.page, min(h, packer.page)), 0 if mode == "L" else (0, 0, 0, 0))
-            for x, y, im in packer.pages[k]:
+            h = min(page, (packer.used_height(k) + 3) // 4 * 4)
+            mode = "LA" if layer == "shadow" else "RGBA"
+            pg = Image.new(mode, (page, h), (0, 0) if mode == "LA" else (0, 0, 0, 0))
+            for x, y, im in content:
                 pg.paste(im, (x, y))
-            p = out / f"{target}_{kind}_{k}.png"
+            p = out / f"{target}_{layer}_{k}.png"
             pg.save(p, optimize=True)
             files.append(p.name)
-            total += pg.width * pg.height
-        return files, total
+            area += pg.width * pg.height
+        tables[layer], pages[layer], px[layer] = table, files, area
 
-    col_files, col_px = write(col, "color", "RGBA")
-    mask_packer = Packer(page)
-    mask_packer.pages = [[] for _ in col.pages]
-    for k, x, y, m in mask_items:
-        mask_packer.pages[k].append((x, y, m))
-    mask_files, mask_px = write(mask_packer, "mask", "L")
-    sha_files, sha_px = write(sha, "shadow", "L")
-    fx_files, fx_px = write(fx, "fx", "RGBA") if fxs else ([], 0)
-    mem = dict(color_rgba8=col_px * 4, mask_l8=mask_px, shadow_l8=sha_px, fx_rgba8=fx_px * 4)
-    mem["total_rgba8_bytes"] = sum(mem.values())
-    # ASTC 4x4 is 8 bits per pixel whatever the channel count; the mask could also ride in one channel
-    mem["total_astc_4x4_bytes"] = col_px + fx_px + mask_px + sha_px
-    mem["colour_frames_px"] = sum(v["w"] * v["h"] for v in frames.values())     # without page padding
+    # every uncompressed page sits on the GPU as RGBA8 (4 bytes a pixel, greyscale too); ASTC 4x4 is 1 byte
+    mem = {f"{k}_bytes": v * 4 for k, v in px.items()}
+    mem["total_rgba8_bytes"] = sum(px.values()) * 4
+    mem["total_astc_4x4_bytes"] = sum(px.values())
+    mem["frames_px"] = {k: sum(v["w"] * v["h"] for v in t.values()) for k, t in tables.items()}
     if astc and shutil.which("astcenc"):
-        for p in col_files + fx_files:
-            subprocess.run(["astcenc", "-cl", str(out / p), str(out / p.replace(".png", ".astc")), astc, "-medium"],
-                           check=True)
-    manifest = dict(format="war-game atlas draft 0", unit=target, scale=scale, px_per_m=spec.PX_PER_M * f,
-                    facings=dict(rendered=spec.RENDERED_FACINGS, mirrored={str(k): v for k, v in spec.MIRRORED.items()}),
-                    anims={a: dict(frames=n, placeholder=ph, loop=a in ("idle", "walk") or a.startswith("work_"))
-                           for a, n, _, ph in u["anims"]},
-                    pages=dict(color=col_files, mask=mask_files, shadow=sha_files, fx=fx_files),
-                    frames=frames, shadows=shadows, fx=fxs)
+        for layer in pages:
+            for p in pages[layer]:
+                subprocess.run(["astcenc", "-cl", str(out / p), str(out / p.replace(".png", ".astc.ktx")), astc,
+                                "-medium"], check=True)
+    anims = {}
+    for a, n, _, ph in u["anims"]:
+        d = dict(frames=n, fps=spec.FPS.get(a, 12), loop=a in ("idle", "walk") or a.startswith("work_"),
+                 placeholder=ph)
+        if a == "attack":
+            d["hit"] = spec.HIT[target]
+        anims[a] = d
+    manifest = {"format": "war-game atlas 1", "unit": target, "scale": scale, "px_per_m": spec.PX_PER_M * f,
+                "team_gain": team_gain,
+                "facings": dict(rendered=spec.RENDERED_FACINGS, mirrored={str(k): v for k, v in spec.MIRRORED.items()}),
+                "anims": anims, "pages": pages,
+                "frames": tables["color"], "team": tables["team"], "shadows": tables["shadow"], "fx": tables["fx"]}
     (out / f"{target}.json").write_text(json.dumps(manifest, separators=(",", ":")))
     (out / "memory.json").write_text(json.dumps(mem, indent=1))
-    mb = {k: round(v / 2 ** 20, 1) for k, v in mem.items()}
-    print(f"[{target}] x{scale:g}: {len(frames)} colour frames, {len(shadows)} shadows, {len(fxs)} fx; "
-          f"pages colour {len(col_files)}, shadow {len(sha_files)}, fx {len(fx_files)}; MB {mb}")
+    print(f"[{target}] x{scale:g}: " + ", ".join(f"{k} {len(tables[k])} frames/{len(pages[k])} pages" for k in tables)
+          + f"; {mem['total_rgba8_bytes'] / 2 ** 20:.1f} MB RGBA8, {mem['total_astc_4x4_bytes'] / 2 ** 20:.1f} MB ASTC")
     return mem
 
 
@@ -203,8 +201,11 @@ if __name__ == "__main__":
     ap.add_argument("--target", required=True, choices=list(spec.UNITS))
     ap.add_argument("--scale", type=float, default=3.0, help="output scale (3 = source; 2 = two-thirds size)")
     ap.add_argument("--page", type=int, default=2048)
+    ap.add_argument("--team-gain", type=float, default=1.0,
+                    help="brighten the player-colour layer (1.0 = the colour layer as it is, per the client spec)")
     ap.add_argument("--astc", help="block size for astcenc, e.g. 4x4 (optional; needs astcenc on PATH)")
     ap.add_argument("--facings")
     ap.add_argument("--preview", action="store_true")
     a = ap.parse_args()
-    run(a.target, a.scale, a.page, a.astc, [int(x) for x in a.facings.split(",")] if a.facings else None, a.preview)
+    run(a.target, a.scale, a.page, a.team_gain, a.astc, [int(x) for x in a.facings.split(",")] if a.facings else None,
+        a.preview)
