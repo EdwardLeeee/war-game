@@ -132,6 +132,8 @@ test("模擬還沒做的指令（投降）顯示「原型尚未開放」；已�
   if (city === undefined) throw new Error("no main city");
   await tap(page, await toScreen(page, { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) }));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "repair", u: ids, building: city.id });
+  // Orders given while paused run on the next tick, so the answer comes after 繼續.
+  await page.getByRole("button", { name: "繼續" }).tap();
   await expect(page.getByRole("status").filter({ hasText: "不需要農民" })).toBeVisible();
 });
 
