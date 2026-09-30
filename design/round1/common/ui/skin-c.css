@@ -1,0 +1,36 @@
+/* C 水墨戰卷: black lacquer panels, vermilion seal accents, paper-white serif text. */
+body { font-family: "Noto Serif CJK TC", serif; color: #efe4cc; font-weight: 700; }
+.panel {
+  background: linear-gradient(180deg, rgba(22, 20, 19, .9), rgba(12, 11, 10, .9));
+  border: 1px solid rgba(239, 228, 204, .45);
+  border-radius: 3px;
+  box-shadow: 0 0 0 3px rgba(12, 11, 10, .55), 0 3px 8px rgba(0, 0, 0, .55);
+}
+.res { font-size: 14px; letter-spacing: .02em; }
+.res .sep { background: rgba(239, 228, 204, .25); }
+.res small { font-size: 10px; opacity: .7; }
+.c-food { color: #d9b36a; } .c-wood { color: #b98d62; --wood-end: #e8d2a8; }
+.c-gold { color: #e8c35a; --coin-hole: #3a2a10; } .c-crystal { color: #7ff0ff; } .c-pop { color: #efe4cc; }
+.ui-btn {
+  border-radius: 3px; color: #efe4cc;
+  background: rgba(16, 14, 13, .88);
+  border: 1px solid rgba(239, 228, 204, .5);
+  box-shadow: 0 0 0 2px rgba(12, 11, 10, .5), 0 2px 5px rgba(0, 0, 0, .6);
+}
+.ui-btn .spd { font-size: 15px; line-height: 1; }
+/* the selected group wears a vermilion seal */
+.grp.on { background: #a8231a; border-color: #f0c9a0; color: #fff3e0;
+          box-shadow: 0 0 0 2px rgba(12, 11, 10, .5), inset 0 0 0 2px rgba(255, 220, 190, .35); }
+.btn .badge { background: #a8231a; color: #fff; border: 1px solid #efe4cc; border-radius: 2px; }
+.mini { padding: 3px; }
+.sel .pt { border: 1px solid rgba(239, 228, 204, .5); background: #2a241e; }
+.sel .name small { color: #c9b995; font-weight: 400; }
+.bar { background: rgba(239, 228, 204, .12); }
+.bar.shield i { background: #62e6f5; box-shadow: 0 0 6px #62e6f5; }
+.bar.hp i { background: #b8a27a; }
+.bars b { color: #c9b995; }
+.sel .state { color: #8ff2ff; }
+.sel .state .p { background: rgba(239, 228, 204, .12); }
+.sel .state .p i { background: #62e6f5; box-shadow: 0 0 5px #62e6f5; }
+.cmd-on { color: #06181b; background: #7ff0ff; border-color: #e6ffff;
+          box-shadow: 0 0 12px #62e6f5aa, 0 0 0 2px rgba(12, 11, 10, .5); }
