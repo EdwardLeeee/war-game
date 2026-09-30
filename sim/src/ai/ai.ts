@@ -511,8 +511,11 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           target = { x: rally.x, y: rally.y };
           return out;
         } else if (mode === "town") {
+          // Done with the town once it is ours, or once it lies in ruins (after our plunder or
+          // theirs): ruins have no owner, and waiting there for them to turn neutral again
+          // parked whole armies in the middle of the map until the game ran out.
           const t = towns.get(targetTown);
-          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral)) mode = "gather";
+          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "gather";
           else send(t.x, t.y, "town");
         } else if (enemyCity >= 0 && tick - lastMove >= 200) {
           out.push({ c: "attack", u: armyIds, target: enemyCity });
