@@ -216,7 +216,11 @@ test("量測面板：量測中不能再按；log 框跟著最新一行，往上�
   await expect(measure).toBeDisabled();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toBe("warmup");
 
-  for (let i = 0; i < 120; i++) await page.evaluate((n) => window.__proto?.game?.log(`line ${n}`), i);
+  // All at once: one round trip per line was slow enough on CI for the 35 s measurement to
+  // finish first, and its result box moved the log (run 36694036113).
+  await page.evaluate(() => {
+    for (let n = 0; n < 120; n++) window.__proto?.game?.log(`line ${n}`);
+  });
   const box = page.locator(".lab-log");
   const lastLine = box.getByText("line 119", { exact: true });
   const inside = async () => {
