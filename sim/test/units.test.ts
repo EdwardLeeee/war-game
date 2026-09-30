@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
-import { CELL_SHIFT, GameOverReason, Order, Stance, UnitType } from "../src/protocol.ts";
+import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Stance, UnitType } from "../src/protocol.ts";
+import { BUILDINGS } from "../src/core/rules.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
 
 test("multipliers: ranged deal 7 to spearmen (5 x 3/2), 5 to others; at least 1", () => {
@@ -88,4 +89,94 @@ test("main city arrows hit intruders; destroying a main city ends the game", () 
   run(g, 100);
   assert.equal(w.winner, 0);
   assert.equal(w.endReason, GameOverReason.MainCityDestroyed);
+});
+
+/**
+ * An enemy lumber camp (2 x 2) in an open area, walled in by 8 enemy houses (`gap`: the
+ * houses on the right are moved one cell out, leaving a one-cell passage down to the camp),
+ * and 4 spearmen of player 0 outside, told to attack the camp.
+ */
+function walledCamp(gap: boolean) {
+  const g = emptyGame();
+  const w = g.w;
+  const a = openArea(g, 16);
+  const x0 = a.x + 6;
+  const y0 = a.y + 6;
+  const camp = w.addBuilding(1, BuildingType.LumberCamp, x0, y0, BUILDINGS[BuildingType.LumberCamp].hp, 1000);
+  const d = gap ? 1 : 0;
+  const spots = [[-2, -2], [0, -2], [2 + d, -2], [-2, 0], [2 + d, 0], [-2, 2], [0, 2], [2, 2]];
+  const houses = spots.map(([dx, dy]) => w.addBuilding(1, BuildingType.House, x0 + dx, y0 + dy, BUILDINGS[BuildingType.House].hp, 1000));
+  const ids: number[] = [];
+  // Close enough to see the camp (sight 6), outside the wall.
+  for (let k = 0; k < 4; k++) ids.push(put(g, 0, UnitType.Spearman, x0 + 6, y0 - 3 + 2 * k));
+  g.fog.update(w);
+  cmd(g, 0, { c: "attack", u: ids, target: camp });
+  g.step();
+  assert.ok(!g.events.some((e) => e.ev.k === "rejected"), "the attack order is accepted");
+  const hp = (id: number) => {
+    const s = w.building(id);
+    return s < 0 ? 0 : w.buildings.col.hp[s];
+  };
+  return { g, camp, houses, hp };
+}
+
+test("walled in: attackers break through the enemy house nearest the target, then hit the target", () => {
+  const { g, camp, houses, hp } = walledCamp(false);
+  let first = -1;
+  for (let t = 0; t < 3000 && hp(camp) === BUILDINGS[BuildingType.LumberCamp].hp; t++) {
+    g.step();
+    if (first < 0) first = houses.findIndex((h) => hp(h) < BUILDINGS[BuildingType.House].hp);
+  }
+  assert.ok(first >= 0, "a house was attacked");
+  // The houses at the sides (1, 3, 4, 6) touch the camp's sides and are nearer it than the
+  // corners; of those the lowest id goes first.
+  assert.equal(first, 1, `broke in through house ${first}`);
+  assert.ok(hp(camp) < BUILDINGS[BuildingType.LumberCamp].hp, "then hit the camp");
+});
+
+test("a narrow way in (one cell) is used: no house is attacked", () => {
+  const { g, camp, houses, hp } = walledCamp(true);
+  for (let t = 0; t < 3000 && hp(camp) > 0; t++) g.step();
+  assert.equal(hp(camp), 0, "the camp was destroyed");
+  // Checked when the camp falls: afterwards idle soldiers pick nearby enemy buildings anyway.
+  assert.deepEqual(houses.map(hp), houses.map(() => BUILDINGS[BuildingType.House].hp), "every house untouched");
+});
+
+test("a move to a walled-in point: soldiers break through enemy walls; with only own walls, they and farmers wait at the nearest cell instead of pushing", () => {
+  // Soldiers told to move into the enemy's walled area break in like an attack.
+  const enemy = walledCamp(false);
+  const u0 = enemy.g.w.units.col;
+  const soldiers: number[] = [];
+  for (let s = 0; s < enemy.g.w.units.count; s++) if (u0.owner[s] === 0) soldiers.push(u0.id[s]);
+  const c = enemy.g.w.building(enemy.camp);
+  cmd(enemy.g, 0, { c: "move", u: soldiers, x: enemy.g.w.buildings.col.cellX[c] + 2, y: enemy.g.w.buildings.col.cellY[c] - 1 });
+  run(enemy.g, 600);
+  assert.ok(enemy.houses.some((h) => enemy.hp(h) < BUILDINGS[BuildingType.House].hp), "a house is attacked");
+
+  // Own houses around an empty spot: nothing to break; a soldier and a farmer go as near as they can.
+  const g = emptyGame();
+  const w = g.w;
+  const a = openArea(g, 16);
+  const x0 = a.x + 6;
+  const y0 = a.y + 6;
+  for (const [dx, dy] of [[-2, -2], [0, -2], [2, -2], [-2, 0], [2, 0], [-2, 2], [0, 2], [2, 2]]) {
+    w.addBuilding(0, BuildingType.House, x0 + dx, y0 + dy, BUILDINGS[BuildingType.House].hp, 1000);
+  }
+  const soldier = put(g, 0, UnitType.Spearman, x0 + 8, y0);
+  const farmer = put(g, 0, UnitType.Farmer, x0 + 8, y0 + 1);
+  g.fog.update(w);
+  cmd(g, 0, { c: "move", u: [soldier], x: x0, y: y0 });
+  cmd(g, 0, { c: "move", u: [farmer], x: x0 + 1, y: y0 + 1 });
+  run(g, 600);
+  const u = w.units.col;
+  for (const id of [soldier, farmer]) {
+    const s = slotOf(g, id);
+    const cx = u.x[s] >> CELL_SHIFT;
+    const cy = u.y[s] >> CELL_SHIFT;
+    // The ring's outer edge is 4 cells from the spot: the unit waits right outside it,
+    // standing, instead of pushing against the wall for ever.
+    assert.ok(Math.max(Math.abs(cx - x0), Math.abs(cy - y0)) <= 4, `unit ${id} at ${cx - x0},${cy - y0}`);
+    assert.equal(u.action[s], Action.Idle, `unit ${id} waits`);
+  }
+  for (let s = 0; s < w.buildings.count; s++) assert.equal(w.buildings.col.hp[s], BUILDINGS[w.buildings.col.type[s]].hp, "own buildings untouched");
 });

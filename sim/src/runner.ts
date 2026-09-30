@@ -6,7 +6,16 @@
 import { type Ai, type AiStyle, createAi } from "./ai/ai.ts";
 import { type GameConfig, Game } from "./core/game.ts";
 import { rules } from "./core/rules.ts";
-import { type Command, type CommandBody, PLAYER_COUNT } from "./protocol.ts";
+import {
+  type AiDifficulty,
+  type Command,
+  type CommandBody,
+  type LogHeader,
+  MAX_TICKS,
+  PLAYER_COUNT,
+  PROTOCOL_VERSION,
+  type ScenarioName,
+} from "./protocol.ts";
 import { buildView } from "./view/view.ts";
 
 export const AI_THINK_EVERY = 10;
@@ -20,6 +29,8 @@ export interface RunnerConfig extends GameConfig {
   swap?: boolean;
   /** Tournament: the AI style of slot 0 and slot 1 (otherwise drawn at random each game). */
   styles?: [AiStyle, AiStyle];
+  /** Per player, how its AI plays (default all "normal"). */
+  difficulty?: AiDifficulty[];
 }
 
 export class Runner {
@@ -27,9 +38,12 @@ export class Runner {
   private ais: (Ai | null)[] = [];
   private aiSeq = 0;
   readonly hashes: { tick: number; hash: number }[] = [];
+  /** Per player, how its AI plays (recorded in the log header). */
+  readonly difficulty: AiDifficulty[];
 
   constructor(cfg: RunnerConfig) {
-    this.game = new Game({ seed: cfg.seed, scenario: cfg.scenario });
+    this.game = new Game({ seed: cfg.seed, scenario: cfg.scenario, maxTicks: cfg.maxTicks ?? MAX_TICKS });
+    this.difficulty = Array.from({ length: PLAYER_COUNT }, (_, p) => cfg.difficulty?.[p] ?? "normal");
     for (let p = 0; p < PLAYER_COUNT; p++) {
       const slot = cfg.swap === true ? 1 - p : p;
       const know = { map: this.game.w.map, rules: rules(), frame: this.game.w.map.frames[p] };
@@ -70,6 +84,17 @@ export class Runner {
 
   get over(): boolean {
     return this.game.w.over;
+  }
+
+  /** The game's time limit in ticks (0 = none). */
+  get maxTicks(): number {
+    return this.game.config.maxTicks ?? MAX_TICKS;
+  }
+
+  /** The first line of this game's command log. */
+  header(ai: boolean[]): LogHeader {
+    const c = this.game.config;
+    return { protocol: PROTOCOL_VERSION, seed: c.seed, scenario: c.scenario as ScenarioName, ai, maxTicks: this.maxTicks, difficulty: this.difficulty };
   }
 }
 
