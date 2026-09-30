@@ -96,8 +96,8 @@ test("長按空地 350 ms 後拖曳 → 框選，優先選軍隊", async ({ page
   await centre(page, 20, 73, 0.8);
   const from = await at(page, { x: 15, y: 67 });
   const to = await at(page, { x: 25, y: 79 });
-  expect(await pressShowsCue(page, from, 200), "the hold cue shows while the finger is still").toBe(true);
-  await page.waitForTimeout(300);
+  expect(await pressShowsCue(page, from, 300), "the hold cue shows while the finger is still").toBe(true);
+  await page.waitForTimeout(200);
   await move(page, to);
   await expect(page.locator(".marquee")).toBeVisible();
   await shot(page, info, "box");

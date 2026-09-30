@@ -6,6 +6,17 @@
 import { LONG_PRESS_MS, PRESS_CUE_DELAY_MS } from "../tuning.ts";
 import type { GestureRecognizer } from "./gestures.ts";
 
+/**
+ * When the finger actually did it: the event's own timestamp, not the moment a busy main
+ * thread gets to the handler (a late pointerup would otherwise look like a finger that
+ * stopped before lifting, and not fling). Falls back to now if a browser's timestamp is on
+ * another clock.
+ */
+function eventTime(e: Event): number {
+  const now = performance.now();
+  return Math.abs(now - e.timeStamp) < 5000 ? Math.min(e.timeStamp, now) : now;
+}
+
 export function attachPointer(target: HTMLElement, rec: GestureRecognizer, stopFling: () => boolean): () => void {
   const timers = new Set<number>();
   const local = (e: PointerEvent) => {
@@ -30,19 +41,19 @@ export function attachPointer(target: HTMLElement, rec: GestureRecognizer, stopF
     const p = local(e);
     // A touch that stops a fling only stops it: lifting it is not a tap.
     const wasFlinging = stopFling();
-    rec.down(e.pointerId, p.x, p.y, performance.now(), wasFlinging);
+    rec.down(e.pointerId, p.x, p.y, eventTime(e), wasFlinging);
     later(PRESS_CUE_DELAY_MS + 1);
     later(LONG_PRESS_MS + 1);
   };
   const move = (e: PointerEvent) => {
     const p = local(e);
-    rec.move(e.pointerId, p.x, p.y, performance.now());
+    rec.move(e.pointerId, p.x, p.y, eventTime(e));
   };
   const up = (e: PointerEvent) => {
     const p = local(e);
-    rec.up(e.pointerId, p.x, p.y, performance.now());
+    rec.up(e.pointerId, p.x, p.y, eventTime(e));
   };
-  const cancel = (e: PointerEvent) => rec.cancel(e.pointerId, performance.now());
+  const cancel = (e: PointerEvent) => rec.cancel(e.pointerId, eventTime(e));
   const block = (e: Event) => e.preventDefault();
 
   target.addEventListener("pointerdown", down);

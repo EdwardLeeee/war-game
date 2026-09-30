@@ -26,19 +26,26 @@ interface Step {
 const step = (type: Kind, p: Pt, after = 0, id = 1): Step => ({ type, id, x: p.x, y: p.y, after });
 
 interface RunResult {
-  /** The hold cue was showing at the probe. */
+  /** The hold cue appeared at some point between the probed step and the probe's end. */
   cue: boolean;
   /** Camera x right after the last event (the lift), read in the page. */
   cameraX: number;
 }
 
-/** Dispatch the steps in the page, optionally checking the hold cue some ms after one step. */
+/** Dispatch the steps in the page, optionally watching for the hold cue for some ms after one step. */
 async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: number } | null = null): Promise<RunResult> {
   return page.evaluate(
     async ({ steps, probe }) => {
       const canvas = document.querySelector("#stage canvas") as HTMLCanvasElement;
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
       let cue = false;
+      const cueEl = document.querySelector(".press-cue") as HTMLElement | null;
+      // A record whose old value is null means `hidden` was absent, i.e. the cue was showing,
+      // even if it was hidden again before this callback ran.
+      const watch = new MutationObserver((records) => {
+        if (cueEl !== null && (!cueEl.hidden || records.some((r) => r.oldValue === null))) cue = true;
+      });
+      if (probe !== null && cueEl !== null) watch.observe(cueEl, { attributes: true, attributeFilter: ["hidden"], attributeOldValue: true });
       for (let i = 0; i < steps.length; i++) {
         const s = steps[i];
         if (s.after > 0) await sleep(s.after);
@@ -55,12 +62,9 @@ async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: 
             cancelable: true,
           }),
         );
-        if (probe !== null && probe.afterStep === i) {
-          await sleep(probe.wait);
-          const el = document.querySelector(".press-cue") as HTMLElement | null;
-          cue = el !== null && !el.hidden;
-        }
+        if (probe !== null && probe.afterStep === i) await sleep(probe.wait);
       }
+      watch.disconnect();
       return { cue, cameraX: window.__proto?.game?.camera().x ?? 0 };
     },
     { steps, probe },
@@ -80,8 +84,12 @@ export async function doubleTap(page: Page, p: Pt): Promise<void> {
   await run(page, [step("pointerdown", p), step("pointerup", p), step("pointerdown", p), step("pointerup", p)]);
 }
 
-/** Finger down, `steps` moves over `ms`, finger up `holdMs` after the last move. Returns the camera x at the lift. */
-export async function drag(page: Page, from: Pt, to: Pt, steps = 10, ms = 150, holdMs = 4): Promise<number> {
+/**
+ * Finger down, `steps` moves over `ms`, finger up `holdMs` after the last move (0: in the
+ * same task, so a busy page cannot make it look like the finger stopped first). Returns the
+ * camera x at the lift.
+ */
+export async function drag(page: Page, from: Pt, to: Pt, steps = 10, ms = 150, holdMs = 0): Promise<number> {
   const list = [step("pointerdown", from)];
   for (let i = 1; i <= steps; i++) {
     list.push(step("pointermove", { x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps }, ms / steps));
@@ -103,7 +111,7 @@ export async function longPress(page: Page, at: Pt, to: Pt | null = null, holdMs
   await run(page, list);
 }
 
-/** Put a finger down and report whether the hold cue shows `probeMs` later (finger stays down). */
+/** Put a finger down and report whether the hold cue showed within `probeMs` (finger stays down). */
 export async function pressShowsCue(page: Page, at: Pt, probeMs = 200): Promise<boolean> {
   return (await run(page, [step("pointerdown", at)], { afterStep: 0, wait: probeMs })).cue;
 }
