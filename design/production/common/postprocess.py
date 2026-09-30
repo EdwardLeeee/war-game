@@ -107,7 +107,8 @@ def run(target, scale=3.0, page=2048, astc=None, facings=None, preview=False):
     mage = u["kind"].startswith("mage")
     col, sha, fx = Packer(page), Packer(page), Packer(page)
     frames, shadows, fxs = {}, {}, {}
-    col_pages, mask_items = {}, []
+    mask_items = []
+    todo_c, todo_s, todo_f = [], [], []        # packed after sorting by height: far less empty page area
     for name, n, _, _ in u["anims"]:
         for fc in (facings or spec.ALL_FACINGS):
             for i in ([0] if preview else range(n)):
@@ -119,28 +120,33 @@ def run(target, scale=3.0, page=2048, astc=None, facings=None, preview=False):
                 sbb = _trim(s.convert("L"))
                 if sbb:
                     s_c = _scaled(s.crop(sbb), f)
-                    k, x, y = sha.add(s_c)
-                    shadows[base] = dict(page=k, x=x, y=y, w=s_c.width, h=s_c.height,
-                                         ax=round((ax / 2 - sbb[0]) * f, 2), ay=round((ay / 2 - sbb[1]) * f, 2),
-                                         half_res=True)
+                    todo_s.append((base, s_c, dict(ax=round((ax / 2 - sbb[0]) * f, 2),
+                                                   ay=round((ay / 2 - sbb[1]) * f, 2), half_res=True)))
                 if fc in spec.MIRRORED:
                     continue
                 c = _colour(raw, base)
                 bb = _trim(c)
                 c_c = _scaled(c.crop(bb), f)
                 m_c = _scaled(_mask(raw, base, c.getchannel("A")).crop(bb), f)
-                k, x, y = col.add(c_c)
-                mask_items.append((k, x, y, m_c))
-                frames[base] = dict(page=k, x=x, y=y, w=c_c.width, h=c_c.height,
-                                    ax=round((ax - bb[0]) * f, 2), ay=round((ay - bb[1]) * f, 2))
+                todo_c.append((base, c_c, dict(ax=round((ax - bb[0]) * f, 2), ay=round((ay - bb[1]) * f, 2)), m_c))
                 if mage and (raw / f"{base}_x3_fx.png").exists():
                     e = Image.open(raw / f"{base}_x3_fx.png").convert("RGBA")
                     ebb = _trim(e)
                     if ebb:
                         e_c = _scaled(e.crop(ebb), f)
-                        k2, x2, y2 = fx.add(e_c)
-                        fxs[base] = dict(page=k2, x=x2, y=y2, w=e_c.width, h=e_c.height,
-                                         ax=round((ax - ebb[0]) * f, 2), ay=round((ay - ebb[1]) * f, 2))
+                        todo_f.append((base, e_c, dict(ax=round((ax - ebb[0]) * f, 2), ay=round((ay - ebb[1]) * f, 2))))
+
+    def pack(todo, packer, table, masks=None):
+        for item in sorted(todo, key=lambda t: (-t[1].height, -t[1].width, t[0])):
+            base, im, anc = item[0], item[1], item[2]
+            k, x, y = packer.add(im)
+            table[base] = dict(page=k, x=x, y=y, w=im.width, h=im.height, **anc)
+            if masks is not None:
+                masks.append((k, x, y, item[3]))
+
+    pack(todo_c, col, frames, mask_items)
+    pack(todo_s, sha, shadows)
+    pack(todo_f, fx, fxs)
     mem = {}
 
     def write(packer, kind, mode):
@@ -149,8 +155,9 @@ def run(target, scale=3.0, page=2048, astc=None, facings=None, preview=False):
         for k in range(len(packer.pages)):
             if not packer.pages[k]:
                 continue
-            h = packer.used_height(k)
-            h = 1 << (h - 1).bit_length()       # power-of-two height (GPU friendly)
+            # height rounded up to a multiple of 4 (ASTC blocks); WebGL2 and iPhone GPUs take
+            # non-power-of-two textures, and rounding to a power of two left a third of the page empty
+            h = (packer.used_height(k) + 3) // 4 * 4
             pg = Image.new(mode, (packer.page, min(h, packer.page)), 0 if mode == "L" else (0, 0, 0, 0))
             for x, y, im in packer.pages[k]:
                 pg.paste(im, (x, y))
