@@ -18,8 +18,10 @@ export interface GameHook {
   centerOn(cx: number, cy: number, scale?: number): void;
   /** Screen position (CSS px) of a cell's centre. */
   cellToScreen(cx: number, cy: number): { x: number; y: number };
-  /** Units in the latest snapshot, with screen positions and cells. */
-  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number }[];
+  /** Units in the latest snapshot, with screen positions, cells (and fractional cells), action, order and carried amount. */
+  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number; fx: number; fy: number; action: number; order: number; target: number; carry: number }[];
+  /** Select these own units (test set-up; the gestures that select are tested elsewhere). */
+  select(units: number[]): void;
   startPlacement(type: number): void;
   placement(): { cellX: number; cellY: number; valid: boolean; phase: string } | null;
   labPhase(): string;
@@ -61,10 +63,25 @@ export function gameHook(game: Game): GameHook {
       const out = [];
       for (let o = 0; o < u.length; o += UNIT_STRIDE) {
         const s = cam.worldToScreen(u[o + U.x] * FIXED_TO_PX, u[o + U.y] * FIXED_TO_PX);
-        out.push({ id: u[o + U.id], owner: u[o + U.owner], type: u[o + U.type], sx: s.x, sy: s.y, cx: u[o + U.x] >> 10, cy: u[o + U.y] >> 10 });
+        out.push({
+          id: u[o + U.id],
+          owner: u[o + U.owner],
+          type: u[o + U.type],
+          sx: s.x,
+          sy: s.y,
+          cx: u[o + U.x] >> 10,
+          cy: u[o + U.y] >> 10,
+          fx: u[o + U.x] / 1024,
+          fy: u[o + U.y] / 1024,
+          action: u[o + U.action],
+          order: u[o + U.order],
+          target: u[o + U.orderTarget],
+          carry: u[o + U.carryAmount],
+        });
       }
       return out;
     },
+    select: (units) => game.apply([{ kind: "select", units: [...units].sort((a, b) => a - b) }]),
     startPlacement: (type) => game.startPlacement(type as BuildingType),
     placement: () => (game.placement === null ? null : { cellX: game.placement.cellX, cellY: game.placement.cellY, valid: game.placement.valid, phase: game.placement.phase }),
     labPhase: () => game.lab.lab.phase,

@@ -20,6 +20,10 @@ export interface IntentWorld {
   readonly me: number;
   /** Nearest thing within r world px: units first, then buildings, then resource nodes, then towns. */
   pick(wx: number, wy: number, r: number): Pick | null;
+  /** The resource node under the point, else the nearest one within r world px. */
+  pickNode(wx: number, wy: number, r: number): Pick | null;
+  /** The building whose footprint contains the point. */
+  buildingAt(wx: number, wy: number): Pick | null;
   /** Own units whose position is inside the world rectangle. */
   ownUnitsIn(x0: number, y0: number, x1: number, y1: number): { id: number; type: number }[];
   /** Own units of this type that are on screen. */
@@ -55,7 +59,11 @@ export const toCell = (w: number): number => Math.floor(w / TILE_PX);
 /** World px to simulation fixed point (integers only go to the simulation). */
 export const toFixed = (w: number): number => Math.floor((w * CELL) / TILE_PX);
 
-export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: number, wy: number, count: 1 | 2, r: number): Intent[] {
+/**
+ * @param r the pick radius in world px (HIT_RADIUS_PT on screen)
+ * @param core the "right on the unit" radius in world px (UNIT_CORE_HIT_PT on screen)
+ */
+export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: number, wy: number, count: 1 | 2, r: number, core = r): Intent[] {
   const x = toCell(wx);
   const y = toCell(wy);
   switch (mode) {
@@ -70,6 +78,22 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
       return sel.building !== null ? [{ kind: "command", cmd: { c: "rally", building: sel.building, x, y } }, { kind: "endMode" }] : [{ kind: "endMode" }];
     case "normal":
       break;
+  }
+
+  // Farmers selected: a resource or own building at the finger is the order's target, even
+  // with a unit standing beside it (farmers crowd resources while they work), unless the
+  // finger is right on that unit. User report 2026-09-30: 「點果樹跟金礦沒反應」.
+  const farmersSelected = sel.units.filter((id) => world.unitType(id) === UnitType.Farmer);
+  if (farmersSelected.length > 0 && world.pick(wx, wy, core)?.kind !== "unit") {
+    const others = sel.units.filter((id) => world.unitType(id) !== UnitType.Farmer);
+    const node = world.pickNode(wx, wy, r);
+    if (node !== null) {
+      const out: Intent[] = [{ kind: "command", cmd: { c: "gather", u: farmersSelected, node: node.id } }];
+      if (others.length > 0) out.push({ kind: "command", cmd: { c: "move", u: others, x, y } });
+      return out;
+    }
+    const b = world.buildingAt(wx, wy);
+    if (b !== null && b.owner === world.me) return [{ kind: "command", cmd: { c: "repair", u: farmersSelected, building: b.id } }];
   }
 
   const pick = world.pick(wx, wy, r);

@@ -105,6 +105,26 @@ export class FakeWorld implements IntentWorld {
     return null;
   }
 
+  pickNode(wx: number, wy: number, r: number): Pick | null {
+    let best: FakeThing | null = null;
+    let bestD = r * r;
+    for (const t of this.things) {
+      if (t.kind !== "node") continue;
+      if (Math.floor(wx / TILE_PX) === t.cx && Math.floor(wy / TILE_PX) === t.cy) return { kind: "node", id: t.id, owner: NO_OWNER, type: t.type };
+      const d = (at(t.cx) - wx) ** 2 + (at(t.cy) - wy) ** 2;
+      if (d <= bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best === null ? null : { kind: "node", id: best.id, owner: NO_OWNER, type: best.type };
+  }
+
+  buildingAt(wx: number, wy: number): Pick | null {
+    const t = this.things.find((v) => v.kind === "building" && Math.floor(wx / TILE_PX) === v.cx && Math.floor(wy / TILE_PX) === v.cy);
+    return t === undefined ? null : { kind: "building", id: t.id, owner: t.owner, type: t.type };
+  }
+
   ownUnitsIn(x0: number, y0: number, x1: number, y1: number): { id: number; type: number }[] {
     return this.units
       .filter((u) => u.owner === ME && at(u.cx) >= x0 && at(u.cx) <= x1 && at(u.cy) >= y0 && at(u.cy) <= y1)

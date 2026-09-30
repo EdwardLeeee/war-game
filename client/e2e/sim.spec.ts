@@ -105,6 +105,67 @@ test("暫停時下指令：模擬停住、指令照收，按繼續後才執行",
   await expect.poll(() => distanceTo(page, target), { timeout: 15_000 }).toBeLessThan(before - 5);
 });
 
+// User report 2026-09-30 (iPhone, 8a0b002): 「點果樹跟金礦沒反應耶」「有阿我有先選」.
+// Farmers the economy sent to the berries and the gold mine stand next to them; a tap on
+// the resource used to re-select the nearest farmer instead of ordering gather.
+test("選了農民點野果、點金礦（旁邊有農民在採）→ 送出採集，農民真的去採", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await start(page, "?test=1&tps=60");
+  const nodes = await page.evaluate(() => window.__proto?.game?.nodes() ?? []);
+  const berries = nodes.filter((n) => n.kind === 2 && n.amount > 0);
+  const gold = nodes.filter((n) => n.kind === 1 && n.amount > 0);
+  expect(berries.length).toBeGreaterThan(0);
+  expect(gold.length).toBeGreaterThan(0);
+  const workingNextTo = async (list: typeof nodes) =>
+    (await farmers(page)).some((f) => list.some((n) => Math.hypot(f.fx - (n.cx + 0.5), f.fy - (n.cy + 0.5)) < 1.6));
+  // The economy sends farmers to the berries (the first food) on its own.
+  await expect.poll(() => workingNextTo(berries), { timeout: 30_000 }).toBe(true);
+  await pause(page);
+  const ids = (await farmers(page)).map((f) => f.id).sort((a, b) => a - b);
+  await page.evaluate((u) => window.__proto?.game?.select(u), ids);
+
+  // Berries zoomed out to 0.6, where the old 22 pt pick radius (36.7 px, 1.15 cells) reaches a
+  // farmer working the next cell: the failing case, checked below. Gold at the default zoom.
+  for (const [name, list, scale] of [
+    ["berries", berries, 0.6],
+    ["gold", gold, 1],
+  ] as const) {
+    // The resource cell with a farmer closest to it: the case that used to re-select the farmer.
+    const all = await farmers(page);
+    const nearest = (n: (typeof list)[number]) => Math.min(...all.map((f) => Math.hypot(f.fx - (n.cx + 0.5), f.fy - (n.cy + 0.5))));
+    const target = [...list].sort((a, b) => nearest(a) - nearest(b))[0];
+    if (name === "berries") {
+      expect(nearest(target), "a farmer is inside the old pick radius, so the old rule would have re-selected it").toBeLessThan(22 / scale / 32);
+    }
+    await page.evaluate(([x, y, z]) => window.__proto?.game?.centerOn(x, y, z), [target.cx, target.cy, scale] as const);
+    await tap(page, await toScreen(page, { x: target.cx, y: target.cy }));
+    await expect.poll(() => lastSent(page), { message: name }).toMatchObject({ c: "gather", u: ids, node: target.id });
+    expect(await selection(page), `${name}: the selection stays the farmers`).toEqual({ units: ids, building: null });
+    await shot(page, info, `gather-${name}`);
+    await page.getByRole("button", { name: "繼續" }).tap();
+    // Every selected farmer takes the order (the simulation may spread them over the
+    // resource's cells), and they get to work on it.
+    const cells = new Set(list.map((n) => n.id));
+    await expect
+      .poll(async () => (await farmers(page)).filter((f) => f.order === 4 && cells.has(f.target)).length, { timeout: 30_000, message: name })
+      .toBe(ids.length);
+    await expect
+      .poll(async () => (await farmers(page)).some((f) => cells.has(f.target) && f.action === 3), { timeout: 30_000, message: name })
+      .toBe(true);
+    await pause(page);
+  }
+});
+
+test("沒選農民時點資源點：顯示它是什麼、剩多少，並提示先選農民", async ({ page }) => {
+  await start(page);
+  const berry = (await page.evaluate(() => window.__proto?.game?.nodes() ?? [])).find((n) => n.kind === 2 && n.amount > 0);
+  if (berry === undefined) throw new Error("no berries");
+  await pause(page);
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y), [berry.cx, berry.cy] as const);
+  await tap(page, await toScreen(page, { x: berry.cx, y: berry.cy }));
+  await expect(page.getByRole("status").filter({ hasText: /野果（糧）剩 \d+：先選農民再點它，就會去採/ })).toBeVisible();
+});
+
 test("速度：正常 → 快 1.5× → 慢 0.75× → 正常（每秒 20、30、15 tick）", async ({ page }) => {
   await start(page);
   await expect.poll(async () => (await header(page)).speed).toBe(2000);
