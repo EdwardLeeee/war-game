@@ -36,7 +36,13 @@ async function farmers(page: Page) {
   return (await units(page)).filter((u) => u.owner === me && u.type === FARMER);
 }
 
-/** Double-tap a farmer: selects every farmer on screen. */
+/** Pause with the 暫停 button (farmers go to work on their own, so they would walk away from the taps). */
+async function pause(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "暫停" }).tap();
+  await expect.poll(async () => (await header(page)).paused).toBe(true);
+}
+
+/** Double-tap a farmer: selects every farmer on screen. Call while paused. */
 async function selectFarmers(page: Page): Promise<number[]> {
   const list = await farmers(page);
   await doubleTap(page, { x: list[0].sx, y: list[0].sy });
@@ -68,18 +74,19 @@ test("開局：模擬在跑，自己有 5 名農民", async ({ page }, info) => 
 
 test("選農民 → 點地面前進：農民往那裡走", async ({ page }) => {
   await start(page, "?test=1&tps=60");
+  await pause(page);
   const ids = await selectFarmers(page);
   const target = await groundNearFarmers(page, 6, -3);
   const before = await distanceTo(page, target);
   await tap(page, await toScreen(page, target));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: ids, x: target.x, y: target.y });
+  await page.getByRole("button", { name: "繼續" }).tap();
   await expect.poll(() => distanceTo(page, target), { timeout: 15_000 }).toBeLessThan(before - 5);
 });
 
 test("暫停時下指令：模擬停住、指令照收，按繼續後才執行", async ({ page }, info) => {
   await start(page, "?test=1&tps=60");
-  await page.getByRole("button", { name: "暫停" }).tap();
-  await expect.poll(async () => (await header(page)).paused).toBe(true);
+  await pause(page);
   await expect(page.getByText("暫停中：仍可下指令")).toBeVisible();
   const frozen = (await header(page)).tick;
 
@@ -118,6 +125,7 @@ test("模擬還沒做的指令（投降）顯示「原型尚未開放」；已�
   await page.evaluate(() => window.__proto?.game?.send({ c: "surrender" }));
   await expect(page.getByRole("status").filter({ hasText: "原型尚未開放" })).toBeVisible();
   // Farmers tapping their own undamaged main city: repair is a real rule, so it says why.
+  await pause(page);
   const ids = await selectFarmers(page);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
