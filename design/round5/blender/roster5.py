@@ -440,9 +440,27 @@ def build_siege_w(P):
     return u
 
 
+# ---------------------------------------------------------------- 槍兵 option A (R5-03)
+
+def build_spear_e_drape(P):
+    """R2's spearman with a player-colour cloth drape over the (neutral) lamellar tassets: front and
+    both sides, open at the back. Same rule as the crossbowman: the armour itself never takes the
+    player colour, a cloth layer does (ceo 2026-09-30)."""
+    u = units2.build_spear_e(P, "C")
+    r = u.rigs["body"]
+    body2.zero_pose(r)
+    tb, lg = units2._bones_torso(r), units2._bones_legs(r)
+    mage4.folded_lathe("spear_e_drape", [(0.176, 1.02), (0.214, 0.88), (0.25, 0.62), (0.256, 0.54)], P["team"], r,
+                       tb[:1] + lg, folds=(8, 0.045), scale=(1, 0.84, 1), cut=lambda c: c.y < -0.05)
+    r.pose()
+    return u
+
+
 BUILDERS = {"farmer_e": build_farmer_e, "farmer_w": build_farmer_w, "xbow_e": build_xbow_e, "bow_w": build_bow_w,
             "pike_w": build_pike_w, "siege_e": build_siege_e, "siege_w": build_siege_w}
 
 
-def build(kind):
+def build(kind, variant=0):
+    if kind == "spear_e" and variant == 1:
+        return build_spear_e_drape(units2.palette("C"))
     return BUILDERS[kind](units2.palette("C"))

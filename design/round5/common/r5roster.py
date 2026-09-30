@@ -1,7 +1,9 @@
 """R5-02 兵種總表: the 12 units at level C.
 
 python3 common/r5roster.py
--> out/R5-02-兵種總表-A-C精緻度-mobile.png   formations at actual size (both colour pairings),
+-> out/R5-03-槍兵玩家色-{0,A}-...-mobile.png spearman: player colour only on the back banner (0) or a
+                                              cloth drape over the tassets (A), actual size and zoomed
+   out/R5-02-兵種總表-A-C精緻度-mobile.png   formations at actual size (both colour pairings),
                                               the same battle at phone pixels, every unit in
                                               blue and red, evaluations and texture memory
    out/R5-02-兵種總表-A-C精緻度-放大.png       12 cells: R1 next to R5 (idle and action), what changed
@@ -32,7 +34,8 @@ UNITS = {
         ("farmer_e", "rosterE1", "農夫", "attack04", "farmer_e_v0_f1_chop3",
          "斗笠加大，加上編織紋和繫繩；麻布短袍有褶子；玩家色從細腰帶改成腰帶加一片垂到膝的前片；加綁腿；斧柄纏皮。"),
         ("spear_e", "rosterE1", "槍兵", "attack04", "spear_e_v0_f0_attack1",
-         "R2 已經做到 C，這輪沒改：漆甲、頭盔與頸甲、背旗與金流蘇。"),
+         "R2 已經做到 C（漆甲、頭盔與頸甲、背旗與金流蘇）。這輪在甲裙外面加一層玩家色的前垂布"
+         "（R5-03 的 A；原本只有背旗，實際大小下敵我不好分）。"),
         ("xbow_e", "rosterE1", "弩手", "attack01", "xbow_e_v0_f0_attack0",
          "漆皮背心改成貼身；玩家色從背旗再加上整圈下裙（身前看得到）；幞頭加頂髻和兩根硬腳；腰側加箭匣；弩加銅機和扳機。"),
         ("hcav_e", "rosterE2", "具裝騎兵", "walk02", "hcav_e_v0_f0_walk2",
@@ -63,6 +66,8 @@ TEAM_OF = {"blue": "e", "red": "w"}      # r2art.TEAM keys: e = blue, w = red
 
 
 def unit_dir(folder, kind):
+    if kind == "spear_e" and (R5 / "spearA" / "spear_e_f7_idle03_x3.json").exists():
+        folder = "spearA"          # R5-03 option A (ceo 2026-09-30: the roster uses A unless the user picks 0)
     d = R5 / folder
     if kind == "mage_w" and not (d / "mage_w_f4_idle03_x3.json").exists():
         return R5 / "mageWB"        # R5-01 renders until rosterW3 arrives (no facing-4 frames there)
@@ -200,7 +205,22 @@ def memory(areas):
 
 # ---------------------------------------------------------------- boards
 
-EVAL = []          # (text, colour) filled in after looking at the renders
+EVAL = [           # judged on the actual-size battles (both colour pairings), magnified without smoothing
+    ("東陸農夫：大斗笠加玩家色腰裙；腰裙包住前面和兩側，正側面也看得到，敵我分得出。", "g"),
+    ("西陸農民：玩家色頭巾加圍裙；圍裙在正側面只剩一條線，所以頭巾也改成玩家色，從哪個方向都分得出敵我。", "g"),
+    ("東陸槍兵：這張用 R5-03 的 A（甲裙外面加玩家色前垂布），實際大小下敵我分得出。"
+     "原本只有背旗，實際大小下只是一小點，對照在 R5-03。", "g"),
+    ("東陸弩手：玩家色下裙很清楚；拿弩的姿勢和槍兵不同，但兩者都是深褐色的甲，擠在一起時主要靠下裙的顏色分。", "n"),
+    ("西陸長矛兵：鐵帽的圓盤加玩家色罩袍，一眼和長弓兵、東陸槍兵分開。", "g"),
+    ("西陸長弓兵：綠兜帽加玩家色罩衣，和戴鐵帽的長矛兵分得開。", "g"),
+    ("具裝騎兵、騎士：馬衣的玩家色面積大，敵我最清楚；褐馬漆甲和灰馬鐵盔也分得開。", "g"),
+    ("霹靂車、投石機：玩家色是大旗子；一個是高架加拉索、一個是低矮的扭力臂，外型分得開。車身本身沒有玩家色。", "g"),
+    ("法師：劍修是淡色長衫、學院大師是深色長袍，兩個分得開；學院大師長袍到腳、沒戴帽，"
+     "也和 C 版的長弓兵、長矛兵分得開（R5-01 的比較在這裡用 C 版再比一次）。", "g"),
+    ("法師開防護罩時，玩家色（劍修的腰帶、學院大師的披肩）在罩子裡會變淡。", "n"),
+    ("兩邊的長槍、長矛、騎槍都是褐色細線，戰線交錯的地方看不出是誰的（R1 就有這個情況，拿武器的人本身分得出）。", "n"),
+    ("藍紅對調後結果一樣：兩種顏色都檢查過。", "g"),
+]
 MEMO_NOTES = []
 
 
@@ -299,7 +319,10 @@ def memo_notes(m5, m1, mean5, mean1, a5, a1):
            (f"平均修邊面積：R5 約 {mean5:.0f} px，R1 約 {mean1:.0f} px（3 倍，依各兵種影格數加權）。", "n"),
            ("變大最多的："
             + "、".join(f"{names[k]} {r:.1f} 倍" for r, k in big) + "（長武器、舉起的工具和更長的罩袍讓修邊框變大）。", "n"),
-           ("算法和 R1 相同：影格數 × 平均修邊面積 × 每像素位元組；影格數照 R1 的量產估計"
+           ("兩種算法：R1 當時（366 MB）是把所有取樣影格的平均面積乘上總影格數，每個兵種一樣重；"
+            "這張依各兵種的影格數加權（法師每方向 80 張、農夫 68 張、其他 36 張）。"
+            "R1 改用這張的算法是 324 MB，和 R5 比的是這個數字。", "n"),
+           ("共同的部分：影格數 × 平均修邊面積 × 每像素位元組；影格數照 R1 的量產估計"
             "（每方向待機 8、走路 8、攻擊 10、倒下 10，法師 80，農夫另加 32；8 方向裡 3 個用鏡像）。"
             "建築這輪沒改，沿用 R1。", "n")]
     return out
@@ -358,6 +381,81 @@ def zoom_sheet():
     print("wrote", label)
 
 
+# ---------------------------------------------------------------- R5-03 槍兵玩家色
+
+SPEAR = {
+    "0": dict(folder="rosterE1", name="現況",
+              sub="選項 0：R2 核准的槍兵，玩家色只有背上的小旗",
+              lines=[("實際大小下背旗只是一小點；兩隊槍兵對上時（例如四方混戰裡東陸打東陸），看起來都是一片深褐色，"
+                      "幾乎分不出敵我。", "r"),
+                     ("背旗在右前和側面常被身體和頭擋住一部分。", "n")]),
+    "A": dict(folder="spearA", name="前垂布",
+              sub="選項 A：甲裙外面加一層玩家色的布（前面和兩側，背後露出甲裙）；甲本身不變，背旗保留",
+              lines=[("實際大小下是清楚的色塊，右前和側面都看得到；兩隊槍兵對上時一眼分得出敵我。", "g"),
+                     ("甲本身不用玩家色，只有布是換色區，和弩手的下裙同一個原則。", "g"),
+                     ("放大時前面的甲裙被布蓋住，漆甲片看到的比較少。", "n")]),
+}
+
+
+def spear_line(folder, colours, px_per_pt):
+    """Two lines of spearmen from the same culture facing each other (the right line is mirrored)."""
+    w_pt, h_pt = 200, 110
+    can = r2art.ground(int(w_pt * px_per_pt), int(h_pt * px_per_pt), zoom=px_per_pt / 3)
+    d = R5 / folder
+    spots = [(40, 30, "idle03"), (48, 50, "walk02"), (40, 70, "walk06"), (48, 90, "idle03")]
+    items = [(x, y, fr, False, colours[0]) for x, y, fr in spots] + \
+            [(200 - x, y, fr, True, colours[1]) for x, y, fr in spots]
+    f = px_per_pt / 3
+    for x, y, fr, flip, col in sorted(items, key=lambda t: t[1]):
+        sp = r5art.sprite(d, f"spear_e_f0_{fr}", "x3", fx=False, team=TEAM_OF[col], glow=False)
+        im, ax = sp.img, sp.anchor[0]
+        if flip:
+            im = im.transpose(Image.FLIP_LEFT_RIGHT)
+            ax = im.width - ax
+        if f != 1:
+            im = im.resize((max(1, int(im.width * f)), max(1, int(im.height * f))), Image.LANCZOS)
+        can.alpha_composite(im, (int(x * px_per_pt - ax * f), int(y * px_per_pt - sp.anchor[1] * f)))
+    return can
+
+
+def spear_board(opt):
+    o = SPEAR[opt]
+    label = f"R5-03-槍兵玩家色-{opt}-{o['name']}-mobile"
+    d = R5 / o["folder"]
+    r1 = [spear_line(o["folder"], ("blue", "red"), 1), spear_line(o["folder"], ("red", "blue"), 1)]
+    r2 = [spear_line(o["folder"], ("blue", "red"), 3)]
+    zs = [r5art.sprite(d, n, "x6", fx=False, team="e", glow=False) for n in ("spear_e_f7_idle03", "spear_e_f7_attack04")]
+    zs += [r5art.sprite(d, "spear_e_f7_idle03", "x6", fx=False, team="w", glow=False)]
+    r3 = [r5art.place_row([(z, 6) for z in zs], 4.5, 60, 60)]
+    M = 70
+    W = max(sum(i.width for i in r) + 30 * (len(r) - 1) for r in (r1, r2, r3)) + 2 * M + 820
+    heads = ["實際大小：1 pt = 1 px（兩隊東陸槍兵對上；左：藍對紅，右：紅對藍）",
+             "手機像素：1 pt = 3 px（藍對紅）",
+             "放大：1 pt = 4.5 px（右前待機、突刺；最右是紅隊）"]
+    H = 210 + sum(max(i.height for i in r) + 90 for r in (r1, r2, r3)) + 40
+    art = Image.new("RGB", (W, H), BG)
+    dr = ImageDraw.Draw(art)
+    dr.text((M, 40), label, font=artboard.font(56), fill=INK)
+    r2art._wrap(dr, M, 118, o["sub"], GREY, 28, W - 2 * M - 820)
+    y = 210
+    for head, row in zip(heads, (r1, r2, r3)):
+        dr.text((M, y), head, font=artboard.font(28), fill=INK)
+        y += 50
+        x = M
+        for im in row:
+            art.paste(im.convert("RGB"), (x, y))
+            x += im.width + 30
+        y += max(i.height for i in row) + 40
+    x0 = W - 820 + 10
+    yy = 210
+    dr.text((x0, yy), "評估", font=artboard.font(30), fill=INK)
+    yy += 50
+    for t, c in o["lines"]:
+        yy = r2art._wrap(dr, x0, yy, t, r2art._col(c), 24, 780)
+    art.save(OUT / f"{label}.png")
+    print("wrote", label)
+
+
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     a5, a1 = areas_r5(), areas_r1()
@@ -366,3 +464,6 @@ if __name__ == "__main__":
     print(memory(a5)[0]["3x"], memory(a1)[0]["3x"])
     roster_board()
     zoom_sheet()
+    for o in SPEAR:
+        if (R5 / SPEAR[o]["folder"]).exists():
+            spear_board(o)

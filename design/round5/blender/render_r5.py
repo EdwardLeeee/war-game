@@ -37,6 +37,8 @@ ROSTER = {
                  ("bow_w", [2.8, 3.2, 0.5, 0.74], ("attack", 4), {})],
     "rosterW2": [("knight_w", [7.6, 4.4, 0.5, 0.75], ("walk", 2), {}),
                  ("siege_w", [5.6, 4.4, 0.5, 0.72], ("attack", 2), {})],
+    # R5-03 槍兵 option A: player-colour cloth drape over the tassets (variant 1)
+    "spearA": [("spear_e", [6.4, 3.6, 0.5, 0.72], ("attack", 4), {"variant": 1})],
     # the West peasant again, after its headscarf became player colour
     "rosterW1farmer": [("farmer_w", [3.8, 3.4, 0.5, 0.8], ("attack", 4), {})],
     # the West mage chosen in R5-01 (使用者 2026-09-30：「b 學院大師」)
@@ -69,15 +71,18 @@ def run(target, preview=False):
             big = [(7, "idle", 3), (7, act, af)]
             small = [(side, "idle", 3), (side, "walk", 2), (side, "walk", 6)]
             items = [dict(facing=f, anim=a, frame=fr, passes=ps, out=str(out / nm(kind, f, a, fr))) for f, a, fr in big]
+            ex = dict(ex)
+            variant = ex.pop("variant", 0)
             extra = dict(r5=True, **ex)
             if preview:
-                batch.run(kind, items[:1], 60, level="C", frame_m=fm, tag="r5p", outputs={"x3": 60},
+                batch.run(kind, items[:1], 60, level="C", frame_m=fm, tag="r5p", outputs={"x3": 60}, variant=variant,
                           samples={"beauty": 12, "shadow": 8, "ao": 6, "fx": 8}, extra=extra)
                 continue
             batch.run(kind, items, 120, level="C", frame_m=fm, tag="r5", ss=2, outputs={"x6": 120, "x3": 60},
-                      extra=extra)
+                      extra=extra, variant=variant)
             items = [dict(facing=f, anim=a, frame=fr, passes=ps, out=str(out / nm(kind, f, a, fr))) for f, a, fr in small]
-            batch.run(kind, items, 60, level="C", frame_m=fm, tag="r5f", ss=2, outputs={"x3": 60}, extra=extra)
+            batch.run(kind, items, 60, level="C", frame_m=fm, tag="r5f", ss=2, outputs={"x3": 60}, extra=extra,
+                      variant=variant)
         print(f"R5 {target} renders done in {time.time() - t0:.0f}s")
         return
     style = target.replace("mage", "")

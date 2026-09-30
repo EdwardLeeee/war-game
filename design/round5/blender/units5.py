@@ -9,7 +9,7 @@ def build(kind, variant=0, mage_style=None):
         import mage4
         return mage4.build(mage_style)
     import roster5
-    if kind in roster5.BUILDERS:
-        return roster5.build(kind)
+    if kind in roster5.BUILDERS or (kind == "spear_e" and variant == 1):
+        return roster5.build(kind, variant)
     import units3
     return units3.build(kind, variant, mage_style)
