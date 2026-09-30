@@ -109,13 +109,11 @@ test("長按空地 350 ms 後拖曳 → 框選，優先選軍隊", async ({ page
 });
 
 test("單指拖曳 → 移動畫面，放開後有慣性", async ({ page }) => {
-  const before = await camera(page);
-  await drag(page, { x: 600, y: 200 }, { x: 300, y: 200 }, 10, 120);
-  const after = await camera(page);
-  expect(after?.x ?? 0).toBeGreaterThan((before?.x ?? 0) + 250);
-  expect(after?.flinging).toBe(true);
+  const before = (await camera(page))?.x ?? 0;
+  const atLift = await drag(page, { x: 600, y: 200 }, { x: 300, y: 200 }, 10, 120);
+  expect(atLift, "the map follows the finger").toBeGreaterThan(before + 250);
   await page.waitForTimeout(300);
-  expect((await camera(page))?.x ?? 0).toBeGreaterThan(after?.x ?? 0);
+  expect((await camera(page))?.x ?? 0, "and keeps sliding after the finger lifts").toBeGreaterThan(atLift + 20);
   // A drag that stops before the finger lifts does not fling.
   await drag(page, { x: 300, y: 200 }, { x: 400, y: 200 }, 10, 200, 150);
   await page.waitForTimeout(200);

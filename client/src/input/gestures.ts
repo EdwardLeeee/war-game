@@ -162,7 +162,6 @@ export class GestureRecognizer {
         if (!cancelled && !this.noTap) this.tap(f.startX, f.startY, t);
         break;
       case "pan": {
-        this.sample(x, y, t);
         const v = cancelled ? { vx: 0, vy: 0 } : this.velocity(t);
         this.host.panEnd(v.vx, v.vy);
         break;
@@ -238,15 +237,21 @@ export class GestureRecognizer {
 
   private sample(x: number, y: number, t: number): void {
     this.samples.push({ x, y, t });
-    while (this.samples.length > 0 && t - this.samples[0].t > INERTIA_SAMPLE_MS * 2) this.samples.shift();
+    while (this.samples.length > 2 && t - this.samples[0].t > INERTIA_SAMPLE_MS * 4) this.samples.shift();
   }
 
-  /** Average velocity over the last INERTIA_SAMPLE_MS; a finger that stopped before lifting flings nothing. */
+  /**
+   * Velocity over the last INERTIA_SAMPLE_MS of movement, measured back from the last move
+   * (not from the lift, so sparse move events on a busy device still fling). A finger that
+   * stopped for INERTIA_SAMPLE_MS before lifting flings nothing.
+   */
   private velocity(t: number): { vx: number; vy: number } {
-    const recent = this.samples.filter((s) => t - s.t <= INERTIA_SAMPLE_MS);
+    const last = this.samples[this.samples.length - 1];
+    if (last === undefined || t - last.t > INERTIA_SAMPLE_MS) return { vx: 0, vy: 0 };
+    let recent = this.samples.filter((s) => last.t - s.t <= INERTIA_SAMPLE_MS);
+    if (recent.length < 2) recent = this.samples.slice(-2);
     if (recent.length < 2) return { vx: 0, vy: 0 };
     const first = recent[0];
-    const last = recent[recent.length - 1];
     const dt = last.t - first.t;
     if (dt <= 0) return { vx: 0, vy: 0 };
     return { vx: (last.x - first.x) / dt, vy: (last.y - first.y) / dt };

@@ -25,8 +25,15 @@ interface Step {
 
 const step = (type: Kind, p: Pt, after = 0, id = 1): Step => ({ type, id, x: p.x, y: p.y, after });
 
-/** Dispatch the steps in the page; returns whether the hold cue was showing at `probeAt` (if given). */
-async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: number } | null = null): Promise<boolean> {
+interface RunResult {
+  /** The hold cue was showing at the probe. */
+  cue: boolean;
+  /** Camera x right after the last event (the lift), read in the page. */
+  cameraX: number;
+}
+
+/** Dispatch the steps in the page, optionally checking the hold cue some ms after one step. */
+async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: number } | null = null): Promise<RunResult> {
   return page.evaluate(
     async ({ steps, probe }) => {
       const canvas = document.querySelector("#stage canvas") as HTMLCanvasElement;
@@ -54,7 +61,7 @@ async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: 
           cue = el !== null && !el.hidden;
         }
       }
-      return cue;
+      return { cue, cameraX: window.__proto?.game?.camera().x ?? 0 };
     },
     { steps, probe },
   );
@@ -69,14 +76,14 @@ export async function doubleTap(page: Page, p: Pt): Promise<void> {
   await run(page, [step("pointerdown", p), step("pointerup", p, 30), step("pointerdown", p, 60), step("pointerup", p, 30)]);
 }
 
-/** Finger down, `steps` moves over `ms`, finger up `holdMs` after the last move. */
-export async function drag(page: Page, from: Pt, to: Pt, steps = 10, ms = 150, holdMs = 4): Promise<void> {
+/** Finger down, `steps` moves over `ms`, finger up `holdMs` after the last move. Returns the camera x at the lift. */
+export async function drag(page: Page, from: Pt, to: Pt, steps = 10, ms = 150, holdMs = 4): Promise<number> {
   const list = [step("pointerdown", from)];
   for (let i = 1; i <= steps; i++) {
     list.push(step("pointermove", { x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps }, ms / steps));
   }
   list.push(step("pointerup", to, holdMs));
-  await run(page, list);
+  return (await run(page, list)).cameraX;
 }
 
 /** Hold still past the long press, then (optionally) drag and lift. */
@@ -94,7 +101,7 @@ export async function longPress(page: Page, at: Pt, to: Pt | null = null, holdMs
 
 /** Put a finger down and report whether the hold cue shows `probeMs` later (finger stays down). */
 export async function pressShowsCue(page: Page, at: Pt, probeMs = 200): Promise<boolean> {
-  return run(page, [step("pointerdown", at)], { afterStep: 0, wait: probeMs });
+  return (await run(page, [step("pointerdown", at)], { afterStep: 0, wait: probeMs })).cue;
 }
 
 export async function move(page: Page, to: Pt, id = 1): Promise<void> {

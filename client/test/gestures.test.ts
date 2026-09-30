@@ -139,6 +139,14 @@ test("releasing a pan while moving flings; stopping first flings nothing", () =>
   const [, vx] = moving.host.of("panEnd")[0];
   assert.equal(vx, 2);
 
+  // Sparse moves (a busy main thread) still fling: the last two moves give the speed.
+  const sparse = setup();
+  sparse.g.down(1, 0, 0, 0);
+  sparse.g.move(1, 50, 0, 150);
+  sparse.g.move(1, 250, 0, 350);
+  sparse.g.up(1, 250, 0, 355);
+  assert.equal(sparse.host.of("panEnd")[0][1], 1);
+
   const stopped = setup();
   stopped.g.down(1, 0, 0, 0);
   for (let t = 10; t <= 100; t += 10) stopped.g.move(1, t * 2, 0, t);
