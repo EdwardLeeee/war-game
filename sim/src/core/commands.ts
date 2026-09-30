@@ -43,6 +43,15 @@ function ownUnits(w: World, p: number, ids: number[]): number[] {
   return slots.sort((a, b) => a - b);
 }
 
+/**
+ * Farmers the player sends somewhere (move, retreat, stop, attack) wait there once idle;
+ * giving them work (gather, build, repair) ends that (GDD section 4, `stay`).
+ */
+function placed(w: World, slots: number[], stay: boolean): void {
+  const u = w.units.col;
+  for (const s of slots) if (u.type[s] === UnitType.Farmer) u.stay[s] = stay ? 1 : 0;
+}
+
 /** Once a command is accepted, farmers hidden by recall come out to follow it. */
 function releaseAll(ctx: CommandContext, slots: number[]): void {
   for (const s of slots) ctx.econ.release(ctx.w, s);
@@ -102,6 +111,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (!cellOk(w, cmd.x, cmd.y)) return Reject.InvalidTarget;
       releaseAll(ctx, slots);
       formation(ctx, slots, cmd.x, cmd.y, cmd.c === "move" ? Order.Move : Order.Retreat);
+      placed(w, slots, true);
       return 0;
     }
     case "attack": {
@@ -109,6 +119,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (slots.length === 0) return Reject.NotOwner;
       if (!targetable(ctx, p, cmd.target)) return Reject.InvalidTarget;
       releaseAll(ctx, slots);
+      placed(w, slots, true);
       const u = w.units.col;
       for (const s of slots) {
         u.order[s] = Order.Attack;
@@ -123,6 +134,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       const slots = ownUnits(w, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
       releaseAll(ctx, slots);
+      placed(w, slots, true);
       const u = w.units.col;
       for (const s of slots) {
         u.order[s] = Order.None;
@@ -155,6 +167,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       const node = cmd.node;
       if (!Number.isInteger(node) || node < 0 || node >= w.nodeAmount.length) return Reject.InvalidTarget;
       if (ctx.fog.nodeSeen[p][node] < 0 || !nodeOpen(w, node)) return Reject.InvalidTarget;
+      placed(w, farmers, false);
       for (const s of farmers) {
         ctx.econ.release(w, s);
         ctx.econ.gather(w, s, node, false);
@@ -173,6 +186,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       pay(w, p, info.cost, 1);
       const id = w.addBuilding(p, type, cmd.x, cmd.y, 1, 0);
       if (!info.walkable) pushOut(w, cmd.x, cmd.y, info.size);
+      placed(w, farmers, false);
       for (const s of farmers) {
         ctx.econ.release(w, s);
         ctx.econ.work(w, s, Order.Build, id);
@@ -191,6 +205,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       else if (b.hp[bs] < info.hp) order = Order.Repair;
       else if (b.type[bs] === BuildingType.Farm) order = Order.Gather;
       if (order === Order.None) return Reject.NotAvailable;
+      placed(w, farmers, false);
       if (order === Order.Gather) {
         // One farmer per farm: the first named farmer takes it if it is free.
         if (ctx.econ.farmTakenBy(w, cmd.building, -1) && !farmers.some((s) => w.units.col.orderTarget[s] === cmd.building && w.units.col.onFarm[s] === 1)) {

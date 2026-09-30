@@ -16,6 +16,10 @@ export const UNIT_COLS = [
   // the work accumulator, whether this tick's decide put the farmer at its work, and the
   // order recall interrupted (restored when recall ends).
   "task", "onFarm", "acc", "working", "prevOrder", "prevTarget", "prevOnFarm",
+  // 1 = the player sent this farmer somewhere (move, retreat, stop, attack): once idle it
+  // waits there and automatic work (auto-repair, the economy ratio) leaves it alone, until
+  // the player gives it work (gather, build, repair). Recall still takes it (GDD section 4).
+  "stay",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 

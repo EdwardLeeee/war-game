@@ -366,7 +366,8 @@ export class Economy {
    * Every ECO_EVERY ticks, per player, idle farmers get work: during recall they go and
    * hide; otherwise they repair a damaged building nearby, and then, with the economy ratio
    * on, go to the resource furthest below its share (ties: food, wood, gold). Crystal is
-   * never assigned: the vein is by hand only.
+   * never assigned: the vein is by hand only. Farmers the player placed (`stay`) are left
+   * where they are, except by recall.
    */
   periodic(w: World): void {
     if (w.tick % ECO_EVERY !== 0) return;
@@ -386,8 +387,10 @@ export class Economy {
         for (const i of idle) this.recallFarmer(w, i);
         continue;
       }
+      // Farmers the player placed wait where they are (GDD section 4).
       const rest: number[] = [];
       for (const i of idle) {
+        if (u.stay[i] === 1) continue;
         const t = this.repairTarget(w, i);
         if (t >= 0) this.work(w, i, Order.Repair, t);
         else rest.push(i);
