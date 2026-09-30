@@ -228,7 +228,8 @@ test("量測面板：量測中不能再按；log 框跟著最新一行，往上�
     const l = await lastLine.boundingBox();
     return b !== null && l !== null && l.y >= b.y - 1 && l.y + l.height <= b.y + b.height + 1;
   };
-  expect(await inside()).toBe(true);
+  // Retried until it holds: on a busy CI machine the scroll to the newest line can land a frame later (run 36712514983).
+  await expect.poll(inside, { message: "the newest line is inside the log box" }).toBe(true);
   await shot(page, info, "lab-log-follows");
 
   await box.evaluate((el) => {
@@ -240,7 +241,7 @@ test("量測面板：量測中不能再按；log 框跟著最新一行，往上�
   await expect(more).toBeVisible();
   await more.tap();
   await expect(more).toBeHidden();
-  expect(await box.getByText("line 120", { exact: true }).isVisible()).toBe(true);
+  await expect(box.getByText("line 120", { exact: true })).toBeVisible();
 });
 
 test("戰場上的按鈕至少 44 pt、不被安全區蓋住", async ({ page }) => {
