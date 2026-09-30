@@ -5,8 +5,8 @@ garments and level-C detail. Player colour is large and faces the camera (R3/R4 
 
 farmer_e 農夫   wider woven 斗笠 with a chin cord, hemp short robe, player-colour waist wrap
                 (front panel to the knees) and sash, leg wraps, straw sandals, axe.
-farmer_w 農民   (new) ochre headscarf, short belted russet tunic, laced boots, player-colour bib
-                apron from chest to knees, hoe.
+farmer_w 農民   (new) player-colour headscarf and bib apron (chest to knees), short belted russet
+                tunic, laced boots, hoe.
 xbow_e   弩手   幞頭 cap with two tails, lacquered leather vest over an ochre tunic, player-colour
                 skirt, bolt case at the hip, back banner, crossbow with bronze fittings.
 bow_w    長弓兵 moss hood with a long tail and a moss shoulder cape, player-colour tabard, quiver of
@@ -42,7 +42,6 @@ def X5():
         straw=mat("straw5", (0.8, 0.66, 0.36), 0.9, noise=0.3, noise_scale=40),
         strawdark=mat("strawdark5", (0.55, 0.43, 0.22), 0.9, noise=0.3, noise_scale=40),
         linen=mat("linen5", (0.84, 0.8, 0.7), 0.85, noise=0.1, noise_scale=6, pattern="cloth", pattern_scale=100),
-        scarf=mat("scarf5", (0.74, 0.6, 0.32), 0.85, noise=0.12, noise_scale=6, pattern="cloth", pattern_scale=100),
         russet=mat("russet5", (0.42, 0.27, 0.17), 0.85, noise=0.15, noise_scale=6, pattern="cloth", pattern_scale=90),
         ochre=mat("ochre5", (0.62, 0.44, 0.2), 0.8, noise=0.12, noise_scale=6, pattern="cloth", pattern_scale=90),
         moss=mat("moss5", (0.22, 0.26, 0.14), 0.85, noise=0.15, noise_scale=6, pattern="cloth", pattern_scale=90),
@@ -153,13 +152,14 @@ def build_farmer_w(P):
                                             (0.08 * s, -0.14, 1.28)], 0.035, P["team"], r, tb)
     r.pose()
     head = r.j["head"]
-    # a loose kerchief, fuller than the skull, knotted at the nape with two tails to the shoulders
+    # player colour, seen from every side (the apron is edge-on in side view): a loose kerchief,
+    # fuller than the skull, knotted at the nape with two tails to the shoulders
     sc = lathe("farmer_w_scarf", [(0.15, 0.02), (0.158, 0.13), (0.153, 0.24), (0.1, 0.315), (0.03, 0.34), (0.0, 0.345)],
-               X["scarf"], head, segs=28, at=(0, -0.02, 0))
+               P["team"], head, segs=28, at=(0, -0.02, 0))
     _cut_head(sc, lambda c: c.y > 0.04 and c.z < 0.24)
-    sphere("farmer_w_knot", 0.052, X["scarf"], head, at=(0, -0.17, 0.1), scale=(1.3, 1, 0.9))
+    sphere("farmer_w_knot", 0.052, P["team"], head, at=(0, -0.17, 0.1), scale=(1.3, 1, 0.9))
     for s in (-1, 1):
-        rod(f"farmer_w_scarftail{s}", (0.02 * s, -0.18, 0.08), (0.075 * s, -0.22, -0.17), 0.03, X["scarf"],
+        rod(f"farmer_w_scarftail{s}", (0.02 * s, -0.18, 0.08), (0.075 * s, -0.22, -0.17), 0.03, P["team"],
             parent=head, r2=0.012)
     g = grip(r, "R", "hoe")
     rod("farmer_w_haft", (0, 0, 0.3), (0, 0, -1.1), 0.018, X["wood"], parent=g)

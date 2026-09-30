@@ -81,8 +81,9 @@ def crystal_mask(img, d=None, key=None):
 
 
 def sprite(d, name, scale, fx=True, team="w", glow=True):
-    """B-look sprite (AO, player colour, shadow, effects) plus a soft glow round the staff crystal."""
-    key = f"{name}_{scale}"
+    """B-look sprite (AO, player colour, shadow, effects) plus a soft glow round the staff crystal.
+    scale None reads R1's unsuffixed sprites (3x)."""
+    key = f"{name}_{scale}" if scale else name
     b = compose.load(d, key, "beauty")
     img = b.img
     crystal = crystal_mask(img, d, key) if glow else None
@@ -101,7 +102,7 @@ def sprite(d, name, scale, fx=True, team="w", glow=True):
     if glow and crystal.any():
         layer = np.zeros((img.height, img.width, 4), np.uint8)
         layer[crystal] = (120, 235, 255, 255)
-        halo = Image.fromarray(layer, "RGBA").filter(ImageFilter.GaussianBlur(3 if scale == "x3" else 6))
+        halo = Image.fromarray(layer, "RGBA").filter(ImageFilter.GaussianBlur(6 if scale == "x6" else 3))
         h = np.asarray(halo, np.float32)
         h[..., 3] = np.clip(h[..., 3] * 1.8, 0, 200)
         out.alpha_composite(Image.fromarray(h.astype(np.uint8), "RGBA"))
@@ -110,7 +111,7 @@ def sprite(d, name, scale, fx=True, team="w", glow=True):
         out.alpha_composite(Image.fromarray(core, "RGBA"))
     if fx and (d / f"{key}_fx.png").exists():
         f = Image.open(d / f"{key}_fx.png").convert("RGBA")
-        out.alpha_composite(f.filter(ImageFilter.GaussianBlur(6 if scale == "x3" else 12)))
+        out.alpha_composite(f.filter(ImageFilter.GaussianBlur(12 if scale == "x6" else 6)))
         out.alpha_composite(f)
     return compose.Sprite(out, b.anchor)
 

@@ -37,6 +37,8 @@ ROSTER = {
                  ("bow_w", [2.8, 3.2, 0.5, 0.74], ("attack", 4), {})],
     "rosterW2": [("knight_w", [7.6, 4.4, 0.5, 0.75], ("walk", 2), {}),
                  ("siege_w", [5.6, 4.4, 0.5, 0.72], ("attack", 2), {})],
+    # the West peasant again, after its headscarf became player colour
+    "rosterW1farmer": [("farmer_w", [3.8, 3.4, 0.5, 0.8], ("attack", 4), {})],
     # the West mage chosen in R5-01 (使用者 2026-09-30：「b 學院大師」)
     "rosterW3": [("mage_w", MAGE_FRAME, ("cast", 20), {"mage_style": "WB"})],
 }
