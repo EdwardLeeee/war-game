@@ -76,6 +76,40 @@ def body_top():
     return z
 
 
+def extents():
+    """How far the unit reaches from the ground anchor on screen, in metres: (left, right, up, down).
+    Effects are left out (the flying bolt should become a projectile drawn by the game)."""
+    from mathutils import Euler as _E
+    bpy.context.view_layer.update()
+    rm = _E((60 * lib.D2R, 0, -45 * lib.D2R)).to_matrix()
+    right, up = rm @ Vector((1, 0, 0)), rm @ Vector((0, 1, 0))
+    xs, ys = [0.0], [0.0]
+    for ob in lib.ALL_PARTS:
+        if ob.hide_render and not ob.visible_camera:
+            continue
+        mw = ob.matrix_world
+        for c in ob.bound_box:
+            p = mw @ Vector(c)
+            xs.append(p.dot(right))
+            ys.append(p.dot(up))
+    return -min(xs), max(xs), max(ys), -min(ys)
+
+
+if job.get("fit"):
+    # measure only: pose every item and keep the largest reach in each direction
+    ext = [0.0, 0.0, 0.0, 0.0]
+    for it in job["items"]:
+        if it.get("n"):
+            u.frames = dict(getattr(u, "frames", {}), **{it["anim"]: it["n"]})
+        u.face(it["facing"])
+        u.pose(it["anim"], it["frame"])
+        ext = [max(a, b) for a, b in zip(ext, extents())]
+    with open(job["fit_out"], "w") as f:
+        json.dump(dict(left=ext[0], right=ext[1], up=ext[2], down=ext[3], items=len(job["items"])), f)
+    print(f"FIT {len(job['items'])} poses: left {ext[0]:.2f} right {ext[1]:.2f} up {ext[2]:.2f} down {ext[3]:.2f} m",
+          flush=True)
+    os._exit(0)                  # nothing to render
+
 t0 = time.time()
 n = 0
 for it in job["items"]:

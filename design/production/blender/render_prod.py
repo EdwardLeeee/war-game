@@ -21,6 +21,37 @@ import config  # noqa: E402
 import spec    # noqa: E402
 
 
+FIT_MARGIN_M = 0.12      # room left around the furthest reach, metres
+
+
+def fit_frame(target, extra, preview=False):
+    """Pose every frame in all eight facings without rendering and size the frame to the furthest
+    reach, so no weapon, flag or falling body is cut (the atlas trims each frame, so a large
+    frame costs render time but no memory)."""
+    u = spec.UNITS[target]
+    items = [dict(facing=f, anim=src, frame=i, n=n) for f in spec.ALL_FACINGS
+             for _, n, src, _ in u["anims"] for i in ([0] if preview else range(n))]
+    jobdir = config.BUILD / "jobs"
+    jobdir.mkdir(parents=True, exist_ok=True)
+    fit_out = config.BUILD / "prod" / target / "fit.json"
+    job = dict(kind=u["kind"], px_per_m=spec.PX_PER_M, emblem_dir=str(config.BUILD / "emblems"), items=items,
+               level="C", quality="hq", frame_m=u["frame"], fit=True, fit_out=str(fit_out), **extra)
+    path = jobdir / f"fit_{target}.json"
+    path.write_text(json.dumps(job))
+    log = jobdir / f"fit_{target}.log"
+    config.blender(HERE / "render_units.py", path, log=log)
+    txt = log.read_text()
+    if "Traceback" in txt or not fit_out.exists():
+        print(txt[-3000:])
+        raise SystemExit(f"fit failed: {log}")
+    e = json.loads(fit_out.read_text())
+    m = FIT_MARGIN_M
+    w, h = e["left"] + e["right"] + 2 * m, e["up"] + e["down"] + 2 * m
+    frame = [round(w, 3), round(h, 3), round((e["left"] + m) / w, 4), round((e["up"] + m) / h, 4)]
+    print(f"[{target}] fitted frame {frame} (spec had {u['frame']})", flush=True)
+    return frame, e
+
+
 def run(target, facings=None, anims=None, preview=False):
     u = spec.UNITS[target]
     raw = config.BUILD / "prod" / target / "raw"
@@ -29,6 +60,9 @@ def run(target, facings=None, anims=None, preview=False):
     extra = dict(variant=u.get("variant", 0), shadow_extra=list(spec.SHADOW_EXTRA))
     if u.get("style"):
         extra["mage_style"] = u["style"]
+    t_fit = time.time()
+    frame_m, reach = fit_frame(target, extra, preview)
+    fit_seconds = round(time.time() - t_fit, 1)
     todo = [f for f in spec.ALL_FACINGS if facings is None or f in facings]
     timing = {}
     t_all = time.time()
@@ -47,16 +81,17 @@ def run(target, facings=None, anims=None, preview=False):
             continue
         t0 = time.time()
         if preview:
-            batch.run(u["kind"], items, spec.PX_PER_M, level="C", frame_m=u["frame"], tag=f"prodp{f}",
+            batch.run(u["kind"], items, spec.PX_PER_M, level="C", frame_m=frame_m, tag=f"prodp{f}",
                       outputs={"x3": spec.PX_PER_M}, samples={"beauty": 12, "shadow": 8, "ao": 6, "fx": 8, "mask": 4},
                       variant=extra["variant"], extra={k: v for k, v in extra.items() if k != "variant"})
         else:
-            batch.run(u["kind"], items, spec.PX_PER_M, level="C", frame_m=u["frame"], tag=f"prod{f}",
+            batch.run(u["kind"], items, spec.PX_PER_M, level="C", frame_m=frame_m, tag=f"prod{f}",
                       ss=spec.SUPERSAMPLE, outputs={"x3": spec.PX_PER_M}, variant=extra["variant"],
                       extra={k: v for k, v in extra.items() if k != "variant"})
         timing[f] = dict(seconds=round(time.time() - t0, 1), frames=len(items), passes=len(passes))
         print(f"[{target}] facing {f}: {len(items)} frames x {len(passes)} passes in {time.time() - t0:.0f}s", flush=True)
-    stats = dict(target=target, seconds=round(time.time() - t_all, 1), facings=timing, preview=preview)
+    stats = dict(target=target, seconds=round(time.time() - t_all, 1), fit_seconds=fit_seconds, frame_m=frame_m,
+                 reach_m=reach, facings=timing, preview=preview)
     (config.BUILD / "prod" / target / "render_stats.json").write_text(json.dumps(stats, indent=1))
     print(f"[{target}] all done in {time.time() - t_all:.0f}s")
 
