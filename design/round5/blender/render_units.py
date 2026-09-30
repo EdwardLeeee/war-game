@@ -68,7 +68,7 @@ from mathutils import Vector     # noqa: E402
 # weapons, banners and effects do not count toward the body height
 EXCL = ("bpole", "bflag", "shaft", "_tip", "lance", "spear_e_tassel", "haft", "_axe", "pick", "xbow_e_stock", "xbow_e_prod", "xbow_e_str",
         "_blade", "_socket", "speartassel", "_float", "_fringe", "_bfinial", "mage_staff", "_hoe", "_tool",
-        "_bowlimb", "_bowstring", "_xbow",
+        "_bowlimb", "_bowstring", "_xbow", "_scabbard", "_hilt", "_pommel", "_swordguard",
         "bow_w_limb", "bow_w_string", "vamplate", "_shield", "fx_", "_flag", "_pole", "_finial")
 
 

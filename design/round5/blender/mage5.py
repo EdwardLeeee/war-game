@@ -1,8 +1,8 @@
 """R5-01 西陸晶術師 (West mage) designs, level C on the R2 body, R4 garment helpers.
 
 WA 晶劍士   young crystal swordsman, paired with the East 劍修: knee-length leather coat over a
-            light shirt, player-colour shoulder mantle and front sash; the staff is his sword, a
-            person-high shaft topped with a glowing crystal blade.
+            light shirt, player-colour shoulder mantle and front sash, a crystal-bladed longsword
+            across the back, a person-high staff topped with a glowing crystal blade.
 WB 學院大師 elder academy master: dark academic robe with wide sleeves and cream cuffs,
             player-colour shoulder capelet, cream stole down the front, long grey beard, soft round
             cap (no hood: hoods belong to the longbowmen), book at the belt, a tall gnarled staff
@@ -22,7 +22,7 @@ import lib
 import mage3
 import mage4
 from humanoid import ease, idle, walk
-from lib import box, ico, lathe, mat, rod, sphere
+from lib import box, cyl, ico, lathe, mat, rod, sphere
 
 
 def M5():
@@ -101,6 +101,13 @@ def style_wa(u, M):
     head = J["head"]
     sphere("mage_w_hair", 0.13, X["brownhair"], head, at=(0, -0.02, 0.14), scale=(1, 1.02, 0.92))
     box("mage_w_belt", (0.39, 0.3, 0.04), X["leather"], J["torso"], at=(0, 0, 0.0), bevel=0.01)
+    # crystal-bladed longsword slung across the back, hilt over the left shoulder (away from the staff);
+    # sheathed, so no glowing part competes with the staff crystal
+    sw = lib.empty("mage_w_swordroot", parent=J["torso"], loc=(0.0, -0.24, 0.24), rot=(12, -35, 0))
+    cyl("mage_w_scabbard", 0.032, 0.64, X["leather"], sw, at=(0, 0, -0.36), scale=(1, 0.45, 1))
+    box("mage_w_swordguard", (0.13, 0.035, 0.03), M["gold"], sw, at=(0, 0, 0.29), bevel=0.006)
+    cyl("mage_w_hilt", 0.018, 0.16, X["leather"], sw, at=(0, 0, 0.3))
+    sphere("mage_w_pommel", 0.026, M["gold"], sw, at=(0, 0, 0.48))
     g, head_at = staff(r, M, X, "blade")
     return r, head_at
 
