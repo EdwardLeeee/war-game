@@ -436,7 +436,8 @@ export class Hud {
   }
 
   /** GDD §5: 城鎮被攻下時，畫面會跳出兩個大按鈕：搶或治理. */
-  private openTownChoice(town: number): void {
+  /** 搶還是治理 (also reopened by tapping the town while it waits, GDD §10). */
+  openTownChoice(town: number): void {
     const size = this.game.view?.map.towns.find((t) => t.id === town)?.size;
     const big = size === TownSize.Large;
     const card = this.openDialog(`攻下${big ? "大城" : "小鎮"}！搶還是治理？`, "town-choice");

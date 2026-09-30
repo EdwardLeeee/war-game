@@ -22,6 +22,7 @@ import {
   TICKS_PER_SECOND,
   TOWN_STRIDE,
   TownField as T,
+  TownState,
   UNIT_STRIDE,
   UnitField as U,
   UnitFlag,
@@ -237,6 +238,13 @@ export class GameView implements IntentWorld {
 
   private nodePick(id: number): Pick {
     return { kind: "node", id, owner: NO_OWNER, type: (this.nodes.get(id) as Int32Array)[N.kind] };
+  }
+
+  /** Our town waiting for 搶 or 治理. */
+  townAwaitsMyChoice(id: number): boolean {
+    const o = this.townRow(id);
+    const t = this.curr?.snap.towns;
+    return o >= 0 && t !== undefined && t[o + T.state] === TownState.AwaitingChoice && t[o + T.owner] === this.me;
   }
 
   townRow(id: number): number {

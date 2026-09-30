@@ -289,7 +289,7 @@ test("攻下城鎮：跳出「搶」「治理」兩個大按鈕", async ({ page 
   await expect(dialog).toBeHidden();
 });
 
-test("攻下城鎮：稍後再決定之後，點城鎮還能選搶或治理", async ({ page }) => {
+test("攻下城鎮：稍後再決定之後，點城鎮會再跳出搶或治理", async ({ page }) => {
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
   const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
   await expect(dialog).toBeVisible();
@@ -310,9 +310,10 @@ test("攻下城鎮：稍後再決定之後，點城鎮還能選搶或治理", as
   }
   if (spot === null) throw new Error("no open ground inside the town");
   await tap(page, spot);
-  const info = page.locator(".sel-info");
-  await expect(info.getByRole("button", { name: "搶", exact: true })).toBeVisible();
-  await info.getByRole("button", { name: "搶", exact: true }).tap();
+  // The choice comes back (GDD §10): the dialog again, and 搶／治理 in the selection info under it.
+  await expect(dialog).toBeVisible();
+  await expect(page.locator(".sel-info").getByRole("button", { name: "搶", exact: true })).toBeAttached();
+  await dialog.getByRole("button", { name: /^搶/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
 });
 

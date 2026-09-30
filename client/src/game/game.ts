@@ -468,6 +468,8 @@ export class Game implements GestureHost {
         case "inspect":
           view.inspected = it.pick;
           this.overlays.toast(this.describe(it.pick));
+          // A town of ours still waiting for 搶 or 治理: the choice again (GDD §10, after 稍後再決定 or 重設).
+          if (it.pick.kind === "town" && view.townAwaitsMyChoice(it.pick.id)) this.hud.openTownChoice(it.pick.id);
           break;
         case "clear":
           view.selection = { units: [], building: null };
