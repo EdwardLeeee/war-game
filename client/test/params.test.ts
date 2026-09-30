@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { MAX_TEST_TPS, parseParams, SPEED_TPS } from "../src/params.ts";
 
 test("game speeds are 15, 20 and 30 ticks per second", () => {
-  assert.deepEqual(SPEED_TPS, { slow: 15, normal: 20, fast: 30 });
+  assert.deepEqual(SPEED_TPS, { slow: 20, normal: 30, fast: 40 });
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {

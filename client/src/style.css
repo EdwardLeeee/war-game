@@ -483,6 +483,13 @@ a {
   font-size: 13px;
 }
 
+/* 重設 (D-024): at the top of the left column, a wider gap from 全體回城 so a quick tap does not recall everyone. */
+.reset-btn {
+  margin-bottom: 8px;
+  background: #fff3b0;
+  color: #201a18;
+}
+
 .idle-btn {
   background: #cfd6d2;
 }
@@ -602,6 +609,51 @@ button.active {
 .sel-queue button {
   padding: 0 8px;
   font-size: 12px;
+}
+
+.rest-chip {
+  background: #fff3b0;
+  color: #201a18;
+}
+
+/* 分出 N 名 (D-024): − N + 分出 */
+.sel-split {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  align-items: center;
+}
+
+.sel-split .step {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.sel-split .split-go {
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+/* 16px or more: Safari on iPhone zooms the page into smaller text fields when they get focus. */
+.split-n {
+  width: 52px;
+  height: var(--touch);
+  box-sizing: border-box;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 16px;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+
+.split-n::-webkit-inner-spin-button,
+.split-n::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .queue-item {

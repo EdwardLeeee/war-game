@@ -1,13 +1,14 @@
 // The brief's main flow, on core's real simulation with its `e2e` scenario (plenty of
 // resources, two houses and a barracks, a squad of 6 spearmen and 4 ranged ten cells from
 // the small town), in WebKit and Chromium at iPhone landscape size with touch:
-// 開局 → 選農民 → 蓋房子 → 訓練 → 框選 → 前進 → 暫停時下指令 → 攻下城鎮後選搶或治理.
+// 開局 → 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 前進 → 暫停時下指令 →
+// 攻下城鎮後選搶或治理 → 分出 N 名存成編隊（D-024）.
 // Every step goes through the interface the player uses; the test hook only reads state
 // and moves the camera.
 
 import { expect, type Page, test } from "@playwright/test";
 import { shot, watchErrors } from "./helpers.ts";
-import { doubleTap, longPress, tap } from "./touch.ts";
+import { doubleTap, longPress, longPressOn, tap } from "./touch.ts";
 
 const FARMER = 0;
 const SPEARMAN = 1;
@@ -23,6 +24,7 @@ const towns = (page: Page) => page.evaluate(() => window.__proto?.game?.towns() 
 const placement = (page: Page) => page.evaluate(() => window.__proto?.game?.placement() ?? null);
 const lastSent = (page: Page) => page.evaluate(() => window.__proto?.game?.sent().at(-1) as Record<string, unknown> | undefined);
 const selection = (page: Page) => page.evaluate(() => window.__proto?.game?.selection());
+const mode = (page: Page) => page.evaluate(() => window.__proto?.game?.mode());
 const myId = (page: Page) => page.evaluate(() => window.__proto?.game?.me() ?? 0);
 const toScreen = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
 const centre = (page: Page, c: { x: number; y: number }, scale = 1) => page.evaluate(([x, y, s]) => window.__proto?.game?.centerOn(x, y, s), [c.x, c.y, scale] as const);
@@ -42,7 +44,7 @@ async function resume(page: Page): Promise<void> {
   await expect.poll(async () => (await header(page)).paused).toBe(false);
 }
 
-test("主要流程：開局 → 選農民 → 蓋房子 → 訓練 → 框選 → 前進 → 暫停時下指令 → 攻下城鎮後選搶或治理", async ({ page }, info) => {
+test("主要流程：開局 → 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 前進 → 暫停時下指令 → 攻下城鎮後選搶或治理 → 分出 N 名", async ({ page }, info) => {
   test.setTimeout(300_000);
   const check = watchErrors(page);
 
@@ -64,6 +66,16 @@ test("主要流程：開局 → 選農民 → 蓋房子 → 訓練 → 框選 �
   expect(farmerIds.every((id) => farmers.some((f) => f.id === id)), "only farmers").toBe(true);
 
   // 3. 蓋房子（指令區：建造 → 民居 → 點一個能蓋的位置 → ✓）
+  // 先用重設按鈕離開放建築（D-024）：開始放民居 → 重設 → 沒有選取、不在放建築 → 再選一次農民。
+  await page.getByRole("button", { name: "建造" }).tap();
+  await page.getByRole("button", { name: /^民居/ }).tap();
+  await expect.poll(() => mode(page)).toBe("place:dragging");
+  await page.getByRole("button", { name: "重設" }).tap();
+  await expect.poll(() => mode(page)).toBe("normal");
+  expect(await placement(page), "no building preview").toBeNull();
+  await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
+  await doubleTap(page, { x: farmers[0].sx, y: farmers[0].sy });
+  await expect.poll(async () => (await selection(page))?.units).toEqual(farmerIds);
   await page.getByRole("button", { name: "建造" }).tap();
   await page.getByRole("button", { name: /^民居/ }).tap();
   let spot: { cellX: number; cellY: number } | null = null;
@@ -182,5 +194,21 @@ test("主要流程：開局 → 選農民 → 蓋房子 → 訓練 → 框選 �
   // Plundering (TownState 2) by us.
   await expect.poll(async () => (await towns(page)).find((t) => t.id === town.id)?.state, { timeout: 30_000 }).toBe(2);
   await shot(page, info, "8-plundering");
+
+  // 9. 分出 N 名存成編隊（D-024）：暫停 → 全軍 → 分出一半 → 長按編隊 2 → 改選其餘
+  await pause(page);
+  await page.getByRole("button", { name: "全軍" }).tap();
+  await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(1);
+  const army = (await selection(page))?.units ?? [];
+  const half = Math.floor(army.length / 2);
+  await page.getByRole("button", { name: `分出 ${half} 名` }).tap();
+  await expect.poll(async () => (await selection(page))?.units.length).toBe(half);
+  const part = (await selection(page))?.units ?? [];
+  expect(part.every((id) => army.includes(id)), "split from the army").toBe(true);
+  await longPressOn(page, ".groups > button:nth-child(2)");
+  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[1], "saved as group 2").toEqual(part);
+  await shot(page, info, "9-split");
+  await page.getByRole("button", { name: `改選其餘 ${army.length - half} 名` }).tap();
+  await expect.poll(async () => (await selection(page))?.units).toEqual(army.filter((id) => !part.includes(id)));
   check();
 });

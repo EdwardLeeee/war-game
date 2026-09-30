@@ -76,6 +76,8 @@ export class Hud {
     menu.setAttribute("aria-haspopup", "dialog");
 
     const left = el("div", root, "side-left");
+    // 重設 (D-024): one tap back to nothing selected; kept apart from 全體回城 below it.
+    btn(left, "重設", () => game.reset(), "reset-btn");
     this.recallBtn = btn(left, "全體回城", () => this.toggleRecall(), "secondary");
     this.idleBtn = el("button", left, "idle-btn", "閒置 0");
     this.idleBtn.type = "button";
@@ -112,6 +114,9 @@ export class Hud {
       chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice),
       selectOnly: (units: number[]) => game.apply([{ kind: "select", units }]),
       clearSelection: () => game.apply([{ kind: "clear" }]),
+      splitSelection: (n: number) => game.splitSelection(n),
+      selectRest: () => game.selectRest(),
+      lastSplit: () => game.lastSplit,
     };
     this.minimap = new Minimap(root, {
       view: () => game.view,
@@ -340,6 +345,12 @@ export class Hud {
     const card = el("div", this.dialog, "dialog-card");
     el("h2", card, "", title);
     return card;
+  }
+
+  /** 重設: close the open dialog unless it is the result screen, and put the command area back on its first page. */
+  closePanels(): void {
+    if (this.dialogOpen && !this.dialog.classList.contains("result")) this.closeDialog();
+    this.cmds.reset();
   }
 
   closeDialog(): void {

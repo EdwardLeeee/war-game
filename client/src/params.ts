@@ -1,8 +1,11 @@
 // Page options read from the URL. Only `?test=1` (CI and debugging) unlocks the test hook,
 // tick rates beyond the three game speeds and the fake world; players never see them.
 
-/** Ticks per second for 慢, 正常, 快 (0.75x, 1x, 1.5x of 20; ceo 2026-09-30). */
-export const SPEED_TPS = { slow: 15, normal: 20, fast: 30 } as const;
+/**
+ * Ticks per second for 慢, 正常, 快 (D-024: the old 1x, 1.5x and 2x; the user found the old
+ * 1.5x the right normal speed). Rules count game time at 20 ticks per second.
+ */
+export const SPEED_TPS = { slow: 20, normal: 30, fast: 40 } as const;
 
 /** Highest tick rate `?tps=` may ask for, test pages only. */
 export const MAX_TEST_TPS = 400;
