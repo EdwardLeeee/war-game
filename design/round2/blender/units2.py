@@ -26,21 +26,25 @@ def palette(detail):
         bronze=mat("bronze2", (0.72, 0.5, 0.22), 0.35, 1.0, pattern="worn_metal"),
         steel=mat("steel2", (0.6, 0.62, 0.66), 0.3, 1.0, pattern="worn_metal"),
         mail=mat("mail2", (0.44, 0.45, 0.48), 0.45, 1.0, noise=0.5, noise_scale=160),
-        indigo=mat("indigo2", (0.1, 0.13, 0.26), 0.8, sheen=0.4, pattern="cloth", pattern_scale=90),
-        dark=mat("darkcloth2", (0.08, 0.075, 0.07), 0.75, pattern="cloth", pattern_scale=90),
-        leather=mat("leather2", (0.3, 0.19, 0.1), 0.55, noise=0.25, noise_scale=30),
+        indigo=mat("indigo2", (0.1, 0.13, 0.26), 0.8, sheen=0.4, noise=0.25, noise_scale=6, pattern="cloth",
+                   pattern_scale=90),
+        dark=mat("darkcloth2", (0.08, 0.075, 0.07), 0.75, noise=0.3, noise_scale=6, pattern="cloth",
+                 pattern_scale=90),
+        leather=mat("leather2", (0.3, 0.19, 0.1), 0.55, noise=0.45, noise_scale=14),
         boots=mat("boots2", (0.12, 0.09, 0.07), 0.55, noise=0.2, noise_scale=40),
         cream=mat("cream2", (0.74, 0.67, 0.52), 0.8, sheen=0.3, pattern="cloth", pattern_scale=90),
         wood=mat("wood2", (0.42, 0.27, 0.14), 0.6, noise=0.3, noise_scale=6),
         shaft=mat("shaft2", (0.2, 0.12, 0.07), 0.45, noise=0.2, noise_scale=8),
         tassel=mat("tassel2", (0.86, 0.83, 0.76), 0.8, sheen=0.4),
         hair=mat("hair2", (0.06, 0.05, 0.045), 0.6, sheen=0.3),
-        horse_bay=mat("bay2", (0.3, 0.16, 0.08), 0.5, sheen=0.5),
-        horse_grey=mat("grey2", (0.62, 0.6, 0.57), 0.5, sheen=0.5),
+        horse_bay=mat("bay2", (0.3, 0.16, 0.08), 0.5, sheen=0.5, pattern="coat", pattern_scale=0.35),
+        horse_grey=mat("grey2", (0.62, 0.6, 0.57), 0.5, sheen=0.5, pattern="coat", pattern_scale=0.6),
         mane=mat("mane2", (0.06, 0.05, 0.04), 0.7),
         hoof=mat("hoof2", (0.12, 0.1, 0.08), 0.55),
-        team=mat("team2", kind="team", rough=0.75, sheen=0.35, pattern="cloth", pattern_scale=90),
-        robe=mat("robe2", (0.84, 0.81, 0.72), 0.75, sheen=0.5, pattern="cloth", pattern_scale=110),
+        team=mat("team2", kind="team", rough=0.75, sheen=0.35, noise=0.12, noise_scale=5, pattern="cloth",
+                 pattern_scale=90),
+        robe=mat("robe2", (0.84, 0.81, 0.72), 0.75, sheen=0.5, noise=0.1, noise_scale=5, pattern="cloth",
+                 pattern_scale=110),
         crystal=mat("crystal2", (0.35, 0.95, 1.0), 0.1, emission=3.0, kind="emit"),
         rope=mat("rope2", (0.55, 0.46, 0.3), 0.9),
         gold=mat("gold2", (0.85, 0.62, 0.22), 0.3, 1.0),
@@ -264,30 +268,80 @@ def horse_bones(hr):
     return b
 
 
-def caparison(hr, P, detail, mat_top, mat_skirt, zb=0.62):
-    """Knight: full cloth over body and neck.  Armoured horse: lamellar top + player-colour skirt."""
+BARREL = [(-0.72, 1.28, 0.2, 0.2), (-0.58, 1.23, 0.27, 0.28), (-0.4, 1.2, 0.3, 0.33), (-0.12, 1.17, 0.31, 0.35),
+          (0.16, 1.17, 0.3, 0.35), (0.4, 1.2, 0.27, 0.33), (0.55, 1.27, 0.22, 0.3)]
+
+
+def _surface(name, loops, material, rig, bones, subsurf=1, thick=0.015):
+    """Quad surface through rows of points; applied, solidified, skinned to the rig."""
+    bm = bmesh.new()
+    vl = [[bm.verts.new(p) for p in row] for row in loops]
+    for i in range(len(vl) - 1):
+        for k in range(len(vl[i]) - 1):
+            bm.faces.new((vl[i][k], vl[i][k + 1], vl[i + 1][k + 1], vl[i + 1][k]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(name + "_raw")
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(name + "_raw", me)
+    bpy.context.scene.collection.objects.link(ob)
+    if subsurf:
+        ss = ob.modifiers.new("sub", "SUBSURF")
+        ss.levels = subsurf
+    so = ob.modifiers.new("thick", "SOLIDIFY")
+    so.thickness = thick
+    dg = bpy.context.evaluated_depsgraph_get()
+    mesh = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    bpy.data.objects.remove(ob)
+    bpy.data.meshes.remove(me)
+    out = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(out)
+    mesh.materials.clear()
+    mesh.materials.append(material)
+    for p in mesh.polygons:
+        p.use_smooth = True
+    lib.ALL_PARTS.append(out)
+    lib._add_hull(out)
+    bpy.context.view_layer.update()
+    rig.skinners.append(body2.Skinner(out, bones, base=rig.root.matrix_world.copy()))
+    return out
+
+
+def caparison(hr, P, detail, mat_top, mat_skirt, hem=0.62, gap=0.035, a0=-28):
+    """Fitted cloth/armour: the top follows the barrel's curve (belly line to belly line over the
+    back); the skirt hangs from the belly line to the hem, open at front and back."""
     n = hr.name
-    st = [(-0.82, 1.26, 0.25, 0.14, zb + 0.05), (-0.6, 1.22, 0.34, 0.22, zb), (-0.3, 1.2, 0.36, 0.24, zb),
-          (0.0, 1.19, 0.36, 0.25, zb), (0.3, 1.2, 0.35, 0.24, zb), (0.52, 1.26, 0.3, 0.22, zb + 0.02),
-          (0.64, 1.36, 0.22, 0.18, zb + 0.1)]
     bones = horse_bones(hr)
-    drape(n + "_capa", st, mat_top, hr, bones)
-    if mat_skirt is not mat_top:   # a second, lower hem band in the player colour
-        st2 = [(y, zc - 0.18, w + 0.012, hh * 0.5, z) for y, zc, w, hh, z in st]
-        drape(n + "_capskirt", st2, mat_skirt, hr, bones)
-    # neck cover
+    top, skirt_r, skirt_l = [], [], []
+    for y, zc, rx, ry in BARREL:
+        rx, ry = rx + gap, ry + gap
+        row = []
+        for k in range(15):
+            a = math.radians(a0 + (180 - 2 * a0) * k / 14)
+            row.append((rx * math.cos(a), y, zc + ry * math.sin(a)))
+        top.append(row)
+        xe, ze = rx * math.cos(math.radians(a0)), zc + ry * math.sin(math.radians(a0))
+        for side, lst in ((1, skirt_r), (-1, skirt_l)):
+            lst.append([(side * (xe + 0.045 * t), y, ze + (hem - ze) * t) for t in (0, 0.33, 0.66, 1.0)])
+    _surface(n + "_captop", top, mat_top, hr, bones)
+    _surface(n + "_capskirtR", skirt_r, mat_skirt, hr, bones)
+    _surface(n + "_capskirtL", skirt_l, mat_skirt, hr, bones)
+    # neck cover follows the neck
     J = hr.j
-    body2.loft(n + "_neckcover", [((0, 0.62, 1.4), 0.19, 0.24), ((0, 0.78, 1.62), 0.14, 0.17),
-                                   ((0, 0.93, 1.82), 0.1, 0.11)], mat_top, subsurf=1)
+    body2.loft(n + "_neckcover", [((0, 0.6, 1.36), 0.19, 0.25), ((0, 0.72, 1.5), 0.15, 0.2),
+                                   ((0, 0.83, 1.66), 0.125, 0.16), ((0, 0.93, 1.82), 0.095, 0.105)], mat_top,
+               subsurf=1)
+    bpy.context.view_layer.update()
     hr.skinners.append(body2.Skinner(lib.ALL_PARTS[-1], [(J["body"], (0, 0.4, 1.3), (0, 0.62, 1.36)),
                                                          (J["neck"], (0, 0.62, 1.36), (0, 0.99, 1.83))],
                                      base=hr.root.matrix_world.copy()))
     if detail == "C":
-        for k in range(14):   # tassels along the hem
-            y = -0.7 + k * 0.1
+        for k in range(len(BARREL)):
+            y = BARREL[k][0]
             for s in (-1, 1):
-                sphere(f"{n}_hemt{k}{s}", 0.022, P["gold"], J["body"], at=(0.37 * s, y, zb - 1.18 - 0.02),
-                       scale=(1, 1, 1.6), outline=False)
+                sphere(f"{n}_hemt{k}{s}", 0.024, P["gold"], J["body"],
+                       at=(s * (BARREL[k][2] + gap + 0.05), y, hem - 1.18 - 0.02), scale=(1, 1, 1.6),
+                       outline=False)
 
 
 def build_cav(kind, P, detail):
@@ -297,17 +351,17 @@ def build_cav(kind, P, detail):
                    parent=u.root)
     u.rigs["horse"] = hr
     if east:
-        caparison(hr, P, detail, P["lacquer"], P["team"])
+        caparison(hr, P, detail, P["lacquer"], P["team"], hem=0.8)
         box(kind + "_chamfron", (0.2, 0.18, 0.4), P["bronze"], hr.j["head"], at=(0, 0.02, 0.2), taper=(0.75, 0.8),
             bevel=0.03)
         sphere(kind + "_plume", 0.1, P["team"], hr.j["head"], at=(0, -0.1, -0.1), scale=(1, 1, 1.7))
     else:
-        caparison(hr, P, detail, P["team"], P["team"])
+        caparison(hr, P, detail, P["team"], P["team"], hem=0.6)
         try:
             fm = lib.flag_mat("knight_emblem2", os.path.join(EMBLEM_DIR, "twintowers.png"))
             for s in (-1, 1):
                 slab(f"{kind}_capemb{s}", [(-0.26, -0.26), (0.26, -0.26), (0.26, 0.26), (-0.26, 0.26)], 0.01, fm,
-                     parent=hr.j["body"], loc=(0.385 * s, -0.25, -0.18), rot=(0, 0, 90), outline=False)
+                     parent=hr.j["body"], loc=(0.395 * s, -0.25, -0.3), rot=(0, 0, 90), outline=False)
         except RuntimeError:
             pass
         box(kind + "_chamfron", (0.19, 0.17, 0.38), P["steel"], hr.j["head"], at=(0, 0.02, 0.2), taper=(0.75, 0.8),

@@ -225,11 +225,13 @@ def horse2(name, coat, mane, hoof, detail="B", parent=None):
     # hooves, mane, tail, ears, eyes: rigid to their joints
     for leg in legs:
         cyl(f"{name}_hoof{leg}", 0.058, 0.09, hoof, J[f"low{leg}"], at=(0, 0.01, -0.6), r2=0.05)
-    lathe(f"{name}_mane", [(0.02, 0.0), (0.05, 0.25), (0.045, 0.55), (0.02, 0.66)], mane, J["neck"],
-          at=(0, -0.1, 0), scale=(0.5, 1, 1), segs=10)
+    lathe(f"{name}_mane", [(0.02, -0.02), (0.08, 0.2), (0.075, 0.5), (0.04, 0.68)], mane, J["neck"],
+          at=(0, -0.11, 0), scale=(0.45, 1, 1), segs=12)
+    lathe(f"{name}_forelock", [(0.0, 0.0), (0.04, 0.05), (0.0, 0.14)], mane, J["head"], at=(0, 0.05, -0.02),
+          scale=(0.8, 0.5, 1), segs=8)
     tail = J["tail"]
-    lathe(f"{name}_tailhair", [(0.05, 0.0), (0.09, 0.2), (0.07, 0.5), (0.02, 0.72)], mane, tail, segs=10,
-          scale=(0.8, 0.6, 1))
+    lathe(f"{name}_tailhair", [(0.05, 0.0), (0.12, 0.2), (0.11, 0.5), (0.06, 0.78), (0.0, 0.84)], mane, tail,
+          segs=12, scale=(0.75, 0.55, 1))
     for s in (-1, 1):
         cyl(f"{name}_ear{s}", 0.03, 0.13, coat, J["head"], at=(0.055 * s, -0.08, -0.04), r2=0.006,
             rot=(180, 0, 0))

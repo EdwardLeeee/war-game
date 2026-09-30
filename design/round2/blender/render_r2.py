@@ -88,7 +88,7 @@ def run(level, only=None, preview=False, parts=("detail", "vignette", "motion", 
                 batch.run(kind, it, 60, level=level, quality=quality, tag="r2b", ss=2, outputs={"x3": 60})
             # zoom crop (2x): the upper hall of the gate / the top of the tower, at 6x
             crop = {"citygate_e": [0.3, 0.05, 0.7, 0.45], "tower_w": [0.15, 0.05, 0.85, 0.55]}[kind]
-            it = [dict(facing=0, anim="idle", frame=0, passes=["beauty"] + ([] if level == "0" else ["ao"]),
+            it = [dict(facing=0, anim="idle", frame=0, passes=["beauty", "mask"] + ([] if level == "0" else ["ao"]),
                        out=str(out / f"{kind}_zoom"))]
             if level == "0":
                 batch.run(kind, it, 120, level="0", tag="r2z", border=crop, outputs={"x6": 120})

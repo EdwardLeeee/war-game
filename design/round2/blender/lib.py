@@ -224,6 +224,26 @@ def _pattern(nt, p, color, pattern, scale):
         nt.links.new(mp.outputs["Vector"], wv.inputs["Vector"])
         nt.links.new(wv.outputs["Factor"], bump.inputs["Height"])
         bump.inputs["Strength"].default_value = 0.35
+    elif pattern == "coat":
+        # horse coat: legs and muzzle darker (scale = leg darkness factor), soft hair noise
+        geo = nt.nodes.new("ShaderNodeNewGeometry")
+        sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+        nt.links.new(geo.outputs["Position"], sep.inputs[0])
+        ramp = nt.nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.elements[0].position = 0.45
+        ramp.color_ramp.elements[0].color = (*[c * scale for c in color], 1)
+        ramp.color_ramp.elements[1].position = 0.8
+        ramp.color_ramp.elements[1].color = (*color, 1)
+        mr = nt.nodes.new("ShaderNodeMapRange")
+        mr.inputs["From Min"].default_value = 0.0
+        mr.inputs["From Max"].default_value = 1.2
+        nt.links.new(sep.outputs["Z"], mr.inputs["Value"])
+        nt.links.new(mr.outputs["Result"], ramp.inputs["Factor"])
+        nt.links.new(ramp.outputs["Color"], p.inputs["Base Color"])
+        tex = nt.nodes.new("ShaderNodeTexNoise")
+        tex.inputs["Scale"].default_value = 90
+        nt.links.new(tex.outputs["Factor"], bump.inputs["Height"])
+        bump.inputs["Strength"].default_value = 0.12
     elif pattern == "worn_metal":
         geo = nt.nodes.new("ShaderNodeNewGeometry")
         ramp = nt.nodes.new("ShaderNodeValToRGB")
