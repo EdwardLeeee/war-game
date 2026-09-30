@@ -1,5 +1,5 @@
-// Page options read from the URL. Only `?test=1` (CI and debugging) unlocks the test hook
-// and tick rates beyond the three game speeds; players never see either.
+// Page options read from the URL. Only `?test=1` (CI and debugging) unlocks the test hook,
+// tick rates beyond the three game speeds and the fake world; players never see them.
 
 /** Ticks per second for 慢, 正常, 快 (0.75x, 1x, 1.5x of 20; ceo 2026-09-30). */
 export const SPEED_TPS = { slow: 15, normal: 20, fast: 30 } as const;
@@ -12,6 +12,8 @@ export interface PageParams {
   test: boolean;
   /** `?test=1&tps=N`: run the simulation at N ticks per second instead of the chosen speed. */
   tps: number | null;
+  /** `?test=1&mock=1`: the fake world (mock/) instead of the simulation, for the gesture tests. */
+  mock: boolean;
 }
 
 export function parseParams(search: string): PageParams {
@@ -22,5 +24,5 @@ export function parseParams(search: string): PageParams {
   if (test && raw !== null && /^[1-9][0-9]*$/.test(raw)) {
     tps = Math.min(Number(raw), MAX_TEST_TPS);
   }
-  return { test, tps };
+  return { test, tps, mock: test && q.get("mock") === "1" };
 }

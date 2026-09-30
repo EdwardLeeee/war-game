@@ -1,12 +1,13 @@
 // Prototype page. The start screen offers the one mode (1 v 1 against the simple AI);
-// 開始 brings up the battlefield. Until core's worker is connected, the battlefield runs on
-// the fake world in mock/ (same messages), so the camera, gestures and lab can be tried.
+// 開始 brings up the battlefield, run by core's simulation Worker. `?test=1&mock=1` runs the
+// fake world in mock/ instead (same messages), for the gesture tests.
 
 import "./style.css";
 import { type Application, VERSION } from "pixi.js";
 import { Game } from "./game/game.ts";
 import { type GameHook, gameHook } from "./game/test-hook.ts";
 import { MockPort } from "./mock/mock-port.ts";
+import { createSimPort } from "./game/port.ts";
 import { parseParams, SPEED_TPS } from "./params.ts";
 import { createStage } from "./stage.ts";
 
@@ -37,7 +38,7 @@ let app: Application | null = null;
 const env = () => ({
   commit: __COMMIT__,
   engine: `PixiJS ${VERSION}`,
-  data: "假資料（還沒接上模擬）",
+  data: params.mock ? "假資料（mock）" : "模擬 standard",
   userAgent: navigator.userAgent,
   dpr: window.devicePixelRatio,
   viewport: `${window.innerWidth}x${window.innerHeight}`,
@@ -53,17 +54,26 @@ async function startGame(): Promise<void> {
   hook.screen = "battle";
   if (app !== null) return;
   app = await createStage($("stage"));
-  const game = new Game(app, new MockPort(), $("hud"), {
-    seed: 1,
+  const port = params.mock ? new MockPort() : createSimPort(showError);
+  const game = new Game(app, port, $("hud"), {
+    seed: newSeed(),
     scenario: "standard",
     tps: params.tps ?? SPEED_TPS.normal,
-    fake: true,
+    fake: params.mock,
     env,
+    checkPort: params.mock ? null : () => createSimPort(showError),
   });
   if (params.test) hook.game = gameHook(game);
   game.start();
   await game.whenReady();
   hook.ready = true;
+}
+
+/** A new game's seed. It is an input to the simulation (recorded in the command log), not simulation state. */
+function newSeed(): number {
+  const a = new Uint32Array(1);
+  crypto.getRandomValues(a);
+  return a[0] >>> 1 || 1;
 }
 
 function showError(err: unknown): void {

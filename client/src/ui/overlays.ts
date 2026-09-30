@@ -2,7 +2,7 @@
 // the skill wheel, the prompt bar for map-tap modes, the ✓ / ✗ of building placement and a
 // short message line. Temporary prototype interface (GDD §10 draft), not an approved design.
 
-import { Reject } from "../sim.ts";
+import { type CommandBody, type CommandKind, Reject } from "../sim.ts";
 
 export interface WheelButton {
   id: string;
@@ -33,6 +33,30 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.GameOver]: "這局已經結束",
   [Reject.OutOfRange]: "超出晶砲射程",
 };
+
+/**
+ * Commands the simulation does not do yet (sim/PROTOCOL.md: from core's PR-4). Their
+ * NotAvailable means "not built yet" and says so (ceo 2026-09-30); remove each when it lands.
+ */
+export const PENDING_COMMANDS: ReadonlySet<CommandKind> = new Set<CommandKind>(["cast", "autocast", "town_choice", "surrender"]);
+
+/** NotAvailable for the rules that exist (sim/PROTOCOL.md 3.1), by command. */
+const NOT_AVAILABLE_TEXT: Partial<Record<CommandKind, string>> = {
+  build: "主城和箭樓不能蓋",
+  repair: "這裡現在不需要農民（沒有受損，或田已經有人耕）",
+  train: "這棟建築還沒蓋好，或不訓練這種兵",
+  rally: "這棟建築不能設集結點",
+  gather: "只有農民能採集",
+};
+
+/** What to tell the player when a command comes back rejected. */
+export function rejectText(reason: number, cmd: CommandBody | undefined): string {
+  if (reason === Reject.NotAvailable && cmd !== undefined) {
+    if (PENDING_COMMANDS.has(cmd.c)) return "原型尚未開放";
+    return NOT_AVAILABLE_TEXT[cmd.c] ?? REJECT_TEXT[reason];
+  }
+  return REJECT_TEXT[reason] ?? "指令沒有執行";
+}
 
 const WHEEL_RADIUS = 72;
 const WHEEL_BUTTON = 60;

@@ -3,6 +3,7 @@
 // button for now; the HUD's menu takes it over.
 
 import { HeaderField as H, STEP_BATCH } from "../sim.ts";
+import type { CheckResult } from "./determinism.ts";
 import { type FrameContext, Lab, type MeasureResult, PASS, WINDOW_MS } from "./lab.ts";
 import { LogBox } from "./log.ts";
 import { round2, summarize } from "./stats.ts";
@@ -41,9 +42,10 @@ export class LabPanel {
   private lastLive = 0;
   private lastTick = -1;
 
-  constructor(root: HTMLElement, hooks: LabHooks) {
+  /** The toggle button goes into `toggleHost` (the top-right row), the panel into `root`. */
+  constructor(root: HTMLElement, hooks: LabHooks, toggleHost: HTMLElement = root) {
     this.hooks = hooks;
-    const toggle = make("button", root, "lab-toggle", "量測");
+    const toggle = make("button", toggleHost, "lab-toggle secondary", "量測");
     toggle.type = "button";
     this.panel = make("section", root, "lab");
     this.panel.hidden = true;
@@ -106,6 +108,8 @@ export class LabPanel {
     this.log.add("確定性檢查開始");
     try {
       await run();
+    } catch (err) {
+      this.log.add(`確定性檢查失敗：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       this.lab.endCheck();
       this.refreshButtons();
@@ -158,6 +162,18 @@ export class LabPanel {
     this.measureBtn.disabled = m !== null;
     this.checkBtn.disabled = c !== null;
     this.status.textContent = [m, c].filter((v) => v !== null).join("；");
+  }
+
+  /** The determinism check's verdict, in the result box. */
+  showCheck(r: CheckResult): void {
+    const box = this.resultBox;
+    box.hidden = false;
+    box.replaceChildren();
+    make("h3", box, "", r.same === null ? "確定性：沒有 CI 對照檔" : r.same ? "確定性：與 CI 相同 ✓" : "確定性：與 CI 不同 ✗");
+    if (r.same === false) make("p", box, "bad", `${r.mismatches} 處不同，第一處在 tick ${r.firstMismatchTick}`);
+    make("p", box, "", `比對 ${r.compared} 個雜湊；${r.ticks} tick，最終 ${r.finalHash}`);
+    make("p", box, "", `花了 ${Math.round(r.totalMs)} ms；每 tick 中位數 ${r.tickMedianMs} ms、最大 ${r.tickMaxMs} ms`);
+    make("p", box, "small", Object.values(this.hooks.env()).join("；"));
   }
 
   private showResult(r: MeasureResult): void {
