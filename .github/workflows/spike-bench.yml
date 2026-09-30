@@ -1,0 +1,80 @@
+name: Spike Bench
+
+# Headless speed of the 20-minute AI game on several runners at once: runner machines
+# differ (CPU models vary between jobs), so one job per candidate is not enough to judge
+# the "<= 60 s on a CI runner" criterion. Each job runs both candidates on the same machine.
+on:
+  push:
+    branches: ["spike/**"]
+    paths:
+      - ".github/workflows/spike-bench.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
+        sample: [1, 2, 3, 4, 5]
+        exclude:
+          - runner: macos-latest
+            sample: 4
+          - runner: macos-latest
+            sample: 5
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: spikes/godot/ci/install-godot.sh
+      - name: Both candidates, 20-minute AI game
+        run: |
+          set -euo pipefail
+          out="${GITHUB_WORKSPACE}/bench-${{ matrix.runner }}-${{ matrix.sample }}"
+          mkdir -p "${out}"
+          if [ "$(uname -s)" = Linux ]; then
+            lscpu | sed -n 's/^Model name: *//p' > "${out}/cpu.txt"
+          else
+            sysctl -n machdep.cpu.brand_string > "${out}/cpu.txt"
+          fi
+          cat "${out}/cpu.txt"
+          node spikes/web/src/headless.ts --mode ai --name ts-ai --out "${out}"
+          (cd spikes/godot && ${GODOT} --headless --import > /dev/null 2>&1 && \
+            ${GODOT} --headless -s res://headless.gd -- --mode ai --name godot-ai --out "${out}")
+          cmp "${out}/ts-ai.state.txt" "${out}/godot-ai.state.txt" && echo "same end state"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bench-${{ matrix.runner }}-${{ matrix.sample }}
+          path: bench-*/
+          retention-days: 30
+
+  summary:
+    needs: bench
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - name: Table
+        run: |
+          {
+            echo "| runner | CPU | TypeScript (s) | Godot (s) | Godot tick median (ms) |"
+            echo "|---|---|---|---|---|"
+            for d in artifacts/*/bench-*; do
+              name="$(basename "${d}")"
+              ts="$(python3 -c "import json; print(round(json.load(open('${d}/ts-ai.timing.json'))['totalMs'] / 1000, 2))")"
+              gd="$(python3 -c "import json; print(round(json.load(open('${d}/godot-ai.timing.json'))['totalMs'] / 1000, 2))")"
+              med="$(python3 -c "import json; print(round(json.load(open('${d}/godot-ai.timing.json'))['tickMs']['median'], 3))")"
+              echo "| ${name#bench-} | $(cat "${d}/cpu.txt") | ${ts} | ${gd} | ${med} |"
+            done
+          } | tee -a "${GITHUB_STEP_SUMMARY}"

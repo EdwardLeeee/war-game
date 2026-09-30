@@ -8,7 +8,7 @@
 // environment is missing a game or differs from the reference at any checkpoint.
 
 import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const args = process.argv.slice(2);
 let games = ["scripted", "ai"];
@@ -43,6 +43,16 @@ function load(env) {
       if (existsSync(t)) extra.timing[g] = JSON.parse(readFileSync(t, "utf8"));
     }
   } else {
+    // size.txt, coldstart.txt and device.txt sit next to spike.txt (tools/*-run.sh).
+    const dir = dirname(env.path);
+    for (const f of ["device.txt", "size.txt", "coldstart.txt"]) {
+      const p = join(dir, f);
+      if (!existsSync(p)) continue;
+      for (const l of readFileSync(p, "utf8").split("\n")) {
+        const t = l.trim();
+        if (t !== "") extra.lines.push(t.startsWith("SPIKE") ? t : `SPIKE device ${t}`);
+      }
+    }
     for (const line of readFileSync(env.path, "utf8").split("\n")) {
       const m = line.match(/^SPIKE hash (\S+) (\d+) ([0-9a-f]{8}) (\d+)/);
       if (m) {

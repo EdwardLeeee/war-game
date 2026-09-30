@@ -1,0 +1,284 @@
+name: Spike Godot
+
+# Engine spike, Godot candidate (docs/briefs/2026-10-core-engine-spike.md). Not a required
+# check: the path filter would leave unrelated pull requests waiting.
+on:
+  push:
+    branches: ["spike/**"]
+    paths:
+      - "spikes/godot/**"
+      - "spikes/tools/**"
+      - ".github/workflows/spike-godot.yml"
+  pull_request:
+    paths:
+      - "spikes/godot/**"
+      - "spikes/tools/**"
+      - ".github/workflows/spike-godot.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-godot-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2
+  ANDROID_PACKAGE: com.oraclelee.wargame.spikegodot
+
+jobs:
+  # Desktop headless (Linux x86_64): both games timed, replay of the AI game, and the
+  # TypeScript reference's command log replayed here (the extra cross-engine check).
+  headless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: spikes/godot/ci/install-godot.sh
+      - name: Import
+        working-directory: spikes/godot
+        run: ${GODOT} --headless --import
+      - name: Scripted game, 20-minute AI game, replay of the AI game
+        working-directory: spikes/godot
+        run: |
+          set -euo pipefail
+          out="${GITHUB_WORKSPACE}/desktop"
+          mkdir -p "${out}"
+          lscpu | grep -E "Model name|^CPU\(s\)" | tee "${out}/cpu.txt" || true
+          ${GODOT} --headless -s res://headless.gd -- --mode scripted --out "${out}"
+          ${GODOT} --headless -s res://headless.gd -- --mode ai --out "${out}"
+          ${GODOT} --headless -s res://headless.gd -- --mode ai --replay "${out}/ai.commands.jsonl" --out "${out}"
+          diff "${out}/ai.hashes.txt" "${out}/ai-replay.hashes.txt"
+          cmp "${out}/ai.state.txt" "${out}/ai-replay.state.txt"
+          echo "replay: every hash and the end state match the original AI game"
+          (cd "${out}" && sha256sum ./*.state.txt | tee state.sha256)
+      - name: Cross-engine check against the TypeScript reference
+        continue-on-error: true
+        working-directory: spikes/godot
+        run: |
+          set -euo pipefail
+          ts="${GITHUB_WORKSPACE}/ts-reference"
+          node ../web/src/headless.ts --mode scripted --out "${ts}"
+          node ../web/src/headless.ts --mode ai --out "${ts}"
+          ${GODOT} --headless -s res://headless.gd -- --mode ai --replay "${ts}/ai.commands.jsonl" --name ai-from-ts --out "${ts}"
+          for g in scripted ai; do
+            if cmp "${ts}/${g}.state.txt" "${GITHUB_WORKSPACE}/desktop/${g}.state.txt"; then
+              echo "${g}: Godot and TypeScript end states are identical"
+            else
+              echo "::warning::${g}: Godot and TypeScript end states differ"
+            fi
+          done
+          diff <(cut -d' ' -f1-3 "${ts}/ai.hashes.txt") <(cut -d' ' -f1-3 "${ts}/ai-from-ts.hashes.txt") &&
+            echo "the TypeScript AI game's command log replays to the same hashes in Godot"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: godot-desktop
+          path: |
+            desktop/
+            ts-reference/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # Godot's single-threaded web export (the build the iPhone test uses) in desktop
+  # browsers. Software GPU: fps is a smoke test only; the hashes are extra environments.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: spikes/web/package-lock.json
+      - uses: actions/cache@v6
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-linux-v1
+      - run: spikes/godot/ci/install-godot.sh web_nothreads_release.zip web_nothreads_debug.zip android_debug.apk android_release.apk
+      - name: Web export with autorun
+        working-directory: spikes/godot
+        run: |
+          set -euo pipefail
+          ${GODOT} --headless --import
+          git rev-parse --short HEAD > commit.txt
+          mkdir -p "${RUNNER_TEMP}/godot-web"
+          ${GODOT} --headless --export-release "Web CI" "${RUNNER_TEMP}/godot-web/index.html"
+          cp web/overlay.js "${RUNNER_TEMP}/godot-web/"
+          ls -la "${RUNNER_TEMP}/godot-web"
+      - name: Chromium and WebKit
+        working-directory: spikes/web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium webkit
+          python3 -m http.server 4174 --bind 127.0.0.1 --directory "${RUNNER_TEMP}/godot-web" > /dev/null 2>&1 &
+          for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:4174/ && break; sleep 1; done
+          status=0
+          for b in chromium webkit; do
+            node scripts/browser-run.mjs http://127.0.0.1:4174/ "${b}" 1500 "${GITHUB_WORKSPACE}/browser-${b}" || status=1
+          done
+          exit "${status}"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-browser
+          path: |
+            browser-chromium/
+            browser-webkit/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-linux-v1
+      - run: spikes/godot/ci/install-godot.sh web_nothreads_release.zip web_nothreads_debug.zip android_debug.apk android_release.apk
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android export (autorun)
+        working-directory: spikes/godot
+        run: |
+          set -euo pipefail
+          ${GODOT} --headless --import
+          git rev-parse --short HEAD > commit.txt
+          # The SDK and JDK paths are editor settings, not export options.
+          mkdir -p ~/.config/godot
+          for v in 4 4.7; do
+            printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\n' \
+              "${ANDROID_HOME}" "${JAVA_HOME}" > ~/.config/godot/editor_settings-${v}.tres
+          done
+          # A throwaway debug keystore for this run only; nothing secret.
+          keytool -genkeypair -keystore "${RUNNER_TEMP}/debug.keystore" -storepass android -keypass android \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Spike Debug,O=Spike,C=US"
+          export GODOT_ANDROID_KEYSTORE_DEBUG_PATH="${RUNNER_TEMP}/debug.keystore"
+          export GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey
+          export GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android
+          mkdir -p ../../build/godot-android
+          ${GODOT} --headless --export-debug "Android" ../../build/godot-android/spike.apk
+          ls -la ../../build/godot-android
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android emulator run
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash spikes/tools/android-run.sh build/godot-android/spike.apk ${{ env.ANDROID_PACKAGE }} "^SPIKE done" 2400 android-out
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-android
+          path: android-out/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: ~/Library/Application Support/Godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-macos-v1
+      - run: spikes/godot/ci/install-godot.sh ios.zip
+      - name: Headless games on macOS arm64 (extra environment)
+        working-directory: spikes/godot
+        run: |
+          set -euo pipefail
+          ${GODOT} --headless --import
+          sysctl -n machdep.cpu.brand_string
+          ${GODOT} --headless -s res://headless.gd -- --mode scripted --out "${GITHUB_WORKSPACE}/macos-desktop"
+          ${GODOT} --headless -s res://headless.gd -- --mode ai --out "${GITHUB_WORKSPACE}/macos-desktop"
+      - name: iOS export (Xcode project only, autorun)
+        working-directory: spikes/godot
+        run: |
+          git rev-parse --short HEAD > commit.txt
+          mkdir -p ../../build/godot-ios
+          ${GODOT} --headless --export-debug "iOS" ../../build/godot-ios/spike.ipa
+      # The official 4.7.2 templates' simulator library links only as x86_64 (the Info.plist
+      # lists arm64 too, but linking arm64 finds x86_64 objects only), so build x86_64 and
+      # let Rosetta run it in the simulator on this Apple silicon runner.
+      - name: Build for the simulator (x86_64)
+        working-directory: build/godot-ios
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          uname -m
+          find . -maxdepth 3 -name "*.xcframework" | while read -r fw; do
+            echo "${fw}: $(plutil -extract AvailableLibraries json -o - "${fw}/Info.plist" | python3 -c '
+          import json, sys
+          print("; ".join(l["LibraryIdentifier"] + " " + ",".join(l["SupportedArchitectures"]) for l in json.load(sys.stdin)))' || true)"
+          done
+          /usr/bin/pgrep -q oahd && echo "Rosetta running" || softwareupdate --install-rosetta --agree-to-license
+          xcodebuild -project spike.xcodeproj -scheme spike -configuration Debug \
+            -sdk iphonesimulator -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "${RUNNER_TEMP}/dd" ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 20
+          lipo -info "$(find "${RUNNER_TEMP}/dd/Build/Products" -maxdepth 3 -path "*.app/spike" | head -n 1)"
+      - name: iOS simulator run
+        run: |
+          app="$(find "${RUNNER_TEMP}/dd/Build/Products" -maxdepth 2 -name "*.app" | head -n 1)"
+          bash spikes/tools/ios-run.sh "${app}" com.oraclelee.wargame.spikegodot spike "^SPIKE done" 3000 ios-out
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-ios
+          path: |
+            ios-out/
+            macos-desktop/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # Same hashes in every Godot environment? The Linux headless run is the reference.
+  report:
+    needs: [headless, browser, android, ios]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - run: find artifacts -maxdepth 3 | sort
+      - name: Compare hashes and collect the numbers
+        run: >-
+          node spikes/tools/report.mjs --games scripted,ai --json report.json
+          desktop-linux=artifacts/godot-desktop/desktop
+          ios-simulator=artifacts/godot-ios/ios-out/spike.txt
+          android-emulator=artifacts/godot-android/spike.txt
+          macos-headless=artifacts/godot-ios/macos-desktop
+          chromium-wasm=artifacts/godot-browser/browser-chromium/spike.txt
+          webkit-wasm=artifacts/godot-browser/browser-webkit/spike.txt
+      - name: Against the TypeScript reference (extra, does not fail the run)
+        continue-on-error: true
+        run: >-
+          node spikes/tools/report.mjs --games scripted,ai --json report-vs-ts.json
+          typescript-node=artifacts/godot-desktop/ts-reference
+          godot-linux=artifacts/godot-desktop/desktop
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-report
+          path: report*.json
+          retention-days: 90
+          if-no-files-found: ignore
