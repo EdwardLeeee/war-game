@@ -5,8 +5,8 @@ targets:
   mageWA mageWB mageWC   R5-01 西陸晶術師 designs (stills and the motion strip)
   compare                R1 longbowman and pikeman with the R2 render settings, only for the
                          actual-size "can you tell them apart" row (their level-C models are R5-02)
-  rosterE1 rosterE2 rosterW1 rosterW2
-                         R5-02 level-C roster: every unit at facing 7 (idle + action, x3 and x6)
+  rosterE1 rosterE2 rosterW1 rosterW2 rosterW3
+                         R5-02 level-C roster (W3 is the chosen West mage, B 學院大師): every unit at facing 7 (idle + action, x3 and x6)
                          and the formation frames (East facing 0, West facing 4; x3)
 Option 0 (the current mage, shared by both sides) reuses design/round3/build/r3/mage0.
 """
@@ -36,6 +36,8 @@ ROSTER = {
                  ("bow_w", [2.8, 3.2, 0.5, 0.74], ("attack", 4), {})],
     "rosterW2": [("knight_w", [6.0, 4.2, 0.5, 0.75], ("walk", 2), {}),
                  ("siege_w", [4.4, 4.2, 0.5, 0.72], ("attack", 2), {})],
+    # the West mage chosen in R5-01 (使用者 2026-09-30：「b 學院大師」)
+    "rosterW3": [("mage_w", MAGE_FRAME, ("cast", 20), {"mage_style": "WB"})],
 }
 COMPARE = {"bow_w": [2.6, 3.0, 0.5, 0.74], "pike_w": [5.2, 3.4, 0.5, 0.72]}
 
