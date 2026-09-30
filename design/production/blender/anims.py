@@ -85,6 +85,14 @@ def extend_mage(u, style):
                subdiv=2, fx=True)
     glow.scale = (0.001,) * 3
     east = style.startswith("T")
+    # the West mages stand holding the staff upright (mage5.build's hold pose); every new animation
+    # starts and ends there, or the staff would snap flat when the game switches from idle
+    hold = {} if east else {"shoulderR": (8, 0, -24), "elbowR": (78, 0, 0)}
+
+    def stand():
+        base, off = idle(0)
+        base.update(hold)
+        return base, off
 
     def tip():
         if east:
@@ -111,7 +119,7 @@ def extend_mage(u, style):
         glow.scale = (s * 4,) * 3
 
     def attack(f):
-        base, off = idle(0)
+        base, off = stand()
         if east:
             ready = {"shoulderR": (35, 0, -12), "elbowR": (115, 0, 0), "wristR": (10, 0, 0), "torso": (0, 0, 12),
                      "shoulderL": (-30, 0, 12), "elbowL": (80, 0, 0)}
@@ -135,7 +143,7 @@ def extend_mage(u, style):
             flash(tip(), 0.36 if f == 4 else 0.18)
 
     def hit(f):
-        base, off = idle(0)
+        base, off = stand()
         k = [0.0, 1.0, 0.8, 0.5, 0.25, 0.0][min(f, 5)]
         a = blend(base, {"torso": (10, 0, 0), "neck": (8, 0, 0), "shoulderL": (60, 0, 20), "elbowL": (80, 0, 0),
                          "hipR": (-8, 0, -4), "hipL": (8, 0, 4)}, k)
@@ -145,7 +153,7 @@ def extend_mage(u, style):
             shield_alpha.default_value = alpha0 + (1.0 - alpha0) * k
 
     def shatter(f):
-        base, off = idle(0)
+        base, off = stand()
         guard = {"torso": (14, 0, 0), "neck": (10, 0, 0), "shoulderR": (100, 0, -20), "elbowR": (100, 0, 0),
                  "shoulderL": (100, 0, 20), "elbowL": (100, 0, 0), "hipL": (14, 0, 6), "kneeL": (-16, 0, 0),
                  "kneeR": (-8, 0, 0)}
@@ -168,6 +176,8 @@ def extend_mage(u, style):
     def die(anim, f):
         t = min(1.0, f / 11.0) if anim == "fall" else 1.0
         a, o = fall(t)
+        if hold:           # the staff arm leaves the upright hold over the first half of the fall
+            a.update(blend(hold, {k: a.get(k, (0, 0, 0)) for k in hold}, ease(min(1.0, t * 2))))
         r.pose(a, o)
         # tilt the whole body before the skinned robe follows the joints
         r.root.rotation_euler = [x * lib.D2R for x in fall_root_tilt(t)]
