@@ -181,10 +181,11 @@ test("速度：正常 → 快 1.5× → 慢 0.75× → 正常（每秒 20、30�
   await expect.poll(async () => (await header(page)).speed).toBe(2000);
 });
 
-test("模擬還沒做的指令（投降）顯示「原型尚未開放」；已經有的規則被拒時說明原因", async ({ page }) => {
+// Which commands the simulation has not built yet changes as core's PRs land (surrender
+// ends the game once PR-4 is in), so "原型尚未開放" is covered by the unit tests
+// (test/messages.test.ts) and this test only uses a rule that exists.
+test("已經有的規則被拒時說明原因：農民點自己沒受損的主城", async ({ page }) => {
   await start(page);
-  await page.evaluate(() => window.__proto?.game?.send({ c: "surrender" }));
-  await expect(page.getByRole("status").filter({ hasText: "原型尚未開放" })).toBeVisible();
   // Farmers tapping their own undamaged main city: repair is a real rule, so it says why.
   await pause(page);
   const ids = await selectFarmers(page);
