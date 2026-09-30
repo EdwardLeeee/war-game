@@ -75,10 +75,16 @@ test("單指點單位或建築 → 選取", () => {
   ]);
 });
 
-test("選了農民後點自己的建築 → repair（幫忙蓋、耕作或修理，由模擬決定）；沒選農民時是選取", () => {
-  const farmers = play(world(), { units: [1, 2], building: null });
+test("選了農民後點自己需要人手的建築（沒蓋好、受損、農田）→ repair；完好的建築、沒選農民時是選取", () => {
+  const w = world();
+  w.things.push({ kind: "building", id: 12, owner: ME, type: BuildingType.House, cx: 4, cy: 8, needsWork: true });
+  const farmers = play(w, { units: [1, 2], building: null });
+  farmers.tap(at(4) + 3, at(8) + 3);
   farmers.tap(at(1) + 3, at(8) + 3);
-  assert.deepEqual(farmers.out, [{ kind: "command", cmd: { c: "repair", u: [1], building: 10 } }]);
+  assert.deepEqual(farmers.out, [
+    { kind: "command", cmd: { c: "repair", u: [1], building: 12 } },
+    { kind: "selectBuilding", id: 10 },
+  ]);
   const army = play(world(), { units: [2], building: null });
   army.tap(at(1) + 3, at(8) + 3);
   assert.deepEqual(army.out, [{ kind: "selectBuilding", id: 10 }]);

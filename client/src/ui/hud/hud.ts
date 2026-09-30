@@ -111,6 +111,7 @@ export class Hud {
       openEconomy: () => this.openEconomy(),
       chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice),
       selectOnly: (units: number[]) => game.apply([{ kind: "select", units }]),
+      clearSelection: () => game.apply([{ kind: "clear" }]),
     };
     this.minimap = new Minimap(root, {
       view: () => game.view,

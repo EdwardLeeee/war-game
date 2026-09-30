@@ -24,6 +24,8 @@ export interface IntentWorld {
   pickNode(wx: number, wy: number, r: number): Pick | null;
   /** The building whose footprint contains the point. */
   buildingAt(wx: number, wy: number): Pick | null;
+  /** Farmers have something to do there: not finished, damaged, or a farm (sim/PROTOCOL.md 3.1 repair). */
+  buildingNeedsFarmers(id: number): boolean;
   /** Own units whose position is inside the world rectangle. */
   ownUnitsIn(x0: number, y0: number, x1: number, y1: number): { id: number; type: number }[];
   /** Own units of this type that are on screen. */
@@ -92,8 +94,12 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
       if (others.length > 0) out.push({ kind: "command", cmd: { c: "move", u: others, x, y } });
       return out;
     }
+    // Only where there is work (build, farm, repair); a healthy barracks is selected instead,
+    // or the player could not pick a building while farmers are selected.
     const b = world.buildingAt(wx, wy);
-    if (b !== null && b.owner === world.me) return [{ kind: "command", cmd: { c: "repair", u: farmersSelected, building: b.id } }];
+    if (b !== null && b.owner === world.me && world.buildingNeedsFarmers(b.id)) {
+      return [{ kind: "command", cmd: { c: "repair", u: farmersSelected, building: b.id } }];
+    }
   }
 
   const pick = world.pick(wx, wy, r);
@@ -106,10 +112,10 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
       return [{ kind: "select", units: [pick.id] }];
     }
     if (pick.kind === "building") {
-      // Farmers tapping their own building: the simulation decides what that means (help
-      // build, farm a field, repair; core, relayed 2026-09-30). Without farmers it selects it.
+      // Farmers tapping their own building where there is work: the simulation decides what
+      // it is (help build, farm a field, repair; core, relayed 2026-09-30). Otherwise select it.
       const farmers = sel.units.filter((id) => world.unitType(id) === UnitType.Farmer);
-      if (farmers.length > 0) return [{ kind: "command", cmd: { c: "repair", u: farmers, building: pick.id } }];
+      if (farmers.length > 0 && world.buildingNeedsFarmers(pick.id)) return [{ kind: "command", cmd: { c: "repair", u: farmers, building: pick.id } }];
       return [{ kind: "selectBuilding", id: pick.id }];
     }
   }

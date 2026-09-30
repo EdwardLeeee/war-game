@@ -234,19 +234,35 @@ test("速度：正常 → 快 1.5× → 慢 0.75× → 正常（每秒 20、30�
 // Which commands the simulation has not built yet changes as core's PRs land (surrender
 // ends the game once PR-4 is in), so "原型尚未開放" is covered by the unit tests
 // (test/messages.test.ts) and this test only uses a rule that exists.
-test("已經有的規則被拒時說明原因：農民點自己沒受損的主城", async ({ page }) => {
+test("已經有的規則被拒時說明原因：主城連排 5 個農民，第 5 個糧食不夠", async ({ page }) => {
   await start(page);
-  // Farmers tapping their own undamaged main city: repair is a real rule, so it says why.
+  await pause(page);
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
+  if (city === undefined) throw new Error("no main city");
+  const c = { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) };
+  await tap(page, await toScreen(page, c));
+  await expect(page.locator(".sel-info")).toContainText("主城");
+  // Standard start: 200 food, a farmer costs 50. Orders given while paused all run on the next tick.
+  for (let i = 0; i < 5; i++) await page.getByRole("button", { name: /^訓練農民/ }).tap();
+  await page.getByRole("button", { name: "繼續" }).tap();
+  await expect(page.getByRole("status").filter({ hasText: "資源不夠" })).toBeVisible();
+});
+
+test("選了農民時點自己完好的建築是選取它（不是叫農民去修）；✕ 取消選取", async ({ page }) => {
+  await start(page);
   await pause(page);
   const ids = await selectFarmers(page);
+  expect(ids.length).toBeGreaterThan(0);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
   if (city === undefined) throw new Error("no main city");
   await tap(page, await toScreen(page, { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) }));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "repair", u: ids, building: city.id });
-  // Orders given while paused run on the next tick, so the answer comes after 繼續.
-  await page.getByRole("button", { name: "繼續" }).tap();
-  await expect(page.getByRole("status").filter({ hasText: "不需要農民" })).toBeVisible();
+  await expect.poll(() => selection(page)).toEqual({ units: [], building: city.id });
+  // The command area is the main city's now.
+  await expect(page.getByRole("button", { name: /^訓練農民/ })).toBeVisible();
+  await page.getByRole("button", { name: "取消選取" }).tap();
+  await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
 });
 
 test("轉成直向或切到背景會自動暫停；回來後維持暫停，要自己按繼續", async ({ page }) => {

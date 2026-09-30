@@ -542,6 +542,20 @@ button.active {
   font-size: 12px;
 }
 
+.sel-info {
+  padding-right: 56px;
+}
+
+.sel-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 18px;
+}
+
 .sel-head {
   display: flex;
   gap: 8px;

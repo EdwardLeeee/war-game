@@ -2,7 +2,7 @@
 
 import type { BoxPhase, GestureHost, LongPressResult } from "../src/input/gestures.ts";
 import type { IntentWorld, Pick } from "../src/input/intent.ts";
-import { NO_OWNER, Stance, UnitType } from "../src/sim.ts";
+import { BuildingType, NO_OWNER, Stance, UnitType } from "../src/sim.ts";
 import { TILE_PX } from "../src/tuning.ts";
 
 export type Call = [string, ...unknown[]];
@@ -67,6 +67,8 @@ export interface FakeThing {
   type: number;
   cx: number;
   cy: number;
+  /** Building: unfinished or damaged (farms always count as work). */
+  needsWork?: boolean;
 }
 
 export const ME = 0;
@@ -123,6 +125,11 @@ export class FakeWorld implements IntentWorld {
   buildingAt(wx: number, wy: number): Pick | null {
     const t = this.things.find((v) => v.kind === "building" && Math.floor(wx / TILE_PX) === v.cx && Math.floor(wy / TILE_PX) === v.cy);
     return t === undefined ? null : { kind: "building", id: t.id, owner: t.owner, type: t.type };
+  }
+
+  buildingNeedsFarmers(id: number): boolean {
+    const t = this.things.find((v) => v.kind === "building" && v.id === id);
+    return t !== undefined && (t.needsWork === true || t.type === BuildingType.Farm);
   }
 
   ownUnitsIn(x0: number, y0: number, x1: number, y1: number): { id: number; type: number }[] {

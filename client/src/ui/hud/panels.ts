@@ -33,6 +33,8 @@ export interface PanelHost {
   openEconomy(): void;
   chooseTown(town: number, choice: TownChoice): void;
   selectOnly(units: number[]): void;
+  /** Nothing selected (tapping the ground would order the selected units to go there). */
+  clearSelection(): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {
@@ -112,6 +114,8 @@ export class SelectionInfo {
   }
 
   private build(view: GameView): void {
+    const close = button(this.el, "✕", "", () => this.host.clearSelection(), "sel-close secondary");
+    close.setAttribute("aria-label", "取消選取");
     const sel = view.selection;
     if (sel.units.length === 1) return this.oneUnit(view, sel.units[0]);
     if (sel.units.length > 1) return this.manyUnits(view, sel.units);

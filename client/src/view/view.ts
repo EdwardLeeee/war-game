@@ -194,6 +194,15 @@ export class GameView implements IntentWorld {
     return null;
   }
 
+  buildingNeedsFarmers(id: number): boolean {
+    const o = this.buildingRow(id);
+    const b = this.curr?.snap.buildings;
+    if (o < 0 || b === undefined) return false;
+    const type = b[o + B.type];
+    const max = this.rules.buildings[type]?.hp ?? 0;
+    return b[o + B.progress] < 1000 || b[o + B.hp] < max || type === BuildingType.Farm;
+  }
+
   pickNode(wx: number, wy: number, r: number): Pick | null {
     const size = this.map.size;
     const cx = Math.floor(wx / TILE_PX);
