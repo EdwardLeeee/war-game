@@ -98,9 +98,10 @@ test("主要流程：開局 → 選農民 → 蓋房子 → 訓練 → 框選 �
   const spearmenBefore = (await own(page, [SPEARMAN])).length;
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "train", building: barracks.id, type: SPEARMAN, n: 1 });
+  // An order given while paused runs on the next tick: the queue shows once the game goes on.
+  await resume(page);
   await expect(page.getByRole("button", { name: /取消訓練第 1 個：槍兵/ })).toBeVisible();
   await shot(page, info, "4-train");
-  await resume(page);
   await expect.poll(async () => (await own(page, [SPEARMAN])).length, { timeout: 60_000 }).toBe(spearmenBefore + 1);
 
   // 5. 框選（長按空地 350 ms 後拖曳，框住在小鎮南邊的部隊）
