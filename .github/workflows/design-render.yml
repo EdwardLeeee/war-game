@@ -6,15 +6,18 @@ name: design-render
 on:
   workflow_dispatch:
     inputs:
-      levels:
-        description: "Detail levels to render (JSON list)"
-        default: '["0", "A", "B", "C"]'
+      round:
+        description: "round2 or round3"
+        default: "round3"
+      targets:
+        description: 'JSON list: round2 levels ["0","A","B","C"]; round3 targets ["mage0","mageA","mageB","mageC","legs"]'
+        default: '["mage0", "mageA", "mageB", "mageC", "legs"]'
   push:
     branches: ["design/**"]
     paths:
       # only when the render code changes, not when finished images are committed
-      - "design/round2/blender/**"
-      - "design/round2/common/config.py"
+      - "design/round3/blender/**"
+      - "design/round3/common/config.py"
 
 permissions:
   contents: read
@@ -26,6 +29,7 @@ concurrency:
 env:
   BLENDER_VERSION: "5.2.2"
   BLENDER_SERIES: "5.2"
+  ROUND: ${{ github.event.inputs.round || 'round3' }}
 
 jobs:
   render:
@@ -34,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        level: ${{ fromJSON(github.event.inputs.levels || '["0", "A", "B", "C"]') }}
+        target: ${{ fromJSON(github.event.inputs.targets || '["mage0", "mageA", "mageB", "mageC", "legs"]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,22 +69,26 @@ jobs:
 
       - name: Emblems
         working-directory: design/round1
-        run: /usr/bin/python3 common/emblems.py ../round2/build/emblems
+        run: /usr/bin/python3 common/emblems.py "../${ROUND}/build/emblems"
 
-      - name: Render level ${{ matrix.level }}
-        working-directory: design/round2
+      - name: Render ${{ env.ROUND }} ${{ matrix.target }}
+        working-directory: design/${{ env.ROUND }}
         env:
           BLENDER: ${{ github.workspace }}/../blender-bin
         run: |
           ln -sf ~/blender/blender "$BLENDER"
-          /usr/bin/python3 blender/render_r2.py --level "${{ matrix.level }}"
+          if [ "$ROUND" = "round2" ]; then
+            /usr/bin/python3 blender/render_r2.py --level "${{ matrix.target }}"
+          else
+            /usr/bin/python3 blender/render_r3.py --target "${{ matrix.target }}"
+          fi
 
       - name: Upload renders
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: r2-${{ matrix.level }}
+          name: ${{ env.ROUND }}-${{ matrix.target }}
           path: |
-            design/round2/build/r2/${{ matrix.level }}/
-            design/round2/build/jobs/*.log
+            design/${{ env.ROUND }}/build/r*/${{ matrix.target }}/
+            design/${{ env.ROUND }}/build/jobs/*.log
           retention-days: 14
