@@ -197,3 +197,23 @@ test("from minute 26 the garrison of a governed town joins the assault", () => {
   const after = orders(26).find((c) => c.u.length >= 16);
   assert.ok(after !== undefined && guards.every((id) => after.u.includes(id)), "minute 26: the garrison goes too");
 });
+test("from minute 26 it no longer goes back to finish a plunder", () => {
+  const where = (minute: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.tick = minute * 1200;
+    const [small] = w.map.towns;
+    w.townState[small.id] = TownState.Plundering;
+    w.townOwner[small.id] = 0;
+    put(g, 0, UnitType.Spearman, small.cellX, small.cellY + 1);
+    const s0 = w.map.spawns[0];
+    for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 5), s0.cellY - 14 - Math.trunc(k / 5));
+    g.fog.update(w);
+    const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
+    const m = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 11) as { x: number; y: number } | undefined;
+    return m && (m.x === small.cellX && m.y === small.cellY ? "town" : m.x === w.map.spawns[1].cellX && m.y === w.map.spawns[1].cellY ? "enemy base" : "other");
+  };
+  assert.equal(where(25), "town", "minute 25: finishes the plunder first");
+  assert.equal(where(26), "enemy base", "minute 26: straight for the enemy main city");
+});
+

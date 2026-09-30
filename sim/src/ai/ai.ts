@@ -21,8 +21,9 @@
 // - crystal: two farmers to the vein (by hand) once there is a mage hall and the vein is known;
 // - attack: with enough soldiers, or once the towns are taken, marches on the enemy main city;
 //   from minute 22 it takes no more towns and gathers for one assault (goes with 15, or from
-//   minute 24 with 8), from minute 26 the garrisons go too, and it does not give up on an
-//   enemy main city that is down to 40% of its hp.
+//   minute 24 with 8), from minute 26 the garrisons go too and it no longer goes back to
+//   finish a plunder, and it does not give up on an enemy main city that is down to 40% of
+//   its hp.
 //
 // Every spatial choice is made in the canonical frame (frame.ts): player 1 on the mirrored
 // 1 v 1 map sees the same picture as player 0, ties included.
@@ -506,8 +507,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const busy = [...towns.entries()].find(
         ([, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice),
       );
-      if (busy !== undefined) {
-        // Stay inside until the plunder is done.
+      if (busy !== undefined && !endgame) {
+        // Stay inside until the plunder is done (not in the endgame: everything goes for the
+        // enemy main city then).
         send(busy[1].x, busy[1].y, "town");
         return out;
       }
