@@ -40,7 +40,7 @@ import {
 } from "../protocol.ts";
 import { writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -157,6 +157,14 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
       row[BuildingField.rallyY] = -1;
     }
     row[BuildingField.flags] = w.tick - b.lastHurt[s] < 60 ? BuildingFlag.UnderAttack : 0;
+    if (
+      (own || player === null) &&
+      b.type[s] === BuildingType.MainCity &&
+      b.hp[s] < BUILDINGS[BuildingType.MainCity].hp &&
+      w.tick - b.lastHurt[s] < MAIN_CITY_REPAIR_LOCK
+    ) {
+      row[BuildingField.flags] |= BuildingFlag.RepairLocked;
+    }
     rows.push(row);
   }
   if (player !== null) {

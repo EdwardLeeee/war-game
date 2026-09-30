@@ -129,6 +129,7 @@ test("plunder: counts only while the holder's army is inside, pays out, ruins fo
   );
   assert.equal(g.w.plundered[0], 1);
   assert.equal(g.w.plunderIncome[0], rule.plunder.food + rule.plunder.gold + rule.plunder.crystal);
+  assert.deepEqual([rule.plunder.food, rule.plunder.gold, rule.plunder.crystal], [300, 300, 75], "GDD x 1.5 (ceo ruling)");
   assert.ok(g.w.firstCapture >= 0, "the capture was recorded");
   assert.equal(g.w.townState[t], TownState.Ruins);
   assert.equal(g.w.townOwner[t], NO_OWNER);

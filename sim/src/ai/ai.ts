@@ -151,6 +151,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   const lastState = new Map<number, number>();
   /** Farmers sent to the crystal vein. */
   let veinCrew: number[] = [];
+  /** Enemy soldiers seen at each think in the last 2 minutes (for weighing up a fight). */
+  const enemySeen: { tick: number; count: number }[] = [];
 
   const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
 
@@ -490,10 +492,24 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const minute = Math.trunc(tick / TICKS_PER_MINUTE);
       const endgame = minute >= 26;
       const baseNeed = minute < 20 ? baseArmy : Math.max(townArmy, baseArmy - (minute - 19) * 3);
+      // Weighing up: the most enemy soldiers seen at once in the last 2 minutes, and those
+      // near the army now. It goes out only when clearly stronger (1.3 x), and pulls back
+      // when outnumbered where it stands, so even armies do not just grind each other down.
+      enemySeen.push({ tick, count: foes.length });
+      while (enemySeen.length > 0 && tick - enemySeen[0].tick > 2 * TICKS_PER_MINUTE) enemySeen.shift();
+      const enemyPeak = enemySeen.reduce((m, e) => Math.max(m, e.count), 0);
+      const strongEnough = army.length * 10 >= enemyPeak * 13;
+      const cx = army.length === 0 ? home.cellX : Math.trunc(army.reduce((a, u) => a + u.x, 0) / army.length);
+      const cy = army.length === 0 ? home.cellY : Math.trunc(army.reduce((a, u) => a + u.y, 0) / army.length);
+      const outnumbered = foesNear(cx, cy, 12) > army.length;
       if (mode === "town" || mode === "base") {
-        if (!endgame && army.length * 5 < armyAtStart * 2) {
-          // Ground down: fall back and rebuild.
-          send(rally.x, rally.y, "gather");
+        if (!endgame && (army.length * 5 < armyAtStart * 2 || outnumbered)) {
+          // Ground down or outnumbered: break off (retreat ignores enemies) and rebuild.
+          out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
+          lastMove = tick;
+          mode = "gather";
+          target = { x: rally.x, y: rally.y };
+          return out;
         } else if (mode === "town") {
           const t = towns.get(targetTown);
           if (t === undefined || (t.owner === player && t.state !== TownState.Neutral)) mode = "gather";
@@ -511,10 +527,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           .filter(([, t]) => !(t.owner === player && t.state !== TownState.Neutral) && t.state !== TownState.Ruins)
           .filter(([id]) => tick - (plunders.get(id)?.tick ?? -100000) >= 6 * TICKS_PER_MINUTE)
           .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
-        if (army.length >= baseNeed || (open.length === 0 && army.length >= townArmy + 6) || (endgame && army.length >= 8)) {
+        if (endgame ? army.length >= 8 : strongEnough && (army.length >= baseNeed || (open.length === 0 && army.length >= townArmy + 6))) {
           armyAtStart = army.length;
           send(enemyHome.cellX, enemyHome.cellY, "base");
-        } else if (army.length >= townArmy && open.length > 0) {
+        } else if (army.length >= townArmy && open.length > 0 && (endgame || strongEnough)) {
           const pick = army.length >= 24 || open.length === 1 ? open[open.length - 1] : open[0];
           targetTown = pick[0];
           armyAtStart = army.length;
