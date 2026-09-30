@@ -238,7 +238,7 @@ def roster_board():
              "手機像素：1 pt = 3 px（同一場仗的中間一段；東陸藍、西陸紅）",
              "手機像素：1 pt = 3 px，每個兵種藍紅並排（上：東陸，下：西陸）"]
     H = 220 + 60 + f1.height + 60 + 60 + f3.height + 60 + 60 + le.height + 20 + lw.height + 80
-    art = Image.new("RGB", (W, max(H, 1800)), BG)
+    art = Image.new("RGB", (W, max(H, 1800) + 1500), BG)      # cropped to the content at the end
     dr = ImageDraw.Draw(art)
     dr.text((M, 40), label, font=artboard.font(56), fill=INK)
     r2art._wrap(dr, M, 118, "東陸、西陸各 6 種兵，全部是 C 精緻度（D-015），3 倍素材（D-017）。"
@@ -318,8 +318,9 @@ def memo_notes(m5, m1, mean5, mean1, a5, a1):
            ("3 倍未壓縮本來就放不進手機記憶體；量產仍建議 2 倍＋ASTC 壓縮。", "n"),
            (f"平均修邊面積：R5 約 {mean5:.0f} px，R1 約 {mean1:.0f} px（3 倍，依各兵種影格數加權）。", "n"),
            ("變大最多的："
-            + "、".join(f"{names[k]} {r:.1f} 倍" for r, k in big) + "（長武器、舉起的工具和更長的罩袍讓修邊框變大）。", "n"),
-           ("兩種算法：R1 當時（366 MB）是把所有取樣影格的平均面積乘上總影格數，每個兵種一樣重；"
+            + "、".join(f"{names[k]} {r:.1f} 倍" for r, k in big) + "（長武器、舉起的工具和更長的罩袍讓修邊框變大；"
+            "R1 沒有西陸農民，農民是和 R1 的東陸農夫比）。", "n"),
+           ("兩種算法：R1 當時（366 MB）是把所有取樣影格的平均面積乘上總影格數，沒有照各兵種的影格數加權；"
             "這張依各兵種的影格數加權（法師每方向 80 張、農夫 68 張、其他 36 張）。"
             "R1 改用這張的算法是 324 MB，和 R5 比的是這個數字。", "n"),
            ("共同的部分：影格數 × 平均修邊面積 × 每像素位元組；影格數照 R1 的量產估計"
@@ -399,10 +400,10 @@ SPEAR = {
 
 def spear_line(folder, colours, px_per_pt):
     """Two lines of spearmen from the same culture facing each other (the right line is mirrored)."""
-    w_pt, h_pt = 200, 110
+    w_pt, h_pt = 200, 124
     can = r2art.ground(int(w_pt * px_per_pt), int(h_pt * px_per_pt), zoom=px_per_pt / 3)
     d = R5 / folder
-    spots = [(40, 30, "idle03"), (48, 50, "walk02"), (40, 70, "walk06"), (48, 90, "idle03")]
+    spots = [(44, 52, "idle03"), (52, 72, "walk02"), (44, 92, "walk06"), (52, 112, "idle03")]
     items = [(x, y, fr, False, colours[0]) for x, y, fr in spots] + \
             [(200 - x, y, fr, True, colours[1]) for x, y, fr in spots]
     f = px_per_pt / 3
