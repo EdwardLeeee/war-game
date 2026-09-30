@@ -75,7 +75,7 @@ export class LabPanel {
     this.checkBtn.type = "button";
     const copy = make("button", row, "secondary", "複製 log");
     copy.type = "button";
-    make("p", this.panel, "lab-note", "開始量測：開一局 perf 場景（雙方接近人口上限、法師自動施放、迷霧開著、在城鎮附近交戰），暖機 5 秒後量 30 秒。量測時請不要操作。");
+    make("p", this.panel, "lab-note", "開始量測：開一局 perf 場景（所有系統都開著），暖機 5 秒後量 30 秒，量測時不要操作。");
     this.status = make("p", this.panel, "lab-status");
     this.resultBox = make("div", this.panel, "lab-result");
     this.resultBox.hidden = true;
@@ -167,7 +167,7 @@ export class LabPanel {
       this.live.textContent =
         `最近 ${secs} 秒：fps 中位數 ${f.median > 0 ? round2(1000 / f.median) : 0}，最慢 5% ${f.p95 > 0 ? round2(1000 / f.p95) : 0}；` +
         `模擬每 tick 中位數 ${round2(t.median)} ms、最大 ${round2(t.max)} ms` +
-        (this.hooks.fake() ? "（假資料，沒有真的模擬）" : "");
+        (this.hooks.fake() ? "（假資料）" : "");
     }
   }
 

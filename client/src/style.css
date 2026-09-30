@@ -368,6 +368,8 @@ a {
   border-radius: 12px;
   pointer-events: auto;
   font-size: 13px;
+  /* Short screens: the panel scrolls rather than pushing the log off the bottom. */
+  overflow-y: auto;
   -webkit-user-select: text;
   user-select: text;
 }
@@ -419,8 +421,8 @@ a {
 
 .lab-log-wrap {
   position: relative;
-  flex: 1 1 60px;
-  min-height: 60px;
+  flex: 1 0 96px;
+  min-height: 96px;
 }
 
 .lab-log {
