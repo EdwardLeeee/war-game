@@ -40,11 +40,12 @@ def M4():
 
 
 def folded_lathe(name, profile, material, rig, bones, folds=(9, 0.05), segs=48, scale=(1, 1, 1), at=(0, 0, 0),
-                 cut=None):
-    """A skinned garment with vertical folds that deepen toward the hem."""
+                 cut=None, zrange=None):
+    """A skinned garment with vertical folds that deepen toward the hem.
+    zrange=(top, bottom) makes a trim fold exactly like the garment it edges."""
     ob = lathe(name, profile, material, None, segs=segs, scale=scale, at=at, cap=False)
     zs = [p[1] for p in profile]
-    ztop, zbot = max(zs), min(zs)
+    ztop, zbot = zrange or (max(zs), min(zs))
     n, amp = folds
     for v in ob.data.vertices:
         x, y, z = v.co.x - at[0], v.co.y - at[1], v.co.z
@@ -127,8 +128,8 @@ def _wide_sleeves(r, mat_, b, cuff=None, flare=0.19):
         folded_lathe(f"mage_e_sleeve{side}", [(0.075, 1.42), (0.09, 1.2), (0.14, 1.02), (flare, 0.86), (flare + 0.01, 0.8)],
                      mat_, r, mage3._arm(r, side, b), folds=(7, 0.06), segs=24, at=(x, 0, 0))
         if cuff:
-            folded_lathe(f"mage_e_cuff{side}", [(flare + 0.004, 0.8), (flare + 0.006, 0.86)], cuff, r,
-                         mage3._arm(r, side, b), folds=(7, 0.06), segs=24, at=(x, 0, 0))
+            folded_lathe(f"mage_e_cuff{side}", [(flare + 0.012, 0.79), (flare + 0.014, 0.88)], cuff, r,
+                         mage3._arm(r, side, b), folds=(7, 0.06), segs=24, at=(x, 0, 0), zrange=(1.42, 0.8))
 
 
 # ---------------------------------------------------------------- TA 道長
@@ -143,7 +144,7 @@ def style_ta(u, M):
     folded_lathe("mage_e_robe", [(0.155, 1.46), (0.176, 1.26), (0.176, 1.02), (0.21, 0.7), (0.245, 0.35), (0.26, 0.05)],
                  X["black"], r, tb + lg, folds=(10, 0.06), scale=(1, 0.84, 1))
     folded_lathe("mage_e_hem", [(0.258, 0.05), (0.262, 0.16)], X["white"], r, tb + lg, folds=(10, 0.06),
-                 scale=(1, 0.84, 1))
+                 scale=(1, 0.84, 1), zrange=(1.46, 0.05))
     h2.skinned_lathe("mage_e_sash", [(0.18, 0.99), (0.184, 1.09)], M["team"], r, tb, scale=(1, 0.82, 1), segs=28)
     _wide_sleeves(r, X["black"], b, cuff=X["white"])
     r.pose()
@@ -199,12 +200,11 @@ def style_tb(u, M):
                  X["jade"], r, tb + lg, folds=(9, 0.055), scale=(1, 0.84, 1),
                  cut=lambda c: c.y > 0.08 and abs(c.x) < 0.1 and c.z < 1.0)
     h2.skinned_lathe("mage_e_sash", [(0.182, 0.99), (0.186, 1.08)], M["team"], r, tb, scale=(1, 0.84, 1), segs=28)
-    _wide_sleeves(r, X["jade"], b, cuff=X["slate"], flare=0.16)
-    # long player-colour sash ties flowing behind
-    ribbon("mage_e_tieR", [(0.12, -0.14, 1.03), (0.16, -0.24, 0.9), (0.2, -0.36, 0.7), (0.26, -0.46, 0.5)], 0.06,
-           M["team"], r, tb + lg)
-    ribbon("mage_e_tieL", [(0.06, -0.15, 1.03), (0.04, -0.26, 0.88), (0.02, -0.38, 0.66), (0.0, -0.48, 0.44)], 0.05,
-           M["team"], r, tb + lg)
+    _wide_sleeves(r, X["jade"], b, cuff=M["team"], flare=0.16)
+    # long player-colour sash ties hanging down both hips, in front of the robe
+    for s_ in (1, -1):
+        ribbon(f"mage_e_tie{s_}", [(0.16 * s_, 0.1, 1.03), (0.2 * s_, 0.12, 0.85), (0.23 * s_, 0.13, 0.62),
+                                   (0.25 * s_, 0.12, 0.42)], 0.07, M["team"], r, tb + lg)
     r.pose()
     J = r.j
     head = J["head"]
@@ -234,7 +234,8 @@ def style_tc(u, M):
     body2.zero_pose(r)
     tb, lg = mage3._torso(r), mage3._legs(r, b)
     # high-waisted: short jacket, sash under the chest, long skirt to the ground
-    folded_lathe("mage_e_skirt", [(0.15, 1.3), (0.16, 1.1), (0.2, 0.75), (0.25, 0.35), (0.28, 0.03)], X["taupe"], r,
+    ochre = mat("ochre4", (0.55, 0.36, 0.18), 0.8, noise=0.15, noise_scale=6, pattern="cloth", pattern_scale=110)
+    folded_lathe("mage_e_skirt", [(0.15, 1.3), (0.16, 1.1), (0.2, 0.75), (0.25, 0.35), (0.28, 0.03)], ochre, r,
                  tb + lg, folds=(12, 0.06), scale=(1, 0.86, 1))
     folded_lathe("mage_e_jacket", [(0.145, 1.46), (0.16, 1.34), (0.165, 1.26)], X["cream"], r, tb, folds=(6, 0.02),
                  scale=(1, 0.8, 1))
@@ -243,10 +244,11 @@ def style_tc(u, M):
     # 披帛: from the left hand up the outside of the arm, behind the back, down the right arm, ends hanging
     arms = mage3._arm(r, "R", b) + mage3._arm(r, "L", b)
     x = 0.215 * b
-    path = [(-x - 0.12, 0.02, 0.55), (-x - 0.1, 0.02, 0.8), (-x - 0.09, 0.0, 1.05), (-x - 0.06, -0.06, 1.28),
-            (-0.12, -0.2, 1.3), (0.0, -0.22, 1.24), (0.12, -0.2, 1.3), (x + 0.06, -0.06, 1.28), (x + 0.09, 0.0, 1.05),
-            (x + 0.1, 0.02, 0.8), (x + 0.12, 0.02, 0.55)]
-    ribbon("mage_e_pibo", path, 0.075, M["team"], r, arms + tb)
+    # 披帛 rests over both shoulders, crosses the upper back, and falls down the front of the arms to the knees
+    path = [(-x - 0.02, 0.16, 0.42), (-x - 0.03, 0.17, 0.68), (-x - 0.02, 0.15, 0.95), (-x + 0.01, 0.1, 1.2),
+            (-x + 0.04, 0.0, 1.4), (-0.12, -0.13, 1.36), (0.0, -0.16, 1.33), (0.12, -0.13, 1.36), (x - 0.04, 0.0, 1.4),
+            (x - 0.01, 0.1, 1.2), (x + 0.02, 0.15, 0.95), (x + 0.03, 0.17, 0.68), (x + 0.02, 0.16, 0.42)]
+    ribbon("mage_e_pibo", path, 0.1, M["team"], r, arms + tb)
     r.pose()
     J = r.j
     head = J["head"]
