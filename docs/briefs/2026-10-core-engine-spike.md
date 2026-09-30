@@ -1,20 +1,20 @@
-主旨：war-game-core 做引擎 spike。Godot 4.7.2 和 TypeScript + PixiJS + Capacitor 各做一個 300 單位的 RTS 小實驗，量出數字，讓使用者選引擎。
+主旨：war-game-core 做引擎 spike。Godot 4.7.2 和 TypeScript + PixiJS + Capacitor 各做一個 400 單位、4 方混戰的 RTS 小實驗，量出數字，讓使用者選引擎。
 
 ## 目標
 
 用實際量到的數字回答三個問題：
-- 兩個候選引擎，哪個能在使用者的 iPhone 上順暢跑 300 個單位的即時戰鬥？
+- 兩個候選引擎，哪個能在使用者的 iPhone 上順暢跑 400 個單位的即時戰鬥？
 - 哪個能保持確定性（同一份操作紀錄在每台機器上算出一模一樣的戰局）？
 - 哪個能在 CI 上不開畫面，快速跑完 AI 對 AI？
 
 ## 依據
 
-- 使用者 2026-09-30 核准的第一階段計畫：`docs/decisions/log.md` D-008。
+- 使用者 2026-09-30 核准的第一階段計畫：`docs/decisions/log.md` D-008。第一版要支援最多 4 方混戰（D-011），所以規模從計畫原本的 300 單位提高到 400。
 - 研究筆記：`docs/research/2026-09-engine-candidates.md`，裡面有官方文件原文、版本和通過標準。
 - `AGENTS.md` 的「模擬與 AI 規則」：只用整數或定點數、三角函數查表、亂數用固定種子、迭代依 ID 排序、每秒 20 tick。
-- 目標實機是使用者的 iPhone 14 Pro Max。
+- 目標實機是使用者的 iPhone 14 Pro Max。使用者沒有 Android 手機（2026-09-30），Android 只在 CI 的模擬器上預檢。
 - 可參考的既有經驗（repo `EdwardLeeee/connect4-web2`，本機在 `/home/oraclelee/Desktop/connect4-web2`）：
-  - Capacitor 8.5.2 app 內可以跑 WASM 和 Web Worker，iOS 18.7 模擬器與 Android API 36 模擬器都成功。
+  - Capacitor 8.5.2 app 內可以跑 WASM 和 Web Worker，iOS 模擬器（當時從 userAgent 讀到「18.7」；iOS 26 起 userAgent 的系統版本號是凍結的，實際版本未確認）與 Android API 36 模擬器都成功。
   - 重算放 Worker，不放主執行緒。曾經在主執行緒解題，iOS 畫面空白了 60 秒。
   - 驗證頁要把結果一步一步寫進 DOM 和 log，這樣卡住時 XCUITest 也讀得到做到哪裡。
   - iOS 與 Android 模擬器在 CI 上的冒煙測試，可以參考該 repo 的 `.github/workflows/ci.yml`。
@@ -22,10 +22,10 @@
 ## 實驗規格（兩個候選相同）
 
 - **地圖**：
-  - 128×128 格，約 20% 是障礙，用固定種子產生。
+  - 176×176 格，也就是混戰地圖的大小（GDD 第 12 節），約 20% 是障礙，用固定種子產生。
   - 地形用 tile 貼圖。
 - **單位**：
-  - 300 個，兩隊各 150。
+  - 400 個，四隊各 100。四隊都是敵人，互相攻擊。
   - 三種：近戰、遠程、快速。
   - 各有血量、攻擊力、射程、移動速度，死亡就移除。
 - **尋路**：
@@ -36,16 +36,16 @@
   - 指令紀錄的格式是 `(tick, player, command)`，要能重播。
   - 每 100 tick 輸出一次狀態雜湊：把所有單位的 ID、位置、血量算成一個雜湊值，演算法由你提案。
 - **兩份測試對局**：
-  - 固定腳本對局：兩軍在地圖中央交戰，打到一方全滅或滿 24,000 tick。用於比對確定性。
-  - 簡單 AI 對 AI：兩邊用同一套簡單規則，跑滿 20 分鐘（24,000 tick）。用於測無畫面的速度。
+  - 固定腳本對局：四軍在地圖中央交戰，打到只剩一方或滿 24,000 tick。用於比對確定性。
+  - 簡單 AI 對 AI：四方用同一套簡單規則，跑滿 20 分鐘（24,000 tick）。用於測無畫面的速度。
 - **繪圖（暫代圖形）**：
   - 每個單位畫一張小圖加血條。
   - 移動和攻擊時每一幀換一次貼圖，模擬正式動畫的負擔。
-  - 鏡頭可以拖曳和縮放，縮小時 300 個單位要能同時出現在畫面裡。
+  - 鏡頭可以拖曳和縮放，縮小時 400 個單位要能同時出現在畫面裡。
 - **觸控**：點選、長按後拖曳框選、單指拖曳移動畫面、雙指縮放、點地面移動。
 - **量測**：
   - 畫面上即時顯示 fps（中位數、最慢 5%）和每個 tick 的模擬時間（中位數、最大值），同時寫進 log 和 DOM。
-  - 量測窗口 30 秒，期間 300 個單位都在畫面內交戰。
+  - 量測窗口 30 秒，期間 400 個單位都在畫面內交戰。
 
 ## 通過標準
 
@@ -59,9 +59,8 @@
 
 **Godot 的實機數字怎麼量**：
 - 用 Godot 的單執行緒網頁版，在 iPhone Safari 上量，當成下限。
-- 這樣做有兩個原因：
-  - GitHub Pages 不能設定 COOP/COEP 標頭，多執行緒版跑不起來。
-  - Godot 文件寫原生版「will always perform better by a significant margin」，所以網頁版通過，原生版一定也會通過。
+- 這樣做的原因：Godot 文件寫原生版「will always perform better by a significant margin」，所以網頁版通過，原生版一定也會通過。
+- 更正：原本這裡寫「GitHub Pages 不能設 COOP/COEP 標頭，多執行緒版跑不起來」，這不完整。Godot 的 PWA 選項可以用 service worker 補上這些標頭（研究筆記第 6 節有原文），所以多執行緒版也能放在 Pages 上。先用單執行緒版當下限，沒通過時再測多執行緒版。
 - 網頁版沒通過就無法下結論。這時回報 ceo，由 ceo 決定要不要改走 TestFlight；那需要使用者操作 App Store Connect。
 
 ## 範圍
@@ -69,7 +68,8 @@
 - 要改：
   - `spikes/godot/`、`spikes/web/`
   - 只跑 spike 的 CI 工作，例如 `.github/workflows/spike-*.yml`
-  - GitHub Pages 上的 spike 測試頁
+  - GitHub Pages 上的 spike 測試頁。用 GitHub Actions 部署 Pages，不要設定成直接發布 `main` 的 `/docs`，
+    因為 `docs/` 是專案文件，不該變成網站。
   - 研究筆記第 7 節，以及原始數據資料夾 `docs/research/2026-09-engine-candidates/`
 - 不做：正式遊戲程式、正式美術、GDD。spike 程式是丟棄式的，之後不直接沿用，只借用做法。
 
