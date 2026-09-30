@@ -10,10 +10,12 @@
 // building gone) and the field is at least OPEN_REFRESH ticks old: an opened cell only
 // offers a shorter way, the old field still leads around it, so that rebuild can wait.
 //
-// At most REBUILDS_PER_TICK fields are built per tick, so a new building (which makes every
-// cached field stale) does not stall one tick. Past the budget a stale field is used as it
-// is for this tick, and a unit with no field at all heads straight for its goal. Units ask
-// in id order, so which ones get the fresh fields first is deterministic.
+// Each owner (player, or the neutral side) may build at most REBUILDS_PER_OWNER fields per
+// tick, so a new building (which makes every cached field stale) does not stall one tick.
+// Past its budget a stale field is used as it is for this tick, and a unit with no field at
+// all heads straight for its goal. Units ask in id order, so which of one owner's units get
+// the fresh fields first is deterministic; the budget is per owner so that a side with lower
+// ids does not take the other side's share.
 
 import { NO_DIR } from "./fixed.ts";
 import type { World } from "./world.ts";
@@ -23,8 +25,8 @@ const RING = 15;
 const CACHE_SIZE = 64;
 /** Ticks a field may keep ignoring cells that opened after it was built. */
 export const OPEN_REFRESH = 100;
-/** Fields built per tick at most. */
-export const REBUILDS_PER_TICK = 4;
+/** Fields each owner may build per tick. */
+export const REBUILDS_PER_OWNER = 2;
 
 export interface Field {
   key: number;
@@ -111,9 +113,12 @@ export function buildField(w: World, goals: number[], key: number): Field {
 
 /**
  * The step from cell c along the field: the DIR8 index of the neighbour with the lowest
- * dist + step cost (ties to the lowest index), or NO_DIR on a goal or an unreached cell.
+ * dist + step cost, or NO_DIR on a goal or an unreached cell. Ties go to the first in
+ * `order`, the unit owner's step order (World.stepOrders, from its symmetry frame): the
+ * lowest direction in canonical coordinates, so in mirror-image situations both sides take
+ * mirror-image steps (the map, and every field built from mirror-image goals, are images too).
  */
-export function fieldStep(w: World, f: Field, c: number): number {
+export function fieldStep(w: World, f: Field, c: number, order: readonly number[]): number {
   const dist = f.dist;
   const dc = dist[c];
   if (dc === 0 || dc === INF) return NO_DIR;
@@ -124,19 +129,29 @@ export function fieldStep(w: World, f: Field, c: number): number {
   const oW = x > 0 && grid[c - 1] === 0;
   const oS = c + n < n * n && grid[c + n] === 0;
   const oN = c >= n && grid[c - n] === 0;
+  // Cost of each direction through open cells, INF where blocked (corner cutting too).
+  const v = STEP_SCRATCH;
+  v[0] = oE ? dist[c + 1] + 10 : INF;
+  v[1] = oE && oS && grid[c + n + 1] === 0 ? dist[c + n + 1] + 14 : INF;
+  v[2] = oS ? dist[c + n] + 10 : INF;
+  v[3] = oS && oW && grid[c + n - 1] === 0 ? dist[c + n - 1] + 14 : INF;
+  v[4] = oW ? dist[c - 1] + 10 : INF;
+  v[5] = oW && oN && grid[c - n - 1] === 0 ? dist[c - n - 1] + 14 : INF;
+  v[6] = oN ? dist[c - n] + 10 : INF;
+  v[7] = oN && oE && grid[c - n + 1] === 0 ? dist[c - n + 1] + 14 : INF;
   let best = INF;
   let bestK = NO_DIR;
-  let v: number;
-  if (oE && (v = dist[c + 1] + 10) < best) (best = v), (bestK = 0);
-  if (oE && oS && grid[c + n + 1] === 0 && (v = dist[c + n + 1] + 14) < best) (best = v), (bestK = 1);
-  if (oS && (v = dist[c + n] + 10) < best) (best = v), (bestK = 2);
-  if (oS && oW && grid[c + n - 1] === 0 && (v = dist[c + n - 1] + 14) < best) (best = v), (bestK = 3);
-  if (oW && (v = dist[c - 1] + 10) < best) (best = v), (bestK = 4);
-  if (oW && oN && grid[c - n - 1] === 0 && (v = dist[c - n - 1] + 14) < best) (best = v), (bestK = 5);
-  if (oN && (v = dist[c - n] + 10) < best) (best = v), (bestK = 6);
-  if (oN && oE && grid[c - n + 1] === 0 && (v = dist[c - n + 1] + 14) < best) (best = v), (bestK = 7);
+  for (let i = 0; i < 8; i++) {
+    const k = order[i];
+    if (v[k] < best) {
+      best = v[k];
+      bestK = k;
+    }
+  }
   return bestK;
 }
+
+const STEP_SCRATCH = new Int32Array(8);
 
 /**
  * The walkable cell nearest (x, y): smallest squared distance; ties go to the cell nearer
@@ -195,7 +210,7 @@ export function cellsAround(w: World, cellX: number, cellY: number, size: number
 export class FieldCache {
   private fields: Field[] = [];
   private budgetTick = -1;
-  private built = 0;
+  private built = [0, 0, 0, 0];
   /** Counters for timing reports: fields built, fresh hits, stale fields used past the budget, requests left without a field. */
   builds = 0;
   hits = 0;
@@ -203,10 +218,10 @@ export class FieldCache {
   deferred = 0;
 
   /**
-   * The field for `key`, or null when it has none yet and this tick's budget is spent.
-   * `drop`: the field also depends on the set of finished drop-off buildings.
+   * The field for `key`, or null when it has none yet and `owner`'s budget for this tick is
+   * spent. `drop`: the field also depends on the set of finished drop-off buildings.
    */
-  get(w: World, key: number, goals: () => number[], drop = false): Field | null {
+  get(w: World, key: number, goals: () => number[], drop = false, owner = 0): Field | null {
     let f: Field | undefined;
     for (const g of this.fields) {
       if (g.key === key) {
@@ -222,9 +237,9 @@ export class FieldCache {
     if (f === undefined || stale) {
       if (this.budgetTick !== w.tick) {
         this.budgetTick = w.tick;
-        this.built = 0;
+        this.built.fill(0);
       }
-      if (this.built >= REBUILDS_PER_TICK) {
+      if (this.built[owner] >= REBUILDS_PER_OWNER) {
         if (f === undefined) {
           this.deferred++;
           return null;
@@ -233,7 +248,7 @@ export class FieldCache {
         f.lastUsed = w.tick;
         return f;
       }
-      this.built++;
+      this.built[owner]++;
       if (f !== undefined) this.fields.splice(this.fields.indexOf(f), 1);
       if (this.fields.length >= CACHE_SIZE) this.evict();
       f = buildField(w, goals(), key);

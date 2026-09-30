@@ -1,0 +1,78 @@
+// Map symmetry frames. Each player has a frame that carries its side of a symmetric map onto
+// the canonical side (player 0's). The prototype's 1 v 1 map is mirrored across x <-> y, so
+// player 1's frame is that mirror; a 4-player map would give each player a rotation.
+//
+// Every tie-break that depends on direction or position (a flow-field step, which axis to
+// slide along first, where the AI puts a building) is made in canonical coordinates, so
+// every player resolves the image of a situation the image way, and neither side gets the
+// better end of the ties. Integer maths only; shared by the simulation and the AI.
+
+/** canon = M · (x, y) + t for cells, with M = [m0 m1; m2 m3] a signed permutation matrix. */
+export interface Frame {
+  m: readonly [number, number, number, number];
+  t: readonly [number, number];
+}
+
+export const IDENTITY: Frame = { m: [1, 0, 0, 1], t: [0, 0] };
+/** Across the main diagonal: (x, y) -> (y, x). */
+export const MIRROR_XY: Frame = { m: [0, 1, 1, 0], t: [0, 0] };
+/** Quarter turns about the centre of a size x size map (for 4-player maps). */
+export function rotation(quarters: number, size: number): Frame {
+  const q = ((quarters % 4) + 4) % 4;
+  const s = size - 1;
+  if (q === 1) return { m: [0, -1, 1, 0], t: [s, 0] };
+  if (q === 2) return { m: [-1, 0, 0, -1], t: [s, s] };
+  if (q === 3) return { m: [0, 1, -1, 0], t: [0, s] };
+  return IDENTITY;
+}
+
+export function toCanon(f: Frame, x: number, y: number): { u: number; v: number } {
+  const [a, b, c, d] = f.m;
+  return { u: a * x + b * y + f.t[0], v: c * x + d * y + f.t[1] };
+}
+
+/** The inverse of toCanon (M is orthogonal, so its inverse is its transpose). */
+export function fromCanon(f: Frame, u: number, v: number): { x: number; y: number } {
+  const [a, b, c, d] = f.m;
+  const du = u - f.t[0];
+  const dv = v - f.t[1];
+  return { x: a * du + c * dv, y: b * du + d * dv };
+}
+
+/** Top-left cell of the real footprint whose canonical image is the size x size square at (u, v). */
+export function rectFromCanon(f: Frame, u: number, v: number, size: number): { x: number; y: number } {
+  const p = fromCanon(f, u, v);
+  const q = fromCanon(f, u + size - 1, v + size - 1);
+  return { x: Math.min(p.x, q.x), y: Math.min(p.y, q.y) };
+}
+
+/** DIR8 steps: E, SE, S, SW, W, NW, N, NE (y points down). */
+const DX = [1, 1, 0, -1, -1, -1, 0, 1];
+const DY = [0, 1, 1, 1, 0, -1, -1, -1];
+
+/**
+ * The real DIR8 indices in canonical order: element i is the real direction whose canonical
+ * image is direction i. Trying directions in this order and keeping the first strict best
+ * breaks ties by the lowest canonical direction.
+ */
+export function stepOrder(f: Frame): number[] {
+  const [a, b, c, d] = f.m;
+  const order: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    // Real vector = M^T · canonical vector.
+    const rx = a * DX[i] + c * DY[i];
+    const ry = b * DX[i] + d * DY[i];
+    for (let k = 0; k < 8; k++) if (DX[k] === rx && DY[k] === ry) order.push(k);
+  }
+  return order;
+}
+
+/** True for a mirror frame (it swaps left and right): determinant -1. */
+export function isReflection(f: Frame): boolean {
+  return f.m[0] * f.m[3] - f.m[1] * f.m[2] < 0;
+}
+
+/** True when the real x axis is the canonical y axis (such a player tries y first on a tie). */
+export function xIsCanonY(f: Frame): boolean {
+  return f.m[0] === 0;
+}

@@ -24,20 +24,27 @@ export function clamp(v: number, lo: number, hi: number): number {
 // 16 directions, k * 22.5 degrees, y down: rounded cos/sin * 1024.
 export const DIR16_X = [1024, 946, 724, 392, 0, -392, -724, -946, -1024, -946, -724, -392, 0, 392, 724, 946];
 export const DIR16_Y = [0, 392, 724, 946, 1024, 946, 724, 392, 0, -392, -724, -946, -1024, -946, -724, -392];
-// tan(11.25), tan(33.75), tan(56.25), tan(78.75) degrees * 1024
-const DIR16_TAN = [204, 684, 1533, 5148];
+// tan(11.25), tan(33.75) degrees * 1024
+const DIR16_TAN = [204, 684];
 
-/** Direction of (dx, dy) as one of 16 sectors. (0, 0) gives 0. */
+/** Sector of (a, b) with a >= b >= 0, i.e. an angle in [0, 45] degrees: 0, 1 or 2. */
+function halfQuadrant(a: number, b: number): number {
+  const s = b * 1024;
+  if (s < a * DIR16_TAN[0]) return 0;
+  if (s < a * DIR16_TAN[1]) return 1;
+  return 2;
+}
+
+/**
+ * Direction of (dx, dy) as one of 16 sectors. (0, 0) gives 0. Mirror-exact: the steeper
+ * half of each quadrant is worked out with the axes swapped, so dir16(dy, dx) is always the
+ * mirror image (x <-> y) of dir16(dx, dy) (frame.ts relies on it).
+ */
 export function dir16(dx: number, dy: number): number {
   if (dx === 0 && dy === 0) return 0;
   const ax = dx < 0 ? -dx : dx;
   const ay = dy < 0 ? -dy : dy;
-  const s = ay * 1024;
-  let q = 4;
-  if (s < ax * DIR16_TAN[0]) q = 0;
-  else if (s < ax * DIR16_TAN[1]) q = 1;
-  else if (s < ax * DIR16_TAN[2]) q = 2;
-  else if (s < ax * DIR16_TAN[3]) q = 3;
+  const q = ay <= ax ? halfQuadrant(ax, ay) : 4 - halfQuadrant(ay, ax);
   if (dx >= 0) return dy >= 0 ? q : (16 - q) % 16;
   return dy >= 0 ? 8 - q : 8 + q;
 }

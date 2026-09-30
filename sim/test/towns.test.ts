@@ -128,6 +128,8 @@ test("plunder: counts only while the holder's army is inside, pays out, ruins fo
     [rule.plunder.food, rule.plunder.gold, rule.plunder.crystal],
   );
   assert.equal(g.w.plundered[0], 1);
+  assert.equal(g.w.plunderIncome[0], rule.plunder.food + rule.plunder.gold + rule.plunder.crystal);
+  assert.ok(g.w.firstCapture >= 0, "the capture was recorded");
   assert.equal(g.w.townState[t], TownState.Ruins);
   assert.equal(g.w.townOwner[t], NO_OWNER);
   cmd(g, 0, { c: "town_choice", town: t, choice: TownChoice.Govern });
@@ -167,6 +169,8 @@ test("govern: pays at the choice, repairs with the minimum garrison, then produc
   assert.deepEqual(step(g), []);
   assert.equal(g.w.res[Resource.Wood], 500 - rule.governCost.wood);
   assert.equal(g.w.res[Resource.Gold], gold0 - rule.governCost.gold);
+  assert.equal(g.w.governChosen[0], 1);
+  assert.equal(g.w.governCost[0], rule.governCost.wood + rule.governCost.gold);
   cmd(g, 0, { c: "town_choice", town: t, choice: TownChoice.Plunder });
   assert.deepEqual(step(g), [Reject.TownChoiceMade]);
   run(g, rule.repairTicks);
@@ -197,6 +201,10 @@ test("govern: pays at the choice, repairs with the minimum garrison, then produc
   }
   assert.ok(revolted);
   assert.equal(g.w.townState[t], TownState.Neutral);
+  // Eleven minutes of production (about 1,000) had paid back the 160 it cost.
+  assert.ok(g.w.townIncome[0] > 900);
+  assert.equal(g.w.governEnded[0], 1);
+  assert.equal(g.w.governPaidBack[0], 1);
   assert.equal(g.w.populationCap(0), 10);
 });
 

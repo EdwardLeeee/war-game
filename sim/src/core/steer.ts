@@ -41,9 +41,9 @@ export function steerTo(
       return c < 0 ? [] : [c];
     };
   }
-  const f = fields.get(w, fieldKey, g, drop);
+  const f = fields.get(w, fieldKey, g, drop, u.owner[i]);
   const cell = (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT);
-  const d = f === null ? NO_DIR : fieldStep(w, f, cell);
+  const d = f === null ? NO_DIR : fieldStep(w, f, cell, w.stepOrders[u.owner[i]]);
   // No field yet this tick, on a goal cell, or on a cell the field cannot route from: head
   // straight for the point.
   if (d === NO_DIR) {

@@ -4,6 +4,7 @@
 // nodes and towns have their own small, fixed id ranges.
 
 import { BuildingType, NEUTRAL, PLAYER_COUNT, TownState, UnitType } from "../protocol.ts";
+import { IDENTITY, stepOrder, xIsCanonY } from "../frame.ts";
 import type { GameMap } from "./map.ts";
 import { BUILDINGS, ECO_DEFAULT, MAX_POPULATION, TOWNS, UNITS } from "./rules.ts";
 
@@ -114,6 +115,9 @@ export class World {
   townContested: Int32Array;
   /** Per-minute production accumulators [town * 3 + food|gold|crystal] (towns.ts). */
   townAcc: Int32Array;
+  /** The current governing spell of each town: what it cost, what it has paid out. */
+  townSpellCost: Int32Array;
+  townSpellIncome: Int32Array;
 
   /** Resources per player: [player * 4 + Resource]. Neutral has a row too. */
   res = new Int32Array((PLAYER_COUNT + 1) * 4);
@@ -141,6 +145,28 @@ export class World {
   lost = new Int32Array(PLAYER_COUNT * 5);
   plundered = new Int32Array(PLAYER_COUNT);
   governed = new Int32Array(PLAYER_COUNT);
+  /** Crystal cannon shots fired, and units they hit, per player. */
+  cannonShots = new Int32Array(PLAYER_COUNT);
+  cannonHits = new Int32Array(PLAYER_COUNT);
+  // Town statistics per player (for weighing plunder against govern): resources taken by
+  // plunders; governing chosen, its cost, what governed towns paid out and the ticks they
+  // were governed; governing spells that ended (revolt or capture) and those of them whose
+  // pay-out had reached their cost. Resources are counted as food + wood + gold + crystal.
+  plunderIncome = new Int32Array(PLAYER_COUNT);
+  governChosen = new Int32Array(PLAYER_COUNT);
+  governCost = new Int32Array(PLAYER_COUNT);
+  townIncome = new Int32Array(PLAYER_COUNT);
+  governedTicks = new Int32Array(PLAYER_COUNT);
+  governEnded = new Int32Array(PLAYER_COUNT);
+  governPaidBack = new Int32Array(PLAYER_COUNT);
+  /** Tick of the first town capture, or -1. */
+  firstCapture = -1;
+  /**
+   * Per owner (players, then neutral): the flow-field step order and whether to try the y
+   * axis first when sliding along a wall, both from the owner's symmetry frame (frame.ts).
+   */
+  stepOrders: number[][] = [];
+  yFirst: boolean[] = [];
   /** Winner once the game is over (-1 = draw), or -2 while running. */
   winner = -2;
   endReason = -1;
@@ -150,6 +176,11 @@ export class World {
     const n = (this.size = map.size);
     this.grid = new Uint8Array(n * n);
     this.buildingAt = new Int32Array(n * n).fill(-1);
+    for (let o = 0; o <= PLAYER_COUNT; o++) {
+      const f = map.frames[o] ?? IDENTITY;
+      this.stepOrders.push(stepOrder(f));
+      this.yFirst.push(xIsCanonY(f));
+    }
     for (let i = 0; i < n * n; i++) if (map.terrain[i] === 1) this.grid[i] = BLOCK_ROCK;
     for (let p = 0; p < PLAYER_COUNT; p++) {
       this.ecoRatio.set([ECO_DEFAULT.food, ECO_DEFAULT.wood, ECO_DEFAULT.gold], p * 3);
@@ -181,6 +212,8 @@ export class World {
     this.townRevolt = new Int32Array(t);
     this.townContested = new Int32Array(t);
     this.townAcc = new Int32Array(t * 3);
+    this.townSpellCost = new Int32Array(t);
+    this.townSpellIncome = new Int32Array(t);
     map.towns.forEach((s, i) => {
       this.townSize[i] = s.size;
       this.townX[i] = s.cellX;

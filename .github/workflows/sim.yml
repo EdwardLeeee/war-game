@@ -1,8 +1,7 @@
 name: Sim
 
 # Game rules and the prototype's simple AI (sim/, war-game-core). Not a required check:
-# the path filter would leave unrelated pull requests waiting. Later PRs add the
-# AI-vs-AI and browser-determinism jobs (see sim/README.md).
+# the path filter would leave unrelated pull requests waiting.
 on:
   push:
     branches: ["core/**"]
@@ -78,4 +77,91 @@ jobs:
         with:
           name: sim-headless
           path: headless/
+          retention-days: 30
+
+  # 100 AI-vs-AI games (50 seeds x both spawns), 4 shards of 25; each game is replayed from
+  # its command log with the AIs off and every hash must match.
+  ai-vs-ai:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sim/package-lock.json
+      - run: npm ci
+      - name: 25 games, each replayed
+        run: node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --out "${GITHUB_WORKSPACE}/tournament/shard-${{ matrix.shard }}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tournament-shard-${{ matrix.shard }}
+          path: tournament/
+          retention-days: 30
+
+  # The same command logs give the same hashes in Node, Chromium and WebKit: three AI-vs-AI
+  # games played in Node, replayed in the browser from the simulation's own sources.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sim/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Replay Node's games in ${{ matrix.browser }}
+        run: |
+          set -o pipefail
+          { echo "### ${{ matrix.browser }}"; node src/browser-check.ts --browser ${{ matrix.browser }} --games 3; } | tee -a "${GITHUB_STEP_SUMMARY}"
+
+  # Win rate of each spawn within 35-65% (draws left out), draws at most 10% (D5).
+  # For now draws may reach 30% (ceo 2026-09-30, see src/tournament-summary.ts); the next PR
+  # brings the gate back to 10%.
+  ai-summary:
+    needs: ai-vs-ai
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: tournament-shard-*
+          path: tournament
+          merge-multiple: true
+      - name: Summary and gates
+        run: |
+          set -o pipefail
+          node src/tournament-summary.ts ../tournament/shard-* --json ../tournament/summary.json | tee -a "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tournament-summary
+          path: tournament/summary.json
           retention-days: 30

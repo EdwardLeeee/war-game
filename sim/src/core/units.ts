@@ -45,6 +45,7 @@ import {
   UNDER_ATTACK_TICKS,
   UNITS,
 } from "./rules.ts";
+import { IDENTITY, toCanon } from "../frame.ts";
 import { steerDirect, steerTo } from "./steer.ts";
 import type { World } from "./world.ts";
 
@@ -143,6 +144,7 @@ export class UnitSystem {
     const cx = mx >> CELL_SHIFT;
     const cy = my >> CELL_SHIFT;
     const r2 = reach * reach;
+    const high = preferHighId(w, u.id[i]);
     let best = r2 + 1;
     let bestId = -1;
     for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
@@ -154,7 +156,7 @@ export class UnitSystem {
           const d2 = dx * dx + dy * dy;
           if (d2 > r2) continue;
           if (!this.sees(fog, me, u.x[j], u.y[j], n)) continue;
-          if (d2 < best || (d2 === best && u.id[j] < bestId)) {
+          if (d2 < best || (d2 === best && (high ? u.id[j] > bestId : u.id[j] < bestId))) {
             best = d2;
             bestId = u.id[j];
           }
@@ -170,7 +172,7 @@ export class UnitSystem {
       const bx = (b.cellX[s] << CELL_SHIFT) + 512;
       const by = (b.cellY[s] << CELL_SHIFT) + 512;
       if (!this.sees(fog, me, bx, by, n)) continue;
-      if (d2 < best || (d2 === best && b.id[s] < bestId)) {
+      if (d2 < best || (d2 === best && (high ? b.id[s] > bestId : b.id[s] < bestId))) {
         best = d2;
         bestId = b.id[s];
       }
@@ -229,6 +231,17 @@ export class UnitSystem {
     return best;
   }
 
+  /**
+   * When a unit looks for targets: every RETARGET_EVERY ticks, staggered by u + v of its
+   * cell in its owner's canonical frame (frame.ts), so mirror-image units look on the same
+   * tick. (Staggering by id made one side's units see enemies a tick earlier.)
+   */
+  private phase(w: World, i: number): number {
+    const u = w.units.col;
+    const c = toCanon(w.map.frames[u.owner[i]] ?? IDENTITY, u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT);
+    return c.u + c.v;
+  }
+
   // --- decide ----------------------------------------------------------------------------
 
   private decide(w: World, fog: Fog, fields: FieldCache, farmers: FarmerDecider, i: number): void {
@@ -261,7 +274,7 @@ export class UnitSystem {
       (u.flags[i] & UnitFlag.Autocast) !== 0 &&
       order !== Order.Retreat &&
       u.castCooldown[i] === 0 &&
-      (w.tick + u.id[i]) % RETARGET_EVERY === 0 &&
+      (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0 &&
       w.res[u.owner[i] * 4 + Resource.Crystal] >= CANNON.crystal
     ) {
       const aim = this.autocastAim(w, fog, i);
@@ -294,7 +307,7 @@ export class UnitSystem {
     } else if (order === Order.Retreat || farmer) {
       // Farmers fight only when told to attack something.
       tid = -1;
-    } else if ((w.tick + u.id[i]) % RETARGET_EVERY === 0) {
+    } else if ((w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
       const hold = order === Order.None && u.stance[i] === Stance.Hold;
       tid = this.findTarget(w, fog, i, hold ? info.range : Math.max(AGGRO_RANGE, info.range));
     }
@@ -418,7 +431,8 @@ export class UnitSystem {
             const dy = yi - u.y[j];
             if (dx >= SEPARATION || dx <= -SEPARATION || dy >= SEPARATION || dy <= -SEPARATION) continue;
             if (dx * dx + dy * dy >= sep2) continue;
-            const k = dx === 0 && dy === 0 ? (u.id[i] < u.id[j] ? 0 : 8) : dir16(dx, dy);
+            // Two units on the very same point part along the owner's canonical x axis.
+            const k = dx === 0 && dy === 0 ? (u.id[i] < u.id[j] ? 0 : 8) + (w.yFirst[u.owner[i]] ? 4 : 0) : dir16(dx, dy);
             px += idiv(DIR16_X[k] * PUSH, CELL);
             py += idiv(DIR16_Y[k] * PUSH, CELL);
           }
@@ -428,11 +442,11 @@ export class UnitSystem {
       py = clamp(py, -MAX_PUSH, MAX_PUSH);
       let tx = clamp(xi + u.vx[i] + px, 0, max - 1);
       let ty = clamp(yi + u.vy[i] + py, 0, max - 1);
-      // Wall sliding: try the larger component first; on a tie player 1 tries y first, the
-      // mirror image of player 0 trying x first.
+      // Wall sliding: try the larger component first; on a tie, the axis that is x in the
+      // owner's canonical frame (frame.ts), so mirror-image situations slide the same way.
       const ax = Math.abs(tx - xi);
       const ay = Math.abs(ty - yi);
-      if (ax > ay || (ax === ay && u.owner[i] !== 1)) {
+      if (ax > ay || (ax === ay && !w.yFirst[u.owner[i]])) {
         if (w.grid[(yi >> CELL_SHIFT) * n + (tx >> CELL_SHIFT)] !== 0) tx = xi;
         if (w.grid[(ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT)] !== 0) ty = yi;
       } else {
@@ -500,11 +514,13 @@ export class UnitSystem {
       const size = BUILDINGS[type].size;
       let best = arrow.range * arrow.range + 1;
       let bestSlot = -1;
+      // Slots are in id order: `<=` keeps the last (highest id) of equally near units.
+      const high = preferHighId(w, b.id[s]);
       for (let j = 0; j < count; j++) {
         if (u.owner[j] === b.owner[s] || u.action[j] === Action.Garrisoned) continue;
         if (b.owner[s] !== NEUTRAL && fog.visible[b.owner[s]][(u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT)] !== 1) continue;
         const d2 = rectDist2(u.x[j], u.y[j], b.cellX[s], b.cellY[s], size);
-        if (d2 < best) {
+        if (d2 < best || (high && d2 === best)) {
           best = d2;
           bestSlot = j;
         }
@@ -592,10 +608,14 @@ export class UnitSystem {
             if (u.owner[j] === p || u.action[j] === Action.Garrisoned) continue;
             const dx = u.x[j] - u.castX[i];
             const dy = u.y[j] - u.castY[i];
-            if (dx * dx + dy * dy <= r2) this.hit(w, j, CANNON.damage, UnitType.Mage, p);
+            if (dx * dx + dy * dy <= r2) {
+              this.hit(w, j, CANNON.damage, UnitType.Mage, p);
+              if (p < PLAYER_COUNT) w.cannonHits[p]++;
+            }
           }
         }
       }
+      if (p < PLAYER_COUNT) w.cannonShots[p]++;
       u.lastDealt[i] = w.tick;
       u.castCooldown[i] = CANNON.cooldownTicks;
     }
@@ -673,6 +693,15 @@ export class UnitSystem {
       w.endReason = GameOverReason.MainCityDestroyed;
     }
   }
+}
+
+/**
+ * Equally near targets: the lower or the higher id, alternating with the time and the
+ * chooser's id. Ids are handed out in creation order, so always preferring the lower id
+ * would make neutral militia and towers pick on whichever player built first.
+ */
+export function preferHighId(w: World, chooser: number): boolean {
+  return ((Math.trunc(w.tick / RETARGET_EVERY) + chooser) & 1) === 1;
 }
 
 /** Damage after the attacker-vs-target multiplier (integer, at least 1). */
