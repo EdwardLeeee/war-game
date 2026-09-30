@@ -1,6 +1,6 @@
 """Post-processing: 3x source renders -> trimmed frames packed into atlas pages.
 
-python3 common/postprocess.py --target farmer_e [--scale 3] [--page 2048] [--team-gain 1.0] [--astc 4x4]
+python3 common/postprocess.py --target farmer_e [--scale 3] [--page 2048] [--team-gain 1.6] [--astc 4x4]
 -> build/prod/<unit>/atlas_x<scale>/<unit>_color_<k>.png   RGBA8, AO baked in, player-colour parts grey
                                     <unit>_team_<k>.png    RGBA8 player-colour layer (own trim and layout)
                                     <unit>_shadow_<k>.png  black + alpha (LA), half the colour resolution
@@ -10,7 +10,7 @@ python3 common/postprocess.py --target farmer_e [--scale 3] [--page 2048] [--tea
 
 Format: client/docs/sprite-atlas.md (war-game-client, first draft 2026-09-30).
 - colour: straight alpha; the client draws it normally.
-- team: RGB = the colour layer at that point (x --team-gain, clipped), A = mask weight x colour alpha;
+- team: RGB = the colour layer at that point x team_gain (1.6, clipped at white), A = mask weight x colour alpha;
   the client draws it over the colour layer tinted with the player colour (a multiply in effect).
 - shadow: rendered for all eight facings, stored at half resolution, the client scales it by 2.
 - frames/team/fx list the rendered facings only; mirrored facings are drawn flipped (scale.x = -1
@@ -55,7 +55,9 @@ def _colour(raw, base):
 
 
 def _team(raw, base, colour, gain):
-    """Player-colour layer: the colour layer's pixels, alpha = mask weight x colour alpha."""
+    """Player-colour layer: the colour layer's pixels x gain (clipped at white), alpha = mask weight x
+    colour alpha. The gain 1.6 (= 1 / 0.62, R5's reference grey) makes the client's multiply match
+    the approved R5 recolouring; checked in blue, red, yellow and near-white (common/team_compare.py)."""
     m = np.asarray(Image.open(raw / f"{base}_x3_mask.png").convert("RGBA"), np.float32)
     c = np.asarray(colour, np.float32)
     w = (m[..., 0] / 255.0) * (m[..., 3] / 255.0) * (c[..., 3] / 255.0)
@@ -108,7 +110,10 @@ def _anchor(ax, ay, bb, f, div=1):
     return dict(ax=round((ax / div - bb[0]) * f, 2), ay=round((ay / div - bb[1]) * f, 2))
 
 
-def run(target, scale=3.0, page=2048, team_gain=1.0, astc=None, facings=None, preview=False):
+TEAM_GAIN = 1.6        # ceo 2026-10-01, after the four-colour check
+
+
+def run(target, scale=3.0, page=2048, team_gain=TEAM_GAIN, astc=None, facings=None, preview=False):
     u = spec.UNITS[target]
     raw = config.BUILD / "prod" / target / "raw"
     out = config.BUILD / "prod" / target / f"atlas_x{scale:g}"
@@ -201,8 +206,8 @@ if __name__ == "__main__":
     ap.add_argument("--target", required=True, choices=list(spec.UNITS))
     ap.add_argument("--scale", type=float, default=3.0, help="output scale (3 = source; 2 = two-thirds size)")
     ap.add_argument("--page", type=int, default=2048)
-    ap.add_argument("--team-gain", type=float, default=1.0,
-                    help="brighten the player-colour layer (1.0 = the colour layer as it is, per the client spec)")
+    ap.add_argument("--team-gain", type=float, default=TEAM_GAIN,
+                    help="brighten the player-colour layer (1.0 = the colour layer as it is)")
     ap.add_argument("--astc", help="block size for astcenc, e.g. 4x4 (optional; needs astcenc on PATH)")
     ap.add_argument("--facings")
     ap.add_argument("--preview", action="store_true")

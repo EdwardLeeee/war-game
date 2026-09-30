@@ -7,7 +7,7 @@ Columns per unit and team colour:
   R5       compose.recolor (the look the user approved: the grey is mapped to the player colour,
            lit parts drift toward white)
   client   colour layer, then the team layer tinted with the player colour (a multiply)
-  x1.6     the same, with the team layer brightened by 1 / 0.62 (--team-gain 1.6)
+  x1.6     the same, with the team layer brightened by 1 / 0.62 (the postprocess default), clipped at white
 Uses whatever renders are in build/prod/<unit>/raw (facing 7, first idle frame).
 """
 import sys
@@ -24,7 +24,10 @@ import config      # noqa: E402
 import postprocess  # noqa: E402
 
 UNITS = ["spear_e", "farmer_e", "hcav_e", "mage_w"]
-TEAMS = {"blue": config.TEAM["blue"], "red": config.TEAM["red"]}
+# the four player colours are not decided yet; blue and red are the R1-R5 ones, yellow and near-white
+# are the hard cases for a brightened layer (they clip first)
+TEAMS = {"blue": config.TEAM["blue"], "red": config.TEAM["red"], "yellow": (232, 190, 40),
+         "white": (236, 234, 226)}
 GROUND = (118, 128, 104)
 
 

@@ -43,6 +43,10 @@ import units5    # noqa: E402
 u = units5.build(job["kind"], job.get("variant", 0), job.get("mage_style"))
 if job.get("frames"):
     u.frames = dict(getattr(u, "frames", {}), **job["frames"])
+# the flying 晶砲 bolt is a projectile the game draws itself (client/docs/sprite-atlas.md): not in the unit images
+for _ob in lib.FX_PARTS:
+    if "fx_bolt" in _ob.name:
+        _ob["fx_on"] = False
 w_m, h_m, ax, ay = job.get("frame_m") or units.frame_m(job["kind"])
 ppm = job["px_per_m"]
 W, H = int(round(w_m * ppm)), int(round(h_m * ppm))
@@ -78,14 +82,14 @@ def body_top():
 
 def extents():
     """How far the unit reaches from the ground anchor on screen, in metres: (left, right, up, down).
-    Effects are left out (the flying bolt should become a projectile drawn by the game)."""
+    Effects count (shield, magic circles) except the ones switched off (the flying bolt)."""
     from mathutils import Euler as _E
     bpy.context.view_layer.update()
     rm = _E((60 * lib.D2R, 0, -45 * lib.D2R)).to_matrix()
     right, up = rm @ Vector((1, 0, 0)), rm @ Vector((0, 1, 0))
     xs, ys = [0.0], [0.0]
-    for ob in lib.ALL_PARTS:
-        if ob.hide_render and not ob.visible_camera:
+    for ob in list(lib.ALL_PARTS) + [o for o in lib.FX_PARTS if o.get("fx_on", True)]:
+        if ob.hide_render and not ob.visible_camera and ob not in lib.FX_PARTS:
             continue
         mw = ob.matrix_world
         for c in ob.bound_box:
