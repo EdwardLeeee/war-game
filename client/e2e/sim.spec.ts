@@ -330,5 +330,7 @@ test("量測：開一局 perf 場景（所有系統都開著），暖機 5 秒�
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
   await expect(page.getByRole("button", { name: "確定性檢查" })).toBeDisabled();
   await expect(page.locator(".lab-result")).toContainText("場景：perf（所有系統都開著）", { timeout: 90_000 });
+  // The texture limits for the sprite atlas (client/docs/sprite-atlas.md section 8).
+  await expect(page.locator(".lab-result")).toContainText(/最大貼圖 \d+、一次繪製 \d+ 張、ASTC (有|沒有)/);
   await shot(page, info, "perf-measure");
 });

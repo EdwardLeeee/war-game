@@ -10,11 +10,13 @@ on:
     branches: [main]
     paths:
       - "client/**"
+      - "!client/docs/**"
       - "sim/**"
       - ".github/workflows/client.yml"
   pull_request:
     paths:
       - "client/**"
+      - "!client/docs/**"
       - "sim/**"
       - ".github/workflows/client.yml"
   workflow_dispatch:

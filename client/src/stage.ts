@@ -19,3 +19,22 @@ export async function createStage(host: HTMLElement): Promise<Application> {
   host.appendChild(app.canvas);
   return app;
 }
+
+let limits: string | null = null;
+
+/**
+ * The phone's texture limits, for the sprite atlas decisions (client/docs/sprite-atlas.md,
+ * section 8): largest texture, textures per draw call, ASTC compression. Read once.
+ */
+export function gpuLimits(app: Application): string {
+  if (limits === null) {
+    const gl = "gl" in app.renderer ? (app.renderer.gl as WebGL2RenderingContext) : null;
+    if (gl === null) {
+      limits = "GPU：不是 WebGL";
+    } else {
+      const astc = gl.getExtension("WEBGL_compressed_texture_astc") !== null;
+      limits = `最大貼圖 ${gl.getParameter(gl.MAX_TEXTURE_SIZE)}、一次繪製 ${gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)} 張、ASTC ${astc ? "有" : "沒有"}`;
+    }
+  }
+  return limits;
+}
