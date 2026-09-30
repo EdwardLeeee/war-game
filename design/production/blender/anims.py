@@ -51,9 +51,10 @@ def _pose_body(r, a, o=None):
 
 # ---------------------------------------------------------------- mages
 
-def _shards(u, n=14):
-    """Shield fragments (effect layer only), hidden until the shield breaks."""
-    m = fx_mat("fx_shard", CRYSTAL, strength=2.2, alpha=0.9, fresnel=True)
+def _shards(u, n=18):
+    """Shield fragments (effect layer only), hidden until the shield breaks. Solid, not edge-lit:
+    a flat shard seen face-on is almost transparent with the shield's fresnel material."""
+    m = fx_mat("fx_shard", CRYSTAL, strength=3.0, alpha=1.0, fresnel=False)
     out = []
     ga = math.pi * (3 - math.sqrt(5))
     for k in range(n):
@@ -62,7 +63,7 @@ def _shards(u, n=14):
         th = ga * k
         d = Vector((rr * math.cos(th), rr * math.sin(th), z)).normalized()
         p0 = Vector((0, 0, 0.95)) + Vector((d.x * 0.78, d.y * 0.78, d.z * 0.78 * 1.18))
-        ob = ico(f"fx_shard{k}", 0.07, m, u.root, at=(0, 0, 0), subdiv=1, smooth=False, scale=(1.0, 0.35, 0.8),
+        ob = ico(f"fx_shard{k}", 0.11, m, u.root, at=(0, 0, 0), subdiv=1, smooth=False, scale=(1.0, 0.45, 0.8),
                  fx=True)
         ob.location = p0
         ob.rotation_euler = (th, z * 2, th * 0.5)
@@ -80,7 +81,7 @@ def extend_mage(u, style):
     sig = _obj("fx_sigil_root")
     fingers = r.j.get("fingers")
     shards = _shards(u)
-    glow = ico("fx_flash", 0.09, fx_mat("fx_flash", CRYSTAL, strength=3.0, alpha=0.95, fresnel=True), u.root,
+    glow = ico("fx_flash", 0.09, fx_mat("fx_flash", CRYSTAL, strength=4.0, alpha=1.0, fresnel=False), u.root,
                subdiv=2, fx=True)
     glow.scale = (0.001,) * 3
     east = style.startswith("T")
@@ -107,7 +108,7 @@ def extend_mage(u, style):
         sig.location = (at[0], at[1] + 0.05, at[2])
         sig.scale = (s,) * 3
         glow.location = at
-        glow.scale = (s * 5,) * 3
+        glow.scale = (s * 4,) * 3
 
     def attack(f):
         base, off = idle(0)
@@ -131,7 +132,7 @@ def extend_mage(u, style):
             a = blend(blend(base, strike, 1), base, ease((f - 5) / 4))
         _pose_body(r, a, off)
         if f in (4, 5):
-            flash(tip(), 0.24 if f == 4 else 0.13)
+            flash(tip(), 0.36 if f == 4 else 0.18)
 
     def hit(f):
         base, off = idle(0)
@@ -162,7 +163,7 @@ def extend_mage(u, style):
                 p = p0 + d * (1.6 * t)
                 p.z -= 1.4 * t * t
                 ob.location = (p.x, p.y, max(0.02, p.z))
-                ob.scale = (max(0.001, 1 - 0.7 * t),) * 3
+                ob.scale = (max(0.001, 1 - 0.5 * t),) * 3
 
     def die(anim, f):
         t = min(1.0, f / 11.0) if anim == "fall" else 1.0
