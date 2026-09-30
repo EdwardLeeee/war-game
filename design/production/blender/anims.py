@@ -274,7 +274,10 @@ def extend_siege(u, kind):
         if kind == "siege_e":
             arm.rotation_euler = ((55 + 70 * ease(min(1, t * 1.4))) * lib.D2R, 0, 0)
         else:
-            arm.rotation_euler = ((70 - 95 * ease(min(1, t * 1.4))) * lib.D2R, 0, 0)
+            # the catapult's arm rests pulled back (70 degrees); broken, it slumps further back onto the
+            # frame and twists to one side (swinging it up would read as a shot)
+            k = ease(min(1, t * 1.4))
+            arm.rotation_euler = ((70 + 32 * k) * lib.D2R, 0, 14 * k * lib.D2R)
         if loose is not None:
             loc0, _ = rest[loose.name]
             w = ease(min(1, t * 1.3))
