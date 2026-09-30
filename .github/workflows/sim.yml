@@ -181,16 +181,16 @@ jobs:
           cache: npm
           cache-dependency-path: sim/package-lock.json
       - run: npm ci
-      # Installing a browser has hung for 15+ minutes on some runners (2026-10-01): give each
-      # try 5 minutes, and try twice.
+      # Installing a browser hung for 15+ minutes when the Ubuntu package mirror stalled, and
+      # took 4-5 minutes when it was slow (2026-10-01). apt itself now gives up on a download
+      # that stalls for 30 s and tries it again (5 times). Killing the install from outside and
+      # trying again did not work: the killed apt left dpkg locked and the second try failed
+      # with exit code 100 (run 36761820799).
+      - name: Let apt retry stalled downloads
+        run: printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries
       - name: Install ${{ matrix.browser }}
-        timeout-minutes: 11
-        run: |
-          for attempt in 1 2; do
-            if timeout 300 npx playwright install --with-deps ${{ matrix.browser }}; then exit 0; fi
-            echo "install attempt $attempt failed or took over 5 minutes"
-          done
-          exit 1
+        timeout-minutes: 12
+        run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Replay Node's games in ${{ matrix.browser }}
         run: |
           set -o pipefail
