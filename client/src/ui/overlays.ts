@@ -31,31 +31,36 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.TownNotYours]: "不是你攻下的城鎮",
   [Reject.TownChoiceMade]: "這座城鎮已經選過了",
   [Reject.GameOver]: "這局已經結束",
-  [Reject.OutOfRange]: "超出晶砲射程",
+  [Reject.OutOfRange]: "超出晶砲射程（8 格）",
 };
 
 /**
- * Commands the simulation does not do yet (sim/PROTOCOL.md: from core's PR-4). Their
- * NotAvailable means "not built yet" and says so (ceo 2026-09-30); remove each when it lands.
+ * The same reason code means different things for different commands (sim/PROTOCOL.md 3.1
+ * and 3.2); these say it plainly for the command that was rejected.
  */
-export const PENDING_COMMANDS: ReadonlySet<CommandKind> = new Set<CommandKind>(["cast", "autocast", "town_choice", "surrender"]);
-
-/** NotAvailable for the rules that exist (sim/PROTOCOL.md 3.1), by command. */
-const NOT_AVAILABLE_TEXT: Partial<Record<CommandKind, string>> = {
-  build: "主城和箭樓不能蓋",
-  repair: "這裡現在不需要農民（沒有受損，或田已經有人耕）",
-  train: "這棟建築還沒蓋好，或不訓練這種兵",
-  rally: "這棟建築不能設集結點",
-  gather: "只有農民能採集",
+const BY_COMMAND: Partial<Record<number, Partial<Record<CommandKind, string>>>> = {
+  [Reject.NotAvailable]: {
+    build: "主城和箭樓不能蓋",
+    repair: "這裡現在不需要農民（沒有受損，或田已經有人耕）",
+    train: "這棟建築還沒蓋好，或不訓練這種兵",
+    rally: "這棟建築不能設集結點",
+    gather: "只有農民能採集",
+    cast: "只有法師能發晶砲",
+    autocast: "只有法師能自動施放",
+  },
+  [Reject.InvalidTarget]: {
+    cast: "晶砲的落點不在地圖內",
+    town_choice: "這座城鎮現在不能選",
+  },
+  [Reject.CannotAfford]: {
+    town_choice: "治理要先投入金和木，現在不夠",
+  },
 };
 
 /** What to tell the player when a command comes back rejected. */
 export function rejectText(reason: number, cmd: CommandBody | undefined): string {
-  if (reason === Reject.NotAvailable && cmd !== undefined) {
-    if (PENDING_COMMANDS.has(cmd.c)) return "原型尚未開放";
-    return NOT_AVAILABLE_TEXT[cmd.c] ?? REJECT_TEXT[reason];
-  }
-  return REJECT_TEXT[reason] ?? "指令沒有執行";
+  const specific = cmd === undefined ? undefined : BY_COMMAND[reason]?.[cmd.c];
+  return specific ?? REJECT_TEXT[reason] ?? "指令沒有執行";
 }
 
 const WHEEL_RADIUS = 72;
@@ -188,12 +193,35 @@ export class Overlays {
     this.prompt.hidden = true;
   }
 
-  /** ✓ and ✗ beside the preview's screen rectangle (right of it, or left near the edge). */
-  showPlace(rect: { x: number; y: number; w: number; h: number }, okEnabled: boolean, onOk: () => void, onCancel: () => void): void {
-    const w = this.root.clientWidth;
-    const side = rect.x + rect.w + 120 < w ? rect.x + rect.w + 10 : rect.x - 110;
-    this.place.style.left = `${Math.max(8, side)}px`;
-    this.place.style.top = `${Math.max(8, rect.y + rect.h / 2 - 26)}px`;
+  /**
+   * ✓ and ✗ next to the preview's screen rectangle: right of it, else left, below or above,
+   * whichever stays on screen without covering an interface panel (`avoid`, screen rects).
+   */
+  showPlace(
+    rect: { x: number; y: number; w: number; h: number },
+    okEnabled: boolean,
+    onOk: () => void,
+    onCancel: () => void,
+    avoid: DOMRect[] = [],
+  ): void {
+    const W = this.root.clientWidth;
+    const H = this.root.clientHeight;
+    const bw = 112;
+    const bh = 52;
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+    const candidates = [
+      { x: rect.x + rect.w + 10, y: cy - bh / 2 },
+      { x: rect.x - 10 - bw, y: cy - bh / 2 },
+      { x: cx - bw / 2, y: rect.y + rect.h + 10 },
+      { x: cx - bw / 2, y: rect.y - 10 - bh },
+    ];
+    const clear = (p: { x: number; y: number }) =>
+      p.x >= 8 && p.y >= 8 && p.x + bw <= W - 8 && p.y + bh <= H - 8 &&
+      avoid.every((a) => p.x + bw <= a.left || p.x >= a.right || p.y + bh <= a.top || p.y >= a.bottom);
+    const spot = candidates.find(clear) ?? { x: W / 2 - bw / 2, y: H / 2 - bh / 2 };
+    this.place.style.left = `${spot.x}px`;
+    this.place.style.top = `${spot.y}px`;
     this.placeOk.disabled = !okEnabled;
     this.placeOk.onclick = onOk;
     this.placeCancel.onclick = onCancel;

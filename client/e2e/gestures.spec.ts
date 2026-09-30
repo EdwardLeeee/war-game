@@ -4,7 +4,7 @@
 // commands from what the page posted. sim.spec.ts runs the real simulation.
 
 import { expect, type Page, test } from "@playwright/test";
-import { INTERACTIVE, IPHONE_SAFE, injectSafeArea, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { INTERACTIVE, IPHONE_SAFE, injectSafeArea, openLab, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 import { doubleTap, drag, lift, longPress, move, pinch, pressShowsCue, tap } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -177,7 +177,7 @@ test("撤退：點地面選位置，或按取消離開", async ({ page }) => {
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: [spear], x: 12, y: 74 });
   await longPress(page, await at(page, SPEAR));
   await page.getByRole("menuitem", { name: "撤退" }).tap();
-  await page.getByRole("button", { name: "取消" }).tap();
+  await page.getByRole("button", { name: "取消", exact: true }).tap();
   expect(await mode(page)).toBe("normal");
 });
 
@@ -208,7 +208,7 @@ test("放建築 → 預覽跟著手指，紅色不能按 ✓，放開後按 ✓ 
 });
 
 test("量測面板：量測中不能再按；log 框跟著最新一行，往上捲時不會被拉走", async ({ page }, info) => {
-  await page.getByRole("button", { name: "量測", exact: true }).tap();
+  await openLab(page);
   const measure = page.getByRole("button", { name: "開始量測" });
   const check = page.getByRole("button", { name: "確定性檢查" });
   await expect(check).toBeDisabled();

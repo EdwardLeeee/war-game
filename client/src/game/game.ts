@@ -21,7 +21,7 @@ import { attachPointer } from "../input/pointer.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
-import { buildAtlas } from "../render/atlas.ts";
+import { atlasFor } from "../render/atlas.ts";
 import { WorldRenderer } from "../render/world.ts";
 import {
   BuildingField,
@@ -35,11 +35,14 @@ import {
   PROTOCOL_VERSION,
   type ScenarioName,
   Stance,
+  UNIT_STRIDE,
+  UnitField,
   UnitType,
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
+import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, rejectText } from "../ui/overlays.ts";
 import { Placement } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
@@ -54,6 +57,8 @@ export interface GameOptions {
   env: () => Record<string, unknown>;
   /** A fresh simulation Worker for the determinism check, or null (the fake world has none). */
   checkPort: (() => SimPort) | null;
+  /** 重來 and 回開局畫面 (the page owns games). */
+  life: HudLifecycle;
 }
 
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
@@ -74,7 +79,11 @@ export class Game implements GestureHost {
   speed: SpeedName = "normal";
   /** The last determinism check's result (the test hook reads it). */
   lastCheck: CheckResult | null = null;
+  readonly hud: Hud;
   private readonly controls: Controls;
+  private readonly hudRoot: HTMLElement;
+  private readonly cleanups: (() => void)[] = [];
+  private readonly tick = () => this.frame();
   private readonly app: Application;
   private readonly port: SimPort;
   private readonly overlays: Overlays;
@@ -89,43 +98,122 @@ export class Game implements GestureHost {
     this.app = app;
     this.port = port;
     this.options = options;
+    this.hudRoot = hud;
     this.overlays = new Overlays(hud);
     this.controls = new Controls(hud, { togglePause: () => (this.paused ? this.resume() : this.pause()), cycleSpeed: () => this.setSpeed(nextSpeed(this.speed)) });
     const checkPort = options.checkPort;
+    // The lab opens from the menu (選單 → 量測與確定性檢查).
     this.lab = new LabPanel(
       hud,
-      { env: options.env, check: checkPort === null ? null : () => this.determinism(checkPort), fake: () => options.fake },
-      this.controls.bar,
+      {
+        env: options.env,
+        check: checkPort === null ? null : () => this.determinism(checkPort),
+        fake: () => options.fake,
+        // Measure "every system running" (brief): the perf scenario, in a game of its own.
+        requestMeasure: options.fake || options.scenario === "perf" ? undefined : () => options.life.perf(),
+      },
+      null,
     );
+    this.hud = new Hud(hud, this, this.controls.bar, options.life);
     this.recognizer = new GestureRecognizer(this);
     port.onmessage = (e) => this.receive(e.data);
-    attachPointer(app.canvas, this.recognizer, () => {
-      const was = this.camera?.flinging ?? false;
-      this.camera?.stop();
-      return was;
-    });
-    app.canvas.addEventListener(
-      "wheel",
-      (e) => {
-        e.preventDefault();
-        const cam = this.camera;
-        if (cam === null) return;
-        cam.zoomAt(e.offsetX, e.offsetY, cam.scale * Math.exp(-e.deltaY * 0.0015));
-      },
-      { passive: false },
+    this.cleanups.push(
+      attachPointer(app.canvas, this.recognizer, () => {
+        const was = this.camera?.flinging ?? false;
+        this.camera?.stop();
+        return was;
+      }),
     );
-    app.ticker.add(() => this.frame());
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const cam = this.camera;
+      if (cam === null) return;
+      cam.zoomAt(e.offsetX, e.offsetY, cam.scale * Math.exp(-e.deltaY * 0.0015));
+    };
+    app.canvas.addEventListener("wheel", wheel, { passive: false });
+    this.cleanups.push(() => app.canvas.removeEventListener("wheel", wheel));
+    app.ticker.add(this.tick);
     // GDD §11 (ceo 2026-09-30): going to the background or turning the phone upright pauses
     // the game; coming back leaves it paused until the player presses 繼續.
-    document.addEventListener("visibilitychange", () => {
+    const hidden = () => {
       if (!document.hidden) return;
       this.lab.lab.spoil("量測期間頁面切到背景");
       this.pause();
-    });
+    };
+    document.addEventListener("visibilitychange", hidden);
+    this.cleanups.push(() => document.removeEventListener("visibilitychange", hidden));
     const portrait = window.matchMedia("(orientation: portrait)");
-    portrait.addEventListener("change", () => {
+    const upright = () => {
       if (portrait.matches) this.pause();
-    });
+    };
+    portrait.addEventListener("change", upright);
+    this.cleanups.push(() => portrait.removeEventListener("change", upright));
+  }
+
+  /** End this game: stop its Worker and take its drawing, listeners and interface away. */
+  destroy(): void {
+    this.port.onmessage = null;
+    this.port.terminate();
+    for (const c of this.cleanups) c();
+    this.app.ticker.remove(this.tick);
+    this.renderer?.destroy();
+    this.renderer = null;
+    this.hud.destroy();
+    this.hudRoot.replaceChildren();
+  }
+
+  /** Point the camera at the fighting: the soldiers on screen or in sight, a little zoomed out (量測 perf). */
+  focusBattle(): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const cam = this.camera;
+    if (view === null || u === undefined || cam === null) return;
+    let x = 0;
+    let y = 0;
+    let n = 0;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      const t = u[o + UnitField.type];
+      if (t !== UnitType.Spearman && t !== UnitType.Ranged && t !== UnitType.Mage) continue;
+      const p = view.unitPos(o);
+      x += p.x;
+      y += p.y;
+      n++;
+    }
+    if (n === 0) return;
+    cam.zoomAt(0, 0, 0.75);
+    cam.centerOn(x / n, y / n);
+  }
+
+  /** The port, for the test hook (it can feed events to the fake world). */
+  get portForTest(): SimPort {
+    return this.port;
+  }
+
+  toast(text: string): void {
+    this.overlays.toast(text);
+  }
+
+  /** Minimap tap (GDD §10): jump there; in 撤退／晶砲／集結點 mode, pick that spot. */
+  minimapTap(cx: number, cy: number): void {
+    const view = this.view;
+    if (view === null) return;
+    const wx = (cx + 0.5) * TILE_PX;
+    const wy = (cy + 0.5) * TILE_PX;
+    if (this.mode !== "normal") {
+      this.apply(tapIntents(view, view.selection, this.mode, wx, wy, 1, this.hitRadius()));
+      return;
+    }
+    this.camera?.centerOn(wx, wy);
+  }
+
+  /** Minimap long press with units selected (GDD §10): they advance there. */
+  minimapLongPress(cx: number, cy: number): void {
+    const units = this.view?.selection.units ?? [];
+    if (units.length === 0) {
+      this.toast("先選部隊，再長按小地圖");
+      return;
+    }
+    this.apply([{ kind: "command", cmd: { c: "move", u: units, x: cx, y: cy } }]);
   }
 
   pause(): void {
@@ -204,8 +292,10 @@ export class Game implements GestureHost {
           const v = cam.visible();
           return wx >= v.x0 && wx <= v.x1 && wy >= v.y0 && wy <= v.y1;
         };
-        this.renderer = new WorldRenderer(this.app, this.view, buildAtlas(this.app.renderer));
-        this.app.renderer.on("resize", (w: number, h: number) => cam.resize(w, h));
+        this.renderer = new WorldRenderer(this.app, this.view, atlasFor(this.app.renderer));
+        const resize = (w: number, h: number) => cam.resize(w, h);
+        this.app.renderer.on("resize", resize);
+        this.cleanups.push(() => this.app.renderer.off("resize", resize));
         this.lab.log.add(`ready seed ${this.options.seed} ${JSON.stringify(this.options.env())}`);
         break;
       }
@@ -219,6 +309,8 @@ export class Game implements GestureHost {
           if (ev.k === "rejected") {
             const cmd = this.sent.find((c) => c.seq === ev.seq);
             this.overlays.toast(rejectText(ev.reason, cmd));
+          } else {
+            this.hud.onEvent(ev);
           }
         }
         if (this.placement !== null) {
@@ -233,7 +325,7 @@ export class Game implements GestureHost {
         break;
       case "game_over":
         this.lab.log.add(`game_over winner ${msg.winner} reason ${msg.reason} tick ${msg.stats.ticks}`);
-        this.overlays.toast("這局結束了");
+        this.hud.showResult(msg.winner, msg.reason, msg.stats);
         break;
       default:
         break;
@@ -250,6 +342,7 @@ export class Game implements GestureHost {
     if (cam === null || view === null || this.renderer === null) return;
     cam.update(dt);
     this.renderer.draw(now, cam, this.placement);
+    this.hud.frame(now);
     // ✓ and ✗ follow the preview on screen while the camera pinches or flings (a few style writes).
     if (this.placement?.phase === "confirm") this.showPlaceButtons();
     const header = view.header;
@@ -531,7 +624,17 @@ export class Game implements GestureHost {
     if (p === null || cam === null || p.phase !== "confirm") return;
     const r = p.rect();
     const tl = cam.worldToScreen(r.x, r.y);
-    this.overlays.showPlace({ x: tl.x, y: tl.y, w: r.w * cam.scale, h: r.h * cam.scale }, p.valid && p.builders.length > 0, () => this.confirmPlacement(), () => this.endPlacement());
+    // Keep ✓ and ✗ off the interface panels (the preview can be dragged under any of them).
+    const avoid = [...this.hudRoot.querySelectorAll<HTMLElement>(".top-right, .res-bar, .side-left, .side-right, .minimap, .sel-info, .cmds, .prompt")]
+      .filter((e) => !e.hidden && e.offsetParent !== null)
+      .map((e) => e.getBoundingClientRect());
+    this.overlays.showPlace(
+      { x: tl.x, y: tl.y, w: r.w * cam.scale, h: r.h * cam.scale },
+      p.valid && p.builders.length > 0,
+      () => this.confirmPlacement(),
+      () => this.endPlacement(),
+      avoid,
+    );
   }
 
   private confirmPlacement(): void {

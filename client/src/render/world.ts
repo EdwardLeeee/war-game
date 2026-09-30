@@ -108,6 +108,7 @@ export class WorldRenderer {
   private readonly barLayer = new Container();
   private readonly townLayer = new Container();
   private readonly ghost = new Graphics();
+  private readonly terrainTexture: Texture;
   private readonly fogCanvas: HTMLCanvasElement;
   private readonly fogTexture: Texture;
   private readonly fogPixels: ImageData;
@@ -141,6 +142,7 @@ export class WorldRenderer {
     }
     tctx.putImageData(img, 0, 0);
     const terrainTex = Texture.from(terrain);
+    this.terrainTexture = terrainTex;
     terrainTex.source.scaleMode = "nearest";
     const ground = new Sprite(terrainTex);
     ground.scale.set(TILE_PX);
@@ -176,6 +178,14 @@ export class WorldRenderer {
     this.drawSelectionExtras();
     this.drawMarkers(now);
     this.drawGhost(placement);
+  }
+
+  /** Take this game's drawing off the stage (the shared shapes stay). */
+  destroy(): void {
+    this.root.parent?.removeChild(this.root);
+    this.root.destroy({ children: true });
+    this.terrainTexture.destroy(true);
+    this.fogTexture.destroy(true);
   }
 
   /** Flash a ring at a world point (px). */
@@ -413,8 +423,10 @@ export class WorldRenderer {
       const x = w[o + W.x] * FIXED_TO_PX;
       const y = w[o + W.y] * FIXED_TO_PX;
       const r = w[o + W.radius] * FIXED_TO_PX;
-      this.fx.circle(x, y, r).fill({ color: WARNING_TINT, alpha: 0.18 + 0.12 * pulse }).stroke({ width: 3, color: WARNING_TINT, alpha: 0.9 });
-      this.fx.circle(x, y, r * 0.35).stroke({ width: 2, color: WARNING_TINT, alpha: 0.9 });
+      this.fx.circle(x, y, r).fill({ color: WARNING_TINT, alpha: 0.12 + 0.1 * pulse }).stroke({ width: 3, color: WARNING_TINT, alpha: 0.9 });
+      // Countdown (core: ticksLeft 30 -> 0, then it fires): an inner disc that grows to the rim.
+      const left = Math.min(Math.max(w[o + W.ticksLeft], 0), 30);
+      this.fx.circle(x, y, r * (1 - left / 30)).fill({ color: WARNING_TINT, alpha: 0.35 });
     }
   }
 

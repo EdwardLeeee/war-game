@@ -1,8 +1,20 @@
 // Read-only view of a game for the Playwright tests, on window.__proto.game with ?test=1 only.
 
-import { BUILDING_STRIDE, BuildingField as B, type BuildingType, type CommandBody, HeaderField as H, NodeField as N, Terrain, UNIT_STRIDE, UnitField as U } from "../sim.ts";
+import {
+  BUILDING_STRIDE,
+  BuildingField as B,
+  type BuildingType,
+  type CommandBody,
+  HeaderField as H,
+  NodeField as N,
+  type SimEvent,
+  Terrain,
+  UNIT_STRIDE,
+  UnitField as U,
+} from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX } from "../view/view.ts";
+import { MockPort } from "../mock/mock-port.ts";
 import type { Game } from "./game.ts";
 
 export interface GameHook {
@@ -27,7 +39,7 @@ export interface GameHook {
   labPhase(): string;
   log(line: string): void;
   /** Latest snapshot header values. */
-  header(): { tick: number; paused: boolean; speed: number };
+  header(): { tick: number; paused: boolean; speed: number; scenario: number };
   /** Buildings in the latest snapshot: top-left cell and footprint size. */
   buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number }[];
   /** Resource nodes the player knows about, with cells. */
@@ -37,6 +49,10 @@ export interface GameHook {
   lastCheck(): unknown;
   /** Post a command as the player (tests of commands the interface has no button for yet). */
   send(cmd: CommandBody): void;
+  /** Fake world only: deliver an event with the next snapshot. */
+  inject(ev: SimEvent): void;
+  /** Control groups 1–4 as stored by the interface. */
+  groups(): number[][];
 }
 
 export function gameHook(game: Game): GameHook {
@@ -88,7 +104,7 @@ export function gameHook(game: Game): GameHook {
     log: (line) => game.lab.log.add(line),
     header: () => {
       const h = game.view?.header;
-      return { tick: h?.[H.tick] ?? -1, paused: h?.[H.paused] === 1, speed: h?.[H.speed] ?? 0 };
+      return { tick: h?.[H.tick] ?? -1, paused: h?.[H.paused] === 1, speed: h?.[H.speed] ?? 0, scenario: h?.[H.scenario] ?? -1 };
     },
     buildings: () => {
       const b = game.view?.curr?.snap.buildings;
@@ -126,5 +142,9 @@ export function gameHook(game: Game): GameHook {
     },
     lastCheck: () => game.lastCheck,
     send: (cmd) => game.command(cmd),
+    inject: (ev) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.inject(ev);
+    },
+    groups: () => game.hud.groups.map((g) => [...g]),
   };
 }
