@@ -10,7 +10,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { join } from "node:path";
 import { chromium, webkit } from "playwright";
 import { hex8 } from "./core/fixed.ts";
-import { type LogHeader, MAX_TICKS, PROTOCOL_VERSION } from "./protocol.ts";
+import { type LogHeader, MAX_TICKS } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 
 function arg(name: string, fallback: string): string {
@@ -26,10 +26,10 @@ const src = new URL(".", import.meta.url).pathname;
 const logs: { seed: number; jsonl: string; hashes: { tick: number; hash: string }[]; ticks: number }[] = [];
 for (let k = 0; k < games; k++) {
   const seed = 101 + k;
-  const r = new Runner({ seed, scenario: "standard", ai: [true, true] });
+  const r = new Runner({ seed, scenario: "standard", ai: [true, true], maxTicks });
   while (!r.over && r.game.tick < maxTicks) r.tick();
   if (r.hashes.at(-1)!.tick !== r.game.tick) r.hashes.push({ tick: r.game.tick, hash: r.game.hash() });
-  const head: LogHeader = { protocol: PROTOCOL_VERSION, seed, scenario: "standard", ai: [true, true] };
+  const head: LogHeader = r.header([true, true]);
   const jsonl = [JSON.stringify(head), ...r.game.log.map((c) => JSON.stringify(c))].join("\n") + "\n";
   logs.push({ seed, jsonl, ticks: r.game.tick, hashes: r.hashes.map((h) => ({ tick: h.tick, hash: hex8(h.hash) })) });
 }

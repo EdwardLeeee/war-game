@@ -554,9 +554,34 @@ export class Economy {
     steerTo(w, fields, i, tx, ty, buildingKey(t), UNITS[UnitType.Farmer].speed, buildingGoals(w, bs));
   }
 
-  /** A finished building's builders: a farm is farmed, a lumber camp or mine sends them to the nearest wood or gold. */
+  /**
+   * A finished building's builders. Sent by a build without farmers: back to what it was
+   * gathering if that is still there, otherwise to the economy ratio (idle). Otherwise: a farm
+   * is farmed, a lumber camp or mine sends them to the nearest wood or gold.
+   */
   private afterBuild(w: World, i: number, bs: number): void {
     const b = w.buildings.col;
+    const u = w.units.col;
+    if (u.autoBuild[i] === b.id[bs]) {
+      const t = u.resumeTarget[i];
+      const farm = u.resumeFarm[i] === 1;
+      u.autoBuild[i] = -1;
+      u.resumeTarget[i] = -1;
+      u.resumeFarm[i] = 0;
+      if (t >= 0) {
+        const fs = farm ? w.building(t) : -1;
+        if (farm && fs >= 0 && b.owner[fs] === u.owner[i] && b.progress[fs] >= 1000 && !this.farmTakenBy(w, t, i)) {
+          this.gather(w, i, t, true);
+          return;
+        }
+        if (!farm && nodeOpen(w, t)) {
+          this.gather(w, i, t, false);
+          return;
+        }
+      }
+      this.idle(w, i);
+      return;
+    }
     const type = b.type[bs];
     if (type === BuildingType.Farm && !this.farmTakenBy(w, b.id[bs], i)) {
       this.gather(w, i, b.id[bs], true);

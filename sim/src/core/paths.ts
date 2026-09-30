@@ -206,6 +206,68 @@ export function cellsAround(w: World, cellX: number, cellY: number, size: number
   return out;
 }
 
+/**
+ * Areas of walkable cells that connect (round 2: telling whether a goal can be reached at
+ * all). Cells joined by a side are in the same area; a diagonal step needs both sides open, so
+ * it joins nothing more. Labels depend only on the grid (flooded in cell order) and are worked
+ * out again, when asked, after cells were blocked or opened.
+ */
+export class Regions {
+  private label = new Int32Array(0);
+  private stack = new Int32Array(0);
+  private block = -1;
+  private open = -1;
+
+  /** The area of cell c, or -1 for a cell that is not walkable. */
+  of(w: World, c: number): number {
+    if (w.blockVersion !== this.block || w.openVersion !== this.open || this.label.length !== w.size * w.size) this.flood(w);
+    return this.label[c];
+  }
+
+  private flood(w: World): void {
+    const n = w.size;
+    const total = n * n;
+    const grid = w.grid;
+    if (this.label.length !== total) {
+      this.label = new Int32Array(total);
+      this.stack = new Int32Array(total);
+    }
+    const label = this.label;
+    const stack = this.stack;
+    label.fill(-1);
+    let next = 0;
+    for (let start = 0; start < total; start++) {
+      if (grid[start] !== 0 || label[start] >= 0) continue;
+      label[start] = next;
+      let top = 0;
+      stack[top++] = start;
+      while (top > 0) {
+        const c = stack[--top];
+        const x = c % n;
+        if (x < n - 1 && grid[c + 1] === 0 && label[c + 1] < 0) {
+          label[c + 1] = next;
+          stack[top++] = c + 1;
+        }
+        if (x > 0 && grid[c - 1] === 0 && label[c - 1] < 0) {
+          label[c - 1] = next;
+          stack[top++] = c - 1;
+        }
+        if (c + n < total && grid[c + n] === 0 && label[c + n] < 0) {
+          label[c + n] = next;
+          stack[top++] = c + n;
+        }
+        if (c >= n && grid[c - n] === 0 && label[c - n] < 0) {
+          label[c - n] = next;
+          stack[top++] = c - n;
+        }
+      }
+      next++;
+    }
+    this.block = w.blockVersion;
+    this.open = w.openVersion;
+  }
+}
+
 /** Keeps the CACHE_SIZE most recently used fields (keys: see buildingKey and friends). */
 export class FieldCache {
   private fields: Field[] = [];

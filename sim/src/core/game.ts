@@ -5,7 +5,7 @@
 // 2. hands idle farmers work (every ECO_EVERY ticks); 3. unit decisions (farmers at work
 // by the economy); 4. movement; 5. attacks, then gathering, building, repairing, hiding;
 // 6. deaths (a mage's killer picks up crystal); 7. training; 8. towns; 9. tick + 1, then fog every FOG_EVERY ticks;
-// 10. time limit. The hash covers all state.
+// 10. the game's time limit (none when 0). The hash covers all state.
 
 import {
   CELL_SHIFT,
@@ -32,6 +32,8 @@ import { World } from "./world.ts";
 export interface GameConfig {
   seed: number;
   scenario: ScenarioKey;
+  /** Time limit in ticks, 0 = none (a game a person plays). Absent: MAX_TICKS. */
+  maxTicks?: number;
 }
 
 /** An event and who gets it: a player, or -1 for everyone. */
@@ -130,7 +132,8 @@ export class Game {
     // 9. Fog.
     if (w.tick % FOG_EVERY === 0) this.fog.update(w);
     // 10. Time limit, then the game-over event.
-    if (!w.over && w.tick >= MAX_TICKS) {
+    const limit = this.config.maxTicks ?? MAX_TICKS;
+    if (!w.over && limit > 0 && w.tick >= limit) {
       w.winner = -1;
       w.endReason = GameOverReason.TimeLimit;
     }

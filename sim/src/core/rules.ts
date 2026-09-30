@@ -200,6 +200,10 @@ export const CARRY = 10;
 export const NODE_AMOUNT = { tree: 100, goldCell: 400, bush: 100, crystalCell: 150 };
 /** Builders on one building that add progress (more wait); the same cap applies to repairs. */
 export const BUILDERS_MAX = 4;
+/** Farmers a build without farmers sends (round 2): by footprint, 1 for 2 x 2 and 2 for 3 x 3. */
+export function autoBuilders(size: number): number {
+  return size <= 2 ? 1 : 2;
+}
 export const REPAIR_PER_SECOND = 5;
 /** A main city cannot be repaired within this many ticks of taking damage (10 s); other buildings can. */
 export const MAIN_CITY_REPAIR_LOCK = 10 * S;

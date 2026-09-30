@@ -8,10 +8,11 @@
 import { rules } from "./core/rules.ts";
 import { hex8 } from "./core/fixed.ts";
 import {
+  AI_DIFFICULTIES,
   COMMAND_KINDS,
   type FromWorker,
   type GameStats,
-  type LogHeader,
+  MAX_TICKS,
   PLAYER_COUNT,
   PROTOCOL_VERSION,
   Resource,
@@ -118,7 +119,7 @@ function stop(): void {
 }
 
 function determinism(msg: Extract<ToWorker, { type: "determinism" }>): void {
-  const r = new Runner({ seed: msg.seed, scenario: msg.scenario, ai: [true, true] });
+  const r = new Runner({ seed: msg.seed, scenario: msg.scenario, ai: [true, true], maxTicks: msg.maxTicks });
   const times: number[] = [];
   const start = now();
   post({ type: "determinism_progress", tick: 0, hash: hex8(r.game.hash()) });
@@ -151,7 +152,12 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
         tps = msg.tps;
         paused = false;
         recent.length = 0;
-        runner = new Runner({ seed, scenario, ai: aiFlags });
+        // No time limit by default when a person plays (D-024); AI against AI keeps MAX_TICKS.
+        const maxTicks = msg.maxTicks ?? (human === null ? MAX_TICKS : 0);
+        if (!Number.isInteger(maxTicks) || maxTicks < 0) throw new Error(`bad maxTicks ${msg.maxTicks}`);
+        const difficulty = msg.difficulty ?? [];
+        if (!difficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad difficulty ${msg.difficulty}`);
+        runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty });
         encoder = new SnapshotEncoder(runner.game.w.nodeAmount.length);
         const m = runner.game.w.map;
         post({
@@ -193,8 +199,7 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
         break;
       case "export_log": {
         if (runner === null) return;
-        const head: LogHeader = { protocol: PROTOCOL_VERSION, seed, scenario, ai: aiFlags };
-        const lines = [JSON.stringify(head), ...runner.game.log.map((c) => JSON.stringify(c))];
+        const lines = [JSON.stringify(runner.header(aiFlags)), ...runner.game.log.map((c) => JSON.stringify(c))];
         post({ type: "log", jsonl: lines.join("\n") + "\n" });
         break;
       }

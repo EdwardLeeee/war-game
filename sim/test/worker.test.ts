@@ -2,7 +2,17 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type FromWorker, HeaderField, PROTOCOL_VERSION, type ToWorker, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
+import {
+  type FromWorker,
+  GameOverReason,
+  HeaderField,
+  MAX_TICKS,
+  PROTOCOL_VERSION,
+  type ToWorker,
+  UNIT_STRIDE,
+  UnitField,
+  UnitType,
+} from "../src/protocol.ts";
 
 const out: FromWorker[] = [];
 const fake = {
@@ -49,7 +59,7 @@ test("init answers ready, then snapshots arrive in real time; commands, pause an
   send({ type: "export_log" });
   const log = of("log")[0].jsonl.trim().split("\n");
   const head = JSON.parse(log[0]);
-  assert.deepEqual(head, { protocol: PROTOCOL_VERSION, seed: 5, scenario: "standard", ai: [false, true] });
+  assert.deepEqual(head, { protocol: PROTOCOL_VERSION, seed: 5, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "normal"] });
   // The AI's own commands are in the log too; find the human's by player and seq.
   const moved = log.slice(1).map((l) => JSON.parse(l)).find((c) => c.p === 0 && c.seq === 9);
   assert.ok(moved !== undefined, "the human's command is in the log");
@@ -74,4 +84,24 @@ test("determinism runs a whole game and reports hashes; a wrong protocol is an e
   assert.equal(of("ready").at(-1)!.player, 0);
   assert.equal(of("snapshot").at(-1)!.header[HeaderField.scenario], 2, "perf");
   assert.equal(of("error").length, 2);
+});
+
+test("the time limit comes with init: none when a person plays, MAX_TICKS for AI against AI, or as given", async () => {
+  const header = () => {
+    send({ type: "export_log" });
+    return JSON.parse(of("log").at(-1)!.jsonl.split("\n")[0]);
+  };
+  out.length = 0;
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: null, ai: [true, true], tps: 20, scenario: "standard" });
+  send({ type: "pause" });
+  assert.equal(header().maxTicks, MAX_TICKS);
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: 0, ai: [false, true], tps: 20, scenario: "standard", difficulty: ["normal", "easy"] });
+  send({ type: "pause" });
+  assert.deepEqual([header().maxTicks, header().difficulty], [0, ["normal", "easy"]]);
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: 0, ai: [false, false], tps: 1000, scenario: "standard", maxTicks: 40 });
+  await until(() => of("game_over").length > 0);
+  const over = of("game_over")[0];
+  assert.deepEqual([over.winner, over.reason, over.stats.ticks], [-1, GameOverReason.TimeLimit, 40]);
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: 0, ai: [false, true], tps: 20, scenario: "standard", difficulty: ["hard" as never] });
+  assert.match(of("error").at(-1)!.message, /difficulty/);
 });

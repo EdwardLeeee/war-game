@@ -21,6 +21,10 @@ export const UNIT_COLS = [
   // waits there and automatic work (auto-repair, the economy ratio) leaves it alone, until
   // the player gives it work (gather, build, repair). Recall still takes it (GDD section 4).
   "stay",
+  // A build without farmers (round 2): the building the simulation sent this farmer to build,
+  // and the gathering it was doing then (node, or farm building with resumeFarm = 1), which it
+  // goes back to when that building is done.
+  "autoBuild", "resumeTarget", "resumeFarm",
   // Mages (units.ts): the cannon's aim point, the last tick this unit dealt damage (shield
   // regeneration waits for both), and the owner of the last thing that hit it (bounty).
   "castX", "castY", "lastDealt", "hitBy",
@@ -258,6 +262,8 @@ export class World {
     c.lastHurt[s] = -100000;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
+    c.autoBuild[s] = -1;
+    c.resumeTarget[s] = -1;
     c.lastDealt[s] = -100000;
     c.hitBy[s] = -1;
     return id;

@@ -10,7 +10,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
-import { type LogHeader, MAX_TICKS, PROTOCOL_VERSION, UnitType } from "./protocol.ts";
+import { type LogHeader, MAX_TICKS, UnitType } from "./protocol.ts";
 import { AI_STYLES, type AiStyle } from "./ai/ai.ts";
 import { Runner } from "./runner.ts";
 
@@ -153,7 +153,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
   const seed = 1 + (i >> 1);
   const swap = (i & 1) === 1;
   const start = performance.now();
-  const r = new Runner({ seed, scenario: "standard", ai: [true, true], swap, styles: STYLE_PAIRS[(seed - 1) % STYLE_PAIRS.length] });
+  const r = new Runner({ seed, scenario: "standard", ai: [true, true], swap, styles: STYLE_PAIRS[(seed - 1) % STYLE_PAIRS.length], maxTicks });
   const g = r.game;
   const micros: number[] = [];
   const timeline: Sample[] = [];
@@ -163,7 +163,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
   }
   if (r.hashes.at(-1)!.tick !== g.tick) r.hashes.push({ tick: g.tick, hash: g.hash() });
   // Replay with the AIs off.
-  const rp = new Runner({ seed, scenario: "standard", ai: [false, false], replay: g.log });
+  const rp = new Runner({ seed, scenario: "standard", ai: [false, false], replay: g.log, maxTicks });
   while (!rp.over && rp.game.tick < g.tick) rp.tick();
   if (rp.hashes.at(-1)!.tick !== rp.game.tick) rp.hashes.push({ tick: rp.game.tick, hash: rp.game.hash() });
   const same = rp.hashes.length === r.hashes.length && r.hashes.every((h, k) => h.tick === rp.hashes[k].tick && h.hash === rp.hashes[k].hash);
@@ -209,7 +209,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
     })),
   };
   writeFileSync(join(out, `game-${i}.json`), JSON.stringify(result, null, 1) + "\n");
-  const head: LogHeader = { protocol: PROTOCOL_VERSION, seed, scenario: "standard", ai: [true, true] };
+  const head: LogHeader = r.header([true, true]);
   writeFileSync(join(out, `game-${i}.jsonl`), [JSON.stringify(head), ...g.log.map((c) => JSON.stringify(c))].join("\n") + "\n");
   console.log(
     `game ${i} seed ${seed}${swap ? " swap" : ""} ${result.styles.join("/")}: ${result.winner === -1 ? "draw" : `player ${result.winner} wins`} at tick ${g.tick}` +

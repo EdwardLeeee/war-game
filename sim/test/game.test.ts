@@ -75,3 +75,20 @@ test("the standard start: a main city and five farmers each, mirror images of ea
   assert.deepEqual(farmers[1], farmers[0]);
   assert.equal(g.w.res[0], 200);
 });
+
+test("each game has its own time limit: a draw when it is reached, never with 0", async () => {
+  const { GameOverReason, MAX_TICKS } = await import("../src/protocol.ts");
+  const limited = new Runner({ seed: 3, scenario: "standard", ai: [false, false], maxTicks: 120 });
+  while (!limited.over && limited.game.tick < 1000) limited.tick();
+  assert.deepEqual([limited.game.tick, limited.game.w.winner, limited.game.w.endReason], [120, -1, GameOverReason.TimeLimit]);
+  const open = new Runner({ seed: 3, scenario: "standard", ai: [false, false], maxTicks: 0 });
+  while (!open.over && open.game.tick < 300) open.tick();
+  assert.equal(open.over, false, "no limit");
+  assert.equal(new Runner({ seed: 3, scenario: "standard", ai: [false, false] }).maxTicks, MAX_TICKS, "default");
+  // The log header records the limit and each player's difficulty, and a replay keeps the limit.
+  const head = new Runner({ seed: 3, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "easy"] }).header([false, true]);
+  assert.deepEqual([head.maxTicks, head.difficulty], [0, ["normal", "easy"]]);
+  const replay = new Runner({ seed: 3, scenario: "standard", ai: [false, false], maxTicks: 120, replay: limited.game.log });
+  while (!replay.over && replay.game.tick < 1000) replay.tick();
+  assert.equal(replay.game.tick, 120);
+});

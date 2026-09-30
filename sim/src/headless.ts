@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
 import type { ScenarioKey } from "./core/scenarios.ts";
 import {
+  AI_DIFFICULTIES,
+  type AiDifficulty,
   type Command,
   type ExpectedHashes,
   type LogHeader,
@@ -40,12 +42,16 @@ if (replayFile !== "") {
 const scenario = (header?.scenario ?? arg("scenario", "standard")) as ScenarioKey;
 const seed = header?.seed ?? Number(arg("seed", "1"));
 const ai = (header?.ai ?? arg("ai", "1,1").split(",").map((v) => v === "1")) as boolean[];
-const maxTicks = Number(arg("ticks", String(MAX_TICKS)));
+// The game's time limit: the log's (MAX_TICKS for logs from before round 2), or --ticks (0 = none).
+const maxTicks = replay !== undefined ? (header?.maxTicks ?? MAX_TICKS) : Number(arg("ticks", String(MAX_TICKS)));
+const difficulty = (header?.difficulty ?? arg("difficulty", "normal,normal").split(",")) as AiDifficulty[];
+if (!Number.isInteger(maxTicks) || maxTicks < 0) throw new Error(`bad --ticks ${maxTicks}`);
+if (!difficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad --difficulty ${difficulty}`);
 const script = replay === undefined ? arg("script", "") : "";
 const out = arg("out", "");
 const expected = arg("expected", "");
 
-const runner = new Runner({ seed, scenario, ai, replay });
+const runner = new Runner({ seed, scenario, ai, replay, maxTicks, difficulty });
 const g = runner.game;
 let seq = 0;
 
@@ -76,7 +82,7 @@ function eco(): void {
 
 const micros: number[] = [];
 const start = performance.now();
-while (!runner.over && g.tick < maxTicks) {
+while (!runner.over && (maxTicks === 0 || g.tick < maxTicks)) {
   if (script === "demo") demo();
   if (script === "eco") eco();
   micros.push(runner.tick(() => performance.now()));
@@ -126,7 +132,7 @@ if (final.tick !== g.tick) runner.hashes.push({ tick: g.tick, hash: g.hash() });
 if (out !== "") {
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "hashes.txt"), runner.hashes.map((h) => `${h.tick} ${hex8(h.hash)}`).join("\n") + "\n");
-  const head: LogHeader = { protocol: PROTOCOL_VERSION, seed, scenario: scenario as ScenarioName, ai };
+  const head: LogHeader = runner.header(ai);
   writeFileSync(join(out, "commands.jsonl"), [JSON.stringify(head), ...g.log.map((c) => JSON.stringify(c))].join("\n") + "\n");
   writeFileSync(join(out, "timing.json"), JSON.stringify(timing, null, 2) + "\n");
 }

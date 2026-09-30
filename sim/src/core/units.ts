@@ -23,7 +23,7 @@ import {
 } from "../protocol.ts";
 import { clamp, DIR16_X, DIR16_Y, dir16, idiv } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
-import { type FieldCache, buildingKey, cellsAround } from "./paths.ts";
+import { type FieldCache, buildingKey, cellsAround, nearestWalkable, Regions } from "./paths.ts";
 import {
   AGGRO_RANGE,
   ARRIVE_DISTANCE,
@@ -82,6 +82,8 @@ export class UnitSystem {
   private newY = new Int32Array(256);
   private deadUnits = new Uint8Array(256);
   private deadBuildings = new Uint8Array(64);
+  /** Which walkable cells connect (for goals walled in by buildings). */
+  private readonly regions = new Regions();
 
   constructor(size: number) {
     this.cellHead = new Int32Array(size * size);
@@ -353,6 +355,13 @@ export class UnitSystem {
           return;
         }
       }
+      if (order === Order.Attack) {
+        const here = this.walledOff(w, i, ts, tid);
+        if (here >= 0) {
+          this.breakThrough(w, fields, i, here, tx, ty, true);
+          return;
+        }
+      }
       if (order === Order.Attack && d2 > DIRECT_STEER * DIRECT_STEER) {
         if (ts >= 0) {
           steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), info.speed);
@@ -377,6 +386,15 @@ export class UnitSystem {
         return;
       }
       const sp = u.speedCap[i] > 0 ? Math.min(u.speedCap[i], info.speed) : info.speed;
+      // A point no one can walk to from here: soldiers on a move break through, farmers and
+      // retreats go as near as they can get.
+      const key = u.orderTarget[i] >= 0 ? u.orderTarget[i] : (u.orderY[i] >> CELL_SHIFT) * n + (u.orderX[i] >> CELL_SHIFT);
+      const goal = nearestWalkable(w, key % n, Math.trunc(key / n));
+      const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT));
+      if (goal >= 0 && here >= 0 && this.regions.of(w, goal) !== here) {
+        this.breakThrough(w, fields, i, here, u.orderX[i], u.orderY[i], order === Order.Move && !farmer);
+        return;
+      }
       steerTo(w, fields, i, u.orderX[i], u.orderY[i], u.orderTarget[i], sp);
       return;
     }
@@ -389,6 +407,115 @@ export class UnitSystem {
       return;
     }
     u.action[i] = Action.Idle;
+  }
+
+  /**
+   * The area unit i stands in when its attack target (unit ts, or building tid) cannot be
+   * reached from there at all, else -1 (also when i stands on a cell that is not walkable).
+   */
+  private walledOff(w: World, i: number, ts: number, tid: number): number {
+    const u = w.units.col;
+    const n = w.size;
+    const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT));
+    if (here < 0) return -1;
+    if (ts >= 0) {
+      const there = this.regions.of(w, (u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT));
+      return there >= 0 && there !== here ? here : -1;
+    }
+    const bs = w.building(tid);
+    const b = w.buildings.col;
+    for (const c of cellsAround(w, b.cellX[bs], b.cellY[bs], BUILDINGS[b.type[bs]].size)) {
+      if (this.regions.of(w, c) === here) return -1;
+    }
+    return here;
+  }
+
+  /**
+   * A goal at (tx, ty) walled off from area `here` (round 2, GDD section 9). With `fight`,
+   * attack the enemy building that blocks the way: of the enemy players' buildings touching
+   * the area and nearer the goal than any cell of the area (so they stand in between), the
+   * one nearest the goal (ties: lower id). Otherwise, or with none to attack (walled in by
+   * rock, trees or own buildings), walk to the cell of the area nearest the goal and wait.
+   */
+  private breakThrough(w: World, fields: FieldCache, i: number, here: number, tx: number, ty: number, fight: boolean): void {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const info = UNITS[u.type[i]];
+    const c = this.nearestIn(w, here, tx, ty);
+    const reach = c < 0 ? 0 : cellDist2(c, n, tx, ty);
+    let best = -1;
+    let bestD = 0;
+    for (let s = 0; fight && c >= 0 && s < w.buildings.count; s++) {
+      const o = b.owner[s];
+      const bi = BUILDINGS[b.type[s]];
+      if (o === u.owner[i] || o >= PLAYER_COUNT || b.hp[s] <= 0 || bi.walkable) continue;
+      const d = rectDist2(tx, ty, b.cellX[s], b.cellY[s], bi.size);
+      if (d >= reach) continue;
+      if (!cellsAround(w, b.cellX[s], b.cellY[s], bi.size).some((k) => this.regions.of(w, k) === here)) continue;
+      if (best < 0 || d < bestD || (d === bestD && b.id[s] < b.id[best])) {
+        best = s;
+        bestD = d;
+      }
+    }
+    if (best >= 0) {
+      const size = BUILDINGS[b.type[best]].size;
+      const bx = (b.cellX[best] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
+      const by = (b.cellY[best] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
+      u.target[i] = b.id[best];
+      u.facing[i] = dir16(bx - u.x[i], by - u.y[i]);
+      if (rectDist2(u.x[i], u.y[i], b.cellX[best], b.cellY[best], size) <= info.range * info.range) {
+        this.attacking[i] = 1;
+        u.action[i] = Action.Attack;
+        return;
+      }
+      const cx = b.cellX[best];
+      const cy = b.cellY[best];
+      steerTo(w, fields, i, bx, by, buildingKey(b.id[best]), info.speed, () => cellsAround(w, cx, cy, size));
+      return;
+    }
+    if (c < 0) {
+      u.action[i] = Action.Idle;
+      return;
+    }
+    const gx = ((c % n) << CELL_SHIFT) + (CELL >> 1);
+    const gy = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
+    const dx = gx - u.x[i];
+    const dy = gy - u.y[i];
+    if (dx * dx + dy * dy <= ARRIVE_DISTANCE * ARRIVE_DISTANCE) {
+      // As near as it gets: a move or retreat is done; an attack waits here for a way in.
+      if (u.order[i] === Order.Move || u.order[i] === Order.Retreat) this.arrive(w, i);
+      else u.action[i] = Action.Idle;
+      return;
+    }
+    steerTo(w, fields, i, gx, gy, c, info.speed);
+  }
+
+  /** The cell of area `region` nearest the point (tx, ty): the nearest ring around it that has one, then the nearest (ties: lower index). */
+  private nearestIn(w: World, region: number, tx: number, ty: number): number {
+    const n = w.size;
+    const cx = tx >> CELL_SHIFT;
+    const cy = ty >> CELL_SHIFT;
+    for (let r = 0; r < n; r++) {
+      let best = -1;
+      let bestD = 0;
+      for (let y = cy - r; y <= cy + r; y++) {
+        if (y < 0 || y >= n) continue;
+        const step = y === cy - r || y === cy + r ? 1 : 2 * r;
+        for (let x = cx - r; x <= cx + r; x += Math.max(step, 1)) {
+          if (x < 0 || x >= n) continue;
+          const c = y * n + x;
+          if (this.regions.of(w, c) !== region) continue;
+          const d = cellDist2(c, n, tx, ty);
+          if (best < 0 || d < bestD || (d === bestD && c < best)) {
+            best = c;
+            bestD = d;
+          }
+        }
+      }
+      if (best >= 0) return best;
+    }
+    return -1;
   }
 
   private arrive(w: World, i: number): void {
@@ -727,6 +854,13 @@ export function damage(attack: number, attacker: number, target: number): number
 }
 
 /** Squared fixed-point distance from a point to a building's footprint (0 inside). */
+/** Squared distance from the centre of cell c to the point (tx, ty). */
+function cellDist2(c: number, n: number, tx: number, ty: number): number {
+  const dx = ((c % n) << CELL_SHIFT) + (CELL >> 1) - tx;
+  const dy = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1) - ty;
+  return dx * dx + dy * dy;
+}
+
 export function rectDist2(x: number, y: number, cellX: number, cellY: number, size: number): number {
   const x0 = cellX << CELL_SHIFT;
   const y0 = cellY << CELL_SHIFT;

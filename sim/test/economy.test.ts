@@ -584,3 +584,84 @@ test("a main city cannot be repaired within 10 s of being hit; other buildings c
   run(g, 200);
   assert.ok(b.hp[hs] > 100, "houses repair at once");
 });
+
+test("a build without farmers sends the nearest free ones: 1 for 2 x 2, 2 for 3 x 3, not placed, busy, hidden or vein farmers", () => {
+  const g = emptyGame();
+  const w = g.w;
+  w.ecoOn[0] = 0;
+  const u = w.units.col;
+  const vein = Array.from(w.nodeKind).findIndex((k) => k === NodeKind.CrystalVein);
+  // Nearest first: placed by the player, building, hiding, on the vein; then three free ones,
+  // two of them on the same spot (ties go to the lower id).
+  const placed = farmerAtBase(g, 0, 0);
+  const building = farmerAtBase(g, 0, 1);
+  const hiding = farmerAtBase(g, 0, 2);
+  const onVein = farmerAtBase(g, 0, 3);
+  const near = farmerAtBase(g, 0, 5);
+  const tieA = farmerAtBase(g, 0, 7);
+  const tieB = farmerAtBase(g, 0, 7);
+  u.stay[slotOf(g, placed)] = 1;
+  u.order[slotOf(g, building)] = Order.Build;
+  u.orderTarget[slotOf(g, building)] = w.buildings.col.id[w.mainCity(0)];
+  u.action[slotOf(g, hiding)] = Action.Garrisoned;
+  u.order[slotOf(g, onVein)] = Order.Gather;
+  u.orderTarget[slotOf(g, onVein)] = vein;
+  const house = spot(g, 0, BuildingType.House);
+  cmd(g, 0, { c: "build", u: [], type: BuildingType.House, x: house.x, y: house.y });
+  assert.deepEqual(step(g), []);
+  const houseId = w.buildingAt[house.y * w.size + house.x];
+  const builders = (id: number) => [placed, building, hiding, onVein, near, tieA, tieB].filter((f) => u.order[slotOf(g, f)] === Order.Build && u.orderTarget[slotOf(g, f)] === id);
+  assert.deepEqual(builders(houseId), [near], "one farmer, the nearest free one");
+  const barracks = spot(g, 0, BuildingType.Barracks, 2);
+  cmd(g, 0, { c: "build", u: [], type: BuildingType.Barracks, x: barracks.x, y: barracks.y });
+  assert.deepEqual(step(g), []);
+  assert.deepEqual(builders(w.buildingAt[barracks.y * w.size + barracks.x]), [tieA, tieB], "two for a 3 x 3");
+  assert.equal(u.stay[slotOf(g, near)], 0, "not placed: the economy may take it afterwards");
+});
+
+test("a build without farmers and nobody free is refused with NoFarmer: nothing placed, nothing paid", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const f = farmerAtBase(g, 0);
+  w.units.col.stay[slotOf(g, f)] = 1;
+  const at = spot(g, 0, BuildingType.House);
+  const wood = w.res[Resource.Wood];
+  const count = w.buildings.count;
+  cmd(g, 0, { c: "build", u: [], type: BuildingType.House, x: at.x, y: at.y });
+  assert.deepEqual(step(g), [Reject.NoFarmer]);
+  assert.equal(w.res[Resource.Wood], wood);
+  assert.equal(w.buildings.count, count);
+  // The other checks come first.
+  w.res[Resource.Wood] = 0;
+  cmd(g, 0, { c: "build", u: [], type: BuildingType.House, x: at.x, y: at.y });
+  assert.deepEqual(step(g), [Reject.CannotAfford]);
+});
+
+test("a farmer the simulation sent to build goes back to what it gathered, or to the economy when that is gone", () => {
+  for (const gone of [false, true]) {
+    const g = emptyGame();
+    const w = g.w;
+    w.ecoOn[0] = 0;
+    const f = farmerAtBase(g, 0);
+    const tree = nodesNear(g, 0, NodeKind.Tree)[0];
+    cmd(g, 0, { c: "gather", u: [f], node: tree });
+    run(g, 20);
+    const at = spot(g, 0, BuildingType.House);
+    cmd(g, 0, { c: "build", u: [], type: BuildingType.House, x: at.x, y: at.y });
+    assert.deepEqual(step(g), []);
+    const u = w.units.col;
+    assert.equal(u.order[slotOf(g, f)], Order.Build);
+    if (gone) w.nodeAmount[tree] = 0;
+    let done = false;
+    for (let t = 0; t < 1500 && !done; t++) {
+      g.step();
+      done = g.events.some((e) => e.to === 0 && e.ev.k === "building_done");
+    }
+    assert.ok(done, "the house is built");
+    run(g, 2);
+    const s = slotOf(g, f);
+    if (gone) assert.equal(u.order[s], Order.None, "its tree is gone: idle, for the economy ratio");
+    else assert.deepEqual([u.order[s], u.orderTarget[s]], [Order.Gather, tree], "back to its tree");
+    assert.equal(u.stay[s], 0);
+  }
+});

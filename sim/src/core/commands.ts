@@ -9,6 +9,7 @@ import {
   type Command,
   CELL_SHIFT,
   GameOverReason,
+  NodeKind,
   Order,
   PlaceBit,
   Reject,
@@ -25,8 +26,8 @@ import { type Economy, nodeOpen, shiftQueue } from "./economy.ts";
 import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
 import { nearestWalkable } from "./paths.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, FORMATION_SPACING, MAGE_CAP, QUEUE_MAX, TOWNS, UNITS } from "./rules.ts";
-import { startCast } from "./units.ts";
+import { autoBuilders, BUILDINGS, CANNON, FARMLAND_REACH, FORMATION_SPACING, MAGE_CAP, QUEUE_MAX, TOWNS, UNITS } from "./rules.ts";
+import { rectDist2, startCast } from "./units.ts";
 import type { World } from "./world.ts";
 
 export interface CommandContext {
@@ -71,6 +72,27 @@ function ownFarmers(ctx: CommandContext, p: number, ids: number[]): number[] | R
   const farmers = all.filter((s) => w.units.col.type[s] === UnitType.Farmer);
   if (farmers.length === 0) return Reject.NotAvailable;
   return farmers;
+}
+
+/**
+ * The farmers a build without farmers sends: player p's nearest to the footprint (ties: lower
+ * id), autoBuilders(size) of them, leaving out farmers the player placed (stay), those building
+ * or repairing, those hiding or on their way to hide (recall), and those on the crystal vein
+ * (by hand only: taking them would quietly empty it). PROTOCOL.md 3.1.
+ */
+function pickBuilders(w: World, p: number, type: BuildingType, x: number, y: number): number[] {
+  const u = w.units.col;
+  const size = BUILDINGS[type].size;
+  const free: { s: number; d: number }[] = [];
+  for (let s = 0; s < w.units.count; s++) {
+    if (u.owner[s] !== p || u.type[s] !== UnitType.Farmer || u.stay[s] === 1 || u.action[s] === Action.Garrisoned) continue;
+    const o = u.order[s];
+    if (o === Order.Build || o === Order.Repair || o === Order.Recall) continue;
+    if (o === Order.Gather && u.onFarm[s] === 0 && u.orderTarget[s] >= 0 && w.nodeKind[u.orderTarget[s]] === NodeKind.CrystalVein) continue;
+    free.push({ s, d: rectDist2(u.x[s], u.y[s], x, y, size) });
+  }
+  free.sort((a, b) => a.d - b.d || u.id[a.s] - u.id[b.s]);
+  return free.slice(0, autoBuilders(size)).map((f) => f.s);
 }
 
 /** An own building by id: its slot, or -1. */
@@ -181,21 +203,39 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       return 0;
     }
     case "build": {
-      const farmers = ownFarmers(ctx, p, cmd.u);
-      if (typeof farmers === "number") return farmers;
+      // No farmers named: the simulation picks them (after the other checks).
+      const auto = Array.isArray(cmd.u) && cmd.u.length === 0;
+      let farmers: number[] = [];
+      if (!auto) {
+        const named = ownFarmers(ctx, p, cmd.u);
+        if (typeof named === "number") return named;
+        farmers = named;
+      }
       const type = cmd.type;
       if (!Number.isInteger(type) || type < 0 || type >= BUILDINGS.length) return Reject.InvalidTarget;
       if (type === BuildingType.MainCity || type === BuildingType.TownTower) return Reject.NotAvailable;
       const info = BUILDINGS[type];
       if (placeCheck(ctx, p, type, cmd.x, cmd.y) !== 0) return Reject.BadPlacement;
       if (!afford(w, p, info.cost, 1)) return Reject.CannotAfford;
+      if (auto) {
+        farmers = pickBuilders(w, p, type, cmd.x, cmd.y);
+        if (farmers.length === 0) return Reject.NoFarmer;
+      }
       pay(w, p, info.cost, 1);
       const id = w.addBuilding(p, type, cmd.x, cmd.y, 1, 0);
       if (!info.walkable) pushOut(w, cmd.x, cmd.y, info.size);
       placed(w, farmers, false);
+      const u = w.units.col;
       for (const s of farmers) {
+        // Sent by the simulation: remember what it was gathering, to go back to it afterwards.
+        const gathering = auto && u.order[s] === Order.Gather && u.orderTarget[s] >= 0;
+        const resume = gathering ? u.orderTarget[s] : -1;
+        const resumeFarm = gathering ? u.onFarm[s] : 0;
         ctx.econ.release(w, s);
         ctx.econ.work(w, s, Order.Build, id);
+        u.autoBuild[s] = auto ? id : -1;
+        u.resumeTarget[s] = resume;
+        u.resumeFarm[s] = resumeFarm;
       }
       return 0;
     }
