@@ -48,7 +48,8 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Install (at most 17 minutes, below) plus the tests (about 5).
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -67,7 +68,19 @@ jobs:
       - run: npm run build
       - name: Hashes the page's determinism check compares against (headless run of the same game)
         run: bash scripts/expected-hashes.sh dist/expected-hashes.json
-      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      # WebKit's system libraries (about 130 MB from the Ubuntu mirror) took 12–18 minutes to
+      # download on some runners (#44, 2026-10-01; normally under a minute). Each try gets
+      # 5 minutes, up to 3 tries. apt keeps the packages a stopped try finished downloading,
+      # so the next try carries on from there; dpkg --configure -a finishes a stopped unpack.
+      - name: Install ${{ matrix.browser }}
+        timeout-minutes: 17
+        run: |
+          for attempt in 1 2 3; do
+            if timeout --kill-after=20s 300 npx playwright install --with-deps ${{ matrix.browser }}; then exit 0; fi
+            echo "::warning::installing ${{ matrix.browser }}: try $attempt failed or took over 5 minutes"
+            sudo dpkg --configure -a || true
+          done
+          exit 1
       - run: npx playwright test --project=${{ matrix.browser }}
       - if: always()
         uses: actions/upload-artifact@v7
