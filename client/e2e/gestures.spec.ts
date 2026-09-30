@@ -4,7 +4,7 @@
 
 import { expect, type Page, test } from "@playwright/test";
 import { INTERACTIVE, IPHONE_SAFE, injectSafeArea, shot, visibleBoxes, watchErrors } from "./helpers.ts";
-import { doubleTap, drag, lift, longPress, move, pinch, press, tap } from "./touch.ts";
+import { doubleTap, drag, lift, longPress, move, pinch, pressShowsCue, tap } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
 const SPEAR = { x: 22, y: 68 };
@@ -96,11 +96,8 @@ test("長按空地 350 ms 後拖曳 → 框選，優先選軍隊", async ({ page
   await centre(page, 20, 73, 0.8);
   const from = await at(page, { x: 15, y: 67 });
   const to = await at(page, { x: 25, y: 79 });
-  await press(page, from);
-  await page.waitForTimeout(200);
-  await expect(page.locator(".press-cue")).toBeVisible();
-  await shot(page, info, "hold-cue");
-  await page.waitForTimeout(250);
+  expect(await pressShowsCue(page, from, 200), "the hold cue shows while the finger is still").toBe(true);
+  await page.waitForTimeout(300);
   await move(page, to);
   await expect(page.locator(".marquee")).toBeVisible();
   await shot(page, info, "box");
@@ -119,8 +116,8 @@ test("單指拖曳 → 移動畫面，放開後有慣性", async ({ page }) => {
   expect(after?.flinging).toBe(true);
   await page.waitForTimeout(300);
   expect((await camera(page))?.x ?? 0).toBeGreaterThan(after?.x ?? 0);
-  // A slow drag that stops before lifting does not fling.
-  await drag(page, { x: 300, y: 200 }, { x: 400, y: 200 }, 5, 400);
+  // A drag that stops before the finger lifts does not fling.
+  await drag(page, { x: 300, y: 200 }, { x: 400, y: 200 }, 10, 200, 150);
   await page.waitForTimeout(200);
   expect((await camera(page))?.flinging).toBe(false);
 });

@@ -1,7 +1,9 @@
 // Touch input for the battlefield canvas. Playwright has no multi-touch or long-press-drag
-// API that works in both WebKit and Chromium, so these send the same PointerEvent sequence
-// (pointerType "touch") a finger would, into the same recogniser the page uses. Single taps
-// can also go through the browser's own touch path with page.touchscreen.tap.
+// API that works in both WebKit and Chromium, so these send the PointerEvent sequence
+// (pointerType "touch") a finger would, into the same recogniser the page uses. Each
+// gesture runs inside the page with in-page timers: one Playwright round trip per event
+// was slow and uneven enough on CI to break the 300 ms double tap and the fling
+// (run 36670621854). Single taps can also use the browser's own path (page.touchscreen.tap).
 
 import type { Page } from "@playwright/test";
 
@@ -10,77 +12,106 @@ export interface Pt {
   y: number;
 }
 
-async function pointer(page: Page, type: string, id: number, p: Pt): Promise<void> {
-  await page.evaluate(
-    ({ type, id, x, y }) => {
+type Kind = "pointerdown" | "pointermove" | "pointerup";
+
+interface Step {
+  type: Kind;
+  id: number;
+  x: number;
+  y: number;
+  /** ms to wait before this event. */
+  after: number;
+}
+
+const step = (type: Kind, p: Pt, after = 0, id = 1): Step => ({ type, id, x: p.x, y: p.y, after });
+
+/** Dispatch the steps in the page; returns whether the hold cue was showing at `probeAt` (if given). */
+async function run(page: Page, steps: Step[], probe: { afterStep: number; wait: number } | null = null): Promise<boolean> {
+  return page.evaluate(
+    async ({ steps, probe }) => {
       const canvas = document.querySelector("#stage canvas") as HTMLCanvasElement;
-      canvas.dispatchEvent(
-        new PointerEvent(type, { pointerId: id, pointerType: "touch", isPrimary: id === 1, clientX: x, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, bubbles: true, cancelable: true }),
-      );
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      let cue = false;
+      for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        if (s.after > 0) await sleep(s.after);
+        canvas.dispatchEvent(
+          new PointerEvent(s.type, {
+            pointerId: s.id,
+            pointerType: "touch",
+            isPrimary: s.id === 1,
+            clientX: s.x,
+            clientY: s.y,
+            button: 0,
+            buttons: s.type === "pointerup" ? 0 : 1,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        if (probe !== null && probe.afterStep === i) {
+          await sleep(probe.wait);
+          const el = document.querySelector(".press-cue") as HTMLElement | null;
+          cue = el !== null && !el.hidden;
+        }
+      }
+      return cue;
     },
-    { type, id, x: p.x, y: p.y },
+    { steps, probe },
   );
 }
 
 export async function tap(page: Page, p: Pt, holdMs = 40): Promise<void> {
-  await pointer(page, "pointerdown", 1, p);
-  await page.waitForTimeout(holdMs);
-  await pointer(page, "pointerup", 1, p);
+  await run(page, [step("pointerdown", p), step("pointerup", p, holdMs)]);
 }
 
 /** Two quick taps, well inside the 300 ms double-tap window. */
 export async function doubleTap(page: Page, p: Pt): Promise<void> {
-  await tap(page, p, 20);
-  await page.waitForTimeout(30);
-  await tap(page, p, 20);
+  await run(page, [step("pointerdown", p), step("pointerup", p, 30), step("pointerdown", p, 60), step("pointerup", p, 30)]);
 }
 
-/** Finger down, `steps` moves over `ms`, finger up (at speed: the camera flings). */
-export async function drag(page: Page, from: Pt, to: Pt, steps = 10, ms = 150): Promise<void> {
-  await pointer(page, "pointerdown", 1, from);
+/** Finger down, `steps` moves over `ms`, finger up `holdMs` after the last move. */
+export async function drag(page: Page, from: Pt, to: Pt, steps = 10, ms = 150, holdMs = 4): Promise<void> {
+  const list = [step("pointerdown", from)];
   for (let i = 1; i <= steps; i++) {
-    await page.waitForTimeout(ms / steps);
-    await pointer(page, "pointermove", 1, { x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps });
+    list.push(step("pointermove", { x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps }, ms / steps));
   }
-  await pointer(page, "pointerup", 1, to);
+  list.push(step("pointerup", to, holdMs));
+  await run(page, list);
 }
 
 /** Hold still past the long press, then (optionally) drag and lift. */
 export async function longPress(page: Page, at: Pt, to: Pt | null = null, holdMs = 450): Promise<void> {
-  await pointer(page, "pointerdown", 1, at);
-  await page.waitForTimeout(holdMs);
+  const list = [step("pointerdown", at)];
+  const end = to ?? at;
   if (to !== null) {
-    for (let i = 1; i <= 6; i++) {
-      await pointer(page, "pointermove", 1, { x: at.x + ((to.x - at.x) * i) / 6, y: at.y + ((to.y - at.y) * i) / 6 });
-      await page.waitForTimeout(20);
-    }
+    for (let i = 1; i <= 6; i++) list.push(step("pointermove", { x: at.x + ((to.x - at.x) * i) / 6, y: at.y + ((to.y - at.y) * i) / 6 }, i === 1 ? holdMs : 20));
+    list.push(step("pointerup", end, 20));
+  } else {
+    list.push(step("pointerup", end, holdMs));
   }
-  await pointer(page, "pointerup", 1, to ?? at);
+  await run(page, list);
 }
 
-/** Press and hold without lifting (to look at the hold cue or the box mid-gesture). */
-export async function press(page: Page, at: Pt, id = 1): Promise<void> {
-  await pointer(page, "pointerdown", id, at);
+/** Put a finger down and report whether the hold cue shows `probeMs` later (finger stays down). */
+export async function pressShowsCue(page: Page, at: Pt, probeMs = 200): Promise<boolean> {
+  return run(page, [step("pointerdown", at)], { afterStep: 0, wait: probeMs });
 }
 
 export async function move(page: Page, to: Pt, id = 1): Promise<void> {
-  await pointer(page, "pointermove", id, to);
+  await run(page, [step("pointermove", to, 0, id)]);
 }
 
 export async function lift(page: Page, at: Pt, id = 1): Promise<void> {
-  await pointer(page, "pointerup", id, at);
+  await run(page, [step("pointerup", at, 0, id)]);
 }
 
 /** Two fingers spread from `from` px apart to `to` px apart around the centre. */
 export async function pinch(page: Page, c: Pt, from: number, to: number): Promise<void> {
-  await pointer(page, "pointerdown", 1, { x: c.x - from / 2, y: c.y });
-  await pointer(page, "pointerdown", 2, { x: c.x + from / 2, y: c.y });
+  const list = [step("pointerdown", { x: c.x - from / 2, y: c.y }, 0, 1), step("pointerdown", { x: c.x + from / 2, y: c.y }, 10, 2)];
   for (let i = 1; i <= 8; i++) {
     const d = from + ((to - from) * i) / 8;
-    await pointer(page, "pointermove", 1, { x: c.x - d / 2, y: c.y });
-    await pointer(page, "pointermove", 2, { x: c.x + d / 2, y: c.y });
-    await page.waitForTimeout(16);
+    list.push(step("pointermove", { x: c.x - d / 2, y: c.y }, 16, 1), step("pointermove", { x: c.x + d / 2, y: c.y }, 0, 2));
   }
-  await pointer(page, "pointerup", 2, { x: c.x + to / 2, y: c.y });
-  await pointer(page, "pointerup", 1, { x: c.x - to / 2, y: c.y });
+  list.push(step("pointerup", { x: c.x + to / 2, y: c.y }, 10, 2), step("pointerup", { x: c.x - to / 2, y: c.y }, 10, 1));
+  await run(page, list);
 }

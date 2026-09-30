@@ -51,6 +51,8 @@ export async function visibleBoxes(page: Page, selector: string): Promise<Box[]>
 export const INTERACTIVE = "button, a[href], [role=button], input, select";
 
 export async function shot(page: Page, info: TestInfo, name: string): Promise<void> {
+  // Let the canvas draw the latest state first (the battlefield renders on animation frames).
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const path = info.outputPath(`${name}.png`);
   await page.screenshot({ path });
   await info.attach(name, { path, contentType: "image/png" });
