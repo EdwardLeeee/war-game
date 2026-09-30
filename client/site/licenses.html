@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>第三方授權聲明</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f2ea;
+        --fg: #1e1c18;
+        --accent: #8a5a12;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1a1d1b;
+          --fg: #efebe2;
+          --accent: #e7c35a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.55 -apple-system, "Noto Sans TC", sans-serif;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: calc(env(safe-area-inset-top) + 20px) 16px 40px;
+      }
+      a {
+        color: var(--accent);
+      }
+      li {
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>第三方授權聲明</h1>
+      <p>這個網站的測試頁（原型與兩個引擎 spike）使用了以下開放原始碼軟體。完整授權文字在每一項的連結裡。</p>
+      <ul>
+        <li>
+          <b>PixiJS</b>（<code>proto/</code>、<code>web/</code>）：MIT License，Copyright (c) 2013-2023 Mathew Groves, Chad Engler。
+          <a href="licenses/pixi.js-LICENSE.txt">授權全文</a>
+        </li>
+        <li>
+          <b>Godot Engine</b>（<code>godot/</code>）：MIT License，Copyright (c) 2014-present Godot Engine contributors；
+          Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur。
+          <a href="licenses/godot-LICENSE.txt">授權全文</a>；
+          Godot 內含的第三方元件與其授權：<a href="licenses/godot-COPYRIGHT.txt">COPYRIGHT.txt</a>。
+          網頁版另含 Emscripten 執行環境（MIT／University of Illinois NCSA 雙授權）。
+        </li>
+      </ul>
+      <p>暫代圖形都用程式畫出，沒有使用第三方素材：原型的在 <code>client/src/</code>，spike 的由 <code>spikes/tools/make-art.mjs</code> 產生。</p>
+      <p><a href="./">回首頁</a></p>
+    </main>
+  </body>
+</html>

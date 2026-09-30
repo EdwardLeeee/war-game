@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Safari ignores user-scalable=no; the canvas blocks browser zoom with touch-action: none. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>war-game 原型</title>
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <section id="start" class="screen" aria-labelledby="start-title">
+      <div class="card">
+        <h1 id="start-title">war-game 原型</h1>
+        <p class="mode">1 對 1 對簡單 AI</p>
+        <button id="start-game" type="button">開始</button>
+        <p class="note">開發中：目前只有畫面外殼，戰場和操作還沒接上。</p>
+        <p class="small"><span id="commit"></span> · <a href="../">回測試頁首頁</a></p>
+      </div>
+    </section>
+
+    <p id="error" role="alert" hidden></p>
+    <div id="proto-label">原型介面（非正式設計）</div>
+    <div id="rotate" role="alert">
+      <div class="phone" aria-hidden="true"></div>
+      <p>請轉成橫向</p>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,176 @@
+name: Pages
+
+# Publishes the GitHub Pages test site (Actions source; docs/ is never published).
+# Every deployment replaces the whole site, so this one workflow builds all of it:
+#   proto/            the phase 2 prototype (client/)
+#   web/, godot/      the two engine spike pages, kept as the record of the engine choice:
+#                     rebuilt from the last commit that changed spikes/, so they show that
+#                     commit, and cached by it so most runs skip the Godot install
+#   index.html, licenses.html, licenses/   home page (client/site/) and licence texts
+# Pull requests build only. Pushes to main and spike/* deploy (the github-pages environment
+# accepts only those), and only when all three parts were built. Replaces spike-pages.yml.
+on:
+  push:
+    branches: [main, "spike/**"]
+    paths:
+      - "client/**"
+      - "sim/**"
+      - "spikes/**"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths:
+      - "client/**"
+      - "sim/**"
+      - "spikes/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deployments queue one at a time; a pull request's builds only replace each other.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      complete: ${{ steps.complete.outputs.complete }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            spikes/web/package-lock.json
+
+      - name: Which commit the spike pages come from
+        id: spike
+        run: |
+          sha="$(git log -1 --format=%H -- spikes/)"
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          echo "spike pages from $(git log -1 --format='%h %s' "${sha}")"
+      - name: Spike pages from cache
+        id: spike-cache
+        uses: actions/cache@v6
+        with:
+          path: spike-site
+          key: pages-spike-site-${{ steps.spike.outputs.sha }}-v1
+      - name: Check out the spike commit
+        if: steps.spike-cache.outputs.cache-hit != 'true'
+        run: git worktree add --detach "${RUNNER_TEMP}/spike-src" "${{ steps.spike.outputs.sha }}"
+      # Same steps as spike-pages.yml. Without GITHUB_SHA the page's commit label comes from
+      # `git rev-parse HEAD` in the spike checkout, i.e. the spike commit.
+      - name: PixiJS spike page and the hashes it compares against
+        if: steps.spike-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}/spike-src/spikes/web
+        run: |
+          set -euo pipefail
+          npm ci
+          node src/headless.ts --mode scripted --out "${RUNNER_TEMP}/web-hashes"
+          node src/headless.ts --mode ai --out "${RUNNER_TEMP}/web-hashes"
+          env -u GITHUB_SHA npm run build
+          node ../tools/expected-hashes.mjs "${RUNNER_TEMP}/web-hashes" scripted ai > dist/expected-hashes.json
+          mkdir -p "${GITHUB_WORKSPACE}/spike-site/licenses"
+          cp -R dist "${GITHUB_WORKSPACE}/spike-site/web"
+          cp node_modules/pixi.js/LICENSE "${GITHUB_WORKSPACE}/spike-site/licenses/pixi.js-LICENSE.txt"
+      - if: steps.spike-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-linux-v1
+      - if: steps.spike-cache.outputs.cache-hit != 'true'
+        run: '"${RUNNER_TEMP}/spike-src/spikes/godot/ci/install-godot.sh" web_nothreads_release.zip web_nothreads_debug.zip android_debug.apk android_release.apk'
+      - name: Godot spike page (single-threaded web export)
+        if: steps.spike-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}/spike-src/spikes/godot
+        run: |
+          set -euo pipefail
+          ${GODOT} --headless --import
+          bash ci/pages.sh "${GITHUB_WORKSPACE}/spike-site/godot"
+          base="https://raw.githubusercontent.com/godotengine/godot/${GODOT_VERSION}-stable"
+          curl -sSLf -o "${GITHUB_WORKSPACE}/spike-site/licenses/godot-LICENSE.txt" "${base}/LICENSE.txt"
+          curl -sSLf -o "${GITHUB_WORKSPACE}/spike-site/licenses/godot-COPYRIGHT.txt" "${base}/COPYRIGHT.txt"
+
+      - name: Prototype
+        working-directory: client
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          mkdir -p ../site
+          cp -R dist ../site/proto
+
+      - name: Assemble the site
+        run: |
+          set -euo pipefail
+          cp -R spike-site/. site/
+          cp client/site/index.html client/site/licenses.html site/
+          find site -maxdepth 2 | sort
+          du -sh site site/*
+      - name: Are all parts there?
+        id: complete
+        run: |
+          complete=true
+          for f in proto/index.html web/index.html web/expected-hashes.json godot/index.html index.html licenses.html \
+                   licenses/pixi.js-LICENSE.txt licenses/godot-LICENSE.txt licenses/godot-COPYRIGHT.txt; do
+            [ -s "site/${f}" ] || { echo "::warning::missing site/${f}: building only, not deploying"; complete=false; }
+          done
+          echo "complete=${complete}" >> "${GITHUB_OUTPUT}"
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && needs.build.outputs.complete == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
+
+  # The published site, the way the user opens it: every page loads and proto/ is this commit.
+  live:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps webkit
+      - run: node scripts/live-check.ts "${{ needs.deploy.outputs.page_url }}" "${GITHUB_SHA::7}" "${GITHUB_WORKSPACE}/live"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pages-live
+          path: live/
+          retention-days: 30
+          if-no-files-found: ignore
