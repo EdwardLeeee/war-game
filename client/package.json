@@ -1,0 +1,27 @@
+{
+  "name": "war-game-client",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Phase 2 prototype client: PixiJS battlefield, touch controls and the GitHub Pages test page",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\"",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "pixi.js": "8.21.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.1"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
