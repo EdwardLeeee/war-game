@@ -20,6 +20,7 @@ import {
   TICKS_PER_SECOND,
   UnitType,
 } from "../protocol.ts";
+import { toCanon } from "../frame.ts";
 import { isqrt } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
 import { type FieldCache, buildingKey, cellsAround, dropKey, nearestWalkable, nodeKey } from "./paths.ts";
@@ -33,6 +34,7 @@ import {
   ECO_EVERY,
   GATHER_PER_MINUTE,
   GATHER_UNIT,
+  MAIN_CITY_REPAIR_LOCK,
   NEXT_NODE_RADIUS,
   REPAIR_PER_SECOND,
   UNITS,
@@ -266,16 +268,19 @@ export class Economy {
   /**
    * Best node of `kind` the player knows: least distance plus CROWD_PENALTY per farmer
    * already there, within `radius` cells of (cx, cy) when radius > 0; ties to the node
-   * nearer the owner's spawn, then the lower id. Returns [node, score] or [-1, 0].
+   * nearer the owner's spawn, then the first in the owner's canonical frame (frame.ts).
+   * Returns [node, score] or [-1, 0].
    */
   private bestNode(w: World, i: number, kind: number, cx: number, cy: number, radius: number, crowd: boolean): [number, number] {
     const u = w.units.col;
     const p = u.owner[i];
     const seen = this.fog.nodeSeen[p];
     const spawn = w.map.spawns[p];
+    const frame = w.map.frames[p];
     let best = -1;
     let bestScore = 0;
     let bestSpawn = 0;
+    let bestKey = 0;
     for (let k = 0; k < w.nodeAmount.length; k++) {
       if (w.nodeKind[k] !== kind || seen[k] < 0) continue;
       const nx = w.nodeX[k];
@@ -286,10 +291,13 @@ export class Economy {
       const dy = center(ny) - u.y[i];
       const score = isqrt(dx * dx + dy * dy) + (crowd ? this.nodeLoad[k] * CROWD_PENALTY : 0);
       const sp = (nx - spawn.cellX) * (nx - spawn.cellX) + (ny - spawn.cellY) * (ny - spawn.cellY);
-      if (best < 0 || score < bestScore || (score === bestScore && sp < bestSpawn)) {
+      const c = toCanon(frame, nx, ny);
+      const key = c.v * w.size + c.u;
+      if (best < 0 || score < bestScore || (score === bestScore && (sp < bestSpawn || (sp === bestSpawn && key < bestKey)))) {
         best = k;
         bestScore = score;
         bestSpawn = sp;
+        bestKey = key;
       }
     }
     return [best, bestScore];
@@ -672,6 +680,8 @@ export class Economy {
           if (bs < 0 || b.hp[bs] <= 0 || this.helpers[bs] >= BUILDERS_MAX) break;
           const max = BUILDINGS[b.type[bs]].hp;
           if (b.hp[bs] >= max) break;
+          // A main city under attack cannot be patched up on the spot: its repairers wait.
+          if (b.type[bs] === BuildingType.MainCity && w.tick - b.lastHurt[bs] < MAIN_CITY_REPAIR_LOCK) break;
           this.helpers[bs]++;
           b.acc[bs] += REPAIR_PER_SECOND;
           while (b.acc[bs] >= S) {

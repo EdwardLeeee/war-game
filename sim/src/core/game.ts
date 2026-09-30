@@ -165,6 +165,12 @@ export class Game {
     for (const a of [w.townState, w.townOwner, w.townTimer, w.townTimerTotal, w.townRevolt, w.townContested, w.townAcc]) h = fnvInt32(h, a);
     h = fnvInt32(h, w.plundered);
     h = fnvInt32(h, w.governed);
+    h = fnvInt32(h, w.cannonShots);
+    h = fnvInt32(h, w.cannonHits);
+    for (const a of [w.plunderIncome, w.governChosen, w.governCost, w.townIncome, w.governedTicks, w.governEnded, w.governPaidBack, w.townSpellCost, w.townSpellIncome]) {
+      h = fnvInt32(h, a);
+    }
+    h = fnvWord(h, w.firstCapture);
     h = fnvWord(h, w.units.count);
     for (const name of w.units.names) h = fnvInt32(h, w.units.col[name], w.units.count);
     h = fnvWord(h, w.buildings.count);

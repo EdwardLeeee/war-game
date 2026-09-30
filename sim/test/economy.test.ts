@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { Task } from "../src/core/economy.ts";
-import { BUILDINGS, CARRY, MAIN_ARROW, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, CARRY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, UNITS } from "../src/core/rules.ts";
 import { checkPlacement } from "../src/placement.ts";
 import {
   Action,
@@ -550,4 +550,31 @@ test("recall still takes waiting farmers, and they wait again afterwards", () =>
   run(g, 200);
   assert.equal(u.order[slotOf(g, f)], Order.None, "back to waiting, not sent to work");
   assert.equal(u.stay[slotOf(g, f)], 1);
+});
+
+test("a main city cannot be repaired within 10 s of being hit; other buildings can", () => {
+  const g = emptyGame();
+  g.w.ecoOn[0] = 0;
+  const b = g.w.buildings.col;
+  const mc = g.w.mainCity(0);
+  b.hp[mc] = 1000;
+  const f = farmerAtBase(g, 0);
+  cmd(g, 0, { c: "repair", u: [f], building: b.id[mc] });
+  run(g, 20);
+  b.lastHurt[mc] = g.tick; // hit now
+  const hp0 = b.hp[mc];
+  run(g, MAIN_CITY_REPAIR_LOCK - 1);
+  assert.equal(b.hp[mc], hp0, "no repair for 10 s after a hit");
+  assert.equal(g.w.units.col.order[slotOf(g, f)], Order.Repair, "the repairer waits");
+  run(g, 41);
+  assert.ok(b.hp[mc] > hp0, "then repair resumes");
+  // A house repairs straight after a hit.
+  const at = spot(g, 0, BuildingType.House);
+  const house = g.w.addBuilding(0, BuildingType.House, at.x, at.y, 100, 1000);
+  const hs = g.w.building(house);
+  b.lastHurt[hs] = g.tick;
+  const h = farmerAtBase(g, 0, 2);
+  cmd(g, 0, { c: "repair", u: [h], building: house });
+  run(g, 200);
+  assert.ok(b.hp[hs] > 100, "houses repair at once");
 });

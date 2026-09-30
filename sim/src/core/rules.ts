@@ -200,6 +200,8 @@ export const NODE_AMOUNT = { tree: 100, goldCell: 400, bush: 100, crystalCell: 1
 /** Builders on one building that add progress (more wait); the same cap applies to repairs. */
 export const BUILDERS_MAX = 4;
 export const REPAIR_PER_SECOND = 5;
+/** A main city cannot be repaired within this many ticks of taking damage (10 s); other buildings can. */
+export const MAIN_CITY_REPAIR_LOCK = 10 * S;
 /** Farms must be within this many cells (Chebyshev, footprint to footprint) of an own finished main city or granary. */
 export const FARMLAND_REACH = 6;
 /** Economy ratio default (GDD section 4): food / wood / gold in percent. */

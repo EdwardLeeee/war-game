@@ -7,6 +7,7 @@
 // half, so symmetry holds by construction. Then every open cell the starts cannot reach
 // becomes rock, and the required places are checked to be reachable.
 
+import { type Frame, IDENTITY, MIRROR_XY } from "../frame.ts";
 import { NodeKind, Terrain, TownSize } from "../protocol.ts";
 import { Rng } from "./fixed.ts";
 import { NODE_AMOUNT, TOWNS } from "./rules.ts";
@@ -39,6 +40,8 @@ export interface GameMap {
   towns: TownSpec[];
   /** Top-left cell of the big city's tower (2 x 2, on the axis). */
   tower: { cellX: number; cellY: number };
+  /** Each player's symmetry frame onto player 0's side (frame.ts): identity, and the x <-> y mirror. */
+  frames: Frame[];
 }
 
 const P0 = { x: 16, y: 78 };
@@ -202,6 +205,7 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
       { id: 1, size: TownSize.Large, cellX: LARGE.x, cellY: LARGE.y, radius: TOWNS[TownSize.Large].radius },
     ],
     tower: { cellX: LARGE.x - 1, cellY: LARGE.y - 1 },
+    frames: [IDENTITY, MIRROR_XY],
   };
 }
 

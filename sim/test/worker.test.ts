@@ -15,6 +15,10 @@ const fake = {
 await import("../src/worker.ts");
 const send = (data: ToWorker) => fake.onmessage!({ data });
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Waits until `ok()` holds (at most 3 s), so a busy machine does not fail the test. */
+async function until(ok: () => boolean): Promise<void> {
+  for (let k = 0; k < 300 && !ok(); k++) await wait(10);
+}
 const of = <T extends FromWorker["type"]>(t: T) => out.filter((m) => m.type === t) as Extract<FromWorker, { type: T }>[];
 
 test("init answers ready, then snapshots arrive in real time; commands, pause and export work", async () => {
@@ -22,7 +26,7 @@ test("init answers ready, then snapshots arrive in real time; commands, pause an
   const ready = of("ready")[0];
   assert.equal(ready.map.size, 96);
   assert.equal(ready.rules.units[UnitType.Farmer].hp, 25);
-  await wait(300);
+  await until(() => of("snapshot").length > 10 && (of("snapshot").at(-1)?.header[HeaderField.tick] ?? 0) > 10);
   const snaps = of("snapshot");
   assert.ok(snaps.length > 10, `${snaps.length} snapshots`);
   const last = snaps.at(-1)!;
@@ -41,14 +45,15 @@ test("init answers ready, then snapshots arrive in real time; commands, pause an
   assert.equal(of("snapshot").at(-1)!.header[HeaderField.tick], pausedAt, "no ticks while paused");
   assert.equal(of("snapshot").at(-1)!.header[HeaderField.paused], 1);
   send({ type: "resume" });
-  await wait(100);
+  await until(() => (of("snapshot").at(-1)?.header[HeaderField.tick] ?? 0) > pausedAt + 2);
   send({ type: "export_log" });
   const log = of("log")[0].jsonl.trim().split("\n");
   const head = JSON.parse(log[0]);
   assert.deepEqual(head, { protocol: PROTOCOL_VERSION, seed: 5, scenario: "standard", ai: [false, true] });
-  const moved = JSON.parse(log[1]);
+  // The AI's own commands are in the log too; find the human's by player and seq.
+  const moved = log.slice(1).map((l) => JSON.parse(l)).find((c) => c.p === 0 && c.seq === 9);
+  assert.ok(moved !== undefined, "the human's command is in the log");
   assert.equal(moved.t, pausedAt, "a command sent while paused runs on the next tick");
-  assert.equal(moved.p, 0);
   send({ type: "pause" });
 });
 

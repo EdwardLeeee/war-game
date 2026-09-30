@@ -117,6 +117,7 @@ export class TownSystem {
           this.revoltCheck(w, t, p, manned);
           break;
         case TownState.Governed:
+          w.governedTicks[p]++;
           if (manned) {
             const o = t * 3;
             w.townAcc[o] += rule.perMinute.food;
@@ -127,6 +128,8 @@ export class TownSystem {
               for (let k = 0; k < 3; k++) {
                 const pay = Math.trunc(w.townAcc[o + k] / PER_MINUTE);
                 w.res[p * 4 + res[k]] += pay;
+                w.townIncome[p] += pay;
+                w.townSpellIncome[t] += pay;
                 w.townAcc[o + k] -= pay * PER_MINUTE;
               }
             }
@@ -150,7 +153,20 @@ export class TownSystem {
     this.tell(w, t, { k: "town_revolted", town: t, from: p }, [p]);
   }
 
+  /** A governing spell (repairing or governed) ends: did its pay-out reach its cost? */
+  private endSpell(w: World, t: number): void {
+    const st = w.townState[t];
+    const p = w.townOwner[t];
+    if ((st !== TownState.Repairing && st !== TownState.Governed) || p < 0 || p >= PLAYER_COUNT) return;
+    w.governEnded[p]++;
+    if (w.townSpellIncome[t] >= w.townSpellCost[t]) w.governPaidBack[p]++;
+    w.townSpellCost[t] = 0;
+    w.townSpellIncome[t] = 0;
+  }
+
   private capture(w: World, t: number, p: number): void {
+    this.endSpell(w, t);
+    if (w.firstCapture < 0) w.firstCapture = w.tick;
     const before = w.townOwner[t];
     w.townState[t] = TownState.AwaitingChoice;
     w.townOwner[t] = p;
@@ -167,6 +183,7 @@ export class TownSystem {
     w.res[p * 4 + Resource.Gold] += rule.plunder.gold;
     w.res[p * 4 + Resource.Crystal] += rule.plunder.crystal;
     w.plundered[p]++;
+    w.plunderIncome[p] += rule.plunder.food + rule.plunder.gold + rule.plunder.crystal;
     w.townState[t] = TownState.Ruins;
     w.townOwner[t] = NO_OWNER;
     w.townTimer[t] = rule.ruinsTicks;
@@ -181,6 +198,7 @@ export class TownSystem {
 
   /** Back to neutral with half the militia (after ruins or a revolt). */
   private neutral(w: World, t: number): void {
+    this.endSpell(w, t);
     w.townState[t] = TownState.Neutral;
     w.townOwner[t] = NEUTRAL;
     w.townTimer[t] = 0;

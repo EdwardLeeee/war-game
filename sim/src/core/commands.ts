@@ -19,6 +19,7 @@ import {
   UnitFlag,
   UnitType,
 } from "../protocol.ts";
+import { IDENTITY, isReflection } from "../frame.ts";
 import { checkPlacement } from "../placement.ts";
 import { type Economy, nodeOpen, shiftQueue } from "./economy.ts";
 import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
@@ -332,6 +333,11 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       }
       if (!afford(w, p, rule.governCost, 1)) return Reject.CannotAfford;
       pay(w, p, rule.governCost, 1);
+      const c = rule.governCost;
+      w.governChosen[p]++;
+      w.governCost[p] += c.food + c.wood + c.gold + c.crystal;
+      w.townSpellCost[t] = c.food + c.wood + c.gold + c.crystal;
+      w.townSpellIncome[t] = 0;
       w.townState[t] = TownState.Repairing;
       w.townTimer[t] = rule.repairTicks;
       w.townTimerTotal[t] = rule.repairTicks;
@@ -475,8 +481,11 @@ function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: n
   const k = dir16(gx - cx, gy - cy);
   const fx = DIR16_X[k];
   const fy = DIR16_Y[k];
-  const lx = DIR16_X[(k + 4) % 16];
-  const ly = DIR16_Y[(k + 4) % 16];
+  // "Left" of the heading, taken in the owner's canonical frame: a mirror frame swaps left
+  // and right, so its left is the other side (units get the mirror image of the slots).
+  const turn = isReflection(w.map.frames[u.owner[slots[0]]] ?? IDENTITY) ? 12 : 4;
+  const lx = DIR16_X[(k + turn) % 16];
+  const ly = DIR16_Y[(k + turn) % 16];
   const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
   const ordered = [...slots].sort((a, b) => rank(u.type[a]) - rank(u.type[b]) || u.id[a] - u.id[b]);
   const width = isqrt(ordered.length - 1) + 1;
