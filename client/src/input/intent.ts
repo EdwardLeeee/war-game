@@ -81,7 +81,13 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
       }
       return [{ kind: "select", units: [pick.id] }];
     }
-    if (pick.kind === "building") return [{ kind: "selectBuilding", id: pick.id }];
+    if (pick.kind === "building") {
+      // Farmers tapping their own building: the simulation decides what that means (help
+      // build, farm a field, repair; core, relayed 2026-09-30). Without farmers it selects it.
+      const farmers = sel.units.filter((id) => world.unitType(id) === UnitType.Farmer);
+      if (farmers.length > 0) return [{ kind: "command", cmd: { c: "repair", u: farmers, building: pick.id } }];
+      return [{ kind: "selectBuilding", id: pick.id }];
+    }
   }
 
   const u = sel.units;

@@ -75,6 +75,15 @@ test("單指點單位或建築 → 選取", () => {
   ]);
 });
 
+test("選了農民後點自己的建築 → repair（幫忙蓋、耕作或修理，由模擬決定）；沒選農民時是選取", () => {
+  const farmers = play(world(), { units: [1, 2], building: null });
+  farmers.tap(at(1) + 3, at(8) + 3);
+  assert.deepEqual(farmers.out, [{ kind: "command", cmd: { c: "repair", u: [1], building: 10 } }]);
+  const army = play(world(), { units: [2], building: null });
+  army.tap(at(1) + 3, at(8) + 3);
+  assert.deepEqual(army.out, [{ kind: "selectBuilding", id: 10 }]);
+});
+
 test("選了部隊後點地面 → 前進", () => {
   const p = play(world(), { units: [2, 3], building: null });
   p.tap(at(40), at(41));

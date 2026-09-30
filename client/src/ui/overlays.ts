@@ -21,7 +21,7 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.NotOwner]: "不是你的單位",
   [Reject.InvalidTarget]: "目標不在了",
   [Reject.CannotAfford]: "資源不夠",
-  [Reject.PopulationCap]: "人口已滿，先蓋民居",
+  [Reject.PopulationCap]: "人口已滿（訓練中的也算），先蓋民居",
   [Reject.MageCap]: "法師已達上限",
   [Reject.NoCrystal]: "魔晶不夠一發晶砲",
   [Reject.Cooldown]: "晶砲還在冷卻",
