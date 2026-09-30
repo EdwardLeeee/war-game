@@ -108,6 +108,30 @@ jobs:
           path: tournament/
           retention-days: 30
 
+  # What a person meets (round 2): each AI against a player who does nothing, without a time
+  # limit, as a timeline (easy must not go for a town before game minute 18); and the time per
+  # tick of 40 soldiers walled in by their own houses.
+  ai-timeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sim/package-lock.json
+      - run: npm ci
+      - name: Easy and normal against a player who does nothing; walled-in soldiers
+        run: |
+          set -o pipefail
+          node src/ai-timeline.ts --seed 4 --difficulty easy --first-town-min 18 | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/ai-timeline.ts --seed 4 --difficulty normal | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/walled-perf.ts | tee -a "${GITHUB_STEP_SUMMARY}"
+
   # 100 games of the normal AI against the easy one (round 2): the same seeds, styles and swaps;
   # each spawn plays easy half the time. Replayed like the others.
   ai-vs-easy:
