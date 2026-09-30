@@ -25,14 +25,25 @@ OPTIONS = {
               lines=[("使用者不喜歡；R3 的三個方向也都不採用，改往道士／修仙者。", "n")], west="—"),
     "A": dict(dir=R4 / "mageTA", name="道長",
               sub="選項 A：年長的道士。黑色道袍配白色交領與白袖口、寬袖、偃月冠加白髮髻、長鬚，左手拂塵、右手法印，背後金色八卦紋",
-              lines=[], west="西陸版：年長的學者型晶術師，深色長袍與兜帽、長鬚，拿頂端嵌晶的長杖，腰掛書卷。"),
+              lines=[("黑白對比最強：黑袍、白袖口、白下擺、白髮，放大後最有道士的樣子。", "g"),
+                     ("實際大小下黑袍和東陸槍兵的深色甲接近，主要靠白髮、白袖口和防護罩的光分辨。", "r"),
+                     ("拂塵在實際大小下太小，看不到（只是造型，不影響辨認）。", "n")],
+              west="西陸版：年長的學者型晶術師，深色長袍與兜帽、長鬚，拿頂端嵌晶的長杖，腰掛書卷。"),
     "B": dict(dir=R4 / "mageTB", name="劍修",
               sub="選項 B：年輕的劍修。淡色層疊長衫、深色內袍、高馬尾戴玉冠、背著帶穗長劍、玩家色腰帶與長飄帶；法器仍是法印",
-              lines=[], west="西陸版：年輕的晶劍士，長外套配短披風，背著晶刃長劍，手上的晶杖較短。"),
+              lines=[("實際大小下最醒目：白袍配玩家色袖口、腰帶和身前飄帶，敵我一眼分得出。", "g"),
+                     ("飄帶在實際大小下是清楚的色塊，不會變成雜訊；背上的劍要放大才看得出來。", "n")],
+              west="西陸版：年輕的晶劍士，長外套配短披風，背著晶刃長劍，手上的晶杖較短。"),
     "C": dict(dir=R4 / "mageTC", name="女修",
               sub="選項 C：女修。雙髻插簪、高腰短襦配長裙、寬袖，肩臂之間繞一條玩家色的長披帛",
-              lines=[], west="西陸版：女晶術師，長裙配披肩（玩家色），手持晶杖。"),
+              lines=[("暖赭長裙配玩家色披帛，和另外兩種顏色都不同；雙髻是清楚的剪影。", "g"),
+                     ("披帛在實際大小下是兩條清楚的色帶，不會變成雜訊。", "g")],
+              west="西陸版：女晶術師，長裙配披肩（玩家色），手持晶杖。"),
 }
+
+
+HAT_NOTES = [("三種術士都不戴帽子（髮髻加偃月冠、玉冠加馬尾、雙髻），和農夫的大斗笠在實際大小下一眼分得開。", "g"),
+             ("劍指（兩指併攏）在實際大小下看不到；要看出「正在施法」，靠的是手前的魔法陣、腳下的法陣和發光。", "n")]
 
 
 def configure():
@@ -172,8 +183,10 @@ def overview(hat_note):
             font=artboard.font(28), fill=INK)
     art.paste(one.convert("RGB"), (M, y + 50))
     art.paste(three.convert("RGB"), (M + one.width + 40, y + 50))
-    r2art._wrap(dr, M + one.width + 40 + three.width + 40, y + 50, hat_note[0], r2art._col(hat_note[1]), 26,
-                W - (M + one.width + 40 + three.width + 40) - M)
+    yy = y + 50
+    for text, col in hat_note:
+        yy = r2art._wrap(dr, M + one.width + 40 + three.width + 40, yy, text, r2art._col(col), 26,
+                         W - (M + one.width + 40 + three.width + 40) - M)
     art.save(OUT / "R4-99-總覽對照.png")
     print("wrote R4-99-總覽對照")
 
@@ -184,4 +197,4 @@ if __name__ == "__main__":
     for o in ("0", "A", "B", "C"):
         artboard_01(o)
     motion_gif()
-    overview(("（評估待填）", "n"))
+    overview(HAT_NOTES)
