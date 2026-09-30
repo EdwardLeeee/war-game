@@ -482,3 +482,72 @@ test("e2e scenario: resources, finished houses and barracks, squads by the small
   run(g, 3 * UNITS[UnitType.Spearman].trainTicks + 20);
   assert.equal(w.trained[UnitType.Spearman], 3);
 });
+
+test("a farmer the player sends somewhere waits there: automatic work leaves it alone until it gets work", () => {
+  const g = emptyGame();
+  const m = mainCityCell(g, 0);
+  const f = farmerAtBase(g, 0);
+  const stopped = farmerAtBase(g, 0, 2);
+  const tree = nodesNear(g, 0, NodeKind.Tree)[0];
+  // `stopped` is working when the player stops it.
+  cmd(g, 0, { c: "gather", u: [stopped], node: tree });
+  run(g, 30);
+  cmd(g, 0, { c: "stop", u: [stopped] });
+  const to = { x: m.x + 12, y: m.y - 6 };
+  cmd(g, 0, { c: "move", u: [f], x: to.x, y: to.y });
+  // Damage the main city too: auto-repair must not take them either.
+  g.w.buildings.col.hp[g.w.mainCity(0)] -= 100;
+  run(g, 600);
+  const u = g.w.units.col;
+  const s = slotOf(g, f);
+  assert.equal(u.order[s], Order.None, "still waiting after many economy passes");
+  assert.ok(Math.abs((u.x[s] >> CELL_SHIFT) - to.x) <= 1 && Math.abs((u.y[s] >> CELL_SHIFT) - to.y) <= 1, "where it was sent");
+  assert.equal(u.order[slotOf(g, stopped)], Order.None, "a stopped farmer waits too");
+  const view = buildView(g, 0);
+  assert.ok(view.idleFarmers.includes(f) && view.idleFarmers.includes(stopped), "counted as idle");
+  // Work ends the waiting: a gather, and when that work runs out, the ratio takes over.
+  g.w.nodeAmount[tree] = 2;
+  cmd(g, 0, { c: "gather", u: [stopped], node: tree });
+  run(g, 2);
+  assert.equal(u.stay[slotOf(g, stopped)], 0);
+});
+
+test("farmers whose work ended, and new farmers, still go to the economy ratio", () => {
+  const g = emptyGame();
+  const builder = farmerAtBase(g, 0);
+  const at = spot(g, 0, BuildingType.House);
+  cmd(g, 0, { c: "build", u: [builder], type: BuildingType.House, x: at.x, y: at.y });
+  let done = false;
+  for (let t = 0; t < 1000 && !done; t++) {
+    g.step();
+    done = g.events.some((e) => e.to === 0 && e.ev.k === "building_done");
+  }
+  assert.ok(done);
+  run(g, 45);
+  assert.equal(g.w.units.col.order[slotOf(g, builder)], Order.Gather, "house done: the ratio sends it on");
+  const mc = g.w.buildings.col.id[g.w.mainCity(0)];
+  cmd(g, 0, { c: "train", building: mc, type: UnitType.Farmer, n: 1 });
+  let id = -1;
+  for (let t = 0; t < 300 && id < 0; t++) {
+    g.step();
+    for (const e of g.events) if (e.ev.k === "unit_trained") id = e.ev.id;
+  }
+  run(g, 25);
+  assert.equal(g.w.units.col.order[slotOf(g, id)], Order.Gather, "a new farmer goes to work");
+});
+
+test("recall still takes waiting farmers, and they wait again afterwards", () => {
+  const g = emptyGame();
+  const m = mainCityCell(g, 0);
+  const f = farmerAtBase(g, 0);
+  cmd(g, 0, { c: "move", u: [f], x: m.x + 6, y: m.y });
+  run(g, 200);
+  cmd(g, 0, { c: "recall", on: true });
+  run(g, 200);
+  const u = g.w.units.col;
+  assert.equal(u.action[slotOf(g, f)], Action.Garrisoned);
+  cmd(g, 0, { c: "recall", on: false });
+  run(g, 200);
+  assert.equal(u.order[slotOf(g, f)], Order.None, "back to waiting, not sent to work");
+  assert.equal(u.stay[slotOf(g, f)], 1);
+});
