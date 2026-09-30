@@ -79,6 +79,23 @@ UNITS = {
 # (fractions of the frame height). The sun is low enough that 0.25 below clipped the farmer's shadow.
 SHADOW_EXTRA = (0.45, 0.6)
 
+# the new animations waiting for the user's approval (blender/anims.py): rendered with
+# render_prod.py --review at facing 7 only, for the motion GIF; after approval they replace the
+# stand-ins in UNITS. (name, frames)
+REVIEW_FACINGS = [7]
+REVIEW_ANIMS = {
+    "mage_e": [("attack", 10), ("hit", 6), ("shatter", 8), ("fall", 12), ("dead", 4)],
+    "mage_w": [("attack", 10), ("hit", 6), ("shatter", 8), ("fall", 12), ("dead", 4)],
+    "hcav_e": [("death", 10)],
+    "knight_w": [("death", 10)],
+    "siege_e": [("walk", 8), ("death", 10)],
+    "siege_w": [("walk", 8), ("death", 10)],
+    "farmer_e": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8)],
+    "farmer_w": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8)],
+}
+# a siege engine's walk cycle turns the wheels 90 degrees: it moves 2 pi r / 4 per cycle (client: stride_m)
+STRIDE_M = {"siege_e": round(2 * 3.14159265 * 0.42 / 4, 3), "siege_w": round(2 * 3.14159265 * 0.36 / 4, 3)}
+
 PX_PER_M = 60       # 3x source art (20 pt per metre x 3); scaling and compression are a later step
 SUPERSAMPLE = 2
 

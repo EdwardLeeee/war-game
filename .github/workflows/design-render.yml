@@ -82,11 +82,17 @@ jobs:
             round3) /usr/bin/python3 blender/render_r3.py --target "${{ matrix.target }}" ;;
             round4) /usr/bin/python3 blender/render_r4.py --target "${{ matrix.target }}" ;;
             production)
-              # render (3x source), post-process at 3x and 2x, then the checks decide the job result
-              /usr/bin/python3 blender/render_prod.py --target "${{ matrix.target }}"
-              /usr/bin/python3 common/postprocess.py --target "${{ matrix.target }}" --scale 3
-              /usr/bin/python3 common/postprocess.py --target "${{ matrix.target }}" --scale 2
-              /usr/bin/python3 common/checks.py --target "${{ matrix.target }}" ;;
+              t="${{ matrix.target }}"
+              case "$t" in
+                # review-<unit>: only the new animations waiting for the user's approval (facing 7, for the GIF)
+                review-*) /usr/bin/python3 blender/render_prod.py --review --target "${t#review-}" ;;
+                # render (3x source), post-process at 3x and 2x, then the checks decide the job result
+                *)
+                  /usr/bin/python3 blender/render_prod.py --target "$t"
+                  /usr/bin/python3 common/postprocess.py --target "$t" --scale 3
+                  /usr/bin/python3 common/postprocess.py --target "$t" --scale 2
+                  /usr/bin/python3 common/checks.py --target "$t" ;;
+              esac ;;
             *)      /usr/bin/python3 blender/render_r5.py --target "${{ matrix.target }}" ;;
           esac
 

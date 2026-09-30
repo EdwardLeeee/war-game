@@ -33,18 +33,21 @@ def main():
         s = json.loads(st.read_text()) if st else {}
         mem = {}
         for sc in ("x3", "x2"):
-            mp = _find(t, f"atlas_{sc}/memory.json")
-            if mp:
+            # memory always from the local post-processing (one format for all units; the CI reports of
+            # earlier runs used older layouts)
+            mp = config.BUILD / "prod" / t / f"atlas_{sc}" / "memory.json"
+            if mp.exists():
                 mem[sc] = json.loads(mp.read_text())
                 for k, v in mem[sc].items():
-                    tot[sc][k] = tot[sc].get(k, 0) + v
+                    if isinstance(v, (int, float)):
+                        tot[sc][k] = tot[sc].get(k, 0) + v
         fm = s.get("frame_m", ["?"] * 4)
         mb3 = mem.get("x3", {}).get("total_rgba8_bytes", 0) / 2 ** 20
-        mb2 = mem.get("x2", {}).get("total_rgba8_bytes", 0) / 2 ** 20
+        mb2 = mem.get("x2", {}).get("total_astc_4x4_bytes", 0) / 2 ** 20
         rows.append(f"| {t} | {round((s.get('seconds') or 0) / 60)} 分 | {r['unique_frames']} | "
                     f"{fm[0]} × {fm[1]} m | {len(r['errors'])} / {r['warnings_total']} | "
                     f"{mb3:.1f} / {mb2:.1f} MB | {'、'.join(r['placeholders']) or '—'} |")
-    head = ["| 兵種 | 算圖時間 | 影格（不含鏡像） | 畫框 | 錯誤 / 警告 | 記憶體 3 倍 / 2 倍 | 還是替代動作 |",
+    head = ["| 兵種 | 算圖時間 | 影格（不含鏡像） | 畫框 | 錯誤 / 警告 | 記憶體：3 倍未壓縮 / 2 倍 ASTC | 還是替代動作 |",
             "|---|---|---|---|---|---|---|"]
     print("\n".join(head + rows))
     for sc in ("x3", "x2"):
@@ -52,8 +55,9 @@ def main():
         if not m:
             continue
         mb = {k: round(v / 2 ** 20) for k, v in m.items()}
-        print(f"\n{sc}：本體 {mb['color_rgba8']} MB、遮罩 {mb['mask_l8']}、影子 {mb['shadow_l8']}、特效 {mb['fx_rgba8']}；"
-              f"合計 {mb['total_rgba8_bytes']} MB（未壓縮），ASTC 4×4 約 {mb['total_astc_4x4_bytes']} MB")
+        n = sum(1 for t in spec.UNITS if (config.BUILD / "prod" / t / f"atlas_{sc}" / "memory.json").exists())
+        print(f"\n{sc}（{n} 個兵種）：顏色 {mb['color_bytes']} MB、玩家色 {mb['team_bytes']}、影子 {mb['shadow_bytes']}、"
+              f"特效 {mb['fx_bytes']}；合計 {mb['total_rgba8_bytes']} MB（未壓縮 RGBA8），ASTC 4×4 {mb['total_astc_4x4_bytes']} MB")
 
 
 if __name__ == "__main__":

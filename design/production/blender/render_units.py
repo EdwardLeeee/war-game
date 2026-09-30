@@ -41,6 +41,9 @@ bpy_scene = __import__("bpy").context.scene
 bpy_scene.cycles.seed = 0
 import units5    # noqa: E402
 u = units5.build(job["kind"], job.get("variant", 0), job.get("mage_style"))
+if job.get("new_anims"):              # animations waiting for the user's approval (anims.py)
+    import anims  # noqa: E402
+    u = anims.extend(u, job["kind"], job.get("mage_style"))
 if job.get("frames"):
     u.frames = dict(getattr(u, "frames", {}), **job["frames"])
 # the flying 晶砲 bolt is a projectile the game draws itself (client/docs/sprite-atlas.md): not in the unit images
