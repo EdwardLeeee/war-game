@@ -36,10 +36,11 @@ import {
   UnitFlag,
   UnitType,
   WARNING_STRIDE,
+  WarningField,
 } from "../protocol.ts";
 import { writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
-import { BUILDINGS, FARMLAND_REACH, MAGE_CAP, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -248,6 +249,24 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   header[HeaderField.fogTick] = fog.fogTick;
   header[HeaderField.scenario] = SCENARIO_ID[game.config.scenario] ?? Scenario.Standard;
 
+  // Cannon warnings: each calibrating mage's blast area, when its centre cell is seen.
+  const casting: number[] = [];
+  for (let s = 0; s < w.units.count; s++) {
+    if (u.order[s] !== Order.Cast) continue;
+    if (u.owner[s] !== player && !seesCell(u.castX[s] >> CELL_SHIFT, u.castY[s] >> CELL_SHIFT)) continue;
+    casting.push(s);
+  }
+  const warnings = new Int32Array(casting.length * WARNING_STRIDE);
+  casting.forEach((s, r) => {
+    const o = r * WARNING_STRIDE;
+    warnings[o + WarningField.id] = u.id[s];
+    warnings[o + WarningField.owner] = u.owner[s];
+    warnings[o + WarningField.x] = u.castX[s];
+    warnings[o + WarningField.y] = u.castY[s];
+    warnings[o + WarningField.radius] = CANNON.radius;
+    warnings[o + WarningField.ticksLeft] = CANNON.calibrateTicks - u.castProgress[s];
+  });
+
   // Placement: rock, nodes as last seen, and every building the player knows block;
   // unexplored cells are marked; farm land comes from own finished main cities and granaries.
   const placement = new Uint8Array(n * n);
@@ -281,7 +300,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     units,
     buildings,
     towns,
-    warnings: new Int32Array(0 * WARNING_STRIDE),
+    warnings,
     nodes,
     fog: fogGrid,
     fogTick: fog.fogTick,

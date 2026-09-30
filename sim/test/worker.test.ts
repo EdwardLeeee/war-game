@@ -62,6 +62,11 @@ test("determinism runs a whole game and reports hashes; a wrong protocol is an e
   assert.equal(done.finalHash, progress.at(-1)!.hash);
   send({ type: "init", protocol: 999, seed: 1, human: 0, ai: [false, false], tps: 20, scenario: "standard" });
   assert.match(of("error")[0].message, /protocol/);
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 1, human: 0, ai: [false, false], tps: 20, scenario: "nowhere" as never });
+  assert.match(of("error")[1].message, /unknown scenario/);
   send({ type: "init", protocol: PROTOCOL_VERSION, seed: 1, human: 0, ai: [false, false], tps: 20, scenario: "perf" });
-  assert.match(of("error")[1].message, /PR-4/);
+  send({ type: "pause" });
+  assert.equal(of("ready").at(-1)!.player, 0);
+  assert.equal(of("snapshot").at(-1)!.header[HeaderField.scenario], 2, "perf");
+  assert.equal(of("error").length, 2);
 });

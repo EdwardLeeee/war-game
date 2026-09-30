@@ -3,7 +3,7 @@
 // visible), and memory — the last sighting of each enemy or neutral building, each
 // resource node and each town. Memory is simulation state: the AI decides from it.
 
-import { CELL_SHIFT, NEUTRAL, PLAYER_COUNT, TOWN_STRIDE, TownField, TownFlag, TownState, UnitType } from "../protocol.ts";
+import { Action, CELL_SHIFT, NEUTRAL, PLAYER_COUNT, TOWN_STRIDE, TownField, TownFlag, TownState, UnitType } from "../protocol.ts";
 import { BUILDINGS, TOWNS, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
 
@@ -157,7 +157,7 @@ export function writeTownRow(w: World, t: number, out: Int32Array, o: number): v
   const cy = (w.townY[t] << CELL_SHIFT) + 512;
   for (let s = 0; s < w.units.count; s++) {
     if (u.home[s] === t && u.owner[s] === NEUTRAL) militia++;
-    if (u.owner[s] === w.townOwner[t] && u.owner[s] !== NEUTRAL && u.type[s] !== UnitType.Farmer) {
+    if (u.owner[s] === w.townOwner[t] && u.owner[s] !== NEUTRAL && u.type[s] !== UnitType.Farmer && u.action[s] !== Action.Garrisoned) {
       const dx = u.x[s] - cx;
       const dy = u.y[s] - cy;
       if (dx * dx + dy * dy <= r * r) garrison++;
@@ -169,5 +169,7 @@ export function writeTownRow(w: World, t: number, out: Int32Array, o: number): v
   out[o + TownField.revoltTimer] = w.townRevolt[t];
   const held = w.townState[t] === TownState.Repairing || w.townState[t] === TownState.Governed;
   out[o + TownField.flags] =
-    (out[o + TownField.flags] & TownFlag.Visible) | (held && garrison < rule.garrisonNeeded ? TownFlag.BelowGarrison : 0);
+    (out[o + TownField.flags] & TownFlag.Visible) |
+    (held && garrison < rule.garrisonNeeded ? TownFlag.BelowGarrison : 0) |
+    (w.townContested[t] === 1 ? TownFlag.Contested : 0);
 }
