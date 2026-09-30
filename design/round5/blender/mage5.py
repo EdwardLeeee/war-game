@@ -150,9 +150,10 @@ def style_wc(u, M):
     mage4._wide_sleeves(r, X["gown"], b, flare=0.12)
     # player-colour shawl: over both shoulders, crossing low on the chest
     for s_ in (1, -1):
-        mage4.ribbon(f"mage_w_shawl{s_}", [(-0.2 * s_, -0.06, 1.44), (-0.14 * s_, 0.06, 1.46), (-0.05 * s_, 0.14, 1.34),
-                                           (0.06 * s_, 0.16, 1.18), (0.16 * s_, 0.14, 1.04), (0.2 * s_, 0.12, 0.86)],
-                     0.15, M["team"], r, tb + mage3._arm(r, "R", b)[:1] + mage3._arm(r, "L", b)[:1])
+        mage4.ribbon(f"mage_w_shawl{s_}", [(-0.2 * s_, -0.06, 1.44), (-0.14 * s_, 0.06, 1.46), (-0.05 * s_, 0.15, 1.34),
+                                           (0.06 * s_, 0.17, 1.18), (0.15 * s_, 0.16, 1.02), (0.19 * s_, 0.17, 0.84),
+                                           (0.2 * s_, 0.2, 0.68)],
+                     0.19, M["team"], r, tb + lg[:1] + lg[2:3] + mage3._arm(r, "R", b)[:1] + mage3._arm(r, "L", b)[:1])
     r.pose()
     J = r.j
     head = J["head"]
