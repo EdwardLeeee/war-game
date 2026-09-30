@@ -7,11 +7,11 @@ name: Pages
 #                     rebuilt from the last commit that changed spikes/, so they show that
 #                     commit, and cached by it so most runs skip the Godot install
 #   index.html, licenses.html, licenses/   home page (client/site/) and licence texts
-# Pull requests build only. Pushes to main and spike/* deploy (the github-pages environment
-# accepts only those), and only when all three parts were built. Replaces spike-pages.yml.
+# Pull requests build only. Pushes to main deploy (the github-pages environment accepts only
+# main), and only when all three parts were built. Replaces spike-pages.yml.
 on:
   push:
-    branches: [main, "spike/**"]
+    branches: [main]
     paths:
       - "client/**"
       - "sim/**"
