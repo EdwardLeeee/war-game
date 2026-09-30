@@ -1,0 +1,244 @@
+// What the screen knows about the game: the static data from `ready`, the last two
+// snapshots (for interpolation), the resource-node table rebuilt from the snapshots'
+// change rows, the latest fog and placement grids, and the player's selection. Answers the
+// questions the intent rules ask (input/intent.ts). Never writes simulation state.
+
+import type { IntentWorld, Pick } from "../input/intent.ts";
+import {
+  Action,
+  BuildingField as B,
+  BUILDING_STRIDE,
+  BuildingType,
+  CELL,
+  HeaderField as H,
+  type MapInfo,
+  NO_OWNER,
+  NODE_STRIDE,
+  NodeField as N,
+  type PlacementGrid,
+  type Rules,
+  type Snapshot,
+  TICKS_PER_SECOND,
+  TOWN_STRIDE,
+  TownField as T,
+  UNIT_STRIDE,
+  UnitField as U,
+  UnitFlag,
+} from "../sim.ts";
+import { TILE_PX } from "../tuning.ts";
+
+/** World px per fixed-point unit. */
+export const FIXED_TO_PX = TILE_PX / CELL;
+
+export interface Frame {
+  snap: Snapshot;
+  /** performance.now() when it arrived. */
+  at: number;
+}
+
+export class GameView implements IntentWorld {
+  readonly me: number;
+  readonly map: MapInfo;
+  readonly rules: Rules;
+  prev: Frame | null = null;
+  curr: Frame | null = null;
+  /** Resource nodes by id: [id, kind, cellX, cellY, amount, visible]. */
+  readonly nodes = new Map<number, Int32Array>();
+  /** Node id per cell (amount > 0), or -1. */
+  readonly nodeAt: Int32Array;
+  /** Bumped whenever the node table changes, so the renderer can skip unchanged frames. */
+  nodesVersion = 0;
+  fog: Uint8Array | null = null;
+  fogVersion = 0;
+  placement: PlacementGrid | null = null;
+  selection: { units: number[]; building: number | null } = { units: [], building: null };
+  /** A foreign unit, building, node or town the player tapped with nothing of theirs selected. */
+  inspected: Pick | null = null;
+  /** Is this world point on screen? Set by the game from the camera. */
+  onScreen: (wx: number, wy: number) => boolean = () => true;
+
+  constructor(player: number, map: MapInfo, rules: Rules) {
+    this.me = player;
+    this.map = map;
+    this.rules = rules;
+    this.nodeAt = new Int32Array(map.size * map.size).fill(-1);
+  }
+
+  push(snap: Snapshot, at: number): void {
+    this.prev = this.curr;
+    this.curr = { snap, at };
+    const size = this.map.size;
+    const rows = snap.nodes;
+    for (let o = 0; o < rows.length; o += NODE_STRIDE) {
+      const row = rows.slice(o, o + NODE_STRIDE);
+      const id = row[N.id];
+      const old = this.nodes.get(id);
+      if (old !== undefined) this.nodeAt[old[N.cellY] * size + old[N.cellX]] = -1;
+      this.nodes.set(id, row);
+      if (row[N.amount] > 0) this.nodeAt[row[N.cellY] * size + row[N.cellX]] = id;
+    }
+    if (rows.length > 0) this.nodesVersion++;
+    if (snap.fog !== null) {
+      this.fog = snap.fog;
+      this.fogVersion++;
+    }
+    if (snap.placement !== null) this.placement = { size, cells: snap.placement };
+    this.pruneSelection();
+  }
+
+  get header(): Int32Array | null {
+    return this.curr?.snap.header ?? null;
+  }
+
+  /** Ticks per second the simulation is running at (for interpolation). */
+  get tps(): number {
+    const h = this.header;
+    return h === null || h[H.speed] <= 0 ? TICKS_PER_SECOND : h[H.speed] / 100;
+  }
+
+  /** Row offset of a unit in the current snapshot, or -1 (rows are sorted by id). */
+  unitRow(id: number, units = this.curr?.snap.units): number {
+    if (units === undefined) return -1;
+    let lo = 0;
+    let hi = units.length / UNIT_STRIDE - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const v = units[mid * UNIT_STRIDE];
+      if (v === id) return mid * UNIT_STRIDE;
+      if (v < id) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return -1;
+  }
+
+  buildingRow(id: number): number {
+    const b = this.curr?.snap.buildings;
+    if (b === undefined) return -1;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) if (b[o + B.id] === id) return o;
+    return -1;
+  }
+
+  unitType(id: number): number {
+    const o = this.unitRow(id);
+    return o < 0 ? -1 : (this.curr as Frame).snap.units[o + U.type];
+  }
+
+  unitStance(id: number): number {
+    const o = this.unitRow(id);
+    return o < 0 ? -1 : (this.curr as Frame).snap.units[o + U.stance];
+  }
+
+  unitAutocast(id: number): boolean {
+    const o = this.unitRow(id);
+    return o >= 0 && ((this.curr as Frame).snap.units[o + U.flags] & UnitFlag.Autocast) !== 0;
+  }
+
+  /** World px position of a unit in the current snapshot. */
+  unitPos(o: number): { x: number; y: number } {
+    const u = (this.curr as Frame).snap.units;
+    return { x: u[o + U.x] * FIXED_TO_PX, y: u[o + U.y] * FIXED_TO_PX };
+  }
+
+  pick(wx: number, wy: number, r: number): Pick | null {
+    const snap = this.curr?.snap;
+    if (snap === undefined) return null;
+    const u = snap.units;
+    let best: Pick | null = null;
+    let bestD = r * r;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + U.action] === Action.Garrisoned) continue;
+      const dx = u[o + U.x] * FIXED_TO_PX - wx;
+      const dy = u[o + U.y] * FIXED_TO_PX - wy;
+      const d = dx * dx + dy * dy;
+      if (d <= bestD) {
+        bestD = d;
+        best = { kind: "unit", id: u[o + U.id], owner: u[o + U.owner], type: u[o + U.type] };
+      }
+    }
+    if (best !== null) return best;
+
+    const cx = Math.floor(wx / TILE_PX);
+    const cy = Math.floor(wy / TILE_PX);
+    const b = snap.buildings;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      const s = this.rules.buildings[b[o + B.type]]?.size ?? 1;
+      if (cx >= b[o + B.cellX] && cx < b[o + B.cellX] + s && cy >= b[o + B.cellY] && cy < b[o + B.cellY] + s) {
+        return { kind: "building", id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type] };
+      }
+    }
+
+    const size = this.map.size;
+    if (cx >= 0 && cy >= 0 && cx < size && cy < size) {
+      const node = this.nodeAt[cy * size + cx];
+      if (node >= 0) return { kind: "node", id: node, owner: NO_OWNER, type: (this.nodes.get(node) as Int32Array)[N.kind] };
+    }
+
+    for (const town of this.map.towns) {
+      const tx = (town.cellX + 0.5) * TILE_PX;
+      const ty = (town.cellY + 0.5) * TILE_PX;
+      const tr = town.radius * TILE_PX;
+      if ((wx - tx) ** 2 + (wy - ty) ** 2 <= tr * tr) {
+        const row = this.townRow(town.id);
+        const owner = row < 0 ? NO_OWNER : snap.towns[row + T.owner];
+        return { kind: "town", id: town.id, owner, type: town.size };
+      }
+    }
+    return null;
+  }
+
+  townRow(id: number): number {
+    const t = this.curr?.snap.towns;
+    if (t === undefined) return -1;
+    for (let o = 0; o < t.length; o += TOWN_STRIDE) if (t[o + T.id] === id) return o;
+    return -1;
+  }
+
+  ownUnitsIn(x0: number, y0: number, x1: number, y1: number): { id: number; type: number }[] {
+    const out: { id: number; type: number }[] = [];
+    const u = this.curr?.snap.units;
+    if (u === undefined) return out;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + U.owner] !== this.me || u[o + U.action] === Action.Garrisoned) continue;
+      const x = u[o + U.x] * FIXED_TO_PX;
+      const y = u[o + U.y] * FIXED_TO_PX;
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) out.push({ id: u[o + U.id], type: u[o + U.type] });
+    }
+    return out;
+  }
+
+  ownUnitsOnScreen(type: number): number[] {
+    const out: number[] = [];
+    const u = this.curr?.snap.units;
+    if (u === undefined) return out;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + U.owner] !== this.me || u[o + U.type] !== type || u[o + U.action] === Action.Garrisoned) continue;
+      if (this.onScreen(u[o + U.x] * FIXED_TO_PX, u[o + U.y] * FIXED_TO_PX)) out.push(u[o + U.id]);
+    }
+    return out;
+  }
+
+  /** Cell just outside the own main city's footprint, towards the map centre (退回主城). */
+  homeCell(): { x: number; y: number } | null {
+    const b = this.curr?.snap.buildings;
+    if (b === undefined) return null;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + B.owner] !== this.me || b[o + B.type] !== BuildingType.MainCity) continue;
+      const s = this.rules.buildings[BuildingType.MainCity]?.size ?? 1;
+      const half = this.map.size / 2;
+      const x = b[o + B.cellX] < half ? b[o + B.cellX] + s : b[o + B.cellX] - 1;
+      const y = b[o + B.cellY] < half ? b[o + B.cellY] + s : b[o + B.cellY] - 1;
+      return { x, y };
+    }
+    return null;
+  }
+
+  /** Drop selected ids that are gone (dead, or a building destroyed). */
+  private pruneSelection(): void {
+    const sel = this.selection;
+    if (sel.units.length > 0) {
+      const alive = sel.units.filter((id) => this.unitRow(id) >= 0);
+      if (alive.length !== sel.units.length) sel.units = alive;
+    }
+    if (sel.building !== null && this.buildingRow(sel.building) < 0) sel.building = null;
+  }
+}

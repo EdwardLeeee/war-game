@@ -178,3 +178,236 @@ a {
     display: flex;
   }
 }
+
+/* --- battlefield overlays (gestures, lab) ------------------------------------------- */
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#hud button {
+  pointer-events: auto;
+}
+
+.secondary {
+  background: #cfd6d2;
+}
+
+/* Hold cue: a ring that closes on the finger during the 350 ms before a long press. */
+.press-cue {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border: 3px solid rgba(255, 243, 176, 0.9);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.press-cue.run {
+  animation: cue 270ms linear forwards;
+}
+
+@keyframes cue {
+  from {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  to {
+    transform: scale(0.35);
+    opacity: 1;
+  }
+}
+
+.marquee {
+  position: absolute;
+  border: 2px solid #fff3b0;
+  background: rgba(255, 243, 176, 0.14);
+}
+
+.wheel-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.wheel {
+  position: absolute;
+  inset: 0;
+}
+
+.wheel-item {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  min-width: 0;
+  padding: 0 4px;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1.15;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.prompt {
+  position: absolute;
+  top: calc(var(--safe-t) + 52px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 24px);
+  padding: 4px 6px 4px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.prompt-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.prompt .primary {
+  min-width: 110px;
+}
+
+.place-confirm {
+  position: absolute;
+  display: flex;
+  gap: 8px;
+}
+
+.place-confirm button {
+  width: 52px;
+  height: 52px;
+  font-size: 24px;
+  padding: 0;
+}
+
+.place-confirm .place-ok {
+  background: #4fd06a;
+}
+
+.place-confirm .place-ok:disabled {
+  background: #6d7a70;
+  color: #2a302c;
+}
+
+.place-confirm .place-cancel {
+  background: #e0473d;
+  color: #fff;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 110px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  background: rgba(90, 28, 24, 0.92);
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+/* --- lab (measurement) panel --------------------------------------------------------- */
+
+.lab-toggle {
+  position: absolute;
+  top: calc(var(--safe-t) + 4px);
+  right: calc(var(--safe-r) + 4px);
+  background: #cfd6d2;
+}
+
+.lab {
+  position: absolute;
+  top: calc(var(--safe-t) + 4px);
+  right: calc(var(--safe-r) + 4px);
+  bottom: calc(var(--safe-b) + 4px);
+  width: min(430px, calc(100vw - var(--safe-l) - var(--safe-r) - 8px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: rgba(12, 14, 13, 0.93);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  pointer-events: auto;
+  font-size: 13px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.lab-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lab p {
+  margin: 0;
+}
+
+.lab-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lab-buttons button:disabled {
+  opacity: 0.45;
+}
+
+.lab-status {
+  color: #f0c27a;
+  min-height: 1em;
+}
+
+.lab-result {
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+.lab-result h3 {
+  margin: 0 0 4px;
+}
+
+.lab-result .bad {
+  color: #ff9c8f;
+}
+
+.lab-result .small {
+  font-size: 11px;
+  opacity: 0.8;
+  word-break: break-all;
+}
+
+.lab-log-wrap {
+  position: relative;
+  flex: 1 1 60px;
+  min-height: 60px;
+}
+
+.lab-log {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  font: 11px/1.35 ui-monospace, Menlo, monospace;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  padding: 4px 6px;
+  word-break: break-all;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lab-more {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+}

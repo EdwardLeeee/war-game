@@ -1,9 +1,13 @@
 // Prototype page. The start screen offers the one mode (1 v 1 against the simple AI);
-// 開始 brings up the battlefield.
+// 開始 brings up the battlefield. Until core's worker is connected, the battlefield runs on
+// the fake world in mock/ (same messages), so the camera, gestures and lab can be tried.
 
 import "./style.css";
-import { type Application, UPDATE_PRIORITY } from "pixi.js";
-import { parseParams } from "./params.ts";
+import { type Application, VERSION } from "pixi.js";
+import { Game } from "./game/game.ts";
+import { type GameHook, gameHook } from "./game/test-hook.ts";
+import { MockPort } from "./mock/mock-port.ts";
+import { parseParams, SPEED_TPS } from "./params.ts";
 import { createStage } from "./stage.ts";
 
 declare const __COMMIT__: string;
@@ -14,6 +18,7 @@ export interface ProtoHook {
   screen: "start" | "battle";
   /** The battlefield has been drawn at least once. */
   ready: boolean;
+  game?: GameHook;
 }
 
 declare global {
@@ -29,6 +34,15 @@ if (params.test) window.__proto = hook;
 
 let app: Application | null = null;
 
+const env = () => ({
+  commit: __COMMIT__,
+  engine: `PixiJS ${VERSION}`,
+  data: "假資料（還沒接上模擬）",
+  userAgent: navigator.userAgent,
+  dpr: window.devicePixelRatio,
+  viewport: `${window.innerWidth}x${window.innerHeight}`,
+});
+
 $("commit").textContent = `commit ${__COMMIT__}`;
 $("start-game").addEventListener("click", () => {
   void startGame().catch(showError);
@@ -37,17 +51,19 @@ $("start-game").addEventListener("click", () => {
 async function startGame(): Promise<void> {
   $("start").hidden = true;
   hook.screen = "battle";
-  if (app === null) {
-    app = await createStage($("stage"));
-    // UTILITY runs after the render callback, so the first frame is on screen by then.
-    app.ticker.addOnce(
-      () => {
-        hook.ready = true;
-      },
-      undefined,
-      UPDATE_PRIORITY.UTILITY,
-    );
-  }
+  if (app !== null) return;
+  app = await createStage($("stage"));
+  const game = new Game(app, new MockPort(), $("hud"), {
+    seed: 1,
+    scenario: "standard",
+    tps: params.tps ?? SPEED_TPS.normal,
+    fake: true,
+    env,
+  });
+  if (params.test) hook.game = gameHook(game);
+  game.start();
+  await game.whenReady();
+  hook.ready = true;
 }
 
 function showError(err: unknown): void {
