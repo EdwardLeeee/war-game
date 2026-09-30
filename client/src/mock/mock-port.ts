@@ -169,6 +169,15 @@ export class MockPort implements SimPort {
 
   /** Tests: deliver an event with the next snapshot (an attack, a captured town...). */
   inject(ev: SimEvent): void {
+    // A capture also leaves the town waiting for 搶 or 治理, as in the simulation.
+    if (ev.k === "town_captured") {
+      const t = this.towns.find((v) => v.id === ev.town);
+      if (t !== undefined) {
+        t.state = TownState.AwaitingChoice;
+        t.owner = ev.by;
+        t.militia = 0;
+      }
+    }
     this.events.push(ev);
   }
 

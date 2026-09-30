@@ -289,6 +289,33 @@ test("攻下城鎮：跳出「搶」「治理」兩個大按鈕", async ({ page 
   await expect(dialog).toBeHidden();
 });
 
+test("攻下城鎮：稍後再決定之後，點城鎮還能選搶或治理", async ({ page }) => {
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: /^稍後再決定/ }).tap();
+  await expect(dialog).toBeHidden();
+  // The small town at (30, 66) is now waiting for the choice; tapping it offers both again.
+  await centre(page, 30, 66);
+  // TownState.AwaitingChoice = 1.
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).find((t) => t.id === 0)?.state).toBe(1);
+  // A point inside the town where a tap picks the town itself (not a militia man or a tree).
+  let spot: { x: number; y: number } | null = null;
+  for (const [dx, dy] of [[0, 0], [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2]]) {
+    const p = await at(page, { x: 30.5 + dx, y: 66.5 + dy });
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === "town") {
+      spot = p;
+      break;
+    }
+  }
+  if (spot === null) throw new Error("no open ground inside the town");
+  await tap(page, spot);
+  const info = page.locator(".sel-info");
+  await expect(info.getByRole("button", { name: "搶", exact: true })).toBeVisible();
+  await info.getByRole("button", { name: "搶", exact: true }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
+});
+
 test("被攻擊：小地圖閃、畫面邊緣出現箭頭，點箭頭跳過去", async ({ page }, info) => {
   await page.evaluate(() => window.__proto?.game?.inject({ k: "attacked", x: 80 * 1024 + 512, y: 20 * 1024 + 512, target: 1 }));
   const arrow = page.getByRole("button", { name: "有東西被攻擊：點一下跳過去" });
