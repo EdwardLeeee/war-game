@@ -5,13 +5,17 @@
 
 import { BuildingType, NEUTRAL, PLAYER_COUNT, TownState, UnitType } from "../protocol.ts";
 import type { GameMap } from "./map.ts";
-import { BUILDINGS } from "./rules.ts";
+import { BUILDINGS, ECO_DEFAULT, MAX_POPULATION, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
   "order", "orderTarget", "orderX", "orderY", "stance", "castProgress", "castCooldown", "flags",
   "cooldown", "target", "group", "speedCap", "anchorX", "anchorY", "lastHurt", "stuck", "home",
-  "vx", "vy", "workX", "workY", "workTicks",
+  "vx", "vy",
+  // Farmers (economy.ts): task phase, 1 when a Gather order's target is a farm building,
+  // the work accumulator, whether this tick's decide put the farmer at its work, and the
+  // order recall interrupted (restored when recall ends).
+  "task", "onFarm", "acc", "working", "prevOrder", "prevTarget", "prevOnFarm",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 
@@ -19,6 +23,8 @@ export const BUILDING_COLS = [
   "id", "owner", "type", "cellX", "cellY", "hp", "progress", "flags",
   "q0", "q1", "q2", "q3", "q4", "q5", "q6", "queueLength", "queueTicks",
   "rallyX", "rallyY", "garrisoned", "cooldown", "target", "lastHurt", "town",
+  // Builder-ticks of construction done, and the hp accumulator of repairs.
+  "work", "acc",
 ] as const;
 export type BuildingCol = (typeof BUILDING_COLS)[number];
 
@@ -102,8 +108,26 @@ export class World {
   res = new Int32Array((PLAYER_COUNT + 1) * 4);
   /** BLOCK_* bits per cell. */
   grid: Uint8Array;
-  /** Bumped whenever grid changes, so cached paths know to rebuild. */
-  gridVersion = 0;
+  /** Cell -> id of the building whose footprint covers it (farms too), or -1. */
+  buildingAt: Int32Array;
+  /**
+   * Path-cache versions (paths.ts): blockVersion is bumped when cells become blocked (a
+   * building placed), openVersion when cells open (a node used up, a building gone), and
+   * dropVersion when the set of finished drop-off buildings changes.
+   */
+  blockVersion = 0;
+  openVersion = 0;
+  dropVersion = 0;
+
+  // Per player economy settings: ratio in percent [p * 3 + food|wood|gold], on/off, recall.
+  ecoRatio = new Int32Array(PLAYER_COUNT * 3);
+  ecoOn = new Uint8Array(PLAYER_COUNT);
+  recall = new Uint8Array(PLAYER_COUNT);
+
+  // Statistics for game_over (GameStats): [p * 4 + Resource], [p * 5 + UnitType].
+  gathered = new Int32Array(PLAYER_COUNT * 4);
+  trained = new Int32Array(PLAYER_COUNT * 5);
+  lost = new Int32Array(PLAYER_COUNT * 5);
   /** Winner once the game is over (-1 = draw), or -2 while running. */
   winner = -2;
   endReason = -1;
@@ -112,7 +136,12 @@ export class World {
     this.map = map;
     const n = (this.size = map.size);
     this.grid = new Uint8Array(n * n);
+    this.buildingAt = new Int32Array(n * n).fill(-1);
     for (let i = 0; i < n * n; i++) if (map.terrain[i] === 1) this.grid[i] = BLOCK_ROCK;
+    for (let p = 0; p < PLAYER_COUNT; p++) {
+      this.ecoRatio.set([ECO_DEFAULT.food, ECO_DEFAULT.wood, ECO_DEFAULT.gold], p * 3);
+      this.ecoOn[p] = 1;
+    }
     const k = map.nodes.length;
     this.nodeKind = new Int32Array(k);
     this.nodeX = new Int32Array(k);
@@ -179,6 +208,7 @@ export class World {
     c.anchorY[s] = y;
     c.lastHurt[s] = -100000;
     c.home[s] = -1;
+    c.prevTarget[s] = -1;
     return id;
   }
 
@@ -200,22 +230,29 @@ export class World {
     c.target[s] = -1;
     c.lastHurt[s] = -100000;
     c.town[s] = -1;
-    this.setFootprint(type, cellX, cellY, true);
+    this.setFootprint(id, type, cellX, cellY, true);
+    if (progress >= 1000 && BUILDINGS[type].accepts.length > 0) this.dropVersion++;
     return id;
   }
 
-  /** Marks or clears a building's footprint in the grid (walkable buildings leave it open). */
-  setFootprint(type: BuildingType, cellX: number, cellY: number, on: boolean): void {
+  /**
+   * Marks or clears a building's footprint: buildingAt always, the grid's BLOCK_BUILDING
+   * bit unless the building is walkable (farms).
+   */
+  setFootprint(id: number, type: BuildingType, cellX: number, cellY: number, on: boolean): void {
     const info = BUILDINGS[type];
-    if (info.walkable) return;
     const n = this.size;
     for (let y = cellY; y < cellY + info.size; y++) {
       for (let x = cellX; x < cellX + info.size; x++) {
+        this.buildingAt[y * n + x] = on ? id : -1;
+        if (info.walkable) continue;
         if (on) this.grid[y * n + x] |= BLOCK_BUILDING;
         else this.grid[y * n + x] &= ~BLOCK_BUILDING;
       }
     }
-    this.gridVersion++;
+    if (info.walkable) return;
+    if (on) this.blockVersion++;
+    else this.openVersion++;
   }
 
   unit(id: number): number {
@@ -232,6 +269,24 @@ export class World {
 
   get over(): boolean {
     return this.winner !== -2;
+  }
+
+  /** Population in use: every living unit the player owns (garrisoned farmers too). */
+  population(p: number): number {
+    const u = this.units.col;
+    let pop = 0;
+    for (let s = 0; s < this.units.count; s++) if (u.owner[s] === p) pop += UNITS[u.type[s]].population;
+    return pop;
+  }
+
+  /** Population cap: finished buildings (governed towns from PR-4), at most MAX_POPULATION. */
+  populationCap(p: number): number {
+    const b = this.buildings.col;
+    let cap = 0;
+    for (let s = 0; s < this.buildings.count; s++) {
+      if (b.owner[s] === p && b.progress[s] >= 1000) cap += BUILDINGS[b.type[s]].populationCap;
+    }
+    return Math.min(cap, MAX_POPULATION);
   }
 
   /** The main city of a player, or -1. */

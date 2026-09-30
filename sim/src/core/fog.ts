@@ -45,6 +45,22 @@ export class Fog {
     }
   }
 
+  /** Start of game: each player has explored the area around its spawn and knows its nodes. */
+  reveal(w: World, radius: number): void {
+    const n = w.size;
+    for (let p = 0; p < PLAYER_COUNT; p++) {
+      const s = w.map.spawns[p];
+      const exp = this.explored[p];
+      for (let y = Math.max(0, s.cellY - radius); y <= Math.min(n - 1, s.cellY + radius); y++) {
+        for (let x = Math.max(0, s.cellX - radius); x <= Math.min(n - 1, s.cellX + radius); x++) {
+          if ((x - s.cellX) * (x - s.cellX) + (y - s.cellY) * (y - s.cellY) <= radius * radius) exp[y * n + x] = 1;
+        }
+      }
+      const seen = this.nodeSeen[p];
+      for (let k = 0; k < seen.length; k++) if (exp[w.nodeY[k] * n + w.nodeX[k]] === 1) seen[k] = w.nodeAmount[k];
+    }
+  }
+
   update(w: World): void {
     this.fogTick = w.tick;
     const n = w.size;

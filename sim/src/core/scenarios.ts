@@ -11,8 +11,16 @@ export type ScenarioKey = ScenarioName | "skirmish";
 
 /** Which PR brings each protocol scenario (before that, init fails with this message). */
 const NOT_YET: Partial<Record<ScenarioKey, string>> = {
-  e2e: "the e2e scenario arrives with PR-3 (building, training) and PR-4 (towns)",
   perf: "the perf scenario arrives with PR-4",
+};
+
+/** e2e: resources per side, and the squad placed beside the small town. */
+export const E2E = {
+  resources: { food: 2000, wood: 2000, gold: 2000, crystal: 300 },
+  spearmen: 6,
+  ranged: 4,
+  /** Squad centre for player 0 (player 1: mirrored), about 11 cells from the small town. */
+  squad: { x: 26, y: 40 },
 };
 
 const center = (c: number) => (c << CELL_SHIFT) + 512;
@@ -22,6 +30,7 @@ export function setupScenario(w: World, scenario: ScenarioKey): void {
   if (missing !== undefined) throw new Error(missing);
   standard(w);
   if (scenario === "skirmish") skirmish(w);
+  if (scenario === "e2e") e2e(w);
 }
 
 function standard(w: World): void {
@@ -96,4 +105,57 @@ function skirmish(w: World): void {
     for (let k = 0; k < 30; k++) place(p, UnitType.Spearman, k);
     for (let k = 30; k < 50; k++) place(p, UnitType.Ranged, k);
   }
+}
+
+/**
+ * e2e (PROTOCOL.md section 8): plenty of resources, two finished houses and a barracks by
+ * each main city (population cap 20, so training works at once), and a squad of 6 spearmen
+ * and 4 ranged about 11 cells from the small town, outside the militia's reach, so the
+ * test and not the simulation starts the fight. Player 1 gets the mirror image.
+ */
+function e2e(w: World): void {
+  for (let p = 0; p < 2; p++) {
+    w.res[p * 4 + Resource.Food] = E2E.resources.food;
+    w.res[p * 4 + Resource.Wood] = E2E.resources.wood;
+    w.res[p * 4 + Resource.Gold] = E2E.resources.gold;
+    w.res[p * 4 + Resource.Crystal] = E2E.resources.crystal;
+  }
+  const s0 = w.map.spawns[0];
+  for (const type of [BuildingType.House, BuildingType.House, BuildingType.Barracks]) {
+    const info = BUILDINGS[type];
+    const spot = freeSpot(w, info.size, s0.cellX, s0.cellY);
+    w.addBuilding(0, type, spot.x, spot.y, info.hp, 1000);
+    w.addBuilding(1, type, spot.y, spot.x, info.hp, 1000);
+  }
+  const squad: UnitType[] = [];
+  for (let k = 0; k < E2E.spearmen; k++) squad.push(UnitType.Spearman);
+  for (let k = 0; k < E2E.ranged; k++) squad.push(UnitType.Ranged);
+  squad.forEach((type, k) => {
+    const c = nearestWalkable(w, E2E.squad.x - 2 + (k % 5), E2E.squad.y + Math.trunc(k / 5));
+    const x = c % w.size;
+    const y = Math.trunc(c / w.size);
+    w.addUnit(0, type, center(x), center(y), UNITS[type].hp);
+    w.addUnit(1, type, center(y), center(x), UNITS[type].hp);
+  });
+}
+
+/**
+ * The first free size x size spot (with a free one-cell ring around it) in rings of growing
+ * Chebyshev distance from (cx, cy); inside a ring, row by row. Player 0's side of the map.
+ */
+function freeSpot(w: World, size: number, cx: number, cy: number): { x: number; y: number } {
+  const n = w.size;
+  const free = (x: number, y: number) => w.walkable(x, y) && w.buildingAt[y * n + x] < 0;
+  for (let r = 1; r < n; r++) {
+    for (let y = cy - r; y <= cy + r; y++) {
+      for (let x = cx - r; x <= cx + r; x++) {
+        if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r) continue;
+        if (x - 1 < 0 || y - 1 < 0 || x + size >= n || y + size >= n || x >= y) continue;
+        let ok = true;
+        for (let yy = y - 1; yy <= y + size && ok; yy++) for (let xx = x - 1; xx <= x + size && ok; xx++) ok = free(xx, yy);
+        if (ok) return { x, y };
+      }
+    }
+  }
+  throw new Error("e2e: no free spot");
 }

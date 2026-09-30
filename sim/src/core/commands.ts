@@ -1,30 +1,66 @@
 // Validating and applying commands at the start of their tick. A rejected command changes
 // nothing and returns a Reject code; it is still written to the log, so a replay rejects
 // it the same way. Kinds whose systems come in later PRs are rejected with NotAvailable.
+// Checks run in the order written below; the first failure is the reason reported.
 
 import {
+  Action,
+  BuildingType,
   type Command,
   CELL_SHIFT,
   Order,
+  PlaceBit,
   Reject,
+  Resource,
   Stance,
   UnitType,
 } from "../protocol.ts";
+import { checkPlacement } from "../placement.ts";
+import { type Economy, nodeOpen, shiftQueue } from "./economy.ts";
 import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
 import { nearestWalkable } from "./paths.ts";
-import { FORMATION_SPACING, UNITS } from "./rules.ts";
+import { BUILDINGS, FARMLAND_REACH, FORMATION_SPACING, MAGE_CAP, QUEUE_MAX, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 export interface CommandContext {
   w: World;
   fog: Fog;
+  econ: Economy;
   /** Next formation group id. */
   nextGroup: { value: number };
 }
 
-/** Own, living units named in the command, in id order (duplicates dropped). */
-function ownUnits(w: World, p: number, ids: number[]): number[] {
+/**
+ * Own, living units named in the command, in id order (duplicates dropped). Farmers hidden
+ * by recall come out to follow the command.
+ */
+function ownUnits(ctx: CommandContext, p: number, ids: number[]): number[] {
+  const { w } = ctx;
+  if (!Array.isArray(ids)) return [];
+  const slots: number[] = [];
+  for (const id of ids) {
+    if (!Number.isInteger(id)) continue;
+    const s = w.unit(id);
+    if (s >= 0 && w.units.col.owner[s] === p && !slots.includes(s)) slots.push(s);
+  }
+  slots.sort((a, b) => a - b);
+  for (const s of slots) ctx.econ.release(w, s);
+  return slots;
+}
+
+/** The farmers among own units; NotOwner / NotAvailable when there are none. */
+function ownFarmers(ctx: CommandContext, p: number, ids: number[]): number[] | Reject {
+  const { w } = ctx;
+  const all = ownUnitsNoRelease(w, p, ids);
+  if (all.length === 0) return Reject.NotOwner;
+  const farmers = all.filter((s) => w.units.col.type[s] === UnitType.Farmer);
+  if (farmers.length === 0) return Reject.NotAvailable;
+  return farmers;
+}
+
+function ownUnitsNoRelease(w: World, p: number, ids: number[]): number[] {
+  if (!Array.isArray(ids)) return [];
   const slots: number[] = [];
   for (const id of ids) {
     if (!Number.isInteger(id)) continue;
@@ -32,6 +68,32 @@ function ownUnits(w: World, p: number, ids: number[]): number[] {
     if (s >= 0 && w.units.col.owner[s] === p && !slots.includes(s)) slots.push(s);
   }
   return slots.sort((a, b) => a - b);
+}
+
+/** An own building by id: its slot, or -1. */
+function ownBuilding(w: World, p: number, id: number): number {
+  if (!Number.isInteger(id)) return -1;
+  const s = w.building(id);
+  return s >= 0 && w.buildings.col.owner[s] === p ? s : -1;
+}
+
+function afford(w: World, p: number, cost: { food: number; wood: number; gold: number; crystal: number }, n: number): boolean {
+  const r = w.res;
+  const o = p * 4;
+  return (
+    r[o + Resource.Food] >= cost.food * n &&
+    r[o + Resource.Wood] >= cost.wood * n &&
+    r[o + Resource.Gold] >= cost.gold * n &&
+    r[o + Resource.Crystal] >= cost.crystal * n
+  );
+}
+
+function pay(w: World, p: number, cost: { food: number; wood: number; gold: number; crystal: number }, n: number): void {
+  const o = p * 4;
+  w.res[o + Resource.Food] -= cost.food * n;
+  w.res[o + Resource.Wood] -= cost.wood * n;
+  w.res[o + Resource.Gold] -= cost.gold * n;
+  w.res[o + Resource.Crystal] -= cost.crystal * n;
 }
 
 function cellOk(w: World, x: number, y: number): boolean {
@@ -47,14 +109,14 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
   switch (cmd.c) {
     case "move":
     case "retreat": {
-      const slots = ownUnits(w, p, cmd.u);
+      const slots = ownUnits(ctx, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
       if (!cellOk(w, cmd.x, cmd.y)) return Reject.InvalidTarget;
       formation(ctx, slots, cmd.x, cmd.y, cmd.c === "move" ? Order.Move : Order.Retreat);
       return 0;
     }
     case "attack": {
-      const slots = ownUnits(w, p, cmd.u);
+      const slots = ownUnits(ctx, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
       if (!targetable(ctx, p, cmd.target)) return Reject.InvalidTarget;
       const u = w.units.col;
@@ -68,7 +130,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       return 0;
     }
     case "stop": {
-      const slots = ownUnits(w, p, cmd.u);
+      const slots = ownUnits(ctx, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
       const u = w.units.col;
       for (const s of slots) {
@@ -83,7 +145,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       return 0;
     }
     case "stance": {
-      const slots = ownUnits(w, p, cmd.u);
+      const slots = ownUnits(ctx, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
       if (cmd.stance !== Stance.Aggressive && cmd.stance !== Stance.Hold) return Reject.InvalidTarget;
       const u = w.units.col;
@@ -96,8 +158,209 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       }
       return 0;
     }
+    case "gather": {
+      const farmers = ownFarmers(ctx, p, cmd.u);
+      if (typeof farmers === "number") return farmers;
+      const node = cmd.node;
+      if (!Number.isInteger(node) || node < 0 || node >= w.nodeAmount.length) return Reject.InvalidTarget;
+      if (ctx.fog.nodeSeen[p][node] < 0 || !nodeOpen(w, node)) return Reject.InvalidTarget;
+      for (const s of farmers) {
+        ctx.econ.release(w, s);
+        ctx.econ.gather(w, s, node, false);
+      }
+      return 0;
+    }
+    case "build": {
+      const farmers = ownFarmers(ctx, p, cmd.u);
+      if (typeof farmers === "number") return farmers;
+      const type = cmd.type;
+      if (!Number.isInteger(type) || type < 0 || type >= BUILDINGS.length) return Reject.InvalidTarget;
+      if (type === BuildingType.MainCity || type === BuildingType.TownTower) return Reject.NotAvailable;
+      const info = BUILDINGS[type];
+      if (placeCheck(ctx, p, type, cmd.x, cmd.y) !== 0) return Reject.BadPlacement;
+      if (!afford(w, p, info.cost, 1)) return Reject.CannotAfford;
+      pay(w, p, info.cost, 1);
+      const id = w.addBuilding(p, type, cmd.x, cmd.y, 1, 0);
+      if (!info.walkable) pushOut(w, cmd.x, cmd.y, info.size);
+      for (const s of farmers) {
+        ctx.econ.release(w, s);
+        ctx.econ.work(w, s, Order.Build, id);
+      }
+      return 0;
+    }
+    case "repair": {
+      const farmers = ownFarmers(ctx, p, cmd.u);
+      if (typeof farmers === "number") return farmers;
+      const bs = ownBuilding(w, p, cmd.building);
+      if (bs < 0) return w.building(cmd.building) >= 0 ? Reject.NotOwner : Reject.InvalidTarget;
+      const b = w.buildings.col;
+      const info = BUILDINGS[b.type[bs]];
+      let order: number = Order.None;
+      if (b.progress[bs] < 1000) order = Order.Build;
+      else if (b.hp[bs] < info.hp) order = Order.Repair;
+      else if (b.type[bs] === BuildingType.Farm) order = Order.Gather;
+      if (order === Order.None) return Reject.NotAvailable;
+      if (order === Order.Gather) {
+        // One farmer per farm: the first named farmer takes it if it is free.
+        if (ctx.econ.farmTakenBy(w, cmd.building, -1) && !farmers.some((s) => w.units.col.orderTarget[s] === cmd.building && w.units.col.onFarm[s] === 1)) {
+          return Reject.NotAvailable;
+        }
+        farmers.forEach((s, k) => {
+          ctx.econ.release(w, s);
+          if (k === 0) ctx.econ.gather(w, s, cmd.building, true);
+          else ctx.econ.idle(w, s);
+        });
+        return 0;
+      }
+      for (const s of farmers) {
+        ctx.econ.release(w, s);
+        ctx.econ.work(w, s, order, cmd.building);
+      }
+      return 0;
+    }
+    case "train": {
+      const bs = ownBuilding(w, p, cmd.building);
+      if (bs < 0) return w.building(cmd.building) >= 0 ? Reject.NotOwner : Reject.InvalidTarget;
+      const b = w.buildings.col;
+      const type = cmd.type;
+      const n = cmd.n;
+      if (!Number.isInteger(n) || n < 1 || n > QUEUE_MAX) return Reject.InvalidTarget;
+      if (b.progress[bs] < 1000 || !BUILDINGS[b.type[bs]].trains.includes(type)) return Reject.NotAvailable;
+      if (b.queueLength[bs] + n > QUEUE_MAX) return Reject.QueueFull;
+      const queued = queuedUnits(w, p);
+      if (w.population(p) + queued.all + n > w.populationCap(p)) return Reject.PopulationCap;
+      if (type === UnitType.Mage && mages(w, p) + queued.mages + n > MAGE_CAP) return Reject.MageCap;
+      const info = UNITS[type];
+      if (!afford(w, p, info.cost, n)) return Reject.CannotAfford;
+      pay(w, p, info.cost, n);
+      const q = [b.q0, b.q1, b.q2, b.q3, b.q4, b.q5, b.q6];
+      for (let k = 0; k < n; k++) q[b.queueLength[bs]++][bs] = type;
+      return 0;
+    }
+    case "cancel_train": {
+      const bs = ownBuilding(w, p, cmd.building);
+      if (bs < 0) return w.building(cmd.building) >= 0 ? Reject.NotOwner : Reject.InvalidTarget;
+      const b = w.buildings.col;
+      const k = cmd.index;
+      if (!Number.isInteger(k) || k < 0 || k >= b.queueLength[bs]) return Reject.InvalidTarget;
+      const q = [b.q0, b.q1, b.q2, b.q3, b.q4, b.q5, b.q6];
+      const info = UNITS[q[k][bs]];
+      const o = p * 4;
+      w.res[o + Resource.Food] += info.cost.food;
+      w.res[o + Resource.Wood] += info.cost.wood;
+      w.res[o + Resource.Gold] += info.cost.gold;
+      w.res[o + Resource.Crystal] += info.cost.crystal;
+      shiftQueue(w, bs, k);
+      if (k === 0) b.queueTicks[bs] = 0;
+      return 0;
+    }
+    case "rally": {
+      const bs = ownBuilding(w, p, cmd.building);
+      if (bs < 0) return w.building(cmd.building) >= 0 ? Reject.NotOwner : Reject.InvalidTarget;
+      if (BUILDINGS[w.buildings.col.type[bs]].trains.length === 0) return Reject.NotAvailable;
+      if (!cellOk(w, cmd.x, cmd.y)) return Reject.InvalidTarget;
+      w.buildings.col.rallyX[bs] = (cmd.x << CELL_SHIFT) + 512;
+      w.buildings.col.rallyY[bs] = (cmd.y << CELL_SHIFT) + 512;
+      return 0;
+    }
+    case "eco_ratio": {
+      const r = [cmd.food, cmd.wood, cmd.gold];
+      if (!r.every((v) => Number.isInteger(v) && v >= 0 && v <= 100) || r[0] + r[1] + r[2] !== 100) return Reject.InvalidTarget;
+      if (typeof cmd.on !== "boolean") return Reject.InvalidTarget;
+      w.ecoRatio.set(r, p * 3);
+      w.ecoOn[p] = cmd.on ? 1 : 0;
+      return 0;
+    }
+    case "recall": {
+      if (typeof cmd.on !== "boolean") return Reject.InvalidTarget;
+      ctx.econ.setRecall(w, p, cmd.on);
+      return 0;
+    }
     default:
       return Reject.NotAvailable;
+  }
+}
+
+/** Units in every own training queue: all of them, and the mages. */
+function queuedUnits(w: World, p: number): { all: number; mages: number } {
+  const b = w.buildings.col;
+  const q = [b.q0, b.q1, b.q2, b.q3, b.q4, b.q5, b.q6];
+  let all = 0;
+  let m = 0;
+  for (let s = 0; s < w.buildings.count; s++) {
+    if (b.owner[s] !== p) continue;
+    all += b.queueLength[s];
+    for (let k = 0; k < b.queueLength[s]; k++) if (q[k][s] === UnitType.Mage) m++;
+  }
+  return { all, mages: m };
+}
+
+function mages(w: World, p: number): number {
+  const u = w.units.col;
+  let m = 0;
+  for (let s = 0; s < w.units.count; s++) if (u.owner[s] === p && u.type[s] === UnitType.Mage) m++;
+  return m;
+}
+
+/** Is a cell farm land for player p: within FARMLAND_REACH of an own finished main city or granary? */
+export function farmLand(w: World, p: number, cx: number, cy: number): boolean {
+  const b = w.buildings.col;
+  for (let s = 0; s < w.buildings.count; s++) {
+    const t = b.type[s];
+    if (b.owner[s] !== p || b.progress[s] < 1000 || (t !== BuildingType.MainCity && t !== BuildingType.Granary)) continue;
+    const size = BUILDINGS[t].size;
+    const dx = Math.max(b.cellX[s] - cx, 0, cx - (b.cellX[s] + size - 1));
+    const dy = Math.max(b.cellY[s] - cy, 0, cy - (b.cellY[s] + size - 1));
+    if (Math.max(dx, dy) <= FARMLAND_REACH) return true;
+  }
+  return false;
+}
+
+const scratch: { cells: Uint8Array | null } = { cells: null };
+
+/**
+ * The simulation's ruling on a `build`: checkPlacement (the function the screen uses) on
+ * the footprint cells of the full-knowledge grid — anything really there blocks, even if
+ * the player has not seen it; the player must have explored every cell.
+ */
+function placeCheck(ctx: CommandContext, p: number, type: BuildingType, x: number, y: number): number {
+  const { w, fog } = ctx;
+  const n = w.size;
+  const info = BUILDINGS[type];
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + info.size > n || y + info.size > n) {
+    return Reject.BadPlacement;
+  }
+  if (scratch.cells === null || scratch.cells.length !== n * n) scratch.cells = new Uint8Array(n * n);
+  const cells = scratch.cells;
+  for (let cy = y; cy < y + info.size; cy++) {
+    for (let cx = x; cx < x + info.size; cx++) {
+      const c = cy * n + cx;
+      cells[c] =
+        (w.grid[c] !== 0 || w.buildingAt[c] >= 0 ? PlaceBit.Blocked : 0) |
+        (fog.explored[p][c] === 1 ? 0 : PlaceBit.Unexplored) |
+        (farmLand(w, p, cx, cy) ? PlaceBit.FarmLand : 0);
+    }
+  }
+  const result = checkPlacement({ size: n, cells }, info, x, y);
+  for (let cy = y; cy < y + info.size; cy++) cells.fill(0, cy * n + x, cy * n + x + info.size);
+  return result;
+}
+
+/** Units standing on a new building's footprint step to the nearest open cell (toward their own side). */
+function pushOut(w: World, x: number, y: number, size: number): void {
+  const u = w.units.col;
+  const n = w.size;
+  for (let s = 0; s < w.units.count; s++) {
+    const cx = u.x[s] >> CELL_SHIFT;
+    const cy = u.y[s] >> CELL_SHIFT;
+    if (cx < x || cy < y || cx >= x + size || cy >= y + size) continue;
+    const spawn = u.owner[s] < 2 ? w.map.spawns[u.owner[s]] : undefined;
+    const c = nearestWalkable(w, cx, cy, spawn);
+    if (c < 0) continue;
+    u.x[s] = ((c % n) << CELL_SHIFT) + 512;
+    u.y[s] = (Math.trunc(c / n) << CELL_SHIFT) + 512;
+    u.anchorX[s] = u.x[s];
+    u.anchorY[s] = u.y[s];
   }
 }
 
@@ -109,7 +372,7 @@ function targetable(ctx: CommandContext, p: number, id: number): boolean {
   const s = w.unit(id);
   if (s >= 0) {
     const u = w.units.col;
-    if (u.owner[s] === p) return false;
+    if (u.owner[s] === p || u.action[s] === Action.Garrisoned) return false;
     return fog.visible[p][(u.y[s] >> CELL_SHIFT) * n + (u.x[s] >> CELL_SHIFT)] === 1;
   }
   const bs = w.building(id);

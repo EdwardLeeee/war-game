@@ -1,7 +1,9 @@
-// Unit behaviour for one tick: bucket by cell, decide (targets, stance, orders -> desired
-// velocity), move (separation from start-of-tick positions, wall sliding), attack (cooldowns,
-// damage summed per target), then remove the dead. Every loop runs in id order and reads
-// start-of-tick state, so results do not depend on iteration details.
+// Unit behaviour for one tick, in phases the game calls in order: prepare (bucket by cell),
+// decide (targets, stance, orders -> desired velocity; farmers at work are decided by the
+// economy), move (separation from start-of-tick positions, wall sliding), attack (cooldowns,
+// damage summed per target), then, after the economy's work, remove the dead. Every loop
+// runs in id order and reads start-of-tick state, so results do not depend on iteration
+// details.
 
 import {
   Action,
@@ -11,12 +13,14 @@ import {
   GameOverReason,
   NEUTRAL,
   Order,
+  PLAYER_COUNT,
   Stance,
   UnitFlag,
+  UnitType,
 } from "../protocol.ts";
-import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt, NO_DIR } from "./fixed.ts";
+import { clamp, DIR16_X, DIR16_Y, dir16, idiv } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
-import { type FieldCache, cellsAround, nearestWalkable } from "./paths.ts";
+import { type FieldCache, buildingKey, cellsAround } from "./paths.ts";
 import {
   AGGRO_RANGE,
   ARRIVE_DISTANCE,
@@ -34,7 +38,18 @@ import {
   UNDER_ATTACK_TICKS,
   UNITS,
 } from "./rules.ts";
+import { steerDirect, steerTo } from "./steer.ts";
 import type { World } from "./world.ts";
+
+/** Decides a farmer that carries an economy order (Gather, Build, Repair, Recall). */
+export interface FarmerDecider {
+  decide(w: World, fields: FieldCache, i: number): void;
+}
+
+/** Orders the economy decides instead of the combat logic. */
+export function isWorkOrder(order: number): boolean {
+  return order === Order.Gather || order === Order.Build || order === Order.Repair || order === Order.Recall;
+}
 
 export interface Hurt {
   /** Owner of what was hurt, fixed-point position, id. */
@@ -77,15 +92,13 @@ export class UnitSystem {
     }
   }
 
-  /** One tick of unit behaviour. Returns what got hurt (for events). */
-  run(w: World, fog: Fog, fields: FieldCache): Hurt[] {
+  /** Decide, move and attack. Returns what got hurt (for events); removeDead comes later. */
+  run(w: World, fog: Fog, fields: FieldCache, farmers: FarmerDecider): Hurt[] {
     this.fit(w.units.count, w.buildings.count);
     this.bucket(w);
-    for (let i = 0; i < w.units.count; i++) this.decide(w, fog, fields, i);
+    for (let i = 0; i < w.units.count; i++) this.decide(w, fog, fields, farmers, i);
     this.move(w);
-    const hurt = this.attack(w, fog);
-    this.removeDead(w);
-    return hurt;
+    return this.attack(w, fog);
   }
 
   private bucket(w: World): void {
@@ -123,7 +136,7 @@ export class UnitSystem {
     for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
       for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
         for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
-          if (u.owner[j] === me) continue;
+          if (u.owner[j] === me || u.action[j] === Action.Garrisoned) continue;
           const dx = u.x[j] - mx;
           const dy = u.y[j] - my;
           const d2 = dx * dx + dy * dy;
@@ -155,26 +168,34 @@ export class UnitSystem {
 
   // --- decide ----------------------------------------------------------------------------
 
-  private decide(w: World, fog: Fog, fields: FieldCache, i: number): void {
+  private decide(w: World, fog: Fog, fields: FieldCache, farmers: FarmerDecider, i: number): void {
     const u = w.units.col;
     const n = w.size;
     const info = UNITS[u.type[i]];
     u.vx[i] = 0;
     u.vy[i] = 0;
+    u.working[i] = 0;
     this.attacking[i] = 0;
     if (u.action[i] === Action.Garrisoned) return;
-
-    // Drop a target that died (or, for player units, walked into the fog).
-    let tid = u.target[i];
-    if (tid >= 0 && !alive(w, tid)) tid = -1;
-    if (tid >= 0 && w.unit(tid) >= 0) {
-      const ts = w.unit(tid);
-      if (!this.sees(fog, u.owner[i], u.x[ts], u.y[ts], n)) tid = -1;
-    }
     const order = u.order[i];
+    if (isWorkOrder(order)) {
+      u.target[i] = -1;
+      farmers.decide(w, fields, i);
+      return;
+    }
+    const farmer = u.type[i] === UnitType.Farmer;
+
+    // Drop a target that died, hid in a building, or (for player units) walked into the fog.
+    const gone = (id: number) => {
+      if (!alive(w, id)) return true;
+      const ts = w.unit(id);
+      return ts >= 0 && (u.action[ts] === Action.Garrisoned || !this.sees(fog, u.owner[i], u.x[ts], u.y[ts], n));
+    };
+    let tid = u.target[i];
+    if (tid >= 0 && gone(tid)) tid = -1;
     if (order === Order.Attack) {
       const ot = u.orderTarget[i];
-      if (!alive(w, ot) || (w.unit(ot) >= 0 && !this.sees(fog, u.owner[i], u.x[w.unit(ot)], u.y[w.unit(ot)], n))) {
+      if (gone(ot)) {
         u.order[i] = Order.None;
         u.orderTarget[i] = -1;
         u.anchorX[i] = u.x[i];
@@ -183,7 +204,8 @@ export class UnitSystem {
       } else {
         tid = ot;
       }
-    } else if (order === Order.Retreat) {
+    } else if (order === Order.Retreat || farmer) {
+      // Farmers fight only when told to attack something.
       tid = -1;
     } else if ((w.tick + u.id[i]) % RETARGET_EVERY === 0) {
       const hold = order === Order.None && u.stance[i] === Stance.Hold;
@@ -227,15 +249,22 @@ export class UnitSystem {
         const ay = ty - u.anchorY[i];
         if (ax * ax + ay * ay > LEASH * LEASH) {
           u.target[i] = -1;
-          this.steerTo(w, fields, i, u.anchorX[i], u.anchorY[i], -1, info.speed);
+          steerTo(w, fields, i, u.anchorX[i], u.anchorY[i], -1, info.speed);
           return;
         }
       }
       if (order === Order.Attack && d2 > DIRECT_STEER * DIRECT_STEER) {
-        const key = ts >= 0 ? (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT) : -(tid + 1);
-        this.steerTo(w, fields, i, tx, ty, key, info.speed, ts < 0 ? tid : -1);
+        if (ts >= 0) {
+          steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), info.speed);
+        } else {
+          const bs = w.building(tid);
+          const b = w.buildings.col;
+          steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () =>
+            cellsAround(w, b.cellX[bs], b.cellY[bs], BUILDINGS[b.type[bs]].size),
+          );
+        }
       } else {
-        this.steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
+        steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
       }
       return;
     }
@@ -248,15 +277,15 @@ export class UnitSystem {
         return;
       }
       const sp = u.speedCap[i] > 0 ? Math.min(u.speedCap[i], info.speed) : info.speed;
-      this.steerTo(w, fields, i, u.orderX[i], u.orderY[i], u.orderTarget[i], sp);
+      steerTo(w, fields, i, u.orderX[i], u.orderY[i], u.orderTarget[i], sp);
       return;
     }
 
-    // Idle: aggressive units walk back to where they stood after a chase.
+    // Idle: aggressive units walk back to where they stood after a chase (farmers never chase).
     const ax = u.anchorX[i] - u.x[i];
     const ay = u.anchorY[i] - u.y[i];
-    if (ax * ax + ay * ay > 4 * ARRIVE_DISTANCE * ARRIVE_DISTANCE) {
-      this.steerTo(w, fields, i, u.anchorX[i], u.anchorY[i], -1, info.speed);
+    if (!farmer && ax * ax + ay * ay > 4 * ARRIVE_DISTANCE * ARRIVE_DISTANCE) {
+      steerTo(w, fields, i, u.anchorX[i], u.anchorY[i], -1, info.speed);
       return;
     }
     u.action[i] = Action.Idle;
@@ -272,67 +301,6 @@ export class UnitSystem {
     u.anchorY[i] = u.y[i];
     u.stuck[i] = 0;
     u.action[i] = Action.Idle;
-  }
-
-  /**
-   * Head for (tx, ty): straight when close, else along the flow field keyed by `key`
-   * (a cell index, -(building id + 1), or -1 for "the cell of (tx, ty)").
-   */
-  private steerTo(
-    w: World,
-    fields: FieldCache,
-    i: number,
-    tx: number,
-    ty: number,
-    key: number,
-    speed: number,
-    buildingId = -1,
-  ): void {
-    const u = w.units.col;
-    const n = w.size;
-    const dx = tx - u.x[i];
-    const dy = ty - u.y[i];
-    if (dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) {
-      this.steerDirect(w, i, dx, dy, speed);
-      return;
-    }
-    let fieldKey = key;
-    let goals: () => number[];
-    if (buildingId >= 0) {
-      const bs = w.building(buildingId);
-      const b = w.buildings.col;
-      goals = () => cellsAround(w, b.cellX[bs], b.cellY[bs], BUILDINGS[b.type[bs]].size);
-    } else {
-      if (fieldKey < 0) fieldKey = (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT);
-      const goalCell = fieldKey;
-      goals = () => {
-        const c = nearestWalkable(w, goalCell % n, Math.trunc(goalCell / n));
-        return c < 0 ? [] : [c];
-      };
-    }
-    const f = fields.get(w, fieldKey, goals);
-    const d = f.dir[(u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT)];
-    if (d === NO_DIR) {
-      this.steerDirect(w, i, dx, dy, speed);
-      return;
-    }
-    const k = d * 2;
-    u.facing[i] = k;
-    u.vx[i] = idiv(DIR16_X[k] * speed, CELL);
-    u.vy[i] = idiv(DIR16_Y[k] * speed, CELL);
-    u.action[i] = Action.Move;
-  }
-
-  private steerDirect(w: World, i: number, dx: number, dy: number, speed: number): void {
-    const u = w.units.col;
-    const k = dir16(dx, dy);
-    u.facing[i] = k;
-    // Do not overshoot a close target point.
-    const dist2 = dx * dx + dy * dy;
-    const s = dist2 < speed * speed ? Math.max(1, isqrt(dist2)) : speed;
-    u.vx[i] = idiv(DIR16_X[k] * s, CELL);
-    u.vy[i] = idiv(DIR16_Y[k] * s, CELL);
-    u.action[i] = Action.Move;
   }
 
   // --- move ------------------------------------------------------------------------------
@@ -479,7 +447,11 @@ export class UnitSystem {
 
   // --- deaths ----------------------------------------------------------------------------
 
-  private removeDead(w: World): void {
+  /**
+   * Removes units and buildings at 0 hp. A fallen building lets out the farmers hidden in it
+   * (`release`), no longer blocks its cells, and a fallen main city ends the game.
+   */
+  removeDead(w: World, release: (slot: number) => void): void {
     const u = w.units.col;
     const b = w.buildings.col;
     let anyUnit = false;
@@ -488,6 +460,7 @@ export class UnitSystem {
       if (this.deadUnits[i] === 1) {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
+        if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * 5 + u.type[i]]++;
       }
     }
     if (anyUnit) {
@@ -502,8 +475,15 @@ export class UnitSystem {
       this.deadBuildings[s] = b.hp[s] <= 0 ? 1 : 0;
       if (this.deadBuildings[s] === 0) continue;
       anyBuilding = true;
+      w.setFootprint(b.id[s], b.type[s] as BuildingType, b.cellX[s], b.cellY[s], false);
+      if (b.garrisoned[s] > 0) {
+        for (let i = 0; i < w.units.count; i++) {
+          if (u.action[i] === Action.Garrisoned && u.orderTarget[i] === b.id[s]) release(i);
+        }
+        b.garrisoned[s] = 0;
+      }
       w.buildingSlot[b.id[s]] = -1;
-      w.setFootprint(b.type[s] as BuildingType, b.cellX[s], b.cellY[s], false);
+      if (b.progress[s] >= 1000 && BUILDINGS[b.type[s]].accepts.length > 0) w.dropVersion++;
       if (b.type[s] === BuildingType.MainCity) {
         if (b.owner[s] === 0) lost0 = true;
         if (b.owner[s] === 1) lost1 = true;

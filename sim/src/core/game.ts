@@ -2,9 +2,10 @@
 //
 // Tick order (sim/README.md): AI thinking happens outside, before step(), on the view of
 // the previous tick. step() then: 1. applies this tick's commands in queue order;
-// 2-3. farmer work and combat decisions (PR-3 adds the economy); 4. movement;
-// 5. attacks; 6. deaths; 7-8. production and towns (PR-3, PR-4); 9. tick + 1, then fog
-// every FOG_EVERY ticks; 10. time limit. The hash covers all state.
+// 2. hands idle farmers work (every ECO_EVERY ticks); 3. unit decisions (farmers at work
+// by the economy); 4. movement; 5. attacks, then gathering, building, repairing, hiding;
+// 6. deaths; 7. training; 8. towns (PR-4); 9. tick + 1, then fog every FOG_EVERY ticks;
+// 10. time limit. The hash covers all state.
 
 import {
   CELL_SHIFT,
@@ -17,10 +18,12 @@ import {
   type SimEvent,
 } from "../protocol.ts";
 import { type CommandContext, applyCommand } from "./commands.ts";
+import { Economy } from "./economy.ts";
 import { FNV_OFFSET, fnvBytes, fnvInt32, fnvWord } from "./fixed.ts";
 import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { FieldCache } from "./paths.ts";
+import { START_REVEAL } from "./rules.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
 import { UnitSystem } from "./units.ts";
 import { World } from "./world.ts";
@@ -45,6 +48,7 @@ export class Game {
   readonly w: World;
   readonly fog: Fog;
   readonly fields = new FieldCache();
+  readonly econ: Economy;
   private readonly units: UnitSystem;
   private readonly ctx: CommandContext;
   private queue: Command[] = [];
@@ -60,9 +64,11 @@ export class Game {
     this.w = new World(map);
     setupScenario(this.w, config.scenario);
     this.fog = new Fog(this.w);
+    this.fog.reveal(this.w, START_REVEAL);
     this.fog.update(this.w);
     this.units = new UnitSystem(this.w.size);
-    this.ctx = { w: this.w, fog: this.fog, nextGroup: { value: 0 } };
+    this.econ = new Economy(this.w, this.fog, (to, ev) => this.events.push({ to, ev }));
+    this.ctx = { w: this.w, fog: this.fog, econ: this.econ, nextGroup: { value: 0 } };
     const perRow = Math.ceil(this.w.size / (1 << ATTACK_BLOCK));
     const blocks = perRow * perRow;
     for (let p = 0; p < PLAYER_COUNT; p++) this.lastAttacked.push(new Int32Array(blocks).fill(-ATTACK_EVERY));
@@ -96,8 +102,14 @@ export class Game {
     }
     this.queue = later;
 
-    // 2-6. Decide, move, attack, deaths.
-    const hurt = this.units.run(w, this.fog, this.fields);
+    // 2. Idle farmers get work.
+    this.econ.periodic(w);
+    // 3-6. Decide, move, attack, work, deaths.
+    const hurt = this.units.run(w, this.fog, this.fields, this.econ);
+    this.econ.workTick(w);
+    this.units.removeDead(w, (s) => this.econ.release(w, s));
+    // 7. Training.
+    this.econ.produce(w);
     const n = w.size;
     const perRow = Math.ceil(n / (1 << ATTACK_BLOCK));
     for (const h of hurt) {
@@ -135,8 +147,14 @@ export class Game {
     h = fnvWord(h, this.ctx.nextGroup.value);
     h = fnvWord(h, w.winner);
     h = fnvWord(h, w.endReason);
-    h = fnvWord(h, w.gridVersion);
+    h = fnvWord(h, w.blockVersion);
+    h = fnvWord(h, w.openVersion);
+    h = fnvWord(h, w.dropVersion);
     h = fnvInt32(h, w.res);
+    h = fnvInt32(h, w.ecoRatio);
+    h = fnvBytes(h, w.ecoOn);
+    h = fnvBytes(h, w.recall);
+    for (const a of [w.gathered, w.trained, w.lost]) h = fnvInt32(h, a);
     h = fnvBytes(h, w.grid);
     h = fnvInt32(h, w.nodeAmount);
     for (const a of [w.townState, w.townOwner, w.townTimer, w.townTimerTotal, w.townRevolt]) h = fnvInt32(h, a);
