@@ -5,6 +5,9 @@ targets:
   mageWA mageWB mageWC   R5-01 西陸晶術師 designs (stills and the motion strip)
   compare                R1 longbowman and pikeman with the R2 render settings, only for the
                          actual-size "can you tell them apart" row (their level-C models are R5-02)
+  rosterE1 rosterE2 rosterW1 rosterW2
+                         R5-02 level-C roster: every unit at facing 7 (idle + action, x3 and x6)
+                         and the formation frames (East facing 0, West facing 4; x3)
 Option 0 (the current mage, shared by both sides) reuses design/round3/build/r3/mage0.
 """
 import argparse
@@ -20,6 +23,20 @@ import config  # noqa: E402
 
 MAGE_STILLS = [(7, "idle", 3), (0, "idle", 3), (7, "cast", 20), (5, "idle", 3)]
 MAGE_FRAME = [3.4, 3.6, 0.5, 0.74]
+# R5-02 roster: (kind, frame metres, action (anim, frame), extra job keys); East faces 0, West faces 4
+ROSTER = {
+    "rosterE1": [("farmer_e", [2.6, 2.6, 0.5, 0.78], ("attack", 4), {}),
+                 ("spear_e", [4.6, 3.4, 0.5, 0.72], ("attack", 4), {}),
+                 ("xbow_e", [2.6, 3.2, 0.5, 0.72], ("attack", 1), {})],
+    "rosterE2": [("hcav_e", [5.6, 4.2, 0.5, 0.75], ("walk", 2), {}),
+                 ("siege_e", [5.6, 6.4, 0.5, 0.8], ("attack", 3), {}),
+                 ("mage_e", MAGE_FRAME, ("cast", 20), {"mage_style": "TB"})],
+    "rosterW1": [("farmer_w", [2.6, 2.8, 0.5, 0.78], ("attack", 4), {}),
+                 ("pike_w", [6.0, 3.6, 0.5, 0.72], ("attack", 4), {}),
+                 ("bow_w", [2.8, 3.2, 0.5, 0.74], ("attack", 4), {})],
+    "rosterW2": [("knight_w", [6.0, 4.2, 0.5, 0.75], ("walk", 2), {}),
+                 ("siege_w", [4.4, 4.2, 0.5, 0.72], ("attack", 2), {})],
+}
 COMPARE = {"bow_w": [2.6, 3.0, 0.5, 0.74], "pike_w": [5.2, 3.4, 0.5, 0.72]}
 
 
@@ -39,6 +56,24 @@ def run(target, preview=False):
             batch.run(kind, items, 60 if preview else 120, level="A", quality="hq", frame_m=fm, tag="r5",
                       ss=1 if preview else 2, outputs={"x3": 60} if preview else {"x6": 120, "x3": 60})
         print(f"R5 compare done in {time.time() - t0:.0f}s")
+        return
+    if target in ROSTER:
+        for kind, fm, (act, af), ex in ROSTER[target]:
+            side = 0 if kind.endswith("_e") else 4
+            ps = ["beauty", "mask", "shadow", "ao"] + (["fx"] if kind.startswith("mage") else [])
+            big = [(7, "idle", 3), (7, act, af)]
+            small = [(side, "idle", 3), (side, "walk", 2), (side, "walk", 6)]
+            items = [dict(facing=f, anim=a, frame=fr, passes=ps, out=str(out / nm(kind, f, a, fr))) for f, a, fr in big]
+            extra = dict(r5=True, **ex)
+            if preview:
+                batch.run(kind, items[:1], 60, level="C", frame_m=fm, tag="r5p", outputs={"x3": 60},
+                          samples={"beauty": 12, "shadow": 8, "ao": 6, "fx": 8}, extra=extra)
+                continue
+            batch.run(kind, items, 120, level="C", frame_m=fm, tag="r5", ss=2, outputs={"x6": 120, "x3": 60},
+                      extra=extra)
+            items = [dict(facing=f, anim=a, frame=fr, passes=ps, out=str(out / nm(kind, f, a, fr))) for f, a, fr in small]
+            batch.run(kind, items, 60, level="C", frame_m=fm, tag="r5f", ss=2, outputs={"x3": 60}, extra=extra)
+        print(f"R5 {target} renders done in {time.time() - t0:.0f}s")
         return
     style = target.replace("mage", "")
     extra = dict(r5=True, mage_style=style)
@@ -61,7 +96,7 @@ def run(target, preview=False):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--target", required=True, choices=["mageWA", "mageWB", "mageWC", "compare"])
+    ap.add_argument("--target", required=True, choices=["mageWA", "mageWB", "mageWC", "compare"] + list(ROSTER))
     ap.add_argument("--preview", action="store_true")
     a = ap.parse_args()
     run(a.target, a.preview)

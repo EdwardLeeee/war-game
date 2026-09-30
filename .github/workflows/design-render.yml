@@ -10,7 +10,7 @@ on:
         description: "round2, round3, round4 or round5"
         default: "round5"
       targets:
-        description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare"]'
+        description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare","rosterE1","rosterE2","rosterW1","rosterW2"]'
         default: '["mageWA", "mageWB", "mageWC", "compare"]'
   push:
     branches: ["design/**"]
