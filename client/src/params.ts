@@ -19,6 +19,11 @@ export interface PageParams {
   mock: boolean;
   /** `?test=1&scenario=e2e|perf|standard`: start that scenario (sim/PROTOCOL.md section 8). */
   scenario: "standard" | "e2e" | "perf" | null;
+  /**
+   * The opponent is played by the computer. `?test=1&ai=0` turns it off (its units stand still),
+   * so the main-flow e2e does not race it for the small town; the AI is tested by core's games.
+   */
+  enemyAi: boolean;
 }
 
 export function parseParams(search: string): PageParams {
@@ -31,5 +36,5 @@ export function parseParams(search: string): PageParams {
   }
   const sc = q.get("scenario");
   const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf") ? sc : null;
-  return { test, tps, mock: test && q.get("mock") === "1", scenario };
+  return { test, tps, mock: test && q.get("mock") === "1", scenario, enemyAi: !(test && q.get("ai") === "0") };
 }

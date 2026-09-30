@@ -74,6 +74,8 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     scenario,
     tps: measure ? SPEED_TPS.normal : (params.tps ?? SPEED_TPS.normal),
     fake: params.mock,
+    // 量測 always has the computer playing (all systems on).
+    enemyAi: measure || params.enemyAi,
     env: env(scenario),
     checkPort: params.mock ? null : () => createSimPort(showError),
     life: {

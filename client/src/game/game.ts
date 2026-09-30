@@ -55,6 +55,8 @@ export interface GameOptions {
   tps: number;
   /** The port is the fake world (mock/), not the simulation. */
   fake: boolean;
+  /** The opponent is played by the computer (false only on test pages, `?test=1&ai=0`). */
+  enemyAi: boolean;
   env: () => Record<string, unknown>;
   /** A fresh simulation Worker for the determinism check, or null (the fake world has none). */
   checkPort: (() => SimPort) | null;
@@ -263,7 +265,7 @@ export class Game implements GestureHost {
       protocol: PROTOCOL_VERSION,
       seed: this.options.seed,
       human: 0,
-      ai: [false, true],
+      ai: [false, this.options.enemyAi],
       tps: this.options.tps,
       scenario: this.options.scenario,
     });

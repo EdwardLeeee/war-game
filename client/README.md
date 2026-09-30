@@ -44,6 +44,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 - `?test=1`：開 `window.__proto`（`commit`、`screen`、`ready`，以及 `game` 底下的選取、送出的指令、表頭、鏡頭、輪盤、放建築、格子轉螢幕座標、確定性檢查結果）。一般網址沒有。
 - `?test=1&tps=N`：模擬每秒跑 N 個 tick（上限 400），CI 用來加快流程。遊戲裡的速度只有慢 20、正常 30、快 40（D-024）。
 - `?test=1&mock=1`：用假世界代替模擬（`e2e/gestures.spec.ts`、`e2e/hud.spec.ts` 用；版面固定）。
+- `?test=1&ai=0`：對手不由電腦操作，單位站著不動。`e2e/main-flow.spec.ts` 用，免得電腦先搶走小鎮或打掉主城；電腦的行為由 core 的 AI 對打測試。量測一律有電腦。
 
 量測與確定性檢查在「選單 → 量測與確定性檢查」。「開始量測」會開一局 `perf` 場景（所有系統都開著），鏡頭對準交戰部隊，暖機 5 秒後量 30 秒。結果和 log 會附上手機的貼圖上限（最大貼圖、一次繪製幾張、有沒有 ASTC），給精靈圖集用。
 

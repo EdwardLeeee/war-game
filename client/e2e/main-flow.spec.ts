@@ -4,7 +4,7 @@
 // 開局 → 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 前進 → 暫停時下指令 →
 // 攻下城鎮後選搶或治理 → 分出 N 名存成編隊（D-024）.
 // Every step goes through the interface the player uses; the test hook only reads state
-// and moves the camera.
+// and moves the camera. The opponent stands still (?test=1&ai=0, see step 1).
 
 import { expect, type Page, test } from "@playwright/test";
 import { shot, watchErrors } from "./helpers.ts";
@@ -49,7 +49,10 @@ test("主要流程：開局 → 選農民 → 蓋房子（重設）→ 訓練 �
   const check = watchErrors(page);
 
   // 1. 開局
-  await page.goto("./?test=1&scenario=e2e&tps=100");
+  // ai=0: the opponent stands still. With the computer playing, whether it reaches the small
+  // town first depends on the random seed and on how fast CI runs the steps (run 36758767611:
+  // it took the town and our main city fell at 6:22).
+  await page.goto("./?test=1&scenario=e2e&tps=100&ai=0");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   expect((await header(page)).scenario, "the e2e scenario").toBe(1);

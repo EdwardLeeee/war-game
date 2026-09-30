@@ -207,6 +207,10 @@ test("分出 N 名：− N + 或直接輸入，分出來的變成新的選取，
   // The other 4, in one tap.
   await page.getByRole("button", { name: "改選其餘 4 名" }).tap();
   await expect.poll(async () => (await selection(page))?.units).toEqual(ids.filter((id) => !picked.includes(id)));
+  // The panel redraws on the next interface update (10 a second): wait for it before typing,
+  // or the digits go into the old box (run 36758767611, WebKit).
+  await expect(page.locator(".sel-info")).toContainText("已選 4 個單位");
+  await expect(go).toHaveAccessibleName("分出 2 名");
   // Typed numbers are kept in range: 99 → 3 (the most for 4 units).
   await box.fill("99");
   await box.blur();
