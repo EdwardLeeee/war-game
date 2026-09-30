@@ -49,7 +49,7 @@ const env = (scenario: ScenarioName) => () => ({
 
 $("commit").textContent = `commit ${__COMMIT__}`;
 $("start-game").addEventListener("click", () => {
-  void (game === null ? newGame() : continueGame()).catch(showError);
+  void (game === null ? newGame(params.scenario ?? "standard") : continueGame()).catch(showError);
 });
 $("restart-game").addEventListener("click", () => {
   void newGame().catch(showError);

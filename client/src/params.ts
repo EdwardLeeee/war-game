@@ -14,6 +14,8 @@ export interface PageParams {
   tps: number | null;
   /** `?test=1&mock=1`: the fake world (mock/) instead of the simulation, for the gesture tests. */
   mock: boolean;
+  /** `?test=1&scenario=e2e|perf|standard`: start that scenario (sim/PROTOCOL.md section 8). */
+  scenario: "standard" | "e2e" | "perf" | null;
 }
 
 export function parseParams(search: string): PageParams {
@@ -24,5 +26,7 @@ export function parseParams(search: string): PageParams {
   if (test && raw !== null && /^[1-9][0-9]*$/.test(raw)) {
     tps = Math.min(Number(raw), MAX_TEST_TPS);
   }
-  return { test, tps, mock: test && q.get("mock") === "1" };
+  const sc = q.get("scenario");
+  const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf") ? sc : null;
+  return { test, tps, mock: test && q.get("mock") === "1", scenario };
 }
