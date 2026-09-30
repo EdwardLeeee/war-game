@@ -12,8 +12,9 @@ on:
   push:
     branches: ["design/**"]
     paths:
-      - "design/round2/**"
-      - ".github/workflows/design-render.yml"
+      # only when the render code changes, not when finished images are committed
+      - "design/round2/blender/**"
+      - "design/round2/common/config.py"
 
 permissions:
   contents: read
