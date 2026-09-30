@@ -39,3 +39,36 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+
+  # Full-length games without a screen, each replayed from its command log (every hash must
+  # match). Until the AI arrives (PR-5) the skirmish scenario's armies follow a fixed script.
+  headless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sim/package-lock.json
+      - run: npm ci
+      - name: Skirmish and standard games, replayed
+        run: |
+          set -euo pipefail
+          out="${GITHUB_WORKSPACE}/headless"
+          lscpu | sed -n 's/^Model name: *//p'
+          node src/headless.ts --scenario skirmish --script demo --ticks 12000 --out "${out}/skirmish"
+          node src/headless.ts --replay "${out}/skirmish/commands.jsonl" --ticks 12000 --out "${out}/skirmish-replay"
+          diff "${out}/skirmish/hashes.txt" "${out}/skirmish-replay/hashes.txt"
+          node src/headless.ts --scenario standard --ai 0,0 --out "${out}/standard" --expected "${out}/expected-standard.json"
+          echo "replay: every hash matches ($(wc -l < "${out}/skirmish/hashes.txt") checkpoints)"
+          { echo "### Headless"; for d in skirmish skirmish-replay standard; do echo "- ${d}: \`$(tr -d '\n' < "${out}/${d}/timing.json" | tr -s ' ')\`"; done; } >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sim-headless
+          path: headless/
+          retention-days: 30

@@ -2,26 +2,96 @@
 
 負責：war-game-core。依據：`docs/briefs/2026-10-core-prototype-sim.md`、`docs/design/gdd.md`。
 
-- **介面**：`PROTOCOL.md`（說明）與 `src/protocol.ts`（型別）。client 只透過這兩份和 `src/worker.ts` 使用模擬。
-- **確定性**：照 `AGENTS.md` 的「模擬與 AI 規則」，沿用引擎 spike 驗證過的做法。
-  - 1 格 = 1024 定點、每秒 20 tick、xorshift32、依 ID 迭代、flow field、FNV-1a 雜湊、JSONL 重播。
-- **沒有建置步驟**：Node 直接執行 TypeScript（只用可以剝掉的型別語法），Vite 直接匯入。
+## 對外介面
+
+- `PROTOCOL.md`（說明）與 `src/protocol.ts`（型別）。
+- client 只透過 `src/worker.ts` 的訊息使用模擬，另外可以直接呼叫 `src/placement.ts`。
+
+## 結構
+
+| 路徑 | 內容 |
+|---|---|
+| `src/core/` | 規則與狀態。不碰 DOM、時間、`Math.random`、`Math.sin` 這類函式（`test/boundaries.test.ts` 會檢查） |
+| `src/core/rules.ts` | 所有數值：GDD 附錄 A 加上 ceo 核准的補缺值 |
+| `src/core/map.ts` | 96×96 地圖，沿主對角線鏡射 |
+| `src/core/world.ts` | 狀態表：typed array 分欄存，依 id 排序 |
+| `src/core/units.ts` | 單位行為：找目標、姿態、移動、分離、攻擊、死亡 |
+| `src/core/commands.ts` | 指令驗證與套用、隊形 |
+| `src/core/fog.ts` | 戰爭迷霧與記憶 |
+| `src/core/paths.ts` | flow field（多目標、快取、地圖一改就重算） |
+| `src/core/game.ts` | 每個 tick 的順序、事件、雜湊 |
+| `src/view/view.ts` | PlayerView（AI 和畫面讀的都是它）與快照編碼 |
+| `src/ai/` | 簡單 AI（PR-5）。只能 import protocol、view 的型別和 `core/fixed.ts` |
+| `src/runner.ts` | Worker 與無畫面工具共用：AI 思考、跑一個 tick、計時 |
+| `src/worker.ts`、`src/headless.ts` | Web Worker；Node 命令列 |
+
+## 每個 tick 的順序
+
+0. AI 思考：每位 AI 每 10 tick 一次，兩位錯開 5 tick，讀的是上一個 tick 結束時的 PlayerView。
+1. 套用這個 tick 的指令，依佇列順序。被拒的也記進紀錄。
+2. 農民工作（PR-3）。
+3. 決策：找目標、姿態、依指令決定速度。
+4. 移動：分離力、沿牆滑動。
+5. 攻擊：剋制加成、主城與箭樓射箭；傷害先加總，再一次扣。
+6. 死亡：主城倒下就判勝負。
+7. 生產（PR-3）。
+8. 城鎮（PR-4）。
+9. tick 加 1；每 5 tick 更新一次戰爭迷霧。
+10. 時間到（36,000 tick）判平手。每 100 tick 算一次雜湊。
+
+每一段都依 id 順序處理，而且讀的是 tick 開始時的狀態，所以處理先後不會影響結果。
+
+## 確定性
+
+- 沿用引擎 spike 驗證過的做法：1 格 = 1024 定點、每秒 20 tick、xorshift32、依 ID 迭代、flow field、FNV-1a 雜湊、JSONL 重播。
+- 雜湊涵蓋全部狀態：
+  - 資源、地圖格、資源點、城鎮、單位表和建築表的每一欄。
+  - 每位玩家的迷霧、探索與記憶。
+  - 還沒到 tick 的指令不算狀態，因為重播時會一次全部排進佇列。
+
+**對雙方公平的平手規則**：地圖是鏡射的，所以遇到平手時，玩家 1 用玩家 0 的鏡像規則。
+- 目標格被擋住時，最近可走格的平手選離下指令玩家出生點較近的那格。
+- 沿牆滑動先試速度分量較大的那一軸；兩軸一樣大時，玩家 0 先試 x、玩家 1 先試 y。
+- flow field 的方向平手選方向編號最小的，這一點無法完全鏡像，因為雙方共用同一張場。平手的路徑一樣長，影響很小，由 PR-5 的 100 場勝率檢查把關。
+
+## 本機執行
 
 ```bash
 cd sim
 npm ci
 npm run typecheck
 npm test
+node src/headless.ts --scenario skirmish --script demo --ticks 3000 --out /tmp/sk
+node src/headless.ts --replay /tmp/sk/commands.jsonl --ticks 3000 --out /tmp/sk-replay   # 雜湊應該相同
 ```
 
-在這台開發機上，重工作一律用 `systemd-run --user --scope -q -p MemoryMax=1500M -p MemorySwapMax=0` 包起來。100 場 AI 對打和瀏覽器測試交給 CI（`.github/workflows/sim.yml`）。
+在這台開發機上，重工作一律用 `systemd-run --user --scope -q -p MemoryMax=1500M -p MemorySwapMax=0` 包起來。完整對局、100 場 AI 對打和瀏覽器測試交給 CI（`.github/workflows/sim.yml`）。
+
+## 我補的數值（GDD 沒寫的，ceo 更新進附錄 A）
+
+D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與占地、攻擊間隔、視野、民兵、箭樓、城鎮半徑、資源量、晶砲、主城射箭。下表是這個 PR 另外補、還沒寫進 GDD 的：
+
+| 項目 | 值 | 原因 |
+|---|---|---|
+| 地圖配置 | 出生點（主城中心）(16,78)／(78,16)；小鎮 (29,29)、大城 (48,48)、晶脈 2×2 在 (66,66) 起（4 格 × 150 = 600）；大城箭樓 2×2 在 (47,47) 起 | 在對稱軸上、和兩邊出生點等距（第 17 節） |
+| 每方的資源 | 基地旁兩片森林、兩座金礦（各 2×2 × 400）、一叢野果（6 × 100）；另外隨機 12 塊岩石、18 片森林，地圖種子 20261001 | 原型用 |
+| 開局農民位置 | 主城周圍、最靠近地圖中心的 5 格；玩家 1 取鏡像 | 對稱 |
+| 民兵站位 | 城鎮中心周圍一組對稱位置：小鎮 6 名、大城 12 名 | 對稱 |
+| 警戒距離 | 6 格：積極姿態與前進途中，會找這個距離內的敵人 | 同 spike |
+| 追擊上限 | 8 格：待命的積極單位追到離原位超過 8 格就放棄，走回原位 | GDD「不會追太遠」 |
+| 重新找目標 | 每 10 tick，依 id 錯開 | 同 spike |
+| 隊形 | 間距 1 格，接近正方形；離自己的位置 0.25 格內算抵達；3 格內直接朝位置走；卡住 40 tick 算抵達 | GDD 第 9 節的隊形 |
+| 單位半徑與分離力 | 0.35 格；每個重疊的鄰居推 16，每軸最多 48 | 同 spike |
+| 打建築的距離 | 從單位到建築占地邊緣的距離（近戰 = 貼著建築） | |
+| 主城與箭樓射箭 | 打射程內最近、而且看得到的敵方單位 | |
+| 「被攻擊」事件 | 同一個 8×8 格的區塊，每 60 tick 最多一次；單位的 `UnderAttack` 旗標保持 60 tick | 給畫面的提示用 |
 
 ## 進度（照核准的計畫分 5 個 PR）
 
 | PR | 內容 | 狀態 |
 |---|---|---|
-| 1 | 介面（這一版） | 進行中 |
-| 2 | 骨架：地圖、移動、隊形、戰鬥、戰爭迷霧與 PlayerView、雜湊、重播、Worker、無畫面執行 | |
+| 1 | 介面 | 已合併（#11） |
+| 2 | 骨架：地圖、移動、隊形、姿態、撤退、戰鬥、戰爭迷霧與 PlayerView、雜湊、重播、Worker、無畫面執行 | 這一版 |
 | 3 | 經濟：資源、農民、建築、訓練、人口、經濟分配、全體回城 | |
 | 4 | 法師、城鎮、勝負 | |
 | 5 | 簡單 AI、100 場 AI 對打、瀏覽器確定性、效能報告 | |
