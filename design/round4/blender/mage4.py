@@ -1,14 +1,14 @@
 """R4 術士 designs in the direction the user asked for: 道士 or 修仙者 (level C, R2 body).
 
 TA 道長  an elder Taoist: black robe with white bands and wide sleeves, crescent crown on a
-         white topknot, long beard, horsetail whisk in the left hand, the seal in the right,
-         gold trigram marks on the back.
+         white topknot, long beard, horsetail whisk in the left hand, gold trigram marks on the back.
 TB 劍修  a young sword cultivator: pale layered robe over a dark inner robe, high ponytail with
          a jade crown, a tasselled sword across the back, player-colour sash with long ties.
 TC 女修  a female cultivator: double hair buns with pins, high-waisted jacket and long skirt,
          a long player-colour 披帛 looped behind the back and over both arms.
 Rules kept: they serve as the army's elite (look only changes), never fly, no metal armour,
-the seal is the implement, player colour only on sash / ties / 披帛.
+player colour only on sash / ties / 披帛. No seal (user, 2026-09-30): they cast with a 劍指
+hand sign and the magic circle appears in front of the hand.
 Robes get vertical folds so they no longer read as cones.
 """
 import math
@@ -109,6 +109,18 @@ def ribbon(name, pts, width, material, rig, bones, thick=0.008):
     return out_ob
 
 
+def sword_fingers(r, M):
+    """劍指 on the right hand: index and middle finger together, thumb over the others.
+    Shown only while casting (the build() pose hook scales it); the spell comes from the hand."""
+    J = r.j
+    f = r.joint("fingers", J["wristR"], (0, 0.012, -0.075))
+    rod("mage_e_finger1", (0.008, 0, 0), (0.008, 0.005, -0.1), 0.0105, M["skin"], parent=f, segs=8)
+    rod("mage_e_finger2", (-0.012, 0, 0), (-0.012, 0.005, -0.095), 0.0105, M["skin"], parent=f, segs=8)
+    sphere("mage_e_fingertip", 0.012, M["crystal"], f, at=(0.0, 0.006, -0.105), outline=False)
+    r.rest["fingers"] = (0, 0, 0)
+    return f
+
+
 def _wide_sleeves(r, mat_, b, cuff=None, flare=0.19):
     for side in ("R", "L"):
         x = 0.215 * (1 if side == "R" else -1) * b
@@ -167,8 +179,7 @@ def style_ta(u, M):
     rod("mage_e_whiskhandle", (0, 0, 0.1), (0, 0, -0.18), 0.014, X["wood"], parent=gl)
     lathe("mage_e_whisk", [(0.015, 0.0), (0.05, -0.08), (0.045, -0.3), (0.0, -0.42)], X["white"], gl, at=(0, 0, -0.17),
           segs=12)
-    gr = r.joint("grip_seal", J["wristR"], (0, 0.02, -0.1))
-    mage3.seal("mage_e_seal", M, gr, 1.0)
+    sword_fingers(r, M)
     return r
 
 
@@ -209,8 +220,7 @@ def style_tb(u, M):
     cyl("mage_e_hilt", 0.018, 0.18, X["wood"], sw, at=(0, 0, 0.375))
     sphere("mage_e_pommel", 0.025, M["gold"], sw, at=(0, 0, 0.56))
     rod("mage_e_swordtassel", (0, 0, 0.56), (0.02, -0.03, 0.4), 0.018, X["white"], parent=sw, r2=0.004)
-    gr = r.joint("grip_seal", J["wristR"], (0, 0.02, -0.1))
-    mage3.seal("mage_e_seal", M, gr, 1.0)
+    sword_fingers(r, M)
     return r
 
 
@@ -245,8 +255,7 @@ def style_tc(u, M):
         sphere(f"mage_e_bun{s}", 0.06, M["hair"], head, at=(0.07 * s, -0.02, 0.3))
         rod(f"mage_e_hairpin{s}", (0.07 * s, -0.08, 0.3), (0.11 * s, 0.06, 0.34), 0.006, M["gold"], parent=head)
         ico(f"mage_e_pingem{s}", 0.018, M["crystal"], head, at=(0.11 * s, 0.06, 0.34), subdiv=1, smooth=False)
-    gr = r.joint("grip_seal", J["wristR"], (0, 0.02, -0.1))
-    mage3.seal("mage_e_seal", M, gr, 0.95)
+    sword_fingers(r, M)
     return r
 
 
@@ -254,4 +263,14 @@ mage3.STYLES.update({"TA": style_ta, "TB": style_tb, "TC": style_tc})
 
 
 def build(style):
-    return mage3.build(style)
+    u = mage3.build(style)
+    r = u.rigs["body"]
+    fingers = r.j.get("fingers")
+    inner = u.pose
+
+    def pose(anim, frame):
+        inner(anim, frame)
+        if fingers is not None:
+            fingers.scale = (1, 1, 1) if anim == "cast" else (0.001,) * 3
+    u.pose = pose
+    return u
