@@ -600,7 +600,17 @@ export class Game implements GestureHost {
     if (p === null || cam === null || p.phase !== "confirm") return;
     const r = p.rect();
     const tl = cam.worldToScreen(r.x, r.y);
-    this.overlays.showPlace({ x: tl.x, y: tl.y, w: r.w * cam.scale, h: r.h * cam.scale }, p.valid && p.builders.length > 0, () => this.confirmPlacement(), () => this.endPlacement());
+    // Keep ✓ and ✗ off the interface panels (the preview can be dragged under any of them).
+    const avoid = [...this.hudRoot.querySelectorAll<HTMLElement>(".top-right, .res-bar, .side-left, .side-right, .minimap, .sel-info, .cmds, .prompt")]
+      .filter((e) => !e.hidden && e.offsetParent !== null)
+      .map((e) => e.getBoundingClientRect());
+    this.overlays.showPlace(
+      { x: tl.x, y: tl.y, w: r.w * cam.scale, h: r.h * cam.scale },
+      p.valid && p.builders.length > 0,
+      () => this.confirmPlacement(),
+      () => this.endPlacement(),
+      avoid,
+    );
   }
 
   private confirmPlacement(): void {

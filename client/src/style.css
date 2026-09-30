@@ -519,8 +519,8 @@ button.active {
   bottom: calc(var(--safe-b) + 4px);
   width: 112px;
   height: 112px;
-  border: 2px solid var(--line);
-  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--line);
+  border-radius: 4px;
   background: #000;
   image-rendering: pixelated;
   touch-action: none;

@@ -29,9 +29,10 @@ export function pressable(el: HTMLElement, h: PressHandlers): () => void {
     pinch: () => {},
     pinchEnd: () => {},
   });
+  // Relative to the content box (inside any border), which is what the element draws in.
   const local = (e: PointerEvent) => {
     const r = el.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    return { x: e.clientX - r.left - el.clientLeft, y: e.clientY - r.top - el.clientTop };
   };
   const time = (e: Event) => {
     const now = performance.now();

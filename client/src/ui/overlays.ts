@@ -193,12 +193,35 @@ export class Overlays {
     this.prompt.hidden = true;
   }
 
-  /** ✓ and ✗ beside the preview's screen rectangle (right of it, or left near the edge). */
-  showPlace(rect: { x: number; y: number; w: number; h: number }, okEnabled: boolean, onOk: () => void, onCancel: () => void): void {
-    const w = this.root.clientWidth;
-    const side = rect.x + rect.w + 120 < w ? rect.x + rect.w + 10 : rect.x - 110;
-    this.place.style.left = `${Math.max(8, side)}px`;
-    this.place.style.top = `${Math.max(8, rect.y + rect.h / 2 - 26)}px`;
+  /**
+   * ✓ and ✗ next to the preview's screen rectangle: right of it, else left, below or above,
+   * whichever stays on screen without covering an interface panel (`avoid`, screen rects).
+   */
+  showPlace(
+    rect: { x: number; y: number; w: number; h: number },
+    okEnabled: boolean,
+    onOk: () => void,
+    onCancel: () => void,
+    avoid: DOMRect[] = [],
+  ): void {
+    const W = this.root.clientWidth;
+    const H = this.root.clientHeight;
+    const bw = 112;
+    const bh = 52;
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+    const candidates = [
+      { x: rect.x + rect.w + 10, y: cy - bh / 2 },
+      { x: rect.x - 10 - bw, y: cy - bh / 2 },
+      { x: cx - bw / 2, y: rect.y + rect.h + 10 },
+      { x: cx - bw / 2, y: rect.y - 10 - bh },
+    ];
+    const clear = (p: { x: number; y: number }) =>
+      p.x >= 8 && p.y >= 8 && p.x + bw <= W - 8 && p.y + bh <= H - 8 &&
+      avoid.every((a) => p.x + bw <= a.left || p.x >= a.right || p.y + bh <= a.top || p.y >= a.bottom);
+    const spot = candidates.find(clear) ?? { x: W / 2 - bw / 2, y: H / 2 - bh / 2 };
+    this.place.style.left = `${spot.x}px`;
+    this.place.style.top = `${spot.y}px`;
     this.placeOk.disabled = !okEnabled;
     this.placeOk.onclick = onOk;
     this.placeCancel.onclick = onCancel;

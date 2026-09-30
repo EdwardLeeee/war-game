@@ -177,7 +177,7 @@ test("撤退：點地面選位置，或按取消離開", async ({ page }) => {
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: [spear], x: 12, y: 74 });
   await longPress(page, await at(page, SPEAR));
   await page.getByRole("menuitem", { name: "撤退" }).tap();
-  await page.getByRole("button", { name: "取消" }).tap();
+  await page.getByRole("button", { name: "取消", exact: true }).tap();
   expect(await mode(page)).toBe("normal");
 });
 
