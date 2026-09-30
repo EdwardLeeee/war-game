@@ -9,6 +9,8 @@ import {
   NodeField as N,
   type SimEvent,
   Terrain,
+  TOWN_STRIDE,
+  TownField as T,
   UNIT_STRIDE,
   UnitField as U,
 } from "../sim.ts";
@@ -53,6 +55,8 @@ export interface GameHook {
   inject(ev: SimEvent): void;
   /** Control groups 1–4 as stored by the interface. */
   groups(): number[][];
+  /** Every town on the map (size 0 small, 1 large): state, holder and militia as last seen (-1 before it is explored). */
+  towns(): { id: number; size: number; state: number; owner: number; cx: number; cy: number; radius: number; militia: number }[];
 }
 
 export function gameHook(game: Game): GameHook {
@@ -146,5 +150,24 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.inject(ev);
     },
     groups: () => game.hud.groups.map((g) => [...g]),
+    towns: () => {
+      const view = game.view;
+      const t = view?.curr?.snap.towns;
+      if (view === null || t === undefined) return [];
+      return view.map.towns.map((info) => {
+        let o = -1;
+        for (let i = 0; i < t.length; i += TOWN_STRIDE) if (t[i + T.id] === info.id) o = i;
+        return {
+          id: info.id,
+          size: info.size,
+          state: o < 0 ? -1 : t[o + T.state],
+          owner: o < 0 ? -1 : t[o + T.owner],
+          cx: info.cellX,
+          cy: info.cellY,
+          radius: info.radius,
+          militia: o < 0 ? -1 : t[o + T.militia],
+        };
+      });
+    },
   };
 }
