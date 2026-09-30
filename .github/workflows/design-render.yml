@@ -1,0 +1,85 @@
+# Final design renders (Blender, Cycles CPU) for the ui rounds.
+# The developer laptop keeps a 2 GB memory reserve for everyone else, so big or
+# supersampled renders run here instead. Not a required check.
+name: design-render
+
+on:
+  workflow_dispatch:
+    inputs:
+      levels:
+        description: "Detail levels to render (JSON list)"
+        default: '["0", "A", "B", "C"]'
+  push:
+    branches: ["design/**"]
+    paths:
+      - "design/round2/**"
+      - ".github/workflows/design-render.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: design-render-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_SERIES: "5.2"
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        level: ${{ fromJSON(github.event.inputs.levels || '["0", "A", "B", "C"]') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Blender
+        id: cache-blender
+        uses: actions/cache@v4
+        with:
+          path: ~/blender
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
+
+      - name: Download Blender and verify sha256
+        if: steps.cache-blender.outputs.cache-hit != 'true'
+        run: |
+          base="https://download.blender.org/release/Blender${BLENDER_SERIES}"
+          tarball="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+          curl -sSfL -o "$tarball" "$base/$tarball"
+          curl -sSfL -o sums.sha256 "$base/blender-${BLENDER_VERSION}.sha256"
+          grep "$tarball" sums.sha256 | sha256sum -c -
+          mkdir -p ~/blender
+          tar -xf "$tarball" -C ~/blender --strip-components=1
+
+      - name: System libraries and Python packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libxkbcommon0 libsm6 \
+            python3-cairo python3-pil python3-numpy
+          ~/blender/blender --version | head -1
+
+      - name: Emblems
+        working-directory: design/round1
+        run: /usr/bin/python3 common/emblems.py ../round2/build/emblems
+
+      - name: Render level ${{ matrix.level }}
+        working-directory: design/round2
+        env:
+          BLENDER: ${{ github.workspace }}/../blender-bin
+        run: |
+          ln -sf ~/blender/blender "$BLENDER"
+          /usr/bin/python3 blender/render_r2.py --level "${{ matrix.level }}"
+
+      - name: Upload renders
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r2-${{ matrix.level }}
+          path: |
+            design/round2/build/r2/${{ matrix.level }}/
+            design/round2/build/jobs/*.log
+          retention-days: 14
