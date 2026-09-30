@@ -259,6 +259,8 @@ test("選了農民時點自己完好的建築是選取它（不是叫農民去�
   if (city === undefined) throw new Error("no main city");
   await tap(page, await toScreen(page, { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) }));
   await expect.poll(() => selection(page)).toEqual({ units: [], building: city.id });
+  // The command area is the main city's now.
+  await expect(page.getByRole("button", { name: /^訓練農民/ })).toBeVisible();
   await page.getByRole("button", { name: "取消選取" }).tap();
   await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
 });
