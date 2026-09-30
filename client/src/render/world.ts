@@ -59,6 +59,16 @@ export function townLook(state: number, owner: number, me: number): TownLook {
   }
 }
 
+/** Where an order went, as a ring that grows and fades (feedback that it was sent). */
+interface Marker {
+  x: number;
+  y: number;
+  color: number;
+  at: number;
+}
+
+const MARKER_MS = 600;
+
 interface UnitSprites {
   body: Sprite;
   ring: Sprite;
@@ -108,6 +118,7 @@ export class WorldRenderer {
   private readonly buildingPool: BuildingSprites[] = [];
   private readonly townMarks = new Map<number, TownMark>();
   private zonesKey = "";
+  private markers: Marker[] = [];
 
   constructor(app: Application, view: GameView, atlas: Atlas) {
     this.view = view;
@@ -163,7 +174,22 @@ export class WorldRenderer {
     this.drawUnits(now);
     this.drawWarnings(now);
     this.drawSelectionExtras();
+    this.drawMarkers(now);
     this.drawGhost(placement);
+  }
+
+  /** Flash a ring at a world point (px). */
+  mark(x: number, y: number, color: number, now: number): void {
+    this.markers.push({ x, y, color, at: now });
+    if (this.markers.length > 8) this.markers.shift();
+  }
+
+  private drawMarkers(now: number): void {
+    this.markers = this.markers.filter((m) => now - m.at < MARKER_MS);
+    for (const m of this.markers) {
+      const k = (now - m.at) / MARKER_MS;
+      this.fx.circle(m.x, m.y, TILE_PX * (0.3 + 0.5 * k)).stroke({ width: 3, color: m.color, alpha: 1 - k });
+    }
   }
 
   private drawFog(): void {

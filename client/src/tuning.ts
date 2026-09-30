@@ -26,3 +26,8 @@ export const START_ZOOM = 1;
 
 /** Taps pick the nearest thing within this many pt of the finger. */
 export const HIT_RADIUS_PT = 22;
+/**
+ * With farmers selected, a resource or own building near the finger beats a unit standing
+ * next to it, unless the finger is this close to the unit (it is right on it).
+ */
+export const UNIT_CORE_HIT_PT = 12;

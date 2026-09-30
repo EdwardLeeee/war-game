@@ -8,6 +8,7 @@ import { type GestureHost, GestureRecognizer, type LongPressResult } from "../in
 import {
   boxSelect,
   type Intent,
+  type Pick,
   longPressKind,
   type Mode,
   retreatHome,
@@ -22,8 +23,22 @@ import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { buildAtlas } from "../render/atlas.ts";
 import { WorldRenderer } from "../render/world.ts";
-import { type BuildingType, type CommandBody, type FromWorker, HeaderField as H, PROTOCOL_VERSION, type ScenarioName, Stance, UnitType } from "../sim.ts";
-import { HIT_RADIUS_PT, START_ZOOM, TILE_PX } from "../tuning.ts";
+import {
+  BuildingField,
+  type BuildingType,
+  type CommandBody,
+  type FromWorker,
+  HeaderField as H,
+  NEUTRAL,
+  NO_OWNER,
+  NodeField,
+  PROTOCOL_VERSION,
+  type ScenarioName,
+  Stance,
+  UnitType,
+} from "../sim.ts";
+import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
+import { BUILDING_NAME, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { type PromptButton, Overlays, rejectText } from "../ui/overlays.ts";
 import { Placement } from "../ui/placement.ts";
@@ -268,7 +283,7 @@ export class Game implements GestureHost {
       this.showPlaceButtons();
       return;
     }
-    this.apply(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius()));
+    this.apply(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
   }
 
   longPress(x: number, y: number): LongPressResult {
@@ -352,6 +367,7 @@ export class Game implements GestureHost {
           break;
         case "inspect":
           view.inspected = it.pick;
+          this.overlays.toast(this.describe(it.pick));
           break;
         case "clear":
           view.selection = { units: [], building: null };
@@ -359,12 +375,90 @@ export class Game implements GestureHost {
           break;
         case "command":
           this.command(it.cmd);
+          this.markCommand(it.cmd);
           break;
         case "endMode":
           this.setMode("normal");
           break;
       }
     }
+  }
+
+  /** What a tapped thing is, for the message line (nothing of yours was selected). */
+  private describe(p: Pick): string {
+    const view = this.view;
+    if (view === null) return "";
+    const whose = p.owner === view.me ? "我方" : p.owner === NEUTRAL ? "中立" : p.owner === NO_OWNER ? "" : "敵方";
+    switch (p.kind) {
+      case "node": {
+        const row = view.nodes.get(p.id);
+        const res = ["木", "金", "糧", "魔晶"][p.type] ?? "";
+        return `${NODE_NAME[p.type] ?? "資源"}（${res}）剩 ${row?.[NodeField.amount] ?? "?"}：先選農民再點它，就會去採`;
+      }
+      case "unit":
+        return `${whose}${UNIT_NAME[p.type] ?? "單位"}`;
+      case "building":
+        return `${whose}${BUILDING_NAME[p.type] ?? "建築"}`;
+      case "town":
+        return `${p.type === 1 ? "大城" : "小鎮"}${whose === "" ? "" : `（${whose}）`}`;
+    }
+  }
+
+  /** Flash a ring where an order goes, so the player sees it was sent. */
+  private markCommand(cmd: CommandBody): void {
+    const view = this.view;
+    const r = this.renderer;
+    if (view === null || r === null) return;
+    const now = performance.now();
+    const cell = (x: number, y: number) => ({ x: (x + 0.5) * TILE_PX, y: (y + 0.5) * TILE_PX });
+    let at: { x: number; y: number } | null = null;
+    let color = 0xffffff;
+    switch (cmd.c) {
+      case "move":
+        at = cell(cmd.x, cmd.y);
+        break;
+      case "retreat":
+        at = cell(cmd.x, cmd.y);
+        color = 0x9cc4ff;
+        break;
+      case "rally":
+        at = cell(cmd.x, cmd.y);
+        color = 0xfff3b0;
+        break;
+      case "gather": {
+        const row = view.nodes.get(cmd.node);
+        if (row !== undefined) at = cell(row[NodeField.cellX], row[NodeField.cellY]);
+        color = 0xf2c230;
+        break;
+      }
+      case "attack": {
+        const o = view.unitRow(cmd.target);
+        if (o >= 0) at = view.unitPos(o);
+        else at = this.buildingCentre(cmd.target);
+        color = 0xff5a4f;
+        break;
+      }
+      case "repair":
+        at = this.buildingCentre(cmd.building);
+        color = 0x4fd06a;
+        break;
+      case "cast":
+        at = { x: (cmd.fx * TILE_PX) / 1024, y: (cmd.fy * TILE_PX) / 1024 };
+        color = 0xff8a2a;
+        break;
+      default:
+        break;
+    }
+    if (at !== null) r.mark(at.x, at.y, color, now);
+  }
+
+  private buildingCentre(id: number): { x: number; y: number } | null {
+    const view = this.view;
+    const o = view?.buildingRow(id) ?? -1;
+    const b = view?.curr?.snap.buildings;
+    if (view === null || o < 0 || b === undefined) return null;
+    const s = view.rules.buildings[b[o + BuildingField.type]]?.size ?? 1;
+    return { x: (b[o + BuildingField.cellX] + s / 2) * TILE_PX, y: (b[o + BuildingField.cellY] + s / 2) * TILE_PX };
   }
 
   setMode(mode: Mode): void {

@@ -157,20 +157,14 @@ export class GameView implements IntentWorld {
     }
     if (best !== null) return best;
 
+    const building = this.buildingAt(wx, wy);
+    if (building !== null) return building;
     const cx = Math.floor(wx / TILE_PX);
     const cy = Math.floor(wy / TILE_PX);
-    const b = snap.buildings;
-    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-      const s = this.rules.buildings[b[o + B.type]]?.size ?? 1;
-      if (cx >= b[o + B.cellX] && cx < b[o + B.cellX] + s && cy >= b[o + B.cellY] && cy < b[o + B.cellY] + s) {
-        return { kind: "building", id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type] };
-      }
-    }
-
     const size = this.map.size;
     if (cx >= 0 && cy >= 0 && cx < size && cy < size) {
       const node = this.nodeAt[cy * size + cx];
-      if (node >= 0) return { kind: "node", id: node, owner: NO_OWNER, type: (this.nodes.get(node) as Int32Array)[N.kind] };
+      if (node >= 0) return this.nodePick(node);
     }
 
     for (const town of this.map.towns) {
@@ -184,6 +178,48 @@ export class GameView implements IntentWorld {
       }
     }
     return null;
+  }
+
+  buildingAt(wx: number, wy: number): Pick | null {
+    const b = this.curr?.snap.buildings;
+    if (b === undefined) return null;
+    const cx = Math.floor(wx / TILE_PX);
+    const cy = Math.floor(wy / TILE_PX);
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      const s = this.rules.buildings[b[o + B.type]]?.size ?? 1;
+      if (cx >= b[o + B.cellX] && cx < b[o + B.cellX] + s && cy >= b[o + B.cellY] && cy < b[o + B.cellY] + s) {
+        return { kind: "building", id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type] };
+      }
+    }
+    return null;
+  }
+
+  pickNode(wx: number, wy: number, r: number): Pick | null {
+    const size = this.map.size;
+    const cx = Math.floor(wx / TILE_PX);
+    const cy = Math.floor(wy / TILE_PX);
+    if (cx >= 0 && cy >= 0 && cx < size && cy < size && this.nodeAt[cy * size + cx] >= 0) return this.nodePick(this.nodeAt[cy * size + cx]);
+    const reach = Math.ceil(r / TILE_PX);
+    let best = -1;
+    let bestD = r * r;
+    for (let y = Math.max(0, cy - reach); y <= Math.min(size - 1, cy + reach); y++) {
+      for (let x = Math.max(0, cx - reach); x <= Math.min(size - 1, cx + reach); x++) {
+        const id = this.nodeAt[y * size + x];
+        if (id < 0) continue;
+        const dx = (x + 0.5) * TILE_PX - wx;
+        const dy = (y + 0.5) * TILE_PX - wy;
+        const d = dx * dx + dy * dy;
+        if (d <= bestD) {
+          bestD = d;
+          best = id;
+        }
+      }
+    }
+    return best < 0 ? null : this.nodePick(best);
+  }
+
+  private nodePick(id: number): Pick {
+    return { kind: "node", id, owner: NO_OWNER, type: (this.nodes.get(id) as Int32Array)[N.kind] };
   }
 
   townRow(id: number): number {
