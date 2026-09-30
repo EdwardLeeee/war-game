@@ -169,6 +169,7 @@ export class Game implements GestureHost {
     if (cam === null || view === null || this.renderer === null) return;
     cam.update(dt);
     this.renderer.draw(now, cam, this.placement);
+    // ✓ and ✗ follow the preview on screen while the camera pinches or flings (a few style writes).
     if (this.placement?.phase === "confirm") this.showPlaceButtons();
     const header = view.header;
     this.lab.frame(now, dt, {
