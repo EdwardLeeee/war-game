@@ -377,7 +377,8 @@ def build_siege_e(P):
     banner_big("siege_e", P, base, (0.42, 0.0, 3.55), w=0.5, h=0.75)
 
     def pose(anim, frame):
-        t = (frame % 8) / 8
+        n = u.frames.get(anim, 8)          # production renders the attack with 10 frames
+        t = (frame % n) / n
         if anim == "attack":
             ang = 55 - 150 * ease(min(1, t / 0.5)) if t < 0.5 else -95 + 150 * ease((t - 0.5) / 0.5)
         else:
@@ -430,7 +431,8 @@ def build_siege_w(P):
     banner_big("siege_w", P, base, (0.5, -0.9, 2.5), w=0.56, h=0.72, emblem=True)
 
     def pose(anim, frame):
-        t = (frame % 8) / 8
+        n = u.frames.get(anim, 8)          # production renders the attack with 10 frames
+        t = (frame % n) / n
         if anim == "attack":
             ang = 70 - 80 * ease(min(1, t / 0.35)) if t < 0.35 else -10 + 80 * ease((t - 0.35) / 0.65)
         else:
