@@ -23,7 +23,11 @@ export const DIRECTIONS = 16;
 export const HASH_EVERY = 100;
 /** Fog of war is recomputed, and sent, every FOG_EVERY ticks. */
 export const FOG_EVERY = 5;
-/** A game that reaches this tick without a winner is a draw (30 minutes). */
+/**
+ * The time limit of AI-vs-AI games, determinism checks and headless runs (30 minutes): a game
+ * that reaches its limit without a winner is a draw. A game's limit is set when it starts
+ * (`maxTicks` in `init` and in the log header); 0 means none, the default when a person plays.
+ */
 export const MAX_TICKS = 36000;
 /** Snapshot header carries the summed step time of the last STEP_BATCH ticks. */
 export const STEP_BATCH = 20;
@@ -35,6 +39,13 @@ export const PLAYER_COUNT = 2;
 export const NEUTRAL = 2;
 /** Owner value for "nobody" (e.g. a neutral town with no militia left). */
 export const NO_OWNER = -1;
+
+/**
+ * How the simple AI plays. "normal" is the AI of the first play test; "easy" only holds itself
+ * back (fewer farmers and buildings, later and smaller attacks) and gets nothing extra (GDD 13).
+ */
+export const AI_DIFFICULTIES = ["easy", "normal"] as const;
+export type AiDifficulty = (typeof AI_DIFFICULTIES)[number];
 
 // --- enumerations (const objects; the type is the union of the values) ---------------
 
@@ -139,7 +150,7 @@ export type GameState = (typeof GameState)[keyof typeof GameState];
 export const GameOverReason = {
   MainCityDestroyed: 0,
   Surrender: 1,
-  /** MAX_TICKS reached. */
+  /** The game's time limit (maxTicks) reached. */
   TimeLimit: 2,
 } as const;
 export type GameOverReason = (typeof GameOverReason)[keyof typeof GameOverReason];
@@ -163,6 +174,8 @@ export const Reject = {
   TownChoiceMade: 12,
   GameOver: 13,
   OutOfRange: 14,
+  /** A `build` without farmers: no farmer the simulation may send (round 2 of the prototype). */
+  NoFarmer: 15,
 } as const;
 export type Reject = (typeof Reject)[keyof typeof Reject];
 
@@ -456,6 +469,7 @@ export type CommandBody =
   | { c: "stop"; u: number[] }
   | { c: "stance"; u: number[]; stance: Stance }
   | { c: "gather"; u: number[]; node: number }
+  /** `u` may be empty: the simulation then sends the nearest free farmers (PROTOCOL.md 3.1). */
   | { c: "build"; u: number[]; type: BuildingType; x: number; y: number }
   | { c: "repair"; u: number[]; building: number }
   | { c: "train"; building: number; type: UnitType; n: number }
@@ -542,15 +556,19 @@ export type ToWorker =
       human: number | null;
       /** Which players the simple AI plays. */
       ai: boolean[];
-      /** Ticks per second (normal = 20). */
+      /** Ticks per second (normal = 30 from round 2 of the prototype). */
       tps: number;
       scenario: ScenarioName;
+      /** Time limit in ticks, 0 = none. Absent: 0 when a person plays, MAX_TICKS for AI against AI. */
+      maxTicks?: number;
+      /** Per player (aligned with `ai`), how its simple AI plays. Absent: all "normal". */
+      difficulty?: AiDifficulty[];
     }
   /** The worker stamps t (next tick not yet run) and p (the human player). */
   | { type: "command"; cmd: CommandBody & { seq: number } }
   | { type: "pause" }
   | { type: "resume" }
-  /** Ticks per wall-clock second: 15 slow, 20 normal, 30 fast (tests may go higher). Never changes the game. */
+  /** Ticks per wall-clock second: 20 slow, 30 normal, 40 fast (D-024; tests may go higher). Never changes the game. */
   | { type: "speed"; tps: number }
   /** Run a whole AI-vs-AI game as fast as possible and report hashes. Use a separate Worker. */
   | { type: "determinism"; protocol: number; seed: number; scenario: ScenarioName; maxTicks: number }
@@ -606,6 +624,10 @@ export interface LogHeader {
   seed: number;
   scenario: ScenarioName;
   ai: boolean[];
+  /** Time limit in ticks, 0 = none. Absent (logs from before round 2): MAX_TICKS. */
+  maxTicks?: number;
+  /** Per player, how its AI played (informational: a replay runs without AIs). Absent: "normal". */
+  difficulty?: AiDifficulty[];
 }
 
 /**
