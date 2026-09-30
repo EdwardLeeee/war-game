@@ -19,7 +19,10 @@
 //   with plunders, a town it has plundered counts toward governing it next time, and it
 //   leaves a town it plundered alone for 6 minutes;
 // - crystal: two farmers to the vein (by hand) once there is a mage hall and the vein is known;
-// - attack: with enough soldiers, or once the towns are taken, marches on the enemy main city.
+// - attack: with enough soldiers, or once the towns are taken, marches on the enemy main city;
+//   from minute 22 it takes no more towns and gathers for one assault (goes with 15, or from
+//   minute 24 with 8), from minute 26 the garrisons go too, and it does not give up on an
+//   enemy main city that is down to 40% of its hp.
 //
 // Every spatial choice is made in the canonical frame (frame.ts): player 1 on the mirrored
 // 1 v 1 map sees the same picture as player 0, ties included.
@@ -102,6 +105,18 @@ interface Town {
 type Mode = "gather" | "town" | "base" | "defend";
 
 const TICKS_PER_MINUTE = 1200;
+// The assault at the end of a 30-minute prototype game (later: from the game's own time limit).
+/** From this minute no new town expeditions: the army gathers for one assault on the enemy main city. */
+const ASSAULT_MINUTE = 22;
+/** It sets off with this many (in round 9, 15-19 attackers took the city 76% of the time). */
+const ASSAULT_ARMY = 15;
+/** From this minute it sets off with ENDGAME_ARMY, so it arrives with minutes to spare. */
+const ASSAULT_LATEST = 24;
+/** From this minute the garrisons join, and it goes and stays with ENDGAME_ARMY or more. */
+const ENDGAME_MINUTE = 26;
+const ENDGAME_ARMY = 8;
+/** An enemy main city at or below this share of its hp (percent) is not given up on. */
+const PRESS_ON_HP = 40;
 /** Govern costs (GDD appendix A), for the choice. */
 const GOVERN_COST: Cost[] = [];
 GOVERN_COST[TownSize.Small] = { food: 0, wood: 80, gold: 80, crystal: 0 };
@@ -233,11 +248,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       }
       const own: Building[] = [];
       let enemyCity = -1;
+      let enemyCityHp = -1;
       let queued = 0;
       for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
         const owner = view.buildings[r + BuildingField.owner];
         const type = view.buildings[r + BuildingField.type];
-        if (owner === 1 - player && type === BuildingType.MainCity) enemyCity = view.buildings[r + BuildingField.id];
+        if (owner === 1 - player && type === BuildingType.MainCity) {
+          enemyCity = view.buildings[r + BuildingField.id];
+          enemyCityHp = view.buildings[r + BuildingField.hp];
+        }
         if (owner !== player) continue;
         const b: Building = {
           id: view.buildings[r + BuildingField.id],
@@ -432,10 +451,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         out.push({ c: "town_choice", town: id, choice: govern ? TownChoice.Govern : TownChoice.Plunder });
         if (govern) spend(cost);
       }
-      // Garrisons: the soldiers nearest each held town (not mages), topped up as they fall.
+      // The clock (see ASSAULT_MINUTE and the rest).
+      const minute = Math.trunc(tick / TICKS_PER_MINUTE);
+      const endgame = minute >= ENDGAME_MINUTE;
+      // Garrisons: the soldiers nearest each held town (not mages), topped up as they fall;
+      // in the endgame they join the assault.
+      if (endgame) garrison.clear();
       for (const [id, t] of towns) {
         const held = t.owner === player && (t.state === TownState.Repairing || t.state === TownState.Governed);
-        if (!held) continue;
+        if (!held || endgame) continue;
         const alive = (garrison.get(id) ?? []).filter((gid) => soldiers.some((s) => s.id === gid));
         const free = soldiers
           .filter((s) => !isGuard(s.id) && s.type !== UnitType.Mage)
@@ -487,10 +511,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         send(busy[1].x, busy[1].y, "town");
         return out;
       }
-      // The clock: from 20 minutes the army it takes to march on the enemy base shrinks, and
-      // in the last minutes it goes with what it has and does not fall back.
-      const minute = Math.trunc(tick / TICKS_PER_MINUTE);
-      const endgame = minute >= 26;
+      // From 20 minutes the army it takes to march on the enemy base shrinks; from 22 it
+      // gathers for the assault; in the last minutes it goes with what it has and does not
+      // fall back.
+      const assault = minute >= ASSAULT_MINUTE;
       const baseNeed = minute < 20 ? baseArmy : Math.max(townArmy, baseArmy - (minute - 19) * 3);
       // Weighing up: the most enemy soldiers seen at once in the last 2 minutes, and those
       // near the army now. It goes out only when clearly stronger (1.3 x), and pulls back
@@ -502,8 +526,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const cx = army.length === 0 ? home.cellX : Math.trunc(army.reduce((a, u) => a + u.x, 0) / army.length);
       const cy = army.length === 0 ? home.cellY : Math.trunc(army.reduce((a, u) => a + u.y, 0) / army.length);
       const outnumbered = foesNear(cx, cy, 12) > army.length;
+      // An enemy main city this low would be repaired to full within minutes if left alone.
+      const cityLow = enemyCityHp >= 0 && enemyCityHp * 100 <= rules.buildings[BuildingType.MainCity].hp * PRESS_ON_HP;
       if (mode === "town" || mode === "base") {
-        if (!endgame && (army.length * 5 < armyAtStart * 2 || outnumbered)) {
+        if (!endgame && !(mode === "base" && cityLow) && (army.length * 5 < armyAtStart * 2 || outnumbered)) {
           // Ground down or outnumbered: break off (retreat ignores enemies) and rebuild.
           out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
           lastMove = tick;
@@ -530,10 +556,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           .filter(([, t]) => !(t.owner === player && t.state !== TownState.Neutral) && t.state !== TownState.Ruins)
           .filter(([id]) => tick - (plunders.get(id)?.tick ?? -100000) >= 6 * TICKS_PER_MINUTE)
           .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
-        if (endgame ? army.length >= 8 : strongEnough && (army.length >= baseNeed || (open.length === 0 && army.length >= townArmy + 6))) {
+        const go = endgame
+          ? army.length >= ENDGAME_ARMY
+          : assault
+            ? army.length >= ASSAULT_ARMY || (minute >= ASSAULT_LATEST && army.length >= ENDGAME_ARMY)
+            : strongEnough && (army.length >= baseNeed || (open.length === 0 && army.length >= townArmy + 6));
+        if (go) {
           armyAtStart = army.length;
           send(enemyHome.cellX, enemyHome.cellY, "base");
-        } else if (army.length >= townArmy && open.length > 0 && (endgame || strongEnough)) {
+        } else if (!assault && army.length >= townArmy && open.length > 0 && strongEnough) {
           const pick = army.length >= 24 || open.length === 1 ? open[open.length - 1] : open[0];
           targetTown = pick[0];
           armyAtStart = army.length;

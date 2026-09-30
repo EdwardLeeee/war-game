@@ -111,3 +111,89 @@ test("an army sent to a town moves on once the town lies in ruins, instead of wa
   g.fog.update(w);
   assert.deepEqual(bigMove(), { x: big.cellX, y: big.cellY }, "then on to the big town, not waiting in the ruins");
 });
+
+/** Where the first big move of an AI with `n` spearmen out from home goes at `minute` (no enemy in view). */
+function goesAt(n: number, minute: number): string {
+  const g = emptyGame();
+  const w = g.w;
+  w.tick = minute * 1200;
+  const s0 = w.map.spawns[0];
+  for (let k = 0; k < n; k++) put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6));
+  g.fog.update(w);
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
+  const m = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= n) as { x: number; y: number } | undefined;
+  if (m === undefined) return "none";
+  const s1 = w.map.spawns[1];
+  if (m.x === s1.cellX && m.y === s1.cellY) return "enemy base";
+  return w.map.towns.some((t) => t.cellX === m.x && t.cellY === m.y) ? "town" : "rally";
+}
+
+test("from minute 22 no more towns: the army gathers and goes for the enemy base with 15, from minute 24 with 8", () => {
+  assert.equal(goesAt(18, 21), "town", "minute 21: still takes towns");
+  assert.equal(goesAt(18, 22), "enemy base", "minute 22: 18 >= 15 go");
+  assert.equal(goesAt(12, 22), "rally", "minute 22: 12 wait for more, and no town");
+  assert.equal(goesAt(9, 23), "rally", "minute 23: 9 wait");
+  assert.equal(goesAt(9, 24), "enemy base", "minute 24: 9 >= 8 go");
+  assert.equal(goesAt(5, 24), "rally", "minute 24: not with 5");
+});
+
+/** An AI whose 20 spearmen stand by the enemy main city at minute 23 (so it marches on it). */
+function atEnemyCity() {
+  const g = emptyGame();
+  const w = g.w;
+  w.tick = 23 * 1200;
+  const s1 = w.map.spawns[1];
+  const ids: number[] = [];
+  for (let k = 0; k < 20; k++) ids.push(put(g, 0, UnitType.Spearman, s1.cellX - 6 + (k % 5), s1.cellY + 3 + Math.trunc(k / 5)));
+  g.fog.update(w);
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
+  const first = ai.think(buildView(g, 0));
+  assert.ok(first.some((c) => c.c === "move" && c.u.length === 20 && c.x === s1.cellX && c.y === s1.cellY), "marches on the city");
+  let city = -1;
+  for (let s = 0; s < w.buildings.count; s++) if (w.buildings.col.owner[s] === 1 && w.buildings.col.type[s] === BuildingType.MainCity) city = s;
+  return { g, w, s1, ai, ids, city };
+}
+
+test("it does not break off from an enemy main city at 40% hp or less, but does from a sound one", () => {
+  for (const [hp, retreats] of [[1200, true], [480, false], [300, false]] as const) {
+    const { g, w, s1, ai, city } = atEnemyCity();
+    // 25 defenders turn up around the army: outnumbered.
+    for (let k = 0; k < 25; k++) put(g, 1, UnitType.Spearman, s1.cellX - 7 + (k % 5), s1.cellY + 8 + Math.trunc(k / 5));
+    w.buildings.col.hp[city] = hp;
+    w.tick += 20;
+    g.fog.update(w);
+    assert.equal(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), retreats, `city at ${hp} hp`);
+  }
+});
+
+test("soldiers trained during the assault join it", () => {
+  const { g, w, ai } = atEnemyCity();
+  const s0 = w.map.spawns[0];
+  const fresh = put(g, 0, UnitType.Spearman, s0.cellX + 3, s0.cellY - 3);
+  w.tick += 200;
+  g.fog.update(w);
+  const attack = ai.think(buildView(g, 0)).find((c) => c.c === "attack") as { u: number[] } | undefined;
+  assert.ok(attack !== undefined && attack.u.includes(fresh) && attack.u.length === 21, "the new spearman is in the attack order");
+});
+
+test("from minute 26 the garrison of a governed town joins the assault", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const [small] = w.map.towns;
+  w.townState[small.id] = TownState.Governed;
+  w.townOwner[small.id] = 0;
+  const s0 = w.map.spawns[0];
+  // A small town keeps garrisonNeeded (1) + 1 soldiers: these two, the nearest.
+  const guards = [0, 1].map((k) => put(g, 0, UnitType.Spearman, small.cellX + k, small.cellY + 1));
+  for (let k = 0; k < 16; k++) put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6));
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
+  const orders = (minute: number) => {
+    w.tick = minute * 1200;
+    g.fog.update(w);
+    return ai.think(buildView(g, 0)).filter((c) => c.c === "move" || c.c === "attack") as { u: number[] }[];
+  };
+  const before = orders(25).find((c) => c.u.length >= 16);
+  assert.ok(before !== undefined && !guards.some((id) => before.u.includes(id)), "minute 25: the garrison stays");
+  const after = orders(26).find((c) => c.u.length >= 16);
+  assert.ok(after !== undefined && guards.every((id) => after.u.includes(id)), "minute 26: the garrison goes too");
+});
