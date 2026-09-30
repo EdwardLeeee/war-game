@@ -353,6 +353,7 @@ a {
 
 .lab {
   position: absolute;
+  z-index: 20;
   top: calc(var(--safe-t) + 4px);
   right: calc(var(--safe-r) + 4px);
   bottom: calc(var(--safe-b) + 4px);
@@ -656,7 +657,7 @@ button .sub {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 10;
+  z-index: 30;
 }
 
 .dialog-card {

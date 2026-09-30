@@ -86,6 +86,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   if (game !== g) return;
   hook.ready = true;
   if (measure) {
+    g.focusBattle();
     g.lab.show();
     g.lab.startMeasure(performance.now());
   }

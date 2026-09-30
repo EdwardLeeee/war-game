@@ -35,6 +35,8 @@ import {
   PROTOCOL_VERSION,
   type ScenarioName,
   Stance,
+  UNIT_STRIDE,
+  UnitField,
   UnitType,
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
@@ -158,6 +160,28 @@ export class Game implements GestureHost {
     this.renderer = null;
     this.hud.destroy();
     this.hudRoot.replaceChildren();
+  }
+
+  /** Point the camera at the fighting: the soldiers on screen or in sight, a little zoomed out (量測 perf). */
+  focusBattle(): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const cam = this.camera;
+    if (view === null || u === undefined || cam === null) return;
+    let x = 0;
+    let y = 0;
+    let n = 0;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      const t = u[o + UnitField.type];
+      if (t !== UnitType.Spearman && t !== UnitType.Ranged && t !== UnitType.Mage) continue;
+      const p = view.unitPos(o);
+      x += p.x;
+      y += p.y;
+      n++;
+    }
+    if (n === 0) return;
+    cam.zoomAt(0, 0, 0.75);
+    cam.centerOn(x / n, y / n);
   }
 
   /** The port, for the test hook (it can feed events to the fake world). */
