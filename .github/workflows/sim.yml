@@ -1,0 +1,41 @@
+name: Sim
+
+# Game rules and the prototype's simple AI (sim/, war-game-core). Not a required check:
+# the path filter would leave unrelated pull requests waiting. Later PRs add the
+# AI-vs-AI and browser-determinism jobs (see sim/README.md).
+on:
+  push:
+    branches: ["core/**"]
+    paths:
+      - "sim/**"
+      - ".github/workflows/sim.yml"
+  pull_request:
+    paths:
+      - "sim/**"
+      - ".github/workflows/sim.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sim-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sim/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
