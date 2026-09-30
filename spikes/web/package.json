@@ -1,0 +1,31 @@
+{
+  "name": "war-game-spike-web",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Throwaway engine spike: TypeScript + PixiJS + Capacitor, 400 units, deterministic simulation",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\"",
+    "headless": "node src/headless.ts",
+    "browser": "node scripts/browser-run.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/ios": "8.5.2",
+    "pixi.js": "8.21.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2",
+    "@types/node": "26.6.3",
+    "playwright": "1.63.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.1"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

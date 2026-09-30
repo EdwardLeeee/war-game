@@ -1,0 +1,101 @@
+name: Spike Pages
+
+# Publishes the engine spike test pages to GitHub Pages (Actions source; the docs/ folder
+# is never published). Every deployment replaces the whole site, so each run builds both
+# candidates: web/ (PixiJS) and godot/ (Godot single-threaded web export, when present).
+# The github-pages environment accepts main and spike/* only. A branch without the Godot
+# project builds but does not deploy, so it never replaces a site that has both pages.
+on:
+  push:
+    branches: [main, "spike/**"]
+    paths:
+      - "spikes/**"
+      - ".github/workflows/spike-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      complete: ${{ steps.godot.outputs.present }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: spikes/web/package-lock.json
+      - name: PixiJS page and the hashes it compares against
+        working-directory: spikes/web
+        run: |
+          set -euo pipefail
+          npm ci
+          node src/headless.ts --mode scripted --out "${RUNNER_TEMP}/web-hashes"
+          node src/headless.ts --mode ai --out "${RUNNER_TEMP}/web-hashes"
+          npm run build
+          node ../tools/expected-hashes.mjs "${RUNNER_TEMP}/web-hashes" scripted ai > dist/expected-hashes.json
+          mkdir -p ../../site
+          cp -R dist ../../site/web
+      - name: Is there a Godot project?
+        id: godot
+        run: |
+          present="$([ -f spikes/godot/project.godot ] && echo true || echo false)"
+          echo "present=${present}" >> "${GITHUB_OUTPUT}"
+          [ "${present}" = true ] || echo "::notice::no Godot project on this ref: building only, not deploying"
+      - if: steps.godot.outputs.present == 'true'
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-linux-v1
+      - if: steps.godot.outputs.present == 'true'
+        run: spikes/godot/ci/install-godot.sh web_nothreads_release.zip web_nothreads_debug.zip android_debug.apk android_release.apk
+      - if: steps.godot.outputs.present == 'true'
+        name: Godot page (single-threaded web export)
+        run: |
+          set -euo pipefail
+          cd spikes/godot
+          ${GODOT} --headless --import
+          if [ -f ci/pages.sh ]; then bash ci/pages.sh "${GITHUB_WORKSPACE}/site/godot"; else
+            mkdir -p "${GITHUB_WORKSPACE}/site/godot"
+            ${GODOT} --headless --export-release "Web" "${GITHUB_WORKSPACE}/site/godot/index.html"
+          fi
+      - name: Home page and licences
+        run: |
+          set -euo pipefail
+          cp spikes/site/index.html spikes/site/licenses.html site/
+          mkdir -p site/licenses
+          cp spikes/web/node_modules/pixi.js/LICENSE site/licenses/pixi.js-LICENSE.txt
+          base="https://raw.githubusercontent.com/godotengine/godot/${GODOT_VERSION}-stable"
+          curl -sSLf -o site/licenses/godot-LICENSE.txt "${base}/LICENSE.txt"
+          curl -sSLf -o site/licenses/godot-COPYRIGHT.txt "${base}/COPYRIGHT.txt"
+          find site -maxdepth 2 | sort
+          du -sh site site/*
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.complete == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
