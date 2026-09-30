@@ -408,6 +408,14 @@ test("recall: farmers hide in the main city (15) and houses (5), arrows grow, an
   const hp0 = u.hp[slotOf(g, raider)];
   run(g, MAIN_ARROW.cooldown + 1);
   assert.equal(hp0 - u.hp[slotOf(g, raider)], MAIN_ARROW.damage * (1 + MAIN_ARROW.extraMax));
+  // A rejected command leaves hidden farmers inside; an accepted one lets them out.
+  const inside = ids.slice(5).find((id) => u.action[slotOf(g, id)] === Action.Garrisoned)!;
+  cmd(g, 0, { c: "move", u: [inside], x: -5, y: 3 });
+  assert.deepEqual(step(g), [Reject.InvalidTarget]);
+  assert.equal(u.action[slotOf(g, inside)], Action.Garrisoned, "still hidden after a rejected move");
+  cmd(g, 0, { c: "stop", u: [inside] });
+  assert.deepEqual(step(g), []);
+  assert.notEqual(u.action[slotOf(g, inside)], Action.Garrisoned, "out after an accepted stop");
   cmd(g, 0, { c: "recall", on: false });
   run(g, 1);
   assert.equal(b.garrisoned[g.w.mainCity(0)], 0);

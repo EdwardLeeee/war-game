@@ -31,35 +31,8 @@ export interface CommandContext {
   nextGroup: { value: number };
 }
 
-/**
- * Own, living units named in the command, in id order (duplicates dropped). Farmers hidden
- * by recall come out to follow the command.
- */
-function ownUnits(ctx: CommandContext, p: number, ids: number[]): number[] {
-  const { w } = ctx;
-  if (!Array.isArray(ids)) return [];
-  const slots: number[] = [];
-  for (const id of ids) {
-    if (!Number.isInteger(id)) continue;
-    const s = w.unit(id);
-    if (s >= 0 && w.units.col.owner[s] === p && !slots.includes(s)) slots.push(s);
-  }
-  slots.sort((a, b) => a - b);
-  for (const s of slots) ctx.econ.release(w, s);
-  return slots;
-}
-
-/** The farmers among own units; NotOwner / NotAvailable when there are none. */
-function ownFarmers(ctx: CommandContext, p: number, ids: number[]): number[] | Reject {
-  const { w } = ctx;
-  const all = ownUnitsNoRelease(w, p, ids);
-  if (all.length === 0) return Reject.NotOwner;
-  const farmers = all.filter((s) => w.units.col.type[s] === UnitType.Farmer);
-  if (farmers.length === 0) return Reject.NotAvailable;
-  return farmers;
-}
-
-function ownUnitsNoRelease(w: World, p: number, ids: number[]): number[] {
+/** Own, living units named in the command, in id order (duplicates dropped). */
+function ownUnits(w: World, p: number, ids: number[]): number[] {
   if (!Array.isArray(ids)) return [];
   const slots: number[] = [];
   for (const id of ids) {
@@ -68,6 +41,21 @@ function ownUnitsNoRelease(w: World, p: number, ids: number[]): number[] {
     if (s >= 0 && w.units.col.owner[s] === p && !slots.includes(s)) slots.push(s);
   }
   return slots.sort((a, b) => a - b);
+}
+
+/** Once a command is accepted, farmers hidden by recall come out to follow it. */
+function releaseAll(ctx: CommandContext, slots: number[]): void {
+  for (const s of slots) ctx.econ.release(ctx.w, s);
+}
+
+/** The farmers among own units; NotOwner / NotAvailable when there are none. */
+function ownFarmers(ctx: CommandContext, p: number, ids: number[]): number[] | Reject {
+  const { w } = ctx;
+  const all = ownUnits(w, p, ids);
+  if (all.length === 0) return Reject.NotOwner;
+  const farmers = all.filter((s) => w.units.col.type[s] === UnitType.Farmer);
+  if (farmers.length === 0) return Reject.NotAvailable;
+  return farmers;
 }
 
 /** An own building by id: its slot, or -1. */
@@ -109,16 +97,18 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
   switch (cmd.c) {
     case "move":
     case "retreat": {
-      const slots = ownUnits(ctx, p, cmd.u);
+      const slots = ownUnits(w, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
       if (!cellOk(w, cmd.x, cmd.y)) return Reject.InvalidTarget;
+      releaseAll(ctx, slots);
       formation(ctx, slots, cmd.x, cmd.y, cmd.c === "move" ? Order.Move : Order.Retreat);
       return 0;
     }
     case "attack": {
-      const slots = ownUnits(ctx, p, cmd.u);
+      const slots = ownUnits(w, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
       if (!targetable(ctx, p, cmd.target)) return Reject.InvalidTarget;
+      releaseAll(ctx, slots);
       const u = w.units.col;
       for (const s of slots) {
         u.order[s] = Order.Attack;
@@ -130,8 +120,9 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       return 0;
     }
     case "stop": {
-      const slots = ownUnits(ctx, p, cmd.u);
+      const slots = ownUnits(w, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
+      releaseAll(ctx, slots);
       const u = w.units.col;
       for (const s of slots) {
         u.order[s] = Order.None;
@@ -145,7 +136,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       return 0;
     }
     case "stance": {
-      const slots = ownUnits(ctx, p, cmd.u);
+      const slots = ownUnits(w, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
       if (cmd.stance !== Stance.Aggressive && cmd.stance !== Stance.Hold) return Reject.InvalidTarget;
       const u = w.units.col;
