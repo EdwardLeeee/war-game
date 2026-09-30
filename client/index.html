@@ -13,12 +13,18 @@
     <section id="start" class="screen" aria-labelledby="start-title">
       <div class="card">
         <h1 id="start-title">war-game 原型</h1>
-        <p class="mode">1 對 1 對簡單 AI</p>
+        <p class="mode">1 對 1 對電腦</p>
+        <div class="difficulty" role="radiogroup" aria-labelledby="difficulty-label">
+          <span id="difficulty-label">難度</span>
+          <button type="button" role="radio" data-difficulty="easy" aria-checked="true">簡單</button>
+          <button type="button" role="radio" data-difficulty="normal" aria-checked="false" class="secondary">普通</button>
+        </div>
+        <p id="difficulty-note" class="note" hidden>改了難度，要按「重來」才會用在新的一局。</p>
         <div class="start-buttons">
           <button id="start-game" type="button">開始</button>
           <button id="restart-game" class="secondary" type="button" hidden>重來</button>
         </div>
-        <p class="note">開發中：已經接上模擬，部隊可以移動和戰鬥；經濟、法師、城鎮、電腦對手和大部分介面還在做。</p>
+        <p class="note">畫面是暫代的幾何圖形。對局沒有時間上限，打到一方的主城被摧毀或投降為止。</p>
         <p class="small"><span id="commit"></span> · <a href="../">回測試頁首頁</a></p>
       </div>
     </section>

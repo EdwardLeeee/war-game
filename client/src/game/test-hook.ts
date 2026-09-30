@@ -43,7 +43,9 @@ export interface GameHook {
   /** Latest snapshot header values. */
   header(): { tick: number; paused: boolean; speed: number; scenario: number };
   /** Buildings in the latest snapshot: top-left cell and footprint size. */
-  buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number }[];
+  buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number; progress: number }[];
+  /** The init message the game started with (難度, time limit, who the computer plays). */
+  init(): Record<string, unknown> | null;
   /** Resource nodes the player knows about, with cells. */
   nodes(): { id: number; kind: number; cx: number; cy: number; amount: number }[];
   /** Nearest open, explored cell to (cx, cy) with no node or building on it, for "tap the ground". */
@@ -117,7 +119,7 @@ export function gameHook(game: Game): GameHook {
       if (b === undefined || game.view === null) return [];
       const out = [];
       for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-        out.push({ id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type], cx: b[o + B.cellX], cy: b[o + B.cellY], size: game.view.rules.buildings[b[o + B.type]]?.size ?? 1 });
+        out.push({ id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type], cx: b[o + B.cellX], cy: b[o + B.cellY], size: game.view.rules.buildings[b[o + B.type]]?.size ?? 1, progress: b[o + B.progress] });
       }
       return out;
     },
@@ -152,6 +154,7 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.inject(ev);
     },
     groups: () => game.hud.groups.map((g) => [...g]),
+    init: () => (game.initSent === null ? null : { ...game.initSent }),
     pickAt: (sx, sy) => {
       const cam = game.camera;
       const view = game.view;

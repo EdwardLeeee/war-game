@@ -15,10 +15,11 @@ test.afterEach(() => {
   checkErrors();
 });
 
-test("開局畫面：一個模式、開始鈕、原型標示", async ({ page }, info) => {
+test("開局畫面：一個模式、難度、開始鈕、原型標示", async ({ page }, info) => {
   info.annotations.push({ type: "viewport", description: JSON.stringify(page.viewportSize()) });
   await expect(page.getByRole("heading", { name: "war-game 原型" })).toBeVisible();
-  await expect(page.getByText("1 對 1 對簡單 AI")).toBeVisible();
+  await expect(page.getByText("1 對 1 對電腦")).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "難度" })).toBeVisible();
   await expect(page.getByRole("button", { name: "開始" })).toBeVisible();
   await expect(page.getByText("原型介面（非正式設計）")).toBeVisible();
   await expect(page.locator("#commit")).toHaveText(/^commit ([0-9a-f]{7}|unknown)$/);
@@ -53,6 +54,21 @@ for (const size of [
     await shot(page, info, `safe-area-${width}x${height}`);
   });
 }
+
+test("難度：第一次是簡單；選了普通，重新整理後還記得；開局帶著難度，沒有時間上限（D-024）", async ({ page }) => {
+  const group = page.getByRole("radiogroup", { name: "難度" });
+  await expect(group.getByRole("radio", { name: "簡單" })).toBeChecked();
+  await expect(group.getByRole("radio", { name: "普通" })).not.toBeChecked();
+  await group.getByRole("radio", { name: "普通" }).tap();
+  await expect(group.getByRole("radio", { name: "普通" })).toBeChecked();
+  await expect(group.getByRole("radio", { name: "簡單" })).not.toBeChecked();
+  await page.reload();
+  await expect(page.getByRole("radiogroup", { name: "難度" }).getByRole("radio", { name: "普通" })).toBeChecked();
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  // The person is player 0 (its value is not used); the computer plays 普通; no time limit.
+  expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ type: "init", human: 0, ai: [false, true], difficulty: ["normal", "normal"], maxTicks: 0 });
+});
 
 test("點開始進入戰場", async ({ page }, info) => {
   await page.getByRole("button", { name: "開始" }).tap();

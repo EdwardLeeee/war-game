@@ -24,6 +24,7 @@ import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
 import { WorldRenderer } from "../render/world.ts";
 import {
+  type AiDifficulty,
   BuildingField,
   type BuildingType,
   type CommandBody,
@@ -35,6 +36,7 @@ import {
   PROTOCOL_VERSION,
   type ScenarioName,
   Stance,
+  type ToWorker,
   UNIT_STRIDE,
   UnitField,
   UnitType,
@@ -49,6 +51,8 @@ import { type SplitUnit, splitPick } from "../input/split.ts";
 import { GameView } from "../view/view.ts";
 import type { SimPort } from "./port.ts";
 
+type InitMessage = Extract<ToWorker, { type: "init" }>;
+
 export interface GameOptions {
   seed: number;
   scenario: ScenarioName;
@@ -57,6 +61,10 @@ export interface GameOptions {
   fake: boolean;
   /** The opponent is played by the computer (false only on test pages, `?test=1&ai=0`). */
   enemyAi: boolean;
+  /** The computer's 難度 (D-024). */
+  difficulty: AiDifficulty;
+  /** Time limit in ticks, 0 = none (players' games, D-024). */
+  maxTicks: number;
   env: () => Record<string, unknown>;
   /** A fresh simulation Worker for the determinism check, or null (the fake world has none). */
   checkPort: (() => SimPort) | null;
@@ -82,6 +90,8 @@ export class Game implements GestureHost {
   speed: SpeedName = "normal";
   /** Ticks per second the simulation runs at (the chosen speed, or `?tps=` on test pages). */
   tps: number;
+  /** The init message this game started with (the test hook reads it). */
+  initSent: InitMessage | null = null;
   /** The last 分出 N 名: the units split off and the ones left behind (for 改選其餘). */
   lastSplit: { picked: number[]; rest: number[] } | null = null;
   /** The last determinism check's result (the test hook reads it). */
@@ -260,15 +270,20 @@ export class Game implements GestureHost {
   }
 
   start(): void {
-    this.port.postMessage({
+    const init: InitMessage = {
       type: "init",
       protocol: PROTOCOL_VERSION,
       seed: this.options.seed,
       human: 0,
       ai: [false, this.options.enemyAi],
+      // One value per player, like `ai`; the person's (player 0) is not used.
+      difficulty: ["normal", this.options.difficulty],
+      maxTicks: this.options.maxTicks,
       tps: this.options.tps,
       scenario: this.options.scenario,
-    });
+    };
+    this.initSent = init;
+    this.port.postMessage(init);
   }
 
   /** Resolves once the first snapshot has been drawn. */
@@ -663,12 +678,13 @@ export class Game implements GestureHost {
     if (view === null || cam === null) return;
     const info = view.rules.buildings[type];
     if (info === undefined) return;
+    // The selected farmers build it; with none selected the simulation sends the nearest (D-024).
     const builders = view.selection.units.filter((id) => view.unitType(id) === UnitType.Farmer);
     this.setMode("normal");
     this.placement = new Placement(info, builders);
     const c = cam.screenToWorld(cam.width / 2, cam.height / 2);
     this.placement.moveTo(c.x, c.y, view.placement);
-    this.overlays.showPrompt("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗", []);
+    this.overlays.showPrompt(builders.length > 0 ? "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗" : "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的農民去蓋", []);
   }
 
   private moveGhost(x: number, y: number): void {
@@ -689,7 +705,7 @@ export class Game implements GestureHost {
       .map((e) => e.getBoundingClientRect());
     this.overlays.showPlace(
       { x: tl.x, y: tl.y, w: r.w * cam.scale, h: r.h * cam.scale },
-      p.valid && p.builders.length > 0,
+      p.valid,
       () => this.confirmPlacement(),
       () => this.endPlacement(),
       avoid,
@@ -699,7 +715,7 @@ export class Game implements GestureHost {
   private confirmPlacement(): void {
     const cmd = this.placement?.confirm() ?? null;
     if (cmd === null) {
-      this.overlays.toast(this.placement?.builders.length === 0 ? "先選農民再蓋" : "這裡不能蓋");
+      this.overlays.toast("這裡不能蓋");
       return;
     }
     this.command(cmd);

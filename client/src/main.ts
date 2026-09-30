@@ -9,7 +9,8 @@ import { type GameHook, gameHook } from "./game/test-hook.ts";
 import { MockPort } from "./mock/mock-port.ts";
 import { createSimPort } from "./game/port.ts";
 import { parseParams, SPEED_TPS } from "./params.ts";
-import type { ScenarioName } from "./sim.ts";
+import { DIFFICULTY_LABEL, loadDifficulty, saveDifficulty } from "./difficulty.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, MAX_TICKS, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
 import { tickRateText } from "./ui/controls.ts";
 
@@ -38,7 +39,35 @@ if (params.test) window.__proto = hook;
 let app: Application | null = null;
 let game: Game | null = null;
 
-const env = (scenario: ScenarioName) => () => ({
+/** 難度 on the start screen: 簡單 the first time, then the last choice on this device (D-024). */
+let difficulty: AiDifficulty = loadDifficulty();
+const difficultyButtons = [...document.querySelectorAll<HTMLButtonElement>("#start [data-difficulty]")];
+function showDifficulty(): void {
+  for (const b of difficultyButtons) {
+    const on = b.dataset.difficulty === difficulty;
+    b.setAttribute("aria-checked", on ? "true" : "false");
+    b.classList.toggle("secondary", !on);
+  }
+}
+for (const b of difficultyButtons) {
+  b.addEventListener("click", () => {
+    const d = AI_DIFFICULTIES.find((v) => v === b.dataset.difficulty);
+    if (d === undefined) return;
+    difficulty = d;
+    saveDifficulty(d);
+    showDifficulty();
+  });
+}
+showDifficulty();
+
+/** This game's opponent and time limit, in words, for the lab's result and log. */
+function gameText(level: AiDifficulty, maxTicks: number, enemyAi: boolean): string {
+  const who = enemyAi ? `電腦${DIFFICULTY_LABEL[level]}` : "對手不動（測試）";
+  const limit = maxTicks === 0 ? "沒有時間上限" : `時間上限 ${maxTicks / TICKS_PER_SECOND / 60} 分鐘`;
+  return `這局：${who}、${limit}`;
+}
+
+const env = (scenario: ScenarioName, about: string) => () => ({
   commit: __COMMIT__,
   engine: `PixiJS ${VERSION}`,
   scenario: params.mock ? "mock" : scenario,
@@ -48,6 +77,7 @@ const env = (scenario: ScenarioName) => () => ({
   viewport: `${window.innerWidth}x${window.innerHeight}`,
   gpu: app === null ? "" : gpuLimits(app),
   tickRate: game === null ? "" : tickRateText(game.tps),
+  game: about,
 });
 
 $("commit").textContent = `commit ${__COMMIT__}`;
@@ -69,14 +99,21 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   if (app === null) app = await createStage($("stage"));
   game?.destroy();
   const port = params.mock ? new MockPort() : createSimPort(showError);
+  // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
+  // 30-minute limit, like the determinism check and CI, so the numbers compare between runs.
+  const level: AiDifficulty = measure ? "normal" : difficulty;
+  const maxTicks = measure ? MAX_TICKS : 0;
+  const enemyAi = measure || params.enemyAi;
   const g = new Game(app, port, $("hud"), {
     seed: newSeed(),
     scenario,
     tps: measure ? SPEED_TPS.normal : (params.tps ?? SPEED_TPS.normal),
     fake: params.mock,
     // 量測 always has the computer playing (all systems on).
-    enemyAi: measure || params.enemyAi,
-    env: env(scenario),
+    enemyAi,
+    difficulty: level,
+    maxTicks,
+    env: env(scenario, gameText(level, maxTicks, enemyAi)),
     checkPort: params.mock ? null : () => createSimPort(showError),
     life: {
       restart: () => void newGame().catch(showError),
@@ -107,6 +144,8 @@ async function continueGame(): Promise<void> {
 function showStart(): void {
   game?.pause();
   hook.screen = "start";
+  // A game is in progress: a new 難度 applies from the next game.
+  $("difficulty-note").hidden = false;
   $("start-game").textContent = "繼續這局";
   $("restart-game").hidden = false;
   $("start").hidden = false;
