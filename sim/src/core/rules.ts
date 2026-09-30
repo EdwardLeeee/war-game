@@ -173,14 +173,15 @@ export interface TownRule {
   garrisonNeeded: number;
   revoltTicks: number;
 }
+/** Plunder takes: GDD appendix A x 1.5 (ceo balance ruling 2026-09-30, see sim/README.md). */
 export const TOWNS: TownRule[] = [];
 TOWNS[TownSize.Small] = {
-  militia: 6, tower: false, radius: 5, plunderTicks: 15 * S, plunder: cost(200, 0, 200, 50), ruinsTicks: 240 * S,
+  militia: 6, tower: false, radius: 5, plunderTicks: 15 * S, plunder: cost(300, 0, 300, 75), ruinsTicks: 240 * S,
   governCost: cost(0, 80, 80), repairTicks: 45 * S, perMinute: cost(40, 0, 40, 12), populationCap: 5,
   garrisonNeeded: 1, revoltTicks: 60 * S,
 };
 TOWNS[TownSize.Large] = {
-  militia: 12, tower: true, radius: 7, plunderTicks: 25 * S, plunder: cost(450, 0, 450, 120), ruinsTicks: 240 * S,
+  militia: 12, tower: true, radius: 7, plunderTicks: 25 * S, plunder: cost(675, 0, 675, 180), ruinsTicks: 240 * S,
   governCost: cost(0, 150, 150), repairTicks: 60 * S, perMinute: cost(90, 0, 90, 30), populationCap: 10,
   garrisonNeeded: 3, revoltTicks: 60 * S,
 };

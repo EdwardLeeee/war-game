@@ -9,6 +9,9 @@ import { BUILDINGS, CARRY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, UNITS } from "../s
 import { checkPlacement } from "../src/placement.ts";
 import {
   Action,
+  BUILDING_STRIDE,
+  BuildingField,
+  BuildingFlag,
   BuildingType,
   CELL_SHIFT,
   HeaderField,
@@ -566,8 +569,11 @@ test("a main city cannot be repaired within 10 s of being hit; other buildings c
   run(g, MAIN_CITY_REPAIR_LOCK - 1);
   assert.equal(b.hp[mc], hp0, "no repair for 10 s after a hit");
   assert.equal(g.w.units.col.order[slotOf(g, f)], Order.Repair, "the repairer waits");
+  const flags = () => buildView(g, 0).buildings[g.w.mainCity(0) * BUILDING_STRIDE + BuildingField.flags];
+  assert.ok((flags() & BuildingFlag.RepairLocked) !== 0, "the snapshot says the main city is locked");
   run(g, 41);
   assert.ok(b.hp[mc] > hp0, "then repair resumes");
+  assert.equal(flags() & BuildingFlag.RepairLocked, 0, "and the flag is gone");
   // A house repairs straight after a hit.
   const at = spot(g, 0, BuildingType.House);
   const house = g.w.addBuilding(0, BuildingType.House, at.x, at.y, 100, 1000);

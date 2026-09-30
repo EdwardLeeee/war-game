@@ -2,7 +2,7 @@
 // of the denominator), draws, game lengths, plunder and govern counts, mages, tick times.
 //   node src/tournament-summary.ts DIR [DIR ...] [--json FILE]
 // Prints Markdown (for the CI step summary). Gates (D5): each spawn's win rate within
-// 35–65%, draws at most 10% (for now 30%, see GATES), every replay matching. Exits 1 when
+// 35–65%, draws at most 10% (for now 25%, see GATES), every replay matching. Exits 1 when
 // a gate fails.
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -10,11 +10,12 @@ import { join } from "node:path";
 import type { GameResult } from "./tournament.ts";
 
 /**
- * drawsMax is relaxed to 30% for now (ceo 2026-09-30): the win-rate gate, replays and
- * browser determinism pass, and the draws only happen between two AIs (a person attacks);
- * the next PR (the AI weighing up fights) brings it back to 10% (D5).
+ * drawsMax is relaxed to 25% for now (ceo 2026-09-30): win rate by spawn, replays and
+ * browser determinism pass and the two plunder / govern paths are balanced; the remaining
+ * draws happen between two identical AIs (a person breaks the symmetry). Round 8 (AI
+ * thresholds per style) aims at 10% (D5) and restores this gate.
  */
-export const GATES = { winRateMin: 0.35, winRateMax: 0.65, drawsMax: 0.3 };
+export const GATES = { winRateMin: 0.35, winRateMax: 0.65, drawsMax: 0.25 };
 
 const args = process.argv.slice(2);
 const jsonAt = args.indexOf("--json");

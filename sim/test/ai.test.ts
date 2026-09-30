@@ -73,3 +73,23 @@ test("an AI against itself builds up an economy and an army", () => {
     assert.ok(soldiers + w.trained[p * 5 + UnitType.Spearman] > 0, `player ${p} started an army`);
   }
 });
+
+/** The first think of a balanced AI whose 18 spearmen stand near home, with `foes` enemy spearmen in view beside them. */
+function firstMove(foes: number): CommandBody | undefined {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  for (let k = 0; k < 18; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 8 - Math.trunc(k / 6));
+  for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 13 - Math.trunc(k / 6));
+  g.fog.update(w);
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0] }, 0, "balanced");
+  return ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= 18);
+}
+
+test("the AI weighs up: it goes for a town when stronger, not when the enemy in view outnumbers it", () => {
+  const towns = new Set(emptyGame().w.map.towns.map((t) => `${t.cellX},${t.cellY}`));
+  const alone = firstMove(0) as { x: number; y: number } | undefined;
+  assert.ok(alone !== undefined && towns.has(`${alone.x},${alone.y}`), "no enemy in sight: off to a town");
+  const outnumbered = firstMove(24) as { x: number; y: number } | undefined;
+  assert.ok(outnumbered === undefined || !towns.has(`${outnumbered.x},${outnumbered.y}`), "24 enemies in sight: stays");
+});

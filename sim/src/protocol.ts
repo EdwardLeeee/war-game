@@ -239,6 +239,8 @@ export const BuildingFlag = {
   /** Not visible now: this row is the player's memory of the last sighting (hp as last seen). */
   Remembered: 1,
   UnderAttack: 2,
+  /** Own main city, damaged and hit in the last 10 s: repairs wait until the lock ends (repair is still accepted). */
+  RepairLocked: 4,
 } as const;
 
 /** Resource nodes: sent as changes only (see Snapshot.nodes). */
