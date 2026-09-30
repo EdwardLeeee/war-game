@@ -31,31 +31,36 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.TownNotYours]: "不是你攻下的城鎮",
   [Reject.TownChoiceMade]: "這座城鎮已經選過了",
   [Reject.GameOver]: "這局已經結束",
-  [Reject.OutOfRange]: "超出晶砲射程",
+  [Reject.OutOfRange]: "超出晶砲射程（8 格）",
 };
 
 /**
- * Commands the simulation does not do yet (sim/PROTOCOL.md: from core's PR-4). Their
- * NotAvailable means "not built yet" and says so (ceo 2026-09-30); remove each when it lands.
+ * The same reason code means different things for different commands (sim/PROTOCOL.md 3.1
+ * and 3.2); these say it plainly for the command that was rejected.
  */
-export const PENDING_COMMANDS: ReadonlySet<CommandKind> = new Set<CommandKind>(["cast", "autocast", "town_choice", "surrender"]);
-
-/** NotAvailable for the rules that exist (sim/PROTOCOL.md 3.1), by command. */
-const NOT_AVAILABLE_TEXT: Partial<Record<CommandKind, string>> = {
-  build: "主城和箭樓不能蓋",
-  repair: "這裡現在不需要農民（沒有受損，或田已經有人耕）",
-  train: "這棟建築還沒蓋好，或不訓練這種兵",
-  rally: "這棟建築不能設集結點",
-  gather: "只有農民能採集",
+const BY_COMMAND: Partial<Record<number, Partial<Record<CommandKind, string>>>> = {
+  [Reject.NotAvailable]: {
+    build: "主城和箭樓不能蓋",
+    repair: "這裡現在不需要農民（沒有受損，或田已經有人耕）",
+    train: "這棟建築還沒蓋好，或不訓練這種兵",
+    rally: "這棟建築不能設集結點",
+    gather: "只有農民能採集",
+    cast: "只有法師能發晶砲",
+    autocast: "只有法師能自動施放",
+  },
+  [Reject.InvalidTarget]: {
+    cast: "晶砲的落點不在地圖內",
+    town_choice: "這座城鎮現在不能選",
+  },
+  [Reject.CannotAfford]: {
+    town_choice: "治理要先投入金和木，現在不夠",
+  },
 };
 
 /** What to tell the player when a command comes back rejected. */
 export function rejectText(reason: number, cmd: CommandBody | undefined): string {
-  if (reason === Reject.NotAvailable && cmd !== undefined) {
-    if (PENDING_COMMANDS.has(cmd.c)) return "原型尚未開放";
-    return NOT_AVAILABLE_TEXT[cmd.c] ?? REJECT_TEXT[reason];
-  }
-  return REJECT_TEXT[reason] ?? "指令沒有執行";
+  const specific = cmd === undefined ? undefined : BY_COMMAND[reason]?.[cmd.c];
+  return specific ?? REJECT_TEXT[reason] ?? "指令沒有執行";
 }
 
 const WHEEL_RADIUS = 72;

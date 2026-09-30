@@ -101,7 +101,17 @@ export class Game implements GestureHost {
     this.controls = new Controls(hud, { togglePause: () => (this.paused ? this.resume() : this.pause()), cycleSpeed: () => this.setSpeed(nextSpeed(this.speed)) });
     const checkPort = options.checkPort;
     // The lab opens from the menu (選單 → 量測與確定性檢查).
-    this.lab = new LabPanel(hud, { env: options.env, check: checkPort === null ? null : () => this.determinism(checkPort), fake: () => options.fake }, null);
+    this.lab = new LabPanel(
+      hud,
+      {
+        env: options.env,
+        check: checkPort === null ? null : () => this.determinism(checkPort),
+        fake: () => options.fake,
+        // Measure "every system running" (brief): the perf scenario, in a game of its own.
+        requestMeasure: options.fake || options.scenario === "perf" ? undefined : () => options.life.perf(),
+      },
+      null,
+    );
     this.hud = new Hud(hud, this, this.controls.bar, options.life);
     this.recognizer = new GestureRecognizer(this);
     port.onmessage = (e) => this.receive(e.data);

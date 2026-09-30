@@ -9,6 +9,7 @@ import { type GameHook, gameHook } from "./game/test-hook.ts";
 import { MockPort } from "./mock/mock-port.ts";
 import { createSimPort } from "./game/port.ts";
 import { parseParams, SPEED_TPS } from "./params.ts";
+import type { ScenarioName } from "./sim.ts";
 import { createStage } from "./stage.ts";
 
 declare const __COMMIT__: string;
@@ -36,10 +37,11 @@ if (params.test) window.__proto = hook;
 let app: Application | null = null;
 let game: Game | null = null;
 
-const env = () => ({
+const env = (scenario: ScenarioName) => () => ({
   commit: __COMMIT__,
   engine: `PixiJS ${VERSION}`,
-  data: params.mock ? "假資料（mock）" : "模擬 standard",
+  scenario: params.mock ? "mock" : scenario,
+  data: params.mock ? "假資料（mock）" : `模擬 ${scenario}`,
   userAgent: navigator.userAgent,
   dpr: window.devicePixelRatio,
   viewport: `${window.innerWidth}x${window.innerHeight}`,
@@ -53,8 +55,11 @@ $("restart-game").addEventListener("click", () => {
   void newGame().catch(showError);
 });
 
-/** Start a game, ending the one on screen if there is one (開始, 重來). */
-async function newGame(): Promise<void> {
+/**
+ * Start a game, ending the one on screen if there is one (開始, 重來). `measure`: the perf
+ * scenario for 量測, which opens the lab and starts measuring once the game runs.
+ */
+async function newGame(scenario: ScenarioName = "standard", measure = false): Promise<void> {
   $("start").hidden = true;
   hook.screen = "battle";
   hook.ready = false;
@@ -63,21 +68,27 @@ async function newGame(): Promise<void> {
   const port = params.mock ? new MockPort() : createSimPort(showError);
   const g = new Game(app, port, $("hud"), {
     seed: newSeed(),
-    scenario: "standard",
-    tps: params.tps ?? SPEED_TPS.normal,
+    scenario,
+    tps: measure ? SPEED_TPS.normal : (params.tps ?? SPEED_TPS.normal),
     fake: params.mock,
-    env,
+    env: env(scenario),
     checkPort: params.mock ? null : () => createSimPort(showError),
     life: {
       restart: () => void newGame().catch(showError),
       toStart: showStart,
+      perf: () => void newGame("perf", true).catch(showError),
     },
   });
   game = g;
   if (params.test) hook.game = gameHook(g);
   g.start();
   await g.whenReady();
-  if (game === g) hook.ready = true;
+  if (game !== g) return;
+  hook.ready = true;
+  if (measure) {
+    g.lab.show();
+    g.lab.startMeasure(performance.now());
+  }
 }
 
 /** Back from the start screen to the game in progress; it stays paused until 繼續. */

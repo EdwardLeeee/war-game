@@ -39,7 +39,7 @@ export interface GameHook {
   labPhase(): string;
   log(line: string): void;
   /** Latest snapshot header values. */
-  header(): { tick: number; paused: boolean; speed: number };
+  header(): { tick: number; paused: boolean; speed: number; scenario: number };
   /** Buildings in the latest snapshot: top-left cell and footprint size. */
   buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number }[];
   /** Resource nodes the player knows about, with cells. */
@@ -104,7 +104,7 @@ export function gameHook(game: Game): GameHook {
     log: (line) => game.lab.log.add(line),
     header: () => {
       const h = game.view?.header;
-      return { tick: h?.[H.tick] ?? -1, paused: h?.[H.paused] === 1, speed: h?.[H.speed] ?? 0 };
+      return { tick: h?.[H.tick] ?? -1, paused: h?.[H.paused] === 1, speed: h?.[H.speed] ?? 0, scenario: h?.[H.scenario] ?? -1 };
     },
     buildings: () => {
       const b = game.view?.curr?.snap.buildings;

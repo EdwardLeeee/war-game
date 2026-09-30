@@ -769,3 +769,8 @@ button.danger {
 .result.won h2 {
   color: var(--accent);
 }
+
+.lab-note {
+  font-size: 11px;
+  opacity: 0.8;
+}

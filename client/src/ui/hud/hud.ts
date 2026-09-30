@@ -22,6 +22,8 @@ const MAX_ARROWS = 3;
 export interface HudLifecycle {
   restart(): void;
   toStart(): void;
+  /** Start a game of the `perf` scenario that measures itself (量測). */
+  perf(): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {

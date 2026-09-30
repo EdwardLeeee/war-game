@@ -25,7 +25,7 @@ async function start(page: Page, query = "?test=1"): Promise<void> {
   await page.waitForFunction(() => window.__proto?.ready === true);
 }
 
-const header = (page: Page) => page.evaluate(() => window.__proto?.game?.header() ?? { tick: -1, paused: false, speed: 0 });
+const header = (page: Page) => page.evaluate(() => window.__proto?.game?.header() ?? { tick: -1, paused: false, speed: 0, scenario: -1 });
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const selection = (page: Page) => page.evaluate(() => window.__proto?.game?.selection());
 const lastSent = (page: Page) => page.evaluate(() => window.__proto?.game?.sent().at(-1) as Record<string, unknown> | undefined);
@@ -287,4 +287,32 @@ test("確定性檢查：瀏覽器算出的一局和 CI 的無畫面執行完全�
   await expect(page.getByText("確定性：與 CI 相同 ✓")).toBeVisible();
   await expect(measure).toBeEnabled();
   await shot(page, info, "determinism-same");
+});
+
+test("選單 → 投降 → 勝負畫面顯示失敗（投降）→ 重來開新局", async ({ page }, info) => {
+  await start(page);
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "投降" }).tap();
+  await page.getByRole("dialog").getByRole("button", { name: "投降" }).tap();
+  const result = page.getByRole("dialog", { name: "失敗" });
+  await expect(result).toBeVisible();
+  await expect(result).toContainText("投降");
+  await shot(page, info, "surrender-result");
+  await result.getByRole("button", { name: "重來" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await expect(page.getByRole("dialog")).toBeHidden();
+  expect((await header(page)).tick).toBeLessThan(200);
+});
+
+test("量測：開一局 perf 場景（所有系統都開著），暖機 5 秒量 30 秒，結果框寫明場景", async ({ page }, info) => {
+  test.setTimeout(150_000);
+  await start(page);
+  await openLab(page);
+  await page.getByRole("button", { name: "開始量測" }).tap();
+  // A new game of the perf scenario (Scenario.Perf = 2) that measures itself.
+  await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 2);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
+  await expect(page.getByRole("button", { name: "確定性檢查" })).toBeDisabled();
+  await expect(page.locator(".lab-result")).toContainText("場景：perf（所有系統都開著）", { timeout: 90_000 });
+  await shot(page, info, "perf-measure");
 });

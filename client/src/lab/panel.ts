@@ -15,6 +15,11 @@ export interface LabHooks {
   check: (() => Promise<void>) | null;
   /** The numbers come from the fake world, not the game. */
   fake(): boolean;
+  /**
+   * 開始量測 asks this instead of measuring the game on screen when given (it starts the
+   * `perf` scenario, which measures itself once it is running).
+   */
+  requestMeasure?: () => void;
 }
 
 function make<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {
@@ -70,6 +75,7 @@ export class LabPanel {
     this.checkBtn.type = "button";
     const copy = make("button", row, "secondary", "複製 log");
     copy.type = "button";
+    make("p", this.panel, "lab-note", "開始量測：開一局 perf 場景（雙方接近人口上限、法師自動施放、迷霧開著、在城鎮附近交戰），暖機 5 秒後量 30 秒。量測時請不要操作。");
     this.status = make("p", this.panel, "lab-status");
     this.resultBox = make("div", this.panel, "lab-result");
     this.resultBox.hidden = true;
@@ -80,7 +86,10 @@ export class LabPanel {
     more.type = "button";
     this.log = new LogBox(logBox, more);
 
-    this.measureBtn.addEventListener("click", () => this.startMeasure(performance.now()));
+    this.measureBtn.addEventListener("click", () => {
+      if (this.hooks.requestMeasure !== undefined) this.hooks.requestMeasure();
+      else this.startMeasure(performance.now());
+    });
     this.checkBtn.addEventListener("click", () => void this.startCheck());
     copy.addEventListener("click", () => {
       void navigator.clipboard?.writeText(this.log.text()).then(
@@ -189,6 +198,7 @@ export class LabPanel {
     box.hidden = false;
     box.replaceChildren();
     make("h3", box, "", r.valid ? (r.pass ? "通過" : "未通過") : "無效");
+    make("p", box, "", `場景：${String(env.scenario ?? "?")}${env.scenario === "perf" ? "（所有系統都開著）" : ""}`);
     if (!r.valid) make("p", box, "bad", `原因：${r.reasons.join("、")}。請重新量測。`);
     const rows: [string, string, boolean][] = [
       ["fps 中位數", `${r.fpsMedian}（標準 ≥ ${PASS.fpsMedian}）`, r.fpsMedian >= PASS.fpsMedian],
