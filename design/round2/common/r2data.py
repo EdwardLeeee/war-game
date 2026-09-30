@@ -63,8 +63,8 @@ def costs(level):
     if per:
         # CI renders at 2x ss for A/B/C; per-image seconds already include that
         hours = frames * passes * per / 3600
-        render = (f"約 {hours:.0f} 小時（GitHub Actions 4 核，每張約 {per:.1f} 秒 × {frames:,} 格 × {passes} 層；"
-                  f"CI 機器速度每次不同，A／B／C 取最慢的一次；估計）")
+        note = "CI 機器速度每次不同，A／B／C 取最慢的一次；" if level != "0" else ""
+        render = f"約 {hours:.0f} 小時（GitHub Actions 4 核，每張約 {per:.1f} 秒 × {frames:,} 格 × {passes} 層；{note}估計）"
     else:
         render = "待 CI 實測"
     mem = prodnotes.memory_table(20384, 240000)[0]

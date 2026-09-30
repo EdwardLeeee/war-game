@@ -228,7 +228,7 @@ def artboard_02(opt, level="C"):
     for k, v in (("兵種", u), ("玩家色遮罩", m), ("建築與城鎮", b)):
         d.text((x0, yy), f"{k}：約 {v:.0f} MB", font=artboard.font(26, weight="regular"), fill=GREY)
         yy += 44
-    col = GREEN if tot < 400 else RED
+    col = GREY if tot < 400 else RED        # uncompressed totals are notes, not a pass
     d.text((x0, yy + 10), f"合計：約 {tot:.0f} MB", font=artboard.font(32), fill=col)
     d.text((x0, yy + 70), "壓縮貼圖能省多少，第二階段由 core 實測。", font=artboard.font(24, weight="regular"),
            fill=GREY)
