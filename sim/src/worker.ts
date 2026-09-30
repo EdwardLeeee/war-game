@@ -14,9 +14,11 @@ import {
   type LogHeader,
   PLAYER_COUNT,
   PROTOCOL_VERSION,
+  Resource,
   STEP_BATCH,
   type ScenarioName,
   type ToWorker,
+  UnitType,
 } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 import { buildView, SnapshotEncoder, transferables } from "./view/view.ts";
@@ -56,19 +58,24 @@ function sendSnapshot(stepMicros: number): void {
   post(snap, transferables(snap));
 }
 
+/** End-of-game statistics (towns from PR-4). unitsTrained / unitsLost are by UnitType: farmer, spearman, ranged, mage. */
 function stats(): GameStats {
   const w = runner!.game.w;
-  const zero = { food: 0, wood: 0, gold: 0, crystal: 0 };
   return {
     ticks: w.tick,
     winner: w.winner,
     reason: w.endReason as GameStats["reason"],
-    perPlayer: Array.from({ length: PLAYER_COUNT }, () => ({
-      gathered: { ...zero },
-      unitsTrained: [0, 0, 0, 0],
-      unitsLost: [0, 0, 0, 0],
-      magesTrained: 0,
-      magesLost: 0,
+    perPlayer: Array.from({ length: PLAYER_COUNT }, (_, p) => ({
+      gathered: {
+        food: w.gathered[p * 4 + Resource.Food],
+        wood: w.gathered[p * 4 + Resource.Wood],
+        gold: w.gathered[p * 4 + Resource.Gold],
+        crystal: w.gathered[p * 4 + Resource.Crystal],
+      },
+      unitsTrained: Array.from(w.trained.subarray(p * 5, p * 5 + 4)),
+      unitsLost: Array.from(w.lost.subarray(p * 5, p * 5 + 4)),
+      magesTrained: w.trained[p * 5 + UnitType.Mage],
+      magesLost: w.lost[p * 5 + UnitType.Mage],
       townsPlundered: 0,
       townsGoverned: 0,
     })),

@@ -1,10 +1,11 @@
 // Headless runner (Node; no build step, types are stripped).
-//   node src/headless.ts [--scenario standard|skirmish] [--seed N] [--ticks N] [--ai 1,1]
-//                        [--script demo] [--replay FILE] [--out DIR] [--expected FILE]
+//   node src/headless.ts [--scenario standard|e2e|skirmish] [--seed N] [--ticks N] [--ai 1,1]
+//                        [--script demo|eco] [--replay FILE] [--out DIR] [--expected FILE]
 // Writes into --out: hashes.txt ("tick hash" per HASH_EVERY), commands.jsonl (LogHeader,
 // then one command per line), timing.json. --expected writes ExpectedHashes JSON for the
-// phone-side determinism check. --script demo drives the armies of the internal skirmish
-// scenario (until the AI arrives in PR-5).
+// phone-side determinism check. Until the AI arrives (PR-5): --script demo drives the
+// armies of the internal skirmish scenario; --script eco plays both sides' economy
+// (src/scripts/eco.ts) from their own views.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,6 +21,8 @@ import {
   UnitType,
 } from "./protocol.ts";
 import { Runner } from "./runner.ts";
+import { ECO_SCRIPT_EVERY, ecoScript } from "./scripts/eco.ts";
+import { buildView } from "./view/view.ts";
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -63,10 +66,19 @@ function demo(): void {
   }
 }
 
+/** Both players' economy script, each on its own view, staggered by half a period. */
+function eco(): void {
+  for (let p = 0; p < 2; p++) {
+    if (g.tick % ECO_SCRIPT_EVERY !== (p * ECO_SCRIPT_EVERY) / 2) continue;
+    for (const body of ecoScript(buildView(g, p), g.w.map.spawns[p])) g.push({ ...body, t: g.tick, p, seq: seq++ } as Command);
+  }
+}
+
 const micros: number[] = [];
 const start = performance.now();
 while (!runner.over && g.tick < maxTicks) {
   if (script === "demo") demo();
+  if (script === "eco") eco();
   micros.push(runner.tick(() => performance.now()));
 }
 const totalMs = performance.now() - start;
@@ -81,8 +93,30 @@ const timing = {
   ticks: g.tick,
   winner: g.w.winner,
   totalMs: Math.round(totalMs),
-  tickMicros: { median: pick(50), p95: pick(95), max: sorted.at(-1) ?? 0, mean: sorted.length ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length) : 0 },
+  tickMicros: {
+    median: pick(50),
+    p95: pick(95),
+    max: sorted.at(-1) ?? 0,
+    /** The first ticks include the JIT warming up; this is the max from tick 100 on. */
+    maxAfter100: micros.slice(100).reduce((a, b) => Math.max(a, b), 0),
+    mean: sorted.length ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length) : 0,
+  },
   fieldBuilds: g.fields.builds,
+  fieldHits: g.fields.hits,
+  fieldStaleUses: g.fields.staleUses,
+  fieldDeferred: g.fields.deferred,
+  /** Share of field requests answered from the cache (fresh or stale) without building. */
+  fieldHitRate: (() => {
+    const f = g.fields;
+    const all = f.builds + f.hits + f.staleUses + f.deferred;
+    return all === 0 ? 1 : Math.round(((f.hits + f.staleUses) / all) * 10000) / 10000;
+  })(),
+  economy: [0, 1].map((p) => ({
+    gathered: Array.from(g.w.gathered.subarray(p * 4, p * 4 + 4)),
+    trained: Array.from(g.w.trained.subarray(p * 5, p * 5 + 5)),
+    lost: Array.from(g.w.lost.subarray(p * 5, p * 5 + 5)),
+    buildings: g.w.buildings.col.owner.subarray(0, g.w.buildings.count).filter((o) => o === p).length,
+  })),
 };
 const final = runner.hashes.at(-1)!;
 if (final.tick !== g.tick) runner.hashes.push({ tick: g.tick, hash: g.hash() });
@@ -107,6 +141,8 @@ if (expected !== "") {
 }
 console.log(
   `SIM ${scenario} seed ${seed}${replay ? " (replay)" : ""}: ${g.tick} ticks in ${(totalMs / 1000).toFixed(2)} s; ` +
-    `tick median ${timing.tickMicros.median} us, p95 ${timing.tickMicros.p95} us, max ${timing.tickMicros.max} us; ` +
+    `tick median ${timing.tickMicros.median} us, p95 ${timing.tickMicros.p95} us, max ${timing.tickMicros.max} us ` +
+    `(${timing.tickMicros.maxAfter100} us from tick 100); ` +
+    `fields built ${timing.fieldBuilds}, hit rate ${timing.fieldHitRate}; ` +
     `final ${hex8(g.hash())}, winner ${g.w.winner}, commands ${g.log.length}`,
 );

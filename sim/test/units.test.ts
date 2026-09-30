@@ -40,6 +40,7 @@ test("retreat ignores enemies; attack-move fights them", () => {
     const mine = put(g, 0, UnitType.Spearman, a.x + 2, a.y + 10);
     const enemy = put(g, 1, UnitType.Farmer, a.x + 8, a.y + 10);
     g.w.units.col.stance[slotOf(g, enemy)] = Stance.Hold;
+    g.w.ecoOn[1] = 0; // keep the target farmer standing still
     g.fog.update(g.w);
     cmd(g, 0, { c: kind, u: [mine], x: a.x + 20, y: a.y + 10 });
     run(g, 300);

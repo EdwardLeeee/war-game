@@ -5,10 +5,14 @@
 // - other units: only on cells the player sees now;
 // - other buildings: live when seen now, else the player's memory (flag Remembered);
 // - resource nodes: the ones ever seen, with the amount last seen;
-// - towns: the ones explored, as last seen.
+// - towns: the ones explored, as last seen;
+// - placement: where the player may try to build, from what it knows (PROTOCOL.md section 7).
+// Farmers hidden in buildings (recall) are listed only for their owner.
 // A null player is a spectator (AI against AI on screen): everything, live.
 
 import {
+  Action,
+  BuildingType,
   BUILDING_STRIDE,
   BuildingField,
   BuildingFlag,
@@ -19,7 +23,9 @@ import {
   HeaderField,
   NODE_STRIDE,
   NodeField,
+  Order,
   PLAYER_COUNT,
+  PlaceBit,
   Scenario,
   type Snapshot,
   TOWN_STRIDE,
@@ -27,12 +33,13 @@ import {
   TownFlag,
   UNIT_STRIDE,
   UnitField,
+  UnitFlag,
   UnitType,
   WARNING_STRIDE,
 } from "../protocol.ts";
 import { writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
-import { BUILDINGS, MAGE_CAP, MAX_POPULATION, UNITS } from "../core/rules.ts";
+import { BUILDINGS, FARMLAND_REACH, MAGE_CAP, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -48,6 +55,10 @@ export interface PlayerView {
   /** size * size Fog values as of fogTick. */
   fog: Uint8Array;
   fogTick: number;
+  /** size * size PlaceBit values (PROTOCOL.md section 7). */
+  placement: Uint8Array;
+  /** Own idle farmers, in id order. */
+  idleFarmers: Int32Array;
   mapSize: number;
 }
 
@@ -71,9 +82,12 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   // Units.
   const u = w.units.col;
   const unitRows: number[] = [];
+  const idle: number[] = [];
   for (let s = 0; s < w.units.count; s++) {
-    if (u.owner[s] !== player && !seesCell(u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT)) continue;
+    const own = u.owner[s] === player;
+    if (!own && player !== null && (u.action[s] === Action.Garrisoned || !seesCell(u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT))) continue;
     unitRows.push(s);
+    if (own && u.type[s] === UnitType.Farmer && u.order[s] === Order.None && u.action[s] !== Action.Garrisoned) idle.push(u.id[s]);
   }
   const units = new Int32Array(unitRows.length * UNIT_STRIDE);
   unitRows.forEach((s, r) => {
@@ -93,7 +107,8 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     units[o + UnitField.orderTarget] = u.orderTarget[s];
     units[o + UnitField.stance] = u.stance[s];
     units[o + UnitField.castProgress] = u.castProgress[s];
-    units[o + UnitField.flags] = u.flags[s];
+    const idleFarmer = u.owner[s] === player && u.type[s] === UnitType.Farmer && u.order[s] === Order.None && u.action[s] !== Action.Garrisoned;
+    units[o + UnitField.flags] = u.flags[s] | (idleFarmer ? UnitFlag.IdleFarmer : 0);
     units[o + UnitField.castCooldown] = u.castCooldown[s];
   });
 
@@ -131,7 +146,8 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
       for (let k = 0; k < b.queueLength[s]; k++) packed |= (q[k] & 15) << (4 * k);
       row[BuildingField.queueLength] = b.queueLength[s];
       row[BuildingField.queuePacked] = packed;
-      row[BuildingField.queueProgress] = b.queueTicks[s];
+      const head = b.queueLength[s] > 0 ? UNITS[b.q0[s]].trainTicks : 0;
+      row[BuildingField.queueProgress] = head > 0 ? Math.trunc((b.queueTicks[s] * 1000) / head) : 0;
       row[BuildingField.rallyX] = b.rallyX[s];
       row[BuildingField.rallyY] = b.rallyY[s];
       row[BuildingField.garrisoned] = b.garrisoned[s];
@@ -215,26 +231,48 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   header[HeaderField.gameState] = state;
   if (player !== null && player < PLAYER_COUNT) {
     for (let r = 0; r < 4; r++) header[HeaderField.food + r] = w.res[player * 4 + r];
-    let pop = 0;
     let mages = 0;
-    for (let s = 0; s < w.units.count; s++) {
-      if (u.owner[s] !== player) continue;
-      pop += UNITS[u.type[s]].population;
-      if (u.type[s] === UnitType.Mage) mages++;
-    }
-    let cap = 0;
-    for (let s = 0; s < w.buildings.count; s++) {
-      if (b.owner[s] === player && b.progress[s] >= 1000) cap += BUILDINGS[b.type[s]].populationCap;
-    }
-    header[HeaderField.population] = pop;
-    header[HeaderField.populationCap] = Math.min(cap, MAX_POPULATION);
+    for (let s = 0; s < w.units.count; s++) if (u.owner[s] === player && u.type[s] === UnitType.Mage) mages++;
+    header[HeaderField.population] = w.population(player);
+    header[HeaderField.populationCap] = w.populationCap(player);
     header[HeaderField.mages] = mages;
     header[HeaderField.mageCap] = MAGE_CAP;
+    header[HeaderField.ratioFood] = w.ecoRatio[player * 3];
+    header[HeaderField.ratioWood] = w.ecoRatio[player * 3 + 1];
+    header[HeaderField.ratioGold] = w.ecoRatio[player * 3 + 2];
+    header[HeaderField.ratioOn] = w.ecoOn[player];
+    header[HeaderField.recall] = w.recall[player];
   }
   header[HeaderField.stepMicros] = info?.stepMicros ?? 0;
   header[HeaderField.stepBatchMicros] = info?.stepBatchMicros ?? 0;
   header[HeaderField.fogTick] = fog.fogTick;
   header[HeaderField.scenario] = SCENARIO_ID[game.config.scenario] ?? Scenario.Standard;
+
+  // Placement: rock, nodes as last seen, and every building the player knows block;
+  // unexplored cells are marked; farm land comes from own finished main cities and granaries.
+  const placement = new Uint8Array(n * n);
+  const terrain = w.map.terrain;
+  for (let i = 0; i < n * n; i++) {
+    let bits = terrain[i] === 1 ? PlaceBit.Blocked : 0;
+    if (exp !== null && exp[i] === 0) bits |= PlaceBit.Unexplored;
+    placement[i] = bits;
+  }
+  for (let k = 0; k < nodeCount; k++) {
+    const amount = player === null ? w.nodeAmount[k] : fog.nodeSeen[player][k];
+    if (amount > 0) placement[w.nodeY[k] * n + w.nodeX[k]] |= PlaceBit.Blocked;
+  }
+  for (const row of rows) {
+    const size = BUILDINGS[row[BuildingField.type]].size;
+    const x0 = row[BuildingField.cellX];
+    const y0 = row[BuildingField.cellY];
+    for (let y = y0; y < y0 + size; y++) for (let x = x0; x < x0 + size; x++) placement[y * n + x] |= PlaceBit.Blocked;
+    const t = row[BuildingField.type];
+    const land = row[BuildingField.owner] === player && row[BuildingField.progress] >= 1000 && (t === BuildingType.MainCity || t === BuildingType.Granary);
+    if (!land) continue;
+    for (let y = Math.max(0, y0 - FARMLAND_REACH); y < Math.min(n, y0 + size + FARMLAND_REACH); y++) {
+      for (let x = Math.max(0, x0 - FARMLAND_REACH); x < Math.min(n, x0 + size + FARMLAND_REACH); x++) placement[y * n + x] |= PlaceBit.FarmLand;
+    }
+  }
 
   return {
     player,
@@ -247,6 +285,8 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     nodes,
     fog: fogGrid,
     fogTick: fog.fogTick,
+    placement,
+    idleFarmers: Int32Array.from(idle),
     mapSize: n,
   };
 }
@@ -288,8 +328,8 @@ export class SnapshotEncoder {
       warnings: view.warnings,
       nodes,
       fog: fogNew ? view.fog : null,
-      placement: null,
-      idleFarmers: new Int32Array(0),
+      placement: fogNew ? view.placement : null,
+      idleFarmers: view.idleFarmers,
       events,
     };
   }

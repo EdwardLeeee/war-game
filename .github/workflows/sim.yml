@@ -41,7 +41,8 @@ jobs:
       - run: npm test
 
   # Full-length games without a screen, each replayed from its command log (every hash must
-  # match). Until the AI arrives (PR-5) the skirmish scenario's armies follow a fixed script.
+  # match). Until the AI arrives (PR-5) fixed scripts play: `demo` moves the skirmish armies,
+  # `eco` plays both sides' economy for a whole 36,000-tick game.
   headless:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -56,7 +57,7 @@ jobs:
           cache: npm
           cache-dependency-path: sim/package-lock.json
       - run: npm ci
-      - name: Skirmish and standard games, replayed
+      - name: Skirmish, economy and standard games, replayed
         run: |
           set -euo pipefail
           out="${GITHUB_WORKSPACE}/headless"
@@ -64,9 +65,14 @@ jobs:
           node src/headless.ts --scenario skirmish --script demo --ticks 12000 --out "${out}/skirmish"
           node src/headless.ts --replay "${out}/skirmish/commands.jsonl" --ticks 12000 --out "${out}/skirmish-replay"
           diff "${out}/skirmish/hashes.txt" "${out}/skirmish-replay/hashes.txt"
+          echo "skirmish replay: every hash matches ($(wc -l < "${out}/skirmish/hashes.txt") checkpoints)"
+          node src/headless.ts --scenario standard --script eco --ai 0,0 --out "${out}/eco"
+          node src/headless.ts --replay "${out}/eco/commands.jsonl" --out "${out}/eco-replay"
+          diff "${out}/eco/hashes.txt" "${out}/eco-replay/hashes.txt"
+          echo "economy replay: every hash matches ($(wc -l < "${out}/eco/hashes.txt") checkpoints)"
+          node src/headless.ts --scenario e2e --ai 0,0 --ticks 6000 --out "${out}/e2e"
           node src/headless.ts --scenario standard --ai 0,0 --out "${out}/standard" --expected "${out}/expected-standard.json"
-          echo "replay: every hash matches ($(wc -l < "${out}/skirmish/hashes.txt") checkpoints)"
-          { echo "### Headless"; for d in skirmish skirmish-replay standard; do echo "- ${d}: \`$(tr -d '\n' < "${out}/${d}/timing.json" | tr -s ' ')\`"; done; } >> "${GITHUB_STEP_SUMMARY}"
+          { echo "### Headless"; for d in skirmish skirmish-replay eco eco-replay e2e standard; do echo "- ${d}: \`$(tr -d '\n' < "${out}/${d}/timing.json" | tr -s ' ')\`"; done; } >> "${GITHUB_STEP_SUMMARY}"
       - uses: actions/upload-artifact@v7
         with:
           name: sim-headless

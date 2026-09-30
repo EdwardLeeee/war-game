@@ -197,7 +197,24 @@ GATHER_PER_MINUTE[Resource.Crystal] = 12;
 export const BERRIES_PER_MINUTE = 30;
 export const CARRY = 10;
 export const NODE_AMOUNT = { tree: 100, goldCell: 400, bush: 100, crystalCell: 150 };
+/** Builders on one building that add progress (more wait); the same cap applies to repairs. */
 export const BUILDERS_MAX = 4;
 export const REPAIR_PER_SECOND = 5;
-/** Farms must be within this many cells (Chebyshev, footprint to footprint) of an own main city or granary. */
+/** Farms must be within this many cells (Chebyshev, footprint to footprint) of an own finished main city or granary. */
 export const FARMLAND_REACH = 6;
+/** Economy ratio default (GDD section 4): food / wood / gold in percent. */
+export const ECO_DEFAULT = { food: 40, wood: 35, gold: 25 };
+/** Idle farmers are handed work (auto-repair, then the economy ratio, or recall) every this many ticks. */
+export const ECO_EVERY = 20;
+/** A farmer works (gathers, drops off, builds, repairs, shelters) within this distance of the target's cell or footprint. */
+export const WORK_REACH = 768;
+/** Choosing a node, each farmer already on it counts as this much extra distance (2 cells). */
+export const CROWD_PENALTY = 2 * CELL;
+/** After a node runs out, a farmer looks for the same kind within this many cells of it. */
+export const NEXT_NODE_RADIUS = 8;
+/** Idle farmers repair own damaged buildings this close (cells, to the footprint). */
+export const AUTO_REPAIR_RANGE = 6;
+/** At the start each player has explored the disc of this radius (cells) around its spawn and knows its resource nodes. */
+export const START_REVEAL = 16;
+/** Gathering accumulates per-minute rates each tick; one unit is gathered per this many. */
+export const GATHER_UNIT = 60 * S;
