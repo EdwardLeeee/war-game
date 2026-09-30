@@ -156,7 +156,9 @@ test("主要流程：開局 → 選農民 → 蓋房子 → 訓練 → 框選 �
     return list.reduce((s, u) => s + Math.hypot(u.fx - (c.x + 0.5), u.fy - (c.y + 0.5)), 0) / Math.max(1, list.length);
   };
   const startDist = await distTo(halfway);
-  await expect.poll(() => distTo(halfway), { timeout: 30_000 }).toBeLessThan(startDist - 2);
+  // At least 2 cells closer, or arrived: in formation (1 cell apart) the average distance to
+  // the point stays around 1.5 cells.
+  await expect.poll(() => distTo(halfway), { timeout: 30_000 }).toBeLessThan(Math.max(startDist - 2, 2.5));
 
   // 7. 暫停時下指令（暫停後模擬停住，對小鎮下前進指令，按繼續後才執行）
   await pause(page);
