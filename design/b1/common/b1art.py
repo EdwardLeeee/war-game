@@ -764,6 +764,47 @@ def overview1(suffix):
     return p
 
 
+def overview2(suffix):
+    """Second batch: every building of both cultures (1 pt = 1.5 px), the resources, and an actual-size row."""
+    label = "B1-99-總覽對照-核准題"
+    M = 50
+    kinds = [k for _, ks in GROUPS for k in ks]
+    rows = []
+    for c, team in (("E", "blue"), ("W", "red")):
+        row = [caption(tile(kind_items(k, c, suffix, 30, team), 1.5, footprint=footprint_of(k), pad=10), bname(k, c), 16)
+               for k in kinds]
+        rows.append((f"{CULT[c]}（1 pt = 1.5 px）", row))
+    res = []
+    for n, t in (("tree_E_v0", "松"), ("tree_E_v2", "樟"), ("tree_W_v0", "橡"), ("tree_W_v1", "冷杉"), ("tree_W_v2", "樺"),
+                 ("gold_E_v0_full", "金礦"), ("berry_E_v0_full", "野果"), ("crystal_E_v0_full", "晶脈"),
+                 ("farm_E_ripe", "作物・東"), ("farm_W_ripe", "作物・西")):
+        fp = (3, 3) if n.startswith("farm") else (1, 1)
+        res.append(caption(tile([rpiece(n, suffix, 30)], 1.5, footprint=fp, pad=10), t, 16))
+    rows.append(("資源點（1 pt = 1.5 px）", res))
+    lab = 300
+    W = max(M * 2 + lab + sum(i.width + 8 for i in row) for _, row in rows)
+    sub = ("第二批：要使用者核准的兩項。B1-01 東陸、西陸各 15 種建築（城牆畫成一座小城），B1-04 資源點。"
+           "每一項另有完整的總表與放大圖（放大圖上標了占地、認得出、看得出是誰的、擋不擋人四項檢查）。東陸藍、西陸紅。")
+    top = header_height(sub, W - 2 * M)
+    H = top + sum(max(i.height for i in row) + 30 for _, row in rows) + 40
+    art = Image.new("RGB", (W, H), BG)
+    y = draw_header(art, label, sub, M)
+    dr = ImageDraw.Draw(art)
+    for name, row in rows:
+        h = max(i.height for i in row)
+        dr.text((M, y + h // 2 - 14), name, font=artboard.font(24), fill=INK)
+        x = M + lab
+        for im in row:
+            art.paste(im.convert("RGB"), (x, y + h - im.height))
+            x += im.width + 8
+        y += h + 30
+    art = art.crop((0, 0, W, y + 10))
+    p = config.OUT / f"{label}.png"
+    art.save(p)
+    print("wrote", p.name, art.size)
+    return p
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("what", nargs="*", default=["b102", "b103"])
@@ -780,3 +821,5 @@ if __name__ == "__main__":
         b104(a.suffix)
     if "overview1" in a.what:
         overview1(a.suffix)
+    if "overview2" in a.what:
+        overview2(a.suffix)
