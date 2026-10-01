@@ -588,6 +588,13 @@ test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現�
   await expect.poll(async () => (await selection(page))?.units).toEqual([...spear.slice(3), ...recruits]);
   const sw = page.getByRole("button", { name: /^編隊 1 自動補兵/ });
   await expect(sw).toHaveText("編隊 1 自動補兵：開");
+  // A new control: one line, at least 44 pt, left of the ✕.
+  expect(await lines(sw.locator(".label")), "the switch on one line").toBe(1);
+  const [swBox] = await visibleBoxes(page, ".refill-chip");
+  const [close] = await visibleBoxes(page, ".sel-close");
+  expect(Math.min(swBox.width, swBox.height), "the switch is at least 44 pt").toBeGreaterThanOrEqual(44);
+  expect(swBox.x + swBox.width, "left of the ✕").toBeLessThanOrEqual(close.x);
+  await shot(page, info, "group-refill-switch");
   await sw.tap();
   await expect(sw).toHaveText("編隊 1 自動補兵：關");
   await expect(toast(page, "編隊 1 自動補兵：關")).toBeVisible();
