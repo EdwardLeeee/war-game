@@ -7,10 +7,10 @@ on:
   workflow_dispatch:
     inputs:
       round:
-        description: "round2, round3, round4, round5 or production"
+        description: "round2, round3, round4, round5, production or b1"
         default: "round5"
       targets:
-        description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare","rosterE1","rosterE2","rosterW1","rosterW2","rosterW3"]; production: unit keys, "effects", or review-<unit>, e.g. ["farmer_e","spear_e","xbow_e","hcav_e","siege_e","mage_e","farmer_w","pike_w","bow_w","knight_w","siege_w","mage_w"]'
+        description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare","rosterE1","rosterE2","rosterW1","rosterW2","rosterW3"]; b1: ["core3","states_main_city","states_house","states_barracks","towns_E","towns_W"] (design/b1/common/run.py TARGETS); production: unit keys, "effects", or review-<unit>, e.g. ["farmer_e","spear_e","xbow_e","hcav_e","siege_e","mage_e","farmer_w","pike_w","bow_w","knight_w","siege_w","mage_w"]'
         default: '["mageWA", "mageWB", "mageWC", "compare"]'
   push:
     branches: ["design/**"]
@@ -81,6 +81,8 @@ jobs:
             round2) /usr/bin/python3 blender/render_r2.py --level "${{ matrix.target }}" ;;
             round3) /usr/bin/python3 blender/render_r3.py --target "${{ matrix.target }}" ;;
             round4) /usr/bin/python3 blender/render_r4.py --target "${{ matrix.target }}" ;;
+            # B1: buildings, towns and resources (design/b1/common/run.py), 3x with 2x supersampling
+            b1) /usr/bin/python3 common/run.py "${{ matrix.target }}" ;;
             production)
               t="${{ matrix.target }}"
               case "$t" in
@@ -99,8 +101,18 @@ jobs:
             *)      /usr/bin/python3 blender/render_r5.py --target "${{ matrix.target }}" ;;
           esac
 
+      - name: Upload B1 renders
+        if: always() && env.ROUND == 'b1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: b1-${{ matrix.target }}
+          path: |
+            design/b1/build/b1/${{ matrix.target }}/
+            design/b1/build/jobs/*.log
+          retention-days: 30
+
       - name: Upload renders
-        if: always() && env.ROUND != 'production'
+        if: always() && env.ROUND != 'production' && env.ROUND != 'b1'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ROUND }}-${{ matrix.target }}
