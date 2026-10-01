@@ -80,6 +80,26 @@ test("cast: calibrates 1.5 s with a warning both sides see, then hits enemies in
   assert.deepEqual(step(g), [Reject.Cooldown]);
 });
 
+test("a spearman at full health stands two crystal cannon shots (round 3, D-026); the third kills it", () => {
+  const { g, a } = arena();
+  const mages = [0, 1, 2].map((k) => put(g, 0, UnitType.Mage, a.x + 2, a.y + 9 + k));
+  const foe = put(g, 1, UnitType.Spearman, a.x + 9, a.y + 10);
+  const u = g.w.units.col;
+  for (const s of [...mages, foe]) {
+    u.stance[slotOf(g, s)] = 1;
+    u.cooldown[slotOf(g, s)] = 100000;
+  }
+  g.fog.update(g.w);
+  const fx = centre(a.x + 9);
+  const fy = centre(a.y + 10);
+  for (const m of mages.slice(0, 2)) cmd(g, 0, { c: "cast", u: m, fx, fy });
+  run(g, CANNON.calibrateTicks + 1);
+  assert.equal(u.hp[slotOf(g, foe)], UNITS[UnitType.Spearman].hp - 2 * CANNON.damage, "two shots: still standing");
+  cmd(g, 0, { c: "cast", u: mages[2], fx, fy });
+  run(g, CANNON.calibrateTicks + 1);
+  assert.equal(slotOf(g, foe), -1, "the third shot kills it");
+});
+
 test("cast rejects: not a mage, out of range, no crystal; another order cancels without spending", () => {
   const { g, a } = arena();
   const mage = put(g, 0, UnitType.Mage, a.x + 2, a.y + 10);

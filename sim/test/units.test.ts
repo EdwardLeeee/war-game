@@ -3,12 +3,12 @@ import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { BUILDINGS } from "../src/core/rules.ts";
+import { BUILDINGS, UNITS } from "../src/core/rules.ts";
 import type { Game } from "../src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
 
-test("multipliers: ranged deal 7 to spearmen (5 x 3/2), 5 to others; at least 1", () => {
-  assert.equal(damage(5, UnitType.Ranged, UnitType.Spearman), 7);
+test("multipliers: ranged deal 12 to spearmen (5 x 5/2, round 3), 5 to others; at least 1", () => {
+  assert.equal(damage(5, UnitType.Ranged, UnitType.Spearman), 12);
   assert.equal(damage(5, UnitType.Ranged, UnitType.Ranged), 5);
   assert.equal(damage(6, UnitType.Spearman, UnitType.Ranged), 6);
   assert.equal(damage(0, UnitType.Farmer, UnitType.Farmer), 1);
@@ -82,7 +82,7 @@ test("main city arrows hit intruders; destroying a main city ends the game", () 
   const intruder = put(g, 0, UnitType.Spearman, s1.cellX - 5, s1.cellY + 3);
   g.fog.update(w);
   run(g, 45);
-  assert.ok(slotOf(g, intruder) < 0 || w.units.col.hp[slotOf(g, intruder)] < 60, "arrow hit");
+  assert.ok(slotOf(g, intruder) < 0 || w.units.col.hp[slotOf(g, intruder)] < UNITS[UnitType.Spearman].hp, "arrow hit");
   const main1 = w.mainCity(1);
   w.buildings.col.hp[main1] = 1;
   const attacker = put(g, 0, UnitType.Spearman, s1.cellX + 3, s1.cellY);
