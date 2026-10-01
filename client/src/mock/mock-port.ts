@@ -181,6 +181,18 @@ export class MockPort implements SimPort {
     this.events.push(ev);
   }
 
+  /** Tests: put units of ours on cells (the fake world has no pathfinding worth waiting for). */
+  place(ids: number[], cells: { x: number; y: number }[]): void {
+    ids.forEach((id, i) => {
+      const u = this.units.find((v) => v.id === id && v.owner === ME);
+      const c = cells[i % cells.length];
+      if (u === undefined || c === undefined) return;
+      u.x = centre(c.x);
+      u.y = centre(c.y);
+      u.target = null;
+    });
+  }
+
   postMessage(msg: ToWorker): void {
     switch (msg.type) {
       case "init":
@@ -463,6 +475,11 @@ export class MockPort implements SimPort {
       towns[o + T.owner] = t.owner;
       towns[o + T.timer] = t.timer;
       towns[o + T.timerTotal] = t.timerTotal;
+      // As in the simulation: the holder's soldiers inside the circle around the town centre.
+      const r = t.radius * CELL;
+      towns[o + T.garrison] = this.units.filter(
+        (u) => u.owner === t.owner && u.type !== UnitType.Farmer && (u.x - centre(t.cx)) * (u.x - centre(t.cx)) + (u.y - centre(t.cy)) * (u.y - centre(t.cy)) <= r * r,
+      ).length;
       towns[o + T.garrisonNeeded] = t.size === TownSize.Large ? 3 : 1;
       towns[o + T.militia] = t.militia;
       towns[o + T.flags] = this.visible(t.cx, t.cy) ? TownFlag.Visible : 0;

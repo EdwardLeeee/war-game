@@ -5,7 +5,7 @@
 
 import type { Game } from "../../game/game.ts";
 import { pressable } from "../../input/pressable.ts";
-import { type GameStats, HeaderField as H, type SimEvent, TownChoice, TownSize, UnitType } from "../../sim.ts";
+import { type GameStats, HeaderField as H, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
@@ -58,7 +58,6 @@ export class Hud {
   private readonly recallBtn: HTMLButtonElement;
   private readonly idleBtn: HTMLButtonElement;
   private readonly groupBtns: HTMLButtonElement[] = [];
-  readonly groups: number[][] = [[], [], [], []];
   private idleIndex = 0;
   private lastUpdate = 0;
   private alerts: Alert[] = [];
@@ -111,7 +110,11 @@ export class Hud {
       setMode: (m: Parameters<Game["setMode"]>[0]) => game.setMode(m),
       startPlacement: (t: Parameters<Game["startPlacement"]>[0]) => game.startPlacement(t),
       openEconomy: () => this.openEconomy(),
-      chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice),
+      chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice, this.defaultKeep(town, choice)),
+      garrison: (town: number) => game.army.garrisonOf(town).length,
+      garrisonMore: (town: number) => game.garrisonMore(town),
+      garrisonLess: (town: number) => game.garrisonLess(town),
+      notify: (text: string) => game.toast(text),
       selectOnly: (units: number[]) => game.apply([{ kind: "select", units }]),
       clearSelection: () => game.apply([{ kind: "clear" }]),
       splitSelection: (n: number) => game.splitSelection(n),
@@ -157,7 +160,7 @@ export class Hud {
     if (this.idleBtn.textContent !== idleText) this.idleBtn.textContent = idleText;
     this.idleBtn.classList.toggle("has-idle", idle > 0);
     for (let i = 0; i < 4; i++) {
-      const alive = this.alive(this.groups[i]).length;
+      const alive = this.alive(this.game.army.groups[i].ids).length;
       const text = alive > 0 ? `${i + 1}·${alive}` : `${i + 1}`;
       if (this.groupBtns[i].textContent !== text) this.groupBtns[i].textContent = text;
     }
@@ -237,7 +240,7 @@ export class Hud {
 
   /** 編隊, tap: select it; double tap: also look at it. */
   private recallGroup(i: number, jump: boolean): void {
-    const alive = this.alive(this.groups[i]);
+    const alive = this.alive(this.game.army.groups[i].ids);
     if (alive.length === 0) {
       this.game.toast(`編隊 ${i + 1} 是空的：選好部隊後長按這顆按鈕存起來`);
       return;
@@ -262,20 +265,18 @@ export class Hud {
       this.game.toast("先選部隊，再長按編隊按鈕");
       return;
     }
-    this.groups[i] = [...units];
+    this.game.army.groups[i].ids = [...units];
     this.game.toast(`已存成編隊 ${i + 1}（${units.length} 個）`);
   }
 
-  /** 全軍: every own military unit on the map. */
+  /** 全軍: every own soldier on the map, except the ones stationed in a town (留守, D-026). */
   private selectArmy(): void {
-    const view = this.game.view;
-    if (view === null) return;
-    const all = view.ownUnitsIn(-Infinity, -Infinity, Infinity, Infinity).filter((u) => u.type === UnitType.Spearman || u.type === UnitType.Ranged || u.type === UnitType.Mage);
+    const all = this.game.armyIds();
     if (all.length === 0) {
-      this.game.toast("還沒有軍隊");
+      this.game.toast(this.game.hasSoldiers() ? "所有的兵都在留守：點城鎮可以調整留守的人數" : "還沒有軍隊");
       return;
     }
-    this.game.apply([{ kind: "select", units: all.map((u) => u.id).sort((a, b) => a - b) }]);
+    this.game.apply([{ kind: "select", units: all }]);
   }
 
   // --- attack alerts (GDD §10: 小地圖閃爍，畫面邊緣出現箭頭，點箭頭就跳過去) -------------
@@ -441,18 +442,57 @@ export class Hud {
     const size = this.game.view?.map.towns.find((t) => t.id === town)?.size;
     const big = size === TownSize.Large;
     const card = this.openDialog(`攻下${big ? "大城" : "小鎮"}！搶還是治理？`, "town-choice");
+    // 留守 (D-026): how many soldiers stay behind with each choice.
+    const keep = { plunder: this.defaultKeep(town, TownChoice.Plunder), govern: this.defaultKeep(town, TownChoice.Govern) };
     const row = el("div", card, "choice-row");
-    const plunder = btn(row, "", () => this.chooseTown(town, TownChoice.Plunder), "choice-plunder");
+    const plunder = btn(row, "", () => this.chooseTown(town, TownChoice.Plunder, keep.plunder), "choice-plunder");
     el("b", plunder, "", "搶");
     el("span", plunder, "", `部隊留下搶 ${big ? 25 : 15} 秒，拿一大筆糧、金、魔晶；城鎮變成廢墟 4 分鐘`);
-    const govern = btn(row, "", () => this.chooseTown(town, TownChoice.Govern), "choice-govern");
+    const govern = btn(row, "", () => this.chooseTown(town, TownChoice.Govern, keep.govern), "choice-govern");
     el("b", govern, "", "治理");
     el("span", govern, "", `投入金和木修繕 ${big ? 60 : 45} 秒，之後每分鐘產出、加人口；要留兵駐守`);
+    const keeps = el("div", card, "keep-row");
+    this.keepStepper(keeps, "搶", town, keep.plunder, (n) => (keep.plunder = n));
+    this.keepStepper(keeps, "治理", town, keep.govern, (n) => (keep.govern = n));
+    el("p", card, "small", "留守的兵改成堅守，不跟「全軍」走，也會離開原本的編隊。");
     btn(card, "稍後再決定（點城鎮也能選）", () => this.closeDialog(), "secondary later");
   }
 
-  chooseTown(town: number, choice: TownChoice): void {
-    this.game.command({ c: "town_choice", town, choice });
+  /** How many soldiers a choice leaves behind unless the player changes it: the least a governed town needs, none for a plunder. */
+  private defaultKeep(town: number, choice: TownChoice): number {
+    if (choice !== TownChoice.Govern) return 0;
+    return Math.max(0, this.game.garrisonNeeded(town) - this.game.army.garrisonOf(town).length);
+  }
+
+  /** 留守 − N + 名 under one of the two choices. The most is the soldiers inside the town when the button is pressed. */
+  private keepStepper(parent: HTMLElement, name: string, town: number, initial: number, set: (n: number) => void): void {
+    let n = initial;
+    const box = el("div", parent, "keep");
+    box.setAttribute("role", "group");
+    box.setAttribute("aria-label", `留守（${name}）`);
+    el("span", box, "", `${name}：留守`);
+    const minus = btn(box, "−", null, "secondary step");
+    minus.setAttribute("aria-label", `少留守 1 名（${name}）`);
+    const out = el("output", box, "", `${n}`);
+    out.setAttribute("aria-label", `留守幾名（${name}）`);
+    const plus = btn(box, "+", null, "secondary step");
+    plus.setAttribute("aria-label", `多留守 1 名（${name}）`);
+    el("span", box, "", "名");
+    const show = (v: number) => {
+      n = v;
+      out.textContent = `${n}`;
+      set(n);
+    };
+    minus.addEventListener("click", () => show(Math.max(0, n - 1)));
+    plus.addEventListener("click", () => {
+      const most = this.game.garrisonCandidates(town);
+      if (n >= most) this.game.toast(`城鎮範圍內只有 ${most} 名兵可以留守`);
+      else show(n + 1);
+    });
+  }
+
+  chooseTown(town: number, choice: TownChoice, keep: number): void {
+    this.game.chooseTown(town, choice, keep);
     this.closeDialog();
   }
 

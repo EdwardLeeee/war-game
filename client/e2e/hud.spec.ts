@@ -43,6 +43,20 @@ async function centreCell(page: Page): Promise<{ x: number; y: number }> {
 }
 const minimapPoint = (c: { x: number; y: number }) => [(c.x + 0.5) / SIZE, (c.y + 0.5) / SIZE] as const;
 
+/** A point inside the small town at (30, 66) where a tap picks the town itself (not a soldier or a tree). */
+async function townSpot(page: Page): Promise<{ x: number; y: number }> {
+  for (const [dx, dy] of [[0, 0], [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2], [2, 2], [-2, -2]]) {
+    const p = await at(page, { x: 30.5 + dx, y: 66.5 + dy });
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === "town") return p;
+  }
+  throw new Error("no open ground inside the town");
+}
+
+const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
+const garrison = (page: Page, town: number) => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], town);
+const place = (page: Page, ids: number[], cells: { x: number; y: number }[]) => page.evaluate(([i, c]) => window.__proto?.game?.place(i, c), [ids, cells] as const);
+const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
+
 async function ownIds(page: Page, types: number[]): Promise<number[]> {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   return (await units(page)).filter((u) => u.owner === me && types.includes(u.type)).map((u) => u.id).sort((a, b) => a - b);
@@ -56,14 +70,17 @@ async function selectSpearmen(page: Page): Promise<number[]> {
 }
 
 for (const size of [
-  { name: "工具列展開", viewport: null },
-  { name: "工具列收合", viewport: FULL_SCREEN },
+  { name: "工具列展開", viewport: null, who: "農民", types: [0] },
+  { name: "工具列收合", viewport: FULL_SCREEN, who: "農民", types: [0] },
+  // Soldiers add the stance button and its two lines of explanation (D-026); mages add 晶砲 and 自動施放.
+  { name: "工具列展開", viewport: null, who: "全軍", types: [1, 2, 3] },
+  { name: "工具列收合", viewport: FULL_SCREEN, who: "全軍", types: [1, 2, 3] },
 ]) {
-  test(`介面：按鈕至少 44 pt、在安全區內、彼此不重疊（${size.name}）`, async ({ page }, info) => {
+  test(`介面：按鈕至少 44 pt、在安全區內、彼此不重疊（${size.name}，選了${size.who}）`, async ({ page }, info) => {
     if (size.viewport !== null) await page.setViewportSize(size.viewport);
     await injectSafeArea(page);
-    // Farmers selected, so the command area and the selection info are showing too.
-    await select(page, await ownIds(page, [0]));
+    // Units selected, so the command area and the selection info are showing too.
+    await select(page, await ownIds(page, size.types));
     await page.waitForTimeout(300);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     const buttons = await visibleBoxes(page, INTERACTIVE);
@@ -84,8 +101,16 @@ for (const size of [
         if (overlap && !nested(a, b) && !nested(b, a)) expect.soft(`${a.label} ↔ ${b.label}`, "overlapping").toBe("");
       }
     }
+    // The explanation lines use the panel's full width, so they must start below the ✕.
+    if (size.who === "全軍") {
+      const [close] = await visibleBoxes(page, ".sel-close");
+      const [note] = await visibleBoxes(page, ".sel-note");
+      expect(note.y, "the stance note starts below the ✕").toBeGreaterThanOrEqual(close.y + close.height);
+      const [panel] = await visibleBoxes(page, ".sel-info");
+      expect(note.x + note.width, "the stance note stays inside the panel").toBeLessThanOrEqual(panel.x + panel.width);
+    }
     await expect(page.locator(".res-bar")).toHaveText(/糧 200　木 200　金 100　晶 20　人口 \d+\/20/);
-    await shot(page, info, `hud-${width}x${height}`);
+    await shot(page, info, `hud-${size.who}-${width}x${height}`);
   });
 }
 
@@ -332,22 +357,168 @@ test("攻下城鎮：稍後再決定之後，點城鎮會再跳出搶或治理",
   await centre(page, 30, 66);
   // TownState.AwaitingChoice = 1.
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).find((t) => t.id === 0)?.state).toBe(1);
-  // A point inside the town where a tap picks the town itself (not a militia man or a tree).
-  let spot: { x: number; y: number } | null = null;
-  for (const [dx, dy] of [[0, 0], [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2]]) {
-    const p = await at(page, { x: 30.5 + dx, y: 66.5 + dy });
-    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === "town") {
-      spot = p;
-      break;
-    }
-  }
-  if (spot === null) throw new Error("no open ground inside the town");
-  await tap(page, spot);
+  await tap(page, await townSpot(page));
   // The choice comes back (GDD §10): the dialog again, and 搶／治理 in the selection info under it.
   await expect(dialog).toBeVisible();
   await expect(page.locator(".sel-info").getByRole("button", { name: "搶", exact: true })).toBeAttached();
   await dialog.getByRole("button", { name: /^搶/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
+});
+
+test("姿態：按鈕寫出現在是哪一種、按了會變成哪一種，選取資訊寫出意思；只選農民時沒有姿態鈕（D-026）", async ({ page }, info) => {
+  const spear = await selectSpearmen(page);
+  const stance = page.getByRole("button", { name: /^姿態/ });
+  const panel = page.locator(".sel-info");
+  await expect(stance).toHaveText("姿態：積極按一下改成堅守");
+  await expect(panel).toContainText("積極：6 格內有敵人就追上去打，離原位 8 格就回來");
+  await expect(panel).toContainText("姿態只管沒有指令、站著待命的時候");
+  await shot(page, info, "stance-aggressive");
+  await stance.tap();
+  // Stance.Hold = 1.
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: spear, stance: 1 });
+  await expect(toast(page, "已改成堅守。堅守：站在原地不動，只打走進射程的敵人")).toBeVisible();
+  await expect(stance).toHaveText("姿態：堅守按一下改成積極");
+  await expect(panel).toContainText("堅守：站在原地不動，只打走進射程的敵人");
+  await shot(page, info, "stance-hold");
+
+  // 全軍 now mixes 堅守 spearmen with 積極 archers and mages: one tap makes them all 堅守.
+  await page.getByRole("button", { name: "全軍" }).tap();
+  const army = await ownIds(page, [1, 2, 3]);
+  await expect.poll(async () => (await selection(page))?.units).toEqual(army);
+  await expect(stance).toHaveText("姿態：混合按一下全部改成堅守");
+  await expect(panel).toContainText("姿態：有的積極、有的堅守");
+  await stance.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: army, stance: 1 });
+  await expect(stance).toHaveText("姿態：堅守按一下改成積極");
+
+  // Soldiers and farmers together: the order goes to the soldiers only.
+  const farmers = await ownIds(page, [0]);
+  await select(page, [...farmers, ...spear].sort((a, b) => a - b));
+  await expect(stance).toHaveText("姿態：堅守按一下改成積極");
+  await stance.tap();
+  // Stance.Aggressive = 0.
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: spear, stance: 0 });
+
+  // Farmers ignore the stance: no button and no explanation.
+  await select(page, farmers);
+  await expect(page.getByRole("button", { name: "建造" })).toBeVisible();
+  await expect(stance).toBeHidden();
+  await expect(panel).not.toContainText("姿態");
+});
+
+test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；留守的兵改成堅守、離開編隊、不跟全軍走（D-026）", async ({ page }, info) => {
+  const spear = await ownIds(page, [1]);
+  const mage = (await ownIds(page, [3]))[0];
+  // Three spearmen and a mage walk into the small town at (30, 66), radius 4. In the order
+  // they are chosen to stay: 1, 2 and 3 cells from the centre, and the mage last though it
+  // stands on the centre.
+  const inside = [spear[2], spear[0], spear[4]];
+  await place(page, inside, [{ x: 30, y: 67 }, { x: 32, y: 66 }, { x: 30, y: 69 }]);
+  await place(page, [mage], [{ x: 30, y: 66 }]);
+  await select(page, spear);
+  await longPressOn(page, GROUP_1);
+  await select(page, []);
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  await expect(dialog).toBeVisible();
+  const keepGovern = dialog.getByRole("status", { name: "留守幾名（治理）" });
+  await expect(keepGovern).toHaveText("1");
+  await expect(dialog.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("0");
+  for (const b of await visibleBoxes(page, ".keep .step")) expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
+  const more = dialog.getByRole("button", { name: "多留守 1 名（治理）" });
+  await more.tap();
+  await more.tap();
+  await more.tap();
+  await expect(keepGovern).toHaveText("4");
+  // Only four soldiers are inside the town.
+  await more.tap();
+  await expect(keepGovern).toHaveText("4");
+  await expect(toast(page, "城鎮範圍內只有 4 名兵可以留守")).toBeVisible();
+  await dialog.getByRole("button", { name: "少留守 1 名（治理）" }).tap();
+  await expect(keepGovern).toHaveText("3");
+  await shot(page, info, "town-choice-keep");
+  await dialog.getByRole("button", { name: /^治理/ }).tap();
+  await expect(dialog).toBeHidden();
+
+  // 治理, then the three nearest soldiers are told to hold (the mage is the last choice).
+  await expect.poll(async () => (await sent(page)).at(-2)).toMatchObject({ c: "town_choice", town: 0, choice: 1 });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: inside, stance: 1, auto: true });
+  expect(await garrison(page, 0)).toEqual(inside);
+  // They left control group 1, and 全軍 does not take them.
+  const rest = spear.filter((id) => !inside.includes(id));
+  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(rest);
+  await page.getByRole("button", { name: "全軍" }).tap();
+  const army = (await ownIds(page, [1, 2, 3])).filter((id) => !inside.includes(id));
+  await expect.poll(async () => (await selection(page))?.units).toEqual(army);
+  await select(page, []);
+
+  // The town's selection info: both counts, and 留守 − N +.
+  await centre(page, 30, 66);
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).find((t) => t.id === 0)?.garrison).toBe(4);
+  await tap(page, await townSpot(page));
+  const panel = page.locator(".sel-info");
+  await expect(panel).toContainText("城裡有 4 名兵（至少要 1 名）");
+  const kept = panel.getByRole("status", { name: "留守幾名" });
+  await expect(kept).toHaveText("3");
+  await shot(page, info, "town-keep");
+  await panel.getByRole("button", { name: "多留守 1 名" }).tap();
+  await expect(kept).toHaveText("4");
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [mage], stance: 1, auto: true });
+  await panel.getByRole("button", { name: "多留守 1 名" }).tap();
+  await expect(toast(page, "城鎮裡沒有其他的兵可以留守")).toBeVisible();
+  await expect(kept).toHaveText("4");
+  // One fewer: the last choice (the mage) goes back to 積極.
+  await panel.getByRole("button", { name: "少留守 1 名" }).tap();
+  await expect(kept).toHaveText("3");
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [mage], stance: 0, auto: true });
+
+  // The player's own 前進 ends a soldier's stay, and its stance goes back to 積極.
+  await select(page, [inside[2]]);
+  // Open ground outside the town (5 cells or more from its centre).
+  let ground: { x: number; y: number } | null = null;
+  for (const [cx, cy] of [[25, 62], [24, 63], [25, 70], [36, 62], [36, 70], [24, 66]]) {
+    const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [cx, cy] as const);
+    if (cell === null || Math.hypot(cell.x - 30, cell.y - 66) < 5) continue;
+    const p = await at(page, { x: cell.x + 0.5, y: cell.y + 0.5 });
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === null) {
+      ground = p;
+      break;
+    }
+  }
+  if (ground === null) throw new Error("no open ground outside the town");
+  await tap(page, ground);
+  await expect.poll(async () => (await sent(page)).at(-2)).toMatchObject({ c: "move", u: [inside[2]] });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [inside[2]], stance: 0, auto: true });
+  expect(await garrison(page, 0)).toEqual([inside[0], inside[1]]);
+
+  // The enemy takes the town: its garrison ends and the survivors go back to 積極.
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 1 }));
+  await expect.poll(() => garrison(page, 0)).toEqual([]);
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [inside[0], inside[1]], stance: 0, auto: true });
+  await page.getByRole("button", { name: "全軍" }).tap();
+  await expect.poll(async () => (await selection(page))?.units).toEqual(await ownIds(page, [1, 2, 3]));
+});
+
+test("留守：搶預設不留人；所有的兵都留守時，全軍會說明", async ({ page }) => {
+  const army = await ownIds(page, [1, 2, 3]);
+  await place(page, army, [{ x: 30, y: 66 }, { x: 31, y: 66 }, { x: 29, y: 66 }, { x: 30, y: 67 }]);
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  await dialog.getByRole("button", { name: /^搶/ }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
+  expect(await garrison(page, 0)).toEqual([]);
+  // Station everyone from the town's selection info: 全軍 then has nobody to take.
+  await centre(page, 30, 66);
+  await select(page, []);
+  await tap(page, await townSpot(page));
+  const panel = page.locator(".sel-info");
+  const more = panel.getByRole("button", { name: "多留守 1 名" });
+  for (let i = 0; i < army.length; i++) await more.tap();
+  await expect(panel.getByRole("status", { name: "留守幾名" })).toHaveText(`${army.length}`);
+  expect((await garrison(page, 0)).slice().sort((x, y) => x - y)).toEqual(army);
+  await page.getByRole("button", { name: "全軍" }).tap();
+  await expect(toast(page, "所有的兵都在留守")).toBeVisible();
+  await expect.poll(async () => (await selection(page))?.units).toEqual([]);
 });
 
 test("被攻擊：小地圖閃、畫面邊緣出現箭頭，點箭頭跳過去", async ({ page }, info) => {

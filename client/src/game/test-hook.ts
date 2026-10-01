@@ -33,7 +33,7 @@ export interface GameHook {
   /** Screen position (CSS px) of a cell's centre. */
   cellToScreen(cx: number, cy: number): { x: number; y: number };
   /** Units in the latest snapshot, with screen positions, cells (and fractional cells), action, order and carried amount. */
-  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number; fx: number; fy: number; action: number; order: number; target: number; carry: number }[];
+  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number; fx: number; fy: number; action: number; order: number; target: number; carry: number; stance: number }[];
   /** Select these own units (test set-up; the gestures that select are tested elsewhere). */
   select(units: number[]): void;
   startPlacement(type: number): void;
@@ -55,12 +55,16 @@ export interface GameHook {
   send(cmd: CommandBody): void;
   /** Fake world only: deliver an event with the next snapshot. */
   inject(ev: SimEvent): void;
+  /** Fake world only: put own units on these cells (one cell each, cycling). */
+  place(ids: number[], cells: { x: number; y: number }[]): void;
   /** Control groups 1–4 as stored by the interface. */
   groups(): number[][];
+  /** The soldiers stationed in a town (留守, D-026). */
+  garrison(town: number): number[];
   /** What a tap at this screen point would hit (unit, building, node, town), or null for open ground. */
   pickAt(sx: number, sy: number): string | null;
   /** Every town on the map (size 0 small, 1 large): state, holder and militia as last seen (-1 before it is explored). */
-  towns(): { id: number; size: number; state: number; owner: number; cx: number; cy: number; radius: number; militia: number }[];
+  towns(): { id: number; size: number; state: number; owner: number; cx: number; cy: number; radius: number; militia: number; garrison: number; garrisonNeeded: number; revoltTimer: number }[];
 }
 
 export function gameHook(game: Game): GameHook {
@@ -101,6 +105,7 @@ export function gameHook(game: Game): GameHook {
           order: u[o + U.order],
           target: u[o + U.orderTarget],
           carry: u[o + U.carryAmount],
+          stance: u[o + U.stance],
         });
       }
       return out;
@@ -153,7 +158,11 @@ export function gameHook(game: Game): GameHook {
     inject: (ev) => {
       if (game.portForTest instanceof MockPort) game.portForTest.inject(ev);
     },
-    groups: () => game.hud.groups.map((g) => [...g]),
+    place: (ids, cells) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.place(ids, cells);
+    },
+    groups: () => game.army.groups.map((g) => [...g.ids]),
+    garrison: (town) => game.army.garrisonOf(town),
     init: () => (game.initSent === null ? null : { ...game.initSent }),
     pickAt: (sx, sy) => {
       const cam = game.camera;
@@ -178,6 +187,9 @@ export function gameHook(game: Game): GameHook {
           cy: info.cellY,
           radius: info.radius,
           militia: o < 0 ? -1 : t[o + T.militia],
+          garrison: o < 0 ? -1 : t[o + T.garrison],
+          garrisonNeeded: o < 0 ? -1 : t[o + T.garrisonNeeded],
+          revoltTimer: o < 0 ? -1 : t[o + T.revoltTimer],
         };
       });
     },
