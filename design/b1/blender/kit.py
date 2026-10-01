@@ -46,7 +46,7 @@ def palette(culture):
         iron=mat("iron_b1", (0.2, 0.2, 0.22), 0.45, 1.0, pattern="worn_metal"),
         gold=mat("gold_b1", (0.85, 0.62, 0.22), 0.3, 1.0),
         ore=mat("ore_b1", (1.0, 0.72, 0.2), 0.25, 1.0, emission=0.25),
-        crystal=mat("crystal_b1", (0.35, 0.95, 0.92), 0.15, emission=2.2),
+        crystal=mat("crystal_b1", (0.0, 0.5, 0.56), 0.15, emission=0.45),
         earth=mat("earth_b1", (0.5, 0.41, 0.3), 0.95, noise=0.3, noise_scale=6),
         rock=mat("rock_b1", (0.34, 0.31, 0.28), 0.85, noise=0.45, noise_scale=5),
         hay=mat("hay_b1", (0.78, 0.66, 0.34), 0.9, noise=0.3, noise_scale=25),

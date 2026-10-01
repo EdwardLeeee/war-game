@@ -54,6 +54,16 @@ for _c in CULTURES:
                              + [dict(kind="gate", culture=_c, opts=dict(piece="x"), tag="x", footprint=[4, 1]),
                                 dict(kind="gate", culture=_c, opts=dict(piece="y"), tag="y", footprint=[1, 4])])
 
+# B1-04: resource points (trees per culture; gold, berries and crystal are the same in both) and the farm's crops
+TARGETS["b104"] = (
+    [dict(kind="tree", culture=c, opts=dict(variant=v), tag=f"v{v}") for c in CULTURES for v in (0, 1, 2)]
+    + [dict(kind="tree", culture=c, opts=dict(state="stump"), tag="stump") for c in CULTURES]
+    + [dict(kind="forest", culture=c, probe=True) for c in CULTURES]
+    + [dict(kind="farm", culture=c, opts=dict(stage=st), tag=st) for c in CULTURES for st in ("sown", "growing", "ripe")]
+    + [dict(kind=k, culture="E", opts=dict(variant=v, state=st), tag=f"v{v}_{st}") for k, sts in
+       (("gold", ("full", "mined", "depleted")), ("berry", ("full", "depleted")), ("crystal", ("full", "depleted")))
+       for v in (0, 1) for st in sts])
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})

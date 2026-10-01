@@ -30,6 +30,17 @@ BNAME = {"main_city": "主城", "house": "民居", "barracks": "兵營"}
 SRC_PPM = {"x3": 60, "prev": 30}
 
 
+def src_ppm(suffix, d=None):
+    """Pixels per metre of the renders in a folder (previews vary)."""
+    import json
+    if suffix == "x3":
+        return 60
+    if d is not None:
+        for m in Path(d).glob(f"*_{suffix}.json"):
+            return json.loads(m.read_text())["px_per_m"]
+    return SRC_PPM[suffix]
+
+
 def wrap(dr, x, y, text, width, size=22, fill=GREY):
     f = artboard.font(size)
     line = ""
@@ -147,16 +158,16 @@ ITEM = {"build": "施工中", "damaged": "受損", "destroyed": "被摧毀"}
 CORE = ("main_city", "house", "barracks")
 
 
-def _state_piece(kind, c, state, suffix, scale):
+def _state_piece(kind, c, state, suffix, ppm):
     if state == "done":
-        return scene.piece(config.BUILD / "b1" / "core3", f"{kind}_{c}", suffix, scale=scale)
-    return scene.piece(config.BUILD / "b1" / "states", f"{kind}_{c}_{state}", suffix, scale=scale)
+        return scene.piece(config.BUILD / "b1" / "core3", f"{kind}_{c}", suffix, ppm=ppm)
+    return scene.piece(config.BUILD / "b1" / "states", f"{kind}_{c}_{state}", suffix, ppm=ppm)
 
 
 def b102_board(item, opt, name, states_, labels, sub, suffix):
     label = f"B1-02-{ITEM[item]}-{opt}-{name}-mobile"
     pp = 1.5                                   # px per pt for the big panels (phone pixels are 3)
-    scale = 20 * pp / SRC_PPM[suffix]
+    scale = 20 * pp                              # pixels per metre on the board
     M = 50
     rows = []
     for kind in CORE:
@@ -168,7 +179,7 @@ def b102_board(item, opt, name, states_, labels, sub, suffix):
                 cells.append(caption(t, f"{CULT[c]}・{lab}"))
         rows.append((kind, cells))
     # actual size: every building in the last state, both cultures, with a spearman and a farmer
-    s1 = 20 / SRC_PPM[suffix]
+    s1 = 20
     act = []
     for c in ("E", "W"):
         for kind in CORE:
@@ -286,6 +297,414 @@ def b103(suffix):
     return [b103_board(o, n, d, s, suffix) for o, n, d, s in B103]
 
 
+# ---------------------------------------------------------------- B1-01
+
+GROUPS = [("基礎", ["main_city", "house", "lumber_camp", "mine", "granary", "farm"]),
+          ("軍事", ["barracks", "range", "mage_hall", "stable", "workshop", "smithy"]),
+          ("城防", ["tower", "walls", "gate", "branch_city"])]
+NAMES = {"main_city": "主城", "house": "民居", "lumber_camp": "伐木場", "mine": "礦場", "granary": "糧倉", "farm": "農田",
+         "barracks": "兵營", "range": "射場", "mage_hall": ("術院", "晶塔"), "stable": "馬廄", "workshop": "砲坊",
+         "smithy": "鐵匠鋪", "tower": "箭樓", "walls": "城牆", "gate": "城門", "branch_city": "分城"}
+LOOK = {   # what makes each one recognisable at actual size (the second check)
+    "main_city": ("重簷大殿、高台、兩面大旗", "石造主堡、圓塔、兩面大旗"),
+    "house": ("最小、有門簾、水缸", "最小、木架白牆、煙囪"),
+    "lumber_camp": ("草頂棚子下堆滿原木", "草頂棚子下堆滿原木"),
+    "mine": ("礦石堆有金塊和魔晶、礦車、吊架", "礦石堆有金塊和魔晶、礦車、吊架"),
+    "granary": ("架高的草頂穀倉、糧袋", "穀倉大門、圓筒倉、糧袋"),
+    "farm": ("平的田、一行行作物、稻草人", "平的田、一行行麥子、稻草人"),
+    "barracks": ("長屋加練兵場：兵器架、木樁人", "長屋加練兵場：兵器架、木樁人、圓盾"),
+    "range": ("一排紅圈靶子", "一排紅圈靶子"),
+    "mage_hall": ("三層塔、頂上一簇魔晶", "細高石塔、頂上一大簇魔晶"),
+    "stable": ("一排馬房門、圍欄、乾草", "一排馬房門、圍欄、乾草"),
+    "workshop": ("做到一半的投石器、吊架", "做到一半的投石器、吊架"),
+    "smithy": ("煙囪、爐火、鐵砧", "煙囪、爐火、鐵砧"),
+    "tower": ("木造高望樓", "圓石塔、尖頂"),
+    "walls": ("磚牆、瓦簷、雉堞", "石牆、雉堞"),
+    "gate": ("兩座門墩、門樓", "兩座門塔、尖頂"),
+    "branch_city": ("台基上的單簷大殿、一面大旗", "方石塔加大屋、旗"),
+}
+
+
+def bname(kind, c):
+    n = NAMES[kind]
+    return n if isinstance(n, str) else n[0 if c == "E" else 1]
+
+
+def _bdir(kind):
+    return "core3" if kind in CORE else "b101"
+
+
+def bpiece(kind, c, suffix, ppm, team="blue", x=0.0, y=0.0, tag=None):
+    name = f"{kind}_{c}" + (f"_{tag}" if tag else "")
+    sp = scene.piece(config.BUILD / "b1" / _bdir(kind), name, suffix, team=team, ppm=ppm, x=x, y=y)
+    sp.ground = kind == "farm"           # walkable and low: drawn with the ground, under the units
+    return sp
+
+
+def walls_items(c, suffix, ppm, team="blue"):
+    """A small walled square, 9 x 7 cells: four corner turrets, straight runs, a gate in the middle of
+    the -y side (along x) and of the -x side (along y)."""
+    items = []
+    nx, ny = 9, 7
+    C = layouts.CELL
+    gx = range(2, 6)            # cells of the -y side taken by the gate along x
+    gy = range(1, 5)            # cells of the -x side taken by the gate along y
+    for i in range(nx):
+        for j in range(ny):
+            edge_x = i in (0, nx - 1)
+            edge_y = j in (0, ny - 1)
+            if not (edge_x or edge_y):
+                continue
+            x, y = (i - (nx - 1) / 2) * C, (j - (ny - 1) / 2) * C
+            if edge_x and edge_y:
+                items.append(bpiece("wall", c, suffix, ppm, team, x, y, "corner"))
+            elif j == 0 and i in gx:
+                if i == gx[0]:
+                    items.append(bpiece("gate", c, suffix, ppm, team, x + 1.5 * C, y, "x"))
+            elif i == 0 and j in gy:
+                if j == gy[0]:
+                    items.append(bpiece("gate", c, suffix, ppm, team, x, y + 1.5 * C, "y"))
+            elif edge_y:
+                items.append(bpiece("wall", c, suffix, ppm, team, x, y, "x"))
+            else:
+                items.append(bpiece("wall", c, suffix, ppm, team, x, y, "y"))
+    return items
+
+
+def kind_items(kind, c, suffix, scale, team="blue"):
+    if kind == "walls":
+        return walls_items(c, suffix, scale, team)
+    if kind == "gate":
+        return scene.with_fx(bpiece("gate", c, suffix, scale, team, tag="x"))
+    return scene.with_fx(bpiece(kind, c, suffix, scale, team))
+
+
+FP = {"main_city": (4, 4), "house": (2, 2), "lumber_camp": (2, 2), "mine": (2, 2), "granary": (2, 2), "farm": (3, 3),
+      "barracks": (3, 3), "range": (3, 3), "mage_hall": (3, 3), "stable": (3, 3), "workshop": (3, 3), "smithy": (2, 2),
+      "tower": (2, 2), "walls": (9, 7), "gate": (4, 1), "branch_city": (3, 3)}
+
+
+def footprint_of(kind):
+    return FP[kind]
+
+
+def team_share(kind, c, suffix):
+    """Share of the building's pixels that take the player colour (mask > 50%)."""
+    import numpy as np
+    if kind in ("walls", "gate"):
+        name, d = f"gate_{c}_x", "b101"
+    else:
+        name, d = f"{kind}_{c}", _bdir(kind)
+    base = config.BUILD / "b1" / d / f"{name}_{suffix}"
+    try:
+        a = np.asarray(Image.open(f"{base}_beauty.png").getchannel("A")) > 128
+        m = np.asarray(Image.open(f"{base}_mask.png").convert("L")) > 128
+    except FileNotFoundError:
+        return None
+    return float((a & m).sum()) / max(1, a.sum())
+
+
+def probe_text(kind, c, suffix):
+    import json
+    if kind in ("walls", "gate"):
+        return "城牆和城門本來就要擋路，不做這項測試。"
+    p = config.BUILD / "b1" / _bdir(kind) / f"{kind}_{c}_{suffix}.json"
+    m = json.loads(p.read_text())
+    pr = m.get("probe")
+    if not pr:
+        return ""
+    b1 = pr["by_cells"]["1"]
+    faces = [s[2] for s in b1["spots"] if s[0] != "corner"]
+    corner = [s[2] for s in b1["spots"] if s[0] == "corner"][0]
+    up = pr["upper_half_from_cells"]
+    full = sum(1 for v in faces if v >= 1.75)
+    return (f"緊鄰後一格：沿兩面背牆 {len(faces)} 個位置中，{full} 個整個人露出、最少露 {min(faces):.1f} 公尺；"
+            f"斜後角露 {corner:.1f} 公尺。隔 {up} 格以上全部露出上半身。" if up else
+            f"緊鄰後一格：最少露 {min(faces):.1f} 公尺；隔 5 格還擋住上半身。")
+
+
+def occlusion_demo(kind, c, suffix, pp=1.5):
+    """The building with three spearmen behind it: in the middle of the back-right face and at the back
+    corner one cell behind, and one two cells behind the back-left face (the game's draw order)."""
+    items = kind_items(kind, c, suffix, 20 * pp)
+    fx, fy = footprint_of(kind)
+    C = layouts.CELL
+    hx, hy = fx * C / 2, fy * C / 2
+    sol = town_art.SOLDIER[c]
+    us = 20 * pp / 60
+    for (x, y, f) in ((hx + C / 2, 0.0, 7), (hx + C / 2, hy + C / 2, 6), (-hx / 2, hy + 1.5 * C, 7)):
+        items.append(scene.unit(sol, "red", facing=f, scale=us, x=x, y=y))
+    return tile(items, pp, footprint=(fx, fy), grid_extra=2)
+
+
+def b101_zoom(c, group, kinds, suffix):
+    label = f"B1-01-建築放大-{CULT[c]}-{group}-mobile"
+    M = 50
+    panels = []
+    for kind in kinds:
+        big = tile(kind_items(kind, c, suffix, 60), 3.0, footprint=footprint_of(kind))
+        one_b = tile(kind_items(kind, c, suffix, 20, "blue"), 1.0, pad=8)
+        one_r = tile(kind_items(kind, c, suffix, 20, "red"), 1.0, pad=8)
+        demo = occlusion_demo(kind, c, suffix)
+        share = team_share(kind, c, suffix)
+        fx, fy = footprint_of(kind)
+        checks = [
+            f"占地 {fx}×{fy} 格：底座對齊格子（黃框）。" if kind not in ("walls", "gate") else
+            ("每段 1×1 格；轉角是一座角樓，四個方向都用同一張。" if kind == "walls" else "4×1 格，中間 2 格是通道。"),
+            f"認得出：{LOOK[kind][0 if c == 'E' else 1]}。",
+            (f"看得出是誰的：玩家色佔建築畫面的 {share:.0%}，在朝鏡頭的兩面。" if share is not None else "看得出是誰的：—"),
+            "不擋人：" + probe_text(kind, c, suffix),
+        ]
+        panels.append((kind, big, one_b, one_r, demo, checks))
+    W = 2600
+    sub = ("每棟一格：左邊是手機像素（1 pt = 3 px）、黃框是占地；中間上是實際大小（1 pt = 1 px）的藍和紅；"
+           "中間下是遮擋示範（1 pt = 1.5 px）：三名紅色士兵站在建築後面（右後牆外一格、斜後角一格、左後牆外兩格），"
+           "照遊戲的前後順序合成。右邊是四項檢查。")
+    top = header_height(sub, W - 2 * M)
+    rows_h = []
+    for kind, big, ob, orr, demo, checks in panels:
+        rows_h.append(max(big.height, ob.height + demo.height + 40, 260) + 60)
+    H = top + sum(rows_h) + 30
+    art = Image.new("RGB", (W, H), BG)
+    y = draw_header(art, label, sub, M)
+    dr = ImageDraw.Draw(art)
+    for (kind, big, ob, orr, demo, checks), rh in zip(panels, rows_h):
+        dr.text((M, y), bname(kind, c), font=artboard.font(34), fill=INK)
+        yy = y + 50
+        art.paste(big.convert("RGB"), (M, yy))
+        x2 = M + big.width + 30
+        art.paste(ob.convert("RGB"), (x2, yy))
+        art.paste(orr.convert("RGB"), (x2 + ob.width + 10, yy))
+        art.paste(demo.convert("RGB"), (x2, yy + max(ob.height, orr.height) + 20))
+        x3 = x2 + max(ob.width + orr.width + 10, demo.width) + 30
+        ty = yy
+        for t in checks:
+            ty = wrap(dr, x3, ty, t, W - x3 - M, 22, INK) + 6
+        y += rh
+    art = art.crop((0, 0, W, y + 20))
+    p = config.OUT / f"{label}.png"
+    art.save(p)
+    print("wrote", p.name, art.size)
+    return p
+
+
+def b101_sheet(c, suffix):
+    """Every building of one culture: enlarged (1 pt = 1.5 px), then at actual size in blue and in red,
+    with spearmen and farmers for scale."""
+    label = f"B1-01-建築總表-{CULT[c]}-mobile"
+    M = 50
+    kinds = [k for _, ks in GROUPS for k in ks]
+    big = []
+    for kind in kinds:
+        t = tile(kind_items(kind, c, suffix, 30), 1.5, footprint=footprint_of(kind), pad=14)
+        big.append(caption(t, bname(kind, c)))
+    small = {}
+    for team in ("blue", "red"):
+        row = []
+        for kind in kinds:
+            items = kind_items(kind, c, suffix, 20, team)
+            fx, fy = footprint_of(kind)
+            items.append(scene.unit(town_art.SOLDIER[c], team, scale=1 / 3, x=-fx - 0.8, y=-fy * 0.3))
+            farmer = "farmer_e" if c == "E" else "farmer_w"
+            items.append(scene.unit(farmer, team, scale=1 / 3, x=-fx * 0.2, y=-fy - 0.8))
+            row.append(tile(items, 1.0, pad=8))
+        small[team] = row
+    sub = ("全部 15 種建築（城牆畫成一座小城，含轉角和兩個方向的城門）。上面是放大（1 pt = 1.5 px），黃框是占地；"
+           "下面兩列是實際大小（1 pt = 1 px），藍和紅兩種玩家色，旁邊站一名士兵和一名農民當比例尺。")
+    rows = []
+    cur, w = [], 0
+    for t in big:
+        if w + t.width > 3000 and cur:
+            rows.append(cur)
+            cur, w = [], 0
+        cur.append(t)
+        w += t.width + 12
+    rows.append(cur)
+    W = M * 2 + max(sum(t.width + 12 for t in r) for r in rows + [small["blue"]])
+    top = header_height(sub, W - 2 * M)
+    H = top + sum(max(t.height for t in r) + 16 for r in rows) + 2 * (max(t.height for t in small["blue"]) + 50) + 60
+    art = Image.new("RGB", (W, H), BG)
+    y = draw_header(art, label, sub, M)
+    for r in rows:
+        x = M
+        h = max(t.height for t in r)
+        for t in r:
+            art.paste(t.convert("RGB"), (x, y + h - t.height))
+            x += t.width + 12
+        y += h + 16
+    dr = ImageDraw.Draw(art)
+    for team, nm in (("blue", "實際大小・藍"), ("red", "實際大小・紅")):
+        dr.text((M, y + 6), nm, font=artboard.font(24), fill=INK)
+        y += 40
+        x = M
+        h = max(t.height for t in small[team])
+        for t in small[team]:
+            art.paste(t.convert("RGB"), (x, y + h - t.height))
+            x += t.width + 8
+        y += h + 10
+    art = art.crop((0, 0, W, y + 20))
+    p = config.OUT / f"{label}.png"
+    art.save(p)
+    print("wrote", p.name, art.size)
+    return p
+
+
+def b101(suffix):
+    out = []
+    for c in ("E", "W"):
+        out.append(b101_sheet(c, suffix))
+        for g, ks in GROUPS:
+            out.append(b101_zoom(c, g, ks, suffix))
+    return out
+
+
+# ---------------------------------------------------------------- B1-04
+
+def rpiece(name, suffix, ppm, x=0.0, y=0.0, team="blue"):
+    sp = scene.piece(config.BUILD / "b1" / "b104", name, suffix, team=team, ppm=ppm, x=x, y=y)
+    sp.ground = name.startswith("farm")
+    return sp
+
+
+def forest_items(c, suffix, ppm, cells_, seed=3):
+    import random
+    rnd = random.Random(seed)
+    C = layouts.CELL
+    return [rpiece(f"tree_{c}_v{rnd.randrange(3)}", suffix, ppm, x=i * C, y=j * C) for i, j in cells_]
+
+
+def blob(r):
+    return [(i, j) for i in range(-r, r + 1) for j in range(-r, r + 1) if i * i + j * j <= r * r + 1]
+
+
+def cluster(kind, suffix, ppm, cells_, states_, x0=0.0, y0=0.0):
+    C = layouts.CELL
+    return [rpiece(f"{kind}_E_v{(i + j) % 2}_{st}", suffix, ppm, x=x0 + i * C, y=y0 + j * C)
+            for (i, j), st in zip(cells_, states_)]
+
+
+def warning_ring(pp):
+    """The 晶砲 warning circle as client draws it (WARNING_TINT 0xff8a2a, 3 px stroke, light fill), 1.5 cells."""
+    r = 1.5 * layouts.CELL * 20 * pp
+    W, H = int(2 * r + 12), int(r + 12)
+    im = Image.new("RGB", (W, H), GROUND)
+    d = ImageDraw.Draw(im, "RGBA")
+    box = [6, 6, W - 6, H - 6]
+    d.ellipse(box, fill=(255, 138, 42, 50), outline=(255, 138, 42, 240), width=3)
+    return im.convert("RGBA")
+
+
+def b104(suffix):
+    label = "B1-04-資源點總表-mobile"
+    M = 50
+    pp = 1.5
+    ppm = 20 * pp
+    C = layouts.CELL
+    sections = []
+    # trees
+    for c in ("E", "W"):
+        ims = [caption(tile(scene.with_fx(rpiece(f"tree_{c}_v{v}", suffix, 60)), 3.0, footprint=(1, 1)), n)
+               for v, n in enumerate(("松", "曲松", "樟") if c == "E" else ("橡", "冷杉", "樺"))]
+        ims.append(caption(tile([rpiece(f"tree_{c}_stump", suffix, 60)], 3.0, footprint=(1, 1)), "砍掉後"))
+        sections.append((f"樹・{CULT[c]}（手機像素）", ims))
+    # forests with the edge test
+    ims = []
+    for c in ("E", "W"):
+        cells_ = blob(3)
+        items = forest_items(c, suffix, ppm, cells_)
+        sol = town_art.SOLDIER[c]
+        for (x, y) in ((4 * C, 0.0), (3 * C, 3 * C), (0.0, 4.5 * C)):
+            items.append(scene.unit(sol, "red", scale=pp * 20 / 60, x=x, y=y))
+        ims.append(caption(tile(items, pp, pad=20), f"一片森林・{CULT[c]}：三名士兵站在森林後緣外一格、斜後角、兩格"))
+        mt = ""
+        try:
+            import json
+            m = json.loads((config.BUILD / "b1" / "b104" / f"forest_{c}_{suffix}.json").read_text())
+            pr = m["probe"]
+            b1 = pr["by_cells"]["1"]
+            faces = [sp[2] for sp in b1["spots"] if sp[0] != "corner"]
+            mt = f"量測（3×3 的樹）：緊鄰後一格最少露 {min(faces):.1f} 公尺、斜後角 {[sp[2] for sp in b1['spots'] if sp[0] == 'corner'][0]:.1f} 公尺；隔 {pr['upper_half_from_cells']} 格露出上半身。"
+        except Exception:
+            pass
+        ims[-1].info["note"] = mt
+    sections.append(("一片森林（1 pt = 1.5 px）", ims))
+    # gold: 2 x 2 cells, full / some mined / all used up
+    g = [(0, 0), (1, 0), (0, 1), (1, 1)]
+    ims = [caption(tile(cluster("gold", suffix, ppm, g, ["full"] * 4), pp, footprint=(2, 2)), "金礦（2×2 格）"),
+           caption(tile(cluster("gold", suffix, ppm, g, ["mined", "full", "depleted", "mined"]), pp, footprint=(2, 2)),
+                   "採了一部分"),
+           caption(tile(cluster("gold", suffix, ppm, g, ["depleted"] * 4), pp, footprint=(2, 2)), "採完（可以走）")]
+    b = [(i, j) for i in range(3) for j in range(2)]
+    ims += [caption(tile(cluster("berry", suffix, ppm, b, ["full"] * 6), pp, footprint=(3, 2)), "野果（3×2 格）"),
+            caption(tile(cluster("berry", suffix, ppm, b, ["full", "depleted", "full", "depleted", "depleted", "full"]), pp,
+                         footprint=(3, 2)), "採了一部分"),
+            caption(tile(cluster("berry", suffix, ppm, b, ["depleted"] * 6), pp, footprint=(3, 2)), "採完（可以走）")]
+    sections.append(("金礦、野果（1 pt = 1.5 px）", ims))
+    # crystal vein next to the mage's shield and the 晶砲 warning circle
+    v = [(0, 0), (1, 0), (0, 1), (1, 1)]
+    ims = [caption(tile(cluster("crystal", suffix, ppm, v, ["full"] * 4), pp, footprint=(2, 2)), "晶脈（2×2 格）"),
+           caption(tile(cluster("crystal", suffix, ppm, v, ["depleted"] * 4), pp, footprint=(2, 2)), "採完（可以走）")]
+    shp = HERE.parents[1] / "production" / "build" / "val_shield" / "mage_e"
+    try:
+        sh = Image.open(shp / "proxy_on_00_x3_shield.png").convert("RGBA")
+        sh = sh.resize((round(sh.width * pp / 3), round(sh.height * pp / 3)), Image.LANCZOS)
+        t = Image.new("RGBA", (sh.width + 40, sh.height + 40), (*GROUND, 255))
+        t.alpha_composite(sh, (20, 20))
+        ims.append(caption(t, "法師的防護罩"))
+    except FileNotFoundError:
+        pass
+    ims.append(caption(warning_ring(pp), "晶砲預警圈"))
+    sections.append(("晶脈：和防護罩、晶砲預警圈並排（1 pt = 1.5 px）", ims))
+    # crops
+    for c in ("E", "W"):
+        ims = []
+        for st, n in (("sown", "剛種"), ("growing", "長高"), ("ripe", "成熟")):
+            items = [rpiece(f"farm_{c}_{st}", suffix, ppm)]
+            farmer = "farmer_e" if c == "E" else "farmer_w"
+            items.append(scene.unit(farmer, "blue", scale=pp * 20 / 60, x=0.6, y=-0.4))
+            ims.append(caption(tile(items, pp, footprint=(3, 3)), n))
+        sections.append((f"農田作物・{CULT[c]}（站一名農民：作物不擋人）", ims))
+    sub = ("資源點和模擬一樣是一格一塊：樹一格一棵；金礦 2×2、野果 3×2、晶脈 2×2，每一格各自採完，採完的那格就可以走，"
+           "所以剩下的樣子都很低。樹照東西陸各三種，金礦、野果、晶脈兩邊共用。晶脈是飽和的魔晶青、長在深色岩石上的晶簇，"
+           "和淡色半透明的防護罩、橘色的預警圈分得開。最下面是實際大小（1 pt = 1 px）。")
+    # actual size: a few of everything
+    items = forest_items("E", suffix, 20, blob(2)) + cluster("gold", suffix, 20, g, ["full"] * 4, x0=6 * C, y0=-2 * C) + \
+        cluster("crystal", suffix, 20, v, ["full"] * 4, x0=-2 * C, y0=6 * C) + \
+        cluster("berry", suffix, 20, b, ["full"] * 6, x0=6 * C, y0=4 * C)
+    items.append(scene.unit("spear_e", "blue", scale=1 / 3, x=3.5 * C, y=0.5 * C))
+    items.append(scene.unit("farmer_e", "blue", scale=1 / 3, x=5 * C, y=1.0 * C))
+    act = tile(items, 1.0, pad=20)
+    W = 2800
+    top = header_height(sub, W - 2 * M)
+    H = top + sum(max(i.height for i in ims) + 80 for _, ims in sections) + act.height + 120
+    art = Image.new("RGB", (W, H), BG)
+    y = draw_header(art, label, sub, M)
+    dr = ImageDraw.Draw(art)
+    for title, ims in sections:
+        dr.text((M, y), title, font=artboard.font(28), fill=INK)
+        y += 44
+        x = M
+        h = max(i.height for i in ims)
+        for im in ims:
+            if x + im.width > W - M:
+                break
+            art.paste(im.convert("RGB"), (x, y + h - im.height))
+            note = im.info.get("note")
+            if note:
+                ny = wrap(dr, x, y + h + 4, note, im.width, 18, INK)
+                h = max(h, ny - y)
+            x += im.width + 16
+        y += h + 36
+    dr.text((M, y), "實際大小（1 pt = 1 px）：森林、金礦、晶脈、野果，一名士兵和一名農民", font=artboard.font(26), fill=INK)
+    y += 40
+    art.paste(act.convert("RGB"), (M, y))
+    art = art.crop((0, 0, W, y + act.height + 30))
+    p = config.OUT / f"{label}.png"
+    art.save(p)
+    print("wrote", p.name, art.size)
+    return p
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("what", nargs="*", default=["b102", "b103"])
@@ -296,3 +715,7 @@ if __name__ == "__main__":
         b102(a.suffix)
     if "b103" in a.what:
         b103(a.suffix)
+    if "b101" in a.what:
+        b101(a.suffix)
+    if "b104" in a.what:
+        b104(a.suffix)

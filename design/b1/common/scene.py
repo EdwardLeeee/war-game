@@ -42,10 +42,14 @@ def _scaled(img, f):
     return img.resize((max(1, round(img.width * f)), max(1, round(img.height * f))), Image.LANCZOS)
 
 
-def piece(dirpath, name, suffix, team="blue", scale=1.0, x=0.0, y=0.0, z=0.0, shadow=True, ground=False, top=False):
-    """A rendered piece (render_b1.py) at world (x, y): colour with AO and player colour, plus shadow."""
+def piece(dirpath, name, suffix, team="blue", scale=1.0, x=0.0, y=0.0, z=0.0, shadow=True, ground=False, top=False,
+          ppm=None):
+    """A rendered piece (render_b1.py) at world (x, y): colour with AO and player colour, plus shadow.
+    ppm: the pixels per metre wanted (overrides scale, whatever the render's own resolution)."""
     d = Path(dirpath)
     meta = json.loads((d / f"{name}_{suffix}.json").read_text())
+    if ppm:
+        scale = ppm / meta["px_per_m"]
     b = Image.open(d / f"{name}_{suffix}_beauty.png").convert("RGBA")
     ao_p = d / f"{name}_{suffix}_ao.png"
     if ao_p.exists():

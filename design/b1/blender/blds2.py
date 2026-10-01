@@ -203,7 +203,7 @@ def mage_hall(root, c):
     P = kit.palette(c)
     W = cells(3)
     kit.pad("mh_pad", P, root, W, W, 0.2)
-    glow = lib.mat("crystal_glow", (0.35, 0.95, 0.92), 0.1, emission=4.0)
+    glow = lib.mat("crystal_glow", (0.0, 0.5, 0.56), 0.15, emission=0.5)
     if c == "E":
         # 術院: a hall at the back-right (low), and at the front a three-tier pagoda with a 魔晶 finial
         kit.block_e("mh_hall", P, root, 1.0, 1.0, 3.6, 3.0, 0.2, 2.1, door=("y", 0.0, 1.1))
