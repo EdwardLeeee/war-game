@@ -655,8 +655,10 @@ def _tools(kind, grip, P):
     g = groups["hoe"]
     rod(f"{n}_hoe_haft", (0, 0, 0), (0, 0, 1.43), 0.023, haft, parent=g, r2=0.02)
     box(f"{n}_hoe_socket", (0.06, 0.08, 0.10), iron, g, at=(0, 0.0, 1.40), bevel=0.01)
-    box(f"{n}_hoe_blade", (0.30, 0.34, 0.03), steel, g, loc=(0, 0.02, 1.42), rot=(-28, 0, 0), at=(0, 0.17, 0),
-        bevel=0.006)
+    # folded 40 degrees toward the haft: with the head resting on the ground in the idle pose the
+    # blade lies flat and shows its face to the camera (at 28 degrees it was seen almost edge-on)
+    box(f"{n}_hoe_blade", (0.34, 0.40, 0.045), steel, g, loc=(0, 0.02, 1.42), rot=(-40, 0, 0), at=(0, 0.20, 0),
+        bevel=0.008)
     g = groups["hammer"]
     rod(f"{n}_hammer_haft", (0, 0, 0), (0, 0, 0.46), 0.024, haft, parent=g, r2=0.022)
     box(f"{n}_hammer_head", (0.17, 0.34, 0.17), pale, g, at=(0, 0, 0.42), bevel=0.03)
