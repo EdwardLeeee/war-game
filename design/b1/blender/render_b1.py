@@ -109,6 +109,10 @@ def probe(fx, fy):
     sc = bpy.context.scene
     if lib.GROUND is not None:
         lib.GROUND.hide_viewport = True
+    # thin things (poles, spears, fence rails, ropes) do not hide a soldier: leave them out
+    thin = [o for o in bpy.data.objects if o.type == "MESH" and sorted(o.dimensions)[1] < 0.25 and not o.hide_viewport]
+    for o in thin:
+        o.hide_viewport = True
     bpy.context.view_layer.update()
     dg = bpy.context.evaluated_depsgraph_get()
     hx, hy = fx * kit.CELL / 2, fy * kit.CELL / 2
@@ -142,6 +146,8 @@ def probe(fx, fy):
     upper = next((k for k in range(1, 6) if res[k]["worst"] >= 0.9), None)
     if lib.GROUND is not None:
         lib.GROUND.hide_viewport = False
+    for o in thin:
+        o.hide_viewport = False
     return dict(by_cells=res, upper_half_from_cells=upper)
 
 
@@ -180,6 +186,11 @@ for pc in job["pieces"]:
                 top_m=round(max((p.z for p in pts), default=0.0), 2))
     if pc.get("probe"):
         meta["probe"] = probe(fx, fy)
+    if job.get("probe_only"):
+        with open(pc["out"] + ".json", "w") as f:
+            json.dump(meta, f)
+        print(f"PROBE {kind} {c}: upper half from {meta.get('probe', {}).get('upper_half_from_cells')} cells", flush=True)
+        continue
     for p in pc["passes"]:
         lib.set_pass(p, job.get("samples", {}).get(p))
         for ob in lib.ALL_PARTS:                 # smoke and flames: colour image only

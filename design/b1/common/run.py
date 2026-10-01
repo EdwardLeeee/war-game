@@ -79,6 +79,28 @@ def piece_name(pc):
     return f"{pc['kind']}_{pc['culture']}" + ("" if s == "done" else f"_{s}") + (f"_{tag}" if tag else "")
 
 
+def probes(target, only=None):
+    """Only the occlusion measurement (no rendering): build/b1/<folder>/<piece>_probe.json."""
+    out = config.BUILD / "b1" / FOLDER[target]
+    out.mkdir(parents=True, exist_ok=True)
+    pcs = []
+    for pc in pieces(target):
+        if not pc.get("probe") or (only and pc["kind"] not in only):
+            continue
+        d = dict(pc, out=str(out / f"{piece_name(pc)}_probe"), passes=[])
+        pcs.append(d)
+    job = dict(px_per_m=20, emblem_dir=str(config.BUILD / "emblems"), quality="hq", probe_only=True, pieces=pcs)
+    jp = config.BUILD / "jobs" / f"b1_{target}_probe.json"
+    jp.write_text(json.dumps(job))
+    log = config.BUILD / "jobs" / f"b1_{target}_probe.log"
+    config.blender(Path(HERE.parent / "blender" / "render_b1.py"), jp, log=log)
+    txt = log.read_text()
+    if "Traceback" in txt:
+        print(txt[-3000:])
+        raise SystemExit("probe failed")
+    print("\n".join(ln for ln in txt.splitlines() if ln.startswith("PROBE")))
+
+
 def run(target, preview=False, only=None, prev_ppm=24):
     out = config.BUILD / "b1" / FOLDER[target]
     out.mkdir(parents=True, exist_ok=True)
@@ -136,5 +158,9 @@ if __name__ == "__main__":
     ap.add_argument("--preview", action="store_true")
     ap.add_argument("--only", help="comma list of kinds")
     ap.add_argument("--ppm", type=int, default=24, help="preview pixels per metre (60 = the 3x art scale)")
+    ap.add_argument("--probe", action="store_true", help="only the occlusion measurement, no rendering")
     a = ap.parse_args()
-    run(a.target, a.preview, a.only.split(",") if a.only else None, a.ppm)
+    if a.probe:
+        probes(a.target, a.only.split(",") if a.only else None)
+    else:
+        run(a.target, a.preview, a.only.split(",") if a.only else None, a.ppm)
