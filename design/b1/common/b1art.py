@@ -109,7 +109,7 @@ def render_transparent(items, ppm, origin, size):
         gx, gy = at(s)
         can.alpha_composite(s.img, (int(round(gx - s.ax)), int(round(gy - s.ay))))
     for s in items:
-        if s.shadow:
+        if s.shadow and not s.ground:           # ground pieces (paving, fields) keep their own shading
             gx, gy = at(s)
             si, sax, say = s.shadow
             can.alpha_composite(si, (int(round(gx - sax)), int(round(gy - say))))
@@ -159,9 +159,10 @@ CORE = ("main_city", "house", "barracks")
 
 
 def _state_piece(kind, c, state, suffix, ppm):
+    team = "blue" if c == "E" else "red"          # East blue, West red on every B1-02 board
     if state == "done":
-        return scene.piece(config.BUILD / "b1" / "core3", f"{kind}_{c}", suffix, ppm=ppm)
-    return scene.piece(config.BUILD / "b1" / "states", f"{kind}_{c}_{state}", suffix, ppm=ppm)
+        return scene.piece(config.BUILD / "b1" / "core3", f"{kind}_{c}", suffix, ppm=ppm, team=team)
+    return scene.piece(config.BUILD / "b1" / "states", f"{kind}_{c}_{state}", suffix, ppm=ppm, team=team)
 
 
 def b102_board(item, opt, name, states_, labels, sub, suffix):
@@ -678,7 +679,7 @@ def b104(suffix):
     act = tile(items, 1.0, pad=20)
     W = 2800
     top = header_height(sub, W - 2 * M)
-    H = top + sum(max(i.height for i in ims) + 80 for _, ims in sections) + act.height + 120
+    H = top + sum(max(i.height for i in ims) + 140 for _, ims in sections) + act.height + 400
     art = Image.new("RGB", (W, H), BG)
     y = draw_header(art, label, sub, M)
     dr = ImageDraw.Draw(art)

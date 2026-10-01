@@ -54,7 +54,7 @@ def palette(culture):
         canvas=mat("canvas_b1", (0.82, 0.78, 0.68), 0.9, noise=0.1, noise_scale=10),
         target=mat("target_b1", (0.86, 0.82, 0.7), 0.9),
         target_red=mat("target_red_b1", (0.62, 0.16, 0.12), 0.8),
-        fire=mat("fire_b1", (1.0, 0.45, 0.12), 0.5, emission=6.0),
+        fire=mat("fire_b1", (1.0, 0.42, 0.08), 0.5, emission=2.2),
         char=mat("char_b1", (0.09, 0.075, 0.065), 0.9, noise=0.3, noise_scale=12),
     )
     if culture == "E":

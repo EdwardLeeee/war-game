@@ -146,8 +146,11 @@ def cut_holes(obs, centres, r):
             _hole_surface(ob, centres, r)
     obs = [o for o in obs if not _surface(o)]
     for k, c in enumerate(centres):
-        h = ico(f"hole{k}_{int(c.x * 10)}_{int(c.y * 10)}", r, lib.mat("cutter", (1, 0, 1)), None, loc=tuple(c), subdiv=2,
-                outline=False)
+        h = B1.lumpy(f"hole{k}_{int(c.x * 10)}_{int(c.y * 10)}", r, lib.mat("cutter", (1, 0, 1)), None, tuple(c),
+                     seed=k * 7 + int(abs(c.x * 13)), squash=1.0, subdiv=2, amp=0.35)
+        for lst in (lib.HULLS,):
+            if h in lst:
+                lst.remove(h)
         _forget(h)
         h.hide_render = True
         h.display_type = "WIRE"
@@ -304,7 +307,7 @@ def smoke(root, name, base, height=3.5, r0=0.3, r1=0.85, n=8, dark=0.18, drift=(
 
 def flames(root, P, name, base, size=1.0, n=5, seed=1):
     rnd = random.Random(seed)
-    core = lib.mat("flame_core", (1.0, 0.85, 0.35), 0.5, emission=8.0)
+    core = lib.mat("flame_core", (1.0, 0.72, 0.25), 0.5, emission=2.6)
     for i in range(n):
         h = size * rnd.uniform(0.5, 1.0)
         x, y = base[0] + rnd.uniform(-0.3, 0.3) * size, base[1] + rnd.uniform(-0.3, 0.3) * size
@@ -380,8 +383,39 @@ def ash(root, name, w, d, seed=7):
             outline=False)
 
 
+def _hollow(root, blocks, z_from):
+    """Hollow every wall block (a box cutter inside the walls, from z_from up), so a cut wall is a rim
+    of wall and not a solid lid."""
+    cut = []
+    for g, (cx, cy, bw, bd, z0, wh) in blocks:
+        o = g.matrix_world.translation
+        inner = box("hollow", (max(0.3, bw - 0.36), max(0.3, bd - 0.36), 8.0), lib.mat("cutter", (1, 0, 1)), None,
+                    loc=(o.x, o.y, max(z_from, z0 + 0.12) + 4.0), outline=False)
+        _forget(inner)
+        inner.hide_render = True
+        cut.append((inner, (o.x - bw / 2, o.x + bw / 2, o.y - bd / 2, o.y + bd / 2)))
+    for ob in kit.parts_under(root):
+        b = _bbox(ob)
+        for k, (inner, (x0, x1, y0, y1)) in enumerate(cut):
+            if b[3] < x0 or b[0] > x1 or b[4] < y0 or b[1] > y1:
+                continue
+            m = ob.modifiers.new(f"hollow{k}", "BOOLEAN")
+            m.operation = "DIFFERENCE"
+            m.object = inner
+            m.solver = "EXACT"
+
+
+def _drop_cloth(root):
+    """Burnt: every player-colour cloth and flag is gone."""
+    for ob in list(kit.parts_under(root)):
+        names = [s.material.name for s in ob.material_slots if s.material]
+        if any(n.startswith(("team", "flag_")) for n in names):
+            _drop(ob)
+
+
 def _char_all(root, above=0.25):
     """Every part above the base turns sooty (materials swapped for a darker copy)."""
+    bpy.context.view_layer.update()
     for ob in kit.parts_under(root):
         if _bbox(ob)[5] <= above + 0.01:
             continue
@@ -393,7 +427,7 @@ def _char_all(root, above=0.25):
             if key not in lib.MATS:
                 info = lib.MATS.get(m.name.split(".")[0], {})
                 col = info.get("color", (0.4, 0.4, 0.4))
-                lib.mat(key, tuple(v * 0.32 for v in col), 0.95, noise=0.4, noise_scale=6)
+                lib.mat(key, tuple(v * 0.2 for v in col), 0.95, noise=0.45, noise_scale=6)
             slot.material = lib.MATS[key]["mat"]
 
 
@@ -438,6 +472,16 @@ def apply(root, kind, c, state, **opts):
             ww, dd = (rw, rd) if ridge == "x" else (rd, rw)
             centres.append(front_slope(g.matrix_world, ww, dd, -0.25, 0.5, rh * 0.45))
         cut_holes(roof_parts, centres, 0.75)
+        if blocks:
+            g, (cx, cy, bw, bd, z0, wh) = max(blocks, key=lambda t: t[0].matrix_world.translation.z + t[1][5])
+            top = g.matrix_world.translation.z + wh
+            covered = any(abs(rg.matrix_world.translation.z - top) < 0.6 for rg, _ in roofs)
+            if not covered and top > 3.0:
+                o = g.matrix_world.translation
+                p = Vector((o.x + bw * 0.22, o.y - bd * 0.22, top + 0.45))     # clear of a front corner turret
+                flames(root, P, "dm_firetop", (p.x, p.y, p.z), size=2.2, n=9, seed=seed + 5)
+                smoke(root, "dm_smoketop", (p.x, p.y, p.z + 0.8), height=3.0, r0=0.35, r1=0.9, n=11, dark=0.16,
+                      alpha=0.9)
         for k, cc in enumerate(centres):
             for i in range(3):
                 rod(f"dm_raf{k}{i}", (cc.x - 0.7, cc.y - 0.3 + i * 0.3, cc.z - 0.2), (cc.x + 0.7, cc.y - 0.2 + i * 0.3,
@@ -483,10 +527,21 @@ def apply(root, kind, c, state, **opts):
             if _bbox(ob)[5] > 0.3:
                 _drop(ob)
         rubble(root, P, c, w, d, seed)
+        ash(root, "ds_ash", w, d, seed)
+        _char_all(root, above=0.3)
         smoke(root, "ds_wisp", (0.3, -0.2, 0.5), height=2.2, r0=0.15, r1=0.35, n=7, dark=0.5, alpha=0.55)
     elif state == "destroyed_b":
+        _drop_cloth(root)
+        _hollow(root, blocks, 0.12)
         cut_above(root, KNEE)
         _char_all(root)
+        rnd2 = random.Random(seed + 2)
+        for g, (cx, cy, bw, bd, z0, wh) in blocks:
+            o = g.matrix_world.translation
+            for i in range(int(bw * bd)):
+                B1.lumpy(f"ds_deb{len(blocks)}_{i}_{int(o.x * 10)}", rnd2.uniform(0.15, 0.3), P["char"], root,
+                         (o.x + rnd2.uniform(-bw / 3, bw / 3), o.y + rnd2.uniform(-bd / 3, bd / 3), z0 + 0.08),
+                         seed=i, squash=0.4)
         ash(root, "ds_ash", w, d, seed)
         rnd = random.Random(seed)
         for i in range(10):

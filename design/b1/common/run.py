@@ -64,9 +64,21 @@ TARGETS["b104"] = (
        (("gold", ("full", "mined", "depleted")), ("berry", ("full", "depleted")), ("crystal", ("full", "depleted")))
        for v in (0, 1) for st in sts])
 
+# second pass after the self-check: the damage and destruction states, the burning and ruined town houses and the
+# torn-down tower (fire colour, holes, hollow stubs, rubble)
+for _k in ("main_city", "house", "barracks"):
+    TARGETS[f"states2_{_k}"] = [dict(kind=_k, culture=c, state=s) for c in CULTURES
+                                for s in ("damaged_a", "damaged_b", "destroyed_a", "destroyed_b")]
+for _c in CULTURES:
+    TARGETS[f"towns2_{_c}"] = ([dict(kind=k, culture=_c, state=s, opts=dict(variant=v), tag=f"v{v}")
+                                for k in ("th22", "th21", "th12") for v in (0, 1) for s in ("ruin", "burning")]
+                               + [dict(kind="ttower", culture=_c, state="rubble")])
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
+FOLDER.update({t: "states" for t in TARGETS if t.startswith("states2")})
+FOLDER.update({t: "towns" for t in TARGETS if t.startswith("towns2")})
 
 
 def pieces(target):

@@ -185,7 +185,7 @@ def render(items, ppm, pad=20, bg=None, bounds=None):
         gx, gy = at(s)
         can.alpha_composite(s.img, (int(round(gx - s.ax)), int(round(gy - s.ay))))
     for s in items:
-        if s.shadow:
+        if s.shadow and not s.ground:           # ground pieces (paving, fields) keep their own shading
             gx, gy = at(s)
             si, sax, say = s.shadow
             can.alpha_composite(si, (int(round(gx - sax)), int(round(gy - say))))

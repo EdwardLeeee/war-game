@@ -212,6 +212,8 @@ def tower_state(root, c, state):
         return
     P = kit.palette(c)
     if state == "rubble":           # torn down: the sim frees the cells, so the rubble is low
+        import bpy
+        bpy.context.view_layer.update()
         for ob in list(kit.parts_under(root)):
             if states._bbox(ob)[5] > 0.3:
                 states._drop(ob)
