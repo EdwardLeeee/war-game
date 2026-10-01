@@ -2,7 +2,7 @@
 section 4: "請 ui 驗證").
 
 python3 common/shield_compare.py          (renders: build/val_shield/<unit>/, made by a validation job)
--> build/val_shield/shield_compare_3x.png, shield_compare_1x.png, and the numbers printed
+-> out/V2-01-防護罩拆圖-對照-手機像素.png (3x), out/V2-01-防護罩拆圖-對照-實際大小.png (1x), the numbers printed
 
 For each mage and three frames (idle, the brightest frame of hit, the first frame of shatter):
   A  the approved composition: the effect layer still contains the shield, cut out where the body
@@ -10,6 +10,9 @@ For each mage and three frames (idle, the brightest frame of hit, the first fram
   B  the version-2 layers drawn in the game's order: colour, player colour, shield, effects; the
      shield layer is rendered without the body, so its back half also lies over the body
   C  as B, but the shield layer has only the half of the shell that faces the camera
+  D  as B, but the far half of the shell is hidden behind a body-sized stand-in, as the body hid it
+     in A (render_units.py BODY_PROXY). ceo 2026-10-01 chose D: at actual size A and D cannot be told
+     apart; B fogs the body, C thins the shell.
 Both drawn the way the game draws them (normal alpha blending, no added glow), East blue, West red.
 """
 import sys
@@ -25,8 +28,11 @@ import artboard      # noqa: E402
 import compose       # noqa: E402
 import config        # noqa: E402
 import postprocess   # noqa: E402
+import review_gif    # noqa: E402
 
 VAL = config.BUILD / "val_shield"
+OUT = review_gif.OUT
+TITLE = "V2-01-防護罩拆圖-對照"
 FRAMES = [("idle_00", "on_00", "待機"), ("hit_01", "hit_01", "受擊最亮"), ("shatter_01", "break_01", "破盾第 1 格")]
 TEAM = {"mage_e": config.TEAM["blue"], "mage_w": config.TEAM["red"]}
 GROUND = (118, 128, 104)
@@ -70,7 +76,7 @@ def compose_pair(unit, fkey, skey):
     return out, stats
 
 
-def board(scale, path):
+def board(scale, path, title):
     tiles, rows = [], []
     for unit in ("mage_e", "mage_w"):
         row = []
@@ -88,15 +94,21 @@ def board(scale, path):
                 ims = [i.resize((max(1, round(i.width * f)), max(1, round(i.height * f))), Image.LANCZOS) for i in ims]
             row.append((f"{'劍修' if unit == 'mage_e' else '學院大師'} {name}", ims, st))
         rows.append(row)
-    cw = max(sum(i.width for i in ims) + 6 for row in rows for _, ims, _ in row)
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    cw = max(max(sum(i.width for i in ims) + 6, probe.textlength(t, font=artboard.font(14)) + 6)
+             for row in rows for t, ims, _ in row)
     ch = max(max(i.height for i in ims) for row in rows for _, ims, _ in row) + 24
-    W, H = 10 + len(rows[0]) * (cw + 14), 10 + len(rows) * (ch + 14)
+    head = 64
+    W, H = max(10 + len(rows[0]) * (cw + 14), 860), head + 10 + len(rows) * (ch + 14)
     sheet = Image.new("RGB", (W, H), (244, 241, 234))
     dr = ImageDraw.Draw(sheet)
+    dr.text((10, 8), title, font=artboard.font(22), fill=(40, 40, 40))
+    dr.text((10, 38), "每組由左到右：A 核准｜B 整顆｜C 前半｜D 替身遮後半（採用）。照遊戲的順序合成：顏色、玩家色、防護罩、特效。",
+            font=artboard.font(14), fill=(90, 90, 90))
     for r, row in enumerate(rows):
         for c, (title, ims, st) in enumerate(row):
-            x, y = 10 + c * (cw + 14), 10 + r * (ch + 14)
-            dr.text((x, y), f"{title}：A 核准｜B 整顆｜C 前半｜D 替身遮後半", font=artboard.font(14), fill=(40, 40, 40))
+            x, y = 10 + c * (cw + 14), head + 10 + r * (ch + 14)
+            dr.text((x, y), title, font=artboard.font(14), fill=(40, 40, 40))
             xx = x
             for im in ims:
                 sheet.paste(im.convert("RGB"), (xx, y + 18))
@@ -106,8 +118,8 @@ def board(scale, path):
 
 
 if __name__ == "__main__":
-    rows = board(3, VAL / "shield_compare_3x.png")
-    board(1, VAL / "shield_compare_1x.png")
+    rows = board(3, OUT / f"{TITLE}-手機像素.png", f"{TITLE}-手機像素（1 pt = 3 px）")
+    board(1, OUT / f"{TITLE}-實際大小.png", f"{TITLE}-實際大小（1 pt = 1 px）")
     print("mean luminance change against A (0-255): inside the body / in the shield around it")
     for row in rows:
         for title, _, st in row:

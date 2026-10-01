@@ -137,7 +137,7 @@ if __name__ == "__main__":
              for u in spec.INFANTRY]
     review_p2.gif_pairs("P3-01-步兵倒下-B-精修-動作", "每一格左邊是現況 A，右邊是精修 B。" + SUB,
                         [(NAMES[u], a_, b_) for u, a_, b_ in pairs], OUT / "P3-01-步兵倒下-B-精修-動作.gif", cols=3,
-                        names=("A 現況", "B 精修"))
+                        names=("A 現況", "B 精修"), dither="bayer:bayer_scale=4")   # no team-colour specks in the dust
     option_board("A", "現況", pairs, 0)
     option_board("B", "精修", pairs, 1)
     overview(pairs)

@@ -161,7 +161,7 @@ def _header(label, sub, width):
     return h, draw
 
 
-def gif_pairs(label, sub, pairs, path, cols, names=("A 初版", "B 精修")):
+def gif_pairs(label, sub, pairs, path, cols, names=("A 初版", "B 精修"), dither="sierra2_4a"):
     """pairs: [(title, cell A, cell B)]. Each pair is two tiles of the same size, side by side."""
     tw = max(max(a.w, b.w) for _, a, b in pairs) + 12
     th = max(max(a.h, b.h) for _, a, b in pairs) + 10
@@ -190,7 +190,7 @@ def gif_pairs(label, sub, pairs, path, cols, names=("A 初版", "B 精修")):
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", str(TICK), "-i", str(tmp / "%03d.png"), "-vf",
                     "palettegen=stats_mode=full", str(pal)], check=True)
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", str(TICK), "-i", str(tmp / "%03d.png"), "-i",
-                    str(pal), "-lavfi", "paletteuse=dither=sierra2_4a", "-loop", "0", str(path)], check=True)
+                    str(pal), "-lavfi", f"paletteuse=dither={dither}", "-loop", "0", str(path)], check=True)
     for p in tmp.iterdir():
         p.unlink()
     tmp.rmdir()
