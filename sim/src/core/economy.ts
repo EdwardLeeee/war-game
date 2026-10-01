@@ -18,6 +18,7 @@ import {
   Resource,
   type SimEvent,
   TICKS_PER_SECOND,
+  UnitFlag,
   UnitType,
 } from "../protocol.ts";
 import { toCanon } from "../frame.ts";
@@ -812,6 +813,9 @@ export class Economy {
     const info = UNITS[type];
     const id = w.addUnit(p, type, center(cell % n), center(Math.trunc(cell / n)), info.hp);
     const i = w.unit(id);
+    // A trained mage casts on its own from the start (D-026: the player found mages with
+    // autocast off "of little use"); the `autocast` command switches it off.
+    if (type === UnitType.Mage) u.flags[i] |= UnitFlag.Autocast;
     w.trained[p * 5 + type]++;
     this.emit(p, { k: "unit_trained", id, type, building: b.id[bs] });
 

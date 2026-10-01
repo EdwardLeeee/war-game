@@ -193,3 +193,45 @@ test("a trained mage starts with a full shield; the mage cap counts the queue", 
   }
   assert.equal(g.w.units.col.shield[slotOf(g, id)], UNITS[UnitType.Mage].shield);
 });
+
+test("a trained mage has autocast on from the start and fires at a cluster; switched off, it does not", () => {
+  for (const off of [false, true]) {
+    const g = emptyGame();
+    const w = g.w;
+    w.ecoOn[0] = 0;
+    const m = w.mainCity(0);
+    const b = w.buildings.col;
+    const hall = w.addBuilding(0, BuildingType.MageHall, b.cellX[m] + 8, b.cellY[m], 500, 1000);
+    w.res.set([1000, 1000, 2000, 1000], 0);
+    cmd(g, 0, { c: "train", building: hall, type: UnitType.Mage, n: 1 });
+    assert.deepEqual(step(g), []);
+    let id = -1;
+    for (let t = 0; t < UNITS[UnitType.Mage].trainTicks + 5 && id < 0; t++) {
+      g.step();
+      for (const e of g.events) if (e.ev.k === "unit_trained") id = e.ev.id;
+    }
+    assert.ok(id >= 0, "the mage is trained");
+    const u = w.units.col;
+    assert.ok((u.flags[slotOf(g, id)] & UnitFlag.Autocast) !== 0, "autocast is on at birth");
+    if (off) {
+      cmd(g, 0, { c: "autocast", u: [id], on: false });
+      assert.deepEqual(step(g), []);
+      assert.equal(u.flags[slotOf(g, id)] & UnitFlag.Autocast, 0);
+    }
+    // Three enemy farmers (they do not fight back) 6 cells from the mage, close together.
+    const mx = u.x[slotOf(g, id)] >> 10;
+    const my = u.y[slotOf(g, id)] >> 10;
+    u.stance[slotOf(g, id)] = 1;
+    for (let k = 0; k < 3; k++) {
+      const f = put(g, 1, UnitType.Farmer, mx + 6, my - 1 + k);
+      u.stance[slotOf(g, f)] = 1;
+    }
+    g.fog.update(w);
+    let cast = false;
+    for (let t = 0; t < 20 && !cast; t++) {
+      g.step();
+      cast = u.order[slotOf(g, id)] === Order.Cast;
+    }
+    assert.equal(cast, !off, off ? "switched off: it does not cast on its own" : "it casts on its own");
+  }
+});
