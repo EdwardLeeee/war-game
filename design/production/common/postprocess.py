@@ -4,17 +4,24 @@ python3 common/postprocess.py --target farmer_e [--scale 3] [--page 2048] [--tea
 -> build/prod/<unit>/atlas_x<scale>/<unit>_color_<k>.png   RGBA8, AO baked in, player-colour parts grey
                                     <unit>_team_<k>.png    RGBA8 player-colour layer (own trim and layout)
                                     <unit>_shadow_<k>.png  black + alpha (LA), half the colour resolution
-                                    <unit>_fx_<k>.png      RGBA8 (mages: shield and magic circle)
-                                    <unit>.json            format "war-game atlas 1"
+                                    <unit>_fx_<k>.png      RGBA8 (mages: magic circle, flashes, shards)
+                                    <unit>_shield_<k>.png  RGBA8 (mages: the shield alone, one facing)
+                                    <unit>.json            format "war-game atlas 2"
                                     memory.json            runtime bytes (the GPU keeps every PNG as RGBA8)
 
-Format: client/docs/sprite-atlas.md (war-game-client, first draft 2026-09-30).
+Format: client/docs/sprite-atlas.md version 2 (war-game-client, 2026-10-01).
 - colour: straight alpha; the client draws it normally.
 - team: RGB = the colour layer at that point x team_gain (1.6, clipped at white), A = mask weight x colour alpha;
   the client draws it over the colour layer tinted with the player colour (a multiply in effect).
 - shadow: rendered for all eight facings, stored at half resolution, the client scales it by 2.
 - frames/team/fx list the rendered facings only; mirrored facings are drawn flipped (scale.x = -1
-  about the anchor). shadows list all eight.
+  about the anchor). shadows list all eight. Frames with nothing in a layer are not listed.
+- shield (mages): its own pages and a `shield` block {anims, frames}; frames are named
+  <unit>_shield_<anim>_<ii>, have no facing and are never mirrored. The effect layer no longer
+  contains the shield (render_units.py split_shield).
+- anims: fps; hit on attack (the blow) and on the work loops (the tool lands); impact (and
+  impact_scale when not 1) on a death or a mage's fall, where the game plays the shared dust
+  (common/effects.py); stride_m on a siege engine's walk.
 
 The scale and the compression are parameters: the renders stay at 3x, and when the client has
 measured on the iPhone (D-017 is provisional) only this step is run again. --astc runs astcenc
@@ -121,7 +128,7 @@ def run(target, scale=3.0, page=2048, team_gain=TEAM_GAIN, astc=None, facings=No
     out.mkdir(parents=True)
     f = scale / 3.0
     mage = u["kind"].startswith("mage")
-    todo = {"color": [], "team": [], "shadow": [], "fx": []}
+    todo = {"color": [], "team": [], "shadow": [], "fx": [], "shield": []}
     for name, n, _, _ in u["anims"]:
         for fc in (facings or spec.ALL_FACINGS):
             for i in ([0] if preview else range(n)):
@@ -148,6 +155,20 @@ def run(target, scale=3.0, page=2048, team_gain=TEAM_GAIN, astc=None, facings=No
                     ebb = _bbox(e.getchannel("A"))
                     if ebb:
                         todo["fx"].append((base, _scaled(e.crop(ebb), f), _anchor(ax, ay, ebb, f)))
+    shield_anims = {}
+    if mage:
+        for a, n in spec.SHIELD_ANIMS:
+            shield_anims[a] = dict(frames=n, fps=spec.SHIELD_FPS[a], loop=a == "on")
+            for i in range(n):
+                base = f"{target}_shield_{a}_{i:02d}"
+                meta_p = raw / f"{base}_x3.json"
+                if not meta_p.exists():
+                    continue
+                ax, ay = json.loads(meta_p.read_text())["anchor"]
+                e = Image.open(raw / f"{base}_x3_shield.png").convert("RGBA")
+                ebb = _bbox(e.getchannel("A"))
+                if ebb:
+                    todo["shield"].append((base, _scaled(e.crop(ebb), f), _anchor(ax, ay, ebb, f)))
 
     tables, pages, px = {}, {}, {}
     for layer, items in todo.items():
@@ -188,12 +209,22 @@ def run(target, scale=3.0, page=2048, team_gain=TEAM_GAIN, astc=None, facings=No
                  placeholder=ph)
         if a == "attack":
             d["hit"] = spec.HIT[target]
+        if a in spec.WORK_HIT:
+            d["hit"] = spec.WORK_HIT[a]
+        if target in spec.IMPACT and spec.IMPACT[target][0] == a:
+            d["impact"] = spec.IMPACT[target][1]
+            if spec.IMPACT[target][2] != 1.0:
+                d["impact_scale"] = spec.IMPACT[target][2]
+        if a == "walk" and target in spec.STRIDE_M:
+            d["stride_m"] = spec.STRIDE_M[target]
         anims[a] = d
-    manifest = {"format": "war-game atlas 1", "unit": target, "scale": scale, "px_per_m": spec.PX_PER_M * f,
+    manifest = {"format": "war-game atlas 2", "unit": target, "scale": scale, "px_per_m": spec.PX_PER_M * f,
                 "team_gain": team_gain,
                 "facings": dict(rendered=spec.RENDERED_FACINGS, mirrored={str(k): v for k, v in spec.MIRRORED.items()}),
                 "anims": anims, "pages": pages,
                 "frames": tables["color"], "team": tables["team"], "shadows": tables["shadow"], "fx": tables["fx"]}
+    if mage:
+        manifest["shield"] = dict(anims=shield_anims, frames=tables["shield"])
     (out / f"{target}.json").write_text(json.dumps(manifest, separators=(",", ":")))
     (out / "memory.json").write_text(json.dumps(mem, indent=1))
     print(f"[{target}] x{scale:g}: " + ", ".join(f"{k} {len(tables[k])} frames/{len(pages[k])} pages" for k in tables)

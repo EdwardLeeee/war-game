@@ -33,9 +33,8 @@ def main():
         s = json.loads(st.read_text()) if st else {}
         mem = {}
         for sc in ("x3", "x2"):
-            # memory always from the local post-processing (one format for all units; the CI reports of
-            # earlier runs used older layouts)
-            mp = config.BUILD / "prod" / t / f"atlas_{sc}" / "memory.json"
+            # memory from this run's CI report; the local post-processing only when the report has none
+            mp = _find(t, f"atlas_{sc}/memory.json") or config.BUILD / "prod" / t / f"atlas_{sc}" / "memory.json"
             if mp.exists():
                 mem[sc] = json.loads(mp.read_text())
                 for k, v in mem[sc].items():
@@ -55,9 +54,10 @@ def main():
         if not m:
             continue
         mb = {k: round(v / 2 ** 20) for k, v in m.items()}
-        n = sum(1 for t in spec.UNITS if (config.BUILD / "prod" / t / f"atlas_{sc}" / "memory.json").exists())
+        n = sum(1 for t in spec.UNITS if _find(t, f"atlas_{sc}/memory.json")
+                or (config.BUILD / "prod" / t / f"atlas_{sc}" / "memory.json").exists())
         print(f"\n{sc}（{n} 個兵種）：顏色 {mb['color_bytes']} MB、玩家色 {mb['team_bytes']}、影子 {mb['shadow_bytes']}、"
-              f"特效 {mb['fx_bytes']}；合計 {mb['total_rgba8_bytes']} MB（未壓縮 RGBA8），ASTC 4×4 {mb['total_astc_4x4_bytes']} MB")
+              f"特效 {mb['fx_bytes']}、防護罩 {m.get('shield_bytes', 0) / 2 ** 20:.1f}；合計 {mb['total_rgba8_bytes']} MB（未壓縮 RGBA8），ASTC 4×4 {mb['total_astc_4x4_bytes']} MB")
 
 
 if __name__ == "__main__":

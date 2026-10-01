@@ -44,7 +44,7 @@ WHITE = (250, 248, 240)
 
 
 def fetch(run_id):
-    for unit in spec.REVIEW_ANIMS:
+    for unit in spec.P2_ANIMS:
         d = PROD / f"review-{unit}"
         subprocess.run(["rm", "-rf", str(d)])
         r = subprocess.run(["gh", "run", "download", str(run_id), "-n", f"production-review-{unit}", "-D", str(d)])
@@ -161,7 +161,7 @@ def _header(label, sub, width):
     return h, draw
 
 
-def gif_pairs(label, sub, pairs, path, cols, names=("A 初版", "B 精修")):
+def gif_pairs(label, sub, pairs, path, cols, names=("A 初版", "B 精修"), dither="sierra2_4a"):
     """pairs: [(title, cell A, cell B)]. Each pair is two tiles of the same size, side by side."""
     tw = max(max(a.w, b.w) for _, a, b in pairs) + 12
     th = max(max(a.h, b.h) for _, a, b in pairs) + 10
@@ -190,7 +190,7 @@ def gif_pairs(label, sub, pairs, path, cols, names=("A 初版", "B 精修")):
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", str(TICK), "-i", str(tmp / "%03d.png"), "-vf",
                     "palettegen=stats_mode=full", str(pal)], check=True)
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", str(TICK), "-i", str(tmp / "%03d.png"), "-i",
-                    str(pal), "-lavfi", "paletteuse=dither=sierra2_4a", "-loop", "0", str(path)], check=True)
+                    str(pal), "-lavfi", f"paletteuse=dither={dither}", "-loop", "0", str(path)], check=True)
     for p in tmp.iterdir():
         p.unlink()
     tmp.rmdir()
@@ -376,7 +376,7 @@ if __name__ == "__main__":
         fetch(a.fetch)
     only = set(a.only.split(",")) if a.only else {"falls", "works", "tools", "overview"}
     OUT.mkdir(parents=True, exist_ok=True)
-    B = {u: dict(spec.REVIEW_ANIMS[u]) for u in spec.REVIEW_ANIMS}
+    B = {u: dict(spec.P2_ANIMS[u]) for u in spec.P2_ANIMS}
     falls = []
     for u in ("mage_e", "mage_w", "hcav_e", "knight_w", "siege_e", "siege_w"):
         an = ["fall", "dead"] if u.startswith("mage") else ["death"]

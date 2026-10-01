@@ -41,8 +41,10 @@ bpy_scene = __import__("bpy").context.scene
 bpy_scene.cycles.seed = 0
 import units5    # noqa: E402
 u = units5.build(job["kind"], job.get("variant", 0), job.get("mage_style"))
-if job.get("new_anims"):              # animations waiting for the user's approval (anims.py)
+if job.get("new_anims"):              # the approved new animations (anims.py)
     import anims  # noqa: E402
+    if job.get("infantry_fall") is not None:
+        anims.INFANTRY_FALL = bool(job["infantry_fall"])
     u = anims.extend(u, job["kind"], job.get("mage_style"))
 if job.get("frames"):
     u.frames = dict(getattr(u, "frames", {}), **job["frames"])
@@ -117,6 +119,48 @@ if job.get("fit"):
           flush=True)
     os._exit(0)                  # nothing to render
 
+def _front_only(ob):
+    """Give the shield a copy of its material that is clear on back faces: only the half of the shell
+    that faces the camera is drawn (the far half, seen from inside, is the part the body used to hide)."""
+    if ob is None or ob.get("front_only"):
+        return
+    for slot in ob.material_slots:
+        m = slot.material.copy()
+        nt = m.node_tree
+        out = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+        link = out.inputs["Surface"].links[0]
+        src = link.from_socket
+        geo = nt.nodes.new("ShaderNodeNewGeometry")
+        clear = nt.nodes.new("ShaderNodeBsdfTransparent")
+        mix = nt.nodes.new("ShaderNodeMixShader")
+        nt.links.remove(link)
+        nt.links.new(geo.outputs["Backfacing"], mix.inputs[0])
+        nt.links.new(src, mix.inputs[1])
+        nt.links.new(clear.outputs[0], mix.inputs[2])
+        nt.links.new(mix.outputs[0], out.inputs["Surface"])
+        slot.material = m
+    ob["front_only"] = True
+
+
+# A stand-in for the mage's body, used only as a holdout in the shield layer. The approved look drew
+# the shield's far half only where the body did not hide it; the shield layer has no body, so this
+# body-sized shape (robe, shoulders, head of the standing mage) hides the far half in the same place.
+# The near half, in front of it, is not affected. (radius, height) from the ground up, metres.
+BODY_PROXY = [(0.27, 0.0), (0.27, 0.15), (0.23, 0.6), (0.21, 1.05), (0.23, 1.3), (0.2, 1.42), (0.08, 1.5),
+              (0.11, 1.58), (0.12, 1.72), (0.08, 1.84), (0.0, 1.88)]
+
+
+def _body_proxy(u):
+    if bpy.data.objects.get("shield_body_proxy"):
+        return
+    ob = lib.lathe("shield_body_proxy", BODY_PROXY, lib.mat("proxy_grey", (0.5, 0.5, 0.5)), u.root, segs=24,
+                   scale=(1, 0.8, 1), outline=False)
+    if ob in lib.ALL_PARTS:
+        lib.ALL_PARTS.remove(ob)
+    ob.is_holdout = True
+    ob.hide_render = False
+
+
 t0 = time.time()
 n = 0
 for it in job["items"]:
@@ -132,7 +176,24 @@ for it in job["items"]:
             ex, ey = job.get("shadow_extra", (0.45, 0.25))    # room right and below, in frame heights
             cam.set((W + int(ex * h_m * ppm)) // 2, (H + int(ey * h_m * ppm)) // 2, ppm / 2,
                     (anchor[0] / 2, anchor[1] / 2))
-        lib.set_pass(p, job.get("samples", {}).get(p))
+        if p == "shield":
+            # the mage's shield on its own layer (client/docs/sprite-atlas.md version 2, section 4):
+            # the effect render settings, the body not rendered at all (not cut out), only the shield
+            lib.set_pass("fx", job.get("samples", {}).get("fx"))
+            for ob in lib.ALL_PARTS:
+                ob.hide_render = True
+            for ob in lib.FX_PARTS:
+                ob.hide_render = ob.name != "fx_shield_ob"
+            if job.get("shield_front_only"):
+                _front_only(bpy.data.objects.get("fx_shield_ob"))
+            if job.get("shield_proxy", True):
+                _body_proxy(u)
+        else:
+            lib.set_pass(p, job.get("samples", {}).get(p))
+            if p == "fx" and job.get("split_shield"):
+                for ob in lib.FX_PARTS:          # the effect layer no longer contains the shield
+                    if ob.name == "fx_shield_ob":
+                        ob.hide_render = True
         if p == "shadow" and "rim" in lib.LIGHTS:
             # only the sun casts the ground shadow; the cool back light would add a second one toward the camera
             lib.LIGHTS["rim"].hide_render = True
