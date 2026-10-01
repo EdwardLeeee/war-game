@@ -125,7 +125,7 @@ def house(root, c):
         kit.block_e("ho_body", P, root, 0.1, 0.25, 2.9, 2.4, 0.42, 1.95, door=("y", -0.5, 1.0))
         kit.roof_e("ho_roof", P, root, 0.1, 0.25, 2.37, 2.9, 2.4, 1.0, over=0.5, curl=0.3)
         kit.drape("ho_cur", P, root, "y", -0.5, 2.15, 1.05, 1.15, y0=0.25 - 1.2, tails=False)
-        kit.drape("ho_curx", P, root, "x", 0.6, 2.15, 0.9, 0.9, x0=0.1 - 1.45 - 0.06)
+        kit.drape("ho_curx", P, root, "x", 0.55, 2.2, 1.3, 1.45, x0=0.1 - 1.45 - 0.06)
         for k, (x, y) in enumerate(((-1.55, -1.45), (-1.25, -1.6))):     # water jars
             lathe(f"ho_jar{k}", [(0.18, 0), (0.26, 0.2), (0.22, 0.45), (0.14, 0.5)], P["brick"], root, loc=(x, y, 0.12),
                   segs=12)

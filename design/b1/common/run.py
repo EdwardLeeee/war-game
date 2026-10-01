@@ -74,12 +74,23 @@ for _c in CULTURES:
                                 for k in ("th22", "th21", "th12") for v in (0, 1) for s in ("ruin", "burning")]
                                + [dict(kind="ttower", culture=_c, state="rubble")])
 
+# player colour raised to 5 % or more (ceo 2026-10-02): the buildings that changed, and what is built from them
+TARGETS["teamfix_b101"] = ([dict(kind=k, culture="E", probe=True) for k in
+                            ("lumber_camp", "mine", "granary", "farm", "mage_hall", "smithy")]
+                           + [dict(kind=k, culture="W", probe=True) for k in ("lumber_camp", "mine", "farm", "smithy")])
+TARGETS["teamfix_core3"] = [dict(kind="house", culture="E", probe=True)]
+TARGETS["teamfix_b104"] = [dict(kind="farm", culture=c, opts=dict(stage=st), tag=st) for c in CULTURES
+                           for st in ("sown", "growing", "ripe")]
+TARGETS["teamfix_states"] = [dict(kind="house", culture="E", state=s) for s in
+                             ("build_a1", "build_a2", "build_a3", "build_b1", "build_b2", "build_b3",
+                              "damaged_a", "damaged_b", "destroyed_a", "destroyed_b")]
 TARGETS["states3"] = [dict(kind=k, culture=c, state="destroyed_b") for k in ("main_city", "barracks") for c in CULTURES]
 
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
 FOLDER.update({t: "states" for t in TARGETS if t.startswith(("states2", "states3"))})
+FOLDER.update({"teamfix_b101": "b101", "teamfix_core3": "core3", "teamfix_b104": "b104", "teamfix_states": "states"})
 FOLDER.update({t: "towns" for t in TARGETS if t.startswith("towns2")})
 
 

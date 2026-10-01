@@ -40,7 +40,8 @@ def lumber_camp(root, c):
         box(f"lc_split{k}", (0.12, 0.45, 0.12), P["logend"], root, loc=(1.35 + (k % 3) * 0.14, -0.7 - (k // 3) * 0.2, 0.16),
             rot=(0, 0, 10 * k))
     kit.awning("lc_aw", P, root, "y", sx - 0.6, 1.75, 1.2, 0.7, y0=sy - sd / 2)
-    kit.pennant("lc_pen", P, root, (-1.7, -0.4, 0.1), 2.6)
+    kit.drape("lc_val", P, root, "x", sy, 1.98, sd - 0.3, 0.75, x0=sx - sw / 2 - 0.02)
+    kit.pennant("lc_pen", P, root, (-1.7, -0.4, 0.1), 2.8, w=1.2, fh=0.75)
 
 
 # ---------------------------------------------------------------- 礦場
@@ -59,6 +60,7 @@ def mine(root, c):
         kit.block_w("mi_store", P, root, bx, by, bw, bd, 0.1, 1.9, door=("y", -0.2, 1.0), windows=False)
         kit.roof_w("mi_roof", P, root, bx, by, 2.0, bw, bd, 0.95, ridge="x")
     kit.drape("mi_dr", P, root, "y", bx - 0.2, 1.7 if c == "E" else 1.75, 1.0, 1.0, y0=by - bd / 2 - 0.05, tails=False)
+    kit.drape("mi_drx", P, root, "x", by + 0.3, 1.75, 1.2, 1.05, x0=bx - bw / 2 - 0.08)
     # ore heaps with gold and 魔晶 in front, an ore cart on two rails
     kit.ore_pile("mi_ore", P, root, (-1.15, 0.6, 0.1), r=0.75, gold=8, crystal=4, seed=4)
     kit.ore_pile("mi_ore2", P, root, (-0.9, -0.45, 0.1), r=0.55, gold=6, crystal=0, seed=8)
@@ -70,7 +72,7 @@ def mine(root, c):
         rod(f"mi_frame{s}", (-1.55 + s * 0.35, -1.5, 0.1), (-1.55, -1.5, 2.6), 0.06, P["wood"], parent=root, segs=6)
     cyl("mi_wheel", 0.35, 0.08, P["wood"], root, loc=(-1.55, -1.5, 2.45), rot=(90, 0, 0), at=(0, 0, -0.04), segs=14)
     rod("mi_rope", (-1.55, -1.5, 2.1), (-1.15, 0.2, 0.6), 0.015, P["rope"], parent=root, segs=4, outline=False)
-    kit.pennant("mi_pen", P, root, (-1.55, -1.5, 2.6), 0.7, w=0.7, fh=0.42)
+    kit.pennant("mi_pen", P, root, (-1.55, -1.5, 2.6), 0.9, w=1.0, fh=0.6)
 
 
 # ---------------------------------------------------------------- 糧倉
@@ -93,6 +95,7 @@ def granary(root, c):
         rod("gr_ladder2", (gx + 0.65, gy - gd / 2 - 0.55, 0.1), (gx + 0.65, gy - gd / 2 - 0.05, 0.95), 0.03, P["wood"],
             parent=root, segs=6)
         kit.drape("gr_dr", P, root, "x", gy, 2.1, 1.3, 1.0, x0=gx - gw / 2 - 0.06)
+        kit.drape("gr_dry", P, root, "y", gx - 0.55, 2.1, 0.95, 0.95, y0=gy - gd / 2 - 0.06)
     else:
         # a timber barn with big doors; a squat round silo at the front-left
         gx, gy, gw, gd = 0.55, 0.5, 2.5, 2.6
@@ -157,6 +160,14 @@ def farm(root, c, stage="growing"):
         cyl("fa_schat", 0.26, 0.12, P["straw"], root, loc=(sx, sy, 1.68), r2=0.02, segs=12)
     slab("fa_scarf", [(-0.4, 0), (0.4, 0), (0.3, -0.55), (-0.3, -0.55)], 0.03, P["team"], parent=root,
          loc=(sx, sy - 0.05, 1.32), plane="XZ")
+    for k in range(4):                 # field markers: short stakes with player-colour flags on the front edges
+        t = -W / 2 + 1.3 + k * (W - 2.2) / 3
+        for side, (x, y) in (("y", (t, -W / 2 + 0.15)), ("x", (-W / 2 + 0.15, t))):
+            if abs(x - sx) < 0.6 and abs(y - sy) < 0.6:
+                continue
+            rod(f"fa_mk{side}{k}", (x, y, 0.0), (x, y, 1.0), 0.03, P["wood"], parent=root, segs=6)
+            slab(f"fa_mf{side}{k}", [(0, 0), (0.55, -0.1), (0.5, -0.38), (0, -0.42)], 0.02, P["team"], parent=root,
+                 loc=(x + 0.03, y - 0.02, 0.98), rot=(0, 0, -25 if side == "y" else 65), plane="XZ")
 
 
 # ---------------------------------------------------------------- 射場
@@ -215,6 +226,10 @@ def mage_hall(root, c):
             kit.block_e(f"mh_t{k}", P, root, px, py, w, w, z, h, windows=k == 0, door=("y", 0.0, 0.8) if k == 0 else None)
             kit.roof_e(f"mh_tr{k}", P, root, px, py, z + h, w, w, 0.55 + 0.1 * k, over=0.55, curl=0.45)
             z += h + 0.5
+        kit.drape("mh_tdy", P, root, "y", px, 2.2, 1.3, 1.25, y0=py - 1.0 - 0.06)
+        kit.drape("mh_tdx", P, root, "x", py, 2.2, 1.3, 1.25, x0=px - 1.0 - 0.06)
+        for s_ in (-1, 1):
+            kit.drape(f"mh_ban{s_}", P, root, "y", px + s_ * 1.15, 2.35, 0.45, 1.5, y0=py - 1.2)
         rod("mh_spire", (px, py, z), (px, py, z + 0.9), 0.05, P["gold"], parent=root)
         kit.crystals("mh_cr", dict(P, crystal=glow), root, (px, py, z + 0.8), size=0.9, n=6, seed=2)
         # a bronze incense tripod and crystal lanterns in the court
@@ -428,8 +443,9 @@ def smithy(root, c):
     for k in range(4):
         rod(f"sm_blade{k}", (1.25 + k * 0.22, -1.52, 0.2), (1.25 + k * 0.22, -1.52, 1.25), 0.025, P["iron"], parent=root,
             segs=4)
-    kit.awning("sm_aw", P, root, "y", 0.9, 1.85, 1.3, 0.6, y0=sy - sd / 2)
-    kit.pennant("sm_pen", P, root, (-1.65, -1.65, 0.12), 2.4)
+    kit.awning("sm_aw", P, root, "y", 0.75, 1.85, 2.3, 0.85, y0=sy - sd / 2)
+    kit.drape("sm_ban", P, root, "y", sx + sw / 2 - 0.35, 1.75, 0.55, 1.3, y0=sy - sd / 2 - 0.02)
+    kit.pennant("sm_pen", P, root, (-1.65, -1.65, 0.12), 2.8, w=1.2, fh=0.75)
 
 
 # ---------------------------------------------------------------- 馬廄
