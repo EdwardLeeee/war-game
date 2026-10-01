@@ -496,6 +496,17 @@ a {
   gap: 6px;
 }
 
+/* 全軍撤退 (user 2026-10-01): under the resource bar, right of the prototype label, far from 全軍 so that one is not tapped for the other. */
+.retreat-all-btn {
+  position: absolute;
+  top: calc(var(--safe-t) + 44px);
+  left: calc(var(--safe-l) + 136px);
+  padding: 0 12px;
+  font-size: 13px;
+  background: #e0473d;
+  color: #fff;
+}
+
 .side-left button,
 .side-right button {
   min-width: 64px;

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Camera } from "../src/camera/camera.ts";
 import { type GestureHost, GestureRecognizer } from "../src/input/gestures.ts";
-import { boxSelect, type Intent, longPressKind, type Selection, tapIntents, wheelItems } from "../src/input/intent.ts";
+import { boxSelect, type Intent, longPressKind, retreatNow, type Selection, tapIntents, wheelIntents, wheelItems } from "../src/input/intent.ts";
 import { BuildingType, NodeKind, NO_OWNER, PlaceBit } from "../src/sim.ts";
 import { LONG_PRESS_MS, TILE_PX } from "../src/tuning.ts";
 import { Placement } from "../src/ui/placement.ts";
@@ -210,6 +210,21 @@ test("長按單位 → 技能輪盤：法師有晶砲、自動施放、撤退；
   // Long press on an enemy or a building does nothing.
   assert.equal(longPressKind(w, at(20), at(20), R), "none");
   assert.equal(longPressKind(w, at(1), at(8), R), "none");
+});
+
+test("撤退（指令區或輪盤）→ 直接退回主城前面那一格，不用再點第二下；沒有主城時才點地面選位置（使用者 2026-10-01）", () => {
+  const w = world();
+  const sel: Selection = { units: [2, 3], building: null };
+  w.home = { x: 2, y: 7 };
+  const home = { mode: null, intents: [{ kind: "command", cmd: { c: "retreat", u: [2, 3], x: 2, y: 7 } }] };
+  assert.deepEqual(retreatNow(sel, w.homeCell()), home);
+  assert.deepEqual(wheelIntents(w, sel, "retreat"), home, "the wheel's 撤退 does the same");
+  // No main city: pick a spot, as before.
+  w.home = null;
+  assert.deepEqual(retreatNow(sel, w.homeCell()), { mode: "retreat", intents: [] });
+  assert.deepEqual(wheelIntents(w, sel, "retreat"), { mode: "retreat", intents: [] });
+  // Nothing selected: nothing happens.
+  assert.deepEqual(retreatNow({ units: [], building: null }, { x: 2, y: 7 }), { mode: null, intents: [] });
 });
 
 test("放建築 → 預覽跟著手指移動（紅綠依可蓋與否），放開後按 ✓ 或 ✗", () => {

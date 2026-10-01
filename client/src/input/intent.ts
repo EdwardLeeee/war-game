@@ -33,6 +33,8 @@ export interface IntentWorld {
   unitType(id: number): number;
   unitStance(id: number): number;
   unitAutocast(id: number): boolean;
+  /** The cell in front of the own main city, where 退回主城 goes; null without a main city. */
+  homeCell(): { x: number; y: number } | null;
 }
 
 export interface Selection {
@@ -168,7 +170,7 @@ export function wheelIntents(world: IntentWorld, sel: Selection, item: WheelItem
     case "cast":
       return { mode: "cast", intents: [] };
     case "retreat":
-      return { mode: "retreat", intents: [] };
+      return retreatNow(sel, world.homeCell());
     case "autocast": {
       const mages = u.filter((id) => world.unitType(id) === UnitType.Mage);
       if (mages.length === 0) return { mode: null, intents: [] };
@@ -181,6 +183,17 @@ export function wheelIntents(world: IntentWorld, sel: Selection, item: WheelItem
       return { mode: null, intents: [{ kind: "command", cmd: { c: "stance", u, stance } }] };
     }
   }
+}
+
+/**
+ * 撤退 (the command area or the wheel): straight back to the cell in front of the main city,
+ * no second tap (user 2026-10-01: too many steps). Another spot is 「改撤到別處」, which the
+ * game offers for a few seconds. Without a main city, the player picks a spot as before.
+ */
+export function retreatNow(sel: Selection, home: { x: number; y: number } | null): { mode: Mode | null; intents: Intent[] } {
+  if (sel.units.length === 0) return { mode: null, intents: [] };
+  if (home === null) return { mode: "retreat", intents: [] };
+  return { mode: null, intents: [{ kind: "command", cmd: { c: "retreat", u: sel.units, x: home.x, y: home.y } }] };
 }
 
 /** 退回主城: retreat the selection to the cell in front of the main city. */

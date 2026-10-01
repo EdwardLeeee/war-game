@@ -130,6 +130,11 @@ for (const size of [
       const rows = new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y)));
       expect(rows.size, "two rows of commands").toBe(2);
     }
+    // 全軍撤退 (user 2026-10-01) is far from 全軍, so that one is not tapped for the other.
+    const [retreatAll] = await visibleBoxes(page, ".retreat-all-btn");
+    const [armyBtn] = await visibleBoxes(page, ".army-btn");
+    const apart = Math.max(armyBtn.x - (retreatAll.x + retreatAll.width), retreatAll.x - (armyBtn.x + armyBtn.width), armyBtn.y - (retreatAll.y + retreatAll.height), retreatAll.y - (armyBtn.y + armyBtn.height));
+    expect(apart, "全軍撤退 far from 全軍").toBeGreaterThan(100);
     await expect(page.locator(".res-bar")).toHaveText(/糧 200　木 200　金 100　晶 20　人口 \d+\/20/);
     await shot(page, info, `hud-${size.who}-${width}x${height}`);
   });
@@ -148,16 +153,49 @@ test("已選部隊時長按小地圖 → 部隊前進到那裡", async ({ page }
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: ids, x: 50, y: 50 });
 });
 
-test("撤退：按指令區的撤退，再點小地圖選位置；再按一次撤退就取消", async ({ page }) => {
+test("撤退：按指令區的撤退就直接退回主城；提示列的「改撤到別處」再點小地圖選位置；提示列幾秒後自己消失（使用者 2026-10-01）", async ({ page }, info) => {
   const ids = await selectSpearmen(page);
-  await page.getByRole("button", { name: "撤退", exact: true }).tap();
+  const retreat = page.getByRole("button", { name: /^撤退/ });
+  await expect(retreat).toHaveText("撤退退回主城");
+  await retreat.tap();
+  // In front of the main city at (8, 80), 4 cells: (12, 79).
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: ids, x: 12, y: 79 });
+  await expect(page.getByText("正在退回主城")).toBeVisible();
+  expect(await page.evaluate(() => window.__proto?.game?.mode())).toBe("normal");
+  await shot(page, info, "retreat-home");
+  // 改撤到別處: then a spot on the minimap.
+  await page.getByRole("button", { name: "改撤到別處" }).tap();
   await expect(page.getByText("點地面或小地圖選撤退位置")).toBeVisible();
-  await tapOn(page, ".minimap", ...minimapPoint({ x: 10, y: 80 }));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: ids, x: 10, y: 80 });
-  await page.getByRole("button", { name: "撤退", exact: true }).tap();
-  await expect(page.getByRole("button", { name: "取消撤退" })).toBeVisible();
+  await tapOn(page, ".minimap", ...minimapPoint({ x: 10, y: 70 }));
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: ids, x: 10, y: 70 });
+  // Left alone, the prompt goes away by itself.
+  await retreat.tap();
+  await expect(page.getByText("正在退回主城")).toBeVisible();
+  await expect(page.getByText("正在退回主城")).toBeHidden({ timeout: 8_000 });
+  // 取消撤退 leaves the picking.
+  await retreat.tap();
+  await page.getByRole("button", { name: "改撤到別處" }).tap();
   await page.getByRole("button", { name: "取消撤退" }).tap();
   await expect(page.getByText("點地面或小地圖選撤退位置")).toBeHidden();
+  expect(await page.evaluate(() => window.__proto?.game?.mode())).toBe("normal");
+});
+
+test("全軍撤退：不用先選兵，所有士兵退回主城，選取不變（使用者 2026-10-01）", async ({ page }, info) => {
+  const soldiers = await ownIds(page, [1, 2, 3]);
+  await select(page, []);
+  const button = page.getByRole("button", { name: "全軍撤退" });
+  await shot(page, info, "retreat-all-button");
+  await button.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: soldiers, x: 12, y: 79 });
+  await expect(toast(page, `全軍 ${soldiers.length} 名退回主城`)).toBeVisible();
+  expect(await selection(page)).toEqual({ units: [], building: null });
+  // With farmers selected, they stay selected and stay home.
+  const farmers = await ownIds(page, [0]);
+  await select(page, farmers);
+  await button.tap();
+  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "retreat").length).toBe(2);
+  expect((await lastSent(page))?.u).toEqual(soldiers);
+  expect((await selection(page))?.units).toEqual(farmers);
 });
 
 test("編隊：長按存成編隊、點一下選取、點兩下跳過去", async ({ page }) => {
@@ -181,9 +219,10 @@ test("重設：一按就取消選取、離開撤退／集結點／放建築、�
   const mode = () => page.evaluate(() => window.__proto?.game?.mode());
   const nothing = { units: [], building: null };
 
-  // 撤退：選兵 → 撤退 → 重設
+  // 撤退：選兵 → 撤退（直接退回主城）→ 改撤到別處 → 重設
   await selectSpearmen(page);
-  await page.getByRole("button", { name: "撤退", exact: true }).tap();
+  await page.getByRole("button", { name: /^撤退/ }).tap();
+  await page.getByRole("button", { name: "改撤到別處" }).tap();
   await expect(page.getByText("點地面或小地圖選撤退位置")).toBeVisible();
   await shot(page, info, "reset-before");
   await reset.tap();
@@ -276,7 +315,7 @@ test("閒置農民：點一下跳到下一個並選取，長按全部選取", as
 });
 
 test("全軍：選取所有軍隊", async ({ page }) => {
-  await page.getByRole("button", { name: "全軍" }).tap();
+  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   await expect.poll(() => selection(page)).toEqual({ units: await ownIds(page, [1, 2, 3]), building: null });
 });
 
@@ -412,7 +451,7 @@ test("姿態：按鈕寫出現在是哪一種、按了會變成哪一種，選�
   await shot(page, info, "stance-hold");
 
   // 全軍 now mixes 堅守 spearmen with 積極 archers and mages: one tap makes them all 堅守.
-  await page.getByRole("button", { name: "全軍" }).tap();
+  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   const army = await ownIds(page, [1, 2, 3]);
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await expect(stance).toHaveText("姿態：混合按一下全部改成堅守");
@@ -461,7 +500,7 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await shot(page, info, "formation-loose");
 
   // 全軍 now mixes 散開 spearmen with 密集 archers and mages: one tap makes them all 散開.
-  await page.getByRole("button", { name: "全軍" }).tap();
+  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   const army = await ownIds(page, [1, 2, 3]);
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await expect(formation).toHaveText("隊形：混合按一下全部改成散開");
@@ -548,7 +587,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   // They left control group 1, and 全軍 does not take them.
   const rest = spear.filter((id) => !inside.includes(id));
   expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(rest);
-  await page.getByRole("button", { name: "全軍" }).tap();
+  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   const army = (await ownIds(page, [1, 2, 3])).filter((id) => !inside.includes(id));
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await select(page, []);
@@ -596,7 +635,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 1 }));
   await expect.poll(() => garrison(page, 0)).toEqual([]);
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [inside[0], inside[1]], stance: 0, auto: true });
-  await page.getByRole("button", { name: "全軍" }).tap();
+  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   await expect.poll(async () => (await selection(page))?.units).toEqual(await ownIds(page, [1, 2, 3]));
 });
 
@@ -617,9 +656,14 @@ test("留守：搶預設不留人；所有的兵都留守時，全軍會說明",
   for (let i = 0; i < army.length; i++) await more.tap();
   await expect(panel.getByRole("status", { name: "留守幾名" })).toHaveText(`${army.length}`);
   expect((await garrison(page, 0)).slice().sort((x, y) => x - y)).toEqual(army);
-  await page.getByRole("button", { name: "全軍" }).tap();
+  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   await expect(toast(page, "所有的兵都在留守")).toBeVisible();
   await expect.poll(async () => (await selection(page))?.units).toEqual([]);
+  // 全軍撤退 leaves the garrisons too: nobody to send, and it says so.
+  const before = (await sent(page)).length;
+  await page.getByRole("button", { name: "全軍撤退" }).tap();
+  await expect(toast(page, "沒有可以撤退的士兵")).toBeVisible();
+  expect((await sent(page)).length, "no order").toBe(before);
 });
 
 test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現有／原本；湊滿 3 名一起出發；可以關掉（D-026）", async ({ page }, info) => {

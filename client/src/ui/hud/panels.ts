@@ -49,6 +49,8 @@ export interface PanelHost {
   garrisonLess(town: number): void;
   /** A line in the message strip. */
   notify(text: string): void;
+  /** 撤退 with units selected: back to the main city at once. */
+  retreat(): void;
   /** 編隊自動補兵 (D-026): the control group these units are exactly, its switch, and flipping it. */
   groupOf(ids: number[]): number | null;
   groupRefill(i: number): boolean;
@@ -495,7 +497,11 @@ export class CommandArea {
         }, "wide");
       }
       if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
-      const retreat = button(this.el, mode === "retreat" ? "取消撤退" : "撤退", "", () => this.host.setMode(mode === "retreat" ? "normal" : "retreat"));
+      // 撤退 goes back to the main city at once; 「改撤到別處」 (the prompt strip) picks another spot.
+      const retreat =
+        mode === "retreat"
+          ? button(this.el, "取消撤退", "", () => this.host.setMode("normal"))
+          : button(this.el, "撤退", "退回主城", () => this.host.retreat());
       if (mode === "retreat") retreat.classList.add("active");
       button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary");
       if (types.has(UnitType.Mage)) {
