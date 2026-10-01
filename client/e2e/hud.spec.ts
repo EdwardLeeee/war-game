@@ -72,6 +72,8 @@ const toastOnTop = (page: Page) =>
   });
 /** How many lines a piece of text takes (the line height is 1.15 times the font size). */
 const lines = (l: Locator) => l.evaluate((e) => Math.round(e.getBoundingClientRect().height / (parseFloat(getComputedStyle(e).fontSize) * 1.15)));
+const groupInfo = (page: Page) => page.evaluate(() => window.__proto?.game?.groupInfo() ?? []);
+const remove = (page: Page, ids: number[]) => page.evaluate((i) => window.__proto?.game?.remove(i), ids);
 
 async function ownIds(page: Page, types: number[]): Promise<number[]> {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -548,6 +550,62 @@ test("留守：搶預設不留人；所有的兵都留守時，全軍會說明",
   await page.getByRole("button", { name: "全軍" }).tap();
   await expect(toast(page, "所有的兵都在留守")).toBeVisible();
   await expect.poll(async () => (await selection(page))?.units).toEqual([]);
+});
+
+test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現有／原本；湊滿 3 名一起出發；可以關掉（D-026）", async ({ page }, info) => {
+  const GROUP_2 = ".groups > button:nth-child(2)";
+  const spear = await selectSpearmen(page);
+  await longPressOn(page, GROUP_1);
+  const g1 = page.locator(GROUP_1);
+  await expect(g1).toHaveText("1·6/6");
+  // Three fall: the group keeps what it was saved with.
+  await remove(page, spear.slice(0, 3));
+  await expect(g1).toHaveText("1·3/6");
+  expect((await groupInfo(page))[0]).toMatchObject({ ids: spear.slice(3), want: { 1: 6 }, saved: 6, refill: true });
+
+  // Three spearmen from the barracks: each joins group 1 as it is trained.
+  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
+  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await expect(page.locator(".sel-info")).toContainText("兵營");
+  const train = page.getByRole("button", { name: /^訓練槍兵/ });
+  await train.tap();
+  await train.tap();
+  await train.tap();
+  await expect(toast(page, "新的槍兵補進編隊 1")).toBeVisible({ timeout: 15_000 });
+  await expect(g1).toHaveText("1·6/6", { timeout: 30_000 });
+  const recruits = (await ownIds(page, [1])).filter((id) => !spear.includes(id));
+  expect(recruits).toHaveLength(3);
+  expect((await groupInfo(page))[0].ids).toEqual([...spear.slice(3), ...recruits]);
+  await shot(page, info, "group-refill");
+  // The third makes three: they set off together for where the group stands (the three
+  // survivors are on cells (22–24, 69)), by an order the player did not give.
+  await expect
+    .poll(async () => (await sent(page)).filter((c) => c.c === "move" && c.auto === true).at(-1))
+    .toMatchObject({ c: "move", u: recruits, x: 23, y: 69, auto: true });
+
+  // The switch shows when the whole group is selected with its button.
+  await tapOn(page, GROUP_1);
+  await expect.poll(async () => (await selection(page))?.units).toEqual([...spear.slice(3), ...recruits]);
+  const sw = page.getByRole("button", { name: /^編隊 1 自動補兵/ });
+  await expect(sw).toHaveText("編隊 1 自動補兵：開");
+  await sw.tap();
+  await expect(sw).toHaveText("編隊 1 自動補兵：關");
+  await expect(toast(page, "編隊 1 自動補兵：關")).toBeVisible();
+  // Off: a fallen soldier is not replaced; the new spearman stays by the barracks.
+  await remove(page, [spear[3]]);
+  await expect(g1).toHaveText("1·5/6");
+  await select(page, []);
+  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await train.tap();
+  await expect.poll(async () => (await ownIds(page, [1])).length, { timeout: 15_000 }).toBe(6);
+  await page.waitForTimeout(300);
+  await expect(g1).toHaveText("1·5/6");
+
+  // A soldier belongs to one group: saving two of group 1 as group 2 takes them out of group 1, whose 原本 shrinks with them.
+  await select(page, [spear[4], spear[5]]);
+  await longPressOn(page, GROUP_2);
+  await expect(page.locator(GROUP_2)).toHaveText("2·2/2");
+  await expect(g1).toHaveText("1·3/4");
 });
 
 test("被攻擊：小地圖閃、畫面邊緣出現箭頭，點箭頭跳過去", async ({ page }, info) => {

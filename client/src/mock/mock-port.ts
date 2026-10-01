@@ -193,6 +193,11 @@ export class MockPort implements SimPort {
     });
   }
 
+  /** Tests: these units of ours fall. */
+  remove(ids: number[]): void {
+    for (let i = this.units.length - 1; i >= 0; i--) if (this.units[i].owner === ME && ids.includes(this.units[i].id)) this.units.splice(i, 1);
+  }
+
   postMessage(msg: ToWorker): void {
     switch (msg.type) {
       case "init":

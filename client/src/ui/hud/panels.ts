@@ -49,6 +49,10 @@ export interface PanelHost {
   garrisonLess(town: number): void;
   /** A line in the message strip. */
   notify(text: string): void;
+  /** 編隊自動補兵 (D-026): the control group these units are exactly, its switch, and flipping it. */
+  groupOf(ids: number[]): number | null;
+  groupRefill(i: number): boolean;
+  toggleRefill(i: number): void;
 }
 
 /** 姿態 in the player's words (GDD §9, D-026: 「看不太懂積極和堅守的差別」). */
@@ -186,6 +190,7 @@ export class SelectionInfo {
       const autocast = mine && (u[o + U.flags] & UnitFlag.Autocast) !== 0 ? "　自動施放開" : "";
       status.textContent = `${ACTION_NAME[u[o + U.action]] ?? ""}　${stance}${autocast}`;
     });
+    if (this.host.groupOf([id]) !== null) this.refillSwitch(el("div", this.el, "sel-chips"), [id]);
     this.stanceNote(view, [id]);
   }
 
@@ -225,8 +230,21 @@ export class SelectionInfo {
       const rest = split.rest.filter((id) => view.unitRow(id) >= 0).length;
       if (rest > 0) button(chips, `改選其餘 ${rest} 名`, "", () => this.host.selectRest(), "chip rest-chip");
     }
+    this.refillSwitch(chips, ids);
     this.stanceNote(view, ids);
     this.splitRow(ids.length);
+  }
+
+  /** 編隊 N 自動補兵：開／關, when the selection is exactly one control group (it was just recalled with its button). */
+  private refillSwitch(parent: HTMLElement, ids: number[]): void {
+    const i = this.host.groupOf(ids);
+    if (i === null) return;
+    const b = button(parent, "", "", () => this.host.toggleRefill(i), "chip refill-chip secondary");
+    const label = b.querySelector(".label") as HTMLElement;
+    this.updaters.push(() => {
+      const text = `編隊 ${i + 1} 自動補兵：${this.host.groupRefill(i) ? "開" : "關"}`;
+      if (label.textContent !== text) label.textContent = text;
+    });
   }
 
   /** 分出 N 名 (D-024): − N + and 分出; N can also be typed. */

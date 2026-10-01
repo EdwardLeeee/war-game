@@ -307,10 +307,12 @@ export class Game implements GestureHost {
     const seq = this.post(cmd, false);
     // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
     if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") this.setStance(this.army.release(cmd.u), Stance.Aggressive);
+    // Any order of his own to a recruit: 自動補兵 no longer leads it to its group (GDD §10).
+    if ("u" in cmd) this.army.playerOrdered(Array.isArray(cmd.u) ? cmd.u : [cmd.u]);
     return seq;
   }
 
-  /** An order the interface gives on its own (a garrison's stance): a rejection is not shown to the player. */
+  /** An order the interface gives on its own (a garrison's stance, a recruit's march): a rejection is not shown to the player. */
   autoCommand(cmd: CommandBody): number {
     return this.post(cmd, true);
   }
@@ -421,6 +423,50 @@ export class Game implements GestureHost {
     this.army.settle((town) => view.townAwaitsMyChoice(town));
   }
 
+  // --- 編隊自動補兵 (D-026, GDD §10) ------------------------------------------------------
+
+  /** A soldier of ours was trained: it joins the control group that is short of its type, if any. */
+  private enlist(id: number, type: number): void {
+    const view = this.view;
+    const tick = view?.header?.[H.tick];
+    if (view === null || tick === undefined) return;
+    const i = this.army.enlist(id, type, tick, (m) => (view.unitRow(m) >= 0 ? view.unitType(m) : null));
+    if (i !== null) this.toast(`新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}`);
+  }
+
+  /** Every snapshot: recruits that have gathered (or waited long enough) are sent to their group. */
+  private musterRecruits(): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const tick = view?.header?.[H.tick];
+    if (view === null || u === undefined || tick === undefined) return;
+    const where = (id: number): { x: number; y: number } | null => {
+      const o = view.unitRow(id);
+      return o < 0 ? null : { x: u[o + UnitField.x], y: u[o + UnitField.y] };
+    };
+    for (const o of this.army.muster(tick, where)) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
+  }
+
+  /** 長按編隊按鈕: the selected units become control group i. */
+  saveGroup(i: number): number {
+    const view = this.view;
+    if (view === null) return 0;
+    const units = view.selection.units.map((id) => ({ id, type: view.unitType(id) }));
+    if (units.length > 0) this.army.saveGroup(i, units);
+    return units.length;
+  }
+
+  /** The control group whose living members are exactly these units, or null. */
+  groupOf(ids: number[]): number | null {
+    const view = this.view;
+    if (view === null || ids.length === 0) return null;
+    const i = this.army.groups.findIndex((g) => {
+      const alive = g.ids.filter((id) => view.unitRow(id) >= 0);
+      return alive.length === ids.length && alive.every((id) => ids.includes(id));
+    });
+    return i < 0 ? null : i;
+  }
+
   private receive(msg: FromWorker): void {
     switch (msg.type) {
       case "ready": {
@@ -456,10 +502,12 @@ export class Game implements GestureHost {
             this.setStance(this.army.refused(ev.seq), Stance.Aggressive);
             if (cmd?.auto !== true) this.overlays.toast(rejectText(ev.reason, cmd));
           } else {
+            if (ev.k === "unit_trained") this.enlist(ev.id, ev.type);
             this.hud.onEvent(ev);
           }
         }
         this.pruneArmy();
+        this.musterRecruits();
         if (this.placement !== null) {
           this.placement.revalidate(view.placement);
           this.showPlaceButtons();
