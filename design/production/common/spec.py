@@ -7,7 +7,7 @@ sequence (idle 12, walk 12, cast 30, hit 6, shatter 8, fall 12, dead 4).
 
 Every animation is approved now (2026-10-01): P1-01 晶彈, P1-02 hit and shatter, P1-05 the siege
 engines' walk, P2-03 the falls, P2-04 the farmers' four works, P2-06 the enlarged farm tools.
-The infantry deaths use the P2-03 fall too (ceo 2026-10-01; shown to the user as P3-01).
+The infantry deaths use the P2-03 fall too (P3-01, approved 2026-10-01, D-032).
 They live in blender/anims.py and are switched on for every production render (new_anims).
 `placeholder` stays in the format for animations added later.
 
@@ -84,8 +84,8 @@ UNITS = {
 SHADOW_EXTRA = (0.45, 0.6)
 
 # Approval renders (render_prod.py --review: facing 7 only, into build/prod/review-<unit>).
-# P2 (approved 2026-10-01) is kept for common/review_p2.py; REVIEW_ANIMS is what waits for approval now:
-# P3-01, the infantry deaths with the approved P2-03 fall.
+# P2 (approved 2026-10-01) is kept for common/review_p2.py; REVIEW_ANIMS is the last set sent for approval:
+# P3-01, the infantry deaths with the P2-03 fall (approved 2026-10-01, D-032).
 REVIEW_FACINGS = [7]
 P2_ANIMS = {
     "mage_e": [("fall", 12), ("dead", 4)],
