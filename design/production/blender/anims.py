@@ -50,15 +50,16 @@ FALL_KEYS = [
                 hipR=(30, -6, 0), kneeR=(-70, 0, 0), hipL=(60, 8, 0), kneeL=(-100, 0, 0)), "lin"),
     # the back hits the ground
     (0.75, dict(hips=(-0.10, -0.38, -0.80), hips_rot=(88, -10, 28), torso=(4, 0, 6), neck=(-6, 0, 30),
-                shoulderR=(150, -30, 0), elbowR=(30, 0, 0), shoulderL=(20, 62, 0), elbowL=(40, 0, 0),
+                shoulderR=(30, -60, 0), elbowR=(30, 0, 0), shoulderL=(20, 40, 0), elbowL=(30, 0, 0),
                 hipR=(8, -12, 0), kneeR=(-18, 0, 0), hipL=(48, 10, 0), kneeL=(-80, 0, 0)), "in"),
     # one small bounce
     (0.84, dict(hips=(-0.10, -0.38, -0.765), hips_rot=(84, -10, 28), torso=(8, 0, 6),
-                shoulderR=(142, -32, 0), shoulderL=(28, 56, 0)), "out"),
-    # at rest: on the back, turned, one knee up, the right arm up by the head, the left one wide
-    # (wide sleeves seen end-on read as dark discs: both arms lie along the ground, away from the camera)
+                shoulderR=(34, -56, 0), shoulderL=(24, 36, 0)), "out"),
+    # at rest: on the back, turned, one knee up, the right arm flung out toward the camera, the left
+    # one by the side (an arm up by the head hides the head under the wide sleeve; an arm pointing
+    # away from the camera reads as a tube standing up)
     (1.0, dict(hips=(-0.10, -0.39, -0.81), hips_rot=(89, -10, 28), torso=(3, 0, 6), neck=(-8, 0, 34),
-               shoulderR=(165, -24, 0), elbowR=(35, 0, 0), shoulderL=(10, 72, 0), elbowL=(25, 0, 0),
+               shoulderR=(4, -40, 0), elbowR=(10, 0, 0), shoulderL=(4, 28, 0), elbowL=(12, 0, 0),
                hipR=(4, -14, 0), kneeR=(-10, 0, 0), hipL=(40, 12, 0), kneeL=(-72, 0, 0)), "smooth"),
 ]
 STAFF_LEN = 1.0                    # hand to the foot of the staff (mage5.staff)
