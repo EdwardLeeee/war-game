@@ -33,6 +33,7 @@ import {
   SHIELD,
   SHIELD_REGEN,
   DIRECT_STEER,
+  JOIN_FIGHT,
   LEASH,
   MAIN_ARROW,
   MAX_PUSH,
@@ -74,6 +75,8 @@ export class UnitSystem {
   private cellHead: Int32Array;
   private cellNext = new Int32Array(256);
   private attacking = new Uint8Array(256);
+  /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
+  private startTarget = new Int32Array(256);
   private unitDamage = new Int32Array(256);
   /** The same hits counted against a mage's shield (its own multipliers). */
   private shieldDamage = new Int32Array(256);
@@ -102,6 +105,7 @@ export class UnitSystem {
       const c = Math.max(n, this.cellNext.length * 2);
       this.cellNext = new Int32Array(c);
       this.attacking = new Uint8Array(c);
+      this.startTarget = new Int32Array(c);
       this.unitDamage = new Int32Array(c);
       this.shieldDamage = new Int32Array(c);
       this.newX = new Int32Array(c);
@@ -119,6 +123,7 @@ export class UnitSystem {
   run(w: World, fog: Fog, fields: FieldCache, farmers: FarmerDecider): Hurt[] {
     this.fit(w.units.count, w.buildings.count);
     this.bucket(w);
+    this.startTarget.set(w.units.col.target.subarray(0, w.units.count));
     for (let i = 0; i < w.units.count; i++) this.decide(w, fog, fields, farmers, i);
     this.move(w);
     return this.attack(w, fog);
@@ -141,6 +146,53 @@ export class UnitSystem {
   private sees(fog: Fog, owner: number, x: number, y: number, n: number): boolean {
     if (owner === NEUTRAL) return true;
     return fog.visible[owner][(y >> CELL_SHIFT) * n + (x >> CELL_SHIFT)] === 1;
+  }
+
+  /**
+   * Joining a fight (JOIN_FIGHT): the enemy unit that a friend within JOIN_FIGHT.range had as
+   * its target at the start of the tick, nearest unit i (ties: lower id), among those i's owner
+   * sees within LEASH of i's place (anchor); -1 if none. Farmers' targets do not count.
+   */
+  private joinFight(w: World, fog: Fog, i: number): number {
+    const reach = JOIN_FIGHT.range;
+    if (reach <= 0) return -1;
+    const u = w.units.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const mx = u.x[i];
+    const my = u.y[i];
+    const cells = (reach >> CELL_SHIFT) + 1;
+    const cx = mx >> CELL_SHIFT;
+    const cy = my >> CELL_SHIFT;
+    const r2 = reach * reach;
+    let best = 0;
+    let bestId = -1;
+    for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
+      for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (j === i || u.owner[j] !== me || u.type[j] === UnitType.Farmer) continue;
+          const t = this.startTarget[j];
+          if (t < 0) continue;
+          const fx = u.x[j] - mx;
+          const fy = u.y[j] - my;
+          if (fx * fx + fy * fy > r2) continue;
+          const ts = w.unit(t);
+          if (ts < 0 || u.owner[ts] === me || u.action[ts] === Action.Garrisoned) continue;
+          if (!this.sees(fog, me, u.x[ts], u.y[ts], n)) continue;
+          const ax = u.x[ts] - u.anchorX[i];
+          const ay = u.y[ts] - u.anchorY[i];
+          if (ax * ax + ay * ay > LEASH * LEASH) continue;
+          const dx = u.x[ts] - mx;
+          const dy = u.y[ts] - my;
+          const d2 = dx * dx + dy * dy;
+          if (bestId < 0 || d2 < best || (d2 === best && t < bestId)) {
+            best = d2;
+            bestId = t;
+          }
+        }
+      }
+    }
+    return bestId;
   }
 
   /** Nearest enemy unit within reach (ties to the lower id), else the nearest enemy building; returns an id or -1. */
@@ -320,6 +372,7 @@ export class UnitSystem {
     } else if ((w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
       const hold = order === Order.None && u.stance[i] === Stance.Hold;
       tid = this.findTarget(w, fog, i, hold ? info.range : Math.max(AGGRO_RANGE, info.range));
+      if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT) tid = this.joinFight(w, fog, i);
     }
     u.target[i] = tid;
 

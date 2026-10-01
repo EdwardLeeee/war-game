@@ -125,6 +125,14 @@ for (const m of MULTIPLIERS) {
 export const AGGRO_RANGE = 6 * CELL;
 /** Aggressive idle units give up a chase this far from where they stood. */
 export const LEASH = 8 * CELL;
+/**
+ * Joining a fight (round 3, D-026): a player's idle aggressive soldier with no enemy within
+ * AGGRO_RANGE takes on an enemy that a friend within `range` had as its target at the start of
+ * the tick (chasing or hitting it), the one nearest itself, if that enemy is within LEASH of
+ * where it stands, so no chain of friends draws a unit away from its place. `range` 0 switches
+ * it off (src/balance.ts measures both ways).
+ */
+export const JOIN_FIGHT = { range: 6 * CELL };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;

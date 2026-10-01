@@ -6,7 +6,7 @@
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
 import { type Army, armyCost, armyText, BOTH, type Fight, fewestToTake, fight, type Formation, siege, twoShots } from "./balance-lib.ts";
-import { CANNON, MULT_DEN, MULT_NUM, UNITS } from "./core/rules.ts";
+import { CANNON, JOIN_FIGHT, MULT_DEN, MULT_NUM, UNITS } from "./core/rules.ts";
 import { TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -56,6 +56,17 @@ function withValues<T>(v: Record<string, number[]>, run: () => T): T {
   }
 }
 
+/** Runs with joining a fight (JOIN_FIGHT, round 3) on or off. */
+function withJoin<T>(on: boolean, run: () => T): T {
+  const range = JOIN_FIGHT.range;
+  if (!on) JOIN_FIGHT.range = 0;
+  try {
+    return run();
+  } finally {
+    JOIN_FIGHT.range = range;
+  }
+}
+
 const A = (spear: number, ranged = 0, mage = 0): Army => ({ spear, ranged, mage });
 const DISTANCES = [8, 9, 10];
 const WAYS: [string, number][] = [
@@ -91,10 +102,14 @@ function cell(m: Match, f: Fight): string {
   return s;
 }
 
-function table(m: Match): string[] {
+/** One match's table; with `off` (the same match with joining a fight off), a row for each. */
+function table(m: Match, off?: Match): string[] {
   const head = `#### ${m.title}：A ${armyText(m.a)}（${armyCost(m.a)}）對 B ${armyText(m.b)}（${armyCost(m.b)}）${m.form === "loose" ? "，B 先散開" : ""}`;
   const rows = [head, "", `| 打法 | ${DISTANCES.map((d) => `${d} 格`).join(" | ")} |`, `|---|${DISTANCES.map(() => "---|").join("")}`];
-  WAYS.forEach(([name], k) => rows.push(`| ${name} | ${m.fights[k].map((f) => cell(m, f)).join(" | ")} |`));
+  WAYS.forEach(([name], k) => {
+    if (off !== undefined) rows.push(`| ${name}，一起迎戰關 | ${off.fights[k].map((f) => cell(off, f)).join(" | ")} |`);
+    rows.push(`| ${name}${off !== undefined ? "，一起迎戰開" : ""} | ${m.fights[k].map((f) => cell(m, f)).join(" | ")} |`);
+  });
   return [...rows, ""];
 }
 
@@ -135,18 +150,21 @@ function measure(): Report {
   return { matches: [g3, g2, g4a, g4b, g5, g5loose], loose, goals };
 }
 
-function looseTable(r: Report): string[] {
+function looseTable(r: Report, off?: Report): string[] {
   const rows = [
     "#### 攻方散開：14 槍兵進攻，法師那一方站著",
     "",
     `| 對手 | 隊形 | ${DISTANCES.map((d) => `${d} 格`).join(" | ")} |`,
     `|---|---|${DISTANCES.map(() => "---|").join("")}`,
   ];
-  for (const x of r.loose) {
+  r.loose.forEach((x, k) => {
     const m: Match = { title: "", a: A(14), b: x.b, form: "close", fights: [] };
-    rows.push(`| ${armyText(x.b)} | 密集 | ${x.close.map((f) => cell(m, f)).join(" | ")} |`);
-    rows.push(`| ${armyText(x.b)} | 先散開 | ${x.loose.map((f) => cell(m, f)).join(" | ")} |`);
-  }
+    const sets: [string, typeof x][] = off === undefined ? [["", x]] : [["，一起迎戰關", off.loose[k]], ["，一起迎戰開", x]];
+    for (const [label, y] of sets) {
+      rows.push(`| ${armyText(x.b)} | 密集${label} | ${y.close.map((f) => cell(m, f)).join(" | ")} |`);
+      rows.push(`| ${armyText(x.b)} | 先散開${label} | ${y.loose.map((f) => cell(m, f)).join(" | ")} |`);
+    }
+  });
   return [...rows, ""];
 }
 
@@ -167,7 +185,8 @@ function main(): void {
   const i = process.argv.indexOf("--check");
   const check = i >= 0 ? process.argv[i + 1].split(",").map(Number) : [];
   const code = values();
-  const before = withValues(BEFORE, measure);
+  const before = withValues(BEFORE, () => withJoin(false, measure));
+  const off = withJoin(false, measure);
   const now = measure();
   const out: string[] = [
     "## 兵種平衡量測（原型第三輪，D-026）",
@@ -175,6 +194,7 @@ function main(): void {
     "- 每方花費 840（四種資源都算）：槍兵 60、遠程 70、法師 140。兩方的前排相距 8、9、10 格各打一場，最多 2 分鐘。",
     "- A 進攻：A 走向站著的 B。B 進攻：反過來。雙方對進：同時往對方走。站著的一方是積極姿態，6 格內有敵人才會動。目標以雙方對進判定。",
     "- 法師開著自動施放，魔晶足夠。",
+    `- 一起迎戰（第三輪）：待命、積極姿態的兵，6 格內沒有敵人時，去打 ${JOIN_FIGHT.range / 1024} 格內隊友正在追或打的敵人（離自己原位 8 格內）。「現在」沒有這條規則；「這個版本」兩種都列。`,
     `- 晶砲不動：傷害 ${CANNON.damage}、半徑 ${CANNON.radius / 1024} 格、射程 ${CANNON.range / 1024} 格、冷卻 ${CANNON.cooldownTicks / 20} 秒。`,
     "",
     "### 數值",
@@ -185,14 +205,14 @@ function main(): void {
   for (const [k, knob] of Object.entries(KNOBS)) {
     out.push(`| ${knob.label} | ${knob.show(BEFORE[k])} | ${knob.show(code[k])} |`);
   }
-  out.push("", "### 目標（雙方對進）", "", "| 目標 | 現在 | 這個版本 | 備註 |", "|---|---|---|---|");
+  out.push("", "### 目標（雙方對進）", "", "| 目標 | 現在 | 這個版本，一起迎戰關 | 這個版本 | 備註 |", "|---|---|---|---|---|");
   GOALS.forEach((g, k) => {
     const mark = (r: Report) => `${r.goals[k].ok ? "✓" : "✗"} ${r.goals[k].text}`;
-    out.push(`| ${g} | ${mark(before)} | ${mark(now)} | ${now.goals[k].ok ? "" : (KNOWN[k + 1] ?? "")} |`);
+    out.push(`| ${g} | ${mark(before)} | ${mark(off)} | ${mark(now)} | ${now.goals[k].ok ? "" : (KNOWN[k + 1] ?? "")} |`);
   });
-  out.push("", "### 對戰：這個版本", "");
-  for (const m of now.matches) out.push(...table(m));
-  out.push(...looseTable(now));
+  out.push("", "### 對戰：這個版本（一起迎戰關、開各一列）", "");
+  now.matches.forEach((m, k) => out.push(...table(m, off.matches[k])));
+  out.push(...looseTable(now, off));
   out.push("<details><summary>對戰：現在（第二輪的數值）</summary>", "");
   for (const m of before.matches) out.push(...table(m));
   out.push(...looseTable(before));
