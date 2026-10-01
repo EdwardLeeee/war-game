@@ -278,11 +278,24 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   const g1 = (await groupInfo(page))[0];
   const sp = (await units(page)).find((u) => g1.ids.includes(u.id) && u.type === SPEARMAN)?.id;
   if (sp === undefined) throw new Error("no spearman left in group 1");
-  // Walk it into the town by hand, then station it from the town's selection info.
+  // Walk it into the town by hand, then station it from the town's selection info. Not to
+  // `target`: the soldier kept in step 8 (the one nearest the centre) stands there, and a tap
+  // on him selects him (run 36820687063). A cell where a tap hits the town's open ground.
   await page.evaluate((u) => window.__proto?.game?.select(u), [sp]);
   await centre(page, { x: town.cx, y: town.cy + 3 }, 0.8);
-  await tap(page, await toScreen(page, target));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: [sp] });
+  let inside: { x: number; y: number } | null = null;
+  for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [2, 1], [-2, 1], [1, 2], [-1, 2], [2, 2], [-2, 2], [0, -2]]) {
+    const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [town.cx + dx, town.cy + dy] as const);
+    if (cell === null || Math.hypot(cell.x - town.cx, cell.y - town.cy) > town.radius - 1) continue;
+    const p = await toScreen(page, cell);
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === "town") {
+      inside = cell;
+      break;
+    }
+  }
+  if (inside === null) throw new Error("no open ground inside the town to walk to");
+  await tap(page, await toScreen(page, inside));
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: [sp], x: inside.x, y: inside.y });
   const fromTown = async (id: number) => {
     const u = (await units(page)).find((v) => v.id === id);
     return u === undefined ? 99 : Math.hypot(u.fx - (town.cx + 0.5), u.fy - (town.cy + 0.5));
