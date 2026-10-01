@@ -79,20 +79,35 @@ UNITS = {
 # (fractions of the frame height). The sun is low enough that 0.25 below clipped the farmer's shadow.
 SHADOW_EXTRA = (0.45, 0.6)
 
-# the new animations waiting for the user's approval (blender/anims.py): rendered with
-# render_prod.py --review at facing 7 only, for the motion GIF; after approval they replace the
-# stand-ins in UNITS. (name, frames)
+# The new animations (blender/anims.py). The user's rulings, 2026-10-01:
+#   approved (P1): the mages' attack (晶彈), hit and shatter; the siege engines' walk.
+#   redone as P2 ("p1-03 p1-04看起來不夠精緻"): the falls and deaths, the farmers' four works;
+#   the farmers' enlarged tools (their idle and walk change with them) are shown as P2-06.
+# render_prod.py --review renders REVIEW_ANIMS at facing 7 only, for the approval GIFs; after
+# approval the animations replace the stand-ins in UNITS. (name, frames)
 REVIEW_FACINGS = [7]
+APPROVED_ANIMS = {
+    "mage_e": [("attack", 10), ("hit", 6), ("shatter", 8)],
+    "mage_w": [("attack", 10), ("hit", 6), ("shatter", 8)],
+    "siege_e": [("walk", 8)],
+    "siege_w": [("walk", 8)],
+}
 REVIEW_ANIMS = {
-    "mage_e": [("attack", 10), ("hit", 6), ("shatter", 8), ("fall", 12), ("dead", 4)],
-    "mage_w": [("attack", 10), ("hit", 6), ("shatter", 8), ("fall", 12), ("dead", 4)],
+    "mage_e": [("fall", 12), ("dead", 4)],
+    "mage_w": [("fall", 12), ("dead", 4)],
     "hcav_e": [("death", 10)],
     "knight_w": [("death", 10)],
-    "siege_e": [("walk", 8), ("death", 10)],
-    "siege_w": [("walk", 8), ("death", 10)],
-    "farmer_e": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8)],
-    "farmer_w": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8)],
+    "siege_e": [("death", 10)],
+    "siege_w": [("death", 10)],
+    "farmer_e": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8), ("idle", 8), ("walk", 8)],
+    "farmer_w": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8), ("idle", 8), ("walk", 8)],
 }
+# client/docs/sprite-atlas.md, sections 7 and 11: the frame of a fall where the body lands (the game
+# plays the shared dust there), how much larger the dust is for big units, and the frame of a work
+# loop where the tool lands
+IMPACT = {"mage_e": ("fall", 8, 1.0), "mage_w": ("fall", 8, 1.0), "hcav_e": ("death", 7, 1.6),
+          "knight_w": ("death", 7, 1.6), "siege_e": ("death", 6, 2.0), "siege_w": ("death", 6, 2.0)}
+WORK_HIT = {"work_chop": 4, "work_mine": 4, "work_farm": 3, "work_build": 2}
 # a siege engine's walk cycle turns the wheels 90 degrees: it moves 2 pi r / 4 per cycle (client: stride_m)
 STRIDE_M = {"siege_e": round(2 * 3.14159265 * 0.42 / 4, 3), "siege_w": round(2 * 3.14159265 * 0.36 / 4, 3)}
 
