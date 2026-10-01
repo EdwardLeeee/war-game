@@ -63,11 +63,13 @@ def run(target, facings=None, anims=None, preview=False, review=False):
     raw = outdir / "raw"
     raw.mkdir(parents=True, exist_ok=True)
     mage = u["kind"].startswith("mage")
-    extra = dict(variant=u.get("variant", 0), shadow_extra=list(spec.SHADOW_EXTRA))
+    # the approved new animations (anims.py) are part of every production render; the mages' shield
+    # is a layer of its own (client/docs/sprite-atlas.md version 2)
+    extra = dict(variant=u.get("variant", 0), shadow_extra=list(spec.SHADOW_EXTRA), new_anims=True,
+                 split_shield=mage)
     if u.get("style"):
         extra["mage_style"] = u["style"]
     if review:
-        extra["new_anims"] = True
         u = dict(u, anims=[(a, n, a, False) for a, n in spec.REVIEW_ANIMS[target]])
         facings = facings or spec.REVIEW_FACINGS
     t_fit = time.time()
@@ -100,6 +102,22 @@ def run(target, facings=None, anims=None, preview=False, review=False):
                       extra={k: v for k, v in extra.items() if k != "variant"})
         timing[f] = dict(seconds=round(time.time() - t0, 1), frames=len(items), passes=len(passes))
         print(f"[{target}] facing {f}: {len(items)} frames x {len(passes)} passes in {time.time() - t0:.0f}s", flush=True)
+    if mage and not review and (anims is None or "shield" in anims):
+        # the shield layer: one facing, no mirroring; named <unit>_shield_<anim>_<ii>
+        items = [dict(facing=spec.SHIELD_FACING, anim=f"shield_{a}", frame=i, n=n, passes=["shield"],
+                      out=str(raw / f"{target}_shield_{a}_{i:02d}"))
+                 for a, n in spec.SHIELD_ANIMS for i in ([0] if preview else range(n))]
+        t0 = time.time()
+        if preview:
+            batch.run(u["kind"], items, spec.PX_PER_M, level="C", frame_m=frame_m, tag="prodpshield",
+                      outputs={"x3": spec.PX_PER_M}, samples={"fx": 8}, variant=extra["variant"],
+                      extra={k: v for k, v in extra.items() if k != "variant"})
+        else:
+            batch.run(u["kind"], items, spec.PX_PER_M, level="C", frame_m=frame_m, tag="prodshield",
+                      ss=spec.SUPERSAMPLE, outputs={"x3": spec.PX_PER_M}, variant=extra["variant"],
+                      extra={k: v for k, v in extra.items() if k != "variant"})
+        timing["shield"] = dict(seconds=round(time.time() - t0, 1), frames=len(items), passes=1)
+        print(f"[{target}] shield: {len(items)} frames in {time.time() - t0:.0f}s", flush=True)
     stats = dict(target=target, seconds=round(time.time() - t_all, 1), fit_seconds=fit_seconds, frame_m=frame_m,
                  reach_m=reach, facings=timing, preview=preview)
     (outdir / "render_stats.json").write_text(json.dumps(stats, indent=1))

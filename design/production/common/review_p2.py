@@ -44,7 +44,7 @@ WHITE = (250, 248, 240)
 
 
 def fetch(run_id):
-    for unit in spec.REVIEW_ANIMS:
+    for unit in spec.P2_ANIMS:
         d = PROD / f"review-{unit}"
         subprocess.run(["rm", "-rf", str(d)])
         r = subprocess.run(["gh", "run", "download", str(run_id), "-n", f"production-review-{unit}", "-D", str(d)])
@@ -376,7 +376,7 @@ if __name__ == "__main__":
         fetch(a.fetch)
     only = set(a.only.split(",")) if a.only else {"falls", "works", "tools", "overview"}
     OUT.mkdir(parents=True, exist_ok=True)
-    B = {u: dict(spec.REVIEW_ANIMS[u]) for u in spec.REVIEW_ANIMS}
+    B = {u: dict(spec.P2_ANIMS[u]) for u in spec.P2_ANIMS}
     falls = []
     for u in ("mage_e", "mage_w", "hcav_e", "knight_w", "siege_e", "siege_w"):
         an = ["fall", "dead"] if u.startswith("mage") else ["death"]

@@ -19,7 +19,7 @@ animation rendered in the same Blender process.
 import math
 
 import bpy
-from mathutils import Euler, Vector
+from mathutils import Euler, Matrix, Vector
 
 import humanoid2 as h2
 import lib
@@ -65,6 +65,7 @@ FALL_KEYS = [
 STAFF_LEN = 1.0                    # hand to the foot of the staff (mage5.staff)
 STAFF_LIES = (0.80, 0.55, 0.0)     # where the dropped staff points on the ground (unit space)
 MAGE_IMPACT = 8                    # the frame of `fall` where the body lands (for the game's dust)
+HIT_K = [0.0, 1.0, 0.8, 0.5, 0.25, 0.0]     # how bright the shield flashes over the 6 frames of `hit`
 
 
 def _obj(name):
@@ -179,7 +180,7 @@ def extend_mage(u, style):
 
     def hit(f):
         base, off = stand()
-        k = [0.0, 1.0, 0.8, 0.5, 0.25, 0.0][min(f, 5)]
+        k = HIT_K[min(f, len(HIT_K) - 1)]
         a = blend(base, {"torso": (10, 0, 0), "neck": (8, 0, 0), "shoulderL": (60, 0, 20), "elbowL": (80, 0, 0),
                          "hipR": (-8, 0, -4), "hipL": (8, 0, 4)}, k)
         _pose_body(r, a, {"hips": (0, -0.04 * k, 0)})
@@ -237,8 +238,25 @@ def extend_mage(u, style):
         if shield:
             shield.scale = (0.001,) * 3
 
+    def shield_layer(anim, f):
+        """The separate shield layer (client/docs/sprite-atlas.md version 2, section 4): only the
+        shield is rendered (render_units.py hides the body), so the body pose does not matter."""
+        inner("idle", 0)
+        if not shield:
+            return
+        if anim == "shield_hit":
+            k = HIT_K[min(f, len(HIT_K) - 1)]
+            shield.scale = (1 + 0.07 * k,) * 3
+            shield_alpha.default_value = alpha0 + (1.0 - alpha0) * k
+        elif anim == "shield_break":            # = the shield in the first two frames of shatter
+            shield.scale = (1 + 0.1 * min(f, 1),) * 3
+            shield_alpha.default_value = 1.0
+
     def pose(anim, frame):
         reset()
+        if anim.startswith("shield_"):
+            shield_layer(anim, frame)
+            return
         if anim not in MAGE_NEW:
             inner(anim, frame)
             return
@@ -707,6 +725,172 @@ def extend_farmer(u, kind):
     return u
 
 
+# ---------------------------------------------------------------- infantry deaths (P3)
+#
+# The infantry (spearman, crossbowman, longbowman, pikeman, both farmers) fall the way the user
+# approved for the mages in P2-03 (the same keys, FALL_KEYS): the knees give, the body sinks, tips
+# backward and to one side, lands with a small bounce and ends lying askew. The weapon or tool is
+# let go at once and falls on its own; it ends lying flat on the ground beside the body, along the
+# body, on the side of the hand that held it, never through the body and never below the ground.
+
+INFANTRY_FALL = True               # ceo 2026-10-01; False keeps the R1 death for the infantry
+INF_IMPACT = 7                     # the frame of `death` where the body lands (for the game's dust)
+# what each unit drops: the joint or object that carries the weapon, the hand that held it, the
+# weapon's long axis and the axis that points up when it lies flat (in that object's own frame)
+# weapon's long axis and the axis that points up when it lies flat (in that object's own frame), and
+# how far beside the body it lands (metres from the hand, outward)
+DROPS = {
+    "spear_e": ("grip_spear", "R", (0, 0, -1), (0, 1, 0), 0.18),
+    "pike_w": ("grip_pike", "R", (0, 0, -1), (0, 1, 0), 0.18),
+    "xbow_e": ("grip_xbow", "R", (0, 1, 0), (0, 0, 1), 0.18),
+    "bow_w": ("grip_bow", "L", (0, 1, 0), (1, 0, 0), 0.55),        # the bow is 2.3 m long: clear of the body
+    "farmer_e": ("tool_root", "R", (0, 0, 1), (1, 0, 0), 0.18),
+    "farmer_w": ("tool_root", "R", (0, 0, 1), (1, 0, 0), 0.18),
+}
+# hats that come off: a straw hat stays on a head lying on its back as a disc standing on edge;
+# it flies off and lands flat beside the head (helmets and scarves stay on)
+HATS = {"farmer_e": ("farmer_e_hat", "farmer_e_cord")}
+HAT_OFF = 0.18                     # the moment the hat comes off: the end of the recoil
+
+
+def _world_box(ob):
+    """World-space bounding-box corners of every mesh under `ob` (visible ones only)."""
+    pts = []
+    stack = [ob]
+    while stack:
+        o = stack.pop()
+        stack.extend(o.children)
+        if o.type == "MESH" and min(o.matrix_world.to_scale()) > 0.01:
+            pts += [o.matrix_world @ Vector(c) for c in o.bound_box]
+    return pts
+
+
+def extend_infantry(u, kind):
+    r = u.rigs["body"]
+    inner = u.pose
+    joint, side, long_ax, up_ax, beside = DROPS[kind]
+    cache = {}
+    hat = None
+    if kind in HATS:
+        hat = lib.empty(f"{kind}_hatroot", parent=r.j["head"])
+        for o in [o for o in bpy.data.objects if o.name.startswith(HATS[kind]) and o.type == "MESH"]:
+            _adopt(o, hat)
+
+    def drop_obj():
+        if joint == "tool_root":
+            return bpy.data.objects.get(f"{kind}_tool_root")
+        return r.j.get(joint)
+
+    def stand():
+        """The unit's own standing pose (its idle frame 0, weapon in hand): joint angles in degrees,
+        and where the weapon is (unit space)."""
+        inner("idle", 0)
+        bpy.context.view_layer.update()
+        ang = {name: tuple(a * motion.R2D for a in r.j[name].rotation_euler) for name in FALL_JOINTS}
+        ob = drop_obj()
+        Wi = u.root.matrix_world.inverted()
+        return ang, (Wi @ ob.matrix_world if ob is not None else None)
+
+    def body(t, base):
+        k0 = dict(base)
+        k0.update(hips=(0, 0, 0), hips_rot=(0, 0, 0))
+        k = motion.sample([(0.0, k0, "lin")] + FALL_KEYS, t)
+        ang = {name: k[name] for name in FALL_JOINTS}
+        ang["hips"] = k["hips_rot"]
+        r.pose(ang, {"hips": k["hips"]})
+        r.root.rotation_euler = (0, 0, 0)
+
+    def lying(base, M0):
+        """Where the weapon ends (unit space): flat on the ground along the body, beside the hand
+        that held it, its grip by that hand."""
+        body(1.0, base)
+        bpy.context.view_layer.update()
+        Wi = u.root.matrix_world.inverted()
+        P = lambda name: Wi @ r.j[name].matrix_world.translation          # noqa: E731
+        head, hips = P("neck"), P("hips")
+        along = Vector((hips.x - head.x, hips.y - head.y, 0)).normalized()        # toward the feet
+        outward = Vector((-along.y, along.x, 0))
+        hand = P("wrist" + side)
+        if (hand - hips).dot(outward) < 0:
+            outward = -outward
+        a0 = (M0.to_3x3() @ Vector(long_ax)).normalized()
+        a1 = along if a0.dot(along) >= 0 else -along          # keep the weapon's own end toward the feet
+        up = Vector((0, 0, 1))
+        # the rotation that maps the weapon's long axis to a1 and its flat-side axis to up
+        L, U = Vector(long_ax), Vector(up_ax)
+        Ml = Matrix((L, U, L.cross(U))).transposed()
+        Mw = Matrix((a1, up, a1.cross(up))).transposed()
+        R1 = Mw @ Ml.inverted()
+        grip_at = Vector((hand.x, hand.y, 0.0)) + outward * beside
+        hat_at = None
+        if hat is not None:
+            back = -along                                  # past the head, a little to the side
+            hat_at = Vector((head.x, head.y, 0.0)) + back * 0.42 - outward * 0.25
+        return R1, grip_at, hat_at
+
+    def lift(ob, loc, R):
+        """Put `ob` at loc/R (unit space), raised so that no part is below the ground."""
+        motion.place(u, ob, loc, R)
+        bpy.context.view_layer.update()
+        zs = [p.z for p in _world_box(ob)]
+        if zs:
+            low = min(zs) - u.root.matrix_world.translation.z
+            if low < 0.02:
+                motion.place(u, ob, loc + Vector((0, 0, 0.02 - low)), R)
+
+    def pose(anim, frame):
+        r.root.rotation_euler = (0, 0, 0)
+        if hat is not None:
+            hat.matrix_basis = Matrix.Identity(4)
+        if anim != "death" or not INFANTRY_FALL:
+            inner(anim, frame)
+            return
+        n = u.frames.get("death", 10)
+        t = min(1.0, frame / (n - 1.0))
+        base, M0 = stand()
+        ob = drop_obj()
+        if hat is not None and "hat0" not in cache:
+            body(HAT_OFF, base)               # where the hat is when it comes off (the head thrown back)
+            bpy.context.view_layer.update()
+            cache["hat0"] = u.root.matrix_world.inverted() @ hat.matrix_world
+        if "end" not in cache:
+            cache["end"] = lying(base, M0)
+        R1, grip_at, hat_at = cache["end"]
+        body(t, base)
+        if hat is not None:
+            H0 = cache["hat0"]
+            qh = motion.clamp(motion.ease_in((t - HAT_OFF) / 0.52) - motion.bounce(t, HAT_OFF + 0.52, 0.95, 0.05))
+            Rh = H0.to_3x3().to_quaternion().slerp(Matrix.Identity(3).to_quaternion(), qh).to_matrix()
+            p = H0.translation.lerp(hat_at, qh)
+            p.z += 0.3 * math.sin(math.pi * qh) * (1 - qh)
+            if t <= HAT_OFF:
+                # still on the head: follow it
+                bpy.context.view_layer.update()
+                hat.matrix_basis = Matrix.Identity(4)
+            else:
+                lift(hat, p, Rh)
+        if ob is not None:
+            # the grip point in the weapon's own frame: where the hand was in the standing pose
+            hand0 = cache.setdefault("hand0", None)
+            if hand0 is None:
+                inner("idle", 0)
+                bpy.context.view_layer.update()
+                Wi = u.root.matrix_world.inverted()
+                hand0 = (Wi @ ob.matrix_world).inverted() @ (Wi @ r.j["wrist" + side].matrix_world.translation)
+                cache["hand0"] = hand0
+                body(t, base)
+            q = motion.clamp(motion.ease_in((t - 0.02) / 0.6) - motion.bounce(t, 0.62, 0.85, 0.06))
+            R0 = M0.to_3x3()
+            R = R0.to_quaternion().slerp(R1.to_quaternion(), q).to_matrix()
+            g0 = M0 @ hand0
+            g = g0.lerp(grip_at, q)
+            g.z += 0.25 * math.sin(math.pi * min(1.0, q)) * (1 - q)      # it is tossed up a little first
+            lift(ob, g - R @ hand0, R)          # never below the ground
+        h2.update(r)
+    u.pose = pose
+    return u
+
+
 def extend(u, kind, style=None):
     if kind.startswith("mage"):
         return extend_mage(u, style or "")
@@ -715,5 +899,7 @@ def extend(u, kind, style=None):
     if kind.startswith("siege"):
         return extend_siege(u, kind)
     if kind.startswith("farmer"):
-        return extend_farmer(u, kind)
+        u = extend_farmer(u, kind)
+    if kind in DROPS:
+        return extend_infantry(u, kind)
     return u
