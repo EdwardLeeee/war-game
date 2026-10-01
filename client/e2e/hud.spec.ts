@@ -391,7 +391,7 @@ test("姿態：按鈕寫出現在是哪一種、按了會變成哪一種，選�
   const stance = page.getByRole("button", { name: /^姿態/ });
   const panel = page.locator(".sel-info");
   await expect(stance).toHaveText("姿態：積極按一下改成堅守");
-  await expect(panel).toContainText("積極：6 格內有敵人就追上去打，離原位 8 格就回來");
+  await expect(panel).toContainText("積極：6 格內有敵人、或 6 格內的隊友正在打敵人，就追上去打；追到離原位 8 格就回來");
   await expect(panel).toContainText("姿態只管沒有指令、站著待命的時候");
   await shot(page, info, "stance-aggressive");
   await stance.tap();
@@ -451,10 +451,11 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await expect(formation).toHaveText("隊形：散開按一下改成密集");
   await expect(panel).toContainText("散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
   await expect(panel).toContainText("隊伍比較寬，過窄路比較慢；近戰兵打起來還是會擠在一起");
-  // Every line of the note takes one line, and the button's two lines one each.
-  for (const part of [".stance-meaning", ".stance-scope", ".formation-meaning", ".formation-more"]) {
+  // The formation lines take one line each (積極's longer meaning wraps to two), and the button's two lines one each.
+  for (const part of [".stance-scope", ".formation-meaning", ".formation-more"]) {
     expect(await lines(panel.locator(part)), `${part} on one line`).toBe(1);
   }
+  expect(await lines(panel.locator(".stance-meaning")), "積極 in two lines at most").toBeLessThanOrEqual(2);
   expect(await lines(formation.locator(".label")), "the label on one line").toBe(1);
   expect(await lines(formation.locator(".sub")), "the line under it on one line").toBe(1);
   await shot(page, info, "formation-loose");

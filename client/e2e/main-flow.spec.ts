@@ -179,7 +179,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   const stance = page.getByRole("button", { name: /^姿態/ });
   const stanceOfSquad = async () => [...new Set((await units(page)).filter((u) => squadIds.includes(u.id)).map((u) => u.stance))];
   await expect(stance).toHaveText("姿態：積極按一下改成堅守");
-  await expect(page.locator(".sel-info")).toContainText("積極：6 格內有敵人就追上去打，離原位 8 格就回來");
+  await expect(page.locator(".sel-info")).toContainText("積極：6 格內有敵人、或 6 格內的隊友正在打敵人，就追上去打；追到離原位 8 格就回來");
   await expect(page.locator(".sel-info")).toContainText("姿態只管沒有指令、站著待命的時候");
   await stance.tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: squadIds, stance: 1 });

@@ -55,9 +55,9 @@ export interface PanelHost {
   toggleRefill(i: number): void;
 }
 
-/** 姿態 in the player's words (GDD §9, D-026: 「看不太懂積極和堅守的差別」). */
+/** 姿態 in the player's words (GDD §9, D-026: 「看不太懂積極和堅守的差別」; 一起迎戰, D-032). */
 export const STANCE_TEXT = {
-  [Stance.Aggressive]: "積極：6 格內有敵人就追上去打，離原位 8 格就回來",
+  [Stance.Aggressive]: "積極：6 格內有敵人、或 6 格內的隊友正在打敵人，就追上去打；追到離原位 8 格就回來",
   [Stance.Hold]: "堅守：站在原地不動，只打走進射程的敵人",
 } as const;
 export const STANCE_MIXED_TEXT = "姿態：有的積極、有的堅守";
