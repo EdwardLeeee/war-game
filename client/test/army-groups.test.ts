@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ArmyBook, type ArmyUnit, RECRUIT_RECHECK_TICKS, RECRUIT_WAIT_TICKS, type TownArea } from "../src/game/army.ts";
+import { ArmyBook, type ArmyUnit, mostlyLoose, RECRUIT_RECHECK_TICKS, RECRUIT_WAIT_TICKS, redirects, type TownArea } from "../src/game/army.ts";
 import { CELL, UnitType } from "../src/sim.ts";
 
 const FARMER = UnitType.Farmer;
@@ -226,6 +226,38 @@ test("編隊自動補兵：玩家親手下過指令的新兵不再替他下指�
   assert.deepEqual(book.groups[0].recruits.map((r) => r.id), [21]);
 });
 
+test("編隊自動補兵：玩家對走在路上的新兵改姿態、隊形或自動施放，編隊移動後還是會被帶過去；前進才算親手指揮", () => {
+  const w = new World();
+  const book = new ArmyBook();
+  book.saveGroup(0, w.many(1, 4, SPEAR, 50, 50));
+  w.kill(2, 3, 4);
+  book.prune(w.alive, () => true); // one veteran left, at cell (50, 50)
+  for (const id of [21, 22, 23]) {
+    w.add(id, SPEAR, 10, 50);
+    book.enlist(id, SPEAR, 0, w.typeOf);
+  }
+  assert.deepEqual(book.muster(0, w.where), [{ ids: [21, 22, 23], cellX: 50, cellY: 50 }]);
+  // On their way, the player selects the whole group and changes its stance, formation and autocast.
+  book.playerCommand({ c: "stance", u: [1, 21, 22, 23], stance: 1 });
+  book.playerCommand({ c: "formation", u: [1, 21, 22, 23], loose: true });
+  book.playerCommand({ c: "autocast", u: [1, 21, 22, 23], on: false });
+  // The group moves on: all three are sent after it again.
+  w.move([1], 10, 0);
+  assert.deepEqual(book.muster(RECRUIT_RECHECK_TICKS, w.where), [{ ids: [21, 22, 23], cellX: 60, cellY: 50 }]);
+  // A march order of his own to one of them: that one is his now.
+  book.playerCommand({ c: "move", u: [22], x: 5, y: 5 });
+  w.move([1], 10, 0);
+  assert.deepEqual(book.muster(2 * RECRUIT_RECHECK_TICKS, w.where), [{ ids: [21, 23], cellX: 70, cellY: 50 }]);
+  // Which orders count.
+  for (const c of ["move", "attack", "retreat", "stop", "cast", "gather", "build", "repair"]) {
+    const cmd = { c, u: [21], x: 0, y: 0, target: 0, node: 0, building: 0, type: 1, fx: 0, fy: 0 } as Parameters<typeof redirects>[0];
+    assert.equal(redirects(cmd), true, c);
+  }
+  for (const cmd of [{ c: "stance", u: [21], stance: 0 }, { c: "formation", u: [21], loose: true }, { c: "autocast", u: [21], on: true }] as Parameters<typeof redirects>[0][]) {
+    assert.equal(redirects(cmd), false, cmd.c);
+  }
+});
+
 test("編隊自動補兵：編隊全滅時新兵不出發，留在原地當編隊的新成員", () => {
   const w = new World();
   const book = new ArmyBook();
@@ -246,4 +278,14 @@ test("編隊自動補兵：編隊全滅時新兵不出發，留在原地當編�
   w.add(24, SPEAR, 40, 10);
   book.enlist(24, SPEAR, 500, w.typeOf);
   assert.deepEqual(book.muster(500 + RECRUIT_WAIT_TICKS, w.where), [{ ids: [24], cellX: 10, cellY: 10 }]);
+});
+
+test("隊形：編隊裡超過一半是散開，補進來的新兵也散開；剛好一半或沒有人時不算（D-027）", () => {
+  const loose = new Set([1, 2, 3]);
+  const isLoose = (id: number): boolean => loose.has(id);
+  assert.equal(mostlyLoose([1, 2, 3, 4, 5], isLoose), true, "3 of 5");
+  assert.equal(mostlyLoose([1, 2, 4, 5], isLoose), false, "2 of 4: half is not more than half");
+  assert.equal(mostlyLoose([1, 2, 3], isLoose), true, "all of them");
+  assert.equal(mostlyLoose([4, 5], isLoose), false, "none of them");
+  assert.equal(mostlyLoose([], isLoose), false, "nobody left in the group");
 });
