@@ -838,6 +838,40 @@ def extend_infantry(u, kind):
             if low < 0.02:
                 motion.place(u, ob, loc + Vector((0, 0, 0.02 - low)), R)
 
+    def settle(ob, loc, R):
+        """The weapon's resting place, from loc/R (unit space): raised off the ground, then tipped
+        about its lowest point at one end until the other end is down too. A hoe lies on the edge
+        of its blade with the butt of the haft on the ground instead of hovering level at the
+        height of the blade. Returns (loc, R) in unit space."""
+        lift(ob, loc, R)
+        bpy.context.view_layer.update()
+        Wi = u.root.matrix_world.inverted()
+        M = Wi @ ob.matrix_world
+        pts = [Wi @ p for p in _world_box(ob)]
+        a = M.to_3x3() @ Vector(long_ax)
+        a = Vector((a.x, a.y, 0.0)).normalized()
+        s = [p.dot(a) for p in pts]
+        mid = (max(s) + min(s)) / 2
+        lo = min(pts, key=lambda p: p.z)
+        side = lo.dot(a) - mid
+        other = [p for p, si in zip(pts, s) if (si - mid) * side < 0]
+        if not other:
+            return M.translation.copy(), M.to_3x3()
+        b = min(other, key=lambda p: p.z)
+        dz, d = b.z - lo.z, abs((b - lo).dot(a))
+        if dz < 0.03 or d < 0.1:
+            return M.translation.copy(), M.to_3x3()
+        axis = a.cross(Vector((0, 0, 1)))
+        for ang in (math.atan2(dz, d), -math.atan2(dz, d)):
+            Rt = Matrix.Rotation(ang, 3, axis)
+            if (lo + Rt @ (b - lo)).z < b.z:
+                break
+        Mt = Matrix.Translation(lo) @ Rt.to_4x4() @ Matrix.Translation(-lo) @ M
+        lift(ob, Mt.translation, Mt.to_3x3())          # a corner may now be a hair below the ground
+        bpy.context.view_layer.update()
+        M = Wi @ ob.matrix_world
+        return M.translation.copy(), M.to_3x3()
+
     def pose(anim, frame):
         r.root.rotation_euler = (0, 0, 0)
         if hat is not None:
@@ -856,6 +890,14 @@ def extend_infantry(u, kind):
         if "end" not in cache:
             cache["end"] = lying(base, M0)
         R1, grip_at, hat_at = cache["end"]
+        if ob is not None and "rest" not in cache:
+            # the grip point in the weapon's own frame: where the hand was in the standing pose
+            inner("idle", 0)
+            bpy.context.view_layer.update()
+            Wi = u.root.matrix_world.inverted()
+            hand0 = (Wi @ ob.matrix_world).inverted() @ (Wi @ r.j["wrist" + side].matrix_world.translation)
+            loc, R = settle(ob, grip_at - R1 @ hand0, R1)
+            cache["rest"] = (hand0, R, loc + R @ hand0)
         body(t, base)
         if hat is not None:
             H0 = cache["hat0"]
@@ -870,15 +912,7 @@ def extend_infantry(u, kind):
             else:
                 lift(hat, p, Rh)
         if ob is not None:
-            # the grip point in the weapon's own frame: where the hand was in the standing pose
-            hand0 = cache.setdefault("hand0", None)
-            if hand0 is None:
-                inner("idle", 0)
-                bpy.context.view_layer.update()
-                Wi = u.root.matrix_world.inverted()
-                hand0 = (Wi @ ob.matrix_world).inverted() @ (Wi @ r.j["wrist" + side].matrix_world.translation)
-                cache["hand0"] = hand0
-                body(t, base)
+            hand0, R1, grip_at = cache["rest"]
             q = motion.clamp(motion.ease_in((t - 0.02) / 0.6) - motion.bounce(t, 0.62, 0.85, 0.06))
             R0 = M0.to_3x3()
             R = R0.to_quaternion().slerp(R1.to_quaternion(), q).to_matrix()

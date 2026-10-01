@@ -5,7 +5,9 @@ python3 common/checks.py --target farmer_e [--preview]
 Exit code 1 when a hard check fails (missing frame, clipped colour, empty frame, anchor drift).
 
 Hard checks: every frame and pass exists; the colour layer never touches the frame edge; no
-empty frame; one anchor and one size for the whole unit.
+empty frame; one anchor and one size for the whole unit. Mages: every shield frame exists, is not
+empty and stays inside the frame, and the effect layer of idle, walk and hit is empty (the shield
+has its own layer since atlas format 2; left in the effect layer it would be drawn twice).
 Warnings: shadow or effect layer at the frame edge (effects such as the flying bolt should
 become separate projectile sprites), very little player colour in a frame.
 """
@@ -77,8 +79,29 @@ def check(target, preview=False, facings=None):
                         share = float((m & a).sum()) / max(1, a.sum())
                         if share < team_min[0]:
                             team_min = (share, base)
+                    elif p == "fx" and name in ("idle", "walk", "hit") and _alpha_bbox(im) is not None:
+                        errors.append(f"特效層不該有東西（防護罩已拆成單獨一層）：{base}")
                     elif p in ("shadow", "fx") and _touches(_alpha_bbox(im, 40 if p == "shadow" else 8), im.size):
                         warnings.append(f"{'影子' if p == 'shadow' else '特效'}碰到畫框：{base}")
+    shield_frames = 0
+    if mage and not preview:
+        for a, n in spec.SHIELD_ANIMS:
+            for i in range(n):
+                base = f"{target}_shield_{a}_{i:02d}"
+                meta_p, fp = raw / f"{base}_x3.json", raw / f"{base}_x3_shield.png"
+                if not meta_p.exists() or not fp.exists():
+                    errors.append(f"缺防護罩影格：{base}")
+                    continue
+                anchors.add(tuple(round(v, 2) for v in json.loads(meta_p.read_text())["anchor"]))
+                im = Image.open(fp)
+                n_images += 1
+                shield_frames += 1
+                sizes.add(im.size)
+                bb = _alpha_bbox(im)
+                if bb is None:
+                    errors.append(f"空白防護罩：{base}")
+                elif _touches(bb, im.size):
+                    errors.append(f"防護罩被畫框切到：{base} {bb} / {im.size}")
     if len(anchors) > 1:
         errors.append(f"錨點不一致：{sorted(anchors)[:4]}")
     if len(sizes) > 1:
@@ -89,7 +112,7 @@ def check(target, preview=False, facings=None):
     unique = sum(n for _, n, _, _ in u["anims"]) * (1 if preview else len(spec.RENDERED_FACINGS))
     stats_p = config.BUILD / "prod" / target / "render_stats.json"
     stats = json.loads(stats_p.read_text()) if stats_p.exists() else {}
-    rep = dict(target=target, preview=preview, images=n_images, unique_frames=unique,
+    rep = dict(target=target, preview=preview, images=n_images, unique_frames=unique, shield_frames=shield_frames,
                mean_trimmed_px=round(float(np.mean(areas))) if areas else 0,
                min_team_share=round(team_min[0], 4), placeholders=ph, errors=errors,
                warnings=sorted(set(warnings))[:40], warnings_total=len(set(warnings)),
@@ -98,7 +121,7 @@ def check(target, preview=False, facings=None):
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{target}_report.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1))
     md = [f"# {target}", "",
-          f"- 影格（不含鏡像）：{unique}；圖層檔：{n_images}",
+          f"- 影格（不含鏡像）：{unique}；防護罩影格：{shield_frames}；圖層檔：{n_images}",
           f"- 算圖時間：{rep['render_seconds']} 秒",
           f"- 平均修邊面積（3 倍）：{rep['mean_trimmed_px']} px",
           f"- 玩家色最少的一格：{rep['min_team_share']:.1%}",
