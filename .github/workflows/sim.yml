@@ -132,6 +132,25 @@ jobs:
           node src/ai-timeline.ts --seed 4 --difficulty normal | tee -a "${GITHUB_STEP_SUMMARY}"
           node src/walled-perf.ts | tee -a "${GITHUB_STEP_SUMMARY}"
 
+  # Unit balance (round 3, D-026): small battles of equal cost, the values before this round
+  # against the values in the code, every goal marked (src/balance.ts). About 10 seconds.
+  # Goals 1-4 must hold with both sides advancing; goal 5 is reported (ceo: not this round).
+  balance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Battles of equal cost
+        run: |
+          set -o pipefail
+          node src/balance.ts --check 1,2,3,4 | tee -a "${GITHUB_STEP_SUMMARY}"
+
   # 100 games of the normal AI against the easy one (round 2): the same seeds, styles and swaps;
   # each spawn plays easy half the time. Replayed like the others.
   ai-vs-easy:

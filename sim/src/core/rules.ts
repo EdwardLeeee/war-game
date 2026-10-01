@@ -26,8 +26,11 @@ UNITS[UnitType.Farmer] = {
   type: UnitType.Farmer, hp: 25, shield: 0, attack: 3, range: CELL, speed: speed(100), sight: 5,
   cooldown: 30, cost: cost(50), trainTicks: 12 * S, population: 1,
 };
+// Round 3 (D-026): spearmen 60 -> 100, so a full-health spearman stands two crystal cannon shots
+// (2 x 45 = 90) and the mage side pays for beating them; ranged hit spearmen x5/2 (was x3/2), so a
+// mixed army does not lose to spearmen alone (src/balance.ts).
 UNITS[UnitType.Spearman] = {
-  type: UnitType.Spearman, hp: 60, shield: 0, attack: 6, range: CELL, speed: speed(100), sight: 6,
+  type: UnitType.Spearman, hp: 100, shield: 0, attack: 6, range: CELL, speed: speed(100), sight: 6,
   cooldown: 30, cost: cost(40, 20), trainTicks: 18 * S, population: 1,
 };
 UNITS[UnitType.Ranged] = {
@@ -82,7 +85,7 @@ BUILDINGS[BuildingType.TownTower] = building({ type: BuildingType.TownTower, hp:
 
 /** Damage x num / den. Spearman x3 vs cavalry and cavalry x2 vs shields wait for cavalry. */
 export const MULTIPLIERS: Multiplier[] = [
-  { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 3, den: 2 },
+  { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 5, den: 2 },
   { attacker: UnitType.Ranged, target: "shield", num: 3, den: 2 },
 ];
 
@@ -122,6 +125,14 @@ for (const m of MULTIPLIERS) {
 export const AGGRO_RANGE = 6 * CELL;
 /** Aggressive idle units give up a chase this far from where they stood. */
 export const LEASH = 8 * CELL;
+/**
+ * Joining a fight (round 3, D-026): a player's idle aggressive soldier with no enemy within
+ * AGGRO_RANGE takes on an enemy that a friend within `range` had as its target at the start of
+ * the tick (chasing or hitting it), the one nearest itself, if that enemy is within LEASH of
+ * where it stands, so no chain of friends draws a unit away from its place. `range` 0 switches
+ * it off (src/balance.ts measures both ways).
+ */
+export const JOIN_FIGHT = { range: 6 * CELL };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;

@@ -80,6 +80,26 @@ test("cast: calibrates 1.5 s with a warning both sides see, then hits enemies in
   assert.deepEqual(step(g), [Reject.Cooldown]);
 });
 
+test("a spearman at full health stands two crystal cannon shots (round 3, D-026); the third kills it", () => {
+  const { g, a } = arena();
+  const mages = [0, 1, 2].map((k) => put(g, 0, UnitType.Mage, a.x + 2, a.y + 9 + k));
+  const foe = put(g, 1, UnitType.Spearman, a.x + 9, a.y + 10);
+  const u = g.w.units.col;
+  for (const s of [...mages, foe]) {
+    u.stance[slotOf(g, s)] = 1;
+    u.cooldown[slotOf(g, s)] = 100000;
+  }
+  g.fog.update(g.w);
+  const fx = centre(a.x + 9);
+  const fy = centre(a.y + 10);
+  for (const m of mages.slice(0, 2)) cmd(g, 0, { c: "cast", u: m, fx, fy });
+  run(g, CANNON.calibrateTicks + 1);
+  assert.equal(u.hp[slotOf(g, foe)], UNITS[UnitType.Spearman].hp - 2 * CANNON.damage, "two shots: still standing");
+  cmd(g, 0, { c: "cast", u: mages[2], fx, fy });
+  run(g, CANNON.calibrateTicks + 1);
+  assert.equal(slotOf(g, foe), -1, "the third shot kills it");
+});
+
 test("cast rejects: not a mage, out of range, no crystal; another order cancels without spending", () => {
   const { g, a } = arena();
   const mage = put(g, 0, UnitType.Mage, a.x + 2, a.y + 10);
@@ -192,4 +212,46 @@ test("a trained mage starts with a full shield; the mage cap counts the queue", 
     for (const e of g.events) if (e.ev.k === "unit_trained") id = e.ev.id;
   }
   assert.equal(g.w.units.col.shield[slotOf(g, id)], UNITS[UnitType.Mage].shield);
+});
+
+test("a trained mage has autocast on from the start and fires at a cluster; switched off, it does not", () => {
+  for (const off of [false, true]) {
+    const g = emptyGame();
+    const w = g.w;
+    w.ecoOn[0] = 0;
+    const m = w.mainCity(0);
+    const b = w.buildings.col;
+    const hall = w.addBuilding(0, BuildingType.MageHall, b.cellX[m] + 8, b.cellY[m], 500, 1000);
+    w.res.set([1000, 1000, 2000, 1000], 0);
+    cmd(g, 0, { c: "train", building: hall, type: UnitType.Mage, n: 1 });
+    assert.deepEqual(step(g), []);
+    let id = -1;
+    for (let t = 0; t < UNITS[UnitType.Mage].trainTicks + 5 && id < 0; t++) {
+      g.step();
+      for (const e of g.events) if (e.ev.k === "unit_trained") id = e.ev.id;
+    }
+    assert.ok(id >= 0, "the mage is trained");
+    const u = w.units.col;
+    assert.ok((u.flags[slotOf(g, id)] & UnitFlag.Autocast) !== 0, "autocast is on at birth");
+    if (off) {
+      cmd(g, 0, { c: "autocast", u: [id], on: false });
+      assert.deepEqual(step(g), []);
+      assert.equal(u.flags[slotOf(g, id)] & UnitFlag.Autocast, 0);
+    }
+    // Three enemy farmers (they do not fight back) 6 cells from the mage, close together.
+    const mx = u.x[slotOf(g, id)] >> 10;
+    const my = u.y[slotOf(g, id)] >> 10;
+    u.stance[slotOf(g, id)] = 1;
+    for (let k = 0; k < 3; k++) {
+      const f = put(g, 1, UnitType.Farmer, mx + 6, my - 1 + k);
+      u.stance[slotOf(g, f)] = 1;
+    }
+    g.fog.update(w);
+    let cast = false;
+    for (let t = 0; t < 20 && !cast; t++) {
+      g.step();
+      cast = u.order[slotOf(g, id)] === Order.Cast;
+    }
+    assert.equal(cast, !off, off ? "switched off: it does not cast on its own" : "it casts on its own");
+  }
 });

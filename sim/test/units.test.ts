@@ -3,12 +3,13 @@ import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { BUILDINGS } from "../src/core/rules.ts";
+import { BUILDINGS, JOIN_FIGHT, UNITS } from "../src/core/rules.ts";
+import { fight } from "../src/balance-lib.ts";
 import type { Game } from "../src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
 
-test("multipliers: ranged deal 7 to spearmen (5 x 3/2), 5 to others; at least 1", () => {
-  assert.equal(damage(5, UnitType.Ranged, UnitType.Spearman), 7);
+test("multipliers: ranged deal 12 to spearmen (5 x 5/2, round 3), 5 to others; at least 1", () => {
+  assert.equal(damage(5, UnitType.Ranged, UnitType.Spearman), 12);
   assert.equal(damage(5, UnitType.Ranged, UnitType.Ranged), 5);
   assert.equal(damage(6, UnitType.Spearman, UnitType.Ranged), 6);
   assert.equal(damage(0, UnitType.Farmer, UnitType.Farmer), 1);
@@ -75,6 +76,69 @@ test("hold stance stays put; aggressive idle units chase but give up past the le
   assert.ok(Math.abs(dx) < 2 << CELL_SHIFT, `chaser back near its post (dx ${dx})`);
 });
 
+test("joining a fight: an idle soldier takes on the enemy a friend within 6 cells is fighting; hold, farmers and units with orders do not", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const a = openArea(g, 24);
+  w.ecoOn[0] = 0;
+  const u = w.units.col;
+  // The enemy stands (hold) and never hits back.
+  const enemy = put(g, 1, UnitType.Spearman, a.x + 12, a.y + 16);
+  u.stance[slotOf(g, enemy)] = Stance.Hold;
+  u.cooldown[slotOf(g, enemy)] = 100000;
+  const friend = put(g, 0, UnitType.Spearman, a.x + 12, a.y + 12); // 4 cells: it fights
+  const joiner = put(g, 0, UnitType.Spearman, a.x + 12, a.y + 9); // 7 cells: too far to see it as its own
+  const holder = put(g, 0, UnitType.Spearman, a.x + 10, a.y + 9);
+  u.stance[slotOf(g, holder)] = Stance.Hold;
+  const farmer = put(g, 0, UnitType.Farmer, a.x + 14, a.y + 9);
+  const mover = put(g, 0, UnitType.Spearman, a.x + 11, a.y + 8);
+  g.fog.update(w);
+  cmd(g, 0, { c: "move", u: [mover], x: a.x + 11, y: a.y + 1 });
+  const at = (id: number) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]];
+  const holderAt = at(holder);
+  const farmerAt = at(farmer);
+  const joinerY = u.y[slotOf(g, joiner)];
+  run(g, 40);
+  assert.equal(u.target[slotOf(g, friend)], enemy, "the friend fights it");
+  assert.equal(u.target[slotOf(g, joiner)], enemy, "the idle soldier joins in");
+  assert.ok(u.y[slotOf(g, joiner)] > joinerY + 1024, "and goes for it");
+  assert.deepEqual(at(holder), holderAt, "hold: stays");
+  assert.deepEqual(at(farmer), farmerAt, "farmer: stays");
+  assert.equal(u.target[slotOf(g, mover)], -1, "a unit with an order keeps to it");
+});
+
+test("joining a fight does not chain: in a line of soldiers 4 cells apart, only those within 8 cells of the enemy leave their place", () => {
+  const g = emptyGame();
+  const a = openArea(g, 24);
+  const u = g.w.units.col;
+  const enemy = put(g, 1, UnitType.Spearman, a.x + 12, a.y + 2);
+  u.stance[slotOf(g, enemy)] = Stance.Hold;
+  u.cooldown[slotOf(g, enemy)] = 100000;
+  const line = [6, 10, 14, 18].map((dy) => put(g, 0, UnitType.Spearman, a.x + 12, a.y + dy));
+  g.fog.update(g.w);
+  const start = line.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]);
+  let moved1 = false;
+  for (let t = 0; t < 150; t++) {
+    g.step();
+    if (u.y[slotOf(g, line[1])] < start[1][1] - 512) moved1 = true;
+    for (const k of [2, 3]) assert.deepEqual([u.x[slotOf(g, line[k])], u.y[slotOf(g, line[k])]], start[k], `tick ${g.tick}: soldier ${k} (12 or more cells away) stays`);
+  }
+  assert.ok(moved1, "the one 8 cells away joins");
+});
+
+test("joining a fight: ranged walking up to standing spearmen meet all of them (equal cost, 8 cells): the spearmen win; without it the ranged win", () => {
+  const spear = { spear: 14, ranged: 0, mage: 0 };
+  const ranged = { spear: 0, ranged: 12, mage: 0 };
+  assert.equal(fight([spear, ranged], 1, 8).winner, 0, "with joining");
+  const range = JOIN_FIGHT.range;
+  JOIN_FIGHT.range = 0;
+  try {
+    assert.equal(fight([spear, ranged], 1, 8).winner, 1, "without it, the standing spearmen come one by one");
+  } finally {
+    JOIN_FIGHT.range = range;
+  }
+});
+
 test("main city arrows hit intruders; destroying a main city ends the game", () => {
   const g = emptyGame();
   const w = g.w;
@@ -82,7 +146,7 @@ test("main city arrows hit intruders; destroying a main city ends the game", () 
   const intruder = put(g, 0, UnitType.Spearman, s1.cellX - 5, s1.cellY + 3);
   g.fog.update(w);
   run(g, 45);
-  assert.ok(slotOf(g, intruder) < 0 || w.units.col.hp[slotOf(g, intruder)] < 60, "arrow hit");
+  assert.ok(slotOf(g, intruder) < 0 || w.units.col.hp[slotOf(g, intruder)] < UNITS[UnitType.Spearman].hp, "arrow hit");
   const main1 = w.mainCity(1);
   w.buildings.col.hp[main1] = 1;
   const attacker = put(g, 0, UnitType.Spearman, s1.cellX + 3, s1.cellY);

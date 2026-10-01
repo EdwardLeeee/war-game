@@ -99,3 +99,49 @@ test("formation: mirror-image squads spread out and close up as mirror images, t
     assert.ok(moved > 0, `${loose ? "spread out" : "closed up"}: they really moved`);
   }
 });
+
+test("joining a fight: mirror-image squads join mirror-image fights, tick by tick", () => {
+  const g = emptyGame();
+  const w = g.w;
+  // A 4 x 14 open column on player 0's side of the diagonal; its mirror image is open too.
+  let bx = -1;
+  let by = -1;
+  for (let y = 40; y < 80 && bx < 0; y++) {
+    for (let x = 4; x < 30 && bx < 0; x++) {
+      let ok = true;
+      for (let yy = y; yy < y + 14 && ok; yy++) for (let xx = x; xx < x + 4 && ok; xx++) if (!w.walkable(xx, yy) || !w.walkable(yy, xx)) ok = false;
+      if (ok) {
+        bx = x;
+        by = y;
+      }
+    }
+  }
+  assert.ok(bx >= 0, "an open column");
+  const u = w.units.col;
+  const pairs: [number, number][] = [];
+  const add = (owner: number, type: UnitType, x: number, y: number) => {
+    const a = put(g, owner, type, x, y);
+    const b = put(g, 1 - owner, type, y, x);
+    pairs.push([a, b]);
+    return [a, b];
+  };
+  // An enemy that stands and never hits back, a soldier 4 cells from it, two behind (7 and 11 cells).
+  for (const id of add(1, UnitType.Spearman, bx + 1, by + 1)) {
+    u.stance[slotOf(g, id)] = 1;
+    u.cooldown[slotOf(g, id)] = 100000;
+  }
+  for (const dy of [5, 8, 12]) add(0, UnitType.Spearman, bx + 1, by + 1 + dy);
+  g.fog.update(w);
+  let joined = 0;
+  for (let t = 0; t < 150; t++) {
+    g.step();
+    for (const [a, b] of pairs) {
+      const sa = slotOf(g, a);
+      const sb = slotOf(g, b);
+      assert.equal(u.x[sb], u.y[sa], `tick ${g.tick}: x of the image is y of the original`);
+      assert.equal(u.y[sb], u.x[sa], `tick ${g.tick}`);
+    }
+    if (u.target[slotOf(g, pairs[2][0])] >= 0) joined++;
+  }
+  assert.ok(joined > 0, "the soldier 7 cells away joined");
+});
