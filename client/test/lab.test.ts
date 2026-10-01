@@ -42,6 +42,43 @@ test("a clean measurement reports the numbers and passes the spike's thresholds"
   assert.equal(lab.phase, "idle");
 });
 
+test("mean fps and stalls: frames over 50 ms are counted, with their total time and the longest one (D-030)", () => {
+  const lab = new Lab();
+  lab.startMeasure(0);
+  let t = 0;
+  let r = null;
+  let n = 0;
+  // Every 25th frame takes 60 ms (a stall), every 100th 120 ms; the others 16 ms.
+  while (r === null && t < WARMUP_MS + WINDOW_MS + 5000) {
+    n++;
+    const dt = n % 100 === 0 ? 120 : n % 25 === 0 ? 60 : 16;
+    t += dt;
+    lab.tick(400, null, 20);
+    r = lab.frame(t, dt, ok);
+  }
+  assert.ok(r !== null);
+  // In the 30 s window: frames of 16 ms mostly, so the median stays at 62.5 fps.
+  assert.equal(r.fpsMedian, 62.5);
+  assert.ok(r.stalls > 0);
+  assert.equal(r.longestFrameMs, 120);
+  // The mean counts the stalls: below the median.
+  assert.ok(r.fpsMean < r.fpsMedian, `mean ${r.fpsMean}`);
+  // The stalls' total time is the sum of the 60 and 120 ms frames counted.
+  const big = r.stalls;
+  assert.ok(r.stallMs >= big * 60 && r.stallMs <= big * 120, `stalls ${big}, ${r.stallMs} ms`);
+});
+
+test("a measurement without stalls says 0", () => {
+  const lab = new Lab();
+  lab.startMeasure(0);
+  const r = run(lab, 0, () => lab.tick(400, null, 20));
+  assert.ok(r !== null);
+  assert.equal(r.stalls, 0);
+  assert.equal(r.stallMs, 0);
+  assert.equal(r.fpsMean, 62.5);
+  assert.equal(r.longestFrameMs, 16);
+});
+
 test("the mean tick time uses the batch sums (1 ms timer resolution on iOS)", () => {
   const lab = new Lab();
   lab.startMeasure(0);

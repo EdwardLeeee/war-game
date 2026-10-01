@@ -4,7 +4,7 @@
 
 import { HeaderField as H, STEP_BATCH } from "../sim.ts";
 import type { CheckResult } from "./determinism.ts";
-import { type FrameContext, Lab, type MeasureResult, PASS, WINDOW_MS } from "./lab.ts";
+import { type FrameContext, Lab, type MeasureResult, PASS, STALL_MS, WINDOW_MS } from "./lab.ts";
 import { LogBox } from "./log.ts";
 import { round2, summarize } from "./stats.ts";
 
@@ -210,14 +210,18 @@ export class LabPanel {
     make("p", box, "", `場景：${String(env.scenario ?? "?")}${env.scenario === "perf" ? "（所有系統都開著）" : ""}`);
     make("p", box, "", `tick 速度：${String(env.tickRate ?? "?")}`);
     if (!r.valid) make("p", box, "bad", `原因：${r.reasons.join("、")}。請重新量測。`);
-    const rows: [string, string, boolean][] = [
+    // ✓／✗ against a standard; ・ for the numbers that have none (yet).
+    const rows: [string, string, boolean | null][] = [
       ["fps 中位數", `${r.fpsMedian}（標準 ≥ ${PASS.fpsMedian}）`, r.fpsMedian >= PASS.fpsMedian],
       ["最慢 5% 的 fps", `${r.fpsLow5}（標準 ≥ ${PASS.fpsLow}）`, r.fpsLow5 >= PASS.fpsLow],
+      // D-030: they show the stalls the median hides.
+      ["平均 fps", `${r.fpsMean}`, null],
+      [`停頓（一張畫面超過 ${STALL_MS} ms）`, `${r.stalls} 次，共 ${round2(r.stallMs / 1000)} 秒；最長的一張 ${r.longestFrameMs} ms`, null],
       ["每 tick 模擬中位數", `${r.tickMedianMs} ms（標準 ≤ ${PASS.tickMedianMs}）`, r.tickMedianMs <= PASS.tickMedianMs],
-      ["每 tick 模擬平均", `${r.tickMeanMs} ms`, true],
-      ["每 tick 模擬最大值", `${r.tickMaxMs} ms`, true],
+      ["每 tick 模擬平均", `${r.tickMeanMs} ms`, null],
+      ["每 tick 模擬最大值", `${r.tickMaxMs} ms`, null],
     ];
-    for (const [k, v, ok] of rows) make("p", box, "", `${ok ? "✓" : "✗"} ${k}：${v}`);
+    for (const [k, v, ok] of rows) make("p", box, "", `${ok === null ? "・" : ok ? "✓" : "✗"} ${k}：${v}`);
     make("p", box, "small", `樣本：${r.frames} 幀、${r.ticks} tick；${Object.values(env).join("；")}`);
     this.refreshButtons();
   }

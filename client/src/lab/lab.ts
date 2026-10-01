@@ -10,6 +10,12 @@ import { round2, summarize } from "./stats.ts";
 export const WARMUP_MS = 5000;
 export const WINDOW_MS = 30000;
 export const PASS = { fpsMedian: 55, fpsLow: 30, tickMedianMs: 5 };
+/**
+ * A frame that took longer than this is a stall (停頓): the picture stops for about three
+ * frames at 60 fps or more, which the player sees. The median and the slowest 5 % do not
+ * show how many there were (D-030: 30 s at a median of 59.88 fps had only 1557 frames).
+ */
+export const STALL_MS = 50;
 
 export type LabPhase = "idle" | "warmup" | "measuring" | "checking";
 
@@ -28,6 +34,12 @@ export interface MeasureResult {
   ticks: number;
   fpsMedian: number;
   fpsLow5: number;
+  /** Frames per second over the whole window: frames ÷ their total time (D-030). */
+  fpsMean: number;
+  /** Frames longer than STALL_MS, their total time and the longest frame. */
+  stalls: number;
+  stallMs: number;
+  longestFrameMs: number;
   tickMedianMs: number;
   tickMeanMs: number;
   tickMaxMs: number;
@@ -116,6 +128,10 @@ export class Lab {
       ticks: t.samples,
       fpsMedian: f.median > 0 ? round2(1000 / f.median) : 0,
       fpsLow5: f.p95 > 0 ? round2(1000 / f.p95) : 0,
+      fpsMean: f.mean > 0 ? round2(1000 / f.mean) : 0,
+      stalls: this.frames.filter((ms) => ms > STALL_MS).length,
+      stallMs: round2(this.frames.filter((ms) => ms > STALL_MS).reduce((sum, ms) => sum + ms, 0)),
+      longestFrameMs: round2(f.max),
       tickMedianMs: round2(t.median),
       tickMeanMs: round2(mean),
       tickMaxMs: round2(t.max),
