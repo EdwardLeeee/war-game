@@ -713,19 +713,9 @@ def b104(suffix):
 def overview1(suffix):
     label = "B1-99-總覽對照-選擇題"
     M = 50
-    W = 3000
-    art = Image.new("RGB", (W, 6000), BG)
-    dr = ImageDraw.Draw(art)
-    dr.text((M, 36), label, font=artboard.font(54), fill=INK)
-    sub = ("第一批：要使用者選的兩項。B1-02 建築的三種狀態（施工中、受損、被摧毀，各有 A、B 兩種畫法），"
-           "B1-03 城鎮四種狀態怎麼一眼分得出來（A 旗與炊煙、B 界樁圍一圈，也可以兩個都要）。"
-           "每一項另有一張完整的選項圖。這裡是主城和民居（東陸藍、西陸紅），放大 1 pt = 1.5 px；城鎮是實際大小。")
-    y = wrap(dr, M, 120, sub, W - 2 * M, 24) + 20
+    blocks = []                          # (title, [(subtitle, [images])])
     for item, opts in B102.items():
-        dr.text((M, y), f"B1-02 {ITEM[item]}", font=artboard.font(34), fill=INK)
-        y += 52
-        x = M
-        hh = 0
+        rows = []
         for opt, name, sts, labs, _ in opts:
             row = []
             for c in ("E", "W"):
@@ -733,32 +723,40 @@ def overview1(suffix):
                     st = sts[-1] if item != "build" else sts[1]
                     sp = _state_piece(kind, c, st, suffix, 30)
                     row.append(tile(scene.with_fx(sp), 1.5, footprint=tuple(sp.meta["footprint"]), pad=12))
-            w = sum(r.width for r in row) + 8 * (len(row) - 1)
-            h = max(r.height for r in row)
-            dr.text((x, y), f"{opt} {name}", font=artboard.font(26), fill=INK)
-            xx = x
-            for r in row:
-                art.paste(r.convert("RGB"), (xx, y + 36 + h - r.height))
-                xx += r.width + 8
-            x += w + 60
-            hh = max(hh, h + 36)
-        y += hh + 40
-    dr.text((M, y), "B1-03 城鎮（小鎮・東陸，實際大小）", font=artboard.font(34), fill=INK)
-    y += 52
+            rows.append((f"{opt} {name}", row))
+        blocks.append((f"B1-02 {ITEM[item]}", rows))
     L = layouts.small()
+    rows = []
     for opt, name, direction, _ in B103:
-        dr.text((M, y), f"{opt} {name}", font=artboard.font(26), fill=INK)
-        x = M + 220
-        h = 0
+        row = []
         for st in ("neutral", "ours", "enemy", "ruins", "plunder", "repair"):
             img, _ = town_art.town("E", L, st, direction, suffix)
             f = (1 / 3) if suffix == "x3" else (2 / 3)
             img = img.resize((round(img.width * f), round(img.height * f)), Image.LANCZOS)
-            img = caption(img, town_art.NAMES[st], 16)
-            art.paste(img.convert("RGB"), (x, y))
-            x += img.width + 10
-            h = max(h, img.height)
-        y += h + 30
+            row.append(caption(img, town_art.NAMES[st], 16))
+        rows.append((f"{opt} {name}", row))
+    blocks.append(("B1-03 城鎮（小鎮・東陸，實際大小）", rows))
+    gap, lab = 10, 230
+    W = max(M * 2 + lab + sum(i.width + gap for i in row) for _, rs in blocks for _, row in rs)
+    sub = ("第一批：要使用者選的兩項。B1-02 建築的三種狀態（施工中、受損、被摧毀，各有 A、B 兩種畫法），"
+           "B1-03 城鎮四種狀態怎麼一眼分得出來（A 旗與炊煙、B 界樁圍一圈，也可以兩個都要）。"
+           "每一項另有一張完整的選項圖。這裡是主城和民居（東陸藍、西陸紅），放大 1 pt = 1.5 px；城鎮是實際大小。")
+    top = header_height(sub, W - 2 * M)
+    H = top + sum(52 + sum(max(i.height for i in row) + 24 for _, row in rs) for _, rs in blocks) + 40
+    art = Image.new("RGB", (W, H), BG)
+    y = draw_header(art, label, sub, M)
+    dr = ImageDraw.Draw(art)
+    for title, rs in blocks:
+        dr.text((M, y), title, font=artboard.font(34), fill=INK)
+        y += 52
+        for name, row in rs:
+            h = max(i.height for i in row)
+            dr.text((M, y + h // 2 - 14), name, font=artboard.font(26), fill=INK)
+            x = M + lab
+            for im in row:
+                art.paste(im.convert("RGB"), (x, y + h - im.height))
+                x += im.width + gap
+            y += h + 24
     art = art.crop((0, 0, W, y + 20))
     p = config.OUT / f"{label}.png"
     art.save(p)

@@ -55,8 +55,8 @@ def small():
         for a in range(fx):
             for b in range(fy):
                 cells[(round(ci - (fx - 1) / 2 + a), round(cj - (fy - 1) / 2 + b))] = "house"
-    militia = [(-1, -1), (1, -1), (-1, 1), (1, 1), (0.35, -0.6), (-0.35, 0.6)]      # cell units
-    garrison = [(0.5, -0.7)]
+    militia = [(-1, -1), (1, -1), (-1, 1), (1, 1), (0.0, -1.1), (0.0, 1.1)]      # cell units
+    garrison = [(-0.75, 0.25)]
     flag = (0.0, 0.0)
     return dict(name="small", radius=R, centre=(0.0, 0.0), cells=cells, pieces=pieces, militia=militia,
                 garrison=garrison, flag=flag, tower=None, posts=_posts(R, 1.5 + 0.0, (0.0, 0.0)),
@@ -94,8 +94,8 @@ def large():
                 cells[(int(math.floor(a)), int(math.floor(b)))] = "house"
     militia = [(1.5, 0.5), (1.5, -0.5), (-1.5, 0.5), (-1.5, -0.5), (0.5, 1.5), (-0.5, 1.5), (0.5, -1.5), (-0.5, -1.5),
                (2.5, 2.5), (-2.5, 2.5), (2.5, -2.5), (-2.5, -2.5)]
-    garrison = [(-1.6, -2.3), (-2.3, -1.6), (-2.2, -2.4)]
-    flag = (-2.5, -2.5)
+    garrison = [(-1.0, -2.2), (-2.2, -1.0), (-1.5, -1.5)]
+    flag = (-2.0, -2.0)            # the front corner of the square, between the militia posts
     return dict(name="large", radius=R, centre=(0.0, 0.0), cells=cells, pieces=pieces, militia=militia,
                 garrison=garrison, flag=flag, tower=(0.0, 0.0), posts=_posts(R, 2.0 + 0.3, (0.0, 0.0)),
                 cell_centre=lambda i, j: (i + 0.5, j + 0.5))

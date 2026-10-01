@@ -28,9 +28,10 @@ LEGEND = [("house", "房子（擋路）"), ("tower", "箭樓（擋路，拆掉�
           ("street", "街道（可走）"), ("garden", "菜園空地（可走）")]
 
 
-def plan_image(L, px=34):
+def plan_image(L, px=None):
     """Top view: x to the right, y down (the sim's grid), the town centre in the middle."""
     R = L["radius"]
+    px = px or (60 if R <= 5 else 48)
     n = 2 * R + 2
     W = H = n * px + 40
     im = Image.new("RGB", (W, H), (255, 255, 255))
@@ -47,7 +48,7 @@ def plan_image(L, px=34):
         fx, fy = layouts.piece_fp(kind)
         x0, y0 = cx + (ca - fx / 2) * px, cy + (cb - fy / 2) * px
         dr.rectangle([x0 + 1, y0 + 1, x0 + fx * px - 2, y0 + fy * px - 2], outline=(60, 30, 20), width=2)
-        dr.text((x0 + 4, y0 + 2), f"{fx}×{fy}", font=artboard.font(11), fill=(255, 240, 220))
+        dr.text((x0 + 5, y0 + 3), f"{fx}×{fy}", font=artboard.font(15), fill=(255, 240, 220))
     # the sim's circle (the town's radius): small town from the centre cell's middle; big city as proposed
     r = R * px
     dr.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(200, 60, 40), width=2)
@@ -60,8 +61,8 @@ def plan_image(L, px=34):
 
     def mark(pt, label, col):
         x, y = cx + pt[0] * px, cy + pt[1] * px
-        dr.ellipse([x - 9, y - 9, x + 9, y + 9], fill=col, outline=(255, 255, 255))
-        dr.text((x - 6, y - 8), label, font=artboard.font(12), fill=(255, 255, 255))
+        dr.ellipse([x - 12, y - 12, x + 12, y + 12], fill=col, outline=(255, 255, 255))
+        dr.text((x - 8, y - 10), label, font=artboard.font(16), fill=(255, 255, 255))
 
     for p in L["militia"]:
         mark(p, "民", (90, 90, 90))
