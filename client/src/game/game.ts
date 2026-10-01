@@ -307,8 +307,8 @@ export class Game implements GestureHost {
     const seq = this.post(cmd, false);
     // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
     if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") this.setStance(this.army.release(cmd.u), Stance.Aggressive);
-    // Any order of his own to a recruit: 自動補兵 no longer leads it to its group (GDD §10).
-    if ("u" in cmd) this.army.playerOrdered(Array.isArray(cmd.u) ? cmd.u : [cmd.u]);
+    // His own order sending a recruit somewhere: 自動補兵 no longer leads it to its group (GDD §10).
+    this.army.playerCommand(cmd);
     return seq;
   }
 
