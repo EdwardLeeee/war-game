@@ -55,8 +55,10 @@ def small():
         for a in range(fx):
             for b in range(fy):
                 cells[(round(ci - (fx - 1) / 2 + a), round(cj - (fy - 1) / 2 + b))] = "house"
-    militia = [(-1, -1), (1, -1), (-1, 1), (1, 1), (0.0, -1.1), (0.0, 1.1)]      # cell units
-    garrison = [(-0.75, 0.25)]
+    # the map is mirrored along its diagonal (x <-> y): every post is its own mirror or has its mirror in the
+    # list (ceo and war-game-core 2026-10-02): the square's four corners, one cell right of and below the centre
+    militia = [(-1, -1), (1, -1), (-1, 1), (1, 1), (1, 0), (0, 1)]      # cell units
+    garrison = [(-0.5, -0.5)]
     flag = (0.0, 0.0)
     return dict(name="small", radius=R, centre=(0.0, 0.0), cells=cells, pieces=pieces, militia=militia,
                 garrison=garrison, flag=flag, tower=None, posts=_posts(R, 1.5 + 0.0, (0.0, 0.0)),

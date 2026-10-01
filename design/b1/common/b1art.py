@@ -781,9 +781,17 @@ def overview2(suffix):
         fp = (3, 3) if n.startswith("farm") else (1, 1)
         res.append(caption(tile([rpiece(n, suffix, 30)], 1.5, footprint=fp, pad=10), t, 16))
     rows.append(("資源點（1 pt = 1.5 px）", res))
+    global suffix_glb
+    suffix_glb = suffix
+    xr = []
+    for style, nm in (("A", "B1-05 A 半透明剪影"), ("B", "B1-05 B 輪廓線")):
+        for which in ("main_city", "forest"):
+            items, fp = _b105_scene(which, "E", 30)
+            xr.append(caption(xray_render(items, 1.5, style, footprint=fp, pad=10), nm, 16))
+    rows.append(("被擋住的單位（1 pt = 1.5 px）", xr))
     lab = 300
     W = max(M * 2 + lab + sum(i.width + 8 for i in row) for _, row in rows)
-    sub = ("第二批：要使用者核准的兩項。B1-01 東陸、西陸各 15 種建築（城牆畫成一座小城），B1-04 資源點。"
+    sub = ("第二批：要使用者核准的 B1-01 東陸、西陸各 15 種建築（城牆畫成一座小城）、B1-04 資源點，以及要使用者選的 B1-05 被擋住的單位怎麼畫。"
            "每一項另有完整的總表與放大圖（放大圖上標了占地、認得出、看得出是誰的、擋不擋人四項檢查）。東陸藍、西陸紅。")
     top = header_height(sub, W - 2 * M)
     H = top + sum(max(i.height for i in row) + 30 for _, row in rows) + 40
@@ -805,6 +813,168 @@ def overview2(suffix):
     return p
 
 
+# ---------------------------------------------------------------- B1-05 units hidden behind buildings
+
+def unit_x(name, team, ppm, x, y, facing=7, anim="idle", frame=0):
+    sp = scene.unit(name, team, anim=anim, facing=facing, frame=frame, scale=ppm / 60, x=x, y=y)
+    sp.is_unit = True
+    sp.team = team
+    return sp
+
+
+def xray_render(items, pp, style, footprint=None, pad=24, grid_extra=2):
+    """Compose like tile(); then, for every unit, the part hidden by sprites drawn after it is shown:
+    style None (nothing, the game today), "A" (a translucent player-colour silhouette) or "B" (an outline in
+    the player colour, 1.5 pt wide, only round the hidden part)."""
+    import numpy as np
+    from PIL import ImageFilter
+    ppm = 20 * pp
+    base, origin = scene.render(items, ppm, pad=pad, bg=GROUND)
+    W, H = base.size
+    can = Image.new("RGBA", (W, H), (*GROUND, 255))
+    if footprint:
+        dr = ImageDraw.Draw(can)
+        fx, fy = footprint
+        for p0, p1 in proj.grid_lines(fx, fy, layouts.CELL, grid_extra):
+            dr.line([proj.to_px(p0, origin, ppm), proj.to_px(p1, origin, ppm)], fill=GRID, width=1)
+
+    def at(s_):
+        cx = (s_.rect[0] + s_.rect[1]) / 2
+        cy = (s_.rect[2] + s_.rect[3]) / 2
+        return proj.to_px((cx, cy, s_.z), origin, ppm)
+
+    for s_ in [s_ for s_ in items if s_.ground]:
+        gx, gy = at(s_)
+        can.alpha_composite(s_.img, (int(round(gx - s_.ax)), int(round(gy - s_.ay))))
+    for s_ in items:
+        if s_.shadow and not s_.ground:
+            gx, gy = at(s_)
+            si, sax, say = s_.shadow
+            can.alpha_composite(si, (int(round(gx - sax)), int(round(gy - say))))
+    ordered = scene.order([s_ for s_ in items if not s_.ground and not s_.top])
+    alphas = []
+    for s_ in ordered:
+        gx, gy = at(s_)
+        pos = (int(round(gx - s_.ax)), int(round(gy - s_.ay)))
+        can.alpha_composite(s_.img, pos)
+        a = Image.new("L", (W, H), 0)
+        a.paste(s_.img.getchannel("A"), pos)
+        alphas.append(np.asarray(a, np.float32) / 255.0)
+    for s_ in [s_ for s_ in items if s_.top]:
+        gx, gy = at(s_)
+        can.alpha_composite(s_.img, (int(round(gx - s_.ax)), int(round(gy - s_.ay))))
+    if style:
+        over = np.zeros((H, W), np.float32)
+        for k in range(len(ordered) - 1, -1, -1):
+            s_ = ordered[k]
+            if getattr(s_, "is_unit", False):
+                u = alphas[k]
+                hidden = np.clip(np.minimum(u, over) * 1.0, 0, 1)
+                hidden[hidden < 0.35] = 0
+                if hidden.max() > 0:
+                    col = scene.TEAM[s_.team]
+                    if style == "A":
+                        # translucent silhouette: the player colour, lighter toward the middle, 55 %
+                        al = (hidden * 0.55 * 255).astype(np.uint8)
+                        rgb = np.empty((H, W, 3), np.uint8)
+                        rgb[:] = [min(255, int(v * 0.85 + 60)) for v in col]
+                        lay = Image.fromarray(np.dstack([rgb, al]), "RGBA")
+                        can.alpha_composite(lay)
+                        # its edge a little stronger, so small figures keep their shape
+                        m = Image.fromarray((hidden * 255).astype(np.uint8), "L")
+                        edge = np.asarray(m.filter(ImageFilter.MaxFilter(3)), np.float32) / 255 - hidden
+                        edge = np.clip(edge, 0, 1) * (np.asarray(m.filter(ImageFilter.MaxFilter(7)), np.float32) / 255)
+                        rgb[:] = col
+                        can.alpha_composite(Image.fromarray(np.dstack([rgb, (edge * 0.9 * 255).astype(np.uint8)]), "RGBA"))
+                    else:
+                        # outline only, round the hidden part: a dark hairline outside, the player colour inside it
+                        r = max(1, int(round(1.5 * pp / 2)))
+                        um = Image.fromarray((np.clip(u, 0, 1) > 0.35).astype(np.uint8) * 255, "L")
+                        ring = np.asarray(um.filter(ImageFilter.MaxFilter(2 * r + 1)), np.float32) / 255 - \
+                            (np.asarray(um, np.float32) / 255)
+                        hm = Image.fromarray((hidden > 0).astype(np.uint8) * 255, "L")
+                        near = np.asarray(hm.filter(ImageFilter.MaxFilter(2 * r + 3)), np.float32) / 255
+                        ring = np.clip(ring, 0, 1) * near
+                        dark = np.asarray(Image.fromarray((ring * 255).astype(np.uint8), "L").filter(
+                            ImageFilter.MaxFilter(3)), np.float32) / 255
+                        rgb = np.zeros((H, W, 3), np.uint8)
+                        can.alpha_composite(Image.fromarray(np.dstack([rgb, (dark * 0.55 * 255).astype(np.uint8)]), "RGBA"))
+                        rgb[:] = col
+                        can.alpha_composite(Image.fromarray(np.dstack([rgb, (ring * 255).astype(np.uint8)]), "RGBA"))
+            over = np.maximum(over, alphas[k])
+    return can
+
+
+def _b105_scene(which, c, ppm):
+    """(items, footprint) of a demo: the occluder and four units behind it (soldier and farmer, blue and red)."""
+    C = layouts.CELL
+    sol, farmer = town_art.SOLDIER[c], "farmer_e" if c == "E" else "farmer_w"
+    if which == "forest":
+        items = forest_items(c, suffix_glb, ppm, blob(2))
+        fp = (5, 5)
+        h = 2.5 * C
+    else:
+        items = scene.with_fx(bpiece(which, c, suffix_glb, ppm))
+        fp = FP[which]
+        h = fp[0] * C / 2
+    d = 0.5 * C                                       # half a cell behind the back faces: the next cell
+    spots = [(sol, "blue", h + d, -0.35 * h, 7), (farmer, "red", h + d, 0.45 * h, 6),
+             (farmer, "blue", -0.4 * h, h + d, 7), (sol, "red", 0.35 * h, h + d, 6)]
+    for name, team, x, y, f in spots:
+        items.append(unit_x(name, team, ppm, x, y, facing=f))
+    return items, fp
+
+
+suffix_glb = "x3"
+B105 = [("A", "半透明剪影", "A", "選項 A：被擋住的部分畫成玩家色的半透明剪影（55%），邊緣稍深。看得出人在那裡、是誰的、大概在做什麼。"),
+        ("B", "輪廓線", "B", "選項 B：被擋住的部分只畫一圈玩家色的輪廓線（1.5 pt），外面一道細的深色線讓它在亮的屋頂上也看得見。"
+                            "建築本身看得比較清楚，但小的農民只剩細細一圈。")]
+OCCLUDERS = [("main_city", "主城"), ("tower", "箭樓"), ("forest", "森林")]
+
+
+def b105_board(opt, name, style, sub, suffix):
+    global suffix_glb
+    suffix_glb = suffix
+    label = f"B1-05-被擋住的單位-{opt}-{name}-mobile"
+    M = 50
+    rows = []
+    for which, wname in OCCLUDERS:
+        for c in ("E", "W"):
+            items, fp = _b105_scene(which, c, 30)
+            big = caption(xray_render(items, 1.5, style, footprint=fp), f"{wname}・{CULT[c]}（1 pt = 1.5 px）")
+            items1, _ = _b105_scene(which, c, 20)
+            one = caption(xray_render(items1, 1.0, style, pad=10), "實際大小", 14)
+            before = caption(xray_render(items1, 1.0, None, pad=10), "現況（不處理）", 14)
+            rows.append((which, c, big, one, before))
+    sub2 = (sub + "\n每一格後面站四個人：藍色士兵、紅色農民在右後牆外一格，藍色農民、紅色士兵在左後牆外一格（森林則站在樹叢後緣外）。"
+            "左邊放大，右邊上是實際大小，右邊下是現在不處理的樣子。這只是合成的設計稿，遊戲裡要由 client 畫。")
+    W = 2 * M + max(b.width + max(o.width, p.width) + 30 for _, _, b, o, p in rows) * 2 + 40
+    top = header_height(sub2, W - 2 * M)
+    pairs = [rows[k:k + 2] for k in range(0, len(rows), 2)]
+    H = top + sum(max(max(b.height, o.height + p.height + 10) for _, _, b, o, p in pr) + 30 for pr in pairs) + 30
+    art = Image.new("RGB", (W, H), BG)
+    y = draw_header(art, label, sub2, M)
+    for pr in pairs:
+        x = M
+        hh = 0
+        for which, c, big, one, before in pr:
+            art.paste(big.convert("RGB"), (x, y))
+            art.paste(one.convert("RGB"), (x + big.width + 10, y))
+            art.paste(before.convert("RGB"), (x + big.width + 10, y + one.height + 10))
+            x += big.width + max(one.width, before.width) + 50
+            hh = max(hh, big.height, one.height + before.height + 10)
+        y += hh + 30
+    art = art.crop((0, 0, W, y + 10))
+    p = config.OUT / f"{label}.png"
+    art.save(p)
+    print("wrote", p.name, art.size)
+    return p
+
+
+def b105(suffix):
+    return [b105_board(o, n, st, sb, suffix) for o, n, st, sb in B105]
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("what", nargs="*", default=["b102", "b103"])
@@ -823,3 +993,5 @@ if __name__ == "__main__":
         overview1(a.suffix)
     if "overview2" in a.what:
         overview2(a.suffix)
+    if "b105" in a.what:
+        b105(a.suffix)
