@@ -130,5 +130,12 @@ jobs:
           path: |
             design/production/build/prod/${{ matrix.target }}/raw/
             design/production/build/prod/${{ matrix.target }}/atlas_x*/
-            design/production/build/effects_x*/
+          retention-days: 90
+
+      - name: Upload world effects (effects.json and its page, 3x and 2x)
+        if: always() && env.ROUND == 'production' && matrix.target == 'effects'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-effects-atlas
+          path: design/production/build/effects_x*/
           retention-days: 90

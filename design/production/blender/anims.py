@@ -742,7 +742,7 @@ INF_IMPACT = 7                     # the frame of `death` where the body lands (
 DROPS = {
     "spear_e": ("grip_spear", "R", (0, 0, -1), (0, 1, 0), 0.18),
     "pike_w": ("grip_pike", "R", (0, 0, -1), (0, 1, 0), 0.18),
-    "xbow_e": ("grip_xbow", "R", (0, 1, 0), (0, 0, 1), 0.18),
+    "xbow_e": ("grip_xbow", "R", (0, 1, 0), (0, 0, 1), 0.40),     # the prod reaches 0.35 m to each side
     "bow_w": ("grip_bow", "L", (0, 1, 0), (1, 0, 0), 0.55),        # the bow is 2.3 m long: clear of the body
     "farmer_e": ("tool_root", "R", (0, 0, 1), (1, 0, 0), 0.18),
     "farmer_w": ("tool_root", "R", (0, 0, 1), (1, 0, 0), 0.18),
