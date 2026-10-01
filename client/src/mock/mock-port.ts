@@ -28,6 +28,7 @@ import {
   PROTOCOL_VERSION,
   Reject,
   type Rules,
+  rules,
   type SimEvent,
   Stance,
   TOWN_STRIDE,
@@ -39,7 +40,6 @@ import {
   UNIT_STRIDE,
   UnitField as U,
   UnitFlag,
-  type UnitInfo,
   UnitType,
   WARNING_STRIDE,
 } from "../sim.ts";
@@ -60,23 +60,16 @@ const DIRS = [
 
 const cost = (food: number, wood: number, gold: number, crystal = 0): Cost => ({ food, wood, gold, crystal });
 
-function unitInfo(type: UnitType, hp: number, shield: number, attack: number, range: number, c: Cost): UnitInfo {
-  return { type, hp, shield, attack, range: range * CELL, speed: STEP, sight: SIGHT, cooldown: 20, cost: c, trainTicks: 360, population: 1 };
-}
-
 function buildingInfo(type: BuildingType, hp: number, size: number, c: Cost, extra: Partial<BuildingInfo> = {}): BuildingInfo {
   return { type, hp, size, walkable: false, cost: c, buildTicks: 600, sight: 6, populationCap: 0, accepts: [], trains: [], shelter: 0, ...extra };
 }
 
-/** Placeholder tables (GDD appendix A where it has a number). The real ones come from sim/. */
+/**
+ * The unit table is the simulation's own, so what the interface shows (life, shield, cost)
+ * matches the game. The buildings are placeholders sized for this fixed layout.
+ */
 export const MOCK_RULES: Rules = {
-  units: [
-    unitInfo(UnitType.Farmer, 25, 0, 3, 1, cost(50, 0, 0)),
-    unitInfo(UnitType.Spearman, 60, 0, 6, 1, cost(40, 20, 0)),
-    unitInfo(UnitType.Ranged, 35, 0, 5, 5, cost(0, 40, 30)),
-    unitInfo(UnitType.Mage, 30, 60, 4, 5, cost(0, 0, 90, 50)),
-    unitInfo(UnitType.Militia, 40, 0, 4, 1, cost(0, 0, 0)),
-  ],
+  units: rules().units,
   buildings: [
     buildingInfo(BuildingType.MainCity, 1200, 4, cost(0, 0, 0), { populationCap: 10, accepts: [0, 1, 2, 3], trains: [UnitType.Farmer], shelter: 15 }),
     buildingInfo(BuildingType.House, 300, 2, cost(0, 30, 0), { populationCap: 5, shelter: 5 }),
