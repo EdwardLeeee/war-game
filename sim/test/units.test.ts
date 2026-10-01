@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
-import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Stance, UnitType } from "../src/protocol.ts";
+import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
+import { buildView } from "../src/view/view.ts";
 import { BUILDINGS } from "../src/core/rules.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
 
@@ -179,4 +180,45 @@ test("a move to a walled-in point: soldiers break through enemy walls; with only
     assert.equal(u.action[s], Action.Idle, `unit ${id} waits`);
   }
   for (let s = 0; s < w.buildings.count; s++) assert.equal(w.buildings.col.hp[s], BUILDINGS[w.buildings.col.type[s]].hp, "own buildings untouched");
+});
+
+test("formation: sets and clears the Loose flag of own units, moves nobody, and shows in the view", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const a = openArea(g, 12);
+  const mine = [0, 1, 2].map((k) => put(g, 0, UnitType.Spearman, a.x + 2 + k, a.y + 2));
+  const farmer = put(g, 0, UnitType.Farmer, a.x + 2, a.y + 4);
+  const theirs = put(g, 1, UnitType.Spearman, a.x + 10, a.y + 10);
+  g.fog.update(w);
+  const u = w.units.col;
+  const loose = (id: number) => (u.flags[slotOf(g, id)] & UnitFlag.Loose) !== 0;
+  const before = mine.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]);
+  const rejected = () => g.events.filter((e) => e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
+
+  cmd(g, 0, { c: "formation", u: [...mine, farmer, theirs], loose: true });
+  g.step();
+  assert.deepEqual(rejected(), []);
+  assert.deepEqual([...mine, farmer].map(loose), [true, true, true, true], "own units, any type");
+  assert.equal(loose(theirs), false, "not the other player's");
+  run(g, 40);
+  assert.deepEqual(mine.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]), before, "the command alone moves nobody");
+  assert.equal(u.order[slotOf(g, mine[0])], Order.None);
+  // The flag is in the snapshot's flags field.
+  const view = buildView(g, 0);
+  let seen = 0;
+  for (let o = 0; o < view.units.length; o += UNIT_STRIDE) {
+    if (view.units[o + UnitField.id] === mine[0]) seen = view.units[o + UnitField.flags] & UnitFlag.Loose;
+  }
+  assert.equal(seen, UnitFlag.Loose);
+
+  cmd(g, 0, { c: "formation", u: [mine[0]], loose: false });
+  g.step();
+  assert.deepEqual(mine.map(loose), [false, true, true], "cleared for the one named");
+  cmd(g, 0, { c: "formation", u: [theirs], loose: true });
+  g.step();
+  assert.deepEqual(rejected(), [Reject.NotOwner]);
+  cmd(g, 0, { c: "formation", u: mine, loose: 1 as never });
+  g.step();
+  assert.deepEqual(rejected(), [Reject.InvalidTarget]);
+  assert.deepEqual(mine.map(loose), [false, true, true], "a rejected command changes nothing");
 });

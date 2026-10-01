@@ -345,6 +345,17 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       startCast(w, s, cmd.fx, cmd.fy, false);
       return 0;
     }
+    case "formation": {
+      const slots = ownUnits(w, p, cmd.u);
+      if (slots.length === 0) return Reject.NotOwner;
+      if (typeof cmd.loose !== "boolean") return Reject.InvalidTarget;
+      const u = w.units.col;
+      for (const s of slots) {
+        if (cmd.loose) u.flags[s] |= UnitFlag.Loose;
+        else u.flags[s] &= ~UnitFlag.Loose;
+      }
+      return 0;
+    }
     case "autocast": {
       const slots = ownUnits(w, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
