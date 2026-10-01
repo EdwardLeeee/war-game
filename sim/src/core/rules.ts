@@ -132,6 +132,11 @@ export const COMBAT_TICKS = 5 * S;
 export const UNDER_ATTACK_TICKS = 60;
 /** Formation slots are this far apart. */
 export const FORMATION_SPACING = CELL;
+/**
+ * Slots of a loose formation (UnitFlag.Loose, round 3): further apart than the crystal
+ * cannon's radius (1.5 cells), so a shot on one unit standing in formation hits only that one.
+ */
+export const FORMATION_LOOSE_SPACING = 2 * CELL;
 /** Closer than this to its slot, a unit stops (fixed point). */
 export const ARRIVE_DISTANCE = 256;
 /** Within this distance of its slot a unit steers straight at it instead of following the field. */

@@ -7,6 +7,7 @@ import {
   Action,
   BuildingType,
   type Command,
+  CELL,
   CELL_SHIFT,
   GameOverReason,
   NodeKind,
@@ -26,7 +27,18 @@ import { type Economy, nodeOpen, shiftQueue } from "./economy.ts";
 import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
 import { nearestWalkable } from "./paths.ts";
-import { autoBuilders, BUILDINGS, CANNON, FARMLAND_REACH, FORMATION_SPACING, MAGE_CAP, QUEUE_MAX, TOWNS, UNITS } from "./rules.ts";
+import {
+  autoBuilders,
+  BUILDINGS,
+  CANNON,
+  FARMLAND_REACH,
+  FORMATION_LOOSE_SPACING,
+  FORMATION_SPACING,
+  MAGE_CAP,
+  QUEUE_MAX,
+  TOWNS,
+  UNITS,
+} from "./rules.ts";
 import { rectDist2, startCast } from "./units.ts";
 import type { World } from "./world.ts";
 
@@ -345,6 +357,18 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       startCast(w, s, cmd.fx, cmd.fy, false);
       return 0;
     }
+    case "formation": {
+      const slots = ownUnits(w, p, cmd.u);
+      if (slots.length === 0) return Reject.NotOwner;
+      if (typeof cmd.loose !== "boolean") return Reject.InvalidTarget;
+      const u = w.units.col;
+      for (const s of slots) {
+        if (cmd.loose) u.flags[s] |= UnitFlag.Loose;
+        else u.flags[s] &= ~UnitFlag.Loose;
+      }
+      reform(ctx, slots);
+      return 0;
+    }
     case "autocast": {
       const slots = ownUnits(w, p, cmd.u);
       if (slots.length === 0) return Reject.NotOwner;
@@ -503,12 +527,9 @@ function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: n
   const { w } = ctx;
   const u = w.units.col;
   const n = w.size;
-  const group = ctx.nextGroup.value++;
-  let speed = Infinity;
   let sx = 0;
   let sy = 0;
   for (const s of slots) {
-    speed = Math.min(speed, UNITS[u.type[s]].speed);
     sx += u.x[s];
     sy += u.y[s];
   }
@@ -518,7 +539,106 @@ function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: n
   const goal = nearestWalkable(w, cellX, cellY, spawn);
   const gx = ((goal % n) << CELL_SHIFT) + 512;
   const gy = (Math.trunc(goal / n) << CELL_SHIFT) + 512;
-  const k = dir16(gx - cx, gy - cy);
+  layout(ctx, slots, gx, gy, dir16(gx - cx, gy - cy), order, goal);
+}
+
+/** Units standing this close (or closer, through one another) re-form as one formation. */
+const REFORM_LINK = 3 * CELL;
+
+/**
+ * The `formation` command re-forms the units named in it with the new spacing (round 3, D-027),
+ * each lot where it is, so troops in different places are never drawn together:
+ * - a group still on its way (from one move or retreat) forms up again at its goal; members
+ *   of it that are already there join in;
+ * - units standing (no order) form up in place: those within REFORM_LINK of one another, or
+ *   linked through others, are one formation, which keeps its middle and faces the way its
+ *   melee stand from its ranged and mages (one kind only: toward the enemy's main city);
+ *   a unit standing alone only keeps the new flag.
+ * Farmers, units casting or attacking something, and new units walking to a rally point
+ * only keep the new flag.
+ */
+function reform(ctx: CommandContext, slots: number[]): void {
+  const { w } = ctx;
+  const u = w.units.col;
+  const n = w.size;
+  const soldier = (s: number) => u.type[s] !== UnitType.Farmer && u.action[s] !== Action.Garrisoned;
+  const moving = (s: number) => u.order[s] === Order.Move || u.order[s] === Order.Retreat;
+  const done = new Set<number>();
+  for (const s of slots) {
+    if (!soldier(s) || !moving(s) || u.group[s] < 0 || done.has(s)) continue;
+    const g = u.group[s];
+    const members = slots.filter((m) => soldier(m) && u.group[m] === g && (moving(m) || u.order[m] === Order.None));
+    for (const m of members) done.add(m);
+    const goal = u.orderTarget[s];
+    if (goal >= 0) formation(ctx, members, goal % n, Math.trunc(goal / n), u.order[s]);
+  }
+  const idle = slots.filter((s) => soldier(s) && !done.has(s) && u.order[s] === Order.None);
+  // Clusters: union-find over pairs within REFORM_LINK, roots kept at the lowest slot.
+  const root = idle.map((_, k) => k);
+  const find = (k: number): number => (root[k] === k ? k : (root[k] = find(root[k])));
+  for (let a = 0; a < idle.length; a++) {
+    for (let b = a + 1; b < idle.length; b++) {
+      const dx = u.x[idle[a]] - u.x[idle[b]];
+      const dy = u.y[idle[a]] - u.y[idle[b]];
+      if (dx * dx + dy * dy > REFORM_LINK * REFORM_LINK) continue;
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) root[Math.max(ra, rb)] = Math.min(ra, rb);
+    }
+  }
+  for (let k = 0; k < idle.length; k++) {
+    if (find(k) !== k) continue;
+    const cluster = idle.filter((_, j) => find(j) === k);
+    if (cluster.length < 2) continue;
+    let sx = 0;
+    let sy = 0;
+    for (const s of cluster) {
+      sx += u.x[s];
+      sy += u.y[s];
+    }
+    const cx = idiv(sx, cluster.length);
+    const cy = idiv(sy, cluster.length);
+    layout(ctx, cluster, cx, cy, heading(w, cluster, cx, cy), Order.Move, -1);
+  }
+}
+
+/**
+ * The way a standing formation faces: from where its higher ranks stand toward its lower ones
+ * (ranks weighted about their mean); with one kind of unit only, toward the enemy's main city.
+ */
+function heading(w: World, cluster: number[], cx: number, cy: number): number {
+  const u = w.units.col;
+  let total = 0;
+  for (const s of cluster) total += rank(u.type[s]);
+  let dx = 0;
+  let dy = 0;
+  for (const s of cluster) {
+    const weight = total - cluster.length * rank(u.type[s]);
+    dx += weight * (u.x[s] - cx);
+    dy += weight * (u.y[s] - cy);
+  }
+  if (dx !== 0 || dy !== 0) return dir16(dx, dy);
+  const enemy = w.map.spawns[1 - u.owner[cluster[0]]];
+  return dir16((enemy.cellX << CELL_SHIFT) + 512 - cx, (enemy.cellY << CELL_SHIFT) + 512 - cy);
+}
+
+/** Melee in front, then ranged, then mages. */
+const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
+
+/**
+ * Slots for a group facing heading k (dir16), with `order` (Move or Retreat) to them. With a
+ * goal cell, (x, y) is its centre and the middle of the front row stands there; with goal -1
+ * (re-forming in place), (x, y) is where the middle of the whole formation goes and the goal
+ * cell is the one under the front row's middle.
+ */
+function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: number, order: number, goalCell: number): void {
+  const { w } = ctx;
+  const u = w.units.col;
+  const n = w.size;
+  const group = ctx.nextGroup.value++;
+  let speed = Infinity;
+  for (const s of slots) speed = Math.min(speed, UNITS[u.type[s]].speed);
+  const spawn = w.map.spawns[u.owner[slots[0]]];
   const fx = DIR16_X[k];
   const fy = DIR16_Y[k];
   // "Left" of the heading, taken in the owner's canonical frame: a mirror frame swaps left
@@ -526,22 +646,78 @@ function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: n
   const turn = isReflection(w.map.frames[u.owner[slots[0]]] ?? IDENTITY) ? 12 : 4;
   const lx = DIR16_X[(k + turn) % 16];
   const ly = DIR16_Y[(k + turn) % 16];
-  const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
-  const ordered = [...slots].sort((a, b) => rank(u.type[a]) - rank(u.type[b]) || u.id[a] - u.id[b]);
-  const width = isqrt(ordered.length - 1) + 1;
+  let ordered = [...slots].sort((a, b) => rank(u.type[a]) - rank(u.type[b]) || u.id[a] - u.id[b]);
+  const m = ordered.length;
+  const width = isqrt(m - 1) + 1;
   const max = (n << CELL_SHIFT) - 1;
-  ordered.forEach((s, i) => {
-    const row = Math.trunc(i / width);
-    const col = i % width;
-    const back = row * FORMATION_SPACING;
-    const side = idiv((2 * col - (width - 1)) * FORMATION_SPACING, 2);
-    let px = clamp(gx - idiv(fx * back, 1024) + idiv(lx * side, 1024), 0, max);
-    let py = clamp(gy - idiv(fy * back, 1024) + idiv(ly * side, 1024), 0, max);
+  // Loose when more than half of the group is (UnitFlag.Loose): the whole group forms up
+  // further apart, so that a group told to go loose is not held together by a few who are not.
+  let loose = 0;
+  for (const s of slots) if ((u.flags[s] & UnitFlag.Loose) !== 0) loose++;
+  const spacing = 2 * loose > m ? FORMATION_LOOSE_SPACING : FORMATION_SPACING;
+  const back = (i: number) => Math.trunc(i / width) * spacing;
+  const side = (i: number) => idiv((2 * (i % width) - (width - 1)) * spacing, 2);
+  let gx = x;
+  let gy = y;
+  let goal = goalCell;
+  if (goal < 0) {
+    // The front row's middle sits ahead of the formation's middle by the mean offset.
+    let sb = 0;
+    let ss = 0;
+    for (let i = 0; i < m; i++) {
+      sb += back(i);
+      ss += side(i);
+    }
+    const mb = idiv(sb, m);
+    const ms = idiv(ss, m);
+    gx = clamp(x + idiv(fx * mb, 1024) - idiv(lx * ms, 1024), 0, max);
+    gy = clamp(y + idiv(fy * mb, 1024) - idiv(ly * ms, 1024), 0, max);
+    goal = nearestWalkable(w, gx >> CELL_SHIFT, gy >> CELL_SHIFT, spawn);
+  }
+  // Slot i: rows back from the front, each row left to right.
+  const sx: number[] = [];
+  const sy: number[] = [];
+  for (let i = 0; i < m; i++) {
+    let px = clamp(gx - idiv(fx * back(i), 1024) + idiv(lx * side(i), 1024), 0, max);
+    let py = clamp(gy - idiv(fy * back(i), 1024) + idiv(ly * side(i), 1024), 0, max);
     if (!w.walkable(px >> CELL_SHIFT, py >> CELL_SHIFT)) {
       const c = nearestWalkable(w, px >> CELL_SHIFT, py >> CELL_SHIFT, spawn);
       px = ((c % n) << CELL_SHIFT) + 512;
       py = (Math.trunc(c / n) << CELL_SHIFT) + 512;
     }
+    sx.push(px);
+    sy.push(py);
+  }
+  if (goalCell < 0) {
+    // Re-forming in place, units may take the slots in the order they stand: each rank front
+    // to back and each row left to right. Whichever order has the shorter longest walk (then
+    // the smaller sum of squared walks; a tie keeps id order) is used, so the formation is
+    // done sooner and nobody crosses it for nothing.
+    const ahead = (s: number) => fx * (u.x[s] - x) + fy * (u.y[s] - y);
+    const across = (s: number) => lx * (u.x[s] - x) + ly * (u.y[s] - y);
+    const standing = [...ordered].sort((a, b) => rank(u.type[a]) - rank(u.type[b]) || ahead(b) - ahead(a) || u.id[a] - u.id[b]);
+    for (let r = 0; r < m; r += width) {
+      const row = standing.slice(r, r + width).sort((a, b) => across(a) - across(b) || u.id[a] - u.id[b]);
+      standing.splice(r, row.length, ...row);
+    }
+    const walk = (o: number[]) => {
+      let most = 0;
+      let sum = 0;
+      o.forEach((s, i) => {
+        const dx = (sx[i] - u.x[s]) >> 4;
+        const dy = (sy[i] - u.y[s]) >> 4;
+        most = Math.max(most, dx * dx + dy * dy);
+        sum += dx * dx + dy * dy;
+      });
+      return { most, sum };
+    };
+    const a = walk(standing);
+    const b = walk(ordered);
+    if (a.most < b.most || (a.most === b.most && a.sum < b.sum)) ordered = standing;
+  }
+  ordered.forEach((s, i) => {
+    const px = sx[i];
+    const py = sy[i];
     u.order[s] = order;
     u.orderTarget[s] = goal;
     u.orderX[s] = px;

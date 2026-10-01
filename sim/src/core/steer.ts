@@ -68,3 +68,26 @@ export function steerDirect(w: World, i: number, dx: number, dy: number, speed: 
   u.vy[i] = idiv(DIR16_Y[k] * s, CELL);
   u.action[i] = Action.Move;
 }
+
+/**
+ * Can a unit walk straight from (x0, y0) to (x1, y1): every cell the line crosses is walkable,
+ * checked every half cell, and a diagonal step between two cells needs both cells beside it
+ * open too (as in the flow field, no cutting corners).
+ */
+export function openLine(w: World, x0: number, y0: number, x1: number, y1: number): boolean {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const steps = (Math.max(Math.abs(dx), Math.abs(dy)) >> (CELL_SHIFT - 1)) + 1;
+  let px = x0 >> CELL_SHIFT;
+  let py = y0 >> CELL_SHIFT;
+  for (let k = 1; k <= steps; k++) {
+    const cx = (x0 + idiv(dx * k, steps)) >> CELL_SHIFT;
+    const cy = (y0 + idiv(dy * k, steps)) >> CELL_SHIFT;
+    if (cx === px && cy === py) continue;
+    if (!w.walkable(cx, cy)) return false;
+    if (cx !== px && cy !== py && (!w.walkable(cx, py) || !w.walkable(px, cy))) return false;
+    px = cx;
+    py = cy;
+  }
+  return true;
+}
