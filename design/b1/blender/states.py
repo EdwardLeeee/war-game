@@ -538,9 +538,11 @@ def apply(root, kind, c, state, **opts):
         rnd2 = random.Random(seed + 2)
         for g, (cx, cy, bw, bd, z0, wh) in blocks:
             o = g.matrix_world.translation
+            if o.z >= KNEE - 0.05:                  # an upper storey: nothing of it is left at knee height
+                continue
             for i in range(int(bw * bd)):
                 B1.lumpy(f"ds_deb{len(blocks)}_{i}_{int(o.x * 10)}", rnd2.uniform(0.15, 0.3), P["char"], root,
-                         (o.x + rnd2.uniform(-bw / 3, bw / 3), o.y + rnd2.uniform(-bd / 3, bd / 3), z0 + 0.08),
+                         (o.x + rnd2.uniform(-bw / 3, bw / 3), o.y + rnd2.uniform(-bd / 3, bd / 3), min(o.z, KNEE) + 0.05),
                          seed=i, squash=0.4)
         ash(root, "ds_ash", w, d, seed)
         rnd = random.Random(seed)

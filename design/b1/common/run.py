@@ -74,10 +74,12 @@ for _c in CULTURES:
                                 for k in ("th22", "th21", "th12") for v in (0, 1) for s in ("ruin", "burning")]
                                + [dict(kind="ttower", culture=_c, state="rubble")])
 
+TARGETS["states3"] = [dict(kind=k, culture=c, state="destroyed_b") for k in ("main_city", "barracks") for c in CULTURES]
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
-FOLDER.update({t: "states" for t in TARGETS if t.startswith("states2")})
+FOLDER.update({t: "states" for t in TARGETS if t.startswith(("states2", "states3"))})
 FOLDER.update({t: "towns" for t in TARGETS if t.startswith("towns2")})
 
 
