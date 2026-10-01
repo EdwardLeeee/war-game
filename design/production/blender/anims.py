@@ -23,14 +23,48 @@ from mathutils import Euler, Vector
 
 import humanoid2 as h2
 import lib
+import motion
 from humanoid import blend, ease, fall, fall_root_tilt, idle
 from lib import box, fx_mat, ico, rod, slab
 
 CRYSTAL = (0.35, 0.95, 1.0)
 MAGE_NEW = ("attack", "hit", "shatter", "fall", "dead")
-WORK = ("work_chop", "work_mine", "work_farm", "work_build")
 STAFF_HEAD = {"WA": (0, 1.2, 0), "WB": (0, 1.25, 0), "WC": (0, 1.21, 0)}
 SPIN_PER_CYCLE = 90.0       # degrees the siege wheels turn in one 8-frame walk cycle
+
+# P2 mage fall: joints keyed over the 12 frames (time 0..1); the hips carry the body down and over
+# (offset from the standing hips, then Euler XYZ: tilt back, roll, turn)
+FALL_JOINTS = ("torso", "neck", "shoulderR", "elbowR", "shoulderL", "elbowL", "hipR", "kneeR", "hipL", "kneeL")
+FALL_KEYS = [
+    # recoil: chest and head thrown back, arms flung out, the knees start to go
+    (0.18, dict(hips=(0, -0.03, -0.03), hips_rot=(0, 0, 0), torso=(16, 0, 6), neck=(12, 0, -8),
+                shoulderR=(10, -55, 0), elbowR=(30, 0, 0), shoulderL=(-10, 50, 0), elbowL=(35, 0, 0),
+                hipR=(10, 0, -4), kneeR=(-20, 0, 0), hipL=(16, 0, 4), kneeL=(-30, 0, 0)), "out"),
+    # the knees buckle: the body drops straight down and slumps forward
+    (0.42, dict(hips=(0.02, -0.10, -0.42), hips_rot=(-8, 0, 10), torso=(-22, 6, -8), neck=(-18, 0, 10),
+                shoulderR=(20, -20, 0), elbowR=(40, 0, 0), shoulderL=(15, 25, 0), elbowL=(50, 0, 0),
+                hipR=(70, -8, 0), kneeR=(-125, 0, 0), hipL=(95, 10, 0), kneeL=(-130, 0, 0)), "in"),
+    # tipping over backward and to the side, the arms trailing
+    (0.62, dict(hips=(-0.05, -0.25, -0.66), hips_rot=(48, -14, 22), torso=(10, -6, 10), neck=(10, 0, 20),
+                shoulderR=(100, -40, 0), elbowR=(30, 0, 0), shoulderL=(50, 60, 0), elbowL=(40, 0, 0),
+                hipR=(30, -6, 0), kneeR=(-70, 0, 0), hipL=(60, 8, 0), kneeL=(-100, 0, 0)), "lin"),
+    # the back hits the ground
+    (0.75, dict(hips=(-0.10, -0.38, -0.80), hips_rot=(88, -10, 28), torso=(4, 0, 6), neck=(-6, 0, 30),
+                shoulderR=(30, -60, 0), elbowR=(30, 0, 0), shoulderL=(20, 40, 0), elbowL=(30, 0, 0),
+                hipR=(8, -12, 0), kneeR=(-18, 0, 0), hipL=(48, 10, 0), kneeL=(-80, 0, 0)), "in"),
+    # one small bounce
+    (0.84, dict(hips=(-0.10, -0.38, -0.765), hips_rot=(84, -10, 28), torso=(8, 0, 6),
+                shoulderR=(34, -56, 0), shoulderL=(24, 36, 0)), "out"),
+    # at rest: on the back, turned, one knee up, the right arm flung out toward the camera, the left
+    # one by the side (an arm up by the head hides the head under the wide sleeve; an arm pointing
+    # away from the camera reads as a tube standing up)
+    (1.0, dict(hips=(-0.10, -0.39, -0.81), hips_rot=(89, -10, 28), torso=(3, 0, 6), neck=(-8, 0, 34),
+               shoulderR=(4, -40, 0), elbowR=(10, 0, 0), shoulderL=(4, 28, 0), elbowL=(12, 0, 0),
+               hipR=(4, -14, 0), kneeR=(-10, 0, 0), hipL=(40, 12, 0), kneeL=(-72, 0, 0)), "smooth"),
+]
+STAFF_LEN = 1.0                    # hand to the foot of the staff (mage5.staff)
+STAFF_LIES = (0.80, 0.55, 0.0)     # where the dropped staff points on the ground (unit space)
+MAGE_IMPACT = 8                    # the frame of `fall` where the body lands (for the game's dust)
 
 
 def _obj(name):
@@ -85,6 +119,7 @@ def extend_mage(u, style):
                subdiv=2, fx=True)
     glow.scale = (0.001,) * 3
     east = style.startswith("T")
+    staff = r.j.get("grip_staff")
     # the West mages stand holding the staff upright (mage5.build's hold pose); every new animation
     # starts and ends there, or the staff would snap flat when the game switches from idle
     hold = {} if east else {"shoulderR": (8, 0, -24), "elbowR": (78, 0, 0)}
@@ -174,13 +209,30 @@ def extend_mage(u, style):
                 ob.scale = (max(0.001, 1 - 0.5 * t),) * 3
 
     def die(anim, f):
+        """P2: the knees give first, the body sinks, tips backward and to one side, lands with a
+        small bounce and ends lying askew with the limbs spread. The 學院大師's staff is let go on
+        the first frame and topples on its own, pivoting on its foot."""
         t = min(1.0, f / 11.0) if anim == "fall" else 1.0
-        a, o = fall(t)
-        if hold:           # the staff arm leaves the upright hold over the first half of the fall
-            a.update(blend(hold, {k: a.get(k, (0, 0, 0)) for k in hold}, ease(min(1.0, t * 2))))
-        r.pose(a, o)
-        # tilt the whole body before the skinned robe follows the joints
-        r.root.rotation_euler = [x * lib.D2R for x in fall_root_tilt(t)]
+        base, off = stand()
+        k0 = {name: tuple(base.get(name, (0, 0, 0))) for name in FALL_JOINTS}
+        k0.update(hips=(0, 0, 0), hips_rot=(0, 0, 0))
+        k = motion.sample([(0.0, k0, "lin")] + FALL_KEYS, t)
+        ang = {name: k[name] for name in FALL_JOINTS}
+        ang["hips"] = k["hips_rot"]
+        if staff is not None:
+            # where the staff stood in the hand (unit space), before the body moves
+            r.pose(base, off)
+            bpy.context.view_layer.update()
+            M0 = u.root.matrix_world.inverted() @ staff.matrix_world
+        r.pose(ang, {"hips": k["hips"]})
+        if staff is not None:
+            axis0 = (M0.to_3x3() @ Vector((0, 1, 0))).normalized()
+            foot = M0 @ Vector((0, -STAFF_LEN, 0))
+            foot.z = max(foot.z, 0.03)
+            q = motion.ease_in((t - 0.02) / 0.55) - motion.bounce(t, 0.57, 0.8, 0.07)
+            axis = axis0.lerp(Vector(STAFF_LIES), motion.clamp(q)).normalized()
+            R = motion.frame((M0.to_3x3() @ Vector((1, 0, 0))).cross(axis), axis)     # +Y along the staff
+            motion.place(u, staff, foot + axis * STAFF_LEN, R)
         h2.update(r)
         if shield:
             shield.scale = (0.001,) * 3
@@ -198,49 +250,101 @@ def extend_mage(u, style):
     return u
 
 
-# ---------------------------------------------------------------- cavalry
+# ---------------------------------------------------------------- cavalry (P2)
+#
+# death, 10 frames: the horse stumbles on its forelegs (they fold and stay folded), the hindquarters
+# follow and it rolls onto its left side with its legs tucked and its neck on the ground; the rider
+# is pitched forward out of the saddle, lands face down ahead of the horse and lies sprawled; the
+# lance falls beside them. Slow to start, fast into the ground, one small bounce.
+
+HORSE_KEYS = [
+    (0.0, dict(body_off=(0, 0, 0), body_rot=(0, 0, 0), neck=(-38, 0, 0), head=(-112, 0, 0), tail=(149, 0, 0),
+               legFR=(0, 0, 0), lowFR=(0, 0, 0), legFL=(3, 0, 0), lowFL=(0, 0, 0),
+               legBR=(-3, 0, 0), lowBR=(4, 0, 0), legBL=(0, 0, 0), lowBL=(0, 0, 0)), "lin"),
+    (0.2, dict(body_off=(0, 0.04, -0.12), body_rot=(-12, 0, 0), neck=(-60, 0, 0), head=(-104, 0, 0),
+               tail=(120, 0, 0), legFR=(18, 0, 0), lowFR=(-60, 0, 0), legFL=(10, 0, 0), lowFL=(-85, 0, 0),
+               legBR=(-8, 0, 0), lowBR=(6, 0, 0), legBL=(-12, 0, 0), lowBL=(8, 0, 0)), "out"),
+    (0.42, dict(body_off=(-0.02, 0.10, -0.36), body_rot=(-24, -8, 0), neck=(-86, 0, 8), head=(-98, 0, 0),
+                legFR=(22, 0, 0), lowFR=(-128, 0, 0), legFL=(28, 0, 0), lowFL=(-135, 0, 0),
+                legBR=(-14, 0, 0), lowBR=(14, 0, 0), legBL=(-6, 0, 0), lowBL=(10, 0, 0)), "in"),
+    (0.62, dict(body_off=(-0.14, 0.10, -0.60), body_rot=(-10, -46, 6), neck=(-84, 0, 16), head=(-108, 0, 0),
+                tail=(115, 0, 0), legFR=(30, 0, 0), lowFR=(-118, 0, 0), legFL=(34, 0, 0), lowFL=(-120, 0, 0),
+                legBR=(30, 0, 0), lowBR=(-50, 0, 0), legBL=(40, 0, 0), lowBL=(-70, 0, 0)), "lin"),
+    (0.78, dict(body_off=(-0.20, 0.06, -0.85), body_rot=(2, -87, 10), neck=(-88, 0, 24), head=(-120, 0, 0),
+                tail=(100, 0, 0), legFR=(22, 0, 0), lowFR=(-92, 0, 0), legFL=(40, 0, 0), lowFL=(-118, 0, 0),
+                legBR=(38, 0, 0), lowBR=(-72, 0, 0), legBL=(52, 0, 0), lowBL=(-98, 0, 0)), "in"),
+    (0.88, dict(body_off=(-0.20, 0.06, -0.80), body_rot=(0, -81, 10)), "out"),
+    (1.0, dict(body_off=(-0.21, 0.06, -0.855), body_rot=(2, -88, 10), neck=(-90, 0, 26), tail=(95, 0, 0)),
+     "smooth"),
+]
+# the rider: where the hips are (unit space) and how the body is turned, then the limbs
+RIDER_KEYS = [
+    (0.2, dict(at=(0, 0.10, 1.40), rot=(-28, 0, 0), torso=(-18, 0, 0), neck=(10, 0, 0),
+               shoulderR=(70, -20, 0), elbowR=(40, 0, 0), shoulderL=(60, 25, 0), elbowL=(50, 0, 0)), "out"),
+    (0.42, dict(at=(0.14, 0.72, 1.34), rot=(-62, 6, -12), torso=(-10, 0, 0), neck=(20, 0, 0),
+                shoulderR=(140, -25, 0), elbowR=(25, 0, 0), shoulderL=(130, 30, 0), elbowL=(30, 0, 0),
+                hipR=(30, -12, -10), kneeR=(-50, 0, 0), hipL=(20, 14, 10), kneeL=(-40, 0, 0),
+                ankleR=(20, 0, 0), ankleL=(20, 0, 0)), "in"),
+    (0.62, dict(at=(0.48, 1.38, 0.74), rot=(-92, 10, -26), torso=(6, 0, 0),
+                shoulderR=(160, -30, 0), shoulderL=(140, 40, 0),
+                hipR=(10, -6, 0), kneeR=(-30, 0, 0), hipL=(5, 8, 0), kneeL=(-20, 0, 0)), "lin"),
+    (0.76, dict(at=(0.70, 1.74, 0.16), rot=(-90, 12, -32), torso=(12, 0, 0), neck=(10, 0, 28),
+                shoulderR=(168, -28, 0), elbowR=(35, 0, 0), shoulderL=(118, 52, 0), elbowL=(75, 0, 0),
+                hipR=(-4, -5, 0), kneeR=(-8, 0, 0), hipL=(-6, 7, 0), kneeL=(-42, 0, 0),
+                ankleR=(35, 0, 0), ankleL=(35, 0, 0)), "in"),
+    (0.86, dict(at=(0.72, 1.78, 0.21), rot=(-86, 12, -33), torso=(14, 0, 0)), "out"),
+    (1.0, dict(at=(0.75, 1.82, 0.14), rot=(-89, 12, -34), torso=(4, 0, 0)), "smooth"),
+]
+RIDER_JOINTS = ("torso", "neck", "shoulderR", "elbowR", "shoulderL", "elbowL", "hipR", "kneeR", "hipL", "kneeL",
+                "ankleR", "ankleL")
+LANCE_LIES = dict(at=(1.25, 0.10, 0.05), tip=(0.10, 0.99, 0.0))     # the grip point and where the tip points
+CAV_IMPACT = 7                     # the frame where the horse's body lands (for the game's dust)
+
 
 def extend_cav(u, kind):
-    import units2
     hr, rider = u.rigs["horse"], u.rigs["body"]
     inner = u.pose
     lance = rider.j.get("grip_lance")
-    P = units2.palette("C")
-    # the rider lets go as the horse goes down: the lance then lies on the ground beside it
-    dropped = lib.empty(f"{kind}_droppedlance", parent=u.root)
-    rod(f"{kind}_droppedlance_shaft", (-1.05, 1.7, 0.03), (-1.0, -1.5, 0.05), 0.024,
-        P["shaft"] if kind == "hcav_e" else P["team"], parent=dropped, r2=0.014)
-    lib.lathe(f"{kind}_droppedlance_tip", [(0.0, 0.0), (0.032, 0.24), (0.014, 0.3)], P["steel"], dropped, segs=8,
-              rot=(-90, 0, 0), at=(0, 0, 0), loc=(-1.06, 2.0, 0.03))
-    dropped.scale = (0.001,) * 3
+    root_rest = rider.root.matrix_basis.copy()
 
     def pose(anim, frame):
         hr.root.rotation_euler = (0, 0, 0)
         hr.root.location = (0, 0, 0)
-        dropped.scale = (0.001,) * 3
-        if lance is not None:
-            lance.scale = (1, 1, 1)
+        rider.root.matrix_basis = root_rest.copy()
         if anim != "death":
             inner(anim, frame)
             return
-        t = min(1.0, frame / 9.0)
-        a = ease(min(1, t / 0.35))                 # forelegs buckle, head drops
-        b = ease(max(0.0, (t - 0.3) / 0.7))        # rolls onto its side
-        ha = {"legFR": (25 * a - 15 * b, 0, 0), "legFL": (30 * a - 20 * b, 0, 0),
-              "lowFR": (-100 * a + 90 * b, 0, 0), "lowFL": (-110 * a + 100 * b, 0, 0),
-              "legBR": (-10 * a, 0, 0), "legBL": (-15 * a, 0, 0), "lowBR": (20 * a - 20 * b, 0, 0),
-              "lowBL": (25 * a - 25 * b, 0, 0),
-              "body": (-12 * a + 12 * b, 0, 0), "neck": (-38 + 25 * a, 0, 0), "tail": (150 - 40 * b, 0, 0)}
-        hr.pose(ha, {"body": (0, 0, -0.35 * a * (1 - b))})
-        hr.root.rotation_euler = (0, 78 * b * lib.D2R, 0)
-        hr.root.location = (-0.55 * b, 0, 0.14 * b)
+        n = u.frames.get("death", 10)
+        t = min(1.0, frame / (n - 1.0))
+        # where the rider sat and the lance was held (unit space), before anything moves
+        inner("idle", 0)
+        bpy.context.view_layer.update()
+        Wi = u.root.matrix_world.inverted()
+        seat = Wi @ rider.j["hips"].matrix_world.translation
+        L0 = Wi @ lance.matrix_world if lance is not None else None
+        # the horse
+        k = motion.sample(HORSE_KEYS, t)
+        ang = {name: k[name] for name in k if name not in ("body_off", "body_rot")}
+        ang["body"] = k["body_rot"]
+        hr.pose(ang, {"body": k["body_off"]})
+        # the rider, thrown clear
+        k0 = {name: tuple(rider.rest.get(name, (0, 0, 0))) for name in RIDER_JOINTS}
+        k0.update(at=tuple(seat), rot=(0, 0, 0))
+        rk = motion.sample([(0.0, k0, "lin")] + RIDER_KEYS, t)
         ra = dict(rider.rest)
-        ra.update({"torso": (30 * a + 10 * b, 0, 0), "neck": (20 * a, 0, 0), "shoulderR": (45 - 20 * b, 0, -30 * b),
-                   "shoulderL": (35 - 40 * b, 0, 40 * b), "elbowL": (30, 0, 0)})
+        ra.update({name: rk[name] for name in RIDER_JOINTS})
         rider.pose(ra, {})
-        if lance is not None and b > 0.35:
-            lance.scale = (0.001,) * 3
-            dropped.scale = (1, 1, 1)
+        R = Euler([a * lib.D2R for a in rk["rot"]]).to_matrix()
+        hips = Vector(rider.rest_loc["hips"])
+        motion.place(u, rider.root, Vector(rk["at"]) - R @ hips, R)
+        if lance is not None:
+            q = motion.ease_in((t - 0.12) / 0.55) - motion.bounce(t, 0.67, 0.9, 0.05)
+            q = motion.clamp(q)
+            tip0 = (L0.to_3x3() @ Vector((0, 0, -1))).normalized()
+            tip = tip0.lerp(Vector(LANCE_LIES["tip"]), q).normalized()
+            at = L0.translation.lerp(Vector(LANCE_LIES["at"]), q)
+            at.z += 0.5 * math.sin(math.pi * min(1.0, q * 1.2)) * (1 - q)      # tossed up a little first
+            motion.place(u, lance, at, motion.frame(-tip, L0.to_3x3() @ Vector((0, 1, 0))))
         h2.update(hr)
         h2.update(rider)
     u.pose = pose
@@ -248,6 +352,42 @@ def extend_cav(u, kind):
 
 
 # ---------------------------------------------------------------- siege engines
+#
+# walk (approved in P1): the wheels turn, 90 degrees a cycle.
+# death (P2), 10 frames: the machine comes apart. The frame's posts splay and fall from their feet,
+# the throwing arm crashes onto the base, the banner pole topples with its flag, two wheels come
+# off, the cart drops on one corner, and planks and shot scatter. Each part falls with gravity
+# (slow, then fast), lands around frame 6 and settles; the pieces stay in the last frame.
+
+SIEGE_IMPACT = 6                   # the frame where the frame hits the ground (for the game's dust)
+
+
+def _adopt(child, parent):
+    """Make `child` follow `parent` without moving it."""
+    if child is None or parent is None:
+        return
+    bpy.context.view_layer.update()
+    mw = child.matrix_world.copy()
+    child.parent = parent
+    child.matrix_world = mw
+
+
+def _drop(t, t0, t1, rebound=0.06):
+    """0 -> 1 between t0 and t1 like something falling, then one small rebound."""
+    return motion.clamp(motion.ease_in((t - t0) / (t1 - t0)) - motion.bounce(t, t1, min(1.0, t1 + 0.22), rebound))
+
+
+def _debris(u, kind, mat_, n=5):
+    """Loose planks, hidden until the machine breaks up: (object, where it lands, spin)."""
+    out = []
+    for k in range(n):
+        a = 2.4 * k + 0.6
+        ob = box(f"{kind}_debris{k}", (0.09, 0.42 + 0.1 * (k % 3), 0.045), mat_, u.root, bevel=0.01)
+        ob.scale = (0.001,) * 3
+        land = Vector((1.25 * math.cos(a) + 0.15, 1.15 * math.sin(a) - 0.1, 0.03))
+        out.append((ob, land, (40 * k, 25 * k + 10, 70 * k)))
+    return out
+
 
 def extend_siege(u, kind):
     base, arm = _obj(f"{kind}_base"), u.rigs["arm"]
@@ -256,15 +396,118 @@ def extend_siege(u, kind):
     rest = {o.name: (o.location.copy(), o.rotation_euler.copy()) for o in wheels + [base]}
     inner = u.pose
     spin_axis_rot = Euler((0, 90 * lib.D2R, 0)).to_matrix()
-    loose = _obj(f"{kind}_w1a")          # a front wheel on the +x side
+    east = kind == "siege_e"
+    O = lambda name: _obj(f"{kind}_{name}")          # noqa: E731
+    # pieces that belong together fall together (nothing moves: the built pose is kept)
+    pole = O("bpole")
+    _adopt(O("bfinial"), pole)
+    _adopt(O("flag"), pole)
+    if east:
+        for s in (-1, 1):
+            for yy, e in ((1, "a"), (-1, "b")):
+                for kk in (0, 1):
+                    _adopt(O(f"band{s}{kk}{yy}"), O(f"post{s}{e}"))
+                _adopt(O(f"lash{s}{yy}"), O(f"post{s}{e}"))
+    else:
+        for name in ("bar", "pad", "upband-1", "upband1"):
+            _adopt(O(name), O("up-1"))
+    arm_rest = arm.location.copy()
+    wreck = motion.Wreck([])
+    planks = _debris(u, kind, lib.MATS["wood5"]["mat"] if "wood5" in lib.MATS else None)
+    loose_shot = [o for o in (O("stone"), O("sling")) if o is not None] if east else []
 
     def reset():
         for o in wheels + [base]:
             loc, rot = rest[o.name]
             o.location, o.rotation_euler = loc.copy(), rot.copy()
+        wreck.reset()
+        arm.location = arm_rest.copy()
+        for ob, _, _ in planks:
+            ob.scale = (0.001,) * 3
+        for ob in loose_shot:
+            ob.scale = (1, 1, 1)
 
     def spin(o, deg):
         o.rotation_euler = (spin_axis_rot @ Euler((0, 0, deg * lib.D2R)).to_matrix()).to_euler("XYZ")
+
+    def scatter(t, t0, t1):
+        """The planks fly out from the middle of the machine and land around it."""
+        q = motion.clamp((t - t0) / (t1 - t0))
+        if q <= 0:
+            return
+        src = Vector((0.1, 0.0, 1.3 if east else 0.9))
+        for ob, land, sp in planks:
+            p = src.lerp(land, q)
+            p.z += 0.9 * math.sin(math.pi * q) * (1 - 0.4 * q)
+            ob.location = p
+            ob.rotation_euler = [a * lib.D2R * q for a in sp[:2]] + [sp[2] * lib.D2R]
+            if q >= 1:
+                ob.rotation_euler = (0, 0, sp[2] * lib.D2R)
+            ob.scale = (1, 1, 1)
+
+    def jolt(t):
+        """The hit: the whole machine rocks once before it starts to come apart."""
+        return math.sin(math.pi * motion.clamp(t / 0.3)) * (1 - motion.clamp(t / 0.3))
+
+    def collapse_e(t):
+        k = _drop(t, 0.02, 0.64)                       # the frame
+        ka = _drop(t, 0.08, 0.68, 0.04)                # the throwing arm, a moment later
+        # the two posts on the right splay outward and end flat beside the cart
+        wreck.move(O("post1a"), k, shift=(0.20, 0.10, -0.47), rot=(-22, 88, 0))
+        wreck.move(O("post1b"), k, shift=(0.25, -0.10, -0.47), rot=(24, 84, 0))
+        # the two on the left fall forward and backward across the cart
+        wreck.move(O("post-1a"), k, shift=(0.0, 0.25, -0.45), rot=(-84, -8, 0))
+        wreck.move(O("post-1b"), k, shift=(0.0, -0.20, -0.45), rot=(86, 10, 0))
+        wreck.move(O("axle"), k, shift=(0.10, -0.15, -2.0), rot=(0, 10, 24))
+        # the arm drops onto the base and lies across it, its long end on the ground
+        arm.location = arm_rest + Vector((0.10, 0.25, -1.98)) * ka
+        arm.rotation_euler = ((55 - 44 * ka) * lib.D2R, 0, 22 * ka * lib.D2R)
+        for ob in loose_shot:                             # the sling and its stone are thrown clear
+            ob.scale = (0.001,) * 3 if ka > 0.5 else (1, 1, 1)
+        for n_ in range(4):                               # the pull ropes go slack, fall and end under the wreck
+            x = -0.21 + n_ * 0.14
+            kr = _drop(t, 0.05, 0.6, 0.0)
+            wreck.move(O(f"pull{n_}"), kr, rot=(-70 - 6 * n_, 0, 0), pivot=(x * 2.2, 1.45 + 0.08 * n_, 0.05))
+            if kr > 0.8:
+                O(f"pull{n_}").scale = (0.001,) * 3
+        # the banner pole topples to the right with its flag
+        wreck.move(pole, _drop(t, 0.04, 0.68), shift=(0.95, -0.35, -2.47), rot=(10, 86, 0))
+        # the basket tips over and the shot rolls out
+        kb = _drop(t, 0.1, 0.66)
+        wreck.move(O("basket"), kb, shift=(0.55, -0.35, -0.62), rot=(0, 75, 0), pivot=(0.28, -1.0, 0.68))
+        for n_ in range(4):
+            a = n_ * 1.6
+            wreck.move(O(f"bstone{n_}"), kb, shift=(0.75 + 0.3 * math.cos(a), -0.45 + 0.35 * math.sin(a), -0.82))
+        # two wheels come off; the cart drops on its right front corner
+        kw = _drop(t, 0.04, 0.55)
+        wreck.move(O("w1a"), kw, shift=(0.55, 0.25, -0.34), rot=(0, -82, 30), pivot=(0.64, 0.8, 0.42))
+        wreck.move(O("w-1b"), _drop(t, 0.12, 0.66), shift=(-0.25, -0.2, -0.12), rot=(0, 38, -12), pivot=(-0.64, -0.8, 0.0))
+        kc = _drop(t, 0.04, 0.6, 0.1)
+        base.location = Vector(rest[base.name][0]) + Vector((0, 0, -0.20)) * kc
+        base.rotation_euler = (-5 * kc * lib.D2R, (11 * kc - 3.5 * jolt(t)) * lib.D2R, 0)
+        scatter(t, 0.12, 0.74)
+
+    def collapse_w(t):
+        k = _drop(t, 0.02, 0.62)
+        # the upright frame (with its crossbar) falls forward; the braces fall to either side
+        wreck.move(O("up-1"), k, shift=(0, 0.05, -0.38), rot=(-88, 0, 6))
+        wreck.move(O("up1"), k, shift=(0, 0.10, -0.38), rot=(-80, 0, -10))
+        wreck.move(O("brace1"), _drop(t, 0.06, 0.64), shift=(0.15, 0, -0.38), rot=(10, 78, 0))
+        wreck.move(O("brace-1"), _drop(t, 0.10, 0.68), shift=(-0.15, 0, -0.38), rot=(-8, -74, 0))
+        # the arm breaks off its skein and lies on the ground behind, to the right
+        ka = _drop(t, 0.06, 0.66, 0.04)
+        arm.location = arm_rest + Vector((0.50, -0.25, -0.48)) * ka
+        arm.rotation_euler = ((70 + 19 * ka) * lib.D2R, 0, 38 * ka * lib.D2R)
+        wreck.move(O("winch"), _drop(t, 0.1, 0.66), shift=(-0.15, -0.55, -0.43), rot=(0, 0, 24))
+        wreck.move(pole, _drop(t, 0.04, 0.68), shift=(0.75, 0.15, -1.47), rot=(22, 84, 0))
+        kw = _drop(t, 0.04, 0.55)
+        wreck.move(O("w1a"), kw, shift=(0.55, 0.30, -0.29), rot=(0, -82, 30), pivot=(0.6, 0.75, 0.36))
+        wreck.move(O("w-1b"), _drop(t, 0.12, 0.66), shift=(-0.25, -0.2, -0.10), rot=(0, 38, -12), pivot=(-0.6, -0.75, 0.0))
+        wreck.move(O("rail1"), _drop(t, 0.12, 0.66), shift=(0.22, 0.0, -0.05), rot=(0, 0, -9), pivot=(0.45, -1.1, 0.45))
+        kc = _drop(t, 0.04, 0.6, 0.1)
+        base.location = Vector(rest[base.name][0]) + Vector((0, 0, -0.16)) * kc
+        base.rotation_euler = (-4 * kc * lib.D2R, (10 * kc - 3.5 * jolt(t)) * lib.D2R, 0)
+        scatter(t, 0.12, 0.74)
 
     def pose(anim, frame):
         reset()
@@ -278,101 +521,158 @@ def extend_siege(u, kind):
             inner(anim, frame)
             return
         inner("idle", 0)
-        t = min(1.0, frame / 9.0)
-        e = ease(t)
-        base.location = (rest[base.name][0].x, rest[base.name][0].y, -0.22 * e)
-        base.rotation_euler = (6 * e * lib.D2R, -16 * e * lib.D2R, 0)
-        if kind == "siege_e":
-            arm.rotation_euler = ((55 + 70 * ease(min(1, t * 1.4))) * lib.D2R, 0, 0)
-        else:
-            # the catapult's arm rests pulled back (70 degrees); broken, it slumps further back onto the
-            # frame and twists to one side (swinging it up would read as a shot)
-            k = ease(min(1, t * 1.4))
-            arm.rotation_euler = ((70 + 32 * k) * lib.D2R, 0, 14 * k * lib.D2R)
-        if loose is not None:
-            loc0, _ = rest[loose.name]
-            w = ease(min(1, t * 1.3))
-            loose.location = (loc0.x + 0.45 * w, loc0.y + 0.1 * w, loc0.z - 0.3 * w)
-            loose.rotation_euler = (0, (90 - 80 * w) * lib.D2R, 25 * w * lib.D2R)
+        n = u.frames.get("death", 10)
+        (collapse_e if east else collapse_w)(min(1.0, frame / (n - 1.0)))
     u.pose = pose
     return u
 
 
-# ---------------------------------------------------------------- farmers
+# ---------------------------------------------------------------- farmers (P2)
+#
+# Every work loop is 8 frames: two or three slow frames of wind-up, one or two fast frames of
+# strike, a held frame on the hit, then the recovery. The feet stay planted and the hips carry
+# the weight from the back foot to the front one (motion.plant); both hands stay on the haft
+# (motion.reach). The four works differ in the path of the tool, not only in the tool:
+#   chop   a sideways swing at trunk height, the body coiling to the right and unwinding
+#   mine   the pick lifted high overhead and driven into the ground in front of the feet, in a squat
+#   farm   the hoe reached forward, dropped, and dragged back along the ground
+#   build  two quick mallet strokes at chest height, the left hand steadying the work
+# The tool frame: butt at the origin, +Z toward the head, +Y toward the working edge.
 
-def mine(t):
-    """Pick swing: higher lift, a deeper bend and a strike close to the feet."""
-    up = {"torso": (6, 0, -10), "shoulderR": (165, 0, -10), "elbowR": (25, 0, 0),
-          "shoulderL": (150, 0, 15), "elbowL": (30, 0, 0), "hipL": (18, 0, 6), "hipR": (-8, 0, -6)}
-    down = {"torso": (-42, 0, 0), "neck": (-10, 0, 0), "shoulderR": (55, 0, -5), "elbowR": (5, 0, 0),
-            "shoulderL": (52, 0, 10), "elbowL": (8, 0, 0), "hipL": (32, 0, 6), "kneeL": (-30, 0, 0),
-            "hipR": (-4, 0, -6), "kneeR": (-12, 0, 0)}
-    if t < 0.5:
-        a = blend(down, up, ease(t / 0.5))
-    elif t < 0.66:
-        a = blend(up, down, ease((t - 0.5) / 0.16))
-    else:
-        a = down
-    return a, {"hips": (0, 0, -0.06)}
-
-
-def build_work(t):
-    """Hammering at chest height: quick strokes, the left hand steadying the work."""
-    up = {"torso": (-22, 0, -6), "shoulderR": (125, 0, -12), "elbowR": (95, 0, 0), "wristR": (-20, 0, 0),
-          "shoulderL": (55, 0, 12), "elbowL": (60, 0, 0), "hipL": (20, 0, 6), "kneeL": (-18, 0, 0)}
-    down = dict(up, shoulderR=(70, 0, -8), elbowR=(25, 0, 0), wristR=(10, 0, 0))
-    if t < 0.4:
-        a = blend(down, up, ease(t / 0.4))
-    elif t < 0.55:
-        a = blend(up, down, ease((t - 0.4) / 0.15))
-    else:
-        a = blend(down, down, 1)
-    return a, {"hips": (0, 0, -0.04)}
+def _n(x, y, z):
+    d = math.sqrt(x * x + y * y + z * z)
+    return (x / d, y / d, z / d)
 
 
-def _tools(kind, grip, P, X):
-    """Four tools under the grip (identity transform, the hand's own axes: the haft runs down -Z)."""
-    import roster5
-    groups = {}
-    for name in ("axe", "pick", "hoe", "hammer"):
-        g = lib.empty(f"{kind}_tool_{name}", parent=grip)
-        groups[name] = g
-    # the unit's own tool goes into its group
-    own = "axe" if kind == "farmer_e" else "hoe"
-    for ob in list(grip.children):
-        if ob.name.startswith(f"{kind}_") and "_tool_" not in ob.name:
-            mw = ob.matrix_world.copy()
-            ob.parent = groups[own]
-            ob.matrix_world = mw
+WORKS = {
+    "work_chop": dict(
+        tool="axe", hit=4, two_hands=True,
+        feet={"L": (-0.12, 0.24, 0.05), "R": (0.20, -0.14, 0.05)},
+        edge=lambda h: (-h[1], h[0], 0.25),
+        keys=[
+            (0.0, dict(hips=(0.04, -0.03, -0.06), hips_rot=(0, 0, -28), torso=(-6, 0, -12), neck=(4, 0, 22),
+                       hand=(0.36, 0.26, 1.08), h=_n(0.62, 0.15, 0.77), g=(0.50,), gl=(0.10,)), "smooth"),
+            (0.25, dict(hips=(0.09, -0.09, -0.04), hips_rot=(0, 0, -40), torso=(8, 0, -38), neck=(-2, 0, 48),
+                        hand=(0.54, 0.02, 1.36), h=_n(0.58, -0.52, 0.63), g=(0.56,)), "out"),
+            (0.375, dict(hips=(0.03, 0.02, -0.08), hips_rot=(0, 0, -24), torso=(-6, 0, -8), neck=(4, 0, 20),
+                         hand=(0.52, 0.36, 1.22), h=_n(0.85, 0.50, 0.15), g=(0.44,)), "in"),
+            (0.5, dict(hips=(-0.05, 0.11, -0.12), hips_rot=(0, 0, -6), torso=(-16, 0, 24), neck=(8, 0, -12),
+                       hand=(0.04, 0.50, 1.00), h=_n(-0.38, 0.92, -0.08), g=(0.30,)), "lin"),
+            (0.625, dict(hips=(-0.04, 0.09, -0.10), torso=(-14, 0, 20), hand=(0.06, 0.48, 1.01),
+                         h=_n(-0.33, 0.94, -0.06)), "out"),
+            (0.75, dict(hips=(0.0, 0.02, -0.07), hips_rot=(0, 0, -18), torso=(-10, 0, 4), neck=(6, 0, 6),
+                        hand=(0.16, 0.42, 1.02), h=_n(-0.10, 0.96, 0.25), g=(0.38,)), "smooth"),
+        ]),
+    "work_mine": dict(
+        tool="pick", hit=4, two_hands=True,
+        feet={"L": (-0.20, 0.14, 0.05), "R": (0.20, -0.04, 0.05)},
+        edge=lambda h: (0, h[2], -h[1]),
+        keys=[
+            (0.0, dict(hips=(0, 0.0, -0.06), hips_rot=(0, 0, 0), torso=(-10, 0, 0), neck=(6, 0, 0),
+                       hand=(0.10, 0.36, 1.05), h=_n(0, 0.75, 0.66), g=(0.50,), gl=(0.10,)), "smooth"),
+            (0.25, dict(hips=(0, -0.05, 0.0), torso=(14, 0, 0), neck=(-6, 0, 0), hand=(0.10, -0.02, 1.90),
+                        h=_n(0, -0.50, 0.87), g=(0.40,)), "out"),
+            (0.375, dict(hips=(0, 0.03, -0.10), torso=(-14, 0, 0), neck=(10, 0, 0), hand=(0.09, 0.42, 1.60),
+                         h=_n(0, 0.72, 0.69), g=(0.34,)), "in"),
+            (0.5, dict(hips=(0, 0.07, -0.23), torso=(-38, 0, 0), neck=(24, 0, 0), hand=(0.07, 0.56, 0.70),
+                       h=_n(0, 0.58, -0.81), g=(0.28,)), "lin"),
+            (0.625, dict(hips=(0, 0.06, -0.20), torso=(-35, 0, 0), hand=(0.07, 0.55, 0.72)), "out"),
+            (0.75, dict(hips=(0, 0.02, -0.16), torso=(-22, 0, 0), neck=(14, 0, 0), hand=(0.09, 0.44, 0.86),
+                        h=_n(0, 0.80, -0.60), g=(0.36,)), "smooth"),
+        ]),
+    "work_farm": dict(
+        tool="hoe", hit=3, two_hands=True,
+        feet={"L": (-0.11, 0.27, 0.05), "R": (0.15, -0.15, 0.05)},
+        edge=lambda h: (0, h[2], -h[1]),
+        keys=[
+            (0.0, dict(hips=(0.02, -0.02, -0.05), hips_rot=(0, 0, -10), torso=(-6, 0, -8), neck=(8, 0, 8),
+                       hand=(0.18, 0.36, 1.12), h=_n(0, 0.97, 0.25), g=(0.46,), gl=(0.10,)), "smooth"),
+            (0.125, dict(hips=(0.03, -0.06, -0.03), torso=(4, 0, -12), neck=(2, 0, 10), hand=(0.20, 0.28, 1.36),
+                         h=_n(0, 0.80, 0.60)), "out"),
+            (0.25, dict(hips=(0.0, 0.02, -0.06), torso=(-8, 0, -4), hand=(0.16, 0.46, 1.18),
+                        h=_n(0, 0.92, 0.38)), "in"),
+            (0.375, dict(hips=(-0.02, 0.11, -0.12), hips_rot=(0, 0, -4), torso=(-24, 0, 8), neck=(16, 0, -4),
+                         hand=(0.10, 0.56, 0.88), h=_n(0, 0.62, -0.78)), "in"),
+            (0.5, dict(hips=(0.0, 0.04, -0.11), torso=(-20, 0, 2), hand=(0.13, 0.44, 0.90),
+                       h=_n(0, 0.58, -0.81)), "lin"),
+            (0.625, dict(hips=(0.03, -0.07, -0.09), hips_rot=(0, 0, -12), torso=(-10, 0, -8), neck=(10, 0, 8),
+                         hand=(0.17, 0.30, 0.93), h=_n(0, 0.54, -0.84)), "out"),
+            (0.75, dict(hips=(0.03, -0.06, -0.05), torso=(-4, 0, -10), hand=(0.19, 0.30, 1.02),
+                        h=_n(0, 0.80, -0.60)), "smooth"),
+            (0.875, dict(hips=(0.03, -0.04, -0.05), torso=(-4, 0, -9), hand=(0.19, 0.32, 1.08),
+                         h=_n(0, 0.97, -0.15)), "smooth"),
+        ]),
+    "work_build": dict(
+        tool="hammer", hit=2, two_hands=False,
+        feet={"L": (-0.10, 0.30, 0.05), "R": (0.14, -0.12, 0.05)},
+        edge=lambda h: (0, h[2], -h[1]),
+        keys=[
+            (0.0, dict(hips=(0.0, 0.03, -0.07), hips_rot=(0, 0, -12), torso=(-10, 0, -14), neck=(10, 0, 10),
+                       hand=(0.44, 0.14, 1.50), h=_n(0.35, -0.45, 0.82), g=(0.10,), handL=(-0.10, 0.58, 1.00)), "out"),
+            (0.125, dict(hips=(0.0, 0.07, -0.09), torso=(-18, 0, -2), hand=(0.24, 0.44, 1.34),
+                         h=_n(0, 0.70, 0.71)), "in"),
+            (0.25, dict(hips=(-0.01, 0.11, -0.12), hips_rot=(0, 0, -6), torso=(-26, 0, 10), neck=(16, 0, -4),
+                        hand=(0.14, 0.50, 1.08), h=_n(-0.08, 0.93, -0.36), handL=(-0.10, 0.58, 0.98)), "lin"),
+            (0.375, dict(hips=(0.0, 0.07, -0.09), torso=(-18, 0, 2), hand=(0.20, 0.44, 1.24),
+                         h=_n(0, 0.86, 0.50), handL=(-0.10, 0.58, 1.00)), "out"),
+            (0.5, dict(hips=(0.0, 0.04, -0.07), hips_rot=(0, 0, -12), torso=(-12, 0, -12), neck=(10, 0, 10),
+                       hand=(0.42, 0.18, 1.44), h=_n(0.35, -0.30, 0.89)), "out"),
+            (0.625, dict(hips=(0.0, 0.08, -0.10), torso=(-20, 0, 0), hand=(0.23, 0.45, 1.32),
+                         h=_n(0, 0.72, 0.69)), "in"),
+            (0.75, dict(hips=(-0.01, 0.12, -0.13), hips_rot=(0, 0, -5), torso=(-28, 0, 12), neck=(18, 0, -4),
+                        hand=(0.14, 0.50, 1.07), h=_n(-0.08, 0.92, -0.38), handL=(-0.10, 0.58, 0.975)), "lin"),
+            (0.875, dict(hips=(0.0, 0.06, -0.08), torso=(-16, 0, -4), hand=(0.22, 0.40, 1.28),
+                         h=_n(0.05, 0.80, 0.60), handL=(-0.10, 0.58, 1.00)), "out"),
+        ]),
+}
+# how the unit's own tool is carried outside the work loops: as in R5, a continuation of the
+# forearm (tool +Z along the hand's -Z), the hand 0.12 m (axe) or 0.30 m (hoe) from the butt
+CARRY = {"axe": ((0, 0, 0.12), (0, 180, 0)), "hoe": ((0, 0, 0.30), (180, 0, 0))}
+
+
+def _tools(kind, grip, P):
+    """Four tools, larger than R5's so each reads at actual size (heads 0.3-0.4 m across, hafts
+    5 cm thick). R5's own tool in the hand is hidden; the unit carries the new one in every
+    animation. Returns (tool root, {name: group}, the unit's own tool)."""
+    for ob in list(grip.children):          # R5's axe or hoe
+        ob.scale = (0.001,) * 3
+    haft = lib.mat("toolhaft_p2", (0.60, 0.45, 0.26), 0.6, noise=0.25, noise_scale=10)
+    pale = lib.mat("mallet_p2", (0.76, 0.64, 0.44), 0.6, noise=0.3, noise_scale=8)
+    iron = lib.mat("tooliron_p2", (0.30, 0.30, 0.32), 0.45, 1.0, pattern="worn_metal")
+    steel = P["steel"]
+    root = lib.empty(f"{kind}_tool_root", parent=grip)
+    groups = {name: lib.empty(f"{kind}_tool_{name}", parent=root) for name in ("axe", "pick", "hoe", "hammer")}
     n = f"{kind}_tool"
-    if own != "axe":
-        g = groups["axe"]
-        rod(f"{n}_axe_haft", (0, 0, 0.12), (0, 0, -0.64), 0.017, X["wood"], parent=g)
-        slab(f"{n}_axe_head", [(0, 0.02), (0.1, 0.05), (0.19, 0.08), (0.2, -0.1), (0.1, -0.08), (0, -0.07)], 0.022,
-             P["steel"], parent=g, loc=(0, 0, -0.54), rot=(0, 0, 90))
-    if own != "hoe":
-        g = groups["hoe"]
-        rod(f"{n}_hoe_haft", (0, 0, 0.3), (0, 0, -1.1), 0.018, X["wood"], parent=g)
-        box(f"{n}_hoe_blade", (0.17, 0.2, 0.016), P["steel"], g, at=(0, -0.09, -1.1), bevel=0.004)
+    g = groups["axe"]
+    rod(f"{n}_axe_haft", (0, 0, 0), (0, 0, 0.84), 0.026, haft, parent=g, r2=0.022)
+    slab(f"{n}_axe_head", [(-0.075, 0.67), (-0.075, 0.81), (0.06, 0.80), (0.20, 0.87), (0.30, 0.91), (0.33, 0.74),
+                           (0.30, 0.57), (0.20, 0.61), (0.06, 0.68)], 0.055, steel, parent=g, plane="YZ")
     g = groups["pick"]
-    rod(f"{n}_pick_haft", (0, 0, 0.12), (0, 0, -0.68), 0.017, X["wood"], parent=g)
-    rod(f"{n}_pick_a", (0, 0, -0.62), (0, 0.25, -0.69), 0.02, P["steel"], parent=g, r2=0.004)
-    rod(f"{n}_pick_b", (0, 0, -0.62), (0, -0.23, -0.67), 0.02, P["steel"], parent=g, r2=0.004)
+    rod(f"{n}_pick_haft", (0, 0, 0), (0, 0, 0.88), 0.027, haft, parent=g, r2=0.024)
+    box(f"{n}_pick_eye", (0.075, 0.11, 0.10), iron, g, at=(0, 0, 0.85), bevel=0.012)
+    rod(f"{n}_pick_a", (0, 0.04, 0.86), (0, 0.42, 0.72), 0.044, steel, parent=g, r2=0.008)
+    rod(f"{n}_pick_b", (0, -0.04, 0.86), (0, -0.38, 0.74), 0.044, steel, parent=g, r2=0.012)
+    g = groups["hoe"]
+    rod(f"{n}_hoe_haft", (0, 0, 0), (0, 0, 1.43), 0.023, haft, parent=g, r2=0.02)
+    box(f"{n}_hoe_socket", (0.06, 0.08, 0.10), iron, g, at=(0, 0.0, 1.40), bevel=0.01)
+    # folded 40 degrees toward the haft: with the head resting on the ground in the idle pose the
+    # blade lies flat and shows its face to the camera (at 28 degrees it was seen almost edge-on)
+    box(f"{n}_hoe_blade", (0.34, 0.40, 0.045), steel, g, loc=(0, 0.02, 1.42), rot=(-40, 0, 0), at=(0, 0.20, 0),
+        bevel=0.008)
     g = groups["hammer"]
-    rod(f"{n}_hammer_haft", (0, 0, 0.08), (0, 0, -0.36), 0.015, X["wood"], parent=g)
-    box(f"{n}_hammer_head", (0.055, 0.16, 0.07), X["iron"], g, at=(0, 0.02, -0.38), bevel=0.008)
-    return groups, own
+    rod(f"{n}_hammer_haft", (0, 0, 0), (0, 0, 0.46), 0.024, haft, parent=g, r2=0.022)
+    box(f"{n}_hammer_head", (0.17, 0.34, 0.17), pale, g, at=(0, 0, 0.42), bevel=0.03)
+    for s in (-1, 1):
+        box(f"{n}_hammer_band{s}", (0.18, 0.035, 0.18), iron, g, at=(0, 0.11 * s, 0.42), bevel=0.01)
+    return root, groups, ("axe" if kind == "farmer_e" else "hoe")
 
 
 def extend_farmer(u, kind):
-    import roster5
     import units2
     r = u.rigs["body"]
     grip = r.j["grip_axe"] if kind == "farmer_e" else r.j["grip_hoe"]
-    groups, own = _tools(kind, grip, units2.palette("C"), roster5.X5())
+    tool_root, groups, own = _tools(kind, grip, units2.palette("C"))
     inner = u.pose
-    motions = {"work_chop": ("axe", None), "work_mine": ("pick", mine), "work_farm": ("hoe", roster5.hoe_attack),
-               "work_build": ("hammer", build_work)}
 
     def show(tool):
         for name, g in groups.items():
@@ -380,19 +680,29 @@ def extend_farmer(u, kind):
 
     def pose(anim, frame):
         r.root.rotation_euler = (0, 0, 0)
-        if anim not in WORK:
+        if anim not in WORKS:
             show(own)
+            tool_root.location = CARRY[own][0]
+            tool_root.rotation_euler = [a * lib.D2R for a in CARRY[own][1]]
+            tool_root.scale = (1, 1, 1)
             inner(anim, frame)
             return
-        tool, fn = motions[anim]
-        show(tool)
+        w = WORKS[anim]
+        show(w["tool"])
         n = u.frames.get(anim, 8)
-        t = (frame % n) / n
-        if fn is None:
-            import units as U1
-            fn = U1.chop
-        a, o = fn(t)
-        _pose_body(r, a, o)
+        k = motion.sample(w["keys"], (frame % n) / n, loop=True)
+        hips_rot = k.get("hips_rot", (0, 0, 0))
+        ang = {"hips": hips_rot, "torso": k["torso"], "neck": k.get("neck", (0, 0, 0))}
+        ang.update(motion.plant(r, k["hips"], hips_rot, w["feet"]))
+        r.pose(ang, {"hips": k["hips"]})
+        W = u.root.matrix_world
+        motion.reach(r, "R", W @ Vector(k["hand"]))
+        M = motion.aim_tool(u, grip, tool_root, k["h"], w["edge"](k["h"]), k["g"][0])
+        if w["two_hands"]:
+            motion.reach(r, "L", M @ Vector((0, 0, k["gl"][0])))
+        else:
+            motion.reach(r, "L", W @ Vector(k["handL"]))
+        h2.update(r)
     u.pose = pose
     return u
 

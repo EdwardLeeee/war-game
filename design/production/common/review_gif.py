@@ -62,10 +62,17 @@ ITEMS = [
 ]
 
 
+# P1 (the first version): frames per animation, and the units it covered. The P1 renders live in
+# build/prod/review1-<unit> (runs 36763436805, 36764691711, 36766724809); review-<unit> now holds P2.
+P1_COUNTS = {"attack": 10, "hit": 6, "shatter": 8, "fall": 12, "dead": 4, "death": 10, "walk": 8,
+             "work_chop": 8, "work_mine": 8, "work_farm": 8, "work_build": 8}
+P1_UNITS = ("mage_e", "mage_w", "hcav_e", "knight_w", "siege_e", "siege_w", "farmer_e", "farmer_w")
+
+
 def fetch(run_id):
-    """Download every review artifact into build/prod/review-<unit> (the artifact root holds raw/)."""
-    for unit in spec.REVIEW_ANIMS:
-        d = config.BUILD / "prod" / f"review-{unit}"
+    """Download every P1 review artifact into build/prod/review1-<unit> (the artifact root holds raw/)."""
+    for unit in P1_UNITS:
+        d = config.BUILD / "prod" / f"review1-{unit}"
         r = subprocess.run(["gh", "run", "download", str(run_id), "-n", f"production-review-{unit}", "-D", str(d)])
         n = len(list((d / "raw").glob("*_beauty.png"))) if (d / "raw").exists() else 0
         print(f"review-{unit}: {'ok' if r.returncode == 0 else 'no artifact'}, {n} colour frames")
@@ -115,8 +122,8 @@ def _sprite(d, base, team, mage, glow):
 class Cell:
     def __init__(self, unit, anims):
         self.unit, self.anims = unit, anims
-        self.dir = config.BUILD / "prod" / f"review-{unit}" / "raw"
-        n = dict(spec.REVIEW_ANIMS[unit])
+        self.dir = config.BUILD / "prod" / f"review1-{unit}" / "raw"
+        n = P1_COUNTS
         self.seq = []                       # (sprite key, ticks shown)
         for a in anims:
             per = TICK / FPS.get(a, 12)
