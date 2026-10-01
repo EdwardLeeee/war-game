@@ -212,7 +212,7 @@ export const UnitField = {
 } as const;
 export const UNIT_STRIDE = 20;
 export const UnitFlag = {
-  /** Mage autocast on (from PR-4). */
+  /** Mage autocast on (from PR-4); a trained mage starts with it on (round 3, D-026). */
   Autocast: 1,
   /** Farmer with nothing to do (from PR-3). */
   IdleFarmer: 2,
