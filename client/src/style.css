@@ -329,6 +329,9 @@ a {
 
 .toast {
   position: absolute;
+  /* Above the selection info and the dialogs: the message answers a tap there (姿態, 留守 −／+).
+     It still lets taps through (#hud). */
+  z-index: 40;
   left: 50%;
   bottom: calc(var(--safe-b) + 110px);
   transform: translateX(-50%);

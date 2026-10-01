@@ -56,6 +56,20 @@ const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?
 const garrison = (page: Page, town: number) => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], town);
 const place = (page: Page, ids: number[], cells: { x: number; y: number }[]) => page.evaluate(([i, c]) => window.__proto?.game?.place(i, c), [ids, cells] as const);
 const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
+/** Whether the message strip is drawn on top at its centre, not behind the selection info or a dialog. */
+const toastOnTop = (page: Page) =>
+  page.evaluate(() => {
+    const t = document.querySelector<HTMLElement>(".toast");
+    if (t === null || t.hidden) return false;
+    // Taps go through most of the interface: let everything take this one hit test, to find what is drawn on top.
+    const all = document.createElement("style");
+    all.textContent = "#hud * { pointer-events: auto !important; }";
+    document.head.appendChild(all);
+    const r = t.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    all.remove();
+    return hit !== null && t.contains(hit);
+  });
 /** How many lines a piece of text takes (the line height is 1.15 times the font size). */
 const lines = (l: Locator) => l.evaluate((e) => Math.round(e.getBoundingClientRect().height / (parseFloat(getComputedStyle(e).fontSize) * 1.15)));
 
@@ -379,6 +393,7 @@ test("姿態：按鈕寫出現在是哪一種、按了會變成哪一種，選�
   // Stance.Hold = 1.
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: spear, stance: 1 });
   await expect(toast(page, "已改成堅守。堅守：站在原地不動，只打走進射程的敵人")).toBeVisible();
+  expect(await toastOnTop(page), "the message is not behind the selection info").toBe(true);
   await expect(stance).toHaveText("姿態：堅守按一下改成積極");
   await expect(panel).toContainText("堅守：站在原地不動，只打走進射程的敵人");
   await shot(page, info, "stance-hold");
@@ -439,6 +454,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await more.tap();
   await expect(keepGovern).toHaveText("4");
   await expect(toast(page, "城鎮範圍內只有 4 名兵可以留守")).toBeVisible();
+  expect(await toastOnTop(page), "the message is not behind the dialog").toBe(true);
   await dialog.getByRole("button", { name: "少留守 1 名（治理）" }).tap();
   await expect(keepGovern).toHaveText("3");
   await shot(page, info, "town-choice-keep");
