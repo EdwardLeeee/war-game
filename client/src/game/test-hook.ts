@@ -61,6 +61,10 @@ export interface GameHook {
   groups(): number[][];
   /** The soldiers stationed in a town (留守, D-026). */
   garrison(town: number): number[];
+  /** Control groups with what 自動補兵 knows: 原本 by type, the switch, and the recruits still on their way. */
+  groupInfo(): { ids: number[]; want: Record<number, number>; saved: number; refill: boolean; recruits: number[] }[];
+  /** Fake world only: remove own units (as if they fell). */
+  remove(ids: number[]): void;
   /** What a tap at this screen point would hit (unit, building, node, town), or null for open ground. */
   pickAt(sx: number, sy: number): string | null;
   /** Every town on the map (size 0 small, 1 large): state, holder and militia as last seen (-1 before it is explored). */
@@ -163,6 +167,10 @@ export function gameHook(game: Game): GameHook {
     },
     groups: () => game.army.groups.map((g) => [...g.ids]),
     garrison: (town) => game.army.garrisonOf(town),
+    groupInfo: () => game.army.groups.map((g) => ({ ids: [...g.ids], want: { ...g.want }, saved: g.saved, refill: g.refill, recruits: g.recruits.map((r) => r.id) })),
+    remove: (ids) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.remove(ids);
+    },
     init: () => (game.initSent === null ? null : { ...game.initSent }),
     pickAt: (sx, sy) => {
       const cam = game.camera;

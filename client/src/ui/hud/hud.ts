@@ -118,6 +118,13 @@ export class Hud {
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
       notify: (text: string) => game.toast(text),
+      groupOf: (ids: number[]) => game.groupOf(ids),
+      groupRefill: (i: number) => game.army.groups[i].refill,
+      toggleRefill: (i: number) => {
+        const g = game.army.groups[i];
+        g.refill = !g.refill;
+        game.toast(g.refill ? `編隊 ${i + 1} 自動補兵：開。缺人時，新訓練的兵會自己走去會合` : `編隊 ${i + 1} 自動補兵：關`);
+      },
       selectOnly: (units: number[]) => game.apply([{ kind: "select", units }]),
       clearSelection: () => game.apply([{ kind: "clear" }]),
       splitSelection: (n: number) => game.splitSelection(n),
@@ -163,8 +170,9 @@ export class Hud {
     if (this.idleBtn.textContent !== idleText) this.idleBtn.textContent = idleText;
     this.idleBtn.classList.toggle("has-idle", idle > 0);
     for (let i = 0; i < 4; i++) {
-      const alive = this.alive(this.game.army.groups[i].ids).length;
-      const text = alive > 0 ? `${i + 1}·${alive}` : `${i + 1}`;
+      // 現有／原本 (D-026): what the group has now against what it was saved with.
+      const g = this.game.army.groups[i];
+      const text = g.saved > 0 ? `${i + 1}·${this.alive(g.ids).length}/${g.saved}` : `${i + 1}`;
       if (this.groupBtns[i].textContent !== text) this.groupBtns[i].textContent = text;
     }
     this.info.update();
@@ -251,9 +259,11 @@ export class Hud {
 
   /** 編隊, tap: select it; double tap: also look at it. */
   private recallGroup(i: number, jump: boolean): void {
-    const alive = this.alive(this.game.army.groups[i].ids);
+    const g = this.game.army.groups[i];
+    const alive = this.alive(g.ids);
     if (alive.length === 0) {
-      this.game.toast(`編隊 ${i + 1} 是空的：選好部隊後長按這顆按鈕存起來`);
+      const waiting = g.saved > 0 && g.refill ? `編隊 ${i + 1} 的兵都不在了：新訓練的兵會自動補進來` : `編隊 ${i + 1} 是空的：選好部隊後長按這顆按鈕存起來`;
+      this.game.toast(waiting);
       return;
     }
     this.game.apply([{ kind: "select", units: alive }]);
@@ -271,13 +281,12 @@ export class Hud {
 
   /** 編隊, long press: store the selected units. */
   private saveGroup(i: number): void {
-    const units = this.game.view?.selection.units ?? [];
-    if (units.length === 0) {
+    const n = this.game.saveGroup(i);
+    if (n === 0) {
       this.game.toast("先選部隊，再長按編隊按鈕");
       return;
     }
-    this.game.army.groups[i].ids = [...units];
-    this.game.toast(`已存成編隊 ${i + 1}（${units.length} 個）`);
+    this.game.toast(`已存成編隊 ${i + 1}（${n} 個）`);
   }
 
   /** 全軍: every own soldier on the map, except the ones stationed in a town (留守, D-026). */

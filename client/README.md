@@ -24,7 +24,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 | 資料夾 | 內容 |
 |---|---|
 | `sim.ts` | 唯一從 `sim/` 匯入的地方（`protocol.ts`、`placement.ts`） |
-| `game/` | 一局遊戲：接模擬 Worker（`port.ts`）、收快照、把手勢變成選取和指令、暫停與速度、自動暫停（`game.ts`）；留守與編隊的名單（`army.ts`，純邏輯，D-026）；測試掛鉤（`test-hook.ts`） |
+| `game/` | 一局遊戲：接模擬 Worker（`port.ts`）、收快照、把手勢變成選取和指令、暫停與速度、自動暫停（`game.ts`）；留守、編隊與自動補兵的名單（`army.ts`，純邏輯，D-026）；測試掛鉤（`test-hook.ts`） |
 | `mock/` | 假世界：跟 `sim/src/worker.ts` 同一套訊息，版面固定，給手勢測試用（`?test=1&mock=1`） |
 | `view/` | 畫面知道的一切：前後兩份快照（插值用）、資源點表、迷霧、放建築格子、選取 |
 | `camera/` | 螢幕與世界座標、拖曳、縮放、慣性（純計算，Node 可測） |
