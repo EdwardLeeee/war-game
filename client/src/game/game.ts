@@ -36,6 +36,11 @@ import {
   PROTOCOL_VERSION,
   type ScenarioName,
   Stance,
+  TOWN_STRIDE,
+  type TownChoice,
+  TownField,
+  TownSize,
+  TownState,
   type ToWorker,
   UNIT_STRIDE,
   UnitField,
@@ -49,6 +54,7 @@ import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../
 import { Placement } from "../ui/placement.ts";
 import { type SplitUnit, splitPick } from "../input/split.ts";
 import { GameView } from "../view/view.ts";
+import { ArmyBook, type ArmyUnit, isSoldier, type TownArea } from "./army.ts";
 import type { SimPort } from "./port.ts";
 
 type InitMessage = Extract<ToWorker, { type: "init" }>;
@@ -83,8 +89,10 @@ export class Game implements GestureHost {
   camera: Camera | null = null;
   mode: Mode = "normal";
   placement: Placement | null = null;
-  /** Commands posted, newest last (the test hook reads them). */
-  readonly sent: (CommandBody & { seq: number })[] = [];
+  /** Commands posted, newest last (the test hook reads them). `auto`: given by the interface, not by the player's hand. */
+  readonly sent: (CommandBody & { seq: number; auto?: boolean })[] = [];
+  /** Garrisons and control groups (D-026). */
+  readonly army = new ArmyBook();
   readonly lab: LabPanel;
   paused = false;
   speed: SpeedName = "normal";
@@ -294,11 +302,123 @@ export class Game implements GestureHost {
     });
   }
 
-  command(cmd: CommandBody): void {
-    const withSeq = { ...cmd, seq: this.seq++ };
-    this.sent.push(withSeq);
+  /** An order from the player's own hand. Returns its sequence number. */
+  command(cmd: CommandBody): number {
+    const seq = this.post(cmd, false);
+    // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
+    if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") this.setStance(this.army.release(cmd.u), Stance.Aggressive);
+    return seq;
+  }
+
+  /** An order the interface gives on its own (a garrison's stance): a rejection is not shown to the player. */
+  autoCommand(cmd: CommandBody): number {
+    return this.post(cmd, true);
+  }
+
+  private post(cmd: CommandBody, auto: boolean): number {
+    const seq = this.seq++;
+    const withSeq = { ...cmd, seq };
+    this.sent.push(auto ? { ...withSeq, auto } : withSeq);
     if (this.sent.length > 200) this.sent.shift();
     this.port.postMessage({ type: "command", cmd: withSeq });
+    return seq;
+  }
+
+  private setStance(ids: number[], stance: Stance): void {
+    if (ids.length > 0) this.autoCommand({ c: "stance", u: ids, stance });
+  }
+
+  // --- garrisons (留守, D-026) ----------------------------------------------------------
+
+  /** Our soldiers with the simulation's own positions, for the garrison rules. */
+  private soldiers(): ArmyUnit[] {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return [];
+    const out: ArmyUnit[] = [];
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      const type = u[o + UnitField.type];
+      if (u[o + UnitField.owner] === view.me && isSoldier(type)) out.push({ id: u[o + UnitField.id], type, x: u[o + UnitField.x], y: u[o + UnitField.y] });
+    }
+    return out;
+  }
+
+  private townArea(town: number): TownArea | null {
+    return this.view?.map.towns.find((t) => t.id === town) ?? null;
+  }
+
+  /** How many soldiers stay by default: the least a governed town needs (GDD §5: small 1, large 3). */
+  garrisonNeeded(town: number): number {
+    const view = this.view;
+    const t = view?.curr?.snap.towns;
+    const o = view?.townRow(town) ?? -1;
+    const needed = t !== undefined && o >= 0 ? t[o + TownField.garrisonNeeded] : 0;
+    if (needed > 0) return needed;
+    return view?.map.towns.find((v) => v.id === town)?.size === TownSize.Large ? 3 : 1;
+  }
+
+  /** Soldiers that could still be stationed in the town right now. */
+  garrisonCandidates(town: number): number {
+    const area = this.townArea(town);
+    return area === null ? 0 : this.army.candidates(this.soldiers(), area).length;
+  }
+
+  /**
+   * Station up to n more soldiers in the town: they turn to 堅守, leave their control groups
+   * and are no longer taken by 全軍. Returns how many were stationed.
+   */
+  stationGarrison(town: number, n: number): number[] {
+    const area = this.townArea(town);
+    if (area === null || n <= 0) return [];
+    const ids = this.army.station(this.soldiers(), area, n);
+    this.setStance(ids, Stance.Hold);
+    return ids;
+  }
+
+  /** 搶 or 治理, leaving `keep` soldiers behind. If the simulation refuses the choice, they are released again. */
+  chooseTown(town: number, choice: TownChoice, keep: number): void {
+    const seq = this.command({ c: "town_choice", town, choice });
+    this.army.awaitChoice(town, seq, this.stationGarrison(town, keep));
+  }
+
+  /** 全軍: every soldier of ours that is not stationed in a town. */
+  armyIds(): number[] {
+    return this.army.army(this.soldiers());
+  }
+
+  /** Whether we have soldiers at all (全軍 with everyone stationed says so). */
+  hasSoldiers(): boolean {
+    return this.soldiers().length > 0;
+  }
+
+  /** 留守 +: one more soldier from inside the town. */
+  garrisonMore(town: number): void {
+    if (this.stationGarrison(town, 1).length === 0) this.toast("城鎮裡沒有其他的兵可以留守");
+  }
+
+  /** 留守 −: the last-chosen soldier goes back to 積極 and to 全軍. */
+  garrisonLess(town: number): void {
+    const area = this.townArea(town);
+    if (area === null) return;
+    const id = this.army.releaseOne(this.soldiers(), area);
+    if (id !== null) this.setStance([id], Stance.Aggressive);
+  }
+
+  /** Every snapshot: forget dead soldiers; a town that is no longer ours has no garrison. */
+  private pruneArmy(): void {
+    const view = this.view;
+    const t = view?.curr?.snap.towns;
+    if (view === null || t === undefined) return;
+    const held = (town: number): boolean => {
+      for (let o = 0; o < t.length; o += TOWN_STRIDE) {
+        if (t[o + TownField.id] !== town) continue;
+        const state = t[o + TownField.state];
+        return t[o + TownField.owner] === view.me && state !== TownState.Neutral && state !== TownState.Ruins;
+      }
+      return false;
+    };
+    this.setStance(this.army.prune((id) => view.unitRow(id) >= 0, held), Stance.Aggressive);
+    this.army.settle((town) => view.townAwaitsMyChoice(town));
   }
 
   private receive(msg: FromWorker): void {
@@ -332,11 +452,14 @@ export class Game implements GestureHost {
         for (const ev of msg.events) {
           if (ev.k === "rejected") {
             const cmd = this.sent.find((c) => c.seq === ev.seq);
-            this.overlays.toast(rejectText(ev.reason, cmd));
+            // A refused 搶 or 治理: the soldiers stationed with it go back to 積極 and to 全軍.
+            this.setStance(this.army.refused(ev.seq), Stance.Aggressive);
+            if (cmd?.auto !== true) this.overlays.toast(rejectText(ev.reason, cmd));
           } else {
             this.hud.onEvent(ev);
           }
         }
+        this.pruneArmy();
         if (this.placement !== null) {
           this.placement.revalidate(view.placement);
           this.showPlaceButtons();

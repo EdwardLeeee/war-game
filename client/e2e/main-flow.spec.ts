@@ -1,8 +1,9 @@
 // The brief's main flow, on core's real simulation with its `e2e` scenario (plenty of
 // resources, two houses and a barracks, a squad of 6 spearmen and 4 ranged ten cells from
 // the small town), in WebKit and Chromium at iPhone landscape size with touch:
-// 開局（選難度）→ 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 前進 →
-// 暫停時下指令 → 攻下城鎮後選搶或治理 → 分出 N 名存成編隊 → 不選農民蓋民居（D-024）.
+// 開局（選難度）→ 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 改姿態 → 前進 →
+// 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開、城鎮不叛離 → 分出 N 名存成編隊 →
+// 不選農民蓋民居（D-024、D-026）.
 // Every step goes through the interface the player uses; the test hook only reads state
 // and moves the camera. The opponent stands still (?test=1&ai=0, see step 1).
 
@@ -23,6 +24,9 @@ const buildings = (page: Page) => page.evaluate(() => window.__proto?.game?.buil
 const towns = (page: Page) => page.evaluate(() => window.__proto?.game?.towns() ?? []);
 const placement = (page: Page) => page.evaluate(() => window.__proto?.game?.placement() ?? null);
 const lastSent = (page: Page) => page.evaluate(() => window.__proto?.game?.sent().at(-1) as Record<string, unknown> | undefined);
+const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
+const groups = (page: Page) => page.evaluate(() => window.__proto?.game?.groups() ?? []);
+const garrison = (page: Page, town: number) => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], town);
 const selection = (page: Page) => page.evaluate(() => window.__proto?.game?.selection());
 const mode = (page: Page) => page.evaluate(() => window.__proto?.game?.mode());
 const myId = (page: Page) => page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -44,7 +48,7 @@ async function resume(page: Page): Promise<void> {
   await expect.poll(async () => (await header(page)).paused).toBe(false);
 }
 
-test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 前進 → 暫停時下指令 → 攻下城鎮後選搶或治理 → 分出 N 名 → 不選農民蓋民居", async ({ page }, info) => {
+test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 分出 N 名 → 不選農民蓋民居", async ({ page }, info) => {
   test.setTimeout(300_000);
   const check = watchErrors(page);
 
@@ -163,6 +167,28 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await longPress(page, from, to);
   await expect.poll(async () => (await selection(page))?.units).toEqual(squadIds);
   await shot(page, info, "5-box");
+  // The squad becomes control group 1 (a soldier left as garrison later leaves it).
+  await longPressOn(page, ".groups > button:nth-child(1)");
+  expect((await groups(page))[0], "saved as group 1").toEqual(squadIds);
+
+  // 5b. 改姿態（D-026）：按鈕寫著現在是積極、按了改成堅守；選取資訊寫出意思。再按一次改回積極。
+  const stance = page.getByRole("button", { name: /^姿態/ });
+  const stanceOfSquad = async () => [...new Set((await units(page)).filter((u) => squadIds.includes(u.id)).map((u) => u.stance))];
+  await expect(stance).toHaveText("姿態：積極按一下改成堅守");
+  await expect(page.locator(".sel-info")).toContainText("積極：6 格內有敵人就追上去打，離原位 8 格就回來");
+  await expect(page.locator(".sel-info")).toContainText("姿態只管沒有指令、站著待命的時候");
+  await stance.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: squadIds, stance: 1 });
+  // An order given while paused runs when the game goes on.
+  await resume(page);
+  await expect.poll(stanceOfSquad).toEqual([1]);
+  await expect(stance).toHaveText("姿態：堅守按一下改成積極");
+  await expect(page.locator(".sel-info")).toContainText("堅守：站在原地不動，只打走進射程的敵人");
+  await shot(page, info, "5b-stance-hold");
+  await stance.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: squadIds, stance: 0 });
+  await expect.poll(stanceOfSquad).toEqual([0]);
+  await pause(page);
 
   // 6. 前進（點地面：往小鎮走，路上遇到敵人會打）
   const town = (await towns(page)).find((t) => t.size === 0);
@@ -194,21 +220,60 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await shot(page, info, "7-order-while-paused");
   await resume(page);
 
-  // 8. 攻下城鎮後選搶或治理（民兵全倒、只剩我方軍隊 → 跳出兩個大按鈕）
+  // 8. 攻下城鎮後治理並留守（民兵全倒、只剩我方軍隊 → 跳出兩個大按鈕，各有「留守 − N + 名」；D-026）
   const choice = page.getByRole("dialog", { name: /搶還是治理/ });
   await expect(choice).toBeVisible({ timeout: 180_000 });
+  // 治理 keeps the least a small town needs (1); 搶 keeps nobody.
+  await expect(choice.getByRole("status", { name: "留守幾名（治理）" })).toHaveText("1");
+  await expect(choice.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("0");
   await shot(page, info, "8-town-choice");
-  await choice.getByRole("button", { name: /^搶/ }).tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: town.id, choice: 0 });
-  // Plundering (TownState 2) by us.
-  await expect.poll(async () => (await towns(page)).find((t) => t.id === town.id)?.state, { timeout: 30_000 }).toBe(2);
-  await shot(page, info, "8-plundering");
+  await choice.getByRole("button", { name: /^治理/ }).tap();
+  await expect.poll(async () => (await sent(page)).at(-2)).toMatchObject({ c: "town_choice", town: town.id, choice: 1 });
+  // One soldier stays: told to hold, out of control group 1.
+  await expect.poll(() => garrison(page, town.id)).toHaveLength(1);
+  const [kept] = await garrison(page, town.id);
+  expect(squadIds, "one of the squad").toContain(kept);
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [kept], stance: 1, auto: true });
+  expect((await groups(page))[0]).not.toContain(kept);
+  // Repairing (TownState 3) by us, and the soldier holds.
+  await expect.poll(async () => (await towns(page)).find((t) => t.id === town.id)?.state, { timeout: 30_000 }).toBe(3);
+  await expect.poll(async () => (await units(page)).find((u) => u.id === kept)?.stance).toBe(1);
+  await shot(page, info, "8-governing");
+
+  // 8b. 全軍不帶走留守的兵：全軍 → 前進到遠處 → 部隊都離開城鎮後，駐軍還夠，沒有開始叛離
+  await page.getByRole("button", { name: "全軍" }).tap();
+  await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(0);
+  const marching = (await selection(page))?.units ?? [];
+  expect(marching, "全軍 leaves the garrison").not.toContain(kept);
+  const away = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [SQUAD.x, SQUAD.y] as const);
+  if (away === null) throw new Error("no open cell to march to");
+  await page.evaluate((u) => window.__proto?.game?.select(u), marching);
+  await centre(page, away, 0.8);
+  await tap(page, await toScreen(page, away));
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: marching, x: away.x, y: away.y });
+  // Everyone who marched is outside the town's circle.
+  await expect
+    .poll(
+      async () => {
+        const list = (await units(page)).filter((u) => marching.includes(u.id));
+        return list.every((u) => Math.hypot(u.fx - (town.cx + 0.5), u.fy - (town.cy + 0.5)) > town.radius);
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+  const held = (await towns(page)).find((t) => t.id === town.id);
+  expect(held?.owner, "still ours").toBe(me);
+  expect(held?.garrison, "the garrison stayed").toBeGreaterThanOrEqual(held?.garrisonNeeded ?? 99);
+  expect(held?.revoltTimer, "not counting down to a revolt").toBe(0);
+  expect(await garrison(page, town.id)).toEqual([kept]);
+  await shot(page, info, "8b-army-left-garrison-stays");
 
   // 9. 分出 N 名存成編隊（D-024）：暫停 → 全軍 → 分出一半 → 長按編隊 2 → 改選其餘
   await pause(page);
   await page.getByRole("button", { name: "全軍" }).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(1);
   const army = (await selection(page))?.units ?? [];
+  expect(army, "全軍 still leaves the garrison").not.toContain(kept);
   const half = Math.floor(army.length / 2);
   await page.getByRole("button", { name: `分出 ${half} 名` }).tap();
   await expect.poll(async () => (await selection(page))?.units.length).toBe(half);

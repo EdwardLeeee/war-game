@@ -329,8 +329,11 @@ a {
 
 .toast {
   position: absolute;
+  /* Drawn over the dialogs: the message answers a tap there (留守 −／+). It lets taps through (#hud). */
+  z-index: 40;
   left: 50%;
-  bottom: calc(var(--safe-b) + 110px);
+  /* --toast-above: just above the selection info (Hud.frame). */
+  bottom: max(calc(var(--safe-b) + 110px), var(--toast-above, 0px));
   transform: translateX(-50%);
   padding: 8px 14px;
   background: rgba(90, 28, 24, 0.92);
@@ -641,7 +644,9 @@ button.active {
   align-items: center;
 }
 
-.sel-split .step {
+.sel-split .step,
+.keep .step,
+.sel-keep .step {
   width: 44px;
   min-width: 44px;
   padding: 0;
@@ -651,6 +656,49 @@ button.active {
 .sel-split .split-go {
   padding: 0 10px;
   font-size: 13px;
+}
+
+/* 留守 − N + 名 (D-026): under each of 搶 and 治理 in the dialog, and in a held town's selection info. */
+.keep-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.keep,
+.sel-keep {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.sel-keep {
+  margin-top: 4px;
+}
+
+.keep output,
+.sel-keep output {
+  min-width: 22px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+/* What the stance means (D-026), two small lines. They sit below the ✕, so they use the full width. */
+.sel-note {
+  margin: 4px -46px 0 0;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.sel-note span {
+  display: block;
+}
+
+.sel-note .stance-scope {
+  opacity: 0.8;
 }
 
 /* 16px or more: Safari on iPhone zooms the page into smaller text fields when they get focus. */
@@ -687,6 +735,8 @@ button.active {
   bottom: calc(var(--safe-b) + 4px);
   display: grid;
   grid-template-columns: repeat(3, 56px);
+  /* A two-column button that does not fit at the end of a row leaves no hole: the next one fills it. */
+  grid-auto-flow: row dense;
   gap: 5px;
 }
 
@@ -701,6 +751,13 @@ button.active {
   padding: 2px;
   font-size: 12px;
   line-height: 1.15;
+}
+
+/* 姿態 (D-026): the label and the line under it each stay on one line. */
+.cmds button.wide {
+  grid-column: span 2;
+  justify-self: stretch;
+  width: auto;
 }
 
 button .sub {

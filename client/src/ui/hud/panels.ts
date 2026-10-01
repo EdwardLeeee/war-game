@@ -2,6 +2,7 @@
 // right. Both rebuild their buttons only when what is selected changes (a button must not
 // be replaced under a finger); numbers that tick (health, progress) update in place.
 
+import { isSoldier } from "../../game/army.ts";
 import type { Mode } from "../../input/intent.ts";
 import { splitRange } from "../../input/split.ts";
 import {
@@ -42,6 +43,28 @@ export interface PanelHost {
   /** 改選其餘 M 名: the units the last split left behind. */
   selectRest(): void;
   lastSplit(): { picked: number[]; rest: number[] } | null;
+  /** 留守 (D-026): how many soldiers are stationed in the town, and one more or one fewer. */
+  garrison(town: number): number;
+  garrisonMore(town: number): void;
+  garrisonLess(town: number): void;
+  /** A line in the message strip. */
+  notify(text: string): void;
+}
+
+/** 姿態 in the player's words (GDD §9, D-026: 「看不太懂積極和堅守的差別」). */
+export const STANCE_TEXT = {
+  [Stance.Aggressive]: "積極：6 格內有敵人就追上去打，離原位 8 格就回來",
+  [Stance.Hold]: "堅守：站在原地不動，只打走進射程的敵人",
+} as const;
+export const STANCE_MIXED_TEXT = "姿態：有的積極、有的堅守";
+export const STANCE_SCOPE_TEXT = "姿態只管沒有指令、站著待命的時候";
+
+/** The stance of the soldiers among these units: one of the two, "mixed", or null when there is no soldier. */
+export function stanceOf(view: GameView, ids: number[]): Stance | "mixed" | null {
+  const soldiers = ids.filter((id) => isSoldier(view.unitType(id)));
+  if (soldiers.length === 0) return null;
+  const hold = soldiers.filter((id) => view.unitStance(id) === Stance.Hold).length;
+  return hold === 0 ? Stance.Aggressive : hold === soldiers.length ? Stance.Hold : "mixed";
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {
@@ -157,9 +180,30 @@ export class SelectionInfo {
       }
       if (u[o + U.carryAmount] > 0) text += `　搬運 ${u[o + U.carryAmount]}`;
       hpText.textContent = text;
-      const stance = u[o + U.stance] === Stance.Hold ? "堅守" : "積極";
-      const autocast = (u[o + U.flags] & UnitFlag.Autocast) !== 0 ? "　自動施放開" : "";
-      status.textContent = `${ACTION_NAME[u[o + U.action]] ?? ""}　${u[o + U.owner] === view.me ? stance + autocast : ""}`;
+      const mine = u[o + U.owner] === view.me;
+      // Farmers ignore the stance (they fight only when told to), so it is not shown for them.
+      const stance = !mine || !isSoldier(type) ? "" : u[o + U.stance] === Stance.Hold ? "堅守" : "積極";
+      const autocast = mine && (u[o + U.flags] & UnitFlag.Autocast) !== 0 ? "　自動施放開" : "";
+      status.textContent = `${ACTION_NAME[u[o + U.action]] ?? ""}　${stance}${autocast}`;
+    });
+    this.stanceNote(view, [id]);
+  }
+
+  /** Two small lines under an own selection with soldiers: what their stance means, and when it applies. */
+  private stanceNote(view: GameView, ids: number[]): void {
+    const u = view.curr?.snap.units;
+    const mine = (id: number): boolean => {
+      const o = view.unitRow(id);
+      return o >= 0 && u !== undefined && u[o + U.owner] === view.me;
+    };
+    if (!ids.every(mine) || stanceOf(view, ids) === null) return;
+    const note = el("p", this.el, "sel-note");
+    const meaning = el("span", note, "stance-meaning");
+    el("span", note, "stance-scope", STANCE_SCOPE_TEXT);
+    this.updaters.push(() => {
+      const s = stanceOf(view, ids);
+      const text = s === null ? "" : s === "mixed" ? STANCE_MIXED_TEXT : STANCE_TEXT[s];
+      if (meaning.textContent !== text) meaning.textContent = text;
     });
   }
 
@@ -181,6 +225,7 @@ export class SelectionInfo {
       const rest = split.rest.filter((id) => view.unitRow(id) >= 0).length;
       if (rest > 0) button(chips, `改選其餘 ${rest} 名`, "", () => this.host.selectRest(), "chip rest-chip");
     }
+    this.stanceNote(view, ids);
     this.splitRow(ids.length);
   }
 
@@ -281,6 +326,25 @@ export class SelectionInfo {
       button(row, "搶", "", () => this.host.chooseTown(id, TownChoice.Plunder), "choice-plunder");
       button(row, "治理", "", () => this.host.chooseTown(id, TownChoice.Govern), "choice-govern");
     }
+    // 留守 − N + 名 (D-026), for a town we hold.
+    if (o0 >= 0 && t0 !== undefined && t0[o0 + T.owner] === view.me && t0[o0 + T.state] !== TownState.Neutral && t0[o0 + T.state] !== TownState.Ruins) {
+      const row = el("div", this.el, "sel-keep");
+      row.setAttribute("role", "group");
+      row.setAttribute("aria-label", "留守");
+      el("span", row, "", "留守");
+      const minus = button(row, "−", "", () => this.host.garrisonLess(id), "secondary step");
+      minus.setAttribute("aria-label", "少留守 1 名");
+      const count = el("output", row);
+      count.setAttribute("aria-label", "留守幾名");
+      const plus = button(row, "+", "", () => this.host.garrisonMore(id), "secondary step");
+      plus.setAttribute("aria-label", "多留守 1 名");
+      el("span", row, "", "名");
+      el("p", this.el, "sel-note", "留守的兵改成堅守，不跟全軍走");
+      this.updaters.push(() => {
+        const n = `${this.host.garrison(id)}`;
+        if (count.textContent !== n) count.textContent = n;
+      });
+    }
     this.updaters.push(() => {
       const o = view.townRow(id);
       const t = view.curr?.snap.towns;
@@ -291,7 +355,10 @@ export class SelectionInfo {
       const owner = t[o + T.owner];
       const who = owner === view.me ? "我方" : owner === NO_OWNER || owner === NEUTRAL ? "" : "敵方";
       status.textContent = `${who}${TOWN_STATE_NAME[t[o + T.state]] ?? ""}`;
-      const parts = [`民兵 ${t[o + T.militia]}`, `駐軍 ${t[o + T.garrison]}/${t[o + T.garrisonNeeded]}`];
+      // Two different counts for our own town: every soldier of ours inside it now, and the
+      // ones told to stay (留守, below), who do not leave with 全軍.
+      const inside = owner === view.me ? `城裡有 ${t[o + T.garrison]} 名兵（至少要 ${t[o + T.garrisonNeeded]} 名）` : `駐軍 ${t[o + T.garrison]}/${t[o + T.garrisonNeeded]}`;
+      const parts = [`民兵 ${t[o + T.militia]}`, inside];
       if (t[o + T.timer] > 0) parts.push(`剩 ${clock(t[o + T.timer])}`);
       if (t[o + T.revoltTimer] > 0) parts.push(`駐軍不足，${clock(t[o + T.revoltTimer])} 後叛離`);
       text.textContent = parts.join("　");
@@ -358,10 +425,19 @@ export class CommandArea {
       if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
       const retreat = button(this.el, mode === "retreat" ? "取消撤退" : "撤退", "", () => this.host.setMode(mode === "retreat" ? "normal" : "retreat"));
       if (mode === "retreat") retreat.classList.add("active");
-      const aggressive = sel.units.some((id) => view.unitStance(id) === Stance.Aggressive);
-      button(this.el, aggressive ? "改成堅守" : "改成積極", aggressive ? "目前積極" : "目前堅守", () =>
-        this.host.command({ c: "stance", u: sel.units, stance: aggressive ? Stance.Hold : Stance.Aggressive }),
-      );
+      // 姿態 (D-026): what it is now, and what a tap changes it to. Soldiers only: farmers ignore it.
+      // Two columns wide: in one (56 pt), 「姿態：堅守」 broke into 「姿態：堅」 and 「守」.
+      const stance = stanceOf(view, sel.units);
+      if (stance !== null) {
+        const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
+        const next = stance === Stance.Hold ? Stance.Aggressive : Stance.Hold;
+        const now = stance === "mixed" ? "混合" : stance === Stance.Hold ? "堅守" : "積極";
+        const to = `${stance === "mixed" ? "全部" : ""}改成${next === Stance.Hold ? "堅守" : "積極"}`;
+        button(this.el, `姿態：${now}`, `按一下${to}`, () => {
+          this.host.command({ c: "stance", u: soldiers, stance: next });
+          this.host.notify(`已${to}。${STANCE_TEXT[next]}`);
+        }, "wide");
+      }
       button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary");
       if (types.has(UnitType.Mage)) {
         const mages = sel.units.filter((id) => view.unitType(id) === UnitType.Mage);
