@@ -2,7 +2,7 @@
 // Chromium at iPhone landscape size: the gesture-table rows for the minimap, control groups
 // and idle farmers, and every piece of the temporary interface (GDD §10 草稿).
 
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { FULL_SCREEN, INTERACTIVE, IPHONE_SAFE, injectSafeArea, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 import { doubleTap, doubleTapOn, longPress, longPressOn, tap, tapOn } from "./touch.ts";
 
@@ -56,6 +56,8 @@ const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?
 const garrison = (page: Page, town: number) => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], town);
 const place = (page: Page, ids: number[], cells: { x: number; y: number }[]) => page.evaluate(([i, c]) => window.__proto?.game?.place(i, c), [ids, cells] as const);
 const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
+/** How many lines a piece of text takes (the line height is 1.15 times the font size). */
+const lines = (l: Locator) => l.evaluate((e) => Math.round(e.getBoundingClientRect().height / (parseFloat(getComputedStyle(e).fontSize) * 1.15)));
 
 async function ownIds(page: Page, types: number[]): Promise<number[]> {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -387,6 +389,9 @@ test("姿態：按鈕寫出現在是哪一種、按了會變成哪一種，選�
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await expect(stance).toHaveText("姿態：混合按一下全部改成堅守");
   await expect(panel).toContainText("姿態：有的積極、有的堅守");
+  // The longest text still takes one line each: the button is two columns wide (in one, 「姿態：堅守」 broke in two).
+  expect(await lines(stance.locator(".label")), "the label on one line").toBe(1);
+  expect(await lines(stance.locator(".sub")), "the line under it on one line").toBe(1);
   await stance.tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: army, stance: 1 });
   await expect(stance).toHaveText("姿態：堅守按一下改成積極");

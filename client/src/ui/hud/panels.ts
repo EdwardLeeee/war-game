@@ -426,6 +426,7 @@ export class CommandArea {
       const retreat = button(this.el, mode === "retreat" ? "取消撤退" : "撤退", "", () => this.host.setMode(mode === "retreat" ? "normal" : "retreat"));
       if (mode === "retreat") retreat.classList.add("active");
       // 姿態 (D-026): what it is now, and what a tap changes it to. Soldiers only: farmers ignore it.
+      // Two columns wide: in one (56 pt), 「姿態：堅守」 broke into 「姿態：堅」 and 「守」.
       const stance = stanceOf(view, sel.units);
       if (stance !== null) {
         const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
@@ -435,7 +436,7 @@ export class CommandArea {
         button(this.el, `姿態：${now}`, `按一下${to}`, () => {
           this.host.command({ c: "stance", u: soldiers, stance: next });
           this.host.notify(`已${to}。${STANCE_TEXT[next]}`);
-        });
+        }, "wide");
       }
       button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary");
       if (types.has(UnitType.Mage)) {

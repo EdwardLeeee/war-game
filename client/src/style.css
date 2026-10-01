@@ -732,6 +732,8 @@ button.active {
   bottom: calc(var(--safe-b) + 4px);
   display: grid;
   grid-template-columns: repeat(3, 56px);
+  /* A two-column button that does not fit at the end of a row leaves no hole: the next one fills it. */
+  grid-auto-flow: row dense;
   gap: 5px;
 }
 
@@ -746,6 +748,13 @@ button.active {
   padding: 2px;
   font-size: 12px;
   line-height: 1.15;
+}
+
+/* 姿態 (D-026): the label and the line under it each stay on one line. */
+.cmds button.wide {
+  grid-column: span 2;
+  justify-self: stretch;
+  width: auto;
 }
 
 button .sub {
