@@ -4,6 +4,7 @@ import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { BUILDINGS } from "../src/core/rules.ts";
+import type { Game } from "../src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
 
 test("multipliers: ranged deal 7 to spearmen (5 x 3/2), 5 to others; at least 1", () => {
@@ -182,27 +183,87 @@ test("a move to a walled-in point: soldiers break through enemy walls; with only
   for (let s = 0; s < w.buildings.count; s++) assert.equal(w.buildings.col.hp[s], BUILDINGS[w.buildings.col.type[s]].hp, "own buildings untouched");
 });
 
-test("formation: sets and clears the Loose flag of own units, moves nobody, and shows in the view", () => {
+/** Runs (at least the tick that applies the commands just given) until none of the units has an order, at most `cap` ticks; true when they all got there. */
+function settle(g: Game, ids: number[], cap = 600): boolean {
+  const u = g.w.units.col;
+  for (let t = 0; t < cap; t++) {
+    g.step();
+    if (ids.every((id) => u.order[slotOf(g, id)] === Order.None)) return true;
+  }
+  return false;
+}
+
+/** Middle of the units, in cells. */
+function middle(g: Game, ids: number[]): { x: number; y: number } {
+  const u = g.w.units.col;
+  let x = 0;
+  let y = 0;
+  for (const id of ids) {
+    x += u.x[slotOf(g, id)];
+    y += u.y[slotOf(g, id)];
+  }
+  return { x: x / ids.length / 1024, y: y / ids.length / 1024 };
+}
+
+/** Distance from each unit to its nearest neighbour among them, in cells: the smallest and the mean. */
+function spacing(g: Game, ids: number[]): { min: number; mean: number } {
+  const u = g.w.units.col;
+  const d: number[] = ids.map((a) => {
+    let best = Infinity;
+    for (const b of ids) {
+      if (a === b) continue;
+      const dx = u.x[slotOf(g, a)] - u.x[slotOf(g, b)];
+      const dy = u.y[slotOf(g, a)] - u.y[slotOf(g, b)];
+      best = Math.min(best, Math.hypot(dx, dy) / 1024);
+    }
+    return best;
+  });
+  return { min: Math.min(...d), mean: d.reduce((p, v) => p + v, 0) / d.length };
+}
+
+const far = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/** Standing about two cells apart (a loose formation), not one. */
+function loose2(g: Game, ids: number[]): boolean {
+  const d = spacing(g, ids);
+  return d.mean >= 1.5 && d.min >= 1.2;
+}
+
+const shown = (g: Game, ids: number[]) => `nearest neighbour ${spacing(g, ids).min.toFixed(2)}, on average ${spacing(g, ids).mean.toFixed(2)} cells`;
+
+test("formation: sets and clears the Loose flag of own units and shows in the view; standing soldiers spread out where they are, others keep their orders", () => {
   const g = emptyGame();
   const w = g.w;
-  const a = openArea(g, 12);
+  const a = openArea(g, 16);
   const mine = [0, 1, 2].map((k) => put(g, 0, UnitType.Spearman, a.x + 2 + k, a.y + 2));
   const farmer = put(g, 0, UnitType.Farmer, a.x + 2, a.y + 4);
-  const theirs = put(g, 1, UnitType.Spearman, a.x + 10, a.y + 10);
-  g.fog.update(w);
+  // A spearman far from the others attacks an enemy farmer standing still.
+  const busy = put(g, 0, UnitType.Spearman, a.x + 12, a.y + 8);
+  const theirs = put(g, 1, UnitType.Farmer, a.x + 12, a.y + 12);
   const u = w.units.col;
+  u.stance[slotOf(g, theirs)] = Stance.Hold;
+  // No automatic work: farmers stay where they are.
+  w.ecoOn[0] = 0;
+  w.ecoOn[1] = 0;
+  g.fog.update(w);
+  cmd(g, 0, { c: "attack", u: [busy], target: theirs });
+  g.step();
   const loose = (id: number) => (u.flags[slotOf(g, id)] & UnitFlag.Loose) !== 0;
-  const before = mine.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]);
+  const farmerAt = [u.x[slotOf(g, farmer)], u.y[slotOf(g, farmer)]];
+  const before = middle(g, mine);
   const rejected = () => g.events.filter((e) => e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
 
-  cmd(g, 0, { c: "formation", u: [...mine, farmer, theirs], loose: true });
+  cmd(g, 0, { c: "formation", u: [...mine, farmer, busy, theirs], loose: true });
   g.step();
   assert.deepEqual(rejected(), []);
-  assert.deepEqual([...mine, farmer].map(loose), [true, true, true, true], "own units, any type");
+  assert.deepEqual([...mine, farmer, busy].map(loose), [true, true, true, true, true], "own units, any type");
   assert.equal(loose(theirs), false, "not the other player's");
-  run(g, 40);
-  assert.deepEqual(mine.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]), before, "the command alone moves nobody");
-  assert.equal(u.order[slotOf(g, mine[0])], Order.None);
+  assert.equal(u.order[slotOf(g, busy)], Order.Attack, "a unit attacking something keeps at it");
+  assert.equal(u.order[slotOf(g, mine[0])], Order.Move, "the standing spearmen form up again");
+  assert.ok(settle(g, mine), "and get there");
+  assert.ok(loose2(g, mine), `two cells apart now (${shown(g, mine)})`);
+  assert.ok(far(middle(g, mine), before) <= 1, "where they stood");
+  assert.deepEqual([u.x[slotOf(g, farmer)], u.y[slotOf(g, farmer)]], farmerAt, "the farmer only takes the flag");
   // The flag is in the snapshot's flags field.
   const view = buildView(g, 0);
   let seen = 0;
@@ -214,6 +275,7 @@ test("formation: sets and clears the Loose flag of own units, moves nobody, and 
   cmd(g, 0, { c: "formation", u: [mine[0]], loose: false });
   g.step();
   assert.deepEqual(mine.map(loose), [false, true, true], "cleared for the one named");
+  assert.equal(u.order[slotOf(g, mine[0])], Order.None, "a soldier on its own only takes the flag");
   cmd(g, 0, { c: "formation", u: [theirs], loose: true });
   g.step();
   assert.deepEqual(rejected(), [Reject.NotOwner]);
@@ -221,4 +283,123 @@ test("formation: sets and clears the Loose flag of own units, moves nobody, and 
   g.step();
   assert.deepEqual(rejected(), [Reject.InvalidTarget]);
   assert.deepEqual(mine.map(loose), [false, true, true], "a rejected command changes nothing");
+});
+
+test("formation: two squads far apart told together spread out each where it stands, and close up again", () => {
+  const g = emptyGame();
+  const a = openArea(g, 24);
+  const squad = (x: number, y: number) => {
+    const ids: number[] = [];
+    for (let k = 0; k < 9; k++) ids.push(put(g, 0, UnitType.Spearman, x + (k % 3), y + Math.trunc(k / 3)));
+    return ids;
+  };
+  const one = squad(a.x + 3, a.y + 3);
+  const two = squad(a.x + 18, a.y + 18);
+  g.fog.update(g.w);
+  const at = [middle(g, one), middle(g, two)];
+  cmd(g, 0, { c: "formation", u: [...one, ...two], loose: true });
+  assert.ok(settle(g, [...one, ...two]), "everyone got there");
+  [one, two].forEach((ids, k) => {
+    assert.ok(far(middle(g, ids), at[k]) <= 1, `squad ${k}: its middle moved ${far(middle(g, ids), at[k]).toFixed(2)} cells`);
+    assert.ok(loose2(g, ids), `squad ${k}: ${shown(g, ids)}`);
+  });
+  assert.ok(far(middle(g, one), middle(g, two)) > 19, "not drawn together");
+
+  cmd(g, 0, { c: "formation", u: [...one, ...two], loose: false });
+  assert.ok(settle(g, [...one, ...two]));
+  [one, two].forEach((ids, k) => {
+    assert.ok(far(middle(g, ids), at[k]) <= 1, `squad ${k} closed up where it stood`);
+    assert.ok(spacing(g, ids).mean <= 1.25, `squad ${k}: one cell apart again (${shown(g, ids)})`);
+  });
+});
+
+test("formation: spreading out in place, units take the slots nearest where they stand (a block of 16 is done in 3 s)", () => {
+  const g = emptyGame();
+  const a = openArea(g, 24);
+  const ids: number[] = [];
+  for (let k = 0; k < 16; k++) ids.push(put(g, 0, UnitType.Spearman, a.x + 8 + (k % 4), a.y + 8 + Math.trunc(k / 4)));
+  g.fog.update(g.w);
+  const u = g.w.units.col;
+  const start = ids.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]);
+  cmd(g, 0, { c: "formation", u: ids, loose: true });
+  assert.ok(settle(g, ids, 60), "spread out within 60 ticks");
+  const walked = ids.map((id, k) => Math.hypot(u.x[slotOf(g, id)] - start[k][0], u.y[slotOf(g, id)] - start[k][1]) / 1024);
+  assert.ok(Math.max(...walked) <= 2.5, `the longest walk ${Math.max(...walked).toFixed(2)} cells`);
+  assert.ok(loose2(g, ids), shown(g, ids));
+});
+
+test("formation: a squad that marched in keeps its front when it spreads out (spearmen ahead of ranged)", () => {
+  const g = emptyGame();
+  const a = openArea(g, 24);
+  const ids: number[] = [];
+  for (let k = 0; k < 4; k++) ids.push(put(g, 0, UnitType.Ranged, a.x + 8 + k, a.y + 2));
+  for (let k = 0; k < 4; k++) ids.push(put(g, 0, UnitType.Spearman, a.x + 8 + k, a.y + 3));
+  g.fog.update(g.w);
+  cmd(g, 0, { c: "move", u: ids, x: a.x + 10, y: a.y + 14 });
+  assert.ok(settle(g, ids));
+  const at = middle(g, ids);
+  cmd(g, 0, { c: "formation", u: ids, loose: true });
+  assert.ok(settle(g, ids));
+  const u = g.w.units.col;
+  const meanY = (t: number) => {
+    const ys = ids.filter((id) => u.type[slotOf(g, id)] === t).map((id) => u.y[slotOf(g, id)] / 1024);
+    return ys.reduce((p, v) => p + v, 0) / ys.length;
+  };
+  // They came toward +y: the front is the larger y.
+  assert.ok(meanY(UnitType.Spearman) > meanY(UnitType.Ranged) + 1, "spearmen still in front");
+  assert.ok(loose2(g, ids), shown(g, ids));
+  assert.ok(far(middle(g, ids), at) <= 1);
+});
+
+test("formation: a group forms up two cells apart only when more than half of it is loose", () => {
+  const g = emptyGame();
+  const a = openArea(g, 24);
+  const ids = [0, 1, 2, 3].map((k) => put(g, 0, UnitType.Spearman, a.x + 4 + k, a.y + 4));
+  g.fog.update(g.w);
+  cmd(g, 0, { c: "formation", u: ids.slice(0, 2), loose: true });
+  cmd(g, 0, { c: "move", u: ids, x: a.x + 12, y: a.y + 16 });
+  assert.ok(settle(g, ids));
+  assert.ok(spacing(g, ids).mean <= 1.25, `two of four: one cell (${shown(g, ids)})`);
+  cmd(g, 0, { c: "formation", u: [ids[2]], loose: true });
+  cmd(g, 0, { c: "move", u: ids, x: a.x + 12, y: a.y + 4 });
+  assert.ok(settle(g, ids));
+  assert.ok(loose2(g, ids), `three of four: two cells (${shown(g, ids)})`);
+});
+
+test("formation: a group on its way keeps its goal and takes the new spacing; members already there join in", () => {
+  const g = emptyGame();
+  const a = openArea(g, 24);
+  const ids: number[] = [];
+  for (let k = 0; k < 9; k++) ids.push(put(g, 0, UnitType.Spearman, a.x + 2 + (k % 3), a.y + 2 + Math.trunc(k / 3)));
+  g.fog.update(g.w);
+  cmd(g, 0, { c: "move", u: ids, x: a.x + 14, y: a.y + 14 });
+  g.step();
+  const u = g.w.units.col;
+  const goal = u.orderTarget[slotOf(g, ids[0])];
+  // Until the first of them is there, the rest still on their way.
+  let t = 0;
+  while (ids.every((id) => u.order[slotOf(g, id)] === Order.Move) && t++ < 600) g.step();
+  const there = ids.filter((id) => u.order[slotOf(g, id)] === Order.None).length;
+  assert.ok(there > 0 && there < ids.length, `some there (${there}), some not`);
+  cmd(g, 0, { c: "formation", u: ids, loose: true });
+  g.step();
+  assert.deepEqual(new Set(ids.map((id) => u.orderTarget[slotOf(g, id)])), new Set([goal]), "the same goal for all");
+  assert.equal(new Set(ids.map((id) => u.group[slotOf(g, id)])).size, 1, "one formation");
+  assert.ok(settle(g, ids));
+  assert.ok(loose2(g, ids), `two cells apart (${shown(g, ids)})`);
+});
+
+test("big groups reach their slots, close and loose (slots off to the side of the way in)", () => {
+  for (const [n, loose] of [[36, false], [25, true]] as const) {
+    const g = emptyGame();
+    const a = openArea(g, 30);
+    const ids: number[] = [];
+    for (let k = 0; k < n; k++) ids.push(put(g, 0, UnitType.Spearman, a.x + 1 + Math.trunc(k / 7), a.y + 1 + (k % 7)));
+    g.fog.update(g.w);
+    if (loose) cmd(g, 0, { c: "formation", u: ids, loose: true });
+    cmd(g, 0, { c: "move", u: ids, x: a.x + 22, y: a.y + 22 });
+    const u = g.w.units.col;
+    assert.ok(settle(g, ids, 1500), `${n} ${loose ? "loose" : "close"}: ${ids.filter((id) => u.order[slotOf(g, id)] !== Order.None).length} still on their way`);
+    assert.ok(loose ? loose2(g, ids) : spacing(g, ids).mean <= 1.25, `${n}: ${shown(g, ids)}`);
+  }
 });

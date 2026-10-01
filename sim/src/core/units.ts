@@ -46,7 +46,7 @@ import {
   UNITS,
 } from "./rules.ts";
 import { IDENTITY, toCanon } from "../frame.ts";
-import { steerDirect, steerTo } from "./steer.ts";
+import { openLine, steerDirect, steerTo } from "./steer.ts";
 import type { World } from "./world.ts";
 
 const TICKS = TICKS_PER_SECOND;
@@ -403,6 +403,10 @@ export class UnitSystem {
         this.breakThrough(w, fields, i, here, u.orderX[i], u.orderY[i], order === Order.Move && !farmer);
         return;
       }
+      if (this.slotInReach(w, i, dx, dy)) {
+        steerDirect(w, i, dx, dy, sp);
+        return;
+      }
       steerTo(w, fields, i, u.orderX[i], u.orderY[i], u.orderTarget[i], sp);
       return;
     }
@@ -415,6 +419,27 @@ export class UnitSystem {
       return;
     }
     u.action[i] = Action.Idle;
+  }
+
+  /**
+   * A unit on a move, more than DIRECT_STEER from its slot (dx, dy away) but no farther from
+   * the group's goal cell than the slot is, heads straight for the slot when the straight way
+   * there is open (round 3). The group's field leads only to the goal cell: a slot off to the
+   * side of the way in (a wide formation, a loose one above all) never came within
+   * DIRECT_STEER, and the unit ended up shuttling at the goal cell.
+   */
+  private slotInReach(w: World, i: number, dx: number, dy: number): boolean {
+    const u = w.units.col;
+    const t = u.orderTarget[i];
+    if (t < 0 || dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) return false;
+    const n = w.size;
+    const gx = ((t % n) << CELL_SHIFT) + (CELL >> 1);
+    const gy = (Math.trunc(t / n) << CELL_SHIFT) + (CELL >> 1);
+    const ux = u.x[i] - gx;
+    const uy = u.y[i] - gy;
+    const sx = u.orderX[i] - gx;
+    const sy = u.orderY[i] - gy;
+    return ux * ux + uy * uy <= sx * sx + sy * sy && openLine(w, u.x[i], u.y[i], u.orderX[i], u.orderY[i]);
   }
 
   /**
@@ -543,7 +568,8 @@ export class UnitSystem {
     const u = w.units.col;
     u.order[i] = Order.None;
     u.orderTarget[i] = -1;
-    u.group[i] = -1;
+    // The group stays: a `formation` command re-forms the members who are already there
+    // together with those still on the way (commands.ts, reform).
     u.speedCap[i] = 0;
     u.anchorX[i] = u.x[i];
     u.anchorY[i] = u.y[i];

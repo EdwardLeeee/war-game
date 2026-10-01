@@ -219,9 +219,10 @@ export const UnitFlag = {
   /** Took damage in the last 60 ticks. */
   UnderAttack: 4,
   /**
-   * Loose formation (round 3 of the prototype, D-027): set by the `formation` command. A group
-   * told to move forms up two cells apart instead of one when more than half of it has this
-   * flag, so one crystal cannon shot hits fewer of them.
+   * Loose formation (round 3 of the prototype, D-027): set by the `formation` command, which
+   * also re-forms the units named in it (PROTOCOL.md 3). A group forms up two cells apart
+   * instead of one when more than half of it has this flag, so one crystal cannon shot hits
+   * fewer of them.
    */
   Loose: 8,
 } as const;
@@ -474,7 +475,7 @@ export type CommandBody =
   | { c: "attack"; u: number[]; target: number }
   | { c: "stop"; u: number[] }
   | { c: "stance"; u: number[]; stance: Stance }
-  /** Loose (true) or close (false) formation for these units: sets or clears UnitFlag.Loose. */
+  /** Loose (true) or close (false) formation for these units: sets or clears UnitFlag.Loose and re-forms them (PROTOCOL.md 3). */
   | { c: "formation"; u: number[]; loose: boolean }
   | { c: "gather"; u: number[]; node: number }
   /** `u` may be empty: the simulation then sends the nearest free farmers (PROTOCOL.md 3.1). */

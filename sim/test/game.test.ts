@@ -41,6 +41,13 @@ test("a replay of the command log reproduces every hash", () => {
       }
       a.game.push({ t, p: 1, seq: seq++, c: "train", building: 0, type: UnitType.Farmer, n: 1 });
     }
+    if (t % 400 === 200) {
+      // Loose, then close again: re-forming in place (round 3).
+      const u = a.game.w.units.col;
+      const army: number[] = [];
+      for (let s = 0; s < a.game.w.units.count; s++) if (u.owner[s] === 0 && u.type[s] !== UnitType.Farmer) army.push(u.id[s]);
+      a.game.push({ t, p: 0, seq: seq++, c: "formation", u: army, loose: t % 800 === 200 });
+    }
     a.tick();
   }
   const b = new Runner({ seed: 3, scenario: "skirmish", ai: [false, false], replay: a.game.log.map((c) => ({ ...c })) });
