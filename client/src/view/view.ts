@@ -135,6 +135,12 @@ export class GameView implements IntentWorld {
     return o >= 0 && ((this.curr as Frame).snap.units[o + U.flags] & UnitFlag.Autocast) !== 0;
   }
 
+  /** 散開 (D-027): the unit has the Loose flag. */
+  unitLoose(id: number): boolean {
+    const o = this.unitRow(id);
+    return o >= 0 && ((this.curr as Frame).snap.units[o + U.flags] & UnitFlag.Loose) !== 0;
+  }
+
   /** World px position of a unit in the current snapshot. */
   unitPos(o: number): { x: number; y: number } {
     const u = (this.curr as Frame).snap.units;

@@ -78,6 +78,14 @@ export function isSoldier(type: number): boolean {
   return type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage;
 }
 
+/**
+ * 散開 (D-027): more than half of these units are loose, the rule the simulation uses for
+ * troops told to move together. A recruit joining such a group is made loose too.
+ */
+export function mostlyLoose(ids: number[], isLoose: (id: number) => boolean): boolean {
+  return ids.filter(isLoose).length * 2 > ids.length;
+}
+
 /** Squared distance from the unit to the town centre, fixed point (within 2^53 on any map). */
 function toCentre2(u: ArmyUnit, town: TownArea): number {
   const dx = u.x - (town.cellX * CELL + CELL / 2);

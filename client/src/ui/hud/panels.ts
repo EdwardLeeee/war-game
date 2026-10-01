@@ -63,6 +63,24 @@ export const STANCE_TEXT = {
 export const STANCE_MIXED_TEXT = "姿態：有的積極、有的堅守";
 export const STANCE_SCOPE_TEXT = "姿態只管沒有指令、站著待命的時候";
 
+/**
+ * 隊形 in the player's words (GDD §9, D-027, D-028), a line each. 散開 has a second line for
+ * what it costs, since its effect is limited and the player is told so (D-028).
+ */
+export const FORMATION_TEXT = {
+  close: ["密集：站位間隔 1 格，火力集中"],
+  loose: ["散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名", "隊伍比較寬，過窄路比較慢；近戰兵打起來還是會擠在一起"],
+} as const;
+export const FORMATION_MIXED_TEXT = "隊形：有的密集、有的散開";
+
+/** The formation of the soldiers among these units: loose (true), close (false), "mixed", or null when there is no soldier. */
+export function formationOf(view: GameView, ids: number[]): boolean | "mixed" | null {
+  const soldiers = ids.filter((id) => isSoldier(view.unitType(id)));
+  if (soldiers.length === 0) return null;
+  const loose = soldiers.filter((id) => view.unitLoose(id)).length;
+  return loose === 0 ? false : loose === soldiers.length ? true : "mixed";
+}
+
 /** The stance of the soldiers among these units: one of the two, "mixed", or null when there is no soldier. */
 export function stanceOf(view: GameView, ids: number[]): Stance | "mixed" | null {
   const soldiers = ids.filter((id) => isSoldier(view.unitType(id)));
@@ -194,7 +212,10 @@ export class SelectionInfo {
     this.stanceNote(view, [id]);
   }
 
-  /** Two small lines under an own selection with soldiers: what their stance means, and when it applies. */
+  /**
+   * Small lines under an own selection with soldiers: what their stance means and when it
+   * applies, then what their formation means (D-026, D-027).
+   */
   private stanceNote(view: GameView, ids: number[]): void {
     const u = view.curr?.snap.units;
     const mine = (id: number): boolean => {
@@ -205,10 +226,17 @@ export class SelectionInfo {
     const note = el("p", this.el, "sel-note");
     const meaning = el("span", note, "stance-meaning");
     el("span", note, "stance-scope", STANCE_SCOPE_TEXT);
+    const formation = el("span", note, "formation-meaning");
+    const formationMore = el("span", note, "formation-more");
     this.updaters.push(() => {
       const s = stanceOf(view, ids);
       const text = s === null ? "" : s === "mixed" ? STANCE_MIXED_TEXT : STANCE_TEXT[s];
       if (meaning.textContent !== text) meaning.textContent = text;
+      const f = formationOf(view, ids);
+      const lines: readonly string[] = f === null ? [] : f === "mixed" ? [FORMATION_MIXED_TEXT] : FORMATION_TEXT[f ? "loose" : "close"];
+      if (formation.textContent !== (lines[0] ?? "")) formation.textContent = lines[0] ?? "";
+      // An empty line takes no height (the spans are blocks).
+      if (formationMore.textContent !== (lines[1] ?? "")) formationMore.textContent = lines[1] ?? "";
     });
   }
 
@@ -421,7 +449,8 @@ export class CommandArea {
     if (sel.units.length > 0 && u !== undefined) {
       const stances = sel.units.map((id) => {
         const o = view.unitRow(id);
-        return o < 0 ? "" : `${u[o + U.type]}${u[o + U.stance]}${(u[o + U.flags] & UnitFlag.Autocast) !== 0 ? "a" : ""}`;
+        const flags = o < 0 ? 0 : u[o + U.flags];
+        return o < 0 ? "" : `${u[o + U.type]}${u[o + U.stance]}${(flags & UnitFlag.Autocast) !== 0 ? "a" : ""}${(flags & UnitFlag.Loose) !== 0 ? "l" : ""}`;
       });
       return `u:${[...new Set(stances)].sort().join(",")}`;
     }
@@ -440,14 +469,12 @@ export class CommandArea {
     if (this.page === "build") return this.buildMenu(view);
     if (sel.units.length > 0) {
       const types = new Set(sel.units.map((id) => view.unitType(id)));
-      if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
-      const retreat = button(this.el, mode === "retreat" ? "取消撤退" : "撤退", "", () => this.host.setMode(mode === "retreat" ? "normal" : "retreat"));
-      if (mode === "retreat") retreat.classList.add("active");
-      // 姿態 (D-026): what it is now, and what a tap changes it to. Soldiers only: farmers ignore it.
-      // Two columns wide: in one (56 pt), 「姿態：堅守」 broke into 「姿態：堅」 and 「守」.
+      const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
+      // 姿態 (D-026) and 隊形 (D-027): what it is now, and what a tap changes it to. Soldiers
+      // only. Two columns wide each (in one, 「姿態：堅守」 broke into 「姿態：堅」 and 「守」),
+      // side by side in the first row; the orders go in the row below.
       const stance = stanceOf(view, sel.units);
       if (stance !== null) {
-        const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
         const next = stance === Stance.Hold ? Stance.Aggressive : Stance.Hold;
         const now = stance === "mixed" ? "混合" : stance === Stance.Hold ? "堅守" : "積極";
         const to = `${stance === "mixed" ? "全部" : ""}改成${next === Stance.Hold ? "堅守" : "積極"}`;
@@ -456,13 +483,28 @@ export class CommandArea {
           this.host.notify(`已${to}。${STANCE_TEXT[next]}`);
         }, "wide");
       }
+      // A tap re-forms the troops where they stand (D-028): no march order needed.
+      const formation = formationOf(view, sel.units);
+      if (formation !== null) {
+        const loose = formation !== true;
+        const now = formation === "mixed" ? "混合" : formation ? "散開" : "密集";
+        const to = `${formation === "mixed" ? "全部" : ""}改成${loose ? "散開" : "密集"}`;
+        button(this.el, `隊形：${now}`, `按一下${to}`, () => {
+          this.host.command({ c: "formation", u: soldiers, loose });
+          this.host.notify(`已${to}。${FORMATION_TEXT[loose ? "loose" : "close"][0]}`);
+        }, "wide");
+      }
+      if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
+      const retreat = button(this.el, mode === "retreat" ? "取消撤退" : "撤退", "", () => this.host.setMode(mode === "retreat" ? "normal" : "retreat"));
+      if (mode === "retreat") retreat.classList.add("active");
       button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary");
       if (types.has(UnitType.Mage)) {
         const mages = sel.units.filter((id) => view.unitType(id) === UnitType.Mage);
         const cast = button(this.el, mode === "cast" ? "取消晶砲" : "晶砲", "魔晶 5", () => this.host.setMode(mode === "cast" ? "normal" : "cast"));
         if (mode === "cast") cast.classList.add("active");
         const on = mages.every((id) => view.unitAutocast(id));
-        button(this.el, on ? "自動施放：開" : "自動施放：關", "", () => this.host.command({ c: "autocast", u: mages, on: !on }), "secondary");
+        // 「自動施放：關」 broke into two lines in one column: the state goes under the name.
+        button(this.el, "自動施放", on ? "目前：開" : "目前：關", () => this.host.command({ c: "autocast", u: mages, on: !on }), "secondary");
       }
       return;
     }

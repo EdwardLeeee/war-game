@@ -13,6 +13,7 @@ import {
   TownField as T,
   UNIT_STRIDE,
   UnitField as U,
+  UnitFlag,
 } from "../sim.ts";
 import { HIT_RADIUS_PT, TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX } from "../view/view.ts";
@@ -33,7 +34,7 @@ export interface GameHook {
   /** Screen position (CSS px) of a cell's centre. */
   cellToScreen(cx: number, cy: number): { x: number; y: number };
   /** Units in the latest snapshot, with screen positions, cells (and fractional cells), action, order and carried amount. */
-  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number; fx: number; fy: number; action: number; order: number; target: number; carry: number; stance: number }[];
+  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number; fx: number; fy: number; action: number; order: number; target: number; carry: number; stance: number; loose: boolean }[];
   /** Select these own units (test set-up; the gestures that select are tested elsewhere). */
   select(units: number[]): void;
   startPlacement(type: number): void;
@@ -110,6 +111,7 @@ export function gameHook(game: Game): GameHook {
           target: u[o + U.orderTarget],
           carry: u[o + U.carryAmount],
           stance: u[o + U.stance],
+          loose: (u[o + U.flags] & UnitFlag.Loose) !== 0,
         });
       }
       return out;

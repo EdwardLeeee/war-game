@@ -559,7 +559,8 @@ button.active {
 .sel-info {
   position: absolute;
   left: calc(var(--safe-l) + 124px);
-  right: calc(var(--safe-r) + 188px);
+  /* Clear of the command area: 4 columns of 56 pt and 3 gaps of 5 (239), its 4 pt margin and 6 pt between. */
+  right: calc(var(--safe-r) + 249px);
   bottom: calc(var(--safe-b) + 4px);
   max-width: 300px;
   margin: 0 auto;
@@ -686,7 +687,7 @@ button.active {
   font-size: 16px;
 }
 
-/* What the stance means (D-026), two small lines. They sit below the ✕, so they use the full width. */
+/* What the stance and the formation mean (D-026, D-027), small lines. They sit below the ✕, so they use the full width. */
 .sel-note {
   margin: 4px -46px 0 0;
   font-size: 11px;
@@ -697,7 +698,8 @@ button.active {
   display: block;
 }
 
-.sel-note .stance-scope {
+.sel-note .stance-scope,
+.sel-note .formation-more {
   opacity: 0.8;
 }
 
@@ -734,7 +736,8 @@ button.active {
   right: calc(var(--safe-r) + 4px);
   bottom: calc(var(--safe-b) + 4px);
   display: grid;
-  grid-template-columns: repeat(3, 56px);
+  /* 4 columns (D-027): 姿態 and 隊形 take two each and share the first row; the orders go below. */
+  grid-template-columns: repeat(4, 56px);
   /* A two-column button that does not fit at the end of a row leaves no hole: the next one fills it. */
   grid-auto-flow: row dense;
   gap: 5px;

@@ -126,6 +126,9 @@ for (const size of [
       expect(note.y, "the stance note starts below the ✕").toBeGreaterThanOrEqual(close.y + close.height);
       const [panel] = await visibleBoxes(page, ".sel-info");
       expect(note.x + note.width, "the stance note stays inside the panel").toBeLessThanOrEqual(panel.x + panel.width);
+      // 4 columns (D-027): 姿態 and 隊形 in the first row, the orders in the second.
+      const rows = new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y)));
+      expect(rows.size, "two rows of commands").toBe(2);
     }
     await expect(page.locator(".res-bar")).toHaveText(/糧 200　木 200　金 100　晶 20　人口 \d+\/20/);
     await shot(page, info, `hud-${size.who}-${width}x${height}`);
@@ -434,6 +437,72 @@ test("姿態：按鈕寫出現在是哪一種、按了會變成哪一種，選�
   await expect(page.getByRole("button", { name: "建造" })).toBeVisible();
   await expect(stance).toBeHidden();
   await expect(panel).not.toContainText("姿態");
+});
+
+test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一種，選取資訊寫出意思；混合時全部改成散開；只選農民時沒有隊形鈕（D-027）", async ({ page }, info) => {
+  const spear = await selectSpearmen(page);
+  const formation = page.getByRole("button", { name: /^隊形/ });
+  const panel = page.locator(".sel-info");
+  await expect(formation).toHaveText("隊形：密集按一下改成散開");
+  await expect(panel).toContainText("密集：站位間隔 1 格，火力集中");
+  await formation.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "formation", u: spear, loose: true });
+  await expect(toast(page, "已改成散開。散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名")).toBeVisible();
+  await expect(formation).toHaveText("隊形：散開按一下改成密集");
+  await expect(panel).toContainText("散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
+  await expect(panel).toContainText("隊伍比較寬，過窄路比較慢；近戰兵打起來還是會擠在一起");
+  // Every line of the note takes one line, and the button's two lines one each.
+  for (const part of [".stance-meaning", ".stance-scope", ".formation-meaning", ".formation-more"]) {
+    expect(await lines(panel.locator(part)), `${part} on one line`).toBe(1);
+  }
+  expect(await lines(formation.locator(".label")), "the label on one line").toBe(1);
+  expect(await lines(formation.locator(".sub")), "the line under it on one line").toBe(1);
+  await shot(page, info, "formation-loose");
+
+  // 全軍 now mixes 散開 spearmen with 密集 archers and mages: one tap makes them all 散開.
+  await page.getByRole("button", { name: "全軍" }).tap();
+  const army = await ownIds(page, [1, 2, 3]);
+  await expect.poll(async () => (await selection(page))?.units).toEqual(army);
+  await expect(formation).toHaveText("隊形：混合按一下全部改成散開");
+  await expect(panel).toContainText("隊形：有的密集、有的散開");
+  // Soldiers and mages: 姿態 and 隊形 side by side, the four orders below (4 columns).
+  await shot(page, info, "formation-mixed-4-columns");
+  await formation.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "formation", u: army, loose: true });
+  await expect(formation).toHaveText("隊形：散開按一下改成密集");
+  await formation.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "formation", u: army, loose: false });
+  await expect(formation).toHaveText("隊形：密集按一下改成散開");
+
+  // 自動施放 fits one column now: the name, and the state under it.
+  const autocast = page.getByRole("button", { name: /^自動施放/ });
+  await expect(autocast).toHaveText(/^自動施放目前：(開|關)$/);
+  expect(await lines(autocast.locator(".label")), "自動施放 on one line").toBe(1);
+
+  // Farmers: no 隊形 button.
+  await select(page, await ownIds(page, [0]));
+  await expect(page.getByRole("button", { name: "建造" })).toBeVisible();
+  await expect(formation).toBeHidden();
+  await expect(panel).not.toContainText("隊形");
+});
+
+test("隊形：編隊裡超過一半是散開時，補進來的新兵也送散開（D-027）", async ({ page }) => {
+  const spear = await selectSpearmen(page);
+  await longPressOn(page, GROUP_1);
+  await page.getByRole("button", { name: /^隊形/ }).tap();
+  await expect.poll(async () => (await units(page)).filter((u) => spear.includes(u.id)).every((u) => u.loose)).toBe(true);
+  // One falls; the next spearman from the barracks joins group 1 and is told 散開 by the interface.
+  await remove(page, [spear[0]]);
+  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
+  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await expect(page.locator(".sel-info")).toContainText("兵營");
+  await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
+  await expect.poll(async () => (await groupInfo(page))[0].recruits.length, { timeout: 15_000 }).toBe(1);
+  const [recruit] = (await groupInfo(page))[0].recruits;
+  await expect
+    .poll(async () => (await sent(page)).find((c) => c.c === "formation" && c.auto === true))
+    .toMatchObject({ c: "formation", u: [recruit], loose: true, auto: true });
+  await expect.poll(async () => (await units(page)).find((u) => u.id === recruit)?.loose).toBe(true);
 });
 
 test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；留守的兵改成堅守、離開編隊、不跟全軍走（D-026）", async ({ page }, info) => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ArmyBook, type ArmyUnit, RECRUIT_RECHECK_TICKS, RECRUIT_WAIT_TICKS, type TownArea } from "../src/game/army.ts";
+import { ArmyBook, type ArmyUnit, mostlyLoose, RECRUIT_RECHECK_TICKS, RECRUIT_WAIT_TICKS, type TownArea } from "../src/game/army.ts";
 import { CELL, UnitType } from "../src/sim.ts";
 
 const FARMER = UnitType.Farmer;
@@ -246,4 +246,14 @@ test("編隊自動補兵：編隊全滅時新兵不出發，留在原地當編�
   w.add(24, SPEAR, 40, 10);
   book.enlist(24, SPEAR, 500, w.typeOf);
   assert.deepEqual(book.muster(500 + RECRUIT_WAIT_TICKS, w.where), [{ ids: [24], cellX: 10, cellY: 10 }]);
+});
+
+test("隊形：編隊裡超過一半是散開，補進來的新兵也散開；剛好一半或沒有人時不算（D-027）", () => {
+  const loose = new Set([1, 2, 3]);
+  const isLoose = (id: number): boolean => loose.has(id);
+  assert.equal(mostlyLoose([1, 2, 3, 4, 5], isLoose), true, "3 of 5");
+  assert.equal(mostlyLoose([1, 2, 4, 5], isLoose), false, "2 of 4: half is not more than half");
+  assert.equal(mostlyLoose([1, 2, 3], isLoose), true, "all of them");
+  assert.equal(mostlyLoose([4, 5], isLoose), false, "none of them");
+  assert.equal(mostlyLoose([], isLoose), false, "nobody left in the group");
 });

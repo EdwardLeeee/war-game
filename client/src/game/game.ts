@@ -54,7 +54,7 @@ import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../
 import { Placement } from "../ui/placement.ts";
 import { type SplitUnit, splitPick } from "../input/split.ts";
 import { GameView } from "../view/view.ts";
-import { ArmyBook, type ArmyUnit, isSoldier, type TownArea } from "./army.ts";
+import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, type TownArea } from "./army.ts";
 import type { SimPort } from "./port.ts";
 
 type InitMessage = Extract<ToWorker, { type: "init" }>;
@@ -312,7 +312,7 @@ export class Game implements GestureHost {
     return seq;
   }
 
-  /** An order the interface gives on its own (a garrison's stance, a recruit's march): a rejection is not shown to the player. */
+  /** An order the interface gives on its own (a garrison's stance, a recruit's march or formation): a rejection is not shown to the player. */
   autoCommand(cmd: CommandBody): number {
     return this.post(cmd, true);
   }
@@ -431,7 +431,12 @@ export class Game implements GestureHost {
     const tick = view?.header?.[H.tick];
     if (view === null || tick === undefined) return;
     const i = this.army.enlist(id, type, tick, (m) => (view.unitRow(m) >= 0 ? view.unitType(m) : null));
-    if (i !== null) this.toast(`新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}`);
+    if (i === null) return;
+    this.toast(`新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}`);
+    // It takes the group's formation (D-027): 散開 when more than half of the others are. New
+    // units are 密集, and on their way to the rally point the simulation only sets the flag.
+    const others = this.army.groups[i].ids.filter((m) => m !== id && view.unitRow(m) >= 0);
+    if (mostlyLoose(others, (m) => view.unitLoose(m))) this.autoCommand({ c: "formation", u: [id], loose: true });
   }
 
   /** Every snapshot: recruits that have gathered (or waited long enough) are sent to their group. */

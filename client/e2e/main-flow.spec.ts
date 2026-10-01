@@ -3,7 +3,7 @@
 // the small town), in WebKit and Chromium at iPhone landscape size with touch:
 // 開局（選難度）→ 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 改姿態 → 前進 →
 // 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開、城鎮不叛離 → 編隊缺人後新兵補進來 →
-// 分出 N 名存成編隊 → 不選農民蓋民居（D-024、D-026）.
+// 分出 N 名存成編隊 → 不選農民蓋民居 → 散開隊形（D-024、D-026、D-027）.
 // Every step goes through the interface the player uses; the test hook only reads state
 // and moves the camera. The opponent stands still (?test=1&ai=0, see step 1).
 
@@ -52,7 +52,7 @@ async function resume(page: Page): Promise<void> {
   await expect.poll(async () => (await header(page)).paused).toBe(false);
 }
 
-test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 新兵補進編隊 → 分出 N 名 → 不選農民蓋民居", async ({ page }, info) => {
+test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 新兵補進編隊 → 分出 N 名 → 不選農民蓋民居 → 散開隊形", async ({ page }, info) => {
   test.setTimeout(300_000);
   const check = watchErrors(page);
 
@@ -384,5 +384,57 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
     .poll(async () => (await buildings(page)).find((b) => b.owner === me && b.type === HOUSE && b.cx === house2.cellX && b.cy === house2.cellY)?.progress ?? -1, { timeout: 30_000 })
     .toBeGreaterThan(0);
   await expect(page.getByText("附近沒有可以派去蓋的農民")).toBeHidden();
+
+  // 11. 散開隊形（D-027、D-028）：全軍 → 隊形：散開（按下去就原地重排）→ 前進 → 站好後彼此相隔約 2 格。
+  //     Last, so that a wider squad does not change the town steps (a radius-4 town).
+  await page.getByRole("button", { name: "全軍" }).tap();
+  await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(3);
+  const troops = (await selection(page))?.units ?? [];
+  const formation = page.getByRole("button", { name: /^隊形/ });
+  await expect(formation).toHaveText("隊形：密集按一下改成散開");
+  await formation.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "formation", u: troops, loose: true });
+  await expect.poll(async () => (await units(page)).filter((u) => troops.includes(u.id)).every((u) => u.loose)).toBe(true);
+  await expect(formation).toHaveText("隊形：散開按一下改成密集");
+  await expect(page.locator(".sel-info")).toContainText("散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
+  // March them together to open ground south of where the squad started; tap where nothing stands.
+  await centre(page, { x: SQUAD.x, y: SQUAD.y + 4 }, 0.8);
+  let field: { x: number; y: number } | null = null;
+  for (const [dx, dy] of [[0, 4], [2, 4], [-2, 4], [0, 6], [3, 3], [-3, 3], [0, 2]]) {
+    const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [SQUAD.x + dx, SQUAD.y + dy] as const);
+    if (cell === null) continue;
+    const p = await toScreen(page, cell);
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === null) {
+      field = cell;
+      break;
+    }
+  }
+  if (field === null) throw new Error("no open ground to march to");
+  const ground = field;
+  await tap(page, await toScreen(page, ground));
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: troops, x: ground.x, y: ground.y });
+  // Wait until every one of them has arrived: no order, and the same positions twice in a row.
+  let before = "";
+  await expect
+    .poll(
+      async () => {
+        const list = (await units(page)).filter((u) => troops.includes(u.id));
+        const now = list.map((u) => `${u.fx.toFixed(2)},${u.fy.toFixed(2)}`).join(";");
+        const still = list.length === troops.length && list.every((u) => u.order === 0) && now === before;
+        before = now;
+        return still;
+      },
+      { timeout: 90_000, intervals: [500] },
+    )
+    .toBe(true);
+  // Each one's nearest neighbour: about 2 cells in 散開 (1 in 密集).
+  const arrived = (await units(page)).filter((u) => troops.includes(u.id));
+  const nearest = arrived
+    .map((a) => Math.min(...arrived.filter((b) => b.id !== a.id).map((b) => Math.hypot(a.fx - b.fx, a.fy - b.fy))))
+    .sort((a, b) => a - b);
+  const median = nearest[Math.floor(nearest.length / 2)];
+  await shot(page, info, "11-loose-formation");
+  expect(median, `nearest neighbours ${nearest.map((d) => d.toFixed(2)).join(", ")}`).toBeGreaterThanOrEqual(1.7);
+  expect(median, "not scattered").toBeLessThanOrEqual(2.5);
   check();
 });
