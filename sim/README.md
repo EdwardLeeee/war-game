@@ -30,6 +30,7 @@
 | `src/worker.ts`、`src/headless.ts` | Web Worker；Node 命令列 |
 | `src/scripts/eco.ts` | 無畫面工具用來推動雙方經濟的固定腳本（不是 AI，只讀自己的 PlayerView） |
 | `src/tournament.ts`、`src/tournament-summary.ts` | 100 場 AI 對打（每場重播比對）與彙整、門檻 |
+| `src/balance.ts`、`src/balance-lib.ts` | 兵種平衡量測：花費相同的小型對戰（三種打法、距離 8／9／10 格、攻方散開、打城鎮），比較第二輪的數值和程式裡的數值，標出五條目標（第三輪，D-026） |
 | `src/browser-check.ts`、`src/browser-replay.ts` | 在 Chromium、WebKit 重播 Node 產生的紀錄，比對雜湊 |
 
 ## 每個 tick 的順序
@@ -119,6 +120,7 @@ npm test
 node src/headless.ts --scenario skirmish --script demo --ticks 3000 --out /tmp/sk
 node src/headless.ts --replay /tmp/sk/commands.jsonl --ticks 3000 --out /tmp/sk-replay   # 雜湊應該相同
 node src/headless.ts --scenario standard --script eco --ticks 6000 --out /tmp/eco          # 雙方經濟腳本
+node src/balance.ts                    # 兵種平衡量測（Markdown，約 5 秒）；--check 1,2,3,4 時目標沒成立就 exit 1
 ```
 
 在這台開發機上，重工作一律用 `systemd-run --user --scope -q -p MemoryMax=1500M -p MemorySwapMax=0` 包起來。完整對局、100 場 AI 對打和瀏覽器測試交給 CI（`.github/workflows/sim.yml`）。
@@ -229,7 +231,7 @@ D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與�
 |---|---|---|
 | 散開隊形 | 一起下指令的部隊超過一半帶 `Loose`：間距 2 格；不然照舊 1 格 | 晶砲半徑 1.5 格：站好時一發只打到一名（D-027；使用者：「不然法師一炮就帶走了」） |
 | 按下散開或密集時重排 | 站著的兵相距 3 格內算同一隊（至少 2 名），在原地重排、中心不動；朝向依近戰兵站在哪一邊，只有一種兵時朝敵方主城；位置照站的前後左右分，或照 id 分，取最遠那名走得比較少的一種；還在路上的隊伍在原目的地重排 | ceo 選「按下去就重排」，不能把分散在各地的兵拉到一起；16 名方陣照 id 分要 94 tick 才排好，照站位分 39 tick |
-| 隊形的最後一段 | 離目的地已經不比自己的位置遠、而且直線走得到（每半格檢查一次，斜走不切角）時，直接朝自己的位置走 | 整隊共用一張往目的地的路線圖：寬隊形兩側的位置永遠不會進到 3 格內，那些兵就在目的地來回走、不會抵達（改之前斜走 30 格：密集 36 名有 4 名、散開 25 名有 10 名到不了） |
+| 隊形的最後一段 | 離目的地已經不比自己的位置遠、而且直線走得到（每半格檢查一次，斜走不切角）時，直接朝自己的位置走 | 整隊共用一張往目的地的路線圖：寬隊形兩側的位置永遠不會進到 3 格內，那些兵就在目的地來回走、不會抵達（改之前斜走約 25 格：密集 36 名有 4 名、散開 25 名有 10 名到不了） |
 
 ## 進度（照核准的計畫分 5 個 PR）
 
