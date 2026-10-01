@@ -32,6 +32,7 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.TownChoiceMade]: "這座城鎮已經選過了",
   [Reject.GameOver]: "這局已經結束",
   [Reject.OutOfRange]: "超出晶砲射程（8 格）",
+  [Reject.NoFarmer]: "附近沒有可以派去蓋的農民",
 };
 
 /**

@@ -256,6 +256,35 @@ test("指令區：選農民 → 建造 → 民居 → 放下 → ✓", async ({ 
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: farmers, type: 1, x: 21, y: 76 });
 });
 
+test("不選農民也能蓋：什麼都沒選 → 建造 → 民居 → ✓，送出不帶農民的 build；挑不到農民時有提示（D-024）", async ({ page }, info) => {
+  await centre(page, 18, 77);
+  await select(page, []);
+  await page.getByRole("button", { name: "建造" }).tap();
+  await page.getByRole("button", { name: /^民居/ }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("place:dragging");
+  await expect(page.getByText("會派最近的農民去蓋")).toBeVisible();
+  await tap(page, await at(page, { x: 21, y: 76 }));
+  await shot(page, info, "build-without-farmers");
+  await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: [], type: 1, x: 21, y: 76 });
+  // The fake world, like the simulation, sends the nearest farmer: a foundation appears.
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).some((b) => b.type === 1 && b.cx === 21 && b.cy === 76)).toBe(true);
+  // No farmer to send (Reject.NoFarmer = 15).
+  const seq = ((await lastSent(page)) as { seq: number }).seq;
+  await page.evaluate((s) => window.__proto?.game?.inject({ k: "rejected", seq: s, reason: 15 }), seq);
+  await expect(page.getByRole("status").filter({ hasText: "附近沒有可以派去蓋的農民" })).toBeVisible();
+});
+
+test("主城的指令區也有建造", async ({ page }) => {
+  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
+  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await expect(page.locator(".sel-info")).toContainText("主城");
+  await page.getByRole("button", { name: "建造" }).tap();
+  await expect(page.getByRole("button", { name: /^民居/ })).toBeVisible();
+  await page.getByRole("button", { name: "返回" }).tap();
+  await expect(page.getByRole("button", { name: /^訓練農民/ })).toBeVisible();
+});
+
 test("指令區與選取資訊：選兵營 → 訓練槍兵 → 佇列顯示，點它取消", async ({ page }, info) => {
   await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
   await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));

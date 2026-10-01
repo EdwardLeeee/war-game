@@ -306,6 +306,8 @@ export class CommandArea {
   private readonly host: PanelHost;
   private key = "";
   private page: "main" | "build" = "main";
+  /** What is selected; a new selection goes back to the first page. */
+  private ident = "";
 
   constructor(parent: HTMLElement, host: PanelHost) {
     this.host = host;
@@ -316,6 +318,11 @@ export class CommandArea {
   update(): void {
     const view = this.host.view();
     if (view === null || view.curr === null) return;
+    const ident = `${view.selection.units.join(",")}|${view.selection.building}`;
+    if (ident !== this.ident) {
+      this.ident = ident;
+      this.page = "main";
+    }
     const key = `${this.keyFor(view)}|${this.page}|${this.host.mode()}`;
     if (key === this.key) return;
     this.key = key;
@@ -338,17 +345,16 @@ export class CommandArea {
       const b = view.curr?.snap.buildings;
       return o < 0 || b === undefined ? "none" : `b:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}`;
     }
-    if (this.page === "build") this.page = "main";
     return "none";
   }
 
   private build(view: GameView): void {
     const sel = view.selection;
     const mode = this.host.mode();
+    // The 建造 page opens from farmers, from nothing selected or from the main city (D-024).
+    if (this.page === "build") return this.buildMenu(view);
     if (sel.units.length > 0) {
       const types = new Set(sel.units.map((id) => view.unitType(id)));
-      if (this.page === "build" && types.has(UnitType.Farmer)) return this.buildMenu(view);
-      this.page = "main";
       if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
       const retreat = button(this.el, mode === "retreat" ? "取消撤退" : "撤退", "", () => this.host.setMode(mode === "retreat" ? "normal" : "retreat"));
       if (mode === "retreat") retreat.classList.add("active");
@@ -383,19 +389,25 @@ export class CommandArea {
           const rally = button(this.el, mode === "rally" ? "取消集結點" : "集結點", "", () => this.host.setMode(mode === "rally" ? "normal" : "rally"), "secondary");
           if (mode === "rally") rally.classList.add("active");
         }
-        if (type === BuildingType.MainCity) button(this.el, "經濟分配", "", () => this.host.openEconomy(), "secondary");
+        if (type === BuildingType.MainCity) {
+          button(this.el, "經濟分配", "", () => this.host.openEconomy(), "secondary");
+          button(this.el, "建造", "", () => this.setPage("build"));
+        }
       }
+      return;
     }
+    // Nothing selected (or only looking at a resource, a town or someone else's building):
+    // 建造 still works, and the simulation sends the nearest farmers (D-024).
+    button(this.el, "建造", "", () => this.setPage("build"));
   }
 
   private buildMenu(view: GameView): void {
-    const farmers = view.selection.units.filter((id) => view.unitType(id) === UnitType.Farmer);
     for (const type of BUILDABLE) {
       const info = view.rules.buildings[type];
       if (info === undefined) continue;
       button(this.el, BUILDING_NAME[type] ?? "", costText(info.cost), () => {
         this.page = "main";
-        if (farmers.length > 0) this.host.startPlacement(type);
+        this.host.startPlacement(type);
       });
     }
     button(this.el, "返回", "", () => this.setPage("main"), "secondary");

@@ -39,8 +39,9 @@ export class Placement {
   }
 
   /** ✓: the build command, or null while the spot is red or nobody can build. */
+  /** The build order; with no farmers chosen the simulation sends the nearest ones (D-024). */
   confirm(): CommandBody | null {
-    if (!this.valid || this.builders.length === 0) return null;
+    if (!this.valid) return null;
     return { c: "build", u: this.builders, type: this.info.type, x: this.cellX, y: this.cellY };
   }
 

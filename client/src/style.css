@@ -92,6 +92,23 @@ a {
   font-size: 17px;
 }
 
+/* 難度 (D-024): 簡單 or 普通, the chosen one in the accent colour. */
+.difficulty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.difficulty span {
+  font-weight: 700;
+}
+
+.difficulty button {
+  min-width: 88px;
+}
+
 .start-buttons {
   display: flex;
   justify-content: center;

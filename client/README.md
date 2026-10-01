@@ -34,6 +34,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 | `ui/hud/` | 介面外殼（臨時版）：`hud.ts`（編隊、全軍、閒置、全體回城、被攻擊箭頭、經濟分配、搶或治理、選單、勝負）、`panels.ts`（資源列、選取資訊、指令區）、`minimap.ts`、`names.ts`（顯示用名稱）、`economy-ratio.ts` |
 | `lab/` | 量測與確定性檢查（互斥、無效標示、對照 CI 雜湊）、log 框 |
 | `tuning.ts` | 長按 350 ms、移動容許 10 px、點兩下 300 ms、慣性等參數 |
+| `difficulty.ts` | 開局畫面的難度：第一次是簡單，之後記住這台手機上次選的；讀寫瀏覽器儲存空間失敗時當成沒存過（D-024） |
 
 戰場接的是 core 的模擬 Worker（`game/port.ts` 的 `createSimPort`，Vite 把 `sim/src/worker.ts` 打包成獨立檔案）。
 確定性檢查另開一個 Worker 跑同一局 AI 對 AI，逐一比對建置時用 `scripts/expected-hashes.sh`
@@ -46,7 +47,9 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 - `?test=1&mock=1`：用假世界代替模擬（`e2e/gestures.spec.ts`、`e2e/hud.spec.ts` 用；版面固定）。
 - `?test=1&ai=0`：對手不由電腦操作，單位站著不動。`e2e/main-flow.spec.ts` 用，免得電腦先搶走小鎮或打掉主城；電腦的行為由 core 的 AI 對打測試。量測一律有電腦。
 
-量測與確定性檢查在「選單 → 量測與確定性檢查」。「開始量測」會開一局 `perf` 場景（所有系統都開著），鏡頭對準交戰部隊，暖機 5 秒後量 30 秒。結果和 log 會附上手機的貼圖上限（最大貼圖、一次繪製幾張、有沒有 ASTC），給精靈圖集用。
+開局畫面選難度（簡單／普通）。玩家的對局沒有時間上限（`init` 的 `maxTicks: 0`），電腦照選的難度下（D-024）。
+
+量測與確定性檢查在「選單 → 量測與確定性檢查」。「開始量測」會開一局 `perf` 場景（所有系統都開著），鏡頭對準交戰部隊，暖機 5 秒後量 30 秒。量測一律用普通、30 分鐘上限，確定性檢查照 CI 的那一局，都不受開局畫面的難度影響。結果和 log 會附上手機的貼圖上限（最大貼圖、一次繪製幾張、有沒有 ASTC），給精靈圖集用。
 
 ## e2e 怎麼模擬觸控
 

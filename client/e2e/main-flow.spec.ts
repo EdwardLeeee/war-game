@@ -1,8 +1,8 @@
 // The brief's main flow, on core's real simulation with its `e2e` scenario (plenty of
 // resources, two houses and a barracks, a squad of 6 spearmen and 4 ranged ten cells from
 // the small town), in WebKit and Chromium at iPhone landscape size with touch:
-// 開局 → 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 前進 → 暫停時下指令 →
-// 攻下城鎮後選搶或治理 → 分出 N 名存成編隊（D-024）.
+// 開局（選難度）→ 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 前進 →
+// 暫停時下指令 → 攻下城鎮後選搶或治理 → 分出 N 名存成編隊 → 不選農民蓋民居（D-024）.
 // Every step goes through the interface the player uses; the test hook only reads state
 // and moves the camera. The opponent stands still (?test=1&ai=0, see step 1).
 
@@ -44,7 +44,7 @@ async function resume(page: Page): Promise<void> {
   await expect.poll(async () => (await header(page)).paused).toBe(false);
 }
 
-test("主要流程：開局 → 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 前進 → 暫停時下指令 → 攻下城鎮後選搶或治理 → 分出 N 名", async ({ page }, info) => {
+test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 前進 → 暫停時下指令 → 攻下城鎮後選搶或治理 → 分出 N 名 → 不選農民蓋民居", async ({ page }, info) => {
   test.setTimeout(300_000);
   const check = watchErrors(page);
 
@@ -53,9 +53,15 @@ test("主要流程：開局 → 選農民 → 蓋房子（重設）→ 訓練 �
   // town first depends on the random seed and on how fast CI runs the steps (run 36758767611:
   // it took the town and our main city fell at 6:22).
   await page.goto("./?test=1&scenario=e2e&tps=100&ai=0");
+  // 選難度（D-024）
+  const easy = page.getByRole("radiogroup", { name: "難度" }).getByRole("radio", { name: "簡單" });
+  await easy.tap();
+  await expect(easy).toBeChecked();
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   expect((await header(page)).scenario, "the e2e scenario").toBe(1);
+  // The chosen 難度 and no time limit reach the simulation (player 1 does not play here: ai=0).
+  expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ difficulty: ["normal", "easy"], maxTicks: 0, ai: [false, false] });
   await expect(page.locator(".res-bar")).toContainText(/糧 \d{4}/);
   await shot(page, info, "1-start");
 
@@ -213,5 +219,34 @@ test("主要流程：開局 → 選農民 → 蓋房子（重設）→ 訓練 �
   await shot(page, info, "9-split");
   await page.getByRole("button", { name: `改選其餘 ${army.length - half} 名` }).tap();
   await expect.poll(async () => (await selection(page))?.units).toEqual(army.filter((id) => !part.includes(id)));
+
+  // 10. 不選農民蓋民居（D-024）：重設 → 建造 → 民居 → ✓，由模擬派最近的農民去蓋
+  await page.getByRole("button", { name: "重設" }).tap();
+  await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
+  await centre(page, { x: farmers[0].cx, y: farmers[0].cy });
+  await page.getByRole("button", { name: "建造" }).tap();
+  await page.getByRole("button", { name: /^民居/ }).tap();
+  let spot2: { cellX: number; cellY: number } | null = null;
+  for (const [dx, dy] of [[-4, 3], [-5, 2], [-3, 4], [0, 5], [5, 4], [4, -3], [5, -2], [3, -4], [6, -3], [4, -5], [7, -1], [2, -5], [6, 0], [-6, -2]]) {
+    const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [farmers[0].cx + dx, farmers[0].cy + dy] as const);
+    if (cell === null) continue;
+    await tap(page, await toScreen(page, cell));
+    const p = await placement(page);
+    if (p?.valid === true) {
+      spot2 = p;
+      break;
+    }
+  }
+  if (spot2 === null) throw new Error("no green spot for the second house");
+  const house2 = spot2;
+  await shot(page, info, "10-house-without-farmers");
+  await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: [], type: HOUSE, x: house2.cellX, y: house2.cellY });
+  await resume(page);
+  // The simulation sent the nearest farmer: the foundation is there and building has started.
+  await expect
+    .poll(async () => (await buildings(page)).find((b) => b.owner === me && b.type === HOUSE && b.cx === house2.cellX && b.cy === house2.cellY)?.progress ?? -1, { timeout: 30_000 })
+    .toBeGreaterThan(0);
+  await expect(page.getByText("附近沒有可以派去蓋的農民")).toBeHidden();
   check();
 });

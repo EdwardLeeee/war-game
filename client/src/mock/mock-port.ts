@@ -499,6 +499,15 @@ export class MockPort implements SimPort {
     };
   }
 
+  /** Our n farmers nearest the cell (cx, cy), nearest first, ties to the lower id. */
+  private nearestFarmers(cx: number, cy: number, n: number): MUnit[] {
+    const d = (u: MUnit) => (u.x / CELL - cx) * (u.x / CELL - cx) + (u.y / CELL - cy) * (u.y / CELL - cy);
+    return this.units
+      .filter((u) => u.owner === ME && u.type === UnitType.Farmer)
+      .sort((a, b) => d(a) - d(b) || a.id - b.id)
+      .slice(0, n);
+  }
+
   private everSeen(b: MBuilding): boolean {
     const s = MOCK_RULES.buildings[b.type].size;
     for (let y = b.cy; y < b.cy + s; y++) for (let x = b.cx; x < b.cx + s; x++) if (this.fog[y * SIZE + x] > 0) return true;
@@ -559,8 +568,14 @@ export class MockPort implements SimPort {
           reject(Reject.BadPlacement);
           break;
         }
+        // No farmers named (D-024): the nearest ones, as the simulation does (sim/PROTOCOL.md 3.1).
+        const builders = cmd.u.length > 0 ? own(cmd.u) : this.nearestFarmers(cmd.x + info.size / 2, cmd.y + info.size / 2, info.size >= 3 ? 2 : 1);
+        if (builders.length === 0) {
+          reject(Reject.NoFarmer);
+          break;
+        }
         this.building(ME, cmd.type, cmd.x, cmd.y).progress = 0;
-        goTo(own(cmd.u), cmd.x + info.size, cmd.y + info.size, Order.Build);
+        goTo(builders, cmd.x + info.size, cmd.y + info.size, Order.Build);
         break;
       }
       case "rally": {
