@@ -166,7 +166,7 @@ for pc in job["pieces"]:
     sW, sH = int(math.ceil((sL + sR) * ppm / 2)), int(math.ceil((sU + sD) * ppm / 2))
     s_anchor = (sL * ppm / 2, sU * ppm / 2)
     cam = lib.Camera(W, H, ppm, anchor)
-    fx, fy = FOOT.get(kind, (1, 1))
+    fx, fy = pc.get("footprint") or FOOT.get(kind, (1, 1))
     smoke_at = [list(o.matrix_world.translation) for o in bpy.data.objects if o.name.startswith("smoke_at")]
     smoke = [dict(pos=list(o.matrix_world.translation), h=o["smoke"][0], r0=o["smoke"][1], r1=o["smoke"][2],
                   dark=o["smoke"][3], alpha=o["smoke"][4], drift=[o["smoke"][5], o["smoke"][6]])

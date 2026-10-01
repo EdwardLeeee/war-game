@@ -45,8 +45,18 @@ TARGETS = {
         + [dict(kind="tground", culture=c, opts=dict(plan=layouts.ground_plan(L)), tag=L["name"])
            for L in (layouts.small(), layouts.large())]) for c in CULTURES},
 }
+# B1-01: the other twelve buildings, the wall pieces and the gates, per culture
+B101 = ("lumber_camp", "mine", "granary", "farm", "range", "mage_hall", "tower", "branch_city", "smithy", "stable",
+        "workshop")
+for _c in CULTURES:
+    TARGETS[f"b101_{_c}"] = ([dict(kind=k, culture=_c, probe=True) for k in B101]
+                             + [dict(kind="wall", culture=_c, opts=dict(piece=p), tag=p) for p in ("x", "y", "corner")]
+                             + [dict(kind="gate", culture=_c, opts=dict(piece="x"), tag="x", footprint=[4, 1]),
+                                dict(kind="gate", culture=_c, opts=dict(piece="y"), tag="y", footprint=[1, 4])])
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
+FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
 
 
 def pieces(target):

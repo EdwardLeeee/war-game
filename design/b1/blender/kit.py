@@ -89,7 +89,36 @@ def palette(culture):
             thatch=mat("thatch_w", (0.66, 0.55, 0.34), 0.95, noise=0.3, noise_scale=30),
             plaque=mat("sign_w", (0.3, 0.2, 0.12), 0.6),
         )
+    for k in ("stone", "brick", "pave"):
+        _boxmap(common[k])
     return common
+
+
+def _boxmap(m):
+    """lib's brick and block patterns map the object's (x, z) onto the texture, so a face that looks
+    along x (the -X face the camera sees) gets one smeared column. Map (x + y, z) instead: both
+    camera faces get courses of stones."""
+    if m is None or m.get("boxmap"):
+        return m
+    nt = m.node_tree
+    mp = next((n for n in nt.nodes if n.bl_idname == "ShaderNodeMapping"), None)
+    br = next((n for n in nt.nodes if n.bl_idname == "ShaderNodeTexBrick"), None)
+    if mp is None or br is None:
+        return m
+    co = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(co.outputs["Object"], sep.inputs[0])
+    add = nt.nodes.new("ShaderNodeMath")
+    add.operation = "ADD"
+    nt.links.new(sep.outputs["X"], add.inputs[0])
+    nt.links.new(sep.outputs["Y"], add.inputs[1])
+    comb = nt.nodes.new("ShaderNodeCombineXYZ")
+    nt.links.new(add.outputs[0], comb.inputs["X"])
+    nt.links.new(sep.outputs["Z"], comb.inputs["Y"])
+    for link in list(mp.outputs["Vector"].links):
+        nt.links.new(comb.outputs[0], link.to_socket)
+    m["boxmap"] = True
+    return m
 
 
 EMBLEM = {"E": "crane", "W": "twintowers"}       # 南溟, 布倫莫爾: decoration only (ceo 2026-10-01)

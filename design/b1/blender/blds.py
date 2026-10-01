@@ -186,3 +186,7 @@ def barracks(root, c):
 
 
 BUILDERS = {"main_city": main_city, "house": house, "barracks": barracks}
+
+import blds2  # noqa: E402  (the other twelve)
+
+BUILDERS.update(blds2.BUILDERS)
