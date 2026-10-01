@@ -49,6 +49,7 @@ interface Alert {
 }
 
 export class Hud {
+  private readonly root: HTMLElement;
   private readonly game: Game;
   private readonly life: HudLifecycle;
   private readonly res: ResourceBar;
@@ -60,6 +61,7 @@ export class Hud {
   private readonly groupBtns: HTMLButtonElement[] = [];
   private idleIndex = 0;
   private lastUpdate = 0;
+  private toastAbove = -1;
   private alerts: Alert[] = [];
   private readonly arrowLayer: HTMLElement;
   private readonly dialog: HTMLElement;
@@ -67,6 +69,7 @@ export class Hud {
   private readonly cleanups: (() => void)[] = [];
 
   constructor(root: HTMLElement, game: Game, controlsBar: HTMLElement, life: HudLifecycle) {
+    this.root = root;
     this.game = game;
     this.life = life;
     this.res = new ResourceBar(root);
@@ -166,6 +169,14 @@ export class Hud {
     }
     this.info.update();
     this.cmds.update();
+    // The message strip sits above the selection info, which grows with what is selected
+    // (the stance lines, 分出 N 名; D-026), so that neither covers the other.
+    const panel = this.info.el.hidden ? null : this.info.el.getBoundingClientRect();
+    const above = panel === null ? 0 : Math.ceil(this.root.getBoundingClientRect().bottom - panel.top + 8);
+    if (above !== this.toastAbove) {
+      this.toastAbove = above;
+      this.root.style.setProperty("--toast-above", `${above}px`);
+    }
   }
 
   onEvent(ev: SimEvent): void {

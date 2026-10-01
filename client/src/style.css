@@ -329,11 +329,11 @@ a {
 
 .toast {
   position: absolute;
-  /* Above the selection info and the dialogs: the message answers a tap there (姿態, 留守 −／+).
-     It still lets taps through (#hud). */
+  /* Drawn over the dialogs: the message answers a tap there (留守 −／+). It lets taps through (#hud). */
   z-index: 40;
   left: 50%;
-  bottom: calc(var(--safe-b) + 110px);
+  /* --toast-above: just above the selection info (Hud.frame). */
+  bottom: max(calc(var(--safe-b) + 110px), var(--toast-above, 0px));
   transform: translateX(-50%);
   padding: 8px 14px;
   background: rgba(90, 28, 24, 0.92);

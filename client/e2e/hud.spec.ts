@@ -394,6 +394,14 @@ test("姿態：按鈕寫出現在是哪一種、按了會變成哪一種，選�
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: spear, stance: 1 });
   await expect(toast(page, "已改成堅守。堅守：站在原地不動，只打走進射程的敵人")).toBeVisible();
   expect(await toastOnTop(page), "the message is not behind the selection info").toBe(true);
+  // Nor does it cover the selection info: it sits above it.
+  await expect
+    .poll(async () => {
+      const [strip] = await visibleBoxes(page, ".toast");
+      const [box] = await visibleBoxes(page, ".sel-info");
+      return strip !== undefined && box !== undefined && strip.y + strip.height <= box.y;
+    })
+    .toBe(true);
   await expect(stance).toHaveText("姿態：堅守按一下改成積極");
   await expect(panel).toContainText("堅守：站在原地不動，只打走進射程的敵人");
   await shot(page, info, "stance-hold");
