@@ -7,10 +7,10 @@ on:
   workflow_dispatch:
     inputs:
       round:
-        description: "round2, round3, round4 or round5"
+        description: "round2, round3, round4, round5 or production"
         default: "round5"
       targets:
-        description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare","rosterE1","rosterE2","rosterW1","rosterW2","rosterW3"]'
+        description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare","rosterE1","rosterE2","rosterW1","rosterW2","rosterW3"]; production: unit keys, e.g. ["farmer_e","spear_e","xbow_e","hcav_e","siege_e","mage_e","farmer_w","pike_w","bow_w","knight_w","siege_w","mage_w"]'
         default: '["mageWA", "mageWB", "mageWC", "compare"]'
   push:
     branches: ["design/**"]
@@ -34,7 +34,7 @@ env:
 jobs:
   render:
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
@@ -81,11 +81,23 @@ jobs:
             round2) /usr/bin/python3 blender/render_r2.py --level "${{ matrix.target }}" ;;
             round3) /usr/bin/python3 blender/render_r3.py --target "${{ matrix.target }}" ;;
             round4) /usr/bin/python3 blender/render_r4.py --target "${{ matrix.target }}" ;;
+            production)
+              t="${{ matrix.target }}"
+              case "$t" in
+                # review-<unit>: only the new animations waiting for the user's approval (facing 7, for the GIF)
+                review-*) /usr/bin/python3 blender/render_prod.py --review --target "${t#review-}" ;;
+                # render (3x source), post-process at 3x and 2x, then the checks decide the job result
+                *)
+                  /usr/bin/python3 blender/render_prod.py --target "$t"
+                  /usr/bin/python3 common/postprocess.py --target "$t" --scale 3
+                  /usr/bin/python3 common/postprocess.py --target "$t" --scale 2
+                  /usr/bin/python3 common/checks.py --target "$t" ;;
+              esac ;;
             *)      /usr/bin/python3 blender/render_r5.py --target "${{ matrix.target }}" ;;
           esac
 
       - name: Upload renders
-        if: always()
+        if: always() && env.ROUND != 'production'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ROUND }}-${{ matrix.target }}
@@ -93,3 +105,26 @@ jobs:
             design/${{ env.ROUND }}/build/r*/${{ matrix.target }}/
             design/${{ env.ROUND }}/build/jobs/*.log
           retention-days: 14
+
+      - name: Upload production report (checks, contact sheet, memory)
+        if: always() && env.ROUND == 'production'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-${{ matrix.target }}-report
+          path: |
+            design/production/build/prod/${{ matrix.target }}/report/
+            design/production/build/prod/${{ matrix.target }}/render_stats.json
+            design/production/build/prod/${{ matrix.target }}/atlas_x*/memory.json
+            design/production/build/jobs/*.log
+          retention-days: 90
+
+      - name: Upload production renders and atlases
+        if: always() && env.ROUND == 'production'
+        uses: actions/upload-artifact@v4
+        with:
+          # the 3x source renders are kept so the post-processing can be re-run without rendering again
+          name: production-${{ matrix.target }}
+          path: |
+            design/production/build/prod/${{ matrix.target }}/raw/
+            design/production/build/prod/${{ matrix.target }}/atlas_x*/
+          retention-days: 90
