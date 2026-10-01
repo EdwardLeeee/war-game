@@ -294,13 +294,16 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
     }
   }
   if (inside === null) throw new Error("no open ground inside the town to walk to");
-  await tap(page, await toScreen(page, inside));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: [sp], x: inside.x, y: inside.y });
-  const fromTown = async (id: number) => {
-    const u = (await units(page)).find((v) => v.id === id);
-    return u === undefined ? 99 : Math.hypot(u.fx - (town.cx + 0.5), u.fy - (town.cy + 0.5));
+  const dest = inside;
+  await tap(page, await toScreen(page, dest));
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: [sp], x: dest.x, y: dest.y });
+  // Wait until it stands on that cell. Still walking in, it can pass the spot tapped next to
+  // pick the town, and that tap selects it instead (stability run 36850843922, WebKit).
+  const fromDest = async () => {
+    const u = (await units(page)).find((v) => v.id === sp);
+    return u === undefined ? 99 : Math.hypot(u.fx - (dest.x + 0.5), u.fy - (dest.y + 0.5));
   };
-  await expect.poll(() => fromTown(sp), { timeout: 60_000 }).toBeLessThan(town.radius - 0.5);
+  await expect.poll(fromDest, { timeout: 60_000 }).toBeLessThan(0.6);
   await page.evaluate(() => window.__proto?.game?.select([]));
   let townSpot: { x: number; y: number } | null = null;
   for (const [dx, dy] of [[0, 0], [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2], [2, 2], [-2, -2], [3, 0], [0, 3]]) {
