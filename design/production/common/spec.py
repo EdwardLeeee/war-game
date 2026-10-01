@@ -58,7 +58,7 @@ FPS = {"idle": 8, "walk": 12, "attack": 20, "death": 12, "cast": 20, "hit": 20, 
 # the attack frame (from 0) where the blow lands or the shot leaves, read off the attack curves:
 # spear/pike thrust peaks at t 0.5; crossbow recoil at t 0.4; longbow loose at t 0.6; tool strikes at t 0.7;
 # trebuchet releases near the top of its swing (t 0.4), catapult arm stops at t 0.35; riders have no strike
-# motion yet (lance held couched), mages: stand-in
+# motion yet (lance held couched); mages: the 晶彈 shot leaves at frame 4 (P1-01)
 HIT = {"farmer_e": 7, "spear_e": 5, "xbow_e": 4, "hcav_e": 5, "siege_e": 4, "mage_e": 4,
        "farmer_w": 7, "pike_w": 5, "bow_w": 6, "knight_w": 5, "siege_w": 3, "mage_w": 4}
 
