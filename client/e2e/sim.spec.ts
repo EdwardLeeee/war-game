@@ -216,19 +216,19 @@ test("介面：選農民 → 建造 → 民居 → 找到能蓋的位置 → ✓
     .toBe(true);
 });
 
-test("速度：正常 → 快 1.5× → 慢 0.75× → 正常（每秒 20、30、15 tick）", async ({ page }) => {
+test("速度：正常 → 快 → 慢 → 正常（每秒 30、40、20 tick，D-024）", async ({ page }) => {
   await start(page);
-  await expect.poll(async () => (await header(page)).speed).toBe(2000);
-  const speed = page.getByRole("button", { name: /^速度/ });
-  await expect(speed).toHaveText("速度 正常 1×");
-  await speed.tap();
-  await expect(speed).toHaveText("速度 快 1.5×");
   await expect.poll(async () => (await header(page)).speed).toBe(3000);
+  const speed = page.getByRole("button", { name: /^速度/ });
+  await expect(speed).toHaveText("速度 正常");
   await speed.tap();
-  await expect(speed).toHaveText("速度 慢 0.75×");
-  await expect.poll(async () => (await header(page)).speed).toBe(1500);
+  await expect(speed).toHaveText("速度 快");
+  await expect.poll(async () => (await header(page)).speed).toBe(4000);
   await speed.tap();
+  await expect(speed).toHaveText("速度 慢");
   await expect.poll(async () => (await header(page)).speed).toBe(2000);
+  await speed.tap();
+  await expect.poll(async () => (await header(page)).speed).toBe(3000);
 });
 
 // Which commands the simulation has not built yet changes as core's PRs land (surrender
@@ -330,6 +330,8 @@ test("量測：開一局 perf 場景（所有系統都開著），暖機 5 秒�
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
   await expect(page.getByRole("button", { name: "確定性檢查" })).toBeDisabled();
   await expect(page.locator(".lab-result")).toContainText("場景：perf（所有系統都開著）", { timeout: 90_000 });
+  // Measured at the speed the player plays at (D-024: 正常 is 30 ticks per second).
+  await expect(page.locator(".lab-result")).toContainText("tick 速度：每秒 30 tick（正常）");
   // The texture limits for the sprite atlas (client/docs/sprite-atlas.md section 8).
   await expect(page.locator(".lab-result")).toContainText(/最大貼圖 \d+、一次繪製 \d+ 張、ASTC (有|沒有)/);
   await shot(page, info, "perf-measure");

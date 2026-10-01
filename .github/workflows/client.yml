@@ -48,7 +48,8 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Install (at most 25 minutes, below) plus the tests (about 5).
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -67,7 +68,28 @@ jobs:
       - run: npm run build
       - name: Hashes the page's determinism check compares against (headless run of the same game)
         run: bash scripts/expected-hashes.sh dist/expected-hashes.json
-      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      # Same as sim.yml (core, 3ba971f): apt gives up on a download that stalls for 30 s and
+      # tries it again, up to 5 times, inside one try below.
+      - name: Let apt retry stalled downloads
+        run: printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries
+      # WebKit's system libraries (about 130 MB from the Ubuntu mirror) took 12–18 minutes to
+      # download on some runners (#44, 2026-10-01; normally under a minute). Each try gets
+      # 5 minutes: the first and up to 3 more (at the slowest mirror seen, run 36764218437,
+      # three tries fetched 87 of the 125 MB). Stopping a try leaves its apt-get running under
+      # sudo, holding the dpkg lock (run 36761738752), so it is stopped and waited for before
+      # the next try. apt keeps what it already downloaded, so the next try carries on from
+      # there, and dpkg --configure -a finishes an interrupted unpack.
+      - name: Install ${{ matrix.browser }}
+        timeout-minutes: 25
+        run: |
+          for attempt in 1 2 3 4; do
+            if timeout --kill-after=20s 300 npx playwright install --with-deps ${{ matrix.browser }}; then exit 0; fi
+            echo "::warning::installing ${{ matrix.browser }}: try $attempt failed or took over 5 minutes"
+            sudo pkill -x apt-get || true
+            for i in $(seq 60); do pgrep -x apt-get > /dev/null || pgrep -x dpkg > /dev/null || break; sleep 1; done
+            sudo dpkg --configure -a || true
+          done
+          exit 1
       - run: npx playwright test --project=${{ matrix.browser }}
       - if: always()
         uses: actions/upload-artifact@v7

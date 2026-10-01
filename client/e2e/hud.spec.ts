@@ -130,6 +130,94 @@ test("編隊：長按存成編隊、點一下選取、點兩下跳過去", async
   expect(Math.abs(c.y - 69)).toBeLessThan(1.5);
 });
 
+test("重設：一按就取消選取、離開撤退／集結點／放建築、回到指令區第一頁、關掉量測面板（D-024）", async ({ page }, info) => {
+  const reset = page.getByRole("button", { name: "重設" });
+  const mode = () => page.evaluate(() => window.__proto?.game?.mode());
+  const nothing = { units: [], building: null };
+
+  // 撤退：選兵 → 撤退 → 重設
+  await selectSpearmen(page);
+  await page.getByRole("button", { name: "撤退", exact: true }).tap();
+  await expect(page.getByText("點地面或小地圖選撤退位置")).toBeVisible();
+  await shot(page, info, "reset-before");
+  await reset.tap();
+  await expect.poll(mode).toBe("normal");
+  await expect(page.getByText("點地面或小地圖選撤退位置")).toBeHidden();
+  await expect.poll(() => selection(page)).toEqual(nothing);
+  await expect(page.locator(".sel-info")).toBeHidden();
+
+  // 集結點：選兵營 → 集結點 → 重設
+  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
+  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await expect(page.locator(".sel-info")).toContainText("兵營");
+  await page.getByRole("button", { name: "集結點" }).tap();
+  await expect.poll(mode).toBe("rally");
+  await reset.tap();
+  await expect.poll(mode).toBe("normal");
+  await expect.poll(() => selection(page)).toEqual(nothing);
+
+  // 建造子選單：選農民 → 建造 → 重設
+  const farmers = await ownIds(page, [0]);
+  await select(page, farmers);
+  await page.getByRole("button", { name: "建造" }).tap();
+  await expect(page.getByRole("button", { name: /^民居/ })).toBeVisible();
+  await reset.tap();
+  await expect(page.getByRole("button", { name: /^民居/ })).toBeHidden();
+  await expect.poll(() => selection(page)).toEqual(nothing);
+
+  // 放建築：選農民 → 建造 → 民居 → 重設
+  await select(page, farmers);
+  await page.getByRole("button", { name: "建造" }).tap();
+  await page.getByRole("button", { name: /^民居/ }).tap();
+  await expect.poll(mode).toBe("place:dragging");
+  await reset.tap();
+  await expect.poll(mode).toBe("normal");
+  expect(await page.evaluate(() => window.__proto?.game?.placement())).toBeNull();
+  await expect(page.getByText("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗")).toBeHidden();
+
+  // 量測面板（沒在量測時）
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "量測與確定性檢查" }).tap();
+  const lab = page.getByRole("region", { name: "量測與確定性檢查" });
+  await expect(lab).toBeVisible();
+  await reset.tap();
+  await expect(lab).toBeHidden();
+});
+
+test("分出 N 名：− N + 或直接輸入，分出來的變成新的選取，可以存成編隊，再改選其餘（D-024）", async ({ page }, info) => {
+  const ids = await selectSpearmen(page);
+  const go = page.getByRole("button", { name: /^分出 \d+ 名$/ });
+  // 6 名：預設分出一半（3 名），範圍 1–5。
+  await expect(go).toHaveAccessibleName("分出 3 名");
+  await page.getByRole("button", { name: "多分出 1 名" }).tap();
+  await expect(go).toHaveAccessibleName("分出 4 名");
+  await page.getByRole("button", { name: "少分出 1 名" }).tap();
+  await expect(go).toHaveAccessibleName("分出 3 名");
+  const box = page.getByRole("spinbutton", { name: "分出幾名" });
+  await box.fill("2");
+  await expect(go).toHaveAccessibleName("分出 2 名");
+  await shot(page, info, "split-row");
+  await go.tap();
+  await expect.poll(async () => (await selection(page))?.units.length).toBe(2);
+  const picked = (await selection(page))?.units ?? [];
+  expect(picked.every((id) => ids.includes(id))).toBe(true);
+  // Saved as a control group.
+  await longPressOn(page, GROUP_1);
+  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(picked);
+  // The other 4, in one tap.
+  await page.getByRole("button", { name: "改選其餘 4 名" }).tap();
+  await expect.poll(async () => (await selection(page))?.units).toEqual(ids.filter((id) => !picked.includes(id)));
+  // The panel redraws on the next interface update (10 a second): wait for it before typing,
+  // or the digits go into the old box (run 36758767611, WebKit).
+  await expect(page.locator(".sel-info")).toContainText("已選 4 個單位");
+  await expect(go).toHaveAccessibleName("分出 2 名");
+  // Typed numbers are kept in range: 99 → 3 (the most for 4 units).
+  await box.fill("99");
+  await box.blur();
+  await expect(box).toHaveValue("3");
+  await expect(go).toHaveAccessibleName("分出 3 名");
+});
+
 test("閒置農民：點一下跳到下一個並選取，長按全部選取", async ({ page }) => {
   const idle = await ownIds(page, [0]);
   await expect(page.locator(".idle-btn")).toHaveText(`閒置 ${idle.length}`);
@@ -203,6 +291,34 @@ test("攻下城鎮：跳出「搶」「治理」兩個大按鈕", async ({ page 
   await dialog.getByRole("button", { name: /^治理/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: 0, choice: 1 });
   await expect(dialog).toBeHidden();
+});
+
+test("攻下城鎮：稍後再決定之後，點城鎮會再跳出搶或治理", async ({ page }) => {
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: /^稍後再決定/ }).tap();
+  await expect(dialog).toBeHidden();
+  // The small town at (30, 66) is now waiting for the choice; tapping it offers both again.
+  await centre(page, 30, 66);
+  // TownState.AwaitingChoice = 1.
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).find((t) => t.id === 0)?.state).toBe(1);
+  // A point inside the town where a tap picks the town itself (not a militia man or a tree).
+  let spot: { x: number; y: number } | null = null;
+  for (const [dx, dy] of [[0, 0], [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2]]) {
+    const p = await at(page, { x: 30.5 + dx, y: 66.5 + dy });
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === "town") {
+      spot = p;
+      break;
+    }
+  }
+  if (spot === null) throw new Error("no open ground inside the town");
+  await tap(page, spot);
+  // The choice comes back (GDD §10): the dialog again, and 搶／治理 in the selection info under it.
+  await expect(dialog).toBeVisible();
+  await expect(page.locator(".sel-info").getByRole("button", { name: "搶", exact: true })).toBeAttached();
+  await dialog.getByRole("button", { name: /^搶/ }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
 });
 
 test("被攻擊：小地圖閃、畫面邊緣出現箭頭，點箭頭跳過去", async ({ page }, info) => {

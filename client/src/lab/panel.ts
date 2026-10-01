@@ -104,6 +104,15 @@ export class LabPanel {
     this.panel.hidden = false;
   }
 
+  hide(): void {
+    this.panel.hidden = true;
+  }
+
+  /** Measuring or checking (重設 leaves the panel open then). */
+  get busy(): boolean {
+    return this.lab.phase !== "idle";
+  }
+
   get open(): boolean {
     return !this.panel.hidden;
   }
@@ -199,6 +208,7 @@ export class LabPanel {
     box.replaceChildren();
     make("h3", box, "", r.valid ? (r.pass ? "通過" : "未通過") : "無效");
     make("p", box, "", `場景：${String(env.scenario ?? "?")}${env.scenario === "perf" ? "（所有系統都開著）" : ""}`);
+    make("p", box, "", `tick 速度：${String(env.tickRate ?? "?")}`);
     if (!r.valid) make("p", box, "bad", `原因：${r.reasons.join("、")}。請重新量測。`);
     const rows: [string, string, boolean][] = [
       ["fps 中位數", `${r.fpsMedian}（標準 ≥ ${PASS.fpsMedian}）`, r.fpsMedian >= PASS.fpsMedian],

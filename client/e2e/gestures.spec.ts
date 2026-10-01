@@ -20,7 +20,11 @@ let checkErrors: () => void;
 
 test.beforeEach(async ({ page }) => {
   checkErrors = watchErrors(page);
-  await page.goto("./?test=1&mock=1");
+  // The fake world runs on the page's main thread; at 30 ticks per second (the new normal,
+  // D-024) CI's WebKit (software drawing at 3x) sometimes stalls past the hold cue's window:
+  // 2 of 20 long presses failed at 30, none at 20 (run 36765936608). These tests are about
+  // the fingers, not the game speed; on the phone the simulation runs in a Worker.
+  await page.goto("./?test=1&mock=1&tps=20");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   await centre(page, 22, 71);

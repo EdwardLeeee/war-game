@@ -76,6 +76,8 @@ export class Hud {
     menu.setAttribute("aria-haspopup", "dialog");
 
     const left = el("div", root, "side-left");
+    // 重設 (D-024): one tap back to nothing selected; kept apart from 全體回城 below it.
+    btn(left, "重設", () => game.reset(), "reset-btn");
     this.recallBtn = btn(left, "全體回城", () => this.toggleRecall(), "secondary");
     this.idleBtn = el("button", left, "idle-btn", "閒置 0");
     this.idleBtn.type = "button";
@@ -112,6 +114,9 @@ export class Hud {
       chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice),
       selectOnly: (units: number[]) => game.apply([{ kind: "select", units }]),
       clearSelection: () => game.apply([{ kind: "clear" }]),
+      splitSelection: (n: number) => game.splitSelection(n),
+      selectRest: () => game.selectRest(),
+      lastSplit: () => game.lastSplit,
     };
     this.minimap = new Minimap(root, {
       view: () => game.view,
@@ -342,6 +347,12 @@ export class Hud {
     return card;
   }
 
+  /** 重設: close the open dialog unless it is the result screen, and put the command area back on its first page. */
+  closePanels(): void {
+    if (this.dialogOpen && !this.dialog.classList.contains("result")) this.closeDialog();
+    this.cmds.reset();
+  }
+
   closeDialog(): void {
     this.dialog.hidden = true;
     this.dialog.replaceChildren();
@@ -425,7 +436,8 @@ export class Hud {
   }
 
   /** GDD §5: 城鎮被攻下時，畫面會跳出兩個大按鈕：搶或治理. */
-  private openTownChoice(town: number): void {
+  /** 搶還是治理 (also reopened by tapping the town while it waits, GDD §10). */
+  openTownChoice(town: number): void {
     const size = this.game.view?.map.towns.find((t) => t.id === town)?.size;
     const big = size === TownSize.Large;
     const card = this.openDialog(`攻下${big ? "大城" : "小鎮"}！搶還是治理？`, "town-choice");

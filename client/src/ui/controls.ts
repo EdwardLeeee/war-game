@@ -7,7 +7,14 @@ import { SPEED_TPS } from "../params.ts";
 export type SpeedName = keyof typeof SPEED_TPS;
 
 const ORDER: SpeedName[] = ["normal", "fast", "slow"];
-export const SPEED_LABEL: Record<SpeedName, string> = { slow: "慢 0.75×", normal: "正常 1×", fast: "快 1.5×" };
+// No multipliers on the button: "正常 1.5×" would read as a sped-up normal (D-024).
+export const SPEED_LABEL: Record<SpeedName, string> = { slow: "慢", normal: "正常", fast: "快" };
+
+/** The tick rate for the lab's result and log, e.g. 每秒 30 tick（正常）. */
+export function tickRateText(tps: number): string {
+  const name = (Object.keys(SPEED_TPS) as SpeedName[]).find((k) => SPEED_TPS[k] === tps);
+  return `每秒 ${tps} tick${name === undefined ? "" : `（${SPEED_LABEL[name]}）`}`;
+}
 
 export function nextSpeed(s: SpeedName): SpeedName {
   return ORDER[(ORDER.indexOf(s) + 1) % ORDER.length];

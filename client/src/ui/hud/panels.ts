@@ -3,6 +3,7 @@
 // be replaced under a finger); numbers that tick (health, progress) update in place.
 
 import type { Mode } from "../../input/intent.ts";
+import { splitRange } from "../../input/split.ts";
 import {
   BuildingField as B,
   BuildingFlag,
@@ -36,6 +37,11 @@ export interface PanelHost {
   selectOnly(units: number[]): void;
   /** Nothing selected (tapping the ground would order the selected units to go there). */
   clearSelection(): void;
+  /** 分出 N 名 (D-024): select n of the selected units. */
+  splitSelection(n: number): void;
+  /** 改選其餘 M 名: the units the last split left behind. */
+  selectRest(): void;
+  lastSplit(): { picked: number[]; rest: number[] } | null;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {
@@ -169,6 +175,45 @@ export class SelectionInfo {
       // Tapping a type keeps only that type selected.
       button(chips, `${UNIT_NAME[type] ?? "單位"} ×${list.length}`, "", () => this.host.selectOnly(list), "chip secondary");
     }
+    // Right after 分出 N 名: one tap to the units left behind, to split again or save another group.
+    const split = this.host.lastSplit();
+    if (split !== null && split.picked.length === ids.length && split.picked.every((id, i) => id === ids[i])) {
+      const rest = split.rest.filter((id) => view.unitRow(id) >= 0).length;
+      if (rest > 0) button(chips, `改選其餘 ${rest} 名`, "", () => this.host.selectRest(), "chip rest-chip");
+    }
+    this.splitRow(ids.length);
+  }
+
+  /** 分出 N 名 (D-024): − N + and 分出; N can also be typed. */
+  private splitRow(total: number): void {
+    const range = splitRange(total);
+    if (range.max === 0) return;
+    let n = range.initial;
+    const row = el("div", this.el, "sel-split");
+    const minus = button(row, "−", "", () => set(n - 1), "secondary step");
+    minus.setAttribute("aria-label", "少分出 1 名");
+    const input = el("input", row, "split-n");
+    input.type = "number";
+    input.inputMode = "numeric";
+    input.min = `${range.min}`;
+    input.max = `${range.max}`;
+    input.setAttribute("aria-label", "分出幾名");
+    const plus = button(row, "+", "", () => set(n + 1), "secondary step");
+    plus.setAttribute("aria-label", "多分出 1 名");
+    const go = button(row, "分出", "", () => this.host.splitSelection(n), "split-go");
+    const set = (v: number, writeBack = true) => {
+      n = Math.min(Math.max(Math.round(v), range.min), range.max);
+      if (writeBack) input.value = `${n}`;
+      minus.disabled = n <= range.min;
+      plus.disabled = n >= range.max;
+      go.setAttribute("aria-label", `分出 ${n} 名`);
+    };
+    // Typing: follow the digits without rewriting the box mid-edit; tidy it up when done.
+    input.addEventListener("input", () => {
+      if (input.value !== "" && Number.isFinite(Number(input.value))) set(Number(input.value), false);
+    });
+    input.addEventListener("change", () => set(input.value === "" ? n : Number(input.value)));
+    set(n);
   }
 
   private building(view: GameView, id: number): void {
@@ -354,6 +399,11 @@ export class CommandArea {
       });
     }
     button(this.el, "返回", "", () => this.setPage("main"), "secondary");
+  }
+
+  /** 重設: back to the first page (leaves the 建造 list). */
+  reset(): void {
+    this.setPage("main");
   }
 
   private setPage(page: "main" | "build"): void {

@@ -45,6 +45,7 @@ import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
 import { Placement } from "../ui/placement.ts";
+import { type SplitUnit, splitPick } from "../input/split.ts";
 import { GameView } from "../view/view.ts";
 import type { SimPort } from "./port.ts";
 
@@ -54,6 +55,8 @@ export interface GameOptions {
   tps: number;
   /** The port is the fake world (mock/), not the simulation. */
   fake: boolean;
+  /** The opponent is played by the computer (false only on test pages, `?test=1&ai=0`). */
+  enemyAi: boolean;
   env: () => Record<string, unknown>;
   /** A fresh simulation Worker for the determinism check, or null (the fake world has none). */
   checkPort: (() => SimPort) | null;
@@ -77,6 +80,10 @@ export class Game implements GestureHost {
   readonly lab: LabPanel;
   paused = false;
   speed: SpeedName = "normal";
+  /** Ticks per second the simulation runs at (the chosen speed, or `?tps=` on test pages). */
+  tps: number;
+  /** The last 分出 N 名: the units split off and the ones left behind (for 改選其餘). */
+  lastSplit: { picked: number[]; rest: number[] } | null = null;
   /** The last determinism check's result (the test hook reads it). */
   lastCheck: CheckResult | null = null;
   readonly hud: Hud;
@@ -98,6 +105,7 @@ export class Game implements GestureHost {
     this.app = app;
     this.port = port;
     this.options = options;
+    this.tps = options.tps;
     this.hudRoot = hud;
     this.overlays = new Overlays(hud);
     this.controls = new Controls(hud, { togglePause: () => (this.paused ? this.resume() : this.pause()), cycleSpeed: () => this.setSpeed(nextSpeed(this.speed)) });
@@ -232,7 +240,8 @@ export class Game implements GestureHost {
 
   setSpeed(s: SpeedName): void {
     this.speed = s;
-    this.port.postMessage({ type: "speed", tps: SPEED_TPS[s] });
+    this.tps = SPEED_TPS[s];
+    this.port.postMessage({ type: "speed", tps: this.tps });
     this.controls.setSpeed(s);
   }
 
@@ -256,7 +265,7 @@ export class Game implements GestureHost {
       protocol: PROTOCOL_VERSION,
       seed: this.options.seed,
       human: 0,
-      ai: [false, true],
+      ai: [false, this.options.enemyAi],
       tps: this.options.tps,
       scenario: this.options.scenario,
     });
@@ -349,7 +358,7 @@ export class Game implements GestureHost {
     this.lab.frame(now, dt, {
       hidden: document.hidden,
       paused: header !== null && header[H.paused] === 1,
-      normalSpeed: header === null || header[H.speed] === 2000,
+      normalSpeed: header === null || header[H.speed] === SPEED_TPS.normal * 100,
     });
     if (view.curr !== null && this.readyWaiters.length > 0) {
       for (const r of this.readyWaiters.splice(0)) r();
@@ -461,6 +470,8 @@ export class Game implements GestureHost {
         case "inspect":
           view.inspected = it.pick;
           this.overlays.toast(this.describe(it.pick));
+          // A town of ours still waiting for 搶 or 治理: the choice again (GDD §10, after 稍後再決定 or 重設).
+          if (it.pick.kind === "town" && view.townAwaitsMyChoice(it.pick.id)) this.hud.openTownChoice(it.pick.id);
           break;
         case "clear":
           view.selection = { units: [], building: null };
@@ -596,6 +607,53 @@ export class Game implements GestureHost {
 
   wheelItems(): string[] | null {
     return this.overlays.wheelItems;
+  }
+
+  /**
+   * 重設 (D-024, GDD §10): back to nothing selected, no mode, no building preview, no skill
+   * wheel and no open panel. The result screen stays (it holds 重來), and so does the lab
+   * panel while it measures or checks.
+   */
+  reset(): void {
+    this.setMode("normal");
+    if (this.placement !== null) this.endPlacement();
+    this.overlays.closeWheel();
+    this.apply([{ kind: "clear" }]);
+    this.hud.closePanels();
+    if (!this.lab.busy) this.lab.hide();
+  }
+
+  /** 分出 N 名: select n of the selected units (the rule is in input/split.ts) and remember the rest. */
+  splitSelection(n: number): void {
+    const view = this.view;
+    if (view === null) return;
+    const units: SplitUnit[] = [];
+    for (const id of view.selection.units) {
+      const o = view.unitRow(id);
+      if (o < 0) continue;
+      const p = view.unitPos(o);
+      units.push({ id, type: view.unitType(id), x: p.x, y: p.y });
+    }
+    const picked = splitPick(units, n);
+    if (picked.length === 0) return;
+    const rest = units.map((u) => u.id).filter((id) => !picked.includes(id));
+    this.apply([{ kind: "select", units: picked }]);
+    this.lastSplit = { picked, rest };
+    this.toast(`分出 ${picked.length} 名：長按右側 1–4 存成編隊`);
+  }
+
+  /** 改選其餘 M 名 after 分出 N 名: the units left behind that are still alive. */
+  selectRest(): void {
+    const view = this.view;
+    const split = this.lastSplit;
+    if (view === null || split === null) return;
+    const rest = split.rest.filter((id) => view.unitRow(id) >= 0);
+    this.lastSplit = null;
+    if (rest.length === 0) {
+      this.toast("其餘的單位都不在了");
+      return;
+    }
+    this.apply([{ kind: "select", units: rest }]);
   }
 
   /** Start placing a building with the selected farmers (the command area calls this). */
