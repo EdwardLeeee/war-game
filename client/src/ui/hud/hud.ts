@@ -105,6 +105,8 @@ export class Hud {
       this.groupBtns.push(b);
     }
     btn(right, "全軍", () => this.selectArmy(), "army-btn secondary");
+    // 全軍撤退 (user 2026-10-01): nothing to select first. Top left, far from 全軍.
+    btn(root, "全軍撤退", () => game.retreatAll(), "retreat-all-btn");
 
     const host = {
       view: () => game.view,
@@ -118,6 +120,7 @@ export class Hud {
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
       notify: (text: string) => game.toast(text),
+      retreat: () => game.retreatSelection(),
       groupOf: (ids: number[]) => game.groupOf(ids),
       groupRefill: (i: number) => game.army.groups[i].refill,
       toggleRefill: (i: number) => {

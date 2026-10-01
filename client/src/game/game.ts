@@ -12,6 +12,7 @@ import {
   longPressKind,
   type Mode,
   retreatHome,
+  retreatNow,
   tapIntents,
   type WheelItem,
   wheelIntents,
@@ -77,6 +78,9 @@ export interface GameOptions {
   /** 重來 and 回開局畫面 (the page owns games). */
   life: HudLifecycle;
 }
+
+/** After 撤退 went home at once, 「改撤到別處」 stays this long (user 2026-10-01: 撤退很難用). */
+const RETREAT_PROMPT_MS = 4000;
 
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   retreat: "點地面或小地圖選撤退位置",
@@ -757,6 +761,47 @@ export class Game implements GestureHost {
     return { x: (b[o + BuildingField.cellX] + s / 2) * TILE_PX, y: (b[o + BuildingField.cellY] + s / 2) * TILE_PX };
   }
 
+  /** 撤退 in the command area, with units selected: straight back to the main city. */
+  retreatSelection(): void {
+    const view = this.view;
+    if (view === null) return;
+    this.retreated(retreatNow(view.selection, view.homeCell()));
+  }
+
+  /**
+   * 全軍撤退 (user 2026-10-01): every soldier but the garrisons back to the main city, without
+   * selecting them first. What is selected stays selected.
+   */
+  retreatAll(): void {
+    const view = this.view;
+    if (view === null) return;
+    const u = this.armyIds();
+    if (u.length === 0) {
+      this.toast("沒有可以撤退的士兵");
+      return;
+    }
+    const home = view.homeCell();
+    if (home === null) {
+      this.toast("主城不在了，沒有地方可以撤退");
+      return;
+    }
+    this.apply([{ kind: "command", cmd: { c: "retreat", u, x: home.x, y: home.y } }]);
+    this.toast(`全軍 ${u.length} 名退回主城`);
+  }
+
+  /** After 撤退 (command area or wheel): on the way home, 「改撤到別處」 for a few seconds; without a main city, pick a spot. */
+  private retreated(r: { mode: Mode | null; intents: Intent[] }): void {
+    if (r.mode !== null) {
+      this.setMode(r.mode);
+      this.toast("主城不在了：點地面或小地圖選撤退位置");
+      return;
+    }
+    if (r.intents.length === 0) return;
+    this.setMode("normal");
+    this.apply(r.intents);
+    this.overlays.showPrompt("正在退回主城", [{ label: "改撤到別處", primary: true, onTap: () => this.setMode("retreat") }], RETREAT_PROMPT_MS);
+  }
+
   setMode(mode: Mode): void {
     this.mode = mode;
     if (mode === "normal") {
@@ -790,6 +835,7 @@ export class Game implements GestureHost {
       items.map((id) => ({ id, label: label[id] })),
       (id) => {
         const r = wheelIntents(view, view.selection, id as WheelItem);
+        if (id === "retreat") return this.retreated(r);
         this.apply(r.intents);
         if (r.mode !== null) this.setMode(r.mode);
       },

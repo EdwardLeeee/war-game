@@ -134,7 +134,7 @@ test("雙指捏合 → 縮放", async ({ page }) => {
   expect(await lastSent(page)).toBeUndefined();
 });
 
-test("長按法師 → 技能輪盤：晶砲、自動施放、撤退；撤退要選位置，也可以直接退回主城", async ({ page }, info) => {
+test("長按法師 → 技能輪盤：晶砲、自動施放、撤退；撤退直接退回主城，提示列的「改撤到別處」再選位置", async ({ page }, info) => {
   const mage = await idAt(page, MAGE);
   await longPress(page, await at(page, MAGE));
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.wheel())).toEqual(["cast", "autocast", "retreat"]);
@@ -146,11 +146,16 @@ test("長按法師 → 技能輪盤：晶砲、自動施放、撤退；撤退要
   }
   await shot(page, info, "wheel-mage");
   await page.getByRole("menuitem", { name: "撤退" }).tap();
+  // Straight back to the cell in front of the main city at (8, 80), 4 cells: (12, 79).
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: [mage], x: 12, y: 79 });
+  expect(await mode(page)).toBe("normal");
+  await expect(page.getByText("正在退回主城")).toBeVisible();
+  await shot(page, info, "retreat-prompt");
+  await page.getByRole("button", { name: "改撤到別處" }).tap();
   expect(await mode(page)).toBe("retreat");
   await expect(page.getByText("點地面或小地圖選撤退位置")).toBeVisible();
-  await shot(page, info, "retreat-prompt");
-  await page.getByRole("button", { name: "退回主城" }).tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: [mage] });
+  await page.getByRole("button", { name: "退回主城", exact: true }).tap();
+  await expect.poll(() => page.evaluate(() => ((window.__proto?.game?.sent() ?? []) as { c: string }[]).filter((c) => c.c === "retreat").length)).toBe(2);
   expect(await mode(page)).toBe("normal");
 });
 
@@ -173,14 +178,22 @@ test("長按其他兵種 → 技能輪盤：撤退、姿態", async ({ page }, i
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [spear], stance: 1 });
 });
 
-test("撤退：點地面選位置，或按取消離開", async ({ page }) => {
+test("撤退：改撤到別處之後點地面選位置，或按取消離開", async ({ page }) => {
   const spear = await idAt(page, SPEAR);
-  await longPress(page, await at(page, SPEAR));
+  // Where the spearman stands now (it walks once told to retreat).
+  const now = async () => {
+    const u = (await units(page)).find((v) => v.id === spear);
+    if (u === undefined) throw new Error("the spearman is gone");
+    return { x: u.sx, y: u.sy };
+  };
+  await longPress(page, await now());
   await page.getByRole("menuitem", { name: "撤退" }).tap();
+  await page.getByRole("button", { name: "改撤到別處" }).tap();
   await tap(page, await at(page, { x: 12, y: 74 }));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: [spear], x: 12, y: 74 });
-  await longPress(page, await at(page, SPEAR));
+  await longPress(page, await now());
   await page.getByRole("menuitem", { name: "撤退" }).tap();
+  await page.getByRole("button", { name: "改撤到別處" }).tap();
   await page.getByRole("button", { name: "取消", exact: true }).tap();
   expect(await mode(page)).toBe("normal");
 });

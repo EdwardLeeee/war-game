@@ -3,7 +3,7 @@
 // the small town), in WebKit and Chromium at iPhone landscape size with touch:
 // 開局（選難度）→ 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 改姿態 → 前進 →
 // 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開、城鎮不叛離 → 編隊缺人後新兵補進來 →
-// 分出 N 名存成編隊 → 不選農民蓋民居 → 散開隊形（D-024、D-026、D-027）.
+// 分出 N 名存成編隊 → 不選農民蓋民居 → 散開隊形 → 全軍撤退（D-024、D-026、D-027）.
 // Every step goes through the interface the player uses; the test hook only reads state
 // and moves the camera. The opponent stands still (?test=1&ai=0, see step 1).
 
@@ -14,6 +14,7 @@ import { doubleTap, longPress, longPressOn, tap } from "./touch.ts";
 const FARMER = 0;
 const SPEARMAN = 1;
 const RANGED = 2;
+const MAIN_CITY = 0;
 const HOUSE = 1;
 const BARRACKS = 6;
 const SQUAD = { x: 26, y: 40 };
@@ -52,7 +53,7 @@ async function resume(page: Page): Promise<void> {
   await expect.poll(async () => (await header(page)).paused).toBe(false);
 }
 
-test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 新兵補進編隊 → 分出 N 名 → 不選農民蓋民居 → 散開隊形", async ({ page }, info) => {
+test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 新兵補進編隊 → 分出 N 名 → 不選農民蓋民居 → 散開隊形 → 全軍撤退", async ({ page }, info) => {
   test.setTimeout(300_000);
   const check = watchErrors(page);
 
@@ -245,7 +246,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await shot(page, info, "8-governing");
 
   // 8b. 全軍不帶走留守的兵：全軍 → 前進到遠處 → 部隊都離開城鎮後，駐軍還夠，沒有開始叛離
-  await page.getByRole("button", { name: "全軍" }).tap();
+  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(0);
   const marching = (await selection(page))?.units ?? [];
   expect(marching, "全軍 leaves the garrison").not.toContain(kept);
@@ -341,7 +342,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
 
   // 9. 分出 N 名存成編隊（D-024）：暫停 → 全軍 → 分出一半 → 長按編隊 2 → 改選其餘
   await pause(page);
-  await page.getByRole("button", { name: "全軍" }).tap();
+  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(1);
   const army = (await selection(page))?.units ?? [];
   expect(army, "全軍 still leaves the garrison").not.toContain(kept);
@@ -387,7 +388,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
 
   // 11. 散開隊形（D-027、D-028）：全軍 → 隊形：散開（按下去就原地重排）→ 前進 → 站好後彼此相隔約 2 格。
   //     Last, so that a wider squad does not change the town steps (a radius-4 town).
-  await page.getByRole("button", { name: "全軍" }).tap();
+  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(3);
   const troops = (await selection(page))?.units ?? [];
   const formation = page.getByRole("button", { name: /^隊形/ });
@@ -440,5 +441,20 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   expect(mean, shown).toBeGreaterThanOrEqual(1.5);
   expect(nearest[0], shown).toBeGreaterThanOrEqual(1.2);
   expect(mean, `not scattered: ${shown}`).toBeLessThanOrEqual(2.6);
+
+  // 12. 全軍撤退（使用者 2026-10-01）：什麼都沒選，按一下，所有士兵（留守的不算）退回主城前面
+  await page.getByRole("button", { name: "重設" }).tap();
+  await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
+  await page.getByRole("button", { name: "全軍撤退" }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: troops });
+  expect(troops, "the garrison stays").not.toContain(kept);
+  const back = (await lastSent(page)) as { x: number; y: number };
+  const city = (await buildings(page)).find((b) => b.owner === me && b.type === MAIN_CITY);
+  if (city === undefined) throw new Error("no main city");
+  expect(Math.abs(back.x - (city.cx + city.size / 2)), "in front of the main city").toBeLessThanOrEqual(city.size);
+  expect(Math.abs(back.y - (city.cy + city.size / 2)), "in front of the main city").toBeLessThanOrEqual(city.size);
+  // On their way: the order is Retreat (2).
+  await expect.poll(async () => (await units(page)).filter((u) => troops.includes(u.id)).every((u) => u.order === 2)).toBe(true);
+  await shot(page, info, "12-retreat-all");
   check();
 });

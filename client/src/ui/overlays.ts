@@ -94,6 +94,7 @@ export class Overlays {
   private readonly placeCancel: HTMLButtonElement;
   private readonly toastBox: HTMLElement;
   private toastTimer = 0;
+  private promptTimer = 0;
   wheelItems: string[] | null = null;
 
   constructor(root: HTMLElement) {
@@ -184,7 +185,10 @@ export class Overlays {
     this.wheelItems = null;
   }
 
-  showPrompt(text: string, buttons: PromptButton[]): void {
+  /** The prompt strip; with `hideAfterMs` it goes away by itself (a new prompt or hidePrompt cancels that). */
+  showPrompt(text: string, buttons: PromptButton[], hideAfterMs = 0): void {
+    window.clearTimeout(this.promptTimer);
+    if (hideAfterMs > 0) this.promptTimer = window.setTimeout(() => this.hidePrompt(), hideAfterMs);
     this.promptText.textContent = text;
     this.promptButtons.replaceChildren();
     for (const b of buttons) {
@@ -197,6 +201,7 @@ export class Overlays {
   }
 
   hidePrompt(): void {
+    window.clearTimeout(this.promptTimer);
     this.prompt.hidden = true;
   }
 

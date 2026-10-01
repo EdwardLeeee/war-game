@@ -81,6 +81,8 @@ export class FakeWorld implements IntentWorld {
   units: FakeUnit[];
   things: FakeThing[];
   screenCells: number;
+  /** The cell in front of the own main city, or null without one. */
+  home: { x: number; y: number } | null = null;
 
   constructor(units: FakeUnit[], things: FakeThing[] = [], screenCells = 1000) {
     this.units = units;
@@ -125,6 +127,10 @@ export class FakeWorld implements IntentWorld {
   buildingAt(wx: number, wy: number): Pick | null {
     const t = this.things.find((v) => v.kind === "building" && Math.floor(wx / TILE_PX) === v.cx && Math.floor(wy / TILE_PX) === v.cy);
     return t === undefined ? null : { kind: "building", id: t.id, owner: t.owner, type: t.type };
+  }
+
+  homeCell(): { x: number; y: number } | null {
+    return this.home;
   }
 
   buildingNeedsFarmers(id: number): boolean {
