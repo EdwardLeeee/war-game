@@ -108,6 +108,59 @@ jobs:
           path: tournament/
           retention-days: 30
 
+  # What a person meets (round 2): each AI against a player who does nothing, without a time
+  # limit, as a timeline (easy must not go for a town before game minute 18); and the time per
+  # tick of 40 soldiers walled in by their own houses.
+  ai-timeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sim/package-lock.json
+      - run: npm ci
+      - name: Easy and normal against a player who does nothing; walled-in soldiers
+        run: |
+          set -o pipefail
+          node src/ai-timeline.ts --seed 4 --difficulty easy --first-town-min 18 | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/ai-timeline.ts --seed 4 --difficulty normal | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/walled-perf.ts | tee -a "${GITHUB_STEP_SUMMARY}"
+
+  # 100 games of the normal AI against the easy one (round 2): the same seeds, styles and swaps;
+  # each spawn plays easy half the time. Replayed like the others.
+  ai-vs-easy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sim/package-lock.json
+      - run: npm ci
+      - name: 25 games against the easy AI, each replayed
+        run: node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --difficulty normal,easy --out "${GITHUB_WORKSPACE}/tournament-easy/shard-${{ matrix.shard }}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tournament-easy-shard-${{ matrix.shard }}
+          path: tournament-easy/
+          retention-days: 30
+
   # The same command logs give the same hashes in Node, Chromium and WebKit: three AI-vs-AI
   # games played in Node, replayed in the browser from the simulation's own sources.
   browser:
@@ -128,7 +181,16 @@ jobs:
           cache: npm
           cache-dependency-path: sim/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      # Installing a browser hung for 15+ minutes when the Ubuntu package mirror stalled, and
+      # took 4-5 minutes when it was slow (2026-10-01). apt itself now gives up on a download
+      # that stalls for 30 s and tries it again (5 times). Killing the install from outside and
+      # trying again did not work: the killed apt left dpkg locked and the second try failed
+      # with exit code 100 (run 36761820799).
+      - name: Let apt retry stalled downloads
+        run: printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries
+      - name: Install ${{ matrix.browser }}
+        timeout-minutes: 12
+        run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Replay Node's games in ${{ matrix.browser }}
         run: |
           set -o pipefail
@@ -136,9 +198,10 @@ jobs:
 
   # Win rate of each spawn within 35-65% (draws left out), draws at most 10% (D5).
   # For now draws may reach 25% (ceo 2026-09-30, see src/tournament-summary.ts) until a
-  # later round brings them back to 10%.
+  # later round brings them back to 10%. Against the easy AI, normal also wins at least 80%
+  # of the decided games.
   ai-summary:
-    needs: ai-vs-ai
+    needs: [ai-vs-ai, ai-vs-easy]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -155,13 +218,29 @@ jobs:
           pattern: tournament-shard-*
           path: tournament
           merge-multiple: true
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: tournament-easy-shard-*
+          path: tournament-easy
+          merge-multiple: true
       - name: Summary and gates
         run: |
           set -o pipefail
           node src/tournament-summary.ts ../tournament/shard-* --json ../tournament/summary.json | tee -a "${GITHUB_STEP_SUMMARY}"
+      - name: Summary and gates, normal against easy
+        if: always()
+        run: |
+          set -o pipefail
+          { echo "## 普通對簡單"; node src/tournament-summary.ts ../tournament-easy/shard-* --json ../tournament-easy/summary.json; } | tee -a "${GITHUB_STEP_SUMMARY}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: tournament-summary
           path: tournament/summary.json
+          retention-days: 30
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tournament-summary-easy
+          path: tournament-easy/summary.json
           retention-days: 30

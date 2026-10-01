@@ -84,6 +84,14 @@ export class UnitSystem {
   private deadBuildings = new Uint8Array(64);
   /** Which walkable cells connect (for goals walled in by buildings). */
   private readonly regions = new Regions();
+  /**
+   * breakThrough's answers by (owner, area, goal point): the nearest cell of the area and the
+   * building to break. They depend only on the grid and the buildings, so they are kept until
+   * cells are blocked or opened (every building placed or gone changes one of the two).
+   */
+  private readonly walled = new Map<string, { cell: number; blocker: number }>();
+  private walledBlock = -1;
+  private walledOpen = -1;
 
   constructor(size: number) {
     this.cellHead = new Int32Array(size * size);
@@ -442,22 +450,35 @@ export class UnitSystem {
     const b = w.buildings.col;
     const n = w.size;
     const info = UNITS[u.type[i]];
-    const c = this.nearestIn(w, here, tx, ty);
-    const reach = c < 0 ? 0 : cellDist2(c, n, tx, ty);
-    let best = -1;
-    let bestD = 0;
-    for (let s = 0; fight && c >= 0 && s < w.buildings.count; s++) {
-      const o = b.owner[s];
-      const bi = BUILDINGS[b.type[s]];
-      if (o === u.owner[i] || o >= PLAYER_COUNT || b.hp[s] <= 0 || bi.walkable) continue;
-      const d = rectDist2(tx, ty, b.cellX[s], b.cellY[s], bi.size);
-      if (d >= reach) continue;
-      if (!cellsAround(w, b.cellX[s], b.cellY[s], bi.size).some((k) => this.regions.of(w, k) === here)) continue;
-      if (best < 0 || d < bestD || (d === bestD && b.id[s] < b.id[best])) {
-        best = s;
-        bestD = d;
-      }
+    if (w.blockVersion !== this.walledBlock || w.openVersion !== this.walledOpen) {
+      this.walled.clear();
+      this.walledBlock = w.blockVersion;
+      this.walledOpen = w.openVersion;
     }
+    const key = `${u.owner[i]},${here},${tx},${ty}`;
+    let known = this.walled.get(key);
+    if (known === undefined) {
+      const c = this.nearestIn(w, here, tx, ty);
+      const reach = c < 0 ? 0 : cellDist2(c, n, tx, ty);
+      let blocker = -1;
+      let bestD = 0;
+      for (let s = 0; c >= 0 && s < w.buildings.count; s++) {
+        const o = b.owner[s];
+        const bi = BUILDINGS[b.type[s]];
+        if (o === u.owner[i] || o >= PLAYER_COUNT || b.hp[s] <= 0 || bi.walkable) continue;
+        const d = rectDist2(tx, ty, b.cellX[s], b.cellY[s], bi.size);
+        if (d >= reach) continue;
+        if (!cellsAround(w, b.cellX[s], b.cellY[s], bi.size).some((k) => this.regions.of(w, k) === here)) continue;
+        if (blocker < 0 || d < bestD || (d === bestD && b.id[s] < blocker)) {
+          blocker = b.id[s];
+          bestD = d;
+        }
+      }
+      known = { cell: c, blocker };
+      this.walled.set(key, known);
+    }
+    const c = known.cell;
+    const best = fight && known.blocker >= 0 ? w.building(known.blocker) : -1;
     if (best >= 0) {
       const size = BUILDINGS[b.type[best]].size;
       const bx = (b.cellX[best] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
