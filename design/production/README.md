@@ -285,7 +285,7 @@ gh workflow run design-render --ref <分支> -f round=production \
   - 法師特效從 48 MB 降到 26 MB（3 倍未壓縮），加上防護罩 1.9 MB，省了約 20 MB。
   - 核准的新動作讓顏色、玩家色、影子多了約 15 MB：倒下的範圍變大（霹靂車垮開、法師的杖倒在旁邊、步兵的武器放在身旁）、農民工具放大。
 - 共用的世界效果圖集（落地揚塵）另計：3 倍一頁 2048 × 104，未壓縮 0.8 MB（ASTC 0.2 MB）；2 倍一頁 2048 × 72，未壓縮 0.6 MB（ASTC 0.1 MB）。
-  產物是 `production-effects`（run 36849835568；之後的 run 叫 `production-effects-atlas`）。
+  產物在 run 36849835568 叫 `production-effects`；揚塵改成單獨上傳後，run 36869894736 起叫 `production-effects-atlas`（最上層就是 `effects_x3/`、`effects_x2/`）。
 - 每點位元組數：未壓縮一律 4（灰階 PNG 上 GPU 也是 RGBA8），ASTC 4×4 一律 1。
 - 一局只載入場上兩個陣營的兵種（client 規格）；建築另計（R1：3 倍 82 MB、2 倍 ASTC 9 MB）。
 - 圖集是用 CI 產物照說明檔的座標和錨點合成檢查過的（劍修待機、受擊、破盾，朝向 7 與 0）：防護罩、玩家色、碎片都對在同一個地面點。
