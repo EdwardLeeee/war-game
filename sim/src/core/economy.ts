@@ -12,6 +12,7 @@ import {
   BuildingType,
   CELL,
   CELL_SHIFT,
+  NEUTRAL,
   NodeKind,
   Order,
   PLAYER_COUNT,
@@ -36,6 +37,7 @@ import {
   GATHER_PER_MINUTE,
   GATHER_UNIT,
   MAIN_CITY_REPAIR_LOCK,
+  MILITIA_NODE_REACH2,
   NEXT_NODE_RADIUS,
   REPAIR_PER_SECOND,
   UNITS,
@@ -128,11 +130,41 @@ export class Economy {
   private nodeLoad: Int32Array;
   /** Per building slot: 1 when a farmer works this farm (economy pass). */
   private farmTaken = new Uint8Array(64);
+  /** Per cell: 1 within MILITIA_NODE_REACH2 of a living militia man's post; rebuilt when the militia change. */
+  private militiaReach: Uint8Array;
+  /** The militia ids the map was built for, and the tick it was last checked. */
+  private militiaIds: number[] = [];
+  private militiaTick = -1;
 
   constructor(w: World, fog: Fog, emit: Emit) {
     this.fog = fog;
     this.emit = emit;
     this.nodeLoad = new Int32Array(w.nodeAmount.length);
+    this.militiaReach = new Uint8Array(w.size * w.size);
+  }
+
+  /** Brings militiaReach up to date (at most one look at the units a tick). */
+  private refreshMilitiaReach(w: World): void {
+    if (this.militiaTick === w.tick) return;
+    this.militiaTick = w.tick;
+    const u = w.units.col;
+    const ids: number[] = [];
+    for (let i = 0; i < w.units.count; i++) if (u.owner[i] === NEUTRAL && u.type[i] === UnitType.Militia) ids.push(u.id[i]);
+    if (ids.length === this.militiaIds.length && ids.every((id, k) => id === this.militiaIds[k])) return;
+    this.militiaIds = ids;
+    const n = w.size;
+    this.militiaReach.fill(0);
+    const r = isqrt(MILITIA_NODE_REACH2);
+    for (const id of ids) {
+      const s = w.unit(id);
+      const px = u.anchorX[s] >> CELL_SHIFT;
+      const py = u.anchorY[s] >> CELL_SHIFT;
+      for (let y = Math.max(py - r, 0); y <= Math.min(py + r, n - 1); y++) {
+        for (let x = Math.max(px - r, 0); x <= Math.min(px + r, n - 1); x++) {
+          if ((x - px) * (x - px) + (y - py) * (y - py) <= MILITIA_NODE_REACH2) this.militiaReach[y * n + x] = 1;
+        }
+      }
+    }
   }
 
   // --- orders --------------------------------------------------------------------------
@@ -270,9 +302,11 @@ export class Economy {
    * Best node of `kind` the player knows: least distance plus CROWD_PENALTY per farmer
    * already there, within `radius` cells of (cx, cy) when radius > 0; ties to the node
    * nearer the owner's spawn, then the first in the owner's canonical frame (frame.ts).
-   * Returns [node, score] or [-1, 0].
+   * Never one within reach of a living militia man's post (MILITIA_NODE_REACH2): every
+   * caller picks for a farmer by itself. Returns [node, score] or [-1, 0].
    */
   private bestNode(w: World, i: number, kind: number, cx: number, cy: number, radius: number, crowd: boolean): [number, number] {
+    this.refreshMilitiaReach(w);
     const u = w.units.col;
     const p = u.owner[i];
     const seen = this.fog.nodeSeen[p];
@@ -287,7 +321,7 @@ export class Economy {
       const nx = w.nodeX[k];
       const ny = w.nodeY[k];
       if (radius > 0 && (nx - cx) * (nx - cx) + (ny - cy) * (ny - cy) > radius * radius) continue;
-      if (!nodeOpen(w, k)) continue;
+      if (!nodeOpen(w, k) || this.militiaReach[ny * w.size + nx] === 1) continue;
       const dx = center(nx) - u.x[i];
       const dy = center(ny) - u.y[i];
       const score = isqrt(dx * dx + dy * dy) + (crowd ? this.nodeLoad[k] * CROWD_PENALTY : 0);

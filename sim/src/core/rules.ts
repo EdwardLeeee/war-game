@@ -235,6 +235,14 @@ export const WORK_REACH = 768;
 export const CROWD_PENALTY = 2 * CELL;
 /** After a node runs out, a farmer looks for the same kind within this many cells of it. */
 export const NEXT_NODE_RADIUS = 8;
+/**
+ * Nodes no farmer is sent to by itself (round 4, ceo): within this squared distance in cells
+ * (about 7.5) of the post of a living militia man. Picked by the economy ratio, after a node
+ * runs out or after building a camp, a farmer working next to such a node (at most 1.5 cells
+ * from it) would be within AGGRO_RANGE (6) of the post. A player's own order to gather there
+ * still stands; once the militia are dead the nodes are free again.
+ */
+export const MILITIA_NODE_REACH2 = 56;
 /** Idle farmers repair own damaged buildings this close (cells, to the footprint). */
 export const AUTO_REPAIR_RANGE = 6;
 /** At the start each player has explored the disc of this radius (cells) around its spawn and knows its resource nodes. */
