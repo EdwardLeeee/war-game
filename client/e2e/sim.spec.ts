@@ -334,5 +334,8 @@ test("量測：開一局 perf 場景（所有系統都開著），暖機 5 秒�
   await expect(page.locator(".lab-result")).toContainText("tick 速度：每秒 30 tick（正常）");
   // The texture limits for the sprite atlas (client/docs/sprite-atlas.md section 8).
   await expect(page.locator(".lab-result")).toContainText(/最大貼圖 \d+、一次繪製 \d+ 張、ASTC (有|沒有)/);
+  // D-030: the mean fps and the stalls, which the median hides.
+  await expect(page.locator(".lab-result")).toContainText(/平均 fps：[\d.]+/);
+  await expect(page.locator(".lab-result")).toContainText(/停頓（一張畫面超過 50 ms）：\d+ 次，共 [\d.]+ 秒；最長的一張 [\d.]+ ms/);
   await shot(page, info, "perf-measure");
 });
