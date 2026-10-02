@@ -196,7 +196,11 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await pause(page);
 
   // 6. 前進（點地面：往小鎮走，路上遇到敵人會打）
-  const town = (await towns(page)).find((t) => t.size === 0);
+  // The small town nearest the squad, whatever towns the map has (D-044 adds one near each
+  // main city): not the first one in the list or a fixed id.
+  const town = (await towns(page))
+    .filter((t) => t.size === 0)
+    .sort((a, b) => Math.hypot(a.cx - SQUAD.x, a.cy - SQUAD.y) - Math.hypot(b.cx - SQUAD.x, b.cy - SQUAD.y) || a.id - b.id)[0];
   if (town === undefined) throw new Error("no small town on the map");
   const halfway = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [SQUAD.x, SQUAD.y - 5] as const);
   if (halfway === null) throw new Error("no open cell on the way");

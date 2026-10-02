@@ -36,6 +36,8 @@ export interface MinimapHost {
   longPress(cellX: number, cellY: number): void;
   /** Attack alerts to flash, in cells. */
   alerts(): { cx: number; cy: number }[];
+  /** 開局提示 (D-044): the town to flash, or null. */
+  highlight(): { cx: number; cy: number; radius: number } | null;
 }
 
 export class Minimap {
@@ -150,6 +152,15 @@ export class Minimap {
     }
 
     const pulse = 0.5 + 0.5 * Math.sin(now / 150);
+    // 開局提示: the nearest town in the crystal's cyan, a thick ring that swells and fades.
+    const h = this.host.highlight();
+    if (h !== null) {
+      ctx.strokeStyle = css(0x7af0ff, 0.45 + 0.55 * pulse);
+      ctx.lineWidth = Math.max(2, k * 1.6);
+      ctx.beginPath();
+      ctx.arc((h.cx + 0.5) * k, (h.cy + 0.5) * k, (h.radius + 2 + 2 * pulse) * k, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.fillStyle = css(0xff3b30, 0.35 + 0.5 * pulse);
     for (const a of this.host.alerts()) {
       ctx.beginPath();

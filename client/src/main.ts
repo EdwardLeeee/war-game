@@ -149,6 +149,8 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   await g.whenReady();
   if (game !== g) return;
   hook.ready = true;
+  // 開局提示 (D-044): once per game, here at its start (重來 is a new game; 繼續這局 is not).
+  if (!measure && params.hint) g.showTownHint();
   if (measure) {
     g.focusBattle();
     g.lab.show();

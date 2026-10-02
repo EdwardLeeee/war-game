@@ -852,6 +852,16 @@ button .sub {
   margin: 4px 0;
 }
 
+/* 開局提示 (D-044): three short paragraphs; the last, where the town is, in the crystal's cyan. */
+.town-hint .dialog-card p {
+  margin: 6px 0;
+  line-height: 1.5;
+}
+
+.town-hint .dialog-card p:last-of-type {
+  color: #7af0ff;
+}
+
 .dialog-card .small {
   font-size: 12px;
   opacity: 0.8;
