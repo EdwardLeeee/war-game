@@ -58,8 +58,32 @@ export async function shot(page: Page, info: TestInfo, name: string): Promise<vo
   await info.attach(name, { path, contentType: "image/png" });
 }
 
+/** 全軍, whose label says how many soldiers it selects (全軍 24; ceo 2026-10-03). */
+export const armyButton = (page: Page) => page.getByRole("button", { name: /^全軍 \d+$/ });
+
 /** The lab panel opens from the menu: 選單 → 量測與確定性檢查. */
 export async function openLab(page: Page): Promise<void> {
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "量測與確定性檢查" }).tap();
+}
+
+/** TownSize.Small and TownState.Ruins (sim/src/protocol.ts). */
+const SMALL_TOWN = 0;
+const RUINS = 5;
+
+/**
+ * 開局提示 (D-044): the town the hint should show, by its rule: the small town nearest our
+ * spawn that we can take (not ours, not in ruins); else the nearest small town; the nearest
+ * town only on a map without small ones; the lower id on a tie. From whatever towns the map
+ * has, so the tests do not depend on their number or ids.
+ */
+export async function hintTownOf(page: Page): Promise<{ id: number; size: number; cx: number; cy: number }> {
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const home = await page.evaluate(() => window.__proto?.game?.home() ?? null);
+  const list = await page.evaluate(() => window.__proto?.game?.towns() ?? []);
+  if (home === null || list.length === 0) throw new Error("no spawn or no towns");
+  const d = (t: { cx: number; cy: number }) => (t.cx - home.cx) ** 2 + (t.cy - home.cy) ** 2;
+  const small = list.filter((t) => t.size === SMALL_TOWN);
+  const open = small.filter((t) => t.owner !== me && t.state !== RUINS);
+  return [...(open.length > 0 ? open : small.length > 0 ? small : list)].sort((a, b) => d(a) - d(b) || a.id - b.id)[0];
 }

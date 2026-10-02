@@ -312,6 +312,17 @@ a {
   gap: 6px;
 }
 
+.prompt-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 離民兵太近 (放建築): a second line, in a warning colour. */
+.prompt-warn {
+  color: #ffa089;
+  font-weight: 700;
+}
+
 .prompt .primary {
   min-width: 110px;
 }
@@ -499,6 +510,8 @@ a {
   border-radius: 10px;
   font-weight: 700;
   font-size: 14px;
+  /* The clock ticks every second: figures of one width keep the line from shifting. */
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
 }
@@ -852,6 +865,16 @@ button .sub {
   margin: 4px 0;
 }
 
+/* 開局提示 (D-044): three short paragraphs; the last, where the town is, in the crystal's cyan. */
+.town-hint .dialog-card p {
+  margin: 6px 0;
+  line-height: 1.5;
+}
+
+.town-hint .dialog-card p:last-of-type {
+  color: #7af0ff;
+}
+
 .dialog-card .small {
   font-size: 12px;
   opacity: 0.8;
@@ -866,6 +889,12 @@ button .sub {
 
 .dialog-buttons.column {
   flex-direction: column;
+}
+
+/* 選單: two columns, so all six fit a phone held sideways (380 pt with Safari's toolbars) without scrolling. */
+.menu .dialog-buttons.column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
 }
 
 button.danger {

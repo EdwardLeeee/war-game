@@ -88,6 +88,7 @@ export class Overlays {
   private readonly wheel: HTMLElement;
   private readonly prompt: HTMLElement;
   private readonly promptText: HTMLElement;
+  private readonly promptWarn: HTMLElement;
   private readonly promptButtons: HTMLElement;
   private readonly place: HTMLElement;
   private readonly placeOk: HTMLButtonElement;
@@ -105,7 +106,10 @@ export class Overlays {
     this.wheel = el("div", "wheel", root);
     this.wheel.setAttribute("role", "menu");
     this.prompt = el("div", "prompt", root);
-    this.promptText = el("span", "prompt-text", this.prompt);
+    const body = el("span", "prompt-body", this.prompt);
+    this.promptText = el("span", "prompt-text", body);
+    this.promptWarn = el("span", "prompt-warn", body);
+    this.promptWarn.hidden = true;
     this.promptButtons = el("span", "prompt-buttons", this.prompt);
     this.place = el("div", "place-confirm", root);
     this.placeOk = el("button", "place-ok", this.place);
@@ -190,6 +194,7 @@ export class Overlays {
     window.clearTimeout(this.promptTimer);
     if (hideAfterMs > 0) this.promptTimer = window.setTimeout(() => this.hidePrompt(), hideAfterMs);
     this.promptText.textContent = text;
+    this.promptWarning(null);
     this.promptButtons.replaceChildren();
     for (const b of buttons) {
       const btn = el("button", b.primary === true ? "primary" : "secondary", this.promptButtons);
@@ -198,6 +203,14 @@ export class Overlays {
       btn.addEventListener("click", b.onTap);
     }
     this.prompt.hidden = false;
+  }
+
+  /** A warning line under the prompt's text (放建築: 離民兵太近); null takes it away, and so does the next prompt. */
+  promptWarning(text: string | null): void {
+    // Called as the preview moves: write only when it changes.
+    if (text === null ? this.promptWarn.hidden : !this.promptWarn.hidden && this.promptWarn.textContent === text) return;
+    this.promptWarn.textContent = text ?? "";
+    this.promptWarn.hidden = text === null;
   }
 
   hidePrompt(): void {

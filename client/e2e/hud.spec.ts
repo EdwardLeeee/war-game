@@ -3,7 +3,7 @@
 // and idle farmers, and every piece of the temporary interface (GDD §10 草稿).
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { FULL_SCREEN, INTERACTIVE, IPHONE_SAFE, injectSafeArea, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { armyButton, FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 import { doubleTap, doubleTapOn, longPress, longPressOn, tap, tapOn } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -135,10 +135,190 @@ for (const size of [
     const [armyBtn] = await visibleBoxes(page, ".army-btn");
     const apart = Math.max(armyBtn.x - (retreatAll.x + retreatAll.width), retreatAll.x - (armyBtn.x + armyBtn.width), armyBtn.y - (retreatAll.y + retreatAll.height), retreatAll.y - (armyBtn.y + armyBtn.height));
     expect(apart, "全軍撤退 far from 全軍").toBeGreaterThan(100);
-    await expect(page.locator(".res-bar")).toHaveText(/糧 200　木 200　金 100　晶 20　人口 \d+\/20/);
+    await expect(page.locator(".res-bar")).toHaveText(/^糧 200　木 200　金 100　晶 20　人口 \d+\/20　時間 \d+:\d\d$/);
     await shot(page, info, `hud-${size.who}-${width}x${height}`);
   });
 }
+
+test("開局提示：開局時說魔晶從城鎮來、最近的城鎮在哪裡；遊戲先暫停，小地圖閃那座城鎮；看那座城鎮會跳過去（D-044）", async ({ page }, info) => {
+  await page.goto("./?test=1&mock=1&hint=1");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText("魔晶主要從城鎮來");
+  await expect(hint).toContainText("搶：馬上拿到一筆糧、金和魔晶");
+  // The fake world's nearest small town, (18, 62), is ours already: the next one, which we can take.
+  await expect(hint).toContainText(/離你的主城最近、可以攻下的小鎮在主城的.{1,2}方，約 \d+ 格/);
+  const town = await hintTownOf(page);
+  expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
+  await injectSafeArea(page);
+  const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
+  for (const b of await visibleBoxes(page, ".town-hint button")) {
+    expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
+    expect(b.x, `${b.label} left`).toBeGreaterThanOrEqual(IPHONE_SAFE.left);
+    expect(b.x + b.width, `${b.label} right`).toBeLessThanOrEqual(width - IPHONE_SAFE.right);
+    expect(b.y + b.height, `${b.label} bottom`).toBeLessThanOrEqual(height - IPHONE_SAFE.bottom);
+  }
+  await shot(page, info, "town-hint");
+  // 看那座城鎮: the hint closes, the game goes on, the camera is on the town, the minimap still flashes it.
+  await hint.getByRole("button", { name: "看那座城鎮" }).tap();
+  await expect(hint).toBeHidden();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
+  const c = await centreCell(page);
+  expect(Math.hypot(c.x - (town.cx + 0.5), c.y - (town.cy + 0.5)), "the camera is on the town").toBeLessThan(2);
+  expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: false, flashing: true });
+  await shot(page, info, "town-hint-look");
+});
+
+test("開局提示：每局一次；繼續這局不再出現，重來是新的一局會再出現；按知道了，遊戲繼續（D-044）", async ({ page }) => {
+  await page.goto("./?test=1&mock=1&hint=1");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  await hint.getByRole("button", { name: "知道了" }).tap();
+  await expect(hint).toBeHidden();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
+  // 繼續這局: the same game, so no hint.
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "回開局畫面" }).tap();
+  await page.getByRole("button", { name: "繼續這局" }).tap();
+  await expect(page.getByRole("button", { name: "繼續" })).toBeVisible();
+  await expect(hint).toBeHidden();
+  // 重來: a new game, and the hint again.
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "回開局畫面" }).tap();
+  await page.getByRole("button", { name: "重來" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await expect(hint).toBeVisible();
+});
+
+test("開局提示：按不再提示，記在這台裝置上，重來、重新整理都不再跳；選單的魔晶怎麼拿打得開，在那裡可以改回開局時要提示（D-044）", async ({ page }) => {
+  await page.goto("./?test=1&mock=1&hint=1");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  const stored = () => page.evaluate(() => window.localStorage.getItem("war-game.proto.townHint"));
+  await expect(hint).toBeVisible();
+  expect(await stored(), "nothing kept before 不再提示").toBeNull();
+  await hint.getByRole("button", { name: "不再提示" }).tap();
+  await expect(hint).toBeHidden();
+  await expect(toast(page, "之後開局不會再提示")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
+  expect(await stored()).toBe("off");
+  // 重來: a new game, and no hint (the Hud is new, so nothing points at a town).
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "回開局畫面" }).tap();
+  await page.getByRole("button", { name: "重來" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await page.waitForTimeout(500);
+  await expect(hint).toBeHidden();
+  expect(await page.evaluate(() => window.__proto?.game?.townHint())).toBeNull();
+  // Reloaded: kept on this device.
+  await page.goto("./?test=1&mock=1&hint=1");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await page.waitForTimeout(500);
+  await expect(hint).toBeHidden();
+  expect(await page.evaluate(() => window.__proto?.game?.townHint())).toBeNull();
+  // 選單 → 魔晶怎麼拿: the same hint, the game waits while it is open.
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "魔晶怎麼拿" }).tap();
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText("魔晶主要從城鎮來");
+  const town = await hintTownOf(page);
+  expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
+  // Turned off, so its third button turns it back on.
+  await expect(hint.getByRole("button", { name: "不再提示" })).toHaveCount(0);
+  await hint.getByRole("button", { name: "開局時要提示" }).tap();
+  await expect(hint).toBeHidden();
+  await expect(toast(page, "之後每一局開局都會提示")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
+  expect(await stored()).toBe("on");
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "回開局畫面" }).tap();
+  await page.getByRole("button", { name: "重來" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await expect(hint).toBeVisible();
+});
+
+test("開局提示：按知道了、看那座城鎮不算不再提示，重新整理後還會提示（D-044）", async ({ page }) => {
+  await page.goto("./?test=1&mock=1&hint=1");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  await hint.getByRole("button", { name: "看那座城鎮" }).tap();
+  await expect(hint).toBeHidden();
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "魔晶怎麼拿" }).tap();
+  await hint.getByRole("button", { name: "知道了" }).tap();
+  await expect(hint).toBeHidden();
+  expect(await page.evaluate(() => window.localStorage.getItem("war-game.proto.townHint"))).toBeNull();
+  await page.goto("./?test=1&mock=1&hint=1");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await expect(hint).toBeVisible();
+  await expect(hint.getByRole("button", { name: "不再提示" })).toBeVisible();
+});
+
+for (const viewport of [null, FULL_SCREEN]) {
+  test(`選單：全部的按鈕不用捲動就看得到，至少 44 pt、在安全區內（${viewport === null ? "工具列展開" : "工具列收合"}）`, async ({ page }, info) => {
+    if (viewport !== null) await page.setViewportSize(viewport);
+    await injectSafeArea(page);
+    await page.getByRole("button", { name: "選單" }).tap();
+    const menu = page.getByRole("dialog", { name: "選單" });
+    await expect(menu).toBeVisible();
+    const card = menu.locator(".dialog-card");
+    expect(await card.evaluate((c) => c.scrollHeight - c.clientHeight), "the menu does not scroll").toBeLessThanOrEqual(1);
+    const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
+    const boxes = await visibleBoxes(page, ".menu button");
+    expect(boxes.map((b) => b.label)).toEqual(["魔晶怎麼拿", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
+    for (const b of boxes) {
+      expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
+      expect(b.x, `${b.label} left`).toBeGreaterThanOrEqual(IPHONE_SAFE.left);
+      expect(b.x + b.width, `${b.label} right`).toBeLessThanOrEqual(width - IPHONE_SAFE.right);
+      expect(b.y, `${b.label} top`).toBeGreaterThanOrEqual(IPHONE_SAFE.top);
+      expect(b.y + b.height, `${b.label} bottom`).toBeLessThanOrEqual(height - IPHONE_SAFE.bottom);
+    }
+    await shot(page, info, `menu-${width}x${height}`);
+  });
+}
+
+test("離民兵太近：放建築的預覽在還有民兵的中立城鎮 12 格內時，提示列多一行警告，✓ 照樣蓋得下去；遠一點就沒有（ceo，D-044）", async ({ page }, info) => {
+  const towns = await page.evaluate(() => window.__proto?.game?.towns() ?? []);
+  // The fake world's neutral town (30, 66) still has its militia.
+  const held = towns.find((t) => t.cx === 30 && t.cy === 66);
+  expect(held).toMatchObject({ state: 0, militia: 3 });
+  await centre(page, 24, 72);
+  await select(page, []);
+  await page.getByRole("button", { name: "建造" }).tap();
+  await page.getByRole("button", { name: /^民居/ }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("place:dragging");
+  const warning = page.getByText("這裡離城鎮的民兵太近，去蓋的農民會被攻擊");
+  const placement = () => page.evaluate(() => window.__proto?.game?.placement());
+  // (21, 76): the house's centre is 13.5 cells from the town's.
+  await tap(page, await at(page, { x: 21, y: 76 }));
+  await expect.poll(placement).toMatchObject({ cellX: 21, cellY: 76, militia: null });
+  await expect(warning).toBeHidden();
+  // (22, 74): 11.3 cells.
+  await tap(page, await at(page, { x: 22, y: 74 }));
+  await expect.poll(placement).toMatchObject({ cellX: 22, cellY: 74, militia: held?.id });
+  await expect(warning).toBeVisible();
+  await expect(page.getByText("拖曳預覽到想蓋的位置")).toBeVisible();
+  await shot(page, info, "militia-warning");
+  // Only a warning: ✓ builds it.
+  await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: [], type: 1, x: 22, y: 74 });
+  await expect(warning).toBeHidden();
+  // The next placement starts without it.
+  await page.getByRole("button", { name: "建造" }).tap();
+  await page.getByRole("button", { name: /^民居/ }).tap();
+  await tap(page, await at(page, { x: 21, y: 77 }));
+  await expect.poll(placement).toMatchObject({ cellX: 21, cellY: 77, militia: null });
+  await expect(warning).toBeHidden();
+});
 
 test("點小地圖 → 跳到那裡", async ({ page }) => {
   await tapOn(page, ".minimap", ...minimapPoint({ x: 70, y: 30 }));
@@ -314,9 +494,51 @@ test("閒置農民：點一下跳到下一個並選取，長按全部選取", as
   await expect.poll(() => selection(page)).toEqual({ units: idle, building: null });
 });
 
-test("全軍：選取所有軍隊", async ({ page }) => {
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
-  await expect.poll(() => selection(page)).toEqual({ units: await ownIds(page, [1, 2, 3]), building: null });
+test("全軍：選取所有軍隊；按鈕上寫會選到幾名（ceo 2026-10-03）", async ({ page }) => {
+  const army = await ownIds(page, [1, 2, 3]);
+  await expect(armyButton(page)).toHaveText(`全軍 ${army.length}`);
+  await armyButton(page).tap();
+  await expect.poll(() => selection(page)).toEqual({ units: army, building: null });
+});
+
+test("遊戲時間：資源列最後一項，開局後會前進，暫停時不動；是遊戲時間，每秒 20 tick（ceo 2026-10-03）", async ({ page }) => {
+  const bar = page.locator(".res-bar");
+  const seconds = async () => {
+    const m = /　時間 (\d+):(\d\d)$/.exec((await bar.textContent()) ?? "");
+    return m === null ? -1 : Number(m[1]) * 60 + Number(m[2]);
+  };
+  await expect(bar).toHaveText(/人口 \d+\/\d+　時間 \d+:\d\d$/);
+  const tick = (await page.evaluate(() => window.__proto?.game?.header().tick)) ?? -1;
+  expect(Math.abs((await seconds()) - tick / 20), "the simulation's ticks, 20 a second").toBeLessThanOrEqual(1);
+  const start = await seconds();
+  await expect.poll(seconds, { timeout: 5000 }).toBeGreaterThan(start);
+  // 暫停: it stands still.
+  await page.getByRole("button", { name: "暫停" }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
+  await page.waitForTimeout(300);
+  const paused = await seconds();
+  await page.waitForTimeout(1500);
+  expect(await seconds(), "paused").toBe(paused);
+  await page.getByRole("button", { name: "繼續" }).tap();
+  await expect.poll(seconds, { timeout: 5000 }).toBeGreaterThan(paused);
+});
+
+test("遊戲時間：畫面窄到放不下時，只留數字，不換行、不碰到右上的按鈕", async ({ page }, info) => {
+  await injectSafeArea(page);
+  const bar = page.locator(".res-bar");
+  await expect(bar).toHaveText(/　時間 \d+:\d\d$/);
+  const [full] = await visibleBoxes(page, ".res-bar");
+  const [controls] = await visibleBoxes(page, ".top-right");
+  const size = page.viewportSize() ?? { width: 0, height: 0 };
+  // Narrow the page until the full line misses its room (the gap before the buttons is 8) by 10 px.
+  const room = controls.x - full.x - 8;
+  await page.setViewportSize({ width: Math.floor(size.width - (room - (full.width - 10))), height: size.height });
+  await expect(bar).toHaveText(/人口 \d+\/20　\d+:\d\d$/);
+  const [short] = await visibleBoxes(page, ".res-bar");
+  const [after] = await visibleBoxes(page, ".top-right");
+  expect(short.height, "one line").toBe(full.height);
+  expect(short.x + short.width, "clear of the top-right buttons").toBeLessThanOrEqual(after.x - 8);
+  await shot(page, info, "res-bar-narrow");
 });
 
 test("全體回城：切換全體回城與回去工作", async ({ page }) => {
@@ -451,7 +673,7 @@ test("姿態：按鈕寫出現在是哪一種、按了會變成哪一種，選�
   await shot(page, info, "stance-hold");
 
   // 全軍 now mixes 堅守 spearmen with 積極 archers and mages: one tap makes them all 堅守.
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await armyButton(page).tap();
   const army = await ownIds(page, [1, 2, 3]);
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await expect(stance).toHaveText("姿態：混合按一下全部改成堅守");
@@ -500,7 +722,7 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await shot(page, info, "formation-loose");
 
   // 全軍 now mixes 散開 spearmen with 密集 archers and mages: one tap makes them all 散開.
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await armyButton(page).tap();
   const army = await ownIds(page, [1, 2, 3]);
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await expect(formation).toHaveText("隊形：混合按一下全部改成散開");
@@ -587,8 +809,9 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   // They left control group 1, and 全軍 does not take them.
   const rest = spear.filter((id) => !inside.includes(id));
   expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(rest);
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   const army = (await ownIds(page, [1, 2, 3])).filter((id) => !inside.includes(id));
+  await expect(armyButton(page), "the garrison left out").toHaveText(`全軍 ${army.length}`);
+  await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await select(page, []);
 
@@ -635,7 +858,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 1 }));
   await expect.poll(() => garrison(page, 0)).toEqual([]);
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [inside[0], inside[1]], stance: 0, auto: true });
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units).toEqual(await ownIds(page, [1, 2, 3]));
 });
 
@@ -656,7 +879,8 @@ test("留守：搶預設不留人；所有的兵都留守時，全軍會說明",
   for (let i = 0; i < army.length; i++) await more.tap();
   await expect(panel.getByRole("status", { name: "留守幾名" })).toHaveText(`${army.length}`);
   expect((await garrison(page, 0)).slice().sort((x, y) => x - y)).toEqual(army);
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await expect(armyButton(page)).toHaveText("全軍 0");
+  await armyButton(page).tap();
   await expect(toast(page, "所有的兵都在留守")).toBeVisible();
   await expect.poll(async () => (await selection(page))?.units).toEqual([]);
   // 全軍撤退 leaves the garrisons too: nobody to send, and it says so.

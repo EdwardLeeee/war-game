@@ -206,6 +206,8 @@ export class MockPort implements SimPort {
         break;
       case "pause":
         this.paused = true;
+        // Like the Worker (sim/src/worker.ts): the header says 暫停 at once, not at the next step.
+        this.emit(this.snapshot(false));
         break;
       case "resume":
         this.paused = false;

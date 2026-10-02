@@ -24,6 +24,11 @@ export interface PageParams {
    * so the main-flow e2e does not race it for the small town; the AI is tested by core's games.
    */
   enemyAi: boolean;
+  /**
+   * 開局提示 (D-044) at the start of each game. Test pages leave it out unless they ask
+   * (`?test=1&hint=1`), so the other tests start straight on the battlefield.
+   */
+  hint: boolean;
 }
 
 export function parseParams(search: string): PageParams {
@@ -36,5 +41,5 @@ export function parseParams(search: string): PageParams {
   }
   const sc = q.get("scenario");
   const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf") ? sc : null;
-  return { test, tps, mock: test && q.get("mock") === "1", scenario, enemyAi: !(test && q.get("ai") === "0") };
+  return { test, tps, mock: test && q.get("mock") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1" };
 }
