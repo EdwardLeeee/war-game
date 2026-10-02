@@ -5,6 +5,19 @@
     <!-- Safari ignores user-scalable=no; the canvas blocks browser zoom with touch-action: none. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>war-game 原型</title>
+    <!-- Add to Home Screen opens it without the browser's address bar (D-042). The name and
+         icon are temporary (GDD section 16). No service worker: nothing is cached, so a new
+         deployment is never hidden behind an old copy (version.json tells the page instead). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#1d2320" />
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+    <!-- Safari before iOS 26 opens a Home Screen site as a web app only with the manifest's
+         display or this; landscape iPhones hide the status bar, so the page may run under it. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="war-game" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
   <body>
     <div id="stage"></div>
@@ -23,6 +36,10 @@
         <div class="start-buttons">
           <button id="start-game" type="button">開始</button>
           <button id="restart-game" class="secondary" type="button" hidden>重來</button>
+        </div>
+        <div id="update" class="update" role="status" hidden>
+          <span>有新版本</span>
+          <button id="update-now" type="button">更新</button>
         </div>
         <p class="note">畫面是暫代的幾何圖形。對局沒有時間上限，打到一方的主城被摧毀或投降為止。</p>
         <p class="small"><span id="commit"></span> · <a href="../">回測試頁首頁</a></p>

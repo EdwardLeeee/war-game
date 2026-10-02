@@ -126,7 +126,8 @@ jobs:
         id: complete
         run: |
           complete=true
-          for f in proto/index.html proto/expected-hashes.json web/index.html web/expected-hashes.json godot/index.html index.html licenses.html \
+          for f in proto/index.html proto/expected-hashes.json proto/version.json proto/manifest.webmanifest \
+                   web/index.html web/expected-hashes.json godot/index.html index.html licenses.html \
                    licenses/pixi.js-LICENSE.txt licenses/godot-LICENSE.txt licenses/godot-COPYRIGHT.txt; do
             [ -s "site/${f}" ] || { echo "::warning::missing site/${f}: building only, not deploying"; complete=false; }
           done
