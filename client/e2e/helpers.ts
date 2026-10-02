@@ -64,19 +64,23 @@ export async function openLab(page: Page): Promise<void> {
   await page.getByRole("button", { name: "量測與確定性檢查" }).tap();
 }
 
-/** TownSize.Small (sim/src/protocol.ts). */
+/** TownSize.Small and TownState.Ruins (sim/src/protocol.ts). */
 const SMALL_TOWN = 0;
+const RUINS = 5;
 
 /**
  * 開局提示 (D-044): the town the hint should show, by its rule: the small town nearest our
- * spawn, the nearest town only on a map without small ones, the lower id on a tie. From
- * whatever towns the map has, so the tests do not depend on their number or ids.
+ * spawn that we can take (not ours, not in ruins); else the nearest small town; the nearest
+ * town only on a map without small ones; the lower id on a tie. From whatever towns the map
+ * has, so the tests do not depend on their number or ids.
  */
 export async function hintTownOf(page: Page): Promise<{ id: number; size: number; cx: number; cy: number }> {
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const home = await page.evaluate(() => window.__proto?.game?.home() ?? null);
   const list = await page.evaluate(() => window.__proto?.game?.towns() ?? []);
   if (home === null || list.length === 0) throw new Error("no spawn or no towns");
   const d = (t: { cx: number; cy: number }) => (t.cx - home.cx) ** 2 + (t.cy - home.cy) ** 2;
   const small = list.filter((t) => t.size === SMALL_TOWN);
-  return [...(small.length > 0 ? small : list)].sort((a, b) => d(a) - d(b) || a.id - b.id)[0];
+  const open = small.filter((t) => t.owner !== me && t.state !== RUINS);
+  return [...(open.length > 0 ? open : small.length > 0 ? small : list)].sort((a, b) => d(a) - d(b) || a.id - b.id)[0];
 }

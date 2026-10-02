@@ -312,6 +312,17 @@ a {
   gap: 6px;
 }
 
+.prompt-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 離民兵太近 (放建築): a second line, in a warning colour. */
+.prompt-warn {
+  color: #ffa089;
+  font-weight: 700;
+}
+
 .prompt .primary {
   min-width: 110px;
 }

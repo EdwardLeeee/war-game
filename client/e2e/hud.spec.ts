@@ -148,7 +148,8 @@ test("開局提示：開局時說魔晶從城鎮來、最近的城鎮在哪裡�
   await expect(hint).toBeVisible();
   await expect(hint).toContainText("魔晶主要從城鎮來");
   await expect(hint).toContainText("搶：馬上拿到一筆糧、金和魔晶");
-  await expect(hint).toContainText(/離你的主城最近的小鎮在主城的.{1,2}方，約 \d+ 格/);
+  // The fake world's nearest small town, (18, 62), is ours already: the next one, which we can take.
+  await expect(hint).toContainText(/離你的主城最近、可以攻下的小鎮在主城的.{1,2}方，約 \d+ 格/);
   const town = await hintTownOf(page);
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
@@ -284,6 +285,40 @@ for (const viewport of [null, FULL_SCREEN]) {
     await shot(page, info, `menu-${width}x${height}`);
   });
 }
+
+test("離民兵太近：放建築的預覽在還有民兵的中立城鎮 12 格內時，提示列多一行警告，✓ 照樣蓋得下去；遠一點就沒有（ceo，D-044）", async ({ page }, info) => {
+  const towns = await page.evaluate(() => window.__proto?.game?.towns() ?? []);
+  // The fake world's neutral town (30, 66) still has its militia.
+  const held = towns.find((t) => t.cx === 30 && t.cy === 66);
+  expect(held).toMatchObject({ state: 0, militia: 3 });
+  await centre(page, 24, 72);
+  await select(page, []);
+  await page.getByRole("button", { name: "建造" }).tap();
+  await page.getByRole("button", { name: /^民居/ }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("place:dragging");
+  const warning = page.getByText("這裡離城鎮的民兵太近，去蓋的農民會被攻擊");
+  const placement = () => page.evaluate(() => window.__proto?.game?.placement());
+  // (21, 76): the house's centre is 13.5 cells from the town's.
+  await tap(page, await at(page, { x: 21, y: 76 }));
+  await expect.poll(placement).toMatchObject({ cellX: 21, cellY: 76, militia: null });
+  await expect(warning).toBeHidden();
+  // (22, 74): 11.3 cells.
+  await tap(page, await at(page, { x: 22, y: 74 }));
+  await expect.poll(placement).toMatchObject({ cellX: 22, cellY: 74, militia: held?.id });
+  await expect(warning).toBeVisible();
+  await expect(page.getByText("拖曳預覽到想蓋的位置")).toBeVisible();
+  await shot(page, info, "militia-warning");
+  // Only a warning: ✓ builds it.
+  await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: [], type: 1, x: 22, y: 74 });
+  await expect(warning).toBeHidden();
+  // The next placement starts without it.
+  await page.getByRole("button", { name: "建造" }).tap();
+  await page.getByRole("button", { name: /^民居/ }).tap();
+  await tap(page, await at(page, { x: 21, y: 77 }));
+  await expect.poll(placement).toMatchObject({ cellX: 21, cellY: 77, militia: null });
+  await expect(warning).toBeHidden();
+});
 
 test("點小地圖 → 跳到那裡", async ({ page }) => {
   await tapOn(page, ".minimap", ...minimapPoint({ x: 70, y: 30 }));

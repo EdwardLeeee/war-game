@@ -56,6 +56,7 @@ import { Placement } from "../ui/placement.ts";
 import { type SplitUnit, splitPick } from "../input/split.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, type TownArea } from "./army.ts";
+import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
 
@@ -194,19 +195,21 @@ export class Game implements GestureHost {
   }
 
   /**
-   * 開局提示 (D-044): where crystal comes from and the small town nearest our main city, worked
-   * out from the map. The game waits while the player reads, and goes on when the hint closes.
+   * 開局提示 (D-044): where crystal comes from and the small town to take nearest our main city,
+   * worked out from the map and what we know of its towns (選單 → 魔晶怎麼拿 opens it in the
+   * middle of a game too). The game waits while the player reads, and goes on when it closes.
    */
   showTownHint(): void {
     const view = this.view;
     if (view === null) return;
     const home = view.map.spawns.find((s) => s.player === view.me);
-    const town = home === undefined ? null : hintTown(view.map.towns, home);
-    if (home === undefined || town === null) return;
+    const hint = home === undefined ? null : hintTown(view.townsNow(), home, view.me);
+    if (home === undefined || hint === null) return;
+    const town = hint.town;
     const wasPaused = this.paused;
     this.pause();
     this.hud.openTownHint(
-      townHintLines(town, home),
+      townHintLines(town, home, hint.passed),
       { id: town.id, cx: town.cellX, cy: town.cellY, radius: town.radius },
       () => this.camera?.centerOn((town.cellX + 0.5) * TILE_PX, (town.cellY + 0.5) * TILE_PX),
       () => {
@@ -547,6 +550,7 @@ export class Game implements GestureHost {
         this.musterRecruits();
         if (this.placement !== null) {
           this.placement.revalidate(view.placement);
+          this.warnMilitia();
           this.showPlaceButtons();
         }
         break;
@@ -605,6 +609,7 @@ export class Game implements GestureHost {
     if (this.placement !== null) {
       this.placement.moveTo(w.x, w.y, view.placement);
       this.placement.release();
+      this.warnMilitia();
       this.showPlaceButtons();
       return;
     }
@@ -935,12 +940,24 @@ export class Game implements GestureHost {
     const c = cam.screenToWorld(cam.width / 2, cam.height / 2);
     this.placement.moveTo(c.x, c.y, view.placement);
     this.overlays.showPrompt(builders.length > 0 ? "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗" : "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的農民去蓋", []);
+    this.warnMilitia();
   }
 
   private moveGhost(x: number, y: number): void {
     const w = this.world(x, y);
     this.placement?.moveTo(w.x, w.y, this.view?.placement ?? null);
+    this.warnMilitia();
     this.overlays.hidePlace();
+  }
+
+  /** 離民兵太近 (ceo, D-044): a warning under the prompt while militia would reach the farmers building there; ✓ still builds. */
+  private warnMilitia(): void {
+    const p = this.placement;
+    const view = this.view;
+    if (p === null || view === null) return;
+    const town = militiaTownNear(view.townsNow(), p.cellX, p.cellY, p.info.size);
+    p.militia = town?.id ?? null;
+    this.overlays.promptWarning(town === null ? null : MILITIA_WARNING);
   }
 
   private showPlaceButtons(): void {
