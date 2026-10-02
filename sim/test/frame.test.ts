@@ -209,3 +209,45 @@ test("loose ranged: mirror-image squads march, shoot and keep apart as mirror im
   const mean = nearest.reduce((p, v) => p + v, 0) / nearest.length;
   assert.ok(mean >= 1.8, `mean nearest neighbour ${mean.toFixed(2)} cells`);
 });
+
+test("retreat: mirror-image groups of mixed speed run as mirror images, tick by tick (round 4)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  let bx = -1;
+  let by = -1;
+  for (let y = 40; y < 78 && bx < 0; y++) {
+    for (let x = 2; x < 30 && bx < 0; x++) {
+      if (x + 8 > y) continue;
+      let ok = true;
+      for (let yy = y; yy < y + 18 && ok; yy++) for (let xx = x; xx < x + 8 && ok; xx++) if (!w.walkable(xx, yy) || !w.walkable(yy, xx)) ok = false;
+      if (ok) {
+        bx = x;
+        by = y;
+      }
+    }
+  }
+  assert.ok(bx >= 0, "an open block");
+  const u = w.units.col;
+  const pairs: [number, number][] = [];
+  const mine: [number[], number[]] = [[], []];
+  for (const [type, x, y] of [[UnitType.Spearman, bx + 2, by + 2], [UnitType.Spearman, bx + 3, by + 2], [UnitType.Ranged, bx + 2, by + 3], [UnitType.Mage, bx + 3, by + 3]] as const) {
+    const a = put(g, 0, type, x, y);
+    const b = put(g, 1, type, y, x);
+    pairs.push([a, b]);
+    mine[0].push(a);
+    mine[1].push(b);
+  }
+  g.fog.update(w);
+  cmd(g, 0, { c: "retreat", u: mine[0], x: bx + 4, y: by + 16 });
+  cmd(g, 1, { c: "retreat", u: mine[1], x: by + 16, y: bx + 4 });
+  for (let t = 0; t < 300; t++) {
+    g.step();
+    for (const [a, b] of pairs) {
+      const sa = slotOf(g, a);
+      const sb = slotOf(g, b);
+      assert.equal(u.x[sb], u.y[sa], `tick ${g.tick}: x of the image is y of the original`);
+      assert.equal(u.y[sb], u.x[sa], `tick ${g.tick}`);
+    }
+  }
+  assert.ok(mine[0].every((id) => u.speedCap[slotOf(g, id)] === 0), "each at its own speed");
+});

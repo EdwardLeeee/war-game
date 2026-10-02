@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { BUILDINGS, JOIN_FIGHT, LOOSE_KEEP, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, JOIN_FIGHT, LOOSE_KEEP, RETREAT_OWN_SPEED, UNITS } from "../src/core/rules.ts";
 import { fight } from "../src/balance-lib.ts";
 import type { Game } from "../src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
@@ -35,6 +35,38 @@ test("a group moves at its slowest speed and forms up: melee in front, then rang
   // Moving toward +y: the front is the largest y.
   assert.ok(meanY(UnitType.Spearman) > meanY(UnitType.Ranged), "spearmen ahead of ranged");
   assert.ok(meanY(UnitType.Ranged) > meanY(UnitType.Mage), "ranged ahead of mages");
+});
+
+/** How far (cells) 4 spearmen and 2 mages, told together to retreat 20 cells, each got in 200 ticks: spearmen, mages (means). */
+function retreatGap(ownSpeed: boolean): { spear: number; mage: number; caps: number[] } {
+  const saved = RETREAT_OWN_SPEED.on;
+  RETREAT_OWN_SPEED.on = ownSpeed;
+  try {
+    const g = emptyGame();
+    const a = openArea(g, 30);
+    const u = g.w.units.col;
+    const ids = [0, 1, 2, 3].map((k) => put(g, 0, UnitType.Spearman, a.x + 4 + k, a.y + 3));
+    ids.push(put(g, 0, UnitType.Mage, a.x + 5, a.y + 2), put(g, 0, UnitType.Mage, a.x + 6, a.y + 2));
+    g.fog.update(g.w);
+    const y0 = ids.map((id) => u.y[slotOf(g, id)]);
+    cmd(g, 0, { c: "retreat", u: ids, x: a.x + 5, y: a.y + 24 });
+    run(g, 1);
+    const caps = ids.map((id) => u.speedCap[slotOf(g, id)]);
+    run(g, 199);
+    const went = ids.map((id, k) => (u.y[slotOf(g, id)] - y0[k]) / 1024);
+    const mean = (v: number[]) => v.reduce((p, x) => p + x, 0) / v.length;
+    return { spear: mean(went.slice(0, 4)), mage: mean(went.slice(4)), caps };
+  } finally {
+    RETREAT_OWN_SPEED.on = saved;
+  }
+}
+
+test("a retreat lets each run at its own speed: the fast do not wait for the slow (round 4); a move still keeps to the slowest", () => {
+  const own = retreatGap(true);
+  assert.deepEqual(own.caps, [0, 0, 0, 0, 0, 0], "no speed cap");
+  assert.ok(own.spear - own.mage >= 0.6, `spearmen ${own.spear.toFixed(2)} cells, mages ${own.mage.toFixed(2)}`);
+  const capped = retreatGap(false);
+  assert.ok(Math.abs(capped.spear - capped.mage) < 0.2, `before: together (${capped.spear.toFixed(2)} and ${capped.mage.toFixed(2)})`);
 });
 
 test("retreat ignores enemies; attack-move fights them", () => {

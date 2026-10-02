@@ -7,7 +7,7 @@
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
 import { type Army, armyCost, armyText, BOTH, type Fight, fewestToTake, fight, type Formation, siege, twoShots } from "./balance-lib.ts";
-import { CANNON, LOOSE_KEEP, MULT_DEN, MULT_NUM, SHIELD, UNITS } from "./core/rules.ts";
+import { CANNON, LOOSE_KEEP, MULT_DEN, MULT_NUM, RETREAT_OWN_SPEED, SHIELD, UNITS } from "./core/rules.ts";
 import { TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -36,10 +36,18 @@ const KNOBS: Record<string, Knob> = {
     },
     show: ([v]) => (v === 0 ? "沒有" : `${v / 1024} 格`),
   },
+  retreatOwnSpeed: {
+    label: "撤退的速度",
+    get: () => [RETREAT_OWN_SPEED.on ? 1 : 0],
+    set: ([v]) => {
+      RETREAT_OWN_SPEED.on = v === 1;
+    },
+    show: ([v]) => (v === 1 ? "各走各的" : "照整隊最慢的"),
+  },
 };
 
 /** The values and rules before this round's changes (round 3 of the prototype). */
-const BEFORE: Record<string, number[]> = { rangedVsShield: [3, 2], looseSpacing: [0] };
+const BEFORE: Record<string, number[]> = { rangedVsShield: [3, 2], looseSpacing: [0], retreatOwnSpeed: [0] };
 
 function values(): Record<string, number[]> {
   const v: Record<string, number[]> = {};

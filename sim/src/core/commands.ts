@@ -35,6 +35,7 @@ import {
   FORMATION_LOOSE_SPACING,
   FORMATION_SPACING,
   LOOSE_KEEP,
+  RETREAT_OWN_SPEED,
   MAGE_CAP,
   QUEUE_MAX,
   TOWNS,
@@ -520,9 +521,9 @@ function targetable(ctx: CommandContext, p: number, id: number): boolean {
 }
 
 /**
- * Formation (GDD section 9): the group moves at its slowest member's speed; at the goal the
- * units stand in rows facing the way they came, melee in front, then ranged, then mages,
- * each rank in id order.
+ * Formation (GDD section 9): the group moves at its slowest member's speed (a retreat at each
+ * one's own, RETREAT_OWN_SPEED); at the goal the units stand in rows facing the way they came,
+ * melee in front, then ranged, then mages, each rank in id order.
  */
 function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: number, order: number): void {
   const { w } = ctx;
@@ -725,7 +726,7 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     u.orderX[s] = px;
     u.orderY[s] = py;
     u.group[s] = group;
-    u.speedCap[s] = speed;
+    u.speedCap[s] = order === Order.Retreat && RETREAT_OWN_SPEED.on ? 0 : speed;
     u.target[s] = -1;
     u.stuck[s] = 0;
   });

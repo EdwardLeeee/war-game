@@ -147,6 +147,12 @@ export const JOIN_FIGHT = { range: 6 * CELL };
  * cells (src/balance.ts). `spacing` 0 switches it all off (the balance tool measures both ways).
  */
 export const LOOSE_KEEP = { spacing: 2 * CELL };
+/**
+ * A retreat (round 4, D-034): each unit runs at its own speed instead of the group's slowest, so
+ * the fast are not caught waiting for the slow; they still form up at the goal. `on` false gives
+ * the old way back (src/balance.ts measures both ways).
+ */
+export const RETREAT_OWN_SPEED = { on: true };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;
