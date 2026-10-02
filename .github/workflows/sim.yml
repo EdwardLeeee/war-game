@@ -185,6 +185,14 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Playwright's own image, as client's e2e (#75): the browsers and the system libraries they
+    # need are already in it, so nothing comes from the Ubuntu package mirror. Installing them on
+    # the runner hung for 15+ minutes when the mirror stalled (2026-10-01) and still ran out of
+    # its 12 minutes with apt retrying (#87's run 37025825408, 2026-10-02).
+    # The tag is the Playwright version package-lock.json locks (a step below checks it).
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --user 1001
     strategy:
       fail-fast: false
       matrix:
@@ -194,22 +202,19 @@ jobs:
         working-directory: sim
     steps:
       - uses: actions/checkout@v7
+      - name: The image has the Playwright that package-lock.json locks
+        run: |
+          locked=$(node -p 'require("./package-lock.json").packages["node_modules/playwright"].version')
+          if [ "$locked" != "1.63.0" ]; then
+            echo "::error::package-lock.json locks Playwright $locked; change the container image in sim.yml to v$locked-noble"
+            exit 1
+          fi
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: sim/package-lock.json
       - run: npm ci
-      # Installing a browser hung for 15+ minutes when the Ubuntu package mirror stalled, and
-      # took 4-5 minutes when it was slow (2026-10-01). apt itself now gives up on a download
-      # that stalls for 30 s and tries it again (5 times). Killing the install from outside and
-      # trying again did not work: the killed apt left dpkg locked and the second try failed
-      # with exit code 100 (run 36761820799).
-      - name: Let apt retry stalled downloads
-        run: printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries
-      - name: Install ${{ matrix.browser }}
-        timeout-minutes: 12
-        run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Replay Node's games in ${{ matrix.browser }}
         run: |
           set -o pipefail
