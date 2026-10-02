@@ -11,11 +11,24 @@ function commit(): string {
   }
 }
 
+const COMMIT = process.env.GITHUB_SHA?.slice(0, 7) ?? commit();
+
 export default defineConfig({
   base: "./",
   define: {
-    __COMMIT__: JSON.stringify(process.env.GITHUB_SHA?.slice(0, 7) ?? commit()),
+    __COMMIT__: JSON.stringify(COMMIT),
   },
+  plugins: [
+    {
+      // 有新版本 (D-042): the deployed build's commit, which an open page reads without any
+      // cache and compares with its own.
+      name: "version-json",
+      apply: "build",
+      generateBundle() {
+        this.emitFile({ type: "asset", fileName: "version.json", source: `${JSON.stringify({ commit: COMMIT })}\n` });
+      },
+    },
+  ],
   build: { target: "es2022", chunkSizeWarningLimit: 2000 },
   worker: { format: "es" },
 });

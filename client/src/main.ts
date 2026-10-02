@@ -13,6 +13,7 @@ import { DIFFICULTY_LABEL, loadDifficulty, saveDifficulty } from "./difficulty.t
 import { AI_DIFFICULTIES, type AiDifficulty, MAX_TICKS, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
 import { tickRateText } from "./ui/controls.ts";
+import { deployedCommit, isNewer } from "./version.ts";
 
 declare const __COMMIT__: string;
 
@@ -81,6 +82,27 @@ const env = (scenario: ScenarioName, about: string) => () => ({
 });
 
 $("commit").textContent = `commit ${__COMMIT__}`;
+
+/**
+ * 有新版本 (D-042): checked when the page opens and whenever it comes back from the
+ * background. The start screen offers 更新 (a reload); during a game the player is only told
+ * once, and nothing reloads under him.
+ */
+let newerTold = false;
+async function checkVersion(): Promise<void> {
+  const deployed = await deployedCommit();
+  if (!isNewer(__COMMIT__, deployed)) return;
+  $("update").hidden = false;
+  if (hook.screen === "battle" && game !== null && !newerTold) {
+    newerTold = true;
+    game.toast("有新版本：回到開局畫面（選單 → 回開局畫面）就能更新");
+  }
+}
+$("update-now").addEventListener("click", () => location.reload());
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void checkVersion();
+});
+void checkVersion();
 $("start-game").addEventListener("click", () => {
   void (game === null ? newGame(params.scenario ?? "standard") : continueGame()).catch(showError);
 });

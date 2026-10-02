@@ -51,6 +51,12 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 
 量測與確定性檢查在「選單 → 量測與確定性檢查」。「開始量測」會開一局 `perf` 場景（所有系統都開著），鏡頭對準交戰部隊，暖機 5 秒後量 30 秒。量測一律用普通、30 分鐘上限，確定性檢查照 CI 的那一局，都不受開局畫面的難度影響。結果和 log 會附上手機的貼圖上限（最大貼圖、一次繪製幾張、有沒有 ASTC），給精靈圖集用。
 
+## 加到主畫面（D-042）
+
+- iPhone 的 Safari 用「加入主畫面」、或筆電的 Chrome 安裝之後，從圖示打開沒有網址列。名稱 `war-game` 和晶體圖示是暫時的（GDD 第 16 節）。
+- 不用 service worker，什麼都不快取：常常部署，快取會讓人一直開到舊版。
+- 建置時多一個 `version.json`（只有 commit）。頁面打開、從背景回來時繞過快取讀它，和自己的 commit 不同就在開局畫面顯示「有新版本」和「更新」；對局中只提示一次，不重新載入（`src/version.ts`）。
+
 ## e2e 怎麼模擬觸控
 
 Playwright 沒有兩個瀏覽器都能用的多指、長按拖曳 API。`e2e/touch.ts` 在頁面裡用頁面自己的計時器送出手指會產生的
@@ -63,6 +69,8 @@ Chromium 在 CI 上用裝置倍率 1（沒有 GPU，倍率 3 會拖慢到手勢�
 - `site/`：Pages 首頁與第三方授權頁（整個網站的，不只原型）。
 - `e2e/`、`playwright.config.ts`：Playwright 測試。
 - `docs/`：client 的規格文件，例如兵種精靈圖集規格 `docs/sprite-atlas.md`。只改這裡不會觸發 CI 和 Pages 部署。
-- `scripts/live-check.ts`：部署後檢查公開的網站。
+- `scripts/live-check.ts`：部署後檢查公開的網站（含 `version.json` 和 manifest）。
+- `public/`：原樣複製到建置結果：`manifest.webmanifest` 和 `icons/`（加到主畫面用，D-042）。
+- `scripts/icons.py`：畫暫時的主畫面圖示（`public/icons/` 的 SVG 和 180、192、512 的 PNG；要 Pillow，產出的檔案有進 repo，CI 不跑它）。
 - `scripts/expected-hashes.sh`：產生確定性檢查的對照檔。
 - `test/`：單元測試。

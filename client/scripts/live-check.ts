@@ -34,6 +34,13 @@ try {
     await page.waitForTimeout(15_000);
   }
   check(seen === commit, `proto/ is commit ${commit} (saw ${seen || "nothing"})`);
+  // 加到主畫面 and 有新版本 (D-042): the manifest is there, and version.json names this commit
+  // (read the way the page reads it, past every cache).
+  const version = await page.request.get(`${base}proto/version.json?t=${Date.now()}`);
+  const deployed = version.ok() ? ((await version.json()) as { commit?: string }).commit : undefined;
+  check(deployed === commit, `proto/version.json is commit ${commit} (saw ${deployed ?? "nothing"})`);
+  const manifest = await page.request.get(`${base}proto/manifest.webmanifest`);
+  check(manifest.ok(), `proto/manifest.webmanifest -> ${manifest.status()}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, undefined, { timeout: 30_000 });
   check(true, "proto/ battlefield drawn");

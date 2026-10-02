@@ -122,6 +122,22 @@ a {
   font-size: 19px;
 }
 
+/* 有新版本 (D-042): above the notes, with 更新 beside it. */
+.update {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 10px;
+  background: rgba(122, 240, 255, 0.14);
+  font-weight: 600;
+}
+
+.update[hidden] {
+  display: none;
+}
+
 .card .note {
   margin: 14px 0 4px;
   font-size: 13px;
