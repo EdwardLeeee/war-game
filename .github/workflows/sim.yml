@@ -200,6 +200,8 @@ jobs:
     defaults:
       run:
         working-directory: sim
+        # In a container steps run in sh unless told otherwise; the replay step uses pipefail.
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - name: The image has the Playwright that package-lock.json locks
