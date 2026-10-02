@@ -48,8 +48,15 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    # Install (at most 25 minutes, below) plus the tests (about 5).
-    timeout-minutes: 40
+    # Pulling the image, the build and the tests (WebKit about 4 minutes, Chromium about 8).
+    timeout-minutes: 30
+    # Playwright's own image: the browsers and the system libraries they need are already in
+    # it, so nothing comes from the Ubuntu package mirror. Installing them on the runner took
+    # 12–25+ minutes on some runners (#44, #63's run 36881450879, #65's run 36887698710).
+    # The tag is the Playwright version package-lock.json locks (a step below checks it).
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --user 1001
     strategy:
       fail-fast: false
       matrix:
@@ -59,6 +66,13 @@ jobs:
         working-directory: client
     steps:
       - uses: actions/checkout@v7
+      - name: The image has the Playwright that package-lock.json locks
+        run: |
+          locked=$(node -p 'require("./package-lock.json").packages["node_modules/@playwright/test"].version')
+          if [ "$locked" != "1.63.0" ]; then
+            echo "::error::package-lock.json locks Playwright $locked; change the container image in client.yml to v$locked-noble"
+            exit 1
+          fi
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -68,19 +82,6 @@ jobs:
       - run: npm run build
       - name: Hashes the page's determinism check compares against (headless run of the same game)
         run: bash scripts/expected-hashes.sh dist/expected-hashes.json
-      # Same as sim.yml (core, 3ba971f): apt gives up on a download that stalls for 30 s and
-      # tries it again, up to 5 times, inside one try below.
-      - name: Let apt retry stalled downloads
-        run: printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries
-      # WebKit's system libraries (about 130 MB from the Ubuntu mirror) took 12–18 minutes to
-      # download on some runners (#44, 2026-10-01; normally under a minute). Same as sim.yml:
-      # one try, and apt itself retries a stalled download (above). Stopping a try from outside
-      # (`timeout`, then trying again) left dpkg locked or half done, and on a slow mirror four
-      # tries of 5 minutes never finished (#63's Client run 36881450879), while sim.yml's way
-      # went through. The step limit allows the slowest download seen.
-      - name: Install ${{ matrix.browser }}
-        timeout-minutes: 25
-        run: npx playwright install --with-deps ${{ matrix.browser }}
       - run: npx playwright test --project=${{ matrix.browser }}
       - if: always()
         uses: actions/upload-artifact@v7
