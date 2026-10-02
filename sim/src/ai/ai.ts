@@ -182,10 +182,10 @@ const FULL_MARGIN = 2;
 const PRESS_ON_HP = 40;
 /**
  * It builds nothing whose centre is this close to a town's centre (cells; round 4): militia stand
- * up to 3 cells from the centre and go for a building within 6 cells of them whose centre is
- * within 8 of their post, a construction site (1 hp) at the first blow. The town by its own main
- * city brought them into its base (seed 4: its first barracks site, 9 cells from that town, lost
- * within 5 seconds).
+ * up to 3 cells from the centre and go for anyone within 6 cells of them, up to 8 cells from their
+ * post, the farmers building there included. The town by its own main city brought them into its
+ * base (seed 4, before militia left buildings alone: its first barracks site, 9 cells from that
+ * town, was knocked down within 5 seconds).
  */
 const TOWN_CLEARANCE = 12;
 /** Govern costs (GDD appendix A), for the choice. */

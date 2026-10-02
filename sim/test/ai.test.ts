@@ -71,8 +71,8 @@ test("an AI against itself builds up an economy and an army, out of the towns' m
     for (let s = 0; s < w.buildings.count; s++) {
       if (b.owner[s] !== p) continue;
       if (b.type[s] === BuildingType.LumberCamp) camp = true;
-      // Militia go for buildings whose centre is within 11 cells of their town's centre (round 4:
-      // the town by its own main city took out its first barracks site).
+      // Militia go for anyone within 6 cells of them, the builders of a site within 11 cells of
+      // their town's centre included (round 4: the town by its own main city).
       const size = rules().buildings[b.type[s]].size;
       for (const t of w.map.towns) {
         const d2 = (2 * b.cellX[s] + size - 2 * t.cellX - 1) ** 2 + (2 * b.cellY[s] + size - 2 * t.cellY - 1) ** 2;
