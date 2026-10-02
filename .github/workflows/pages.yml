@@ -10,20 +10,28 @@ name: Pages
 #   index.html, licenses.html, licenses/   home page (client/site/) and licence texts
 # Pull requests build only. Pushes to main deploy (the github-pages environment accepts only
 # main), and only when all three parts were built. Replaces spike-pages.yml.
+# Markdown under client/ and sim/ (README, PROTOCOL, notices) is in neither the site nor its
+# build: changing only that must not redeploy, as a new deployment changes the version the
+# players see and tells them 有新版本 (ceo 2026-10-03). A pull request is judged by all the
+# files it changes, a push by the files it brings.
 on:
   push:
     branches: [main]
     paths:
       - "client/**"
       - "!client/docs/**"
+      - "!client/**/*.md"
       - "sim/**"
+      - "!sim/**/*.md"
       - "spikes/**"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
       - "client/**"
       - "!client/docs/**"
+      - "!client/**/*.md"
       - "sim/**"
+      - "!sim/**/*.md"
       - "spikes/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
