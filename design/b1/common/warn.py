@@ -8,8 +8,8 @@ turned 45 degrees to the map grid and squashed to the ground ellipse (camera 30 
 
 A 「收束圈」: a crisp outer rim with tick marks (the edge of the blast) that stays; a bright ring starts
   at the rim and closes in on the centre; behind it the ground glows hotter; the last 5 ticks flash.
-B 「符文漸強」: an original crystal-lattice sigil (double ring, six crystal marks, a hexagon of lines,
-  like the 魔晶's six faces) that turns slowly; it brightens and its fill thickens, pulsing faster
+B 「符文漸強」: an original crystal sigil (double ring, six crystal marks, a crystal's cross-section: two
+  concentric hexagons and the three long diagonals; no six-pointed star, ceo 2026-10-02) that turns slowly; it brightens and its fill thickens, pulsing faster
   and faster (3 -> 9 pulses a second); the last 5 ticks it burns white at the core.
 
 Colours: orange-red (client WARNING_TINT 0xff8a2a, a little redder for the rim), a pale gold for the hottest
@@ -103,8 +103,8 @@ def frame_a(tick):
 
 
 def _sigil(dr, c, R, rot, col, width):
-    """The crystal-lattice sigil (original): a double ring, six crystal marks on the ring, a hexagon of
-    straight lines joining them, and a small hexagon at the centre."""
+    """The crystal sigil (original): a double ring, six crystal marks on the ring, a crystal's cross-section
+    (two concentric hexagons and the three long diagonals) and a small hexagon at the centre."""
     _ring(dr, c, R, width, col)
     _ring(dr, c, R * 0.84, max(2, width * 0.6), col)
     pts = []
@@ -119,8 +119,16 @@ def _sigil(dr, c, R, rot, col, width):
         L, Wd = R * 0.11, R * 0.035
         dr.polygon([(ax + ux * L, ay + uy * L), (ax + vx * Wd, ay + vy * Wd), (ax - ux * L, ay - uy * L),
                     (ax - vx * Wd, ay - vy * Wd)], fill=col)
+    # a crystal's cross-section: the hexagon through the marks, a second hexagon inside it and the three
+    # long diagonals through the centre (no lines skip a corner, so no star is formed)
+    lw = max(2, int(width * 0.5))
     for i in range(6):
-        dr.line([pts[i], pts[(i + 2) % 6]], fill=col, width=max(2, int(width * 0.5)))
+        dr.line([pts[i], pts[(i + 1) % 6]], fill=col, width=lw)
+    inner = [(c + (x - c) * 0.6, c + (y - c) * 0.6) for x, y in pts]
+    for i in range(6):
+        dr.line([inner[i], inner[(i + 1) % 6]], fill=col, width=max(2, int(width * 0.4)))
+    for i in range(3):
+        dr.line([pts[i], pts[i + 3]], fill=col, width=max(2, int(width * 0.35)))
     h = [(c + math.cos(rot + math.pi / 6 + 2 * math.pi * i / 6) * R * 0.18,
           c + math.sin(rot + math.pi / 6 + 2 * math.pi * i / 6) * R * 0.18) for i in range(6)]
     dr.polygon(h, outline=col, width=max(2, int(width * 0.6)))
