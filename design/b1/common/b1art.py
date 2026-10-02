@@ -781,17 +781,10 @@ def overview2(suffix):
         fp = (3, 3) if n.startswith("farm") else (1, 1)
         res.append(caption(tile([rpiece(n, suffix, 30)], 1.5, footprint=fp, pad=10), t, 16))
     rows.append(("資源點（1 pt = 1.5 px）", res))
-    global suffix_glb
-    suffix_glb = suffix
-    xr = []
-    for style, nm in (("A", "B1-05 A 半透明剪影"), ("B", "B1-05 B 輪廓線")):
-        for which in ("main_city", "forest"):
-            items, fp = _b105_scene(which, "E", 30)
-            xr.append(caption(xray_render(items, 1.5, style, footprint=fp, pad=10), nm, 16))
-    rows.append(("被擋住的單位（1 pt = 1.5 px）", xr))
+    # B1-05 (units hidden behind buildings) is set aside (the user, 2026-10-02: 「被擋住應該先不用管」)
     lab = 300
     W = max(M * 2 + lab + sum(i.width + 8 for i in row) for _, row in rows)
-    sub = ("第二批：要使用者核准的 B1-01 東陸、西陸各 15 種建築（城牆畫成一座小城）、B1-04 資源點，以及要使用者選的 B1-05 被擋住的單位怎麼畫。"
+    sub = ("第二批：要使用者核准的 B1-01 東陸、西陸各 15 種建築（城牆畫成一座小城）、B1-04 資源點。"
            "每一項另有完整的總表與放大圖（放大圖上標了占地、認得出、看得出是誰的、擋不擋人四項檢查）。東陸藍、西陸紅。")
     top = header_height(sub, W - 2 * M)
     H = top + sum(max(i.height for i in row) + 30 for _, row in rows) + 40
@@ -975,6 +968,172 @@ def b105(suffix):
     return [b105_board(o, n, st, sb, suffix) for o, n, st, sb in B105]
 
 
+# ---------------------------------------------------------------- B1b (the user's second-batch notes, 2026-10-02)
+
+def b1b_tower(opt, name, suffix):
+    label = f"B1b-01-東陸箭樓-{opt}-{name}-mobile"
+    folder, piece = ("b101", "tower_E") if opt == "A" else ("b1b", "tower_fine_E")
+
+    def items(ppm, team, extra=False):
+        sp = scene.piece(config.BUILD / "b1" / folder, piece, suffix, team=team, ppm=ppm)
+        out = scene.with_fx(sp)
+        if extra:
+            out.append(scene.unit("spear_e", team, scale=ppm / 60, x=-2.8, y=-0.8))
+            out.append(scene.unit("farmer_e", team, scale=ppm / 60, x=-1.0, y=-2.8))
+        return out
+
+    big = caption(tile(items(60, "blue"), 3.0, footprint=(2, 2), pad=14), "手機像素（1 pt = 3 px）")
+    mid = [caption(tile(items(30, t), 1.5, footprint=(2, 2), pad=10), f"1 pt = 1.5 px・{'藍' if t == 'blue' else '紅'}", 14)
+           for t in ("blue", "red")]
+    act = [caption(tile(items(20, t, True), 1.0, pad=10), f"實際大小・{'藍' if t == 'blue' else '紅'}", 13)
+           for t in ("blue", "red")]
+    sub = ("選項 A：現在的東陸箭樓（B1-01）。" if opt == "A" else
+           "選項 B：精修（使用者：「東陸箭樓可以更精細」）。磚砌的斜面台基加石壓頂、拱門；四根紅柱立在石礎上，兩圈橫樑、"
+           "兩層斜撐；從台基到望台的木梯；望台下有挑樑，四周一圈欄杆和欄柱；望樓四面格子窗、簷下斗拱、屋頂翹角加脊獸和寶頂；"
+           "前面掛匾、望台上一面鼓、簷下一口銅鐘、兩盞燈籠；玩家色在兩條長幡和頂上的旗。占地一樣 2×2。")
+    sub += "\n左：手機像素；中：1.5 倍的藍和紅；右：實際大小，旁邊站一名槍兵和一名農民當比例尺。"
+    M = 50
+    W = M * 2 + big.width + max(i.width for i in mid) * 2 + max(i.width for i in act) * 2 + 60
+    top = header_height(sub, W - 2 * M)
+    H = top + big.height + 40
+    art = Image.new("RGB", (W, H), BG)
+    y = draw_header(art, label, sub, M)
+    x = M
+    art.paste(big.convert("RGB"), (x, y))
+    x += big.width + 20
+    for im in mid:
+        art.paste(im.convert("RGB"), (x, y + big.height - im.height))
+        x += im.width + 10
+    x += 10
+    for im in act:
+        art.paste(im.convert("RGB"), (x, y + big.height - im.height))
+        x += im.width + 10
+    art = art.crop((0, 0, max(x + M, W), y + big.height + 20))
+    p = config.OUT / f"{label}.png"
+    art.save(p)
+    print("wrote", p.name, art.size)
+    return p
+
+
+def _farm_piece(opt, c, st, suffix, ppm):
+    if opt == "A":
+        sp = scene.piece(config.BUILD / "b1" / "b104", f"farm_{c}_{st}", suffix, ppm=ppm)
+    else:
+        sp = scene.piece(config.BUILD / "b1" / "b1b", f"farm_fine_{c}_{st}", suffix, ppm=ppm)
+    sp.ground = True
+    return sp
+
+
+def b1b_farm(opt, name, suffix):
+    label = f"B1b-02-農田作物-{opt}-{name}-mobile"
+    stages = (("sown", "剛種"), ("growing", "長高"), ("ripe", "成熟"))
+    rows = []
+    for c in ("E", "W"):
+        farmer = "farmer_e" if c == "E" else "farmer_w"
+        big = []
+        for st, nm in stages:
+            items = [_farm_piece(opt, c, st, suffix, 30),
+                     scene.unit(farmer, "blue", anim="work_farm", frame=3, scale=0.5, x=0.8, y=-0.6)]
+            big.append(caption(tile(items, 1.5, footprint=(3, 3), pad=8), f"{CULT[c]}・{nm}", 15))
+        small = []
+        for st, nm in stages:
+            items = [_farm_piece(opt, c, st, suffix, 20),
+                     scene.unit(farmer, "blue", anim="work_farm", frame=3, scale=1 / 3, x=0.8, y=-0.6)]
+            small.append(caption(tile(items, 1.0, pad=6), nm, 12))
+        rows.append((c, big, small))
+    sub = ("選項 A：現在的農田（B1-04），作物是一格格的方塊。" if opt == "A" else
+           "選項 B：精修（使用者：「農田裡面應該是稻子或是麥子吧,現在太粗糙了」）。東陸是水田種稻：剛插秧時田裡有水、"
+           "一叢叢秧苗；長高後一片綠；成熟時放乾水、金黃的稻穗垂下來。西陸是旱地種麥：剛種是一行行的田畦和小苗；"
+           "長高後綠色的麥稈和葉；成熟時金黃的麥穗。")
+    sub += ("\n作物都在 0.65 公尺以下，田裡的農民（約 1.7 公尺）不會被擋住；稻草人、前緣的玩家色小旗照舊。"
+            "左三格是 1 pt = 1.5 px，右三格是實際大小。")
+    M = 50
+    W = M * 2 + 120 + max(sum(i.width + 10 for i in b) + sum(i.width + 8 for i in sm) + 30 for _, b, sm in rows)
+    top = header_height(sub, W - 2 * M)
+    H = top + sum(max(i.height for i in b) + 30 for _, b, _ in rows) + 30
+    art = Image.new("RGB", (W, H), BG)
+    y = draw_header(art, label, sub, M)
+    dr = ImageDraw.Draw(art)
+    for c, big, small in rows:
+        h = max(i.height for i in big)
+        dr.text((M, y + h // 2 - 16), CULT[c], font=artboard.font(30), fill=INK)
+        x = M + 120
+        for im in big:
+            art.paste(im.convert("RGB"), (x, y + h - im.height))
+            x += im.width + 10
+        x += 20
+        for im in small:
+            art.paste(im.convert("RGB"), (x, y + h - im.height))
+            x += im.width + 8
+        y += h + 30
+    art = art.crop((0, 0, W, y))
+    p = config.OUT / f"{label}.png"
+    art.save(p)
+    print("wrote", p.name, art.size)
+    return p
+
+
+def b1b_overview(suffix):
+    import warn
+    import warn_art
+    label = "B1b-99-總覽對照"
+    M = 50
+    sec = []
+    # tower
+    t = []
+    for opt, nm, folder, piece in (("A", "現況", "b101", "tower_E"), ("B", "精修", "b1b", "tower_fine_E")):
+        sp = scene.piece(config.BUILD / "b1" / folder, piece, suffix, ppm=45)
+        t.append(caption(tile(scene.with_fx(sp), 2.25, footprint=(2, 2), pad=10), f"{opt} {nm}", 18))
+    sec.append(("B1b-01 東陸箭樓", t))
+    # fields: ripe and growing, both cultures
+    f = []
+    for opt, nm in (("A", "現況"), ("B", "精修")):
+        for c, st in (("E", "growing"), ("E", "ripe"), ("W", "ripe")):
+            items = [_farm_piece(opt, c, st, suffix, 30),
+                     scene.unit("farmer_e" if c == "E" else "farmer_w", "blue", anim="work_farm", frame=3, scale=0.5,
+                                x=0.8, y=-0.6)]
+            f.append(caption(tile(items, 1.5, footprint=(3, 3), pad=6),
+                             f"{opt} {nm}・{CULT[c]}・{'長高' if st == 'growing' else '成熟'}", 14))
+    sec.append(("B1b-02 農田作物", f))
+    # warning circle: tick 20 on grass and paving, both options
+    w_ = []
+    for opt, nm, _ in warn_art.OPTS:
+        fr = warn.frames(opt, 30)
+        for kind, kn in (("grass", "草地"), ("paving", "鋪面")):
+            w_.append(caption(warn_art.panel(fr, 20, kind, 30, int(8.5 * 30), int(4.6 * 30)), f"{opt} {nm}・{kn}", 14))
+    sec.append(("B1b-03 晶砲預警圈（0.5 秒前）", w_))
+    sub = ("使用者看 B1 第二批後的三項修改（2026-10-02）：東陸箭樓更精細、農田改成稻子和麥子、晶砲預警圈更精細。"
+           "每一項 A 是現況（預警圈 A、B 是兩種新畫法），另有完整的選項圖；預警圈另有動作 GIF。")
+    W = M * 2 + max(sum(i.width + 10 for i in r) for _, r in sec)
+    top = header_height(sub, W - 2 * M)
+    H = top + sum(max(i.height for i in r) + 60 for _, r in sec) + 20
+    art = Image.new("RGB", (W, H), BG)
+    y = draw_header(art, label, sub, M)
+    dr = ImageDraw.Draw(art)
+    for title, r in sec:
+        dr.text((M, y), title, font=artboard.font(30), fill=INK)
+        y += 44
+        h = max(i.height for i in r)
+        x = M
+        for im in r:
+            art.paste(im.convert("RGB"), (x, y + h - im.height))
+            x += im.width + 10
+        y += h + 16
+    art = art.crop((0, 0, W, y + 10))
+    p = config.OUT / f"{label}.png"
+    art.save(p)
+    print("wrote", p.name, art.size)
+    return p
+
+
+def b1b(suffix):
+    b1b_tower("A", "現況", suffix)
+    b1b_tower("B", "精修", suffix)
+    b1b_farm("A", "現況", suffix)
+    b1b_farm("B", "精修", suffix)
+    b1b_overview(suffix)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("what", nargs="*", default=["b102", "b103"])
@@ -995,3 +1154,5 @@ if __name__ == "__main__":
         overview2(a.suffix)
     if "b105" in a.what:
         b105(a.suffix)
+    if "b1b" in a.what:
+        b1b(a.suffix)
