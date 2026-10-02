@@ -5,7 +5,7 @@ import test from "node:test";
 import { type AiStyle, createAi } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
 import { rules } from "../src/core/rules.ts";
-import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
+import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TOWN_CLEARANCE, TownChoice, TownState, UnitFlag, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
 import { emptyGame, put, slotOf } from "./helpers.ts";
@@ -76,7 +76,7 @@ test("an AI against itself builds up an economy and an army, out of the towns' m
       const size = rules().buildings[b.type[s]].size;
       for (const t of w.map.towns) {
         const d2 = (2 * b.cellX[s] + size - 2 * t.cellX - 1) ** 2 + (2 * b.cellY[s] + size - 2 * t.cellY - 1) ** 2;
-        assert.ok(d2 > 4 * 12 * 12, `player ${p}: building at ${b.cellX[s]},${b.cellY[s]} by town ${t.id}`);
+        assert.ok(d2 > 4 * TOWN_CLEARANCE * TOWN_CLEARANCE, `player ${p}: building at ${b.cellX[s]},${b.cellY[s]} by town ${t.id}`);
       }
     }
     assert.ok(farmers >= 10, `player ${p}: ${farmers} farmers`);
@@ -444,4 +444,34 @@ test("marching on a known enemy main city it keeps together until it is there, t
   });
   const at = orders(200).find((c) => c.c === "attack") as { u: number[] } | undefined;
   assert.ok(at !== undefined && at.u.length === 30, "attacks the city");
+});
+
+test("seeing two enemy mages at once, it sets its ranged and mages loose, new ones too, and sends its army again (round 4)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const u = w.units.col;
+  const s0 = w.map.spawns[0];
+  const spearmen = [0, 1, 2].map((k) => put(g, 0, UnitType.Spearman, s0.cellX + 6 + k, s0.cellY - 8));
+  const shooters = [put(g, 0, UnitType.Ranged, s0.cellX + 6, s0.cellY - 7), put(g, 0, UnitType.Ranged, s0.cellX + 7, s0.cellY - 7), put(g, 0, UnitType.Mage, s0.cellX + 8, s0.cellY - 7)];
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: MAX_TICKS }, 0, "balanced");
+  const think = () => {
+    g.fog.update(w);
+    return ai.think(buildView(g, 0));
+  };
+  const formation = (out: CommandBody[]) => out.find((c) => c.c === "formation") as { u: number[]; loose: boolean } | undefined;
+  const enemy = [put(g, 1, UnitType.Mage, s0.cellX + 8, s0.cellY - 12)];
+  assert.equal(formation(think()), undefined, "one enemy mage: nothing");
+  enemy.push(put(g, 1, UnitType.Mage, s0.cellX + 9, s0.cellY - 12));
+  const out = think();
+  const f = formation(out);
+  assert.deepEqual(f && [f.loose, [...f.u].sort((a, b) => a - b)], [true, [...shooters].sort((a, b) => a - b)], "two: its ranged and mages, not its spearmen");
+  const after = out.slice(out.indexOf(f as CommandBody) + 1);
+  assert.ok(after.some((c) => "u" in c && spearmen.every((id) => (c.u as number[]).includes(id)) && shooters.every((id) => (c.u as number[]).includes(id))), "the whole army is sent again");
+  // The flags as the command sets them; the enemy mages gone; a new ranged unit is made loose too.
+  for (const id of shooters) u.flags[slotOf(g, id)] |= UnitFlag.Loose;
+  for (const id of enemy) u.hp[slotOf(g, id)] = 0;
+  g.step();
+  assert.equal(formation(think()), undefined, "all loose already");
+  const fresh = put(g, 0, UnitType.Ranged, s0.cellX + 9, s0.cellY - 7);
+  assert.deepEqual(formation(think())?.u, [fresh], "a new ranged unit, no enemy mage in sight");
 });

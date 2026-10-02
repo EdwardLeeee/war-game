@@ -52,6 +52,7 @@ import {
   Order,
   PlaceBit,
   type Rules,
+  TOWN_CLEARANCE,
   TOWN_STRIDE,
   TownChoice,
   TownField,
@@ -180,14 +181,6 @@ const ENDGAME_ARMY = 8;
 const FULL_MARGIN = 2;
 /** An enemy main city at or below this share of its hp (percent) is not given up on. */
 const PRESS_ON_HP = 40;
-/**
- * It builds nothing whose centre is this close to a town's centre (cells; round 4): militia stand
- * up to 3 cells from the centre and go for anyone within 6 cells of them, up to 8 cells from their
- * post, the farmers building there included. The town by its own main city brought them into its
- * base (seed 4, before militia left buildings alone: its first barracks site, 9 cells from that
- * town, was knocked down within 5 seconds).
- */
-const TOWN_CLEARANCE = 12;
 /** Govern costs (GDD appendix A), for the choice. */
 const GOVERN_COST: Cost[] = [];
 GOVERN_COST[TownSize.Small] = { food: 0, wood: 80, gold: 80, crystal: 0 };
@@ -240,6 +233,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let townTrips = 0;
   let ratioSet = "";
   let recalled = false;
+  /** It has seen two or more enemy mages at once: its ranged units and mages are loose from then on. */
+  let looseShooters = false;
   /** Soldier ids kept as the garrison of a governed or repairing town, per town. */
   const garrison = new Map<number, number[]>();
   /** Towns this AI has plundered: how often, and when last (it prefers governing a town it keeps coming back to). */
@@ -275,7 +270,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           }
         }
         if (!ok) continue;
-        // Out of every town's militia's reach (doubled coordinates: centres of footprint and town cell).
+        // Out of every town's militia's reach (TOWN_CLEARANCE, round 4: the town by its own
+        // main city brought them into its base; doubled coordinates, centres of footprint and town cell).
         const near = (t: { cellX: number; cellY: number }) => {
           const dx = 2 * x + size - 2 * t.cellX - 1;
           const dy = 2 * y + size - 2 * t.cellY - 1;
@@ -572,6 +568,18 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       }
       const army = soldiers.filter((u) => !isGuard(u.id));
       const armyIds = army.map((u) => u.id);
+      // Once it has seen two or more enemy mages at once, its ranged units and mages go loose and
+      // stay so, new ones too (round 4, D-037): a crystal cannon shot then hits one of them, not a
+      // crowd. The formation command lays out only the units it names, so the army's own command
+      // goes out again this same think (lastMove) and keeps it one group.
+      if (!looseShooters && foes.filter((f) => f.type === UnitType.Mage).length >= 2) looseShooters = true;
+      if (looseShooters) {
+        const tight = army.filter((s) => (s.type === UnitType.Ranged || s.type === UnitType.Mage) && (s.flags & UnitFlag.Loose) === 0).map((s) => s.id);
+        if (tight.length > 0) {
+          out.push({ c: "formation", u: tight, loose: true });
+          lastMove = -100000;
+        }
+      }
 
       // --- defence, towns and attack --------------------------------------------------------------
       const threat = foesNear(home.cellX, home.cellY, 16);

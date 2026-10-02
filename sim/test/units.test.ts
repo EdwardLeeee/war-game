@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { BUILDINGS, JOIN_FIGHT, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, JOIN_FIGHT, LOOSE_KEEP, UNITS } from "../src/core/rules.ts";
 import { fight } from "../src/balance-lib.ts";
 import type { Game } from "../src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
@@ -451,6 +451,47 @@ test("formation: a group on its way keeps its goal and takes the new spacing; me
   assert.equal(new Set(ids.map((id) => u.group[slotOf(g, id)])).size, 1, "one formation");
   assert.ok(settle(g, ids));
   assert.ok(loose2(g, ids), `two cells apart (${shown(g, ids)})`);
+});
+
+/**
+ * 12 ranged of player 0 (loose or close) walk at 6 spearmen of player 1 standing 14 cells off,
+ * with LOOSE_KEEP.spacing set to `keep` for the run. Returns the game's hash at the end and
+ * the ranged's spacing 8 s after the first of them shot.
+ */
+function rangedWalkUp(loose: boolean, keep: number): { hash: number; after: { min: number; mean: number } } {
+  const saved = LOOSE_KEEP.spacing;
+  LOOSE_KEEP.spacing = keep;
+  try {
+    const g = emptyGame();
+    const a = openArea(g, 30);
+    const u = g.w.units.col;
+    const ranged: number[] = [];
+    for (let k = 0; k < 12; k++) ranged.push(put(g, 0, UnitType.Ranged, a.x + 9 + (k % 6), a.y + 2 + Math.trunc(k / 6)));
+    for (let k = 0; k < 6; k++) put(g, 1, UnitType.Spearman, a.x + 9 + k, a.y + 16);
+    g.fog.update(g.w);
+    if (loose) cmd(g, 0, { c: "formation", u: ranged, loose: true });
+    cmd(g, 0, { c: "move", u: ranged, x: a.x + 11, y: a.y + 18 });
+    let first = -1;
+    let after = { min: 0, mean: 0 };
+    for (let t = 0; t < 400; t++) {
+      g.step();
+      const alive = ranged.filter((id) => slotOf(g, id) >= 0);
+      if (first < 0 && alive.some((id) => u.action[slotOf(g, id)] === Action.Attack)) first = g.tick;
+      if (first >= 0 && g.tick === first + 160) after = spacing(g, alive);
+    }
+    return { hash: g.hash(), after };
+  } finally {
+    LOOSE_KEEP.spacing = saved;
+  }
+}
+
+test("loose ranged keep about 2 cells apart in a fight; a close formation fights exactly as before (round 4)", () => {
+  const on = rangedWalkUp(true, 2 * 1024);
+  const off = rangedWalkUp(true, 0);
+  assert.ok(on.after.min >= 1.8 && on.after.mean >= 1.9, `loose, kept apart: nearest ${on.after.min.toFixed(2)}, mean ${on.after.mean.toFixed(2)}`);
+  assert.ok(off.after.mean < 1.2, `loose without it, bunched: mean ${off.after.mean.toFixed(2)}`);
+  assert.notEqual(on.hash, off.hash);
+  assert.equal(rangedWalkUp(false, 2 * 1024).hash, rangedWalkUp(false, 0).hash, "close: the same game either way");
 });
 
 test("big groups reach their slots, close and loose (slots off to the side of the way in)", () => {

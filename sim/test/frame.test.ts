@@ -145,3 +145,67 @@ test("joining a fight: mirror-image squads join mirror-image fights, tick by tic
   }
   assert.ok(joined > 0, "the soldier 7 cells away joined");
 });
+
+test("loose ranged: mirror-image squads march, shoot and keep apart as mirror images, tick by tick (round 4)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  // An 8 x 18 open block on player 0's side of the diagonal; its mirror image is open too.
+  let bx = -1;
+  let by = -1;
+  for (let y = 40; y < 78 && bx < 0; y++) {
+    for (let x = 2; x < 30 && bx < 0; x++) {
+      if (x + 8 > y) continue;
+      let ok = true;
+      for (let yy = y; yy < y + 18 && ok; yy++) for (let xx = x; xx < x + 8 && ok; xx++) if (!w.walkable(xx, yy) || !w.walkable(yy, xx)) ok = false;
+      if (ok) {
+        bx = x;
+        by = y;
+      }
+    }
+  }
+  assert.ok(bx >= 0, "an open block");
+  const u = w.units.col;
+  const pairs: [number, number][] = [];
+  const add = (owner: number, type: UnitType, x: number, y: number) => {
+    const a = put(g, owner, type, x, y);
+    const b = put(g, 1 - owner, type, y, x);
+    pairs.push([a, b]);
+    return [a, b];
+  };
+  // Two enemies that stand and never hit back, and 8 ranged 14 cells from them in a 4 x 2 block.
+  for (const x of [bx + 2, bx + 5]) {
+    for (const id of add(1, UnitType.Spearman, x, by + 1)) {
+      u.stance[slotOf(g, id)] = 1;
+      u.cooldown[slotOf(g, id)] = 100000;
+    }
+  }
+  const ranged: [number[], number[]] = [[], []];
+  for (let k = 0; k < 8; k++) {
+    const [a, b] = add(0, UnitType.Ranged, bx + 2 + (k % 4), by + 15 + Math.trunc(k / 4));
+    ranged[0].push(a);
+    ranged[1].push(b);
+  }
+  g.fog.update(w);
+  for (const p of [0, 1]) cmd(g, p, { c: "formation", u: ranged[p], loose: true });
+  cmd(g, 0, { c: "move", u: ranged[0], x: bx + 3, y: by + 3 });
+  cmd(g, 1, { c: "move", u: ranged[1], x: by + 3, y: bx + 3 });
+  let shooting = 0;
+  for (let t = 0; t < 400; t++) {
+    g.step();
+    for (const [a, b] of pairs) {
+      const sa = slotOf(g, a);
+      const sb = slotOf(g, b);
+      assert.equal(sa < 0, sb < 0, `tick ${g.tick}: both alive or both gone`);
+      if (sa < 0) continue;
+      assert.equal(u.x[sb], u.y[sa], `tick ${g.tick}: x of the image is y of the original`);
+      assert.equal(u.y[sb], u.x[sa], `tick ${g.tick}`);
+    }
+    if (ranged[0].some((id) => slotOf(g, id) >= 0 && u.target[slotOf(g, id)] >= 0)) shooting++;
+  }
+  assert.ok(shooting > 0, "the ranged shot");
+  // And they stand about two cells apart (LOOSE_KEEP), not one.
+  const alive = ranged[0].filter((id) => slotOf(g, id) >= 0);
+  const nearest = alive.map((a) => Math.min(...alive.filter((b) => b !== a).map((b) => Math.hypot(u.x[slotOf(g, a)] - u.x[slotOf(g, b)], u.y[slotOf(g, a)] - u.y[slotOf(g, b)]) / 1024)));
+  const mean = nearest.reduce((p, v) => p + v, 0) / nearest.length;
+  assert.ok(mean >= 1.8, `mean nearest neighbour ${mean.toFixed(2)} cells`);
+});

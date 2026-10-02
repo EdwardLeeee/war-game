@@ -83,16 +83,21 @@ BUILDINGS[BuildingType.MageHall] = building({
 });
 BUILDINGS[BuildingType.TownTower] = building({ type: BuildingType.TownTower, hp: 400, size: 2, sight: 8 });
 
-/** Damage x num / den. Spearman x3 vs cavalry and cavalry x2 vs shields wait for cavalry. */
+/**
+ * Damage x num / den. Spearman x3 vs cavalry and cavalry x2 vs shields wait for cavalry.
+ * Ranged against a mage's shield x3 since round 4 (D-037, was x3/2).
+ */
 export const MULTIPLIERS: Multiplier[] = [
   { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 5, den: 2 },
-  { attacker: UnitType.Ranged, target: "shield", num: 3, den: 2 },
+  { attacker: UnitType.Ranged, target: "shield", num: 3, den: 1 },
 ];
 
 export const MAGE_CAP = 6;
 export const MAX_POPULATION = 120;
 /** Queue entries fit 4 bits each in BuildingField.queuePacked. */
 export const QUEUE_MAX = 7;
+/** How near a town's centre its militia reach the farmers building there (round 4; defined in protocol.ts, which the AI may read). */
+export { TOWN_CLEARANCE } from "../protocol.ts";
 
 export function rules(): Rules {
   return {
@@ -133,6 +138,15 @@ export const LEASH = 8 * CELL;
  * it off (src/balance.ts measures both ways).
  */
 export const JOIN_FIGHT = { range: 6 * CELL };
+/**
+ * Loose ranged units and mages (UnitFlag.Loose; round 4, D-035, D-037): on a move they keep to
+ * their place, straight to it when the way is open, and shoot only what comes within range on
+ * the way; those of one player and one group (last told to move together) push apart to
+ * `spacing` (fixed point) from each other, not just to SEPARATION, walking or not. Pushing only
+ * while they shoot or stand was tried: they reached the enemy bunched and lost goal 5 at 8
+ * cells (src/balance.ts). `spacing` 0 switches it all off (the balance tool measures both ways).
+ */
+export const LOOSE_KEEP = { spacing: 2 * CELL };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;

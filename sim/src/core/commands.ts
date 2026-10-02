@@ -34,6 +34,7 @@ import {
   FARMLAND_REACH,
   FORMATION_LOOSE_SPACING,
   FORMATION_SPACING,
+  LOOSE_KEEP,
   MAGE_CAP,
   QUEUE_MAX,
   TOWNS,
@@ -688,9 +689,10 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     sx.push(px);
     sy.push(py);
   }
-  if (goalCell < 0) {
-    // Re-forming in place, units may take the slots in the order they stand: each rank front
-    // to back and each row left to right. Whichever order has the shorter longest walk (then
+  if (goalCell < 0 || (LOOSE_KEEP.spacing > 0 && spacing === FORMATION_LOOSE_SPACING)) {
+    // Re-forming in place, or a loose group on a move (its ranged units and mages walk straight
+    // to their places, LOOSE_KEEP), units may take the slots in the order they stand: each rank
+    // front to back and each row left to right. Whichever order has the shorter longest walk (then
     // the smaller sum of squared walks; a tie keeps id order) is used, so the formation is
     // done sooner and nobody crosses it for nothing.
     const ahead = (s: number) => fx * (u.x[s] - x) + fy * (u.y[s] - y);
