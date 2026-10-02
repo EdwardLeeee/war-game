@@ -133,25 +133,29 @@ jobs:
           node src/walled-perf.ts | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # The scripted player against the normal AI (D-045, D-046; src/scripted-games.ts): five fixed
-  # ways a person might play, game by game, each group its own job. Reports only, no threshold.
+  # ways a person might play, seeds 1-40 each (D-049: 15 seeds overstated a difference that 40
+  # did not), game by game; the long groups split over jobs, all five in one table in
+  # scripted-summary, the first 15 or 20 seeds beside all 40. Reports only, no threshold.
+  # Only in pull request runs and pushes to core/scratch-* (analysis branches): the push run of a
+  # pull request's branch would play the same games again.
   scripted:
-    name: scripted (${{ matrix.group }})
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-')
+    name: scripted (${{ matrix.group }} ${{ matrix.seeds }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - group: push
-            args: --seeds 1-20 --strategy push --speed h1 --formation close
-          - group: defend
-            args: --seeds 1-15 --strategy defend --speed h1 --formation close
-          - group: defend-loose
-            args: --seeds 1-15 --strategy defend --speed h1 --formation all
-          - group: defend-eco
-            args: --seeds 1-15 --strategy defend --speed eco --formation all
-          - group: notown
-            args: --seeds 1-15 --strategy notown --speed h1 --formation close
+          - { group: push, seeds: 1-40, args: --strategy push --speed h1 --formation close }
+          - { group: defend, seeds: 1-20, args: --strategy defend --speed h1 --formation close }
+          - { group: defend, seeds: 21-40, args: --strategy defend --speed h1 --formation close }
+          - { group: defend-loose, seeds: 1-20, args: --strategy defend --speed h1 --formation all }
+          - { group: defend-loose, seeds: 21-40, args: --strategy defend --speed h1 --formation all }
+          - { group: defend-eco, seeds: 1-14, args: --strategy defend --speed eco --formation all }
+          - { group: defend-eco, seeds: 15-27, args: --strategy defend --speed eco --formation all }
+          - { group: defend-eco, seeds: 28-40, args: --strategy defend --speed eco --formation all }
+          - { group: notown, seeds: 1-40, args: --strategy notown --speed h1 --formation close }
     defaults:
       run:
         working-directory: sim
@@ -163,14 +167,56 @@ jobs:
       - name: Scripted player against the normal AI
         run: |
           set -o pipefail
-          node src/scripted-games.ts ${{ matrix.args }} --json scripted-${{ matrix.group }}.json | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/scripted-games.ts --seeds ${{ matrix.seeds }} ${{ matrix.args }} --json scripted-${{ matrix.group }}-${{ matrix.seeds }}.json | tee -a "${GITHUB_STEP_SUMMARY}"
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: scripted-${{ matrix.group }}
-          path: sim/scripted-${{ matrix.group }}.json
+          name: scripted-${{ matrix.group }}-${{ matrix.seeds }}
+          path: sim/scripted-${{ matrix.group }}-${{ matrix.seeds }}.json
           retention-days: 30
           if-no-files-found: ignore
+
+  # The five groups in one table: games won of the first 15 seeds (20 for push), as the table had
+  # before D-049, and of all 40; games still open at the cap in brackets.
+  scripted-summary:
+    needs: [scripted]
+    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: scripted-*
+          path: scripted
+          merge-multiple: true
+      - name: The five groups
+        run: |
+          set -o pipefail
+          cat > summary.mjs <<'EOF'
+          import { readdirSync, readFileSync } from "node:fs";
+          const groups = [["push", "主動", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15]];
+          const games = new Map(groups.map(([g]) => [g, []]));
+          for (const f of readdirSync("scripted")) {
+            const m = /^scripted-(.+)-\d+-\d+\.json$/.exec(f);
+            if (m && games.has(m[1])) games.get(m[1]).push(...JSON.parse(readFileSync(`scripted/${f}`, "utf8")).games);
+          }
+          const cell = (list) => {
+            const won = list.filter((x) => x.result === "won").length;
+            const open = list.filter((x) => x.result === "open").length;
+            return `${won}/${list.length}${open > 0 ? `（${open}）` : ""}`;
+          };
+          const out = ["## 腳本玩家五組（對普通電腦）", "", "| 組 | 前 15／20 局 | 40 局 |", "|---|---|---|"];
+          for (const [g, name, first] of groups) {
+            const list = games.get(g).sort((a, b) => a.seed - b.seed);
+            out.push(`| ${name}（${g}） | ${cell(list.filter((x) => x.seed <= first))} | ${cell(list)} |`);
+          }
+          out.push("", "贏/局數；括號是到第 50 分還沒分出勝負的局。前 15／20 局是 D-049 以前 CI 跑的局，逐局相同。");
+          console.log(out.join("\n"));
+          EOF
+          node summary.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # Unit balance (round 3, D-026): small battles of equal cost, the values before this round
   # against the values in the code, every goal marked (src/balance.ts). About 10 seconds.
