@@ -13,7 +13,7 @@ import { DIFFICULTY_LABEL, loadDifficulty, saveDifficulty } from "./difficulty.t
 import { AI_DIFFICULTIES, type AiDifficulty, MAX_TICKS, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
 import { tickRateText } from "./ui/controls.ts";
-import { deployedCommit, isNewer } from "./version.ts";
+import { deployedCommit, isNewer, updateHref } from "./version.ts";
 
 declare const __COMMIT__: string;
 
@@ -89,16 +89,20 @@ $("commit").textContent = `commit ${__COMMIT__}`;
  * once, and nothing reloads under him.
  */
 let newerTold = false;
+let newer: string | null = null;
 async function checkVersion(): Promise<void> {
   const deployed = await deployedCommit();
-  if (!isNewer(__COMMIT__, deployed)) return;
+  if (deployed === null || !isNewer(__COMMIT__, deployed)) return;
+  newer = deployed;
   $("update").hidden = false;
   if (hook.screen === "battle" && game !== null && !newerTold) {
     newerTold = true;
     game.toast("有新版本：回到開局畫面（選單 → 回開局畫面）就能更新");
   }
 }
-$("update-now").addEventListener("click", () => location.reload());
+$("update-now").addEventListener("click", () => {
+  if (newer !== null) location.assign(updateHref(location.href, newer));
+});
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") void checkVersion();
 });
