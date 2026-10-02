@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { deployedCommit, isNewer } from "../src/version.ts";
+import { deployedCommit, isNewer, updateHref } from "../src/version.ts";
 
 const answer = (body: unknown, ok = true) =>
   (async () => ({ ok, json: async () => body }) as Response) as unknown as typeof fetch;
@@ -32,4 +32,11 @@ test("讀版本檔：每次都繞過快取；檔案不在、格式不對、網�
     throw new TypeError("offline");
   }) as unknown as typeof fetch;
   assert.equal(await deployedCommit(broken), null);
+});
+
+test("更新：帶著新的 commit 換到新網址，原本的參數都留著（舊的 index.html 可能還在快取裡）", () => {
+  assert.equal(updateHref("https://example.org/war-game/proto/", "7a8b202"), "https://example.org/war-game/proto/?v=7a8b202");
+  assert.equal(updateHref("https://example.org/war-game/proto/?test=1&mock=1", "7a8b202"), "https://example.org/war-game/proto/?test=1&mock=1&v=7a8b202");
+  // Updating again replaces the old mark.
+  assert.equal(updateHref("https://example.org/war-game/proto/?v=40eb6c3&test=1", "7a8b202"), "https://example.org/war-game/proto/?v=7a8b202&test=1");
 });

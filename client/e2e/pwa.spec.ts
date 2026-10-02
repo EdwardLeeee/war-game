@@ -83,9 +83,12 @@ test("有新版本：版本檔和頁面的 commit 一樣時不提示；線上換
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await expect(page.getByText("有新版本")).toBeVisible();
   await shot(page, info, "update-notice");
-  // 更新 loads the page again: a mark left on this one is gone afterwards.
+  // 更新 loads the page anew at an address with the new commit (past any cached index.html),
+  // keeping the page's own parameters: a mark left on the old page is gone afterwards.
   await page.evaluate(() => Object.assign(window, { oldPage: true }));
-  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "更新" }).tap()]);
+  await Promise.all([page.waitForURL(/[?&]v=0000000/), page.getByRole("button", { name: "更新" }).tap()]);
+  await page.waitForLoadState("load");
+  expect(new URL(page.url()).searchParams.get("test")).toBe("1");
   expect(await page.evaluate(() => "oldPage" in window)).toBe(false);
   // Opening the page while a newer one is out: the notice is there at once.
   await expect(page.getByText("有新版本")).toBeVisible();

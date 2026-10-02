@@ -19,3 +19,14 @@ export async function deployedCommit(fetchFn: typeof fetch = fetch): Promise<str
 export function isNewer(own: string, deployed: string | null): boolean {
   return deployed !== null && deployed !== own;
 }
+
+/**
+ * Where 更新 goes: this page with `v=<the new commit>` added and its other parameters kept.
+ * A new address is fetched anew past the browser's and GitHub Pages' caches, where a plain
+ * reload could get the old index.html again and leave 更新 showing.
+ */
+export function updateHref(href: string, deployed: string): string {
+  const u = new URL(href);
+  u.searchParams.set("v", deployed);
+  return u.href;
+}

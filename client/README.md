@@ -55,7 +55,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 
 - iPhone 的 Safari 用「加入主畫面」、或筆電的 Chrome 安裝之後，從圖示打開沒有網址列。名稱 `war-game` 和晶體圖示是暫時的（GDD 第 16 節）。
 - 不用 service worker，什麼都不快取：常常部署，快取會讓人一直開到舊版。
-- 建置時多一個 `version.json`（只有 commit）。頁面打開、從背景回來時繞過快取讀它，和自己的 commit 不同就在開局畫面顯示「有新版本」和「更新」；對局中只提示一次，不重新載入（`src/version.ts`）。
+- 建置時多一個 `version.json`（只有 commit）。頁面打開、從背景回來時繞過快取讀它，和自己的 commit 不同就在開局畫面顯示「有新版本」和「更新」。「更新」換到加上 `v=<新的 commit>` 的網址（其他參數保留），新網址不會拿到快取裡的舊 `index.html`；對局中只提示一次，不重新載入（`src/version.ts`）。
 
 ## e2e 怎麼模擬觸控
 
