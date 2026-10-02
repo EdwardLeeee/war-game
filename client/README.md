@@ -31,7 +31,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 | `input/` | 手勢狀態機（`gestures.ts`）、點擊的意思（`intent.ts`）、瀏覽器事件接線（`pointer.ts`）、介面按鈕的點／點兩下／長按（`pressable.ts`，同一個狀態機）、分出 N 名挑哪幾名（`split.ts`） |
 | `render/` | PixiJS 圖層與程式畫的暫代圖形 |
 | `ui/` | DOM 介面：右上的速度與暫停（`controls.ts`）；手勢用到的長按提示圈、框選框、技能輪盤、提示列、放建築的 ✓ ✗、被拒原因（`overlays.ts`） |
-| `ui/hud/` | 介面外殼（臨時版）：`hud.ts`（編隊、全軍、閒置、全體回城、被攻擊箭頭、經濟分配、搶或治理、選單、勝負）、`panels.ts`（資源列、選取資訊、指令區）、`minimap.ts`、`names.ts`（顯示用名稱）、`economy-ratio.ts` |
+| `ui/hud/` | 介面外殼（臨時版）：`hud.ts`（編隊、全軍（寫會選到幾名）、閒置、全體回城、被攻擊箭頭、經濟分配、搶或治理、選單、勝負）、`panels.ts`（資源列（最後是遊戲時間）、選取資訊、指令區）、`minimap.ts`、`names.ts`（顯示用名稱）、`economy-ratio.ts` |
 | `lab/` | 量測與確定性檢查（互斥、無效標示、對照 CI 雜湊）、log 框 |
 | `tuning.ts` | 長按 350 ms、移動容許 10 px、點兩下 300 ms、慣性等參數 |
 | `difficulty.ts` | 開局畫面的難度：第一次是簡單，之後記住這台手機上次選的；讀寫瀏覽器儲存空間失敗時當成沒存過（D-024） |

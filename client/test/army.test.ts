@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ArmyBook, type ArmyUnit, inTown, isSoldier, type TownArea } from "../src/game/army.ts";
 import { CELL, UnitType } from "../src/sim.ts";
+import { armyText } from "../src/ui/hud/names.ts";
 
 const FARMER = UnitType.Farmer;
 const SPEAR = UnitType.Spearman;
@@ -49,6 +50,18 @@ test("留守：全軍不選留守的兵，也不選農民", () => {
   book.station(units, TOWN, 1);
   assert.deepEqual(book.army(units), [2, 3, 5]);
   assert.equal(isSoldier(FARMER), false);
+});
+
+test("全軍的數字（ceo 2026-10-03）：全軍會選到幾名，不含留守的兵和農民；都留守時是 0", () => {
+  const book = new ArmyBook();
+  const units = [unit(1, SPEAR, 30, 30), unit(2, SPEAR, 31, 30), unit(3, RANGED, 50, 50), unit(4, FARMER, 31, 31), unit(5, MAGE, 52, 50)];
+  assert.equal(armyText(book.army(units).length), "全軍 4");
+  book.station(units, TOWN, 1);
+  assert.equal(armyText(book.army(units).length), "全軍 3");
+  book.station(units, TOWN, 5);
+  assert.deepEqual(book.army(units), [3, 5], "the two by the town stay");
+  assert.equal(armyText(book.army(units).length), "全軍 2");
+  assert.equal(armyText(book.army([unit(4, FARMER, 31, 31)]).length), "全軍 0");
 });
 
 test("留守：被挑中的兵從原本的編隊移出", () => {

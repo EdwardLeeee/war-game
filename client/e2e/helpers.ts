@@ -58,6 +58,9 @@ export async function shot(page: Page, info: TestInfo, name: string): Promise<vo
   await info.attach(name, { path, contentType: "image/png" });
 }
 
+/** 全軍, whose label says how many soldiers it selects (全軍 24; ceo 2026-10-03). */
+export const armyButton = (page: Page) => page.getByRole("button", { name: /^全軍 \d+$/ });
+
 /** The lab panel opens from the menu: 選單 → 量測與確定性檢查. */
 export async function openLab(page: Page): Promise<void> {
   await page.getByRole("button", { name: "選單" }).tap();

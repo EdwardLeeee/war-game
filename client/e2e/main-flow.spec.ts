@@ -8,7 +8,7 @@
 // and moves the camera. The opponent stands still (?test=1&ai=0, see step 1).
 
 import { expect, type Page, test } from "@playwright/test";
-import { shot, watchErrors } from "./helpers.ts";
+import { armyButton, shot, watchErrors } from "./helpers.ts";
 import { doubleTap, longPress, longPressOn, tap } from "./touch.ts";
 
 const FARMER = 0;
@@ -250,7 +250,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await shot(page, info, "8-governing");
 
   // 8b. 全軍不帶走留守的兵：全軍 → 前進到遠處 → 部隊都離開城鎮後，駐軍還夠，沒有開始叛離
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(0);
   const marching = (await selection(page))?.units ?? [];
   expect(marching, "全軍 leaves the garrison").not.toContain(kept);
@@ -346,7 +346,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
 
   // 9. 分出 N 名存成編隊（D-024）：暫停 → 全軍 → 分出一半 → 長按編隊 2 → 改選其餘
   await pause(page);
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(1);
   const army = (await selection(page))?.units ?? [];
   expect(army, "全軍 still leaves the garrison").not.toContain(kept);
@@ -392,7 +392,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
 
   // 11. 散開隊形（D-027、D-028）：全軍 → 隊形：散開（按下去就原地重排）→ 前進 → 站好後彼此相隔約 2 格。
   //     Last, so that a wider squad does not change the town steps (a radius-4 town).
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(3);
   const troops = (await selection(page))?.units ?? [];
   const formation = page.getByRole("button", { name: /^隊形/ });

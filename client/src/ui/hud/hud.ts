@@ -11,10 +11,12 @@ import { FIXED_TO_PX } from "../../view/view.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
 import { Minimap } from "./minimap.ts";
-import { BUILDING_NAME, clock, GAME_OVER_REASON } from "./names.ts";
+import { armyText, BUILDING_NAME, clock, GAME_OVER_REASON } from "./names.ts";
 import { CommandArea, ResourceBar, SelectionInfo } from "./panels.ts";
 
 const UPDATE_MS = 100;
+/** px between the resource bar and the top-right buttons. */
+const RES_GAP = 8;
 const ALERT_MS = 6000;
 /** Attacks closer than this (cells) to a live alert refresh it instead of adding another. */
 const ALERT_MERGE_CELLS = 8;
@@ -56,6 +58,8 @@ export class Hud {
   private readonly game: Game;
   private readonly life: HudLifecycle;
   private readonly res: ResourceBar;
+  private readonly controlsBar: HTMLElement;
+  private readonly armyBtn: HTMLButtonElement;
   private readonly minimap: Minimap;
   /** 開局提示 (D-044): the town the minimap flashes, until when (performance.now ms; Infinity while the hint is open). */
   private flash: { id: number; cx: number; cy: number; radius: number; until: number } | null = null;
@@ -80,6 +84,7 @@ export class Hud {
     this.game = game;
     this.life = life;
     this.res = new ResourceBar(root);
+    this.controlsBar = controlsBar;
 
     const menu = btn(controlsBar, "選單", () => this.openMenu(), "secondary");
     menu.setAttribute("aria-haspopup", "dialog");
@@ -111,7 +116,7 @@ export class Hud {
       );
       this.groupBtns.push(b);
     }
-    btn(right, "全軍", () => this.selectArmy(), "army-btn secondary");
+    this.armyBtn = btn(right, armyText(0), () => this.selectArmy(), "army-btn secondary");
     // 全軍撤退 (user 2026-10-01): nothing to select first. Top left, far from 全軍.
     btn(root, "全軍撤退", () => game.retreatAll(), "retreat-all-btn");
 
@@ -169,7 +174,8 @@ export class Hud {
     this.lastUpdate = now;
     const view = this.game.view;
     const h = view?.header;
-    this.res.update(view);
+    // The resource bar keeps a gap before the top-right buttons.
+    this.res.update(view, Math.floor(this.controlsBar.getBoundingClientRect().left - this.res.el.getBoundingClientRect().left - RES_GAP));
     if (h !== null && h !== undefined) {
       const recall = h[H.recall] === 1;
       const label = recall ? "回去工作" : "全體回城";
@@ -180,6 +186,9 @@ export class Hud {
     const idleText = `閒置 ${idle}`;
     if (this.idleBtn.textContent !== idleText) this.idleBtn.textContent = idleText;
     this.idleBtn.classList.toggle("has-idle", idle > 0);
+    // 全軍 N (ceo 2026-10-03): the soldiers it selects, those stationed in towns left out.
+    const armyLabel = armyText(this.game.armyIds().length);
+    if (this.armyBtn.textContent !== armyLabel) this.armyBtn.textContent = armyLabel;
     for (let i = 0; i < 4; i++) {
       // 現有／原本 (D-026): what the group has now against what it was saved with.
       const g = this.game.army.groups[i];
