@@ -1,0 +1,20 @@
+seed 2 over true winner 1 at 19.3
+1分 #0Neut:2 #1Neut:2 #2Neut:2 #3Neut:2 搶 0/0 治理 0/0 魔晶 0/0
+2分 #0Neut:2 #1Neut:2 #2Neut:2 #3Neut:2 搶 0/0 治理 0/0 魔晶 0/0
+3分 #0Neut:2 #1Neut:2 #2Neut:2 #3Neut:2 搶 0/0 治理 0/0 魔晶 0/0
+4分 #0Neut:2 #1Neut:2 #2Neut:2 #3Neut:2 搶 0/0 治理 0/0 魔晶 0/0
+5分 #0Neut:2 #1Neut:2 #2Neut:2 #3Neut:2 搶 0/0 治理 0/0 魔晶 0/0
+6分 #0Neut:2 #1Neut:2 #2Neut:2 #3Neut:2 搶 0/0 治理 0/0 魔晶 0/0
+7分 #0Neut:2 #1Neut:2 #2Ruin:-1 #3Neut:2 搶 1/0 治理 0/0 魔晶 75/0
+8分 #0Neut:2 #1Neut:2 #2Ruin:-1 #3Neut:2 搶 1/0 治理 0/0 魔晶 75/0
+9分 #0Neut:2 #1Neut:2 #2Ruin:-1 #3Ruin:-1 搶 1/1 治理 0/0 魔晶 25/75
+10分 #0Repa:1 #1Neut:2 #2Ruin:-1 #3Ruin:-1 搶 1/1 治理 0/0 魔晶 25/75
+11分 #0Gove:1 #1Repa:1 #2Plun:0 #3Ruin:-1 搶 1/1 治理 0/1 魔晶 25/85
+12分 #0Gove:1 #1Gove:1 #2Ruin:-1 #3Ruin:-1 搶 2/1 治理 0/2 魔晶 50/21
+13分 #0Gove:1 #1Gove:1 #2Ruin:-1 #3Neut:2 搶 2/1 治理 0/2 魔晶 35/13
+14分 #0Gove:1 #1Gove:1 #2Ruin:-1 #3Ruin:-1 搶 2/2 治理 0/2 魔晶 35/30
+15分 #0Gove:1 #1Gove:1 #2Ruin:-1 #3Ruin:-1 搶 2/2 治理 0/2 魔晶 35/22
+16分 #0Gove:1 #1Gove:1 #2Ruin:-1 #3Ruin:-1 搶 3/2 治理 0/2 魔晶 60/64
+17分 #0Gove:1 #1Gove:1 #2Ruin:-1 #3Ruin:-1 搶 3/2 治理 0/2 魔晶 60/106
+18分 #0Gove:1 #1Gove:1 #2Ruin:-1 #3Ruin:-1 搶 3/3 治理 0/2 魔晶 0/148
+19分 #0Gove:1 #1Gove:1 #2Ruin:-1 #3Ruin:-1 搶 3/3 治理 0/2 魔晶 30/95
