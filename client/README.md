@@ -90,3 +90,5 @@ Chromium 在 CI 上用裝置倍率 1（沒有 GPU，倍率 3 會拖慢到手勢�
 - `scripts/icons.py`：畫暫時的主畫面圖示（`public/icons/` 的 SVG 和 180、192、512 的 PNG；要 Pillow，產出的檔案有進 repo，CI 不跑它）。
 - `scripts/expected-hashes.sh`：產生確定性檢查的對照檔。
 - `test/`：單元測試。
+
+<!-- 暫時：確認只改 .md 不觸發 Pages 和 Client（#101），不合併 -->
