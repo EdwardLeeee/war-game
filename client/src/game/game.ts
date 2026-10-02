@@ -56,7 +56,7 @@ import { Placement } from "../ui/placement.ts";
 import { type SplitUnit, splitPick } from "../input/split.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, type TownArea } from "./army.ts";
-import { nearestTown, townHintLines } from "./town-hint.ts";
+import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
 
 type InitMessage = Extract<ToWorker, { type: "init" }>;
@@ -194,14 +194,14 @@ export class Game implements GestureHost {
   }
 
   /**
-   * 開局提示 (D-044): where crystal comes from and the town nearest our main city, worked out
-   * from the map. The game waits while the player reads, and goes on when the hint closes.
+   * 開局提示 (D-044): where crystal comes from and the small town nearest our main city, worked
+   * out from the map. The game waits while the player reads, and goes on when the hint closes.
    */
   showTownHint(): void {
     const view = this.view;
     if (view === null) return;
     const home = view.map.spawns.find((s) => s.player === view.me);
-    const town = home === undefined ? null : nearestTown(view.map.towns, home);
+    const town = home === undefined ? null : hintTown(view.map.towns, home);
     if (home === undefined || town === null) return;
     const wasPaused = this.paused;
     this.pause();

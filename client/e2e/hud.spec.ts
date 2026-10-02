@@ -3,7 +3,7 @@
 // and idle farmers, and every piece of the temporary interface (GDD §10 草稿).
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { FULL_SCREEN, INTERACTIVE, IPHONE_SAFE, injectSafeArea, nearestTownToHome, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 import { doubleTap, doubleTapOn, longPress, longPressOn, tap, tapOn } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -148,8 +148,8 @@ test("開局提示：開局時說魔晶從城鎮來、最近的城鎮在哪裡�
   await expect(hint).toBeVisible();
   await expect(hint).toContainText("魔晶主要從城鎮來");
   await expect(hint).toContainText("搶：馬上拿到一筆糧、金和魔晶");
-  await expect(hint).toContainText(/離你的主城最近的是一座(小鎮|大城)，在主城的.{1,2}方，約 \d+ 格/);
-  const town = await nearestTownToHome(page);
+  await expect(hint).toContainText(/離你的主城最近的小鎮在主城的.{1,2}方，約 \d+ 格/);
+  const town = await hintTownOf(page);
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
   await injectSafeArea(page);
@@ -226,7 +226,7 @@ test("開局提示：按不再提示，記在這台裝置上，重來、重新�
   await page.getByRole("button", { name: "魔晶怎麼拿" }).tap();
   await expect(hint).toBeVisible();
   await expect(hint).toContainText("魔晶主要從城鎮來");
-  const town = await nearestTownToHome(page);
+  const town = await hintTownOf(page);
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
   // Turned off, so its third button turns it back on.
