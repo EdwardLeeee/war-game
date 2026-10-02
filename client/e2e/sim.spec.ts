@@ -4,7 +4,7 @@
 // hashes CI computed with the headless runner (dist/expected-hashes.json).
 
 import { expect, type Page, test } from "@playwright/test";
-import { openLab, shot, watchErrors } from "./helpers.ts";
+import { hintTownOf, openLab, shot, watchErrors } from "./helpers.ts";
 import { doubleTap, tap } from "./touch.ts";
 
 const FARMER = 0;
@@ -318,6 +318,22 @@ test("選單 → 投降 → 勝負畫面顯示失敗（投降）→ 重來開新
   await page.waitForFunction(() => window.__proto?.ready === true);
   await expect(page.getByRole("dialog")).toBeHidden();
   expect((await header(page)).tick).toBeLessThan(200);
+});
+
+test("開局提示：真的地圖上，提示指向離主城最近的小鎮，大城比較近也一樣（不管地圖上有幾座、編號是多少）；按知道了，模擬開始跑（D-044）", async ({ page }, info) => {
+  await start(page, "?test=1&hint=1");
+  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  await expect(hint).toBeVisible();
+  const town = await hintTownOf(page);
+  expect(town.size, "the real map has small towns").toBe(0);
+  await expect(hint).toContainText(/離你的主城最近的小鎮在主城的.{1,2}方，約 \d+ 格/);
+  expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
+  await shot(page, info, "town-hint-real-map");
+  const tick = (await header(page)).tick;
+  await hint.getByRole("button", { name: "知道了" }).tap();
+  await expect(hint).toBeHidden();
+  await expect.poll(async () => (await header(page)).tick, { timeout: 10_000 }).toBeGreaterThan(tick);
+  expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: false, flashing: true });
 });
 
 test("量測：開一局 perf 場景（所有系統都開著），暖機 5 秒量 30 秒，結果框寫明場景", async ({ page }, info) => {

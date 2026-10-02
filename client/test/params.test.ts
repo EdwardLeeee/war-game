@@ -7,15 +7,15 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, scenario: null, enemyAi: true });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, scenario: null, enemyAi: true, hint: true });
 });
 
 test("tps, mock, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&scenario=e2e&ai=0"), { test: false, tps: null, mock: false, scenario: null, enemyAi: true });
+  assert.deepEqual(parseParams("?tps=200&mock=1&scenario=e2e&ai=0&hint=0"), { test: false, tps: null, mock: false, scenario: null, enemyAi: true, hint: true });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, scenario: null, enemyAi: true });
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, scenario: null, enemyAi: true, hint: false });
   assert.equal(parseParams("?test=1&mock=1").mock, true);
   assert.equal(parseParams("?test=1&scenario=e2e").scenario, "e2e");
   assert.equal(parseParams("?test=1&scenario=bogus").scenario, null);
@@ -32,4 +32,12 @@ test("tps is capped and must be a positive whole number", () => {
   for (const bad of ["0", "-5", "1.5", "abc", ""]) {
     assert.equal(parseParams(`?test=1&tps=${bad}`).tps, null, bad);
   }
+});
+
+test("開局提示：玩家的頁面每局都有；測試頁要加 hint=1 才有，其他測試直接進戰場（D-044）", () => {
+  assert.equal(parseParams("").hint, true);
+  assert.equal(parseParams("?v=7a8b202").hint, true);
+  assert.equal(parseParams("?test=1").hint, false);
+  assert.equal(parseParams("?test=1&hint=1").hint, true);
+  assert.equal(parseParams("?test=1&hint=0").hint, false);
 });

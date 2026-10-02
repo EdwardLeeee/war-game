@@ -62,6 +62,10 @@ export interface GameHook {
   groups(): number[][];
   /** The soldiers stationed in a town (留守, D-026). */
   garrison(town: number): number[];
+  /** 開局提示 (D-044): the town it points at, whether its dialog is open, whether the minimap flashes it. */
+  townHint(): { town: number; open: boolean; flashing: boolean } | null;
+  /** Our spawn (where the main city starts), in cells. */
+  home(): { cx: number; cy: number } | null;
   /** Control groups with what 自動補兵 knows: 原本 by type, the switch, and the recruits still on their way. */
   groupInfo(): { ids: number[]; want: Record<number, number>; saved: number; refill: boolean; recruits: number[] }[];
   /** Fake world only: remove own units (as if they fell). */
@@ -169,6 +173,12 @@ export function gameHook(game: Game): GameHook {
     },
     groups: () => game.army.groups.map((g) => [...g.ids]),
     garrison: (town) => game.army.garrisonOf(town),
+    townHint: () => game.townHint(),
+    home: () => {
+      const view = game.view;
+      const s = view?.map.spawns.find((v) => v.player === view.me);
+      return s === undefined ? null : { cx: s.cellX, cy: s.cellY };
+    },
     groupInfo: () => game.army.groups.map((g) => ({ ids: [...g.ids], want: { ...g.want }, saved: g.saved, refill: g.refill, recruits: g.recruits.map((r) => r.id) })),
     remove: (ids) => {
       if (game.portForTest instanceof MockPort) game.portForTest.remove(ids);

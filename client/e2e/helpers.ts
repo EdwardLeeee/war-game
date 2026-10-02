@@ -63,3 +63,20 @@ export async function openLab(page: Page): Promise<void> {
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "量測與確定性檢查" }).tap();
 }
+
+/** TownSize.Small (sim/src/protocol.ts). */
+const SMALL_TOWN = 0;
+
+/**
+ * 開局提示 (D-044): the town the hint should show, by its rule: the small town nearest our
+ * spawn, the nearest town only on a map without small ones, the lower id on a tie. From
+ * whatever towns the map has, so the tests do not depend on their number or ids.
+ */
+export async function hintTownOf(page: Page): Promise<{ id: number; size: number; cx: number; cy: number }> {
+  const home = await page.evaluate(() => window.__proto?.game?.home() ?? null);
+  const list = await page.evaluate(() => window.__proto?.game?.towns() ?? []);
+  if (home === null || list.length === 0) throw new Error("no spawn or no towns");
+  const d = (t: { cx: number; cy: number }) => (t.cx - home.cx) ** 2 + (t.cy - home.cy) ** 2;
+  const small = list.filter((t) => t.size === SMALL_TOWN);
+  return [...(small.length > 0 ? small : list)].sort((a, b) => d(a) - d(b) || a.id - b.id)[0];
+}

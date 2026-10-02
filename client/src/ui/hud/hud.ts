@@ -9,6 +9,7 @@ import { type GameStats, HeaderField as H, type SimEvent, TownChoice, TownSize }
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
+import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
 import { Minimap } from "./minimap.ts";
 import { BUILDING_NAME, clock, GAME_OVER_REASON } from "./names.ts";
 import { CommandArea, ResourceBar, SelectionInfo } from "./panels.ts";
@@ -18,6 +19,8 @@ const ALERT_MS = 6000;
 /** Attacks closer than this (cells) to a live alert refresh it instead of adding another. */
 const ALERT_MERGE_CELLS = 8;
 const MAX_ARROWS = 3;
+/** 開局提示: the minimap keeps flashing the town this long after the hint is closed (ms). */
+const TOWN_FLASH_AFTER_MS = 10_000;
 
 export interface HudLifecycle {
   restart(): void;
@@ -54,6 +57,10 @@ export class Hud {
   private readonly life: HudLifecycle;
   private readonly res: ResourceBar;
   private readonly minimap: Minimap;
+  /** 開局提示 (D-044): the town the minimap flashes, until when (performance.now ms; Infinity while the hint is open). */
+  private flash: { id: number; cx: number; cy: number; radius: number; until: number } | null = null;
+  /** Called once when the dialog on screen goes away, however it goes (the hint resumes the game). */
+  private dialogGone: (() => void) | null = null;
   private readonly info: SelectionInfo;
   private readonly cmds: CommandArea;
   private readonly recallBtn: HTMLButtonElement;
@@ -140,6 +147,7 @@ export class Hud {
       tap: (x, y) => game.minimapTap(x, y),
       longPress: (x, y) => game.minimapLongPress(x, y),
       alerts: () => this.alerts.map((a) => ({ cx: Math.floor(a.wx / TILE_PX), cy: Math.floor(a.wy / TILE_PX) })),
+      highlight: () => (this.flash !== null && performance.now() < this.flash.until ? this.flash : null),
     });
     this.info = new SelectionInfo(root, host);
     this.cmds = new CommandArea(root, host);
@@ -362,6 +370,7 @@ export class Hud {
   // --- dialogs ----------------------------------------------------------------------
 
   private openDialog(title: string, cls: string): HTMLElement {
+    this.dialogClosed();
     this.dialog.replaceChildren();
     this.dialog.className = `dialog ${cls}`;
     this.dialog.hidden = false;
@@ -380,6 +389,59 @@ export class Hud {
   closeDialog(): void {
     this.dialog.hidden = true;
     this.dialog.replaceChildren();
+    this.dialogClosed();
+  }
+
+  private dialogClosed(): void {
+    const gone = this.dialogGone;
+    this.dialogGone = null;
+    gone?.();
+  }
+
+  /**
+   * 開局提示 (D-044): where crystal comes from and the nearest town, over the paused game.
+   * The minimap flashes that town while this is open and for a while after; 看那座城鎮 also
+   * moves the camera there. `done` runs however the dialog goes away.
+   */
+  openTownHint(lines: string[], town: { id: number; cx: number; cy: number; radius: number }, look: () => void, done: () => void): void {
+    const card = this.openDialog("魔晶從城鎮來", "town-hint");
+    for (const line of lines) el("p", card, "", line);
+    this.flash = { ...town, until: Number.POSITIVE_INFINITY };
+    this.dialogGone = () => {
+      if (this.flash !== null) this.flash.until = performance.now() + TOWN_FLASH_AFTER_MS;
+      done();
+    };
+    const row = el("div", card, "dialog-buttons");
+    // 不再提示 (ceo, D-044): the player plays one game after another. Kept on this device;
+    // 選單 → 魔晶怎麼拿 opens the hint again, and there it can be turned back on. On the left,
+    // away from 知道了 under the right thumb.
+    const off = loadTownHintOff();
+    btn(
+      row,
+      off ? "開局時要提示" : "不再提示",
+      () => {
+        saveTownHintOff(!off);
+        this.closeDialog();
+        this.game.toast(off ? "之後每一局開局都會提示" : "之後開局不會再提示；選單裡的「魔晶怎麼拿」可以再看");
+      },
+      "secondary",
+    );
+    btn(
+      row,
+      "看那座城鎮",
+      () => {
+        this.closeDialog();
+        look();
+      },
+      "secondary",
+    );
+    btn(row, "知道了", () => this.closeDialog());
+  }
+
+  /** The town 開局提示 points at, whether its dialog is open, and whether the minimap flashes it (test hook). */
+  townHint(): { town: number; open: boolean; flashing: boolean } | null {
+    if (this.flash === null) return null;
+    return { town: this.flash.id, open: this.flash.until === Number.POSITIVE_INFINITY, flashing: performance.now() < this.flash.until };
   }
 
   get dialogOpen(): boolean {
@@ -389,6 +451,11 @@ export class Hud {
   private openMenu(): void {
     const card = this.openDialog("選單", "menu");
     const list = el("div", card, "dialog-buttons column");
+    // 開局提示 again (D-044), also after 不再提示.
+    btn(list, "魔晶怎麼拿", () => {
+      this.closeDialog();
+      this.game.showTownHint();
+    }, "secondary");
     btn(list, "量測與確定性檢查", () => {
       this.closeDialog();
       this.game.lab.show();

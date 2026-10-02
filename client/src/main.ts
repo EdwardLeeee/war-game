@@ -10,6 +10,7 @@ import { MockPort } from "./mock/mock-port.ts";
 import { createSimPort } from "./game/port.ts";
 import { parseParams, SPEED_TPS } from "./params.ts";
 import { DIFFICULTY_LABEL, loadDifficulty, saveDifficulty } from "./difficulty.ts";
+import { loadTownHintOff } from "./hint-pref.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, MAX_TICKS, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
 import { tickRateText } from "./ui/controls.ts";
@@ -153,6 +154,9 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   await g.whenReady();
   if (game !== g) return;
   hook.ready = true;
+  // 開局提示 (D-044): once per game, here at its start (重來 is a new game; 繼續這局 is not),
+  // unless the player chose 不再提示; 選單 → 魔晶怎麼拿 still opens it.
+  if (!measure && params.hint && !loadTownHintOff()) g.showTownHint();
   if (measure) {
     g.focusBattle();
     g.lab.show();
