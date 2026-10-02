@@ -151,7 +151,7 @@ test("開局提示：開局時說魔晶從城鎮來、最近的城鎮在哪裡�
   await expect(hint).toContainText(/離你的主城最近的是一座(小鎮|大城)，在主城的.{1,2}方，約 \d+ 格/);
   const town = await nearestTownToHome(page);
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
-  expect(await page.evaluate(() => window.__proto?.game?.header().paused), "the game waits while the hint is open").toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
   await injectSafeArea(page);
   const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
   for (const b of await visibleBoxes(page, ".town-hint button")) {
@@ -228,7 +228,7 @@ test("開局提示：按不再提示，記在這台裝置上，重來、重新�
   await expect(hint).toContainText("魔晶主要從城鎮來");
   const town = await nearestTownToHome(page);
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
-  expect(await page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
   // Turned off, so its third button turns it back on.
   await expect(hint.getByRole("button", { name: "不再提示" })).toHaveCount(0);
   await hint.getByRole("button", { name: "開局時要提示" }).tap();
