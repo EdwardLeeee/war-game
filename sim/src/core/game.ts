@@ -162,7 +162,7 @@ export class Game {
     h = fnvInt32(h, w.ecoRatio);
     h = fnvBytes(h, w.ecoOn);
     h = fnvBytes(h, w.recall);
-    for (const a of [w.gathered, w.trained, w.lost]) h = fnvInt32(h, a);
+    for (const a of [w.gathered, w.trained, w.lost, w.farmerDeaths]) h = fnvInt32(h, a);
     h = fnvBytes(h, w.grid);
     h = fnvInt32(h, w.nodeAmount);
     for (const a of [w.townState, w.townOwner, w.townTimer, w.townTimerTotal, w.townRevolt, w.townContested, w.townAcc]) h = fnvInt32(h, a);
@@ -170,6 +170,7 @@ export class Game {
     h = fnvInt32(h, w.governed);
     h = fnvInt32(h, w.cannonShots);
     h = fnvInt32(h, w.cannonHits);
+    h = fnvInt32(h, w.revolts);
     for (const a of [w.plunderIncome, w.governChosen, w.governCost, w.townIncome, w.governedTicks, w.governEnded, w.governPaidBack, w.townSpellCost, w.townSpellIncome]) {
       h = fnvInt32(h, a);
     }

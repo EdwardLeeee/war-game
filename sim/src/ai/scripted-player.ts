@@ -22,6 +22,7 @@ import {
   Order,
   PlaceBit,
   type Rules,
+  TOWN_CLEARANCE,
   TOWN_STRIDE,
   TownChoice,
   TownField,
@@ -115,8 +116,6 @@ interface Town {
 }
 type Mode = "home" | "town" | "base" | "defend";
 
-/** Builds nothing whose centre is this close to a town's centre (cells), as the AI of round 4 PR A. */
-const TOWN_CLEARANCE = 12;
 const PRESS_ON_HP = 40;
 const GOVERN_COST: Cost[] = [];
 GOVERN_COST[TownSize.Small] = { food: 0, wood: 80, gold: 80, crystal: 0 };

@@ -41,7 +41,7 @@ export function armyText(a: Army): string {
 }
 
 /** How the attacker stands and marches. */
-export type Formation = "close" | "loose" | "loose-on-the-way";
+export type Formation = "close" | "loose" | "loose-on-the-way" | "loose-shooters";
 
 export interface Fight {
   /** 0 or 1: the side that won (the other has nobody left), or -1 when the time ran out. */
@@ -108,8 +108,9 @@ export const BOTH = 2;
  * cells apart; `attacker` (0, 1 or BOTH) is then told to move onto the other's position; a
  * side not told to attack stands as it is (aggressive, so it answers enemies that come near).
  * `formation` is that of side `looseSide` (default: the attacker, side 0 when both attack):
- * close, loose before it sets off (it forms up two cells apart, then attacks), or told to go
- * loose only together with the order to attack.
+ * close, loose before it sets off (it forms up two cells apart, then attacks), told to go
+ * loose only together with the order to attack, or only its ranged and mages loose before it
+ * sets off (its spearmen close).
  */
 export function fight(armies: [Army, Army], attacker: number, distance: number, formation: Formation = "close", looseSide = attacker === BOTH ? 0 : attacker): Fight {
   const g = new Game({ seed: 1, scenario: "standard", maxTicks: 0 });
@@ -152,6 +153,10 @@ export function fight(armies: [Army, Army], attacker: number, distance: number, 
   }
   g.fog.update(w);
   if (formation === "loose") push(looseSide, { c: "formation", u: ids[looseSide], loose: true });
+  if (formation === "loose-shooters") {
+    const shooters = ids[looseSide].filter((id) => u.type[w.unit(id)] !== UnitType.Spearman);
+    if (shooters.length > 0) push(looseSide, { c: "formation", u: shooters, loose: true });
+  }
   for (let p = 0; p < 2; p++) push(p, { c: "move", u: ids[p], x: frontX[p], y: midY });
   for (let t = 0; t < FORM_UP_TICKS; t++) {
     g.step();

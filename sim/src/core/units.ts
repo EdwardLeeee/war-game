@@ -29,12 +29,14 @@ import {
   ARRIVE_DISTANCE,
   BUILDINGS,
   CANNON,
+  COUNTER_ATTACK,
   MAGE_BOUNTY,
   SHIELD,
   SHIELD_REGEN,
   DIRECT_STEER,
   JOIN_FIGHT,
   LEASH,
+  LOOSE_KEEP,
   MAIN_ARROW,
   MAX_PUSH,
   MULT_DEN,
@@ -48,7 +50,7 @@ import {
 } from "./rules.ts";
 import { IDENTITY, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
-import type { World } from "./world.ts";
+import { HitCause, type World } from "./world.ts";
 
 const TICKS = TICKS_PER_SECOND;
 
@@ -74,6 +76,10 @@ export interface Hurt {
 export class UnitSystem {
   private cellHead: Int32Array;
   private cellNext = new Int32Array(256);
+  /** The same buckets for the loose soldiers that push apart (LOOSE_KEEP), rebuilt in move(). */
+  private keepHead: Int32Array;
+  private keepNext = new Int32Array(256);
+  private keeps = new Uint8Array(256);
   private attacking = new Uint8Array(256);
   /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
   private startTarget = new Int32Array(256);
@@ -98,12 +104,15 @@ export class UnitSystem {
 
   constructor(size: number) {
     this.cellHead = new Int32Array(size * size);
+    this.keepHead = new Int32Array(size * size);
   }
 
   private fit(n: number, nb: number): void {
     if (this.cellNext.length < n) {
       const c = Math.max(n, this.cellNext.length * 2);
       this.cellNext = new Int32Array(c);
+      this.keepNext = new Int32Array(c);
+      this.keeps = new Uint8Array(c);
       this.attacking = new Uint8Array(c);
       this.startTarget = new Int32Array(c);
       this.unitDamage = new Int32Array(c);
@@ -378,6 +387,7 @@ export class UnitSystem {
       const hold = order === Order.None && u.stance[i] === Stance.Hold;
       tid = this.findTarget(w, fog, i, hold ? info.range : Math.max(AGGRO_RANGE, info.range));
       if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT) tid = this.joinFight(w, fog, i);
+      if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT && COUNTER_ATTACK.on) tid = this.counterAttack(w, fog, i);
     }
     u.target[i] = tid;
 
@@ -404,6 +414,11 @@ export class UnitSystem {
       if (d2 <= info.range * info.range) {
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
+        return;
+      }
+      if (order === Order.Move && this.keepsPlace(w, i)) {
+        // A loose ranged unit or mage keeps to its place instead of going for a target out of range.
+        this.march(w, fields, i, order, farmer, info.speed);
         return;
       }
       const idle = order === Order.None;
@@ -445,27 +460,7 @@ export class UnitSystem {
     }
 
     if (order === Order.Move || order === Order.Retreat) {
-      const dx = u.orderX[i] - u.x[i];
-      const dy = u.orderY[i] - u.y[i];
-      if (dx * dx + dy * dy <= ARRIVE_DISTANCE * ARRIVE_DISTANCE) {
-        this.arrive(w, i);
-        return;
-      }
-      const sp = u.speedCap[i] > 0 ? Math.min(u.speedCap[i], info.speed) : info.speed;
-      // A point no one can walk to from here: soldiers on a move break through, farmers and
-      // retreats go as near as they can get.
-      const key = u.orderTarget[i] >= 0 ? u.orderTarget[i] : (u.orderY[i] >> CELL_SHIFT) * n + (u.orderX[i] >> CELL_SHIFT);
-      const goal = nearestWalkable(w, key % n, Math.trunc(key / n));
-      const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT));
-      if (goal >= 0 && here >= 0 && this.regions.of(w, goal) !== here) {
-        this.breakThrough(w, fields, i, here, u.orderX[i], u.orderY[i], order === Order.Move && !farmer);
-        return;
-      }
-      if (this.slotInReach(w, i, dx, dy)) {
-        steerDirect(w, i, dx, dy, sp);
-        return;
-      }
-      steerTo(w, fields, i, u.orderX[i], u.orderY[i], u.orderTarget[i], sp);
+      this.march(w, fields, i, order, farmer, info.speed);
       return;
     }
 
@@ -477,6 +472,94 @@ export class UnitSystem {
       return;
     }
     u.action[i] = Action.Idle;
+  }
+
+  /** A move or a retreat toward the unit's slot: the group's field, or straight when near or keeping its place. */
+  private march(w: World, fields: FieldCache, i: number, order: number, farmer: boolean, speed: number): void {
+    const u = w.units.col;
+    const n = w.size;
+    const dx = u.orderX[i] - u.x[i];
+    const dy = u.orderY[i] - u.y[i];
+    if (dx * dx + dy * dy <= ARRIVE_DISTANCE * ARRIVE_DISTANCE) {
+      this.arrive(w, i);
+      return;
+    }
+    const sp = u.speedCap[i] > 0 ? Math.min(u.speedCap[i], speed) : speed;
+    // A point no one can walk to from here: soldiers on a move break through, farmers and
+    // retreats go as near as they can get.
+    const key = u.orderTarget[i] >= 0 ? u.orderTarget[i] : (u.orderY[i] >> CELL_SHIFT) * n + (u.orderX[i] >> CELL_SHIFT);
+    const goal = nearestWalkable(w, key % n, Math.trunc(key / n));
+    const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT));
+    if (goal >= 0 && here >= 0 && this.regions.of(w, goal) !== here) {
+      this.breakThrough(w, fields, i, here, u.orderX[i], u.orderY[i], order === Order.Move && !farmer);
+      return;
+    }
+    // Loose ranged units and mages go straight to their place whenever the way is open, so the
+    // formation keeps its shape on the march (LOOSE_KEEP).
+    if (this.slotInReach(w, i, dx, dy) || (this.keepsPlace(w, i) && openLine(w, u.x[i], u.y[i], u.orderX[i], u.orderY[i]))) {
+      steerDirect(w, i, dx, dy, sp);
+      return;
+    }
+    steerTo(w, fields, i, u.orderX[i], u.orderY[i], u.orderTarget[i], sp);
+  }
+
+  /**
+   * Counter-attack (COUNTER_ATTACK): the unit that hit unit i, or a friend of i within
+   * JOIN_FIGHT.range, in the last RETARGET_EVERY ticks, if i's owner sees it and it is within
+   * LEASH of i's place; the nearest such (ties to the lower id), or -1.
+   */
+  private counterAttack(w: World, fog: Fog, i: number): number {
+    const u = w.units.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const reach = JOIN_FIGHT.range;
+    const cells = (reach >> CELL_SHIFT) + 1;
+    const cx = u.x[i] >> CELL_SHIFT;
+    const cy = u.y[i] >> CELL_SHIFT;
+    let best = 0;
+    let bestId = -1;
+    for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
+      for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (u.owner[j] !== me || w.tick - u.lastHurt[j] > RETARGET_EVERY) continue;
+          if (j !== i) {
+            const fx = u.x[j] - u.x[i];
+            const fy = u.y[j] - u.y[i];
+            if (fx * fx + fy * fy > reach * reach) continue;
+          }
+          const a = u.hitById[j];
+          const as = a >= 0 ? w.unit(a) : -1;
+          if (as < 0 || u.owner[as] === me || u.action[as] === Action.Garrisoned) continue;
+          if (!this.sees(fog, me, u.x[as], u.y[as], n)) continue;
+          const ax = u.x[as] - u.anchorX[i];
+          const ay = u.y[as] - u.anchorY[i];
+          if (ax * ax + ay * ay > LEASH * LEASH) continue;
+          const dx = u.x[as] - u.x[i];
+          const dy = u.y[as] - u.y[i];
+          const d2 = dx * dx + dy * dy;
+          if (bestId < 0 || d2 < best || (d2 === best && a < bestId)) {
+            best = d2;
+            bestId = a;
+          }
+        }
+      }
+    }
+    return bestId;
+  }
+
+  /** A player's loose soldier that keeps the wider spacing: any type, or ranged units and mages only without LOOSE_KEEP.everyone. */
+  private pushesApart(w: World, i: number): boolean {
+    const u = w.units.col;
+    const t = u.type[i];
+    if (LOOSE_KEEP.spacing === 0 || (u.flags[i] & UnitFlag.Loose) === 0 || u.owner[i] >= PLAYER_COUNT || t === UnitType.Farmer) return false;
+    return LOOSE_KEEP.everyone || t === UnitType.Ranged || t === UnitType.Mage;
+  }
+
+  /** A player's loose ranged unit or mage (LOOSE_KEEP): keeps to its place on a move. */
+  private keepsPlace(w: World, i: number): boolean {
+    const u = w.units.col;
+    const t = u.type[i];
+    return LOOSE_KEEP.spacing > 0 && (u.flags[i] & UnitFlag.Loose) !== 0 && (t === UnitType.Ranged || t === UnitType.Mage) && u.owner[i] < PLAYER_COUNT;
   }
 
   /**
@@ -643,6 +726,22 @@ export class UnitSystem {
     const count = w.units.count;
     const max = n << CELL_SHIFT;
     const sep2 = SEPARATION * SEPARATION;
+    // Loose soldiers, and their own buckets (only they are looked at for the wider spacing).
+    const spacing = LOOSE_KEEP.spacing;
+    let anyKeep = false;
+    for (let i = 0; i < count; i++) {
+      this.keeps[i] = this.pushesApart(w, i) ? 1 : 0;
+      if (this.keeps[i] === 1) anyKeep = true;
+    }
+    if (anyKeep) {
+      this.keepHead.fill(-1);
+      for (let i = 0; i < count; i++) {
+        if (this.keeps[i] === 0) continue;
+        const c = (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT);
+        this.keepNext[i] = this.keepHead[c];
+        this.keepHead[c] = i;
+      }
+    }
     for (let i = 0; i < count; i++) {
       const xi = u.x[i];
       const yi = u.y[i];
@@ -655,10 +754,13 @@ export class UnitSystem {
       const cy = yi >> CELL_SHIFT;
       let px = 0;
       let py = 0;
+      // A loose soldier keeps those of its own player and group at `spacing` (below).
+      const wide = this.keeps[i] === 1 && u.group[i] >= 0;
       for (let y = Math.max(cy - 1, 0); y <= Math.min(cy + 1, n - 1); y++) {
         for (let x = Math.max(cx - 1, 0); x <= Math.min(cx + 1, n - 1); x++) {
           for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
             if (j === i || u.action[j] === Action.Garrisoned) continue;
+            if (wide && this.keeps[j] === 1 && u.owner[j] === u.owner[i] && u.group[j] === u.group[i]) continue;
             const dx = xi - u.x[j];
             const dy = yi - u.y[j];
             if (dx >= SEPARATION || dx <= -SEPARATION || dy >= SEPARATION || dy <= -SEPARATION) continue;
@@ -667,6 +769,25 @@ export class UnitSystem {
             const k = dx === 0 && dy === 0 ? (u.id[i] < u.id[j] ? 0 : 8) + (w.yFirst[u.owner[i]] ? 4 : 0) : dir16(dx, dy);
             px += idiv(DIR16_X[k] * PUSH, CELL);
             py += idiv(DIR16_Y[k] * PUSH, CELL);
+          }
+        }
+      }
+      if (wide) {
+        // Reach 2 cells is enough: units two cells further off along an axis are at least
+        // 2 * CELL + 1 apart, never closer than `spacing` (2 * CELL).
+        const reach = (spacing + CELL - 1) >> CELL_SHIFT;
+        for (let y = Math.max(cy - reach, 0); y <= Math.min(cy + reach, n - 1); y++) {
+          for (let x = Math.max(cx - reach, 0); x <= Math.min(cx + reach, n - 1); x++) {
+            for (let j = this.keepHead[y * n + x]; j >= 0; j = this.keepNext[j]) {
+              if (j === i || u.owner[j] !== u.owner[i] || u.group[j] !== u.group[i]) continue;
+              const dx = xi - u.x[j];
+              const dy = yi - u.y[j];
+              if (dx >= spacing || dx <= -spacing || dy >= spacing || dy <= -spacing) continue;
+              if (dx * dx + dy * dy >= spacing * spacing) continue;
+              const k = dx === 0 && dy === 0 ? (u.id[i] < u.id[j] ? 0 : 8) + (w.yFirst[u.owner[i]] ? 4 : 0) : dir16(dx, dy);
+              px += idiv(DIR16_X[k] * PUSH, CELL);
+              py += idiv(DIR16_Y[k] * PUSH, CELL);
+            }
           }
         }
       }
@@ -725,7 +846,7 @@ export class UnitSystem {
       const info = UNITS[u.type[i]];
       const ts = w.unit(tid);
       if (ts >= 0) {
-        this.hit(w, ts, info.attack, u.type[i], u.owner[i]);
+        this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
       } else {
         const bs = w.building(tid);
         if (bs >= 0) this.buildingDamage[bs] += info.attack;
@@ -762,6 +883,8 @@ export class UnitSystem {
       this.unitDamage[bestSlot] += arrow.damage * arrows;
       this.shieldDamage[bestSlot] += arrow.damage * arrows;
       u.hitBy[bestSlot] = b.owner[s];
+      u.hitCause[bestSlot] = HitCause.Arrow;
+      u.hitById[bestSlot] = -1;
       b.target[s] = u.id[bestSlot];
       b.cooldown[s] = arrow.cooldown;
     }
@@ -811,11 +934,13 @@ export class UnitSystem {
   }
 
   /** One hit on unit slot ts: hp damage and shield damage with their multipliers. */
-  private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number): void {
+  private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number, cause: HitCause, attackerId: number): void {
     const u = w.units.col;
     this.unitDamage[ts] += damage(attack, attackerType, u.type[ts]);
     this.shieldDamage[ts] += damage(attack, attackerType, SHIELD);
     u.hitBy[ts] = attackerOwner;
+    u.hitCause[ts] = cause;
+    u.hitById[ts] = attackerId;
   }
 
   /**
@@ -841,7 +966,7 @@ export class UnitSystem {
             const dx = u.x[j] - u.castX[i];
             const dy = u.y[j] - u.castY[i];
             if (dx * dx + dy * dy <= r2) {
-              this.hit(w, j, CANNON.damage, UnitType.Mage, p);
+              this.hit(w, j, CANNON.damage, UnitType.Mage, p, HitCause.Cannon, u.id[i]);
               if (p < PLAYER_COUNT) w.cannonHits[p]++;
             }
           }
@@ -878,6 +1003,7 @@ export class UnitSystem {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * 5 + u.type[i]]++;
+        if (u.owner[i] < PLAYER_COUNT && u.type[i] === UnitType.Farmer) w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
         if (u.type[i] === UnitType.Mage) {
           // The killer's side picks up the bounty (none for the neutral side).
           const killer = u.hitBy[i];

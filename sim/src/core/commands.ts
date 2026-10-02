@@ -34,6 +34,8 @@ import {
   FARMLAND_REACH,
   FORMATION_LOOSE_SPACING,
   FORMATION_SPACING,
+  LOOSE_KEEP,
+  RETREAT_OWN_SPEED,
   MAGE_CAP,
   QUEUE_MAX,
   TOWNS,
@@ -519,9 +521,9 @@ function targetable(ctx: CommandContext, p: number, id: number): boolean {
 }
 
 /**
- * Formation (GDD section 9): the group moves at its slowest member's speed; at the goal the
- * units stand in rows facing the way they came, melee in front, then ranged, then mages,
- * each rank in id order.
+ * Formation (GDD section 9): the group moves at its slowest member's speed (a retreat at each
+ * one's own, RETREAT_OWN_SPEED); at the goal the units stand in rows facing the way they came,
+ * melee in front, then ranged, then mages, each rank in id order.
  */
 function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: number, order: number): void {
   const { w } = ctx;
@@ -688,9 +690,10 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     sx.push(px);
     sy.push(py);
   }
-  if (goalCell < 0) {
-    // Re-forming in place, units may take the slots in the order they stand: each rank front
-    // to back and each row left to right. Whichever order has the shorter longest walk (then
+  if (goalCell < 0 || (LOOSE_KEEP.spacing > 0 && spacing === FORMATION_LOOSE_SPACING)) {
+    // Re-forming in place, or a loose group on a move (its ranged units and mages walk straight
+    // to their places, LOOSE_KEEP), units may take the slots in the order they stand: each rank
+    // front to back and each row left to right. Whichever order has the shorter longest walk (then
     // the smaller sum of squared walks; a tie keeps id order) is used, so the formation is
     // done sooner and nobody crosses it for nothing.
     const ahead = (s: number) => fx * (u.x[s] - x) + fy * (u.y[s] - y);
@@ -723,7 +726,7 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     u.orderX[s] = px;
     u.orderY[s] = py;
     u.group[s] = group;
-    u.speedCap[s] = speed;
+    u.speedCap[s] = order === Order.Retreat && RETREAT_OWN_SPEED.on ? 0 : speed;
     u.target[s] = -1;
     u.stuck[s] = 0;
   });

@@ -175,9 +175,9 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-  # Unit balance (round 3, D-026): small battles of equal cost, the values before this round
-  # against the values in the code, every goal marked (src/balance.ts). About 10 seconds.
-  # Goals 1-4 must hold with both sides advancing; goal 5 is reported (ceo: not this round).
+  # Unit balance (round 3, D-026; round 4, D-035, D-037): small battles of equal cost, the values
+  # and rules before this round against those in the code, every goal marked (src/balance.ts).
+  # All five goals must hold with both sides advancing (goal 5 since round 4).
   balance:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -192,7 +192,7 @@ jobs:
       - name: Battles of equal cost
         run: |
           set -o pipefail
-          node src/balance.ts --check 1,2,3,4 | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/balance.ts --check 1,2,3,4,5 | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # 100 games of the normal AI against the easy one (round 2): the same seeds, styles and swaps;
   # each spawn plays easy half the time. Replayed like the others.

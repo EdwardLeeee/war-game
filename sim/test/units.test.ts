@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
-import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
+import { Action, BuildingType, CELL_SHIFT, GameOverReason, NEUTRAL, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { BUILDINGS, JOIN_FIGHT, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, CANNON, COUNTER_ATTACK, JOIN_FIGHT, LOOSE_KEEP, RETREAT_OWN_SPEED, UNITS } from "../src/core/rules.ts";
 import { fight } from "../src/balance-lib.ts";
 import type { Game } from "../src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
@@ -35,6 +35,38 @@ test("a group moves at its slowest speed and forms up: melee in front, then rang
   // Moving toward +y: the front is the largest y.
   assert.ok(meanY(UnitType.Spearman) > meanY(UnitType.Ranged), "spearmen ahead of ranged");
   assert.ok(meanY(UnitType.Ranged) > meanY(UnitType.Mage), "ranged ahead of mages");
+});
+
+/** How far (cells) 4 spearmen and 2 mages, told together to retreat 20 cells, each got in 200 ticks: spearmen, mages (means). */
+function retreatGap(ownSpeed: boolean): { spear: number; mage: number; caps: number[] } {
+  const saved = RETREAT_OWN_SPEED.on;
+  RETREAT_OWN_SPEED.on = ownSpeed;
+  try {
+    const g = emptyGame();
+    const a = openArea(g, 30);
+    const u = g.w.units.col;
+    const ids = [0, 1, 2, 3].map((k) => put(g, 0, UnitType.Spearman, a.x + 4 + k, a.y + 3));
+    ids.push(put(g, 0, UnitType.Mage, a.x + 5, a.y + 2), put(g, 0, UnitType.Mage, a.x + 6, a.y + 2));
+    g.fog.update(g.w);
+    const y0 = ids.map((id) => u.y[slotOf(g, id)]);
+    cmd(g, 0, { c: "retreat", u: ids, x: a.x + 5, y: a.y + 24 });
+    run(g, 1);
+    const caps = ids.map((id) => u.speedCap[slotOf(g, id)]);
+    run(g, 199);
+    const went = ids.map((id, k) => (u.y[slotOf(g, id)] - y0[k]) / 1024);
+    const mean = (v: number[]) => v.reduce((p, x) => p + x, 0) / v.length;
+    return { spear: mean(went.slice(0, 4)), mage: mean(went.slice(4)), caps };
+  } finally {
+    RETREAT_OWN_SPEED.on = saved;
+  }
+}
+
+test("a retreat lets each run at its own speed: the fast do not wait for the slow (round 4); a move still keeps to the slowest", () => {
+  const own = retreatGap(true);
+  assert.deepEqual(own.caps, [0, 0, 0, 0, 0, 0], "no speed cap");
+  assert.ok(own.spear - own.mage >= 0.6, `spearmen ${own.spear.toFixed(2)} cells, mages ${own.mage.toFixed(2)}`);
+  const capped = retreatGap(false);
+  assert.ok(Math.abs(capped.spear - capped.mage) < 0.2, `before: together (${capped.spear.toFixed(2)} and ${capped.mage.toFixed(2)})`);
 });
 
 test("retreat ignores enemies; attack-move fights them", () => {
@@ -136,6 +168,115 @@ test("joining a fight: ranged walking up to standing spearmen meet all of them (
     assert.equal(fight([spear, ranged], 1, 8).winner, 1, "without it, the standing spearmen come one by one");
   } finally {
     JOIN_FIGHT.range = range;
+  }
+});
+
+test("a farmer's death is counted by what last hurt it: militia, an enemy soldier, a crystal cannon (round 4)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const a = openArea(g, 30);
+  const u = w.units.col;
+  w.ecoOn[0] = 0;
+  // Three farmers far apart: one by a militia man, one by an enemy spearman, one under a mage's cannon.
+  put(g, 0, UnitType.Farmer, a.x + 2, a.y + 2);
+  put(g, NEUTRAL, UnitType.Militia, a.x + 3, a.y + 2);
+  put(g, 0, UnitType.Farmer, a.x + 2, a.y + 14);
+  put(g, 1, UnitType.Spearman, a.x + 3, a.y + 14);
+  const target = put(g, 0, UnitType.Farmer, a.x + 26, a.y + 26);
+  const mage = put(g, 1, UnitType.Mage, a.x + 26, a.y + 20);
+  u.stance[slotOf(g, mage)] = Stance.Hold;
+  w.res[1 * 4 + 3] = 100;
+  g.fog.update(w);
+  cmd(g, 1, { c: "cast", u: mage, fx: u.x[slotOf(g, target)], fy: u.y[slotOf(g, target)] });
+  run(g, 300);
+  assert.deepEqual(Array.from(w.farmerDeaths.subarray(0, 5)), [0, 1, 1, 1, 0], "none, militia, unit, cannon, arrow");
+});
+
+/**
+ * A 3 x 3 block of player 0's spearmen standing (one on hold) with a farmer beside it; player 1's
+ * mage 8 cells off, out of their sight, shells the block once. With COUNTER_ATTACK set to `on`.
+ */
+function shelled(on: boolean) {
+  const saved = COUNTER_ATTACK.on;
+  COUNTER_ATTACK.on = on;
+  const g = emptyGame();
+  const w = g.w;
+  const a = openArea(g, 30);
+  const u = w.units.col;
+  w.ecoOn[0] = 0;
+  const block: number[] = [];
+  for (let k = 0; k < 9; k++) block.push(put(g, 0, UnitType.Spearman, a.x + 5 + (k % 3), a.y + 5 + Math.trunc(k / 3)));
+  const holder = block[6];
+  u.stance[slotOf(g, holder)] = Stance.Hold;
+  const farmer = put(g, 0, UnitType.Farmer, a.x + 9, a.y + 7);
+  const mage = put(g, 1, UnitType.Mage, a.x + 6, a.y + 14);
+  u.stance[slotOf(g, mage)] = Stance.Hold;
+  w.res[1 * 4 + 3] = 100;
+  g.fog.update(w);
+  cmd(g, 1, { c: "cast", u: mage, fx: ((a.x + 6) << CELL_SHIFT) + 512, fy: ((a.y + 6) << CELL_SHIFT) + 512 });
+  const restore = () => {
+    COUNTER_ATTACK.on = saved;
+  };
+  return { g, w, u, a, block, holder, farmer, mage, restore };
+}
+
+test("counter-attack: soldiers shelled by a mage they cannot see charge it; hold, farmers stay (round 4)", () => {
+  for (const on of [true, false]) {
+    const { g, u, block, holder, farmer, mage, restore } = shelled(on);
+    try {
+      const at = (id: number) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]];
+      const holdAt = at(holder);
+      const farmerAt = at(farmer);
+      let shot = -1;
+      for (let t = 0; t < 200 && shot < 0; t++) {
+        g.step();
+        if (u.castCooldown[slotOf(g, mage)] > 0) shot = g.tick;
+      }
+      assert.ok(shot > 0, "the mage fired");
+      run(g, 40);
+      const chasing = block.filter((id) => slotOf(g, id) >= 0 && u.target[slotOf(g, id)] === mage).length;
+      if (on) {
+        assert.ok(chasing >= 3, `${chasing} go for the mage`);
+        assert.equal(u.target[slotOf(g, holder)], -1, "hold stays");
+        assert.deepEqual(at(holder), holdAt, "hold does not move");
+        assert.deepEqual(at(farmer), farmerAt, "the farmer does not move");
+      } else {
+        assert.equal(chasing, 0, "without it nobody goes for the unseen mage");
+      }
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("counter-attack: once the mage is gone beyond 8 cells, the soldiers go back to their places and stay there (round 4)", () => {
+  const { g, w, u, a, block, mage, restore } = shelled(true);
+  try {
+    let shot = -1;
+    for (let t = 0; t < 200 && shot < 0; t++) {
+      g.step();
+      if (u.castCooldown[slotOf(g, mage)] > 0) shot = g.tick;
+    }
+    run(g, 20);
+    assert.ok(block.some((id) => u.target[slotOf(g, id)] === mage), "they went for it");
+    // The mage gets away: 20 cells off, out of sight; no more shots.
+    const ms = slotOf(g, mage);
+    u.y[ms] = ((a.y + 28) << CELL_SHIFT) + 512;
+    u.castCooldown[ms] = CANNON.cooldownTicks * 10;
+    w.res[1 * 4 + 3] = 0;
+    const home = (id: number) => Math.hypot(u.x[slotOf(g, id)] - u.anchorX[slotOf(g, id)], u.y[slotOf(g, id)] - u.anchorY[slotOf(g, id)]) / 1024;
+    run(g, 200);
+    const alive = block.filter((id) => slotOf(g, id) >= 0);
+    for (const id of alive) assert.ok(home(id) <= 1, `soldier ${id} back (${home(id).toFixed(2)} cells off)`);
+    for (let t = 0; t < 100; t++) {
+      g.step();
+      for (const id of alive) {
+        assert.equal(u.target[slotOf(g, id)], -1, `tick ${g.tick}: no target`);
+        assert.ok(home(id) <= 1, `tick ${g.tick}: soldier ${id} stays`);
+      }
+    }
+  } finally {
+    restore();
   }
 });
 
@@ -451,6 +592,89 @@ test("formation: a group on its way keeps its goal and takes the new spacing; me
   assert.equal(new Set(ids.map((id) => u.group[slotOf(g, id)])).size, 1, "one formation");
   assert.ok(settle(g, ids));
   assert.ok(loose2(g, ids), `two cells apart (${shown(g, ids)})`);
+});
+
+/**
+ * 12 ranged of player 0 (loose or close) walk at 6 spearmen of player 1 standing 14 cells off,
+ * with LOOSE_KEEP.spacing set to `keep` for the run. Returns the game's hash at the end and
+ * the ranged's spacing 8 s after the first of them shot.
+ */
+function rangedWalkUp(loose: boolean, keep: number): { hash: number; after: { min: number; mean: number } } {
+  const saved = LOOSE_KEEP.spacing;
+  LOOSE_KEEP.spacing = keep;
+  try {
+    const g = emptyGame();
+    const a = openArea(g, 30);
+    const u = g.w.units.col;
+    const ranged: number[] = [];
+    for (let k = 0; k < 12; k++) ranged.push(put(g, 0, UnitType.Ranged, a.x + 9 + (k % 6), a.y + 2 + Math.trunc(k / 6)));
+    for (let k = 0; k < 6; k++) put(g, 1, UnitType.Spearman, a.x + 9 + k, a.y + 16);
+    g.fog.update(g.w);
+    if (loose) cmd(g, 0, { c: "formation", u: ranged, loose: true });
+    cmd(g, 0, { c: "move", u: ranged, x: a.x + 11, y: a.y + 18 });
+    let first = -1;
+    let after = { min: 0, mean: 0 };
+    for (let t = 0; t < 400; t++) {
+      g.step();
+      const alive = ranged.filter((id) => slotOf(g, id) >= 0);
+      if (first < 0 && alive.some((id) => u.action[slotOf(g, id)] === Action.Attack)) first = g.tick;
+      if (first >= 0 && g.tick === first + 160) after = spacing(g, alive);
+    }
+    return { hash: g.hash(), after };
+  } finally {
+    LOOSE_KEEP.spacing = saved;
+  }
+}
+
+test("loose ranged keep about 2 cells apart in a fight; a close formation fights exactly as before (round 4)", () => {
+  const on = rangedWalkUp(true, 2 * 1024);
+  const off = rangedWalkUp(true, 0);
+  assert.ok(on.after.min >= 1.8 && on.after.mean >= 1.9, `loose, kept apart: nearest ${on.after.min.toFixed(2)}, mean ${on.after.mean.toFixed(2)}`);
+  assert.ok(off.after.mean < 1.2, `loose without it, bunched: mean ${off.after.mean.toFixed(2)}`);
+  assert.notEqual(on.hash, off.hash);
+  assert.equal(rangedWalkUp(false, 2 * 1024).hash, rangedWalkUp(false, 0).hash, "close: the same game either way");
+});
+
+/**
+ * 12 spearmen of player 0 (loose or close) stand; 12 spearmen of player 1 walk up to them.
+ * With LOOSE_KEEP.everyone set to `everyone`. Returns the game's hash at the end and player 0's
+ * spacing 2 s after the first of them struck.
+ */
+function spearmenHold(loose: boolean, everyone: boolean): { hash: number; after: { min: number; mean: number } } {
+  const saved = LOOSE_KEEP.everyone;
+  LOOSE_KEEP.everyone = everyone;
+  try {
+    const g = emptyGame();
+    const a = openArea(g, 30);
+    const u = g.w.units.col;
+    const mine: number[] = [];
+    for (let k = 0; k < 12; k++) mine.push(put(g, 0, UnitType.Spearman, a.x + 9 + (k % 6), a.y + 4 + Math.trunc(k / 6)));
+    const foes: number[] = [];
+    for (let k = 0; k < 12; k++) foes.push(put(g, 1, UnitType.Spearman, a.x + 9 + (k % 6), a.y + 20 + Math.trunc(k / 6)));
+    g.fog.update(g.w);
+    if (loose) cmd(g, 0, { c: "formation", u: mine, loose: true });
+    cmd(g, 1, { c: "move", u: foes, x: a.x + 11, y: a.y + 4 });
+    let first = -1;
+    let after = { min: 0, mean: 0 };
+    for (let t = 0; t < 500; t++) {
+      g.step();
+      const alive = mine.filter((id) => slotOf(g, id) >= 0);
+      if (first < 0 && alive.some((id) => u.action[slotOf(g, id)] === Action.Attack)) first = g.tick;
+      if (first >= 0 && g.tick === first + 40) after = spacing(g, alive);
+    }
+    return { hash: g.hash(), after };
+  } finally {
+    LOOSE_KEEP.everyone = saved;
+  }
+}
+
+test("loose spearmen keep about 2 cells apart too (round 4, E4); close spearmen fight exactly as before", () => {
+  const on = spearmenHold(true, true);
+  const off = spearmenHold(true, false);
+  assert.ok(on.after.mean >= 1.6, `loose, kept apart: mean ${on.after.mean.toFixed(2)} cells`);
+  assert.ok(off.after.mean < 1.35, `loose spearmen without it, pressed together: mean ${off.after.mean.toFixed(2)}`);
+  assert.notEqual(on.hash, off.hash);
+  assert.equal(spearmenHold(false, true).hash, spearmenHold(false, false).hash, "close: the same game either way");
 });
 
 test("big groups reach their slots, close and loose (slots off to the side of the way in)", () => {

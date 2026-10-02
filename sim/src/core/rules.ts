@@ -83,16 +83,21 @@ BUILDINGS[BuildingType.MageHall] = building({
 });
 BUILDINGS[BuildingType.TownTower] = building({ type: BuildingType.TownTower, hp: 400, size: 2, sight: 8 });
 
-/** Damage x num / den. Spearman x3 vs cavalry and cavalry x2 vs shields wait for cavalry. */
+/**
+ * Damage x num / den. Spearman x3 vs cavalry and cavalry x2 vs shields wait for cavalry.
+ * Ranged against a mage's shield x3 since round 4 (D-037, was x3/2).
+ */
 export const MULTIPLIERS: Multiplier[] = [
   { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 5, den: 2 },
-  { attacker: UnitType.Ranged, target: "shield", num: 3, den: 2 },
+  { attacker: UnitType.Ranged, target: "shield", num: 3, den: 1 },
 ];
 
 export const MAGE_CAP = 6;
 export const MAX_POPULATION = 120;
 /** Queue entries fit 4 bits each in BuildingField.queuePacked. */
 export const QUEUE_MAX = 7;
+/** How near a town's centre its militia reach the farmers building there (round 4; defined in protocol.ts, which the AI may read). */
+export { TOWN_CLEARANCE } from "../protocol.ts";
 
 export function rules(): Rules {
   return {
@@ -133,6 +138,37 @@ export const LEASH = 8 * CELL;
  * it off (src/balance.ts measures both ways).
  */
 export const JOIN_FIGHT = { range: 6 * CELL };
+/**
+ * Loose soldiers (UnitFlag.Loose; round 4, D-035, D-037). Ranged units and mages on a move keep
+ * to their place, straight to it when the way is open, and shoot only what comes within range on
+ * the way. Loose soldiers of one player and one group (last told to move together) push apart to
+ * `spacing` (fixed point) from each other, not just to SEPARATION, walking or not: every type
+ * since `everyone` (ceo: a standing army all loose then holds against 3 mages and spearmen),
+ * before that ranged units and mages only. Pushing only while they shoot or stand was tried:
+ * they reached the enemy bunched and lost goal 5 at 8 cells (src/balance.ts). `spacing` 0
+ * switches it all off (the balance tool measures both ways).
+ */
+export const LOOSE_KEEP = { spacing: 2 * CELL, everyone: true };
+/**
+ * A retreat (round 4, D-034): each unit runs at its own speed instead of the group's slowest, so
+ * the fast are not caught waiting for the slow; they still form up at the goal. `on` false gives
+ * the old way back (src/balance.ts measures both ways).
+ */
+export const RETREAT_OWN_SPEED = { on: true };
+/**
+ * Counter-attack (round 4, D-037): an idle aggressive player soldier with no enemy within
+ * AGGRO_RANGE and no friend's fight to join, hit in the last RETARGET_EVERY ticks, or with a
+ * friend within JOIN_FIGHT.range hit then, takes on the unit that hit (the nearest such, ties
+ * to the lower id) if its owner sees it and it is within LEASH of the soldier's place. Hold
+ * (garrisons too), units with orders, farmers and militia do not. `on` false switches it off
+ * (src/balance.ts measures both ways).
+ */
+export const COUNTER_ATTACK = { on: true };
+/**
+ * A mage calibrating the crystal cannon, and for `ticks` after it fired, is seen by every other
+ * player in its own cell (round 4, D-037). `on` false switches it off.
+ */
+export const REVEAL_CAST = { on: true, ticks: 2 * S };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;

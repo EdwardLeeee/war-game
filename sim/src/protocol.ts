@@ -37,6 +37,15 @@ export const STEP_BATCH = 20;
 /** Players 0 and 1; NEUTRAL owns town militia and town towers. */
 export const PLAYER_COUNT = 2;
 export const NEUTRAL = 2;
+
+/**
+ * Cells from a building's centre to a town's centre within which that town's militia reach the
+ * farmers building it (round 4): the footprint's centre to the town cell's centre, this many cells
+ * or less. Militia stand up to 3 cells from the centre and go for anyone within 6 cells of them,
+ * up to 8 from their post. The AI builds nothing that close; a client may warn. Also exported by
+ * core/rules.ts.
+ */
+export const TOWN_CLEARANCE = 12;
 /** Owner value for "nobody" (e.g. a neutral town with no militia left). */
 export const NO_OWNER = -1;
 
