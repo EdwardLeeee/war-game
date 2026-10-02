@@ -10,7 +10,6 @@ import {
   BuildingFlag,
   BuildingType,
   type CommandBody,
-  HeaderField as H,
   NEUTRAL,
   NO_OWNER,
   NodeField as N,
@@ -24,7 +23,7 @@ import {
   UnitType,
 } from "../../sim.ts";
 import type { GameView } from "../../view/view.ts";
-import { ACTION_NAME, BUILDABLE, BUILDING_NAME, clock, costText, NODE_NAME, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
+import { ACTION_NAME, BUILDABLE, BUILDING_NAME, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
 
 /** What the bottom panels ask of the game. */
 export interface PanelHost {
@@ -572,19 +571,23 @@ export class CommandArea {
 export class ResourceBar {
   readonly el: HTMLElement;
   private text = "";
+  private room = 0;
 
   constructor(parent: HTMLElement) {
     this.el = el("div", parent, "res-bar");
     this.el.setAttribute("aria-label", "資源");
   }
 
-  update(view: GameView | null): void {
+  /** `room`: px the bar may take before the top-right buttons; one line, the time without 時間 if it must. */
+  update(view: GameView | null, room: number): void {
     const h = view?.header;
     if (h === null || h === undefined) return;
-    const text = `糧 ${h[H.food]}　木 ${h[H.wood]}　金 ${h[H.gold]}　晶 ${h[H.crystal]}　人口 ${h[H.population]}/${h[H.populationCap]}`;
-    if (text === this.text) return;
-    this.text = text;
-    this.el.textContent = text;
+    const line = resourceLine(h);
+    if (line.full === this.text && room === this.room) return;
+    this.text = line.full;
+    this.room = room;
+    this.el.textContent = line.full;
+    if (this.el.offsetWidth > room) this.el.textContent = line.short;
   }
 }
 

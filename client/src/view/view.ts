@@ -253,6 +253,19 @@ export class GameView implements IntentWorld {
     return o >= 0 && t !== undefined && t[o + T.state] === TownState.AwaitingChoice && t[o + T.owner] === this.me;
   }
 
+  /**
+   * The map's towns with what we know of them now: the snapshot's row (in fog, as last seen),
+   * or `state` null for a town never explored (開局提示, 離民兵太近).
+   */
+  townsNow(): { id: number; size: number; cellX: number; cellY: number; radius: number; state: number | null; owner: number; militia: number }[] {
+    const t = this.curr?.snap.towns;
+    return this.map.towns.map((info) => {
+      const o = this.townRow(info.id);
+      if (t === undefined || o < 0) return { ...info, state: null, owner: NO_OWNER, militia: 0 };
+      return { ...info, state: t[o + T.state], owner: t[o + T.owner], militia: t[o + T.militia] };
+    });
+  }
+
   townRow(id: number): number {
     const t = this.curr?.snap.towns;
     if (t === undefined) return -1;

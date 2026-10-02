@@ -1,7 +1,7 @@
 // Words the interface shows for the simulation's numbers. Prototype role names (GDD §6
 // 定位); the country-specific names come with the final interface.
 
-import { Action, BuildingType, GameOverReason, NodeKind, TownState, UnitType } from "../../sim.ts";
+import { Action, BuildingType, GameOverReason, HeaderField as H, NodeKind, TICKS_PER_SECOND, TownState, UnitType } from "../../sim.ts";
 
 export const UNIT_NAME: Record<number, string> = {
   [UnitType.Farmer]: "農民",
@@ -79,8 +79,24 @@ export function costText(c: { food: number; wood: number; gold: number; crystal:
   return parts.length > 0 ? parts.join(" ") : "免費";
 }
 
-/** Game time from ticks, as m:ss. */
-export function clock(ticks: number, tps = 20): string {
+/** Game time from ticks, as m:ss; past an hour the minutes go on (62:05). */
+export function clock(ticks: number, tps = TICKS_PER_SECOND): string {
   const s = Math.floor(ticks / tps);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/**
+ * 資源列: resources, population and, last, the game time (ceo 2026-10-03: the player plays by
+ * the clock, "第 7 分帶 6 名兵去搶小鎮"). Ticks, so it stands still while paused and shows game
+ * time at every speed. `short` leaves 時間 out, for a screen too narrow for `full`.
+ */
+export function resourceLine(h: ArrayLike<number>): { full: string; short: string } {
+  const res = `糧 ${h[H.food]}　木 ${h[H.wood]}　金 ${h[H.gold]}　晶 ${h[H.crystal]}　人口 ${h[H.population]}/${h[H.populationCap]}`;
+  const time = clock(h[H.tick]);
+  return { full: `${res}　時間 ${time}`, short: `${res}　${time}` };
+}
+
+/** 全軍's label (ceo 2026-10-03): how many soldiers it selects. */
+export function armyText(count: number): string {
+  return `全軍 ${count}`;
 }
