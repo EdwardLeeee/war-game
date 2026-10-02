@@ -519,6 +519,203 @@ def workshop(root, c):
     kit.flag("ws_flag", P, root, (-0.1, -2.7, 0.12), 4.2, c, w=1.0, fh=1.5)
 
 
+# ---------------------------------------------------------------- B1b: the refined East tower and the crops
+
+def tower_fine(root, c):
+    """東陸箭樓, refined (the user, 2026-10-02: 「東陸箭樓可以更精細」): a battered brick base with stone
+    coping and a gate, four red posts with two rings of tie beams and cross-bracing, a lookout with a
+    railing of balusters, lattice windows, bracket sets under the eaves, a double-curved roof with ridge
+    beasts, a drum, a bell, lanterns, a ladder, the player colour on a long banner and a flag."""
+    import buildings2 as B2
+    P = kit.palette(c)
+    P2 = B2.P2()
+    W = cells(2)
+    kit.pad("tf_pad", P, root, W, W, 0.15)
+    # the base: brick, battered, stone coping, a stone plinth course, an arched opening on the -y face
+    box("tf_plinth", (3.3, 3.3, 0.3), P["stone"], root, loc=(0, 0, 0.3), bevel=0.04)
+    box("tf_base", (3.0, 3.0, 1.5), P["brick"], root, loc=(0, 0, 1.2), bevel=0.05, taper=(0.9, 0.9))
+    box("tf_cope", (2.95, 2.95, 0.18), P["stone"], root, loc=(0, 0, 2.0), bevel=0.03)
+    box("tf_gate", (0.75, 0.1, 1.0), P["dark"], root, loc=(-0.3, -1.42, 0.95), outline=False)
+    cyl("tf_arch", 0.375, 0.1, P["dark"], root, loc=(-0.3, -1.42, 1.45), rot=(90, 0, 0), at=(0, 0, -0.05), outline=False)
+    for s_ in (-1, 1):
+        box(f"tf_jamb{s_}", (0.12, 0.14, 1.2), P["stone"], root, loc=(-0.3 + s_ * 0.45, -1.43, 1.0))
+    # four main posts on stone bases, two rings of tie beams, cross-bracing on the two camera faces
+    z0, z1 = 2.1, 5.3
+    corners = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+    for k, (x, y) in enumerate(corners):
+        cyl(f"tf_pbase{k}", 0.2, 0.15, P["stone"], root, loc=(x, y, z0), segs=10)
+        rod(f"tf_post{k}", (x, y, z0 + 0.1), (x * 0.9, y * 0.9, z1), 0.13, P["post"], parent=root, segs=12)
+    for zr in (3.2, 4.3):
+        f = 1 - 0.1 * (zr - z0) / (z1 - z0)
+        for k in range(4):
+            (ax, ay), (bx, by) = corners[k], corners[(k + 1) % 4]
+            rod(f"tf_tie{zr}_{k}", (ax * f, ay * f, zr), (bx * f, by * f, zr), 0.07, P["beam"], parent=root, segs=8)
+    for k, ((ax, ay), (bx, by)) in enumerate(((corners[0], corners[1]), (corners[0], corners[3]))):
+        rod(f"tf_x1_{k}", (ax, ay, z0 + 0.15), (bx * 0.95, by * 0.95, 3.2), 0.05, P["beam"], parent=root, segs=6)
+        rod(f"tf_x2_{k}", (bx, by, z0 + 0.15), (ax * 0.95, ay * 0.95, 3.2), 0.05, P["beam"], parent=root, segs=6)
+        rod(f"tf_x3_{k}", (ax * 0.95, ay * 0.95, 3.25), (bx * 0.92, by * 0.92, 4.3), 0.045, P["beam"], parent=root, segs=6)
+        rod(f"tf_x4_{k}", (bx * 0.95, by * 0.95, 3.25), (ax * 0.92, ay * 0.92, 4.3), 0.045, P["beam"], parent=root, segs=6)
+    # a ladder up the -x face to a trap in the deck
+    for s_ in (-1, 1):
+        rod(f"tf_lad{s_}", (-1.25, -0.2 + s_ * 0.22, 2.1), (-1.0, -0.2 + s_ * 0.22, 5.3), 0.03, P["wood"], parent=root, segs=6)
+    for k in range(9):
+        t = (k + 0.5) / 9
+        x, z = -1.25 + 0.25 * t, 2.1 + 3.2 * t
+        rod(f"tf_rung{k}", (x, -0.42, z), (x, 0.02, z), 0.02, P["wood"], parent=root, segs=4, outline=False)
+    # the deck on corbels, a railing with balusters
+    box("tf_deck", (2.75, 2.75, 0.2), P["wood"], root, loc=(0, 0, 5.35))
+    for k in range(4):
+        (ax, ay), (bx, by) = corners[k], corners[(k + 1) % 4]
+        rod(f"tf_corb{k}", (ax * 0.9, ay * 0.9, 4.85), (ax * 1.3, ay * 1.3, 5.25), 0.07, P["beam"], parent=root, segs=6)
+    rh, rz = 0.55, 5.45
+    for side in ("y", "x"):
+        L = 2.7
+        rail = (L, 0.07, 0.07) if side == "y" else (0.07, L, 0.07)
+        pos = (0, -1.33, rz + rh) if side == "y" else (-1.33, 0, rz + rh)
+        box(f"tf_rail{side}", rail, P["post"], root, loc=pos)
+        box(f"tf_rail2{side}", rail, P["post"], root, loc=(pos[0], pos[1], rz + 0.12))
+        for k in range(11):
+            t = -L / 2 + 0.1 + k * (L - 0.2) / 10
+            loc = (t, -1.33, rz + rh / 2 + 0.05) if side == "y" else (-1.33, t, rz + rh / 2 + 0.05)
+            box(f"tf_bal{side}{k}", (0.05, 0.05, rh - 0.1), P["post"], root, loc=loc, outline=False)
+    # the lookout: plaster walls, lattice windows on every face, bracket sets under the eaves
+    kit.block_e("tf_room", P, root, 0, 0, 2.0, 2.0, 5.45, 1.55, windows=True)
+    for s_ in ("y", "x"):
+        for k in range(3):
+            t = -0.75 + k * 0.75
+            if s_ == "y":
+                box(f"tf_brk{s_}{k}a", (0.16, 0.16, 0.1), P2["timber"], root, loc=(t, -1.05, 6.95))
+                box(f"tf_brk{s_}{k}b", (0.38, 0.1, 0.07), P2["red_post"], root, loc=(t, -1.1, 7.04))
+                box(f"tf_brk{s_}{k}c", (0.1, 0.32, 0.07), P2["timber"], root, loc=(t, -1.18, 7.1))
+            else:
+                box(f"tf_brk{s_}{k}a", (0.16, 0.16, 0.1), P2["timber"], root, loc=(-1.05, t, 6.95))
+                box(f"tf_brk{s_}{k}b", (0.1, 0.38, 0.07), P2["red_post"], root, loc=(-1.1, t, 7.04))
+                box(f"tf_brk{s_}{k}c", (0.32, 0.1, 0.07), P2["timber"], root, loc=(-1.18, t, 7.1))
+    kit.roof_e("tf_roof", P, root, 0, 0, 7.0, 2.0, 2.0, 1.25, over=0.75, curl=0.6)
+    for s_ in (-1, 1):                      # ridge beasts on the hip ends
+        box(f"tf_beast{s_}", (0.12, 0.22, 0.2), P["ridge"], root, loc=(s_ * 0.5, 0, 8.35), rot=(0, s_ * 15, 0))
+    sphere("tf_finial", 0.13, P["gold"], root, loc=(0, 0, 8.45))
+    rod("tf_finrod", (0, 0, 8.3), (0, 0, 8.9), 0.035, P["gold"], parent=root)
+    # a plaque, a drum on the deck, a bell under the eave, lanterns at the front corners
+    box("tf_plaque", (0.7, 0.06, 0.3), P["plaque"], root, loc=(0, -1.07, 6.75))
+    box("tf_plaquerim", (0.78, 0.04, 0.38), P["gold"], root, loc=(0, -1.05, 6.75))
+    cyl("tf_drum", 0.3, 0.35, P["post"], root, loc=(0.95, -0.95, 5.85), rot=(90, 0, 45), at=(0, 0, -0.17), segs=16)
+    rod("tf_bellrope", (-0.95, -1.25, 7.0), (-0.95, -1.25, 6.7), 0.012, P["rope"], parent=root, outline=False)
+    lathe("tf_bell", [(0.02, 0.0), (0.16, 0.05), (0.18, 0.28), (0.1, 0.36), (0.0, 0.38)], P["gold"], root,
+          loc=(-0.95, -1.25, 6.3), segs=12)
+    for k, (x, y) in enumerate(((1.2, -1.45), (-1.45, 1.2))):
+        kit.lantern(f"tf_lan{k}", P, root, (x, y, 6.95))
+    # player colour: a long banner down the -y face of the platform and one down the -x face, a flag on the finial
+    kit.drape("tf_ban", P, root, "y", 0.45, 5.35, 0.9, 2.3, y0=-1.36)
+    kit.drape("tf_banx", P, root, "x", 0.45, 5.35, 0.9, 2.3, x0=-1.36)
+    kit.flag("tf_flag", P, root, (0.0, 0.0, 8.9), 1.2, c, w=0.9, fh=1.0)
+
+
+def _matte(m, spec=0.12):
+    """Thin blades seen edge-on catch the specular sheen and go white: keep crops and water nearly matte."""
+    p = next((n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"), None)
+    if p is not None:
+        for key in ("Specular IOR Level", "Specular"):
+            if key in p.inputs:
+                p.inputs[key].default_value = spec
+        if "IOR" in p.inputs and spec < 0.2:
+            p.inputs["IOR"].default_value = 1.05      # almost no Fresnel glare on a surface seen at 60 degrees
+        if "Sheen Weight" in p.inputs:
+            p.inputs["Sheen Weight"].default_value = 0.0
+    return m
+
+
+def farm_fine(root, c, stage="growing"):
+    """The fields, refined (the user: 「農田裡面應該是稻子或是麥子吧,現在太粗糙了」): East a flooded rice
+    paddy, rice set out in clumps; West wheat sown in drills. Stages: sown, growing, ripe. Nothing over
+    0.65 m, so a farmer (1.7 m) stays in sight. One mesh per kind of plant."""
+    import random as _r
+    P = kit.palette(c)
+    W = cells(3)
+    rnd = _r.Random(11 if c == "E" else 23)
+    # the field boundary: a low earth bund all round, the scarecrow and the player-colour markers as before
+    for s_ in (-1, 1):
+        box(f"ff_bx{s_}", (W - 0.1, 0.32, 0.2), P["earth"], root, loc=(0, s_ * (W / 2 - 0.2), 0.1), bevel=0.06)
+        box(f"ff_by{s_}", (0.32, W - 0.1, 0.2), P["earth"], root, loc=(s_ * (W / 2 - 0.2), 0, 0.1), bevel=0.06)
+    inner = W - 0.75
+    if c == "E":
+        soil = lib.mat("paddy_mud", (0.3, 0.25, 0.18), 0.9, noise=0.3, noise_scale=8)
+        box("ff_mud", (inner, inner, 0.05), soil, root, loc=(0, 0, 0.03), outline=False)
+        water = _matte(lib.mat("paddy_water", (0.13, 0.22, 0.2), 0.5), 0.08)
+        if stage != "ripe":            # drained before the harvest
+            box("ff_water", (inner, inner, 0.02), water, root, loc=(0, 0, 0.08), outline=False)
+        green = _matte(lib.mat("rice_green", (0.2, 0.42, 0.08), 0.85, noise=0.25, noise_scale=30))
+        gold = _matte(lib.mat("rice_gold", (0.5, 0.48, 0.14), 0.85, noise=0.25, noise_scale=30))
+        H = {"sown": 0.18, "growing": 0.45, "ripe": 0.6}[stage]
+        n = 15
+        specs, ears = [], []
+        for i in range(n):
+            for j in range(n):
+                x = -inner / 2 + 0.2 + i * (inner - 0.4) / (n - 1) + rnd.uniform(-0.03, 0.03)
+                y = -inner / 2 + 0.2 + j * (inner - 0.4) / (n - 1) + rnd.uniform(-0.03, 0.03)
+                blades_n = 6 if stage == "sown" else 14
+                for b in range(blades_n):
+                    a = 2 * math.pi * (b + rnd.random() * 0.5) / blades_n
+                    lean = rnd.uniform(0.15, 0.35)
+                    d = (math.cos(a) * lean, math.sin(a) * lean, 1.0)
+                    specs.append(((x, y, 0.06), d, H * rnd.uniform(0.7, 1.05), 0.07 if stage != "sown" else 0.045,
+                                  0.3 if stage != "sown" else 0.12))
+                if stage == "ripe":    # drooping golden panicles
+                    for b in range(6):
+                        a = rnd.uniform(0, 2 * math.pi)
+                        ears.append((x + 0.13 * math.cos(a), y + 0.13 * math.sin(a), H * 0.88, 0.7, 0.7, 2.3,
+                                     1.0 * math.sin(a), -1.0 * math.cos(a)))
+        kit.blades("ff_rice", gold if stage == "ripe" else green, root, specs)
+        if ears:
+            kit.ellipsoids("ff_panicle", _matte(lib.mat("rice_grain", (0.86, 0.62, 0.16), 0.7)), root, ears, 0.07)
+    else:
+        soil = lib.mat("drill_soil", (0.4, 0.3, 0.2), 0.95, noise=0.35, noise_scale=8)
+        box("ff_soil", (inner, inner, 0.06), soil, root, loc=(0, 0, 0.03), outline=False)
+        rows = 18
+        for r in range(rows):           # ridges between the drills
+            y = -inner / 2 + 0.2 + r * (inner - 0.4) / (rows - 1)
+            box(f"ff_ridge{r}", (inner - 0.1, 0.12, 0.06), soil, root, loc=(0, y + 0.18, 0.08), outline=False)
+        green = _matte(lib.mat("wheat_green", (0.28, 0.46, 0.12), 0.85, noise=0.25, noise_scale=30))
+        gold = _matte(lib.mat("wheat_gold", (0.74, 0.56, 0.2), 0.85, noise=0.25, noise_scale=30))
+        H = {"sown": 0.14, "growing": 0.42, "ripe": 0.62}[stage]
+        specs, ears = [], []
+        for r in range(rows):
+            y = -inner / 2 + 0.2 + r * (inner - 0.4) / (rows - 1)
+            m = 72
+            for k in range(m):
+                x = -inner / 2 + 0.15 + k * (inner - 0.3) / (m - 1) + rnd.uniform(-0.03, 0.03)
+                yy = y + rnd.uniform(-0.04, 0.04)
+                lean = rnd.uniform(0.0, 0.18)
+                a = rnd.uniform(0, 2 * math.pi)
+                d = (math.cos(a) * lean, math.sin(a) * lean, 1.0)
+                h = H * rnd.uniform(0.8, 1.05)
+                specs.append(((x, yy, 0.06), d, h, 0.045 if stage != "sown" else 0.035, 0.05))
+                if stage == "sown":
+                    continue
+                specs.append(((x, yy, 0.06 + h * 0.3), (math.cos(a + 1.5), math.sin(a + 1.5), 0.6), h * 0.5, 0.05, 0.3))
+                if stage == "ripe":     # upright ears with a slight nod
+                    ears.append((x + d[0] * h, yy + d[1] * h, 0.06 + h + 0.05, 0.6, 0.6, 2.2, d[1] * 0.6, -d[0] * 0.6))
+        kit.blades("ff_wheat", gold if stage == "ripe" else green, root, specs)
+        if ears:
+            kit.ellipsoids("ff_ears", _matte(lib.mat("wheat_ear", (0.82, 0.6, 0.2), 0.7)), root, ears, 0.065)
+    sx, sy = -W / 2 + 0.6, -W / 2 + 0.6
+    rod("ff_scpost", (sx, sy, 0), (sx, sy, 1.6), 0.04, P["wood"], parent=root, segs=6)
+    rod("ff_scarm", (sx - 0.4, sy, 1.25), (sx + 0.4, sy, 1.25), 0.03, P["wood"], parent=root, segs=6)
+    sphere("ff_schead", 0.13, P["sack"], root, loc=(sx, sy, 1.62))
+    if c == "E":
+        cyl("ff_schat", 0.26, 0.12, P["straw"], root, loc=(sx, sy, 1.68), r2=0.02, segs=12)
+    slab("ff_scarf", [(-0.4, 0), (0.4, 0), (0.3, -0.55), (-0.3, -0.55)], 0.03, P["team"], parent=root,
+         loc=(sx, sy - 0.05, 1.32), plane="XZ")
+    for k in range(4):
+        t = -W / 2 + 1.3 + k * (W - 2.2) / 3
+        for side, (x, y) in (("y", (t, -W / 2 + 0.15)), ("x", (-W / 2 + 0.15, t))):
+            if abs(x - sx) < 0.6 and abs(y - sy) < 0.6:
+                continue
+            rod(f"ff_mk{side}{k}", (x, y, 0.0), (x, y, 1.0), 0.03, P["wood"], parent=root, segs=6)
+            slab(f"ff_mf{side}{k}", [(0, 0), (0.55, -0.1), (0.5, -0.38), (0, -0.42)], 0.02, P["team"], parent=root,
+                 loc=(x + 0.03, y - 0.02, 0.98), rot=(0, 0, -25 if side == "y" else 65), plane="XZ")
+
+
 BUILDERS = {"lumber_camp": lumber_camp, "mine": mine, "granary": granary, "farm": farm, "range": range_,
             "mage_hall": mage_hall, "tower": tower, "wall": wall, "gate": gate, "branch_city": branch_city,
-            "smithy": smithy, "stable": stable, "workshop": workshop}
+            "smithy": smithy, "stable": stable, "workshop": workshop, "tower_fine": tower_fine, "farm_fine": farm_fine}

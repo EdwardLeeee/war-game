@@ -554,3 +554,49 @@ def parts_under(root):
         if o.type == "MESH":
             out.append(o)
     return out
+
+
+# ---------------------------------------------------------------- dense plants as one mesh
+
+def blades(name, material, parent, specs, width_tip=0.0, segs=3):
+    """One mesh of many thin curved blades (leaves, stalks). specs: [(base (x, y, z), direction (dx, dy, dz),
+    length, width, bend)], bend tilts the tip toward the direction's horizontal part. Two-sided quads."""
+    import bmesh
+    from mathutils import Vector
+    bm = bmesh.new()
+    for base, d, L, w, bend in specs:
+        b = Vector(base)
+        dv = Vector(d).normalized()
+        side = dv.cross(Vector((0, 0, 1)))
+        if side.length < 1e-4:
+            side = Vector((1, 0, 0))
+        side.normalize()
+        hor = Vector((dv.x, dv.y, 0))
+        hor = hor.normalized() if hor.length > 1e-4 else Vector((0, 0, 0))
+        prev = None
+        for k in range(segs + 1):
+            t = k / segs
+            p = b + dv * L * t + hor * bend * L * t * t - Vector((0, 0, bend * L * 0.5 * t * t))
+            ww = w * (1 - t) + width_tip * t
+            v0 = bm.verts.new(p - side * ww / 2)
+            v1 = bm.verts.new(p + side * ww / 2)
+            if prev:
+                bm.faces.new((prev[0], prev[1], v1, v0))
+            prev = (v0, v1)
+    ob = lib._mesh_obj(name, bm, material, parent, smooth=True, outline=False)
+    for poly in ob.data.polygons:
+        poly.use_smooth = True
+    return ob
+
+
+def ellipsoids(name, material, parent, centres, size, seed=0):
+    """One mesh of small ellipsoids (grain ears, rice panicles): centres [(x, y, z, sx, sy, sz, tilt_x, tilt_y)]."""
+    import bmesh
+    from mathutils import Euler, Matrix, Vector
+    bm = bmesh.new()
+    for x, y, z, sx, sy, sz, ax, ay in centres:
+        geom = bmesh.ops.create_uvsphere(bm, u_segments=6, v_segments=4, radius=size)
+        m = (Matrix.Translation(Vector((x, y, z))) @ Euler((ax, ay, 0)).to_matrix().to_4x4()
+             @ Matrix.Diagonal((sx, sy, sz, 1)))
+        bmesh.ops.transform(bm, matrix=m, verts=geom["verts"])
+    return lib._mesh_obj(name, bm, material, parent, smooth=True, outline=False)
