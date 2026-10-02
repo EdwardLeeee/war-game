@@ -194,7 +194,7 @@ export class Overlays {
     window.clearTimeout(this.promptTimer);
     if (hideAfterMs > 0) this.promptTimer = window.setTimeout(() => this.hidePrompt(), hideAfterMs);
     this.promptText.textContent = text;
-    this.promptWarn.hidden = true;
+    this.promptWarning(null);
     this.promptButtons.replaceChildren();
     for (const b of buttons) {
       const btn = el("button", b.primary === true ? "primary" : "secondary", this.promptButtons);
