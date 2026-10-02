@@ -56,6 +56,8 @@ export interface GameResult {
   perPlayer: {
     plundered: number;
     governed: number;
+    /** Towns lost to a revolt (round 4). */
+    revolts: number;
     magesTrained: number;
     magesLost: number;
     /** Farmers lost by what last hurt them: none, militia, an enemy unit, a crystal cannon, an arrow (HitCause; round 4). */
@@ -199,6 +201,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
     perPlayer: [0, 1].map((p) => ({
       plundered: w.plundered[p],
       governed: w.governed[p],
+      revolts: w.revolts[p],
       magesTrained: w.trained[p * 5 + UnitType.Mage],
       magesLost: w.lost[p * 5 + UnitType.Mage],
       farmersLostBy: Array.from(w.farmerDeaths.subarray(p * 5, p * 5 + 5)),

@@ -170,6 +170,7 @@ export class Game {
     h = fnvInt32(h, w.governed);
     h = fnvInt32(h, w.cannonShots);
     h = fnvInt32(h, w.cannonHits);
+    h = fnvInt32(h, w.revolts);
     for (const a of [w.plunderIncome, w.governChosen, w.governCost, w.townIncome, w.governedTicks, w.governEnded, w.governPaidBack, w.townSpellCost, w.townSpellIncome]) {
       h = fnvInt32(h, a);
     }

@@ -159,6 +159,8 @@ export class World {
   farmerDeaths = new Int32Array(PLAYER_COUNT * 5);
   plundered = new Int32Array(PLAYER_COUNT);
   governed = new Int32Array(PLAYER_COUNT);
+  /** Towns a player lost to a revolt (governed or repairing without the minimum garrison; round 4). */
+  revolts = new Int32Array(PLAYER_COUNT);
   /** Crystal cannon shots fired, and units they hit, per player. */
   cannonShots = new Int32Array(PLAYER_COUNT);
   cannonHits = new Int32Array(PLAYER_COUNT);

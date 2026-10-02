@@ -44,6 +44,8 @@ const q = (arr: number[], p: number) => (arr.length === 0 ? 0 : arr[Math.max(0, 
 const sum = (f: (g: GameResult) => number) => games.reduce((a, g) => a + f(g), 0);
 const plunder = sum((g) => g.perPlayer[0].plundered + g.perPlayer[1].plundered);
 const govern = sum((g) => g.perPlayer[0].governed + g.perPlayer[1].governed);
+// Towns lost to a revolt (round 4; absent in older results).
+const revolts = sum((g) => (g.perPlayer[0].revolts ?? 0) + (g.perPlayer[1].revolts ?? 0));
 // Farmers lost per side and game, by what last hurt them (round 4): militia, enemy units, crystal cannon, arrows.
 const perSideGame = (k: number) => (games.length === 0 ? 0 : sum((g) => (g.perPlayer[0].farmersLostBy?.[k] ?? 0) + (g.perPlayer[1].farmersLostBy?.[k] ?? 0)) / (2 * games.length));
 const farmerDeaths = [1, 2, 3, 4, 0].map(perSideGame);
@@ -161,6 +163,7 @@ const lines = [
   ...(mixed.length === 0 ? [] : [`| 難度不同的 ${mixed.length} 場 | ${stronger.name} 勝 ${stronger.wins}／分出勝負 ${stronger.decided}（${pct(strongerRate)}，門檻 ${pct(GATES.strongerWinMin)}） |`]),
   `| 每局長度（分鐘） | 最短 ${summary.minutes.min.toFixed(1)}、中位數 ${summary.minutes.median.toFixed(1)}、90% ${summary.minutes.p90.toFixed(1)}、最長 ${summary.minutes.max.toFixed(1)} |`,
   `| 搶／治理 | ${plunder}／${govern}（搶 ${pct(summary.plunderShare)}） |`,
+  `| 叛離（駐軍不足，城鎮變回中立） | ${revolts} 次（每方每局 ${(games.length === 0 ? 0 : revolts / (2 * games.length)).toFixed(2)}） |`,
   `| 法師產量／陣亡 | 玩家 0：${mages[0].trained}／${mages[0].lost}；玩家 1：${mages[1].trained}／${mages[1].lost} |`,
   `| 晶砲發射／命中人次（每發平均） | 玩家 0：${mages[0].shots}／${mages[0].hits}（${perShot(mages[0])}）；玩家 1：${mages[1].shots}／${mages[1].hits}（${perShot(mages[1])}） |`,
   `| 每方每局死掉的農民（民兵／敵方的兵／晶砲／主城和箭樓的箭／其他） | ${farmerDeaths.map((v) => v.toFixed(2)).join("／")} |`,

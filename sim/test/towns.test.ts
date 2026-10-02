@@ -202,6 +202,7 @@ test("govern: pays at the choice, repairs with the minimum garrison, then produc
   }
   assert.ok(revolted);
   assert.equal(g.w.townState[t], TownState.Neutral);
+  assert.deepEqual(Array.from(g.w.revolts), [1, 0], "counted against player 0");
   // Eleven minutes of production (about 1,000) had paid back the 160 it cost.
   assert.ok(g.w.townIncome[0] > 900);
   assert.equal(g.w.governEnded[0], 1);
