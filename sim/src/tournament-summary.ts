@@ -44,6 +44,9 @@ const q = (arr: number[], p: number) => (arr.length === 0 ? 0 : arr[Math.max(0, 
 const sum = (f: (g: GameResult) => number) => games.reduce((a, g) => a + f(g), 0);
 const plunder = sum((g) => g.perPlayer[0].plundered + g.perPlayer[1].plundered);
 const govern = sum((g) => g.perPlayer[0].governed + g.perPlayer[1].governed);
+// Farmers lost per side and game, by what last hurt them (round 4): militia, enemy units, crystal cannon, arrows.
+const perSideGame = (k: number) => (games.length === 0 ? 0 : sum((g) => (g.perPlayer[0].farmersLostBy?.[k] ?? 0) + (g.perPlayer[1].farmersLostBy?.[k] ?? 0)) / (2 * games.length));
+const farmerDeaths = [1, 2, 3, 4, 0].map(perSideGame);
 const mages = [0, 1].map((p) => ({
   trained: sum((g) => g.perPlayer[p].magesTrained),
   lost: sum((g) => g.perPlayer[p].magesLost),
@@ -160,6 +163,7 @@ const lines = [
   `| 搶／治理 | ${plunder}／${govern}（搶 ${pct(summary.plunderShare)}） |`,
   `| 法師產量／陣亡 | 玩家 0：${mages[0].trained}／${mages[0].lost}；玩家 1：${mages[1].trained}／${mages[1].lost} |`,
   `| 晶砲發射／命中人次（每發平均） | 玩家 0：${mages[0].shots}／${mages[0].hits}（${perShot(mages[0])}）；玩家 1：${mages[1].shots}／${mages[1].hits}（${perShot(mages[1])}） |`,
+  `| 每方每局死掉的農民（民兵／敵方的兵／晶砲／主城和箭樓的箭／其他） | ${farmerDeaths.map((v) => v.toFixed(2)).join("／")} |`,
   `| 每 tick（µs） | 各局中位數的中位數 ${summary.tickMicros.medianOfMedians}、各局 p95 的 95% ${summary.tickMicros.p95OfP95}、最大 ${summary.tickMicros.max} |`,
   `| 總時間（含重播） | ${(wallMs / 1000).toFixed(1)} 秒 |`,
   "",

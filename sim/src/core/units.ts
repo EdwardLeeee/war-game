@@ -49,7 +49,7 @@ import {
 } from "./rules.ts";
 import { IDENTITY, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
-import type { World } from "./world.ts";
+import { HitCause, type World } from "./world.ts";
 
 const TICKS = TICKS_PER_SECOND;
 
@@ -792,7 +792,7 @@ export class UnitSystem {
       const info = UNITS[u.type[i]];
       const ts = w.unit(tid);
       if (ts >= 0) {
-        this.hit(w, ts, info.attack, u.type[i], u.owner[i]);
+        this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit);
       } else {
         const bs = w.building(tid);
         if (bs >= 0) this.buildingDamage[bs] += info.attack;
@@ -829,6 +829,7 @@ export class UnitSystem {
       this.unitDamage[bestSlot] += arrow.damage * arrows;
       this.shieldDamage[bestSlot] += arrow.damage * arrows;
       u.hitBy[bestSlot] = b.owner[s];
+      u.hitCause[bestSlot] = HitCause.Arrow;
       b.target[s] = u.id[bestSlot];
       b.cooldown[s] = arrow.cooldown;
     }
@@ -878,11 +879,12 @@ export class UnitSystem {
   }
 
   /** One hit on unit slot ts: hp damage and shield damage with their multipliers. */
-  private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number): void {
+  private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number, cause: HitCause): void {
     const u = w.units.col;
     this.unitDamage[ts] += damage(attack, attackerType, u.type[ts]);
     this.shieldDamage[ts] += damage(attack, attackerType, SHIELD);
     u.hitBy[ts] = attackerOwner;
+    u.hitCause[ts] = cause;
   }
 
   /**
@@ -908,7 +910,7 @@ export class UnitSystem {
             const dx = u.x[j] - u.castX[i];
             const dy = u.y[j] - u.castY[i];
             if (dx * dx + dy * dy <= r2) {
-              this.hit(w, j, CANNON.damage, UnitType.Mage, p);
+              this.hit(w, j, CANNON.damage, UnitType.Mage, p, HitCause.Cannon);
               if (p < PLAYER_COUNT) w.cannonHits[p]++;
             }
           }
@@ -945,6 +947,7 @@ export class UnitSystem {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * 5 + u.type[i]]++;
+        if (u.owner[i] < PLAYER_COUNT && u.type[i] === UnitType.Farmer) w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
         if (u.type[i] === UnitType.Mage) {
           // The killer's side picks up the bounty (none for the neutral side).
           const killer = u.hitBy[i];

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
-import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
+import { Action, BuildingType, CELL_SHIFT, GameOverReason, NEUTRAL, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { BUILDINGS, JOIN_FIGHT, LOOSE_KEEP, RETREAT_OWN_SPEED, UNITS } from "../src/core/rules.ts";
 import { fight } from "../src/balance-lib.ts";
@@ -169,6 +169,27 @@ test("joining a fight: ranged walking up to standing spearmen meet all of them (
   } finally {
     JOIN_FIGHT.range = range;
   }
+});
+
+test("a farmer's death is counted by what last hurt it: militia, an enemy soldier, a crystal cannon (round 4)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const a = openArea(g, 30);
+  const u = w.units.col;
+  w.ecoOn[0] = 0;
+  // Three farmers far apart: one by a militia man, one by an enemy spearman, one under a mage's cannon.
+  put(g, 0, UnitType.Farmer, a.x + 2, a.y + 2);
+  put(g, NEUTRAL, UnitType.Militia, a.x + 3, a.y + 2);
+  put(g, 0, UnitType.Farmer, a.x + 2, a.y + 14);
+  put(g, 1, UnitType.Spearman, a.x + 3, a.y + 14);
+  const target = put(g, 0, UnitType.Farmer, a.x + 26, a.y + 26);
+  const mage = put(g, 1, UnitType.Mage, a.x + 26, a.y + 20);
+  u.stance[slotOf(g, mage)] = Stance.Hold;
+  w.res[1 * 4 + 3] = 100;
+  g.fog.update(w);
+  cmd(g, 1, { c: "cast", u: mage, fx: u.x[slotOf(g, target)], fy: u.y[slotOf(g, target)] });
+  run(g, 300);
+  assert.deepEqual(Array.from(w.farmerDeaths.subarray(0, 5)), [0, 1, 1, 1, 0], "none, militia, unit, cannon, arrow");
 });
 
 test("main city arrows hit intruders; destroying a main city ends the game", () => {

@@ -8,6 +8,10 @@ import { IDENTITY, stepOrder, xIsCanonY } from "../frame.ts";
 import type { GameMap } from "./map.ts";
 import { BUILDINGS, ECO_DEFAULT, MAX_POPULATION, TOWNS, UNITS } from "./rules.ts";
 
+/** What last hurt a unit (unit column hitCause; farmers' deaths are counted by it). */
+export const HitCause = { None: 0, Militia: 1, Unit: 2, Cannon: 3, Arrow: 4 } as const;
+export type HitCause = (typeof HitCause)[keyof typeof HitCause];
+
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
   "order", "orderTarget", "orderX", "orderY", "stance", "castProgress", "castCooldown", "flags",
@@ -28,6 +32,8 @@ export const UNIT_COLS = [
   // Mages (units.ts): the cannon's aim point, the last tick this unit dealt damage (shield
   // regeneration waits for both), and the owner of the last thing that hit it (bounty).
   "castX", "castY", "lastDealt", "hitBy",
+  // What last hurt this unit (HitCause), for statistics.
+  "hitCause",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 
@@ -147,6 +153,8 @@ export class World {
   gathered = new Int32Array(PLAYER_COUNT * 4);
   trained = new Int32Array(PLAYER_COUNT * 5);
   lost = new Int32Array(PLAYER_COUNT * 5);
+  /** Farmers lost per player by what last hurt them: [p * 5 + HitCause] (round 4). */
+  farmerDeaths = new Int32Array(PLAYER_COUNT * 5);
   plundered = new Int32Array(PLAYER_COUNT);
   governed = new Int32Array(PLAYER_COUNT);
   /** Crystal cannon shots fired, and units they hit, per player. */
@@ -266,6 +274,7 @@ export class World {
     c.resumeTarget[s] = -1;
     c.lastDealt[s] = -100000;
     c.hitBy[s] = -1;
+    c.hitCause[s] = HitCause.None;
     return id;
   }
 
