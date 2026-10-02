@@ -153,6 +153,20 @@ export const LOOSE_KEEP = { spacing: 2 * CELL };
  * the old way back (src/balance.ts measures both ways).
  */
 export const RETREAT_OWN_SPEED = { on: true };
+/**
+ * Counter-attack (round 4, D-037): an idle aggressive player soldier with no enemy within
+ * AGGRO_RANGE and no friend's fight to join, hit in the last RETARGET_EVERY ticks, or with a
+ * friend within JOIN_FIGHT.range hit then, takes on the unit that hit (the nearest such, ties
+ * to the lower id) if its owner sees it and it is within LEASH of the soldier's place. Hold
+ * (garrisons too), units with orders, farmers and militia do not. `on` false switches it off
+ * (src/balance.ts measures both ways).
+ */
+export const COUNTER_ATTACK = { on: true };
+/**
+ * A mage calibrating the crystal cannon, and for `ticks` after it fired, is seen by every other
+ * player in its own cell (round 4, D-037). `on` false switches it off.
+ */
+export const REVEAL_CAST = { on: true, ticks: 2 * S };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;

@@ -7,7 +7,7 @@
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
 import { type Army, armyCost, armyText, BOTH, type Fight, fewestToTake, fight, type Formation, siege, twoShots } from "./balance-lib.ts";
-import { CANNON, LOOSE_KEEP, MULT_DEN, MULT_NUM, RETREAT_OWN_SPEED, SHIELD, UNITS } from "./core/rules.ts";
+import { CANNON, COUNTER_ATTACK, LOOSE_KEEP, MULT_DEN, MULT_NUM, RETREAT_OWN_SPEED, REVEAL_CAST, SHIELD, UNITS } from "./core/rules.ts";
 import { TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -44,10 +44,26 @@ const KNOBS: Record<string, Knob> = {
     },
     show: ([v]) => (v === 1 ? "各走各的" : "照整隊最慢的"),
   },
+  revealCast: {
+    label: "法師開砲現形（校準期間和放完 2 秒內，其他玩家看得到那一格）",
+    get: () => [REVEAL_CAST.on ? 1 : 0],
+    set: ([v]) => {
+      REVEAL_CAST.on = v === 1;
+    },
+    show: ([v]) => (v === 1 ? "有" : "沒有"),
+  },
+  counterAttack: {
+    label: "反擊（待命的兵被打、或 6 格內隊友被打，就去打看得到、在原位 8 格內的攻擊者）",
+    get: () => [COUNTER_ATTACK.on ? 1 : 0],
+    set: ([v]) => {
+      COUNTER_ATTACK.on = v === 1;
+    },
+    show: ([v]) => (v === 1 ? "有" : "沒有"),
+  },
 };
 
 /** The values and rules before this round's changes (round 3 of the prototype). */
-const BEFORE: Record<string, number[]> = { rangedVsShield: [3, 2], looseSpacing: [0], retreatOwnSpeed: [0] };
+const BEFORE: Record<string, number[]> = { rangedVsShield: [3, 2], looseSpacing: [0], retreatOwnSpeed: [0], revealCast: [0], counterAttack: [0] };
 
 function values(): Record<string, number[]> {
   const v: Record<string, number[]> = {};

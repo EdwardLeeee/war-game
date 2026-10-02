@@ -251,3 +251,55 @@ test("retreat: mirror-image groups of mixed speed run as mirror images, tick by 
   }
   assert.ok(mine[0].every((id) => u.speedCap[slotOf(g, id)] === 0), "each at its own speed");
 });
+
+test("counter-attack: mirror-image blocks shelled by mirror-image mages charge as mirror images, tick by tick (round 4)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  let bx = -1;
+  let by = -1;
+  for (let y = 40; y < 78 && bx < 0; y++) {
+    for (let x = 2; x < 30 && bx < 0; x++) {
+      if (x + 8 > y) continue;
+      let ok = true;
+      for (let yy = y; yy < y + 18 && ok; yy++) for (let xx = x; xx < x + 8 && ok; xx++) if (!w.walkable(xx, yy) || !w.walkable(yy, xx)) ok = false;
+      if (ok) {
+        bx = x;
+        by = y;
+      }
+    }
+  }
+  assert.ok(bx >= 0, "an open block");
+  const u = w.units.col;
+  const pairs: [number, number][] = [];
+  const add = (owner: number, type: UnitType, x: number, y: number) => {
+    const a = put(g, owner, type, x, y);
+    const b = put(g, 1 - owner, type, y, x);
+    pairs.push([a, b]);
+    return [a, b];
+  };
+  // A 3 x 3 block of player 0 standing, and player 1's mage 8 cells off; and the mirror image.
+  const block: number[] = [];
+  for (let k = 0; k < 9; k++) block.push(add(0, UnitType.Spearman, bx + 3 + (k % 3), by + 2 + Math.trunc(k / 3))[0]);
+  const [mage0, mage1] = add(1, UnitType.Mage, bx + 4, by + 11);
+  for (const m of [mage0, mage1]) u.stance[slotOf(g, m)] = 1;
+  w.res[0 * 4 + 3] = 100;
+  w.res[1 * 4 + 3] = 100;
+  g.fog.update(w);
+  // mage0 is player 1's (shelling player 0's block), mage1 player 0's (its mirror image).
+  cmd(g, 1, { c: "cast", u: mage0, fx: ((bx + 4) << CELL_SHIFT) + 512, fy: ((by + 3) << CELL_SHIFT) + 512 });
+  cmd(g, 0, { c: "cast", u: mage1, fx: ((by + 3) << CELL_SHIFT) + 512, fy: ((bx + 4) << CELL_SHIFT) + 512 });
+  let charged = 0;
+  for (let t = 0; t < 250; t++) {
+    g.step();
+    for (const [a, b] of pairs) {
+      const sa = slotOf(g, a);
+      const sb = slotOf(g, b);
+      assert.equal(sa < 0, sb < 0, `tick ${g.tick}: both alive or both gone`);
+      if (sa < 0) continue;
+      assert.equal(u.x[sb], u.y[sa], `tick ${g.tick}: x of the image is y of the original`);
+      assert.equal(u.y[sb], u.x[sa], `tick ${g.tick}`);
+    }
+    if (block.some((id) => slotOf(g, id) >= 0 && u.target[slotOf(g, id)] === mage0)) charged++;
+  }
+  assert.ok(charged > 0, "the block went for the mage");
+});

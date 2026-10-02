@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, NEUTRAL, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { BUILDINGS, JOIN_FIGHT, LOOSE_KEEP, RETREAT_OWN_SPEED, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, CANNON, COUNTER_ATTACK, JOIN_FIGHT, LOOSE_KEEP, RETREAT_OWN_SPEED, UNITS } from "../src/core/rules.ts";
 import { fight } from "../src/balance-lib.ts";
 import type { Game } from "../src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
@@ -190,6 +190,94 @@ test("a farmer's death is counted by what last hurt it: militia, an enemy soldie
   cmd(g, 1, { c: "cast", u: mage, fx: u.x[slotOf(g, target)], fy: u.y[slotOf(g, target)] });
   run(g, 300);
   assert.deepEqual(Array.from(w.farmerDeaths.subarray(0, 5)), [0, 1, 1, 1, 0], "none, militia, unit, cannon, arrow");
+});
+
+/**
+ * A 3 x 3 block of player 0's spearmen standing (one on hold) with a farmer beside it; player 1's
+ * mage 8 cells off, out of their sight, shells the block once. With COUNTER_ATTACK set to `on`.
+ */
+function shelled(on: boolean) {
+  const saved = COUNTER_ATTACK.on;
+  COUNTER_ATTACK.on = on;
+  const g = emptyGame();
+  const w = g.w;
+  const a = openArea(g, 30);
+  const u = w.units.col;
+  w.ecoOn[0] = 0;
+  const block: number[] = [];
+  for (let k = 0; k < 9; k++) block.push(put(g, 0, UnitType.Spearman, a.x + 5 + (k % 3), a.y + 5 + Math.trunc(k / 3)));
+  const holder = block[6];
+  u.stance[slotOf(g, holder)] = Stance.Hold;
+  const farmer = put(g, 0, UnitType.Farmer, a.x + 9, a.y + 7);
+  const mage = put(g, 1, UnitType.Mage, a.x + 6, a.y + 14);
+  u.stance[slotOf(g, mage)] = Stance.Hold;
+  w.res[1 * 4 + 3] = 100;
+  g.fog.update(w);
+  cmd(g, 1, { c: "cast", u: mage, fx: ((a.x + 6) << CELL_SHIFT) + 512, fy: ((a.y + 6) << CELL_SHIFT) + 512 });
+  const restore = () => {
+    COUNTER_ATTACK.on = saved;
+  };
+  return { g, w, u, a, block, holder, farmer, mage, restore };
+}
+
+test("counter-attack: soldiers shelled by a mage they cannot see charge it; hold, farmers stay (round 4)", () => {
+  for (const on of [true, false]) {
+    const { g, u, block, holder, farmer, mage, restore } = shelled(on);
+    try {
+      const at = (id: number) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]];
+      const holdAt = at(holder);
+      const farmerAt = at(farmer);
+      let shot = -1;
+      for (let t = 0; t < 200 && shot < 0; t++) {
+        g.step();
+        if (u.castCooldown[slotOf(g, mage)] > 0) shot = g.tick;
+      }
+      assert.ok(shot > 0, "the mage fired");
+      run(g, 40);
+      const chasing = block.filter((id) => slotOf(g, id) >= 0 && u.target[slotOf(g, id)] === mage).length;
+      if (on) {
+        assert.ok(chasing >= 3, `${chasing} go for the mage`);
+        assert.equal(u.target[slotOf(g, holder)], -1, "hold stays");
+        assert.deepEqual(at(holder), holdAt, "hold does not move");
+        assert.deepEqual(at(farmer), farmerAt, "the farmer does not move");
+      } else {
+        assert.equal(chasing, 0, "without it nobody goes for the unseen mage");
+      }
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("counter-attack: once the mage is gone beyond 8 cells, the soldiers go back to their places and stay there (round 4)", () => {
+  const { g, w, u, a, block, mage, restore } = shelled(true);
+  try {
+    let shot = -1;
+    for (let t = 0; t < 200 && shot < 0; t++) {
+      g.step();
+      if (u.castCooldown[slotOf(g, mage)] > 0) shot = g.tick;
+    }
+    run(g, 20);
+    assert.ok(block.some((id) => u.target[slotOf(g, id)] === mage), "they went for it");
+    // The mage gets away: 20 cells off, out of sight; no more shots.
+    const ms = slotOf(g, mage);
+    u.y[ms] = ((a.y + 28) << CELL_SHIFT) + 512;
+    u.castCooldown[ms] = CANNON.cooldownTicks * 10;
+    w.res[1 * 4 + 3] = 0;
+    const home = (id: number) => Math.hypot(u.x[slotOf(g, id)] - u.anchorX[slotOf(g, id)], u.y[slotOf(g, id)] - u.anchorY[slotOf(g, id)]) / 1024;
+    run(g, 200);
+    const alive = block.filter((id) => slotOf(g, id) >= 0);
+    for (const id of alive) assert.ok(home(id) <= 1, `soldier ${id} back (${home(id).toFixed(2)} cells off)`);
+    for (let t = 0; t < 100; t++) {
+      g.step();
+      for (const id of alive) {
+        assert.equal(u.target[slotOf(g, id)], -1, `tick ${g.tick}: no target`);
+        assert.ok(home(id) <= 1, `tick ${g.tick}: soldier ${id} stays`);
+      }
+    }
+  } finally {
+    restore();
+  }
 });
 
 test("main city arrows hit intruders; destroying a main city ends the game", () => {

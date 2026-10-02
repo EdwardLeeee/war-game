@@ -29,6 +29,7 @@ import {
   ARRIVE_DISTANCE,
   BUILDINGS,
   CANNON,
+  COUNTER_ATTACK,
   MAGE_BOUNTY,
   SHIELD,
   SHIELD_REGEN,
@@ -386,6 +387,7 @@ export class UnitSystem {
       const hold = order === Order.None && u.stance[i] === Stance.Hold;
       tid = this.findTarget(w, fog, i, hold ? info.range : Math.max(AGGRO_RANGE, info.range));
       if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT) tid = this.joinFight(w, fog, i);
+      if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT && COUNTER_ATTACK.on) tid = this.counterAttack(w, fog, i);
     }
     u.target[i] = tid;
 
@@ -499,6 +501,50 @@ export class UnitSystem {
       return;
     }
     steerTo(w, fields, i, u.orderX[i], u.orderY[i], u.orderTarget[i], sp);
+  }
+
+  /**
+   * Counter-attack (COUNTER_ATTACK): the unit that hit unit i, or a friend of i within
+   * JOIN_FIGHT.range, in the last RETARGET_EVERY ticks, if i's owner sees it and it is within
+   * LEASH of i's place; the nearest such (ties to the lower id), or -1.
+   */
+  private counterAttack(w: World, fog: Fog, i: number): number {
+    const u = w.units.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const reach = JOIN_FIGHT.range;
+    const cells = (reach >> CELL_SHIFT) + 1;
+    const cx = u.x[i] >> CELL_SHIFT;
+    const cy = u.y[i] >> CELL_SHIFT;
+    let best = 0;
+    let bestId = -1;
+    for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
+      for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (u.owner[j] !== me || w.tick - u.lastHurt[j] > RETARGET_EVERY) continue;
+          if (j !== i) {
+            const fx = u.x[j] - u.x[i];
+            const fy = u.y[j] - u.y[i];
+            if (fx * fx + fy * fy > reach * reach) continue;
+          }
+          const a = u.hitById[j];
+          const as = a >= 0 ? w.unit(a) : -1;
+          if (as < 0 || u.owner[as] === me || u.action[as] === Action.Garrisoned) continue;
+          if (!this.sees(fog, me, u.x[as], u.y[as], n)) continue;
+          const ax = u.x[as] - u.anchorX[i];
+          const ay = u.y[as] - u.anchorY[i];
+          if (ax * ax + ay * ay > LEASH * LEASH) continue;
+          const dx = u.x[as] - u.x[i];
+          const dy = u.y[as] - u.y[i];
+          const d2 = dx * dx + dy * dy;
+          if (bestId < 0 || d2 < best || (d2 === best && a < bestId)) {
+            best = d2;
+            bestId = a;
+          }
+        }
+      }
+    }
+    return bestId;
   }
 
   /** A player's loose ranged unit or mage (LOOSE_KEEP). */
@@ -792,7 +838,7 @@ export class UnitSystem {
       const info = UNITS[u.type[i]];
       const ts = w.unit(tid);
       if (ts >= 0) {
-        this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit);
+        this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
       } else {
         const bs = w.building(tid);
         if (bs >= 0) this.buildingDamage[bs] += info.attack;
@@ -830,6 +876,7 @@ export class UnitSystem {
       this.shieldDamage[bestSlot] += arrow.damage * arrows;
       u.hitBy[bestSlot] = b.owner[s];
       u.hitCause[bestSlot] = HitCause.Arrow;
+      u.hitById[bestSlot] = -1;
       b.target[s] = u.id[bestSlot];
       b.cooldown[s] = arrow.cooldown;
     }
@@ -879,12 +926,13 @@ export class UnitSystem {
   }
 
   /** One hit on unit slot ts: hp damage and shield damage with their multipliers. */
-  private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number, cause: HitCause): void {
+  private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number, cause: HitCause, attackerId: number): void {
     const u = w.units.col;
     this.unitDamage[ts] += damage(attack, attackerType, u.type[ts]);
     this.shieldDamage[ts] += damage(attack, attackerType, SHIELD);
     u.hitBy[ts] = attackerOwner;
     u.hitCause[ts] = cause;
+    u.hitById[ts] = attackerId;
   }
 
   /**
@@ -910,7 +958,7 @@ export class UnitSystem {
             const dx = u.x[j] - u.castX[i];
             const dy = u.y[j] - u.castY[i];
             if (dx * dx + dy * dy <= r2) {
-              this.hit(w, j, CANNON.damage, UnitType.Mage, p, HitCause.Cannon);
+              this.hit(w, j, CANNON.damage, UnitType.Mage, p, HitCause.Cannon, u.id[i]);
               if (p < PLAYER_COUNT) w.cannonHits[p]++;
             }
           }

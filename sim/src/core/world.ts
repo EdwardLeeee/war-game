@@ -34,6 +34,8 @@ export const UNIT_COLS = [
   "castX", "castY", "lastDealt", "hitBy",
   // What last hurt this unit (HitCause), for statistics.
   "hitCause",
+  // The unit that last hit this one, -1 when it was an arrow (round 4: counter-attacks).
+  "hitById",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 
@@ -275,6 +277,7 @@ export class World {
     c.lastDealt[s] = -100000;
     c.hitBy[s] = -1;
     c.hitCause[s] = HitCause.None;
+    c.hitById[s] = -1;
     return id;
   }
 

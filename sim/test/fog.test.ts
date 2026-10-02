@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Rng } from "../src/core/fixed.ts";
 import { buildView } from "../src/view/view.ts";
-import { BuildingFlag, BuildingField, BUILDING_STRIDE, CELL_SHIFT, Fog, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
-import { emptyGame, openArea, put, slotOf } from "./helpers.ts";
+import { BuildingFlag, BuildingField, BUILDING_STRIDE, CELL_SHIFT, Fog, Stance, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
+import { REVEAL_CAST } from "../src/core/rules.ts";
+import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
 
 test("a player sees enemy units only within sight; explored cells stay explored", () => {
   const g = emptyGame();
@@ -81,5 +82,46 @@ test("PlayerView never shows enemy units outside visible cells, and hidden chang
     const v2 = buildView(g, 0);
     assert.deepEqual(v2.units, v.units);
     assert.deepEqual(v2.buildings, v.buildings);
+  }
+});
+
+test("a mage calibrating the cannon, and for 2 s after it fired, is seen by the other player in its cell (round 4)", () => {
+  for (const on of [true, false]) {
+    const saved = REVEAL_CAST.on;
+    REVEAL_CAST.on = on;
+    try {
+      const g = emptyGame();
+      const w = g.w;
+      const a = openArea(g, 24);
+      const u = w.units.col;
+      put(g, 0, UnitType.Spearman, a.x + 6, a.y + 6);
+      const mage = put(g, 1, UnitType.Mage, a.x + 6, a.y + 14);
+      u.stance[slotOf(g, mage)] = Stance.Hold;
+      w.res[1 * 4 + 3] = 100;
+      g.fog.update(w);
+      const seen = () => {
+        const s = slotOf(g, mage);
+        return g.fog.visible[0][(u.y[s] >> CELL_SHIFT) * w.size + (u.x[s] >> CELL_SHIFT)] === 1;
+      };
+      assert.equal(seen(), false, "8 cells off, out of sight");
+      cmd(g, 1, { c: "cast", u: mage, fx: ((a.x + 6) << CELL_SHIFT) + 512, fy: ((a.y + 6) << CELL_SHIFT) + 512 });
+      run(g, 10);
+      g.fog.update(w);
+      assert.equal(seen(), on, "calibrating");
+      let fired = -1;
+      for (let t = 0; t < 100 && fired < 0; t++) {
+        g.step();
+        if (u.castCooldown[slotOf(g, mage)] > 0) fired = g.tick;
+      }
+      assert.ok(fired > 0, "fired");
+      run(g, REVEAL_CAST.ticks - 5);
+      g.fog.update(w);
+      assert.equal(seen(), on, "just under 2 s after");
+      run(g, 10);
+      g.fog.update(w);
+      assert.equal(seen(), false, "more than 2 s after");
+    } finally {
+      REVEAL_CAST.on = saved;
+    }
   }
 });

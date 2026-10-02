@@ -3,8 +3,8 @@
 // visible), and memory — the last sighting of each enemy or neutral building, each
 // resource node and each town. Memory is simulation state: the AI decides from it.
 
-import { Action, CELL_SHIFT, NEUTRAL, PLAYER_COUNT, TOWN_STRIDE, TownField, TownFlag, TownState, UnitType } from "../protocol.ts";
-import { BUILDINGS, TOWNS, UNITS } from "./rules.ts";
+import { Action, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, TOWN_STRIDE, TownField, TownFlag, TownState, UnitType } from "../protocol.ts";
+import { BUILDINGS, CANNON, REVEAL_CAST, TOWNS, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 const MAX_SIGHT = 10;
@@ -81,6 +81,14 @@ export class Fog {
       for (let s = 0; s < w.units.count; s++) {
         if (u.owner[s] !== p) continue;
         stamp(u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT, UNITS[u.type[s]].sight);
+      }
+      // Another player's mage calibrating the cannon, or that fired it in the last
+      // REVEAL_CAST.ticks, shows in its own cell (round 4).
+      if (REVEAL_CAST.on) {
+        for (let s = 0; s < w.units.count; s++) {
+          if (u.owner[s] === p || u.owner[s] >= PLAYER_COUNT || u.type[s] !== UnitType.Mage) continue;
+          if (u.order[s] === Order.Cast || u.castCooldown[s] > CANNON.cooldownTicks - REVEAL_CAST.ticks) stamp(u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT, 0);
+        }
       }
       for (let s = 0; s < w.buildings.count; s++) {
         if (b.owner[s] !== p) continue;
