@@ -30,6 +30,7 @@
 | `src/worker.ts`、`src/headless.ts` | Web Worker；Node 命令列 |
 | `src/scripts/eco.ts` | 無畫面工具用來推動雙方經濟的固定腳本（不是 AI，只讀自己的 PlayerView） |
 | `src/tournament.ts`、`src/tournament-summary.ts` | 100 場 AI 對打（每場重播比對）與彙整、門檻 |
+| `src/ai-timeline.ts` | 電腦對不動的玩家（沒有時間上限）：第一次打野城、攻下哪座城鎮、搶或治理、第一名法師、第一次打主城（帶幾名法師）、主城第一次被打（電腦有幾名法師）、主城被攻下的時間；`--player-town governed` 或 `ruins` 設定玩家家旁那座小鎮的狀態（第四輪） |
 | `src/balance.ts`、`src/balance-lib.ts` | 兵種平衡量測：花費相同的小型對戰（三種打法、距離 8／9／10 格、攻方散開、打城鎮），比較第二輪的數值和程式裡的數值，標出五條目標（第三輪，D-026） |
 | `src/browser-check.ts`、`src/browser-replay.ts` | 在 Chromium、WebKit 重播 Node 產生的紀錄，比對雜湊 |
 

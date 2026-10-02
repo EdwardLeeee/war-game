@@ -125,11 +125,14 @@ jobs:
           cache: npm
           cache-dependency-path: sim/package-lock.json
       - run: npm ci
+      # Normal also with the player's own small town (round 4) governed by the player, and in ruins.
       - name: Easy and normal against a player who does nothing; walled-in soldiers
         run: |
           set -o pipefail
           node src/ai-timeline.ts --seed 4 --difficulty easy --first-town-min 18 | tee -a "${GITHUB_STEP_SUMMARY}"
           node src/ai-timeline.ts --seed 4 --difficulty normal | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/ai-timeline.ts --seed 4 --difficulty normal --player-town governed | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/ai-timeline.ts --seed 4 --difficulty normal --player-town ruins | tee -a "${GITHUB_STEP_SUMMARY}"
           node src/walled-perf.ts | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # Unit balance (round 3, D-026): small battles of equal cost, the values before this round
