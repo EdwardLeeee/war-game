@@ -79,12 +79,14 @@ def total(d):
 
 def run(suffix="x3"):
     done = folder("core3", suffix)
-    done.update(folder("b101", suffix))
+    # the first East tower and the first fields were replaced in B1b (the user, 2026-10-02)
+    done.update(folder("b101", suffix, lambda n: n not in ("tower_E", "farm_E", "farm_W")))
+    done.update(folder("b1b", suffix))                     # tower_fine_E and the rice / wheat fields, 3 stages each
     towns = folder("towns", suffix, lambda n: not n.startswith("tground"))
-    res = folder("b104", suffix, lambda n: not n.startswith("forest"))
+    res = folder("b104", suffix, lambda n: not n.startswith(("forest", "farm")))
     states = folder("states", suffix)
-    rows = {"建築（完成，15 種 × 2 文化，含城牆、城門）": total(done), "城鎮零件（不含地面鋪面）": total(towns),
-            "資源點（含作物三階段）": total(res)}
+    rows = {"建築（完成，15 種 × 2 文化，含城牆、城門；農田含三個階段）": total(done), "城鎮零件（不含地面鋪面）": total(towns),
+            "資源點（樹、金礦、野果、晶脈，含採完的樣子）": total(res)}
     # the states, two ways
     core = ("main_city", "house", "barracks")
     groups = {"施工中 A": ("build_a1", "build_a2", "build_a3"), "施工中 B": ("build_b1", "build_b2", "build_b3"),

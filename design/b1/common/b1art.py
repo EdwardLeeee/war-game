@@ -312,18 +312,28 @@ LOOK = {   # what makes each one recognisable at actual size (the second check)
     "lumber_camp": ("草頂棚子下堆滿原木", "草頂棚子下堆滿原木"),
     "mine": ("礦石堆有金塊和魔晶、礦車、吊架", "礦石堆有金塊和魔晶、礦車、吊架"),
     "granary": ("架高的草頂穀倉、糧袋", "穀倉大門、圓筒倉、糧袋"),
-    "farm": ("平的田、一行行作物、稻草人", "平的田、一行行麥子、稻草人"),
+    "farm": ("水田種稻、一叢叢秧苗、稻草人", "旱地種麥、一行行田畦、稻草人"),
     "barracks": ("長屋加練兵場：兵器架、木樁人", "長屋加練兵場：兵器架、木樁人、圓盾"),
     "range": ("一排紅圈靶子", "一排紅圈靶子"),
     "mage_hall": ("三層塔、頂上一簇魔晶", "細高石塔、頂上一大簇魔晶"),
     "stable": ("一排馬房門、圍欄、乾草", "一排馬房門、圍欄、乾草"),
     "workshop": ("做到一半的投石器、吊架", "做到一半的投石器、吊架"),
     "smithy": ("煙囪、爐火、鐵砧", "煙囪、爐火、鐵砧"),
-    "tower": ("木造高望樓", "圓石塔、尖頂"),
+    "tower": ("磚台上的木造高望樓：欄杆、斗拱、鐘鼓、長幡", "圓石塔、尖頂"),
     "walls": ("磚牆、瓦簷、雉堞", "石牆、雉堞"),
     "gate": ("兩座門墩、門樓", "兩座門塔、尖頂"),
     "branch_city": ("台基上的單簷大殿、一面大旗", "方石塔加大屋、旗"),
 }
+
+
+# approved in B1b (the user, 2026-10-02): the refined East tower and the rice / wheat fields replace the first versions
+APPROVED = {("tower", "E"): ("b1b", "tower_fine_E"), ("farm", "E"): ("b1b", "farm_fine_E_growing"),
+            ("farm", "W"): ("b1b", "farm_fine_W_growing")}
+
+
+def piece_ref(kind, c):
+    """(folder, piece name) of the approved render of a building."""
+    return APPROVED.get((kind, c), (_bdir(kind), f"{kind}_{c}"))
 
 
 def bname(kind, c):
@@ -336,8 +346,11 @@ def _bdir(kind):
 
 
 def bpiece(kind, c, suffix, ppm, team="blue", x=0.0, y=0.0, tag=None):
-    name = f"{kind}_{c}" + (f"_{tag}" if tag else "")
-    sp = scene.piece(config.BUILD / "b1" / _bdir(kind), name, suffix, team=team, ppm=ppm, x=x, y=y)
+    if tag is None:
+        folder, name = piece_ref(kind, c)
+    else:
+        folder, name = _bdir(kind), f"{kind}_{c}_{tag}"
+    sp = scene.piece(config.BUILD / "b1" / folder, name, suffix, team=team, ppm=ppm, x=x, y=y)
     sp.ground = kind == "farm"           # walkable and low: drawn with the ground, under the units
     return sp
 
@@ -395,7 +408,7 @@ def team_share(kind, c, suffix):
     if kind in ("walls", "gate"):
         name, d = f"gate_{c}_x", "b101"
     else:
-        name, d = f"{kind}_{c}", _bdir(kind)
+        d, name = piece_ref(kind, c)
     base = config.BUILD / "b1" / d / f"{name}_{suffix}"
     try:
         a = np.asarray(Image.open(f"{base}_beauty.png").getchannel("A")) > 128
@@ -409,9 +422,12 @@ def probe_text(kind, c, suffix):
     import json
     if kind in ("walls", "gate"):
         return "城牆和城門本來就要擋路，不做這項測試。"
-    p = config.BUILD / "b1" / _bdir(kind) / f"{kind}_{c}_probe.json"         # local probe (thin poles ignored)
+    d, name = piece_ref(kind, c)
+    if kind == "farm":
+        d, name = _bdir(kind), f"{kind}_{c}"                 # a field: the first version's probe (crops are lower now)
+    p = config.BUILD / "b1" / d / f"{name}_probe.json"         # local probe (thin poles ignored)
     if not p.exists():
-        p = config.BUILD / "b1" / _bdir(kind) / f"{kind}_{c}_{suffix}.json"
+        p = config.BUILD / "b1" / d / f"{name}_{suffix}.json"
     m = json.loads(p.read_text())
     pr = m.get("probe")
     if not pr:
@@ -662,11 +678,11 @@ def b104(suffix):
     for c in ("E", "W"):
         ims = []
         for st, n in (("sown", "剛種"), ("growing", "長高"), ("ripe", "成熟")):
-            items = [rpiece(f"farm_{c}_{st}", suffix, ppm)]
+            items = [_farm_piece("B", c, st, suffix, ppm)]
             farmer = "farmer_e" if c == "E" else "farmer_w"
             items.append(scene.unit(farmer, "blue", scale=pp * 20 / 60, x=0.6, y=-0.4))
             ims.append(caption(tile(items, pp, footprint=(3, 3)), n))
-        sections.append((f"農田作物・{CULT[c]}（站一名農民：作物不擋人）", ims))
+        sections.append((f"農田作物・{CULT[c]}・{'水田種稻' if c == 'E' else '旱地種麥'}（B1b 精修；站一名農民：作物不擋人）", ims))
     sub = ("資源點和模擬一樣是一格一塊：樹一格一棵；金礦 2×2、野果 3×2、晶脈 2×2，每一格各自採完，採完的那格就可以走，"
            "所以剩下的樣子都很低。樹照東西陸各三種，金礦、野果、晶脈兩邊共用。晶脈是飽和的魔晶青、長在深色岩石上的晶簇，"
            "和淡色半透明的防護罩、橘色的預警圈分得開。最下面是實際大小（1 pt = 1 px）。")
@@ -777,9 +793,12 @@ def overview2(suffix):
     res = []
     for n, t in (("tree_E_v0", "松"), ("tree_E_v2", "樟"), ("tree_W_v0", "橡"), ("tree_W_v1", "冷杉"), ("tree_W_v2", "樺"),
                  ("gold_E_v0_full", "金礦"), ("berry_E_v0_full", "野果"), ("crystal_E_v0_full", "晶脈"),
-                 ("farm_E_ripe", "作物・東"), ("farm_W_ripe", "作物・西")):
+                 ("farm_fine_E_ripe", "稻・東"), ("farm_fine_W_ripe", "麥・西")):
         fp = (3, 3) if n.startswith("farm") else (1, 1)
-        res.append(caption(tile([rpiece(n, suffix, 30)], 1.5, footprint=fp, pad=10), t, 16))
+        sp = (scene.piece(config.BUILD / "b1" / "b1b", n, suffix, ppm=30) if n.startswith("farm")
+              else rpiece(n, suffix, 30))
+        sp.ground = n.startswith("farm")
+        res.append(caption(tile([sp], 1.5, footprint=fp, pad=10), t, 16))
     rows.append(("資源點（1 pt = 1.5 px）", res))
     # B1-05 (units hidden behind buildings) is set aside (the user, 2026-10-02: 「被擋住應該先不用管」)
     lab = 300
