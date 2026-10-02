@@ -9,6 +9,7 @@ import { type GameStats, HeaderField as H, type SimEvent, TownChoice, TownSize }
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
+import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
 import { Minimap } from "./minimap.ts";
 import { BUILDING_NAME, clock, GAME_OVER_REASON } from "./names.ts";
 import { CommandArea, ResourceBar, SelectionInfo } from "./panels.ts";
@@ -411,6 +412,20 @@ export class Hud {
       done();
     };
     const row = el("div", card, "dialog-buttons");
+    // 不再提示 (ceo, D-044): the player plays one game after another. Kept on this device;
+    // 選單 → 魔晶怎麼拿 opens the hint again, and there it can be turned back on. On the left,
+    // away from 知道了 under the right thumb.
+    const off = loadTownHintOff();
+    btn(
+      row,
+      off ? "開局時要提示" : "不再提示",
+      () => {
+        saveTownHintOff(!off);
+        this.closeDialog();
+        this.game.toast(off ? "之後每一局開局都會提示" : "之後開局不會再提示；選單裡的「魔晶怎麼拿」可以再看");
+      },
+      "secondary",
+    );
     btn(
       row,
       "看那座城鎮",
@@ -436,6 +451,11 @@ export class Hud {
   private openMenu(): void {
     const card = this.openDialog("選單", "menu");
     const list = el("div", card, "dialog-buttons column");
+    // 開局提示 again (D-044), also after 不再提示.
+    btn(list, "魔晶怎麼拿", () => {
+      this.closeDialog();
+      this.game.showTownHint();
+    }, "secondary");
     btn(list, "量測與確定性檢查", () => {
       this.closeDialog();
       this.game.lab.show();

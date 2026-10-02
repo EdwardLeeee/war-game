@@ -878,6 +878,12 @@ button .sub {
   flex-direction: column;
 }
 
+/* 選單: two columns, so all six fit a phone held sideways (380 pt with Safari's toolbars) without scrolling. */
+.menu .dialog-buttons.column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
 button.danger {
   background: #e0473d;
   color: #fff;
