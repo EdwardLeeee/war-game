@@ -510,6 +510,8 @@ a {
   border-radius: 10px;
   font-weight: 700;
   font-size: 14px;
+  /* The clock ticks every second: figures of one width keep the line from shifting. */
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
 }

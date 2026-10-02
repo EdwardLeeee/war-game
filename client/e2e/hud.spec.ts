@@ -3,7 +3,7 @@
 // and idle farmers, and every piece of the temporary interface (GDD §10 草稿).
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { armyButton, FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 import { doubleTap, doubleTapOn, longPress, longPressOn, tap, tapOn } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -135,7 +135,7 @@ for (const size of [
     const [armyBtn] = await visibleBoxes(page, ".army-btn");
     const apart = Math.max(armyBtn.x - (retreatAll.x + retreatAll.width), retreatAll.x - (armyBtn.x + armyBtn.width), armyBtn.y - (retreatAll.y + retreatAll.height), retreatAll.y - (armyBtn.y + armyBtn.height));
     expect(apart, "全軍撤退 far from 全軍").toBeGreaterThan(100);
-    await expect(page.locator(".res-bar")).toHaveText(/糧 200　木 200　金 100　晶 20　人口 \d+\/20/);
+    await expect(page.locator(".res-bar")).toHaveText(/^糧 200　木 200　金 100　晶 20　人口 \d+\/20　時間 \d+:\d\d$/);
     await shot(page, info, `hud-${size.who}-${width}x${height}`);
   });
 }
@@ -494,9 +494,51 @@ test("閒置農民：點一下跳到下一個並選取，長按全部選取", as
   await expect.poll(() => selection(page)).toEqual({ units: idle, building: null });
 });
 
-test("全軍：選取所有軍隊", async ({ page }) => {
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
-  await expect.poll(() => selection(page)).toEqual({ units: await ownIds(page, [1, 2, 3]), building: null });
+test("全軍：選取所有軍隊；按鈕上寫會選到幾名（ceo 2026-10-03）", async ({ page }) => {
+  const army = await ownIds(page, [1, 2, 3]);
+  await expect(armyButton(page)).toHaveText(`全軍 ${army.length}`);
+  await armyButton(page).tap();
+  await expect.poll(() => selection(page)).toEqual({ units: army, building: null });
+});
+
+test("遊戲時間：資源列最後一項，開局後會前進，暫停時不動；是遊戲時間，每秒 20 tick（ceo 2026-10-03）", async ({ page }) => {
+  const bar = page.locator(".res-bar");
+  const seconds = async () => {
+    const m = /　時間 (\d+):(\d\d)$/.exec((await bar.textContent()) ?? "");
+    return m === null ? -1 : Number(m[1]) * 60 + Number(m[2]);
+  };
+  await expect(bar).toHaveText(/人口 \d+\/\d+　時間 \d+:\d\d$/);
+  const tick = (await page.evaluate(() => window.__proto?.game?.header().tick)) ?? -1;
+  expect(Math.abs((await seconds()) - tick / 20), "the simulation's ticks, 20 a second").toBeLessThanOrEqual(1);
+  const start = await seconds();
+  await expect.poll(seconds, { timeout: 5000 }).toBeGreaterThan(start);
+  // 暫停: it stands still.
+  await page.getByRole("button", { name: "暫停" }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
+  await page.waitForTimeout(300);
+  const paused = await seconds();
+  await page.waitForTimeout(1500);
+  expect(await seconds(), "paused").toBe(paused);
+  await page.getByRole("button", { name: "繼續" }).tap();
+  await expect.poll(seconds, { timeout: 5000 }).toBeGreaterThan(paused);
+});
+
+test("遊戲時間：畫面窄到放不下時，只留數字，不換行、不碰到右上的按鈕", async ({ page }, info) => {
+  await injectSafeArea(page);
+  const bar = page.locator(".res-bar");
+  await expect(bar).toHaveText(/　時間 \d+:\d\d$/);
+  const [full] = await visibleBoxes(page, ".res-bar");
+  const [controls] = await visibleBoxes(page, ".top-right");
+  const size = page.viewportSize() ?? { width: 0, height: 0 };
+  // Narrow the page until the full line misses its room (the gap before the buttons is 8) by 10 px.
+  const room = controls.x - full.x - 8;
+  await page.setViewportSize({ width: Math.floor(size.width - (room - (full.width - 10))), height: size.height });
+  await expect(bar).toHaveText(/人口 \d+\/20　\d+:\d\d$/);
+  const [short] = await visibleBoxes(page, ".res-bar");
+  const [after] = await visibleBoxes(page, ".top-right");
+  expect(short.height, "one line").toBe(full.height);
+  expect(short.x + short.width, "clear of the top-right buttons").toBeLessThanOrEqual(after.x - 8);
+  await shot(page, info, "res-bar-narrow");
 });
 
 test("全體回城：切換全體回城與回去工作", async ({ page }) => {
@@ -631,7 +673,7 @@ test("姿態：按鈕寫出現在是哪一種、按了會變成哪一種，選�
   await shot(page, info, "stance-hold");
 
   // 全軍 now mixes 堅守 spearmen with 積極 archers and mages: one tap makes them all 堅守.
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await armyButton(page).tap();
   const army = await ownIds(page, [1, 2, 3]);
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await expect(stance).toHaveText("姿態：混合按一下全部改成堅守");
@@ -680,7 +722,7 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await shot(page, info, "formation-loose");
 
   // 全軍 now mixes 散開 spearmen with 密集 archers and mages: one tap makes them all 散開.
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await armyButton(page).tap();
   const army = await ownIds(page, [1, 2, 3]);
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await expect(formation).toHaveText("隊形：混合按一下全部改成散開");
@@ -767,8 +809,9 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   // They left control group 1, and 全軍 does not take them.
   const rest = spear.filter((id) => !inside.includes(id));
   expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(rest);
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
   const army = (await ownIds(page, [1, 2, 3])).filter((id) => !inside.includes(id));
+  await expect(armyButton(page), "the garrison left out").toHaveText(`全軍 ${army.length}`);
+  await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await select(page, []);
 
@@ -815,7 +858,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 1 }));
   await expect.poll(() => garrison(page, 0)).toEqual([]);
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [inside[0], inside[1]], stance: 0, auto: true });
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units).toEqual(await ownIds(page, [1, 2, 3]));
 });
 
@@ -836,7 +879,8 @@ test("留守：搶預設不留人；所有的兵都留守時，全軍會說明",
   for (let i = 0; i < army.length; i++) await more.tap();
   await expect(panel.getByRole("status", { name: "留守幾名" })).toHaveText(`${army.length}`);
   expect((await garrison(page, 0)).slice().sort((x, y) => x - y)).toEqual(army);
-  await page.getByRole("button", { name: "全軍", exact: true }).tap();
+  await expect(armyButton(page)).toHaveText("全軍 0");
+  await armyButton(page).tap();
   await expect(toast(page, "所有的兵都在留守")).toBeVisible();
   await expect.poll(async () => (await selection(page))?.units).toEqual([]);
   // 全軍撤退 leaves the garrisons too: nobody to send, and it says so.
