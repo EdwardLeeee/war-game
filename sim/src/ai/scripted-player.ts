@@ -79,6 +79,8 @@ export interface Plan {
   staticRatio: boolean;
   /** Never builds a mage hall (to see what the mages are worth to the plan). */
   noMage: boolean;
+  /** Never builds a range: spearmen (and mages) only; the mage hall then waits for the barracks instead. */
+  noRange: boolean;
 }
 
 interface Unit {
@@ -159,6 +161,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     focus: 0,
     staticRatio: false,
     noMage: false,
+    noRange: false,
   };
 }
 
@@ -381,12 +384,13 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
-        if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
-        if (!plan.noMage && !has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * 1200)) add(BuildingType.MageHall, base);
+        if (!plan.noRange && !has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
+        const shooters = plan.noRange ? BuildingType.Barracks : BuildingType.Range;
+        if (!plan.noMage && !has(BuildingType.MageHall) && has(shooters) && (res.crystal >= 40 || tick > 10 * 1200)) add(BuildingType.MageHall, base);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
-          add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
+          add(plan.noRange || count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
         for (const p of plans) {
           if (p.at === null) continue;

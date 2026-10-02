@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createScriptedPlayer, type Plan, planFor, SCRIPTED_THINK_EVERY } from "../src/ai/scripted-player.ts";
 import { rules } from "../src/core/rules.ts";
-import { TownSize, UnitType } from "../src/protocol.ts";
+import { BuildingType, TownSize, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
 
@@ -44,11 +44,21 @@ test("the push plan trains an army and takes the small town nearest its main cit
   assert.ok(w.trained[UnitType.Spearman] + w.trained[UnitType.Ranged] >= 6, "soldiers trained");
 });
 
+test("without a range (an option outside the fixed groups) it trains spearmen, no ranged", () => {
+  const r = play(1, { ...planFor("push", "h1", "close"), noRange: true }, 12000);
+  const w = r.game.w;
+  const b = w.buildings.col;
+  for (let s = 0; s < w.buildings.count; s++) assert.ok(b.owner[s] !== 0 || b.type[s] !== BuildingType.Range, "no range");
+  assert.equal(w.trained[UnitType.Ranged], 0);
+  assert.ok(w.trained[UnitType.Spearman] >= 6, "spearmen trained");
+});
+
 test("the fixed plans: strategies, speeds and formations", () => {
   const push = planFor("push", "h1", "close");
   assert.deepEqual([push.townAt, push.pushAt, push.counterAt, push.farmers, push.production, push.loose, push.woodBias], [6, 24, 14, 22, 2, 0, false]);
   const defend = planFor("defend", "eco", "all");
   assert.deepEqual([defend.townAt, defend.pushAt, defend.farmers, defend.production, defend.loose, defend.woodBias], [6, 0, 30, 6, 2, true]);
   assert.deepEqual([planFor("notown", "h1", "shooters").townAt, planFor("notown", "h1", "shooters").loose], [0, 1]);
+  assert.deepEqual([push.staticRatio, push.noMage, push.noRange], [false, false, false]);
   assert.equal(SCRIPTED_THINK_EVERY, 40);
 });

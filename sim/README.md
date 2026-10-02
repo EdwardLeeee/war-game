@@ -127,6 +127,11 @@
   - `eco`（經濟養大）：農民 30 名、兵營加射場最多 6 座；糧和金都到 300、木頭不到 100 時，多派人砍木頭。
   - 兩種都是每 40 tick 下一輪指令（`SCRIPTED_THINK_EVERY`），像人的手速。
 - **隊形**（`--formation`）：`close` 都不散開；`shooters` 遠程和法師散開；`all` 整隊散開。
+- **其他選項**（不在 CI 的五組裡，ceo 量過，D-046）：
+  - `--static-ratio`：經濟分配固定 40／35／25（糧／木／金），不照電腦的方式調；木頭不夠時多砍木（`eco`）照樣有效。
+  - `--no-mage`：不蓋法術營，沒有法師。
+  - `--no-range`：不蓋射場，只出槍兵和法師；法術營改成有兵營以後才蓋。和 `--no-mage` 一起用就是只出槍兵。
+  - `--think N`：每 N tick 下一輪指令（預設 40）。
 - **輸出**：Markdown。
   - 每局：電腦的性格、攻下小鎮、雙方第一名法師、主城第一次被打（當時電腦有幾名兵和法師）、第一次出發打電腦主城、勝負和時間。
   - 到第 50 分（`--cap`）還沒分出勝負的局另外算，列出雙方的主城血量和兵數。
@@ -143,6 +148,7 @@
 ```
 node src/scripted-games.ts --seeds 1-15 --strategy defend --speed h1 --formation close
 node src/scripted-games.ts --seeds 1,2,3 --strategy push --style plunder --trace --json out.json
+node src/scripted-games.ts --seeds 1-20 --strategy push --no-range --no-mage
 ```
 
 ## 本機執行

@@ -4,6 +4,7 @@
 // (D-045, D-046). The player decides from its own view only; the numbers here read the world.
 //   node src/scripted-games.ts --seeds 1-15 --strategy defend --speed h1 --formation close
 //   node src/scripted-games.ts --seeds 1,2,3 --strategy push --trace --json out.json
+//   node src/scripted-games.ts --seeds 1-20 --strategy push --no-range --no-mage   (spearmen only)
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
 import { writeFileSync } from "node:fs";
@@ -49,6 +50,11 @@ const CAP = Number(arg("cap", "50")) * 1200;
 const trace = flag("trace");
 const jsonOut = arg("json", "");
 const plan = planFor(strategy, speed, formation);
+// Options outside the fixed groups (ceo's measurements, D-046): the economy ratio left at
+// 40/35/25, no mage hall, no range (with --no-mage too: spearmen only).
+if (flag("static-ratio")) plan.staticRatio = true;
+if (flag("no-mage")) plan.noMage = true;
+if (flag("no-range")) plan.noRange = true;
 
 const NAMES: Record<Strategy, string> = { push: "主動", defend: "守家", notown: "守家、不拿城鎮" };
 const SPEED_NAMES: Record<Speed, string> = { h1: "手速 H1", eco: "經濟養大" };
@@ -219,7 +225,13 @@ function play(seed: number): GameRecord {
 const games = seeds.map(play);
 const won = games.filter((x) => x.result === "won").length;
 const open = games.filter((x) => x.result === "open");
-const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${difficulty === "easy" ? "簡單" : "普通"}）`;
+const options = [
+  plan.staticRatio ? "經濟比例固定" : "",
+  plan.noMage ? "不蓋法術營" : "",
+  plan.noRange ? "不蓋射場" : "",
+  think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
+].filter((x) => x !== "");
+const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${difficulty === "easy" ? "簡單" : "普通"}）`;
 const out: string[] = [`### ${title}`, ""];
 out.push(`${games.length} 局贏 ${won} 局，輸 ${games.length - won - open.length} 局${open.length > 0 ? `，到第 ${m(CAP)} 分還沒分出勝負 ${open.length} 局` : ""}。`, "");
 const byStyle = AI_STYLES.map((s) => {
