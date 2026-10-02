@@ -635,6 +635,48 @@ test("loose ranged keep about 2 cells apart in a fight; a close formation fights
   assert.equal(rangedWalkUp(false, 2 * 1024).hash, rangedWalkUp(false, 0).hash, "close: the same game either way");
 });
 
+/**
+ * 12 spearmen of player 0 (loose or close) stand; 12 spearmen of player 1 walk up to them.
+ * With LOOSE_KEEP.everyone set to `everyone`. Returns the game's hash at the end and player 0's
+ * spacing 2 s after the first of them struck.
+ */
+function spearmenHold(loose: boolean, everyone: boolean): { hash: number; after: { min: number; mean: number } } {
+  const saved = LOOSE_KEEP.everyone;
+  LOOSE_KEEP.everyone = everyone;
+  try {
+    const g = emptyGame();
+    const a = openArea(g, 30);
+    const u = g.w.units.col;
+    const mine: number[] = [];
+    for (let k = 0; k < 12; k++) mine.push(put(g, 0, UnitType.Spearman, a.x + 9 + (k % 6), a.y + 4 + Math.trunc(k / 6)));
+    const foes: number[] = [];
+    for (let k = 0; k < 12; k++) foes.push(put(g, 1, UnitType.Spearman, a.x + 9 + (k % 6), a.y + 20 + Math.trunc(k / 6)));
+    g.fog.update(g.w);
+    if (loose) cmd(g, 0, { c: "formation", u: mine, loose: true });
+    cmd(g, 1, { c: "move", u: foes, x: a.x + 11, y: a.y + 4 });
+    let first = -1;
+    let after = { min: 0, mean: 0 };
+    for (let t = 0; t < 500; t++) {
+      g.step();
+      const alive = mine.filter((id) => slotOf(g, id) >= 0);
+      if (first < 0 && alive.some((id) => u.action[slotOf(g, id)] === Action.Attack)) first = g.tick;
+      if (first >= 0 && g.tick === first + 40) after = spacing(g, alive);
+    }
+    return { hash: g.hash(), after };
+  } finally {
+    LOOSE_KEEP.everyone = saved;
+  }
+}
+
+test("loose spearmen keep about 2 cells apart too (round 4, E4); close spearmen fight exactly as before", () => {
+  const on = spearmenHold(true, true);
+  const off = spearmenHold(true, false);
+  assert.ok(on.after.mean >= 1.6, `loose, kept apart: mean ${on.after.mean.toFixed(2)} cells`);
+  assert.ok(off.after.mean < 1.35, `loose spearmen without it, pressed together: mean ${off.after.mean.toFixed(2)}`);
+  assert.notEqual(on.hash, off.hash);
+  assert.equal(spearmenHold(false, true).hash, spearmenHold(false, false).hash, "close: the same game either way");
+});
+
 test("big groups reach their slots, close and loose (slots off to the side of the way in)", () => {
   for (const [n, loose] of [[36, false], [25, true]] as const) {
     const g = emptyGame();

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { IDENTITY, MIRROR_XY, fromCanon, rectFromCanon, rotation, stepOrder, toCanon, xIsCanonY } from "../src/frame.ts";
-import { CELL_SHIFT, Order, UnitType } from "../src/protocol.ts";
+import { Action, CELL_SHIFT, Order, UnitType } from "../src/protocol.ts";
 import { nearestWalkable } from "../src/core/paths.ts";
 import { cmd, emptyGame, put, slotOf } from "./helpers.ts";
 
@@ -302,4 +302,71 @@ test("counter-attack: mirror-image blocks shelled by mirror-image mages charge a
     if (block.some((id) => slotOf(g, id) >= 0 && u.target[slotOf(g, id)] === mage0)) charged++;
   }
   assert.ok(charged > 0, "the block went for the mage");
+});
+
+test("loose spearmen: mirror-image squads hold against mirror-image attacks as mirror images, tick by tick (round 4, E4)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  let bx = -1;
+  let by = -1;
+  for (let y = 40; y < 78 && bx < 0; y++) {
+    for (let x = 2; x < 30 && bx < 0; x++) {
+      if (x + 8 > y) continue;
+      let ok = true;
+      for (let yy = y; yy < y + 18 && ok; yy++) for (let xx = x; xx < x + 8 && ok; xx++) if (!w.walkable(xx, yy) || !w.walkable(yy, xx)) ok = false;
+      if (ok) {
+        bx = x;
+        by = y;
+      }
+    }
+  }
+  assert.ok(bx >= 0, "an open block");
+  const u = w.units.col;
+  const pairs: [number, number][] = [];
+  const add = (owner: number, type: UnitType, x: number, y: number) => {
+    const a = put(g, owner, type, x, y);
+    const b = put(g, 1 - owner, type, y, x);
+    pairs.push([a, b]);
+    return [a, b];
+  };
+  // 8 loose spearmen standing, 8 enemy spearmen 12 cells off walking up; and the mirror image.
+  const mine: [number[], number[]] = [[], []];
+  const foes: [number[], number[]] = [[], []];
+  for (let k = 0; k < 8; k++) {
+    const [a, b] = add(0, UnitType.Spearman, bx + 2 + (k % 4), by + 2 + Math.trunc(k / 4));
+    mine[0].push(a);
+    mine[1].push(b);
+  }
+  for (let k = 0; k < 8; k++) {
+    const [a, b] = add(1, UnitType.Spearman, bx + 2 + (k % 4), by + 14 + Math.trunc(k / 4));
+    foes[0].push(a);
+    foes[1].push(b);
+  }
+  g.fog.update(w);
+  cmd(g, 0, { c: "formation", u: mine[0], loose: true });
+  cmd(g, 1, { c: "formation", u: mine[1], loose: true });
+  cmd(g, 1, { c: "move", u: foes[0], x: bx + 3, y: by + 2 });
+  cmd(g, 0, { c: "move", u: foes[1], x: by + 2, y: bx + 3 });
+  let first = -1;
+  let after = 0;
+  for (let t = 0; t < 300; t++) {
+    g.step();
+    for (const [a, b] of pairs) {
+      const sa = slotOf(g, a);
+      const sb = slotOf(g, b);
+      assert.equal(sa < 0, sb < 0, `tick ${g.tick}: both alive or both gone`);
+      if (sa < 0) continue;
+      assert.equal(u.x[sb], u.y[sa], `tick ${g.tick}: x of the image is y of the original`);
+      assert.equal(u.y[sb], u.x[sa], `tick ${g.tick}`);
+    }
+    const alive = mine[0].filter((id) => slotOf(g, id) >= 0);
+    if (first < 0 && alive.some((id) => u.target[slotOf(g, id)] >= 0 && u.action[slotOf(g, id)] === Action.Attack)) first = g.tick;
+    if (first >= 0 && g.tick === first + 40 && alive.length > 1) {
+      const nearest = alive.map((p) => Math.min(...alive.filter((q) => q !== p).map((q) => Math.hypot(u.x[slotOf(g, p)] - u.x[slotOf(g, q)], u.y[slotOf(g, p)] - u.y[slotOf(g, q)]) / 1024)));
+      after = nearest.reduce((p, v) => p + v, 0) / nearest.length;
+    }
+  }
+  assert.ok(first > 0, "they fought");
+  // 2 s after the first blow they still stand about two cells apart (E4).
+  assert.ok(after >= 1.6, `mean nearest neighbour ${after.toFixed(2)} cells`);
 });

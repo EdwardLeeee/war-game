@@ -76,7 +76,7 @@ export interface Hurt {
 export class UnitSystem {
   private cellHead: Int32Array;
   private cellNext = new Int32Array(256);
-  /** The same buckets for loose ranged units and mages only (LOOSE_KEEP), rebuilt in move(). */
+  /** The same buckets for the loose soldiers that push apart (LOOSE_KEEP), rebuilt in move(). */
   private keepHead: Int32Array;
   private keepNext = new Int32Array(256);
   private keeps = new Uint8Array(256);
@@ -547,7 +547,15 @@ export class UnitSystem {
     return bestId;
   }
 
-  /** A player's loose ranged unit or mage (LOOSE_KEEP). */
+  /** A player's loose soldier that keeps the wider spacing: any type, or ranged units and mages only without LOOSE_KEEP.everyone. */
+  private pushesApart(w: World, i: number): boolean {
+    const u = w.units.col;
+    const t = u.type[i];
+    if (LOOSE_KEEP.spacing === 0 || (u.flags[i] & UnitFlag.Loose) === 0 || u.owner[i] >= PLAYER_COUNT || t === UnitType.Farmer) return false;
+    return LOOSE_KEEP.everyone || t === UnitType.Ranged || t === UnitType.Mage;
+  }
+
+  /** A player's loose ranged unit or mage (LOOSE_KEEP): keeps to its place on a move. */
   private keepsPlace(w: World, i: number): boolean {
     const u = w.units.col;
     const t = u.type[i];
@@ -718,11 +726,11 @@ export class UnitSystem {
     const count = w.units.count;
     const max = n << CELL_SHIFT;
     const sep2 = SEPARATION * SEPARATION;
-    // Loose ranged units and mages, and their own buckets (only they are looked at for the wider spacing).
+    // Loose soldiers, and their own buckets (only they are looked at for the wider spacing).
     const spacing = LOOSE_KEEP.spacing;
     let anyKeep = false;
     for (let i = 0; i < count; i++) {
-      this.keeps[i] = this.keepsPlace(w, i) ? 1 : 0;
+      this.keeps[i] = this.pushesApart(w, i) ? 1 : 0;
       if (this.keeps[i] === 1) anyKeep = true;
     }
     if (anyKeep) {
@@ -746,7 +754,7 @@ export class UnitSystem {
       const cy = yi >> CELL_SHIFT;
       let px = 0;
       let py = 0;
-      // A loose ranged unit or mage keeps those of its own player and group at `spacing` (below).
+      // A loose soldier keeps those of its own player and group at `spacing` (below).
       const wide = this.keeps[i] === 1 && u.group[i] >= 0;
       for (let y = Math.max(cy - 1, 0); y <= Math.min(cy + 1, n - 1); y++) {
         for (let x = Math.max(cx - 1, 0); x <= Math.min(cx + 1, n - 1); x++) {

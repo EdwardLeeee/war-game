@@ -36,6 +36,14 @@ const KNOBS: Record<string, Knob> = {
     },
     show: ([v]) => (v === 0 ? "沒有" : `${v / 1024} 格`),
   },
+  looseEveryone: {
+    label: "散開時互推 2 格的兵種",
+    get: () => [LOOSE_KEEP.everyone ? 1 : 0],
+    set: ([v]) => {
+      LOOSE_KEEP.everyone = v === 1;
+    },
+    show: ([v]) => (v === 1 ? "所有兵種（E4）" : "只有遠程和法師"),
+  },
   retreatOwnSpeed: {
     label: "撤退的速度",
     get: () => [RETREAT_OWN_SPEED.on ? 1 : 0],
@@ -63,7 +71,7 @@ const KNOBS: Record<string, Knob> = {
 };
 
 /** The values and rules before this round's changes (round 3 of the prototype). */
-const BEFORE: Record<string, number[]> = { rangedVsShield: [3, 2], looseSpacing: [0], retreatOwnSpeed: [0], revealCast: [0], counterAttack: [0] };
+const BEFORE: Record<string, number[]> = { rangedVsShield: [3, 2], looseSpacing: [0], looseEveryone: [0], retreatOwnSpeed: [0], revealCast: [0], counterAttack: [0] };
 
 function values(): Record<string, number[]> {
   const v: Record<string, number[]> = {};
@@ -137,24 +145,30 @@ interface Report {
 
 const both = (m: Match) => m.fights[WAYS.length - 1];
 
-/** An attacker with 3 mages (A) walks up to a standing defender of equal cost without mages (B: spearmen in front, loose ranged behind). */
+/** An attacker with 3 mages (A) walks up to a standing defender of equal cost without mages (B: spearmen in front, ranged behind). */
 interface MageRaid {
   a: Army;
   b: Army;
+  /** B's ranged loose only, or B all loose. */
+  form: Formation;
   fights: Fight[];
 }
 
 /** The user's case (D-044): the normal AI's army with 3 mages against a player standing at home. */
 function mageRaids(): MageRaid[] {
   const b = A(7, 6);
-  return [A(7, 0, 3), A(0, 6, 3)].map((a) => ({ a, b, fights: DISTANCES.map((d) => fight([a, b], 0, d, "loose-shooters", 1)) }));
+  const out: MageRaid[] = [];
+  for (const form of ["loose-shooters", "loose"] as const) {
+    for (const a of [A(7, 0, 3), A(0, 6, 3)]) out.push({ a, b, form, fights: DISTANCES.map((d) => fight([a, b], 0, d, form, 1)) });
+  }
+  return out;
 }
 
 function raidTable(r: Report): string[] {
   const rows = [`| 進攻方 A | 防守方 B | ${DISTANCES.map((d) => `${d} 格`).join(" | ")} |`, `|---|---|${DISTANCES.map(() => "---|").join("")}`];
   for (const x of r.mages) {
     const m: Match = { title: "", a: x.a, b: x.b, form: "close", fights: [] };
-    rows.push(`| ${armyText(x.a)} | ${armyText(x.b)}（遠程散開） | ${x.fights.map((f) => cell(m, f)).join(" | ")} |`);
+    rows.push(`| ${armyText(x.a)} | ${armyText(x.b)}（${x.form === "loose" ? "全部散開" : "只有遠程散開"}） | ${x.fights.map((f) => cell(m, f)).join(" | ")} |`);
   }
   return [...rows, ""];
 }
@@ -217,6 +231,8 @@ function main(): void {
   const check = i >= 0 ? process.argv[i + 1].split(",").map(Number) : [];
   const code = values();
   const before = withValues(BEFORE, measure);
+  // This version without E4 (only loose ranged units and mages push apart), for the two tables E4 changes.
+  const noE4 = withValues({ ...code, looseEveryone: [0] }, measure);
   const now = measure();
   const out: string[] = [
     "## 兵種平衡量測（原型第三輪 D-026；第四輪 D-035、D-037）",
@@ -239,7 +255,8 @@ function main(): void {
     const mark = (r: Report) => `${r.goals[k].ok ? "✓" : "✗"} ${r.goals[k].text}`;
     out.push(`| ${g} | ${mark(before)} | ${mark(now)} | ${now.goals[k].ok ? "" : (KNOWN[k + 1] ?? "")} |`);
   });
-  out.push("", "### 只回報：有 3 名法師的進攻方走向站著、沒有法師的防守方（A 進攻）", "", "第三輪：", "", ...raidTable(before), "這個版本：", "", ...raidTable(now));
+  out.push("", "### 只回報：有 3 名法師的進攻方走向站著、沒有法師的防守方（A 進攻）", "", "第三輪：", "", ...raidTable(before), "這個版本，不含 E4（散開時只有遠程和法師互推 2 格）：", "", ...raidTable(noE4), "這個版本：", "", ...raidTable(now));
+  out.push("### 攻方散開的槍兵，E4 之前和之後", "", "不含 E4：", "", ...looseTable(noE4), "這個版本：", "", ...looseTable(now));
   out.push("### 對戰：這個版本", "");
   for (const m of now.matches) out.push(...table(m));
   out.push(...looseTable(now));

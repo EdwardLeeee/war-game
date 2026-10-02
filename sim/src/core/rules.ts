@@ -139,14 +139,16 @@ export const LEASH = 8 * CELL;
  */
 export const JOIN_FIGHT = { range: 6 * CELL };
 /**
- * Loose ranged units and mages (UnitFlag.Loose; round 4, D-035, D-037): on a move they keep to
- * their place, straight to it when the way is open, and shoot only what comes within range on
- * the way; those of one player and one group (last told to move together) push apart to
- * `spacing` (fixed point) from each other, not just to SEPARATION, walking or not. Pushing only
- * while they shoot or stand was tried: they reached the enemy bunched and lost goal 5 at 8
- * cells (src/balance.ts). `spacing` 0 switches it all off (the balance tool measures both ways).
+ * Loose soldiers (UnitFlag.Loose; round 4, D-035, D-037). Ranged units and mages on a move keep
+ * to their place, straight to it when the way is open, and shoot only what comes within range on
+ * the way. Loose soldiers of one player and one group (last told to move together) push apart to
+ * `spacing` (fixed point) from each other, not just to SEPARATION, walking or not: every type
+ * since `everyone` (ceo: a standing army all loose then holds against 3 mages and spearmen),
+ * before that ranged units and mages only. Pushing only while they shoot or stand was tried:
+ * they reached the enemy bunched and lost goal 5 at 8 cells (src/balance.ts). `spacing` 0
+ * switches it all off (the balance tool measures both ways).
  */
-export const LOOSE_KEEP = { spacing: 2 * CELL };
+export const LOOSE_KEEP = { spacing: 2 * CELL, everyone: true };
 /**
  * A retreat (round 4, D-034): each unit runs at its own speed instead of the group's slowest, so
  * the fast are not caught waiting for the slow; they still form up at the goal. `on` false gives
