@@ -38,7 +38,7 @@ export interface GameHook {
   /** Select these own units (test set-up; the gestures that select are tested elsewhere). */
   select(units: number[]): void;
   startPlacement(type: number): void;
-  placement(): { cellX: number; cellY: number; valid: boolean; phase: string } | null;
+  placement(): { cellX: number; cellY: number; valid: boolean; phase: string; militia: number | null } | null;
   labPhase(): string;
   log(line: string): void;
   /** Latest snapshot header values. */
@@ -122,7 +122,8 @@ export function gameHook(game: Game): GameHook {
     },
     select: (units) => game.apply([{ kind: "select", units: [...units].sort((a, b) => a - b) }]),
     startPlacement: (type) => game.startPlacement(type as BuildingType),
-    placement: () => (game.placement === null ? null : { cellX: game.placement.cellX, cellY: game.placement.cellY, valid: game.placement.valid, phase: game.placement.phase }),
+    placement: () =>
+      game.placement === null ? null : { cellX: game.placement.cellX, cellY: game.placement.cellY, valid: game.placement.valid, phase: game.placement.phase, militia: game.placement.militia },
     labPhase: () => game.lab.lab.phase,
     log: (line) => game.lab.log.add(line),
     header: () => {

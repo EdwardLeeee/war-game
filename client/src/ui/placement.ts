@@ -14,6 +14,8 @@ export class Placement {
   cellY = 0;
   valid = false;
   phase: PlacementPhase = "dragging";
+  /** The town whose militia reach the site (離民兵太近), set by Game; null when none. */
+  militia: number | null = null;
 
   constructor(info: Pick<BuildingInfo, "type" | "size">, builders: number[]) {
     this.info = info;
