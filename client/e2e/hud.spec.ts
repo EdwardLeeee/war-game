@@ -1062,7 +1062,8 @@ for (const viewport of [null, FULL_SCREEN]) {
   test(`軍團設定：不用捲動、按鈕至少 44 pt、在安全區內（${viewport === null ? "工具列展開" : "工具列收合"}）`, async ({ page }, info) => {
     if (viewport !== null) await page.setViewportSize(viewport);
     await injectSafeArea(page);
-    await selectSpearmen(page);
+    // Through the hook: a tap right after the resize can land before the camera follows it.
+    await select(page, await ownIds(page, [1]));
     await longPressOn(page, GROUP_2);
     const dialog = page.getByRole("dialog", { name: "編隊 2" });
     await expect(dialog).toBeVisible();
