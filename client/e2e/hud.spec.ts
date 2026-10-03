@@ -382,7 +382,6 @@ test("全軍撤退：不用先選兵，所有士兵退回主城，選取不變�
 test("編隊：長按存成編隊、點一下選取、點兩下跳過去", async ({ page }) => {
   const ids = await selectSpearmen(page);
   await saveGroup(page, GROUP_1);
-  await expect(page.getByRole("status").filter({ hasText: "已存成編隊 1（6 個）" })).toBeVisible();
   expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(ids);
   await select(page, []);
   await tapOn(page, GROUP_1);
@@ -1051,7 +1050,6 @@ test("軍團設定：長按編隊按鈕打開，設定每種兵要幾名；沒�
   await dialog.getByRole("button", { name: "關閉" }).tap();
   await select(page, spear.slice(0, 3));
   await saveGroup(page, GROUP_1);
-  await expect(toast(page, "已存成編隊 1（3 個）")).toBeVisible();
   expect((await groupInfo(page))[0]).toMatchObject({ ids: spear.slice(0, 3), want: { 1: 3 }, saved: 3 });
 });
 

@@ -67,6 +67,8 @@ export async function saveGroup(page: Page, button: string): Promise<void> {
   await longPressOn(page, button);
   const dialog = page.getByRole("dialog", { name: /^編隊 \d$/ });
   await dialog.getByRole("button", { name: "照目前選的兵" }).tap();
+  // Its message, before it fades.
+  await expect(page.getByRole("status").filter({ hasText: /^已存成編隊 \d（\d+ 個）$/ })).toBeVisible();
   await dialog.getByRole("button", { name: "關閉" }).tap();
   await expect(dialog).toBeHidden();
 }

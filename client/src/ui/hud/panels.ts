@@ -457,7 +457,9 @@ export class CommandArea {
       this.ident = ident;
       this.page = "main";
     }
-    const key = `${this.keyFor(view)}|${this.page}|${this.host.mode()}`;
+    // The selection itself too: the buttons act on the units it held when they were built, so
+    // another soldier of the same kind needs buttons of his own.
+    const key = `${ident}|${this.keyFor(view)}|${this.page}|${this.host.mode()}`;
     if (key === this.key) return;
     this.key = key;
     this.el.replaceChildren();
