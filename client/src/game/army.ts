@@ -1,6 +1,7 @@
 // Who stays behind and who marches (D-026, GDD §5 and §10): the soldiers left in a town as
 // its garrison (留守), 全軍 and the control groups without them, and the control groups that
-// fill themselves up with newly trained soldiers (編隊自動補兵). Bookkeeping on unit ids
+// fill themselves up with newly trained soldiers (編隊自動補兵) and with the soldiers in no group
+// (軍團, D-050: the player sets how many of each type a group wants). Bookkeeping on unit ids
 // only, with no screen and no clock (the caller passes the simulation's tick), so the rules
 // are unit tested and the interface just draws them.
 //
@@ -51,9 +52,9 @@ export interface Recruit {
 /** A control group (編隊 1–4). */
 export interface Group {
   ids: number[];
-  /** Soldiers of each type when the group was saved (UnitType → count): what 自動補兵 fills it back up to. */
+  /** Soldiers of each type the group wants (UnitType → count): what 自動補兵 fills it up to; set by 軍團設定 or by saving a selection. */
   want: Record<number, number>;
-  /** Units in the group when it was saved (原本). */
+  /** Units the group wants in all (目標): its soldiers wanted, and the farmers saved with it. */
   saved: number;
   /** 自動補兵 is on. */
   refill: boolean;
@@ -72,6 +73,9 @@ export interface MarchOrder {
 }
 
 const emptyGroup = (): Group => ({ ids: [], want: {}, saved: 0, refill: true, recruits: [], goal: null, checked: Number.NEGATIVE_INFINITY });
+
+/** The soldier types 軍團設定 sets, in the order of its rows. */
+export const GROUP_TYPES = [UnitType.Spearman, UnitType.Ranged, UnitType.Mage] as const;
 
 /** The units 全軍 and the garrison rules are about: farmers are not soldiers. */
 export function isSoldier(type: number): boolean {
@@ -247,6 +251,16 @@ export class ArmyBook {
    * `typeOf`: the type of a living unit, null for a dead one.
    */
   enlist(id: number, type: number, tick: number, typeOf: (id: number) => number | null): number | null {
+    const best = this.shortest(id, type, typeOf);
+    if (best === null) return null;
+    const g = this.groups[best];
+    g.ids = [...g.ids, id];
+    g.recruits.push({ id, since: tick, marching: false, byHand: false });
+    return best;
+  }
+
+  /** The group most short of this type among those with 自動補兵 on (the lower number on a tie), or null. */
+  private shortest(id: number, type: number, typeOf: (id: number) => number | null): number | null {
     if (!isSoldier(type)) return null;
     let best: number | null = null;
     let most = 0;
@@ -258,11 +272,71 @@ export class ArmyBook {
         best = i;
       }
     });
-    if (best === null) return null;
-    const g = this.groups[best];
-    g.ids = [...g.ids, id];
-    g.recruits.push({ id, since: tick, marching: false, byHand: false });
     return best;
+  }
+
+  /**
+   * 軍團 (D-050): the soldiers in no group and not stationed in a town join the groups that
+   * are short of their type, by the rule of 自動補兵 (the one most short, the lower number on a
+   * tie), in id order. They are spread over the map, so they do not wait for company: each
+   * sets off for its group at the next muster. Returns who joined which group.
+   * `idle`: whether a soldier may be taken now. The game passes those standing with no order
+   * and not holding (堅守), so that no order of the player's is undone; the others are taken
+   * once they stand idle.
+   */
+  draft(units: ArmyUnit[], tick: number, idle: (id: number) => boolean = () => true): { group: number; ids: number[] }[] {
+    const inGroup = new Set(this.groups.flatMap((g) => g.ids));
+    const typeOf = new Map(units.map((u) => [u.id, u.type]));
+    const free = units.filter((u) => isSoldier(u.type) && !inGroup.has(u.id) && !this.isGarrisoned(u.id) && idle(u.id)).sort((a, b) => a.id - b.id);
+    const out: { group: number; ids: number[] }[] = [];
+    for (const u of free) {
+      const best = this.shortest(u.id, u.type, (m) => typeOf.get(m) ?? null);
+      if (best === null) continue;
+      const g = this.groups[best];
+      g.ids = [...g.ids, u.id];
+      g.recruits.push({ id: u.id, since: tick, marching: true, byHand: false });
+      // Send everyone marching again, the new one with them, at the next muster.
+      g.goal = null;
+      g.checked = Number.NEGATIVE_INFINITY;
+      const entry = out.find((e) => e.group === best);
+      if (entry === undefined) out.push({ group: best, ids: [u.id] });
+      else entry.ids.push(u.id);
+    }
+    return out;
+  }
+
+  /**
+   * 軍團設定: group i wants n soldiers of this type. With more of them than that, the last to
+   * join leave the group (they are free again, for the groups still short). Returns those.
+   * `typeOf`: the type of a living unit, null for a dead one.
+   */
+  setWant(i: number, type: number, n: number, typeOf: (id: number) => number | null): number[] {
+    const g = this.groups[i];
+    const want = Math.max(0, Math.floor(n));
+    g.want = { ...g.want, [type]: want };
+    const leave = g.ids.filter((id) => typeOf(id) === type).slice(want);
+    if (leave.length > 0) {
+      g.ids = g.ids.filter((id) => !leave.includes(id));
+      g.recruits = g.recruits.filter((r) => !leave.includes(r.id));
+    }
+    const farmers = g.ids.filter((id) => {
+      const t = typeOf(id);
+      return t !== null && !isSoldier(t);
+    }).length;
+    g.saved = GROUP_TYPES.reduce((sum, t) => sum + (g.want[t] ?? 0), 0) + farmers;
+    return leave;
+  }
+
+  /** 軍團設定 清空: group i has nobody and wants nobody. Returns who was in it. */
+  clearGroup(i: number): number[] {
+    const g = this.groups[i];
+    const was = g.ids;
+    g.ids = [];
+    g.want = {};
+    g.saved = 0;
+    g.recruits = [];
+    g.goal = null;
+    return was;
   }
 
   /**
@@ -270,9 +344,11 @@ export class ArmyBook {
    * group have gathered or the first has waited 20 s, then walk to the group together, so
    * that they do not arrive one at a time; they are sent again when the group moves on, and
    * left alone once they are within 6 cells of it. Returns the 前進 orders to give.
-   * `where`: a living unit's position (fixed point), null for a dead one.
+   * `where`: a living unit's position (fixed point), null for a dead one. `gather`: where
+   * a group with nobody to join meets (the rally point, fixed point; D-050); without it, its
+   * recruits are the group where they stand.
    */
-  muster(tick: number, where: (id: number) => { x: number; y: number } | null): MarchOrder[] {
+  muster(tick: number, where: (id: number) => { x: number; y: number } | null, gather: { x: number; y: number } | null = null): MarchOrder[] {
     const orders: MarchOrder[] = [];
     for (const g of this.groups) {
       if (g.recruits.length === 0) continue;
@@ -288,14 +364,19 @@ export class ArmyBook {
         cx += p.x;
         cy += p.y;
       }
-      // Nobody left to join: the recruits are the group now, where they stand.
-      if (n === 0) {
+      if (n > 0) {
+        cx /= n;
+        cy /= n;
+      } else if (gather !== null) {
+        // Nobody to join yet (軍團 just set up, or everyone fell): they meet at the rally point.
+        cx = gather.x;
+        cy = gather.y;
+      } else {
+        // Nobody left to join: the recruits are the group now, where they stand.
         g.recruits = [];
         g.goal = null;
         continue;
       }
-      cx /= n;
-      cy /= n;
       const far = (p: { x: number; y: number }, cells: number): boolean => (p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy) > cells * CELL * (cells * CELL);
 
       const waiting = g.recruits.filter((r) => !r.marching && !r.byHand);

@@ -44,8 +44,29 @@ test("資源列：糧木金晶、人口，最後是遊戲時間；窄的畫面�
   h[H.population] = 17;
   h[H.populationCap] = 20;
   h[H.tick] = 20 * 425 + 7;
-  assert.deepEqual(resourceLine(h), {
-    full: "糧 1250　木 200　金 100　晶 20　人口 17/20　時間 7:05",
-    short: "糧 1250　木 200　金 100　晶 20　人口 17/20　7:05",
-  });
+  // Nothing in training: no brackets, and the last two lines are the same.
+  assert.deepEqual(resourceLine(h), [
+    "糧 1250　木 200　金 100　晶 20　人口 17/20　時間 7:05",
+    "糧 1250　木 200　金 100　晶 20　人口 17/20　7:05",
+    "糧 1250　木 200　金 100　晶 20　人口 17/20　7:05",
+  ]);
+});
+
+test("資源列的人口含訓練中的兵，後面寫訓練中幾名；放不下時先拿掉「時間」，再拿掉括號（D-050）", () => {
+  const h = new Int32Array(HEADER_LENGTH);
+  h[H.food] = 200;
+  h[H.wood] = 200;
+  h[H.gold] = 100;
+  h[H.crystal] = 20;
+  h[H.population] = 17;
+  h[H.populationCap] = 20;
+  h[H.tick] = 20 * 65;
+  assert.deepEqual(resourceLine(h, 2), [
+    "糧 200　木 200　金 100　晶 20　人口 19/20（訓練中 2）　時間 1:05",
+    "糧 200　木 200　金 100　晶 20　人口 19/20（訓練中 2）　1:05",
+    "糧 200　木 200　金 100　晶 20　人口 19/20　1:05",
+  ]);
+  // Full up with the queues: the line says so before the next 訓練 is refused.
+  h[H.population] = 18;
+  assert.match(resourceLine(h, 2)[0], /人口 20\/20（訓練中 2）/);
 });

@@ -738,7 +738,7 @@ button.active {
   display: block;
 }
 
-.sel-note .stance-scope,
+.sel-note .order-meaning,
 .sel-note .formation-more {
   opacity: 0.8;
 }
@@ -909,6 +909,11 @@ button.danger {
   margin: 6px 0;
 }
 
+/* 經濟分配: its explanation takes two lines now (D-050); tighter rows keep it from scrolling at 380 pt. */
+.economy .ratio-row {
+  margin: 3px 0;
+}
+
 .ratio-name {
   width: 1.5em;
   font-weight: 700;
@@ -918,6 +923,20 @@ button.danger {
   width: 3.5em;
   text-align: center;
   font-weight: 700;
+}
+
+/* 軍團設定 (D-050): a row per soldier type; four buttons in one row below. */
+.group-type {
+  width: 3.5em;
+  font-weight: 700;
+}
+
+.group-has {
+  opacity: 0.8;
+}
+
+.group-setup .dialog-buttons button {
+  padding: 0 12px;
 }
 
 .choice-row {

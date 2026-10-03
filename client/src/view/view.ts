@@ -113,6 +113,15 @@ export class GameView implements IntentWorld {
     return -1;
   }
 
+  /** Our units in training: the queues of our buildings (人口 counts them, D-050). */
+  trainingCount(): number {
+    const b = this.curr?.snap.buildings;
+    if (b === undefined) return 0;
+    let n = 0;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) if (b[o + B.owner] === this.me) n += b[o + B.queueLength];
+    return n;
+  }
+
   buildingRow(id: number): number {
     const b = this.curr?.snap.buildings;
     if (b === undefined) return -1;
@@ -128,6 +137,12 @@ export class GameView implements IntentWorld {
   unitStance(id: number): number {
     const o = this.unitRow(id);
     return o < 0 ? -1 : (this.curr as Frame).snap.units[o + U.stance];
+  }
+
+  /** The unit's order (Order: 撤退 is Order.Retreat), -1 for a unit not in the snapshot. */
+  unitOrder(id: number): number {
+    const o = this.unitRow(id);
+    return o < 0 ? -1 : (this.curr as Frame).snap.units[o + U.order];
   }
 
   unitAutocast(id: number): boolean {
