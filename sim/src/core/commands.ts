@@ -68,7 +68,12 @@ function ownUnits(w: World, p: number, ids: number[]): number[] {
  */
 function placed(w: World, slots: number[], stay: boolean): void {
   const u = w.units.col;
-  for (const s of slots) if (u.type[s] === UnitType.Farmer) u.stay[s] = stay ? 1 : 0;
+  for (const s of slots) {
+    if (u.type[s] !== UnitType.Farmer) continue;
+    u.stay[s] = stay ? 1 : 0;
+    // Any command takes a farmer off the job it was sent to by hand (`gather` sets it again).
+    u.flags[s] &= ~UnitFlag.HandPicked;
+  }
 }
 
 /** Once a command is accepted, farmers hidden by recall come out to follow it. */
@@ -211,6 +216,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       for (const s of farmers) {
         ctx.econ.release(w, s);
         ctx.econ.gather(w, s, node, false);
+        w.units.col.flags[s] |= UnitFlag.HandPicked;
       }
       return 0;
     }

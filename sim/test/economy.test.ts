@@ -665,3 +665,113 @@ test("a farmer the simulation sent to build goes back to what it gathered, or to
     assert.equal(u.stay[s], 0);
   }
 });
+
+// --- operations round (D-050): the ratio for farmers already at work --------------------
+
+/** What farmer slot s is gathering: Resource, Crystal (3) for the vein, -1 if not gathering. */
+function gatheringOf(g: Game, s: number): number {
+  const u = g.w.units.col;
+  if (u.order[s] !== Order.Gather) return -1;
+  if (u.onFarm[s] === 1) return Resource.Food;
+  const kind = g.w.nodeKind[u.orderTarget[s]];
+  return kind === NodeKind.Tree ? Resource.Wood : kind === NodeKind.GoldMine ? Resource.Gold : kind === NodeKind.Berries ? Resource.Food : Resource.Crystal;
+}
+
+function shares(g: Game, ids: number[]): number[] {
+  const count = [0, 0, 0, 0];
+  for (const id of ids) {
+    const r = gatheringOf(g, slotOf(g, id));
+    if (r >= 0) count[r]++;
+  }
+  return count;
+}
+
+/** Player p's farmers beside its main city, player 1's the mirror image of player 0's. */
+function mirroredFarmers(g: Game, p: number, n: number): number[] {
+  const m = mainCityCell(g, p);
+  const ids: number[] = [];
+  for (let k = 0; k < n; k++) ids.push(p === 0 ? put(g, 0, UnitType.Farmer, m.x + 4, m.y + (k % 4)) : put(g, 1, UnitType.Farmer, m.x + (k % 4), m.y + 4));
+  return ids;
+}
+
+test("a new ratio moves farmers already at work within 2 s, each share within one farmer, mirrored", () => {
+  const g = emptyGame();
+  const ids = [mirroredFarmers(g, 0, 12), mirroredFarmers(g, 1, 12)];
+  run(g, 200);
+  assert.deepEqual(shares(g, ids[0]), shares(g, ids[1]));
+  const before = shares(g, ids[0]);
+  for (const p of [0, 1]) cmd(g, p, { c: "eco_ratio", food: 10, wood: 20, gold: 70, on: true });
+  run(g, 40);
+  for (const p of [0, 1]) {
+    const now = shares(g, ids[p]);
+    [10, 20, 70].forEach((r, k) => assert.ok(Math.abs(now[k] - (r * 12) / 100) <= 1, `player ${p} resource ${k}: ${now[k]} of 12 for ${r}%`));
+    assert.notDeepEqual(now, before, "farmers moved");
+  }
+  // Mirrored: the same work, the mirror image of each node.
+  const w = g.w;
+  const u = w.units.col;
+  const work = (p: number) =>
+    ids[p]
+      .map((id) => {
+        const s = slotOf(g, id);
+        const t = u.orderTarget[s];
+        return u.onFarm[s] === 1 || t < 0 ? "-" : p === 0 ? `${w.nodeX[t]},${w.nodeY[t]}` : `${w.nodeY[t]},${w.nodeX[t]}`;
+      })
+      .sort();
+  assert.deepEqual(work(0), work(1));
+});
+
+test("the ratio does not move farmers sent by hand, on the vein, placed, or building; the others follow it", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const u = w.units.col;
+  const ids = mirroredFarmers(g, 0, 10);
+  run(g, 100);
+  const tree = nodesNear(g, 0, NodeKind.Tree)[0];
+  const hand = ids.slice(0, 3);
+  cmd(g, 0, { c: "gather", u: hand, node: tree });
+  const vein = Array.from(w.nodeKind).findIndex((k) => k === NodeKind.CrystalVein);
+  g.fog.nodeSeen[0][vein] = 0;
+  cmd(g, 0, { c: "gather", u: [ids[3]], node: vein });
+  const m = mainCityCell(g, 0);
+  cmd(g, 0, { c: "move", u: [ids[4]], x: m.x + 8, y: m.y - 4 });
+  const at = spot(g, 0, BuildingType.House);
+  cmd(g, 0, { c: "build", u: [ids[5]], type: BuildingType.House, x: at.x, y: at.y });
+  run(g, 2);
+  for (const id of hand) assert.ok((u.flags[slotOf(g, id)] & UnitFlag.HandPicked) !== 0, "sent by hand");
+  const view = buildView(g, 0);
+  const row = [...view.units].findIndex((_, i) => i % UNIT_STRIDE === 0 && view.units[i] === hand[0]);
+  assert.ok((view.units[row + UnitField.flags] & UnitFlag.HandPicked) !== 0, "the view says so");
+  cmd(g, 0, { c: "eco_ratio", food: 0, wood: 0, gold: 100, on: true });
+  run(g, 60);
+  for (const id of hand) assert.equal(u.orderTarget[slotOf(g, id)], tree, "still on the tree it was sent to");
+  assert.equal(gatheringOf(g, slotOf(g, ids[3])), Resource.Crystal, "still on the vein");
+  assert.ok([Order.Move, Order.None].includes(u.order[slotOf(g, ids[4])] as never), "still going to, or waiting at, where it was placed");
+  assert.equal(u.order[slotOf(g, ids[5])], Order.Build, "still building");
+  for (const id of ids.slice(6)) assert.equal(gatheringOf(g, slotOf(g, id)), Resource.Gold, "the others went to gold");
+  // Another command takes a farmer off the job it was sent to by hand.
+  cmd(g, 0, { c: "stop", u: [hand[0]] });
+  run(g, 1);
+  assert.equal(u.flags[slotOf(g, hand[0])] & UnitFlag.HandPicked, 0);
+});
+
+test("with the ratio unchanged, no farmer is moved back and forth", () => {
+  const g = emptyGame();
+  const ids = mirroredFarmers(g, 0, 15);
+  run(g, 100);
+  const u = g.w.units.col;
+  const last = new Map<number, { r: number; t: number }>();
+  let moved = 0;
+  for (let t = 0; t < 1200; t++) {
+    g.step();
+    for (const id of ids) {
+      const s = slotOf(g, id);
+      const r = gatheringOf(g, s);
+      const prev = last.get(id);
+      // Moved by the ratio: on to another resource while the old node was still there.
+      if (prev && r >= 0 && prev.r >= 0 && r !== prev.r && prev.t >= 0 && g.w.nodeAmount[prev.t] > 0) moved++;
+      last.set(id, { r, t: u.onFarm[s] === 1 ? -1 : u.orderTarget[s] });
+    }
+  }
+  assert.equal(moved, 0);
+});

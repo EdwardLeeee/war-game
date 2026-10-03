@@ -225,6 +225,12 @@ export const UnitFlag = {
    * fewer of them.
    */
   Loose: 8,
+  /**
+   * Farmer sent to a resource by hand with the `gather` command (operations round, D-050): the
+   * economy ratio does not move it. Cleared by any other command to it, and when it has nothing
+   * left to gather there (it goes idle).
+   */
+  HandPicked: 16,
 } as const;
 
 /** Buildings: own, visible enemy/neutral ones, and remembered enemy ones (flag Remembered). */
