@@ -392,3 +392,38 @@ test("marching on a known enemy main city it keeps together until it is there, t
   const at = orders(200).find((c) => c.c === "attack") as { u: number[] } | undefined;
   assert.ok(at !== undefined && at.u.length === 30, "attacks the city");
 });
+
+test("the AI's ratio does not send a farmer back and forth (operations round, D-050)", () => {
+  const r = new Runner({ seed: 1, scenario: "standard", ai: [true, true], maxTicks: 0 });
+  const w = r.game.w;
+  const u = w.units.col;
+  const gathering = (s: number) => {
+    if (u.order[s] !== Order.Gather) return -1;
+    if (u.onFarm[s] === 1) return 0;
+    const kind = w.nodeKind[u.orderTarget[s]];
+    return kind === NodeKind.Tree ? 1 : kind === NodeKind.GoldMine ? 2 : kind === NodeKind.Berries ? 0 : 3;
+  };
+  const last = new Map<number, { r: number; t: number }>();
+  const lastMove = new Map<number, { tick: number; from: number; to: number }>();
+  let moves = 0;
+  let back = 0;
+  while (!r.over && w.tick < 12000) {
+    r.tick();
+    for (let s = 0; s < w.units.count; s++) {
+      if (u.type[s] !== UnitType.Farmer) continue;
+      const id = u.id[s];
+      const now = gathering(s);
+      const prev = last.get(id);
+      // Moved by the ratio: on to another resource while the old node was still there.
+      if (prev && now >= 0 && prev.r >= 0 && now !== prev.r && prev.t >= 0 && w.nodeAmount[prev.t] > 0) {
+        moves++;
+        const m = lastMove.get(id);
+        if (m && m.from === now && m.to === prev.r && w.tick - m.tick < 600) back++;
+        lastMove.set(id, { tick: w.tick, from: prev.r, to: now });
+      }
+      last.set(id, { r: now, t: u.onFarm[s] === 1 ? -1 : u.orderTarget[s] });
+    }
+  }
+  assert.ok(moves > 0, "the ratio moved some farmers");
+  assert.equal(back, 0, "none of them back within 30 s");
+});

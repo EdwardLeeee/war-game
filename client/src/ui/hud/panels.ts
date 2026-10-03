@@ -13,6 +13,7 @@ import {
   NEUTRAL,
   NO_OWNER,
   NodeField as N,
+  Order,
   Stance,
   TownChoice,
   TownField as T,
@@ -56,13 +57,17 @@ export interface PanelHost {
   toggleRefill(i: number): void;
 }
 
-/** 姿態 in the player's words (GDD §9, D-026: 「看不太懂積極和堅守的差別」; 一起迎戰, D-032). */
-export const STANCE_TEXT = {
-  [Stance.Aggressive]: "積極：6 格內有敵人、或 6 格內的隊友正在打敵人，就追上去打；追到離原位 8 格就回來",
-  [Stance.Hold]: "堅守：站在原地不動，只打走進射程的敵人",
+/**
+ * 進攻／撤退／堅守, the three orders for soldiers (D-050: 「指揮軍團進攻與撤退還有堅守的指令仍然
+ * 不明確」), a line each in the player's words, under the selection.
+ */
+export const ORDER_TEXT = {
+  advance: "進攻：點地面或小地圖，整隊前進，遇到敵人一起打",
+  retreat: "撤退：退回主城；提示列可以改撤到別處",
+  hold: "堅守：停在原地，敵人進到射程就打，不追出去",
 } as const;
-export const STANCE_MIXED_TEXT = "姿態：有的積極、有的堅守";
-export const STANCE_SCOPE_TEXT = "姿態只管沒有指令、站著待命的時候";
+export type OrderState = keyof typeof ORDER_TEXT;
+export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻", retreat: "撤退中", hold: "堅守" };
 
 /**
  * 隊形 in the player's words (GDD §9, D-027, D-028), a line each. 散開 has a second line for
@@ -82,12 +87,28 @@ export function formationOf(view: GameView, ids: number[]): boolean | "mixed" | 
   return loose === 0 ? false : loose === soldiers.length ? true : "mixed";
 }
 
-/** The stance of the soldiers among these units: one of the two, "mixed", or null when there is no soldier. */
-export function stanceOf(view: GameView, ids: number[]): Stance | "mixed" | null {
+/**
+ * Which of 進攻／撤退／堅守 a soldier is in (D-050): 撤退中 while it carries a retreat order,
+ * 堅守 when it holds, else 進攻 (積極: it goes for enemies near it, and its group with it).
+ */
+export function orderState(view: GameView, id: number): OrderState {
+  if (view.unitOrder(id) === Order.Retreat) return "retreat";
+  return view.unitStance(id) === Stance.Hold ? "hold" : "advance";
+}
+
+/** How many of the soldiers among these units are in each order, in the order of the buttons; null when there is no soldier. */
+export function orderCounts(view: GameView, ids: number[]): Record<OrderState, number> | null {
   const soldiers = ids.filter((id) => isSoldier(view.unitType(id)));
   if (soldiers.length === 0) return null;
-  const hold = soldiers.filter((id) => view.unitStance(id) === Stance.Hold).length;
-  return hold === 0 ? Stance.Aggressive : hold === soldiers.length ? Stance.Hold : "mixed";
+  const counts: Record<OrderState, number> = { advance: 0, retreat: 0, hold: 0 };
+  for (const id of soldiers) counts[orderState(view, id)]++;
+  return counts;
+}
+
+/** The line above the three: 「目前：進攻 4、堅守 2」. */
+export function orderNowText(counts: Record<OrderState, number>): string {
+  const parts = (Object.keys(ORDER_TEXT) as OrderState[]).filter((s) => counts[s] > 0).map((s) => `${ORDER_NAME[s]} ${counts[s]}`);
+  return `目前：${parts.join("、")}`;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {
@@ -204,35 +225,34 @@ export class SelectionInfo {
       if (u[o + U.carryAmount] > 0) text += `　搬運 ${u[o + U.carryAmount]}`;
       hpText.textContent = text;
       const mine = u[o + U.owner] === view.me;
-      // Farmers ignore the stance (they fight only when told to), so it is not shown for them.
-      const stance = !mine || !isSoldier(type) ? "" : u[o + U.stance] === Stance.Hold ? "堅守" : "積極";
+      // 進攻／撤退／堅守 is in the note below (D-050); farmers have none.
       const autocast = mine && (u[o + U.flags] & UnitFlag.Autocast) !== 0 ? "　自動施放開" : "";
-      status.textContent = `${ACTION_NAME[u[o + U.action]] ?? ""}　${stance}${autocast}`;
+      status.textContent = `${ACTION_NAME[u[o + U.action]] ?? ""}${autocast}`;
     });
     if (this.host.groupOf([id]) !== null) this.refillSwitch(el("div", this.el, "sel-chips"), [id]);
-    this.stanceNote(view, [id]);
+    this.orderNote(view, [id]);
   }
 
   /**
-   * Small lines under an own selection with soldiers: what their stance means and when it
-   * applies, then what their formation means (D-026, D-027).
+   * Small lines under an own selection with soldiers: which of 進攻／撤退／堅守 they are in,
+   * what each of the three does (D-050), then what their formation means (D-027).
    */
-  private stanceNote(view: GameView, ids: number[]): void {
+  private orderNote(view: GameView, ids: number[]): void {
     const u = view.curr?.snap.units;
     const mine = (id: number): boolean => {
       const o = view.unitRow(id);
       return o >= 0 && u !== undefined && u[o + U.owner] === view.me;
     };
-    if (!ids.every(mine) || stanceOf(view, ids) === null) return;
+    if (!ids.every(mine) || orderCounts(view, ids) === null) return;
     const note = el("p", this.el, "sel-note");
-    const meaning = el("span", note, "stance-meaning");
-    el("span", note, "stance-scope", STANCE_SCOPE_TEXT);
+    const now = el("span", note, "order-now");
+    for (const s of Object.keys(ORDER_TEXT) as OrderState[]) el("span", note, "order-meaning", ORDER_TEXT[s]);
     const formation = el("span", note, "formation-meaning");
     const formationMore = el("span", note, "formation-more");
     this.updaters.push(() => {
-      const s = stanceOf(view, ids);
-      const text = s === null ? "" : s === "mixed" ? STANCE_MIXED_TEXT : STANCE_TEXT[s];
-      if (meaning.textContent !== text) meaning.textContent = text;
+      const counts = orderCounts(view, ids);
+      const text = counts === null ? "" : orderNowText(counts);
+      if (now.textContent !== text) now.textContent = text;
       const f = formationOf(view, ids);
       const lines: readonly string[] = f === null ? [] : f === "mixed" ? [FORMATION_MIXED_TEXT] : FORMATION_TEXT[f ? "loose" : "close"];
       if (formation.textContent !== (lines[0] ?? "")) formation.textContent = lines[0] ?? "";
@@ -260,7 +280,7 @@ export class SelectionInfo {
       if (rest > 0) button(chips, `改選其餘 ${rest} 名`, "", () => this.host.selectRest(), "chip rest-chip");
     }
     this.refillSwitch(chips, ids);
-    this.stanceNote(view, ids);
+    this.orderNote(view, ids);
     this.splitRow(ids.length);
   }
 
@@ -437,11 +457,15 @@ export class CommandArea {
       this.ident = ident;
       this.page = "main";
     }
-    const key = `${this.keyFor(view)}|${this.page}|${this.host.mode()}`;
+    // The selection itself too: the buttons act on the units it held when they were built, so
+    // another soldier of the same kind needs buttons of his own.
+    const key = `${ident}|${this.keyFor(view)}|${this.page}|${this.host.mode()}`;
     if (key === this.key) return;
     this.key = key;
     this.el.replaceChildren();
     this.build(view);
+    // Which selection these buttons act on (tests wait for it after selecting by hand).
+    this.el.dataset.selection = view.selection.units.join(",");
   }
 
   private keyFor(view: GameView): string {
@@ -451,7 +475,8 @@ export class CommandArea {
       const stances = sel.units.map((id) => {
         const o = view.unitRow(id);
         const flags = o < 0 ? 0 : u[o + U.flags];
-        return o < 0 ? "" : `${u[o + U.type]}${u[o + U.stance]}${(flags & UnitFlag.Autocast) !== 0 ? "a" : ""}${(flags & UnitFlag.Loose) !== 0 ? "l" : ""}`;
+        const retreating = o >= 0 && u[o + U.order] === Order.Retreat ? "r" : "";
+        return o < 0 ? "" : `${u[o + U.type]}${u[o + U.stance]}${retreating}${(flags & UnitFlag.Autocast) !== 0 ? "a" : ""}${(flags & UnitFlag.Loose) !== 0 ? "l" : ""}`;
       });
       return `u:${[...new Set(stances)].sort().join(",")}`;
     }
@@ -471,19 +496,29 @@ export class CommandArea {
     if (sel.units.length > 0) {
       const types = new Set(sel.units.map((id) => view.unitType(id)));
       const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
-      // 姿態 (D-026) and 隊形 (D-027): what it is now, and what a tap changes it to. Soldiers
-      // only. Two columns wide each (in one, 「姿態：堅守」 broke into 「姿態：堅」 and 「守」),
-      // side by side in the first row; the orders go in the row below.
-      const stance = stanceOf(view, sel.units);
-      if (stance !== null) {
-        const next = stance === Stance.Hold ? Stance.Aggressive : Stance.Hold;
-        const now = stance === "mixed" ? "混合" : stance === Stance.Hold ? "堅守" : "積極";
-        const to = `${stance === "mixed" ? "全部" : ""}改成${next === Stance.Hold ? "堅守" : "積極"}`;
-        button(this.el, `姿態：${now}`, `按一下${to}`, () => {
-          this.host.command({ c: "stance", u: soldiers, stance: next });
-          this.host.notify(`已${to}。${STANCE_TEXT[next]}`);
-        }, "wide");
+      // 進攻／撤退／堅守 (D-050), then 停止, in the first row; the one all the soldiers are in is
+      // lit. 撤退 goes back to the main city at once; 「改撤到別處」 (the prompt strip) picks another spot.
+      const counts = orderCounts(view, sel.units);
+      const all = counts === null ? null : ((Object.keys(counts) as OrderState[]).find((s) => counts[s] === soldiers.length) ?? null);
+      if (counts !== null) {
+        const advance =
+          mode === "advance" ? button(this.el, "取消進攻", "", () => this.host.setMode("normal")) : button(this.el, "進攻", "點地面", () => this.host.setMode("advance"));
+        if (mode === "advance" || (mode !== "retreat" && all === "advance")) advance.classList.add("active");
       }
+      const retreat =
+        mode === "retreat"
+          ? button(this.el, "取消撤退", "", () => this.host.setMode("normal"))
+          : button(this.el, "撤退", "退回主城", () => this.host.retreat());
+      if (mode === "retreat" || (mode !== "advance" && all === "retreat")) retreat.classList.add("active");
+      if (counts !== null) {
+        const hold = button(this.el, "堅守", "原地不動", () => {
+          this.host.command({ c: "stop", u: soldiers });
+          this.host.command({ c: "stance", u: soldiers, stance: Stance.Hold });
+          this.host.notify(ORDER_TEXT.hold);
+        });
+        if (mode === "normal" && all === "hold") hold.classList.add("active");
+      }
+      button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary");
       // A tap re-forms the troops where they stand (D-028): no march order needed.
       const formation = formationOf(view, sel.units);
       if (formation !== null) {
@@ -496,13 +531,6 @@ export class CommandArea {
         }, "wide");
       }
       if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
-      // 撤退 goes back to the main city at once; 「改撤到別處」 (the prompt strip) picks another spot.
-      const retreat =
-        mode === "retreat"
-          ? button(this.el, "取消撤退", "", () => this.host.setMode("normal"))
-          : button(this.el, "撤退", "退回主城", () => this.host.retreat());
-      if (mode === "retreat") retreat.classList.add("active");
-      button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary");
       if (types.has(UnitType.Mage)) {
         const mages = sel.units.filter((id) => view.unitType(id) === UnitType.Mage);
         const cast = button(this.el, mode === "cast" ? "取消晶砲" : "晶砲", "魔晶 5", () => this.host.setMode(mode === "cast" ? "normal" : "cast"));
@@ -578,16 +606,18 @@ export class ResourceBar {
     this.el.setAttribute("aria-label", "資源");
   }
 
-  /** `room`: px the bar may take before the top-right buttons; one line, the time without 時間 if it must. */
+  /** `room`: px the bar may take before the top-right buttons; one line, shortened as it must (resourceLine). */
   update(view: GameView | null, room: number): void {
     const h = view?.header;
-    if (h === null || h === undefined) return;
-    const line = resourceLine(h);
-    if (line.full === this.text && room === this.room) return;
-    this.text = line.full;
+    if (view === null || h === null || h === undefined) return;
+    const lines = resourceLine(h, view.trainingCount());
+    if (lines[0] === this.text && room === this.room) return;
+    this.text = lines[0];
     this.room = room;
-    this.el.textContent = line.full;
-    if (this.el.offsetWidth > room) this.el.textContent = line.short;
+    for (const line of lines) {
+      this.el.textContent = line;
+      if (this.el.offsetWidth <= room) break;
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
+import { longPressOn } from "./touch.ts";
 
 /** iPhone 14 Pro Max landscape insets in pt: Dynamic Island side, rounded corner side, home indicator. */
 export const IPHONE_SAFE = { top: 0, right: 59, bottom: 21, left: 59 };
@@ -56,6 +57,31 @@ export async function shot(page: Page, info: TestInfo, name: string): Promise<vo
   const path = info.outputPath(`${name}.png`);
   await page.screenshot({ path });
   await info.attach(name, { path, contentType: "image/png" });
+}
+
+/**
+ * 長按編隊按鈕 → 軍團設定 → 照目前選的兵 → 關閉: the selected units become the group, as the
+ * long press itself did before the 軍團 dialog (D-026, D-050).
+ */
+export async function saveGroup(page: Page, button: string): Promise<void> {
+  await longPressOn(page, button);
+  const dialog = page.getByRole("dialog", { name: /^編隊 \d$/ });
+  await dialog.getByRole("button", { name: "照目前選的兵" }).tap();
+  // Its message, before it fades.
+  await expect(page.getByRole("status").filter({ hasText: /^已存成編隊 \d（\d+ 個）$/ })).toBeVisible();
+  await dialog.getByRole("button", { name: "關閉" }).tap();
+  await expect(dialog).toBeHidden();
+}
+
+/**
+ * Select these units and wait until the command area is built for them: it is rebuilt on the
+ * next interface update (10 a second), and a tap before that reaches the old buttons, which act
+ * on the old selection.
+ */
+export async function selectForCommands(page: Page, ids: number[]): Promise<void> {
+  const sorted = [...ids].sort((a, b) => a - b);
+  await page.evaluate((u) => window.__proto?.game?.select(u), sorted);
+  await expect(page.locator(".cmds")).toHaveAttribute("data-selection", sorted.join(","));
 }
 
 /** 全軍, whose label says how many soldiers it selects (全軍 24; ceo 2026-10-03). */

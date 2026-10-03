@@ -363,6 +363,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const sum = ratio[0] + ratio[1] + ratio[2];
       for (let k = 0; k < 3; k++) ratio[k] = Math.max(5, Math.trunc((ratio[k] * 100) / sum));
       ratio[0] = 100 - ratio[1] - ratio[2];
+      // The ratio moves farmers already at work too (D-050). Within one farmer of a share
+      // nobody moves, so a ratio that changes often does not send farmers back and forth; a
+      // 30 s limit on changing it was tried and made the normal AI stronger (sim/README.md).
       const ratioKey = ratio.join("/");
       if (ratioKey !== ratioSet) {
         out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });

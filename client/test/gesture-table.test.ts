@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Camera } from "../src/camera/camera.ts";
 import { type GestureHost, GestureRecognizer } from "../src/input/gestures.ts";
-import { boxSelect, type Intent, longPressKind, retreatNow, type Selection, tapIntents, wheelIntents, wheelItems } from "../src/input/intent.ts";
-import { BuildingType, NodeKind, NO_OWNER, PlaceBit } from "../src/sim.ts";
+import { boxSelect, holdIntents, type Intent, longPressKind, retreatNow, type Selection, tapIntents, wheelIntents, wheelItems } from "../src/input/intent.ts";
+import { BuildingType, NodeKind, NO_OWNER, PlaceBit, Stance } from "../src/sim.ts";
 import { LONG_PRESS_MS, TILE_PX } from "../src/tuning.ts";
 import { Placement } from "../src/ui/placement.ts";
 import { at, ENEMY, FakeWorld, ME, UnitType } from "./fakes.ts";
@@ -198,18 +198,45 @@ test("點兩下單位 → 選取畫面內所有同類單位", () => {
   ]);
 });
 
-test("長按單位 → 技能輪盤：法師有晶砲、自動施放、撤退；其他兵種有撤退和姿態", () => {
+test("長按單位 → 技能輪盤：法師有晶砲、自動施放、撤退、堅守；槍兵和遠程兵有進攻、撤退、堅守；農民只有撤退（D-050）", () => {
   const w = world();
   const p = play(w, { units: [], building: null });
   p.g.down(1, at(7), at(2), 0);
   p.g.update(LONG_PRESS_MS);
   assert.equal(p.longPressed(), "wheel");
-  assert.deepEqual(wheelItems(UnitType.Mage), ["cast", "autocast", "retreat"]);
-  assert.deepEqual(wheelItems(UnitType.Spearman), ["retreat", "stance"]);
-  assert.deepEqual(wheelItems(UnitType.Farmer), ["retreat", "stance"]);
+  assert.deepEqual(wheelItems(UnitType.Mage), ["cast", "autocast", "retreat", "hold"]);
+  assert.deepEqual(wheelItems(UnitType.Spearman), ["advance", "retreat", "hold"]);
+  assert.deepEqual(wheelItems(UnitType.Ranged), ["advance", "retreat", "hold"]);
+  assert.deepEqual(wheelItems(UnitType.Farmer), ["retreat"]);
   // Long press on an enemy or a building does nothing.
   assert.equal(longPressKind(w, at(20), at(20), R), "none");
   assert.equal(longPressKind(w, at(1), at(8), R), "none");
+});
+
+test("進攻（指令區或輪盤）→ 點地面：整隊前進；點敵人：攻擊；點完回到一般狀態（D-050）", () => {
+  const w = world();
+  const sel: Selection = { units: [1, 2, 3], building: null };
+  assert.deepEqual(wheelIntents(w, sel, "advance"), { mode: "advance", intents: [] });
+  assert.deepEqual(wheelIntents(w, { units: [], building: null }, "advance"), { mode: null, intents: [] });
+  // Open ground: everyone selected advances there.
+  assert.deepEqual(tapIntents(w, sel, "advance", at(40), at(40), 1, R), [{ kind: "command", cmd: { c: "move", u: [1, 2, 3], x: 40, y: 40 } }, { kind: "endMode" }]);
+  // An enemy unit or building: attacked.
+  assert.deepEqual(tapIntents(w, sel, "advance", at(20), at(20), 1, R), [{ kind: "command", cmd: { c: "attack", u: [1, 2, 3], target: 9 } }, { kind: "endMode" }]);
+  assert.deepEqual(tapIntents(w, sel, "advance", at(30) + 3, at(30) + 3, 1, R)[0], { kind: "command", cmd: { c: "attack", u: [1, 2, 3], target: 11 } });
+  // One of ours there: the place is the destination, nothing gets selected.
+  assert.deepEqual(tapIntents(w, sel, "advance", at(60), at(2), 1, R), [{ kind: "command", cmd: { c: "move", u: [1, 2, 3], x: 60, y: 2 } }, { kind: "endMode" }]);
+  assert.deepEqual(tapIntents(w, { units: [], building: null }, "advance", at(40), at(40), 1, R), [{ kind: "endMode" }]);
+});
+
+test("堅守（指令區或輪盤）→ 選的兵停下並改成堅守；農民不動（D-050）", () => {
+  const w = world();
+  const hold = [
+    { kind: "command", cmd: { c: "stop", u: [2, 4] } },
+    { kind: "command", cmd: { c: "stance", u: [2, 4], stance: Stance.Hold } },
+  ];
+  assert.deepEqual(holdIntents(w, [1, 2, 4]), hold);
+  assert.deepEqual(wheelIntents(w, { units: [1, 2, 4], building: null }, "hold"), { mode: null, intents: hold });
+  assert.deepEqual(holdIntents(w, [1]), [], "only a farmer: nothing");
 });
 
 test("撤退（指令區或輪盤）→ 直接退回主城前面那一格，不用再點第二下；沒有主城時才點地面選位置（使用者 2026-10-01）", () => {
