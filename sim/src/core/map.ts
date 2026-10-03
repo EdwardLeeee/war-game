@@ -1,7 +1,9 @@
 // The prototype's 1 v 1 map: 96 x 96, mirror-symmetric across the main diagonal (x <-> y),
 // generated from a fixed seed. Player 0 starts bottom-left, player 1 top-right; the small
 // town, the big city and the crystal vein sit on the axis, so both starts are equally far
-// from each (GDD section 17). No river in the prototype: rock and forest make the chokes.
+// from each (GDD section 17). Since round 4 (D-044) each player also has a small town of its
+// own near its main city, the two mirror images of each other. No river in the prototype:
+// rock and forest make the chokes.
 //
 // Features are generated in the half below the diagonal (x < y) and copied to the other
 // half, so symmetry holds by construction. Then every open cell the starts cannot reach
@@ -47,6 +49,13 @@ export interface GameMap {
 const P0 = { x: 16, y: 78 };
 const SMALL = { x: 29, y: 29 };
 const LARGE = { x: 48, y: 48 };
+/**
+ * Player 0's own small town (round 4, D-044; player 1's is its mirror image): a walk of 18
+ * cells from the main city, its militia at least 10 cells from the farmers' ways to the crystal
+ * vein, both gold mines, the home forests and the berries; the other player gets there only
+ * through the middle (past the big city).
+ */
+const OWN = { x: 28, y: 64 };
 /** Top-left of the 2 x 2 crystal vein, on the axis. */
 const VEIN = { x: 66, y: 66 };
 
@@ -79,6 +88,8 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
   reserveDisc(P0.y, P0.x, 9);
   reserveDisc(SMALL.x, SMALL.y, TOWNS[TownSize.Small].radius + 2);
   reserveDisc(LARGE.x, LARGE.y, TOWNS[TownSize.Large].radius + 2);
+  reserveDisc(OWN.x, OWN.y, TOWNS[TownSize.Small].radius + 2);
+  reserveDisc(OWN.y, OWN.x, TOWNS[TownSize.Small].radius + 2);
   reserveDisc(VEIN.x + 1, VEIN.y + 1, 3);
   for (const [a, b] of [
     [P0, LARGE],
@@ -162,7 +173,7 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
 
   // Required places must be reachable: the other start, both town centres, and a free cell
   // beside every resource node group.
-  const need = [P0.x * n + P0.y, SMALL.y * n + SMALL.x, LARGE.y * n + LARGE.x];
+  const need = [P0.x * n + P0.y, SMALL.y * n + SMALL.x, LARGE.y * n + LARGE.x, OWN.y * n + OWN.x, OWN.x * n + OWN.y];
   for (const c of need) if (seen[c] !== 1) throw new Error(`map: cell ${c} unreachable`);
   for (let i = 0; i < n * n; i++) {
     if (kind[i] === -1 || kind[i] === NodeKind.Tree) continue;
@@ -203,6 +214,9 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
     towns: [
       { id: 0, size: TownSize.Small, cellX: SMALL.x, cellY: SMALL.y, radius: TOWNS[TownSize.Small].radius },
       { id: 1, size: TownSize.Large, cellX: LARGE.x, cellY: LARGE.y, radius: TOWNS[TownSize.Large].radius },
+      // Round 4: each player's own small town, player 0's then player 1's.
+      { id: 2, size: TownSize.Small, cellX: OWN.x, cellY: OWN.y, radius: TOWNS[TownSize.Small].radius },
+      { id: 3, size: TownSize.Small, cellX: OWN.y, cellY: OWN.x, radius: TOWNS[TownSize.Small].radius },
     ],
     tower: { cellX: LARGE.x - 1, cellY: LARGE.y - 1 },
     frames: [IDENTITY, MIRROR_XY],

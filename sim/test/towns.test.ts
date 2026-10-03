@@ -1,11 +1,11 @@
 // Towns (PR-4, D4): capture, contested, plunder, ruins, govern, production, revolt,
-// recapture; surrender; the perf scenario.
+// recapture; militia and buildings; surrender; the perf scenario.
 
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { PERF } from "../src/core/scenarios.ts";
-import { TOWNS } from "../src/core/rules.ts";
+import { BUILDINGS, TOWNS, UNITS } from "../src/core/rules.ts";
 import {
   BuildingType,
   GameOverReason,
@@ -207,6 +207,30 @@ test("govern: pays at the choice, repairs with the minimum garrison, then produc
   assert.equal(g.w.governEnded[0], 1);
   assert.equal(g.w.governPaidBack[0], 1);
   assert.equal(g.w.populationCap(0), 10);
+});
+
+test("militia go for soldiers and farmers within 6 cells, never for a building or a building site (round 4)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  w.ecoOn[0] = 0;
+  w.ecoOn[1] = 0;
+  // One militia man at his post 2 cells east of the centre of player 0's own town.
+  const t = w.map.towns[2];
+  const m = put(g, NEUTRAL, UnitType.Militia, t.cellX + 2, t.cellY);
+  w.units.col.home[slotOf(g, m)] = 2;
+  // Player 0's finished house and a house site, both within 6 cells of him.
+  const house = w.addBuilding(0, BuildingType.House, t.cellX + 5, t.cellY - 1, BUILDINGS[BuildingType.House].hp, 1000);
+  const site = w.addBuilding(0, BuildingType.House, t.cellX + 2, t.cellY + 3, 1, 0);
+  g.fog.update(w);
+  run(g, 100);
+  assert.equal(w.units.col.target[slotOf(g, m)], -1, "no building is a target");
+  assert.equal(w.buildings.col.hp[w.building(site)], 1, "the site stands");
+  assert.equal(w.buildings.col.hp[w.building(house)], BUILDINGS[BuildingType.House].hp, "the house is untouched");
+  // A farmer 4 cells from him: that he goes for, as ever.
+  const f = put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY - 4);
+  run(g, 100);
+  assert.equal(w.units.col.target[slotOf(g, m)], f);
+  assert.ok(w.units.col.hp[slotOf(g, f)] < UNITS[UnitType.Farmer].hp, "the farmer is hit");
 });
 
 test("surrender ends the game for the other side; later commands are refused", () => {

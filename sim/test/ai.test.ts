@@ -54,10 +54,11 @@ test("styles: with money and spare soldiers, a governor governs and a plunderer 
   assert.deepEqual(choice("plunder"), { c: "town_choice", town: 0, choice: TownChoice.Plunder });
 });
 
-test("an AI against itself builds up an economy and an army", () => {
+test("an AI against itself builds up an economy and an army, out of the towns' militia's reach", () => {
   const r = new Runner({ seed: 4, scenario: "standard", ai: [true, true] });
   while (r.game.tick < 6000) r.tick();
   const w = r.game.w;
+  const b = w.buildings.col;
   for (const p of [0, 1]) {
     let farmers = 0;
     let soldiers = 0;
@@ -67,7 +68,17 @@ test("an AI against itself builds up an economy and an army", () => {
       else soldiers++;
     }
     let camp = false;
-    for (let s = 0; s < w.buildings.count; s++) if (w.buildings.col.owner[s] === p && w.buildings.col.type[s] === BuildingType.LumberCamp) camp = true;
+    for (let s = 0; s < w.buildings.count; s++) {
+      if (b.owner[s] !== p) continue;
+      if (b.type[s] === BuildingType.LumberCamp) camp = true;
+      // Militia go for anyone within 6 cells of them, the builders of a site within 11 cells of
+      // their town's centre included (round 4: the town by its own main city).
+      const size = rules().buildings[b.type[s]].size;
+      for (const t of w.map.towns) {
+        const d2 = (2 * b.cellX[s] + size - 2 * t.cellX - 1) ** 2 + (2 * b.cellY[s] + size - 2 * t.cellY - 1) ** 2;
+        assert.ok(d2 > 4 * 12 * 12, `player ${p}: building at ${b.cellX[s]},${b.cellY[s]} by town ${t.id}`);
+      }
+    }
     assert.ok(farmers >= 10, `player ${p}: ${farmers} farmers`);
     assert.ok(camp, `player ${p} built a lumber camp`);
     assert.ok(soldiers + w.trained[p * 5 + UnitType.Spearman] > 0, `player ${p} started an army`);
@@ -96,20 +107,61 @@ test("the AI weighs up: it goes for a town when stronger, not when the enemy in 
 test("an army sent to a town moves on once the town lies in ruins, instead of waiting there", () => {
   const g = emptyGame();
   const w = g.w;
-  const [small, big] = w.map.towns;
-  for (let k = 0; k < 18; k++) put(g, 0, UnitType.Spearman, small.cellX + 2 + (k % 6), small.cellY + 3 + Math.trunc(k / 6));
+  const [small, big, own] = w.map.towns;
+  for (let k = 0; k < 18; k++) put(g, 0, UnitType.Spearman, own.cellX + 2 + (k % 6), own.cellY + 3 + Math.trunc(k / 6));
+  // A lookout by the small town in the middle, so the AI sees what becomes of it.
+  put(g, 0, UnitType.Farmer, small.cellX + 2, small.cellY + 2);
   g.fog.update(w);
   const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: MAX_TICKS }, 0, "plunder");
   const bigMove = () => {
     const m = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= 18) as { x: number; y: number } | undefined;
     return m && { x: m.x, y: m.y };
   };
-  assert.deepEqual(bigMove(), { x: small.cellX, y: small.cellY }, "off to the small town first");
+  assert.deepEqual(bigMove(), { x: own.cellX, y: own.cellY }, "off to the small town by its main city first");
   // Plundered (by anyone): ruins belong to no one until they turn neutral again.
-  w.townState[small.id] = TownState.Ruins;
-  w.townOwner[small.id] = NO_OWNER;
+  for (const t of [own, small]) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    g.fog.update(w);
+    const next = t === own ? small : big;
+    assert.deepEqual(bigMove(), { x: next.cellX, y: next.cellY }, `town ${t.id} in ruins: on to town ${next.id}, not waiting there`);
+  }
+});
+
+/**
+ * The town an AI of player `p` with `n` spearmen out from home sends them to first (no enemy in
+ * view), with these towns in ruins (a farmer by each, so it sees them); -1: none.
+ */
+function firstTown(p: number, n: number, ruined: number[] = []): number {
+  const g = emptyGame();
+  const w = g.w;
+  // Placed in player 0's frame, then mirrored (x <-> y) for player 1.
+  const at = (x: number, y: number): [number, number] => (p === 0 ? [x, y] : [y, x]);
+  const s0 = w.map.spawns[0];
+  for (let k = 0; k < n; k++) put(g, p, UnitType.Spearman, ...at(s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6)));
+  for (const id of ruined) {
+    const t = w.map.towns[id];
+    w.townState[id] = TownState.Ruins;
+    w.townOwner[id] = NO_OWNER;
+    w.townTimer[id] = 4800;
+    put(g, p, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+  }
   g.fog.update(w);
-  assert.deepEqual(bigMove(), { x: big.cellX, y: big.cellY }, "then on to the big town, not waiting in the ruins");
+  const ai = createAi(p, 1, { map: w.map, rules: rules(), frame: w.map.frames[p], maxTicks: MAX_TICKS }, 0, "balanced");
+  const m = ai.think(buildView(g, p)).find((c) => c.c === "move" && c.u.length >= n) as { x: number; y: number } | undefined;
+  return m === undefined ? -1 : w.map.towns.findIndex((t) => t.cellX === m.x && t.cellY === m.y);
+}
+
+test("towns by distance (round 4): its own small town first, then the middle (the big city with 24 or more), the other player's town last", () => {
+  for (const p of [0, 1]) {
+    const own = 2 + p;
+    const theirs = 3 - p;
+    assert.equal(firstTown(p, 18), own, `player ${p}, 18 soldiers: its own town first`);
+    assert.equal(firstTown(p, 24), own, `player ${p}, 24 soldiers: its own town first, not the big city`);
+    assert.equal(firstTown(p, 18, [own]), 0, `player ${p}, 18 soldiers: then the small town in the middle`);
+    assert.equal(firstTown(p, 24, [own]), 1, `player ${p}, 24 soldiers: then the big city`);
+    assert.equal(firstTown(p, 18, [own, 0, 1]), theirs, `player ${p}: the other player's town last`);
+  }
 });
 
 /**
@@ -282,28 +334,29 @@ test("easy leaves the second town alone for a while (normal does not)", () => {
     const s0 = w.map.spawns[0];
     for (let k = 0; k < 12; k++) put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6));
     const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
-    const [small, big] = w.map.towns;
+    const [small, big, own] = w.map.towns;
     const s1 = w.map.spawns[1];
-    // A lookout by the small town, so the AI sees what becomes of it.
-    put(g, 0, UnitType.Spearman, small.cellX + 3, small.cellY + 3);
+    // A lookout by its own small town, so the AI sees what becomes of it.
+    put(g, 0, UnitType.Spearman, own.cellX + 3, own.cellY + 3);
     const at = (minute: number) => {
       w.tick = minute * 1200;
       g.fog.update(w);
       const m = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= 10) as { x: number; y: number } | undefined;
       if (m === undefined) return "none";
+      if (m.x === own.cellX && m.y === own.cellY) return "own";
       if (m.x === small.cellX && m.y === small.cellY) return "small";
       if (m.x === big.cellX && m.y === big.cellY) return "big";
       return m.x === s1.cellX && m.y === s1.cellY ? "base" : "rally";
     };
-    assert.equal(at(18), "small", `${difficulty}: the first trip`);
+    assert.equal(at(18), "own", `${difficulty}: the first trip, to its own small town`);
     // Taken (plundered: ruins); the army comes back.
-    w.townState[small.id] = TownState.Ruins;
-    w.townOwner[small.id] = NO_OWNER;
+    w.townState[own.id] = TownState.Ruins;
+    w.townOwner[own.id] = NO_OWNER;
     if (difficulty === "easy") {
-      assert.equal(at(19), "rally", "easy: not yet for the big town");
+      assert.equal(at(19), "rally", "easy: not yet for a second town");
       assert.equal(at(20), "base", "easy: from minute 20 the enemy base, if it has the soldiers");
     } else {
-      assert.equal(at(19), "big", "normal: straight on to the big town");
+      assert.equal(at(19), "small", "normal: straight on to the small town in the middle");
     }
   }
 });

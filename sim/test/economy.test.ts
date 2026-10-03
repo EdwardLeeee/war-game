@@ -1,11 +1,11 @@
 // Economy (PR-3): gathering, the economy ratio, building, placement, training, repair,
-// recall, idle farmers, and the e2e scenario.
+// recall, idle farmers, the e2e scenario, and nodes by the militia (round 4).
 
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { Task } from "../src/core/economy.ts";
-import { BUILDINGS, CARRY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, CARRY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, MILITIA_NODE_REACH2, UNITS } from "../src/core/rules.ts";
 import { checkPlacement } from "../src/placement.ts";
 import {
   Action,
@@ -15,6 +15,7 @@ import {
   BuildingType,
   CELL_SHIFT,
   HeaderField,
+  NEUTRAL,
   NodeKind,
   Order,
   PlaceBit,
@@ -664,4 +665,49 @@ test("a farmer the simulation sent to build goes back to what it gathered, or to
     else assert.deepEqual([u.order[s], u.orderTarget[s]], [Order.Gather, tree], "back to its tree");
     assert.equal(u.stay[s], 0);
   }
+});
+
+test("farmers are not sent by themselves near a living militia man's post (round 4), on both sides; an order still sends them", () => {
+  // The perf scenario: 40 farmers a side on the economy ratio, the towns' militia at their posts.
+  const g = new Game({ seed: 1, scenario: "perf" });
+  const w = g.w;
+  const u = w.units.col;
+  const posts = () => {
+    const out: [number, number][] = [];
+    for (let s = 0; s < w.units.count; s++) if (u.owner[s] === NEUTRAL && u.type[s] === UnitType.Militia) out.push([u.anchorX[s] >> CELL_SHIFT, u.anchorY[s] >> CELL_SHIFT]);
+    return out;
+  };
+  const near = (x: number, y: number, ps: [number, number][]) => ps.some(([px, py]) => (x - px) ** 2 + (y - py) ** 2 <= MILITIA_NODE_REACH2);
+  const farmers = () => [0, 1].map((p) => {
+    let n = 0;
+    for (let s = 0; s < w.units.count; s++) if (u.owner[s] === p && u.type[s] === UnitType.Farmer) n++;
+    return n;
+  });
+  const start = farmers();
+  for (let t = 0; t < 600; t++) {
+    g.step();
+    const ps = posts();
+    for (let s = 0; s < w.units.count; s++) {
+      if (u.type[s] !== UnitType.Farmer || u.order[s] !== Order.Gather || u.onFarm[s] === 1 || u.orderTarget[s] < 0) continue;
+      const k = u.orderTarget[s];
+      assert.ok(!near(w.nodeX[k], w.nodeY[k], ps), `tick ${g.tick}: player ${u.owner[s]}'s farmer sent to ${w.nodeX[k]},${w.nodeY[k]}`);
+    }
+  }
+  // Before this rule, militia by each player's own town had killed a farmer of each side by tick 197.
+  assert.deepEqual(farmers(), start, "no farmer lost");
+  // An order still sends a farmer there: player 0's farmer to the tree nearest its main city among those the militia reach.
+  const ps = posts();
+  const s0 = w.map.spawns[0];
+  let tree = -1;
+  for (let k = 0; k < w.nodeAmount.length; k++) {
+    if (w.nodeKind[k] !== NodeKind.Tree || w.nodeAmount[k] <= 0 || !near(w.nodeX[k], w.nodeY[k], ps) || g.fog.nodeSeen[0][k] < 0) continue;
+    const d = (w.nodeX[k] - s0.cellX) ** 2 + (w.nodeY[k] - s0.cellY) ** 2;
+    if (tree < 0 || d < (w.nodeX[tree] - s0.cellX) ** 2 + (w.nodeY[tree] - s0.cellY) ** 2) tree = k;
+  }
+  assert.ok(tree >= 0, "a tree the militia reach, known to player 0");
+  let f = -1;
+  for (let s = 0; s < w.units.count && f < 0; s++) if (u.owner[s] === 0 && u.type[s] === UnitType.Farmer) f = u.id[s];
+  cmd(g, 0, { c: "gather", u: [f], node: tree });
+  g.step();
+  assert.deepEqual([u.order[slotOf(g, f)], u.orderTarget[slotOf(g, f)]], [Order.Gather, tree]);
 });

@@ -195,7 +195,12 @@ export class UnitSystem {
     return bestId;
   }
 
-  /** Nearest enemy unit within reach (ties to the lower id), else the nearest enemy building; returns an id or -1. */
+  /**
+   * Nearest enemy unit within reach (ties to the lower id), else the nearest enemy building; returns
+   * an id or -1. Town militia (neutral) guard against units only: never a building or a building
+   * site (round 4, ceo: with a town 18 cells from each main city they walked into the base and
+   * knocked down sites, with nothing to tell a player why).
+   */
   private findTarget(w: World, fog: Fog, i: number, reach: number): number {
     const u = w.units.col;
     const n = w.size;
@@ -225,7 +230,7 @@ export class UnitSystem {
         }
       }
     }
-    if (bestId >= 0) return bestId;
+    if (bestId >= 0 || me === NEUTRAL) return bestId;
     const b = w.buildings.col;
     for (let s = 0; s < w.buildings.count; s++) {
       if (b.owner[s] === me) continue;

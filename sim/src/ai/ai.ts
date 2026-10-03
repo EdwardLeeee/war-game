@@ -180,6 +180,14 @@ const ENDGAME_ARMY = 8;
 const FULL_MARGIN = 2;
 /** An enemy main city at or below this share of its hp (percent) is not given up on. */
 const PRESS_ON_HP = 40;
+/**
+ * It builds nothing whose centre is this close to a town's centre (cells; round 4): militia stand
+ * up to 3 cells from the centre and go for anyone within 6 cells of them, up to 8 cells from their
+ * post, the farmers building there included. The town by its own main city brought them into its
+ * base (seed 4, before militia left buildings alone: its first barracks site, 9 cells from that
+ * town, was knocked down within 5 seconds).
+ */
+const TOWN_CLEARANCE = 12;
 /** Govern costs (GDD appendix A), for the choice. */
 const GOVERN_COST: Cost[] = [];
 GOVERN_COST[TownSize.Small] = { food: 0, wood: 80, gold: 80, crystal: 0 };
@@ -267,6 +275,13 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           }
         }
         if (!ok) continue;
+        // Out of every town's militia's reach (doubled coordinates: centres of footprint and town cell).
+        const near = (t: { cellX: number; cellY: number }) => {
+          const dx = 2 * x + size - 2 * t.cellX - 1;
+          const dy = 2 * y + size - 2 * t.cellY - 1;
+          return dx * dx + dy * dy <= 4 * TOWN_CLEARANCE * TOWN_CLEARANCE;
+        };
+        if (know.map.towns.some(near)) continue;
         const du = 2 * u + size - 2 * a.u;
         const dv = 2 * v + size - 2 * a.v;
         const d = du * du + dv * dv;
@@ -662,10 +677,13 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       }
       if (mode === "gather" || mode === "defend") {
         // Towns to take: not ours, not ruins, and not one we plundered in the last 6 minutes.
+        // Our own side first (nearer our main city than the enemy's), then the middle (as far
+        // from both), the enemy's side last (round 4, D-044); within a side smaller first, then id.
+        const side = (t: Town) => Math.sign(dist2(t.x, t.y, home.cellX, home.cellY) - dist2(t.x, t.y, enemyHome.cellX, enemyHome.cellY));
         const open = [...towns.entries()]
           .filter(([, t]) => !(t.owner === player && t.state !== TownState.Neutral) && t.state !== TownState.Ruins)
           .filter(([id]) => tick - (plunders.get(id)?.tick ?? -100000) >= 6 * TICKS_PER_MINUTE)
-          .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
+          .sort(([a, ta], [b, tb]) => side(ta) - side(tb) || ta.size - tb.size || a - b);
         const go = endgame
           ? army.length >= ENDGAME_ARMY
           : assault
@@ -677,7 +695,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           for (const id of armyIds) marched.add(id);
           send(enemyHome.cellX, enemyHome.cellY, "base");
         } else if (!assault && townTime && army.length >= townArmy && open.length > 0 && strongEnough) {
-          const pick = army.length >= 24 || open.length === 1 ? open[open.length - 1] : open[0];
+          // With 24 or more, the biggest of the nearest side's towns (the big city in the middle).
+          const near = open.filter(([, t]) => side(t) === side(open[0][1]));
+          const pick = army.length >= 24 ? near[near.length - 1] : open[0];
           targetTown = pick[0];
           armyAtStart = army.length;
           marched.clear();
