@@ -9,10 +9,12 @@
 |---|---|
 | `war-game-ceo`（總設計師兼 CEO） | `AGENTS.md`、`README.md`、`docs/design/`、`docs/world/`、`docs/decisions/`、`docs/briefs/`、`scripts/` |
 | `war-game-ui` | `design/`、`.github/workflows/design-render.yml` |
-| `war-game-core` | `sim/`（遊戲規則與原型的簡單 AI）、`.github/workflows/sim.yml`、`spikes/`、`docs/research/` 裡自己的研究筆記 |
+| `war-game-core` | `sim/`（遊戲規則、地圖、協定、量測工具與腳本玩家；電腦對手除外）、`.github/workflows/sim.yml`、`spikes/`、`docs/research/` 裡自己的研究筆記 |
+| `war-game-ai` | 電腦對手：`sim/src/ai/ai.ts`、之後新增的 `sim/src/ai/` 電腦檔案（`scripted-player.ts` 除外）、`sim/test/ai.test.ts`、`docs/research/` 裡自己的研究筆記 |
 | `war-game-client` | `client/`（畫面、觸控、介面、測試頁）、`.github/workflows/client.yml`、`.github/workflows/pages.yml` |
 
-之後再加 `war-game-ai`（正式的電腦對手）與 `war-game-mobile`（打包與上架）。引擎是 TypeScript + PixiJS + Capacitor（D-013）。
+`war-game-ai` 從 2026-10-03 起負責電腦對手（D-052）。之後再加 `war-game-mobile`（打包與上架）。
+協定（`sim/src/protocol.ts`）屬於 core：電腦需要新欄位或新難度時，war-game-ai 回報 ceo，由 core 加。引擎是 TypeScript + PixiJS + Capacitor（D-013）。
 一條路徑只屬於一個角色。要改別人的路徑，先回報 ceo。
 
 ## 工作流程
