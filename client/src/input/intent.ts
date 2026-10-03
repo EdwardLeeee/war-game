@@ -44,8 +44,8 @@ export interface Selection {
   building: number | null;
 }
 
-/** Map taps that finish a command started from a button (撤退, 晶砲, 集結點). */
-export type Mode = "normal" | "retreat" | "cast" | "rally";
+/** Map taps that finish a command started from a button (進攻, 撤退, 晶砲, 集結點). */
+export type Mode = "normal" | "advance" | "retreat" | "cast" | "rally";
 
 export type Intent =
   | { kind: "select"; units: number[] }
@@ -55,7 +55,7 @@ export type Intent =
   | { kind: "command"; cmd: CommandBody }
   | { kind: "endMode" };
 
-export type WheelItem = "cast" | "autocast" | "retreat" | "stance";
+export type WheelItem = "cast" | "autocast" | "advance" | "retreat" | "hold";
 
 export const isMilitary = (type: number): boolean => type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage;
 
@@ -80,6 +80,16 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
     }
     case "rally":
       return sel.building !== null ? [{ kind: "command", cmd: { c: "rally", building: sel.building, x, y } }, { kind: "endMode" }] : [{ kind: "endMode" }];
+    case "advance": {
+      // 進攻 (D-050): an enemy there is attacked; anywhere else, the troops advance to it.
+      if (sel.units.length === 0) return [{ kind: "endMode" }];
+      const target = world.pick(wx, wy, r);
+      const cmd: CommandBody =
+        target !== null && target.owner !== world.me && (target.kind === "unit" || target.kind === "building")
+          ? { c: "attack", u: sel.units, target: target.id }
+          : { c: "move", u: sel.units, x, y };
+      return [{ kind: "command", cmd }, { kind: "endMode" }];
+    }
     case "normal":
       break;
   }
@@ -155,14 +165,31 @@ export function boxSelect(world: IntentWorld, x0: number, y0: number, x1: number
   return chosen.map((v) => v.id).sort((a, b) => a - b);
 }
 
-/** Skill wheel for the long-pressed unit (GDD §10): mages cast, autocast, retreat; others retreat, stance. */
+/**
+ * Skill wheel for the long-pressed unit (GDD §10): mages cast, autocast, retreat and 堅守;
+ * spearmen and ranged 進攻, 撤退, 堅守 (D-050); farmers, who have neither, only 撤退.
+ */
 export function wheelItems(pressedType: number): WheelItem[] {
-  return pressedType === UnitType.Mage ? ["cast", "autocast", "retreat"] : ["retreat", "stance"];
+  if (pressedType === UnitType.Mage) return ["cast", "autocast", "retreat", "hold"];
+  return isMilitary(pressedType) ? ["advance", "retreat", "hold"] : ["retreat"];
 }
 
 /**
- * A wheel choice applied to the selection. cast and retreat need a map tap next, so they
- * return the mode to enter; autocast and stance are commands at once.
+ * 堅守 (D-050): the soldiers among these units stop where they are and hold (they fight what
+ * comes into range and do not chase).
+ */
+export function holdIntents(world: IntentWorld, units: number[]): Intent[] {
+  const soldiers = units.filter((id) => isMilitary(world.unitType(id)));
+  if (soldiers.length === 0) return [];
+  return [
+    { kind: "command", cmd: { c: "stop", u: soldiers } },
+    { kind: "command", cmd: { c: "stance", u: soldiers, stance: Stance.Hold } },
+  ];
+}
+
+/**
+ * A wheel choice applied to the selection. 進攻 and 晶砲 need a map tap next, so they return
+ * the mode to enter; 撤退 goes home at once; autocast and 堅守 are commands at once.
  */
 export function wheelIntents(world: IntentWorld, sel: Selection, item: WheelItem): { mode: Mode | null; intents: Intent[] } {
   const u = sel.units;
@@ -177,11 +204,10 @@ export function wheelIntents(world: IntentWorld, sel: Selection, item: WheelItem
       const on = mages.some((id) => !world.unitAutocast(id));
       return { mode: null, intents: [{ kind: "command", cmd: { c: "autocast", u: mages, on } }] };
     }
-    case "stance": {
-      if (u.length === 0) return { mode: null, intents: [] };
-      const stance = u.some((id) => world.unitStance(id) === Stance.Aggressive) ? Stance.Hold : Stance.Aggressive;
-      return { mode: null, intents: [{ kind: "command", cmd: { c: "stance", u, stance } }] };
-    }
+    case "advance":
+      return { mode: u.length > 0 ? "advance" : null, intents: [] };
+    case "hold":
+      return { mode: null, intents: holdIntents(world, u) };
   }
 }
 

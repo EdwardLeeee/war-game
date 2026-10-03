@@ -155,7 +155,8 @@ export class Overlays {
     this.wheelItems = buttons.map((b) => b.id);
     const w = this.root.clientWidth;
     const h = this.root.clientHeight;
-    const span = buttons.length === 2 ? 90 : 120;
+    // 60° apart from three buttons on (72 pt out, 60 pt wide: 12 pt between neighbours); four make a half circle.
+    const span = buttons.length === 2 ? 90 : (buttons.length - 1) * 60;
     buttons.forEach((b, i) => {
       const deg = -90 - span / 2 + (buttons.length === 1 ? span / 2 : (span * i) / (buttons.length - 1));
       const rad = (deg * Math.PI) / 180;

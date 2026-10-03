@@ -26,14 +26,17 @@ import { atlasFor } from "../render/atlas.ts";
 import { WorldRenderer } from "../render/world.ts";
 import {
   type AiDifficulty,
+  BUILDING_STRIDE,
   BuildingField,
-  type BuildingType,
+  BuildingType,
+  CELL,
   type CommandBody,
   type FromWorker,
   HeaderField as H,
   NEUTRAL,
   NO_OWNER,
   NodeField,
+  Order,
   PROTOCOL_VERSION,
   type ScenarioName,
   Stance,
@@ -85,6 +88,7 @@ export interface GameOptions {
 const RETREAT_PROMPT_MS = 4000;
 
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
+  advance: "點地面或小地圖：整隊前進，遇到敵人一起打",
   retreat: "點地面或小地圖選撤退位置",
   cast: "點地面選晶砲落點",
   rally: "點地面設集結點",
@@ -254,7 +258,7 @@ export class Game implements GestureHost {
     this.overlays.toast(text);
   }
 
-  /** Minimap tap (GDD §10): jump there; in 撤退／晶砲／集結點 mode, pick that spot. */
+  /** Minimap tap (GDD §10): jump there; in 進攻／撤退／晶砲／集結點 mode, pick that spot. */
   minimapTap(cx: number, cy: number): void {
     const view = this.view;
     if (view === null) return;
@@ -340,8 +344,15 @@ export class Game implements GestureHost {
   /** An order from the player's own hand. Returns its sequence number. */
   command(cmd: CommandBody): number {
     const seq = this.post(cmd, false);
-    // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
-    if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") this.setStance(this.army.release(cmd.u), Stance.Aggressive);
+    if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") {
+      // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
+      const released = this.army.release(cmd.u);
+      // 前進 and 攻擊 are 進攻 (D-050), with or without the button: those holding go 積極.
+      const view = this.view;
+      const holding =
+        cmd.c === "retreat" || view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && view.unitStance(id) === Stance.Hold);
+      this.setStance([...released, ...holding], Stance.Aggressive);
+    }
     // His own order sending a recruit somewhere: 自動補兵 no longer leads it to its group (GDD §10).
     this.army.playerCommand(cmd);
     return seq;
@@ -484,15 +495,87 @@ export class Game implements GestureHost {
       const o = view.unitRow(id);
       return o < 0 ? null : { x: u[o + UnitField.x], y: u[o + UnitField.y] };
     };
-    for (const o of this.army.muster(tick, where)) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
+    for (const o of this.army.muster(tick, where, this.gatherPoint())) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
   }
 
-  /** 長按編隊按鈕: the selected units become control group i. */
+  /**
+   * 軍團 (D-050): every snapshot, the soldiers in no group and not stationed join the groups
+   * short of their type, and set off to them (musterRecruits). Only those standing with no
+   * order and not holding: an order of the player's, 堅守 included, is not undone.
+   */
+  private draftArmy(): void {
+    const view = this.view;
+    const tick = view?.header?.[H.tick];
+    if (view === null || tick === undefined) return;
+    const idle = (id: number): boolean => view.unitOrder(id) === Order.None && view.unitStance(id) !== Stance.Hold;
+    for (const d of this.army.draft(this.soldiers(), tick, idle)) {
+      this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}，正走過去`);
+      // They take the group's formation, as recruits do (D-027).
+      const others = this.army.groups[d.group].ids.filter((m) => !d.ids.includes(m) && view.unitRow(m) >= 0);
+      if (mostlyLoose(others, (m) => view.unitLoose(m))) this.autoCommand({ c: "formation", u: d.ids, loose: true });
+    }
+  }
+
+  /**
+   * Where soldiers drafted into a group with nobody in it meet (D-050): the rally point of
+   * our barracks, range or mage hall with the lowest id that has one; else the cell in front
+   * of the main city (where 撤退 goes). Fixed point.
+   */
+  private gatherPoint(): { x: number; y: number } | null {
+    const view = this.view;
+    const b = view?.curr?.snap.buildings;
+    if (view === null || b === undefined) return null;
+    let best: { id: number; x: number; y: number } | null = null;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      const type = b[o + BuildingField.type];
+      if (b[o + BuildingField.owner] !== view.me || b[o + BuildingField.rallyX] < 0) continue;
+      if (type !== BuildingType.Barracks && type !== BuildingType.Range && type !== BuildingType.MageHall) continue;
+      const id = b[o + BuildingField.id];
+      if (best === null || id < best.id) best = { id, x: b[o + BuildingField.rallyX], y: b[o + BuildingField.rallyY] };
+    }
+    if (best !== null) return { x: best.x, y: best.y };
+    const home = view.homeCell();
+    return home === null ? null : { x: home.x * CELL + CELL / 2, y: home.y * CELL + CELL / 2 };
+  }
+
+  // --- 軍團設定 (D-050) ------------------------------------------------------------------
+
+  /** Living soldiers of this type in group i (現有). */
+  groupHas(i: number, type: number): number {
+    const view = this.view;
+    if (view === null) return 0;
+    return this.army.groups[i].ids.filter((id) => view.unitRow(id) >= 0 && view.unitType(id) === type).length;
+  }
+
+  /** 軍團設定 −／+: group i wants n of this type; the free soldiers come at once, the extra ones leave. */
+  setGroupWant(i: number, type: number, n: number): void {
+    const view = this.view;
+    if (view === null) return;
+    this.army.setWant(i, type, n, (id) => (view.unitRow(id) >= 0 ? view.unitType(id) : null));
+    this.regroup();
+  }
+
+  /** 軍團設定 清空: the group has nobody and wants nobody (its soldiers may join the groups still short). */
+  clearGroup(i: number): void {
+    this.army.clearGroup(i);
+    this.regroup();
+  }
+
+  /** After the player changed a group: draft and send at once, without waiting for the next snapshot (the game may be paused). */
+  private regroup(): void {
+    this.draftArmy();
+    this.musterRecruits();
+  }
+
+  /** 軍團設定 照目前選的兵 (the long press of D-026): the selected units become control group i. */
   saveGroup(i: number): number {
     const view = this.view;
     if (view === null) return 0;
     const units = view.selection.units.map((id) => ({ id, type: view.unitType(id) }));
-    if (units.length > 0) this.army.saveGroup(i, units);
+    if (units.length > 0) {
+      this.army.saveGroup(i, units);
+      this.regroup();
+    }
     return units.length;
   }
 
@@ -547,6 +630,7 @@ export class Game implements GestureHost {
           }
         }
         this.pruneArmy();
+        this.draftArmy();
         this.musterRecruits();
         if (this.placement !== null) {
           this.placement.revalidate(view.placement);
@@ -855,12 +939,12 @@ export class Game implements GestureHost {
     const items = wheelItems(pressedType);
     const mages = view.selection.units.filter((id) => view.unitType(id) === UnitType.Mage);
     const autocastOn = mages.length > 0 && mages.every((id) => view.unitAutocast(id));
-    const anyAggressive = view.selection.units.some((id) => view.unitStance(id) === Stance.Aggressive);
     const label: Record<WheelItem, string> = {
       cast: "晶砲",
       autocast: autocastOn ? "自動施放：開" : "自動施放：關",
+      advance: "進攻",
       retreat: "撤退",
-      stance: anyAggressive ? "改成堅守" : "改成積極",
+      hold: "堅守",
     };
     this.overlays.openWheel(
       x,
