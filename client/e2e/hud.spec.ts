@@ -3,7 +3,7 @@
 // and idle farmers, and every piece of the temporary interface (GDD §10 草稿).
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { armyButton, FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, saveGroup, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { armyButton, FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 import { doubleTap, doubleTapOn, longPress, longPressOn, tap, tapOn } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -710,7 +710,7 @@ test("進攻、撤退、堅守：選了兵時指令區第一列是這三顆和�
   await expect(now).toHaveText(`目前：進攻 ${army.length}`);
 
   // A plain tap on the ground is 進攻 too: a 堅守 group told to move goes 積極 with it.
-  await select(page, spear);
+  await selectForCommands(page, spear);
   await hold.tap();
   await expect(now).toHaveText("目前：堅守 6");
   const mark = (await sent(page)).length;
@@ -1023,7 +1023,7 @@ test("軍團設定：長按編隊按鈕打開，設定每種兵要幾名；沒�
   await select(page, [ranged[2]]);
   await tap(page, await at(page, { x: 12, y: 66 }));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: [ranged[2]] });
-  await select(page, [ranged[3]]);
+  await selectForCommands(page, [ranged[3]]);
   await page.getByRole("button", { name: /^堅守/ }).tap();
   await expect.poll(async () => (await units(page)).find((u) => u.id === ranged[3])?.stance).toBe(1);
   await select(page, []);

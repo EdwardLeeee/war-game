@@ -71,6 +71,17 @@ export async function saveGroup(page: Page, button: string): Promise<void> {
   await expect(dialog).toBeHidden();
 }
 
+/**
+ * Select these units and wait until the command area is built for them: it is rebuilt on the
+ * next interface update (10 a second), and a tap before that reaches the old buttons, which act
+ * on the old selection.
+ */
+export async function selectForCommands(page: Page, ids: number[]): Promise<void> {
+  const sorted = [...ids].sort((a, b) => a - b);
+  await page.evaluate((u) => window.__proto?.game?.select(u), sorted);
+  await expect(page.locator(".cmds")).toHaveAttribute("data-selection", sorted.join(","));
+}
+
 /** 全軍, whose label says how many soldiers it selects (全軍 24; ceo 2026-10-03). */
 export const armyButton = (page: Page) => page.getByRole("button", { name: /^全軍 \d+$/ });
 

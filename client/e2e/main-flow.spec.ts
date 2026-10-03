@@ -8,7 +8,7 @@
 // and moves the camera. The opponent stands still (?test=1&ai=0, see step 1).
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, saveGroup, shot, watchErrors } from "./helpers.ts";
+import { armyButton, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
 import { doubleTap, longPress, tap } from "./touch.ts";
 
 const FARMER = 0;
@@ -287,7 +287,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   const inGroups = (await groupInfo(page)).flatMap((g) => g.ids);
   const free = (await own(page, [SPEARMAN])).map((u) => u.id).filter((id) => !inGroups.includes(id) && id !== kept);
   if (free.length > 0) {
-    await page.evaluate((u) => window.__proto?.game?.select(u), free);
+    await selectForCommands(page, free);
     await page.getByRole("button", { name: /^堅守/ }).tap();
     await expect.poll(async () => (await units(page)).filter((u) => free.includes(u.id)).every((u) => u.stance === 1)).toBe(true);
   }

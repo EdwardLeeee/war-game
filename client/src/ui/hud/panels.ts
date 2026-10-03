@@ -462,6 +462,8 @@ export class CommandArea {
     this.key = key;
     this.el.replaceChildren();
     this.build(view);
+    // Which selection these buttons act on (tests wait for it after selecting by hand).
+    this.el.dataset.selection = view.selection.units.join(",");
   }
 
   private keyFor(view: GameView): string {
