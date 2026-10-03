@@ -133,6 +133,15 @@ export const LEASH = 8 * CELL;
  * it off (src/balance.ts measures both ways).
  */
 export const JOIN_FIGHT = { range: 6 * CELL };
+/**
+ * A squad (operations round, D-050): the units that got the same move or attack command. A
+ * member on a move or idle and aggressive, with no enemy within AGGRO_RANGE, takes on the enemy
+ * nearest itself among those its mates are fighting and those within `near` of them, if that
+ * enemy is within `reach` of it; an idle member gives up a chase `leash` from where it stood
+ * (LEASH for units without a squad). Hold stance and retreat are left as they are. `reach` 0
+ * switches it off (tests and src/balance.ts measure both ways).
+ */
+export const SQUAD = { reach: 12 * CELL, near: 3 * CELL, leash: 12 * CELL, crowd: 3 };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;

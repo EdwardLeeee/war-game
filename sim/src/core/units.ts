@@ -21,7 +21,7 @@ import {
   UnitFlag,
   UnitType,
 } from "../protocol.ts";
-import { clamp, DIR16_X, DIR16_Y, dir16, idiv } from "./fixed.ts";
+import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
 import { type FieldCache, buildingKey, cellsAround, nearestWalkable, Regions } from "./paths.ts";
 import {
@@ -34,6 +34,7 @@ import {
   SHIELD_REGEN,
   DIRECT_STEER,
   JOIN_FIGHT,
+  SQUAD,
   LEASH,
   MAIN_ARROW,
   MAX_PUSH,
@@ -77,6 +78,10 @@ export class UnitSystem {
   private attacking = new Uint8Array(256);
   /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
   private startTarget = new Int32Array(256);
+  /** Per squad, at the start of the tick: what its soldiers are fighting (unit positions, building ids). */
+  private readonly squadFights = new Map<number, { x: number[]; y: number[]; buildings: number[] }>();
+  /** Per enemy unit id, how many units had it as their target at the start of the tick. */
+  private readonly attackers = new Map<number, number>();
   private unitDamage = new Int32Array(256);
   /** The same hits counted against a mage's shield (its own multipliers). */
   private shieldDamage = new Int32Array(256);
@@ -124,6 +129,7 @@ export class UnitSystem {
     this.fit(w.units.count, w.buildings.count);
     this.bucket(w);
     this.startTarget.set(w.units.col.target.subarray(0, w.units.count));
+    this.collectSquadFights(w);
     for (let i = 0; i < w.units.count; i++) this.decide(w, fog, fields, farmers, i);
     this.move(w);
     return this.attack(w, fog);
@@ -191,6 +197,100 @@ export class UnitSystem {
           }
         }
       }
+    }
+    return bestId;
+  }
+
+  /** What each squad's soldiers had as targets at the start of the tick (SQUAD). */
+  private collectSquadFights(w: World): void {
+    this.squadFights.clear();
+    this.attackers.clear();
+    if (SQUAD.reach <= 0) return;
+    const u = w.units.col;
+    for (let j = 0; j < w.units.count; j++) {
+      const t = this.startTarget[j];
+      if (t >= 0) this.attackers.set(t, (this.attackers.get(t) ?? 0) + 1);
+      if (t < 0 || u.squad[j] === 0 || u.type[j] === UnitType.Farmer) continue;
+      let f = this.squadFights.get(u.squad[j]);
+      if (f === undefined) {
+        f = { x: [], y: [], buildings: [] };
+        this.squadFights.set(u.squad[j], f);
+      }
+      const ts = w.unit(t);
+      if (ts >= 0) {
+        if (u.owner[ts] === u.owner[j]) continue;
+        f.x.push(u.x[ts]);
+        f.y.push(u.y[ts]);
+      } else if (w.building(t) >= 0 && !f.buildings.includes(t)) {
+        f.buildings.push(t);
+      }
+    }
+  }
+
+  /**
+   * A squad fights together (SQUAD, operations round, D-050): the enemy unit nearest unit i, within
+   * SQUAD.reach of it and seen by its owner, that one of its squad mates was fighting at the start
+   * of the tick or that stands within SQUAD.near of one of those (ties as findTarget); else the
+   * nearest building a mate was hitting, within reach; -1 if none.
+   */
+  private squadTarget(w: World, fog: Fog, i: number): number {
+    const u = w.units.col;
+    const f = this.squadFights.get(u.squad[i]);
+    if (f === undefined) return -1;
+    const n = w.size;
+    const me = u.owner[i];
+    const mx = u.x[i];
+    const my = u.y[i];
+    const reach = SQUAD.reach;
+    const r2 = reach * reach;
+    const near2 = SQUAD.near * SQUAD.near;
+    const cells = (reach >> CELL_SHIFT) + 1;
+    const cx = mx >> CELL_SHIFT;
+    const cy = my >> CELL_SHIFT;
+    const high = preferHighId(w, u.id[i]);
+    // Melee crowd at a target that already has SQUAD.crowd attackers: one more cell per attacker over that.
+    const melee = UNITS[u.type[i]].range <= CELL;
+    let best = r2 + 1;
+    let bestId = -1;
+    if (f.x.length > 0) {
+      for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
+        for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
+          for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+            if (u.owner[j] === me || u.action[j] === Action.Garrisoned) continue;
+            const dx = u.x[j] - mx;
+            const dy = u.y[j] - my;
+            let d2 = dx * dx + dy * dy;
+            if (d2 > r2) continue;
+            if (melee) {
+              const over = (this.attackers.get(u.id[j]) ?? 0) - SQUAD.crowd;
+              if (over > 0) {
+                const d = isqrt(d2) + over * CELL;
+                d2 = d * d;
+              }
+            }
+            if (d2 > best || (d2 === best && (high ? u.id[j] < bestId : u.id[j] > bestId))) continue;
+            let fought = false;
+            for (let k = 0; k < f.x.length && !fought; k++) {
+              const fx = u.x[j] - f.x[k];
+              const fy = u.y[j] - f.y[k];
+              if (fx * fx + fy * fy <= near2) fought = true;
+            }
+            if (!fought || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+            best = d2;
+            bestId = u.id[j];
+          }
+        }
+      }
+      if (bestId >= 0) return bestId;
+    }
+    const b = w.buildings.col;
+    for (const id of f.buildings) {
+      const s = w.building(id);
+      if (s < 0 || b.owner[s] === me) continue;
+      const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], BUILDINGS[b.type[s]].size);
+      if (d2 > r2 || d2 > best || (d2 === best && (high ? id < bestId : id > bestId))) continue;
+      best = d2;
+      bestId = id;
     }
     return bestId;
   }
@@ -372,6 +472,7 @@ export class UnitSystem {
     } else if ((w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
       const hold = order === Order.None && u.stance[i] === Stance.Hold;
       tid = this.findTarget(w, fog, i, hold ? info.range : Math.max(AGGRO_RANGE, info.range));
+      if (tid < 0 && (order === Order.None || order === Order.Move) && u.stance[i] !== Stance.Hold && u.squad[i] !== 0) tid = this.squadTarget(w, fog, i);
       if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT) tid = this.joinFight(w, fog, i);
     }
     u.target[i] = tid;
@@ -410,7 +511,8 @@ export class UnitSystem {
       if (idle) {
         const ax = tx - u.anchorX[i];
         const ay = ty - u.anchorY[i];
-        if (ax * ax + ay * ay > LEASH * LEASH) {
+        const leash = u.squad[i] !== 0 && SQUAD.reach > 0 ? SQUAD.leash : LEASH;
+        if (ax * ax + ay * ay > leash * leash) {
           u.target[i] = -1;
           steerTo(w, fields, i, u.anchorX[i], u.anchorY[i], -1, info.speed);
           return;
