@@ -118,6 +118,11 @@ type Mode = "home" | "town" | "base" | "defend";
 /** Builds nothing whose centre is this close to a town's centre (cells), as the AI of round 4 PR A. */
 const TOWN_CLEARANCE = 12;
 const PRESS_ON_HP = 40;
+/**
+ * Enemy soldiers this near the main city (cells) count toward a wave the player beats before it
+ * counters. 16 missed the attacks its army beat on the way in, so it never countered (D-050).
+ */
+const WAVE_CELLS = 24;
 const GOVERN_COST: Cost[] = [];
 GOVERN_COST[TownSize.Small] = { food: 0, wood: 80, gold: 80, crystal: 0 };
 GOVERN_COST[TownSize.Large] = { food: 0, wood: 150, gold: 150, crystal: 0 };
@@ -211,6 +216,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   let nextTown = 0;
   let waveMax = 0;
   let lastThreat = -100000;
+  /** When enemy soldiers were last within WAVE_CELLS of the main city. */
+  let lastWave = -100000;
   let counterReady = false;
   let siege = "";
   const loosed = new Set<number>();
@@ -522,8 +529,13 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const atHome = foes.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) <= 16 * 16);
       // On the march and nearer the enemy's main city than our own: a person would press on.
       const committed = mode === "base" && dist2(cx, cy, enemyHome.cellX, enemyHome.cellY) < dist2(cx, cy, home.cellX, home.cellY);
+      // A wave: the most enemy soldiers near the main city at once, wherever the army beat them.
+      const near = foes.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) <= WAVE_CELLS * WAVE_CELLS).length;
+      if (near > 0) {
+        waveMax = Math.max(waveMax, near);
+        lastWave = tick;
+      }
       if (atHome.length > 0) {
-        waveMax = Math.max(waveMax, atHome.length);
         lastThreat = tick;
         if (!recalled && atHome.length >= 4) {
           out.push({ c: "recall", on: true });
@@ -543,7 +555,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           out.push({ c: "recall", on: false });
           recalled = false;
         }
-        if (tick - lastThreat >= 200 && waveMax > 0) {
+        if (tick - lastWave >= 200 && waveMax > 0) {
           if (waveMax >= 6) {
             counterReady = true;
             waves++;

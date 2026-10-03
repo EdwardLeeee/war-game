@@ -9,6 +9,7 @@ import { rules } from "../src/core/rules.ts";
 import { BuildingType, TownSize, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
+import { cmd, emptyGame, put } from "./helpers.ts";
 
 /** The scripted player as player 0 against the normal AI for `ticks`, as src/scripted-games.ts plays it. */
 function play(seed: number, plan: Plan, ticks: number): Runner {
@@ -61,4 +62,28 @@ test("the fixed plans: strategies, speeds and formations", () => {
   assert.deepEqual([planFor("notown", "h1", "shooters").townAt, planFor("notown", "h1", "shooters").loose], [0, 1]);
   assert.deepEqual([push.staticRatio, push.noMage, push.noRange], [false, false, false]);
   assert.equal(SCRIPTED_THINK_EVERY, 40);
+});
+
+test("enemies beaten 16-24 cells from the main city count as a wave: the player counters (D-050)", () => {
+  // Six enemy spearmen 20 cells out (outside the 16 of the defence), seen by one of ours, then
+  // gone: that is a wave beaten, and with 16 soldiers at home the player marches on the enemy
+  // (the notown plan, so no town trip comes first).
+  const g = emptyGame();
+  const w = g.w;
+  const home = w.map.spawns[0];
+  const sx = home.cellX < w.size / 2 ? 1 : -1;
+  const sy = home.cellY < w.size / 2 ? 1 : -1;
+  const foes: number[] = [];
+  for (let k = 0; k < 6; k++) foes.push(put(g, 1, UnitType.Spearman, home.cellX + sx * (14 + (k % 3)), home.cellY + sy * (14 + Math.trunc(k / 3))));
+  put(g, 0, UnitType.Spearman, home.cellX + sx * 12, home.cellY + sy * 12);
+  for (let k = 0; k < 16; k++) put(g, 0, UnitType.Spearman, home.cellX + sx * (5 + (k % 4)), home.cellY + sy * (5 + Math.trunc(k / 4)));
+  g.fog.update(w);
+  const player = createScriptedPlayer(0, { map: w.map, rules: rules(), frame: w.map.frames[0] }, planFor("notown", "h1", "close"));
+  for (let t = 0; t < 600 && player.state().marches === 0; t++) {
+    if (w.tick === 50) for (const id of foes) if (w.unit(id) >= 0) w.units.col.hp[w.unit(id)] = 0;
+    if (w.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) cmd(g, 0, body);
+    g.step();
+  }
+  assert.equal(player.state().waves, 1, "one wave beaten");
+  assert.equal(player.state().marches, 1, "and a march on the enemy's main city");
 });
