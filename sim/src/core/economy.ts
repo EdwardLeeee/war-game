@@ -376,7 +376,8 @@ export class Economy {
    * hide; otherwise they repair a damaged building nearby, and then, with the economy ratio
    * on, go to the resource furthest below its share (ties: food, wood, gold). Crystal is
    * never assigned: the vein is by hand only. Farmers the player placed (`stay`) are left
-   * where they are, except by recall.
+   * where they are, except by recall. Then the farmers already at work follow the ratio too
+   * (`rebalance`, operations round, D-050).
    */
   periodic(w: World): void {
     if (w.tick % ECO_EVERY !== 0) return;
@@ -386,12 +387,14 @@ export class Economy {
       const idle: number[] = [];
       for (let i = 0; i < w.units.count; i++) {
         if (u.owner[i] !== p || u.type[i] !== UnitType.Farmer || u.action[i] === Action.Garrisoned) continue;
-        if (u.order[i] === Order.None) idle.push(i);
-        else if (w.recall[p] === 1 && u.order[i] === Order.Recall && u.orderTarget[i] < 0) {
+        if (u.order[i] === Order.None) {
+          // Idle, it is no longer on the job it was sent to by hand.
+          u.flags[i] &= ~UnitFlag.HandPicked;
+          idle.push(i);
+        } else if (w.recall[p] === 1 && u.order[i] === Order.Recall && u.orderTarget[i] < 0) {
           u.orderTarget[i] = this.shelterFor(w, i);
         }
       }
-      if (idle.length === 0) continue;
       if (w.recall[p] === 1) {
         for (const i of idle) this.recallFarmer(w, i);
         continue;
@@ -404,7 +407,7 @@ export class Economy {
         if (t >= 0) this.work(w, i, Order.Repair, t);
         else rest.push(i);
       }
-      if (rest.length === 0 || w.ecoOn[p] === 0) continue;
+      if (w.ecoOn[p] === 0) continue;
 
       // Current shares.
       this.nodeLoad.fill(0);
@@ -420,7 +423,7 @@ export class Economy {
           this.nodeLoad[t]++;
         }
         if (u.owner[i] !== p) continue;
-        const r = u.onFarm[i] === 1 ? Resource.Food : t >= 0 ? nodeResource(w.nodeKind[t]) : u.carryKind[i];
+        const r = this.gathering(w, i);
         if (r >= 0 && r < 3) count[r]++;
       }
       const total = count[0] + count[1] + count[2] + rest.length;
@@ -434,6 +437,111 @@ export class Economy {
           }
         }
       }
+      this.rebalance(w, p, count, ratio);
+    }
+  }
+
+  /** The resource farmer i is gathering (Resource), from its job or else what it carries; -1 if none. */
+  private gathering(w: World, i: number): number {
+    const u = w.units.col;
+    const t = u.orderTarget[i];
+    return u.onFarm[i] === 1 ? Resource.Food : t >= 0 ? nodeResource(w.nodeKind[t]) : u.carryKind[i];
+  }
+
+  /**
+   * The economy ratio for farmers already at work (operations round, D-050): while some
+   * resource is more than one farmer off its share of all the player's food, wood and gold
+   * farmers, one farmer moves from the resource furthest above its share to the one furthest
+   * below, the farmer with the shortest way to its new work. Within one farmer of the ratio
+   * nobody moves, so a farmer is not sent back and forth. Never moved: farmers sent by hand
+   * (UnitFlag.HandPicked), on the crystal vein (not a share), placed to stay, building,
+   * repairing or hiding (none of them is gathering a share); farmers sent by hand still count.
+   */
+  private rebalance(w: World, p: number, count: number[], ratio: number[]): void {
+    const n = count[0] + count[1] + count[2];
+    for (let moves = 0; moves < n; moves++) {
+      // Hundredths of a farmer above (+) or below (-) each share.
+      const off = [0, 1, 2].map((r) => 100 * count[r] - ratio[r] * n);
+      if (Math.max(off[0], off[1], off[2]) <= 100 && Math.min(off[0], off[1], off[2]) >= -100) return;
+      const to = [0, 1, 2].reduce((a, r) => (off[r] < off[a] ? r : a), 0);
+      if (!this.anyWork(w, p, to as Resource)) return;
+      const from = [0, 1, 2].filter((r) => r !== to && off[r] > 0).sort((a, c) => off[c] - off[a] || a - c);
+      let moved = false;
+      for (const r of from) {
+        const i = this.mover(w, p, r, to as Resource);
+        if (i < 0) continue;
+        this.leave(w, i);
+        if (!this.assign(w, i, to as Resource)) return;
+        count[r]--;
+        count[to]++;
+        moved = true;
+        break;
+      }
+      if (!moved) return;
+    }
+  }
+
+  /**
+   * The farmer of player p gathering resource `from` that may be moved by the ratio: empty-handed
+   * first (a farmer moved to another resource drops what it carries), then the shortest way to
+   * work on `to`, then the lower id; -1 if none.
+   */
+  private mover(w: World, p: number, from: number, to: Resource): number {
+    const u = w.units.col;
+    let best = -1;
+    let bestD = 0;
+    let bestFull = 0;
+    for (let i = 0; i < w.units.count; i++) {
+      if (u.owner[i] !== p || u.type[i] !== UnitType.Farmer || u.order[i] !== Order.Gather) continue;
+      if ((u.flags[i] & UnitFlag.HandPicked) !== 0 || u.action[i] === Action.Garrisoned) continue;
+      if (this.gathering(w, i) !== from) continue;
+      const d = this.wayTo(w, i, to);
+      if (d < 0) continue;
+      const full = u.carryAmount[i] > 0 ? 1 : 0;
+      if (best < 0 || full < bestFull || (full === bestFull && (d < bestD || (d === bestD && u.id[i] < u.id[best])))) {
+        best = i;
+        bestD = d;
+        bestFull = full;
+      }
+    }
+    return best;
+  }
+
+  /** Is there any work on resource r for player p: a free own farm or berries for food, a known open node otherwise? */
+  private anyWork(w: World, p: number, r: Resource): boolean {
+    if (r === Resource.Food) {
+      const b = w.buildings.col;
+      for (let s = 0; s < w.buildings.count; s++) {
+        if (b.owner[s] === p && b.type[s] === BuildingType.Farm && b.progress[s] >= 1000 && this.farmTaken[s] === 0) return true;
+      }
+    }
+    const kind = r === Resource.Food ? NodeKind.Berries : r === Resource.Wood ? NodeKind.Tree : NodeKind.GoldMine;
+    const seen = this.fog.nodeSeen[p];
+    for (let k = 0; k < w.nodeAmount.length; k++) if (w.nodeKind[k] === kind && seen[k] >= 0 && nodeOpen(w, k)) return true;
+    return false;
+  }
+
+  /** How far farmer i would walk to work on resource r (as `assign` would choose), or -1 if there is no such work. */
+  private wayTo(w: World, i: number, r: Resource): number {
+    if (r === Resource.Food) {
+      const [farm, fd] = this.freeFarm(w, i);
+      const [bush, bd] = this.bestNode(w, i, NodeKind.Berries, 0, 0, 0, true);
+      if (farm >= 0 && (bush < 0 || fd <= bd)) return fd;
+      return bush < 0 ? -1 : bd;
+    }
+    const [node, d] = this.bestNode(w, i, r === Resource.Wood ? NodeKind.Tree : NodeKind.GoldMine, 0, 0, 0, true);
+    return node < 0 ? -1 : d;
+  }
+
+  /** Farmer i stops working its node or farm (for the shares counted this period). */
+  private leave(w: World, i: number): void {
+    const u = w.units.col;
+    const t = u.orderTarget[i];
+    if (u.onFarm[i] === 1) {
+      const fs = w.building(t);
+      if (fs >= 0) this.farmTaken[fs] = 0;
+    } else if (t >= 0 && this.nodeLoad[t] > 0) {
+      this.nodeLoad[t]--;
     }
   }
 

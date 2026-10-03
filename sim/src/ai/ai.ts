@@ -52,6 +52,7 @@ import {
   Order,
   PlaceBit,
   type Rules,
+  TICKS_PER_SECOND,
   TOWN_STRIDE,
   TownChoice,
   TownField,
@@ -128,6 +129,9 @@ const LEVELS: Record<AiDifficulty, Level> = {
     armyCap: [[0, 8], [15, 12], [25, 16]],
   },
 };
+
+/** The AI changes its economy ratio at most this often, except when its base shares change (30 s, D-050). */
+const RATIO_EVERY = 30 * TICKS_PER_SECOND;
 
 /** GDD section 13: plunderer, governor, balanced. It only shifts the plunder-or-govern choice. */
 export const AI_STYLES = ["plunder", "govern", "balanced"] as const;
@@ -231,6 +235,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   /** Town expeditions started (the difficulty may wait before the second). */
   let townTrips = 0;
   let ratioSet = "";
+  /** The base shares last sent (they change with the buildings), and when the ratio last changed. */
+  let ratioBase = "";
+  let ratioAt = -RATIO_EVERY;
   let recalled = false;
   /** Soldier ids kept as the garrison of a governed or repairing town, per town. */
   const garrison = new Map<number, number[]>();
@@ -355,6 +362,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       // Gold matters once there is something to spend it on (ranged, then mages); then the
       // shares lean away from what is piling up and toward what is short.
       const ratio = done(BuildingType.MageHall).length > 0 ? [35, 30, 35] : done(BuildingType.Range).length > 0 ? [40, 35, 25] : [50, 40, 10];
+      const base = ratio.join("/");
       const stock = [res.food, res.wood, res.gold];
       for (let k = 0; k < 3; k++) {
         if (stock[k] > 400) ratio[k] -= 10;
@@ -363,10 +371,14 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const sum = ratio[0] + ratio[1] + ratio[2];
       for (let k = 0; k < 3; k++) ratio[k] = Math.max(5, Math.trunc((ratio[k] * 100) / sum));
       ratio[0] = 100 - ratio[1] - ratio[2];
+      // The ratio moves farmers already at work (D-050): a new base at once, the lean toward
+      // what is short at most every RATIO_EVERY ticks, so farmers are not sent back and forth.
       const ratioKey = ratio.join("/");
-      if (ratioKey !== ratioSet) {
+      if (ratioKey !== ratioSet && (base !== ratioBase || tick - ratioAt >= RATIO_EVERY)) {
         out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
         ratioSet = ratioKey;
+        ratioBase = base;
+        ratioAt = tick;
       }
       let room = cap - pop - queued;
       const main = done(BuildingType.MainCity)[0];
