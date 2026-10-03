@@ -609,8 +609,13 @@ test("指令區與選取資訊：選兵營 → 訓練槍兵 → 佇列顯示，�
 test("經濟分配：選主城 → 經濟分配 → 金多一點 → 套用", async ({ page }, info) => {
   await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
   await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await injectSafeArea(page);
   await page.getByRole("button", { name: "經濟分配" }).tap();
-  await expect(page.getByRole("dialog", { name: "經濟分配" })).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "經濟分配" });
+  await expect(dialog).toBeVisible();
+  // What the ratio does now (D-050, core #105).
+  await expect(dialog).toContainText("自動分配開著時，改比例後，正在採糧、木、金的農民會照新比例重新分配；你親手派去採的不會動。晶脈要自己派。");
+  expect(await dialog.locator(".dialog-card").evaluate((c) => c.scrollHeight - c.clientHeight), "no scrolling at 814 × 380").toBeLessThanOrEqual(1);
   await page.getByRole("button", { name: "金多一點" }).tap();
   await expect(page.locator(".ratio-value").nth(2)).toHaveText("30%");
   await shot(page, info, "economy");

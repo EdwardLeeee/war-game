@@ -909,6 +909,11 @@ button.danger {
   margin: 6px 0;
 }
 
+/* 經濟分配: its explanation takes two lines now (D-050); tighter rows keep it from scrolling at 380 pt. */
+.economy .ratio-row {
+  margin: 3px 0;
+}
+
 .ratio-name {
   width: 1.5em;
   font-weight: 700;

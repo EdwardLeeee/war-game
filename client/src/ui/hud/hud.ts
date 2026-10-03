@@ -545,7 +545,8 @@ export class Hud {
     const e = this.econ;
     if (e === null) return;
     const card = this.openDialog("經濟分配", "economy");
-    el("p", card, "small", "新生和閒下來的農民，會自動去目前人數最不夠的資源。晶脈不會自動派，要自己派。");
+    // D-050 (core #105): the ratio now moves the farmers already gathering too, but not those sent by hand.
+    el("p", card, "small", "自動分配開著時，改比例後，正在採糧、木、金的農民會照新比例重新分配；你親手派去採的不會動。晶脈要自己派。");
     const rows: [keyof Ratio, string][] = [
       ["food", "糧"],
       ["wood", "木"],
