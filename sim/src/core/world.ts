@@ -28,6 +28,9 @@ export const UNIT_COLS = [
   // Mages (units.ts): the cannon's aim point, the last tick this unit dealt damage (shield
   // regeneration waits for both), and the owner of the last thing that hit it (bounty).
   "castX", "castY", "lastDealt", "hitBy",
+  // The squad (operations round, D-050): units that got the same move or attack command share a
+  // number above 0 and fight together (units.ts); 0 = none (new units, retreat).
+  "squad",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 

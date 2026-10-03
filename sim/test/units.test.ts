@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { BUILDINGS, JOIN_FIGHT, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, JOIN_FIGHT, SQUAD, UNITS } from "../src/core/rules.ts";
 import { fight } from "../src/balance-lib.ts";
 import type { Game } from "../src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
@@ -130,12 +130,16 @@ test("joining a fight: ranged walking up to standing spearmen meet all of them (
   const spear = { spear: 14, ranged: 0, mage: 0 };
   const ranged = { spear: 0, ranged: 12, mage: 0 };
   assert.equal(fight([spear, ranged], 1, 8).winner, 0, "with joining");
+  // The spearmen formed up with one move, so they are a squad too (operations round): off as well.
   const range = JOIN_FIGHT.range;
+  const reach = SQUAD.reach;
   JOIN_FIGHT.range = 0;
+  SQUAD.reach = 0;
   try {
     assert.equal(fight([spear, ranged], 1, 8).winner, 1, "without it, the standing spearmen come one by one");
   } finally {
     JOIN_FIGHT.range = range;
+    SQUAD.reach = reach;
   }
 });
 
@@ -466,4 +470,178 @@ test("big groups reach their slots, close and loose (slots off to the side of th
     assert.ok(settle(g, ids, 1500), `${n} ${loose ? "loose" : "close"}: ${ids.filter((id) => u.order[slotOf(g, id)] !== Order.None).length} still on their way`);
     assert.ok(loose ? loose2(g, ids) : spacing(g, ids).mean <= 1.25, `${n}: ${shown(g, ids)}`);
   }
+});
+
+// --- operations round (D-050): a squad fights together ----------------------------------
+
+/**
+ * The brief's scene: `size` soldiers of player `me` (half spearmen, half ranged, close) told
+ * with one move to stand 3 cells in front of `foes` enemy soldiers (half spearmen, half
+ * ranged) standing idle. Returns the game, the ids, and per squad member the tick it first
+ * dealt damage and its distance to its target then (fixed point). `mirror` builds the mirror
+ * image: positions x <-> y and the players swapped.
+ */
+function squadScene(size: number, foes: number, mirror = false, hold = false) {
+  const g = emptyGame();
+  const w = g.w;
+  w.ecoOn[0] = 0;
+  w.ecoOn[1] = 0;
+  const a = openArea(g, 30);
+  const me = mirror ? 1 : 0;
+  const at = (x: number, y: number) => (mirror ? [y, x] : [x, y]) as [number, number];
+  const enemy: number[] = [];
+  for (let k = 0; k < foes; k++) enemy.push(put(g, 1 - me, k < foes / 2 ? UnitType.Spearman : UnitType.Ranged, ...at(a.x + 24 + Math.trunc(k / 8), a.y + 10 + (k % 8))));
+  const mine: number[] = [];
+  for (let k = 0; k < size; k++) mine.push(put(g, me, k < size / 2 ? UnitType.Spearman : UnitType.Ranged, ...at(a.x + 1 + Math.trunc(k / 8), a.y + 10 + (k % 8))));
+  const u = w.units.col;
+  if (hold) for (const id of enemy) u.stance[slotOf(g, id)] = Stance.Hold;
+  g.fog.update(w);
+  const [tx, ty] = at(a.x + 21, a.y + 13);
+  cmd(g, me, { c: "move", u: mine, x: tx, y: ty });
+  return { g, mine, enemy };
+}
+
+/** Runs the scene until 15 s after the first blow of `mine`: the share of the living that dealt damage in that time. */
+function struckShare(g: Game, mine: number[]): { share: number; first: Map<number, number> } {
+  const u = g.w.units.col;
+  const first = new Map<number, number>();
+  let start = -1;
+  for (let t = 0; t < 1500 && (start < 0 || g.tick - start < 300); t++) {
+    g.step();
+    for (const id of mine) {
+      const s = slotOf(g, id);
+      if (s < 0 || u.lastDealt[s] < g.tick - 1) continue;
+      if (start < 0) start = g.tick;
+      if (!first.has(id)) {
+        const ts = slotOf(g, u.target[s]);
+        first.set(id, ts < 0 ? -1 : Math.hypot(u.x[ts] - u.x[s], u.y[ts] - u.y[s]));
+      }
+    }
+  }
+  const alive = mine.filter((id) => slotOf(g, id) >= 0);
+  return { share: alive.filter((id) => first.has(id)).length / alive.length, first };
+}
+
+function withoutSquads<T>(f: () => T): T {
+  const reach = SQUAD.reach;
+  SQUAD.reach = 0;
+  try {
+    return f();
+  } finally {
+    SQUAD.reach = reach;
+  }
+}
+
+test("a squad fights together: 24 soldiers told to stand 3 cells before 12 standing enemies: at least nine in ten of the living strike within 15 s (more than without)", () => {
+  const scene = squadScene(24, 12);
+  const { share } = struckShare(scene.g, scene.mine);
+  const before = withoutSquads(() => {
+    const s = squadScene(24, 12);
+    return struckShare(s.g, s.mine).share;
+  });
+  assert.ok(share >= 0.9, `with squads ${share}`);
+  assert.ok(share > before, `with squads ${share}, without ${before}`);
+});
+
+test("a squad fights together, mirrored: the mirror image plays the mirror image, tick by tick", () => {
+  const a = squadScene(24, 12);
+  const b = squadScene(24, 12, true);
+  const ua = a.g.w.units.col;
+  const ub = b.g.w.units.col;
+  for (let t = 0; t < 600; t++) {
+    a.g.step();
+    b.g.step();
+    for (let k = 0; k < a.mine.length; k++) {
+      const sa = slotOf(a.g, a.mine[k]);
+      const sb = slotOf(b.g, b.mine[k]);
+      assert.equal(sa < 0, sb < 0, `tick ${t}: soldier ${k} alive in both or neither`);
+      if (sa < 0) continue;
+      assert.deepEqual([ua.x[sa], ua.y[sa], ua.hp[sa]], [ub.y[sb], ub.x[sb], ub.hp[sb]], `tick ${t}: soldier ${k}`);
+    }
+  }
+});
+
+test("a squad's ranged stop at their range: none walks into close combat", () => {
+  const scene = squadScene(24, 12, false, true);
+  const { first } = struckShare(scene.g, scene.mine);
+  const u = scene.g.w.units.col;
+  let ranged = 0;
+  for (const [id, d] of first) {
+    if (u.type[slotOf(scene.g, id)] !== UnitType.Ranged) continue;
+    ranged++;
+    assert.ok(d >= UNITS[UnitType.Ranged].range - 512, `ranged ${id} struck from ${d / 1024} cells`);
+  }
+  assert.ok(ranged >= 10, `${ranged} ranged struck`);
+});
+
+test("a squad beats an equal standing force that it loses to when its back rows wait (24 against 24)", () => {
+  const finish = (s: ReturnType<typeof squadScene>) => {
+    run(s.g, 2400);
+    return [s.mine.filter((id) => slotOf(s.g, id) >= 0).length, s.enemy.filter((id) => slotOf(s.g, id) >= 0).length];
+  };
+  const [mine, foes] = finish(squadScene(24, 24));
+  const [mine0, foes0] = withoutSquads(() => finish(squadScene(24, 24)));
+  assert.ok(mine > 0 && foes === 0, `with squads ${mine}:${foes}`);
+  assert.ok(mine0 === 0 && foes0 > 0, `without ${mine0}:${foes0}`);
+});
+
+test("an idle squad is not drawn away: its members join a fight within 12 cells of where they stood, no further", () => {
+  const g = emptyGame();
+  const w = g.w;
+  w.ecoOn[0] = 0;
+  const a = openArea(g, 30);
+  const u = w.units.col;
+  // A deep column: the last rows stand 9 or more cells from the enemy, beyond the old reach.
+  const squad: number[] = [];
+  for (let k = 0; k < 20; k++) squad.push(put(g, 0, UnitType.Spearman, a.x + 10 + (k % 4), a.y + 6 + Math.trunc(k / 4)));
+  g.fog.update(w);
+  cmd(g, 0, { c: "move", u: squad, x: a.x + 12, y: a.y + 6 });
+  run(g, 200);
+  const post = new Map(squad.map((id) => [id, [u.anchorX[slotOf(g, id)], u.anchorY[slotOf(g, id)]]]));
+  // A ranged enemy shoots at the front, then walks off to the north-west, out of the area.
+  const bait = put(g, 1, UnitType.Ranged, a.x + 12, a.y + 1);
+  u.cooldown[slotOf(g, bait)] = 0;
+  g.fog.update(w);
+  run(g, 60);
+  u.stance[slotOf(g, bait)] = Stance.Hold;
+  cmd(g, 1, { c: "move", u: [bait], x: a.x, y: a.y });
+  let far = 0;
+  let back = 0;
+  for (let t = 0; t < 600; t++) {
+    g.step();
+    for (const id of squad) {
+      const s = slotOf(g, id);
+      if (s < 0) continue;
+      const [px, py] = post.get(id)!;
+      const d = Math.hypot(u.x[s] - px, u.y[s] - py);
+      far = Math.max(far, d);
+      if (Math.trunc(k(id) / 4) >= 3 && d > 1024) back++;
+    }
+  }
+  assert.ok(far <= SQUAD.leash + 1024, `furthest from its place: ${far / 1024} cells`);
+  assert.ok(back > 0, "the back rows joined in");
+  function k(id: number) {
+    return squad.indexOf(id);
+  }
+});
+
+test("a squad on hold stance stays put; only the ones in range shoot", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const a = openArea(g, 30);
+  const u = w.units.col;
+  const squad: number[] = [];
+  for (let k = 0; k < 12; k++) squad.push(put(g, 0, k < 6 ? UnitType.Spearman : UnitType.Ranged, a.x + 10 + (k % 4), a.y + 10 + Math.trunc(k / 4)));
+  g.fog.update(w);
+  cmd(g, 0, { c: "move", u: squad, x: a.x + 12, y: a.y + 10 });
+  run(g, 200);
+  cmd(g, 0, { c: "stance", u: squad, stance: Stance.Hold });
+  const enemy = put(g, 1, UnitType.Spearman, a.x + 12, a.y + 4);
+  u.stance[slotOf(g, enemy)] = Stance.Hold;
+  u.cooldown[slotOf(g, enemy)] = 100000;
+  g.fog.update(w);
+  run(g, 2);
+  const at = squad.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]);
+  run(g, 200);
+  squad.forEach((id, k) => assert.deepEqual([u.x[slotOf(g, id)], u.y[slotOf(g, id)]], at[k], `soldier ${k} stays`));
 });

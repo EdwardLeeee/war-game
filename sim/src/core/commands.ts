@@ -152,6 +152,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       releaseAll(ctx, slots);
       formation(ctx, slots, cmd.x, cmd.y, cmd.c === "move" ? Order.Move : Order.Retreat);
       placed(w, slots, true);
+      // The squad: one number for the units of one move (the formation's group); none on a retreat.
+      for (const s of slots) w.units.col.squad[s] = cmd.c === "move" ? w.units.col.group[s] + 1 : 0;
       return 0;
     }
     case "attack": {
@@ -161,12 +163,15 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       releaseAll(ctx, slots);
       placed(w, slots, true);
       const u = w.units.col;
+      // The squad of an attack: a number of its own (from the groups' sequence).
+      const squad = ctx.nextGroup.value++ + 1;
       for (const s of slots) {
         u.order[s] = Order.Attack;
         u.orderTarget[s] = cmd.target;
         u.target[s] = cmd.target;
         u.group[s] = -1;
         u.speedCap[s] = 0;
+        u.squad[s] = squad;
       }
       return 0;
     }
