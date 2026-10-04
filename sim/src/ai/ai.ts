@@ -744,6 +744,10 @@ export interface HardPlan {
   mageReserve: number;
   /** Farmers on the crystal vein once there is a mage hall. */
   vein: number;
+  /** Builds a mine by the crystal vein (crystal goes to a mine too), so the crew does not walk it home. */
+  veinMine: boolean;
+  /** Sends one soldier to explore until it has found the crystal vein (its place is not known from the start). */
+  scout: boolean;
   /** Soldiers it takes to a small town (each game: +0..1), and to the big one. */
   townArmy: number;
   bigArmy: number;
@@ -781,6 +785,8 @@ export const HARD: HardPlan = {
   counterMix: 15,
   mageReserve: 10,
   vein: 2,
+  veinMine: false,
+  scout: false,
   townArmy: 6,
   bigArmy: 20,
   pushArmy: 24,
@@ -894,6 +900,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let raidNext = 0;
   const guard = new Set<number>();
   const second = new Set<number>();
+  let scoutId = -1;
+  let scoutNext = 0;
+  let scoutTo = -1;
+  let scoutSince = 0;
+  /** Exploring: points on a 12-cell grid (player 0's frame), tried once each. */
+  const looks: { x: number; y: number }[] = [];
+  for (let v = 6; v < n; v += 12) for (let u = 6; u < n; u += 12) looks.push(real(u, v));
+  const looked = new Set<number>();
   let secondNext = 0;
   let awayTick = -100000;
 
@@ -1100,10 +1114,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const granary = done(BuildingType.Granary)[0];
         const base = { x: home.cellX, y: home.cellY };
         const add = (type: BuildingType, at: { x: number; y: number } | null) => {
-          if (!plans.some((p) => p.type === type)) plans.push({ type, at });
+          if (!plans.some((p) => p.type === type && p.at?.x === at?.x && p.at?.y === at?.y)) plans.push({ type, at });
         };
+        /** A mine of ours (finished or not) within 6 cells of a node. */
+        const mineBy = (node: { x: number; y: number }) => own.some((b) => b.type === BuildingType.Mine && dist2(b.x, b.y, node.x, node.y) <= 36);
         // The mage hall first once there is the crystal for a mage (a plunder brings 75).
         if (!has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
+        const vein = nearestNode(NodeKind.CrystalVein);
+        if (plan.veinMine && vein !== null && has(BuildingType.MageHall) && !mineBy(vein)) add(BuildingType.Mine, vein);
         // Houses before the population is full: every producer can add one at a time.
         if (cap < rules.maxPopulation && cap - pop - queued <= 5 + producers) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
@@ -1112,13 +1130,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
-        if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
+        const gold = nearestNode(NodeKind.GoldMine);
+        if (gold !== null && !mineBy(gold) && farmers.length >= 14) add(BuildingType.Mine, gold);
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
           add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
         for (const p of plans) {
           if (p.at === null) continue;
-          const spot = spotNear(view, p.type, p.at.x, p.at.y, 12) ?? spotNear(view, p.type, base.x, base.y, 20);
+          // A mine is only worth it by its node.
+          const spot = spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20));
           if (spot === null) continue;
           const cost = rules.buildings[p.type].cost;
           if (!afford(cost)) {
@@ -1209,7 +1229,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
 
       // --- groups split off the army -----------------------------------------------------------------
       for (const g of [raid, guard, second]) for (const id of g) if (!byId.has(id)) g.delete(id);
-      const grouped = (id: number) => raid.has(id) || guard.has(id) || second.has(id);
+      if (scoutId >= 0 && !byId.has(scoutId)) {
+        scoutId = -1;
+        scoutNext = tick + 2 * TICKS_PER_MINUTE;
+      }
+      const grouped = (id: number) => raid.has(id) || guard.has(id) || second.has(id) || id === scoutId;
 
       // --- cannon warnings: step out ------------------------------------------------------------------
       for (const [id, until] of dodging) if (tick >= until || !byId.has(id)) dodging.delete(id);
@@ -1552,6 +1576,43 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const there = dist2(c.x, c.y, enemyHome.cellX, enemyHome.cellY) <= 12 * 12;
             if (there && enemyCity >= 0 && foesNear(enemyHome.cellX, enemyHome.cellY, 12).length === 0) out.push({ c: "attack", u: ids, target: enemyCity });
             else out.push({ c: "move", u: ids, x: enemyHome.cellX, y: enemyHome.cellY });
+          }
+        }
+      }
+      // --- a scout, until it has found the crystal vein --------------------------------------------------
+      if (plan.scout) {
+        const known = nearestNode(NodeKind.CrystalVein) !== null;
+        if (scoutId < 0 && !known && tick >= scoutNext && army.length >= 3) {
+          const pick = nearest(army.filter((u) => u.type !== UnitType.Mage && !detached(u.id)), home.cellX << CELL_SHIFT, home.cellY << CELL_SHIFT)[0];
+          if (pick !== undefined) {
+            scoutId = pick.id;
+            scoutTo = -1;
+          }
+        }
+        if (scoutId >= 0) {
+          const u = byId.get(scoutId)!;
+          const at = scoutTo >= 0 ? looks[scoutTo] : undefined;
+          if (known) {
+            if (!detached(scoutId)) out.push({ c: "move", u: [scoutId], x: post.x, y: post.y });
+            scoutId = -1;
+          } else if (at === undefined || dist2(u.x, u.y, at.x, at.y) <= 9 || tick - scoutSince > TICKS_PER_MINUTE) {
+            if (scoutTo >= 0) looked.add(scoutTo);
+            // The nearest point not explored yet, away from the enemy's main city.
+            let best = -1;
+            for (let k = 0; k < looks.length; k++) {
+              const p = looks[k];
+              if (looked.has(k) || view.fog[p.y * n + p.x] !== Fog.Unexplored || dist2(p.x, p.y, enemyHome.cellX, enemyHome.cellY) <= 22 * 22) continue;
+              const d = dist2(p.x, p.y, u.x, u.y);
+              const b = best < 0 ? 0 : dist2(looks[best].x, looks[best].y, u.x, u.y);
+              if (best < 0 || d < b || (d === b && rank(p.x, p.y) < rank(looks[best].x, looks[best].y))) best = k;
+            }
+            scoutTo = best;
+            scoutSince = tick;
+            if (best < 0) {
+              out.push({ c: "move", u: [scoutId], x: post.x, y: post.y });
+              scoutId = -1;
+              scoutNext = Infinity;
+            } else out.push({ c: "retreat", u: [scoutId], x: looks[best].x, y: looks[best].y });
           }
         }
       }
