@@ -84,6 +84,13 @@ export interface Plan {
    * hallFirst (the AI's own rule waits for a range), as in ceo's measurement.
    */
   noRange: boolean;
+  /**
+   * Keeps taking towns, as the user does (round 6, D-054): instead of only the small town
+   * nearest home, each town trip goes to the nearest small town that is not ours and not lying
+   * in ruins (equally near: the lower id, the AI's rule); the march on the main city is the
+   * plan's as before. On a map with one small town it plays exactly as without it.
+   */
+  corners: boolean;
 }
 
 interface Unit {
@@ -170,6 +177,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     staticRatio: false,
     noMage: false,
     noRange: false,
+    corners: false,
   };
 }
 
@@ -213,7 +221,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   let waves = 0;
   let brokenOff = 0;
   let firstMarch = -1;
-  let nextTown = 0;
+  /** Per small town: the tick from which it may be taken again (ruins turn neutral). */
+  const nextTown = new Map<number, number>();
+  /** The town of this trip, or of the next one (myTown unless plan.corners). */
+  let aim = myTown;
   let waveMax = 0;
   let lastThreat = -100000;
   /** When enemy soldiers were last within WAVE_CELLS of the main city. */
@@ -482,8 +493,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       for (const [id, t] of towns) {
         // Ruins (after our plunder or theirs) turn neutral again, with half the militia, when the
         // timer ends: a person reads the timer while there and comes back a little after it.
-        if (id === myTown.id && t.state === TownState.Ruins && t.visible) nextTown = tick + t.timer + 100;
-        else if (id === myTown.id && t.state === TownState.Ruins && lastState.get(id) === TownState.Plundering) nextTown = tick + RUINS_TICKS;
+        const tracked = plan.corners ? t.size === TownSize.Small : id === myTown.id;
+        if (tracked && t.state === TownState.Ruins && t.visible) nextTown.set(id, tick + t.timer + 100);
+        else if (tracked && t.state === TownState.Ruins && lastState.get(id) === TownState.Plundering) nextTown.set(id, tick + RUINS_TICKS);
         lastState.set(id, t.state);
       }
       const isGuard = (id: number) => [...garrison.values()].some((ids) => ids.includes(id));
@@ -566,14 +578,23 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       }
 
       // --- the town of the plan --------------------------------------------------------------------------
-      const t = towns.get(myTown.id)!;
-      const oursNow = t.owner === player && t.state !== TownState.Neutral;
+      // Keeping on taking towns (plan.corners): between trips, the nearest small town that is not
+      // ours and may be taken now; on the way, the one the army set out for.
+      const ours = (x: Town) => x.owner === player && x.state !== TownState.Neutral;
+      if (plan.corners && mode !== "town") {
+        const open = know.map.towns
+          .filter((x) => x.size === TownSize.Small && !ours(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
+          .sort((a, b) => dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id);
+        aim = open[0] ?? myTown;
+      }
+      const t = towns.get(aim.id)!;
+      const oursNow = ours(t);
       if (t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice)) {
         send(t.x, t.y, "town");
         return out;
       }
       if (mode === "town") {
-        if (oursNow || tick < nextTown) mode = "home";
+        if (oursNow || tick < (nextTown.get(aim.id) ?? 0)) mode = "home";
         else if (army.length < 3) {
           // Beaten at the town: back home, and again with the full number.
           out.push({ c: "retreat", u: armyIds, x: post.x, y: post.y });
@@ -622,7 +643,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
 
       // --- at home: go for the town, march, or wait at the post ---------------------------------------------
       const go = (counterReady && army.length >= plan.counterAt) || (plan.pushAt > 0 && army.length >= plan.pushAt);
-      const townOpen = plan.townAt > 0 && !oursNow && tick >= nextTown && (trips === 0 || plan.again || plan.choice === "govern");
+      const townOpen = plan.townAt > 0 && !oursNow && tick >= (nextTown.get(aim.id) ?? 0) && (trips === 0 || plan.again || plan.choice === "govern");
       if (go) {
         armyAtStart = army.length;
         marched.clear();
