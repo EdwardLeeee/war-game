@@ -68,6 +68,8 @@ function field(g: Game): { x: number; y: number } {
   const w = g.w;
   const n = w.size;
   const b = w.buildings.col;
+  const militia = new Set<number>();
+  for (let s = 0; s < w.units.count; s++) if (w.units.col.type[s] === UnitType.Militia) militia.add(w.units.col.home[s]);
   for (let y = 2; y + FIELD_H <= n - 2; y++) {
     for (let x = 2; x + FIELD_W <= n - 2; x++) {
       let ok = true;
@@ -75,7 +77,10 @@ function field(g: Game): { x: number; y: number } {
         const size = BUILDINGS[b.type[s]].size;
         if (b.cellX[s] + size + 10 > x && b.cellX[s] - 10 < x + FIELD_W && b.cellY[s] + size + 10 > y && b.cellY[s] - 10 < y + FIELD_H) ok = false;
       }
+      // Towns whose militia still stand. fight() clears them all, so since the corner towns
+      // (round 6) the field lies where it always did, in the top-left open ground.
       for (const t of w.map.towns) {
+        if (!militia.has(t.id)) continue;
         const r = t.radius + 3;
         if (t.cellX + r >= x && t.cellX - r < x + FIELD_W && t.cellY + r >= y && t.cellY - r < y + FIELD_H) ok = false;
       }

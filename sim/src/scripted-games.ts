@@ -55,6 +55,7 @@ const plan = planFor(strategy, speed, formation);
 if (flag("static-ratio")) plan.staticRatio = true;
 if (flag("no-mage")) plan.noMage = true;
 if (flag("no-range")) plan.noRange = true;
+if (flag("corners")) plan.corners = true;
 
 const NAMES: Record<Strategy, string> = { push: "主動", defend: "守家", notown: "守家、不拿城鎮" };
 const SPEED_NAMES: Record<Speed, string> = { h1: "手速 H1", eco: "經濟養大" };
@@ -85,6 +86,8 @@ interface GameRecord {
   endTick: number;
   /** The player first holds the small town nearest its main city; its first mage; the AI's first mage. */
   town: number;
+  /** Per player, per town: when that player first held it, or -1 (round 6: the corner towns). */
+  taken: [number[], number[]];
   myMage: number;
   aiMage: number;
   /** The player's main city first hit, with the AI's soldiers (mages) near it then and the player's army. */
@@ -146,6 +149,7 @@ function play(seed: number): GameRecord {
 
   let seq = 0;
   let town = -1;
+  const taken: [number[], number[]] = [map.towns.map(() => -1), map.towns.map(() => -1)];
   let myMage = -1;
   let aiMage = -1;
   let cityHit = -1;
@@ -171,6 +175,7 @@ function play(seed: number): GameRecord {
     r.tick();
     for (const e of g.events) if (e.to === 0 && e.ev.k === "rejected") rejected++;
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
+    for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;
     if (myMage < 0 && count(0, UnitType.Mage) > 0) myMage = w.tick;
     if (aiMage < 0 && count(1, UnitType.Mage) > 0) aiMage = w.tick;
     if (cityHit < 0 && cityHp(0) < 1200) {
@@ -204,6 +209,7 @@ function play(seed: number): GameRecord {
     result: !r.over ? "open" : w.winner === 0 ? "won" : "lost",
     endTick: w.tick,
     town,
+    taken,
     myMage,
     aiMage,
     cityHit,
@@ -230,6 +236,7 @@ const options = [
   plan.staticRatio ? "經濟比例固定" : "",
   plan.noMage ? "不蓋法術營" : "",
   plan.noRange ? "不蓋射場" : "",
+  plan.corners ? "一直搶城鎮（最近、不是自己的小鎮）" : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;

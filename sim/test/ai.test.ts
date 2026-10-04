@@ -97,6 +97,13 @@ test("an army sent to a town moves on once the town lies in ruins, instead of wa
   const g = emptyGame();
   const w = g.w;
   const [small, big] = w.map.towns;
+  // The corner towns (round 6) lie in ruins, a farmer by each so the AI sees it: this is
+  // about the middle town and the big one.
+  for (const t of w.map.towns.slice(2)) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+  }
   for (let k = 0; k < 18; k++) put(g, 0, UnitType.Spearman, small.cellX + 2 + (k % 6), small.cellY + 3 + Math.trunc(k / 6));
   g.fog.update(w);
   const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: MAX_TICKS }, 0, "plunder");
@@ -283,6 +290,13 @@ test("easy leaves the second town alone for a while (normal does not)", () => {
     for (let k = 0; k < 12; k++) put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6));
     const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
     const [small, big] = w.map.towns;
+    // The corner towns (round 6) lie in ruins, a farmer by each so the AI sees it: this is
+    // about the middle town and the big one.
+    for (const t of w.map.towns.slice(2)) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+    }
     const s1 = w.map.spawns[1];
     // A lookout by the small town, so the AI sees what becomes of it.
     put(g, 0, UnitType.Spearman, small.cellX + 3, small.cellY + 3);
