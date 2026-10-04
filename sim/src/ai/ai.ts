@@ -40,9 +40,11 @@ import {
   BUILDING_STRIDE,
   BuildingField,
   BuildingType,
+  CELL,
   CELL_SHIFT,
   type CommandBody,
   type Cost,
+  Fog,
   HeaderField,
   type MapInfo,
   NEUTRAL,
@@ -55,12 +57,15 @@ import {
   TOWN_STRIDE,
   TownChoice,
   TownField,
+  TownFlag,
   TownSize,
   TownState,
   UNIT_STRIDE,
   UnitField,
   UnitFlag,
   UnitType,
+  WARNING_STRIDE,
+  WarningField,
 } from "../protocol.ts";
 import { Rng } from "../core/fixed.ts";
 import type { PlayerView } from "../view/view.ts";
@@ -109,7 +114,7 @@ interface Level {
   /** Most soldiers outside garrisons (with those in training) from each game minute on; none: no limit. */
   armyCap: [number, number][];
 }
-const LEVELS: Record<AiDifficulty, Level> = {
+const LEVELS: Record<Exclude<AiDifficulty, "hard">, Level> = {
   normal: { farmers: [28, 9], production: 6, veinCrew: 2, townArmy: [10, 8], townMinute: 0, secondTownMinute: 0, baseArmy: [26, 12], baseMinute: 0, armyCap: [] },
   easy: {
     farmers: [18, 5],
@@ -191,6 +196,8 @@ GOVERN_COST[TownSize.Large] = { food: 0, wood: 150, gold: 150, crystal: 0 };
  * of AIs from both spawns. Without a `style`, the style is drawn at random (each game).
  */
 export function createAi(player: number, seed: number, know: AiKnowledge, slot = player, style?: AiStyle): Ai {
+  // Hard is its own AI below; nothing in this function changes for easy and normal.
+  if (know.difficulty === "hard") return createHardAi(player, seed, know, slot);
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
   const drawn = rng.below(AI_STYLES.length);
   const myStyle: AiStyle = style ?? AI_STYLES[drawn];
@@ -691,6 +698,863 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           send(rally.x, rally.y, "gather");
         }
       }
+      return out;
+    },
+  };
+}
+
+// --- hard (D-052, D-055) ------------------------------------------------------------------------
+//
+// As strong as it can get from its own PlayerView, with nothing extra (GDD section 13): no
+// resources, population or numbers the others do not have, and nothing from beyond its fog. It
+// plays the plan that beat normal (sim/README.md, scripted player): takes the nearest town early
+// and plunders it again whenever it is neutral again, builds a mage hall as soon as it has the
+// crystal for a mage, fights at home under the main city's arrows, strikes back after beating off
+// a wave and marches once clearly stronger. On top of that it does what a careful player does:
+// - keeps count of the enemy soldiers it has seen, and of those it saw fall (a soldier gone from
+//   a place it still sees has died), so it weighs up against what the enemy has, not only what is
+//   in sight;
+// - answers the enemy's mix: spearmen against mages (a cannon shot kills a ranged unit, not a
+//   spearman), ranged against spearmen;
+// - steps out of the crystal cannon's warning area, shoots the enemy's mages first, and goes loose
+//   against several mages;
+// - splits off small groups (HardPlan: raid, guard, second): raiders after the enemy's gatherers,
+//   a guard at home while the army is out, a second front while the enemy's army is away.
+// The numbers (HARD) were chosen with AI-against-AI games; each game moves a few of them a little
+// (its own Rng), so no two games are alike. Every spatial choice and tie is made in player 0's
+// frame, as in the normal AI.
+
+/** What the hard AI tunes (HARD has the values it plays with). */
+export interface HardPlan {
+  /** Farmers it trains (each game: +-2). */
+  farmers: number;
+  /** Barracks plus ranges at most. */
+  production: number;
+  /** Unfinished buildings at once. */
+  sites: number;
+  /** Ticks between two changes of the economy ratio (0: whenever it changes, as normal does). */
+  ratioEvery: number;
+  /** Percent spearmen among spearmen and ranged (each game: +-5)... */
+  spearShare: number;
+  /** ...moved this many points toward what beats the enemy's mix as it has seen it (0: never). */
+  counterMix: number;
+  /** Crystal kept per mage for its shots before it trains another. */
+  mageReserve: number;
+  /** Farmers on the crystal vein once there is a mage hall. */
+  vein: number;
+  /** Soldiers it takes to a small town (each game: +0..1), and to the big one. */
+  townArmy: number;
+  bigArmy: number;
+  /** It marches on the enemy base with this many (each game: +-3)... */
+  pushArmy: number;
+  /** ...if its army is worth at least this percent of what it believes the enemy has. */
+  pushRatio: number;
+  /** After beating off a wave of 6 or more near home it strikes back with this many. */
+  counterArmy: number;
+  /** The farmers hide in the main city with this many enemy soldiers near it (0: never). */
+  recallAt: number;
+  /** Steps out of crystal cannon warnings. */
+  dodge: boolean;
+  /** Ranged units sent at each enemy mage in sight (0: none). */
+  focus: number;
+  /** Loose formation once it believes the enemy has this many mages (0: never)... */
+  looseAt: number;
+  /** ...for 1: ranged and mages, 2: every soldier. */
+  looseWho: number;
+  /** Raiders sent at the enemy's gatherers (0: none), once the army has this many. */
+  raid: number;
+  raidFrom: number;
+  /** Soldiers left at home when the army marches on the enemy base (0: none). */
+  guard: number;
+  /** A second front: while the enemy's army is seen away from its base, this many go for the base (0: none). */
+  second: number;
+}
+
+export const HARD: HardPlan = {
+  farmers: 32,
+  production: 4,
+  sites: 1,
+  ratioEvery: 600,
+  spearShare: 50,
+  counterMix: 15,
+  mageReserve: 10,
+  vein: 2,
+  townArmy: 6,
+  bigArmy: 20,
+  pushArmy: 24,
+  pushRatio: 120,
+  counterArmy: 14,
+  recallAt: 4,
+  dodge: true,
+  focus: 4,
+  looseAt: 0,
+  looseWho: 1,
+  raid: 0,
+  raidFrom: 18,
+  guard: 0,
+  second: 0,
+};
+
+/** What a soldier is worth when weighing up two armies (a mage for its cannon). */
+const WORTH = [0, 10, 10, 25, 6];
+/** Enemy soldiers not seen for this long are forgotten. */
+const INTEL_TICKS = 4 * TICKS_PER_MINUTE;
+/** Enemy soldiers within this many cells of the main city make a wave (as the scripted player counts). */
+const WAVE_CELLS = 24;
+/** A cannon warning: a unit this much further out than the blast radius (fixed point) is safe. */
+const DODGE_MARGIN = 256;
+
+interface Seen {
+  type: number;
+  x: number;
+  y: number;
+  tick: number;
+}
+interface HardUnit extends Unit {
+  /** Position in fixed point. */
+  fx: number;
+  fy: number;
+}
+interface HardTown extends Town {
+  timer: number;
+  visible: boolean;
+}
+type HardMode = "home" | "town" | "base" | "defend";
+
+function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number, plan: HardPlan = HARD): Ai {
+  const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
+  const n = know.map.size;
+  const home = know.map.spawns[player];
+  const enemyHome = know.map.spawns[1 - player];
+  const rules = know.rules;
+  const real = (u: number, v: number) => fromCanon(know.frame, u, v);
+  const frame = (x: number, y: number) => toCanon(know.frame, x, y);
+  /** Order of a point in player 0's frame (for ties: player 1 breaks them the mirror-image way). */
+  const rank = (x: number, y: number) => {
+    const f = frame(x, y);
+    return f.v * n * CELL + f.u;
+  };
+  const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
+  // Per game, a few numbers move a little.
+  const farmerTarget = plan.farmers + rng.below(5) - 2;
+  const spearBase = plan.spearShare + rng.below(11) - 5;
+  const pushArmy = plan.pushArmy + rng.below(7) - 3;
+  const townArmy = plan.townArmy + rng.below(2);
+  const mid = n >> 1;
+  const homeF = frame(home.cellX, home.cellY);
+  const su = Math.sign(mid - homeF.u);
+  const sv = Math.sign(mid - homeF.v);
+  // Production buildings 6 cells toward the map centre; the army waits 4 cells out, inside the
+  // main city's arrows (range 7).
+  const rally = real(homeF.u + su * 6 + rng.below(3) - 1, homeF.v + sv * 6 + rng.below(3) - 1);
+  const post = real(homeF.u + su * 4, homeF.v + sv * 4);
+  // Where raiders look for the enemy's gatherers: 8 points 11 cells around its main city, the
+  // nearest to us first.
+  const enemyF = frame(enemyHome.cellX, enemyHome.cellY);
+  const clampCell = (c: number) => Math.max(1, Math.min(n - 2, c));
+  const patrol = [
+    [11, 0], [8, 8], [0, 11], [-8, 8], [-11, 0], [-8, -8], [0, -11], [8, -8],
+  ]
+    .map(([du, dv]) => real(clampCell(enemyF.u + du), clampCell(enemyF.v + dv)))
+    .sort((a, b) => dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.x, a.y) - rank(b.x, b.y));
+
+  let mode: HardMode = "home";
+  let target = { x: post.x, y: post.y };
+  let targetTown = -1;
+  let lastMove = -100000;
+  let armyAtStart = 0;
+  const marched = new Set<number>();
+  let ratioSet = "";
+  let ratioTick = -100000;
+  let recalled = false;
+  let lastThreat = -100000;
+  let veinCrew: number[] = [];
+  /** When each town turns neutral again, as last read off its ruins. */
+  const restoreAt = new Map<number, number>();
+  /** Enemy soldiers seen and not known to have fallen. */
+  const intel = new Map<number, Seen>();
+  let waveMax = 0;
+  let lastWave = -100000;
+  let counterReady = false;
+  let loose = false;
+  let lastEnemyMage = -100000;
+  const loosed = new Set<number>();
+  /** Units stepping out of a cannon warning, until the tick it lands (and a little). */
+  const dodging = new Map<number, number>();
+  /** Ranged units sent at an enemy mage: the mage. */
+  const focusing = new Map<number, number>();
+  /** Split-off groups. */
+  const raid = new Set<number>();
+  let raidStop = 0;
+  let raidAt = 0;
+  let raidPrey = -1;
+  let raidNext = 0;
+  const guard = new Set<number>();
+  const second = new Set<number>();
+  let secondNext = 0;
+  let awayTick = -100000;
+
+  /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
+  function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number): { x: number; y: number } | null {
+    const info = rules.buildings[type];
+    const size = info.size;
+    const grid = { size: n, cells: view.placement };
+    const a = frame(ax, ay);
+    let best: { x: number; y: number } | null = null;
+    let bestD = 0;
+    for (let v = Math.max(1, a.v - radius); v <= Math.min(n - size - 1, a.v + radius); v++) {
+      for (let u = Math.max(1, a.u - radius); u <= Math.min(n - size - 1, a.u + radius); u++) {
+        const { x, y } = rectFromCanon(know.frame, u, v, size);
+        if (checkPlacement(grid, info, x, y) !== 0) continue;
+        let ok = true;
+        if (type !== BuildingType.Farm) {
+          for (let yy = y - 1; yy <= y + size && ok; yy++) {
+            for (let xx = x - 1; xx <= x + size && ok; xx++) if ((view.placement[yy * n + xx] & PlaceBit.Blocked) !== 0) ok = false;
+          }
+        }
+        if (!ok) continue;
+        const du = 2 * u + size - 2 * a.u;
+        const dv = 2 * v + size - 2 * a.v;
+        const d = du * du + dv * dv;
+        if (best === null || d < bestD) {
+          best = { x, y };
+          bestD = d;
+        }
+      }
+    }
+    return best;
+  }
+
+  return {
+    // It always plunders (a town plundered again every 5 minutes pays more than governing it).
+    style: "plunder",
+    think(view: PlayerView): CommandBody[] {
+      const out: CommandBody[] = [];
+      const h = view.header;
+      const tick = view.tick;
+      const toGo = know.maxTicks > 0 ? know.maxTicks - tick : -1;
+      const res: Cost = { food: h[HeaderField.food], wood: h[HeaderField.wood], gold: h[HeaderField.gold], crystal: h[HeaderField.crystal] };
+      const pop = h[HeaderField.population];
+      const cap = h[HeaderField.populationCap];
+      const reserve: Cost = { food: 0, wood: 0, gold: 0, crystal: 0 };
+      const afford = (c: Cost) =>
+        res.food - reserve.food >= c.food && res.wood - reserve.wood >= c.wood && res.gold - reserve.gold >= c.gold && res.crystal - reserve.crystal >= c.crystal;
+      const spend = (c: Cost) => {
+        res.food -= c.food;
+        res.wood -= c.wood;
+        res.gold -= c.gold;
+        res.crystal -= c.crystal;
+      };
+
+      // --- read the view ------------------------------------------------------------------
+      const mine: HardUnit[] = [];
+      const foes: HardUnit[] = [];
+      const prey: HardUnit[] = [];
+      for (let r = 0; r < view.units.length; r += UNIT_STRIDE) {
+        const fx = view.units[r + UnitField.x];
+        const fy = view.units[r + UnitField.y];
+        const u: HardUnit = {
+          id: view.units[r + UnitField.id],
+          type: view.units[r + UnitField.type],
+          x: fx >> CELL_SHIFT,
+          y: fy >> CELL_SHIFT,
+          fx,
+          fy,
+          order: view.units[r + UnitField.order],
+          orderTarget: view.units[r + UnitField.orderTarget],
+          flags: view.units[r + UnitField.flags],
+        };
+        const owner = view.units[r + UnitField.owner];
+        if (owner === player) mine.push(u);
+        else if (owner === 1 - player) (u.type === UnitType.Farmer ? prey : foes).push(u);
+      }
+      const own: Building[] = [];
+      let enemyCity = -1;
+      let enemyCityHp = -1;
+      let queued = 0;
+      for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+        const owner = view.buildings[r + BuildingField.owner];
+        const type = view.buildings[r + BuildingField.type];
+        if (owner === 1 - player && type === BuildingType.MainCity) {
+          enemyCity = view.buildings[r + BuildingField.id];
+          enemyCityHp = view.buildings[r + BuildingField.hp];
+        }
+        if (owner !== player) continue;
+        const b: Building = {
+          id: view.buildings[r + BuildingField.id],
+          type,
+          x: view.buildings[r + BuildingField.cellX],
+          y: view.buildings[r + BuildingField.cellY],
+          progress: view.buildings[r + BuildingField.progress],
+          queue: view.buildings[r + BuildingField.queueLength],
+        };
+        queued += b.queue;
+        own.push(b);
+      }
+      const farmers = mine.filter((u) => u.type === UnitType.Farmer);
+      const gatherers = farmers.filter((u) => u.order === Order.Gather).map((u) => u.id);
+      const soldiers = mine.filter((u) => u.type !== UnitType.Farmer);
+      const byId = new Map<number, HardUnit>();
+      for (const u of soldiers) byId.set(u.id, u);
+      const has = (t: number) => own.some((b) => b.type === t);
+      const done = (t: number) => own.filter((b) => b.type === t && b.progress >= 1000);
+      const count = (t: number) => own.filter((b) => b.type === t).length;
+      const worth = (list: { type: number }[]) => list.reduce((a, u) => a + WORTH[u.type], 0);
+      const centre = (list: { x: number; y: number }[], fx: number, fy: number) =>
+        list.length === 0 ? { x: fx, y: fy } : { x: Math.trunc(list.reduce((a, u) => a + u.x, 0) / list.length), y: Math.trunc(list.reduce((a, u) => a + u.y, 0) / list.length) };
+      /** Nearest first; ties in player 0's frame. */
+      const nearest = <T extends { fx: number; fy: number }>(list: T[], x: number, y: number) =>
+        [...list].sort((a, b) => dist2(a.fx, a.fy, x, y) - dist2(b.fx, b.fy, x, y) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+
+      // --- what it knows of the enemy -------------------------------------------------------------
+      // A soldier gone from view while every cell around where it stood is still in view has fallen
+      // (soldiers cannot hide); one that walked into the fog is kept, and forgotten after a while.
+      const sees = (x: number, y: number) => {
+        for (let yy = Math.max(0, y - 1); yy <= Math.min(n - 1, y + 1); yy++) {
+          for (let xx = Math.max(0, x - 1); xx <= Math.min(n - 1, x + 1); xx++) if (view.fog[yy * n + xx] !== Fog.Visible) return false;
+        }
+        return true;
+      };
+      const fallen: Seen[] = [];
+      for (const f of foes) intel.set(f.id, { type: f.type, x: f.x, y: f.y, tick });
+      for (const [id, e] of intel) {
+        if (e.tick === tick) continue;
+        if (tick - e.tick <= 10 && sees(e.x, e.y)) {
+          intel.delete(id);
+          fallen.push(e);
+        } else if (tick - e.tick > INTEL_TICKS) intel.delete(id);
+      }
+      let enemySpear = 0;
+      let enemyRanged = 0;
+      let enemyMages = 0;
+      let enemyWorth = 0;
+      for (const e of intel.values()) {
+        if (e.type === UnitType.Spearman) enemySpear++;
+        else if (e.type === UnitType.Ranged) enemyRanged++;
+        else if (e.type === UnitType.Mage) enemyMages++;
+        enemyWorth += WORTH[e.type];
+      }
+      if (enemyMages > 0) lastEnemyMage = tick;
+
+      // --- economy --------------------------------------------------------------------------
+      // The ratio leans hard away from what piles up (a plunder brings 300 gold and no wood, and
+      // wood is in every soldier and building) and is changed at most every ratioEvery ticks:
+      // farmers moved back and forth gather nothing on the way (sim/README.md).
+      const ratio = done(BuildingType.MageHall).length > 0 ? [35, 40, 25] : done(BuildingType.Range).length > 0 ? [40, 40, 20] : [50, 40, 10];
+      const stock = [res.food, res.wood, res.gold];
+      for (let k = 0; k < 3; k++) {
+        if (stock[k] > 800) ratio[k] >>= 2;
+        else if (stock[k] > 400) ratio[k] >>= 1;
+        else if (stock[k] < 100) ratio[k] += ratio[k] >> 1;
+      }
+      const sum = ratio[0] + ratio[1] + ratio[2];
+      for (let k = 0; k < 3; k++) ratio[k] = Math.max(5, Math.trunc((ratio[k] * 100) / sum));
+      ratio[0] = 100 - ratio[1] - ratio[2];
+      const ratioKey = ratio.join("/");
+      if (ratioKey !== ratioSet && (ratioSet === "" || tick - ratioTick >= plan.ratioEvery)) {
+        out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
+        ratioSet = ratioKey;
+        ratioTick = tick;
+      }
+      let room = cap - pop - queued;
+      const main = done(BuildingType.MainCity)[0];
+      const farmerCost = rules.units[UnitType.Farmer].cost;
+      if (main && main.queue < 2 && farmers.length + main.queue < farmerTarget && room > 0 && afford(farmerCost)) {
+        out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
+        spend(farmerCost);
+        room--;
+      }
+      const nearestNode = (kind: number): { x: number; y: number; id: number } | null => {
+        let best: { x: number; y: number; id: number } | null = null;
+        let bestD = 0;
+        let bestKey = 0;
+        for (let r = 0; r < view.nodes.length; r += NODE_STRIDE) {
+          if (view.nodes[r + NodeField.kind] !== kind || view.nodes[r + NodeField.amount] <= 0) continue;
+          const x = view.nodes[r + NodeField.cellX];
+          const y = view.nodes[r + NodeField.cellY];
+          const d = dist2(x, y, home.cellX, home.cellY);
+          const key = rank(x, y);
+          if (best === null || d < bestD || (d === bestD && key < bestKey)) {
+            best = { x, y, id: view.nodes[r + NodeField.id] };
+            bestD = d;
+            bestKey = key;
+          }
+        }
+        return best;
+      };
+      for (const site of own.filter((b) => b.progress < 1000)) {
+        if (farmers.some((f) => f.order === Order.Build && f.orderTarget === site.id)) continue;
+        const crew = gatherers.slice(0, 2);
+        if (crew.length > 0) out.push({ c: "repair", u: crew, building: site.id });
+        gatherers.splice(0, crew.length);
+      }
+      // Buildings in priority order; it saves up for the first that cannot be paid for yet.
+      const mageCost = rules.units[UnitType.Mage].cost;
+      const producers = count(BuildingType.Barracks) + count(BuildingType.Range) + count(BuildingType.MageHall);
+      if (own.filter((b) => b.progress < 1000).length < plan.sites && gatherers.length >= 3) {
+        const plans: { type: BuildingType; at: { x: number; y: number } | null }[] = [];
+        const granary = done(BuildingType.Granary)[0];
+        const base = { x: home.cellX, y: home.cellY };
+        const add = (type: BuildingType, at: { x: number; y: number } | null) => {
+          if (!plans.some((p) => p.type === type)) plans.push({ type, at });
+        };
+        // The mage hall first once there is the crystal for a mage (a plunder brings 75).
+        if (!has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
+        // Houses before the population is full: every producer can add one at a time.
+        if (cap < rules.maxPopulation && cap - pop - queued <= 5 + producers) add(BuildingType.House, base);
+        if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
+        if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
+        if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
+        if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
+        if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
+        if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
+        if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
+        if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
+          add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
+        }
+        for (const p of plans) {
+          if (p.at === null) continue;
+          const spot = spotNear(view, p.type, p.at.x, p.at.y, 12) ?? spotNear(view, p.type, base.x, base.y, 20);
+          if (spot === null) continue;
+          const cost = rules.buildings[p.type].cost;
+          if (!afford(cost)) {
+            reserve.food += cost.food;
+            reserve.wood += cost.wood;
+            reserve.gold += cost.gold;
+            reserve.crystal += cost.crystal;
+            break;
+          }
+          const crew = p.type === BuildingType.House || p.type === BuildingType.Farm ? 1 : 2;
+          out.push({ c: "build", u: gatherers.slice(0, crew), type: p.type, x: spot.x, y: spot.y });
+          gatherers.splice(0, crew);
+          spend(cost);
+          break;
+        }
+      }
+
+      // --- army production ------------------------------------------------------------------
+      const spear = soldiers.filter((u) => u.type === UnitType.Spearman).length;
+      const ranged = soldiers.filter((u) => u.type === UnitType.Ranged).length;
+      const mages = soldiers.filter((u) => u.type === UnitType.Mage).length;
+      const trainAt = (t: number, type: UnitType) => {
+        for (const b of done(t)) {
+          if (b.queue >= 2 || room <= 0 || !afford(rules.units[type].cost)) continue;
+          out.push({ c: "train", building: b.id, type, n: 1 });
+          spend(rules.units[type].cost);
+          room--;
+        }
+      };
+      const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
+      if (mages + hallQueue < rules.mageCap && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage);
+      // The mix answers what it has seen: a cannon shot kills a ranged unit but not a spearman, and
+      // ranged units hit spearmen 2.5 times as hard.
+      let share = spearBase;
+      if (plan.counterMix > 0) {
+        if (enemyMages >= 2) share += plan.counterMix;
+        else if (enemySpear + enemyRanged >= 6 && enemySpear * 100 >= (enemySpear + enemyRanged) * 60) share -= plan.counterMix;
+        else if (enemySpear + enemyRanged >= 6 && enemyRanged * 100 >= (enemySpear + enemyRanged) * 60) share += plan.counterMix;
+      }
+      share = Math.max(20, Math.min(80, share));
+      if (spear * 100 <= share * (spear + ranged)) {
+        trainAt(BuildingType.Barracks, UnitType.Spearman);
+        trainAt(BuildingType.Range, UnitType.Ranged);
+      } else {
+        trainAt(BuildingType.Range, UnitType.Ranged);
+        trainAt(BuildingType.Barracks, UnitType.Spearman);
+      }
+      veinCrew = veinCrew.filter((id) => farmers.some((f) => f.id === id && f.order === Order.Gather));
+      const vein = nearestNode(NodeKind.CrystalVein);
+      if (vein !== null && has(BuildingType.MageHall) && veinCrew.length < plan.vein) {
+        const pick = gatherers.filter((id) => !veinCrew.includes(id)).slice(-(plan.vein - veinCrew.length));
+        if (pick.length > 0) {
+          out.push({ c: "gather", u: pick, node: vein.id });
+          veinCrew.push(...pick);
+        }
+      }
+      const quiet = soldiers.filter((u) => u.type === UnitType.Mage && (u.flags & UnitFlag.Autocast) === 0).map((u) => u.id);
+      if (quiet.length > 0) out.push({ c: "autocast", u: quiet, on: true });
+
+      // --- towns ------------------------------------------------------------------------------
+      const towns = new Map<number, HardTown>();
+      for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+        const id = view.towns[r + TownField.id];
+        const t = know.map.towns[id];
+        towns.set(id, {
+          state: view.towns[r + TownField.state],
+          owner: view.towns[r + TownField.owner],
+          needed: view.towns[r + TownField.garrisonNeeded],
+          timer: view.towns[r + TownField.timer],
+          visible: (view.towns[r + TownField.flags] & TownFlag.Visible) !== 0,
+          x: t.cellX,
+          y: t.cellY,
+          size: t.size,
+        });
+      }
+      for (const t of know.map.towns) {
+        if (!towns.has(t.id)) towns.set(t.id, { state: TownState.Neutral, owner: NEUTRAL, needed: 0, timer: 0, visible: false, x: t.cellX, y: t.cellY, size: t.size });
+      }
+      for (const [id, t] of towns) {
+        if (t.state === TownState.Ruins && t.visible) restoreAt.set(id, tick + t.timer);
+        if (t.owner === player && t.state === TownState.AwaitingChoice) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
+      }
+
+      // --- the clock (AI-against-AI games only: a person plays without a limit) ---------------------
+      const endgame = toGo >= 0 && toGo <= ENDGAME_TO_GO;
+      const assault = toGo >= 0 && toGo <= ASSAULT_TO_GO;
+      const latest = toGo >= 0 && toGo <= LATEST_TO_GO;
+
+      // --- groups split off the army -----------------------------------------------------------------
+      for (const g of [raid, guard, second]) for (const id of g) if (!byId.has(id)) g.delete(id);
+      const grouped = (id: number) => raid.has(id) || guard.has(id) || second.has(id);
+
+      // --- cannon warnings: step out ------------------------------------------------------------------
+      for (const [id, until] of dodging) if (tick >= until || !byId.has(id)) dodging.delete(id);
+      const rejoin: number[] = [];
+      if (plan.dodge) {
+        for (let r = 0; r < view.warnings.length; r += WARNING_STRIDE) {
+          if (view.warnings[r + WarningField.owner] === player) continue;
+          const wx = view.warnings[r + WarningField.x];
+          const wy = view.warnings[r + WarningField.y];
+          const reach = view.warnings[r + WarningField.radius] + DODGE_MARGIN;
+          const left = view.warnings[r + WarningField.ticksLeft] - 1;
+          const caster = foes.find((f) => f.id === view.warnings[r + WarningField.id]);
+          for (const u of soldiers) {
+            if (dodging.has(u.id)) continue;
+            const dx = u.fx - wx;
+            const dy = u.fy - wy;
+            const d2 = dx * dx + dy * dy;
+            if (d2 > reach * reach) continue;
+            const d = Math.sqrt(d2);
+            const need = reach - d;
+            if (need > rules.units[u.type].speed * left) continue; // too late: it keeps fighting
+            // Straight out from the blast's centre; from the centre itself, away from the caster
+            // (or toward home when the caster is out of sight).
+            let ex = dx;
+            let ey = dy;
+            if (d < 128) {
+              ex = caster !== undefined ? wx - caster.fx : (home.cellX << CELL_SHIFT) - wx;
+              ey = caster !== undefined ? wy - caster.fy : (home.cellY << CELL_SHIFT) - wy;
+            }
+            const e = Math.sqrt(ex * ex + ey * ey) || 1;
+            const step = need + CELL / 2;
+            const x = Math.max(0, Math.min(n - 1, Math.trunc((u.fx + (ex * step) / e) / CELL)));
+            const y = Math.max(0, Math.min(n - 1, Math.trunc((u.fy + (ey * step) / e) / CELL)));
+            out.push({ c: "retreat", u: [u.id], x, y });
+            dodging.set(u.id, tick + left + 10);
+            focusing.delete(u.id);
+          }
+        }
+      }
+      // --- enemy mages: shoot them first --------------------------------------------------------------
+      const foeIds = new Set(foes.map((f) => f.id));
+      for (const [id, mage] of focusing) {
+        if (!byId.has(id)) focusing.delete(id);
+        else if (!foeIds.has(mage)) {
+          focusing.delete(id);
+          if (!dodging.has(id)) rejoin.push(id);
+        }
+      }
+      if (plan.focus > 0) {
+        for (const m of nearest(foes.filter((f) => f.type === UnitType.Mage), home.cellX << CELL_SHIFT, home.cellY << CELL_SHIFT)) {
+          let on = 0;
+          for (const t of focusing.values()) if (t === m.id) on++;
+          if (on >= plan.focus) continue;
+          const shooters = nearest(
+            soldiers.filter((u) => u.type === UnitType.Ranged && !dodging.has(u.id) && !focusing.has(u.id) && !guard.has(u.id) && dist2(u.x, u.y, m.x, m.y) <= 49),
+            m.fx,
+            m.fy,
+          ).slice(0, plan.focus - on);
+          if (shooters.length === 0) continue;
+          out.push({ c: "attack", u: shooters.map((u) => u.id), target: m.id });
+          for (const u of shooters) focusing.set(u.id, m.id);
+        }
+      }
+      for (const [id] of dodging) if (dodging.get(id)! <= tick + 10 && !focusing.has(id)) rejoin.push(id);
+      const detached = (id: number) => dodging.has(id) || focusing.has(id);
+
+      // --- loose against several mages ---------------------------------------------------------------
+      if (plan.looseAt > 0) {
+        const want = enemyMages >= plan.looseAt || (loose && tick - lastEnemyMage < 2 * TICKS_PER_MINUTE);
+        const who = (u: HardUnit) => plan.looseWho === 2 || u.type === UnitType.Ranged || u.type === UnitType.Mage;
+        if (want) {
+          const fresh = soldiers.filter((u) => who(u) && !loosed.has(u.id)).map((u) => u.id);
+          if (fresh.length > 0) {
+            out.push({ c: "formation", u: fresh, loose: true });
+            for (const id of fresh) loosed.add(id);
+          }
+          loose = true;
+        } else if (loose) {
+          const all = soldiers.filter((u) => loosed.has(u.id)).map((u) => u.id);
+          if (all.length > 0) out.push({ c: "formation", u: all, loose: false });
+          loosed.clear();
+          loose = false;
+        }
+      }
+
+      // --- the army ------------------------------------------------------------------------------------
+      const army = soldiers.filter((u) => !grouped(u.id));
+      const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
+      let sent = false;
+      const send = (x: number, y: number, why: HardMode) => {
+        if (armyIds.length === 0) return;
+        if (why !== mode || target.x !== x || target.y !== y || tick - lastMove >= 400) {
+          out.push({ c: "move", u: armyIds, x, y });
+          lastMove = tick;
+          sent = true;
+        }
+        mode = why;
+        target = { x, y };
+      };
+      const fallBack = (x: number, y: number) => {
+        const ids = army.map((u) => u.id);
+        if (ids.length > 0) out.push({ c: "retreat", u: ids, x, y });
+        for (const id of ids) {
+          focusing.delete(id);
+          dodging.delete(id);
+        }
+        lastMove = tick;
+        sent = true;
+        mode = "home";
+        target = { x: post.x, y: post.y };
+      };
+      const armyWorth = worth(army);
+      const ac = centre(army, home.cellX, home.cellY);
+      const foesNear = (x: number, y: number, r: number) => foes.filter((f) => dist2(f.x, f.y, x, y) <= r * r);
+
+      // Waves: the most enemy soldiers near the main city at once; one is beaten off once none
+      // have been near for 10 s. A beaten wave of 6 or more is the time to strike back.
+      const nearHome = foesNear(home.cellX, home.cellY, WAVE_CELLS).length;
+      if (nearHome > 0) {
+        waveMax = Math.max(waveMax, nearHome);
+        lastWave = tick;
+      } else if (tick - lastWave >= 200 && waveMax > 0) {
+        if (waveMax >= 6) counterReady = true;
+        waveMax = 0;
+      }
+
+      // The enemy's army is away: most of what it has (as it believes) was seen in the last 30 s far
+      // from the enemy's main city.
+      let away = 0;
+      for (const e of intel.values()) if (tick - e.tick <= 600 && dist2(e.x, e.y, enemyHome.cellX, enemyHome.cellY) > 30 * 30) away++;
+      if (away >= 6 && away * 100 >= intel.size * 60) awayTick = tick;
+
+      const armyOrders = (): void => {
+        // Defence: everyone home, under the main city's arrows; farmers inside against a raid.
+        const atHome = foesNear(home.cellX, home.cellY, 16);
+        const committed = mode === "base" && dist2(ac.x, ac.y, enemyHome.cellX, enemyHome.cellY) < dist2(ac.x, ac.y, home.cellX, home.cellY);
+        if (atHome.length > 0) {
+          lastThreat = tick;
+          if (plan.recallAt > 0 && !recalled && atHome.length >= plan.recallAt) {
+            out.push({ c: "recall", on: true });
+            recalled = true;
+          }
+          if (!committed) {
+            const wave = foesNear(home.cellX, home.cellY, WAVE_CELLS);
+            const close = atHome.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) <= 100);
+            // Clearly stronger: meet them; otherwise wait for them by the city.
+            const meet = armyWorth >= worth(wave) * 2 ? wave : close;
+            const c = centre(meet, post.x, post.y);
+            send(c.x, c.y, "defend");
+            return;
+          }
+        } else {
+          if (recalled && tick - lastThreat >= 100) {
+            out.push({ c: "recall", on: false });
+            recalled = false;
+          }
+          if (mode === "defend") mode = "home";
+        }
+        // Plundering: stay inside until it is done (not in the endgame).
+        const busy = [...towns.entries()].find(([, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice));
+        if (busy !== undefined && !endgame) {
+          send(busy[1].x, busy[1].y, "town");
+          return;
+        }
+        const standing = soldiers.filter((u) => marched.has(u.id)).length;
+        const local = worth(foesNear(ac.x, ac.y, 12));
+        if (mode === "town") {
+          const t = towns.get(targetTown);
+          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "home";
+          else if (standing * 5 < armyAtStart * 2 || local > armyWorth) {
+            fallBack(post.x, post.y);
+            return;
+          } else {
+            send(t.x, t.y, "town");
+            return;
+          }
+        }
+        if (mode === "base") {
+          // Those that set out are the front; soldiers trained since wait at home and follow six at
+          // a time (one by one they would be picked off on the way).
+          const reserves = army.filter((u) => !marched.has(u.id) && !detached(u.id));
+          if (reserves.length >= 6) for (const u of reserves) marched.add(u.id);
+          const front = army.filter((u) => marched.has(u.id));
+          const frontIds = front.filter((u) => !detached(u.id)).map((u) => u.id);
+          const fc = centre(front, ac.x, ac.y);
+          const cityLow = enemyCityHp >= 0 && enemyCityHp * 100 <= rules.buildings[BuildingType.MainCity].hp * PRESS_ON_HP;
+          // It breaks off only when outmatched where the front stands (not because the city's arrows
+          // thinned it: with nobody left to defend it, the city falls), or when too few are left.
+          const atCity = front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 14 * 14);
+          const there = atCity.length * 2 >= front.length;
+          const defenders = worth(foesNear(fc.x, fc.y, 12));
+          if (front.length === 0 || (!endgame && !cityLow && (defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0)))) {
+            counterReady = false;
+            fallBack(post.x, post.y);
+            return;
+          }
+          if (enemyCity >= 0 && there) {
+            if (tick - lastMove >= 100 && frontIds.length > 0) {
+              // Defenders first (a move fights what it meets), then the city; those still on the way
+              // keep coming.
+              const close = atCity.filter((u) => !detached(u.id)).map((u) => u.id);
+              const late = frontIds.filter((id) => !close.includes(id));
+              if (foesNear(enemyHome.cellX, enemyHome.cellY, 12).length > 0 || close.length === 0) out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
+              else {
+                out.push({ c: "attack", u: close, target: enemyCity });
+                if (late.length > 0) out.push({ c: "move", u: late, x: enemyHome.cellX, y: enemyHome.cellY });
+              }
+              lastMove = tick;
+              sent = true;
+            }
+          } else if (frontIds.length > 0 && (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= 400 || reserves.length >= 6)) {
+            out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
+            lastMove = tick;
+            sent = true;
+            target = { x: enemyHome.cellX, y: enemyHome.cellY };
+          }
+          const wait = reserves.filter((u) => !marched.has(u.id) && dist2(u.x, u.y, post.x, post.y) > 9).map((u) => u.id);
+          if (wait.length > 0 && tick % 100 === 0) out.push({ c: "move", u: wait, x: post.x, y: post.y });
+          return;
+        }
+        // At home: march, go for a town, or wait by the city.
+        const popFull = toGo < 0 && cap >= rules.maxPopulation && pop >= cap - FULL_MARGIN;
+        const strong = armyWorth * 100 >= enemyWorth * plan.pushRatio;
+        const go = endgame
+          ? army.length >= ENDGAME_ARMY
+          : assault
+            ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
+            : (counterReady && army.length >= plan.counterArmy && armyWorth >= enemyWorth) || (army.length >= pushArmy && strong) || (popFull && army.length >= townArmy + 6);
+        if (go) {
+          // A guard stays home: the spearmen nearest the main city.
+          if (plan.guard > 0 && !endgame) {
+            for (const u of nearest(army.filter((s) => s.type === UnitType.Spearman), home.cellX << CELL_SHIFT, home.cellY << CELL_SHIFT).slice(0, plan.guard)) guard.add(u.id);
+          }
+          const goers = army.filter((u) => !guard.has(u.id) && !detached(u.id));
+          armyIds.length = 0;
+          armyIds.push(...goers.map((u) => u.id));
+          armyAtStart = army.length - guard.size;
+          marched.clear();
+          for (const u of army) if (!guard.has(u.id)) marched.add(u.id);
+          counterReady = false;
+          send(enemyHome.cellX, enemyHome.cellY, "base");
+          return;
+        }
+        if (!assault) {
+          let pick = -1;
+          let pickD = 0;
+          for (const [id, t] of towns) {
+            if (t.state === TownState.Ruins || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
+            if (tick < (restoreAt.get(id) ?? 0)) continue;
+            if (army.length < (t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
+            // Not into a stronger enemy seen there in the last minute.
+            let there = 0;
+            for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= 14 * 14) there += WORTH[e.type];
+            if (there * 10 > armyWorth * 8) continue;
+            const d = dist2(t.x, t.y, home.cellX, home.cellY);
+            if (pick < 0 || d < pickD || (d === pickD && rank(t.x, t.y) < rank(towns.get(pick)!.x, towns.get(pick)!.y))) {
+              pick = id;
+              pickD = d;
+            }
+          }
+          if (pick >= 0) {
+            targetTown = pick;
+            armyAtStart = army.length;
+            marched.clear();
+            for (const u of army) marched.add(u.id);
+            const t = towns.get(pick)!;
+            send(t.x, t.y, "town");
+            return;
+          }
+        }
+        send(post.x, post.y, "home");
+      };
+      armyOrders();
+      if (mode === "home" || mode === "defend") guard.clear();
+
+      // --- raiders: after the enemy's gatherers, away from its arrows and its army ----------------------
+      if (plan.raid > 0) {
+        if (raid.size === 0 && tick >= raidNext && mode === "home" && army.length >= plan.raidFrom) {
+          const pool = army.filter((u) => u.type !== UnitType.Mage && !detached(u.id));
+          const pick = nearest(pool.filter((u) => u.type === UnitType.Ranged), home.cellX << CELL_SHIFT, home.cellY << CELL_SHIFT).slice(0, plan.raid);
+          if (pick.length === plan.raid) {
+            for (const u of pick) raid.add(u.id);
+            raidStop = 0;
+            raidPrey = -1;
+            raidAt = tick;
+          }
+        }
+        if (raid.size > 0) {
+          const crew = soldiers.filter((u) => raid.has(u.id));
+          const ids = crew.filter((u) => !detached(u.id)).map((u) => u.id);
+          const c = centre(crew, home.cellX, home.cellY);
+          const danger = worth(foesNear(c.x, c.y, 10));
+          if (danger > worth(crew) || crew.length * 2 <= plan.raid || tick - raidAt > 4 * TICKS_PER_MINUTE) {
+            // Their army is there, too few left, or long enough: home, and again in 2 minutes.
+            if (crew.length > 0) out.push({ c: "retreat", u: crew.map((u) => u.id), x: post.x, y: post.y });
+            raid.clear();
+            raidNext = tick + 2 * TICKS_PER_MINUTE;
+          } else if (ids.length > 0) {
+            // Gatherers in sight, out of the enemy main city's arrows (range 7).
+            const food = nearest(
+              prey.filter((f) => dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) > 9 * 9 && dist2(f.x, f.y, c.x, c.y) <= 12 * 12),
+              c.x << CELL_SHIFT,
+              c.y << CELL_SHIFT,
+            );
+            if (food.length > 0) {
+              if (food[0].id !== raidPrey) {
+                out.push({ c: "attack", u: ids, target: food[0].id });
+                raidPrey = food[0].id;
+              }
+            } else {
+              raidPrey = -1;
+              const p = patrol[raidStop % patrol.length];
+              if (dist2(c.x, c.y, p.x, p.y) <= 9) raidStop++;
+              const q = patrol[raidStop % patrol.length];
+              if (tick % 100 === 0 || dist2(c.x, c.y, p.x, p.y) <= 9) out.push({ c: "retreat", u: ids, x: q.x, y: q.y });
+            }
+          }
+        }
+      }
+
+      // --- a second front while the enemy's army is away ------------------------------------------------
+      if (plan.second > 0) {
+        if (second.size === 0 && tick >= secondNext && mode === "home" && tick - awayTick <= 100 && army.length >= plan.second + 8) {
+          const pick = nearest(army.filter((u) => u.type !== UnitType.Mage && !detached(u.id)), enemyHome.cellX << CELL_SHIFT, enemyHome.cellY << CELL_SHIFT).slice(0, plan.second);
+          for (const u of pick) second.add(u.id);
+        }
+        if (second.size > 0) {
+          const crew = soldiers.filter((u) => second.has(u.id));
+          const ids = crew.filter((u) => !detached(u.id)).map((u) => u.id);
+          const c = centre(crew, home.cellX, home.cellY);
+          if (tick - awayTick > 30 * 20 || worth(foesNear(c.x, c.y, 10)) > worth(crew)) {
+            if (crew.length > 0) out.push({ c: "retreat", u: crew.map((u) => u.id), x: post.x, y: post.y });
+            second.clear();
+            secondNext = tick + 2 * TICKS_PER_MINUTE;
+          } else if (ids.length > 0 && tick % 100 === 0) {
+            const there = dist2(c.x, c.y, enemyHome.cellX, enemyHome.cellY) <= 12 * 12;
+            if (there && enemyCity >= 0 && foesNear(enemyHome.cellX, enemyHome.cellY, 12).length === 0) out.push({ c: "attack", u: ids, target: enemyCity });
+            else out.push({ c: "move", u: ids, x: enemyHome.cellX, y: enemyHome.cellY });
+          }
+        }
+      }
+      for (const id of guard) {
+        const u = byId.get(id)!;
+        if (!detached(id) && tick % 100 === 0 && dist2(u.x, u.y, post.x, post.y) > 16) out.push({ c: "move", u: [id], x: post.x, y: post.y });
+      }
+
+      // Back from a dodge or a fallen mage: with the army again.
+      const back = rejoin.filter((id) => !grouped(id) && byId.has(id) && !detached(id));
+      if (back.length > 0 && !sent) out.push({ c: "move", u: back, x: target.x, y: target.y });
       return out;
     },
   };

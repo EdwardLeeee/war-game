@@ -42,9 +42,10 @@ export const NO_OWNER = -1;
 
 /**
  * How the simple AI plays. "normal" is the AI of the first play test; "easy" only holds itself
- * back (fewer farmers and buildings, later and smaller attacks) and gets nothing extra (GDD 13).
+ * back (fewer farmers and buildings, later and smaller attacks) and gets nothing extra (GDD 13);
+ * "hard" decides better and gets nothing extra either (D-052, D-055).
  */
-export const AI_DIFFICULTIES = ["easy", "normal"] as const;
+export const AI_DIFFICULTIES = ["easy", "normal", "hard"] as const;
 export type AiDifficulty = (typeof AI_DIFFICULTIES)[number];
 
 // --- enumerations (const objects; the type is the union of the values) ---------------
