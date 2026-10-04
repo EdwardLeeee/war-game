@@ -2,7 +2,7 @@
 // (GDD §9 and §10). Pure functions over a small query interface, so every row of the gesture
 // table is unit-tested without a browser. Coordinates are world px (TILE_PX per cell).
 
-import { CELL, type CommandBody, Stance, UnitType } from "../sim.ts";
+import { BuildingType, CELL, type CommandBody, Stance, UnitType } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 
 export type PickKind = "unit" | "building" | "node" | "town";
@@ -71,8 +71,14 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
   const x = toCell(wx);
   const y = toCell(wy);
   switch (mode) {
-    case "retreat":
-      return sel.units.length > 0 ? [{ kind: "command", cmd: { c: "retreat", u: sel.units, x, y } }, { kind: "endMode" }] : [{ kind: "endMode" }];
+    case "retreat": {
+      // 撤退 (D-059: 「它就跟攻擊一樣 點到哪就撤退到哪」): to the cell tapped; on the own main
+      // city, home to the cell in front of it.
+      if (sel.units.length === 0) return [{ kind: "endMode" }];
+      const b = world.buildingAt(wx, wy);
+      const home = b !== null && b.owner === world.me && b.type === BuildingType.MainCity ? world.homeCell() : null;
+      return [{ kind: "command", cmd: { c: "retreat", u: sel.units, x: home?.x ?? x, y: home?.y ?? y } }, { kind: "endMode" }];
+    }
     case "cast": {
       const mages = sel.units.filter((id) => world.unitType(id) === UnitType.Mage);
       const casts: Intent[] = mages.map((u) => ({ kind: "command", cmd: { c: "cast", u, fx: toFixed(wx), fy: toFixed(wy) } }));
@@ -197,7 +203,7 @@ export function wheelIntents(world: IntentWorld, sel: Selection, item: WheelItem
     case "cast":
       return { mode: "cast", intents: [] };
     case "retreat":
-      return retreatNow(sel, world.homeCell());
+      return { mode: u.length > 0 ? "retreat" : null, intents: [] };
     case "autocast": {
       const mages = u.filter((id) => world.unitType(id) === UnitType.Mage);
       if (mages.length === 0) return { mode: null, intents: [] };
@@ -211,18 +217,7 @@ export function wheelIntents(world: IntentWorld, sel: Selection, item: WheelItem
   }
 }
 
-/**
- * 撤退 (the command area or the wheel): straight back to the cell in front of the main city,
- * no second tap (user 2026-10-01: too many steps). Another spot is 「改撤到別處」, which the
- * game offers for a few seconds. Without a main city, the player picks a spot as before.
- */
-export function retreatNow(sel: Selection, home: { x: number; y: number } | null): { mode: Mode | null; intents: Intent[] } {
-  if (sel.units.length === 0) return { mode: null, intents: [] };
-  if (home === null) return { mode: "retreat", intents: [] };
-  return { mode: null, intents: [{ kind: "command", cmd: { c: "retreat", u: sel.units, x: home.x, y: home.y } }] };
-}
-
-/** 退回主城: retreat the selection to the cell in front of the main city. */
+/** 退回主城 (the prompt while picking where to retreat to): the selection to the cell in front of the main city. */
 export function retreatHome(sel: Selection, home: { x: number; y: number } | null): Intent[] {
   if (home === null || sel.units.length === 0) return [{ kind: "endMode" }];
   return [{ kind: "command", cmd: { c: "retreat", u: sel.units, x: home.x, y: home.y } }, { kind: "endMode" }];

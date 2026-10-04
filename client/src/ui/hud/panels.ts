@@ -84,7 +84,7 @@ export function autoTrainText(type: number, flags: number): string | null {
  */
 export const ORDER_TEXT = {
   advance: "進攻：點地面或小地圖，整隊前進，遇到敵人一起打",
-  retreat: "撤退：退回主城；提示列可以改撤到別處",
+  retreat: "撤退：點地面或小地圖撤到那裡，點主城回家",
   hold: "堅守：停在原地，敵人進到射程就打，不追出去",
 } as const;
 /** The 「目前：」 line's words, in its order (D-054 adds 待命: standing, not 進攻中). */
@@ -525,9 +525,9 @@ export class CommandArea {
       const types = new Set(sel.units.map((id) => view.unitType(id)));
       const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
       // 進攻／撤退／堅守 (D-050), then 停止, in the first row; the one all the soldiers are in is
-      // lit. 撤退 goes back to the main city at once; 「改撤到別處」 (the prompt strip) picks another
-      // spot. 取消即堅守 (D-054): while they advance or retreat, or while the spot is being
-      // picked, the same button reads 取消 and stops them where they are, holding.
+      // lit. 進攻 and 撤退 both ask where to (D-059: 撤退 「跟攻擊一樣」). 取消即堅守 (D-054):
+      // while they advance or retreat, or while the spot is being picked, the same button
+      // reads 取消 and stops them where they are, holding.
       const counts = orderCounts(view, sel.units);
       const advancing = mode === "advance" || (mode === "normal" && allIn(view, sel.units, "advance"));
       const retreating = mode === "retreat" || (mode === "normal" && allIn(view, sel.units, "retreat"));
@@ -539,7 +539,7 @@ export class CommandArea {
       }
       const retreat = retreating
         ? button(this.el, "取消撤退", "停下堅守", () => this.host.cancelToHold())
-        : button(this.el, "撤退", "退回主城", () => this.host.retreat());
+        : button(this.el, "撤退", "點地面", () => this.host.retreat());
       if (retreating) retreat.classList.add("active");
       if (counts !== null) {
         const hold = button(this.el, "堅守", "原地不動", () => {
