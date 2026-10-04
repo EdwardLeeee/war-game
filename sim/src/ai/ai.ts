@@ -753,6 +753,8 @@ export interface HardPlan {
   veinMine: boolean;
   /** Sends one soldier to explore until it has found the crystal vein (its place is not known from the start). */
   scout: boolean;
+  /** Sets off for a town in ruins so as to be there when it turns neutral again (it read the ruins' timer), and waits there. */
+  early: boolean;
   /** Soldiers it takes to a small town (each game: +0..1), and to the big one. */
   townArmy: number;
   bigArmy: number;
@@ -804,6 +806,7 @@ export const HARD: HardPlan = {
   vein: 2,
   veinMine: false,
   scout: false,
+  early: false,
   townArmy: 6,
   bigArmy: 20,
   pushArmy: 24,
@@ -1497,7 +1500,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const local = worth(foesNear(ac.x, ac.y, 12));
         if (mode === "town") {
           const t = towns.get(targetTown);
-          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "home";
+          // Ruins about to turn neutral again: wait there (early), otherwise it is done.
+          const soon = plan.early && t !== undefined && t.state === TownState.Ruins && (restoreAt.get(targetTown) ?? 0) - tick <= TICKS_PER_MINUTE;
+          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || (t.state === TownState.Ruins && !soon)) mode = "home";
           else if (standing * 5 < armyAtStart * 2 || local > armyWorth) {
             fallBack(post.x, post.y);
             return;
@@ -1584,8 +1589,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           let pick = -1;
           let pickD = 0;
           for (const [id, t] of towns) {
-            if (t.state === TownState.Ruins || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
-            if (tick < (restoreAt.get(id) ?? 0)) continue;
+            // Walking a cell takes about 21 ticks: with `early` it leaves so as to arrive as the ruins turn neutral.
+            const travel = plan.early ? Math.trunc(Math.sqrt(dist2(t.x, t.y, ac.x, ac.y)) * 21) : 0;
+            const ruinsOk = plan.early && t.state === TownState.Ruins && restoreAt.has(id) && tick + travel >= restoreAt.get(id)!;
+            if ((t.state === TownState.Ruins && !ruinsOk) || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
+            if (!ruinsOk && tick < (restoreAt.get(id) ?? 0)) continue;
             if (army.length < (t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
