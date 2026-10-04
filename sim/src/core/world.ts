@@ -33,6 +33,9 @@ export const UNIT_COLS = [
   "squad",
   // What last hurt this unit (HitCause), for statistics only: not in the hash (UNIT_HASH_SKIP).
   "hitCause",
+  // The unit that last hit this one, -1 for an arrow (counter-attacks, COUNTER_ATTACK; in the
+  // hash only while counter-attacks are on).
+  "hitById",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 /** Unit columns that are statistics only, left out of the hash so a game plays and hashes as without them. */
@@ -286,6 +289,7 @@ export class World {
     c.anchorY[s] = y;
     c.lastHurt[s] = -100000;
     c.hitCause[s] = HitCause.None;
+    c.hitById[s] = -1;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
     c.autoBuild[s] = -1;
