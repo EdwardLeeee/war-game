@@ -36,6 +36,7 @@ import {
   JOIN_FIGHT,
   SQUAD,
   LEASH,
+  LOOSE_KEEP,
   MAIN_ARROW,
   MAX_PUSH,
   MULT_DEN,
@@ -75,6 +76,10 @@ export interface Hurt {
 export class UnitSystem {
   private cellHead: Int32Array;
   private cellNext = new Int32Array(256);
+  /** The same buckets for the loose soldiers that keep LOOSE_KEEP.spacing, and their teams (0: none), rebuilt in move(). */
+  private keepHead: Int32Array;
+  private keepNext = new Int32Array(256);
+  private team = new Int32Array(256);
   private attacking = new Uint8Array(256);
   /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
   private startTarget = new Int32Array(256);
@@ -103,12 +108,15 @@ export class UnitSystem {
 
   constructor(size: number) {
     this.cellHead = new Int32Array(size * size);
+    this.keepHead = new Int32Array(size * size);
   }
 
   private fit(n: number, nb: number): void {
     if (this.cellNext.length < n) {
       const c = Math.max(n, this.cellNext.length * 2);
       this.cellNext = new Int32Array(c);
+      this.keepNext = new Int32Array(c);
+      this.team = new Int32Array(c);
       this.attacking = new Uint8Array(c);
       this.startTarget = new Int32Array(c);
       this.unitDamage = new Int32Array(c);
@@ -740,6 +748,24 @@ export class UnitSystem {
     const count = w.units.count;
     const max = n << CELL_SHIFT;
     const sep2 = SEPARATION * SEPARATION;
+    // Loose soldiers and their teams (LOOSE_KEEP), in their own buckets: only they are looked
+    // at for the wider spacing.
+    const spacing = LOOSE_KEEP.spacing;
+    let anyKeep = false;
+    for (let i = 0; i < count; i++) {
+      const loose = spacing > 0 && (u.flags[i] & UnitFlag.Loose) !== 0 && u.type[i] !== UnitType.Farmer && u.owner[i] < PLAYER_COUNT;
+      this.team[i] = !loose || u.action[i] === Action.Garrisoned ? 0 : u.squad[i] !== 0 ? u.squad[i] : u.group[i] + 1;
+      if (this.team[i] !== 0) anyKeep = true;
+    }
+    if (anyKeep) {
+      this.keepHead.fill(-1);
+      for (let i = 0; i < count; i++) {
+        if (this.team[i] === 0) continue;
+        const c = (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT);
+        this.keepNext[i] = this.keepHead[c];
+        this.keepHead[c] = i;
+      }
+    }
     for (let i = 0; i < count; i++) {
       const xi = u.x[i];
       const yi = u.y[i];
@@ -752,10 +778,13 @@ export class UnitSystem {
       const cy = yi >> CELL_SHIFT;
       let px = 0;
       let py = 0;
+      // A loose soldier keeps those of its own player and team at `spacing` (below).
+      const ti = this.team[i];
       for (let y = Math.max(cy - 1, 0); y <= Math.min(cy + 1, n - 1); y++) {
         for (let x = Math.max(cx - 1, 0); x <= Math.min(cx + 1, n - 1); x++) {
           for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
             if (j === i || u.action[j] === Action.Garrisoned) continue;
+            if (ti !== 0 && this.team[j] === ti && u.owner[j] === u.owner[i]) continue;
             const dx = xi - u.x[j];
             const dy = yi - u.y[j];
             if (dx >= SEPARATION || dx <= -SEPARATION || dy >= SEPARATION || dy <= -SEPARATION) continue;
@@ -764,6 +793,25 @@ export class UnitSystem {
             const k = dx === 0 && dy === 0 ? (u.id[i] < u.id[j] ? 0 : 8) + (w.yFirst[u.owner[i]] ? 4 : 0) : dir16(dx, dy);
             px += idiv(DIR16_X[k] * PUSH, CELL);
             py += idiv(DIR16_Y[k] * PUSH, CELL);
+          }
+        }
+      }
+      if (ti !== 0) {
+        // Reach 2 cells is enough: units two cells further off along an axis are at least
+        // 2 * CELL + 1 apart, never closer than `spacing` (2 * CELL).
+        const reach = (spacing + CELL - 1) >> CELL_SHIFT;
+        for (let y = Math.max(cy - reach, 0); y <= Math.min(cy + reach, n - 1); y++) {
+          for (let x = Math.max(cx - reach, 0); x <= Math.min(cx + reach, n - 1); x++) {
+            for (let j = this.keepHead[y * n + x]; j >= 0; j = this.keepNext[j]) {
+              if (j === i || this.team[j] !== ti || u.owner[j] !== u.owner[i]) continue;
+              const dx = xi - u.x[j];
+              const dy = yi - u.y[j];
+              if (dx >= spacing || dx <= -spacing || dy >= spacing || dy <= -spacing) continue;
+              if (dx * dx + dy * dy >= spacing * spacing) continue;
+              const k = dx === 0 && dy === 0 ? (u.id[i] < u.id[j] ? 0 : 8) + (w.yFirst[u.owner[i]] ? 4 : 0) : dir16(dx, dy);
+              px += idiv(DIR16_X[k] * PUSH, CELL);
+              py += idiv(DIR16_Y[k] * PUSH, CELL);
+            }
           }
         }
       }

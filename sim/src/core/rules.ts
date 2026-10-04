@@ -142,6 +142,15 @@ export const JOIN_FIGHT = { range: 6 * CELL };
  * switches it off (tests and src/balance.ts measure both ways).
  */
 export const SQUAD = { reach: 12 * CELL, near: 3 * CELL, leash: 12 * CELL, crowd: 3 };
+/**
+ * Loose soldiers keep their distance (round 6, D-054; rule 1 of round 4 and E4, D-035, D-037):
+ * a player's soldiers with UnitFlag.Loose (not farmers) push apart to `spacing` (fixed point)
+ * from the loose soldiers of their own team, not just to SEPARATION, walking, chasing or
+ * fighting. The team is the squad (one move or attack command, D-050), or on a retreat the
+ * group. The user: loose soldiers chasing or advancing still bunched up (2026-10-04). Others
+ * keep SEPARATION. `spacing` 0 switches it off (tests measure both ways).
+ */
+export const LOOSE_KEEP = { spacing: 2 * CELL };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;
