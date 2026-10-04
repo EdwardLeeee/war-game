@@ -42,7 +42,7 @@ export class Runner {
   readonly difficulty: AiDifficulty[];
 
   constructor(cfg: RunnerConfig) {
-    this.game = new Game({ seed: cfg.seed, scenario: cfg.scenario, maxTicks: cfg.maxTicks ?? MAX_TICKS });
+    this.game = new Game({ seed: cfg.seed, scenario: cfg.scenario, maxTicks: cfg.maxTicks ?? MAX_TICKS, autoTrain: cfg.autoTrain });
     this.difficulty = Array.from({ length: PLAYER_COUNT }, (_, p) => cfg.difficulty?.[p] ?? "normal");
     for (let p = 0; p < PLAYER_COUNT; p++) {
       const slot = cfg.swap === true ? 1 - p : p;
@@ -94,7 +94,10 @@ export class Runner {
   /** The first line of this game's command log. */
   header(ai: boolean[]): LogHeader {
     const c = this.game.config;
-    return { protocol: PROTOCOL_VERSION, seed: c.seed, scenario: c.scenario as ScenarioName, ai, maxTicks: this.maxTicks, difficulty: this.difficulty };
+    const head: LogHeader = { protocol: PROTOCOL_VERSION, seed: c.seed, scenario: c.scenario as ScenarioName, ai, maxTicks: this.maxTicks, difficulty: this.difficulty };
+    // Only when some player has it, so the logs of AI-vs-AI games stay as they were.
+    if (c.autoTrain?.some((on) => on) === true) head.autoTrain = Array.from({ length: PLAYER_COUNT }, (_, p) => c.autoTrain?.[p] === true);
+    return head;
   }
 }
 

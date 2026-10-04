@@ -157,7 +157,8 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
         if (!Number.isInteger(maxTicks) || maxTicks < 0) throw new Error(`bad maxTicks ${msg.maxTicks}`);
         const difficulty = msg.difficulty ?? [];
         if (!difficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad difficulty ${msg.difficulty}`);
-        runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty });
+        // A person's barracks, ranges and mage halls train on their own; an AI's do not (round 6, D-054).
+        runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty, autoTrain: aiFlags.map((a) => !a) });
         encoder = new SnapshotEncoder(runner.game.w.nodeAmount.length);
         const m = runner.game.w.map;
         post({

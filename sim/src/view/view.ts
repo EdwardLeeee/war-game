@@ -165,6 +165,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     ) {
       row[BuildingField.flags] |= BuildingFlag.RepairLocked;
     }
+    if (own || player === null) row[BuildingField.flags] |= b.flags[s] & (BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
     rows.push(row);
   }
   if (player !== null) {
@@ -251,6 +252,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     header[HeaderField.ratioGold] = w.ecoRatio[player * 3 + 2];
     header[HeaderField.ratioOn] = w.ecoOn[player];
     header[HeaderField.recall] = w.recall[player];
+    for (let r = 0; r < 4; r++) header[HeaderField.reserveFood + r] = w.reserve[player * 4 + r];
   }
   header[HeaderField.stepMicros] = info?.stepMicros ?? 0;
   header[HeaderField.stepBatchMicros] = info?.stepBatchMicros ?? 0;

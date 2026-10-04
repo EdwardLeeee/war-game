@@ -25,6 +25,7 @@ import { generateMap } from "./map.ts";
 import { FieldCache } from "./paths.ts";
 import { START_REVEAL } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
+import { autoTrain } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
 import { UnitSystem } from "./units.ts";
 import { World } from "./world.ts";
@@ -34,6 +35,8 @@ export interface GameConfig {
   scenario: ScenarioKey;
   /** Time limit in ticks, 0 = none (a game a person plays). Absent: MAX_TICKS. */
   maxTicks?: number;
+  /** Per player: its barracks, ranges and mage halls start with automatic training on (round 6, D-054). Absent: all off. */
+  autoTrain?: boolean[];
 }
 
 /** An event and who gets it: a player, or -1 for everyone. */
@@ -66,6 +69,7 @@ export class Game {
     this.config = config;
     const map = generateMap();
     this.w = new World(map);
+    for (let p = 0; p < PLAYER_COUNT; p++) this.w.autoTrain[p] = config.autoTrain?.[p] === true ? 1 : 0;
     setupScenario(this.w, config.scenario);
     this.fog = new Fog(this.w);
     this.fog.reveal(this.w, START_REVEAL);
@@ -113,8 +117,9 @@ export class Game {
     const hurt = this.units.run(w, this.fog, this.fields, this.econ);
     this.econ.workTick(w);
     this.units.removeDead(w, (s) => this.econ.release(w, s), (to, ev) => this.events.push({ to, ev }));
-    // 7. Training.
+    // 7. Training, then automatic training queues the next unit where a queue emptied.
     this.econ.produce(w);
+    autoTrain(w);
     // 8. Towns.
     this.towns.step(w);
     const n = w.size;

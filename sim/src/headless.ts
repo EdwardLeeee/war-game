@@ -1,6 +1,7 @@
 // Headless runner (Node; no build step, types are stripped).
 //   node src/headless.ts [--scenario standard|e2e|perf|skirmish] [--seed N] [--ticks N] [--ai 1,1]
 //                        [--script demo|eco] [--replay FILE] [--out DIR] [--expected FILE]
+//                        [--auto-train 1,0]
 // Writes into --out: hashes.txt ("tick hash" per HASH_EVERY), commands.jsonl (LogHeader,
 // then one command per line), timing.json. --expected writes ExpectedHashes JSON for the
 // phone-side determinism check. Until the AI arrives (PR-5): --script demo drives the
@@ -51,7 +52,9 @@ const script = replay === undefined ? arg("script", "") : "";
 const out = arg("out", "");
 const expected = arg("expected", "");
 
-const runner = new Runner({ seed, scenario, ai, replay, maxTicks, difficulty });
+// Automatic training (round 6): the log's, or --auto-train 1,0; off when neither says.
+const autoTrain = header?.autoTrain ?? (arg("auto-train", "") === "" ? undefined : arg("auto-train", "").split(",").map((v) => v === "1"));
+const runner = new Runner({ seed, scenario, ai, replay, maxTicks, difficulty, autoTrain });
 const g = runner.game;
 let seq = 0;
 

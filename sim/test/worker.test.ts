@@ -59,7 +59,8 @@ test("init answers ready, then snapshots arrive in real time; commands, pause an
   send({ type: "export_log" });
   const log = of("log")[0].jsonl.trim().split("\n");
   const head = JSON.parse(log[0]);
-  assert.deepEqual(head, { protocol: PROTOCOL_VERSION, seed: 5, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "normal"] });
+  // The person's buildings train on their own, the AI's do not (round 6, D-054); a replay needs it.
+  assert.deepEqual(head, { protocol: PROTOCOL_VERSION, seed: 5, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "normal"], autoTrain: [true, false] });
   // The AI's own commands are in the log too; find the human's by player and seq.
   const moved = log.slice(1).map((l) => JSON.parse(l)).find((c) => c.p === 0 && c.seq === 9);
   assert.ok(moved !== undefined, "the human's command is in the log");

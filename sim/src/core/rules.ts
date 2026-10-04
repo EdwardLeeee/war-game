@@ -236,6 +236,20 @@ export const MAIN_CITY_REPAIR_LOCK = 10 * S;
 export const FARMLAND_REACH = 6;
 /** Economy ratio default (GDD section 4): food / wood / gold in percent. */
 export const ECO_DEFAULT = { food: 40, wood: 35, gold: 25 };
+
+/**
+ * Automatic training (round 6, D-054): a barracks, range or mage hall with it on queues its
+ * unit whenever its queue is empty, paid only from what is above the player's reserve. The
+ * default reserve keeps a mage hall's wood and gold (150 / 100) and 15 crystal for three
+ * cannon shots (5 each); the player changes it with `reserve`. A player's buildings start with
+ * it on when the game says so (GameConfig.autoTrain: a person's yes, an AI's no).
+ */
+export const AUTO_TRAIN = {
+  reserve: { food: 0, wood: 150, gold: 100, crystal: 15 },
+  /** Largest reserve per resource a `reserve` command may set. */
+  reserveMax: 10000,
+  buildings: [BuildingType.Barracks, BuildingType.Range, BuildingType.MageHall] as number[],
+};
 /** Idle farmers are handed work (auto-repair, then the economy ratio, or recall) every this many ticks. */
 export const ECO_EVERY = 20;
 /** A farmer works (gathers, drops off, builds, repairs, shelters) within this distance of the target's cell or footprint. */

@@ -56,6 +56,7 @@ if (flag("static-ratio")) plan.staticRatio = true;
 if (flag("no-mage")) plan.noMage = true;
 if (flag("no-range")) plan.noRange = true;
 if (flag("corners")) plan.corners = true;
+if (flag("auto-train")) plan.autoTrain = true;
 
 const NAMES: Record<Strategy, string> = { push: "主動", defend: "守家", notown: "守家、不拿城鎮" };
 const SPEED_NAMES: Record<Speed, string> = { h1: "手速 H1", eco: "經濟養大" };
@@ -110,7 +111,17 @@ interface GameRecord {
 }
 
 function play(seed: number): GameRecord {
-  const r = new Runner({ seed, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", difficulty], styles: style === "" ? undefined : [style as AiStyle, style as AiStyle] });
+  const r = new Runner({
+    seed,
+    scenario: "standard",
+    ai: [false, true],
+    maxTicks: 0,
+    difficulty: ["normal", difficulty],
+    styles: style === "" ? undefined : [style as AiStyle, style as AiStyle],
+    // The scripted player's buildings train on their own only in the --auto-train group, so the
+    // fixed groups play as before round 6.
+    autoTrain: [plan.autoTrain, false],
+  });
   const g = r.game;
   const w = g.w;
   const map = w.map;
@@ -237,6 +248,7 @@ const options = [
   plan.noMage ? "不蓋法術營" : "",
   plan.noRange ? "不蓋射場" : "",
   plan.corners ? "一直搶城鎮（最近、不是自己的小鎮）" : "",
+  plan.autoTrain ? "用自動訓練（自己不點訓練兵）" : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;

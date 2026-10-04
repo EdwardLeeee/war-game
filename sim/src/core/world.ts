@@ -3,10 +3,10 @@
 // iterating a table is deterministic. Units and buildings share one id sequence; resource
 // nodes and towns have their own small, fixed id ranges.
 
-import { BuildingType, NEUTRAL, PLAYER_COUNT, TownState, UnitType } from "../protocol.ts";
+import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, TownState, UnitType } from "../protocol.ts";
 import { IDENTITY, stepOrder, xIsCanonY } from "../frame.ts";
 import type { GameMap } from "./map.ts";
-import { BUILDINGS, ECO_DEFAULT, MAX_POPULATION, TOWNS, UNITS } from "./rules.ts";
+import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, MAX_POPULATION, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -145,6 +145,11 @@ export class World {
   ecoRatio = new Int32Array(PLAYER_COUNT * 3);
   ecoOn = new Uint8Array(PLAYER_COUNT);
   recall = new Uint8Array(PLAYER_COUNT);
+  // Automatic training (round 6): what it leaves untouched [p * 4 + Resource], and whether a
+  // player's new barracks, ranges and mage halls start with it on (from GameConfig.autoTrain).
+  // Neither is in the hash: the reserve shows in what gets queued, and the start in the flags.
+  reserve = new Int32Array(PLAYER_COUNT * 4);
+  autoTrain = new Uint8Array(PLAYER_COUNT);
 
   // Statistics for game_over (GameStats): [p * 4 + Resource], [p * 5 + UnitType].
   gathered = new Int32Array(PLAYER_COUNT * 4);
@@ -192,6 +197,8 @@ export class World {
     for (let p = 0; p < PLAYER_COUNT; p++) {
       this.ecoRatio.set([ECO_DEFAULT.food, ECO_DEFAULT.wood, ECO_DEFAULT.gold], p * 3);
       this.ecoOn[p] = 1;
+      const r = AUTO_TRAIN.reserve;
+      this.reserve.set([r.food, r.wood, r.gold, r.crystal], p * 4);
     }
     const k = map.nodes.length;
     this.nodeKind = new Int32Array(k);
@@ -290,6 +297,7 @@ export class World {
     c.target[s] = -1;
     c.lastHurt[s] = -100000;
     c.town[s] = -1;
+    if (owner < PLAYER_COUNT && this.autoTrain[owner] === 1 && AUTO_TRAIN.buildings.includes(type)) c.flags[s] = BuildingFlag.AutoTrain;
     this.setFootprint(id, type, cellX, cellY, true);
     if (progress >= 1000 && BUILDINGS[type].accepts.length > 0) this.dropVersion++;
     return id;
