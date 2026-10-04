@@ -4,7 +4,7 @@ name: Sim
 # the path filter would leave unrelated pull requests waiting.
 on:
   push:
-    branches: ["core/**"]
+    branches: ["core/**", "ai/scratch-*"]
     paths:
       - "sim/**"
       - ".github/workflows/sim.yml"
@@ -136,10 +136,11 @@ jobs:
   # ways a person might play, seeds 1-40 each (D-049: 15 seeds overstated a difference that 40
   # did not), game by game; the long groups split over jobs, all five in one table in
   # scripted-summary, the first 15 or 20 seeds beside all 40. Reports only, no threshold.
-  # Only in pull request runs and pushes to core/scratch-* (analysis branches): the push run of a
-  # pull request's branch would play the same games again.
+  # Only in pull request runs and pushes to core/scratch-* and ai/scratch-* (analysis branches of
+  # war-game-core and war-game-ai, D-052): the push run of a pull request's branch would play the
+  # same games again.
   scripted:
-    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-')
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
     name: scripted (${{ matrix.group }} ${{ matrix.seeds }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -180,7 +181,7 @@ jobs:
   # before D-049, and of all 40; games still open at the cap in brackets.
   scripted-summary:
     needs: [scripted]
-    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-'))
+    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
