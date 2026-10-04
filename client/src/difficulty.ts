@@ -6,7 +6,7 @@ import { AI_DIFFICULTIES, type AiDifficulty } from "./sim.ts";
 
 export const DIFFICULTY_KEY = "war-game.proto.difficulty";
 export const DEFAULT_DIFFICULTY: AiDifficulty = "easy";
-export const DIFFICULTY_LABEL: Record<AiDifficulty, string> = { easy: "簡單", normal: "普通" };
+export const DIFFICULTY_LABEL: Record<AiDifficulty, string> = { easy: "簡單", normal: "普通", hard: "困難" };
 
 type Store = Pick<Storage, "getItem" | "setItem">;
 

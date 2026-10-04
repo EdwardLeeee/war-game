@@ -103,6 +103,6 @@ test("the time limit comes with init: none when a person plays, MAX_TICKS for AI
   await until(() => of("game_over").length > 0);
   const over = of("game_over")[0];
   assert.deepEqual([over.winner, over.reason, over.stats.ticks], [-1, GameOverReason.TimeLimit, 40]);
-  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: 0, ai: [false, true], tps: 20, scenario: "standard", difficulty: ["hard" as never] });
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: 0, ai: [false, true], tps: 20, scenario: "standard", difficulty: ["brutal" as never] });
   assert.match(of("error").at(-1)!.message, /difficulty/);
 });

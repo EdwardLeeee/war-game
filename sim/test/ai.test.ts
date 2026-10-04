@@ -2,9 +2,10 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, createAi } from "../src/ai/ai.ts";
+import { type AiStyle, createAi, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
 import { rules } from "../src/core/rules.ts";
+import { startCast } from "../src/core/units.ts";
 import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
@@ -440,4 +441,256 @@ test("the AI's ratio does not send a farmer back and forth (operations round, D-
   }
   assert.ok(moves > 0, "the ratio moved some farmers");
   assert.equal(back, 0, "none of them back within 30 s");
+});
+
+// --- hard (D-052, D-055) ---------------------------------------------------------------------------
+
+/** A hard AI for player 0 of `g`, without a time limit (a person plays), with plan numbers replaced. */
+function hardAi(g: Game, plan: Partial<HardPlan> = {}, player = 0) {
+  return createAi(player, 1, { map: g.w.map, rules: rules(), frame: g.w.map.frames[player], maxTicks: 0, difficulty: "hard", hard: plan }, player);
+}
+
+test("hard: two identical hard AIs on the mirrored spawns play mirror images of each other", () => {
+  const g = new Game({ seed: 7, scenario: "standard" });
+  const w = g.w;
+  const ais = [0, 1].map((p) => createAi(p, 7, { map: w.map, rules: rules(), frame: w.map.frames[p], maxTicks: MAX_TICKS, difficulty: "hard" }, 0));
+  let seq = 0;
+  for (let t = 0; t < 4000; t++) {
+    if (g.tick % 10 === 0) {
+      for (let p = 0; p < 2; p++) for (const body of ais[p].think(buildView(g, p))) g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+    }
+    g.step();
+    assert.equal(units(g, 1), units(g, 0), `tick ${g.tick}`);
+  }
+});
+
+/** Three spearmen of player 0 side by side, an enemy mage 7-8 cells off calibrating a shot on the first. */
+function cannonOnThree() {
+  const g = emptyGame();
+  const w = g.w;
+  const ids = [put(g, 0, UnitType.Spearman, 40, 40), put(g, 0, UnitType.Spearman, 40, 41), put(g, 0, UnitType.Spearman, 41, 40)];
+  // 7 cells and more from them: beyond the 6 cells at which idle soldiers go after an enemy.
+  const mage = put(g, 1, UnitType.Mage, 48, 40);
+  w.res[1 * 4 + 3] = 100;
+  const s = slotOf(g, ids[0]);
+  startCast(w, slotOf(g, mage), w.units.col.x[s], w.units.col.y[s], false);
+  g.fog.update(w);
+  return { g, w, ids };
+}
+
+test("hard: soldiers step out of a crystal cannon's warning; only the one it aims at, too late to get out, is hit", () => {
+  for (const dodge of [true, false]) {
+    const { g, w, ids } = cannonOnThree();
+    const ai = hardAi(g, { dodge });
+    const orders = ai.think(buildView(g, 0));
+    const out = orders.filter((c) => c.c === "retreat") as { u: number[] }[];
+    if (dodge) assert.deepEqual(out.map((c) => c.u[0]).sort(), [ids[1], ids[2]].sort(), "the two at the edge step out");
+    else assert.equal(out.length, 0);
+    // Only the steps out go into the game (the army's own orders would move it anyway).
+    let seq = 0;
+    for (const body of out) g.push({ ...body, t: g.tick, p: 0, seq: seq++ } as never);
+    for (let k = 0; k < 40; k++) g.step();
+    assert.equal(w.cannonHits[1], dodge ? 1 : 3, dodge ? "one hit" : "without stepping out all three are hit");
+  }
+});
+
+test("hard: army orders leave out a mage calibrating a shot (an order would call it off)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const ids: number[] = [];
+  for (let k = 0; k < 8; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 14 + k, s0.cellY - 14));
+  const mage = put(g, 0, UnitType.Mage, s0.cellX + 14, s0.cellY - 15);
+  w.res[3] = 100;
+  startCast(w, slotOf(g, mage), (s0.cellX + 20) << 10, (s0.cellY - 20) << 10, true);
+  g.fog.update(w);
+  const move = hardAi(g).think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= 8) as { u: number[] } | undefined;
+  assert.ok(move !== undefined && ids.every((id) => move.u.includes(id)), "the spearmen get the order");
+  assert.equal(move.u.includes(mage), false, "the calibrating mage does not");
+});
+
+/** Where hard's army of 26 spearmen (out in the field, no town worth taking) goes after it saw 40 enemy soldiers that then vanished. */
+function afterSighting(how: "fog" | "fell"): string {
+  const g = emptyGame();
+  const w = g.w;
+  for (const t of w.map.towns) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    w.townTimer[t.id] = 4800;
+    put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+  }
+  w.tick = 12 * 1200;
+  for (let k = 0; k < 26; k++) put(g, 0, UnitType.Spearman, 40 + (k % 6), 60 + Math.trunc(k / 6));
+  const foes: number[] = [];
+  for (let k = 0; k < 40; k++) foes.push(put(g, 1, UnitType.Spearman, 38 + (k % 10), 55 + Math.trunc(k / 10)));
+  g.fog.update(w);
+  const ai = hardAi(g, { pushArmy: 20, dodge: false });
+  ai.think(buildView(g, 0));
+  const s1 = w.map.spawns[1];
+  const marches = () => {
+    w.tick += 10;
+    g.fog.update(w);
+    return ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length >= 20 && c.x === s1.cellX && c.y === s1.cellY);
+  };
+  if (how === "fell") {
+    kill(g, foes);
+    return marches() ? "enemy base" : "other";
+  }
+  // They walk off north into the fog, half a cell a think, as soldiers do.
+  let marched = false;
+  for (let step = 0; step < 20; step++) {
+    for (const id of foes) w.units.col.y[slotOf(g, id)] -= 512;
+    if (marches()) marched = true;
+  }
+  return marched ? "enemy base" : "other";
+}
+
+test("hard: it remembers enemy soldiers that walked into the fog, and counts those it saw fall", () => {
+  assert.equal(afterSighting("fog"), "other", "40 enemy soldiers still out there: it does not march with 26");
+  assert.equal(afterSighting("fell"), "enemy base", "it saw all 40 fall: it marches");
+});
+
+/** Hard's 30 spearmen marched on the enemy main city and stand by it; `fallen` of them die, `defenders` enemy spearmen turn up. */
+function siege(fallen: number, defenders: number): CommandBody[] {
+  const g = emptyGame();
+  const w = g.w;
+  for (const t of w.map.towns) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    w.townTimer[t.id] = 4800;
+  }
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  const ids: number[] = [];
+  for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6)));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+  const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
+  assert.deepEqual(go && [go.x, go.y], [s1.cellX, s1.cellY], "marches on the enemy base");
+  ids.forEach((id, k) => {
+    const s = slotOf(g, id);
+    w.units.col.x[s] = ((s1.cellX - 6 + (k % 6)) << 10) + 512;
+    w.units.col.y[s] = ((s1.cellY + 3 + Math.trunc(k / 6)) << 10) + 512;
+  });
+  kill(g, ids.slice(0, fallen));
+  for (let k = 0; k < defenders; k++) put(g, 1, UnitType.Spearman, s1.cellX - 7 + (k % 5), s1.cellY + 8 + Math.trunc(k / 5));
+  w.tick += 200;
+  g.fog.update(w);
+  return ai.think(buildView(g, 0));
+}
+
+test("hard: an attack on an undefended main city goes on however many the arrows took; it breaks off against stronger defenders", () => {
+  const alone = siege(20, 0);
+  assert.equal(alone.some((c) => c.c === "retreat"), false, "10 of 30 left, nobody defends: no retreat (normal would)");
+  assert.ok(alone.some((c) => c.c === "attack" && c.u.length === 10), "the 10 attack the city");
+  assert.ok(siege(20, 15).some((c) => c.c === "retreat"), "15 defenders against 10: breaks off");
+});
+
+test("hard: soldiers trained while the army is away wait at home and follow six at a time", () => {
+  const g = emptyGame();
+  const w = g.w;
+  for (const t of w.map.towns) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    w.townTimer[t.id] = 4800;
+  }
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+  ai.think(buildView(g, 0));
+  const fresh: number[] = [];
+  const toBase = () => {
+    w.tick += 400;
+    g.fog.update(w);
+    return ai.think(buildView(g, 0)).filter((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY) as { u: number[] }[];
+  };
+  for (let k = 0; k < 5; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3 + k, s0.cellY - 3));
+  assert.ok(toBase().every((c) => !fresh.some((id) => c.u.includes(id))), "five new ones wait");
+  fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3, s0.cellY - 4));
+  assert.ok(toBase().some((c) => fresh.every((id) => c.u.includes(id))), "the sixth: all six go");
+});
+
+test("hard: the mage hall comes first once there is the crystal for a mage", () => {
+  const plan = (crystal: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    for (let k = 0; k < 12; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + k, s0.cellY + 4);
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    w.res.set([500, 500, 500, crystal], 0);
+    g.fog.update(w);
+    return (hardAi(g).think(buildView(g, 0)).find((c) => c.c === "build") as { type: number } | undefined)?.type;
+  };
+  assert.equal(plan(50), BuildingType.MageHall);
+  assert.notEqual(plan(0), BuildingType.MageHall);
+});
+
+test("hard: it trains spearmen rather than ranged units against an enemy with mages", () => {
+  const first = (enemyMages: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.addBuilding(0, BuildingType.Barracks, s0.cellX + 4, s0.cellY - 8, 500, 1000);
+    w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 8, 500, 1000);
+    for (let k = 0; k < 3; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 8 + 3 * k, s0.cellY + 6, 200, 1000);
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, 40 + k, 60);
+    for (let k = 0; k < 4; k++) put(g, 0, UnitType.Ranged, 40 + k, 61);
+    for (let k = 0; k < enemyMages; k++) put(g, 1, UnitType.Mage, 40 + k, 55);
+    // Enough for one soldier only: food 40, wood 40, gold 30.
+    w.res.set([40, 40, 30, 0], 0);
+    g.fog.update(w);
+    return (hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "train") as { type: number } | undefined)?.type;
+  };
+  assert.equal(first(0), UnitType.Ranged, "6 spearmen, 4 ranged, no mages seen: a ranged unit");
+  assert.equal(first(2), UnitType.Spearman, "two enemy mages seen: a spearman");
+});
+
+test("hard: the economy ratio leans away from what piles up", () => {
+  const ratio = (gold: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 8, 500, 1000);
+    w.res.set([200, 50, gold, 0], 0);
+    g.fog.update(w);
+    return hardAi(g).think(buildView(g, 0)).find((c) => c.c === "eco_ratio") as { food: number; wood: number; gold: number };
+  };
+  const some = ratio(200);
+  const pile = ratio(1000);
+  assert.ok(pile.gold < some.gold && pile.wood > some.wood, `${JSON.stringify(some)} then ${JSON.stringify(pile)}`);
+  assert.equal(pile.gold, 5, "a quarter of its share, at least 5");
+});
+
+test("hard: a lone raider at home draws back a few soldiers, not the army out at a town", () => {
+  const orders = (raiders: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const [small] = w.map.towns;
+    const ids: number[] = [];
+    for (let k = 0; k < 14; k++) ids.push(put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7)));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false });
+    // Off to the small town (the nearest one it can take).
+    const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 14) as { x: number; y: number } | undefined;
+    assert.ok(go !== undefined && w.map.towns.some((t) => t.cellX === go.x && t.cellY === go.y), "off to a town");
+    const s0 = w.map.spawns[0];
+    for (let k = 0; k < raiders; k++) put(g, 1, UnitType.Spearman, s0.cellX + 5 + k, s0.cellY - 5);
+    // A farmer at home sees them.
+    put(g, 0, UnitType.Farmer, s0.cellX + 3, s0.cellY - 3);
+    w.tick += 10;
+    g.fog.update(w);
+    return { out: ai.think(buildView(g, 0)).filter((c) => c.c === "move") as { u: number[]; x: number; y: number }[], small, s0 };
+  };
+  const one = orders(1);
+  const back = one.out.filter((c) => Math.abs(c.x - one.s0.cellX) <= 8 && Math.abs(c.y - one.s0.cellY) <= 8);
+  assert.equal(back.length, 1);
+  assert.equal(back[0].u.length, 3, "two for the raider and one more");
+  const five = orders(5);
+  assert.ok(five.out.some((c) => c.u.length === 14 && Math.abs(c.x - five.s0.cellX) <= 8 && Math.abs(c.y - five.s0.cellY) <= 8), "five raiders: everyone home");
 });
