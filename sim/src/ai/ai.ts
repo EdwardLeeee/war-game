@@ -734,6 +734,8 @@ export interface HardPlan {
   production: number;
   /** Unfinished buildings at once. */
   sites: number;
+  /** Farmers it has when it builds its barracks (normal: 10). */
+  barracksAt: number;
   /** Ticks between two changes of the economy ratio (0: whenever it changes, as normal does). */
   ratioEvery: number;
   /**
@@ -798,6 +800,7 @@ export const HARD: HardPlan = {
   farmers: 32,
   production: 4,
   sites: 1,
+  barracksAt: 10,
   ratioEvery: 600,
   demandRatio: false,
   spearShare: 50,
@@ -1184,7 +1187,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (cap < rules.maxPopulation && cap - pop - queued <= 5 + producers) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
-        if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
+        if (!has(BuildingType.Barracks) && farmers.length >= plan.barracksAt) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
