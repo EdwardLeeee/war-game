@@ -565,7 +565,7 @@ function siege(fallen: number, defenders: number): CommandBody[] {
   const ids: number[] = [];
   for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6)));
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false });
+  const ai = hardAi(g, { dodge: false, pushArmy: 24 });
   const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
   assert.deepEqual(go && [go.x, go.y], [s1.cellX, s1.cellY], "marches on the enemy base");
   ids.forEach((id, k) => {
@@ -600,7 +600,7 @@ test("hard: soldiers trained while the army is away wait at home and follow six 
   const s1 = w.map.spawns[1];
   for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false });
+  const ai = hardAi(g, { dodge: false, pushArmy: 24 });
   ai.think(buildView(g, 0));
   const fresh: number[] = [];
   const toBase = () => {
