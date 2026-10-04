@@ -4,7 +4,7 @@ name: Sim
 # the path filter would leave unrelated pull requests waiting.
 on:
   push:
-    branches: ["core/**"]
+    branches: ["core/**", "ai/scratch-*"]
     paths:
       - "sim/**"
       - ".github/workflows/sim.yml"
@@ -109,8 +109,10 @@ jobs:
           retention-days: 30
 
   # What a person meets (round 2): each AI against a player who does nothing, without a time
-  # limit, as a timeline (easy must not go for a town before game minute 18); and the time per
-  # tick of 40 soldiers walled in by their own houses.
+  # limit, as a timeline (easy must not go for a town before game minute 18); normal and hard
+  # for seeds 1-5 with a table of when each town fell and the first march on the main city
+  # (round 6; hard once AI_DIFFICULTIES has it, D-052); and the time per tick of 40 soldiers
+  # walled in by their own houses.
   ai-timeline:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -129,24 +131,42 @@ jobs:
         run: |
           set -o pipefail
           node src/ai-timeline.ts --seed 4 --difficulty easy --first-town-min 18 | tee -a "${GITHUB_STEP_SUMMARY}"
-          node src/ai-timeline.ts --seed 4 --difficulty normal | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/ai-timeline.ts --seeds 1-5 --difficulty normal | tee -a "${GITHUB_STEP_SUMMARY}"
           node src/walled-perf.ts | tee -a "${GITHUB_STEP_SUMMARY}"
+      - name: Is there a hard AI yet (AI_DIFFICULTIES)?
+        id: hard
+        run: |
+          if node --input-type=module -e 'const m = await import("./src/protocol.ts"); process.exit(m.AI_DIFFICULTIES.includes("hard") ? 0 : 1)' 2>/dev/null; then
+            echo "on=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "on=false" >> "${GITHUB_OUTPUT}"
+            echo "No hard AI in AI_DIFFICULTIES yet: skipped." | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
+      - name: Hard against a player who does nothing
+        if: steps.hard.outputs.on == 'true'
+        run: |
+          set -o pipefail
+          node src/ai-timeline.ts --seeds 1-5 --difficulty hard | tee -a "${GITHUB_STEP_SUMMARY}"
 
-  # The scripted player against the normal AI (D-045, D-046; src/scripted-games.ts): five fixed
+  # The scripted player against the normal AI, and the hard one once there is one (D-052) (D-045,
+  # D-046; src/scripted-games.ts): five fixed
   # ways a person might play, seeds 1-40 each (D-049: 15 seeds overstated a difference that 40
   # did not), game by game; the long groups split over jobs, all five in one table in
   # scripted-summary, the first 15 or 20 seeds beside all 40. Reports only, no threshold.
-  # Only in pull request runs and pushes to core/scratch-* (analysis branches): the push run of a
-  # pull request's branch would play the same games again.
+  # Only in pull request runs and pushes to core/scratch-* and ai/scratch-* (analysis branches of
+  # war-game-core and war-game-ai, D-052): the push run of a pull request's branch would play the
+  # same games again.
   scripted:
-    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-')
-    name: scripted (${{ matrix.group }} ${{ matrix.seeds }})
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
+    name: scripted (${{ matrix.difficulty == 'hard' && 'hard ' || '' }}${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
+        # Against the normal AI, and the hard one once AI_DIFFICULTIES has it (D-052).
+        difficulty: [normal, hard]
+        cell:
           - { group: push, seeds: 1-40, args: --strategy push --speed h1 --formation close }
           - { group: defend, seeds: 1-20, args: --strategy defend --speed h1 --formation close }
           - { group: defend, seeds: 21-40, args: --strategy defend --speed h1 --formation close }
@@ -156,6 +176,9 @@ jobs:
           - { group: defend-eco, seeds: 15-27, args: --strategy defend --speed eco --formation all }
           - { group: defend-eco, seeds: 28-40, args: --strategy defend --speed eco --formation all }
           - { group: notown, seeds: 1-40, args: --strategy notown --speed h1 --formation close }
+    env:
+      # scripted-<group>-<seeds> against normal (as before), scripted-hard-<group>-<seeds> against hard.
+      NAME: scripted-${{ matrix.difficulty == 'hard' && 'hard-' || '' }}${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
     defaults:
       run:
         working-directory: sim
@@ -164,15 +187,26 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
-      - name: Scripted player against the normal AI
+      - name: Is there a hard AI yet (AI_DIFFICULTIES)?
+        id: hard
+        if: matrix.difficulty == 'hard'
+        run: |
+          if node --input-type=module -e 'const m = await import("./src/protocol.ts"); process.exit(m.AI_DIFFICULTIES.includes("hard") ? 0 : 1)' 2>/dev/null; then
+            echo "on=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "on=false" >> "${GITHUB_OUTPUT}"
+            echo "No hard AI in AI_DIFFICULTIES yet: skipped." | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
+      - name: Scripted player against the ${{ matrix.difficulty }} AI
+        if: matrix.difficulty == 'normal' || steps.hard.outputs.on == 'true'
         run: |
           set -o pipefail
-          node src/scripted-games.ts --seeds ${{ matrix.seeds }} ${{ matrix.args }} --json scripted-${{ matrix.group }}-${{ matrix.seeds }}.json | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/scripted-games.ts --seeds ${{ matrix.cell.seeds }} ${{ matrix.cell.args }} --difficulty ${{ matrix.difficulty }} --json "${NAME}.json" | tee -a "${GITHUB_STEP_SUMMARY}"
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: scripted-${{ matrix.group }}-${{ matrix.seeds }}
-          path: sim/scripted-${{ matrix.group }}-${{ matrix.seeds }}.json
+          name: ${{ env.NAME }}
+          path: sim/${{ env.NAME }}.json
           retention-days: 30
           if-no-files-found: ignore
 
@@ -180,7 +214,7 @@ jobs:
   # before D-049, and of all 40; games still open at the cap in brackets.
   scripted-summary:
     needs: [scripted]
-    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-'))
+    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -198,7 +232,9 @@ jobs:
           cat > summary.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
           const groups = [["push", "主動", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15]];
-          const games = new Map(groups.map(([g]) => [g, []]));
+          // scripted-<group>-<seeds>.json against normal, scripted-hard-<group>-<seeds>.json against hard.
+          const levels = [["", "普通"], ["hard-", "困難"]];
+          const games = new Map(levels.flatMap(([l]) => groups.map(([g]) => [l + g, []])));
           for (const f of readdirSync("scripted")) {
             const m = /^scripted-(.+)-\d+-\d+\.json$/.exec(f);
             if (m && games.has(m[1])) games.get(m[1]).push(...JSON.parse(readFileSync(`scripted/${f}`, "utf8")).games);
@@ -208,12 +244,17 @@ jobs:
             const open = list.filter((x) => x.result === "open").length;
             return `${won}/${list.length}${open > 0 ? `（${open}）` : ""}`;
           };
-          const out = ["## 腳本玩家五組（對普通電腦）", "", "| 組 | 前 15／20 局 | 40 局 |", "|---|---|---|"];
-          for (const [g, name, first] of groups) {
-            const list = games.get(g).sort((a, b) => a.seed - b.seed);
-            out.push(`| ${name}（${g}） | ${cell(list.filter((x) => x.seed <= first))} | ${cell(list)} |`);
+          const out = [];
+          for (const [l, level] of levels) {
+            if (groups.every(([g]) => games.get(l + g).length === 0)) continue;
+            out.push(`## 腳本玩家五組（對${level}電腦）`, "", "| 組 | 前 15／20 局 | 40 局 |", "|---|---|---|");
+            for (const [g, name, first] of groups) {
+              const list = games.get(l + g).sort((a, b) => a.seed - b.seed);
+              out.push(`| ${name}（${g}） | ${cell(list.filter((x) => x.seed <= first))} | ${cell(list)} |`);
+            }
+            out.push("");
           }
-          out.push("", "贏/局數；括號是到第 50 分還沒分出勝負的局。前 15／20 局是 D-049 以前 CI 跑的局，逐局相同。");
+          out.push("贏/局數；括號是到第 50 分還沒分出勝負的局。前 15／20 局是 D-049 以前 CI 跑的局，逐局相同。");
           console.log(out.join("\n"));
           EOF
           node summary.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
@@ -265,6 +306,111 @@ jobs:
           name: tournament-easy-shard-${{ matrix.shard }}
           path: tournament-easy/
           retention-days: 30
+
+  # The hard AI (D-052), once AI_DIFFICULTIES has it: 100 games against the normal AI (each
+  # spawn plays hard half the time, as against easy) and 100 hard against hard, replayed like
+  # the others. Until then every step after the check is skipped.
+  ai-vs-hard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        pair: [hard-normal, hard-hard]
+        shard: [0, 1, 2, 3]
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sim/package-lock.json
+      - name: Is there a hard AI yet (AI_DIFFICULTIES)?
+        id: hard
+        run: |
+          if node --input-type=module -e 'const m = await import("./src/protocol.ts"); process.exit(m.AI_DIFFICULTIES.includes("hard") ? 0 : 1)' 2>/dev/null; then
+            echo "on=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "on=false" >> "${GITHUB_OUTPUT}"
+            echo "No hard AI in AI_DIFFICULTIES yet: skipped." | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
+      - if: steps.hard.outputs.on == 'true'
+        run: npm ci
+      - name: 25 games, ${{ matrix.pair }}, each replayed
+        if: steps.hard.outputs.on == 'true'
+        run: |
+          pair="${{ matrix.pair }}"
+          node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --difficulty "${pair/-/,}" --out "${GITHUB_WORKSPACE}/tournament-${pair}/shard-${{ matrix.shard }}"
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.hard.outputs.on == 'true'
+        with:
+          name: tournament-${{ matrix.pair }}-shard-${{ matrix.shard }}
+          path: tournament-${{ matrix.pair }}/
+          retention-days: 30
+
+  # Gates as for the others; hard against normal: hard wins at least 65% of the decided games
+  # (D-052's brief, src/tournament-summary.ts).
+  ai-hard-summary:
+    needs: [ai-vs-hard]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Is there a hard AI yet (AI_DIFFICULTIES)?
+        id: hard
+        run: |
+          if node --input-type=module -e 'const m = await import("./src/protocol.ts"); process.exit(m.AI_DIFFICULTIES.includes("hard") ? 0 : 1)' 2>/dev/null; then
+            echo "on=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "on=false" >> "${GITHUB_OUTPUT}"
+            echo "No hard AI in AI_DIFFICULTIES yet: skipped." | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
+      - uses: actions/download-artifact@v7
+        if: steps.hard.outputs.on == 'true'
+        with:
+          pattern: tournament-hard-normal-shard-*
+          path: tournament-hard-normal
+          merge-multiple: true
+      - uses: actions/download-artifact@v7
+        if: steps.hard.outputs.on == 'true'
+        with:
+          pattern: tournament-hard-hard-shard-*
+          path: tournament-hard-hard
+          merge-multiple: true
+      - name: Summary and gates, hard against normal
+        if: steps.hard.outputs.on == 'true'
+        run: |
+          set -o pipefail
+          { echo "## 困難對普通"; node src/tournament-summary.ts ../tournament-hard-normal/shard-* --json ../tournament-hard-normal/summary.json; } | tee -a "${GITHUB_STEP_SUMMARY}"
+      - name: Summary and gates, hard against hard
+        if: always() && steps.hard.outputs.on == 'true'
+        run: |
+          set -o pipefail
+          { echo "## 困難對困難"; node src/tournament-summary.ts ../tournament-hard-hard/shard-* --json ../tournament-hard-hard/summary.json; } | tee -a "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.hard.outputs.on == 'true'
+        with:
+          name: tournament-summary-hard-normal
+          path: tournament-hard-normal/summary.json
+          retention-days: 30
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.hard.outputs.on == 'true'
+        with:
+          name: tournament-summary-hard-hard
+          path: tournament-hard-hard/summary.json
+          retention-days: 30
+          if-no-files-found: ignore
 
   # The same command logs give the same hashes in Node, Chromium and WebKit: three AI-vs-AI
   # games played in Node, replayed in the browser from the simulation's own sources.
