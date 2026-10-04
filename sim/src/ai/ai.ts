@@ -755,6 +755,11 @@ export interface HardPlan {
   counterArmy: number;
   /** The farmers hide in the main city with this many enemy soldiers near it (0: never). */
   recallAt: number;
+  /**
+   * With the army out, this many enemy soldiers near the main city call it home; fewer, and only
+   * the nearest few (two for each, and one more) go back (1: any enemy calls the army home).
+   */
+  pullAll: number;
   /** Steps out of crystal cannon warnings. */
   dodge: boolean;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
@@ -777,6 +782,7 @@ export const HARD: HardPlan = {
   pushRatio: 120,
   counterArmy: 14,
   recallAt: 4,
+  pullAll: 4,
   dodge: true,
   looseAt: 0,
   looseWho: 1,
@@ -859,6 +865,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const loosed = new Set<number>();
   /** Units stepping out of a cannon warning, until the tick it lands (and a little). */
   const dodging = new Map<number, number>();
+  /** Soldiers sent home against a small raid while the army is out. */
+  const homeSquad = new Set<number>();
+  let squadMove = -100000;
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number): { x: number; y: number } | null {
@@ -1206,7 +1215,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
       // Not told anything while stepping out of a shot or calibrating one (any order would call the
       // shot off).
-      const detached = (id: number) => dodging.has(id) || byId.get(id)?.order === Order.Cast;
+      for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
+      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || byId.get(id)?.order === Order.Cast;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -1276,7 +1286,31 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             out.push({ c: "recall", on: true });
             recalled = true;
           }
-          if (!committed) {
+          if ((mode === "town" || mode === "base") && atHome.length < plan.pullAll) {
+            // A few enemy soldiers while the army is out: the nearest few go back and the army
+            // carries on (otherwise one raider would call the whole army home).
+            const need = 2 * atHome.length + 1;
+            const fresh = army
+              .filter((u) => !detached(u.id))
+              .sort((a, b) => dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.fx, a.fy) - rank(b.fx, b.fy))
+              .slice(0, Math.max(0, need - homeSquad.size));
+            for (const u of fresh) homeSquad.add(u.id);
+            const ids = [...homeSquad].filter((id) => !dodging.has(id));
+            if (ids.length > 0 && (fresh.length > 0 || tick - squadMove >= 100)) {
+              const c = centre(atHome, post.x, post.y);
+              out.push({ c: "move", u: ids, x: c.x, y: c.y });
+              squadMove = tick;
+            }
+            const keep = armyIds.filter((id) => !homeSquad.has(id));
+            armyIds.length = 0;
+            armyIds.push(...keep);
+          } else if (!committed) {
+            if (homeSquad.size > 0) {
+              homeSquad.clear();
+              armyIds.length = 0;
+              armyIds.push(...army.filter((u) => !detached(u.id)).map((u) => u.id));
+              lastMove = -100000;
+            }
             const wave = foesNear(home.cellX, home.cellY, WAVE_CELLS);
             const close = atHome.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) <= 100);
             // Clearly stronger: meet them; otherwise wait for them by the city.
@@ -1289,6 +1323,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (recalled && tick - lastThreat >= 100) {
             out.push({ c: "recall", on: false });
             recalled = false;
+          }
+          // The raid is over: the home squad goes back to the army.
+          if (homeSquad.size > 0 && tick - lastThreat >= 200) {
+            rejoin.push(...homeSquad);
+            homeSquad.clear();
           }
           if (mode === "defend") mode = "home";
         }
@@ -1407,9 +1446,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       };
       armyOrders();
 
-      // Back from a dodge: with the army again.
+      // Back from a dodge or a raid at home: with the army again (on an attack, those that did not
+      // set out with it wait at home like the other reserves).
       const back = rejoin.filter((id) => byId.has(id) && !detached(id));
-      if (back.length > 0 && !sent) out.push({ c: "move", u: back, x: target.x, y: target.y });
+      const late = mode === "base" ? back.filter((id) => !marched.has(id)) : [];
+      const on = back.filter((id) => !late.includes(id));
+      if (on.length > 0 && !sent) out.push({ c: "move", u: on, x: target.x, y: target.y });
+      if (late.length > 0) out.push({ c: "move", u: late, x: post.x, y: post.y });
       return out;
     },
   };

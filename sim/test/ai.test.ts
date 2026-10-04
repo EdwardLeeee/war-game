@@ -666,3 +666,31 @@ test("hard: the economy ratio leans away from what piles up", () => {
   assert.ok(pile.gold < some.gold && pile.wood > some.wood, `${JSON.stringify(some)} then ${JSON.stringify(pile)}`);
   assert.equal(pile.gold, 5, "a quarter of its share, at least 5");
 });
+
+test("hard: a lone raider at home draws back a few soldiers, not the army out at a town", () => {
+  const orders = (raiders: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const [small] = w.map.towns;
+    const ids: number[] = [];
+    for (let k = 0; k < 14; k++) ids.push(put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7)));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false });
+    // Off to the small town (the nearest one it can take).
+    const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 14) as { x: number; y: number } | undefined;
+    assert.ok(go !== undefined && w.map.towns.some((t) => t.cellX === go.x && t.cellY === go.y), "off to a town");
+    const s0 = w.map.spawns[0];
+    for (let k = 0; k < raiders; k++) put(g, 1, UnitType.Spearman, s0.cellX + 5 + k, s0.cellY - 5);
+    // A farmer at home sees them.
+    put(g, 0, UnitType.Farmer, s0.cellX + 3, s0.cellY - 3);
+    w.tick += 10;
+    g.fog.update(w);
+    return { out: ai.think(buildView(g, 0)).filter((c) => c.c === "move") as { u: number[]; x: number; y: number }[], small, s0 };
+  };
+  const one = orders(1);
+  const back = one.out.filter((c) => Math.abs(c.x - one.s0.cellX) <= 8 && Math.abs(c.y - one.s0.cellY) <= 8);
+  assert.equal(back.length, 1);
+  assert.equal(back[0].u.length, 3, "two for the raider and one more");
+  const five = orders(5);
+  assert.ok(five.out.some((c) => c.u.length === 14 && Math.abs(c.x - five.s0.cellX) <= 8 && Math.abs(c.y - five.s0.cellY) <= 8), "five raiders: everyone home");
+});
