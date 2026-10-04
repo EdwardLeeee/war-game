@@ -481,7 +481,7 @@ function cannonOnThree() {
 test("hard: soldiers step out of a crystal cannon's warning; only the one it aims at, too late to get out, is hit", () => {
   for (const dodge of [true, false]) {
     const { g, w, ids } = cannonOnThree();
-    const ai = hardAi(g, { dodge, focus: 0 });
+    const ai = hardAi(g, { dodge });
     const orders = ai.think(buildView(g, 0));
     const out = orders.filter((c) => c.c === "retreat") as { u: number[] }[];
     if (dodge) assert.deepEqual(out.map((c) => c.u[0]).sort(), [ids[1], ids[2]].sort(), "the two at the edge step out");
@@ -494,22 +494,19 @@ test("hard: soldiers step out of a crystal cannon's warning; only the one it aim
   }
 });
 
-test("hard: ranged units nearby shoot an enemy mage in sight first", () => {
-  for (const focus of [3, 0]) {
-    const g = emptyGame();
-    const shooters = [0, 1, 2, 3, 4].map((k) => put(g, 0, UnitType.Ranged, 40 + k, 44));
-    const mage = put(g, 1, UnitType.Mage, 42, 39);
-    put(g, 1, UnitType.Spearman, 42, 41);
-    g.fog.update(g.w);
-    const at = hardAi(g, { focus, dodge: false }).think(buildView(g, 0)).filter((c) => c.c === "attack") as { u: number[]; target: number }[];
-    if (focus === 0) assert.equal(at.length, 0);
-    else {
-      assert.equal(at.length, 1);
-      assert.equal(at[0].target, mage);
-      assert.equal(at[0].u.length, 3, "three of the five");
-      assert.ok(at[0].u.every((id) => shooters.includes(id)));
-    }
-  }
+test("hard: army orders leave out a mage calibrating a shot (an order would call it off)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const ids: number[] = [];
+  for (let k = 0; k < 8; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 14 + k, s0.cellY - 14));
+  const mage = put(g, 0, UnitType.Mage, s0.cellX + 14, s0.cellY - 15);
+  w.res[3] = 100;
+  startCast(w, slotOf(g, mage), (s0.cellX + 20) << 10, (s0.cellY - 20) << 10, true);
+  g.fog.update(w);
+  const move = hardAi(g).think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length >= 8) as { u: number[] } | undefined;
+  assert.ok(move !== undefined && ids.every((id) => move.u.includes(id)), "the spearmen get the order");
+  assert.equal(move.u.includes(mage), false, "the calibrating mage does not");
 });
 
 /** Where hard's army of 26 spearmen (out in the field, no town worth taking) goes after it saw 40 enemy soldiers that then vanished. */
@@ -527,7 +524,7 @@ function afterSighting(how: "fog" | "fell"): string {
   const foes: number[] = [];
   for (let k = 0; k < 40; k++) foes.push(put(g, 1, UnitType.Spearman, 38 + (k % 10), 55 + Math.trunc(k / 10)));
   g.fog.update(w);
-  const ai = hardAi(g, { pushArmy: 20, dodge: false, focus: 0 });
+  const ai = hardAi(g, { pushArmy: 20, dodge: false });
   ai.think(buildView(g, 0));
   const s1 = w.map.spawns[1];
   const marches = () => {
@@ -568,7 +565,7 @@ function siege(fallen: number, defenders: number): CommandBody[] {
   const ids: number[] = [];
   for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6)));
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, focus: 0 });
+  const ai = hardAi(g, { dodge: false });
   const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
   assert.deepEqual(go && [go.x, go.y], [s1.cellX, s1.cellY], "marches on the enemy base");
   ids.forEach((id, k) => {
@@ -603,7 +600,7 @@ test("hard: soldiers trained while the army is away wait at home and follow six 
   const s1 = w.map.spawns[1];
   for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, focus: 0 });
+  const ai = hardAi(g, { dodge: false });
   ai.think(buildView(g, 0));
   const fresh: number[] = [];
   const toBase = () => {
@@ -648,7 +645,7 @@ test("hard: it trains spearmen rather than ranged units against an enemy with ma
     // Enough for one soldier only: food 40, wood 40, gold 30.
     w.res.set([40, 40, 30, 0], 0);
     g.fog.update(w);
-    return (hardAi(g, { dodge: false, focus: 0 }).think(buildView(g, 0)).find((c) => c.c === "train") as { type: number } | undefined)?.type;
+    return (hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "train") as { type: number } | undefined)?.type;
   };
   assert.equal(first(0), UnitType.Ranged, "6 spearmen, 4 ranged, no mages seen: a ranged unit");
   assert.equal(first(2), UnitType.Spearman, "two enemy mages seen: a spearman");

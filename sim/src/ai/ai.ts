@@ -718,15 +718,17 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
 //   in sight;
 // - answers the enemy's mix: spearmen against mages (a cannon shot kills a ranged unit, not a
 //   spearman), ranged against spearmen;
-// - steps out of the crystal cannon's warning area, shoots the enemy's mages first, and goes loose
-//   against several mages;
-// - splits off small groups (HardPlan: raid, guard, second): raiders after the enemy's gatherers,
-//   a guard at home while the army is out, a second front while the enemy's army is away.
-// The numbers (HARD) were chosen with AI-against-AI games; each game moves a few of them a little
-// (its own Rng), so no two games are alike. Every spatial choice and tie is made in player 0's
-// frame, as in the normal AI.
+// - steps out of the crystal cannon's warning area, and does not call off its own mages' shots
+//   with an army order;
+// - sends what was trained during an attack after it six at a time, and does not give up an attack
+//   on a main city nobody defends.
+// Kept only what won in AI-against-AI games (sim/README.md lists what was tried and dropped: raids
+// on gatherers, a guard at home, a second front, sending ranged units at the enemy's mages, aiming
+// its own cannon, a mine by the crystal vein, an earlier barracks, ...). Each game moves a few
+// numbers a little (its own Rng), so no two games are alike. Every spatial choice and tie is made
+// in player 0's frame, as in the normal AI.
 
-/** What the hard AI tunes (HARD has the values it plays with). */
+/** What the hard AI tunes (HARD has the values it plays with; tests may replace them). */
 export interface HardPlan {
   /** Farmers it trains (each game: +-2). */
   farmers: number;
@@ -734,27 +736,14 @@ export interface HardPlan {
   production: number;
   /** Unfinished buildings at once. */
   sites: number;
-  /** Farmers it has when it builds its barracks (normal: 10). */
-  barracksAt: number;
-  /**
-   * The ratio from what its buildings would spend at full pace (farmers, soldiers, mages, houses)
-   * instead of a fixed ratio per stage; both lean away from what piles up.
-   */
-  demandRatio: boolean;
   /** Percent spearmen among spearmen and ranged (each game: +-5)... */
   spearShare: number;
   /** ...moved this many points toward what beats the enemy's mix as it has seen it (0: never). */
   counterMix: number;
   /** Crystal kept per mage for its shots before it trains another. */
   mageReserve: number;
-  /** Farmers on the crystal vein once there is a mage hall. */
+  /** Farmers on the crystal vein once there is a mage hall (and it has found the vein). */
   vein: number;
-  /** Builds a mine by the crystal vein (crystal goes to a mine too), so the crew does not walk it home. */
-  veinMine: boolean;
-  /** Sends one soldier to explore until it has found the crystal vein (its place is not known from the start). */
-  scout: boolean;
-  /** Sets off for a town in ruins so as to be there when it turns neutral again (it read the ruins' timer), and waits there. */
-  early: boolean;
   /** Soldiers it takes to a small town (each game: +0..1), and to the big one. */
   townArmy: number;
   bigArmy: number;
@@ -768,45 +757,20 @@ export interface HardPlan {
   recallAt: number;
   /** Steps out of crystal cannon warnings. */
   dodge: boolean;
-  /** Ranged units sent at each enemy mage in sight (0: none). */
-  focus: number;
-  /** Its mages aim their own shots at what one shot kills (ranged units, farmers), not only at the biggest crowd. */
-  aim: boolean;
-  /** Army orders leave out a mage calibrating a shot (an order would call the shot off). */
-  keepCasts: boolean;
-  /**
-   * With little left of the enemy's army (as it believes: worth under this), soldiers trained
-   * during an attack follow at once instead of six at a time (0: always six at a time).
-   */
-  allIn: number;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
   looseWho: number;
-  /** Raiders sent at the enemy's gatherers (0: none), once the army has this many. */
-  raid: number;
-  raidFrom: number;
-  /** Soldiers left at home when the army marches on the enemy base (0: none). */
-  guard: number;
-  /** A second front: while the enemy's army is seen away from its base, this many go for the base (0: none). */
-  second: number;
-  /** While the enemy's army is seen away from its base, the whole army marches on it once it has this many (0: never). */
-  pounce: number;
 }
 
 export const HARD: HardPlan = {
   farmers: 32,
   production: 4,
   sites: 1,
-  barracksAt: 10,
-  demandRatio: false,
   spearShare: 50,
   counterMix: 15,
   mageReserve: 10,
   vein: 2,
-  veinMine: false,
-  scout: false,
-  early: false,
   townArmy: 6,
   bigArmy: 20,
   pushArmy: 24,
@@ -814,17 +778,8 @@ export const HARD: HardPlan = {
   counterArmy: 14,
   recallAt: 4,
   dodge: true,
-  focus: 4,
-  aim: false,
-  keepCasts: true,
-  allIn: 0,
   looseAt: 0,
   looseWho: 1,
-  raid: 0,
-  raidFrom: 18,
-  guard: 0,
-  second: 0,
-  pounce: 0,
 };
 
 /** What a soldier is worth when weighing up two armies (a mage for its cannon). */
@@ -835,11 +790,6 @@ const INTEL_TICKS = 4 * TICKS_PER_MINUTE;
 const WAVE_CELLS = 24;
 /** A cannon warning: a unit this much further out than the blast radius (fixed point) is safe. */
 const DODGE_MARGIN = 256;
-/** The crystal cannon (GDD appendix A; what a player reads in the rules book): damage, blast radius and range (fixed point), crystal a shot. */
-const CANNON_DAMAGE = 45;
-const CANNON_RADIUS = 1536;
-const CANNON_RANGE = 8 * CELL;
-const CANNON_CRYSTAL = 5;
 
 interface Seen {
   type: number;
@@ -851,10 +801,6 @@ interface HardUnit extends Unit {
   /** Position in fixed point. */
   fx: number;
   fy: number;
-  /** Hit points plus shield. */
-  life: number;
-  /** Ticks until a mage's cannon is ready. */
-  cooldown: number;
 }
 interface HardTown extends Town {
   timer: number;
@@ -890,15 +836,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   // main city's arrows (range 7).
   const rally = real(homeF.u + su * 6 + rng.below(3) - 1, homeF.v + sv * 6 + rng.below(3) - 1);
   const post = real(homeF.u + su * 4, homeF.v + sv * 4);
-  // Where raiders look for the enemy's gatherers: 8 points 11 cells around its main city, the
-  // nearest to us first.
-  const enemyF = frame(enemyHome.cellX, enemyHome.cellY);
-  const clampCell = (c: number) => Math.max(1, Math.min(n - 2, c));
-  const patrol = [
-    [11, 0], [8, 8], [0, 11], [-8, 8], [-11, 0], [-8, -8], [0, -11], [8, -8],
-  ]
-    .map(([du, dv]) => real(clampCell(enemyF.u + du), clampCell(enemyF.v + dv)))
-    .sort((a, b) => dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.x, a.y) - rank(b.x, b.y));
 
   let mode: HardMode = "home";
   let target = { x: post.x, y: post.y };
@@ -922,28 +859,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const loosed = new Set<number>();
   /** Units stepping out of a cannon warning, until the tick it lands (and a little). */
   const dodging = new Map<number, number>();
-  /** Ranged units sent at an enemy mage: the mage. */
-  const focusing = new Map<number, number>();
-  /** Mages told where to shoot, and when (they stand still after the shot). */
-  const aimed = new Map<number, number>();
-  /** Split-off groups. */
-  const raid = new Set<number>();
-  let raidStop = 0;
-  let raidAt = 0;
-  let raidPrey = -1;
-  let raidNext = 0;
-  const guard = new Set<number>();
-  const second = new Set<number>();
-  let scoutId = -1;
-  let scoutNext = 0;
-  let scoutTo = -1;
-  let scoutSince = 0;
-  /** Exploring: points on a 12-cell grid (player 0's frame), tried once each. */
-  const looks: { x: number; y: number }[] = [];
-  for (let v = 6; v < n; v += 12) for (let u = 6; u < n; u += 12) looks.push(real(u, v));
-  const looked = new Set<number>();
-  let secondNext = 0;
-  let awayTick = -100000;
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number): { x: number; y: number } | null {
@@ -1000,7 +915,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // --- read the view ------------------------------------------------------------------
       const mine: HardUnit[] = [];
       const foes: HardUnit[] = [];
-      const prey: HardUnit[] = [];
       for (let r = 0; r < view.units.length; r += UNIT_STRIDE) {
         const fx = view.units[r + UnitField.x];
         const fy = view.units[r + UnitField.y];
@@ -1011,15 +925,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           y: fy >> CELL_SHIFT,
           fx,
           fy,
-          life: view.units[r + UnitField.hp] + view.units[r + UnitField.shield],
-          cooldown: view.units[r + UnitField.castCooldown],
           order: view.units[r + UnitField.order],
           orderTarget: view.units[r + UnitField.orderTarget],
           flags: view.units[r + UnitField.flags],
         };
         const owner = view.units[r + UnitField.owner];
         if (owner === player) mine.push(u);
-        else if (owner === 1 - player) (u.type === UnitType.Farmer ? prey : foes).push(u);
+        else if (owner === 1 - player && u.type !== UnitType.Farmer) foes.push(u);
       }
       const own: Building[] = [];
       let enemyCity = -1;
@@ -1055,9 +967,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const worth = (list: { type: number }[]) => list.reduce((a, u) => a + WORTH[u.type], 0);
       const centre = (list: { x: number; y: number }[], fx: number, fy: number) =>
         list.length === 0 ? { x: fx, y: fy } : { x: Math.trunc(list.reduce((a, u) => a + u.x, 0) / list.length), y: Math.trunc(list.reduce((a, u) => a + u.y, 0) / list.length) };
-      /** Nearest first; ties in player 0's frame. */
-      const nearest = <T extends { fx: number; fy: number }>(list: T[], x: number, y: number) =>
-        [...list].sort((a, b) => dist2(a.fx, a.fy, x, y) - dist2(b.fx, b.fy, x, y) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
 
       // --- what it knows of the enemy -------------------------------------------------------------
       // A soldier gone from view while every cell around where it stood is still in view has fallen
@@ -1069,14 +978,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         return true;
       };
-      const fallen: Seen[] = [];
       for (const f of foes) intel.set(f.id, { type: f.type, x: f.x, y: f.y, tick });
       for (const [id, e] of intel) {
         if (e.tick === tick) continue;
-        if (tick - e.tick <= 20 && sees(e.x, e.y)) {
-          intel.delete(id);
-          fallen.push(e);
-        } else if (tick - e.tick > INTEL_TICKS) intel.delete(id);
+        if ((tick - e.tick <= 20 && sees(e.x, e.y)) || tick - e.tick > INTEL_TICKS) intel.delete(id);
       }
       let enemySpear = 0;
       let enemyRanged = 0;
@@ -1095,27 +1000,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // wood is in every soldier and building). It is sent as soon as it changes: with a limit of
       // 30 s between changes it won 41% of 80 games against itself without the limit.
       const ratio = done(BuildingType.MageHall).length > 0 ? [35, 40, 25] : done(BuildingType.Range).length > 0 ? [40, 40, 20] : [50, 40, 10];
-      if (plan.demandRatio) {
-        // Per minute at full pace, in farmers it takes to gather it (a farm gives 24 food, a
-        // farmer 30 wood or 24 gold a minute); wood for buildings on top (more while the base
-        // goes up: camp, granary, farms, barracks and range are about 500 wood).
-        const want = [0, has(BuildingType.Range) ? 60 : 150, 0];
-        const per = (type: UnitType, n: number) => {
-          const u = rules.units[type];
-          const k = (n * TICKS_PER_MINUTE) / u.trainTicks;
-          want[0] += u.cost.food * k;
-          want[1] += u.cost.wood * k + 6 * k; // and a house per 5 of them
-          want[2] += u.cost.gold * k;
-        };
-        if (farmers.length < farmerTarget) per(UnitType.Farmer, 1);
-        per(UnitType.Spearman, done(BuildingType.Barracks).length);
-        per(UnitType.Ranged, done(BuildingType.Range).length);
-        if (soldiers.filter((u) => u.type === UnitType.Mage).length < rules.mageCap) per(UnitType.Mage, done(BuildingType.MageHall).length);
-        if (!has(BuildingType.MageHall) && has(BuildingType.Range)) want[2] += 60;
-        ratio[0] = Math.max(1, Math.trunc(want[0] / 24));
-        ratio[1] = Math.max(1, Math.trunc(want[1] / 30));
-        ratio[2] = Math.max(1, Math.trunc(want[2] / 24));
-      }
       const stock = [res.food, res.wood, res.gold];
       for (let k = 0; k < 3; k++) {
         if (stock[k] > 800) ratio[k] >>= 2;
@@ -1170,24 +1054,19 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const granary = done(BuildingType.Granary)[0];
         const base = { x: home.cellX, y: home.cellY };
         const add = (type: BuildingType, at: { x: number; y: number } | null) => {
-          if (!plans.some((p) => p.type === type && p.at?.x === at?.x && p.at?.y === at?.y)) plans.push({ type, at });
+          if (!plans.some((p) => p.type === type)) plans.push({ type, at });
         };
-        /** A mine of ours (finished or not) within 6 cells of a node. */
-        const mineBy = (node: { x: number; y: number }) => own.some((b) => b.type === BuildingType.Mine && dist2(b.x, b.y, node.x, node.y) <= 36);
         // The mage hall first once there is the crystal for a mage (a plunder brings 75).
         if (!has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
-        const vein = nearestNode(NodeKind.CrystalVein);
-        if (plan.veinMine && vein !== null && has(BuildingType.MageHall) && !mineBy(vein)) add(BuildingType.Mine, vein);
         // Houses before the population is full: every producer can add one at a time.
         if (cap < rules.maxPopulation && cap - pop - queued <= 5 + producers) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
-        if (!has(BuildingType.Barracks) && farmers.length >= plan.barracksAt) add(BuildingType.Barracks, rally);
+        if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
-        const gold = nearestNode(NodeKind.GoldMine);
-        if (gold !== null && !mineBy(gold) && farmers.length >= 14) add(BuildingType.Mine, gold);
+        if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
           add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
@@ -1283,17 +1162,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const assault = toGo >= 0 && toGo <= ASSAULT_TO_GO;
       const latest = toGo >= 0 && toGo <= LATEST_TO_GO;
 
-      // --- groups split off the army -----------------------------------------------------------------
-      for (const g of [raid, guard, second]) for (const id of g) if (!byId.has(id)) g.delete(id);
-      if (scoutId >= 0 && !byId.has(scoutId)) {
-        scoutId = -1;
-        scoutNext = tick + 2 * TICKS_PER_MINUTE;
-      }
-      const grouped = (id: number) => raid.has(id) || guard.has(id) || second.has(id) || id === scoutId;
-
       // --- cannon warnings: step out ------------------------------------------------------------------
-      for (const [id, until] of dodging) if (tick >= until || !byId.has(id)) dodging.delete(id);
+      // Back from stepping out: with the army again.
       const rejoin: number[] = [];
+      for (const [id, until] of dodging) {
+        if (tick < until && byId.has(id)) continue;
+        dodging.delete(id);
+        if (byId.has(id)) rejoin.push(id);
+      }
       if (plan.dodge) {
         for (let r = 0; r < view.warnings.length; r += WARNING_STRIDE) {
           if (view.warnings[r + WarningField.owner] === player) continue;
@@ -1325,76 +1201,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const y = Math.max(0, Math.min(n - 1, Math.trunc((u.fy + (ey * step) / e) / CELL)));
             out.push({ c: "retreat", u: [u.id], x, y });
             dodging.set(u.id, tick + left + 10);
-            focusing.delete(u.id);
           }
         }
       }
-      // --- enemy mages: shoot them first --------------------------------------------------------------
-      const foeIds = new Set(foes.map((f) => f.id));
-      for (const [id, mage] of focusing) {
-        if (!byId.has(id)) focusing.delete(id);
-        else if (!foeIds.has(mage)) {
-          focusing.delete(id);
-          if (!dodging.has(id)) rejoin.push(id);
-        }
-      }
-      if (plan.focus > 0) {
-        for (const m of nearest(foes.filter((f) => f.type === UnitType.Mage), home.cellX << CELL_SHIFT, home.cellY << CELL_SHIFT)) {
-          let on = 0;
-          for (const t of focusing.values()) if (t === m.id) on++;
-          if (on >= plan.focus) continue;
-          const shooters = nearest(
-            soldiers.filter((u) => u.type === UnitType.Ranged && !dodging.has(u.id) && !focusing.has(u.id) && !guard.has(u.id) && dist2(u.x, u.y, m.x, m.y) <= 49),
-            m.fx,
-            m.fy,
-          ).slice(0, plan.focus - on);
-          if (shooters.length === 0) continue;
-          out.push({ c: "attack", u: shooters.map((u) => u.id), target: m.id });
-          for (const u of shooters) focusing.set(u.id, m.id);
-        }
-      }
-      // --- its own cannon: where a shot kills most ---------------------------------------------------------
-      if (plan.aim && res.crystal >= CANNON_CRYSTAL) {
-        const targets = [...foes, ...prey];
-        const taken = new Set<number>();
-        const blast = CANNON_RADIUS * CANNON_RADIUS;
-        for (const m of soldiers) {
-          if (m.type !== UnitType.Mage || m.cooldown > 0 || m.order === Order.Cast || dodging.has(m.id)) continue;
-          let best: HardUnit | null = null;
-          let bestScore = 0;
-          for (const t of targets) {
-            if (dist2(t.fx, t.fy, m.fx, m.fy) > (CANNON_RANGE - 256) * (CANNON_RANGE - 256)) continue;
-            let score = 0;
-            for (const e of targets) {
-              if (taken.has(e.id) || dist2(e.fx, e.fy, t.fx, t.fy) > blast) continue;
-              const worthOf = e.type === UnitType.Farmer ? 6 : WORTH[e.type];
-              score += e.life <= CANNON_DAMAGE ? worthOf * 2 : Math.trunc((worthOf * CANNON_DAMAGE) / e.life);
-            }
-            if (score > bestScore || (score === bestScore && best !== null && rank(t.fx, t.fy) < rank(best.fx, best.fy))) {
-              best = t;
-              bestScore = score;
-            }
-          }
-          // Two kills' worth at least; less is left to autocast.
-          if (best === null || bestScore < 30) continue;
-          out.push({ c: "cast", u: m.id, fx: best.fx, fy: best.fy });
-          aimed.set(m.id, tick);
-          for (const e of targets) if (dist2(e.fx, e.fy, best.fx, best.fy) <= blast) taken.add(e.id);
-        }
-      }
-      for (const [id] of dodging) if (dodging.get(id)! <= tick + 10 && !focusing.has(id)) rejoin.push(id);
-      // A mage that has fired the shot it was told to stands still: with the army again.
-      for (const [id, when] of aimed) {
-        const m = byId.get(id);
-        if (m === undefined) aimed.delete(id);
-        else if (m.order !== Order.Cast && tick - when > 10) {
-          aimed.delete(id);
-          rejoin.push(id);
-        }
-      }
-      // Not told anything while stepping out of a shot, shooting a mage, or calibrating a shot (any
-      // order would call the shot off).
-      const detached = (id: number) => dodging.has(id) || focusing.has(id) || aimed.has(id) || (plan.keepCasts && byId.get(id)?.order === Order.Cast);
+      // Not told anything while stepping out of a shot or calibrating one (any order would call the
+      // shot off).
+      const detached = (id: number) => dodging.has(id) || byId.get(id)?.order === Order.Cast;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -1416,7 +1228,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
 
       // --- the army ------------------------------------------------------------------------------------
-      const army = soldiers.filter((u) => !grouped(u.id));
+      const army = soldiers;
       const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
       let sent = false;
       const send = (x: number, y: number, why: HardMode) => {
@@ -1432,10 +1244,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const fallBack = (x: number, y: number) => {
         const ids = army.map((u) => u.id);
         if (ids.length > 0) out.push({ c: "retreat", u: ids, x, y });
-        for (const id of ids) {
-          focusing.delete(id);
-          dodging.delete(id);
-        }
+        for (const id of ids) dodging.delete(id);
         lastMove = tick;
         sent = true;
         mode = "home";
@@ -1456,11 +1265,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         waveMax = 0;
       }
 
-      // The enemy's army is away: most of what it has (as it believes) was seen in the last 30 s far
-      // from the enemy's main city.
-      let away = 0;
-      for (const e of intel.values()) if (tick - e.tick <= 600 && dist2(e.x, e.y, enemyHome.cellX, enemyHome.cellY) > 30 * 30) away++;
-      if (away >= 6 && away * 100 >= intel.size * 60) awayTick = tick;
 
       const armyOrders = (): void => {
         // Defence: everyone home, under the main city's arrows; farmers inside against a raid.
@@ -1498,9 +1302,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const local = worth(foesNear(ac.x, ac.y, 12));
         if (mode === "town") {
           const t = towns.get(targetTown);
-          // Ruins about to turn neutral again: wait there (early), otherwise it is done.
-          const soon = plan.early && t !== undefined && t.state === TownState.Ruins && (restoreAt.get(targetTown) ?? 0) - tick <= TICKS_PER_MINUTE;
-          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || (t.state === TownState.Ruins && !soon)) mode = "home";
+          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "home";
           else if (standing * 5 < armyAtStart * 2 || local > armyWorth) {
             fallBack(post.x, post.y);
             return;
@@ -1513,8 +1315,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // Those that set out are the front; soldiers trained since wait at home and follow six at
           // a time (one by one they would be picked off on the way).
           const reserves = army.filter((u) => !marched.has(u.id) && !detached(u.id));
-          const safe = enemyWorth < plan.allIn;
-          if (reserves.length >= 6 || (reserves.length > 0 && safe)) for (const u of reserves) marched.add(u.id);
+          if (reserves.length >= 6) for (const u of reserves) marched.add(u.id);
           const front = army.filter((u) => marched.has(u.id));
           const frontIds = front.filter((u) => !detached(u.id)).map((u) => u.id);
           const fc = centre(front, ac.x, ac.y);
@@ -1566,19 +1367,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
             : (counterReady && army.length >= plan.counterArmy && armyWorth >= enemyWorth) ||
               (army.length >= pushArmy && strong) ||
-              (popFull && army.length >= townArmy + 6) ||
-              (plan.pounce > 0 && tick - awayTick <= 100 && army.length >= plan.pounce);
+              (popFull && army.length >= townArmy + 6);
         if (go) {
-          // A guard stays home: the spearmen nearest the main city.
-          if (plan.guard > 0 && !endgame) {
-            for (const u of nearest(army.filter((s) => s.type === UnitType.Spearman), home.cellX << CELL_SHIFT, home.cellY << CELL_SHIFT).slice(0, plan.guard)) guard.add(u.id);
-          }
-          const goers = army.filter((u) => !guard.has(u.id) && !detached(u.id));
-          armyIds.length = 0;
-          armyIds.push(...goers.map((u) => u.id));
-          armyAtStart = army.length - guard.size;
+          armyAtStart = army.length;
           marched.clear();
-          for (const u of army) if (!guard.has(u.id)) marched.add(u.id);
+          for (const u of army) marched.add(u.id);
           counterReady = false;
           send(enemyHome.cellX, enemyHome.cellY, "base");
           return;
@@ -1587,11 +1380,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           let pick = -1;
           let pickD = 0;
           for (const [id, t] of towns) {
-            // Walking a cell takes about 21 ticks: with `early` it leaves so as to arrive as the ruins turn neutral.
-            const travel = plan.early ? Math.trunc(Math.sqrt(dist2(t.x, t.y, ac.x, ac.y)) * 21) : 0;
-            const ruinsOk = plan.early && t.state === TownState.Ruins && restoreAt.has(id) && tick + travel >= restoreAt.get(id)!;
-            if ((t.state === TownState.Ruins && !ruinsOk) || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
-            if (!ruinsOk && tick < (restoreAt.get(id) ?? 0)) continue;
+            if (t.state === TownState.Ruins || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
+            if (tick < (restoreAt.get(id) ?? 0)) continue;
             if (army.length < (t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
@@ -1616,118 +1406,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         send(post.x, post.y, "home");
       };
       armyOrders();
-      if (mode === "home" || mode === "defend") guard.clear();
 
-      // --- raiders: after the enemy's gatherers, away from its arrows and its army ----------------------
-      if (plan.raid > 0) {
-        if (raid.size === 0 && tick >= raidNext && mode === "home" && army.length >= plan.raidFrom) {
-          const pool = army.filter((u) => u.type !== UnitType.Mage && !detached(u.id));
-          const pick = nearest(pool.filter((u) => u.type === UnitType.Ranged), home.cellX << CELL_SHIFT, home.cellY << CELL_SHIFT).slice(0, plan.raid);
-          if (pick.length === plan.raid) {
-            for (const u of pick) raid.add(u.id);
-            raidStop = 0;
-            raidPrey = -1;
-            raidAt = tick;
-          }
-        }
-        if (raid.size > 0) {
-          const crew = soldiers.filter((u) => raid.has(u.id));
-          const ids = crew.filter((u) => !detached(u.id)).map((u) => u.id);
-          const c = centre(crew, home.cellX, home.cellY);
-          const danger = worth(foesNear(c.x, c.y, 10));
-          if (danger > worth(crew) || crew.length * 2 <= plan.raid || tick - raidAt > 4 * TICKS_PER_MINUTE) {
-            // Their army is there, too few left, or long enough: home, and again in 2 minutes.
-            if (crew.length > 0) out.push({ c: "retreat", u: crew.map((u) => u.id), x: post.x, y: post.y });
-            raid.clear();
-            raidNext = tick + 2 * TICKS_PER_MINUTE;
-          } else if (ids.length > 0) {
-            // Gatherers in sight, out of the enemy main city's arrows (range 7).
-            const food = nearest(
-              prey.filter((f) => dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) > 9 * 9 && dist2(f.x, f.y, c.x, c.y) <= 12 * 12),
-              c.x << CELL_SHIFT,
-              c.y << CELL_SHIFT,
-            );
-            if (food.length > 0) {
-              if (food[0].id !== raidPrey) {
-                out.push({ c: "attack", u: ids, target: food[0].id });
-                raidPrey = food[0].id;
-              }
-            } else {
-              raidPrey = -1;
-              const p = patrol[raidStop % patrol.length];
-              if (dist2(c.x, c.y, p.x, p.y) <= 9) raidStop++;
-              const q = patrol[raidStop % patrol.length];
-              if (tick % 100 === 0 || dist2(c.x, c.y, p.x, p.y) <= 9) out.push({ c: "retreat", u: ids, x: q.x, y: q.y });
-            }
-          }
-        }
-      }
-
-      // --- a second front while the enemy's army is away ------------------------------------------------
-      if (plan.second > 0) {
-        if (second.size === 0 && tick >= secondNext && mode === "home" && tick - awayTick <= 100 && army.length >= plan.second + 8) {
-          const pick = nearest(army.filter((u) => u.type !== UnitType.Mage && !detached(u.id)), enemyHome.cellX << CELL_SHIFT, enemyHome.cellY << CELL_SHIFT).slice(0, plan.second);
-          for (const u of pick) second.add(u.id);
-        }
-        if (second.size > 0) {
-          const crew = soldiers.filter((u) => second.has(u.id));
-          const ids = crew.filter((u) => !detached(u.id)).map((u) => u.id);
-          const c = centre(crew, home.cellX, home.cellY);
-          if (tick - awayTick > 30 * 20 || worth(foesNear(c.x, c.y, 10)) > worth(crew)) {
-            if (crew.length > 0) out.push({ c: "retreat", u: crew.map((u) => u.id), x: post.x, y: post.y });
-            second.clear();
-            secondNext = tick + 2 * TICKS_PER_MINUTE;
-          } else if (ids.length > 0 && tick % 100 === 0) {
-            const there = dist2(c.x, c.y, enemyHome.cellX, enemyHome.cellY) <= 12 * 12;
-            if (there && enemyCity >= 0 && foesNear(enemyHome.cellX, enemyHome.cellY, 12).length === 0) out.push({ c: "attack", u: ids, target: enemyCity });
-            else out.push({ c: "move", u: ids, x: enemyHome.cellX, y: enemyHome.cellY });
-          }
-        }
-      }
-      // --- a scout, until it has found the crystal vein --------------------------------------------------
-      if (plan.scout) {
-        const known = nearestNode(NodeKind.CrystalVein) !== null;
-        if (scoutId < 0 && !known && tick >= scoutNext && army.length >= 3) {
-          const pick = nearest(army.filter((u) => u.type !== UnitType.Mage && !detached(u.id)), home.cellX << CELL_SHIFT, home.cellY << CELL_SHIFT)[0];
-          if (pick !== undefined) {
-            scoutId = pick.id;
-            scoutTo = -1;
-          }
-        }
-        if (scoutId >= 0) {
-          const u = byId.get(scoutId)!;
-          const at = scoutTo >= 0 ? looks[scoutTo] : undefined;
-          if (known) {
-            if (!detached(scoutId)) out.push({ c: "move", u: [scoutId], x: post.x, y: post.y });
-            scoutId = -1;
-          } else if (at === undefined || dist2(u.x, u.y, at.x, at.y) <= 9 || tick - scoutSince > TICKS_PER_MINUTE) {
-            if (scoutTo >= 0) looked.add(scoutTo);
-            // The nearest point not explored yet, away from the enemy's main city.
-            let best = -1;
-            for (let k = 0; k < looks.length; k++) {
-              const p = looks[k];
-              if (looked.has(k) || view.fog[p.y * n + p.x] !== Fog.Unexplored || dist2(p.x, p.y, enemyHome.cellX, enemyHome.cellY) <= 22 * 22) continue;
-              const d = dist2(p.x, p.y, u.x, u.y);
-              const b = best < 0 ? 0 : dist2(looks[best].x, looks[best].y, u.x, u.y);
-              if (best < 0 || d < b || (d === b && rank(p.x, p.y) < rank(looks[best].x, looks[best].y))) best = k;
-            }
-            scoutTo = best;
-            scoutSince = tick;
-            if (best < 0) {
-              out.push({ c: "move", u: [scoutId], x: post.x, y: post.y });
-              scoutId = -1;
-              scoutNext = Infinity;
-            } else out.push({ c: "retreat", u: [scoutId], x: looks[best].x, y: looks[best].y });
-          }
-        }
-      }
-      for (const id of guard) {
-        const u = byId.get(id)!;
-        if (!detached(id) && tick % 100 === 0 && dist2(u.x, u.y, post.x, post.y) > 16) out.push({ c: "move", u: [id], x: post.x, y: post.y });
-      }
-
-      // Back from a dodge or a fallen mage: with the army again.
-      const back = rejoin.filter((id) => !grouped(id) && byId.has(id) && !detached(id));
+      // Back from a dodge: with the army again.
+      const back = rejoin.filter((id) => byId.has(id) && !detached(id));
       if (back.length > 0 && !sent) out.push({ c: "move", u: back, x: target.x, y: target.y });
       return out;
     },
