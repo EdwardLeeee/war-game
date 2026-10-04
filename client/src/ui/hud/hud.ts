@@ -322,7 +322,8 @@ export class Hud {
     const r = this.reserve;
     if (r === null) return;
     const card = this.openDialog("預留", "economy reserve");
-    el("p", card, "small", "自動訓練只用超過這些的資源。預設留木 150、金 100（夠蓋法術營）、晶 15（3 發晶砲）。");
+    // One line, so that four rows fit a phone held sideways without scrolling.
+    el("p", card, "small", "自動訓練只用超過這些的資源；預設留的夠蓋法術營、放 3 發晶砲。");
     const rows: [keyof typeof r, string, number][] = [
       ["food", "糧", 10],
       ["wood", "木", 10],

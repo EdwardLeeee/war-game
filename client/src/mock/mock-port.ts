@@ -472,7 +472,9 @@ export class MockPort implements SimPort {
       buildings[o + B.queueProgress] = b.owner === ME ? b.queueProgress : 0;
       buildings[o + B.rallyX] = b.rallyX;
       buildings[o + B.rallyY] = b.rallyY;
-      buildings[o + B.flags] = b.owner !== ME && !this.visible(b.cx, b.cy) ? BuildingFlag.Remembered : b.owner === ME ? b.flags : 0;
+      // 自動訓練 stopped by a full population (D-054): flagged as the simulation does, though the fake world trains nothing by itself.
+      const full = this.units.filter((u) => u.owner === ME).length >= 20 && (b.flags & BuildingFlag.AutoTrain) !== 0 ? BuildingFlag.AutoPopulationFull : 0;
+      buildings[o + B.flags] = b.owner !== ME && !this.visible(b.cx, b.cy) ? BuildingFlag.Remembered : b.owner === ME ? b.flags | full : 0;
     });
 
     const known = this.towns.filter((t) => this.fog[t.cy * SIZE + t.cx] > 0);

@@ -68,8 +68,8 @@ export async function saveGroup(page: Page, button: string): Promise<void> {
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".sel-head")).toContainText(/^編隊 \d/);
   await panel.getByRole("button", { name: /^改成剛才選的 \d+ 名$/ }).tap();
-  // Its message, before it fades.
-  await expect(page.getByRole("status").filter({ hasText: /^已存成編隊 \d（\d+ 個）$/ })).toBeVisible();
+  // Saved: nothing selected before any more, and the group selected (a message such as 人口滿了 may take the strip).
+  await expect(panel.getByRole("button", { name: /^改成剛才選的/ })).toBeHidden();
 }
 
 /**

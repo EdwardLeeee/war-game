@@ -736,7 +736,7 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await expect(toast(page, "已改成散開。散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名")).toBeVisible();
   await expect(formation).toHaveText("隊形：散開按一下改成密集");
   await expect(panel).toContainText("散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
-  await expect(panel).toContainText("隊伍比較寬，過窄路比較慢；近戰兵打起來還是會擠在一起");
+  await expect(panel).toContainText("行軍、追擊、交戰時也盡量保持 2 格；隊伍較寬，過窄路較慢");
   // The formation lines take one line each, and the button's two lines one each.
   for (const part of [".formation-meaning", ".formation-more"]) {
     expect(await lines(panel.locator(part)), `${part} on one line`).toBe(1);
@@ -1130,6 +1130,69 @@ test("人口：資源列的人口含訓練中的兵，後面寫訓練中幾名�
   await shot(page, info, "population-training");
   await expect(bar).toHaveText(/人口 19\/20　時間/, { timeout: 30_000 });
   expect((await ownIds(page, [1])).length).toBe(8);
+});
+
+test("自動訓練：兵營預設開著，指令區寫目前：開、選取資訊寫自動訓練中；按了送出暫停，再按又開（D-054）", async ({ page }, info) => {
+  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
+  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  const panel = page.locator(".sel-info");
+  await expect(panel).toContainText("兵營");
+  const auto = page.locator(".cmds").getByRole("button", { name: /^自動訓練/ });
+  await expect(auto).toHaveText("自動訓練目前：開");
+  await expect(auto).toHaveClass(/active/);
+  await expect(panel.locator(".sel-status")).toContainText("自動訓練中");
+  await shot(page, info, "auto-train-panel");
+  const barracks = (await page.evaluate(() => window.__proto?.game?.selection()))?.building;
+  await auto.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "auto_train", building: barracks, on: false });
+  await expect(auto).toHaveText("自動訓練目前：暫停");
+  await expect(panel.locator(".sel-status")).toContainText("自動訓練暫停");
+  await auto.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "auto_train", building: barracks, on: true });
+  await expect(auto).toHaveText("自動訓練目前：開");
+});
+
+test("人口滿了：自動訓練停下來時，訊息列提示一次，兵營寫人口滿了（D-054）", async ({ page }) => {
+  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
+  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  const train = page.getByRole("button", { name: /^訓練槍兵/ });
+  // 17 now, 20 at most: three more fill it.
+  for (let i = 0; i < 3; i++) await train.tap();
+  await expect(toast(page, "人口滿了，自動訓練停下來：蓋民居")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".sel-info .sel-status")).toContainText("人口滿了，蓋民居");
+});
+
+test("預留：選主城 → 預留 → 對話框寫現在的預留額（預設木 150、金 100、晶 15），−／+ 後套用送出 reserve；預設鈕回到預設（D-054）", async ({ page }, info) => {
+  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
+  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await injectSafeArea(page);
+  await page.locator(".cmds").getByRole("button", { name: /^預留/ }).tap();
+  const dialog = page.getByRole("dialog", { name: "預留" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("自動訓練只用超過這些的資源；預設留的夠蓋法術營、放 3 發晶砲。");
+  const value = (name: string) => dialog.getByRole("status", { name: `${name}預留` });
+  await expect(value("糧")).toHaveText("0");
+  await expect(value("木")).toHaveText("150");
+  await expect(value("金")).toHaveText("100");
+  await expect(value("晶")).toHaveText("15");
+  expect(await dialog.locator(".dialog-card").evaluate((c) => c.scrollHeight - c.clientHeight), "no scrolling").toBeLessThanOrEqual(1);
+  await shot(page, info, "reserve-dialog");
+  await dialog.getByRole("button", { name: "木少留 10" }).tap();
+  await dialog.getByRole("button", { name: "晶多留 5" }).tap();
+  await dialog.getByRole("button", { name: "糧少留 10" }).tap();
+  await expect(value("木")).toHaveText("140");
+  await expect(value("晶")).toHaveText("20");
+  await expect(value("糧")).toHaveText("0", { timeout: 1000 });
+  await dialog.getByRole("button", { name: "套用" }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "reserve", food: 0, wood: 140, gold: 100, crystal: 20 });
+  // Open again: what the simulation reports now; 預設 puts the defaults back.
+  await page.locator(".cmds").getByRole("button", { name: /^預留/ }).tap();
+  await expect(value("木")).toHaveText("140");
+  await dialog.getByRole("button", { name: "預設" }).tap();
+  await expect(value("木")).toHaveText("150");
+  await expect(value("晶")).toHaveText("15");
+  await dialog.getByRole("button", { name: "取消" }).tap();
+  await expect(dialog).toBeHidden();
 });
 
 test("被攻擊：小地圖閃、畫面邊緣出現箭頭，點箭頭跳過去", async ({ page }, info) => {

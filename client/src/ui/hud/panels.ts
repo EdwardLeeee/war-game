@@ -96,7 +96,8 @@ export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻中", re
  */
 export const FORMATION_TEXT = {
   close: ["密集：站位間隔 1 格，火力集中"],
-  loose: ["散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名", "隊伍比較寬，過窄路比較慢；近戰兵打起來還是會擠在一起"],
+  // D-054 (core round 6 PR C): a squad that is loose keeps its spacing while it marches, chases and fights too.
+  loose: ["散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名", "行軍、追擊、交戰時也盡量保持 2 格；隊伍較寬，過窄路較慢"],
 } as const;
 export const FORMATION_MIXED_TEXT = "隊形：有的密集、有的散開";
 
