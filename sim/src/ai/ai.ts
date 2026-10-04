@@ -768,6 +768,10 @@ export interface HardPlan {
   dodge: boolean;
   /** Ranged units sent at each enemy mage in sight (0: none). */
   focus: number;
+  /** Its mages aim their own shots at what one shot kills (ranged units, farmers), not only at the biggest crowd. */
+  aim: boolean;
+  /** Army orders leave out a mage calibrating a shot (an order would call the shot off). */
+  keepCasts: boolean;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -803,6 +807,8 @@ export const HARD: HardPlan = {
   recallAt: 4,
   dodge: true,
   focus: 4,
+  aim: false,
+  keepCasts: true,
   looseAt: 0,
   looseWho: 1,
   raid: 0,
@@ -820,6 +826,11 @@ const INTEL_TICKS = 4 * TICKS_PER_MINUTE;
 const WAVE_CELLS = 24;
 /** A cannon warning: a unit this much further out than the blast radius (fixed point) is safe. */
 const DODGE_MARGIN = 256;
+/** The crystal cannon (GDD appendix A; what a player reads in the rules book): damage, blast radius and range (fixed point), crystal a shot. */
+const CANNON_DAMAGE = 45;
+const CANNON_RADIUS = 1536;
+const CANNON_RANGE = 8 * CELL;
+const CANNON_CRYSTAL = 5;
 
 interface Seen {
   type: number;
@@ -831,6 +842,10 @@ interface HardUnit extends Unit {
   /** Position in fixed point. */
   fx: number;
   fy: number;
+  /** Hit points plus shield. */
+  life: number;
+  /** Ticks until a mage's cannon is ready. */
+  cooldown: number;
 }
 interface HardTown extends Town {
   timer: number;
@@ -901,6 +916,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const dodging = new Map<number, number>();
   /** Ranged units sent at an enemy mage: the mage. */
   const focusing = new Map<number, number>();
+  /** Mages told where to shoot, and when (they stand still after the shot). */
+  const aimed = new Map<number, number>();
   /** Split-off groups. */
   const raid = new Set<number>();
   let raidStop = 0;
@@ -986,6 +1003,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           y: fy >> CELL_SHIFT,
           fx,
           fy,
+          life: view.units[r + UnitField.hp] + view.units[r + UnitField.shield],
+          cooldown: view.units[r + UnitField.castCooldown],
           order: view.units[r + UnitField.order],
           orderTarget: view.units[r + UnitField.orderTarget],
           flags: view.units[r + UnitField.flags],
@@ -1327,8 +1346,48 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           for (const u of shooters) focusing.set(u.id, m.id);
         }
       }
+      // --- its own cannon: where a shot kills most ---------------------------------------------------------
+      if (plan.aim && res.crystal >= CANNON_CRYSTAL) {
+        const targets = [...foes, ...prey];
+        const taken = new Set<number>();
+        const blast = CANNON_RADIUS * CANNON_RADIUS;
+        for (const m of soldiers) {
+          if (m.type !== UnitType.Mage || m.cooldown > 0 || m.order === Order.Cast || dodging.has(m.id)) continue;
+          let best: HardUnit | null = null;
+          let bestScore = 0;
+          for (const t of targets) {
+            if (dist2(t.fx, t.fy, m.fx, m.fy) > (CANNON_RANGE - 256) * (CANNON_RANGE - 256)) continue;
+            let score = 0;
+            for (const e of targets) {
+              if (taken.has(e.id) || dist2(e.fx, e.fy, t.fx, t.fy) > blast) continue;
+              const worthOf = e.type === UnitType.Farmer ? 6 : WORTH[e.type];
+              score += e.life <= CANNON_DAMAGE ? worthOf * 2 : Math.trunc((worthOf * CANNON_DAMAGE) / e.life);
+            }
+            if (score > bestScore || (score === bestScore && best !== null && rank(t.fx, t.fy) < rank(best.fx, best.fy))) {
+              best = t;
+              bestScore = score;
+            }
+          }
+          // Two kills' worth at least; less is left to autocast.
+          if (best === null || bestScore < 30) continue;
+          out.push({ c: "cast", u: m.id, fx: best.fx, fy: best.fy });
+          aimed.set(m.id, tick);
+          for (const e of targets) if (dist2(e.fx, e.fy, best.fx, best.fy) <= blast) taken.add(e.id);
+        }
+      }
       for (const [id] of dodging) if (dodging.get(id)! <= tick + 10 && !focusing.has(id)) rejoin.push(id);
-      const detached = (id: number) => dodging.has(id) || focusing.has(id);
+      // A mage that has fired the shot it was told to stands still: with the army again.
+      for (const [id, when] of aimed) {
+        const m = byId.get(id);
+        if (m === undefined) aimed.delete(id);
+        else if (m.order !== Order.Cast && tick - when > 10) {
+          aimed.delete(id);
+          rejoin.push(id);
+        }
+      }
+      // Not told anything while stepping out of a shot, shooting a mage, or calibrating a shot (any
+      // order would call the shot off).
+      const detached = (id: number) => dodging.has(id) || focusing.has(id) || aimed.has(id) || (plan.keepCasts && byId.get(id)?.order === Order.Cast);
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
