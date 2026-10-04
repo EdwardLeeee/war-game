@@ -562,7 +562,11 @@ export class MockPort implements SimPort {
         break;
       }
       case "stop":
-        for (const u of own(cmd.u)) u.target = null;
+        // Like the simulation: no order left (a retreat or a march ends there).
+        for (const u of own(cmd.u)) {
+          u.target = null;
+          u.order = Order.None;
+        }
         break;
       case "stance":
         for (const u of own(cmd.u)) u.stance = cmd.stance;

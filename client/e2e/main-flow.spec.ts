@@ -180,6 +180,8 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   const hold = page.getByRole("button", { name: /^堅守/ });
   const stanceOfSquad = async () => [...new Set((await units(page)).filter((u) => squadIds.includes(u.id)).map((u) => u.stance))];
   const now = page.locator(".sel-info .order-now");
+  // Saved, the group's panel shows (D-054); the squad selected as such shows its states.
+  await selectForCommands(page, squadIds);
   await expect(now).toHaveText(`目前：待命 ${squadIds.length}`);
   await expect(page.locator(".sel-info")).toContainText("堅守：停在原地，敵人進到射程就打，不追出去");
   await hold.tap();

@@ -205,16 +205,24 @@ test("撤退：改撤到別處之後點地面選位置，或按取消離開", as
     if (u === undefined) throw new Error("the spearman is gone");
     return { x: u.sx, y: u.sy };
   };
+  const held = async () => expect.poll(async () => ((await page.evaluate(() => window.__proto?.game?.sent() ?? [])) as Record<string, unknown>[]).slice(-2)).toMatchObject([{ c: "stop", u: [spear] }, { c: "stance", u: [spear], stance: 1 }]);
   await longPress(page, await now());
-  await page.getByRole("menuitem", { name: "撤退" }).tap();
+  await page.getByRole("menuitem", { name: "撤退", exact: true }).tap();
   await page.getByRole("button", { name: "改撤到別處" }).tap();
   await tap(page, await at(page, { x: 12, y: 74 }));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: [spear], x: 12, y: 74 });
+  // On its way, the wheel's 撤退 reads 取消撤退: it stops and holds (D-054).
+  await expect.poll(async () => (await units(page)).find((v) => v.id === spear)?.order).toBe(2);
   await longPress(page, await now());
-  await page.getByRole("menuitem", { name: "撤退" }).tap();
+  await page.getByRole("menuitem", { name: "取消撤退" }).tap();
+  await held();
+  // Picking a spot, 取消 in the prompt: the same.
+  await longPress(page, await now());
+  await page.getByRole("menuitem", { name: "撤退", exact: true }).tap();
   await page.getByRole("button", { name: "改撤到別處" }).tap();
-  await page.getByRole("button", { name: "取消", exact: true }).tap();
+  await page.locator(".prompt").getByRole("button", { name: "取消", exact: true }).tap();
   expect(await mode(page)).toBe("normal");
+  await held();
 });
 
 test("放建築 → 預覽跟著手指，紅色不能按 ✓，放開後按 ✓ 送出、✗ 取消", async ({ page }, info) => {

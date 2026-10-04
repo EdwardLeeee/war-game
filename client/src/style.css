@@ -267,15 +267,18 @@ a {
   background: rgba(255, 243, 176, 0.14);
 }
 
+/* Over the panels (a bubble can fall on the selection info), under the dialogs (30) and the message strip (40). */
 .wheel-backdrop {
   position: absolute;
   inset: 0;
   pointer-events: auto;
+  z-index: 25;
 }
 
 .wheel {
   position: absolute;
   inset: 0;
+  z-index: 26;
 }
 
 .wheel-item {

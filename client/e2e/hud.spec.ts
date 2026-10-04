@@ -336,7 +336,8 @@ test("已選部隊時長按小地圖 → 部隊前進到那裡", async ({ page }
 
 test("撤退：按指令區的撤退就直接退回主城；提示列的「改撤到別處」再點小地圖選位置；提示列幾秒後自己消失（使用者 2026-10-01）", async ({ page }, info) => {
   const ids = await selectSpearmen(page);
-  const retreat = page.getByRole("button", { name: /^撤退/ });
+  const retreat = page.locator(".cmds").getByRole("button", { name: /^(取消)?撤退/ });
+  const held = async () => expect.poll(async () => (await sent(page)).slice(-2)).toMatchObject([{ c: "stop", u: ids }, { c: "stance", u: ids, stance: 1 }]);
   await expect(retreat).toHaveText("撤退退回主城");
   await retreat.tap();
   // In front of the main city at (8, 80), 4 cells: (12, 79).
@@ -349,16 +350,25 @@ test("撤退：按指令區的撤退就直接退回主城；提示列的「改�
   await expect(page.getByText("點地面或小地圖選撤退位置")).toBeVisible();
   await tapOn(page, ".minimap", ...minimapPoint({ x: 10, y: 70 }));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: ids, x: 10, y: 70 });
+  // On their way: the button reads 取消撤退, and a tap stops them, holding (D-054).
+  await expect(retreat).toHaveText("取消撤退停下堅守");
+  await retreat.tap();
+  await held();
+  await expect(retreat).toHaveText("撤退退回主城");
   // Left alone, the prompt goes away by itself.
   await retreat.tap();
   await expect(page.getByText("正在退回主城")).toBeVisible();
   await expect(page.getByText("正在退回主城")).toBeHidden({ timeout: 8_000 });
-  // 取消撤退 leaves the picking.
+  // While the spot is picked, 取消撤退 leaves the picking, and they stop and hold.
+  await retreat.tap();
+  await held();
   await retreat.tap();
   await page.getByRole("button", { name: "改撤到別處" }).tap();
-  await page.getByRole("button", { name: "取消撤退" }).tap();
+  await expect(retreat).toHaveText("取消撤退停下堅守");
+  await retreat.tap();
   await expect(page.getByText("點地面或小地圖選撤退位置")).toBeHidden();
   expect(await page.evaluate(() => window.__proto?.game?.mode())).toBe("normal");
+  await held();
 });
 
 test("全軍撤退：不用先選兵，所有士兵退回主城，選取不變（使用者 2026-10-01）", async ({ page }, info) => {
