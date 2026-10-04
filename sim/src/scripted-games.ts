@@ -59,6 +59,7 @@ if (flag("no-range")) plan.noRange = true;
 const NAMES: Record<Strategy, string> = { push: "主動", defend: "守家", notown: "守家、不拿城鎮" };
 const SPEED_NAMES: Record<Speed, string> = { h1: "手速 H1", eco: "經濟養大" };
 const FORMATION_NAMES: Record<Formation, string> = { close: "密集", shooters: "遠程和法師散開", all: "整隊散開" };
+const LEVEL_NAMES: Record<string, string> = { easy: "簡單", normal: "普通", hard: "困難" };
 const STYLE_NAMES: Record<string, string> = { plunder: "掠奪型", govern: "治理型", balanced: "均衡型" };
 const m = (t: number) => (t < 0 ? "沒有" : (t / 1200).toFixed(1));
 
@@ -231,7 +232,7 @@ const options = [
   plan.noRange ? "不蓋射場" : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
 ].filter((x) => x !== "");
-const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${difficulty === "easy" ? "簡單" : "普通"}）`;
+const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
 out.push(`${games.length} 局贏 ${won} 局，輸 ${games.length - won - open.length} 局${open.length > 0 ? `，到第 ${m(CAP)} 分還沒分出勝負 ${open.length} 局` : ""}。`, "");
 const byStyle = AI_STYLES.map((s) => {

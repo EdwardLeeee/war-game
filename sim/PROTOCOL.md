@@ -399,7 +399,7 @@
 
 | `type` | 欄位 | 說明 |
 |---|---|---|
-| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"` 或 `"normal"`，見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起） |
+| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"`、`"normal"`，或 war-game-ai 加的 `"hard"`（D-052，它的 PR 把 `"hard"` 加進 `AI_DIFFICULTIES` 之後才收），見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起） |
 | `command` | `cmd` | 見第 3 節 |
 | `pause`／`resume` | — | 暫停時模擬停下，但照收指令 |
 | `speed` | `tps` | 每秒跑幾個 tick：慢 20、正常 30、快 40（D-024），測試時可以更快。不會改變戰局 |

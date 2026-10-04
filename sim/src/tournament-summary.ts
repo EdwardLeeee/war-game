@@ -3,8 +3,9 @@
 //   node src/tournament-summary.ts DIR [DIR ...] [--json FILE]
 // Prints Markdown (for the CI step summary). Gates (D5): each spawn's win rate within
 // 35–65%, draws at most 10% (for now 25%, see GATES), every replay matching; when the two
-// AIs play different difficulties (normal against easy, round 2), the stronger one wins at
-// least 80% of the decided games. Exits 1 when a gate fails.
+// AIs play different difficulties, the stronger one wins at least 80% of the decided games
+// (normal against easy, round 2), or 65% (hard against normal, D-052). Exits 1 when a gate
+// fails.
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -17,7 +18,9 @@ import type { GameResult } from "./tournament.ts";
  * main city but cannot finish it. ceo decides the next step toward 10% (D5).
  */
 export const GATES = { winRateMin: 0.35, winRateMax: 0.65, drawsMax: 0.25, strongerWinMin: 0.8 };
-const LEVEL = { easy: 0, normal: 1 } as Record<string, number>;
+const LEVEL = { easy: 0, normal: 1, hard: 2 } as Record<string, number>;
+/** The stronger AI's least share of the decided games, by its difficulty (hard: D-052's brief). */
+const STRONGER_WIN_MIN: Record<string, number> = { normal: GATES.strongerWinMin, hard: 0.65 };
 
 const args = process.argv.slice(2);
 const jsonAt = args.indexOf("--json");
@@ -109,6 +112,7 @@ for (const g of mixed) {
   if (g.winner === s) stronger.wins++;
 }
 const strongerRate = stronger.decided === 0 ? 0 : stronger.wins / stronger.decided;
+const strongerMin = STRONGER_WIN_MIN[stronger.name] ?? GATES.strongerWinMin;
 const medians = games.map((g) => g.tickMicros.median).sort((a, b) => a - b);
 const p95s = games.map((g) => g.tickMicros.p95).sort((a, b) => a - b);
 const maxes = games.map((g) => g.tickMicros.max).sort((a, b) => a - b);
@@ -122,7 +126,7 @@ if (games.length === 0) failures.push("沒有任何對局");
 if (rate < GATES.winRateMin || rate > GATES.winRateMax) failures.push(`玩家 0 出生點勝率 ${pct(rate)} 不在 ${pct(GATES.winRateMin)}–${pct(GATES.winRateMax)} 之間`);
 if (drawShare > GATES.drawsMax) failures.push(`平手 ${pct(drawShare)} 超過 ${pct(GATES.drawsMax)}`);
 if (replayFail > 0) failures.push(`${replayFail} 場重播的雜湊不同`);
-if (mixed.length > 0 && strongerRate < GATES.strongerWinMin) failures.push(`${stronger.name} 的勝率 ${pct(strongerRate)} 低於 ${pct(GATES.strongerWinMin)}`);
+if (mixed.length > 0 && strongerRate < strongerMin) failures.push(`${stronger.name} 的勝率 ${pct(strongerRate)} 低於 ${pct(strongerMin)}`);
 
 const summary = {
   games: games.length,
@@ -141,7 +145,7 @@ const summary = {
   towns,
   tickMicros: { medianOfMedians: q(medians, 0.5), p95OfP95: q(p95s, 0.95), max: q(maxes, 1) },
   wallMs,
-  gates: GATES,
+  gates: { ...GATES, strongerWinMin: strongerMin },
   failures,
 };
 if (jsonFile !== "") writeFileSync(jsonFile, JSON.stringify(summary, null, 2) + "\n");
@@ -155,7 +159,7 @@ const lines = [
   `| 玩家 1 出生點勝 | ${wins[1]}（勝率 ${pct(1 - rate)}） |`,
   `| 平手（30 分鐘到） | ${draws}（${pct(drawShare)}） |`,
   `| 重播雜湊不同 | ${replayFail} 場 |`,
-  ...(mixed.length === 0 ? [] : [`| 難度不同的 ${mixed.length} 場 | ${stronger.name} 勝 ${stronger.wins}／分出勝負 ${stronger.decided}（${pct(strongerRate)}，門檻 ${pct(GATES.strongerWinMin)}） |`]),
+  ...(mixed.length === 0 ? [] : [`| 難度不同的 ${mixed.length} 場 | ${stronger.name} 勝 ${stronger.wins}／分出勝負 ${stronger.decided}（${pct(strongerRate)}，門檻 ${pct(strongerMin)}） |`]),
   `| 每局長度（分鐘） | 最短 ${summary.minutes.min.toFixed(1)}、中位數 ${summary.minutes.median.toFixed(1)}、90% ${summary.minutes.p90.toFixed(1)}、最長 ${summary.minutes.max.toFixed(1)} |`,
   `| 搶／治理 | ${plunder}／${govern}（搶 ${pct(summary.plunderShare)}） |`,
   `| 法師產量／陣亡 | 玩家 0：${mages[0].trained}／${mages[0].lost}；玩家 1：${mages[1].trained}／${mages[1].lost} |`,
