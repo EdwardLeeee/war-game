@@ -774,6 +774,8 @@ export interface HardPlan {
   guard: number;
   /** A second front: while the enemy's army is seen away from its base, this many go for the base (0: none). */
   second: number;
+  /** While the enemy's army is seen away from its base, the whole army marches on it once it has this many (0: never). */
+  pounce: number;
 }
 
 export const HARD: HardPlan = {
@@ -801,6 +803,7 @@ export const HARD: HardPlan = {
   raidFrom: 18,
   guard: 0,
   second: 0,
+  pounce: 0,
 };
 
 /** What a soldier is worth when weighing up two armies (a mage for its cannon). */
@@ -1465,7 +1468,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           ? army.length >= ENDGAME_ARMY
           : assault
             ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
-            : (counterReady && army.length >= plan.counterArmy && armyWorth >= enemyWorth) || (army.length >= pushArmy && strong) || (popFull && army.length >= townArmy + 6);
+            : (counterReady && army.length >= plan.counterArmy && armyWorth >= enemyWorth) ||
+              (army.length >= pushArmy && strong) ||
+              (popFull && army.length >= townArmy + 6) ||
+              (plan.pounce > 0 && tick - awayTick <= 100 && army.length >= plan.pounce);
         if (go) {
           // A guard stays home: the spearmen nearest the main city.
           if (plan.guard > 0 && !endgame) {
