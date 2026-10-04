@@ -144,7 +144,11 @@ test("對局紀錄：重來時，打了一分鐘以上的局存成「沒打完�
   await page.waitForFunction(() => window.__proto?.ready === true && (window.__proto?.game?.header().tick ?? 9999) < 1000);
   await expect.poll(async () => (await kept(page)).map((e) => [e.rec.result, e.rec.reason, e.state])).toEqual([["abandoned", "", "pending"]]);
   expect((await kept(page))[0].rec.ticks).toBeGreaterThan(1300);
-  // Again at once: too short to keep.
+  // Again before a minute of game time: not kept. Paused first, so that a slow runner does
+  // not let it pass the minute (dispatch run 37221206636, Chromium: it did at 400 ticks a second).
+  await page.getByRole("button", { name: "暫停", exact: true }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
+  expect(await tick(page)).toBeLessThan(1200);
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "重來（開新的一局）" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
