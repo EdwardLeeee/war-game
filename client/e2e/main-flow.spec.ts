@@ -436,9 +436,12 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await expect(formation).toHaveText("隊形：散開按一下改成密集");
   await expect(page.locator(".sel-info")).toContainText("散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
   // March them together to open ground south of where the squad started; tap where nothing stands.
-  await centre(page, { x: SQUAD.x, y: SQUAD.y + 4 }, 0.8);
+  // 12 cells south: with 自動訓練 the army is some 16 strong, 8 by 8 cells loose, and 4 cells
+  // south its north edge met the rocks at (19–25, 33–39). Loose soldiers pressed there never
+  // came to rest (core PR C: run 37215665684, reproduced in the simulation alone).
+  await centre(page, { x: SQUAD.x + 2, y: SQUAD.y + 12 }, 0.8);
   let field: { x: number; y: number } | null = null;
-  for (const [dx, dy] of [[0, 4], [2, 4], [-2, 4], [0, 6], [3, 3], [-3, 3], [0, 2]]) {
+  for (const [dx, dy] of [[2, 12], [0, 12], [4, 12], [2, 10], [2, 14], [0, 10], [4, 14]]) {
     const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [SQUAD.x + dx, SQUAD.y + dy] as const);
     if (cell === null) continue;
     const p = await toScreen(page, cell);
