@@ -88,6 +88,8 @@ export interface AiKnowledge {
   maxTicks: number;
   /** How this AI plays (absent: "normal"). */
   difficulty?: AiDifficulty;
+  /** Hard only: numbers that replace HARD's (tests and measurements). */
+  hard?: Partial<HardPlan>;
 }
 
 /**
@@ -821,7 +823,8 @@ interface HardTown extends Town {
 }
 type HardMode = "home" | "town" | "base" | "defend";
 
-function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number, plan: HardPlan = HARD): Ai {
+function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
+  const plan: HardPlan = { ...HARD, ...know.hard };
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
   const n = know.map.size;
   const home = know.map.spawns[player];
@@ -1008,7 +1011,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
 
       // --- what it knows of the enemy -------------------------------------------------------------
       // A soldier gone from view while every cell around where it stood is still in view has fallen
-      // (soldiers cannot hide); one that walked into the fog is kept, and forgotten after a while.
+      // (soldiers cannot hide, and none walks more than a cell in 20 ticks); one that walked into
+      // the fog is kept, and forgotten after a while.
       const sees = (x: number, y: number) => {
         for (let yy = Math.max(0, y - 1); yy <= Math.min(n - 1, y + 1); yy++) {
           for (let xx = Math.max(0, x - 1); xx <= Math.min(n - 1, x + 1); xx++) if (view.fog[yy * n + xx] !== Fog.Visible) return false;
@@ -1019,7 +1023,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       for (const f of foes) intel.set(f.id, { type: f.type, x: f.x, y: f.y, tick });
       for (const [id, e] of intel) {
         if (e.tick === tick) continue;
-        if (tick - e.tick <= 10 && sees(e.x, e.y)) {
+        if (tick - e.tick <= 20 && sees(e.x, e.y)) {
           intel.delete(id);
           fallen.push(e);
         } else if (tick - e.tick > INTEL_TICKS) intel.delete(id);
@@ -1416,7 +1420,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               lastMove = tick;
               sent = true;
             }
-          } else if (frontIds.length > 0 && (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= 400 || reserves.length >= 6)) {
+          } else if (
+            frontIds.length > 0 &&
+            (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= (there ? 100 : 400) || reserves.length >= 6)
+          ) {
+            // On the way, or there without the city in sight yet: on to it.
             out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
             lastMove = tick;
             sent = true;
