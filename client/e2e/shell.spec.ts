@@ -55,19 +55,27 @@ for (const size of [
   });
 }
 
-test("難度：第一次是簡單；選了普通，重新整理後還記得；開局帶著難度，沒有時間上限（D-024）", async ({ page }) => {
-  const group = page.getByRole("radiogroup", { name: "難度" });
-  await expect(group.getByRole("radio", { name: "簡單" })).toBeChecked();
-  await expect(group.getByRole("radio", { name: "普通" })).not.toBeChecked();
-  await group.getByRole("radio", { name: "普通" }).tap();
-  await expect(group.getByRole("radio", { name: "普通" })).toBeChecked();
-  await expect(group.getByRole("radio", { name: "簡單" })).not.toBeChecked();
+test("難度：簡單、普通、困難三顆，第一次是簡單；選了的重新整理後還記得；開局帶著難度，沒有時間上限（D-024、D-055）", async ({ page }) => {
+  const radios = () => page.getByRole("radiogroup", { name: "難度" }).getByRole("radio");
+  const radio = (name: string) => page.getByRole("radiogroup", { name: "難度" }).getByRole("radio", { name });
+  await expect(radios()).toHaveText(["簡單", "普通", "困難"]);
+  await expect(radio("簡單")).toBeChecked();
+  for (const name of ["普通", "困難"]) await expect(radio(name)).not.toBeChecked();
+  await radio("普通").tap();
+  await expect(radio("普通")).toBeChecked();
+  await expect(radio("簡單")).not.toBeChecked();
   await page.reload();
-  await expect(page.getByRole("radiogroup", { name: "難度" }).getByRole("radio", { name: "普通" })).toBeChecked();
+  await expect(radio("普通")).toBeChecked();
+  // 困難 too (D-055): chosen, remembered, and sent.
+  await radio("困難").tap();
+  await expect(radio("困難")).toBeChecked();
+  for (const name of ["簡單", "普通"]) await expect(radio(name)).not.toBeChecked();
+  await page.reload();
+  await expect(radio("困難")).toBeChecked();
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  // The person is player 0 (its value is not used); the computer plays 普通; no time limit.
-  expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ type: "init", human: 0, ai: [false, true], difficulty: ["normal", "normal"], maxTicks: 0 });
+  // The person is player 0 (its value is not used); the computer plays 困難; no time limit.
+  expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ type: "init", human: 0, ai: [false, true], difficulty: ["normal", "hard"], maxTicks: 0 });
 });
 
 test("點開始進入戰場", async ({ page }, info) => {

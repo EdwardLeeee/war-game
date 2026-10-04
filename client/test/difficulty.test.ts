@@ -36,6 +36,10 @@ test("難度：選過之後讀回同一個", () => {
   assert.equal(loadDifficulty(store), "normal");
   saveDifficulty("easy", store);
   assert.equal(loadDifficulty(store), "easy");
+  // 困難 (D-055) is remembered the same way.
+  saveDifficulty("hard", store);
+  assert.equal(store.raw.get(DIFFICULTY_KEY), "hard");
+  assert.equal(loadDifficulty(store), "hard");
 });
 
 test("難度：存的值不認得時，當成沒存過", () => {
