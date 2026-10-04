@@ -293,7 +293,7 @@ test("離民兵太近：放建築的預覽在還有民兵的中立城鎮 12 格�
   const held = towns.find((t) => t.cx === 30 && t.cy === 66);
   expect(held).toMatchObject({ state: 0, militia: 3 });
   await centre(page, 24, 72);
-  await select(page, []);
+  await selectForCommands(page, []);
   await page.getByRole("button", { name: "建造" }).tap();
   await page.getByRole("button", { name: /^民居/ }).tap();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("place:dragging");
@@ -433,7 +433,7 @@ test("重設：一按就取消選取、離開撤退／集結點／放建築、�
 
   // 建造子選單：選農民 → 建造 → 重設
   const farmers = await ownIds(page, [0]);
-  await select(page, farmers);
+  await selectForCommands(page, farmers);
   await page.getByRole("button", { name: "建造" }).tap();
   await expect(page.getByRole("button", { name: /^民居/ })).toBeVisible();
   await reset.tap();
@@ -441,7 +441,7 @@ test("重設：一按就取消選取、離開撤退／集結點／放建築、�
   await expect.poll(() => selection(page)).toEqual(nothing);
 
   // 放建築：選農民 → 建造 → 民居 → 重設
-  await select(page, farmers);
+  await selectForCommands(page, farmers);
   await page.getByRole("button", { name: "建造" }).tap();
   await page.getByRole("button", { name: /^民居/ }).tap();
   await expect.poll(mode).toBe("place:dragging");
@@ -541,7 +541,7 @@ test("指令區：選農民 → 建造 → 民居 → 放下 → ✓", async ({ 
 
 test("不選農民也能蓋：什麼都沒選 → 建造 → 民居 → ✓，送出不帶農民的 build；挑不到農民時有提示（D-024）", async ({ page }, info) => {
   await centre(page, 18, 77);
-  await select(page, []);
+  await selectForCommands(page, []);
   await page.getByRole("button", { name: "建造" }).tap();
   await page.getByRole("button", { name: /^民居/ }).tap();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("place:dragging");
