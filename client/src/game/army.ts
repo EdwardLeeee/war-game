@@ -33,6 +33,12 @@ export const RECRUIT_RECHECK_TICKS = 40;
 export const RECRUIT_JOINED_CELLS = 6;
 /** The group has moved this far from where its recruits were sent: they are sent again (cells). */
 export const RECRUIT_RETARGET_CELLS = 3;
+/**
+ * At most one message about recruits per minute of game time: with 自動訓練 (D-054) every
+ * barracks, range and mage hall sends one every 12 to 35 s, and a message each would bury
+ * the battlefield. The group buttons count them all the same.
+ */
+export const RECRUIT_MESSAGE_TICKS = 1200;
 
 /**
  * A soldier added by 自動補兵 (or drafted, D-050) that has not joined up with its group yet.

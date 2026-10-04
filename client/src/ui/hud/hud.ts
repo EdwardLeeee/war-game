@@ -204,13 +204,23 @@ export class Hud {
       // 現有／原本 (D-026): what the group has now against what it was saved with.
       const g = this.game.army.groups[i];
       const text = g.saved > 0 ? `${i + 1}·${this.alive(g.ids).length}/${g.saved}` : `${i + 1}`;
-      if (this.groupBtns[i].textContent !== text) this.groupBtns[i].textContent = text;
+      const b = this.groupBtns[i];
+      if (b.textContent === text) continue;
+      if (g.saved === 0) {
+        b.textContent = text;
+        continue;
+      }
+      // Two lines (16/16 does not fit a 48 pt button on one); the dot is there for the text only.
+      b.replaceChildren();
+      el("span", b, "group-no", `${i + 1}`);
+      el("span", b, "group-dot", "·");
+      el("span", b, "group-count", `${this.alive(g.ids).length}/${g.saved}`);
     }
     this.info.update();
     this.cmds.update();
     this.warnPopulationFull();
     // The message strip sits above the selection info, which grows with what is selected
-    // (the stance lines, 分出 N 名; D-026), so that neither covers the other.
+    // (the stance lines, the group panel; D-026, D-054), so that neither covers the other.
     const panel = this.info.el.hidden ? null : this.info.el.getBoundingClientRect();
     const above = panel === null ? 0 : Math.ceil(this.root.getBoundingClientRect().bottom - panel.top + 8);
     if (above !== this.toastAbove) {

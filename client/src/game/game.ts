@@ -58,7 +58,7 @@ import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
 import { Placement } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
-import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, type TownArea } from "./army.ts";
+import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { allIn } from "./orders.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
@@ -104,6 +104,8 @@ export class Game implements GestureHost {
   readonly sent: (CommandBody & { seq: number; auto?: boolean })[] = [];
   /** Garrisons and control groups (D-026). */
   readonly army = new ArmyBook();
+  /** The tick of the last message about a recruit (RECRUIT_MESSAGE_TICKS). */
+  private recruitMessageTick = Number.NEGATIVE_INFINITY;
   readonly lab: LabPanel;
   paused = false;
   speed: SpeedName = "normal";
@@ -486,14 +488,18 @@ export class Game implements GestureHost {
     const short = this.army.enlist(id, type, typeOf);
     const i = short ?? this.army.joinLargest(id, type, typeOf);
     if (i === null) return;
-    this.toast(short !== null ? `新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}，正走過去` : `新的${UNIT_NAME[type] ?? "兵"}加入兵最多的編隊 ${i + 1}，正走過去`);
+    const tick = view.header?.[H.tick] ?? 0;
+    if (tick - this.recruitMessageTick >= RECRUIT_MESSAGE_TICKS) {
+      this.recruitMessageTick = tick;
+      this.toast(short !== null ? `新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}，正走過去` : `新的${UNIT_NAME[type] ?? "兵"}加入兵最多的編隊 ${i + 1}，正走過去`);
+    }
     // It takes the group's formation (D-027): 散開 when more than half of the others are. New
     // units are 密集, and on their way to the rally point the simulation only sets the flag.
     const others = this.army.groups[i].ids.filter((m) => m !== id && view.unitRow(m) >= 0);
     if (mostlyLoose(others, (m) => view.unitLoose(m))) this.autoCommand({ c: "formation", u: [id], loose: true });
   }
 
-  /** Every snapshot: recruits that have gathered (or waited long enough) are sent to their group. */
+  /** Every snapshot: recruits are sent to where their group stands, and again when it moves on (D-054). */
   private musterRecruits(): void {
     const view = this.view;
     const u = view?.curr?.snap.units;
