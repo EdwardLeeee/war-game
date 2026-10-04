@@ -4,7 +4,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CANNON, COUNTER_ATTACK, RETREAT_OWN_SPEED, REVEAL_CAST } from "../src/core/rules.ts";
+import { CANNON, COUNTER_ATTACK, RETREAT_OWN_SPEED, REVEAL_CAST, SHIELD, UNITS } from "../src/core/rules.ts";
+import { damage } from "../src/core/units.ts";
 import { CELL_SHIFT, Stance, UnitType } from "../src/protocol.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
 
@@ -276,4 +277,10 @@ test("counter-attacks off: hitById stays out of the hash", () => {
   } finally {
     COUNTER_ATTACK.on = saved;
   }
+});
+
+test("ranged hit a mage's shield x3: 15 a shot (was 7, x3/2)", () => {
+  assert.equal(damage(UNITS[UnitType.Ranged].attack, UnitType.Ranged, SHIELD), 15);
+  assert.equal(damage(UNITS[UnitType.Ranged].attack, UnitType.Ranged, UnitType.Mage), 5, "the hp after the shield as before");
+  assert.equal(damage(UNITS[UnitType.Spearman].attack, UnitType.Spearman, SHIELD), 6, "others as before");
 });

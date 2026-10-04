@@ -1,5 +1,5 @@
 // Mages (PR-4): crystal bolt, crystal cannon (calibration, warning, crystal, cooldown,
-// range, no friendly fire), autocast, shield (absorb, ranged x1.5, regeneration), bounty.
+// range, no friendly fire), autocast, shield (absorb, ranged x3, regeneration), bounty.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -143,7 +143,7 @@ test("autocast fires at a cluster of 3 enemies, not at 2", () => {
   }
 });
 
-test("shield: takes hits first (ranged x1.5), hp only after it breaks; regenerates out of combat", () => {
+test("shield: takes hits first (ranged x3, early balance), hp only after it breaks; regenerates out of combat", () => {
   const { g, a } = arena();
   const mage = put(g, 0, UnitType.Mage, a.x + 2, a.y + 10);
   const shooter = put(g, 1, UnitType.Ranged, a.x + 6, a.y + 10);
@@ -156,7 +156,7 @@ test("shield: takes hits first (ranged x1.5), hp only after it breaks; regenerat
   // Mage bolts back (range 5): keep the mage from killing the shooter first by stopping it.
   u.hp[slotOf(g, shooter)] = 10000;
   for (let t = 0; t < 30 && u.shield[slotOf(g, mage)] === UNITS[UnitType.Mage].shield; t++) g.step();
-  assert.equal(u.shield[slotOf(g, mage)], UNITS[UnitType.Mage].shield - 7, "5 x 3/2 = 7 on the shield");
+  assert.equal(u.shield[slotOf(g, mage)], UNITS[UnitType.Mage].shield - 15, "5 x 3 = 15 on the shield");
   assert.equal(u.hp[slotOf(g, mage)], UNITS[UnitType.Mage].hp);
   for (let t = 0; t < 2000 && u.shield[slotOf(g, mage)] > 0; t++) g.step();
   assert.equal(u.hp[slotOf(g, mage)], UNITS[UnitType.Mage].hp, "the breaking hit is absorbed whole");

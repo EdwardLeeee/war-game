@@ -83,10 +83,15 @@ BUILDINGS[BuildingType.MageHall] = building({
 });
 BUILDINGS[BuildingType.TownTower] = building({ type: BuildingType.TownTower, hp: 400, size: 2, sight: 8 });
 
+/**
+ * Ranged against a mage's shield (early balance, D-057; round 4, D-037): x3, was x3/2 (num 3,
+ * den 2 gives that back).
+ */
+export const RANGED_VS_SHIELD = { num: 3, den: 1 };
 /** Damage x num / den. Spearman x3 vs cavalry and cavalry x2 vs shields wait for cavalry. */
 export const MULTIPLIERS: Multiplier[] = [
   { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 5, den: 2 },
-  { attacker: UnitType.Ranged, target: "shield", num: 3, den: 2 },
+  { attacker: UnitType.Ranged, target: "shield", ...RANGED_VS_SHIELD },
 ];
 
 export const MAGE_CAP = 6;
