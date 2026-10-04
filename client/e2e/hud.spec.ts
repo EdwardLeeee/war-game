@@ -1020,7 +1020,9 @@ test("軍團畫面：點編隊按鈕就選取並打開；設定每種兵要幾�
   const members = async () => (await groupInfo(page))[0].ids.slice().sort((a, b) => a - b);
   // About 11 cells to walk at 1.5 a second: still on its way.
   expect(await members(), "not while it walks where the player sent it").not.toContain(ranged[2]);
-  await expect.poll(members, { timeout: 20_000 }).toEqual(ranged.slice(0, 3));
+  // Both join once they stand still. The fake world runs on the page's timers: on a slow
+  // Chromium runner it walked them 2.7 cells in 12 s (run 37215667850), so wait for the walk.
+  await expect.poll(members, { timeout: 60_000 }).toEqual(ranged.slice(0, 3));
   await page.waitForTimeout(500);
   expect(await members(), "the 堅守 one stays where it was told").toEqual(ranged.slice(0, 3));
 
