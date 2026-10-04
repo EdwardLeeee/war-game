@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { PERF } from "../src/core/scenarios.ts";
-import { TOWNS } from "../src/core/rules.ts";
+import { MAIN_CRYSTAL, TOWNS } from "../src/core/rules.ts";
 import {
   BuildingType,
   GameOverReason,
@@ -24,6 +24,19 @@ import {
 } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
+
+/** A test of a town's own income: the main city's crystal (D-057) is off while it runs. */
+function townIncomeOnly(body: () => void): () => void {
+  return () => {
+    const saved = MAIN_CRYSTAL.every;
+    MAIN_CRYSTAL.every = 0;
+    try {
+      body();
+    } finally {
+      MAIN_CRYSTAL.every = saved;
+    }
+  };
+}
 
 function step(g: Game, p = 0): number[] {
   g.step();
@@ -96,7 +109,7 @@ test("a town with militia alive, or the big city with its tower standing, is not
   assert.equal(g.w.townState[0], TownState.Neutral);
 });
 
-test("plunder: counts only while the holder's army is inside, pays out, ruins for 4 minutes, back to neutral with half the militia", () => {
+test("plunder: counts only while the holder's army is inside, pays out, ruins for 4 minutes, back to neutral with half the militia", townIncomeOnly(() => {
   const { g, t, x, y } = smallTown();
   const spear = put(g, 0, UnitType.Spearman, x + 1, y);
   run(g, 2);
@@ -141,7 +154,7 @@ test("plunder: counts only while the holder's army is inside, pays out, ruins fo
   let militia = 0;
   for (let s = 0; s < g.w.units.count; s++) if (u.owner[s] === NEUTRAL && u.home[s] === t) militia++;
   assert.equal(militia, rule.militia >> 1);
-});
+}));
 
 test("plundering is cancelled when the enemy takes the town", () => {
   const { g, t, x, y } = smallTown();
@@ -156,7 +169,7 @@ test("plundering is cancelled when the enemy takes the town", () => {
   assert.equal(g.w.townOwner[t], 1);
 });
 
-test("govern: pays at the choice, repairs with the minimum garrison, then produces and raises the cap; revolts after 60 s without it", () => {
+test("govern: pays at the choice, repairs with the minimum garrison, then produces and raises the cap; revolts after 60 s without it", townIncomeOnly(() => {
   const { g, t, x, y } = smallTown();
   const rule = TOWNS[TownSize.Small];
   const spear = put(g, 0, UnitType.Spearman, x + 1, y);
@@ -207,7 +220,7 @@ test("govern: pays at the choice, repairs with the minimum garrison, then produc
   assert.equal(g.w.governEnded[0], 1);
   assert.equal(g.w.governPaidBack[0], 1);
   assert.equal(g.w.populationCap(0), 10);
-});
+}));
 
 test("surrender ends the game for the other side; later commands are refused", () => {
   const g = emptyGame();
