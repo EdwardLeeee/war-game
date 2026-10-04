@@ -151,6 +151,12 @@ export const SQUAD = { reach: 12 * CELL, near: 3 * CELL, leash: 12 * CELL, crowd
  * keep SEPARATION. `spacing` 0 switches it off (tests measure both ways).
  */
 export const LOOSE_KEEP = { spacing: 2 * CELL };
+/**
+ * A retreat (early balance, D-057; rule 2 of round 4, D-034): each unit runs at its own speed
+ * instead of the group's slowest, so the fast are not caught waiting for the slow; they still
+ * form up at the goal. A move keeps to the slowest. `on` false gives the old way back.
+ */
+export const RETREAT_OWN_SPEED = { on: true };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;
