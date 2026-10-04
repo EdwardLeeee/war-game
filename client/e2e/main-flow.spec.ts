@@ -45,12 +45,12 @@ async function own(page: Page, types: number[]) {
 }
 
 async function pause(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "暫停" }).tap();
+  await page.getByRole("button", { name: "暫停", exact: true }).tap();
   await expect.poll(async () => (await header(page)).paused).toBe(true);
 }
 
 async function resume(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "繼續" }).tap();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await header(page)).paused).toBe(false);
 }
 

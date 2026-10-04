@@ -185,7 +185,7 @@ test("開局提示：每局一次；繼續這局不再出現，重來是新的�
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "回開局畫面" }).tap();
   await page.getByRole("button", { name: "繼續這局" }).tap();
-  await expect(page.getByRole("button", { name: "繼續" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "繼續", exact: true })).toBeVisible();
   await expect(hint).toBeHidden();
   // 重來: a new game, and the hint again.
   await page.getByRole("button", { name: "選單" }).tap();
@@ -489,13 +489,13 @@ test("遊戲時間：資源列最後一項，開局後會前進，暫停時不�
   const start = await seconds();
   await expect.poll(seconds, { timeout: 5000 }).toBeGreaterThan(start);
   // 暫停: it stands still.
-  await page.getByRole("button", { name: "暫停" }).tap();
+  await page.getByRole("button", { name: "暫停", exact: true }).tap();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
   await page.waitForTimeout(300);
   const paused = await seconds();
   await page.waitForTimeout(1500);
   expect(await seconds(), "paused").toBe(paused);
-  await page.getByRole("button", { name: "繼續" }).tap();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(seconds, { timeout: 5000 }).toBeGreaterThan(paused);
 });
 
@@ -1225,10 +1225,10 @@ test("選單 → 回開局畫面 → 繼續這局（維持暫停）／重來", a
   await page.getByRole("button", { name: "回開局畫面" }).tap();
   await expect(page.getByRole("button", { name: "繼續這局" })).toBeVisible();
   await page.getByRole("button", { name: "繼續這局" }).tap();
-  await expect(page.getByRole("button", { name: "繼續" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "繼續", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "回開局畫面" }).tap();
   await page.getByRole("button", { name: "重來" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  await expect(page.getByRole("button", { name: "暫停" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "暫停", exact: true })).toBeVisible();
 });
