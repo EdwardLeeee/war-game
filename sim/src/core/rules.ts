@@ -247,6 +247,14 @@ export const FARMLAND_REACH = 6;
 export const ECO_DEFAULT = { food: 40, wood: 35, gold: 25 };
 
 /**
+ * The main city's crystal (early balance, D-051, D-057): every `every` ticks each standing main
+ * city gives its owner `amount` crystal, so a side without towns still gets mages (one mage, 50,
+ * by about game minute 13), while one plundered small town (75) stays worth 20 minutes of it.
+ * `every` 0 switches it off.
+ */
+export const MAIN_CRYSTAL = { every: 16 * S, amount: 1 };
+
+/**
  * Automatic training (round 6, D-054): a barracks, range or mage hall with it on queues its
  * unit whenever its queue is empty, paid only from what is above the player's reserve. The
  * default reserve keeps a mage hall's wood and gold (150 / 100) and 15 crystal for three

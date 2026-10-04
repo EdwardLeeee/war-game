@@ -2,9 +2,19 @@
 // player has queued, its mages, and the step that queues the next unit of a barracks, range or
 // mage hall whose automatic training is on.
 
-import { BuildingFlag, PLAYER_COUNT, Resource, UnitType } from "../protocol.ts";
-import { BUILDINGS, MAGE_CAP, UNITS } from "./rules.ts";
+import { BuildingFlag, BuildingType, PLAYER_COUNT, Resource, UnitType } from "../protocol.ts";
+import { BUILDINGS, MAGE_CAP, MAIN_CRYSTAL, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
+
+/** Every MAIN_CRYSTAL.every ticks, each standing main city gives its owner crystal (D-057). */
+export function mainCityCrystal(w: World): void {
+  if (MAIN_CRYSTAL.every <= 0 || w.tick === 0 || w.tick % MAIN_CRYSTAL.every !== 0) return;
+  const b = w.buildings.col;
+  for (let s = 0; s < w.buildings.count; s++) {
+    if (b.type[s] !== BuildingType.MainCity || b.hp[s] <= 0 || b.owner[s] >= PLAYER_COUNT) continue;
+    w.res[b.owner[s] * 4 + Resource.Crystal] += MAIN_CRYSTAL.amount;
+  }
+}
 
 /** Units in every own training queue: all of them, and the mages. */
 export function queuedUnits(w: World, p: number): { all: number; mages: number } {
