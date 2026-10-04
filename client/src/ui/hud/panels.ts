@@ -6,6 +6,7 @@ import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
+  AUTO_TRAIN,
   BuildingField as B,
   BuildingFlag,
   BuildingType,
@@ -63,6 +64,18 @@ export interface PanelHost {
   /** 收起 (D-054): the panel shows its title line only; kept for this game. */
   collapsed(): boolean;
   toggleCollapsed(): void;
+  /** 預留 (D-054): the reserve 自動訓練 leaves untouched, set in a dialog. */
+  openReserve(): void;
+}
+
+/**
+ * 自動訓練 (D-054): what an own barracks, range or mage hall is doing about it, from its flags;
+ * null for other buildings.
+ */
+export function autoTrainText(type: number, flags: number): string | null {
+  if (!AUTO_TRAIN.buildings.includes(type)) return null;
+  if ((flags & BuildingFlag.AutoPopulationFull) !== 0) return "人口滿了，蓋民居";
+  return (flags & BuildingFlag.AutoTrain) !== 0 ? "自動訓練中" : "自動訓練暫停";
 }
 
 /**
@@ -376,7 +389,8 @@ export class SelectionInfo {
       const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名農民` : "";
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
-      status.textContent = `${own ? locked : remembered}${inside}`;
+      const auto = own ? (autoTrainText(type, b[o + B.flags]) ?? "") : "";
+      status.textContent = `${own ? [locked, auto].filter((t) => t !== "").join("　") : remembered}${inside}`;
       headBar?.(b[o + B.queueProgress] / 1000);
     });
   }
@@ -495,7 +509,8 @@ export class CommandArea {
     if (sel.building !== null) {
       const o = view.buildingRow(sel.building);
       const b = view.curr?.snap.buildings;
-      return o < 0 || b === undefined ? "none" : `b:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}`;
+      const auto = o < 0 || b === undefined ? 0 : b[o + B.flags] & (BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
+      return o < 0 || b === undefined ? "none" : `b:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}`;
     }
     return "none";
   }
@@ -575,8 +590,17 @@ export class CommandArea {
         }
         if (type === BuildingType.MainCity) {
           button(this.el, "經濟分配", "", () => this.host.openEconomy(), "secondary");
+          // 預留 (D-054): what 自動訓練 leaves for building.
+          button(this.el, "預留", "自動訓練", () => this.host.openReserve(), "secondary");
           button(this.el, "建造", "", () => this.setPage("build"));
         }
+      }
+      // 自動訓練 (D-054): on by default for the player; a tap pauses or resumes this building
+      // (it can be set before the building is finished, too).
+      if (AUTO_TRAIN.buildings.includes(type)) {
+        const on = (b[o + B.flags] & BuildingFlag.AutoTrain) !== 0;
+        const auto = button(this.el, "自動訓練", on ? "目前：開" : "目前：暫停", () => this.host.command({ c: "auto_train", building: id, on: !on }), "secondary");
+        if (on) auto.classList.add("active");
       }
       return;
     }

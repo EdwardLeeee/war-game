@@ -5,7 +5,7 @@
 
 import type { Game } from "../../game/game.ts";
 import { pressable } from "../../input/pressable.ts";
-import { type GameStats, HeaderField as H, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
+import { AUTO_TRAIN, BUILDING_STRIDE, BuildingField, BuildingFlag, type GameStats, HeaderField as H, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
@@ -69,6 +69,8 @@ export class Hud {
   private dialogGone: (() => void) | null = null;
   /** 收起 (D-054): the selection info shows its title line only, for this game. */
   private collapsed = false;
+  /** 自動訓練 stopped by a full population somewhere (D-054), as last seen: told once when it starts. */
+  private populationFull = false;
   private readonly info: SelectionInfo;
   private readonly cmds: CommandArea;
   private readonly recallBtn: HTMLButtonElement;
@@ -153,6 +155,7 @@ export class Hud {
       toggleCollapsed: () => {
         this.collapsed = !this.collapsed;
       },
+      openReserve: () => this.openReserve(),
     };
     this.minimap = new Minimap(root, {
       view: () => game.view,
@@ -205,6 +208,7 @@ export class Hud {
     }
     this.info.update();
     this.cmds.update();
+    this.warnPopulationFull();
     // The message strip sits above the selection info, which grows with what is selected
     // (the stance lines, 分出 N 名; D-026), so that neither covers the other.
     const panel = this.info.el.hidden ? null : this.info.el.getBoundingClientRect();
@@ -283,6 +287,71 @@ export class Hud {
       return;
     }
     this.game.apply([{ kind: "select", units: [...idle].sort((a, b) => a - b) }]);
+  }
+
+  /**
+   * 人口滿了 (D-054: the brief asks for a word in the message strip): one of our barracks,
+   * ranges or mage halls has stopped 自動訓練 for want of room; said once each time it starts.
+   */
+  private warnPopulationFull(): void {
+    const view = this.game.view;
+    const b = view?.curr?.snap.buildings;
+    if (view === null || b === undefined) return;
+    let full = false;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + BuildingField.owner] === view.me && (b[o + BuildingField.flags] & BuildingFlag.AutoPopulationFull) !== 0) full = true;
+    }
+    if (full && !this.populationFull) this.game.toast("人口滿了，自動訓練停下來：蓋民居");
+    this.populationFull = full;
+  }
+
+  /**
+   * 預留 (D-054): what 自動訓練 leaves untouched, so that the player can still build (a mage
+   * hall's wood and gold by default) and cast (three cannon shots of crystal).
+   */
+  openReserve(): void {
+    const h = this.game.view?.header;
+    if (h === null || h === undefined) return;
+    this.reserve = { food: h[H.reserveFood], wood: h[H.reserveWood], gold: h[H.reserveGold], crystal: h[H.reserveCrystal] };
+    this.drawReserve();
+  }
+
+  private reserve: { food: number; wood: number; gold: number; crystal: number } | null = null;
+
+  private drawReserve(): void {
+    const r = this.reserve;
+    if (r === null) return;
+    const card = this.openDialog("預留", "economy reserve");
+    el("p", card, "small", "自動訓練只用超過這些的資源。預設留木 150、金 100（夠蓋法術營）、晶 15（3 發晶砲）。");
+    const rows: [keyof typeof r, string, number][] = [
+      ["food", "糧", 10],
+      ["wood", "木", 10],
+      ["gold", "金", 10],
+      ["crystal", "晶", 5],
+    ];
+    for (const [key, name, step] of rows) {
+      const row = el("div", card, "ratio-row");
+      el("span", row, "ratio-name", name);
+      const set = (v: number) => {
+        this.reserve = { ...r, [key]: Math.min(Math.max(v, 0), AUTO_TRAIN.reserveMax) };
+        this.drawReserve();
+      };
+      btn(row, "−", () => set(r[key] - step), "secondary").setAttribute("aria-label", `${name}少留 ${step}`);
+      const value = el("span", row, "ratio-value", `${r[key]}`);
+      value.setAttribute("role", "status");
+      value.setAttribute("aria-label", `${name}預留`);
+      btn(row, "+", () => set(r[key] + step), "secondary").setAttribute("aria-label", `${name}多留 ${step}`);
+    }
+    const row = el("div", card, "dialog-buttons");
+    btn(row, "套用", () => {
+      this.game.command({ c: "reserve", ...r });
+      this.closeDialog();
+    });
+    btn(row, "預設", () => {
+      this.reserve = { ...AUTO_TRAIN.reserve };
+      this.drawReserve();
+    }, "secondary");
+    btn(row, "取消", () => this.closeDialog(), "secondary");
   }
 
   private toggleRefill(i: number): void {
