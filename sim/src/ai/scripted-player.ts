@@ -91,6 +91,12 @@ export interface Plan {
    * plan's as before. On a map with one small town it plays exactly as without it.
    */
   corners: boolean;
+  /**
+   * Leaves the soldiers to automatic training (round 6, D-054): never sends `train` for them,
+   * the game's barracks, ranges and mage halls train on their own (scripted-games starts the
+   * player's buildings with it on). Farmers are still trained at the main city.
+   */
+  autoTrain: boolean;
 }
 
 interface Unit {
@@ -178,6 +184,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     noMage: false,
     noRange: false,
     corners: false,
+    autoTrain: false,
   };
 }
 
@@ -436,6 +443,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const ranged = soldiers.filter((u) => u.type === UnitType.Ranged).length;
       const mages = soldiers.filter((u) => u.type === UnitType.Mage).length;
       const trainAt = (t: number, type: UnitType) => {
+        if (plan.autoTrain) return;
         for (const b of done(t)) {
           if (b.queue >= 2 || room <= 0 || !afford(rules.units[type].cost)) continue;
           out.push({ c: "train", building: b.id, type, n: 1 });

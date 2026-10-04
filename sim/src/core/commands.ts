@@ -5,6 +5,7 @@
 
 import {
   Action,
+  BuildingFlag,
   BuildingType,
   type Command,
   CELL,
@@ -28,6 +29,7 @@ import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
 import { nearestWalkable } from "./paths.ts";
 import {
+  AUTO_TRAIN,
   autoBuilders,
   BUILDINGS,
   CANNON,
@@ -39,6 +41,7 @@ import {
   TOWNS,
   UNITS,
 } from "./rules.ts";
+import { mages, queuedUnits } from "./training.ts";
 import { rectDist2, startCast } from "./units.ts";
 import type { World } from "./world.ts";
 
@@ -312,6 +315,22 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       for (let k = 0; k < n; k++) q[b.queueLength[bs]++][bs] = type;
       return 0;
     }
+    case "auto_train": {
+      const bs = ownBuilding(w, p, cmd.building);
+      if (bs < 0) return w.building(cmd.building) >= 0 ? Reject.NotOwner : Reject.InvalidTarget;
+      if (typeof cmd.on !== "boolean") return Reject.InvalidTarget;
+      const b = w.buildings.col;
+      if (!AUTO_TRAIN.buildings.includes(b.type[bs])) return Reject.NotAvailable;
+      if (cmd.on) b.flags[bs] |= BuildingFlag.AutoTrain;
+      else b.flags[bs] &= ~(BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
+      return 0;
+    }
+    case "reserve": {
+      const v = [cmd.food, cmd.wood, cmd.gold, cmd.crystal];
+      if (!v.every((x) => Number.isInteger(x) && x >= 0 && x <= AUTO_TRAIN.reserveMax)) return Reject.InvalidTarget;
+      w.reserve.set(v, p * 4);
+      return 0;
+    }
     case "cancel_train": {
       const bs = ownBuilding(w, p, cmd.building);
       if (bs < 0) return w.building(cmd.building) >= 0 ? Reject.NotOwner : Reject.InvalidTarget;
@@ -426,27 +445,6 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
     default:
       return Reject.NotAvailable;
   }
-}
-
-/** Units in every own training queue: all of them, and the mages. */
-function queuedUnits(w: World, p: number): { all: number; mages: number } {
-  const b = w.buildings.col;
-  const q = [b.q0, b.q1, b.q2, b.q3, b.q4, b.q5, b.q6];
-  let all = 0;
-  let m = 0;
-  for (let s = 0; s < w.buildings.count; s++) {
-    if (b.owner[s] !== p) continue;
-    all += b.queueLength[s];
-    for (let k = 0; k < b.queueLength[s]; k++) if (q[k][s] === UnitType.Mage) m++;
-  }
-  return { all, mages: m };
-}
-
-function mages(w: World, p: number): number {
-  const u = w.units.col;
-  let m = 0;
-  for (let s = 0; s < w.units.count; s++) if (u.owner[s] === p && u.type[s] === UnitType.Mage) m++;
-  return m;
 }
 
 /** Is a cell farm land for player p: within FARMLAND_REACH of an own finished main city or granary? */

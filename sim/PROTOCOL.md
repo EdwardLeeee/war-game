@@ -113,6 +113,8 @@
 | `repair` | `u`、`building` | 農民對自己的建築工作：沒蓋好就幫忙蓋、受損就修理（不花資源，每名農民每秒 5 點）、農田就去耕作。見 3.1 | PR-3 |
 | `train` | `building`、`type`、`n` | 排 n 個訓練。花費在排入時扣 | PR-3 |
 | `cancel_train` | `building`、`index` | 取消佇列第 index 個，退回花費 | PR-3 |
+| `auto_train` | `building`、`on` | 自己的兵營、射場或法術營的自動訓練開（`true`）或暫停（`false`），見 3.1 | 第六輪 |
+| `reserve` | `food`、`wood`、`gold`、`crystal` | 自動訓練要留下的資源（預留額），見 3.1 | 第六輪 |
 | `rally` | `building`、`x`、`y` | 集結點（格子） | PR-3 |
 | `eco_ratio` | `food`、`wood`、`gold`、`on` | 經濟分配的比例（百分比，加起來 100）與開關 | PR-3 |
 | `recall` | `on` | 全體回城（`true`）或回去工作（`false`），是同一個指令 | PR-3 |
@@ -165,6 +167,23 @@
   - 資源不夠 `n` 個：`CannotAfford`。整批接受或整批拒絕。
   - 上限變低（例如民居被拆）時，隊首會停在 100%，等有空位才出生。
 - **`cancel_train`**：`index` 超出佇列：`InvalidTarget`。退回全額花費。
+- **自動訓練**（第六輪，D-054）：
+  - 兵營、射場、法術營有自動訓練開關，建築上的 `BuildingFlag.AutoTrain`（8）。
+    - 開著時，每個 tick 訓練跑完以後，佇列空了就排一名這棟建築的兵（槍兵、遠程、法師），和 `train` 一樣在排入時扣錢。
+    - 只用超過預留額的資源：每種資源「現有 − 預留額」都夠才排。
+    - 人口：現有人口 ＋ 佇列中的單位 ＋ 1 超過上限就不排。這時建築帶 `BuildingFlag.AutoPopulationFull`（16），畫面可以提示是人口滿了才停；有空位、排進去以後就清掉。
+    - 法師照樣受上限 6 限制，到上限就不排（不帶旗標）。
+    - 同一位玩家的幾棟建築，照建築表的順序（先蓋的先）用錢。
+    - 玩家自己的 `train` 照舊可以用，排在自動排的後面。
+  - 預設：人類玩家的這三種建築一放下就開著（蓋好才開始排）；電腦的關著，電腦照舊自己下 `train`。由開局決定（6 節 `init`），重播照 `LogHeader.autoTrain`。
+  - **`auto_train`**：
+    - 不是自己的建築：`NotOwner`；建築不存在：`InvalidTarget`。
+    - `on` 不是布林值：`InvalidTarget`。
+    - 不是兵營、射場、法術營：`NotAvailable`。
+    - 沒蓋好也可以設，蓋好以後照設定。暫停時兩個旗標都清掉；已經排的照樣訓練。
+  - **`reserve`**：每位玩家一組，預設木 150、金 100（夠蓋一座法術營）、魔晶 15（留 3 發晶砲）、糧 0。
+    - 四個值都要是 0–10000 的整數，否則 `InvalidTarget`。
+    - 現在的預留額在表頭 `reserveFood` 到 `reserveCrystal`。
 - **`rally`**：
   - 只有會訓練的建築可以設，其他：`NotAvailable`。
   - 新單位出生後走到集結點。
@@ -259,7 +278,7 @@
 
 所有 typed array 都用 transferable 傳，client 收到後直接擁有。各表都是 `Int32Array`，每列固定長度（stride），依 id 由小到大排列。
 
-### 4.1 表頭 `header`（長度 `HEADER_LENGTH` = 21）
+### 4.1 表頭 `header`（長度 `HEADER_LENGTH` = 25）
 
 | 欄 | 名稱 | 說明 | 從 |
 |---|---|---|---|
@@ -276,6 +295,7 @@
 | 18 | `stepBatchMicros` | 最近 20 tick 的總和。iOS 計時精度只有 1 ms，要算平均請用這個 | PR-2 |
 | 19 | `fogTick` | 最近一次迷霧更新的 tick | PR-2 |
 | 20 | `scenario` | `Scenario` | PR-2 |
+| 21–24 | `reserveFood`、`reserveWood`、`reserveGold`、`reserveCrystal` | 自動訓練的預留額（3.1） | 第六輪 |
 
 ### 4.2 單位 `units`（stride `UNIT_STRIDE` = 20）
 
@@ -313,7 +333,7 @@
 | 9 | `queueProgress` | 隊首的訓練進度（千分比） | PR-3 |
 | 10–11 | `rallyX`、`rallyY` | 集結點（定點），沒有就是 -1 | PR-3 |
 | 12 | `garrisoned` | 躲在裡面的農民數 | PR-3 |
-| 13 | `flags` | `BuildingFlag`：1 記憶中（目前看不到）、2 最近 60 tick 內受過傷、4 修理鎖定中（只有自己的主城，見 3.1） | PR-2（4 從 PR-6） |
+| 13 | `flags` | `BuildingFlag`：1 記憶中（目前看不到）、2 最近 60 tick 內受過傷、4 修理鎖定中（只有自己的主城，見 3.1）、8 自動訓練開著、16 自動訓練因為人口滿而停（8、16 只有自己的建築，見 3.1） | PR-2（4 從 PR-6，8、16 從第六輪） |
 | 14–15 | 保留 | 0 | — |
 
 開局時雙方各有一座主城（PR-2 起）。大城的中立箭樓也是一棟建築（`TownTower`，擁有者 `NEUTRAL`）。
@@ -399,7 +419,7 @@
 
 | `type` | 欄位 | 說明 |
 |---|---|---|
-| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"`、`"normal"`，或 war-game-ai 加的 `"hard"`（D-052，它的 PR 把 `"hard"` 加進 `AI_DIFFICULTIES` 之後才收），見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起） |
+| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"`、`"normal"`，或 war-game-ai 加的 `"hard"`（D-052，它的 PR 把 `"hard"` 加進 `AI_DIFFICULTIES` 之後才收），見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起）。`ai` 是 false 的玩家，兵營、射場、法術營一開始就自動訓練（第六輪，3.1）；電腦的不會 |
 | `command` | `cmd` | 見第 3 節 |
 | `pause`／`resume` | — | 暫停時模擬停下，但照收指令 |
 | `speed` | `tps` | 每秒跑幾個 tick：慢 20、正常 30、快 40（D-024），測試時可以更快。不會改變戰局 |
@@ -415,7 +435,7 @@
 | `hash` | 每 100 tick：`tick`、8 碼十六進位的 `hash` |
 | `game_over` | `winner`、`reason`、`stats`（採集量、訓練與損失、法師產量與陣亡、搶與治理次數）。`unitsTrained`、`unitsLost` 依 `UnitType` 排：農民、槍兵、遠程、法師。城鎮次數從 PR-4 |
 | `determinism_progress`／`determinism_done` | 確定性檢查的進度與結果：總 tick、最終雜湊、耗時、每 tick 中位數與最大值 |
-| `log` | 指令紀錄：第一行是 `LogHeader`（protocol、seed、scenario、ai，第二輪起加 `maxTicks`、每位玩家的 `difficulty`），之後一行一道指令 |
+| `log` | 指令紀錄：第一行是 `LogHeader`（protocol、seed、scenario、ai，第二輪起加 `maxTicks`、每位玩家的 `difficulty`，第六輪起有人類玩家時加 `autoTrain`），之後一行一道指令 |
 | `error` | 版本不合或內部錯誤 |
 
 **暫停與速度**：
@@ -466,6 +486,7 @@
 - **指令紀錄**（`export_log`）：第一行是 `LogHeader`，之後每行一道已經套用的指令（含被拒的）。
   - `maxTicks`：這局的時間上限，重播照它判平手。舊紀錄沒有這個欄位，當成 `MAX_TICKS`。
   - `difficulty`：每位玩家的電腦難度，只是紀錄；重播時電腦關著，不影響結果。沒有時當成 `"normal"`。
+  - `autoTrain`（第六輪）：每位玩家的兵營、射場、法術營是否一開始就自動訓練。會影響結果，重播照它開局。沒有時全部關著（電腦對電腦的紀錄不寫這個欄位）。
   - 同一份紀錄關掉 AI 重播，每 100 tick 的雜湊都會相同。
 - **雜湊**：FNV-1a 32 位元，輸出 8 碼十六進位。範圍是模擬的全部狀態，依 id 順序：
   - 資源、單位、建築、生產佇列、資源點、城鎮與計時、法師的防護罩與冷卻、亂數狀態、每位玩家的記憶表。

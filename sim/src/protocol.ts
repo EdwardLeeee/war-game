@@ -267,6 +267,10 @@ export const BuildingFlag = {
   UnderAttack: 2,
   /** Own main city, damaged and hit in the last 10 s: repairs wait until the lock ends (repair is still accepted). */
   RepairLocked: 4,
+  /** Own barracks, range or mage hall training on its own (`auto_train`, round 6, D-054). */
+  AutoTrain: 8,
+  /** Own, with AutoTrain: its queue is empty and nothing is queued because the population is full. */
+  AutoPopulationFull: 16,
 } as const;
 
 /** Resource nodes: sent as changes only (see Snapshot.nodes). */
@@ -352,8 +356,13 @@ export const HeaderField = {
   fogTick: 19,
   /** Scenario the game runs (Scenario value). */
   scenario: 20,
+  /** What automatic training leaves untouched (`reserve`, round 6, D-054). */
+  reserveFood: 21,
+  reserveWood: 22,
+  reserveGold: 23,
+  reserveCrystal: 24,
 } as const;
-export const HEADER_LENGTH = 21;
+export const HEADER_LENGTH = 25;
 
 /**
  * Fixed starting situations, generated entirely by the simulation from the seed.
@@ -489,6 +498,10 @@ export type CommandBody =
   | { c: "repair"; u: number[]; building: number }
   | { c: "train"; building: number; type: UnitType; n: number }
   | { c: "cancel_train"; building: number; index: number }
+  /** Automatic training of an own barracks, range or mage hall on or off (round 6, D-054, PROTOCOL.md 3). */
+  | { c: "auto_train"; building: number; on: boolean }
+  /** What automatic training leaves untouched, per resource (round 6, D-054). */
+  | { c: "reserve"; food: number; wood: number; gold: number; crystal: number }
   | { c: "rally"; building: number; x: number; y: number }
   | { c: "eco_ratio"; food: number; wood: number; gold: number; on: boolean }
   | { c: "recall"; on: boolean }
@@ -513,6 +526,8 @@ export const COMMAND_KINDS = [
   "repair",
   "train",
   "cancel_train",
+  "auto_train",
+  "reserve",
   "rally",
   "eco_ratio",
   "recall",
@@ -644,6 +659,8 @@ export interface LogHeader {
   maxTicks?: number;
   /** Per player, how its AI played (informational: a replay runs without AIs). Absent: "normal". */
   difficulty?: AiDifficulty[];
+  /** Per player, whether its barracks, ranges and mage halls start with automatic training on (round 6). Absent: all off. */
+  autoTrain?: boolean[];
 }
 
 /**
