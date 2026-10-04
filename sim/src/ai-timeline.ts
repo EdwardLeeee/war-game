@@ -56,6 +56,8 @@ interface Result {
   base: [number, number, number];
   /** When the main city fell, or -1. */
   fell: number;
+  /** When the AI first had a mage, or -1 (early balance, D-057). */
+  firstMage: number;
   map: GameMap;
 }
 
@@ -90,6 +92,7 @@ function timeline(seed: number): Result {
   let firstTown = -1;
   let base: [number, number, number] = [-1, 0, 0];
   let firstHit = false;
+  let firstMage = -1;
   const owner = Array.from(w.townOwner);
   while (!r.over && w.tick < CAP) {
     r.tick();
@@ -115,6 +118,15 @@ function timeline(seed: number): Result {
       }
       owner[t] = w.townOwner[t];
     }
+    if (firstMage < 0) {
+      for (let i = 0; i < w.units.count; i++) {
+        if (w.units.col.owner[i] === 1 && w.units.col.type[i] === UnitType.Mage) {
+          firstMage = w.tick;
+          lines.push(`- ${when(w.tick)}：電腦第一名法師`);
+          break;
+        }
+      }
+    }
     if (!firstHit && cityHp(0) < 1200) {
       firstHit = true;
       lines.push(`- ${when(w.tick)}：主城第一次被打`);
@@ -126,7 +138,7 @@ function timeline(seed: number): Result {
   const fell = r.over && w.winner === 1 ? w.tick : -1;
   lines.push(r.over ? `- ${when(w.tick)}：${w.winner === 1 ? "主城被攻下" : `結束（勝方 ${w.winner}）`}` : `- 到${when(w.tick)}還沒結束`);
   lines.push("", "| 遊戲分鐘 | 電腦的農民 | 電腦的兵 | 兵營＋射場 | 玩家主城血量 |", "|---|---|---|---|---|", ...status, "");
-  return { lines, style: r.styles[1] ?? "", taken, firstTown, base, fell, map };
+  return { lines, style: r.styles[1] ?? "", taken, firstTown, base, fell, firstMage, map };
 }
 
 const results = seeds.map(timeline);
@@ -138,11 +150,11 @@ if (seeds.length > 1) {
   out.push(
     "### 彙整（遊戲分鐘；「—」是沒拿下或沒發生）",
     "",
-    `| 種子 | 電腦 | ${names.map((n) => `攻下${n}`).join(" | ")} | 第一次出發打主城（兵／法師） | 主城被攻下 |`,
-    `|---|---|${names.map(() => "---|").join("")}---|---|`,
+    `| 種子 | 電腦 | ${names.map((n) => `攻下${n}`).join(" | ")} | 電腦第一名法師 | 第一次出發打主城（兵／法師） | 主城被攻下 |`,
+    `|---|---|${names.map(() => "---|").join("")}---|---|---|`,
     ...results.map(
       (x, k) =>
-        `| ${seeds[k]} | ${x.style} | ${x.taken.map(m).join(" | ")} | ${x.base[0] < 0 ? "—" : `${m(x.base[0])}（${x.base[1]}／${x.base[2]}）`} | ${m(x.fell)} |`,
+        `| ${seeds[k]} | ${x.style} | ${x.taken.map(m).join(" | ")} | ${m(x.firstMage)} | ${x.base[0] < 0 ? "—" : `${m(x.base[0])}（${x.base[1]}／${x.base[2]}）`} | ${m(x.fell)} |`,
     ),
     "",
   );
