@@ -65,6 +65,10 @@ const spellsPaid = both((p) => p.governPaidBack);
 const spellsOpen = both((p) => p.governOpen);
 const spellsOpenPaid = both((p) => p.governOpenPaidBack);
 const firstCaptures = games.map((g) => g.firstCapture).filter((t) => t >= 0).map((t) => t / 1200).sort((a, b) => a - b);
+// Comebacks (D-057): of the decided games with a town taken, how often the side that did not
+// take the first town won. Results from before the statistic have no firstCaptureBy.
+const contested = games.filter((g) => (g.winner === 0 || g.winner === 1) && (g.firstCaptureBy ?? -1) >= 0);
+const comebacks = contested.filter((g) => g.winner !== g.firstCaptureBy).length;
 const towns = {
   plunderGain,
   governChosen,
@@ -78,6 +82,7 @@ const towns = {
   spellsOpen,
   spellsOpenPaid,
   firstCaptureMinute: { median: q(firstCaptures, 0.5), mean: firstCaptures.length ? firstCaptures.reduce((a, b) => a + b, 0) / firstCaptures.length : 0, games: firstCaptures.length },
+  comebacks: { won: comebacks, games: contested.length },
 };
 /** 95% Wilson interval for k successes out of n. */
 function wilson(k: number, n: number): [number, number] {
@@ -182,6 +187,7 @@ const lines = [
   `- 選治理 ${governChosen} 次，平均花 ${governCostAvg.toFixed(0)}；治理中的城鎮共 ${governedMinutes.toFixed(0)} 城鎮·分鐘，每分鐘實際產出 ${incomePerMinute.toFixed(1)}（含駐軍不足、不產出的時間）；照這個速度 ${towns.paybackMinutes.toFixed(1)} 分鐘回本（不含修繕時間）。`,
   `- 治理結束（叛離或被攻下）${spellsEnded} 次，其中 ${spellsPaid} 次已經回本；一局結束時還在治理 ${spellsOpen} 座，其中 ${spellsOpenPaid} 座已經回本。`,
   `- 第一次攻下城鎮：中位數第 ${towns.firstCaptureMinute.median.toFixed(1)} 分鐘，平均第 ${towns.firstCaptureMinute.mean.toFixed(1)} 分鐘（${towns.firstCaptureMinute.games} 局有攻下）。`,
+  `- 翻盤：第一座城鎮被對方先拿下的一方，最後贏了 ${comebacks}／${contested.length} 局（${contested.length === 0 ? "—" : pct(comebacks / contested.length)}；分出勝負、有人拿下城鎮的局）。`,
   "",
   failures.length === 0 ? "門檻全部通過。" : `**沒通過：** ${failures.join("；")}`,
 ];

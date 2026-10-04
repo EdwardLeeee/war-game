@@ -173,6 +173,8 @@ export class World {
   governPaidBack = new Int32Array(PLAYER_COUNT);
   /** Tick of the first town capture, or -1. */
   firstCapture = -1;
+  /** Who made it (a statistic for comebacks, D-057; not in the hash: firstCapture is). */
+  firstCaptureBy = -1;
   /**
    * Per owner (players, then neutral): the flow-field step order and whether to try the y
    * axis first when sliding along a wall, both from the owner's symmetry frame (frame.ts).
