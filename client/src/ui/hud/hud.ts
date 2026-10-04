@@ -3,7 +3,6 @@
 // 閒置農民 and 全體回城 on the left, attack alerts, 經濟分配, 搶／治理, the menu and the result
 // screen. Text updates at most 10 times a second and only when it changed.
 
-import { GROUP_TYPES } from "../../game/army.ts";
 import type { Game } from "../../game/game.ts";
 import { pressable } from "../../input/pressable.ts";
 import { type GameStats, HeaderField as H, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
@@ -12,11 +11,11 @@ import { FIXED_TO_PX } from "../../view/view.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
 import { Minimap } from "./minimap.ts";
-import { armyText, BUILDING_NAME, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
+import { armyText, BUILDING_NAME, clock, GAME_OVER_REASON } from "./names.ts";
 import { CommandArea, ResourceBar, SelectionInfo } from "./panels.ts";
 
 const UPDATE_MS = 100;
-/** 軍團設定 asks for at most this many of one type (more than the population cap allows). */
+/** 軍團畫面 asks for at most this many of one type (more than the population cap allows). */
 const GROUP_WANT_MAX = 50;
 /** px between the resource bar and the top-right buttons. */
 const RES_GAP = 8;
@@ -68,8 +67,8 @@ export class Hud {
   private flash: { id: number; cx: number; cy: number; radius: number; until: number } | null = null;
   /** Called once when the dialog on screen goes away, however it goes (the hint resumes the game). */
   private dialogGone: (() => void) | null = null;
-  /** Keeps the open dialog's numbers current (軍團設定's 現有), with the rest of the interface. */
-  private dialogUpdate: (() => void) | null = null;
+  /** 收起 (D-054): the selection info shows its title line only, for this game. */
+  private collapsed = false;
   private readonly info: SelectionInfo;
   private readonly cmds: CommandArea;
   private readonly recallBtn: HTMLButtonElement;
@@ -112,13 +111,10 @@ export class Hud {
     for (let i = 0; i < 4; i++) {
       const b = el("button", grid, "group-btn secondary", `${i + 1}`);
       b.type = "button";
-      b.setAttribute("aria-label", `編隊 ${i + 1}：點一下選取，點兩下跳過去，長按存成編隊`);
-      this.cleanups.push(
-        pressable(b, {
-          tap: (count) => this.recallGroup(i, count === 2),
-          longPress: () => this.openGroup(i),
-        }),
-      );
+      b.setAttribute("aria-label", `編隊 ${i + 1}：點一下選取並打開軍團畫面，點兩下跳過去`);
+      // 軍團畫面 (D-054): the tap opens it; the long press that saved the selection is gone
+      // (改成剛才選的 N 名 in the panel does that).
+      this.cleanups.push(pressable(b, { tap: (count) => game.showGroup(i, count === 2) }));
       this.groupBtns.push(b);
     }
     this.armyBtn = btn(right, armyText(0), () => this.selectArmy(), "army-btn secondary");
@@ -138,14 +134,25 @@ export class Hud {
       garrisonLess: (town: number) => game.garrisonLess(town),
       notify: (text: string) => game.toast(text),
       retreat: () => game.retreatSelection(),
-      groupOf: (ids: number[]) => game.groupOf(ids),
+      cancelToHold: () => game.cancelToHold(),
       groupRefill: (i: number) => game.army.groups[i].refill,
       toggleRefill: (i: number) => this.toggleRefill(i),
       selectOnly: (units: number[]) => game.apply([{ kind: "select", units }]),
       clearSelection: () => game.apply([{ kind: "clear" }]),
-      splitSelection: (n: number) => game.splitSelection(n),
-      selectRest: () => game.selectRest(),
-      lastSplit: () => game.lastSplit,
+      groupView: () => game.groupView,
+      groupWant: (i: number, type: number) => game.army.groups[i].want[type] ?? 0,
+      groupHas: (i: number, type: number) => game.groupHas(i, type),
+      setGroupWant: (i: number, type: number, n: number) => game.setGroupWant(i, type, Math.min(n, GROUP_WANT_MAX)),
+      clearGroup: (i: number) => game.clearGroup(i),
+      beforeGroupCount: () => game.beforeGroupCount(),
+      saveBeforeIntoGroup: (i: number) => {
+        const n = game.saveBeforeIntoGroup(i);
+        if (n > 0) game.toast(`已存成編隊 ${i + 1}（${n} 個）`);
+      },
+      collapsed: () => this.collapsed,
+      toggleCollapsed: () => {
+        this.collapsed = !this.collapsed;
+      },
     };
     this.minimap = new Minimap(root, {
       view: () => game.view,
@@ -198,7 +205,6 @@ export class Hud {
     }
     this.info.update();
     this.cmds.update();
-    this.dialogUpdate?.();
     // The message strip sits above the selection info, which grows with what is selected
     // (the stance lines, 分出 N 名; D-026), so that neither covers the other.
     const panel = this.info.el.hidden ? null : this.info.el.getBoundingClientRect();
@@ -279,75 +285,10 @@ export class Hud {
     this.game.apply([{ kind: "select", units: [...idle].sort((a, b) => a - b) }]);
   }
 
-  /** 編隊, tap: select it; double tap: also look at it. */
-  private recallGroup(i: number, jump: boolean): void {
-    const g = this.game.army.groups[i];
-    const alive = this.alive(g.ids);
-    if (alive.length === 0) {
-      const waiting = g.saved > 0 && g.refill ? `編隊 ${i + 1} 的兵都不在了：沒編隊和新訓練的兵會自動補進來` : `編隊 ${i + 1} 是空的：長按這顆按鈕設定要幾名兵`;
-      this.game.toast(waiting);
-      return;
-    }
-    this.game.apply([{ kind: "select", units: alive }]);
-    const view = this.game.view;
-    if (!jump || view === null) return;
-    let x = 0;
-    let y = 0;
-    for (const id of alive) {
-      const p = view.unitPos(view.unitRow(id));
-      x += p.x;
-      y += p.y;
-    }
-    this.game.camera?.centerOn(x / alive.length, y / alive.length);
-  }
-
   private toggleRefill(i: number): void {
     const g = this.game.army.groups[i];
     g.refill = !g.refill;
     this.game.toast(g.refill ? `編隊 ${i + 1} 自動補兵：開。缺人時，沒編隊和新訓練的兵會自己走去會合` : `編隊 ${i + 1} 自動補兵：關`);
-  }
-
-  /**
-   * 軍團設定 (D-050), the long press on a group button: how many of each soldier type the
-   * group wants, with what it has now. The soldiers in no group come at once; 照目前選的兵 is
-   * the long press of before (D-026). The game goes on meanwhile.
-   */
-  private openGroup(i: number): void {
-    const card = this.openDialog(`編隊 ${i + 1}`, "group-setup");
-    el("p", card, "small", "沒編隊、沒留守的兵會馬上走過來補，之後新訓練的兵也會補。");
-    const want = (type: number): number => this.game.army.groups[i].want[type] ?? 0;
-    const rows = GROUP_TYPES.map((type) => {
-      const name = UNIT_NAME[type] ?? "兵";
-      const row = el("div", card, "ratio-row");
-      el("span", row, "group-type", name);
-      btn(row, "−", () => this.game.setGroupWant(i, type, want(type) - 1), "secondary").setAttribute("aria-label", `少要 1 名${name}`);
-      const value = el("span", row, "ratio-value");
-      value.setAttribute("role", "status");
-      value.setAttribute("aria-label", `${name}要幾名`);
-      btn(row, "+", () => this.game.setGroupWant(i, type, Math.min(want(type) + 1, GROUP_WANT_MAX)), "secondary").setAttribute("aria-label", `多要 1 名${name}`);
-      const has = el("span", row, "group-has");
-      return { type, value, has };
-    });
-    const row = el("div", card, "dialog-buttons");
-    const fromSelection = btn(row, "照目前選的兵", () => {
-      const n = this.game.saveGroup(i);
-      if (n > 0) this.game.toast(`已存成編隊 ${i + 1}（${n} 個）`);
-    }, "secondary");
-    btn(row, "清空", () => this.game.clearGroup(i), "secondary");
-    const refill = btn(row, "", () => this.toggleRefill(i), "secondary");
-    btn(row, "關閉", () => this.closeDialog());
-    this.dialogUpdate = () => {
-      for (const r of rows) {
-        const w = `${want(r.type)}`;
-        if (r.value.textContent !== w) r.value.textContent = w;
-        const has = `現有 ${this.game.groupHas(i, r.type)}`;
-        if (r.has.textContent !== has) r.has.textContent = has;
-      }
-      fromSelection.disabled = (this.game.view?.selection.units.length ?? 0) === 0;
-      const on = `自動補兵：${this.game.army.groups[i].refill ? "開" : "關"}`;
-      if (refill.textContent !== on) refill.textContent = on;
-    };
-    this.dialogUpdate();
   }
 
   /** 全軍: every own soldier on the map, except the ones stationed in a town (留守, D-026). */
@@ -443,7 +384,6 @@ export class Hud {
   }
 
   private dialogClosed(): void {
-    this.dialogUpdate = null;
     const gone = this.dialogGone;
     this.dialogGone = null;
     gone?.();

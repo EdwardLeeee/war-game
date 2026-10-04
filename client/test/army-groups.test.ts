@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ArmyBook, type ArmyUnit, mostlyLoose, RECRUIT_RECHECK_TICKS, RECRUIT_WAIT_TICKS, redirects, type TownArea } from "../src/game/army.ts";
+import { ArmyBook, type ArmyUnit, mostlyLoose, RECRUIT_RECHECK_TICKS, redirects, type TownArea } from "../src/game/army.ts";
 import { CELL, UnitType } from "../src/sim.ts";
 
 const FARMER = UnitType.Farmer;
@@ -52,12 +52,12 @@ test("編隊自動補兵：存 10 名槍兵、陣亡 3 名後，接下來訓練�
   assert.equal(count(book, 0), "7/10");
   for (const id of [21, 22, 23]) {
     w.add(id, SPEAR, 10, 10);
-    assert.equal(book.enlist(id, SPEAR, 100, w.typeOf), 0);
+    assert.equal(book.enlist(id, SPEAR, w.typeOf), 0);
   }
   assert.equal(count(book, 0), "10/10");
   // Full again: the next one stays at the rally point.
   w.add(24, SPEAR, 10, 10);
-  assert.equal(book.enlist(24, SPEAR, 100, w.typeOf), null);
+  assert.equal(book.enlist(24, SPEAR, w.typeOf), null);
   assert.equal(count(book, 0), "10/10");
 });
 
@@ -72,7 +72,7 @@ test("編隊自動補兵：補給缺這種兵最多的編隊，一樣多挑編�
   book.prune(w.alive, () => true);
   const train = (id: number, type: number): number | null => {
     w.add(id, type, 10, 10);
-    return book.enlist(id, type, 0, w.typeOf);
+    return book.enlist(id, type, w.typeOf);
   };
   assert.equal(train(101, SPEAR), 1, "3 short in groups 2 and 3: the lower number");
   assert.equal(train(102, SPEAR), 2, "now group 3 is shortest (3 against 2)");
@@ -102,7 +102,7 @@ test("編隊：一名兵只屬於一個編隊，存進另一個編隊時從舊�
   assert.deepEqual(book.groups[1].want, { [SPEAR]: 3, [RANGED]: 2 });
   // Regrouping left nobody short.
   w.add(30, SPEAR, 10, 10);
-  assert.equal(book.enlist(30, SPEAR, 0, w.typeOf), null);
+  assert.equal(book.enlist(30, SPEAR, w.typeOf), null);
   // Saving a group again counts it afresh.
   w.kill(1);
   book.prune(w.alive, () => true);
@@ -119,44 +119,29 @@ test("編隊：移去留守的兵不改「原本」，所以會補回來", () =>
   assert.deepEqual(book.station(w.army(), town, 1), [2], "the one on the centre");
   assert.equal(count(book, 0), "4/5");
   w.add(9, SPEAR, 10, 10);
-  assert.equal(book.enlist(9, SPEAR, 0, w.typeOf), 0);
+  assert.equal(book.enlist(9, SPEAR, w.typeOf), 0);
   assert.equal(count(book, 0), "5/5");
 });
 
-test("編隊自動補兵：新兵湊滿 3 名才一起出發，走到編隊現在的中心（不算還沒會合的新兵）", () => {
+test("編隊自動補兵：新兵訓練出來就出發，不等湊滿，走到編隊現在的中心（不算還沒會合的新兵）（D-054）", () => {
   const w = new World();
   const book = new ArmyBook();
-  book.saveGroup(0, w.many(1, 6, SPEAR, 50, 50)); // cells 50–55: the centre is 52.5 → cell 53 after + half a cell
+  book.saveGroup(0, w.many(1, 6, SPEAR, 50, 50));
   w.kill(4, 5, 6);
   book.prune(w.alive, () => true); // 1, 2, 3 at cells 50, 51, 52: centre cell 51
   const train = (id: number, tick: number): MarchOrderList => {
     w.add(id, SPEAR, 10, 10);
-    assert.equal(book.enlist(id, SPEAR, tick, w.typeOf), 0);
+    assert.equal(book.enlist(id, SPEAR, w.typeOf), 0);
     return book.muster(tick, w.where);
   };
-  assert.deepEqual(train(21, 0), []);
-  assert.deepEqual(train(22, 60), []);
-  assert.deepEqual(train(23, 120), [{ ids: [21, 22, 23], cellX: 51, cellY: 50 }]);
+  assert.deepEqual(train(21, 0), [{ ids: [21], cellX: 51, cellY: 50 }]);
+  // The next one goes at once too, with the one still on its way.
+  assert.deepEqual(train(22, 60), [{ ids: [21, 22], cellX: 51, cellY: 50 }]);
   // Already sent: nothing more while the group stays put.
-  assert.deepEqual(book.muster(121, w.where), []);
-  assert.deepEqual(book.muster(120 + RECRUIT_RECHECK_TICKS, w.where), []);
+  assert.deepEqual(book.muster(61, w.where), []);
+  assert.deepEqual(book.muster(60 + RECRUIT_RECHECK_TICKS, w.where), []);
 });
 type MarchOrderList = ReturnType<ArmyBook["muster"]>;
-
-test("編隊自動補兵：湊不到 3 名時，第一名等了 20 秒（400 tick）就出發", () => {
-  const w = new World();
-  const book = new ArmyBook();
-  book.saveGroup(0, w.many(1, 4, SPEAR, 50, 50));
-  w.kill(3, 4);
-  book.prune(w.alive, () => true);
-  w.add(21, SPEAR, 10, 10);
-  book.enlist(21, SPEAR, 1000, w.typeOf);
-  w.add(22, SPEAR, 10, 11);
-  book.enlist(22, SPEAR, 1300, w.typeOf);
-  assert.deepEqual(book.muster(1000 + RECRUIT_WAIT_TICKS - 1, w.where), []);
-  // The two veterans stand on cells 50 and 51: the centre is the line between them, cell 51.
-  assert.deepEqual(book.muster(1000 + RECRUIT_WAIT_TICKS, w.where), [{ ids: [21, 22], cellX: 51, cellY: 50 }], "the second leaves with the first");
-});
 
 test("編隊自動補兵：編隊移動超過 3 格就重下前進指令；走到 6 格內就不再管；新兵一直是編隊的成員", () => {
   const w = new World();
@@ -166,7 +151,7 @@ test("編隊自動補兵：編隊移動超過 3 格就重下前進指令；走�
   book.prune(w.alive, () => true); // one veteran left, at cell (50, 50)
   for (const id of [21, 22, 23]) {
     w.add(id, SPEAR, 10, 50);
-    book.enlist(id, SPEAR, 0, w.typeOf);
+    book.enlist(id, SPEAR, w.typeOf);
   }
   assert.deepEqual(book.muster(0, w.where), [{ ids: [21, 22, 23], cellX: 50, cellY: 50 }]);
   // The group walks 2 cells: not far enough to send them again.
@@ -196,10 +181,10 @@ test("編隊自動補兵：新兵訓練出來就在編隊旁邊（6 格內）時
   w.kill(3);
   book.prune(w.alive, () => true);
   w.add(21, SPEAR, 10, 10);
-  book.enlist(21, SPEAR, 0, w.typeOf);
+  book.enlist(21, SPEAR, w.typeOf);
   assert.deepEqual(book.muster(0, w.where), []);
   assert.deepEqual(book.groups[0].recruits, []);
-  assert.deepEqual(book.muster(RECRUIT_WAIT_TICKS, w.where), []);
+  assert.deepEqual(book.muster(RECRUIT_RECHECK_TICKS, w.where), []);
 });
 
 test("編隊自動補兵：玩家親手下過指令的新兵不再替他下指令，但還在編隊裡；陣亡的新兵不管", () => {
@@ -210,19 +195,18 @@ test("編隊自動補兵：玩家親手下過指令的新兵不再替他下指�
   book.prune(w.alive, () => true);
   for (const id of [21, 22, 23]) {
     w.add(id, SPEAR, 10, 10);
-    book.enlist(id, SPEAR, 0, w.typeOf);
+    book.enlist(id, SPEAR, w.typeOf);
   }
   book.playerOrdered([22, 99]);
   w.kill(23);
-  // Three were waiting: the one ordered by hand and the dead one are out, so 21 waits for the 20 s.
-  assert.deepEqual(book.muster(10, w.where), []);
-  // 22 stands far away by the player's order: it does not pull the meeting point toward it.
-  assert.deepEqual(book.muster(RECRUIT_WAIT_TICKS, w.where), [{ ids: [21], cellX: 51, cellY: 50 }]);
+  // The one ordered by hand and the dead one are not led; 22 stands far away by the player's
+  // order and does not pull the meeting point toward it.
+  assert.deepEqual(book.muster(10, w.where), [{ ids: [21], cellX: 51, cellY: 50 }]);
   book.prune(w.alive, () => true);
   assert.deepEqual(book.groups[0].ids, [1, 2, 21, 22]);
   // Once it walks up to the group it is an ordinary member, and counts for where the group is.
   w.units.set(22, { type: SPEAR, cx: 52, cy: 50 });
-  book.muster(RECRUIT_WAIT_TICKS + RECRUIT_RECHECK_TICKS, w.where);
+  book.muster(10 + RECRUIT_RECHECK_TICKS, w.where);
   assert.deepEqual(book.groups[0].recruits.map((r) => r.id), [21]);
 });
 
@@ -234,7 +218,7 @@ test("編隊自動補兵：玩家對走在路上的新兵改姿態、隊形或�
   book.prune(w.alive, () => true); // one veteran left, at cell (50, 50)
   for (const id of [21, 22, 23]) {
     w.add(id, SPEAR, 10, 50);
-    book.enlist(id, SPEAR, 0, w.typeOf);
+    book.enlist(id, SPEAR, w.typeOf);
   }
   assert.deepEqual(book.muster(0, w.where), [{ ids: [21, 22, 23], cellX: 50, cellY: 50 }]);
   // On their way, the player selects the whole group and changes its stance, formation and autocast.
@@ -267,7 +251,7 @@ test("編隊自動補兵：編隊全滅時新兵不出發，留在原地當編�
   assert.equal(count(book, 0), "0/3");
   for (const id of [21, 22, 23]) {
     w.add(id, SPEAR, 10, 10);
-    assert.equal(book.enlist(id, SPEAR, 0, w.typeOf), 0);
+    assert.equal(book.enlist(id, SPEAR, w.typeOf), 0);
   }
   assert.deepEqual(book.muster(0, w.where), []);
   assert.deepEqual(book.groups[0].recruits, []);
@@ -276,8 +260,8 @@ test("編隊自動補兵：編隊全滅時新兵不出發，留在原地當編�
   w.kill(21);
   book.prune(w.alive, () => true);
   w.add(24, SPEAR, 40, 10);
-  book.enlist(24, SPEAR, 500, w.typeOf);
-  assert.deepEqual(book.muster(500 + RECRUIT_WAIT_TICKS, w.where), [{ ids: [24], cellX: 10, cellY: 10 }]);
+  book.enlist(24, SPEAR, w.typeOf);
+  assert.deepEqual(book.muster(500, w.where), [{ ids: [24], cellX: 10, cellY: 10 }]);
 });
 
 test("隊形：編隊裡超過一半是散開，補進來的新兵也散開；剛好一半或沒有人時不算（D-027）", () => {
@@ -310,7 +294,7 @@ test("軍團：設定目標後，沒編隊、沒留守的兵被拉進缺人的�
   book.setWant(0, RANGED, 1, w.typeOf);
   book.setWant(2, SPEAR, 2, w.typeOf);
   book.setWant(1, SPEAR, 3, w.typeOf);
-  const drafted = book.draft(w.army(), 100);
+  const drafted = book.draft(w.army());
   // Spearmen in id order, each to the group most short (the lower number on a tie):
   // 11 → 1 (short 2, 2, 1 for groups 1, 3, 2), 12 → 3, 13 → 1, 14 → 2, 15 → 3; ranged 21 → 1.
   assert.deepEqual(book.groups[0].ids, [11, 13, 21]);
@@ -327,7 +311,7 @@ test("軍團：設定目標後，沒編隊、沒留守的兵被拉進缺人的�
   for (const id of [22, 31, 41]) assert.ok(!all.includes(id), `${id} not taken`);
   assert.deepEqual(book.garrisonOf(0), [31]);
   // Nothing more to do: a second draft takes nobody.
-  assert.deepEqual(book.draft(w.army(), 101), []);
+  assert.deepEqual(book.draft(w.army()), []);
 });
 
 test("軍團：優先順序和自動補兵一樣：缺最多的先補，一樣多補編號小的；關掉自動補兵的編隊不拉", () => {
@@ -339,7 +323,7 @@ test("軍團：優先順序和自動補兵一樣：缺最多的先補，一樣�
   book.groups[3].refill = false;
   book.setWant(3, SPEAR, 9, w.typeOf);
   w.many(1, 4, SPEAR, 20, 20);
-  book.draft(w.army(), 0);
+  book.draft(w.army());
   // 1 → group 2 (short 3, the lower of 2 and 3), 2 → group 3 (3 against 2), 3 → group 2 (2 and 2: the lower), 4 → group 3 (2 against 1).
   assert.deepEqual(book.groups[1].ids, [1, 3]);
   assert.deepEqual(book.groups[2].ids, [2, 4]);
@@ -354,7 +338,7 @@ test("軍團：拉進來的兵不等湊滿 3 名，下一次就出發走到編�
   book.setWant(0, SPEAR, 5, w.typeOf);
   w.add(11, SPEAR, 10, 10);
   w.add(12, SPEAR, 52, 51); // already by the group
-  book.draft(w.army(), 200);
+  book.draft(w.army());
   assert.deepEqual(book.groups[0].ids, [1, 2, 3, 11, 12]);
   assert.deepEqual(book.muster(200, w.where), [{ ids: [11], cellX: 51, cellY: 50 }]);
   assert.deepEqual(
@@ -371,12 +355,12 @@ test("軍團：編隊現在沒人時，拉進來的兵先在集結點集合；�
   book.setWant(0, RANGED, 3, w.typeOf);
   w.add(1, RANGED, 10, 10);
   w.add(2, RANGED, 70, 10);
-  book.draft(w.army(), 0);
+  book.draft(w.army());
   assert.deepEqual(book.muster(0, w.where, at(40, 60)), [{ ids: [1, 2], cellX: 40, cellY: 60 }]);
   // Without a gathering point they are the group where they stand, as before.
   const other = new ArmyBook();
   other.setWant(0, RANGED, 3, w.typeOf);
-  other.draft(w.army(), 0);
+  other.draft(w.army());
   assert.deepEqual(other.muster(0, w.where), []);
   // They arrive; the next one goes to them.
   w.move([1], 30, 50);
@@ -384,7 +368,7 @@ test("軍團：編隊現在沒人時，拉進來的兵先在集結點集合；�
   assert.deepEqual(book.muster(RECRUIT_RECHECK_TICKS, w.where, at(40, 60)), []);
   assert.deepEqual(book.groups[0].recruits, []);
   w.add(3, RANGED, 40, 20);
-  book.draft(w.army(), 100);
+  book.draft(w.army());
   assert.deepEqual(book.muster(100, w.where, at(5, 5)), [{ ids: [3], cellX: 40, cellY: 60 }]);
 });
 
@@ -395,7 +379,7 @@ test("軍團設定：目標調低時，後加入的兵先離開編隊；目標�
   assert.equal(count(book, 0), "6/6");
   w.add(4, SPEAR, 30, 30);
   book.setWant(0, SPEAR, 4, w.typeOf);
-  book.draft(w.army(), 0);
+  book.draft(w.army());
   assert.deepEqual(book.groups[0].ids, [1, 2, 3, 11, 12, 21, 4]);
   assert.equal(count(book, 0), "7/7", "4 spearmen + 2 ranged + the farmer saved with them");
   // Down to 2 spearmen: the last two to join leave (4, then 3).
@@ -405,14 +389,14 @@ test("軍團設定：目標調低時，後加入的兵先離開編隊；目標�
   assert.equal(count(book, 0), "5/5");
   assert.deepEqual(book.groups[0].want, { [SPEAR]: 2, [RANGED]: 2 });
   // Free again, and no group short of spearmen: they stay free.
-  assert.deepEqual(book.draft(w.army(), 1), []);
+  assert.deepEqual(book.draft(w.army()), []);
   assert.deepEqual(book.setWant(0, MAGE, 1, w.typeOf), []);
   assert.equal(count(book, 0), "5/6");
   assert.deepEqual(book.clearGroup(0), [1, 2, 11, 12, 21]);
   assert.equal(count(book, 0), "0/0");
   assert.deepEqual(book.groups[0].want, {});
   // Nothing wanted: nobody is pulled back.
-  assert.deepEqual(book.draft(w.army(), 2), []);
+  assert.deepEqual(book.draft(w.army()), []);
 });
 
 test("軍團設定：「照目前選的兵」就是原本的存編隊（選的兵放進來、各種兵的目標設成選的人數）", () => {
@@ -433,8 +417,37 @@ test("軍團：只拉站著沒有指令、不是堅守的兵；正在執行玩�
   book.setWant(0, SPEAR, 3, w.typeOf);
   w.many(1, 3, SPEAR, 20, 20);
   const busy = new Set([1, 3]);
-  assert.deepEqual(book.draft(w.army(), 0, (id) => !busy.has(id)), [{ group: 0, ids: [2] }]);
+  assert.deepEqual(book.draft(w.army(), (id) => !busy.has(id)), [{ group: 0, ids: [2] }]);
   busy.delete(3);
-  assert.deepEqual(book.draft(w.army(), 1, (id) => !busy.has(id)), [{ group: 0, ids: [3] }]);
+  assert.deepEqual(book.draft(w.army(), (id) => !busy.has(id)), [{ group: 0, ids: [3] }]);
   assert.deepEqual(book.groups[0].ids, [2, 3]);
+});
+
+test("新兵補不進任何編隊時，加入現有兵最多的編隊，那種兵的目標加 1；一樣多給編號小的、自動補兵關掉的不算；沒有編隊有兵時留在集結點（D-054）", () => {
+  const w = new World();
+  const book = new ArmyBook();
+  // No group has anyone: it stays at the rally point.
+  w.add(100, SPEAR, 10, 10);
+  assert.equal(book.joinLargest(100, SPEAR, w.typeOf), null);
+  book.saveGroup(0, w.many(1, 3, SPEAR, 40, 40));
+  book.saveGroup(1, [...w.many(11, 3, RANGED, 50, 40), w.add(14, MAGE, 50, 41)]);
+  book.saveGroup(2, w.many(21, 4, SPEAR, 60, 40));
+  book.groups[2].refill = false;
+  // Group 2 has the most (4) among those on: a spearman joins it and it wants one more.
+  w.add(101, SPEAR, 10, 10);
+  assert.equal(book.enlist(101, SPEAR, w.typeOf), null, "nobody is short of spearmen");
+  assert.equal(book.joinLargest(101, SPEAR, w.typeOf), 1);
+  assert.deepEqual(book.groups[1].want, { [RANGED]: 3, [MAGE]: 1, [SPEAR]: 1 });
+  assert.equal(count(book, 1), "5/5");
+  assert.deepEqual(book.groups[1].recruits.map((r) => r.id), [101]);
+  // It sets off at once, to the group.
+  assert.deepEqual(book.muster(0, w.where), [{ ids: [101], cellX: 51, cellY: 40 }]);
+  // The dead do not count: two of group 2 fall, group 1 (3) and group 2 (3) tie, the lower number.
+  w.kill(11, 12);
+  book.prune(w.alive, () => true);
+  w.add(102, RANGED, 10, 10);
+  assert.equal(book.enlist(102, RANGED, w.typeOf), 1, "group 2 is short of ranged now: filled first");
+  w.add(103, MAGE, 10, 10);
+  assert.equal(book.joinLargest(103, MAGE, w.typeOf), 1, "group 2 has 4 again, group 1 has 3");
+  assert.equal(book.joinLargest(104, FARMER, w.typeOf), null, "farmers never");
 });

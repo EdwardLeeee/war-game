@@ -7,6 +7,7 @@ import { Camera } from "../camera/camera.ts";
 import { type GestureHost, GestureRecognizer, type LongPressResult } from "../input/gestures.ts";
 import {
   boxSelect,
+  holdIntents,
   type Intent,
   type Pick,
   longPressKind,
@@ -56,10 +57,10 @@ import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
 import { Placement } from "../ui/placement.ts";
-import { type SplitUnit, splitPick } from "../input/split.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
+import { allIn } from "./orders.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
 
@@ -110,8 +111,10 @@ export class Game implements GestureHost {
   tps: number;
   /** The init message this game started with (the test hook reads it). */
   initSent: InitMessage | null = null;
-  /** The last 分出 N 名: the units split off and the ones left behind (for 改選其餘). */
-  lastSplit: { picked: number[]; rest: number[] } | null = null;
+  /** 軍團畫面 (D-054): the group shown in place of the selection info, chosen with its button; null for the usual one. */
+  groupView: number | null = null;
+  /** What was selected before the group button was tapped (改成剛才選的 N 名). */
+  private beforeGroup: number[] = [];
   /** The last determinism check's result (the test hook reads it). */
   lastCheck: CheckResult | null = null;
   readonly hud: Hud;
@@ -471,14 +474,19 @@ export class Game implements GestureHost {
 
   // --- 編隊自動補兵 (D-026, GDD §10) ------------------------------------------------------
 
-  /** A soldier of ours was trained: it joins the control group that is short of its type, if any. */
+  /**
+   * A soldier of ours was trained: it joins the control group short of its type; with none
+   * short, the group with the most soldiers (D-054); with no group at all, it stays at the
+   * rally point. It sets off for the group at once.
+   */
   private enlist(id: number, type: number): void {
     const view = this.view;
-    const tick = view?.header?.[H.tick];
-    if (view === null || tick === undefined) return;
-    const i = this.army.enlist(id, type, tick, (m) => (view.unitRow(m) >= 0 ? view.unitType(m) : null));
+    if (view === null) return;
+    const typeOf = (m: number): number | null => (view.unitRow(m) >= 0 ? view.unitType(m) : null);
+    const short = this.army.enlist(id, type, typeOf);
+    const i = short ?? this.army.joinLargest(id, type, typeOf);
     if (i === null) return;
-    this.toast(`新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}`);
+    this.toast(short !== null ? `新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}，正走過去` : `新的${UNIT_NAME[type] ?? "兵"}加入兵最多的編隊 ${i + 1}，正走過去`);
     // It takes the group's formation (D-027): 散開 when more than half of the others are. New
     // units are 密集, and on their way to the rally point the simulation only sets the flag.
     const others = this.army.groups[i].ids.filter((m) => m !== id && view.unitRow(m) >= 0);
@@ -505,10 +513,9 @@ export class Game implements GestureHost {
    */
   private draftArmy(): void {
     const view = this.view;
-    const tick = view?.header?.[H.tick];
-    if (view === null || tick === undefined) return;
+    if (view === null) return;
     const idle = (id: number): boolean => view.unitOrder(id) === Order.None && view.unitStance(id) !== Stance.Hold;
-    for (const d of this.army.draft(this.soldiers(), tick, idle)) {
+    for (const d of this.army.draft(this.soldiers(), idle)) {
       this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}，正走過去`);
       // They take the group's formation, as recruits do (D-027).
       const others = this.army.groups[d.group].ids.filter((m) => !d.ids.includes(m) && view.unitRow(m) >= 0);
@@ -540,6 +547,51 @@ export class Game implements GestureHost {
 
   // --- 軍團設定 (D-050) ------------------------------------------------------------------
 
+  /**
+   * 編隊按鈕 (D-054): select the group and show the 軍團畫面 in place of the selection info,
+   * even with nobody in it (to set what it wants); a double tap also looks at it. What was
+   * selected before is kept for 改成剛才選的 N 名.
+   */
+  showGroup(i: number, jump: boolean): void {
+    const view = this.view;
+    if (view === null) return;
+    const alive = this.army.groups[i].ids.filter((id) => view.unitRow(id) >= 0);
+    const now = view.selection.units;
+    const same = now.length === alive.length && now.every((id) => alive.includes(id));
+    const before = this.groupView === i ? this.beforeGroup : same ? [] : [...now];
+    this.apply([alive.length > 0 ? { kind: "select", units: alive } : { kind: "clear" }]);
+    this.groupView = i;
+    this.beforeGroup = before;
+    if (!jump || alive.length === 0) return;
+    let x = 0;
+    let y = 0;
+    for (const id of alive) {
+      const p = view.unitPos(view.unitRow(id));
+      x += p.x;
+      y += p.y;
+    }
+    this.camera?.centerOn(x / alive.length, y / alive.length);
+  }
+
+  /** How many units 改成剛才選的 N 名 would put in the group shown (the living ones selected before). */
+  beforeGroupCount(): number {
+    const view = this.view;
+    return view === null ? 0 : this.beforeGroup.filter((id) => view.unitRow(id) >= 0).length;
+  }
+
+  /** 改成剛才選的 N 名: the units selected before become group i (the long press of D-026), and it is shown with them. */
+  saveBeforeIntoGroup(i: number): number {
+    const view = this.view;
+    if (view === null) return 0;
+    const units = this.beforeGroup.filter((id) => view.unitRow(id) >= 0).map((id) => ({ id, type: view.unitType(id) }));
+    if (units.length === 0) return 0;
+    this.army.saveGroup(i, units);
+    this.regroup();
+    this.beforeGroup = [];
+    this.showGroup(i, false);
+    return units.length;
+  }
+
   /** Living soldiers of this type in group i (現有). */
   groupHas(i: number, type: number): number {
     const view = this.view;
@@ -565,29 +617,6 @@ export class Game implements GestureHost {
   private regroup(): void {
     this.draftArmy();
     this.musterRecruits();
-  }
-
-  /** 軍團設定 照目前選的兵 (the long press of D-026): the selected units become control group i. */
-  saveGroup(i: number): number {
-    const view = this.view;
-    if (view === null) return 0;
-    const units = view.selection.units.map((id) => ({ id, type: view.unitType(id) }));
-    if (units.length > 0) {
-      this.army.saveGroup(i, units);
-      this.regroup();
-    }
-    return units.length;
-  }
-
-  /** The control group whose living members are exactly these units, or null. */
-  groupOf(ids: number[]): number | null {
-    const view = this.view;
-    if (view === null || ids.length === 0) return null;
-    const i = this.army.groups.findIndex((g) => {
-      const alive = g.ids.filter((id) => view.unitRow(id) >= 0);
-      return alive.length === ids.length && alive.every((id) => ids.includes(id));
-    });
-    return i < 0 ? null : i;
   }
 
   private receive(msg: FromWorker): void {
@@ -770,6 +799,11 @@ export class Game implements GestureHost {
     const view = this.view;
     if (view === null) return;
     for (const it of intents) {
+      // Selecting anything else closes the 軍團畫面 (showGroup opens it again after its own select).
+      if (it.kind === "select" || it.kind === "selectBuilding" || it.kind === "clear" || it.kind === "inspect") {
+        this.groupView = null;
+        this.beforeGroup = [];
+      }
       switch (it.kind) {
         case "select":
           view.selection = { units: it.units, building: null };
@@ -929,8 +963,24 @@ export class Game implements GestureHost {
     if (mode === "retreat") {
       buttons.push({ label: "退回主城", primary: true, onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, this.view?.homeCell() ?? null)) });
     }
-    buttons.push({ label: "取消", onTap: () => this.setMode("normal") });
+    // 取消 while picking where to advance or retreat to: they stop and hold (D-054).
+    const holds = mode === "advance" || mode === "retreat";
+    buttons.push({ label: "取消", onTap: () => (holds ? this.cancelToHold() : this.setMode("normal")) });
     this.overlays.showPrompt(MODE_PROMPT[mode], buttons);
+  }
+
+  /**
+   * 取消即堅守 (D-054: 「撤退按鈕應該點第二下就是取消撤退變成原地堅守」「點取消進攻還是會看到
+   * 敵人就打不會變成固守」): out of the mode, and the soldiers selected stop where they are and hold.
+   */
+  cancelToHold(): void {
+    const view = this.view;
+    this.setMode("normal");
+    if (view === null) return;
+    const intents = holdIntents(view, view.selection.units);
+    if (intents.length === 0) return;
+    this.apply(intents);
+    this.toast("已停下，改成堅守");
   }
 
   private openWheel(x: number, y: number, pressedType: number): void {
@@ -942,8 +992,8 @@ export class Game implements GestureHost {
     const label: Record<WheelItem, string> = {
       cast: "晶砲",
       autocast: autocastOn ? "自動施放：開" : "自動施放：關",
-      advance: "進攻",
-      retreat: "撤退",
+      advance: allIn(view, view.selection.units, "advance") ? "取消進攻" : "進攻",
+      retreat: allIn(view, view.selection.units, "retreat") ? "取消撤退" : "撤退",
       hold: "堅守",
     };
     this.overlays.openWheel(
@@ -951,6 +1001,8 @@ export class Game implements GestureHost {
       y,
       items.map((id) => ({ id, label: label[id] })),
       (id) => {
+        // 進攻 while they advance, 撤退 while they retreat: they stop and hold (D-054).
+        if ((id === "advance" || id === "retreat") && allIn(view, view.selection.units, id)) return this.cancelToHold();
         const r = wheelIntents(view, view.selection, id as WheelItem);
         if (id === "retreat") return this.retreated(r);
         this.apply(r.intents);
@@ -977,38 +1029,6 @@ export class Game implements GestureHost {
     if (!this.lab.busy) this.lab.hide();
   }
 
-  /** 分出 N 名: select n of the selected units (the rule is in input/split.ts) and remember the rest. */
-  splitSelection(n: number): void {
-    const view = this.view;
-    if (view === null) return;
-    const units: SplitUnit[] = [];
-    for (const id of view.selection.units) {
-      const o = view.unitRow(id);
-      if (o < 0) continue;
-      const p = view.unitPos(o);
-      units.push({ id, type: view.unitType(id), x: p.x, y: p.y });
-    }
-    const picked = splitPick(units, n);
-    if (picked.length === 0) return;
-    const rest = units.map((u) => u.id).filter((id) => !picked.includes(id));
-    this.apply([{ kind: "select", units: picked }]);
-    this.lastSplit = { picked, rest };
-    this.toast(`分出 ${picked.length} 名：長按右側 1–4 存成編隊`);
-  }
-
-  /** 改選其餘 M 名 after 分出 N 名: the units left behind that are still alive. */
-  selectRest(): void {
-    const view = this.view;
-    const split = this.lastSplit;
-    if (view === null || split === null) return;
-    const rest = split.rest.filter((id) => view.unitRow(id) >= 0);
-    this.lastSplit = null;
-    if (rest.length === 0) {
-      this.toast("其餘的單位都不在了");
-      return;
-    }
-    this.apply([{ kind: "select", units: rest }]);
-  }
 
   /** Start placing a building with the selected farmers (the command area calls this). */
   startPlacement(type: BuildingType): void {

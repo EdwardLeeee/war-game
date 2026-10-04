@@ -2,9 +2,9 @@
 // right. Both rebuild their buttons only when what is selected changes (a button must not
 // be replaced under a finger); numbers that tick (health, progress) update in place.
 
-import { isSoldier } from "../../game/army.ts";
+import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
+import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import type { Mode } from "../../input/intent.ts";
-import { splitRange } from "../../input/split.ts";
 import {
   BuildingField as B,
   BuildingFlag,
@@ -13,7 +13,6 @@ import {
   NEUTRAL,
   NO_OWNER,
   NodeField as N,
-  Order,
   Stance,
   TownChoice,
   TownField as T,
@@ -38,11 +37,6 @@ export interface PanelHost {
   selectOnly(units: number[]): void;
   /** Nothing selected (tapping the ground would order the selected units to go there). */
   clearSelection(): void;
-  /** 分出 N 名 (D-024): select n of the selected units. */
-  splitSelection(n: number): void;
-  /** 改選其餘 M 名: the units the last split left behind. */
-  selectRest(): void;
-  lastSplit(): { picked: number[]; rest: number[] } | null;
   /** 留守 (D-026): how many soldiers are stationed in the town, and one more or one fewer. */
   garrison(town: number): number;
   garrisonMore(town: number): void;
@@ -51,10 +45,24 @@ export interface PanelHost {
   notify(text: string): void;
   /** 撤退 with units selected: back to the main city at once. */
   retreat(): void;
-  /** 編隊自動補兵 (D-026): the control group these units are exactly, its switch, and flipping it. */
-  groupOf(ids: number[]): number | null;
+  /** 取消即堅守 (D-054): out of 進攻／撤退, the soldiers selected stop and hold. */
+  cancelToHold(): void;
+  /** 編隊自動補兵 (D-026): its switch, and flipping it. */
   groupRefill(i: number): boolean;
   toggleRefill(i: number): void;
+  /** 軍團畫面 (D-054): the group shown in place of the selection info, or null. */
+  groupView(): number | null;
+  /** Soldiers of this type group i wants (目標) and has alive (現有). */
+  groupWant(i: number, type: number): number;
+  groupHas(i: number, type: number): number;
+  setGroupWant(i: number, type: number, n: number): void;
+  clearGroup(i: number): void;
+  /** 改成剛才選的 N 名: how many, and doing it. */
+  beforeGroupCount(): number;
+  saveBeforeIntoGroup(i: number): void;
+  /** 收起 (D-054): the panel shows its title line only; kept for this game. */
+  collapsed(): boolean;
+  toggleCollapsed(): void;
 }
 
 /**
@@ -66,8 +74,8 @@ export const ORDER_TEXT = {
   retreat: "撤退：退回主城；提示列可以改撤到別處",
   hold: "堅守：停在原地，敵人進到射程就打，不追出去",
 } as const;
-export type OrderState = keyof typeof ORDER_TEXT;
-export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻", retreat: "撤退中", hold: "堅守" };
+/** The 「目前：」 line's words, in its order (D-054 adds 待命: standing, not 進攻中). */
+export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻中", retreat: "撤退中", hold: "堅守", idle: "待命" };
 
 /**
  * 隊形 in the player's words (GDD §9, D-027, D-028), a line each. 散開 has a second line for
@@ -87,27 +95,9 @@ export function formationOf(view: GameView, ids: number[]): boolean | "mixed" | 
   return loose === 0 ? false : loose === soldiers.length ? true : "mixed";
 }
 
-/**
- * Which of 進攻／撤退／堅守 a soldier is in (D-050): 撤退中 while it carries a retreat order,
- * 堅守 when it holds, else 進攻 (積極: it goes for enemies near it, and its group with it).
- */
-export function orderState(view: GameView, id: number): OrderState {
-  if (view.unitOrder(id) === Order.Retreat) return "retreat";
-  return view.unitStance(id) === Stance.Hold ? "hold" : "advance";
-}
-
-/** How many of the soldiers among these units are in each order, in the order of the buttons; null when there is no soldier. */
-export function orderCounts(view: GameView, ids: number[]): Record<OrderState, number> | null {
-  const soldiers = ids.filter((id) => isSoldier(view.unitType(id)));
-  if (soldiers.length === 0) return null;
-  const counts: Record<OrderState, number> = { advance: 0, retreat: 0, hold: 0 };
-  for (const id of soldiers) counts[orderState(view, id)]++;
-  return counts;
-}
-
-/** The line above the three: 「目前：進攻 4、堅守 2」. */
+/** The line above the three: 「目前：進攻中 4、堅守 2」. */
 export function orderNowText(counts: Record<OrderState, number>): string {
-  const parts = (Object.keys(ORDER_TEXT) as OrderState[]).filter((s) => counts[s] > 0).map((s) => `${ORDER_NAME[s]} ${counts[s]}`);
+  const parts = (Object.keys(ORDER_NAME) as OrderState[]).filter((s) => counts[s] > 0).map((s) => `${ORDER_NAME[s]} ${counts[s]}`);
   return `目前：${parts.join("、")}`;
 }
 
@@ -170,6 +160,8 @@ export class SelectionInfo {
 
   private keyFor(view: GameView): string {
     const sel = view.selection;
+    const group = this.host.groupView();
+    if (group !== null) return `g:${group}`;
     if (sel.units.length > 0) return `u:${sel.units.join(",")}`;
     if (sel.building !== null) {
       const o = view.buildingRow(sel.building);
@@ -190,6 +182,29 @@ export class SelectionInfo {
   private build(view: GameView): void {
     const close = button(this.el, "✕", "", () => this.host.clearSelection(), "sel-close secondary");
     close.setAttribute("aria-label", "取消選取");
+    this.content(view);
+    // 收起 (D-054: 「要有一個把資訊欄位收起來的鍵，不然進攻的時候擋掉太多視野」): at the end of the title line.
+    const head = this.el.querySelector<HTMLElement>(".sel-head");
+    if (head === null) return;
+    const fold = button(head, "", "", () => {
+      this.host.toggleCollapsed();
+      this.fold(fold);
+    }, "sel-fold secondary");
+    this.fold(fold);
+  }
+
+  /** Show the panel folded or not, as the game keeps it; the button says what a tap does. */
+  private fold(b: HTMLButtonElement): void {
+    const collapsed = this.host.collapsed();
+    this.el.classList.toggle("collapsed", collapsed);
+    const label = b.querySelector(".label") as HTMLElement;
+    label.textContent = collapsed ? "展開" : "收起";
+    b.setAttribute("aria-label", collapsed ? "展開選取資訊" : "收起選取資訊");
+  }
+
+  private content(view: GameView): void {
+    const group = this.host.groupView();
+    if (group !== null) return this.groupPanel(view, group);
     const sel = view.selection;
     if (sel.units.length === 1) return this.oneUnit(view, sel.units[0]);
     if (sel.units.length > 1) return this.manyUnits(view, sel.units);
@@ -200,6 +215,57 @@ export class SelectionInfo {
     if (p.kind === "building") return this.building(view, p.id);
     if (p.kind === "node") return this.node(view, p.id);
     if (p.kind === "town") return this.town(view, p.id);
+  }
+
+  /**
+   * 軍團畫面 (D-054, the user's choice: a tap on a group button selects it and shows this): how
+   * many of each soldier type it has and wants, − and + for each, 改成剛才選的 N 名 (what was
+   * selected before the tap), 清空 and 自動補兵. 進攻／撤退／堅守 are the command area's, beside it.
+   */
+  private groupPanel(_view: GameView, i: number): void {
+    const head = el("div", this.el, "sel-head");
+    el("b", head, "", `編隊 ${i + 1}`);
+    // 現有／目標 in the title line; no 「目前：」 line (the command area's buttons light up), so
+    // that the panel stays clear of 全軍撤退 on a phone held sideways.
+    const total = el("span", head, "sel-status");
+    const rows = GROUP_TYPES.map((type) => {
+      const name = UNIT_NAME[type] ?? "兵";
+      const row = el("div", this.el, "group-row");
+      el("span", row, "group-type", name);
+      const has = el("span", row, "group-has");
+      const minus = button(row, "−", "", () => this.host.setGroupWant(i, type, this.host.groupWant(i, type) - 1), "secondary step");
+      minus.setAttribute("aria-label", `少要 1 名${name}`);
+      const want = el("b", row, "group-want");
+      want.setAttribute("role", "status");
+      want.setAttribute("aria-label", `${name}要幾名`);
+      const plus = button(row, "+", "", () => this.host.setGroupWant(i, type, this.host.groupWant(i, type) + 1), "secondary step");
+      plus.setAttribute("aria-label", `多要 1 名${name}`);
+      return { type, has, want };
+    });
+    const actions = el("div", this.el, "sel-chips group-actions");
+    const fromBefore = button(actions, "", "", () => this.host.saveBeforeIntoGroup(i), "chip secondary");
+    button(actions, "清空", "", () => this.host.clearGroup(i), "chip secondary");
+    const refill = button(actions, "", "", () => this.host.toggleRefill(i), "chip refill-chip secondary");
+    const set = (e: HTMLElement, text: string) => {
+      if (e.textContent !== text) e.textContent = text;
+    };
+    this.updaters.push(() => {
+      let has = 0;
+      let want = 0;
+      for (const r of rows) {
+        const h = this.host.groupHas(i, r.type);
+        const w = this.host.groupWant(i, r.type);
+        has += h;
+        want += w;
+        set(r.has, `現有 ${h}`);
+        set(r.want, `${w}`);
+      }
+      set(total, has > 0 || want > 0 ? `${has}/${want}` : "還沒有兵");
+      const n = this.host.beforeGroupCount();
+      fromBefore.hidden = n === 0;
+      set(fromBefore.querySelector(".label") as HTMLElement, `改成剛才選的 ${n} 名`);
+      set(refill.querySelector(".label") as HTMLElement, `自動補兵：${this.host.groupRefill(i) ? "開" : "關"}`);
+    });
   }
 
   private oneUnit(view: GameView, id: number): void {
@@ -229,7 +295,6 @@ export class SelectionInfo {
       const autocast = mine && (u[o + U.flags] & UnitFlag.Autocast) !== 0 ? "　自動施放開" : "";
       status.textContent = `${ACTION_NAME[u[o + U.action]] ?? ""}${autocast}`;
     });
-    if (this.host.groupOf([id]) !== null) this.refillSwitch(el("div", this.el, "sel-chips"), [id]);
     this.orderNote(view, [id]);
   }
 
@@ -246,7 +311,7 @@ export class SelectionInfo {
     if (!ids.every(mine) || orderCounts(view, ids) === null) return;
     const note = el("p", this.el, "sel-note");
     const now = el("span", note, "order-now");
-    for (const s of Object.keys(ORDER_TEXT) as OrderState[]) el("span", note, "order-meaning", ORDER_TEXT[s]);
+    for (const line of Object.values(ORDER_TEXT)) el("span", note, "order-meaning", line);
     const formation = el("span", note, "formation-meaning");
     const formationMore = el("span", note, "formation-more");
     this.updaters.push(() => {
@@ -273,59 +338,7 @@ export class SelectionInfo {
       // Tapping a type keeps only that type selected.
       button(chips, `${UNIT_NAME[type] ?? "單位"} ×${list.length}`, "", () => this.host.selectOnly(list), "chip secondary");
     }
-    // Right after 分出 N 名: one tap to the units left behind, to split again or save another group.
-    const split = this.host.lastSplit();
-    if (split !== null && split.picked.length === ids.length && split.picked.every((id, i) => id === ids[i])) {
-      const rest = split.rest.filter((id) => view.unitRow(id) >= 0).length;
-      if (rest > 0) button(chips, `改選其餘 ${rest} 名`, "", () => this.host.selectRest(), "chip rest-chip");
-    }
-    this.refillSwitch(chips, ids);
     this.orderNote(view, ids);
-    this.splitRow(ids.length);
-  }
-
-  /** 編隊 N 自動補兵：開／關, when the selection is exactly one control group (it was just recalled with its button). */
-  private refillSwitch(parent: HTMLElement, ids: number[]): void {
-    const i = this.host.groupOf(ids);
-    if (i === null) return;
-    const b = button(parent, "", "", () => this.host.toggleRefill(i), "chip refill-chip secondary");
-    const label = b.querySelector(".label") as HTMLElement;
-    this.updaters.push(() => {
-      const text = `編隊 ${i + 1} 自動補兵：${this.host.groupRefill(i) ? "開" : "關"}`;
-      if (label.textContent !== text) label.textContent = text;
-    });
-  }
-
-  /** 分出 N 名 (D-024): − N + and 分出; N can also be typed. */
-  private splitRow(total: number): void {
-    const range = splitRange(total);
-    if (range.max === 0) return;
-    let n = range.initial;
-    const row = el("div", this.el, "sel-split");
-    const minus = button(row, "−", "", () => set(n - 1), "secondary step");
-    minus.setAttribute("aria-label", "少分出 1 名");
-    const input = el("input", row, "split-n");
-    input.type = "number";
-    input.inputMode = "numeric";
-    input.min = `${range.min}`;
-    input.max = `${range.max}`;
-    input.setAttribute("aria-label", "分出幾名");
-    const plus = button(row, "+", "", () => set(n + 1), "secondary step");
-    plus.setAttribute("aria-label", "多分出 1 名");
-    const go = button(row, "分出", "", () => this.host.splitSelection(n), "split-go");
-    const set = (v: number, writeBack = true) => {
-      n = Math.min(Math.max(Math.round(v), range.min), range.max);
-      if (writeBack) input.value = `${n}`;
-      minus.disabled = n <= range.min;
-      plus.disabled = n >= range.max;
-      go.setAttribute("aria-label", `分出 ${n} 名`);
-    };
-    // Typing: follow the digits without rewriting the box mid-edit; tidy it up when done.
-    input.addEventListener("input", () => {
-      if (input.value !== "" && Number.isFinite(Number(input.value))) set(Number(input.value), false);
-    });
-    input.addEventListener("change", () => set(input.value === "" ? n : Number(input.value)));
-    set(n);
   }
 
   private building(view: GameView, id: number): void {
@@ -475,8 +488,7 @@ export class CommandArea {
       const stances = sel.units.map((id) => {
         const o = view.unitRow(id);
         const flags = o < 0 ? 0 : u[o + U.flags];
-        const retreating = o >= 0 && u[o + U.order] === Order.Retreat ? "r" : "";
-        return o < 0 ? "" : `${u[o + U.type]}${u[o + U.stance]}${retreating}${(flags & UnitFlag.Autocast) !== 0 ? "a" : ""}${(flags & UnitFlag.Loose) !== 0 ? "l" : ""}`;
+        return o < 0 ? "" : `${u[o + U.type]}${orderState(view, id)}${(flags & UnitFlag.Autocast) !== 0 ? "a" : ""}${(flags & UnitFlag.Loose) !== 0 ? "l" : ""}`;
       });
       return `u:${[...new Set(stances)].sort().join(",")}`;
     }
@@ -497,26 +509,29 @@ export class CommandArea {
       const types = new Set(sel.units.map((id) => view.unitType(id)));
       const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
       // 進攻／撤退／堅守 (D-050), then 停止, in the first row; the one all the soldiers are in is
-      // lit. 撤退 goes back to the main city at once; 「改撤到別處」 (the prompt strip) picks another spot.
+      // lit. 撤退 goes back to the main city at once; 「改撤到別處」 (the prompt strip) picks another
+      // spot. 取消即堅守 (D-054): while they advance or retreat, or while the spot is being
+      // picked, the same button reads 取消 and stops them where they are, holding.
       const counts = orderCounts(view, sel.units);
-      const all = counts === null ? null : ((Object.keys(counts) as OrderState[]).find((s) => counts[s] === soldiers.length) ?? null);
+      const advancing = mode === "advance" || (mode === "normal" && allIn(view, sel.units, "advance"));
+      const retreating = mode === "retreat" || (mode === "normal" && allIn(view, sel.units, "retreat"));
       if (counts !== null) {
-        const advance =
-          mode === "advance" ? button(this.el, "取消進攻", "", () => this.host.setMode("normal")) : button(this.el, "進攻", "點地面", () => this.host.setMode("advance"));
-        if (mode === "advance" || (mode !== "retreat" && all === "advance")) advance.classList.add("active");
+        const advance = advancing
+          ? button(this.el, "取消進攻", "停下堅守", () => this.host.cancelToHold())
+          : button(this.el, "進攻", "點地面", () => this.host.setMode("advance"));
+        if (advancing) advance.classList.add("active");
       }
-      const retreat =
-        mode === "retreat"
-          ? button(this.el, "取消撤退", "", () => this.host.setMode("normal"))
-          : button(this.el, "撤退", "退回主城", () => this.host.retreat());
-      if (mode === "retreat" || (mode !== "advance" && all === "retreat")) retreat.classList.add("active");
+      const retreat = retreating
+        ? button(this.el, "取消撤退", "停下堅守", () => this.host.cancelToHold())
+        : button(this.el, "撤退", "退回主城", () => this.host.retreat());
+      if (retreating) retreat.classList.add("active");
       if (counts !== null) {
         const hold = button(this.el, "堅守", "原地不動", () => {
           this.host.command({ c: "stop", u: soldiers });
           this.host.command({ c: "stance", u: soldiers, stance: Stance.Hold });
           this.host.notify(ORDER_TEXT.hold);
         });
-        if (mode === "normal" && all === "hold") hold.classList.add("active");
+        if (mode === "normal" && allIn(view, sel.units, "hold")) hold.classList.add("active");
       }
       button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary");
       // A tap re-forms the troops where they stand (D-028): no march order needed.

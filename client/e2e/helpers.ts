@@ -1,5 +1,5 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
-import { longPressOn } from "./touch.ts";
+import { tapOn } from "./touch.ts";
 
 /** iPhone 14 Pro Max landscape insets in pt: Dynamic Island side, rounded corner side, home indicator. */
 export const IPHONE_SAFE = { top: 0, right: 59, bottom: 21, left: 59 };
@@ -60,17 +60,16 @@ export async function shot(page: Page, info: TestInfo, name: string): Promise<vo
 }
 
 /**
- * 長按編隊按鈕 → 軍團設定 → 照目前選的兵 → 關閉: the selected units become the group, as the
- * long press itself did before the 軍團 dialog (D-026, D-050).
+ * 點編隊按鈕 → 軍團畫面 → 改成剛才選的 N 名: the units selected before become the group, as
+ * the long press did before (D-026, D-054). The group stays selected with its panel.
  */
 export async function saveGroup(page: Page, button: string): Promise<void> {
-  await longPressOn(page, button);
-  const dialog = page.getByRole("dialog", { name: /^編隊 \d$/ });
-  await dialog.getByRole("button", { name: "照目前選的兵" }).tap();
+  await tapOn(page, button);
+  const panel = page.locator(".sel-info");
+  await expect(panel.locator(".sel-head")).toContainText(/^編隊 \d/);
+  await panel.getByRole("button", { name: /^改成剛才選的 \d+ 名$/ }).tap();
   // Its message, before it fades.
   await expect(page.getByRole("status").filter({ hasText: /^已存成編隊 \d（\d+ 個）$/ })).toBeVisible();
-  await dialog.getByRole("button", { name: "關閉" }).tap();
-  await expect(dialog).toBeHidden();
 }
 
 /**

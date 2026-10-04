@@ -27,10 +27,6 @@ export interface TownArea {
   radius: number;
 }
 
-/** A lone recruit waits this long for company before setting off: 20 s of game time (GDD §10). */
-export const RECRUIT_WAIT_TICKS = 400;
-/** Recruits of a group set off together once this many are waiting. */
-export const RECRUIT_BATCH = 3;
 /** How often recruits are checked against where their group is now: 2 s of game time. */
 export const RECRUIT_RECHECK_TICKS = 40;
 /** A recruit this close to its group has joined it (cells). */
@@ -38,13 +34,12 @@ export const RECRUIT_JOINED_CELLS = 6;
 /** The group has moved this far from where its recruits were sent: they are sent again (cells). */
 export const RECRUIT_RETARGET_CELLS = 3;
 
-/** A soldier added by 自動補兵 that has not joined up with its group yet. */
+/**
+ * A soldier added by 自動補兵 (or drafted, D-050) that has not joined up with its group yet.
+ * It sets off for the group at once (D-054: 「新造出來的兵也不會自動去和大部隊匯合」).
+ */
 export interface Recruit {
   id: number;
-  /** The tick it was trained. */
-  since: number;
-  /** Already sent toward the group (false: still waiting where it was trained). */
-  marching: boolean;
   /** The player gave it an order himself: it is no longer led, but until it reaches the group it does not count as where the group is. */
   byHand: boolean;
 }
@@ -246,17 +241,50 @@ export class ArmyBook {
 
   /**
    * A soldier of ours was just trained. It joins the group that is shortest of its type
-   * among those with 自動補兵 on (the lower number on a tie), and waits there for company
-   * (muster). Returns the group's index, or null when no group is short of this type.
+   * among those with 自動補兵 on (the lower number on a tie), and sets off for it at the next
+   * muster. Returns the group's index, or null when no group is short of this type.
    * `typeOf`: the type of a living unit, null for a dead one.
    */
-  enlist(id: number, type: number, tick: number, typeOf: (id: number) => number | null): number | null {
+  enlist(id: number, type: number, typeOf: (id: number) => number | null): number | null {
     const best = this.shortest(id, type, typeOf);
     if (best === null) return null;
-    const g = this.groups[best];
-    g.ids = [...g.ids, id];
-    g.recruits.push({ id, since: tick, marching: false, byHand: false });
+    this.join(best, id);
     return best;
+  }
+
+  /**
+   * D-054: a new soldier no group is short of joins the group with the most soldiers now (the
+   * main army, the lower number on a tie, 自動補兵 on), which wants one more of its type, so it
+   * is a member and is selected with it. Returns the group, or null with no group to join (it
+   * stays at the rally point).
+   */
+  joinLargest(id: number, type: number, typeOf: (id: number) => number | null): number | null {
+    if (!isSoldier(type)) return null;
+    let best: number | null = null;
+    let most = 0;
+    this.groups.forEach((g, i) => {
+      if (!g.refill || g.ids.includes(id)) return;
+      const n = g.ids.filter((m) => typeOf(m) !== null).length;
+      if (n > most) {
+        most = n;
+        best = i;
+      }
+    });
+    if (best === null) return null;
+    const g = this.groups[best];
+    g.want = { ...g.want, [type]: (g.want[type] ?? 0) + 1 };
+    g.saved += 1;
+    this.join(best, id);
+    return best;
+  }
+
+  /** The unit becomes a recruit of group i, and everyone marching is sent again at the next muster. */
+  private join(i: number, id: number): void {
+    const g = this.groups[i];
+    g.ids = [...g.ids, id];
+    g.recruits.push({ id, byHand: false });
+    g.goal = null;
+    g.checked = Number.NEGATIVE_INFINITY;
   }
 
   /** The group most short of this type among those with 自動補兵 on (the lower number on a tie), or null. */
@@ -284,7 +312,7 @@ export class ArmyBook {
    * and not holding (堅守), so that no order of the player's is undone; the others are taken
    * once they stand idle.
    */
-  draft(units: ArmyUnit[], tick: number, idle: (id: number) => boolean = () => true): { group: number; ids: number[] }[] {
+  draft(units: ArmyUnit[], idle: (id: number) => boolean = () => true): { group: number; ids: number[] }[] {
     const inGroup = new Set(this.groups.flatMap((g) => g.ids));
     const typeOf = new Map(units.map((u) => [u.id, u.type]));
     const free = units.filter((u) => isSoldier(u.type) && !inGroup.has(u.id) && !this.isGarrisoned(u.id) && idle(u.id)).sort((a, b) => a.id - b.id);
@@ -292,12 +320,7 @@ export class ArmyBook {
     for (const u of free) {
       const best = this.shortest(u.id, u.type, (m) => typeOf.get(m) ?? null);
       if (best === null) continue;
-      const g = this.groups[best];
-      g.ids = [...g.ids, u.id];
-      g.recruits.push({ id: u.id, since: tick, marching: true, byHand: false });
-      // Send everyone marching again, the new one with them, at the next muster.
-      g.goal = null;
-      g.checked = Number.NEGATIVE_INFINITY;
+      this.join(best, u.id);
       const entry = out.find((e) => e.group === best);
       if (entry === undefined) out.push({ group: best, ids: [u.id] });
       else entry.ids.push(u.id);
@@ -340,10 +363,9 @@ export class ArmyBook {
   }
 
   /**
-   * Called with every snapshot. Recruits wait where they were trained until three of a
-   * group have gathered or the first has waited 20 s, then walk to the group together, so
-   * that they do not arrive one at a time; they are sent again when the group moves on, and
-   * left alone once they are within 6 cells of it. Returns the 前進 orders to give.
+   * Called with every snapshot. Recruits walk to their group as soon as they join it (D-054:
+   * no waiting for company any more); they are sent again when the group moves on, and left
+   * alone once they are within 6 cells of it. Returns the 前進 orders to give.
    * `where`: a living unit's position (fixed point), null for a dead one. `gather`: where
    * a group with nobody to join meets (the rally point, fixed point; D-050); without it, its
    * recruits are the group where they stand.
@@ -379,20 +401,16 @@ export class ArmyBook {
       }
       const far = (p: { x: number; y: number }, cells: number): boolean => (p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy) > cells * CELL * (cells * CELL);
 
-      const waiting = g.recruits.filter((r) => !r.marching && !r.byHand);
-      const setOff = waiting.length >= RECRUIT_BATCH || (waiting.length > 0 && tick - Math.min(...waiting.map((r) => r.since)) >= RECRUIT_WAIT_TICKS);
-      const check = tick - g.checked >= RECRUIT_RECHECK_TICKS;
-      if (!setOff && !check) continue;
+      if (tick - g.checked < RECRUIT_RECHECK_TICKS) continue;
       g.checked = tick;
-      if (setOff) for (const r of waiting) r.marching = true;
       // Those already with the group have joined it.
       g.recruits = g.recruits.filter((r) => far(where(r.id) as { x: number; y: number }, RECRUIT_JOINED_CELLS));
-      const marching = g.recruits.filter((r) => r.marching && !r.byHand);
+      const marching = g.recruits.filter((r) => !r.byHand);
       if (marching.length === 0) {
         if (g.recruits.length === 0) g.goal = null;
         continue;
       }
-      if (setOff || g.goal === null || far(g.goal, RECRUIT_RETARGET_CELLS)) {
+      if (g.goal === null || far(g.goal, RECRUIT_RETARGET_CELLS)) {
         g.goal = { x: cx, y: cy };
         orders.push({ ids: marching.map((r) => r.id), cellX: Math.floor(cx / CELL), cellY: Math.floor(cy / CELL) });
       }
