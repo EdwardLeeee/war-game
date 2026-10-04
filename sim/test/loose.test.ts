@@ -4,10 +4,10 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Game } from "../src/core/game.ts";
-import { LOOSE_KEEP } from "../src/core/rules.ts";
+import { Game } from "../src/core/game.ts";
+import { LOOSE_KEEP, UNITS } from "../src/core/rules.ts";
 import { Action, UnitType } from "../src/protocol.ts";
-import { cmd, emptyGame, openArea, put, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
 
 /** Each unit's distance to its nearest mate, in cells: the least and the mean. */
 function spacing(g: Game, ids: number[]): { min: number; mean: number } {
@@ -180,4 +180,39 @@ test("mirror-image loose squads march, fight and keep apart as mirror images, ti
   assert.ok(fighting > 0, "they fought");
   const alive = squad[0].filter((id) => slotOf(g, id) >= 0);
   assert.ok(spacing(g, alive).mean >= 1.8, `mean nearest mate ${spacing(g, alive).mean.toFixed(2)} cells`);
+});
+
+test("loose soldiers by a rock spread out and then stand still (#116)", () => {
+  // The client's case: in the e2e game, 16 loose soldiers of player 0 stand bunched below the
+  // rock at (21-23, 39) and are told to move to (26, 44). One of them ends below the rock, and
+  // the push of the mate nearest it ran into the rock; it was pushed off the place it stood on,
+  // walked back, and was pushed off again, for good.
+  const g = new Game({ seed: 1, scenario: "e2e" });
+  const w = g.w;
+  const u = w.units.col;
+  for (let s = 0; s < w.units.count; s++) {
+    if ((u.owner[s] === 0 && u.type[s] !== UnitType.Farmer) || (u.type[s] === UnitType.Militia && u.home[s] === 0)) u.hp[s] = 0;
+  }
+  g.step();
+  const start = [
+    [1, 27.32, 40.42], [1, 26.5, 40.4], [1, 24.84, 40.06], [1, 27.95, 39.67], [2, 24.76, 39.33], [2, 28.3, 38.44], [2, 26.76, 38.27], [2, 26.05, 38.35],
+    [1, 27.14, 39.72], [1, 26.41, 39.71], [1, 25.46, 39.32], [1, 25.74, 39.98], [1, 26.12, 39.06], [1, 22.73, 43.29], [1, 19.03, 59.54], [1, 18.04, 77.01],
+  ] as const;
+  const ids = start.map(([t, x, y]) => w.addUnit(0, t, Math.round(x * 1024), Math.round(y * 1024), UNITS[t].hp));
+  cmd(g, 0, { c: "formation", u: ids, loose: true });
+  run(g, 20);
+  cmd(g, 0, { c: "move", u: ids, x: 26, y: 44 });
+  run(g, 1200);
+  const moving: number[] = [];
+  let last = ids.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]);
+  for (let k = 0; k < 8; k++) {
+    run(g, 50);
+    const now = ids.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]);
+    moving.push(now.filter((p, j) => Math.hypot(p[0] - last[j][0], p[1] - last[j][1]) > 5).length);
+    last = now;
+  }
+  // Measured: 3-5 of them still moving in every 50 ticks, the nearest pair 1.82 cells apart; now
+  // none, and 2.00 cells.
+  assert.deepEqual(moving, [0, 0, 0, 0, 0, 0, 0, 0], `moving per 50 ticks after a minute: ${moving.join(" ")}`);
+  assert.ok(spacing(g, ids).min >= 1.95, `nearest pair ${spacing(g, ids).min.toFixed(2)} cells`);
 });
