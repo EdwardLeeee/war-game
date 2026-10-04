@@ -38,7 +38,7 @@ async function farmers(page: Page) {
 
 /** Pause with the 暫停 button (farmers go to work on their own, so they would walk away from the taps). */
 async function pause(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "暫停" }).tap();
+  await page.getByRole("button", { name: "暫停", exact: true }).tap();
   await expect.poll(async () => (await header(page)).paused).toBe(true);
 }
 
@@ -80,7 +80,7 @@ test("選農民 → 點地面前進：農民往那裡走", async ({ page }) => {
   const before = await distanceTo(page, target);
   await tap(page, await toScreen(page, target));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: ids, x: target.x, y: target.y });
-  await page.getByRole("button", { name: "繼續" }).tap();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(() => distanceTo(page, target), { timeout: 15_000 }).toBeLessThan(before - 5);
 });
 
@@ -100,7 +100,7 @@ test("暫停時下指令：模擬停住、指令照收，按繼續後才執行",
   expect((await header(page)).tick, "no ticks while paused").toBe(frozen);
   expect(await distanceTo(page, target), "nobody moved while paused").toBe(before);
 
-  await page.getByRole("button", { name: "繼續" }).tap();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect(page.getByText("暫停中：仍可下指令")).toBeHidden();
   await expect.poll(() => distanceTo(page, target), { timeout: 15_000 }).toBeLessThan(before - 5);
 });
@@ -124,25 +124,34 @@ test("選了農民點野果、點金礦（旁邊有農民在採）→ 送出採�
   const ids = (await farmers(page)).map((f) => f.id).sort((a, b) => a - b);
   await page.evaluate((u) => window.__proto?.game?.select(u), ids);
 
-  // Berries zoomed out to 0.6, where the old 22 pt pick radius (36.7 px, 1.15 cells) reaches a
-  // farmer working the next cell: the failing case, checked below. Gold at the default zoom.
-  for (const [name, list, scale] of [
-    ["berries", berries, 0.6],
-    ["gold", gold, 1],
+  // The failing case on the berries: a farmer inside the old pick radius (HIT_RADIUS_PT, 22 pt)
+  // of the tapped cell, but not right under the finger (UNIT_CORE_HIT_PT, 12 pt, where the
+  // farmer is meant). The zoom puts the nearest farmer halfway between the two, from where it
+  // stands (paused); a fixed zoom made the case depend on that (run 37214078363: 1.22 cells,
+  // over the 1.15 that 0.6 gave). Gold at the default zoom.
+  for (const [name, list] of [
+    ["berries", berries],
+    ["gold", gold],
   ] as const) {
     // The resource cell with a farmer closest to it: the case that used to re-select the farmer.
     const all = await farmers(page);
     const nearest = (n: (typeof list)[number]) => Math.min(...all.map((f) => Math.hypot(f.fx - (n.cx + 0.5), f.fy - (n.cy + 0.5))));
     const target = [...list].sort((a, b) => nearest(a) - nearest(b))[0];
-    if (name === "berries") {
-      expect(nearest(target), "a farmer is inside the old pick radius, so the old rule would have re-selected it").toBeLessThan(22 / scale / 32);
-    }
+    const d = nearest(target);
+    // A cell is 32 world px; the radii are screen pt, so (22 + 12) / 2 pt is d cells at this zoom.
+    const scale = name === "berries" ? 17 / 32 / d : 1;
     await page.evaluate(([x, y, z]) => window.__proto?.game?.centerOn(x, y, z), [target.cx, target.cy, scale] as const);
+    if (name === "berries") {
+      const actual = await page.evaluate(() => window.__proto?.game?.camera().scale ?? 0);
+      const cells = (pt: number) => pt / actual / 32;
+      expect(d, "a farmer is inside the old pick radius, so the old rule would have re-selected it").toBeLessThan(cells(22));
+      expect(d, "and not right under the finger, so the new rule gathers").toBeGreaterThan(cells(12));
+    }
     await tap(page, await toScreen(page, { x: target.cx, y: target.cy }));
     await expect.poll(() => lastSent(page), { message: name }).toMatchObject({ c: "gather", u: ids, node: target.id });
     expect(await selection(page), `${name}: the selection stays the farmers`).toEqual({ units: ids, building: null });
     await shot(page, info, `gather-${name}`);
-    await page.getByRole("button", { name: "繼續" }).tap();
+    await page.getByRole("button", { name: "繼續", exact: true }).tap();
     // Every selected farmer takes the order (the simulation may spread them over the
     // resource's cells), and they get to work on it.
     const cells = new Set(list.map((n) => n.id));
@@ -182,7 +191,7 @@ test("介面：資源列是模擬的數字；選主城 → 訓練農民 → 佇�
   const before = (await farmers(page)).length;
   await page.getByRole("button", { name: /^訓練農民/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "train", building: city.id, type: 0, n: 1 });
-  await page.getByRole("button", { name: "繼續" }).tap();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect(page.getByRole("button", { name: /取消訓練第 1 個：農民/ })).toBeVisible();
   await shot(page, info, "train-farmer");
   await expect.poll(async () => (await farmers(page)).length, { timeout: 30_000 }).toBe(before + 1);
@@ -209,7 +218,7 @@ test("介面：選農民 → 建造 → 民居 → 找到能蓋的位置 → ✓
   await shot(page, info, "place-house");
   await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: ids, type: 1, x: placed?.cellX, y: placed?.cellY });
-  await page.getByRole("button", { name: "繼續" }).tap();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   await expect
     .poll(async () => (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).some((b) => b.owner === me && b.type === 1 && b.cx === placed?.cellX && b.cy === placed?.cellY), { timeout: 20_000 })
@@ -245,7 +254,7 @@ test("已經有的規則被拒時說明原因：主城連排 5 個農民，第 5
   await expect(page.locator(".sel-info")).toContainText("主城");
   // Standard start: 200 food, a farmer costs 50. Orders given while paused all run on the next tick.
   for (let i = 0; i < 5; i++) await page.getByRole("button", { name: /^訓練農民/ }).tap();
-  await page.getByRole("button", { name: "繼續" }).tap();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect(page.getByRole("status").filter({ hasText: "資源不夠" })).toBeVisible();
 });
 
@@ -273,9 +282,9 @@ test("轉成直向或切到背景會自動暫停；回來後維持暫停，要�
   await page.setViewportSize(landscape);
   await page.waitForTimeout(500);
   expect((await header(page)).paused).toBe(true);
-  await expect(page.getByRole("button", { name: "繼續" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "繼續", exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "繼續" }).tap();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await header(page)).paused).toBe(false);
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", { configurable: true, get: () => true });

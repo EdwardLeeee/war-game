@@ -2,14 +2,17 @@
 // resources, two houses and a barracks, a squad of 6 spearmen and 4 ranged ten cells from
 // the small town), in WebKit and Chromium at iPhone landscape size with touch:
 // 開局（選難度）→ 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 改姿態 → 前進 →
-// 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開、城鎮不叛離 → 編隊缺人後新兵補進來 →
-// 分出 N 名存成編隊 → 不選農民蓋民居 → 散開隊形 → 全軍撤退（D-024、D-026、D-027）.
+// 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開、城鎮不叛離 → 編隊缺人後不選農民蓋民居，
+// 自動訓練出來的新兵補進來 → 暫停自動訓練 → 軍團畫面 → 散開隊形 → 全軍撤退
+// （D-024、D-026、D-027、D-054）.
 // Every step goes through the interface the player uses; the test hook only reads state
-// and moves the camera. The opponent stands still (?test=1&ai=0, see step 1).
+// and moves the camera. The opponent stands still (?test=1&ai=0, see step 1). As in a real
+// game, the barracks trains spearmen on its own (自動訓練, on by default: D-054) until
+// step 8d pauses it, so the counts before that say "at least".
 
 import { expect, type Page, test } from "@playwright/test";
 import { armyButton, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
-import { doubleTap, longPress, tap } from "./touch.ts";
+import { doubleTap, longPress, tap, tapOn } from "./touch.ts";
 
 const FARMER = 0;
 const SPEARMAN = 1;
@@ -27,8 +30,6 @@ const placement = (page: Page) => page.evaluate(() => window.__proto?.game?.plac
 const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
 /** The last order the player gave himself (the interface's own orders are marked `auto`). */
 const lastSent = async (page: Page) => (await sent(page)).filter((c) => c.auto !== true).at(-1);
-/** The last order the interface gave on its own: a garrison's stance, a recruit's march (D-026). */
-const lastAuto = async (page: Page) => (await sent(page)).filter((c) => c.auto === true).at(-1);
 const groupInfo = (page: Page) => page.evaluate(() => window.__proto?.game?.groupInfo() ?? []);
 const groups = (page: Page) => page.evaluate(() => window.__proto?.game?.groups() ?? []);
 const garrison = (page: Page, town: number) => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], town);
@@ -44,16 +45,16 @@ async function own(page: Page, types: number[]) {
 }
 
 async function pause(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "暫停" }).tap();
+  await page.getByRole("button", { name: "暫停", exact: true }).tap();
   await expect.poll(async () => (await header(page)).paused).toBe(true);
 }
 
 async function resume(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "繼續" }).tap();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await header(page)).paused).toBe(false);
 }
 
-test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 新兵補進編隊 → 分出 N 名 → 不選農民蓋民居 → 散開隊形 → 全軍撤退", async ({ page }, info) => {
+test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 不選農民蓋民居、自動訓練的新兵補進編隊 → 暫停自動訓練 → 軍團畫面 → 散開隊形 → 全軍撤退", async ({ page }, info) => {
   test.setTimeout(300_000);
   const check = watchErrors(page);
 
@@ -132,7 +133,8 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await resume(page);
   await expect(page.getByRole("button", { name: /取消訓練第 1 個：槍兵/ })).toBeVisible();
   await shot(page, info, "4-train");
-  await expect.poll(async () => (await own(page, [SPEARMAN])).length, { timeout: 60_000 }).toBe(spearmenBefore + 1);
+  // At least one more: 自動訓練 queues spearmen of its own too.
+  await expect.poll(async () => (await own(page, [SPEARMAN])).length, { timeout: 60_000 }).toBeGreaterThanOrEqual(spearmenBefore + 1);
 
   // 5. 框選（長按空地 350 ms 後拖曳，框住在小鎮南邊的部隊）
   await pause(page);
@@ -180,7 +182,9 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   const hold = page.getByRole("button", { name: /^堅守/ });
   const stanceOfSquad = async () => [...new Set((await units(page)).filter((u) => squadIds.includes(u.id)).map((u) => u.stance))];
   const now = page.locator(".sel-info .order-now");
-  await expect(now).toHaveText(`目前：進攻 ${squadIds.length}`);
+  // Saved, the group's panel shows (D-054); the squad selected as such shows its states.
+  await selectForCommands(page, squadIds);
+  await expect(now).toHaveText(`目前：待命 ${squadIds.length}`);
   await expect(page.locator(".sel-info")).toContainText("堅守：停在原地，敵人進到射程就打，不追出去");
   await hold.tap();
   await expect.poll(async () => (await sent(page)).slice(-2)).toMatchObject([{ c: "stop", u: squadIds }, { c: "stance", u: squadIds, stance: 1 }]);
@@ -242,7 +246,8 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   // One soldier stays: told to hold, out of control group 1.
   await expect.poll(() => garrison(page, town.id)).toHaveLength(1);
   const [kept] = await garrison(page, town.id);
-  expect(squadIds, "one of the squad").toContain(kept);
+  // One of ours who took the town: the squad, or a spearman 自動訓練 sent after it (D-054).
+  expect((await units(page)).find((u) => u.id === kept)?.owner, "one of ours").toBe(me);
   // (Group 1 is short of him now, and may take a soldier in no group (D-050): look for the stance among what was sent.)
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance" && c.auto === true).at(-1)).toMatchObject({ c: "stance", u: [kept], stance: 1 });
   expect((await groups(page))[0]).not.toContain(kept);
@@ -279,18 +284,11 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   expect(await garrison(page, town.id)).toEqual([kept]);
   await shot(page, info, "8b-army-left-garrison-stays");
 
-  // 8c. 編隊缺人後新兵補進來（D-026）：編隊 1 的一名槍兵去留守 → 編隊 1 缺一名槍兵 → 訓練槍兵 →
-  //     新兵補進編隊 1，一個人等滿 20 秒（遊戲時間）後自己走去會合
-  const g1Button = page.locator(".groups > button:nth-child(1)");
-  // The spearman trained in step 4 is in no group. Told to 堅守 it is not taken (D-050: no
-  // order of the player's is undone), so the new one from the barracks fills the gap.
-  const inGroups = (await groupInfo(page)).flatMap((g) => g.ids);
-  const free = (await own(page, [SPEARMAN])).map((u) => u.id).filter((id) => !inGroups.includes(id) && id !== kept);
-  if (free.length > 0) {
-    await selectForCommands(page, free);
-    await page.getByRole("button", { name: /^堅守/ }).tap();
-    await expect.poll(async () => (await units(page)).filter((u) => free.includes(u.id)).every((u) => u.stance === 1)).toBe(true);
-  }
+  // 8c. 編隊缺人後，自動訓練出來的新兵補進來（D-026、D-054）：自動訓練一直開著，沒有人按「訓練槍兵」。
+  //     編隊 1 的一名槍兵去留守 → 編隊 1 缺一名槍兵 → 不選農民蓋民居（D-024；人口可能早就滿了，蓋好才有空位）→
+  //     兵營自己練出來的槍兵編進編隊 1，馬上自己走到部隊那裡（全軍在 8b 走到了 `away`）。
+  //     Who fills the gap first is not fixed: an idle spearman in no group (D-050) or a new one.
+  //     The new ones join group 1 either way (the group short of them, or the largest one).
   const g1 = (await groupInfo(page))[0];
   const sp = (await units(page)).find((u) => g1.ids.includes(u.id) && u.type === SPEARMAN)?.id;
   if (sp === undefined) throw new Error("no spearman left in group 1");
@@ -331,50 +329,14 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   }
   if (townSpot === null) throw new Error("no spot that picks the town");
   await tap(page, townSpot);
+  // Every spearman there is now: the ones the barracks trains from here on are new.
+  const known = (await own(page, [SPEARMAN])).map((u) => u.id);
   await page.locator(".sel-info").getByRole("button", { name: "多留守 1 名" }).tap();
   await expect.poll(() => garrison(page, town.id)).toEqual([kept, sp]);
   await expect.poll(async () => (await groupInfo(page))[0].ids).not.toContain(sp);
-  await page.waitForTimeout(500);
-  const short = (await groupInfo(page))[0];
-  for (const id of free) expect(short.ids, "the 堅守 spearman in no group is not taken").not.toContain(id);
-  await expect(g1Button).toHaveText(`1·${short.ids.length}/${short.saved}`);
-  expect(short.ids.length, "group 1 is short").toBeLessThan(short.saved);
-  // A spearman from the barracks joins group 1.
-  await centre(page, bc);
-  await tap(page, await toScreen(page, bc));
-  await expect(page.locator(".sel-info")).toContainText("兵營");
-  const known = (await own(page, [SPEARMAN])).map((u) => u.id);
-  await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
-  await expect.poll(async () => (await own(page, [SPEARMAN])).length, { timeout: 60_000 }).toBe(known.length + 1);
-  const recruit = (await own(page, [SPEARMAN])).map((u) => u.id).find((id) => !known.includes(id));
-  if (recruit === undefined) throw new Error("no new spearman");
-  await expect.poll(async () => (await groupInfo(page))[0].ids).toContain(recruit);
-  await expect(g1Button).toHaveText(`1·${short.ids.length + 1}/${short.saved}`);
-  await shot(page, info, "8c-recruit-joined");
-  // Alone, it waits 20 s of game time for company, then is sent to where the group stands
-  // (the army marched to `away`), by an order the player did not give.
-  await expect.poll(() => lastAuto(page), { timeout: 60_000 }).toMatchObject({ c: "move", u: [recruit] });
-  const march = (await lastAuto(page)) as { x: number; y: number };
-  expect(Math.hypot(march.x - away.x, march.y - away.y), "toward the group").toBeLessThan(5);
-
-  // 9. 分出 N 名存成編隊（D-024）：暫停 → 全軍 → 分出一半 → 長按編隊 2 → 改選其餘
+  // 不選農民蓋民居：重設 → 建造 → 民居 → ✓，由模擬派最近的農民去蓋. Placed while paused, so
+  // nobody walks onto the spot between the preview and ✓.
   await pause(page);
-  await armyButton(page).tap();
-  await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(1);
-  const army = (await selection(page))?.units ?? [];
-  expect(army, "全軍 still leaves the garrison").not.toContain(kept);
-  const half = Math.floor(army.length / 2);
-  await page.getByRole("button", { name: `分出 ${half} 名` }).tap();
-  await expect.poll(async () => (await selection(page))?.units.length).toBe(half);
-  const part = (await selection(page))?.units ?? [];
-  expect(part.every((id) => army.includes(id)), "split from the army").toBe(true);
-  await saveGroup(page, ".groups > button:nth-child(2)");
-  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[1], "saved as group 2").toEqual(part);
-  await shot(page, info, "9-split");
-  await page.getByRole("button", { name: `改選其餘 ${army.length - half} 名` }).tap();
-  await expect.poll(async () => (await selection(page))?.units).toEqual(army.filter((id) => !part.includes(id)));
-
-  // 10. 不選農民蓋民居（D-024）：重設 → 建造 → 民居 → ✓，由模擬派最近的農民去蓋
   await page.getByRole("button", { name: "重設" }).tap();
   await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
   await centre(page, { x: farmers[0].cx, y: farmers[0].cy });
@@ -393,7 +355,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   }
   if (spot2 === null) throw new Error("no green spot for the second house");
   const house2 = spot2;
-  await shot(page, info, "10-house-without-farmers");
+  await shot(page, info, "8c-house-without-farmers");
   await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: [], type: HOUSE, x: house2.cellX, y: house2.cellY });
   await resume(page);
@@ -402,8 +364,66 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
     .poll(async () => (await buildings(page)).find((b) => b.owner === me && b.type === HOUSE && b.cx === house2.cellX && b.cy === house2.cellY)?.progress ?? -1, { timeout: 30_000 })
     .toBeGreaterThan(0);
   await expect(page.getByText("附近沒有可以派去蓋的農民")).toBeHidden();
+  // A spearman the barracks trained on its own joins group 1.
+  const newcomer = async () => {
+    const ids = (await groupInfo(page))[0].ids;
+    return (await own(page, [SPEARMAN])).map((u) => u.id).find((id) => !known.includes(id) && ids.includes(id)) ?? null;
+  };
+  await expect.poll(newcomer, { timeout: 90_000 }).not.toBeNull();
+  const recruit = await newcomer();
+  if (recruit === null) throw new Error("no new spearman in group 1");
+  await shot(page, info, "8c-recruit-joined");
+  // It sets off at once (D-054: no waiting for company), for where the group stands, by an
+  // order the player did not give (with others who joined at the same check, if any).
+  const marchOf = async () =>
+    (await sent(page)).filter((c) => c.auto === true && c.c === "move" && (c.u as number[]).includes(recruit)).at(-1) as { x: number; y: number } | undefined;
+  await expect.poll(marchOf, { timeout: 60_000 }).toBeDefined();
+  const march = (await marchOf()) ?? { x: -99, y: -99 };
+  expect(Math.hypot(march.x - away.x, march.y - away.y), "toward the group").toBeLessThan(5);
+  // And gets there.
+  await expect
+    .poll(
+      async () => {
+        const u = (await units(page)).find((v) => v.id === recruit);
+        return u === undefined ? 99 : Math.hypot(u.fx - (away.x + 0.5), u.fy - (away.y + 0.5));
+      },
+      { timeout: 90_000 },
+    )
+    .toBeLessThan(5);
 
-  // 11. 散開隊形（D-027、D-028）：全軍 → 隊形：散開（按下去就原地重排）→ 前進 → 站好後彼此相隔約 2 格。
+  // 8d. 暫停自動訓練（D-054）：選兵營 → 「自動訓練　目前：開」→ 送出暫停、兵營的旗標清掉、按鈕寫目前：暫停 →
+  //     佇列裡已經在練的那名練完，就不再排新的（後面的步驟要數全部的兵）
+  await centre(page, bc);
+  await tap(page, await toScreen(page, bc));
+  await expect(page.locator(".sel-info")).toContainText("兵營");
+  const autoTrain = page.locator(".cmds").getByRole("button", { name: /^自動訓練/ });
+  await expect(autoTrain).toHaveText("自動訓練目前：開");
+  await autoTrain.tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "auto_train", building: barracks.id, on: false });
+  // BuildingFlag.AutoTrain (8) cleared in the simulation.
+  await expect.poll(async () => ((await buildings(page)).find((b) => b.id === barracks.id)?.flags ?? 8) & 8).toBe(0);
+  await expect(autoTrain).toHaveText("自動訓練目前：暫停");
+  await expect(page.locator(".sel-info .sel-status")).toContainText("自動訓練暫停");
+  await expect(page.getByRole("button", { name: /^取消訓練第 1 個/ })).toBeHidden({ timeout: 30_000 });
+  await shot(page, info, "8d-auto-train-paused");
+
+  // 9. 軍團畫面（D-054）：點編隊 1 → 選取編隊 1，選取資訊換成軍團畫面（三種兵的現有和目標）→ 收起 → 展開
+  await pause(page);
+  await tapOn(page, ".groups > button:nth-child(1)");
+  const panel = page.locator(".sel-info");
+  await expect(panel.locator(".sel-head")).toContainText("編隊 1");
+  const g1Now = (await groupInfo(page))[0];
+  const g1Alive = (await units(page)).filter((u) => g1Now.ids.includes(u.id)).map((u) => u.id);
+  await expect.poll(async () => (await selection(page))?.units.slice().sort((a, b) => a - b)).toEqual(g1Alive.slice().sort((a, b) => a - b));
+  await expect(panel.getByRole("status", { name: "槍兵要幾名" })).toHaveText(`${g1Now.want[SPEARMAN] ?? 0}`);
+  await shot(page, info, "9-group-panel");
+  await panel.getByRole("button", { name: "收起選取資訊" }).tap();
+  await expect(panel.locator(".group-row").first()).toBeHidden();
+  await panel.getByRole("button", { name: "展開選取資訊" }).tap();
+  await expect(panel.locator(".group-row").first()).toBeVisible();
+  await resume(page);
+
+  // 10. 散開隊形（D-027、D-028）：全軍 → 隊形：散開（按下去就原地重排）→ 前進 → 站好後彼此相隔約 2 格。
   //     Last, so that a wider squad does not change the town steps (a radius-4 town).
   await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(3);
@@ -416,9 +436,12 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await expect(formation).toHaveText("隊形：散開按一下改成密集");
   await expect(page.locator(".sel-info")).toContainText("散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
   // March them together to open ground south of where the squad started; tap where nothing stands.
-  await centre(page, { x: SQUAD.x, y: SQUAD.y + 4 }, 0.8);
+  // 12 cells south: with 自動訓練 the army is some 16 strong, 8 by 8 cells loose, and 4 cells
+  // south its north edge met the rocks at (19–25, 33–39). Loose soldiers pressed there never
+  // came to rest (core PR C: run 37215665684, reproduced in the simulation alone).
+  await centre(page, { x: SQUAD.x + 2, y: SQUAD.y + 12 }, 0.8);
   let field: { x: number; y: number } | null = null;
-  for (const [dx, dy] of [[0, 4], [2, 4], [-2, 4], [0, 6], [3, 3], [-3, 3], [0, 2]]) {
+  for (const [dx, dy] of [[2, 12], [0, 12], [4, 12], [2, 10], [2, 14], [0, 10], [4, 14]]) {
     const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [SQUAD.x + dx, SQUAD.y + dy] as const);
     if (cell === null) continue;
     const p = await toScreen(page, cell);
@@ -454,12 +477,12 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
     .sort((a, b) => a - b);
   const mean = nearest.reduce((sum, d) => sum + d, 0) / nearest.length;
   const shown = `nearest neighbours ${nearest.map((d) => d.toFixed(2)).join(", ")}`;
-  await shot(page, info, "11-loose-formation");
+  await shot(page, info, "10-loose-formation");
   expect(mean, shown).toBeGreaterThanOrEqual(1.5);
   expect(nearest[0], shown).toBeGreaterThanOrEqual(1.2);
   expect(mean, `not scattered: ${shown}`).toBeLessThanOrEqual(2.6);
 
-  // 12. 全軍撤退（使用者 2026-10-01）：什麼都沒選，按一下，所有士兵（留守的不算）退回主城前面
+  // 11. 全軍撤退（使用者 2026-10-01）：什麼都沒選，按一下，所有士兵（留守的不算）退回主城前面
   await page.getByRole("button", { name: "重設" }).tap();
   await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
   await page.getByRole("button", { name: "全軍撤退" }).tap();
@@ -472,6 +495,6 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   expect(Math.abs(back.y - (city.cy + city.size / 2)), "in front of the main city").toBeLessThanOrEqual(city.size);
   // On their way: the order is Retreat (2).
   await expect.poll(async () => (await units(page)).filter((u) => troops.includes(u.id)).every((u) => u.order === 2)).toBe(true);
-  await shot(page, info, "12-retreat-all");
+  await shot(page, info, "11-retreat-all");
   check();
 });

@@ -267,15 +267,18 @@ a {
   background: rgba(255, 243, 176, 0.14);
 }
 
+/* Over the panels (a bubble can fall on the selection info), under the dialogs (30) and the message strip (40). */
 .wheel-backdrop {
   position: absolute;
   inset: 0;
   pointer-events: auto;
+  z-index: 25;
 }
 
 .wheel {
   position: absolute;
   inset: 0;
+  z-index: 26;
 }
 
 .wheel-item {
@@ -581,6 +584,19 @@ button.active {
   min-width: 48px;
   width: 48px;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
+}
+
+.groups .group-dot {
+  display: none;
+}
+
+.groups .group-count {
+  font-size: 12px;
 }
 
 .minimap {
@@ -627,7 +643,7 @@ button.active {
 .sel-head {
   display: flex;
   gap: 8px;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
 }
 
@@ -672,20 +688,7 @@ button.active {
   font-size: 12px;
 }
 
-.rest-chip {
-  background: #fff3b0;
-  color: #201a18;
-}
-
-/* 分出 N 名 (D-024): − N + 分出 */
-.sel-split {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-  align-items: center;
-}
-
-.sel-split .step,
+.group-row .step,
 .keep .step,
 .sel-keep .step {
   width: 44px;
@@ -694,9 +697,44 @@ button.active {
   font-size: 18px;
 }
 
-.sel-split .split-go {
-  padding: 0 10px;
+/* 軍團畫面 (D-054): a row per soldier type, using the width under the ✕ too. */
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px -46px 0 0;
   font-size: 13px;
+}
+
+.group-row .group-type {
+  width: 3.5em;
+  font-weight: 700;
+}
+
+.group-row .group-has {
+  width: 4.5em;
+  opacity: 0.85;
+}
+
+.group-row .group-want {
+  min-width: 1.6em;
+  text-align: center;
+  font-size: 16px;
+}
+
+.group-actions {
+  margin-right: -46px;
+}
+
+/* 收起 (D-054): the title line only; its button sits at the end of that line, left of the ✕. */
+.sel-fold {
+  margin-left: auto;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.sel-info.collapsed > :not(.sel-head):not(.sel-close) {
+  display: none;
 }
 
 /* 留守 − N + 名 (D-026): under each of 搶 and 治理 in the dialog, and in a held town's selection info. */
@@ -741,26 +779,6 @@ button.active {
 .sel-note .order-meaning,
 .sel-note .formation-more {
   opacity: 0.8;
-}
-
-/* 16px or more: Safari on iPhone zooms the page into smaller text fields when they get focus. */
-.split-n {
-  width: 52px;
-  height: var(--touch);
-  box-sizing: border-box;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 8px;
-  font: inherit;
-  font-size: 16px;
-  text-align: center;
-  -moz-appearance: textfield;
-}
-
-.split-n::-webkit-inner-spin-button,
-.split-n::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
 }
 
 .queue-item {

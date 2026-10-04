@@ -8,8 +8,10 @@
 import type { SimPort } from "../game/port.ts";
 import {
   Action,
+  AUTO_TRAIN,
   BUILDING_STRIDE,
   BuildingField as B,
+  BuildingFlag,
   type BuildingInfo,
   BuildingType,
   CELL,
@@ -148,6 +150,8 @@ export class MockPort implements SimPort {
   private readonly terrain = new Uint8Array(SIZE * SIZE);
   private readonly units: MUnit[] = [];
   private readonly buildings: MBuilding[] = [];
+  /** 預留 (D-054): what 自動訓練 would leave; the fake world only reports it. */
+  private reserve = { ...AUTO_TRAIN.reserve };
   private readonly towns: MTown[] = [];
   /** [id, kind, cx, cy, amount] */
   private readonly nodes: number[][] = [];
@@ -261,7 +265,8 @@ export class MockPort implements SimPort {
 
     this.building(ME, BuildingType.MainCity, 8, 80);
     this.building(ME, BuildingType.House, 14, 86);
-    this.building(ME, BuildingType.Barracks, 4, 74);
+    // 自動訓練 is on for the player's barracks, as in the simulation (D-054); the fake world keeps the flag but trains nothing by itself.
+    this.building(ME, BuildingType.Barracks, 4, 74).flags = BuildingFlag.AutoTrain;
     this.building(ME, BuildingType.Farm, 14, 80);
     this.building(ME, BuildingType.House, 18, 86).progress = 400;
     this.building(FOE, BuildingType.MainCity, 84, 12);
@@ -416,6 +421,10 @@ export class MockPort implements SimPort {
     header[H.crystal] = 20;
     header[H.population] = this.units.filter((u) => u.owner === ME).length;
     header[H.populationCap] = 20;
+    header[H.reserveFood] = this.reserve.food;
+    header[H.reserveWood] = this.reserve.wood;
+    header[H.reserveGold] = this.reserve.gold;
+    header[H.reserveCrystal] = this.reserve.crystal;
     header[H.mages] = 2;
     header[H.mageCap] = 6;
     header[H.ratioFood] = this.ratio.food;
@@ -463,7 +472,9 @@ export class MockPort implements SimPort {
       buildings[o + B.queueProgress] = b.owner === ME ? b.queueProgress : 0;
       buildings[o + B.rallyX] = b.rallyX;
       buildings[o + B.rallyY] = b.rallyY;
-      buildings[o + B.flags] = b.owner !== ME && !this.visible(b.cx, b.cy) ? 1 : 0;
+      // 自動訓練 stopped by a full population (D-054): flagged as the simulation does, though the fake world trains nothing by itself.
+      const full = this.units.filter((u) => u.owner === ME).length >= 20 && (b.flags & BuildingFlag.AutoTrain) !== 0 ? BuildingFlag.AutoPopulationFull : 0;
+      buildings[o + B.flags] = b.owner !== ME && !this.visible(b.cx, b.cy) ? BuildingFlag.Remembered : b.owner === ME ? b.flags | full : 0;
     });
 
     const known = this.towns.filter((t) => this.fog[t.cy * SIZE + t.cx] > 0);
@@ -561,8 +572,20 @@ export class MockPort implements SimPort {
         else goTo(own(cmd.u), n[2], n[3], Order.Gather);
         break;
       }
+      case "auto_train": {
+        const b = this.buildings.find((v) => v.id === cmd.building && v.owner === ME);
+        if (b !== undefined) b.flags = cmd.on ? b.flags | BuildingFlag.AutoTrain : b.flags & ~(BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
+        break;
+      }
+      case "reserve":
+        this.reserve = { food: cmd.food, wood: cmd.wood, gold: cmd.gold, crystal: cmd.crystal };
+        break;
       case "stop":
-        for (const u of own(cmd.u)) u.target = null;
+        // Like the simulation: no order left (a retreat or a march ends there).
+        for (const u of own(cmd.u)) {
+          u.target = null;
+          u.order = Order.None;
+        }
         break;
       case "stance":
         for (const u of own(cmd.u)) u.stance = cmd.stance;
