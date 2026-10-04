@@ -736,6 +736,11 @@ export interface HardPlan {
   sites: number;
   /** Ticks between two changes of the economy ratio (0: whenever it changes, as normal does). */
   ratioEvery: number;
+  /**
+   * The ratio from what its buildings would spend at full pace (farmers, soldiers, mages, houses)
+   * instead of a fixed ratio per stage; both lean away from what piles up.
+   */
+  demandRatio: boolean;
   /** Percent spearmen among spearmen and ranged (each game: +-5)... */
   spearShare: number;
   /** ...moved this many points toward what beats the enemy's mix as it has seen it (0: never). */
@@ -783,6 +788,7 @@ export const HARD: HardPlan = {
   production: 4,
   sites: 1,
   ratioEvery: 600,
+  demandRatio: false,
   spearShare: 50,
   counterMix: 15,
   mageReserve: 10,
@@ -1062,6 +1068,27 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // wood is in every soldier and building) and is changed at most every ratioEvery ticks:
       // farmers moved back and forth gather nothing on the way (sim/README.md).
       const ratio = done(BuildingType.MageHall).length > 0 ? [35, 40, 25] : done(BuildingType.Range).length > 0 ? [40, 40, 20] : [50, 40, 10];
+      if (plan.demandRatio) {
+        // Per minute at full pace, in farmers it takes to gather it (a farm gives 24 food, a
+        // farmer 30 wood or 24 gold a minute); wood for buildings on top (more while the base
+        // goes up: camp, granary, farms, barracks and range are about 500 wood).
+        const want = [0, has(BuildingType.Range) ? 60 : 150, 0];
+        const per = (type: UnitType, n: number) => {
+          const u = rules.units[type];
+          const k = (n * TICKS_PER_MINUTE) / u.trainTicks;
+          want[0] += u.cost.food * k;
+          want[1] += u.cost.wood * k + 6 * k; // and a house per 5 of them
+          want[2] += u.cost.gold * k;
+        };
+        if (farmers.length < farmerTarget) per(UnitType.Farmer, 1);
+        per(UnitType.Spearman, done(BuildingType.Barracks).length);
+        per(UnitType.Ranged, done(BuildingType.Range).length);
+        if (soldiers.filter((u) => u.type === UnitType.Mage).length < rules.mageCap) per(UnitType.Mage, done(BuildingType.MageHall).length);
+        if (!has(BuildingType.MageHall) && has(BuildingType.Range)) want[2] += 60;
+        ratio[0] = Math.max(1, Math.trunc(want[0] / 24));
+        ratio[1] = Math.max(1, Math.trunc(want[1] / 30));
+        ratio[2] = Math.max(1, Math.trunc(want[2] / 24));
+      }
       const stock = [res.food, res.wood, res.gold];
       for (let k = 0; k < 3; k++) {
         if (stock[k] > 800) ratio[k] >>= 2;
