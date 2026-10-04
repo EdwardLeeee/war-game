@@ -772,6 +772,11 @@ export interface HardPlan {
   aim: boolean;
   /** Army orders leave out a mage calibrating a shot (an order would call the shot off). */
   keepCasts: boolean;
+  /**
+   * With little left of the enemy's army (as it believes: worth under this), soldiers trained
+   * during an attack follow at once instead of six at a time (0: always six at a time).
+   */
+  allIn: number;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -809,6 +814,7 @@ export const HARD: HardPlan = {
   focus: 4,
   aim: false,
   keepCasts: true,
+  allIn: 0,
   looseAt: 0,
   looseWho: 1,
   raid: 0,
@@ -1504,7 +1510,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // Those that set out are the front; soldiers trained since wait at home and follow six at
           // a time (one by one they would be picked off on the way).
           const reserves = army.filter((u) => !marched.has(u.id) && !detached(u.id));
-          if (reserves.length >= 6) for (const u of reserves) marched.add(u.id);
+          const safe = enemyWorth < plan.allIn;
+          if (reserves.length >= 6 || (reserves.length > 0 && safe)) for (const u of reserves) marched.add(u.id);
           const front = army.filter((u) => marched.has(u.id));
           const frontIds = front.filter((u) => !detached(u.id)).map((u) => u.id);
           const fc = centre(front, ac.x, ac.y);
