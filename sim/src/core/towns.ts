@@ -149,6 +149,7 @@ export class TownSystem {
     }
     if (w.townRevolt[t] === 0) w.townRevolt[t] = TOWNS[w.townSize[t]].revoltTicks;
     if (--w.townRevolt[t] > 0) return;
+    w.revolts[p]++;
     this.neutral(w, t);
     this.tell(w, t, { k: "town_revolted", town: t, from: p }, [p]);
   }

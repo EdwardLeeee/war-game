@@ -155,6 +155,11 @@ const summary = {
 };
 if (jsonFile !== "") writeFileSync(jsonFile, JSON.stringify(summary, null, 2) + "\n");
 
+// Farmers lost per side and game by what last hurt them, and towns lost to a revolt (D-057;
+// absent in older results).
+const perSideGame = (f: (p: GameResult["perPlayer"][number]) => number) => (games.length === 0 ? 0 : sum((g) => f(g.perPlayer[0]) + f(g.perPlayer[1])) / (2 * games.length));
+const farmerDeaths = [1, 2, 3, 4, 0].map((k) => perSideGame((p) => p.farmersLostBy?.[k] ?? 0));
+const revolts = sum((g) => (g.perPlayer[0].revolts ?? 0) + (g.perPlayer[1].revolts ?? 0));
 const lines = [
   `### AI 對 AI：${games.length} 場`,
   "",
@@ -169,6 +174,8 @@ const lines = [
   `| 搶／治理 | ${plunder}／${govern}（搶 ${pct(summary.plunderShare)}） |`,
   `| 法師產量／陣亡 | 玩家 0：${mages[0].trained}／${mages[0].lost}；玩家 1：${mages[1].trained}／${mages[1].lost} |`,
   `| 晶砲發射／命中人次（每發平均） | 玩家 0：${mages[0].shots}／${mages[0].hits}（${perShot(mages[0])}）；玩家 1：${mages[1].shots}／${mages[1].hits}（${perShot(mages[1])}） |`,
+  `| 每方每局死掉的農民（民兵／敵方的兵／晶砲／主城和箭樓的箭／其他） | ${farmerDeaths.map((v) => v.toFixed(2)).join("／")} |`,
+  `| 叛離（駐軍不足，城鎮變回中立） | ${revolts} 次（每方每局 ${perSideGame((p) => p.revolts ?? 0).toFixed(2)}） |`,
   `| 每 tick（µs） | 各局中位數的中位數 ${summary.tickMicros.medianOfMedians}、各局 p95 的 95% ${summary.tickMicros.p95OfP95}、最大 ${summary.tickMicros.max} |`,
   `| 總時間（含重播） | ${(wallMs / 1000).toFixed(1)} 秒 |`,
   "",

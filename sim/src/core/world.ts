@@ -31,8 +31,15 @@ export const UNIT_COLS = [
   // The squad (operations round, D-050): units that got the same move or attack command share a
   // number above 0 and fight together (units.ts); 0 = none (new units, retreat).
   "squad",
+  // What last hurt this unit (HitCause), for statistics only: not in the hash (UNIT_HASH_SKIP).
+  "hitCause",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
+/** Unit columns that are statistics only, left out of the hash so a game plays and hashes as without them. */
+export const UNIT_HASH_SKIP: ReadonlySet<string> = new Set(["hitCause"]);
+/** What last hurt a unit (unit column hitCause; farmers' deaths are counted by it). */
+export const HitCause = { None: 0, Militia: 1, Unit: 2, Cannon: 3, Arrow: 4 } as const;
+export type HitCause = (typeof HitCause)[keyof typeof HitCause];
 
 export const BUILDING_COLS = [
   "id", "owner", "type", "cellX", "cellY", "hp", "progress", "flags",
@@ -176,6 +183,12 @@ export class World {
   /** Who made it (a statistic for comebacks, D-057; not in the hash: firstCapture is). */
   firstCaptureBy = -1;
   /**
+   * Statistics, not in the hash (early balance, D-057; from round 4): farmers lost per player
+   * by what last hurt them [p * 5 + HitCause], and towns lost to a revolt per player.
+   */
+  farmerDeaths = new Int32Array(PLAYER_COUNT * 5);
+  revolts = new Int32Array(PLAYER_COUNT);
+  /**
    * Per owner (players, then neutral): the flow-field step order and whether to try the y
    * axis first when sliding along a wall, both from the owner's symmetry frame (frame.ts).
    */
@@ -272,6 +285,7 @@ export class World {
     c.anchorX[s] = x;
     c.anchorY[s] = y;
     c.lastHurt[s] = -100000;
+    c.hitCause[s] = HitCause.None;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
     c.autoBuild[s] = -1;
