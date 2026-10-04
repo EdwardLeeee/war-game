@@ -11,7 +11,11 @@ import { createSimPort } from "./game/port.ts";
 import { parseParams, SPEED_TPS } from "./params.ts";
 import { DIFFICULTY_LABEL, loadDifficulty, saveDifficulty } from "./difficulty.ts";
 import { loadTownHintOff } from "./hint-pref.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, MAX_TICKS, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
+import { recordCode } from "./logs/code.ts";
+import { GAME_LOGS_URL, LogCollector, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "./logs/collect.ts";
+import { openIndexedDb, type StoredLog } from "./logs/store.ts";
+import { fetchPoster } from "./logs/upload.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
 import { tickRateText } from "./ui/controls.ts";
 import { deployedCommit, isNewer, updateHref } from "./version.ts";
@@ -25,6 +29,9 @@ export interface ProtoHook {
   /** The battlefield has been drawn at least once. */
   ready: boolean;
   game?: GameHook;
+  /** 紀錄代號 and the game records kept on this phone (D-056). */
+  recordCode: string;
+  logs: () => Promise<StoredLog[]>;
 }
 
 declare global {
@@ -35,7 +42,15 @@ declare global {
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const params = parseParams(location.search);
-const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false };
+/**
+ * 對局紀錄 (D-056): each game's command log is kept on this phone and uploaded to the user's
+ * Worker; the player sees only 紀錄代號 on the start screen. Waiting uploads go when the page opens.
+ */
+const code = recordCode();
+const logs = new LogCollector(openIndexedDb(), params.logsUrl ?? GAME_LOGS_URL, fetchPoster());
+void logs.flush();
+
+const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false, recordCode: code, logs: () => logs.list() };
 if (params.test) window.__proto = hook;
 
 let app: Application | null = null;
@@ -83,6 +98,31 @@ const env = (scenario: ScenarioName, about: string) => () => ({
 });
 
 $("commit").textContent = `commit ${__COMMIT__}`;
+$("record-code").textContent = `紀錄代號 ${code}`;
+
+/**
+ * A game's record, once: when it ends, or when 重來 leaves it after a minute of game time.
+ * Resolves when the simulation has given the log (before its Worker may be stopped); keeping
+ * and uploading go on by themselves. The fake world and 量測 are not kept.
+ */
+const keeping = new WeakMap<Game, Promise<void>>();
+function keepLog(g: Game): Promise<void> {
+  const already = keeping.get(g);
+  if (already !== undefined) return already;
+  const init = g.initSent;
+  if (params.mock || init === null || init.scenario === "perf") return Promise.resolve();
+  const over = g.over;
+  const ticks = over === null ? g.currentTick() : over.ticks;
+  if (over === null && ticks < MIN_ABANDONED_TICKS) return Promise.resolve();
+  const job = g.exportLog().then((log) => {
+    if (log === null || log === "") return;
+    const end = over === null ? { result: "abandoned" as const, reason: "", ticks } : { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks };
+    const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log });
+    void logs.keep(record);
+  });
+  keeping.set(g, job);
+  return job;
+}
 
 /**
  * 有新版本 (D-042): checked when the page opens and whenever it comes back from the
@@ -124,6 +164,8 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   hook.screen = "battle";
   hook.ready = false;
   if (app === null) app = await createStage($("stage"));
+  // 重來 leaves the game on screen: keep its record first (D-056).
+  if (game !== null) await keepLog(game);
   game?.destroy();
   const port = params.mock ? new MockPort() : createSimPort(showError);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
@@ -147,6 +189,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
       toStart: showStart,
       perf: () => void newGame("perf", true).catch(showError),
     },
+    ended: () => void keepLog(g),
   });
   game = g;
   if (params.test) hook.game = gameHook(g);

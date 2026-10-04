@@ -6,7 +6,9 @@ name: Client
 # client shows up on that pull request. Not a required check: the path filter would leave
 # unrelated pull requests waiting.
 # Markdown under client/ and sim/ is not read by the build or the tests, so changing only that
-# runs nothing (ceo 2026-10-03).
+# runs nothing (ceo 2026-10-03). services/game-logs/ (the Worker that collects game records,
+# D-056) is type-checked and unit-tested with the client: the page builds its records with
+# the Worker's schema.
 on:
   push:
     branches: [main]
@@ -16,6 +18,8 @@ on:
       - "!client/**/*.md"
       - "sim/**"
       - "!sim/**/*.md"
+      - "services/game-logs/**"
+      - "!services/game-logs/**/*.md"
       - ".github/workflows/client.yml"
   pull_request:
     paths:
@@ -24,6 +28,8 @@ on:
       - "!client/**/*.md"
       - "sim/**"
       - "!sim/**/*.md"
+      - "services/game-logs/**"
+      - "!services/game-logs/**/*.md"
       - ".github/workflows/client.yml"
   workflow_dispatch:
 

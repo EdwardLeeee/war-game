@@ -33,6 +33,7 @@ import {
   CELL,
   type CommandBody,
   type FromWorker,
+  type GameOverReason,
   HeaderField as H,
   NEUTRAL,
   NO_OWNER,
@@ -83,6 +84,8 @@ export interface GameOptions {
   checkPort: (() => SimPort) | null;
   /** 重來 and 回開局畫面 (the page owns games). */
   life: HudLifecycle;
+  /** The game has ended (game_over): the page keeps its record (D-056). */
+  ended?: () => void;
 }
 
 /** After 撤退 went home at once, 「改撤到別處」 stays this long (user 2026-10-01: 撤退很難用). */
@@ -113,6 +116,11 @@ export class Game implements GestureHost {
   tps: number;
   /** The init message this game started with (the test hook reads it). */
   initSent: InitMessage | null = null;
+  /** The last state hash the simulation published (every HASH_EVERY ticks), for checking a replay of the log (D-056). */
+  lastHash: { tick: number; hash: string } | null = null;
+  /** How the game ended, once it has. */
+  over: { winner: number; reason: GameOverReason; ticks: number } | null = null;
+  private logWaiters: ((jsonl: string) => void)[] = [];
   /** 軍團畫面 (D-054): the group shown in place of the selection info, chosen with its button; null for the usual one. */
   groupView: number | null = null;
   /** What was selected before the group button was tapped (改成剛才選的 N 名). */
@@ -336,6 +344,30 @@ export class Game implements GestureHost {
     };
     this.initSent = init;
     this.port.postMessage(init);
+  }
+
+  /**
+   * The simulation's command log (LogHeader, then one command per line), or null when it
+   * does not answer within `timeoutMs` (D-056). Asked before the Worker is stopped.
+   */
+  exportLog(timeoutMs = 3000): Promise<string | null> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.logWaiters = this.logWaiters.filter((w) => w !== got);
+        resolve(null);
+      }, timeoutMs);
+      const got = (jsonl: string) => {
+        clearTimeout(timer);
+        resolve(jsonl);
+      };
+      this.logWaiters.push(got);
+      this.port.postMessage({ type: "export_log" });
+    });
+  }
+
+  /** The tick the game has reached (the last snapshot's). */
+  currentTick(): number {
+    return this.view?.header?.[H.tick] ?? 0;
   }
 
   /** Resolves once the first snapshot has been drawn. */
@@ -680,7 +712,15 @@ export class Game implements GestureHost {
         break;
       case "game_over":
         this.lab.log.add(`game_over winner ${msg.winner} reason ${msg.reason} tick ${msg.stats.ticks}`);
+        this.over = { winner: msg.winner, reason: msg.reason, ticks: msg.stats.ticks };
         this.hud.showResult(msg.winner, msg.reason, msg.stats);
+        this.options.ended?.();
+        break;
+      case "hash":
+        this.lastHash = { tick: msg.tick, hash: msg.hash };
+        break;
+      case "log":
+        for (const w of this.logWaiters.splice(0)) w(msg.jsonl);
         break;
       default:
         break;

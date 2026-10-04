@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/*.test.ts\"",
+    "test": "node --test \"test/*.test.ts\" \"../services/game-logs/test/*.test.ts\"",
     "e2e": "playwright test"
   },
   "dependencies": {

@@ -14,5 +14,5 @@
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "include": ["src", "test", "e2e", "scripts", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "test", "e2e", "scripts", "vite.config.ts", "playwright.config.ts", "../services/game-logs/src", "../services/game-logs/test", "../services/game-logs/fetch.ts"]
 }
