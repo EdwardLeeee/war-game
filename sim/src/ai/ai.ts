@@ -736,8 +736,6 @@ export interface HardPlan {
   sites: number;
   /** Farmers it has when it builds its barracks (normal: 10). */
   barracksAt: number;
-  /** Ticks between two changes of the economy ratio (0: whenever it changes, as normal does). */
-  ratioEvery: number;
   /**
    * The ratio from what its buildings would spend at full pace (farmers, soldiers, mages, houses)
    * instead of a fixed ratio per stage; both lean away from what piles up.
@@ -801,7 +799,6 @@ export const HARD: HardPlan = {
   production: 4,
   sites: 1,
   barracksAt: 10,
-  ratioEvery: 600,
   demandRatio: false,
   spearShare: 50,
   counterMix: 15,
@@ -910,7 +907,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let armyAtStart = 0;
   const marched = new Set<number>();
   let ratioSet = "";
-  let ratioTick = -100000;
   let recalled = false;
   let lastThreat = -100000;
   let veinCrew: number[] = [];
@@ -1096,8 +1092,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
 
       // --- economy --------------------------------------------------------------------------
       // The ratio leans hard away from what piles up (a plunder brings 300 gold and no wood, and
-      // wood is in every soldier and building) and is changed at most every ratioEvery ticks:
-      // farmers moved back and forth gather nothing on the way (sim/README.md).
+      // wood is in every soldier and building). It is sent as soon as it changes: with a limit of
+      // 30 s between changes it won 41% of 80 games against itself without the limit.
       const ratio = done(BuildingType.MageHall).length > 0 ? [35, 40, 25] : done(BuildingType.Range).length > 0 ? [40, 40, 20] : [50, 40, 10];
       if (plan.demandRatio) {
         // Per minute at full pace, in farmers it takes to gather it (a farm gives 24 food, a
@@ -1130,10 +1126,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       for (let k = 0; k < 3; k++) ratio[k] = Math.max(5, Math.trunc((ratio[k] * 100) / sum));
       ratio[0] = 100 - ratio[1] - ratio[2];
       const ratioKey = ratio.join("/");
-      if (ratioKey !== ratioSet && (ratioSet === "" || tick - ratioTick >= plan.ratioEvery)) {
+      if (ratioKey !== ratioSet) {
         out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
         ratioSet = ratioKey;
-        ratioTick = tick;
       }
       let room = cap - pop - queued;
       const main = done(BuildingType.MainCity)[0];

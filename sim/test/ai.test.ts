@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, createAi, HARD, type HardPlan } from "../src/ai/ai.ts";
+import { type AiStyle, createAi, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
 import { rules } from "../src/core/rules.ts";
 import { startCast } from "../src/core/units.ts";
@@ -654,10 +654,18 @@ test("hard: it trains spearmen rather than ranged units against an enemy with ma
   assert.equal(first(2), UnitType.Spearman, "two enemy mages seen: a spearman");
 });
 
-test("hard: the economy ratio changes at most every ratioEvery ticks", () => {
-  const r = new Runner({ seed: 2, scenario: "standard", ai: [true, true], maxTicks: 0, difficulty: ["hard", "normal"] });
-  while (r.game.tick < 10000) r.tick();
-  const ticks = r.game.log.filter((c) => c.p === 0 && c.c === "eco_ratio").map((c) => c.t);
-  assert.ok(ticks.length >= 3, `${ticks.length} changes`);
-  for (let k = 1; k < ticks.length; k++) assert.ok(ticks[k] - ticks[k - 1] >= HARD.ratioEvery, `${ticks[k - 1]} then ${ticks[k]}`);
+test("hard: the economy ratio leans away from what piles up", () => {
+  const ratio = (gold: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 8, 500, 1000);
+    w.res.set([200, 50, gold, 0], 0);
+    g.fog.update(w);
+    return hardAi(g).think(buildView(g, 0)).find((c) => c.c === "eco_ratio") as { food: number; wood: number; gold: number };
+  };
+  const some = ratio(200);
+  const pile = ratio(1000);
+  assert.ok(pile.gold < some.gold && pile.wood > some.wood, `${JSON.stringify(some)} then ${JSON.stringify(pile)}`);
+  assert.equal(pile.gold, 5, "a quarter of its share, at least 5");
 });
