@@ -61,6 +61,8 @@ if (flag("corners")) plan.corners = true;
 if (flag("auto-train")) plan.autoTrain = true;
 // Round 7 (D-061): every town taken is governed, not plundered.
 if (flag("govern")) plan.choice = "govern";
+// Round 7 (D-061): cavalry raiders, this many (--raid 4).
+plan.raid = Number(arg("raid", "0"));
 
 const NAMES: Record<Strategy, string> = { push: "主動", defend: "守家", notown: "守家、不拿城鎮" };
 const SPEED_NAMES: Record<Speed, string> = { h1: "手速 H1", eco: "經濟養大" };
@@ -113,6 +115,11 @@ interface GameRecord {
   trained: { mages: [number, number] };
   cannonShots: [number, number];
   rejected: number;
+  /** Round 7 cavalry raids (--raid): raids sent, the first; the AI's farmers lost by minute 10 and in all. */
+  raids: number;
+  firstRaid: number;
+  aiFarmersLost10: number;
+  aiFarmersLost: number;
   finalHash: string;
   trace?: string[];
 }
@@ -187,6 +194,7 @@ function play(seed: number): GameRecord {
     [0, 0, 0],
     [0, 0, 0],
   ];
+  let aiFarmersLost10 = -1;
   const taken: [number[], number[]] = [map.towns.map(() => -1), map.towns.map(() => -1)];
   let myMage = -1;
   let crystalForMage = -1;
@@ -213,6 +221,7 @@ function play(seed: number): GameRecord {
       for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
     }
     r.tick();
+    if (w.tick === 12000) aiFarmersLost10 = w.lost[UNIT_KINDS + UnitType.Farmer];
     for (const e of g.events) if (e.to === 0 && e.ev.k === "rejected") rejected++;
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
     for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;
@@ -274,6 +283,10 @@ function play(seed: number): GameRecord {
     cityHitAi,
     cityHitMine,
     firstMarch: st.firstMarch,
+    raids: st.raids,
+    firstRaid: st.firstRaid,
+    aiFarmersLost10,
+    aiFarmersLost: w.lost[UNIT_KINDS + UnitType.Farmer],
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
@@ -297,6 +310,7 @@ const options = [
   plan.corners ? "一直搶城鎮（最近、不是自己的小鎮）" : "",
   plan.autoTrain ? "用自動訓練（自己不點訓練兵）" : "",
   plan.choice === "govern" ? "打下來就治理" : "",
+  plan.raid > 0 ? `${plan.raid} 名騎兵突襲電腦的村民` : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;

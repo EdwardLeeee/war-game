@@ -176,6 +176,8 @@ jobs:
           # town after town but governing every one (governing has to be worth it).
           - { group: push-auto-corners, seeds: 1-40, args: --strategy push --speed h1 --formation close --auto-train --corners }
           - { group: push-corners-govern, seeds: 1-40, args: --strategy push --speed h1 --formation close --corners --govern }
+          # Round 7 (D-061): a cavalry rush, 4 raiders at the AI's farmers before the push.
+          - { group: push-raid, seeds: 1-40, args: --strategy push --speed h1 --formation close --raid 4 }
           - { group: defend, seeds: 1-20, args: --strategy defend --speed h1 --formation close }
           - { group: defend, seeds: 21-40, args: --strategy defend --speed h1 --formation close }
           - { group: defend-loose, seeds: 1-20, args: --strategy defend --speed h1 --formation all }
@@ -239,7 +241,7 @@ jobs:
           set -o pipefail
           cat > summary.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
-          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15]];
+          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15]];
           // scripted-<group>-<seeds>.json against normal, scripted-hard-<group>-<seeds>.json against hard.
           const levels = [["", "普通"], ["hard-", "困難"]];
           const games = new Map(levels.flatMap(([l]) => groups.map(([g]) => [l + g, []])));
@@ -284,7 +286,7 @@ jobs:
       - name: Battles of equal cost
         run: |
           set -o pipefail
-          node src/balance.ts --check 1,2,3,4 | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/balance.ts --check 1,2,3,4,6,7,8,9 | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # 100 games of the normal AI against the easy one (round 2): the same seeds, styles and swaps;
   # each spawn plays easy half the time. Replayed like the others.
