@@ -67,7 +67,7 @@ function withJoin<T>(on: boolean, run: () => T): T {
   }
 }
 
-const A = (spear: number, ranged = 0, mage = 0): Army => ({ spear, ranged, mage });
+const A = (spear: number, ranged = 0, mage = 0, cav = 0): Army => ({ spear, ranged, mage, cav });
 const DISTANCES = [8, 9, 10];
 const WAYS: [string, number][] = [
   ["A 進攻", 0],
@@ -121,6 +121,8 @@ interface Report {
 }
 
 const both = (m: Match) => m.fights[WAYS.length - 1];
+/** A (the cavalry, round 7) attacks. */
+const cavAttacks = (m: Match) => m.fights[0];
 
 function measure(): Report {
   const g3 = play("目標 3：B 不該贏", A(14), A(0, 12));
@@ -129,6 +131,11 @@ function measure(): Report {
   const g4b = play("目標 4：B 要贏，遠程至少損一半", A(14), A(0, 4, 4));
   const g5 = play("目標 5：B 要贏", A(0, 0, 6), A(0, 12));
   const g5loose = play("目標 5（參考）：B 要贏", A(0, 0, 6), A(0, 12), "loose");
+  // Round 7 (D-061): cavalry, 6 of them (840).
+  const g6 = play("目標 6：A 進攻要贏", A(0, 0, 0, 6), A(0, 0, 6));
+  const g7 = play("目標 7：A 不該贏", A(0, 0, 0, 6), A(14));
+  const g8 = play("目標 8：A 進攻要贏，騎兵至少損三分之一", A(0, 0, 0, 6), A(0, 12));
+  const g9 = play("目標 9：B 要贏", A(0, 0, 0, 6), A(7, 6));
   const loose = [A(0, 8, 2), A(0, 4, 4), A(0, 0, 6)].map((b) => ({
     b,
     close: DISTANCES.map((d) => fight([A(14), b], 0, d, "close", 0)),
@@ -146,8 +153,16 @@ function measure(): Report {
       text: g4.map((x, k) => `${k === 0 ? "2 法師" : "4 法師"}贏 ${x.won}/3、遠程損 ${x.lost.join("/")}%`).join("；"),
     },
     { ok: wins(both(g5), 1) === 3, text: `遠程贏 ${wins(both(g5), 1)}/3（散開時 ${wins(both(g5loose), 1)}/3）` },
+    // Goals 6 and 8 as the brief puts them: the cavalry attacks (A 進攻); 7 and 9 both advancing.
+    { ok: wins(cavAttacks(g6), 0) === 3, text: `騎兵進攻贏 ${wins(cavAttacks(g6), 0)}/3（雙方對進 ${wins(both(g6), 0)}/3）` },
+    { ok: wins(both(g7), 0) === 0, text: `騎兵贏 ${wins(both(g7), 0)}/3` },
+    {
+      ok: wins(cavAttacks(g8), 0) === 3 && cavAttacks(g8).every((f) => 6 - (f.left[0].cav ?? 0) >= 2),
+      text: `騎兵進攻贏 ${wins(cavAttacks(g8), 0)}/3、損 ${cavAttacks(g8).map((f) => 6 - (f.left[0].cav ?? 0)).join("/")} 名（共 6；雙方對進贏 ${wins(both(g8), 0)}/3、損 ${both(g8).map((f) => (f.winner === 0 ? 6 - (f.left[0].cav ?? 0) : 6)).join("/")}）`,
+    },
+    { ok: wins(both(g9), 1) === 3, text: `混編贏 ${wins(both(g9), 1)}/3` },
   ];
-  return { matches: [g3, g2, g4a, g4b, g5, g5loose], loose, goals };
+  return { matches: [g3, g2, g4a, g4b, g5, g5loose, g6, g7, g8, g9], loose, goals };
 }
 
 function looseTable(r: Report, off?: Report): string[] {
@@ -174,6 +189,10 @@ const GOALS = [
   "3 花費相同，沒人保護的遠程打不贏槍兵",
   "4 花費相同，法師＋遠程打贏純槍兵，但遠程至少損一半",
   "5 花費相同，遠程打贏沒人保護的法師",
+  "6 花費相同，騎兵進攻沒人保護的法師要贏（第七輪；以騎兵進攻判定）",
+  "7 花費相同，騎兵打不贏槍兵（第七輪）",
+  "8 花費相同，騎兵打得贏沒人保護的遠程，但至少損三分之一（第七輪；以騎兵進攻判定）",
+  "9 花費相同，槍兵加遠程的混編打得贏純騎兵（第七輪）",
 ];
 
 /** Why a goal is allowed to fail this round (ceo 2026-10-01), shown while it does. */
@@ -191,7 +210,7 @@ function main(): void {
   const out: string[] = [
     "## 兵種平衡量測（原型第三輪，D-026）",
     "",
-    "- 每方花費 840（四種資源都算）：槍兵 60、遠程 70、法師 140。兩方的前排相距 8、9、10 格各打一場，最多 2 分鐘。",
+    "- 每方花費 840（四種資源都算）：槍兵 60、遠程 70、法師 140、騎兵 140（第七輪）。兩方的前排相距 8、9、10 格各打一場，最多 2 分鐘。",
     "- A 進攻：A 走向站著的 B。B 進攻：反過來。雙方對進：同時往對方走。站著的一方是積極姿態，6 格內有敵人才會動。目標以雙方對進判定。",
     "- 法師開著自動施放，魔晶足夠。",
     `- 一起迎戰（第三輪）：待命、積極姿態的兵，6 格內沒有敵人時，去打 ${JOIN_FIGHT.range / 1024} 格內隊友正在追或打的敵人（離自己原位 8 格內）。「現在」沒有這條規則；「這個版本」兩種都列。`,

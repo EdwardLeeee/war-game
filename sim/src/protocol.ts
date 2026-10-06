@@ -762,6 +762,9 @@ export interface GameStats {
     unitsLost: number[];
     magesTrained: number;
     magesLost: number;
+    /** Round 7 (D-061): unitsTrained and unitsLost stay farmers, spearmen, ranged, mages. */
+    cavalryTrained?: number;
+    cavalryLost?: number;
     townsPlundered: number;
     townsGoverned: number;
   }[];
