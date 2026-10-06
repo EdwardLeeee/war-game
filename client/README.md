@@ -99,7 +99,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 
 - 每局結束（勝、負、投降、時間到），以及按「重來」時已經打了一分鐘以上的局，把模擬的指令紀錄（`export_log`）、這局最後一個狀態雜湊、版本、難度、勝負、遊戲時間存在手機上（IndexedDB，最多 50 局），接著上傳到 `services/game-logs/` 的 Worker。量測和假世界不存。
 - 上傳不擋畫面、失敗不顯示；沒傳成功的在下次打開遊戲、或下一局結束時再傳。`text/plain`，跨網域不用預檢；64 KB 以下加 `keepalive`，頁面關掉也會送完。
-- 收紀錄的網址是 `src/logs/collect.ts` 的 `GAME_LOGS_URL`；使用者部署 Worker 之前是空的，只存不傳。部署步驟在 `services/game-logs/README.md`。
+- 收紀錄的網址是 `src/logs/collect.ts` 的 `GAME_LOGS_URL`（使用者 2026-10-07 部署的 Worker 的 `/logs`）。測試頁（`?test=1`）不上傳，除非給了 `?logs=`，所以 CI 不會打到真的 Worker。部署步驟在 `services/game-logs/README.md`。
 - 開局畫面的版本號旁邊寫「紀錄代號 xxxxxxxx」：手機第一次打開時隨機產生、存在手機上的 8 個字，不是帳號、認不出是誰，用來分開不同手機的紀錄。瀏覽器儲存不能用時只在這一頁有效。
 - 紀錄裡沒有帳號、裝置名稱或任何認得出人的東西（欄位見 `services/game-logs/README.md`）。
 

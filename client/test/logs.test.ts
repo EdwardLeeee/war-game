@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkRecord, type GameRecord } from "../../services/game-logs/src/record.ts";
 import { newRecordCode, RECORD_CODE_KEY, recordCode } from "../src/logs/code.ts";
-import { LogCollector, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "../src/logs/collect.ts";
+import { GAME_LOGS_URL, LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "../src/logs/collect.ts";
 import { KEEP_GAMES, type LogBackend, LogStore, MemoryBackend } from "../src/logs/store.ts";
 import { fetchPoster, KEEPALIVE_MAX, type Poster, uploadPending } from "../src/logs/upload.ts";
 import { GameOverReason, TICKS_PER_SECOND } from "../src/sim.ts";
@@ -179,4 +179,11 @@ test("上傳的請求：text/plain（跨網域不用預檢）、不帶 cookie；
       ["POST", "text/plain;charset=UTF-8", "omit", false],
     ],
   );
+});
+
+test("收紀錄的網址：玩家的頁面傳到 Worker 的 /logs（https）；測試頁不傳，除非給了 ?logs=（D-056）", () => {
+  assert.match(GAME_LOGS_URL, /^https:\/\/[a-z0-9.-]+\.workers\.dev\/logs$/);
+  assert.equal(logsUrlFor(false, null), GAME_LOGS_URL);
+  assert.equal(logsUrlFor(true, null), "", "CI never posts to the real Worker");
+  assert.equal(logsUrlFor(true, "https://game-logs.test/logs"), "https://game-logs.test/logs");
 });
