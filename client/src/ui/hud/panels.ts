@@ -112,7 +112,7 @@ export function incomeText(permille: number, state: number): string | null {
 }
 
 /** The 「目前：」 line's words, in its order (D-054 adds 待命: standing, not 進攻中). */
-export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻中", retreat: "撤退中", hold: "堅守", idle: "待命" };
+export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻中", retreat: "撤退中", hold: "堅守", idle: "待命", garrison: "躲在建築裡" };
 
 /**
  * 隊形 in the player's words (GDD §9, D-027, D-028), a line each. 散開 has a second line for
