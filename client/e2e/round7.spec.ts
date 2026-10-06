@@ -312,8 +312,10 @@ test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groupInfo() ?? []))[0]?.ids ?? [], TICKS).toContain(cavalry);
   await shot(page, info, "r7-cavalry");
   // Beside the spearmen, close up: the two shapes read apart.
-  await place(page, [cavalry], [{ x: 25, y: 69 }]);
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  await place(page, [cavalry], [{ x: 25, y: 68 }]);
   await centre(page, 23.5, 68.5, 2.5);
+  await expect.poll(async () => (await units(page)).find((u) => u.id === cavalry)?.cy).toBe(68);
   await shot(page, info, "r7-cavalry-vs-spear");
   await centre(page, 22, 71);
   await tapOn(page, GROUP_1);
