@@ -248,10 +248,14 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await pause(page);
   const frozen = (await header(page)).tick;
   await centre(page, { x: town.cx, y: town.cy + 3 }, 0.8);
-  const target = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [town.cx, town.cy] as const);
+  // Into the town, still in the fog (step 6 kept away from it): a cell of its own, not the
+  // nearest explored one, which lay outside it (runs 37506439348, 37506431898: the squad
+  // stopped at the edge, and nobody was inside to stay as garrison in step 8).
+  const target = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y, false) ?? null, [town.cx, town.cy] as const);
   if (target === null) throw new Error("no open cell in the town");
+  expect(Math.hypot(target.x - town.cx, target.y - town.cy), "a cell inside the town").toBeLessThan(town.radius - 1);
   await tap(page, await toScreen(page, target));
-  await expect.poll(() => lastSent(page)).toMatchObject({ u: squadIds });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: squadIds, x: target.x, y: target.y });
   await page.waitForTimeout(500);
   expect((await header(page)).tick, "no ticks while paused").toBe(frozen);
   await shot(page, info, "7-order-while-paused");
