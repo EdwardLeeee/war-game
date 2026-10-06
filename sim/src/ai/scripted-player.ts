@@ -365,6 +365,28 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         ratio[1] = 60;
         ratio[2] = 20;
       }
+      // Wood for governing (round 7, D-061): a town of ours waiting to be governed, or one the
+      // plan goes for that can only be governed (plan.choice govern, or plundered once), and the
+      // wood for it short: more farmers on wood, and the wood kept from other spending.
+      const plunderOnce = rules.features?.plunderOnce === true;
+      let govWood = 0;
+      for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+        const id = view.towns[r + TownField.id];
+        const state = view.towns[r + TownField.state];
+        const owner = view.towns[r + TownField.owner];
+        const plundered = (view.towns[r + TownField.flags] & TownFlag.Plundered) !== 0;
+        const size = know.map.towns[id].size;
+        if (plan.choice !== "govern" && !(plunderOnce && plundered)) continue;
+        const waiting = owner === player && state === TownState.AwaitingChoice;
+        const next = plan.townAt > 0 && state === TownState.Neutral && size === TownSize.Small;
+        if (waiting || next) govWood = Math.max(govWood, GOVERN_COST[size].wood);
+      }
+      if (govWood > 0 && res.wood < govWood) {
+        ratio[0] = 20;
+        ratio[1] = 60;
+        ratio[2] = 20;
+      }
+      if (govWood > 0) reserve.wood += govWood;
       const ratioKey = ratio.join("/");
       if (ratioKey !== ratioSet) {
         out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
@@ -518,8 +540,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         // A town plundered once can only be governed (round 7, Rules.features.plunderOnce): a
         // person governs it, or waits until it can be paid for.
         const once = rules.features?.plunderOnce === true && t.plundered;
-        const govern = (plan.choice === "govern" || once) && affordAll(cost);
-        if (once && !govern) continue;
+        const wantGovern = plan.choice === "govern" || once;
+        // Short of the cost: wait for it (round 7; before, the govern plan plundered instead).
+        if (wantGovern && !affordAll(cost)) continue;
+        const govern = wantGovern;
         out.push({ c: "town_choice", town: id, choice: govern ? TownChoice.Govern : TownChoice.Plunder });
         if (govern) spend(cost);
       }
@@ -596,9 +620,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // Keeping on taking towns (plan.corners): between trips, the nearest small town that is not
       // ours and may be taken now; on the way, the one the army set out for.
       const ours = (x: Town) => x.owner === player && x.state !== TownState.Neutral;
-      // A town plundered once can only be governed (round 7): not worth a trip, nor waiting at,
-      // while governing it cannot be paid for.
-      const blocked = (x: Town) => rules.features?.plunderOnce === true && x.plundered && !affordAll(GOVERN_COST[x.size]);
+      // A town that can only be governed (plan.choice govern, or plundered once, round 7): not
+      // worth a trip, nor waiting at, while governing it cannot be paid for.
+      const blocked = (x: Town) => (plan.choice === "govern" || (rules.features?.plunderOnce === true && x.plundered)) && !affordAll(GOVERN_COST[x.size]);
       if (plan.corners && mode !== "town") {
         const open = know.map.towns
           .filter((x) => x.size === TownSize.Small && !ours(towns.get(x.id)!) && !blocked(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
