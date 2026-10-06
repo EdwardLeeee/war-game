@@ -165,14 +165,14 @@ test("選了村民點野果、點金礦（旁邊有村民在採）→ 送出採�
   }
 });
 
-test("沒選村民時點資源點：顯示它是什麼、剩多少，並提示選村民或在下面派村民", async ({ page }) => {
+test("沒選村民時點資源點：顯示它是什麼、剩多少，並提示可以在下面派村民", async ({ page }) => {
   await start(page);
   const berry = (await page.evaluate(() => window.__proto?.game?.nodes() ?? [])).find((n) => n.kind === 2 && n.amount > 0);
   if (berry === undefined) throw new Error("no berries");
   await pause(page);
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y), [berry.cx, berry.cy] as const);
   await tap(page, await toScreen(page, { x: berry.cx, y: berry.cy }));
-  await expect(page.getByRole("status").filter({ hasText: /野果（糧）剩 \d+：選村民再點它就會去採；也可以在下面派村民過來/ })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /野果（糧）剩 \d+：下面可以派村民過來/ })).toBeVisible();
 });
 
 test("點資源派村民（D-061）：沒選東西時點一棵樹，面板寫別處有幾名在採木；按 ½ 送出親手派的 gather，只派採木的村民、照比例、近的先派，他們真的過去", async ({ page }, info) => {

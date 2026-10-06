@@ -100,9 +100,13 @@ for (const size of [
   test(`介面：按鈕至少 44 pt、在安全區內、彼此不重疊（${size.name}，選了${size.who}）`, async ({ page }, info) => {
     if (size.viewport !== null) await page.setViewportSize(size.viewport);
     await injectSafeArea(page);
-    // Units selected, so the command area and the selection info are showing too.
-    await select(page, await ownIds(page, size.types));
-    await page.waitForTimeout(300);
+    // Units selected, so the command area and the selection info are showing too. Measured
+    // once they are drawn (a fixed 300 ms was not always enough on WebKit: run 37512251562
+    // found no stance note yet).
+    const ids = await ownIds(page, size.types);
+    await selectForCommands(page, ids);
+    await expect(page.locator(".sel-info")).toBeVisible();
+    if (size.who === "全軍") await expect(page.locator(".sel-note")).toBeVisible();
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     const buttons = await visibleBoxes(page, INTERACTIVE);
     const panels = await visibleBoxes(page, ".minimap, .res-bar, .sel-info");

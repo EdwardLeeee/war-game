@@ -781,6 +781,13 @@ button.active {
   opacity: 0.8;
 }
 
+/* 派村民 (D-061): whom the buttons send, on a line of its own under 剩下 N. */
+.dispatch-whom {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
 /* 撤退中：點地面改撤退位置 (D-061): what a tap does now, in full. */
 .sel-note .order-meaning.order-hint {
   opacity: 1;

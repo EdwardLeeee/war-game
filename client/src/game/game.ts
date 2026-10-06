@@ -973,7 +973,7 @@ export class Game implements GestureHost {
       case "node": {
         const row = view.nodes.get(p.id);
         const res = ["木", "金", "糧", "魔晶"][p.type] ?? "";
-        return `${NODE_NAME[p.type] ?? "資源"}（${res}）剩 ${row?.[NodeField.amount] ?? "?"}：選村民再點它就會去採；也可以在下面派村民過來`;
+        return `${NODE_NAME[p.type] ?? "資源"}（${res}）剩 ${row?.[NodeField.amount] ?? "?"}：下面可以派村民過來`;
       }
       case "unit":
         return `${whose}${UNIT_NAME[p.type] ?? "單位"}`;
