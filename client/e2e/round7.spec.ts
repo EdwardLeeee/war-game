@@ -19,6 +19,11 @@ const TOWER_ON = { x: 12, y: 84 };
 /** 10 cells off the main city and 14 off our town: not TowerLand. */
 const TOWER_OFF = { x: 21, y: 76 };
 const GROUP_1 = ".groups > button:nth-child(1)";
+/**
+ * Waits on the fake world's ticks (shooting, slipping inside): Chromium on a busy runner ran
+ * far slower than 30 ticks a second (run 37544720334).
+ */
+const TICKS = { timeout: 30_000 };
 const HIDE_ERROR = "躲著的兵要從建築的「全部出來」叫出來";
 
 let checkErrors: () => void;
@@ -83,7 +88,7 @@ async function hideInCity(page: Page, ids: number[]): Promise<number> {
   const city = await mainCityId(page);
   await page.evaluate(([u, b]) => window.__proto?.game?.send({ c: "garrison", u, building: b }), [ids, city] as const);
   await place(page, ids, [{ x: MAIN_CITY.x + 4, y: MAIN_CITY.y + 2 }]);
-  await expect.poll(() => soldiersIn(page, city)).toBe(ids.length);
+  await expect.poll(() => soldiersIn(page, city), TICKS).toBe(ids.length);
   return city;
 }
 
@@ -201,8 +206,8 @@ test("躲進去：混選時提示只有遠程兵和法師會去，點錯地方�
   expect(await mode(page)).toBe("normal");
   // Beside the city they slip in and are no longer drawn.
   await place(page, hiders, [{ x: MAIN_CITY.x + 4, y: MAIN_CITY.y + 2 }]);
-  await expect.poll(() => soldiersIn(page, city)).toBe(hiders.length);
-  await expect.poll(async () => (await units(page)).filter((u) => hiders.includes(u.id)).every((u) => u.action === 7 && u.order === 9)).toBe(true);
+  await expect.poll(() => soldiersIn(page, city), TICKS).toBe(hiders.length);
+  await expect.poll(async () => (await units(page)).filter((u) => hiders.includes(u.id)).every((u) => u.action === 7 && u.order === 9), TICKS).toBe(true);
   // The city: how many hide inside, how many fit, and 全部出來.
   await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
   const panel = page.locator(".sel-info");
@@ -212,7 +217,7 @@ test("躲進去：混選時提示只有遠程兵和法師會去，點錯地方�
   await shot(page, info, "r7-garrison-city");
   await out.tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "leave", building: city });
-  await expect.poll(() => soldiersIn(page, city)).toBe(0);
+  await expect.poll(() => soldiersIn(page, city), TICKS).toBe(0);
   await expect(panel.locator(".garrison-count")).toHaveText("躲了 0 名士兵（最多 6 名）");
   await expect(out).toBeDisabled();
   await expect.poll(async () => (await units(page)).filter((u) => hiders.includes(u.id)).every((u) => u.action !== 7)).toBe(true);
@@ -267,7 +272,7 @@ test("別人的建築裡有人：敵方箭樓右上角有記號，點它寫「�
   const tower = (await buildings(page)).find((b) => b.type === 10 && b.owner === 1);
   expect(tower, "the enemy's arrow tower is in view").toBeDefined();
   expect((tower?.flags ?? 0) & 32, "Occupied").toBe(32);
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.shots() ?? 0)).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.shots() ?? 0), TICKS).toBeGreaterThan(0);
   await centre(page, FOE_TOWER.x + 1, FOE_TOWER.y + 1, 2);
   await tap(page, await at(page, FOE_TOWER));
   const panel = page.locator(".sel-info");
