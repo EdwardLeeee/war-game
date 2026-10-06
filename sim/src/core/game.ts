@@ -16,6 +16,9 @@ import {
   MAX_TICKS,
   PLAYER_COUNT,
   type SimEvent,
+  TOWN_STRIDE,
+  TownField,
+  UnitType,
 } from "../protocol.ts";
 import { type CommandContext, applyCommand } from "./commands.ts";
 import { Economy } from "./economy.ts";
@@ -23,12 +26,12 @@ import { FNV_OFFSET, fnvBytes, fnvInt32, fnvWord } from "./fixed.ts";
 import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { FieldCache } from "./paths.ts";
-import { COUNTER_ATTACK, START_REVEAL } from "./rules.ts";
+import { CAVALRY, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
 import { UnitSystem } from "./units.ts";
-import { UNIT_HASH_SKIP, World } from "./world.ts";
+import { UNIT_HASH_SKIP, UNIT_KINDS, World } from "./world.ts";
 
 export interface GameConfig {
   seed: number;
@@ -169,7 +172,12 @@ export class Game {
     h = fnvInt32(h, w.ecoRatio);
     h = fnvBytes(h, w.ecoOn);
     h = fnvBytes(h, w.recall);
-    for (const a of [w.gathered, w.trained, w.lost]) h = fnvInt32(h, a);
+    h = fnvInt32(h, w.gathered);
+    // Cavalry's counts (round 7) only while CAVALRY is on: off, the words are the old ones.
+    for (const a of [w.trained, w.lost]) {
+      if (CAVALRY.on) h = fnvInt32(h, a);
+      else for (let p = 0; p < PLAYER_COUNT; p++) for (let t = 0; t < UnitType.Cavalry; t++) h = fnvWord(h, a[p * UNIT_KINDS + t]);
+    }
     h = fnvBytes(h, w.grid);
     h = fnvInt32(h, w.nodeAmount);
     for (const a of [w.townState, w.townOwner, w.townTimer, w.townTimerTotal, w.townRevolt, w.townContested, w.townAcc]) h = fnvInt32(h, a);
@@ -181,20 +189,30 @@ export class Game {
       h = fnvInt32(h, a);
     }
     h = fnvWord(h, w.firstCapture);
+    // Round 7 town state (D-061), only while its rules are on.
+    if (TOWN_ONCE.on || PLUNDER_RECOVERY.on) h = fnvInt32(h, w.townPlundered);
+    if (PLUNDER_RECOVERY.on) h = fnvInt32(h, w.townRecover);
     h = fnvWord(h, w.units.count);
     for (const name of w.units.names) {
       if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on)) continue;
       h = fnvInt32(h, w.units.col[name], w.units.count);
     }
     h = fnvWord(h, w.buildings.count);
-    for (const name of w.buildings.names) h = fnvInt32(h, w.buildings.col[name], w.buildings.count);
+    for (const name of w.buildings.names) {
+      if (name === "soldiers" && !GARRISON.on) continue;
+      h = fnvInt32(h, w.buildings.col[name], w.buildings.count);
+    }
     const f = this.fog;
     h = fnvWord(h, f.fogTick);
     for (let p = 0; p < PLAYER_COUNT; p++) {
       h = fnvBytes(h, f.visible[p]);
       h = fnvBytes(h, f.explored[p]);
       h = fnvInt32(h, f.nodeSeen[p]);
-      h = fnvInt32(h, f.townSeen[p]);
+      // Town rows as last seen; their income column (round 7) only while PLUNDER_RECOVERY is on.
+      const seen = f.townSeen[p];
+      for (let t = 0; t * TOWN_STRIDE < seen.length; t++) {
+        h = fnvInt32(h, seen.subarray(t * TOWN_STRIDE, (t + 1) * TOWN_STRIDE), PLUNDER_RECOVERY.on ? TOWN_STRIDE : TownField.incomePermille);
+      }
       h = fnvWord(h, f.memory[p].length);
       for (const m of f.memory[p]) for (const v of m) h = fnvWord(h, v);
     }

@@ -4,6 +4,7 @@
 // sim/README.md lists every value added here that is not in the GDD.
 
 import {
+  type ArrowInfo,
   BuildingType,
   CELL,
   type BuildingInfo,
@@ -12,6 +13,7 @@ import {
   Resource,
   type Rules,
   TICKS_PER_SECOND,
+  type TownInfo,
   TownSize,
   type UnitInfo,
   UnitType,
@@ -45,16 +47,24 @@ UNITS[UnitType.Militia] = {
   type: UnitType.Militia, hp: 40, shield: 0, attack: 4, range: CELL, speed: speed(100), sight: 5,
   cooldown: 30, cost: cost(), trainTicks: 0, population: 0,
 };
+// Round 7 (D-061): GDD appendix A's heavy cavalry; cooldown as spearmen, sight as ranged (not in
+// the GDD). Trained only while CAVALRY is on.
+UNITS[UnitType.Cavalry] = {
+  type: UnitType.Cavalry, hp: 130, shield: 0, attack: 11, range: CELL, speed: speed(160), sight: 7,
+  cooldown: 30, cost: cost(70, 0, 70), trainTicks: 28 * S, population: 1,
+};
 
 const ALL: Resource[] = [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal];
 
 export const BUILDINGS: BuildingInfo[] = [];
 const building = (b: Partial<BuildingInfo> & Pick<BuildingInfo, "type" | "hp" | "size">): BuildingInfo => ({
-  walkable: false, cost: cost(), buildTicks: 0, sight: 5, populationCap: 0, accepts: [], trains: [], shelter: 0, ...b,
+  walkable: false, cost: cost(), buildTicks: 0, sight: 5, populationCap: 0, accepts: [], trains: [], shelter: 0,
+  holds: 0, requires: [], ...b,
 });
+// holds: soldiers that can hide inside (round 7, D-061; only while GARRISON is on).
 BUILDINGS[BuildingType.MainCity] = building({
   type: BuildingType.MainCity, hp: 1200, size: 4, sight: 8, populationCap: 10, accepts: ALL,
-  trains: [UnitType.Farmer], shelter: 15,
+  trains: [UnitType.Farmer], shelter: 15, holds: 6,
 });
 BUILDINGS[BuildingType.House] = building({
   type: BuildingType.House, hp: 200, size: 2, cost: cost(0, 30), buildTicks: 20 * S, populationCap: 5, shelter: 5,
@@ -82,16 +92,27 @@ BUILDINGS[BuildingType.MageHall] = building({
   type: BuildingType.MageHall, hp: 500, size: 3, cost: cost(0, 150, 100), buildTicks: 45 * S, trains: [UnitType.Mage],
 });
 BUILDINGS[BuildingType.TownTower] = building({ type: BuildingType.TownTower, hp: 400, size: 2, sight: 8 });
+// Round 7 (D-061): a player's arrow tower (only while TOWERS is on) and the stable (only while
+// CAVALRY is on). Footprints from GDD section 8; the rest are the prototype's values.
+BUILDINGS[BuildingType.ArrowTower] = building({
+  type: BuildingType.ArrowTower, hp: 500, size: 2, cost: cost(0, 100, 50), buildTicks: 40 * S, sight: 8, holds: 3,
+});
+BUILDINGS[BuildingType.Stable] = building({
+  type: BuildingType.Stable, hp: 500, size: 3, cost: cost(0, 150, 50), buildTicks: 40 * S, trains: [UnitType.Cavalry],
+});
 
 /**
  * Ranged against a mage's shield (early balance, D-057; round 4, D-037): x3, was x3/2 (num 3,
  * den 2 gives that back).
  */
 export const RANGED_VS_SHIELD = { num: 3, den: 1 };
-/** Damage x num / den. Spearman x3 vs cavalry and cavalry x2 vs shields wait for cavalry. */
+/** Damage x num / den. Cavalry's (round 7, D-061) from GDD appendix A. */
 export const MULTIPLIERS: Multiplier[] = [
   { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 5, den: 2 },
   { attacker: UnitType.Ranged, target: "shield", ...RANGED_VS_SHIELD },
+  { attacker: UnitType.Spearman, target: UnitType.Cavalry, num: 3, den: 1 },
+  { attacker: UnitType.Cavalry, target: UnitType.Mage, num: 2, den: 1 },
+  { attacker: UnitType.Cavalry, target: "shield", num: 2, den: 1 },
 ];
 
 export const MAGE_CAP = 6;
@@ -107,6 +128,12 @@ export function rules(): Rules {
     mageCap: MAGE_CAP,
     maxPopulation: MAX_POPULATION,
     queueMax: QUEUE_MAX,
+    features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on },
+    arrows: { mainCity: MAIN_ARROW, townTower: { ...TOWER_ARROW, extraMax: 0 }, arrowTower: { ...ARROW_TOWER, extraMax: 0 } },
+    garrisonTypes: GARRISON_TYPES,
+    towerReach: TOWER_REACH,
+    towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size)),
+    plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
   };
 }
 
@@ -114,7 +141,7 @@ export function rules(): Rules {
 export const SHIELD = 8;
 export const MULT_NUM: number[][] = [];
 export const MULT_DEN: number[][] = [];
-for (let a = 0; a < 5; a++) {
+for (let a = 0; a < UNITS.length; a++) {
   MULT_NUM.push(new Array(9).fill(1));
   MULT_DEN.push(new Array(9).fill(1));
 }
@@ -199,9 +226,40 @@ export const ARRIVE_DISTANCE = 256;
 export const DIRECT_STEER = 3 * CELL;
 
 /** Main city arrows (D3): one every 2 s, 5 damage, range 7; +1 arrow per sheltered farmer, max +10. */
-export const MAIN_ARROW = { damage: 5, range: 7 * CELL, cooldown: 2 * S, extraMax: 10 };
+export const MAIN_ARROW: ArrowInfo = { damage: 5, range: 7 * CELL, cooldown: 2 * S, extraMax: 10 };
 /** The big city's tower (D1). */
 export const TOWER_ARROW = { damage: 6, range: 7 * CELL, cooldown: 2 * S };
+/** A player's arrow tower (round 7, D-061): as the main city's own arrow. */
+export const ARROW_TOWER = { damage: 5, range: 7 * CELL, cooldown: 2 * S };
+
+// --- round 7 (D-061): switches, all off until their PR -----------------------------------
+
+/** A town can be plundered once per game; plundered again, `town_choice` is rejected. */
+export const TOWN_ONCE = { on: false };
+/**
+ * Governing pays `boost` instead of TownRule.perMinute: about 4 minutes of it match one
+ * plunder (small 170 a minute against 675, large 385 against 1530).
+ */
+export const GOVERN_INCOME = {
+  on: false,
+  boost: [cost(75, 0, 75, 20), cost(170, 0, 170, 45)] as Cost[],
+};
+/**
+ * A plundered town, governed again, pays `startPermille` of its income at first, climbing
+ * linearly to all of it over `ticks` of being governed; the town keeps what it climbed when it
+ * changes hands.
+ */
+export const PLUNDER_RECOVERY = { on: false, startPermille: 250, ticks: 10 * 60 * S };
+/** Players can build arrow towers (BuildingType.ArrowTower). */
+export const TOWERS = { on: false };
+/** Ranged units and mages can hide in main cities and arrow towers (`garrison`, `leave`). */
+export const GARRISON = { on: false };
+/** Players can build stables and train cavalry. */
+export const CAVALRY = { on: false };
+/** Unit types that may hide in buildings. */
+export const GARRISON_TYPES: UnitType[] = [UnitType.Ranged, UnitType.Mage];
+/** Arrow towers: within `mainCity` cells of an own main city's footprint, or a held town's radius + `town`. */
+export const TOWER_REACH = { mainCity: 8, town: 2 };
 
 // --- mages (from PR-4) ---------------------------------------------------------------
 
@@ -246,6 +304,33 @@ TOWNS[TownSize.Large] = {
   governCost: cost(0, 150, 150), repairTicks: 60 * S, perMinute: cost(90, 0, 90, 30), populationCap: 10,
   garrisonNeeded: 3, revoltTicks: 60 * S,
 };
+
+/** What governing a town of this size pays a minute at full income (GOVERN_INCOME). */
+export function governPerMinute(size: number): Cost {
+  return GOVERN_INCOME.on ? GOVERN_INCOME.boost[size] : TOWNS[size].perMinute;
+}
+
+/**
+ * What governing town t pays now, in permille of governPerMinute (TownField.incomePermille):
+ * 1000 unless it was plundered and PLUNDER_RECOVERY is on; then startPermille climbing
+ * linearly to 1000 over PLUNDER_RECOVERY.ticks of being governed.
+ */
+export function townIncomePermille(plundered: number, recovered: number): number {
+  if (!PLUNDER_RECOVERY.on || plundered === 0) return 1000;
+  const r = PLUNDER_RECOVERY;
+  if (recovered >= r.ticks) return 1000;
+  return r.startPermille + Math.trunc(((1000 - r.startPermille) * recovered) / r.ticks);
+}
+
+/** A town's rules as sent in `Rules.towns`. */
+function townInfo(size: number): TownInfo {
+  const t = TOWNS[size];
+  return {
+    militia: t.militia, radius: t.radius, plunderTicks: t.plunderTicks, plunder: t.plunder, ruinsTicks: t.ruinsTicks,
+    governCost: t.governCost, repairTicks: t.repairTicks, perMinute: governPerMinute(size), populationCap: t.populationCap,
+    garrisonNeeded: t.garrisonNeeded, revoltTicks: t.revoltTicks,
+  };
+}
 
 // --- economy (from PR-3) -----------------------------------------------------------------
 
@@ -292,7 +377,7 @@ export const AUTO_TRAIN = {
   reserve: { food: 0, wood: 150, gold: 100, crystal: 15 },
   /** Largest reserve per resource a `reserve` command may set. */
   reserveMax: 10000,
-  buildings: [BuildingType.Barracks, BuildingType.Range, BuildingType.MageHall] as number[],
+  buildings: [BuildingType.Barracks, BuildingType.Range, BuildingType.MageHall, BuildingType.Stable] as number[],
 };
 /** Idle farmers are handed work (auto-repair, then the economy ratio, or recall) every this many ticks. */
 export const ECO_EVERY = 20;

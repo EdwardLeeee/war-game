@@ -43,7 +43,7 @@ import {
 } from "./rules.ts";
 import { steerTo } from "./steer.ts";
 import { rectDist2 } from "./units.ts";
-import { BLOCK_NODE, type World } from "./world.ts";
+import { BLOCK_NODE, UNIT_KINDS, type World } from "./world.ts";
 
 /** Farmer task phases (unit column `task`). */
 export const Task = { Go: 0, Return: 1 } as const;
@@ -924,7 +924,7 @@ export class Economy {
     // A trained mage casts on its own from the start (D-026: the player found mages with
     // autocast off "of little use"); the `autocast` command switches it off.
     if (type === UnitType.Mage) u.flags[i] |= UnitFlag.Autocast;
-    w.trained[p * 5 + type]++;
+    w.trained[p * UNIT_KINDS + type]++;
     this.emit(p, { k: "unit_trained", id, type, building: b.id[bs] });
 
     if (type === UnitType.Farmer && w.recall[p] === 1) {

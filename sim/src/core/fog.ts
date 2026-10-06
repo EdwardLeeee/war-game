@@ -4,7 +4,7 @@
 // resource node and each town. Memory is simulation state: the AI decides from it.
 
 import { Action, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, TOWN_STRIDE, TownField, TownFlag, TownState, UnitType } from "../protocol.ts";
-import { BUILDINGS, CANNON, REVEAL_CAST, TOWNS, UNITS } from "./rules.ts";
+import { BUILDINGS, CANNON, PLUNDER_RECOVERY, REVEAL_CAST, TOWN_ONCE, TOWNS, townIncomePermille, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 const MAX_SIGHT = 10;
@@ -176,8 +176,12 @@ export function writeTownRow(w: World, t: number, out: Int32Array, o: number): v
   out[o + TownField.militia] = militia;
   out[o + TownField.revoltTimer] = w.townRevolt[t];
   const held = w.townState[t] === TownState.Repairing || w.townState[t] === TownState.Governed;
+  // Plundered (round 7, D-061): shown only while a rule uses it, so games without them see what they saw.
+  const plundered = (TOWN_ONCE.on || PLUNDER_RECOVERY.on) && w.townPlundered[t] !== 0;
   out[o + TownField.flags] =
     (out[o + TownField.flags] & TownFlag.Visible) |
     (held && garrison < rule.garrisonNeeded ? TownFlag.BelowGarrison : 0) |
-    (w.townContested[t] === 1 ? TownFlag.Contested : 0);
+    (w.townContested[t] === 1 ? TownFlag.Contested : 0) |
+    (plundered ? TownFlag.Plundered : 0);
+  out[o + TownField.incomePermille] = townIncomePermille(w.townPlundered[t], w.townRecover[t]);
 }

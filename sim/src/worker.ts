@@ -6,6 +6,7 @@
 // possible instead (use a separate Worker for it).
 
 import { rules } from "./core/rules.ts";
+import { UNIT_KINDS } from "./core/world.ts";
 import { hex8 } from "./core/fixed.ts";
 import {
   AI_DIFFICULTIES,
@@ -73,10 +74,10 @@ function stats(): GameStats {
         gold: w.gathered[p * 4 + Resource.Gold],
         crystal: w.gathered[p * 4 + Resource.Crystal],
       },
-      unitsTrained: Array.from(w.trained.subarray(p * 5, p * 5 + 4)),
-      unitsLost: Array.from(w.lost.subarray(p * 5, p * 5 + 4)),
-      magesTrained: w.trained[p * 5 + UnitType.Mage],
-      magesLost: w.lost[p * 5 + UnitType.Mage],
+      unitsTrained: Array.from(w.trained.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
+      unitsLost: Array.from(w.lost.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
+      magesTrained: w.trained[p * UNIT_KINDS + UnitType.Mage],
+      magesLost: w.lost[p * UNIT_KINDS + UnitType.Mage],
       townsPlundered: w.plundered[p],
       townsGoverned: w.governed[p],
     })),
