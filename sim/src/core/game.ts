@@ -23,12 +23,12 @@ import { FNV_OFFSET, fnvBytes, fnvInt32, fnvWord } from "./fixed.ts";
 import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { FieldCache } from "./paths.ts";
-import { START_REVEAL } from "./rules.ts";
+import { COUNTER_ATTACK, START_REVEAL } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
 import { UnitSystem } from "./units.ts";
-import { World } from "./world.ts";
+import { UNIT_HASH_SKIP, World } from "./world.ts";
 
 export interface GameConfig {
   seed: number;
@@ -182,7 +182,10 @@ export class Game {
     }
     h = fnvWord(h, w.firstCapture);
     h = fnvWord(h, w.units.count);
-    for (const name of w.units.names) h = fnvInt32(h, w.units.col[name], w.units.count);
+    for (const name of w.units.names) {
+      if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on)) continue;
+      h = fnvInt32(h, w.units.col[name], w.units.count);
+    }
     h = fnvWord(h, w.buildings.count);
     for (const name of w.buildings.names) h = fnvInt32(h, w.buildings.col[name], w.buildings.count);
     const f = this.fog;

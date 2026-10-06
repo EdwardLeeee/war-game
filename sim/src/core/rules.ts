@@ -83,10 +83,15 @@ BUILDINGS[BuildingType.MageHall] = building({
 });
 BUILDINGS[BuildingType.TownTower] = building({ type: BuildingType.TownTower, hp: 400, size: 2, sight: 8 });
 
+/**
+ * Ranged against a mage's shield (early balance, D-057; round 4, D-037): x3, was x3/2 (num 3,
+ * den 2 gives that back).
+ */
+export const RANGED_VS_SHIELD = { num: 3, den: 1 };
 /** Damage x num / den. Spearman x3 vs cavalry and cavalry x2 vs shields wait for cavalry. */
 export const MULTIPLIERS: Multiplier[] = [
   { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 5, den: 2 },
-  { attacker: UnitType.Ranged, target: "shield", num: 3, den: 2 },
+  { attacker: UnitType.Ranged, target: "shield", ...RANGED_VS_SHIELD },
 ];
 
 export const MAGE_CAP = 6;
@@ -151,6 +156,28 @@ export const SQUAD = { reach: 12 * CELL, near: 3 * CELL, leash: 12 * CELL, crowd
  * keep SEPARATION. `spacing` 0 switches it off (tests measure both ways).
  */
 export const LOOSE_KEEP = { spacing: 2 * CELL };
+/**
+ * A retreat (early balance, D-057; rule 2 of round 4, D-034): each unit runs at its own speed
+ * instead of the group's slowest, so the fast are not caught waiting for the slow; they still
+ * form up at the goal. A move keeps to the slowest. `on` false gives the old way back.
+ */
+export const RETREAT_OWN_SPEED = { on: true };
+/**
+ * Counter-attack (early balance, D-057; rule 3 of round 4, D-037): an idle aggressive player
+ * soldier without a squad (a squad fights together instead, SQUAD), with no enemy within
+ * AGGRO_RANGE and no friend's fight to join, hit in the last RETARGET_EVERY ticks or with a
+ * friend within JOIN_FIGHT.range hit then, takes on the unit that hit (the nearest such, ties to
+ * the lower id) if its owner sees it and it is within LEASH of the soldier's place. Hold
+ * (garrisons too), units with orders, farmers and militia do not. `on` false switches it off,
+ * and the unit column it reads (hitById) then stays out of the hash.
+ */
+export const COUNTER_ATTACK = { on: true };
+/**
+ * A mage calibrating the crystal cannon, and for `ticks` after it fired, is seen by every other
+ * player in its own cell (early balance, D-057; rule 3 of round 4, D-037). `on` false switches
+ * it off.
+ */
+export const REVEAL_CAST = { on: true, ticks: 2 * S };
 export const RETARGET_EVERY = 10;
 export const UNIT_RADIUS = 358;
 export const SEPARATION = 2 * UNIT_RADIUS;

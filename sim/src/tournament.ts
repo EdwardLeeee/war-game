@@ -74,6 +74,10 @@ export interface GameResult {
     trained: number[];
     lost: number[];
     gathered: number[];
+    /** Farmers lost by what last hurt them: none, militia, an enemy unit, a crystal cannon, an arrow (HitCause; D-057). */
+    farmersLostBy: number[];
+    /** Towns lost to a revolt (D-057). */
+    revolts: number;
   }[];
 }
 
@@ -215,7 +219,9 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
       trained: Array.from(w.trained.subarray(p * 5, p * 5 + 4)),
       lost: Array.from(w.lost.subarray(p * 5, p * 5 + 4)),
       gathered: Array.from(w.gathered.subarray(p * 4, p * 4 + 4)),
-    })),
+      farmersLostBy: Array.from(w.farmerDeaths.subarray(p * 5, p * 5 + 5)),
+      revolts: w.revolts[p],
+})),
   };
   writeFileSync(join(out, `game-${i}.json`), JSON.stringify(result, null, 1) + "\n");
   const head: LogHeader = r.header([true, true]);

@@ -29,6 +29,7 @@ import {
   ARRIVE_DISTANCE,
   BUILDINGS,
   CANNON,
+  COUNTER_ATTACK,
   MAGE_BOUNTY,
   SHIELD,
   SHIELD_REGEN,
@@ -50,7 +51,7 @@ import {
 } from "./rules.ts";
 import { IDENTITY, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
-import type { World } from "./world.ts";
+import { HitCause, type World } from "./world.ts";
 
 const TICKS = TICKS_PER_SECOND;
 
@@ -163,6 +164,50 @@ export class UnitSystem {
   private sees(fog: Fog, owner: number, x: number, y: number, n: number): boolean {
     if (owner === NEUTRAL) return true;
     return fog.visible[owner][(y >> CELL_SHIFT) * n + (x >> CELL_SHIFT)] === 1;
+  }
+
+  /**
+   * Counter-attack (COUNTER_ATTACK): the unit that hit unit i, or a friend of i within
+   * JOIN_FIGHT.range, in the last RETARGET_EVERY ticks, if i's owner sees it and it is within
+   * LEASH of i's place; the nearest such (ties to the lower id), or -1.
+   */
+  private counterAttack(w: World, fog: Fog, i: number): number {
+    const u = w.units.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const reach = JOIN_FIGHT.range;
+    const cells = (reach >> CELL_SHIFT) + 1;
+    const cx = u.x[i] >> CELL_SHIFT;
+    const cy = u.y[i] >> CELL_SHIFT;
+    let best = 0;
+    let bestId = -1;
+    for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
+      for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (u.owner[j] !== me || w.tick - u.lastHurt[j] > RETARGET_EVERY) continue;
+          if (j !== i) {
+            const fx = u.x[j] - u.x[i];
+            const fy = u.y[j] - u.y[i];
+            if (fx * fx + fy * fy > reach * reach) continue;
+          }
+          const a = u.hitById[j];
+          const as = a >= 0 ? w.unit(a) : -1;
+          if (as < 0 || u.owner[as] === me || u.action[as] === Action.Garrisoned) continue;
+          if (!this.sees(fog, me, u.x[as], u.y[as], n)) continue;
+          const ax = u.x[as] - u.anchorX[i];
+          const ay = u.y[as] - u.anchorY[i];
+          if (ax * ax + ay * ay > LEASH * LEASH) continue;
+          const dx = u.x[as] - u.x[i];
+          const dy = u.y[as] - u.y[i];
+          const d2 = dx * dx + dy * dy;
+          if (bestId < 0 || d2 < best || (d2 === best && a < bestId)) {
+            best = d2;
+            bestId = a;
+          }
+        }
+      }
+    }
+    return bestId;
   }
 
   /**
@@ -485,6 +530,9 @@ export class UnitSystem {
       tid = this.findTarget(w, fog, i, hold ? info.range : Math.max(AGGRO_RANGE, info.range));
       if (tid < 0 && (order === Order.None || order === Order.Move) && u.stance[i] !== Stance.Hold && u.squad[i] !== 0) tid = this.squadTarget(w, fog, i);
       if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT) tid = this.joinFight(w, fog, i);
+      // A soldier without a squad hits back at what hit it or a friend (COUNTER_ATTACK); a squad's
+      // soldiers fight together instead (SQUAD).
+      if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT && u.squad[i] === 0 && COUNTER_ATTACK.on) tid = this.counterAttack(w, fog, i);
     }
     u.target[i] = tid;
 
@@ -884,7 +932,7 @@ export class UnitSystem {
       const info = UNITS[u.type[i]];
       const ts = w.unit(tid);
       if (ts >= 0) {
-        this.hit(w, ts, info.attack, u.type[i], u.owner[i]);
+        this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
       } else {
         const bs = w.building(tid);
         if (bs >= 0) this.buildingDamage[bs] += info.attack;
@@ -921,6 +969,8 @@ export class UnitSystem {
       this.unitDamage[bestSlot] += arrow.damage * arrows;
       this.shieldDamage[bestSlot] += arrow.damage * arrows;
       u.hitBy[bestSlot] = b.owner[s];
+      u.hitCause[bestSlot] = HitCause.Arrow;
+      u.hitById[bestSlot] = -1;
       b.target[s] = u.id[bestSlot];
       b.cooldown[s] = arrow.cooldown;
     }
@@ -970,8 +1020,10 @@ export class UnitSystem {
   }
 
   /** One hit on unit slot ts: hp damage and shield damage with their multipliers. */
-  private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number): void {
+  private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number, cause: HitCause, attackerId: number): void {
     const u = w.units.col;
+    u.hitCause[ts] = cause;
+    u.hitById[ts] = attackerId;
     this.unitDamage[ts] += damage(attack, attackerType, u.type[ts]);
     this.shieldDamage[ts] += damage(attack, attackerType, SHIELD);
     u.hitBy[ts] = attackerOwner;
@@ -1000,7 +1052,7 @@ export class UnitSystem {
             const dx = u.x[j] - u.castX[i];
             const dy = u.y[j] - u.castY[i];
             if (dx * dx + dy * dy <= r2) {
-              this.hit(w, j, CANNON.damage, UnitType.Mage, p);
+              this.hit(w, j, CANNON.damage, UnitType.Mage, p, HitCause.Cannon, u.id[i]);
               if (p < PLAYER_COUNT) w.cannonHits[p]++;
             }
           }
@@ -1037,6 +1089,7 @@ export class UnitSystem {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * 5 + u.type[i]]++;
+        if (u.owner[i] < PLAYER_COUNT && u.type[i] === UnitType.Farmer) w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
         if (u.type[i] === UnitType.Mage) {
           // The killer's side picks up the bounty (none for the neutral side).
           const killer = u.hitBy[i];
