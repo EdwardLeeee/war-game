@@ -160,7 +160,7 @@ test("箭樓：建造選單有箭樓；離主城或治理的城鎮太遠時預�
   await shot(page, info, "r7-build-menu");
   await page.getByRole("button", { name: /^箭樓/ }).tap();
   await expect.poll(() => mode(page)).toBe("place:dragging");
-  await expect(page.getByText(/箭樓要在主城或治理的城鎮附近/)).toBeVisible();
+  await expect(page.getByText("拖曳箭樓到主城或治理的城鎮附近，放開後按 ✓ 或 ✗；會派最近的村民去蓋")).toBeVisible();
   const placement = () => page.evaluate(() => window.__proto?.game?.placement());
   await centre(page, TOWER_OFF.x, TOWER_OFF.y);
   await tap(page, await at(page, TOWER_OFF));
