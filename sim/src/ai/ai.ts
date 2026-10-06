@@ -806,12 +806,6 @@ export interface HardPlan {
   mageReserve: number;
   /** Farmers on the crystal vein once there is a mage hall (and it has found the vein). */
   vein: number;
-  /**
-   * A town taken for the first time within this many cells of its main city is governed (if it
-   * can pay), farther ones plundered; 0: always plunder the first time. A town plundered before
-   * (round 7, plunderOnce) can only be governed.
-   */
-  governNear: number;
   /** Soldiers it takes to a small town (each game: +0..1), and to the big one. */
   townArmy: number;
   bigArmy: number;
@@ -830,17 +824,8 @@ export interface HardPlan {
   pullAll: number;
   /** Steps out of crystal cannon warnings. */
   dodge: boolean;
-  /** Round 7: arrow towers it builds by its main city, toward the map centre, once it has a range (0: none). */
-  towers: number;
-  /** Round 7: with enemies near its main city, its ranged units and mages at home hide in it and its towers. */
+  /** Round 7: with enemies near its main city, its ranged units and mages at home hide in it (and towers it holds). */
   hide: boolean;
-  /**
-   * Round 7: percent cavalry among spearmen, ranged units and cavalry (0: no stable); more against
-   * enemy mages and ranged units, none against an army of spearmen.
-   */
-  cavShare: number;
-  /** Round 7: each enemy arrow tower it knows by the enemy main city counts this much against marching on it. */
-  towerWorth: number;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -855,7 +840,6 @@ export const HARD: HardPlan = {
   counterMix: 15,
   mageReserve: 10,
   vein: 2,
-  governNear: 0,
   townArmy: 5,
   bigArmy: 14,
   pushArmy: 34,
@@ -864,10 +848,7 @@ export const HARD: HardPlan = {
   recallAt: 4,
   pullAll: 4,
   dodge: true,
-  towers: 0,
   hide: true,
-  cavShare: 0,
-  towerWorth: 0,
   looseAt: 0,
   looseWho: 1,
 };
@@ -907,9 +888,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const once = know.rules.features?.plunderOnce === true;
   /** Any round 7 rule on (what only matters then is behind it, so that all off it plays as before). */
   const r7 = Object.values(know.rules.features ?? {}).some((on) => on === true);
-  const towersOn = know.rules.features?.towers === true && plan.towers > 0;
   const hideOn = garrisonOn && plan.hide;
-  const cavalryOn = know.rules.features?.cavalry === true && plan.cavShare > 0;
   const governCost = (size: number): Cost => know.rules.towns?.[size]?.governCost ?? GOVERN_COST[size];
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
   const n = know.map.size;
@@ -937,8 +916,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   // main city's arrows (range 7).
   const rally = real(homeF.u + su * 6 + rng.below(3) - 1, homeF.v + sv * 6 + rng.below(3) - 1);
   const post = real(homeF.u + su * 4, homeF.v + sv * 4);
-  // Arrow towers (round 7) go 7 cells out, toward the map centre (where attacks come from).
-  const towerSpot = real(homeF.u + su * 7, homeF.v + sv * 7);
 
   let mode: HardMode = "home";
   let target = { x: post.x, y: post.y };
@@ -1015,11 +992,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) if (view.towns[r + TownField.id] === id) return (view.towns[r + TownField.flags] & TownFlag.Plundered) !== 0;
         return false;
       };
-      /** It will govern this town when it takes it: plundered before (round 7), or near enough. */
-      const toGovern = (id: number) => {
-        const t = know.map.towns[id];
-        return (once && plunderedTown(id)) || (plan.governNear > 0 && dist2(t.cellX, t.cellY, home.cellX, home.cellY) <= plan.governNear * plan.governNear);
-      };
+      /** It will govern this town when it takes it: only a town plundered before (round 7); others it plunders. */
+      const toGovern = (id: number) => once && plunderedTown(id);
       // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
       const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(know.map.towns[targetTown].size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
@@ -1223,8 +1197,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
-        if (cavalryOn && !has(BuildingType.Stable) && (rules.buildings[BuildingType.Stable].requires ?? []).every((t) => done(t).length > 0)) add(BuildingType.Stable, rally);
-        if (towersOn && has(BuildingType.Range) && count(BuildingType.ArrowTower) < plan.towers) add(BuildingType.ArrowTower, towerSpot);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
@@ -1232,9 +1204,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         for (const p of plans) {
           if (p.at === null) continue;
-          // A mine is only worth it by its node; an arrow tower only where towers may go.
-          const fixed = p.type === BuildingType.Mine || p.type === BuildingType.ArrowTower;
-          const spot = spotNear(view, p.type, p.at.x, p.at.y, p.type === BuildingType.ArrowTower ? 6 : 12) ?? (fixed ? null : spotNear(view, p.type, base.x, base.y, 20));
+          // A mine is only worth it by its node.
+          const spot = spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20));
           if (spot === null) continue;
           const cost = rules.buildings[p.type].cost;
           if (!afford(cost)) {
@@ -1275,15 +1246,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         else if (enemySpear + enemyRanged >= 6 && enemyRanged * 100 >= (enemySpear + enemyRanged) * 60) share += plan.counterMix;
       }
       share = Math.max(20, Math.min(80, share));
-      if (cavalryOn) {
-        // Cavalry beats mages and ranged units and loses to spearmen.
-        const cav = soldiers.filter((u) => u.type === UnitType.Cavalry).length;
-        const shooters = enemyMages + enemyRanged;
-        let want = plan.cavShare;
-        if (shooters >= 4 && shooters * 100 >= (shooters + enemySpear) * 50) want += plan.counterMix;
-        else if (enemySpear >= 6 && enemySpear * 100 >= (shooters + enemySpear) * 70) want = 0;
-        if (cav * 100 < want * (spear + ranged + cav + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
-      }
       if (spear * 100 <= share * (spear + ranged)) {
         trainAt(BuildingType.Barracks, UnitType.Spearman);
         trainAt(BuildingType.Range, UnitType.Ranged);
@@ -1634,15 +1596,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         // At home: march, go for a town, or wait by the city.
         const popFull = toGo < 0 && cap >= rules.maxPopulation && pop >= cap - FULL_MARGIN;
-        // Round 7: the enemy's arrow towers by its main city (seen, or remembered) make it harder.
-        let towersThere = 0;
-        if (plan.towerWorth > 0) {
-          for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
-            if (view.buildings[r + BuildingField.owner] !== 1 - player || view.buildings[r + BuildingField.type] !== BuildingType.ArrowTower) continue;
-            if (dist2(view.buildings[r + BuildingField.cellX], view.buildings[r + BuildingField.cellY], enemyHome.cellX, enemyHome.cellY) <= 14 * 14) towersThere++;
-          }
-        }
-        const strong = armyWorth * 100 >= (enemyWorth + towersThere * plan.towerWorth) * plan.pushRatio;
+        const strong = armyWorth * 100 >= enemyWorth * plan.pushRatio;
         const go = endgame
           ? army.length >= ENDGAME_ARMY
           : assault
