@@ -876,3 +876,33 @@ test("hard keeps a garrison in a town it governs", () => {
   const move = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "move" && c.x === small.cellX && c.y === small.cellY) as { u: number[] } | undefined;
   assert.ok(move !== undefined && move.u.length === 2, "a small town needs 1: two go");
 });
+
+test("round 7: hard's siege when soldiers can hide in the city: ground down it breaks off, and reinforcements wait for the next march", () => {
+  // The same siege as above (20 of 30 fallen by the city, nobody in sight), with the rule on.
+  const on = withSwitches({ garrison: true }, () => siege(20, 0));
+  assert.ok(on.some((c) => c.c === "retreat"), "hiding defenders cannot be seen: ground down, it breaks off");
+  assert.equal(siege(20, 0).some((c) => c.c === "retreat"), false, "rule off: it goes on, as before");
+  // Six new soldiers at home while the army is away: they stay home.
+  const sent = withSwitches({ garrison: true }, () => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+    ai.think(buildView(g, 0));
+    const fresh: number[] = [];
+    for (let k = 0; k < 6; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3 + k, s0.cellY - 3));
+    w.tick += 400;
+    g.fog.update(w);
+    return ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY && fresh.some((id) => c.u.includes(id)));
+  });
+  assert.equal(sent, false);
+});
