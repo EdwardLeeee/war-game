@@ -56,8 +56,10 @@ UNITS[UnitType.Cavalry] = {
 
 const ALL: Resource[] = [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal];
 
-export const BUILDINGS: BuildingInfo[] = [];
-const building = (b: Partial<BuildingInfo> & Pick<BuildingInfo, "type" | "hp" | "size">): BuildingInfo => ({
+/** BuildingInfo with the round 7 fields the simulation always fills (optional in the protocol for mocks). */
+export type SimBuildingInfo = Required<BuildingInfo>;
+export const BUILDINGS: SimBuildingInfo[] = [];
+const building = (b: Partial<BuildingInfo> & Pick<BuildingInfo, "type" | "hp" | "size">): SimBuildingInfo => ({
   walkable: false, cost: cost(), buildTicks: 0, sight: 5, populationCap: 0, accepts: [], trains: [], shelter: 0,
   holds: 0, requires: [], ...b,
 });
@@ -120,7 +122,7 @@ export const MAX_POPULATION = 120;
 /** Queue entries fit 4 bits each in BuildingField.queuePacked. */
 export const QUEUE_MAX = 7;
 
-export function rules(): Rules {
+export function rules(): Required<Rules> {
   return {
     units: UNITS,
     buildings: BUILDINGS,

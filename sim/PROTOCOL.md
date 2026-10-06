@@ -55,10 +55,10 @@
 - `rules: Rules`：兵種與建築的資料表，client 顯示花費、血量、占地、視野、射程時用這份，不要自己抄數值。
   - `units`：血量、防護罩、攻擊、射程（定點）、速度（每 tick 定點）、視野（格）、攻擊間隔（tick）、花費、訓練 tick、人口。
   - `buildings`：血量、占地邊長、能不能走過、花費、建造 tick、視野、人口上限、可以存放哪些資源、可以訓練哪些兵、全體回城時能躲幾名農民。
-    - 第七輪加：`holds`（能躲幾名士兵，`garrison`）、`requires`（要先有哪些自己蓋好的建築才能蓋）。
+    - 第七輪加：`holds`（能躲幾名士兵，`garrison`）、`requires`（要先有哪些自己蓋好的建築才能蓋）。模擬一定會填；型別上選填，理由同下。
   - `multipliers`：剋制加成。`target` 是兵種或 `"shield"`；傷害 × num / den，全部整數運算。
   - `mageCap`（6）、`maxPopulation`（120）、`queueMax`（每棟建築的訓練佇列上限）。
-  - 第七輪（D-061）加的，畫面和電腦都照這份，不要自己抄數值：
+  - 第七輪（D-061）加的，畫面和電腦都照這份，不要自己抄數值。模擬一定會送；型別上是選填，只是讓手寫的假資料（mock）照樣編得過，讀的時候給預設值（沒有就當成關著）：
     - `features`：哪些第七輪的規則開著。`plunderOnce` 城鎮只能搶一次、`towers` 可以蓋箭樓、`garrison` 遠程兵和法師可以躲進建築、`cavalry` 可以蓋馬廄、訓練騎兵。
     - `arrows`：建築自己射的箭。`mainCity` 主城、`townTower` 大城的箭樓、`arrowTower` 玩家的箭樓；各有 `damage`、`range`（定點，從占地邊緣算）、`cooldown`（tick）、`extraMax`（主城每躲 1 名農民多 1 箭，最多幾箭；其他是 0）。
     - `garrisonTypes`：能用 `garrison` 躲進建築的兵種（遠程兵、法師）。

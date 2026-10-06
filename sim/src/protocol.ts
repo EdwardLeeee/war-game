@@ -488,10 +488,13 @@ export interface BuildingInfo {
   trains: UnitType[];
   /** Farmers it can hide during recall. */
   shelter: number;
-  /** Soldiers (`Rules.garrisonTypes`) that can hide in it with `garrison` (round 7, D-061). */
-  holds: number;
-  /** Own finished buildings of these types needed before it can be built (round 7). */
-  requires: BuildingType[];
+  /**
+   * Soldiers (`Rules.garrisonTypes`) that can hide in it with `garrison` (round 7, D-061).
+   * The simulation always fills it; optional only so tables written by hand (mocks) still compile.
+   */
+  holds?: number;
+  /** Own finished buildings of these types needed before it can be built (round 7; always filled, as `holds`). */
+  requires?: BuildingType[];
 }
 
 export interface Multiplier {
@@ -563,25 +566,26 @@ export interface Rules {
   mageCap: number;
   maxPopulation: number;
   queueMax: number;
-  /** Round 7 (D-061). */
-  features: Features;
+  // Round 7 (D-061). The simulation always sends all of these; they are optional only so rules
+  // written by hand (the screen's mocks) still compile. Read them with a default (absent = off).
+  features?: Features;
   /** Arrows of the main city, the big city's tower and arrow towers (round 7). */
-  arrows: { mainCity: ArrowInfo; townTower: ArrowInfo; arrowTower: ArrowInfo };
+  arrows?: { mainCity: ArrowInfo; townTower: ArrowInfo; arrowTower: ArrowInfo };
   /** Unit types that may hide in buildings with `garrison` (round 7). */
-  garrisonTypes: UnitType[];
+  garrisonTypes?: UnitType[];
   /**
    * Where arrow towers may go (round 7, PlaceBit.TowerLand), in cells: within `mainCity` of an
    * own finished main city's footprint (Chebyshev), or within a held town's radius + `town`
    * of its centre (governed or repairing).
    */
-  towerReach: { mainCity: number; town: number };
+  towerReach?: { mainCity: number; town: number };
   /** By TownSize (round 7). */
-  towns: TownInfo[];
+  towns?: TownInfo[];
   /**
    * A plundered town governed again pays `startPermille` of its income at first and climbs
    * linearly to 1000 over `ticks` of being governed (round 7; startPermille 1000 = off).
    */
-  plunderRecovery: { startPermille: number; ticks: number };
+  plunderRecovery?: { startPermille: number; ticks: number };
 }
 
 // --- commands (one JSON object per line in the command log) ---------------------------
