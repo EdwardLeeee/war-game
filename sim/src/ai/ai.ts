@@ -905,6 +905,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
+  /** Any round 7 rule on (what only matters then is behind it, so that all off it plays as before). */
+  const r7 = Object.values(know.rules.features ?? {}).some((on) => on === true);
   const towersOn = know.rules.features?.towers === true && plan.towers > 0;
   const hideOn = garrisonOn && plan.hide;
   const cavalryOn = know.rules.features?.cavalry === true && plan.cavShare > 0;
@@ -1585,7 +1587,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // It breaks off only when outmatched where the front stands (not because the city's arrows
           // thinned it: with nobody left to defend it, the city falls), or when too few are left.
           const atCity = front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 14 * 14);
-          const there = atCity.length * 2 >= front.length;
+          // Round 7: hiding defenders slow a siege and the front strings out behind it; six by the
+          // city are enough to start on it while the rest come on.
+          const there = atCity.length * 2 >= front.length || (r7 && atCity.length >= 6);
           const defenders = worth(foesNear(fc.x, fc.y, 12));
           if (front.length === 0 || (!endgame && !cityLow && (defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0)))) {
             counterReady = false;
@@ -1598,7 +1602,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               // keep coming.
               const close = atCity.filter((u) => !detached(u.id)).map((u) => u.id);
               const late = frontIds.filter((id) => !close.includes(id));
-              if (foesNear(enemyHome.cellX, enemyHome.cellY, 12).length > 0 || close.length === 0) out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
+              // Round 7: a few defenders in sight do not stop an attack on the city that is clearly
+              // stronger or nearly done (a move fights them but never hits the city, which is repaired).
+              const guards = worth(foesNear(enemyHome.cellX, enemyHome.cellY, 12));
+              const pressOn = r7 && close.length > 0 && (cityLow || worth(atCity) >= guards * 3);
+              if ((guards > 0 && !pressOn) || close.length === 0) out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
               else {
                 out.push({ c: "attack", u: close, target: enemyCity });
                 if (late.length > 0) out.push({ c: "move", u: late, x: enemyHome.cellX, y: enemyHome.cellY });
