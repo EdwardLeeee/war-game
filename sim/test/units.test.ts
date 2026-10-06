@@ -468,6 +468,9 @@ test("big groups reach their slots, close and loose (slots off to the side of th
     cmd(g, 0, { c: "move", u: ids, x: a.x + 22, y: a.y + 22 });
     const u = g.w.units.col;
     assert.ok(settle(g, ids, 1500), `${n} ${loose ? "loose" : "close"}: ${ids.filter((id) => u.order[slotOf(g, id)] !== Order.None).length} still on their way`);
+    // Loose, those standing make room for the last ones in a moment (#116; measured: nearest
+    // 0.90 cells the tick the last one got there, 2.00 three seconds later).
+    if (loose) run(g, 60);
     assert.ok(loose ? loose2(g, ids) : spacing(g, ids).mean <= 1.25, `${n}: ${shown(g, ids)}`);
   }
 });

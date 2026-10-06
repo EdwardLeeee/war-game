@@ -80,6 +80,8 @@ export class UnitSystem {
   private keepHead: Int32Array;
   private keepNext = new Int32Array(256);
   private team = new Int32Array(256);
+  /** Per unit this tick (move()): 1 when standing mates of its team pushed it apart, 2 when one on the move did too. */
+  private kept = new Uint8Array(256);
   private attacking = new Uint8Array(256);
   /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
   private startTarget = new Int32Array(256);
@@ -117,6 +119,7 @@ export class UnitSystem {
       this.cellNext = new Int32Array(c);
       this.keepNext = new Int32Array(c);
       this.team = new Int32Array(c);
+      this.kept = new Uint8Array(c);
       this.attacking = new Uint8Array(c);
       this.startTarget = new Int32Array(c);
       this.unitDamage = new Int32Array(c);
@@ -780,6 +783,7 @@ export class UnitSystem {
       let py = 0;
       // A loose soldier keeps those of its own player and team at `spacing` (below).
       const ti = this.team[i];
+      this.kept[i] = 0;
       for (let y = Math.max(cy - 1, 0); y <= Math.min(cy + 1, n - 1); y++) {
         for (let x = Math.max(cx - 1, 0); x <= Math.min(cx + 1, n - 1); x++) {
           for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
@@ -811,6 +815,8 @@ export class UnitSystem {
               const k = dx === 0 && dy === 0 ? (u.id[i] < u.id[j] ? 0 : 8) + (w.yFirst[u.owner[i]] ? 4 : 0) : dir16(dx, dy);
               px += idiv(DIR16_X[k] * PUSH, CELL);
               py += idiv(DIR16_Y[k] * PUSH, CELL);
+              if (this.kept[i] === 0) this.kept[i] = 1;
+              if (u.action[j] !== Action.Idle) this.kept[i] = 2;
             }
           }
         }
@@ -837,6 +843,14 @@ export class UnitSystem {
       const moved = Math.abs(this.newX[i] - u.x[i]) + Math.abs(this.newY[i] - u.y[i]);
       u.x[i] = this.newX[i];
       u.y[i] = this.newY[i];
+      // A loose soldier standing at its place (#116): pushed apart by mates who stand too, its
+      // place moves with it. Otherwise one pushed against a rock walked back to the place, was
+      // pushed off again, and never stood still. A mate still on its way only bumps it: it goes
+      // back to its place. One walking back after a chase is not Idle.
+      if (this.kept[i] === 1 && u.action[i] === Action.Idle) {
+        u.anchorX[i] = u.x[i];
+        u.anchorY[i] = u.y[i];
+      }
       // A unit pressed against others near its slot for 40 ticks counts as arrived.
       if ((u.order[i] === Order.Move || u.order[i] === Order.Retreat) && u.target[i] < 0) {
         const dx = u.orderX[i] - u.x[i];
