@@ -288,9 +288,9 @@ for (const viewport of [null, FULL_SCREEN]) {
     await expect(page.locator(".cmds").getByRole("button", { name: /^躲進去/ })).toBeVisible();
     await expect(page.locator(".sel-note")).toBeVisible();
     await checkLayout(page);
-    // 進攻、撤退、堅守、停止, then 隊形, the mages' two and 躲進去: still two rows.
+    // 進攻、撤退、堅守、停止, then 隊形 (two columns wide) and the mages' two; 躲進去 starts a third row.
     const rows = new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y)));
-    expect(rows.size, "two rows of commands").toBe(2);
+    expect(rows.size, "three rows of commands").toBe(3);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     await shot(page, info, `r7-layout-army-${width}x${height}`);
     await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
@@ -322,7 +322,8 @@ test("開關關著（沒有 r7）：沒有箭樓、沒有躲進去、建築不�
   const panel = page.locator(".sel-info");
   await expect(panel).toContainText("主城");
   await expect(panel.locator(".sel-garrison")).toHaveCount(0);
-  await centre(page, OUR_TOWN.x, OUR_TOWN.y);
+  // Off the screen centre, where the main city was just tapped: a tap there again would be a double tap.
+  await centre(page, OUR_TOWN.x + 4, OUR_TOWN.y + 2);
   await tap(page, await townSpot(page, OUR_TOWN));
   await expect(panel).toContainText("民兵");
   await expect(panel).not.toContainText("收入");
