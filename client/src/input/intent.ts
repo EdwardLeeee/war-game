@@ -58,7 +58,7 @@ export type Intent =
 
 export type WheelItem = "cast" | "autocast" | "advance" | "retreat" | "hold";
 
-export const isMilitary = (type: number): boolean => type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage;
+export const isMilitary = (type: number): boolean => type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage || type === UnitType.Cavalry;
 
 export const toCell = (w: number): number => Math.floor(w / TILE_PX);
 /** World px to simulation fixed point (integers only go to the simulation). */
@@ -177,7 +177,7 @@ export function boxSelect(world: IntentWorld, x0: number, y0: number, x1: number
 
 /**
  * Skill wheel for the long-pressed unit (GDD §10): mages cast, autocast, retreat and 堅守;
- * spearmen and ranged 進攻, 撤退, 堅守 (D-050); farmers, who have neither, only 撤退.
+ * spearmen, ranged and cavalry 進攻, 撤退, 堅守 (D-050); farmers, who have neither, only 撤退.
  */
 export function wheelItems(pressedType: number): WheelItem[] {
   if (pressedType === UnitType.Mage) return ["cast", "autocast", "retreat", "hold"];

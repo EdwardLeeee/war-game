@@ -1,8 +1,9 @@
 // 第七輪 (D-061) on the fake world with its rules on (?test=1&mock=1&r7=1, src/mock/mock-port.ts):
 // a town plundered once offers only 治理, a governed town's income line, arrow towers only near
 // the main city or a governed town, 躲進去 and 全部出來, those hiding left out of orders given to
-// many (ceo 2026-10-07), and the enemy tower's 裡面有人 and its arrows. The last tests check
-// that without the switches none of it shows. The simulation's side is tested by core.
+// many (ceo 2026-10-07), the enemy tower's 裡面有人 and its arrows, and the stable training
+// cavalry. The last tests check that without the switches none of it shows. The simulation's
+// side is tested by core.
 
 import { expect, type Page, test } from "@playwright/test";
 import { armyButton, FULL_SCREEN, INTERACTIVE, IPHONE_SAFE, injectSafeArea, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
@@ -18,6 +19,8 @@ const FOE_TOWER = { x: 26, y: 63 };
 const TOWER_ON = { x: 12, y: 84 };
 /** 10 cells off the main city and 14 off our town: not TowerLand. */
 const TOWER_OFF = { x: 21, y: 76 };
+/** Ours, training cavalry. */
+const STABLE = { x: 14, y: 70, size: 3 };
 const GROUP_1 = ".groups > button:nth-child(1)";
 /**
  * Waits on the fake world's ticks (shooting, slipping inside): Chromium on a busy runner ran
@@ -283,6 +286,54 @@ test("別人的建築裡有人：敵方箭樓右上角有記號，點它寫「�
   await shot(page, info, "r7-occupied-marker");
 });
 
+test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎兵出來加入編隊，軍團畫面的騎兵列算到，全軍也算到（D-061）", async ({ page }, info) => {
+  await start(page);
+  const spear = await ownIds(page, [1]);
+  const soldiers = (await ownIds(page, [1, 2, 3])).length;
+  await selectForCommands(page, spear);
+  await saveGroup(page, GROUP_1);
+  // 建造 lists 馬廄 (nothing to build first in the fake world, as in the simulation).
+  await selectForCommands(page, []);
+  await page.getByRole("button", { name: "建造" }).tap();
+  await expect(page.getByRole("button", { name: /^馬廄/ })).toBeEnabled();
+  await page.getByRole("button", { name: "返回" }).tap();
+  // The stable trains cavalry, and on its own too, as the barracks does (D-054).
+  await centre(page, STABLE.x + 1, STABLE.y + 1);
+  await tap(page, await at(page, { x: STABLE.x + 1, y: STABLE.y + 1 }));
+  const panel = page.locator(".sel-info");
+  await expect(panel).toContainText("馬廄");
+  await expect(panel).toContainText("自動訓練中");
+  await page.getByRole("button", { name: /^訓練騎兵/ }).tap();
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "train", type: 5, n: 1 });
+  await shot(page, info, "r7-stable");
+  await expect.poll(async () => (await ownIds(page, [5])).length).toBe(1);
+  const [cavalry] = await ownIds(page, [5]);
+  // No group short of cavalry: it joins the largest, which wants one more (D-054).
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groupInfo() ?? []))[0]?.ids ?? []).toContain(cavalry);
+  await shot(page, info, "r7-cavalry");
+  await tapOn(page, GROUP_1);
+  const row = panel.locator(".group-row").filter({ hasText: "騎兵" });
+  await expect(row.locator(".group-has")).toHaveText("現有 1");
+  await expect(row.locator(".group-want")).toHaveText("1");
+  await shot(page, info, "r7-cavalry-group");
+  await expect(armyButton(page)).toHaveText(`全軍 ${soldiers + 1}`);
+});
+
+for (const viewport of [null, FULL_SCREEN]) {
+  test(`版面：軍團畫面多了騎兵一列，按鈕至少 44 pt、在安全區內、不重疊（${viewport === null ? "工具列展開" : "工具列收合"}）`, async ({ page }, info) => {
+    await start(page);
+    if (viewport !== null) await page.setViewportSize(viewport);
+    await injectSafeArea(page);
+    await selectForCommands(page, await ownIds(page, [1]));
+    await saveGroup(page, GROUP_1);
+    await expect(page.locator(".sel-info .group-row")).toHaveCount(4);
+    await expect(page.locator(".sel-info .group-row").nth(3)).toContainText("騎兵");
+    await checkLayout(page);
+    const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
+    await shot(page, info, `r7-layout-group-${width}x${height}`);
+  });
+}
+
 for (const viewport of [null, FULL_SCREEN]) {
   test(`版面：選了全軍（有躲進去）、選了主城（有躲了幾名和全部出來）時，按鈕至少 44 pt、在安全區內、不重疊（${viewport === null ? "工具列展開" : "工具列收合"}）`, async ({ page }, info) => {
     await start(page);
@@ -311,7 +362,7 @@ for (const viewport of [null, FULL_SCREEN]) {
   });
 }
 
-test("開關關著（沒有 r7）：沒有箭樓、沒有躲進去、建築不寫躲了幾名士兵、城鎮不寫收入，攻下城鎮照樣有搶（D-061）", async ({ page }) => {
+test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、躲進去，建築不寫躲了幾名士兵、城鎮不寫收入，攻下城鎮照樣有搶（D-061）", async ({ page }) => {
   await start(page, false);
   const { hiders, spear } = await army(page);
   await selectForCommands(page, [...spear, ...hiders].sort((a, b) => a - b));
@@ -321,7 +372,15 @@ test("開關關著（沒有 r7）：沒有箭樓、沒有躲進去、建築不�
   await page.getByRole("button", { name: "建造" }).tap();
   await expect(page.getByRole("button", { name: /^民居/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^箭樓/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^馬廄/ })).toHaveCount(0);
   await page.getByRole("button", { name: "返回" }).tap();
+  // 軍團畫面: the three rows of before, no 騎兵.
+  await selectForCommands(page, spear);
+  await saveGroup(page, GROUP_1);
+  await expect(page.locator(".sel-info .group-row")).toHaveCount(3);
+  await expect(page.locator(".sel-info .group-row").filter({ hasText: "騎兵" })).toHaveCount(0);
+  // The group's panel could cover the main city at the centre of the screen.
+  await page.evaluate(() => window.__proto?.game?.select([]));
   await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
   await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
   const panel = page.locator(".sel-info");
