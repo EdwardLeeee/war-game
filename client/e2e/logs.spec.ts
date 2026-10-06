@@ -101,7 +101,7 @@ test("對局紀錄：投降後存在手機上並上傳；內容是這局的版�
   check();
 });
 
-test("對局紀錄：還沒部署收紀錄的網址時，只存在手機上，不傳出去", async ({ page }) => {
+test("對局紀錄：測試頁沒給 ?logs= 時只存在手機上，不傳出去（CI 不會打到真的收紀錄網址）", async ({ page }) => {
   const check = watchErrors(page);
   const out: string[] = [];
   page.on("request", (r) => {

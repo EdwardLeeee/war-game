@@ -12,10 +12,19 @@ import { type LogBackend, LogStore, type StoredLog } from "./store.ts";
 import { type Poster, uploadPending } from "./upload.ts";
 
 /**
- * Where records go: the Worker's /logs. Empty until the user has deployed it (README of
- * services/game-logs): then records are only kept on the phone.
+ * Where records go: the Worker's /logs (services/game-logs, deployed by the user 2026-10-07).
+ * Not a secret: anyone may post a record, only the read key lists or downloads them.
  */
-export const GAME_LOGS_URL = "";
+export const GAME_LOGS_URL = "https://war-game-logs.edwardleeee.workers.dev/logs";
+
+/**
+ * The URL this page uploads to: `?test=1&logs=` when given (the e2e catches it there); none
+ * on other test pages, so that CI never posts to the real Worker; GAME_LOGS_URL for players.
+ */
+export function logsUrlFor(test: boolean, override: string | null): string {
+  if (override !== null) return override;
+  return test ? "" : GAME_LOGS_URL;
+}
 
 /** A game left by 重來 is kept from this much game time on: shorter ones are restarts, not games. */
 export const MIN_ABANDONED_TICKS = 60 * TICKS_PER_SECOND;

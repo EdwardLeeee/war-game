@@ -12,7 +12,7 @@ import { parseParams, SPEED_TPS } from "./params.ts";
 import { DIFFICULTY_LABEL, loadDifficulty, saveDifficulty } from "./difficulty.ts";
 import { loadTownHintOff } from "./hint-pref.ts";
 import { recordCode } from "./logs/code.ts";
-import { GAME_LOGS_URL, LogCollector, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "./logs/collect.ts";
+import { LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "./logs/collect.ts";
 import { openIndexedDb, type StoredLog } from "./logs/store.ts";
 import { fetchPoster } from "./logs/upload.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
@@ -47,7 +47,7 @@ const params = parseParams(location.search);
  * Worker; the player sees only 紀錄代號 on the start screen. Waiting uploads go when the page opens.
  */
 const code = recordCode();
-const logs = new LogCollector(openIndexedDb(), params.logsUrl ?? GAME_LOGS_URL, fetchPoster());
+const logs = new LogCollector(openIndexedDb(), logsUrlFor(params.test, params.logsUrl), fetchPoster());
 void logs.flush();
 
 const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false, recordCode: code, logs: () => logs.list() };

@@ -5,7 +5,7 @@ war-game-ai 用讀取金鑰把紀錄抓回來，重播同一局、看電腦輸�
 玩的人不用按任何東西，也看不到上傳的事。
 
 - 收紀錄的程式：這個資料夾，一個 Cloudflare Worker 加一個 KV（`src/worker.ts`）。
-- 手機那一半：`client/src/logs/`（存在 IndexedDB，最多 50 局；網址是 `client/src/logs/collect.ts` 的 `GAME_LOGS_URL`，部署前是空的，只存不傳）。
+- 手機那一半：`client/src/logs/`（存在 IndexedDB，最多 50 局；網址是 `client/src/logs/collect.ts` 的 `GAME_LOGS_URL`，Worker 的 `/logs`。測試頁不上傳）。
 - 紀錄的格式和檢查：`src/record.ts`，手機和 Worker 共用。
 
 ## 一筆紀錄裡有什麼
@@ -113,7 +113,7 @@ war-game-ai 用讀取金鑰把紀錄抓回來，重播同一局、看電腦輸�
 
    剛部署時是 `0 records listed, 0 kept, 0 downloaded to /home/…/war-game-logs`。看到 `401` 是金鑰沒放好，回第 6 步。
 
-9. **把網址貼給 ceo**（只貼網址，不貼金鑰）。ceo 轉給 war-game-client 填進 `GAME_LOGS_URL`，合併上線後手機才開始上傳；
+9. **把網址貼給 ceo**（只貼網址，不貼金鑰）。ceo 轉給 war-game-client 填進 `GAME_LOGS_URL`（後面加 `/logs`），合併上線後手機才開始上傳；
    在那之前打的局已經存在手機上，上線後下次打開遊戲就會補傳。
 
 ## 給 war-game-ai：抓紀錄
