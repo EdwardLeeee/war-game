@@ -8,7 +8,8 @@
 // With `?r7=1` round 7's rules are on (D-061, sim/PROTOCOL.md 3.3): towns plundered once (the
 // small neutral town and our governed one, which pays 25% and climbs back), arrow towers on
 // TowerLand, ranged units and mages hiding in our main city or an arrow tower, an enemy arrow
-// tower with someone inside that shoots (the `shot` event; nothing gets hurt here).
+// tower with someone inside that shoots (the `shot` event; nothing gets hurt here), and our
+// stable training cavalry.
 
 import type { SimPort } from "../game/port.ts";
 import {
@@ -90,6 +91,7 @@ export const MOCK_RULES: Rules = {
     buildingInfo(BuildingType.TownTower, 800, 2, cost(0, 0, 0)),
     // Round 7 (D-061): shown only while `features.towers` is on.
     buildingInfo(BuildingType.ArrowTower, 500, 2, cost(0, 100, 50), { sight: 8, holds: 3 }),
+    buildingInfo(BuildingType.Stable, 500, 3, cost(0, 150, 50), { trains: [UnitType.Cavalry] }),
   ],
   multipliers: [],
   mageCap: 6,
@@ -97,10 +99,10 @@ export const MOCK_RULES: Rules = {
   queueMax: 5,
 };
 
-/** `?r7=1`: round 7's switches on, the simulation's values (馬廄與騎兵 come with their own PR). */
+/** `?r7=1`: round 7's switches on, with the simulation's values. */
 export const MOCK_RULES_R7: Rules = {
   ...MOCK_RULES,
-  features: { plunderOnce: true, towers: true, garrison: true, cavalry: false },
+  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true },
   arrows: rules().arrows,
   garrisonTypes: rules().garrisonTypes,
   towerReach: rules().towerReach,
@@ -317,6 +319,8 @@ export class MockPort implements SimPort {
     this.building(NEUTRAL, BuildingType.TownTower, 47, 45);
     // Round 7: an enemy arrow tower in view with someone inside, shooting at our soldiers near it.
     if (this.round7) this.building(FOE, BuildingType.ArrowTower, 26, 63).occupied = true;
+    // Round 7: our stable, training on its own like the barracks (D-054).
+    if (this.round7) this.building(ME, BuildingType.Stable, 14, 70).flags = BuildingFlag.AutoTrain;
 
     const town = (size: TownSize, cx: number, cy: number, state: TownState, owner: number, timer = 0, total = 0, militia = 0) => {
       const t: MTown = { id: this.towns.length, size, cx, cy, radius: size === TownSize.Large ? 6 : 4, state, owner, timer, timerTotal: total, militia, plundered: false, income: 1000 };

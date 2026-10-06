@@ -260,7 +260,7 @@ export class Game implements GestureHost {
     let n = 0;
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       const t = u[o + UnitField.type];
-      if (t !== UnitType.Spearman && t !== UnitType.Ranged && t !== UnitType.Mage) continue;
+      if (!isSoldier(t)) continue;
       const p = view.unitPos(o);
       x += p.x;
       y += p.y;
@@ -677,7 +677,7 @@ export class Game implements GestureHost {
     for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
       const type = b[o + BuildingField.type];
       if (b[o + BuildingField.owner] !== view.me || b[o + BuildingField.rallyX] < 0) continue;
-      if (type !== BuildingType.Barracks && type !== BuildingType.Range && type !== BuildingType.MageHall) continue;
+      if (type !== BuildingType.Barracks && type !== BuildingType.Range && type !== BuildingType.MageHall && type !== BuildingType.Stable) continue;
       const id = b[o + BuildingField.id];
       if (best === null || id < best.id) best = { id, x: b[o + BuildingField.rallyX], y: b[o + BuildingField.rallyY] };
     }
