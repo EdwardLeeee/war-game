@@ -311,6 +311,11 @@ test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎
   // No group short of cavalry: it joins the largest, which wants one more (D-054).
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groupInfo() ?? []))[0]?.ids ?? []).toContain(cavalry);
   await shot(page, info, "r7-cavalry");
+  // Beside the spearmen, close up: the two shapes read apart.
+  await place(page, [cavalry], [{ x: 25, y: 69 }]);
+  await centre(page, 23.5, 68.5, 2.5);
+  await shot(page, info, "r7-cavalry-vs-spear");
+  await centre(page, 22, 71);
   await tapOn(page, GROUP_1);
   const row = panel.locator(".group-row").filter({ hasText: "騎兵" });
   await expect(row.locator(".group-has")).toHaveText("現有 1");
