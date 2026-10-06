@@ -185,12 +185,22 @@ export class Economy {
     return false;
   }
 
-  /** Lets a hidden farmer out where it went in. */
+  /** Lets a hidden farmer, or a soldier hiding in a building (round 7), out where it went in. */
   release(w: World, i: number): void {
     const u = w.units.col;
     if (u.action[i] !== Action.Garrisoned) return;
-    const bs = w.building(u.orderTarget[i]);
-    if (bs >= 0 && w.buildings.col.garrisoned[bs] > 0) w.buildings.col.garrisoned[bs]--;
+    const farmer = u.type[i] === UnitType.Farmer;
+    // A calibrating mage keeps its building in prevTarget (units.ts, startCast).
+    const bs = w.building(!farmer && u.order[i] === Order.Cast ? u.prevTarget[i] : u.orderTarget[i]);
+    const b = w.buildings.col;
+    if (bs >= 0 && farmer && b.garrisoned[bs] > 0) b.garrisoned[bs]--;
+    if (bs >= 0 && !farmer && b.soldiers[bs] > 0) b.soldiers[bs]--;
+    if (!farmer) {
+      u.castProgress[i] = 0;
+      u.prevOrder[i] = Order.None;
+      u.prevTarget[i] = -1;
+      u.target[i] = -1;
+    }
     u.action[i] = Action.Idle;
     u.order[i] = Order.None;
     u.orderTarget[i] = -1;

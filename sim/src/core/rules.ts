@@ -133,6 +133,7 @@ export function rules(): Required<Rules> {
     features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on },
     arrows: { mainCity: MAIN_ARROW, townTower: { ...TOWER_ARROW, extraMax: 0 }, arrowTower: { ...ARROW_TOWER, extraMax: 0 } },
     garrisonTypes: GARRISON_TYPES,
+    garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },
     towerReach: TOWER_REACH,
     towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
@@ -254,9 +255,14 @@ export const GOVERN_INCOME = {
  */
 export const PLUNDER_RECOVERY = { on: true, startPermille: 250, ticks: 10 * 60 * S };
 /** Players can build arrow towers (BuildingType.ArrowTower). */
-export const TOWERS = { on: false };
-/** Ranged units and mages can hide in main cities and arrow towers (`garrison`, `leave`). */
-export const GARRISON = { on: false };
+export const TOWERS = { on: true };
+/**
+ * Ranged units and mages can hide in main cities and arrow towers (`garrison`, `leave`). A mage
+ * hiding fires the crystal cannon (`cannon`) at `cannonPermille` of its damage and `cannonCooldown`
+ * times its cooldown (ceo 2026-10-07, B): at full strength, 2 towers with 6 hidden wiped out 24
+ * and 30 attackers without a loss (src/balance.ts, "攻打主城"); so it takes about a quarter more.
+ */
+export const GARRISON = { on: true, cannon: true, cannonPermille: 500, cannonCooldown: 2 };
 /** Players can build stables and train cavalry. */
 export const CAVALRY = { on: false };
 /** Unit types that may hide in buildings. */

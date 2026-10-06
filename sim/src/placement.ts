@@ -14,7 +14,8 @@ export interface PlacementGrid {
 /**
  * 0 if a building of this kind fits with its top-left cell at (cellX, cellY), otherwise
  * Reject.BadPlacement. Every footprint cell must be on the map, explored and not blocked;
- * a farm's cells must also all be farm land (near your own main city or granary).
+ * a farm's cells must also all be farm land (near your own main city or granary), an arrow
+ * tower's tower land (near your own main city or a town you hold, round 7).
  * Units standing there do not block: they are pushed aside.
  */
 export function checkPlacement(
@@ -28,11 +29,13 @@ export function checkPlacement(
   if (!Number.isInteger(cellX) || !Number.isInteger(cellY)) return Reject.BadPlacement;
   if (cellX < 0 || cellY < 0 || cellX + s > n || cellY + s > n) return Reject.BadPlacement;
   const farm = building.type === BuildingType.Farm;
+  const tower = building.type === BuildingType.ArrowTower;
   for (let y = cellY; y < cellY + s; y++) {
     for (let x = cellX; x < cellX + s; x++) {
       const c = grid.cells[y * n + x];
       if ((c & (PlaceBit.Blocked | PlaceBit.Unexplored)) !== 0) return Reject.BadPlacement;
       if (farm && (c & PlaceBit.FarmLand) === 0) return Reject.BadPlacement;
+      if (tower && (c & PlaceBit.TowerLand) === 0) return Reject.BadPlacement;
     }
   }
   return 0;

@@ -573,6 +573,8 @@ export interface Rules {
   arrows?: { mainCity: ArrowInfo; townTower: ArrowInfo; arrowTower: ArrowInfo };
   /** Unit types that may hide in buildings with `garrison` (round 7). */
   garrisonTypes?: UnitType[];
+  /** A mage hiding in a building fires the cannon at `permille` of its damage, its cooldown `cooldownTimes` as long (round 7). */
+  garrisonCannon?: { permille: number; cooldownTimes: number };
   /**
    * Where arrow towers may go (round 7, PlaceBit.TowerLand), in cells: within `mainCity` of an
    * own finished main city's footprint (Chebyshev), or within a held town's radius + `town`

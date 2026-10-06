@@ -5,8 +5,8 @@
 //   node src/balance.ts [--check 1,2,3,4]
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
-import { type Army, armyCost, armyText, BOTH, type Fight, fewestToTake, fight, type Formation, siege, twoShots } from "./balance-lib.ts";
-import { CANNON, JOIN_FIGHT, MULT_DEN, MULT_NUM, UNITS } from "./core/rules.ts";
+import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, siege, twoShots } from "./balance-lib.ts";
+import { CANNON, GARRISON, JOIN_FIGHT, MULT_DEN, MULT_NUM, UNITS } from "./core/rules.ts";
 import { TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -233,6 +233,28 @@ function main(): void {
     ] as const) {
       const s = siege(size, n);
       out.push(`| ${n} 槍兵打${name(size)} | ${s.taken ? "攻下" : "沒攻下"}，剩 ${s.left} 名，生命剩 ${s.hpPercent}%，${(s.ticks / 20).toFixed(1)} 秒 |`);
+    }
+    out.push("");
+  }
+  {
+    // Round 7 (D-061): attacking a main city that defends itself. The attackers are the push
+    // group's first march (24) and a quarter more (30); goal: towers and hiding make it clearly
+    // harder, but not impossible.
+    out.push(
+      "### 攻打主城（第七輪，D-061）",
+      "",
+      "- 攻方（玩家 0）從 20 格外前進到主城旁，遇到什麼打什麼，沒有操作。守方（玩家 1）4 遠程＋2 法師（自動施放、魔晶 100），三種站法：站在主城旁、全部躲進主城、2 座箭樓（主城前 6 格）各躲 3 名。最多 3 分鐘。",
+      `- 躲在建築裡的法師放晶砲：傷害 ${GARRISON.cannonPermille / 10}%、冷卻 ×${GARRISON.cannonCooldown}（ceo 2026-10-07 選 B）。`,
+      "",
+      "| 攻方 | 隊形 | 站在主城旁 | 躲進主城 | 2 座箭樓各躲 3 名 |",
+      "|---|---|---|---|---|",
+    );
+    const show = (r: Assault) =>
+      `${r.fell ? `打下，${(r.ticks / 20).toFixed(0)} 秒，剩 ${r.attackersLeft} 名` : `沒打下，${r.attackersLeft > 0 ? `剩 ${r.attackersLeft} 名` : "全滅"}，主城剩 ${r.cityHp}`}；守方剩 ${r.defendersLeft}${r.towersLeft > 0 ? `、箭樓剩 ${r.towersLeft}` : ""}`;
+    for (const army of [A(14, 8, 2), A(17, 10, 3)]) {
+      for (const loose of [false, true]) {
+        out.push(`| ${armyText(army)} | ${loose ? "散開" : "密集"} | ${(["standing", "city", "towers"] as const).map((d) => show(assault(d, army, loose))).join(" | ")} |`);
+      }
     }
     out.push("");
   }
