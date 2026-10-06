@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Camera } from "../src/camera/camera.ts";
 import { type GestureHost, GestureRecognizer } from "../src/input/gestures.ts";
-import { boxSelect, holdIntents, type Intent, longPressKind, retreatNow, type Selection, tapIntents, wheelIntents, wheelItems } from "../src/input/intent.ts";
+import { boxSelect, holdIntents, type Intent, longPressKind, retreatHome, type Selection, tapIntents, wheelIntents, wheelItems } from "../src/input/intent.ts";
 import { BuildingType, NodeKind, NO_OWNER, PlaceBit, Stance } from "../src/sim.ts";
 import { LONG_PRESS_MS, TILE_PX } from "../src/tuning.ts";
 import { Placement } from "../src/ui/placement.ts";
@@ -239,19 +239,27 @@ test("堅守（指令區或輪盤）→ 選的兵停下並改成堅守；農民�
   assert.deepEqual(holdIntents(w, [1]), [], "only a farmer: nothing");
 });
 
-test("撤退（指令區或輪盤）→ 直接退回主城前面那一格，不用再點第二下；沒有主城時才點地面選位置（使用者 2026-10-01）", () => {
+test("撤退（指令區或輪盤）→ 選位置，和進攻一樣：點地面撤到那一格；點自己的主城回到主城前面那一格（D-059）", () => {
   const w = world();
+  w.things.push({ kind: "building", id: 12, owner: ENEMY, type: BuildingType.MainCity, cx: 40, cy: 40 });
   const sel: Selection = { units: [2, 3], building: null };
   w.home = { x: 2, y: 7 };
-  const home = { mode: null, intents: [{ kind: "command", cmd: { c: "retreat", u: [2, 3], x: 2, y: 7 } }] };
-  assert.deepEqual(retreatNow(sel, w.homeCell()), home);
-  assert.deepEqual(wheelIntents(w, sel, "retreat"), home, "the wheel's 撤退 does the same");
-  // No main city: pick a spot, as before.
+  assert.deepEqual(wheelIntents(w, sel, "retreat"), { mode: "retreat", intents: [] }, "the wheel's 撤退 asks where to");
+  assert.deepEqual(wheelIntents(w, { units: [], building: null }, "retreat"), { mode: null, intents: [] }, "nothing selected: nothing");
+  const retreat = (x: number, y: number) => [{ kind: "command", cmd: { c: "retreat", u: [2, 3], x, y } }, { kind: "endMode" }];
+  // Open ground: that cell.
+  assert.deepEqual(tapIntents(w, sel, "retreat", at(15), at(9), 1, R), retreat(15, 9));
+  // The own main city: home, in front of it.
+  assert.deepEqual(tapIntents(w, sel, "retreat", at(1), at(8), 1, R), retreat(2, 7));
+  // Another building, or the enemy's main city: the cell tapped, like any spot.
+  assert.deepEqual(tapIntents(w, sel, "retreat", at(30), at(30), 1, R), retreat(30, 30));
+  assert.deepEqual(tapIntents(w, sel, "retreat", at(40), at(40), 1, R), retreat(40, 40));
+  // 退回主城 on the prompt strip.
+  assert.deepEqual(retreatHome(sel, w.homeCell()), retreat(2, 7));
+  // No main city any more: the city's cell is just a spot.
   w.home = null;
-  assert.deepEqual(retreatNow(sel, w.homeCell()), { mode: "retreat", intents: [] });
-  assert.deepEqual(wheelIntents(w, sel, "retreat"), { mode: "retreat", intents: [] });
-  // Nothing selected: nothing happens.
-  assert.deepEqual(retreatNow({ units: [], building: null }, { x: 2, y: 7 }), { mode: null, intents: [] });
+  assert.deepEqual(tapIntents(w, sel, "retreat", at(1), at(8), 1, R), retreat(1, 8));
+  assert.deepEqual(tapIntents(w, { units: [], building: null }, "retreat", at(15), at(9), 1, R), [{ kind: "endMode" }]);
 });
 
 test("放建築 → 預覽跟著手指移動（紅綠依可蓋與否），放開後按 ✓ 或 ✗", () => {

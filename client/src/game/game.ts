@@ -13,7 +13,6 @@ import {
   longPressKind,
   type Mode,
   retreatHome,
-  retreatNow,
   tapIntents,
   type WheelItem,
   wheelIntents,
@@ -88,12 +87,9 @@ export interface GameOptions {
   ended?: () => void;
 }
 
-/** After 撤退 went home at once, 「改撤到別處」 stays this long (user 2026-10-01: 撤退很難用). */
-const RETREAT_PROMPT_MS = 4000;
-
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   advance: "點地面或小地圖：整隊前進，遇到敵人一起打",
-  retreat: "點地面或小地圖選撤退位置",
+  retreat: "點地面或小地圖：撤到那裡；點主城回家",
   cast: "點地面選晶砲落點",
   rally: "點地面設集結點",
 };
@@ -958,11 +954,9 @@ export class Game implements GestureHost {
     return { x: (b[o + BuildingField.cellX] + s / 2) * TILE_PX, y: (b[o + BuildingField.cellY] + s / 2) * TILE_PX };
   }
 
-  /** 撤退 in the command area, with units selected: straight back to the main city. */
+  /** 撤退 in the command area, with units selected: pick where to, as for 進攻 (D-059). */
   retreatSelection(): void {
-    const view = this.view;
-    if (view === null) return;
-    this.retreated(retreatNow(view.selection, view.homeCell()));
+    if ((this.view?.selection.units.length ?? 0) > 0) this.setMode("retreat");
   }
 
   /**
@@ -986,19 +980,6 @@ export class Game implements GestureHost {
     this.toast(`全軍 ${u.length} 名退回主城`);
   }
 
-  /** After 撤退 (command area or wheel): on the way home, 「改撤到別處」 for a few seconds; without a main city, pick a spot. */
-  private retreated(r: { mode: Mode | null; intents: Intent[] }): void {
-    if (r.mode !== null) {
-      this.setMode(r.mode);
-      this.toast("主城不在了：點地面或小地圖選撤退位置");
-      return;
-    }
-    if (r.intents.length === 0) return;
-    this.setMode("normal");
-    this.apply(r.intents);
-    this.overlays.showPrompt("正在退回主城", [{ label: "改撤到別處", primary: true, onTap: () => this.setMode("retreat") }], RETREAT_PROMPT_MS);
-  }
-
   setMode(mode: Mode): void {
     this.mode = mode;
     if (mode === "normal") {
@@ -1006,8 +987,10 @@ export class Game implements GestureHost {
       return;
     }
     const buttons: PromptButton[] = [];
-    if (mode === "retreat") {
-      buttons.push({ label: "退回主城", primary: true, onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, this.view?.homeCell() ?? null)) });
+    // 退回主城 (D-059), while there is a main city to go back to.
+    const home = this.view?.homeCell() ?? null;
+    if (mode === "retreat" && home !== null) {
+      buttons.push({ label: "退回主城", primary: true, onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, home)) });
     }
     // 取消 while picking where to advance or retreat to: they stop and hold (D-054).
     const holds = mode === "advance" || mode === "retreat";
@@ -1050,7 +1033,6 @@ export class Game implements GestureHost {
         // 進攻 while they advance, 撤退 while they retreat: they stop and hold (D-054).
         if ((id === "advance" || id === "retreat") && allIn(view, view.selection.units, id)) return this.cancelToHold();
         const r = wheelIntents(view, view.selection, id as WheelItem);
-        if (id === "retreat") return this.retreated(r);
         this.apply(r.intents);
         if (r.mode !== null) this.setMode(r.mode);
       },
