@@ -239,10 +239,12 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await expect.poll(() => distTo(halfway), { timeout: 30_000 }).toBeLessThan(Math.max(startDist - 2, 2.5));
 
   // 7. 暫停時下指令（暫停後模擬停住，對小鎮下前進指令，按繼續後才執行）
-  // Not fought yet: the town is still neutral, and no dialog covers the buttons.
+  // Not fought yet: no dialog covers the buttons, and the town is untouched: not seen yet (the
+  // hook's -1: from 14 cells off it stays in the fog, CI runs 37504823291 and 37504822387) or
+  // neutral (TownState.Neutral, 0) with its militia all there.
   await expect(page.getByRole("dialog", { name: /搶還是治理/ }), "the squad stayed away from the town").toHaveCount(0);
-  // TownState.Neutral (0), its militia all there.
-  expect((await towns(page)).find((t) => t.id === town.id), "the town is still neutral").toMatchObject({ state: 0, militia: town.militia });
+  const untouched = (await towns(page)).find((t) => t.id === town.id);
+  expect(untouched?.state === -1 || (untouched?.state === 0 && untouched.militia === town.militia), `the town is untouched: ${JSON.stringify(untouched)}`).toBe(true);
   await pause(page);
   const frozen = (await header(page)).tick;
   await centre(page, { x: town.cx, y: town.cy + 3 }, 0.8);
