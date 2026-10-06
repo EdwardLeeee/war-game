@@ -96,3 +96,8 @@ test("開局提示：三行字寫魔晶從哪裡來、到了要做什麼、最�
   // A map without small towns: the large one.
   assert.equal(townHintLines(town(1, 48, 48, TownSize.Large), home)[2], "離你的主城最近的是一座大城，在主城的東北方，約 44 格。小地圖上閃的圓圈就是它。");
 });
+
+test("開局提示：城鎮只能搶一次開著時（第七輪，D-061），第二行加上每座城一局只能搶一次；關著時不提", () => {
+  assert.equal(townHintLines(town(0, 29, 29), home, false, true)[1], "搶：馬上拿到一筆糧、金和魔晶，每座城一局只能搶一次。治理：修好之後，每分鐘都有魔晶。");
+  assert.doesNotMatch(townHintLines(town(0, 29, 29), home)[1], /只能搶一次/);
+});

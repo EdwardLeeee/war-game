@@ -21,7 +21,10 @@ export const BUILDING_NAME: Record<number, string> = {
   [BuildingType.Barracks]: "兵營",
   [BuildingType.Range]: "射場",
   [BuildingType.MageHall]: "法術營",
-  [BuildingType.TownTower]: "箭樓",
+  // The big city's neutral tower; a player's own is 箭樓 (round 7, D-061).
+  [BuildingType.TownTower]: "大城箭樓",
+  [BuildingType.ArrowTower]: "箭樓",
+  [BuildingType.Stable]: "馬廄",
 };
 
 /** What a player may build, in the order the build menu lists it (GDD §17 prototype buildings). */
@@ -34,6 +37,8 @@ export const BUILDABLE: BuildingType[] = [
   BuildingType.Barracks,
   BuildingType.Range,
   BuildingType.MageHall,
+  // Round 7 (D-061): listed only while its feature is on (buildMenu).
+  BuildingType.ArrowTower,
 ];
 
 export const NODE_NAME: Record<number, string> = {

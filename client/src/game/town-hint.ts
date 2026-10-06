@@ -56,8 +56,11 @@ export function compass(dx: number, dy: number): string {
   return DIRECTIONS[(Math.round(turns * 8) + 8) % 8];
 }
 
-/** The hint's lines: where crystal comes from, what to do there, and where the town (`hintTown`) is. */
-export function townHintLines(town: TownSpot, from: { cellX: number; cellY: number }, passed = false): string[] {
+/**
+ * The hint's lines: where crystal comes from, what to do there, and where the town (`hintTown`)
+ * is. `plunderOnce`: 城鎮只能搶一次 is on (round 7, D-061).
+ */
+export function townHintLines(town: TownSpot, from: { cellX: number; cellY: number }, passed = false, plunderOnce = false): string[] {
   const dx = town.cellX - from.cellX;
   const dy = town.cellY - from.cellY;
   const where = `在主城的${compass(dx, dy)}方，約 ${Math.round(Math.hypot(dx, dy))} 格`;
@@ -66,7 +69,9 @@ export function townHintLines(town: TownSpot, from: { cellX: number; cellY: numb
     town.size === TownSize.Large ? `離你的主城最近的是一座大城，${where}` : passed ? `離你的主城最近、可以攻下的小鎮${where}` : `離你的主城最近的小鎮${where}`;
   return [
     "法師要用魔晶。魔晶主要從城鎮來：帶兵打倒城裡的民兵，就能選「搶」或「治理」。",
-    "搶：馬上拿到一筆糧、金和魔晶。治理：修好之後，每分鐘都有魔晶。",
+    plunderOnce
+      ? "搶：馬上拿到一筆糧、金和魔晶，每座城一局只能搶一次。治理：修好之後，每分鐘都有魔晶。"
+      : "搶：馬上拿到一筆糧、金和魔晶。治理：修好之後，每分鐘都有魔晶。",
     `${which}。小地圖上閃的圓圈就是它。`,
   ];
 }

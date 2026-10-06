@@ -82,9 +82,22 @@ interface UnitSprites {
 interface BuildingSprites {
   base: Sprite;
   glyph: Sprite;
+  /** 裡面有人 (BuildingFlag.Occupied, round 7). */
+  occupied: Sprite;
   hpBack: Sprite;
   hpFront: Sprite;
 }
+
+/** An arrow a building or a soldier hiding in it shot (`shot` event, round 7), flying for SHOT_MS. */
+interface Shot {
+  fx: number;
+  fy: number;
+  tx: number;
+  ty: number;
+  at: number;
+}
+
+const SHOT_MS = 300;
 
 interface TownMark {
   holder: Container;
@@ -120,6 +133,9 @@ export class WorldRenderer {
   private readonly townMarks = new Map<number, TownMark>();
   private zonesKey = "";
   private markers: Marker[] = [];
+  private shots: Shot[] = [];
+  /** Arrows drawn since the game started (tests). */
+  shotCount = 0;
 
   constructor(app: Application, view: GameView, atlas: Atlas) {
     this.view = view;
@@ -177,6 +193,7 @@ export class WorldRenderer {
     this.drawWarnings(now);
     this.drawSelectionExtras();
     this.drawMarkers(now);
+    this.drawShots(now);
     this.drawGhost(placement);
   }
 
@@ -192,6 +209,31 @@ export class WorldRenderer {
   mark(x: number, y: number, color: number, now: number): void {
     this.markers.push({ x, y, color, at: now });
     if (this.markers.length > 8) this.markers.shift();
+  }
+
+  /** An arrow from a building (world px) to a unit, drawn flying for a moment (round 7). */
+  shot(fromX: number, fromY: number, toX: number, toY: number, now: number): void {
+    this.shots.push({ fx: fromX, fy: fromY, tx: toX, ty: toY, at: now });
+    this.shotCount++;
+    if (this.shots.length > 40) this.shots.shift();
+  }
+
+  private drawShots(now: number): void {
+    this.shots = this.shots.filter((s) => now - s.at < SHOT_MS);
+    for (const s of this.shots) {
+      const k = (now - s.at) / SHOT_MS;
+      const dx = s.tx - s.fx;
+      const dy = s.ty - s.fy;
+      const len = Math.hypot(dx, dy) || 1;
+      const x = s.fx + dx * k;
+      const y = s.fy + dy * k;
+      const ux = dx / len;
+      const uy = dy / len;
+      // A shaft 12 px long with a head: it leaves the building and flies to the target.
+      this.fx.moveTo(x - ux * 12, y - uy * 12).lineTo(x, y).stroke({ width: 2.5, color: 0x2a1c10 });
+      this.fx.moveTo(x - ux * 12, y - uy * 12).lineTo(x, y).stroke({ width: 1.2, color: 0xf4e2b0 });
+      this.fx.poly([x + ux * 4, y + uy * 4, x - ux * 2 - uy * 3, y - uy * 2 + ux * 3, x - ux * 2 + uy * 3, y - uy * 2 - ux * 3]).fill(0xf4e2b0);
+    }
   }
 
   private drawMarkers(now: number): void {
@@ -236,17 +278,20 @@ export class WorldRenderer {
       const base = new Sprite(this.atlas.building);
       const glyph = new Sprite(Texture.EMPTY);
       glyph.anchor.set(0.5);
+      const occupied = new Sprite(this.atlas.occupied);
+      occupied.anchor.set(1, 0);
       const hpBack = new Sprite(this.atlas.white);
       hpBack.tint = 0x201a18;
       const hpFront = new Sprite(this.atlas.white);
-      this.buildingLayer.addChild(base, glyph);
+      this.buildingLayer.addChild(base, glyph, occupied);
       this.barLayer.addChild(hpBack, hpFront);
-      this.buildingPool.push({ base, glyph, hpBack, hpFront });
+      this.buildingPool.push({ base, glyph, occupied, hpBack, hpFront });
     }
     for (let i = 0; i < this.buildingPool.length; i++) {
       const p = this.buildingPool[i];
       const shown = i < n;
       p.base.visible = p.glyph.visible = shown;
+      p.occupied.visible = false;
       p.hpBack.visible = p.hpFront.visible = false;
       if (!shown) continue;
       const o = i * BUILDING_STRIDE;
@@ -257,7 +302,7 @@ export class WorldRenderer {
       const y = b[o + B.cellY] * TILE_PX;
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0;
       const building = b[o + B.progress] < 1000;
-      p.base.texture = type === BuildingType.Farm ? this.atlas.farm : this.atlas.building;
+      p.base.texture = type === BuildingType.Farm ? this.atlas.farm : type === BuildingType.ArrowTower ? this.atlas.tower : this.atlas.building;
       p.base.position.set(x, y);
       p.base.width = size;
       p.base.height = size;
@@ -267,6 +312,12 @@ export class WorldRenderer {
       p.glyph.position.set(x + size / 2, y + size / 2);
       p.glyph.scale.set(Math.min(size * 0.5, 36) / 36);
       p.glyph.alpha = p.base.alpha;
+      // 裡面有人 (round 7): a small shield at the top right corner, ours and the enemy's in view.
+      if ((b[o + B.flags] & BuildingFlag.Occupied) !== 0 && !remembered) {
+        p.occupied.visible = true;
+        p.occupied.position.set(x + size - 2, y + 2);
+        p.occupied.scale.set(Math.max(1, size / 48));
+      }
       const hp = b[o + B.hp];
       const max = info?.hp ?? hp;
       const selected = this.view.selection.building === b[o + B.id];
