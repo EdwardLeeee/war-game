@@ -5,6 +5,7 @@ import test from "node:test";
 import { type AiStyle, createAi, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
 import { rules } from "../src/core/rules.ts";
+import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
 import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
@@ -71,7 +72,7 @@ test("an AI against itself builds up an economy and an army", () => {
     for (let s = 0; s < w.buildings.count; s++) if (w.buildings.col.owner[s] === p && w.buildings.col.type[s] === BuildingType.LumberCamp) camp = true;
     assert.ok(farmers >= 10, `player ${p}: ${farmers} farmers`);
     assert.ok(camp, `player ${p} built a lumber camp`);
-    assert.ok(soldiers + w.trained[p * 5 + UnitType.Spearman] > 0, `player ${p} started an army`);
+    assert.ok(soldiers + w.trained[p * UNIT_KINDS + UnitType.Spearman] > 0, `player ${p} started an army`);
   }
 });
 

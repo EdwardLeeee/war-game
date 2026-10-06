@@ -51,7 +51,7 @@ import {
 } from "./rules.ts";
 import { IDENTITY, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
-import { HitCause, type World } from "./world.ts";
+import { HitCause, UNIT_KINDS, type World } from "./world.ts";
 
 const TICKS = TICKS_PER_SECOND;
 
@@ -1088,7 +1088,7 @@ export class UnitSystem {
       if (this.deadUnits[i] === 1) {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
-        if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * 5 + u.type[i]]++;
+        if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
         if (u.owner[i] < PLAYER_COUNT && u.type[i] === UnitType.Farmer) w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
         if (u.type[i] === UnitType.Mage) {
           // The killer's side picks up the bounty (none for the neutral side).

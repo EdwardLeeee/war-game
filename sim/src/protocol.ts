@@ -57,6 +57,8 @@ export const UnitType = {
   Mage: 3,
   /** Neutral town guard; never trained by players. */
   Militia: 4,
+  /** Heavy cavalry, trained at a stable (round 7, D-061; while `Rules.features.cavalry`). */
+  Cavalry: 5,
 } as const;
 export type UnitType = (typeof UnitType)[keyof typeof UnitType];
 
@@ -72,6 +74,13 @@ export const BuildingType = {
   MageHall: 8,
   /** The big city's neutral arrow tower; never built by players. */
   TownTower: 9,
+  /**
+   * A player's arrow tower (round 7, D-061; while `Rules.features.towers`): shoots by itself,
+   * ranged units and mages can hide in it and shoot from inside. Not the big city's TownTower.
+   */
+  ArrowTower: 10,
+  /** Trains cavalry (round 7, D-061; while `Rules.features.cavalry`). */
+  Stable: 11,
 } as const;
 export type BuildingType = (typeof BuildingType)[keyof typeof BuildingType];
 
@@ -142,6 +151,11 @@ export const Order = {
   Repair: 6,
   Recall: 7,
   Cast: 8,
+  /**
+   * A soldier going to hide in a building, or hiding in it (action Garrisoned); orderTarget is
+   * the building's id (round 7, D-061, `garrison`). Farmers hiding keep Recall.
+   */
+  Garrison: 9,
 } as const;
 export type Order = (typeof Order)[keyof typeof Order];
 
@@ -177,6 +191,10 @@ export const Reject = {
   OutOfRange: 14,
   /** A `build` without farmers: no farmer the simulation may send (round 2 of the prototype). */
   NoFarmer: 15,
+  /** `town_choice` plunder on a town already plundered this game (round 7, D-061). */
+  AlreadyPlundered: 16,
+  /** `garrison` into a building with no room left, counting the soldiers on their way (round 7). */
+  NoRoom: 17,
 } as const;
 export type Reject = (typeof Reject)[keyof typeof Reject];
 
@@ -254,11 +272,15 @@ export const BuildingField = {
   /** Rally point in fixed point, or -1 (own, from PR-3). */
   rallyX: 10,
   rallyY: 11,
-  /** Farmers hidden inside (recall, from PR-3). */
+  /** Farmers hidden inside (recall, from PR-3). Own buildings only; 0 for others. */
   garrisoned: 12,
   /** Bit flags, see BuildingFlag. */
   flags: 13,
-  reserved14: 14,
+  /**
+   * Soldiers hidden inside (round 7, D-061, `garrison`). Own buildings only; for other
+   * players' buildings 0, and only BuildingFlag.Occupied says someone is in.
+   */
+  soldiers: 14,
   reserved15: 15,
 } as const;
 export const BUILDING_STRIDE = 16;
@@ -272,6 +294,11 @@ export const BuildingFlag = {
   AutoTrain: 8,
   /** Own, with AutoTrain: its queue is empty and nothing is queued because the population is full. */
   AutoPopulationFull: 16,
+  /**
+   * Someone (farmers or soldiers) hides inside (round 7, D-061). Set on every building in
+   * view, own or not; never on a remembered one. How many and who: own buildings only.
+   */
+  Occupied: 32,
 } as const;
 
 /** Resource nodes: sent as changes only (see Snapshot.nodes). */
@@ -306,14 +333,26 @@ export const TownField = {
   revoltTimer: 8,
   /** Bit flags, see TownFlag. */
   flags: 9,
+  /**
+   * What governing it pays now, in permille of its full income (round 7, D-061): 1000 for a
+   * town never plundered; a plundered one starts at `Rules.plunderRecovery.startPermille` and
+   * climbs back while it is governed.
+   */
+  incomePermille: 10,
 } as const;
-export const TOWN_STRIDE = 10;
+/** 11 from round 7 (D-061; was 10). */
+export const TOWN_STRIDE = 11;
 export const TownFlag = {
   /** Both sides have military units inside the radius; state is frozen. */
   Contested: 1,
   Visible: 2,
   /** Governed or repairing without the minimum garrison. */
   BelowGarrison: 4,
+  /**
+   * Plundered once this game (round 7, D-061). With `Rules.features.plunderOnce` it cannot be
+   * plundered again: `town_choice` plunder is rejected with AlreadyPlundered.
+   */
+  Plundered: 8,
 } as const;
 
 /** Crystal cannon warning areas on visible cells (from PR-4). Everyone who sees it gets it. */
@@ -394,6 +433,11 @@ export const PlaceBit = {
   Unexplored: 2,
   /** Within reach of your own main city or granary: farms may go here. */
   FarmLand: 4,
+  /**
+   * Within reach of your own main city or of a town you govern or repair (`Rules.towerReach`):
+   * arrow towers may go here (round 7, D-061; only while `Rules.features.towers`).
+   */
+  TowerLand: 8,
 } as const;
 
 // --- static data sent once, in "ready" -----------------------------------------------
@@ -444,6 +488,13 @@ export interface BuildingInfo {
   trains: UnitType[];
   /** Farmers it can hide during recall. */
   shelter: number;
+  /**
+   * Soldiers (`Rules.garrisonTypes`) that can hide in it with `garrison` (round 7, D-061).
+   * The simulation always fills it; optional only so tables written by hand (mocks) still compile.
+   */
+  holds?: number;
+  /** Own finished buildings of these types needed before it can be built (round 7; always filled, as `holds`). */
+  requires?: BuildingType[];
 }
 
 export interface Multiplier {
@@ -453,6 +504,49 @@ export interface Multiplier {
   /** Damage x num / den, integer arithmetic. */
   num: number;
   den: number;
+}
+
+/** Arrows a building shoots by itself (main city, the big city's tower, arrow towers). */
+export interface ArrowInfo {
+  damage: number;
+  /** Fixed point, from the building's footprint. */
+  range: number;
+  /** Ticks between arrows. */
+  cooldown: number;
+  /** Extra arrows per farmer hiding inside, up to this many (main city only; 0 for others). */
+  extraMax: number;
+}
+
+/** A town's rules by size (TownSize), as the simulation plays them. */
+export interface TownInfo {
+  militia: number;
+  /** Cells. */
+  radius: number;
+  plunderTicks: number;
+  plunder: Cost;
+  ruinsTicks: number;
+  governCost: Cost;
+  repairTicks: number;
+  /** Full income per minute while governed with the minimum garrison. */
+  perMinute: Cost;
+  populationCap: number;
+  garrisonNeeded: number;
+  revoltTicks: number;
+}
+
+/**
+ * Round 7 rules that may be switched off (D-061). The screen and the AI leave out what is off;
+ * the simulation rejects it.
+ */
+export interface Features {
+  /** A town can be plundered once per game. */
+  plunderOnce: boolean;
+  /** Arrow towers can be built. */
+  towers: boolean;
+  /** Ranged units and mages can hide in main cities and arrow towers. */
+  garrison: boolean;
+  /** Stables can be built and cavalry trained. */
+  cavalry: boolean;
 }
 
 export interface MapInfo {
@@ -472,6 +566,26 @@ export interface Rules {
   mageCap: number;
   maxPopulation: number;
   queueMax: number;
+  // Round 7 (D-061). The simulation always sends all of these; they are optional only so rules
+  // written by hand (the screen's mocks) still compile. Read them with a default (absent = off).
+  features?: Features;
+  /** Arrows of the main city, the big city's tower and arrow towers (round 7). */
+  arrows?: { mainCity: ArrowInfo; townTower: ArrowInfo; arrowTower: ArrowInfo };
+  /** Unit types that may hide in buildings with `garrison` (round 7). */
+  garrisonTypes?: UnitType[];
+  /**
+   * Where arrow towers may go (round 7, PlaceBit.TowerLand), in cells: within `mainCity` of an
+   * own finished main city's footprint (Chebyshev), or within a held town's radius + `town`
+   * of its centre (governed or repairing).
+   */
+  towerReach?: { mainCity: number; town: number };
+  /** By TownSize (round 7). */
+  towns?: TownInfo[];
+  /**
+   * A plundered town governed again pays `startPermille` of its income at first and climbs
+   * linearly to 1000 over `ticks` of being governed (round 7; startPermille 1000 = off).
+   */
+  plunderRecovery?: { startPermille: number; ticks: number };
 }
 
 // --- commands (one JSON object per line in the command log) ---------------------------
@@ -509,6 +623,10 @@ export type CommandBody =
   | { c: "cast"; u: number; fx: number; fy: number }
   | { c: "autocast"; u: number[]; on: boolean }
   | { c: "town_choice"; town: number; choice: TownChoice }
+  /** Ranged units and mages go and hide in an own finished main city or arrow tower (round 7). */
+  | { c: "garrison"; u: number[]; building: number }
+  /** Soldiers hiding in the building come out: all of them, or those in `u` (round 7). */
+  | { c: "leave"; building: number; u?: number[] }
   | { c: "surrender" };
 
 export type Command = CommandBase & CommandBody;
@@ -535,6 +653,8 @@ export const COMMAND_KINDS = [
   "cast",
   "autocast",
   "town_choice",
+  "garrison",
+  "leave",
   "surrender",
 ] as const satisfies readonly CommandKind[];
 type MissingCommand = Exclude<CommandKind, (typeof COMMAND_KINDS)[number]>;
@@ -555,6 +675,11 @@ export type SimEvent =
   | { k: "town_revolted"; town: number; from: number }
   | { k: "town_restored"; town: number }
   | { k: "mage_killed"; id: number; owner: number; killer: number; crystal: number }
+  /**
+   * A building's own arrow, or a soldier hiding in it, shot at `target` (unit id) this tick
+   * (round 7, D-061). To every player who sees the building or the target.
+   */
+  | { k: "shot"; building: number; target: number }
   | { k: "rejected"; seq: number; reason: Reject }
   | { k: "game_over"; winner: number; reason: GameOverReason };
 export type EventKind = SimEvent["k"];
@@ -571,6 +696,7 @@ export const EVENT_KINDS = [
   "town_revolted",
   "town_restored",
   "mage_killed",
+  "shot",
   "rejected",
   "game_over",
 ] as const satisfies readonly EventKind[];

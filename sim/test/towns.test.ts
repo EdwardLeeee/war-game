@@ -6,6 +6,7 @@ import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { PERF } from "../src/core/scenarios.ts";
 import { MAIN_CRYSTAL, TOWNS } from "../src/core/rules.ts";
+import { UNIT_KINDS } from "../src/core/world.ts";
 import {
   BuildingType,
   GameOverReason,
@@ -255,5 +256,5 @@ test("perf scenario: 114 / 120 on each side, mages on autocast, and the battle s
     for (let s = 0; s < w.units.count; s++) if (u.castCooldown[s] > 0) fired = true;
   }
   assert.ok(fired, "a cannon fired");
-  assert.ok(w.lost[UnitType.Spearman] + w.lost[5 + UnitType.Spearman] > 0, "soldiers fell");
+  assert.ok(w.lost[UnitType.Spearman] + w.lost[UNIT_KINDS + UnitType.Spearman] > 0, "soldiers fell");
 });

@@ -38,6 +38,8 @@ export const UNIT_COLS = [
   "hitById",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
+/** Unit types counted per player in `trained` and `lost` (UnitType 0..5; the hash leaves out cavalry while CAVALRY is off). */
+export const UNIT_KINDS = 6;
 /** Unit columns that are statistics only, left out of the hash so a game plays and hashes as without them. */
 export const UNIT_HASH_SKIP: ReadonlySet<string> = new Set(["hitCause"]);
 /** What last hurt a unit (unit column hitCause; farmers' deaths are counted by it). */
@@ -50,6 +52,8 @@ export const BUILDING_COLS = [
   "rallyX", "rallyY", "garrisoned", "cooldown", "target", "lastHurt", "town",
   // Builder-ticks of construction done, and the hp accumulator of repairs.
   "work", "acc",
+  // Soldiers hiding inside (round 7, D-061, GARRISON; in the hash only while it is on).
+  "soldiers",
 ] as const;
 export type BuildingCol = (typeof BUILDING_COLS)[number];
 
@@ -135,6 +139,12 @@ export class World {
   /** The current governing spell of each town: what it cost, what it has paid out. */
   townSpellCost: Int32Array;
   townSpellIncome: Int32Array;
+  /**
+   * Round 7 (D-061): 1 once a town has been plundered this game (TOWN_ONCE), and the ticks it
+   * has been governed since (PLUNDER_RECOVERY). In the hash only while those rules are on.
+   */
+  townPlundered: Int32Array;
+  townRecover: Int32Array;
 
   /** Resources per player: [player * 4 + Resource]. Neutral has a row too. */
   res = new Int32Array((PLAYER_COUNT + 1) * 4);
@@ -161,10 +171,10 @@ export class World {
   reserve = new Int32Array(PLAYER_COUNT * 4);
   autoTrain = new Uint8Array(PLAYER_COUNT);
 
-  // Statistics for game_over (GameStats): [p * 4 + Resource], [p * 5 + UnitType].
+  // Statistics for game_over (GameStats): [p * 4 + Resource], [p * UNIT_KINDS + UnitType].
   gathered = new Int32Array(PLAYER_COUNT * 4);
-  trained = new Int32Array(PLAYER_COUNT * 5);
-  lost = new Int32Array(PLAYER_COUNT * 5);
+  trained = new Int32Array(PLAYER_COUNT * UNIT_KINDS);
+  lost = new Int32Array(PLAYER_COUNT * UNIT_KINDS);
   plundered = new Int32Array(PLAYER_COUNT);
   governed = new Int32Array(PLAYER_COUNT);
   /** Crystal cannon shots fired, and units they hit, per player. */
@@ -246,6 +256,8 @@ export class World {
     this.townAcc = new Int32Array(t * 3);
     this.townSpellCost = new Int32Array(t);
     this.townSpellIncome = new Int32Array(t);
+    this.townPlundered = new Int32Array(t);
+    this.townRecover = new Int32Array(t);
     map.towns.forEach((s, i) => {
       this.townSize[i] = s.size;
       this.townX[i] = s.cellX;

@@ -11,6 +11,7 @@
 - **分階段填值**：原型的所有欄位、事件和指令，這一版都已經定義好了。
   - 標「PR-n 起」的欄位，在那個 PR 之前是 0 或 -1，指令會被拒絕（原因碼 `NotAvailable`）。
   - 補上這些值不算改格式。
+- **第七輪（D-061）的規則有開關**：`rules.features` 說哪些開著（3.3 節）。關著的指令會被拒絕（`NotAvailable`），畫面和電腦就不要顯示或使用；開關打開不算改格式。
 - **怎麼用 sim**：
   - `sim/` 是獨立的套件，沒有建置步驟。
   - client 用相對路徑或 Vite alias 匯入 `sim/src/protocol.ts` 和 `sim/src/placement.ts`，再用
@@ -54,8 +55,16 @@
 - `rules: Rules`：兵種與建築的資料表，client 顯示花費、血量、占地、視野、射程時用這份，不要自己抄數值。
   - `units`：血量、防護罩、攻擊、射程（定點）、速度（每 tick 定點）、視野（格）、攻擊間隔（tick）、花費、訓練 tick、人口。
   - `buildings`：血量、占地邊長、能不能走過、花費、建造 tick、視野、人口上限、可以存放哪些資源、可以訓練哪些兵、全體回城時能躲幾名農民。
+    - 第七輪加：`holds`（能躲幾名士兵，`garrison`）、`requires`（要先有哪些自己蓋好的建築才能蓋）。模擬一定會填；型別上選填，理由同下。
   - `multipliers`：剋制加成。`target` 是兵種或 `"shield"`；傷害 × num / den，全部整數運算。
   - `mageCap`（6）、`maxPopulation`（120）、`queueMax`（每棟建築的訓練佇列上限）。
+  - 第七輪（D-061）加的，畫面和電腦都照這份，不要自己抄數值。模擬一定會送；型別上是選填，只是讓手寫的假資料（mock）照樣編得過，讀的時候給預設值（沒有就當成關著）：
+    - `features`：哪些第七輪的規則開著。`plunderOnce` 城鎮只能搶一次、`towers` 可以蓋箭樓、`garrison` 遠程兵和法師可以躲進建築、`cavalry` 可以蓋馬廄、訓練騎兵。
+    - `arrows`：建築自己射的箭。`mainCity` 主城、`townTower` 大城的箭樓、`arrowTower` 玩家的箭樓；各有 `damage`、`range`（定點，從占地邊緣算）、`cooldown`（tick）、`extraMax`（主城每躲 1 名農民多 1 箭，最多幾箭；其他是 0）。
+    - `garrisonTypes`：能用 `garrison` 躲進建築的兵種（遠程兵、法師）。
+    - `towerReach`：箭樓可以蓋在哪裡（第 7 節）。
+    - `towns`：依 `TownSize` 排，城鎮的民兵、半徑、搶的時間與收穫、廢墟時間、治理費、修繕時間、每分鐘收入（`perMinute`，收入全額時）、人口上限、最少駐軍、叛離時間。
+    - `plunderRecovery`：搶過的城鎮再被治理時，收入從 `startPermille`（千分比）開始，治理 `ticks` 之後回到全額；`startPermille` 是 1000 表示沒有這條規則。
 
 ## 3. 指令
 
@@ -132,6 +141,8 @@
 | `cast` | `u`、`fx`、`fy` | 一名法師對定點位置發晶砲：原地校準 1.5 秒，期間出現預警區 | PR-4 |
 | `autocast` | `u`、`on` | 法師的自動施放開關 | PR-4 |
 | `town_choice` | `town`、`choice` | 攻下的城鎮選搶（0）或治理（1） | PR-4 |
+| `garrison` | `u`、`building` | 遠程兵和法師走去躲進自己蓋好的主城或箭樓，在裡面照樣攻擊，見 3.3 | 第七輪 |
+| `leave` | `building`，可選 `u` | 建築裡的士兵出來：全部，或只放 `u` 裡的，見 3.3 | 第七輪 |
 | `surrender` | — | 投降 | PR-4 |
 
 ### 3.1 經濟指令的細節（PR-3）
@@ -260,6 +271,43 @@
   - **叛離**：修繕中或治理中駐軍不足，`revoltTimer` 從 1,200 tick 倒數，歸零時變回中立、民兵補回一半；駐軍補足就停止倒數。
 - **`surrender`**：投降的一方輸，`game_over` 的原因是 `Surrender`。之後的指令都回 `GameOver`。
 
+### 3.3 第七輪：城鎮只能搶一次、箭樓與躲進建築、騎兵（D-061）
+
+每一項都有開關，看 `rules.features`。開關關著時，模擬照第六輪的規則跑。
+
+- **城鎮只能搶一次**（`plunderOnce`）：
+  - 每座城鎮一局只能搶一次。搶完照舊變廢墟 4 分鐘，之後回到中立、民兵補回一半；再被攻下時只能治理。
+  - `town_choice` 選搶一座搶過的城鎮：`AlreadyPlundered`，城鎮還是待選擇。
+  - 快照的城鎮旗標 `Plundered`（4.5 節）說這座搶過了。
+- **治理收入**：`rules.towns[size].perMinute` 是全額。
+  - 搶過的城鎮再被治理時，收入從 `rules.plunderRecovery.startPermille` 開始，治理越久越高，`ticks` 之後回到全額。
+  - 回升的進度記在城鎮本身，換人治理不會歸零。
+  - 目前是幾成，看城鎮的 `incomePermille`（4.5 節）。
+- **箭樓**（`towers`，`BuildingType.ArrowTower`）：
+  - 用 `build` 蓋，占地、花費、血量照 `rules.buildings`。只能蓋在 `TowerLand` 的格子上（第 7 節）。
+  - 自己會射箭，數值照 `rules.arrows.arrowTower`。
+  - 大城的中立箭樓是另一種建築（`TownTower`），不能蓋。
+- **躲進建築**（`garrison`）：
+  - `garrison`：`u` 裡自己的遠程兵和法師走到 `building`（自己蓋好的主城或箭樓）旁邊躲進去，其他兵種略過。
+    - 每棟最多躲 `rules.buildings[type].holds` 名，走在路上的也算。超過的兵留在原地，指令不變。
+    - 被拒：`u` 裡沒有自己的單位 `NotOwner`；不是自己蓋好、能躲士兵的建築 `InvalidTarget`；`u` 裡沒有能躲的兵 `NotAvailable`；一名都放不進去 `NoRoom`。
+    - 走去的路上和躲在裡面時，單位的 `order` 是 `Garrison`、`orderTarget` 是建築 id；躲在裡面時 `action` 是 `Garrisoned`（不畫）。
+  - 躲在裡面時：
+    - 照自己的攻擊、攻擊間隔、剋制加成打看得到的敵方單位，射程從建築占地的邊緣算。不會移動、不會追。
+    - 法師照樣用晶彈；晶砲的射程也從邊緣算，自動施放照舊，`cast` 也可以下。
+    - 不會被任何攻擊打到（包括晶砲），也不算城鎮的駐軍。
+    - 每射一次，事件 `shot` 給看得到建築或目標的玩家（第 5 節）。
+  - 出來：
+    - `leave`：`building` 裡自己的士兵出來，站在建築旁邊待命；有 `u` 就只放 `u` 裡的。沒有人可以出來：`NotAvailable`。
+    - 對躲著的兵下 `move`、`retreat`、`attack`：先出來再照做。`stop`、`stance`、`autocast`、`cast` 留在裡面照用。
+    - 建築被打掉時，裡面的人全部跑出來。
+  - 農民照舊用 `recall` 躲進主城和民居，數量另算（`shelter`），不佔士兵的位置。
+- **別人的建築裡有沒有人**：看得到的建築都帶 `Occupied` 旗標（裡面有人，農民或士兵都算）。人數（`garrisoned`、`soldiers`）和是誰只有自己的建築才有；這是規則，電腦的 PlayerView 也一樣。
+- **騎兵與馬廄**（`cavalry`，`UnitType.Cavalry`、`BuildingType.Stable`）：
+  - 馬廄用 `build` 蓋，`requires` 裡的建築要先有。用 `train` 訓練騎兵，`auto_train` 和兵營一樣（人類玩家的一開始開著）。
+  - 數值和剋制照 `rules.units`、`rules.multipliers`。
+- **`game_over` 的統計**：`unitsTrained`、`unitsLost` 照舊只列農民、槍兵、遠程、法師（騎兵的統計等 PR K 再定）。
+
 **被拒的原因碼**（`Reject`）：
 
 | 碼 | 名稱 | 意思 |
@@ -279,6 +327,8 @@
 | 13 | `GameOver` | 這局已經結束 |
 | 14 | `OutOfRange` | 晶砲的目標超出射程 |
 | 15 | `NoFarmer` | 不帶農民的 `build`：沒有可以派去蓋的農民（第二輪起）。畫面可以提示「附近沒有可以派去蓋的農民」 |
+| 16 | `AlreadyPlundered` | 這座城鎮這局已經搶過，只能治理（第七輪，3.3） |
+| 17 | `NoRoom` | 建築裡沒有空位了，走在路上的也算（第七輪，`garrison`） |
 
 ## 4. 快照（`snapshot` 訊息，每個 tick 一份）
 
@@ -321,7 +371,7 @@
 | 7 | `action` | `Action`，動畫用：待命、走、攻擊、採集、蓋、修、校準、躲在建築裡（不畫） | PR-2 |
 | 8 | `facing` | 0–15 | PR-2 |
 | 9–10 | `carryKind`、`carryAmount` | 搬運中的資源（`Resource`）與數量；沒有搬就是 -1、0 | PR-3 |
-| 11 | `order` | `Order`，目前的指令 | PR-2 |
+| 11 | `order` | `Order`，目前的指令。第七輪加 `Garrison`：士兵走去躲、或躲在建築裡 | PR-2 |
 | 12 | `orderTarget` | 目標 id、資源點 id，或 move／retreat 的目的格編號；沒有就是 -1 | PR-2 |
 | 13 | `stance` | `Stance` | PR-2 |
 | 14 | `castProgress` | 晶砲已經校準幾個 tick（30 = 發射） | PR-4 |
@@ -343,11 +393,12 @@
 | 8 | `queuePacked` | 佇列裡最多 7 個兵種，每個 4 位元，最低位是隊首 | PR-3 |
 | 9 | `queueProgress` | 隊首的訓練進度（千分比） | PR-3 |
 | 10–11 | `rallyX`、`rallyY` | 集結點（定點），沒有就是 -1 | PR-3 |
-| 12 | `garrisoned` | 躲在裡面的農民數 | PR-3 |
-| 13 | `flags` | `BuildingFlag`：1 記憶中（目前看不到）、2 最近 60 tick 內受過傷、4 修理鎖定中（只有自己的主城，見 3.1）、8 自動訓練開著、16 自動訓練因為人口滿而停（8、16 只有自己的建築，見 3.1） | PR-2（4 從 PR-6，8、16 從第六輪） |
-| 14–15 | 保留 | 0 | — |
+| 12 | `garrisoned` | 躲在裡面的農民數（只有自己的建築；別人的是 0） | PR-3 |
+| 13 | `flags` | `BuildingFlag`：1 記憶中（目前看不到）、2 最近 60 tick 內受過傷、4 修理鎖定中（只有自己的主城，見 3.1）、8 自動訓練開著、16 自動訓練因為人口滿而停（8、16 只有自己的建築，見 3.1）、32 裡面有人躲（`Occupied`，看得到的建築都有，記憶中的沒有，見 3.3） | PR-2（4 從 PR-6，8、16 從第六輪，32 從第七輪） |
+| 14 | `soldiers` | 躲在裡面的士兵數（只有自己的建築；別人的是 0，只看得到 `Occupied`） | 第七輪 |
+| 15 | 保留 | 0 | — |
 
-開局時雙方各有一座主城（PR-2 起）。大城的中立箭樓也是一棟建築（`TownTower`，擁有者 `NEUTRAL`）。
+開局時雙方各有一座主城（PR-2 起）。大城的中立箭樓也是一棟建築（`TownTower`，擁有者 `NEUTRAL`）。第七輪起玩家可以蓋箭樓（`ArrowTower`）和馬廄（`Stable`），見 3.3。
 
 ### 4.4 資源點 `nodes`（stride `NODE_STRIDE` = 6，只送有變化的）
 
@@ -365,7 +416,10 @@
 
 農田不是資源點，是建築（不會用完，一塊一名農民）。
 
-### 4.5 城鎮 `towns`（stride `TOWN_STRIDE` = 10，已探索的城鎮、最後看到的狀態）
+### 4.5 城鎮 `towns`（stride `TOWN_STRIDE` = 11，已探索的城鎮、最後看到的狀態）
+
+第七輪起 stride 從 10 改成 11（加了 `incomePermille`）。快照只在同一個建置裡用，指令和紀錄的格式不變，所以 `PROTOCOL_VERSION` 不動；請用 `TOWN_STRIDE`，不要寫死 10。
+
 
 | 欄 | 名稱 | 說明 | 從 |
 |---|---|---|---|
@@ -378,7 +432,8 @@
 | 6 | `garrisonNeeded` | 修繕中與治理中需要的最少駐軍（小鎮 1、大城 3） | PR-4 |
 | 7 | `militia` | 民兵數 | PR-2 |
 | 8 | `revoltTimer` | 駐軍不足時，距離叛離還剩幾 tick；0 = 沒在倒數 | PR-4 |
-| 9 | `flags` | `TownFlag`：1 爭奪中（雙方軍隊都在，狀態凍結）、2 看得到、4 駐軍不足 | PR-2 |
+| 9 | `flags` | `TownFlag`：1 爭奪中（雙方軍隊都在，狀態凍結）、2 看得到、4 駐軍不足、8 這局已經被搶過（`Plundered`，3.3） | PR-2（8 從第七輪） |
+| 10 | `incomePermille` | 治理這座城鎮現在的收入是全額的幾千分之幾：沒被搶過是 1000；搶過的從 `rules.plunderRecovery.startPermille` 慢慢回升（3.3） | 第七輪 |
 
 畫面要分四種狀態時：
 - 中立：`state` = Neutral。
@@ -416,6 +471,7 @@
 | `town_revolted` | `town`、`from` | 駐軍不足滿 60 秒，叛離回中立 | PR-4 |
 | `town_restored` | `town` | 廢墟恢復成中立 | PR-4 |
 | `mage_killed` | `id`、`owner`、`killer`、`crystal` | 法師陣亡，擊殺方得到的魔晶 | PR-4 |
+| `shot` | `building`、`target` | 主城、箭樓自己的箭，或躲在裡面的兵，對 `target`（單位 id）射了一次。給看得到建築或目標的玩家，畫面用來畫箭 | 第七輪 |
 | `rejected` | `seq`、`reason` | 指令被拒 | PR-2 |
 | `game_over` | `winner`、`reason` | 主城被摧毀、投降，或時間到（平手時 `winner` = -1） | PR-2 |
 
@@ -462,6 +518,7 @@
 - 判定規則：
   - 占地的每一格都要在地圖內、已探索、沒有被擋住。擋住的包括不可走的地形、樹、已知的建築（含農田）。
   - 農田的每一格還要在自己主城或糧倉的範圍內（`FarmLand`）：離已完成的主城或糧倉占地 6 格內（x、y 距離取較大的那個）。
+  - 箭樓（第七輪）的每一格還要是 `TowerLand`：離自己已完成的主城占地 `rules.towerReach.mainCity` 格內（x、y 距離取較大的那個），或在自己修繕中、治理中的城鎮半徑再加 `rules.towerReach.town` 格內（從城鎮中心算）。`features.towers` 關著時沒有這種格子。
   - 站在那裡的單位不算阻擋，會被推開。
 - 快照裡的 `placement` 是這位玩家知道的狀況：資源點用最後看到的剩餘量，敵方建築用記憶。
 - 開局時，每位玩家出生點周圍 16 格已經算探索過，也知道那裡的資源點。
@@ -501,6 +558,7 @@
   - 同一份紀錄關掉 AI 重播，每 100 tick 的雜湊都會相同。
 - **雜湊**：FNV-1a 32 位元，輸出 8 碼十六進位。範圍是模擬的全部狀態，依 id 順序：
   - 資源、單位、建築、生產佇列、資源點、城鎮與計時、法師的防護罩與冷卻、亂數狀態、每位玩家的記憶表。
+  - 第七輪的狀態（城鎮搶過與回升、建築裡的士兵數、騎兵的訓練與損失數）只在它的規則開著時才算進雜湊，所以規則都關著時，雜湊和第六輪逐局相同。
 - **確定性檢查的期望值**：`node sim/src/headless.ts --scenario standard --seed <n> --expected <檔案>` 會寫出 `ExpectedHashes` 格式的 JSON（PR-2 起）。
   - Pages 建置時用它產生 `expected-hashes.json`。
   - 手機上的 `determinism` 結果跟它比對。

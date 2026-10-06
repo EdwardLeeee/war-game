@@ -152,6 +152,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
       row[BuildingField.rallyX] = b.rallyX[s];
       row[BuildingField.rallyY] = b.rallyY[s];
       row[BuildingField.garrisoned] = b.garrisoned[s];
+      row[BuildingField.soldiers] = b.soldiers[s];
     } else {
       row[BuildingField.rallyX] = -1;
       row[BuildingField.rallyY] = -1;
@@ -166,6 +167,8 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
       row[BuildingField.flags] |= BuildingFlag.RepairLocked;
     }
     if (own || player === null) row[BuildingField.flags] |= b.flags[s] & (BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
+    // Someone hiding inside (round 7, D-061): everyone who sees the building learns that much, no more.
+    if (b.garrisoned[s] > 0 || b.soldiers[s] > 0) row[BuildingField.flags] |= BuildingFlag.Occupied;
     rows.push(row);
   }
   if (player !== null) {

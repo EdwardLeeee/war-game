@@ -10,6 +10,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
+import { UNIT_KINDS } from "./core/world.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, type LogHeader, MAX_TICKS, UnitType } from "./protocol.ts";
 import { AI_STYLES, type AiStyle } from "./ai/ai.ts";
 import { Runner } from "./runner.ts";
@@ -203,8 +204,8 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
     perPlayer: [0, 1].map((p) => ({
       plundered: w.plundered[p],
       governed: w.governed[p],
-      magesTrained: w.trained[p * 5 + UnitType.Mage],
-      magesLost: w.lost[p * 5 + UnitType.Mage],
+      magesTrained: w.trained[p * UNIT_KINDS + UnitType.Mage],
+      magesLost: w.lost[p * UNIT_KINDS + UnitType.Mage],
       cannonShots: w.cannonShots[p],
       cannonHits: w.cannonHits[p],
       plunderIncome: w.plunderIncome[p],
@@ -216,8 +217,8 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
       governPaidBack: w.governPaidBack[p],
       governOpen: openSpells(w, p, false),
       governOpenPaidBack: openSpells(w, p, true),
-      trained: Array.from(w.trained.subarray(p * 5, p * 5 + 4)),
-      lost: Array.from(w.lost.subarray(p * 5, p * 5 + 4)),
+      trained: Array.from(w.trained.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
+      lost: Array.from(w.lost.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
       gathered: Array.from(w.gathered.subarray(p * 4, p * 4 + 4)),
       farmersLostBy: Array.from(w.farmerDeaths.subarray(p * 5, p * 5 + 5)),
       revolts: w.revolts[p],

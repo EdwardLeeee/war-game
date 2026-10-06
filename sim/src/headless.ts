@@ -11,6 +11,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
+import { UNIT_KINDS } from "./core/world.ts";
 import type { ScenarioKey } from "./core/scenarios.ts";
 import {
   AI_DIFFICULTIES,
@@ -122,8 +123,8 @@ const timing = {
   })(),
   economy: [0, 1].map((p) => ({
     gathered: Array.from(g.w.gathered.subarray(p * 4, p * 4 + 4)),
-    trained: Array.from(g.w.trained.subarray(p * 5, p * 5 + 5)),
-    lost: Array.from(g.w.lost.subarray(p * 5, p * 5 + 5)),
+    trained: Array.from(g.w.trained.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 5)),
+    lost: Array.from(g.w.lost.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 5)),
     buildings: g.w.buildings.col.owner.subarray(0, g.w.buildings.count).filter((o) => o === p).length,
     townsPlundered: g.w.plundered[p],
     townsGoverned: g.w.governed[p],

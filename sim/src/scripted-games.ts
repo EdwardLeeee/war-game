@@ -11,6 +11,7 @@ import { writeFileSync } from "node:fs";
 import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THINK_EVERY, SPEEDS, type Speed, STRATEGIES, type Strategy } from "./ai/scripted-player.ts";
 import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
 import { rules } from "./core/rules.ts";
+import { UNIT_KINDS } from "./core/world.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, Resource, TownSize, UnitType } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 import { buildView } from "./view/view.ts";
@@ -138,7 +139,7 @@ function play(seed: number): GameRecord {
     return n;
   };
   const army = (p: number) => `${count(p, UnitType.Spearman)}/${count(p, UnitType.Ranged)}/${count(p, UnitType.Mage)}`;
-  const lostSoldiers = (p: number) => w.lost[p * 5 + UnitType.Spearman] + w.lost[p * 5 + UnitType.Ranged] + w.lost[p * 5 + UnitType.Mage];
+  const lostSoldiers = (p: number) => w.lost[p * UNIT_KINDS + UnitType.Spearman] + w.lost[p * UNIT_KINDS + UnitType.Ranged] + w.lost[p * UNIT_KINDS + UnitType.Mage];
   /** Soldiers of p within r cells of (x, y), and the mages among them. */
   const near = (p: number, x: number, y: number, rad: number): [number, number] => {
     let n = 0;
@@ -243,7 +244,7 @@ function play(seed: number): GameRecord {
     waves,
     cityHp: [cityHp(0), cityHp(1)],
     armies: [army(0), army(1)],
-    trained: { mages: [w.trained[UnitType.Mage], w.trained[5 + UnitType.Mage]] },
+    trained: { mages: [w.trained[UnitType.Mage], w.trained[UNIT_KINDS + UnitType.Mage]] },
     cannonShots: [w.cannonShots[0], w.cannonShots[1]],
     rejected,
     finalHash: (g.hash() >>> 0).toString(16).padStart(8, "0"),

@@ -39,6 +39,8 @@ import {
   MAGE_CAP,
   QUEUE_MAX,
   RETREAT_OWN_SPEED,
+  CAVALRY,
+  TOWERS,
   TOWNS,
   UNITS,
 } from "./rules.ts";
@@ -241,7 +243,10 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       const type = cmd.type;
       if (!Number.isInteger(type) || type < 0 || type >= BUILDINGS.length) return Reject.InvalidTarget;
       if (type === BuildingType.MainCity || type === BuildingType.TownTower) return Reject.NotAvailable;
+      // Round 7 (D-061): arrow towers and stables only while their rules are on.
+      if ((type === BuildingType.ArrowTower && !TOWERS.on) || (type === BuildingType.Stable && !CAVALRY.on)) return Reject.NotAvailable;
       const info = BUILDINGS[type];
+      if (!info.requires.every((r) => hasFinished(w, p, r))) return Reject.NotAvailable;
       if (placeCheck(ctx, p, type, cmd.x, cmd.y) !== 0) return Reject.BadPlacement;
       if (!afford(w, p, info.cost, 1)) return Reject.CannotAfford;
       if (auto) {
@@ -446,6 +451,13 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
     default:
       return Reject.NotAvailable;
   }
+}
+
+/** Does player p have a finished building of this type? */
+function hasFinished(w: World, p: number, type: number): boolean {
+  const b = w.buildings.col;
+  for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === type && b.progress[s] >= 1000) return true;
+  return false;
 }
 
 /** Is a cell farm land for player p: within FARMLAND_REACH of an own finished main city or granary? */
