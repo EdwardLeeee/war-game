@@ -865,7 +865,7 @@ export const HARD: HardPlan = {
   pullAll: 4,
   dodge: true,
   towers: 0,
-  hide: false,
+  hide: true,
   cavShare: 0,
   towerWorth: 0,
   looseAt: 0,
