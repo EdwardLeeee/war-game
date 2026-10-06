@@ -830,6 +830,17 @@ export interface HardPlan {
   pullAll: number;
   /** Steps out of crystal cannon warnings. */
   dodge: boolean;
+  /** Round 7: arrow towers it builds by its main city, toward the map centre, once it has a range (0: none). */
+  towers: number;
+  /** Round 7: with enemies near its main city, its ranged units and mages at home hide in it and its towers. */
+  hide: boolean;
+  /**
+   * Round 7: percent cavalry among spearmen, ranged units and cavalry (0: no stable); more against
+   * enemy mages and ranged units, none against an army of spearmen.
+   */
+  cavShare: number;
+  /** Round 7: each enemy arrow tower it knows by the enemy main city counts this much against marching on it. */
+  towerWorth: number;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -853,6 +864,10 @@ export const HARD: HardPlan = {
   recallAt: 4,
   pullAll: 4,
   dodge: true,
+  towers: 0,
+  hide: false,
+  cavShare: 0,
+  towerWorth: 0,
   looseAt: 0,
   looseWho: 1,
 };
@@ -890,6 +905,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
+  const towersOn = know.rules.features?.towers === true && plan.towers > 0;
+  const hideOn = garrisonOn && plan.hide;
+  const cavalryOn = know.rules.features?.cavalry === true && plan.cavShare > 0;
   const governCost = (size: number): Cost => know.rules.towns?.[size]?.governCost ?? GOVERN_COST[size];
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
   const n = know.map.size;
@@ -917,6 +935,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   // main city's arrows (range 7).
   const rally = real(homeF.u + su * 6 + rng.below(3) - 1, homeF.v + sv * 6 + rng.below(3) - 1);
   const post = real(homeF.u + su * 4, homeF.v + sv * 4);
+  // Arrow towers (round 7) go 7 cells out, toward the map centre (where attacks come from).
+  const towerSpot = real(homeF.u + su * 7, homeF.v + sv * 7);
 
   let mode: HardMode = "home";
   let target = { x: post.x, y: post.y };
@@ -1201,6 +1221,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
+        if (cavalryOn && !has(BuildingType.Stable) && (rules.buildings[BuildingType.Stable].requires ?? []).every((t) => done(t).length > 0)) add(BuildingType.Stable, rally);
+        if (towersOn && has(BuildingType.Range) && count(BuildingType.ArrowTower) < plan.towers) add(BuildingType.ArrowTower, towerSpot);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
@@ -1208,8 +1230,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         for (const p of plans) {
           if (p.at === null) continue;
-          // A mine is only worth it by its node.
-          const spot = spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20));
+          // A mine is only worth it by its node; an arrow tower only where towers may go.
+          const fixed = p.type === BuildingType.Mine || p.type === BuildingType.ArrowTower;
+          const spot = spotNear(view, p.type, p.at.x, p.at.y, p.type === BuildingType.ArrowTower ? 6 : 12) ?? (fixed ? null : spotNear(view, p.type, base.x, base.y, 20));
           if (spot === null) continue;
           const cost = rules.buildings[p.type].cost;
           if (!afford(cost)) {
@@ -1250,6 +1273,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         else if (enemySpear + enemyRanged >= 6 && enemyRanged * 100 >= (enemySpear + enemyRanged) * 60) share += plan.counterMix;
       }
       share = Math.max(20, Math.min(80, share));
+      if (cavalryOn) {
+        // Cavalry beats mages and ranged units and loses to spearmen.
+        const cav = soldiers.filter((u) => u.type === UnitType.Cavalry).length;
+        const shooters = enemyMages + enemyRanged;
+        let want = plan.cavShare;
+        if (shooters >= 4 && shooters * 100 >= (shooters + enemySpear) * 50) want += plan.counterMix;
+        else if (enemySpear >= 6 && enemySpear * 100 >= (shooters + enemySpear) * 70) want = 0;
+        if (cav * 100 < want * (spear + ranged + cav + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
+      }
       if (spear * 100 <= share * (spear + ranged)) {
         trainAt(BuildingType.Barracks, UnitType.Spearman);
         trainAt(BuildingType.Range, UnitType.Ranged);
@@ -1371,7 +1403,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // Not told anything while stepping out of a shot or calibrating one (any order would call the
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || byId.get(id)?.order === Order.Cast;
+      // Hiding in a building (round 7) too: a move would bring it out.
+      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -1471,7 +1504,28 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             // Clearly stronger: meet them; otherwise wait for them by the city.
             const meet = armyWorth >= worth(wave) * 2 ? wave : close;
             const c = centre(meet, post.x, post.y);
+            // Round 7: ranged units and mages at home hide in the main city and its towers and shoot
+            // from there (they cannot be hit inside).
+            const hiding: { building: number; u: number[] }[] = [];
+            if (hideOn) {
+              const types = rules.garrisonTypes ?? [];
+              const pool = army
+                .filter((u) => types.includes(u.type as UnitType) && !detached(u.id) && dist2(u.x, u.y, home.cellX, home.cellY) <= 400)
+                .sort((a, b) => dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+              for (const b of [...done(BuildingType.MainCity), ...done(BuildingType.ArrowTower)]) {
+                const used = soldiers.filter((u) => u.order === Order.Garrison && u.orderTarget === b.id).length;
+                const go = pool.splice(0, Math.max(0, (rules.buildings[b.type].holds ?? 0) - used));
+                if (go.length > 0) hiding.push({ building: b.id, u: go.map((u) => u.id) });
+              }
+              const hidden = new Set(hiding.flatMap((h) => h.u));
+              if (hidden.size > 0) {
+                const keep = armyIds.filter((id) => !hidden.has(id));
+                armyIds.length = 0;
+                armyIds.push(...keep);
+              }
+            }
             send(c.x, c.y, "defend");
+            for (const h of hiding) out.push({ c: "garrison", u: h.u, building: h.building });
             return;
           }
         } else {
@@ -1483,6 +1537,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (homeSquad.size > 0 && tick - lastThreat >= 200) {
             rejoin.push(...homeSquad);
             homeSquad.clear();
+          }
+          // Round 7: and those hiding come out (the next army order takes them along).
+          if (hideOn && tick - lastThreat >= 200) {
+            for (const b of own) {
+              if (soldiers.some((u) => u.order === Order.Garrison && u.orderTarget === b.id)) {
+                out.push({ c: "leave", building: b.id });
+                lastMove = -100000;
+              }
+            }
           }
           if (mode === "defend") mode = "home";
         }
@@ -1559,7 +1622,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         // At home: march, go for a town, or wait by the city.
         const popFull = toGo < 0 && cap >= rules.maxPopulation && pop >= cap - FULL_MARGIN;
-        const strong = armyWorth * 100 >= enemyWorth * plan.pushRatio;
+        // Round 7: the enemy's arrow towers by its main city (seen, or remembered) make it harder.
+        let towersThere = 0;
+        if (plan.towerWorth > 0) {
+          for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+            if (view.buildings[r + BuildingField.owner] !== 1 - player || view.buildings[r + BuildingField.type] !== BuildingType.ArrowTower) continue;
+            if (dist2(view.buildings[r + BuildingField.cellX], view.buildings[r + BuildingField.cellY], enemyHome.cellX, enemyHome.cellY) <= 14 * 14) towersThere++;
+          }
+        }
+        const strong = armyWorth * 100 >= (enemyWorth + towersThere * plan.towerWorth) * plan.pushRatio;
         const go = endgame
           ? army.length >= ENDGAME_ARMY
           : assault
