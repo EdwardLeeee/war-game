@@ -23,7 +23,7 @@ const TOWER_OFF = { x: 21, y: 76 };
 const STABLE = { x: 14, y: 70, size: 3 };
 const GROUP_1 = ".groups > button:nth-child(1)";
 /**
- * Waits on the fake world's ticks (shooting, slipping inside): Chromium on a busy runner ran
+ * Waits on the fake world's ticks (shooting, slipping inside, training): Chromium on a busy runner ran
  * far slower than 30 ticks a second (run 37544720334).
  */
 const TICKS = { timeout: 30_000 };
@@ -306,10 +306,10 @@ test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎
   await page.getByRole("button", { name: /^訓練騎兵/ }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "train", type: 5, n: 1 });
   await shot(page, info, "r7-stable");
-  await expect.poll(async () => (await ownIds(page, [5])).length).toBe(1);
+  await expect.poll(async () => (await ownIds(page, [5])).length, TICKS).toBe(1);
   const [cavalry] = await ownIds(page, [5]);
   // No group short of cavalry: it joins the largest, which wants one more (D-054).
-  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groupInfo() ?? []))[0]?.ids ?? []).toContain(cavalry);
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groupInfo() ?? []))[0]?.ids ?? [], TICKS).toContain(cavalry);
   await shot(page, info, "r7-cavalry");
   // Beside the spearmen, close up: the two shapes read apart.
   await place(page, [cavalry], [{ x: 25, y: 69 }]);
