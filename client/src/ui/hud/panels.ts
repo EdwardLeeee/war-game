@@ -525,7 +525,12 @@ export class SelectionInfo {
       // 治理 income (round 7, D-061), while the rule is on.
       const income = owner === view.me && features(view.rules).plunderOnce ? incomeText(t[o + T.incomePermille], t[o + T.state]) : null;
       if (income !== null) parts.push(income);
-      text.textContent = parts.join("　");
+      // Lines break between the parts, not inside one (「收入 25%，慢\n慢回升」).
+      const line = parts.join("　");
+      if (text.dataset.line !== line) {
+        text.dataset.line = line;
+        text.replaceChildren(...parts.flatMap((p, i) => [...(i > 0 ? ["　"] : []), el("span", text, "nowrap", p)]));
+      }
     });
   }
 }
@@ -643,7 +648,10 @@ export class CommandArea {
       const hiders = garrisonTypes(view.rules);
       if (sel.units.some((id) => hiders.includes(view.unitType(id)))) {
         const picking = mode === "garrison";
-        const hide = button(this.el, picking ? "取消躲進去" : "躲進去", "主城或箭樓", () => this.host.setMode(picking ? "normal" : "garrison"), "secondary");
+        // 「取消躲進去」 broke into two lines in one column: 取消 over 躲進去.
+        const hide = picking
+          ? button(this.el, "取消", "躲進去", () => this.host.setMode("normal"), "secondary")
+          : button(this.el, "躲進去", "主城或箭樓", () => this.host.setMode("garrison"), "secondary");
         if (picking) hide.classList.add("active");
       }
       return;

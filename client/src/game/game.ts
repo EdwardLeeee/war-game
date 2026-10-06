@@ -1226,8 +1226,9 @@ export class Game implements GestureHost {
     this.placement = new Placement(info, builders);
     const c = cam.screenToWorld(cam.width / 2, cam.height / 2);
     this.placement.moveTo(c.x, c.y, view.placement);
-    const tower = type === BuildingType.ArrowTower ? "；箭樓要在主城或治理的城鎮附近" : "";
-    this.overlays.showPrompt(builders.length > 0 ? `拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗${tower}` : `拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋${tower}`, []);
+    // 箭樓 (round 7) says where it may go in the same short line (a longer one ran under the group buttons).
+    const drag = type === BuildingType.ArrowTower ? "拖曳箭樓到主城或治理的城鎮附近" : "拖曳預覽到想蓋的位置";
+    this.overlays.showPrompt(builders.length > 0 ? `${drag}，放開後按 ✓ 或 ✗` : `${drag}，放開後按 ✓ 或 ✗；會派最近的村民去蓋`, []);
     this.warnMilitia();
   }
 

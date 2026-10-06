@@ -765,6 +765,11 @@ button.active {
   font-size: 16px;
 }
 
+/* A town's info line breaks between its parts, not inside one. */
+.sel-info .nowrap {
+  white-space: nowrap;
+}
+
 /* What the stance and the formation mean (D-026, D-027), small lines. They sit below the ✕, so they use the full width. */
 .sel-note {
   margin: 4px -46px 0 0;
