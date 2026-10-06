@@ -49,8 +49,12 @@ export interface GameHook {
   init(): Record<string, unknown> | null;
   /** Resource nodes the player knows about, with cells. */
   nodes(): { id: number; kind: number; cx: number; cy: number; amount: number }[];
-  /** Nearest open, explored cell to (cx, cy) with no node or building on it, for "tap the ground". */
-  openCellNear(cx: number, cy: number): { x: number; y: number } | null;
+  /**
+   * The nearest open cell (no building, resource or rock), in rings around (cx, cy). Only cells
+   * the player has explored, unless `explored` is false: the terrain is the map's, known from
+   * the start, so a spot inside a town still in the fog can be aimed at too.
+   */
+  openCellNear(cx: number, cy: number, explored?: boolean): { x: number; y: number } | null;
   lastCheck(): unknown;
   /** Post a command as the player (tests of commands the interface has no button for yet). */
   send(cmd: CommandBody): void;
@@ -140,7 +144,7 @@ export function gameHook(game: Game): GameHook {
       return out;
     },
     nodes: () => [...(game.view?.nodes.values() ?? [])].map((r) => ({ id: r[N.id], kind: r[N.kind], cx: r[N.cellX], cy: r[N.cellY], amount: r[N.amount] })),
-    openCellNear: (cx, cy) => {
+    openCellNear: (cx, cy, explored = true) => {
       const view = game.view;
       if (view === null || view.fog === null) return null;
       const size = view.map.size;
@@ -157,7 +161,7 @@ export function gameHook(game: Game): GameHook {
           for (let x = cx - r; x <= cx + r; x++) {
             if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r || x < 1 || y < 1 || x >= size - 1 || y >= size - 1) continue;
             const i = y * size + x;
-            if (view.map.terrain[i] !== Terrain.Open || view.nodeAt[i] >= 0 || taken[i] === 1 || view.fog[i] === 0) continue;
+            if (view.map.terrain[i] !== Terrain.Open || view.nodeAt[i] >= 0 || taken[i] === 1 || (explored && view.fog[i] === 0)) continue;
             return { x, y };
           }
         }

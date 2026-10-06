@@ -196,15 +196,32 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await shot(page, info, "5b-hold");
   await pause(page);
 
-  // 6. 前進（點地面：往小鎮走，路上遇到敵人會打）
+  // 6. 前進（點地面：整隊走到那裡，遇到敵人會打）
   // The small town nearest the squad, whatever towns the map has (D-044 adds one near each
   // main city): not the first one in the list or a fixed id.
   const town = (await towns(page))
     .filter((t) => t.size === 0)
     .sort((a, b) => Math.hypot(a.cx - SQUAD.x, a.cy - SQUAD.y) - Math.hypot(b.cx - SQUAD.x, b.cy - SQUAD.y) || a.id - b.id)[0];
   if (town === undefined) throw new Error("no small town on the map");
-  const halfway = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [SQUAD.x, SQUAD.y - 5] as const);
-  if (halfway === null) throw new Error("no open cell on the way");
+  // Open ground west of the squad, away from the town: at least 14 cells from its centre, so
+  // that no one in the squad sees its militia (ranged 7 cells, militia within the radius of
+  // 5). The fight starts in step 7. Halfway to the town (6.7 cells from its centre), the squad
+  // could take it before step 7 and the town-choice dialog covered 暫停 (core #126, run
+  // 37497276106, WebKit). The camera is 3 cells south of the spot: the tap lands above the
+  // selection info, and only on open ground.
+  let away6: { x: number; y: number } | null = null;
+  for (const [dx, dy] of [[-6, 1], [-6, 0], [-7, 1], [-5, 1], [-6, 2], [-7, 0]]) {
+    const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [SQUAD.x + dx, SQUAD.y + dy] as const);
+    if (cell === null || Math.hypot(cell.x - town.cx, cell.y - town.cy) < 14) continue;
+    await centre(page, { x: cell.x, y: cell.y + 3 }, 0.8);
+    const p = await toScreen(page, cell);
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === null) {
+      away6 = cell;
+      break;
+    }
+  }
+  if (away6 === null) throw new Error("no open ground away from the town");
+  const halfway = away6;
   await tap(page, await toScreen(page, halfway));
   // A tap on the ground is 進攻 (D-050): the 堅守 squad goes 積極 with it.
   await expect
@@ -222,13 +239,23 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await expect.poll(() => distTo(halfway), { timeout: 30_000 }).toBeLessThan(Math.max(startDist - 2, 2.5));
 
   // 7. 暫停時下指令（暫停後模擬停住，對小鎮下前進指令，按繼續後才執行）
+  // Not fought yet: no dialog covers the buttons, and the town is untouched: not seen yet (the
+  // hook's -1: from 14 cells off it stays in the fog, CI runs 37504823291 and 37504822387) or
+  // neutral (TownState.Neutral, 0) with its militia all there.
+  await expect(page.getByRole("dialog", { name: /搶還是治理/ }), "the squad stayed away from the town").toHaveCount(0);
+  const untouched = (await towns(page)).find((t) => t.id === town.id);
+  expect(untouched?.state === -1 || (untouched?.state === 0 && untouched.militia === town.militia), `the town is untouched: ${JSON.stringify(untouched)}`).toBe(true);
   await pause(page);
   const frozen = (await header(page)).tick;
   await centre(page, { x: town.cx, y: town.cy + 3 }, 0.8);
-  const target = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [town.cx, town.cy] as const);
+  // Into the town, still in the fog (step 6 kept away from it): a cell of its own, not the
+  // nearest explored one, which lay outside it (runs 37506439348, 37506431898: the squad
+  // stopped at the edge, and nobody was inside to stay as garrison in step 8).
+  const target = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y, false) ?? null, [town.cx, town.cy] as const);
   if (target === null) throw new Error("no open cell in the town");
+  expect(Math.hypot(target.x - town.cx, target.y - town.cy), "a cell inside the town").toBeLessThan(town.radius - 1);
   await tap(page, await toScreen(page, target));
-  await expect.poll(() => lastSent(page)).toMatchObject({ u: squadIds });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: squadIds, x: target.x, y: target.y });
   await page.waitForTimeout(500);
   expect((await header(page)).tick, "no ticks while paused").toBe(frozen);
   await shot(page, info, "7-order-while-paused");
