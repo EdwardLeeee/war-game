@@ -41,6 +41,7 @@ import {
   RETREAT_OWN_SPEED,
   CAVALRY,
   TOWERS,
+  TOWN_ONCE,
   TOWNS,
   UNITS,
 } from "./rules.ts";
@@ -426,6 +427,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (w.townState[t] !== TownState.AwaitingChoice) return Reject.TownChoiceMade;
       const rule = TOWNS[w.townSize[t]];
       if (cmd.choice === TownChoice.Plunder) {
+        // Round 7 (D-061): a town can be plundered once a game; after that only governed.
+        if (TOWN_ONCE.on && w.townPlundered[t] !== 0) return Reject.AlreadyPlundered;
         w.townState[t] = TownState.Plundering;
         w.townTimer[t] = rule.plunderTicks;
         w.townTimerTotal[t] = rule.plunderTicks;

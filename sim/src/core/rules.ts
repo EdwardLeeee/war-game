@@ -237,13 +237,13 @@ export const ARROW_TOWER = { damage: 5, range: 7 * CELL, cooldown: 2 * S };
 // --- round 7 (D-061): switches, all off until their PR -----------------------------------
 
 /** A town can be plundered once per game; plundered again, `town_choice` is rejected. */
-export const TOWN_ONCE = { on: false };
+export const TOWN_ONCE = { on: true };
 /**
  * Governing pays `boost` instead of TownRule.perMinute: about 4 minutes of it match one
  * plunder (small 170 a minute against 675, large 385 against 1530).
  */
 export const GOVERN_INCOME = {
-  on: false,
+  on: true,
   boost: [cost(75, 0, 75, 20), cost(170, 0, 170, 45)] as Cost[],
 };
 /**
@@ -251,7 +251,7 @@ export const GOVERN_INCOME = {
  * linearly to all of it over `ticks` of being governed; the town keeps what it climbed when it
  * changes hands.
  */
-export const PLUNDER_RECOVERY = { on: false, startPermille: 250, ticks: 10 * 60 * S };
+export const PLUNDER_RECOVERY = { on: true, startPermille: 250, ticks: 10 * 60 * S };
 /** Players can build arrow towers (BuildingType.ArrowTower). */
 export const TOWERS = { on: false };
 /** Ranged units and mages can hide in main cities and arrow towers (`garrison`, `leave`). */

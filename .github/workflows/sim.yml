@@ -172,6 +172,10 @@ jobs:
           - { group: push-corners, seeds: 1-40, args: --strategy push --speed h1 --formation close --corners }
           # Round 6 (D-054): the same push, its soldiers left to automatic training.
           - { group: push-auto, seeds: 1-40, args: --strategy push --speed h1 --formation close --auto-train }
+          # Round 7 (D-061): automatic training and taking town after town together, and taking
+          # town after town but governing every one (governing has to be worth it).
+          - { group: push-auto-corners, seeds: 1-40, args: --strategy push --speed h1 --formation close --auto-train --corners }
+          - { group: push-corners-govern, seeds: 1-40, args: --strategy push --speed h1 --formation close --corners --govern }
           - { group: defend, seeds: 1-20, args: --strategy defend --speed h1 --formation close }
           - { group: defend, seeds: 21-40, args: --strategy defend --speed h1 --formation close }
           - { group: defend-loose, seeds: 1-20, args: --strategy defend --speed h1 --formation all }
@@ -235,7 +239,7 @@ jobs:
           set -o pipefail
           cat > summary.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
-          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15]];
+          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15]];
           // scripted-<group>-<seeds>.json against normal, scripted-hard-<group>-<seeds>.json against hard.
           const levels = [["", "普通"], ["hard-", "困難"]];
           const games = new Map(levels.flatMap(([l]) => groups.map(([g]) => [l + g, []])));

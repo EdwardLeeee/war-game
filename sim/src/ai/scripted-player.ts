@@ -122,6 +122,8 @@ interface Town {
   needed: number;
   timer: number;
   visible: boolean;
+  /** Plundered once this game (round 7, TownFlag.Plundered). */
+  plundered: boolean;
   x: number;
   y: number;
   size: number;
@@ -490,13 +492,14 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           needed: view.towns[r + TownField.garrisonNeeded],
           timer: view.towns[r + TownField.timer],
           visible: (view.towns[r + TownField.flags] & TownFlag.Visible) !== 0,
+          plundered: (view.towns[r + TownField.flags] & TownFlag.Plundered) !== 0,
           x: t.cellX,
           y: t.cellY,
           size: t.size,
         });
       }
       for (const t of know.map.towns) {
-        if (!towns.has(t.id)) towns.set(t.id, { state: TownState.Neutral, owner: NEUTRAL, needed: 0, timer: 0, visible: false, x: t.cellX, y: t.cellY, size: t.size });
+        if (!towns.has(t.id)) towns.set(t.id, { state: TownState.Neutral, owner: NEUTRAL, needed: 0, timer: 0, visible: false, plundered: false, x: t.cellX, y: t.cellY, size: t.size });
       }
       for (const [id, t] of towns) {
         // Ruins (after our plunder or theirs) turn neutral again, with half the militia, when the
@@ -512,7 +515,11 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (!held) garrison.delete(id);
         if (t.owner !== player || t.state !== TownState.AwaitingChoice) continue;
         const cost = GOVERN_COST[t.size];
-        const govern = plan.choice === "govern" && affordAll(cost);
+        // A town plundered once can only be governed (round 7, Rules.features.plunderOnce): a
+        // person governs it, or waits until it can be paid for.
+        const once = rules.features?.plunderOnce === true && t.plundered;
+        const govern = (plan.choice === "govern" || once) && affordAll(cost);
+        if (once && !govern) continue;
         out.push({ c: "town_choice", town: id, choice: govern ? TownChoice.Govern : TownChoice.Plunder });
         if (govern) spend(cost);
       }
@@ -589,15 +596,18 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // Keeping on taking towns (plan.corners): between trips, the nearest small town that is not
       // ours and may be taken now; on the way, the one the army set out for.
       const ours = (x: Town) => x.owner === player && x.state !== TownState.Neutral;
+      // A town plundered once can only be governed (round 7): not worth a trip, nor waiting at,
+      // while governing it cannot be paid for.
+      const blocked = (x: Town) => rules.features?.plunderOnce === true && x.plundered && !affordAll(GOVERN_COST[x.size]);
       if (plan.corners && mode !== "town") {
         const open = know.map.towns
-          .filter((x) => x.size === TownSize.Small && !ours(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
+          .filter((x) => x.size === TownSize.Small && !ours(towns.get(x.id)!) && !blocked(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
           .sort((a, b) => dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id);
         aim = open[0] ?? myTown;
       }
       const t = towns.get(aim.id)!;
       const oursNow = ours(t);
-      if (t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice)) {
+      if (t.owner === player && (t.state === TownState.Plundering || (t.state === TownState.AwaitingChoice && !blocked(t)))) {
         send(t.x, t.y, "town");
         return out;
       }
@@ -651,7 +661,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
 
       // --- at home: go for the town, march, or wait at the post ---------------------------------------------
       const go = (counterReady && army.length >= plan.counterAt) || (plan.pushAt > 0 && army.length >= plan.pushAt);
-      const townOpen = plan.townAt > 0 && !oursNow && tick >= (nextTown.get(aim.id) ?? 0) && (trips === 0 || plan.again || plan.choice === "govern");
+      const townOpen =
+        plan.townAt > 0 && !oursNow && !blocked(t) && tick >= (nextTown.get(aim.id) ?? 0) && (trips === 0 || plan.again || plan.choice === "govern");
       if (go) {
         armyAtStart = army.length;
         marched.clear();

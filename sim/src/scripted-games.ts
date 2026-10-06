@@ -5,6 +5,7 @@
 //   node src/scripted-games.ts --seeds 1-15 --strategy defend --speed h1 --formation close
 //   node src/scripted-games.ts --seeds 1,2,3 --strategy push --trace --json out.json
 //   node src/scripted-games.ts --seeds 1-20 --strategy push --no-range --no-mage   (spearmen only)
+//   node src/scripted-games.ts --seeds 1-40 --strategy push --corners --govern   (round 7: govern every town taken)
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
 import { writeFileSync } from "node:fs";
@@ -58,6 +59,8 @@ if (flag("no-mage")) plan.noMage = true;
 if (flag("no-range")) plan.noRange = true;
 if (flag("corners")) plan.corners = true;
 if (flag("auto-train")) plan.autoTrain = true;
+// Round 7 (D-061): every town taken is governed, not plundered.
+if (flag("govern")) plan.choice = "govern";
 
 const NAMES: Record<Strategy, string> = { push: "主動", defend: "守家", notown: "守家、不拿城鎮" };
 const SPEED_NAMES: Record<Speed, string> = { h1: "手速 H1", eco: "經濟養大" };
@@ -261,6 +264,7 @@ const options = [
   plan.noRange ? "不蓋射場" : "",
   plan.corners ? "一直搶城鎮（最近、不是自己的小鎮）" : "",
   plan.autoTrain ? "用自動訓練（自己不點訓練兵）" : "",
+  plan.choice === "govern" ? "打下來就治理" : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
