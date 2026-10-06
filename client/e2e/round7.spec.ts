@@ -247,6 +247,7 @@ test("躲著的兵：編隊照算、點編隊會選到，不會因此再拉兵�
   // Only those hiding selected: nothing sent, and how to get them out.
   const mark = (await sent(page)).length;
   await selectForCommands(page, hiding);
+  await expect(page.locator(".sel-info .order-now")).toHaveText(`目前：躲在建築裡 ${hiding.length}`);
   await page.locator(".cmds").getByRole("button", { name: /^進攻/ }).tap();
   await tap(page, await at(page, { x: 18, y: 67 }));
   await expect(toast(page, HIDE_ERROR)).toBeVisible();
