@@ -906,3 +906,21 @@ test("round 7: hard's siege when soldiers can hide in the city: ground down it b
   });
   assert.equal(sent, false);
 });
+
+test("round 7: hard hides its ranged units and mages in its main city when enemies come near it", () => {
+  const hides = (on: boolean) =>
+    withSwitches({ garrison: on }, () => {
+      const g = emptyGame();
+      const w = g.w;
+      const s0 = w.map.spawns[0];
+      const city = w.buildings.col.id[w.mainCity(0)];
+      const shooters = [0, 1, 2].map((k) => put(g, 0, UnitType.Ranged, s0.cellX + 4 + k, s0.cellY - 5));
+      for (let k = 0; k < 4; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + k, s0.cellY - 6);
+      for (let k = 0; k < 3; k++) put(g, 1, UnitType.Spearman, s0.cellX + 7 + k, s0.cellY - 7);
+      g.fog.update(w);
+      const hide = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "garrison") as { u: number[]; building: number } | undefined;
+      return hide !== undefined && hide.building === city && shooters.every((id) => hide.u.includes(id));
+    });
+  assert.equal(hides(true), true);
+  assert.equal(hides(false), false, "rule off: nothing to hide in");
+});
