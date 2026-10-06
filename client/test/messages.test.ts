@@ -7,7 +7,7 @@ import { Reject } from "../src/sim.ts";
 import { rejectText } from "../src/ui/overlays.ts";
 
 test("NotAvailable says what the rule is, for each command", () => {
-  assert.match(rejectText(Reject.NotAvailable, { c: "repair", u: [1], building: 2 }), /不需要農民/);
+  assert.match(rejectText(Reject.NotAvailable, { c: "repair", u: [1], building: 2 }), /不需要村民/);
   assert.match(rejectText(Reject.NotAvailable, { c: "train", building: 2, type: 1, n: 1 }), /還沒蓋好/);
   assert.equal(rejectText(Reject.NotAvailable, { c: "cast", u: 1, fx: 0, fy: 0 }), "只有法師能發晶砲");
   assert.equal(rejectText(Reject.NotAvailable, { c: "move", u: [1], x: 0, y: 0 }), "現在不能這樣做");

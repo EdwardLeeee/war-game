@@ -61,7 +61,7 @@ test("編隊自動補兵：存 10 名槍兵、陣亡 3 名後，接下來訓練�
   assert.equal(count(book, 0), "10/10");
 });
 
-test("編隊自動補兵：補給缺這種兵最多的編隊，一樣多挑編號小的；關掉的編隊和不缺的編隊不補；農民不補", () => {
+test("編隊自動補兵：補給缺這種兵最多的編隊，一樣多挑編號小的；關掉的編隊和不缺的編隊不補；村民不補", () => {
   const w = new World();
   const book = new ArmyBook();
   book.saveGroup(0, [...w.many(1, 4, SPEAR, 40, 40), ...w.many(11, 2, RANGED, 40, 41)]);
@@ -279,7 +279,7 @@ test("隊形：編隊裡超過一半是散開，補進來的新兵也散開；�
 /** A gathering point (the rally point) at a cell, fixed point. */
 const at = (cx: number, cy: number) => ({ x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 });
 
-test("軍團：設定目標後，沒編隊、沒留守的兵被拉進缺人的編隊（缺最多的優先，一樣多給編號小的）；留守、其他編隊的兵和農民不動", () => {
+test("軍團：設定目標後，沒編隊、沒留守的兵被拉進缺人的編隊（缺最多的優先，一樣多給編號小的）；留守、其他編隊的兵和村民不動", () => {
   const w = new World();
   const book = new ArmyBook();
   const town: TownArea = { id: 0, cellX: 80, cellY: 80, radius: 4 };

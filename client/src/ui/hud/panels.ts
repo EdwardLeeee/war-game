@@ -3,6 +3,7 @@
 // be replaced under a finger); numbers that tick (health, progress) update in place.
 
 import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
+import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
@@ -44,8 +45,11 @@ export interface PanelHost {
   garrisonLess(town: number): void;
   /** A line in the message strip. */
   notify(text: string): void;
-  /** 撤退 with units selected: back to the main city at once. */
+  /** 撤退 with units selected: pick where to (D-059). */
   retreat(): void;
+  /** 派村民 (D-061): whom a tap on this node can send, and sending a share of them. */
+  dispatchPool(node: number): DispatchPool | null;
+  dispatch(node: number, share: number): void;
   /** 取消即堅守 (D-054): out of 進攻／撤退, the soldiers selected stop and hold. */
   cancelToHold(): void;
   /** 編隊自動補兵 (D-026): its switch, and flipping it. */
@@ -87,6 +91,11 @@ export const ORDER_TEXT = {
   retreat: "撤退：點地面或小地圖撤到那裡，點主城回家",
   hold: "堅守：停在原地，敵人進到射程就打，不追出去",
 } as const;
+/**
+ * While every soldier selected is retreating, the 撤退 line says what a tap does now (D-061):
+ * it moves the retreat, it is no 進攻. In place of the line, so the panel does not grow.
+ */
+export const RETREAT_NOW_TEXT = "撤退中：點地面或小地圖改撤退位置，到了原地堅守";
 /** The 「目前：」 line's words, in its order (D-054 adds 待命: standing, not 進攻中). */
 export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻中", retreat: "撤退中", hold: "堅守", idle: "待命" };
 
@@ -325,13 +334,19 @@ export class SelectionInfo {
     if (!ids.every(mine) || orderCounts(view, ids) === null) return;
     const note = el("p", this.el, "sel-note");
     const now = el("span", note, "order-now");
-    for (const line of Object.values(ORDER_TEXT)) el("span", note, "order-meaning", line);
+    el("span", note, "order-meaning", ORDER_TEXT.advance);
+    const retreat = el("span", note, "order-meaning", ORDER_TEXT.retreat);
+    el("span", note, "order-meaning", ORDER_TEXT.hold);
     const formation = el("span", note, "formation-meaning");
     const formationMore = el("span", note, "formation-more");
     this.updaters.push(() => {
       const counts = orderCounts(view, ids);
       const text = counts === null ? "" : orderNowText(counts);
       if (now.textContent !== text) now.textContent = text;
+      const retreating = allIn(view, ids, "retreat");
+      const retreatLine = retreating ? RETREAT_NOW_TEXT : ORDER_TEXT.retreat;
+      if (retreat.textContent !== retreatLine) retreat.textContent = retreatLine;
+      retreat.classList.toggle("order-hint", retreating);
       const f = formationOf(view, ids);
       const lines: readonly string[] = f === null ? [] : f === "mixed" ? [FORMATION_MIXED_TEXT] : FORMATION_TEXT[f ? "loose" : "close"];
       if (formation.textContent !== (lines[0] ?? "")) formation.textContent = lines[0] ?? "";
@@ -387,7 +402,7 @@ export class SelectionInfo {
       const building = b[o + B.progress] < 1000;
       hpBar(building ? b[o + B.progress] / 1000 : max > 0 ? b[o + B.hp] / max : 0);
       hpText.textContent = building ? `建造中 ${Math.floor(b[o + B.progress] / 10)}%` : `生命 ${b[o + B.hp]}/${max}`;
-      const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名農民` : "";
+      const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名村民` : "";
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
       const auto = own ? (autoTrainText(type, b[o + B.flags]) ?? "") : "";
@@ -402,9 +417,28 @@ export class SelectionInfo {
     const head = el("div", this.el, "sel-head");
     el("b", head, "", NODE_NAME[row[N.kind]] ?? "資源");
     const text = el("span", this.el, "sel-num");
+    // 派村民 (D-061): a share of those gathering the same resource elsewhere, nearest first.
+    const word = RESOURCE_WORD[NODE_RESOURCE[row[N.kind]]] ?? "";
+    const whom = el("span", this.el, "dispatch-whom");
+    const shares = el("div", this.el, "sel-chips dispatch-shares");
+    shares.setAttribute("role", "group");
+    shares.setAttribute("aria-label", "派村民");
+    const buttons = DISPATCH_SHARES.map((s) => ({ s, b: button(shares, "", "", () => this.host.dispatch(id, s.share), "chip secondary") }));
     this.updaters.push(() => {
       const r = view.nodes.get(id);
       if (r !== undefined) text.textContent = `剩下 ${r[N.amount]}${r[N.visible] === 1 ? "" : "（上次看到的量）"}`;
+      const pool = this.host.dispatchPool(id);
+      const n = pool?.ids.length ?? 0;
+      const line = n === 0 ? `沒有可以派的村民（沒人在採別處的${word}，也沒有閒置的）` : pool?.from === "same" ? `派採${word}的村民過來（別處有 ${n} 名）` : `沒人在採別處的${word}：派閒置的村民過來（${n} 名）`;
+      if (whom.textContent !== line) whom.textContent = line;
+      for (const { s, b } of buttons) {
+        const k = dispatchCount(n, s.share);
+        const label = `${s.label}（${k} 名）`;
+        const span = b.querySelector(".label") as HTMLElement;
+        if (span.textContent !== label) span.textContent = label;
+        b.setAttribute("aria-label", `派${s.label === "全部" ? "全部" : ` ${s.label} `}村民過來：${k} 名`);
+        b.disabled = k === 0;
+      }
     });
   }
 

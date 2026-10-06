@@ -4,7 +4,7 @@
 import { Action, BuildingType, GameOverReason, HeaderField as H, NodeKind, TICKS_PER_SECOND, TownState, UnitType } from "../../sim.ts";
 
 export const UNIT_NAME: Record<number, string> = {
-  [UnitType.Farmer]: "農民",
+  [UnitType.Farmer]: "村民",
   [UnitType.Spearman]: "槍兵",
   [UnitType.Ranged]: "遠程兵",
   [UnitType.Mage]: "法師",

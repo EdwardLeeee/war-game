@@ -1,4 +1,4 @@
-// Tap, double tap and long press on an interface element (編隊 1–4, 閒置農民, the minimap),
+// Tap, double tap and long press on an interface element (編隊 1–4, 閒置村民, the minimap),
 // with the same recogniser and timings as the battlefield (input/gestures.ts): a long press
 // is 350 ms still, a double tap is two taps within 300 ms, and the first tap acts at once.
 // Keyboard and assistive-technology activation (a click with no pointer before it) is a tap.

@@ -32,7 +32,7 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.TownChoiceMade]: "這座城鎮已經選過了",
   [Reject.GameOver]: "這局已經結束",
   [Reject.OutOfRange]: "超出晶砲射程（8 格）",
-  [Reject.NoFarmer]: "附近沒有可以派去蓋的農民",
+  [Reject.NoFarmer]: "附近沒有可以派去蓋的村民",
 };
 
 /**
@@ -42,10 +42,10 @@ export const REJECT_TEXT: Record<number, string> = {
 const BY_COMMAND: Partial<Record<number, Partial<Record<CommandKind, string>>>> = {
   [Reject.NotAvailable]: {
     build: "主城和箭樓不能蓋",
-    repair: "這裡現在不需要農民（沒有受損，或田已經有人耕）",
+    repair: "這裡現在不需要村民（沒有受損，或田已經有人耕）",
     train: "這棟建築還沒蓋好，或不訓練這種兵",
     rally: "這棟建築不能設集結點",
-    gather: "只有農民能採集",
+    gather: "只有村民能採集",
     cast: "只有法師能發晶砲",
     autocast: "只有法師能自動施放",
   },
@@ -62,7 +62,7 @@ const BY_COMMAND: Partial<Record<number, Partial<Record<CommandKind, string>>>> 
  * Farmers sent to repair the own main city while it is locked (hit in the last 10 s): the
  * order is accepted and they wait beside it, so this only tells the player why nothing happens yet.
  */
-export const REPAIR_LOCKED_TEXT = "主城剛被攻擊，暫時不能修理：農民會在旁邊等，10 秒內沒再被打就開始修";
+export const REPAIR_LOCKED_TEXT = "主城剛被攻擊，暫時不能修理：村民會在旁邊等，10 秒內沒再被打就開始修";
 
 /** What to tell the player when a command comes back rejected. */
 export function rejectText(reason: number, cmd: CommandBody | undefined): string {

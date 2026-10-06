@@ -67,18 +67,18 @@ const full = (t: BuildingType) => MOCK_RULES.buildings[t].hp;
 const farmers = { units: [1], building: null };
 const tapCell = (v: GameView, cx: number, cy: number) => tapIntents(v, farmers, "normal", (cx + 0.5) * TILE_PX, (cy + 0.5) * TILE_PX, 1, 22, 12);
 
-test("還沒蓋好的建築 → 派農民去蓋（repair）", () => {
+test("還沒蓋好的建築 → 派村民去蓋（repair）", () => {
   const v = view([[10, BuildingType.House, 2, 2, 50, 400]]);
   assert.equal(v.buildingNeedsFarmers(10), true);
   assert.deepEqual(tapCell(v, 2, 2), [{ kind: "command", cmd: { c: "repair", u: [1], building: 10 } }]);
 });
 
-test("受損的建築 → 派農民去修（repair）", () => {
+test("受損的建築 → 派村民去修（repair）", () => {
   const v = view([[10, BuildingType.Barracks, 2, 2, full(BuildingType.Barracks) - 1, 1000]]);
   assert.deepEqual(tapCell(v, 3, 3), [{ kind: "command", cmd: { c: "repair", u: [1], building: 10 } }]);
 });
 
-test("農田 → 派農民去耕（有沒有人耕由模擬判定）", () => {
+test("農田 → 派村民去耕（有沒有人耕由模擬判定）", () => {
   const v = view([[10, BuildingType.Farm, 2, 2, full(BuildingType.Farm), 1000]]);
   assert.deepEqual(tapCell(v, 2, 2), [{ kind: "command", cmd: { c: "repair", u: [1], building: 10 } }]);
 });
@@ -91,7 +91,7 @@ test("完好的主城、民居、兵營 → 改選那棟建築", () => {
   }
 });
 
-test("主城剛被攻擊（RepairLocked）：照樣派農民去修（模擬會讓他們等），畫面另外說明", () => {
+test("主城剛被攻擊（RepairLocked）：照樣派村民去修（模擬會讓他們等），畫面另外說明", () => {
   const v = view([[10, BuildingType.MainCity, 2, 2, full(BuildingType.MainCity) - 100, 1000, BuildingFlag.RepairLocked]]);
   assert.equal(v.buildingRepairLocked(10), true);
   assert.deepEqual(tapCell(v, 3, 3), [{ kind: "command", cmd: { c: "repair", u: [1], building: 10 } }]);

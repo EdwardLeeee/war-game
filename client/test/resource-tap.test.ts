@@ -29,7 +29,7 @@ const sel = { units: [1, 2], building: null };
 // The right edge of the berries' cell: 18 px from the farmer's centre (inside 22, outside 12).
 const nearEdge = { x: 12 * TILE_PX + 30, y: 12 * TILE_PX + TILE_PX / 2 };
 
-test("資源點旁邊有自己的單位時，已選農民點資源點 → gather（不是改選那名農民）", () => {
+test("資源點旁邊有自己的單位時，已選村民點資源點 → gather（不是改選那名村民）", () => {
   assert.deepEqual(tapIntents(world(), sel, "normal", nearEdge.x, nearEdge.y, 1, R, CORE), [
     { kind: "command", cmd: { c: "gather", u: [1, 2], node: 100 } },
   ]);
@@ -55,13 +55,13 @@ test("一起選的軍隊不去採集，而是走過去", () => {
   ]);
 });
 
-test("沒選農民時，點資源點是查看（畫面會顯示它的名稱和剩下的量）", () => {
+test("沒選村民時，點資源點是查看（畫面會顯示它的名稱和剩下的量）", () => {
   assert.deepEqual(tapIntents(world(), { units: [], building: null }, "normal", 12 * TILE_PX + 16, 12 * TILE_PX + 16, 1, R, CORE), [
     { kind: "inspect", pick: { kind: "node", id: 100, owner: NO_OWNER, type: NodeKind.Berries } },
   ]);
 });
 
-test("已選農民點自己的農田（旁邊有人）→ repair（耕作），不是改選", () => {
+test("已選村民點自己的農田（旁邊有人）→ repair（耕作），不是改選", () => {
   const w = world();
   w.units.push({ id: 4, owner: ME, type: UnitType.Farmer, cx: 21, cy: 20 });
   assert.deepEqual(tapIntents(w, sel, "normal", 20 * TILE_PX + 30, 20 * TILE_PX + 16, 1, R, CORE), [

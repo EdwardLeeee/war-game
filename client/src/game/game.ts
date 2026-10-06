@@ -25,6 +25,7 @@ import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
 import { WorldRenderer } from "../render/world.ts";
 import {
+  Action,
   type AiDifficulty,
   BUILDING_STRIDE,
   BuildingField,
@@ -39,6 +40,7 @@ import {
   NodeField,
   Order,
   PROTOCOL_VERSION,
+  Resource,
   type ScenarioName,
   Stance,
   TOWN_STRIDE,
@@ -49,6 +51,7 @@ import {
   type ToWorker,
   UNIT_STRIDE,
   UnitField,
+  UnitFlag,
   UnitType,
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
@@ -60,6 +63,7 @@ import { Placement } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
+import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
 import { allIn } from "./orders.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
@@ -86,6 +90,9 @@ export interface GameOptions {
   /** The game has ended (game_over): the page keeps its record (D-056). */
   ended?: () => void;
 }
+
+/** A tap while every soldier selected is retreating moves the retreat (D-061). */
+export const RETREAT_RETARGET_TEXT = "改撤到這裡，撤到後原地堅守";
 
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   advance: "點地面或小地圖：整隊前進，遇到敵人一起打",
@@ -287,7 +294,7 @@ export class Game implements GestureHost {
       this.toast("先選部隊，再長按小地圖");
       return;
     }
-    this.apply([{ kind: "command", cmd: { c: "move", u: units, x: cx, y: cy } }]);
+    this.apply(this.keepRetreating([{ kind: "command", cmd: { c: "move", u: units, x: cx, y: cy } }]));
   }
 
   pause(): void {
@@ -380,11 +387,18 @@ export class Game implements GestureHost {
     if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") {
       // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
       const released = this.army.release(cmd.u);
-      // 前進 and 攻擊 are 進攻 (D-050), with or without the button: those holding go 積極.
       const view = this.view;
-      const holding =
-        cmd.c === "retreat" || view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && view.unitStance(id) === Stance.Hold);
-      this.setStance([...released, ...holding], Stance.Aggressive);
+      if (cmd.c === "retreat") {
+        // 撤到就堅守 (D-061: 「撤到之後兵自己回頭打」): a retreating soldier fights no one, and once
+        // there, holding, it shoots only what comes in range and does not chase. 進攻 makes it
+        // 積極 again (below). Those released from a garrison hold already.
+        const soldiers = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && view.unitStance(id) !== Stance.Hold);
+        this.setStance(soldiers, Stance.Hold);
+      } else {
+        // 前進 and 攻擊 are 進攻 (D-050), with or without the button: those holding go 積極.
+        const holding = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && view.unitStance(id) === Stance.Hold);
+        this.setStance([...released, ...holding], Stance.Aggressive);
+      }
     }
     // His own order sending a recruit somewhere: 自動補兵 no longer leads it to its group (GDD §10).
     this.army.playerCommand(cmd);
@@ -460,6 +474,64 @@ export class Game implements GestureHost {
   chooseTown(town: number, choice: TownChoice, keep: number): void {
     const seq = this.command({ c: "town_choice", town, choice });
     this.army.awaitChoice(town, seq, this.stationGarrison(town, keep));
+  }
+
+  /** Our villagers, with what each gathers now (派村民, D-061). Those hiding in a building are left out. */
+  private villagers(): Villager[] {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const b = view?.curr?.snap.buildings;
+    if (view === null || u === undefined || b === undefined) return [];
+    const out: Villager[] = [];
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] !== view.me || u[o + UnitField.type] !== UnitType.Farmer || u[o + UnitField.action] === Action.Garrisoned) continue;
+      const x = u[o + UnitField.x] / CELL;
+      const y = u[o + UnitField.y] / CELL;
+      const order = u[o + UnitField.order];
+      const t = u[o + UnitField.orderTarget];
+      let gathers: Resource | null = null;
+      let node: number | null = null;
+      if (order === Order.Gather) {
+        // The target is a node, or a farm of ours (ids of nodes and of buildings can be the
+        // same number): the one nearer the villager.
+        const row = view.nodes.get(t);
+        const bo = view.buildingRow(t);
+        const farm = bo >= 0 && b[bo + BuildingField.owner] === view.me && b[bo + BuildingField.type] === BuildingType.Farm;
+        const toNode = row === undefined ? Infinity : Math.hypot(x - (row[NodeField.cellX] + 0.5), y - (row[NodeField.cellY] + 0.5));
+        const toFarm = farm ? Math.hypot(x - (b[bo + BuildingField.cellX] + 1.5), y - (b[bo + BuildingField.cellY] + 1.5)) : Infinity;
+        if (row !== undefined && toNode <= toFarm) {
+          node = t;
+          gathers = NODE_RESOURCE[row[NodeField.kind]] ?? null;
+        } else if (farm) {
+          gathers = Resource.Food;
+        }
+      }
+      const idle = order === Order.None || (u[o + UnitField.flags] & UnitFlag.IdleFarmer) !== 0;
+      out.push({ id: u[o + UnitField.id], x, y, gathers, node, idle });
+    }
+    return out;
+  }
+
+  /** 派村民 (D-061): whom a tap on this node can send, nearest first; null for an unknown node. */
+  dispatchPool(nodeId: number): DispatchPool | null {
+    const row = this.view?.nodes.get(nodeId);
+    if (row === undefined) return null;
+    return dispatchPool(this.villagers(), { id: nodeId, kind: row[NodeField.kind], cx: row[NodeField.cellX], cy: row[NodeField.cellY] });
+  }
+
+  /** 派村民: a share of them gathers at the node, by the player's own `gather` (the economy ratio leaves them, D-050). */
+  dispatch(nodeId: number, share: number): void {
+    const row = this.view?.nodes.get(nodeId);
+    const pool = this.dispatchPool(nodeId);
+    if (row === undefined || pool === null) return;
+    const n = dispatchCount(pool.ids.length, share);
+    if (n === 0) {
+      this.toast("沒有可以派的村民");
+      return;
+    }
+    const u = pool.ids.slice(0, n).sort((a, c) => a - c);
+    this.apply([{ kind: "command", cmd: { c: "gather", u, node: nodeId } }]);
+    this.toast(`派 ${n} 名村民去採${RESOURCE_WORD[NODE_RESOURCE[row[NodeField.kind]]] ?? ""}`);
   }
 
   /** 全軍: every soldier of ours that is not stationed in a town. */
@@ -768,7 +840,22 @@ export class Game implements GestureHost {
       this.showPlaceButtons();
       return;
     }
-    this.apply(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
+    this.apply(this.keepRetreating(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1))));
+  }
+
+  /**
+   * 撤退中點地面 (D-061: 「撤退按下去之後，點地面應該是撤退的方向，不是改為進攻」): while every
+   * soldier selected is retreating (the button reads 取消撤退), the 前進 a tap on the ground or
+   * a long press on the minimap would give is a retreat to that spot instead. With only some of
+   * them retreating it stays 前進, as the button shows.
+   */
+  private keepRetreating(intents: Intent[]): Intent[] {
+    const view = this.view;
+    if (view === null || this.mode !== "normal" || intents.length !== 1) return intents;
+    const [only] = intents;
+    if (only.kind !== "command" || only.cmd.c !== "move" || !allIn(view, view.selection.units, "retreat")) return intents;
+    this.toast(RETREAT_RETARGET_TEXT);
+    return [{ kind: "command", cmd: { c: "retreat", u: only.cmd.u, x: only.cmd.x, y: only.cmd.y } }];
   }
 
   longPress(x: number, y: number): LongPressResult {
@@ -886,7 +973,7 @@ export class Game implements GestureHost {
       case "node": {
         const row = view.nodes.get(p.id);
         const res = ["木", "金", "糧", "魔晶"][p.type] ?? "";
-        return `${NODE_NAME[p.type] ?? "資源"}（${res}）剩 ${row?.[NodeField.amount] ?? "?"}：先選農民再點它，就會去採`;
+        return `${NODE_NAME[p.type] ?? "資源"}（${res}）剩 ${row?.[NodeField.amount] ?? "?"}：下面可以派村民過來`;
       }
       case "unit":
         return `${whose}${UNIT_NAME[p.type] ?? "單位"}`;
@@ -1071,7 +1158,7 @@ export class Game implements GestureHost {
     this.placement = new Placement(info, builders);
     const c = cam.screenToWorld(cam.width / 2, cam.height / 2);
     this.placement.moveTo(c.x, c.y, view.placement);
-    this.overlays.showPrompt(builders.length > 0 ? "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗" : "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的農民去蓋", []);
+    this.overlays.showPrompt(builders.length > 0 ? "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗" : "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", []);
     this.warnMilitia();
   }
 
