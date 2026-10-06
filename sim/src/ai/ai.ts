@@ -1578,8 +1578,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (mode === "base") {
           // Those that set out are the front; soldiers trained since wait at home and follow six at
           // a time (one by one they would be picked off on the way).
+          // Round 7: a main city with soldiers hiding in it picks off what comes in small groups,
+          // so then they wait for the next march instead.
           const reserves = army.filter((u) => !marched.has(u.id) && !detached(u.id));
-          if (reserves.length >= 6) for (const u of reserves) marched.add(u.id);
+          if (reserves.length >= 6 && !r7) for (const u of reserves) marched.add(u.id);
           const front = army.filter((u) => marched.has(u.id));
           const frontIds = front.filter((u) => !detached(u.id)).map((u) => u.id);
           const fc = centre(front, ac.x, ac.y);
@@ -1587,11 +1589,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // It breaks off only when outmatched where the front stands (not because the city's arrows
           // thinned it: with nobody left to defend it, the city falls), or when too few are left.
           const atCity = front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 14 * 14);
-          // Round 7: hiding defenders slow a siege and the front strings out behind it; six by the
-          // city are enough to start on it while the rest come on.
-          const there = atCity.length * 2 >= front.length || (r7 && atCity.length >= 6);
+          // Round 7: stragglers far behind do not hold up the siege; and soldiers hiding in the city
+          // cannot be seen, so a front ground down to under 40% of those that set out breaks off.
+          const nearFront = r7 ? front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 30 * 30).length : front.length;
+          const there = atCity.length * 2 >= nearFront;
           const defenders = worth(foesNear(fc.x, fc.y, 12));
-          if (front.length === 0 || (!endgame && !cityLow && (defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0)))) {
+          const ground = r7 && front.length * 5 < armyAtStart * 2;
+          if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0)))) {
             counterReady = false;
             fallBack(post.x, post.y);
             return;
@@ -1616,7 +1620,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             }
           } else if (
             frontIds.length > 0 &&
-            (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= (there ? 100 : 400) || reserves.length >= 6)
+            (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= (there ? 100 : 400) || (reserves.length >= 6 && !r7))
           ) {
             // On the way, or there without the city in sight yet: on to it.
             out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
