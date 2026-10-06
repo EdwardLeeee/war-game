@@ -64,7 +64,7 @@ async function distanceTo(page: Page, c: { x: number; y: number }): Promise<numb
   return (await farmers(page)).reduce((sum, u) => sum + Math.hypot(u.cx - c.x, u.cy - c.y), 0);
 }
 
-test("開局：模擬在跑，自己有 5 名農民", async ({ page }, info) => {
+test("開局：模擬在跑，自己有 5 名村民", async ({ page }, info) => {
   await start(page);
   const t0 = (await header(page)).tick;
   await expect.poll(async () => (await header(page)).tick).toBeGreaterThan(t0 + 5);
@@ -72,7 +72,7 @@ test("開局：模擬在跑，自己有 5 名農民", async ({ page }, info) => 
   await shot(page, info, "sim-start");
 });
 
-test("選農民 → 點地面前進：農民往那裡走", async ({ page }) => {
+test("選村民 → 點地面前進：村民往那裡走", async ({ page }) => {
   await start(page, "?test=1&tps=60");
   await pause(page);
   const ids = await selectFarmers(page);
@@ -108,7 +108,7 @@ test("暫停時下指令：模擬停住、指令照收，按繼續後才執行",
 // User report 2026-09-30 (iPhone, 8a0b002): 「點果樹跟金礦沒反應耶」「有阿我有先選」.
 // Farmers the economy sent to the berries and the gold mine stand next to them; a tap on
 // the resource used to re-select the nearest farmer instead of ordering gather.
-test("選了農民點野果、點金礦（旁邊有農民在採）→ 送出採集，農民真的去採", async ({ page }, info) => {
+test("選了村民點野果、點金礦（旁邊有村民在採）→ 送出採集，村民真的去採", async ({ page }, info) => {
   test.setTimeout(120_000);
   await start(page, "?test=1&tps=60");
   const nodes = await page.evaluate(() => window.__proto?.game?.nodes() ?? []);
@@ -165,17 +165,66 @@ test("選了農民點野果、點金礦（旁邊有農民在採）→ 送出採�
   }
 });
 
-test("沒選農民時點資源點：顯示它是什麼、剩多少，並提示先選農民", async ({ page }) => {
+test("沒選村民時點資源點：顯示它是什麼、剩多少，並提示選村民或在下面派村民", async ({ page }) => {
   await start(page);
   const berry = (await page.evaluate(() => window.__proto?.game?.nodes() ?? [])).find((n) => n.kind === 2 && n.amount > 0);
   if (berry === undefined) throw new Error("no berries");
   await pause(page);
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y), [berry.cx, berry.cy] as const);
   await tap(page, await toScreen(page, { x: berry.cx, y: berry.cy }));
-  await expect(page.getByRole("status").filter({ hasText: /野果（糧）剩 \d+：先選農民再點它，就會去採/ })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /野果（糧）剩 \d+：選村民再點它就會去採；也可以在下面派村民過來/ })).toBeVisible();
 });
 
-test("介面：資源列是模擬的數字；選主城 → 訓練農民 → 佇列顯示 → 農民出生、人口增加", async ({ page }, info) => {
+test("點資源派村民（D-061）：沒選東西時點一棵樹，面板寫別處有幾名在採木；按 ½ 送出親手派的 gather，只派採木的村民、照比例、近的先派，他們真的過去", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await start(page, "?test=1&tps=60");
+  const nodes = await page.evaluate(() => window.__proto?.game?.nodes() ?? []);
+  const kindOf = new Map(nodes.map((n) => [n.id, n.kind]));
+  // The economy sends some villagers to the trees on its own (no farms yet: every target is a node).
+  const onWood = async () => (await farmers(page)).filter((f) => f.order === 4 && kindOf.get(f.target) === 0);
+  await expect.poll(async () => (await onWood()).length, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
+  await pause(page);
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  const cutters = await onWood();
+  const mid = { x: cutters.reduce((s, f) => s + f.fx, 0) / cutters.length, y: cutters.reduce((s, f) => s + f.fy, 0) / cutters.length };
+  // A tree nobody works, near them, and a tap on it that picks the tree (not a villager beside it).
+  const free = nodes
+    .filter((n) => n.kind === 0 && n.amount > 0 && !cutters.some((f) => f.target === n.id))
+    .sort((a, b) => Math.hypot(a.cx - mid.x, a.cy - mid.y) - Math.hypot(b.cx - mid.x, b.cy - mid.y));
+  let tree: (typeof nodes)[number] | null = null;
+  for (const n of free.slice(0, 30)) {
+    await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y + 2), [n.cx, n.cy] as const);
+    const at = await toScreen(page, { x: n.cx, y: n.cy });
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [at.x, at.y] as const)) === "node") {
+      tree = n;
+      break;
+    }
+  }
+  if (tree === null) throw new Error("no free tree to tap");
+  const t = tree;
+  await tap(page, await toScreen(page, { x: t.cx, y: t.cy }));
+  const panel = page.locator(".sel-info");
+  await expect(panel.locator(".sel-head")).toContainText("樹");
+  const n = cutters.length;
+  await expect(panel.locator(".dispatch-whom")).toHaveText(`派採木的村民過來（別處有 ${n} 名）`);
+  const half = Math.max(1, Math.floor(n / 2 + 0.5));
+  const quarter = Math.max(1, Math.floor(n / 4 + 0.5));
+  await expect(panel.locator(".dispatch-shares button")).toHaveText([`¼（${quarter} 名）`, `½（${half} 名）`, `全部（${n} 名）`]);
+  await shot(page, info, "dispatch-panel");
+  await panel.getByRole("button", { name: `派 ½ 村民過來：${half} 名` }).tap();
+  // The nearest of those cutting wood elsewhere, as the player's own gather.
+  const nearest = [...cutters]
+    .sort((a, b) => Math.hypot(a.fx - (t.cx + 0.5), a.fy - (t.cy + 0.5)) - Math.hypot(b.fx - (t.cx + 0.5), b.fy - (t.cy + 0.5)) || a.id - b.id)
+    .slice(0, half)
+    .map((f) => f.id)
+    .sort((a, b) => a - b);
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "gather", u: nearest, node: t.id });
+  await expect(page.getByRole("status").filter({ hasText: `派 ${half} 名村民去採木` })).toBeVisible();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(async () => (await farmers(page)).filter((f) => nearest.includes(f.id)).every((f) => f.target === t.id), { timeout: 15_000 }).toBe(true);
+});
+
+test("介面：資源列是模擬的數字；選主城 → 訓練村民 → 佇列顯示 → 村民出生、人口增加", async ({ page }, info) => {
   await start(page, "?test=1&tps=60");
   await pause(page);
   const h = await page.evaluate(() => window.__proto?.game?.header());
@@ -189,15 +238,15 @@ test("介面：資源列是模擬的數字；選主城 → 訓練農民 → 佇�
   await tap(page, await toScreen(page, centre));
   await expect(page.locator(".sel-info")).toContainText("主城");
   const before = (await farmers(page)).length;
-  await page.getByRole("button", { name: /^訓練農民/ }).tap();
+  await page.getByRole("button", { name: /^訓練村民/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "train", building: city.id, type: 0, n: 1 });
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
-  await expect(page.getByRole("button", { name: /取消訓練第 1 個：農民/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /取消訓練第 1 個：村民/ })).toBeVisible();
   await shot(page, info, "train-farmer");
   await expect.poll(async () => (await farmers(page)).length, { timeout: 30_000 }).toBe(before + 1);
 });
 
-test("介面：選農民 → 建造 → 民居 → 找到能蓋的位置 → ✓ → 工地出現", async ({ page }, info) => {
+test("介面：選村民 → 建造 → 民居 → 找到能蓋的位置 → ✓ → 工地出現", async ({ page }, info) => {
   await start(page, "?test=1&tps=60");
   await pause(page);
   const ids = await selectFarmers(page);
@@ -243,7 +292,7 @@ test("速度：正常 → 快 → 慢 → 正常（每秒 30、40、20 tick，D-
 // Which commands the simulation has not built yet changes as core's PRs land (surrender
 // ends the game once PR-4 is in), so "原型尚未開放" is covered by the unit tests
 // (test/messages.test.ts) and this test only uses a rule that exists.
-test("已經有的規則被拒時說明原因：主城連排 5 個農民，第 5 個糧食不夠", async ({ page }) => {
+test("已經有的規則被拒時說明原因：主城連排 5 個村民，第 5 個糧食不夠", async ({ page }) => {
   await start(page);
   await pause(page);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -253,12 +302,12 @@ test("已經有的規則被拒時說明原因：主城連排 5 個農民，第 5
   await tap(page, await toScreen(page, c));
   await expect(page.locator(".sel-info")).toContainText("主城");
   // Standard start: 200 food, a farmer costs 50. Orders given while paused all run on the next tick.
-  for (let i = 0; i < 5; i++) await page.getByRole("button", { name: /^訓練農民/ }).tap();
+  for (let i = 0; i < 5; i++) await page.getByRole("button", { name: /^訓練村民/ }).tap();
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect(page.getByRole("status").filter({ hasText: "資源不夠" })).toBeVisible();
 });
 
-test("選了農民時點自己完好的建築是選取它（不是叫農民去修）；✕ 取消選取", async ({ page }) => {
+test("選了村民時點自己完好的建築是選取它（不是叫村民去修）；✕ 取消選取", async ({ page }) => {
   await start(page);
   await pause(page);
   const ids = await selectFarmers(page);
@@ -269,7 +318,7 @@ test("選了農民時點自己完好的建築是選取它（不是叫農民去�
   await tap(page, await toScreen(page, { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) }));
   await expect.poll(() => selection(page)).toEqual({ units: [], building: city.id });
   // The command area is the main city's now.
-  await expect(page.getByRole("button", { name: /^訓練農民/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^訓練村民/ })).toBeVisible();
   await page.getByRole("button", { name: "取消選取" }).tap();
   await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
 });

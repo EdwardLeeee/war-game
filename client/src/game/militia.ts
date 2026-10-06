@@ -11,7 +11,7 @@ import { TownState } from "../sim.ts";
  */
 export const MILITIA_CLEARANCE = 12;
 
-export const MILITIA_WARNING = "這裡離城鎮的民兵太近，去蓋的農民會被攻擊";
+export const MILITIA_WARNING = "這裡離城鎮的民兵太近，去蓋的村民會被攻擊";
 
 /** A town as we know it now: `state` null when never explored. */
 export interface MilitiaTown {

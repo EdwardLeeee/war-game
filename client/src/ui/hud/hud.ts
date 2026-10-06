@@ -1,6 +1,6 @@
 // The prototype's interface shell (GDD §10 草稿; temporary, not an approved design): resource
 // bar, minimap, selection info, command area, control groups 1–4 and 全軍 on the right,
-// 閒置農民 and 全體回城 on the left, attack alerts, 經濟分配, 搶／治理, the menu and the result
+// 閒置村民 and 全體回城 on the left, attack alerts, 經濟分配, 搶／治理, the menu and the result
 // screen. Text updates at most 10 times a second and only when it changed.
 
 import type { Game } from "../../game/game.ts";
@@ -136,6 +136,8 @@ export class Hud {
       garrisonLess: (town: number) => game.garrisonLess(town),
       notify: (text: string) => game.toast(text),
       retreat: () => game.retreatSelection(),
+      dispatchPool: (node: number) => game.dispatchPool(node),
+      dispatch: (node: number, share: number) => game.dispatch(node, share),
       cancelToHold: () => game.cancelToHold(),
       groupRefill: (i: number) => game.army.groups[i].refill,
       toggleRefill: (i: number) => this.toggleRefill(i),
@@ -271,12 +273,12 @@ export class Hud {
     this.game.command({ c: "recall", on: !on });
   }
 
-  /** 閒置農民, tap: select the next idle farmer and look at it. */
+  /** 閒置村民, tap: select the next idle farmer and look at it. */
   private nextIdle(): void {
     const view = this.game.view;
     const idle = view?.curr?.snap.idleFarmers;
     if (view === null || idle === undefined || idle.length === 0) {
-      this.game.toast("沒有閒置的農民");
+      this.game.toast("沒有閒置的村民");
       return;
     }
     this.idleIndex = (this.idleIndex + 1) % idle.length;
@@ -289,11 +291,11 @@ export class Hud {
     }
   }
 
-  /** 閒置農民, long press: select every idle farmer. */
+  /** 閒置村民, long press: select every idle farmer. */
   private allIdle(): void {
     const idle = this.game.view?.curr?.snap.idleFarmers;
     if (idle === undefined || idle.length === 0) {
-      this.game.toast("沒有閒置的農民");
+      this.game.toast("沒有閒置的村民");
       return;
     }
     this.game.apply([{ kind: "select", units: [...idle].sort((a, b) => a - b) }]);
@@ -566,7 +568,7 @@ export class Hud {
     if (e === null) return;
     const card = this.openDialog("經濟分配", "economy");
     // D-050 (core #105): the ratio now moves the farmers already gathering too, but not those sent by hand.
-    el("p", card, "small", "自動分配開著時，改比例後，正在採糧、木、金的農民會照新比例重新分配；你親手派去採的不會動。晶脈要自己派。");
+    el("p", card, "small", "自動分配開著時，改比例後，正在採糧、木、金的村民會照新比例重新分配；你親手派去採的不會動。晶脈要自己派。");
     const rows: [keyof Ratio, string][] = [
       ["food", "糧"],
       ["wood", "木"],

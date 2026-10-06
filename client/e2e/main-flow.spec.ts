@@ -1,8 +1,8 @@
 // The brief's main flow, on core's real simulation with its `e2e` scenario (plenty of
 // resources, two houses and a barracks, a squad of 6 spearmen and 4 ranged ten cells from
 // the small town), in WebKit and Chromium at iPhone landscape size with touch:
-// 開局（選難度）→ 選農民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 改姿態 → 前進 →
-// 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開、城鎮不叛離 → 編隊缺人後不選農民蓋民居，
+// 開局（選難度）→ 選村民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 改姿態 → 前進 →
+// 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開、城鎮不叛離 → 編隊缺人後不選村民蓋民居，
 // 自動訓練出來的新兵補進來 → 暫停自動訓練 → 軍團畫面 → 散開隊形 → 全軍撤退
 // （D-024、D-026、D-027、D-054）.
 // Every step goes through the interface the player uses; the test hook only reads state
@@ -54,7 +54,7 @@ async function resume(page: Page): Promise<void> {
   await expect.poll(async () => (await header(page)).paused).toBe(false);
 }
 
-test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 不選農民蓋民居、自動訓練的新兵補進編隊 → 暫停自動訓練 → 軍團畫面 → 散開隊形 → 全軍撤退", async ({ page }, info) => {
+test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 不選村民蓋民居、自動訓練的新兵補進編隊 → 暫停自動訓練 → 軍團畫面 → 散開隊形 → 全軍撤退", async ({ page }, info) => {
   test.setTimeout(300_000);
   const check = watchErrors(page);
 
@@ -75,7 +75,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await expect(page.locator(".res-bar")).toContainText(/糧 \d{4}/);
   await shot(page, info, "1-start");
 
-  // 2. 選農民（點兩下一名農民 = 畫面內所有農民）
+  // 2. 選村民（點兩下一名村民 = 畫面內所有村民）
   await pause(page);
   const farmers = (await own(page, [FARMER])).sort((a, b) => a.id - b.id);
   await doubleTap(page, { x: farmers[0].sx, y: farmers[0].sy });
@@ -85,7 +85,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   expect(farmerIds.every((id) => farmers.some((f) => f.id === id)), "only farmers").toBe(true);
 
   // 3. 蓋房子（指令區：建造 → 民居 → 點一個能蓋的位置 → ✓）
-  // 先用重設按鈕離開放建築（D-024）：開始放民居 → 重設 → 沒有選取、不在放建築 → 再選一次農民。
+  // 先用重設按鈕離開放建築（D-024）：開始放民居 → 重設 → 沒有選取、不在放建築 → 再選一次村民。
   await page.getByRole("button", { name: "建造" }).tap();
   await page.getByRole("button", { name: /^民居/ }).tap();
   await expect.poll(() => mode(page)).toBe("place:dragging");
@@ -285,7 +285,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await shot(page, info, "8b-army-left-garrison-stays");
 
   // 8c. 編隊缺人後，自動訓練出來的新兵補進來（D-026、D-054）：自動訓練一直開著，沒有人按「訓練槍兵」。
-  //     編隊 1 的一名槍兵去留守 → 編隊 1 缺一名槍兵 → 不選農民蓋民居（D-024；人口可能早就滿了，蓋好才有空位）→
+  //     編隊 1 的一名槍兵去留守 → 編隊 1 缺一名槍兵 → 不選村民蓋民居（D-024；人口可能早就滿了，蓋好才有空位）→
   //     兵營自己練出來的槍兵編進編隊 1，馬上自己走到部隊那裡（全軍在 8b 走到了 `away`）。
   //     Who fills the gap first is not fixed: an idle spearman in no group (D-050) or a new one.
   //     The new ones join group 1 either way (the group short of them, or the largest one).
@@ -334,7 +334,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await page.locator(".sel-info").getByRole("button", { name: "多留守 1 名" }).tap();
   await expect.poll(() => garrison(page, town.id)).toEqual([kept, sp]);
   await expect.poll(async () => (await groupInfo(page))[0].ids).not.toContain(sp);
-  // 不選農民蓋民居：重設 → 建造 → 民居 → ✓，由模擬派最近的農民去蓋. Placed while paused, so
+  // 不選村民蓋民居：重設 → 建造 → 民居 → ✓，由模擬派最近的村民去蓋. Placed while paused, so
   // nobody walks onto the spot between the preview and ✓.
   await pause(page);
   await page.getByRole("button", { name: "重設" }).tap();
@@ -363,7 +363,7 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   await expect
     .poll(async () => (await buildings(page)).find((b) => b.owner === me && b.type === HOUSE && b.cx === house2.cellX && b.cy === house2.cellY)?.progress ?? -1, { timeout: 30_000 })
     .toBeGreaterThan(0);
-  await expect(page.getByText("附近沒有可以派去蓋的農民")).toBeHidden();
+  await expect(page.getByText("附近沒有可以派去蓋的村民")).toBeHidden();
   // A spearman the barracks trained on its own joins group 1.
   const newcomer = async () => {
     const ids = (await groupInfo(page))[0].ids;
@@ -493,8 +493,8 @@ test("主要流程：開局（選難度）→ 選農民 → 蓋房子（重設�
   if (city === undefined) throw new Error("no main city");
   expect(Math.abs(back.x - (city.cx + city.size / 2)), "in front of the main city").toBeLessThanOrEqual(city.size);
   expect(Math.abs(back.y - (city.cy + city.size / 2)), "in front of the main city").toBeLessThanOrEqual(city.size);
-  // On their way: the order is Retreat (2).
-  await expect.poll(async () => (await units(page)).filter((u) => troops.includes(u.id)).every((u) => u.order === 2)).toBe(true);
+  // On their way: the order is Retreat (2), and they hold (D-061: once home they do not run out after enemies).
+  await expect.poll(async () => (await units(page)).filter((u) => troops.includes(u.id)).every((u) => u.order === 2 && u.stance === 1)).toBe(true);
   await shot(page, info, "11-retreat-all");
   check();
 });

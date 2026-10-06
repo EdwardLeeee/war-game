@@ -781,6 +781,12 @@ button.active {
   opacity: 0.8;
 }
 
+/* 撤退中：點地面改撤退位置 (D-061): what a tap does now, in full. */
+.sel-note .order-meaning.order-hint {
+  opacity: 1;
+  color: var(--accent);
+}
+
 .queue-item {
   display: flex;
   flex-direction: column;

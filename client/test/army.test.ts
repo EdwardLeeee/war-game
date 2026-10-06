@@ -43,7 +43,7 @@ test("留守：只挑城鎮範圍內的士兵，離中心近的先、一樣近�
   assert.deepEqual(book.station(units, TOWN, 0), []);
 });
 
-test("留守：全軍不選留守的兵，也不選農民", () => {
+test("留守：全軍不選留守的兵，也不選村民", () => {
   const book = new ArmyBook();
   const units = [unit(1, SPEAR, 30, 30), unit(2, SPEAR, 31, 30), unit(3, RANGED, 50, 50), unit(4, FARMER, 31, 31), unit(5, MAGE, 52, 50)];
   assert.deepEqual(book.army(units), [1, 2, 3, 5]);
@@ -52,7 +52,7 @@ test("留守：全軍不選留守的兵，也不選農民", () => {
   assert.equal(isSoldier(FARMER), false);
 });
 
-test("全軍的數字（ceo 2026-10-03）：全軍會選到幾名，不含留守的兵和農民；都留守時是 0", () => {
+test("全軍的數字（ceo 2026-10-03）：全軍會選到幾名，不含留守的兵和村民；都留守時是 0", () => {
   const book = new ArmyBook();
   const units = [unit(1, SPEAR, 30, 30), unit(2, SPEAR, 31, 30), unit(3, RANGED, 50, 50), unit(4, FARMER, 31, 31), unit(5, MAGE, 52, 50)];
   assert.equal(armyText(book.army(units).length), "全軍 4");

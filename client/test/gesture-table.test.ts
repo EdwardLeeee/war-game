@@ -75,7 +75,7 @@ test("單指點單位或建築 → 選取", () => {
   ]);
 });
 
-test("選了農民後點自己需要人手的建築（沒蓋好、受損、農田）→ repair；完好的建築、沒選農民時是選取", () => {
+test("選了村民後點自己需要人手的建築（沒蓋好、受損、農田）→ repair；完好的建築、沒選村民時是選取", () => {
   const w = world();
   w.things.push({ kind: "building", id: 12, owner: ME, type: BuildingType.House, cx: 4, cy: 8, needsWork: true });
   const farmers = play(w, { units: [1, 2], building: null });
@@ -106,7 +106,7 @@ test("選了部隊後點敵人 → 攻擊（單位或建築）", () => {
   ]);
 });
 
-test("選了農民後點資源 → 採集（一起選的軍隊走過去）", () => {
+test("選了村民後點資源 → 採集（一起選的軍隊走過去）", () => {
   const p = play(world(), { units: [1, 2], building: null });
   p.tap(at(12), at(12));
   assert.deepEqual(p.out, [
@@ -179,7 +179,7 @@ test("長按空地 350 ms 後拖曳 → 框選，框內有軍隊只選軍隊", (
   assert.deepEqual(p.out, [{ kind: "select", units: [2, 3, 4] }]);
 });
 
-test("長按空地 350 ms 後拖曳 → 框選，框內只有農民才選農民", () => {
+test("長按空地 350 ms 後拖曳 → 框選，框內只有村民才選村民", () => {
   const p = play(world(), { units: [], building: null });
   p.g.down(1, at(1), at(1), 0);
   p.g.update(LONG_PRESS_MS);
@@ -198,7 +198,7 @@ test("點兩下單位 → 選取畫面內所有同類單位", () => {
   ]);
 });
 
-test("長按單位 → 技能輪盤：法師有晶砲、自動施放、撤退、堅守；槍兵和遠程兵有進攻、撤退、堅守；農民只有撤退（D-050）", () => {
+test("長按單位 → 技能輪盤：法師有晶砲、自動施放、撤退、堅守；槍兵和遠程兵有進攻、撤退、堅守；村民只有撤退（D-050）", () => {
   const w = world();
   const p = play(w, { units: [], building: null });
   p.g.down(1, at(7), at(2), 0);
@@ -228,7 +228,7 @@ test("進攻（指令區或輪盤）→ 點地面：整隊前進；點敵人：�
   assert.deepEqual(tapIntents(w, { units: [], building: null }, "advance", at(40), at(40), 1, R), [{ kind: "endMode" }]);
 });
 
-test("堅守（指令區或輪盤）→ 選的兵停下並改成堅守；農民不動（D-050）", () => {
+test("堅守（指令區或輪盤）→ 選的兵停下並改成堅守；村民不動（D-050）", () => {
   const w = world();
   const hold = [
     { kind: "command", cmd: { c: "stop", u: [2, 4] } },

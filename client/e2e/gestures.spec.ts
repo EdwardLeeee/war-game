@@ -42,6 +42,10 @@ const lastSent = (page: Page) => page.evaluate(() => window.__proto?.game?.sent(
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const camera = (page: Page) => page.evaluate(() => window.__proto?.game?.camera());
 const mode = (page: Page) => page.evaluate(() => window.__proto?.game?.mode());
+/** The commands sent, the interface's own ones (marked `auto`) included. */
+const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
+/** The last order of the player's own hand (撤退 is followed by the interface's 堅守, D-061). */
+const lastOrder = async (page: Page) => (await sent(page)).filter((c) => c.auto !== true).at(-1);
 
 async function idAt(page: Page, c: { x: number; y: number }): Promise<number> {
   const p = await at(page, c);
@@ -88,7 +92,7 @@ test("選了部隊後點地面 → 前進；點敵人 → 攻擊", async ({ page
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "attack", u: spears, target: enemy });
 });
 
-test("選了農民後點資源 → 採集", async ({ page }) => {
+test("選了村民後點資源 → 採集", async ({ page }) => {
   await centre(page, 18, 76);
   const farmers = await ownIds(page, [0]);
   await longPress(page, await at(page, { x: 12, y: 77 }), await at(page, { x: 18, y: 79 }));
@@ -160,7 +164,8 @@ test("長按法師 → 技能輪盤：晶砲、自動施放、撤退、堅守；
   await expect(page.getByText("點地面或小地圖：撤到那裡；點主城回家")).toBeVisible();
   // 退回主城: the cell in front of the main city at (8, 80), 4 cells: (12, 79).
   await page.locator(".prompt").getByRole("button", { name: "退回主城", exact: true }).tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: [mage], x: 12, y: 79 });
+  // With 堅守, so that once home it does not run out after enemies (D-061).
+  await expect.poll(async () => (await sent(page)).slice(-2)).toMatchObject([{ c: "retreat", u: [mage], x: 12, y: 79 }, { c: "stance", u: [mage], stance: 1, auto: true }]);
   expect(await mode(page)).toBe("normal");
 });
 
@@ -206,7 +211,7 @@ test("輪盤的撤退：點地面撤到那裡；撤退中按取消撤退、選�
   await page.getByRole("menuitem", { name: "撤退", exact: true }).tap();
   await expect.poll(() => mode(page)).toBe("retreat");
   await tap(page, await at(page, { x: 12, y: 74 }));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: [spear], x: 12, y: 74 });
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: [spear], x: 12, y: 74 });
   // On its way, the wheel's 撤退 reads 取消撤退: it stops and holds (D-054).
   await expect.poll(async () => (await units(page)).find((v) => v.id === spear)?.order).toBe(2);
   await longPress(page, await now());

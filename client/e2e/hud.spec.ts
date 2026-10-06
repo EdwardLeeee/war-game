@@ -54,6 +54,8 @@ async function townSpot(page: Page): Promise<{ x: number; y: number }> {
 }
 
 const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
+/** The last order of the player's own hand (撤退 is followed by the interface's 堅守, D-061). */
+const lastOrder = async (page: Page) => (await sent(page)).filter((c) => c.auto !== true).at(-1);
 const garrison = (page: Page, town: number) => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], town);
 const place = (page: Page, ids: number[], cells: { x: number; y: number }[]) => page.evaluate(([i, c]) => window.__proto?.game?.place(i, c), [ids, cells] as const);
 const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
@@ -89,8 +91,8 @@ async function selectSpearmen(page: Page): Promise<number[]> {
 }
 
 for (const size of [
-  { name: "工具列展開", viewport: null, who: "農民", types: [0] },
-  { name: "工具列收合", viewport: FULL_SCREEN, who: "農民", types: [0] },
+  { name: "工具列展開", viewport: null, who: "村民", types: [0] },
+  { name: "工具列收合", viewport: FULL_SCREEN, who: "村民", types: [0] },
   // Soldiers add the stance button and its two lines of explanation (D-026); mages add 晶砲 and 自動施放.
   { name: "工具列展開", viewport: null, who: "全軍", types: [1, 2, 3] },
   { name: "工具列收合", viewport: FULL_SCREEN, who: "全軍", types: [1, 2, 3] },
@@ -297,7 +299,7 @@ test("離民兵太近：放建築的預覽在還有民兵的中立城鎮 12 格�
   await page.getByRole("button", { name: "建造" }).tap();
   await page.getByRole("button", { name: /^民居/ }).tap();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("place:dragging");
-  const warning = page.getByText("這裡離城鎮的民兵太近，去蓋的農民會被攻擊");
+  const warning = page.getByText("這裡離城鎮的民兵太近，去蓋的村民會被攻擊");
   const placement = () => page.evaluate(() => window.__proto?.game?.placement());
   // (21, 76): the house's centre is 13.5 cells from the town's.
   await tap(page, await at(page, { x: 21, y: 76 }));
@@ -354,24 +356,37 @@ test("撤退：和進攻一樣先選位置——點地面或小地圖撤到那�
   // The ground: they retreat to the cell tapped (above the middle, clear of the panels).
   await centre(page, 18, 74);
   await tap(page, await at(page, { x: 16, y: 72 }));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: ids, x: 16, y: 72 });
+  // With 堅守 (D-061): once there they hit only what comes in reach and do not chase.
+  await expect.poll(async () => (await sent(page)).slice(-2)).toMatchObject([{ c: "retreat", u: ids, x: 16, y: 72 }, { c: "stance", u: ids, stance: 1, auto: true }]);
   await expect.poll(mode).toBe("normal");
   await expect(prompt).toBeHidden();
-  // On their way: 取消撤退 stops them, holding.
+  // On their way, a tap on the ground moves the retreat: no 進攻 (D-061). The 撤退 line says so.
   await expect(retreat).toHaveText("取消撤退停下堅守");
+  const hint = page.locator(".sel-info .order-hint");
+  await expect(hint).toHaveText("撤退中：點地面或小地圖改撤退位置，到了原地堅守");
+  const ground = { x: 12, y: 75 };
+  const g = await at(page, ground);
+  expect(await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [g.x, g.y] as const), "open ground").toBeNull();
+  await tap(page, g);
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: ids, x: ground.x, y: ground.y });
+  expect((await sent(page)).filter((c) => c.c === "move"), "no 前進").toEqual([]);
+  await expect(toast(page, "改撤到這裡，撤到後原地堅守")).toBeVisible();
+  await shot(page, info, "retreat-retarget");
+  // 取消撤退 stops them, holding.
   await retreat.tap();
   await held();
+  await expect(hint).toHaveCount(0);
   // The minimap.
   await retreat.tap();
   await tapOn(page, ".minimap", ...minimapPoint({ x: 10, y: 70 }));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: ids, x: 10, y: 70 });
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: ids, x: 10, y: 70 });
   await expect(retreat).toHaveText("取消撤退停下堅守");
   await retreat.tap();
   await held();
   // 退回主城 on the prompt strip: in front of the main city at (8, 80), 4 cells: (12, 79).
   await retreat.tap();
   await page.locator(".prompt").getByRole("button", { name: "退回主城", exact: true }).tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: ids, x: 12, y: 79 });
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: ids, x: 12, y: 79 });
   await expect(retreat).toHaveText("取消撤退停下堅守");
   await retreat.tap();
   await held();
@@ -379,7 +394,7 @@ test("撤退：和進攻一樣先選位置——點地面或小地圖撤到那�
   await retreat.tap();
   await centre(page, 10, 82);
   await tap(page, await at(page, { x: 9, y: 81 }));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: ids, x: 12, y: 79 });
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: ids, x: 12, y: 79 });
   await expect(retreat).toHaveText("取消撤退停下堅守");
   await retreat.tap();
   await held();
@@ -392,13 +407,32 @@ test("撤退：和進攻一樣先選位置——點地面或小地圖撤到那�
   await held();
 });
 
+test("撤退中點地面：只有一部分在撤退時照舊是進攻（和按鈕一樣，D-061）", async ({ page }) => {
+  const ids = await selectSpearmen(page);
+  const retreat = page.locator(".cmds").getByRole("button", { name: /^(取消)?撤退/ });
+  // Half of them retreat (an order of the player's), the others stand.
+  const half = ids.slice(0, 3);
+  await page.evaluate((u) => window.__proto?.game?.send({ c: "retreat", u, x: 12, y: 79 }), half);
+  await expect.poll(async () => (await units(page)).filter((u) => half.includes(u.id)).every((u) => u.order === 2)).toBe(true);
+  await selectForCommands(page, ids);
+  await expect(retreat).toHaveText("撤退點地面");
+  await expect(page.locator(".sel-info .order-hint")).toHaveCount(0);
+  const ground = { x: 20, y: 75 };
+  const g = await at(page, ground);
+  expect(await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [g.x, g.y] as const), "open ground").toBeNull();
+  await tap(page, g);
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "move", u: ids, x: ground.x, y: ground.y });
+});
+
 test("全軍撤退：不用先選兵，所有士兵退回主城，選取不變（使用者 2026-10-01）", async ({ page }, info) => {
   const soldiers = await ownIds(page, [1, 2, 3]);
   await select(page, []);
   const button = page.getByRole("button", { name: "全軍撤退" });
   await shot(page, info, "retreat-all-button");
   await button.tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: soldiers, x: 12, y: 79 });
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: soldiers, x: 12, y: 79 });
+  // With 堅守 for those not holding already (D-061).
+  await expect.poll(async () => (await units(page)).filter((u) => soldiers.includes(u.id)).every((u) => u.stance === 1)).toBe(true);
   await expect(toast(page, `全軍 ${soldiers.length} 名退回主城`)).toBeVisible();
   expect(await selection(page)).toEqual({ units: [], building: null });
   // With farmers selected, they stay selected and stay home.
@@ -451,7 +485,7 @@ test("重設：一按就取消選取、離開撤退／集結點／放建築、�
   await expect.poll(mode).toBe("normal");
   await expect.poll(() => selection(page)).toEqual(nothing);
 
-  // 建造子選單：選農民 → 建造 → 重設
+  // 建造子選單：選村民 → 建造 → 重設
   const farmers = await ownIds(page, [0]);
   await selectForCommands(page, farmers);
   await page.getByRole("button", { name: "建造" }).tap();
@@ -460,7 +494,7 @@ test("重設：一按就取消選取、離開撤退／集結點／放建築、�
   await expect(page.getByRole("button", { name: /^民居/ })).toBeHidden();
   await expect.poll(() => selection(page)).toEqual(nothing);
 
-  // 放建築：選農民 → 建造 → 民居 → 重設
+  // 放建築：選村民 → 建造 → 民居 → 重設
   await selectForCommands(page, farmers);
   await page.getByRole("button", { name: "建造" }).tap();
   await page.getByRole("button", { name: /^民居/ }).tap();
@@ -479,7 +513,7 @@ test("重設：一按就取消選取、離開撤退／集結點／放建築、�
   await expect(lab).toBeHidden();
 });
 
-test("閒置農民：點一下跳到下一個並選取，長按全部選取", async ({ page }) => {
+test("閒置村民：點一下跳到下一個並選取，長按全部選取", async ({ page }) => {
   const idle = await ownIds(page, [0]);
   await expect(page.locator(".idle-btn")).toHaveText(`閒置 ${idle.length}`);
   await tapOn(page, ".idle-btn");
@@ -545,7 +579,7 @@ test("全體回城：切換全體回城與回去工作", async ({ page }) => {
   await expect(page.getByRole("button", { name: "全體回城" })).toBeVisible();
 });
 
-test("指令區：選農民 → 建造 → 民居 → 放下 → ✓", async ({ page }, info) => {
+test("指令區：選村民 → 建造 → 民居 → 放下 → ✓", async ({ page }, info) => {
   await centre(page, 18, 77);
   const farmers = await ownIds(page, [0]);
   await longPress(page, await at(page, { x: 12, y: 77 }), await at(page, { x: 18, y: 79 }));
@@ -559,13 +593,13 @@ test("指令區：選農民 → 建造 → 民居 → 放下 → ✓", async ({ 
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "build", u: farmers, type: 1, x: 21, y: 76 });
 });
 
-test("不選農民也能蓋：什麼都沒選 → 建造 → 民居 → ✓，送出不帶農民的 build；挑不到農民時有提示（D-024）", async ({ page }, info) => {
+test("不選村民也能蓋：什麼都沒選 → 建造 → 民居 → ✓，送出不帶村民的 build；挑不到村民時有提示（D-024）", async ({ page }, info) => {
   await centre(page, 18, 77);
   await selectForCommands(page, []);
   await page.getByRole("button", { name: "建造" }).tap();
   await page.getByRole("button", { name: /^民居/ }).tap();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("place:dragging");
-  await expect(page.getByText("會派最近的農民去蓋")).toBeVisible();
+  await expect(page.getByText("會派最近的村民去蓋")).toBeVisible();
   await tap(page, await at(page, { x: 21, y: 76 }));
   await shot(page, info, "build-without-farmers");
   await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
@@ -575,7 +609,7 @@ test("不選農民也能蓋：什麼都沒選 → 建造 → 民居 → ✓，�
   // No farmer to send (Reject.NoFarmer = 15).
   const seq = ((await lastSent(page)) as { seq: number }).seq;
   await page.evaluate((s) => window.__proto?.game?.inject({ k: "rejected", seq: s, reason: 15 }), seq);
-  await expect(page.getByRole("status").filter({ hasText: "附近沒有可以派去蓋的農民" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "附近沒有可以派去蓋的村民" })).toBeVisible();
 });
 
 test("主城的指令區也有建造", async ({ page }) => {
@@ -585,7 +619,7 @@ test("主城的指令區也有建造", async ({ page }) => {
   await page.getByRole("button", { name: "建造" }).tap();
   await expect(page.getByRole("button", { name: /^民居/ })).toBeVisible();
   await page.getByRole("button", { name: "返回" }).tap();
-  await expect(page.getByRole("button", { name: /^訓練農民/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^訓練村民/ })).toBeVisible();
 });
 
 test("指令區與選取資訊：選兵營 → 訓練槍兵 → 佇列顯示，點它取消", async ({ page }, info) => {
@@ -610,7 +644,7 @@ test("經濟分配：選主城 → 經濟分配 → 金多一點 → 套用", as
   const dialog = page.getByRole("dialog", { name: "經濟分配" });
   await expect(dialog).toBeVisible();
   // What the ratio does now (D-050, core #105).
-  await expect(dialog).toContainText("自動分配開著時，改比例後，正在採糧、木、金的農民會照新比例重新分配；你親手派去採的不會動。晶脈要自己派。");
+  await expect(dialog).toContainText("自動分配開著時，改比例後，正在採糧、木、金的村民會照新比例重新分配；你親手派去採的不會動。晶脈要自己派。");
   expect(await dialog.locator(".dialog-card").evaluate((c) => c.scrollHeight - c.clientHeight), "no scrolling at 814 × 380").toBeLessThanOrEqual(1);
   await page.getByRole("button", { name: "金多一點" }).tap();
   await expect(page.locator(".ratio-value").nth(2)).toHaveText("30%");
@@ -730,7 +764,7 @@ test("進攻、撤退、堅守：第一列是這三顆和停止，選取資訊�
   await retreat.tap();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("retreat");
   await tap(page, await at(page, { x: 18, y: 67 }));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: spear, x: 18, y: 67 });
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: spear, x: 18, y: 67 });
   await expect(now).toHaveText("目前：撤退中 6");
   await expect(retreat).toHaveText("取消撤退停下堅守");
   await expect(retreat).toHaveClass(/active/);
@@ -747,7 +781,7 @@ test("進攻、撤退、堅守：第一列是這三顆和停止，選取資訊�
   await expect(panel.locator(".sel-note")).toHaveCount(0);
 });
 
-test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一種，選取資訊寫出意思；混合時全部改成散開；只選農民時沒有隊形鈕（D-027）", async ({ page }, info) => {
+test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一種，選取資訊寫出意思；混合時全部改成散開；只選村民時沒有隊形鈕（D-027）", async ({ page }, info) => {
   const spear = await selectSpearmen(page);
   const formation = page.getByRole("button", { name: /^隊形/ });
   const panel = page.locator(".sel-info");
@@ -1255,4 +1289,23 @@ test("選單 → 回開局畫面 → 繼續這局（維持暫停）／重來", a
   await page.getByRole("button", { name: "重來" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   await expect(page.getByRole("button", { name: "暫停", exact: true })).toBeVisible();
+});
+
+test("村民（D-061）：介面上找不到「農民」——戰場、選了村民、主城、經濟分配、選單", async ({ page }) => {
+  const noOldWord = async (where: string) => expect(await page.evaluate(() => document.body.innerText), where).not.toContain("農民");
+  await noOldWord("戰場");
+  await selectForCommands(page, await ownIds(page, [0]));
+  await expect(page.locator(".sel-info")).toContainText("村民");
+  await noOldWord("選了村民");
+  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
+  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await expect(page.locator(".sel-info")).toContainText("主城");
+  await expect(page.getByRole("button", { name: /^訓練村民/ })).toBeVisible();
+  await noOldWord("主城");
+  await page.getByRole("button", { name: "經濟分配" }).tap();
+  await expect(page.getByRole("dialog", { name: "經濟分配" })).toContainText("村民");
+  await noOldWord("經濟分配");
+  await page.getByRole("dialog", { name: "經濟分配" }).getByRole("button", { name: "取消" }).tap();
+  await page.getByRole("button", { name: "選單" }).tap();
+  await noOldWord("選單");
 });
