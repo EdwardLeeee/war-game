@@ -1,0 +1,15 @@
+# Collects game records from the test page (D-056). The user deploys it once with
+# `npx wrangler deploy` (README.md). No keys here: the read key is a Worker secret
+# (`npx wrangler secret put READ_KEY`). The KV namespace has no id: the first deploy creates
+# it and writes its id back into this file, which is not a secret
+# (https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning).
+name = "war-game-logs"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+
+[[kv_namespaces]]
+binding = "LOGS"
+
+[vars]
+# Pages that may post records: the test page (client/README.md).
+ALLOWED_ORIGINS = "https://edwardleeee.github.io"

@@ -1,0 +1,18 @@
+{
+  "name": "war-game-logs",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Collects game records from the test page (D-056): a Cloudflare Worker with one KV namespace",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\"",
+    "deploy": "wrangler deploy",
+    "fetch": "node fetch.ts"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0"
+  }
+}

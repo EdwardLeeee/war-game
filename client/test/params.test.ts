@@ -7,15 +7,15 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, scenario: null, enemyAi: true, hint: true });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, scenario: null, enemyAi: true, hint: true, logsUrl: null });
 });
 
 test("tps, mock, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&scenario=e2e&ai=0&hint=0"), { test: false, tps: null, mock: false, scenario: null, enemyAi: true, hint: true });
+  assert.deepEqual(parseParams("?tps=200&mock=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs"), { test: false, tps: null, mock: false, scenario: null, enemyAi: true, hint: true, logsUrl: null });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, scenario: null, enemyAi: true, hint: false });
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, scenario: null, enemyAi: true, hint: false, logsUrl: null });
   assert.equal(parseParams("?test=1&mock=1").mock, true);
   assert.equal(parseParams("?test=1&scenario=e2e").scenario, "e2e");
   assert.equal(parseParams("?test=1&scenario=bogus").scenario, null);
@@ -40,4 +40,11 @@ test("開局提示：玩家的頁面每局都有；測試頁要加 hint=1 才有
   assert.equal(parseParams("?test=1").hint, false);
   assert.equal(parseParams("?test=1&hint=1").hint, true);
   assert.equal(parseParams("?test=1&hint=0").hint, false);
+});
+
+test("對局紀錄：test=1&logs= 改傳到那個網址（e2e 攔截用）；沒有 test=1、或不是 http(s) 都不算（D-056）", () => {
+  assert.equal(parseParams("?test=1&logs=https://game-logs.test/logs").logsUrl, "https://game-logs.test/logs");
+  assert.equal(parseParams("?logs=https://game-logs.test/logs").logsUrl, null);
+  assert.equal(parseParams("?test=1&logs=javascript:alert(1)").logsUrl, null);
+  assert.equal(parseParams("?test=1").logsUrl, null);
 });

@@ -29,6 +29,11 @@ export interface PageParams {
    * (`?test=1&hint=1`), so the other tests start straight on the battlefield.
    */
   hint: boolean;
+  /**
+   * `?test=1&logs=<url>`: game records (D-056) go to this URL instead of the Worker's, so the
+   * e2e can catch them. Only http(s) URLs.
+   */
+  logsUrl: string | null;
 }
 
 export function parseParams(search: string): PageParams {
@@ -41,5 +46,7 @@ export function parseParams(search: string): PageParams {
   }
   const sc = q.get("scenario");
   const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf") ? sc : null;
-  return { test, tps, mock: test && q.get("mock") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1" };
+  const logs = q.get("logs");
+  const logsUrl = test && logs !== null && /^https?:\/\/[^\s]+$/.test(logs) ? logs : null;
+  return { test, tps, mock: test && q.get("mock") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl };
 }

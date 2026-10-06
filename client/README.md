@@ -33,6 +33,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 | `ui/` | DOM 介面：右上的速度與暫停（`controls.ts`）；手勢用到的長按提示圈、框選框、技能輪盤、提示列、放建築的 ✓ ✗、被拒原因（`overlays.ts`） |
 | `ui/hud/` | 介面外殼（臨時版）：`hud.ts`（編隊、全軍（寫會選到幾名）、閒置、全體回城、被攻擊箭頭、經濟分配、搶或治理、選單、勝負）、`panels.ts`（資源列（人口含訓練中、最後是遊戲時間）、選取資訊與軍團畫面、指令區（進攻／撤退／堅守））、`minimap.ts`、`names.ts`（顯示用名稱）、`economy-ratio.ts` |
 | `lab/` | 量測與確定性檢查（互斥、無效標示、對照 CI 雜湊）、log 框 |
+| `logs/` | 對局紀錄（D-056）：紀錄代號（`code.ts`）、存在 IndexedDB 的最近 50 局（`store.ts`）、上傳（`upload.ts`）、每局結束時組一筆紀錄並存、傳（`collect.ts`） |
 | `tuning.ts` | 長按 350 ms、移動容許 10 px、點兩下 300 ms、慣性等參數 |
 | `difficulty.ts` | 開局畫面的難度：第一次是簡單，之後記住這台手機上次選的；讀寫瀏覽器儲存空間失敗時當成沒存過（D-024） |
 
@@ -46,6 +47,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 - `?test=1&tps=N`：模擬每秒跑 N 個 tick（上限 400），CI 用來加快流程。遊戲裡的速度只有慢 20、正常 30、快 40（D-024）。
 - `?test=1&mock=1`：用假世界代替模擬（`e2e/gestures.spec.ts`、`e2e/hud.spec.ts` 用；版面固定）。
 - `?test=1&hint=1`：開局提示（D-044）。玩家的頁面每局都有；測試頁預設沒有，其他測試直接進戰場。
+- `?test=1&logs=<網址>`：對局紀錄改傳到這個網址（`e2e/logs.spec.ts` 攔截用）。
 - `?test=1&ai=0`：對手不由電腦操作，單位站著不動。`e2e/main-flow.spec.ts` 用，免得電腦先搶走小鎮或打掉主城；電腦的行為由 core 的 AI 對打測試。量測一律有電腦。
 
 開局畫面選難度（簡單／普通）。玩家的對局沒有時間上限（`init` 的 `maxTicks: 0`），電腦照選的難度下（D-024）。
@@ -91,6 +93,14 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
   - 主城的指令區有「預留」：自動訓練只用超過預留額的資源。對話框裡糧、木、金每次 ±10，晶 ±5；「預設」回到 `AUTO_TRAIN.reserve`（木 150、金 100、晶 15）；按「套用」才送出（`reserve`）。
   - 人口滿了讓自動訓練停下來時（建築旗標 AutoPopulationFull），訊息列提示一次「人口滿了，自動訓練停下來：蓋民居」；有空位之後再滿才會再提示。
 - 「分出 N 名」「改選其餘」拿掉了（D-054）。
+
+## 對局紀錄（D-056）
+
+- 每局結束（勝、負、投降、時間到），以及按「重來」時已經打了一分鐘以上的局，把模擬的指令紀錄（`export_log`）、這局最後一個狀態雜湊、版本、難度、勝負、遊戲時間存在手機上（IndexedDB，最多 50 局），接著上傳到 `services/game-logs/` 的 Worker。量測和假世界不存。
+- 上傳不擋畫面、失敗不顯示；沒傳成功的在下次打開遊戲、或下一局結束時再傳。`text/plain`，跨網域不用預檢；64 KB 以下加 `keepalive`，頁面關掉也會送完。
+- 收紀錄的網址是 `src/logs/collect.ts` 的 `GAME_LOGS_URL`；使用者部署 Worker 之前是空的，只存不傳。部署步驟在 `services/game-logs/README.md`。
+- 開局畫面的版本號旁邊寫「紀錄代號 xxxxxxxx」：手機第一次打開時隨機產生、存在手機上的 8 個字，不是帳號、認不出是誰，用來分開不同手機的紀錄。瀏覽器儲存不能用時只在這一頁有效。
+- 紀錄裡沒有帳號、裝置名稱或任何認得出人的東西（欄位見 `services/game-logs/README.md`）。
 
 ## 加到主畫面（D-042）
 

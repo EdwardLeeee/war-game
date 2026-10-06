@@ -13,7 +13,8 @@ name: Pages
 # Markdown under client/ and sim/ (README, PROTOCOL, notices) is in neither the site nor its
 # build: changing only that must not redeploy, as a new deployment changes the version the
 # players see and tells them 有新版本 (ceo 2026-10-03). A pull request is judged by all the
-# files it changes, a push by the files it brings.
+# files it changes, a push by the files it brings. Of services/game-logs/ only the record
+# schema is in the page (D-056); the Worker itself is deployed by the user, not here.
 on:
   push:
     branches: [main]
@@ -24,6 +25,7 @@ on:
       - "sim/**"
       - "!sim/**/*.md"
       - "spikes/**"
+      - "services/game-logs/src/record.ts"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
@@ -33,6 +35,7 @@ on:
       - "sim/**"
       - "!sim/**/*.md"
       - "spikes/**"
+      - "services/game-logs/src/record.ts"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
