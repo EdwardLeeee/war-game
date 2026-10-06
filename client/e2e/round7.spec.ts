@@ -186,7 +186,7 @@ test("躲進去：混選時提示只有遠程兵和法師會去，點錯地方�
   await hide.tap();
   await expect.poll(() => mode(page)).toBe("garrison");
   await expect(page.getByText("點自己的主城或箭樓：只有遠程兵和法師會躲進去")).toBeVisible();
-  await expect(page.locator(".cmds").getByRole("button", { name: /^取消躲進去/ })).toHaveClass(/active/);
+  await expect(page.locator(".cmds").getByRole("button", { name: /^取消\s*躲進去/ })).toHaveClass(/active/);
   await shot(page, info, "r7-garrison-prompt");
   // Open ground, or the enemy's tower: told what to tap, still picking.
   await tap(page, await at(page, { x: 18, y: 67 }));
@@ -322,8 +322,10 @@ test("開關關著（沒有 r7）：沒有箭樓、沒有躲進去、建築不�
   const panel = page.locator(".sel-info");
   await expect(panel).toContainText("主城");
   await expect(panel.locator(".sel-garrison")).toHaveCount(0);
-  // Off the screen centre, where the main city was just tapped: a tap there again would be a double tap.
-  await centre(page, OUR_TOWN.x + 4, OUR_TOWN.y + 2);
+  // With a building selected, a tap on a town only names it (the panel keeps the building): nothing selected first.
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  await expect(panel).toBeHidden();
+  await centre(page, OUR_TOWN.x, OUR_TOWN.y);
   await tap(page, await townSpot(page, OUR_TOWN));
   await expect(panel).toContainText("民兵");
   await expect(panel).not.toContainText("收入");
