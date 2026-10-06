@@ -11,7 +11,7 @@ import { writeFileSync } from "node:fs";
 import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THINK_EVERY, SPEEDS, type Speed, STRATEGIES, type Strategy } from "./ai/scripted-player.ts";
 import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
 import { rules } from "./core/rules.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, Resource, TownSize, UnitType } from "./protocol.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, Resource, TownSize, UnitType } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 import { buildView } from "./view/view.ts";
 
@@ -90,6 +90,9 @@ interface GameRecord {
   /** Per player, per town: when that player first held it, or -1 (round 6: the corner towns). */
   taken: [number[], number[]];
   myMage: number;
+  /** When the player first had a mage's crystal (early balance, D-057), and its first mage hall stood: did crystal or the hall hold the first mage back? */
+  crystalForMage: number;
+  hallDone: number;
   aiMage: number;
   /** The player's main city first hit, with the AI's soldiers (mages) near it then and the player's army. */
   cityHit: number;
@@ -162,6 +165,8 @@ function play(seed: number): GameRecord {
   let town = -1;
   const taken: [number[], number[]] = [map.towns.map(() => -1), map.towns.map(() => -1)];
   let myMage = -1;
+  let crystalForMage = -1;
+  let hallDone = -1;
   let aiMage = -1;
   let cityHit = -1;
   let cityHitAi: [number, number] = [0, 0];
@@ -188,6 +193,10 @@ function play(seed: number): GameRecord {
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
     for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;
     if (myMage < 0 && count(0, UnitType.Mage) > 0) myMage = w.tick;
+    if (crystalForMage < 0 && w.res[Resource.Crystal] >= rules().units[UnitType.Mage].cost.crystal) crystalForMage = w.tick;
+    if (hallDone < 0) {
+      for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === 0 && b.type[s] === BuildingType.MageHall && b.progress[s] >= 1000) hallDone = w.tick;
+    }
     if (aiMage < 0 && count(1, UnitType.Mage) > 0) aiMage = w.tick;
     if (cityHit < 0 && cityHp(0) < 1200) {
       cityHit = w.tick;
@@ -222,6 +231,8 @@ function play(seed: number): GameRecord {
     town,
     taken,
     myMage,
+    crystalForMage,
+    hallDone,
     aiMage,
     cityHit,
     cityHitAi,

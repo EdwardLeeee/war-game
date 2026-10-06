@@ -25,7 +25,7 @@ import { generateMap } from "./map.ts";
 import { FieldCache } from "./paths.ts";
 import { START_REVEAL } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
-import { autoTrain } from "./training.ts";
+import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
 import { UnitSystem } from "./units.ts";
 import { World } from "./world.ts";
@@ -117,9 +117,11 @@ export class Game {
     const hurt = this.units.run(w, this.fog, this.fields, this.econ);
     this.econ.workTick(w);
     this.units.removeDead(w, (s) => this.econ.release(w, s), (to, ev) => this.events.push({ to, ev }));
-    // 7. Training, then automatic training queues the next unit where a queue emptied.
+    // 7. Training, then automatic training queues the next unit where a queue emptied; the
+    // main cities' crystal.
     this.econ.produce(w);
     autoTrain(w);
+    mainCityCrystal(w);
     // 8. Towns.
     this.towns.step(w);
     const n = w.size;

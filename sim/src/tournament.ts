@@ -51,8 +51,9 @@ export interface GameResult {
   tickMicros: { median: number; p95: number; max: number; mean: number };
   /** Every TIMELINE_EVERY ticks: what each side had and where its army was (for finding why games run long). */
   timeline: Sample[];
-  /** Tick of the first town capture, or -1. */
+  /** Tick of the first town capture, or -1, and the spawn that made it (-1: none). */
   firstCapture: number;
+  firstCaptureBy: number;
   perPlayer: {
     plundered: number;
     governed: number;
@@ -194,6 +195,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
     tickMicros: { median: pick(0.5), p95: pick(0.95), max: sorted.at(-1) ?? 0, mean: sorted.length ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length) : 0 },
     timeline,
     firstCapture: w.firstCapture,
+    firstCaptureBy: w.firstCaptureBy,
     perPlayer: [0, 1].map((p) => ({
       plundered: w.plundered[p],
       governed: w.governed[p],

@@ -166,7 +166,10 @@ export class TownSystem {
 
   private capture(w: World, t: number, p: number): void {
     this.endSpell(w, t);
-    if (w.firstCapture < 0) w.firstCapture = w.tick;
+    if (w.firstCapture < 0) {
+      w.firstCapture = w.tick;
+      w.firstCaptureBy = p;
+    }
     const before = w.townOwner[t];
     w.townState[t] = TownState.AwaitingChoice;
     w.townOwner[t] = p;
