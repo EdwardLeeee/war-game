@@ -266,11 +266,16 @@ export class SelectionInfo {
     // 現有／目標 in the title line; no 「目前：」 line (the command area's buttons light up), so
     // that the panel stays clear of 全軍撤退 on a phone held sideways.
     const total = el("span", head, "sel-status");
-    const rows = GROUP_TYPES.filter((type) => type !== UnitType.Cavalry || features(view.rules).cavalry).map((type) => {
+    const types = GROUP_TYPES.filter((type) => type !== UnitType.Cavalry || features(view.rules).cavalry);
+    // Four kinds with 騎兵 (round 7): two to a line, the name over its − N +, or the panel
+    // would reach 全軍撤退 on a phone held sideways. Three kinds keep a line each.
+    const grid = types.length > 3 ? el("div", this.el, "group-grid") : null;
+    const rows = types.map((type) => {
       const name = UNIT_NAME[type] ?? "兵";
-      const row = el("div", this.el, "group-row");
-      el("span", row, "group-type", name);
-      const has = el("span", row, "group-has");
+      const row = el("div", grid ?? this.el, "group-row");
+      const label = grid !== null ? el("div", row, "group-label") : row;
+      el("span", label, "group-type", name);
+      const has = el("span", label, "group-has");
       const minus = button(row, "−", "", () => this.host.setGroupWant(i, type, this.host.groupWant(i, type) - 1), "secondary step");
       minus.setAttribute("aria-label", `少要 1 名${name}`);
       const want = el("b", row, "group-want");

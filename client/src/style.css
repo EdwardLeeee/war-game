@@ -726,6 +726,31 @@ button.active {
   margin-right: -46px;
 }
 
+/* 騎兵 makes four kinds (round 7): two to a line, the name over its − N +. */
+.group-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 8px;
+  margin: 4px -46px 0 0;
+}
+
+.group-grid .group-row {
+  flex-wrap: wrap;
+  gap: 0 6px;
+  margin: 0;
+}
+
+.group-grid .group-label {
+  display: flex;
+  flex: 1 0 100%;
+  gap: 6px;
+}
+
+.group-grid .group-type,
+.group-grid .group-has {
+  width: auto;
+}
+
 /* 收起 (D-054): the title line only; its button sits at the end of that line, left of the ✕. */
 .sel-fold {
   margin-left: auto;
