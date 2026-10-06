@@ -17,6 +17,11 @@ export interface PageParams {
   tps: number | null;
   /** `?test=1&mock=1`: the fake world (mock/) instead of the simulation, for the gesture tests. */
   mock: boolean;
+  /**
+   * `?test=1&mock=1&r7=1`: the fake world with round 7's rules switched on (D-061: 城鎮只能搶一次,
+   * 箭樓, 躲進建築), which the simulation has behind switches the page cannot reach.
+   */
+  round7: boolean;
   /** `?test=1&scenario=e2e|perf|standard`: start that scenario (sim/PROTOCOL.md section 8). */
   scenario: "standard" | "e2e" | "perf" | null;
   /**
@@ -48,5 +53,5 @@ export function parseParams(search: string): PageParams {
   const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf") ? sc : null;
   const logs = q.get("logs");
   const logsUrl = test && logs !== null && /^https?:\/\/[^\s]+$/.test(logs) ? logs : null;
-  return { test, tps, mock: test && q.get("mock") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl };
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl };
 }

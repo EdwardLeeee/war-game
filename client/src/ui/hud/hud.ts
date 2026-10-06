@@ -12,7 +12,7 @@ import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
 import { Minimap } from "./minimap.ts";
 import { armyText, BUILDING_NAME, clock, GAME_OVER_REASON } from "./names.ts";
-import { CommandArea, ResourceBar, SelectionInfo } from "./panels.ts";
+import { CommandArea, PLUNDERED_TEXT, ResourceBar, SelectionInfo } from "./panels.ts";
 
 const UPDATE_MS = 100;
 /** 軍團畫面 asks for at most this many of one type (more than the population cap allows). */
@@ -605,18 +605,23 @@ export class Hud {
   openTownChoice(town: number): void {
     const size = this.game.view?.map.towns.find((t) => t.id === town)?.size;
     const big = size === TownSize.Large;
-    const card = this.openDialog(`攻下${big ? "大城" : "小鎮"}！搶還是治理？`, "town-choice");
+    // 城鎮只能搶一次 (round 7, D-061): a town plundered this game offers 治理 only.
+    const once = this.game.view?.townPlunderedOnce(town) === true;
+    const card = this.openDialog(`攻下${big ? "大城" : "小鎮"}！${once ? "只能治理" : "搶還是治理？"}`, "town-choice");
     // 留守 (D-026): how many soldiers stay behind with each choice.
     const keep = { plunder: this.defaultKeep(town, TownChoice.Plunder), govern: this.defaultKeep(town, TownChoice.Govern) };
     const row = el("div", card, "choice-row");
-    const plunder = btn(row, "", () => this.chooseTown(town, TownChoice.Plunder, keep.plunder), "choice-plunder");
-    el("b", plunder, "", "搶");
-    el("span", plunder, "", `部隊留下搶 ${big ? 25 : 15} 秒，拿一大筆糧、金、魔晶；城鎮變成廢墟 4 分鐘`);
+    if (!once) {
+      const plunder = btn(row, "", () => this.chooseTown(town, TownChoice.Plunder, keep.plunder), "choice-plunder");
+      el("b", plunder, "", "搶");
+      el("span", plunder, "", `部隊留下搶 ${big ? 25 : 15} 秒，拿一大筆糧、金、魔晶；城鎮變成廢墟 4 分鐘`);
+    }
     const govern = btn(row, "", () => this.chooseTown(town, TownChoice.Govern, keep.govern), "choice-govern");
     el("b", govern, "", "治理");
     el("span", govern, "", `投入金和木修繕 ${big ? 60 : 45} 秒，之後每分鐘產出、加人口；要留兵駐守`);
+    if (once) el("p", card, "small plundered-note", PLUNDERED_TEXT);
     const keeps = el("div", card, "keep-row");
-    this.keepStepper(keeps, "搶", town, keep.plunder, (n) => (keep.plunder = n));
+    if (!once) this.keepStepper(keeps, "搶", town, keep.plunder, (n) => (keep.plunder = n));
     this.keepStepper(keeps, "治理", town, keep.govern, (n) => (keep.govern = n));
     el("p", card, "small", "留守的兵改成堅守，不跟「全軍」走，也會離開原本的編隊。");
     btn(card, "稍後再決定（點城鎮也能選）", () => this.closeDialog(), "secondary later");

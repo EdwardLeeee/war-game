@@ -44,7 +44,8 @@ export interface GameHook {
   /** Latest snapshot header values. */
   header(): { tick: number; paused: boolean; speed: number; scenario: number };
   /** Buildings in the latest snapshot: top-left cell and footprint size. */
-  buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number; progress: number; flags: number }[];
+  /** `soldiers`: hiding inside (round 7; ours only). */
+  buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number; progress: number; flags: number; soldiers: number }[];
   /** The init message the game started with (難度, time limit, who the computer plays). */
   init(): Record<string, unknown> | null;
   /** Resource nodes the player knows about, with cells. */
@@ -74,6 +75,8 @@ export interface GameHook {
   groupInfo(): { ids: number[]; want: Record<number, number>; saved: number; refill: boolean; recruits: number[] }[];
   /** Fake world only: remove own units (as if they fell). */
   remove(ids: number[]): void;
+  /** Arrows drawn from `shot` events so far (round 7). */
+  shots(): number;
   /** What a tap at this screen point would hit (unit, building, node, town), or null for open ground. */
   pickAt(sx: number, sy: number): string | null;
   /** Every town on the map (size 0 small, 1 large): state, holder and militia as last seen (-1 before it is explored). */
@@ -139,7 +142,7 @@ export function gameHook(game: Game): GameHook {
       if (b === undefined || game.view === null) return [];
       const out = [];
       for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-        out.push({ id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type], cx: b[o + B.cellX], cy: b[o + B.cellY], size: game.view.rules.buildings[b[o + B.type]]?.size ?? 1, progress: b[o + B.progress], flags: b[o + B.flags] });
+        out.push({ id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type], cx: b[o + B.cellX], cy: b[o + B.cellY], size: game.view.rules.buildings[b[o + B.type]]?.size ?? 1, progress: b[o + B.progress], flags: b[o + B.flags], soldiers: b[o + B.soldiers] });
       }
       return out;
     },
@@ -188,6 +191,7 @@ export function gameHook(game: Game): GameHook {
     remove: (ids) => {
       if (game.portForTest instanceof MockPort) game.portForTest.remove(ids);
     },
+    shots: () => game.shotsForTest,
     init: () => (game.initSent === null ? null : { ...game.initSent }),
     pickAt: (sx, sy) => {
       const cam = game.camera;

@@ -34,6 +34,8 @@ export const BUILDING_GLYPH: Record<number, string> = {
   [BuildingType.Range]: "射",
   [BuildingType.MageHall]: "術",
   [BuildingType.TownTower]: "塔",
+  // A player's arrow tower (round 7): its own tower shape and glyph, unlike the big city's 塔.
+  [BuildingType.ArrowTower]: "箭",
 };
 
 export interface Atlas {
@@ -44,6 +46,10 @@ export interface Atlas {
   /** 64 x 64, scaled to the footprint. */
   building: Texture;
   farm: Texture;
+  /** A player's arrow tower (round 7): a narrow tower with battlements, 64 x 64. */
+  tower: Texture;
+  /** Someone hides inside (BuildingFlag.Occupied, round 7): a small shield, 16 x 16. */
+  occupied: Texture;
   glyphs: Record<number, Texture>;
   /** Indexed by NodeKind; 32 x 32. */
   nodes: Texture[];
@@ -99,6 +105,14 @@ function buildAtlas(renderer: Renderer): Atlas {
     for (let y = 10; y < 60; y += 10) g.moveTo(6, y).lineTo(58, y).stroke({ width: 2, color: 0x8f7a3a });
   });
 
+  const tower = shape(renderer, 64, (g) => {
+    g.poly([14, 60, 14, 16, 20, 16, 20, 6, 27, 6, 27, 16, 37, 16, 37, 6, 44, 6, 44, 16, 50, 16, 50, 60]).fill(0xffffff).stroke({ width: 3, color: INK });
+  });
+  const occupied = shape(renderer, 16, (g) => {
+    g.poly([8, 1, 14, 3, 14, 8, 8, 15, 2, 8, 2, 3]).fill(0xf5f1e6).stroke({ width: 1.4, color: INK });
+    g.circle(8, 7, 2).fill(INK);
+  });
+
   const glyphs: Record<number, Texture> = {};
   for (const [type, ch] of Object.entries(BUILDING_GLYPH)) {
     const t = new Text({ text: ch, style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 30, fontWeight: "700", fill: INK } });
@@ -130,5 +144,5 @@ function buildAtlas(renderer: Renderer): Atlas {
     g.poly([10, 4, 28, 9, 10, 15]).fill(0xffffff).stroke({ width: 1.5, color: INK });
   });
 
-  return { units, ring, white, building, farm, glyphs, nodes, flag };
+  return { units, ring, white, building, farm, tower, occupied, glyphs, nodes, flag };
 }

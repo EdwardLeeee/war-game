@@ -4,6 +4,11 @@
 // every number here is a placeholder. It shows one of everything the screen must draw:
 // towns in each state, fog in all three states, a remembered building, a mage calibrating
 // with a shield, an enemy cannon warning, trees, gold, berries and a crystal vein.
+//
+// With `?r7=1` round 7's rules are on (D-061, sim/PROTOCOL.md 3.3): towns plundered once (the
+// small neutral town and our governed one, which pays 25% and climbs back), arrow towers on
+// TowerLand, ranged units and mages hiding in our main city or an arrow tower, an enemy arrow
+// tower with someone inside that shoots (the `shot` event; nothing gets hurt here).
 
 import type { SimPort } from "../game/port.ts";
 import {
@@ -73,7 +78,7 @@ function buildingInfo(type: BuildingType, hp: number, size: number, c: Cost, ext
 export const MOCK_RULES: Rules = {
   units: rules().units,
   buildings: [
-    buildingInfo(BuildingType.MainCity, 1200, 4, cost(0, 0, 0), { populationCap: 10, accepts: [0, 1, 2, 3], trains: [UnitType.Farmer], shelter: 15 }),
+    buildingInfo(BuildingType.MainCity, 1200, 4, cost(0, 0, 0), { populationCap: 10, accepts: [0, 1, 2, 3], trains: [UnitType.Farmer], shelter: 15, holds: 6 }),
     buildingInfo(BuildingType.House, 300, 2, cost(0, 30, 0), { populationCap: 5, shelter: 5 }),
     buildingInfo(BuildingType.LumberCamp, 300, 2, cost(0, 50, 0), { accepts: [1] }),
     buildingInfo(BuildingType.Mine, 300, 2, cost(0, 50, 0), { accepts: [2, 3] }),
@@ -83,12 +88,31 @@ export const MOCK_RULES: Rules = {
     buildingInfo(BuildingType.Range, 600, 3, cost(0, 150, 0), { trains: [UnitType.Ranged] }),
     buildingInfo(BuildingType.MageHall, 700, 3, cost(0, 200, 150), { trains: [UnitType.Mage] }),
     buildingInfo(BuildingType.TownTower, 800, 2, cost(0, 0, 0)),
+    // Round 7 (D-061): shown only while `features.towers` is on.
+    buildingInfo(BuildingType.ArrowTower, 500, 2, cost(0, 100, 50), { sight: 8, holds: 3 }),
   ],
   multipliers: [],
   mageCap: 6,
   maxPopulation: 120,
   queueMax: 5,
 };
+
+/** `?r7=1`: round 7's switches on, the simulation's values (馬廄與騎兵 come with their own PR). */
+export const MOCK_RULES_R7: Rules = {
+  ...MOCK_RULES,
+  features: { plunderOnce: true, towers: true, garrison: true, cavalry: false },
+  arrows: rules().arrows,
+  garrisonTypes: rules().garrisonTypes,
+  towerReach: rules().towerReach,
+  towns: rules().towns,
+  plunderRecovery: { startPermille: 250, ticks: 12000 },
+};
+
+/** Cells from a building's centre within which a soldier on its way slips inside. */
+const GARRISON_REACH = 3;
+/** The enemy arrow tower and soldiers hiding with us shoot this often, at this many cells. */
+const SHOT_TICKS = 30;
+const SHOT_CELLS = 7;
 
 interface MUnit {
   id: number;
@@ -104,6 +128,10 @@ interface MUnit {
   target: { x: number; y: number } | null;
   order: number;
   cast: number;
+  /** Round 7: the building it hides in (or walks to, order Garrison), else -1. */
+  inside: number;
+  /** Inside, not drawn (action Garrisoned). */
+  hidden: boolean;
 }
 
 interface MBuilding {
@@ -120,6 +148,8 @@ interface MBuilding {
   queue: UnitType[];
   /** Head of the queue, permille done. */
   queueProgress: number;
+  /** An enemy building with someone inside (round 7): its Occupied flag while in view. */
+  occupied: boolean;
 }
 
 /** The fake world trains a unit in 3 seconds, so tests do not wait. */
@@ -136,6 +166,10 @@ interface MTown {
   timer: number;
   timerTotal: number;
   militia: number;
+  /** Round 7: plundered this game. */
+  plundered: boolean;
+  /** Round 7: governed income, permille of the full amount. */
+  income: number;
 }
 
 const centre = (c: number): number => c * CELL + HALF;
@@ -163,6 +197,14 @@ export class MockPort implements SimPort {
   private ratio = { food: 40, wood: 35, gold: 25, on: true };
   private recall = false;
   private over = false;
+  private readonly round7: boolean;
+  private readonly rules: Rules;
+
+  /** `round7`: `?r7=1`, round 7's rules on. */
+  constructor(round7 = false) {
+    this.round7 = round7;
+    this.rules = round7 ? MOCK_RULES_R7 : MOCK_RULES;
+  }
 
   /** Tests: deliver an event with the next snapshot (an attack, a captured town...). */
   inject(ev: SimEvent): void {
@@ -200,7 +242,7 @@ export class MockPort implements SimPort {
       case "init":
         this.tps = msg.tps;
         this.setup();
-        this.emit({ type: "ready", protocol: PROTOCOL_VERSION, player: ME, map: this.mapInfo(), rules: MOCK_RULES });
+        this.emit({ type: "ready", protocol: PROTOCOL_VERSION, player: ME, map: this.mapInfo(), rules: this.rules });
         this.updateFog();
         this.emit(this.snapshot(true));
         this.schedule();
@@ -273,11 +315,22 @@ export class MockPort implements SimPort {
     this.building(FOE, BuildingType.Barracks, 34, 58);
     this.building(FOE, BuildingType.House, 38, 62);
     this.building(NEUTRAL, BuildingType.TownTower, 47, 45);
+    // Round 7: an enemy arrow tower in view with someone inside, shooting at our soldiers near it.
+    if (this.round7) this.building(FOE, BuildingType.ArrowTower, 26, 63).occupied = true;
 
-    const town = (size: TownSize, cx: number, cy: number, state: TownState, owner: number, timer = 0, total = 0, militia = 0) =>
-      this.towns.push({ id: this.towns.length, size, cx, cy, radius: size === TownSize.Large ? 6 : 4, state, owner, timer, timerTotal: total, militia });
-    town(TownSize.Small, 30, 66, TownState.Neutral, NEUTRAL, 0, 0, 3);
-    town(TownSize.Small, 18, 62, TownState.Governed, ME);
+    const town = (size: TownSize, cx: number, cy: number, state: TownState, owner: number, timer = 0, total = 0, militia = 0) => {
+      const t: MTown = { id: this.towns.length, size, cx, cy, radius: size === TownSize.Large ? 6 : 4, state, owner, timer, timerTotal: total, militia, plundered: false, income: 1000 };
+      this.towns.push(t);
+      return t;
+    };
+    // Round 7: the small neutral town was plundered before (taken again, only 治理), and our
+    // governed town too, so it pays a quarter and climbs back.
+    town(TownSize.Small, 30, 66, TownState.Neutral, NEUTRAL, 0, 0, 3).plundered = this.round7;
+    const ours = town(TownSize.Small, 18, 62, TownState.Governed, ME);
+    if (this.round7) {
+      ours.plundered = true;
+      ours.income = (this.rules.plunderRecovery as { startPermille: number }).startPermille;
+    }
     town(TownSize.Small, 36, 80, TownState.Ruins, -1, 3000, 4800);
     town(TownSize.Large, 48, 48, TownState.Plundering, ME, 300, 500);
     town(TownSize.Small, 38, 56, TownState.Governed, FOE);
@@ -286,7 +339,7 @@ export class MockPort implements SimPort {
       const info = MOCK_RULES.units[type];
       const u: MUnit = {
         id: this.nextId++, owner, type, x: centre(cx), y: centre(cy), hp: info.hp, shield: info.shield,
-        facing: 0, stance: Stance.Aggressive, flags: 0, target: null, order: Order.None, cast: 0,
+        facing: 0, stance: Stance.Aggressive, flags: 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
       };
       this.units.push(u);
       return u;
@@ -312,7 +365,7 @@ export class MockPort implements SimPort {
   }
 
   private building(owner: number, type: BuildingType, cx: number, cy: number): MBuilding {
-    const b: MBuilding = { id: this.nextId++, owner, type, cx, cy, hp: MOCK_RULES.buildings[type].hp, progress: 1000, flags: 0, rallyX: -1, rallyY: -1, queue: [], queueProgress: 0 };
+    const b: MBuilding = { id: this.nextId++, owner, type, cx, cy, hp: MOCK_RULES.buildings[type].hp, progress: 1000, flags: 0, rallyX: -1, rallyY: -1, queue: [], queueProgress: 0, occupied: false };
     this.buildings.push(b);
     return b;
   }
@@ -333,6 +386,24 @@ export class MockPort implements SimPort {
   private step(): void {
     this.tick++;
     for (const u of this.units) {
+      // Round 7: on its way to hide, it slips in once near the building (also when a test put it there).
+      if (u.order === Order.Garrison && !u.hidden) {
+        const b = this.buildings.find((v) => v.id === u.inside);
+        if (b === undefined) {
+          u.order = Order.None;
+          u.inside = -1;
+        } else {
+          const s = MOCK_RULES.buildings[b.type].size;
+          const dx = u.x - (b.cx * CELL + (s * CELL) / 2);
+          const dy = u.y - (b.cy * CELL + (s * CELL) / 2);
+          if (dx * dx + dy * dy <= GARRISON_REACH * CELL * GARRISON_REACH * CELL) {
+            u.hidden = true;
+            u.target = null;
+            u.x = b.cx * CELL + (s * CELL) / 2;
+            u.y = b.cy * CELL + (s * CELL) / 2;
+          }
+        }
+      }
       if (u.target !== null) {
         const dx = u.target.x - u.x;
         const dy = u.target.y - u.y;
@@ -341,7 +412,7 @@ export class MockPort implements SimPort {
           u.x = u.target.x;
           u.y = u.target.y;
           u.target = null;
-          u.order = Order.None;
+          if (u.order !== Order.Garrison) u.order = Order.None;
           if (u.type === UnitType.Farmer) u.flags |= UnitFlag.IdleFarmer;
         } else {
           u.x += Math.round((dx * STEP) / d);
@@ -361,7 +432,7 @@ export class MockPort implements SimPort {
           const info = MOCK_RULES.units[type];
           const u: MUnit = {
             id: this.nextId++, owner: b.owner, type, x: centre(b.cx - 1), y: centre(b.cy), hp: info.hp, shield: info.shield,
-            facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Farmer ? UnitFlag.IdleFarmer : 0, target: null, order: Order.None, cast: 0,
+            facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Farmer ? UnitFlag.IdleFarmer : 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
           };
           this.units.push(u);
           this.events.push({ k: "unit_trained", id: u.id, type, building: b.id });
@@ -369,9 +440,53 @@ export class MockPort implements SimPort {
       }
     }
     for (const t of this.towns) if (t.timer > 0) t.timer = t.timer <= 1 ? t.timerTotal : t.timer - 1;
+    // Round 7: a plundered town governed again climbs back to its full income.
+    const climb = this.rules.plunderRecovery;
+    if (climb !== undefined) {
+      for (const t of this.towns) if (t.state === TownState.Governed && t.income < 1000 && this.tick % Math.ceil(climb.ticks / (1000 - climb.startPermille)) === 0) t.income++;
+    }
+    if (this.round7 && this.tick % SHOT_TICKS === 0) this.shoot();
     this.warningTicks = this.warningTicks <= 0 ? 60 : this.warningTicks - 1;
     if (this.tick % FOG_EVERY === 0) this.updateFog();
     this.emit(this.snapshot(this.tick % FOG_EVERY === 0));
+  }
+
+  /**
+   * Round 7's `shot`: the enemy arrow tower at the nearest of our units in reach, and each of our
+   * buildings with soldiers inside at the nearest enemy in view. Nobody is hurt in the fake world.
+   */
+  private shoot(): void {
+    for (const b of this.buildings) {
+      const s = MOCK_RULES.buildings[b.type].size;
+      const bx = b.cx * CELL + (s * CELL) / 2;
+      const by = b.cy * CELL + (s * CELL) / 2;
+      const mine = b.owner === ME && this.units.some((u) => u.hidden && u.inside === b.id);
+      if (!mine && !(b.owner === FOE && b.occupied)) continue;
+      const targets = this.units.filter((u) => !u.hidden && (mine ? u.owner === FOE && this.visible(u.x >> 10, u.y >> 10) : u.owner === ME));
+      const d = (u: MUnit) => (u.x - bx) * (u.x - bx) + (u.y - by) * (u.y - by);
+      const near = targets.filter((u) => d(u) <= SHOT_CELLS * CELL * SHOT_CELLS * CELL).sort((a, c) => d(a) - d(c) || a.id - c.id)[0];
+      if (near !== undefined && (mine || this.visible(b.cx, b.cy))) this.events.push({ k: "shot", building: b.id, target: near.id });
+    }
+  }
+
+  /** Round 7's TowerLand: within `towerReach` of our main city's footprint (Chebyshev) or of a town we govern or repair. */
+  private towerLand(cells: Uint8Array): void {
+    const reach = this.rules.towerReach;
+    if (reach === undefined) return;
+    for (const b of this.buildings) {
+      if (b.owner !== ME || b.type !== BuildingType.MainCity || b.progress < 1000) continue;
+      const s = MOCK_RULES.buildings[b.type].size;
+      for (let y = b.cy - reach.mainCity; y < b.cy + s + reach.mainCity; y++) {
+        for (let x = b.cx - reach.mainCity; x < b.cx + s + reach.mainCity; x++) if (x >= 0 && y >= 0 && x < SIZE && y < SIZE) cells[y * SIZE + x] |= PlaceBit.TowerLand;
+      }
+    }
+    for (const t of this.towns) {
+      if (t.owner !== ME || (t.state !== TownState.Governed && t.state !== TownState.Repairing)) continue;
+      const r = t.radius + reach.town;
+      for (let y = t.cy - r; y <= t.cy + r; y++) {
+        for (let x = t.cx - r; x <= t.cx + r; x++) if (x >= 0 && y >= 0 && x < SIZE && y < SIZE && (x - t.cx) ** 2 + (y - t.cy) ** 2 <= r * r) cells[y * SIZE + x] |= PlaceBit.TowerLand;
+      }
+    }
   }
 
   private updateFog(): void {
@@ -407,6 +522,7 @@ export class MockPort implements SimPort {
         }
       }
     }
+    this.towerLand(cells);
     return cells;
   }
 
@@ -435,7 +551,7 @@ export class MockPort implements SimPort {
     header[H.gameState] = this.over ? 2 : 0;
     header[H.fogTick] = this.tick - (this.tick % FOG_EVERY);
 
-    const seen = this.units.filter((u) => u.owner === ME || this.visible(u.x >> 10, u.y >> 10));
+    const seen = this.units.filter((u) => u.owner === ME || (!u.hidden && this.visible(u.x >> 10, u.y >> 10)));
     const units = new Int32Array(seen.length * UNIT_STRIDE);
     seen.forEach((u, i) => {
       const o = i * UNIT_STRIDE;
@@ -446,11 +562,11 @@ export class MockPort implements SimPort {
       units[o + U.y] = u.y;
       units[o + U.hp] = u.hp;
       units[o + U.shield] = u.shield;
-      units[o + U.action] = u.cast > 0 ? Action.Calibrate : u.target !== null ? Action.Move : Action.Idle;
+      units[o + U.action] = u.hidden ? Action.Garrisoned : u.cast > 0 ? Action.Calibrate : u.target !== null ? Action.Move : Action.Idle;
       units[o + U.facing] = u.facing;
       units[o + U.carryKind] = -1;
       units[o + U.order] = u.cast > 0 ? Order.Cast : u.order;
-      units[o + U.orderTarget] = u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
+      units[o + U.orderTarget] = u.order === Order.Garrison ? u.inside : u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
       units[o + U.stance] = u.stance;
       units[o + U.castProgress] = u.cast;
       units[o + U.flags] = u.flags;
@@ -474,7 +590,11 @@ export class MockPort implements SimPort {
       buildings[o + B.rallyY] = b.rallyY;
       // 自動訓練 stopped by a full population (D-054): flagged as the simulation does, though the fake world trains nothing by itself.
       const full = this.units.filter((u) => u.owner === ME).length >= 20 && (b.flags & BuildingFlag.AutoTrain) !== 0 ? BuildingFlag.AutoPopulationFull : 0;
-      buildings[o + B.flags] = b.owner !== ME && !this.visible(b.cx, b.cy) ? BuildingFlag.Remembered : b.owner === ME ? b.flags | full : 0;
+      // Round 7: soldiers hiding inside (ours only); Occupied on every building in view with someone inside.
+      const soldiers = b.owner === ME ? this.units.filter((u) => u.hidden && u.inside === b.id).length : 0;
+      buildings[o + B.soldiers] = soldiers;
+      const occupied = soldiers > 0 || b.occupied ? BuildingFlag.Occupied : 0;
+      buildings[o + B.flags] = b.owner !== ME && !this.visible(b.cx, b.cy) ? BuildingFlag.Remembered : b.owner === ME ? b.flags | full | occupied : occupied;
     });
 
     const known = this.towns.filter((t) => this.fog[t.cy * SIZE + t.cx] > 0);
@@ -489,11 +609,12 @@ export class MockPort implements SimPort {
       // As in the simulation: the holder's soldiers inside the circle around the town centre.
       const r = t.radius * CELL;
       towns[o + T.garrison] = this.units.filter(
-        (u) => u.owner === t.owner && u.type !== UnitType.Farmer && (u.x - centre(t.cx)) * (u.x - centre(t.cx)) + (u.y - centre(t.cy)) * (u.y - centre(t.cy)) <= r * r,
+        (u) => u.owner === t.owner && u.type !== UnitType.Farmer && !u.hidden && (u.x - centre(t.cx)) * (u.x - centre(t.cx)) + (u.y - centre(t.cy)) * (u.y - centre(t.cy)) <= r * r,
       ).length;
       towns[o + T.garrisonNeeded] = t.size === TownSize.Large ? 3 : 1;
       towns[o + T.militia] = t.militia;
-      towns[o + T.flags] = this.visible(t.cx, t.cy) ? TownFlag.Visible : 0;
+      towns[o + T.incomePermille] = t.income;
+      towns[o + T.flags] = (this.visible(t.cx, t.cy) ? TownFlag.Visible : 0) | (t.plundered ? TownFlag.Plundered : 0);
     });
 
     const warnings = new Int32Array(this.warningTicks > 30 ? WARNING_STRIDE : 0);
@@ -550,6 +671,11 @@ export class MockPort implements SimPort {
         u.order = order;
         u.cast = 0;
         u.flags &= ~UnitFlag.IdleFarmer;
+        // Round 7: moving, retreating or attacking brings a hiding soldier out first.
+        if (order !== Order.Garrison) {
+          u.inside = -1;
+          u.hidden = false;
+        }
       });
     };
     const reject = (reason: Reject) => this.events.push({ k: "rejected", seq: cmd.seq, reason });
@@ -581,12 +707,51 @@ export class MockPort implements SimPort {
         this.reserve = { food: cmd.food, wood: cmd.wood, gold: cmd.gold, crystal: cmd.crystal };
         break;
       case "stop":
-        // Like the simulation: no order left (a retreat or a march ends there).
+        // Like the simulation: no order left (a retreat or a march ends there). Those hiding stay in.
         for (const u of own(cmd.u)) {
+          if (u.hidden) continue;
           u.target = null;
           u.order = Order.None;
+          u.inside = -1;
         }
         break;
+      case "garrison": {
+        // Round 7 (sim/PROTOCOL.md 3.3), checked in the protocol's order.
+        const list = own(cmd.u);
+        const b = this.buildings.find((v) => v.id === cmd.building);
+        const holds = b === undefined ? 0 : (this.rules.features?.garrison === true ? (MOCK_RULES.buildings[b.type].holds ?? 0) : 0);
+        const hides = list.filter((u) => (this.rules.garrisonTypes ?? []).includes(u.type));
+        if (list.length === 0) reject(Reject.NotOwner);
+        else if (b === undefined || b.owner !== ME || b.progress < 1000 || holds <= 0) reject(Reject.InvalidTarget);
+        else if (hides.length === 0) reject(Reject.NotAvailable);
+        else {
+          const room = holds - this.units.filter((u) => u.inside === b.id && !hides.includes(u)).length;
+          if (room <= 0) reject(Reject.NoRoom);
+          else {
+            const going = hides.sort((a, c) => a.id - c.id).slice(0, room);
+            const s = MOCK_RULES.buildings[b.type].size;
+            goTo(going, b.cx + Math.floor(s / 2), b.cy + s, Order.Garrison);
+            for (const u of going) u.inside = b.id;
+          }
+        }
+        break;
+      }
+      case "leave": {
+        const b = this.buildings.find((v) => v.id === cmd.building && v.owner === ME);
+        const out = this.units.filter((u) => b !== undefined && u.hidden && u.inside === b.id && (cmd.u === undefined || cmd.u.includes(u.id)));
+        if (b === undefined || out.length === 0) reject(Reject.NotAvailable);
+        else {
+          const s = MOCK_RULES.buildings[b.type].size;
+          out.forEach((u, i) => {
+            u.hidden = false;
+            u.inside = -1;
+            u.order = Order.None;
+            u.x = centre(b.cx + (i % (s + 2)) - 1);
+            u.y = centre(b.cy + s + Math.floor(i / (s + 2)));
+          });
+        }
+        break;
+      }
       case "stance":
         for (const u of own(cmd.u)) u.stance = cmd.stance;
         break;
@@ -608,9 +773,19 @@ export class MockPort implements SimPort {
       }
       case "build": {
         const info = MOCK_RULES.buildings[cmd.type];
-        if (checkPlacement({ size: SIZE, cells: this.placementGrid() }, info, cmd.x, cmd.y) !== 0) {
+        const grid = this.placementGrid();
+        if (checkPlacement({ size: SIZE, cells: grid }, info, cmd.x, cmd.y) !== 0) {
           reject(Reject.BadPlacement);
           break;
+        }
+        // Round 7: arrow towers only while the rule is on, and only on TowerLand.
+        if (cmd.type === BuildingType.ArrowTower) {
+          let land = this.rules.features?.towers === true;
+          for (let y = cmd.y; y < cmd.y + info.size; y++) for (let x = cmd.x; x < cmd.x + info.size; x++) if ((grid[y * SIZE + x] & PlaceBit.TowerLand) === 0) land = false;
+          if (!land) {
+            reject(Reject.BadPlacement);
+            break;
+          }
         }
         // No farmers named (D-024): the nearest ones, as the simulation does (sim/PROTOCOL.md 3.1).
         const builders = cmd.u.length > 0 ? own(cmd.u) : this.nearestFarmers(cmd.x + info.size / 2, cmd.y + info.size / 2, info.size >= 3 ? 2 : 1);
@@ -657,9 +832,12 @@ export class MockPort implements SimPort {
       case "town_choice": {
         const t = this.towns.find((v) => v.id === cmd.town);
         if (t === undefined) reject(Reject.InvalidTarget);
+        // Round 7: plundered once already, only 治理.
+        else if (cmd.choice === 0 && t.plundered && this.rules.features?.plunderOnce === true) reject(Reject.AlreadyPlundered);
         else {
           t.owner = ME;
           t.state = cmd.choice === 0 ? TownState.Plundering : TownState.Repairing;
+          if (cmd.choice === 0 && this.round7) t.plundered = true;
           t.timer = t.timerTotal = t.size === TownSize.Large ? 500 : 300;
         }
         break;

@@ -2,7 +2,7 @@
 // coloured by sim/src/placement.ts on the snapshot's placement grid; when the finger lifts,
 // ✓ sends `build`, ✗ cancels. Pure state, drawn by render/ and ui/overlays.ts.
 
-import { type BuildingInfo, checkPlacement, type CommandBody, type PlacementGrid } from "../sim.ts";
+import { type BuildingInfo, BuildingType, checkPlacement, type CommandBody, PlaceBit, type PlacementGrid } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 
 export type PlacementPhase = "dragging" | "confirm";
@@ -37,7 +37,7 @@ export class Placement {
   }
 
   revalidate(grid: PlacementGrid | null): void {
-    this.valid = grid !== null && checkPlacement(grid, this.info, this.cellX, this.cellY) === 0;
+    this.valid = grid !== null && checkPlacement(grid, this.info, this.cellX, this.cellY) === 0 && towerLandOk(grid, this.info, this.cellX, this.cellY);
   }
 
   /** ✓: the build command, or null while the spot is red or nobody can build. */
@@ -52,4 +52,20 @@ export class Placement {
     const s = this.info.size * TILE_PX;
     return { x: this.cellX * TILE_PX, y: this.cellY * TILE_PX, w: s, h: s };
   }
+}
+
+/**
+ * 箭樓 (round 7, D-061): every footprint cell must be TowerLand, near the own main city or a
+ * town we govern or repair (sim/PROTOCOL.md section 7). Checked here as well, so the preview is
+ * red there whatever `checkPlacement` of this version says. Other buildings: always true.
+ */
+export function towerLandOk(grid: PlacementGrid, building: Pick<BuildingInfo, "type" | "size">, cellX: number, cellY: number): boolean {
+  if (building.type !== BuildingType.ArrowTower) return true;
+  const n = grid.size;
+  for (let y = cellY; y < cellY + building.size; y++) {
+    for (let x = cellX; x < cellX + building.size; x++) {
+      if (x < 0 || y < 0 || x >= n || y >= n || (grid.cells[y * n + x] & PlaceBit.TowerLand) === 0) return false;
+    }
+  }
+  return true;
 }
