@@ -342,10 +342,10 @@ test("兵種相剋：選單 → 兵種相剋，每種兵一行寫剋誰、怕誰
   await injectSafeArea(page);
   const dialog = await openCounters(page);
   await expect(dialog.locator(".counter-row")).toHaveText([
-    "槍兵剋：打騎兵 ×3怕：遠程兵 ×2.5",
-    "遠程兵剋：打槍兵 ×2.5、打法師的護盾 ×3怕：沒有",
-    "法師剋：沒有怕：遠程兵打護盾 ×3、騎兵 ×2、騎兵打護盾 ×2",
-    "騎兵剋：打法師 ×2、打法師的護盾 ×2怕：槍兵 ×3",
+    "槍兵剋：騎兵 ×3怕：遠程兵 ×2.5、晶砲（擠在一起時）",
+    "遠程兵剋：槍兵 ×2.5、法師的護盾 ×3怕：騎兵（跑得快，很快衝到面前；生命少）",
+    "法師剋：擠在一起的部隊（晶砲範圍傷害）怕：遠程兵打護盾 ×3、騎兵 ×2、騎兵打護盾 ×2",
+    "騎兵剋：遠程兵（跑得快）、法師 ×2、法師的護盾 ×2怕：槍兵 ×3",
   ]);
   expect(await dialog.locator(".dialog-card").evaluate((c) => c.scrollHeight - c.clientHeight), "no scrolling at 814 × 380").toBeLessThanOrEqual(1);
   for (const b of await visibleBoxes(page, ".counters button")) expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
@@ -435,8 +435,8 @@ test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、�
   // 兵種相剋: three kinds, nothing about 騎兵.
   const counters = await openCounters(page);
   await expect(counters.locator(".counter-row")).toHaveText([
-    "槍兵剋：沒有怕：遠程兵 ×2.5",
-    "遠程兵剋：打槍兵 ×2.5、打法師的護盾 ×3怕：沒有",
-    "法師剋：沒有怕：遠程兵打護盾 ×3",
+    "槍兵剋：沒有怕：遠程兵 ×2.5、晶砲（擠在一起時）",
+    "遠程兵剋：槍兵 ×2.5、法師的護盾 ×3怕：沒有",
+    "法師剋：擠在一起的部隊（晶砲範圍傷害）怕：遠程兵打護盾 ×3",
   ]);
 });
