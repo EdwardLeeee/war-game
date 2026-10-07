@@ -7,7 +7,7 @@ import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
+import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Stance, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
@@ -1052,4 +1052,126 @@ test("random maps: hard marches on the enemy only once it has seen where it is, 
     const c = spawnCentre(frame, w.map.spawns[1]);
     return [c.x, c.y];
   })(), "to the main city itself");
+});
+
+// --- coming home (D-072) --------------------------------------------------------------------------------
+
+test("hard: lookouts stand on the three ways home, one soldier each, a ranged one first; a fallen one is replaced a minute later", () => {
+  for (const p of [0, 1]) {
+    const g = emptyGame();
+    const w = g.w;
+    // Cells in player 0's frame; player 1's are the mirror image (x <-> y).
+    const at = (x: number, y: number) => (p === 0 ? [x, y] : [y, x]);
+    const s0 = w.map.spawns[0];
+    const archer = put(g, p, UnitType.Ranged, ...(at(s0.cellX + 8, s0.cellY - 8) as [number, number]));
+    for (let k = 0; k < 10; k++) put(g, p, UnitType.Spearman, ...(at(s0.cellX + 5 + (k % 5), s0.cellY - 5 - Math.trunc(k / 5)) as [number, number]));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, sentries: 3, sentryDist: 25 }, p);
+    const out = ai.think(buildView(g, p));
+    // Toward the centre (+x, -y from player 0's main city), then along the two edges.
+    const posts = [at(s0.cellX + 17, s0.cellY - 17), at(s0.cellX + 25, s0.cellY), at(s0.cellX, s0.cellY - 25)];
+    const lookouts = posts.map(([x, y]) => out.find((c) => c.c === "move" && c.u.length === 1 && c.x === x && c.y === y) as { u: number[] } | undefined);
+    assert.ok(lookouts.every((c) => c !== undefined), `player ${p}: one soldier to each post`);
+    const ids = lookouts.map((c) => c!.u[0]);
+    assert.equal(new Set(ids).size, 3);
+    assert.equal(ids[0], archer, "the ranged one (it sees further) toward the centre");
+    for (const id of ids) assert.ok(out.some((c) => c.c === "stance" && c.stance === Stance.Hold && c.u.includes(id)), "standing its ground");
+    assert.ok(out.every((c) => c.c !== "move" || c.u.length === 1 || !ids.some((id) => c.u.includes(id))), "not in the army");
+    // The one toward the centre falls: nobody at once, someone a minute later.
+    kill(g, [archer]);
+    w.tick += 100;
+    g.fog.update(w);
+    const toCentre = (cs: CommandBody[]) => cs.some((c) => c.c === "move" && c.u.length === 1 && c.x === posts[0][0] && c.y === posts[0][1]);
+    assert.equal(toCentre(ai.think(buildView(g, p))), false);
+    w.tick += 1200;
+    g.fog.update(w);
+    assert.ok(toCentre(ai.think(buildView(g, p))), "replaced");
+  }
+});
+
+/**
+ * No time limit, towns in ruins: hard's 30 spearmen set out for the enemy base; then they are put
+ * at `at` (a cell toward the enemy), the enemy's main city left at `cityHp`, and 10 enemy spearmen
+ * stand 26 cells from hard's main city where a farmer sees them, with `home` spearmen of its own
+ * there. Returns its orders.
+ */
+function raidWhileAway(at: "midway" | "their city", plan: Partial<HardPlan>, home = 0, cityHp = 1200): CommandBody[] {
+  const g = emptyGame();
+  const w = g.w;
+  for (const t of w.map.towns) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    w.townTimer[t.id] = 4800;
+  }
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  const ids: number[] = [];
+  for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6)));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, pushArmy: 24, ...plan });
+  const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
+  assert.deepEqual(go && [go.x, go.y], [s1.cellX, s1.cellY], "marches on the enemy base");
+  const [ax, ay] = at === "midway" ? [s0.cellX + 20, s0.cellY - 22] : [s1.cellX - 8, s1.cellY + 4];
+  ids.forEach((id, k) => {
+    const s = slotOf(g, id);
+    w.units.col.x[s] = ((ax + (k % 6)) << 10) + 512;
+    w.units.col.y[s] = ((ay + Math.trunc(k / 6)) << 10) + 512;
+  });
+  w.buildings.col.hp[w.mainCity(1)] = cityHp;
+  for (let k = 0; k < home; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 6), s0.cellY - 4 - Math.trunc(k / 6));
+  put(g, 0, UnitType.Farmer, s0.cellX + 27, s0.cellY - 4);
+  for (let k = 0; k < 10; k++) put(g, 1, UnitType.Spearman, s0.cellX + 25 + (k % 5), s0.cellY - 3 + Math.trunc(k / 5));
+  w.tick += 10;
+  g.fog.update(w);
+  const out = ai.think(buildView(g, 0));
+  // Turned back: the next minute it does not set out again.
+  if (out.some((c) => c.c === "retreat")) {
+    w.tick += 10;
+    g.fog.update(w);
+    assert.ok(!ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY), "waits at home after turning back");
+  }
+  return out;
+}
+
+test("hard: an enemy army near home while its own is out: it turns back when its main city would fall first", () => {
+  const post = (cs: CommandBody[]) => cs.find((c) => c.c === "retreat") as { u: number[]; x: number; y: number } | undefined;
+  const back = post(raidWhileAway("midway", { rescueAt: 60 }));
+  assert.ok(back !== undefined && back.u.length === 30, "everyone back");
+  assert.equal(post(raidWhileAway("midway", { rescueAt: 0 })), undefined, "off: the army marches on (still far from home)");
+  // Not when its own city goes first, nor when enough are at home to hold it.
+  assert.equal(post(raidWhileAway("their city", { rescueAt: 60, rescueBack: 1000 }, 0, 200)), undefined, "at their nearly fallen city: it presses on");
+  assert.equal(post(raidWhileAway("midway", { rescueAt: 60 }, 15)), undefined, "15 at home against 10: it carries on");
+  assert.equal(post(raidWhileAway("midway", { rescueAt: 120 })), undefined, "fewer than rescueAt: it carries on");
+});
+
+test("hard: marching on the enemy base without knowing where the enemy's army is, it leaves the spearmen nearest home behind", () => {
+  const march = (seen: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    const near = [0, 1, 2, 3].map((k) => put(g, 0, UnitType.Spearman, s0.cellX + 3 + k, s0.cellY - 3));
+    for (let k = 0; k < 26; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
+    if (seen) {
+      // The enemy's army, far off, where a farmer sees it.
+      put(g, 0, UnitType.Farmer, 56, 40);
+      for (let k = 0; k < 6; k++) put(g, 1, UnitType.Spearman, 58 + (k % 3), 38 + Math.trunc(k / 3));
+    }
+    g.fog.update(w);
+    const go = hardAi(g, { dodge: false, pushArmy: 24, unknownHold: 4 }).think(buildView(g, 0)).find((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY) as
+      | { u: number[] }
+      | undefined;
+    return { go, near };
+  };
+  const blind = march(false);
+  assert.equal(blind.go?.u.length, 26);
+  assert.ok(blind.near.every((id) => !blind.go!.u.includes(id)), "the four nearest home stay");
+  assert.equal(march(true).go?.u.length, 30, "the enemy's army in sight: everyone goes");
 });

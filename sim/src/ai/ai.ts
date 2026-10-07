@@ -1094,11 +1094,13 @@ export interface HardPlan {
    * `rescueAt`) within `rescueRadius` cells of its main city, more than those at home can hold, it
    * weighs which main city falls first and turns back when its own would, if it can be back in
    * time. Its own march goes on only while it takes the enemy's city in rescueMargin percent of
-   * the time the enemy needs for its own (0: never turns back for this).
+   * the time the enemy needs for its own (0: never turns back for this). In time: back within
+   * rescueBack percent of the time the enemy needs.
    */
   rescueAt: number;
   rescueRadius: number;
   rescueMargin: number;
+  rescueBack: number;
   /**
    * Marching on the enemy base without having seen the enemy's army for `unknownTicks`: it leaves
    * `unknownHold` soldiers at home (0: none).
@@ -1134,6 +1136,7 @@ export const HARD: HardPlan = {
   rescueAt: 0,
   rescueRadius: 35,
   rescueMargin: 100,
+  rescueBack: 100,
   unknownHold: 0,
   unknownTicks: 1800,
   looseAt: 0,
@@ -1814,7 +1817,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
                 tMine = Math.max(0, Math.sqrt(dist2(fc.x, fc.y, enemyHome.cellX, enemyHome.cellY)) - 5) * 21 + theirHp / Math.max(0.05, hits);
               }
               const tBack = Math.max(0, Math.sqrt(dist2(ac.x, ac.y, home.cellX, home.cellY)) - 5) * 21;
-              if (tMine * 100 > tEnemy * plan.rescueMargin && tBack < tEnemy) {
+              if (tMine * 100 > tEnemy * plan.rescueMargin && tBack * 100 < tEnemy * plan.rescueBack) {
                 rescueUntil = tick + TICKS_PER_MINUTE;
                 counterReady = false;
                 fallBack(post.x, post.y);
