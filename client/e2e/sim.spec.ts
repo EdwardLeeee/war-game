@@ -532,9 +532,11 @@ test("點伐木場、糧倉派村民（D-066）：寫附近有幾名在採；每
   const camp = (await done(2)) as Building;
   const granary = (await done(4)) as Building;
   const panel = page.locator(".sel-info");
-  const count = async (b: Building, word: string) => {
+  const count = async (b: Building, name: string, word: string) => {
     await tapBuilding(page, b);
-    // The panel fills its numbers on the next interface update (10 a second).
+    // The panel is rebuilt for this building and fills its numbers on the next interface
+    // update (10 a second); until then it is the one before (run 37565059980 read the city's).
+    await expect(panel.locator(".sel-head")).toContainText(name);
     const cell = panel.locator(".depot-count").filter({ hasText: word });
     await expect(cell).toHaveText(/\d+ 名/);
     return Number(/(\d+) 名/.exec((await cell.textContent()) ?? "")?.[1] ?? -1);
@@ -544,8 +546,8 @@ test("點伐木場、糧倉派村民（D-066）：寫附近有幾名在採；每
   const kindOf = new Map(nodes.map((n) => [n.id, n.kind]));
   const list = await farmers(page);
   const onWood = list.filter((f) => f.order === 4 && kindOf.get(f.target) === 0).length;
-  const atCity = await count(city, "木");
-  const atCamp = await count(camp, "木");
+  const atCity = await count(city, "主城", "木");
+  const atCamp = await count(camp, "伐木場", "在採木");
   expect(atCity + atCamp, "each villager on wood counted once").toBe(onWood);
   await expect(panel.locator(".depot-count")).toHaveText(`附近有 ${atCamp} 名村民在採木`);
   await shot(page, info, "depot-lumber-camp");
@@ -556,6 +558,7 @@ test("點伐木場、糧倉派村民（D-066）：寫附近有幾名在採；每
   if (who !== null && tree !== null) await expect.poll(() => lastSent(page)).toMatchObject({ c: "gather", u: [who], node: tree.id });
   // The granary: food, no farms yet, so berries within reach or 先蓋農田.
   await tapBuilding(page, granary);
+  await expect(panel.locator(".sel-head")).toContainText("糧倉");
   await expect(panel.locator(".depot-count")).toHaveText(/^附近有 \d+ 名村民在採糧$/);
   await shot(page, info, "depot-granary");
   const mark = (await page.evaluate(() => window.__proto?.game?.sent() ?? [])).length;
