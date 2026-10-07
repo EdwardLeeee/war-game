@@ -110,9 +110,9 @@ export interface Plan {
    * 他的兵比我慢到我的主堡，他的主堡比我早被打爆了"). "" no. Once it sets out the army never comes
    * home to defend and never breaks off; farmers still go inside when the enemy comes (recall).
    * - "edge": the user's way: with `raceAt` soldiers, or at tick `raceBy` with `counterAt` or
-   *   more, it sets out by the small town in the far corner of its own side (canonical (81, 81))
-   *   and up the map's edge (canonical (70, 60), (76, 35)) to the enemy's main city, whatever the
-   *   enemy does.
+   *   more, it sets out beside the small town in the far corner of its own side (canonical
+   *   (76, 76), the town at (81, 81)) and up the map's edge (canonical (68, 62), (76, 39)) to the
+   *   enemy's main city, whatever the enemy does.
    * - "sentry": a spearman stands 40% of the way to the enemy's main city; once `raceSeen` enemy
    *   soldiers are seen on our half of the map, nearer than the time before, the army sets out
    *   straight for the enemy's main city; with `raceAt` soldiers, or at tick `raceBy`, it sets
@@ -122,16 +122,34 @@ export interface Plan {
   raceAt: number;
   raceSeen: number;
   raceBy: number;
+  /**
+   * The user's economy in the game they beat hard (D-072; ai's replay, d867633): automatic
+   * training on, farmers held at `farmers` (16), no gold until the first plunder (food 50 / wood
+   * 50, then 40 / 45 / 15), barracks and range early (from 9 and 10 farmers), the mage hall only
+   * after a plunder. Set together with `bigTown` by scripted-games' --user-eco.
+   */
+  userEco: boolean;
+  /** The plan's town is the big town, not the small town nearest home (D-072: the user's one trip, plundered). */
+  bigTown: boolean;
+  /**
+   * "edge" only: the army that set out stops at the second waypoint (canonical (68, 62)) and goes
+   * on once a sentry (as "sentry"'s, kept until then) sees the enemy's army coming on our half,
+   * or 3 minutes after `raceBy`.
+   */
+  raceStage: boolean;
 }
 
-/** The user's way to the enemy's main city in canonical cells (player 0's), D-072: the far corner town, then up the edge. */
+/**
+ * The user's way to the enemy's main city in canonical cells (player 0's), D-072, from ai's replay
+ * (d867633): beside the far corner town (81, 81) at 11.5-12 min, then (68, 64) at 13, (76, 39) at 14.
+ */
 const RACE_EDGE: { u: number; v: number }[] = [
-  { u: 81, v: 81 },
-  { u: 70, v: 60 },
-  { u: 76, v: 35 },
+  { u: 76, v: 76 },
+  { u: 68, v: 62 },
+  { u: 76, v: 39 },
 ];
 /** A race waypoint counts as reached this near (cells). */
-const RACE_NEAR = 5;
+const RACE_NEAR = 6;
 
 interface Unit {
   id: number;
@@ -226,6 +244,9 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     raceAt: 30,
     raceSeen: 12,
     raceBy: 20 * 1200,
+    userEco: false,
+    bigTown: false,
+    raceStage: false,
   };
 }
 
@@ -251,7 +272,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
   // The town of the plan: the small town nearest the main city.
   const myTown = know.map.towns
-    .filter((t) => t.size === TownSize.Small)
+    .filter((t) => t.size === (plan.bigTown ? TownSize.Large : TownSize.Small))
     .sort((a, b) => dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id)[0];
 
   let mode: Mode = "home";
@@ -278,6 +299,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   let raceStep = 0;
   let sentry = -1;
   let lastSeenNear = Number.MAX_SAFE_INTEGER;
+  /** The race goes on from its stop (plan.raceStage): the sentry saw the enemy's army coming, or time. */
+  let raceGo = false;
+  /** Towns of the plan this player has plundered (plan.userEco's ratio and mage hall wait for one). */
+  let plunders = 0;
   const sentryAt = real(homeF.u + Math.trunc(((frame(enemyHome.cellX, enemyHome.cellY).u - homeF.u) * 2) / 5), homeF.v + Math.trunc(((frame(enemyHome.cellX, enemyHome.cellY).v - homeF.v) * 2) / 5));
   /** Per small town: the tick from which it may be taken again (ruins turn neutral). */
   const nextTown = new Map<number, number>();
@@ -411,6 +436,11 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         ratio[1] = 35;
         ratio[2] = 25;
       }
+      if (plan.userEco) {
+        // The user's ratio (D-072): no gold until the first plunder.
+        const r = plunders > 0 ? [40, 45, 15] : [50, 50, 0];
+        for (let k = 0; k < 3; k++) ratio[k] = r[k];
+      }
       if (plan.woodBias && res.food >= 300 && res.gold >= 300 && res.wood < 100) {
         ratio[0] = 20;
         ratio[1] = 60;
@@ -492,9 +522,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const stableReady = (rules.buildings[BuildingType.Stable]?.requires ?? []).every((t) => done(t).length > 0);
         if (plan.raid > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && stableReady && farmers.length >= 6) add(BuildingType.Stable, rally);
         if (plan.raid > 0 && !has(BuildingType.Mine) && farmers.length >= 8) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
-        if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
-        if (!plan.noRange && !has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
-        if (!plan.noMage && !has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * 1200)) add(BuildingType.MageHall, base);
+        if (!has(BuildingType.Barracks) && farmers.length >= (plan.userEco ? 9 : 10)) add(BuildingType.Barracks, rally);
+        if (!plan.noRange && !has(BuildingType.Range) && farmers.length >= (plan.userEco ? 10 : 12)) add(BuildingType.Range, rally);
+        const hallTime = plan.userEco ? plunders > 0 : res.crystal >= 40 || tick > 10 * 1200;
+        if (!plan.noMage && !has(BuildingType.MageHall) && has(BuildingType.Range) && hallTime) add(BuildingType.MageHall, base);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
@@ -593,7 +624,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         // timer ends: a person reads the timer while there and comes back a little after it.
         const tracked = plan.corners ? t.size === TownSize.Small : id === myTown.id;
         if (tracked && t.state === TownState.Ruins && t.visible) nextTown.set(id, tick + t.timer + 100);
-        else if (tracked && t.state === TownState.Ruins && lastState.get(id) === TownState.Plundering) nextTown.set(id, tick + RUINS_TICKS);
+        else if (tracked && t.state === TownState.Ruins && lastState.get(id) === TownState.Plundering) {
+          nextTown.set(id, tick + RUINS_TICKS);
+          plunders++;
+        }
         lastState.set(id, t.state);
       }
       const isGuard = (id: number) => [...garrison.values()].some((ids) => ids.includes(id));
@@ -648,7 +682,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         raiding = false;
       }
       // The race's sentry (plan.race "sentry", D-072) stands apart until the army sets out.
-      if (plan.race === "sentry" && mode !== "race") {
+      const watching = (plan.race === "sentry" && mode !== "race") || (plan.race === "edge" && plan.raceStage && !raceGo);
+      if (watching) {
         if (!soldiers.some((u) => u.id === sentry)) {
           const spears = soldiers.filter((u) => u.type === UnitType.Spearman && !isGuard(u.id) && !raiders.includes(u)).sort((a, b) => a.id - b.id);
           sentry = spears.length >= 2 ? spears[0].id : -1;
@@ -672,8 +707,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
 
       // --- the race (plan.race, D-072): setting out --------------------------------------------------------
       const setOut = () => {
-        const ids = sentry >= 0 && soldiers.some((u) => u.id === sentry) ? [...armyIds, sentry] : armyIds;
-        sentry = -1;
+        const joins = plan.race === "sentry" && sentry >= 0 && soldiers.some((u) => u.id === sentry);
+        const ids = joins ? [...armyIds, sentry] : armyIds;
+        if (joins) sentry = -1;
         armyAtStart = ids.length;
         marched.clear();
         for (const id of ids) marched.add(id);
@@ -685,19 +721,27 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         mode = "race";
         lastMove = -100000;
       };
-      if (plan.race === "sentry" && mode !== "race") {
+      if (watching) {
         // Enemy soldiers on our half of the map, nearer than the time before: its army is coming.
         const ourHalf = foes.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) < dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY));
+        let coming = false;
         if (ourHalf.length >= plan.raceSeen) {
           const fx = Math.trunc(ourHalf.reduce((a, u) => a + u.x, 0) / ourHalf.length);
           const fy = Math.trunc(ourHalf.reduce((a, u) => a + u.y, 0) / ourHalf.length);
           const d = dist2(fx, fy, home.cellX, home.cellY);
-          if (lastSeenNear !== Number.MAX_SAFE_INTEGER && d < lastSeenNear && army.length >= plan.counterAt) setOut();
+          coming = lastSeenNear !== Number.MAX_SAFE_INTEGER && d < lastSeenNear;
           lastSeenNear = d;
         } else {
           lastSeenNear = Number.MAX_SAFE_INTEGER;
         }
-        if (raced < 0 && (army.length >= plan.raceAt || (tick >= plan.raceBy && army.length >= plan.counterAt))) setOut();
+        if (plan.race === "sentry") {
+          if (coming && army.length >= plan.counterAt) setOut();
+          if (raced < 0 && (army.length >= plan.raceAt || (tick >= plan.raceBy && army.length >= plan.counterAt))) setOut();
+        } else if (raced >= 0 && (coming || tick >= plan.raceBy + 3 * 1200)) {
+          // The staged race goes on, the sentry with it.
+          raceGo = true;
+          sentry = -1;
+        }
       }
 
       // --- defence: under the main city's arrows, farmers inside ---------------------------------------
@@ -744,11 +788,17 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // --- the race (plan.race, D-072): the user's way out, then at the enemy's main city ----------------------
       if (plan.race === "edge" && mode !== "race" && (army.length >= plan.raceAt || (tick >= plan.raceBy && army.length >= plan.counterAt))) setOut();
       if (mode === "race") {
+        // Where those that set out are (soldiers trained since walk after them and would hold the
+        // centre back).
+        const front = soldiers.filter((u) => marched.has(u.id));
+        const fx = front.length === 0 ? cx : Math.trunc(front.reduce((a, u) => a + u.x, 0) / front.length);
+        const fy = front.length === 0 ? cy : Math.trunc(front.reduce((a, u) => a + u.y, 0) / front.length);
         while (raceStep < RACE_EDGE.length) {
           const wp = real(RACE_EDGE[raceStep].u, RACE_EDGE[raceStep].v);
-          if (dist2(cx, cy, wp.x, wp.y) > RACE_NEAR * RACE_NEAR) break;
+          if (dist2(fx, fy, wp.x, wp.y) > RACE_NEAR * RACE_NEAR) break;
           raceStep++;
         }
+        if (plan.raceStage && !raceGo && raceStep >= 2) raceStep = 1;
         if (raceStep < RACE_EDGE.length) {
           const wp = real(RACE_EDGE[raceStep].u, RACE_EDGE[raceStep].v);
           send(wp.x, wp.y, "race");
@@ -756,7 +806,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         }
         // At the enemy's main city as a march (defenders first, or the city: plan.focus), but it never
         // breaks off.
-        if (enemyCity >= 0 && dist2(cx, cy, enemyHome.cellX, enemyHome.cellY) <= 12 * 12) {
+        if (enemyCity >= 0 && dist2(fx, fy, enemyHome.cellX, enemyHome.cellY) <= 12 * 12) {
           const near = foes.filter((f) => dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) <= 12 * 12).length;
           const want = near > plan.focus ? "move" : "attack";
           if (tick - lastMove >= 200 || (plan.focus > 0 && want !== siege)) {

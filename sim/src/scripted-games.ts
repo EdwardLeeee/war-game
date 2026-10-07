@@ -70,6 +70,18 @@ plan.race = race;
 plan.raceAt = Number(arg("race-at", String(plan.raceAt)));
 plan.raceSeen = Number(arg("race-seen", String(plan.raceSeen)));
 plan.raceBy = Number(arg("race-by", String(plan.raceBy / 1200))) * 1200;
+plan.raceStage = flag("race-stage");
+// D-072: the user's economy (ai's replay of the game they beat hard): automatic training, 16
+// farmers, no gold until the plunder, one trip, to the big town with 10 soldiers.
+if (flag("user-eco")) {
+  plan.userEco = true;
+  plan.bigTown = true;
+  plan.autoTrain = true;
+  plan.hallFirst = false;
+  plan.farmers = 16;
+  plan.townAt = 10;
+  plan.again = false;
+}
 
 const NAMES: Record<Strategy, string> = { push: "主動", defend: "守家", notown: "守家、不拿城鎮" };
 const SPEED_NAMES: Record<Speed, string> = { h1: "手速 H1", eco: "經濟養大" };
@@ -308,8 +320,13 @@ function play(seed: number): GameRecord {
         return `收入 採${d[0]} 城${d[1]} 搶${d[2]}`;
       };
       const towns = map.towns.map((_, k) => `${TOWN_SHORT(map, k)}${townState(w.townOwner[k], w.townState[k])}`).join(" ");
+      // Where the soldiers are (D-072): the centre of those standing (cells).
+      const at = (p: number) => {
+        const c = centre(p, 0);
+        return c.n === 0 ? "" : ` @(${Math.round(c.x)},${Math.round(c.y)})`;
+      };
       lines.push(
-        `${(w.tick / 1200).toFixed(0)} 分｜我 ${res(0)} 農 ${count(0, UnitType.Farmer)} 兵 ${army(0)} ${player.state().mode} 城 ${cityHp(0)} ${income(0)}｜電腦 ${res(1)} 農 ${count(1, UnitType.Farmer)} 兵 ${army(1)} 城 ${cityHp(1)} ${income(1)}｜${towns}`,
+        `${(w.tick / 1200).toFixed(0)} 分｜我 ${res(0)} 農 ${count(0, UnitType.Farmer)} 兵 ${army(0)}${at(0)} ${player.state().mode} 城 ${cityHp(0)} ${income(0)}｜電腦 ${res(1)} 農 ${count(1, UnitType.Farmer)} 兵 ${army(1)}${at(1)} 城 ${cityHp(1)} ${income(1)}｜${towns}`,
       );
     }
   }
@@ -362,7 +379,8 @@ const options = [
   plan.autoTrain ? "用自動訓練（自己不點訓練兵）" : "",
   plan.choice === "govern" ? "打下來就治理" : "",
   plan.raid > 0 ? `${plan.raid} 名騎兵突襲電腦的村民` : "",
-  plan.race === "edge" ? `偷家：${plan.raceAt} 名就從角落小鎮沿地圖邊緣去電腦主城` : "",
+  plan.race === "edge" ? `偷家：${plan.raceAt} 名或第 ${plan.raceBy / 1200} 分從角落小鎮沿地圖邊緣去電腦主城${plan.raceStage ? "，半路停下等哨兵看到電腦大軍出門" : ""}` : "",
+  plan.userEco ? "使用者的經濟（自動訓練、16 名村民、搶到大城前不採金、只去大城一趟）" : "",
   plan.race === "sentry" ? `偷家：哨兵看到電腦 ${plan.raceSeen} 名往家裡來就直衝電腦主城（${plan.raceAt} 名或第 ${plan.raceBy / 1200} 分也去）` : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
 ].filter((x) => x !== "");

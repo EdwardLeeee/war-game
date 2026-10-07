@@ -80,9 +80,9 @@ test("once out, enemies at home do not call it back", () => {
   assert.ok(all.some((c) => c.c === "recall" && (c as { on: boolean }).on), "the farmers go inside");
 });
 
-test("edge: with 30 soldiers it sets out by the far corner town, not straight", () => {
+test("edge: with 30 soldiers it sets out beside the far corner town, not straight", () => {
   const { g, ids, player } = scene("edge", 30);
   const out = player.think(buildView(g, 0));
-  assert.deepEqual(marches(out, ids), [[81, 81]]);
+  assert.deepEqual(marches(out, ids), [[76, 76]]);
   assert.equal(player.state().raced, g.w.tick);
 });
