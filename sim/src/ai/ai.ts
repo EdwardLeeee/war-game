@@ -192,6 +192,10 @@ const PRESS_ON_HP = 40;
 const GOVERN_COST: Cost[] = [];
 GOVERN_COST[TownSize.Small] = { food: 0, wood: 80, gold: 80, crystal: 0 };
 GOVERN_COST[TownSize.Large] = { food: 0, wood: 150, gold: 150, crystal: 0 };
+/** What governing a town of this size costs: from the rules (round 7 sends them), else GOVERN_COST. */
+function governCostOf(rules: Rules, size: number): Cost {
+  return rules.towns?.[size]?.governCost ?? GOVERN_COST[size];
+}
 
 /**
  * The AI for `player`. Its random choices come from (seed, slot); slot defaults to the
@@ -319,7 +323,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       // is made the tick the town falls, so the money has to be there).
       const aimTown =
         mode === "town" && targetTown >= 0 && (myStyle !== "plunder" || (once && plundered(targetTown))) ? know.map.towns[targetTown] : undefined;
-      const reserve: Cost = aimTown !== undefined ? { ...GOVERN_COST[aimTown.size] } : { food: 0, wood: 0, gold: 0, crystal: 0 };
+      const reserve: Cost = aimTown !== undefined ? { ...governCostOf(rules, aimTown.size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
         res.food - reserve.food >= c.food && res.wood - reserve.wood >= c.wood && res.gold - reserve.gold >= c.gold && res.crystal - reserve.crystal >= c.crystal;
       const affordAll = (c: Cost) => res.food >= c.food && res.wood >= c.wood && res.gold >= c.gold && res.crystal >= c.crystal;
@@ -558,7 +562,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (!held) garrison.delete(id);
         if (t.owner !== player || t.state !== TownState.AwaitingChoice) continue;
         // Govern when it can be paid for, held and paid back in time; otherwise plunder.
-        const cost = GOVERN_COST[t.size];
+        const cost = governCostOf(rules, t.size);
         if (once && plundered(id)) {
           // Plundered before (round 7): it can only be governed, so it waits until it can pay.
           if (affordAll(cost)) {
@@ -657,7 +661,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         out.push({ c: "leave", building: main.id });
       }
       // A town it took that it may only govern and cannot pay for yet (round 7) does not hold the army.
-      const stuck = (id: number, t: Town) => once && t.state === TownState.AwaitingChoice && plundered(id) && !affordAll(GOVERN_COST[t.size]);
+      const stuck = (id: number, t: Town) => once && t.state === TownState.AwaitingChoice && plundered(id) && !affordAll(governCostOf(rules, t.size));
       const busy = [...towns.entries()].find(
         ([id, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice) && !stuck(id, t),
       );
@@ -738,7 +742,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           .filter(([, t]) => !(t.owner === player && t.state !== TownState.Neutral) && t.state !== TownState.Ruins)
           .filter(([id]) => tick - (plunders.get(id)?.tick ?? -100000) >= 6 * TICKS_PER_MINUTE)
           // Plundered already (round 7): worth taking only when it can pay to govern it.
-          .filter(([id, t]) => !(once && plundered(id) && !affordAll(GOVERN_COST[t.size])))
+          .filter(([id, t]) => !(once && plundered(id) && !affordAll(governCostOf(rules, t.size))))
           .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
         const go = endgame
           ? army.length >= ENDGAME_ARMY
@@ -826,6 +830,11 @@ export interface HardPlan {
   dodge: boolean;
   /** Round 7: with enemies near its main city, its ranged units and mages at home hide in it (and towers it holds). */
   hide: boolean;
+  /**
+   * A town taken for the first time is governed when this many minutes of its income (from the
+   * rules, less what governing costs) are worth more than plundering it; 0: always plunder first.
+   */
+  governMinutes: number;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -849,6 +858,7 @@ export const HARD: HardPlan = {
   pullAll: 4,
   dodge: true,
   hide: true,
+  governMinutes: 0,
   looseAt: 0,
   looseWho: 1,
 };
@@ -891,7 +901,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** Any round 7 rule on (what only matters then is behind it, so that all off it plays as before). */
   const r7 = Object.values(know.rules.features ?? {}).some((on) => on === true);
   const hideOn = garrisonOn && plan.hide;
-  const governCost = (size: number): Cost => know.rules.towns?.[size]?.governCost ?? GOVERN_COST[size];
+  const governCost = (size: number): Cost => governCostOf(rules, size);
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
   const n = know.map.size;
   const home = know.map.spawns[player];
@@ -994,8 +1004,18 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) if (view.towns[r + TownField.id] === id) return (view.towns[r + TownField.flags] & TownFlag.Plundered) !== 0;
         return false;
       };
-      /** It will govern this town when it takes it: only a town plundered before (round 7); others it plunders. */
-      const toGovern = (id: number) => once && plunderedTown(id);
+      /**
+       * It will govern this town when it takes it: a town plundered before (round 7), or one whose
+       * income over governMinutes (the rules' numbers, less the cost) is worth more than its plunder.
+       */
+      const toGovern = (id: number) => {
+        if (once && plunderedTown(id)) return true;
+        if (plan.governMinutes <= 0) return false;
+        const info = know.rules.towns?.[know.map.towns[id].size];
+        if (info === undefined) return false;
+        const value = (c: Cost) => c.food + c.wood + c.gold + 3 * c.crystal;
+        return value(info.perMinute) * plan.governMinutes - value(info.governCost) > value(info.plunder);
+      };
       // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
       const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(know.map.towns[targetTown].size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>

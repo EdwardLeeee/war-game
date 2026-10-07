@@ -956,3 +956,21 @@ test("round 7: hard counts the arrow tower of a town the enemy holds, and who ma
   assert.equal(goes(false, false), true, "no tower: 6 spearmen go for it");
   assert.equal(goes(true, true), false, "a tower with soldiers hiding in it (worth 50 against 60): they stay");
 });
+
+test("hard weighs governing a town it takes for the first time against plundering it, with the rules' numbers", () => {
+  const choice = (governMinutes: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.townState[0] = TownState.AwaitingChoice;
+    w.townOwner[0] = 0;
+    w.res.set([1000, 1000, 1000, 0], 0);
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, w.townX[0] + (k % 3), w.townY[0] + 1 + Math.trunc(k / 3));
+    g.fog.update(w);
+    // A small town: plunder 300 / 300 / 75 crystal (worth 825), governing 80 + 80 and 40 / 40 / 12 a minute (worth 116).
+    const out = hardAi(g, { dodge: false, governMinutes }).think(buildView(g, 0)).find((c) => c.c === "town_choice") as { choice: number } | undefined;
+    return out?.choice;
+  };
+  assert.equal(choice(0), TownChoice.Plunder, "0: plunders as before");
+  assert.equal(choice(5), TownChoice.Plunder, "5 minutes: 580 - 160 is less than 825");
+  assert.equal(choice(10), TownChoice.Govern, "10 minutes: 1160 - 160 is more than 825");
+});
