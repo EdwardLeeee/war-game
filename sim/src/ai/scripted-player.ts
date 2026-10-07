@@ -109,9 +109,10 @@ export interface Plan {
    * Racing the AI to its main city (D-072; the user beat hard so: "我直接帶三十幾隻兵攻擊電腦主堡，
    * 他的兵比我慢到我的主堡，他的主堡比我早被打爆了"). "" no. Once it sets out the army never comes
    * home to defend and never breaks off; farmers still go inside when the enemy comes (recall).
-   * - "edge": the user's way: with `raceAt` soldiers it sets out by the small town in the far
-   *   corner of its own side (canonical (81, 81)) and up the map's edge (canonical (70, 60),
-   *   (76, 35)) to the enemy's main city, whatever the enemy does.
+   * - "edge": the user's way: with `raceAt` soldiers, or at tick `raceBy` with `counterAt` or
+   *   more, it sets out by the small town in the far corner of its own side (canonical (81, 81))
+   *   and up the map's edge (canonical (70, 60), (76, 35)) to the enemy's main city, whatever the
+   *   enemy does.
    * - "sentry": a spearman stands 40% of the way to the enemy's main city; once `raceSeen` enemy
    *   soldiers are seen on our half of the map, nearer than the time before, the army sets out
    *   straight for the enemy's main city; with `raceAt` soldiers, or at tick `raceBy`, it sets
@@ -741,7 +742,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       }
 
       // --- the race (plan.race, D-072): the user's way out, then at the enemy's main city ----------------------
-      if (plan.race === "edge" && mode !== "race" && army.length >= plan.raceAt) setOut();
+      if (plan.race === "edge" && mode !== "race" && (army.length >= plan.raceAt || (tick >= plan.raceBy && army.length >= plan.counterAt))) setOut();
       if (mode === "race") {
         while (raceStep < RACE_EDGE.length) {
           const wp = real(RACE_EDGE[raceStep].u, RACE_EDGE[raceStep].v);
