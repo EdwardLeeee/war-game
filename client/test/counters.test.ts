@@ -23,9 +23,10 @@ test("兵種相剋：騎兵開著時四種兵；倍數從 rules.multipliers 來�
   );
   const by = (t: number) => lines.find((l) => l.type === t);
   assert.deepEqual(by(UnitType.Spearman), { type: UnitType.Spearman, beats: ["騎兵 ×3"], fears: ["遠程兵 ×2.5", "晶砲（擠在一起時）"] });
-  assert.deepEqual(by(UnitType.Ranged), { type: UnitType.Ranged, beats: ["槍兵 ×2.5", "法師的護盾 ×3"], fears: ["騎兵（跑得快，很快衝到面前；生命少）"] });
+  // 遠程打騎兵 ×1.8 (core, round 7 PR K): read from the table like the rest.
+  assert.deepEqual(by(UnitType.Ranged), { type: UnitType.Ranged, beats: ["槍兵 ×2.5", "法師的護盾 ×3", "騎兵 ×1.8"], fears: ["騎兵（跑得快，很快衝到面前；生命少）"] });
   assert.deepEqual(by(UnitType.Mage), { type: UnitType.Mage, beats: ["擠在一起的部隊（晶砲範圍傷害）"], fears: ["遠程兵打護盾 ×3", "騎兵 ×2", "騎兵打護盾 ×2"] });
-  assert.deepEqual(by(UnitType.Cavalry), { type: UnitType.Cavalry, beats: ["遠程兵（跑得快）", "法師 ×2", "法師的護盾 ×2"], fears: ["槍兵 ×3"] });
+  assert.deepEqual(by(UnitType.Cavalry), { type: UnitType.Cavalry, beats: ["遠程兵（跑得快）", "法師 ×2", "法師的護盾 ×2"], fears: ["遠程兵 ×1.8", "槍兵 ×3"] });
 });
 
 test("兵種相剋：騎兵關著時只有三種兵，和騎兵有關的倍數和說明都不列", () => {
