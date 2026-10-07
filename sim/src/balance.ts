@@ -6,7 +6,7 @@
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
 import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, type Held, type Hold, hold, siege, twoShots } from "./balance-lib.ts";
-import { AVENGE, CANNON, DODGE, GARRISON, JOIN_FIGHT, MULT_DEN, MULT_NUM, UNITS } from "./core/rules.ts";
+import { AVENGE, CANNON, DODGE, GARRISON, JOIN_FIGHT, MULT_DEN, MULT_NUM, SHORT_CANNON, UNITS } from "./core/rules.ts";
 import { TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -224,6 +224,13 @@ const ROUND8: Switch[] = [
       AVENGE.on = on;
     },
   },
+  {
+    label: "3 晶砲射程 7",
+    get: () => SHORT_CANNON.on,
+    set: (on) => {
+      SHORT_CANNON.on = on;
+    },
+  },
 ];
 
 /** Round 8's switches as given (in ROUND8's order) while `run` runs; then as they were. */
@@ -262,7 +269,7 @@ function main(): void {
     "- A 進攻：A 走向站著的 B。B 進攻：反過來。雙方對進：同時往對方走。站著的一方是積極姿態，6 格內有敵人才會動。目標以雙方對進判定。",
     "- 法師開著自動施放，魔晶足夠。",
     `- 一起迎戰（第三輪）：待命、積極姿態的兵，6 格內沒有敵人時，去打 ${JOIN_FIGHT.range / 1024} 格內隊友正在追或打的敵人（離自己原位 8 格內）。「現在」沒有這條規則；「這個版本」兩種都列。`,
-    `- 晶砲不動：傷害 ${CANNON.damage}、半徑 ${CANNON.radius / 1024} 格、射程 ${CANNON.range / 1024} 格、冷卻 ${CANNON.cooldownTicks / 20} 秒。`,
+    `- 晶砲：傷害 ${CANNON.damage}、半徑 ${CANNON.radius / 1024} 格、射程 ${CANNON.range / 1024} 格（第八輪起 7 格，以前 8 格）、冷卻 ${CANNON.cooldownTicks / 20} 秒。`,
     "",
     "### 數值",
     "",

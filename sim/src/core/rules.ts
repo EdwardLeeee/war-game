@@ -142,6 +142,7 @@ export function rules(): Required<Rules> {
     towerReach: TOWER_REACH,
     towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
+    cannonRange: CANNON.range,
   };
 }
 
@@ -296,13 +297,18 @@ export const DODGE = { on: true, margin: 256, farmers: false };
  * The unit column it keeps (avenge) is in the hash only while it is on.
  */
 export const AVENGE = { on: true, reach: 8 * CELL };
+/** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
+export const SHORT_CANNON = { on: true, range: 7 * CELL };
 
 // --- mages (from PR-4) ---------------------------------------------------------------
 
 export const CANNON = {
   damage: 45,
   radius: Math.trunc(1.5 * CELL),
-  range: 8 * CELL,
+  /** 8 cells; 7 with round 8's SHORT_CANNON on. */
+  get range(): number {
+    return SHORT_CANNON.on ? SHORT_CANNON.range : 8 * CELL;
+  },
   calibrateTicks: Math.trunc(1.5 * S),
   cooldownTicks: 8 * S,
   crystal: 5,

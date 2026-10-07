@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Game } from "../src/core/game.ts";
-import { AVENGE, CANNON, DODGE, MAGE_BOUNTY, SHIELD_REGEN, UNITS } from "../src/core/rules.ts";
+import { AVENGE, CANNON, DODGE, MAGE_BOUNTY, SHIELD_REGEN, SHORT_CANNON, UNITS } from "../src/core/rules.ts";
 import {
   Action,
   BuildingType,
@@ -36,7 +36,7 @@ function arena() {
   return { g, a };
 }
 
-test("cast: calibrates 1.5 s with a warning both sides see, then hits enemies in the radius only", switchedOff(DODGE, () => {
+test("cast: calibrates 1.5 s with a warning both sides see, then hits enemies in the radius only", switchedOff([DODGE, SHORT_CANNON], () => {
   const { g, a } = arena();
   const mage = put(g, 0, UnitType.Mage, a.x + 2, a.y + 10);
   const friend = put(g, 0, UnitType.Spearman, a.x + 9, a.y + 11);
@@ -80,7 +80,7 @@ test("cast: calibrates 1.5 s with a warning both sides see, then hits enemies in
   assert.deepEqual(step(g), [Reject.Cooldown]);
 }));
 
-test("a spearman at full health stands two crystal cannon shots (round 3, D-026); the third kills it", switchedOff([AVENGE], () => {
+test("a spearman at full health stands two crystal cannon shots (round 3, D-026); the third kills it", switchedOff([AVENGE, SHORT_CANNON], () => {
   const { g, a } = arena();
   const mages = [0, 1, 2].map((k) => put(g, 0, UnitType.Mage, a.x + 2, a.y + 9 + k));
   const foe = put(g, 1, UnitType.Spearman, a.x + 9, a.y + 10);
