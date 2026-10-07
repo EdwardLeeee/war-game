@@ -924,3 +924,35 @@ test("round 7: hard hides its ranged units and mages in its main city when enemi
   assert.equal(hides(true), true);
   assert.equal(hides(false), false, "rule off: nothing to hide in");
 });
+
+test("round 7: hard counts the arrow tower of a town the enemy holds, and who may hide in it, before going for it", () => {
+  const goes = (tower: boolean, occupied: boolean) =>
+    withSwitches({ garrison: true }, () => {
+      const g = emptyGame();
+      const w = g.w;
+      const [small, big] = w.map.towns;
+      // Only the small town is worth taking: the others lie in ruins.
+      for (const t of w.map.towns) {
+        if (t.id === small.id) continue;
+        w.townState[t.id] = TownState.Ruins;
+        w.townOwner[t.id] = NO_OWNER;
+        w.townTimer[t.id] = 4800;
+      }
+      w.townState[small.id] = TownState.Governed;
+      w.townOwner[small.id] = 1;
+      const s0 = w.map.spawns[0];
+      for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + k, s0.cellY - 6);
+      // A lookout in the town sees it (and its tower).
+      put(g, 0, UnitType.Farmer, small.cellX + 1, small.cellY + 1);
+      if (tower) {
+        const b = w.addBuilding(1, BuildingType.ArrowTower, small.cellX - 1, small.cellY - 1, 500, 1000);
+        if (occupied) w.buildings.col.soldiers[w.building(b)] = 3;
+      }
+      void big;
+      g.fog.update(w);
+      const m = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 6) as { x: number; y: number } | undefined;
+      return m !== undefined && m.x === small.cellX && m.y === small.cellY;
+    });
+  assert.equal(goes(false, false), true, "no tower: 6 spearmen go for it");
+  assert.equal(goes(true, true), false, "a tower with soldiers hiding in it (worth 50 against 60): they stay");
+});

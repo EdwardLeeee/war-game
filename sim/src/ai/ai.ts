@@ -855,6 +855,8 @@ export const HARD: HardPlan = {
 
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
+/** An enemy arrow tower by a town, weighing up whether to go for it (round 7): about two soldiers. */
+const TOWER_WORTH = 20;
 /** Enemy soldiers not seen for this long are forgotten. */
 const INTEL_TICKS = 4 * TICKS_PER_MINUTE;
 /** Enemy soldiers within this many cells of the main city make a wave (as the scripted player counts). */
@@ -1624,6 +1626,18 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
             for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= 14 * 14) there += WORTH[e.type];
+            // Round 7: a town the enemy governs gets an arrow tower of its own, and soldiers may hide
+            // in it (it counts the tower, and as many ranged units as it holds when someone is in).
+            if (r7) {
+              const reach = know.map.towns[id].radius + 3;
+              for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+                const type = view.buildings[r + BuildingField.type];
+                if (view.buildings[r + BuildingField.owner] !== 1 - player || (type !== BuildingType.ArrowTower && type !== BuildingType.TownTower)) continue;
+                if (dist2(view.buildings[r + BuildingField.cellX], view.buildings[r + BuildingField.cellY], t.x, t.y) > reach * reach) continue;
+                there += TOWER_WORTH;
+                if ((view.buildings[r + BuildingField.flags] & BuildingFlag.Occupied) !== 0) there += (rules.buildings[type].holds ?? 0) * WORTH[UnitType.Ranged];
+              }
+            }
             if (there * 10 > armyWorth * 8) continue;
             const d = dist2(t.x, t.y, home.cellX, home.cellY);
             if (pick < 0 || d < pickD || (d === pickD && rank(t.x, t.y) < rank(towns.get(pick)!.x, towns.get(pick)!.y))) {
