@@ -413,3 +413,137 @@ test("量測：開一局 perf 場景（所有系統都開著），暖機 5 秒�
   await expect(page.locator(".lab-result")).toContainText(/停頓（一張畫面超過 50 ms）：\d+ 次，共 [\d.]+ 秒；最長的一張 [\d.]+ ms/);
   await shot(page, info, "perf-measure");
 });
+
+// --- 點存放建築派村民 (D-066) ------------------------------------------------------------
+
+type Building = { id: number; owner: number; type: number; cx: number; cy: number; size: number; progress: number };
+/** Distance from a point (cells) to a building's footprint, as src/game/depot.ts measures it. */
+const toFootprint = (p: { x: number; y: number }, b: Building) =>
+  Math.hypot(Math.max(b.cx - p.x, 0, p.x - (b.cx + b.size)), Math.max(b.cy - p.y, 0, p.y - (b.cy + b.size)));
+const ownBuildings = async (page: Page): Promise<Building[]> => {
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  return (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).filter((b) => b.owner === me);
+};
+
+/** Tap one of our buildings where the tap picks the building (not a villager beside or on it); its panel opens. */
+async function tapBuilding(page: Page, b: Building): Promise<void> {
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y), [b.cx + b.size / 2, b.cy + b.size / 2] as const);
+  for (let y = b.cy; y < b.cy + b.size; y++) {
+    for (let x = b.cx; x < b.cx + b.size; x++) {
+      const at = await toScreen(page, { x, y });
+      if ((await page.evaluate(([sx, sy]) => window.__proto?.game?.pickAt(sx, sy) ?? null, [at.x, at.y] as const)) !== "building") continue;
+      await tap(page, at);
+      await expect.poll(() => selection(page)).toEqual({ units: [], building: b.id });
+      return;
+    }
+  }
+  throw new Error(`no cell of building ${b.id} to tap`);
+}
+
+/** Whom ＋ should send (src/game/depot.ts): idle first, then those gathering another resource (not the vein), nearest to the building. */
+function expectedPick(list: Awaited<ReturnType<typeof farmers>>, kindOf: Map<number, number>, b: Building, kind: number): number | null {
+  const near = (a: { fx: number; fy: number; id: number }, c: { fx: number; fy: number; id: number }) => toFootprint({ x: a.fx, y: a.fy }, b) - toFootprint({ x: c.fx, y: c.fy }, b) || a.id - c.id;
+  const free = list.filter((f) => f.order !== 5 && f.order !== 6);
+  const idle = free.filter((f) => f.order === 0).sort(near);
+  if (idle.length > 0) return idle[0].id;
+  const others = free.filter((f) => f.order === 4 && kindOf.has(f.target) && kindOf.get(f.target) !== kind && kindOf.get(f.target) !== 3).sort(near);
+  return others[0]?.id ?? null;
+}
+
+/** The node ＋ should send to: the nearest of this kind within 10 cells of the building (ties: lower id). */
+function expectedNode(nodes: { id: number; kind: number; cx: number; cy: number; amount: number }[], b: Building, kind: number) {
+  return (
+    nodes
+      .filter((n) => n.kind === kind && n.amount > 0)
+      .map((n) => ({ n, d: toFootprint({ x: n.cx + 0.5, y: n.cy + 0.5 }, b) }))
+      .filter((e) => e.d <= 10)
+      .sort((a, c) => a.d - c.d || a.n.id - c.n.id)[0]?.n ?? null
+  );
+}
+
+test("點主城派村民（D-066）：主城寫糧、木、金各有幾名在採；木的＋派閒置的、沒有就派採別種資源、離主城最近的一名，送出親手派的 gather 去最近的樹", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await start(page, "?test=1&tps=60");
+  await expect.poll(async () => (await farmers(page)).filter((f) => f.order === 4).length, { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
+  await pause(page);
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  const city = (await ownBuildings(page)).find((b) => b.type === 0);
+  if (city === undefined) throw new Error("no main city");
+  const nodes = await page.evaluate(() => window.__proto?.game?.nodes() ?? []);
+  const kindOf = new Map(nodes.map((n) => [n.id, n.kind]));
+  const list = await farmers(page);
+  // At the start the main city is our only depot (no farms yet): everyone gathering food, wood or gold counts here.
+  const on = (kind: number) => list.filter((f) => f.order === 4 && kindOf.get(f.target) === kind).length;
+  await tapBuilding(page, city);
+  const panel = page.locator(".sel-info");
+  await expect(panel.locator(".depot-caption")).toHaveText("附近在採的村民");
+  await expect(panel.locator(".depot-count")).toHaveText([`糧 ${on(2)} 名`, `木 ${on(0)} 名`, `金 ${on(1)} 名`]);
+  await shot(page, info, "depot-city");
+  const who = await expectedPick(list, kindOf, city, 0);
+  const tree = expectedNode(nodes, city, 0);
+  expect(who, "someone to send").not.toBeNull();
+  await panel.getByRole("button", { name: "多派 1 名村民採木" }).tap();
+  if (tree === null) {
+    await expect(page.getByRole("status").filter({ hasText: "附近沒有樹" })).toBeVisible();
+    return;
+  }
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "gather", u: [who], node: tree.id });
+  await expect(page.getByRole("status").filter({ hasText: "派 1 名村民去採木" })).toBeVisible();
+  // The player's own gather: off to that tree, and the economy ratio leaves it there (HandPicked, D-050).
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(async () => (await farmers(page)).find((f) => f.id === who), { timeout: 15_000 }).toMatchObject({ target: tree.id, handPicked: true });
+});
+
+test("點伐木場、糧倉派村民（D-066）：寫附近有幾名在採；每名村民只算在他送回的那一棟；伐木場的＋派去它旁邊的樹，糧倉沒有空田時去野果或提示先蓋田", async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await start(page, "?test=1&tps=60");
+  await expect.poll(async () => (await farmers(page)).filter((f) => f.order === 4).length, { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
+  const city = (await ownBuildings(page)).find((b) => b.type === 0);
+  if (city === undefined) throw new Error("no main city");
+  const nodes0 = await page.evaluate(() => window.__proto?.game?.nodes() ?? []);
+  // A lumber camp by the trees nearest the main city, a granary by the city; the nearest villagers build them.
+  const nearTree = nodes0.filter((n) => n.kind === 0 && n.amount > 0).sort((a, c) => toFootprint({ x: a.cx, y: a.cy }, city) - toFootprint({ x: c.cx, y: c.cy }, city))[0];
+  const campAt = await page.evaluate(([x, y]) => window.__proto?.game?.buildSpotNear(2, x, y) ?? null, [nearTree.cx, nearTree.cy] as const);
+  const granaryAt = await page.evaluate(([x, y]) => window.__proto?.game?.buildSpotNear(4, x, y) ?? null, [city.cx - 4, city.cy + 1] as const);
+  if (campAt === null || granaryAt === null) throw new Error("no spot to build on");
+  await page.evaluate(([c, g]) => {
+    window.__proto?.game?.send({ c: "build", u: [], type: 2, x: c.x, y: c.y });
+    window.__proto?.game?.send({ c: "build", u: [], type: 4, x: g.x, y: g.y });
+  }, [campAt, granaryAt] as const);
+  const done = async (type: number) => (await ownBuildings(page)).find((b) => b.type === type && b.progress >= 1000);
+  await expect.poll(async () => (await done(2)) !== undefined && (await done(4)) !== undefined, { timeout: 120_000 }).toBe(true);
+  await pause(page);
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  const camp = (await done(2)) as Building;
+  const granary = (await done(4)) as Building;
+  const panel = page.locator(".sel-info");
+  const count = async (b: Building, word: string) => {
+    await tapBuilding(page, b);
+    const text = (await panel.locator(".depot-count").allTextContents()).find((t) => t.includes(word)) ?? "";
+    return Number(/(\d+) 名/.exec(text)?.[1] ?? -1);
+  };
+  // Every villager on wood counts at exactly one of the two: the city and the camp add up.
+  const nodes = await page.evaluate(() => window.__proto?.game?.nodes() ?? []);
+  const kindOf = new Map(nodes.map((n) => [n.id, n.kind]));
+  const list = await farmers(page);
+  const onWood = list.filter((f) => f.order === 4 && kindOf.get(f.target) === 0).length;
+  const atCity = await count(city, "木");
+  const atCamp = await count(camp, "木");
+  expect(atCity + atCamp, "each villager on wood counted once").toBe(onWood);
+  await expect(panel.locator(".depot-count")).toHaveText(`附近有 ${atCamp} 名村民在採木`);
+  await shot(page, info, "depot-lumber-camp");
+  // ＋ at the camp: the tree nearest the camp.
+  const who = expectedPick(list, kindOf, camp, 0);
+  const tree = expectedNode(nodes, camp, 0);
+  await panel.getByRole("button", { name: "多派 1 名村民採木" }).tap();
+  if (who !== null && tree !== null) await expect.poll(() => lastSent(page)).toMatchObject({ c: "gather", u: [who], node: tree.id });
+  // The granary: food, no farms yet, so berries within reach or 先蓋農田.
+  await tapBuilding(page, granary);
+  await expect(panel.locator(".depot-count")).toHaveText(/^附近有 \d+ 名村民在採糧$/);
+  await shot(page, info, "depot-granary");
+  const mark = (await page.evaluate(() => window.__proto?.game?.sent() ?? [])).length;
+  await panel.getByRole("button", { name: "多派 1 名村民採糧" }).tap();
+  const berries = expectedNode(nodes, granary, 2);
+  if (berries === null) await expect(page.getByRole("status").filter({ hasText: "附近沒有空田，先蓋農田" })).toBeVisible();
+  else await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.sent() ?? [])).slice(mark)).toMatchObject([{ c: "gather", node: berries.id }]);
+});
