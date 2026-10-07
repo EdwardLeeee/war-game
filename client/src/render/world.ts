@@ -15,7 +15,6 @@ import {
   Fog,
   HeaderField as H,
   NodeField as N,
-  Terrain,
   TOWN_STRIDE,
   TownField as T,
   TownState,
@@ -126,6 +125,10 @@ export class WorldRenderer {
   private readonly fogTexture: Texture;
   private readonly fogPixels: ImageData;
   private fogVersion = -1;
+  private readonly terrainCanvas: HTMLCanvasElement;
+  private readonly terrainPixels: ImageData;
+  /** The rocks drawn (D-074: a random map's grow as they are explored). */
+  private rocksVersion = 0;
   private nodesVersion = -1;
   private readonly nodeSprites = new Map<number, Sprite>();
   private readonly unitPool: UnitSprites[] = [];
@@ -145,18 +148,9 @@ export class WorldRenderer {
     const terrain = document.createElement("canvas");
     terrain.width = size;
     terrain.height = size;
-    const tctx = terrain.getContext("2d") as CanvasRenderingContext2D;
-    const img = tctx.createImageData(size, size);
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const i = (y * size + x) * 4;
-        const rock = view.map.terrain[y * size + x] === Terrain.Blocked;
-        const shade = (x + y) % 2 === 0;
-        const [r, g, b] = rock ? [104, 96, 86] : shade ? [86, 116, 64] : [92, 123, 69];
-        img.data.set([r, g, b, 255], i);
-      }
-    }
-    tctx.putImageData(img, 0, 0);
+    this.terrainCanvas = terrain;
+    this.terrainPixels = (terrain.getContext("2d") as CanvasRenderingContext2D).createImageData(size, size);
+    this.paintTerrain();
     const terrainTex = Texture.from(terrain);
     this.terrainTexture = terrainTex;
     terrainTex.source.scaleMode = "nearest";
@@ -184,6 +178,7 @@ export class WorldRenderer {
     this.root.position.set(-camera.x * camera.scale, -camera.y * camera.scale);
     const curr = this.view.curr;
     if (curr === null) return;
+    this.drawTerrain();
     this.drawFog();
     this.drawNodes();
     this.drawBuildings();
@@ -242,6 +237,29 @@ export class WorldRenderer {
       const k = (now - m.at) / MARKER_MS;
       this.fx.circle(m.x, m.y, TILE_PX * (0.3 + 0.5 * k)).stroke({ width: 3, color: m.color, alpha: 1 - k });
     }
+  }
+
+  /** Ground and the rocks the player knows (GameView.rocks), one texel per cell. */
+  private paintTerrain(): void {
+    const size = this.view.map.size;
+    const d = this.terrainPixels.data;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const rock = this.view.rocks[y * size + x] === 1;
+        const shade = (x + y) % 2 === 0;
+        const [r, g, b] = rock ? [104, 96, 86] : shade ? [86, 116, 64] : [92, 123, 69];
+        d.set([r, g, b, 255], (y * size + x) * 4);
+      }
+    }
+    (this.terrainCanvas.getContext("2d") as CanvasRenderingContext2D).putImageData(this.terrainPixels, 0, 0);
+    this.rocksVersion = this.view.rocksVersion;
+  }
+
+  /** Rocks explored since the last frame (random map): the terrain texture again. */
+  private drawTerrain(): void {
+    if (this.view.rocksVersion === this.rocksVersion) return;
+    this.paintTerrain();
+    this.terrainTexture.source.update();
   }
 
   private drawFog(): void {
@@ -337,7 +355,7 @@ export class WorldRenderer {
     const seen = new Set<number>();
     for (let o = 0; o < t.length; o += TOWN_STRIDE) {
       const id = t[o + T.id];
-      const info = this.view.map.towns.find((v) => v.id === id);
+      const info = this.view.knownTowns.get(id);
       if (info === undefined) continue;
       seen.add(id);
       const look = townLook(t[o + T.state], t[o + T.owner], this.view.me);

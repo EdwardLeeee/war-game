@@ -7,18 +7,22 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false });
 });
 
 test("tps, mock, r7, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null });
+  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null });
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false });
   assert.equal(parseParams("?test=1&mock=1").mock, true);
   assert.equal(parseParams("?test=1&mock=1").round7, false);
   assert.equal(parseParams("?test=1&mock=1&r7=1").round7, true);
+  assert.equal(parseParams("?test=1&map=random").map, "random");
+  assert.equal(parseParams("?test=1&map=fixed").map, "fixed");
+  assert.equal(parseParams("?test=1&map=huge").map, null);
+  assert.equal(parseParams("?test=1&watch=1").watch, true);
   assert.equal(parseParams("?test=1&scenario=e2e").scenario, "e2e");
   assert.equal(parseParams("?test=1&scenario=bogus").scenario, null);
 });

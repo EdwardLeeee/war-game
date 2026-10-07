@@ -109,6 +109,15 @@ a {
   min-width: 88px;
 }
 
+/* 地圖 (D-074): the same row as 難度, its meaning in one small line under it. */
+.map-mode {
+  margin-bottom: 2px;
+}
+
+.map-note {
+  margin: 0 0 10px;
+}
+
 .start-buttons {
   display: flex;
   justify-content: center;

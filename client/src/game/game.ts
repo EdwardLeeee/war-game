@@ -34,6 +34,7 @@ import {
   type CommandBody,
   type FromWorker,
   type GameOverReason,
+  type MapMode,
   HeaderField as H,
   NEUTRAL,
   NO_OWNER,
@@ -85,6 +86,10 @@ export interface GameOptions {
   difficulty: AiDifficulty;
   /** Time limit in ticks, 0 = none (players' games, D-024). */
   maxTicks: number;
+  /** 地圖 (D-074): the fixed map or a new random one. */
+  map: MapMode;
+  /** Test pages (`?test=1&watch=1`): the computer plays both sides, the page only watches. */
+  watch: boolean;
   env: () => Record<string, unknown>;
   /** A fresh simulation Worker for the determinism check, or null (the fake world has none). */
   checkPort: (() => SimPort) | null;
@@ -231,14 +236,17 @@ export class Game implements GestureHost {
     if (view === null) return;
     const home = view.map.spawns.find((s) => s.player === view.me);
     const hint = home === undefined ? null : hintTown(view.townsNow(), home, view.me);
-    if (home === undefined || hint === null) return;
-    const town = hint.town;
+    // A random map with no town explored yet (D-074): the hint all the same, without a town to point at.
+    if (home === undefined || (hint === null && !view.randomMap)) return;
+    const town = hint?.town ?? null;
     const wasPaused = this.paused;
     this.pause();
     this.hud.openTownHint(
-      townHintLines(town, home, hint.passed, features(view.rules).plunderOnce),
-      { id: town.id, cx: town.cellX, cy: town.cellY, radius: town.radius },
-      () => this.camera?.centerOn((town.cellX + 0.5) * TILE_PX, (town.cellY + 0.5) * TILE_PX),
+      townHintLines(town, home, hint?.passed ?? false, features(view.rules).plunderOnce),
+      town === null ? null : { id: town.id, cx: town.cellX, cy: town.cellY, radius: town.radius },
+      () => {
+        if (town !== null) this.camera?.centerOn((town.cellX + 0.5) * TILE_PX, (town.cellY + 0.5) * TILE_PX);
+      },
       () => {
         if (!wasPaused) this.resume();
       },
@@ -288,6 +296,9 @@ export class Game implements GestureHost {
   get portForTest(): SimPort {
     return this.port;
   }
+
+  /** The last frames: their intervals and how long drawing them took (test pages compare maps, D-074). */
+  readonly frameTimes = new FrameTimes(1200);
 
   /** Arrows drawn from `shot` events so far (round 7), for the test hook. */
   get shotsForTest(): number {
@@ -365,13 +376,16 @@ export class Game implements GestureHost {
       type: "init",
       protocol: PROTOCOL_VERSION,
       seed: this.options.seed,
-      human: 0,
-      ai: [false, this.options.enemyAi],
+      // Watching (test pages): no person plays, the worker shows everything.
+      human: this.options.watch ? null : 0,
+      ai: [this.options.watch, this.options.enemyAi],
       // One value per player, like `ai`; the person's (player 0) is not used.
       difficulty: ["normal", this.options.difficulty],
       maxTicks: this.options.maxTicks,
       tps: this.options.tps,
       scenario: this.options.scenario,
+      // Only a random map says so (D-074): a fixed map's init and log stay as they were.
+      ...(this.options.map === "random" ? { map: "random" as const } : {}),
     };
     this.initSent = init;
     this.port.postMessage(init);
@@ -484,7 +498,7 @@ export class Game implements GestureHost {
   }
 
   private townArea(town: number): TownArea | null {
-    return this.view?.map.towns.find((t) => t.id === town) ?? null;
+    return this.view?.knownTowns.get(town) ?? null;
   }
 
   /** How many soldiers stay by default: the least a governed town needs (GDD §5: small 1, large 3). */
@@ -494,7 +508,7 @@ export class Game implements GestureHost {
     const o = view?.townRow(town) ?? -1;
     const needed = t !== undefined && o >= 0 ? t[o + TownField.garrisonNeeded] : 0;
     if (needed > 0) return needed;
-    return view?.map.towns.find((v) => v.id === town)?.size === TownSize.Large ? 3 : 1;
+    return view?.knownTowns.get(town)?.size === TownSize.Large ? 3 : 1;
   }
 
   /** Soldiers that could still be stationed in the town right now. */
@@ -976,6 +990,7 @@ export class Game implements GestureHost {
     cam.update(dt);
     this.renderer.draw(now, cam, this.placement);
     this.hud.frame(now);
+    this.frameTimes.add(dt, performance.now() - now);
     // ✓ and ✗ follow the preview on screen while the camera pinches or flings (a few style writes).
     if (this.placement?.phase === "confirm") this.showPlaceButtons();
     const header = view.header;
@@ -1423,5 +1438,39 @@ export class Game implements GestureHost {
     this.placement = null;
     this.overlays.hidePlace();
     this.overlays.hidePrompt();
+  }
+}
+
+/** A ring of the last frames' intervals and drawing times (ms). */
+export class FrameTimes {
+  private readonly gaps: Float64Array;
+  private readonly draws: Float64Array;
+  private count = 0;
+
+  constructor(size: number) {
+    this.gaps = new Float64Array(size);
+    this.draws = new Float64Array(size);
+  }
+
+  add(gapMs: number, drawMs: number): void {
+    const i = this.count % this.gaps.length;
+    this.gaps[i] = gapMs;
+    this.draws[i] = drawMs;
+    this.count++;
+  }
+
+  clear(): void {
+    this.count = 0;
+  }
+
+  /** Median and slowest 5 % of the frames kept (ms), and fps from the median gap. */
+  summary(): { frames: number; gapMedian: number; gapP95: number; fps: number; drawMedian: number; drawP95: number } {
+    const n = Math.min(this.count, this.gaps.length);
+    const pick = (a: Float64Array, q: number) => {
+      const s = Array.from(a.subarray(0, n)).sort((x, y) => x - y);
+      return n === 0 ? 0 : s[Math.min(n - 1, Math.floor(q * n))];
+    };
+    const gapMedian = pick(this.gaps, 0.5);
+    return { frames: n, gapMedian, gapP95: pick(this.gaps, 0.95), fps: gapMedian > 0 ? 1000 / gapMedian : 0, drawMedian: pick(this.draws, 0.5), drawP95: pick(this.draws, 0.95) };
   }
 }

@@ -80,6 +80,12 @@ export interface GameHook {
   remove(ids: number[]): void;
   /** Arrows drawn from `shot` events so far (round 7). */
   shots(): number;
+  /** The map's mode (D-074) and what the screen knows: town ids, and how many cells of rock. */
+  mapMode(): string;
+  knownTowns(): number[];
+  knownRocks(): number;
+  /** The last frames' intervals and drawing times (ms); `clear` starts a new window. */
+  frameTimes(clear?: boolean): { frames: number; gapMedian: number; gapP95: number; fps: number; drawMedian: number; drawP95: number };
   /** What a tap at this screen point would hit (unit, building, node, town), or null for open ground. */
   pickAt(sx: number, sy: number): string | null;
   /** Every town on the map (size 0 small, 1 large): state, holder and militia as last seen (-1 before it is explored). */
@@ -168,7 +174,7 @@ export function gameHook(game: Game): GameHook {
           for (let x = cx - r; x <= cx + r; x++) {
             if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r || x < 1 || y < 1 || x >= size - 1 || y >= size - 1) continue;
             const i = y * size + x;
-            if (view.map.terrain[i] !== Terrain.Open || view.nodeAt[i] >= 0 || taken[i] === 1 || (explored && view.fog[i] === 0)) continue;
+            if (view.rocks[i] === 1 || view.map.terrain[i] !== Terrain.Open || view.nodeAt[i] >= 0 || taken[i] === 1 || (explored && view.fog[i] === 0)) continue;
             return { x, y };
           }
         }
@@ -211,6 +217,14 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.remove(ids);
     },
     shots: () => game.shotsForTest,
+    mapMode: () => game.view?.map.mode ?? "fixed",
+    knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],
+    knownRocks: () => game.view?.rocks.reduce((a, b) => a + b, 0) ?? 0,
+    frameTimes: (clear = false) => {
+      const s = game.frameTimes.summary();
+      if (clear) game.frameTimes.clear();
+      return s;
+    },
     init: () => (game.initSent === null ? null : { ...game.initSent }),
     pickAt: (sx, sy) => {
       const cam = game.camera;
@@ -223,7 +237,7 @@ export function gameHook(game: Game): GameHook {
       const view = game.view;
       const t = view?.curr?.snap.towns;
       if (view === null || t === undefined) return [];
-      return view.map.towns.map((info) => {
+      return view.townList().map((info) => {
         let o = -1;
         for (let i = 0; i < t.length; i += TOWN_STRIDE) if (t[i + T.id] === info.id) o = i;
         return {

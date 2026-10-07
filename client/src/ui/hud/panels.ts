@@ -516,7 +516,7 @@ export class SelectionInfo {
   }
 
   private town(view: GameView, id: number): void {
-    const info = view.map.towns.find((t) => t.id === id);
+    const info = view.knownTowns.get(id);
     const head = el("div", this.el, "sel-head");
     el("b", head, "", info?.size === TownSize.Large ? "大城" : "小鎮");
     const status = el("span", head, "sel-status");

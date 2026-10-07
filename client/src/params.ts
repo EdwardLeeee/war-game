@@ -1,6 +1,8 @@
 // Page options read from the URL. Only `?test=1` (CI and debugging) unlocks the test hook,
 // tick rates beyond the three game speeds and the fake world; players never see them.
 
+import type { MapMode } from "./sim.ts";
+
 /**
  * Ticks per second for 慢, 正常, 快 (D-024: the old 1x, 1.5x and 2x; the user found the old
  * 1.5x the right normal speed). Rules count game time at 20 ticks per second.
@@ -39,6 +41,13 @@ export interface PageParams {
    * e2e can catch them. Only http(s) URLs.
    */
   logsUrl: string | null;
+  /** `?test=1&map=fixed|random`: this map instead of the start screen's choice (D-074). */
+  map: MapMode | null;
+  /**
+   * `?test=1&watch=1`: the computer plays both sides and the page watches, seeing everything
+   * (human null; the only way onto a random map until the AI scouts, D-074).
+   */
+  watch: boolean;
 }
 
 export function parseParams(search: string): PageParams {
@@ -53,5 +62,7 @@ export function parseParams(search: string): PageParams {
   const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf") ? sc : null;
   const logs = q.get("logs");
   const logsUrl = test && logs !== null && /^https?:\/\/[^\s]+$/.test(logs) ? logs : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl };
+  const m = q.get("map");
+  const map = test && (m === "fixed" || m === "random") ? m : null;
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1" };
 }
