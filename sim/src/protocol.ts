@@ -755,8 +755,8 @@ export type ToWorker =
       /** Per player (aligned with `ai`), how its simple AI plays. Absent: all "normal". */
       difficulty?: AiDifficulty[];
       /**
-       * Absent: "fixed". "random" (D-074) only for AI against AI (human null) until the AI scouts:
-       * the AI knows the whole random map for now, so a person cannot play one yet.
+       * Absent: "fixed". "random" (D-074): a new map from the seed; a player, person or AI, starts
+       * knowing only its own main city (MapInfo).
        */
       map?: MapMode;
     }

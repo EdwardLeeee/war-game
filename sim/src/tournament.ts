@@ -5,8 +5,7 @@
 // with the AIs off and every HASH_EVERY-tick hash must match.
 //   node src/tournament.ts --games 100 --shard 0 --shards 4 --out DIR [--map random]
 // --map random (D-074): game i's map comes from its seed, so both games of a seed share a map.
-// The AI still knows the whole random map (runner.ts, temporary), so these games only check
-// whether the maps are fair.
+// The AI scouts (ai.ts); only the replays gate (tournament-summary.ts).
 // Writes DIR/game-<i>.json (result and statistics) and DIR/game-<i>.jsonl (the log).
 // Exits 1 if any replay differs.
 
