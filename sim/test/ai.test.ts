@@ -1184,3 +1184,31 @@ test("hard: marching on the enemy base without knowing where the enemy's army is
   assert.ok(blind.near.every((id) => !blind.go!.u.includes(id)), "the four nearest home stay");
   assert.equal(march(true).go?.u.length, 30, "the enemy's army in sight: everyone goes");
 });
+
+test("random maps: lookouts' posts come from its own home and the rock it has seen, not from the fixed map", () => {
+  const g = emptyRandom();
+  const w = g.w;
+  const frame = w.map.frames[0];
+  const home = spawnCentre(frame, w.map.spawns[0]);
+  const h = toCanon(frame, home.x, home.y);
+  const at = (du: number, dv: number) => fromCanon(frame, h.u + du, h.v + dv);
+  // Spearmen first: the first of them scouts (the lowest id), the ranged one stands lookout.
+  for (let k = 0; k < 11; k++) {
+    const c = at(5 + (k % 5), -5 - Math.trunc(k / 5));
+    put(g, 0, UnitType.Spearman, c.x, c.y);
+  }
+  const archer = at(8, -8);
+  const id = put(g, 0, UnitType.Ranged, archer.x, archer.y);
+  // The post toward the centre (17 cells along the diagonal) is rock, and a farmer by it has seen so.
+  const post = at(17, -17);
+  w.grid[post.y * w.size + post.x] = 1;
+  w.map.terrain[post.y * w.size + post.x] = 1;
+  const eye = at(15, -15);
+  put(g, 0, UnitType.Farmer, eye.x, eye.y);
+  g.fog.update(w);
+  const ai = createAi(0, 1, { ...aiKnowledge(w.map, 0, 0, "hard"), hard: { dodge: false, sentries: 3, sentryDist: 25 } }, 0);
+  const move = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 1 && c.u[0] === id) as { x: number; y: number } | undefined;
+  assert.ok(move !== undefined, "the ranged one goes to the post toward the centre");
+  assert.notDeepEqual([move.x, move.y], [post.x, post.y], "not onto the rock");
+  assert.ok(Math.max(Math.abs(move.x - post.x), Math.abs(move.y - post.y)) <= 4, "beside it");
+});

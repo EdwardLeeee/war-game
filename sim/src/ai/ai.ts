@@ -1642,10 +1642,26 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         sentryNext[k] = tick + TICKS_PER_MINUTE;
       }
       if (posts.length > 0) {
+        // Where a lookout can stand: the post, or the nearest cell by it not known to be rock (a
+        // random map's rock is only known where explored, D-074).
+        const stand = (p: { x: number; y: number }) => {
+          const c = frame(p.x, p.y);
+          for (let r = 0; r <= 4; r++) {
+            for (let dv = -r; dv <= r; dv++) {
+              for (let du = -r; du <= r; du++) {
+                if (Math.max(Math.abs(du), Math.abs(dv)) !== r) continue;
+                const q = real(clampCell(c.u + du), clampCell(c.v + dv));
+                if ((view.placement[q.y * n + q.x] & PlaceBit.Blocked) === 0) return q;
+              }
+            }
+          }
+          return p;
+        };
         const taken = new Set([...townGuards.values()].flat());
         for (const id of sentryAt.values()) taken.add(id);
         const free = soldiers.filter((s) => !taken.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison && s.order !== Order.Cast);
-        posts.forEach((p, k) => {
+        posts.forEach((post, k) => {
+          const p = stand(post);
           const id = sentryAt.get(k);
           if (id !== undefined) {
             const s = byId.get(id)!;
