@@ -13,6 +13,8 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 PX = 8
+DIAG = math.sqrt(2)
+HALF_DIAG = math.sqrt(0.5)
 FONT = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 TC = 3  # Noto Sans CJK TC inside the collection
@@ -57,20 +59,23 @@ def passable(grid, x, y):
     return 0 <= y < len(grid) and 0 <= x < len(grid) and grid[y][x] == "."
 
 
-def walk(grid, starts, goals):
-    """Shortest 8-way walk in tenths of a cell (no corner cutting), from any start to any goal."""
+def walk(grid, starts, goals, start_cost=0.0, goal_cost=0.0):
+    """Shortest 8-way walk in cells (no corner cutting), from any start to any goal.
+
+    start_cost / goal_cost: from the exact start or goal point to the centre of those cells
+    (a main city's centre is a cell corner, half a diagonal from its four inner cells)."""
     n = len(grid)
     goals = set(goals)
     dist = {}
-    heap = [(0, s) for s in starts]
+    heap = [(start_cost, s) for s in starts]
     for _, s in heap:
-        dist[s] = 0
+        dist[s] = start_cost
     heapq.heapify(heap)
     while heap:
         d, (x, y) = heapq.heappop(heap)
         if (x, y) in goals:
-            return d / 10
-        if d > dist.get((x, y), 1 << 60):
+            return d + goal_cost
+        if d > dist.get((x, y), 1e18):
             continue
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
@@ -81,8 +86,8 @@ def walk(grid, starts, goals):
                     continue
                 if dx and dy and not (passable(grid, x + dx, y) and passable(grid, x, y + dy)):
                     continue
-                nd = d + (14 if dx and dy else 10)
-                if nd < dist.get((nx, ny), 1 << 60):
+                nd = d + (DIAG if dx and dy else 1.0)
+                if nd < dist.get((nx, ny), 1e18):
                     dist[(nx, ny)] = nd
                     heapq.heappush(heap, (nd, (nx, ny)))
     return None
@@ -106,15 +111,19 @@ def numbers(m):
     shared = near[0] is near[1]
 
     def pair(targets):
-        e = [round(eu(centre[p], tc(targets[p]))) for p in (0, 1)]
-        w = [walk(grid, city_cells(sp[p]), [(targets[p]["cellX"], targets[p]["cellY"])]) for p in (0, 1)]
+        e_exact = [eu(centre[p], tc(targets[p])) for p in (0, 1)]
+        e = [round(x) for x in e_exact]
+        w = [walk(grid, city_cells(sp[p]), [(targets[p]["cellX"], targets[p]["cellY"])], HALF_DIAG) for p in (0, 1)]
+        for p in (0, 1):
+            assert w[p] is None or w[p] >= e_exact[p] - 1e-9, (w[p], e_exact[p])
         w = [round(x) if x is not None else "走不到" for x in w]
         if e[0] == e[1] and w[0] == w[1]:
             return f"雙方各 {e[0]} 格（走路 {w[0]}）"
         return f"藍 {e[0]}（走 {w[0]}）／紅 {e[1]}（走 {w[1]}）"
 
     main = round(eu(centre[0], centre[1]))
-    main_walk = walk(grid, city_cells(sp[0]), city_cells(sp[1]))
+    main_walk = walk(grid, city_cells(sp[0]), city_cells(sp[1]), HALF_DIAG, HALF_DIAG)
+    assert main_walk >= eu(centre[0], centre[1]) - 1e-9
     layout = {"diagonal": "對角出生", "adjacent": "相鄰出生"}[m["layout"]]
     home = "到最近小鎮（軸上共用）" if shared else "到家旁小鎮"
     return (
