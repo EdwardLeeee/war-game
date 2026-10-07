@@ -7,7 +7,7 @@ import { Game } from "../src/core/game.ts";
 import { CAVALRY, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownSize, TownState, UnitType } from "../src/protocol.ts";
+import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
 import { emptyGame, put, slotOf } from "./helpers.ts";
@@ -925,25 +925,4 @@ test("round 7: hard hides its ranged units and mages in its main city when enemi
     });
   assert.equal(hides(true), true);
   assert.equal(hides(false), false, "rule off: nothing to hide in");
-});
-
-test("hard weighs governing a town it takes for the first time against plundering it, with the rules' numbers", () => {
-  const choice = (governMinutes: number) => {
-    const g = emptyGame();
-    const w = g.w;
-    w.townState[0] = TownState.AwaitingChoice;
-    w.townOwner[0] = 0;
-    w.res.set([1000, 1000, 1000, 0], 0);
-    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, w.townX[0] + (k % 3), w.townY[0] + 1 + Math.trunc(k / 3));
-    g.fog.update(w);
-    const out = hardAi(g, { dodge: false, governMinutes }).think(buildView(g, 0)).find((c) => c.c === "town_choice") as { choice: number } | undefined;
-    return out?.choice;
-  };
-  // The break-even from the rules for a small town (crystal counted 3 times): below it plunder, above it govern.
-  const info = rules().towns[TownSize.Small];
-  const value = (c: { food: number; wood: number; gold: number; crystal: number }) => c.food + c.wood + c.gold + 3 * c.crystal;
-  const even = Math.floor((value(info.plunder) + value(info.governCost)) / value(info.perMinute));
-  assert.equal(choice(0), TownChoice.Plunder, "0: plunders as before");
-  assert.equal(choice(even), TownChoice.Plunder, `${even} minutes: not worth more than a plunder`);
-  assert.equal(choice(even + 1), TownChoice.Govern, `${even + 1} minutes: worth more`);
 });

@@ -830,11 +830,6 @@ export interface HardPlan {
   dodge: boolean;
   /** Round 7: with enemies near its main city, its ranged units and mages at home hide in it (and towers it holds). */
   hide: boolean;
-  /**
-   * A town taken for the first time is governed when this many minutes of its income (from the
-   * rules, less what governing costs) are worth more than plundering it; 0: always plunder first.
-   */
-  governMinutes: number;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -858,7 +853,6 @@ export const HARD: HardPlan = {
   pullAll: 4,
   dodge: true,
   hide: true,
-  governMinutes: 0,
   looseAt: 0,
   looseWho: 1,
 };
@@ -1001,17 +995,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         return false;
       };
       /**
-       * It will govern this town when it takes it: a town plundered before (round 7), or one whose
-       * income over governMinutes (the rules' numbers, less the cost) is worth more than its plunder.
+       * It governs a town it takes only when it was plundered before (round 7); a first capture it
+       * plunders (governing first captures won 3% of 120 games on the final round 7 rules).
        */
-      const toGovern = (id: number) => {
-        if (once && plunderedTown(id)) return true;
-        if (plan.governMinutes <= 0) return false;
-        const info = know.rules.towns?.[know.map.towns[id].size];
-        if (info === undefined) return false;
-        const value = (c: Cost) => c.food + c.wood + c.gold + 3 * c.crystal;
-        return value(info.perMinute) * plan.governMinutes - value(info.governCost) > value(info.plunder);
-      };
+      const toGovern = (id: number) => once && plunderedTown(id);
       // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
       const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(know.map.towns[targetTown].size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
