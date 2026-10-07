@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, createAi, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
-import { rules } from "../src/core/rules.ts";
+import { CAVALRY, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
 import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
@@ -581,39 +581,41 @@ function siege(fallen: number, defenders: number): CommandBody[] {
   return ai.think(buildView(g, 0));
 }
 
-test("hard: an attack on an undefended main city goes on however many the arrows took; it breaks off against stronger defenders", () => {
-  const alone = siege(20, 0);
-  assert.equal(alone.some((c) => c.c === "retreat"), false, "10 of 30 left, nobody defends: no retreat (normal would)");
-  assert.ok(alone.some((c) => c.c === "attack" && c.u.length === 10), "the 10 attack the city");
-  assert.ok(siege(20, 15).some((c) => c.c === "retreat"), "15 defenders against 10: breaks off");
-});
+test("hard: an attack on an undefended main city goes on however many the arrows took; it breaks off against stronger defenders", () =>
+  withSwitches({}, () => {
+    const alone = siege(20, 0);
+    assert.equal(alone.some((c) => c.c === "retreat"), false, "10 of 30 left, nobody defends: no retreat (normal would)");
+    assert.ok(alone.some((c) => c.c === "attack" && c.u.length === 10), "the 10 attack the city");
+    assert.ok(siege(20, 15).some((c) => c.c === "retreat"), "15 defenders against 10: breaks off");
+  }));
 
-test("hard: soldiers trained while the army is away wait at home and follow six at a time", () => {
-  const g = emptyGame();
-  const w = g.w;
-  for (const t of w.map.towns) {
-    w.townState[t.id] = TownState.Ruins;
-    w.townOwner[t.id] = NO_OWNER;
-    w.townTimer[t.id] = 4800;
-  }
-  w.tick = 12 * 1200;
-  const s0 = w.map.spawns[0];
-  const s1 = w.map.spawns[1];
-  for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
-  g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, pushArmy: 24 });
-  ai.think(buildView(g, 0));
-  const fresh: number[] = [];
-  const toBase = () => {
-    w.tick += 400;
+test("hard: soldiers trained while the army is away wait at home and follow six at a time", () =>
+  withSwitches({}, () => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
     g.fog.update(w);
-    return ai.think(buildView(g, 0)).filter((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY) as { u: number[] }[];
-  };
-  for (let k = 0; k < 5; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3 + k, s0.cellY - 3));
-  assert.ok(toBase().every((c) => !fresh.some((id) => c.u.includes(id))), "five new ones wait");
-  fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3, s0.cellY - 4));
-  assert.ok(toBase().some((c) => fresh.every((id) => c.u.includes(id))), "the sixth: all six go");
-});
+    const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+    ai.think(buildView(g, 0));
+    const fresh: number[] = [];
+    const toBase = () => {
+      w.tick += 400;
+      g.fog.update(w);
+      return ai.think(buildView(g, 0)).filter((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY) as { u: number[] }[];
+    };
+    for (let k = 0; k < 5; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3 + k, s0.cellY - 3));
+    assert.ok(toBase().every((c) => !fresh.some((id) => c.u.includes(id))), "five new ones wait");
+    fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3, s0.cellY - 4));
+    assert.ok(toBase().some((c) => fresh.every((id) => c.u.includes(id))), "the sixth: all six go");
+  }));
 
 test("hard: the mage hall comes first once there is the crystal for a mage", () => {
   const plan = (crystal: number) => {
@@ -694,4 +696,233 @@ test("hard: a lone raider at home draws back a few soldiers, not the army out at
   assert.equal(back[0].u.length, 3, "two for the raider and one more");
   const five = orders(5);
   assert.ok(five.out.some((c) => c.u.length === 14 && Math.abs(c.x - five.s0.cellX) <= 8 && Math.abs(c.y - five.s0.cellY) <= 8), "five raiders: everyone home");
+});
+
+// --- round 7 (D-061) ------------------------------------------------------------------------------------
+
+/** Runs `f` with these round 7 switches on, then puts them back (the AI reads them from rules().features). */
+function withSwitches<T>(on: { once?: boolean; garrison?: boolean; cavalry?: boolean }, f: () => T): T {
+  const was = [TOWN_ONCE.on, GARRISON.on, CAVALRY.on];
+  TOWN_ONCE.on = on.once ?? false;
+  GARRISON.on = on.garrison ?? false;
+  CAVALRY.on = on.cavalry ?? false;
+  try {
+    return f();
+  } finally {
+    [TOWN_ONCE.on, GARRISON.on, CAVALRY.on] = was;
+  }
+}
+
+/** The town choice an AI of `difficulty` makes for a small town it took that was plundered before. */
+function plunderedChoice(difficulty: AiDifficulty, rich: boolean, once: boolean): CommandBody | undefined {
+  return withSwitches({ once }, () => {
+    const g = emptyGame();
+    const w = g.w;
+    w.townState[0] = TownState.AwaitingChoice;
+    w.townOwner[0] = 0;
+    w.townPlundered[0] = 1;
+    w.res.set(rich ? [1000, 1000, 1000, 0] : [0, 0, 0, 0], 0);
+    for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, w.townX[0] + (k % 3), w.townY[0] + 1 + Math.trunc(k / 3));
+    g.fog.update(w);
+    const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "plunder");
+    return ai.think(buildView(g, 0)).find((c) => c.c === "town_choice");
+  });
+}
+
+test("round 7: a town plundered before is governed when the AI can pay, and nothing is sent when it cannot (every difficulty)", () => {
+  for (const difficulty of ["easy", "normal", "hard"] as const) {
+    assert.deepEqual(plunderedChoice(difficulty, true, true), { c: "town_choice", town: 0, choice: TownChoice.Govern }, `${difficulty}, rich`);
+    assert.equal(plunderedChoice(difficulty, false, true), undefined, `${difficulty}, poor: no plunder (it would be refused)`);
+    // The rule off: these plunderers plunder as before.
+    assert.deepEqual(plunderedChoice(difficulty, true, false), { c: "town_choice", town: 0, choice: TownChoice.Plunder }, `${difficulty}, rule off`);
+  }
+});
+
+/** A normal (or easy) AI with a barracks, a range and a stable at home, soldiers in the field and an enemy ranged unit in view. */
+function cavalryGame(difficulty: AiDifficulty) {
+  return withSwitches({ cavalry: true }, () => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.addBuilding(0, BuildingType.Barracks, s0.cellX + 4, s0.cellY - 9, 500, 1000);
+    w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 9, 500, 1000);
+    const stable = w.addBuilding(0, BuildingType.Stable, s0.cellX + 12, s0.cellY - 9, 500, 1000);
+    for (let k = 0; k < 4; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 9 + 3 * k, s0.cellY + 6, 200, 1000);
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, 40 + k, 60);
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Ranged, 40 + k, 61);
+    put(g, 1, UnitType.Ranged, 42, 55);
+    w.res.set([1000, 1000, 1000, 0], 0);
+    g.fog.update(w);
+    const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
+    return { trains: ai.think(buildView(g, 0)).filter((c) => c.c === "train") as { building: number; type: number }[], stable };
+  });
+}
+
+test("round 7: normal trains cavalry, about one soldier in four, at its stable; easy does not", () => {
+  const normal = cavalryGame("normal");
+  assert.ok(normal.trains.some((c) => c.type === UnitType.Cavalry && c.building === normal.stable), "6 spearmen, 6 ranged, no cavalry: a horseman");
+  const easy = cavalryGame("easy");
+  assert.equal(easy.trains.some((c) => c.type === UnitType.Cavalry), false);
+});
+
+test("round 7: normal builds a stable once it has seen enemy ranged units or mages", () => {
+  const plan = (enemyRanged: boolean) =>
+    withSwitches({ cavalry: true }, () => {
+      const g = emptyGame();
+      const w = g.w;
+      const s0 = w.map.spawns[0];
+      w.addBuilding(0, BuildingType.Barracks, s0.cellX + 4, s0.cellY - 9, 500, 1000);
+      w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 9, 500, 1000);
+      for (let k = 0; k < 4; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 9 + 3 * k, s0.cellY + 6, 200, 1000);
+      for (let k = 0; k < 3; k++) w.addBuilding(0, BuildingType.Farm, s0.cellX - 9 + 3 * k, s0.cellY + 2, 100, 1000);
+      // Four farmers at work: too few for a lumber camp, granary or mine, enough to send builders.
+      for (let k = 0; k < 4; k++) {
+        const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + k, s0.cellY + 4);
+        w.units.col.order[slotOf(g, id)] = Order.Gather;
+      }
+      if (enemyRanged) put(g, 1, UnitType.Ranged, s0.cellX + 6, s0.cellY - 14);
+      w.res.set([200, 300, 300, 0], 0);
+      g.fog.update(w);
+      const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty: "normal" }, 0, "balanced");
+      ai.think(buildView(g, 0));
+      w.tick += 10;
+      return (ai.think(buildView(g, 0)).find((c) => c.c === "build") as { type: number } | undefined)?.type;
+    });
+  assert.equal(plan(true), BuildingType.Stable);
+  assert.notEqual(plan(false), BuildingType.Stable);
+});
+
+/** Normal's ranged units, mage and spearmen at home with `foes` enemy spearmen 10 cells from its main city. */
+function homeRaid(difficulty: AiDifficulty, foes: number) {
+  return withSwitches({ garrison: true }, () => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    const city = w.buildings.col.id[w.mainCity(0)];
+    const shooters = [0, 1, 2].map((k) => put(g, 0, UnitType.Ranged, s0.cellX + 4 + k, s0.cellY - 5));
+    shooters.push(put(g, 0, UnitType.Mage, s0.cellX + 7, s0.cellY - 5));
+    const spears = [0, 1, 2, 3].map((k) => put(g, 0, UnitType.Spearman, s0.cellX + 4 + k, s0.cellY - 6));
+    for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, s0.cellX + 7 + k, s0.cellY - 7);
+    g.fog.update(w);
+    const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
+    return { g, w, ai, city, shooters, spears, out: ai.think(buildView(g, 0)) };
+  });
+}
+
+test("round 7: with enemies near its main city normal hides its ranged units and mages in it, and brings them out after", () => {
+  const { g, w, ai, city, shooters, spears, out } = homeRaid("normal", 3);
+  const hide = out.find((c) => c.c === "garrison") as { u: number[]; building: number } | undefined;
+  assert.ok(hide !== undefined && hide.building === city, "into the main city");
+  assert.deepEqual([...hide.u].sort(), [...shooters].sort(), "the three ranged units and the mage");
+  const meet = out.find((c) => c.c === "move") as { u: number[] } | undefined;
+  assert.ok(meet !== undefined && spears.every((id) => meet.u.includes(id)) && !shooters.some((id) => meet.u.includes(id)), "the spearmen go out, the others do not");
+  // Inside; the enemies are gone; 10 s later they come out.
+  withSwitches({ garrison: true }, () => {
+    for (const id of shooters) {
+      const s = slotOf(g, id);
+      w.units.col.order[s] = Order.Garrison;
+      w.units.col.orderTarget[s] = city;
+    }
+    for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 1) w.units.col.hp[s] = 0;
+    g.step();
+    g.fog.update(w);
+    w.tick += 300;
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "leave" && c.building === city), "they come out");
+  });
+  assert.equal(homeRaid("easy", 3).out.some((c) => c.c === "garrison"), false, "easy does not");
+});
+
+test("round 7: hard counts enemy mages that went into a building where someone hides as alive, as many as it holds", () => {
+  const goes = (occupied: boolean) =>
+    withSwitches({ garrison: true }, () => {
+      const g = emptyGame();
+      const w = g.w;
+      for (const t of w.map.towns) {
+        w.townState[t.id] = TownState.Ruins;
+        w.townOwner[t.id] = NO_OWNER;
+        w.townTimer[t.id] = 4800;
+        put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+      }
+      w.tick = 12 * 1200;
+      for (let k = 0; k < 8; k++) put(g, 0, UnitType.Spearman, 40 + k, 58);
+      // An enemy arrow tower in sight (it holds 3), 3 enemy mages beside it.
+      const tower = w.addBuilding(1, BuildingType.ArrowTower, 44, 50, 500, 1000);
+      const foes = [0, 1, 2].map((k) => put(g, 1, UnitType.Mage, 43 + k, 53));
+      g.fog.update(w);
+      const ai = hardAi(g, { pushArmy: 4, dodge: false });
+      ai.think(buildView(g, 0));
+      // They are gone from view; the tower shows someone inside, or nobody.
+      kill(g, foes);
+      w.buildings.col.soldiers[w.building(tower)] = occupied ? 3 : 0;
+      w.tick += 10;
+      g.fog.update(w);
+      const s1 = w.map.spawns[1];
+      return ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 8 && c.x === s1.cellX && c.y === s1.cellY);
+    });
+  assert.equal(goes(true), false, "someone inside: three mages (worth 75) may be in there; 8 spearmen (80) do not march");
+  assert.equal(goes(false), true, "nobody inside: they fell, it marches");
+});
+
+test("hard keeps a garrison in a town it governs", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const [small] = w.map.towns;
+  w.townState[small.id] = TownState.Governed;
+  w.townOwner[small.id] = 0;
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 5), s0.cellY - 6 - Math.trunc(k / 5));
+  // A farmer in the town: it sees what it holds.
+  put(g, 0, UnitType.Farmer, small.cellX + 1, small.cellY + 1);
+  g.fog.update(w);
+  const move = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "move" && c.x === small.cellX && c.y === small.cellY) as { u: number[] } | undefined;
+  assert.ok(move !== undefined && move.u.length === 2, "a small town needs 1: two go");
+});
+
+test("round 7: hard's siege when soldiers can hide in the city: ground down it breaks off, and reinforcements wait for the next march", () => {
+  // The same siege as above (20 of 30 fallen by the city, nobody in sight), with the rule on.
+  const on = withSwitches({ garrison: true }, () => siege(20, 0));
+  assert.ok(on.some((c) => c.c === "retreat"), "hiding defenders cannot be seen: ground down, it breaks off");
+  assert.equal(withSwitches({}, () => siege(20, 0)).some((c) => c.c === "retreat"), false, "rule off: it goes on, as before");
+  // Six new soldiers at home while the army is away: they stay home.
+  const sent = withSwitches({ garrison: true }, () => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+    ai.think(buildView(g, 0));
+    const fresh: number[] = [];
+    for (let k = 0; k < 6; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3 + k, s0.cellY - 3));
+    w.tick += 400;
+    g.fog.update(w);
+    return ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY && fresh.some((id) => c.u.includes(id)));
+  });
+  assert.equal(sent, false);
+});
+
+test("round 7: hard hides its ranged units and mages in its main city when enemies come near it", () => {
+  const hides = (on: boolean) =>
+    withSwitches({ garrison: on }, () => {
+      const g = emptyGame();
+      const w = g.w;
+      const s0 = w.map.spawns[0];
+      const city = w.buildings.col.id[w.mainCity(0)];
+      const shooters = [0, 1, 2].map((k) => put(g, 0, UnitType.Ranged, s0.cellX + 4 + k, s0.cellY - 5));
+      for (let k = 0; k < 4; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + k, s0.cellY - 6);
+      for (let k = 0; k < 3; k++) put(g, 1, UnitType.Spearman, s0.cellX + 7 + k, s0.cellY - 7);
+      g.fog.update(w);
+      const hide = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "garrison") as { u: number[]; building: number } | undefined;
+      return hide !== undefined && hide.building === city && shooters.every((id) => hide.u.includes(id));
+    });
+  assert.equal(hides(true), true);
+  assert.equal(hides(false), false, "rule off: nothing to hide in");
 });

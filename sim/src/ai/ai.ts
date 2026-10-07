@@ -39,6 +39,7 @@ import {
   type AiDifficulty,
   BUILDING_STRIDE,
   BuildingField,
+  BuildingFlag,
   BuildingType,
   CELL,
   CELL_SHIFT,
@@ -191,6 +192,10 @@ const PRESS_ON_HP = 40;
 const GOVERN_COST: Cost[] = [];
 GOVERN_COST[TownSize.Small] = { food: 0, wood: 80, gold: 80, crystal: 0 };
 GOVERN_COST[TownSize.Large] = { food: 0, wood: 150, gold: 150, crystal: 0 };
+/** What governing a town of this size costs: from the rules (round 7 sends them), else GOVERN_COST. */
+function governCostOf(rules: Rules, size: number): Cost {
+  return rules.towns?.[size]?.governCost ?? GOVERN_COST[size];
+}
 
 /**
  * The AI for `player`. Its random choices come from (seed, slot); slot defaults to the
@@ -250,6 +255,13 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let veinCrew: number[] = [];
   /** Enemy soldiers seen at each think in the last 2 minutes (for weighing up a fight). */
   const enemySeen: { tick: number; count: number }[] = [];
+  // Round 7 (D-061), normal only: cavalry once it has seen enemy ranged units or mages, and
+  // ranged units and mages hiding in the main city while enemies are near it.
+  const extras = (know.difficulty ?? "normal") === "normal";
+  const useCavalry = extras && know.rules.features?.cavalry === true;
+  const hide = extras && know.rules.features?.garrison === true;
+  let sawShooters = false;
+  let lastHomeThreat = -100000;
 
   const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
 
@@ -299,10 +311,19 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const res: Cost = { food: h[HeaderField.food], wood: h[HeaderField.wood], gold: h[HeaderField.gold], crystal: h[HeaderField.crystal] };
       const pop = h[HeaderField.population];
       const cap = h[HeaderField.populationCap];
+      // Round 7 (D-061): each switch off, everything below plays as before.
+      const feat = know.rules.features;
+      const once = feat?.plunderOnce === true;
+      /** Plundered already this game (TownFlag.Plundered): with `once` it can only be governed. */
+      const plundered = (id: number) => {
+        for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) if (view.towns[r + TownField.id] === id) return (view.towns[r + TownField.flags] & TownFlag.Plundered) !== 0;
+        return false;
+      };
       // On the way to a town it may govern, it keeps the governing cost aside (D4: the choice
       // is made the tick the town falls, so the money has to be there).
-      const aimTown = mode === "town" && targetTown >= 0 && myStyle !== "plunder" ? know.map.towns[targetTown] : undefined;
-      const reserve: Cost = aimTown !== undefined ? { ...GOVERN_COST[aimTown.size] } : { food: 0, wood: 0, gold: 0, crystal: 0 };
+      const aimTown =
+        mode === "town" && targetTown >= 0 && (myStyle !== "plunder" || (once && plundered(targetTown))) ? know.map.towns[targetTown] : undefined;
+      const reserve: Cost = aimTown !== undefined ? { ...governCostOf(rules, aimTown.size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
         res.food - reserve.food >= c.food && res.wood - reserve.wood >= c.wood && res.gold - reserve.gold >= c.gold && res.crystal - reserve.crystal >= c.crystal;
       const affordAll = (c: Cost) => res.food >= c.food && res.wood >= c.wood && res.gold >= c.gold && res.crystal >= c.crystal;
@@ -433,6 +454,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
+        if (useCavalry && sawShooters && !has(BuildingType.Stable) && (rules.buildings[BuildingType.Stable].requires ?? []).every((t) => done(t).length > 0)) {
+          add(BuildingType.Stable, rally);
+        }
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         // Spare food and wood: more places to train (one building trains one unit at a time).
@@ -480,6 +504,12 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         }
       };
       if (mages < rules.mageCap && res.crystal >= rules.units[UnitType.Mage].cost.crystal) trainAt(BuildingType.MageHall, UnitType.Mage);
+      // About one soldier in four a horseman, once it has a stable (round 7).
+      if (useCavalry) {
+        if (foes.some((u) => u.type === UnitType.Ranged || u.type === UnitType.Mage)) sawShooters = true;
+        const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry).length;
+        if (cavalry * 4 < spear + ranged + cavalry + 1) trainAt(BuildingType.Stable, UnitType.Cavalry);
+      }
       if (spear * 100 <= spearShare * (spear + ranged)) {
         trainAt(BuildingType.Barracks, UnitType.Spearman);
         trainAt(BuildingType.Range, UnitType.Ranged);
@@ -532,7 +562,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (!held) garrison.delete(id);
         if (t.owner !== player || t.state !== TownState.AwaitingChoice) continue;
         // Govern when it can be paid for, held and paid back in time; otherwise plunder.
-        const cost = GOVERN_COST[t.size];
+        const cost = governCostOf(rules, t.size);
+        if (once && plundered(id)) {
+          // Plundered before (round 7): it can only be governed, so it waits until it can pay.
+          if (affordAll(cost)) {
+            out.push({ c: "town_choice", town: id, choice: TownChoice.Govern });
+            spend(cost);
+          }
+          continue;
+        }
         const spare = soldiers.filter((s) => !isGuard(s.id)).length;
         let score = rng.below(3) - 1;
         if (affordAll(cost)) score += 2;
@@ -557,7 +595,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (!held || endgame) continue;
         const alive = (garrison.get(id) ?? []).filter((gid) => soldiers.some((s) => s.id === gid));
         const free = soldiers
-          .filter((s) => !isGuard(s.id) && s.type !== UnitType.Mage)
+          .filter((s) => !isGuard(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison)
           .sort((a, b) => dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < t.needed + 1 && free.length > 0) alive.push(free.shift()!.id);
         garrison.set(id, alive);
@@ -568,7 +606,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
       }
       const army = soldiers.filter((u) => !isGuard(u.id));
-      const armyIds = army.map((u) => u.id);
+      // Soldiers hiding in a building (round 7) are left out of orders: a move would bring them out.
+      const armyIds = army.filter((u) => u.order !== Order.Garrison).map((u) => u.id);
 
       // --- defence, towns and attack --------------------------------------------------------------
       const threat = foesNear(home.cellX, home.cellY, 16);
@@ -582,10 +621,29 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         target = { x, y };
       };
       if (threat > 0) {
+        lastHomeThreat = tick;
         const near = foes.filter((u) => dist2(u.x, u.y, home.cellX, home.cellY) <= 256);
         const cx = Math.trunc(near.reduce((a, u) => a + u.x, 0) / near.length);
         const cy = Math.trunc(near.reduce((a, u) => a + u.y, 0) / near.length);
+        // Normal (round 7): ranged units and mages at home hide in the main city and shoot from it.
+        const hiders: number[] = [];
+        if (hide && main) {
+          const holds = rules.buildings[BuildingType.MainCity].holds ?? 0;
+          const used = soldiers.filter((u) => u.order === Order.Garrison && u.orderTarget === main.id).length;
+          const types = rules.garrisonTypes ?? [];
+          const pick = army
+            .filter((u) => types.includes(u.type as UnitType) && u.order !== Order.Garrison && dist2(u.x, u.y, home.cellX, home.cellY) <= 400)
+            .sort((a, b) => dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || a.id - b.id)
+            .slice(0, Math.max(0, holds - used));
+          for (const u of pick) hiders.push(u.id);
+          if (hiders.length > 0) {
+            const keep = armyIds.filter((id) => !hiders.includes(id));
+            armyIds.length = 0;
+            armyIds.push(...keep);
+          }
+        }
         send(cx, cy, "defend");
+        if (hiders.length > 0) out.push({ c: "garrison", u: hiders, building: main!.id });
         // Farmers hide when the raid outnumbers the soldiers at home.
         const defenders = army.filter((u) => dist2(u.x, u.y, home.cellX, home.cellY) <= 400).length;
         if (!recalled && threat >= 4 && defenders < threat) {
@@ -598,8 +656,14 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         out.push({ c: "recall", on: false });
         recalled = false;
       }
+      // The raid is over (10 s without enemies near): those hiding come out.
+      if (hide && main && tick - lastHomeThreat >= 200 && soldiers.some((u) => u.order === Order.Garrison && u.orderTarget === main.id)) {
+        out.push({ c: "leave", building: main.id });
+      }
+      // A town it took that it may only govern and cannot pay for yet (round 7) does not hold the army.
+      const stuck = (id: number, t: Town) => once && t.state === TownState.AwaitingChoice && plundered(id) && !affordAll(governCostOf(rules, t.size));
       const busy = [...towns.entries()].find(
-        ([, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice),
+        ([id, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice) && !stuck(id, t),
       );
       if (busy !== undefined && !endgame) {
         // Stay inside until the plunder is done (not in the endgame: everything goes for the
@@ -677,6 +741,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const open = [...towns.entries()]
           .filter(([, t]) => !(t.owner === player && t.state !== TownState.Neutral) && t.state !== TownState.Ruins)
           .filter(([id]) => tick - (plunders.get(id)?.tick ?? -100000) >= 6 * TICKS_PER_MINUTE)
+          // Plundered already (round 7): worth taking only when it can pay to govern it.
+          .filter(([id, t]) => !(once && plundered(id) && !affordAll(governCostOf(rules, t.size))))
           .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
         const go = endgame
           ? army.length >= ENDGAME_ARMY
@@ -762,6 +828,8 @@ export interface HardPlan {
   pullAll: number;
   /** Steps out of crystal cannon warnings. */
   dodge: boolean;
+  /** Round 7: with enemies near its main city, its ranged units and mages at home hide in it (and towers it holds). */
+  hide: boolean;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -784,12 +852,13 @@ export const HARD: HardPlan = {
   recallAt: 4,
   pullAll: 4,
   dodge: true,
+  hide: true,
   looseAt: 0,
   looseWho: 1,
 };
 
-/** What a soldier is worth when weighing up two armies (a mage for its cannon). */
-const WORTH = [0, 10, 10, 25, 6];
+/** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
+const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
 const INTEL_TICKS = 4 * TICKS_PER_MINUTE;
 /** Enemy soldiers within this many cells of the main city make a wave (as the scripted player counts). */
@@ -802,6 +871,8 @@ interface Seen {
   x: number;
   y: number;
   tick: number;
+  /** Seen going into this building, or gone from view beside it while someone hides there (round 7). */
+  inside?: number;
 }
 interface HardUnit extends Unit {
   /** Position in fixed point. */
@@ -816,6 +887,11 @@ type HardMode = "home" | "town" | "base" | "defend";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
   const plan: HardPlan = { ...HARD, ...know.hard };
+  // Round 7 (D-061) switches; each off, it plays as before.
+  const garrisonOn = know.rules.features?.garrison === true;
+  const once = know.rules.features?.plunderOnce === true;
+  const hideOn = garrisonOn && plan.hide;
+  const governCost = (size: number): Cost => governCostOf(rules, size);
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
   const n = know.map.size;
   const home = know.map.spawns[player];
@@ -865,6 +941,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const loosed = new Set<number>();
   /** Units stepping out of a cannon warning, until the tick it lands (and a little). */
   const dodging = new Map<number, number>();
+  /** Soldiers kept as the garrison of each governed (or repairing) town. */
+  const townGuards = new Map<number, number[]>();
   /** Soldiers sent home against a small raid while the army is out. */
   const homeSquad = new Set<number>();
   let squadMove = -100000;
@@ -911,9 +989,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const res: Cost = { food: h[HeaderField.food], wood: h[HeaderField.wood], gold: h[HeaderField.gold], crystal: h[HeaderField.crystal] };
       const pop = h[HeaderField.population];
       const cap = h[HeaderField.populationCap];
-      const reserve: Cost = { food: 0, wood: 0, gold: 0, crystal: 0 };
+      /** Plundered already this game (TownFlag.Plundered). */
+      const plunderedTown = (id: number) => {
+        for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) if (view.towns[r + TownField.id] === id) return (view.towns[r + TownField.flags] & TownFlag.Plundered) !== 0;
+        return false;
+      };
+      /**
+       * It governs a town it takes only when it was plundered before (round 7); a first capture it
+       * plunders (governing first captures won 3% of 120 games on the final round 7 rules).
+       */
+      const toGovern = (id: number) => once && plunderedTown(id);
+      // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
+      const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(know.map.towns[targetTown].size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
         res.food - reserve.food >= c.food && res.wood - reserve.wood >= c.wood && res.gold - reserve.gold >= c.gold && res.crystal - reserve.crystal >= c.crystal;
+      const affordAll = (c: Cost) => res.food >= c.food && res.wood >= c.wood && res.gold >= c.gold && res.crystal >= c.crystal;
       const spend = (c: Cost) => {
         res.food -= c.food;
         res.wood -= c.wood;
@@ -946,12 +1036,24 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       let enemyCity = -1;
       let enemyCityHp = -1;
       let queued = 0;
+      /** Enemy buildings in sight that soldiers can hide in: id -> footprint, and whether someone is inside (round 7). */
+      const shelters = new Map<number, { x: number; y: number; size: number; holds: number; occupied: boolean }>();
       for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
         const owner = view.buildings[r + BuildingField.owner];
         const type = view.buildings[r + BuildingField.type];
         if (owner === 1 - player && type === BuildingType.MainCity) {
           enemyCity = view.buildings[r + BuildingField.id];
           enemyCityHp = view.buildings[r + BuildingField.hp];
+        }
+        const flags = view.buildings[r + BuildingField.flags];
+        if (garrisonOn && owner === 1 - player && (rules.buildings[type].holds ?? 0) > 0 && (flags & BuildingFlag.Remembered) === 0) {
+          shelters.set(view.buildings[r + BuildingField.id], {
+            x: view.buildings[r + BuildingField.cellX],
+            y: view.buildings[r + BuildingField.cellY],
+            size: rules.buildings[type].size,
+            holds: rules.buildings[type].holds ?? 0,
+            occupied: (flags & BuildingFlag.Occupied) !== 0,
+          });
         }
         if (owner !== player) continue;
         const b: Building = {
@@ -979,17 +1081,43 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
 
       // --- what it knows of the enemy -------------------------------------------------------------
       // A soldier gone from view while every cell around where it stood is still in view has fallen
-      // (soldiers cannot hide, and none walks more than a cell in 20 ticks); one that walked into
-      // the fog is kept, and forgotten after a while.
+      // (none walks more than a cell in 20 ticks); one that walked into the fog is kept, and
+      // forgotten after a while. Round 7: ranged units and mages can hide in a main city or an
+      // arrow tower. One seen going in, or gone from view beside one where someone hides
+      // (BuildingFlag.Occupied: it sees that someone is in, not who or how many), is counted as
+      // hiding there until the building is seen empty or gone.
       const sees = (x: number, y: number) => {
         for (let yy = Math.max(0, y - 1); yy <= Math.min(n - 1, y + 1); yy++) {
           for (let xx = Math.max(0, x - 1); xx <= Math.min(n - 1, x + 1); xx++) if (view.fog[yy * n + xx] !== Fog.Visible) return false;
         }
         return true;
       };
-      for (const f of foes) intel.set(f.id, { type: f.type, x: f.x, y: f.y, tick });
+      for (const f of foes) intel.set(f.id, { type: f.type, x: f.x, y: f.y, tick, inside: f.order === Order.Garrison && shelters.has(f.orderTarget) ? f.orderTarget : undefined });
       for (const [id, e] of intel) {
         if (e.tick === tick) continue;
+        if (garrisonOn && (rules.garrisonTypes ?? []).includes(e.type as UnitType)) {
+          if (e.inside === undefined && tick - e.tick <= 20 && sees(e.x, e.y)) {
+            // Gone from view where it should still be seen: into a shelter beside it with someone in,
+            // and with room (no more than it holds are counted inside)?
+            for (const [bid, b] of shelters) {
+              const dx = Math.max(b.x - e.x, 0, e.x - (b.x + b.size - 1));
+              const dy = Math.max(b.y - e.y, 0, e.y - (b.y + b.size - 1));
+              let inside = 0;
+              for (const o of intel.values()) if (o.inside === bid) inside++;
+              if (b.occupied && dx <= 2 && dy <= 2 && inside < b.holds) {
+                e.inside = bid;
+                break;
+              }
+            }
+          }
+          if (e.inside !== undefined) {
+            const b = shelters.get(e.inside);
+            if (b !== undefined && !b.occupied) intel.delete(id);
+            else if (b !== undefined) e.tick = tick;
+            else if (tick - e.tick > INTEL_TICKS) intel.delete(id);
+            continue;
+          }
+        }
         if ((tick - e.tick <= 20 && sees(e.x, e.y)) || tick - e.tick > INTEL_TICKS) intel.delete(id);
       }
       let enemySpear = 0;
@@ -1163,8 +1291,36 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
       for (const [id, t] of towns) {
         if (t.state === TownState.Ruins && t.visible) restoreAt.set(id, tick + t.timer);
-        if (t.owner === player && t.state === TownState.AwaitingChoice) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
+        if (t.owner !== player || t.state !== TownState.AwaitingChoice) continue;
+        if (!toGovern(id)) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
+        else if (affordAll(governCost(t.size))) {
+          out.push({ c: "town_choice", town: id, choice: TownChoice.Govern });
+          spend(governCost(t.size));
+        } else if (!(once && plunderedTown(id))) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
+        // Plundered before and it cannot pay yet: it waits (a plunder would be refused).
       }
+      // Garrisons: the spearmen (else any soldier but a mage) nearest each held town, one more
+      // than it needs, topped up as they fall.
+      for (const [id, t] of towns) {
+        const held = t.owner === player && (t.state === TownState.Repairing || t.state === TownState.Governed);
+        if (!held) {
+          townGuards.delete(id);
+          continue;
+        }
+        const guarded = new Set([...townGuards.values()].flat());
+        const alive = (townGuards.get(id) ?? []).filter((g) => byId.has(g));
+        const free = soldiers
+          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison)
+          .sort((a, b) => (b.type === UnitType.Spearman ? 1 : 0) - (a.type === UnitType.Spearman ? 1 : 0) || dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
+        while (alive.length < t.needed + 1 && free.length > 0) alive.push(free.shift()!.id);
+        townGuards.set(id, alive);
+        const away = alive.filter((g) => {
+          const s = byId.get(g)!;
+          return dist2(s.x, s.y, t.x, t.y) > 9;
+        });
+        if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
+      }
+      const guarding = new Set([...townGuards.values()].flat());
 
       // --- the clock (AI-against-AI games only: a person plays without a limit) ---------------------
       const endgame = toGo >= 0 && toGo <= ENDGAME_TO_GO;
@@ -1216,7 +1372,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // Not told anything while stepping out of a shot or calibrating one (any order would call the
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || byId.get(id)?.order === Order.Cast;
+      // Hiding in a building (round 7) too: a move would bring it out.
+      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -1238,7 +1395,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
 
       // --- the army ------------------------------------------------------------------------------------
-      const army = soldiers;
+      const army = guarding.size === 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id));
       const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
       let sent = false;
       const send = (x: number, y: number, why: HardMode) => {
@@ -1316,7 +1473,28 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             // Clearly stronger: meet them; otherwise wait for them by the city.
             const meet = armyWorth >= worth(wave) * 2 ? wave : close;
             const c = centre(meet, post.x, post.y);
+            // Round 7: ranged units and mages at home hide in the main city and its towers and shoot
+            // from there (they cannot be hit inside).
+            const hiding: { building: number; u: number[] }[] = [];
+            if (hideOn) {
+              const types = rules.garrisonTypes ?? [];
+              const pool = army
+                .filter((u) => types.includes(u.type as UnitType) && !detached(u.id) && dist2(u.x, u.y, home.cellX, home.cellY) <= 400)
+                .sort((a, b) => dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+              for (const b of [...done(BuildingType.MainCity), ...done(BuildingType.ArrowTower)]) {
+                const used = soldiers.filter((u) => u.order === Order.Garrison && u.orderTarget === b.id).length;
+                const go = pool.splice(0, Math.max(0, (rules.buildings[b.type].holds ?? 0) - used));
+                if (go.length > 0) hiding.push({ building: b.id, u: go.map((u) => u.id) });
+              }
+              const hidden = new Set(hiding.flatMap((h) => h.u));
+              if (hidden.size > 0) {
+                const keep = armyIds.filter((id) => !hidden.has(id));
+                armyIds.length = 0;
+                armyIds.push(...keep);
+              }
+            }
             send(c.x, c.y, "defend");
+            for (const h of hiding) out.push({ c: "garrison", u: h.u, building: h.building });
             return;
           }
         } else {
@@ -1329,10 +1507,24 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             rejoin.push(...homeSquad);
             homeSquad.clear();
           }
+          // Round 7: and those hiding come out (the next army order takes them along).
+          if (hideOn && tick - lastThreat >= 200) {
+            for (const b of own) {
+              if (soldiers.some((u) => u.order === Order.Garrison && u.orderTarget === b.id)) {
+                out.push({ c: "leave", building: b.id });
+                lastMove = -100000;
+              }
+            }
+          }
           if (mode === "defend") mode = "home";
         }
-        // Plundering: stay inside until it is done (not in the endgame).
-        const busy = [...towns.entries()].find(([, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice));
+        // Plundering: stay inside until it is done (not in the endgame). A town it may only govern
+        // and cannot pay for yet does not hold the army.
+        const busy = [...towns.entries()].find(
+          ([id, t]) =>
+            t.owner === player &&
+            (t.state === TownState.Plundering || (t.state === TownState.AwaitingChoice && !(once && plunderedTown(id) && !affordAll(governCost(t.size))))),
+        );
         if (busy !== undefined && !endgame) {
           send(busy[1].x, busy[1].y, "town");
           return;
@@ -1353,8 +1545,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (mode === "base") {
           // Those that set out are the front; soldiers trained since wait at home and follow six at
           // a time (one by one they would be picked off on the way).
+          // Round 7 (garrison): a main city with soldiers hiding in it picks off what comes in small
+          // groups, so then they wait for the next march instead.
           const reserves = army.filter((u) => !marched.has(u.id) && !detached(u.id));
-          if (reserves.length >= 6) for (const u of reserves) marched.add(u.id);
+          if (reserves.length >= 6 && !garrisonOn) for (const u of reserves) marched.add(u.id);
           const front = army.filter((u) => marched.has(u.id));
           const frontIds = front.filter((u) => !detached(u.id)).map((u) => u.id);
           const fc = centre(front, ac.x, ac.y);
@@ -1362,9 +1556,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // It breaks off only when outmatched where the front stands (not because the city's arrows
           // thinned it: with nobody left to defend it, the city falls), or when too few are left.
           const atCity = front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 14 * 14);
-          const there = atCity.length * 2 >= front.length;
+          // Round 7: stragglers far behind do not hold up the siege; and soldiers hiding in the city
+          // cannot be seen, so a front ground down to under 40% of those that set out breaks off.
+          const nearFront = garrisonOn ? front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 30 * 30).length : front.length;
+          const there = atCity.length * 2 >= nearFront;
           const defenders = worth(foesNear(fc.x, fc.y, 12));
-          if (front.length === 0 || (!endgame && !cityLow && (defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0)))) {
+          const ground = garrisonOn && front.length * 5 < armyAtStart * 2;
+          if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0)))) {
             counterReady = false;
             fallBack(post.x, post.y);
             return;
@@ -1375,7 +1573,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               // keep coming.
               const close = atCity.filter((u) => !detached(u.id)).map((u) => u.id);
               const late = frontIds.filter((id) => !close.includes(id));
-              if (foesNear(enemyHome.cellX, enemyHome.cellY, 12).length > 0 || close.length === 0) out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
+              // Round 7: a few defenders in sight do not stop an attack on the city that is clearly
+              // stronger or nearly done (a move fights them but never hits the city, which is repaired).
+              const guards = worth(foesNear(enemyHome.cellX, enemyHome.cellY, 12));
+              const pressOn = garrisonOn && close.length > 0 && (cityLow || worth(atCity) >= guards * 3);
+              if ((guards > 0 && !pressOn) || close.length === 0) out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
               else {
                 out.push({ c: "attack", u: close, target: enemyCity });
                 if (late.length > 0) out.push({ c: "move", u: late, x: enemyHome.cellX, y: enemyHome.cellY });
@@ -1385,7 +1587,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             }
           } else if (
             frontIds.length > 0 &&
-            (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= (there ? 100 : 400) || reserves.length >= 6)
+            (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= (there ? 100 : 400) || (reserves.length >= 6 && !garrisonOn))
           ) {
             // On the way, or there without the city in sight yet: on to it.
             out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
@@ -1421,6 +1623,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           for (const [id, t] of towns) {
             if (t.state === TownState.Ruins || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
             if (tick < (restoreAt.get(id) ?? 0)) continue;
+            // Plundered before (round 7): only worth it when it can pay to govern it.
+            if (once && plunderedTown(id) && !affordAll(governCost(t.size))) continue;
             if (army.length < (t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
