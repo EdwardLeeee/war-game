@@ -588,6 +588,8 @@ export interface Rules {
    * linearly to 1000 over `ticks` of being governed (round 7; startPermille 1000 = off).
    */
   plunderRecovery?: { startPermille: number; ticks: number };
+  /** The crystal cannon's range in fixed point (round 8: 7 cells; before, 8). */
+  cannonRange?: number;
 }
 
 // --- commands (one JSON object per line in the command log) ---------------------------

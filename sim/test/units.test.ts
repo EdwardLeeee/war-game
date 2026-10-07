@@ -3,10 +3,10 @@ import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { BUILDINGS, JOIN_FIGHT, SQUAD, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, JOIN_FIGHT, LONG_BOWS, SQUAD, UNITS } from "../src/core/rules.ts";
 import { fight } from "../src/balance-lib.ts";
 import type { Game } from "../src/core/game.ts";
-import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 test("multipliers: ranged deal 12 to spearmen (5 x 5/2, round 3), 5 to others; at least 1", () => {
   assert.equal(damage(5, UnitType.Ranged, UnitType.Spearman), 12);
@@ -577,7 +577,7 @@ test("a squad's ranged stop at their range: none walks into close combat", () =>
   assert.ok(ranged >= 10, `${ranged} ranged struck`);
 });
 
-test("a squad beats an equal standing force that it loses to when its back rows wait (24 against 24)", () => {
+test("a squad beats an equal standing force that it loses to when its back rows wait (24 against 24)", switchedOff([LONG_BOWS], () => {
   const finish = (s: ReturnType<typeof squadScene>) => {
     run(s.g, 2400);
     return [s.mine.filter((id) => slotOf(s.g, id) >= 0).length, s.enemy.filter((id) => slotOf(s.g, id) >= 0).length];
@@ -586,7 +586,7 @@ test("a squad beats an equal standing force that it loses to when its back rows 
   const [mine0, foes0] = withoutSquads(() => finish(squadScene(24, 24)));
   assert.ok(mine > 0 && foes === 0, `with squads ${mine}:${foes}`);
   assert.ok(mine0 === 0 && foes0 > 0, `without ${mine0}:${foes0}`);
-});
+}));
 
 test("an idle squad is not drawn away: its members join a fight within 12 cells of where they stood, no further", () => {
   const g = emptyGame();

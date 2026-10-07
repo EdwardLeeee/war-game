@@ -133,6 +133,8 @@ interface GameRecord {
   armies: [string, string];
   trained: { mages: [number, number] };
   cannonShots: [number, number];
+  /** Units each side's crystal cannon killed (round 8). */
+  cannonKills: [number, number];
   rejected: number;
   /** Round 7 cavalry raids (--raid): raids sent, the first; the AI's farmers lost by minute 10 and in all. */
   raids: number;
@@ -362,6 +364,7 @@ function play(seed: number): GameRecord {
     armies: [army(0), army(1)],
     trained: { mages: [w.trained[UnitType.Mage], w.trained[UNIT_KINDS + UnitType.Mage]] },
     cannonShots: [w.cannonShots[0], w.cannonShots[1]],
+    cannonKills: [w.cannonKills[0], w.cannonKills[1]],
     rejected,
     finalHash: (g.hash() >>> 0).toString(16).padStart(8, "0"),
     ...(trace ? { trace: lines } : {}),

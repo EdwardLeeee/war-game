@@ -6,10 +6,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Game } from "../src/core/game.ts";
-import { ARROW_TOWER, BUILDINGS, CANNON, GARRISON, UNITS } from "../src/core/rules.ts";
+import { ARROW_TOWER, BUILDINGS, CANNON, DODGE, GARRISON, LONG_BOWS, SHORT_CANNON, UNITS } from "../src/core/rules.ts";
 import { Action, BuildingField, BuildingFlag, BUILDING_STRIDE, BuildingType, Order, PlaceBit, Reject, Resource, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 // Player 0's main city covers (14..17, 76..79); player 1's is its mirror image at (76, 14).
 const TX = 20;
@@ -50,8 +50,10 @@ test("villagers build arrow towers near their main city only; finished, a tower 
   let s = -1;
   for (let k = 0; k < g.w.buildings.count; k++) if (b.type[k] === BuildingType.ArrowTower) s = k;
   assert.ok(s >= 0 && b.progress[s] === 1000, "built");
-  assert.deepEqual([g.w.res[Resource.Wood], g.w.res[Resource.Gold]], [900, 950]);
-  // An enemy spearman 5 cells off the tower: an arrow of 5 every 2 s, and a shot event.
+  const price = BUILDINGS[BuildingType.ArrowTower].cost;
+  assert.deepEqual([g.w.res[Resource.Wood], g.w.res[Resource.Gold]], [1000 - price.wood, 1000 - price.gold]);
+  // An enemy spearman 5 cells off the tower: an arrow every ARROW_TOWER.cooldown ticks (2 s; 1.5 s
+  // with round 8's TOWER_VALUE), and a shot event each.
   const foe = put(g, 1, UnitType.Spearman, TX + 7, TY);
   g.w.units.col.stance[slotOf(g, foe)] = 1;
   g.fog.update(g.w);
@@ -60,8 +62,9 @@ test("villagers build arrow towers near their main city only; finished, a tower 
     g.step();
     shots += g.events.filter((e) => e.to === 0 && e.ev.k === "shot" && (e.ev as { building: number }).building === b.id[s]).length;
   }
-  assert.equal(shots, 2);
-  assert.equal(g.w.units.col.hp[slotOf(g, foe)], UNITS[UnitType.Spearman].hp - 2 * ARROW_TOWER.damage);
+  const arrows = Math.ceil(80 / ARROW_TOWER.cooldown);
+  assert.equal(shots, arrows);
+  assert.equal(g.w.units.col.hp[slotOf(g, foe)], UNITS[UnitType.Spearman].hp - arrows * ARROW_TOWER.damage);
 });
 
 test("ranged units and mages hide in a tower (3) or main city (6); spearmen cannot; full is NoRoom", () => {
@@ -137,7 +140,7 @@ test("from inside: hidden ranged shoot from the tower's edge and cannot be targe
   assert.ok(ranged.every((id) => slotOf(g, id) >= 0 && u.action[slotOf(g, id)] !== Action.Garrisoned), "out and alive");
 });
 
-test("a mage hiding in the main city fires the cannon on autocast from the city's edge and stays inside", () => {
+test("a mage hiding in the main city fires the cannon on autocast from the city's edge and stays inside", switchedOff([DODGE, SHORT_CANNON, LONG_BOWS], () => {
   const g = emptyGame();
   const city = g.w.buildings.col.id[g.w.mainCity(0)];
   const mage = put(g, 0, UnitType.Mage, 19, 78);
@@ -169,9 +172,9 @@ test("a mage hiding in the main city fires the cannon on autocast from the city'
   assert.equal(u.action[slotOf(g, mage)], Action.Garrisoned, "still inside");
   assert.equal(u.order[slotOf(g, mage)], Order.Garrison);
   assert.equal(u.orderTarget[slotOf(g, mage)], city);
-});
+}));
 
-test("mirror images: two towers with hidden ranged and their attackers play as mirror images, tick by tick", () => {
+test("mirror images: two towers with hidden ranged and their attackers play as mirror images, tick by tick", switchedOff([LONG_BOWS], () => {
   const g = emptyGame();
   const towers = [tower(g, 0), tower(g, 1)];
   const pairs: [number, number][] = [];
@@ -213,4 +216,4 @@ test("mirror images: two towers with hidden ranged and their attackers play as m
     if (s0 >= 0) assert.equal(g.w.buildings.col.hp[s0], g.w.buildings.col.hp[s1], `tick ${g.tick}: tower hp`);
   }
   assert.ok(att0.some((id) => slotOf(g, id) < 0 || u.hp[slotOf(g, id)] < UNITS[UnitType.Spearman].hp), "the defenders hit");
-});
+}));

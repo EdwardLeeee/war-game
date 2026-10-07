@@ -5,9 +5,9 @@
 //   node src/balance.ts [--check 1,2,3,4]
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
-import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, siege, twoShots } from "./balance-lib.ts";
-import { CANNON, GARRISON, JOIN_FIGHT, MULT_DEN, MULT_NUM, UNITS } from "./core/rules.ts";
-import { TownSize, UnitType } from "./protocol.ts";
+import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, guardPoint, type Held, type Hold, hold, siege, twoShots } from "./balance-lib.ts";
+import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, TOWER_VALUE, UNITS } from "./core/rules.ts";
+import { BuildingType, TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
 interface Knob {
@@ -200,6 +200,82 @@ const KNOWN: Record<number, string> = {
   5: "這一輪不動晶砲（ceo 選 a）。不成立的原因是晶砲的齊射：法師在遠程進到射程（5 格）前就放（8 格），密集時一發打中好幾名",
 };
 
+/**
+ * Round 8 (D-069): the rules that help a defender, each with its switch. The report measures
+ * them all off (as main), each on alone and all on; a rule joins this list in its own commit.
+ */
+interface Switch {
+  label: string;
+  get(): boolean;
+  set(on: boolean): void;
+}
+const ROUND8: Switch[] = [
+  {
+    label: "1 躲預警圈",
+    get: () => DODGE.on,
+    set: (on) => {
+      DODGE.on = on;
+    },
+  },
+  {
+    label: "2 被砲打的兵打法師",
+    get: () => AVENGE.on,
+    set: (on) => {
+      AVENGE.on = on;
+    },
+  },
+  {
+    label: "3 晶砲射程 7",
+    get: () => SHORT_CANNON.on,
+    set: (on) => {
+      SHORT_CANNON.on = on;
+    },
+  },
+  {
+    label: "4 城裡受傷少 20%",
+    get: () => HOME_GUARD.on,
+    set: (on) => {
+      HOME_GUARD.on = on;
+    },
+  },
+  {
+    label: "5 遠程和箭塔更遠",
+    get: () => LONG_BOWS.on,
+    set: (on) => {
+      LONG_BOWS.on = on;
+    },
+  },
+  {
+    label: "6 箭樓划算",
+    get: () => TOWER_VALUE.on,
+    set: (on) => {
+      TOWER_VALUE.on = on;
+    },
+  },
+];
+
+/** Round 8's switches as given (in ROUND8's order) while `run` runs; then as they were. */
+function withRound8<T>(on: boolean[], run: () => T): T {
+  const was = ROUND8.map((s) => s.get());
+  ROUND8.forEach((s, k) => s.set(on[k]));
+  try {
+    return run();
+  } finally {
+    ROUND8.forEach((s, k) => s.set(was[k]));
+  }
+}
+
+/** All off, each alone, all on (just the code's values while no rule has joined). */
+function round8Configs(): { label: string; on: boolean[] }[] {
+  if (ROUND8.length === 0) return [{ label: "這個版本", on: [] }];
+  const off = ROUND8.map(() => false);
+  return [
+    { label: "全關（＝main）", on: off },
+    ...ROUND8.map((s, k) => ({ label: `只開 ${s.label}`, on: off.map((_, j) => j === k) })),
+    { label: "**全開**", on: ROUND8.map(() => true) },
+  ];
+}
+
 function main(): void {
   const i = process.argv.indexOf("--check");
   const check = i >= 0 ? process.argv[i + 1].split(",").map(Number) : [];
@@ -214,7 +290,7 @@ function main(): void {
     "- A 進攻：A 走向站著的 B。B 進攻：反過來。雙方對進：同時往對方走。站著的一方是積極姿態，6 格內有敵人才會動。目標以雙方對進判定。",
     "- 法師開著自動施放，魔晶足夠。",
     `- 一起迎戰（第三輪）：待命、積極姿態的兵，6 格內沒有敵人時，去打 ${JOIN_FIGHT.range / 1024} 格內隊友正在追或打的敵人（離自己原位 8 格內）。「現在」沒有這條規則；「這個版本」兩種都列。`,
-    `- 晶砲不動：傷害 ${CANNON.damage}、半徑 ${CANNON.radius / 1024} 格、射程 ${CANNON.range / 1024} 格、冷卻 ${CANNON.cooldownTicks / 20} 秒。`,
+    `- 晶砲：傷害 ${CANNON.damage}、半徑 ${CANNON.radius / 1024} 格、射程 ${CANNON.range / 1024} 格（第八輪起 7 格，以前 8 格）、冷卻 ${CANNON.cooldownTicks / 20} 秒。`,
     "",
     "### 數值",
     "",
@@ -275,6 +351,86 @@ function main(): void {
         out.push(`| ${armyText(army)} | ${loose ? "散開" : "密集"} | ${(["standing", "city", "towers"] as const).map((d) => show(assault(d, army, loose))).join(" | ")} |`);
       }
     }
+    out.push("");
+  }
+  {
+    // Round 8 (D-069): a governed town held against mages that fire first. The user: "如果是在
+    // 中立城市固守，對方進攻的法師往往會先開砲，先開砲就會導致我後續會戰兵力非常劣勢".
+    const configs = round8Configs();
+    const ways: [Hold, string][] = [
+      ["idle", "待命"],
+      ["hold", "堅守"],
+      ["tower", "有箭樓"],
+    ];
+    out.push(
+      "### 守城（第八輪，D-069）",
+      "",
+      "- 守方（玩家 1）站在自己治理中的小鎮（兩方出生點中間那座），一個移動指令帶進去的（有隊號）。槍兵、遠程各半，花費和攻方差不到一對；有箭樓時少一座箭樓的錢（150），箭樓在鎮中心前 2 格。",
+      "- 攻方（玩家 0）6 槍兵、6 遠程加 2–4 名法師，從南邊 16 格外過來。法師一字排開，走到最近的守兵在射程內 1 格；其他人在法師後 3 格等。每名法師朝打中最多人的守兵開一砲（各打不同點），砲落地後全部衝進城鎮，法師開著自動施放。衝鋒後最多 2 分鐘。",
+      "- 格子：開打前守方剩幾名（生命剩幾 %）；誰贏、剩幾名；攻方晶砲一共打死幾名。",
+      "",
+      `| 守方 | 法師 | ${configs.map((c) => c.label).join(" | ")} |`,
+      `|---|---|${configs.map(() => "---|").join("")}`,
+    );
+    const show = (r: Held) => {
+      const end = r.winner === 0 ? `攻方贏，剩 ${r.attackersLeft}/${r.attackers}` : r.winner === 1 ? `**守方贏**，剩 ${r.defendersLeft}/${r.defenders}` : `沒分出，${r.attackersLeft} 對 ${r.defendersLeft}`;
+      return `開打前 ${r.beforeCharge}/${r.defenders}（${r.hpBeforeCharge}%）；${end}；晶砲打死 ${r.cannonKills}`;
+    };
+    const kills = configs.map(() => 0);
+    const held = configs.map(() => 0);
+    for (const [way, name] of ways) {
+      for (const mages of [2, 3, 4]) {
+        const rs = configs.map((c) => withRound8(c.on, () => hold(way, mages)));
+        rs.forEach((r, k) => {
+          kills[k] += r.cannonKills;
+          if (r.winner === 1) held[k]++;
+        });
+        out.push(`| ${name} | ${mages} | ${rs.map(show).join(" | ")} |`);
+      }
+    }
+    out.push(`| 合計 | | ${configs.map((_, k) => `守住 ${held[k]}/9，晶砲打死 ${kills[k]}`).join(" | ")} |`, "");
+    if (ROUND8.length > 0) {
+      // Goals 1-9 under each switch (both sides advancing, as the goals table above).
+      const reports = configs.map((c) => withRound8(c.on, measure));
+      out.push("### 目標在第八輪各規則下（雙方對進）", "", `| 目標 | ${configs.map((c) => c.label).join(" | ")} |`, `|---|${configs.map(() => "---|").join("")}`);
+      GOALS.forEach((g, k) => out.push(`| ${g} | ${reports.map((r) => `${r.goals[k].ok ? "✓" : "✗"} ${r.goals[k].text}`).join(" | ")} |`));
+      out.push("");
+    }
+  }
+  {
+    // Round 8 rule 6 (D-071): arrow towers worth their cost. The user: "箭塔太貴傷害又太低根本不可能選".
+    const withValue = <T>(on: boolean, run: () => T): T => {
+      const was = TOWER_VALUE.on;
+      TOWER_VALUE.on = on;
+      try {
+        return run();
+      } finally {
+        TOWER_VALUE.on = was;
+      }
+    };
+    const tower = BUILDINGS[BuildingType.ArrowTower];
+    const describe = () => `木 ${tower.cost.wood}、金 ${tower.cost.gold}，生命 ${tower.hp}，蓋 ${tower.buildTicks / 20} 秒，每 ${ARROW_TOWER.cooldown / 20} 秒一箭、傷害 ${ARROW_TOWER.damage}`;
+    out.push(
+      "### 箭樓划不划算（第八輪第 6 項，D-071）",
+      "",
+      `- 關：${withValue(false, describe)}。開：${withValue(true, describe)}。射程、視野照第 5 項。其他第八輪規則照程式裡的開關。`,
+      "- 守點：玩家 1 治理中間的小鎮，在南邊排一列箭樓（沒人躲）或花費相同的遠程兵（堅守），攻方從南邊 16 格外走進城鎮；格子是「箭樓打死幾名（箭樓剩幾座）／遠程兵打死幾名」。",
+      "- 攻打主城：主城前 2 座箭樓各躲 3 名遠程（「攻打主城」那張表的第三欄）；「下」後面是攻方剩幾名，「不下」後面是主城剩的生命；格子是密集／散開。",
+      "",
+      "| 攻方 | 第 6 項關 | 第 6 項開 |",
+      "|---|---|---|",
+    );
+    const guard = (a: Army) => {
+      const t = guardPoint(true, a);
+      const r = guardPoint(false, a);
+      return `${t.towers} 座打死 ${t.kills}（剩 ${t.towersLeft}）／${r.ranged} 名打死 ${r.kills}`;
+    };
+    for (const a of [A(12, 4), A(8, 8, 2), A(16)]) out.push(`| 守點：${armyText(a)} | ${withValue(false, () => guard(a))} | ${withValue(true, () => guard(a))} |`);
+    const siegeCell = (a: Army) => [false, true].map((loose) => {
+      const r = assault("towers", a, loose);
+      return r.fell ? `下，剩 ${r.attackersLeft}` : `不下，${r.cityHp}`;
+    }).join("／");
+    for (const a of [A(14, 8, 2), A(17, 10, 3)]) out.push(`| 攻打主城：${armyText(a)} | ${withValue(false, () => siegeCell(a))} | ${withValue(true, () => siegeCell(a))} |`);
     out.push("");
   }
   const failed = check.filter((g) => !now.goals[g - 1]?.ok);

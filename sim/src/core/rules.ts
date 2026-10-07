@@ -142,6 +142,7 @@ export function rules(): Required<Rules> {
     towerReach: TOWER_REACH,
     towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
+    cannonRange: CANNON.range,
   };
 }
 
@@ -277,12 +278,74 @@ export const GARRISON_TYPES: UnitType[] = [UnitType.Ranged, UnitType.Mage];
 /** Arrow towers: within `mainCity` cells of an own main city's footprint, or a held town's radius + `town`. */
 export const TOWER_REACH = { mainCity: 8, town: 2 };
 
+// --- round 8 (D-069): a defender is not beaten by the first cannon shots -------------------
+
+/**
+ * Stepping out of a cannon warning (rule 1): a player's soldier with no order (idle, hold, or
+ * fighting where it stands) inside the blast of an enemy cannon that is calibrating, whose
+ * target point its owner sees (the warning on the screen), walks straight out to `margin` past
+ * the radius if it gets there before the shot lands (else it keeps fighting), and does not step
+ * into a warning; after the shot it walks back to its place as after a chase. From the centre
+ * itself it walks away from the caster. `farmers`: farmers at work or idle do it too.
+ */
+export const DODGE = { on: true, margin: 256, farmers: false };
+/**
+ * Going for the mage (rule 2): a player's soldier with no order that a cannon shot hits, hold
+ * stance and squads too, goes for the mage that fired while its owner sees it (it shows itself
+ * when it fires, REVEAL_CAST) and it is within `reach` of the soldier's place; then back to its
+ * place. Its mates follow as they fight together (SQUAD, JOIN_FIGHT); hold stance mates stay.
+ * The unit column it keeps (avenge) is in the hash only while it is on.
+ */
+export const AVENGE = { on: true, reach: 8 * CELL };
+/** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
+export const SHORT_CANNON = { on: true, range: 7 * CELL };
+/**
+ * Fighting at home (rule 4): a player's soldier within `mainCity` cells (Chebyshev, from the
+ * footprint, as arrow towers' land) of its own finished main city, or within the radius of a
+ * town it governs, takes `permille` thousandths less damage, hp and shield, rounded down.
+ */
+export const HOME_GUARD = { on: true, permille: 200, mainCity: 8 };
+/**
+ * Longer bows (rule 5; the user: "弓兵跟箭塔的視野跟攻擊範圍應該要比較大"): ranged units reach
+ * `rangedRange` and see `rangedSight` cells (before: 5 and 7); main cities', the big town's tower's
+ * and players' arrow towers' arrows reach `arrowRange` (before 7 cells) and those buildings see
+ * `towerSight` cells (before 8): farther than the cannon's 7, so a mage that stands to fire at
+ * them is shot. The tables read the switch (their fields are getters, set up below).
+ */
+export const LONG_BOWS = { on: true, rangedRange: 6 * CELL, rangedSight: 8, arrowRange: 9 * CELL, towerSight: 10 };
+/** A table field that reads a round 8 switch: `on()` while the switch is on, else what the table said. */
+function switched<T extends object>(table: T, key: keyof T & string, sw: { on: boolean }, on: () => unknown): void {
+  const off = table[key];
+  Object.defineProperty(table, key, { get: () => (sw.on ? on() : off), enumerable: true, configurable: true });
+}
+switched(UNITS[UnitType.Ranged], "range", LONG_BOWS, () => LONG_BOWS.rangedRange);
+switched(UNITS[UnitType.Ranged], "sight", LONG_BOWS, () => LONG_BOWS.rangedSight);
+for (const arrow of [MAIN_ARROW, TOWER_ARROW, ARROW_TOWER]) switched(arrow, "range", LONG_BOWS, () => LONG_BOWS.arrowRange);
+for (const type of [BuildingType.MainCity, BuildingType.TownTower, BuildingType.ArrowTower]) switched(BUILDINGS[type], "sight", LONG_BOWS, () => LONG_BOWS.towerSight);
+/**
+ * Arrow towers worth building (rule 6, D-071; the user 2026-10-07: "箭塔太貴傷害又太低根本不可能選"):
+ * a player's arrow tower costs `cost` (was wood 100, gold 50: two ranged units' worth for one's
+ * firepower), has `hp` (500) and takes `buildTicks` (40 s); its arrow does `damage` (5) every
+ * `cooldown` ticks (2 s). Range and sight as LONG_BOWS. The tables read the switch (getters).
+ * ceo 2026-10-07: one arrow every 2 s as before, not 1.5 s (30 attackers in close order could no
+ * longer take a main city with 2 towers).
+ */
+export const TOWER_VALUE = { on: true, cost: cost(0, 60, 20), hp: 600, buildTicks: 30 * S, damage: 10, cooldown: 2 * S };
+switched(BUILDINGS[BuildingType.ArrowTower], "cost", TOWER_VALUE, () => TOWER_VALUE.cost);
+switched(BUILDINGS[BuildingType.ArrowTower], "hp", TOWER_VALUE, () => TOWER_VALUE.hp);
+switched(BUILDINGS[BuildingType.ArrowTower], "buildTicks", TOWER_VALUE, () => TOWER_VALUE.buildTicks);
+switched(ARROW_TOWER, "damage", TOWER_VALUE, () => TOWER_VALUE.damage);
+switched(ARROW_TOWER, "cooldown", TOWER_VALUE, () => TOWER_VALUE.cooldown);
+
 // --- mages (from PR-4) ---------------------------------------------------------------
 
 export const CANNON = {
   damage: 45,
   radius: Math.trunc(1.5 * CELL),
-  range: 8 * CELL,
+  /** 8 cells; 7 with round 8's SHORT_CANNON on. */
+  get range(): number {
+    return SHORT_CANNON.on ? SHORT_CANNON.range : 8 * CELL;
+  },
   calibrateTicks: Math.trunc(1.5 * S),
   cooldownTicks: 8 * S,
   crystal: 5,

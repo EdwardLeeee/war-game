@@ -36,6 +36,9 @@ export const UNIT_COLS = [
   // The unit that last hit this one, -1 for an arrow (counter-attacks, COUNTER_ATTACK; in the
   // hash only while counter-attacks are on).
   "hitById",
+  // The mage a cannon shot sent this soldier after (AVENGE, round 8), -1 none; in the hash only
+  // while AVENGE is on.
+  "avenge",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 /** Unit types counted per player in `trained` and `lost` (UnitType 0..5; the hash leaves out cavalry while CAVALRY is off). */
@@ -180,6 +183,8 @@ export class World {
   /** Crystal cannon shots fired, and units they hit, per player. */
   cannonShots = new Int32Array(PLAYER_COUNT);
   cannonHits = new Int32Array(PLAYER_COUNT);
+  /** Units the crystal cannon killed (its hit was the last), per player that fired (round 8; not hashed). */
+  cannonKills = new Int32Array(PLAYER_COUNT);
   // Town statistics per player (for weighing plunder against govern): resources taken by
   // plunders; governing chosen, its cost, what governed towns paid out and the ticks they
   // were governed; governing spells that ended (revolt or capture) and those of them whose
@@ -304,6 +309,7 @@ export class World {
     c.lastHurt[s] = -100000;
     c.hitCause[s] = HitCause.None;
     c.hitById[s] = -1;
+    c.avenge[s] = -1;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
     c.autoBuild[s] = -1;

@@ -846,7 +846,7 @@ export const HARD: HardPlan = {
   vein: 2,
   townArmy: 5,
   bigArmy: 14,
-  pushArmy: 34,
+  pushArmy: 44,
   pushRatio: 120,
   counterArmy: 14,
   recallAt: 4,

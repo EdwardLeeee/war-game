@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Game } from "../src/core/game.ts";
-import { CANNON, MAGE_BOUNTY, SHIELD_REGEN, UNITS } from "../src/core/rules.ts";
+import { AVENGE, CANNON, DODGE, MAGE_BOUNTY, SHIELD_REGEN, SHORT_CANNON, UNITS } from "../src/core/rules.ts";
 import {
   Action,
   BuildingType,
@@ -18,7 +18,7 @@ import {
   WarningField,
 } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 function step(g: Game, p = 0): number[] {
   g.step();
@@ -36,7 +36,7 @@ function arena() {
   return { g, a };
 }
 
-test("cast: calibrates 1.5 s with a warning both sides see, then hits enemies in the radius only", () => {
+test("cast: calibrates 1.5 s with a warning both sides see, then hits enemies in the radius only", switchedOff([DODGE, SHORT_CANNON], () => {
   const { g, a } = arena();
   const mage = put(g, 0, UnitType.Mage, a.x + 2, a.y + 10);
   const friend = put(g, 0, UnitType.Spearman, a.x + 9, a.y + 11);
@@ -78,9 +78,9 @@ test("cast: calibrates 1.5 s with a warning both sides see, then hits enemies in
   assert.equal(buildView(g, 0).warnings.length, 0);
   cmd(g, 0, { c: "cast", u: mage, fx, fy });
   assert.deepEqual(step(g), [Reject.Cooldown]);
-});
+}));
 
-test("a spearman at full health stands two crystal cannon shots (round 3, D-026); the third kills it", () => {
+test("a spearman at full health stands two crystal cannon shots (round 3, D-026); the third kills it", switchedOff([AVENGE, SHORT_CANNON], () => {
   const { g, a } = arena();
   const mages = [0, 1, 2].map((k) => put(g, 0, UnitType.Mage, a.x + 2, a.y + 9 + k));
   const foe = put(g, 1, UnitType.Spearman, a.x + 9, a.y + 10);
@@ -98,7 +98,7 @@ test("a spearman at full health stands two crystal cannon shots (round 3, D-026)
   cmd(g, 0, { c: "cast", u: mages[2], fx, fy });
   run(g, CANNON.calibrateTicks + 1);
   assert.equal(slotOf(g, foe), -1, "the third shot kills it");
-});
+}));
 
 test("cast rejects: not a mage, out of range, no crystal; another order cancels without spending", () => {
   const { g, a } = arena();

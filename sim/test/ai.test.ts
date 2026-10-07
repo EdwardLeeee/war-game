@@ -4,13 +4,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, createAi, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
-import { CAVALRY, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
+import { CAVALRY, DODGE, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
 import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
-import { emptyGame, put, slotOf } from "./helpers.ts";
+import { emptyGame, put, slotOf, switchedOff } from "./helpers.ts";
 
 /** Units of a player as sortable strings in player 0's frame (x <-> y for player 1). */
 function units(g: Game, p: number): string {
@@ -479,7 +479,8 @@ function cannonOnThree() {
   return { g, w, ids };
 }
 
-test("hard: soldiers step out of a crystal cannon's warning; only the one it aims at, too late to get out, is hit", () => {
+// Round 8 (D-069): with soldiers stepping out on their own (DODGE), the control would not be hit.
+test("hard: soldiers step out of a crystal cannon's warning; only the one it aims at, too late to get out, is hit", switchedOff(DODGE, () => {
   for (const dodge of [true, false]) {
     const { g, w, ids } = cannonOnThree();
     const ai = hardAi(g, { dodge });
@@ -493,7 +494,7 @@ test("hard: soldiers step out of a crystal cannon's warning; only the one it aim
     for (let k = 0; k < 40; k++) g.step();
     assert.equal(w.cannonHits[1], dodge ? 1 : 3, dodge ? "one hit" : "without stepping out all three are hit");
   }
-});
+}));
 
 test("hard: army orders leave out a mage calibrating a shot (an order would call it off)", () => {
   const g = emptyGame();
@@ -925,4 +926,31 @@ test("round 7: hard hides its ranged units and mages in its main city when enemi
     });
   assert.equal(hides(true), true);
   assert.equal(hides(false), false, "rule off: nothing to hide in");
+});
+
+// --- round 8 sieges (D-073) -------------------------------------------------------------------------------
+
+test("round 8: hard marches on the enemy base with 41–47 soldiers, not the 31–37 of round 7 (D-073)", () => {
+  const marches = (n: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < n; k++) put(g, 0, UnitType.Spearman, s0.cellX + 8 + (k % 8), s0.cellY - 8 - Math.trunc(k / 8));
+    g.fog.update(w);
+    // Several games: the number is drawn per game.
+    return [1, 2, 3, 4, 5, 6].map((seed) =>
+      createAi(0, seed, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty: "hard", hard: { dodge: false } }, 0)
+        .think(buildView(g, 0))
+        .some((c) => c.c === "move" && c.u.length === n && c.x === s1.cellX && c.y === s1.cellY),
+    );
+  };
+  assert.deepEqual(marches(40), [false, false, false, false, false, false], "40: not yet");
+  assert.deepEqual(marches(48), [true, true, true, true, true, true], "48: always");
 });

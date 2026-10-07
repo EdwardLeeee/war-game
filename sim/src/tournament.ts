@@ -63,6 +63,8 @@ export interface GameResult {
     magesLost: number;
     cannonShots: number;
     cannonHits: number;
+    /** Units the cannon killed (round 8); results from before have none. */
+    cannonKills?: number;
     plunderIncome: number;
     governChosen: number;
     governCost: number;
@@ -244,6 +246,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
       magesLost: w.lost[p * UNIT_KINDS + UnitType.Mage],
       cannonShots: w.cannonShots[p],
       cannonHits: w.cannonHits[p],
+      cannonKills: w.cannonKills[p],
       plunderIncome: w.plunderIncome[p],
       governChosen: w.governChosen[p],
       governCost: w.governCost[p],
