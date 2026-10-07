@@ -927,3 +927,74 @@ test("round 7: hard hides its ranged units and mages in its main city when enemi
   assert.equal(hides(true), true);
   assert.equal(hides(false), false, "rule off: nothing to hide in");
 });
+
+// --- round 8 sieges (D-073) -------------------------------------------------------------------------------
+
+/**
+ * With soldiers able to hide (garrison): hard's 30 spearmen march on the enemy's main city and
+ * stand by it; `before` of them fall on the way. The siege's first look, then 150 ticks later
+ * `during` more have fallen and the city has gone from 1200 to `cityTo` hp; `reserves` new
+ * soldiers wait at home all along. Returns the orders of both looks and the reserves' ids.
+ */
+function siegeR8(plan: Partial<HardPlan>, { before = 0, during = 0, cityTo = 1200, reserves = 0 } = {}) {
+  return withSwitches({ garrison: true }, () => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    const ids: number[] = [];
+    for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6)));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, pushArmy: 24, ...plan });
+    ai.think(buildView(g, 0));
+    ids.forEach((id, k) => {
+      const s = slotOf(g, id);
+      w.units.col.x[s] = ((s1.cellX - 6 + (k % 6)) << 10) + 512;
+      w.units.col.y[s] = ((s1.cellY + 3 + Math.trunc(k / 6)) << 10) + 512;
+    });
+    const fresh: number[] = [];
+    for (let k = 0; k < reserves; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3 + (k % 6), s0.cellY - 3 - Math.trunc(k / 6)));
+    kill(g, ids.slice(0, before));
+    w.tick += 100;
+    g.fog.update(w);
+    const first = ai.think(buildView(g, 0));
+    kill(g, ids.slice(before, before + during));
+    w.buildings.col.hp[w.mainCity(1)] = cityTo;
+    w.tick += 150;
+    g.fog.update(w);
+    const then = ai.think(buildView(g, 0));
+    return { first, then, fresh, s1 };
+  });
+}
+
+test("round 8: hard keeps up a siege that is ground down while the city falls faster than its front (siegeRate)", () => {
+  const retreats = (plan: Partial<HardPlan>, cityTo: number) => siegeR8(plan, { before: 16, during: 3, cityTo }).then.some((c) => c.c === "retreat");
+  // 14 at the city, then 11 (under 40% of 30); the city from 1200 to 600: with 11 left at the rate
+  // it lost 3, they deal some 1100 more, nearly twice what is left.
+  assert.equal(retreats({}, 600), true, "off: under 40%, it breaks off");
+  assert.equal(retreats({ siegeRate: 50 }, 600), false, "the city goes first: it presses on");
+  assert.equal(retreats({ siegeRate: 50 }, 1150), true, "the city barely dented: it breaks off");
+});
+
+test("round 8: hard's soldiers waiting at home follow the siege in one group, once a march (reserveJoin)", () => {
+  const called = (plan: Partial<HardPlan>, reserves: number) => {
+    const { first, then, fresh, s1 } = siegeR8(plan, { reserves });
+    const up = (cs: CommandBody[]) => cs.some((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY && fresh.every((id) => c.u.includes(id)));
+    return [up(first), up(then)];
+  };
+  assert.deepEqual(called({}, 14), [false, false], "off: they wait for the next march");
+  assert.deepEqual(called({ reserveJoin: 12 }, 14), [true, true], "14 of 12 needed: all go as the siege starts (and keep going)");
+  assert.deepEqual(called({ reserveJoin: 20 }, 14), [false, false], "fewer than needed: they wait");
+});
+
+test("round 8: hard's own threshold for pressing on at a damaged city (pressOnHp)", () => {
+  const retreats = (plan: Partial<HardPlan>) => siegeR8(plan, { before: 16, during: 3, cityTo: 600 }).then.some((c) => c.c === "retreat");
+  assert.equal(retreats({}), true, "half its hp left (over 40%): ground down, it breaks off");
+  assert.equal(retreats({ pressOnHp: 60 }), false, "under 60%: it presses on");
+});
