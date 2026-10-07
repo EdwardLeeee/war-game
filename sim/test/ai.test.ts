@@ -998,3 +998,28 @@ test("round 8: hard's own threshold for pressing on at a damaged city (pressOnHp
   assert.equal(retreats({}), true, "half its hp left (over 40%): ground down, it breaks off");
   assert.equal(retreats({ pressOnHp: 60 }), false, "under 60%: it presses on");
 });
+
+test("round 8: hard marches on the enemy base with 41–47 soldiers, not the 31–37 of round 7 (D-073)", () => {
+  const marches = (n: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < n; k++) put(g, 0, UnitType.Spearman, s0.cellX + 8 + (k % 8), s0.cellY - 8 - Math.trunc(k / 8));
+    g.fog.update(w);
+    // Several games: the number is drawn per game.
+    return [1, 2, 3, 4, 5, 6].map((seed) =>
+      createAi(0, seed, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty: "hard", hard: { dodge: false } }, 0)
+        .think(buildView(g, 0))
+        .some((c) => c.c === "move" && c.u.length === n && c.x === s1.cellX && c.y === s1.cellY),
+    );
+  };
+  assert.deepEqual(marches(40), [false, false, false, false, false, false], "40: not yet");
+  assert.deepEqual(marches(48), [true, true, true, true, true, true], "48: always");
+});
