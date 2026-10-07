@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Game } from "../src/core/game.ts";
-import { ARROW_TOWER, BUILDINGS, CANNON, DODGE, GARRISON, SHORT_CANNON, UNITS } from "../src/core/rules.ts";
+import { ARROW_TOWER, BUILDINGS, CANNON, DODGE, GARRISON, LONG_BOWS, SHORT_CANNON, UNITS } from "../src/core/rules.ts";
 import { Action, BuildingField, BuildingFlag, BUILDING_STRIDE, BuildingType, Order, PlaceBit, Reject, Resource, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
@@ -137,7 +137,7 @@ test("from inside: hidden ranged shoot from the tower's edge and cannot be targe
   assert.ok(ranged.every((id) => slotOf(g, id) >= 0 && u.action[slotOf(g, id)] !== Action.Garrisoned), "out and alive");
 });
 
-test("a mage hiding in the main city fires the cannon on autocast from the city's edge and stays inside", switchedOff([DODGE, SHORT_CANNON], () => {
+test("a mage hiding in the main city fires the cannon on autocast from the city's edge and stays inside", switchedOff([DODGE, SHORT_CANNON, LONG_BOWS], () => {
   const g = emptyGame();
   const city = g.w.buildings.col.id[g.w.mainCity(0)];
   const mage = put(g, 0, UnitType.Mage, 19, 78);
@@ -171,7 +171,7 @@ test("a mage hiding in the main city fires the cannon on autocast from the city'
   assert.equal(u.orderTarget[slotOf(g, mage)], city);
 }));
 
-test("mirror images: two towers with hidden ranged and their attackers play as mirror images, tick by tick", () => {
+test("mirror images: two towers with hidden ranged and their attackers play as mirror images, tick by tick", switchedOff([LONG_BOWS], () => {
   const g = emptyGame();
   const towers = [tower(g, 0), tower(g, 1)];
   const pairs: [number, number][] = [];
@@ -213,4 +213,4 @@ test("mirror images: two towers with hidden ranged and their attackers play as m
     if (s0 >= 0) assert.equal(g.w.buildings.col.hp[s0], g.w.buildings.col.hp[s1], `tick ${g.tick}: tower hp`);
   }
   assert.ok(att0.some((id) => slotOf(g, id) < 0 || u.hp[slotOf(g, id)] < UNITS[UnitType.Spearman].hp), "the defenders hit");
-});
+}));
