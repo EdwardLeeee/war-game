@@ -455,16 +455,14 @@ export class SelectionInfo {
   }
 
   /**
-   * 點存放建築派村民 (D-066): how many villagers gather here, − and ＋ for one less or more. One
-   * resource (granary, lumber camp, mine): a line of its own. The main city's three: side by
-   * side, so the panel stays clear of 全軍撤退 with a training queue above. Returns the update.
+   * 點存放建築派村民 (D-066): how many villagers gather here, − and ＋ for one less or more; a
+   * line per resource (granary, lumber camp and mine take one each; the main city shows none,
+   * D-070). Returns the update.
    */
   private depot(id: number): (() => void) | null {
     const resources = this.host.depotResources(id);
     if (resources.length === 0) return null;
-    const one = resources.length === 1;
-    const box = el("div", this.el, one ? "depot depot-one" : "depot depot-grid");
-    if (!one) el("span", box, "depot-caption", "附近在採的村民");
+    const box = el("div", this.el, "depot");
     const cells = resources.map((r) => {
       const word = RESOURCE_WORD[r] ?? "";
       const cell = el("div", box, "depot-cell");
@@ -479,7 +477,7 @@ export class SelectionInfo {
     return () => {
       for (const c of cells) {
         const n = this.host.depotWorkers(id, c.r);
-        const text = one ? `附近有 ${n} 名村民在採${c.word}` : `${c.word} ${n} 名`;
+        const text = `附近有 ${n} 名村民在採${c.word}`;
         if (c.count.textContent !== text) c.count.textContent = text;
         c.minus.disabled = n === 0;
       }

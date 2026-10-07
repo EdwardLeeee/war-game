@@ -1,8 +1,10 @@
 // 點存放建築派村民 (D-066, user 2026-10-07: 「點擊糧倉、伐木場、礦場點擊後可以分配村民」): a tap
-// on our granary, lumber camp, mine or main city shows how many villagers gather there, with
-// − and +. A villager counts at the one depot it brings its load back to: the nearest of ours
-// that takes that resource, measured from where it gathers (a node, or the farm it works). So
-// every villager counts once, and the depots' counts add up.
+// on our granary, lumber camp or mine shows how many villagers gather there, with − and +. The
+// main city shows none of it (D-070: 「主城的那個附近在彩的村民沒有用，拿掉」), though it still
+// counts as a depot. A villager counts at the one depot it brings its load back to: the nearest
+// of ours that takes that resource, measured from where it gathers (a node, or the farm it
+// works). So every villager counts once, and a lumber camp's count leaves out those who bring
+// their wood to the main city.
 //
 // +: one at a time; idle villagers first, then those gathering another resource, nearest to
 // the depot first. Never those on the crystal vein (by hand only, GDD §4) or building or
@@ -10,13 +12,19 @@
 // depot; food to the nearest farm nobody works, else berries.
 // −: the one gathering here farthest from the depot (ceo 2026-10-07).
 
-import { NodeKind, Resource } from "../sim.ts";
+import { BuildingType, NodeKind, Resource } from "../sim.ts";
 
 /** Cells from a depot's footprint within which + looks for trees, gold, farms and berries. */
 export const DEPOT_REACH = 10;
 
 /** The resources a depot row is shown for (the crystal vein is by hand only). */
 export const DEPOT_RESOURCES: readonly Resource[] = [Resource.Food, Resource.Wood, Resource.Gold];
+
+/** The resource rows the panel of this building of ours shows: none for the main city (D-070). */
+export function panelResources(type: number, accepts: readonly number[]): Resource[] {
+  if (type === BuildingType.MainCity) return [];
+  return DEPOT_RESOURCES.filter((r) => accepts.includes(r));
+}
 
 /** One own villager as the depot panel needs it (cells). */
 export interface Worker {

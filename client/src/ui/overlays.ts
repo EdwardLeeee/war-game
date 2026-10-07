@@ -271,4 +271,11 @@ export class Overlays {
       this.toastBox.hidden = true;
     }, 2200);
   }
+
+  /** Takes this message off the strip now, if it is still the one showing (a newer one stays). */
+  clearToast(text: string): void {
+    if (this.toastBox.hidden || this.toastBox.textContent !== text) return;
+    window.clearTimeout(this.toastTimer);
+    this.toastBox.hidden = true;
+  }
 }
