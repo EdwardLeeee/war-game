@@ -52,6 +52,7 @@ const mages = [0, 1].map((p) => ({
   lost: sum((g) => g.perPlayer[p].magesLost),
   shots: sum((g) => g.perPlayer[p].cannonShots),
   hits: sum((g) => g.perPlayer[p].cannonHits),
+  kills: sum((g) => g.perPlayer[p].cannonKills ?? 0),
 }));
 // Towns: what a plunder brings, what governing costs and pays, when towns first fall.
 const both = (f: (p: GameResult["perPlayer"][number]) => number) => sum((g) => f(g.perPlayer[0]) + f(g.perPlayer[1]));
@@ -174,6 +175,7 @@ const lines = [
   `| 搶／治理 | ${plunder}／${govern}（搶 ${pct(summary.plunderShare)}） |`,
   `| 法師產量／陣亡 | 玩家 0：${mages[0].trained}／${mages[0].lost}；玩家 1：${mages[1].trained}／${mages[1].lost} |`,
   `| 晶砲發射／命中人次（每發平均） | 玩家 0：${mages[0].shots}／${mages[0].hits}（${perShot(mages[0])}）；玩家 1：${mages[1].shots}／${mages[1].hits}（${perShot(mages[1])}） |`,
+  `| 晶砲打死（每方每局） | 玩家 0：${mages[0].kills}；玩家 1：${mages[1].kills}（${games.length === 0 ? "0" : ((mages[0].kills + mages[1].kills) / 2 / games.length).toFixed(2)}） |`,
   `| 每方每局死掉的農民（民兵／敵方的兵／晶砲／主城和箭樓的箭／其他） | ${farmerDeaths.map((v) => v.toFixed(2)).join("／")} |`,
   `| 叛離（駐軍不足，城鎮變回中立） | ${revolts} 次（每方每局 ${perSideGame((p) => p.revolts ?? 0).toFixed(2)}） |`,
   `| 每 tick（µs） | 各局中位數的中位數 ${summary.tickMicros.medianOfMedians}、各局 p95 的 95% ${summary.tickMicros.p95OfP95}、最大 ${summary.tickMicros.max} |`,

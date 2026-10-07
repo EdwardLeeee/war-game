@@ -1232,6 +1232,7 @@ export class UnitSystem {
         w.unitSlot[u.id[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
         if (u.owner[i] < PLAYER_COUNT && u.type[i] === UnitType.Farmer) w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
+        if (u.hitCause[i] === HitCause.Cannon && u.hitBy[i] >= 0 && u.hitBy[i] < PLAYER_COUNT) w.cannonKills[u.hitBy[i]]++;
         if (u.type[i] === UnitType.Mage) {
           // The killer's side picks up the bounty (none for the neutral side).
           const killer = u.hitBy[i];

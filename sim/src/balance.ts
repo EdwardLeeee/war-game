@@ -5,7 +5,7 @@
 //   node src/balance.ts [--check 1,2,3,4]
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
-import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, siege, twoShots } from "./balance-lib.ts";
+import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, type Held, type Hold, hold, siege, twoShots } from "./balance-lib.ts";
 import { CANNON, GARRISON, JOIN_FIGHT, MULT_DEN, MULT_NUM, UNITS } from "./core/rules.ts";
 import { TownSize, UnitType } from "./protocol.ts";
 
@@ -200,6 +200,39 @@ const KNOWN: Record<number, string> = {
   5: "這一輪不動晶砲（ceo 選 a）。不成立的原因是晶砲的齊射：法師在遠程進到射程（5 格）前就放（8 格），密集時一發打中好幾名",
 };
 
+/**
+ * Round 8 (D-069): the rules that help a defender, each with its switch. The report measures
+ * them all off (as main), each on alone and all on; a rule joins this list in its own commit.
+ */
+interface Switch {
+  label: string;
+  get(): boolean;
+  set(on: boolean): void;
+}
+const ROUND8: Switch[] = [];
+
+/** Round 8's switches as given (in ROUND8's order) while `run` runs; then as they were. */
+function withRound8<T>(on: boolean[], run: () => T): T {
+  const was = ROUND8.map((s) => s.get());
+  ROUND8.forEach((s, k) => s.set(on[k]));
+  try {
+    return run();
+  } finally {
+    ROUND8.forEach((s, k) => s.set(was[k]));
+  }
+}
+
+/** All off, each alone, all on (just the code's values while no rule has joined). */
+function round8Configs(): { label: string; on: boolean[] }[] {
+  if (ROUND8.length === 0) return [{ label: "這個版本", on: [] }];
+  const off = ROUND8.map(() => false);
+  return [
+    { label: "全關（＝main）", on: off },
+    ...ROUND8.map((s, k) => ({ label: `只開 ${s.label}`, on: off.map((_, j) => j === k) })),
+    { label: "**全開**", on: ROUND8.map(() => true) },
+  ];
+}
+
 function main(): void {
   const i = process.argv.indexOf("--check");
   const check = i >= 0 ? process.argv[i + 1].split(",").map(Number) : [];
@@ -276,6 +309,50 @@ function main(): void {
       }
     }
     out.push("");
+  }
+  {
+    // Round 8 (D-069): a governed town held against mages that fire first. The user: "如果是在
+    // 中立城市固守，對方進攻的法師往往會先開砲，先開砲就會導致我後續會戰兵力非常劣勢".
+    const configs = round8Configs();
+    const ways: [Hold, string][] = [
+      ["idle", "待命"],
+      ["hold", "堅守"],
+      ["tower", "有箭樓"],
+    ];
+    out.push(
+      "### 守城（第八輪，D-069）",
+      "",
+      "- 守方（玩家 1）站在自己治理中的小鎮（兩方出生點中間那座），一個移動指令帶進去的（有隊號）。槍兵、遠程各半，花費和攻方差不到一對；有箭樓時少一座箭樓的錢（150），箭樓在鎮中心前 2 格。",
+      "- 攻方（玩家 0）6 槍兵、6 遠程加 2–4 名法師，從南邊 16 格外過來。法師一字排開，走到最近的守兵在射程內 1 格；其他人在法師後 3 格等。每名法師朝打中最多人的守兵開一砲（各打不同點），砲落地後全部衝進城鎮，法師開著自動施放。衝鋒後最多 2 分鐘。",
+      "- 格子：開打前守方剩幾名（生命剩幾 %）；誰贏、剩幾名；攻方晶砲一共打死幾名。",
+      "",
+      `| 守方 | 法師 | ${configs.map((c) => c.label).join(" | ")} |`,
+      `|---|---|${configs.map(() => "---|").join("")}`,
+    );
+    const show = (r: Held) => {
+      const end = r.winner === 0 ? `攻方贏，剩 ${r.attackersLeft}/${r.attackers}` : r.winner === 1 ? `**守方贏**，剩 ${r.defendersLeft}/${r.defenders}` : `沒分出，${r.attackersLeft} 對 ${r.defendersLeft}`;
+      return `開打前 ${r.beforeCharge}/${r.defenders}（${r.hpBeforeCharge}%）；${end}；晶砲打死 ${r.cannonKills}`;
+    };
+    const kills = configs.map(() => 0);
+    const held = configs.map(() => 0);
+    for (const [way, name] of ways) {
+      for (const mages of [2, 3, 4]) {
+        const rs = configs.map((c) => withRound8(c.on, () => hold(way, mages)));
+        rs.forEach((r, k) => {
+          kills[k] += r.cannonKills;
+          if (r.winner === 1) held[k]++;
+        });
+        out.push(`| ${name} | ${mages} | ${rs.map(show).join(" | ")} |`);
+      }
+    }
+    out.push(`| 合計 | | ${configs.map((_, k) => `守住 ${held[k]}/9，晶砲打死 ${kills[k]}`).join(" | ")} |`, "");
+    if (ROUND8.length > 0) {
+      // Goals 1-9 under each switch (both sides advancing, as the goals table above).
+      const reports = configs.map((c) => withRound8(c.on, measure));
+      out.push("### 目標在第八輪各規則下（雙方對進）", "", `| 目標 | ${configs.map((c) => c.label).join(" | ")} |`, `|---|${configs.map(() => "---|").join("")}`);
+      GOALS.forEach((g, k) => out.push(`| ${g} | ${reports.map((r) => `${r.goals[k].ok ? "✓" : "✗"} ${r.goals[k].text}`).join(" | ")} |`));
+      out.push("");
+    }
   }
   const failed = check.filter((g) => !now.goals[g - 1]?.ok);
   if (check.length > 0) out.push(failed.length === 0 ? `檢查的目標（${check.join("、")}）都成立。` : `未成立：目標 ${failed.join("、")}。`, "");
