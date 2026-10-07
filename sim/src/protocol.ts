@@ -245,9 +245,9 @@ export const UnitFlag = {
    */
   Loose: 8,
   /**
-   * Farmer sent to a resource by hand with the `gather` command (operations round, D-050): the
-   * economy ratio does not move it. Cleared by any other command to it, and when it has nothing
-   * left to gather there (it goes idle).
+   * Farmer sent to a resource by hand with the `gather` command (operations round, D-050), or to
+   * a farm with `repair` (2026-10-07): the economy ratio does not move it. Cleared by any other
+   * command to it (`release` too), and when it has nothing left to gather there (it goes idle).
    */
   HandPicked: 16,
 } as const;
@@ -622,6 +622,8 @@ export type CommandBody =
   | { c: "rally"; building: number; x: number; y: number }
   | { c: "eco_ratio"; food: number; wood: number; gold: number; on: boolean }
   | { c: "recall"; on: boolean }
+  /** Farmers put down their work and idle, for the economy ratio to give them work (D-066). */
+  | { c: "release"; u: number[] }
   | { c: "cast"; u: number; fx: number; fy: number }
   | { c: "autocast"; u: number[]; on: boolean }
   | { c: "town_choice"; town: number; choice: TownChoice }
@@ -652,6 +654,7 @@ export const COMMAND_KINDS = [
   "rally",
   "eco_ratio",
   "recall",
+  "release",
   "cast",
   "autocast",
   "town_choice",
