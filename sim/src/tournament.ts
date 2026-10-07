@@ -10,8 +10,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
-import { UNIT_KINDS } from "./core/world.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, type LogHeader, MAX_TICKS, UnitType } from "./protocol.ts";
+import { BUILDINGS } from "./core/rules.ts";
+import { UNIT_KINDS, type World } from "./core/world.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, type LogHeader, MAX_TICKS, UnitType } from "./protocol.ts";
 import { AI_STYLES, type AiStyle } from "./ai/ai.ts";
 import { Runner } from "./runner.ts";
 
@@ -77,9 +78,44 @@ export interface GameResult {
     gathered: number[];
     /** Farmers lost by what last hurt them: none, militia, an enemy unit, a crystal cannon, an arrow (HitCause; D-057). */
     farmersLostBy: number[];
+    /**
+     * Each farmer lost (D-070): [tick, cells from its main city's footprint (Chebyshev), HitCause,
+     * the nearest own granary, lumber camp or mine standing at the end (BuildingType, or -1), cells
+     * to it]; -1 cells when the main city fell. Results from before have none.
+     */
+    farmerDeaths?: number[][];
     /** Towns lost to a revolt (D-057). */
     revolts: number;
   }[];
+}
+
+/** Player p's farmer deaths (World.farmerDeathLog) with where they were (GameResult.perPlayer.farmerDeaths). */
+function deathsOf(w: World, p: number): number[][] {
+  const b = w.buildings.col;
+  const city = w.mainCity(p);
+  const out: number[][] = [];
+  const log = w.farmerDeathLog;
+  for (let k = 0; k < log.length; k += 5) {
+    if (log[k] !== p) continue;
+    const x = log[k + 1];
+    const y = log[k + 2];
+    const cells = (s: number) => {
+      const size = BUILDINGS[b.type[s]].size;
+      return Math.max(b.cellX[s] - x, 0, x - (b.cellX[s] + size - 1), b.cellY[s] - y, 0, y - (b.cellY[s] + size - 1));
+    };
+    let depot = -1;
+    let depotD = 0;
+    for (let s = 0; s < w.buildings.count; s++) {
+      const t = b.type[s];
+      if (b.owner[s] !== p || (t !== BuildingType.Granary && t !== BuildingType.LumberCamp && t !== BuildingType.Mine)) continue;
+      if (depot < 0 || cells(s) < depotD) {
+        depot = s;
+        depotD = cells(s);
+      }
+    }
+    out.push([log[k + 4], city >= 0 ? cells(city) : -1, log[k + 3], depot < 0 ? -1 : b.type[depot], depot < 0 ? -1 : depotD]);
+  }
+  return out;
 }
 
 export interface Sample {
@@ -221,6 +257,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
       lost: Array.from(w.lost.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
       gathered: Array.from(w.gathered.subarray(p * 4, p * 4 + 4)),
       farmersLostBy: Array.from(w.farmerDeaths.subarray(p * 5, p * 5 + 5)),
+      farmerDeaths: deathsOf(w, p),
       revolts: w.revolts[p],
 })),
   };

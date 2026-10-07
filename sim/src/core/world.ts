@@ -200,6 +200,8 @@ export class World {
    * by what last hurt them [p * 5 + HitCause], and towns lost to a revolt per player.
    */
   farmerDeaths = new Int32Array(PLAYER_COUNT * 5);
+  /** Where farmers died (D-070's measurement; not hashed): owner, cell x, cell y, HitCause, tick, five numbers each. */
+  readonly farmerDeathLog: number[] = [];
   revolts = new Int32Array(PLAYER_COUNT);
   /**
    * Per owner (players, then neutral): the flow-field step order and whether to try the y

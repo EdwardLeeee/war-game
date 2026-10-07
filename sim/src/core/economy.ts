@@ -32,6 +32,7 @@ import {
   BUILDINGS,
   CARRY,
   CROWD_PENALTY,
+  DEPOT_SPREAD,
   ECO_EVERY,
   GATHER_PER_MINUTE,
   GATHER_UNIT,
@@ -128,6 +129,8 @@ export class Economy {
   private nodeLoad: Int32Array;
   /** Per building slot: 1 when a farmer works this farm (economy pass). */
   private farmTaken = new Uint8Array(64);
+  /** Per building slot: farmers whose work's nearest drop-off is this depot (economy pass, DEPOT_SPREAD). */
+  private depotLoad = new Int32Array(64);
 
   constructor(w: World, fog: Fog, emit: Emit) {
     this.fog = fog;
@@ -282,7 +285,7 @@ export class Economy {
    * nearer the owner's spawn, then the first in the owner's canonical frame (frame.ts).
    * Returns [node, score] or [-1, 0].
    */
-  private bestNode(w: World, i: number, kind: number, cx: number, cy: number, radius: number, crowd: boolean): [number, number] {
+  private bestNode(w: World, i: number, kind: number, cx: number, cy: number, radius: number, crowd: boolean, fromX = w.units.col.x[i], fromY = w.units.col.y[i]): [number, number] {
     const u = w.units.col;
     const p = u.owner[i];
     const seen = this.fog.nodeSeen[p];
@@ -298,8 +301,8 @@ export class Economy {
       const ny = w.nodeY[k];
       if (radius > 0 && (nx - cx) * (nx - cx) + (ny - cy) * (ny - cy) > radius * radius) continue;
       if (!nodeOpen(w, k)) continue;
-      const dx = center(nx) - u.x[i];
-      const dy = center(ny) - u.y[i];
+      const dx = center(nx) - fromX;
+      const dy = center(ny) - fromY;
       const score = isqrt(dx * dx + dy * dy) + (crowd ? this.nodeLoad[k] * CROWD_PENALTY : 0);
       const sp = (nx - spawn.cellX) * (nx - spawn.cellX) + (ny - spawn.cellY) * (ny - spawn.cellY);
       const c = toCanon(frame, nx, ny);
@@ -319,8 +322,8 @@ export class Economy {
     return this.bestNode(w, i, w.nodeKind[node], w.nodeX[node], w.nodeY[node], NEXT_NODE_RADIUS, false)[0];
   }
 
-  /** Nearest free own finished farm: [building slot, distance] or [-1, 0]. */
-  private freeFarm(w: World, i: number): [number, number] {
+  /** Nearest free own finished farm (to farmer i, or to (fromX, fromY) within `reach`): [building slot, distance] or [-1, 0]. */
+  private freeFarm(w: World, i: number, fromX = w.units.col.x[i], fromY = w.units.col.y[i], reach = 0): [number, number] {
     const u = w.units.col;
     const b = w.buildings.col;
     let best = -1;
@@ -328,7 +331,8 @@ export class Economy {
     for (let s = 0; s < w.buildings.count; s++) {
       if (b.owner[s] !== u.owner[i] || b.type[s] !== BuildingType.Farm || b.progress[s] < 1000 || this.farmTaken[s] === 1) continue;
       const [fx, fy] = buildingCentre(w, s);
-      const d = isqrt((fx - u.x[i]) * (fx - u.x[i]) + (fy - u.y[i]) * (fy - u.y[i]));
+      const d = isqrt((fx - fromX) * (fx - fromX) + (fy - fromY) * (fy - fromY));
+      if (reach > 0 && d > reach) continue;
       if (best < 0 || d < bestD) {
         best = s;
         bestD = d;
@@ -339,24 +343,96 @@ export class Economy {
 
   /** Puts an idle farmer on resource r if there is a source; false if none. */
   private assign(w: World, i: number, r: Resource): boolean {
-    if (r === Resource.Food) {
-      const [farm, fd] = this.freeFarm(w, i);
-      const [bush, bd] = this.bestNode(w, i, NodeKind.Berries, 0, 0, 0, true);
-      if (farm >= 0 && (bush < 0 || fd <= bd)) {
-        this.farmTaken[farm] = 1;
-        this.gather(w, i, w.buildings.col.id[farm], true);
-        return true;
-      }
-      if (bush < 0) return false;
-      this.nodeLoad[bush]++;
-      this.gather(w, i, bush, false);
-      return true;
-    }
-    const [node] = this.bestNode(w, i, r === Resource.Wood ? NodeKind.Tree : NodeKind.GoldMine, 0, 0, 0, true);
-    if (node < 0) return false;
-    this.nodeLoad[node]++;
-    this.gather(w, i, node, false);
+    const job = this.choose(w, i, r);
+    if (job === null) return false;
+    if (job.farm) this.farmTaken[job.target] = 1;
+    else this.nodeLoad[job.target]++;
+    if (job.depot >= 0) this.depotLoad[job.depot]++;
+    this.gather(w, i, job.farm ? w.buildings.col.id[job.target] : job.target, job.farm);
     return true;
+  }
+
+  /**
+   * The work the economy gives farmer i on resource r: a free farm (building slot) or a node,
+   * the depot it was chosen for (DEPOT_SPREAD) or -1, and how far the farmer walks to it; null if none.
+   */
+  private choose(w: World, i: number, r: Resource): { farm: boolean; target: number; depot: number; way: number } | null {
+    const u = w.units.col;
+    if (DEPOT_SPREAD.on) {
+      for (const d of this.depots(w, u.owner[i], r)) {
+        const [dx, dy] = buildingCentre(w, d);
+        const job = this.nearestWork(w, i, r, dx, dy, DEPOT_SPREAD.reach);
+        if (job === null) continue;
+        const [tx, ty] = job.farm ? buildingCentre(w, job.target) : [center(w.nodeX[job.target]), center(w.nodeY[job.target])];
+        return { ...job, depot: d, way: isqrt((tx - u.x[i]) * (tx - u.x[i]) + (ty - u.y[i]) * (ty - u.y[i])) };
+      }
+    }
+    const job = this.nearestWork(w, i, r, u.x[i], u.y[i], 0);
+    return job === null ? null : { ...job, depot: -1 };
+  }
+
+  /** The work on r nearest (fromX, fromY), within `reach` cells of it when reach > 0: [farm?, target, distance], or null. */
+  private nearestWork(w: World, i: number, r: Resource, fromX: number, fromY: number, reach: number): { farm: boolean; target: number; way: number } | null {
+    if (r === Resource.Food) {
+      const [farm, fd] = this.freeFarm(w, i, fromX, fromY, reach * CELL);
+      const [bush, bd] = this.bestNode(w, i, NodeKind.Berries, fromX >> CELL_SHIFT, fromY >> CELL_SHIFT, reach, true, fromX, fromY);
+      if (farm >= 0 && (bush < 0 || fd <= bd)) return { farm: true, target: farm, way: fd };
+      return bush < 0 ? null : { farm: false, target: bush, way: bd };
+    }
+    const [node, d] = this.bestNode(w, i, r === Resource.Wood ? NodeKind.Tree : NodeKind.GoldMine, fromX >> CELL_SHIFT, fromY >> CELL_SHIFT, reach, true, fromX, fromY);
+    return node < 0 ? null : { farm: false, target: node, way: d };
+  }
+
+  /**
+   * Player p's finished depots of resource r other than main cities (DEPOT_SPREAD), fewest
+   * farmers working near them first; ties: the first in p's canonical frame, then the lower id.
+   */
+  private depots(w: World, p: number, r: Resource): number[] {
+    const b = w.buildings.col;
+    const frame = w.map.frames[p];
+    const out: { s: number; load: number; key: number }[] = [];
+    for (let s = 0; s < w.buildings.count; s++) {
+      if (b.owner[s] !== p || b.progress[s] < 1000 || b.type[s] === BuildingType.MainCity || !BUILDINGS[b.type[s]].accepts.includes(r)) continue;
+      const c = toCanon(frame, b.cellX[s], b.cellY[s]);
+      out.push({ s, load: this.depotLoad[s], key: c.v * w.size + c.u });
+    }
+    out.sort((a, c) => a.load - c.load || a.key - c.key || b.id[a.s] - b.id[c.s]);
+    return out.map((d) => d.s);
+  }
+
+  /**
+   * The depot (not a main city) that is the nearest drop-off of farmer i's work, or -1 (DEPOT_SPREAD's
+   * count: what a farmer works on counts for the depot it carries to).
+   */
+  private depotOf(w: World, i: number): number {
+    const u = w.units.col;
+    const t = u.orderTarget[i];
+    const r = this.gathering(w, i);
+    if (r < 0 || r > Resource.Gold) return -1;
+    let x: number;
+    let y: number;
+    if (u.onFarm[i] === 1) {
+      const fs = w.building(t);
+      if (fs < 0) return -1;
+      [x, y] = buildingCentre(w, fs);
+    } else if (t >= 0) {
+      x = center(w.nodeX[t]);
+      y = center(w.nodeY[t]);
+    } else {
+      return -1;
+    }
+    const b = w.buildings.col;
+    let best = -1;
+    let bestD = 0;
+    for (let s = 0; s < w.buildings.count; s++) {
+      if (b.owner[s] !== u.owner[i] || b.progress[s] < 1000 || !BUILDINGS[b.type[s]].accepts.includes(r as Resource)) continue;
+      const d = rectDist2(x, y, b.cellX[s], b.cellY[s], BUILDINGS[b.type[s]].size);
+      if (best < 0 || d < bestD) {
+        best = s;
+        bestD = d;
+      }
+    }
+    return best >= 0 && b.type[best] !== BuildingType.MainCity ? best : -1;
   }
 
   /** Own finished damaged building within AUTO_REPAIR_RANGE with room for another repairer, or -1. */
@@ -393,6 +469,7 @@ export class Economy {
     if (w.tick % ECO_EVERY !== 0) return;
     const u = w.units.col;
     if (this.farmTaken.length < w.buildings.count) this.farmTaken = new Uint8Array(w.buildings.count * 2);
+    if (this.depotLoad.length < w.buildings.count) this.depotLoad = new Int32Array(w.buildings.count * 2);
     for (let p = 0; p < PLAYER_COUNT; p++) {
       const idle: number[] = [];
       for (let i = 0; i < w.units.count; i++) {
@@ -435,6 +512,14 @@ export class Economy {
         if (u.owner[i] !== p) continue;
         const r = this.gathering(w, i);
         if (r >= 0 && r < 3) count[r]++;
+      }
+      if (DEPOT_SPREAD.on) {
+        this.depotLoad.fill(0);
+        for (let i = 0; i < w.units.count; i++) {
+          if (u.owner[i] !== p || u.order[i] !== Order.Gather) continue;
+          const d = this.depotOf(w, i);
+          if (d >= 0) this.depotLoad[d]++;
+        }
       }
       const total = count[0] + count[1] + count[2] + rest.length;
       const ratio = [w.ecoRatio[p * 3], w.ecoRatio[p * 3 + 1], w.ecoRatio[p * 3 + 2]];
@@ -533,20 +618,18 @@ export class Economy {
 
   /** How far farmer i would walk to work on resource r (as `assign` would choose), or -1 if there is no such work. */
   private wayTo(w: World, i: number, r: Resource): number {
-    if (r === Resource.Food) {
-      const [farm, fd] = this.freeFarm(w, i);
-      const [bush, bd] = this.bestNode(w, i, NodeKind.Berries, 0, 0, 0, true);
-      if (farm >= 0 && (bush < 0 || fd <= bd)) return fd;
-      return bush < 0 ? -1 : bd;
-    }
-    const [node, d] = this.bestNode(w, i, r === Resource.Wood ? NodeKind.Tree : NodeKind.GoldMine, 0, 0, 0, true);
-    return node < 0 ? -1 : d;
+    const job = this.choose(w, i, r);
+    return job === null ? -1 : job.way;
   }
 
   /** Farmer i stops working its node or farm (for the shares counted this period). */
   private leave(w: World, i: number): void {
     const u = w.units.col;
     const t = u.orderTarget[i];
+    if (DEPOT_SPREAD.on) {
+      const d = this.depotOf(w, i);
+      if (d >= 0 && this.depotLoad[d] > 0) this.depotLoad[d]--;
+    }
     if (u.onFarm[i] === 1) {
       const fs = w.building(t);
       if (fs >= 0) this.farmTaken[fs] = 0;
