@@ -108,10 +108,15 @@ BUILDINGS[BuildingType.Stable] = building({
  * den 2 gives that back).
  */
 export const RANGED_VS_SHIELD = { num: 3, den: 1 };
-/** Damage x num / den. Cavalry's (round 7, D-061) from GDD appendix A. */
+/**
+ * Damage x num / den. Cavalry's (round 7, D-061) from GDD appendix A, plus ranged x9/5 against
+ * cavalry (not in the GDD): without it 6 cavalry beat 12 ranged of the same cost losing 0-1
+ * (D-035 too); with it they still win, losing 2-3 (brief: at least a third; src/balance.ts).
+ */
 export const MULTIPLIERS: Multiplier[] = [
   { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 5, den: 2 },
   { attacker: UnitType.Ranged, target: "shield", ...RANGED_VS_SHIELD },
+  { attacker: UnitType.Ranged, target: UnitType.Cavalry, num: 9, den: 5 },
   { attacker: UnitType.Spearman, target: UnitType.Cavalry, num: 3, den: 1 },
   { attacker: UnitType.Cavalry, target: UnitType.Mage, num: 2, den: 1 },
   { attacker: UnitType.Cavalry, target: "shield", num: 2, den: 1 },
@@ -266,7 +271,7 @@ export const TOWERS = { on: true };
  */
 export const GARRISON = { on: true, cannon: true, cannonPermille: 333, cannonCooldown: 1 };
 /** Players can build stables and train cavalry. */
-export const CAVALRY = { on: false };
+export const CAVALRY = { on: true };
 /** Unit types that may hide in buildings. */
 export const GARRISON_TYPES: UnitType[] = [UnitType.Ranged, UnitType.Mage];
 /** Arrow towers: within `mainCity` cells of an own main city's footprint, or a held town's radius + `town`. */

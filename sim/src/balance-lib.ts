@@ -9,17 +9,19 @@ import { BUILDINGS, CANNON, UNITS } from "./core/rules.ts";
 import { damage } from "./core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, type CommandBody, NEUTRAL, Order, Resource, type TownSize, UnitFlag, UnitType } from "./protocol.ts";
 
-/** Spearmen, ranged and mages of one side. */
+/** Spearmen, ranged, mages and (round 7) cavalry of one side. */
 export interface Army {
   spear: number;
   ranged: number;
   mage: number;
+  cav?: number;
 }
 
 const TYPES: [keyof Army, UnitType][] = [
   ["spear", UnitType.Spearman],
   ["ranged", UnitType.Ranged],
   ["mage", UnitType.Mage],
+  ["cav", UnitType.Cavalry],
 ];
 
 /** What an army costs: every resource counts the same (crystal too). */
@@ -27,7 +29,7 @@ export function armyCost(a: Army): number {
   let sum = 0;
   for (const [key, type] of TYPES) {
     const c = UNITS[type].cost;
-    sum += a[key] * (c.food + c.wood + c.gold + c.crystal);
+    sum += (a[key] ?? 0) * (c.food + c.wood + c.gold + c.crystal);
   }
   return sum;
 }
@@ -37,6 +39,7 @@ export function armyText(a: Army): string {
   if (a.spear > 0) parts.push(`${a.spear} 槍兵`);
   if (a.ranged > 0) parts.push(`${a.ranged} 遠程`);
   if (a.mage > 0) parts.push(`${a.mage} 法師`);
+  if ((a.cav ?? 0) > 0) parts.push(`${a.cav} 騎兵`);
   return parts.join("＋");
 }
 
@@ -93,17 +96,18 @@ function field(g: Game): { x: number; y: number } {
 
 function count(g: Game, p: number): Army {
   const u = g.w.units.col;
-  const a: Army = { spear: 0, ranged: 0, mage: 0 };
+  const a: Army = { spear: 0, ranged: 0, mage: 0, cav: 0 };
   for (let s = 0; s < g.w.units.count; s++) {
     if (u.owner[s] !== p) continue;
     if (u.type[s] === UnitType.Spearman) a.spear++;
     else if (u.type[s] === UnitType.Ranged) a.ranged++;
     else if (u.type[s] === UnitType.Mage) a.mage++;
+    else if (u.type[s] === UnitType.Cavalry) a.cav = (a.cav ?? 0) + 1;
   }
   return a;
 }
 
-const total = (a: Army) => a.spear + a.ranged + a.mage;
+const total = (a: Army) => a.spear + a.ranged + a.mage + (a.cav ?? 0);
 
 /** Who is told to move onto the other's position: side 0, side 1, or both at once. */
 export const BOTH = 2;
@@ -143,7 +147,7 @@ export function fight(armies: [Army, Army], attacker: number, distance: number, 
     const back = p === 0 ? -1 : 1;
     let k = 0;
     for (const [key, type] of TYPES) {
-      for (let i = 0; i < armies[p][key]; i++, k++) {
+      for (let i = 0; i < (armies[p][key] ?? 0); i++, k++) {
         const col = Math.trunc(k / 6);
         const row = k % 6;
         const x = frontX[p] + back * (4 + col);
@@ -321,7 +325,7 @@ export function assault(defense: Defense, attackers: Army, loose = false, defend
     const ids: number[] = [];
     let k = 0;
     for (const [key, type] of TYPES) {
-      for (let i = 0; i < army[key]; i++, k++) {
+      for (let i = 0; i < (army[key] ?? 0); i++, k++) {
         const id = w.addUnit(p, type, ((x0 + (k % 8)) << CELL_SHIFT) + 512, ((y0 + Math.trunc(k / 8)) << CELL_SHIFT) + 512, UNITS[type].hp);
         if (type === UnitType.Mage) u.flags[w.unit(id)] |= UnitFlag.Autocast;
         ids.push(id);

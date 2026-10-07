@@ -97,6 +97,14 @@ export interface Plan {
    * player's buildings with it on). Farmers are still trained at the main city.
    */
   autoTrain: boolean;
+  /**
+   * Cavalry raiders, a rush (round 7, D-061; 0: none): builds a stable first (from 6 farmers,
+   * once its `requires` stand) and a mine, mines gold from the start, trains only 14 farmers
+   * before the first raid and nothing else but mages while the group is short; keeps this many
+   * cavalry apart from the army and sends them at the enemy's main city, where its farmers
+   * work; they ride home when half of them are down, and go again once the group is full.
+   */
+  raid: number;
 }
 
 interface Unit {
@@ -187,13 +195,14 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     noRange: false,
     corners: false,
     autoTrain: false,
+    raid: 0,
   };
 }
 
 export interface ScriptedPlayer {
   think(view: PlayerView): CommandBody[];
   /** For the measurement: what it is doing. */
-  state(): { mode: Mode; trips: number; marches: number; waves: number; brokenOff: number; firstMarch: number };
+  state(): { mode: Mode; trips: number; marches: number; waves: number; brokenOff: number; firstMarch: number; raids: number; firstRaid: number };
 }
 
 export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan: Plan): ScriptedPlayer {
@@ -230,6 +239,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   let waves = 0;
   let brokenOff = 0;
   let firstMarch = -1;
+  let raiding = false;
+  let raids = 0;
+  let firstRaid = -1;
+  let lastRaidMove = -100000;
   /** Per small town: the tick from which it may be taken again (ruins turn neutral). */
   const nextTown = new Map<number, number>();
   /** The town of this trip, or of the next one (myTown unless plan.corners). */
@@ -279,7 +292,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   }
 
   return {
-    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch }),
+    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch, raids, firstRaid }),
     think(view: PlayerView): CommandBody[] {
       const out: CommandBody[] = [];
       const h = view.header;
@@ -346,7 +359,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const count = (t: number) => own.filter((b) => b.type === t).length;
 
       // --- economy (the AI's) -----------------------------------------------------------------
-      const ratio = done(BuildingType.MageHall).length > 0 ? [35, 30, 35] : done(BuildingType.Range).length > 0 ? [40, 35, 25] : [50, 40, 10];
+      // A cavalry rush (plan.raid) mines gold from the start: cavalry cost 70 gold each.
+      const ratio =
+        done(BuildingType.MageHall).length > 0 ? [35, 30, 35] : plan.raid > 0 ? [45, 25, 30] : done(BuildingType.Range).length > 0 ? [40, 35, 25] : [50, 40, 10];
       const stock = [res.food, res.wood, res.gold];
       for (let k = 0; k < 3; k++) {
         if (stock[k] > 400) ratio[k] -= 10;
@@ -395,7 +410,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       let room = cap - pop - queued;
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
-      if (main && main.queue < 2 && farmers.length + main.queue < plan.farmers && room > 0 && afford(farmerCost)) {
+      // A cavalry rush (plan.raid) stops at 14 farmers until its first raid has set off.
+      const farmerGoal = plan.raid > 0 && raids === 0 ? Math.min(plan.farmers, 14) : plan.farmers;
+      if (main && main.queue < 2 && farmers.length + main.queue < farmerGoal && room > 0 && afford(farmerCost)) {
         out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
         spend(farmerCost);
         room--;
@@ -435,6 +452,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (cap < 120 && cap - pop - queued <= 5) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
+        // Raiders (round 7): the stable first, as early as it may go up (its `requires`, if any, before it).
+        const stableReady = (rules.buildings[BuildingType.Stable]?.requires ?? []).every((t) => done(t).length > 0);
+        if (plan.raid > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && stableReady && farmers.length >= 6) add(BuildingType.Stable, rally);
+        if (plan.raid > 0 && !has(BuildingType.Mine) && farmers.length >= 8) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!plan.noRange && !has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
         if (!plan.noMage && !has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * 1200)) add(BuildingType.MageHall, base);
@@ -475,9 +496,17 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           room--;
         }
       };
+      // Raiders first (round 7): keep the cavalry group full.
+      const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry);
+      const stableQueue = done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
+      // A rush: while the group is short and a stable stands, nothing else is trained (mages aside).
+      const raidFirst = plan.raid > 0 && has(BuildingType.Stable) && cavalry.length + stableQueue < plan.raid;
+      if (raidFirst) trainAt(BuildingType.Stable, UnitType.Cavalry);
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
       if (mages + hallQueue < rules.mageCap && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage);
-      if (spear * 100 <= plan.spearShare * (spear + ranged)) {
+      if (raidFirst) {
+        // Spearmen and ranged wait for the raiders.
+      } else if (spear * 100 <= plan.spearShare * (spear + ranged)) {
         trainAt(BuildingType.Barracks, UnitType.Spearman);
         trainAt(BuildingType.Range, UnitType.Ranged);
       } else {
@@ -562,7 +591,27 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         });
         if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
       }
-      const army = soldiers.filter((u) => !isGuard(u.id));
+      // Cavalry raiders (round 7) are kept apart from the army.
+      const raiders = plan.raid > 0 ? soldiers.filter((u) => u.type === UnitType.Cavalry && !isGuard(u.id)) : [];
+      if (raiders.length > 0) {
+        const ids = raiders.map((u) => u.id);
+        if (!raiding && raiders.length >= plan.raid) {
+          raiding = true;
+          raids++;
+          if (firstRaid < 0) firstRaid = tick;
+          lastRaidMove = -100000;
+        }
+        if (raiding && raiders.length * 2 <= plan.raid) {
+          raiding = false;
+          out.push({ c: "retreat", u: ids, x: post.x, y: post.y });
+        } else if (raiding && tick - lastRaidMove >= 400) {
+          out.push({ c: "move", u: ids, x: enemyHome.cellX, y: enemyHome.cellY });
+          lastRaidMove = tick;
+        }
+      } else {
+        raiding = false;
+      }
+      const army = soldiers.filter((u) => !isGuard(u.id) && !raiders.includes(u));
       const armyIds = army.map((u) => u.id);
       const send = (x: number, y: number, why: Mode) => {
         if (armyIds.length === 0) return;

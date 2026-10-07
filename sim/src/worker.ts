@@ -78,6 +78,8 @@ function stats(): GameStats {
       unitsLost: Array.from(w.lost.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
       magesTrained: w.trained[p * UNIT_KINDS + UnitType.Mage],
       magesLost: w.lost[p * UNIT_KINDS + UnitType.Mage],
+      cavalryTrained: w.trained[p * UNIT_KINDS + UnitType.Cavalry],
+      cavalryLost: w.lost[p * UNIT_KINDS + UnitType.Cavalry],
       townsPlundered: w.plundered[p],
       townsGoverned: w.governed[p],
     })),

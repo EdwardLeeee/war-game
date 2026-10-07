@@ -308,7 +308,7 @@
 - **騎兵與馬廄**（`cavalry`，`UnitType.Cavalry`、`BuildingType.Stable`）：
   - 馬廄用 `build` 蓋，`requires` 裡的建築要先有。用 `train` 訓練騎兵，`auto_train` 和兵營一樣（人類玩家的一開始開著）。
   - 數值和剋制照 `rules.units`、`rules.multipliers`。
-- **`game_over` 的統計**：`unitsTrained`、`unitsLost` 照舊只列村民、槍兵、遠程、法師（騎兵的統計等 PR K 再定）。
+- **`game_over` 的統計**：`unitsTrained`、`unitsLost` 照舊只列村民、槍兵、遠程、法師；騎兵另外放在 `cavalryTrained`、`cavalryLost`（PR K）。
 
 **被拒的原因碼**（`Reject`）：
 
