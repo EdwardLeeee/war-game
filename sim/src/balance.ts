@@ -6,7 +6,7 @@
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
 import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, type Held, type Hold, hold, siege, twoShots } from "./balance-lib.ts";
-import { AVENGE, CANNON, DODGE, GARRISON, JOIN_FIGHT, MULT_DEN, MULT_NUM, SHORT_CANNON, UNITS } from "./core/rules.ts";
+import { AVENGE, CANNON, DODGE, GARRISON, HOME_GUARD, JOIN_FIGHT, MULT_DEN, MULT_NUM, SHORT_CANNON, UNITS } from "./core/rules.ts";
 import { TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -229,6 +229,13 @@ const ROUND8: Switch[] = [
     get: () => SHORT_CANNON.on,
     set: (on) => {
       SHORT_CANNON.on = on;
+    },
+  },
+  {
+    label: "4 城裡受傷少 20%",
+    get: () => HOME_GUARD.on,
+    set: (on) => {
+      HOME_GUARD.on = on;
     },
   },
 ];

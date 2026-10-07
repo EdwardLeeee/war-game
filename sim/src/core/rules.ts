@@ -299,6 +299,12 @@ export const DODGE = { on: true, margin: 256, farmers: false };
 export const AVENGE = { on: true, reach: 8 * CELL };
 /** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
 export const SHORT_CANNON = { on: true, range: 7 * CELL };
+/**
+ * Fighting at home (rule 4): a player's soldier within `mainCity` cells (Chebyshev, from the
+ * footprint, as arrow towers' land) of its own finished main city, or within the radius of a
+ * town it governs, takes `permille` thousandths less damage, hp and shield, rounded down.
+ */
+export const HOME_GUARD = { on: true, permille: 200, mainCity: 8 };
 
 // --- mages (from PR-4) ---------------------------------------------------------------
 
