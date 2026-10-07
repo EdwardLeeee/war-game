@@ -376,8 +376,12 @@ test("farm: built on farm land, the builder farms it, one farmer per farm", () =
   assert.equal(u.order[slotOf(g, a)], Order.Gather);
   assert.equal(u.onFarm[slotOf(g, a)], 1);
   assert.equal(u.orderTarget[slotOf(g, a)], farm);
+  // The player's pick wins (2026-10-07): b takes the farm, a has no other farm and idles.
   cmd(g, 0, { c: "repair", u: [b], building: farm });
-  assert.deepEqual(step(g), [Reject.NotAvailable], "the farm already has its farmer");
+  assert.deepEqual(step(g), []);
+  assert.equal(u.orderTarget[slotOf(g, b)], farm);
+  assert.equal(u.onFarm[slotOf(g, b)], 1);
+  assert.equal(u.order[slotOf(g, a)], Order.None, "one farmer per farm");
   const food0 = g.w.res[Resource.Food];
   run(g, 1200);
   assert.ok(g.w.res[Resource.Food] >= food0 + 10, "food came in from the farm");
