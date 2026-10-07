@@ -239,12 +239,13 @@ export const ARROW_TOWER = { damage: 5, range: 7 * CELL, cooldown: 2 * S };
 /** A town can be plundered once per game; plundered again, `town_choice` is rejected. */
 export const TOWN_ONCE = { on: true };
 /**
- * Governing pays `boost` instead of TownRule.perMinute: about 4 minutes of it match one
- * plunder (small 170 a minute against 675, large 385 against 1530).
+ * Governing pays `boost` instead of TownRule.perMinute: about 3 minutes of it match one
+ * plunder (small 230 a minute against 675, large 515 against 1530; the user 2026-10-07, after
+ * 4 minutes: "應該拉高每分鐘的收益就好").
  */
 export const GOVERN_INCOME = {
   on: true,
-  boost: [cost(75, 0, 75, 20), cost(170, 0, 170, 45)] as Cost[],
+  boost: [cost(100, 0, 100, 30), cost(220, 0, 220, 75)] as Cost[],
 };
 /**
  * A plundered town, governed again, pays `startPermille` of its income at first, climbing

@@ -107,9 +107,10 @@ test("a plundered town governed again pays 25% at first and all of it after 10 m
   assert.equal(g.w.townState[T], TownState.Governed);
   const per = governPerMinute(TownSize.Small).food;
   assert.equal(row(g, 0)[TownField.incomePermille], 250, "a quarter at first");
-  // The first minute pays a quarter climbing to 32.5%: about 21.6 food of 75.
+  // The first minute pays a quarter climbing to 32.5%: about 28.75% of a full minute.
   const first = foodOver(g, 0, 1200);
-  assert.ok(first >= 20 && first <= 23, `first minute ${first}`);
+  const expect = (per * 2875) / 10000;
+  assert.ok(Math.abs(first - expect) <= 1.5, `first minute ${first}, about ${expect}`);
   assert.equal(row(g, 0)[TownField.incomePermille], 325);
   run(g, 4 * 1200);
   assert.equal(row(g, null)[TownField.incomePermille], 625, "a spectator sees it too");
