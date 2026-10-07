@@ -16,6 +16,7 @@ import {
   NEUTRAL,
   NO_OWNER,
   NodeField as N,
+  type Resource,
   Stance,
   TownChoice,
   TownField as T,
@@ -51,6 +52,11 @@ export interface PanelHost {
   /** 派村民 (D-061): whom a tap on this node can send, and sending a share of them. */
   dispatchPool(node: number): DispatchPool | null;
   dispatch(node: number, share: number): void;
+  /** 點存放建築派村民 (D-066): the resources this building of ours takes, how many gather each for it, and one more. */
+  depotResources(building: number): Resource[];
+  depotWorkers(building: number, resource: Resource): number;
+  depotSend(building: number, resource: Resource): void;
+  depotTake(building: number, resource: Resource): void;
   /** 取消即堅守 (D-054): out of 進攻／撤退, the soldiers selected stop and hold. */
   cancelToHold(): void;
   /** 編隊自動補兵 (D-026): its switch, and flipping it. */
@@ -423,10 +429,12 @@ export class SelectionInfo {
         if (i === 0) headBar = bar(q, "queue");
       }
     }
+    const depot = own ? this.depot(id) : null;
     this.updaters.push(() => {
       const o = view.buildingRow(id);
       const b = view.curr?.snap.buildings;
       if (o < 0 || b === undefined) return;
+      depot?.();
       const max = info?.hp ?? b[o + B.hp];
       const building = b[o + B.progress] < 1000;
       hpBar(building ? b[o + B.progress] / 1000 : max > 0 ? b[o + B.hp] / max : 0);
@@ -444,6 +452,38 @@ export class SelectionInfo {
       status.textContent = `${own ? [locked, auto].filter((t) => t !== "").join("　") : remembered}${inside}`;
       headBar?.(b[o + B.queueProgress] / 1000);
     });
+  }
+
+  /**
+   * 點存放建築派村民 (D-066): how many villagers gather here, − and ＋ for one less or more. One
+   * resource (granary, lumber camp, mine): a line of its own. The main city's three: side by
+   * side, so the panel stays clear of 全軍撤退 with a training queue above. Returns the update.
+   */
+  private depot(id: number): (() => void) | null {
+    const resources = this.host.depotResources(id);
+    if (resources.length === 0) return null;
+    const one = resources.length === 1;
+    const box = el("div", this.el, one ? "depot depot-one" : "depot depot-grid");
+    if (!one) el("span", box, "depot-caption", "附近在採的村民");
+    const cells = resources.map((r) => {
+      const word = RESOURCE_WORD[r] ?? "";
+      const cell = el("div", box, "depot-cell");
+      const count = el("span", cell, "depot-count");
+      const steps = el("div", cell, "depot-steps");
+      const minus = button(steps, "−", "", () => this.host.depotTake(id, r), "secondary step");
+      minus.setAttribute("aria-label", `少派 1 名村民採${word}`);
+      const plus = button(steps, "+", "", () => this.host.depotSend(id, r), "secondary step");
+      plus.setAttribute("aria-label", `多派 1 名村民採${word}`);
+      return { r, word, count, minus };
+    });
+    return () => {
+      for (const c of cells) {
+        const n = this.host.depotWorkers(id, c.r);
+        const text = one ? `附近有 ${n} 名村民在採${c.word}` : `${c.word} ${n} 名`;
+        if (c.count.textContent !== text) c.count.textContent = text;
+        c.minus.disabled = n === 0;
+      }
+    };
   }
 
   private node(view: GameView, id: number): void {
