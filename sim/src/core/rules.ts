@@ -305,6 +305,23 @@ export const SHORT_CANNON = { on: true, range: 7 * CELL };
  * town it governs, takes `permille` thousandths less damage, hp and shield, rounded down.
  */
 export const HOME_GUARD = { on: true, permille: 200, mainCity: 8 };
+/**
+ * Longer bows (rule 5; the user: "弓兵跟箭塔的視野跟攻擊範圍應該要比較大"): ranged units reach
+ * `rangedRange` and see `rangedSight` cells (before: 5 and 7); main cities', the big town's tower's
+ * and players' arrow towers' arrows reach `arrowRange` (before 7 cells) and those buildings see
+ * `towerSight` cells (before 8): farther than the cannon's 7, so a mage that stands to fire at
+ * them is shot. The tables read the switch (their fields are getters, set up below).
+ */
+export const LONG_BOWS = { on: true, rangedRange: 6 * CELL, rangedSight: 8, arrowRange: 9 * CELL, towerSight: 10 };
+/** A table field that reads LONG_BOWS: `on` while it is on, else what the table said. */
+function bows<T extends object>(table: T, key: keyof T & string, on: () => number): void {
+  const off = table[key] as number;
+  Object.defineProperty(table, key, { get: () => (LONG_BOWS.on ? on() : off), enumerable: true, configurable: true });
+}
+bows(UNITS[UnitType.Ranged], "range", () => LONG_BOWS.rangedRange);
+bows(UNITS[UnitType.Ranged], "sight", () => LONG_BOWS.rangedSight);
+for (const arrow of [MAIN_ARROW, TOWER_ARROW, ARROW_TOWER]) bows(arrow, "range", () => LONG_BOWS.arrowRange);
+for (const type of [BuildingType.MainCity, BuildingType.TownTower, BuildingType.ArrowTower]) bows(BUILDINGS[type], "sight", () => LONG_BOWS.towerSight);
 
 // --- mages (from PR-4) ---------------------------------------------------------------
 
