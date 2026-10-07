@@ -327,8 +327,10 @@ for (const type of [BuildingType.MainCity, BuildingType.TownTower, BuildingType.
  * a player's arrow tower costs `cost` (was wood 100, gold 50: two ranged units' worth for one's
  * firepower), has `hp` (500) and takes `buildTicks` (40 s); its arrow does `damage` (5) every
  * `cooldown` ticks (2 s). Range and sight as LONG_BOWS. The tables read the switch (getters).
+ * ceo 2026-10-07: one arrow every 2 s as before, not 1.5 s (30 attackers in close order could no
+ * longer take a main city with 2 towers).
  */
-export const TOWER_VALUE = { on: true, cost: cost(0, 60, 20), hp: 600, buildTicks: 30 * S, damage: 10, cooldown: Math.trunc(1.5 * S) };
+export const TOWER_VALUE = { on: true, cost: cost(0, 60, 20), hp: 600, buildTicks: 30 * S, damage: 10, cooldown: 2 * S };
 switched(BUILDINGS[BuildingType.ArrowTower], "cost", TOWER_VALUE, () => TOWER_VALUE.cost);
 switched(BUILDINGS[BuildingType.ArrowTower], "hp", TOWER_VALUE, () => TOWER_VALUE.hp);
 switched(BUILDINGS[BuildingType.ArrowTower], "buildTicks", TOWER_VALUE, () => TOWER_VALUE.buildTicks);

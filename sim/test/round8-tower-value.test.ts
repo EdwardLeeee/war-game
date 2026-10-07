@@ -1,5 +1,5 @@
 // Round 8 rule 6 (D-071; core/rules.ts TOWER_VALUE): a player's arrow tower costs wood 60 and gold
-// 20, has 600 hp, is built in 30 s, and shoots 10 every 1.5 s; rules() says so; mirror-image towers
+// 20, has 600 hp, is built in 30 s, and shoots 10 every 2 s; rules() says so; mirror-image towers
 // shoot as mirror images.
 
 import assert from "node:assert/strict";
@@ -20,11 +20,11 @@ function withValue<T>(on: boolean, f: () => T): T {
   }
 }
 
-test("the values: wood 60, gold 20, 600 hp, 30 s, 10 every 1.5 s, in rules() too; off as before", () => {
+test("the values: wood 60, gold 20, 600 hp, 30 s, 10 every 2 s, in rules() too; off as before", () => {
   withValue(true, () => {
-    assert.deepEqual([TOWER.cost.wood, TOWER.cost.gold, TOWER.hp, TOWER.buildTicks, ARROW_TOWER.damage, ARROW_TOWER.cooldown], [60, 20, 600, 600, 10, 30]);
+    assert.deepEqual([TOWER.cost.wood, TOWER.cost.gold, TOWER.hp, TOWER.buildTicks, ARROW_TOWER.damage, ARROW_TOWER.cooldown], [60, 20, 600, 600, 10, 40]);
     const r = JSON.parse(JSON.stringify(rules()));
-    assert.deepEqual([r.buildings[BuildingType.ArrowTower].cost.wood, r.buildings[BuildingType.ArrowTower].hp, r.arrows.arrowTower.damage, r.arrows.arrowTower.cooldown], [60, 600, 10, 30]);
+    assert.deepEqual([r.buildings[BuildingType.ArrowTower].cost.wood, r.buildings[BuildingType.ArrowTower].hp, r.arrows.arrowTower.damage, r.arrows.arrowTower.cooldown], [60, 600, 10, 40]);
   });
   withValue(false, () => {
     assert.deepEqual([TOWER.cost.wood, TOWER.cost.gold, TOWER.hp, TOWER.buildTicks, ARROW_TOWER.damage, ARROW_TOWER.cooldown], [100, 50, 500, 800, 5, 40]);
@@ -50,7 +50,7 @@ test("villagers build one for wood 60 and gold 20 in 30 s, and it stands with 60
   });
 });
 
-test("its arrows: 10 every 1.5 s, 30 in 64 ticks on a spearman 5 cells off (10 with the switch off)", () => {
+test("its arrows: 10 every 2 s, 20 in 64 ticks on a spearman 5 cells off (10 with the switch off)", () => {
   for (const on of [true, false]) {
     withValue(on, () => {
       const g = emptyGame();
@@ -60,7 +60,7 @@ test("its arrows: 10 every 1.5 s, 30 in 64 ticks on a spearman 5 cells off (10 w
       g.fog.update(g.w);
       cmd(g, 1, { c: "stance", u: [foe], stance: Stance.Hold });
       run(g, 64);
-      assert.equal(UNITS[UnitType.Spearman].hp - g.w.units.col.hp[slotOf(g, foe)], on ? 30 : 10);
+      assert.equal(UNITS[UnitType.Spearman].hp - g.w.units.col.hp[slotOf(g, foe)], on ? 20 : 10);
     });
   }
 });
@@ -93,6 +93,6 @@ test("mirror images: mirror-image towers shoot mirror-image spearmen, 10 an arro
     }
     for (const [a] of pairs) lost += UNITS[UnitType.Spearman].hp - u.hp[slotOf(g, a)];
     assert.equal(lost % 10, 0, "arrows of 10");
-    assert.ok(lost >= 30, `${lost}`);
+    assert.ok(lost >= 20, `${lost}`);
   });
 });
