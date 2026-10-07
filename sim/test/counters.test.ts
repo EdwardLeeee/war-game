@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CANNON, COUNTER_ATTACK, DODGE, RETREAT_OWN_SPEED, REVEAL_CAST, SHIELD, UNITS } from "../src/core/rules.ts";
+import { AVENGE, CANNON, COUNTER_ATTACK, DODGE, RETREAT_OWN_SPEED, REVEAL_CAST, SHIELD, UNITS } from "../src/core/rules.ts";
 import { damage } from "../src/core/units.ts";
 import { CELL_SHIFT, Stance, UnitType } from "../src/protocol.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
@@ -128,7 +128,7 @@ function untilShot(g: ReturnType<typeof emptyGame>, mage: number): number {
   return -1;
 }
 
-test("counter-attack: soldiers without a squad, shelled by a mage they cannot see, charge it; hold and farmers stay", switchedOff(DODGE, () => {
+test("counter-attack: soldiers without a squad, shelled by a mage they cannot see, charge it; hold and farmers stay", switchedOff([DODGE, AVENGE], () => {
   for (const on of [true, false]) {
     const { g, u, block, holder, farmer, mage, restore } = shelled(on);
     try {
@@ -190,7 +190,7 @@ test("counter-attack: once the mage is gone beyond 8 cells, the soldiers go back
   }
 });
 
-test("a mage calibrating the cannon, and for 2 s after it fired, is seen by the other player in its cell", () => {
+test("a mage calibrating the cannon, and for 2 s after it fired, is seen by the other player in its cell", switchedOff([AVENGE], () => {
   for (const on of [true, false]) {
     const saved = REVEAL_CAST.on;
     REVEAL_CAST.on = on;
@@ -224,7 +224,7 @@ test("a mage calibrating the cannon, and for 2 s after it fired, is seen by the 
       REVEAL_CAST.on = saved;
     }
   }
-});
+}));
 
 test("counter-attack: mirror-image blocks shelled by mirror-image mages charge as mirror images, tick by tick", () => {
   const g = emptyGame();
