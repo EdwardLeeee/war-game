@@ -13,6 +13,7 @@ import {
   FOG_EVERY,
   GameOverReason,
   HASH_EVERY,
+  type MapMode,
   MAX_TICKS,
   PLAYER_COUNT,
   type SimEvent,
@@ -25,6 +26,7 @@ import { Economy } from "./economy.ts";
 import { FNV_OFFSET, fnvBytes, fnvInt32, fnvWord } from "./fixed.ts";
 import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
+import { generateRandomMap } from "./random-map.ts";
 import { FieldCache } from "./paths.ts";
 import { AVENGE, BUILDINGS, CAVALRY, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
@@ -40,6 +42,8 @@ export interface GameConfig {
   maxTicks?: number;
   /** Per player: its barracks, ranges and mage halls start with automatic training on (round 6, D-054). Absent: all off. */
   autoTrain?: boolean[];
+  /** Absent: "fixed". "random": a new map from `seed` (D-074). */
+  map?: MapMode;
 }
 
 /** An event and who gets it: a player, or -1 for everyone. */
@@ -70,7 +74,7 @@ export class Game {
 
   constructor(config: GameConfig) {
     this.config = config;
-    const map = generateMap();
+    const map = config.map === "random" ? generateRandomMap(config.seed) : generateMap();
     this.w = new World(map);
     for (let p = 0; p < PLAYER_COUNT; p++) this.w.autoTrain[p] = config.autoTrain?.[p] === true ? 1 : 0;
     setupScenario(this.w, config.scenario);
@@ -235,9 +239,10 @@ export class Game {
       h = fnvBytes(h, f.explored[p]);
       h = fnvInt32(h, f.nodeSeen[p]);
       // Town rows as last seen; their income column (round 7) only while PLUNDER_RECOVERY is on.
+      // The position columns (D-074) never change, so they stay out.
       const seen = f.townSeen[p];
       for (let t = 0; t * TOWN_STRIDE < seen.length; t++) {
-        h = fnvInt32(h, seen.subarray(t * TOWN_STRIDE, (t + 1) * TOWN_STRIDE), PLUNDER_RECOVERY.on ? TOWN_STRIDE : TownField.incomePermille);
+        h = fnvInt32(h, seen.subarray(t * TOWN_STRIDE, (t + 1) * TOWN_STRIDE), PLUNDER_RECOVERY.on ? TownField.incomePermille + 1 : TownField.incomePermille);
       }
       h = fnvWord(h, f.memory[p].length);
       for (const m of f.memory[p]) for (const v of m) h = fnvWord(h, v);

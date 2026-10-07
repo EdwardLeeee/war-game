@@ -8,7 +8,7 @@ import { createScriptedPlayer, type Plan, planFor, SCRIPTED_THINK_EVERY } from "
 import { rules } from "../src/core/rules.ts";
 import { BuildingType, TownSize, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
-import { buildView } from "../src/view/view.ts";
+import { buildView, mapInfo } from "../src/view/view.ts";
 import { cmd, emptyGame, put } from "./helpers.ts";
 
 /** The scripted player as player 0 against the normal AI for `ticks`, as src/scripted-games.ts plays it. */
@@ -86,4 +86,20 @@ test("enemies beaten 16-24 cells from the main city count as a wave: the player 
   }
   assert.equal(player.state().waves, 1, "one wave beaten");
   assert.equal(player.state().marches, 1, "and a march on the enemy's main city");
+});
+
+test("random maps (D-074): it starts knowing only its home, scouts, and finds the AI; the race is fixed-map only", () => {
+  const r = new Runner({ seed: 2, scenario: "standard", ai: [false, true], maxTicks: 0, map: "random" });
+  const g = r.game;
+  const map = g.w.map;
+  const know = { map: mapInfo(map, 0), rules: rules(), frame: map.frames[0] };
+  assert.throws(() => createScriptedPlayer(0, know, { ...planFor("push", "h1", "close"), race: "edge" }), /fixed map only/);
+  const player = createScriptedPlayer(0, know, planFor("push", "h1", "close"));
+  let seq = 0;
+  while (!r.over && g.w.tick < 9000) {
+    if (g.w.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
+    r.tick();
+  }
+  const found = player.state().found;
+  assert.ok(found > 0 && found < 9000, `found the AI's base at tick ${found}`);
 });

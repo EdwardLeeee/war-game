@@ -108,6 +108,36 @@ jobs:
           path: tournament/
           retention-days: 30
 
+  # Random maps (D-074): the same 100 games, each seed on its own map. The AI still knows the whole
+  # random map (runner.ts, temporary until it scouts), so these games only check whether the maps
+  # are fair, by layout; only the replays gate (ai-random-summary).
+  ai-vs-ai-random:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sim/package-lock.json
+      - run: npm ci
+      - name: 25 games on random maps, each replayed
+        run: node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --map random --out "${GITHUB_WORKSPACE}/tournament-random/shard-${{ matrix.shard }}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tournament-random-shard-${{ matrix.shard }}
+          path: tournament-random/
+          retention-days: 30
+
   # What a person meets (round 2): each AI against a player who does nothing, without a time
   # limit, as a timeline (easy must not go for a town before game minute 18); normal and hard
   # for seeds 1-5 with a table of when each town fell and the first march on the main city
@@ -193,6 +223,9 @@ jobs:
           - { group: defend-eco, seeds: 15-27, args: --strategy defend --speed eco --formation all }
           - { group: defend-eco, seeds: 28-40, args: --strategy defend --speed eco --formation all }
           - { group: notown, seeds: 1-40, args: --strategy notown --speed h1 --formation close }
+          # D-074: the push on random maps; the player scouts, the AI still knows the whole map.
+          - { group: push-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --map random }
+          - { group: push-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --map random }
     env:
       # scripted-<group>-<seeds> against normal (as before), scripted-hard-<group>-<seeds> against hard.
       NAME: scripted-${{ matrix.difficulty == 'hard' && 'hard-' || '' }}${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
@@ -248,7 +281,7 @@ jobs:
           set -o pipefail
           cat > summary.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
-          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15]];
+          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15], ["push-random", "主動，隨機地圖（電腦暫時知道完整地圖）", 20]];
           // scripted-<group>-<seeds>.json against normal, scripted-hard-<group>-<seeds>.json against hard.
           const levels = [["", "普通"], ["hard-", "困難"]];
           const games = new Map(levels.flatMap(([l]) => groups.map(([g]) => [l + g, []])));
@@ -518,4 +551,34 @@ jobs:
         with:
           name: tournament-summary-easy
           path: tournament-easy/summary.json
+          retention-days: 30
+
+  # Random maps (D-074): by layout; only the replays gate.
+  ai-random-summary:
+    needs: [ai-vs-ai-random]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: tournament-random-shard-*
+          path: tournament-random
+          merge-multiple: true
+      - name: Summary, random maps
+        run: |
+          set -o pipefail
+          node src/tournament-summary.ts ../tournament-random/shard-* --json ../tournament-random/summary.json | tee -a "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tournament-random-summary
+          path: tournament-random/summary.json
           retention-days: 30

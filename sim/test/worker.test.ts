@@ -106,3 +106,21 @@ test("the time limit comes with init: none when a person plays, MAX_TICKS for AI
   send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: 0, ai: [false, true], tps: 20, scenario: "standard", difficulty: ["brutal" as never] });
   assert.match(of("error").at(-1)!.message, /difficulty/);
 });
+
+test("random maps (D-074): AI against AI only for now; a spectator gets the whole map, the log header says random", () => {
+  out.length = 0;
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 4, human: 0, ai: [false, true], tps: 20, scenario: "standard", map: "random" });
+  assert.match(of("error").at(-1)!.message, /AI against AI only/);
+  assert.equal(of("ready").length, 0, "no game for a person on a random map");
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 4, human: null, ai: [true, true], tps: 20, scenario: "standard", map: "random" });
+  send({ type: "pause" });
+  const ready = of("ready").at(-1)!;
+  assert.deepEqual([ready.map.size, ready.map.mode, ready.map.spawns.length, ready.map.towns.length], [129, "random", 2, 7]);
+  send({ type: "export_log" });
+  assert.equal(JSON.parse(of("log").at(-1)!.jsonl.split("\n")[0]).map, "random");
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 4, human: 0, ai: [false, true], tps: 20, scenario: "standard" });
+  send({ type: "pause" });
+  assert.deepEqual([of("ready").at(-1)!.map.size, of("ready").at(-1)!.map.mode], [96, "fixed"]);
+  send({ type: "export_log" });
+  assert.equal(JSON.parse(of("log").at(-1)!.jsonl.split("\n")[0]).map, undefined, "fixed-map logs as before");
+});

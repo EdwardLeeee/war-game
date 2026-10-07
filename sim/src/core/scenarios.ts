@@ -1,8 +1,10 @@
 // Starting situations, generated entirely by the simulation. Player 1's placements are the
-// mirror images (x <-> y) of player 0's, so neither side starts with a better layout.
-// "skirmish" is internal (tests and headless benchmarks), not part of the protocol.
+// mirror images of player 0's (x <-> y on the fixed map; through the frames on a random map,
+// D-074), so neither side starts with a better layout. "skirmish" is internal (tests and
+// headless benchmarks), not part of the protocol. Random maps take "standard" only.
 
-import { BuildingType, CELL_SHIFT, NEUTRAL, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
+import { IDENTITY, toCanon } from "../frame.ts";
+import { BuildingType, CELL_SHIFT, NEUTRAL, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
 import { BUILDINGS, START, TOWNS, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
@@ -24,6 +26,7 @@ const center = (c: number) => (c << CELL_SHIFT) + 512;
 
 export function setupScenario(w: World, scenario: ScenarioKey): void {
   if (!SCENARIOS.includes(scenario)) throw new Error(`unknown scenario ${String(scenario)}`);
+  if (w.map.mode === "random" && scenario !== "standard") throw new Error(`scenario ${scenario} is for the fixed map only`);
   standard(w);
   if (scenario === "skirmish") skirmish(w);
   if (scenario === "e2e") e2e(w);
@@ -33,22 +36,29 @@ export function setupScenario(w: World, scenario: ScenarioKey): void {
 function standard(w: World): void {
   const n = w.size;
   const main = BUILDINGS[BuildingType.MainCity];
-  const s0 = w.map.spawns[0];
-  const top0 = { x: s0.cellX - 2, y: s0.cellY - 2 };
-  w.addBuilding(0, BuildingType.MainCity, top0.x, top0.y, main.hp, 1000);
-  w.addBuilding(1, BuildingType.MainCity, top0.y, top0.x, main.hp, 1000);
-  // Five farmers on the free cells around player 0's main city nearest the map centre,
-  // and the mirror cells for player 1.
+  const tops = w.map.spawns.map((s) => ({ x: s.cellX - 2, y: s.cellY - 2 }));
+  for (let p = 0; p < PLAYER_COUNT; p++) w.addBuilding(p, BuildingType.MainCity, tops[p].x, tops[p].y, main.hp, 1000);
+  // Five farmers on the free cells around each main city nearest the map centre; ties go to
+  // the lowest canonical cell, so player 1's farmers stand on the mirror cells of player 0's.
   const mid = n >> 1;
-  const around = cellsAround(w, top0.x, top0.y, main.size).sort((a, b) => {
-    const da = Math.abs((a % n) - mid) + Math.abs(Math.trunc(a / n) - mid);
-    const db = Math.abs((b % n) - mid) + Math.abs(Math.trunc(b / n) - mid);
-    return da - db || a - b;
-  });
   const farmer = UNITS[UnitType.Farmer];
-  const cells = around.slice(0, START.farmers);
-  for (const c of cells) w.addUnit(0, UnitType.Farmer, center(c % n), center(Math.trunc(c / n)), farmer.hp);
-  for (const c of cells) w.addUnit(1, UnitType.Farmer, center(Math.trunc(c / n)), center(c % n), farmer.hp);
+  const cells = tops.map((top, p) => {
+    const f = w.map.frames[p] ?? IDENTITY;
+    const key = (c: number) => {
+      const k = toCanon(f, c % n, Math.trunc(c / n));
+      return k.v * n + k.u;
+    };
+    return cellsAround(w, top.x, top.y, main.size)
+      .sort((a, b) => {
+        const da = Math.abs((a % n) - mid) + Math.abs(Math.trunc(a / n) - mid);
+        const db = Math.abs((b % n) - mid) + Math.abs(Math.trunc(b / n) - mid);
+        return da - db || key(a) - key(b);
+      })
+      .slice(0, START.farmers);
+  });
+  for (let p = 0; p < PLAYER_COUNT; p++) {
+    for (const c of cells[p]) w.addUnit(p, UnitType.Farmer, center(c % n), center(Math.trunc(c / n)), farmer.hp);
+  }
   for (let p = 0; p < 2; p++) {
     w.res[p * 4 + Resource.Food] = START.resources.food;
     w.res[p * 4 + Resource.Wood] = START.resources.wood;
@@ -58,7 +68,7 @@ function standard(w: World): void {
   placeTownGuards(w);
 }
 
-/** Militia posts: a set closed under x <-> y, so towns on the axis stay symmetric. */
+/** Militia posts on the fixed map: a set closed under x <-> y, so towns on the axis stay symmetric (random maps: GameMap.posts). */
 const POSTS = [
   [2, 0], [0, 2], [-2, 0], [0, -2], [2, 2], [-2, -2],
   [2, -2], [-2, 2], [3, 0], [0, 3], [-3, 0], [0, -3],
@@ -79,8 +89,9 @@ export function placeTownGuards(w: World): void {
 /** Militia at the town's posts (the nearest open cell if a post has been built over). */
 export function spawnMilitia(w: World, town: number, count: number): void {
   const militia = UNITS[UnitType.Militia];
-  for (let k = 0; k < count && k < POSTS.length; k++) {
-    const c = nearestWalkable(w, w.townX[town] + POSTS[k][0], w.townY[town] + POSTS[k][1]);
+  const posts = w.map.posts ?? POSTS;
+  for (let k = 0; k < count && k < posts.length; k++) {
+    const c = nearestWalkable(w, w.townX[town] + posts[k][0], w.townY[town] + posts[k][1]);
     const id = w.addUnit(NEUTRAL, UnitType.Militia, center(c % w.size), center(Math.trunc(c / w.size)), militia.hp);
     w.units.col.home[w.unit(id)] = town;
   }

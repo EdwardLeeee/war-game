@@ -42,6 +42,7 @@
 ## 2. 開局的靜態資料（`ready` 訊息）
 
 - `map: MapInfo`
+  - `mode`（D-074）：`"fixed"` 固定地圖、`"random"` 隨機地圖；模擬一定會送，型別上選填，沒有就當成固定地圖。下面先說固定地圖，隨機地圖見本節最後。
   - `size`：96。
   - `terrain`：`size * size` 個 `Terrain`，0 可走、1 不可走。
     - 樹不算地形，是資源點；樹會擋路，砍完後變成可走。
@@ -52,6 +53,13 @@
 - **對稱**：原型的 1 對 1 地圖沿 x↔y 鏡射（玩家 1 的出生點是玩家 0 的鏡像，城鎮和晶脈在對稱軸上）。
   - 模擬遇到跟方向或位置有關的平手時，一律先轉到玩家 0 那一側（標準座標系）再比，讓鏡像的局面走出鏡像的結果（`sim/README.md`「對雙方公平的平手規則」）。
   - 這不影響 client 要送或要畫的東西。
+- **隨機地圖**（D-074，`init.map` 是 `"random"`）：每局用 `seed` 產生一張新地圖，129×129。
+  - 開局只知道自己家：`terrain` 全部是可走（0），`spawns` 只有自己那一筆，`towns` 是空陣列。
+    - `spawns` 請用每筆的 `player` 找，不要用陣列位置當玩家編號。
+    - 敵方主城看到才知道（快照的 `buildings`）；城鎮探到才知道（快照的 `towns`，位置和大小在列裡，4.5 節）；岩石探到才知道（快照的 `placement`，第 7 節）。
+  - 旁觀（`human` 是 `null`）照樣拿到整張圖。
+  - 對稱：出生在對角（沿對角線鏡射）或相鄰的角落（沿中線鏡射），整張圖再隨機轉向或翻面。平手規則照樣先轉到各自的標準座標系再比。
+  - 目前只能電腦對電腦：電腦還不會偵察，暫時知道整張圖，所以有人類玩家時 `init` 回 `error`（等 war-game-ai 的偵察）。
 - `rules: Rules`：兵種與建築的資料表，client 顯示花費、血量、占地、視野、射程時用這份，不要自己抄數值。
   - `units`：血量、防護罩、攻擊、射程（定點）、速度（每 tick 定點）、視野（格）、攻擊間隔（tick）、花費、訓練 tick、人口。
   - `buildings`：血量、占地邊長、能不能走過、花費、建造 tick、視野、人口上限、可以存放哪些資源、可以訓練哪些兵、全體回城時能躲幾名村民。
@@ -425,9 +433,9 @@
 
 農田不是資源點，是建築（不會用完，一塊一名村民）。
 
-### 4.5 城鎮 `towns`（stride `TOWN_STRIDE` = 11，已探索的城鎮、最後看到的狀態）
+### 4.5 城鎮 `towns`（stride `TOWN_STRIDE` = 14，已探索的城鎮、最後看到的狀態）
 
-第七輪起 stride 從 10 改成 11（加了 `incomePermille`）。快照只在同一個建置裡用，指令和紀錄的格式不變，所以 `PROTOCOL_VERSION` 不動；請用 `TOWN_STRIDE`，不要寫死 10。
+第七輪起 stride 從 10 改成 11（加了 `incomePermille`），D-074 再改成 14（加了位置和大小）。快照只在同一個建置裡用，指令和紀錄的格式不變，所以 `PROTOCOL_VERSION` 不動；請用 `TOWN_STRIDE`，不要寫死數字。
 
 
 | 欄 | 名稱 | 說明 | 從 |
@@ -443,6 +451,8 @@
 | 8 | `revoltTimer` | 駐軍不足時，距離叛離還剩幾 tick；0 = 沒在倒數 | PR-4 |
 | 9 | `flags` | `TownFlag`：1 爭奪中（雙方軍隊都在，狀態凍結）、2 看得到、4 駐軍不足、8 這局已經被搶過（`Plundered`，3.3） | PR-2（8 從第七輪） |
 | 10 | `incomePermille` | 治理這座城鎮現在的收入是全額的幾千分之幾：沒被搶過是 1000；搶過的從 `rules.plunderRecovery.startPermille` 慢慢回升（3.3） | 第七輪 |
+| 11、12 | `cellX`、`cellY` | 中心格。隨機地圖開局的 `map.towns` 是空的，城鎮在哪裡就從這裡知道；固定地圖和 `map.towns` 一樣 | D-074 |
+| 13 | `size` | `TownSize`；判定半徑看 `rules.towns` | D-074 |
 
 畫面要分四種狀態時：
 - 中立：`state` = Neutral。
@@ -495,11 +505,11 @@
 
 | `type` | 欄位 | 說明 |
 |---|---|---|
-| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"`、`"normal"`，或 war-game-ai 加的 `"hard"`（D-052，它的 PR 把 `"hard"` 加進 `AI_DIFFICULTIES` 之後才收），見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起）。`ai` 是 false 的玩家，兵營、射場、法術營一開始就自動訓練（第六輪，3.1）；電腦的不會 |
+| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty`、`map` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"`、`"normal"`，或 war-game-ai 加的 `"hard"`（D-052，它的 PR 把 `"hard"` 加進 `AI_DIFFICULTIES` 之後才收），見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起）。`ai` 是 false 的玩家，兵營、射場、法術營一開始就自動訓練（第六輪，3.1）；電腦的不會。`map`（D-074）：`"fixed"`（沒帶時）或 `"random"`（第 2 節；目前只能在 `human` 是 `null` 時用，否則回 `error`）。隨機地圖只能用 `standard` 場景 |
 | `command` | `cmd` | 見第 3 節 |
 | `pause`／`resume` | — | 暫停時模擬停下，但照收指令 |
 | `speed` | `tps` | 每秒跑幾個 tick：慢 20、正常 30、快 40（D-024），測試時可以更快。不會改變戰局 |
-| `determinism` | `protocol`、`seed`、`scenario`、`maxTicks` | 用最快的速度跑一整局 AI 對 AI，回報雜湊。請另外開一個 Worker 來跑，不要用正在玩的那個 |
+| `determinism` | `protocol`、`seed`、`scenario`、`maxTicks`，可選 `map` | 用最快的速度跑一整局 AI 對 AI，回報雜湊。請另外開一個 Worker 來跑，不要用正在玩的那個 |
 | `export_log` | — | 取回目前這局的指令紀錄 |
 
 **Worker 送出（`FromWorker`）**
@@ -511,7 +521,7 @@
 | `hash` | 每 100 tick：`tick`、8 碼十六進位的 `hash` |
 | `game_over` | `winner`、`reason`、`stats`（採集量、訓練與損失、法師產量與陣亡、搶與治理次數）。`unitsTrained`、`unitsLost` 依 `UnitType` 排：村民、槍兵、遠程、法師。城鎮次數從 PR-4 |
 | `determinism_progress`／`determinism_done` | 確定性檢查的進度與結果：總 tick、最終雜湊、耗時、每 tick 中位數與最大值 |
-| `log` | 指令紀錄：第一行是 `LogHeader`（protocol、seed、scenario、ai，第二輪起加 `maxTicks`、每位玩家的 `difficulty`，第六輪起有人類玩家時加 `autoTrain`），之後一行一道指令 |
+| `log` | 指令紀錄：第一行是 `LogHeader`（protocol、seed、scenario、ai，第二輪起加 `maxTicks`、每位玩家的 `difficulty`，第六輪起有人類玩家時加 `autoTrain`，D-074 起隨機地圖加 `map`），之後一行一道指令 |
 | `error` | 版本不合或內部錯誤 |
 
 **暫停與速度**：
@@ -530,6 +540,7 @@
   - 箭樓（第七輪）的每一格還要是 `TowerLand`：離自己已完成的主城占地 `rules.towerReach.mainCity` 格內（x、y 距離取較大的那個），或在自己修繕中、治理中的城鎮半徑再加 `rules.towerReach.town` 格內（從城鎮中心算）。`features.towers` 關著時沒有這種格子。
   - 站在那裡的單位不算阻擋，會被推開。
 - 快照裡的 `placement` 是這位玩家知道的狀況：資源點用最後看到的剩餘量，敵方建築用記憶。
+  - 隨機地圖（D-074）：岩石也只標探索過的格子；沒探索的格子只有 `Unexplored`。固定地圖照舊整張標出岩石。
 - 開局時，每位玩家出生點周圍 16 格已經算探索過，也知道那裡的資源點。
 
 ## 8. 場景（`init.scenario`）
@@ -564,6 +575,7 @@
   - `maxTicks`：這局的時間上限，重播照它判平手。舊紀錄沒有這個欄位，當成 `MAX_TICKS`。
   - `difficulty`：每位玩家的電腦難度，只是紀錄；重播時電腦關著，不影響結果。沒有時當成 `"normal"`。
   - `autoTrain`（第六輪）：每位玩家的兵營、射場、法術營是否一開始就自動訓練。會影響結果，重播照它開局。沒有時全部關著（電腦對電腦的紀錄不寫這個欄位）。
+  - `map`（D-074）：`"random"` 時重播用同一個 `seed` 產生同一張隨機地圖。固定地圖的紀錄不寫這個欄位，沒有就當成固定地圖。
   - 同一份紀錄關掉 AI 重播，每 100 tick 的雜湊都會相同。
 - **雜湊**：FNV-1a 32 位元，輸出 8 碼十六進位。範圍是模擬的全部狀態，依 id 順序：
   - 資源、單位、建築、生產佇列、資源點、城鎮與計時、法師的防護罩與冷卻、亂數狀態、每位玩家的記憶表。

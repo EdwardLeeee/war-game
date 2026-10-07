@@ -4,11 +4,13 @@
 // (30 ticks a second, D-024).
 //   node src/ai-timeline.ts --seed 4 --difficulty easy --first-town-min 18
 //   node src/ai-timeline.ts --seeds 1-5
+//   node src/ai-timeline.ts --seeds 1-5 --map random   (D-074: the AI still knows the whole map, runner.ts)
 // Prints Markdown; --seeds adds a table, one row per seed. With --first-town-min, exits 1 if the
 // first town trip comes earlier in any game.
 
 import type { GameMap } from "./core/map.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, TownSize, UnitType } from "./protocol.ts";
+import type { RandomMap } from "./core/random-map.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, TownSize, UnitType } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 
 function arg(name: string, fallback: string): string {
@@ -31,6 +33,8 @@ const seeds = arg("seeds", "") !== "" ? seedList(arg("seeds", "")) : [Number(arg
 const difficulty = arg("difficulty", "normal") as AiDifficulty;
 if (!(AI_DIFFICULTIES as readonly string[]).includes(difficulty)) throw new Error(`bad --difficulty ${difficulty}`);
 const firstTownMin = Number(arg("first-town-min", "0"));
+const mapMode = arg("map", "fixed") as MapMode;
+if (!(MAP_MODES as readonly string[]).includes(mapMode)) throw new Error(`bad --map ${mapMode}`);
 /** Stop after 40 game minutes if the city still stands. */
 const CAP = 48000;
 const LEVEL_NAMES: Record<string, string> = { easy: "簡單", normal: "普通", hard: "困難" };
@@ -41,6 +45,7 @@ const when = (t: number) => `遊戲第 ${minutes(t)} 分（實際 ${((t / 1200) 
 function townName(map: GameMap, t: number): string {
   const s = map.towns[t];
   if (s.size === TownSize.Large) return "大城";
+  if (map.mode === "random") return `小鎮 ${t}`;
   const mid = map.size / 2;
   if (Math.abs(s.cellX - mid) < map.size / 4) return "中間的小鎮";
   return s.cellX < mid ? "左上的小鎮" : "右下的小鎮";
@@ -62,7 +67,7 @@ interface Result {
 }
 
 function timeline(seed: number): Result {
-  const r = new Runner({ seed, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", difficulty] });
+  const r = new Runner({ seed, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", difficulty], map: mapMode });
   const w = r.game.w;
   const map = w.map;
   const own = (p: number, farmers: boolean) => {
@@ -143,7 +148,22 @@ function timeline(seed: number): Result {
 
 const results = seeds.map(timeline);
 const out = results.flatMap((x) => x.lines);
-if (seeds.length > 1) {
+if (seeds.length > 1 && mapMode === "random") {
+  // Every seed has its own map: towns counted, not named.
+  const m = (t: number) => (t < 0 ? "—" : minutes(t));
+  const LAYOUT: Record<string, string> = { diagonal: "對角", adjacent: "相鄰" };
+  out.push(
+    "### 彙整，隨機地圖（遊戲分鐘；「—」是沒拿下或沒發生）",
+    "",
+    "| 種子 | 出生 | 電腦 | 第一次去城鎮 | 攻下的城鎮（座） | 第一座 | 電腦第一名法師 | 第一次出發打主城（兵／法師） | 主城被攻下 |",
+    "|---|---|---|---|---|---|---|---|---|",
+    ...results.map((x, k) => {
+      const got = x.taken.filter((t) => t >= 0).sort((a, b) => a - b);
+      return `| ${seeds[k]} | ${LAYOUT[(x.map as RandomMap).layout]} | ${x.style} | ${m(x.firstTown)} | ${got.length} | ${m(got[0] ?? -1)} | ${m(x.firstMage)} | ${x.base[0] < 0 ? "—" : `${m(x.base[0])}（${x.base[1]}／${x.base[2]}）`} | ${m(x.fell)} |`;
+    }),
+    "",
+  );
+} else if (seeds.length > 1) {
   const map = results[0].map;
   const names = map.towns.map((_, t) => townName(map, t));
   const m = (t: number) => (t < 0 ? "—" : minutes(t));

@@ -3,7 +3,10 @@
 // (every combination of plunderer, governor, balanced); odd games swap the two AIs' slots,
 // so each pair of AIs plays from both spawns. Every game is replayed from its command log
 // with the AIs off and every HASH_EVERY-tick hash must match.
-//   node src/tournament.ts --games 100 --shard 0 --shards 4 --out DIR
+//   node src/tournament.ts --games 100 --shard 0 --shards 4 --out DIR [--map random]
+// --map random (D-074): game i's map comes from its seed, so both games of a seed share a map.
+// The AI still knows the whole random map (runner.ts, temporary), so these games only check
+// whether the maps are fair.
 // Writes DIR/game-<i>.json (result and statistics) and DIR/game-<i>.jsonl (the log).
 // Exits 1 if any replay differs.
 
@@ -12,7 +15,8 @@ import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
 import { BUILDINGS } from "./core/rules.ts";
 import { UNIT_KINDS, type World } from "./core/world.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, type LogHeader, MAX_TICKS, UnitType } from "./protocol.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, type LogHeader, MAP_MODES, type MapMode, MAX_TICKS, UnitType } from "./protocol.ts";
+import type { Layout, RandomMap } from "./core/random-map.ts";
 import { AI_STYLES, type AiStyle } from "./ai/ai.ts";
 import { Runner } from "./runner.ts";
 
@@ -31,6 +35,8 @@ const maxTicks = Number(arg("ticks", String(MAX_TICKS)));
 /** The difficulty of slot 0 and slot 1 (they swap spawns with the styles), e.g. normal,easy. */
 const slotDifficulty = arg("difficulty", "normal,normal").split(",") as AiDifficulty[];
 if (slotDifficulty.length !== 2 || !slotDifficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad --difficulty ${slotDifficulty}`);
+const map = arg("map", "fixed") as MapMode;
+if (!(MAP_MODES as readonly string[]).includes(map)) throw new Error(`bad --map ${map}`);
 const out = arg("out", "tournament");
 mkdirSync(out, { recursive: true });
 
@@ -38,6 +44,9 @@ export interface GameResult {
   game: number;
   seed: number;
   swap: boolean;
+  /** Random maps only (D-074): absent on the fixed map. */
+  map?: MapMode;
+  layout?: Layout;
   /** The style each spawn's AI played. */
   styles: string[];
   /** The difficulty each spawn's AI played. */
@@ -203,7 +212,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
   const swap = (i & 1) === 1;
   const start = performance.now();
   const difficulty = [0, 1].map((p) => slotDifficulty[swap ? 1 - p : p]);
-  const r = new Runner({ seed, scenario: "standard", ai: [true, true], swap, styles: STYLE_PAIRS[(seed - 1) % STYLE_PAIRS.length], maxTicks, difficulty });
+  const r = new Runner({ seed, scenario: "standard", ai: [true, true], swap, styles: STYLE_PAIRS[(seed - 1) % STYLE_PAIRS.length], maxTicks, difficulty, map });
   const g = r.game;
   const micros: number[] = [];
   const timeline: Sample[] = [];
@@ -213,7 +222,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
   }
   if (r.hashes.at(-1)!.tick !== g.tick) r.hashes.push({ tick: g.tick, hash: g.hash() });
   // Replay with the AIs off.
-  const rp = new Runner({ seed, scenario: "standard", ai: [false, false], replay: g.log, maxTicks });
+  const rp = new Runner({ seed, scenario: "standard", ai: [false, false], replay: g.log, maxTicks, map });
   while (!rp.over && rp.game.tick < g.tick) rp.tick();
   if (rp.hashes.at(-1)!.tick !== rp.game.tick) rp.hashes.push({ tick: rp.game.tick, hash: rp.game.hash() });
   const same = rp.hashes.length === r.hashes.length && r.hashes.every((h, k) => h.tick === rp.hashes[k].tick && h.hash === rp.hashes[k].hash);
@@ -226,6 +235,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
     game: i,
     seed,
     swap,
+    ...(map === "random" ? { map, layout: (g.w.map as RandomMap).layout } : {}),
     styles: r.styles.map((s) => s ?? "none"),
     difficulty,
     ticks: g.tick,
@@ -268,7 +278,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
   const head: LogHeader = r.header([true, true]);
   writeFileSync(join(out, `game-${i}.jsonl`), [JSON.stringify(head), ...g.log.map((c) => JSON.stringify(c))].join("\n") + "\n");
   console.log(
-    `game ${i} seed ${seed}${swap ? " swap" : ""} ${result.styles.join("/")}${difficulty[0] === difficulty[1] ? "" : ` ${difficulty.join("/")}`}: ${result.winner === -1 ? "draw" : `player ${result.winner} wins`} at tick ${g.tick}` +
+    `game ${i} seed ${seed}${swap ? " swap" : ""}${result.layout === undefined ? "" : ` ${result.layout}`} ${result.styles.join("/")}${difficulty[0] === difficulty[1] ? "" : ` ${difficulty.join("/")}`}: ${result.winner === -1 ? "draw" : `player ${result.winner} wins`} at tick ${g.tick}` +
       ` (${(g.tick / 1200).toFixed(1)} min); replay ${same ? "matches" : "DIFFERS"} (${r.hashes.length} checkpoints); ${wallMs} ms;` +
       ` plunder ${result.perPlayer.map((p) => p.plundered).join("/")}, govern ${result.perPlayer.map((p) => p.governed).join("/")},` +
       ` mages ${result.perPlayer.map((p) => p.magesTrained).join("/")}`,

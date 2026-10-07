@@ -6,6 +6,8 @@
 //   node src/scripted-games.ts --seeds 1,2,3 --strategy push --trace --json out.json
 //   node src/scripted-games.ts --seeds 1-20 --strategy push --no-range --no-mage   (spearmen only)
 //   node src/scripted-games.ts --seeds 1-40 --strategy push --corners --govern   (round 7: govern every town taken)
+//   node src/scripted-games.ts --seeds 1-40 --strategy push --map random   (D-074: the player scouts; the AI
+//                                                                           still knows the whole map, runner.ts)
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
 import { writeFileSync } from "node:fs";
@@ -13,9 +15,10 @@ import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THI
 import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
 import { rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
-import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
+import type { RandomMap } from "./core/random-map.ts";
+import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
 import { Runner } from "./runner.ts";
-import { buildView } from "./view/view.ts";
+import { buildView, mapInfo } from "./view/view.ts";
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -42,6 +45,7 @@ const strategy = oneOf<Strategy>("strategy", STRATEGIES, "defend");
 const speed = oneOf<Speed>("speed", SPEEDS, "h1");
 const formation = oneOf<Formation>("formation", FORMATIONS, "close");
 const difficulty = oneOf<AiDifficulty>("difficulty", AI_DIFFICULTIES, "normal");
+const mapMode = oneOf<MapMode>("map", MAP_MODES, "fixed");
 /** The AI's style for every game; empty: drawn from the seed, as in an ordinary game. */
 const style = arg("style", "");
 if (style !== "" && !(AI_STYLES as readonly string[]).includes(style)) throw new Error(`--style ${style}: one of ${AI_STYLES.join(", ")}`);
@@ -146,6 +150,9 @@ interface GameRecord {
   armiesNearest: number;
   cityFirstHit: [number, number];
   cityFell: [number, number];
+  /** Random maps (D-074): the map's layout and when the player first saw the AI's main city (-1: never). */
+  layout?: string;
+  found?: number;
   finalHash: string;
   trace?: string[];
 }
@@ -177,11 +184,13 @@ function play(seed: number): GameRecord {
     // The scripted player's buildings train on their own only in the --auto-train group, so the
     // fixed groups play as before round 6.
     autoTrain: [plan.autoTrain, false],
+    map: mapMode,
   });
   const g = r.game;
   const w = g.w;
   const map = w.map;
-  const player = createScriptedPlayer(0, { map, rules: rules(), frame: map.frames[0] }, plan);
+  // What the screen gets (view.ts mapInfo): on a random map its own main city only.
+  const player = createScriptedPlayer(0, { map: mapInfo(map, 0), rules: rules(), frame: map.frames[0] }, plan);
   const home = map.spawns[0];
   const u = w.units.col;
   const b = w.buildings.col;
@@ -366,6 +375,7 @@ function play(seed: number): GameRecord {
     cannonShots: [w.cannonShots[0], w.cannonShots[1]],
     cannonKills: [w.cannonKills[0], w.cannonKills[1]],
     rejected,
+    ...(mapMode === "random" ? { layout: (map as RandomMap).layout, found: st.found } : {}),
     finalHash: (g.hash() >>> 0).toString(16).padStart(8, "0"),
     ...(trace ? { trace: lines } : {}),
   };
@@ -386,6 +396,7 @@ const options = [
   plan.userEco ? "使用者的經濟（自動訓練、16 名村民、搶到大城前不採金、只去大城一趟）" : "",
   plan.race === "sentry" ? `偷家：哨兵看到電腦 ${plan.raceSeen} 名往家裡來就直衝電腦主城（${plan.raceAt} 名或第 ${plan.raceBy / 1200} 分也去）` : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
+  mapMode === "random" ? "隨機地圖（我只知道探到的，派一名槍兵偵察；電腦暫時知道完整地圖）" : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
@@ -395,6 +406,15 @@ const byStyle = AI_STYLES.map((s) => {
   return of.length === 0 ? "" : `${STYLE_NAMES[s]} ${of.filter((x) => x.result === "won").length}/${of.length}`;
 }).filter((x) => x !== "");
 out.push(`照電腦的性格：${byStyle.join("、")}。`, "");
+if (mapMode === "random") {
+  const by = (l: string) => games.filter((x) => x.layout === l);
+  const foundAt = games.filter((x) => (x.found ?? -1) >= 0).map((x) => x.found!).sort((a, b) => a - b);
+  out.push(
+    `隨機地圖：對角出生 ${by("diagonal").filter((x) => x.result === "won").length}/${by("diagonal").length}、相鄰出生 ${by("adjacent").filter((x) => x.result === "won").length}/${by("adjacent").length}；` +
+      `找到電腦主城 ${foundAt.length}/${games.length} 局${foundAt.length === 0 ? "" : `，中位數第 ${m(foundAt[foundAt.length >> 1])} 分`}。`,
+    "",
+  );
+}
 out.push(`逐種子（b 均衡、g 治理、p 掠奪）：${games.map((x) => `${x.seed}${x.style[0]}:${x.result === "won" ? "贏" : x.result === "lost" ? "輸" : "未分"} ${m(x.endTick)}`).join("; ")}`, "");
 out.push("| 種子 | 電腦性格 | 攻下小鎮 | 我第一名法師 | 電腦第一名法師 | 主城第一次被打 | 第一次出發打電腦主城 | 結果 |", "|---|---|---|---|---|---|---|---|");
 for (const x of games) {

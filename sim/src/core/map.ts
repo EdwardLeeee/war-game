@@ -9,7 +9,7 @@
 // becomes rock, and the required places are checked to be reachable.
 
 import { type Frame, IDENTITY, MIRROR_XY } from "../frame.ts";
-import { NodeKind, Terrain, TownSize } from "../protocol.ts";
+import { type MapMode, NodeKind, Terrain, TownSize } from "../protocol.ts";
 import { Rng } from "./fixed.ts";
 import { NODE_AMOUNT, TOWNS } from "./rules.ts";
 
@@ -43,6 +43,13 @@ export interface GameMap {
   tower: { cellX: number; cellY: number };
   /** Each player's symmetry frame onto player 0's side (frame.ts): identity, and the x <-> y mirror. */
   frames: Frame[];
+  /** Absent: this fixed map. "random": random-map.ts (D-074). */
+  mode?: MapMode;
+  /**
+   * Random maps: militia posts (offsets from a town's centre cell), every prefix that militia
+   * fill closed under the map's mirror. Absent: scenarios.ts POSTS.
+   */
+  posts?: readonly (readonly [number, number])[];
 }
 
 const P0 = { x: 16, y: 78 };

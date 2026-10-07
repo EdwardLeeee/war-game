@@ -22,7 +22,7 @@ import {
   UnitFlag,
   UnitType,
 } from "../protocol.ts";
-import { IDENTITY, isReflection } from "../frame.ts";
+import { IDENTITY, footprintCentre, isReflection } from "../frame.ts";
 import { checkPlacement } from "../placement.ts";
 import { type Economy, nodeOpen, shiftQueue } from "./economy.ts";
 import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
@@ -668,7 +668,7 @@ function pushOut(w: World, x: number, y: number, size: number): void {
     const cx = u.x[s] >> CELL_SHIFT;
     const cy = u.y[s] >> CELL_SHIFT;
     if (cx < x || cy < y || cx >= x + size || cy >= y + size) continue;
-    const spawn = u.owner[s] < 2 ? w.map.spawns[u.owner[s]] : undefined;
+    const spawn = u.owner[s] < 2 ? w.homes[u.owner[s]] : undefined;
     const c = nearestWalkable(w, cx, cy, spawn);
     if (c < 0) continue;
     u.x[s] = ((c % n) << CELL_SHIFT) + 512;
@@ -713,7 +713,7 @@ function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: n
   }
   const cx = idiv(sx, slots.length);
   const cy = idiv(sy, slots.length);
-  const spawn = w.map.spawns[u.owner[slots[0]]];
+  const spawn = w.homes[u.owner[slots[0]]];
   const goal = nearestWalkable(w, cellX, cellY, spawn);
   const gx = ((goal % n) << CELL_SHIFT) + 512;
   const gy = (Math.trunc(goal / n) << CELL_SHIFT) + 512;
@@ -796,7 +796,11 @@ function heading(w: World, cluster: number[], cx: number, cy: number): number {
     dy += weight * (u.y[s] - cy);
   }
   if (dx !== 0 || dy !== 0) return dir16(dx, dy);
-  const enemy = w.map.spawns[1 - u.owner[cluster[0]]];
+  // The enemy's main city as this player takes it (the mirror image of what the enemy takes as this one).
+  const own = u.owner[cluster[0]];
+  const e = w.map.spawns[1 - own];
+  const ec = footprintCentre(w.map.frames[own] ?? IDENTITY, e.cellX - 2, e.cellY - 2, 4);
+  const enemy = { cellX: ec.x, cellY: ec.y };
   return dir16((enemy.cellX << CELL_SHIFT) + 512 - cx, (enemy.cellY << CELL_SHIFT) + 512 - cy);
 }
 
@@ -816,7 +820,7 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
   const group = ctx.nextGroup.value++;
   let speed = Infinity;
   for (const s of slots) speed = Math.min(speed, UNITS[u.type[s]].speed);
-  const spawn = w.map.spawns[u.owner[slots[0]]];
+  const spawn = w.homes[u.owner[slots[0]]];
   const fx = DIR16_X[k];
   const fy = DIR16_Y[k];
   // "Left" of the heading, taken in the owner's canonical frame: a mirror frame swaps left
