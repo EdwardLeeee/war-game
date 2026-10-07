@@ -4,6 +4,7 @@
 
 import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
 import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
+import { buildable, features, garrisonTypes, holdsOf, missingFor } from "../../game/features.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
@@ -96,8 +97,22 @@ export const ORDER_TEXT = {
  * it moves the retreat, it is no 進攻. In place of the line, so the panel does not grow.
  */
 export const RETREAT_NOW_TEXT = "撤退中：點地面或小地圖改撤退位置，到了原地堅守";
+/** Under a town plundered this game (round 7, D-061): only 治理 is offered. */
+export const PLUNDERED_TEXT = "這座城這局已經被搶過，只能治理";
+
+/**
+ * 治理 income of our town (round 7, D-061), from the town's `incomePermille`: a plundered town
+ * pays less at first and climbs back while governed. Null while it is not governed or repaired.
+ */
+export function incomeText(permille: number, state: number): string | null {
+  const pct = `${Math.round(permille / 10)}%`;
+  if (state === TownState.Governed) return permille < 1000 ? `收入 ${pct}，慢慢回升` : "收入 100%";
+  if (state === TownState.Repairing) return permille < 1000 ? `修好後收入 ${pct}，慢慢回升` : null;
+  return null;
+}
+
 /** The 「目前：」 line's words, in its order (D-054 adds 待命: standing, not 進攻中). */
-export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻中", retreat: "撤退中", hold: "堅守", idle: "待命" };
+export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻中", retreat: "撤退中", hold: "堅守", idle: "待命", garrison: "躲在建築裡" };
 
 /**
  * 隊形 in the player's words (GDD §9, D-027, D-028), a line each. 散開 has a second line for
@@ -245,17 +260,22 @@ export class SelectionInfo {
    * many of each soldier type it has and wants, − and + for each, 改成剛才選的 N 名 (what was
    * selected before the tap), 清空 and 自動補兵. 進攻／撤退／堅守 are the command area's, beside it.
    */
-  private groupPanel(_view: GameView, i: number): void {
+  private groupPanel(view: GameView, i: number): void {
     const head = el("div", this.el, "sel-head");
     el("b", head, "", `編隊 ${i + 1}`);
     // 現有／目標 in the title line; no 「目前：」 line (the command area's buttons light up), so
     // that the panel stays clear of 全軍撤退 on a phone held sideways.
     const total = el("span", head, "sel-status");
-    const rows = GROUP_TYPES.map((type) => {
+    const types = GROUP_TYPES.filter((type) => type !== UnitType.Cavalry || features(view.rules).cavalry);
+    // Four kinds with 騎兵 (round 7): two to a line, the name over its − N +, or the panel
+    // would reach 全軍撤退 on a phone held sideways. Three kinds keep a line each.
+    const grid = types.length > 3 ? el("div", this.el, "group-grid") : null;
+    const rows = types.map((type) => {
       const name = UNIT_NAME[type] ?? "兵";
-      const row = el("div", this.el, "group-row");
-      el("span", row, "group-type", name);
-      const has = el("span", row, "group-has");
+      const row = el("div", grid ?? this.el, "group-row");
+      const label = grid !== null ? el("div", row, "group-label") : row;
+      el("span", label, "group-type", name);
+      const has = el("span", label, "group-has");
       const minus = button(row, "−", "", () => this.host.setGroupWant(i, type, this.host.groupWant(i, type) - 1), "secondary step");
       minus.setAttribute("aria-label", `少要 1 名${name}`);
       const want = el("b", row, "group-want");
@@ -385,6 +405,15 @@ export class SelectionInfo {
     const queue = own ? el("div", this.el, "sel-queue") : null;
     const queueLength = b0[o0 + B.queueLength];
     const packed = b0[o0 + B.queuePacked];
+    // 躲進建築 (round 7, D-061): how many soldiers hide in our main city or arrow tower, and 全部出來.
+    const holds = own ? holdsOf(view.rules, type) : 0;
+    let hidden: HTMLElement | null = null;
+    let out: HTMLButtonElement | null = null;
+    if (holds > 0) {
+      const row = el("div", this.el, "sel-garrison");
+      hidden = el("span", row, "garrison-count");
+      out = button(row, "全部出來", "", () => this.host.command({ c: "leave", building: id }), "chip secondary");
+    }
     let headBar: ((f: number) => void) | null = null;
     if (queue !== null) {
       for (let i = 0; i < Math.min(queueLength, 7); i++) {
@@ -402,7 +431,13 @@ export class SelectionInfo {
       const building = b[o + B.progress] < 1000;
       hpBar(building ? b[o + B.progress] / 1000 : max > 0 ? b[o + B.hp] / max : 0);
       hpText.textContent = building ? `建造中 ${Math.floor(b[o + B.progress] / 10)}%` : `生命 ${b[o + B.hp]}/${max}`;
-      const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名村民` : "";
+      const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名村民` : !own && (b[o + B.flags] & BuildingFlag.Occupied) !== 0 ? "　裡面有人" : "";
+      if (hidden !== null && out !== null) {
+        const n = b[o + B.soldiers];
+        const line = `躲了 ${n} 名士兵（最多 ${holds} 名）`;
+        if (hidden.textContent !== line) hidden.textContent = line;
+        out.disabled = n === 0;
+      }
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
       const auto = own ? (autoTrainText(type, b[o + B.flags]) ?? "") : "";
@@ -452,8 +487,10 @@ export class SelectionInfo {
     const t0 = view.curr?.snap.towns;
     if (o0 >= 0 && t0 !== undefined && t0[o0 + T.state] === TownState.AwaitingChoice && t0[o0 + T.owner] === view.me) {
       const row = el("div", this.el, "sel-choice");
-      button(row, "搶", "", () => this.host.chooseTown(id, TownChoice.Plunder), "choice-plunder");
+      // 城鎮只能搶一次 (round 7): a town plundered this game can only be governed.
+      if (!view.townPlunderedOnce(id)) button(row, "搶", "", () => this.host.chooseTown(id, TownChoice.Plunder), "choice-plunder");
       button(row, "治理", "", () => this.host.chooseTown(id, TownChoice.Govern), "choice-govern");
+      if (view.townPlunderedOnce(id)) el("p", this.el, "sel-note", PLUNDERED_TEXT);
     }
     // 留守 − N + 名 (D-026), for a town we hold.
     if (o0 >= 0 && t0 !== undefined && t0[o0 + T.owner] === view.me && t0[o0 + T.state] !== TownState.Neutral && t0[o0 + T.state] !== TownState.Ruins) {
@@ -490,7 +527,15 @@ export class SelectionInfo {
       const parts = [`民兵 ${t[o + T.militia]}`, inside];
       if (t[o + T.timer] > 0) parts.push(`剩 ${clock(t[o + T.timer])}`);
       if (t[o + T.revoltTimer] > 0) parts.push(`駐軍不足，${clock(t[o + T.revoltTimer])} 後叛離`);
-      text.textContent = parts.join("　");
+      // 治理 income (round 7, D-061), while the rule is on.
+      const income = owner === view.me && features(view.rules).plunderOnce ? incomeText(t[o + T.incomePermille], t[o + T.state]) : null;
+      if (income !== null) parts.push(income);
+      // Lines break between the parts, not inside one (「收入 25%，慢\n慢回升」).
+      const line = parts.join("　");
+      if (text.dataset.line !== line) {
+        text.dataset.line = line;
+        text.replaceChildren(...parts.flatMap((p, i) => [...(i > 0 ? ["　"] : []), el("span", text, "nowrap", p)]));
+      }
     });
   }
 }
@@ -521,7 +566,9 @@ export class CommandArea {
     }
     // The selection itself too: the buttons act on the units it held when they were built, so
     // another soldier of the same kind needs buttons of his own.
-    const key = `${ident}|${this.keyFor(view)}|${this.page}|${this.host.mode()}`;
+    // On the 建造 page, what each building still needs (round 7's `requires`).
+    const needs = this.page === "build" ? BUILDABLE.map((t) => missingFor(view.rules, t, view.ownFinishedTypes()).join(".")).join("/") : "";
+    const key = `${ident}|${this.keyFor(view)}|${this.page}|${this.host.mode()}|${needs}`;
     if (key === this.key) return;
     this.key = key;
     this.el.replaceChildren();
@@ -604,6 +651,16 @@ export class CommandArea {
         // 「自動施放：關」 broke into two lines in one column: the state goes under the name.
         button(this.el, "自動施放", on ? "目前：開" : "目前：關", () => this.host.command({ c: "autocast", u: mages, on: !on }), "secondary");
       }
+      // 躲進去 (round 7, D-061): ranged units and mages hide in our main city or an arrow tower.
+      const hiders = garrisonTypes(view.rules);
+      if (sel.units.some((id) => hiders.includes(view.unitType(id)))) {
+        const picking = mode === "garrison";
+        // 「取消躲進去」 broke into two lines in one column: 取消 over 躲進去.
+        const hide = picking
+          ? button(this.el, "取消", "躲進去", () => this.host.setMode("normal"), "secondary")
+          : button(this.el, "躲進去", "主城或箭樓", () => this.host.setMode("garrison"), "secondary");
+        if (picking) hide.classList.add("active");
+      }
       return;
     }
     if (sel.building !== null) {
@@ -645,13 +702,17 @@ export class CommandArea {
   }
 
   private buildMenu(view: GameView): void {
+    const owned = view.ownFinishedTypes();
     for (const type of BUILDABLE) {
       const info = view.rules.buildings[type];
-      if (info === undefined) continue;
-      button(this.el, BUILDING_NAME[type] ?? "", costText(info.cost), () => {
+      if (info === undefined || !buildable(view.rules, type)) continue;
+      // Round 7's `requires`: greyed out, saying what to build first.
+      const missing = missingFor(view.rules, type, owned);
+      const b = button(this.el, BUILDING_NAME[type] ?? "", missing.length > 0 ? `要先蓋${missing.map((t) => BUILDING_NAME[t] ?? "").join("、")}` : costText(info.cost), () => {
         this.page = "main";
         this.host.startPlacement(type);
       });
+      b.disabled = missing.length > 0;
     }
     button(this.el, "返回", "", () => this.setPage("main"), "secondary");
   }

@@ -33,6 +33,8 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.GameOver]: "這局已經結束",
   [Reject.OutOfRange]: "超出晶砲射程（8 格）",
   [Reject.NoFarmer]: "附近沒有可以派去蓋的村民",
+  [Reject.AlreadyPlundered]: "這座城這局已經被搶過，只能治理",
+  [Reject.NoRoom]: "建築裡沒有空位了（走在路上的也算）",
 };
 
 /**
@@ -48,10 +50,13 @@ const BY_COMMAND: Partial<Record<number, Partial<Record<CommandKind, string>>>> 
     gather: "只有村民能採集",
     cast: "只有法師能發晶砲",
     autocast: "只有法師能自動施放",
+    garrison: "只有遠程兵和法師能躲進去",
+    leave: "裡面沒有士兵",
   },
   [Reject.InvalidTarget]: {
     cast: "晶砲的落點不在地圖內",
     town_choice: "這座城鎮現在不能選",
+    garrison: "只能躲進自己蓋好的主城或箭樓",
   },
   [Reject.CannotAfford]: {
     town_choice: "治理要先投入金和木，現在不夠",

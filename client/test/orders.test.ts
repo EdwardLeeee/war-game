@@ -13,6 +13,7 @@ const units = new Map<number, { type: number; stance: number; order: number }>([
   [5, { type: UnitType.Spearman, stance: Stance.Hold, order: Order.None }],
   [6, { type: UnitType.Spearman, stance: Stance.Hold, order: Order.Retreat }],
   [7, { type: UnitType.Farmer, stance: Stance.Aggressive, order: Order.Gather }],
+  [8, { type: UnitType.Ranged, stance: Stance.Hold, order: Order.Garrison }],
 ]);
 const w = {
   unitType: (id: number) => units.get(id)?.type ?? -1,
@@ -30,10 +31,20 @@ test("狀態：撤退指令＝撤退中；堅守；前進、攻擊、晶砲＝�
 });
 
 test("狀態：只算士兵；全部同一種時才算 allIn（那顆按鈕亮、再按就停下堅守）", () => {
-  assert.deepEqual(orderCounts(w, [1, 2, 3, 4, 5, 6, 7]), { advance: 3, retreat: 1, hold: 1, idle: 1 });
+  assert.deepEqual(orderCounts(w, [1, 2, 3, 4, 5, 6, 7]), { advance: 3, retreat: 1, hold: 1, idle: 1, garrison: 0 });
   assert.equal(orderCounts(w, [7]), null, "farmers only");
   assert.equal(allIn(w, [2, 3, 7], "advance"), true, "the farmer does not count");
   assert.equal(allIn(w, [2, 3, 1], "advance"), false);
   assert.equal(allIn(w, [6], "retreat"), true);
   assert.equal(allIn(w, [7], "advance"), false, "no soldier: nothing lit");
+});
+
+test("躲在建築裡（第七輪）：order Garrison 不論姿態都算躲著；allIn 不看躲著的兵，全部都躲著時什麼都不亮", () => {
+  assert.equal(orderState(w, 8), "garrison");
+  assert.deepEqual(orderCounts(w, [2, 3, 8]), { advance: 2, retreat: 0, hold: 0, idle: 0, garrison: 1 });
+  assert.equal(allIn(w, [2, 3, 8], "advance"), true, "the group advancing, one of it hiding: 取消進攻");
+  assert.equal(allIn(w, [6, 8], "retreat"), true);
+  assert.equal(allIn(w, [8], "advance"), false);
+  assert.equal(allIn(w, [8], "hold"), false);
+  assert.equal(allIn(w, [8], "garrison"), true);
 });

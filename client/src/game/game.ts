@@ -59,11 +59,13 @@ import { BUILDING_NAME, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
-import { Placement } from "../ui/placement.ts";
+import { Placement, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
+import { features, garrisonTypes, holdsOf } from "./features.ts";
+import { GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding } from "./garrison.ts";
 import { allIn } from "./orders.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
@@ -91,6 +93,9 @@ export interface GameOptions {
   ended?: () => void;
 }
 
+/** Why a 箭樓 preview is red off TowerLand (round 7, D-061). */
+export const TOWER_LAND_TEXT = "箭樓要蓋在主城或治理的城鎮附近";
+
 /** A tap while every soldier selected is retreating moves the retreat (D-061). */
 export const RETREAT_RETARGET_TEXT = "改撤到這裡，撤到後原地堅守";
 
@@ -99,6 +104,7 @@ const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   retreat: "點地面或小地圖：撤到那裡；點主城回家",
   cast: "點地面選晶砲落點",
   rally: "點地面設集結點",
+  garrison: GARRISON_PROMPT,
 };
 
 export class Game implements GestureHost {
@@ -229,7 +235,7 @@ export class Game implements GestureHost {
     const wasPaused = this.paused;
     this.pause();
     this.hud.openTownHint(
-      townHintLines(town, home, hint.passed),
+      townHintLines(town, home, hint.passed, features(view.rules).plunderOnce),
       { id: town.id, cx: town.cellX, cy: town.cellY, radius: town.radius },
       () => this.camera?.centerOn((town.cellX + 0.5) * TILE_PX, (town.cellY + 0.5) * TILE_PX),
       () => {
@@ -254,7 +260,7 @@ export class Game implements GestureHost {
     let n = 0;
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       const t = u[o + UnitField.type];
-      if (t !== UnitType.Spearman && t !== UnitType.Ranged && t !== UnitType.Mage) continue;
+      if (!isSoldier(t)) continue;
       const p = view.unitPos(o);
       x += p.x;
       y += p.y;
@@ -270,6 +276,11 @@ export class Game implements GestureHost {
     return this.port;
   }
 
+  /** Arrows drawn from `shot` events so far (round 7), for the test hook. */
+  get shotsForTest(): number {
+    return this.renderer?.shotCount ?? 0;
+  }
+
   toast(text: string): void {
     this.overlays.toast(text);
   }
@@ -280,6 +291,10 @@ export class Game implements GestureHost {
     if (view === null) return;
     const wx = (cx + 0.5) * TILE_PX;
     const wy = (cy + 0.5) * TILE_PX;
+    if (this.mode === "garrison") {
+      this.toast(GARRISON_WRONG_TARGET);
+      return;
+    }
     if (this.mode !== "normal") {
       this.apply(tapIntents(view, view.selection, this.mode, wx, wy, 1, this.hitRadius()));
       return;
@@ -381,8 +396,21 @@ export class Game implements GestureHost {
     });
   }
 
-  /** An order from the player's own hand. Returns its sequence number. */
-  command(cmd: CommandBody): number {
+  /** An order from the player's own hand. Returns its sequence number, or -1 when nobody it names may take it. */
+  command(given: CommandBody): number {
+    // 前進、攻擊、撤退 leave those hiding in a building where they are: only the building's
+    // 全部出來 lets them out (round 7, ceo 2026-10-07), so tapping a group and ordering it on
+    // does not empty the towers.
+    let cmd = given;
+    if ((cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") && this.view !== null) {
+      const view = this.view;
+      const out = cmd.u.filter((id) => !isHiding(view.unitOrder(id)));
+      if (out.length === 0 && cmd.u.length > 0) {
+        this.toast("躲著的兵要從建築的「全部出來」叫出來");
+        return -1;
+      }
+      cmd = { ...cmd, u: out };
+    }
     const seq = this.post(cmd, false);
     if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") {
       // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
@@ -425,15 +453,19 @@ export class Game implements GestureHost {
 
   // --- garrisons (留守, D-026) ----------------------------------------------------------
 
-  /** Our soldiers with the simulation's own positions, for the garrison rules. */
-  private soldiers(): ArmyUnit[] {
+  /**
+   * Our soldiers with the simulation's own positions, for the garrison rules. Those hiding in a
+   * building (round 7) are left out unless `hiding`: they are out of 全軍, 留守 and the drafts.
+   */
+  private soldiers(hiding = false): ArmyUnit[] {
     const view = this.view;
     const u = view?.curr?.snap.units;
     if (view === null || u === undefined) return [];
     const out: ArmyUnit[] = [];
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       const type = u[o + UnitField.type];
-      if (u[o + UnitField.owner] === view.me && isSoldier(type)) out.push({ id: u[o + UnitField.id], type, x: u[o + UnitField.x], y: u[o + UnitField.y] });
+      // Those hiding in a building (round 7) are out of 全軍, 留守 and 自動補兵's drafts (ceo 2026-10-07).
+      if (u[o + UnitField.owner] === view.me && isSoldier(type) && (hiding || !isHiding(u[o + UnitField.order]))) out.push({ id: u[o + UnitField.id], type, x: u[o + UnitField.x], y: u[o + UnitField.y] });
     }
     return out;
   }
@@ -605,9 +637,10 @@ export class Game implements GestureHost {
     const u = view?.curr?.snap.units;
     const tick = view?.header?.[H.tick];
     if (view === null || u === undefined || tick === undefined) return;
+    // Those hiding in a building (round 7) are not where the group stands.
     const where = (id: number): { x: number; y: number } | null => {
       const o = view.unitRow(id);
-      return o < 0 ? null : { x: u[o + UnitField.x], y: u[o + UnitField.y] };
+      return o < 0 || isHiding(u[o + UnitField.order]) ? null : { x: u[o + UnitField.x], y: u[o + UnitField.y] };
     };
     for (const o of this.army.muster(tick, where, this.gatherPoint())) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
   }
@@ -621,7 +654,9 @@ export class Game implements GestureHost {
     const view = this.view;
     if (view === null) return;
     const idle = (id: number): boolean => view.unitOrder(id) === Order.None && view.unitStance(id) !== Stance.Hold;
-    for (const d of this.army.draft(this.soldiers(), idle)) {
+    // Those hiding still count in their group (ceo 2026-10-07), so it is not short of them; not
+    // idle (order Garrison), they are never drafted themselves.
+    for (const d of this.army.draft(this.soldiers(true), idle)) {
       this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}，正走過去`);
       // They take the group's formation, as recruits do (D-027).
       const others = this.army.groups[d.group].ids.filter((m) => !d.ids.includes(m) && view.unitRow(m) >= 0);
@@ -642,7 +677,7 @@ export class Game implements GestureHost {
     for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
       const type = b[o + BuildingField.type];
       if (b[o + BuildingField.owner] !== view.me || b[o + BuildingField.rallyX] < 0) continue;
-      if (type !== BuildingType.Barracks && type !== BuildingType.Range && type !== BuildingType.MageHall) continue;
+      if (type !== BuildingType.Barracks && type !== BuildingType.Range && type !== BuildingType.MageHall && type !== BuildingType.Stable) continue;
       const id = b[o + BuildingField.id];
       if (best === null || id < best.id) best = { id, x: b[o + BuildingField.rallyX], y: b[o + BuildingField.rallyY] };
     }
@@ -761,6 +796,7 @@ export class Game implements GestureHost {
             if (cmd?.auto !== true) this.overlays.toast(rejectText(ev.reason, cmd));
           } else {
             if (ev.k === "unit_trained") this.enlist(ev.id, ev.type);
+            if (ev.k === "shot") this.drawShot(ev.building, ev.target, now);
             this.hud.onEvent(ev);
           }
         }
@@ -840,7 +876,26 @@ export class Game implements GestureHost {
       this.showPlaceButtons();
       return;
     }
+    if (this.mode === "garrison") return this.garrisonAt(w.x, w.y);
     this.apply(this.keepRetreating(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1))));
+  }
+
+  /** 躲進去 (round 7): the building tapped takes the ranged units and mages selected, or the player is told why not. */
+  private garrisonAt(wx: number, wy: number): void {
+    const view = this.view;
+    if (view === null) return;
+    const pick = view.buildingAt(wx, wy);
+    const b = view.curr?.snap.buildings;
+    const o = pick === null ? -1 : view.buildingRow(pick.id);
+    const target = pick === null || o < 0 || b === undefined ? null : { id: pick.id, owner: pick.owner, type: pick.type, done: b[o + BuildingField.progress] >= 1000 };
+    const hides = garrisonTypes(view.rules);
+    const r = garrisonTap(view.selection.units, target, view.me, (id) => hides.includes(view.unitType(id)), (type) => holdsOf(view.rules, type));
+    if ("error" in r) {
+      this.toast(r.error);
+      return;
+    }
+    this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
+    if (r.cmd.c === "garrison") this.toast(`${r.cmd.u.length} 名躲進${BUILDING_NAME[target?.type ?? -1] ?? "建築"}`);
   }
 
   /**
@@ -1032,6 +1087,16 @@ export class Game implements GestureHost {
     if (at !== null) r.mark(at.x, at.y, color, now);
   }
 
+  /** 射箭 (round 7, `shot`): an arrow from the building's centre to the unit it shot at. */
+  private drawShot(building: number, target: number, now: number): void {
+    const view = this.view;
+    const from = this.buildingCentre(building);
+    const o = view?.unitRow(target) ?? -1;
+    if (view === null || this.renderer === null || from === null || o < 0) return;
+    const to = view.unitPos(o);
+    this.renderer.shot(from.x, from.y, to.x, to.y, now);
+  }
+
   private buildingCentre(id: number): { x: number; y: number } | null {
     const view = this.view;
     const o = view?.buildingRow(id) ?? -1;
@@ -1082,7 +1147,10 @@ export class Game implements GestureHost {
     // 取消 while picking where to advance or retreat to: they stop and hold (D-054).
     const holds = mode === "advance" || mode === "retreat";
     buttons.push({ label: "取消", onTap: () => (holds ? this.cancelToHold() : this.setMode("normal")) });
-    this.overlays.showPrompt(MODE_PROMPT[mode], buttons);
+    const view = this.view;
+    // 躲進去 with spearmen in the selection too: only those who can hide go.
+    const mixed = mode === "garrison" && view !== null && view.selection.units.some((id) => !garrisonTypes(view.rules).includes(view.unitType(id)));
+    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
   }
 
   /**
@@ -1158,7 +1226,9 @@ export class Game implements GestureHost {
     this.placement = new Placement(info, builders);
     const c = cam.screenToWorld(cam.width / 2, cam.height / 2);
     this.placement.moveTo(c.x, c.y, view.placement);
-    this.overlays.showPrompt(builders.length > 0 ? "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗" : "拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", []);
+    // 箭樓 (round 7) says where it may go in the same short line (a longer one ran under the group buttons).
+    const drag = type === BuildingType.ArrowTower ? "拖曳箭樓到主城或治理的城鎮附近" : "拖曳預覽到想蓋的位置";
+    this.overlays.showPrompt(builders.length > 0 ? `${drag}，放開後按 ✓ 或 ✗` : `${drag}，放開後按 ✓ 或 ✗；會派最近的村民去蓋`, []);
     this.warnMilitia();
   }
 
@@ -1176,7 +1246,9 @@ export class Game implements GestureHost {
     if (p === null || view === null) return;
     const town = militiaTownNear(view.townsNow(), p.cellX, p.cellY, p.info.size);
     p.militia = town?.id ?? null;
-    this.overlays.promptWarning(town === null ? null : MILITIA_WARNING);
+    // 箭樓 off TowerLand (round 7): why the spot is red comes first.
+    const offTowerLand = view.placement !== null && !towerLandOk(view.placement, p.info, p.cellX, p.cellY);
+    this.overlays.promptWarning(offTowerLand ? TOWER_LAND_TEXT : town === null ? null : MILITIA_WARNING);
   }
 
   private showPlaceButtons(): void {

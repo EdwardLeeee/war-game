@@ -45,7 +45,8 @@ export interface Selection {
 }
 
 /** Map taps that finish a command started from a button (進攻, 撤退, 晶砲, 集結點). */
-export type Mode = "normal" | "advance" | "retreat" | "cast" | "rally";
+/** `garrison`: picking the building to hide in (round 7); the game handles that tap itself. */
+export type Mode = "normal" | "advance" | "retreat" | "cast" | "rally" | "garrison";
 
 export type Intent =
   | { kind: "select"; units: number[] }
@@ -57,7 +58,7 @@ export type Intent =
 
 export type WheelItem = "cast" | "autocast" | "advance" | "retreat" | "hold";
 
-export const isMilitary = (type: number): boolean => type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage;
+export const isMilitary = (type: number): boolean => type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage || type === UnitType.Cavalry;
 
 export const toCell = (w: number): number => Math.floor(w / TILE_PX);
 /** World px to simulation fixed point (integers only go to the simulation). */
@@ -86,6 +87,9 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
     }
     case "rally":
       return sel.building !== null ? [{ kind: "command", cmd: { c: "rally", building: sel.building, x, y } }, { kind: "endMode" }] : [{ kind: "endMode" }];
+    case "garrison":
+      // Game.tap picks the building itself (garrison.ts); nothing from here.
+      return [];
     case "advance": {
       // 進攻 (D-050): an enemy there is attacked; anywhere else, the troops advance to it.
       if (sel.units.length === 0) return [{ kind: "endMode" }];
@@ -173,7 +177,7 @@ export function boxSelect(world: IntentWorld, x0: number, y0: number, x1: number
 
 /**
  * Skill wheel for the long-pressed unit (GDD §10): mages cast, autocast, retreat and 堅守;
- * spearmen and ranged 進攻, 撤退, 堅守 (D-050); farmers, who have neither, only 撤退.
+ * spearmen, ranged and cavalry 進攻, 撤退, 堅守 (D-050); farmers, who have neither, only 撤退.
  */
 export function wheelItems(pressedType: number): WheelItem[] {
   if (pressedType === UnitType.Mage) return ["cast", "autocast", "retreat", "hold"];

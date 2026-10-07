@@ -9,6 +9,8 @@ export const UNIT_NAME: Record<number, string> = {
   [UnitType.Ranged]: "遠程兵",
   [UnitType.Mage]: "法師",
   [UnitType.Militia]: "民兵",
+  // Round 7 (D-061): GDD §6's 重騎兵, called 騎兵 in the prototype as in the brief.
+  [UnitType.Cavalry]: "騎兵",
 };
 
 export const BUILDING_NAME: Record<number, string> = {
@@ -21,7 +23,10 @@ export const BUILDING_NAME: Record<number, string> = {
   [BuildingType.Barracks]: "兵營",
   [BuildingType.Range]: "射場",
   [BuildingType.MageHall]: "法術營",
-  [BuildingType.TownTower]: "箭樓",
+  // The big city's neutral tower; a player's own is 箭樓 (round 7, D-061).
+  [BuildingType.TownTower]: "大城箭樓",
+  [BuildingType.ArrowTower]: "箭樓",
+  [BuildingType.Stable]: "馬廄",
 };
 
 /** What a player may build, in the order the build menu lists it (GDD §17 prototype buildings). */
@@ -34,6 +39,9 @@ export const BUILDABLE: BuildingType[] = [
   BuildingType.Barracks,
   BuildingType.Range,
   BuildingType.MageHall,
+  // Round 7 (D-061): listed only while its feature is on (buildMenu).
+  BuildingType.ArrowTower,
+  BuildingType.Stable,
 ];
 
 export const NODE_NAME: Record<number, string> = {

@@ -281,7 +281,7 @@ for (const viewport of [null, FULL_SCREEN]) {
     expect(await card.evaluate((c) => c.scrollHeight - c.clientHeight), "the menu does not scroll").toBeLessThanOrEqual(1);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     const boxes = await visibleBoxes(page, ".menu button");
-    expect(boxes.map((b) => b.label)).toEqual(["魔晶怎麼拿", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
+    expect(boxes.map((b) => b.label)).toEqual(["魔晶怎麼拿", "兵種相剋", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
     for (const b of boxes) {
       expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
       expect(b.x, `${b.label} left`).toBeGreaterThanOrEqual(IPHONE_SAFE.left);
@@ -1034,6 +1034,8 @@ test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現�
 });
 
 test("軍團畫面：點編隊按鈕就選取並打開；設定每種兵要幾名，沒編隊的兵馬上被拉進來，走去集合；前往中、堅守的兵不拉（D-050、D-054）", async ({ page }, info) => {
+  // Long on Chromium's software renderer: 36 s on main (run 37520318345), past 60 s on a busy runner (run 37535738590).
+  test.setTimeout(120_000);
   await select(page, []);
   await tapOn(page, GROUP_1);
   const panel = page.locator(".sel-info");

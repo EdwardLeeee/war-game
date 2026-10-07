@@ -726,6 +726,31 @@ button.active {
   margin-right: -46px;
 }
 
+/* 騎兵 makes four kinds (round 7): two to a line, the name over its − N +. */
+.group-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 8px;
+  margin: 4px -46px 0 0;
+}
+
+.group-grid .group-row {
+  flex-wrap: wrap;
+  gap: 0 6px;
+  margin: 0;
+}
+
+.group-grid .group-label {
+  display: flex;
+  flex: 1 0 100%;
+  gap: 6px;
+}
+
+.group-grid .group-type,
+.group-grid .group-has {
+  width: auto;
+}
+
 /* 收起 (D-054): the title line only; its button sits at the end of that line, left of the ✕. */
 .sel-fold {
   margin-left: auto;
@@ -763,6 +788,11 @@ button.active {
   text-align: center;
   font-weight: 700;
   font-size: 16px;
+}
+
+/* A town's info line breaks between its parts, not inside one. */
+.sel-info .nowrap {
+  white-space: nowrap;
 }
 
 /* What the stance and the formation mean (D-026, D-027), small lines. They sit below the ✕, so they use the full width. */
@@ -922,10 +952,25 @@ button .sub {
   flex-direction: column;
 }
 
-/* 選單: two columns, so all six fit a phone held sideways (380 pt with Safari's toolbars) without scrolling. */
+/* 選單: two columns, so all seven fit a phone held sideways (380 pt with Safari's toolbars) without scrolling. */
 .menu .dialog-buttons.column {
   display: grid;
   grid-template-columns: 1fr 1fr;
+}
+
+/* 兵種相剋: a row each, the name beside its 剋 line and 怕 line; four rows fit 380 pt without scrolling. */
+.counter-row {
+  display: grid;
+  grid-template-columns: 3.5em 1fr;
+  column-gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.counter-row .counter-name {
+  grid-row: span 2;
 }
 
 button.danger {

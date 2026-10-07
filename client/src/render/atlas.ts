@@ -34,6 +34,9 @@ export const BUILDING_GLYPH: Record<number, string> = {
   [BuildingType.Range]: "射",
   [BuildingType.MageHall]: "術",
   [BuildingType.TownTower]: "塔",
+  // A player's arrow tower (round 7): its own tower shape and glyph, unlike the big city's 塔.
+  [BuildingType.ArrowTower]: "箭",
+  [BuildingType.Stable]: "馬",
 };
 
 export interface Atlas {
@@ -44,6 +47,10 @@ export interface Atlas {
   /** 64 x 64, scaled to the footprint. */
   building: Texture;
   farm: Texture;
+  /** A player's arrow tower (round 7): a narrow tower with battlements, 64 x 64. */
+  tower: Texture;
+  /** Someone hides inside (BuildingFlag.Occupied, round 7): a small shield, 16 x 16. */
+  occupied: Texture;
   glyphs: Record<number, Texture>;
   /** Indexed by NodeKind; 32 x 32. */
   nodes: Texture[];
@@ -88,6 +95,12 @@ function buildAtlas(renderer: Renderer): Atlas {
   });
   // Mage: a six-pointed star.
   units[UnitType.Mage] = shape(renderer, 32, (g) => g.star(16, 16, 6, 11, 5.5).fill(0xffffff).stroke(outline));
+  // Cavalry (round 7): two notched arrowheads one behind the other (»). A single dart was too
+  // like the spearman's wedge at play size.
+  units[UnitType.Cavalry] = shape(renderer, 32, (g) => {
+    g.poly([2, 7, 15, 16, 2, 25, 7, 16]).fill(0xffffff).stroke(outline);
+    g.poly([14, 6, 29, 16, 14, 26, 19, 16]).fill(0xffffff).stroke(outline);
+  });
   // Militia: a square.
   units[UnitType.Militia] = shape(renderer, 32, (g) => g.rect(9, 9, 14, 14).fill(0xffffff).stroke(outline));
 
@@ -97,6 +110,14 @@ function buildAtlas(renderer: Renderer): Atlas {
   const farm = shape(renderer, 64, (g) => {
     g.rect(2, 2, 60, 60).fill(0xd9c27a).stroke({ width: 2, color: 0x7a6532 });
     for (let y = 10; y < 60; y += 10) g.moveTo(6, y).lineTo(58, y).stroke({ width: 2, color: 0x8f7a3a });
+  });
+
+  const tower = shape(renderer, 64, (g) => {
+    g.poly([14, 60, 14, 16, 20, 16, 20, 6, 27, 6, 27, 16, 37, 16, 37, 6, 44, 6, 44, 16, 50, 16, 50, 60]).fill(0xffffff).stroke({ width: 3, color: INK });
+  });
+  const occupied = shape(renderer, 16, (g) => {
+    g.poly([8, 1, 14, 3, 14, 8, 8, 15, 2, 8, 2, 3]).fill(0xf5f1e6).stroke({ width: 1.4, color: INK });
+    g.circle(8, 7, 2).fill(INK);
   });
 
   const glyphs: Record<number, Texture> = {};
@@ -130,5 +151,5 @@ function buildAtlas(renderer: Renderer): Atlas {
     g.poly([10, 4, 28, 9, 10, 15]).fill(0xffffff).stroke({ width: 1.5, color: INK });
   });
 
-  return { units, ring, white, building, farm, glyphs, nodes, flag };
+  return { units, ring, white, building, farm, tower, occupied, glyphs, nodes, flag };
 }

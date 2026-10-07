@@ -22,11 +22,13 @@ import {
   TICKS_PER_SECOND,
   TOWN_STRIDE,
   TownField as T,
+  TownFlag,
   TownState,
   UNIT_STRIDE,
   UnitField as U,
   UnitFlag,
 } from "../sim.ts";
+import { features } from "../game/features.ts";
 import { TILE_PX } from "../tuning.ts";
 
 /** World px per fixed-point unit. */
@@ -259,6 +261,25 @@ export class GameView implements IntentWorld {
 
   private nodePick(id: number): Pick {
     return { kind: "node", id, owner: NO_OWNER, type: (this.nodes.get(id) as Int32Array)[N.kind] };
+  }
+
+  /**
+   * 城鎮只能搶一次 (round 7, D-061): this town was plundered this game and, with the rule on,
+   * can only be governed now.
+   */
+  townPlunderedOnce(id: number): boolean {
+    const o = this.townRow(id);
+    const t = this.curr?.snap.towns;
+    return features(this.rules).plunderOnce && o >= 0 && t !== undefined && (t[o + T.flags] & TownFlag.Plundered) !== 0;
+  }
+
+  /** The types of our finished buildings (round 7's `requires`). */
+  ownFinishedTypes(): Set<number> {
+    const out = new Set<number>();
+    const b = this.curr?.snap.buildings;
+    if (b === undefined) return out;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) if (b[o + B.owner] === this.me && b[o + B.progress] >= 1000) out.add(b[o + B.type]);
+    return out;
   }
 
   /** Our town waiting for 搶 or 治理. */

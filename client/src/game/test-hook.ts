@@ -3,6 +3,7 @@
 import {
   BUILDING_STRIDE,
   BuildingField as B,
+  checkPlacement,
   type BuildingType,
   type CommandBody,
   HeaderField as H,
@@ -34,7 +35,7 @@ export interface GameHook {
   /** Screen position (CSS px) of a cell's centre. */
   cellToScreen(cx: number, cy: number): { x: number; y: number };
   /** Units in the latest snapshot, with screen positions, cells (and fractional cells), action, order and carried amount. */
-  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number; fx: number; fy: number; action: number; order: number; target: number; carry: number; stance: number; loose: boolean }[];
+  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number; fx: number; fy: number; action: number; order: number; target: number; carry: number; stance: number; loose: boolean; handPicked: boolean }[];
   /** Select these own units (test set-up; the gestures that select are tested elsewhere). */
   select(units: number[]): void;
   startPlacement(type: number): void;
@@ -44,7 +45,8 @@ export interface GameHook {
   /** Latest snapshot header values. */
   header(): { tick: number; paused: boolean; speed: number; scenario: number };
   /** Buildings in the latest snapshot: top-left cell and footprint size. */
-  buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number; progress: number; flags: number }[];
+  /** `soldiers`: hiding inside (round 7; ours only). */
+  buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number; progress: number; flags: number; soldiers: number }[];
   /** The init message the game started with (難度, time limit, who the computer plays). */
   init(): Record<string, unknown> | null;
   /** Resource nodes the player knows about, with cells. */
@@ -55,6 +57,8 @@ export interface GameHook {
    * the start, so a spot inside a town still in the fog can be aimed at too.
    */
   openCellNear(cx: number, cy: number, explored?: boolean): { x: number; y: number } | null;
+  /** The nearest top-left cell (Chebyshev rings) where a building of this type may go now, by the placement grid. */
+  buildSpotNear(type: number, cx: number, cy: number): { x: number; y: number } | null;
   lastCheck(): unknown;
   /** Post a command as the player (tests of commands the interface has no button for yet). */
   send(cmd: CommandBody): void;
@@ -74,6 +78,8 @@ export interface GameHook {
   groupInfo(): { ids: number[]; want: Record<number, number>; saved: number; refill: boolean; recruits: number[] }[];
   /** Fake world only: remove own units (as if they fell). */
   remove(ids: number[]): void;
+  /** Arrows drawn from `shot` events so far (round 7). */
+  shots(): number;
   /** What a tap at this screen point would hit (unit, building, node, town), or null for open ground. */
   pickAt(sx: number, sy: number): string | null;
   /** Every town on the map (size 0 small, 1 large): state, holder and militia as last seen (-1 before it is explored). */
@@ -120,6 +126,7 @@ export function gameHook(game: Game): GameHook {
           carry: u[o + U.carryAmount],
           stance: u[o + U.stance],
           loose: (u[o + U.flags] & UnitFlag.Loose) !== 0,
+          handPicked: (u[o + U.flags] & UnitFlag.HandPicked) !== 0,
         });
       }
       return out;
@@ -139,7 +146,7 @@ export function gameHook(game: Game): GameHook {
       if (b === undefined || game.view === null) return [];
       const out = [];
       for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-        out.push({ id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type], cx: b[o + B.cellX], cy: b[o + B.cellY], size: game.view.rules.buildings[b[o + B.type]]?.size ?? 1, progress: b[o + B.progress], flags: b[o + B.flags] });
+        out.push({ id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type], cx: b[o + B.cellX], cy: b[o + B.cellY], size: game.view.rules.buildings[b[o + B.type]]?.size ?? 1, progress: b[o + B.progress], flags: b[o + B.flags], soldiers: b[o + B.soldiers] });
       }
       return out;
     },
@@ -168,6 +175,21 @@ export function gameHook(game: Game): GameHook {
       }
       return null;
     },
+    buildSpotNear: (type, cx, cy) => {
+      const view = game.view;
+      const info = view?.rules.buildings[type];
+      if (view === null || view.placement === null || info === undefined) return null;
+      const size = view.map.size;
+      for (let r = 0; r < size; r++) {
+        for (let y = cy - r; y <= cy + r; y++) {
+          for (let x = cx - r; x <= cx + r; x++) {
+            if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r) continue;
+            if (checkPlacement(view.placement, info, x, y) === 0) return { x, y };
+          }
+        }
+      }
+      return null;
+    },
     lastCheck: () => game.lastCheck,
     send: (cmd) => game.command(cmd),
     inject: (ev) => {
@@ -188,6 +210,7 @@ export function gameHook(game: Game): GameHook {
     remove: (ids) => {
       if (game.portForTest instanceof MockPort) game.portForTest.remove(ids);
     },
+    shots: () => game.shotsForTest,
     init: () => (game.initSent === null ? null : { ...game.initSent }),
     pickAt: (sx, sy) => {
       const cam = game.camera;
