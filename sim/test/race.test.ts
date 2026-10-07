@@ -86,3 +86,41 @@ test("edge: with 30 soldiers it sets out beside the far corner town, not straigh
   assert.deepEqual(marches(out, ids), [[76, 76]]);
   assert.equal(player.state().raced, g.w.tick);
 });
+
+test("edge with a stop: it waits at (68, 62) until the sentry sees the enemy's army coming, then goes on", () => {
+  const { g, w, ids } = scene("edge", 16);
+  // Out at once (raceBy 0), stopping on the way.
+  const u = w.units.col;
+  const plan = planFor("push", "h1", "close");
+  plan.corners = true;
+  plan.race = "edge";
+  plan.raceStage = true;
+  plan.raceAt = 99;
+  plan.raceBy = 0;
+  plan.pushAt = 0;
+  const p = createScriptedPlayer(0, { map: w.map, rules: rules(), frame: w.map.frames[0] }, plan);
+  p.think(buildView(g, 0));
+  assert.equal(p.state().mode, "race");
+  // The army (all but the sentry, the lowest id) walks the way: beside the corner town, then the stop.
+  const standAt = (x: number, y: number) => {
+    for (const id of ids.slice(1)) {
+      const s = w.unit(id);
+      u.x[s] = (x << 10) + 512;
+      u.y[s] = (y << 10) + 512;
+    }
+    g.fog.update(w);
+  };
+  standAt(76, 76);
+  assert.deepEqual(marches(p.think(buildView(g, 0)), ids.slice(1)), [[68, 62]], "on to the stop");
+  standAt(68, 62);
+  for (let k = 0; k < 3; k++) {
+    const out = p.think(buildView(g, 0));
+    assert.deepEqual(marches(out, ids.slice(1)).filter(([x, y]) => x !== 68 || y !== 62), [], "it waits at the stop");
+  }
+  // The enemy's army comes, in the sentry's sight (it has not left home yet: no step ran).
+  const foes = enemies(g, 14, 17, 68);
+  p.think(buildView(g, 0));
+  moveAll(g, foes, -1, 1);
+  const out = p.think(buildView(g, 0));
+  assert.deepEqual(marches(out, ids.slice(1)), [[76, 39]], "on, up the edge");
+});
