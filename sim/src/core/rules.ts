@@ -403,6 +403,17 @@ export const WORK_REACH = 768;
 export const CROWD_PENALTY = 2 * CELL;
 /** After a node runs out, a farmer looks for the same kind within this many cells of it. */
 export const NEXT_NODE_RADIUS = 8;
+/**
+ * Farmers spread over the depots (D-070; the user 2026-10-07: "生出新的村民請平均派到有糧倉、伐木場、
+ * 礦場的地方做開採"). The economy ratio picks the resource as before; then, when the player has
+ * finished depots of it (granaries, lumber camps, mines; not the main city), the one with the
+ * fewest farmers working near it (whose work's nearest drop-off it is; ties: the first in the
+ * owner's canonical frame, then the lower id) gets the farmer, at the free farm or open node
+ * nearest that depot within `reach` cells (nodes least crowded as before). A depot with no work
+ * within reach is passed over; with none, the farmer goes to the nearest work as before. For
+ * every farmer the economy sends (new ones, and those the ratio moves); farmers sent by hand stay.
+ */
+export const DEPOT_SPREAD = { on: true, reach: 12 };
 /** Idle farmers repair own damaged buildings this close (cells, to the footprint). */
 export const AUTO_REPAIR_RANGE = 6;
 /** At the start each player has explored the disc of this radius (cells) around its spawn and knows its resource nodes. */

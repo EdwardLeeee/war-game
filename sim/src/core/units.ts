@@ -1231,7 +1231,10 @@ export class UnitSystem {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
-        if (u.owner[i] < PLAYER_COUNT && u.type[i] === UnitType.Farmer) w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
+        if (u.owner[i] < PLAYER_COUNT && u.type[i] === UnitType.Farmer) {
+          w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
+          w.farmerDeathLog.push(u.owner[i], u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, u.hitCause[i], w.tick);
+        }
         if (u.type[i] === UnitType.Mage) {
           // The killer's side picks up the bounty (none for the neutral side).
           const killer = u.hitBy[i];
