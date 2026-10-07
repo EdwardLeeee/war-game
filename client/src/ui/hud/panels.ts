@@ -55,6 +55,7 @@ export interface PanelHost {
   depotResources(building: number): Resource[];
   depotWorkers(building: number, resource: Resource): number;
   depotSend(building: number, resource: Resource): void;
+  depotTake(building: number, resource: Resource): void;
   /** 取消即堅守 (D-054): out of 進攻／撤退, the soldiers selected stop and hold. */
   cancelToHold(): void;
   /** 編隊自動補兵 (D-026): its switch, and flipping it. */
@@ -419,7 +420,7 @@ export class SelectionInfo {
   }
 
   /**
-   * 點存放建築派村民 (D-066): how many villagers gather here, and ＋ to send one more. One
+   * 點存放建築派村民 (D-066): how many villagers gather here, − and ＋ for one less or more. One
    * resource (granary, lumber camp, mine): a line of its own. The main city's three: side by
    * side, so the panel stays clear of 全軍撤退 with a training queue above. Returns the update.
    */
@@ -434,15 +435,18 @@ export class SelectionInfo {
       const cell = el("div", box, "depot-cell");
       const count = el("span", cell, "depot-count");
       const steps = el("div", cell, "depot-steps");
+      const minus = button(steps, "−", "", () => this.host.depotTake(id, r), "secondary step");
+      minus.setAttribute("aria-label", `少派 1 名村民採${word}`);
       const plus = button(steps, "+", "", () => this.host.depotSend(id, r), "secondary step");
       plus.setAttribute("aria-label", `多派 1 名村民採${word}`);
-      return { r, word, count };
+      return { r, word, count, minus };
     });
     return () => {
       for (const c of cells) {
         const n = this.host.depotWorkers(id, c.r);
         const text = one ? `附近有 ${n} 名村民在採${c.word}` : `${c.word} ${n} 名`;
         if (c.count.textContent !== text) c.count.textContent = text;
+        c.minus.disabled = n === 0;
       }
     };
   }

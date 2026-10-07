@@ -461,7 +461,7 @@ function expectedNode(nodes: { id: number; kind: number; cx: number; cy: number;
   );
 }
 
-test("點主城派村民（D-066）：主城寫糧、木、金各有幾名在採；木的＋派閒置的、沒有就派採別種資源、離主城最近的一名，送出親手派的 gather 去最近的樹", async ({ page }, info) => {
+test("點主城派村民（D-066）：主城寫糧、木、金各有幾名在採；木的＋派閒置的、沒有就派採別種資源、離主城最近的一名，送出親手派的 gather 去最近的樹；－讓採木最遠的一名放下工作（release），不再是親手派的", async ({ page }, info) => {
   test.setTimeout(120_000);
   await start(page, "?test=1&tps=60");
   await expect.poll(async () => (await farmers(page)).filter((f) => f.order === 4).length, { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
@@ -492,6 +492,21 @@ test("點主城派村民（D-066）：主城寫糧、木、金各有幾名在採
   // The player's own gather: off to that tree, and the economy ratio leaves it there (HandPicked, D-050).
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await farmers(page)).find((f) => f.id === who), { timeout: 15_000 }).toMatchObject({ target: tree.id, handPicked: true });
+  // －: of those on wood (all of them bring it to the city), the farthest from it lets go.
+  await pause(page);
+  const now = await farmers(page);
+  const nodesNow = await page.evaluate(() => window.__proto?.game?.nodes() ?? []);
+  const kindNow = new Map(nodesNow.map((n) => [n.id, n.kind]));
+  const far = now
+    .filter((f) => f.order === 4 && kindNow.get(f.target) === 0)
+    .sort((a, c) => toFootprint({ x: c.fx, y: c.fy }, city) - toFootprint({ x: a.fx, y: a.fy }, city) || c.id - a.id)[0];
+  await expect(panel.locator(".depot-count").filter({ hasText: "木" })).toHaveText(/木 [1-9]\d* 名/);
+  await panel.getByRole("button", { name: "少派 1 名村民採木" }).tap();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "release", u: [far.id] });
+  await expect(page.getByRole("status").filter({ hasText: "1 名採木的村民放下工作，交給經濟分配" })).toBeVisible();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  // Back to the economy: no longer the player's own (the ratio may send it anywhere, wood included).
+  await expect.poll(async () => (await farmers(page)).find((f) => f.id === far.id)?.handPicked, { timeout: 15_000 }).toBe(false);
 });
 
 test("點伐木場、糧倉派村民（D-066）：寫附近有幾名在採；每名村民只算在他送回的那一棟；伐木場的＋派去它旁邊的樹，糧倉沒有空田時去野果或提示先蓋田", async ({ page }, info) => {

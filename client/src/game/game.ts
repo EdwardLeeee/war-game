@@ -63,7 +63,7 @@ import { Placement } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
-import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, pickToSend, sendTarget, type Worker, workersAt } from "./depot.ts";
+import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
 import { allIn } from "./orders.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
@@ -608,10 +608,26 @@ export class Game implements GestureHost {
       this.toast(to.error);
       return;
     }
-    // A farm is worked with `repair` (sim/PROTOCOL.md 3.1); a node with `gather`, which makes it the player's own (HandPicked).
+    // A farm is worked with `repair`, a node with `gather` (sim/PROTOCOL.md 3.1); both make the villager the player's own (HandPicked, core #149).
     const cmd: CommandBody = "farm" in to ? { c: "repair", u: [id], building: to.farm } : { c: "gather", u: [id], node: to.node };
     this.apply([{ kind: "command", cmd }]);
     this.toast(`派 1 名村民去${"farm" in to ? "種田" : `採${RESOURCE_WORD[resource] ?? ""}`}`);
+  }
+
+  /**
+   * － on a depot (D-066): the villager gathering `resource` here farthest from it puts the
+   * work down and goes back to the economy ratio (`release`, core #149), not to 待命.
+   */
+  depotTake(building: number, resource: Resource): void {
+    const depot = this.depots().find((v) => v.id === building);
+    if (depot === undefined) return;
+    const id = pickToTake(this.workers(), this.depots(), depot, resource);
+    if (id === null) {
+      this.toast(`這裡沒有村民在採${RESOURCE_WORD[resource] ?? ""}`);
+      return;
+    }
+    this.apply([{ kind: "command", cmd: { c: "release", u: [id] } }]);
+    this.toast(`1 名採${RESOURCE_WORD[resource] ?? ""}的村民放下工作，交給經濟分配`);
   }
 
   /** 派村民 (D-061): whom a tap on this node can send, nearest first; null for an unknown node. */
