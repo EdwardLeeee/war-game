@@ -31,6 +31,7 @@ import {
   TOWN_STRIDE,
   TownField,
   TownFlag,
+  TownState,
   UNIT_STRIDE,
   UnitField,
   UnitFlag,
@@ -40,7 +41,7 @@ import {
 } from "../protocol.ts";
 import { writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, TOWER_REACH, TOWERS, TOWNS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -299,10 +300,32 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     const y0 = row[BuildingField.cellY];
     for (let y = y0; y < y0 + size; y++) for (let x = x0; x < x0 + size; x++) placement[y * n + x] |= PlaceBit.Blocked;
     const t = row[BuildingField.type];
+    // Tower land (round 7, PlaceBit.TowerLand): near an own finished main city.
+    if (TOWERS.on && row[BuildingField.owner] === player && row[BuildingField.progress] >= 1000 && t === BuildingType.MainCity) {
+      const r = TOWER_REACH.mainCity;
+      for (let y = Math.max(0, y0 - r); y < Math.min(n, y0 + size + r); y++) {
+        for (let x = Math.max(0, x0 - r); x < Math.min(n, x0 + size + r); x++) placement[y * n + x] |= PlaceBit.TowerLand;
+      }
+    }
     const land = row[BuildingField.owner] === player && row[BuildingField.progress] >= 1000 && (t === BuildingType.MainCity || t === BuildingType.Granary);
     if (!land) continue;
     for (let y = Math.max(0, y0 - FARMLAND_REACH); y < Math.min(n, y0 + size + FARMLAND_REACH); y++) {
       for (let x = Math.max(0, x0 - FARMLAND_REACH); x < Math.min(n, x0 + size + FARMLAND_REACH); x++) placement[y * n + x] |= PlaceBit.FarmLand;
+    }
+  }
+
+  // Tower land around towns the player repairs or governs (round 7).
+  if (TOWERS.on && player !== null) {
+    for (let t = 0; t < w.townSize.length; t++) {
+      if (w.townOwner[t] !== player || (w.townState[t] !== TownState.Repairing && w.townState[t] !== TownState.Governed)) continue;
+      const r = TOWNS[w.townSize[t]].radius + TOWER_REACH.town;
+      for (let y = Math.max(0, w.townY[t] - r); y <= Math.min(n - 1, w.townY[t] + r); y++) {
+        for (let x = Math.max(0, w.townX[t] - r); x <= Math.min(n - 1, w.townX[t] + r); x++) {
+          const dx = x - w.townX[t];
+          const dy = y - w.townY[t];
+          if (dx * dx + dy * dy <= r * r) placement[y * n + x] |= PlaceBit.TowerLand;
+        }
+      }
     }
   }
 

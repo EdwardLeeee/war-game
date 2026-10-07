@@ -40,6 +40,9 @@ import {
   QUEUE_MAX,
   RETREAT_OWN_SPEED,
   CAVALRY,
+  GARRISON,
+  GARRISON_TYPES,
+  TOWER_REACH,
   TOWERS,
   TOWN_ONCE,
   TOWNS,
@@ -188,11 +191,14 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       return 0;
     }
     case "stop": {
-      const slots = ownUnits(w, p, cmd.u);
-      if (slots.length === 0) return Reject.NotOwner;
+      const all = ownUnits(w, p, cmd.u);
+      if (all.length === 0) return Reject.NotOwner;
+      const u = w.units.col;
+      // Soldiers hiding in a building stay inside and only drop their target (round 7).
+      const slots = all.filter((s) => !hiding(w, s));
+      for (const s of all) if (hiding(w, s)) u.target[s] = -1;
       releaseAll(ctx, slots);
       placed(w, slots, true);
-      const u = w.units.col;
       for (const s of slots) {
         u.order[s] = Order.None;
         u.orderTarget[s] = -1;
@@ -386,9 +392,7 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (!Number.isInteger(cmd.fx) || !Number.isInteger(cmd.fy) || cmd.fx < 0 || cmd.fy < 0 || cmd.fx >= max || cmd.fy >= max) {
         return Reject.InvalidTarget;
       }
-      const dx = cmd.fx - u.x[s];
-      const dy = cmd.fy - u.y[s];
-      if (dx * dx + dy * dy > CANNON.range * CANNON.range) return Reject.OutOfRange;
+      if (castDist2(w, s, cmd.fx, cmd.fy) > CANNON.range * CANNON.range) return Reject.OutOfRange;
       if (u.castCooldown[s] > 0) return Reject.Cooldown;
       if (w.res[p * 4 + Resource.Crystal] < CANNON.crystal) return Reject.NoCrystal;
       startCast(w, s, cmd.fx, cmd.fy, false);
@@ -446,6 +450,49 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       w.townTimerTotal[t] = rule.repairTicks;
       return 0;
     }
+    case "garrison": {
+      // Round 7 (D-061): ranged units and mages hide in an own finished main city or arrow tower.
+      if (!GARRISON.on) return Reject.NotAvailable;
+      const slots = ownUnits(w, p, cmd.u);
+      if (slots.length === 0) return Reject.NotOwner;
+      const bs = Number.isInteger(cmd.building) ? w.building(cmd.building) : -1;
+      const b = w.buildings.col;
+      if (bs < 0 || b.owner[bs] !== p || b.progress[bs] < 1000 || BUILDINGS[b.type[bs]].holds === 0) return Reject.InvalidTarget;
+      const u = w.units.col;
+      const fit = slots.filter((s) => (GARRISON_TYPES as number[]).includes(u.type[s]) && !(u.order[s] === Order.Garrison && u.orderTarget[s] === cmd.building));
+      if (fit.length === 0) return Reject.NotAvailable;
+      let room = BUILDINGS[b.type[bs]].holds - b.soldiers[bs] - goingTo(w, cmd.building);
+      if (room <= 0) return Reject.NoRoom;
+      for (const s of fit) {
+        if (room === 0) break;
+        room--;
+        ctx.econ.release(w, s);
+        if (u.order[s] === Order.Cast) u.castProgress[s] = 0;
+        u.order[s] = Order.Garrison;
+        u.orderTarget[s] = cmd.building;
+        u.target[s] = -1;
+        u.group[s] = -1;
+        u.squad[s] = 0;
+        u.speedCap[s] = 0;
+      }
+      return 0;
+    }
+    case "leave": {
+      if (!GARRISON.on) return Reject.NotAvailable;
+      const bs = Number.isInteger(cmd.building) ? w.building(cmd.building) : -1;
+      if (bs < 0) return Reject.InvalidTarget;
+      if (w.buildings.col.owner[bs] !== p) return Reject.NotOwner;
+      const u = w.units.col;
+      const named = cmd.u === undefined ? null : ownUnits(w, p, cmd.u);
+      let out = 0;
+      for (let s = 0; s < w.units.count; s++) {
+        if (u.owner[s] !== p || !hiding(w, s) || inside(w, s) !== cmd.building) continue;
+        if (named !== null && !named.includes(s)) continue;
+        ctx.econ.release(w, s);
+        out++;
+      }
+      return out > 0 ? 0 : Reject.NotAvailable;
+    }
     case "surrender": {
       w.winner = 1 - p;
       w.endReason = GameOverReason.Surrender;
@@ -454,6 +501,66 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
     default:
       return Reject.NotAvailable;
   }
+}
+
+/** A soldier hiding in a building (round 7): Garrisoned, not a farmer hiding by recall. */
+function hiding(w: World, s: number): boolean {
+  const u = w.units.col;
+  return u.action[s] === Action.Garrisoned && u.type[s] !== UnitType.Farmer;
+}
+
+/** The building a hiding soldier is in (a calibrating mage keeps it in prevTarget). */
+export function inside(w: World, s: number): number {
+  const u = w.units.col;
+  return u.order[s] === Order.Cast ? u.prevTarget[s] : u.orderTarget[s];
+}
+
+/** Soldiers on their way to hide in building `id`, not yet inside. */
+function goingTo(w: World, id: number): number {
+  const u = w.units.col;
+  let n = 0;
+  for (let s = 0; s < w.units.count; s++) if (u.order[s] === Order.Garrison && u.orderTarget[s] === id && u.action[s] !== Action.Garrisoned) n++;
+  return n;
+}
+
+/** Squared distance from a mage to a cannon point: from the building's edge while it hides (round 7). */
+export function castDist2(w: World, s: number, fx: number, fy: number): number {
+  const u = w.units.col;
+  if (hiding(w, s)) {
+    const bs = w.building(inside(w, s));
+    if (bs >= 0) {
+      const b = w.buildings.col;
+      return rectDist2(fx, fy, b.cellX[bs], b.cellY[bs], BUILDINGS[b.type[bs]].size);
+    }
+  }
+  const dx = fx - u.x[s];
+  const dy = fy - u.y[s];
+  return dx * dx + dy * dy;
+}
+
+/**
+ * Is a cell tower land for player p (round 7, PlaceBit.TowerLand): within TOWER_REACH.mainCity
+ * (Chebyshev) of an own finished main city's footprint, or within a town's radius +
+ * TOWER_REACH.town of its centre while p repairs or governs it?
+ */
+export function towerLand(w: World, p: number, cx: number, cy: number): boolean {
+  if (!TOWERS.on) return false;
+  const b = w.buildings.col;
+  for (let s = 0; s < w.buildings.count; s++) {
+    if (b.owner[s] !== p || b.progress[s] < 1000 || b.type[s] !== BuildingType.MainCity) continue;
+    const size = BUILDINGS[BuildingType.MainCity].size;
+    const dx = Math.max(b.cellX[s] - cx, 0, cx - (b.cellX[s] + size - 1));
+    const dy = Math.max(b.cellY[s] - cy, 0, cy - (b.cellY[s] + size - 1));
+    if (Math.max(dx, dy) <= TOWER_REACH.mainCity) return true;
+  }
+  for (let t = 0; t < w.townSize.length; t++) {
+    if (w.townOwner[t] !== p || (w.townState[t] !== TownState.Repairing && w.townState[t] !== TownState.Governed)) continue;
+    const r = TOWNS[w.townSize[t]].radius + TOWER_REACH.town;
+    const dx = cx - w.townX[t];
+    const dy = cy - w.townY[t];
+    if (dx * dx + dy * dy <= r * r) return true;
+  }
+  return false;
 }
 
 /** Does player p have a finished building of this type? */
@@ -499,7 +606,8 @@ function placeCheck(ctx: CommandContext, p: number, type: BuildingType, x: numbe
       cells[c] =
         (w.grid[c] !== 0 || w.buildingAt[c] >= 0 ? PlaceBit.Blocked : 0) |
         (fog.explored[p][c] === 1 ? 0 : PlaceBit.Unexplored) |
-        (farmLand(w, p, cx, cy) ? PlaceBit.FarmLand : 0);
+        (farmLand(w, p, cx, cy) ? PlaceBit.FarmLand : 0) |
+        (type === BuildingType.ArrowTower && towerLand(w, p, cx, cy) ? PlaceBit.TowerLand : 0);
     }
   }
   const result = checkPlacement({ size: n, cells }, info, x, y);

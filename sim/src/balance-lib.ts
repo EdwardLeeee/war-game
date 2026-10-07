@@ -7,7 +7,7 @@
 import { Game } from "./core/game.ts";
 import { BUILDINGS, CANNON, UNITS } from "./core/rules.ts";
 import { damage } from "./core/units.ts";
-import { CELL_SHIFT, type CommandBody, NEUTRAL, Order, Resource, type TownSize, UnitFlag, UnitType } from "./protocol.ts";
+import { Action, BuildingType, CELL_SHIFT, type CommandBody, NEUTRAL, Order, Resource, type TownSize, UnitFlag, UnitType } from "./protocol.ts";
 
 /** Spearmen, ranged and mages of one side. */
 export interface Army {
@@ -265,4 +265,96 @@ export function militia(g: Game): number {
   let n = 0;
   for (let s = 0; s < g.w.units.count; s++) if (g.w.units.col.owner[s] === NEUTRAL) n++;
   return n;
+}
+
+/** How player 1 defends its main city in `assault` (round 7, D-061). */
+export type Defense = "standing" | "city" | "towers";
+
+export interface Assault {
+  /** The main city fell within the time. */
+  fell: boolean;
+  /** Ticks from the order until the city fell (or the time ran out, or the attackers were all down). */
+  ticks: number;
+  attackersLeft: number;
+  defendersLeft: number;
+  /** The main city's hp at the end, and the arrow towers still standing. */
+  cityHp: number;
+  towersLeft: number;
+}
+
+/** The longest assault (3 minutes). */
+const ASSAULT_TICKS = 3600;
+/** The defender's crystal: 20 shots, about what a side has mid-game (the attacker gets CRYSTAL). */
+const ASSAULT_CRYSTAL = 100;
+
+/**
+ * Player 0's `attackers` march on player 1's main city from 20 cells off and take on what they
+ * meet (an attack-move to the city, then aggressive), with no micromanagement. Player 1 has
+ * `defenders` (default 4 ranged and 2 mages, autocast on, 100 crystal) and defends as
+ * `defense` says: standing beside the city; hidden in the city; or hidden 3 in each of 2 arrow
+ * towers 6 cells in front of it (round 7: towers and hiding). `loose`: the attackers spread out
+ * (`formation`) before they set off.
+ */
+export function assault(defense: Defense, attackers: Army, loose = false, defenders: Army = { spear: 0, ranged: 4, mage: 2 }, defenderCrystal = ASSAULT_CRYSTAL): Assault {
+  const g = new Game({ seed: 1, scenario: "standard", maxTicks: 0 });
+  const w = g.w;
+  const u = w.units.col;
+  const b = w.buildings.col;
+  for (let s = 0; s < w.units.count; s++) w.unitSlot[u.id[s]] = -1;
+  w.units.count = 0;
+  const city = w.mainCity(1);
+  const cityId = b.id[city];
+  const cx = b.cellX[city];
+  const cy = b.cellY[city];
+  // Player 1's city is the mirror image of player 0's: the open ground lies below it (+y).
+  let seq = 0;
+  const push = (p: number, body: CommandBody) => g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+  const towers: number[] = [];
+  if (defense === "towers") {
+    const info = BUILDINGS[BuildingType.ArrowTower];
+    for (const x of [cx - 1, cx + 3]) {
+      for (let y = cy + 6; y < cy + 8; y++) for (let xx = x; xx < x + 2; xx++) if (!w.walkable(xx, y)) throw new Error("no room for a tower");
+      towers.push(w.addBuilding(1, BuildingType.ArrowTower, x, cy + 6, info.hp, 1000));
+    }
+  }
+  const place = (p: number, army: Army, x0: number, y0: number): number[] => {
+    const ids: number[] = [];
+    let k = 0;
+    for (const [key, type] of TYPES) {
+      for (let i = 0; i < army[key]; i++, k++) {
+        const id = w.addUnit(p, type, ((x0 + (k % 8)) << CELL_SHIFT) + 512, ((y0 + Math.trunc(k / 8)) << CELL_SHIFT) + 512, UNITS[type].hp);
+        if (type === UnitType.Mage) u.flags[w.unit(id)] |= UnitFlag.Autocast;
+        ids.push(id);
+      }
+    }
+    w.res[p * 4 + Resource.Crystal] = CRYSTAL;
+    return ids;
+  };
+  const guard = place(1, defenders, cx - 2, cy + 5);
+  w.res[4 + Resource.Crystal] = defenderCrystal;
+  const army = place(0, attackers, cx - 2, cy + 20);
+  g.fog.update(w);
+  if (defense === "city") push(1, { c: "garrison", u: guard, building: cityId });
+  if (defense === "towers") {
+    push(1, { c: "garrison", u: guard.slice(0, 3), building: towers[0] });
+    push(1, { c: "garrison", u: guard.slice(3), building: towers[1] });
+  }
+  for (let t = 0; t < 100; t++) g.step();
+  if (defense !== "standing" && !guard.every((id) => u.action[w.unit(id)] === Action.Garrisoned)) throw new Error("the defenders did not all hide");
+  if (loose) {
+    push(0, { c: "formation", u: army, loose: true });
+    for (let t = 0; t < 100; t++) g.step();
+  }
+  push(0, { c: "move", u: army, x: cx + 1, y: cy + 5 });
+  const start = g.tick;
+  const alive = (ids: number[]) => ids.filter((id) => w.unit(id) >= 0).length;
+  while (g.tick - start < ASSAULT_TICKS && !w.over && alive(army) > 0) g.step();
+  return {
+    fell: w.over && w.winner === 0,
+    ticks: g.tick - start,
+    attackersLeft: alive(army),
+    defendersLeft: alive(guard),
+    cityHp: w.building(cityId) >= 0 ? b.hp[w.building(cityId)] : 0,
+    towersLeft: towers.filter((id) => w.building(id) >= 0).length,
+  };
 }

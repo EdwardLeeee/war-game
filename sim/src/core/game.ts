@@ -26,7 +26,7 @@ import { FNV_OFFSET, fnvBytes, fnvInt32, fnvWord } from "./fixed.ts";
 import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { FieldCache } from "./paths.ts";
-import { CAVALRY, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWN_ONCE } from "./rules.ts";
+import { BUILDINGS, CAVALRY, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -118,6 +118,7 @@ export class Game {
     this.econ.periodic(w);
     // 3-6. Decide, move, attack, work, deaths.
     const hurt = this.units.run(w, this.fog, this.fields, this.econ);
+    if (TOWERS.on || GARRISON.on) this.shotEvents();
     this.econ.workTick(w);
     this.units.removeDead(w, (s) => this.econ.release(w, s), (to, ev) => this.events.push({ to, ev }));
     // 7. Training, then automatic training queues the next unit where a queue emptied; the
@@ -149,6 +150,31 @@ export class Game {
     }
     if (w.over) {
       this.events.push({ to: -1, ev: { k: "game_over", winner: w.winner, reason: w.endReason as never } });
+    }
+  }
+
+  /**
+   * `shot` events (round 7, D-061): each shot of a building's own arrow or of a soldier hiding
+   * in it, to every player who sees a cell of the building or the target's cell.
+   */
+  private shotEvents(): void {
+    const w = this.w;
+    const n = w.size;
+    const b = w.buildings.col;
+    const u = w.units.col;
+    const shots = this.units.shots;
+    for (let k = 0; k < shots.length; k += 2) {
+      const bs = w.building(shots[k]);
+      const ts = w.unit(shots[k + 1]);
+      for (let p = 0; p < PLAYER_COUNT; p++) {
+        const vis = this.fog.visible[p];
+        let sees = ts >= 0 && vis[(u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT)] === 1;
+        if (!sees && bs >= 0) {
+          const size = BUILDINGS[b.type[bs]].size;
+          for (let y = b.cellY[bs]; y < b.cellY[bs] + size && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + size && !sees; x++) sees = vis[y * n + x] === 1;
+        }
+        if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1] } });
+      }
     }
   }
 

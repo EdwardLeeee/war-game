@@ -27,6 +27,8 @@ import { type FieldCache, buildingKey, cellsAround, nearestWalkable, Regions } f
 import {
   AGGRO_RANGE,
   ARRIVE_DISTANCE,
+  ARROW_TOWER,
+  GARRISON,
   BUILDINGS,
   CANNON,
   COUNTER_ATTACK,
@@ -48,6 +50,7 @@ import {
   TOWER_ARROW,
   UNDER_ATTACK_TICKS,
   UNITS,
+  WORK_REACH,
 } from "./rules.ts";
 import { IDENTITY, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
@@ -84,6 +87,11 @@ export class UnitSystem {
   /** Per unit this tick (move()): 1 when standing mates of its team pushed it apart, 2 when one on the move did too. */
   private kept = new Uint8Array(256);
   private attacking = new Uint8Array(256);
+  /**
+   * This tick's shots of buildings' own arrows and of soldiers hiding in buildings, as pairs
+   * (building id, target unit id), for the `shot` event (round 7, D-061; game.ts sends them).
+   */
+  readonly shots: number[] = [];
   /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
   private startTarget = new Int32Array(256);
   /** Per squad, at the start of the tick: what its soldiers are fighting (unit positions, building ids). */
@@ -403,18 +411,21 @@ export class UnitSystem {
    * whose position would hit the most enemies (at least CANNON.autocastMinTargets) within
    * the blast radius; ties to the lower id. Returns a unit slot or -1.
    */
-  private autocastAim(w: World, fog: Fog, i: number): number {
+  private autocastAim(w: World, fog: Fog, i: number, from = -1): number {
     const u = w.units.col;
+    const b = w.buildings.col;
     const n = w.size;
     const me = u.owner[i];
     const range2 = CANNON.range * CANNON.range;
     const r2 = CANNON.radius * CANNON.radius;
     const hostile = (j: number) =>
       u.owner[j] !== me && u.action[j] !== Action.Garrisoned && this.sees(fog, me, u.x[j], u.y[j], n);
-    const reach = (CANNON.range >> CELL_SHIFT) + 1;
+    // A mage hiding in a building (round 7) measures the range from the building's edge.
+    const size = from >= 0 ? BUILDINGS[b.type[from]].size : 0;
+    const reach = (CANNON.range >> CELL_SHIFT) + 1 + size;
     const blast = (CANNON.radius >> CELL_SHIFT) + 1;
-    const cx = u.x[i] >> CELL_SHIFT;
-    const cy = u.y[i] >> CELL_SHIFT;
+    const cx = from >= 0 ? b.cellX[from] + (size >> 1) : u.x[i] >> CELL_SHIFT;
+    const cy = from >= 0 ? b.cellY[from] + (size >> 1) : u.y[i] >> CELL_SHIFT;
     let best = -1;
     let bestCount = CANNON.autocastMinTargets - 1;
     let bestId = 0;
@@ -424,7 +435,8 @@ export class UnitSystem {
           if (!hostile(j)) continue;
           const dx = u.x[j] - u.x[i];
           const dy = u.y[j] - u.y[i];
-          if (dx * dx + dy * dy > range2) continue;
+          const d2 = from >= 0 ? rectDist2(u.x[j], u.y[j], b.cellX[from], b.cellY[from], size) : dx * dx + dy * dy;
+          if (d2 > range2) continue;
           let count = 0;
           const jx = u.x[j] >> CELL_SHIFT;
           const jy = u.y[j] >> CELL_SHIFT;
@@ -460,6 +472,118 @@ export class UnitSystem {
     return c.u + c.v;
   }
 
+  // --- hiding in buildings (round 7, D-061) --------------------------------------------
+
+  /**
+   * A soldier on its way to hide (Order.Garrison): it walks to the building ignoring enemies, as
+   * on a retreat, and goes in once within WORK_REACH of the footprint if there is room; no room,
+   * or the building gone, it stands where it is.
+   */
+  private toShelter(w: World, fields: FieldCache, i: number): void {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const id = u.orderTarget[i];
+    const bs = w.building(id);
+    u.target[i] = -1;
+    const stand = () => {
+      u.order[i] = Order.None;
+      u.orderTarget[i] = -1;
+      u.anchorX[i] = u.x[i];
+      u.anchorY[i] = u.y[i];
+      u.action[i] = Action.Idle;
+    };
+    if (bs < 0 || b.owner[bs] !== u.owner[i]) {
+      stand();
+      return;
+    }
+    const size = BUILDINGS[b.type[bs]].size;
+    if (rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], size) <= WORK_REACH * WORK_REACH) {
+      if (b.soldiers[bs] < BUILDINGS[b.type[bs]].holds) {
+        b.soldiers[bs]++;
+        u.action[i] = Action.Garrisoned;
+      } else {
+        stand();
+      }
+      return;
+    }
+    const half = (size << CELL_SHIFT) >> 1;
+    steerTo(w, fields, i, (b.cellX[bs] << CELL_SHIFT) + half, (b.cellY[bs] << CELL_SHIFT) + half, buildingKey(id), UNITS[u.type[i]].speed, () =>
+      cellsAround(w, b.cellX[bs], b.cellY[bs], size),
+    );
+  }
+
+  /**
+   * A soldier hiding in a building fights from it: its own attack, cooldown and multipliers at
+   * the visible enemy unit nearest the footprint within its range of the footprint; a mage on
+   * autocast fires the cannon with the range from the footprint too. It never moves.
+   */
+  private fromInside(w: World, fog: Fog, i: number): void {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    if (u.order[i] === Order.Cast) return;
+    const bs = w.building(u.orderTarget[i]);
+    if (bs < 0) return;
+    const size = BUILDINGS[b.type[bs]].size;
+    const info = UNITS[u.type[i]];
+    const look = (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0;
+    if (
+      GARRISON.cannon &&
+      u.type[i] === UnitType.Mage &&
+      (u.flags[i] & UnitFlag.Autocast) !== 0 &&
+      u.castCooldown[i] === 0 &&
+      look &&
+      w.res[u.owner[i] * 4 + Resource.Crystal] >= CANNON.crystal
+    ) {
+      const aim = this.autocastAim(w, fog, i, bs);
+      if (aim >= 0) {
+        startCast(w, i, u.x[aim], u.y[aim], true);
+        return;
+      }
+    }
+    const r2 = info.range * info.range;
+    let tid = u.target[i];
+    if (tid >= 0) {
+      const ts = w.unit(tid);
+      if (
+        ts < 0 ||
+        u.action[ts] === Action.Garrisoned ||
+        !this.sees(fog, u.owner[i], u.x[ts], u.y[ts], n) ||
+        rectDist2(u.x[ts], u.y[ts], b.cellX[bs], b.cellY[bs], size) > r2
+      ) {
+        tid = -1;
+      }
+    }
+    if (tid < 0 && look) tid = this.nearestFrom(w, fog, i, bs, info.range);
+    u.target[i] = tid;
+    if (tid < 0) return;
+    const ts = w.unit(tid);
+    u.facing[i] = dir16(u.x[ts] - u.x[i], u.y[ts] - u.y[i]);
+    this.attacking[i] = 1;
+  }
+
+  /** The visible enemy unit nearest building bs's footprint within `reach` of it (id), or -1. */
+  private nearestFrom(w: World, fog: Fog, i: number, bs: number, reach: number): number {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const size = BUILDINGS[b.type[bs]].size;
+    const r2 = reach * reach;
+    let best = r2 + 1;
+    let bestSlot = -1;
+    for (let j = 0; j < w.units.count; j++) {
+      if (u.owner[j] === me || u.action[j] === Action.Garrisoned) continue;
+      const d2 = rectDist2(u.x[j], u.y[j], b.cellX[bs], b.cellY[bs], size);
+      if (d2 > r2 || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+      if (d2 < best || (d2 === best && canonFirst(w, me, j, bestSlot))) {
+        best = d2;
+        bestSlot = j;
+      }
+    }
+    return bestSlot < 0 ? -1 : u.id[bestSlot];
+  }
+
   // --- decide ----------------------------------------------------------------------------
 
   private decide(w: World, fog: Fog, fields: FieldCache, farmers: FarmerDecider, i: number): void {
@@ -470,7 +594,11 @@ export class UnitSystem {
     u.vy[i] = 0;
     u.working[i] = 0;
     this.attacking[i] = 0;
-    if (u.action[i] === Action.Garrisoned) return;
+    if (u.action[i] === Action.Garrisoned) {
+      // A soldier hiding in a building shoots from it (round 7, D-061); a farmer just hides.
+      if (u.type[i] !== UnitType.Farmer) this.fromInside(w, fog, i);
+      return;
+    }
     const order = u.order[i];
     if (isWorkOrder(order)) {
       u.target[i] = -1;
@@ -478,6 +606,10 @@ export class UnitSystem {
       return;
     }
     const farmer = u.type[i] === UnitType.Farmer;
+    if (order === Order.Garrison) {
+      this.toShelter(w, fields, i);
+      return;
+    }
 
     // Crystal cannon: a calibrating mage stands still; any other order has cancelled it.
     if (order !== Order.Cast && u.castProgress[i] > 0) u.castProgress[i] = 0;
@@ -919,6 +1051,7 @@ export class UnitSystem {
     this.unitDamage.fill(0, 0, count);
     this.shieldDamage.fill(0, 0, count);
     this.buildingDamage.fill(0, 0, w.buildings.count);
+    this.shots.length = 0;
     for (let i = 0; i < count; i++) {
       if (u.cooldown[i] > 0) u.cooldown[i]--;
       if (u.castCooldown[i] > 0) u.castCooldown[i]--;
@@ -933,6 +1066,7 @@ export class UnitSystem {
       const ts = w.unit(tid);
       if (ts >= 0) {
         this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
+        if (u.action[i] === Action.Garrisoned) this.shots.push(u.orderTarget[i], tid);
       } else {
         const bs = w.building(tid);
         if (bs >= 0) this.buildingDamage[bs] += info.attack;
@@ -940,26 +1074,30 @@ export class UnitSystem {
       u.lastDealt[i] = w.tick;
       u.cooldown[i] = info.cooldown;
     }
-    // Arrows from main cities and the big city's tower.
+    // Arrows from main cities, the big city's tower and players' arrow towers (round 7, once built).
     const n = w.size;
     for (let s = 0; s < w.buildings.count; s++) {
       const type = b.type[s];
-      if (type !== BuildingType.MainCity && type !== BuildingType.TownTower) continue;
+      if (type !== BuildingType.MainCity && type !== BuildingType.TownTower && type !== BuildingType.ArrowTower) continue;
+      if (b.progress[s] < 1000) continue;
       if (b.cooldown[s] > 0) {
         b.cooldown[s]--;
         continue;
       }
-      const arrow = type === BuildingType.MainCity ? MAIN_ARROW : TOWER_ARROW;
+      const arrow = type === BuildingType.MainCity ? MAIN_ARROW : type === BuildingType.TownTower ? TOWER_ARROW : ARROW_TOWER;
       const size = BUILDINGS[type].size;
       let best = arrow.range * arrow.range + 1;
       let bestSlot = -1;
-      // Slots are in id order: `<=` keeps the last (highest id) of equally near units.
+      // Slots are in id order: `<=` keeps the last (highest id) of equally near units. A
+      // player's arrow tower (round 7) takes the first in its owner's canonical frame instead,
+      // so mirror-image towers shoot mirror-image units.
       const high = preferHighId(w, b.id[s]);
+      const canon = type === BuildingType.ArrowTower;
       for (let j = 0; j < count; j++) {
         if (u.owner[j] === b.owner[s] || u.action[j] === Action.Garrisoned) continue;
         if (b.owner[s] !== NEUTRAL && fog.visible[b.owner[s]][(u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT)] !== 1) continue;
         const d2 = rectDist2(u.x[j], u.y[j], b.cellX[s], b.cellY[s], size);
-        if (d2 < best || (high && d2 === best)) {
+        if (d2 < best || (d2 === best && (canon ? canonFirst(w, b.owner[s], j, bestSlot) : high))) {
           best = d2;
           bestSlot = j;
         }
@@ -973,6 +1111,7 @@ export class UnitSystem {
       u.hitById[bestSlot] = -1;
       b.target[s] = u.id[bestSlot];
       b.cooldown[s] = arrow.cooldown;
+      this.shots.push(b.id[s], u.id[bestSlot]);
     }
 
     const hurt: Hurt[] = [];
@@ -1041,6 +1180,9 @@ export class UnitSystem {
     const o = p * 4 + Resource.Crystal;
     if (w.res[o] >= CANNON.crystal) {
       w.res[o] -= CANNON.crystal;
+      // From inside a building (round 7): weaker and slower (GARRISON).
+      const inside = u.action[i] === Action.Garrisoned;
+      const dmg = inside ? Math.trunc((CANNON.damage * GARRISON.cannonPermille) / 1000) : CANNON.damage;
       const r2 = CANNON.radius * CANNON.radius;
       const blast = (CANNON.radius >> CELL_SHIFT) + 1;
       const cx = u.castX[i] >> CELL_SHIFT;
@@ -1052,7 +1194,7 @@ export class UnitSystem {
             const dx = u.x[j] - u.castX[i];
             const dy = u.y[j] - u.castY[i];
             if (dx * dx + dy * dy <= r2) {
-              this.hit(w, j, CANNON.damage, UnitType.Mage, p, HitCause.Cannon, u.id[i]);
+              this.hit(w, j, dmg, UnitType.Mage, p, HitCause.Cannon, u.id[i]);
               if (p < PLAYER_COUNT) w.cannonHits[p]++;
             }
           }
@@ -1060,7 +1202,7 @@ export class UnitSystem {
       }
       if (p < PLAYER_COUNT) w.cannonShots[p]++;
       u.lastDealt[i] = w.tick;
-      u.castCooldown[i] = CANNON.cooldownTicks;
+      u.castCooldown[i] = inside ? CANNON.cooldownTicks * GARRISON.cannonCooldown : CANNON.cooldownTicks;
     }
     u.castProgress[i] = 0;
     u.order[i] = u.prevOrder[i];
@@ -1114,11 +1256,15 @@ export class UnitSystem {
       if (this.deadBuildings[s] === 0) continue;
       anyBuilding = true;
       w.setFootprint(b.id[s], b.type[s] as BuildingType, b.cellX[s], b.cellY[s], false);
-      if (b.garrisoned[s] > 0) {
+      if (b.garrisoned[s] > 0 || b.soldiers[s] > 0) {
         for (let i = 0; i < w.units.count; i++) {
-          if (u.action[i] === Action.Garrisoned && u.orderTarget[i] === b.id[s]) release(i);
+          if (u.action[i] !== Action.Garrisoned) continue;
+          // A calibrating mage keeps its building in prevTarget (startCast).
+          const at = u.order[i] === Order.Cast ? u.prevTarget[i] : u.orderTarget[i];
+          if (at === b.id[s]) release(i);
         }
         b.garrisoned[s] = 0;
+        b.soldiers[s] = 0;
       }
       w.buildingSlot[b.id[s]] = -1;
       if (b.progress[s] >= 1000 && BUILDINGS[b.type[s]].accepts.length > 0) w.dropVersion++;
@@ -1140,6 +1286,23 @@ export class UnitSystem {
 }
 
 /**
+ * Equally near targets of the round 7 shooters (arrow towers, soldiers hiding in buildings):
+ * is unit slot j before slot k (k < 0: none yet) in the chooser's canonical frame — the
+ * lower canonical v, then u, of their cells, then the lower id? Mirror-image choosers pick
+ * mirror-image targets.
+ */
+function canonFirst(w: World, owner: number, j: number, k: number): boolean {
+  if (k < 0) return true;
+  const u = w.units.col;
+  const f = w.map.frames[owner] ?? IDENTITY;
+  const a = toCanon(f, u.x[j] >> CELL_SHIFT, u.y[j] >> CELL_SHIFT);
+  const c = toCanon(f, u.x[k] >> CELL_SHIFT, u.y[k] >> CELL_SHIFT);
+  if (a.v !== c.v) return a.v < c.v;
+  if (a.u !== c.u) return a.u < c.u;
+  return u.id[j] < u.id[k];
+}
+
+/**
  * Equally near targets: the lower or the higher id, alternating with the time and the
  * chooser's id. Ids are handed out in creation order, so always preferring the lower id
  * would make neutral militia and towers pick on whichever player built first.
@@ -1153,8 +1316,10 @@ export function preferHighId(w: World, chooser: number): boolean {
 export function startCast(w: World, i: number, x: number, y: number, auto: boolean): void {
   const u = w.units.col;
   if (u.order[i] !== Order.Cast) {
-    u.prevOrder[i] = auto ? u.order[i] : Order.None;
-    u.prevTarget[i] = auto ? u.orderTarget[i] : -1;
+    // A mage hiding in a building (round 7) always goes back to hiding in it after the shot.
+    const back = auto || u.action[i] === Action.Garrisoned;
+    u.prevOrder[i] = back ? u.order[i] : Order.None;
+    u.prevTarget[i] = back ? u.orderTarget[i] : -1;
   }
   u.order[i] = Order.Cast;
   u.orderTarget[i] = -1;
