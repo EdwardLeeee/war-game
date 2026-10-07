@@ -291,15 +291,17 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       | (typeof known)[number]
       | undefined;
   let myTown = nearestTown();
-  // The scout's stops (random maps): the other three corners, nearest first, then the centre.
-  const scoutStops = random
+  // The scout's stops (random maps): round the edge of the map through the other three corners
+  // (the middle has the big city's militia and tower), then the centre; after a scout dies, the
+  // next one goes round the other way.
+  const corner = { right: { u: n - 17, v: n - 18 }, far: { u: n - 18, v: 16 }, up: { u: 16, v: 17 }, centre: { u: n >> 1, v: n >> 1 } };
+  const tours = random
     ? [
-        { u: n - 17, v: n - 18 },
-        { u: 16, v: 17 },
-        { u: n - 18, v: 16 },
-        { u: n >> 1, v: n >> 1 },
-      ].map((c) => real(c.u, c.v))
-    : [];
+        [corner.right, corner.far, corner.up, corner.centre],
+        [corner.up, corner.far, corner.right, corner.centre],
+      ].map((t) => t.map((c) => real(c.u, c.v)))
+    : [[], []];
+  let tour = 0;
   let scout = -1;
   let scoutStop = 0;
   let scoutSince = 0;
@@ -703,7 +705,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (!held) continue;
         const alive = (garrison.get(id) ?? []).filter((gid) => soldiers.some((s) => s.id === gid));
         const free = soldiers
-          .filter((s) => !isGuard(s.id) && s.type === UnitType.Spearman)
+          .filter((s) => !isGuard(s.id) && s.type === UnitType.Spearman && s.id !== scout)
           .sort((a, b) => dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < Math.max(t.needed, plan.guards) && free.length > 0) alive.push(free.shift()!.id);
         garrison.set(id, alive);
@@ -746,6 +748,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // Random maps: until the enemy's main city is seen, one spearman scouts the corners (D-074).
       if (found < 0) {
         if (!soldiers.some((u) => u.id === scout)) {
+          // The last scout died on the way: the next goes round the other way.
+          if (scout >= 0) tour = 1 - tour;
+          scoutStop = 0;
           const free = soldiers.filter((u) => !isGuard(u.id) && !raiders.includes(u)).sort((a, b) => (a.type === UnitType.Spearman ? 0 : 1) - (b.type === UnitType.Spearman ? 0 : 1) || a.id - b.id);
           scout = free.length > 0 ? free[0].id : -1;
           scoutSince = tick;
@@ -754,6 +759,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         }
         const sc = soldiers.find((u) => u.id === scout);
         if (sc !== undefined) {
+          const scoutStops = tours[tour];
           const stop = scoutStops[scoutStop % scoutStops.length];
           const d = dist2(sc.x, sc.y, stop.x, stop.y);
           if (d < scoutBest) {
