@@ -5,7 +5,7 @@
 
 import type { Game } from "../../game/game.ts";
 import { pressable } from "../../input/pressable.ts";
-import { AUTO_TRAIN, BUILDING_STRIDE, BuildingField, BuildingFlag, type GameStats, HeaderField as H, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
+import { AUTO_TRAIN, BUILDING_STRIDE, BuildingField, BuildingFlag, type GameStats, HeaderField as H, type Resource, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
@@ -138,6 +138,9 @@ export class Hud {
       retreat: () => game.retreatSelection(),
       dispatchPool: (node: number) => game.dispatchPool(node),
       dispatch: (node: number, share: number) => game.dispatch(node, share),
+      depotResources: (building: number) => game.depotResources(building),
+      depotWorkers: (building: number, resource: Resource) => game.depotWorkers(building, resource),
+      depotSend: (building: number, resource: Resource) => game.depotSend(building, resource),
       cancelToHold: () => game.cancelToHold(),
       groupRefill: (i: number) => game.army.groups[i].refill,
       toggleRefill: (i: number) => this.toggleRefill(i),

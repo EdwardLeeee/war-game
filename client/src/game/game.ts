@@ -63,6 +63,7 @@ import { Placement } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
+import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, pickToSend, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
 import { allIn } from "./orders.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
@@ -510,6 +511,107 @@ export class Game implements GestureHost {
       out.push({ id: u[o + UnitField.id], x, y, gathers, node, idle });
     }
     return out;
+  }
+
+  /**
+   * 點存放建築派村民 (D-066): our villagers as the depot panel needs them. Those hiding in a
+   * building (全體回城) are left out.
+   */
+  private workers(): Worker[] {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const b = view?.curr?.snap.buildings;
+    if (view === null || u === undefined || b === undefined) return [];
+    const out: Worker[] = [];
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] !== view.me || u[o + UnitField.type] !== UnitType.Farmer || u[o + UnitField.action] === Action.Garrisoned) continue;
+      const x = u[o + UnitField.x] / CELL;
+      const y = u[o + UnitField.y] / CELL;
+      const order = u[o + UnitField.order];
+      const t = u[o + UnitField.orderTarget];
+      let gathers: Resource | null = null;
+      let at: { x: number; y: number } | null = null;
+      if (order === Order.Gather) {
+        // A node, or a farm of ours (ids of nodes and of buildings can be the same number): the one nearer the villager, as villagers() does.
+        const row = view.nodes.get(t);
+        const bo = view.buildingRow(t);
+        const farm = bo >= 0 && b[bo + BuildingField.owner] === view.me && b[bo + BuildingField.type] === BuildingType.Farm;
+        const node = row === undefined ? null : { x: row[NodeField.cellX] + 0.5, y: row[NodeField.cellY] + 0.5 };
+        const field = farm ? { x: b[bo + BuildingField.cellX] + 1.5, y: b[bo + BuildingField.cellY] + 1.5 } : null;
+        const dist = (p: { x: number; y: number } | null) => (p === null ? Infinity : Math.hypot(x - p.x, y - p.y));
+        if (row !== undefined && dist(node) <= dist(field)) {
+          gathers = NODE_RESOURCE[row[NodeField.kind]] ?? null;
+          at = node;
+        } else if (farm) {
+          gathers = Resource.Food;
+          at = field;
+        }
+      }
+      const idle = order === Order.None || (u[o + UnitField.flags] & UnitFlag.IdleFarmer) !== 0;
+      const busy = order === Order.Build || order === Order.Repair;
+      out.push({ id: u[o + UnitField.id], x, y, gathers, at, idle, busy });
+    }
+    return out;
+  }
+
+  /** Our finished buildings that take food, wood or gold (D-066). */
+  private depots(): Depot[] {
+    const view = this.view;
+    const b = view?.curr?.snap.buildings;
+    if (view === null || b === undefined) return [];
+    const out: Depot[] = [];
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + BuildingField.owner] !== view.me || b[o + BuildingField.progress] < 1000) continue;
+      const info = view.rules.buildings[b[o + BuildingField.type]];
+      if (info === undefined || !info.accepts.some((r) => DEPOT_RESOURCES.includes(r))) continue;
+      out.push({ id: b[o + BuildingField.id], cx: b[o + BuildingField.cellX], cy: b[o + BuildingField.cellY], size: info.size, accepts: info.accepts });
+    }
+    return out;
+  }
+
+  /** The resources a depot panel shows for this building of ours (none for others). */
+  depotResources(building: number): Resource[] {
+    const d = this.depots().find((v) => v.id === building);
+    return d === undefined ? [] : DEPOT_RESOURCES.filter((r) => d.accepts.includes(r));
+  }
+
+  /** How many of our villagers bring `resource` back to this building (D-066). */
+  depotWorkers(building: number, resource: Resource): number {
+    return workersAt(this.workers(), this.depots(), building, resource).length;
+  }
+
+  /** ＋ on a depot (D-066): one villager more gathering `resource` for it, as the player's own order. */
+  depotSend(building: number, resource: Resource): void {
+    const view = this.view;
+    const depot = this.depots().find((v) => v.id === building);
+    const b = view?.curr?.snap.buildings;
+    if (view === null || depot === undefined || b === undefined) return;
+    const workers = this.workers();
+    const id = pickToSend(workers, depot, resource);
+    if (id === null) {
+      this.toast("沒有可以派的村民");
+      return;
+    }
+    const nodes: DepotNode[] = [...view.nodes.values()].map((r) => ({ id: r[NodeField.id], kind: r[NodeField.kind], cx: r[NodeField.cellX], cy: r[NodeField.cellY], amount: r[NodeField.amount] }));
+    const farms: DepotFarm[] = [];
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + BuildingField.owner] !== view.me || b[o + BuildingField.type] !== BuildingType.Farm || b[o + BuildingField.progress] < 1000) continue;
+      const cx = b[o + BuildingField.cellX];
+      const cy = b[o + BuildingField.cellY];
+      const centre = { x: cx + 1.5, y: cy + 1.5 };
+      // Worked, or someone on the way to it.
+      const taken = workers.some((w) => w.gathers === Resource.Food && w.at !== null && w.at.x === centre.x && w.at.y === centre.y);
+      farms.push({ id: b[o + BuildingField.id], cx, cy, size: view.rules.buildings[BuildingType.Farm]?.size ?? 3, taken });
+    }
+    const to = sendTarget(depot, resource, nodes, farms);
+    if ("error" in to) {
+      this.toast(to.error);
+      return;
+    }
+    // A farm is worked with `repair` (sim/PROTOCOL.md 3.1); a node with `gather`, which makes it the player's own (HandPicked).
+    const cmd: CommandBody = "farm" in to ? { c: "repair", u: [id], building: to.farm } : { c: "gather", u: [id], node: to.node };
+    this.apply([{ kind: "command", cmd }]);
+    this.toast(`派 1 名村民去${"farm" in to ? "種田" : `採${RESOURCE_WORD[resource] ?? ""}`}`);
   }
 
   /** 派村民 (D-061): whom a tap on this node can send, nearest first; null for an unknown node. */

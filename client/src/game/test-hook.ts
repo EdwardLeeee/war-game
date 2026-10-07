@@ -3,6 +3,7 @@
 import {
   BUILDING_STRIDE,
   BuildingField as B,
+  checkPlacement,
   type BuildingType,
   type CommandBody,
   HeaderField as H,
@@ -34,7 +35,7 @@ export interface GameHook {
   /** Screen position (CSS px) of a cell's centre. */
   cellToScreen(cx: number, cy: number): { x: number; y: number };
   /** Units in the latest snapshot, with screen positions, cells (and fractional cells), action, order and carried amount. */
-  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number; fx: number; fy: number; action: number; order: number; target: number; carry: number; stance: number; loose: boolean }[];
+  units(): { id: number; owner: number; type: number; sx: number; sy: number; cx: number; cy: number; fx: number; fy: number; action: number; order: number; target: number; carry: number; stance: number; loose: boolean; handPicked: boolean }[];
   /** Select these own units (test set-up; the gestures that select are tested elsewhere). */
   select(units: number[]): void;
   startPlacement(type: number): void;
@@ -55,6 +56,8 @@ export interface GameHook {
    * the start, so a spot inside a town still in the fog can be aimed at too.
    */
   openCellNear(cx: number, cy: number, explored?: boolean): { x: number; y: number } | null;
+  /** The nearest top-left cell (Chebyshev rings) where a building of this type may go now, by the placement grid. */
+  buildSpotNear(type: number, cx: number, cy: number): { x: number; y: number } | null;
   lastCheck(): unknown;
   /** Post a command as the player (tests of commands the interface has no button for yet). */
   send(cmd: CommandBody): void;
@@ -120,6 +123,7 @@ export function gameHook(game: Game): GameHook {
           carry: u[o + U.carryAmount],
           stance: u[o + U.stance],
           loose: (u[o + U.flags] & UnitFlag.Loose) !== 0,
+          handPicked: (u[o + U.flags] & UnitFlag.HandPicked) !== 0,
         });
       }
       return out;
@@ -163,6 +167,21 @@ export function gameHook(game: Game): GameHook {
             const i = y * size + x;
             if (view.map.terrain[i] !== Terrain.Open || view.nodeAt[i] >= 0 || taken[i] === 1 || (explored && view.fog[i] === 0)) continue;
             return { x, y };
+          }
+        }
+      }
+      return null;
+    },
+    buildSpotNear: (type, cx, cy) => {
+      const view = game.view;
+      const info = view?.rules.buildings[type];
+      if (view === null || view.placement === null || info === undefined) return null;
+      const size = view.map.size;
+      for (let r = 0; r < size; r++) {
+        for (let y = cy - r; y <= cy + r; y++) {
+          for (let x = cx - r; x <= cx + r; x++) {
+            if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r) continue;
+            if (checkPlacement(view.placement, info, x, y) === 0) return { x, y };
           }
         }
       }

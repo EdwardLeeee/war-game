@@ -726,6 +726,45 @@ button.active {
   margin-right: -46px;
 }
 
+/* 點存放建築派村民 (D-066): one resource on a line of its own; the main city's three side by side, the count over its buttons. */
+.depot {
+  margin: 4px -46px 0 0;
+  font-size: 13px;
+}
+
+.depot-one .depot-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.depot-one .depot-count {
+  flex: 1;
+}
+
+.depot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px 8px;
+}
+
+.depot-caption {
+  grid-column: 1 / -1;
+  opacity: 0.85;
+}
+
+.depot-steps {
+  display: flex;
+  gap: 4px;
+}
+
+.depot .step {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 18px;
+}
+
 /* 收起 (D-054): the title line only; its button sits at the end of that line, left of the ✕. */
 .sel-fold {
   margin-left: auto;
