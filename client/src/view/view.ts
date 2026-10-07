@@ -73,6 +73,8 @@ export class GameView implements IntentWorld {
   readonly rocks: Uint8Array;
   /** Bumped when a rock becomes known. */
   rocksVersion = 0;
+  /** learnRocks' cells under a known building, kept between snapshots (it runs on each one). */
+  private built: Uint8Array | null = null;
   selection: { units: number[]; building: number | null } = { units: [], building: null };
   /** A foreign unit, building, node or town the player tapped with nothing of theirs selected. */
   inspected: Pick | null = null;
@@ -150,7 +152,9 @@ export class GameView implements IntentWorld {
     const size = this.map.size;
     const cells = snap.placement;
     if (cells === null) return;
-    const built = new Uint8Array(size * size);
+    if (this.built === null) this.built = new Uint8Array(size * size);
+    const built = this.built;
+    built.fill(0);
     const b = snap.buildings;
     for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
       const s = this.rules.buildings[b[o + B.type]]?.size ?? 1;

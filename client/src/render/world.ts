@@ -34,6 +34,11 @@ const BAR_W = TILE_PX * 0.8;
 const BAR_H = 3;
 /** How dark the fog is: never explored, explored but out of sight (0-255). */
 const FOG_ALPHA = { unexplored: 255, explored: 140 };
+// Ground colours, shared rather than made anew for each cell: on a random map the terrain is
+// painted again whenever a rock is explored (D-074), 16 641 cells each time.
+const ROCK_RGB = [104, 96, 86] as const;
+const GROUND_RGB = [86, 116, 64] as const;
+const GROUND_LIGHT_RGB = [92, 123, 69] as const;
 
 export interface TownLook {
   label: string;
@@ -245,10 +250,12 @@ export class WorldRenderer {
     const d = this.terrainPixels.data;
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const rock = this.view.rocks[y * size + x] === 1;
-        const shade = (x + y) % 2 === 0;
-        const [r, g, b] = rock ? [104, 96, 86] : shade ? [86, 116, 64] : [92, 123, 69];
-        d.set([r, g, b, 255], (y * size + x) * 4);
+        const c = this.view.rocks[y * size + x] === 1 ? ROCK_RGB : (x + y) % 2 === 0 ? GROUND_RGB : GROUND_LIGHT_RGB;
+        const o = (y * size + x) * 4;
+        d[o] = c[0];
+        d[o + 1] = c[1];
+        d[o + 2] = c[2];
+        d[o + 3] = 255;
       }
     }
     (this.terrainCanvas.getContext("2d") as CanvasRenderingContext2D).putImageData(this.terrainPixels, 0, 0);

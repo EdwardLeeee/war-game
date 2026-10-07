@@ -383,8 +383,10 @@ export class MockPort implements SimPort {
   }
 
   private mapInfo(): MapInfo {
+    // Each main city stands on its spawn, as in the simulation (its top-left cell 2 up and left):
+    // the camera opens on it.
     const spawns = [
-      { player: ME, cellX: 16, cellY: 76 },
+      { player: ME, cellX: 10, cellY: 82 },
       { player: FOE, cellX: 86, cellY: 14 },
     ];
     // A random map tells only our own home: open ground everywhere, no towns (D-074).

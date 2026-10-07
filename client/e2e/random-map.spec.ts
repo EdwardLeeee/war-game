@@ -77,8 +77,15 @@ test("隨機地圖開局：看得到自己的主城，看不到敵方主城和�
   expect(await page.evaluate(() => window.__proto?.game?.mapMode())).toBe("random");
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const all = await buildings(page);
-  expect(all.some((b) => b.owner === me && b.type === 0), "our main city").toBe(true);
+  const city = all.find((b) => b.owner === me && b.type === 0);
+  if (city === undefined) throw new Error("no main city of ours");
   expect(all.some((b) => b.owner !== me && b.type === 0), "no enemy main city").toBe(false);
+  // The camera opens on our main city (its spawn), the whole of it on screen.
+  const view = page.viewportSize() ?? { width: 0, height: 0 };
+  for (const [x, y] of [[city.cx, city.cy], [city.cx + city.size, city.cy + city.size]] as const) {
+    const at = await page.evaluate(([cx, cy]) => window.__proto?.game?.cellToScreen(cx, cy) ?? { x: -1, y: -1 }, [x, y] as const);
+    expect(at.x >= 0 && at.y >= 0 && at.x <= view.width && at.y <= view.height, `main city corner (${x}, ${y}) on screen at ${JSON.stringify(at)}`).toBe(true);
+  }
   // Towns near home are explored from the start; the big town in the middle is not.
   const towns0 = await knownTowns(page);
   expect(towns0.length).toBeGreaterThan(0);
