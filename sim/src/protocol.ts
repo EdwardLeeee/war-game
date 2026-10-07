@@ -339,9 +339,17 @@ export const TownField = {
    * climbs back while it is governed.
    */
   incomePermille: 10,
+  /**
+   * Centre cell and TownSize (D-074): on a random map the screen and the AI learn where a town is
+   * only from its row, once explored (MapInfo.towns is empty there). The same as MapInfo.towns
+   * on the fixed map.
+   */
+  cellX: 11,
+  cellY: 12,
+  size: 13,
 } as const;
-/** 11 from round 7 (D-061; was 10). */
-export const TOWN_STRIDE = 11;
+/** 14 from D-074 (11 from round 7, D-061; was 10). */
+export const TOWN_STRIDE = 14;
 export const TownFlag = {
   /** Both sides have military units inside the radius; state is frozen. */
   Contested: 1,
@@ -417,6 +425,14 @@ export const HEADER_LENGTH = 25;
 export const Scenario = { Standard: 0, E2e: 1, Perf: 2 } as const;
 export type Scenario = (typeof Scenario)[keyof typeof Scenario];
 export type ScenarioName = "standard" | "e2e" | "perf";
+
+/**
+ * Which map a game is played on (D-074). "fixed": the prototype's 96 x 96 map, the same every
+ * game, everything on it known from the start. "random": a new 129 x 129 map from the game's
+ * seed, only explored ground known (MapInfo). Random maps take the "standard" scenario only.
+ */
+export type MapMode = "fixed" | "random";
+export const MAP_MODES = ["fixed", "random"] as const satisfies readonly MapMode[];
 
 // --- building placement ---------------------------------------------------------------
 
@@ -553,10 +569,20 @@ export interface MapInfo {
   seed: number;
   /** Side in cells. */
   size: number;
-  /** size * size cells, row by row: Terrain values. Trees are nodes, not terrain. */
+  /**
+   * size * size cells, row by row: Terrain values. Trees are nodes, not terrain. On a random map
+   * a player gets all Open here: rock comes with exploration (Snapshot.placement).
+   */
   terrain: Uint8Array;
+  /**
+   * Main city centres. On a random map a player gets only its own: look a spawn up by `player`,
+   * not by its index. The enemy's main city is known once seen (Snapshot.buildings).
+   */
   spawns: { player: number; cellX: number; cellY: number }[];
+  /** On a random map a player gets none: towns come with exploration (Snapshot.towns). */
   towns: { id: number; size: TownSize; cellX: number; cellY: number; radius: number }[];
+  /** Absent: "fixed" (D-074). */
+  mode?: MapMode;
 }
 
 export interface Rules {
@@ -728,6 +754,11 @@ export type ToWorker =
       maxTicks?: number;
       /** Per player (aligned with `ai`), how its simple AI plays. Absent: all "normal". */
       difficulty?: AiDifficulty[];
+      /**
+       * Absent: "fixed". "random" (D-074) only for AI against AI (human null) until the AI scouts:
+       * the AI knows the whole random map for now, so a person cannot play one yet.
+       */
+      map?: MapMode;
     }
   /** The worker stamps t (next tick not yet run) and p (the human player). */
   | { type: "command"; cmd: CommandBody & { seq: number } }
@@ -736,7 +767,7 @@ export type ToWorker =
   /** Ticks per wall-clock second: 20 slow, 30 normal, 40 fast (D-024; tests may go higher). Never changes the game. */
   | { type: "speed"; tps: number }
   /** Run a whole AI-vs-AI game as fast as possible and report hashes. Use a separate Worker. */
-  | { type: "determinism"; protocol: number; seed: number; scenario: ScenarioName; maxTicks: number }
+  | { type: "determinism"; protocol: number; seed: number; scenario: ScenarioName; maxTicks: number; map?: MapMode }
   | { type: "export_log" };
 
 export interface Snapshot {
@@ -798,6 +829,8 @@ export interface LogHeader {
   difficulty?: AiDifficulty[];
   /** Per player, whether its barracks, ranges and mage halls start with automatic training on (round 6). Absent: all off. */
   autoTrain?: boolean[];
+  /** The map (D-074). Absent (every fixed-map log): "fixed". */
+  map?: MapMode;
 }
 
 /**
@@ -809,6 +842,8 @@ export interface ExpectedHashes {
   seed: number;
   scenario: ScenarioName;
   maxTicks: number;
+  /** Absent: "fixed" (D-074). */
+  map?: MapMode;
   /** Tick (as a string key, every HASH_EVERY) -> 8-digit hex hash. */
   hashes: Record<string, string>;
   final: { tick: number; hash: string; winner: number };

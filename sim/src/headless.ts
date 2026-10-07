@@ -1,7 +1,7 @@
 // Headless runner (Node; no build step, types are stripped).
 //   node src/headless.ts [--scenario standard|e2e|perf|skirmish] [--seed N] [--ticks N] [--ai 1,1]
 //                        [--script demo|eco] [--replay FILE] [--out DIR] [--expected FILE]
-//                        [--auto-train 1,0]
+//                        [--auto-train 1,0] [--map fixed|random]
 // Writes into --out: hashes.txt ("tick hash" per HASH_EVERY), commands.jsonl (LogHeader,
 // then one command per line), timing.json. --expected writes ExpectedHashes JSON for the
 // phone-side determinism check. Until the AI arrives (PR-5): --script demo drives the
@@ -19,6 +19,8 @@ import {
   type Command,
   type ExpectedHashes,
   type LogHeader,
+  MAP_MODES,
+  type MapMode,
   MAX_TICKS,
   PROTOCOL_VERSION,
   type ScenarioName,
@@ -55,7 +57,10 @@ const expected = arg("expected", "");
 
 // Automatic training (round 6): the log's, or --auto-train 1,0; off when neither says.
 const autoTrain = header?.autoTrain ?? (arg("auto-train", "") === "" ? undefined : arg("auto-train", "").split(",").map((v) => v === "1"));
-const runner = new Runner({ seed, scenario, ai, replay, maxTicks, difficulty, autoTrain });
+// The map (D-074): the log's (absent = fixed), or --map.
+const map = (replay !== undefined ? (header?.map ?? "fixed") : arg("map", "fixed")) as MapMode;
+if (!(MAP_MODES as readonly string[]).includes(map)) throw new Error(`bad --map ${map}`);
+const runner = new Runner({ seed, scenario, ai, replay, maxTicks, difficulty, autoTrain, map });
 const g = runner.game;
 let seq = 0;
 
@@ -146,13 +151,14 @@ if (expected !== "") {
     seed,
     scenario: scenario as ScenarioName,
     maxTicks,
+    ...(map === "random" ? { map } : {}),
     hashes: Object.fromEntries(runner.hashes.map((h) => [String(h.tick), hex8(h.hash)])),
     final: { tick: g.tick, hash: hex8(g.hash()), winner: g.w.winner },
   };
   writeFileSync(expected, JSON.stringify(exp) + "\n");
 }
 console.log(
-  `SIM ${scenario} seed ${seed}${replay ? " (replay)" : ""}: ${g.tick} ticks in ${(totalMs / 1000).toFixed(2)} s; ` +
+  `SIM ${scenario}${map === "random" ? " random map" : ""} seed ${seed}${replay ? " (replay)" : ""}: ${g.tick} ticks in ${(totalMs / 1000).toFixed(2)} s; ` +
     `tick median ${timing.tickMicros.median} us, p95 ${timing.tickMicros.p95} us, max ${timing.tickMicros.max} us ` +
     `(${timing.tickMicros.maxAfter100} us from tick 100); ` +
     `fields built ${timing.fieldBuilds}, hit rate ${timing.fieldHitRate}; ` +

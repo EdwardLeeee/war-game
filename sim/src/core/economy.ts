@@ -21,7 +21,7 @@ import {
   UnitFlag,
   UnitType,
 } from "../protocol.ts";
-import { toCanon } from "../frame.ts";
+import { IDENTITY, footprintCentre, toCanon } from "../frame.ts";
 import { isqrt } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
 import { type FieldCache, buildingKey, cellsAround, dropKey, nearestWalkable, nodeKey } from "./paths.ts";
@@ -289,7 +289,7 @@ export class Economy {
     const u = w.units.col;
     const p = u.owner[i];
     const seen = this.fog.nodeSeen[p];
-    const spawn = w.map.spawns[p];
+    const spawn = w.homes[p];
     const frame = w.map.frames[p];
     let best = -1;
     let bestScore = 0;
@@ -791,8 +791,8 @@ export class Economy {
     }
     if (type === BuildingType.LumberCamp || type === BuildingType.Mine) {
       const kind = type === BuildingType.LumberCamp ? NodeKind.Tree : NodeKind.GoldMine;
-      const size = BUILDINGS[type].size;
-      const [node] = this.bestNode(w, i, kind, b.cellX[bs] + (size >> 1), b.cellY[bs] + (size >> 1), NEXT_NODE_RADIUS, false);
+      const c = footprintCentre(w.map.frames[b.owner[bs]] ?? IDENTITY, b.cellX[bs], b.cellY[bs], BUILDINGS[type].size);
+      const [node] = this.bestNode(w, i, kind, c.x, c.y, NEXT_NODE_RADIUS, false);
       if (node >= 0) {
         this.gather(w, i, node, false);
         return;
@@ -992,7 +992,7 @@ export class Economy {
     const n = w.size;
     const p = b.owner[bs];
     const size = BUILDINGS[b.type[bs]].size;
-    const spawn = w.map.spawns[p];
+    const spawn = w.homes[p];
     const rallied = b.rallyX[bs] >= 0;
     const aimX = rallied ? b.rallyX[bs] >> CELL_SHIFT : n >> 1;
     const aimY = rallied ? b.rallyY[bs] >> CELL_SHIFT : n >> 1;

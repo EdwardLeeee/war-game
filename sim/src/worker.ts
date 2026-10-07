@@ -13,6 +13,7 @@ import {
   COMMAND_KINDS,
   type FromWorker,
   type GameStats,
+  MAP_MODES,
   MAX_TICKS,
   PLAYER_COUNT,
   PROTOCOL_VERSION,
@@ -23,7 +24,7 @@ import {
   UnitType,
 } from "./protocol.ts";
 import { Runner } from "./runner.ts";
-import { buildView, SnapshotEncoder, transferables } from "./view/view.ts";
+import { buildView, mapInfo, SnapshotEncoder, transferables } from "./view/view.ts";
 
 const scope = self as unknown as {
   postMessage(msg: FromWorker, transfer?: Transferable[]): void;
@@ -122,7 +123,7 @@ function stop(): void {
 }
 
 function determinism(msg: Extract<ToWorker, { type: "determinism" }>): void {
-  const r = new Runner({ seed: msg.seed, scenario: msg.scenario, ai: [true, true], maxTicks: msg.maxTicks });
+  const r = new Runner({ seed: msg.seed, scenario: msg.scenario, ai: [true, true], maxTicks: msg.maxTicks, map: msg.map });
   const times: number[] = [];
   const start = now();
   post({ type: "determinism_progress", tick: 0, hash: hex8(r.game.hash()) });
@@ -160,17 +161,14 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
         if (!Number.isInteger(maxTicks) || maxTicks < 0) throw new Error(`bad maxTicks ${msg.maxTicks}`);
         const difficulty = msg.difficulty ?? [];
         if (!difficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad difficulty ${msg.difficulty}`);
+        const map = msg.map ?? "fixed";
+        if (!(MAP_MODES as readonly string[]).includes(map)) throw new Error(`bad map ${msg.map}`);
+        // The AI knows the whole random map until it can scout (runner.ts), so no person plays one yet (D-074).
+        if (map === "random" && human !== null) throw new Error("random maps are AI against AI only until the AI scouts (D-074)");
         // A person's barracks, ranges and mage halls train on their own; an AI's do not (round 6, D-054).
-        runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty, autoTrain: aiFlags.map((a) => !a) });
+        runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty, autoTrain: aiFlags.map((a) => !a), map });
         encoder = new SnapshotEncoder(runner.game.w.nodeAmount.length);
-        const m = runner.game.w.map;
-        post({
-          type: "ready",
-          protocol: PROTOCOL_VERSION,
-          player: human,
-          map: { seed: m.seed, size: m.size, terrain: m.terrain.slice(), spawns: m.spawns, towns: m.towns },
-          rules: rules(),
-        });
+        post({ type: "ready", protocol: PROTOCOL_VERSION, player: human, map: mapInfo(runner.game.w.map, human), rules: rules() });
         sendSnapshot(0);
         nextAt = now() + 1000 / tps;
         schedule();

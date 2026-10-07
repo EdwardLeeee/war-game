@@ -4,7 +4,7 @@
 // nodes and towns have their own small, fixed id ranges.
 
 import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, TownState, UnitType } from "../protocol.ts";
-import { IDENTITY, stepOrder, xIsCanonY } from "../frame.ts";
+import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import type { GameMap } from "./map.ts";
 import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, MAX_POPULATION, TOWNS, UNITS } from "./rules.ts";
 
@@ -214,6 +214,11 @@ export class World {
    */
   stepOrders: number[][] = [];
   yFirst: boolean[] = [];
+  /**
+   * Per player, the cell it takes as its own main city's centre (frame.ts spawnCentre): the
+   * spawn cell on the fixed map, the same cell of the mirror image on both sides of a random one.
+   */
+  homes: { cellX: number; cellY: number }[] = [];
   /** Winner once the game is over (-1 = draw), or -2 while running. */
   winner = -2;
   endReason = -1;
@@ -227,6 +232,10 @@ export class World {
       const f = map.frames[o] ?? IDENTITY;
       this.stepOrders.push(stepOrder(f));
       this.yFirst.push(xIsCanonY(f));
+    }
+    for (let p = 0; p < PLAYER_COUNT; p++) {
+      const c = spawnCentre(map.frames[p] ?? IDENTITY, map.spawns[p]);
+      this.homes.push({ cellX: c.x, cellY: c.y });
     }
     for (let i = 0; i < n * n; i++) if (map.terrain[i] === 1) this.grid[i] = BLOCK_ROCK;
     for (let p = 0; p < PLAYER_COUNT; p++) {

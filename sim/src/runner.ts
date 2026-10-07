@@ -42,10 +42,15 @@ export class Runner {
   readonly difficulty: AiDifficulty[];
 
   constructor(cfg: RunnerConfig) {
-    this.game = new Game({ seed: cfg.seed, scenario: cfg.scenario, maxTicks: cfg.maxTicks ?? MAX_TICKS, autoTrain: cfg.autoTrain });
+    this.game = new Game({ seed: cfg.seed, scenario: cfg.scenario, maxTicks: cfg.maxTicks ?? MAX_TICKS, autoTrain: cfg.autoTrain, map: cfg.map });
     this.difficulty = Array.from({ length: PLAYER_COUNT }, (_, p) => cfg.difficulty?.[p] ?? "normal");
     for (let p = 0; p < PLAYER_COUNT; p++) {
       const slot = cfg.swap === true ? 1 - p : p;
+      // TEMPORARY (D-074, ceo 2026-10-07): the AI cannot scout yet, so on a random map it still
+      // gets the whole map (the enemy's main city, every town) instead of what the screen gets,
+      // view.ts mapInfo(map, p). Remove with war-game-ai's scouting PR. Until then a person
+      // cannot play a random map (worker.ts), and AI-vs-AI games on random maps only check
+      // whether the maps are fair.
       const know = { map: this.game.w.map, rules: rules(), frame: this.game.w.map.frames[p], maxTicks: this.maxTicks, difficulty: this.difficulty[p] };
       this.ais.push(cfg.replay === undefined && cfg.ai[p] ? createAi(p, cfg.seed, know, slot, cfg.styles?.[slot]) : null);
     }
@@ -97,6 +102,8 @@ export class Runner {
     const head: LogHeader = { protocol: PROTOCOL_VERSION, seed: c.seed, scenario: c.scenario as ScenarioName, ai, maxTicks: this.maxTicks, difficulty: this.difficulty };
     // Only when some player has it, so the logs of AI-vs-AI games stay as they were.
     if (c.autoTrain?.some((on) => on) === true) head.autoTrain = Array.from({ length: PLAYER_COUNT }, (_, p) => c.autoTrain?.[p] === true);
+    // Only on a random map, so fixed-map logs stay as they were (D-074).
+    if (c.map === "random") head.map = "random";
     return head;
   }
 }

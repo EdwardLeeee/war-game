@@ -81,7 +81,7 @@ test("someone hiding: everyone who sees the building gets Occupied, only the own
 test("town rows are TOWN_STRIDE long and pay in full while the town rules are off", () => {
   const g = emptyGame();
   const v = buildView(g, null);
-  assert.equal(TOWN_STRIDE, 11);
+  assert.equal(TOWN_STRIDE, 14, "11 from round 7, 14 with the town's place and size (D-074)");
   assert.equal(v.towns.length, g.w.townSize.length * TOWN_STRIDE);
   for (let k = 0; k < v.towns.length; k += TOWN_STRIDE) assert.equal(v.towns[k + TownField.incomePermille], 1000);
 });

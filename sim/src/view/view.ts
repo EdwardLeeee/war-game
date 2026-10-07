@@ -6,7 +6,8 @@
 // - other buildings: live when seen now, else the player's memory (flag Remembered);
 // - resource nodes: the ones ever seen, with the amount last seen;
 // - towns: the ones explored, as last seen;
-// - placement: where the player may try to build, from what it knows (PROTOCOL.md section 7).
+// - placement: where the player may try to build, from what it knows (PROTOCOL.md section 7);
+//   on a random map rock only where explored (D-074).
 // Farmers hidden in buildings (recall) are listed only for their owner.
 // A null player is a spectator (AI against AI on screen): everything, live.
 
@@ -21,6 +22,7 @@ import {
   GameState,
   HEADER_LENGTH,
   HeaderField,
+  type MapInfo,
   NODE_STRIDE,
   NodeField,
   Order,
@@ -41,6 +43,7 @@ import {
 } from "../protocol.ts";
 import { writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
+import type { GameMap } from "../core/map.ts";
 import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, TOWER_REACH, TOWERS, TOWNS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
@@ -69,6 +72,26 @@ export interface RunnerInfo {
   tps: number;
   stepMicros: number;
   stepBatchMicros: number;
+}
+
+/**
+ * The map as `ready` gives it to `player` (null: a spectator, who knows everything). The fixed
+ * map is known whole from the start. On a random map a player starts knowing only its own main
+ * city (D-074): no rock, no towns, no enemy main city; the PlayerView brings them as it explores.
+ */
+export function mapInfo(map: GameMap, player: number | null): MapInfo {
+  const mode = map.mode ?? "fixed";
+  if (mode === "fixed" || player === null) {
+    return { seed: map.seed, size: map.size, terrain: map.terrain.slice(), spawns: map.spawns, towns: map.towns, mode };
+  }
+  return {
+    seed: map.seed,
+    size: map.size,
+    terrain: new Uint8Array(map.size * map.size),
+    spawns: map.spawns.filter((s) => s.player === player),
+    towns: [],
+    mode,
+  };
 }
 
 const SCENARIO_ID: Record<string, number> = { standard: Scenario.Standard, e2e: Scenario.E2e, perf: Scenario.Perf };
@@ -285,8 +308,10 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   // unexplored cells are marked; farm land comes from own finished main cities and granaries.
   const placement = new Uint8Array(n * n);
   const terrain = w.map.terrain;
+  // On a random map rock is known only where explored (D-074).
+  const rockSeen = w.map.mode === "random" ? exp : null;
   for (let i = 0; i < n * n; i++) {
-    let bits = terrain[i] === 1 ? PlaceBit.Blocked : 0;
+    let bits = terrain[i] === 1 && (rockSeen === null || rockSeen[i] === 1) ? PlaceBit.Blocked : 0;
     if (exp !== null && exp[i] === 0) bits |= PlaceBit.Unexplored;
     placement[i] = bits;
   }

@@ -35,9 +35,13 @@ import {
 } from "../protocol.ts";
 import type { PlayerView } from "../view/view.ts";
 
-/** What the player knows from the start, as the AI does (ai.ts AiKnowledge): the map, the rules, its symmetry frame. */
+/**
+ * What the player knows from the start, as the AI does (ai.ts AiKnowledge): the map, the rules, its
+ * symmetry frame. On a random map (D-074) that is the screen's MapInfo: its own main city only; it
+ * learns the towns and the enemy's main city from its PlayerView, and sends a scout to find them.
+ */
 export interface PlayerKnowledge {
-  map: Pick<MapInfo, "size" | "spawns" | "towns">;
+  map: Pick<MapInfo, "size" | "spawns" | "towns" | "mode">;
   rules: Rules;
   frame: Frame;
 }
@@ -150,6 +154,9 @@ const RACE_EDGE: { u: number; v: number }[] = [
 ];
 /** A race waypoint counts as reached this near (cells). */
 const RACE_NEAR = 6;
+/** Random maps (D-074): the scout's next stop once within this many cells of one, or after SCOUT_STUCK ticks without getting nearer. */
+const SCOUT_NEAR = 6;
+const SCOUT_STUCK = 600;
 
 interface Unit {
   id: number;
@@ -252,14 +259,20 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
 
 export interface ScriptedPlayer {
   think(view: PlayerView): CommandBody[];
-  /** For the measurement: what it is doing. */
-  state(): { mode: Mode; trips: number; marches: number; waves: number; brokenOff: number; firstMarch: number; raids: number; firstRaid: number; raced: number };
+  /** For the measurement: what it is doing. found: when it first saw the enemy's main city (random maps; 0 on the fixed map). */
+  state(): { mode: Mode; trips: number; marches: number; waves: number; brokenOff: number; firstMarch: number; raids: number; firstRaid: number; raced: number; found: number };
 }
 
 export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan: Plan): ScriptedPlayer {
   const n = know.map.size;
-  const home = know.map.spawns[player];
-  const enemyHome = know.map.spawns[1 - player];
+  const random = know.map.mode === "random";
+  if (random && plan.race !== "") throw new Error("the race's route is on the fixed map only (D-072)");
+  const home = know.map.spawns.find((s) => s.player === player)!;
+  // On a random map the enemy's main city and the towns are known once seen (D-074).
+  let enemyHome = know.map.spawns.find((s) => s.player !== player) ?? { cellX: -1, cellY: -1 };
+  let found = random ? -1 : 0;
+  const known: { id: number; size: TownSize; cellX: number; cellY: number }[] = [...know.map.towns];
+  const townOf = (id: number) => known.find((t) => t.id === id)!;
   const rules = know.rules;
   const real = (u: number, v: number) => fromCanon(know.frame, u, v);
   const frame = (x: number, y: number) => toCanon(know.frame, x, y);
@@ -270,10 +283,28 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   const rally = real(homeF.u + Math.sign(mid - homeF.u) * 6, homeF.v + Math.sign(mid - homeF.v) * 6);
   const post = real(homeF.u + Math.sign(mid - homeF.u) * 4, homeF.v + Math.sign(mid - homeF.v) * 4);
   const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
-  // The town of the plan: the small town nearest the main city.
-  const myTown = know.map.towns
-    .filter((t) => t.size === (plan.bigTown ? TownSize.Large : TownSize.Small))
-    .sort((a, b) => dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id)[0];
+  // The town of the plan: the small town nearest the main city (on a random map, of those seen so far).
+  const nearestTown = () =>
+    known
+      .filter((t) => t.size === (plan.bigTown ? TownSize.Large : TownSize.Small))
+      .sort((a, b) => dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id)[0] as
+      | (typeof known)[number]
+      | undefined;
+  let myTown = nearestTown();
+  // The scout's stops (random maps): the other three corners, nearest first, then the centre.
+  const scoutStops = random
+    ? [
+        { u: n - 17, v: n - 18 },
+        { u: 16, v: 17 },
+        { u: n - 18, v: 16 },
+        { u: n >> 1, v: n >> 1 },
+      ].map((c) => real(c.u, c.v))
+    : [];
+  let scout = -1;
+  let scoutStop = 0;
+  let scoutSince = 0;
+  let scoutBest = Number.MAX_SAFE_INTEGER;
+  let scoutMove = -100000;
 
   let mode: Mode = "home";
   let target = { x: post.x, y: post.y };
@@ -303,7 +334,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   let raceGo = false;
   /** Towns of the plan this player has plundered (plan.userEco's ratio and mage hall wait for one). */
   let plunders = 0;
-  const sentryAt = real(homeF.u + Math.trunc(((frame(enemyHome.cellX, enemyHome.cellY).u - homeF.u) * 2) / 5), homeF.v + Math.trunc(((frame(enemyHome.cellX, enemyHome.cellY).v - homeF.v) * 2) / 5));
+  const sentryAt =
+    plan.race === ""
+      ? post
+      : real(homeF.u + Math.trunc(((frame(enemyHome.cellX, enemyHome.cellY).u - homeF.u) * 2) / 5), homeF.v + Math.trunc(((frame(enemyHome.cellX, enemyHome.cellY).v - homeF.v) * 2) / 5));
   /** Per small town: the tick from which it may be taken again (ruins turn neutral). */
   const nextTown = new Map<number, number>();
   /** The town of this trip, or of the next one (myTown unless plan.corners). */
@@ -339,7 +373,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           const dy = 2 * y + size - 2 * t.cellY - 1;
           return dx * dx + dy * dy <= 4 * TOWN_CLEARANCE * TOWN_CLEARANCE;
         };
-        if (know.map.towns.some(near)) continue;
+        if (known.some(near)) continue;
         const du = 2 * u + size - 2 * a.u;
         const dv = 2 * v + size - 2 * a.v;
         const d = du * du + dv * dv;
@@ -353,7 +387,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   }
 
   return {
-    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch, raids, firstRaid, raced }),
+    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch, raids, firstRaid, raced, found }),
     think(view: PlayerView): CommandBody[] {
       const out: CommandBody[] = [];
       const h = view.header;
@@ -399,6 +433,13 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (owner === 1 - player && type === BuildingType.MainCity) {
           enemyCity = view.buildings[r + BuildingField.id];
           enemyCityHp = view.buildings[r + BuildingField.hp];
+          if (random) enemyHome = { cellX: view.buildings[r + BuildingField.cellX] + 2, cellY: view.buildings[r + BuildingField.cellY] + 2 };
+          if (found < 0) found = tick;
+        } else if (owner === 1 - player && found < 0 && type !== BuildingType.ArrowTower) {
+          // Random maps: any of its buildings (not a tower, which may stand at a town) shows where the
+          // enemy lives; its main city's exact place comes once the army sees it.
+          enemyHome = { cellX: view.buildings[r + BuildingField.cellX] + 1, cellY: view.buildings[r + BuildingField.cellY] + 1 };
+          found = tick;
         }
         if (owner !== player) continue;
         const b: Building = {
@@ -411,6 +452,17 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         };
         queued += b.queue;
         own.push(b);
+      }
+      // Towns explored for the first time (random maps; the fixed map's are all known).
+      for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+        const id = view.towns[r + TownField.id];
+        if (!known.some((t) => t.id === id)) {
+          known.push({ id, size: view.towns[r + TownField.size] as TownSize, cellX: view.towns[r + TownField.cellX], cellY: view.towns[r + TownField.cellY] });
+        }
+      }
+      if (random && trips === 0 && mode !== "town") {
+        myTown = nearestTown();
+        if (!plan.corners) aim = myTown;
       }
       const farmers = mine.filter((u) => u.type === UnitType.Farmer);
       const gatherers = farmers.filter((u) => u.order === Order.Gather).map((u) => u.id);
@@ -456,7 +508,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const state = view.towns[r + TownField.state];
         const owner = view.towns[r + TownField.owner];
         const plundered = (view.towns[r + TownField.flags] & TownFlag.Plundered) !== 0;
-        const size = know.map.towns[id].size;
+        const size = townOf(id).size;
         if (plan.choice !== "govern" && !(plunderOnce && plundered)) continue;
         const waiting = owner === player && state === TownState.AwaitingChoice;
         const next = plan.townAt > 0 && state === TownState.Neutral && size === TownSize.Small;
@@ -603,7 +655,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const towns = new Map<number, Town>();
       for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
         const id = view.towns[r + TownField.id];
-        const t = know.map.towns[id];
+        const t = townOf(id);
         towns.set(id, {
           state: view.towns[r + TownField.state],
           owner: view.towns[r + TownField.owner],
@@ -616,13 +668,13 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           size: t.size,
         });
       }
-      for (const t of know.map.towns) {
+      for (const t of known) {
         if (!towns.has(t.id)) towns.set(t.id, { state: TownState.Neutral, owner: NEUTRAL, needed: 0, timer: 0, visible: false, plundered: false, x: t.cellX, y: t.cellY, size: t.size });
       }
       for (const [id, t] of towns) {
         // Ruins (after our plunder or theirs) turn neutral again, with half the militia, when the
         // timer ends: a person reads the timer while there and comes back a little after it.
-        const tracked = plan.corners ? t.size === TownSize.Small : id === myTown.id;
+        const tracked = plan.corners ? t.size === TownSize.Small : id === myTown?.id;
         if (tracked && t.state === TownState.Ruins && t.visible) nextTown.set(id, tick + t.timer + 100);
         else if (tracked && t.state === TownState.Ruins && lastState.get(id) === TownState.Plundering) {
           nextTown.set(id, tick + RUINS_TICKS);
@@ -674,7 +726,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (raiding && raiders.length * 2 <= plan.raid) {
           raiding = false;
           out.push({ c: "retreat", u: ids, x: post.x, y: post.y });
-        } else if (raiding && tick - lastRaidMove >= 400) {
+        } else if (raiding && found >= 0 && tick - lastRaidMove >= 400) {
           out.push({ c: "move", u: ids, x: enemyHome.cellX, y: enemyHome.cellY });
           lastRaidMove = tick;
         }
@@ -691,7 +743,39 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const s = soldiers.find((u) => u.id === sentry);
         if (s !== undefined && dist2(s.x, s.y, sentryAt.x, sentryAt.y) > 4 && tick % 200 === 0) out.push({ c: "move", u: [s.id], x: sentryAt.x, y: sentryAt.y });
       }
-      const army = soldiers.filter((u) => !isGuard(u.id) && !raiders.includes(u) && u.id !== sentry);
+      // Random maps: until the enemy's main city is seen, one spearman scouts the corners (D-074).
+      if (found < 0) {
+        if (!soldiers.some((u) => u.id === scout)) {
+          const free = soldiers.filter((u) => !isGuard(u.id) && !raiders.includes(u)).sort((a, b) => (a.type === UnitType.Spearman ? 0 : 1) - (b.type === UnitType.Spearman ? 0 : 1) || a.id - b.id);
+          scout = free.length > 0 ? free[0].id : -1;
+          scoutSince = tick;
+          scoutBest = Number.MAX_SAFE_INTEGER;
+          scoutMove = -100000;
+        }
+        const sc = soldiers.find((u) => u.id === scout);
+        if (sc !== undefined) {
+          const stop = scoutStops[scoutStop % scoutStops.length];
+          const d = dist2(sc.x, sc.y, stop.x, stop.y);
+          if (d < scoutBest) {
+            scoutBest = d;
+            scoutSince = tick;
+          }
+          if (d <= SCOUT_NEAR * SCOUT_NEAR || tick - scoutSince >= SCOUT_STUCK) {
+            scoutStop++;
+            scoutSince = tick;
+            scoutBest = Number.MAX_SAFE_INTEGER;
+            scoutMove = -100000;
+          }
+          const next = scoutStops[scoutStop % scoutStops.length];
+          if (tick - scoutMove >= 200) {
+            out.push({ c: "move", u: [sc.id], x: next.x, y: next.y });
+            scoutMove = tick;
+          }
+        }
+      } else {
+        scout = -1;
+      }
+      const army = soldiers.filter((u) => !isGuard(u.id) && !raiders.includes(u) && u.id !== sentry && u.id !== scout);
       const armyIds = army.map((u) => u.id);
       const send = (x: number, y: number, why: Mode) => {
         if (armyIds.length === 0) return;
@@ -829,19 +913,20 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // worth a trip, nor waiting at, while governing it cannot be paid for.
       const blocked = (x: Town) => (plan.choice === "govern" || (rules.features?.plunderOnce === true && x.plundered)) && !affordAll(GOVERN_COST[x.size]);
       if (plan.corners && mode !== "town") {
-        const open = know.map.towns
+        const open = known
           .filter((x) => x.size === TownSize.Small && !ours(towns.get(x.id)!) && !blocked(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
           .sort((a, b) => dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id);
         aim = open[0] ?? myTown;
       }
-      const t = towns.get(aim.id)!;
-      const oursNow = ours(t);
-      if (t.owner === player && (t.state === TownState.Plundering || (t.state === TownState.AwaitingChoice && !blocked(t)))) {
+      // No town seen yet (random maps): the army waits at home.
+      const t = aim === undefined ? undefined : towns.get(aim.id);
+      const oursNow = t !== undefined && ours(t);
+      if (t !== undefined && t.owner === player && (t.state === TownState.Plundering || (t.state === TownState.AwaitingChoice && !blocked(t)))) {
         send(t.x, t.y, "town");
         return out;
       }
       if (mode === "town") {
-        if (oursNow || tick < (nextTown.get(aim.id) ?? 0)) mode = "home";
+        if (t === undefined || aim === undefined || oursNow || tick < (nextTown.get(aim.id) ?? 0)) mode = "home";
         else if (army.length < 3) {
           // Beaten at the town: back home, and again with the full number.
           out.push({ c: "retreat", u: armyIds, x: post.x, y: post.y });
@@ -889,9 +974,16 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       }
 
       // --- at home: go for the town, march, or wait at the post ---------------------------------------------
-      const go = (counterReady && army.length >= plan.counterAt) || (plan.pushAt > 0 && army.length >= plan.pushAt);
+      // Random maps: no march before the enemy's main city has been seen.
+      const go = found >= 0 && ((counterReady && army.length >= plan.counterAt) || (plan.pushAt > 0 && army.length >= plan.pushAt));
       const townOpen =
-        plan.townAt > 0 && !oursNow && !blocked(t) && tick >= (nextTown.get(aim.id) ?? 0) && (trips === 0 || plan.again || plan.choice === "govern");
+        t !== undefined &&
+        aim !== undefined &&
+        plan.townAt > 0 &&
+        !oursNow &&
+        !blocked(t) &&
+        tick >= (nextTown.get(aim.id) ?? 0) &&
+        (trips === 0 || plan.again || plan.choice === "govern");
       if (go) {
         armyAtStart = army.length;
         marched.clear();
@@ -901,7 +993,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         send(enemyHome.cellX, enemyHome.cellY, "base");
       } else if (townOpen && army.length >= (trips === 0 ? plan.townAt : Math.min(plan.townAt, 4))) {
         trips++;
-        send(t.x, t.y, "town");
+        send(t!.x, t!.y, "town");
       } else {
         send(post.x, post.y, "home");
       }

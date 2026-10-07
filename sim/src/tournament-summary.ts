@@ -5,7 +5,9 @@
 // 35–65%, draws at most 10% (for now 25%, see GATES), every replay matching; when the two
 // AIs play different difficulties, the stronger one wins at least 80% of the decided games
 // (normal against easy, round 2), or 65% (hard against normal, D-052). Exits 1 when a gate
-// fails.
+// fails. Random maps (D-074): also by layout (diagonal, adjacent); the AI still knows the
+// whole map there (runner.ts, temporary), so only the replay gate counts and the rest is for
+// reference (whether the maps are fair).
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -133,6 +135,19 @@ if (rate < GATES.winRateMin || rate > GATES.winRateMax) failures.push(`玩家 0 
 if (drawShare > GATES.drawsMax) failures.push(`平手 ${pct(drawShare)} 超過 ${pct(GATES.drawsMax)}`);
 if (replayFail > 0) failures.push(`${replayFail} 場重播的雜湊不同`);
 if (mixed.length > 0 && strongerRate < strongerMin) failures.push(`${stronger.name} 的勝率 ${pct(strongerRate)} 低於 ${pct(strongerMin)}`);
+// Random maps: only the replays gate; the other numbers are for reference (D-074).
+const random = games.some((g) => g.map === "random");
+const reference = random ? failures.filter((f) => !f.includes("重播")) : [];
+if (random) failures.splice(0, failures.length, ...failures.filter((f) => f.includes("重播")));
+const LAYOUT_NAMES: Record<string, string> = { diagonal: "對角出生", adjacent: "相鄰出生" };
+const layouts = random
+  ? ["diagonal", "adjacent"].map((layout) => {
+      const gs = games.filter((g) => g.layout === layout);
+      const w = [0, 1].map((p) => gs.filter((g) => g.winner === p).length);
+      const d = w[0] + w[1];
+      return { layout, games: gs.length, maps: new Set(gs.map((g) => g.seed)).size, wins: w, draws: gs.length - d, winRate0: d === 0 ? 0.5 : w[0] / d };
+    })
+  : [];
 
 const summary = {
   games: games.length,
@@ -148,6 +163,7 @@ const summary = {
   mages,
   styles,
   stronger: { ...stronger, winRate: strongerRate },
+  ...(random ? { map: "random", layouts, reference } : {}),
   towns,
   tickMicros: { medianOfMedians: q(medians, 0.5), p95OfP95: q(p95s, 0.95), max: q(maxes, 1) },
   wallMs,
@@ -162,8 +178,19 @@ const perSideGame = (f: (p: GameResult["perPlayer"][number]) => number) => (game
 const farmerDeaths = [1, 2, 3, 4, 0].map((k) => perSideGame((p) => p.farmersLostBy?.[k] ?? 0));
 const revolts = sum((g) => (g.perPlayer[0].revolts ?? 0) + (g.perPlayer[1].revolts ?? 0));
 const lines = [
-  `### AI 對 AI：${games.length} 場`,
+  random ? `### AI 對 AI，隨機地圖：${games.length} 場（電腦暫時知道完整地圖，只看地圖公不公平）` : `### AI 對 AI：${games.length} 場`,
   "",
+  ...(random
+    ? [
+        "| 出生 | 地圖 | 場 | 玩家 0 出生點勝 | 玩家 1 出生點勝 | 玩家 0 勝率（平手不算） | 平手 |",
+        "|---|---|---|---|---|---|---|",
+        ...layouts.map((l) => {
+          const [lo, hi] = wilson(l.wins[0], l.wins[0] + l.wins[1]);
+          return `| ${LAYOUT_NAMES[l.layout]} | ${l.maps} 張 | ${l.games} | ${l.wins[0]} | ${l.wins[1]} | ${pct(l.winRate0)}（${pct(lo)}–${pct(hi)}） | ${l.draws}（${pct(l.games === 0 ? 0 : l.draws / l.games)}） |`;
+        }),
+        "",
+      ]
+    : []),
   `| 項目 | 結果 |`,
   `|---|---|`,
   `| 玩家 0 出生點勝 | ${wins[0]}（勝率 ${pct(rate)}，平手不算進分母） |`,
@@ -198,7 +225,8 @@ const lines = [
   `- 第一次攻下城鎮：中位數第 ${towns.firstCaptureMinute.median.toFixed(1)} 分鐘，平均第 ${towns.firstCaptureMinute.mean.toFixed(1)} 分鐘（${towns.firstCaptureMinute.games} 局有攻下）。`,
   `- 翻盤：第一座城鎮被對方先拿下的一方，最後贏了 ${comebacks}／${contested.length} 局（${contested.length === 0 ? "—" : pct(comebacks / contested.length)}；分出勝負、有人拿下城鎮的局）。`,
   "",
-  failures.length === 0 ? "門檻全部通過。" : `**沒通過：** ${failures.join("；")}`,
+  failures.length === 0 ? (random ? "重播全部相同。" : "門檻全部通過。") : `**沒通過：** ${failures.join("；")}`,
+  ...(reference.length === 0 ? [] : [`參考（隨機地圖不擋）：${reference.join("；")}`]),
 ];
 console.log(lines.join("\n"));
 if (failures.length > 0) process.exit(1);

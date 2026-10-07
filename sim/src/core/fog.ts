@@ -3,6 +3,7 @@
 // visible), and memory — the last sighting of each enemy or neutral building, each
 // resource node and each town. Memory is simulation state: the AI decides from it.
 
+import { IDENTITY, footprintCentre } from "../frame.ts";
 import { Action, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, TOWN_STRIDE, TownField, TownFlag, TownState, UnitType } from "../protocol.ts";
 import { BUILDINGS, CANNON, PLUNDER_RECOVERY, REVEAL_CAST, TOWN_ONCE, TOWNS, townIncomePermille, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
@@ -49,7 +50,7 @@ export class Fog {
   reveal(w: World, radius: number): void {
     const n = w.size;
     for (let p = 0; p < PLAYER_COUNT; p++) {
-      const s = w.map.spawns[p];
+      const s = w.homes[p];
       const exp = this.explored[p];
       for (let y = Math.max(0, s.cellY - radius); y <= Math.min(n - 1, s.cellY + radius); y++) {
         for (let x = Math.max(0, s.cellX - radius); x <= Math.min(n - 1, s.cellX + radius); x++) {
@@ -85,8 +86,8 @@ export class Fog {
       for (let s = 0; s < w.buildings.count; s++) {
         if (b.owner[s] !== p) continue;
         const info = BUILDINGS[b.type[s]];
-        const half = info.size >> 1;
-        stamp(b.cellX[s] + half, b.cellY[s] + half, info.sight + half);
+        const c = footprintCentre(w.map.frames[p] ?? IDENTITY, b.cellX[s], b.cellY[s], info.size);
+        stamp(c.x, c.y, info.sight + (info.size >> 1));
       }
       // Another player's mage calibrating the cannon, or that fired it in the last
       // REVEAL_CAST.ticks, shows in its own cell (D-057).
@@ -184,4 +185,7 @@ export function writeTownRow(w: World, t: number, out: Int32Array, o: number): v
     (w.townContested[t] === 1 ? TownFlag.Contested : 0) |
     (plundered ? TownFlag.Plundered : 0);
   out[o + TownField.incomePermille] = townIncomePermille(w.townPlundered[t], w.townRecover[t]);
+  out[o + TownField.cellX] = w.townX[t];
+  out[o + TownField.cellY] = w.townY[t];
+  out[o + TownField.size] = w.townSize[t];
 }
