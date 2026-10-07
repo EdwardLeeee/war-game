@@ -18,6 +18,7 @@ import {
   type SimEvent,
   Stance,
   TICKS_PER_SECOND,
+  TownState,
   UnitFlag,
   UnitType,
 } from "../protocol.ts";
@@ -33,6 +34,7 @@ import {
   AVENGE,
   CANNON,
   DODGE,
+  HOME_GUARD,
   COUNTER_ATTACK,
   MAGE_BOUNTY,
   SHIELD,
@@ -50,6 +52,7 @@ import {
   RETARGET_EVERY,
   SEPARATION,
   TOWER_ARROW,
+  TOWNS,
   UNDER_ATTACK_TICKS,
   UNITS,
   WORK_REACH,
@@ -1242,10 +1245,16 @@ export class UnitSystem {
 
     const hurt: Hurt[] = [];
     for (let i = 0; i < count; i++) {
-      const dmg = this.unitDamage[i];
+      let dmg = this.unitDamage[i];
       if (dmg === 0) continue;
+      let shieldDmg = this.shieldDamage[i];
+      // Fighting at home (HOME_GUARD, round 8): less damage.
+      if (HOME_GUARD.on && u.owner[i] < PLAYER_COUNT && u.type[i] !== UnitType.Farmer && atHome(w, i)) {
+        dmg -= Math.trunc((dmg * HOME_GUARD.permille) / 1000);
+        shieldDmg -= Math.trunc((shieldDmg * HOME_GUARD.permille) / 1000);
+      }
       // A shield takes this tick's hits whole, however much they exceed it.
-      if (u.shield[i] > 0) u.shield[i] = Math.max(0, u.shield[i] - this.shieldDamage[i]);
+      if (u.shield[i] > 0) u.shield[i] = Math.max(0, u.shield[i] - shieldDmg);
       else u.hp[i] -= dmg;
       u.lastHurt[i] = w.tick;
       hurt.push({ owner: u.owner[i], x: u.x[i], y: u.y[i], id: u.id[i] });
@@ -1420,6 +1429,33 @@ export class UnitSystem {
  * lower canonical v, then u, of their cells, then the lower id? Mirror-image choosers pick
  * mirror-image targets.
  */
+/**
+ * Is unit slot i at home (HOME_GUARD, round 8): within HOME_GUARD.mainCity cells (Chebyshev, from
+ * the footprint) of its owner's finished main city, or within the radius of a town its owner governs?
+ */
+export function atHome(w: World, i: number): boolean {
+  const u = w.units.col;
+  const p = u.owner[i];
+  const cx = u.x[i] >> CELL_SHIFT;
+  const cy = u.y[i] >> CELL_SHIFT;
+  const b = w.buildings.col;
+  for (let s = 0; s < w.buildings.count; s++) {
+    if (b.owner[s] !== p || b.type[s] !== BuildingType.MainCity || b.progress[s] < 1000) continue;
+    const size = BUILDINGS[BuildingType.MainCity].size;
+    const dx = Math.max(b.cellX[s] - cx, 0, cx - (b.cellX[s] + size - 1));
+    const dy = Math.max(b.cellY[s] - cy, 0, cy - (b.cellY[s] + size - 1));
+    if (Math.max(dx, dy) <= HOME_GUARD.mainCity) return true;
+  }
+  for (let t = 0; t < w.townSize.length; t++) {
+    if (w.townOwner[t] !== p || w.townState[t] !== TownState.Governed) continue;
+    const r = TOWNS[w.townSize[t]].radius << CELL_SHIFT;
+    const dx = u.x[i] - ((w.townX[t] << CELL_SHIFT) + 512);
+    const dy = u.y[i] - ((w.townY[t] << CELL_SHIFT) + 512);
+    if (dx * dx + dy * dy <= r * r) return true;
+  }
+  return false;
+}
+
 function canonFirst(w: World, owner: number, j: number, k: number): boolean {
   if (k < 0) return true;
   const u = w.units.col;
