@@ -63,7 +63,7 @@ import { Placement, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
-import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
+import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
 import { features, garrisonTypes, holdsOf } from "./features.ts";
 import { GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding } from "./garrison.ts";
@@ -270,6 +270,18 @@ export class Game implements GestureHost {
     if (n === 0) return;
     cam.zoomAt(0, 0, 0.75);
     cam.centerOn(x / n, y / n);
+  }
+
+  /**
+   * The message a depot's − or ＋ put up, and for which building: selecting another takes it
+   * off the strip, so it does not read as the new building's (ceo 2026-10-07).
+   */
+  private depotToast: { building: number; text: string } | null = null;
+
+  /** The message of a depot's − or ＋. */
+  private depotSay(building: number, text: string): void {
+    this.toast(text);
+    this.depotToast = { building, text };
   }
 
   /** The port, for the test hook (it can feed events to the fake world). */
@@ -601,10 +613,14 @@ export class Game implements GestureHost {
     return out;
   }
 
-  /** The resources a depot panel shows for this building of ours (none for others). */
+  /** The resources a depot panel shows for this building of ours (none for others, nor for the main city, D-070). */
   depotResources(building: number): Resource[] {
+    const view = this.view;
     const d = this.depots().find((v) => v.id === building);
-    return d === undefined ? [] : DEPOT_RESOURCES.filter((r) => d.accepts.includes(r));
+    const o = view?.buildingRow(building) ?? -1;
+    const b = view?.curr?.snap.buildings;
+    if (view === null || d === undefined || o < 0 || b === undefined) return [];
+    return panelResources(b[o + BuildingField.type], d.accepts);
   }
 
   /** How many of our villagers bring `resource` back to this building (D-066). */
@@ -621,7 +637,7 @@ export class Game implements GestureHost {
     const workers = this.workers();
     const id = pickToSend(workers, depot, resource);
     if (id === null) {
-      this.toast("沒有可以派的村民");
+      this.depotSay(building, "沒有可以派的村民");
       return;
     }
     const nodes: DepotNode[] = [...view.nodes.values()].map((r) => ({ id: r[NodeField.id], kind: r[NodeField.kind], cx: r[NodeField.cellX], cy: r[NodeField.cellY], amount: r[NodeField.amount] }));
@@ -637,13 +653,13 @@ export class Game implements GestureHost {
     }
     const to = sendTarget(depot, resource, nodes, farms);
     if ("error" in to) {
-      this.toast(to.error);
+      this.depotSay(building, to.error);
       return;
     }
     // A farm is worked with `repair`, a node with `gather` (sim/PROTOCOL.md 3.1); both make the villager the player's own (HandPicked, core #149).
     const cmd: CommandBody = "farm" in to ? { c: "repair", u: [id], building: to.farm } : { c: "gather", u: [id], node: to.node };
     this.apply([{ kind: "command", cmd }]);
-    this.toast(`派 1 名村民去${"farm" in to ? "種田" : `採${RESOURCE_WORD[resource] ?? ""}`}`);
+    this.depotSay(building, `派 1 名村民去${"farm" in to ? "種田" : `採${RESOURCE_WORD[resource] ?? ""}`}`);
   }
 
   /**
@@ -655,11 +671,11 @@ export class Game implements GestureHost {
     if (depot === undefined) return;
     const id = pickToTake(this.workers(), this.depots(), depot, resource);
     if (id === null) {
-      this.toast(`這裡沒有村民在採${RESOURCE_WORD[resource] ?? ""}`);
+      this.depotSay(building, `這裡沒有村民在採${RESOURCE_WORD[resource] ?? ""}`);
       return;
     }
     this.apply([{ kind: "command", cmd: { c: "release", u: [id] } }]);
-    this.toast(`1 名採${RESOURCE_WORD[resource] ?? ""}的村民放下工作，交給經濟分配`);
+    this.depotSay(building, `1 名採${RESOURCE_WORD[resource] ?? ""}的村民放下工作，交給經濟分配`);
   }
 
   /** 派村民 (D-061): whom a tap on this node can send, nearest first; null for an unknown node. */
@@ -1134,6 +1150,11 @@ export class Game implements GestureHost {
           this.setMode("normal");
           break;
       }
+    }
+    // Another building selected (or none): a depot's message about the one before goes.
+    if (this.depotToast !== null && view.selection.building !== this.depotToast.building) {
+      this.overlays.clearToast(this.depotToast.text);
+      this.depotToast = null;
     }
   }
 

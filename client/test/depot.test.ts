@@ -2,8 +2,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEPOT_REACH, type Depot, depotFor, NO_FARM_TEXT, pickToSend, pickToTake, sendTarget, toFootprint, type Worker, workersAt } from "../src/game/depot.ts";
-import { NodeKind, Resource } from "../src/sim.ts";
+import { DEPOT_REACH, type Depot, depotFor, NO_FARM_TEXT, panelResources, pickToSend, pickToTake, sendTarget, toFootprint, type Worker, workersAt } from "../src/game/depot.ts";
+import { BuildingType, NodeKind, Resource } from "../src/sim.ts";
 
 const W = (id: number, x: number, y: number, gathers: Resource | null, at: { x: number; y: number } | null, idle = false, busy = false): Worker => ({ id, x, y, gathers, at, idle, busy });
 // A main city (everything), a lumber camp and a granary, in cells.
@@ -77,4 +77,16 @@ test("＋派去哪：木、金去 10 格內最近的樹、金礦；糧先去沒�
   assert.deepEqual(sendTarget(city, Resource.Food, nodes, [farms[0]]), { node: 14 }, "berries when every farm is worked");
   assert.deepEqual(sendTarget(city, Resource.Food, [], []), { error: NO_FARM_TEXT });
   assert.equal(NO_FARM_TEXT, "附近沒有空田，先蓋農田");
+});
+
+test("面板：糧倉、伐木場、礦場各一列（礦場只有金，晶脈只能手動派）；主城不顯示（D-070），但照樣算存放建築", () => {
+  const all = [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal];
+  assert.deepEqual(panelResources(BuildingType.MainCity, all), [], "「主城的那個附近在彩的村民沒有用，拿掉」");
+  assert.deepEqual(panelResources(BuildingType.Granary, [Resource.Food]), [Resource.Food]);
+  assert.deepEqual(panelResources(BuildingType.LumberCamp, [Resource.Wood]), [Resource.Wood]);
+  assert.deepEqual(panelResources(BuildingType.Mine, [Resource.Gold, Resource.Crystal]), [Resource.Gold]);
+  assert.deepEqual(panelResources(BuildingType.House, []), []);
+  // Wood brought to the city is the city's: the camp does not count it.
+  const workers = [W(1, 17, 11, Resource.Wood, { x: 18, y: 11 }), W(2, 25, 11, Resource.Wood, { x: 26, y: 11 })];
+  assert.deepEqual(workersAt(workers, depots, camp.id, Resource.Wood).map((w) => w.id), [2]);
 });
