@@ -47,3 +47,19 @@ export function openArea(g: Game, size: number): { x: number; y: number } {
   }
   throw new Error("no open area");
 }
+
+/**
+ * A test body run with a rule's switch off, then as it was: for tests of other rules that a
+ * later round's rule would change (round 8's soldiers stepping out of cannon warnings, D-069).
+ */
+export function switchedOff(sw: { on: boolean }, body: () => void): () => void {
+  return () => {
+    const was = sw.on;
+    sw.on = false;
+    try {
+      body();
+    } finally {
+      sw.on = was;
+    }
+  };
+}

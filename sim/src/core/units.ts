@@ -31,6 +31,7 @@ import {
   GARRISON,
   BUILDINGS,
   CANNON,
+  DODGE,
   COUNTER_ATTACK,
   MAGE_BOUNTY,
   SHIELD,
@@ -68,6 +69,9 @@ export function isWorkOrder(order: number): boolean {
   return order === Order.Gather || order === Order.Build || order === Order.Repair || order === Order.Recall;
 }
 
+/** Numbers per calibrating cannon in UnitSystem.warns. */
+const WARN_STRIDE = 7;
+
 export interface Hurt {
   /** Owner of what was hurt, fixed-point position, id. */
   owner: number;
@@ -87,6 +91,13 @@ export class UnitSystem {
   /** Per unit this tick (move()): 1 when standing mates of its team pushed it apart, 2 when one on the move did too. */
   private kept = new Uint8Array(256);
   private attacking = new Uint8Array(256);
+  /** Per unit this tick: 1 while it steps out of a cannon warning (DODGE, round 8). */
+  private dodging = new Uint8Array(256);
+  /**
+   * Cannons calibrating at the start of the tick (DODGE, round 8): owner, target point, the
+   * mage's position, moves left before the shot lands and the mage's id, WARN_STRIDE each.
+   */
+  private readonly warns: number[] = [];
   /**
    * This tick's shots of buildings' own arrows and of soldiers hiding in buildings, as pairs
    * (building id, target unit id), for the `shot` event (round 7, D-061; game.ts sends them).
@@ -130,6 +141,7 @@ export class UnitSystem {
       this.team = new Int32Array(c);
       this.kept = new Uint8Array(c);
       this.attacking = new Uint8Array(c);
+      this.dodging = new Uint8Array(c);
       this.startTarget = new Int32Array(c);
       this.unitDamage = new Int32Array(c);
       this.shieldDamage = new Int32Array(c);
@@ -150,7 +162,10 @@ export class UnitSystem {
     this.bucket(w);
     this.startTarget.set(w.units.col.target.subarray(0, w.units.count));
     this.collectSquadFights(w);
+    this.collectWarnings(w);
+    this.dodging.fill(0, 0, w.units.count);
     for (let i = 0; i < w.units.count; i++) this.decide(w, fog, fields, farmers, i);
+    if (this.warns.length > 0) this.keepOut(w, fog);
     this.move(w);
     return this.attack(w, fog);
   }
@@ -586,6 +601,100 @@ export class UnitSystem {
 
   // --- decide ----------------------------------------------------------------------------
 
+  // --- stepping out of cannon warnings (DODGE, round 8, D-069) ----------------------------
+
+  /** Cannons calibrating at the start of the tick, as the screen shows them (warns). */
+  private collectWarnings(w: World): void {
+    this.warns.length = 0;
+    if (!DODGE.on) return;
+    const u = w.units.col;
+    for (let s = 0; s < w.units.count; s++) {
+      if (u.order[s] !== Order.Cast) continue;
+      this.warns.push(u.owner[s], u.castX[s], u.castY[s], u.x[s], u.y[s], CANNON.calibrateTicks - u.castProgress[s], u.id[s]);
+    }
+  }
+
+  /** Does unit i step out of warnings: a player's soldier with no order, or (DODGE.farmers) a farmer idle or at work? */
+  private dodges(w: World, i: number): boolean {
+    const u = w.units.col;
+    if (u.owner[i] >= PLAYER_COUNT || u.action[i] === Action.Garrisoned) return false;
+    if (u.type[i] === UnitType.Farmer) return DODGE.farmers && (u.order[i] === Order.None || isWorkOrder(u.order[i]));
+    return u.order[i] === Order.None;
+  }
+
+  /** The warning (index into warns) whose blast (plus DODGE.margin) holds point (x, y) for player me, or -1; enemy warnings it sees only. */
+  private warnAt(w: World, fog: Fog, me: number, x: number, y: number): number {
+    const reach = CANNON.radius + DODGE.margin;
+    for (let k = 0; k < this.warns.length; k += WARN_STRIDE) {
+      if (this.warns[k] === me || !this.sees(fog, me, this.warns[k + 1], this.warns[k + 2], w.size)) continue;
+      const dx = x - this.warns[k + 1];
+      const dy = y - this.warns[k + 2];
+      if (dx * dx + dy * dy <= reach * reach) return k;
+    }
+    return -1;
+  }
+
+  /**
+   * Unit i inside an enemy warning it can leave before the shot lands walks straight out
+   * (from the nearest such blast's centre; ties to the lower mage id) and drops its target.
+   * Returns false when there is none, or it is too late for all of them.
+   */
+  private dodge(w: World, fog: Fog, i: number): boolean {
+    const u = w.units.col;
+    const me = u.owner[i];
+    const reach = CANNON.radius + DODGE.margin;
+    const speed = UNITS[u.type[i]].speed;
+    let best = -1;
+    let bestD2 = 0;
+    for (let k = 0; k < this.warns.length; k += WARN_STRIDE) {
+      if (this.warns[k] === me || !this.sees(fog, me, this.warns[k + 1], this.warns[k + 2], w.size)) continue;
+      const dx = u.x[i] - this.warns[k + 1];
+      const dy = u.y[i] - this.warns[k + 2];
+      const d2 = dx * dx + dy * dy;
+      if (d2 > reach * reach) continue;
+      if (reach - isqrt(d2) > speed * this.warns[k + 5]) continue; // too late: it keeps fighting
+      if (best < 0 || d2 < bestD2 || (d2 === bestD2 && this.warns[k + 6] < this.warns[best + 6])) {
+        best = k;
+        bestD2 = d2;
+      }
+    }
+    if (best < 0) return false;
+    const cx = this.warns[best + 1];
+    const cy = this.warns[best + 2];
+    let ex = u.x[i] - cx;
+    let ey = u.y[i] - cy;
+    if (bestD2 < 128 * 128) {
+      // From the centre itself: away from the caster (or, standing on it, toward its own place).
+      ex = cx - this.warns[best + 3];
+      ey = cy - this.warns[best + 4];
+      if (ex === 0 && ey === 0) {
+        ex = u.anchorX[i] - cx;
+        ey = u.anchorY[i] - cy;
+      }
+      if (ex === 0 && ey === 0) ey = CELL;
+    }
+    const e = Math.max(1, isqrt(ex * ex + ey * ey));
+    const out = reach - isqrt(bestD2) + 128;
+    steerDirect(w, i, idiv(ex * out, e), idiv(ey * out, e), speed);
+    u.target[i] = -1;
+    this.dodging[i] = 1;
+    return true;
+  }
+
+  /** No unit that steps out of warnings walks into one (it stands instead) while the cannon calibrates. */
+  private keepOut(w: World, fog: Fog): void {
+    const u = w.units.col;
+    for (let i = 0; i < w.units.count; i++) {
+      if (this.dodging[i] === 1 || (u.vx[i] === 0 && u.vy[i] === 0) || !this.dodges(w, i)) continue;
+      const me = u.owner[i];
+      if (this.warnAt(w, fog, me, u.x[i] + u.vx[i], u.y[i] + u.vy[i]) < 0 || this.warnAt(w, fog, me, u.x[i], u.y[i]) >= 0) continue;
+      u.vx[i] = 0;
+      u.vy[i] = 0;
+      u.working[i] = 0;
+      u.action[i] = Action.Idle;
+    }
+  }
+
   private decide(w: World, fog: Fog, fields: FieldCache, farmers: FarmerDecider, i: number): void {
     const u = w.units.col;
     const n = w.size;
@@ -600,12 +709,13 @@ export class UnitSystem {
       return;
     }
     const order = u.order[i];
+    const farmer = u.type[i] === UnitType.Farmer;
+    if (this.warns.length > 0 && this.dodges(w, i) && this.dodge(w, fog, i)) return;
     if (isWorkOrder(order)) {
       u.target[i] = -1;
       farmers.decide(w, fields, i);
       return;
     }
-    const farmer = u.type[i] === UnitType.Farmer;
     if (order === Order.Garrison) {
       this.toShelter(w, fields, i);
       return;

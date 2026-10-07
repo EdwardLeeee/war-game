@@ -4,13 +4,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, createAi, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
-import { CAVALRY, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
+import { CAVALRY, DODGE, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
 import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
-import { emptyGame, put, slotOf } from "./helpers.ts";
+import { emptyGame, put, slotOf, switchedOff } from "./helpers.ts";
 
 /** Units of a player as sortable strings in player 0's frame (x <-> y for player 1). */
 function units(g: Game, p: number): string {
@@ -479,7 +479,8 @@ function cannonOnThree() {
   return { g, w, ids };
 }
 
-test("hard: soldiers step out of a crystal cannon's warning; only the one it aims at, too late to get out, is hit", () => {
+// Round 8 (D-069): with soldiers stepping out on their own (DODGE), the control would not be hit.
+test("hard: soldiers step out of a crystal cannon's warning; only the one it aims at, too late to get out, is hit", switchedOff(DODGE, () => {
   for (const dodge of [true, false]) {
     const { g, w, ids } = cannonOnThree();
     const ai = hardAi(g, { dodge });
@@ -493,7 +494,7 @@ test("hard: soldiers step out of a crystal cannon's warning; only the one it aim
     for (let k = 0; k < 40; k++) g.step();
     assert.equal(w.cannonHits[1], dodge ? 1 : 3, dodge ? "one hit" : "without stepping out all three are hit");
   }
-});
+}));
 
 test("hard: army orders leave out a mage calibrating a shot (an order would call it off)", () => {
   const g = emptyGame();

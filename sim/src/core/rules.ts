@@ -277,6 +277,18 @@ export const GARRISON_TYPES: UnitType[] = [UnitType.Ranged, UnitType.Mage];
 /** Arrow towers: within `mainCity` cells of an own main city's footprint, or a held town's radius + `town`. */
 export const TOWER_REACH = { mainCity: 8, town: 2 };
 
+// --- round 8 (D-069): a defender is not beaten by the first cannon shots -------------------
+
+/**
+ * Stepping out of a cannon warning (rule 1): a player's soldier with no order (idle, hold, or
+ * fighting where it stands) inside the blast of an enemy cannon that is calibrating, whose
+ * target point its owner sees (the warning on the screen), walks straight out to `margin` past
+ * the radius if it gets there before the shot lands (else it keeps fighting), and does not step
+ * into a warning; after the shot it walks back to its place as after a chase. From the centre
+ * itself it walks away from the caster. `farmers`: farmers at work or idle do it too.
+ */
+export const DODGE = { on: true, margin: 256, farmers: false };
+
 // --- mages (from PR-4) ---------------------------------------------------------------
 
 export const CANNON = {
