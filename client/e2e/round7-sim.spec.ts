@@ -10,6 +10,7 @@ import { tap } from "./touch.ts";
 const RANGED = 2;
 const CAVALRY = 5;
 const MAIN_CITY = 0;
+const BARRACKS = 6;
 const ARROW_TOWER = 10;
 const STABLE = 11;
 /** The simulation's ticks: walking, building and training at tps=100 on a busy runner. */
@@ -79,6 +80,10 @@ test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵躲進
   const city = await ownBuilding(page, MAIN_CITY);
   if (city === undefined) throw new Error("no main city");
   const home = { x: city.cx + city.size / 2, y: city.cy + city.size / 2 };
+  // The scenario's barracks trains on its own (D-054) and would fill the population (20) before the cavalry.
+  const barracks = await ownBuilding(page, BARRACKS);
+  if (barracks === undefined) throw new Error("no barracks");
+  await page.evaluate((id) => window.__proto?.game?.send({ c: "auto_train", building: id, on: false }), barracks.id);
 
   // 1. 箭樓, by the main city (TowerLand).
   await build(page, ARROW_TOWER, /^箭樓/, { x: home.x + 4, y: home.y });
