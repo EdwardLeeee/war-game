@@ -865,8 +865,6 @@ export const HARD: HardPlan = {
 
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
-/** An enemy arrow tower by a town, weighing up whether to go for it (round 7): about two soldiers. */
-const TOWER_WORTH = 20;
 /** Enemy soldiers not seen for this long are forgotten. */
 const INTEL_TICKS = 4 * TICKS_PER_MINUTE;
 /** Enemy soldiers within this many cells of the main city make a wave (as the scripted player counts). */
@@ -898,8 +896,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
-  /** Any round 7 rule on (what only matters then is behind it, so that all off it plays as before). */
-  const r7 = Object.values(know.rules.features ?? {}).some((on) => on === true);
   const hideOn = garrisonOn && plan.hide;
   const governCost = (size: number): Cost => governCostOf(rules, size);
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
@@ -1562,10 +1558,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (mode === "base") {
           // Those that set out are the front; soldiers trained since wait at home and follow six at
           // a time (one by one they would be picked off on the way).
-          // Round 7: a main city with soldiers hiding in it picks off what comes in small groups,
-          // so then they wait for the next march instead.
+          // Round 7 (garrison): a main city with soldiers hiding in it picks off what comes in small
+          // groups, so then they wait for the next march instead.
           const reserves = army.filter((u) => !marched.has(u.id) && !detached(u.id));
-          if (reserves.length >= 6 && !r7) for (const u of reserves) marched.add(u.id);
+          if (reserves.length >= 6 && !garrisonOn) for (const u of reserves) marched.add(u.id);
           const front = army.filter((u) => marched.has(u.id));
           const frontIds = front.filter((u) => !detached(u.id)).map((u) => u.id);
           const fc = centre(front, ac.x, ac.y);
@@ -1575,10 +1571,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const atCity = front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 14 * 14);
           // Round 7: stragglers far behind do not hold up the siege; and soldiers hiding in the city
           // cannot be seen, so a front ground down to under 40% of those that set out breaks off.
-          const nearFront = r7 ? front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 30 * 30).length : front.length;
+          const nearFront = garrisonOn ? front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 30 * 30).length : front.length;
           const there = atCity.length * 2 >= nearFront;
           const defenders = worth(foesNear(fc.x, fc.y, 12));
-          const ground = r7 && front.length * 5 < armyAtStart * 2;
+          const ground = garrisonOn && front.length * 5 < armyAtStart * 2;
           if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0)))) {
             counterReady = false;
             fallBack(post.x, post.y);
@@ -1593,7 +1589,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               // Round 7: a few defenders in sight do not stop an attack on the city that is clearly
               // stronger or nearly done (a move fights them but never hits the city, which is repaired).
               const guards = worth(foesNear(enemyHome.cellX, enemyHome.cellY, 12));
-              const pressOn = r7 && close.length > 0 && (cityLow || worth(atCity) >= guards * 3);
+              const pressOn = garrisonOn && close.length > 0 && (cityLow || worth(atCity) >= guards * 3);
               if ((guards > 0 && !pressOn) || close.length === 0) out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
               else {
                 out.push({ c: "attack", u: close, target: enemyCity });
@@ -1604,7 +1600,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             }
           } else if (
             frontIds.length > 0 &&
-            (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= (there ? 100 : 400) || (reserves.length >= 6 && !r7))
+            (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= (there ? 100 : 400) || (reserves.length >= 6 && !garrisonOn))
           ) {
             // On the way, or there without the city in sight yet: on to it.
             out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
@@ -1646,18 +1642,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
             for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= 14 * 14) there += WORTH[e.type];
-            // Round 7: a town the enemy governs gets an arrow tower of its own, and soldiers may hide
-            // in it (it counts the tower, and as many ranged units as it holds when someone is in).
-            if (r7) {
-              const reach = know.map.towns[id].radius + 3;
-              for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
-                const type = view.buildings[r + BuildingField.type];
-                if (view.buildings[r + BuildingField.owner] !== 1 - player || (type !== BuildingType.ArrowTower && type !== BuildingType.TownTower)) continue;
-                if (dist2(view.buildings[r + BuildingField.cellX], view.buildings[r + BuildingField.cellY], t.x, t.y) > reach * reach) continue;
-                there += TOWER_WORTH;
-                if ((view.buildings[r + BuildingField.flags] & BuildingFlag.Occupied) !== 0) there += (rules.buildings[type].holds ?? 0) * WORTH[UnitType.Ranged];
-              }
-            }
             if (there * 10 > armyWorth * 8) continue;
             const d = dist2(t.x, t.y, home.cellX, home.cellY);
             if (pick < 0 || d < pickD || (d === pickD && rank(t.x, t.y) < rank(towns.get(pick)!.x, towns.get(pick)!.y))) {

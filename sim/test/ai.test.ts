@@ -7,7 +7,7 @@ import { Game } from "../src/core/game.ts";
 import { CAVALRY, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
+import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownSize, TownState, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
 import { emptyGame, put, slotOf } from "./helpers.ts";
@@ -581,39 +581,41 @@ function siege(fallen: number, defenders: number): CommandBody[] {
   return ai.think(buildView(g, 0));
 }
 
-test("hard: an attack on an undefended main city goes on however many the arrows took; it breaks off against stronger defenders", () => {
-  const alone = siege(20, 0);
-  assert.equal(alone.some((c) => c.c === "retreat"), false, "10 of 30 left, nobody defends: no retreat (normal would)");
-  assert.ok(alone.some((c) => c.c === "attack" && c.u.length === 10), "the 10 attack the city");
-  assert.ok(siege(20, 15).some((c) => c.c === "retreat"), "15 defenders against 10: breaks off");
-});
+test("hard: an attack on an undefended main city goes on however many the arrows took; it breaks off against stronger defenders", () =>
+  withSwitches({}, () => {
+    const alone = siege(20, 0);
+    assert.equal(alone.some((c) => c.c === "retreat"), false, "10 of 30 left, nobody defends: no retreat (normal would)");
+    assert.ok(alone.some((c) => c.c === "attack" && c.u.length === 10), "the 10 attack the city");
+    assert.ok(siege(20, 15).some((c) => c.c === "retreat"), "15 defenders against 10: breaks off");
+  }));
 
-test("hard: soldiers trained while the army is away wait at home and follow six at a time", () => {
-  const g = emptyGame();
-  const w = g.w;
-  for (const t of w.map.towns) {
-    w.townState[t.id] = TownState.Ruins;
-    w.townOwner[t.id] = NO_OWNER;
-    w.townTimer[t.id] = 4800;
-  }
-  w.tick = 12 * 1200;
-  const s0 = w.map.spawns[0];
-  const s1 = w.map.spawns[1];
-  for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
-  g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, pushArmy: 24 });
-  ai.think(buildView(g, 0));
-  const fresh: number[] = [];
-  const toBase = () => {
-    w.tick += 400;
+test("hard: soldiers trained while the army is away wait at home and follow six at a time", () =>
+  withSwitches({}, () => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
     g.fog.update(w);
-    return ai.think(buildView(g, 0)).filter((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY) as { u: number[] }[];
-  };
-  for (let k = 0; k < 5; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3 + k, s0.cellY - 3));
-  assert.ok(toBase().every((c) => !fresh.some((id) => c.u.includes(id))), "five new ones wait");
-  fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3, s0.cellY - 4));
-  assert.ok(toBase().some((c) => fresh.every((id) => c.u.includes(id))), "the sixth: all six go");
-});
+    const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+    ai.think(buildView(g, 0));
+    const fresh: number[] = [];
+    const toBase = () => {
+      w.tick += 400;
+      g.fog.update(w);
+      return ai.think(buildView(g, 0)).filter((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY) as { u: number[] }[];
+    };
+    for (let k = 0; k < 5; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3 + k, s0.cellY - 3));
+    assert.ok(toBase().every((c) => !fresh.some((id) => c.u.includes(id))), "five new ones wait");
+    fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3, s0.cellY - 4));
+    assert.ok(toBase().some((c) => fresh.every((id) => c.u.includes(id))), "the sixth: all six go");
+  }));
 
 test("hard: the mage hall comes first once there is the crystal for a mage", () => {
   const plan = (crystal: number) => {
@@ -881,7 +883,7 @@ test("round 7: hard's siege when soldiers can hide in the city: ground down it b
   // The same siege as above (20 of 30 fallen by the city, nobody in sight), with the rule on.
   const on = withSwitches({ garrison: true }, () => siege(20, 0));
   assert.ok(on.some((c) => c.c === "retreat"), "hiding defenders cannot be seen: ground down, it breaks off");
-  assert.equal(siege(20, 0).some((c) => c.c === "retreat"), false, "rule off: it goes on, as before");
+  assert.equal(withSwitches({}, () => siege(20, 0)).some((c) => c.c === "retreat"), false, "rule off: it goes on, as before");
   // Six new soldiers at home while the army is away: they stay home.
   const sent = withSwitches({ garrison: true }, () => {
     const g = emptyGame();
@@ -925,38 +927,6 @@ test("round 7: hard hides its ranged units and mages in its main city when enemi
   assert.equal(hides(false), false, "rule off: nothing to hide in");
 });
 
-test("round 7: hard counts the arrow tower of a town the enemy holds, and who may hide in it, before going for it", () => {
-  const goes = (tower: boolean, occupied: boolean) =>
-    withSwitches({ garrison: true }, () => {
-      const g = emptyGame();
-      const w = g.w;
-      const [small, big] = w.map.towns;
-      // Only the small town is worth taking: the others lie in ruins.
-      for (const t of w.map.towns) {
-        if (t.id === small.id) continue;
-        w.townState[t.id] = TownState.Ruins;
-        w.townOwner[t.id] = NO_OWNER;
-        w.townTimer[t.id] = 4800;
-      }
-      w.townState[small.id] = TownState.Governed;
-      w.townOwner[small.id] = 1;
-      const s0 = w.map.spawns[0];
-      for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + k, s0.cellY - 6);
-      // A lookout in the town sees it (and its tower).
-      put(g, 0, UnitType.Farmer, small.cellX + 1, small.cellY + 1);
-      if (tower) {
-        const b = w.addBuilding(1, BuildingType.ArrowTower, small.cellX - 1, small.cellY - 1, 500, 1000);
-        if (occupied) w.buildings.col.soldiers[w.building(b)] = 3;
-      }
-      void big;
-      g.fog.update(w);
-      const m = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 6) as { x: number; y: number } | undefined;
-      return m !== undefined && m.x === small.cellX && m.y === small.cellY;
-    });
-  assert.equal(goes(false, false), true, "no tower: 6 spearmen go for it");
-  assert.equal(goes(true, true), false, "a tower with soldiers hiding in it (worth 50 against 60): they stay");
-});
-
 test("hard weighs governing a town it takes for the first time against plundering it, with the rules' numbers", () => {
   const choice = (governMinutes: number) => {
     const g = emptyGame();
@@ -966,11 +936,14 @@ test("hard weighs governing a town it takes for the first time against plunderin
     w.res.set([1000, 1000, 1000, 0], 0);
     for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, w.townX[0] + (k % 3), w.townY[0] + 1 + Math.trunc(k / 3));
     g.fog.update(w);
-    // A small town: plunder 300 / 300 / 75 crystal (worth 825), governing 80 + 80 and 40 / 40 / 12 a minute (worth 116).
     const out = hardAi(g, { dodge: false, governMinutes }).think(buildView(g, 0)).find((c) => c.c === "town_choice") as { choice: number } | undefined;
     return out?.choice;
   };
+  // The break-even from the rules for a small town (crystal counted 3 times): below it plunder, above it govern.
+  const info = rules().towns[TownSize.Small];
+  const value = (c: { food: number; wood: number; gold: number; crystal: number }) => c.food + c.wood + c.gold + 3 * c.crystal;
+  const even = Math.floor((value(info.plunder) + value(info.governCost)) / value(info.perMinute));
   assert.equal(choice(0), TownChoice.Plunder, "0: plunders as before");
-  assert.equal(choice(5), TownChoice.Plunder, "5 minutes: 580 - 160 is less than 825");
-  assert.equal(choice(10), TownChoice.Govern, "10 minutes: 1160 - 160 is more than 825");
+  assert.equal(choice(even), TownChoice.Plunder, `${even} minutes: not worth more than a plunder`);
+  assert.equal(choice(even + 1), TownChoice.Govern, `${even + 1} minutes: worth more`);
 });
