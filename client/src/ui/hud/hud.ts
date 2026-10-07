@@ -3,6 +3,7 @@
 // 閒置村民 and 全體回城 on the left, attack alerts, 經濟分配, 搶／治理, the menu and the result
 // screen. Text updates at most 10 times a second and only when it changed.
 
+import { counterLines } from "../../game/counters.ts";
 import type { Game } from "../../game/game.ts";
 import { pressable } from "../../input/pressable.ts";
 import { AUTO_TRAIN, BUILDING_STRIDE, BuildingField, BuildingFlag, type GameStats, HeaderField as H, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
@@ -11,7 +12,7 @@ import { FIXED_TO_PX } from "../../view/view.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
 import { Minimap } from "./minimap.ts";
-import { armyText, BUILDING_NAME, clock, GAME_OVER_REASON } from "./names.ts";
+import { armyText, BUILDING_NAME, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
 import { CommandArea, PLUNDERED_TEXT, ResourceBar, SelectionInfo } from "./panels.ts";
 
 const UPDATE_MS = 100;
@@ -529,6 +530,7 @@ export class Hud {
       this.closeDialog();
       this.game.showTownHint();
     }, "secondary");
+    btn(list, "兵種相剋", () => this.openCounters(), "secondary");
     btn(list, "量測與確定性檢查", () => {
       this.closeDialog();
       this.game.lab.show();
@@ -543,6 +545,25 @@ export class Hud {
       this.life.toStart();
     }, "secondary");
     btn(list, "關閉", () => this.closeDialog());
+  }
+
+  /**
+   * 兵種相剋 (ceo 2026-10-07): each soldier type, whom it hits harder and who hits it harder,
+   * from this game's damage table (counters.ts).
+   */
+  private openCounters(): void {
+    const card = this.openDialog("兵種相剋", "counters");
+    el("p", card, "small", "×2 是傷害變成兩倍。數字是這一局的規則。");
+    const table = el("div", card, "counter-table");
+    for (const line of counterLines(this.game.view?.rules, UNIT_NAME)) {
+      const row = el("div", table, "counter-row");
+      el("b", row, "counter-name", UNIT_NAME[line.type] ?? "");
+      el("span", row, "counter-beats", `剋：${line.beats.length > 0 ? line.beats.join("、") : "沒有"}`);
+      el("span", row, "counter-fears", `怕：${line.fears.length > 0 ? line.fears.join("、") : "沒有"}`);
+    }
+    const row = el("div", card, "dialog-buttons");
+    btn(row, "回選單", () => this.openMenu(), "secondary");
+    btn(row, "關閉", () => this.closeDialog());
   }
 
   private confirmSurrender(): void {

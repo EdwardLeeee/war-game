@@ -9,6 +9,8 @@ export const UNIT_NAME: Record<number, string> = {
   [UnitType.Ranged]: "遠程兵",
   [UnitType.Mage]: "法師",
   [UnitType.Militia]: "民兵",
+  // Round 7 (D-061): GDD §6's 重騎兵, called 騎兵 in the prototype as in the brief.
+  [UnitType.Cavalry]: "騎兵",
 };
 
 export const BUILDING_NAME: Record<number, string> = {
@@ -39,6 +41,7 @@ export const BUILDABLE: BuildingType[] = [
   BuildingType.MageHall,
   // Round 7 (D-061): listed only while its feature is on (buildMenu).
   BuildingType.ArrowTower,
+  BuildingType.Stable,
 ];
 
 export const NODE_NAME: Record<number, string> = {

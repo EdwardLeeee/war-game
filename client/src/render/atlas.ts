@@ -36,6 +36,7 @@ export const BUILDING_GLYPH: Record<number, string> = {
   [BuildingType.TownTower]: "塔",
   // A player's arrow tower (round 7): its own tower shape and glyph, unlike the big city's 塔.
   [BuildingType.ArrowTower]: "箭",
+  [BuildingType.Stable]: "馬",
 };
 
 export interface Atlas {
@@ -94,6 +95,12 @@ function buildAtlas(renderer: Renderer): Atlas {
   });
   // Mage: a six-pointed star.
   units[UnitType.Mage] = shape(renderer, 32, (g) => g.star(16, 16, 6, 11, 5.5).fill(0xffffff).stroke(outline));
+  // Cavalry (round 7): two notched arrowheads one behind the other (»). A single dart was too
+  // like the spearman's wedge at play size.
+  units[UnitType.Cavalry] = shape(renderer, 32, (g) => {
+    g.poly([2, 7, 15, 16, 2, 25, 7, 16]).fill(0xffffff).stroke(outline);
+    g.poly([14, 6, 29, 16, 14, 26, 19, 16]).fill(0xffffff).stroke(outline);
+  });
   // Militia: a square.
   units[UnitType.Militia] = shape(renderer, 32, (g) => g.rect(9, 9, 14, 14).fill(0xffffff).stroke(outline));
 

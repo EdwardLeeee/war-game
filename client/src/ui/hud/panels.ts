@@ -4,7 +4,7 @@
 
 import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
 import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
-import { features, garrisonTypes, holdsOf } from "../../game/features.ts";
+import { buildable, features, garrisonTypes, holdsOf, missingFor } from "../../game/features.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
@@ -260,17 +260,22 @@ export class SelectionInfo {
    * many of each soldier type it has and wants, − and + for each, 改成剛才選的 N 名 (what was
    * selected before the tap), 清空 and 自動補兵. 進攻／撤退／堅守 are the command area's, beside it.
    */
-  private groupPanel(_view: GameView, i: number): void {
+  private groupPanel(view: GameView, i: number): void {
     const head = el("div", this.el, "sel-head");
     el("b", head, "", `編隊 ${i + 1}`);
     // 現有／目標 in the title line; no 「目前：」 line (the command area's buttons light up), so
     // that the panel stays clear of 全軍撤退 on a phone held sideways.
     const total = el("span", head, "sel-status");
-    const rows = GROUP_TYPES.map((type) => {
+    const types = GROUP_TYPES.filter((type) => type !== UnitType.Cavalry || features(view.rules).cavalry);
+    // Four kinds with 騎兵 (round 7): two to a line, the name over its − N +, or the panel
+    // would reach 全軍撤退 on a phone held sideways. Three kinds keep a line each.
+    const grid = types.length > 3 ? el("div", this.el, "group-grid") : null;
+    const rows = types.map((type) => {
       const name = UNIT_NAME[type] ?? "兵";
-      const row = el("div", this.el, "group-row");
-      el("span", row, "group-type", name);
-      const has = el("span", row, "group-has");
+      const row = el("div", grid ?? this.el, "group-row");
+      const label = grid !== null ? el("div", row, "group-label") : row;
+      el("span", label, "group-type", name);
+      const has = el("span", label, "group-has");
       const minus = button(row, "−", "", () => this.host.setGroupWant(i, type, this.host.groupWant(i, type) - 1), "secondary step");
       minus.setAttribute("aria-label", `少要 1 名${name}`);
       const want = el("b", row, "group-want");
@@ -561,7 +566,9 @@ export class CommandArea {
     }
     // The selection itself too: the buttons act on the units it held when they were built, so
     // another soldier of the same kind needs buttons of his own.
-    const key = `${ident}|${this.keyFor(view)}|${this.page}|${this.host.mode()}`;
+    // On the 建造 page, what each building still needs (round 7's `requires`).
+    const needs = this.page === "build" ? BUILDABLE.map((t) => missingFor(view.rules, t, view.ownFinishedTypes()).join(".")).join("/") : "";
+    const key = `${ident}|${this.keyFor(view)}|${this.page}|${this.host.mode()}|${needs}`;
     if (key === this.key) return;
     this.key = key;
     this.el.replaceChildren();
@@ -695,15 +702,17 @@ export class CommandArea {
   }
 
   private buildMenu(view: GameView): void {
-    const on = features(view.rules);
+    const owned = view.ownFinishedTypes();
     for (const type of BUILDABLE) {
       const info = view.rules.buildings[type];
-      if (info === undefined) continue;
-      if (type === BuildingType.ArrowTower && !on.towers) continue;
-      button(this.el, BUILDING_NAME[type] ?? "", costText(info.cost), () => {
+      if (info === undefined || !buildable(view.rules, type)) continue;
+      // Round 7's `requires`: greyed out, saying what to build first.
+      const missing = missingFor(view.rules, type, owned);
+      const b = button(this.el, BUILDING_NAME[type] ?? "", missing.length > 0 ? `要先蓋${missing.map((t) => BUILDING_NAME[t] ?? "").join("、")}` : costText(info.cost), () => {
         this.page = "main";
         this.host.startPlacement(type);
       });
+      b.disabled = missing.length > 0;
     }
     button(this.el, "返回", "", () => this.setPage("main"), "secondary");
   }

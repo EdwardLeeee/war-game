@@ -273,6 +273,15 @@ export class GameView implements IntentWorld {
     return features(this.rules).plunderOnce && o >= 0 && t !== undefined && (t[o + T.flags] & TownFlag.Plundered) !== 0;
   }
 
+  /** The types of our finished buildings (round 7's `requires`). */
+  ownFinishedTypes(): Set<number> {
+    const out = new Set<number>();
+    const b = this.curr?.snap.buildings;
+    if (b === undefined) return out;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) if (b[o + B.owner] === this.me && b[o + B.progress] >= 1000) out.add(b[o + B.type]);
+    return out;
+  }
+
   /** Our town waiting for 搶 or 治理. */
   townAwaitsMyChoice(id: number): boolean {
     const o = this.townRow(id);
