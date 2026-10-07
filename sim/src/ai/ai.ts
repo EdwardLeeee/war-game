@@ -55,6 +55,7 @@ import {
   Order,
   PlaceBit,
   type Rules,
+  Stance,
   TOWN_STRIDE,
   TownChoice,
   TownField,
@@ -1080,6 +1081,30 @@ export interface HardPlan {
   dodge: boolean;
   /** Round 7: with enemies near its main city, its ranged units and mages at home hide in it (and towers it holds). */
   hide: boolean;
+  /**
+   * Lookouts (D-072): soldiers standing on the ways to its main city, this many cells out: toward
+   * the map centre, and along the two edges to the corner towns. `sentries` of them (0: none),
+   * once it has `sentryFrom` soldiers; not part of the army; replaced a minute after one falls.
+   */
+  sentries: number;
+  sentryDist: number;
+  sentryFrom: number;
+  /**
+   * Coming home (D-072): with the army out and enemy soldiers it knows of (worth at least
+   * `rescueAt`) within `rescueRadius` cells of its main city, more than those at home can hold, it
+   * weighs which main city falls first and turns back when its own would, if it can be back in
+   * time. Its own march goes on only while it takes the enemy's city in rescueMargin percent of
+   * the time the enemy needs for its own (0: never turns back for this).
+   */
+  rescueAt: number;
+  rescueRadius: number;
+  rescueMargin: number;
+  /**
+   * Marching on the enemy base without having seen the enemy's army for `unknownTicks`: it leaves
+   * `unknownHold` soldiers at home (0: none).
+   */
+  unknownHold: number;
+  unknownTicks: number;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -1103,6 +1128,14 @@ export const HARD: HardPlan = {
   pullAll: 4,
   dodge: true,
   hide: true,
+  sentries: 0,
+  sentryDist: 25,
+  sentryFrom: 8,
+  rescueAt: 0,
+  rescueRadius: 35,
+  rescueMargin: 100,
+  unknownHold: 0,
+  unknownTicks: 1800,
   looseAt: 0,
   looseWho: 1,
 };
@@ -1171,6 +1204,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   // main city's arrows (range 7).
   const rally = real(homeF.u + su * 6 + rng.below(3) - 1, homeF.v + sv * 6 + rng.below(3) - 1);
   const post = real(homeF.u + su * 4, homeF.v + sv * 4);
+  // Lookout posts (D-072), in player 0's frame: toward the map centre, then along the two edges
+  // (to the corner towns).
+  const clampCell = (c: number) => Math.max(1, Math.min(n - 2, c));
+  const posts = [
+    real(clampCell(homeF.u + Math.trunc((su * plan.sentryDist * 7) / 10)), clampCell(homeF.v + Math.trunc((sv * plan.sentryDist * 7) / 10))),
+    real(clampCell(homeF.u + su * plan.sentryDist), homeF.v),
+    real(homeF.u, clampCell(homeF.v + sv * plan.sentryDist)),
+  ].slice(0, plan.sentries);
 
   let mode: HardMode = "home";
   let target = { x: post.x, y: post.y };
@@ -1196,6 +1237,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const dodging = new Map<number, number>();
   /** Soldiers kept as the garrison of each governed (or repairing) town. */
   const townGuards = new Map<number, number[]>();
+  /** Lookouts (D-072): post index -> soldier id, and when a fallen one may be replaced. */
+  const sentryAt = new Map<number, number>();
+  const sentryNext = posts.map(() => 0);
+  /** Soldiers left at home when marching without knowing where the enemy's army is (D-072). */
+  const keepHome = new Set<number>();
+  /** Turned back to save the main city: no new march before this tick. */
+  let rescueUntil = -100000;
+  /** When it last saw six or more enemy soldiers at once (where the enemy's army is). */
+  let armySeen = -100000;
   /** Soldiers sent home against a small raid while the army is out. */
   const homeSquad = new Set<number>();
   let squadMove = -100000;
@@ -1350,6 +1400,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         return true;
       };
       for (const f of foes) intel.set(f.id, { type: f.type, x: f.x, y: f.y, tick, inside: f.order === Order.Garrison && shelters.has(f.orderTarget) ? f.orderTarget : undefined });
+      if (foes.length >= 6) armySeen = tick;
       for (const [id, e] of intel) {
         if (e.tick === tick) continue;
         if (garrisonOn && (rules.garrisonTypes ?? []).includes(e.type as UnitType)) {
@@ -1577,7 +1628,39 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         });
         if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
       }
+      // Lookouts (D-072): one soldier on each post (a ranged unit if it has one: it sees further),
+      // standing its ground there; a fallen one is replaced a minute later.
+      for (const [k, id] of sentryAt) {
+        if (byId.has(id)) continue;
+        sentryAt.delete(k);
+        sentryNext[k] = tick + TICKS_PER_MINUTE;
+      }
+      if (posts.length > 0) {
+        const taken = new Set([...townGuards.values()].flat());
+        for (const id of sentryAt.values()) taken.add(id);
+        const free = soldiers.filter((s) => !taken.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison && s.order !== Order.Cast);
+        posts.forEach((p, k) => {
+          const id = sentryAt.get(k);
+          if (id !== undefined) {
+            const s = byId.get(id)!;
+            if (tick % 100 === 0 && dist2(s.x, s.y, p.x, p.y) > 9) out.push({ c: "move", u: [id], x: p.x, y: p.y });
+            return;
+          }
+          if (tick < sentryNext[k] || free.length < plan.sentryFrom) return;
+          const pick = [...free].sort(
+            (a, b) =>
+              (b.type === UnitType.Ranged ? 1 : 0) - (a.type === UnitType.Ranged ? 1 : 0) ||
+              dist2(a.x, a.y, p.x, p.y) - dist2(b.x, b.y, p.x, p.y) ||
+              rank(a.fx, a.fy) - rank(b.fx, b.fy),
+          )[0];
+          sentryAt.set(k, pick.id);
+          free.splice(free.indexOf(pick), 1);
+          out.push({ c: "move", u: [pick.id], x: p.x, y: p.y });
+          out.push({ c: "stance", u: [pick.id], stance: Stance.Hold });
+        });
+      }
       const guarding = new Set([...townGuards.values()].flat());
+      for (const id of sentryAt.values()) guarding.add(id);
 
       // --- the clock (AI-against-AI games only: a person plays without a limit) ---------------------
       const endgame = toGo >= 0 && toGo <= ENDGAME_TO_GO;
@@ -1691,6 +1774,55 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
 
 
       const armyOrders = (): void => {
+        if (mode === "home" || mode === "defend") keepHome.clear();
+        // Coming home (D-072): enemy soldiers it knows of near its main city while the army is out.
+        if (plan.rescueAt > 0 && (mode === "base" || mode === "town") && !endgame) {
+          const r2 = plan.rescueRadius * plan.rescueRadius;
+          const dps = (type: number) => rules.units[type].attack / rules.units[type].cooldown;
+          let wE = 0;
+          let dE = 0;
+          let sx = 0;
+          let sy = 0;
+          let k = 0;
+          for (const e of intel.values()) {
+            if (e.inside !== undefined || tick - e.tick > 600 || dist2(e.x, e.y, home.cellX, home.cellY) > r2) continue;
+            wE += WORTH[e.type];
+            dE += dps(e.type);
+            sx += e.x;
+            sy += e.y;
+            k++;
+          }
+          if (k > 0 && wE >= plan.rescueAt) {
+            // Who holds home: every soldier within 20 cells of it (those left home, trained since,
+            // hiding in the city, lookouts nearby).
+            const homeWorth = worth(soldiers.filter((u) => dist2(u.x, u.y, home.cellX, home.cellY) <= 400));
+            if (homeWorth * 10 < wE * 12) {
+              let myHp = rules.buildings[BuildingType.MainCity].hp;
+              for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+                if (view.buildings[r + BuildingField.owner] === player && view.buildings[r + BuildingField.type] === BuildingType.MainCity) myHp = view.buildings[r + BuildingField.hp];
+              }
+              // The enemy's: walking to the city, then its hits less the share those at home hold off.
+              const reach = Math.sqrt(dist2(Math.trunc(sx / k), Math.trunc(sy / k), home.cellX, home.cellY));
+              const tEnemy = Math.max(0, reach - 5) * 21 + myHp / Math.max(0.05, dE * (1 - Math.min(0.9, homeWorth / wE)));
+              // Its own: the front walking to the enemy's city, then its hits (towns: it is not racing).
+              let tMine = Infinity;
+              const front = army.filter((u) => marched.has(u.id));
+              if (mode === "base" && front.length > 0) {
+                const fc = centre(front, ac.x, ac.y);
+                const theirHp = enemyCityHp >= 0 ? enemyCityHp : rules.buildings[BuildingType.MainCity].hp;
+                const hits = front.reduce((a, u) => a + dps(u.type), 0);
+                tMine = Math.max(0, Math.sqrt(dist2(fc.x, fc.y, enemyHome.cellX, enemyHome.cellY)) - 5) * 21 + theirHp / Math.max(0.05, hits);
+              }
+              const tBack = Math.max(0, Math.sqrt(dist2(ac.x, ac.y, home.cellX, home.cellY)) - 5) * 21;
+              if (tMine * 100 > tEnemy * plan.rescueMargin && tBack < tEnemy) {
+                rescueUntil = tick + TICKS_PER_MINUTE;
+                counterReady = false;
+                fallBack(post.x, post.y);
+                return;
+              }
+            }
+          }
+        }
         // Defence: everyone home, under the main city's arrows; farmers inside against a raid.
         const atHome = foesNear(home.cellX, home.cellY, 16);
         const committed = mode === "base" && dist2(ac.x, ac.y, enemyHome.cellX, enemyHome.cellY) < dist2(ac.x, ac.y, home.cellX, home.cellY);
@@ -1804,7 +1936,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // a time (one by one they would be picked off on the way).
           // Round 7 (garrison): a main city with soldiers hiding in it picks off what comes in small
           // groups, so then they wait for the next march instead.
-          const reserves = army.filter((u) => !marched.has(u.id) && !detached(u.id));
+          const reserves = army.filter((u) => !marched.has(u.id) && !detached(u.id) && !keepHome.has(u.id));
           if (reserves.length >= 6 && !garrisonOn) for (const u of reserves) marched.add(u.id);
           const front = army.filter((u) => marched.has(u.id));
           const frontIds = front.filter((u) => !detached(u.id)).map((u) => u.id);
@@ -1857,6 +1989,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           return;
         }
         // At home: march, go for a town, or wait by the city.
+        // Just turned back to save the main city (D-072): it waits by the city for a minute first.
+        if (tick < rescueUntil && !endgame) {
+          send(post.x, post.y, "home");
+          return;
+        }
         const popFull = toGo < 0 && cap >= rules.maxPopulation && pop >= cap - FULL_MARGIN;
         const strong = armyWorth * 100 >= enemyWorth * plan.pushRatio;
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
@@ -1871,9 +2008,20 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
                 (army.length >= pushArmy && strong) ||
                 (popFull && army.length >= townArmy + 6));
         if (go) {
-          armyAtStart = army.length;
+          // Not knowing where the enemy's army is (D-072): some stay home, the spearmen nearest it.
+          if (plan.unknownHold > 0 && !endgame && tick - armySeen > plan.unknownTicks) {
+            const stay = army
+              .filter((u) => u.type === UnitType.Spearman && !detached(u.id))
+              .sort((a, b) => dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.fx, a.fy) - rank(b.fx, b.fy))
+              .slice(0, plan.unknownHold);
+            for (const u of stay) keepHome.add(u.id);
+            const keep = armyIds.filter((id) => !keepHome.has(id));
+            armyIds.length = 0;
+            armyIds.push(...keep);
+          }
+          armyAtStart = army.length - keepHome.size;
           marched.clear();
-          for (const u of army) marched.add(u.id);
+          for (const u of army) if (!keepHome.has(u.id)) marched.add(u.id);
           counterReady = false;
           send(enemyHome.cellX, enemyHome.cellY, "base");
           return;
