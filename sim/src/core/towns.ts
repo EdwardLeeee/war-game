@@ -29,7 +29,7 @@ import {
 } from "../protocol.ts";
 import type { Emit } from "./economy.ts";
 import type { Fog } from "./fog.ts";
-import { TOWNS } from "./rules.ts";
+import { governPerMinute, PLUNDER_RECOVERY, TOWNS, townIncomePermille } from "./rules.ts";
 import { spawnMilitia } from "./scenarios.ts";
 import type { World } from "./world.ts";
 
@@ -120,17 +120,24 @@ export class TownSystem {
           w.governedTicks[p]++;
           if (manned) {
             const o = t * 3;
-            w.townAcc[o] += rule.perMinute.food;
-            w.townAcc[o + 1] += rule.perMinute.gold;
-            w.townAcc[o + 2] += rule.perMinute.crystal;
+            const per = governPerMinute(w.townSize[t]);
+            // A plundered town pays a share that climbs back while it is governed (round 7,
+            // PLUNDER_RECOVERY): the accumulators then count in thousandths.
+            const scaled = PLUNDER_RECOVERY.on;
+            const share = scaled ? townIncomePermille(w.townPlundered[t], w.townRecover[t]) : 1;
+            if (scaled && w.townPlundered[t] !== 0 && w.townRecover[t] < PLUNDER_RECOVERY.ticks) w.townRecover[t]++;
+            w.townAcc[o] += per.food * share;
+            w.townAcc[o + 1] += per.gold * share;
+            w.townAcc[o + 2] += per.crystal * share;
             if (w.tick % TOWN_PAY_EVERY === 0) {
               const res = [Resource.Food, Resource.Gold, Resource.Crystal];
+              const unit = scaled ? PER_MINUTE * 1000 : PER_MINUTE;
               for (let k = 0; k < 3; k++) {
-                const pay = Math.trunc(w.townAcc[o + k] / PER_MINUTE);
+                const pay = Math.trunc(w.townAcc[o + k] / unit);
                 w.res[p * 4 + res[k]] += pay;
                 w.townIncome[p] += pay;
                 w.townSpellIncome[t] += pay;
-                w.townAcc[o + k] -= pay * PER_MINUTE;
+                w.townAcc[o + k] -= pay * unit;
               }
             }
           }
@@ -188,6 +195,8 @@ export class TownSystem {
     w.res[p * 4 + Resource.Crystal] += rule.plunder.crystal;
     w.plundered[p]++;
     w.plunderIncome[p] += rule.plunder.food + rule.plunder.gold + rule.plunder.crystal;
+    // Round 7 (D-061): once a game (TOWN_ONCE), and governed again it pays less at first (PLUNDER_RECOVERY).
+    w.townPlundered[t] = 1;
     w.townState[t] = TownState.Ruins;
     w.townOwner[t] = NO_OWNER;
     w.townTimer[t] = rule.ruinsTicks;

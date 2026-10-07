@@ -5,6 +5,7 @@
 //   node src/scripted-games.ts --seeds 1-15 --strategy defend --speed h1 --formation close
 //   node src/scripted-games.ts --seeds 1,2,3 --strategy push --trace --json out.json
 //   node src/scripted-games.ts --seeds 1-20 --strategy push --no-range --no-mage   (spearmen only)
+//   node src/scripted-games.ts --seeds 1-40 --strategy push --corners --govern   (round 7: govern every town taken)
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
 import { writeFileSync } from "node:fs";
@@ -12,7 +13,7 @@ import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THI
 import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
 import { rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, Resource, TownSize, UnitType } from "./protocol.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 import { buildView } from "./view/view.ts";
 
@@ -58,6 +59,8 @@ if (flag("no-mage")) plan.noMage = true;
 if (flag("no-range")) plan.noRange = true;
 if (flag("corners")) plan.corners = true;
 if (flag("auto-train")) plan.autoTrain = true;
+// Round 7 (D-061): every town taken is governed, not plundered.
+if (flag("govern")) plan.choice = "govern";
 
 const NAMES: Record<Strategy, string> = { push: "主動", defend: "守家", notown: "守家、不拿城鎮" };
 const SPEED_NAMES: Record<Speed, string> = { h1: "手速 H1", eco: "經濟養大" };
@@ -114,6 +117,22 @@ interface GameRecord {
   trace?: string[];
 }
 
+/** A town's short name for the trace: the big city, the middle town, or a corner. */
+function TOWN_SHORT(map: { size: number; towns: { size: number; cellX: number }[] }, t: number): string {
+  const s = map.towns[t];
+  if (s.size === TownSize.Large) return "大";
+  const mid = map.size / 2;
+  if (Math.abs(s.cellX - mid) < map.size / 4) return "中";
+  return s.cellX < mid ? "左上" : "右下";
+}
+
+/** "=我治" (player 0 governs), "=電待" (the AI awaits its choice), "=廢" (ruins), "=中立". */
+function townState(owner: number, state: number): string {
+  const who = owner === 0 ? "我" : owner === 1 ? "電" : "";
+  const what = ["中立", "待", "搶", "修", "治", "廢"][state] ?? "?";
+  return state === TownState.Neutral || state === TownState.Ruins ? `=${what}` : `=${who}${what}`;
+}
+
 function play(seed: number): GameRecord {
   const r = new Runner({
     seed,
@@ -164,6 +183,10 @@ function play(seed: number): GameRecord {
 
   let seq = 0;
   let town = -1;
+  const lastIncome = [
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
   const taken: [number[], number[]] = [map.towns.map(() => -1), map.towns.map(() => -1)];
   let myMage = -1;
   let crystalForMage = -1;
@@ -219,7 +242,19 @@ function play(seed: number): GameRecord {
     }
     if (trace && w.tick % 1200 === 0) {
       const res = (p: number) => [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal].map((k) => w.res[p * 4 + k]).join("/");
-      lines.push(`${(w.tick / 1200).toFixed(0)} 分｜我 ${res(0)} 農 ${count(0, UnitType.Farmer)} 兵 ${army(0)} ${player.state().mode} 城 ${cityHp(0)}｜電腦 ${res(1)} 農 ${count(1, UnitType.Farmer)} 兵 ${army(1)} 城 ${cityHp(1)}`);
+      // Round 7 (D-061): who holds each town and how, and this minute's income by source.
+      const income = (p: number) => {
+        let g = 0;
+        for (let k = 0; k < 4; k++) g += w.gathered[p * 4 + k];
+        const now = [g, w.townIncome[p], w.plunderIncome[p]];
+        const d = now.map((v, k) => v - lastIncome[p][k]);
+        lastIncome[p] = now;
+        return `收入 採${d[0]} 城${d[1]} 搶${d[2]}`;
+      };
+      const towns = map.towns.map((_, k) => `${TOWN_SHORT(map, k)}${townState(w.townOwner[k], w.townState[k])}`).join(" ");
+      lines.push(
+        `${(w.tick / 1200).toFixed(0)} 分｜我 ${res(0)} 農 ${count(0, UnitType.Farmer)} 兵 ${army(0)} ${player.state().mode} 城 ${cityHp(0)} ${income(0)}｜電腦 ${res(1)} 農 ${count(1, UnitType.Farmer)} 兵 ${army(1)} 城 ${cityHp(1)} ${income(1)}｜${towns}`,
+      );
     }
   }
   closeWave();
@@ -261,6 +296,7 @@ const options = [
   plan.noRange ? "不蓋射場" : "",
   plan.corners ? "一直搶城鎮（最近、不是自己的小鎮）" : "",
   plan.autoTrain ? "用自動訓練（自己不點訓練兵）" : "",
+  plan.choice === "govern" ? "打下來就治理" : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;

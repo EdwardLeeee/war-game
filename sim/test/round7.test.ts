@@ -1,10 +1,10 @@
-// Round 7 (D-061): the protocol is in place with every switch off (PR P). Arrow towers,
-// stables and hiding soldiers are refused; Rules tells the screen and the AI what is on; and
-// a building with someone inside shows only that to the players who see it.
+// Round 7 (D-061): the protocol (PR P). With their switches off, arrow towers, stables and
+// hiding soldiers are refused; Rules tells the screen and the AI what is on; and a building
+// with someone inside shows only that to the players who see it.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { rules } from "../src/core/rules.ts";
+import { CAVALRY, GARRISON, PLUNDER_RECOVERY, rules, TOWERS, TOWN_ONCE } from "../src/core/rules.ts";
 import { BuildingField, BuildingFlag, BUILDING_STRIDE, BuildingType, Reject, TOWN_STRIDE, TownField, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, slotOf } from "./helpers.ts";
@@ -13,7 +13,21 @@ function rejected(g: ReturnType<typeof emptyGame>, p: number): number[] {
   return g.events.filter((e) => e.to === p && e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
 }
 
-test("all round 7 switches off: towers, stables, garrison and leave are refused, and Rules says so", () => {
+/** Runs `body` with every round 7 switch off. */
+function allOff(body: () => void): () => void {
+  return () => {
+    const switches = [TOWN_ONCE, PLUNDER_RECOVERY, TOWERS, GARRISON, CAVALRY];
+    const saved = switches.map((x) => x.on);
+    for (const x of switches) x.on = false;
+    try {
+      body();
+    } finally {
+      switches.forEach((x, k) => (x.on = saved[k]));
+    }
+  };
+}
+
+test("round 7 switches off: towers, stables, garrison and leave are refused, and Rules says so", allOff(() => {
   const r = rules();
   assert.deepEqual(r.features, { plunderOnce: false, towers: false, garrison: false, cavalry: false });
   assert.equal(r.plunderRecovery.startPermille, 1000, "no recovery rule");
@@ -34,6 +48,11 @@ test("all round 7 switches off: towers, stables, garrison and leave are refused,
   g.step();
   assert.deepEqual(rejected(g, 0), [Reject.NotAvailable, Reject.NotAvailable, Reject.NotAvailable, Reject.NotAvailable]);
   assert.ok(slotOf(g, ranged) >= 0);
+}));
+
+test("Rules.features follows the switches", () => {
+  const f = rules().features;
+  assert.deepEqual(f, { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on });
 });
 
 test("someone hiding: everyone who sees the building gets Occupied, only the owner how many", () => {

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { PERF } from "../src/core/scenarios.ts";
-import { MAIN_CRYSTAL, TOWNS } from "../src/core/rules.ts";
+import { governPerMinute, MAIN_CRYSTAL, TOWNS } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import {
   BuildingType,
@@ -198,11 +198,14 @@ test("govern: pays at the choice, repairs with the minimum garrison, then produc
   // Paid every 20 ticks from an accumulator: any 1,200-tick window holds 40 give or take one.
   const food = g.w.res[Resource.Food] - food0;
   const crystal = g.w.res[Resource.Crystal] - crystal0;
-  assert.ok(Math.abs(food - rule.perMinute.food) <= 1, `food a minute: ${food}`);
-  assert.ok(Math.abs(crystal - rule.perMinute.crystal) <= 1, `crystal a minute: ${crystal}`);
+  // Round 7 (D-061, GOVERN_INCOME): 100 food and 30 crystal a minute (was 40 and 12).
+  const per = governPerMinute(TownSize.Small);
+  assert.deepEqual([per.food, per.gold, per.crystal], [100, 100, 30]);
+  assert.ok(Math.abs(food - per.food) <= 1, `food a minute: ${food}`);
+  assert.ok(Math.abs(crystal - per.crystal) <= 1, `crystal a minute: ${crystal}`);
   const food10 = g.w.res[Resource.Food];
   run(g, 12000);
-  assert.ok(Math.abs(g.w.res[Resource.Food] - food10 - 10 * rule.perMinute.food) <= 1, "400 food in ten minutes");
+  assert.ok(Math.abs(g.w.res[Resource.Food] - food10 - 10 * per.food) <= 1, "1000 food in ten minutes");
   // No garrison: no production, and a revolt after 60 s.
   g.w.units.col.hp[slotOf(g, spear)] = 0;
   g.step();
