@@ -830,6 +830,22 @@ export interface HardPlan {
   dodge: boolean;
   /** Round 7: with enemies near its main city, its ranged units and mages at home hide in it (and towers it holds). */
   hide: boolean;
+  /**
+   * Round 8 sieges (D-073), while soldiers can hide in buildings: a front ground down to under 40%
+   * of those that set out still presses on while the enemy's main city, at the rate it lost hp over
+   * the last `siegeWindow` ticks, falls before the front is gone at the rate it lost soldiers, with
+   * siegeRate percent to spare (0: never; 100: just before).
+   */
+  siegeRate: number;
+  siegeWindow: number;
+  /**
+   * Soldiers trained since the march set out (who otherwise wait for the next march): once per
+   * march, when the front starts on the enemy's main city, they follow it in one group if there
+   * are this many (0: never).
+   */
+  reserveJoin: number;
+  /** It never breaks off from an enemy main city down to this percent of its hp. */
+  pressOnHp: number;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -853,6 +869,10 @@ export const HARD: HardPlan = {
   pullAll: 4,
   dodge: true,
   hide: true,
+  siegeRate: 0,
+  siegeWindow: 200,
+  reserveJoin: 0,
+  pressOnHp: PRESS_ON_HP,
   looseAt: 0,
   looseWho: 1,
 };
@@ -936,6 +956,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let waveMax = 0;
   let lastWave = -100000;
   let counterReady = false;
+  /** The siege so far (D-073): the enemy's main city's hp and the front, while the front is at it. */
+  const siegeLog: { tick: number; hp: number; front: number }[] = [];
+  /** This march has called up the soldiers waiting at home (D-073). */
+  let calledUp = false;
   let loose = false;
   let lastEnemyMage = -100000;
   const loosed = new Set<number>();
@@ -1552,7 +1576,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const front = army.filter((u) => marched.has(u.id));
           const frontIds = front.filter((u) => !detached(u.id)).map((u) => u.id);
           const fc = centre(front, ac.x, ac.y);
-          const cityLow = enemyCityHp >= 0 && enemyCityHp * 100 <= rules.buildings[BuildingType.MainCity].hp * PRESS_ON_HP;
+          const cityLow = enemyCityHp >= 0 && enemyCityHp * 100 <= rules.buildings[BuildingType.MainCity].hp * plan.pressOnHp;
           // It breaks off only when outmatched where the front stands (not because the city's arrows
           // thinned it: with nobody left to defend it, the city falls), or when too few are left.
           const atCity = front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 14 * 14);
@@ -1561,13 +1585,31 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const nearFront = garrisonOn ? front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 30 * 30).length : front.length;
           const there = atCity.length * 2 >= nearFront;
           const defenders = worth(foesNear(fc.x, fc.y, 12));
-          const ground = garrisonOn && front.length * 5 < armyAtStart * 2;
+          // Round 8 (D-073): how the siege goes, while the front is at the city and sees it.
+          if (enemyCity >= 0 && there && atCity.length > 0) siegeLog.push({ tick, hp: enemyCityHp, front: front.length });
+          else siegeLog.length = 0;
+          while (siegeLog.length > 0 && tick - siegeLog[0].tick > plan.siegeWindow) siegeLog.shift();
+          // Ground down, but the city falls first at the way the siege goes: on.
+          const winning = (() => {
+            if (plan.siegeRate <= 0 || siegeLog.length === 0 || tick - siegeLog[0].tick < plan.siegeWindow >> 1) return false;
+            const lostHp = siegeLog[0].hp - enemyCityHp;
+            const lostFront = Math.max(0, siegeLog[0].front - front.length);
+            return lostHp > 0 && enemyCityHp * lostFront * 100 < front.length * lostHp * plan.siegeRate;
+          })();
+          const ground = garrisonOn && front.length * 5 < armyAtStart * 2 && !winning;
           if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0)))) {
             counterReady = false;
             fallBack(post.x, post.y);
             return;
           }
           if (enemyCity >= 0 && there) {
+            // Round 8 (D-073): those waiting at home follow in one group as the siege starts.
+            if (garrisonOn && plan.reserveJoin > 0 && !calledUp && reserves.length >= plan.reserveJoin) {
+              calledUp = true;
+              const ids = reserves.map((u) => u.id);
+              for (const id of ids) marched.add(id);
+              out.push({ c: "move", u: ids, x: enemyHome.cellX, y: enemyHome.cellY });
+            }
             if (tick - lastMove >= 100 && frontIds.length > 0) {
               // Defenders first (a move fights what it meets), then the city; those still on the way
               // keep coming.
@@ -1614,6 +1656,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           marched.clear();
           for (const u of army) marched.add(u.id);
           counterReady = false;
+          calledUp = false;
           send(enemyHome.cellX, enemyHome.cellY, "base");
           return;
         }
