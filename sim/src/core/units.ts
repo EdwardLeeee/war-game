@@ -30,6 +30,7 @@ import {
   ARROW_TOWER,
   GARRISON,
   BUILDINGS,
+  AVENGE,
   CANNON,
   DODGE,
   COUNTER_ATTACK,
@@ -776,6 +777,21 @@ export class UnitSystem {
       // soldiers fight together instead (SQUAD).
       if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT && u.squad[i] === 0 && COUNTER_ATTACK.on) tid = this.counterAttack(w, fog, i);
     }
+    // A cannon shot sent it after the mage (AVENGE, round 8): while it has no order, sees the
+    // mage, and the mage is within AVENGE.reach of its place; hold stance too.
+    let avenging = false;
+    if (AVENGE.on && u.avenge[i] >= 0) {
+      const m = u.avenge[i];
+      const ms = order === Order.None && !gone(m) ? w.unit(m) : -1;
+      const ax = ms >= 0 ? u.x[ms] - u.anchorX[i] : 0;
+      const ay = ms >= 0 ? u.y[ms] - u.anchorY[i] : 0;
+      if (ms < 0 || ax * ax + ay * ay > AVENGE.reach * AVENGE.reach) {
+        u.avenge[i] = -1;
+      } else {
+        tid = m;
+        avenging = true;
+      }
+    }
     u.target[i] = tid;
 
     if (tid >= 0) {
@@ -804,7 +820,7 @@ export class UnitSystem {
         return;
       }
       const idle = order === Order.None;
-      if (idle && u.stance[i] === Stance.Hold) {
+      if (idle && u.stance[i] === Stance.Hold && !avenging) {
         u.target[i] = -1;
         u.action[i] = Action.Idle;
         return;
@@ -1305,6 +1321,8 @@ export class UnitSystem {
             const dy = u.y[j] - u.castY[i];
             if (dx * dx + dy * dy <= r2) {
               this.hit(w, j, dmg, UnitType.Mage, p, HitCause.Cannon, u.id[i]);
+              // A soldier standing with no order goes for the mage (AVENGE, round 8).
+              if (AVENGE.on && u.owner[j] < PLAYER_COUNT && u.type[j] !== UnitType.Farmer && u.order[j] === Order.None) u.avenge[j] = u.id[i];
               if (p < PLAYER_COUNT) w.cannonHits[p]++;
             }
           }

@@ -49,17 +49,21 @@ export function openArea(g: Game, size: number): { x: number; y: number } {
 }
 
 /**
- * A test body run with a rule's switch off, then as it was: for tests of other rules that a
- * later round's rule would change (round 8's soldiers stepping out of cannon warnings, D-069).
+ * A test body run with rules' switches off, then as they were: for tests of other rules that a
+ * later round's rules would change (round 8, D-069: soldiers stepping out of cannon warnings,
+ * going for the mage).
  */
-export function switchedOff(sw: { on: boolean }, body: () => void): () => void {
+export function switchedOff(sw: { on: boolean } | { on: boolean }[], body: () => void): () => void {
+  const all = Array.isArray(sw) ? sw : [sw];
   return () => {
-    const was = sw.on;
-    sw.on = false;
+    const was = all.map((x) => x.on);
+    for (const x of all) x.on = false;
     try {
       body();
     } finally {
-      sw.on = was;
+      all.forEach((x, k) => {
+        x.on = was[k];
+      });
     }
   };
 }

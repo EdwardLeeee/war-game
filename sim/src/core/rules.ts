@@ -288,6 +288,14 @@ export const TOWER_REACH = { mainCity: 8, town: 2 };
  * itself it walks away from the caster. `farmers`: farmers at work or idle do it too.
  */
 export const DODGE = { on: true, margin: 256, farmers: false };
+/**
+ * Going for the mage (rule 2): a player's soldier with no order that a cannon shot hits, hold
+ * stance and squads too, goes for the mage that fired while its owner sees it (it shows itself
+ * when it fires, REVEAL_CAST) and it is within `reach` of the soldier's place; then back to its
+ * place. Its mates follow as they fight together (SQUAD, JOIN_FIGHT); hold stance mates stay.
+ * The unit column it keeps (avenge) is in the hash only while it is on.
+ */
+export const AVENGE = { on: true, reach: 8 * CELL };
 
 // --- mages (from PR-4) ---------------------------------------------------------------
 

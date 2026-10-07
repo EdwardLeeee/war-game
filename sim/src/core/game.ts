@@ -26,7 +26,7 @@ import { FNV_OFFSET, fnvBytes, fnvInt32, fnvWord } from "./fixed.ts";
 import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { FieldCache } from "./paths.ts";
-import { BUILDINGS, CAVALRY, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, BUILDINGS, CAVALRY, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -220,7 +220,7 @@ export class Game {
     if (PLUNDER_RECOVERY.on) h = fnvInt32(h, w.townRecover);
     h = fnvWord(h, w.units.count);
     for (const name of w.units.names) {
-      if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on)) continue;
+      if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on) || (name === "avenge" && !AVENGE.on)) continue;
       h = fnvInt32(h, w.units.col[name], w.units.count);
     }
     h = fnvWord(h, w.buildings.count);
