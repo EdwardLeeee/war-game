@@ -4,10 +4,10 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CANNON, COUNTER_ATTACK, RETREAT_OWN_SPEED, REVEAL_CAST, SHIELD, UNITS } from "../src/core/rules.ts";
+import { CANNON, COUNTER_ATTACK, DODGE, RETREAT_OWN_SPEED, REVEAL_CAST, SHIELD, UNITS } from "../src/core/rules.ts";
 import { damage } from "../src/core/units.ts";
 import { CELL_SHIFT, Stance, UnitType } from "../src/protocol.ts";
-import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 /** A block 8 x 18 open on player 0's side of the diagonal whose mirror image is open too. */
 function mirrorBlock(g: ReturnType<typeof emptyGame>): { bx: number; by: number } {
@@ -128,7 +128,7 @@ function untilShot(g: ReturnType<typeof emptyGame>, mage: number): number {
   return -1;
 }
 
-test("counter-attack: soldiers without a squad, shelled by a mage they cannot see, charge it; hold and farmers stay", () => {
+test("counter-attack: soldiers without a squad, shelled by a mage they cannot see, charge it; hold and farmers stay", switchedOff(DODGE, () => {
   for (const on of [true, false]) {
     const { g, u, block, holder, farmer, mage, restore } = shelled(on);
     try {
@@ -150,7 +150,7 @@ test("counter-attack: soldiers without a squad, shelled by a mage they cannot se
       restore();
     }
   }
-});
+}));
 
 test("counter-attack is not for a squad: soldiers that came by a move command do not charge the unseen mage", () => {
   const { g, u, block, mage, restore } = shelled(true, true);

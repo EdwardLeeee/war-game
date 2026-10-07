@@ -6,10 +6,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Game } from "../src/core/game.ts";
-import { ARROW_TOWER, BUILDINGS, CANNON, GARRISON, UNITS } from "../src/core/rules.ts";
+import { ARROW_TOWER, BUILDINGS, CANNON, DODGE, GARRISON, UNITS } from "../src/core/rules.ts";
 import { Action, BuildingField, BuildingFlag, BUILDING_STRIDE, BuildingType, Order, PlaceBit, Reject, Resource, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 // Player 0's main city covers (14..17, 76..79); player 1's is its mirror image at (76, 14).
 const TX = 20;
@@ -137,7 +137,7 @@ test("from inside: hidden ranged shoot from the tower's edge and cannot be targe
   assert.ok(ranged.every((id) => slotOf(g, id) >= 0 && u.action[slotOf(g, id)] !== Action.Garrisoned), "out and alive");
 });
 
-test("a mage hiding in the main city fires the cannon on autocast from the city's edge and stays inside", () => {
+test("a mage hiding in the main city fires the cannon on autocast from the city's edge and stays inside", switchedOff(DODGE, () => {
   const g = emptyGame();
   const city = g.w.buildings.col.id[g.w.mainCity(0)];
   const mage = put(g, 0, UnitType.Mage, 19, 78);
@@ -169,7 +169,7 @@ test("a mage hiding in the main city fires the cannon on autocast from the city'
   assert.equal(u.action[slotOf(g, mage)], Action.Garrisoned, "still inside");
   assert.equal(u.order[slotOf(g, mage)], Order.Garrison);
   assert.equal(u.orderTarget[slotOf(g, mage)], city);
-});
+}));
 
 test("mirror images: two towers with hidden ranged and their attackers play as mirror images, tick by tick", () => {
   const g = emptyGame();
