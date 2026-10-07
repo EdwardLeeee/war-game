@@ -259,6 +259,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   // ranged units and mages hiding in the main city while enemies are near it.
   const extras = (know.difficulty ?? "normal") === "normal";
   const useCavalry = extras && know.rules.features?.cavalry === true;
+  const normalTowers = extras && know.rules.features?.towers === true ? NORMAL_TRIAL.towers : 0;
   const hide = extras && know.rules.features?.garrison === true;
   let sawShooters = false;
   let lastHomeThreat = -100000;
@@ -457,6 +458,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (useCavalry && sawShooters && !has(BuildingType.Stable) && (rules.buildings[BuildingType.Stable].requires ?? []).every((t) => done(t).length > 0)) {
           add(BuildingType.Stable, rally);
         }
+        if (count(BuildingType.ArrowTower) < normalTowers && has(BuildingType.Barracks) && has(BuildingType.Range)) add(BuildingType.ArrowTower, rally);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         // Spare food and wood: more places to train (one building trains one unit at a time).
@@ -830,6 +832,21 @@ export interface HardPlan {
   dodge: boolean;
   /** Round 7: with enemies near its main city, its ranged units and mages at home hide in it (and towers it holds). */
   hide: boolean;
+  /**
+   * Round 8 candidates (D-071): arrow towers by the production buildings (toward the map centre),
+   * this many (0: none), once it has a barracks and a range; with `towerAfter` only once enemy
+   * soldiers have come near its main city.
+   */
+  towers: number;
+  towerAfter: boolean;
+  /** An arrow tower by each town it governs. */
+  townTower: boolean;
+  /** Cavalry, this percent of its spearmen, ranged units and cavalry (0: no stable)... */
+  cavalry: number;
+  /** ...and this many points more while ranged units and mages are over half the enemy soldiers it knows of. */
+  cavalryCounter: number;
+  /** Each enemy arrow tower it has seen by the enemy's main city counts as this much army (0: none). */
+  towerWorth: number;
   /** Loose formation once it believes the enemy has this many mages (0: never)... */
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
@@ -853,9 +870,18 @@ export const HARD: HardPlan = {
   pullAll: 4,
   dodge: true,
   hide: true,
+  towers: 0,
+  towerAfter: false,
+  townTower: false,
+  cavalry: 0,
+  cavalryCounter: 0,
+  towerWorth: 0,
   looseAt: 0,
   looseWho: 1,
 };
+
+/** Round 8 measurement (D-071): arrow towers normal builds by its production buildings (0: none, as before). */
+export const NORMAL_TRIAL = { towers: 0 };
 
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
@@ -891,6 +917,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
   const hideOn = garrisonOn && plan.hide;
+  const towersOn = know.rules.features?.towers === true;
+  const cavalryOn = know.rules.features?.cavalry === true;
   const governCost = (size: number): Cost => governCostOf(rules, size);
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
   const n = know.map.size;
@@ -1130,6 +1158,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         else if (e.type === UnitType.Mage) enemyMages++;
         enemyWorth += WORTH[e.type];
       }
+      // Round 8 candidate: the enemy's arrow towers by its main city (seen, or remembered in the fog).
+      if (plan.towerWorth > 0) {
+        for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+          if (view.buildings[r + BuildingField.owner] !== 1 - player || view.buildings[r + BuildingField.type] !== BuildingType.ArrowTower) continue;
+          if (dist2(view.buildings[r + BuildingField.cellX], view.buildings[r + BuildingField.cellY], enemyHome.cellX, enemyHome.cellY) <= 15 * 15) enemyWorth += plan.towerWorth;
+        }
+      }
       if (enemyMages > 0) lastEnemyMage = tick;
 
       // --- economy --------------------------------------------------------------------------
@@ -1202,6 +1237,22 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
+        // Round 8 candidates (D-071): arrow towers and a stable once it trains soldiers.
+        const training = has(BuildingType.Barracks) && has(BuildingType.Range);
+        if (towersOn && training && count(BuildingType.ArrowTower) < plan.towers && (!plan.towerAfter || lastThreat > -100000)) add(BuildingType.ArrowTower, rally);
+        if (towersOn && plan.townTower) {
+          for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+            if (view.towns[r + TownField.owner] !== player || view.towns[r + TownField.state] !== TownState.Governed) continue;
+            const town = know.map.towns[view.towns[r + TownField.id]];
+            if (!own.some((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, town.cellX, town.cellY) <= 10 * 10)) {
+              add(BuildingType.ArrowTower, { x: town.cellX, y: town.cellY });
+              break;
+            }
+          }
+        }
+        if (cavalryOn && plan.cavalry > 0 && training && !has(BuildingType.Stable) && (rules.buildings[BuildingType.Stable].requires ?? []).every((t) => done(t).length > 0)) {
+          add(BuildingType.Stable, rally);
+        }
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
@@ -1251,6 +1302,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         else if (enemySpear + enemyRanged >= 6 && enemyRanged * 100 >= (enemySpear + enemyRanged) * 60) share += plan.counterMix;
       }
       share = Math.max(20, Math.min(80, share));
+      // Round 8 candidate: cavalry first while there are fewer than its share.
+      if (cavalryOn && plan.cavalry > 0) {
+        const cav = soldiers.filter((u) => u.type === UnitType.Cavalry).length;
+        const shooters = enemyRanged + enemyMages >= 4 && (enemyRanged + enemyMages) * 2 > enemySpear + enemyRanged + enemyMages;
+        const want = plan.cavalry + (shooters ? plan.cavalryCounter : 0);
+        if (cav * 100 < want * (spear + ranged + cav + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
+      }
       if (spear * 100 <= share * (spear + ranged)) {
         trainAt(BuildingType.Barracks, UnitType.Spearman);
         trainAt(BuildingType.Range, UnitType.Ranged);
