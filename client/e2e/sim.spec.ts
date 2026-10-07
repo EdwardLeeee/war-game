@@ -519,8 +519,10 @@ test("點伐木場、糧倉派村民（D-066）：寫附近有幾名在採；每
   const panel = page.locator(".sel-info");
   const count = async (b: Building, word: string) => {
     await tapBuilding(page, b);
-    const text = (await panel.locator(".depot-count").allTextContents()).find((t) => t.includes(word)) ?? "";
-    return Number(/(\d+) 名/.exec(text)?.[1] ?? -1);
+    // The panel fills its numbers on the next interface update (10 a second).
+    const cell = panel.locator(".depot-count").filter({ hasText: word });
+    await expect(cell).toHaveText(/\d+ 名/);
+    return Number(/(\d+) 名/.exec((await cell.textContent()) ?? "")?.[1] ?? -1);
   };
   // Every villager on wood counts at exactly one of the two: the city and the camp add up.
   const nodes = await page.evaluate(() => window.__proto?.game?.nodes() ?? []);
