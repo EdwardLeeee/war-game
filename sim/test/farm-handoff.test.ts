@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Game } from "../src/core/game.ts";
 import { BUILDINGS } from "../src/core/rules.ts";
-import { BuildingType, NodeKind, Order, UnitType } from "../src/protocol.ts";
+import { BuildingType, NodeKind, Order, Reject, UnitFlag, UnitType } from "../src/protocol.ts";
 import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
 
 /** Player 0's finished farms beside its main city (14..17, 76..79), by id. */
@@ -85,4 +85,43 @@ test("no free farm left: the one who worked it idles; several named: the first t
   assert.deepEqual(rejected(h), []);
   assert.deepEqual(named.map((id) => farmOf(h, id)), [x, y, -1]);
   assert.equal(h.w.units.col.order[slotOf(h, named[2])], Order.None);
+});
+
+test("farmers sent to farms are hand-picked: a new economy ratio does not move them", () => {
+  const g = emptyGame();
+  const [a] = farms(g, 1);
+  const farmer = put(g, 0, UnitType.Farmer, 20, 81);
+  g.fog.update(g.w);
+  cmd(g, 0, { c: "repair", u: [farmer], building: a });
+  g.step();
+  assert.ok((g.w.units.col.flags[slotOf(g, farmer)] & UnitFlag.HandPicked) !== 0);
+  cmd(g, 0, { c: "eco_ratio", food: 0, wood: 100, gold: 0, on: true });
+  run(g, 400);
+  assert.equal(farmOf(g, farmer), a, "still on the farm");
+});
+
+test("release: a farmer puts down its work and idles for the economy ratio, unlike stop", () => {
+  for (const c of ["release", "stop"] as const) {
+    const g = emptyGame();
+    g.w.ecoOn[0] = 0;
+    const cutter = woodcutter(g);
+    const u = g.w.units.col;
+    assert.ok((u.flags[slotOf(g, cutter)] & UnitFlag.HandPicked) !== 0);
+    cmd(g, 0, { c, u: [cutter] });
+    g.step();
+    assert.deepEqual(rejected(g), []);
+    const s = slotOf(g, cutter);
+    assert.equal(u.order[s], Order.None, c);
+    assert.equal(u.flags[s] & UnitFlag.HandPicked, 0, `${c}: no longer hand-picked`);
+    assert.equal(u.stay[s], c === "stop" ? 1 : 0, `${c}: placed to stay or not`);
+    // The economy ratio on again: a released farmer gets work, a stopped one waits.
+    g.w.ecoOn[0] = 1;
+    run(g, 100);
+    assert.equal(u.order[slotOf(g, cutter)] !== Order.None, c === "release", `${c}: given work`);
+  }
+  const g = emptyGame();
+  const spear = put(g, 0, UnitType.Spearman, 20, 80);
+  cmd(g, 0, { c: "release", u: [spear] });
+  g.step();
+  assert.deepEqual(rejected(g), [Reject.NotAvailable], "farmers only");
 });

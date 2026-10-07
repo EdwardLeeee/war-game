@@ -303,6 +303,9 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
           if (farm >= 0) ctx.econ.gather(w, s, farm, true);
           else ctx.econ.idle(w, s);
         }
+        // Sent to farm by the player: the economy ratio does not move them (HandPicked, as
+        // `gather`). Whoever worked the farm keeps its mark as it was.
+        for (const s of farmers) if (u.order[s] === Order.Gather) u.flags[s] |= UnitFlag.HandPicked;
         return 0;
       }
       for (const s of farmers) {
@@ -378,6 +381,18 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (typeof cmd.on !== "boolean") return Reject.InvalidTarget;
       w.ecoRatio.set(r, p * 3);
       w.ecoOn[p] = cmd.on ? 1 : 0;
+      return 0;
+    }
+    case "release": {
+      // Farmers put down their work and idle, for the economy ratio to give them work (client
+      // 7c, D-066): not placed to stay, not hand-picked. Hidden ones come out.
+      const farmers = ownFarmers(ctx, p, cmd.u);
+      if (typeof farmers === "number") return farmers;
+      placed(w, farmers, false);
+      for (const s of farmers) {
+        ctx.econ.release(w, s);
+        ctx.econ.idle(w, s);
+      }
       return 0;
     }
     case "recall": {
