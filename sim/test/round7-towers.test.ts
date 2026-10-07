@@ -50,8 +50,10 @@ test("villagers build arrow towers near their main city only; finished, a tower 
   let s = -1;
   for (let k = 0; k < g.w.buildings.count; k++) if (b.type[k] === BuildingType.ArrowTower) s = k;
   assert.ok(s >= 0 && b.progress[s] === 1000, "built");
-  assert.deepEqual([g.w.res[Resource.Wood], g.w.res[Resource.Gold]], [900, 950]);
-  // An enemy spearman 5 cells off the tower: an arrow of 5 every 2 s, and a shot event.
+  const price = BUILDINGS[BuildingType.ArrowTower].cost;
+  assert.deepEqual([g.w.res[Resource.Wood], g.w.res[Resource.Gold]], [1000 - price.wood, 1000 - price.gold]);
+  // An enemy spearman 5 cells off the tower: an arrow every ARROW_TOWER.cooldown ticks (2 s; 1.5 s
+  // with round 8's TOWER_VALUE), and a shot event each.
   const foe = put(g, 1, UnitType.Spearman, TX + 7, TY);
   g.w.units.col.stance[slotOf(g, foe)] = 1;
   g.fog.update(g.w);
@@ -60,8 +62,9 @@ test("villagers build arrow towers near their main city only; finished, a tower 
     g.step();
     shots += g.events.filter((e) => e.to === 0 && e.ev.k === "shot" && (e.ev as { building: number }).building === b.id[s]).length;
   }
-  assert.equal(shots, 2);
-  assert.equal(g.w.units.col.hp[slotOf(g, foe)], UNITS[UnitType.Spearman].hp - 2 * ARROW_TOWER.damage);
+  const arrows = Math.ceil(80 / ARROW_TOWER.cooldown);
+  assert.equal(shots, arrows);
+  assert.equal(g.w.units.col.hp[slotOf(g, foe)], UNITS[UnitType.Spearman].hp - arrows * ARROW_TOWER.damage);
 });
 
 test("ranged units and mages hide in a tower (3) or main city (6); spearmen cannot; full is NoRoom", () => {

@@ -313,15 +313,27 @@ export const HOME_GUARD = { on: true, permille: 200, mainCity: 8 };
  * them is shot. The tables read the switch (their fields are getters, set up below).
  */
 export const LONG_BOWS = { on: true, rangedRange: 6 * CELL, rangedSight: 8, arrowRange: 9 * CELL, towerSight: 10 };
-/** A table field that reads LONG_BOWS: `on` while it is on, else what the table said. */
-function bows<T extends object>(table: T, key: keyof T & string, on: () => number): void {
-  const off = table[key] as number;
-  Object.defineProperty(table, key, { get: () => (LONG_BOWS.on ? on() : off), enumerable: true, configurable: true });
+/** A table field that reads a round 8 switch: `on()` while the switch is on, else what the table said. */
+function switched<T extends object>(table: T, key: keyof T & string, sw: { on: boolean }, on: () => unknown): void {
+  const off = table[key];
+  Object.defineProperty(table, key, { get: () => (sw.on ? on() : off), enumerable: true, configurable: true });
 }
-bows(UNITS[UnitType.Ranged], "range", () => LONG_BOWS.rangedRange);
-bows(UNITS[UnitType.Ranged], "sight", () => LONG_BOWS.rangedSight);
-for (const arrow of [MAIN_ARROW, TOWER_ARROW, ARROW_TOWER]) bows(arrow, "range", () => LONG_BOWS.arrowRange);
-for (const type of [BuildingType.MainCity, BuildingType.TownTower, BuildingType.ArrowTower]) bows(BUILDINGS[type], "sight", () => LONG_BOWS.towerSight);
+switched(UNITS[UnitType.Ranged], "range", LONG_BOWS, () => LONG_BOWS.rangedRange);
+switched(UNITS[UnitType.Ranged], "sight", LONG_BOWS, () => LONG_BOWS.rangedSight);
+for (const arrow of [MAIN_ARROW, TOWER_ARROW, ARROW_TOWER]) switched(arrow, "range", LONG_BOWS, () => LONG_BOWS.arrowRange);
+for (const type of [BuildingType.MainCity, BuildingType.TownTower, BuildingType.ArrowTower]) switched(BUILDINGS[type], "sight", LONG_BOWS, () => LONG_BOWS.towerSight);
+/**
+ * Arrow towers worth building (rule 6, D-071; the user 2026-10-07: "箭塔太貴傷害又太低根本不可能選"):
+ * a player's arrow tower costs `cost` (was wood 100, gold 50: two ranged units' worth for one's
+ * firepower), has `hp` (500) and takes `buildTicks` (40 s); its arrow does `damage` (5) every
+ * `cooldown` ticks (2 s). Range and sight as LONG_BOWS. The tables read the switch (getters).
+ */
+export const TOWER_VALUE = { on: true, cost: cost(0, 60, 20), hp: 600, buildTicks: 30 * S, damage: 10, cooldown: Math.trunc(1.5 * S) };
+switched(BUILDINGS[BuildingType.ArrowTower], "cost", TOWER_VALUE, () => TOWER_VALUE.cost);
+switched(BUILDINGS[BuildingType.ArrowTower], "hp", TOWER_VALUE, () => TOWER_VALUE.hp);
+switched(BUILDINGS[BuildingType.ArrowTower], "buildTicks", TOWER_VALUE, () => TOWER_VALUE.buildTicks);
+switched(ARROW_TOWER, "damage", TOWER_VALUE, () => TOWER_VALUE.damage);
+switched(ARROW_TOWER, "cooldown", TOWER_VALUE, () => TOWER_VALUE.cooldown);
 
 // --- mages (from PR-4) ---------------------------------------------------------------
 

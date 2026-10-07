@@ -5,9 +5,9 @@
 //   node src/balance.ts [--check 1,2,3,4]
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
-import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, type Held, type Hold, hold, siege, twoShots } from "./balance-lib.ts";
-import { AVENGE, CANNON, DODGE, GARRISON, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, UNITS } from "./core/rules.ts";
-import { TownSize, UnitType } from "./protocol.ts";
+import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, guardPoint, type Held, type Hold, hold, siege, twoShots } from "./balance-lib.ts";
+import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, TOWER_VALUE, UNITS } from "./core/rules.ts";
+import { BuildingType, TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
 interface Knob {
@@ -245,6 +245,13 @@ const ROUND8: Switch[] = [
       LONG_BOWS.on = on;
     },
   },
+  {
+    label: "6 箭樓划算",
+    get: () => TOWER_VALUE.on,
+    set: (on) => {
+      TOWER_VALUE.on = on;
+    },
+  },
 ];
 
 /** Round 8's switches as given (in ROUND8's order) while `run` runs; then as they were. */
@@ -389,6 +396,42 @@ function main(): void {
       GOALS.forEach((g, k) => out.push(`| ${g} | ${reports.map((r) => `${r.goals[k].ok ? "✓" : "✗"} ${r.goals[k].text}`).join(" | ")} |`));
       out.push("");
     }
+  }
+  {
+    // Round 8 rule 6 (D-071): arrow towers worth their cost. The user: "箭塔太貴傷害又太低根本不可能選".
+    const withValue = <T>(on: boolean, run: () => T): T => {
+      const was = TOWER_VALUE.on;
+      TOWER_VALUE.on = on;
+      try {
+        return run();
+      } finally {
+        TOWER_VALUE.on = was;
+      }
+    };
+    const tower = BUILDINGS[BuildingType.ArrowTower];
+    const describe = () => `木 ${tower.cost.wood}、金 ${tower.cost.gold}，生命 ${tower.hp}，蓋 ${tower.buildTicks / 20} 秒，每 ${ARROW_TOWER.cooldown / 20} 秒一箭、傷害 ${ARROW_TOWER.damage}`;
+    out.push(
+      "### 箭樓划不划算（第八輪第 6 項，D-071）",
+      "",
+      `- 關：${withValue(false, describe)}。開：${withValue(true, describe)}。射程、視野照第 5 項。其他第八輪規則照程式裡的開關。`,
+      "- 守點：玩家 1 治理中間的小鎮，在南邊排一列箭樓（沒人躲）或花費相同的遠程兵（堅守），攻方從南邊 16 格外走進城鎮；格子是「箭樓打死幾名（箭樓剩幾座）／遠程兵打死幾名」。",
+      "- 攻打主城：主城前 2 座箭樓各躲 3 名遠程（「攻打主城」那張表的第三欄）；「下」後面是攻方剩幾名，「不下」後面是主城剩的生命；格子是密集／散開。",
+      "",
+      "| 攻方 | 第 6 項關 | 第 6 項開 |",
+      "|---|---|---|",
+    );
+    const guard = (a: Army) => {
+      const t = guardPoint(true, a);
+      const r = guardPoint(false, a);
+      return `${t.towers} 座打死 ${t.kills}（剩 ${t.towersLeft}）／${r.ranged} 名打死 ${r.kills}`;
+    };
+    for (const a of [A(12, 4), A(8, 8, 2), A(16)]) out.push(`| 守點：${armyText(a)} | ${withValue(false, () => guard(a))} | ${withValue(true, () => guard(a))} |`);
+    const siegeCell = (a: Army) => [false, true].map((loose) => {
+      const r = assault("towers", a, loose);
+      return r.fell ? `下，剩 ${r.attackersLeft}` : `不下，${r.cityHp}`;
+    }).join("／");
+    for (const a of [A(14, 8, 2), A(17, 10, 3)]) out.push(`| 攻打主城：${armyText(a)} | ${withValue(false, () => siegeCell(a))} | ${withValue(true, () => siegeCell(a))} |`);
+    out.push("");
   }
   const failed = check.filter((g) => !now.goals[g - 1]?.ok);
   if (check.length > 0) out.push(failed.length === 0 ? `檢查的目標（${check.join("、")}）都成立。` : `未成立：目標 ${failed.join("、")}。`, "");

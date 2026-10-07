@@ -578,3 +578,87 @@ export function hold(defense: Hold, mages: number): Held {
     volley,
   };
 }
+
+export interface Guarded {
+  /** Towers and ranged units on guard, and of those the ones still standing at the end. */
+  towers: number;
+  ranged: number;
+  towersLeft: number;
+  rangedLeft: number;
+  /** Attackers, and those the guard killed. */
+  attackers: number;
+  kills: number;
+  ticks: number;
+}
+
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+
+/**
+ * Round 8 rule 6 (D-071): arrow towers against ranged units of the same cost, standing in the same
+ * place. Player 1 governs the middle small town and guards its south edge with arrow towers (no one
+ * hiding in them) or ranged units on hold, as many as cost the same (towers : ranged = 70 : tower
+ * cost, over their greatest common divisor), in a row across the way in; player 0's `attackers`
+ * come from 16 cells south and move into the town. Until one side has nothing left, or 2 minutes.
+ */
+export function guardPoint(towers: boolean, attackers: Army): Guarded {
+  const g = new Game({ seed: 1, scenario: "standard", maxTicks: 0 });
+  const w = g.w;
+  const u = w.units.col;
+  const b = w.buildings.col;
+  for (let s = 0; s < w.units.count; s++) w.unitSlot[u.id[s]] = -1;
+  w.units.count = 0;
+  const [s0, s1] = w.map.spawns;
+  const far = (x: { cellX: number; cellY: number }) =>
+    Math.hypot(x.cellX - s0.cellX, x.cellY - s0.cellY) + Math.hypot(x.cellX - s1.cellX, x.cellY - s1.cellY);
+  const t = w.map.towns.indexOf(w.map.towns.filter((x) => x.size === 0).sort((a, c) => far(a) - far(c))[0]);
+  w.townOwner[t] = 1;
+  w.townState[t] = TownState.Governed;
+  const tx = w.map.towns[t].cellX;
+  const ty = w.map.towns[t].cellY;
+  const info = BUILDINGS[BuildingType.ArrowTower];
+  const tc = info.cost.food + info.cost.wood + info.cost.gold + info.cost.crystal;
+  const rc = armyCost({ spear: 0, ranged: 1, mage: 0 });
+  const d = gcd(tc, rc);
+  const nTowers = rc / d;
+  const nRanged = tc / d;
+  // The row: cells tx - nTowers .. tx + nTowers - 1, ty + 2 .. ty + 3.
+  const x0 = tx - nTowers;
+  const y0 = ty + 2;
+  const ids: number[] = [];
+  const blds: number[] = [];
+  if (towers) {
+    for (let k = 0; k < nTowers; k++) blds.push(w.addBuilding(1, BuildingType.ArrowTower, x0 + 2 * k, y0, info.hp, 1000));
+  } else {
+    for (let k = 0; k < nRanged; k++) {
+      const col = Math.trunc((k * 2 * nTowers) / nRanged);
+      const id = w.addUnit(1, UnitType.Ranged, ((x0 + col) << CELL_SHIFT) + 512, ((y0 + (k % 2)) << CELL_SHIFT) + 512, UNITS[UnitType.Ranged].hp);
+      u.stance[w.unit(id)] = Stance.Hold;
+      ids.push(id);
+    }
+  }
+  const army: number[] = [];
+  let k = 0;
+  for (const [key, type] of TYPES) {
+    for (let i = 0; i < (attackers[key] ?? 0); i++, k++) {
+      const id = w.addUnit(0, type, ((tx - 4 + (k % 8)) << CELL_SHIFT) + 512, ((ty + 18 + Math.trunc(k / 8)) << CELL_SHIFT) + 512, UNITS[type].hp);
+      if (type === UnitType.Mage) u.flags[w.unit(id)] |= UnitFlag.Autocast;
+      army.push(id);
+    }
+  }
+  w.res[Resource.Crystal] = CRYSTAL;
+  g.fog.update(w);
+  g.push({ c: "move", u: army, x: tx, y: ty, t: g.tick, p: 0, seq: 0 } as never);
+  const alive = (list: number[]) => list.filter((id) => w.unit(id) >= 0).length;
+  const standing = () => blds.filter((id) => w.building(id) >= 0 && b.progress[w.building(id)] === 1000).length;
+  const start = g.tick;
+  while (g.tick - start < HOLD_TICKS && alive(army) > 0 && (towers ? standing() : alive(ids)) > 0) g.step();
+  return {
+    towers: towers ? nTowers : 0,
+    ranged: towers ? 0 : nRanged,
+    towersLeft: towers ? standing() : 0,
+    rangedLeft: towers ? 0 : alive(ids),
+    attackers: army.length,
+    kills: army.length - alive(army),
+    ticks: g.tick - start,
+  };
+}
