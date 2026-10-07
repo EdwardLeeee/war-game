@@ -7,7 +7,7 @@
 import { Game } from "./core/game.ts";
 import { BUILDINGS, CANNON, UNITS } from "./core/rules.ts";
 import { damage } from "./core/units.ts";
-import { Action, BuildingType, CELL_SHIFT, type CommandBody, NEUTRAL, Order, Resource, type TownSize, UnitFlag, UnitType } from "./protocol.ts";
+import { Action, BuildingType, CELL_SHIFT, type CommandBody, NEUTRAL, Order, Resource, Stance, type TownSize, TownState, UnitFlag, UnitType } from "./protocol.ts";
 
 /** Spearmen, ranged, mages and (round 7) cavalry of one side. */
 export interface Army {
@@ -360,5 +360,221 @@ export function assault(defense: Defense, attackers: Army, loose = false, defend
     defendersLeft: alive(guard),
     cityHp: w.building(cityId) >= 0 ? b.hp[w.building(cityId)] : 0,
     towersLeft: towers.filter((id) => w.building(id) >= 0).length,
+  };
+}
+
+/** How player 1 holds its governed town in `hold` (round 8, D-069). */
+export type Hold = "idle" | "hold" | "tower";
+
+export interface Held {
+  /** 0: the attackers took the town (no defender left); 1: the defenders held (no attacker left); -1: time ran out. */
+  winner: number;
+  /** Defenders when the mages had fired and the attackers charged (of `defenders`). */
+  defenders: number;
+  beforeCharge: number;
+  /** The defenders' hit points then, as a share of the start (percent). */
+  hpBeforeCharge: number;
+  defendersLeft: number;
+  attackers: number;
+  attackersLeft: number;
+  /** Units the attackers' cannon killed, and the shots it fired, in all. */
+  cannonKills: number;
+  shots: number;
+  /** Mages that found a defender within cannon range for the opening volley. */
+  volley: number;
+}
+
+/** The longest town fight after the charge (2 minutes). */
+const HOLD_TICKS = 2400;
+
+/**
+ * Player 1 holds its governed town (the middle small town, on the diagonal between the two
+ * starts) against player 0's army with `mages` mages (round 8, D-069; the user: "對方進攻的法師
+ * 往往會先開砲"). The defenders stand in the town as one move put them there (a squad), in
+ * spearmen and ranged pairs costing about what the attackers do (6 spearmen, 6 ranged and the
+ * mages); `defense` "hold" puts them on hold stance, "tower" spends an arrow tower's cost of
+ * them on one in front of the town. The attackers come up from the south: the mages walk to
+ * where the nearest defender is just within cannon range, the rest wait 3 cells behind them;
+ * each mage fires at the spot that hits the most defenders (one spot per mage, if there are
+ * enough), and once the shots have landed everyone moves into the town (mages on autocast).
+ */
+export function hold(defense: Hold, mages: number): Held {
+  const g = new Game({ seed: 1, scenario: "standard", maxTicks: 0 });
+  const w = g.w;
+  const u = w.units.col;
+  for (let s = 0; s < w.units.count; s++) w.unitSlot[u.id[s]] = -1;
+  w.units.count = 0;
+  // The small town nearest both starts (the middle one, not a corner).
+  const [s0, s1] = w.map.spawns;
+  const far = (x: { cellX: number; cellY: number }) =>
+    Math.hypot(x.cellX - s0.cellX, x.cellY - s0.cellY) + Math.hypot(x.cellX - s1.cellX, x.cellY - s1.cellY);
+  const small = w.map.towns.filter((x) => x.size === 0).sort((a, b) => far(a) - far(b));
+  const t = w.map.towns.indexOf(small[0]);
+  const town = w.map.towns[t];
+  w.townOwner[t] = 1;
+  w.townState[t] = TownState.Governed;
+  const tx = town.cellX;
+  const ty = town.cellY;
+  let seq = 0;
+  const push = (p: number, body: CommandBody) => g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+  const attackers: Army = { spear: 6, ranged: 6, mage: mages };
+  const pair = armyCost({ spear: 1, ranged: 1, mage: 0 });
+  const towerCost = (() => {
+    const c = BUILDINGS[BuildingType.ArrowTower].cost;
+    return c.food + c.wood + c.gold + c.crystal;
+  })();
+  const pairs = Math.trunc((armyCost(attackers) - (defense === "tower" ? towerCost : 0)) / pair);
+  const defenders: Army = { spear: pairs, ranged: pairs, mage: 0 };
+  if (defense === "tower") {
+    const x = tx + 2;
+    const y = ty + 2;
+    for (let yy = y; yy < y + 2; yy++) for (let xx = x; xx < x + 2; xx++) if (!w.walkable(xx, yy)) throw new Error("no room for a tower");
+    w.addBuilding(1, BuildingType.ArrowTower, x, y, BUILDINGS[BuildingType.ArrowTower].hp, 1000);
+  }
+  const place = (p: number, army: Army, x0: number, y0: number): number[] => {
+    const ids: number[] = [];
+    let k = 0;
+    for (const [key, type] of TYPES) {
+      for (let i = 0; i < (army[key] ?? 0); i++, k++) {
+        const id = w.addUnit(p, type, ((x0 + (k % 6)) << CELL_SHIFT) + 512, ((y0 + Math.trunc(k / 6)) << CELL_SHIFT) + 512, UNITS[type].hp);
+        if (type === UnitType.Mage) u.flags[w.unit(id)] |= UnitFlag.Autocast;
+        ids.push(id);
+      }
+    }
+    w.res[p * 4 + Resource.Crystal] = CRYSTAL;
+    return ids;
+  };
+  const guard = place(1, defenders, tx - 3, ty - 3);
+  const army = place(0, attackers, tx - 3, ty + 16);
+  const mageIds = army.filter((id) => u.type[w.unit(id)] === UnitType.Mage);
+  const rest = army.filter((id) => u.type[w.unit(id)] !== UnitType.Mage);
+  g.fog.update(w);
+  push(1, { c: "move", u: guard, x: tx, y: ty });
+  push(0, { c: "move", u: army, x: tx, y: ty + 16 });
+  // Commands take effect on the next step.
+  const settled = (ids: number[]) => ids.every((id) => w.unit(id) < 0 || u.order[w.unit(id)] === Order.None);
+  g.step();
+  for (let k = 0; k < FORM_UP_TICKS && !(settled(guard) && settled(army)); k++) g.step();
+  if (defense === "hold") push(1, { c: "stance", u: guard, stance: Stance.Hold });
+  // Where the nearest defender is a cell inside cannon range, south of the town.
+  const range = CANNON.range - 1024;
+  const nearest = (x: number, y: number) => {
+    let best = Number.MAX_SAFE_INTEGER;
+    for (const id of guard) {
+      const s = w.unit(id);
+      if (s < 0) continue;
+      const dx = u.x[s] - x;
+      const dy = u.y[s] - y;
+      best = Math.min(best, dx * dx + dy * dy);
+    }
+    return best;
+  };
+  // Each mage on its own, two cells apart in a row across the way in.
+  let back = 0;
+  mageIds.forEach((m, k) => {
+    const mx = ((tx + 2 * k - (mageIds.length - 1)) << CELL_SHIFT) + 512;
+    let my = (ty << CELL_SHIFT) + 512;
+    while (nearest(mx, my) < range * range) my += 256;
+    back = Math.max(back, my >> CELL_SHIFT);
+    push(0, { c: "move", u: [m], x: mx >> CELL_SHIFT, y: my >> CELL_SHIFT });
+  });
+  push(0, { c: "move", u: rest, x: tx, y: back + 3 });
+  g.step();
+  for (let k = 0; k < FORM_UP_TICKS && !settled(army); k++) g.step();
+  // The defenders may have shifted: a mage with nobody within half a cell of its range walks at
+  // the nearest defender and stops once someone is.
+  const near = (m: number) => {
+    const s = w.unit(m);
+    return s >= 0 && nearest(u.x[s], u.y[s]) <= (CANNON.range - 512) * (CANNON.range - 512);
+  };
+  for (let k = 0; k < FORM_UP_TICKS; k++) {
+    let done = true;
+    for (const m of mageIds) {
+      const s = w.unit(m);
+      if (s < 0) continue;
+      if (near(m)) {
+        if (u.order[s] !== Order.None) push(0, { c: "stop", u: [m] });
+        if (u.order[s] !== Order.None) done = false;
+        continue;
+      }
+      done = false;
+      if (u.order[s] !== Order.None) continue;
+      let to = -1;
+      let best = Number.MAX_SAFE_INTEGER;
+      for (const id of guard) {
+        const d = w.unit(id);
+        if (d < 0) continue;
+        const dx = u.x[d] - u.x[s];
+        const dy = u.y[d] - u.y[s];
+        if (dx * dx + dy * dy < best) {
+          best = dx * dx + dy * dy;
+          to = d;
+        }
+      }
+      if (to >= 0) push(0, { c: "move", u: [m], x: u.x[to] >> CELL_SHIFT, y: u.y[to] >> CELL_SHIFT });
+    }
+    if (done) break;
+    g.step();
+  }
+  // The opening volley: each mage at the spot within its range that hits the most defenders.
+  const r2 = CANNON.radius * CANNON.radius;
+  const taken = new Set<number>();
+  let volley = 0;
+  for (const m of mageIds) {
+    const ms = w.unit(m);
+    if (ms < 0) continue;
+    let best = -1;
+    let bestHits = 0;
+    let bestTaken = true;
+    for (const id of guard) {
+      const s = w.unit(id);
+      if (s < 0) continue;
+      const dx = u.x[s] - u.x[ms];
+      const dy = u.y[s] - u.y[ms];
+      if (dx * dx + dy * dy > CANNON.range * CANNON.range) continue;
+      let hits = 0;
+      for (const other of guard) {
+        const o = w.unit(other);
+        if (o < 0) continue;
+        const ox = u.x[o] - u.x[s];
+        const oy = u.y[o] - u.y[s];
+        if (ox * ox + oy * oy <= r2) hits++;
+      }
+      // A spot no other mage took first; one taken only when there is nothing else in range.
+      const again = taken.has(id);
+      if (best < 0 || (bestTaken && !again) || (bestTaken === again && hits > bestHits)) {
+        bestHits = hits;
+        best = id;
+        bestTaken = again;
+      }
+    }
+    if (best < 0) continue;
+    taken.add(best);
+    volley++;
+    const s = w.unit(best);
+    push(0, { c: "cast", u: m, fx: u.x[s], fy: u.y[s] });
+  }
+  for (let k = 0; k < CANNON.calibrateTicks + 5; k++) g.step();
+  const alive = (ids: number[]) => ids.filter((id) => w.unit(id) >= 0).length;
+  const beforeCharge = alive(guard);
+  const hpOf = (ids: number[]) => ids.reduce((a, id) => a + (w.unit(id) >= 0 ? u.hp[w.unit(id)] : 0), 0);
+  const hpStart = defenders.spear * UNITS[UnitType.Spearman].hp + defenders.ranged * UNITS[UnitType.Ranged].hp;
+  const hpBeforeCharge = Math.trunc((hpOf(guard) * 100) / hpStart);
+  push(0, { c: "move", u: army.filter((id) => w.unit(id) >= 0), x: tx, y: ty });
+  const start = g.tick;
+  while (g.tick - start < HOLD_TICKS && alive(guard) > 0 && alive(army) > 0) g.step();
+  const dl = alive(guard);
+  const al = alive(army);
+  return {
+    winner: dl === 0 ? 0 : al === 0 ? 1 : -1,
+    defenders: guard.length,
+    beforeCharge,
+    hpBeforeCharge,
+    defendersLeft: dl,
+    attackers: army.length,
+    attackersLeft: al,
+    cannonKills: w.cannonKills[0],
+    shots: w.cannonShots[0],
+    volley,
   };
 }

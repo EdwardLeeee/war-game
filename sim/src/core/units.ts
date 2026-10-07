@@ -1235,6 +1235,7 @@ export class UnitSystem {
           w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
           w.farmerDeathLog.push(u.owner[i], u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, u.hitCause[i], w.tick);
         }
+        if (u.hitCause[i] === HitCause.Cannon && u.hitBy[i] >= 0 && u.hitBy[i] < PLAYER_COUNT) w.cannonKills[u.hitBy[i]]++;
         if (u.type[i] === UnitType.Mage) {
           // The killer's side picks up the bounty (none for the neutral side).
           const killer = u.hitBy[i];

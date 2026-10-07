@@ -180,6 +180,8 @@ export class World {
   /** Crystal cannon shots fired, and units they hit, per player. */
   cannonShots = new Int32Array(PLAYER_COUNT);
   cannonHits = new Int32Array(PLAYER_COUNT);
+  /** Units the crystal cannon killed (its hit was the last), per player that fired (round 8; not hashed). */
+  cannonKills = new Int32Array(PLAYER_COUNT);
   // Town statistics per player (for weighing plunder against govern): resources taken by
   // plunders; governing chosen, its cost, what governed towns paid out and the ticks they
   // were governed; governing spells that ended (revolt or capture) and those of them whose

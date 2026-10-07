@@ -176,6 +176,10 @@ jobs:
           # town after town but governing every one (governing has to be worth it).
           - { group: push-auto-corners, seeds: 1-40, args: --strategy push --speed h1 --formation close --auto-train --corners }
           - { group: push-corners-govern, seeds: 1-40, args: --strategy push --speed h1 --formation close --corners --govern }
+          # Round 8 (D-069): the other pushes governing every town they take, too.
+          - { group: push-govern, seeds: 1-40, args: --strategy push --speed h1 --formation close --govern }
+          - { group: push-auto-govern, seeds: 1-40, args: --strategy push --speed h1 --formation close --auto-train --govern }
+          - { group: push-auto-corners-govern, seeds: 1-40, args: --strategy push --speed h1 --formation close --auto-train --corners --govern }
           # Round 7 (D-061): a cavalry rush, 4 raiders at the AI's farmers before the push.
           - { group: push-raid, seeds: 1-40, args: --strategy push --speed h1 --formation close --raid 4 }
           # D-072: the user's race past hard's army to its main city (their economy, their way, waiting
@@ -244,7 +248,7 @@ jobs:
           set -o pipefail
           cat > summary.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
-          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15]];
+          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15]];
           // scripted-<group>-<seeds>.json against normal, scripted-hard-<group>-<seeds>.json against hard.
           const levels = [["", "普通"], ["hard-", "困難"]];
           const games = new Map(levels.flatMap(([l]) => groups.map(([g]) => [l + g, []])));
