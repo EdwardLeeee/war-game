@@ -134,6 +134,8 @@ export class WorldRenderer {
   private readonly terrainPixels: ImageData;
   /** The rocks drawn (D-074: a random map's grow as they are explored). */
   private rocksVersion = 0;
+  /** Terrain repaints after a rock was explored (random map) and their CPU time in ms, for the test page. */
+  readonly terrainRepaints = { count: 0, totalMs: 0, maxMs: 0 };
   private nodesVersion = -1;
   private readonly nodeSprites = new Map<number, Sprite>();
   private readonly unitPool: UnitSprites[] = [];
@@ -265,8 +267,13 @@ export class WorldRenderer {
   /** Rocks explored since the last frame (random map): the terrain texture again. */
   private drawTerrain(): void {
     if (this.view.rocksVersion === this.rocksVersion) return;
+    const t0 = performance.now();
     this.paintTerrain();
     this.terrainTexture.source.update();
+    const ms = performance.now() - t0;
+    this.terrainRepaints.count++;
+    this.terrainRepaints.totalMs += ms;
+    this.terrainRepaints.maxMs = Math.max(this.terrainRepaints.maxMs, ms);
   }
 
   private drawFog(): void {

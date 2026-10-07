@@ -305,6 +305,11 @@ export class Game implements GestureHost {
     return this.renderer?.shotCount ?? 0;
   }
 
+  /** Terrain repaints on exploring rock (random map, D-074), for the test hook. */
+  get terrainRepaintsForTest(): { count: number; totalMs: number; maxMs: number } | null {
+    return this.renderer?.terrainRepaints ?? null;
+  }
+
   toast(text: string): void {
     this.overlays.toast(text);
   }
@@ -1463,14 +1468,14 @@ export class FrameTimes {
     this.count = 0;
   }
 
-  /** Median and slowest 5 % of the frames kept (ms), and fps from the median gap. */
-  summary(): { frames: number; gapMedian: number; gapP95: number; fps: number; drawMedian: number; drawP95: number } {
+  /** Median and slowest 5 % of the frames kept (ms), the slowest draw, and fps from the median gap. */
+  summary(): { frames: number; gapMedian: number; gapP95: number; fps: number; drawMedian: number; drawP95: number; drawMax: number } {
     const n = Math.min(this.count, this.gaps.length);
     const pick = (a: Float64Array, q: number) => {
       const s = Array.from(a.subarray(0, n)).sort((x, y) => x - y);
       return n === 0 ? 0 : s[Math.min(n - 1, Math.floor(q * n))];
     };
     const gapMedian = pick(this.gaps, 0.5);
-    return { frames: n, gapMedian, gapP95: pick(this.gaps, 0.95), fps: gapMedian > 0 ? 1000 / gapMedian : 0, drawMedian: pick(this.draws, 0.5), drawP95: pick(this.draws, 0.95) };
+    return { frames: n, gapMedian, gapP95: pick(this.gaps, 0.95), fps: gapMedian > 0 ? 1000 / gapMedian : 0, drawMedian: pick(this.draws, 0.5), drawP95: pick(this.draws, 0.95), drawMax: pick(this.draws, 1) };
   }
 }

@@ -85,7 +85,11 @@ export interface GameHook {
   knownTowns(): number[];
   knownRocks(): number;
   /** The last frames' intervals and drawing times (ms); `clear` starts a new window. */
-  frameTimes(clear?: boolean): { frames: number; gapMedian: number; gapP95: number; fps: number; drawMedian: number; drawP95: number };
+  frameTimes(clear?: boolean): { frames: number; gapMedian: number; gapP95: number; fps: number; drawMedian: number; drawP95: number; drawMax: number };
+  /** Terrain repaints on exploring rock since the last clear (random map), their total and slowest CPU time (ms). */
+  terrainRepaints(clear?: boolean): { count: number; totalMs: number; maxMs: number };
+  /** Cells along a side of the map. */
+  mapSize(): number;
   /** What a tap at this screen point would hit (unit, building, node, town), or null for open ground. */
   pickAt(sx: number, sy: number): string | null;
   /** Every town on the map (size 0 small, 1 large): state, holder and militia as last seen (-1 before it is explored). */
@@ -225,6 +229,17 @@ export function gameHook(game: Game): GameHook {
       if (clear) game.frameTimes.clear();
       return s;
     },
+    terrainRepaints: (clear = false) => {
+      const r = game.terrainRepaintsForTest;
+      const out = r === null ? { count: 0, totalMs: 0, maxMs: 0 } : { ...r };
+      if (clear && r !== null) {
+        r.count = 0;
+        r.totalMs = 0;
+        r.maxMs = 0;
+      }
+      return out;
+    },
+    mapSize: () => game.view?.map.size ?? 0,
     init: () => (game.initSent === null ? null : { ...game.initSent }),
     pickAt: (sx, sy) => {
       const cam = game.camera;
