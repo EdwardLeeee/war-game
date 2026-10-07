@@ -1095,12 +1095,14 @@ export interface HardPlan {
    * weighs which main city falls first and turns back when its own would, if it can be back in
    * time. Its own march goes on only while it takes the enemy's city in rescueMargin percent of
    * the time the enemy needs for its own (0: never turns back for this). In time: back within
-   * rescueBack percent of the time the enemy needs.
+   * rescueBack percent of the time the enemy needs. rescueTheirs 1: the enemy soldiers it knows of
+   * by their main city hold its army off the same way (0: only those at its own home count).
    */
   rescueAt: number;
   rescueRadius: number;
   rescueMargin: number;
   rescueBack: number;
+  rescueTheirs: number;
   /**
    * Marching on the enemy base without having seen the enemy's army for `unknownTicks`: it leaves
    * `unknownHold` soldiers at home (0: none).
@@ -1137,6 +1139,7 @@ export const HARD: HardPlan = {
   rescueRadius: 35,
   rescueMargin: 100,
   rescueBack: 100,
+  rescueTheirs: 0,
   unknownHold: 0,
   unknownTicks: 1800,
   looseAt: 0,
@@ -1813,7 +1816,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               if (mode === "base" && front.length > 0) {
                 const fc = centre(front, ac.x, ac.y);
                 const theirHp = enemyCityHp >= 0 ? enemyCityHp : rules.buildings[BuildingType.MainCity].hp;
-                const hits = front.reduce((a, u) => a + dps(u.type), 0);
+                let held = 0;
+                if (plan.rescueTheirs > 0) {
+                  for (const e of intel.values()) if (tick - e.tick <= 600 && dist2(e.x, e.y, enemyHome.cellX, enemyHome.cellY) <= 400) held += WORTH[e.type];
+                }
+                const hits = front.reduce((a, u) => a + dps(u.type), 0) * (1 - Math.min(0.9, held / Math.max(1, worth(front))));
                 tMine = Math.max(0, Math.sqrt(dist2(fc.x, fc.y, enemyHome.cellX, enemyHome.cellY)) - 5) * 21 + theirHp / Math.max(0.05, hits);
               }
               const tBack = Math.max(0, Math.sqrt(dist2(ac.x, ac.y, home.cellX, home.cellY)) - 5) * 21;

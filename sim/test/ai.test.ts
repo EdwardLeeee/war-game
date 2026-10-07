@@ -1091,11 +1091,15 @@ test("hard: lookouts stand on the three ways home, one soldier each, a ranged on
 
 /**
  * No time limit, towns in ruins: hard's 30 spearmen set out for the enemy base; then they are put
- * at `at` (a cell toward the enemy), the enemy's main city left at `cityHp`, and 10 enemy spearmen
- * stand 26 cells from hard's main city where a farmer sees them, with `home` spearmen of its own
- * there. Returns its orders.
+ * at `at` (a cell toward the enemy), the enemy's main city left at `cityHp`, `raiders` enemy
+ * spearmen (10) stand 26 cells from hard's main city where a farmer sees them, with `home`
+ * spearmen of its own there, and `defenders` enemy spearmen by the enemy's city. Returns its orders.
  */
-function raidWhileAway(at: "midway" | "their city", plan: Partial<HardPlan>, home = 0, cityHp = 1200): CommandBody[] {
+function raidWhileAway(
+  at: "midway" | "their city",
+  plan: Partial<HardPlan>,
+  { home = 0, cityHp = 1200, raiders = 10, defenders = 0 }: { home?: number; cityHp?: number; raiders?: number; defenders?: number } = {},
+): CommandBody[] {
   const g = emptyGame();
   const w = g.w;
   for (const t of w.map.towns) {
@@ -1121,7 +1125,8 @@ function raidWhileAway(at: "midway" | "their city", plan: Partial<HardPlan>, hom
   w.buildings.col.hp[w.mainCity(1)] = cityHp;
   for (let k = 0; k < home; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 6), s0.cellY - 4 - Math.trunc(k / 6));
   put(g, 0, UnitType.Farmer, s0.cellX + 27, s0.cellY - 4);
-  for (let k = 0; k < 10; k++) put(g, 1, UnitType.Spearman, s0.cellX + 25 + (k % 5), s0.cellY - 3 + Math.trunc(k / 5));
+  for (let k = 0; k < raiders; k++) put(g, 1, UnitType.Spearman, s0.cellX + 25 + (k % 5), s0.cellY - 3 + Math.trunc(k / 5));
+  for (let k = 0; k < defenders; k++) put(g, 1, UnitType.Spearman, s1.cellX - 12 + (k % 6), s1.cellY + 10 + Math.trunc(k / 6));
   w.tick += 10;
   g.fog.update(w);
   const out = ai.think(buildView(g, 0));
@@ -1140,8 +1145,12 @@ test("hard: an enemy army near home while its own is out: it turns back when its
   assert.ok(back !== undefined && back.u.length === 30, "everyone back");
   assert.equal(post(raidWhileAway("midway", { rescueAt: 0 })), undefined, "off: the army marches on (still far from home)");
   // Not when its own city goes first, nor when enough are at home to hold it.
-  assert.equal(post(raidWhileAway("their city", { rescueAt: 60, rescueBack: 1000 }, 0, 200)), undefined, "at their nearly fallen city: it presses on");
-  assert.equal(post(raidWhileAway("midway", { rescueAt: 60 }, 15)), undefined, "15 at home against 10: it carries on");
+  assert.equal(post(raidWhileAway("their city", { rescueAt: 60, rescueBack: 1000 }, { cityHp: 200 })), undefined, "at their nearly fallen city: it presses on");
+  assert.equal(post(raidWhileAway("midway", { rescueAt: 60 }, { home: 15 })), undefined, "15 at home against 10: it carries on");
+  // At their city with 22 of theirs by it: with rescueTheirs those hold its army off, so its own city goes first.
+  const held = (rescueTheirs: number) => post(raidWhileAway("their city", { rescueAt: 60, rescueBack: 1000, rescueTheirs }, { raiders: 20, defenders: 22 }));
+  assert.equal(held(0), undefined, "only its own home counted: it presses on");
+  assert.ok(held(1) !== undefined, "their defenders counted: it turns back");
   assert.equal(post(raidWhileAway("midway", { rescueAt: 120 })), undefined, "fewer than rescueAt: it carries on");
 });
 
