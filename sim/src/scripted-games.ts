@@ -13,7 +13,7 @@ import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THI
 import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
 import { rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
+import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 import { buildView } from "./view/view.ts";
 
@@ -63,6 +63,13 @@ if (flag("auto-train")) plan.autoTrain = true;
 if (flag("govern")) plan.choice = "govern";
 // Round 7 (D-061): cavalry raiders, this many (--raid 4).
 plan.raid = Number(arg("raid", "0"));
+// D-072: racing the AI to its main city (--race edge|sentry), with these numbers.
+const race = arg("race", "");
+if (race !== "" && race !== "edge" && race !== "sentry") throw new Error(`--race ${race}: edge or sentry`);
+plan.race = race;
+plan.raceAt = Number(arg("race-at", String(plan.raceAt)));
+plan.raceSeen = Number(arg("race-seen", String(plan.raceSeen)));
+plan.raceBy = Number(arg("race-by", String(plan.raceBy / 1200))) * 1200;
 
 const NAMES: Record<Strategy, string> = { push: "主動", defend: "守家", notown: "守家、不拿城鎮" };
 const SPEED_NAMES: Record<Speed, string> = { h1: "手速 H1", eco: "經濟養大" };
@@ -120,6 +127,11 @@ interface GameRecord {
   firstRaid: number;
   aiFarmersLost10: number;
   aiFarmersLost: number;
+  /** D-072: when the race set out (-1: never, or not a race); how near the armies came after the first march (cells, -1: never both out); each main city's first hp lost and its fall (-1: never). */
+  raced: number;
+  armiesNearest: number;
+  cityFirstHit: [number, number];
+  cityFell: [number, number];
   finalHash: string;
   trace?: string[];
 }
@@ -204,6 +216,29 @@ function play(seed: number): GameRecord {
   let cityHitAi: [number, number] = [0, 0];
   let cityHitMine = "";
   let rejected = 0;
+  // D-072: when each main city first lost hp and when it fell; how near the two armies came after
+  // the player's army first set out (cells between the centres of the player's soldiers and of the
+  // AI's soldiers more than 20 cells from its main city, while both sides have 6 or more of them).
+  const cityFirstHit: [number, number] = [-1, -1];
+  const cityFell: [number, number] = [-1, -1];
+  let armiesNearest = -1;
+  const aiHome = map.spawns[1];
+  const centre = (p: number, away: number): { x: number; y: number; n: number } => {
+    let x = 0;
+    let y = 0;
+    let k = 0;
+    for (let s = 0; s < w.units.count; s++) {
+      const t = u.type[s];
+      if (u.owner[s] !== p || t === UnitType.Farmer || t === UnitType.Militia || u.action[s] === Action.Garrisoned) continue;
+      const cx = u.x[s] >> 10;
+      const cy = u.y[s] >> 10;
+      if (away > 0 && (cx - aiHome.cellX) ** 2 + (cy - aiHome.cellY) ** 2 <= away * away) continue;
+      x += cx;
+      y += cy;
+      k++;
+    }
+    return k === 0 ? { x: 0, y: 0, n: 0 } : { x: x / k, y: y / k, n: k };
+  };
   const waves: Wave[] = [];
   let wave: Wave | null = null;
   const closeWave = () => {
@@ -231,6 +266,18 @@ function play(seed: number): GameRecord {
       for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === 0 && b.type[s] === BuildingType.MageHall && b.progress[s] >= 1000) hallDone = w.tick;
     }
     if (aiMage < 0 && count(1, UnitType.Mage) > 0) aiMage = w.tick;
+    for (let p = 0; p < 2; p++) {
+      if (cityFirstHit[p] < 0 && cityHp(p) < rules().buildings[BuildingType.MainCity].hp) cityFirstHit[p] = w.tick;
+      if (cityFell[p] < 0 && w.mainCity(p) < 0) cityFell[p] = w.tick;
+    }
+    if (w.tick % 20 === 0 && player.state().firstMarch >= 0) {
+      const mine = centre(0, 0);
+      const theirs = centre(1, 20);
+      if (mine.n >= 6 && theirs.n >= 6) {
+        const d = Math.round(Math.hypot(mine.x - theirs.x, mine.y - theirs.y));
+        if (armiesNearest < 0 || d < armiesNearest) armiesNearest = d;
+      }
+    }
     if (cityHit < 0 && cityHp(0) < 1200) {
       cityHit = w.tick;
       cityHitAi = near(1, home.cellX, home.cellY, 16);
@@ -287,6 +334,10 @@ function play(seed: number): GameRecord {
     firstRaid: st.firstRaid,
     aiFarmersLost10,
     aiFarmersLost: w.lost[UNIT_KINDS + UnitType.Farmer],
+    raced: st.raced,
+    armiesNearest,
+    cityFirstHit,
+    cityFell,
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
@@ -311,6 +362,8 @@ const options = [
   plan.autoTrain ? "用自動訓練（自己不點訓練兵）" : "",
   plan.choice === "govern" ? "打下來就治理" : "",
   plan.raid > 0 ? `${plan.raid} 名騎兵突襲電腦的村民` : "",
+  plan.race === "edge" ? `偷家：${plan.raceAt} 名就從角落小鎮沿地圖邊緣去電腦主城` : "",
+  plan.race === "sentry" ? `偷家：哨兵看到電腦 ${plan.raceSeen} 名往家裡來就直衝電腦主城（${plan.raceAt} 名或第 ${plan.raceBy / 1200} 分也去）` : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
@@ -329,6 +382,14 @@ for (const x of games) {
   out.push(`| ${x.seed} | ${STYLE_NAMES[x.style] ?? x.style} | ${m(x.town)} | ${m(x.myMage)} | ${m(x.aiMage)} | ${hit} | ${m(x.firstMarch)} | ${result} |`);
 }
 out.push("");
+if (plan.race !== "") {
+  // D-072: did the armies pass each other, and whose main city went first?
+  out.push("**偷家**（出發；出發後兩軍中心最近幾格；主城 我／電腦 開始掉血、倒下）", "");
+  for (const x of games) {
+    out.push(`- 種子 ${x.seed}：出發 ${m(x.raced)}；最近 ${x.armiesNearest < 0 ? "—" : `${x.armiesNearest} 格`}；我 ${m(x.cityFirstHit[0])}／${m(x.cityFell[0])}，電腦 ${m(x.cityFirstHit[1])}／${m(x.cityFell[1])}；${x.result === "won" ? "贏" : x.result === "lost" ? "輸" : "未分"}`);
+  }
+  out.push("");
+}
 if (open.length > 0) {
   out.push(`**到第 ${m(CAP)} 分還沒分出勝負**（主城血量 我／電腦；兵 槍兵/遠程/法師 我／電腦）`, "");
   for (const x of open) out.push(`- 種子 ${x.seed}：主城 ${x.cityHp[0]}／${x.cityHp[1]}；兵 ${x.armies[0]}／${x.armies[1]}`);

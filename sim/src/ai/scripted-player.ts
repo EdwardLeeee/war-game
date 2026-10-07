@@ -105,7 +105,32 @@ export interface Plan {
    * work; they ride home when half of them are down, and go again once the group is full.
    */
   raid: number;
+  /**
+   * Racing the AI to its main city (D-072; the user beat hard so: "我直接帶三十幾隻兵攻擊電腦主堡，
+   * 他的兵比我慢到我的主堡，他的主堡比我早被打爆了"). "" no. Once it sets out the army never comes
+   * home to defend and never breaks off; farmers still go inside when the enemy comes (recall).
+   * - "edge": the user's way: with `raceAt` soldiers it sets out by the small town in the far
+   *   corner of its own side (canonical (81, 81)) and up the map's edge (canonical (70, 60),
+   *   (76, 35)) to the enemy's main city, whatever the enemy does.
+   * - "sentry": a spearman stands 40% of the way to the enemy's main city; once `raceSeen` enemy
+   *   soldiers are seen on our half of the map, nearer than the time before, the army sets out
+   *   straight for the enemy's main city; with `raceAt` soldiers, or at tick `raceBy`, it sets
+   *   out anyway.
+   */
+  race: "" | "edge" | "sentry";
+  raceAt: number;
+  raceSeen: number;
+  raceBy: number;
 }
+
+/** The user's way to the enemy's main city in canonical cells (player 0's), D-072: the far corner town, then up the edge. */
+const RACE_EDGE: { u: number; v: number }[] = [
+  { u: 81, v: 81 },
+  { u: 70, v: 60 },
+  { u: 76, v: 35 },
+];
+/** A race waypoint counts as reached this near (cells). */
+const RACE_NEAR = 5;
 
 interface Unit {
   id: number;
@@ -136,7 +161,7 @@ interface Town {
   y: number;
   size: number;
 }
-type Mode = "home" | "town" | "base" | "defend";
+type Mode = "home" | "town" | "base" | "defend" | "race";
 
 /** Builds nothing whose centre is this close to a town's centre (cells), as the AI of round 4 PR A. */
 const TOWN_CLEARANCE = 12;
@@ -196,13 +221,17 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     corners: false,
     autoTrain: false,
     raid: 0,
+    race: "",
+    raceAt: 30,
+    raceSeen: 12,
+    raceBy: 20 * 1200,
   };
 }
 
 export interface ScriptedPlayer {
   think(view: PlayerView): CommandBody[];
   /** For the measurement: what it is doing. */
-  state(): { mode: Mode; trips: number; marches: number; waves: number; brokenOff: number; firstMarch: number; raids: number; firstRaid: number };
+  state(): { mode: Mode; trips: number; marches: number; waves: number; brokenOff: number; firstMarch: number; raids: number; firstRaid: number; raced: number };
 }
 
 export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan: Plan): ScriptedPlayer {
@@ -243,6 +272,12 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   let raids = 0;
   let firstRaid = -1;
   let lastRaidMove = -100000;
+  /** The race (plan.race): when it set out (-1: not yet), the next waypoint, the sentry, and how near the enemy on our half was last time. */
+  let raced = -1;
+  let raceStep = 0;
+  let sentry = -1;
+  let lastSeenNear = Number.MAX_SAFE_INTEGER;
+  const sentryAt = real(homeF.u + Math.trunc(((frame(enemyHome.cellX, enemyHome.cellY).u - homeF.u) * 2) / 5), homeF.v + Math.trunc(((frame(enemyHome.cellX, enemyHome.cellY).v - homeF.v) * 2) / 5));
   /** Per small town: the tick from which it may be taken again (ruins turn neutral). */
   const nextTown = new Map<number, number>();
   /** The town of this trip, or of the next one (myTown unless plan.corners). */
@@ -292,7 +327,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   }
 
   return {
-    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch, raids, firstRaid }),
+    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch, raids, firstRaid, raced }),
     think(view: PlayerView): CommandBody[] {
       const out: CommandBody[] = [];
       const h = view.header;
@@ -611,7 +646,16 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       } else {
         raiding = false;
       }
-      const army = soldiers.filter((u) => !isGuard(u.id) && !raiders.includes(u));
+      // The race's sentry (plan.race "sentry", D-072) stands apart until the army sets out.
+      if (plan.race === "sentry" && mode !== "race") {
+        if (!soldiers.some((u) => u.id === sentry)) {
+          const spears = soldiers.filter((u) => u.type === UnitType.Spearman && !isGuard(u.id) && !raiders.includes(u)).sort((a, b) => a.id - b.id);
+          sentry = spears.length >= 2 ? spears[0].id : -1;
+        }
+        const s = soldiers.find((u) => u.id === sentry);
+        if (s !== undefined && dist2(s.x, s.y, sentryAt.x, sentryAt.y) > 4 && tick % 200 === 0) out.push({ c: "move", u: [s.id], x: sentryAt.x, y: sentryAt.y });
+      }
+      const army = soldiers.filter((u) => !isGuard(u.id) && !raiders.includes(u) && u.id !== sentry);
       const armyIds = army.map((u) => u.id);
       const send = (x: number, y: number, why: Mode) => {
         if (armyIds.length === 0) return;
@@ -625,10 +669,41 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const cx = army.length === 0 ? home.cellX : Math.trunc(army.reduce((a, u) => a + u.x, 0) / army.length);
       const cy = army.length === 0 ? home.cellY : Math.trunc(army.reduce((a, u) => a + u.y, 0) / army.length);
 
+      // --- the race (plan.race, D-072): setting out --------------------------------------------------------
+      const setOut = () => {
+        const ids = sentry >= 0 && soldiers.some((u) => u.id === sentry) ? [...armyIds, sentry] : armyIds;
+        sentry = -1;
+        armyAtStart = ids.length;
+        marched.clear();
+        for (const id of ids) marched.add(id);
+        marches++;
+        if (firstMarch < 0) firstMarch = tick;
+        raced = tick;
+        raceStep = plan.race === "edge" ? 0 : RACE_EDGE.length;
+        if (ids.length > army.length) out.push({ c: "move", u: ids, x: enemyHome.cellX, y: enemyHome.cellY });
+        mode = "race";
+        lastMove = -100000;
+      };
+      if (plan.race === "sentry" && mode !== "race") {
+        // Enemy soldiers on our half of the map, nearer than the time before: its army is coming.
+        const ourHalf = foes.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) < dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY));
+        if (ourHalf.length >= plan.raceSeen) {
+          const fx = Math.trunc(ourHalf.reduce((a, u) => a + u.x, 0) / ourHalf.length);
+          const fy = Math.trunc(ourHalf.reduce((a, u) => a + u.y, 0) / ourHalf.length);
+          const d = dist2(fx, fy, home.cellX, home.cellY);
+          if (lastSeenNear !== Number.MAX_SAFE_INTEGER && d < lastSeenNear && army.length >= plan.counterAt) setOut();
+          lastSeenNear = d;
+        } else {
+          lastSeenNear = Number.MAX_SAFE_INTEGER;
+        }
+        if (raced < 0 && (army.length >= plan.raceAt || (tick >= plan.raceBy && army.length >= plan.counterAt))) setOut();
+      }
+
       // --- defence: under the main city's arrows, farmers inside ---------------------------------------
       const atHome = foes.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) <= 16 * 16);
-      // On the march and nearer the enemy's main city than our own: a person would press on.
-      const committed = mode === "base" && dist2(cx, cy, enemyHome.cellX, enemyHome.cellY) < dist2(cx, cy, home.cellX, home.cellY);
+      // On the march and nearer the enemy's main city than our own: a person would press on. Racing,
+      // it never comes home (D-072).
+      const committed = mode === "race" || (mode === "base" && dist2(cx, cy, enemyHome.cellX, enemyHome.cellY) < dist2(cx, cy, home.cellX, home.cellY));
       // A wave: the most enemy soldiers near the main city at once, wherever the army beat them.
       const near = foes.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) <= WAVE_CELLS * WAVE_CELLS).length;
       if (near > 0) {
@@ -663,6 +738,36 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           waveMax = 0;
         }
         if (mode === "defend") mode = "home";
+      }
+
+      // --- the race (plan.race, D-072): the user's way out, then at the enemy's main city ----------------------
+      if (plan.race === "edge" && mode !== "race" && army.length >= plan.raceAt) setOut();
+      if (mode === "race") {
+        while (raceStep < RACE_EDGE.length) {
+          const wp = real(RACE_EDGE[raceStep].u, RACE_EDGE[raceStep].v);
+          if (dist2(cx, cy, wp.x, wp.y) > RACE_NEAR * RACE_NEAR) break;
+          raceStep++;
+        }
+        if (raceStep < RACE_EDGE.length) {
+          const wp = real(RACE_EDGE[raceStep].u, RACE_EDGE[raceStep].v);
+          send(wp.x, wp.y, "race");
+          return out;
+        }
+        // At the enemy's main city as a march (defenders first, or the city: plan.focus), but it never
+        // breaks off.
+        if (enemyCity >= 0 && dist2(cx, cy, enemyHome.cellX, enemyHome.cellY) <= 12 * 12) {
+          const near = foes.filter((f) => dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) <= 12 * 12).length;
+          const want = near > plan.focus ? "move" : "attack";
+          if (tick - lastMove >= 200 || (plan.focus > 0 && want !== siege)) {
+            if (want === "move") out.push({ c: "move", u: armyIds, x: enemyHome.cellX, y: enemyHome.cellY });
+            else out.push({ c: "attack", u: armyIds, target: enemyCity });
+            lastMove = tick;
+            siege = want;
+          }
+        } else {
+          send(enemyHome.cellX, enemyHome.cellY, "race");
+        }
+        return out;
       }
 
       // --- the town of the plan --------------------------------------------------------------------------
