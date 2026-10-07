@@ -73,9 +73,13 @@ a {
 }
 
 .card {
+  /* No wider: the 原型介面 label at the top left stays clear of it on the phone held sideways. */
   width: min(420px, 100%);
+  /* Never taller than the safe area (the phone held sideways is 380 high): scroll rather than cut off. */
+  max-height: 100%;
+  overflow-y: auto;
   box-sizing: border-box;
-  padding: 18px 22px;
+  padding: 10px 22px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -83,12 +87,12 @@ a {
 }
 
 .card h1 {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   font-size: 22px;
 }
 
 .card .mode {
-  margin: 0 0 14px;
+  margin: 0 0 6px;
   font-size: 17px;
 }
 
@@ -98,7 +102,7 @@ a {
   justify-content: center;
   align-items: center;
   gap: 8px;
-  margin: 0 0 12px;
+  margin: 0 0 4px;
 }
 
 .difficulty span {
@@ -114,8 +118,8 @@ a {
   margin-bottom: 2px;
 }
 
-.map-note {
-  margin: 0 0 10px;
+.card .note.map-note {
+  margin: 0 0 6px;
 }
 
 .start-buttons {
@@ -148,7 +152,7 @@ a {
 }
 
 .card .note {
-  margin: 14px 0 4px;
+  margin: 6px 0 2px;
   font-size: 13px;
   opacity: 0.85;
 }

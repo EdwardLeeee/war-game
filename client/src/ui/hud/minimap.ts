@@ -23,6 +23,9 @@ import { ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint } from "../../render/atla
 export const MINIMAP_CSS_PX = 112;
 /** How often the minimap redraws (ms). */
 const REDRAW_MS = 200;
+// Shared, not made anew for each cell on every redraw (a 129 × 129 random map has 16 641).
+const ROCK_RGB = [110, 102, 92] as const;
+const GROUND_RGB = [86, 118, 66] as const;
 
 const rgb = (c: number): [number, number, number] => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
 const css = (c: number, a = 1) => `rgba(${rgb(c).join(",")},${a})`;
@@ -98,10 +101,9 @@ export class Minimap {
     const fog = view.fog;
     for (let i = 0; i < size * size; i++) {
       // The rocks the player knows (D-074: a random map's only once explored).
-      const rock = view.rocks[i] === 1;
+      const base = view.rocks[i] === 1 ? ROCK_RGB : GROUND_RGB;
       const f = fog === null ? Fog.Unexplored : fog[i];
       const k = f === Fog.Visible ? 1 : f === Fog.Explored ? 0.55 : 0;
-      const base = rock ? [110, 102, 92] : [86, 118, 66];
       d[i * 4] = base[0] * k;
       d[i * 4 + 1] = base[1] * k;
       d[i * 4 + 2] = base[2] * k;

@@ -245,8 +245,10 @@ async function continueGame(): Promise<void> {
 function showStart(): void {
   game?.pause();
   hook.screen = "start";
-  // A game is in progress: a new 難度 applies from the next game.
+  // A game is in progress: a new 難度 or 地圖 applies from the next game. That line takes the
+  // place of the note on the stand-in shapes, so the card still fits the phone held sideways.
   $("difficulty-note").hidden = false;
+  $("about-note").hidden = true;
   $("start-game").textContent = "繼續這局";
   $("restart-game").hidden = false;
   $("start").hidden = false;

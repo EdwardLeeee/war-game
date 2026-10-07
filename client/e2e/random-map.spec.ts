@@ -4,7 +4,7 @@
 // and rocks onto the battlefield and the minimap. The fixed map knows everything as before.
 
 import { expect, type Page, test } from "@playwright/test";
-import { shot, watchErrors } from "./helpers.ts";
+import { injectSafeArea, shot, watchErrors } from "./helpers.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
 const BIG_TOWN = 3;
@@ -25,12 +25,26 @@ async function start(page: Page): Promise<void> {
   await page.waitForFunction(() => window.__proto?.ready === true);
 }
 
+/** The start card inside the safe area of the phone held sideways (814 × 380 less the home indicator), with nothing to scroll and the 原型介面 label clear of it. */
+async function cardFits(page: Page, when: string): Promise<void> {
+  await injectSafeArea(page);
+  const screen = await page.locator("#start").boundingBox();
+  const card = await page.locator("#start .card").boundingBox();
+  if (screen === null || card === null) throw new Error(`${when}: no start card`);
+  expect(card.y, `${when}: card top`).toBeGreaterThanOrEqual(screen.y);
+  expect(card.y + card.height, `${when}: card bottom`).toBeLessThanOrEqual(screen.y + screen.height);
+  expect(await page.locator("#start .card").evaluate((c) => c.scrollHeight - c.clientHeight), `${when}: nothing to scroll`).toBeLessThanOrEqual(1);
+  // Clear of the 原型介面 label at the top left.
+  const label = await page.locator("#proto-label").boundingBox();
+  if (label !== null) expect(label.x + label.width <= card.x || label.y >= card.y + card.height || label.y + label.height <= card.y, `${when}: label clear of the card`).toBe(true);
+}
+
 const knownTowns = (page: Page) => page.evaluate(() => window.__proto?.game?.knownTowns() ?? []);
 const knownRocks = (page: Page) => page.evaluate(() => window.__proto?.game?.knownRocks() ?? 0);
 const buildings = (page: Page) => page.evaluate(() => window.__proto?.game?.buildings() ?? []);
 const centre = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y), [c.x, c.y] as const);
 
-test("開局畫面：地圖選項，第一次是固定地圖；選隨機地圖會換說明、記在這台裝置，重新整理後還是隨機地圖", async ({ page }, info) => {
+test("開局畫面：地圖選項，第一次是固定地圖；選隨機地圖會換說明、記在這台裝置，重新整理後還是隨機地圖；對局中回開局畫面也放得下", async ({ page }, info) => {
   await page.goto("./?test=1&mock=1");
   const maps = page.getByRole("radiogroup", { name: "地圖" });
   await expect(maps.getByRole("radio", { name: "固定地圖" })).toBeChecked();
@@ -39,17 +53,22 @@ test("開局畫面：地圖選項，第一次是固定地圖；選隨機地圖�
   await expect(maps.getByRole("radio", { name: "隨機地圖" })).toBeChecked();
   await expect(maps.getByRole("radio", { name: "固定地圖" })).not.toBeChecked();
   await expect(page.locator("#map-note")).toHaveText("每局不同，只看得到自己家附近");
-  // The whole start screen still fits on the phone held sideways (814 × 380).
-  const card = await page.locator("#start .card").boundingBox();
-  const height = page.viewportSize()?.height ?? 0;
-  expect(card?.y ?? -1, "card top on screen").toBeGreaterThanOrEqual(0);
-  expect((card?.y ?? 0) + (card?.height ?? 0), "card bottom on screen").toBeLessThanOrEqual(height);
+  // The whole start screen still fits on the phone held sideways.
+  await cardFits(page, "start");
   await shot(page, info, "random-start-screen");
   await page.reload();
   await expect(page.getByRole("radiogroup", { name: "地圖" }).getByRole("radio", { name: "隨機地圖" })).toBeChecked();
   // The game starts on it.
   await start(page);
   expect(await page.evaluate(() => window.__proto?.game?.mapMode())).toBe("random");
+  // 回開局畫面 in a game: 繼續這局 and 重來, and the line that a new choice waits for 重來 in place of the note on the shapes.
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "回開局畫面" }).tap();
+  await expect(page.getByRole("button", { name: "繼續這局" })).toBeVisible();
+  await expect(page.locator("#difficulty-note")).toBeVisible();
+  await expect(page.locator("#about-note")).toBeHidden();
+  await cardFits(page, "in a game");
+  await shot(page, info, "random-start-screen-in-game");
 });
 
 test("隨機地圖開局：看得到自己的主城，看不到敵方主城和沒探過的大城；派兵探過以後，大城和那邊的岩石才出現", async ({ page }, info) => {
