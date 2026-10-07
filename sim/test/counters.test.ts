@@ -152,7 +152,7 @@ test("counter-attack: soldiers without a squad, shelled by a mage they cannot se
   }
 }));
 
-test("counter-attack is not for a squad: soldiers that came by a move command do not charge the unseen mage", switchedOff([SHORT_CANNON], () => {
+test("counter-attack is not for a squad: soldiers that came by a move command do not charge the unseen mage", switchedOff([SHORT_CANNON, DODGE, AVENGE], () => {
   const { g, u, block, mage, restore } = shelled(true, true);
   try {
     assert.ok(untilShot(g, mage) > 0, "the mage fired");
@@ -163,7 +163,7 @@ test("counter-attack is not for a squad: soldiers that came by a move command do
   }
 }));
 
-test("counter-attack: once the mage is gone beyond 8 cells, the soldiers go back to their places and stay there", switchedOff([SHORT_CANNON], () => {
+test("counter-attack: once the mage is gone beyond 8 cells, the soldiers go back to their places and stay there", switchedOff([SHORT_CANNON, DODGE, AVENGE], () => {
   const { g, w, u, a, block, mage, restore } = shelled(true);
   try {
     assert.ok(untilShot(g, mage) > 0);
@@ -190,7 +190,7 @@ test("counter-attack: once the mage is gone beyond 8 cells, the soldiers go back
   }
 }));
 
-test("a mage calibrating the cannon, and for 2 s after it fired, is seen by the other player in its cell", switchedOff([AVENGE, SHORT_CANNON], () => {
+test("a mage calibrating the cannon, and for 2 s after it fired, is seen by the other player in its cell", switchedOff([AVENGE, SHORT_CANNON, DODGE], () => {
   for (const on of [true, false]) {
     const saved = REVEAL_CAST.on;
     REVEAL_CAST.on = on;
@@ -226,7 +226,7 @@ test("a mage calibrating the cannon, and for 2 s after it fired, is seen by the 
   }
 }));
 
-test("counter-attack: mirror-image blocks shelled by mirror-image mages charge as mirror images, tick by tick", switchedOff([SHORT_CANNON], () => {
+test("counter-attack: mirror-image blocks shelled by mirror-image mages charge as mirror images, tick by tick", switchedOff([SHORT_CANNON, DODGE, AVENGE], () => {
   const g = emptyGame();
   const w = g.w;
   const { bx, by } = mirrorBlock(g);
