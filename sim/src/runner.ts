@@ -3,7 +3,7 @@
 // the step. AI commands go into the log like a player's, so a replay needs no AI. Both AIs
 // think on the same tick: staggering them gave one side a fixed head start.
 
-import { type Ai, type AiStyle, createAi } from "./ai/ai.ts";
+import { type Ai, type AiKnowledge, type AiStyle, createAi } from "./ai/ai.ts";
 import { type GameConfig, Game } from "./core/game.ts";
 import { rules } from "./core/rules.ts";
 import {
@@ -16,9 +16,17 @@ import {
   PROTOCOL_VERSION,
   type ScenarioName,
 } from "./protocol.ts";
-import { buildView } from "./view/view.ts";
+import { buildView, mapInfo } from "./view/view.ts";
 
 export const AI_THINK_EVERY = 10;
+
+/**
+ * What player p's AI is told at the start: the same map a person playing p gets (view.ts mapInfo;
+ * on a random map only its own main city, D-074), the rules, its symmetry frame, the time limit.
+ */
+export function aiKnowledge(map: Game["w"]["map"], p: number, maxTicks: number, difficulty: AiDifficulty): AiKnowledge {
+  return { map: mapInfo(map, p), rules: rules(), frame: map.frames[p], maxTicks, difficulty };
+}
 
 export interface RunnerConfig extends GameConfig {
   /** Which players the AI plays; ignored for replays. */
@@ -46,12 +54,7 @@ export class Runner {
     this.difficulty = Array.from({ length: PLAYER_COUNT }, (_, p) => cfg.difficulty?.[p] ?? "normal");
     for (let p = 0; p < PLAYER_COUNT; p++) {
       const slot = cfg.swap === true ? 1 - p : p;
-      // TEMPORARY (D-074, ceo 2026-10-07): the AI cannot scout yet, so on a random map it still
-      // gets the whole map (the enemy's main city, every town) instead of what the screen gets,
-      // view.ts mapInfo(map, p). Remove with war-game-ai's scouting PR. Until then a person
-      // cannot play a random map (worker.ts), and AI-vs-AI games on random maps only check
-      // whether the maps are fair.
-      const know = { map: this.game.w.map, rules: rules(), frame: this.game.w.map.frames[p], maxTicks: this.maxTicks, difficulty: this.difficulty[p] };
+      const know = aiKnowledge(this.game.w.map, p, this.maxTicks, this.difficulty[p]);
       this.ais.push(cfg.replay === undefined && cfg.ai[p] ? createAi(p, cfg.seed, know, slot, cfg.styles?.[slot]) : null);
     }
     if (cfg.replay !== undefined) for (const c of cfg.replay) this.game.push(c);

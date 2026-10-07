@@ -8,8 +8,9 @@ import { CAVALRY, DODGE, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
 import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
-import { Runner } from "../src/runner.ts";
-import { buildView } from "../src/view/view.ts";
+import { aiKnowledge, Runner } from "../src/runner.ts";
+import { buildView, mapInfo } from "../src/view/view.ts";
+import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
 import { emptyGame, put, slotOf, switchedOff } from "./helpers.ts";
 
 /** Units of a player as sortable strings in player 0's frame (x <-> y for player 1). */
@@ -953,4 +954,102 @@ test("round 8: hard marches on the enemy base with 41â€“47 soldiers, not the 31â
   };
   assert.deepEqual(marches(40), [false, false, false, false, false, false], "40: not yet");
   assert.deepEqual(marches(48), [true, true, true, true, true, true], "48: always");
+});
+
+// --- random maps: scouting (D-074) -------------------------------------------------------------------------
+
+/** A random map (seed 1: diagonal, player 0 at (111, 16), player 1 at (16, 111)) with every unit removed. */
+function emptyRandom(): Game {
+  const g = new Game({ seed: 1, scenario: "standard", map: "random" });
+  const w = g.w;
+  for (let s = 0; s < w.units.count; s++) w.unitSlot[w.units.col.id[s]] = -1;
+  w.units.count = 0;
+  g.fog.update(w);
+  return g;
+}
+
+test("random maps: the AI is told what a person is (only its own main city); the fixed map as before", () => {
+  const r = emptyRandom();
+  for (const p of [0, 1]) {
+    const know = aiKnowledge(r.w.map, p, 0, "hard");
+    assert.deepEqual(know.map, mapInfo(r.w.map, p));
+    assert.deepEqual(know.map.spawns.map((s) => s.player), [p], "no enemy main city");
+    assert.equal(know.map.towns.length, 0, "no towns");
+  }
+  const f = emptyGame();
+  for (const p of [0, 1]) {
+    const know = aiKnowledge(f.w.map, p, 0, "normal");
+    assert.equal(know.map.spawns, f.w.map.spawns, "the same objects as before");
+    assert.equal(know.map.towns, f.w.map.towns);
+    // The main city's centre cell is the spawn cell itself on the fixed map's frames.
+    for (const s of f.w.map.spawns) assert.deepEqual(spawnCentre(f.w.map.frames[p], s), { x: s.cellX, y: s.cellY });
+  }
+});
+
+test("random maps: a soldier scouts round the edge through the other corners; the next after a fallen one goes the other way", () => {
+  for (const difficulty of ["normal", "hard"] as AiDifficulty[]) {
+    const g = emptyRandom();
+    const w = g.w;
+    const frame = w.map.frames[0];
+    const n = w.size;
+    const ai = createAi(0, 1, { ...aiKnowledge(w.map, 0, 0, difficulty), hard: { dodge: false } }, 0);
+    const home = spawnCentre(frame, w.map.spawns[0]);
+    const h = toCanon(frame, home.x, home.y);
+    const at = (du: number, dv: number) => fromCanon(frame, h.u + du, h.v + dv);
+    const a = at(6, -6);
+    const first = put(g, 0, UnitType.Spearman, a.x, a.y);
+    g.fog.update(w);
+    const go = (id: number) => ai.think(buildView(g, 0)).find((c) => c.c === "retreat" && c.u.length === 1 && c.u[0] === id) as { x: number; y: number } | undefined;
+    // Canonically it starts bottom-left: first along its own (bottom) edge, 12 cells in.
+    const along = go(first);
+    assert.deepEqual(along && toCanon(frame, along.x, along.y), { u: n - 1 - 12, v: n - 1 - 12 }, `${difficulty}: along the edge`);
+    kill(g, [first]);
+    const second = put(g, 0, UnitType.Spearman, a.x, a.y);
+    w.tick += 10;
+    g.fog.update(w);
+    const back = go(second);
+    assert.deepEqual(back && toCanon(frame, back.x, back.y), { u: 12, v: 12 }, `${difficulty}: the other way round`);
+  }
+});
+
+test("random maps: hard marches on the enemy only once it has seen where it is, at its corner first, then at its main city", () => {
+  const g = emptyRandom();
+  const w = g.w;
+  w.tick = 12 * 1200;
+  const frame = w.map.frames[0];
+  const home = spawnCentre(frame, w.map.spawns[0]);
+  const h = toCanon(frame, home.x, home.y);
+  const at = (du: number, dv: number) => fromCanon(frame, h.u + du, h.v + dv);
+  for (let k = 0; k < 12; k++) {
+    const c = at(5 + (k % 4), -5 - Math.trunc(k / 4));
+    put(g, 0, UnitType.Spearman, c.x, c.y);
+  }
+  g.fog.update(w);
+  const ai = createAi(0, 1, { ...aiKnowledge(w.map, 0, 0, "hard"), hard: { dodge: false, pushArmy: 6, townArmy: 99, bigArmy: 99 } }, 0);
+  // Moves of the army far from home (not to its waiting place by the city).
+  const marches = () => (ai.think(buildView(g, 0)).filter((c) => c.c === "move" && c.u.length >= 6) as { x: number; y: number }[]).filter((c) => (c.x - home.x) ** 2 + (c.y - home.y) ** 2 > 30 * 30);
+  assert.equal(marches().length, 0, "nothing seen: no march");
+  // An enemy house toward the far corner (some 23 cells from its main city, out of sight of
+  // it), where one of its soldiers sees it.
+  const n = w.size;
+  const e = fromCanon(frame, n - 1 - 40, 20);
+  w.addBuilding(1, BuildingType.House, e.x, e.y, 200, 1000);
+  const eye = fromCanon(frame, n - 1 - 40, 24);
+  put(g, 0, UnitType.Ranged, eye.x, eye.y);
+  w.tick += 10;
+  g.fog.update(w);
+  const corner = marches()[0];
+  assert.deepEqual(corner && toCanon(frame, corner.x, corner.y), { u: n - 1 - h.u, v: n - 1 - h.v }, "to the corner it was seen in");
+  // Its main city in sight: at its centre.
+  const city = w.buildings.col;
+  const s = w.mainCity(1);
+  const near = { x: city.cellX[s] + 2, y: city.cellY[s] + 6 };
+  put(g, 0, UnitType.Ranged, near.x, near.y);
+  w.tick += 500;
+  g.fog.update(w);
+  const exact = marches().find((c) => c.x !== corner.x || c.y !== corner.y);
+  assert.deepEqual(exact && [exact.x, exact.y], (() => {
+    const c = spawnCentre(frame, w.map.spawns[1]);
+    return [c.x, c.y];
+  })(), "to the main city itself");
 });
