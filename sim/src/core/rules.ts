@@ -259,10 +259,12 @@ export const TOWERS = { on: true };
 /**
  * Ranged units and mages can hide in main cities and arrow towers (`garrison`, `leave`). A mage
  * hiding fires the crystal cannon (`cannon`) at `cannonPermille` of its damage and `cannonCooldown`
- * times its cooldown (ceo 2026-10-07, B): at full strength, 2 towers with 6 hidden wiped out 24
- * and 30 attackers without a loss (src/balance.ts, "攻打主城"); so it takes about a quarter more.
+ * times its cooldown: at full strength, 2 towers with 6 hidden wiped out 24 and 30 attackers
+ * without a loss (src/balance.ts, "攻打主城"). ceo 2026-10-07 chose B (half, cooldown x2), then
+ * B' (a third, cooldown as it is) once the normal AI hid in its main city and the scripted
+ * player's town-taking games stopped ending (0 -> 13 undecided).
  */
-export const GARRISON = { on: true, cannon: true, cannonPermille: 500, cannonCooldown: 2 };
+export const GARRISON = { on: true, cannon: true, cannonPermille: 333, cannonCooldown: 1 };
 /** Players can build stables and train cavalry. */
 export const CAVALRY = { on: false };
 /** Unit types that may hide in buildings. */

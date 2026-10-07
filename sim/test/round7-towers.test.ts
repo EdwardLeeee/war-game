@@ -159,10 +159,11 @@ test("a mage hiding in the main city fires the cannon on autocast from the city'
     fired = g.w.cannonShots[0] > 0;
   }
   assert.ok(fired, "the cannon fired");
-  // From inside it hits for half (ceo 2026-10-07, B: GARRISON) and cools down twice as long.
-  const half = Math.trunc((CANNON.damage * GARRISON.cannonPermille) / 1000);
-  assert.equal(half, 22);
-  assert.deepEqual(foes.map((id) => u.hp[slotOf(g, id)]), foes.map(() => UNITS[UnitType.Spearman].hp - half));
+  // From inside it hits for a third (ceo 2026-10-07, B': GARRISON), cooldown as it is.
+  const third = Math.trunc((CANNON.damage * GARRISON.cannonPermille) / 1000);
+  assert.equal(third, 14);
+  assert.equal(GARRISON.cannonCooldown, 1);
+  assert.deepEqual(foes.map((id) => u.hp[slotOf(g, id)]), foes.map(() => UNITS[UnitType.Spearman].hp - third));
   assert.equal(u.castCooldown[slotOf(g, mage)], CANNON.cooldownTicks * GARRISON.cannonCooldown);
   run(g, 2);
   assert.equal(u.action[slotOf(g, mage)], Action.Garrisoned, "still inside");
