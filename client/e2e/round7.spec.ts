@@ -328,6 +328,32 @@ test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎
   await expect(armyButton(page)).toHaveText(`全軍 ${soldiers + 1}`);
 });
 
+/** 選單 → 兵種相剋: the rows as the player reads them. */
+async function openCounters(page: Page) {
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("dialog", { name: "選單" }).getByRole("button", { name: "兵種相剋" }).tap();
+  const dialog = page.getByRole("dialog", { name: "兵種相剋" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+test("兵種相剋：選單 → 兵種相剋，每種兵一行寫剋誰、怕誰，倍數照這一局的規則；騎兵開著時有騎兵那行，不用捲動（ceo 2026-10-07）", async ({ page }, info) => {
+  await start(page);
+  await injectSafeArea(page);
+  const dialog = await openCounters(page);
+  await expect(dialog.locator(".counter-row")).toHaveText([
+    "槍兵剋：打騎兵 ×3怕：遠程兵 ×2.5",
+    "遠程兵剋：打槍兵 ×2.5、打法師的護盾 ×3怕：沒有",
+    "法師剋：沒有怕：遠程兵打護盾 ×3、騎兵 ×2、騎兵打護盾 ×2",
+    "騎兵剋：打法師 ×2、打法師的護盾 ×2怕：槍兵 ×3",
+  ]);
+  expect(await dialog.locator(".dialog-card").evaluate((c) => c.scrollHeight - c.clientHeight), "no scrolling at 814 × 380").toBeLessThanOrEqual(1);
+  for (const b of await visibleBoxes(page, ".counters button")) expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
+  await shot(page, info, "r7-counters");
+  await dialog.getByRole("button", { name: "回選單" }).tap();
+  await expect(page.getByRole("dialog", { name: "選單" })).toBeVisible();
+});
+
 for (const viewport of [null, FULL_SCREEN]) {
   test(`版面：軍團畫面多了騎兵一列，按鈕至少 44 pt、在安全區內、不重疊（${viewport === null ? "工具列展開" : "工具列收合"}）`, async ({ page }, info) => {
     await start(page);
@@ -371,7 +397,7 @@ for (const viewport of [null, FULL_SCREEN]) {
   });
 }
 
-test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、躲進去，建築不寫躲了幾名士兵、城鎮不寫收入，攻下城鎮照樣有搶（D-061）", async ({ page }) => {
+test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、躲進去，建築不寫躲了幾名士兵、城鎮不寫收入，攻下城鎮照樣有搶，兵種相剋沒有騎兵（D-061）", async ({ page }) => {
   await start(page, false);
   const { hiders, spear } = await army(page);
   await selectForCommands(page, [...spear, ...hiders].sort((a, b) => a - b));
@@ -405,4 +431,12 @@ test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、�
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
   const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
   await expect(dialog.getByRole("button", { name: /^搶/ })).toBeVisible();
+  await dialog.getByRole("button", { name: /^稍後再決定/ }).tap();
+  // 兵種相剋: three kinds, nothing about 騎兵.
+  const counters = await openCounters(page);
+  await expect(counters.locator(".counter-row")).toHaveText([
+    "槍兵剋：沒有怕：遠程兵 ×2.5",
+    "遠程兵剋：打槍兵 ×2.5、打法師的護盾 ×3怕：沒有",
+    "法師剋：沒有怕：遠程兵打護盾 ×3",
+  ]);
 });

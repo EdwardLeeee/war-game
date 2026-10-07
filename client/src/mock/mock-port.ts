@@ -93,7 +93,8 @@ export const MOCK_RULES: Rules = {
     buildingInfo(BuildingType.ArrowTower, 500, 2, cost(0, 100, 50), { sight: 8, holds: 3 }),
     buildingInfo(BuildingType.Stable, 500, 3, cost(0, 150, 50), { trains: [UnitType.Cavalry] }),
   ],
-  multipliers: [],
+  // The simulation's damage table, so 兵種相剋 reads what the game plays.
+  multipliers: rules().multipliers,
   mageCap: 6,
   maxPopulation: 120,
   queueMax: 5,

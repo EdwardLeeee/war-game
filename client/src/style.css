@@ -952,10 +952,25 @@ button .sub {
   flex-direction: column;
 }
 
-/* 選單: two columns, so all six fit a phone held sideways (380 pt with Safari's toolbars) without scrolling. */
+/* 選單: two columns, so all seven fit a phone held sideways (380 pt with Safari's toolbars) without scrolling. */
 .menu .dialog-buttons.column {
   display: grid;
   grid-template-columns: 1fr 1fr;
+}
+
+/* 兵種相剋: a row each, the name beside its 剋 line and 怕 line; four rows fit 380 pt without scrolling. */
+.counter-row {
+  display: grid;
+  grid-template-columns: 3.5em 1fr;
+  column-gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.counter-row .counter-name {
+  grid-row: span 2;
 }
 
 button.danger {
