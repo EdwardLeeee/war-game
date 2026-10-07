@@ -292,15 +292,24 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (order === Order.None) return Reject.NotAvailable;
       placed(w, farmers, false);
       if (order === Order.Gather) {
-        // One farmer per farm: the first named farmer takes it if it is free.
-        if (ctx.econ.farmTakenBy(w, cmd.building, -1) && !farmers.some((s) => w.units.col.orderTarget[s] === cmd.building && w.units.col.onFarm[s] === 1)) {
-          return Reject.NotAvailable;
+        // One farmer per farm, and the player's pick wins (the user, 2026-10-07: a farmer sent
+        // to a farm someone worked could not go): the first named farmer works this farm; the
+        // others named, then whoever worked it, go to the nearest farm of the player's nobody
+        // works, or idle (the economy ratio then gives them work).
+        const u = w.units.col;
+        const was: number[] = [];
+        for (let s = 0; s < w.units.count; s++) {
+          if (!farmers.includes(s) && u.order[s] === Order.Gather && u.onFarm[s] === 1 && u.orderTarget[s] === cmd.building) was.push(s);
         }
         farmers.forEach((s, k) => {
           ctx.econ.release(w, s);
           if (k === 0) ctx.econ.gather(w, s, cmd.building, true);
-          else ctx.econ.idle(w, s);
         });
+        for (const s of [...farmers.slice(1), ...was]) {
+          const farm = freeFarmFor(ctx, s);
+          if (farm >= 0) ctx.econ.gather(w, s, farm, true);
+          else ctx.econ.idle(w, s);
+        }
         return 0;
       }
       for (const s of farmers) {
@@ -561,6 +570,27 @@ export function towerLand(w: World, p: number, cx: number, cy: number): boolean 
     if (dx * dx + dy * dy <= r * r) return true;
   }
   return false;
+}
+
+/** The finished farm of farmer s's owner nearest it (centre to centre) that nobody works, by id, or -1. */
+function freeFarmFor(ctx: CommandContext, s: number): number {
+  const { w } = ctx;
+  const u = w.units.col;
+  const b = w.buildings.col;
+  let best = -1;
+  let bestD = 0;
+  for (let k = 0; k < w.buildings.count; k++) {
+    if (b.owner[k] !== u.owner[s] || b.type[k] !== BuildingType.Farm || b.progress[k] < 1000 || ctx.econ.farmTakenBy(w, b.id[k], -1)) continue;
+    const half = (BUILDINGS[BuildingType.Farm].size << CELL_SHIFT) >> 1;
+    const dx = (b.cellX[k] << CELL_SHIFT) + half - u.x[s];
+    const dy = (b.cellY[k] << CELL_SHIFT) + half - u.y[s];
+    const d = dx * dx + dy * dy;
+    if (best < 0 || d < bestD) {
+      best = k;
+      bestD = d;
+    }
+  }
+  return best < 0 ? -1 : b.id[best];
 }
 
 /** Does player p have a finished building of this type? */
