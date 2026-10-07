@@ -281,7 +281,7 @@ for (const viewport of [null, FULL_SCREEN]) {
     expect(await card.evaluate((c) => c.scrollHeight - c.clientHeight), "the menu does not scroll").toBeLessThanOrEqual(1);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     const boxes = await visibleBoxes(page, ".menu button");
-    expect(boxes.map((b) => b.label)).toEqual(["魔晶怎麼拿", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
+    expect(boxes.map((b) => b.label)).toEqual(["魔晶怎麼拿", "兵種相剋", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
     for (const b of boxes) {
       expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
       expect(b.x, `${b.label} left`).toBeGreaterThanOrEqual(IPHONE_SAFE.left);
