@@ -5,22 +5,22 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CANNON, DODGE, UNITS } from "../src/core/rules.ts";
+import { AVENGE, CANNON, DODGE, UNITS } from "../src/core/rules.ts";
 import { CELL_SHIFT, Resource, Stance, UnitType } from "../src/protocol.ts";
-import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 const centre = (c: number) => (c << CELL_SHIFT) + 512;
 const SPEAR = UNITS[UnitType.Spearman].hp;
 
 /**
- * Player 1's mage 7 cells north of (x, y) fires half a cell east of (x, y), where player 0's
+ * Player 1's mage 6 cells north of (x, y) fires half a cell east of (x, y), where player 0's
  * `type` stands. (The very point a shot aims at is too far from the edge to leave in time: the
  * radius plus DODGE.margin is more than a soldier walks while the cannon calibrates.)
  */
 function shotAt(type: UnitType, setup?: (g: ReturnType<typeof emptyGame>, unit: number) => void, x = 31, y = 44) {
   const g = emptyGame();
   const unit = put(g, 0, type, x, y);
-  const mage = put(g, 1, UnitType.Mage, x, y - 7);
+  const mage = put(g, 1, UnitType.Mage, x, y - 6);
   g.w.res[4 + Resource.Crystal] = 100;
   g.w.ecoOn[0] = 0;
   g.fog.update(g.w);
@@ -42,11 +42,13 @@ function withDodge<T>(on: boolean, farmers: boolean, f: () => T): T {
 
 const hp = (g: ReturnType<typeof emptyGame>, id: number) => (slotOf(g, id) < 0 ? 0 : g.w.units.col.hp[slotOf(g, id)]);
 
-test("an idle spearman steps out of the warning, is not hit, and goes back to its place", () => {
+// Rule 2 (AVENGE) off: a hit spearman would go for the mage.
+test("an idle spearman steps out of the warning, is not hit, and goes back to its place", switchedOff(AVENGE, () => {
   for (const on of [true, false]) {
     withDodge(on, false, () => {
       const { g, unit } = shotAt(UnitType.Spearman);
-      run(g, CANNON.calibrateTicks + 5);
+      // Just as the shot lands (the mage, 6 cells off, then comes to fight).
+      run(g, CANNON.calibrateTicks + 1);
       assert.equal(g.w.cannonShots[1], 1, "the shot was fired");
       assert.equal(hp(g, unit), on ? SPEAR : SPEAR - CANNON.damage, on ? "out of the blast" : "switch off: hit");
       if (!on) return;
@@ -56,7 +58,7 @@ test("an idle spearman steps out of the warning, is not hit, and goes back to it
       assert.ok(Math.abs(u.x[s] - centre(31)) + Math.abs(u.y[s] - centre(44)) < 600, "back at its place");
     });
   }
-});
+}));
 
 test("hold stance steps out too; a unit on the move does not", () => {
   withDodge(true, false, () => {
@@ -133,7 +135,7 @@ test("mirror images: two sides stepping out of each other's shots play as mirror
     };
     for (let k = 0; k < 4; k++) add(0, UnitType.Spearman, 30 + k, 44);
     add(0, UnitType.Ranged, 31, 45);
-    const [m1, m0] = add(1, UnitType.Mage, 31, 37);
+    const [m1, m0] = add(1, UnitType.Mage, 31, 38);
     g.w.res[Resource.Crystal] = 100;
     g.w.res[4 + Resource.Crystal] = 100;
     g.w.ecoOn[0] = 0;

@@ -66,6 +66,8 @@
     - `towerReach`：箭樓可以蓋在哪裡（第 7 節）。
     - `towns`：依 `TownSize` 排，城鎮的民兵、半徑、搶的時間與收穫、廢墟時間、治理費、修繕時間、每分鐘收入（`perMinute`，收入全額時）、人口上限、最少駐軍、叛離時間。
     - `plunderRecovery`：搶過的城鎮再被治理時，收入從 `startPermille`（千分比）開始，治理 `ticks` 之後回到全額；`startPermille` 是 1000 表示沒有這條規則。
+  - 第八輪（D-069）加的，一樣模擬一定會送、型別上選填：
+    - `cannonRange`：晶砲射程（定點）。第八輪是 7 格（7168），以前是 8 格；沒有就當成 8 格。`cast` 超過它回 `OutOfRange`。
 
 ## 3. 指令
 
@@ -240,7 +242,7 @@
     - 不是自己的單位：`NotOwner`。
     - 不是法師：`NotAvailable`。
     - 座標不在地圖內：`InvalidTarget`。
-    - 距離超過 8 格：`OutOfRange`。
+    - 距離超過射程（`rules.cannonRange`，第八輪 7 格，以前 8 格）：`OutOfRange`。
     - 還在冷卻：`Cooldown`。
     - 魔晶不到 5：`NoCrystal`。
   - 法師原地校準 30 tick（1.5 秒），不能動，出現預警區（4.6 節）。
