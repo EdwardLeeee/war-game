@@ -26,6 +26,28 @@ export function rotation(quarters: number, size: number): Frame {
   return IDENTITY;
 }
 
+/** Across the vertical midline of a size x size map: (x, y) -> (size - 1 - x, y). */
+export function mirrorX(size: number): Frame {
+  return { m: [-1, 0, 0, 1], t: [size - 1, 0] };
+}
+
+/** The frame that undoes f. */
+export function invert(f: Frame): Frame {
+  const [a, b, c, d] = f.m;
+  // Inverse of M is its transpose; inverse translation is -M^T t.
+  return { m: [a, c, b, d], t: [-(a * f.t[0] + c * f.t[1]) | 0, -(b * f.t[0] + d * f.t[1]) | 0] };
+}
+
+/** f, then g: toCanon(then(f, g), p) = toCanon(g, toCanon(f, p)). */
+export function then(f: Frame, g: Frame): Frame {
+  const [a, b, c, d] = f.m;
+  const [e, k, l, h] = g.m;
+  return {
+    m: [(e * a + k * c) | 0, (e * b + k * d) | 0, (l * a + h * c) | 0, (l * b + h * d) | 0],
+    t: [(e * f.t[0] + k * f.t[1] + g.t[0]) | 0, (l * f.t[0] + h * f.t[1] + g.t[1]) | 0],
+  };
+}
+
 export function toCanon(f: Frame, x: number, y: number): { u: number; v: number } {
   const [a, b, c, d] = f.m;
   return { u: a * x + b * y + f.t[0], v: c * x + d * y + f.t[1] };
