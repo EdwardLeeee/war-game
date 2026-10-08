@@ -774,7 +774,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           }
           const next = scoutStops[scoutStop % scoutStops.length];
           if (tick - scoutMove >= 200) {
-            out.push({ c: "move", u: [sc.id], x: next.x, y: next.y });
+            // Retreat, not move: a scout does not stop to fight what it meets on the way (the AI's scout, militia).
+            out.push({ c: "retreat", u: [sc.id], x: next.x, y: next.y });
             scoutMove = tick;
           }
         }

@@ -59,7 +59,7 @@
     - 敵方主城看到才知道（快照的 `buildings`）；城鎮探到才知道（快照的 `towns`，位置和大小在列裡，4.5 節）；岩石探到才知道（快照的 `placement`，第 7 節）。
   - 旁觀（`human` 是 `null`）照樣拿到整張圖。
   - 對稱：出生在對角（沿對角線鏡射）或相鄰的角落（沿中線鏡射），整張圖再隨機轉向或翻面。平手規則照樣先轉到各自的標準座標系再比。
-  - 目前只能電腦對電腦：電腦還不會偵察，暫時知道整張圖，所以有人類玩家時 `init` 回 `error`（等 war-game-ai 的偵察）。
+  - 有人類玩家也可以開：電腦和人一樣只知道自己家，城鎮和敵方主城靠偵察找（D-074）。
 - `rules: Rules`：兵種與建築的資料表，client 顯示花費、血量、占地、視野、射程時用這份，不要自己抄數值。
   - `units`：血量、防護罩、攻擊、射程（定點）、速度（每 tick 定點）、視野（格）、攻擊間隔（tick）、花費、訓練 tick、人口。
   - `buildings`：血量、占地邊長、能不能走過、花費、建造 tick、視野、人口上限、可以存放哪些資源、可以訓練哪些兵、全體回城時能躲幾名村民。
@@ -505,7 +505,7 @@
 
 | `type` | 欄位 | 說明 |
 |---|---|---|
-| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty`、`map` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"`、`"normal"`，或 war-game-ai 加的 `"hard"`（D-052，它的 PR 把 `"hard"` 加進 `AI_DIFFICULTIES` 之後才收），見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起）。`ai` 是 false 的玩家，兵營、射場、法術營一開始就自動訓練（第六輪，3.1）；電腦的不會。`map`（D-074）：`"fixed"`（沒帶時）或 `"random"`（第 2 節；目前只能在 `human` 是 `null` 時用，否則回 `error`）。隨機地圖只能用 `standard` 場景 |
+| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty`、`map` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"`、`"normal"`，或 war-game-ai 加的 `"hard"`（D-052，它的 PR 把 `"hard"` 加進 `AI_DIFFICULTIES` 之後才收），見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起）。`ai` 是 false 的玩家，兵營、射場、法術營一開始就自動訓練（第六輪，3.1）；電腦的不會。`map`（D-074）：`"fixed"`（沒帶時）或 `"random"`（第 2 節；有人類玩家也可以，D-074 偵察）。隨機地圖只能用 `standard` 場景 |
 | `command` | `cmd` | 見第 3 節 |
 | `pause`／`resume` | — | 暫停時模擬停下，但照收指令 |
 | `speed` | `tps` | 每秒跑幾個 tick：慢 20、正常 30、快 40（D-024），測試時可以更快。不會改變戰局 |

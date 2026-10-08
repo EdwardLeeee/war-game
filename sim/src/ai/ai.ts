@@ -33,7 +33,7 @@
 // Every spatial choice is made in the canonical frame (frame.ts): player 1 on the mirrored
 // 1 v 1 map sees the same picture as player 0, ties included.
 
-import { type Frame, fromCanon, rectFromCanon, toCanon } from "../frame.ts";
+import { type Frame, footprintCentre, fromCanon, rectFromCanon, spawnCentre, toCanon } from "../frame.ts";
 import { checkPlacement } from "../placement.ts";
 import {
   type AiDifficulty,
@@ -78,8 +78,247 @@ export interface Ai {
 }
 
 /** What every player knows from the start (the `ready` message), and its symmetry frame. */
+// --- the map as it knows it, and its scout (D-074) ---------------------------------------------
+//
+// The fixed map is known whole from the start (MapInfo has every town and both main cities), and
+// the AIs read it as before: the objects here are the MapInfo's own, so nothing changes there.
+// On a random map an AI starts knowing only its own main city (view.ts mapInfo): it learns towns
+// from the PlayerView's town rows once explored, and the enemy from its buildings once seen. The
+// one thing it assumes is the published rule that main cities stand in corners (GDD section 12):
+// a scout goes round the edge of the map through the other three corners, and an enemy building
+// seen near one of them says that is the enemy's corner. Its main city is then taken to stand as
+// far in from that corner as the AI's own stands from its own (a guess to march at, nothing more:
+// the city itself, its id and hp, only ever come from the view).
+
+export interface Site {
+  id: number;
+  size: number;
+  cellX: number;
+  cellY: number;
+}
+
+/** How much it knows of the enemy's main city. */
+export const Known = { None: 0, Corner: 1, City: 2 } as const;
+export type Known = (typeof Known)[keyof typeof Known];
+
+/** The scout's corners this far in from the map's edges (cells). */
+const CORNER_INSET = 12;
+/** A stop counts as reached this near (cells)... */
+const STOP_NEAR = 6;
+/** ...or once the scout has not got nearer for this long (ticks): stuck, or something in the way. */
+const STOP_STUCK = 600;
+/** The scout is told again where to go this often (ticks). */
+const SCOUT_EVERY = 200;
+
+export interface MapMemory {
+  readonly random: boolean;
+  /** Its own main city's centre cell. */
+  readonly home: { cellX: number; cellY: number };
+  /**
+   * The enemy's main city: where it stands (Known.City), a guess in the corner it was seen in
+   * (Known.Corner), or, Known.None, the corner across the map (a placeholder; nothing marches on
+   * it). The fixed map: always Known.City.
+   */
+  readonly enemy: { cellX: number; cellY: number };
+  readonly known: Known;
+  /** A town it knows of (fixed map: every town). */
+  site(id: number): Site | undefined;
+  /** Towns known without having been explored: the fixed map's towns, none on a random map. */
+  readonly unexplored: readonly Site[];
+  /** The scout's stops for each way round (real cells), the other three corners. */
+  readonly stops: readonly (readonly { x: number; y: number }[])[];
+  /** Learns from what it sees now. */
+  observe(view: PlayerView): void;
+}
+
+export function mapMemory(map: Pick<MapInfo, "size" | "spawns" | "towns" | "mode">, frame: Frame, player: number): MapMemory {
+  const random = map.mode === "random";
+  const n = map.size;
+  const mine = map.spawns.find((s) => s.player === player)!;
+  if (!random) {
+    // As before: the map's own objects.
+    const enemy = map.spawns.find((s) => s.player !== player)!;
+    return {
+      random,
+      home: mine,
+      enemy,
+      known: Known.City,
+      site: (id) => map.towns[id],
+      unexplored: map.towns,
+      stops: [[], []],
+      observe: () => {},
+    };
+  }
+  const real = (u: number, v: number) => fromCanon(frame, u, v);
+  const home = (() => {
+    const c = spawnCentre(frame, mine);
+    return { cellX: c.x, cellY: c.y };
+  })();
+  // In its own frame every player starts in the same corner; the other three are the candidates,
+  // the enemy's main city as far in from its corner as its own is from its own.
+  const h = toCanon(frame, home.cellX, home.cellY);
+  const guesses = [
+    { u: n - 1 - h.u, v: h.v },
+    { u: n - 1 - h.u, v: n - 1 - h.v },
+    { u: h.u, v: n - 1 - h.v },
+  ];
+  const k = CORNER_INSET;
+  const near = h.u <= n >> 1 ? k : n - 1 - k;
+  const far = n - 1 - near;
+  const nearV = h.v <= n >> 1 ? k : n - 1 - k;
+  const farV = n - 1 - nearV;
+  // Round the edge, never across the middle (the big city's militia and tower): along its own
+  // side to the next corner, along the far side, back along the other side; or the other way.
+  const corner = [
+    { u: far, v: nearV },
+    { u: far, v: farV },
+    { u: near, v: farV },
+  ].map((c) => real(c.u, c.v));
+  const stops = [
+    [corner[0], corner[1], corner[2]],
+    [corner[2], corner[1], corner[0]],
+  ];
+  const towns = new Map<number, Site>();
+  const enemy = (() => {
+    const g = real(guesses[1].u, guesses[1].v);
+    return { cellX: g.x, cellY: g.y };
+  })();
+  let known: Known = Known.None;
+  return {
+    random,
+    home,
+    enemy,
+    get known() {
+      return known;
+    },
+    site: (id) => towns.get(id),
+    unexplored: [],
+    stops,
+    observe(view: PlayerView) {
+      for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+        const id = view.towns[r + TownField.id];
+        if (!towns.has(id)) towns.set(id, { id, size: view.towns[r + TownField.size], cellX: view.towns[r + TownField.cellX], cellY: view.towns[r + TownField.cellY] });
+      }
+      if (known === Known.City) return;
+      let seen: { x: number; y: number } | null = null;
+      for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+        if (view.buildings[r + BuildingField.owner] !== 1 - player) continue;
+        const x = view.buildings[r + BuildingField.cellX];
+        const y = view.buildings[r + BuildingField.cellY];
+        if (view.buildings[r + BuildingField.type] === BuildingType.MainCity) {
+          const c = footprintCentre(frame, x, y, 4);
+          enemy.cellX = c.x;
+          enemy.cellY = c.y;
+          known = Known.City;
+          return;
+        }
+        if (seen === null) seen = { x, y };
+      }
+      if (seen !== null && known === Known.None) {
+        // The corner nearest the building (in its own frame; ties to the first).
+        const s = toCanon(frame, seen.x, seen.y);
+        let best = 0;
+        let bestD = -1;
+        guesses.forEach((g, i) => {
+          const d = (g.u - s.u) * (g.u - s.u) + (g.v - s.v) * (g.v - s.v);
+          if (bestD < 0 || d < bestD) {
+            best = i;
+            bestD = d;
+          }
+        });
+        const g = real(guesses[best].u, guesses[best].v);
+        enemy.cellX = g.x;
+        enemy.cellY = g.y;
+        known = Known.Corner;
+      }
+    },
+  };
+}
+
+/** A soldier as the scout sees it. */
+interface ScoutUnit {
+  id: number;
+  type: number;
+  x: number;
+  y: number;
+}
+
+export interface Scout {
+  /** The scout's id, or -1: kept out of the army, garrisons and every other job. */
+  readonly id: number;
+  /** Picks a scout from `free` when it needs one and moves it on round the corners. */
+  think(tick: number, soldiers: readonly ScoutUnit[], free: (u: ScoutUnit) => boolean, out: CommandBody[]): void;
+}
+
+/**
+ * One soldier (not a mage) goes round the other three corners along the map's edge, once the
+ * enemy's main city is known stopping when it has been round once; until then round again. A
+ * scout that falls is replaced, and the next goes round the other way. Random maps only.
+ */
+export function createScout(mem: MapMemory): Scout {
+  let id = -1;
+  let way = 0;
+  let stop = 0;
+  let since = 0;
+  let best = Number.MAX_SAFE_INTEGER;
+  let lastMove = -100000;
+  let done = !mem.random;
+  return {
+    get id() {
+      return id;
+    },
+    think(tick, soldiers, free, out) {
+      if (done) return;
+      let s = id >= 0 ? soldiers.find((u) => u.id === id) : undefined;
+      if (id >= 0 && s === undefined) {
+        // It fell on the way: the next one goes round the other way.
+        way = 1 - way;
+        stop = 0;
+        id = -1;
+      }
+      if (s === undefined) {
+        const pick = soldiers.filter((u) => u.type !== UnitType.Mage && free(u)).sort((a, b) => a.id - b.id)[0];
+        if (pick === undefined) return;
+        s = pick;
+        id = pick.id;
+        since = tick;
+        best = Number.MAX_SAFE_INTEGER;
+        lastMove = -100000;
+      }
+      let target = mem.stops[way][stop];
+      const d2 = (s.x - target.x) * (s.x - target.x) + (s.y - target.y) * (s.y - target.y);
+      if (d2 < best) {
+        best = d2;
+        since = tick;
+      }
+      if (d2 <= STOP_NEAR * STOP_NEAR || tick - since >= STOP_STUCK) {
+        stop++;
+        if (stop >= mem.stops[way].length) {
+          if (mem.known === Known.City) {
+            // Been round once and the enemy's main city is known: back to the army.
+            done = true;
+            id = -1;
+            return;
+          }
+          stop = 0;
+        }
+        target = mem.stops[way][stop];
+        since = tick;
+        best = Number.MAX_SAFE_INTEGER;
+        lastMove = -100000;
+      }
+      if (tick - lastMove >= SCOUT_EVERY) {
+        // A retreat: it walks on past what it meets instead of stopping to fight.
+        out.push({ c: "retreat", u: [s.id], x: target.x, y: target.y });
+        lastMove = tick;
+      }
+    },
+  };
+}
+
 export interface AiKnowledge {
-  map: Pick<MapInfo, "size" | "spawns" | "towns">;
+  /** On a random map only its own main city (view.ts mapInfo, D-074): the rest it scouts (scout.ts). */
+  map: Pick<MapInfo, "size" | "spawns" | "towns" | "mode">;
   rules: Rules;
   frame: Frame;
   /**
@@ -209,8 +448,11 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   const drawn = rng.below(AI_STYLES.length);
   const myStyle: AiStyle = style ?? AI_STYLES[drawn];
   const n = know.map.size;
-  const home = know.map.spawns[player];
-  const enemyHome = know.map.spawns[1 - player];
+  // The map as it knows it (scout.ts, D-074): on the fixed map the MapInfo's own objects.
+  const mem = mapMemory(know.map, know.frame, player);
+  const scout = createScout(mem);
+  const home = mem.home;
+  const enemyHome = mem.enemy;
   const rules = know.rules;
   // Every spatial choice is made in player 0's frame: player 1 mirrors coordinates (x <-> y)
   // first, so on the mirror-symmetric map both sides make mirror-image choices, ties included.
@@ -306,6 +548,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const out: CommandBody[] = [];
       const h = view.header;
       const tick = view.tick;
+      mem.observe(view);
       // Ticks to the time limit, or -1 without one.
       const toGo = know.maxTicks > 0 ? know.maxTicks - tick : -1;
       const res: Cost = { food: h[HeaderField.food], wood: h[HeaderField.wood], gold: h[HeaderField.gold], crystal: h[HeaderField.crystal] };
@@ -322,7 +565,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       // On the way to a town it may govern, it keeps the governing cost aside (D4: the choice
       // is made the tick the town falls, so the money has to be there).
       const aimTown =
-        mode === "town" && targetTown >= 0 && (myStyle !== "plunder" || (once && plundered(targetTown))) ? know.map.towns[targetTown] : undefined;
+        mode === "town" && targetTown >= 0 && (myStyle !== "plunder" || (once && plundered(targetTown))) ? mem.site(targetTown) : undefined;
       const reserve: Cost = aimTown !== undefined ? { ...governCostOf(rules, aimTown.size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
         res.food - reserve.food >= c.food && res.wood - reserve.wood >= c.wood && res.gold - reserve.gold >= c.gold && res.crystal - reserve.crystal >= c.crystal;
@@ -376,7 +619,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       }
       const farmers = mine.filter((u) => u.type === UnitType.Farmer);
       const gatherers = farmers.filter((u) => u.order === Order.Gather).map((u) => u.id);
-      const soldiers = mine.filter((u) => u.type !== UnitType.Farmer);
+      // Random maps (D-074): one soldier scouts (scout.ts) and is left out of everything else.
+      const allSoldiers = mine.filter((u) => u.type !== UnitType.Farmer);
+      scout.think(tick, allSoldiers, (u) => ![...garrison.values()].some((ids) => ids.includes(u.id)), out);
+      const soldiers = scout.id < 0 ? allSoldiers : allSoldiers.filter((u) => u.id !== scout.id);
       const has = (t: number) => own.some((b) => b.type === t);
       const done = (t: number) => own.filter((b) => b.type === t && b.progress >= 1000);
       const count = (t: number) => own.filter((b) => b.type === t).length;
@@ -534,7 +780,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const towns = new Map<number, Town>();
       for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
         const id = view.towns[r + TownField.id];
-        const t = know.map.towns[id];
+        const t = mem.site(id)!;
         towns.set(id, {
           state: view.towns[r + TownField.state],
           owner: view.towns[r + TownField.owner],
@@ -545,7 +791,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         });
       }
       // Towns not explored yet: their places are map knowledge; assume them neutral.
-      for (const t of know.map.towns) {
+      for (const t of mem.unexplored) {
         if (!towns.has(t.id)) towns.set(t.id, { state: TownState.Neutral, owner: NEUTRAL, needed: 0, x: t.cellX, y: t.cellY, size: t.size });
       }
       for (const [id, t] of towns) {
@@ -744,11 +990,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // Plundered already (round 7): worth taking only when it can pay to govern it.
           .filter(([id, t]) => !(once && plundered(id) && !affordAll(governCostOf(rules, t.size))))
           .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
-        const go = endgame
-          ? army.length >= ENDGAME_ARMY
-          : assault
-            ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
-            : baseTime && strongEnough && (army.length >= baseNeed || (((open.length === 0 && !baseBroken) || popFull) && army.length >= townArmy + 6));
+        // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
+        // AI-against-AI game (then the corner across the map, the last resort).
+        const go =
+          (mem.known !== Known.None || endgame || assault) &&
+          (endgame
+            ? army.length >= ENDGAME_ARMY
+            : assault
+              ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
+              : baseTime && strongEnough && (army.length >= baseNeed || (((open.length === 0 && !baseBroken) || popFull) && army.length >= townArmy + 6)));
         if (go) {
           armyAtStart = army.length;
           marched.clear();
@@ -894,8 +1144,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const governCost = (size: number): Cost => governCostOf(rules, size);
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
   const n = know.map.size;
-  const home = know.map.spawns[player];
-  const enemyHome = know.map.spawns[1 - player];
+  // The map as it knows it (scout.ts, D-074): on the fixed map the MapInfo's own objects.
+  const mem = mapMemory(know.map, know.frame, player);
+  const scout = createScout(mem);
+  const home = mem.home;
+  const enemyHome = mem.enemy;
   const rules = know.rules;
   const real = (u: number, v: number) => fromCanon(know.frame, u, v);
   const frame = (x: number, y: number) => toCanon(know.frame, x, y);
@@ -985,6 +1238,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const out: CommandBody[] = [];
       const h = view.header;
       const tick = view.tick;
+      mem.observe(view);
       const toGo = know.maxTicks > 0 ? know.maxTicks - tick : -1;
       const res: Cost = { food: h[HeaderField.food], wood: h[HeaderField.wood], gold: h[HeaderField.gold], crystal: h[HeaderField.crystal] };
       const pop = h[HeaderField.population];
@@ -1000,7 +1254,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
        */
       const toGovern = (id: number) => once && plunderedTown(id);
       // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
-      const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(know.map.towns[targetTown].size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
+      const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(mem.site(targetTown)!.size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
         res.food - reserve.food >= c.food && res.wood - reserve.wood >= c.wood && res.gold - reserve.gold >= c.gold && res.crystal - reserve.crystal >= c.crystal;
       const affordAll = (c: Cost) => res.food >= c.food && res.wood >= c.wood && res.gold >= c.gold && res.crystal >= c.crystal;
@@ -1069,7 +1323,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
       const farmers = mine.filter((u) => u.type === UnitType.Farmer);
       const gatherers = farmers.filter((u) => u.order === Order.Gather).map((u) => u.id);
-      const soldiers = mine.filter((u) => u.type !== UnitType.Farmer);
+      // Random maps (D-074): one soldier scouts (scout.ts) and is left out of everything else.
+      const allSoldiers = mine.filter((u) => u.type !== UnitType.Farmer);
+      scout.think(tick, allSoldiers, (u) => ![...townGuards.values()].some((ids) => ids.includes(u.id)), out);
+      const soldiers = scout.id < 0 ? allSoldiers : allSoldiers.filter((u) => u.id !== scout.id);
       const byId = new Map<number, HardUnit>();
       for (const u of soldiers) byId.set(u.id, u);
       const has = (t: number) => own.some((b) => b.type === t);
@@ -1274,7 +1531,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const towns = new Map<number, HardTown>();
       for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
         const id = view.towns[r + TownField.id];
-        const t = know.map.towns[id];
+        const t = mem.site(id)!;
         towns.set(id, {
           state: view.towns[r + TownField.state],
           owner: view.towns[r + TownField.owner],
@@ -1286,7 +1543,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           size: t.size,
         });
       }
-      for (const t of know.map.towns) {
+      for (const t of mem.unexplored) {
         if (!towns.has(t.id)) towns.set(t.id, { state: TownState.Neutral, owner: NEUTRAL, needed: 0, timer: 0, visible: false, x: t.cellX, y: t.cellY, size: t.size });
       }
       for (const [id, t] of towns) {
@@ -1602,13 +1859,17 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // At home: march, go for a town, or wait by the city.
         const popFull = toGo < 0 && cap >= rules.maxPopulation && pop >= cap - FULL_MARGIN;
         const strong = armyWorth * 100 >= enemyWorth * plan.pushRatio;
-        const go = endgame
-          ? army.length >= ENDGAME_ARMY
-          : assault
-            ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
-            : (counterReady && army.length >= plan.counterArmy && armyWorth >= enemyWorth) ||
-              (army.length >= pushArmy && strong) ||
-              (popFull && army.length >= townArmy + 6);
+        // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
+        // AI-against-AI game (then the corner across the map, the last resort).
+        const go =
+          (mem.known !== Known.None || endgame || assault) &&
+          (endgame
+            ? army.length >= ENDGAME_ARMY
+            : assault
+              ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
+              : (counterReady && army.length >= plan.counterArmy && armyWorth >= enemyWorth) ||
+                (army.length >= pushArmy && strong) ||
+                (popFull && army.length >= townArmy + 6));
         if (go) {
           armyAtStart = army.length;
           marched.clear();

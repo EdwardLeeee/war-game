@@ -6,8 +6,7 @@
 //   node src/scripted-games.ts --seeds 1,2,3 --strategy push --trace --json out.json
 //   node src/scripted-games.ts --seeds 1-20 --strategy push --no-range --no-mage   (spearmen only)
 //   node src/scripted-games.ts --seeds 1-40 --strategy push --corners --govern   (round 7: govern every town taken)
-//   node src/scripted-games.ts --seeds 1-40 --strategy push --map random   (D-074: the player scouts; the AI
-//                                                                           still knows the whole map, runner.ts)
+//   node src/scripted-games.ts --seeds 1-40 --strategy push --map random   (D-074: the player and the AI both scout)
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
 import { writeFileSync } from "node:fs";
@@ -396,7 +395,7 @@ const options = [
   plan.userEco ? "使用者的經濟（自動訓練、16 名村民、搶到大城前不採金、只去大城一趟）" : "",
   plan.race === "sentry" ? `偷家：哨兵看到電腦 ${plan.raceSeen} 名往家裡來就直衝電腦主城（${plan.raceAt} 名或第 ${plan.raceBy / 1200} 分也去）` : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
-  mapMode === "random" ? "隨機地圖（我只知道探到的，派一名槍兵偵察；電腦暫時知道完整地圖）" : "",
+  mapMode === "random" ? "隨機地圖（我只知道探到的，派一名槍兵偵察；電腦也要偵察）" : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
