@@ -48,6 +48,11 @@ export interface PageParams {
    * (human null; the only way onto a random map until the AI scouts, D-074).
    */
   watch: boolean;
+  /**
+   * `?test=1&seed=N` (1 to 2^31 - 1): the game's seed instead of a new one, so a test plays the
+   * same map each run (a random map comes from the seed, D-074).
+   */
+  seed: number | null;
 }
 
 export function parseParams(search: string): PageParams {
@@ -64,5 +69,7 @@ export function parseParams(search: string): PageParams {
   const logsUrl = test && logs !== null && /^https?:\/\/[^\s]+$/.test(logs) ? logs : null;
   const m = q.get("map");
   const map = test && (m === "fixed" || m === "random") ? m : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1" };
+  const s = q.get("seed");
+  const seed = test && s !== null && /^[1-9][0-9]{0,9}$/.test(s) && Number(s) <= 0x7fffffff ? Number(s) : null;
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed };
 }

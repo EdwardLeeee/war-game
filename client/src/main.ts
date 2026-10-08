@@ -200,7 +200,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   // 地圖 (D-074): the start screen's choice (a test page may ask for one); 量測 always the fixed map, so the numbers compare between runs.
   const map: MapMode = measure ? "fixed" : (params.map ?? mapMode);
   const g = new Game(app, port, $("hud"), {
-    seed: newSeed(),
+    seed: params.seed ?? newSeed(),
     scenario,
     tps: measure ? SPEED_TPS.normal : (params.tps ?? SPEED_TPS.normal),
     fake: params.mock,

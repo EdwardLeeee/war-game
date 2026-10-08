@@ -11,6 +11,10 @@ import { shot, watchErrors } from "./helpers.ts";
 
 const MAIN_CITY = 0;
 const FARMER = 0;
+// The scouting measurement plays this seed: its random map has rocks along the scouts' ways
+// (seeds 1–10 tried: 0–18 rock cells found in 20 seconds, this one 55), so the ground is painted
+// again within the window on every run (a fresh seed found none on CI's WebKit once, run 37730054591).
+const SCOUT_SEED = 8;
 
 let checkErrors: () => void;
 
@@ -33,9 +37,9 @@ const knownTowns = (page: Page) => page.evaluate(() => window.__proto?.game?.kno
 const knownRocks = (page: Page) => page.evaluate(() => window.__proto?.game?.knownRocks() ?? 0);
 const round = (v: number | undefined) => Math.round((v ?? 0) * 100) / 100;
 
-/** A person plays (player 0) on this map. */
-async function play(page: Page, map: "fixed" | "random", tps: number): Promise<void> {
-  await page.goto(`./?test=1&map=${map}&tps=${tps}`);
+/** A person plays (player 0) on this map; with a seed, the same map every run. */
+async function play(page: Page, map: "fixed" | "random", tps: number, seed?: number): Promise<void> {
+  await page.goto(`./?test=1&map=${map}&tps=${tps}${seed === undefined ? "" : `&seed=${seed}`}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
 }
@@ -109,7 +113,7 @@ test("畫面量測：人類玩家在固定地圖和隨機地圖下同樣的偵�
   test.setTimeout(150_000);
   const rows: Record<string, unknown>[] = [];
   for (const map of ["fixed", "random"] as const) {
-    await play(page, map, 30);
+    await play(page, map, 30, SCOUT_SEED);
     const sent = await scout(page);
     const rocks0 = await knownRocks(page);
     await page.evaluate(() => window.__proto?.game?.frameTimes(true));
@@ -120,6 +124,7 @@ test("畫面量測：人類玩家在固定地圖和隨機地圖下同樣的偵�
     expect(s?.frames ?? 0, `${map}: frames drawn`).toBeGreaterThan(50);
     rows.push({
       map,
+      seed: SCOUT_SEED,
       scouts: sent,
       rocksLearned: (await knownRocks(page)) - rocks0,
       frames: s?.frames,

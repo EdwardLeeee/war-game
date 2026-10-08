@@ -47,7 +47,8 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 - `?test=1&tps=N`：模擬每秒跑 N 個 tick（上限 400），CI 用來加快流程。遊戲裡的速度只有慢 20、正常 30、快 40（D-024）。
 - `?test=1&mock=1`：用假世界代替模擬（`e2e/gestures.spec.ts`、`e2e/hud.spec.ts` 用；版面固定）。
 - `?test=1&map=fixed|random`：用這種地圖，不看開局畫面的選擇（D-074）。和 `mock=1` 一起用時，假世界照隨機地圖的協定只給探過的東西（`e2e/random-map.spec.ts`）。
-- `?test=1&watch=1`：電腦對電腦，頁面只觀戰（`human` 是 null），看得到整張圖。電腦會偵察以前，只有這樣才能在真的模擬上開隨機地圖（`e2e/random-map-sim.spec.ts`）。
+- `?test=1&watch=1`：電腦對電腦，頁面只觀戰（`human` 是 null），看得到整張圖。電腦會偵察以後（#176），人類玩家也能玩隨機地圖，觀戰留著量「探完的整張圖」（`e2e/random-map-sim.spec.ts`）。
+- `?test=1&seed=N`：用這個種子開局（1 到 2^31 − 1），每次都是同一張隨機地圖；偵察量測用它（`e2e/random-map-sim.spec.ts`）。
 - `?test=1&mock=1&r7=1`：假世界打開第七輪的規則（城鎮只能搶一次、箭樓、躲進建築、馬廄和騎兵；`e2e/round7.spec.ts` 用）。模擬的第七輪開關在 `sim/src/core/rules.ts`，網頁打不開。
 - `?test=1&hint=1`：開局提示（D-044）。玩家的頁面每局都有；測試頁預設沒有，其他測試直接進戰場。
 - `?test=1&logs=<網址>`：對局紀錄改傳到這個網址（`e2e/logs.spec.ts` 攔截用）。
