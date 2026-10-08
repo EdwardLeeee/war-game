@@ -60,18 +60,24 @@ export function compass(dx: number, dy: number): string {
  * The hint's lines: where crystal comes from, what to do there, and where the town (`hintTown`)
  * is. `plunderOnce`: 城鎮只能搶一次 is on (round 7, D-061).
  */
-export function townHintLines(town: TownSpot, from: { cellX: number; cellY: number }, passed = false, plunderOnce = false): string[] {
-  const dx = town.cellX - from.cellX;
-  const dy = town.cellY - from.cellY;
-  const where = `在主城的${compass(dx, dy)}方，約 ${Math.round(Math.hypot(dx, dy))} 格`;
-  // A large town only on a map without small ones (hintTown).
-  const which =
-    town.size === TownSize.Large ? `離你的主城最近的是一座大城，${where}` : passed ? `離你的主城最近、可以攻下的小鎮${where}` : `離你的主城最近的小鎮${where}`;
+/** The last line on a random map before any town is explored (D-074). */
+export const RANDOM_MAP_TOWN_TEXT = "這是隨機地圖：城鎮要派兵去探，探到才會出現在地圖上。";
+
+export function townHintLines(town: TownSpot | null, from: { cellX: number; cellY: number }, passed = false, plunderOnce = false): string[] {
+  let which = RANDOM_MAP_TOWN_TEXT;
+  if (town !== null) {
+    const dx = town.cellX - from.cellX;
+    const dy = town.cellY - from.cellY;
+    const where = `在主城的${compass(dx, dy)}方，約 ${Math.round(Math.hypot(dx, dy))} 格`;
+    // A large town only on a map without small ones (hintTown).
+    which =
+      town.size === TownSize.Large ? `離你的主城最近的是一座大城，${where}。小地圖上閃的圓圈就是它。` : passed ? `離你的主城最近、可以攻下的小鎮${where}。小地圖上閃的圓圈就是它。` : `離你的主城最近的小鎮${where}。小地圖上閃的圓圈就是它。`;
+  }
   return [
     "法師要用魔晶。魔晶主要從城鎮來：帶兵打倒城裡的民兵，就能選「搶」或「治理」。",
     plunderOnce
       ? "搶：馬上拿到一筆糧、金和魔晶，每座城一局只能搶一次。治理：修好之後，每分鐘都有魔晶。"
       : "搶：馬上拿到一筆糧、金和魔晶。治理：修好之後，每分鐘都有魔晶。",
-    `${which}。小地圖上閃的圓圈就是它。`,
+    which,
   ];
 }

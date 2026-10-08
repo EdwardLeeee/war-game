@@ -15,7 +15,6 @@ import {
   Fog,
   HeaderField as H,
   NodeField as N,
-  Terrain,
   TOWN_STRIDE,
   TownField as T,
   TownState,
@@ -35,6 +34,11 @@ const BAR_W = TILE_PX * 0.8;
 const BAR_H = 3;
 /** How dark the fog is: never explored, explored but out of sight (0-255). */
 const FOG_ALPHA = { unexplored: 255, explored: 140 };
+// Ground colours, shared rather than made anew for each cell: on a random map the terrain is
+// painted again whenever a rock is explored (D-074), 16 641 cells each time.
+const ROCK_RGB = [104, 96, 86] as const;
+const GROUND_RGB = [86, 116, 64] as const;
+const GROUND_LIGHT_RGB = [92, 123, 69] as const;
 
 export interface TownLook {
   label: string;
@@ -126,6 +130,12 @@ export class WorldRenderer {
   private readonly fogTexture: Texture;
   private readonly fogPixels: ImageData;
   private fogVersion = -1;
+  private readonly terrainCanvas: HTMLCanvasElement;
+  private readonly terrainPixels: ImageData;
+  /** The rocks drawn (D-074: a random map's grow as they are explored). */
+  private rocksVersion = 0;
+  /** Terrain repaints after a rock was explored (random map) and their CPU time in ms, for the test page. */
+  readonly terrainRepaints = { count: 0, totalMs: 0, maxMs: 0 };
   private nodesVersion = -1;
   private readonly nodeSprites = new Map<number, Sprite>();
   private readonly unitPool: UnitSprites[] = [];
@@ -145,18 +155,9 @@ export class WorldRenderer {
     const terrain = document.createElement("canvas");
     terrain.width = size;
     terrain.height = size;
-    const tctx = terrain.getContext("2d") as CanvasRenderingContext2D;
-    const img = tctx.createImageData(size, size);
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const i = (y * size + x) * 4;
-        const rock = view.map.terrain[y * size + x] === Terrain.Blocked;
-        const shade = (x + y) % 2 === 0;
-        const [r, g, b] = rock ? [104, 96, 86] : shade ? [86, 116, 64] : [92, 123, 69];
-        img.data.set([r, g, b, 255], i);
-      }
-    }
-    tctx.putImageData(img, 0, 0);
+    this.terrainCanvas = terrain;
+    this.terrainPixels = (terrain.getContext("2d") as CanvasRenderingContext2D).createImageData(size, size);
+    this.paintTerrain();
     const terrainTex = Texture.from(terrain);
     this.terrainTexture = terrainTex;
     terrainTex.source.scaleMode = "nearest";
@@ -184,6 +185,7 @@ export class WorldRenderer {
     this.root.position.set(-camera.x * camera.scale, -camera.y * camera.scale);
     const curr = this.view.curr;
     if (curr === null) return;
+    this.drawTerrain();
     this.drawFog();
     this.drawNodes();
     this.drawBuildings();
@@ -242,6 +244,36 @@ export class WorldRenderer {
       const k = (now - m.at) / MARKER_MS;
       this.fx.circle(m.x, m.y, TILE_PX * (0.3 + 0.5 * k)).stroke({ width: 3, color: m.color, alpha: 1 - k });
     }
+  }
+
+  /** Ground and the rocks the player knows (GameView.rocks), one texel per cell. */
+  private paintTerrain(): void {
+    const size = this.view.map.size;
+    const d = this.terrainPixels.data;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const c = this.view.rocks[y * size + x] === 1 ? ROCK_RGB : (x + y) % 2 === 0 ? GROUND_RGB : GROUND_LIGHT_RGB;
+        const o = (y * size + x) * 4;
+        d[o] = c[0];
+        d[o + 1] = c[1];
+        d[o + 2] = c[2];
+        d[o + 3] = 255;
+      }
+    }
+    (this.terrainCanvas.getContext("2d") as CanvasRenderingContext2D).putImageData(this.terrainPixels, 0, 0);
+    this.rocksVersion = this.view.rocksVersion;
+  }
+
+  /** Rocks explored since the last frame (random map): the terrain texture again. */
+  private drawTerrain(): void {
+    if (this.view.rocksVersion === this.rocksVersion) return;
+    const t0 = performance.now();
+    this.paintTerrain();
+    this.terrainTexture.source.update();
+    const ms = performance.now() - t0;
+    this.terrainRepaints.count++;
+    this.terrainRepaints.totalMs += ms;
+    this.terrainRepaints.maxMs = Math.max(this.terrainRepaints.maxMs, ms);
   }
 
   private drawFog(): void {
@@ -337,7 +369,7 @@ export class WorldRenderer {
     const seen = new Set<number>();
     for (let o = 0; o < t.length; o += TOWN_STRIDE) {
       const id = t[o + T.id];
-      const info = this.view.map.towns.find((v) => v.id === id);
+      const info = this.view.knownTowns.get(id);
       if (info === undefined) continue;
       seen.add(id);
       const look = townLook(t[o + T.state], t[o + T.owner], this.view.me);

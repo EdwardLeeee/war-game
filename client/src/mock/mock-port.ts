@@ -29,6 +29,7 @@ import {
   HEADER_LENGTH,
   HeaderField as H,
   type MapInfo,
+  type MapMode,
   NEUTRAL,
   NodeKind,
   Order,
@@ -202,11 +203,17 @@ export class MockPort implements SimPort {
   private over = false;
   private readonly round7: boolean;
   private readonly rules: Rules;
+  /**
+   * The same layout as a random map (D-074, sim/PROTOCOL.md): `ready` tells only our own home,
+   * towns come with their rows once explored, and the placement grid marks only explored rocks.
+   */
+  private readonly randomMap: boolean;
 
-  /** `round7`: `?r7=1`, round 7's rules on. */
-  constructor(round7 = false) {
+  /** `round7`: `?r7=1`, round 7's rules on. `map`: `?map=random` plays this layout as a random map. */
+  constructor(round7 = false, map: MapMode = "fixed") {
     this.round7 = round7;
     this.rules = round7 ? MOCK_RULES_R7 : MOCK_RULES;
+    this.randomMap = map === "random";
   }
 
   /** Tests: deliver an event with the next snapshot (an attack, a captured town...). */
@@ -376,16 +383,15 @@ export class MockPort implements SimPort {
   }
 
   private mapInfo(): MapInfo {
-    return {
-      seed: 1,
-      size: SIZE,
-      terrain: this.terrain.slice(),
-      spawns: [
-        { player: ME, cellX: 16, cellY: 76 },
-        { player: FOE, cellX: 86, cellY: 14 },
-      ],
-      towns: this.towns.map((t) => ({ id: t.id, size: t.size, cellX: t.cx, cellY: t.cy, radius: t.radius })),
-    };
+    // Each main city stands on its spawn, as in the simulation (its top-left cell 2 up and left):
+    // the camera opens on it.
+    const spawns = [
+      { player: ME, cellX: 10, cellY: 82 },
+      { player: FOE, cellX: 86, cellY: 14 },
+    ];
+    // A random map tells only our own home: open ground everywhere, no towns (D-074).
+    if (this.randomMap) return { seed: 1, size: SIZE, terrain: new Uint8Array(SIZE * SIZE), spawns: spawns.filter((s) => s.player === ME), towns: [], mode: "random" };
+    return { seed: 1, size: SIZE, terrain: this.terrain.slice(), spawns, towns: this.towns.map((t) => ({ id: t.id, size: t.size, cellX: t.cx, cellY: t.cy, radius: t.radius })) };
   }
 
   private step(): void {
@@ -513,12 +519,15 @@ export class MockPort implements SimPort {
 
   private placementGrid(): Uint8Array {
     const cells = new Uint8Array(SIZE * SIZE);
+    // On a random map only what was explored is known (D-074): rocks, nodes and others' buildings.
+    const known = (i: number) => !this.randomMap || this.fog[i] > 0;
     for (let i = 0; i < cells.length; i++) {
-      if (this.terrain[i] === 1) cells[i] |= PlaceBit.Blocked;
+      if (this.terrain[i] === 1 && known(i)) cells[i] |= PlaceBit.Blocked;
       if (this.fog[i] === 0) cells[i] |= PlaceBit.Unexplored;
     }
-    for (const [, , cx, cy, amount] of this.nodes) if (amount > 0) cells[cy * SIZE + cx] |= PlaceBit.Blocked;
+    for (const [, , cx, cy, amount] of this.nodes) if (amount > 0 && known(cy * SIZE + cx)) cells[cy * SIZE + cx] |= PlaceBit.Blocked;
     for (const b of this.buildings) {
+      if (this.randomMap && b.owner !== ME && !this.everSeen(b)) continue;
       const s = MOCK_RULES.buildings[b.type].size;
       for (let y = b.cy; y < b.cy + s; y++) for (let x = b.cx; x < b.cx + s; x++) cells[y * SIZE + x] |= PlaceBit.Blocked;
       if (b.owner === ME && (b.type === BuildingType.MainCity || b.type === BuildingType.Granary)) {
@@ -620,6 +629,10 @@ export class MockPort implements SimPort {
       towns[o + T.militia] = t.militia;
       towns[o + T.incomePermille] = t.income;
       towns[o + T.flags] = (this.visible(t.cx, t.cy) ? TownFlag.Visible : 0) | (t.plundered ? TownFlag.Plundered : 0);
+      // Where and how big (D-074), as the simulation sends on either map.
+      towns[o + T.cellX] = t.cx;
+      towns[o + T.cellY] = t.cy;
+      towns[o + T.size] = t.size;
     });
 
     const warnings = new Int32Array(this.warningTicks > 30 ? WARNING_STRIDE : 0);
