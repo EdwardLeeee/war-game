@@ -108,9 +108,8 @@ jobs:
           path: tournament/
           retention-days: 30
 
-  # Random maps (D-074): the same 100 games, each seed on its own map. The AI still knows the whole
-  # random map (runner.ts, temporary until it scouts), so these games only check whether the maps
-  # are fair, by layout; only the replays gate (ai-random-summary).
+  # Random maps (D-074): the same 100 games, each seed on its own map. The AI scouts; only the
+  # replays gate (ai-random-summary).
   ai-vs-ai-random:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -223,7 +222,7 @@ jobs:
           - { group: defend-eco, seeds: 15-27, args: --strategy defend --speed eco --formation all }
           - { group: defend-eco, seeds: 28-40, args: --strategy defend --speed eco --formation all }
           - { group: notown, seeds: 1-40, args: --strategy notown --speed h1 --formation close }
-          # D-074: the push on random maps; the player scouts, the AI still knows the whole map.
+          # D-074: the push on random maps; the player and the AI both scout.
           - { group: push-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --map random }
           - { group: push-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --map random }
     env:
@@ -281,7 +280,7 @@ jobs:
           set -o pipefail
           cat > summary.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
-          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15], ["push-random", "主動，隨機地圖（電腦暫時知道完整地圖）", 20]];
+          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15], ["push-random", "主動，隨機地圖", 20]];
           // scripted-<group>-<seeds>.json against normal, scripted-hard-<group>-<seeds>.json against hard.
           const levels = [["", "普通"], ["hard-", "困難"]];
           const games = new Map(levels.flatMap(([l]) => groups.map(([g]) => [l + g, []])));

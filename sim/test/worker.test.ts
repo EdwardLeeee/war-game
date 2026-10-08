@@ -107,11 +107,12 @@ test("the time limit comes with init: none when a person plays, MAX_TICKS for AI
   assert.match(of("error").at(-1)!.message, /difficulty/);
 });
 
-test("random maps (D-074): AI against AI only for now; a spectator gets the whole map, the log header says random", () => {
+test("random maps (D-074): a person gets only their own main city, a spectator the whole map, the log header says random", () => {
   out.length = 0;
   send({ type: "init", protocol: PROTOCOL_VERSION, seed: 4, human: 0, ai: [false, true], tps: 20, scenario: "standard", map: "random" });
-  assert.match(of("error").at(-1)!.message, /AI against AI only/);
-  assert.equal(of("ready").length, 0, "no game for a person on a random map");
+  send({ type: "pause" });
+  const mine = of("ready").at(-1)!;
+  assert.deepEqual([mine.map.size, mine.map.mode, mine.map.spawns.map((s) => s.player), mine.map.towns.length], [129, "random", [0], 0], "own main city only, no towns");
   send({ type: "init", protocol: PROTOCOL_VERSION, seed: 4, human: null, ai: [true, true], tps: 20, scenario: "standard", map: "random" });
   send({ type: "pause" });
   const ready = of("ready").at(-1)!;

@@ -4,7 +4,7 @@
 // (30 ticks a second, D-024).
 //   node src/ai-timeline.ts --seed 4 --difficulty easy --first-town-min 18
 //   node src/ai-timeline.ts --seeds 1-5
-//   node src/ai-timeline.ts --seeds 1-5 --map random   (D-074: the AI still knows the whole map, runner.ts)
+//   node src/ai-timeline.ts --seeds 1-5 --map random   (D-074)
 // Prints Markdown; --seeds adds a table, one row per seed. With --first-town-min, exits 1 if the
 // first town trip comes earlier in any game.
 
