@@ -25,7 +25,7 @@ export const AI_THINK_EVERY = 10;
  * on a random map only its own main city, D-074), the rules, its symmetry frame, the time limit.
  */
 export function aiKnowledge(map: Game["w"]["map"], p: number, maxTicks: number, difficulty: AiDifficulty): AiKnowledge {
-  return { map: mapInfo(map, p), rules: rules(), frame: map.frames[p], maxTicks, difficulty };
+  return { map: mapInfo(map, p), rules: rules(map), frame: map.frames[p], maxTicks, difficulty };
 }
 
 export interface RunnerConfig extends GameConfig {

@@ -7,18 +7,23 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null });
 });
 
 test("tps, mock, r7, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null });
+  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null });
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null });
   assert.equal(parseParams("?test=1&mock=1").mock, true);
   assert.equal(parseParams("?test=1&mock=1").round7, false);
   assert.equal(parseParams("?test=1&mock=1&r7=1").round7, true);
+  assert.equal(parseParams("?test=1&map=random").map, "random");
+  assert.equal(parseParams("?test=1&map=fixed").map, "fixed");
+  assert.equal(parseParams("?test=1&map=huge").map, null);
+  assert.equal(parseParams("?test=1&watch=1").watch, true);
+  assert.equal(parseParams("?test=1&seed=12345").seed, 12345);
   assert.equal(parseParams("?test=1&scenario=e2e").scenario, "e2e");
   assert.equal(parseParams("?test=1&scenario=bogus").scenario, null);
 });
@@ -27,6 +32,14 @@ test("test=1&ai=0 leaves the opponent to stand still (main-flow e2e); anything e
   assert.equal(parseParams("?test=1&ai=0").enemyAi, false);
   assert.equal(parseParams("?test=1&ai=1").enemyAi, true);
   assert.equal(parseParams("?test=1").enemyAi, true);
+});
+
+test("seed: test pages only, a whole number from 1 to 2^31 - 1", () => {
+  assert.equal(parseParams("?seed=7").seed, null);
+  assert.equal(parseParams(`?test=1&seed=${0x7fffffff}`).seed, 0x7fffffff);
+  for (const bad of ["0", "-5", "1.5", "abc", "", "2147483648", "99999999999"]) {
+    assert.equal(parseParams(`?test=1&seed=${bad}`).seed, null, bad);
+  }
 });
 
 test("tps is capped and must be a positive whole number", () => {

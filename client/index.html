@@ -33,7 +33,13 @@
           <button type="button" role="radio" data-difficulty="normal" aria-checked="false" class="secondary">普通</button>
           <button type="button" role="radio" data-difficulty="hard" aria-checked="false" class="secondary">困難</button>
         </div>
-        <p id="difficulty-note" class="note" hidden>改了難度，要按「重來」才會用在新的一局。</p>
+        <div class="difficulty map-mode" role="radiogroup" aria-labelledby="map-label">
+          <span id="map-label">地圖</span>
+          <button type="button" role="radio" data-map="fixed" aria-checked="true">固定地圖</button>
+          <button type="button" role="radio" data-map="random" aria-checked="false" class="secondary">隨機地圖</button>
+        </div>
+        <p id="map-note" class="note map-note">每局同一張，適合比較電腦強弱</p>
+        <p id="difficulty-note" class="note" hidden>改了難度或地圖，要按「重來」才會用在新的一局。</p>
         <div class="start-buttons">
           <button id="start-game" type="button">開始</button>
           <button id="restart-game" class="secondary" type="button" hidden>重來</button>
@@ -42,7 +48,7 @@
           <span>有新版本</span>
           <button id="update-now" type="button">更新</button>
         </div>
-        <p class="note">畫面是暫代的幾何圖形。對局沒有時間上限，打到一方的主城被摧毀或投降為止。</p>
+        <p id="about-note" class="note">畫面是暫代的幾何圖形。對局沒有時間上限，打到一方的主城被摧毀或投降為止。</p>
         <p class="small"><span id="commit"></span> · <span id="record-code"></span> · <a href="../">回測試頁首頁</a></p>
       </div>
     </section>

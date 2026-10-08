@@ -51,6 +51,15 @@ async function tapBuilding(page: Page, b: Building): Promise<void> {
   throw new Error(`no cell of building ${b.id} to tap`);
 }
 
+/** Select a building of ours by tapping it, again if a villager walked onto the cell between the check and the tap (CI run 37657367728). */
+async function selectBuilding(page: Page, b: Building): Promise<void> {
+  await expect(async () => {
+    await page.evaluate(() => window.__proto?.game?.select([]));
+    await tapBuilding(page, b);
+    expect(await page.evaluate(() => window.__proto?.game?.selection().building ?? null)).toBe(b.id);
+  }).toPass({ timeout: 30_000 });
+}
+
 /** 建造 → this building → the preview on the nearest spot where it may go (by the placement grid) → ✓. */
 async function build(page: Page, type: number, name: RegExp, near: { x: number; y: number }): Promise<{ x: number; y: number }> {
   await page.evaluate(() => window.__proto?.game?.select([]));
@@ -102,8 +111,7 @@ test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵躲進
   await expect.poll(async () => (await buildings(page)).find((b) => b.id === tower.id)?.soldiers, TICKS).toBe(3);
   const hiding = (await units(page)).filter((u) => ranged.includes(u.id) && u.order === 9).map((u) => u.id);
   expect(hiding.length, "three on their way or inside, one left out").toBe(3);
-  await page.evaluate(() => window.__proto?.game?.select([]));
-  await tapBuilding(page, tower);
+  await selectBuilding(page, tower);
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".garrison-count")).toHaveText("躲了 3 名士兵（最多 3 名）");
   await shot(page, info, "r7sim-2-garrison");
@@ -121,8 +129,7 @@ test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵躲進
   const stable = (await ownBuilding(page, STABLE)) as Building;
   const soldiers = async () => Number(/(\d+)/.exec((await armyButton(page).textContent()) ?? "")?.[1] ?? -1);
   const before = await soldiers();
-  await page.evaluate(() => window.__proto?.game?.select([]));
-  await tapBuilding(page, stable);
+  await selectBuilding(page, stable);
   await expect(panel).toContainText("馬廄");
   await page.getByRole("button", { name: /^訓練騎兵/ }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "train", building: stable.id, type: CAVALRY, n: 1 });

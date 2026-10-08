@@ -481,10 +481,14 @@ export class Hud {
    * The minimap flashes that town while this is open and for a while after; 看那座城鎮 also
    * moves the camera there. `done` runs however the dialog goes away.
    */
-  openTownHint(lines: string[], town: { id: number; cx: number; cy: number; radius: number }, look: () => void, done: () => void): void {
+  /**
+   * `town` null: no town known yet (a random map at its start, D-074): no ring on the minimap
+   * and no 看那座城鎮.
+   */
+  openTownHint(lines: string[], town: { id: number; cx: number; cy: number; radius: number } | null, look: () => void, done: () => void): void {
     const card = this.openDialog("魔晶從城鎮來", "town-hint");
     for (const line of lines) el("p", card, "", line);
-    this.flash = { ...town, until: Number.POSITIVE_INFINITY };
+    this.flash = town === null ? null : { ...town, until: Number.POSITIVE_INFINITY };
     this.dialogGone = () => {
       if (this.flash !== null) this.flash.until = performance.now() + TOWN_FLASH_AFTER_MS;
       done();
@@ -504,15 +508,17 @@ export class Hud {
       },
       "secondary",
     );
-    btn(
-      row,
-      "看那座城鎮",
-      () => {
-        this.closeDialog();
-        look();
-      },
-      "secondary",
-    );
+    if (town !== null) {
+      btn(
+        row,
+        "看那座城鎮",
+        () => {
+          this.closeDialog();
+          look();
+        },
+        "secondary",
+      );
+    }
     btn(row, "知道了", () => this.closeDialog());
   }
 
@@ -628,7 +634,7 @@ export class Hud {
   /** GDD §5: 城鎮被攻下時，畫面會跳出兩個大按鈕：搶或治理. */
   /** 搶還是治理 (also reopened by tapping the town while it waits, GDD §10). */
   openTownChoice(town: number): void {
-    const size = this.game.view?.map.towns.find((t) => t.id === town)?.size;
+    const size = this.game.view?.knownTowns.get(town)?.size;
     const big = size === TownSize.Large;
     // 城鎮只能搶一次 (round 7, D-061): a town plundered this game offers 治理 only.
     const once = this.game.view?.townPlunderedOnce(town) === true;

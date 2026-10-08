@@ -10,12 +10,13 @@ import { MockPort } from "./mock/mock-port.ts";
 import { createSimPort } from "./game/port.ts";
 import { parseParams, SPEED_TPS } from "./params.ts";
 import { DIFFICULTY_LABEL, loadDifficulty, saveDifficulty } from "./difficulty.ts";
+import { loadMapMode, MAP_LABEL, MAP_NOTE, saveMapMode } from "./map-mode.ts";
 import { loadTownHintOff } from "./hint-pref.ts";
 import { recordCode } from "./logs/code.ts";
 import { LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "./logs/collect.ts";
 import { openIndexedDb, type StoredLog } from "./logs/store.ts";
 import { fetchPoster } from "./logs/upload.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
 import { tickRateText } from "./ui/controls.ts";
 import { deployedCommit, isNewer, updateHref } from "./version.ts";
@@ -77,11 +78,33 @@ for (const b of difficultyButtons) {
 }
 showDifficulty();
 
+/** 地圖 on the start screen (D-074): 固定地圖 the first time, then the last choice on this device. */
+let mapMode: MapMode = loadMapMode();
+const mapButtons = [...document.querySelectorAll<HTMLButtonElement>("#start [data-map]")];
+function showMapMode(): void {
+  for (const b of mapButtons) {
+    const on = b.dataset.map === mapMode;
+    b.setAttribute("aria-checked", on ? "true" : "false");
+    b.classList.toggle("secondary", !on);
+  }
+  $("map-note").textContent = MAP_NOTE[mapMode];
+}
+for (const b of mapButtons) {
+  b.addEventListener("click", () => {
+    const m = MAP_MODES.find((v) => v === b.dataset.map);
+    if (m === undefined) return;
+    mapMode = m;
+    saveMapMode(m);
+    showMapMode();
+  });
+}
+showMapMode();
+
 /** This game's opponent and time limit, in words, for the lab's result and log. */
-function gameText(level: AiDifficulty, maxTicks: number, enemyAi: boolean): string {
-  const who = enemyAi ? `電腦${DIFFICULTY_LABEL[level]}` : "對手不動（測試）";
+function gameText(level: AiDifficulty, maxTicks: number, enemyAi: boolean, map: MapMode, watch: boolean): string {
+  const who = watch ? `電腦${DIFFICULTY_LABEL[level]}對電腦（觀戰）` : enemyAi ? `電腦${DIFFICULTY_LABEL[level]}` : "對手不動（測試）";
   const limit = maxTicks === 0 ? "沒有時間上限" : `時間上限 ${maxTicks / TICKS_PER_SECOND / 60} 分鐘`;
-  return `這局：${who}、${limit}`;
+  return `這局：${who}、${MAP_LABEL[map]}、${limit}`;
 }
 
 const env = (scenario: ScenarioName, about: string) => () => ({
@@ -110,7 +133,8 @@ function keepLog(g: Game): Promise<void> {
   const already = keeping.get(g);
   if (already !== undefined) return already;
   const init = g.initSent;
-  if (params.mock || init === null || init.scenario === "perf") return Promise.resolve();
+  // Not kept: the fake world, 量測, and watching the computer play itself (test pages).
+  if (params.mock || params.watch || init === null || init.scenario === "perf") return Promise.resolve();
   const over = g.over;
   const ticks = over === null ? g.currentTick() : over.ticks;
   if (over === null && ticks < MIN_ABANDONED_TICKS) return Promise.resolve();
@@ -167,14 +191,16 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   // 重來 leaves the game on screen: keep its record first (D-056).
   if (game !== null) await keepLog(game);
   game?.destroy();
-  const port = params.mock ? new MockPort(params.round7) : createSimPort(showError);
+  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode) : createSimPort(showError);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
   // 30-minute limit, like the determinism check and CI, so the numbers compare between runs.
   const level: AiDifficulty = measure ? "normal" : difficulty;
   const maxTicks = measure ? MAX_TICKS : 0;
   const enemyAi = measure || params.enemyAi;
+  // 地圖 (D-074): the start screen's choice (a test page may ask for one); 量測 always the fixed map, so the numbers compare between runs.
+  const map: MapMode = measure ? "fixed" : (params.map ?? mapMode);
   const g = new Game(app, port, $("hud"), {
-    seed: newSeed(),
+    seed: params.seed ?? newSeed(),
     scenario,
     tps: measure ? SPEED_TPS.normal : (params.tps ?? SPEED_TPS.normal),
     fake: params.mock,
@@ -182,7 +208,9 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     enemyAi,
     difficulty: level,
     maxTicks,
-    env: env(scenario, gameText(level, maxTicks, enemyAi)),
+    map,
+    watch: params.watch && !measure,
+    env: env(scenario, gameText(level, maxTicks, enemyAi, map, params.watch && !measure)),
     checkPort: params.mock ? null : () => createSimPort(showError),
     life: {
       restart: () => void newGame().catch(showError),
@@ -217,8 +245,10 @@ async function continueGame(): Promise<void> {
 function showStart(): void {
   game?.pause();
   hook.screen = "start";
-  // A game is in progress: a new 難度 applies from the next game.
+  // A game is in progress: a new 難度 or 地圖 applies from the next game. That line takes the
+  // place of the note on the stand-in shapes, so the card still fits the phone held sideways.
   $("difficulty-note").hidden = false;
+  $("about-note").hidden = true;
   $("start-game").textContent = "繼續這局";
   $("restart-game").hidden = false;
   $("start").hidden = false;

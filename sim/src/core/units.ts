@@ -370,7 +370,7 @@ export class UnitSystem {
     for (const id of f.buildings) {
       const s = w.building(id);
       if (s < 0 || b.owner[s] === me) continue;
-      const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], BUILDINGS[b.type[s]].size);
+      const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]));
       if (d2 > r2 || d2 > best || (d2 === best && (high ? id < bestId : id > bestId))) continue;
       best = d2;
       bestId = id;
@@ -412,7 +412,7 @@ export class UnitSystem {
     const b = w.buildings.col;
     for (let s = 0; s < w.buildings.count; s++) {
       if (b.owner[s] === me) continue;
-      const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], BUILDINGS[b.type[s]].size);
+      const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]));
       if (d2 > r2) continue;
       const bx = (b.cellX[s] << CELL_SHIFT) + 512;
       const by = (b.cellY[s] << CELL_SHIFT) + 512;
@@ -440,7 +440,7 @@ export class UnitSystem {
     const hostile = (j: number) =>
       u.owner[j] !== me && u.action[j] !== Action.Garrisoned && this.sees(fog, me, u.x[j], u.y[j], n);
     // A mage hiding in a building (round 7) measures the range from the building's edge.
-    const size = from >= 0 ? BUILDINGS[b.type[from]].size : 0;
+    const size = from >= 0 ? w.buildingSize(b.type[from]) : 0;
     const reach = (CANNON.range >> CELL_SHIFT) + 1 + size;
     const blast = (CANNON.radius >> CELL_SHIFT) + 1;
     const cx = from >= 0 ? b.cellX[from] + (size >> 1) : u.x[i] >> CELL_SHIFT;
@@ -515,7 +515,7 @@ export class UnitSystem {
       stand();
       return;
     }
-    const size = BUILDINGS[b.type[bs]].size;
+    const size = w.buildingSize(b.type[bs]);
     if (rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], size) <= WORK_REACH * WORK_REACH) {
       if (b.soldiers[bs] < BUILDINGS[b.type[bs]].holds) {
         b.soldiers[bs]++;
@@ -543,7 +543,7 @@ export class UnitSystem {
     if (u.order[i] === Order.Cast) return;
     const bs = w.building(u.orderTarget[i]);
     if (bs < 0) return;
-    const size = BUILDINGS[b.type[bs]].size;
+    const size = w.buildingSize(b.type[bs]);
     const info = UNITS[u.type[i]];
     const look = (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0;
     if (
@@ -587,7 +587,7 @@ export class UnitSystem {
     const b = w.buildings.col;
     const n = w.size;
     const me = u.owner[i];
-    const size = BUILDINGS[b.type[bs]].size;
+    const size = w.buildingSize(b.type[bs]);
     const r2 = reach * reach;
     let best = r2 + 1;
     let bestSlot = -1;
@@ -811,7 +811,7 @@ export class UnitSystem {
       } else {
         const bs = w.building(tid);
         const b = w.buildings.col;
-        const size = BUILDINGS[b.type[bs]].size;
+        const size = w.buildingSize(b.type[bs]);
         tx = (b.cellX[bs] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
         ty = (b.cellY[bs] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
         d2 = rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], size);
@@ -852,7 +852,7 @@ export class UnitSystem {
           const bs = w.building(tid);
           const b = w.buildings.col;
           steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () =>
-            cellsAround(w, b.cellX[bs], b.cellY[bs], BUILDINGS[b.type[bs]].size),
+            cellsAround(w, b.cellX[bs], b.cellY[bs], w.buildingSize(b.type[bs])),
           );
         }
       } else {
@@ -932,7 +932,7 @@ export class UnitSystem {
     }
     const bs = w.building(tid);
     const b = w.buildings.col;
-    for (const c of cellsAround(w, b.cellX[bs], b.cellY[bs], BUILDINGS[b.type[bs]].size)) {
+    for (const c of cellsAround(w, b.cellX[bs], b.cellY[bs], w.buildingSize(b.type[bs]))) {
       if (this.regions.of(w, c) === here) return -1;
     }
     return here;
@@ -966,9 +966,9 @@ export class UnitSystem {
         const o = b.owner[s];
         const bi = BUILDINGS[b.type[s]];
         if (o === u.owner[i] || o >= PLAYER_COUNT || b.hp[s] <= 0 || bi.walkable) continue;
-        const d = rectDist2(tx, ty, b.cellX[s], b.cellY[s], bi.size);
+        const d = rectDist2(tx, ty, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]));
         if (d >= reach) continue;
-        if (!cellsAround(w, b.cellX[s], b.cellY[s], bi.size).some((k) => this.regions.of(w, k) === here)) continue;
+        if (!cellsAround(w, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s])).some((k) => this.regions.of(w, k) === here)) continue;
         if (blocker < 0 || d < bestD || (d === bestD && b.id[s] < blocker)) {
           blocker = b.id[s];
           bestD = d;
@@ -980,7 +980,7 @@ export class UnitSystem {
     const c = known.cell;
     const best = fight && known.blocker >= 0 ? w.building(known.blocker) : -1;
     if (best >= 0) {
-      const size = BUILDINGS[b.type[best]].size;
+      const size = w.buildingSize(b.type[best]);
       const bx = (b.cellX[best] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
       const by = (b.cellY[best] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
       u.target[i] = b.id[best];
@@ -1214,7 +1214,7 @@ export class UnitSystem {
         continue;
       }
       const arrow = type === BuildingType.MainCity ? MAIN_ARROW : type === BuildingType.TownTower ? TOWER_ARROW : ARROW_TOWER;
-      const size = BUILDINGS[type].size;
+      const size = w.buildingSize(type);
       let best = arrow.range * arrow.range + 1;
       let bestSlot = -1;
       // Slots are in id order: `<=` keeps the last (highest id) of equally near units. A
@@ -1282,7 +1282,7 @@ export class UnitSystem {
       if (dmg === 0) continue;
       b.hp[s] -= dmg;
       b.lastHurt[s] = w.tick;
-      const size = BUILDINGS[b.type[s]].size;
+      const size = w.buildingSize(b.type[s]);
       hurt.push({ owner: b.owner[s], x: (b.cellX[s] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1), y: (b.cellY[s] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1), id: b.id[s] });
     }
     // UnderAttack flag for the snapshot.

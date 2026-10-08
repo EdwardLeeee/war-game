@@ -39,8 +39,13 @@ export interface GameMap {
   /** Centre cell of each player's main city (footprint top-left = centre - 2). */
   spawns: { player: number; cellX: number; cellY: number }[];
   towns: TownSpec[];
-  /** Top-left cell of the big city's tower (2 x 2, on the axis). */
+  /** Top-left cell of the big city's tower (2 x 2, on the axis; see towerSize). */
   tower: { cellX: number; cellY: number };
+  /**
+   * The tower's side in cells. Absent: BUILDINGS[TownTower].size (2). Random maps with adjacent
+   * starts: 3, so that it sits exactly on the one-column midline (D-074, the user wants it 100% fair).
+   */
+  towerSize?: number;
   /** Each player's symmetry frame onto player 0's side (frame.ts): identity, and the x <-> y mirror. */
   frames: Frame[];
   /** Absent: this fixed map. "random": random-map.ts (D-074). */

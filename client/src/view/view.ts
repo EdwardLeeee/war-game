@@ -2,6 +2,10 @@
 // snapshots (for interpolation), the resource-node table rebuilt from the snapshots'
 // change rows, the latest fog and placement grids, and the player's selection. Answers the
 // questions the intent rules ask (input/intent.ts). Never writes simulation state.
+//
+// Towns and rocks are what the player knows of them (D-074): on the fixed map all of them from
+// `ready`; on a random map only those explored, learnt from the snapshots' town rows and from
+// the placement grid, and kept once known.
 
 import type { IntentWorld, Pick } from "../input/intent.ts";
 import {
@@ -16,6 +20,7 @@ import {
   NO_OWNER,
   NODE_STRIDE,
   NodeField as N,
+  PlaceBit,
   type PlacementGrid,
   type Rules,
   type Snapshot,
@@ -23,7 +28,9 @@ import {
   TOWN_STRIDE,
   TownField as T,
   TownFlag,
+  TownSize,
   TownState,
+  Terrain,
   UNIT_STRIDE,
   UnitField as U,
   UnitFlag,
@@ -33,6 +40,9 @@ import { TILE_PX } from "../tuning.ts";
 
 /** World px per fixed-point unit. */
 export const FIXED_TO_PX = TILE_PX / CELL;
+
+/** A town's place on the map, as MapInfo.towns has it. */
+export type TownSpot = MapInfo["towns"][number];
 
 export interface Frame {
   snap: Snapshot;
@@ -55,6 +65,16 @@ export class GameView implements IntentWorld {
   fog: Uint8Array | null = null;
   fogVersion = 0;
   placement: PlacementGrid | null = null;
+  /** Towns the player knows of, by id (D-074: on a random map, those explored). */
+  readonly knownTowns = new Map<number, TownSpot>();
+  /** Bumped when a town becomes known. */
+  townsVersion = 0;
+  /** 1 per cell known to be rock (D-074: on a random map, the explored ones). */
+  readonly rocks: Uint8Array;
+  /** Bumped when a rock becomes known. */
+  rocksVersion = 0;
+  /** learnRocks' cells under a known building, kept between snapshots (it runs on each one). */
+  private built: Uint8Array | null = null;
   selection: { units: number[]; building: number | null } = { units: [], building: null };
   /** A foreign unit, building, node or town the player tapped with nothing of theirs selected. */
   inspected: Pick | null = null;
@@ -66,6 +86,20 @@ export class GameView implements IntentWorld {
     this.map = map;
     this.rules = rules;
     this.nodeAt = new Int32Array(map.size * map.size).fill(-1);
+    this.rocks = new Uint8Array(map.size * map.size);
+    for (const town of map.towns) this.knownTowns.set(town.id, town);
+    // On a random map the terrain is all open ground: rocks come with exploration (learnRocks).
+    if (!this.randomMap) for (let i = 0; i < this.rocks.length; i++) this.rocks[i] = map.terrain[i] === Terrain.Blocked ? 1 : 0;
+  }
+
+  /** A random map (D-074): towns, rocks and the enemy come into view only once explored. */
+  get randomMap(): boolean {
+    return this.map.mode === "random";
+  }
+
+  /** Every town the player knows of, by id. */
+  townList(): TownSpot[] {
+    return [...this.knownTowns.values()].sort((a, b) => a.id - b.id);
   }
 
   push(snap: Snapshot, at: number): void {
@@ -80,6 +114,11 @@ export class GameView implements IntentWorld {
       if (old !== undefined) this.nodeAt[old[N.cellY] * size + old[N.cellX]] = -1;
       this.nodes.set(id, row);
       if (row[N.amount] > 0) this.nodeAt[row[N.cellY] * size + row[N.cellX]] = id;
+      // A node's cell taken for rock before its row came (random map): it is not rock.
+      if (this.rocks[row[N.cellY] * size + row[N.cellX]] === 1) {
+        this.rocks[row[N.cellY] * size + row[N.cellX]] = 0;
+        this.rocksVersion++;
+      }
     }
     if (rows.length > 0) this.nodesVersion++;
     if (snap.fog !== null) {
@@ -87,7 +126,54 @@ export class GameView implements IntentWorld {
       this.fogVersion++;
     }
     if (snap.placement !== null) this.placement = { size, cells: snap.placement };
+    this.learnTowns(snap.towns);
+    if (this.randomMap && snap.placement !== null) this.learnRocks(snap);
     this.pruneSelection();
+  }
+
+  /** Towns explored (D-074): each row carries its place; the radius is the rules' for its size. */
+  private learnTowns(t: Int32Array): void {
+    for (let o = 0; o < t.length; o += TOWN_STRIDE) {
+      const id = t[o + T.id];
+      if (this.knownTowns.has(id)) continue;
+      const size = t[o + T.size] as TownSize;
+      const radius = this.rules.towns?.[size]?.radius ?? (size === TownSize.Large ? 6 : 4);
+      this.knownTowns.set(id, { id, size, cellX: t[o + T.cellX], cellY: t[o + T.cellY], radius });
+      this.townsVersion++;
+    }
+  }
+
+  /**
+   * Rocks explored on a random map (D-074): the placement grid blocks a cell for a rock, a
+   * resource node or a known building; what is neither of the other two is rock. Kept once known
+   * (rocks never move).
+   */
+  private learnRocks(snap: Snapshot): void {
+    const size = this.map.size;
+    const cells = snap.placement;
+    if (cells === null) return;
+    if (this.built === null) this.built = new Uint8Array(size * size);
+    const built = this.built;
+    built.fill(0);
+    const b = snap.buildings;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      const s = this.rules.buildings[b[o + B.type]]?.size ?? 1;
+      for (let y = b[o + B.cellY]; y < b[o + B.cellY] + s; y++) {
+        for (let x = b[o + B.cellX]; x < b[o + B.cellX] + s; x++) if (x >= 0 && y >= 0 && x < size && y < size) built[y * size + x] = 1;
+      }
+    }
+    let changed = false;
+    for (let i = 0; i < cells.length; i++) {
+      // A building's cells taken for rock before its row came: they are not rock.
+      if (built[i] === 1 && this.rocks[i] === 1) {
+        this.rocks[i] = 0;
+        changed = true;
+      }
+      if (this.rocks[i] === 1 || (cells[i] & PlaceBit.Blocked) === 0 || this.nodeAt[i] >= 0 || built[i] === 1) continue;
+      this.rocks[i] = 1;
+      changed = true;
+    }
+    if (changed) this.rocksVersion++;
   }
 
   get header(): Int32Array | null {
@@ -192,7 +278,7 @@ export class GameView implements IntentWorld {
       if (node >= 0) return this.nodePick(node);
     }
 
-    for (const town of this.map.towns) {
+    for (const town of this.knownTowns.values()) {
       const tx = (town.cellX + 0.5) * TILE_PX;
       const ty = (town.cellY + 0.5) * TILE_PX;
       const tr = town.radius * TILE_PX;
@@ -290,12 +376,13 @@ export class GameView implements IntentWorld {
   }
 
   /**
-   * The map's towns with what we know of them now: the snapshot's row (in fog, as last seen),
-   * or `state` null for a town never explored (開局提示, 離民兵太近).
+   * The towns we know of with what we know of them now: the snapshot's row (in fog, as last
+   * seen), or `state` null for a town never explored (開局提示, 離民兵太近; fixed map only, as
+   * a random map knows a town only once explored).
    */
   townsNow(): { id: number; size: number; cellX: number; cellY: number; radius: number; state: number | null; owner: number; militia: number }[] {
     const t = this.curr?.snap.towns;
-    return this.map.towns.map((info) => {
+    return this.townList().map((info) => {
       const o = this.townRow(info.id);
       if (t === undefined || o < 0) return { ...info, state: null, owner: NO_OWNER, militia: 0 };
       return { ...info, state: t[o + T.state], owner: t[o + T.owner], militia: t[o + T.militia] };

@@ -166,7 +166,7 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
         // A person's barracks, ranges and mage halls train on their own; an AI's do not (round 6, D-054).
         runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty, autoTrain: aiFlags.map((a) => !a), map });
         encoder = new SnapshotEncoder(runner.game.w.nodeAmount.length);
-        post({ type: "ready", protocol: PROTOCOL_VERSION, player: human, map: mapInfo(runner.game.w.map, human), rules: rules() });
+        post({ type: "ready", protocol: PROTOCOL_VERSION, player: human, map: mapInfo(runner.game.w.map, human), rules: rules(runner.game.w.map) });
         sendSnapshot(0);
         nextAt = now() + 1000 / tps;
         schedule();
