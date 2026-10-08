@@ -114,11 +114,11 @@ export class Fog {
         const id = b.id[s];
         while (oi < old.length && old[oi][0] < id) {
           const m = old[oi++];
-          if (!footprintVisible(m[3], m[4], BUILDINGS[m[2]].size)) next.push(m);
+          if (!footprintVisible(m[3], m[4], w.buildingSize(m[2]))) next.push(m);
         }
         const keepOld = oi < old.length && old[oi][0] === id ? old[oi++] : null;
         if (b.owner[s] === p) continue;
-        if (footprintVisible(b.cellX[s], b.cellY[s], BUILDINGS[b.type[s]].size)) {
+        if (footprintVisible(b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]))) {
           next.push([id, b.owner[s], b.type[s], b.cellX[s], b.cellY[s], b.hp[s]]);
         } else if (keepOld !== null) {
           next.push(keepOld);
@@ -126,7 +126,7 @@ export class Fog {
       }
       while (oi < old.length) {
         const m = old[oi++];
-        if (!footprintVisible(m[3], m[4], BUILDINGS[m[2]].size)) next.push(m);
+        if (!footprintVisible(m[3], m[4], w.buildingSize(m[2]))) next.push(m);
       }
       this.memory[p] = next;
 

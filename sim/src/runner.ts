@@ -51,7 +51,7 @@ export class Runner {
       // view.ts mapInfo(map, p). Remove with war-game-ai's scouting PR. Until then a person
       // cannot play a random map (worker.ts), and AI-vs-AI games on random maps only check
       // whether the maps are fair.
-      const know = { map: this.game.w.map, rules: rules(), frame: this.game.w.map.frames[p], maxTicks: this.maxTicks, difficulty: this.difficulty[p] };
+      const know = { map: this.game.w.map, rules: rules(this.game.w.map), frame: this.game.w.map.frames[p], maxTicks: this.maxTicks, difficulty: this.difficulty[p] };
       this.ais.push(cfg.replay === undefined && cfg.ai[p] ? createAi(p, cfg.seed, know, slot, cfg.styles?.[slot]) : null);
     }
     if (cfg.replay !== undefined) for (const c of cfg.replay) this.game.push(c);

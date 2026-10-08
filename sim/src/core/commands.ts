@@ -554,7 +554,7 @@ export function castDist2(w: World, s: number, fx: number, fy: number): number {
     const bs = w.building(inside(w, s));
     if (bs >= 0) {
       const b = w.buildings.col;
-      return rectDist2(fx, fy, b.cellX[bs], b.cellY[bs], BUILDINGS[b.type[bs]].size);
+      return rectDist2(fx, fy, b.cellX[bs], b.cellY[bs], w.buildingSize(b.type[bs]));
     }
   }
   const dx = fx - u.x[s];

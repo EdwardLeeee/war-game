@@ -190,7 +190,7 @@ function play(seed: number): GameRecord {
   const w = g.w;
   const map = w.map;
   // What the screen gets (view.ts mapInfo): on a random map its own main city only.
-  const player = createScriptedPlayer(0, { map: mapInfo(map, 0), rules: rules(), frame: map.frames[0] }, plan);
+  const player = createScriptedPlayer(0, { map: mapInfo(map, 0), rules: rules(map), frame: map.frames[0] }, plan);
   const home = map.spawns[0];
   const u = w.units.col;
   const b = w.buildings.col;
