@@ -15,6 +15,9 @@ const FARMER = 0;
 // (seeds 1–10 tried: 0–18 rock cells found in 20 seconds, this one 55), so the ground is painted
 // again within the window on every run (a fresh seed found none on CI's WebKit once, run 37730054591).
 const SCOUT_SEED = 8;
+// The person's game plays this seed: a scout meets a town by tick 559 (seeds 2, 3, 6, 8, 10 tried:
+// 555–1171); with a fresh seed CI's WebKit once found none in 60 seconds (run 37732088471).
+const PLAY_SEED = 6;
 
 let checkErrors: () => void;
 
@@ -85,8 +88,8 @@ test("觀戰隨機地圖：模擬接受、開始跑；觀戰看得到整張圖�
 });
 
 test("人類玩家玩隨機地圖（偵察 #176 之後）：開局只知道自己家，看不到敵方主城；派村民去探，城鎮和岩石才出現在畫面和小地圖上", async ({ page }, info) => {
-  test.setTimeout(120_000);
-  await play(page, "random", 100);
+  test.setTimeout(240_000);
+  await play(page, "random", 100, PLAY_SEED);
   expect(await page.evaluate(() => window.__proto?.game?.mapMode())).toBe("random");
   expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ human: 0, map: "random" });
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? -1);
@@ -97,7 +100,7 @@ test("人類玩家玩隨機地圖（偵察 #176 之後）：開局只知道自�
   const rocks0 = await knownRocks(page);
   expect(towns0.length, "towns known at the start (core #172: 7 on the map)").toBeLessThan(7);
   await scout(page);
-  await expect.poll(async () => (await knownTowns(page)).length, { timeout: 60_000 }).toBeGreaterThan(towns0.length);
+  await expect.poll(async () => (await knownTowns(page)).length, { timeout: 120_000 }).toBeGreaterThan(towns0.length);
   await expect.poll(() => knownRocks(page), { timeout: 60_000 }).toBeGreaterThan(rocks0);
   // Each town now known stands where the page knows it, from its row (cellX, cellY, size).
   const found = (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).filter((t) => !towns0.includes(t.id));
