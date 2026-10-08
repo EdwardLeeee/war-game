@@ -143,7 +143,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   const seenNow = new Set<number>();
   for (let s = 0; s < w.buildings.count; s++) {
     const own = b.owner[s] === player;
-    const size = BUILDINGS[b.type[s]].size;
+    const size = w.buildingSize(b.type[s]);
     let visible = own || player === null;
     if (!visible) {
       for (let y = b.cellY[s]; y < b.cellY[s] + size && !visible; y++) {
@@ -320,7 +320,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     if (amount > 0) placement[w.nodeY[k] * n + w.nodeX[k]] |= PlaceBit.Blocked;
   }
   for (const row of rows) {
-    const size = BUILDINGS[row[BuildingField.type]].size;
+    const size = w.buildingSize(row[BuildingField.type]);
     const x0 = row[BuildingField.cellX];
     const y0 = row[BuildingField.cellY];
     for (let y = y0; y < y0 + size; y++) for (let x = x0; x < x0 + size; x++) placement[y * n + x] |= PlaceBit.Blocked;

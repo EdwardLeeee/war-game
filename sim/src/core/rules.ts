@@ -127,10 +127,17 @@ export const MAX_POPULATION = 120;
 /** Queue entries fit 4 bits each in BuildingField.queuePacked. */
 export const QUEUE_MAX = 7;
 
-export function rules(): Required<Rules> {
+/**
+ * The rules a game sends (`ready`) and gives its AIs. With a map whose big city's tower has its
+ * own size (GameMap.towerSize: 3 x 3 on random maps with adjacent starts, D-074), the tower's
+ * row says so; every other value is the same for every game.
+ */
+export function rules(map?: { towerSize?: number }): Required<Rules> {
+  const towerSize = map?.towerSize;
+  const same = towerSize === undefined || towerSize === BUILDINGS[BuildingType.TownTower].size;
   return {
     units: UNITS,
-    buildings: BUILDINGS,
+    buildings: same ? BUILDINGS : BUILDINGS.map((b) => (b.type === BuildingType.TownTower ? { ...b, size: towerSize } : b)),
     multipliers: MULTIPLIERS,
     mageCap: MAGE_CAP,
     maxPopulation: MAX_POPULATION,

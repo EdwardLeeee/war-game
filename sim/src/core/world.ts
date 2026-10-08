@@ -219,12 +219,15 @@ export class World {
    * spawn cell on the fixed map, the same cell of the mirror image on both sides of a random one.
    */
   homes: { cellX: number; cellY: number }[] = [];
+  /** The big city's tower's side on this map (GameMap.towerSize); every other building's is in BUILDINGS. */
+  readonly towerSize: number;
   /** Winner once the game is over (-1 = draw), or -2 while running. */
   winner = -2;
   endReason = -1;
 
   constructor(map: GameMap) {
     this.map = map;
+    this.towerSize = map.towerSize ?? BUILDINGS[BuildingType.TownTower].size;
     const n = (this.size = map.size);
     this.grid = new Uint8Array(n * n);
     this.buildingAt = new Int32Array(n * n).fill(-1);
@@ -352,15 +355,21 @@ export class World {
     return id;
   }
 
+  /** A building type's side in cells on this map: BUILDINGS, except the big city's tower (towerSize). */
+  buildingSize(type: number): number {
+    return type === BuildingType.TownTower ? this.towerSize : BUILDINGS[type].size;
+  }
+
   /**
    * Marks or clears a building's footprint: buildingAt always, the grid's BLOCK_BUILDING
    * bit unless the building is walkable (farms).
    */
   setFootprint(id: number, type: BuildingType, cellX: number, cellY: number, on: boolean): void {
     const info = BUILDINGS[type];
+    const size = this.buildingSize(type);
     const n = this.size;
-    for (let y = cellY; y < cellY + info.size; y++) {
-      for (let x = cellX; x < cellX + info.size; x++) {
+    for (let y = cellY; y < cellY + size; y++) {
+      for (let x = cellX; x < cellX + size; x++) {
         this.buildingAt[y * n + x] = on ? id : -1;
         if (info.walkable) continue;
         if (on) this.grid[y * n + x] |= BLOCK_BUILDING;

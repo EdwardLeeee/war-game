@@ -7,8 +7,8 @@ import { type Frame, IDENTITY, MIRROR_XY, footprintCentre, fromCanon, toCanon } 
 import { Game } from "../src/core/game.ts";
 import { generateMap } from "../src/core/map.ts";
 import { generateRandomMap, RANDOM_MAP, type RandomMap } from "../src/core/random-map.ts";
-import { TOWNS } from "../src/core/rules.ts";
-import { CELL, CELL_SHIFT, NODE_STRIDE, NodeField, NodeKind, Order, PlaceBit, Terrain, TOWN_STRIDE, TownField, TownSize, UnitType } from "../src/protocol.ts";
+import { BUILDINGS, rules, TOWNS } from "../src/core/rules.ts";
+import { BuildingType, CELL, CELL_SHIFT, NEUTRAL, NODE_STRIDE, NodeField, NodeKind, Order, PlaceBit, Terrain, TOWN_STRIDE, TownField, TownSize, UnitType } from "../src/protocol.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { cmd, put, slotOf } from "./helpers.ts";
 
@@ -69,10 +69,10 @@ test("both sides see the same map through their frames", () => {
       const set = new Set(posts.slice(0, k).map((p) => `${p[0]},${p[1]}`));
       for (const [dx, dy] of posts.slice(0, k)) assert.ok(set.has(`${a * dx + b * dy},${cc * dx + d * dy}`), `seed ${m.seed}: post ${dx},${dy} of the first ${k}`);
     }
-    // The big city's tower: its own mirror image on diagonal maps, one cell off on adjacent ones.
-    const t0 = rectCanon(f0, m.tower.cellX, m.tower.cellY, 2).split(",").map(Number);
-    const t1 = rectCanon(f1, m.tower.cellX, m.tower.cellY, 2).split(",").map(Number);
-    assert.equal(Math.abs(t0[0] - t1[0]) + Math.abs(t0[1] - t1[1]), m.layout === "diagonal" ? 0 : 1, `seed ${m.seed}: tower`);
+    // The big city's tower is its own mirror image: 2 x 2 on the diagonal, 3 x 3 on a vertical midline.
+    const ts = m.towerSize ?? 2;
+    assert.equal(ts, m.layout === "diagonal" ? 2 : 3, `seed ${m.seed}: tower size`);
+    assert.equal(rectCanon(f0, m.tower.cellX, m.tower.cellY, ts), rectCanon(f1, m.tower.cellX, m.tower.cellY, ts), `seed ${m.seed}: tower`);
   }
   assert.deepEqual([...layouts].sort(), ["adjacent", "diagonal"]);
 });
@@ -255,4 +255,49 @@ test("on an adjacent random map, a unit and its mirror image walk mirror-image p
   }
   assert.ok(moved > 100, "it really travelled");
   assert.ok(Math.abs((u.x[slotOf(g, a)] >> CELL_SHIFT) - to.x) <= 6, "and got there");
+});
+
+test("at the start every building and every unit has its mirror image across the axis (both layouts)", () => {
+  const seeds = [1, 2, 3, 4, 5, 6, 7, 8];
+  const adjacent = seeds.find((s) => generateRandomMap(s).layout === "adjacent")!;
+  const diagonal = seeds.find((s) => generateRandomMap(s).layout === "diagonal")!;
+  for (const seed of [adjacent, diagonal]) {
+    const g = new Game({ seed, scenario: "standard", map: "random" });
+    const w = g.w;
+    const m = w.map as RandomMap;
+    const other = (o: number) => (o === NEUTRAL ? NEUTRAL : 1 - o);
+    // Buildings: type, owner (players swapped) and footprint.
+    const b = w.buildings.col;
+    const rect = (x: number, y: number, size: number) => {
+      const p = toCanon(m.mirror, x, y);
+      const q = toCanon(m.mirror, x + size - 1, y + size - 1);
+      return `${Math.min(p.u, q.u)},${Math.min(p.v, q.v)}`;
+    };
+    const buildings = new Set<string>();
+    for (let s = 0; s < w.buildings.count; s++) buildings.add(`${b.type[s]}:${b.owner[s]}:${b.cellX[s]},${b.cellY[s]}`);
+    assert.ok(buildings.size >= 3, "two main cities and the tower");
+    for (let s = 0; s < w.buildings.count; s++) {
+      const want = `${b.type[s]}:${other(b.owner[s])}:${rect(b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]))}`;
+      assert.ok(buildings.has(want), `seed ${seed} (${m.layout}): mirror image of building ${b.id[s]} (${want})`);
+    }
+    // The tower blocks exactly its footprint, and the rules say how big it is.
+    const size = m.layout === "adjacent" ? 3 : 2;
+    assert.equal(w.buildingSize(BuildingType.TownTower), size);
+    assert.equal(rules(m).buildings[BuildingType.TownTower].size, size);
+    assert.equal(rules(m).buildings[BuildingType.TownTower].hp, BUILDINGS[BuildingType.TownTower].hp, "same hp");
+    let towerCells = 0;
+    for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.TownTower) for (let i = 0; i < w.buildingAt.length; i++) if (w.buildingAt[i] === b.id[s]) towerCells++;
+    assert.equal(towerCells, size * size);
+    // Units: farmers and every town's militia at mirror-image positions.
+    const u = w.units.col;
+    const units = new Set<string>();
+    for (let s = 0; s < w.units.count; s++) units.add(`${u.type[s]}:${u.owner[s]}:${u.x[s]},${u.y[s]}`);
+    let militia = 0;
+    for (let s = 0; s < w.units.count; s++) {
+      const p = mirrorPos(m.mirror, u.x[s], u.y[s]);
+      assert.ok(units.has(`${u.type[s]}:${other(u.owner[s])}:${p.x},${p.y}`), `seed ${seed} (${m.layout}): mirror image of unit ${u.id[s]}`);
+      if (u.type[s] === UnitType.Militia) militia++;
+    }
+    assert.equal(militia, 6 * 6 + 12, "6 small towns of 6 and the big city's 12");
+  }
 });
