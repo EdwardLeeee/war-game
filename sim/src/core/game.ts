@@ -28,7 +28,7 @@ import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, BUILDINGS, CAVALRY, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAVALRY, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -174,7 +174,7 @@ export class Game {
         const vis = this.fog.visible[p];
         let sees = ts >= 0 && vis[(u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT)] === 1;
         if (!sees && bs >= 0) {
-          const size = BUILDINGS[b.type[bs]].size;
+          const size = w.buildingSize(b.type[bs]);
           for (let y = b.cellY[bs]; y < b.cellY[bs] + size && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + size && !sees; x++) sees = vis[y * n + x] === 1;
         }
         if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1] } });

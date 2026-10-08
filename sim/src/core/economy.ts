@@ -91,7 +91,7 @@ export function nodeOpen(w: World, node: number): boolean {
 
 function footprintCells(w: World, bs: number): number[] {
   const b = w.buildings.col;
-  const size = BUILDINGS[b.type[bs]].size;
+  const size = w.buildingSize(b.type[bs]);
   const out: number[] = [];
   for (let y = b.cellY[bs]; y < b.cellY[bs] + size; y++) {
     for (let x = b.cellX[bs]; x < b.cellX[bs] + size; x++) out.push(y * w.size + x);
@@ -103,19 +103,19 @@ function footprintCells(w: World, bs: number): number[] {
 function buildingGoals(w: World, bs: number): () => number[] {
   const b = w.buildings.col;
   if (b.type[bs] === BuildingType.Farm) return () => footprintCells(w, bs);
-  return () => cellsAround(w, b.cellX[bs], b.cellY[bs], BUILDINGS[b.type[bs]].size);
+  return () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.buildingSize(b.type[bs]));
 }
 
 function buildingCentre(w: World, bs: number): [number, number] {
   const b = w.buildings.col;
-  const half = (BUILDINGS[b.type[bs]].size << CELL_SHIFT) >> 1;
+  const half = (w.buildingSize(b.type[bs]) << CELL_SHIFT) >> 1;
   return [(b.cellX[bs] << CELL_SHIFT) + half, (b.cellY[bs] << CELL_SHIFT) + half];
 }
 
 function distToBuilding2(w: World, i: number, bs: number): number {
   const u = w.units.col;
   const b = w.buildings.col;
-  return rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], BUILDINGS[b.type[bs]].size);
+  return rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], w.buildingSize(b.type[bs]));
 }
 
 export type Emit = (to: number, ev: SimEvent) => void;
@@ -426,7 +426,7 @@ export class Economy {
     let bestD = 0;
     for (let s = 0; s < w.buildings.count; s++) {
       if (b.owner[s] !== u.owner[i] || b.progress[s] < 1000 || !BUILDINGS[b.type[s]].accepts.includes(r as Resource)) continue;
-      const d = rectDist2(x, y, b.cellX[s], b.cellY[s], BUILDINGS[b.type[s]].size);
+      const d = rectDist2(x, y, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]));
       if (best < 0 || d < bestD) {
         best = s;
         bestD = d;
@@ -846,7 +846,7 @@ export class Economy {
     const out: number[] = [];
     for (let s = 0; s < w.buildings.count; s++) {
       if (b.owner[s] !== p || b.progress[s] < 1000 || !BUILDINGS[b.type[s]].accepts.includes(r as Resource)) continue;
-      for (const c of cellsAround(w, b.cellX[s], b.cellY[s], BUILDINGS[b.type[s]].size)) out.push(c);
+      for (const c of cellsAround(w, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]))) out.push(c);
     }
     return out;
   }
@@ -991,7 +991,7 @@ export class Economy {
     const u = w.units.col;
     const n = w.size;
     const p = b.owner[bs];
-    const size = BUILDINGS[b.type[bs]].size;
+    const size = w.buildingSize(b.type[bs]);
     const spawn = w.homes[p];
     const rallied = b.rallyX[bs] >= 0;
     const aimX = rallied ? b.rallyX[bs] >> CELL_SHIFT : n >> 1;

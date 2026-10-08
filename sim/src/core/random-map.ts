@@ -9,8 +9,9 @@
 // Towns on the axis (the big city) and the crystal vein are their own mirror images.
 //
 // The side is always odd (129 for "128"), so the midline is a whole column and a town centre
-// on it is exactly between the two starts. The big city's 2 x 2 tower cannot sit on a
-// one-column axis: on adjacent maps it leans one cell to a side the seed picks.
+// on it is exactly between the two starts. A 2 x 2 tower cannot sit on a one-column axis, so on
+// adjacent maps the big city's tower is 3 x 3 (GameMap.towerSize), centred on the town; its hp,
+// range and damage stay the same.
 //
 // Integer maths and the seeded Rng only (sqrt only for the second gold mine's offset, which
 // IEEE 754 defines exactly).
@@ -101,6 +102,7 @@ interface Generated {
   spawns: Pt[];
   towns: { size: TownSize; x: number; y: number }[];
   tower: Pt;
+  towerSize: number;
   M: Frame;
 }
 
@@ -353,10 +355,11 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     if (!nbs.some((nb) => nb >= 0 && seen[nb] === 1) && !interior(kind, n, x, y)) return null;
   }
 
-  // The tower's 2 x 2 footprint: centred on the diagonal; one cell to a seeded side of a vertical axis.
-  const lean = layout === "adjacent" ? rng.below(2) : 1;
-  const tower = { x: large.x - lean, y: large.y - 1 };
-  return { n, layout, rock, kind, spawns, towns: placed, tower, M };
+  // The tower: 2 x 2 with its centre on the town centre's top-left corner, on the diagonal; 3 x 3
+  // centred on the town centre on a vertical axis. Either way its own mirror image.
+  const towerSize = layout === "adjacent" ? 3 : 2;
+  const tower = { x: large.x - 1, y: large.y - 1 };
+  return { n, layout, rock, kind, spawns, towns: placed, tower, towerSize, M };
 }
 
 function veinCells(layout: Layout, p: Pt): [number, number][] {
@@ -413,7 +416,7 @@ function orient(seed: number, g: Generated, orientation: number, across: boolean
     const r = toCanon(R, t.x, t.y);
     return { id, size: t.size, cellX: r.u, cellY: r.v, radius: TOWNS[t.size].radius };
   });
-  const tw = rectImage(R, g.tower.x, g.tower.y, 2);
+  const tw = rectImage(R, g.tower.x, g.tower.y, g.towerSize);
   const flip: Frame = g.layout === "adjacent" && across ? { m: [0, -1, -1, 0], t: [n - 1, n - 1] } : { m: [1, 0, 0, 1], t: [0, 0] };
   const back = then(invert(R), flip);
   const [a, b, c, d] = R.m;
@@ -426,6 +429,7 @@ function orient(seed: number, g: Generated, orientation: number, across: boolean
     spawns,
     towns,
     tower: { cellX: tw.x, cellY: tw.y },
+    towerSize: g.towerSize,
     frames: [back, then(then(invert(R), g.M), flip)],
     mode: "random",
     posts,
