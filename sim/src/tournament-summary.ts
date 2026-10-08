@@ -5,8 +5,9 @@
 // 35–65%, draws at most 10% (for now 25%, see GATES), every replay matching; when the two
 // AIs play different difficulties, the stronger one wins at least 80% of the decided games
 // (normal against easy, round 2), or 65% (hard against normal, D-052). Exits 1 when a gate
-// fails. Random maps (D-074): also by layout (diagonal, adjacent); the AI scouts (ai.ts); only
-// the replays gate (tournament-summary.ts), the rest is for reference.
+// fails. Random maps (D-074): also by layout (diagonal, adjacent). Their gates (D-076): every
+// replay matching and each spawn's win rate within 35–65% (whether the maps are fair), whatever
+// the difficulties; the stronger AI's share, draws and game lengths are listed only.
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -136,8 +137,9 @@ if (replayFail > 0) failures.push(`${replayFail} 場重播的雜湊不同`);
 if (mixed.length > 0 && strongerRate < strongerMin) failures.push(`${stronger.name} 的勝率 ${pct(strongerRate)} 低於 ${pct(strongerMin)}`);
 // Random maps: only the replays gate; the other numbers are for reference (D-074).
 const random = games.some((g) => g.map === "random");
-const reference = random ? failures.filter((f) => !f.includes("重播")) : [];
-if (random) failures.splice(0, failures.length, ...failures.filter((f) => f.includes("重播")));
+const gated = (f: string) => f.includes("重播") || f.includes("出生點勝率");
+const reference = random ? failures.filter((f) => !gated(f)) : [];
+if (random) failures.splice(0, failures.length, ...failures.filter(gated));
 const LAYOUT_NAMES: Record<string, string> = { diagonal: "對角出生", adjacent: "相鄰出生" };
 const layouts = random
   ? ["diagonal", "adjacent"].map((layout) => {
@@ -177,7 +179,9 @@ const perSideGame = (f: (p: GameResult["perPlayer"][number]) => number) => (game
 const farmerDeaths = [1, 2, 3, 4, 0].map((k) => perSideGame((p) => p.farmersLostBy?.[k] ?? 0));
 const revolts = sum((g) => (g.perPlayer[0].revolts ?? 0) + (g.perPlayer[1].revolts ?? 0));
 const lines = [
-  random ? `### AI 對 AI，隨機地圖：${games.length} 場（門檻只當參考，只有重播擋）` : `### AI 對 AI：${games.length} 場`,
+  random
+    ? `### AI 對 AI，隨機地圖：${games.length} 場（擋：重播、出生點勝率 35–65%；${mixed.length === 0 ? "" : "強的一方勝率、"}平手、局長只列，D-076）`
+    : `### AI 對 AI：${games.length} 場`,
   "",
   ...(random
     ? [
@@ -224,8 +228,8 @@ const lines = [
   `- 第一次攻下城鎮：中位數第 ${towns.firstCaptureMinute.median.toFixed(1)} 分鐘，平均第 ${towns.firstCaptureMinute.mean.toFixed(1)} 分鐘（${towns.firstCaptureMinute.games} 局有攻下）。`,
   `- 翻盤：第一座城鎮被對方先拿下的一方，最後贏了 ${comebacks}／${contested.length} 局（${contested.length === 0 ? "—" : pct(comebacks / contested.length)}；分出勝負、有人拿下城鎮的局）。`,
   "",
-  failures.length === 0 ? (random ? "重播全部相同。" : "門檻全部通過。") : `**沒通過：** ${failures.join("；")}`,
-  ...(reference.length === 0 ? [] : [`參考（隨機地圖不擋）：${reference.join("；")}`]),
+  failures.length === 0 ? "門檻全部通過。" : `**沒通過：** ${failures.join("；")}`,
+  ...(reference.length === 0 ? [] : [`參考（隨機地圖不擋，D-076）：${reference.join("；")}`]),
 ];
 console.log(lines.join("\n"));
 if (failures.length > 0) process.exit(1);
