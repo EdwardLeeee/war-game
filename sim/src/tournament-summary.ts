@@ -5,9 +5,8 @@
 // 35–65%, draws at most 10% (for now 25%, see GATES), every replay matching; when the two
 // AIs play different difficulties, the stronger one wins at least 80% of the decided games
 // (normal against easy, round 2), or 65% (hard against normal, D-052). Exits 1 when a gate
-// fails. Random maps (D-074): also by layout (diagonal, adjacent); the AI still knows the
-// whole map there (runner.ts, temporary), so only the replay gate counts and the rest is for
-// reference (whether the maps are fair).
+// fails. Random maps (D-074): also by layout (diagonal, adjacent); the AI scouts (ai.ts); only
+// the replays gate (tournament-summary.ts), the rest is for reference.
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -178,7 +177,7 @@ const perSideGame = (f: (p: GameResult["perPlayer"][number]) => number) => (game
 const farmerDeaths = [1, 2, 3, 4, 0].map((k) => perSideGame((p) => p.farmersLostBy?.[k] ?? 0));
 const revolts = sum((g) => (g.perPlayer[0].revolts ?? 0) + (g.perPlayer[1].revolts ?? 0));
 const lines = [
-  random ? `### AI 對 AI，隨機地圖：${games.length} 場（電腦暫時知道完整地圖，只看地圖公不公平）` : `### AI 對 AI：${games.length} 場`,
+  random ? `### AI 對 AI，隨機地圖：${games.length} 場（門檻只當參考，只有重播擋）` : `### AI 對 AI：${games.length} 場`,
   "",
   ...(random
     ? [

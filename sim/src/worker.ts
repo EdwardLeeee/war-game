@@ -163,8 +163,6 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
         if (!difficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad difficulty ${msg.difficulty}`);
         const map = msg.map ?? "fixed";
         if (!(MAP_MODES as readonly string[]).includes(map)) throw new Error(`bad map ${msg.map}`);
-        // The AI knows the whole random map until it can scout (runner.ts), so no person plays one yet (D-074).
-        if (map === "random" && human !== null) throw new Error("random maps are AI against AI only until the AI scouts (D-074)");
         // A person's barracks, ranges and mage halls train on their own; an AI's do not (round 6, D-054).
         runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty, autoTrain: aiFlags.map((a) => !a), map });
         encoder = new SnapshotEncoder(runner.game.w.nodeAmount.length);
