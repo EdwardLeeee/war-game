@@ -93,6 +93,8 @@ export const MOCK_RULES: Rules = {
     // Round 7 (D-061): shown only while `features.towers` is on.
     buildingInfo(BuildingType.ArrowTower, 500, 2, cost(0, 100, 50), { sight: 8, holds: 3 }),
     buildingInfo(BuildingType.Stable, 500, 3, cost(0, 150, 50), { trains: [UnitType.Cavalry] }),
+    // D-080: shown only while `features.outpost` is on.
+    buildingInfo(BuildingType.Outpost, 400, 2, cost(0, 50, 0), { sight: 10 }),
   ],
   // The simulation's damage table, so 兵種相剋 reads what the game plays.
   multipliers: rules().multipliers,
@@ -110,6 +112,14 @@ export const MOCK_RULES_R7: Rules = {
   towerReach: rules().towerReach,
   towns: rules().towns,
   plunderRecovery: { startPermille: 250, ticks: 12000 },
+};
+
+/** `?r7=1&outpost=1`: round 7's and the outpost's switches on (D-080), with the simulation's values. */
+export const MOCK_RULES_OUTPOST: Rules = {
+  ...MOCK_RULES_R7,
+  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true },
+  outpost: rules().outpost,
+  towerReach: { ...(rules().towerReach ?? { mainCity: 8, town: 2 }), outpost: rules().towerReach?.outpost ?? 6 },
 };
 
 /** Cells from a building's centre within which a soldier on its way slips inside. */
@@ -136,6 +146,8 @@ interface MUnit {
   inside: number;
   /** Inside, not drawn (action Garrisoned). */
   hidden: boolean;
+  /** D-080: the outpost it stands guard at (or walks to, order Post), else -1. */
+  post?: number;
 }
 
 interface MBuilding {
@@ -154,6 +166,8 @@ interface MBuilding {
   queueProgress: number;
   /** An enemy building with someone inside (round 7): its Occupied flag while in view. */
   occupied: boolean;
+  /** An outpost holding (D-080, `outpost_mode`): its Hold flag. */
+  hold?: boolean;
 }
 
 /** The fake world trains a unit in 3 seconds, so tests do not wait. */
@@ -202,6 +216,8 @@ export class MockPort implements SimPort {
   private recall = false;
   private over = false;
   private readonly round7: boolean;
+  /** `?outpost=1` (with round 7): outposts on (D-080). */
+  private readonly outpost: boolean;
   private readonly rules: Rules;
   /**
    * The same layout as a random map (D-074, sim/PROTOCOL.md): `ready` tells only our own home,
@@ -209,10 +225,11 @@ export class MockPort implements SimPort {
    */
   private readonly randomMap: boolean;
 
-  /** `round7`: `?r7=1`, round 7's rules on. `map`: `?map=random` plays this layout as a random map. */
-  constructor(round7 = false, map: MapMode = "fixed") {
-    this.round7 = round7;
-    this.rules = round7 ? MOCK_RULES_R7 : MOCK_RULES;
+  /** `round7`: `?r7=1`, round 7's rules on. `map`: `?map=random` plays this layout as a random map. `outpost`: `?outpost=1`, outposts too (D-080). */
+  constructor(round7 = false, map: MapMode = "fixed", outpost = false) {
+    this.round7 = round7 || outpost;
+    this.outpost = outpost;
+    this.rules = outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
     this.randomMap = map === "random";
   }
 
@@ -329,6 +346,11 @@ export class MockPort implements SimPort {
     if (this.round7) this.building(FOE, BuildingType.ArrowTower, 26, 63).occupied = true;
     // Round 7: our stable, training on its own like the barracks (D-054).
     if (this.round7) this.building(ME, BuildingType.Stable, 14, 70).flags = BuildingFlag.AutoTrain;
+    // D-080: our outpost north of the barracks, and the enemy's, holding, by its barracks.
+    if (this.outpost) {
+      this.building(ME, BuildingType.Outpost, 12, 66);
+      this.building(FOE, BuildingType.Outpost, 31, 61).hold = true;
+    }
 
     const town = (size: TownSize, cx: number, cy: number, state: TownState, owner: number, timer = 0, total = 0, militia = 0) => {
       const t: MTown = { id: this.towns.length, size, cx, cy, radius: size === TownSize.Large ? 6 : 4, state, owner, timer, timerTotal: total, militia, plundered: false, income: 1000 };
@@ -423,7 +445,8 @@ export class MockPort implements SimPort {
           u.x = u.target.x;
           u.y = u.target.y;
           u.target = null;
-          if (u.order !== Order.Garrison) u.order = Order.None;
+          // On guard at an outpost (D-080) or hiding, the order stays.
+          if (u.order !== Order.Garrison && u.order !== Order.Post) u.order = Order.None;
           if (u.type === UnitType.Farmer) u.flags |= UnitFlag.IdleFarmer;
         } else {
           u.x += Math.round((dx * STEP) / d);
@@ -489,6 +512,16 @@ export class MockPort implements SimPort {
       const s = MOCK_RULES.buildings[b.type].size;
       for (let y = b.cy - reach.mainCity; y < b.cy + s + reach.mainCity; y++) {
         for (let x = b.cx - reach.mainCity; x < b.cx + s + reach.mainCity; x++) if (x >= 0 && y >= 0 && x < SIZE && y < SIZE) cells[y * SIZE + x] |= PlaceBit.TowerLand;
+      }
+    }
+    // D-080: and within `towerReach.outpost` of our finished outposts.
+    if (this.outpost && reach.outpost !== undefined) {
+      for (const b of this.buildings) {
+        if (b.owner !== ME || b.type !== BuildingType.Outpost || b.progress < 1000) continue;
+        const s = MOCK_RULES.buildings[b.type].size;
+        for (let y = b.cy - reach.outpost; y < b.cy + s + reach.outpost; y++) {
+          for (let x = b.cx - reach.outpost; x < b.cx + s + reach.outpost; x++) if (x >= 0 && y >= 0 && x < SIZE && y < SIZE) cells[y * SIZE + x] |= PlaceBit.TowerLand;
+        }
       }
     }
     for (const t of this.towns) {
@@ -580,7 +613,7 @@ export class MockPort implements SimPort {
       units[o + U.facing] = u.facing;
       units[o + U.carryKind] = -1;
       units[o + U.order] = u.cast > 0 ? Order.Cast : u.order;
-      units[o + U.orderTarget] = u.order === Order.Garrison ? u.inside : u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
+      units[o + U.orderTarget] = u.order === Order.Garrison ? u.inside : u.order === Order.Post ? (u.post ?? -1) : u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
       units[o + U.stance] = u.stance;
       units[o + U.castProgress] = u.cast;
       units[o + U.flags] = u.flags;
@@ -608,7 +641,10 @@ export class MockPort implements SimPort {
       const soldiers = b.owner === ME ? this.units.filter((u) => u.hidden && u.inside === b.id).length : 0;
       buildings[o + B.soldiers] = soldiers;
       const occupied = soldiers > 0 || b.occupied ? BuildingFlag.Occupied : 0;
-      buildings[o + B.flags] = b.owner !== ME && !this.visible(b.cx, b.cy) ? BuildingFlag.Remembered : b.owner === ME ? b.flags | full | occupied : occupied;
+      // D-080: spearmen posted at our outpost, those on their way included; Hold on every outpost in view.
+      buildings[o + B.posted] = b.owner === ME && b.type === BuildingType.Outpost ? this.units.filter((u) => u.post === b.id && u.hp > 0).length : 0;
+      const hold = b.type === BuildingType.Outpost && b.hold === true ? BuildingFlag.Hold : 0;
+      buildings[o + B.flags] = b.owner !== ME && !this.visible(b.cx, b.cy) ? BuildingFlag.Remembered : b.owner === ME ? b.flags | full | occupied | hold : occupied | hold;
     });
 
     const known = this.towns.filter((t) => this.fog[t.cy * SIZE + t.cx] > 0);
@@ -694,6 +730,8 @@ export class MockPort implements SimPort {
           u.inside = -1;
           u.hidden = false;
         }
+        // D-080: and off his post.
+        if (order !== Order.Post) u.post = -1;
       });
     };
     const reject = (reason: Reject) => this.events.push({ k: "rejected", seq: cmd.seq, reason });
@@ -752,6 +790,45 @@ export class MockPort implements SimPort {
             for (const u of going) u.inside = b.id;
           }
         }
+        break;
+      }
+      // D-080 (sim/PROTOCOL.md 3.4), checked in the protocol's order.
+      case "post": {
+        const list = own(cmd.u);
+        const b = this.buildings.find((v) => v.id === cmd.building);
+        const spears = list.filter((u) => u.type === UnitType.Spearman);
+        if (list.length === 0) reject(Reject.NotOwner);
+        else if (!this.outpost || b === undefined || b.owner !== ME || b.type !== BuildingType.Outpost || b.progress < 1000) reject(Reject.InvalidTarget);
+        else if (spears.length === 0) reject(Reject.NotAvailable);
+        else {
+          const slots = this.rules.outpost?.slots ?? 0;
+          const room = slots - this.units.filter((u) => u.post === b.id && u.hp > 0 && !spears.includes(u)).length;
+          if (room <= 0) reject(Reject.NoRoom);
+          else {
+            const going = spears.sort((a, c) => a.id - c.id).slice(0, room);
+            goTo(going, b.cx - 1, b.cy + 2, Order.Post);
+            for (const u of going) u.post = b.id;
+          }
+        }
+        break;
+      }
+      case "unpost": {
+        const b = this.buildings.find((v) => v.id === cmd.building && v.owner === ME);
+        const off = this.units.filter((u) => b !== undefined && u.post === b.id);
+        if (b === undefined || off.length === 0) reject(Reject.NotAvailable);
+        else {
+          for (const u of off) {
+            u.post = -1;
+            u.order = Order.None;
+            u.target = null;
+          }
+        }
+        break;
+      }
+      case "outpost_mode": {
+        const b = this.buildings.find((v) => v.id === cmd.building && v.owner === ME && v.type === BuildingType.Outpost);
+        if (b === undefined) reject(Reject.InvalidTarget);
+        else b.hold = cmd.hold;
         break;
       }
       case "leave": {

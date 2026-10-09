@@ -29,6 +29,7 @@ import {
   type AiDifficulty,
   BUILDING_STRIDE,
   BuildingField,
+  BuildingFlag,
   BuildingType,
   CELL,
   type CommandBody,
@@ -66,10 +67,11 @@ import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS,
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
-import { features, garrisonTypes, holdsOf } from "./features.ts";
+import { features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
 import { Charges } from "./follow.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn } from "./orders.ts";
+import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
 
@@ -102,6 +104,8 @@ export interface GameOptions {
 
 /** Why a 箭樓 preview is red off TowerLand (round 7, D-061). */
 export const TOWER_LAND_TEXT = "箭樓要蓋在主城或治理的城鎮附近";
+/** With outposts on (D-080), arrow towers may also go by our outposts. */
+export const TOWER_LAND_TEXT_OUTPOST = "箭樓要蓋在主城、治理的城鎮或哨所附近";
 
 /** A tap while every soldier selected is retreating moves the retreat (D-061). */
 export const RETREAT_RETARGET_TEXT = "改撤到這裡，撤到後原地堅守";
@@ -112,6 +116,7 @@ const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   cast: "點地面選晶砲落點",
   rally: "點地面設集結點",
   garrison: GARRISON_PROMPT,
+  post: POST_PROMPT,
 };
 
 export class Game implements GestureHost {
@@ -323,8 +328,8 @@ export class Game implements GestureHost {
     if (view === null) return;
     const wx = (cx + 0.5) * TILE_PX;
     const wy = (cy + 0.5) * TILE_PX;
-    if (this.mode === "garrison") {
-      this.toast(GARRISON_WRONG_TARGET);
+    if (this.mode === "garrison" || this.mode === "post") {
+      this.toast(this.mode === "post" ? POST_WRONG_TARGET : GARRISON_WRONG_TARGET);
       return;
     }
     if (this.mode !== "normal") {
@@ -467,7 +472,7 @@ export class Game implements GestureHost {
     this.army.playerCommand(cmd);
     // 進攻到底 (D-080): another order of his, 堅守 or 躲進去 included, ends it; an attack starts it.
     const named = (cmd as { u?: number | number[] }).u;
-    if (named !== undefined && (cmd.c === "stance" || cmd.c === "garrison" || redirects(cmd))) this.charges.drop(Array.isArray(named) ? named : [named]);
+    if (named !== undefined && (cmd.c === "stance" || cmd.c === "garrison" || cmd.c === "post" || redirects(cmd))) this.charges.drop(Array.isArray(named) ? named : [named]);
     if (cmd.c === "attack") this.charges.start(cmd.u, cmd.target, this.targetCell(cmd.target), this.view?.header?.[H.tick] ?? 0);
     return seq;
   }
@@ -497,7 +502,7 @@ export class Game implements GestureHost {
     if (view === null || u === undefined || tick === undefined) return;
     const unit = (id: number) => {
       const o = view.unitRow(id);
-      if (o < 0 || isHiding(u[o + UnitField.order]) || this.army.isGarrisoned(id)) return null;
+      if (o < 0 || isHiding(u[o + UnitField.order]) || isPosted(u[o + UnitField.order]) || this.army.isGarrisoned(id)) return null;
       return { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL, attacking: u[o + UnitField.order] === Order.Attack };
     };
     for (const o of this.charges.update(tick, unit, (id) => this.targetCell(id))) this.autoCommand({ c: "move", u: o.ids, x: o.x, y: o.y });
@@ -534,8 +539,10 @@ export class Game implements GestureHost {
     const out: ArmyUnit[] = [];
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       const type = u[o + UnitField.type];
-      // Those hiding in a building (round 7) are out of 全軍, 留守 and 自動補兵's drafts (ceo 2026-10-07).
-      if (u[o + UnitField.owner] === view.me && isSoldier(type) && (hiding || !isHiding(u[o + UnitField.order]))) out.push({ id: u[o + UnitField.id], type, x: u[o + UnitField.x], y: u[o + UnitField.y] });
+      // Those hiding in a building (round 7) are out of 全軍, 留守 and 自動補兵's drafts (ceo 2026-10-07);
+      // those posted at an outpost (D-080) out of all of it too, hiding asked for or not.
+      const order = u[o + UnitField.order];
+      if (u[o + UnitField.owner] === view.me && isSoldier(type) && (hiding || !isHiding(order)) && !isPosted(order)) out.push({ id: u[o + UnitField.id], type, x: u[o + UnitField.x], y: u[o + UnitField.y] });
     }
     return out;
   }
@@ -700,7 +707,8 @@ export class Game implements GestureHost {
   /**
    * ＋遠程／＋法師 (D-080: 「箭塔應該是可以點擊然後把弓箭手或是法師放進去」): one soldier of this
    * type called in to hide in this building of ours, by the player's own `garrison` order
-   * (garrison.ts says whom); the message says why nobody came when nobody does.
+   * (garrison.ts says whom); on an outpost, ＋槍兵 posts one (`post`). The message says why nobody
+   * came when nobody does.
    */
   callToHide(building: number, type: number): void {
     const view = this.view;
@@ -711,8 +719,12 @@ export class Game implements GestureHost {
     const kind = b[o + BuildingField.type];
     const holds = holdsOf(view.rules, kind);
     const name = BUILDING_NAME[kind] ?? "建築";
-    if (b[o + BuildingField.soldiers] + this.hidingComing(building) >= holds) {
-      this.depotSay(building, callFullText(name, holds));
+    // 哨所 (D-080): spearmen posted there, those on their way included (`posted`).
+    const outpost = kind === BuildingType.Outpost;
+    const room = outpost ? outpostSlots(view.rules) : holds;
+    const taken = outpost ? b[o + BuildingField.posted] : b[o + BuildingField.soldiers] + this.hidingComing(building);
+    if (taken >= room) {
+      this.depotSay(building, callFullText(name, room));
       return;
     }
     const u = snap.units;
@@ -721,7 +733,7 @@ export class Game implements GestureHost {
       if (u[p + UnitField.owner] !== view.me) continue;
       const id = u[p + UnitField.id];
       const order = u[p + UnitField.order];
-      units.push({ id, type: u[p + UnitField.type], x: u[p + UnitField.x] / CELL, y: u[p + UnitField.y] / CELL, idle: order === Order.None, hiding: isHiding(order), stationed: this.army.isGarrisoned(id) });
+      units.push({ id, type: u[p + UnitField.type], x: u[p + UnitField.x] / CELL, y: u[p + UnitField.y] / CELL, idle: order === Order.None, hiding: isHiding(order) || isPosted(order), stationed: this.army.isGarrisoned(id) });
     }
     const size = view.rules.buildings[kind]?.size ?? 1;
     const id = pickToHide(units, type, { cx: b[o + BuildingField.cellX], cy: b[o + BuildingField.cellY], size });
@@ -729,8 +741,23 @@ export class Game implements GestureHost {
       this.depotSay(building, callNoneText(UNIT_NAME[type] ?? "兵"));
       return;
     }
+    if (kind === BuildingType.Outpost) {
+      this.command({ c: "post", u: [id], building });
+      this.depotSay(building, "叫 1 名槍兵來駐守");
+      return;
+    }
     this.command({ c: "garrison", u: [id], building });
     this.depotSay(building, `叫 1 名${UNIT_NAME[type] ?? "兵"}躲進${name}`);
+  }
+
+  /** 哨所 (D-080): how many it takes, how many are posted there (on their way or on guard), and whether it holds. */
+  outpostState(building: number): { slots: number; posted: number; hold: boolean; text: string } | null {
+    const view = this.view;
+    const b = view?.curr?.snap.buildings;
+    const o = view?.buildingRow(building) ?? -1;
+    if (view === null || b === undefined || o < 0 || b[o + BuildingField.type] !== BuildingType.Outpost) return null;
+    const hold = (b[o + BuildingField.flags] & BuildingFlag.Hold) !== 0;
+    return { slots: outpostSlots(view.rules), posted: b[o + BuildingField.posted], hold, text: outpostModeText(view.rules, hold) };
   }
 
   /** ＋ on a depot (D-066): one villager more gathering `resource` for it, as the player's own order. */
@@ -843,6 +870,12 @@ export class Game implements GestureHost {
     };
     this.setStance(this.army.prune((id) => view.unitRow(id) >= 0, held), Stance.Aggressive);
     this.army.settle((town) => view.townAwaitsMyChoice(town));
+    // 哨所 (D-080): those posted at an outpost leave their groups, as those stationed in a town do.
+    const u = view.curr?.snap.units;
+    if (u === undefined) return;
+    const posted: number[] = [];
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) if (u[o + UnitField.owner] === view.me && isPosted(u[o + UnitField.order])) posted.push(u[o + UnitField.id]);
+    if (posted.length > 0) this.army.leaveGroups(posted);
   }
 
   // --- 編隊自動補兵 (D-026, GDD §10) ------------------------------------------------------
@@ -1099,6 +1132,7 @@ export class Game implements GestureHost {
       return;
     }
     if (this.mode === "garrison") return this.garrisonAt(w.x, w.y);
+    if (this.mode === "post") return this.postAt(w.x, w.y);
     this.apply(this.keepRetreating(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1))));
   }
 
@@ -1118,6 +1152,23 @@ export class Game implements GestureHost {
     }
     this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
     if (r.cmd.c === "garrison") this.toast(`${r.cmd.u.length} 名躲進${BUILDING_NAME[target?.type ?? -1] ?? "建築"}`);
+  }
+
+  /** 駐守 (D-080): the outpost tapped takes the spearmen selected, or the player is told why not. */
+  private postAt(wx: number, wy: number): void {
+    const view = this.view;
+    if (view === null) return;
+    const pick = view.buildingAt(wx, wy);
+    const b = view.curr?.snap.buildings;
+    const o = pick === null ? -1 : view.buildingRow(pick.id);
+    const target = pick === null || o < 0 || b === undefined ? null : { id: pick.id, owner: pick.owner, type: pick.type, done: b[o + BuildingField.progress] >= 1000 };
+    const r = postTap(view.selection.units, target, view.me, (id) => view.unitType(id) === POST_TYPE);
+    if ("error" in r) {
+      this.toast(r.error);
+      return;
+    }
+    this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
+    if (r.cmd.c === "post") this.toast(`${r.cmd.u.length} 名槍兵去駐守哨所`);
   }
 
   /**
@@ -1377,7 +1428,9 @@ export class Game implements GestureHost {
     const view = this.view;
     // 躲進去 with spearmen in the selection too: only those who can hide go.
     const mixed = mode === "garrison" && view !== null && view.selection.units.some((id) => !garrisonTypes(view.rules).includes(view.unitType(id)));
-    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
+    // 駐守 with others than spearmen selected: only the spearmen go (D-080).
+    const mixedPost = mode === "post" && view !== null && view.selection.units.some((id) => view.unitType(id) !== POST_TYPE);
+    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : mixedPost ? POST_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
   }
 
   /**
@@ -1454,7 +1507,8 @@ export class Game implements GestureHost {
     const c = cam.screenToWorld(cam.width / 2, cam.height / 2);
     this.placement.moveTo(c.x, c.y, view.placement);
     // 箭樓 (round 7) says where it may go in the same short line (a longer one ran under the group buttons).
-    const drag = type === BuildingType.ArrowTower ? "拖曳箭樓到主城或治理的城鎮附近" : "拖曳預覽到想蓋的位置";
+    // With outposts on (D-080) the line names them too, as short as before.
+    const drag = type !== BuildingType.ArrowTower ? "拖曳預覽到想蓋的位置" : outpostSlots(view.rules) > 0 ? "拖曳箭樓到主城、城鎮或哨所附近" : "拖曳箭樓到主城或治理的城鎮附近";
     this.overlays.showPrompt(builders.length > 0 ? `${drag}，放開後按 ✓ 或 ✗` : `${drag}，放開後按 ✓ 或 ✗；會派最近的村民去蓋`, []);
     this.warnMilitia();
   }
@@ -1475,7 +1529,8 @@ export class Game implements GestureHost {
     p.militia = town?.id ?? null;
     // 箭樓 off TowerLand (round 7): why the spot is red comes first.
     const offTowerLand = view.placement !== null && !towerLandOk(view.placement, p.info, p.cellX, p.cellY);
-    this.overlays.promptWarning(offTowerLand ? TOWER_LAND_TEXT : town === null ? null : MILITIA_WARNING);
+    const landText = outpostSlots(view.rules) > 0 ? TOWER_LAND_TEXT_OUTPOST : TOWER_LAND_TEXT;
+    this.overlays.promptWarning(offTowerLand ? landText : town === null ? null : MILITIA_WARNING);
   }
 
   private showPlaceButtons(): void {

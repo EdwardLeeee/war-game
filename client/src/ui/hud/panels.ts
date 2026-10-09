@@ -4,7 +4,8 @@
 
 import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
 import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
-import { buildable, features, garrisonTypes, holdsOf, missingFor } from "../../game/features.ts";
+import { buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots } from "../../game/features.ts";
+import { POST_TYPE } from "../../game/outpost.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
@@ -64,6 +65,8 @@ export interface PanelHost {
   /** ＋遠程／＋法師 (D-080): our soldiers on their way to hide in this building, and calling one more of a type in. */
   hidingComing(building: number): number;
   callToHide(building: number, type: number): void;
+  /** 哨所 (D-080): its spearmen and mode, for its panel; null for another building. */
+  outpostState(building: number): { slots: number; posted: number; hold: boolean; text: string } | null;
   /** 取消即堅守 (D-054): out of 進攻／撤退, the soldiers selected stop and hold. */
   cancelToHold(): void;
   /** 編隊自動補兵 (D-026): its switch, and flipping it. */
@@ -434,6 +437,8 @@ export class SelectionInfo {
       }
       out = button(row, "全部出來", "", () => this.host.command({ c: "leave", building: id }), "chip secondary");
     }
+    // 哨所 (D-080): how many spearmen stand guard, ＋槍兵, 全部離開; then 攻擊／堅守 and what the one on means.
+    const outpost = own && type === BuildingType.Outpost && outpostSlots(view.rules) > 0 ? this.outpostRows(id) : null;
     let headBar: ((f: number) => void) | null = null;
     if (queue !== null) {
       for (let i = 0; i < Math.min(queueLength, 7); i++) {
@@ -449,11 +454,14 @@ export class SelectionInfo {
       const b = view.curr?.snap.buildings;
       if (o < 0 || b === undefined) return;
       depot?.();
+      outpost?.();
       const max = info?.hp ?? b[o + B.hp];
       const building = b[o + B.progress] < 1000;
       hpBar(building ? b[o + B.progress] / 1000 : max > 0 ? b[o + B.hp] / max : 0);
       hpText.textContent = building ? `建造中 ${Math.floor(b[o + B.progress] / 10)}%` : `生命 ${b[o + B.hp]}/${max}`;
-      const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名村民` : !own && (b[o + B.flags] & BuildingFlag.Occupied) !== 0 ? "　裡面有人" : "";
+      // An enemy outpost in view: whether it holds (D-080); remembered ones carry no Hold, so say nothing.
+      const enemyPost = !own && type === BuildingType.Outpost && (b[o + B.flags] & BuildingFlag.Remembered) === 0 ? ((b[o + B.flags] & BuildingFlag.Hold) !== 0 ? "　堅守中" : "　攻擊中") : "";
+      const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名村民` : !own && (b[o + B.flags] & BuildingFlag.Occupied) !== 0 ? "　裡面有人" : enemyPost;
       if (hidden !== null && out !== null) {
         const n = b[o + B.soldiers];
         const coming = this.host.hidingComing(id);
@@ -468,6 +476,33 @@ export class SelectionInfo {
       status.textContent = `${own ? [locked, auto].filter((t) => t !== "").join("　") : remembered}${inside}`;
       headBar?.(b[o + B.queueProgress] / 1000);
     });
+  }
+
+  /** 哨所 (D-080): the rows of our outpost's panel. Returns the update. */
+  private outpostRows(id: number): () => void {
+    const row = el("div", this.el, "sel-garrison");
+    const count = el("span", row, "garrison-count outpost-count");
+    const call = button(row, `＋${UNIT_NAME[POST_TYPE] ?? "槍兵"}`, "", () => this.host.callToHide(id, POST_TYPE), "chip secondary");
+    call.setAttribute("aria-label", "叫 1 名槍兵來駐守");
+    const off = button(row, "全部離開", "", () => this.host.command({ c: "unpost", building: id }), "chip secondary");
+    const modes = el("div", this.el, "sel-garrison outpost-modes");
+    // 攻擊 in red as 進攻 (D-080); 堅守 as it is everywhere.
+    const attack = button(modes, "攻擊", "", () => this.host.command({ c: "outpost_mode", building: id, hold: false }), `chip ${ORDER_TONE.advance}`);
+    const hold = button(modes, "堅守", "", () => this.host.command({ c: "outpost_mode", building: id, hold: true }), "chip");
+    const note = el("span", modes, "garrison-count outpost-note");
+    return () => {
+      const s = this.host.outpostState(id);
+      if (s === null) return;
+      const line = `駐守 ${s.posted} 名槍兵（最多 ${s.slots} 名）`;
+      if (count.textContent !== line) count.textContent = line;
+      call.disabled = s.posted >= s.slots;
+      off.disabled = s.posted === 0;
+      attack.classList.toggle("active", !s.hold);
+      hold.classList.toggle("active", s.hold);
+      attack.setAttribute("aria-pressed", String(!s.hold));
+      hold.setAttribute("aria-pressed", String(s.hold));
+      if (note.textContent !== s.text) note.textContent = s.text;
+    };
   }
 
   /**
@@ -705,6 +740,14 @@ export class CommandArea {
         const on = mages.every((id) => view.unitAutocast(id));
         // 「自動施放：關」 broke into two lines in one column: the state goes under the name.
         button(this.el, "自動施放", on ? "目前：開" : "目前：關", () => this.host.command({ c: "autocast", u: mages, on: !on }), "secondary");
+      }
+      // 駐守 (D-080): spearmen go and stand guard at our outpost.
+      if (outpostSlots(view.rules) > 0 && sel.units.some((id) => view.unitType(id) === POST_TYPE)) {
+        const picking = mode === "post";
+        const post = picking
+          ? button(this.el, "取消", "駐守", () => this.host.setMode("normal"), "secondary")
+          : button(this.el, "駐守", "點哨所", () => this.host.setMode("post"), "secondary");
+        if (picking) post.classList.add("active");
       }
       // 躲進去 (round 7, D-061): ranged units and mages hide in our main city or an arrow tower.
       const hiders = garrisonTypes(view.rules);

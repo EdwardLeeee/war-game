@@ -18,8 +18,8 @@ const rules = (on: boolean) =>
   }) as unknown as Rules;
 
 test("開關：沒送 features 當全關；關著時沒有能躲的兵種、建築也躲不了人", () => {
-  assert.deepEqual(features(null), { plunderOnce: false, towers: false, garrison: false, cavalry: false });
-  assert.deepEqual(features({} as Rules), { plunderOnce: false, towers: false, garrison: false, cavalry: false });
+  assert.deepEqual(features(null), { plunderOnce: false, towers: false, garrison: false, cavalry: false, outpost: false });
+  assert.deepEqual(features({} as Rules), { plunderOnce: false, towers: false, garrison: false, cavalry: false, outpost: false });
   assert.deepEqual(garrisonTypes(rules(false)), []);
   assert.equal(holdsOf(rules(false), BuildingType.MainCity), 0);
   assert.deepEqual(garrisonTypes(rules(true)), [UnitType.Ranged, UnitType.Mage]);

@@ -191,7 +191,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   // 重來 leaves the game on screen: keep its record first (D-056).
   if (game !== null) await keepLog(game);
   game?.destroy();
-  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode) : createSimPort(showError);
+  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpost) : createSimPort(showError);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
   // 30-minute limit, like the determinism check and CI, so the numbers compare between runs.
   const level: AiDifficulty = measure ? "normal" : difficulty;

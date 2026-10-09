@@ -53,6 +53,8 @@ export interface PageParams {
    * same map each run (a random map comes from the seed, D-074).
    */
   seed: number | null;
+  /** `?test=1&mock=1&outpost=1`: the fake world with outposts on (D-080) along with round 7's rules. */
+  outpost: boolean;
 }
 
 export function parseParams(search: string): PageParams {
@@ -71,5 +73,5 @@ export function parseParams(search: string): PageParams {
   const map = test && (m === "fixed" || m === "random") ? m : null;
   const s = q.get("seed");
   const seed = test && s !== null && /^[1-9][0-9]{0,9}$/.test(s) && Number(s) <= 0x7fffffff ? Number(s) : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed };
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1" };
 }

@@ -3,7 +3,7 @@
 
 import { BuildingType, type Features, type Rules } from "../sim.ts";
 
-export const NO_FEATURES: Features = { plunderOnce: false, towers: false, garrison: false, cavalry: false };
+export const NO_FEATURES: Features = { plunderOnce: false, towers: false, garrison: false, cavalry: false, outpost: false };
 
 export function features(rules: Pick<Rules, "features"> | null | undefined): Features {
   return { ...NO_FEATURES, ...(rules?.features ?? {}) };
@@ -26,7 +26,13 @@ export function buildable(rules: Pick<Rules, "features"> | null | undefined, typ
   const on = features(rules);
   if (type === BuildingType.ArrowTower) return on.towers;
   if (type === BuildingType.Stable) return on.cavalry;
+  if (type === BuildingType.Outpost) return on.outpost === true;
   return true;
+}
+
+/** 哨所 (D-080): spearmen an outpost takes (0 while the feature is off). */
+export function outpostSlots(rules: Pick<Rules, "features" | "outpost"> | null | undefined): number {
+  return features(rules).outpost === true ? (rules?.outpost?.slots ?? 0) : 0;
 }
 
 /**
