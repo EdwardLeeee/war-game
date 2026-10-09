@@ -411,7 +411,7 @@ function fortsOnTheWay(forts: Fort[], x: number, y: number, enemyHome: { cellX: 
   );
 }
 
-/** Farmers sent against an unguarded fort: this many, and as many again for each finished arrow tower covering it, at most FORT_CREW_MAX. */
+/** Farmers sent against an unguarded fort: this many (or two for each builder), and FORT_CREW_MAX under the arrows of a finished tower. */
 const FORT_CREW = 4;
 const FORT_CREW_MAX = 12;
 /** Enemy farmers this near a fort (cells, to the footprint) are its builders. */
@@ -458,17 +458,20 @@ export function createFortCrew(rank: (x: number, y: number) => number): FortCrew
     },
     think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out) {
       crew = crew.filter((id) => farmers.some((f) => f.id === id));
-      const guarded = (f: Fort) => foes.some((e) => fortDist2(f, e.x, e.y) <= FORT_GUARDS * FORT_GUARDS);
-      let f = ours.find((x) => x.id === aim && !guarded(x));
-      if (f === undefined) {
-        let bestD = 0;
-        for (const o of ours) {
-          if (guarded(o)) continue;
-          const d = fortDist2(o, home.cellX, home.cellY);
-          if (f === undefined || d < bestD || (d === bestD && rank(o.x, o.y) < rank(f.x, f.y))) {
-            f = o;
-            bestD = d;
-          }
+      const open = ours.filter((f) => !foes.some((e) => fortDist2(f, e.x, e.y) <= FORT_GUARDS * FORT_GUARDS));
+      // The fort to go for: a finished arrow tower first (it shoots), then a site, then an outpost; of
+      // a kind the nearest to the main city (ties: player 0's frame).
+      const kind = (f: Fort) => (f.done && f.type === BuildingType.ArrowTower ? 0 : !f.done ? 1 : 2);
+      let f: Fort | undefined;
+      let fk = 0;
+      let fd = 0;
+      for (const o of open) {
+        const k = kind(o);
+        const d = fortDist2(o, home.cellX, home.cellY);
+        if (f === undefined || k < fk || (k === fk && (d < fd || (d === fd && rank(o.x, o.y) < rank(f.x, f.y))))) {
+          f = o;
+          fk = k;
+          fd = d;
         }
       }
       let towers = 0;
@@ -487,7 +490,12 @@ export function createFortCrew(rank: (x: number, y: number) => number): FortCrew
         hitting = -1;
         return;
       }
-      const want = Math.min(FORT_CREW_MAX, FORT_CREW * (1 + towers));
+      // The builders of every site first: once they are down nothing more goes up.
+      const builders = enemyFarmers.filter((e) => open.some((o) => !o.done && fortDist2(o, e.x, e.y) <= FORT_BUILDERS * FORT_BUILDERS));
+      // Under arrows as many as it sends at all: a tower kills at its own pace, so the sooner it falls
+      // the fewer it kills (scratch: four against a finished tower lost hard 11–14 farmers); against
+      // builders two for each.
+      const want = towers > 0 ? FORT_CREW_MAX : Math.min(FORT_CREW_MAX, Math.max(FORT_CREW, 2 * builders.length));
       if (crew.length < want) {
         const c = fortCentre(f);
         const d2 = (u: Spot) => (u.x - c.x) * (u.x - c.x) + (u.y - c.y) * (u.y - c.y);
@@ -497,18 +505,22 @@ export function createFortCrew(rank: (x: number, y: number) => number): FortCrew
           .slice(0, want - crew.length);
         crew.push(...pick.map((u) => u.id));
       }
-      // Its builders first (the nearest, ties to the lower id), then the fort itself.
+      // The builder nearest the crew (ties to the lower id), else the fort.
       let target = f.id;
-      let builder = false;
-      let bestD = 0;
-      for (const e of enemyFarmers) {
-        const d = fortDist2(f, e.x, e.y);
-        if (d > FORT_BUILDERS * FORT_BUILDERS) continue;
-        if (!builder || d < bestD || (d === bestD && e.id < target)) {
-          target = e.id;
-          builder = true;
-          bestD = d;
+      if (builders.length > 0) {
+        const mine = farmers.filter((u) => crew.includes(u.id));
+        const cx = mine.length === 0 ? home.cellX : Math.trunc(mine.reduce((a, u) => a + u.x, 0) / mine.length);
+        const cy = mine.length === 0 ? home.cellY : Math.trunc(mine.reduce((a, u) => a + u.y, 0) / mine.length);
+        let bestD = 0;
+        let best: Spot | undefined;
+        for (const e of builders) {
+          const d = (e.x - cx) * (e.x - cx) + (e.y - cy) * (e.y - cy);
+          if (best === undefined || d < bestD || (d === bestD && e.id < best.id)) {
+            best = e;
+            bestD = d;
+          }
         }
+        target = best!.id;
       }
       if (crew.length > 0 && (target !== hitting || f.id !== aim || tick - last >= FORT_EVERY)) {
         out.push({ c: "attack", u: crew, target });

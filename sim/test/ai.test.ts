@@ -1200,3 +1200,9 @@ test("D-080: normal's army away at the enemy base, the soldiers trained since pu
   assert.ok(!out.some((c) => (c.c === "move" || c.c === "attack") && c !== hit && c.u.some((id) => fresh.includes(id))), "not sent after the army");
   assert.ok(!out.some((c) => c === hit) || !hit!.u.some((id) => ids.includes(id)), "the army marches on");
 });
+
+test("D-080: against a finished arrow tower and too few soldiers, as many farmers as it sends at all, at once", () => {
+  const { out, fort, farmers } = fortGame({ type: BuildingType.ArrowTower, at: [2, -12], farmers: 14 });
+  const go = out.find((c) => c.c === "attack" && c.target === fort) as { u: number[] } | undefined;
+  assert.ok(go !== undefined && go.u.length === 12 && go.u.every((id) => farmers.includes(id)), "twelve farmers at the tower");
+});
