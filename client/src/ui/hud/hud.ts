@@ -143,6 +143,8 @@ export class Hud {
       depotWorkers: (building: number, resource: Resource) => game.depotWorkers(building, resource),
       depotSend: (building: number, resource: Resource) => game.depotSend(building, resource),
       depotTake: (building: number, resource: Resource) => game.depotTake(building, resource),
+      hidingComing: (building: number) => game.hidingComing(building),
+      callToHide: (building: number, type: number) => game.callToHide(building, type),
       cancelToHold: () => game.cancelToHold(),
       groupRefill: (i: number) => game.army.groups[i].refill,
       toggleRefill: (i: number) => this.toggleRefill(i),

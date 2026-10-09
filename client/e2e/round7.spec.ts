@@ -226,6 +226,55 @@ test("躲進去：混選時提示只有遠程兵和法師會去，點錯地方�
   await expect.poll(async () => (await units(page)).filter((u) => hiders.includes(u.id)).every((u) => u.action !== 7)).toBe(true);
 });
 
+test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來；先叫站著沒指令的，再叫近的；正過來的算進去；30 格內叫不到說明原因；滿了按鈕變灰", async ({ page }, info) => {
+  await start(page);
+  const ranged = await ownIds(page, [2]);
+  const mages = await ownIds(page, [3]);
+  expect(ranged.length).toBe(4);
+  expect(mages.length).toBe(2);
+  const city = await mainCityId(page);
+  // Ranged 0 near the city but walking away (an order of the player's); ranged 1 farther, standing.
+  // The other two and both mages far beyond 30 cells.
+  await place(page, [ranged[0]], [{ x: MAIN_CITY.x + 6, y: MAIN_CITY.y }]);
+  await page.evaluate(([id, x, y]) => window.__proto?.game?.send({ c: "move", u: [id], x, y }), [ranged[0], 50, 30] as const);
+  await place(page, [ranged[1]], [{ x: MAIN_CITY.x + 12, y: MAIN_CITY.y }]);
+  await place(page, [ranged[2], ranged[3], ...mages], [{ x: 60, y: 30 }, { x: 61, y: 30 }, { x: 62, y: 30 }, { x: 63, y: 30 }]);
+  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
+  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  const panel = page.locator(".sel-info");
+  await expect(panel.locator(".sel-head")).toContainText("主城");
+  const callRanged = panel.getByRole("button", { name: "叫 1 名遠程兵躲進來" });
+  const callMage = panel.getByRole("button", { name: "叫 1 名法師躲進來" });
+  await expect(callRanged).toHaveText("＋遠程");
+  await expect(callMage).toHaveText("＋法師");
+
+  // The one standing goes first, though the walking one is nearer.
+  await callRanged.tap();
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "garrison", u: [ranged[1]], building: city });
+  await expect(toast(page, "叫 1 名遠程兵躲進主城")).toBeVisible();
+  await expect(panel.locator(".garrison-count")).toHaveText("躲了 0 名士兵（最多 6 名），1 名正過來");
+  await shot(page, info, "d080-call-city");
+  // No mage within 30 cells: told so, no order.
+  const mark = (await sent(page)).length;
+  await callMage.tap();
+  await expect(toast(page, "30 格內沒有可以叫來的法師")).toBeVisible();
+  expect((await sent(page)).slice(mark).filter((c) => c.c === "garrison")).toEqual([]);
+  // Then the walking one: not the one hiding already, not those far off.
+  await callRanged.tap();
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "garrison", u: [ranged[0]], building: city });
+  await expect(panel.locator(".garrison-count")).toHaveText("躲了 0 名士兵（最多 6 名），2 名正過來");
+
+  // Six inside: full, both greyed; 全部出來 still there.
+  await page.evaluate(([u, b]) => window.__proto?.game?.send({ c: "garrison", u, building: b }), [[ranged[2], ranged[3], ...mages], city] as [number[], number]);
+  await place(page, [...ranged, ...mages], [{ x: MAIN_CITY.x + 4, y: MAIN_CITY.y + 2 }]);
+  await expect.poll(() => soldiersIn(page, city), TICKS).toBe(6);
+  await expect(panel.locator(".garrison-count")).toHaveText("躲了 6 名士兵（最多 6 名）");
+  await expect(callRanged).toBeDisabled();
+  await expect(callMage).toBeDisabled();
+  await expect(panel.getByRole("button", { name: "全部出來" })).toBeEnabled();
+  await shot(page, info, "d080-call-city-full");
+});
+
 test("躲著的兵：編隊照算、點編隊會選到，不會因此再拉兵補進編隊；編隊的進攻只送沒躲的；只選躲著的兵時說明怎麼叫出來；全軍、全軍撤退不含他們（ceo 2026-10-07）", async ({ page }) => {
   await start(page);
   const spear = await ownIds(page, [1]);

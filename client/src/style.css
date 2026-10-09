@@ -695,6 +695,19 @@ button.active {
   margin-top: 4px;
 }
 
+/* 躲進建築 (D-061) and ＋遠程／＋法師 (D-080): the count on a line of its own, the buttons together under it. */
+.sel-garrison {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.garrison-count {
+  flex-basis: 100%;
+}
+
 .sel-chips button,
 .sel-queue button {
   padding: 0 8px;

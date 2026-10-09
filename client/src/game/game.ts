@@ -68,7 +68,7 @@ import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, panelResou
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
 import { features, garrisonTypes, holdsOf } from "./features.ts";
 import { Charges } from "./follow.ts";
-import { GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding } from "./garrison.ts";
+import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn } from "./orders.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
@@ -683,6 +683,54 @@ export class Game implements GestureHost {
   /** How many of our villagers bring `resource` back to this building (D-066). */
   depotWorkers(building: number, resource: Resource): number {
     return workersAt(this.workers(), this.depots(), building, resource).length;
+  }
+
+  /** ＋遠程／＋法師 (D-080): our soldiers on their way to hide in this building, not inside yet. */
+  hidingComing(building: number): number {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return 0;
+    let n = 0;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] === view.me && isHiding(u[o + UnitField.order]) && u[o + UnitField.orderTarget] === building && u[o + UnitField.action] !== Action.Garrisoned) n++;
+    }
+    return n;
+  }
+
+  /**
+   * ＋遠程／＋法師 (D-080: 「箭塔應該是可以點擊然後把弓箭手或是法師放進去」): one soldier of this
+   * type called in to hide in this building of ours, by the player's own `garrison` order
+   * (garrison.ts says whom); the message says why nobody came when nobody does.
+   */
+  callToHide(building: number, type: number): void {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    const o = view?.buildingRow(building) ?? -1;
+    if (view === null || snap === undefined || o < 0) return;
+    const b = snap.buildings;
+    const kind = b[o + BuildingField.type];
+    const holds = holdsOf(view.rules, kind);
+    const name = BUILDING_NAME[kind] ?? "建築";
+    if (b[o + BuildingField.soldiers] + this.hidingComing(building) >= holds) {
+      this.depotSay(building, callFullText(name, holds));
+      return;
+    }
+    const u = snap.units;
+    const units: Callable[] = [];
+    for (let p = 0; p < u.length; p += UNIT_STRIDE) {
+      if (u[p + UnitField.owner] !== view.me) continue;
+      const id = u[p + UnitField.id];
+      const order = u[p + UnitField.order];
+      units.push({ id, type: u[p + UnitField.type], x: u[p + UnitField.x] / CELL, y: u[p + UnitField.y] / CELL, idle: order === Order.None, hiding: isHiding(order), stationed: this.army.isGarrisoned(id) });
+    }
+    const size = view.rules.buildings[kind]?.size ?? 1;
+    const id = pickToHide(units, type, { cx: b[o + BuildingField.cellX], cy: b[o + BuildingField.cellY], size });
+    if (id === null) {
+      this.depotSay(building, callNoneText(UNIT_NAME[type] ?? "兵"));
+      return;
+    }
+    this.command({ c: "garrison", u: [id], building });
+    this.depotSay(building, `叫 1 名${UNIT_NAME[type] ?? "兵"}躲進${name}`);
   }
 
   /** ＋ on a depot (D-066): one villager more gathering `resource` for it, as the player's own order. */
