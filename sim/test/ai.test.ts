@@ -1201,14 +1201,25 @@ test("D-080: normal's army away at the enemy base, the soldiers trained since pu
   assert.ok(!out.some((c) => c === hit) || !hit!.u.some((id) => ids.includes(id)), "the army marches on");
 });
 
-test("D-080: farmers do not go for a finished arrow tower, nor for a site under its arrows", () => {
-  const tower = fortGame({ type: BuildingType.ArrowTower, at: [2, -12], farmers: 14 });
-  assert.ok(!tower.out.some((c) => c.c === "attack" && c.u.some((id) => tower.farmers.includes(id))), "not at the tower");
-  // A site beside a finished tower: under its arrows.
-  const g = fortGame({ type: BuildingType.ArrowTower, at: [2, -12], done: false, farmers: 14, builders: 2 });
-  const home = spawnCentre(g.w.map.frames[0], g.w.map.spawns[0]);
-  g.w.addBuilding(1, BuildingType.ArrowTower, home.x + 6, home.y - 12, 600, 1000);
-  g.w.tick += 10;
-  g.g.fog.update(g.w);
-  assert.ok(!g.ai.think(buildView(g.g, 0)).some((c) => c.c === "attack" && c.u.some((id) => g.farmers.includes(id))), "not under its arrows");
+test("D-080: farmers go for a lone finished arrow tower, all at once; not under two towers' arrows without soldiers at home", () => {
+  const one = fortGame({ type: BuildingType.ArrowTower, at: [2, -12], farmers: 14 });
+  const go = one.out.find((c) => c.c === "attack" && c.target === one.fort) as { u: number[] } | undefined;
+  assert.ok(go !== undefined && go.u.length === 12 && go.u.every((id) => one.farmers.includes(id)), "twelve farmers at the tower");
+  // A second finished tower beside it: not without four soldiers at home.
+  const two = (spears: number) => {
+    const g = fortGame({ type: BuildingType.ArrowTower, at: [2, -12], farmers: 14, spears });
+    const home = spawnCentre(g.w.map.frames[0], g.w.map.spawns[0]);
+    g.w.addBuilding(1, BuildingType.ArrowTower, home.x + 6, home.y - 12, 600, 1000);
+    put(g.g, 0, UnitType.Farmer, home.x + 5, home.y - 9);
+    // Orders against a fort go again every 100 ticks.
+    g.w.tick += 100;
+    g.g.fog.update(g.w);
+    return { ...g, next: g.ai.think(buildView(g.g, 0)) };
+  };
+  const alone = two(0);
+  assert.ok(!alone.next.some((c) => c.c === "attack" && c.u.some((id) => alone.farmers.includes(id))), "two towers, no soldiers: not");
+  const helped = two(4);
+  const farmers = helped.next.find((c) => c.c === "attack" && c.u.some((id) => helped.farmers.includes(id))) as { target: number } | undefined;
+  assert.ok(farmers !== undefined, "two towers, four soldiers at home: the farmers go");
+  assert.ok(helped.next.some((c) => (c.c === "attack" && c.target === farmers.target && c.u.every((id) => helped.spears.includes(id))) || (c.c === "move" && c.u.every((id) => helped.spears.includes(id)))), "and the soldiers with them");
 });
