@@ -136,6 +136,14 @@ export interface Plan {
   /** The plan's town is the big town, not the small town nearest home (D-072: the user's one trip, plundered). */
   bigTown: boolean;
   /**
+   * A tower rush (D-080; 0: none), then the push: once the army reaches pushAt, the whole army
+   * and two farmers walk round the big city (RUSH_WAY) to RUSH_DIST cells from the enemy's main
+   * city; there the farmers build an outpost and this many of the spearmen are posted at it;
+   * the rest march on the enemy's main city at once, while the farmers put up two arrow towers
+   * beside the outpost (toward the enemy). Fixed map only.
+   */
+  towerRush: number;
+  /**
    * "edge" only: the army that set out stops at the second waypoint (canonical (68, 62)) and goes
    * on once a sentry (as "sentry"'s, kept until then) sees the enemy's army coming on our half,
    * or 3 minutes after `raceBy`.
@@ -154,6 +162,25 @@ const RACE_EDGE: { u: number; v: number }[] = [
 ];
 /** A race waypoint counts as reached this near (cells). */
 const RACE_NEAR = 6;
+/**
+ * The tower rush (plan.towerRush, D-080), on the fixed map: the escort goes round the big city
+ * (its militia and tower) and the far corner town by these canonical cells, and the outpost goes
+ * RUSH_DIST cells south of the enemy's main city (canonical, toward the escort's way in).
+ */
+const RUSH_WAY: { u: number; v: number }[] = [
+  { u: 66, v: 74 },
+  { u: 76, v: 44 },
+];
+const RUSH_DIST = 12;
+/**
+ * The escort is at a waypoint or the spot once its centre is within this many cells of it, or
+ * once most of it has stopped within twice that (a big group's formation spreads out), or after
+ * RUSH_WAIT ticks.
+ */
+const RUSH_NEAR = 6;
+const RUSH_WAIT = 1800;
+/** Farmers that walk with the rush and build the outpost and its towers. */
+const RUSH_BUILDERS = 4;
 /** Random maps (D-074): the scout's next stop once within this many cells of one, or after SCOUT_STUCK ticks without getting nearer. */
 const SCOUT_NEAR = 6;
 const SCOUT_STUCK = 600;
@@ -254,19 +281,37 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     userEco: false,
     bigTown: false,
     raceStage: false,
+    towerRush: 0,
   };
 }
 
 export interface ScriptedPlayer {
   think(view: PlayerView): CommandBody[];
-  /** For the measurement: what it is doing. found: when it first saw the enemy's main city (random maps; 0 on the fixed map). */
-  state(): { mode: Mode; trips: number; marches: number; waves: number; brokenOff: number; firstMarch: number; raids: number; firstRaid: number; raced: number; found: number };
+  /**
+   * For the measurement: what it is doing. found: when it first saw the enemy's main city (random
+   * maps; 0 on the fixed map). rush: when the tower rush set out, its outpost stood, and its
+   * second tower was placed (-1: not yet).
+   */
+  state(): {
+    mode: Mode;
+    trips: number;
+    marches: number;
+    waves: number;
+    brokenOff: number;
+    firstMarch: number;
+    raids: number;
+    firstRaid: number;
+    raced: number;
+    found: number;
+    rush: { start: number; outpost: number; towers: number };
+  };
 }
 
 export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan: Plan): ScriptedPlayer {
   const n = know.map.size;
   const random = know.map.mode === "random";
   if (random && plan.race !== "") throw new Error("the race's route is on the fixed map only (D-072)");
+  if (random && plan.towerRush > 0) throw new Error("the tower rush's route is on the fixed map only (D-080)");
   const home = know.map.spawns.find((s) => s.player === player)!;
   // On a random map the enemy's main city and the towns are known once seen (D-074).
   let enemyHome = know.map.spawns.find((s) => s.player !== player) ?? { cellX: -1, cellY: -1 };
@@ -302,6 +347,16 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       ].map((t) => t.map((c) => real(c.u, c.v)))
     : [[], []];
   let tour = 0;
+  /** The tower rush (plan.towerRush): its stage, spot, escort and builders, and when each step happened. */
+  let rushStage: "" | "go" | "build" | "towers" | "done" = "";
+  let rushSpot = { x: 0, y: 0 };
+  let rushWay = 0;
+  let escort: number[] = [];
+  let rushFarmers: number[] = [];
+  let rushBuild = -100000;
+  /** The army that escorted the rush marches on the enemy's main city as soon as the outpost is manned. */
+  let rushPush = false;
+  const rush = { start: -1, outpost: -1, towers: -1 };
   let scout = -1;
   let scoutStop = 0;
   let scoutSince = 0;
@@ -389,7 +444,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   }
 
   return {
-    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch, raids, firstRaid, raced, found }),
+    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch, raids, firstRaid, raced, found, rush: { ...rush } }),
     think(view: PlayerView): CommandBody[] {
       const out: CommandBody[] = [];
       const h = view.header;
@@ -522,6 +577,14 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         ratio[2] = 20;
       }
       if (govWood > 0) reserve.wood += govWood;
+      // The tower rush (plan.towerRush): what its outpost and towers still cost is kept from other spending.
+      if (plan.towerRush > 0 && (rushStage === "go" || rushStage === "build" || rushStage === "towers")) {
+        const o = rules.buildings[BuildingType.Outpost].cost;
+        const t = rules.buildings[BuildingType.ArrowTower].cost;
+        const left = Math.max(0, 2 - own.filter((b) => b.type === BuildingType.ArrowTower).length);
+        reserve.wood += (rushStage === "go" ? o.wood : 0) + left * t.wood;
+        reserve.gold += (rushStage === "go" ? o.gold : 0) + left * t.gold;
+      }
       const ratioKey = ratio.join("/");
       if (ratioKey !== ratioSet) {
         out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
@@ -705,7 +768,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (!held) continue;
         const alive = (garrison.get(id) ?? []).filter((gid) => soldiers.some((s) => s.id === gid));
         const free = soldiers
-          .filter((s) => !isGuard(s.id) && s.type === UnitType.Spearman && s.id !== scout)
+          .filter((s) => !isGuard(s.id) && s.type === UnitType.Spearman && s.id !== scout && !escort.includes(s.id) && s.order !== Order.Post)
           .sort((a, b) => dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < Math.max(t.needed, plan.guards) && free.length > 0) alive.push(free.shift()!.id);
         garrison.set(id, alive);
@@ -717,6 +780,106 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       }
       // Cavalry raiders (round 7) are kept apart from the army.
       const raiders = plan.raid > 0 ? soldiers.filter((u) => u.type === UnitType.Cavalry && !isGuard(u.id)) : [];
+      // --- the tower rush (plan.towerRush, D-080) ------------------------------------------------
+      escort = escort.filter((id) => soldiers.some((u) => u.id === id));
+      rushFarmers = rushFarmers.filter((id) => farmers.some((f) => f.id === id));
+      if (plan.towerRush > 0 && found >= 0) {
+        const outpost = own.find((b) => b.type === BuildingType.Outpost);
+        const towers = own.filter((b) => b.type === BuildingType.ArrowTower);
+        if (rushStage === "" && done(BuildingType.Barracks).length > 0) {
+          const free = soldiers
+            .filter((u) => !isGuard(u.id) && !raiders.includes(u) && u.id !== scout && u.id !== sentry && u.order !== Order.Post)
+            .sort((a, b) => a.id - b.id);
+          const spears = free.filter((u) => u.type === UnitType.Spearman).length;
+          if (free.length >= Math.max(plan.pushAt, plan.towerRush) && spears >= plan.towerRush && gatherers.length >= RUSH_BUILDERS + 3) {
+            escort = free.map((u) => u.id);
+            rushFarmers = gatherers.slice(0, RUSH_BUILDERS);
+            gatherers.splice(0, rushFarmers.length);
+            const e = frame(enemyHome.cellX, enemyHome.cellY);
+            rushSpot = real(e.u, e.v + RUSH_DIST);
+            const wp = real(RUSH_WAY[0].u, RUSH_WAY[0].v);
+            // A move: the escort fights what meets it on the way (on a retreat it was shot down unanswered).
+            out.push({ c: "move", u: [...escort, ...rushFarmers], x: wp.x, y: wp.y });
+            rushWay = 0;
+            rushStage = "go";
+            rush.start = tick;
+          }
+        }
+        const centre = () => {
+          const xs = soldiers.filter((u) => escort.includes(u.id));
+          return { x: Math.trunc(xs.reduce((a, u) => a + u.x, 0) / xs.length), y: Math.trunc(xs.reduce((a, u) => a + u.y, 0) / xs.length) };
+        };
+        if (rushStage === "go" && escort.length === 0) rushStage = "done";
+        if (rushStage === "go" && escort.length > 0) {
+          const c = centre();
+          const stopped = soldiers.filter((u) => escort.includes(u.id) && u.order === Order.None).length * 2 >= escort.length;
+          const at = (x: number, y: number) => {
+            const d = dist2(c.x, c.y, x, y);
+            return d <= RUSH_NEAR * RUSH_NEAR || (stopped && d <= 4 * RUSH_NEAR * RUSH_NEAR);
+          };
+          if (rushWay < RUSH_WAY.length) {
+            const wp = real(RUSH_WAY[rushWay].u, RUSH_WAY[rushWay].v);
+            if (at(wp.x, wp.y)) {
+              rushWay++;
+              const next = rushWay < RUSH_WAY.length ? real(RUSH_WAY[rushWay].u, RUSH_WAY[rushWay].v) : rushSpot;
+              out.push({ c: "move", u: [...escort, ...rushFarmers], x: next.x, y: next.y });
+            }
+          } else if (at(rushSpot.x, rushSpot.y) || tick - rush.start >= RUSH_WAIT) {
+            // There: the escort stops round the builders and fights within its leash of that place.
+            out.push({ c: "stop", u: escort });
+            const cost = rules.buildings[BuildingType.Outpost].cost;
+            const spot = spotNear(view, BuildingType.Outpost, rushSpot.x, rushSpot.y, 5);
+            const crew = rushFarmers.length > 0 ? rushFarmers : gatherers.slice(0, RUSH_BUILDERS);
+            if (spot !== null && crew.length > 0 && affordAll(cost)) {
+              out.push({ c: "build", u: crew, type: BuildingType.Outpost, x: spot.x, y: spot.y });
+              spend(cost);
+              rushFarmers = crew;
+              rushBuild = tick;
+              rushStage = "build";
+            }
+          }
+        }
+        if (rushStage === "build") {
+          if (outpost !== undefined && outpost.progress >= 1000) {
+            const guards = soldiers
+              .filter((u) => escort.includes(u.id) && u.type === UnitType.Spearman)
+              .slice(0, Math.min(plan.towerRush, rules.outpost?.slots ?? 6))
+              .map((u) => u.id);
+            if (guards.length > 0) out.push({ c: "post", u: guards, building: outpost.id });
+            rush.outpost = tick;
+            rushStage = "towers";
+          } else if (outpost === undefined && tick - rushBuild >= 600) {
+            rushStage = escort.length > 0 ? "go" : "done";
+            rushWay = RUSH_WAY.length;
+          }
+        }
+        if (rushStage === "towers") {
+          // Both towers at once, beside the outpost toward the enemy's main city, half the builders each.
+          const placed = towers.length;
+          if (outpost === undefined || placed >= 2 || rushFarmers.length === 0) {
+            if (placed >= 2) rush.towers = tick;
+            // The escort that is not posted marches on the enemy.
+            escort = [];
+            rushPush = true;
+            rushStage = "done";
+          } else if (!towers.some((b) => b.progress < 1000) || placed === 1) {
+            const cost = rules.buildings[BuildingType.ArrowTower].cost;
+            const want = 2 - placed;
+            for (let k = 0; k < want; k++) {
+              const side = k === 0 ? 1 : -1;
+              const ax = outpost.x + 1 + Math.sign(enemyHome.cellX - outpost.x) * 3 + side * 2;
+              const ay = outpost.y + 1 + Math.sign(enemyHome.cellY - outpost.y) * 3 - side * 2;
+              const spot = spotNear(view, BuildingType.ArrowTower, ax, ay, 6);
+              const half = rushFarmers.length >> 1;
+              const crew = want === 2 ? (k === 0 ? rushFarmers.slice(0, Math.max(1, half)) : rushFarmers.slice(Math.max(1, half))) : rushFarmers;
+              if (spot === null || crew.length === 0 || !affordAll(cost)) continue;
+              if (towers.some((b) => b.x === spot.x && b.y === spot.y)) continue;
+              out.push({ c: "build", u: crew, type: BuildingType.ArrowTower, x: spot.x, y: spot.y });
+              spend(cost);
+            }
+          }
+        }
+      }
       if (raiders.length > 0) {
         const ids = raiders.map((u) => u.id);
         if (!raiding && raiders.length >= plan.raid) {
@@ -782,7 +945,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       } else {
         scout = -1;
       }
-      const army = soldiers.filter((u) => !isGuard(u.id) && !raiders.includes(u) && u.id !== sentry && u.id !== scout);
+      const army = soldiers.filter(
+        (u) => !isGuard(u.id) && !raiders.includes(u) && u.id !== sentry && u.id !== scout && !escort.includes(u.id) && u.order !== Order.Post,
+      );
       const armyIds = army.map((u) => u.id);
       const send = (x: number, y: number, why: Mode) => {
         if (armyIds.length === 0) return;
@@ -982,7 +1147,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
 
       // --- at home: go for the town, march, or wait at the post ---------------------------------------------
       // Random maps: no march before the enemy's main city has been seen.
-      const go = found >= 0 && ((counterReady && army.length >= plan.counterAt) || (plan.pushAt > 0 && army.length >= plan.pushAt));
+      const go = found >= 0 && (rushPush || (counterReady && army.length >= plan.counterAt) || (plan.pushAt > 0 && army.length >= plan.pushAt));
+      if (go) rushPush = false;
       const townOpen =
         t !== undefined &&
         aim !== undefined &&

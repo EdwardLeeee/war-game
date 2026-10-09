@@ -564,9 +564,10 @@ export class UnitSystem {
     const provoker = b.provoker[bs];
     if (provoker >= 0) {
       tid = provoker;
-    } else if (tid < 0 || (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
-      // A nearer intruder within reach takes over; the one he chases (still within chase) is kept
-      // otherwise; else anything hostile right next to him (neutral militia too), in either mode.
+    } else if ((w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
+      // Every RETARGET_EVERY ticks, as other soldiers look round: a nearer intruder within reach
+      // takes over; the one he chases (still within chase) is kept otherwise; else anything
+      // hostile right next to him (neutral militia too), in either mode.
       const next = hold ? -1 : this.outpostTarget(w, fog, i, bs);
       if (next >= 0) tid = next;
       else if (tid < 0) tid = this.findTarget(w, fog, i, info.range);

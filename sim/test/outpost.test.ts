@@ -7,10 +7,11 @@ import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
 import { postedAt, towerLand } from "../src/core/commands.ts";
 import { BUILDINGS, OUTPOST, TOWER_REACH } from "../src/core/rules.ts";
+import { PERF } from "../src/core/scenarios.ts";
 import { rectDist2 } from "../src/core/units.ts";
 import { BuildingFlag, BuildingType, CELL, Order, PlaceBit, Reject, Stance, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 const OUT = BUILDINGS[BuildingType.Outpost];
 
@@ -228,4 +229,40 @@ test("mirror-image outposts fight mirror-image fights, tick by tick", () => {
     if (slotOf(g, walker) < 0) fought++;
   }
   assert.ok(fought > 0, "the fight happened");
+});
+
+test("perf: two manned outposts a side, mirror images; a game with no outpost hashes as with the switch off", () => {
+  const g = new Game({ seed: 1, scenario: "perf" });
+  const b = g.w.buildings.col;
+  const posts: number[][] = [[], []];
+  for (let s = 0; s < g.w.buildings.count; s++) if (b.type[s] === BuildingType.Outpost) posts[b.owner[s]].push(s);
+  assert.deepEqual(posts.map((x) => x.length), [2, 2]);
+  posts[0].forEach((s, k) => {
+    const m = posts[1][k];
+    assert.deepEqual([b.cellX[m], b.cellY[m]], [b.cellY[s], b.cellX[s]]);
+    assert.equal(postedAt(g.w, b.id[s]), OUTPOST.slots);
+    assert.equal(postedAt(g.w, b.id[m]), OUTPOST.slots);
+  });
+  // perf's battle without its outposts: soldiers hit and fall, and nothing of D-080 shows.
+  const hashes = (): number[] => {
+    const h = new Game({ seed: 1, scenario: "perf" });
+    const out: number[] = [];
+    for (let t = 0; t < 600; t++) {
+      h.step();
+      if (t % 100 === 99) out.push(h.hash());
+    }
+    return out;
+  };
+  const keep = PERF.outposts;
+  PERF.outposts = [];
+  try {
+    const on = hashes();
+    let off: number[] = [];
+    switchedOff(OUTPOST, () => {
+      off = hashes();
+    })();
+    assert.deepEqual(on, off);
+  } finally {
+    PERF.outposts = keep;
+  }
 });

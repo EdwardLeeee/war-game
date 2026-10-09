@@ -74,6 +74,8 @@ plan.raceAt = Number(arg("race-at", String(plan.raceAt)));
 plan.raceSeen = Number(arg("race-seen", String(plan.raceSeen)));
 plan.raceBy = Number(arg("race-by", String(plan.raceBy / 1200))) * 1200;
 plan.raceStage = flag("race-stage");
+// D-080: the tower rush, with this many spearmen (--tower-rush 6).
+plan.towerRush = Number(arg("tower-rush", "0"));
 // D-072: the user's economy (ai's replay of the game they beat hard): automatic training, 16
 // farmers, no gold until the plunder, one trip, to the big town with 10 soldiers.
 if (flag("user-eco")) {
@@ -149,6 +151,17 @@ interface GameRecord {
   armiesNearest: number;
   cityFirstHit: [number, number];
   cityFell: [number, number];
+  /**
+   * D-080, the tower rush only: when it set out, its outpost stood and its second tower was
+   * placed (-1: never); and each outpost and arrow tower the player put down: when it was
+   * placed, finished and pulled down (-1: never).
+   */
+  rush?: {
+    start: number;
+    outpost: number;
+    towers: number;
+    built: { kind: "outpost" | "tower"; placed: number; done: number; fell: number }[];
+  };
   /** Random maps (D-074): the map's layout and when the player first saw the AI's main city (-1: never). */
   layout?: string;
   found?: number;
@@ -244,6 +257,8 @@ function play(seed: number): GameRecord {
   const cityFirstHit: [number, number] = [-1, -1];
   const cityFell: [number, number] = [-1, -1];
   let armiesNearest = -1;
+  // D-080: the player's outposts and arrow towers, by id: when placed, finished and gone.
+  const rushBuilt = new Map<number, { kind: "outpost" | "tower"; placed: number; done: number; fell: number }>();
   const aiHome = map.spawns[1];
   const centre = (p: number, away: number): { x: number; y: number; n: number } => {
     let x = 0;
@@ -288,6 +303,18 @@ function play(seed: number): GameRecord {
       for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === 0 && b.type[s] === BuildingType.MageHall && b.progress[s] >= 1000) hallDone = w.tick;
     }
     if (aiMage < 0 && count(1, UnitType.Mage) > 0) aiMage = w.tick;
+    if (plan.towerRush > 0) {
+      for (let s = 0; s < w.buildings.count; s++) {
+        if (b.owner[s] !== 0 || (b.type[s] !== BuildingType.Outpost && b.type[s] !== BuildingType.ArrowTower)) continue;
+        let x = rushBuilt.get(b.id[s]);
+        if (x === undefined) {
+          x = { kind: b.type[s] === BuildingType.Outpost ? "outpost" : "tower", placed: w.tick, done: -1, fell: -1 };
+          rushBuilt.set(b.id[s], x);
+        }
+        if (x.done < 0 && b.progress[s] >= 1000) x.done = w.tick;
+      }
+      for (const [id, x] of rushBuilt) if (x.fell < 0 && w.building(id) < 0) x.fell = w.tick;
+    }
     for (let p = 0; p < 2; p++) {
       if (cityFirstHit[p] < 0 && cityHp(p) < rules().buildings[BuildingType.MainCity].hp) cityFirstHit[p] = w.tick;
       if (cityFell[p] < 0 && w.mainCity(p) < 0) cityFell[p] = w.tick;
@@ -365,6 +392,11 @@ function play(seed: number): GameRecord {
     armiesNearest,
     cityFirstHit,
     cityFell,
+    ...(plan.towerRush > 0
+      ? {
+          rush: { ...st.rush, built: [...rushBuilt.values()] },
+        }
+      : {}),
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
@@ -396,6 +428,7 @@ const options = [
   plan.race === "sentry" ? `偷家：哨兵看到電腦 ${plan.raceSeen} 名往家裡來就直衝電腦主城（${plan.raceAt} 名或第 ${plan.raceBy / 1200} 分也去）` : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
   mapMode === "random" ? "隨機地圖（我只知道探到的，派一名槍兵偵察；電腦也要偵察）" : "",
+  plan.towerRush > 0 ? `塔攻：${plan.towerRush} 名槍兵到電腦主城旁蓋哨所駐守，再蓋 2 座箭樓（D-080）` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
@@ -405,6 +438,26 @@ const byStyle = AI_STYLES.map((s) => {
   return of.length === 0 ? "" : `${STYLE_NAMES[s]} ${of.filter((x) => x.result === "won").length}/${of.length}`;
 }).filter((x) => x !== "");
 out.push(`照電腦的性格：${byStyle.join("、")}。`, "");
+if (plan.towerRush > 0) {
+  // D-080: did the AI pull the rush down?
+  const rushed = games.filter((x) => x.rush !== undefined);
+  const built = (kind: "outpost" | "tower") => rushed.flatMap((x) => x.rush!.built.filter((b) => b.kind === kind));
+  const count = (kind: "outpost" | "tower") => {
+    const all = built(kind);
+    const done = all.filter((b) => b.done >= 0);
+    const fell = done.filter((b) => b.fell >= 0).map((b) => b.fell).sort((a, b) => a - b);
+    const early = all.filter((b) => b.done < 0 && b.fell >= 0).length;
+    return (
+      `動工 ${all.length} 座、蓋好 ${done.length} 座；蓋好後被電腦拆掉 ${fell.length} 座` +
+      `${fell.length === 0 ? "" : `（中位數第 ${m(fell[fell.length >> 1])} 分）`}，沒蓋好就被拆掉 ${early} 座`
+    );
+  };
+  out.push(
+    `塔攻：出發 ${rushed.filter((x) => x.rush!.start >= 0).length}/${rushed.length} 局。` +
+      `哨所${count("outpost")}。箭樓${count("tower")}。`,
+    "",
+  );
+}
 if (mapMode === "random") {
   const by = (l: string) => games.filter((x) => x.layout === l);
   const foundAt = games.filter((x) => (x.found ?? -1) >= 0).map((x) => x.found!).sort((a, b) => a - b);
