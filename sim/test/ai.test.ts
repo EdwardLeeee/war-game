@@ -2,12 +2,12 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, createAi, type HardPlan } from "../src/ai/ai.ts";
+import { type AiStyle, createAi, enemyForts, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { type AiDifficulty, BuildingType, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
+import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
@@ -1052,4 +1052,133 @@ test("random maps: hard marches on the enemy only once it has seen where it is, 
     const c = spawnCentre(frame, w.map.spawns[1]);
     return [c.x, c.y];
   })(), "to the main city itself");
+});
+
+// --- D-080: enemy outposts and arrow towers ----------------------------------------------------------
+
+/**
+ * An AI (player 0) with `spears` spearmen by its main city, `farmers` farmers at work there, and an
+ * enemy fort (`type`, finished or a site) at `at` cells from its main city's centre, seen by a farmer
+ * of its own beside it; `guards` enemy spearmen and `builders` enemy farmers stand by the fort.
+ */
+function fortGame(opt: { type: BuildingType; at: [number, number]; done?: boolean; spears?: number; farmers?: number; guards?: number; builders?: number; difficulty?: AiDifficulty }) {
+  const g = emptyGame();
+  const w = g.w;
+  const home = spawnCentre(w.map.frames[0], w.map.spawns[0]);
+  const fx = home.x + opt.at[0];
+  const fy = home.y + opt.at[1];
+  const info = rules().buildings[opt.type];
+  const fort = w.addBuilding(1, opt.type, fx, fy, info.hp, opt.done === false ? 300 : 1000);
+  const spears = Array.from({ length: opt.spears ?? 0 }, (_, k) => put(g, 0, UnitType.Spearman, home.x + 4 + (k % 6), home.y - 4 - Math.trunc(k / 6)));
+  const farmers = Array.from({ length: opt.farmers ?? 0 }, (_, k) => {
+    const id = put(g, 0, UnitType.Farmer, home.x - 3 + (k % 4), home.y + 3 + Math.trunc(k / 4));
+    w.units.col.order[slotOf(g, id)] = Order.Gather;
+    return id;
+  });
+  put(g, 0, UnitType.Farmer, fx - 3, fy);
+  const guards = Array.from({ length: opt.guards ?? 0 }, (_, k) => put(g, 1, UnitType.Spearman, fx - 1 + (k % 3), fy - 1 - Math.trunc(k / 3)));
+  const builders = Array.from({ length: opt.builders ?? 0 }, (_, k) => put(g, 1, UnitType.Farmer, fx + k, fy + info.size));
+  g.fog.update(w);
+  const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty: opt.difficulty }, 0, "balanced");
+  return { g, w, ai, fort, spears, farmers, guards, builders, centre: { x: fx + (info.size >> 1), y: fy + (info.size >> 1) }, out: ai.think(buildView(g, 0)) };
+}
+
+test("D-080: an enemy outpost or arrow tower is a fort; a neutral town's tower is not", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const all = () => enemyForts(buildView(g, null), 0, rules());
+  assert.deepEqual(all(), [], "the big town's tower is neutral");
+  w.addBuilding(1, BuildingType.ArrowTower, 40, 40, 500, 1000);
+  w.addBuilding(1, BuildingType.Outpost, 44, 40, 400, 300);
+  w.addBuilding(0, BuildingType.ArrowTower, 50, 40, 500, 1000);
+  const [tower, outpost] = all();
+  assert.equal(all().length, 2, "its own tower is not");
+  // From the rules: the tower's arrows (cells, rounded up), the outpost's guards and towers beside it.
+  const r = rules();
+  const arrows = Math.ceil(r.arrows.arrowTower.range / CELL);
+  assert.deepEqual([tower.type, tower.hits, tower.reach, tower.done], [BuildingType.ArrowTower, arrows, arrows, true]);
+  assert.deepEqual([outpost.type, outpost.hits, outpost.reach, outpost.done], [BuildingType.Outpost, r.outpost.reach, Math.max(r.outpost.reach, r.towerReach.outpost! + arrows), false], "an outpost: its guards' reach, and the arrows of towers beside it");
+});
+
+test("D-080: an arrow tower by its main city: the army goes and pulls it down; one far off it leaves alone", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    const near = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
+    const hit = near.out.find((c) => c.c === "attack" && c.target === near.fort) as { u: number[] } | undefined;
+    assert.ok(hit !== undefined && near.spears.every((id) => hit.u.includes(id)), `${difficulty}: the army attacks the tower`);
+    const far = fortGame({ type: BuildingType.ArrowTower, at: [30, -40], spears: 8, difficulty });
+    assert.ok(!far.out.some((c) => (c.c === "attack" && c.target === far.fort) || (c.c === "move" && c.x === far.centre.x && c.y === far.centre.y)), `${difficulty}: not one far off`);
+  }
+});
+
+test("D-080: an outpost out past the home raid's reach, with guards by it: the army goes for the guards first", () => {
+  // 22 cells out the guards do not call the army home (16), but towers beside the outpost would reach its ground.
+  const { out, centre, fort } = fortGame({ type: BuildingType.Outpost, at: [0, -22], spears: 12, guards: 2 });
+  assert.ok(out.some((c) => c.c === "move" && c.u.length === 12 && c.x === centre.x && c.y === centre.y), "a move to it (fights what it meets)");
+  assert.ok(!out.some((c) => c.c === "attack" && c.target === fort), "not the outpost itself yet");
+  // Too many guards for it: it stays.
+  const strong = fortGame({ type: BuildingType.Outpost, at: [0, -22], spears: 4, guards: 6 });
+  assert.ok(!strong.out.some((c) => c.c === "move" && c.x === strong.centre.x && c.y === strong.centre.y), "outnumbered: not");
+});
+
+test("D-080: too few soldiers for an unguarded fort site: farmers go for its builders, then the site, and back to work once it is gone", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    const { g, w, ai, fort, farmers, builders, out } = fortGame({ type: BuildingType.ArrowTower, at: [2, -12], done: false, farmers: 8, builders: 2, difficulty });
+    const go = out.find((c) => c.c === "attack" && c.u.every((id) => farmers.includes(id))) as { u: number[]; target: number } | undefined;
+    assert.ok(go !== undefined && go.u.length === 4, `${difficulty}: four farmers`);
+    assert.ok(builders.includes(go.target), `${difficulty}: at a builder first`);
+    for (const id of builders) w.units.col.hp[slotOf(g, id)] = 0;
+    g.step();
+    g.fog.update(w);
+    w.tick += 10;
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "attack" && c.target === fort), `${difficulty}: then the site`);
+    w.buildings.col.hp[w.building(fort)] = 0;
+    g.step();
+    g.fog.update(w);
+    w.tick += 10;
+    const back = ai.think(buildView(g, 0)).find((c) => c.c === "stop") as { u: number[] } | undefined;
+    assert.deepEqual(back?.u, go.u, `${difficulty}: back to work`);
+  }
+  // With enemy soldiers by it, the farmers stay at work.
+  const guarded = fortGame({ type: BuildingType.ArrowTower, at: [2, -12], done: false, farmers: 8, builders: 2, guards: 1 });
+  assert.ok(!guarded.out.some((c) => c.c === "attack" && c.u.some((id) => guarded.farmers.includes(id))), "not against guards");
+});
+
+test("D-080: marching, an arrow tower by the way comes first; then on to the enemy base", () => {
+  const { g, w, ai, ids, s0, s1 } = marchOnBase();
+  // A tower beside the army's way (not by the enemy's main city).
+  const tower = w.addBuilding(1, BuildingType.ArrowTower, s0.cellX + 22, s0.cellY - 18, 500, 1000);
+  w.tick += 10;
+  g.fog.update(w);
+  const hit = ai.think(buildView(g, 0)).find((c) => c.c === "attack" && c.target === tower) as { u: number[] } | undefined;
+  assert.ok(hit !== undefined && hit.u.length === ids.length, "the army attacks it");
+  w.buildings.col.hp[w.building(tower)] = 0;
+  g.step();
+  g.fog.update(w);
+  w.tick += 10;
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY), "then on");
+});
+
+test("D-080: hard's army away at the enemy base, the soldiers waiting at home pull down a tower by the main city", () => {
+  const g = emptyGame();
+  const w = g.w;
+  for (const t of w.map.towns) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    w.townTimer[t.id] = 4800;
+  }
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 30 && c.x === s1.cellX && c.y === s1.cellY), "off to the enemy base");
+  const home = spawnCentre(w.map.frames[0], s0);
+  const fresh = [0, 1, 2, 3, 4].map((k) => put(g, 0, UnitType.Spearman, home.x + 3 + k, home.y - 3));
+  const tower = w.addBuilding(1, BuildingType.ArrowTower, home.x + 2, home.y - 12, 500, 1000);
+  put(g, 0, UnitType.Farmer, home.x, home.y - 11);
+  w.tick += 10;
+  g.fog.update(w);
+  const hit = ai.think(buildView(g, 0)).find((c) => c.c === "attack" && c.target === tower) as { u: number[] } | undefined;
+  assert.deepEqual(hit && [...hit.u].sort(), [...fresh].sort(), "the five at home");
 });
