@@ -1033,7 +1033,7 @@ test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現�
   await expect(g1).toHaveText("1·3/4");
 });
 
-test("軍團畫面：點編隊按鈕就選取並打開；設定每種兵要幾名，沒編隊的兵馬上被拉進來，走去集合；前往中、堅守的兵不拉（D-050、D-054）", async ({ page }, info) => {
+test("軍團畫面：點編隊按鈕就選取並打開；設定每種兵要幾名，沒編隊的兵馬上被拉進來，編隊沒人時站在原地（D-080）；前往中、堅守的兵不拉（D-050、D-054）", async ({ page }, info) => {
   // Long on Chromium's software renderer: 36 s on main (run 37520318345), past 60 s on a busy runner (run 37535738590).
   test.setTimeout(120_000);
   await select(page, []);
@@ -1050,15 +1050,21 @@ test("軍團畫面：點編隊按鈕就選取並打開；設定每種兵要幾�
   const ranged = await ownIds(page, [2]);
   const spear = await ownIds(page, [1]);
 
-  // Two ranged: the two lowest ids in no group join and, with nobody in the group yet, walk
-  // to the gathering point: no rally point is set, so the cell in front of the main city.
+  // Two ranged, one tap each. The first joins the empty group and stays where it stands (D-080:
+  // 「部隊剛編兵的時候預測就是站在原地，不要往主城集合」), not to the rally point or the main city;
+  // the second then has someone to join (D-054; it stands beside the first already, so it has joined).
+  const marches = async (id: number) => (await sent(page)).filter((c) => c.c === "move" && c.auto === true && Array.isArray(c.u) && (c.u as number[]).includes(id));
   await more("遠程兵").tap();
+  await expect(toast(page, /^1 名沒編隊的兵補進編隊 1，在原地待命$/)).toBeVisible();
+  await expect.poll(async () => (await groupInfo(page))[0].ids).toEqual(ranged.slice(0, 1));
   await more("遠程兵").tap();
   await expect(want("遠程兵")).toHaveText("2");
   await expect.poll(async () => (await groupInfo(page))[0].ids).toEqual(ranged.slice(0, 2));
   await expect(panel.locator(".group-row").nth(1)).toContainText("現有 2");
-  await expect(toast(page, /名沒編隊的兵補進編隊 1，正走過去/)).toBeVisible();
-  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "move" && c.auto === true).at(-1)).toMatchObject({ c: "move", u: ranged.slice(0, 2), x: 12, y: 79 });
+  await expect(toast(page, /^1 名沒編隊的兵補進編隊 1，正走過去$/)).toBeVisible();
+  await page.waitForTimeout(2_500);
+  expect(await marches(ranged[0]), "the first one: no march to the rally point or the main city").toEqual([]);
+  expect(await marches(ranged[1]), "the second stands beside the first: nothing to walk").toEqual([]);
   await expect(g1).toHaveText("1·2/2");
   await expect(panel.locator(".sel-head")).toContainText("2/2");
   await shot(page, info, "group-panel");
