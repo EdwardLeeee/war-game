@@ -8,6 +8,7 @@
 // 10. the game's time limit (none when 0). The hash covers all state.
 
 import {
+  BuildingType,
   CELL_SHIFT,
   type Command,
   FOG_EVERY,
@@ -28,7 +29,7 @@ import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, CAVALRY, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAVALRY, OUTPOST, COUNTER_ATTACK, GARRISON, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -230,6 +231,12 @@ export class Game {
     h = fnvWord(h, w.buildings.count);
     for (const name of w.buildings.names) {
       if (name === "soldiers" && !GARRISON.on) continue;
+      if (name === "provoker") {
+        // Outposts' only (D-080): a game without one keeps the words it had before.
+        const b = w.buildings.col;
+        if (OUTPOST.on) for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.Outpost) h = fnvWord(h, b.provoker[s]);
+        continue;
+      }
       h = fnvInt32(h, w.buildings.col[name], w.buildings.count);
     }
     const f = this.fog;
