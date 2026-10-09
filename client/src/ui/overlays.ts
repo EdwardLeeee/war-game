@@ -4,15 +4,24 @@
 
 import { type CommandBody, type CommandKind, Reject } from "../sim.ts";
 
+/**
+ * 進攻紅、撤退藍 (D-080, user 2026-10-09: 「攻擊跟撤退可以做成紅色跟藍色的按鈕，不然有點搞不清楚」):
+ * the class every 進攻 and every 撤退 button carries, wherever it is (指令區、輪盤、全軍撤退、退回主城).
+ */
+export const ORDER_TONE = { advance: "order-advance", retreat: "order-retreat" } as const;
+export type OrderTone = keyof typeof ORDER_TONE;
+
 export interface WheelButton {
   id: string;
   label: string;
+  tone?: OrderTone;
 }
 
 export interface PromptButton {
   label: string;
   /** Wider, primary-coloured button. */
   primary?: boolean;
+  tone?: OrderTone;
   onTap: () => void;
 }
 
@@ -167,7 +176,7 @@ export class Overlays {
       const rad = (deg * Math.PI) / 180;
       const bx = Math.min(Math.max(x + WHEEL_RADIUS * Math.cos(rad), WHEEL_BUTTON / 2 + 8), w - WHEEL_BUTTON / 2 - 8);
       const by = Math.min(Math.max(y + WHEEL_RADIUS * Math.sin(rad), WHEEL_BUTTON / 2 + 8), h - WHEEL_BUTTON / 2 - 8);
-      const btn = el("button", "wheel-item", this.wheel);
+      const btn = el("button", b.tone === undefined ? "wheel-item" : `wheel-item ${ORDER_TONE[b.tone]}`, this.wheel);
       btn.type = "button";
       btn.setAttribute("role", "menuitem");
       btn.dataset.item = b.id;
@@ -203,7 +212,7 @@ export class Overlays {
     this.promptWarning(null);
     this.promptButtons.replaceChildren();
     for (const b of buttons) {
-      const btn = el("button", b.primary === true ? "primary" : "secondary", this.promptButtons);
+      const btn = el("button", `${b.primary === true ? "primary" : "secondary"}${b.tone === undefined ? "" : ` ${ORDER_TONE[b.tone]}`}`, this.promptButtons);
       btn.type = "button";
       btn.textContent = b.label;
       btn.addEventListener("click", b.onTap);

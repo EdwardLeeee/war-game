@@ -62,12 +62,13 @@ import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
 import { Placement, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
-import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, type TownArea } from "./army.ts";
+import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
 import { features, garrisonTypes, holdsOf } from "./features.ts";
-import { GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding } from "./garrison.ts";
+import { Charges } from "./follow.ts";
+import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn } from "./orders.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
@@ -299,6 +300,8 @@ export class Game implements GestureHost {
 
   /** The last frames: their intervals and how long drawing them took (test pages compare maps, D-074). */
   readonly frameTimes = new FrameTimes(1200);
+  /** 進攻到底 (D-080): units the player sent to attack, sent on to their target's spot if the attack ends before they get there. */
+  readonly charges = new Charges();
 
   /** Arrows drawn from `shot` events so far (round 7), for the test hook. */
   get shotsForTest(): number {
@@ -462,7 +465,42 @@ export class Game implements GestureHost {
     }
     // His own order sending a recruit somewhere: 自動補兵 no longer leads it to its group (GDD §10).
     this.army.playerCommand(cmd);
+    // 進攻到底 (D-080): another order of his, 堅守 or 躲進去 included, ends it; an attack starts it.
+    const named = (cmd as { u?: number | number[] }).u;
+    if (named !== undefined && (cmd.c === "stance" || cmd.c === "garrison" || redirects(cmd))) this.charges.drop(Array.isArray(named) ? named : [named]);
+    if (cmd.c === "attack") this.charges.start(cmd.u, cmd.target, this.targetCell(cmd.target), this.view?.header?.[H.tick] ?? 0);
     return seq;
+  }
+
+  /** Where a unit or building is (cells, its centre), or null when it is not in the snapshot. */
+  private targetCell(id: number): { x: number; y: number } | null {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    if (view === null || snap === undefined) return null;
+    const u = view.unitRow(id);
+    if (u >= 0) return { x: snap.units[u + UnitField.x] / CELL, y: snap.units[u + UnitField.y] / CELL };
+    const b = view.buildingRow(id);
+    if (b < 0) return null;
+    const size = view.rules.buildings[snap.buildings[b + BuildingField.type]]?.size ?? 1;
+    return { x: snap.buildings[b + BuildingField.cellX] + size / 2, y: snap.buildings[b + BuildingField.cellY] + size / 2 };
+  }
+
+  /**
+   * 進攻到底 (D-080: 「就算有一部分已經到了，後面那些還沒到的也要聚集過來」): every snapshot, the
+   * units whose attack ended (their target fell) still far from it go on to where it was. Not
+   * those hiding in a building or staying in a town (留守).
+   */
+  private followCharges(): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const tick = view?.header?.[H.tick];
+    if (view === null || u === undefined || tick === undefined) return;
+    const unit = (id: number) => {
+      const o = view.unitRow(id);
+      if (o < 0 || isHiding(u[o + UnitField.order]) || this.army.isGarrisoned(id)) return null;
+      return { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL, attacking: u[o + UnitField.order] === Order.Attack };
+    };
+    for (const o of this.charges.update(tick, unit, (id) => this.targetCell(id))) this.autoCommand({ c: "move", u: o.ids, x: o.x, y: o.y });
   }
 
   /** An order the interface gives on its own (a garrison's stance, a recruit's march or formation): a rejection is not shown to the player. */
@@ -647,6 +685,54 @@ export class Game implements GestureHost {
     return workersAt(this.workers(), this.depots(), building, resource).length;
   }
 
+  /** ＋遠程／＋法師 (D-080): our soldiers on their way to hide in this building, not inside yet. */
+  hidingComing(building: number): number {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return 0;
+    let n = 0;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] === view.me && isHiding(u[o + UnitField.order]) && u[o + UnitField.orderTarget] === building && u[o + UnitField.action] !== Action.Garrisoned) n++;
+    }
+    return n;
+  }
+
+  /**
+   * ＋遠程／＋法師 (D-080: 「箭塔應該是可以點擊然後把弓箭手或是法師放進去」): one soldier of this
+   * type called in to hide in this building of ours, by the player's own `garrison` order
+   * (garrison.ts says whom); the message says why nobody came when nobody does.
+   */
+  callToHide(building: number, type: number): void {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    const o = view?.buildingRow(building) ?? -1;
+    if (view === null || snap === undefined || o < 0) return;
+    const b = snap.buildings;
+    const kind = b[o + BuildingField.type];
+    const holds = holdsOf(view.rules, kind);
+    const name = BUILDING_NAME[kind] ?? "建築";
+    if (b[o + BuildingField.soldiers] + this.hidingComing(building) >= holds) {
+      this.depotSay(building, callFullText(name, holds));
+      return;
+    }
+    const u = snap.units;
+    const units: Callable[] = [];
+    for (let p = 0; p < u.length; p += UNIT_STRIDE) {
+      if (u[p + UnitField.owner] !== view.me) continue;
+      const id = u[p + UnitField.id];
+      const order = u[p + UnitField.order];
+      units.push({ id, type: u[p + UnitField.type], x: u[p + UnitField.x] / CELL, y: u[p + UnitField.y] / CELL, idle: order === Order.None, hiding: isHiding(order), stationed: this.army.isGarrisoned(id) });
+    }
+    const size = view.rules.buildings[kind]?.size ?? 1;
+    const id = pickToHide(units, type, { cx: b[o + BuildingField.cellX], cy: b[o + BuildingField.cellY], size });
+    if (id === null) {
+      this.depotSay(building, callNoneText(UNIT_NAME[type] ?? "兵"));
+      return;
+    }
+    this.command({ c: "garrison", u: [id], building });
+    this.depotSay(building, `叫 1 名${UNIT_NAME[type] ?? "兵"}躲進${name}`);
+  }
+
   /** ＋ on a depot (D-066): one villager more gathering `resource` for it, as the player's own order. */
   depotSend(building: number, resource: Resource): void {
     const view = this.view;
@@ -763,8 +849,9 @@ export class Game implements GestureHost {
 
   /**
    * A soldier of ours was trained: it joins the control group short of its type; with none
-   * short, the group with the most soldiers (D-054); with no group at all, it stays at the
-   * rally point. It sets off for the group at once.
+   * short, the group with the most soldiers (D-054); with no group at all, it stays where
+   * the simulation put it. It sets off for the group at once, if anyone is in it (D-080:
+   * otherwise it stays where it stands).
    */
   private enlist(id: number, type: number): void {
     const view = this.view;
@@ -773,14 +860,15 @@ export class Game implements GestureHost {
     const short = this.army.enlist(id, type, typeOf);
     const i = short ?? this.army.joinLargest(id, type, typeOf);
     if (i === null) return;
+    const others = this.army.groups[i].ids.filter((m) => m !== id && view.unitRow(m) >= 0);
     const tick = view.header?.[H.tick] ?? 0;
     if (tick - this.recruitMessageTick >= RECRUIT_MESSAGE_TICKS) {
       this.recruitMessageTick = tick;
-      this.toast(short !== null ? `新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}，正走過去` : `新的${UNIT_NAME[type] ?? "兵"}加入兵最多的編隊 ${i + 1}，正走過去`);
+      const going = others.length > 0 ? "，正走過去" : "，在原地待命";
+      this.toast(short !== null ? `新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}${going}` : `新的${UNIT_NAME[type] ?? "兵"}加入兵最多的編隊 ${i + 1}${going}`);
     }
     // It takes the group's formation (D-027): 散開 when more than half of the others are. New
     // units are 密集, and on their way to the rally point the simulation only sets the flag.
-    const others = this.army.groups[i].ids.filter((m) => m !== id && view.unitRow(m) >= 0);
     if (mostlyLoose(others, (m) => view.unitLoose(m))) this.autoCommand({ c: "formation", u: [id], loose: true });
   }
 
@@ -795,7 +883,7 @@ export class Game implements GestureHost {
       const o = view.unitRow(id);
       return o < 0 || isHiding(u[o + UnitField.order]) ? null : { x: u[o + UnitField.x], y: u[o + UnitField.y] };
     };
-    for (const o of this.army.muster(tick, where, this.gatherPoint())) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
+    for (const o of this.army.muster(tick, where)) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
   }
 
   /**
@@ -810,33 +898,12 @@ export class Game implements GestureHost {
     // Those hiding still count in their group (ceo 2026-10-07), so it is not short of them; not
     // idle (order Garrison), they are never drafted themselves.
     for (const d of this.army.draft(this.soldiers(true), idle)) {
-      this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}，正走過去`);
-      // They take the group's formation, as recruits do (D-027).
       const others = this.army.groups[d.group].ids.filter((m) => !d.ids.includes(m) && view.unitRow(m) >= 0);
+      // With nobody in the group to join, they are the group where they stand (D-080).
+      this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}${others.length > 0 ? "，正走過去" : "，在原地待命"}`);
+      // They take the group's formation, as recruits do (D-027).
       if (mostlyLoose(others, (m) => view.unitLoose(m))) this.autoCommand({ c: "formation", u: d.ids, loose: true });
     }
-  }
-
-  /**
-   * Where soldiers drafted into a group with nobody in it meet (D-050): the rally point of
-   * our barracks, range or mage hall with the lowest id that has one; else the cell in front
-   * of the main city (where 撤退 goes). Fixed point.
-   */
-  private gatherPoint(): { x: number; y: number } | null {
-    const view = this.view;
-    const b = view?.curr?.snap.buildings;
-    if (view === null || b === undefined) return null;
-    let best: { id: number; x: number; y: number } | null = null;
-    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-      const type = b[o + BuildingField.type];
-      if (b[o + BuildingField.owner] !== view.me || b[o + BuildingField.rallyX] < 0) continue;
-      if (type !== BuildingType.Barracks && type !== BuildingType.Range && type !== BuildingType.MageHall && type !== BuildingType.Stable) continue;
-      const id = b[o + BuildingField.id];
-      if (best === null || id < best.id) best = { id, x: b[o + BuildingField.rallyX], y: b[o + BuildingField.rallyY] };
-    }
-    if (best !== null) return { x: best.x, y: best.y };
-    const home = view.homeCell();
-    return home === null ? null : { x: home.x * CELL + CELL / 2, y: home.y * CELL + CELL / 2 };
   }
 
   // --- 軍團設定 (D-050) ------------------------------------------------------------------
@@ -956,6 +1023,7 @@ export class Game implements GestureHost {
         this.pruneArmy();
         this.draftArmy();
         this.musterRecruits();
+        this.followCharges();
         if (this.placement !== null) {
           this.placement.revalidate(view.placement);
           this.warnMilitia();
@@ -1301,7 +1369,7 @@ export class Game implements GestureHost {
     // 退回主城 (D-059), while there is a main city to go back to.
     const home = this.view?.homeCell() ?? null;
     if (mode === "retreat" && home !== null) {
-      buttons.push({ label: "退回主城", primary: true, onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, home)) });
+      buttons.push({ label: "退回主城", primary: true, tone: "retreat", onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, home)) });
     }
     // 取消 while picking where to advance or retreat to: they stop and hold (D-054).
     const holds = mode === "advance" || mode === "retreat";
@@ -1342,7 +1410,7 @@ export class Game implements GestureHost {
     this.overlays.openWheel(
       x,
       y,
-      items.map((id) => ({ id, label: label[id] })),
+      items.map((id) => ({ id, label: label[id], ...(id === "advance" || id === "retreat" ? { tone: id } : {}) })),
       (id) => {
         // 進攻 while they advance, 撤退 while they retreat: they stop and hold (D-054).
         if ((id === "advance" || id === "retreat") && allIn(view, view.selection.units, id)) return this.cancelToHold();
