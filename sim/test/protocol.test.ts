@@ -5,8 +5,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
-import { rules } from "../src/core/rules.ts";
+import { OUTPOST, rules } from "../src/core/rules.ts";
 import * as P from "../src/protocol.ts";
+import { switchedOff } from "./helpers.ts";
 
 const doc = readFileSync(new URL("../PROTOCOL.md", import.meta.url), "utf8");
 
@@ -86,7 +87,7 @@ test("constants match the engine spike's rules", () => {
   assert.equal(P.EVENT_KINDS_COMPLETE, true);
 });
 
-test("D-080 outposts: in the protocol and the rules table, rejected until their rules land", () => {
+test("D-080 outposts: in the protocol and the rules table; with OUTPOST off, rejected and nothing changes", switchedOff(OUTPOST, () => {
   const info = rules().buildings[P.BuildingType.Outpost];
   assert.deepEqual([info.size, info.hp, info.cost.wood, info.buildTicks, info.sight], [2, 400, 50, 20 * 20, 10]);
   assert.deepEqual(rules().outpost, { slots: 6, reach: 8, chase: 12 });
@@ -110,4 +111,4 @@ test("D-080 outposts: in the protocol and the rules table, rejected until their 
   again.step();
   assert.notEqual(before, 0);
   assert.equal(g.hash(), again.hash(), "rejected commands change nothing");
-});
+}));

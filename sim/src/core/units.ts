@@ -7,6 +7,7 @@
 
 import {
   Action,
+  BuildingFlag,
   BuildingType,
   CELL,
   CELL_SHIFT,
@@ -48,6 +49,7 @@ import {
   MAX_PUSH,
   MULT_DEN,
   MULT_NUM,
+  OUTPOST,
   PUSH,
   RETARGET_EVERY,
   SEPARATION,
@@ -57,7 +59,7 @@ import {
   UNITS,
   WORK_REACH,
 } from "./rules.ts";
-import { IDENTITY, toCanon } from "../frame.ts";
+import { IDENTITY, fromCanon, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
 import { HitCause, UNIT_KINDS, type World } from "./world.ts";
 
@@ -97,6 +99,8 @@ export class UnitSystem {
   private attacking = new Uint8Array(256);
   /** Per unit this tick: 1 while it steps out of a cannon warning (DODGE, round 8). */
   private dodging = new Uint8Array(256);
+  /** Per unit slot: its place among the guards of its outpost (id order), or -1 (D-080). */
+  private postIndex = new Int32Array(256);
   /**
    * Cannons calibrating at the start of the tick (DODGE, round 8): owner, target point, the
    * mage's position, moves left before the shot lands and the mage's id, WARN_STRIDE each.
@@ -146,6 +150,7 @@ export class UnitSystem {
       this.kept = new Uint8Array(c);
       this.attacking = new Uint8Array(c);
       this.dodging = new Uint8Array(c);
+      this.postIndex = new Int32Array(c);
       this.startTarget = new Int32Array(c);
       this.unitDamage = new Int32Array(c);
       this.shieldDamage = new Int32Array(c);
@@ -168,6 +173,7 @@ export class UnitSystem {
     this.collectSquadFights(w);
     this.collectWarnings(w);
     this.dodging.fill(0, 0, w.units.count);
+    if (OUTPOST.on) this.collectPosts(w, fog);
     for (let i = 0; i < w.units.count; i++) this.decide(w, fog, fields, farmers, i);
     if (this.warns.length > 0) this.keepOut(w, fog);
     this.move(w);
@@ -491,6 +497,226 @@ export class UnitSystem {
     return c.u + c.v;
   }
 
+  // --- outposts (D-080) ------------------------------------------------------------------
+
+  /**
+   * Each guard's place among the guards of its outpost (id order), and every outpost's provoker
+   * checked: dropped once dead, hidden, out of its owner's sight or beyond OUTPOST.chase.
+   */
+  private collectPosts(w: World, fog: Fog): void {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const count = new Map<number, number>();
+    for (let i = 0; i < w.units.count; i++) {
+      if (u.order[i] !== Order.Post) {
+        this.postIndex[i] = -1;
+        continue;
+      }
+      const k = count.get(u.orderTarget[i]) ?? 0;
+      this.postIndex[i] = k;
+      count.set(u.orderTarget[i], k + 1);
+    }
+    for (let s = 0; s < w.buildings.count; s++) {
+      if (b.type[s] !== BuildingType.Outpost || b.provoker[s] < 0) continue;
+      if (!this.withinChase(w, fog, b.owner[s], s, b.provoker[s])) b.provoker[s] = -1;
+    }
+  }
+
+  /** Can the outpost at slot bs (its owner p) still go for unit or building id: alive, seen, within OUTPOST.chase? */
+  private withinChase(w: World, fog: Fog, p: number, bs: number, id: number): boolean {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const size = w.buildingSize(b.type[bs]);
+    const chase = OUTPOST.chase << CELL_SHIFT;
+    const ts = w.unit(id);
+    if (ts >= 0) {
+      if (u.hp[ts] <= 0 || u.action[ts] === Action.Garrisoned || !this.sees(fog, p, u.x[ts], u.y[ts], n)) return false;
+      return rectDist2(u.x[ts], u.y[ts], b.cellX[bs], b.cellY[bs], size) <= chase * chase;
+    }
+    const ks = w.building(id);
+    if (ks < 0 || b.hp[ks] <= 0) return false;
+    const half = (w.buildingSize(b.type[ks]) << CELL_SHIFT) >> 1;
+    const kx = (b.cellX[ks] << CELL_SHIFT) + half;
+    const ky = (b.cellY[ks] << CELL_SHIFT) + half;
+    if (!this.sees(fog, p, kx, ky, n)) return false;
+    return rectDist2(kx, ky, b.cellX[bs], b.cellY[bs], size) <= chase * chase;
+  }
+
+  /**
+   * A spearman posted at an outpost (Order.Post, D-080). Whoever hit the outpost or a guard
+   * (the provoker) first, while within chase; then, attacking, the nearest enemy unit within
+   * OUTPOST.reach of the outpost, else the nearest enemy building within it; holding, only what
+   * stands next to him. Without a target he walks back to his place around the outpost. False
+   * when the outpost is gone.
+   */
+  private guard(w: World, fog: Fog, fields: FieldCache, i: number): boolean {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const bs = w.building(u.orderTarget[i]);
+    if (bs < 0 || b.owner[bs] !== me || b.type[bs] !== BuildingType.Outpost || b.hp[bs] <= 0) return false;
+    const info = UNITS[u.type[i]];
+    const hold = (b.flags[bs] & BuildingFlag.Hold) !== 0;
+    let tid = u.target[i];
+    if (tid >= 0 && !this.withinChase(w, fog, me, bs, tid)) tid = -1;
+    const provoker = b.provoker[bs];
+    if (provoker >= 0) {
+      tid = provoker;
+    } else if (tid < 0 || (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
+      // A nearer intruder within reach takes over; the one he chases (still within chase) is kept
+      // otherwise; else anything hostile right next to him (neutral militia too), in either mode.
+      const next = hold ? -1 : this.outpostTarget(w, fog, i, bs);
+      if (next >= 0) tid = next;
+      else if (tid < 0) tid = this.findTarget(w, fog, i, info.range);
+    }
+    u.target[i] = tid;
+    if (tid >= 0) {
+      const ts = w.unit(tid);
+      let tx: number;
+      let ty: number;
+      let d2: number;
+      if (ts >= 0) {
+        tx = u.x[ts];
+        ty = u.y[ts];
+        d2 = (tx - u.x[i]) * (tx - u.x[i]) + (ty - u.y[i]) * (ty - u.y[i]);
+      } else {
+        const ks = w.building(tid);
+        const size = w.buildingSize(b.type[ks]);
+        tx = (b.cellX[ks] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
+        ty = (b.cellY[ks] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
+        d2 = rectDist2(u.x[i], u.y[i], b.cellX[ks], b.cellY[ks], size);
+      }
+      u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
+      if (d2 <= info.range * info.range) {
+        this.attacking[i] = 1;
+        u.action[i] = Action.Attack;
+        return true;
+      }
+      if (!hold || provoker >= 0) {
+        if (d2 > DIRECT_STEER * DIRECT_STEER) {
+          if (ts >= 0) {
+            steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), info.speed);
+          } else {
+            const ks = w.building(tid);
+            steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () => cellsAround(w, b.cellX[ks], b.cellY[ks], w.buildingSize(b.type[ks])));
+          }
+        } else {
+          steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
+        }
+        return true;
+      }
+      // Holding: what stepped away is let go.
+      u.target[i] = -1;
+    }
+    const at = this.postPlace(w, i, bs);
+    u.anchorX[i] = at.x;
+    u.anchorY[i] = at.y;
+    const dx = at.x - u.x[i];
+    const dy = at.y - u.y[i];
+    if (dx * dx + dy * dy > ARRIVE_DISTANCE * ARRIVE_DISTANCE) {
+      steerTo(w, fields, i, at.x, at.y, -1, info.speed);
+      return true;
+    }
+    u.action[i] = Action.Idle;
+    return true;
+  }
+
+  /**
+   * Attacking (D-080): the enemy player's unit within OUTPOST.reach of the outpost nearest the
+   * guard, else its building nearest him; ties to the first in the guard's owner's canonical
+   * frame, so mirror-image outposts take mirror-image targets. Neutral militia are left alone
+   * (unless they come next to him). An id or -1.
+   */
+  private outpostTarget(w: World, fog: Fog, i: number, bs: number): number {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const size = w.buildingSize(b.type[bs]);
+    const reach = OUTPOST.reach << CELL_SHIFT;
+    const r2 = reach * reach;
+    const x0 = Math.max(b.cellX[bs] - OUTPOST.reach - 1, 0);
+    const y0 = Math.max(b.cellY[bs] - OUTPOST.reach - 1, 0);
+    const x1 = Math.min(b.cellX[bs] + size + OUTPOST.reach, n - 1);
+    const y1 = Math.min(b.cellY[bs] + size + OUTPOST.reach, n - 1);
+    let best = -1;
+    let bestD = 0;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          const o = u.owner[j];
+          if (o === me || o >= PLAYER_COUNT || u.action[j] === Action.Garrisoned) continue;
+          if (rectDist2(u.x[j], u.y[j], b.cellX[bs], b.cellY[bs], size) > r2) continue;
+          if (!this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+          const d = (u.x[j] - u.x[i]) * (u.x[j] - u.x[i]) + (u.y[j] - u.y[i]) * (u.y[j] - u.y[i]);
+          if (best < 0 || d < bestD || (d === bestD && canonFirst(w, me, j, best))) {
+            best = j;
+            bestD = d;
+          }
+        }
+      }
+    }
+    if (best >= 0) return u.id[best];
+    const f = w.map.frames[me] ?? IDENTITY;
+    let bestKey = 0;
+    for (let s = 0; s < w.buildings.count; s++) {
+      const o = b.owner[s];
+      if (o === me || o >= PLAYER_COUNT || b.hp[s] <= 0) continue;
+      const half = (w.buildingSize(b.type[s]) << CELL_SHIFT) >> 1;
+      const kx = (b.cellX[s] << CELL_SHIFT) + half;
+      const ky = (b.cellY[s] << CELL_SHIFT) + half;
+      if (rectDist2(kx, ky, b.cellX[bs], b.cellY[bs], size) > r2) continue;
+      if (!this.sees(fog, me, kx, ky, n)) continue;
+      const d = rectDist2(u.x[i], u.y[i], b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]));
+      const c = toCanon(f, b.cellX[s], b.cellY[s]);
+      const key = c.v * n + c.u;
+      if (best < 0 || d < bestD || (d === bestD && key < bestKey)) {
+        best = s;
+        bestD = d;
+        bestKey = key;
+      }
+    }
+    return best < 0 ? -1 : b.id[best];
+  }
+
+  /**
+   * The guard's place (fixed point, a cell centre): POST_PLACES[k] for the k-th guard in id
+   * order, around the outpost's footprint in its owner's canonical frame (so mirror-image
+   * outposts have mirror-image places); the nearest walkable cell if built over.
+   */
+  private postPlace(w: World, i: number, bs: number): { x: number; y: number } {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const p = u.owner[i];
+    const f = w.map.frames[p] ?? IDENTITY;
+    const size = w.buildingSize(b.type[bs]);
+    const a = toCanon(f, b.cellX[bs], b.cellY[bs]);
+    const c = toCanon(f, b.cellX[bs] + size - 1, b.cellY[bs] + size - 1);
+    const k = Math.max(0, this.postIndex[i]) % POST_PLACES.length;
+    const cell = fromCanon(f, Math.min(a.u, c.u) + POST_PLACES[k][0], Math.min(a.v, c.v) + POST_PLACES[k][1]);
+    const n = w.size;
+    let x = cell.x;
+    let y = cell.y;
+    if (!w.walkable(x, y)) {
+      const near = nearestWalkable(w, x, y, w.homes[p]);
+      if (near >= 0) {
+        x = near % n;
+        y = Math.trunc(near / n);
+      }
+    }
+    return { x: (x << CELL_SHIFT) + (CELL >> 1), y: (y << CELL_SHIFT) + (CELL >> 1) };
+  }
+
+  /** Someone hit unit slot ts: if it guards an outpost, that outpost's guards go for the attacker (D-080). */
+  private provoke(w: World, ts: number, attackerId: number): void {
+    const u = w.units.col;
+    if (u.order[ts] !== Order.Post) return;
+    const bs = w.building(u.orderTarget[ts]);
+    if (bs >= 0 && w.buildings.col.type[bs] === BuildingType.Outpost) w.buildings.col.provoker[bs] = attackerId;
+  }
+
   // --- hiding in buildings (round 7, D-061) --------------------------------------------
 
   /**
@@ -723,6 +949,15 @@ export class UnitSystem {
     if (order === Order.Garrison) {
       this.toShelter(w, fields, i);
       return;
+    }
+    if (order === Order.Post) {
+      if (OUTPOST.on && this.guard(w, fog, fields, i)) return;
+      // The outpost is gone: an ordinary soldier again, where it stands (D-080).
+      u.order[i] = Order.None;
+      u.orderTarget[i] = -1;
+      u.target[i] = -1;
+      u.anchorX[i] = u.x[i];
+      u.anchorY[i] = u.y[i];
     }
 
     // Crystal cannon: a calibrating mage stands still; any other order has cancelled it.
@@ -1199,6 +1434,8 @@ export class UnitSystem {
       } else {
         const bs = w.building(tid);
         if (bs >= 0) this.buildingDamage[bs] += info.attack;
+        // An outpost under attack sends its guards after the attacker (D-080).
+        if (OUTPOST.on && bs >= 0 && b.type[bs] === BuildingType.Outpost) b.provoker[bs] = u.id[i];
       }
       u.lastDealt[i] = w.tick;
       u.cooldown[i] = info.cooldown;
@@ -1238,6 +1475,7 @@ export class UnitSystem {
       u.hitBy[bestSlot] = b.owner[s];
       u.hitCause[bestSlot] = HitCause.Arrow;
       u.hitById[bestSlot] = -1;
+      if (OUTPOST.on) this.provoke(w, bestSlot, b.id[s]);
       b.target[s] = u.id[bestSlot];
       b.cooldown[s] = arrow.cooldown;
       this.shots.push(b.id[s], u.id[bestSlot]);
@@ -1296,6 +1534,7 @@ export class UnitSystem {
   /** One hit on unit slot ts: hp damage and shield damage with their multipliers. */
   private hit(w: World, ts: number, attack: number, attackerType: number, attackerOwner: number, cause: HitCause, attackerId: number): void {
     const u = w.units.col;
+    if (OUTPOST.on) this.provoke(w, ts, attackerId);
     u.hitCause[ts] = cause;
     u.hitById[ts] = attackerId;
     this.unitDamage[ts] += damage(attack, attackerType, u.type[ts]);
@@ -1458,6 +1697,11 @@ export function atHome(w: World, i: number): boolean {
   }
   return false;
 }
+
+/** Guards' places around an outpost's 2 x 2 footprint, from its canonical top-left cell (D-080). */
+const POST_PLACES: readonly (readonly [number, number])[] = [
+  [-1, -1], [2, -1], [-1, 2], [2, 2], [0, -1], [1, 2],
+];
 
 function canonFirst(w: World, owner: number, j: number, k: number): boolean {
   if (k < 0) return true;

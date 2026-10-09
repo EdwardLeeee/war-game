@@ -298,11 +298,11 @@ export const TOWER_REACH = { mainCity: 8, town: 2, outpost: 6 };
  * Outposts (D-080, the user 2026-10-09): built anywhere walkable and explored; up to `slots`
  * spearmen stand guard around one (`post`). Attacking (the default) they go for enemies within
  * `reach` cells of it and give up `chase` cells out; holding (`outpost_mode`) they stand and
- * fight what comes next to them, and all go for whoever hits the outpost or one of them. Off
- * until its rules land (the protocol comes first): building one and the three commands are
- * rejected.
+ * fight what comes next to them, and all go for whoever hits the outpost or one of them (and
+ * attacking, they do that too). Off: building one and the three commands are rejected, and
+ * the game plays as before D-080.
  */
-export const OUTPOST = { on: false, slots: 6, reach: 8, chase: 12 };
+export const OUTPOST = { on: true, slots: 6, reach: 8, chase: 12 };
 
 // --- round 8 (D-069): a defender is not beaten by the first cannon shots -------------------
 

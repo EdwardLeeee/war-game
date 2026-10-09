@@ -192,8 +192,9 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       return 0;
     }
     case "stop": {
-      const all = ownUnits(w, p, cmd.u);
-      if (all.length === 0) return Reject.NotOwner;
+      // Spearmen posted at an outpost (D-080) keep guarding it.
+      const all = ownUnits(w, p, cmd.u).filter((s) => w.units.col.order[s] !== Order.Post);
+      if (ownUnits(w, p, cmd.u).length === 0) return Reject.NotOwner;
       const u = w.units.col;
       // Soldiers hiding in a building stay inside and only drop their target (round 7).
       const slots = all.filter((s) => !hiding(w, s));
@@ -426,8 +427,9 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       return 0;
     }
     case "formation": {
-      const slots = ownUnits(w, p, cmd.u);
-      if (slots.length === 0) return Reject.NotOwner;
+      if (ownUnits(w, p, cmd.u).length === 0) return Reject.NotOwner;
+      // Spearmen posted at an outpost (D-080) keep their places.
+      const slots = ownUnits(w, p, cmd.u).filter((s) => w.units.col.order[s] !== Order.Post);
       if (typeof cmd.loose !== "boolean") return Reject.InvalidTarget;
       const u = w.units.col;
       for (const s of slots) {
@@ -520,6 +522,61 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       }
       return out > 0 ? 0 : Reject.NotAvailable;
     }
+    case "post": {
+      // D-080: spearmen go and stand guard at an own finished outpost.
+      if (!OUTPOST.on) return Reject.NotAvailable;
+      const slots = ownUnits(w, p, cmd.u);
+      if (slots.length === 0) return Reject.NotOwner;
+      const bs = Number.isInteger(cmd.building) ? w.building(cmd.building) : -1;
+      const b = w.buildings.col;
+      if (bs < 0 || b.owner[bs] !== p || b.type[bs] !== BuildingType.Outpost || b.progress[bs] < 1000) return Reject.InvalidTarget;
+      const u = w.units.col;
+      const fit = slots.filter((s) => u.type[s] === UnitType.Spearman && u.action[s] !== Action.Garrisoned && !(u.order[s] === Order.Post && u.orderTarget[s] === cmd.building));
+      if (fit.length === 0) return Reject.NotAvailable;
+      let room = OUTPOST.slots - postedAt(w, cmd.building);
+      if (room <= 0) return Reject.NoRoom;
+      for (const s of fit) {
+        if (room === 0) break;
+        room--;
+        if (u.order[s] === Order.Cast) u.castProgress[s] = 0;
+        u.order[s] = Order.Post;
+        u.orderTarget[s] = cmd.building;
+        u.target[s] = -1;
+        u.group[s] = -1;
+        u.squad[s] = 0;
+        u.speedCap[s] = 0;
+      }
+      return 0;
+    }
+    case "unpost": {
+      if (!OUTPOST.on) return Reject.NotAvailable;
+      const bs = Number.isInteger(cmd.building) ? w.building(cmd.building) : -1;
+      if (bs < 0) return Reject.InvalidTarget;
+      if (w.buildings.col.owner[bs] !== p) return Reject.NotOwner;
+      const u = w.units.col;
+      let out = 0;
+      for (let s = 0; s < w.units.count; s++) {
+        if (u.owner[s] !== p || u.order[s] !== Order.Post || u.orderTarget[s] !== cmd.building) continue;
+        u.order[s] = Order.None;
+        u.orderTarget[s] = -1;
+        u.target[s] = -1;
+        u.anchorX[s] = u.x[s];
+        u.anchorY[s] = u.y[s];
+        out++;
+      }
+      return out > 0 ? 0 : Reject.NotAvailable;
+    }
+    case "outpost_mode": {
+      if (!OUTPOST.on) return Reject.NotAvailable;
+      const bs = Number.isInteger(cmd.building) ? w.building(cmd.building) : -1;
+      const b = w.buildings.col;
+      if (bs < 0 || b.type[bs] !== BuildingType.Outpost) return Reject.InvalidTarget;
+      if (b.owner[bs] !== p) return Reject.NotOwner;
+      if (typeof cmd.hold !== "boolean") return Reject.InvalidTarget;
+      if (cmd.hold) b.flags[bs] |= BuildingFlag.Hold;
+      else b.flags[bs] &= ~BuildingFlag.Hold;
+      return 0;
+    }
     case "surrender": {
       w.winner = 1 - p;
       w.endReason = GameOverReason.Surrender;
@@ -543,6 +600,14 @@ export function inside(w: World, s: number): number {
 }
 
 /** Soldiers on their way to hide in building `id`, not yet inside. */
+/** Spearmen posted at outpost id, on their way or standing guard (D-080). */
+export function postedAt(w: World, id: number): number {
+  const u = w.units.col;
+  let n = 0;
+  for (let s = 0; s < w.units.count; s++) if (u.order[s] === Order.Post && u.orderTarget[s] === id) n++;
+  return n;
+}
+
 function goingTo(w: World, id: number): number {
   const u = w.units.col;
   let n = 0;
@@ -574,11 +639,14 @@ export function towerLand(w: World, p: number, cx: number, cy: number): boolean 
   if (!TOWERS.on) return false;
   const b = w.buildings.col;
   for (let s = 0; s < w.buildings.count; s++) {
-    if (b.owner[s] !== p || b.progress[s] < 1000 || b.type[s] !== BuildingType.MainCity) continue;
-    const size = BUILDINGS[BuildingType.MainCity].size;
+    if (b.owner[s] !== p || b.progress[s] < 1000) continue;
+    // Near an own finished main city, or (D-080) an own finished outpost.
+    const outpost = OUTPOST.on && b.type[s] === BuildingType.Outpost;
+    if (b.type[s] !== BuildingType.MainCity && !outpost) continue;
+    const size = w.buildingSize(b.type[s]);
     const dx = Math.max(b.cellX[s] - cx, 0, cx - (b.cellX[s] + size - 1));
     const dy = Math.max(b.cellY[s] - cy, 0, cy - (b.cellY[s] + size - 1));
-    if (Math.max(dx, dy) <= TOWER_REACH.mainCity) return true;
+    if (Math.max(dx, dy) <= (outpost ? TOWER_REACH.outpost : TOWER_REACH.mainCity)) return true;
   }
   for (let t = 0; t < w.townSize.length; t++) {
     if (w.townOwner[t] !== p || (w.townState[t] !== TownState.Repairing && w.townState[t] !== TownState.Governed)) continue;
