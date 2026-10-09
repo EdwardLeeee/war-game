@@ -4,6 +4,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { Game } from "../src/core/game.ts";
+import { rules } from "../src/core/rules.ts";
 import * as P from "../src/protocol.ts";
 
 const doc = readFileSync(new URL("../PROTOCOL.md", import.meta.url), "utf8");
@@ -82,4 +84,30 @@ test("constants match the engine spike's rules", () => {
   assert.equal(P.MAX_TICKS, 30 * 60 * P.TICKS_PER_SECOND);
   assert.equal(P.COMMAND_KINDS_COMPLETE, true);
   assert.equal(P.EVENT_KINDS_COMPLETE, true);
+});
+
+test("D-080 outposts: in the protocol and the rules table, rejected until their rules land", () => {
+  const info = rules().buildings[P.BuildingType.Outpost];
+  assert.deepEqual([info.size, info.hp, info.cost.wood, info.buildTicks, info.sight], [2, 400, 50, 20 * 20, 10]);
+  assert.deepEqual(rules().outpost, { slots: 6, reach: 8, chase: 12 });
+  assert.equal(rules().towerReach.outpost, 6);
+  assert.equal(rules().features.outpost, false);
+  const g = new Game({ seed: 1, scenario: "standard" });
+  const s0 = g.w.map.spawns[0];
+  const before = g.hash();
+  const sent: P.CommandBody[] = [
+    { c: "build", u: [], type: P.BuildingType.Outpost, x: s0.cellX + 4, y: s0.cellY - 8 },
+    { c: "post", u: [], building: 0 },
+    { c: "unpost", building: 0 },
+    { c: "outpost_mode", building: 0, hold: true },
+  ];
+  let seq = 0;
+  for (const body of sent) g.push({ ...body, t: g.tick, p: 0, seq: seq++ } as P.Command);
+  g.step();
+  const rejected = g.events.filter((e) => e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
+  assert.deepEqual(rejected, [P.Reject.NotAvailable, P.Reject.NotAvailable, P.Reject.NotAvailable, P.Reject.NotAvailable]);
+  const again = new Game({ seed: 1, scenario: "standard" });
+  again.step();
+  assert.notEqual(before, 0);
+  assert.equal(g.hash(), again.hash(), "rejected commands change nothing");
 });

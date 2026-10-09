@@ -68,11 +68,12 @@
   - `multipliers`：剋制加成。`target` 是兵種或 `"shield"`；傷害 × num / den，全部整數運算。
   - `mageCap`（6）、`maxPopulation`（120）、`queueMax`（每棟建築的訓練佇列上限）。
   - 第七輪（D-061）加的，畫面和電腦都照這份，不要自己抄數值。模擬一定會送；型別上是選填，只是讓手寫的假資料（mock）照樣編得過，讀的時候給預設值（沒有就當成關著）：
-    - `features`：哪些第七輪的規則開著。`plunderOnce` 城鎮只能搶一次、`towers` 可以蓋箭樓、`garrison` 遠程兵和法師可以躲進建築、`cavalry` 可以蓋馬廄、訓練騎兵。
+    - `features`：哪些第七輪的規則開著。`plunderOnce` 城鎮只能搶一次、`towers` 可以蓋箭樓、`garrison` 遠程兵和法師可以躲進建築、`cavalry` 可以蓋馬廄、訓練騎兵。D-080 加 `outpost`：可以蓋哨所、派槍兵駐守（3.4 節；型別上選填，沒有就當成關著）。
     - `arrows`：建築自己射的箭。`mainCity` 主城、`townTower` 大城的箭樓、`arrowTower` 玩家的箭樓；各有 `damage`、`range`（定點，從占地邊緣算）、`cooldown`（tick）、`extraMax`（主城每躲 1 名村民多 1 箭，最多幾箭；其他是 0）。
     - `garrisonTypes`：能用 `garrison` 躲進建築的兵種（遠程兵、法師）。
     - `garrisonCannon`：躲在建築裡的法師放晶砲時，傷害是平常的 `permille`／1000、冷卻是 `cooldownTimes` 倍。
-    - `towerReach`：箭樓可以蓋在哪裡（第 7 節）。
+    - `towerReach`：箭樓可以蓋在哪裡（第 7 節）。D-080 加 `outpost`：自己蓋好的哨所占地幾格內。
+    - `outpost`（D-080）：哨所的 `slots`（最多駐守幾名槍兵）、`reach`（攻擊模式去打幾格內的敵人）、`chase`（追到幾格就回來），都是格數（3.4 節）。
     - `towns`：依 `TownSize` 排，城鎮的民兵、半徑、搶的時間與收穫、廢墟時間、治理費、修繕時間、每分鐘收入（`perMinute`，收入全額時）、人口上限、最少駐軍、叛離時間。
     - `plunderRecovery`：搶過的城鎮再被治理時，收入從 `startPermille`（千分比）開始，治理 `ticks` 之後回到全額；`startPermille` 是 1000 表示沒有這條規則。
   - 第八輪（D-069）加的，一樣模擬一定會送、型別上選填：
@@ -156,6 +157,9 @@
 | `town_choice` | `town`、`choice` | 攻下的城鎮選搶（0）或治理（1） | PR-4 |
 | `garrison` | `u`、`building` | 遠程兵和法師走去躲進自己蓋好的主城或箭樓，在裡面照樣攻擊，見 3.3 | 第七輪 |
 | `leave` | `building`，可選 `u` | 建築裡的士兵出來：全部，或只放 `u` 裡的，見 3.3 | 第七輪 |
+| `post` | `u`、`building` | `u` 裡自己的槍兵去自己蓋好的哨所駐守，見 3.4 | D-080 |
+| `unpost` | `building` | 這座哨所的駐守兵全部離開，見 3.4 | D-080 |
+| `outpost_mode` | `building`、`hold` | 哨所切換攻擊（`hold` false，預設）或堅守（true），見 3.4 | D-080 |
 | `surrender` | — | 投降 | PR-4 |
 
 ### 3.1 經濟指令的細節（PR-3）
@@ -326,6 +330,34 @@
   - 數值和剋制照 `rules.units`、`rules.multipliers`。
 - **`game_over` 的統計**：`unitsTrained`、`unitsLost` 照舊只列村民、槍兵、遠程、法師；騎兵另外放在 `cavalryTrained`、`cavalryLost`（PR K）。
 
+### 3.4 哨所（D-080）
+
+開關是 `rules.features.outpost`。協定先合併、規則後到：開關打開之前，`build` 哨所和 `post`、`unpost`、`outpost_mode` 都回 `NotAvailable`。
+
+- **蓋**：用 `build` 蓋 `BuildingType.Outpost`，占地、花費、血量、視野照 `rules.buildings`。
+  - 放置規則和一般建築一樣（第 7 節）：走得到、探過、沒有被擋住的空地都可以。中立城鎮的範圍裡、自己治理的城鎮裡、敵方主城的箭射得到的地方都可以（使用者選「任何空地都能蓋」）。沒有數量上限。
+  - 自己蓋好的哨所占地 `rules.towerReach.outpost` 格內可以蓋箭樓（第 7 節的 `TowerLand`）。
+- **駐守**（`post`）：`u` 裡自己的槍兵走到 `building`（自己蓋好的哨所）周圍的位置站好，其他兵種略過。
+  - 每座最多 `rules.outpost.slots` 名，走在路上的也算。超過的兵留在原地，指令不變。
+  - 被拒：`u` 裡沒有自己的單位 `NotOwner`；不是自己蓋好的哨所 `InvalidTarget`；`u` 裡沒有槍兵 `NotAvailable`；一名都放不進去 `NoRoom`。
+  - 走去的路上和駐守中，單位的 `order` 是 `Post`、`orderTarget` 是哨所 id。駐守的兵站在外面，看得到就照常顯示。
+- **攻擊**（預設，沒有 `Hold` 旗標）：
+  - 敵方的兵走進哨所占地 `rules.outpost.reach` 格內，駐守的兵就去打。
+  - 範圍內沒有敵兵時，也去拆範圍內的敵方建築，例如敵人在旁邊蓋的哨所或箭樓。
+  - 追出哨所 `rules.outpost.chase` 格就不追；範圍內沒有敵人就走回自己的位置。
+- **堅守**（`outpost_mode` 的 `hold` true，哨所帶 `Hold` 旗標）：
+  - 站在位置上不動，只打走到身邊的敵人。
+  - 哨所或任何一名駐守的兵被打，駐守的兵就一起去打攻擊者，追到 `rules.outpost.chase` 格為止，再走回位置。
+  - 這條只用在哨所。一般部隊的 `stance` 堅守照舊不反擊。
+- **離開**：
+  - `unpost`：這座哨所的駐守兵全部離開，站在原地待命。沒有人駐守：`NotAvailable`。
+  - 對駐守的兵下 `move`、`retreat`、`attack`：他離開哨所，照新的指令做。`stop`、`stance`、`formation` 對駐守的兵沒有作用。
+  - 哨所被打掉時，駐守的兵全部變回一般的兵，站在原地待命。
+- **快照**：
+  - 建築列的 `posted`：自己的哨所有幾名槍兵駐守（走在路上的也算）。別人的哨所是 0：他們的駐守兵站在外面，看得到的就在單位列裡（`order` 是 `Post`）。
+  - 看得到的哨所都帶 `Hold` 旗標（堅守時）。這是規則，電腦的 PlayerView 也一樣。
+- **畫面**：`order` 是 `Post` 的兵不要拉進軍團（D-080）。
+
 **被拒的原因碼**（`Reject`）：
 
 | 碼 | 名稱 | 意思 |
@@ -389,7 +421,7 @@
 | 7 | `action` | `Action`，動畫用：待命、走、攻擊、採集、蓋、修、校準、躲在建築裡（不畫） | PR-2 |
 | 8 | `facing` | 0–15 | PR-2 |
 | 9–10 | `carryKind`、`carryAmount` | 搬運中的資源（`Resource`）與數量；沒有搬就是 -1、0 | PR-3 |
-| 11 | `order` | `Order`，目前的指令。第七輪加 `Garrison`：士兵走去躲、或躲在建築裡 | PR-2 |
+| 11 | `order` | `Order`，目前的指令。第七輪加 `Garrison`：士兵走去躲、或躲在建築裡。D-080 加 `Post`：槍兵走去哨所或駐守中（3.4） | PR-2 |
 | 12 | `orderTarget` | 目標 id、資源點 id，或 move／retreat 的目的格編號；沒有就是 -1 | PR-2 |
 | 13 | `stance` | `Stance` | PR-2 |
 | 14 | `castProgress` | 晶砲已經校準幾個 tick（30 = 發射） | PR-4 |
@@ -412,11 +444,11 @@
 | 9 | `queueProgress` | 隊首的訓練進度（千分比） | PR-3 |
 | 10–11 | `rallyX`、`rallyY` | 集結點（定點），沒有就是 -1 | PR-3 |
 | 12 | `garrisoned` | 躲在裡面的村民數（只有自己的建築；別人的是 0） | PR-3 |
-| 13 | `flags` | `BuildingFlag`：1 記憶中（目前看不到）、2 最近 60 tick 內受過傷、4 修理鎖定中（只有自己的主城，見 3.1）、8 自動訓練開著、16 自動訓練因為人口滿而停（8、16 只有自己的建築，見 3.1）、32 裡面有人躲（`Occupied`，看得到的建築都有，記憶中的沒有，見 3.3） | PR-2（4 從 PR-6，8、16 從第六輪，32 從第七輪） |
+| 13 | `flags` | `BuildingFlag`：1 記憶中（目前看不到）、2 最近 60 tick 內受過傷、4 修理鎖定中（只有自己的主城，見 3.1）、8 自動訓練開著、16 自動訓練因為人口滿而停（8、16 只有自己的建築，見 3.1）、32 裡面有人躲（`Occupied`，看得到的建築都有，記憶中的沒有，見 3.3）、64 哨所堅守中（`Hold`，看得到的哨所都有，見 3.4） | PR-2（4 從 PR-6，8、16 從第六輪，32 從第七輪，64 從 D-080） |
 | 14 | `soldiers` | 躲在裡面的士兵數（只有自己的建築；別人的是 0，只看得到 `Occupied`） | 第七輪 |
-| 15 | 保留 | 0 | — |
+| 15 | `posted` | 哨所的駐守槍兵數，走在路上的也算（只有自己的哨所；別人的是 0，駐守兵在單位列裡看得到，見 3.4） | D-080 |
 
-開局時雙方各有一座主城（PR-2 起）。大城的中立箭樓也是一棟建築（`TownTower`，擁有者 `NEUTRAL`）。第七輪起玩家可以蓋箭樓（`ArrowTower`）和馬廄（`Stable`），見 3.3。
+開局時雙方各有一座主城（PR-2 起）。大城的中立箭樓也是一棟建築（`TownTower`，擁有者 `NEUTRAL`）。第七輪起玩家可以蓋箭樓（`ArrowTower`）和馬廄（`Stable`），見 3.3；D-080 起可以蓋哨所（`Outpost`），見 3.4。
 
 ### 4.4 資源點 `nodes`（stride `NODE_STRIDE` = 6，只送有變化的）
 
@@ -538,7 +570,7 @@
 - 判定規則：
   - 占地的每一格都要在地圖內、已探索、沒有被擋住。擋住的包括不可走的地形、樹、已知的建築（含農田）。
   - 農田的每一格還要在自己主城或糧倉的範圍內（`FarmLand`）：離已完成的主城或糧倉占地 6 格內（x、y 距離取較大的那個）。
-  - 箭樓（第七輪）的每一格還要是 `TowerLand`：離自己已完成的主城占地 `rules.towerReach.mainCity` 格內（x、y 距離取較大的那個），或在自己修繕中、治理中的城鎮半徑再加 `rules.towerReach.town` 格內（從城鎮中心算）。`features.towers` 關著時沒有這種格子。
+  - 箭樓（第七輪）的每一格還要是 `TowerLand`：離自己已完成的主城占地 `rules.towerReach.mainCity` 格內（x、y 距離取較大的那個），或在自己修繕中、治理中的城鎮半徑再加 `rules.towerReach.town` 格內（從城鎮中心算），或（D-080，`features.outpost` 開著時）離自己已完成的哨所占地 `rules.towerReach.outpost` 格內。`features.towers` 關著時沒有這種格子。
   - 站在那裡的單位不算阻擋，會被推開。
 - 快照裡的 `placement` 是這位玩家知道的狀況：資源點用最後看到的剩餘量，敵方建築用記憶。
   - 隨機地圖（D-074）：岩石也只標探索過的格子；沒探索的格子只有 `Unexplored`。固定地圖照舊整張標出岩石。

@@ -37,6 +37,7 @@ import {
   FORMATION_LOOSE_SPACING,
   FORMATION_SPACING,
   MAGE_CAP,
+  OUTPOST,
   QUEUE_MAX,
   RETREAT_OWN_SPEED,
   CAVALRY,
@@ -252,6 +253,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (type === BuildingType.MainCity || type === BuildingType.TownTower) return Reject.NotAvailable;
       // Round 7 (D-061): arrow towers and stables only while their rules are on.
       if ((type === BuildingType.ArrowTower && !TOWERS.on) || (type === BuildingType.Stable && !CAVALRY.on)) return Reject.NotAvailable;
+      // D-080: outposts only while their rules are on (post, unpost and outpost_mode fall to the default below).
+      if (type === BuildingType.Outpost && !OUTPOST.on) return Reject.NotAvailable;
       const info = BUILDINGS[type];
       if (!info.requires.every((r) => hasFinished(w, p, r))) return Reject.NotAvailable;
       if (placeCheck(ctx, p, type, cmd.x, cmd.y) !== 0) return Reject.BadPlacement;
