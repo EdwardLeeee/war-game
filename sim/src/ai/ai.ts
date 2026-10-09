@@ -445,7 +445,7 @@ export interface FortCrew {
  * Farmers against an unguarded fort on its ground (D-080). With too few soldiers by it (those a
  * barracks under its arrows trains fall one by one), farmers go (they fight only when told to attack):
  * at its builders first, then the fort. Not against one with enemy soldiers by it; called off then,
- * and once it is gone or soldiers enough are there (idle again, the economy hands them work).
+ * and once it is gone or soldiers enough are there (released, the economy hands them work).
  */
 export function createFortCrew(rank: (x: number, y: number) => number): FortCrew {
   let crew: number[] = [];
@@ -479,8 +479,9 @@ export function createFortCrew(rank: (x: number, y: number) => number): FortCrew
         for (const u of soldiers) if (fortDist2(f, u.x, u.y) <= FORT_THERE * FORT_THERE) near++;
       }
       if (f === undefined || near >= FORT_ARMY + 2 * towers) {
-        // Nothing to do, or soldiers enough there: back to work.
-        if (crew.length > 0) out.push({ c: "stop", u: crew });
+        // Nothing to do, or soldiers enough there: back to work (`release`: a farmer told to stop or
+        // attack waits where he is once idle, and the economy leaves him there).
+        if (crew.length > 0) out.push({ c: "release", u: crew });
         crew = [];
         aim = -1;
         hitting = -1;

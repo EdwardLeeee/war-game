@@ -1135,8 +1135,11 @@ test("D-080: too few soldiers for an unguarded fort site: farmers go for its bui
     g.step();
     g.fog.update(w);
     w.tick += 10;
-    const back = ai.think(buildView(g, 0)).find((c) => c.c === "stop") as { u: number[] } | undefined;
+    const back = ai.think(buildView(g, 0)).find((c) => c.c === "release") as { u: number[] } | undefined;
     assert.deepEqual(back?.u, go.u, `${difficulty}: back to work`);
+    // Released, the economy hands them work again (told to attack, a farmer would wait where he is).
+    for (let k = 0; k < 40; k++) g.step();
+    for (const id of go.u) assert.equal(w.units.col.order[slotOf(g, id)], Order.Gather, `${difficulty}: farmer ${id} at work`);
   }
   // With enemy soldiers by it, the farmers stay at work.
   const guarded = fortGame({ type: BuildingType.ArrowTower, at: [2, -12], done: false, farmers: 8, builders: 2, guards: 1 });
