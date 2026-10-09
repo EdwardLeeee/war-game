@@ -55,7 +55,9 @@ function row(v: GameView, id: number): Int32Array {
 
 test("開關：第七輪的四個開關都開著，畫面照 rules 顯示箭樓、馬廄、躲進去", () => {
   const r = rules();
-  assert.deepEqual(features(r), { plunderOnce: true, towers: true, garrison: true, cavalry: true });
+  // Each of round 7's four on its own: later rounds add switches of their own (哨所, D-080).
+  const f = features(r);
+  for (const key of ["plunderOnce", "towers", "garrison", "cavalry"] as const) assert.equal(f[key], true, key);
   assert.equal(buildable(r, BuildingType.ArrowTower), true);
   assert.equal(buildable(r, BuildingType.Stable), true);
   assert.deepEqual(garrisonTypes(r), [UnitType.Ranged, UnitType.Mage]);
