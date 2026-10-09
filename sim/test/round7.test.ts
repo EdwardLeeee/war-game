@@ -29,7 +29,7 @@ function allOff(body: () => void): () => void {
 
 test("round 7 switches off: towers, stables, garrison and leave are refused, and Rules says so", allOff(() => {
   const r = rules();
-  assert.deepEqual(r.features, { plunderOnce: false, towers: false, garrison: false, cavalry: false, outpost: OUTPOST.on });
+  assert.deepEqual(r.features, { plunderOnce: false, towers: false, garrison: false, cavalry: false, ...(OUTPOST.on ? { outpost: true } : {}) });
   assert.equal(r.plunderRecovery.startPermille, 1000, "no recovery rule");
   assert.equal(r.buildings[BuildingType.MainCity].holds, 6);
   assert.equal(r.buildings[BuildingType.ArrowTower].holds, 3);
@@ -52,7 +52,7 @@ test("round 7 switches off: towers, stables, garrison and leave are refused, and
 
 test("Rules.features follows the switches", () => {
   const f = rules().features;
-  assert.deepEqual(f, { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on, outpost: OUTPOST.on });
+  assert.deepEqual(f, { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on, ...(OUTPOST.on ? { outpost: true } : {}) });
 });
 
 test("someone hiding: everyone who sees the building gets Occupied, only the owner how many", () => {

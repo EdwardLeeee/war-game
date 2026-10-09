@@ -91,7 +91,7 @@ test("D-080 outposts: in the protocol and the rules table, rejected until their 
   assert.deepEqual([info.size, info.hp, info.cost.wood, info.buildTicks, info.sight], [2, 400, 50, 20 * 20, 10]);
   assert.deepEqual(rules().outpost, { slots: 6, reach: 8, chase: 12 });
   assert.equal(rules().towerReach.outpost, 6);
-  assert.equal(rules().features.outpost, false);
+  assert.equal(rules().features.outpost, undefined);
   const g = new Game({ seed: 1, scenario: "standard" });
   const s0 = g.w.map.spawns[0];
   const before = g.hash();

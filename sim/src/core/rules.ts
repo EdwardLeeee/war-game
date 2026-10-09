@@ -146,7 +146,8 @@ export function rules(map?: { towerSize?: number }): Required<Rules> {
     mageCap: MAGE_CAP,
     maxPopulation: MAX_POPULATION,
     queueMax: QUEUE_MAX,
-    features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on, outpost: OUTPOST.on },
+    // `outpost` only while on: absent is off, and the screen's tables of the round 7 four stay as they were.
+    features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on, ...(OUTPOST.on ? { outpost: true } : {}) },
     arrows: { mainCity: MAIN_ARROW, townTower: { ...TOWER_ARROW, extraMax: 0 }, arrowTower: { ...ARROW_TOWER, extraMax: 0 } },
     garrisonTypes: GARRISON_TYPES,
     garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },

@@ -68,7 +68,7 @@
   - `multipliers`：剋制加成。`target` 是兵種或 `"shield"`；傷害 × num / den，全部整數運算。
   - `mageCap`（6）、`maxPopulation`（120）、`queueMax`（每棟建築的訓練佇列上限）。
   - 第七輪（D-061）加的，畫面和電腦都照這份，不要自己抄數值。模擬一定會送；型別上是選填，只是讓手寫的假資料（mock）照樣編得過，讀的時候給預設值（沒有就當成關著）：
-    - `features`：哪些第七輪的規則開著。`plunderOnce` 城鎮只能搶一次、`towers` 可以蓋箭樓、`garrison` 遠程兵和法師可以躲進建築、`cavalry` 可以蓋馬廄、訓練騎兵。D-080 加 `outpost`：可以蓋哨所、派槍兵駐守（3.4 節；型別上選填，沒有就當成關著）。
+    - `features`：哪些第七輪的規則開著。`plunderOnce` 城鎮只能搶一次、`towers` 可以蓋箭樓、`garrison` 遠程兵和法師可以躲進建築、`cavalry` 可以蓋馬廄、訓練騎兵。D-080 加 `outpost`：可以蓋哨所、派槍兵駐守（3.4 節）；只在開著時出現（值是 true），沒有這個欄位就是關著。
     - `arrows`：建築自己射的箭。`mainCity` 主城、`townTower` 大城的箭樓、`arrowTower` 玩家的箭樓；各有 `damage`、`range`（定點，從占地邊緣算）、`cooldown`（tick）、`extraMax`（主城每躲 1 名村民多 1 箭，最多幾箭；其他是 0）。
     - `garrisonTypes`：能用 `garrison` 躲進建築的兵種（遠程兵、法師）。
     - `garrisonCannon`：躲在建築裡的法師放晶砲時，傷害是平常的 `permille`／1000、冷卻是 `cooldownTimes` 倍。
