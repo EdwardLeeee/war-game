@@ -276,9 +276,6 @@ test("隊形：編隊裡超過一半是散開，補進來的新兵也散開；�
 
 // --- 軍團 (D-050): the player sets how many of each type a group wants -------------------
 
-/** A gathering point (the rally point) at a cell, fixed point. */
-const at = (cx: number, cy: number) => ({ x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 });
-
 test("軍團：設定目標後，沒編隊、沒留守的兵被拉進缺人的編隊（缺最多的優先，一樣多給編號小的）；留守、其他編隊的兵和村民不動", () => {
   const w = new World();
   const book = new ArmyBook();
@@ -349,27 +346,21 @@ test("軍團：拉進來的兵不等湊滿 3 名，下一次就出發走到編�
   assert.deepEqual(book.muster(200 + RECRUIT_RECHECK_TICKS, w.where), []);
 });
 
-test("軍團：編隊現在沒人時，拉進來的兵先在集結點集合；到了之後，再來的兵走去他們那裡", () => {
+test("軍團：編隊現在沒人時，拉進來的兵站在原地，不去集結點或主城（D-080）；之後再來的兵走去他們那裡", () => {
   const w = new World();
   const book = new ArmyBook();
   book.setWant(0, RANGED, 3, w.typeOf);
   w.add(1, RANGED, 10, 10);
   w.add(2, RANGED, 70, 10);
   book.draft(w.army());
-  assert.deepEqual(book.muster(0, w.where, at(40, 60)), [{ ids: [1, 2], cellX: 40, cellY: 60 }]);
-  // Without a gathering point they are the group where they stand, as before.
-  const other = new ArmyBook();
-  other.setWant(0, RANGED, 3, w.typeOf);
-  other.draft(w.army());
-  assert.deepEqual(other.muster(0, w.where), []);
-  // They arrive; the next one goes to them.
-  w.move([1], 30, 50);
-  w.move([2], -30, 50);
-  assert.deepEqual(book.muster(RECRUIT_RECHECK_TICKS, w.where, at(40, 60)), []);
+  // 「部隊剛編兵的時候預測就是站在原地，不要往主城集合」: no order; they are the group where they stand.
+  assert.deepEqual(book.muster(0, w.where), []);
   assert.deepEqual(book.groups[0].recruits, []);
+  assert.deepEqual(book.muster(RECRUIT_RECHECK_TICKS, w.where), [], "still no order");
+  // The next one goes to them (D-054), to the middle of the two.
   w.add(3, RANGED, 40, 20);
   book.draft(w.army());
-  assert.deepEqual(book.muster(100, w.where, at(5, 5)), [{ ids: [3], cellX: 40, cellY: 60 }]);
+  assert.deepEqual(book.muster(100, w.where), [{ ids: [3], cellX: 40, cellY: 10 }]);
 });
 
 test("軍團設定：目標調低時，後加入的兵先離開編隊；目標是三種兵的總和；清空後編隊沒有兵、什麼都不要", () => {

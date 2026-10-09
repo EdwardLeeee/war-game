@@ -27,7 +27,11 @@ import {
   UnitType,
 } from "../../sim.ts";
 import type { GameView } from "../../view/view.ts";
+import { ORDER_TONE } from "../overlays.ts";
 import { ACTION_NAME, BUILDABLE, BUILDING_NAME, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
+
+/** ＋遠程／＋法師 (D-080): the short word on a panel's call-in button. */
+const CALL_WORD: Record<number, string> = { [UnitType.Ranged]: "遠程", [UnitType.Mage]: "法師" };
 
 /** What the bottom panels ask of the game. */
 export interface PanelHost {
@@ -57,6 +61,9 @@ export interface PanelHost {
   depotWorkers(building: number, resource: Resource): number;
   depotSend(building: number, resource: Resource): void;
   depotTake(building: number, resource: Resource): void;
+  /** ＋遠程／＋法師 (D-080): our soldiers on their way to hide in this building, and calling one more of a type in. */
+  hidingComing(building: number): number;
+  callToHide(building: number, type: number): void;
   /** 取消即堅守 (D-054): out of 進攻／撤退, the soldiers selected stop and hold. */
   cancelToHold(): void;
   /** 編隊自動補兵 (D-026): its switch, and flipping it. */
@@ -411,13 +418,20 @@ export class SelectionInfo {
     const queue = own ? el("div", this.el, "sel-queue") : null;
     const queueLength = b0[o0 + B.queueLength];
     const packed = b0[o0 + B.queuePacked];
-    // 躲進建築 (round 7, D-061): how many soldiers hide in our main city or arrow tower, and 全部出來.
+    // 躲進建築 (round 7, D-061): how many soldiers hide in our main city or arrow tower, and 全部出來;
+    // ＋遠程／＋法師 call one more in from here (D-080).
     const holds = own ? holdsOf(view.rules, type) : 0;
     let hidden: HTMLElement | null = null;
     let out: HTMLButtonElement | null = null;
+    const calls: HTMLButtonElement[] = [];
     if (holds > 0) {
       const row = el("div", this.el, "sel-garrison");
       hidden = el("span", row, "garrison-count");
+      for (const t of garrisonTypes(view.rules)) {
+        const call = button(row, `＋${CALL_WORD[t] ?? UNIT_NAME[t] ?? ""}`, "", () => this.host.callToHide(id, t), "chip secondary");
+        call.setAttribute("aria-label", `叫 1 名${UNIT_NAME[t] ?? ""}躲進來`);
+        calls.push(call);
+      }
       out = button(row, "全部出來", "", () => this.host.command({ c: "leave", building: id }), "chip secondary");
     }
     let headBar: ((f: number) => void) | null = null;
@@ -442,9 +456,11 @@ export class SelectionInfo {
       const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名村民` : !own && (b[o + B.flags] & BuildingFlag.Occupied) !== 0 ? "　裡面有人" : "";
       if (hidden !== null && out !== null) {
         const n = b[o + B.soldiers];
-        const line = `躲了 ${n} 名士兵（最多 ${holds} 名）`;
+        const coming = this.host.hidingComing(id);
+        const line = `躲了 ${n} 名士兵（最多 ${holds} 名）${coming > 0 ? `，${coming} 名正過來` : ""}`;
         if (hidden.textContent !== line) hidden.textContent = line;
         out.disabled = n === 0;
+        for (const call of calls) call.disabled = n + coming >= holds;
       }
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
@@ -651,14 +667,15 @@ export class CommandArea {
       const advancing = mode === "advance" || (mode === "normal" && allIn(view, sel.units, "advance"));
       const retreating = mode === "retreat" || (mode === "normal" && allIn(view, sel.units, "retreat"));
       if (counts !== null) {
+        // 進攻紅、撤退藍 (D-080); 堅守 stays as it was.
         const advance = advancing
-          ? button(this.el, "取消進攻", "停下堅守", () => this.host.cancelToHold())
-          : button(this.el, "進攻", "點地面", () => this.host.setMode("advance"));
+          ? button(this.el, "取消進攻", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
+          : button(this.el, "進攻", "點地面", () => this.host.setMode("advance"), ORDER_TONE.advance);
         if (advancing) advance.classList.add("active");
       }
       const retreat = retreating
-        ? button(this.el, "取消撤退", "停下堅守", () => this.host.cancelToHold())
-        : button(this.el, "撤退", "點地面", () => this.host.retreat());
+        ? button(this.el, "取消撤退", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
+        : button(this.el, "撤退", "點地面", () => this.host.retreat(), ORDER_TONE.retreat);
       if (retreating) retreat.classList.add("active");
       if (counts !== null) {
         const hold = button(this.el, "堅守", "原地不動", () => {
