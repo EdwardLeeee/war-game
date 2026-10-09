@@ -62,11 +62,12 @@ import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
 import { Placement, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
-import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, type TownArea } from "./army.ts";
+import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
 import { features, garrisonTypes, holdsOf } from "./features.ts";
+import { Charges } from "./follow.ts";
 import { GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding } from "./garrison.ts";
 import { allIn } from "./orders.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
@@ -299,6 +300,8 @@ export class Game implements GestureHost {
 
   /** The last frames: their intervals and how long drawing them took (test pages compare maps, D-074). */
   readonly frameTimes = new FrameTimes(1200);
+  /** 進攻到底 (D-080): units the player sent to attack, sent on to their target's spot if the attack ends before they get there. */
+  readonly charges = new Charges();
 
   /** Arrows drawn from `shot` events so far (round 7), for the test hook. */
   get shotsForTest(): number {
@@ -462,7 +465,42 @@ export class Game implements GestureHost {
     }
     // His own order sending a recruit somewhere: 自動補兵 no longer leads it to its group (GDD §10).
     this.army.playerCommand(cmd);
+    // 進攻到底 (D-080): another order of his, 堅守 or 躲進去 included, ends it; an attack starts it.
+    const named = (cmd as { u?: number | number[] }).u;
+    if (named !== undefined && (cmd.c === "stance" || cmd.c === "garrison" || redirects(cmd))) this.charges.drop(Array.isArray(named) ? named : [named]);
+    if (cmd.c === "attack") this.charges.start(cmd.u, cmd.target, this.targetCell(cmd.target), this.view?.header?.[H.tick] ?? 0);
     return seq;
+  }
+
+  /** Where a unit or building is (cells, its centre), or null when it is not in the snapshot. */
+  private targetCell(id: number): { x: number; y: number } | null {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    if (view === null || snap === undefined) return null;
+    const u = view.unitRow(id);
+    if (u >= 0) return { x: snap.units[u + UnitField.x] / CELL, y: snap.units[u + UnitField.y] / CELL };
+    const b = view.buildingRow(id);
+    if (b < 0) return null;
+    const size = view.rules.buildings[snap.buildings[b + BuildingField.type]]?.size ?? 1;
+    return { x: snap.buildings[b + BuildingField.cellX] + size / 2, y: snap.buildings[b + BuildingField.cellY] + size / 2 };
+  }
+
+  /**
+   * 進攻到底 (D-080: 「就算有一部分已經到了，後面那些還沒到的也要聚集過來」): every snapshot, the
+   * units whose attack ended (their target fell) still far from it go on to where it was. Not
+   * those hiding in a building or staying in a town (留守).
+   */
+  private followCharges(): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const tick = view?.header?.[H.tick];
+    if (view === null || u === undefined || tick === undefined) return;
+    const unit = (id: number) => {
+      const o = view.unitRow(id);
+      if (o < 0 || isHiding(u[o + UnitField.order]) || this.army.isGarrisoned(id)) return null;
+      return { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL, attacking: u[o + UnitField.order] === Order.Attack };
+    };
+    for (const o of this.charges.update(tick, unit, (id) => this.targetCell(id))) this.autoCommand({ c: "move", u: o.ids, x: o.x, y: o.y });
   }
 
   /** An order the interface gives on its own (a garrison's stance, a recruit's march or formation): a rejection is not shown to the player. */
@@ -937,6 +975,7 @@ export class Game implements GestureHost {
         this.pruneArmy();
         this.draftArmy();
         this.musterRecruits();
+        this.followCharges();
         if (this.placement !== null) {
           this.placement.revalidate(view.placement);
           this.warnMilitia();
