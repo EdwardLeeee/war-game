@@ -146,6 +146,7 @@ export class Hud {
       depotTake: (building: number, resource: Resource) => game.depotTake(building, resource),
       hidingComing: (building: number) => game.hidingComing(building),
       callToHide: (building: number, type: number) => game.callToHide(building, type),
+      outpostState: (building: number) => game.outpostState(building),
       cancelToHold: () => game.cancelToHold(),
       groupRefill: (i: number) => game.army.groups[i].refill,
       toggleRefill: (i: number) => this.toggleRefill(i),

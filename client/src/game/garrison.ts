@@ -60,7 +60,7 @@ export interface Callable {
   y: number;
   /** Standing with no order. */
   idle: boolean;
-  /** Going to hide or hiding in a building already (isHiding). */
+  /** Busy elsewhere: going to hide or hiding in a building (isHiding), or posted at an outpost (D-080, isPosted). */
   hiding: boolean;
   /** Left in a town as its garrison (留守). */
   stationed: boolean;

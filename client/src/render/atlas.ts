@@ -3,7 +3,7 @@
 // buildings are white so a sprite tint gives the owner colour, with a dark outline that the
 // tint leaves dark. Nodes keep their own colours.
 
-import { type Renderer, Graphics, Rectangle, Text, type Texture } from "pixi.js";
+import { Container, type Renderer, Graphics, Rectangle, Text, type Texture } from "pixi.js";
 import { BuildingType, NodeKind, NO_OWNER, NEUTRAL, UnitType } from "../sim.ts";
 
 /** Texture pixels per world px, so shapes stay sharp at MAX_ZOOM on a 3x screen. */
@@ -37,6 +37,7 @@ export const BUILDING_GLYPH: Record<number, string> = {
   // A player's arrow tower (round 7): its own tower shape and glyph, unlike the big city's 塔.
   [BuildingType.ArrowTower]: "箭",
   [BuildingType.Stable]: "馬",
+  [BuildingType.Outpost]: "哨",
 };
 
 export interface Atlas {
@@ -51,6 +52,8 @@ export interface Atlas {
   tower: Texture;
   /** Someone hides inside (BuildingFlag.Occupied, round 7): a small shield, 16 x 16. */
   occupied: Texture;
+  /** An outpost holding (BuildingFlag.Hold, D-080): a small tag reading 守, 16 x 16. */
+  hold: Texture;
   glyphs: Record<number, Texture>;
   /** Indexed by NodeKind; 32 x 32. */
   nodes: Texture[];
@@ -120,6 +123,18 @@ function buildAtlas(renderer: Renderer): Atlas {
     g.circle(8, 7, 2).fill(INK);
   });
 
+  const hold = (() => {
+    const c = new Container();
+    c.addChild(new Graphics().roundRect(0, 0, 16, 16, 3).fill(0xf5f1e6).stroke({ width: 1.4, color: INK }));
+    const t = new Text({ text: "守", style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 12, fontWeight: "700", fill: INK } });
+    t.anchor.set(0.5);
+    t.position.set(8, 8.5);
+    c.addChild(t);
+    const tex = renderer.generateTexture({ target: c, resolution: RES });
+    c.destroy({ children: true });
+    return tex;
+  })();
+
   const glyphs: Record<number, Texture> = {};
   for (const [type, ch] of Object.entries(BUILDING_GLYPH)) {
     const t = new Text({ text: ch, style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 30, fontWeight: "700", fill: INK } });
@@ -151,5 +166,5 @@ function buildAtlas(renderer: Renderer): Atlas {
     g.poly([10, 4, 28, 9, 10, 15]).fill(0xffffff).stroke({ width: 1.5, color: INK });
   });
 
-  return { units, ring, white, building, farm, tower, occupied, glyphs, nodes, flag };
+  return { units, ring, white, building, farm, tower, occupied, hold, glyphs, nodes, flag };
 }

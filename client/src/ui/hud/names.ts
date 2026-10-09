@@ -27,6 +27,8 @@ export const BUILDING_NAME: Record<number, string> = {
   [BuildingType.TownTower]: "大城箭樓",
   [BuildingType.ArrowTower]: "箭樓",
   [BuildingType.Stable]: "馬廄",
+  // D-080: spearmen stand guard around it.
+  [BuildingType.Outpost]: "哨所",
 };
 
 /** What a player may build, in the order the build menu lists it (GDD §17 prototype buildings). */
@@ -42,6 +44,8 @@ export const BUILDABLE: BuildingType[] = [
   // Round 7 (D-061): listed only while its feature is on (buildMenu).
   BuildingType.ArrowTower,
   BuildingType.Stable,
+  // D-080: listed only while `features.outpost` is on.
+  BuildingType.Outpost,
 ];
 
 export const NODE_NAME: Record<number, string> = {

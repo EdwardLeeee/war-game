@@ -345,7 +345,10 @@ export class WorldRenderer {
       p.glyph.scale.set(Math.min(size * 0.5, 36) / 36);
       p.glyph.alpha = p.base.alpha;
       // 裡面有人 (round 7): a small shield at the top right corner, ours and the enemy's in view.
-      if ((b[o + B.flags] & BuildingFlag.Occupied) !== 0 && !remembered) {
+      // An outpost holding (D-080): a 守 tag there instead.
+      const holding = type === BuildingType.Outpost && (b[o + B.flags] & BuildingFlag.Hold) !== 0;
+      if (((b[o + B.flags] & BuildingFlag.Occupied) !== 0 || holding) && !remembered) {
+        p.occupied.texture = holding ? this.atlas.hold : this.atlas.occupied;
         p.occupied.visible = true;
         p.occupied.position.set(x + size - 2, y + 2);
         p.occupied.scale.set(Math.max(1, size / 48));

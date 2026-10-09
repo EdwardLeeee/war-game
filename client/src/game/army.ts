@@ -169,6 +169,18 @@ export class ArmyBook {
     return last.id;
   }
 
+  /**
+   * 哨所 (D-080): these soldiers stand guard at an outpost. Like those stationed in a town they
+   * leave their control groups, which fill up again (自動補兵).
+   */
+  leaveGroups(ids: readonly number[]): void {
+    for (const g of this.groups) {
+      if (!g.ids.some((id) => ids.includes(id))) continue;
+      g.ids = g.ids.filter((id) => !ids.includes(id));
+      g.recruits = g.recruits.filter((r) => !ids.includes(r.id));
+    }
+  }
+
   /** These units stop being garrison (the player ordered them away). Returns the ones that were stationed. */
   release(ids: number[]): number[] {
     const stationed = ids.filter((id) => this.isGarrisoned(id));
