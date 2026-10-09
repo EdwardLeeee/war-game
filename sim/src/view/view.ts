@@ -44,7 +44,7 @@ import {
 import { writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, TOWER_REACH, TOWERS, TOWNS, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, OUTPOST, TOWER_REACH, TOWERS, TOWNS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -177,6 +177,12 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
       row[BuildingField.rallyY] = b.rallyY[s];
       row[BuildingField.garrisoned] = b.garrisoned[s];
       row[BuildingField.soldiers] = b.soldiers[s];
+      // Spearmen posted at an own outpost (D-080), on their way or standing guard.
+      if (b.type[s] === BuildingType.Outpost) {
+        let posted = 0;
+        for (let k = 0; k < w.units.count; k++) if (u.order[k] === Order.Post && u.orderTarget[k] === b.id[s]) posted++;
+        row[BuildingField.posted] = posted;
+      }
     } else {
       row[BuildingField.rallyX] = -1;
       row[BuildingField.rallyY] = -1;
@@ -193,6 +199,8 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     if (own || player === null) row[BuildingField.flags] |= b.flags[s] & (BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
     // Someone hiding inside (round 7, D-061): everyone who sees the building learns that much, no more.
     if (b.garrisoned[s] > 0 || b.soldiers[s] > 0) row[BuildingField.flags] |= BuildingFlag.Occupied;
+    // An outpost holding (D-080): everyone who sees it.
+    if (b.type[s] === BuildingType.Outpost) row[BuildingField.flags] |= b.flags[s] & BuildingFlag.Hold;
     rows.push(row);
   }
   if (player !== null) {
@@ -325,9 +333,10 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     const y0 = row[BuildingField.cellY];
     for (let y = y0; y < y0 + size; y++) for (let x = x0; x < x0 + size; x++) placement[y * n + x] |= PlaceBit.Blocked;
     const t = row[BuildingField.type];
-    // Tower land (round 7, PlaceBit.TowerLand): near an own finished main city.
-    if (TOWERS.on && row[BuildingField.owner] === player && row[BuildingField.progress] >= 1000 && t === BuildingType.MainCity) {
-      const r = TOWER_REACH.mainCity;
+    // Tower land (round 7, PlaceBit.TowerLand): near an own finished main city, or (D-080) outpost.
+    const towerBase = t === BuildingType.MainCity || (OUTPOST.on && t === BuildingType.Outpost);
+    if (TOWERS.on && row[BuildingField.owner] === player && row[BuildingField.progress] >= 1000 && towerBase) {
+      const r = t === BuildingType.Outpost ? TOWER_REACH.outpost : TOWER_REACH.mainCity;
       for (let y = Math.max(0, y0 - r); y < Math.min(n, y0 + size + r); y++) {
         for (let x = Math.max(0, x0 - r); x < Math.min(n, x0 + size + r); x++) placement[y * n + x] |= PlaceBit.TowerLand;
       }

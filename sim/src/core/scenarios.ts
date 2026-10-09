@@ -4,9 +4,9 @@
 // headless benchmarks), not part of the protocol. Random maps take "standard" only.
 
 import { IDENTITY, toCanon } from "../frame.ts";
-import { BuildingType, CELL_SHIFT, NEUTRAL, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
+import { BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
-import { BUILDINGS, START, TOWNS, UNITS } from "./rules.ts";
+import { BUILDINGS, OUTPOST, START, TOWNS, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
@@ -178,13 +178,22 @@ export const PERF = {
   mages: 6,
   /** Top-left of player 0's army block (10 wide, spearmen nearest the big city). */
   army: { x: 40, y: 51 },
+  /**
+   * D-080, while OUTPOST is on: player 0's outposts, beside its block (each at the nearest free
+   * spot), each manned by OUTPOST.slots of its spearmen, attacking.
+   */
+  outposts: [
+    { x: 36, y: 50 },
+    { x: 51, y: 59 },
+  ],
 };
 
 /**
  * perf: both sides at 114 / 120 population. 22 houses by each main city; 40 farmers working
  * under the economy ratio; 34 spearmen, 34 ranged and 6 mages on autocast in a block beside
  * the big city, within reach of its militia, its tower and each other, so the battle starts
- * by itself. Fog is on as always. Player 1 gets the mirror image.
+ * by itself. While OUTPOST is on (D-080), 2 outposts beside the block, each manned by 6 of its
+ * spearmen. Fog is on as always. Player 1 gets the mirror image.
  */
 function perf(w: World): void {
   const n = w.size;
@@ -200,6 +209,15 @@ function perf(w: World): void {
     const spot = freeSpot(w, house.size, s0.cellX, s0.cellY);
     w.addBuilding(0, BuildingType.House, spot.x, spot.y, house.hp, 1000);
     w.addBuilding(1, BuildingType.House, spot.y, spot.x, house.hp, 1000);
+  }
+  const outposts: number[] = [];
+  if (OUTPOST.on) {
+    const post = BUILDINGS[BuildingType.Outpost];
+    for (const at of PERF.outposts) {
+      const spot = freeSpot(w, post.size, at.x, at.y);
+      outposts.push(w.addBuilding(0, BuildingType.Outpost, spot.x, spot.y, post.hp, 1000));
+      outposts.push(w.addBuilding(1, BuildingType.Outpost, spot.y, spot.x, post.hp, 1000));
+    }
   }
   const both = (type: UnitType, x: number, y: number): number => {
     const c = nearestWalkable(w, x, y);
@@ -218,4 +236,18 @@ function perf(w: World): void {
   army.forEach((type, k) => both(type, PERF.army.x + (k % 10), PERF.army.y + Math.trunc(k / 10)));
   const u = w.units.col;
   for (let s = 0; s < w.units.count; s++) if (u.type[s] === UnitType.Mage) u.flags[s] |= UnitFlag.Autocast;
+  // The outposts' guards: each side's spearmen in id order, as a post command would set them.
+  for (const id of outposts) {
+    const owner = w.buildings.col.owner[w.building(id)];
+    let k = 0;
+    for (let s = 0; s < w.units.count && k < OUTPOST.slots; s++) {
+      if (u.owner[s] !== owner || u.type[s] !== UnitType.Spearman || u.order[s] === Order.Post) continue;
+      u.order[s] = Order.Post;
+      u.orderTarget[s] = id;
+      u.target[s] = -1;
+      u.group[s] = -1;
+      u.squad[s] = 0;
+      k++;
+    }
+  }
 }

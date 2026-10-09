@@ -57,6 +57,9 @@ export const BUILDING_COLS = [
   "work", "acc",
   // Soldiers hiding inside (round 7, D-061, GARRISON; in the hash only while it is on).
   "soldiers",
+  // An outpost's guards go for this unit or building (D-080, OUTPOST; -1: none): whoever last hit
+  // the outpost or one of its guards. In the hash only while OUTPOST is on.
+  "provoker",
 ] as const;
 export type BuildingCol = (typeof BUILDING_COLS)[number];
 
@@ -349,6 +352,7 @@ export class World {
     c.target[s] = -1;
     c.lastHurt[s] = -100000;
     c.town[s] = -1;
+    c.provoker[s] = -1;
     if (owner < PLAYER_COUNT && this.autoTrain[owner] === 1 && AUTO_TRAIN.buildings.includes(type)) c.flags[s] = BuildingFlag.AutoTrain;
     this.setFootprint(id, type, cellX, cellY, true);
     if (progress >= 1000 && BUILDINGS[type].accepts.length > 0) this.dropVersion++;
