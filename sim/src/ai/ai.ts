@@ -601,8 +601,6 @@ interface Building {
   y: number;
   progress: number;
   queue: number;
-  /** Spearmen posted at it (own outposts, D-080). */
-  posted: number;
 }
 interface Town {
   state: number;
@@ -831,7 +829,6 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           y: view.buildings[r + BuildingField.cellY],
           progress: view.buildings[r + BuildingField.progress],
           queue: view.buildings[r + BuildingField.queueLength],
-          posted: view.buildings[r + BuildingField.posted],
         };
         queued += b.queue;
         own.push(b);
@@ -1404,13 +1401,6 @@ export interface HardPlan {
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
   looseWho: number;
-  /**
-   * Own outposts (D-080; tried and left off, sim/README.md): 0 none, 1 one by each town it holds
-   * (inside its radius, toward the enemy), 2 one in front of its main city toward the map centre;
-   * with this many spearmen posted at each, topped up from those at home.
-   */
-  outposts: number;
-  outpostGuards: number;
 }
 
 export const HARD: HardPlan = {
@@ -1432,16 +1422,12 @@ export const HARD: HardPlan = {
   hide: true,
   looseAt: 0,
   looseWho: 1,
-  outposts: 0,
-  outpostGuards: 4,
 };
 
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
 const INTEL_TICKS = 4 * TICKS_PER_MINUTE;
-/** An own outpost in front of the main city (HardPlan.outposts 2) this many cells toward the map centre. */
-const OUTPOST_FRONT = 12;
 /** Enemy soldiers within this many cells of the main city make a wave (as the scripted player counts). */
 const WAVE_CELLS = 24;
 /** A cannon warning: a unit this much further out than the blast radius (fixed point) is safe. */
@@ -1502,9 +1488,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   // main city's arrows (range 7).
   const rally = real(homeF.u + su * 6 + rng.below(3) - 1, homeF.v + sv * 6 + rng.below(3) - 1);
   const post = real(homeF.u + su * 4, homeF.v + sv * 4);
-  // Own outposts (plan.outposts, D-080): only with the rule on.
-  const outpostsOn = know.rules.features?.outpost === true && plan.outposts > 0;
-  const front = real(homeF.u + su * OUTPOST_FRONT, homeF.v + sv * OUTPOST_FRONT);
 
   let mode: HardMode = "home";
   let target = { x: post.x, y: post.y };
@@ -1660,7 +1643,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           y: view.buildings[r + BuildingField.cellY],
           progress: view.buildings[r + BuildingField.progress],
           queue: view.buildings[r + BuildingField.queueLength],
-          posted: view.buildings[r + BuildingField.posted],
         };
         queued += b.queue;
         own.push(b);
@@ -1805,24 +1787,6 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
-        // Own outposts (plan.outposts, D-080): by a town it holds that has none, or in front of the main city.
-        if (outpostsOn && done(BuildingType.Barracks).length > 0) {
-          const outposts = own.filter((b) => b.type === BuildingType.Outpost);
-          const near = (x: number, y: number, r: number) => outposts.some((b) => dist2(b.x, b.y, x, y) <= r * r);
-          if (plan.outposts === 2 && !near(front.x, front.y, 6)) add(BuildingType.Outpost, front);
-          if (plan.outposts === 1) {
-            const ef = frame(enemyHome.cellX, enemyHome.cellY);
-            for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
-              const state = view.towns[r + TownField.state];
-              if (view.towns[r + TownField.owner] !== player || (state !== TownState.Governed && state !== TownState.Repairing)) continue;
-              const t = mem.site(view.towns[r + TownField.id])!;
-              const radius = rules.towns?.[t.size]?.radius ?? 5;
-              if (near(t.cellX, t.cellY, radius + 4)) continue;
-              const tf = frame(t.cellX, t.cellY);
-              add(BuildingType.Outpost, real(tf.u + Math.sign(ef.u - tf.u) * (radius - 2), tf.v + Math.sign(ef.v - tf.v) * (radius - 2)));
-            }
-          }
-        }
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
           add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
@@ -1929,7 +1893,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const guarded = new Set([...townGuards.values()].flat());
         const alive = (townGuards.get(id) ?? []).filter((g) => byId.has(g));
         const free = soldiers
-          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison && s.order !== Order.Post)
+          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison)
           .sort((a, b) => (b.type === UnitType.Spearman ? 1 : 0) - (a.type === UnitType.Spearman ? 1 : 0) || dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < t.needed + 1 && free.length > 0) alive.push(free.shift()!.id);
         townGuards.set(id, alive);
@@ -1963,7 +1927,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const left = view.warnings[r + WarningField.ticksLeft] - 1;
           const caster = foes.find((f) => f.id === view.warnings[r + WarningField.id]);
           for (const u of soldiers) {
-            if (dodging.has(u.id) || u.order === Order.Post) continue;
+            if (dodging.has(u.id)) continue;
             const dx = u.fx - wx;
             const dy = u.fy - wy;
             const d2 = dx * dx + dy * dy;
@@ -2014,23 +1978,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
 
       // --- the army ------------------------------------------------------------------------------------
-      // Own outposts (plan.outposts, D-080): spearmen at home posted at each finished one, topped up as
-      // they fall. Posted ones are not the army's (a move would take them away).
-      const posting = new Set<number>();
-      if (outpostsOn && (mode === "home" || mode === "defend")) {
-        for (const b of done(BuildingType.Outpost)) {
-          const want = Math.min(plan.outpostGuards, rules.outpost?.slots ?? 6) - b.posted;
-          if (want <= 0) continue;
-          const pick = soldiers
-            .filter((u) => u.type === UnitType.Spearman && !guarding.has(u.id) && u.order !== Order.Post && !posting.has(u.id) && !detached(u.id))
-            .sort((p, q) => dist2(p.x, p.y, b.x, b.y) - dist2(q.x, q.y, b.x, b.y) || rank(p.fx, p.fy) - rank(q.fx, q.fy))
-            .slice(0, want);
-          if (pick.length === 0) continue;
-          out.push({ c: "post", u: pick.map((u) => u.id), building: b.id });
-          for (const u of pick) posting.add(u.id);
-        }
-      }
-      const army = guarding.size === 0 && !outpostsOn ? soldiers : soldiers.filter((u) => !guarding.has(u.id) && u.order !== Order.Post && !posting.has(u.id));
+      const army = guarding.size === 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id));
       const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
       let sent = false;
       const send = (x: number, y: number, why: HardMode) => {
