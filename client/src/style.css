@@ -720,6 +720,11 @@ button.order-retreat {
   flex-basis: 100%;
 }
 
+/* A button of the selection info that does nothing now (＋遠程 when full, 全部出來 with nobody inside, a depot's － with nobody gathering) reads as greyed. */
+.sel-info button:disabled {
+  opacity: 0.45;
+}
+
 .sel-chips button,
 .sel-queue button {
   padding: 0 8px;
