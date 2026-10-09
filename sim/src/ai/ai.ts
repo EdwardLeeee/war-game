@@ -712,6 +712,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   /** The enemy fort (D-080) the army is pulling down, and when it may try again after breaking off. */
   let razing = -1;
   let razeAgain = -100000;
+  /** While the army is away: the soldiers trained since, at home, pulling down a fort on its ground. */
+  let reservesRazing = -1;
+  let reservesMove = -100000;
   const crew = createFortCrew((x, y) => {
     const f = frame(x, y);
     return f.v * n + f.u;
@@ -1240,6 +1243,29 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           razing = -1;
           return out;
         }
+        // Soldiers trained since it set out, at home, go for forts on its ground once clearly stronger.
+        const waiting = army.filter((u) => !marched.has(u.id) && u.order !== Order.Garrison && dist2(u.x, u.y, home.cellX, home.cellY) <= FORT_HOME * FORT_HOME);
+        const homeForts = waiting.length >= FORT_ARMY ? ours : [];
+        const mine = homeForts.find((x) => x.id === reservesRazing) ?? nearestFort(homeForts, home.cellX, home.cellY);
+        let reserves = false;
+        if (mine !== undefined) {
+          const c = fortCentre(mine);
+          const towers = forts.filter((o) => o.done && o.type === BuildingType.ArrowTower && fortDist2(o, c.x, c.y) <= FORT_GUARDS * FORT_GUARDS).length;
+          if (mine.id === reservesRazing || waiting.length * 10 >= (foesNear(c.x, c.y, FORT_GUARDS) + FORT_TOWER_MEN * towers) * 13) {
+            const ids = waiting.map((u) => u.id);
+            if (mine.id !== reservesRazing || tick - reservesMove >= FORT_EVERY) {
+              if (foesNear(c.x, c.y, FORT_GUARDS) > 0) out.push({ c: "move", u: ids, x: c.x, y: c.y });
+              else out.push({ c: "attack", u: ids, target: mine.id });
+              reservesMove = tick;
+            }
+            reservesRazing = mine.id;
+            reserves = true;
+            const keep = armyIds.filter((id) => !ids.includes(id));
+            armyIds.length = 0;
+            armyIds.push(...keep);
+          }
+        }
+        if (!reserves) reservesRazing = -1;
         const way = armyIds.length > 0 ? fortsOnTheWay(forts, cx, cy, enemyHome) : [];
         const f = way.find((x) => x.id === razing) ?? nearestFort(way, cx, cy);
         if (f !== undefined) {

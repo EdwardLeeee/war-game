@@ -1220,3 +1220,18 @@ test("D-080: hard's own outposts (off by default): with outposts 2 it puts one i
   const post = on.ai.think(buildView(on.g, 0)).find((c) => c.c === "post") as { u: number[]; building: number } | undefined;
   assert.ok(post !== undefined && post.building === outpost && post.u.length === 4 && post.u.every((id) => on.spears.includes(id)), "four spearmen posted");
 });
+
+test("D-080: normal's army away at the enemy base, the soldiers trained since pull down a tower by the main city", () => {
+  const { g, w, ai, ids } = marchOnBase();
+  const home = spawnCentre(w.map.frames[0], w.map.spawns[0]);
+  const fresh = [0, 1, 2, 3, 4].map((k) => put(g, 0, UnitType.Spearman, home.x + 3 + k, home.y - 3));
+  const tower = w.addBuilding(1, BuildingType.ArrowTower, home.x + 2, home.y - 12, 500, 1000);
+  put(g, 0, UnitType.Farmer, home.x, home.y - 11);
+  w.tick += 10;
+  g.fog.update(w);
+  const out = ai.think(buildView(g, 0));
+  const hit = out.find((c) => c.c === "attack" && c.target === tower) as { u: number[] } | undefined;
+  assert.deepEqual(hit && [...hit.u].sort(), [...fresh].sort(), "the five at home");
+  assert.ok(!out.some((c) => (c.c === "move" || c.c === "attack") && c !== hit && c.u.some((id) => fresh.includes(id))), "not sent after the army");
+  assert.ok(!out.some((c) => c === hit) || !hit!.u.some((id) => ids.includes(id)), "the army marches on");
+});
