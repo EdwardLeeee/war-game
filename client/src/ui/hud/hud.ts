@@ -9,6 +9,7 @@ import { pressable } from "../../input/pressable.ts";
 import { AUTO_TRAIN, BUILDING_STRIDE, BuildingField, BuildingFlag, type GameStats, HeaderField as H, type Resource, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
+import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
 import { Minimap } from "./minimap.ts";
@@ -122,7 +123,7 @@ export class Hud {
     }
     this.armyBtn = btn(right, armyText(0), () => this.selectArmy(), "army-btn secondary");
     // 全軍撤退 (user 2026-10-01): nothing to select first. Top left, far from 全軍.
-    btn(root, "全軍撤退", () => game.retreatAll(), "retreat-all-btn");
+    btn(root, "全軍撤退", () => game.retreatAll(), `retreat-all-btn ${ORDER_TONE.retreat}`);
 
     const host = {
       view: () => game.view,

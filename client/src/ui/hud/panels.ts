@@ -27,6 +27,7 @@ import {
   UnitType,
 } from "../../sim.ts";
 import type { GameView } from "../../view/view.ts";
+import { ORDER_TONE } from "../overlays.ts";
 import { ACTION_NAME, BUILDABLE, BUILDING_NAME, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
 
 /** ＋遠程／＋法師 (D-080): the short word on a panel's call-in button. */
@@ -666,14 +667,15 @@ export class CommandArea {
       const advancing = mode === "advance" || (mode === "normal" && allIn(view, sel.units, "advance"));
       const retreating = mode === "retreat" || (mode === "normal" && allIn(view, sel.units, "retreat"));
       if (counts !== null) {
+        // 進攻紅、撤退藍 (D-080); 堅守 stays as it was.
         const advance = advancing
-          ? button(this.el, "取消進攻", "停下堅守", () => this.host.cancelToHold())
-          : button(this.el, "進攻", "點地面", () => this.host.setMode("advance"));
+          ? button(this.el, "取消進攻", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
+          : button(this.el, "進攻", "點地面", () => this.host.setMode("advance"), ORDER_TONE.advance);
         if (advancing) advance.classList.add("active");
       }
       const retreat = retreating
-        ? button(this.el, "取消撤退", "停下堅守", () => this.host.cancelToHold())
-        : button(this.el, "撤退", "點地面", () => this.host.retreat());
+        ? button(this.el, "取消撤退", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
+        : button(this.el, "撤退", "點地面", () => this.host.retreat(), ORDER_TONE.retreat);
       if (retreating) retreat.classList.add("active");
       if (counts !== null) {
         const hold = button(this.el, "堅守", "原地不動", () => {

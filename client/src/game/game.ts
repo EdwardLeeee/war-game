@@ -1369,7 +1369,7 @@ export class Game implements GestureHost {
     // 退回主城 (D-059), while there is a main city to go back to.
     const home = this.view?.homeCell() ?? null;
     if (mode === "retreat" && home !== null) {
-      buttons.push({ label: "退回主城", primary: true, onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, home)) });
+      buttons.push({ label: "退回主城", primary: true, tone: "retreat", onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, home)) });
     }
     // 取消 while picking where to advance or retreat to: they stop and hold (D-054).
     const holds = mode === "advance" || mode === "retreat";
@@ -1410,7 +1410,7 @@ export class Game implements GestureHost {
     this.overlays.openWheel(
       x,
       y,
-      items.map((id) => ({ id, label: label[id] })),
+      items.map((id) => ({ id, label: label[id], ...(id === "advance" || id === "retreat" ? { tone: id } : {}) })),
       (id) => {
         // 進攻 while they advance, 撤退 while they retreat: they stop and hold (D-054).
         if ((id === "advance" || id === "retreat") && allIn(view, view.selection.units, id)) return this.cancelToHold();
