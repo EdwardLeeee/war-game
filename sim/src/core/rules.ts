@@ -102,6 +102,10 @@ BUILDINGS[BuildingType.ArrowTower] = building({
 BUILDINGS[BuildingType.Stable] = building({
   type: BuildingType.Stable, hp: 500, size: 3, cost: cost(0, 150, 50), buildTicks: 40 * S, trains: [UnitType.Cavalry],
 });
+// D-080: the outpost (only while OUTPOST is on). The brief's starting values.
+BUILDINGS[BuildingType.Outpost] = building({
+  type: BuildingType.Outpost, hp: 400, size: 2, cost: cost(0, 50), buildTicks: 20 * S, sight: 10,
+});
 
 /**
  * Ranged against a mage's shield (early balance, D-057; round 4, D-037): x3, was x3/2 (num 3,
@@ -142,11 +146,13 @@ export function rules(map?: { towerSize?: number }): Required<Rules> {
     mageCap: MAGE_CAP,
     maxPopulation: MAX_POPULATION,
     queueMax: QUEUE_MAX,
-    features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on },
+    // `outpost` only while on: absent is off, and the screen's tables of the round 7 four stay as they were.
+    features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on, ...(OUTPOST.on ? { outpost: true } : {}) },
     arrows: { mainCity: MAIN_ARROW, townTower: { ...TOWER_ARROW, extraMax: 0 }, arrowTower: { ...ARROW_TOWER, extraMax: 0 } },
     garrisonTypes: GARRISON_TYPES,
     garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },
     towerReach: TOWER_REACH,
+    outpost: { slots: OUTPOST.slots, reach: OUTPOST.reach, chase: OUTPOST.chase },
     towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
     cannonRange: CANNON.range,
@@ -282,8 +288,21 @@ export const GARRISON = { on: true, cannon: true, cannonPermille: 333, cannonCoo
 export const CAVALRY = { on: true };
 /** Unit types that may hide in buildings. */
 export const GARRISON_TYPES: UnitType[] = [UnitType.Ranged, UnitType.Mage];
-/** Arrow towers: within `mainCity` cells of an own main city's footprint, or a held town's radius + `town`. */
-export const TOWER_REACH = { mainCity: 8, town: 2 };
+/**
+ * Arrow towers: within `mainCity` cells of an own main city's footprint, or a held town's radius
+ * + `town`, or (D-080, while OUTPOST is on) `outpost` cells of an own finished outpost's footprint.
+ */
+export const TOWER_REACH = { mainCity: 8, town: 2, outpost: 6 };
+
+/**
+ * Outposts (D-080, the user 2026-10-09): built anywhere walkable and explored; up to `slots`
+ * spearmen stand guard around one (`post`). Attacking (the default) they go for enemies within
+ * `reach` cells of it and give up `chase` cells out; holding (`outpost_mode`) they stand and
+ * fight what comes next to them, and all go for whoever hits the outpost or one of them. Off
+ * until its rules land (the protocol comes first): building one and the three commands are
+ * rejected.
+ */
+export const OUTPOST = { on: false, slots: 6, reach: 8, chase: 12 };
 
 // --- round 8 (D-069): a defender is not beaten by the first cannon shots -------------------
 

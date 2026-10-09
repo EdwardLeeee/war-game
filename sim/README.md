@@ -622,6 +622,14 @@ D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與�
   - 腳本玩家 `push-random`：對普通、困難各 40 局，只列。
 - **效能**：CI 的電腦對電腦 100 局，各局每 tick 中位數的中位數是隨機地圖 134 µs、固定地圖 85–107 µs（約 1.3–1.6 倍，run 37649484951）；各局 p95 的 95% 是 689 µs，遠低於 5 ms。
 
+### 哨所（D-080）
+
+使用者 2026-10-09：「我覺得可以建立哨所，就是放在地圖上然後可以駐步兵，有敵人靠近可以選擇攻擊或是堅守，哨所附近可以蓋箭塔。」選擇欄位：槍兵站在哨所旁邊守，選堅守時被打也會反擊；任何空地都能蓋。
+
+- 協定（PR A）：`BuildingType.Outpost`、`Order.Post`、`BuildingFlag.Hold`、建築列的 `posted`、指令 `post`、`unpost`、`outpost_mode`、`rules().outpost`、`towerReach.outpost`、`features.outpost`。見 `PROTOCOL.md` 3.4。
+- 開關 `OUTPOST`（`core/rules.ts`）。規則（PR B）到之前是關的：`build` 哨所和三個指令都回 `NotAvailable`，對局和以前逐局相同。
+- 起始數值（brief）：2×2、木 50、生命 400、蓋 20 秒、視野 10；駐守 6 名槍兵；攻擊模式 8 格內去打、追到 12 格；哨所 6 格內可以蓋箭樓。
+
 ### 已知限制
 
 - 整隊只有一種兵、在原地重排時，前面朝向敵方主城（`commands.ts` 的 `heading()` 用 `spawns[1 - owner]`），只適用 1 對 1。4 方混戰要換規則（ceo 2026-10-01：第三階段再改）。

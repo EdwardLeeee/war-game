@@ -81,6 +81,12 @@ export const BuildingType = {
   ArrowTower: 10,
   /** Trains cavalry (round 7, D-061; while `Rules.features.cavalry`). */
   Stable: 11,
+  /**
+   * An outpost (D-080; while `Rules.features.outpost`): built anywhere walkable and explored;
+   * up to `Rules.outpost.slots` spearmen stand guard around it (`post`), attacking or holding
+   * (`outpost_mode`); arrow towers may go within `Rules.towerReach.outpost` of it.
+   */
+  Outpost: 12,
 } as const;
 export type BuildingType = (typeof BuildingType)[keyof typeof BuildingType];
 
@@ -156,6 +162,13 @@ export const Order = {
    * the building's id (round 7, D-061, `garrison`). Farmers hiding keep Recall.
    */
   Garrison: 9,
+  /**
+   * A spearman posted at an outpost (D-080, `post`): going there or standing guard around it,
+   * also while it fights off enemies near it; orderTarget is the outpost's id. Any move, attack
+   * or retreat command to him, or the outpost's fall, ends it. The screen keeps these soldiers
+   * out of its army groups.
+   */
+  Post: 10,
 } as const;
 export type Order = (typeof Order)[keyof typeof Order];
 
@@ -281,7 +294,12 @@ export const BuildingField = {
    * players' buildings 0, and only BuildingFlag.Occupied says someone is in.
    */
   soldiers: 14,
-  reserved15: 15,
+  /**
+   * Spearmen posted at this outpost, on their way or standing guard (D-080). Own outposts only;
+   * 0 for every other building and for other players' outposts (their guards stand outside:
+   * the units in view show them).
+   */
+  posted: 15,
 } as const;
 export const BUILDING_STRIDE = 16;
 export const BuildingFlag = {
@@ -299,6 +317,12 @@ export const BuildingFlag = {
    * view, own or not; never on a remembered one. How many and who: own buildings only.
    */
   Occupied: 32,
+  /**
+   * An outpost holding (D-080, `outpost_mode`): its guards stay at their posts and fight what
+   * comes next to them, and all of them go for whoever hits the outpost or one of them.
+   * Without it an outpost attacks (the default). Set on every outpost in view, own or not.
+   */
+  Hold: 64,
 } as const;
 
 /** Resource nodes: sent as changes only (see Snapshot.nodes). */
@@ -450,8 +474,9 @@ export const PlaceBit = {
   /** Within reach of your own main city or granary: farms may go here. */
   FarmLand: 4,
   /**
-   * Within reach of your own main city or of a town you govern or repair (`Rules.towerReach`):
-   * arrow towers may go here (round 7, D-061; only while `Rules.features.towers`).
+   * Within reach of your own main city, of a town you govern or repair, or of your own finished
+   * outpost (D-080, while `Rules.features.outpost`) (`Rules.towerReach`): arrow towers may go
+   * here (round 7, D-061; only while `Rules.features.towers`).
    */
   TowerLand: 8,
 } as const;
@@ -563,6 +588,8 @@ export interface Features {
   garrison: boolean;
   /** Stables can be built and cavalry trained. */
   cavalry: boolean;
+  /** Outposts can be built and manned (D-080). Absent: off. */
+  outpost?: boolean;
 }
 
 export interface MapInfo {
@@ -606,7 +633,13 @@ export interface Rules {
    * own finished main city's footprint (Chebyshev), or within a held town's radius + `town`
    * of its centre (governed or repairing).
    */
-  towerReach?: { mainCity: number; town: number };
+  towerReach?: { mainCity: number; town: number; outpost?: number };
+  /**
+   * Outposts (D-080; while `features.outpost`), in cells: `slots` spearmen at most; attacking,
+   * they go for enemies within `reach` of the outpost (footprint to unit) and give up beyond
+   * `chase`; holding, they chase whoever hits them up to `chase`.
+   */
+  outpost?: { slots: number; reach: number; chase: number };
   /** By TownSize (round 7). */
   towns?: TownInfo[];
   /**
@@ -659,6 +692,12 @@ export type CommandBody =
   | { c: "garrison"; u: number[]; building: number }
   /** Soldiers hiding in the building come out: all of them, or those in `u` (round 7). */
   | { c: "leave"; building: number; u?: number[] }
+  /** Spearmen in `u` go and stand guard at an own finished outpost (D-080; others in `u` are left as they are). */
+  | { c: "post"; u: number[]; building: number }
+  /** Every spearman posted at the outpost stops guarding it (D-080). */
+  | { c: "unpost"; building: number }
+  /** An own outpost attacks (hold false, the default) or holds (true) (D-080). */
+  | { c: "outpost_mode"; building: number; hold: boolean }
   | { c: "surrender" };
 
 export type Command = CommandBase & CommandBody;
@@ -688,6 +727,9 @@ export const COMMAND_KINDS = [
   "town_choice",
   "garrison",
   "leave",
+  "post",
+  "unpost",
+  "outpost_mode",
   "surrender",
 ] as const satisfies readonly CommandKind[];
 type MissingCommand = Exclude<CommandKind, (typeof COMMAND_KINDS)[number]>;
