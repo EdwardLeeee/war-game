@@ -1182,3 +1182,41 @@ test("D-080: hard's army away at the enemy base, the soldiers waiting at home pu
   const hit = ai.think(buildView(g, 0)).find((c) => c.c === "attack" && c.target === tower) as { u: number[] } | undefined;
   assert.deepEqual(hit && [...hit.u].sort(), [...fresh].sort(), "the five at home");
 });
+
+test("D-080: hard's own outposts (off by default): with outposts 2 it puts one in front of its main city and posts four spearmen there", () => {
+  const setup = (plan: Partial<HardPlan>) => {
+    const g = emptyGame();
+    const w = g.w;
+    const home = spawnCentre(w.map.frames[0], w.map.spawns[0]);
+    w.res.set([1000, 1000, 1000, 0], 0);
+    w.addBuilding(0, BuildingType.Barracks, home.x + 6, home.y - 9, 600, 1000);
+    for (let k = 0; k < 6; k++) w.units.col.order[slotOf(g, put(g, 0, UnitType.Farmer, home.x - 3 + k, home.y + 3))] = Order.Gather;
+    const spears = Array.from({ length: 6 }, (_, k) => put(g, 0, UnitType.Spearman, home.x + 3 + k, home.y - 3));
+    g.fog.update(w);
+    return { g, w, home, spears, ai: hardAi(g, { dodge: false, townArmy: 99, bigArmy: 99, ...plan }) };
+  };
+  // Other buildings come first: each think's other building stands at once, until it puts down the outpost.
+  const firstOutpost = (x: ReturnType<typeof setup>) => {
+    for (let k = 0; k < 20; k++) {
+      const out = x.ai.think(buildView(x.g, 0));
+      const b = out.find((c) => c.c === "build" && c.type === BuildingType.Outpost) as { x: number; y: number } | undefined;
+      if (b !== undefined) return b;
+      for (const c of out) if (c.c === "build") x.w.addBuilding(0, c.type, c.x, c.y, rules().buildings[c.type].hp, 1000);
+      x.w.tick += 10;
+      x.g.fog.update(x.w);
+    }
+    return undefined;
+  };
+  assert.equal(firstOutpost(setup({})), undefined, "off: none");
+  const on = setup({ outposts: 2 });
+  const build = firstOutpost(on);
+  assert.ok(build !== undefined, "on: one");
+  // In front: toward the map centre, about 12 cells out.
+  const d = Math.max(Math.abs(build.x - on.home.x), Math.abs(build.y - on.home.y));
+  assert.ok(d >= 8 && d <= 16 && build.y < on.home.y, `in front (${build.x}, ${build.y})`);
+  const outpost = on.w.addBuilding(0, BuildingType.Outpost, build.x, build.y, 400, 1000);
+  on.w.tick += 10;
+  on.g.fog.update(on.w);
+  const post = on.ai.think(buildView(on.g, 0)).find((c) => c.c === "post") as { u: number[]; building: number } | undefined;
+  assert.ok(post !== undefined && post.building === outpost && post.u.length === 4 && post.u.every((id) => on.spears.includes(id)), "four spearmen posted");
+});
