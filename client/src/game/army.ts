@@ -262,7 +262,7 @@ export class ArmyBook {
    * D-054: a new soldier no group is short of joins the group with the most soldiers now (the
    * main army, the lower number on a tie, 自動補兵 on), which wants one more of its type, so it
    * is a member and is selected with it. Returns the group, or null with no group to join (it
-   * stays at the rally point).
+   * stays where the simulation put it: the rally point, or by its building).
    */
   joinLargest(id: number, type: number, typeOf: (id: number) => number | null): number | null {
     if (!isSoldier(type)) return null;
@@ -371,12 +371,12 @@ export class ArmyBook {
   /**
    * Called with every snapshot. Recruits walk to their group as soon as they join it (D-054:
    * no waiting for company any more); they are sent again when the group moves on, and left
-   * alone once they are within 6 cells of it. Returns the 前進 orders to give.
-   * `where`: a living unit's position (fixed point), null for a dead one. `gather`: where
-   * a group with nobody to join meets (the rally point, fixed point; D-050); without it, its
-   * recruits are the group where they stand.
+   * alone once they are within 6 cells of it. A group with nobody to join (軍團 just set up,
+   * or everyone fell): its recruits are the group where they stand (D-080: 「部隊剛編兵的時候
+   * 預測就是站在原地，不要往主城集合」). Returns the 前進 orders to give.
+   * `where`: a living unit's position (fixed point), null for a dead one.
    */
-  muster(tick: number, where: (id: number) => { x: number; y: number } | null, gather: { x: number; y: number } | null = null): MarchOrder[] {
+  muster(tick: number, where: (id: number) => { x: number; y: number } | null): MarchOrder[] {
     const orders: MarchOrder[] = [];
     for (const g of this.groups) {
       if (g.recruits.length === 0) continue;
@@ -392,19 +392,14 @@ export class ArmyBook {
         cx += p.x;
         cy += p.y;
       }
-      if (n > 0) {
-        cx /= n;
-        cy /= n;
-      } else if (gather !== null) {
-        // Nobody to join yet (軍團 just set up, or everyone fell): they meet at the rally point.
-        cx = gather.x;
-        cy = gather.y;
-      } else {
-        // Nobody left to join: the recruits are the group now, where they stand.
+      if (n === 0) {
+        // Nobody to join: the recruits are the group now, where they stand.
         g.recruits = [];
         g.goal = null;
         continue;
       }
+      cx /= n;
+      cy /= n;
       const far = (p: { x: number; y: number }, cells: number): boolean => (p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy) > cells * CELL * (cells * CELL);
 
       if (tick - g.checked < RECRUIT_RECHECK_TICKS) continue;

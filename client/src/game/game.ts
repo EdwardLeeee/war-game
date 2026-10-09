@@ -763,8 +763,9 @@ export class Game implements GestureHost {
 
   /**
    * A soldier of ours was trained: it joins the control group short of its type; with none
-   * short, the group with the most soldiers (D-054); with no group at all, it stays at the
-   * rally point. It sets off for the group at once.
+   * short, the group with the most soldiers (D-054); with no group at all, it stays where
+   * the simulation put it. It sets off for the group at once, if anyone is in it (D-080:
+   * otherwise it stays where it stands).
    */
   private enlist(id: number, type: number): void {
     const view = this.view;
@@ -773,14 +774,15 @@ export class Game implements GestureHost {
     const short = this.army.enlist(id, type, typeOf);
     const i = short ?? this.army.joinLargest(id, type, typeOf);
     if (i === null) return;
+    const others = this.army.groups[i].ids.filter((m) => m !== id && view.unitRow(m) >= 0);
     const tick = view.header?.[H.tick] ?? 0;
     if (tick - this.recruitMessageTick >= RECRUIT_MESSAGE_TICKS) {
       this.recruitMessageTick = tick;
-      this.toast(short !== null ? `新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}，正走過去` : `新的${UNIT_NAME[type] ?? "兵"}加入兵最多的編隊 ${i + 1}，正走過去`);
+      const going = others.length > 0 ? "，正走過去" : "，在原地待命";
+      this.toast(short !== null ? `新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}${going}` : `新的${UNIT_NAME[type] ?? "兵"}加入兵最多的編隊 ${i + 1}${going}`);
     }
     // It takes the group's formation (D-027): 散開 when more than half of the others are. New
     // units are 密集, and on their way to the rally point the simulation only sets the flag.
-    const others = this.army.groups[i].ids.filter((m) => m !== id && view.unitRow(m) >= 0);
     if (mostlyLoose(others, (m) => view.unitLoose(m))) this.autoCommand({ c: "formation", u: [id], loose: true });
   }
 
@@ -795,7 +797,7 @@ export class Game implements GestureHost {
       const o = view.unitRow(id);
       return o < 0 || isHiding(u[o + UnitField.order]) ? null : { x: u[o + UnitField.x], y: u[o + UnitField.y] };
     };
-    for (const o of this.army.muster(tick, where, this.gatherPoint())) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
+    for (const o of this.army.muster(tick, where)) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
   }
 
   /**
@@ -810,33 +812,12 @@ export class Game implements GestureHost {
     // Those hiding still count in their group (ceo 2026-10-07), so it is not short of them; not
     // idle (order Garrison), they are never drafted themselves.
     for (const d of this.army.draft(this.soldiers(true), idle)) {
-      this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}，正走過去`);
-      // They take the group's formation, as recruits do (D-027).
       const others = this.army.groups[d.group].ids.filter((m) => !d.ids.includes(m) && view.unitRow(m) >= 0);
+      // With nobody in the group to join, they are the group where they stand (D-080).
+      this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}${others.length > 0 ? "，正走過去" : "，在原地待命"}`);
+      // They take the group's formation, as recruits do (D-027).
       if (mostlyLoose(others, (m) => view.unitLoose(m))) this.autoCommand({ c: "formation", u: d.ids, loose: true });
     }
-  }
-
-  /**
-   * Where soldiers drafted into a group with nobody in it meet (D-050): the rally point of
-   * our barracks, range or mage hall with the lowest id that has one; else the cell in front
-   * of the main city (where 撤退 goes). Fixed point.
-   */
-  private gatherPoint(): { x: number; y: number } | null {
-    const view = this.view;
-    const b = view?.curr?.snap.buildings;
-    if (view === null || b === undefined) return null;
-    let best: { id: number; x: number; y: number } | null = null;
-    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-      const type = b[o + BuildingField.type];
-      if (b[o + BuildingField.owner] !== view.me || b[o + BuildingField.rallyX] < 0) continue;
-      if (type !== BuildingType.Barracks && type !== BuildingType.Range && type !== BuildingType.MageHall && type !== BuildingType.Stable) continue;
-      const id = b[o + BuildingField.id];
-      if (best === null || id < best.id) best = { id, x: b[o + BuildingField.rallyX], y: b[o + BuildingField.rallyY] };
-    }
-    if (best !== null) return { x: best.x, y: best.y };
-    const home = view.homeCell();
-    return home === null ? null : { x: home.x * CELL + CELL / 2, y: home.y * CELL + CELL / 2 };
   }
 
   // --- 軍團設定 (D-050) ------------------------------------------------------------------
