@@ -108,14 +108,17 @@ jobs:
           path: tournament/
           retention-days: 30
 
-  # Random maps (D-074): the same 100 games, each seed on its own map. The AI scouts; only the
-  # replays gate (ai-random-summary).
+  # Random maps (D-074): 100 games each of normal against normal, hard against hard, hard against
+  # normal and normal against easy, each seed on its own map, the AIs scouting. Gates (D-076,
+  # ai-random-summary): every replay matching and each spawn's win rate within 35-65%, for each
+  # pair; the stronger AI's share, draws and game lengths are listed only.
   ai-vs-ai-random:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
+        pair: [normal-normal, hard-hard, hard-normal, normal-easy]
         shard: [0, 1, 2, 3]
     defaults:
       run:
@@ -128,12 +131,15 @@ jobs:
           cache: npm
           cache-dependency-path: sim/package-lock.json
       - run: npm ci
-      - name: 25 games on random maps, each replayed
-        run: node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --map random --out "${GITHUB_WORKSPACE}/tournament-random/shard-${{ matrix.shard }}"
+      - name: 25 games on random maps, ${{ matrix.pair }}, each replayed
+        run: |
+          pair="${{ matrix.pair }}"
+          node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --map random --difficulty "${pair/-/,}" --out "${GITHUB_WORKSPACE}/tournament-random/${pair}/shard-${{ matrix.shard }}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: tournament-random-shard-${{ matrix.shard }}
+          # tournament-random/<pair>/shard-<n>, so the summary's merged download keeps the pairs apart.
+          name: tournament-random-${{ matrix.pair }}-shard-${{ matrix.shard }}
           path: tournament-random/
           retention-days: 30
 
@@ -552,7 +558,7 @@ jobs:
           path: tournament-easy/summary.json
           retention-days: 30
 
-  # Random maps (D-074): by layout; only the replays gate.
+  # Random maps (D-074): by layout. Gates (D-076): replays and the spawn win rate, each pair.
   ai-random-summary:
     needs: [ai-vs-ai-random]
     if: always()
@@ -568,16 +574,20 @@ jobs:
           node-version: "24"
       - uses: actions/download-artifact@v7
         with:
-          pattern: tournament-random-shard-*
+          pattern: tournament-random-*-shard-*
           path: tournament-random
           merge-multiple: true
       - name: Summary, random maps
         run: |
           set -o pipefail
-          node src/tournament-summary.ts ../tournament-random/shard-* --json ../tournament-random/summary.json | tee -a "${GITHUB_STEP_SUMMARY}"
+          ok=0
+          for pair in normal-normal hard-hard hard-normal normal-easy; do
+            { echo "## 隨機地圖：${pair}"; node src/tournament-summary.ts ../tournament-random/${pair}/shard-* --json ../tournament-random/summary-${pair}.json; } | tee -a "${GITHUB_STEP_SUMMARY}" || ok=1
+          done
+          exit $ok
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: tournament-random-summary
-          path: tournament-random/summary.json
+          path: tournament-random/summary-*.json
           retention-days: 30
