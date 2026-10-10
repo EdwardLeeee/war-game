@@ -215,6 +215,11 @@ const FORT_TRIES: [number, number][] = [
   [FORT_DIST - 6, 10],
   [FORT_DIST + 6, -10],
   [FORT_DIST + 6, 10],
+  // The fixed map: the way crosses the big town; nearer home, beside the way.
+  [FORT_DIST - 9, -10],
+  [FORT_DIST - 9, 10],
+  [FORT_DIST - 12, -10],
+  [FORT_DIST - 12, 10],
 ];
 /** Ranged units hidden in each finished fortress tower (as the user did: 3 in each of 5). */
 const FORT_HIDE = 3;
