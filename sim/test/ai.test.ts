@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan, wayRound } from "../src/ai/ai.ts";
+import { type AiStyle, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
@@ -1256,23 +1256,11 @@ test("D-081: forts that reach each other are one group; a tower seen with someon
   assert.equal(full[0].worth, 2 * (v.tower + v.holds * v.hidden), "seen with someone in, and remembered: full");
 });
 
-test("D-081: the way round a group on the straight way passes clear of it; none when the map's edge is in the way", () => {
+test("D-081: a group on the straight way is on the way; one beside another way is not", () => {
   const v = fortValues(rules());
   const g = fortGroups([fort(1, BuildingType.ArrowTower, 47, 47), fort(2, BuildingType.ArrowTower, 51, 47)], () => 0, v);
-  const n = 96;
-  const open = new Uint8Array(n * n);
-  const rank = (x: number, y: number) => y * n + x;
-  const a = { x: 10, y: 48 };
-  const b = { x: 90, y: 48 };
-  assert.equal(groupsOnWay(g, a, b).length, 1, "on the way");
-  const w = wayRound(g, a, b, n, open, rank);
-  assert.ok(w !== null, "a way round");
-  assert.equal(groupsOnWay(g, a, w).length + groupsOnWay(g, w, b).length, 0, "both legs clear");
+  assert.equal(groupsOnWay(g, { x: 10, y: 48 }, { x: 90, y: 48 }).length, 1, "on the way");
   assert.equal(groupsOnWay(g, { x: 10, y: 10 }, { x: 90, y: 10 }).length, 0, "another way: clear");
-  // Along the map's edge: no room on either side within the map... the far side only.
-  const edge = fortGroups([fort(1, BuildingType.ArrowTower, 47, 2)], () => 0, v);
-  const e = wayRound(edge, { x: 10, y: 3 }, { x: 90, y: 3 }, n, open, rank);
-  assert.ok(e === null || e.y > 3, "never off the map");
 });
 
 /** Hard with 20 spearmen at home, and enemy arrow towers (someone hiding in each) on the straight way to the enemy's main city, seen by farmers of its own. */
@@ -1301,14 +1289,12 @@ function fortsOnTheWay(towers: number, hidden: boolean) {
   return { g, w, ai, s1: w.map.spawns[1], ids };
 }
 
-test("D-081: hard does not march straight into forts too strong for it: it goes round them", () => {
+test("D-081: hard does not march into forts too strong for it on the way; it does when stronger", () => {
   const strong = fortsOnTheWay(5, true);
   const out = strong.ai.think(buildView(strong.g, 0));
-  const march = out.find((c) => c.c === "move" && c.u.length === 20) as { x: number; y: number } | undefined;
-  assert.ok(march !== undefined, "it marches");
-  assert.ok(march.x !== strong.s1.cellX || march.y !== strong.s1.cellY, `by a waypoint first (${march.x}, ${march.y})`);
+  assert.ok(!out.some((c) => c.c === "move" && c.u.length === 20 && c.x === strong.s1.cellX && c.y === strong.s1.cellY), "not to the enemy base");
   assert.ok(!out.some((c) => c.c === "attack" && strong.ids.includes(c.target)), "not at the towers");
-  // Two towers without anyone hiding: 20 spearmen are clearly stronger, straight on.
+  // Two towers without anyone hiding: 20 spearmen are stronger, straight on.
   const weak = fortsOnTheWay(2, false);
   const straight = weak.ai.think(buildView(weak.g, 0)).find((c) => c.c === "move" && c.u.length === 20) as { x: number; y: number } | undefined;
   assert.deepEqual(straight && [straight.x, straight.y], [weak.s1.cellX, weak.s1.cellY], "straight to the enemy base");
