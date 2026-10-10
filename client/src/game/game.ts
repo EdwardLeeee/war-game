@@ -69,8 +69,10 @@ import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, panelResou
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
 import { features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
 import { Charges } from "./follow.ts";
+import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
-import { allIn } from "./orders.ts";
+import { allIn, orderState } from "./orders.ts";
+import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
@@ -307,6 +309,11 @@ export class Game implements GestureHost {
   readonly frameTimes = new FrameTimes(1200);
   /** 進攻到底 (D-080): units the player sent to attack, sent on to their target's spot if the attack ends before they get there. */
   readonly charges = new Charges();
+  /** Stances sent that the snapshot does not show yet (D-081), for what 前進 and 撤退 go by. */
+  private readonly stances = new SentStances();
+  /** 閃紅提醒 (D-081): each group's base and alarm, and what the group buttons show (updated every snapshot). */
+  private readonly alarms = new GroupAlarms();
+  private alarmState: (Alarm & { present: number })[] = [0, 1, 2, 3].map(() => ({ advancing: false, base: null, alarm: false, tell: false, present: 0 }));
 
   /** Arrows drawn from `shot` events so far (round 7), for the test hook. */
   get shotsForTest(): number {
@@ -452,6 +459,8 @@ export class Game implements GestureHost {
       cmd = { ...cmd, u: out };
     }
     const seq = this.post(cmd, false);
+    // 堅守 or 取消 (stop and hold): what the next order goes by until the snapshot shows it (D-081).
+    if (cmd.c === "stance") this.stances.note(cmd.u, cmd.stance, this.view?.header?.[H.tick] ?? 0);
     if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") {
       // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
       const released = this.army.release(cmd.u);
@@ -460,11 +469,12 @@ export class Game implements GestureHost {
         // 撤到就堅守 (D-061: 「撤到之後兵自己回頭打」): a retreating soldier fights no one, and once
         // there, holding, it shoots only what comes in range and does not chase. 進攻 makes it
         // 積極 again (below). Those released from a garrison hold already.
-        const soldiers = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && view.unitStance(id) !== Stance.Hold);
+        const soldiers = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && this.stances.of(id, view.unitStance(id)) !== Stance.Hold);
         this.setStance(soldiers, Stance.Hold);
       } else {
         // 前進 and 攻擊 are 進攻 (D-050), with or without the button: those holding go 積極.
-        const holding = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && view.unitStance(id) === Stance.Hold);
+        // With the stance just sent (取消, 堅守) counted, though the snapshot may not show it yet (D-081).
+        const holding = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && this.stances.of(id, view.unitStance(id)) === Stance.Hold);
         this.setStance([...released, ...holding], Stance.Aggressive);
       }
     }
@@ -523,7 +533,9 @@ export class Game implements GestureHost {
   }
 
   private setStance(ids: number[], stance: Stance): void {
-    if (ids.length > 0) this.autoCommand({ c: "stance", u: ids, stance });
+    if (ids.length === 0) return;
+    this.autoCommand({ c: "stance", u: ids, stance });
+    this.stances.note(ids, stance, this.view?.header?.[H.tick] ?? 0);
   }
 
   // --- garrisons (留守, D-026) ----------------------------------------------------------
@@ -927,7 +939,7 @@ export class Game implements GestureHost {
   private draftArmy(): void {
     const view = this.view;
     if (view === null) return;
-    const idle = (id: number): boolean => view.unitOrder(id) === Order.None && view.unitStance(id) !== Stance.Hold;
+    const idle = (id: number): boolean => view.unitOrder(id) === Order.None && this.stances.of(id, view.unitStance(id)) !== Stance.Hold;
     // Those hiding still count in their group (ceo 2026-10-07), so it is not short of them; not
     // idle (order Garrison), they are never drafted themselves.
     for (const d of this.army.draft(this.soldiers(true), idle)) {
@@ -984,6 +996,48 @@ export class Game implements GestureHost {
     this.beforeGroup = [];
     this.showGroup(i, false);
     return units.length;
+  }
+
+  /**
+   * 閃紅提醒 and 「退」 (D-081): every snapshot, whether each group advances (alarm.ts
+   * groupAdvancing: some soldier of it 進攻中, those hiding in a building and the new soldiers
+   * 自動補兵 leads to it left out) and its 現有 (living members, as its button counts them); the
+   * strip says it once when one is down to fewer than half.
+   */
+  private updateGroupAlarms(): void {
+    const view = this.view;
+    if (view === null) return;
+    this.alarmState = this.army.groups.map((g, i) => {
+      const alive = g.ids.filter((id) => view.unitRow(id) >= 0);
+      const advancing = groupAdvancing(alive, g.recruits, (id) => (isHiding(view.unitOrder(id)) || !isSoldier(view.unitType(id)) ? null : orderState(view, id)));
+      const a = this.alarms.update(i, advancing, alive.length);
+      if (a.tell && a.base !== null) this.toast(alarmText(i, alive.length, a.base));
+      return { ...a, present: alive.length };
+    });
+  }
+
+  /** Group i's advance and alarm, for its button and its 「退」 (D-081). */
+  groupAlarm(i: number): Alarm & { present: number } {
+    return this.alarmState[i];
+  }
+
+  /**
+   * 「退」 beside an advancing group's button (D-081, the user's choice 3b-A): the group, recruits
+   * on their way included, retreats to the main city as 退回主城 does; those hiding in a building
+   * stay (orders to many leave them, ceo 2026-10-07). What is selected stays selected.
+   */
+  retreatGroup(i: number): void {
+    const view = this.view;
+    if (view === null) return;
+    const u = this.army.groups[i].ids.filter((id) => view.unitRow(id) >= 0 && !isHiding(view.unitOrder(id)));
+    const home = view.homeCell();
+    if (u.length === 0) return;
+    if (home === null) {
+      this.toast("主城不在了，沒有地方可以撤退");
+      return;
+    }
+    this.command({ c: "retreat", u, x: home.x, y: home.y });
+    this.toast(`編隊 ${i + 1} 撤回主城`);
   }
 
   /** Living soldiers of this type in group i (現有). */
@@ -1053,10 +1107,12 @@ export class Game implements GestureHost {
             this.hud.onEvent(ev);
           }
         }
+        this.stances.settle(view.header?.[H.tick] ?? 0, (id) => (view.unitRow(id) >= 0 ? view.unitStance(id) : null));
         this.pruneArmy();
         this.draftArmy();
         this.musterRecruits();
         this.followCharges();
+        this.updateGroupAlarms();
         if (this.placement !== null) {
           this.placement.revalidate(view.placement);
           this.warnMilitia();

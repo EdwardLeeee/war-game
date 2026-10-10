@@ -624,6 +624,55 @@ button.order-retreat {
   font-size: 12px;
 }
 
+/* 閃紅提醒 (D-081): a group down to fewer than half of what it attacked with. */
+.groups button.alarm {
+  background: #d93a30;
+  color: #fff;
+  animation: group-alarm 0.7s ease-in-out infinite alternate;
+}
+
+@keyframes group-alarm {
+  from {
+    box-shadow: 0 0 0 0 rgba(255, 90, 80, 0.95);
+  }
+  to {
+    box-shadow: 0 0 0 6px rgba(255, 90, 80, 0.15);
+    background: #a8231b;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .groups button.alarm {
+    animation: none;
+  }
+}
+
+/* 「退1」–「退4」 (D-081): left of the group buttons while the group advances; 退1, 退3 beside them, 退2, 退4 one further out. */
+.groups {
+  position: relative;
+}
+
+.groups .group-retreat {
+  position: absolute;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 13px;
+}
+
+.groups .group-retreat.near {
+  right: calc(100% + 6px);
+}
+
+.groups .group-retreat.far {
+  right: calc(100% + 56px);
+}
+
+.groups .group-retreat[hidden] {
+  display: none;
+}
+
 .minimap {
   position: absolute;
   left: calc(var(--safe-l) + 4px);
