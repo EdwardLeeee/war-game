@@ -1,0 +1,29 @@
+{
+ "traces": [
+  {
+   "name": "n-r-9",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 9 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-10",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 10 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-26",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 26 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "h-r-13",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 13 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard"
+  },
+  {
+   "name": "h-r-16",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 16 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard"
+  }
+ ]
+}

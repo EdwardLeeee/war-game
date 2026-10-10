@@ -78,6 +78,13 @@ export interface Ai {
 }
 
 /** What every player knows from the start (the `ready` message), and its symmetry frame. */
+// SCRATCH (ltrace): each command the AI gives, with the line of ai.ts that gave it.
+function tagPush<T>(out: T[], ...cs: T[]): number {
+  const m = /ai\.ts:(\d+)/.exec((new Error().stack ?? "").split("\n")[2] ?? "");
+  for (const c of cs) if (typeof c === "object" && c !== null && "c" in c) (c as unknown as { line?: string }).line = m?.[1] ?? "?";
+  return out.push(...cs);
+}
+
 // --- the map as it knows it, and its scout (D-074) ---------------------------------------------
 //
 // The fixed map is known whole from the start (MapInfo has every town and both main cities), and
@@ -309,7 +316,7 @@ export function createScout(mem: MapMemory): Scout {
       }
       if (tick - lastMove >= SCOUT_EVERY) {
         // A retreat: it walks on past what it meets instead of stopping to fight.
-        out.push({ c: "retreat", u: [s.id], x: target.x, y: target.y });
+        tagPush(out, { c: "retreat", u: [s.id], x: target.x, y: target.y });
         lastMove = tick;
       }
     },
@@ -374,7 +381,7 @@ export function enemyForts(view: PlayerView, player: number, rules: Rules): Fort
     const type = view.buildings[r + BuildingField.type];
     if (owner === player || owner === NEUTRAL || (type !== BuildingType.Outpost && type !== BuildingType.ArrowTower)) continue;
     const outpost = type === BuildingType.Outpost;
-    out.push({
+    tagPush(out, {
       id: view.buildings[r + BuildingField.id],
       type,
       x: view.buildings[r + BuildingField.cellX],
@@ -535,7 +542,7 @@ export function fortGroups(forts: Fort[], guardsAt: (f: Fort) => number, v: Fort
       const c = fortCentre(f);
       radius = Math.max(radius, Math.ceil(Math.sqrt((c.x - x) * (c.x - x) + (c.y - y) * (c.y - y))) + f.hits + 1);
     }
-    out.push({ ids: members.map((f) => f.id), x, y, radius, worth });
+    tagPush(out, { ids: members.map((f) => f.id), x, y, radius, worth });
   }
   return out;
 }
@@ -654,7 +661,7 @@ export function createFortCrew(rank: (x: number, y: number) => number): FortCrew
       if (f === undefined || near >= FORT_ARMY + 2 * arrows) {
         // Nothing to do, or soldiers enough there: back to work (`release`: a farmer told to stop or
         // attack waits where he is once idle, and the economy leaves him there).
-        if (crew.length > 0) out.push({ c: "release", u: crew });
+        if (crew.length > 0) tagPush(out, { c: "release", u: crew });
         crew = [];
         aim = -1;
         hitting = -1;
@@ -692,7 +699,7 @@ export function createFortCrew(rank: (x: number, y: number) => number): FortCrew
         target = best!.id;
       }
       if (crew.length > 0 && (target !== hitting || f.id !== aim || tick - last >= FORT_EVERY)) {
-        out.push({ c: "attack", u: crew, target });
+        tagPush(out, { c: "attack", u: crew, target });
         last = tick;
       }
       aim = f.id;
@@ -1050,14 +1057,14 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       // 30 s limit on changing it was tried and made the normal AI stronger (sim/README.md).
       const ratioKey = ratio.join("/");
       if (ratioKey !== ratioSet) {
-        out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
+        tagPush(out, { c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
         ratioSet = ratioKey;
       }
       let room = cap - pop - queued;
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
       if (main && main.queue < 2 && farmers.length + main.queue < farmerTarget && room > 0 && afford(farmerCost)) {
-        out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
+        tagPush(out, { c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
         spend(farmerCost);
         room--;
       }
@@ -1088,7 +1095,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       for (const site of own.filter((b) => b.progress < 1000)) {
         if (farmers.some((f) => f.order === Order.Build && f.orderTarget === site.id)) continue;
         const crew = gatherers.slice(0, 2);
-        if (crew.length > 0) out.push({ c: "repair", u: crew, building: site.id });
+        if (crew.length > 0) tagPush(out, { c: "repair", u: crew, building: site.id });
         gatherers.splice(0, crew.length);
       }
 
@@ -1129,7 +1136,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
             break;
           }
           const crew = plan.type === BuildingType.House || plan.type === BuildingType.Farm ? 1 : 2;
-          out.push({ c: "build", u: gatherers.slice(0, crew), type: plan.type, x: spot.x, y: spot.y });
+          tagPush(out, { c: "build", u: gatherers.slice(0, crew), type: plan.type, x: spot.x, y: spot.y });
           spend(rules.buildings[plan.type].cost);
           break;
         }
@@ -1149,7 +1156,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const trainAt = (t: number, type: UnitType) => {
         for (const b of done(t)) {
           if (b.queue >= 2 || room <= 0 || armyRoom <= 0 || !afford(rules.units[type].cost)) continue;
-          out.push({ c: "train", building: b.id, type, n: 1 });
+          tagPush(out, { c: "train", building: b.id, type, n: 1 });
           spend(rules.units[type].cost);
           room--;
           armyRoom--;
@@ -1175,12 +1182,12 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       if (vein !== null && has(BuildingType.MageHall) && veinCrew.length < level.veinCrew) {
         const pick = gatherers.filter((id) => !veinCrew.includes(id)).slice(-(level.veinCrew - veinCrew.length));
         if (pick.length > 0) {
-          out.push({ c: "gather", u: pick, node: vein.id });
+          tagPush(out, { c: "gather", u: pick, node: vein.id });
           veinCrew.push(...pick);
         }
       }
       const quiet = soldiers.filter((u) => u.type === UnitType.Mage && (u.flags & UnitFlag.Autocast) === 0).map((u) => u.id);
-      if (quiet.length > 0) out.push({ c: "autocast", u: quiet, on: true });
+      if (quiet.length > 0) tagPush(out, { c: "autocast", u: quiet, on: true });
 
       // --- towns: choose, and keep garrisons ----------------------------------------------------
       const towns = new Map<number, Town>();
@@ -1218,7 +1225,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (once && plundered(id)) {
           // Plundered before (round 7): it can only be governed, so it waits until it can pay.
           if (affordAll(cost)) {
-            out.push({ c: "town_choice", town: id, choice: TownChoice.Govern });
+            tagPush(out, { c: "town_choice", town: id, choice: TownChoice.Govern });
             spend(cost);
           }
           continue;
@@ -1234,7 +1241,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         // A town already plundered is better kept this time; and the style leans one way.
         score += 2 * (plunders.get(id)?.count ?? 0) + STYLE_BIAS[myStyle];
         const govern = score >= 3 && affordAll(cost);
-        out.push({ c: "town_choice", town: id, choice: govern ? TownChoice.Govern : TownChoice.Plunder });
+        tagPush(out, { c: "town_choice", town: id, choice: govern ? TownChoice.Govern : TownChoice.Plunder });
         if (govern) spend(cost);
       }
       // The clock: the end-of-game rules count back from the time limit, if there is one.
@@ -1255,7 +1262,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           const s = soldiers.find((u) => u.id === gid)!;
           return dist2(s.x, s.y, t.x, t.y) > 9;
         });
-        if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
+        if (away.length > 0 && tick % 100 === 0) tagPush(out, { c: "move", u: away, x: t.x, y: t.y });
       }
       const army = soldiers.filter((u) => !isGuard(u.id));
       // Soldiers hiding in a building (round 7) are left out of orders: a move would bring them out.
@@ -1274,12 +1281,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
       }
 
+      if (tick >= 9600 && tick % 100 === 0) {
+        console.log(`NT t=${tick} mode=${mode} target=${target.x},${target.y} town=${targetTown} soldiers=${soldiers.length} recalled=${recalled} worth=${marchWorth} rally=${rally.x},${rally.y} crew=${crew.aim} razing=${razing} forts=${forts.length}/${forts.filter((f) => f.seen).length} failed=${[...failedAt.entries()].map(([k, v]) => k + ":" + v.worth + "@" + v.tick).join(" ")}`);
+      }
       // --- defence, towns and attack --------------------------------------------------------------
       const threat = foesNear(home.cellX, home.cellY, 16);
       const send = (x: number, y: number, why: Mode) => {
         if (armyIds.length === 0) return;
         if (why !== mode || target.x !== x || target.y !== y || tick - lastMove >= 400) {
-          out.push({ c: "move", u: armyIds, x, y });
+          tagPush(out, { c: "move", u: armyIds, x, y });
           lastMove = tick;
         }
         mode = why;
@@ -1308,22 +1318,22 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           }
         }
         send(cx, cy, "defend");
-        if (hiders.length > 0) out.push({ c: "garrison", u: hiders, building: main!.id });
+        if (hiders.length > 0) tagPush(out, { c: "garrison", u: hiders, building: main!.id });
         // Farmers hide when the raid outnumbers the soldiers at home.
         const defenders = army.filter((u) => dist2(u.x, u.y, home.cellX, home.cellY) <= 400).length;
         if (!recalled && threat >= 4 && defenders < threat) {
-          out.push({ c: "recall", on: true });
+          tagPush(out, { c: "recall", on: true });
           recalled = true;
         }
         return out;
       }
       if (recalled) {
-        out.push({ c: "recall", on: false });
+        tagPush(out, { c: "recall", on: false });
         recalled = false;
       }
       // The raid is over (10 s without enemies near): those hiding come out.
       if (hide && main && tick - lastHomeThreat >= 200 && soldiers.some((u) => u.order === Order.Garrison && u.orderTarget === main.id)) {
-        out.push({ c: "leave", building: main.id });
+        tagPush(out, { c: "leave", building: main.id });
       }
       // A town it took that it may only govern and cannot pay for yet (round 7) does not hold the army.
       const stuck = (id: number, t: Town) => once && t.state === TownState.AwaitingChoice && plundered(id) && !affordAll(governCostOf(rules, t.size));
@@ -1387,8 +1397,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const c = fortCentre(f);
         if (razing !== f.id || target.x !== c.x || target.y !== c.y || tick - lastMove >= FORT_EVERY) {
           // Its defenders first (a move fights what it meets), then the fort itself.
-          if (foesNear(c.x, c.y, FORT_GUARDS) > 0) out.push({ c: "move", u: armyIds, x: c.x, y: c.y });
-          else out.push({ c: "attack", u: armyIds, target: f.id });
+          if (foesNear(c.x, c.y, FORT_GUARDS) > 0) tagPush(out, { c: "move", u: armyIds, x: c.x, y: c.y });
+          else tagPush(out, { c: "attack", u: armyIds, target: f.id });
           lastMove = tick;
         }
         razing = f.id;
@@ -1462,7 +1472,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (mode === "raze" && withCrew === undefined && (standing * 5 < armyAtStart * 2 || outnumbered)) {
           // Ground down or outnumbered: back to the rally point, and again a little later; remembered, as from a march.
           rememberFort(army, forts.find((x) => x.id === razing), cx, cy);
-          out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
+          tagPush(out, { c: "retreat", u: armyIds, x: rally.x, y: rally.y });
           lastMove = tick;
           mode = "gather";
           target = { x: rally.x, y: rally.y };
@@ -1507,7 +1517,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           if (mode === "base") baseBroken = true;
           remember(army, byArmy);
           if (mode === "town" && byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
-          out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
+          tagPush(out, { c: "retreat", u: armyIds, x: rally.x, y: rally.y });
           lastMove = tick;
           mode = "gather";
           target = { x: rally.x, y: rally.y };
@@ -1524,8 +1534,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           if (mine.id === reservesRazing || enough(waiting, mine)) {
             const ids = waiting.map((u) => u.id);
             if (mine.id !== reservesRazing || tick - reservesMove >= FORT_EVERY) {
-              if (foesNear(c.x, c.y, FORT_GUARDS) > 0) out.push({ c: "move", u: ids, x: c.x, y: c.y });
-              else out.push({ c: "attack", u: ids, target: mine.id });
+              if (foesNear(c.x, c.y, FORT_GUARDS) > 0) tagPush(out, { c: "move", u: ids, x: c.x, y: c.y });
+              else tagPush(out, { c: "attack", u: ids, target: mine.id });
               reservesMove = tick;
             }
             reservesRazing = mine.id;
@@ -1547,7 +1557,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           armyIds.length = 0;
           armyIds.push(...keep);
           const away = newcomers.filter((u) => dist2(u.x, u.y, rally.x, rally.y) > 9).map((u) => u.id);
-          if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: rally.x, y: rally.y });
+          if (away.length > 0 && tick % 100 === 0) tagPush(out, { c: "move", u: away, x: rally.x, y: rally.y });
         }
         // Forts too strong for it ahead (seen only now, D-081): back, and remember.
         if (aim !== undefined && armyIds.length > 0 && !endgame) {
@@ -1556,7 +1566,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
             if (mode === "base") baseBroken = true;
             remember(army, ahead);
             if (mode === "town") townForts.set(targetTown, { ids: ahead.flatMap((g) => g.ids), tick });
-            out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
+            tagPush(out, { c: "retreat", u: armyIds, x: rally.x, y: rally.y });
             lastMove = tick;
             mode = "gather";
             target = { x: rally.x, y: rally.y };
@@ -1593,8 +1603,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           const there = dist2(fx, fy, enemyHome.cellX, enemyHome.cellY) <= 12 * 12;
           if (enemyCity >= 0 && there) {
             if (tick - lastMove >= 200) {
-              if (foesNear(enemyHome.cellX, enemyHome.cellY, 12) > 0) out.push({ c: "move", u: armyIds, x: enemyHome.cellX, y: enemyHome.cellY });
-              else out.push({ c: "attack", u: armyIds, target: enemyCity });
+              if (foesNear(enemyHome.cellX, enemyHome.cellY, 12) > 0) tagPush(out, { c: "move", u: armyIds, x: enemyHome.cellX, y: enemyHome.cellY });
+              else tagPush(out, { c: "attack", u: armyIds, target: enemyCity });
               lastMove = tick;
             }
           } else {
@@ -1740,6 +1750,12 @@ export const HARD: HardPlan = {
   townRest: 0,
 };
 
+// SCRATCH ONLY (ai/scratch-*, never merged): candidate plans from the environment.
+const SCRATCH_ENV = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HARD_BASE: HardPlan = { ...HARD };
+Object.assign(HARD, JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"));
+const HARD_B: HardPlan = { ...HARD_BASE, ...JSON.parse(SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN || "{}") };
+
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -1771,7 +1787,7 @@ interface HardTown extends Town {
 type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
-  const plan: HardPlan = { ...HARD, ...know.hard };
+  const plan: HardPlan = { ...(slot === 1 ? HARD_B : HARD), ...know.hard };
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
@@ -2059,14 +2075,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       ratio[0] = 100 - ratio[1] - ratio[2];
       const ratioKey = ratio.join("/");
       if (ratioKey !== ratioSet) {
-        out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
+        tagPush(out, { c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
         ratioSet = ratioKey;
       }
       let room = cap - pop - queued;
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
       if (main && main.queue < 2 && farmers.length + main.queue < farmerTarget && room > 0 && afford(farmerCost)) {
-        out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
+        tagPush(out, { c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
         spend(farmerCost);
         room--;
       }
@@ -2091,7 +2107,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       for (const site of own.filter((b) => b.progress < 1000)) {
         if (farmers.some((f) => f.order === Order.Build && f.orderTarget === site.id)) continue;
         const crew = gatherers.slice(0, 2);
-        if (crew.length > 0) out.push({ c: "repair", u: crew, building: site.id });
+        if (crew.length > 0) tagPush(out, { c: "repair", u: crew, building: site.id });
         gatherers.splice(0, crew.length);
       }
       // Buildings in priority order; it saves up for the first that cannot be paid for yet.
@@ -2132,7 +2148,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             break;
           }
           const crew = p.type === BuildingType.House || p.type === BuildingType.Farm ? 1 : 2;
-          out.push({ c: "build", u: gatherers.slice(0, crew), type: p.type, x: spot.x, y: spot.y });
+          tagPush(out, { c: "build", u: gatherers.slice(0, crew), type: p.type, x: spot.x, y: spot.y });
           gatherers.splice(0, crew);
           spend(cost);
           break;
@@ -2146,7 +2162,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const trainAt = (t: number, type: UnitType) => {
         for (const b of done(t)) {
           if (b.queue >= 2 || room <= 0 || !afford(rules.units[type].cost)) continue;
-          out.push({ c: "train", building: b.id, type, n: 1 });
+          tagPush(out, { c: "train", building: b.id, type, n: 1 });
           spend(rules.units[type].cost);
           room--;
         }
@@ -2174,12 +2190,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       if (vein !== null && has(BuildingType.MageHall) && veinCrew.length < plan.vein) {
         const pick = gatherers.filter((id) => !veinCrew.includes(id)).slice(-(plan.vein - veinCrew.length));
         if (pick.length > 0) {
-          out.push({ c: "gather", u: pick, node: vein.id });
+          tagPush(out, { c: "gather", u: pick, node: vein.id });
           veinCrew.push(...pick);
         }
       }
       const quiet = soldiers.filter((u) => u.type === UnitType.Mage && (u.flags & UnitFlag.Autocast) === 0).map((u) => u.id);
-      if (quiet.length > 0) out.push({ c: "autocast", u: quiet, on: true });
+      if (quiet.length > 0) tagPush(out, { c: "autocast", u: quiet, on: true });
 
       // --- towns ------------------------------------------------------------------------------
       const towns = new Map<number, HardTown>();
@@ -2203,11 +2219,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       for (const [id, t] of towns) {
         if (t.state === TownState.Ruins && t.visible) restoreAt.set(id, tick + t.timer);
         if (t.owner !== player || t.state !== TownState.AwaitingChoice) continue;
-        if (!toGovern(id)) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
+        if (!toGovern(id)) tagPush(out, { c: "town_choice", town: id, choice: TownChoice.Plunder });
         else if (affordAll(governCost(t.size))) {
-          out.push({ c: "town_choice", town: id, choice: TownChoice.Govern });
+          tagPush(out, { c: "town_choice", town: id, choice: TownChoice.Govern });
           spend(governCost(t.size));
-        } else if (!(once && plunderedTown(id))) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
+        } else if (!(once && plunderedTown(id))) tagPush(out, { c: "town_choice", town: id, choice: TownChoice.Plunder });
         // Plundered before and it cannot pay yet: it waits (a plunder would be refused).
       }
       // Garrisons: the spearmen (else any soldier but a mage) nearest each held town, one more
@@ -2229,7 +2245,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const s = byId.get(g)!;
           return dist2(s.x, s.y, t.x, t.y) > 9;
         });
-        if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
+        if (away.length > 0 && tick % 100 === 0) tagPush(out, { c: "move", u: away, x: t.x, y: t.y });
       }
       const guarding = new Set([...townGuards.values()].flat());
 
@@ -2275,7 +2291,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const step = need + CELL / 2;
             const x = Math.max(0, Math.min(n - 1, Math.trunc((u.fx + (ex * step) / e) / CELL)));
             const y = Math.max(0, Math.min(n - 1, Math.trunc((u.fy + (ey * step) / e) / CELL)));
-            out.push({ c: "retreat", u: [u.id], x, y });
+            tagPush(out, { c: "retreat", u: [u.id], x, y });
             dodging.set(u.id, tick + left + 10);
           }
         }
@@ -2293,13 +2309,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (want) {
           const fresh = soldiers.filter((u) => who(u) && !loosed.has(u.id)).map((u) => u.id);
           if (fresh.length > 0) {
-            out.push({ c: "formation", u: fresh, loose: true });
+            tagPush(out, { c: "formation", u: fresh, loose: true });
             for (const id of fresh) loosed.add(id);
           }
           loose = true;
         } else if (loose) {
           const all = soldiers.filter((u) => loosed.has(u.id)).map((u) => u.id);
-          if (all.length > 0) out.push({ c: "formation", u: all, loose: false });
+          if (all.length > 0) tagPush(out, { c: "formation", u: all, loose: false });
           loosed.clear();
           loose = false;
         }
@@ -2312,7 +2328,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const send = (x: number, y: number, why: HardMode) => {
         if (armyIds.length === 0) return;
         if (why !== mode || target.x !== x || target.y !== y || tick - lastMove >= 400) {
-          out.push({ c: "move", u: armyIds, x, y });
+          tagPush(out, { c: "move", u: armyIds, x, y });
           lastMove = tick;
           sent = true;
         }
@@ -2321,7 +2337,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       };
       const fallBack = (x: number, y: number) => {
         const ids = army.map((u) => u.id);
-        if (ids.length > 0) out.push({ c: "retreat", u: ids, x, y });
+        if (ids.length > 0) tagPush(out, { c: "retreat", u: ids, x, y });
         for (const id of ids) dodging.delete(id);
         lastMove = tick;
         sent = true;
@@ -2364,7 +2380,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (atHome.length > 0) {
           lastThreat = tick;
           if (plan.recallAt > 0 && !recalled && atHome.length >= plan.recallAt) {
-            out.push({ c: "recall", on: true });
+            tagPush(out, { c: "recall", on: true });
             recalled = true;
           }
           if ((mode === "town" || mode === "base") && atHome.length < plan.pullAll) {
@@ -2379,7 +2395,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const ids = [...homeSquad].filter((id) => !dodging.has(id));
             if (ids.length > 0 && (fresh.length > 0 || tick - squadMove >= 100)) {
               const c = centre(atHome, post.x, post.y);
-              out.push({ c: "move", u: ids, x: c.x, y: c.y });
+              tagPush(out, { c: "move", u: ids, x: c.x, y: c.y });
               squadMove = tick;
             }
             const keep = armyIds.filter((id) => !homeSquad.has(id));
@@ -2418,12 +2434,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               }
             }
             send(c.x, c.y, "defend");
-            for (const h of hiding) out.push({ c: "garrison", u: h.u, building: h.building });
+            for (const h of hiding) tagPush(out, { c: "garrison", u: h.u, building: h.building });
             return;
           }
         } else {
           if (recalled && tick - lastThreat >= 100) {
-            out.push({ c: "recall", on: false });
+            tagPush(out, { c: "recall", on: false });
             recalled = false;
           }
           // The raid is over: the home squad goes back to the army.
@@ -2435,7 +2451,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (hideOn && tick - lastThreat >= 200) {
             for (const b of own) {
               if (soldiers.some((u) => u.order === Order.Garrison && u.orderTarget === b.id)) {
-                out.push({ c: "leave", building: b.id });
+                tagPush(out, { c: "leave", building: b.id });
                 lastMove = -100000;
               }
             }
@@ -2544,8 +2560,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         /** Its defenders first (a move fights what it meets), then the fort itself. */
         const hit = (ids: number[], f: Fort) => {
           const c = fortCentre(f);
-          if (foesNear(c.x, c.y, FORT_GUARDS).length > 0) out.push({ c: "move", u: ids, x: c.x, y: c.y });
-          else out.push({ c: "attack", u: ids, target: f.id });
+          if (foesNear(c.x, c.y, FORT_GUARDS).length > 0) tagPush(out, { c: "move", u: ids, x: c.x, y: c.y });
+          else tagPush(out, { c: "attack", u: ids, target: f.id });
         };
         const razeWith = (ids: number[], f: Fort) => {
           const c = fortCentre(f);
@@ -2704,10 +2720,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               // stronger or nearly done (a move fights them but never hits the city, which is repaired).
               const guards = worth(foesNear(enemyHome.cellX, enemyHome.cellY, 12));
               const pressOn = garrisonOn && close.length > 0 && (cityLow || worth(atCity) >= guards * 3);
-              if ((guards > 0 && !pressOn) || close.length === 0) out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
+              if ((guards > 0 && !pressOn) || close.length === 0) tagPush(out, { c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
               else {
-                out.push({ c: "attack", u: close, target: enemyCity });
-                if (late.length > 0) out.push({ c: "move", u: late, x: enemyHome.cellX, y: enemyHome.cellY });
+                tagPush(out, { c: "attack", u: close, target: enemyCity });
+                if (late.length > 0) tagPush(out, { c: "move", u: late, x: enemyHome.cellX, y: enemyHome.cellY });
               }
               lastMove = tick;
               sent = true;
@@ -2717,13 +2733,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             (target.x !== enemyHome.cellX || target.y !== enemyHome.cellY || tick - lastMove >= (there ? 100 : 400) || (reserves.length >= 6 && !garrisonOn))
           ) {
             // On the way, or there without the city in sight yet: on to it.
-            out.push({ c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
+            tagPush(out, { c: "move", u: frontIds, x: enemyHome.cellX, y: enemyHome.cellY });
             lastMove = tick;
             sent = true;
             target = { x: enemyHome.cellX, y: enemyHome.cellY };
           }
           const wait = reserves.filter((u) => !marched.has(u.id) && dist2(u.x, u.y, post.x, post.y) > 9).map((u) => u.id);
-          if (wait.length > 0 && tick % 100 === 0 && reservesRazing < 0) out.push({ c: "move", u: wait, x: post.x, y: post.y });
+          if (wait.length > 0 && tick % 100 === 0 && reservesRazing < 0) tagPush(out, { c: "move", u: wait, x: post.x, y: post.y });
           return;
         }
         // At home: march, go for a town, or wait by the city.
@@ -2792,14 +2808,20 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         send(post.x, post.y, "home");
       };
       armyOrders();
+      if (tick % 100 === 0 && tick >= 9600) {
+        const fvv = fortValues(know.rules);
+        const gs = forts.length === 0 ? [] : fortGroups(forts, (f) => foes.filter((e) => e.order === Order.Post && fortDist2(f, e.x, e.y) <= 9).length, fvv);
+        const vs = army.reduce((a, u) => a + (fvv.vs[u.type] ?? 0), 0);
+        console.log(`TF t=${tick} mode=${mode} army=${army.length} vs=${vs} worth=${armyWorth} ew=${enemyWorth} at=${ac.x},${ac.y} target=${target.x},${target.y} failed=${[...failedAt.entries()].map(([k, v]) => k + ":" + v).join(" ")} groups=${gs.map((g) => `[${g.ids.length}@${g.x},${g.y} r${g.radius} w${g.worth}]`).join(" ")} rest=${[...townRest.entries()].map(([k, v]) => k + ":" + v).join(" ")} enemy=${enemyHome.cellX},${enemyHome.cellY} crew=${crew.aim} razing=${razing} forts=${forts.length}/${forts.filter((f) => f.seen).length}`);
+      }
 
       // Back from a dodge or a raid at home: with the army again (on an attack, those that did not
       // set out with it wait at home like the other reserves).
       const back = rejoin.filter((id) => byId.has(id) && !detached(id));
       const late = mode === "base" ? back.filter((id) => !marched.has(id)) : [];
       const on = back.filter((id) => !late.includes(id));
-      if (on.length > 0 && !sent) out.push({ c: "move", u: on, x: target.x, y: target.y });
-      if (late.length > 0) out.push({ c: "move", u: late, x: post.x, y: post.y });
+      if (on.length > 0 && !sent) tagPush(out, { c: "move", u: on, x: target.x, y: target.y });
+      if (late.length > 0) tagPush(out, { c: "move", u: late, x: post.x, y: post.y });
       return out;
     },
   };
