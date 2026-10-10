@@ -1,0 +1,14 @@
+{
+ "traces": [
+  {
+   "name": "n-r-9",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 9 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "h-f-21",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 21 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard"
+  }
+ ]
+}
