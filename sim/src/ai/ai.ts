@@ -332,9 +332,11 @@ const FORT_WAY = 2;
 const FORT_SIEGE = 14;
 /** Enemy soldiers this many cells beyond a group's reach count as defending it (D-081). */
 const FORT_ARMY_NEAR = 6;
-/** After breaking off from a group of forts, the next go at it within FORT_FORGET takes this many times the army (percent, D-081). */
+/**
+ * After breaking off from a group of forts, the next go at it takes this many times the army (percent, D-081),
+ * until the group is weaker than it was then (a fort down, fewer guards or hiding; ceo 2026-10-11: no time limit).
+ */
 const FORT_FAILED = 150;
-const FORT_FORGET = 5 * 1200;
 /** It goes for a fort with no fewer soldiers than this. */
 const FORT_ARMY = 4;
 /** Enemy soldiers this near a fort (cells) count as its defenders. */
@@ -414,16 +416,23 @@ function fortsOnOurGround(forts: Fort[], home: { cellX: number; cellY: number },
   });
 }
 
+/** What it remembers of breaking off from a fort (D-081): the army (worth against forts) that did, when, and what the fort's group was worth then. */
+interface Failed {
+  worth: number;
+  tick: number;
+  fort: number;
+}
+
 /**
  * The army (worth against forts) that broke off from `f` or from forts whose arrows or guards reach it,
- * within FORT_FORGET (D-081); 0 for none.
+ * while their groups are no weaker than then (`worthNow`: a fort's group's worth now, 0 for a site); 0 for none.
  */
-function failedNear(f: Fort, forts: readonly Fort[], failedAt: ReadonlyMap<number, { worth: number; tick: number }>, tick: number): number {
+function failedNear(f: Fort, forts: readonly Fort[], failedAt: ReadonlyMap<number, Failed>, worthNow: (id: number) => number): number {
   const c = fortCentre(f);
   let failed = 0;
   for (const o of forts) {
     const m = failedAt.get(o.id);
-    if (m === undefined || tick - m.tick >= FORT_FORGET) continue;
+    if (m === undefined || worthNow(o.id) < m.fort) continue;
     if (o.id === f.id || fortDist2(o, c.x, c.y) <= (o.hits + FORT_WAY) * (o.hits + FORT_WAY)) failed = Math.max(failed, m.worth);
   }
   return failed;
@@ -556,6 +565,65 @@ export function groupsOnWay(groups: FortGroup[], a: { x: number; y: number }, b:
   return groups
     .filter((g) => wayDist2(g.x, g.y, a.x, a.y, b.x, b.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY))
     .sort((p, q) => (p.x - a.x) * (p.x - a.x) + (p.y - a.y) * (p.y - a.y) - ((q.x - a.x) * (q.x - a.x) + (q.y - a.y) * (q.y - a.y)) || p.ids[0] - q.ids[0]);
+}
+
+/** Falling back round forts (aroundForts): points this many cells beyond their reach, and half as far again, and twice... */
+const VIA_SPARE = 3;
+/** ...and on home once within VIA_NEAR cells of the point, or after VIA_TICKS. */
+const VIA_NEAR = 4;
+const VIA_TICKS = 1200;
+/** Sixteen directions in thousandths (no sin or cos in the sim). */
+const DIRS16: readonly (readonly [number, number])[] = [
+  [1000, 0], [924, 383], [707, 707], [383, 924], [0, 1000], [-383, 924], [-707, 707], [-924, 383],
+  [-1000, 0], [-924, -383], [-707, -707], [-383, -924], [0, -1000], [383, -924], [707, -707], [924, -383],
+];
+
+/**
+ * Falling back from `from` to `to` (D-081, ceo 2026-10-11: falling back straight through the forts' reach
+ * killed half of those lost to them): when the straight way nears one of these groups (within reach, FORT_WAY
+ * to spare) before leaving it, a point round the first such group to fall back to first: of points round it
+ * just beyond its reach (and further out), the one with the shortest way there and on whose two legs the army
+ * keeps out of its reach (or, starting within it, does not come nearer). Undefined when the way is clear, leads
+ * away from the group from the first step, or no such point is found.
+ */
+export function aroundForts(groups: readonly FortGroup[], from: { x: number; y: number }, to: { x: number; y: number }, size: number): { x: number; y: number } | undefined {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return undefined;
+  let g: FortGroup | undefined;
+  let gt = 0;
+  for (const o of groups) {
+    const t = ((o.x - from.x) * dx + (o.y - from.y) * dy) / len2;
+    if (t <= 0) continue;
+    const r = o.radius + FORT_WAY;
+    if (wayDist2(o.x, o.y, from.x, from.y, to.x, to.y) > r * r) continue;
+    if (g === undefined || t < gt || (t === gt && o.ids[0] < g.ids[0])) {
+      g = o;
+      gt = t;
+    }
+  }
+  if (g === undefined) return undefined;
+  const reach = g.radius + FORT_WAY;
+  const near = Math.min(reach * reach, (from.x - g.x) * (from.x - g.x) + (from.y - g.y) * (from.y - g.y));
+  const out = reach + VIA_SPARE;
+  let best: { x: number; y: number } | undefined;
+  let bestWay = 0;
+  for (const r of [out, out + (out >> 1), 2 * out]) {
+    for (const [ux, uy] of DIRS16) {
+      const x = g.x + Math.trunc((ux * r) / 1000);
+      const y = g.y + Math.trunc((uy * r) / 1000);
+      if (x < 1 || y < 1 || x > size - 2 || y > size - 2) continue;
+      if (wayDist2(g.x, g.y, from.x, from.y, x, y) < near || wayDist2(g.x, g.y, x, y, to.x, to.y) <= reach * reach) continue;
+      const way = Math.sqrt((x - from.x) * (x - from.x) + (y - from.y) * (y - from.y)) + Math.sqrt((to.x - x) * (to.x - x) + (to.y - y) * (to.y - y));
+      if (best === undefined || way < bestWay) {
+        best = { x, y };
+        bestWay = way;
+      }
+    }
+    if (best !== undefined) return best;
+  }
+  return undefined;
 }
 
 /** Farmers sent against an unguarded fort: this many, or three for each builder, and FORT_CREW_MAX under arrows. */
@@ -900,9 +968,13 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   /** D-081, as hard: the army (worth against forts) that broke off from each fort. */
   /** What the army that set out was worth against forts (D-081: a break-off remembers that, not what is left). */
   let marchWorth = 0;
-  const failedAt = new Map<number, { worth: number; tick: number }>();
+  const failedAt = new Map<number, Failed>();
+  /** Falling back round forts (aroundForts): the point first, and until when. */
+  let via: { x: number; y: number; until: number } | null = null;
   /** Towns it fell back from because of forts (D-081, ceo 2026-10-10): the forts, and when. */
   const townForts = new Map<number, { ids: number[]; tick: number }>();
+  /** The forts its last march on the enemy base fell back from (D-081, ceo 2026-10-11). */
+  let baseForts: number[] = [];
   const fv = fortValues(know.rules);
   const crew = createFortCrew((x, y) => {
     const f = frame(x, y);
@@ -1239,12 +1311,21 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       }
       // The clock: the end-of-game rules count back from the time limit, if there is one.
       const endgame = toGo >= 0 && toGo <= ENDGAME_TO_GO;
+      // Enemy forts (D-080, D-081).
+      const forts = enemyForts(view, player, rules);
+      /** A town under the arrows or guards of an enemy fort (D-081). */
+      const underArrows = (t: { x: number; y: number }) => forts.some((o) => o.done && fortDist2(o, t.x, t.y) <= (o.hits + 1) * (o.hits + 1));
       // Garrisons: the soldiers nearest each held town (not mages), topped up as they fall;
-      // in the endgame they join the assault.
+      // in the endgame they join the assault. None under enemy forts' arrows (D-081: seed 9 of the
+      // fortress-hold runs topped one up as each fell, 21 shot).
       if (endgame) garrison.clear();
       for (const [id, t] of towns) {
         const held = t.owner === player && (t.state === TownState.Repairing || t.state === TownState.Governed);
         if (!held || endgame) continue;
+        if (underArrows(t)) {
+          garrison.delete(id);
+          continue;
+        }
         const alive = (garrison.get(id) ?? []).filter((gid) => soldiers.some((s) => s.id === gid));
         const free = soldiers
           .filter((s) => !isGuard(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison)
@@ -1263,21 +1344,34 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
 
       // Enemy forts (D-080) on its ground (by the main city or a town it holds): farmers go for an
       // unguarded one while too few soldiers are by it (the army's part comes below).
-      const forts = enemyForts(view, player, rules);
       const held = [...towns.values()]
         .filter((t) => t.owner === player && (t.state === TownState.Repairing || t.state === TownState.Governed))
         .map((t) => ({ x: t.x, y: t.y, radius: rules.towns?.[t.size]?.radius ?? 0 }));
       const ours = forts.length === 0 ? [] : fortsOnOurGround(forts, home, held);
       if (!recalled) {
         // Farmers going take the soldiers at home along to the end: not where the army broke off, as its own goes (D-081, ceo 2026-10-10).
-        const vs = soldiers.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
-        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
+        // Those that would go: not the towns' garrisons (seed 9 of the fortress-hold runs: counted in, the farmers went with 14).
+        const vs = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+        const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
+        const worthNow = (id: number) => gs.find((g) => g.ids.includes(id))?.worth ?? 0;
+        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, worthNow) * FORT_FAILED);
       }
 
       // --- defence, towns and attack --------------------------------------------------------------
       const threat = foesNear(home.cellX, home.cellY, 16);
       const send = (x: number, y: number, why: Mode) => {
         if (armyIds.length === 0) return;
+        // Falling back round forts (aroundForts): to the point first, then on to the rally point.
+        if (via !== null) {
+          const back = why === "gather" && x === rally.x && y === rally.y;
+          if (back && tick < via.until && dist2(cx, cy, via.x, via.y) > VIA_NEAR * VIA_NEAR) {
+            mode = why;
+            target = { x, y };
+            return;
+          }
+          if (back) lastMove = -100000;
+          via = null;
+        }
         if (why !== mode || target.x !== x || target.y !== y || tick - lastMove >= 400) {
           out.push({ c: "move", u: armyIds, x, y });
           lastMove = tick;
@@ -1409,7 +1503,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         let failed = 0;
         for (const id of g.ids) {
           const f = failedAt.get(id);
-          if (f !== undefined && tick - f.tick < FORT_FORGET) failed = Math.max(failed, f.worth);
+          if (f !== undefined && g.worth >= f.fort) failed = Math.max(failed, f.worth);
         }
         // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
         // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
@@ -1420,7 +1514,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const remember = (list: { type: number }[], near: FortGroup[]) => {
         // The army that set out, not what is left of it.
         const w = Math.max(vsForts(list), marchWorth);
-        for (const g of near) for (const id of g.ids) failedAt.set(id, { worth: Math.max(failedAt.get(id)?.worth ?? 0, w), tick });
+        for (const g of near) for (const id of g.ids) failedAt.set(id, { worth: Math.max(failedAt.get(id)?.worth ?? 0, w), tick, fort: g.worth });
       };
       /** The groups whose arrows or guards reach (x, y), and the one `f` is in. */
       const covering = (x: number, y: number, f?: Fort) =>
@@ -1428,21 +1522,23 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       /** Broke off from pulling down `f` (gone, maybe) with the army at (x, y): it and the groups there, as from a march (D-081, ceo 2026-10-10). */
       const rememberFort = (list: { type: number }[], f: Fort | undefined, x: number, y: number) => {
         remember(list, covering(x, y, f));
-        if (f !== undefined) failedAt.set(f.id, { worth: Math.max(failedAt.get(f.id)?.worth ?? 0, vsForts(list), marchWorth), tick });
+        if (f !== undefined) failedAt.set(f.id, { worth: Math.max(failedAt.get(f.id)?.worth ?? 0, vsForts(list), marchWorth), tick, fort: groupOf(f)?.worth ?? 0 });
       };
-      /** The army that broke off from `f` or from the groups covering it, within FORT_FORGET (0: none). */
+      /** A fort's group's worth now: 0 for a site, -1 once it is gone. */
+      const worthNow = (id: number) => groups.find((g) => g.ids.includes(id))?.worth ?? (forts.some((o) => o.id === id) ? 0 : -1);
+      /** The army that broke off from `f` or from the groups covering it, while they are no weaker than then (0: none). */
       const failedBy = (f: Fort) => {
         const c = fortCentre(f);
         let failed = 0;
         for (const id of [f.id, ...covering(c.x, c.y, f).flatMap((g) => g.ids)]) {
           const m = failedAt.get(id);
-          if (m !== undefined && tick - m.tick < FORT_FORGET) failed = Math.max(failed, m.worth);
+          if (m !== undefined && worthNow(id) >= m.fort) failed = Math.max(failed, m.worth);
         }
         return failed;
       };
       /**
        * Strong enough for a fort: at least the group it is in, and 1.3 x the enemy soldiers by it, not its guards (D-081; D-080 counted 3 soldiers a tower);
-       * and, within FORT_FORGET of breaking off from it, FORT_FAILED of the army that did (ceo 2026-10-10: it went again every 0.6–3 minutes).
+       * and, after breaking off from it, FORT_FAILED of the army that did until its group is weaker (ceo 2026-10-10: it went again every 0.6–3 minutes).
        */
       const enough = (list: { type: number }[], f: Fort) => {
         const c = fortCentre(f);
@@ -1451,18 +1547,30 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const w = vsForts(list);
         return w * 10 >= (g === undefined ? 0 : g.worth) * 10 + army * 13 && w * 100 >= failedBy(f) * FORT_FAILED;
       };
-      /** Fell back from town `id` because of forts, and they are still too strong for the army (FORT_FAILED, within FORT_FORGET). */
+      /** Fell back from town `id` because of forts, and they are still too strong for the army (FORT_FAILED, while it remembers them). */
       const fortsBar = (id: number) => {
         const m = townForts.get(id);
-        return m !== undefined && tick - m.tick < FORT_FORGET && tooStrong(army).some((g) => g.ids.some((x) => m.ids.includes(x)));
+        return m !== undefined && tooStrong(army).some((g) => g.ids.some((x) => m.ids.includes(x)));
+      };
+      /**
+       * Fell back from the enemy base because of forts still too strong for the army (FORT_FAILED): not again until
+       * they are not, however full its population (ceo 2026-10-11); towns instead.
+       */
+      const baseBar = () => baseForts.length > 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
+      /** Back to the rally point, round forts too strong for it that the straight way passes first (aroundForts, ceo 2026-10-11). */
+      const fallBackPast = (cause: FortGroup[]) => {
+        const v = aroundForts([...cause, ...tooStrong(army)], { x: cx, y: cy }, rally, know.map.size);
+        via = v === undefined ? null : { x: v.x, y: v.y, until: tick + VIA_TICKS };
+        out.push({ c: "retreat", u: armyIds, x: v?.x ?? rally.x, y: v?.y ?? rally.y });
       };
       if (mode === "raze" || ((mode === "gather" || mode === "defend") && !endgame && forts.length > 0)) {
         // With farmers going for a fort, the soldiers at home go with them, however few, to the end.
         const withCrew = crew.aim >= 0 ? ours.find((x) => x.id === crew.aim) : undefined;
         if (mode === "raze" && withCrew === undefined && (standing * 5 < armyAtStart * 2 || outnumbered)) {
           // Ground down or outnumbered: back to the rally point, and again a little later; remembered, as from a march.
-          rememberFort(army, forts.find((x) => x.id === razing), cx, cy);
-          out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
+          const was = forts.find((x) => x.id === razing);
+          rememberFort(army, was, cx, cy);
+          fallBackPast(covering(cx, cy, was));
           lastMove = tick;
           mode = "gather";
           target = { x: rally.x, y: rally.y };
@@ -1507,7 +1615,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           if (mode === "base") baseBroken = true;
           remember(army, byArmy);
           if (mode === "town" && byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
-          out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
+          if (mode === "base" && byArmy.length > 0) baseForts = byArmy.flatMap((g) => g.ids);
+          fallBackPast(byArmy);
           lastMove = tick;
           mode = "gather";
           target = { x: rally.x, y: rally.y };
@@ -1556,7 +1665,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
             if (mode === "base") baseBroken = true;
             remember(army, ahead);
             if (mode === "town") townForts.set(targetTown, { ids: ahead.flatMap((g) => g.ids), tick });
-            out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
+            else baseForts = ahead.flatMap((g) => g.ids);
+            fallBackPast(ahead);
             lastMove = tick;
             mode = "gather";
             target = { x: rally.x, y: rally.y };
@@ -1626,7 +1736,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
               : baseTime && strongEnough && (army.length >= baseNeed || (((open.length === 0 && !baseBroken) || popFull) && army.length >= townArmy + 6)));
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
         const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
-        if (go && toBase!.go) {
+        if (go && toBase!.go && !baseBar()) {
           armyAtStart = army.length;
           marchWorth = vsForts(army);
           marched.clear();
@@ -1844,9 +1954,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** D-081: the army (worth against forts) that broke off from each fort; towns it fell back from, left alone until this tick. */
   /** What the army that set out was worth against forts (D-081: a break-off remembers that, not what is left). */
   let marchWorth = 0;
-  const failedAt = new Map<number, { worth: number; tick: number }>();
+  const failedAt = new Map<number, Failed>();
+  /** Falling back round forts (aroundForts): the point first, and until when. */
+  let via: { x: number; y: number; until: number } | null = null;
   /** Towns it fell back from because of forts (D-081, ceo 2026-10-10): the forts, and when. */
   const townForts = new Map<number, { ids: number[]; tick: number }>();
+  /** The forts its last march on the enemy base fell back from (D-081, ceo 2026-10-11). */
+  let baseForts: number[] = [];
   const townRest = new Map<number, number>();
   const fv = fortValues(know.rules);
 
@@ -2210,11 +2324,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         } else if (!(once && plunderedTown(id))) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
         // Plundered before and it cannot pay yet: it waits (a plunder would be refused).
       }
+      // Enemy forts (D-080, D-081).
+      const forts = enemyForts(view, player, rules);
+      /** A town under the arrows or guards of an enemy fort (D-081). */
+      const underArrows = (t: { x: number; y: number }) => forts.some((o) => o.done && fortDist2(o, t.x, t.y) <= (o.hits + 1) * (o.hits + 1));
       // Garrisons: the spearmen (else any soldier but a mage) nearest each held town, one more
-      // than it needs, topped up as they fall.
+      // than it needs, topped up as they fall; none under enemy forts' arrows (D-081, as normal).
       for (const [id, t] of towns) {
         const held = t.owner === player && (t.state === TownState.Repairing || t.state === TownState.Governed);
-        if (!held) {
+        if (!held || underArrows(t)) {
           townGuards.delete(id);
           continue;
         }
@@ -2311,6 +2429,17 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       let sent = false;
       const send = (x: number, y: number, why: HardMode) => {
         if (armyIds.length === 0) return;
+        // Falling back round forts (aroundForts): to the point first, then on home.
+        if (via !== null) {
+          const back = why === "home" && x === post.x && y === post.y;
+          if (back && tick < via.until && dist2(ac.x, ac.y, via.x, via.y) > VIA_NEAR * VIA_NEAR) {
+            mode = why;
+            target = { x, y };
+            return;
+          }
+          if (back) lastMove = -100000;
+          via = null;
+        }
         if (why !== mode || target.x !== x || target.y !== y || tick - lastMove >= 400) {
           out.push({ c: "move", u: armyIds, x, y });
           lastMove = tick;
@@ -2346,15 +2475,17 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
 
       // Enemy forts (D-080) on its ground (by the main city or a town it holds): farmers go for an
       // unguarded one while too few soldiers are by it (the army's part is in its orders).
-      const forts = enemyForts(view, player, rules);
       const held = [...towns.values()]
         .filter((t) => t.owner === player && (t.state === TownState.Repairing || t.state === TownState.Governed))
         .map((t) => ({ x: t.x, y: t.y, radius: rules.towns?.[t.size]?.radius ?? 0 }));
       const ours = forts.length === 0 ? [] : fortsOnOurGround(forts, home, held);
       if (!recalled) {
         // Farmers going take the soldiers at home along to the end: not where the army broke off, as its own goes (D-081, ceo 2026-10-10).
-        const vs = soldiers.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
-        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
+        // Those that would go: not the towns' guards.
+        const vs = soldiers.filter((u) => !guarding.has(u.id)).reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+        const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
+        const worthNow = (id: number) => gs.find((g) => g.ids.includes(id))?.worth ?? 0;
+        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, worthNow) * FORT_FAILED);
       }
 
       const armyOrders = (): void => {
@@ -2491,7 +2622,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           let failed = 0;
           for (const id of g.ids) {
             const f = failedAt.get(id);
-            if (f !== undefined && tick - f.tick < FORT_FORGET) failed = Math.max(failed, f.worth);
+            if (f !== undefined && g.worth >= f.fort) failed = Math.max(failed, f.worth);
           }
           // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
           // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
@@ -2505,7 +2636,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const remember = (list: { type: number }[], near: FortGroup[]) => {
           // The army that set out, not what is left of it.
           const w = Math.max(vsForts(list), marchWorth);
-          for (const g of near) for (const id of g.ids) failedAt.set(id, { worth: Math.max(failedAt.get(id)?.worth ?? 0, w), tick });
+          for (const g of near) for (const id of g.ids) failedAt.set(id, { worth: Math.max(failedAt.get(id)?.worth ?? 0, w), tick, fort: g.worth });
         };
         /** The groups whose arrows or guards reach (x, y), and the one `f` is in. */
         const covering = (x: number, y: number, f?: Fort) =>
@@ -2513,21 +2644,23 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         /** Broke off from pulling down `f` (gone, maybe) with the army at (x, y): it and the groups there, as from a march (D-081, ceo 2026-10-10). */
         const rememberFort = (list: { type: number }[], f: Fort | undefined, x: number, y: number) => {
           remember(list, covering(x, y, f));
-          if (f !== undefined) failedAt.set(f.id, { worth: Math.max(failedAt.get(f.id)?.worth ?? 0, vsForts(list), marchWorth), tick });
+          if (f !== undefined) failedAt.set(f.id, { worth: Math.max(failedAt.get(f.id)?.worth ?? 0, vsForts(list), marchWorth), tick, fort: groupOf(f)?.worth ?? 0 });
         };
-        /** The army that broke off from `f` or from the groups covering it, within FORT_FORGET (0: none). */
+        /** A fort's group's worth now: 0 for a site, -1 once it is gone. */
+        const worthNow = (id: number) => groups.find((g) => g.ids.includes(id))?.worth ?? (forts.some((o) => o.id === id) ? 0 : -1);
+        /** The army that broke off from `f` or from the groups covering it, while they are no weaker than then (0: none). */
         const failedBy = (f: Fort) => {
           const c = fortCentre(f);
           let failed = 0;
           for (const id of [f.id, ...covering(c.x, c.y, f).flatMap((g) => g.ids)]) {
             const m = failedAt.get(id);
-            if (m !== undefined && tick - m.tick < FORT_FORGET) failed = Math.max(failed, m.worth);
+            if (m !== undefined && worthNow(id) >= m.fort) failed = Math.max(failed, m.worth);
           }
           return failed;
         };
         /**
          * Strong enough for a fort: at least the group it is in, and 1.3 x the enemy soldiers by it, not its guards (D-081; D-080 counted 3 soldiers a tower);
-         * and, within FORT_FORGET of breaking off from it, FORT_FAILED of the army that did (ceo 2026-10-10: it went again every 0.6–3 minutes).
+         * and, after breaking off from it, FORT_FAILED of the army that did until its group is weaker (ceo 2026-10-10: it went again every 0.6–3 minutes).
          */
         const enough = (list: { type: number }[], f: Fort) => {
           const c = fortCentre(f);
@@ -2536,10 +2669,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const w = vsForts(list);
           return w * 10 >= (g === undefined ? 0 : g.worth) * 10 + army * 13 && w * 100 >= failedBy(f) * FORT_FAILED;
         };
-        /** Fell back from town `id` because of forts, and they are still too strong for the army (FORT_FAILED, within FORT_FORGET). */
+        /** Fell back from town `id` because of forts, and they are still too strong for the army (FORT_FAILED, while it remembers them). */
         const fortsBar = (id: number) => {
           const m = townForts.get(id);
-          return m !== undefined && tick - m.tick < FORT_FORGET && tooStrong(army).some((g) => g.ids.some((x) => m.ids.includes(x)));
+          return m !== undefined && tooStrong(army).some((g) => g.ids.some((x) => m.ids.includes(x)));
+        };
+        /**
+         * Fell back from the enemy base because of forts still too strong for the army (FORT_FAILED): not again until
+         * they are not, however full its population (ceo 2026-10-11); towns instead.
+         */
+        const baseBar = () => baseForts.length > 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
+        /** Back home, round forts too strong for it that the straight way from `from` passes first (aroundForts, ceo 2026-10-11). */
+        const fallBackPast = (cause: FortGroup[], from: { x: number; y: number }) => {
+          const v = aroundForts([...cause, ...tooStrong(army)], from, post, know.map.size);
+          fallBack(v?.x ?? post.x, v?.y ?? post.y);
+          via = v === undefined ? null : { x: v.x, y: v.y, until: tick + VIA_TICKS };
         };
         /** Its defenders first (a move fights what it meets), then the fort itself. */
         const hit = (ids: number[], f: Fort) => {
@@ -2562,10 +2706,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const withCrew = crew.aim >= 0 ? ours.find((x) => x.id === crew.aim) : undefined;
           if (mode === "raze" && withCrew === undefined && (standing * 5 < armyAtStart * 2 || local > armyWorth)) {
             // Remembered, as from a march (ceo 2026-10-10).
-            rememberFort(army, forts.find((x) => x.id === razing), ac.x, ac.y);
+            const was = forts.find((x) => x.id === razing);
+            rememberFort(army, was, ac.x, ac.y);
             razing = -1;
             razeAgain = tick + FORT_AGAIN;
-            fallBack(post.x, post.y);
+            fallBackPast(covering(ac.x, ac.y, was), ac);
             return;
           }
           const f = withCrew ?? ours.find((x) => x.id === razing) ?? nearestFort(ours, ac.x, ac.y);
@@ -2595,7 +2740,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             if (byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
             // D-081: not straight back to the same town (in 03a70878, 13 orders between it and home in 12 s).
             if (plan.townRest > 0) townRest.set(targetTown, tick + plan.townRest * TICKS_PER_MINUTE);
-            fallBack(post.x, post.y);
+            fallBackPast(byArmy, ac);
             return;
           } else {
             // Forts too strong for it ahead (seen only now, D-081): back, and remember.
@@ -2605,7 +2750,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               remember(army, ahead);
               townForts.set(targetTown, { ids: ahead.flatMap((g) => g.ids), tick });
               if (plan.townRest > 0) townRest.set(targetTown, tick + plan.townRest * TICKS_PER_MINUTE);
-              fallBack(post.x, post.y);
+              fallBackPast(ahead, ac);
               return;
             }
             const f = nearestFort(
@@ -2649,10 +2794,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const byFront = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, fc.x, fc.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, front));
           if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0) || byFront.length > 0))) {
             remember(front, byFront);
+            if (byFront.length > 0) baseForts = byFront.flatMap((g) => g.ids);
             counterReady = false;
             razing = -1;
             reservesRazing = -1;
-            fallBack(post.x, post.y);
+            fallBackPast(byFront, fc);
             return;
           }
           // Forts too strong for the front ahead (seen only now, D-081): back, and remember.
@@ -2661,10 +2807,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const ahead = groupsOnWay(tooStrong(front), fc, enemy);
             if (ahead.length > 0) {
               remember(front, ahead);
+              baseForts = ahead.flatMap((g) => g.ids);
               counterReady = false;
               razing = -1;
               reservesRazing = -1;
-              fallBack(post.x, post.y);
+              fallBackPast(ahead, fc);
               return;
             }
           }
@@ -2742,7 +2889,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
                 (popFull && army.length >= townArmy + 6));
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
         const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
-        if (go && toBase!.go) {
+        if (go && toBase!.go && !baseBar()) {
           armyAtStart = army.length;
           marchWorth = vsForts(army);
           marched.clear();
