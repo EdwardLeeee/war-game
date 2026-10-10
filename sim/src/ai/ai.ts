@@ -1734,7 +1734,7 @@ export interface HardPlan {
   looseAt: number;
   /** ...for 1: ranged and mages, 2: every soldier. */
   looseWho: number;
-  /** D-081: after falling back from a town it leaves that town alone this many minutes (0: never). */
+  /** D-081: after falling back from a town it leaves that town alone this many minutes (0: never, as before). */
   townRest: number;
 }
 
@@ -1757,7 +1757,8 @@ export const HARD: HardPlan = {
   hide: true,
   looseAt: 0,
   looseWho: 1,
-  townRest: 2,
+  // D-081: measured and left off (hard against hard 50.3% of 200; with it the scripted push on random maps won 4 of 40, without 3).
+  townRest: 0,
 };
 
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */

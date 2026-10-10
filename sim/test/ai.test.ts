@@ -1314,13 +1314,13 @@ test("D-081: hard does not march straight into forts too strong for it: it goes 
   assert.deepEqual(straight && [straight.x, straight.y], [weak.s1.cellX, weak.s1.cellY], "straight to the enemy base");
 });
 
-test("D-081: hard leaves a town it fell back from alone for a while (not back and forth between it and home)", () => {
+test("D-081: with townRest (off by default), hard leaves a town it fell back from alone for a while", () => {
   const g = emptyGame();
   const w = g.w;
   const ids: number[] = [];
   for (let k = 0; k < 14; k++) ids.push(put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7)));
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false });
+  const ai = hardAi(g, { dodge: false, townRest: 2 });
   const toTown = (out: CommandBody[], x: number, y: number) => out.some((c) => c.c === "move" && c.u.length >= 10 && c.x === x && c.y === y);
   const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 14) as { x: number; y: number } | undefined;
   assert.ok(go !== undefined && w.map.towns.some((t) => t.cellX === go.x && t.cellY === go.y), "off to a town");
@@ -1333,11 +1333,11 @@ test("D-081: hard leaves a town it fell back from alone for a while (not back an
   w.tick += 10;
   g.fog.update(w);
   assert.ok(!toTown(ai.think(buildView(g, 0)), go.x, go.y), "not straight back to that town");
-  // With the rest off (as before D-081), straight back.
+  // With the rest off (the default, as before D-081), straight back.
   const g2 = emptyGame();
   for (let k = 0; k < 14; k++) put(g2, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
   g2.fog.update(g2.w);
-  const ai2 = hardAi(g2, { dodge: false, townRest: 0 });
+  const ai2 = hardAi(g2, { dodge: false });
   ai2.think(buildView(g2, 0));
   const foes2 = Array.from({ length: 20 }, (_, k) => put(g2, 1, UnitType.Spearman, 38 + (k % 10), 56 + Math.trunc(k / 10)));
   g2.w.tick += 10;
@@ -1346,5 +1346,5 @@ test("D-081: hard leaves a town it fell back from alone for a while (not back an
   kill(g2, foes2);
   g2.w.tick += 10;
   g2.fog.update(g2.w);
-  assert.ok(toTown(ai2.think(buildView(g2, 0)), go.x, go.y), "townRest 0: straight back");
+  assert.ok(toTown(ai2.think(buildView(g2, 0)), go.x, go.y), "off: straight back");
 });
