@@ -125,3 +125,27 @@ test("閃紅提醒：軍團 1 剩不到進攻時的一半，按鈕變紅、寫�
   await expect(page.locator(GROUP_1)).toHaveText("1·2/6");
   await expect(retreat(page, 1)).toBeHidden();
 });
+
+test("待命的軍團：自動補兵的新兵走過來時（前進中）不出現「退」、不閃紅；玩家按進攻後「退」照常出現（D-081）", async ({ page }) => {
+  const { g1 } = await twoGroups(page);
+  // One falls: group 1 is short of a spearman, and the next one trained walks to it.
+  await page.evaluate((ids) => window.__proto?.game?.remove(ids), g1.slice(0, 1));
+  await expect(page.locator(GROUP_1)).toHaveText("1·5/6", TICKS);
+  await page.evaluate(() => window.__proto?.game?.centerOn(5, 75));
+  const barracks = await page.evaluate(() => window.__proto?.game?.cellToScreen(5.5, 75.5) ?? { x: 0, y: 0 });
+  await page.touchscreen.tap(barracks.x, barracks.y);
+  await expect(page.locator(".sel-info")).toContainText("兵營");
+  await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
+  await expect(toast(page, /^新的槍兵補進編隊 1，正走過去$/)).toBeVisible(TICKS);
+  const recruit = (await ownIds(page, 1)).find((id) => !g1.includes(id));
+  // On his way (an order of 自動補兵's, not the player's): the group is not attacking.
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.units() ?? [])).find((u) => u.id === recruit)?.order, TICKS).toBe(1);
+  for (let k = 0; k < 6; k++) {
+    await expect(retreat(page, 1)).toBeHidden();
+    await expect(page.locator(GROUP_1)).not.toHaveClass(/alarm/);
+    await page.waitForTimeout(500);
+  }
+  // The player sends the group on: 「退1」 as always.
+  await advance(page, [...g1.slice(1), recruit as number]);
+  await expect(retreat(page, 1)).toBeVisible(TICKS);
+});

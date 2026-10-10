@@ -72,7 +72,7 @@ import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn, orderState } from "./orders.ts";
-import { type Alarm, alarmText, GroupAlarms } from "./alarm.ts";
+import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
@@ -999,16 +999,17 @@ export class Game implements GestureHost {
   }
 
   /**
-   * 閃紅提醒 and 「退」 (D-081): every snapshot, whether each group advances (some soldier of it
-   * 進攻中, orders.ts; those hiding in a building left out) and its 現有 (living members, as its
-   * button counts them); the strip says it once when one is down to fewer than half.
+   * 閃紅提醒 and 「退」 (D-081): every snapshot, whether each group advances (alarm.ts
+   * groupAdvancing: some soldier of it 進攻中, those hiding in a building and the new soldiers
+   * 自動補兵 leads to it left out) and its 現有 (living members, as its button counts them); the
+   * strip says it once when one is down to fewer than half.
    */
   private updateGroupAlarms(): void {
     const view = this.view;
     if (view === null) return;
     this.alarmState = this.army.groups.map((g, i) => {
       const alive = g.ids.filter((id) => view.unitRow(id) >= 0);
-      const advancing = alive.some((id) => !isHiding(view.unitOrder(id)) && isSoldier(view.unitType(id)) && orderState(view, id) === "advance");
+      const advancing = groupAdvancing(alive, g.recruits, (id) => (isHiding(view.unitOrder(id)) || !isSoldier(view.unitType(id)) ? null : orderState(view, id)));
       const a = this.alarms.update(i, advancing, alive.length);
       if (a.tell && a.base !== null) this.toast(alarmText(i, alive.length, a.base));
       return { ...a, present: alive.length };

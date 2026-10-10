@@ -1,7 +1,25 @@
 // 閃紅提醒 (D-081, the user's choice 3a-B: 「只閃紅提醒」, not a retreat line): a group that started an
 // attack with b soldiers and is down to fewer than half of them flashes red on its button, and the
 // strip says 「編隊 N 快撐不住了（剩 a/b）」 once per attack. It never retreats by itself. The count
-// is 現有 (army.ts presence: with the group now, not those on their way, D-081).
+// is 現有 as the group button counts it: its living members, new soldiers on their way to it
+// included (the user left that count as it is, D-081).
+//
+// Whether a group advances (for the alarm and its 「退」): some soldier of it 進攻中 (orders.ts).
+// New soldiers walking to join it are not: 自動補兵 sends them with a 前進 of its own (army.ts
+// muster), so a group standing at home would read as advancing every time one trains.
+
+import type { Recruit } from "./army.ts";
+import type { OrderState } from "./orders.ts";
+
+/**
+ * The group advances: one of its members is 進攻中 (`stateOf`; null for one to leave out, such as
+ * a soldier hiding in a building), not counting the recruits still led to it by 自動補兵 (those the
+ * player gave an order of his own count, D-054's byHand).
+ */
+export function groupAdvancing(ids: readonly number[], recruits: readonly Recruit[], stateOf: (id: number) => OrderState | null): boolean {
+  const led = new Set(recruits.filter((r) => !r.byHand).map((r) => r.id));
+  return ids.some((id) => !led.has(id) && stateOf(id) === "advance");
+}
 
 export interface Alarm {
   /** Some soldier of the group advances, attacks or casts (orders.ts: 進攻中). */

@@ -2,7 +2,10 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { alarmText, GroupAlarms } from "../src/game/alarm.ts";
+import { alarmText, GroupAlarms, groupAdvancing } from "../src/game/alarm.ts";
+import { ArmyBook } from "../src/game/army.ts";
+import type { OrderState } from "../src/game/orders.ts";
+import { UnitType } from "../src/sim.ts";
 
 test("開始進攻那一刻的現有是基準；剩不到一半才閃紅，提示只跳一次", () => {
   const a = new GroupAlarms();
@@ -31,4 +34,26 @@ test("各編隊各算各的；基準 0 不閃", () => {
   assert.equal(a.update(0, true, 3).alarm, true);
   assert.equal(a.update(2, true, 0).alarm, false);
   assert.equal(a.update(3, false, 5).alarm, false);
+});
+
+test("自動補兵帶過來的新兵（走在路上、order 是前進）不算進攻：待命的軍團不出「退」、不記基準；玩家下進攻後照常算（D-081）", () => {
+  const book = new ArmyBook();
+  book.saveGroup(0, [1, 2, 3].map((id) => ({ id, type: UnitType.Spearman })));
+  // The group wants a fourth; one is trained: 自動補兵 adds it, and muster sends it on with a 前進 of its own.
+  const typeOf = () => UnitType.Spearman;
+  book.setWant(0, UnitType.Spearman, 4, typeOf);
+  assert.equal(book.enlist(4, UnitType.Spearman, typeOf), 0);
+  const g = book.groups[0];
+  const state = (moving: number[]) => (id: number): OrderState => (moving.includes(id) ? "advance" : "idle");
+  assert.equal(groupAdvancing(g.ids, g.recruits, state([4])), false, "only the recruit walks");
+  const a = new GroupAlarms();
+  assert.deepEqual(a.update(0, groupAdvancing(g.ids, g.recruits, state([4])), 4), { advancing: false, base: null, alarm: false, tell: false });
+  // The player sends the group on: everyone 進攻中, the recruit now on his order (byHand).
+  book.playerCommand({ c: "move", u: [1, 2, 3, 4], x: 50, y: 50 });
+  assert.equal(groupAdvancing(g.ids, g.recruits, state([1, 2, 3, 4])), true);
+  assert.equal(a.update(0, true, 4).base, 4, "the base counts from the player's attack");
+  // A recruit the player ordered himself counts on his own.
+  assert.equal(groupAdvancing(g.ids, g.recruits, state([4])), true);
+  // Those left out (hiding in a building: null) do not make it advance.
+  assert.equal(groupAdvancing([1, 2], [], (id) => (id === 1 ? null : "idle")), false);
 });
