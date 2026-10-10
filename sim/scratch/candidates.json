@@ -1,0 +1,72 @@
+{
+ "scripted": [
+  {
+   "name": "n",
+   "difficulty": "normal",
+   "groups": [
+    "push-fortress-hold",
+    "push-fortress-hold-random"
+   ]
+  },
+  {
+   "name": "h",
+   "difficulty": "hard",
+   "groups": [
+    "push-fortress-hold",
+    "push-fortress-hold-random"
+   ]
+  },
+  {
+   "name": "nu",
+   "difficulty": "normal",
+   "groups": [
+    "push-fortress-hold-random"
+   ],
+   "chunks": [
+    "1923420466,931495929,1178066050,1193501590,314166768,565469441,2107416689,92872783"
+   ]
+  },
+  {
+   "name": "hu",
+   "difficulty": "hard",
+   "groups": [
+    "push-fortress-hold-random"
+   ],
+   "chunks": [
+    "1923420466,931495929,1178066050,1193501590,314166768,565469441,2107416689,92872783"
+   ]
+  }
+ ],
+ "traces": [
+  {
+   "name": "h-u-931",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 931495929 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard"
+  },
+  {
+   "name": "h-f-21",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 21 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard"
+  },
+  {
+   "name": "h-f-25",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 25 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard"
+  },
+  {
+   "name": "h-r-39",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 39 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard"
+  },
+  {
+   "name": "n-r-30",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 30 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-24",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 24 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  }
+ ]
+}
