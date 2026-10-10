@@ -160,6 +160,12 @@ export interface Plan {
    */
   fortress: boolean;
   /**
+   * With the fortress (D-081, ceo 2026-10-10: as the user in f1fd2a87): once its outpost stands, the
+   * army waits by it, not marching on the enemy, until it is this many or FORT_HOLD_UNTIL; then the push
+   * as ever (0: no waiting, the army plays the push).
+   */
+  fortressHold: number;
+  /**
    * "edge" only: the army that set out stops at the second waypoint (canonical (68, 62)) and goes
    * on once a sentry (as "sentry"'s, kept until then) sees the enemy's army coming on our half,
    * or 3 minutes after `raceBy`.
@@ -223,6 +229,8 @@ const FORT_TRIES: [number, number][] = [
 ];
 /** Ranged units hidden in each finished fortress tower (as the user did: 3 in each of 5). */
 const FORT_HIDE = 3;
+/** The army holding by the fortress (plan.fortressHold) marches from this tick whatever its size. */
+const FORT_HOLD_UNTIL = 30 * 1200;
 /** Random maps (D-074): the scout's next stop once within this many cells of one, or after SCOUT_STUCK ticks without getting nearer. */
 const SCOUT_NEAR = 6;
 const SCOUT_STUCK = 600;
@@ -326,6 +334,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     towerRush: 0,
     rushBuildersOnly: false,
     fortress: false,
+    fortressHold: 0,
   };
 }
 
@@ -409,6 +418,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   /** The midway fortress (plan.fortress, D-081): its stage, spot, builders and the guards on their way. */
   let fortStage: "" | "go" | "build" | "towers" | "done" = "";
   let fortSpot = { x: 0, y: 0 };
+  /** Where the army waits by the fortress (plan.fortressHold): 3 cells from the outpost toward home. */
+  let fortHoldAt = { x: 0, y: 0 };
   let fortCrew: number[] = [];
   let fortWalk: number[] = [];
   let fortBuild = -100000;
@@ -992,6 +1003,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
             }
             const at = best ?? { u: hf.u + Math.trunc((du * FORT_DIST) / len), v: hf.v + Math.trunc((dv * FORT_DIST) / len) };
             fortSpot = real(at.u, at.v);
+            fortHoldAt = real(at.u - Math.trunc((du * 3) / len), at.v - Math.trunc((dv * 3) / len));
             out.push({ c: "move", u: [...fortWalk, ...fortCrew], x: fortSpot.x, y: fortSpot.y });
             fortStage = "go";
             fortress.start = tick;
@@ -1346,7 +1358,14 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
 
       // --- at home: go for the town, march, or wait at the post ---------------------------------------------
       // Random maps: no march before the enemy's main city has been seen.
-      const go = found >= 0 && (rushPush || (counterReady && army.length >= plan.counterAt) || (plan.pushAt > 0 && army.length >= plan.pushAt));
+      // Holding by the fortress (plan.fortressHold, D-081): no march until the army is big enough or it is late.
+      const holding =
+        plan.fortressHold > 0 &&
+        (fortStage === "towers" || fortStage === "done") &&
+        own.some((b) => b.type === BuildingType.Outpost) &&
+        army.length < plan.fortressHold &&
+        tick < FORT_HOLD_UNTIL;
+      const go = !holding && found >= 0 && (rushPush || (counterReady && army.length >= plan.counterAt) || (plan.pushAt > 0 && army.length >= plan.pushAt));
       if (go) rushPush = false;
       const townOpen =
         t !== undefined &&
@@ -1367,7 +1386,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         trips++;
         send(t!.x, t!.y, "town");
       } else {
-        send(post.x, post.y, "home");
+        const at = holding ? fortHoldAt : post;
+        send(at.x, at.y, "home");
       }
       return out;
     },

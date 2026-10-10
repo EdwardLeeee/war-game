@@ -83,6 +83,9 @@ plan.towerRush = Number(arg("tower-rush", "0"));
 plan.rushBuildersOnly = flag("tower-rush-farmers");
 // D-081: the midway fortress (--fortress).
 plan.fortress = flag("fortress");
+// D-081: the army holds by the fortress until it is this many or minute 30 (--fortress-hold 60).
+plan.fortressHold = Number(arg("fortress-hold", "0"));
+if (plan.fortressHold > 0) plan.fortress = true;
 const rushing = plan.towerRush > 0 || plan.rushBuildersOnly;
 /** The player puts up outposts and arrow towers: the rush or the fortress. */
 const fortifying = rushing || plan.fortress;
@@ -530,6 +533,7 @@ const options = [
   plan.towerRush > 0 ? `塔攻：${plan.towerRush} 名槍兵到電腦主城旁蓋哨所駐守，再蓋 2 座箭樓（D-080）` : "",
   plan.rushBuildersOnly ? "塔攻（只派村民）：4 名村民到電腦主城旁蓋哨所和 2 座箭樓，沒有護送、沒有駐守（D-080）" : "",
   plan.fortress ? "半路要塞：第 12 分起，在往電腦主城的路上、離家 37 格，蓋哨所（6 名槍兵駐守）和 5 座箭樓（D-081）" : "",
+  plan.fortressHold > 0 ? `大軍守在要塞旁，湊到 ${plan.fortressHold} 名或第 30 分才出發（D-081）` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
