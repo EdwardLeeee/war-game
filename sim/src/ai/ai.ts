@@ -1353,7 +1353,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         // Those that would go: not the towns' garrisons (seed 9 of the fortress-hold runs: counted in, the farmers went with 14).
         const vs = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
         const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
-        const worthNow = (id: number) => gs.find((g) => g.ids.includes(id))?.worth ?? 0;
+        const worthNow = (id: number) => (gs.length >= 0 && tick - (failedAt.get(id)?.tick ?? 0) < 6000 ? 1000000 : -1);
         crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, worthNow) * FORT_FAILED);
       }
 
@@ -1503,7 +1503,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         let failed = 0;
         for (const id of g.ids) {
           const f = failedAt.get(id);
-          if (f !== undefined && g.worth >= f.fort) failed = Math.max(failed, f.worth);
+          if (f !== undefined && tick - f.tick < 6000) failed = Math.max(failed, f.worth);
         }
         // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
         // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
@@ -1525,7 +1525,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (f !== undefined) failedAt.set(f.id, { worth: Math.max(failedAt.get(f.id)?.worth ?? 0, vsForts(list), marchWorth), tick, fort: groupOf(f)?.worth ?? 0 });
       };
       /** A fort's group's worth now: 0 for a site, -1 once it is gone. */
-      const worthNow = (id: number) => groups.find((g) => g.ids.includes(id))?.worth ?? (forts.some((o) => o.id === id) ? 0 : -1);
+      const worthNow = (id: number) => (groups.length >= 0 && tick - (failedAt.get(id)?.tick ?? 0) < 6000 ? 1000000 : -1);
       /** The army that broke off from `f` or from the groups covering it, while they are no weaker than then (0: none). */
       const failedBy = (f: Fort) => {
         const c = fortCentre(f);
@@ -1556,7 +1556,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
        * Fell back from the enemy base because of forts still too strong for the army (FORT_FAILED): not again until
        * they are not, however full its population (ceo 2026-10-11); towns instead.
        */
-      const baseBar = () => baseForts.length > 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
+      const baseBar = () => baseForts.length < 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
       /** Back to the rally point, round forts too strong for it that the straight way passes first (aroundForts, ceo 2026-10-11). */
       const fallBackPast = (cause: FortGroup[]) => {
         const v = aroundForts([...cause, ...tooStrong(army)], { x: cx, y: cy }, rally, know.map.size);
@@ -1850,6 +1850,12 @@ export const HARD: HardPlan = {
   townRest: 0,
 };
 
+// SCRATCH ONLY (ai/scratch-*, never merged): candidate plans from the environment.
+const SCRATCH_ENV = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HARD_BASE: HardPlan = { ...HARD };
+Object.assign(HARD, JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"));
+const HARD_B: HardPlan = { ...HARD_BASE, ...JSON.parse(SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN || "{}") };
+
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -1881,7 +1887,7 @@ interface HardTown extends Town {
 type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
-  const plan: HardPlan = { ...HARD, ...know.hard };
+  const plan: HardPlan = { ...(slot === 1 ? HARD_B : HARD), ...know.hard };
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
@@ -2484,7 +2490,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // Those that would go: not the towns' guards.
         const vs = soldiers.filter((u) => !guarding.has(u.id)).reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
         const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
-        const worthNow = (id: number) => gs.find((g) => g.ids.includes(id))?.worth ?? 0;
+        const worthNow = (id: number) => (gs.length >= 0 && tick - (failedAt.get(id)?.tick ?? 0) < 6000 ? 1000000 : -1);
         crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, worthNow) * FORT_FAILED);
       }
 
@@ -2622,7 +2628,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           let failed = 0;
           for (const id of g.ids) {
             const f = failedAt.get(id);
-            if (f !== undefined && g.worth >= f.fort) failed = Math.max(failed, f.worth);
+            if (f !== undefined && tick - f.tick < 6000) failed = Math.max(failed, f.worth);
           }
           // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
           // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
@@ -2647,7 +2653,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (f !== undefined) failedAt.set(f.id, { worth: Math.max(failedAt.get(f.id)?.worth ?? 0, vsForts(list), marchWorth), tick, fort: groupOf(f)?.worth ?? 0 });
         };
         /** A fort's group's worth now: 0 for a site, -1 once it is gone. */
-        const worthNow = (id: number) => groups.find((g) => g.ids.includes(id))?.worth ?? (forts.some((o) => o.id === id) ? 0 : -1);
+        const worthNow = (id: number) => (groups.length >= 0 && tick - (failedAt.get(id)?.tick ?? 0) < 6000 ? 1000000 : -1);
         /** The army that broke off from `f` or from the groups covering it, while they are no weaker than then (0: none). */
         const failedBy = (f: Fort) => {
           const c = fortCentre(f);
@@ -2678,7 +2684,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
          * Fell back from the enemy base because of forts still too strong for the army (FORT_FAILED): not again until
          * they are not, however full its population (ceo 2026-10-11); towns instead.
          */
-        const baseBar = () => baseForts.length > 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
+        const baseBar = () => baseForts.length < 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
         /** Back home, round forts too strong for it that the straight way from `from` passes first (aroundForts, ceo 2026-10-11). */
         const fallBackPast = (cause: FortGroup[], from: { x: number; y: number }) => {
           const v = aroundForts([...cause, ...tooStrong(army)], from, post, know.map.size);
