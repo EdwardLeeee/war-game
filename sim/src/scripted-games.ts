@@ -54,6 +54,8 @@ const think = Number(arg("think", String(SCRIPTED_THINK_EVERY)));
 const CAP = Number(arg("cap", "50")) * 1200;
 /** D-081: an AI soldier dying this near (cells) one of the player's finished forts counts as lost to it. */
 const FORT_NEAR = 12;
+/** D-081: a bash that cost the AI this many soldiers and pulled down none of the player's forts failed. */
+const FAILED_BASH = 10;
 const trace = flag("trace");
 const jsonOut = arg("json", "");
 const plan = planFor(strategy, speed, formation);
@@ -179,6 +181,12 @@ interface GameRecord {
    */
   fortDeaths: number;
   bashes: number;
+  /**
+   * Each bash: from the first tick some of its soldiers were within reach to the last; the most at once;
+   * the AI's soldiers lost in it, and of those by the player's forts; the player's forts that fell in it.
+   * One with 10 or more lost and no fort fallen is a failed bash.
+   */
+  bashLog: { start: number; end: number; most: number; lost: number; deaths: number; fell: number }[];
   /** Random maps (D-074): the map's layout and when the player first saw the AI's main city (-1: never). */
   layout?: string;
   found?: number;
@@ -281,6 +289,9 @@ function play(seed: number): GameRecord {
   let bashing = false;
   let bashMax = 0;
   let bashLast = -100000;
+  const bashLog: GameRecord["bashLog"] = [];
+  let bashAt = { start: 0, lost: 0, deaths: 0, fell: 0 };
+  let fortIds = new Set<number>();
   const arrowReach = (rules().arrows.arrowTower.range + 1023) >> 10;
   const guardReach = rules().outpost.reach;
   // D-080: the player's outposts and arrow towers, by id: when placed, finished and gone.
@@ -340,6 +351,15 @@ function play(seed: number): GameRecord {
         const dy = Math.max(f.y - y, 0, y - (f.y + f.size - 1));
         return dx * dx + dy * dy <= r * r;
       };
+      // The player's finished forts that fell since the last look.
+      const ids = new Set<number>();
+      for (let s = 0; s < w.buildings.count; s++) {
+        if (b.owner[s] === 0 && b.progress[s] >= 1000 && (b.type[s] === BuildingType.Outpost || b.type[s] === BuildingType.ArrowTower)) ids.add(b.id[s]);
+      }
+      let fell = 0;
+      for (const id of fortIds) if (!ids.has(id) && w.building(id) < 0) fell++;
+      fortIds = ids;
+      if (bashing) bashAt.fell += fell;
       if (forts.length === 0) aiAt.clear();
       else {
         const seen = new Set<number>();
@@ -358,14 +378,20 @@ function play(seed: number): GameRecord {
           if (w.unit(id) < 0 && forts.some((f) => within(at.x, at.y, f, FORT_NEAR))) fortDeaths++;
         }
         if (inReach > 0) {
-          if (!bashing) bashMax = 0;
+          if (!bashing) {
+            bashMax = 0;
+            bashAt = { start: w.tick, lost: lostSoldiers(1), deaths: fortDeaths, fell: 0 };
+          }
           bashing = true;
           bashMax = Math.max(bashMax, inReach);
           bashLast = w.tick;
         }
       }
       if (bashing && w.tick - bashLast >= 600) {
-        if (bashMax >= 5) bashes++;
+        if (bashMax >= 5) {
+          bashes++;
+          bashLog.push({ start: bashAt.start, end: bashLast, most: bashMax, lost: lostSoldiers(1) - bashAt.lost, deaths: fortDeaths - bashAt.deaths, fell: bashAt.fell });
+        }
         bashing = false;
       }
     }
@@ -434,7 +460,10 @@ function play(seed: number): GameRecord {
     }
   }
   closeWave();
-  if (bashing && bashMax >= 5) bashes++;
+  if (bashing && bashMax >= 5) {
+    bashes++;
+    bashLog.push({ start: bashAt.start, end: bashLast, most: bashMax, lost: lostSoldiers(1) - bashAt.lost, deaths: fortDeaths - bashAt.deaths, fell: bashAt.fell });
+  }
   const st = player.state();
   return {
     seed,
@@ -466,6 +495,7 @@ function play(seed: number): GameRecord {
       : {}),
     fortDeaths,
     bashes,
+    bashLog,
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
@@ -513,6 +543,14 @@ if (fortifying) {
   // D-081: the AI's soldiers lost by the player's forts, and its bashes on them.
   const deaths = games.map((x) => x.fortDeaths).sort((a, c) => a - c);
   const bash = games.map((x) => x.bashes).sort((a, c) => a - c);
+  // Failed bashes: 10 or more of the AI's soldiers lost and none of the player's forts fallen.
+  const failed = games.map((x) => x.bashLog.filter((e) => e.lost >= FAILED_BASH && e.fell === 0));
+  const failedCount = failed.map((l) => l.length).sort((a, c) => a - c);
+  const failedLost = failed.map((l) => l.reduce((a, e) => a + e.lost, 0)).sort((a, c) => a - c);
+  out.push(
+    `撞了打不下來（一次撞死 ${FAILED_BASH} 名以上、一座據點都沒拆掉）：每局中位數 ${failedCount[failedCount.length >> 1]}、最多 ${failedCount[failedCount.length - 1]}、` +
+      `合計 ${failedCount.reduce((a, c) => a + c, 0)} 次，${failed.filter((l) => l.length > 0).length} 局；這些撞死的兵每局中位數 ${failedLost[failedLost.length >> 1]}、最多 ${failedLost[failedLost.length - 1]}。`,
+  );
   out.push(
     `電腦的兵死在玩家蓋好的據點 ${FORT_NEAR} 格內：中位數 ${deaths[deaths.length >> 1]}、最多 ${deaths[deaths.length - 1]}；` +
       `撞（5 名以上同時進到據點的射程，30 秒內沒人進去才算下一次）：中位數 ${bash[bash.length >> 1]}、最多 ${bash[bash.length - 1]}、合計 ${bash.reduce((a, c) => a + c, 0)}。`,
