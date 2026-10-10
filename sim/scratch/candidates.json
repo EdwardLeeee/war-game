@@ -1,0 +1,9 @@
+{
+ "traces": [
+  {
+   "name": "nu-931",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 931495929 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  }
+ ]
+}
