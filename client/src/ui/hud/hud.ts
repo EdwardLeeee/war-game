@@ -78,6 +78,8 @@ export class Hud {
   private readonly recallBtn: HTMLButtonElement;
   private readonly idleBtn: HTMLButtonElement;
   private readonly groupBtns: HTMLButtonElement[] = [];
+  /** 「退1」–「退4」 (D-081): beside each group button while that group advances. */
+  private readonly retreatBtns: HTMLButtonElement[] = [];
   private idleIndex = 0;
   private lastUpdate = 0;
   private toastAbove = -1;
@@ -120,6 +122,14 @@ export class Hud {
       // (改成剛才選的 N 名 in the panel does that).
       this.cleanups.push(pressable(b, { tap: (count) => game.showGroup(i, count === 2) }));
       this.groupBtns.push(b);
+    }
+    // 「退」 (D-081, 3b-A): left of the buttons, 退1 and 退3 right beside them, 退2 and 退4 one further
+    // out, each with its number so that two side by side read at a glance.
+    for (let i = 0; i < 4; i++) {
+      const r = btn(grid, `退${i + 1}`, () => game.retreatGroup(i), `group-retreat ${ORDER_TONE.retreat} ${i % 2 === 0 ? "near" : "far"}`);
+      r.setAttribute("aria-label", `編隊 ${i + 1} 撤回主城`);
+      r.hidden = true;
+      this.retreatBtns.push(r);
     }
     this.armyBtn = btn(right, armyText(0), () => this.selectArmy(), "army-btn secondary");
     // 全軍撤退 (user 2026-10-01): nothing to select first. Top left, far from 全軍.
@@ -212,12 +222,19 @@ export class Hud {
     const armyLabel = armyText(this.game.armyIds().length);
     if (this.armyBtn.textContent !== armyLabel) this.armyBtn.textContent = armyLabel;
     for (let i = 0; i < 4; i++) {
-      // 現有／原本 (D-026): what the group has now against what it was saved with.
+      // 現有／原本 (D-026): what the group has now against what it was saved with. 閃紅提醒 (D-081):
+      // down to fewer than half of what it started its attack with, it flashes red and reads 剩 a/b.
       const g = this.game.army.groups[i];
-      const text = g.saved > 0 ? `${i + 1}·${this.alive(g.ids).length}/${g.saved}` : `${i + 1}`;
+      const a = this.game.groupAlarm(i);
+      const r = this.retreatBtns[i];
+      r.hidden = !a.advancing;
+      if (a.advancing) r.style.top = `${this.groupBtns[i].offsetTop}px`;
       const b = this.groupBtns[i];
+      b.classList.toggle("alarm", a.alarm);
+      const count = a.alarm && a.base !== null ? `剩 ${a.present}/${a.base}` : `${this.alive(g.ids).length}/${g.saved}`;
+      const text = g.saved > 0 || a.alarm ? `${i + 1}·${count}` : `${i + 1}`;
       if (b.textContent === text) continue;
-      if (g.saved === 0) {
+      if (g.saved === 0 && !a.alarm) {
         b.textContent = text;
         continue;
       }
@@ -225,7 +242,7 @@ export class Hud {
       b.replaceChildren();
       el("span", b, "group-no", `${i + 1}`);
       el("span", b, "group-dot", "·");
-      el("span", b, "group-count", `${this.alive(g.ids).length}/${g.saved}`);
+      el("span", b, "group-count", count);
     }
     this.info.update();
     this.cmds.update();

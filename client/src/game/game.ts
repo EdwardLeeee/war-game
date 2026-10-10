@@ -71,7 +71,8 @@ import { features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
 import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
-import { allIn } from "./orders.ts";
+import { allIn, orderState } from "./orders.ts";
+import { type Alarm, alarmText, GroupAlarms } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
@@ -310,6 +311,9 @@ export class Game implements GestureHost {
   readonly charges = new Charges();
   /** Stances sent that the snapshot does not show yet (D-081), for what 前進 and 撤退 go by. */
   private readonly stances = new SentStances();
+  /** 閃紅提醒 (D-081): each group's base and alarm, and what the group buttons show (updated every snapshot). */
+  private readonly alarms = new GroupAlarms();
+  private alarmState: (Alarm & { present: number })[] = [0, 1, 2, 3].map(() => ({ advancing: false, base: null, alarm: false, tell: false, present: 0 }));
 
   /** Arrows drawn from `shot` events so far (round 7), for the test hook. */
   get shotsForTest(): number {
@@ -994,6 +998,47 @@ export class Game implements GestureHost {
     return units.length;
   }
 
+  /**
+   * 閃紅提醒 and 「退」 (D-081): every snapshot, whether each group advances (some soldier of it
+   * 進攻中, orders.ts; those hiding in a building left out) and its 現有 (living members, as its
+   * button counts them); the strip says it once when one is down to fewer than half.
+   */
+  private updateGroupAlarms(): void {
+    const view = this.view;
+    if (view === null) return;
+    this.alarmState = this.army.groups.map((g, i) => {
+      const alive = g.ids.filter((id) => view.unitRow(id) >= 0);
+      const advancing = alive.some((id) => !isHiding(view.unitOrder(id)) && isSoldier(view.unitType(id)) && orderState(view, id) === "advance");
+      const a = this.alarms.update(i, advancing, alive.length);
+      if (a.tell && a.base !== null) this.toast(alarmText(i, alive.length, a.base));
+      return { ...a, present: alive.length };
+    });
+  }
+
+  /** Group i's advance and alarm, for its button and its 「退」 (D-081). */
+  groupAlarm(i: number): Alarm & { present: number } {
+    return this.alarmState[i];
+  }
+
+  /**
+   * 「退」 beside an advancing group's button (D-081, the user's choice 3b-A): the group, recruits
+   * on their way included, retreats to the main city as 退回主城 does; those hiding in a building
+   * stay (orders to many leave them, ceo 2026-10-07). What is selected stays selected.
+   */
+  retreatGroup(i: number): void {
+    const view = this.view;
+    if (view === null) return;
+    const u = this.army.groups[i].ids.filter((id) => view.unitRow(id) >= 0 && !isHiding(view.unitOrder(id)));
+    const home = view.homeCell();
+    if (u.length === 0) return;
+    if (home === null) {
+      this.toast("主城不在了，沒有地方可以撤退");
+      return;
+    }
+    this.command({ c: "retreat", u, x: home.x, y: home.y });
+    this.toast(`編隊 ${i + 1} 撤回主城`);
+  }
+
   /** Living soldiers of this type in group i (現有). */
   groupHas(i: number, type: number): number {
     const view = this.view;
@@ -1066,6 +1111,7 @@ export class Game implements GestureHost {
         this.draftArmy();
         this.musterRecruits();
         this.followCharges();
+        this.updateGroupAlarms();
         if (this.placement !== null) {
           this.placement.revalidate(view.placement);
           this.warnMilitia();
