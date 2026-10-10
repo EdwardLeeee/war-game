@@ -1274,6 +1274,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
       }
 
+      if (tick >= 9600 && tick % 100 === 0) {
+        console.log(`NT t=${tick} mode=${mode} target=${target.x},${target.y} town=${targetTown} soldiers=${soldiers.length} recalled=${recalled} worth=${marchWorth} rally=${rally.x},${rally.y} crew=${crew.aim} razing=${razing} failed=${[...failedAt.entries()].map(([k, v]) => k + ":" + v.worth + "@" + v.tick).join(" ")}`);
+      }
       // --- defence, towns and attack --------------------------------------------------------------
       const threat = foesNear(home.cellX, home.cellY, 16);
       const send = (x: number, y: number, why: Mode) => {
@@ -1740,6 +1743,12 @@ export const HARD: HardPlan = {
   townRest: 0,
 };
 
+// SCRATCH ONLY (ai/scratch-*, never merged): candidate plans from the environment.
+const SCRATCH_ENV = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HARD_BASE: HardPlan = { ...HARD };
+Object.assign(HARD, JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"));
+const HARD_B: HardPlan = { ...HARD_BASE, ...JSON.parse(SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN || "{}") };
+
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -1771,7 +1780,7 @@ interface HardTown extends Town {
 type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
-  const plan: HardPlan = { ...HARD, ...know.hard };
+  const plan: HardPlan = { ...(slot === 1 ? HARD_B : HARD), ...know.hard };
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
