@@ -152,6 +152,14 @@ export interface Plan {
    */
   rushBuildersOnly: boolean;
   /**
+   * The midway fortress (D-081, after the user's game f1fd2a87): from FORT_FROM, once the enemy's
+   * main city is known, RUSH_BUILDERS farmers and FORT_GUARDS spearmen walk to FORT_DIST cells from
+   * home on the straight way to the enemy's main city; the farmers build an outpost there, the
+   * spearmen are posted at it, and the farmers put up FORT_TOWERS arrow towers beside it, one after
+   * the other. The army plays the push meanwhile. Both maps.
+   */
+  fortress: boolean;
+  /**
    * "edge" only: the army that set out stops at the second waypoint (canonical (68, 62)) and goes
    * on once a sentry (as "sentry"'s, kept until then) sees the enemy's army coming on our half,
    * or 3 minutes after `raceBy`.
@@ -191,6 +199,30 @@ const RUSH_WAIT = 1800;
 const RUSH_BUILDERS = 4;
 /** The outpost is put down at most this many times; then the rush gives up (hard pulled it down at once, again and again). */
 const RUSH_TRIES = 3;
+/** The midway fortress (plan.fortress, D-081): from this tick, this far from home (cells), so many guards and towers. */
+const FORT_FROM = 12 * 1200;
+const FORT_DIST = 37;
+const FORT_GUARDS = 6;
+const FORT_TOWERS = 5;
+/** Where to try the fortress, in order: cells from home along the way, cells to the side of it. */
+const FORT_TRIES: [number, number][] = [
+  [FORT_DIST, 0],
+  [FORT_DIST - 3, 0],
+  [FORT_DIST + 3, 0],
+  [FORT_DIST, -10],
+  [FORT_DIST, 10],
+  [FORT_DIST - 6, -10],
+  [FORT_DIST - 6, 10],
+  [FORT_DIST + 6, -10],
+  [FORT_DIST + 6, 10],
+  // The fixed map: the way crosses the big town; nearer home, beside the way.
+  [FORT_DIST - 9, -10],
+  [FORT_DIST - 9, 10],
+  [FORT_DIST - 12, -10],
+  [FORT_DIST - 12, 10],
+];
+/** Ranged units hidden in each finished fortress tower (as the user did: 3 in each of 5). */
+const FORT_HIDE = 3;
 /** Random maps (D-074): the scout's next stop once within this many cells of one, or after SCOUT_STUCK ticks without getting nearer. */
 const SCOUT_NEAR = 6;
 const SCOUT_STUCK = 600;
@@ -293,6 +325,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     raceStage: false,
     towerRush: 0,
     rushBuildersOnly: false,
+    fortress: false,
   };
 }
 
@@ -301,7 +334,8 @@ export interface ScriptedPlayer {
   /**
    * For the measurement: what it is doing. found: when it first saw the enemy's main city (random
    * maps; 0 on the fixed map). rush: when the tower rush set out, its outpost stood, and its
-   * second tower was placed (-1: not yet).
+   * second tower was placed (-1: not yet). fortress: the same for the midway fortress (its last
+   * tower placed).
    */
   state(): {
     mode: Mode;
@@ -315,6 +349,7 @@ export interface ScriptedPlayer {
     raced: number;
     found: number;
     rush: { start: number; outpost: number; towers: number };
+    fortress: { start: number; outpost: number; towers: number };
   };
 }
 
@@ -371,6 +406,16 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   /** The army that escorted the rush marches on the enemy's main city as soon as the outpost is manned. */
   let rushPush = false;
   const rush = { start: -1, outpost: -1, towers: -1 };
+  /** The midway fortress (plan.fortress, D-081): its stage, spot, builders and the guards on their way. */
+  let fortStage: "" | "go" | "build" | "towers" | "done" = "";
+  let fortSpot = { x: 0, y: 0 };
+  let fortCrew: number[] = [];
+  let fortWalk: number[] = [];
+  let fortBuild = -100000;
+  let fortTries = 0;
+  const fortress = { start: -1, outpost: -1, towers: -1 };
+  /** Ranged units told to hide in a fortress tower this think (still on their way out of the army). */
+  let hiding = new Set<number>();
   let scout = -1;
   let scoutStop = 0;
   let scoutSince = 0;
@@ -458,7 +503,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   }
 
   return {
-    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch, raids, firstRaid, raced, found, rush: { ...rush } }),
+    state: () => ({ mode, trips, marches, waves, brokenOff, firstMarch, raids, firstRaid, raced, found, rush: { ...rush }, fortress: { ...fortress } }),
     think(view: PlayerView): CommandBody[] {
       const out: CommandBody[] = [];
       const h = view.header;
@@ -591,6 +636,14 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         ratio[2] = 20;
       }
       if (govWood > 0) reserve.wood += govWood;
+      // The midway fortress (plan.fortress): the same.
+      if (plan.fortress && (fortStage === "go" || fortStage === "build" || fortStage === "towers")) {
+        const o = rules.buildings[BuildingType.Outpost].cost;
+        const t = rules.buildings[BuildingType.ArrowTower].cost;
+        const left = Math.max(0, FORT_TOWERS - own.filter((b) => b.type === BuildingType.ArrowTower).length);
+        reserve.wood += (fortStage === "towers" ? 0 : o.wood) + left * t.wood;
+        reserve.gold += (fortStage === "towers" ? 0 : o.gold) + left * t.gold;
+      }
       // The tower rush (plan.towerRush): what its outpost and towers still cost is kept from other spending.
       if (rushing && (rushStage === "go" || rushStage === "build" || rushStage === "towers")) {
         const o = rules.buildings[BuildingType.Outpost].cost;
@@ -782,7 +835,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (!held) continue;
         const alive = (garrison.get(id) ?? []).filter((gid) => soldiers.some((s) => s.id === gid));
         const free = soldiers
-          .filter((s) => !isGuard(s.id) && s.type === UnitType.Spearman && s.id !== scout && !escort.includes(s.id) && s.order !== Order.Post)
+          .filter((s) => !isGuard(s.id) && s.type === UnitType.Spearman && s.id !== scout && !escort.includes(s.id) && !fortWalk.includes(s.id) && s.order !== Order.Post)
           .sort((a, b) => dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < Math.max(t.needed, plan.guards) && free.length > 0) alive.push(free.shift()!.id);
         garrison.set(id, alive);
@@ -904,6 +957,119 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           }
         }
       }
+      // --- the midway fortress (plan.fortress, D-081) -------------------------------------------------
+      fortWalk = fortWalk.filter((id) => soldiers.some((u) => u.id === id));
+      fortCrew = fortCrew.filter((id) => farmers.some((f) => f.id === id));
+      hiding = new Set<number>();
+      if (plan.fortress && found >= 0) {
+        const outpost = own.find((b) => b.type === BuildingType.Outpost);
+        const towers = own.filter((b) => b.type === BuildingType.ArrowTower);
+        if (fortStage === "" && tick >= FORT_FROM && done(BuildingType.Barracks).length > 0) {
+          const spears = soldiers
+            .filter((u) => u.type === UnitType.Spearman && !isGuard(u.id) && !raiders.includes(u) && u.id !== scout && u.id !== sentry && u.order !== Order.Post)
+            .sort((a, b) => a.id - b.id);
+          if (spears.length >= FORT_GUARDS && gatherers.length >= RUSH_BUILDERS + 3) {
+            fortWalk = spears.slice(0, FORT_GUARDS).map((u) => u.id);
+            fortCrew = gatherers.slice(0, RUSH_BUILDERS);
+            gatherers.splice(0, fortCrew.length);
+            // About FORT_DIST cells from home on the straight way to the enemy's main city (canonical
+            // cells), clear of the towns (towers may not go near them; the fixed map's way crosses the big town).
+            const hf = frame(home.cellX, home.cellY);
+            const ef = frame(enemyHome.cellX, enemyHome.cellY);
+            const du = ef.u - hf.u;
+            const dv = ef.v - hf.v;
+            const len = Math.sqrt(du * du + dv * dv) || 1;
+            const clear = TOWN_CLEARANCE + 8;
+            let best: { u: number; v: number } | null = null;
+            for (const [d, side] of FORT_TRIES) {
+              const u = hf.u + Math.trunc((du * d - dv * side) / len);
+              const v = hf.v + Math.trunc((dv * d + du * side) / len);
+              if (u < 4 || v < 4 || u > n - 5 || v > n - 5) continue;
+              const r = real(u, v);
+              if (known.some((t) => (t.cellX - r.x) * (t.cellX - r.x) + (t.cellY - r.y) * (t.cellY - r.y) < clear * clear)) continue;
+              best = { u, v };
+              break;
+            }
+            const at = best ?? { u: hf.u + Math.trunc((du * FORT_DIST) / len), v: hf.v + Math.trunc((dv * FORT_DIST) / len) };
+            fortSpot = real(at.u, at.v);
+            out.push({ c: "move", u: [...fortWalk, ...fortCrew], x: fortSpot.x, y: fortSpot.y });
+            fortStage = "go";
+            fortress.start = tick;
+          }
+        }
+        if (fortStage === "go") {
+          const walking = farmers.filter((u) => fortCrew.includes(u.id));
+          if (walking.length === 0) fortStage = "done";
+          else {
+            const cx = Math.trunc(walking.reduce((a, u) => a + u.x, 0) / walking.length);
+            const cy = Math.trunc(walking.reduce((a, u) => a + u.y, 0) / walking.length);
+            const stopped = walking.filter((u) => u.order === Order.None).length * 2 >= walking.length;
+            const d = dist2(cx, cy, fortSpot.x, fortSpot.y);
+            if (d <= RUSH_NEAR * RUSH_NEAR || (stopped && d <= 4 * RUSH_NEAR * RUSH_NEAR) || tick - fortress.start >= RUSH_WAIT) {
+              const cost = rules.buildings[BuildingType.Outpost].cost;
+              const spot = spotNear(view, BuildingType.Outpost, fortSpot.x, fortSpot.y, 5);
+              if (spot !== null && affordAll(cost)) {
+                out.push({ c: "build", u: fortCrew, type: BuildingType.Outpost, x: spot.x, y: spot.y });
+                spend(cost);
+                fortBuild = tick;
+                fortTries++;
+                fortStage = "build";
+              }
+            }
+          }
+        }
+        if (fortStage === "build") {
+          if (outpost !== undefined && outpost.progress >= 1000) {
+            const guards = soldiers.filter((u) => fortWalk.includes(u.id)).map((u) => u.id);
+            if (guards.length > 0) out.push({ c: "post", u: guards, building: outpost.id });
+            fortWalk = [];
+            fortress.outpost = tick;
+            fortStage = "towers";
+          } else if (outpost === undefined && tick - fortBuild >= 600) {
+            // Pulled down before it stood: again, RUSH_TRIES times in all.
+            fortStage = fortCrew.length > 0 && fortTries < RUSH_TRIES ? "go" : "done";
+            if (fortStage === "go") out.push({ c: "move", u: [...fortWalk, ...fortCrew], x: fortSpot.x, y: fortSpot.y });
+            else fortWalk = [];
+          }
+        }
+        // Ranged units hide in every finished tower, topped up as they fall (and are not the army's).
+        if (fortStage === "towers" || fortStage === "done") {
+          const holds = Math.min(FORT_HIDE, rules.buildings[BuildingType.ArrowTower].holds ?? 0);
+          const busy = new Set<number>();
+          for (const t of towers.filter((b) => b.progress >= 1000)) {
+            const inside = soldiers.filter((u) => u.order === Order.Garrison && u.orderTarget === t.id).length;
+            if (inside >= holds) continue;
+            const pick = soldiers
+              .filter((u) => u.type === UnitType.Ranged && u.order !== Order.Garrison && !busy.has(u.id) && !isGuard(u.id) && !raiders.includes(u) && u.id !== scout && u.id !== sentry)
+              .sort((a, c) => dist2(a.x, a.y, t.x, t.y) - dist2(c.x, c.y, t.x, t.y) || a.id - c.id)
+              .slice(0, holds - inside);
+            if (pick.length === 0) continue;
+            out.push({ c: "garrison", u: pick.map((u) => u.id), building: t.id });
+            for (const u of pick) busy.add(u.id);
+          }
+          hiding = busy;
+        }
+        if (fortStage === "towers") {
+          if (outpost === undefined || fortCrew.length === 0 || towers.length >= FORT_TOWERS) {
+            if (towers.length >= FORT_TOWERS) fortress.towers = tick;
+            fortStage = "done";
+          } else if (!towers.some((b) => b.progress < 1000)) {
+            // One after the other beside the outpost: three cells toward the enemy, spread across the way.
+            const cost = rules.buildings[BuildingType.ArrowTower].cost;
+            const of = frame(outpost.x + 1, outpost.y + 1);
+            const ef = frame(enemyHome.cellX, enemyHome.cellY);
+            const fu = Math.sign(ef.u - of.u);
+            const fv = Math.sign(ef.v - of.v);
+            const side = [0, -3, 3, -6, 6][towers.length];
+            const aim = real(of.u + fu * 3 - fv * side, of.v + fv * 3 + fu * side);
+            const spot = spotNear(view, BuildingType.ArrowTower, aim.x, aim.y, 3);
+            if (spot !== null && affordAll(cost)) {
+              out.push({ c: "build", u: fortCrew, type: BuildingType.ArrowTower, x: spot.x, y: spot.y });
+              spend(cost);
+            }
+          }
+        }
+      }
       if (raiders.length > 0) {
         const ids = raiders.map((u) => u.id);
         if (!raiding && raiders.length >= plan.raid) {
@@ -970,7 +1136,16 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         scout = -1;
       }
       const army = soldiers.filter(
-        (u) => !isGuard(u.id) && !raiders.includes(u) && u.id !== sentry && u.id !== scout && !escort.includes(u.id) && u.order !== Order.Post,
+        (u) =>
+          !isGuard(u.id) &&
+          !raiders.includes(u) &&
+          u.id !== sentry &&
+          u.id !== scout &&
+          !escort.includes(u.id) &&
+          !fortWalk.includes(u.id) &&
+          !hiding.has(u.id) &&
+          u.order !== Order.Post &&
+          u.order !== Order.Garrison,
       );
       const armyIds = army.map((u) => u.id);
       const send = (x: number, y: number, why: Mode) => {
