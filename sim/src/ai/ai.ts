@@ -336,8 +336,10 @@ const FORT_ROUND = 5;
 const FORT_ARMY_NEAR = 6;
 /** After breaking off from a group of forts, the next go at it takes this many times the army (percent, D-081). */
 const FORT_FAILED = 150;
-/** A waypoint counts as reached this near (cells, D-081). */
+/** A waypoint counts as reached this near (cells, D-081)... */
 const FORT_VIA_NEAR = 8;
+/** ...and as out of reach when the army has not come 2 cells nearer it for this long (ticks): it breaks off. */
+const FORT_VIA_STUCK = 400;
 /** It goes for a fort with no fewer soldiers than this. */
 const FORT_ARMY = 4;
 /** Enemy soldiers this near a fort (cells) count as its defenders. */
@@ -546,8 +548,8 @@ export function groupsOnWay(groups: FortGroup[], a: { x: number; y: number }, b:
 
 /**
  * A way round `groups` from a to b: a waypoint beside the first of them on the way, FORT_ROUND (or twice
- * that) cells beyond its reach to one side, such that both legs pass clear of every group, on the map and
- * not on a cell known to be blocked; the shorter way, ties in player 0's frame (`rank`). Null if there is none.
+ * that) cells beyond its reach to one side, such that both legs pass clear of every group, on the map, on
+ * explored and clear cells; the shorter way, ties in player 0's frame (`rank`). Null if there is none.
  */
 export function wayRound(
   groups: FortGroup[],
@@ -570,7 +572,11 @@ export function wayRound(
       const x = Math.trunc(first.x - (side * dy * d) / len);
       const y = Math.trunc(first.y + (side * dx * d) / len);
       if (x < 2 || y < 2 || x > n - 3 || y > n - 3) continue;
-      if ((placement[y * n + x] & PlaceBit.Blocked) !== 0) continue;
+      // Explored and clear, it and the cells round it (an unexplored waypoint was rock in a scratch game, and
+      // the army stood stuck by the forts for half an hour).
+      let open = true;
+      for (let yy = y - 1; yy <= y + 1 && open; yy++) for (let xx = x - 1; xx <= x + 1 && open; xx++) if ((placement[yy * n + xx] & (PlaceBit.Blocked | PlaceBit.Unexplored)) !== 0) open = false;
+      if (!open) continue;
       if (groupsOnWay(groups, a, { x, y }).length > 0 || groupsOnWay(groups, { x, y }, b).length > 0) continue;
       const l = Math.sqrt((x - a.x) * (x - a.x) + (y - a.y) * (y - a.y)) + Math.sqrt((b.x - x) * (b.x - x) + (b.y - y) * (b.y - y));
       if (best === null || l < bestLen - 0.5 || (Math.abs(l - bestLen) <= 0.5 && rank(x, y) < rank(best.x, best.y))) {
@@ -920,6 +926,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let holdFrom = -1;
   /** D-081, as hard: the way round forts on the current march (null: straight), the army (worth against forts) that broke off from each fort. */
   let via: { x: number; y: number } | null = null;
+  /** How near the army has come to the waypoint (cells), and when it last came 2 cells nearer. */
+  let viaBest = Number.MAX_SAFE_INTEGER;
+  let viaSince = 0;
   const failedAt = new Map<number, number>();
   const fv = fortValues(know.rules);
   const rankOf = (x: number, y: number) => {
@@ -1416,7 +1425,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const guardsAt = (f: Fort) => foes.filter((e) => e.order === Order.Post && fortDist2(f, e.x, e.y) <= 9).length;
       const groups = forts.length === 0 ? [] : fortGroups(forts, guardsAt, fv);
       const groupOf = (f: Fort) => groups.find((g) => g.ids.includes(f.id));
-      const bySiege = (g: FortGroup) => dist2(g.x, g.y, enemyHome.cellX, enemyHome.cellY) <= (FORT_SIEGE + g.radius) * (FORT_SIEGE + g.radius);
+      const bySiege = (g: FortGroup) => dist2(g.x, g.y, enemyHome.cellX, enemyHome.cellY) <= FORT_SIEGE * FORT_SIEGE;
       const defendersOf = (g: FortGroup) => {
         const r = g.radius + FORT_ARMY_NEAR;
         return g.worth + 10 * foes.filter((e) => e.order !== Order.Post && dist2(e.x, e.y, g.x, g.y) <= r * r).length;
@@ -1438,6 +1447,21 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const remember = (list: { type: number }[], near: FortGroup[]) => {
         const w = vsForts(list);
         for (const g of near) for (const id of g.ids) failedAt.set(id, Math.max(failedAt.get(id) ?? 0, w));
+      };
+      /** On the way to a waypoint: false once the army has not come nearer it for FORT_VIA_STUCK (it is out of reach). */
+      const viaGoing = (x: number, y: number) => {
+        if (via === null) return true;
+        const d = Math.sqrt(dist2(x, y, via.x, via.y));
+        if (viaBest === Number.MAX_SAFE_INTEGER || d <= viaBest - 2) {
+          viaBest = d;
+          viaSince = tick;
+        }
+        return tick - viaSince < FORT_VIA_STUCK;
+      };
+      const setVia = (w: { x: number; y: number } | null) => {
+        via = w;
+        viaBest = Number.MAX_SAFE_INTEGER;
+        viaSince = tick;
       };
       /** What defends a fort: enemy soldiers by it (not its guards) and the group it is in (D-081; D-080 counted 3 soldiers a tower). */
       const defends = (f: Fort) => {
@@ -1525,12 +1549,24 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (!reserves) reservesRazing = -1;
         // On the way round forts too strong for it (D-081), or back if there is none.
         const aim = mode === "town" ? towns.get(targetTown) : { x: enemyHome.cellX, y: enemyHome.cellY };
-        if (via !== null && dist2(cx, cy, via.x, via.y) <= FORT_VIA_NEAR * FORT_VIA_NEAR) via = null;
+        if (via !== null && dist2(cx, cy, via.x, via.y) <= FORT_VIA_NEAR * FORT_VIA_NEAR) setVia(null);
+        if (!viaGoing(cx, cy)) {
+          // The way round is out of reach: back, and remember.
+          if (mode === "base") baseBroken = true;
+          if (aim !== undefined) remember(army, groupsOnWay(tooStrong(army), { x: cx, y: cy }, aim));
+          setVia(null);
+          out.push({ c: "retreat", u: armyIds, x: rally.x, y: rally.y });
+          lastMove = tick;
+          mode = "gather";
+          target = { x: rally.x, y: rally.y };
+          razing = -1;
+          return out;
+        }
         if (via === null && aim !== undefined && armyIds.length > 0 && !endgame) {
           const strong = tooStrong(army);
           const ahead = groupsOnWay(strong, { x: cx, y: cy }, aim);
           if (ahead.length > 0) {
-            via = wayRound(strong, { x: cx, y: cy }, aim, n, view.placement, rankOf);
+            setVia(wayRound(strong, { x: cx, y: cy }, aim, n, view.placement, rankOf));
             if (via === null) {
               if (mode === "base") baseBroken = true;
               remember(army, ahead);
@@ -1604,7 +1640,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
         const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
         if (go && toBase!.go) {
-          via = toBase!.via;
+          setVia(toBase!.via);
           armyAtStart = army.length;
           marched.clear();
           for (const id of armyIds) marched.add(id);
@@ -1617,7 +1653,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           marched.clear();
           for (const id of armyIds) marched.add(id);
           townTrips++;
-          via = groups.length === 0 ? null : routeFor({ x: home.cellX, y: home.cellY }, pick[1], army).via;
+          setVia(groups.length === 0 ? null : routeFor({ x: home.cellX, y: home.cellY }, pick[1], army).via);
           const goal = via ?? pick[1];
           send(goal.x, goal.y, "town");
         } else {
@@ -1824,6 +1860,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
    * that broke off from each fort; towns it fell back from, left alone until this tick.
    */
   let via: { x: number; y: number } | null = null;
+  /** How near the army has come to the waypoint (squared cells), and when it last came 2 cells nearer. */
+  let viaBest = Number.MAX_SAFE_INTEGER;
+  let viaSince = 0;
   const failedAt = new Map<number, number>();
   const townRest = new Map<number, number>();
   const fv = fortValues(know.rules);
@@ -2449,8 +2488,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const guardsAt = (f: Fort) => foes.filter((e) => e.order === Order.Post && fortDist2(f, e.x, e.y) <= 9).length;
         const groups = forts.length === 0 ? [] : fortGroups(forts, guardsAt, fv);
         const groupOf = (f: Fort) => groups.find((g) => g.ids.includes(f.id));
-        /** A group by the enemy's main city is the siege's: the city's defences count as before. */
-        const bySiege = (g: FortGroup) => dist2(g.x, g.y, enemyHome.cellX, enemyHome.cellY) <= (FORT_SIEGE + g.radius) * (FORT_SIEGE + g.radius);
+        /** A group whose middle is by the enemy's main city (FORT_SIEGE) is the siege's: the city's defences count as before. */
+        const bySiege = (g: FortGroup) => dist2(g.x, g.y, enemyHome.cellX, enemyHome.cellY) <= FORT_SIEGE * FORT_SIEGE;
         /** What defends a group: its forts, and the enemy soldiers it knows of near it, seen in the last minute (posted guards count with the forts). */
         const defendersOf = (g: FortGroup) => {
           let w = g.worth;
@@ -2474,6 +2513,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (groupsOnWay(strong, from, to).length === 0) return { go: true, via: null };
           const w = wayRound(strong, from, to, n, view.placement, rank);
           return { go: w !== null, via: w };
+        };
+        /** On the way to a waypoint: false once the army has not come nearer it for FORT_VIA_STUCK (it is out of reach). */
+        const viaGoing = (x: number, y: number) => {
+          if (via === null) return true;
+          const d = Math.sqrt(dist2(x, y, via.x, via.y));
+          if (viaBest === Number.MAX_SAFE_INTEGER || d <= viaBest - 2) {
+            viaBest = d;
+            viaSince = tick;
+          }
+          return tick - viaSince < FORT_VIA_STUCK;
+        };
+        const setVia = (w: { x: number; y: number } | null) => {
+          via = w;
+          viaBest = Number.MAX_SAFE_INTEGER;
+          viaSince = tick;
         };
         /** Broke off by these groups: the next go at them takes more (FORT_FAILED). */
         const remember = (list: { type: number }[], near: FortGroup[]) => {
@@ -2540,13 +2594,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             fallBack(post.x, post.y);
             return;
           } else {
-            // On the way round forts too strong for it (D-081), or back if there is none.
-            if (via !== null && dist2(ac.x, ac.y, via.x, via.y) <= FORT_VIA_NEAR * FORT_VIA_NEAR) via = null;
+            // On the way round forts too strong for it (D-081), or back if there is none (or the way round is out of reach).
+            if (via !== null && dist2(ac.x, ac.y, via.x, via.y) <= FORT_VIA_NEAR * FORT_VIA_NEAR) setVia(null);
+            if (!viaGoing(ac.x, ac.y)) {
+              razing = -1;
+              remember(army, groupsOnWay(tooStrong(army), ac, t));
+              setVia(null);
+              if (plan.townRest > 0) townRest.set(targetTown, tick + plan.townRest * TICKS_PER_MINUTE);
+              fallBack(post.x, post.y);
+              return;
+            }
             if (via === null) {
               const strong = tooStrong(army);
               const ahead = groupsOnWay(strong, ac, t);
               if (ahead.length > 0) {
-                via = wayRound(strong, ac, t, n, view.placement, rank);
+                setVia(wayRound(strong, ac, t, n, view.placement, rank));
                 if (via === null) {
                   razing = -1;
                   remember(army, ahead);
@@ -2607,12 +2669,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           }
           // On the way round forts too strong for the front (D-081), or back if there is none.
           const enemy = { x: enemyHome.cellX, y: enemyHome.cellY };
-          if (via !== null && dist2(fc.x, fc.y, via.x, via.y) <= FORT_VIA_NEAR * FORT_VIA_NEAR) via = null;
+          if (via !== null && dist2(fc.x, fc.y, via.x, via.y) <= FORT_VIA_NEAR * FORT_VIA_NEAR) setVia(null);
+          if (!viaGoing(fc.x, fc.y)) {
+            remember(front, groupsOnWay(tooStrong(front), fc, enemy));
+            counterReady = false;
+            razing = -1;
+            reservesRazing = -1;
+            setVia(null);
+            fallBack(post.x, post.y);
+            return;
+          }
           if (via === null && frontIds.length > 0 && !endgame) {
             const strong = tooStrong(front);
             const ahead = groupsOnWay(strong, fc, enemy);
             if (ahead.length > 0) {
-              via = wayRound(strong, fc, enemy, n, view.placement, rank);
+              setVia(wayRound(strong, fc, enemy, n, view.placement, rank));
               if (via === null) {
                 remember(front, ahead);
                 counterReady = false;
@@ -2699,7 +2770,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
         const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
         if (go && toBase!.go) {
-          via = toBase!.via;
+          setVia(toBase!.via);
           armyAtStart = army.length;
           marched.clear();
           for (const u of army) marched.add(u.id);
@@ -2738,7 +2809,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             marched.clear();
             for (const u of army) marched.add(u.id);
             const t = towns.get(pick)!;
-            via = groups.length === 0 ? null : routeFor({ x: home.cellX, y: home.cellY }, t, army).via;
+            setVia(groups.length === 0 ? null : routeFor({ x: home.cellX, y: home.cellY }, t, army).via);
             const goal = via ?? t;
             send(goal.x, goal.y, "town");
             return;
