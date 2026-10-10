@@ -52,6 +52,8 @@ const seeds = seedList(arg("seeds", "1-5"));
 const think = Number(arg("think", String(SCRIPTED_THINK_EVERY)));
 /** Games still going at this game minute are stopped and counted apart. */
 const CAP = Number(arg("cap", "50")) * 1200;
+/** D-081: an AI soldier dying this near (cells) one of the player's finished forts counts as lost to it. */
+const FORT_NEAR = 12;
 const trace = flag("trace");
 const jsonOut = arg("json", "");
 const plan = planFor(strategy, speed, formation);
@@ -77,7 +79,11 @@ plan.raceStage = flag("race-stage");
 // D-080: the tower rush, with this many spearmen (--tower-rush 6), or its builders alone (--tower-rush-farmers).
 plan.towerRush = Number(arg("tower-rush", "0"));
 plan.rushBuildersOnly = flag("tower-rush-farmers");
+// D-081: the midway fortress (--fortress).
+plan.fortress = flag("fortress");
 const rushing = plan.towerRush > 0 || plan.rushBuildersOnly;
+/** The player puts up outposts and arrow towers: the rush or the fortress. */
+const fortifying = rushing || plan.fortress;
 // D-072: the user's economy (ai's replay of the game they beat hard): automatic training, 16
 // farmers, no gold until the plunder, one trip, to the big town with 10 soldiers.
 if (flag("user-eco")) {
@@ -164,6 +170,15 @@ interface GameRecord {
     towers: number;
     built: { kind: "outpost" | "tower"; placed: number; done: number; fell: number }[];
   };
+  /**
+   * D-081, every game: the AI's soldiers that died within FORT_NEAR cells of one of the player's
+   * finished outposts or arrow towers (where they last stood, read every 20 ticks), and its bashes on
+   * them: times 5 or more of its soldiers were at once within such a fort's reach (an arrow tower's
+   * arrows, an outpost's guards' reach, from the footprint), counted once until 30 s pass with none
+   * of them within reach.
+   */
+  fortDeaths: number;
+  bashes: number;
   /** Random maps (D-074): the map's layout and when the player first saw the AI's main city (-1: never). */
   layout?: string;
   found?: number;
@@ -259,6 +274,15 @@ function play(seed: number): GameRecord {
   const cityFirstHit: [number, number] = [-1, -1];
   const cityFell: [number, number] = [-1, -1];
   let armiesNearest = -1;
+  // D-081: the AI's deaths by the player's forts and its bashes on them (GameRecord).
+  const aiAt = new Map<number, { x: number; y: number }>();
+  let fortDeaths = 0;
+  let bashes = 0;
+  let bashing = false;
+  let bashMax = 0;
+  let bashLast = -100000;
+  const arrowReach = (rules().arrows.arrowTower.range + 1023) >> 10;
+  const guardReach = rules().outpost.reach;
   // D-080: the player's outposts and arrow towers, by id: when placed, finished and gone.
   const rushBuilt = new Map<number, { kind: "outpost" | "tower"; placed: number; done: number; fell: number }>();
   const aiHome = map.spawns[1];
@@ -305,7 +329,47 @@ function play(seed: number): GameRecord {
       for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === 0 && b.type[s] === BuildingType.MageHall && b.progress[s] >= 1000) hallDone = w.tick;
     }
     if (aiMage < 0 && count(1, UnitType.Mage) > 0) aiMage = w.tick;
-    if (rushing) {
+    if (w.tick % 20 === 0) {
+      const forts: { x: number; y: number; size: number; reach: number }[] = [];
+      for (let s = 0; s < w.buildings.count; s++) {
+        if (b.owner[s] !== 0 || b.progress[s] < 1000 || (b.type[s] !== BuildingType.Outpost && b.type[s] !== BuildingType.ArrowTower)) continue;
+        forts.push({ x: b.cellX[s], y: b.cellY[s], size: w.buildingSize(b.type[s]), reach: b.type[s] === BuildingType.ArrowTower ? arrowReach : guardReach });
+      }
+      const within = (x: number, y: number, f: { x: number; y: number; size: number }, r: number) => {
+        const dx = Math.max(f.x - x, 0, x - (f.x + f.size - 1));
+        const dy = Math.max(f.y - y, 0, y - (f.y + f.size - 1));
+        return dx * dx + dy * dy <= r * r;
+      };
+      if (forts.length === 0) aiAt.clear();
+      else {
+        const seen = new Set<number>();
+        let inReach = 0;
+        for (let i = 0; i < w.units.count; i++) {
+          if (u.owner[i] !== 1 || u.type[i] === UnitType.Farmer) continue;
+          const x = u.x[i] >> 10;
+          const y = u.y[i] >> 10;
+          seen.add(u.id[i]);
+          aiAt.set(u.id[i], { x, y });
+          if (forts.some((f) => within(x, y, f, f.reach))) inReach++;
+        }
+        for (const [id, at] of aiAt) {
+          if (seen.has(id)) continue;
+          aiAt.delete(id);
+          if (w.unit(id) < 0 && forts.some((f) => within(at.x, at.y, f, FORT_NEAR))) fortDeaths++;
+        }
+        if (inReach > 0) {
+          if (!bashing) bashMax = 0;
+          bashing = true;
+          bashMax = Math.max(bashMax, inReach);
+          bashLast = w.tick;
+        }
+      }
+      if (bashing && w.tick - bashLast >= 600) {
+        if (bashMax >= 5) bashes++;
+        bashing = false;
+      }
+    }
+    if (fortifying) {
       for (let s = 0; s < w.buildings.count; s++) {
         if (b.owner[s] !== 0 || (b.type[s] !== BuildingType.Outpost && b.type[s] !== BuildingType.ArrowTower)) continue;
         let x = rushBuilt.get(b.id[s]);
@@ -370,6 +434,7 @@ function play(seed: number): GameRecord {
     }
   }
   closeWave();
+  if (bashing && bashMax >= 5) bashes++;
   const st = player.state();
   return {
     seed,
@@ -394,11 +459,13 @@ function play(seed: number): GameRecord {
     armiesNearest,
     cityFirstHit,
     cityFell,
-    ...(rushing
+    ...(fortifying
       ? {
-          rush: { ...st.rush, built: [...rushBuilt.values()] },
+          rush: { ...(plan.fortress ? st.fortress : st.rush), built: [...rushBuilt.values()] },
         }
       : {}),
+    fortDeaths,
+    bashes,
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
@@ -432,6 +499,7 @@ const options = [
   mapMode === "random" ? "隨機地圖（我只知道探到的，派一名槍兵偵察；電腦也要偵察）" : "",
   plan.towerRush > 0 ? `塔攻：${plan.towerRush} 名槍兵到電腦主城旁蓋哨所駐守，再蓋 2 座箭樓（D-080）` : "",
   plan.rushBuildersOnly ? "塔攻（只派村民）：4 名村民到電腦主城旁蓋哨所和 2 座箭樓，沒有護送、沒有駐守（D-080）" : "",
+  plan.fortress ? "半路要塞：第 12 分起，在往電腦主城的路上、離家 37 格，蓋哨所（6 名槍兵駐守）和 5 座箭樓（D-081）" : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
@@ -441,7 +509,17 @@ const byStyle = AI_STYLES.map((s) => {
   return of.length === 0 ? "" : `${STYLE_NAMES[s]} ${of.filter((x) => x.result === "won").length}/${of.length}`;
 }).filter((x) => x !== "");
 out.push(`照電腦的性格：${byStyle.join("、")}。`, "");
-if (rushing) {
+if (fortifying) {
+  // D-081: the AI's soldiers lost by the player's forts, and its bashes on them.
+  const deaths = games.map((x) => x.fortDeaths).sort((a, c) => a - c);
+  const bash = games.map((x) => x.bashes).sort((a, c) => a - c);
+  out.push(
+    `電腦的兵死在玩家蓋好的據點 ${FORT_NEAR} 格內：中位數 ${deaths[deaths.length >> 1]}、最多 ${deaths[deaths.length - 1]}；` +
+      `撞（5 名以上同時進到據點的射程，30 秒內沒人進去才算下一次）：中位數 ${bash[bash.length >> 1]}、最多 ${bash[bash.length - 1]}、合計 ${bash.reduce((a, c) => a + c, 0)}。`,
+    "",
+  );
+}
+if (fortifying) {
   // D-080: did the AI pull the rush down?
   const rushed = games.filter((x) => x.rush !== undefined);
   const built = (kind: "outpost" | "tower") => rushed.flatMap((x) => x.rush!.built.filter((b) => b.kind === kind));
@@ -458,7 +536,7 @@ if (rushing) {
     );
   };
   out.push(
-    `塔攻：出發 ${rushed.filter((x) => x.rush!.start >= 0).length}/${rushed.length} 局。` +
+    `${plan.fortress ? "半路要塞" : "塔攻"}：出發 ${rushed.filter((x) => x.rush!.start >= 0).length}/${rushed.length} 局。` +
       `哨所${count("outpost")}。箭樓${count("tower")}。`,
     "",
   );
