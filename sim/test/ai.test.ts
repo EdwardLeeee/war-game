@@ -1390,3 +1390,29 @@ test("D-081: hard does not go back to a town it fell back from because of forts 
   g.fog.update(w);
   assert.ok(toTown(), "once 5 minutes are past, again");
 });
+
+test("D-081: farmers do not lead the soldiers at home back to a fort the army broke off from, within 5 minutes (ceo 2026-10-10)", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    const { g, w, ai, fort, spears } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
+    const sight: number[] = [];
+    for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) sight.push(w.units.col.id[s]);
+    kill(g, [...spears.slice(2), ...sight]);
+    w.tick += 10;
+    g.fog.update(w);
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), `${difficulty}: ground down, it breaks off`);
+    // As many soldiers again, and farmers at work: farmers would go for a lone tower with two soldiers at home (D-080),
+    // and the soldiers at home with them, to the end.
+    const home = spawnCentre(w.map.frames[0], w.map.spawns[0]);
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, home.x - 4 - k, home.y - 4);
+    for (let k = 0; k < 8; k++) {
+      const id = put(g, 0, UnitType.Farmer, home.x - 3 + (k % 4), home.y + 3 + Math.trunc(k / 4));
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    w.tick += 700;
+    g.fog.update(w);
+    assert.ok(!ai.think(buildView(g, 0)).some((c) => c.c === "attack" && c.target === fort), `${difficulty}: neither farmers nor soldiers, 35 s on`);
+    w.tick += 5 * 1200;
+    g.fog.update(w);
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "attack" && c.target === fort), `${difficulty}: once 5 minutes are past, again`);
+  }
+});

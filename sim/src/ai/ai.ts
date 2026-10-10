@@ -414,6 +414,21 @@ function fortsOnOurGround(forts: Fort[], home: { cellX: number; cellY: number },
   });
 }
 
+/**
+ * The army (worth against forts) that broke off from `f` or from forts whose arrows or guards reach it,
+ * within FORT_FORGET (D-081); 0 for none.
+ */
+function failedNear(f: Fort, forts: readonly Fort[], failedAt: ReadonlyMap<number, { worth: number; tick: number }>, tick: number): number {
+  const c = fortCentre(f);
+  let failed = 0;
+  for (const o of forts) {
+    const m = failedAt.get(o.id);
+    if (m === undefined || tick - m.tick >= FORT_FORGET) continue;
+    if (o.id === f.id || fortDist2(o, c.x, c.y) <= (o.hits + FORT_WAY) * (o.hits + FORT_WAY)) failed = Math.max(failed, m.worth);
+  }
+  return failed;
+}
+
 /** The forts by an army marching from (x, y): within their arrows' or guards' reach and FORT_WAY, but not by the enemy's main city. */
 function fortsOnTheWay(forts: Fort[], x: number, y: number, enemyHome: { cellX: number; cellY: number }): Fort[] {
   return forts.filter(
@@ -572,6 +587,8 @@ export interface FortCrew {
     soldiers: readonly Spot[],
     farmers: readonly (Spot & { order: number })[],
     out: CommandBody[],
+    /** Forts it leaves alone (D-081: the army broke off from them and is not FORT_FAILED of that army yet). */
+    blocked?: (f: Fort) => boolean,
   ): void;
 }
 
@@ -594,7 +611,7 @@ export function createFortCrew(rank: (x: number, y: number) => number): FortCrew
     get aim() {
       return crew.length > 0 ? aim : -1;
     },
-    think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out) {
+    think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, blocked) {
       crew = crew.filter((id) => farmers.some((f) => f.id === id));
       // Not against guards; nor under the arrows of two finished towers or more without two soldiers at
       // home for each (three arrows kill a farmer: two towers killed a crew of 12 in 50 s without falling,
@@ -611,6 +628,8 @@ export function createFortCrew(rank: (x: number, y: number) => number): FortCrew
       for (const u of soldiers) if ((u.x - home.cellX) * (u.x - home.cellX) + (u.y - home.cellY) * (u.y - home.cellY) <= FORT_HOME * FORT_HOME) atHome++;
       const open = ours.filter((f) => {
         if (foes.some((e) => fortDist2(f, e.x, e.y) <= FORT_GUARDS * FORT_GUARDS)) return false;
+        // The soldiers at home go with the farmers to the end (the army's orders): not where the army broke off (D-081).
+        if (blocked?.(f) === true) return false;
         const k = shooters(f);
         return k <= 1 || atHome >= 2 * k;
       });
@@ -1249,7 +1268,11 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         .filter((t) => t.owner === player && (t.state === TownState.Repairing || t.state === TownState.Governed))
         .map((t) => ({ x: t.x, y: t.y, radius: rules.towns?.[t.size]?.radius ?? 0 }));
       const ours = forts.length === 0 ? [] : fortsOnOurGround(forts, home, held);
-      if (!recalled) crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out);
+      if (!recalled) {
+        // Farmers going take the soldiers at home along to the end: not where the army broke off, as its own goes (D-081, ceo 2026-10-10).
+        const vs = soldiers.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
+      }
 
       // --- defence, towns and attack --------------------------------------------------------------
       const threat = foesNear(home.cellX, home.cellY, 16);
@@ -2328,7 +2351,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         .filter((t) => t.owner === player && (t.state === TownState.Repairing || t.state === TownState.Governed))
         .map((t) => ({ x: t.x, y: t.y, radius: rules.towns?.[t.size]?.radius ?? 0 }));
       const ours = forts.length === 0 ? [] : fortsOnOurGround(forts, home, held);
-      if (!recalled) crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out);
+      if (!recalled) {
+        // Farmers going take the soldiers at home along to the end: not where the army broke off, as its own goes (D-081, ceo 2026-10-10).
+        const vs = soldiers.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
+      }
 
       const armyOrders = (): void => {
         // Defence: everyone home, under the main city's arrows; farmers inside against a raid.
