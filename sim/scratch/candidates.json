@@ -1,0 +1,8 @@
+{
+  "scripted": [
+    { "name": "n", "difficulty": "normal", "groups": ["push-fortress", "push-fortress-random", "push-towerrush", "push-towerrush-farmers"] },
+    { "name": "h", "difficulty": "hard", "groups": ["push-fortress", "push-fortress-random", "push-towerrush", "push-towerrush-farmers"] },
+    { "name": "nu", "difficulty": "normal", "groups": ["push-fortress-random"], "chunks": ["1923420466,931495929,1178066050,1193501590,314166768,565469441,2107416689,92872783"] },
+    { "name": "hu", "difficulty": "hard", "groups": ["push-fortress-random"], "chunks": ["1923420466,931495929,1178066050,1193501590,314166768,565469441,2107416689,92872783"] }
+  ]
+}
