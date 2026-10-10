@@ -1335,14 +1335,12 @@ test("D-081: with townRest (off by default), hard leaves a town it fell back fro
   assert.ok(toTown(ai2.think(buildView(g2, 0)), go.x, go.y), "off: straight back");
 });
 
-test("D-081: after breaking off from a fort on its ground, it goes again only with 1.5 x the army or once the fort is weaker, however long after (ceo 2026-10-11)", () => {
+test("D-081: after breaking off from a fort on its ground, it goes again within 5 minutes only with 1.5 x the army (ceo 2026-10-10)", () => {
   for (const difficulty of ["normal", "hard"] as const) {
-    /** Eight spearmen go for a tower with three hiding in it, six fall and it breaks off; `more` than eight again, `later` ticks on, the tower `emptied` meanwhile. */
-    const again = (more: number, later: number, emptied = false) => {
+    /** Eight spearmen go for a tower by the main city, six fall and it breaks off; `more` than eight again, `later` ticks on. */
+    const again = (more: number, later: number) => {
       const { g, w, ai, fort, spears, centre, out } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
       assert.ok(out.some((c) => c.c === "attack" && c.target === fort), `${difficulty}: the army goes for it`);
-      // Three hide in it once it is there.
-      w.buildings.col.soldiers[w.building(fort)] = 3;
       // Its farmer too: with two soldiers left farmers would join them to the end (D-080), not this path.
       const farmers: number[] = [];
       for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) farmers.push(w.units.col.id[s]);
@@ -1352,21 +1350,14 @@ test("D-081: after breaking off from a fort on its ground, it goes again only wi
       assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), `${difficulty}: ground down, it breaks off`);
       const home = spawnCentre(w.map.frames[0], w.map.spawns[0]);
       for (let k = 0; k < 6 + more; k++) put(g, 0, UnitType.Spearman, home.x - 4 - (k % 6), home.y - 4 - Math.trunc(k / 6));
-      if (emptied) {
-        w.buildings.col.soldiers[w.building(fort)] = 0;
-        // Seen so (only remembered, a tower counts full).
-        put(g, 0, UnitType.Farmer, centre.x - 3, centre.y);
-      }
       w.tick += later;
       g.fog.update(w);
       return ai.think(buildView(g, 0)).some((c) => (c.c === "attack" && c.target === fort) || (c.c === "move" && c.x === centre.x && c.y === centre.y));
     };
-    // Before D-081's memory here it went again 30 s on with as many (FORT_AGAIN): every 0.6–3 minutes in the fortress-hold runs;
-    // with a 5-minute memory, again as soon as it ran out.
+    // Before D-081's memory here it went again 30 s on with as many (FORT_AGAIN): every 0.6–3 minutes in the fortress-hold runs.
     assert.ok(!again(0, 700), `${difficulty}: not with as many as set out, 35 s on`);
-    assert.ok(!again(0, 10 * 1200), `${difficulty}: nor 10 minutes on`);
     assert.ok(again(4, 700), `${difficulty}: with 1.5 x (12 spearmen)`);
-    assert.ok(again(0, 700, true), `${difficulty}: with as many once those hiding in the tower are gone`);
+    assert.ok(again(0, 5 * 1200 + 10), `${difficulty}: with as many once 5 minutes are past`);
   }
 });
 
@@ -1407,7 +1398,7 @@ test("D-081: hard does not go back to a town it fell back from because of forts 
   assert.ok(toTown(), "once the forts are weaker, again");
 });
 
-test("D-081: farmers do not lead the soldiers at home back to a fort the army broke off from, however long after (ceo 2026-10-10)", () => {
+test("D-081: farmers do not lead the soldiers at home back to a fort the army broke off from, within 5 minutes (ceo 2026-10-10)", () => {
   for (const difficulty of ["normal", "hard"] as const) {
     const { g, w, ai, fort, spears } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
     w.buildings.col.soldiers[w.building(fort)] = 3;
@@ -1431,15 +1422,9 @@ test("D-081: farmers do not lead the soldiers at home back to a fort the army br
     w.tick += 700;
     g.fog.update(w);
     assert.ok(!ai.think(buildView(g, 0)).some((c) => c.c === "attack" && c.target === fort), `${difficulty}: neither farmers nor soldiers, 35 s on`);
-    w.tick += 10 * 1200;
+    w.tick += 5 * 1200;
     g.fog.update(w);
-    assert.ok(!ai.think(buildView(g, 0)).some((c) => c.c === "attack" && c.target === fort), `${difficulty}: nor 10 minutes on`);
-    w.buildings.col.soldiers[w.building(fort)] = 0;
-    // Seen so (only remembered, a tower counts full).
-    put(g, 0, UnitType.Farmer, w.buildings.col.cellX[w.building(fort)] - 3, w.buildings.col.cellY[w.building(fort)]);
-    w.tick += 10;
-    g.fog.update(w);
-    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "attack" && c.target === fort), `${difficulty}: once those hiding in it are gone, again`);
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "attack" && c.target === fort), `${difficulty}: once 5 minutes are past, again`);
   }
 });
 
@@ -1517,45 +1502,4 @@ test("D-081: no garrison in a town under the arrows of an enemy fort (normal and
     assert.ok(garrisoned(false), `${difficulty}: a garrison goes to the town`);
     assert.ok(!garrisoned(true), `${difficulty}: none under the tower's arrows (seed 9 of the fortress-hold runs: 21 shot one by one)`);
   }
-});
-
-test("D-081: hard does not march on the enemy base again while forts it fell back from are too strong, though the straight way misses them", () => {
-  const g = emptyGame();
-  const w = g.w;
-  for (const t of w.map.towns) {
-    w.townState[t.id] = TownState.Ruins;
-    w.townOwner[t.id] = NO_OWNER;
-    w.townTimer[t.id] = 100000;
-  }
-  w.tick = 12 * 1200;
-  for (let k = 0; k < 14; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
-  g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, pushArmy: 12, townArmy: 99, bigArmy: 99 });
-  const s1 = w.map.spawns[1];
-  const toBase = () => ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 14 && c.x === s1.cellX && c.y === s1.cellY);
-  assert.ok(toBase(), "off to the enemy base");
-  // Four towers with three hiding in each, by the army but beside the straight way from home to the enemy base.
-  const towers: number[] = [];
-  for (const [dx, dy] of [[0, 0], [3, 0], [0, 3], [3, 3]]) {
-    const id = w.addBuilding(1, BuildingType.ArrowTower, 50 + dx, 66 + dy, 600, 1000);
-    w.buildings.col.soldiers[w.building(id)] = 3;
-    towers.push(id);
-    put(g, 0, UnitType.Farmer, 49 + dx, 65 + dy);
-  }
-  w.tick += 10;
-  g.fog.update(w);
-  const groups = fortGroups(enemyForts(buildView(g, 0), 0, rules()), () => 0, fortValues(rules()));
-  const s0 = w.map.spawns[0];
-  assert.equal(groupsOnWay(groups, { x: s0.cellX, y: s0.cellY }, { x: s1.cellX, y: s1.cellY }).length, 0, "not on the straight way from home");
-  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat" && c.u.length === 14), "too strong for it: back");
-  w.tick += 10;
-  g.fog.update(w);
-  assert.ok(!toBase(), "not straight back at the base");
-  w.tick += 10 * 1200;
-  g.fog.update(w);
-  assert.ok(!toBase(), "nor 10 minutes on");
-  for (const id of towers) w.buildings.col.soldiers[w.building(id)] = 0;
-  w.tick += 10;
-  g.fog.update(w);
-  assert.ok(toBase(), "once the forts are weaker, again");
 });
