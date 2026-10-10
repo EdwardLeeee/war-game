@@ -330,6 +330,8 @@ const FORT_HOME = 16;
 const FORT_WAY = 2;
 /** By the enemy's main city (cells): forts there are left to the siege. */
 const FORT_SIEGE = 14;
+/** SCRATCH: no way round. */
+const NO_ROUND = true;
 /** A way round a group of forts passes this many cells beyond their reach (D-081). */
 const FORT_ROUND = 5;
 /** Enemy soldiers this many cells beyond a group's reach count as defending it (D-081). */
@@ -1451,7 +1453,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const routeFor = (from: { x: number; y: number }, to: { x: number; y: number }, list: { type: number }[]) => {
         const strong = tooStrong(list);
         if (groupsOnWay(strong, from, to).length === 0) return { go: true, via: null };
-        const w = wayRound(strong, from, to, n, view.placement, rankOf);
+        const w = NO_ROUND ? null : wayRound(strong, from, to, n, view.placement, rankOf);
         return { go: w !== null, via: w };
       };
       const remember = (list: { type: number }[], near: FortGroup[]) => {
@@ -1590,7 +1592,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           const strong = tooStrong(army);
           const ahead = groupsOnWay(strong, { x: cx, y: cy }, aim);
           if (ahead.length > 0) {
-            setVia(wayRound(strong, { x: cx, y: cy }, aim, n, view.placement, rankOf));
+            setVia(NO_ROUND ? null : wayRound(strong, { x: cx, y: cy }, aim, n, view.placement, rankOf));
             if (via === null) {
               if (mode === "base") baseBroken = true;
               remember(army, ahead);
@@ -1781,6 +1783,12 @@ export const HARD: HardPlan = {
   townRest: 0,
 };
 
+// SCRATCH ONLY (ai/scratch-*, never merged): candidate plans from the environment.
+const SCRATCH_ENV = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HARD_BASE: HardPlan = { ...HARD };
+Object.assign(HARD, JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"));
+const HARD_B: HardPlan = { ...HARD_BASE, ...JSON.parse(SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN || "{}") };
+
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -1812,7 +1820,7 @@ interface HardTown extends Town {
 type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
-  const plan: HardPlan = { ...HARD, ...know.hard };
+  const plan: HardPlan = { ...(slot === 1 ? HARD_B : HARD), ...know.hard };
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
@@ -2545,7 +2553,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const routeFor = (from: { x: number; y: number }, to: { x: number; y: number }, list: { type: number }[]) => {
           const strong = tooStrong(list);
           if (groupsOnWay(strong, from, to).length === 0) return { go: true, via: null };
-          const w = wayRound(strong, from, to, n, view.placement, rank);
+          const w = NO_ROUND ? null : wayRound(strong, from, to, n, view.placement, rank);
           return { go: w !== null, via: w };
         };
         /** On the way to a waypoint: false once the army has not come nearer it for FORT_VIA_STUCK (it is out of reach). */
@@ -2645,7 +2653,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               const strong = tooStrong(army);
               const ahead = groupsOnWay(strong, ac, t);
               if (ahead.length > 0) {
-                setVia(wayRound(strong, ac, t, n, view.placement, rank));
+                setVia(NO_ROUND ? null : wayRound(strong, ac, t, n, view.placement, rank));
                 if (via === null) {
                   razing = -1;
                   remember(army, ahead);
@@ -2720,7 +2728,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const strong = tooStrong(front);
             const ahead = groupsOnWay(strong, fc, enemy);
             if (ahead.length > 0) {
-              setVia(wayRound(strong, fc, enemy, n, view.placement, rank));
+              setVia(NO_ROUND ? null : wayRound(strong, fc, enemy, n, view.placement, rank));
               if (via === null) {
                 remember(front, ahead);
                 counterReady = false;
