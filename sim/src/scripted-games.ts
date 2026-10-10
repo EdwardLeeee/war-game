@@ -233,6 +233,30 @@ function play(seed: number): GameRecord {
   const player = createScriptedPlayer(0, { map: mapInfo(map, 0), rules: rules(map), frame: map.frames[0] }, plan);
   const home = map.spawns[0];
   const u = w.units.col;
+  // SCRATCH (dtrace): the AI's last command naming each of its units.
+  const lastCmd = new Map<number, string>();
+  const aiAct = new Map<number, string>();
+  {
+    const ai = (r as unknown as { ais: ({ think: (v: unknown) => { c: string; u?: number[] | number; x?: number; y?: number; target?: number; building?: number; node?: number }[] } | null)[] }).ais[1]!;
+    const think = ai.think.bind(ai);
+    ai.think = (v: unknown) => {
+      const out = think(v);
+      for (const c of out) {
+        if (c.c === "rally") console.log(`RL t=${w.tick} building=${c.building} at=${c.x},${c.y}`);
+        if (!Array.isArray(c.u)) continue;
+        let what = c.c;
+        if (c.x !== undefined) what += `@${c.x},${c.y}`;
+        if (c.target !== undefined) {
+          const bi = w.building(c.target);
+          what += bi >= 0 ? `>b${c.target}:${w.buildings.col.type[bi]}@${w.buildings.col.cellX[bi]},${w.buildings.col.cellY[bi]}` : `>u${c.target}`;
+        }
+        if (c.building !== undefined) what += `>b${c.building}`;
+        if (c.node !== undefined) what += `>n${c.node}`;
+        for (const id of c.u) lastCmd.set(id, `${what}(n${c.u.length},t${w.tick})`);
+      }
+      return out;
+    };
+  }
   const b = w.buildings.col;
   const count = (p: number, type: number) => {
     let n = 0;
@@ -373,12 +397,16 @@ function play(seed: number): GameRecord {
           const y = u.y[i] >> 10;
           seen.add(u.id[i]);
           aiAt.set(u.id[i], { x, y });
+          aiAct.set(u.id[i], `type=${u.type[i]} act=${u.action[i]}`);
           if (forts.some((f) => within(x, y, f, f.reach))) inReach++;
         }
         for (const [id, at] of aiAt) {
           if (seen.has(id)) continue;
           aiAt.delete(id);
-          if (w.unit(id) < 0 && forts.some((f) => within(at.x, at.y, f, FORT_NEAR))) fortDeaths++;
+          if (w.unit(id) < 0 && forts.some((f) => within(at.x, at.y, f, FORT_NEAR))) {
+            fortDeaths++;
+            console.log(`DT t=${w.tick} id=${id} ${aiAct.get(id) ?? ""} at=${at.x},${at.y} last=${lastCmd.get(id) ?? "none"}`);
+          }
         }
         if (inReach > 0) {
           if (!bashing) {
