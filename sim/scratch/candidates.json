@@ -1,0 +1,64 @@
+{
+ "traces": [
+  {
+   "name": "n-r-3",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 3 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-8",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 8 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-9",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 9 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-11",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 11 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-14",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 14 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-17",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 17 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-19",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 19 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-22",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 22 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-23",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 23 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-28",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 28 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-30",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 30 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  },
+  {
+   "name": "n-r-38",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 38 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty normal"
+  }
+ ]
+}
