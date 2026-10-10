@@ -334,8 +334,9 @@ const FORT_SIEGE = 14;
 const FORT_ROUND = 5;
 /** Enemy soldiers this many cells beyond a group's reach count as defending it (D-081). */
 const FORT_ARMY_NEAR = 6;
-/** After breaking off from a group of forts, the next go at it takes this many times the army (percent, D-081). */
+/** After breaking off from a group of forts, the next go at it within FORT_FORGET takes this many times the army (percent, D-081). */
 const FORT_FAILED = 150;
+const FORT_FORGET = 5 * 1200;
 /** A waypoint counts as reached this near (cells, D-081)... */
 const FORT_VIA_NEAR = 8;
 /** ...and as out of reach when the army has not come 2 cells nearer it for this long (ticks): it breaks off. */
@@ -438,7 +439,7 @@ function fortsOnTheWay(forts: Fort[], x: number, y: number, enemyHome: { cellX: 
 export interface FortValues {
   /** A finished arrow tower. */
   tower: number;
-  /** A ranged unit or mage hidden in it: it shoots and cannot be hit while the tower stands. */
+  /** A ranged unit or mage hidden in it: it shoots and cannot be hit while the tower stands, and falls with it. */
   hidden: number;
   /** A spearman posted at an outpost. */
   guard: number;
@@ -462,7 +463,9 @@ export function fortValues(rules: Rules): FortValues {
   }
   return {
     tower: worth(arrow.damage / arrow.cooldown, rules.buildings[BuildingType.ArrowTower]?.hp ?? 500),
-    hidden: Math.round((20 * (ranged.attack / ranged.cooldown)) / (spear.attack / spear.cooldown)),
+    // Its damage as a ranged unit's (it dies with the tower). Calibrated on scratch: twice this, hard
+    // would not go with the 45 soldiers that took the scripted fortress (5 towers, 3 in each) in base runs.
+    hidden: Math.round((10 * (ranged.attack / ranged.cooldown)) / (spear.attack / spear.cooldown)),
     guard: 10,
     holds: rules.buildings[BuildingType.ArrowTower]?.holds ?? 0,
     slots: rules.outpost?.slots ?? 6,
@@ -929,7 +932,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   /** How near the army has come to the waypoint (cells), and when it last came 2 cells nearer. */
   let viaBest = Number.MAX_SAFE_INTEGER;
   let viaSince = 0;
-  const failedAt = new Map<number, number>();
+  const failedAt = new Map<number, { worth: number; tick: number }>();
   const fv = fortValues(know.rules);
   const rankOf = (x: number, y: number) => {
     const f = frame(x, y);
@@ -1434,7 +1437,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const beats = (g: FortGroup, list: { type: number }[]) => {
         const w = vsForts(list);
         let failed = 0;
-        for (const id of g.ids) failed = Math.max(failed, failedAt.get(id) ?? 0);
+        for (const id of g.ids) {
+          const f = failedAt.get(id);
+          if (f !== undefined && tick - f.tick < FORT_FORGET) failed = Math.max(failed, f.worth);
+        }
         return w * 10 >= defendersOf(g) * 13 && w * 100 >= failed * FORT_FAILED;
       };
       const tooStrong = (list: { type: number }[]) => groups.filter((g) => !bySiege(g) && !beats(g, list));
@@ -1446,7 +1452,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       };
       const remember = (list: { type: number }[], near: FortGroup[]) => {
         const w = vsForts(list);
-        for (const g of near) for (const id of g.ids) failedAt.set(id, Math.max(failedAt.get(id) ?? 0, w));
+        for (const g of near) for (const id of g.ids) failedAt.set(id, { worth: Math.max(failedAt.get(id)?.worth ?? 0, w), tick });
       };
       /** On the way to a waypoint: false once the army has not come nearer it for FORT_VIA_STUCK (it is out of reach). */
       const viaGoing = (x: number, y: number) => {
@@ -1863,7 +1869,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** How near the army has come to the waypoint (squared cells), and when it last came 2 cells nearer. */
   let viaBest = Number.MAX_SAFE_INTEGER;
   let viaSince = 0;
-  const failedAt = new Map<number, number>();
+  const failedAt = new Map<number, { worth: number; tick: number }>();
   const townRest = new Map<number, number>();
   const fv = fortValues(know.rules);
 
@@ -2502,7 +2508,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const beats = (g: FortGroup, list: { type: number }[]) => {
           const w = vsForts(list);
           let failed = 0;
-          for (const id of g.ids) failed = Math.max(failed, failedAt.get(id) ?? 0);
+          for (const id of g.ids) {
+            const f = failedAt.get(id);
+            if (f !== undefined && tick - f.tick < FORT_FORGET) failed = Math.max(failed, f.worth);
+          }
           return w * 10 >= defendersOf(g) * 13 && w * 100 >= failed * FORT_FAILED;
         };
         /** The groups too strong for `list` (not the siege's). */
@@ -2532,7 +2541,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         /** Broke off by these groups: the next go at them takes more (FORT_FAILED). */
         const remember = (list: { type: number }[], near: FortGroup[]) => {
           const w = vsForts(list);
-          for (const g of near) for (const id of g.ids) failedAt.set(id, Math.max(failedAt.get(id) ?? 0, w));
+          for (const g of near) for (const id of g.ids) failedAt.set(id, { worth: Math.max(failedAt.get(id)?.worth ?? 0, w), tick });
         };
         /** What defends a fort: enemy soldiers by it (not its guards) and the group it is in (D-081; D-080 counted 3 soldiers a tower). */
         const defends = (f: Fort) => {

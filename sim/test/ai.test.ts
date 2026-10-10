@@ -1275,7 +1275,7 @@ test("D-081: the way round a group on the straight way passes clear of it; none 
   assert.ok(e === null || e.y > 3, "never off the map");
 });
 
-/** Hard with 30 spearmen at home, and enemy arrow towers (someone hiding in each) on the straight way to the enemy's main city, seen by a farmer of its own. */
+/** Hard with 20 spearmen at home, and enemy arrow towers (someone hiding in each) on the straight way to the enemy's main city, seen by farmers of its own. */
 function fortsOnTheWay(towers: number, hidden: boolean) {
   const g = emptyGame();
   const w = g.w;
@@ -1286,7 +1286,7 @@ function fortsOnTheWay(towers: number, hidden: boolean) {
   }
   w.tick = 12 * 1200;
   const s0 = w.map.spawns[0];
-  for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 6 - Math.trunc(k / 6));
+  for (let k = 0; k < 20; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 6 - Math.trunc(k / 6));
   // On the way from (16, 78) to (78, 16): about a third of it.
   const ids: number[] = [];
   for (let k = 0; k < towers; k++) {
@@ -1297,20 +1297,20 @@ function fortsOnTheWay(towers: number, hidden: boolean) {
     put(g, 0, UnitType.Farmer, 33 + 3 * k, 59 - 3 * k);
   }
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, pushArmy: 24, townArmy: 99, bigArmy: 99 });
+  const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99 });
   return { g, w, ai, s1: w.map.spawns[1], ids };
 }
 
 test("D-081: hard does not march straight into forts too strong for it: it goes round them", () => {
   const strong = fortsOnTheWay(5, true);
   const out = strong.ai.think(buildView(strong.g, 0));
-  const march = out.find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
+  const march = out.find((c) => c.c === "move" && c.u.length === 20) as { x: number; y: number } | undefined;
   assert.ok(march !== undefined, "it marches");
   assert.ok(march.x !== strong.s1.cellX || march.y !== strong.s1.cellY, `by a waypoint first (${march.x}, ${march.y})`);
   assert.ok(!out.some((c) => c.c === "attack" && strong.ids.includes(c.target)), "not at the towers");
-  // Two towers without anyone hiding: 30 spearmen are clearly stronger, straight on.
+  // Two towers without anyone hiding: 20 spearmen are clearly stronger, straight on.
   const weak = fortsOnTheWay(2, false);
-  const straight = weak.ai.think(buildView(weak.g, 0)).find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
+  const straight = weak.ai.think(buildView(weak.g, 0)).find((c) => c.c === "move" && c.u.length === 20) as { x: number; y: number } | undefined;
   assert.deepEqual(straight && [straight.x, straight.y], [weak.s1.cellX, weak.s1.cellY], "straight to the enemy base");
 });
 
