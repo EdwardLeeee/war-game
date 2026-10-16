@@ -226,6 +226,17 @@ jobs:
           # D-080 (ceo 2026-10-09): the same rush with its 4 farmers alone, no escort, nobody posted;
           # the army plays the push. The AI left farmers alone (war-game-ai): its acceptance group.
           - { group: push-towerrush-farmers, seeds: 1-40, args: --strategy push --speed h1 --formation close --tower-rush-farmers }
+          # D-081 (the user's game f1fd2a87): from minute 12 an outpost manned by 6 spearmen and 5 arrow
+          # towers 37 cells from home on the way to the AI's main city, then the push; how many the AI
+          # loses by them and how often it bashes on them is war-game-ai's measure.
+          - { group: push-fortress, seeds: 1-40, args: --strategy push --speed h1 --formation close --fortress }
+          - { group: push-fortress-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --fortress --map random }
+          - { group: push-fortress-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --fortress --map random }
+          # D-081 (ceo 2026-10-10, as the user in f1fd2a87): the army also holds by the fortress until it is
+          # 60 strong or minute 30, then the push.
+          - { group: push-fortress-hold, seeds: 1-40, args: --strategy push --speed h1 --formation close --fortress-hold 60 }
+          - { group: push-fortress-hold-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --fortress-hold 60 --map random }
+          - { group: push-fortress-hold-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --fortress-hold 60 --map random }
           - { group: defend, seeds: 1-20, args: --strategy defend --speed h1 --formation close }
           - { group: defend, seeds: 21-40, args: --strategy defend --speed h1 --formation close }
           - { group: defend-loose, seeds: 1-20, args: --strategy defend --speed h1 --formation all }
@@ -292,7 +303,7 @@ jobs:
           set -o pipefail
           cat > summary.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
-          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["push-towerrush", "主動（塔攻，護送）", 20], ["push-towerrush-farmers", "主動（塔攻，只派村民）", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15], ["push-random", "主動，隨機地圖", 20]];
+          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["push-towerrush", "主動（塔攻，護送）", 20], ["push-towerrush-farmers", "主動（塔攻，只派村民）", 20], ["push-fortress", "主動（半路要塞）", 20], ["push-fortress-random", "主動（半路要塞），隨機地圖", 20], ["push-fortress-hold", "主動（半路要塞，大軍守著）", 20], ["push-fortress-hold-random", "主動（半路要塞，大軍守著），隨機地圖", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15], ["push-random", "主動，隨機地圖", 20]];
           // scripted-<group>-<seeds>.json against normal, scripted-hard-<group>-<seeds>.json against hard.
           const levels = [["", "普通"], ["hard-", "困難"]];
           const games = new Map(levels.flatMap(([l]) => groups.map(([g]) => [l + g, []])));
