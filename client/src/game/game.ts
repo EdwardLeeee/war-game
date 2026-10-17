@@ -24,7 +24,7 @@ import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
 import { WorldRenderer } from "../render/world.ts";
-import { SAVE_EVERY_TICKS, SCREEN_LOST_TEXT, SCREEN_VERSION, type SavedGame, type ScreenState } from "../save/save.ts";
+import { SAVE_EVERY_TICKS, SCREEN_VERSION, type SavedGame, type ScreenState } from "../save/save.ts";
 import {
   Action,
   type AiDifficulty,
@@ -177,6 +177,8 @@ export class Game implements GestureHost {
   private restoring: SavedGame | null = null;
   /** The next tick at which the page keeps the game (every minute of game time). */
   private nextSave = SAVE_EVERY_TICKS;
+  /** 繼續上一局: the game went on without its screen (a save in another format); the page says so once the battlefield shows. */
+  screenLost = false;
   /** 軍團畫面 (D-054): the group shown in place of the selection info, chosen with its button; null for the usual one. */
   groupView: number | null = null;
   /** What was selected before the group button was tapped (改成剛才選的 N 名). */
@@ -502,7 +504,7 @@ export class Game implements GestureHost {
     this.restoring = null;
     this.nextSave = (Math.floor(tick / SAVE_EVERY_TICKS) + 1) * SAVE_EVERY_TICKS;
     if (saved.screenVersion !== SCREEN_VERSION) {
-      this.toast(SCREEN_LOST_TEXT);
+      this.screenLost = true;
       return;
     }
     const s = saved.screen;

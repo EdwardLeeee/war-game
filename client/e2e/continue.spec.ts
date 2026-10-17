@@ -184,9 +184,21 @@ test("只有畫面改版（畫面狀態的格式不同，模擬一樣）：照�
   await page.reload();
   const resume = page.getByRole("button", { name: /^繼續上一局/ });
   await expect(resume).toBeEnabled();
+  // Every line the message strips show (one shows for 2.2 s; a busy CI may look later than that).
+  await page.evaluate(() => {
+    const w = window as unknown as { said: string[] };
+    w.said = [];
+    new MutationObserver(() => {
+      // Seen: not hidden, and not inside the battlefield's buttons hidden while the game is run again.
+      for (const el of document.querySelectorAll<HTMLElement>("[role=status]")) {
+        const seen = !el.hidden && getComputedStyle(el).visibility !== "hidden";
+        if (seen && el.textContent !== null && !w.said.includes(el.textContent)) w.said.push(el.textContent);
+      }
+    }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+  });
   await resume.tap();
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.screen === "battle", null, { timeout: 60_000 });
-  await expect(page.getByRole("status").filter({ hasText: "編隊沒有還原，請重新編" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { said: string[] }).said)).toContain("編隊沒有還原，請重新編");
   const h = await header(page);
   expect(h.paused).toBe(true);
   expect(h.tick).toBe(tick);

@@ -17,7 +17,7 @@ import { recordCode } from "./logs/code.ts";
 import { LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "./logs/collect.ts";
 import { openIndexedDb, type StoredLog } from "./logs/store.ts";
 import { fetchPoster } from "./logs/upload.ts";
-import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
+import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_LOST_TEXT, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
 import { tickRateText } from "./ui/controls.ts";
@@ -466,6 +466,8 @@ async function resumeGame(saved: SavedGame): Promise<void> {
   $("start").hidden = true;
   hook.screen = "battle";
   hook.ready = true;
+  // Said now that the battlefield shows (the strip waited hidden while the game was run again).
+  if (g.screenLost) g.toast(SCREEN_LOST_TEXT);
 }
 
 /** Back from the start screen to the game in progress; it stays paused until 繼續. */
