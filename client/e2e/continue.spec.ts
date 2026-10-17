@@ -131,7 +131,7 @@ test("繼續上一局：切到背景存起來，重新載入後開局畫面有�
 });
 
 /** Changes the game kept on the phone, as another simulation or a damaged log would leave it. */
-async function spoilSave(page: Page, what: "build" | "hash"): Promise<void> {
+async function spoilSave(page: Page, what: "build" | "hash" | "screen"): Promise<void> {
   await page.evaluate(async (w) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const r = indexedDB.open("war-game-continue", 1);
@@ -139,12 +139,14 @@ async function spoilSave(page: Page, what: "build" | "hash"): Promise<void> {
       r.onerror = () => reject(r.error);
     });
     const store = () => db.transaction("game", "readwrite").objectStore("game");
-    const s = await new Promise<{ build: string; hashes: { tick: number; hash: string }[] }>((resolve) => {
+    const s = await new Promise<{ build: string; hashes: { tick: number; hash: string }[]; screenVersion: number }>((resolve) => {
       const r = store().get("last");
       r.onsuccess = () => resolve(r.result);
     });
-    // The site updated (another simulation), or the hash at 1:00 (tick 1200) does not match.
+    // The site updated (another simulation), the hash at 1:00 (tick 1200) does not match, or
+    // the screen's part is in another format (the screen alone updated).
     if (w === "build") s.build = "000000000000";
+    else if (w === "screen") s.screenVersion = 999;
     else s.hashes = s.hashes.map((h) => (h.tick === 1200 ? { ...h, hash: "00000000" } : h));
     await new Promise((resolve) => {
       const r = store().put(s, "last");
@@ -170,6 +172,28 @@ test("網站已經更新（模擬的 build 不同）：「繼續上一局」變�
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   await expect.poll(() => saved(page)).toBeNull();
+  check();
+});
+
+test("只有畫面改版（畫面狀態的格式不同，模擬一樣）：照樣接著打，停在暫停，不還原編隊，提示「編隊沒有還原，請重新編」（ceo 2026-10-17）", async ({ page }) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  await catchUploads(page);
+  const { tick } = await playAndPutAway(page);
+  await spoilSave(page, "screen");
+  await page.reload();
+  const resume = page.getByRole("button", { name: /^繼續上一局/ });
+  await expect(resume).toBeEnabled();
+  await resume.tap();
+  await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.screen === "battle", null, { timeout: 60_000 });
+  await expect(page.getByRole("status").filter({ hasText: "編隊沒有還原，請重新編" })).toBeVisible();
+  const h = await header(page);
+  expect(h.paused).toBe(true);
+  expect(h.tick).toBe(tick);
+  expect((await groups(page))[0].ids).toEqual([]);
+  // And on it goes.
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(async () => (await header(page)).tick, { timeout: 30_000 }).toBeGreaterThan(tick + 200);
   check();
 });
 
