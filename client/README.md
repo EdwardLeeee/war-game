@@ -49,6 +49,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 - `?test=1&map=fixed|random`：用這種地圖，不看開局畫面的選擇（D-074）。和 `mock=1` 一起用時，假世界照隨機地圖的協定只給探過的東西（`e2e/random-map.spec.ts`）。
 - `?test=1&watch=1`：電腦對電腦，頁面只觀戰（`human` 是 null），看得到整張圖。電腦會偵察以後（#176），人類玩家也能玩隨機地圖，觀戰留著量「探完的整張圖」（`e2e/random-map-sim.spec.ts`）。
 - `?test=1&mock=1&outpost=1`：假世界連同第七輪的開關，再打開哨所（D-080）。
+- `?test=1&scenario=standard|e2e|perf|perf200|perf360`：用這個場景開局（`sim/PROTOCOL.md` 第 8 節）；`perf200`、`perf360` 是 D-083 加的量測場景。
 - `?test=1&seed=N`：用這個種子開局（1 到 2^31 − 1），每次都是同一張隨機地圖；偵察量測用它（`e2e/random-map-sim.spec.ts`）。
 - `?test=1&mock=1&r7=1`：假世界打開第七輪的規則（城鎮只能搶一次、箭樓、躲進建築、馬廄和騎兵；`e2e/round7.spec.ts` 用）。模擬的第七輪開關在 `sim/src/core/rules.ts`，網頁打不開。
 - `?test=1&hint=1`：開局提示（D-044）。玩家的頁面每局都有；測試頁預設沒有，其他測試直接進戰場。
@@ -57,7 +58,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 
 開局畫面選難度（簡單／普通／困難；困難是 D-055，war-game-ai 做的電腦）。玩家的對局沒有時間上限（`init` 的 `maxTicks: 0`），電腦照選的難度下（D-024）。
 
-量測與確定性檢查在「選單 → 量測與確定性檢查」。「開始量測」會開一局 `perf` 場景（所有系統都開著），鏡頭對準交戰部隊，暖機 5 秒後量 30 秒。量測一律用普通、30 分鐘上限，確定性檢查照 CI 的那一局，都不受開局畫面的難度影響。結果和 log 會附上手機的貼圖上限（最大貼圖、一次繪製幾張、有沒有 ASTC），給精靈圖集用。
+量測與確定性檢查在「選單 → 量測與確定性檢查」。「量測 120 人」「量測 200 人」「量測 360 人」各開一局 `perf`、`perf200`、`perf360` 場景（所有系統都開著，雙方人口 120／200／360；D-083，人口規則上線前先用 iPhone 量），鏡頭對準交戰部隊，暖機 5 秒後量 30 秒。已經在同一種場景裡時，量的是畫面上這一局。量測一律用普通、30 分鐘上限，確定性檢查照 CI 的那一局，都不受開局畫面的難度影響。結果和 log 會附上手機的貼圖上限（最大貼圖、一次繪製幾張、有沒有 ASTC），給精靈圖集用。
 
 ## 開局提示（D-044）
 
@@ -220,7 +221,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
   - 自動補兵開著就從沒編隊的兵補；躲著的兵不會被挑。
   - 出來的兵不在任何編隊，自動補兵也不會把他們拉走，等玩家自己把他們編進某個編隊（軍團畫面的「改成剛才選的 N 名」）才回到一般規則（`ArmyBook.keepOut`，ceo 2026-10-17）。全軍、全軍撤退照算他們。
   - 閃紅提醒的基準扣掉因為躲進去或駐守而離開的兵（`GroupAlarms.left`），只有倒下的兵會讓它變紅。
-- 每兵種上限（軍團畫面的 ＋）：跟著人口上限（`groupWantMax`）。core 的人口規則合併前是 `rules.maxPopulation`（120）；之後改讀表頭的人口天花板。
+- 每兵種上限（軍團畫面的 ＋）：跟著人口天花板（`groupWantMax`），讀快照表頭的 `populationCeiling`（core #195；沒有時用 `rules.maxPopulation`）。人口規則關著時是 120；開著時 200，加上治理中的城鎮（`test/population-sim.test.ts` 用真的模擬驗）。
 - 頁面切到背景就存紀錄，見下面「對局紀錄」。
 
 ## 對局紀錄（D-056）

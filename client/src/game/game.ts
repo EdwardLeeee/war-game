@@ -181,8 +181,14 @@ export class Game implements GestureHost {
         env: options.env,
         check: checkPort === null ? null : () => this.determinism(checkPort),
         fake: () => options.fake,
-        // Measure "every system running" (brief): the perf scenario, in a game of its own.
-        requestMeasure: options.fake || options.scenario === "perf" ? undefined : () => options.life.perf(),
+        // Measure "every system running" (brief): a perf scenario, in a game of its own; in that
+        // game already, the game on screen.
+        requestMeasure: options.fake
+          ? undefined
+          : (scenario) => {
+              if (scenario === options.scenario) this.lab.startMeasure(performance.now());
+              else options.life.perf(scenario);
+            },
       },
       null,
     );
@@ -1053,9 +1059,12 @@ export class Game implements GestureHost {
     this.toast(`編隊 ${i + 1} 撤回主城`);
   }
 
-  /** The most of one type a group may want: the population's ceiling (D-083). */
+  /** The most of one type a group may want: the population's ceiling (D-083), the snapshot's. */
   groupWantMax(): number {
-    return this.view === null ? 1 : groupWantMax(this.view.rules);
+    const view = this.view;
+    if (view === null) return 1;
+    const ceiling = view.header?.[H.populationCeiling] ?? 0;
+    return groupWantMax(view.rules, ceiling > 0 ? ceiling : null);
   }
 
   /** Living soldiers of this type in group i (現有). */

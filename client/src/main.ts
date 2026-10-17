@@ -238,7 +238,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     life: {
       restart: () => void newGame().catch(showError),
       toStart: showStart,
-      perf: () => void newGame("perf", true).catch(showError),
+      perf: (s) => void newGame(s, true).catch(showError),
     },
     ended: () => void keepLog(g),
   });

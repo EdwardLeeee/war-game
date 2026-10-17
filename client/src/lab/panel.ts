@@ -1,10 +1,10 @@
-// The measurement panel: live fps and tick times, 開始量測 (5 s warm-up, 30 s window, the
-// engine-spike thresholds), 確定性檢查, the result box and the log. Opened from a corner
+// The measurement panel: live fps and tick times, 量測 120／200／360 人 (5 s warm-up, 30 s
+// window, the engine-spike thresholds; D-083), 確定性檢查, the result box and the log. Opened from a corner
 // button for now; the HUD's menu takes it over.
 
 import { HeaderField as H, STEP_BATCH } from "../sim.ts";
 import type { CheckResult } from "./determinism.ts";
-import { type FrameContext, Lab, type MeasureResult, PASS, STALL_MS, WINDOW_MS } from "./lab.ts";
+import { type FrameContext, Lab, type MeasureResult, PASS, PERF_SCENARIOS, type PerfScenario, STALL_MS, WINDOW_MS } from "./lab.ts";
 import { LogBox } from "./log.ts";
 import { round2, summarize } from "./stats.ts";
 
@@ -16,10 +16,10 @@ export interface LabHooks {
   /** The numbers come from the fake world, not the game. */
   fake(): boolean;
   /**
-   * 開始量測 asks this instead of measuring the game on screen when given (it starts the
-   * `perf` scenario, which measures itself once it is running).
+   * 量測 N 人 asks this instead of measuring the game on screen when given (it starts that
+   * perf scenario, which measures itself once it is running).
    */
-  requestMeasure?: () => void;
+  requestMeasure?: (scenario: PerfScenario) => void;
 }
 
 function make<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {
@@ -36,7 +36,7 @@ export class LabPanel {
   private readonly hooks: LabHooks;
   private readonly panel: HTMLElement;
   private readonly live: HTMLElement;
-  private readonly measureBtn: HTMLButtonElement;
+  private readonly measureBtns: HTMLButtonElement[];
   private readonly checkBtn: HTMLButtonElement;
   private readonly status: HTMLElement;
   private readonly resultBox: HTMLElement;
@@ -68,14 +68,22 @@ export class LabPanel {
       this.panel.hidden = true;
     });
     this.live = make("p", this.panel, "lab-live", "…");
+    const measures = make("div", this.panel, "lab-buttons");
+    this.measureBtns = PERF_SCENARIOS.map((p) => {
+      const b = make("button", measures, "", `量測 ${p.population} 人`);
+      b.type = "button";
+      b.addEventListener("click", () => {
+        if (this.hooks.requestMeasure !== undefined) this.hooks.requestMeasure(p.scenario);
+        else this.startMeasure(performance.now());
+      });
+      return b;
+    });
     const row = make("div", this.panel, "lab-buttons");
-    this.measureBtn = make("button", row, "", "開始量測");
-    this.measureBtn.type = "button";
     this.checkBtn = make("button", row, "secondary", "確定性檢查");
     this.checkBtn.type = "button";
     const copy = make("button", row, "secondary", "複製 log");
     copy.type = "button";
-    make("p", this.panel, "lab-note", "開始量測：開一局 perf 場景（所有系統都開著），暖機 5 秒後量 30 秒，量測時不要操作。");
+    make("p", this.panel, "lab-note", "量測：開一局 perf 場景（所有系統都開著，雙方人口 120、200 或 360），暖機 5 秒後量 30 秒，量測時不要操作。");
     this.status = make("p", this.panel, "lab-status");
     this.resultBox = make("div", this.panel, "lab-result");
     this.resultBox.hidden = true;
@@ -86,10 +94,6 @@ export class LabPanel {
     more.type = "button";
     this.log = new LogBox(logBox, more);
 
-    this.measureBtn.addEventListener("click", () => {
-      if (this.hooks.requestMeasure !== undefined) this.hooks.requestMeasure();
-      else this.startMeasure(performance.now());
-    });
     this.checkBtn.addEventListener("click", () => void this.startCheck());
     copy.addEventListener("click", () => {
       void navigator.clipboard?.writeText(this.log.text()).then(
@@ -183,7 +187,7 @@ export class LabPanel {
   private refreshButtons(): void {
     const m = this.lab.blockedMeasure();
     const c = this.hooks.check === null ? "接上真的模擬後才能做確定性檢查" : this.lab.blockedCheck();
-    this.measureBtn.disabled = m !== null;
+    for (const b of this.measureBtns) b.disabled = m !== null;
     this.checkBtn.disabled = c !== null;
     this.status.textContent = [m, c].filter((v) => v !== null).join("；");
   }
@@ -207,7 +211,8 @@ export class LabPanel {
     box.hidden = false;
     box.replaceChildren();
     make("h3", box, "", r.valid ? (r.pass ? "通過" : "未通過") : "無效");
-    make("p", box, "", `場景：${String(env.scenario ?? "?")}${env.scenario === "perf" ? "（所有系統都開著）" : ""}`);
+    const perf = PERF_SCENARIOS.find((p) => p.scenario === env.scenario);
+    make("p", box, "", `場景：${String(env.scenario ?? "?")}${perf !== undefined ? `（所有系統都開著，雙方人口 ${perf.population}）` : ""}`);
     make("p", box, "", `tick 速度：${String(env.tickRate ?? "?")}`);
     if (!r.valid) make("p", box, "bad", `原因：${r.reasons.join("、")}。請重新量測。`);
     // ✓／✗ against a standard; ・ for the numbers that have none (yet).

@@ -6,6 +6,7 @@
 import { counterLines } from "../../game/counters.ts";
 import type { Game } from "../../game/game.ts";
 import { pressable } from "../../input/pressable.ts";
+import type { PerfScenario } from "../../lab/lab.ts";
 import { AUTO_TRAIN, BUILDING_STRIDE, BuildingField, BuildingFlag, type GameStats, HeaderField as H, type Resource, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
@@ -29,8 +30,8 @@ const TOWN_FLASH_AFTER_MS = 10_000;
 export interface HudLifecycle {
   restart(): void;
   toStart(): void;
-  /** Start a game of the `perf` scenario that measures itself (量測). */
-  perf(): void;
+  /** Start a game of this perf scenario that measures itself (量測, D-083). */
+  perf(scenario: PerfScenario): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {

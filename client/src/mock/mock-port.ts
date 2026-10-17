@@ -584,6 +584,7 @@ export class MockPort implements SimPort {
     header[H.crystal] = 20;
     header[H.population] = this.units.filter((u) => u.owner === ME).length;
     header[H.populationCap] = 20;
+    header[H.populationCeiling] = MOCK_RULES.maxPopulation;
     header[H.reserveFood] = this.reserve.food;
     header[H.reserveWood] = this.reserve.wood;
     header[H.reserveGold] = this.reserve.gold;
