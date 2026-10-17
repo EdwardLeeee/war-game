@@ -57,3 +57,18 @@ test("自動補兵帶過來的新兵（走在路上、order 是前進）不算�
   // Those left out (hiding in a building: null) do not make it advance.
   assert.equal(groupAdvancing([1, 2], [], (id) => (id === 1 ? null : "idle")), false);
 });
+
+test("兵躲進建築或駐守而離開編隊：基準也扣掉，只有陣亡才會閃紅（D-083）", () => {
+  const a = new GroupAlarms();
+  assert.equal(a.update(0, true, 10).base, 10);
+  // Six hide in a tower: 4 left in the group, the base 10 - 6 = 4.
+  a.left(0, 6);
+  assert.deepEqual(a.update(0, true, 4), { advancing: true, base: 4, alarm: false, tell: false });
+  // Two fall: 2 of 4 is half, not fewer; a third: the alarm.
+  assert.equal(a.update(0, true, 2).alarm, false);
+  assert.equal(a.update(0, true, 1).alarm, true);
+  // Not advancing: nothing to take off.
+  a.update(1, false, 5);
+  a.left(1, 3);
+  assert.equal(a.update(1, true, 2).base, 2);
+});

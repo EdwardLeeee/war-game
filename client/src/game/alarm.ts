@@ -41,6 +41,15 @@ export class GroupAlarms {
     this.told = Array.from({ length: groups }, () => false);
   }
 
+  /**
+   * Soldiers of group i left it alive (to hide in a building or stand guard at an outpost,
+   * D-083): out of the base too, so that only the fallen bring the alarm.
+   */
+  left(i: number, n: number): void {
+    const base = this.base[i];
+    if (base !== null) this.base[i] = Math.max(0, base - n);
+  }
+
   /** Every snapshot, for group i: whether it advances and how many it has now. */
   update(i: number, advancing: boolean, present: number): Alarm {
     if (!advancing) {

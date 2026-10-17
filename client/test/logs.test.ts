@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkRecord, type GameRecord } from "../../services/game-logs/src/record.ts";
 import { newRecordCode, RECORD_CODE_KEY, recordCode } from "../src/logs/code.ts";
-import { GAME_LOGS_URL, LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "../src/logs/collect.ts";
-import { KEEP_GAMES, type LogBackend, LogStore, MemoryBackend } from "../src/logs/store.ts";
+import { GAME_LOGS_URL, type GameEnd, LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "../src/logs/collect.ts";
+import { goesFurther, KEEP_GAMES, type LogBackend, LogStore, MemoryBackend } from "../src/logs/store.ts";
 import { fetchPoster, KEEPALIVE_MAX, type Poster, uploadPending } from "../src/logs/upload.ts";
 import { GameOverReason, TICKS_PER_SECOND } from "../src/sim.ts";
 
@@ -21,7 +21,7 @@ class MemoryStorage {
 }
 
 let n = 0;
-function rec(over: Partial<GameRecord> = {}): GameRecord {
+function rec(over: Partial<GameRecord> & { end?: GameEnd } = {}): GameRecord {
   n++;
   return makeRecord({
     id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
@@ -82,6 +82,35 @@ test("存：一局只存一次（局編號去重），只留最近 50 局，新�
   assert.equal(kept.length, KEEP_GAMES);
   assert.equal(kept.some((e) => e.id === first.id), false, "the oldest went");
   assert.ok(kept[0].savedAt > kept[KEEP_GAMES - 1].savedAt, "newest first");
+});
+
+test("同一局（D-083）：切到背景存一次、之後打得更遠再存，手機上只留最新的一筆，用新的局編號上傳；沒有更遠就不存、不傳", async () => {
+  const store = new LogStore(new MemoryBackend());
+  const hidden = rec({ end: { result: "abandoned", reason: "hidden", ticks: 1500 } });
+  assert.equal(await store.save(hidden, 1000, "game-1"), true);
+  await store.mark(hidden.id, "sent");
+  // The same game, no further: nothing kept (the Worker's 1,000 writes a day).
+  assert.equal(await store.save(rec({ end: { result: "abandoned", reason: "hidden", ticks: 1500 } }), 2000, "game-1"), false);
+  // Further on: it takes the earlier one's place, pending under its own 局編號.
+  const later = rec({ end: { result: "abandoned", reason: "hidden", ticks: 4000 } });
+  assert.equal(await store.save(later, 3000, "game-1"), true);
+  assert.deepEqual((await store.list()).map((e) => [e.id, e.state, e.rec.ticks]), [[later.id, "pending", 4000]]);
+  // The game's end, at the same tick, goes further than a save that was not the end.
+  const end = rec({ end: { result: "loss", reason: "main_city", ticks: 4000 } });
+  assert.equal(await store.save(end, 4000, "game-1"), true);
+  assert.deepEqual((await store.list()).map((e) => [e.id, e.rec.result]), [[end.id, "loss"]]);
+  // Another game keeps its own entry.
+  assert.equal(await store.save(rec({ end: { result: "win", reason: "main_city", ticks: 9000 } }), 5000, "game-2"), true);
+  assert.equal((await store.list()).length, 2);
+});
+
+test("更遠：tick 比較多，或打完了（之前存的還沒打完）", () => {
+  const at = (ticks: number, result: GameRecord["result"] = "abandoned") => rec({ end: { result, reason: "", ticks } });
+  assert.equal(goesFurther(at(2000), at(1500)), true);
+  assert.equal(goesFurther(at(1500), at(1500)), false);
+  assert.equal(goesFurther(at(1500, "win"), at(1500)), true);
+  assert.equal(goesFurther(at(1500, "win"), at(1500, "win")), false);
+  assert.equal(goesFurther(at(1000), at(1500, "loss")), false);
 });
 
 test("上傳：成功（201、已有的 200）就標記已傳；400、413 標記不收、不再傳；503 或沒網路就停，下次再傳", async () => {
