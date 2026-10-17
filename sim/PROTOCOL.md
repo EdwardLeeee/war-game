@@ -645,7 +645,7 @@
 - **畫面要存的**：`export_log` 回的 `jsonl`、`hashes`、`tick` 三樣，原樣存。
   - 匯出當下還沒套用的指令（`t` 是下一個 tick 的）不在紀錄裡，所以按下去的那一瞬間就切到背景的話，那一道指令會掉。
 - **`build`**：模擬這一版的識別，由畫面算好帶進 `init` 和 `continue`。模擬只把它當字串比對，不管它怎麼算。
-  - war-game-client 的算法：vite 建置時用 esbuild 從 `sim/src/worker.ts` 打包一次，取 metafile 列的輸入檔，路徑排序後連同內容算 sha256，取前 12 碼十六進位。
+  - war-game-client 的算法：vite 建置時用它的打包器 Rolldown，從 `sim/src/worker.ts` 打包一次，取實際打包進去的模組（moduleIds），路徑排序後連同內容算 sha256，取前 12 碼十六進位。
   - 這樣只有 worker 實際用到的模擬程式改了才會變。只改畫面，或只改 tournament 這類量測工具的上線，舊局照樣接得下去。
   - 畫面自己存的狀態（編隊、留守、鏡頭等）格式有沒有變，由畫面自己帶版本號判斷。
 - **Worker 做的事**：
