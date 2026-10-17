@@ -129,3 +129,179 @@ test("繼續上一局：切到背景存起來，重新載入後開局畫面有�
   await expect.poll(() => saved(page)).toBeNull();
   check();
 });
+
+/** Changes the game kept on the phone, as another simulation or a damaged log would leave it. */
+async function spoilSave(page: Page, what: "build" | "hash"): Promise<void> {
+  await page.evaluate(async (w) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const r = indexedDB.open("war-game-continue", 1);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    const store = () => db.transaction("game", "readwrite").objectStore("game");
+    const s = await new Promise<{ build: string; hashes: { tick: number; hash: string }[] }>((resolve) => {
+      const r = store().get("last");
+      r.onsuccess = () => resolve(r.result);
+    });
+    // The site updated (another simulation), or the hash at 1:00 (tick 1200) does not match.
+    if (w === "build") s.build = "000000000000";
+    else s.hashes = s.hashes.map((h) => (h.tick === 1200 ? { ...h, hash: "00000000" } : h));
+    await new Promise((resolve) => {
+      const r = store().put(s, "last");
+      r.onsuccess = () => resolve(null);
+    });
+    db.close();
+  }, what);
+}
+
+test("網站已經更新（模擬的 build 不同）：「繼續上一局」變灰，寫明不能繼續，開始是主要按鈕；開新局就清掉存的那一局（D-083）", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  await catchUploads(page);
+  await playAndPutAway(page);
+  await spoilSave(page, "build");
+  await page.reload();
+  const resume = page.getByRole("button", { name: /^繼續上一局/ });
+  await expect(resume).toBeVisible();
+  await expect(resume).toBeDisabled();
+  await expect(page.locator("#continue-note")).toHaveText("網站已經更新，這一局不能繼續");
+  await expect(page.locator("#start-game")).not.toHaveClass(/secondary/);
+  await shot(page, info, "d083-continue-blocked");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await expect.poll(() => saved(page)).toBeNull();
+  check();
+});
+
+test("紀錄對不上（雜湊不同）：快轉停在那裡，開局畫面寫「紀錄對不上（第 1 分）」，存的那一局清掉，可以開新局（D-083）", async ({ page }) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  await catchUploads(page);
+  await playAndPutAway(page);
+  await spoilSave(page, "hash");
+  await page.reload();
+  const resume = page.getByRole("button", { name: /^繼續上一局/ });
+  await expect(resume).toBeEnabled();
+  await expect(page.locator("#start-game")).toHaveClass(/secondary/);
+  await resume.tap();
+  await expect(page.locator("#continue-note")).toHaveText("紀錄對不上（第 1 分），這一局不能繼續", { timeout: 30_000 });
+  await expect(resume).toBeHidden();
+  await expect(page.locator("#continue-progress")).toBeHidden();
+  await expect(page.getByRole("button", { name: "開始" })).toBeVisible();
+  expect(await page.evaluate(() => window.__proto?.screen)).toBe("start");
+  await expect.poll(() => saved(page)).toBeNull();
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  check();
+});
+
+/**
+ * An 80-minute game as core's continue-bench plays it (the scripted player defending against
+ * the easy AI, so the game lasts), saved as export_log would at `ticks`, for the page's build.
+ */
+async function longGame(ticks: number): Promise<{ log: string; hashes: { tick: number; hash: string }[]; tick: number; build: string }> {
+  const { createScriptedPlayer, planFor, SCRIPTED_THINK_EVERY } = await import("../../sim/src/ai/scripted-player.ts");
+  const { hex8 } = await import("../../sim/src/core/fixed.ts");
+  const { rules } = await import("../../sim/src/core/rules.ts");
+  const { Runner } = await import("../../sim/src/runner.ts");
+  const { buildView, mapInfo } = await import("../../sim/src/view/view.ts");
+  const { simBuild } = await import("../scripts/sim-build.ts");
+  const build = (await simBuild()).id;
+  const r = new Runner({ seed: 1, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "easy"], autoTrain: [true, false], build });
+  const w = r.game.w;
+  const plan = { ...planFor("defend", "eco", "all"), counterAt: 9999, pushAt: 0 };
+  const player = createScriptedPlayer(0, { map: mapInfo(w.map, 0), rules: rules(w.map), frame: w.map.frames[0] }, plan);
+  let seq = 0;
+  while (!r.over && r.game.tick < ticks) {
+    if (r.game.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(r.game, 0))) r.command(0, { ...body, seq: seq++ } as never);
+    r.tick();
+  }
+  const log = [JSON.stringify(r.header([false, true])), ...r.game.log.map((c) => JSON.stringify(c))].join("\n") + "\n";
+  return { log, hashes: r.hashes.map((h) => ({ tick: h.tick, hash: hex8(h.hash) })), tick: r.game.tick, build };
+}
+
+test("量測（CI 的數字，不是 iPhone）：80 分鐘的局快轉要多久、進度和取消；之後存一次，主執行緒花多久（D-083）", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "chromium", "one browser is enough for the numbers; the screenshot is Chromium's");
+  test.setTimeout(600_000);
+  await catchUploads(page);
+  const t0 = Date.now();
+  const game = await longGame(96_000);
+  const playMs = Date.now() - t0;
+  expect(game.tick).toBe(96_000);
+  const { ArmyBook } = await import("../src/game/army.ts");
+  const { GroupAlarms } = await import("../src/game/alarm.ts");
+  const { SCREEN_VERSION } = await import("../src/save/save.ts");
+  await page.goto(`./${QUERY}`);
+  expect(await page.evaluate(() => window.__proto?.simBuild)).toBe(game.build);
+  const protocol = (JSON.parse(game.log.split("\n")[0]) as { protocol: number }).protocol;
+  const save = {
+    savedAt: Date.now(),
+    commit: "test",
+    protocol,
+    build: game.build,
+    game: "measure",
+    init: { seed: 1, scenario: "standard", difficulty: "easy", map: "fixed", maxTicks: 0, enemyAi: true },
+    log: game.log,
+    hashes: game.hashes,
+    tick: game.tick,
+    screenVersion: SCREEN_VERSION,
+    screen: { army: new ArmyBook().save(), alarms: new GroupAlarms().save(), charges: [], camera: null, speed: "normal", seq: 1, recruitMessageTick: null },
+  };
+  await page.evaluate(async (s) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const r = indexedDB.open("war-game-continue", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("game");
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    await new Promise((resolve) => {
+      const r = db.transaction("game", "readwrite").objectStore("game").put(s, "last");
+      r.onsuccess = () => resolve(null);
+    });
+    db.close();
+  }, save);
+  await page.reload();
+  const resume = page.getByRole("button", { name: "繼續上一局（第 80 分）" });
+  await expect(resume).toBeEnabled();
+
+  // The progress, then 取消: back to the start screen, the game still kept.
+  await resume.tap();
+  const text = page.locator("#continue-progress-text");
+  await expect(text).toHaveText(/^快轉中：第 ([2-9]|[1-7]\d)／80 分$/, { timeout: 120_000 });
+  await shot(page, info, "d083-continue-progress");
+  await page.getByRole("button", { name: "取消" }).tap();
+  await expect(page.locator("#continue-progress")).toBeHidden();
+  await expect(resume).toBeEnabled();
+  expect((await saved(page))?.tick).toBe(96_000);
+
+  // The whole way.
+  const t1 = Date.now();
+  await resume.tap();
+  await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.screen === "battle", null, { timeout: 300_000 });
+  const continueMs = Date.now() - t1;
+  expect((await header(page)).tick).toBe(96_000);
+
+  // A save of the 80-minute game: what it costs the page's main thread.
+  await page.evaluate(() => {
+    const w = window as unknown as { longTasks: number[] };
+    w.longTasks = [];
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) w.longTasks.push(e.duration);
+    }).observe({ type: "longtask" });
+  });
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(async () => (await header(page)).tick, { timeout: 60_000 }).toBeGreaterThan(96_200);
+  await pause(page);
+  await page.evaluate(() => {
+    (window as unknown as { longTasks: number[] }).longTasks = [];
+  });
+  await visibility(page, "hidden");
+  await expect.poll(() => page.evaluate(() => window.__proto?.lastSave?.tick ?? 0), { timeout: 30_000 }).toBeGreaterThan(96_000);
+  const cost = await page.evaluate(() => window.__proto?.lastSave);
+  const longTasks = await page.evaluate(() => (window as unknown as { longTasks: number[] }).longTasks);
+  const numbers = { playInNodeMs: playMs, logKB: Math.round(game.log.length / 1024), hashes: game.hashes.length, continueInBrowserMs: continueMs, save: cost, longTasksDuringSaveMs: longTasks };
+  info.annotations.push({ type: "d083-measure", description: JSON.stringify(numbers) });
+  await info.attach("d083-measure.json", { body: JSON.stringify(numbers, null, 2), contentType: "application/json" });
+  console.log(`D083 MEASURE ${JSON.stringify(numbers)}`);
+  expect(cost?.logBytes).toBeGreaterThan(150_000);
+});

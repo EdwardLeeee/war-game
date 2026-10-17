@@ -385,6 +385,8 @@ $("continue-last").addEventListener("click", () => {
 function continueProgress(tick: number | null, toTick = 0): void {
   const busy = tick !== null;
   $("start").classList.toggle("continuing", busy);
+  // The game's buttons wait behind, out of sight, until it is where it was.
+  $("hud").style.visibility = busy ? "hidden" : "";
   $("start-buttons").hidden = busy;
   $("continue-progress").hidden = !busy;
   if (!busy) return;

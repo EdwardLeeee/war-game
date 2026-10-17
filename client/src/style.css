@@ -145,6 +145,11 @@ a {
   font-size: 17px;
 }
 
+/* Played on another simulation (the site updated): grey, the reason under it. */
+#continue-last:disabled {
+  opacity: 0.45;
+}
+
 /* While the simulation runs the saved game again: how far, a bar, and 取消. */
 .continue-progress {
   display: flex;
