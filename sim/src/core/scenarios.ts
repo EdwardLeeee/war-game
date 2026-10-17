@@ -11,7 +11,7 @@ import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
 
-const SCENARIOS: readonly string[] = ["standard", "e2e", "perf", "skirmish"];
+const SCENARIOS: readonly string[] = ["standard", "e2e", "perf", "perf200", "perf360", "skirmish"];
 
 /** e2e: resources per side, and the squad placed beside the small town. */
 export const E2E = {
@@ -30,7 +30,9 @@ export function setupScenario(w: World, scenario: ScenarioKey): void {
   standard(w);
   if (scenario === "skirmish") skirmish(w);
   if (scenario === "e2e") e2e(w);
-  if (scenario === "perf") perf(w);
+  if (scenario === "perf") perf(w, PERF);
+  if (scenario === "perf200") perf(w, PERF_200);
+  if (scenario === "perf360") perf(w, PERF_360);
 }
 
 function standard(w: World): void {
@@ -176,8 +178,11 @@ export const PERF = {
   spearmen: 34,
   ranged: 34,
   mages: 6,
-  /** Top-left of player 0's army block (10 wide, spearmen nearest the big city). */
+  /** Top-left of player 0's army block (`width` wide, spearmen nearest the big city). */
   army: { x: 40, y: 51 },
+  width: 10,
+  /** Every player's population cap and ceiling, whatever is built (D-083); 0: by the rules. */
+  population: 0,
   /**
    * D-080, while OUTPOST is on: player 0's outposts, beside its block (each at the nearest free
    * spot), each manned by OUTPOST.slots of its spearmen, attacking.
@@ -189,23 +194,32 @@ export const PERF = {
 };
 
 /**
+ * D-083: perf with both sides full at 200 and at 360 (the random map's most: 200 and all seven
+ * towns), farmers and soldiers in about perf's proportions (mages stay at MAGE_CAP), the block
+ * 20 wide; the cap and ceiling held at 200 / 360 whatever the population rule says.
+ */
+export const PERF_200: typeof PERF = { ...PERF, farmers: 70, spearmen: 62, ranged: 62, army: { x: 30, y: 51 }, width: 20, population: 200 };
+export const PERF_360: typeof PERF = { ...PERF, farmers: 126, spearmen: 114, ranged: 114, army: { x: 30, y: 51 }, width: 20, population: 360 };
+
+/**
  * perf: both sides at 114 / 120 population. 22 houses by each main city; 40 farmers working
  * under the economy ratio; 34 spearmen, 34 ranged and 6 mages on autocast in a block beside
  * the big city, within reach of its militia, its tower and each other, so the battle starts
  * by itself. While OUTPOST is on (D-080), 2 outposts beside the block, each manned by 6 of its
  * spearmen. Fog is on as always. Player 1 gets the mirror image.
  */
-function perf(w: World): void {
+function perf(w: World, c: typeof PERF): void {
   const n = w.size;
+  w.fixedPopulation = c.population;
   for (let p = 0; p < 2; p++) {
-    w.res[p * 4 + Resource.Food] = PERF.resources.food;
-    w.res[p * 4 + Resource.Wood] = PERF.resources.wood;
-    w.res[p * 4 + Resource.Gold] = PERF.resources.gold;
-    w.res[p * 4 + Resource.Crystal] = PERF.resources.crystal;
+    w.res[p * 4 + Resource.Food] = c.resources.food;
+    w.res[p * 4 + Resource.Wood] = c.resources.wood;
+    w.res[p * 4 + Resource.Gold] = c.resources.gold;
+    w.res[p * 4 + Resource.Crystal] = c.resources.crystal;
   }
   const s0 = w.map.spawns[0];
   const house = BUILDINGS[BuildingType.House];
-  for (let k = 0; k < PERF.houses; k++) {
+  for (let k = 0; k < c.houses; k++) {
     const spot = freeSpot(w, house.size, s0.cellX, s0.cellY);
     w.addBuilding(0, BuildingType.House, spot.x, spot.y, house.hp, 1000);
     w.addBuilding(1, BuildingType.House, spot.y, spot.x, house.hp, 1000);
@@ -213,7 +227,7 @@ function perf(w: World): void {
   const outposts: number[] = [];
   if (OUTPOST.on) {
     const post = BUILDINGS[BuildingType.Outpost];
-    for (const at of PERF.outposts) {
+    for (const at of c.outposts) {
       const spot = freeSpot(w, post.size, at.x, at.y);
       outposts.push(w.addBuilding(0, BuildingType.Outpost, spot.x, spot.y, post.hp, 1000));
       outposts.push(w.addBuilding(1, BuildingType.Outpost, spot.y, spot.x, post.hp, 1000));
@@ -228,12 +242,13 @@ function perf(w: World): void {
     return id1;
   };
   // Farmers beside the base (the start's five are already there).
-  for (let k = 0; k < PERF.farmers - START.farmers; k++) both(UnitType.Farmer, s0.cellX + 3 + (k % 7), s0.cellY - 6 + Math.trunc(k / 7));
+  const rowOf = c.farmers > 40 ? 10 : 7;
+  for (let k = 0; k < c.farmers - START.farmers; k++) both(UnitType.Farmer, s0.cellX + 3 + (k % rowOf), s0.cellY - 6 + Math.trunc(k / rowOf));
   const army: UnitType[] = [];
-  for (let k = 0; k < PERF.spearmen; k++) army.push(UnitType.Spearman);
-  for (let k = 0; k < PERF.ranged; k++) army.push(UnitType.Ranged);
-  for (let k = 0; k < PERF.mages; k++) army.push(UnitType.Mage);
-  army.forEach((type, k) => both(type, PERF.army.x + (k % 10), PERF.army.y + Math.trunc(k / 10)));
+  for (let k = 0; k < c.spearmen; k++) army.push(UnitType.Spearman);
+  for (let k = 0; k < c.ranged; k++) army.push(UnitType.Ranged);
+  for (let k = 0; k < c.mages; k++) army.push(UnitType.Mage);
+  army.forEach((type, k) => both(type, c.army.x + (k % c.width), c.army.y + Math.trunc(k / c.width)));
   const u = w.units.col;
   for (let s = 0; s < w.units.count; s++) if (u.type[s] === UnitType.Mage) u.flags[s] |= UnitFlag.Autocast;
   // The outposts' guards: each side's spearmen in id order, as a post command would set them.

@@ -1,5 +1,5 @@
 // Headless runner (Node; no build step, types are stripped).
-//   node src/headless.ts [--scenario standard|e2e|perf|skirmish] [--seed N] [--ticks N] [--ai 1,1]
+//   node src/headless.ts [--scenario standard|e2e|perf|perf200|perf360|skirmish] [--seed N] [--ticks N] [--ai 1,1]
 //                        [--script demo|eco] [--replay FILE] [--out DIR] [--expected FILE]
 //                        [--auto-train 1,0] [--map fixed|random]
 // Writes into --out: hashes.txt ("tick hash" per HASH_EVERY), commands.jsonl (LogHeader,
