@@ -39,6 +39,8 @@ export interface RunnerConfig extends GameConfig {
   styles?: [AiStyle, AiStyle];
   /** Per player, how its AI plays (default all "normal"). */
   difficulty?: AiDifficulty[];
+  /** The simulation's build, for the log header (D-083). */
+  build?: string;
 }
 
 export class Runner {
@@ -48,10 +50,12 @@ export class Runner {
   readonly hashes: { tick: number; hash: number }[] = [];
   /** Per player, how its AI plays (recorded in the log header). */
   readonly difficulty: AiDifficulty[];
+  private readonly build: string | undefined;
 
   constructor(cfg: RunnerConfig) {
     this.game = new Game({ seed: cfg.seed, scenario: cfg.scenario, maxTicks: cfg.maxTicks ?? MAX_TICKS, autoTrain: cfg.autoTrain, map: cfg.map });
     this.difficulty = Array.from({ length: PLAYER_COUNT }, (_, p) => cfg.difficulty?.[p] ?? "normal");
+    this.build = cfg.build;
     for (let p = 0; p < PLAYER_COUNT; p++) {
       const slot = cfg.swap === true ? 1 - p : p;
       const know = aiKnowledge(this.game.w.map, p, this.maxTicks, this.difficulty[p]);
@@ -107,6 +111,8 @@ export class Runner {
     if (c.autoTrain?.some((on) => on) === true) head.autoTrain = Array.from({ length: PLAYER_COUNT }, (_, p) => c.autoTrain?.[p] === true);
     // Only on a random map, so fixed-map logs stay as they were (D-074).
     if (c.map === "random") head.map = "random";
+    // Only when the screen gave one (D-083), so headless and CI logs stay as they were.
+    if (this.build !== undefined) head.build = this.build;
     return head;
   }
 }

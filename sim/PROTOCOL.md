@@ -397,7 +397,7 @@
 
 所有 typed array 都用 transferable 傳，client 收到後直接擁有。各表都是 `Int32Array`，每列固定長度（stride），依 id 由小到大排列。
 
-### 4.1 表頭 `header`（長度 `HEADER_LENGTH` = 25）
+### 4.1 表頭 `header`（長度 `HEADER_LENGTH` = 26；D-083 以前 25）
 
 | 欄 | 名稱 | 說明 | 從 |
 |---|---|---|---|
@@ -547,12 +547,13 @@
 
 | `type` | 欄位 | 說明 |
 |---|---|---|
-| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty`、`map` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"`、`"normal"`，或 war-game-ai 加的 `"hard"`（D-052，它的 PR 把 `"hard"` 加進 `AI_DIFFICULTIES` 之後才收），見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起）。`ai` 是 false 的玩家，兵營、射場、法術營一開始就自動訓練（第六輪，3.1）；電腦的不會。`map`（D-074）：`"fixed"`（沒帶時）或 `"random"`（第 2 節；有人類玩家也可以，D-074 偵察）。隨機地圖只能用 `standard` 場景 |
+| `init` | `protocol`、`seed`、`human`、`ai`、`tps`、`scenario`，可選 `maxTicks`、`difficulty`、`map`、`build` | 開新局。`human` 是畫面操作的玩家；`null` = 旁觀 AI 對 AI（看得到全部）。`scenario` 見第 8 節。AI 的性格（掠奪型、治理型、均衡型）由 `seed` 決定，每局不同。`maxTicks`：時間上限（tick），0 = 沒有上限；沒帶時，有人類玩家是 0，AI 對 AI 是 `MAX_TICKS`。`difficulty`：每位玩家一個值、和 `ai` 對齊，例如 `["normal","easy"]`，電腦玩家照它的值下（`"easy"`、`"normal"`，或 war-game-ai 加的 `"hard"`（D-052，它的 PR 把 `"hard"` 加進 `AI_DIFFICULTIES` 之後才收），見 `AI_DIFFICULTIES`），人類玩家的值不用；沒帶時全部是 `"normal"`（第二輪起）。`ai` 是 false 的玩家，兵營、射場、法術營一開始就自動訓練（第六輪，3.1）；電腦的不會。`map`（D-074）：`"fixed"`（沒帶時）或 `"random"`（第 2 節；有人類玩家也可以，D-074 偵察）。隨機地圖只能用 `standard` 場景。`build`（D-083）：模擬這一版的識別字串，寫進紀錄第一行，`continue` 拿它比對（9.1） |
 | `command` | `cmd` | 見第 3 節 |
 | `pause`／`resume` | — | 暫停時模擬停下，但照收指令 |
 | `speed` | `tps` | 每秒跑幾個 tick：慢 20、正常 30、快 40（D-024），測試時可以更快。不會改變戰局 |
 | `determinism` | `protocol`、`seed`、`scenario`、`maxTicks`，可選 `map` | 用最快的速度跑一整局 AI 對 AI，回報雜湊。請另外開一個 Worker 來跑，不要用正在玩的那個 |
 | `export_log` | — | 取回目前這局的指令紀錄 |
+| `continue` | `protocol`、`build`、`log`、`hashes`、`toTick`、`tps` | 接著打被關掉的對局（D-083，9.1）。`log`、`hashes`、`toTick` 照 `log` 訊息給的存下來再送回來；`build` 是現在這個模擬的（和 `init` 的一樣） |
 
 **Worker 送出（`FromWorker`）**
 
@@ -563,7 +564,9 @@
 | `hash` | 每 100 tick：`tick`、8 碼十六進位的 `hash` |
 | `game_over` | `winner`、`reason`、`stats`（採集量、訓練與損失、法師產量與陣亡、搶與治理次數）。`unitsTrained`、`unitsLost` 依 `UnitType` 排：村民、槍兵、遠程、法師。城鎮次數從 PR-4 |
 | `determinism_progress`／`determinism_done` | 確定性檢查的進度與結果：總 tick、最終雜湊、耗時、每 tick 中位數與最大值 |
-| `log` | 指令紀錄：第一行是 `LogHeader`（protocol、seed、scenario、ai，第二輪起加 `maxTicks`、每位玩家的 `difficulty`，第六輪起有人類玩家時加 `autoTrain`，D-074 起隨機地圖加 `map`），之後一行一道指令 |
+| `log` | 指令紀錄 `jsonl`：第一行是 `LogHeader`（protocol、seed、scenario、ai，第二輪起加 `maxTicks`、每位玩家的 `difficulty`，第六輪起有人類玩家時加 `autoTrain`，D-074 起隨機地圖加 `map`，D-083 起 `init` 有帶時加 `build`），之後一行一道指令。D-083 起另外帶 `hashes`（從第 0 tick 起每 100 tick 一個，`{ tick, hash }`，8 碼十六進位）和 `tick`（匯出時跑到第幾 tick），`continue` 要用 |
+| `continue_progress` | `continue` 快轉中：`tick`、`toTick`。每 1200 tick（`CONTINUE_PROGRESS_EVERY`）一次 |
+| `continue_failed` | `continue` 接不下去：`reason`（`ContinueFailure`，見 9.1）、`tick`（出錯的 tick）、`message`。Worker 這時沒有對局 |
 | `error` | 版本不合或內部錯誤 |
 
 **暫停與速度**：
@@ -635,6 +638,33 @@
 - **確定性檢查的期望值**：`node sim/src/headless.ts --scenario standard --seed <n> --expected <檔案>` 會寫出 `ExpectedHashes` 格式的 JSON（PR-2 起）。
   - Pages 建置時用它產生 `expected-hashes.json`。
   - 手機上的 `determinism` 結果跟它比對。
+
+### 9.1 接著打（`continue`，D-083）
+
+給「繼續上一局」用：頁面被 Safari 清掉、重新載入以後，從存下來的紀錄接著打。
+- **畫面要存的**：`export_log` 回的 `jsonl`、`hashes`、`tick` 三樣，原樣存。
+  - 匯出當下還沒套用的指令（`t` 是下一個 tick 的）不在紀錄裡，所以按下去的那一瞬間就切到背景的話，那一道指令會掉。
+- **`build`**：模擬這一版的識別，由畫面算好帶進 `init` 和 `continue`。模擬只把它當字串比對，不管它怎麼算。
+  - war-game-client 的算法：vite 建置時用它的打包器 Rolldown，從 `sim/src/worker.ts` 打包一次，取實際打包進去的模組（moduleIds），路徑排序後連同內容算 sha256，取前 12 碼十六進位。
+  - 這樣只有 worker 實際用到的模擬程式改了才會變。只改畫面，或只改 tournament 這類量測工具的上線，舊局照樣接得下去。
+  - 畫面自己存的狀態（編隊、留守、鏡頭等）格式有沒有變，由畫面自己帶版本號判斷。
+- **Worker 做的事**：
+  1. 讀紀錄第一行。`protocol` 和這個 Worker 不同：`protocol`。`build` 和 `continue` 帶的不同：`build`。
+  2. 用第一行的 `seed`、`scenario`、`ai`、`maxTicks`、`difficulty`、`autoTrain`、`map` 開局。
+  3. 從第 0 tick 用最快的速度跑到 `toTick`，不建快照：
+     - 電腦照常在模擬裡想、下指令；人類玩家的指令照紀錄，在它的 tick、電腦想之前放進去。
+     - 每個 tick 套用的指令（電腦的也算），要和紀錄的那幾行一模一樣，順序也一樣。對不上：`commands`。
+     - 每 100 tick 的雜湊要和 `hashes` 一樣。對不上：`hash`。
+     - 每 1200 tick 送一次 `continue_progress`。
+  4. 跑到 `toTick`：送 `ready`（和 `init` 一樣），接著一份完整的快照（新的編碼器：資源點全部、迷霧都有），停在暫停。畫面還原好自己的狀態後送 `resume`。
+     - 之後的指令接在同一份紀錄後面，`export_log` 照常，`hashes` 也從第 0 tick 算起。
+- **`ContinueFailure`**：
+  - `protocol`、`build`：版本不同（網站更新過，模擬也改了）。
+  - `log`：紀錄或 `hashes` 讀不懂、缺某個第 100 tick 的雜湊、有 `toTick` 以後的指令，或對局在 `toTick` 之前就結束。
+  - `commands`：電腦這次下的指令和紀錄不同，或紀錄裡有一道指令沒有套用。
+  - `hash`：雜湊對不上（例如紀錄被改過）。
+- **要多久**：CI 上一局 80 分鐘（96,000 tick）大約 30–40 秒，見 `node src/continue-bench.ts`。
+- 快轉時不能取消；畫面要中止，就直接結束這個 Worker。
 
 ## 10. 效能
 
