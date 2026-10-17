@@ -292,14 +292,22 @@ test("量測（CI 的數字，不是 iPhone）：80 分鐘的局快轉要多久�
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await header(page)).tick, { timeout: 60_000 }).toBeGreaterThan(96_200);
   await pause(page);
-  await page.evaluate(() => {
-    (window as unknown as { longTasks: number[] }).longTasks = [];
-  });
+  // Long tasks over 2 s, paused: without a save (CI's software drawing makes frames long by
+  // themselves), then from the save on. The save's own share is buildMs and putMs.
+  const longTasks = async (): Promise<number[]> => {
+    await page.evaluate(() => {
+      (window as unknown as { longTasks: number[] }).longTasks = [];
+    });
+    await page.waitForTimeout(2000);
+    return page.evaluate(() => (window as unknown as { longTasks: number[] }).longTasks);
+  };
+  const withoutSave = await longTasks();
+  const during = longTasks();
   await visibility(page, "hidden");
   await expect.poll(() => page.evaluate(() => window.__proto?.lastSave?.tick ?? 0), { timeout: 30_000 }).toBeGreaterThan(96_000);
+  const withSave = await during;
   const cost = await page.evaluate(() => window.__proto?.lastSave);
-  const longTasks = await page.evaluate(() => (window as unknown as { longTasks: number[] }).longTasks);
-  const numbers = { playInNodeMs: playMs, logKB: Math.round(game.log.length / 1024), hashes: game.hashes.length, continueInBrowserMs: continueMs, save: cost, longTasksDuringSaveMs: longTasks };
+  const numbers = { playInNodeMs: playMs, logKB: Math.round(game.log.length / 1024), hashes: game.hashes.length, continueInBrowserMs: continueMs, save: cost, longTasks2sWithoutSaveMs: withoutSave, longTasks2sFromSaveMs: withSave };
   info.annotations.push({ type: "d083-measure", description: JSON.stringify(numbers) });
   await info.attach("d083-measure.json", { body: JSON.stringify(numbers, null, 2), contentType: "application/json" });
   console.log(`D083 MEASURE ${JSON.stringify(numbers)}`);
