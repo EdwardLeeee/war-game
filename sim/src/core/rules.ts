@@ -127,7 +127,20 @@ export const MULTIPLIERS: Multiplier[] = [
 ];
 
 export const MAGE_CAP = 6;
+/** The population ceiling while POPULATION_200 is off. */
 export const MAX_POPULATION = 120;
+/**
+ * D-083 (the user 2026-10-17: 「2 可以 然後加混和1 一起，不過兵上限應該加多一點」): the population
+ * ceiling is `base` plus `town[size]` for each town the player governs (fixed map at most 300,
+ * random 360), and a governed town adds `town[size]` to the cap too (off: 5 / 10). Main cities
+ * and houses count as before; a town lost lowers both, and the units already there stay. Off:
+ * a flat MAX_POPULATION. Fields by TownSize.
+ */
+export const POPULATION_200 = { on: false, base: 200, town: [20, 40] };
+/** The population ceiling without the towns: what `Rules.maxPopulation` says. */
+export function basePopulation(): number {
+  return POPULATION_200.on ? POPULATION_200.base : MAX_POPULATION;
+}
 /** Queue entries fit 4 bits each in BuildingField.queuePacked. */
 export const QUEUE_MAX = 7;
 
@@ -144,7 +157,8 @@ export function rules(map?: { towerSize?: number }): Required<Rules> {
     buildings: same ? BUILDINGS : BUILDINGS.map((b) => (b.type === BuildingType.TownTower ? { ...b, size: towerSize } : b)),
     multipliers: MULTIPLIERS,
     mageCap: MAGE_CAP,
-    maxPopulation: MAX_POPULATION,
+    maxPopulation: basePopulation(),
+    population: { base: basePopulation(), town: [TownSize.Small, TownSize.Large].map((size) => (POPULATION_200.on ? POPULATION_200.town[size] : 0)) },
     queueMax: QUEUE_MAX,
     // `outpost` only while on: absent is off, and the screen's tables of the round 7 four stay as they were.
     features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on, ...(OUTPOST.on ? { outpost: true } : {}) },
@@ -409,6 +423,9 @@ TOWNS[TownSize.Large] = {
   governCost: cost(0, 150, 150), repairTicks: 60 * S, perMinute: cost(90, 0, 90, 30), populationCap: 10,
   garrisonNeeded: 3, revoltTicks: 60 * S,
 };
+
+// D-083: what a governed town adds to the population cap while POPULATION_200 is on (a getter).
+for (const size of [TownSize.Small, TownSize.Large]) switched(TOWNS[size], "populationCap", POPULATION_200, () => POPULATION_200.town[size]);
 
 /** What governing a town of this size pays a minute at full income (GOVERN_INCOME). */
 export function governPerMinute(size: number): Cost {
