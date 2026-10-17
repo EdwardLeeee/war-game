@@ -359,7 +359,7 @@ test("確定性檢查：瀏覽器算出的一局和 CI 的無畫面執行完全�
   expect(r.same, JSON.stringify(r)).toBe(true);
   expect(r.compared).toBeGreaterThan(100);
   await expect(page.getByText("確定性：與 CI 相同 ✓")).toBeVisible();
-  await expect(measure).toBeEnabled();
+  for (let i = 0; i < 3; i++) await expect(measure.nth(i)).toBeEnabled();
   await shot(page, info, "determinism-same");
 });
 
