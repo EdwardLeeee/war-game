@@ -69,7 +69,36 @@ test("off: the ceiling is 120 as before, and the rules say so", () => {
   assert.equal(r.maxPopulation, 120);
   assert.deepEqual(r.population, { base: 120, town: [0, 0] });
   assert.deepEqual(r.towns.map((t) => t.populationCap), [5, 10]);
+  assert.equal(r.buildings[BuildingType.House].populationCap, 5);
 });
+
+test(
+  "on: a house gives 8, so a main city and 24 houses fill 200; the towns add on top",
+  populationOn(() => {
+    assert.equal(rules().buildings[BuildingType.House].populationCap, 8);
+    const g = emptyGame();
+    const w = g.w;
+    const area = openArea(g, 26);
+    const house = BUILDINGS[BuildingType.House];
+    const build = (n: number) => {
+      for (let k = 0; k < n; k++) w.addBuilding(0, BuildingType.House, area.x + 2 * (k % 12), area.y + 2 * Math.trunc(k / 12), house.hp, 1000);
+    };
+    build(23);
+    assert.equal(w.populationCap(0), 10 + 23 * 8, "194 with 23");
+    const small = Array.from(w.townSize).indexOf(TownSize.Small);
+    const large = Array.from(w.townSize).indexOf(TownSize.Large);
+    govern(g, small, 0);
+    assert.equal(w.populationCap(0), 194 + 20, "a governed town adds on top of the houses");
+    build(1);
+    assert.equal(w.populationCap(0), 220, "10 + 24 x 8 + 20 = 222, at most the ceiling 220");
+    lose(g, small);
+    assert.equal(w.populationCap(0), 200, "10 + 24 x 8 = 202, at most 200");
+    govern(g, small, 0);
+    govern(g, large, 0);
+    assert.equal(w.populationCap(0), 260, "202 + 60 = 262, at most the ceiling 260");
+    assert.equal(ceilingOnScreen(g, 0), 260);
+  }),
+);
 
 test(
   "on: 200, plus 20 for each small town and 40 for the big one governed; a town lost lowers it again",

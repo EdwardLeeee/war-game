@@ -778,6 +778,7 @@ D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與�
 - 開著時：
   - 天花板 = 200 ＋ 每座自己治理中的小鎮 20、大城 40（`World.populationCeiling`）。固定地圖全拿最多 300，隨機地圖 360。
   - 治理的城鎮給的人口上限也是 +20／+40（`TOWNS` 的 `populationCap` 讀開關）。
+  - 民居每間 +8（關著 +5；`BUILDINGS` 裡民居的 `populationCap` 讀開關）：主城＋24 間就到 200，和現在主城＋22 間到 120 差不多（使用者 2026-10-17）。
   - 上限 = 主城、民居、治理的城鎮加起來，最多到天花板。城鎮丟了兩個都降，已經有的兵留著，只是不能再練。
 - 畫面和電腦：表頭新增 `populationCeiling`（目前的天花板）；`rules().maxPopulation` 關著 120、開著 200；`rules().population` 是 `{ base, town }`。見 `PROTOCOL.md` 第 2 節、4.1。
 - perf 場景多兩種：`perf200`、`perf360`，雙方人口滿的 200／360，上限和天花板固定在那裡（`World.fixedPopulation`），不看開關。CI 的 headless 和 `perf` 一起跑，給 iPhone 量測之前先看每 tick 時間。

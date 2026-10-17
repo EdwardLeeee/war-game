@@ -132,11 +132,12 @@ export const MAX_POPULATION = 120;
 /**
  * D-083 (the user 2026-10-17: 「2 可以 然後加混和1 一起，不過兵上限應該加多一點」): the population
  * ceiling is `base` plus `town[size]` for each town the player governs (fixed map at most 300,
- * random 360), and a governed town adds `town[size]` to the cap too (off: 5 / 10). Main cities
- * and houses count as before; a town lost lowers both, and the units already there stay. Off:
- * a flat MAX_POPULATION. Fields by TownSize.
+ * random 360), and a governed town adds `town[size]` to the cap too (off: 5 / 10). A house adds
+ * `house` (off: 5; the user 2026-10-17: main city and 24 houses fill 200, as 22 fill 120 now);
+ * main cities as before. A town lost lowers both, and the units already there stay. Off: a flat
+ * MAX_POPULATION. `town` by TownSize.
  */
-export const POPULATION_200 = { on: false, base: 200, town: [20, 40] };
+export const POPULATION_200 = { on: false, base: 200, town: [20, 40], house: 8 };
 /** The population ceiling without the towns: what `Rules.maxPopulation` says. */
 export function basePopulation(): number {
   return POPULATION_200.on ? POPULATION_200.base : MAX_POPULATION;
@@ -424,8 +425,9 @@ TOWNS[TownSize.Large] = {
   garrisonNeeded: 3, revoltTicks: 60 * S,
 };
 
-// D-083: what a governed town adds to the population cap while POPULATION_200 is on (a getter).
+// D-083: what a governed town and a house add to the population cap while POPULATION_200 is on (getters).
 for (const size of [TownSize.Small, TownSize.Large]) switched(TOWNS[size], "populationCap", POPULATION_200, () => POPULATION_200.town[size]);
+switched(BUILDINGS[BuildingType.House], "populationCap", POPULATION_200, () => POPULATION_200.house);
 
 /** What governing a town of this size pays a minute at full income (GOVERN_INCOME). */
 export function governPerMinute(size: number): Cost {
