@@ -5,6 +5,7 @@
 import "./style.css";
 import { type Application, VERSION } from "pixi.js";
 import { Game } from "./game/game.ts";
+import type { HudLifecycle } from "./ui/hud/hud.ts";
 import { type GameHook, gameHook } from "./game/test-hook.ts";
 import { MockPort } from "./mock/mock-port.ts";
 import { createSimPort } from "./game/port.ts";
@@ -16,12 +17,15 @@ import { recordCode } from "./logs/code.ts";
 import { LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "./logs/collect.ts";
 import { openIndexedDb, type StoredLog } from "./logs/store.ts";
 import { fetchPoster } from "./logs/upload.ts";
+import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_LOST_TEXT, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
 import { tickRateText } from "./ui/controls.ts";
 import { deployedCommit, isNewer, updateHref } from "./version.ts";
 
 declare const __COMMIT__: string;
+/** Which simulation this page runs (scripts/sim-build.ts, D-083). */
+declare const __SIM_BUILD__: string;
 
 /** Read-only view for the Playwright tests, present only with `?test=1`. */
 export interface ProtoHook {
@@ -33,6 +37,20 @@ export interface ProtoHook {
   /** 紀錄代號 and the game records kept on this phone (D-056). */
   recordCode: string;
   logs: () => Promise<StoredLog[]>;
+  /** 繼續上一局 (D-083): the simulation's build, the game kept on this phone, and what the last save cost. */
+  simBuild: string;
+  saved: () => Promise<SavedGame | null>;
+  lastSave: SaveCost | null;
+}
+
+/** What the last save for 繼續上一局 cost (ms): export_log's round trip (the Worker's work), and on the page's main thread building it and IndexedDB's put. */
+export interface SaveCost {
+  tick: number;
+  logBytes: number;
+  hashes: number;
+  exportMs: number;
+  buildMs: number;
+  putMs: number;
 }
 
 declare global {
@@ -51,7 +69,10 @@ const code = recordCode();
 const logs = new LogCollector(openIndexedDb(), logsUrlFor(params.test, params.logsUrl), fetchPoster());
 void logs.flush();
 
-const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false, recordCode: code, logs: () => logs.list() };
+/** 繼續上一局 (D-083): the game being played, kept on this phone (one, the last). */
+const saveStore = new SaveStore(openSaveDb());
+
+const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false, recordCode: code, logs: () => logs.list(), simBuild: __SIM_BUILD__, saved: () => saveStore.load(), lastSave: null };
 if (params.test) window.__proto = hook;
 
 let app: Application | null = null;
@@ -124,51 +145,105 @@ $("commit").textContent = `commit ${__COMMIT__}`;
 $("record-code").textContent = `紀錄代號 ${code}`;
 
 /**
- * A game's record: when it ends, when 重來 leaves it, and (D-083) whenever the page goes to the
- * background, so that a game Safari drops while the phone is put away is not lost with it. From
- * a minute of game time on, and only when the game has gone further than the last save (the
- * Worker's free plan writes 1,000 records a day). Each save goes up under a new 局編號; on the
- * phone it takes the place of the game's earlier one, so the game keeps one entry, and of a
- * game's uploads the one with the most ticks is the newest. `hidden`: saved in the background,
- * still being played (result abandoned, reason "hidden"). Resolves when the simulation has
- * given the log (before its Worker may be stopped); keeping and uploading go on by themselves,
- * off the game's frames. The fake world, 量測 and watching are not kept.
+ * What the page keeps of a game, from one export of its log each time:
+ * - Its record (D-056), uploaded: when it ends, when 重來 leaves it, and (D-083) whenever the
+ *   page goes to the background, so that a game Safari drops while the phone is put away is not
+ *   lost with it. Only when the game has gone further than the last upload (the Worker's free
+ *   plan writes 1,000 records a day). Each upload goes under a new 局編號; on the phone it takes
+ *   the place of the game's earlier one, so the game keeps one entry, and of a game's uploads
+ *   the one with the most ticks is the newest. In the background it is still being played
+ *   (result abandoned, reason "hidden").
+ * - 繼續上一局's save (D-083), on this phone only: in the background and every minute of game
+ *   time while the game goes on (ceo 2026-10-17: the minute's is not uploaded).
+ * From a minute of game time on. Resolves when the simulation has given the log (before its
+ * Worker may be stopped) and the save is written; uploading goes on by itself, off the game's
+ * frames. The fake world, 量測 and watching are not kept.
  */
-const saves = new WeakMap<Game, { game: string; ticks: number; ended: boolean; job: Promise<void> }>();
-function keepLog(g: Game, hidden = false): Promise<void> {
+type KeepWhy = "hidden" | "minute" | "end" | "restart";
+interface Kept {
+  /** The game's key among the phone's records. */
+  game: string;
+  /** The ticks of the last record uploaded, and of the last save for 繼續上一局. */
+  uploaded: number;
+  saved: number;
+  ended: boolean;
+  job: Promise<void>;
+}
+const kept = new WeakMap<Game, Kept>();
+function keptOf(g: Game): Kept {
+  let k = kept.get(g);
+  if (k === undefined) {
+    k = { game: crypto.randomUUID(), uploaded: -1, saved: -1, ended: false, job: Promise.resolve() };
+    kept.set(g, k);
+  }
+  return k;
+}
+function keepGame(g: Game, why: KeepWhy): Promise<void> {
   const init = g.initSent;
   // Not kept: the fake world, 量測 (perf, perf200, perf360), and watching the computer play itself (test pages).
   if (params.mock || params.watch || init === null || init.scenario.startsWith("perf")) return Promise.resolve();
   const over = g.over;
   const ticks = over === null ? g.currentTick() : over.ticks;
   if (over === null && ticks < MIN_ABANDONED_TICKS) return Promise.resolve();
-  let s = saves.get(g);
-  if (s === undefined) {
-    s = { game: crypto.randomUUID(), ticks: -1, ended: false, job: Promise.resolve() };
-    saves.set(g, s);
+  const k = keptOf(g);
+  const upload = why !== "minute" && (over !== null ? !k.ended : ticks > k.uploaded);
+  const save = over === null && (why === "hidden" || why === "minute") && ticks > k.saved;
+  // Nothing new since the last time: no export, no write, no upload.
+  if (!upload && !save) return k.job;
+  if (upload) {
+    k.uploaded = ticks;
+    k.ended = over !== null;
   }
-  // Nothing new since the last save: no write, no upload.
-  if (ticks <= s.ticks && (over === null || s.ended)) return s.job;
-  s.ticks = ticks;
-  s.ended = over !== null;
-  const save = s;
-  save.job = save.job.then(() =>
+  if (save) k.saved = ticks;
+  const screen = save ? g.screenState() : null;
+  const asked = performance.now();
+  k.job = k.job.then(() =>
     g.exportLog().then((log) => {
-      if (log === null || log === "") return;
-      const end = over !== null ? { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks } : { result: "abandoned" as const, reason: hidden ? "hidden" : "", ticks };
-      const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log });
-      void logs.keep(record, save.game);
+      if (log === null || log.jsonl === "") return;
+      const got = performance.now();
+      if (upload) {
+        const end = over !== null ? { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks } : { result: "abandoned" as const, reason: why === "hidden" ? "hidden" : "", ticks };
+        const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log: log.jsonl });
+        void logs.keep(record, k.game);
+      }
+      if (screen === null || g.over !== null) return;
+      const saved: SavedGame = {
+        savedAt: Date.now(),
+        commit: __COMMIT__,
+        protocol: PROTOCOL_VERSION,
+        build: __SIM_BUILD__,
+        game: k.game,
+        init: { seed: init.seed, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", map: init.map ?? "fixed", maxTicks: init.maxTicks ?? 0, enemyAi: init.ai[1] ?? true },
+        log: log.jsonl,
+        hashes: log.hashes,
+        tick: log.tick,
+        screenVersion: SCREEN_VERSION,
+        screen,
+      };
+      const built = performance.now();
+      return saveStore.save(saved).then(() => {
+        hook.lastSave = { tick: log.tick, logBytes: log.jsonl.length, hashes: log.hashes.length, exportMs: got - asked, buildMs: built - got, putMs: saveStore.lastPutMs };
+      });
     }),
   );
-  return save.job;
+  return k.job;
+}
+
+/** The game is over, or another takes its place: its record as above, then no 繼續上一局 for it. */
+function forgetGame(g: Game, why: "end" | "restart"): Promise<void> {
+  const k = keptOf(g);
+  return keepGame(g, why).then(() => {
+    k.job = k.job.then(() => saveStore.clear());
+    return k.job;
+  });
 }
 
 // To the background (D-083): iPhone Safari may drop the page while it is away, with the game.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden" && game !== null) void keepLog(game, true);
+  if (document.visibilityState === "hidden" && game !== null) void keepGame(game, "hidden");
 });
 window.addEventListener("pagehide", () => {
-  if (game !== null) void keepLog(game, true);
+  if (game !== null) void keepGame(game, "hidden");
 });
 
 /**
@@ -211,8 +286,11 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   hook.screen = "battle";
   hook.ready = false;
   if (app === null) app = await createStage($("stage"));
-  // 重來 leaves the game on screen: keep its record first (D-056).
-  if (game !== null) await keepLog(game);
+  // 重來 leaves the game on screen: keep its record first (D-056). A new game takes the place
+  // of the one kept for 繼續上一局 (D-083).
+  if (game !== null) await forgetGame(game, "restart");
+  else await saveStore.clear();
+  hideSaved();
   game?.destroy();
   const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpost) : createSimPort(showError);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
@@ -235,12 +313,10 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     watch: params.watch && !measure,
     env: env(scenario, gameText(level, maxTicks, enemyAi, map, params.watch && !measure)),
     checkPort: params.mock ? null : () => createSimPort(showError),
-    life: {
-      restart: () => void newGame().catch(showError),
-      toStart: showStart,
-      perf: (s) => void newGame(s, true).catch(showError),
-    },
-    ended: () => void keepLog(g),
+    life,
+    ended: () => void forgetGame(g, "end"),
+    build: __SIM_BUILD__,
+    minute: () => void keepGame(g, "minute"),
   });
   game = g;
   if (params.test) hook.game = gameHook(g);
@@ -256,6 +332,142 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     g.lab.show();
     g.lab.startMeasure(performance.now());
   }
+}
+
+/** 重來, 回開局畫面 and 量測, from the game's menu. */
+const life: HudLifecycle = {
+  restart: () => void newGame().catch(showError),
+  toStart: showStart,
+  perf: (s) => void newGame(s, true).catch(showError),
+};
+
+/**
+ * 繼續上一局 (D-083) on the start screen of a page just opened: the game this phone kept, if
+ * any. Played on another simulation (the site was updated), it cannot go on: the button is
+ * grey and says why.
+ */
+let savedGame: SavedGame | null = null;
+function continueNote(text: string | null): void {
+  const note = $("continue-note");
+  note.hidden = text === null;
+  note.textContent = text ?? "";
+  $("about-note").hidden = text !== null;
+}
+async function showSaved(): Promise<void> {
+  const button = $("continue-last") as HTMLButtonElement;
+  const s = params.mock || params.watch ? null : await saveStore.load();
+  // A game started meanwhile.
+  if (game !== null) return;
+  savedGame = s;
+  button.hidden = s === null;
+  if (s === null) return;
+  button.textContent = continueLabel(s);
+  const ok = canGoOn(s, PROTOCOL_VERSION, __SIM_BUILD__);
+  button.disabled = !ok;
+  // The likelier wish, and 開始 clears the game kept: 繼續上一局 is the main button then.
+  button.classList.toggle("secondary", !ok);
+  $("start-game").classList.toggle("secondary", ok);
+  continueNote(ok ? null : UPDATED_TEXT);
+}
+void showSaved();
+/** A game is on: the start screen offers 繼續這局 and 重來 from now on. */
+function hideSaved(): void {
+  savedGame = null;
+  $("continue-last").hidden = true;
+  $("start-game").classList.remove("secondary");
+  continueNote(null);
+}
+$("continue-last").addEventListener("click", () => {
+  if (savedGame !== null && game === null) void resumeGame(savedGame).catch(showError);
+});
+
+/** While the simulation runs the saved game again: how far, and 取消. */
+function continueProgress(tick: number | null, toTick = 0): void {
+  const busy = tick !== null;
+  $("start").classList.toggle("continuing", busy);
+  // The game's buttons wait behind, out of sight, until it is where it was.
+  $("hud").style.visibility = busy ? "hidden" : "";
+  $("start-buttons").hidden = busy;
+  $("continue-progress").hidden = !busy;
+  if (!busy) return;
+  $("continue-progress-text").textContent = progressText(tick, toTick);
+  ($("continue-bar") as HTMLProgressElement).value = toTick > 0 ? tick / toTick : 0;
+}
+/** Ends the wait for the game being run again (取消, or it cannot go on). */
+let stopResume: (() => void) | null = null;
+$("continue-cancel").addEventListener("click", () => {
+  // The Worker stops where it is (PROTOCOL.md 9.1: no cancelling message); the save stays.
+  game?.destroy();
+  game = null;
+  hook.game = undefined;
+  continueProgress(null);
+  stopResume?.();
+  void showSaved();
+});
+
+/**
+ * 繼續上一局: the saved game, run again by the simulation up to where it was (the progress on
+ * the start screen), then its screen as it was, paused until 繼續. When it cannot go on, the
+ * start screen says why in one of two kinds (ceo 2026-10-17) and the save is cleared; the
+ * game's record went up in the background already.
+ */
+async function resumeGame(saved: SavedGame): Promise<void> {
+  continueNote(null);
+  continueProgress(0, saved.tick);
+  hook.ready = false;
+  if (app === null) app = await createStage($("stage"));
+  const { init } = saved;
+  const speed = screenUsable(saved) ? saved.screen.speed : "normal";
+  const stopped = new Promise<void>((resolve) => {
+    stopResume = resolve;
+  });
+  const g: Game = new Game(app, createSimPort(showError), $("hud"), {
+    seed: init.seed,
+    scenario: init.scenario,
+    tps: params.tps ?? SPEED_TPS[speed],
+    fake: false,
+    enemyAi: init.enemyAi,
+    difficulty: init.difficulty,
+    maxTicks: init.maxTicks,
+    map: init.map,
+    watch: false,
+    env: env(init.scenario, gameText(init.difficulty, init.maxTicks, init.enemyAi, init.map, false)),
+    checkPort: () => createSimPort(showError),
+    life,
+    ended: () => void forgetGame(g, "end"),
+    build: __SIM_BUILD__,
+    minute: () => void keepGame(g, "minute"),
+    resume: saved,
+    progress: (tick, toTick) => {
+      if (game === g) continueProgress(tick, toTick);
+    },
+    continueFailed: (reason, tick) => {
+      if (game !== g) return;
+      g.destroy();
+      game = null;
+      hook.game = undefined;
+      void saveStore.clear();
+      continueProgress(null);
+      hideSaved();
+      continueNote(failureText(reason, tick));
+      stopResume?.();
+    },
+  });
+  game = g;
+  // The same game: its record keeps its entry on the phone, uploaded again only once further.
+  kept.set(g, { game: saved.game, uploaded: saved.tick, saved: saved.tick, ended: false, job: Promise.resolve() });
+  if (params.test) hook.game = gameHook(g);
+  g.start();
+  const ready = await Promise.race([g.whenReady().then(() => true), stopped.then(() => false)]);
+  stopResume = null;
+  if (!ready || game !== g) return;
+  continueProgress(null);
+  hideSaved();
+  $("start").hidden = true;
+  hook.screen = "battle";
+  hook.ready = true;
+  // Said now that the battlefield shows (the strip waited hidden while the game was run again).
+  if (g.screenLost) g.toast(SCREEN_LOST_TEXT);
 }
 
 /** Back from the start screen to the game in progress; it stays paused until 繼續. */

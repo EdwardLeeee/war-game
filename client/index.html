@@ -40,10 +40,17 @@
         </div>
         <p id="map-note" class="note map-note">每局同一張，適合比較電腦強弱</p>
         <p id="difficulty-note" class="note" hidden>改了難度或地圖，要按「重來」才會用在新的一局。</p>
-        <div class="start-buttons">
+        <div id="start-buttons" class="start-buttons">
           <button id="start-game" type="button">開始</button>
           <button id="restart-game" class="secondary" type="button" hidden>重來</button>
+          <button id="continue-last" class="secondary" type="button" hidden>繼續上一局</button>
         </div>
+        <div id="continue-progress" class="continue-progress" hidden>
+          <span id="continue-progress-text"></span>
+          <progress id="continue-bar" max="1" value="0"></progress>
+          <button id="continue-cancel" class="secondary" type="button">取消</button>
+        </div>
+        <p id="continue-note" class="note continue-note" role="status" hidden></p>
         <div id="update" class="update" role="status" hidden>
           <span>有新版本</span>
           <button id="update-now" type="button">更新</button>

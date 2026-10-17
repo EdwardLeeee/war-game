@@ -66,6 +66,16 @@ export interface Group {
   checked: number;
 }
 
+/**
+ * What 繼續上一局 keeps of the book (D-083): the groups, the towns' garrisons and those kept out.
+ * Plain data, for IndexedDB; a group's `checked` −∞ (never checked) is null.
+ */
+export interface ArmyState {
+  groups: (Omit<Group, "checked"> & { checked: number | null })[];
+  garrisons: [number, number[]][];
+  keptOut: number[];
+}
+
 /** A 前進 order for recruits, to a cell. */
 export interface MarchOrder {
   ids: number[];
@@ -207,6 +217,43 @@ export class ArmyBook {
   /** Whether 自動補兵 leaves this soldier alone (it hid in a building, D-083). */
   isKeptOut(id: number): boolean {
     return this.keptOut.has(id);
+  }
+
+  /** 繼續上一局 (D-083): the book as plain data. 搶 and 治理 waiting for the simulation's answer are not kept. */
+  save(): ArmyState {
+    return {
+      groups: this.groups.map((g) => ({
+        ids: [...g.ids],
+        want: { ...g.want },
+        saved: g.saved,
+        refill: g.refill,
+        recruits: g.recruits.map((r) => ({ ...r })),
+        goal: g.goal === null ? null : { ...g.goal },
+        checked: Number.isFinite(g.checked) ? g.checked : null,
+      })),
+      garrisons: [...this.garrisons].map(([town, ids]) => [town, [...ids]]),
+      keptOut: [...this.keptOut].sort((a, b) => a - b),
+    };
+  }
+
+  /** 繼續上一局: the book as saved (save()). */
+  restore(s: ArmyState): void {
+    this.groups.forEach((g, i) => {
+      const k = s.groups[i];
+      if (k === undefined) return;
+      g.ids = [...k.ids];
+      g.want = { ...k.want };
+      g.saved = k.saved;
+      g.refill = k.refill;
+      g.recruits = k.recruits.map((r) => ({ ...r }));
+      g.goal = k.goal === null ? null : { ...k.goal };
+      g.checked = k.checked ?? Number.NEGATIVE_INFINITY;
+    });
+    this.garrisons.clear();
+    for (const [town, ids] of s.garrisons) this.garrisons.set(town, [...ids]);
+    this.pending.clear();
+    this.keptOut.clear();
+    for (const id of s.keptOut) this.keptOut.add(id);
   }
 
   /** These units stop being garrison (the player ordered them away). Returns the ones that were stationed. */

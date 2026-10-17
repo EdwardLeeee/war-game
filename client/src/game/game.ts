@@ -24,6 +24,7 @@ import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
 import { WorldRenderer } from "../render/world.ts";
+import { SAVE_EVERY_TICKS, SCREEN_VERSION, type SavedGame, type ScreenState } from "../save/save.ts";
 import {
   Action,
   type AiDifficulty,
@@ -33,6 +34,7 @@ import {
   BuildingType,
   CELL,
   type CommandBody,
+  type ContinueFailure,
   type FromWorker,
   type GameOverReason,
   type MapMode,
@@ -102,6 +104,26 @@ export interface GameOptions {
   life: HudLifecycle;
   /** The game has ended (game_over): the page keeps its record (D-056). */
   ended?: () => void;
+  /** Which simulation the page runs (scripts/sim-build.ts), sent in `init` and `continue` (D-083). */
+  build: string;
+  /**
+   * 繼續上一局 (D-083): go on with this saved game instead of starting one (`continue`). The
+   * options above are the ones it was started with; `tps` its speed.
+   */
+  resume?: SavedGame;
+  /** 繼續上一局: how far the simulation has run the game again. */
+  progress?: (tick: number, toTick: number) => void;
+  /** 繼續上一局: the game cannot go on (the Worker has no game). */
+  continueFailed?: (reason: ContinueFailure, tick: number) => void;
+  /** Every minute of game time (SAVE_EVERY_TICKS): the page keeps the game for 繼續上一局. */
+  minute?: () => void;
+}
+
+/** export_log's answer: the command log, the hash every HASH_EVERY ticks and the tick it got to (D-083). */
+export interface ExportedLog {
+  jsonl: string;
+  hashes: { tick: number; hash: string }[];
+  tick: number;
 }
 
 /** Why a 箭樓 preview is red off TowerLand (round 7, D-061). */
@@ -120,6 +142,13 @@ const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   garrison: GARRISON_PROMPT,
   post: POST_PROMPT,
 };
+
+/** The sequence number after the log's last (繼續上一局, D-083): the game's commands go on numbered after it. */
+export function nextSeq(log: string): number {
+  let last = 0;
+  for (const m of log.matchAll(/"seq":(\d+)/g)) last = Math.max(last, Number(m[1]));
+  return last + 1;
+}
 
 export class Game implements GestureHost {
   view: GameView | null = null;
@@ -143,7 +172,13 @@ export class Game implements GestureHost {
   lastHash: { tick: number; hash: string } | null = null;
   /** How the game ended, once it has. */
   over: { winner: number; reason: GameOverReason; ticks: number } | null = null;
-  private logWaiters: ((jsonl: string) => void)[] = [];
+  private logWaiters: ((log: ExportedLog) => void)[] = [];
+  /** 繼續上一局 (D-083): the saved game's screen, put back with the first snapshot once the game is where it was. */
+  private restoring: SavedGame | null = null;
+  /** The next tick at which the page keeps the game (every minute of game time). */
+  private nextSave = SAVE_EVERY_TICKS;
+  /** 繼續上一局: the game went on without its screen (a save in another format); the page says so once the battlefield shows. */
+  screenLost = false;
   /** 軍團畫面 (D-054): the group shown in place of the selection info, chosen with its button; null for the usual one. */
   groupView: number | null = null;
   /** What was selected before the group button was tapped (改成剛才選的 N 名). */
@@ -412,28 +447,79 @@ export class Game implements GestureHost {
       scenario: this.options.scenario,
       // Only a random map says so (D-074): a fixed map's init and log stay as they were.
       ...(this.options.map === "random" ? { map: "random" as const } : {}),
+      build: this.options.build,
     };
     this.initSent = init;
-    this.port.postMessage(init);
+    const resume = this.options.resume;
+    if (resume === undefined) {
+      this.port.postMessage(init);
+      return;
+    }
+    // 繼續上一局 (D-083): the simulation runs the saved game again up to where it was, then waits.
+    this.restoring = resume;
+    this.seq = nextSeq(resume.log);
+    this.port.postMessage({ type: "continue", protocol: PROTOCOL_VERSION, build: this.options.build, log: resume.log, hashes: resume.hashes, toTick: resume.tick, tps: this.tps });
   }
 
   /**
-   * The simulation's command log (LogHeader, then one command per line), or null when it
-   * does not answer within `timeoutMs` (D-056). Asked before the Worker is stopped.
+   * The simulation's command log (LogHeader, then one command per line), with its hashes and
+   * the tick it got to (D-083), or null when it does not answer within `timeoutMs` (D-056).
+   * Asked before the Worker is stopped.
    */
-  exportLog(timeoutMs = 3000): Promise<string | null> {
+  exportLog(timeoutMs = 3000): Promise<ExportedLog | null> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.logWaiters = this.logWaiters.filter((w) => w !== got);
         resolve(null);
       }, timeoutMs);
-      const got = (jsonl: string) => {
+      const got = (log: ExportedLog) => {
         clearTimeout(timer);
-        resolve(jsonl);
+        resolve(log);
       };
       this.logWaiters.push(got);
       this.port.postMessage({ type: "export_log" });
     });
+  }
+
+  /** 繼續上一局 (D-083): what the screen keeps beside the simulation, to save with its log. */
+  screenState(): ScreenState {
+    const cam = this.camera;
+    const mid = cam === null ? null : cam.screenToWorld(cam.width / 2, cam.height / 2);
+    return {
+      army: this.army.save(),
+      alarms: this.alarms.save(),
+      charges: this.charges.save(),
+      camera: cam === null || mid === null ? null : { x: mid.x, y: mid.y, scale: cam.scale },
+      speed: this.speed,
+      seq: this.seq,
+      recruitMessageTick: Number.isFinite(this.recruitMessageTick) ? this.recruitMessageTick : null,
+    };
+  }
+
+  /**
+   * 繼續上一局: with the first snapshot of the game run again, the screen as it was saved. A
+   * save in another format (an update of the screen alone) goes on without it (ceo 2026-10-17).
+   */
+  private restoreScreen(saved: SavedGame, tick: number): void {
+    this.restoring = null;
+    this.nextSave = (Math.floor(tick / SAVE_EVERY_TICKS) + 1) * SAVE_EVERY_TICKS;
+    if (saved.screenVersion !== SCREEN_VERSION) {
+      this.screenLost = true;
+      return;
+    }
+    const s = saved.screen;
+    this.army.restore(s.army);
+    this.alarms.restore(s.alarms);
+    this.charges.restore(s.charges);
+    this.recruitMessageTick = s.recruitMessageTick ?? Number.NEGATIVE_INFINITY;
+    this.seq = Math.max(this.seq, s.seq);
+    this.speed = s.speed;
+    this.controls.setSpeed(s.speed);
+    const cam = this.camera;
+    if (cam !== null && s.camera !== null) {
+      cam.zoomAt(0, 0, s.camera.scale);
+      cam.centerOn(s.camera.x, s.camera.y);
+    }
   }
 
   /** The tick the game has reached (the last snapshot's). */
@@ -1114,6 +1200,12 @@ export class Game implements GestureHost {
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
         this.lab.log.add(`ready seed ${this.options.seed} ${JSON.stringify(this.options.env())}`);
+        // 繼續上一局: the simulation waits where the game was, as when the page comes back from
+        // the background (GDD §11): paused until 繼續.
+        if (this.restoring !== null) {
+          this.paused = true;
+          this.controls.setPaused(true);
+        }
         break;
       }
       case "snapshot": {
@@ -1122,6 +1214,12 @@ export class Game implements GestureHost {
         const now = performance.now();
         view.push(msg, now);
         this.lab.snapshot(msg.header, now);
+        const tick = view.header?.[H.tick] ?? 0;
+        if (this.restoring !== null) this.restoreScreen(this.restoring, tick);
+        else if (tick >= this.nextSave) {
+          this.nextSave = (Math.floor(tick / SAVE_EVERY_TICKS) + 1) * SAVE_EVERY_TICKS;
+          this.options.minute?.();
+        }
         for (const ev of msg.events) {
           if (ev.k === "rejected") {
             const cmd = this.sent.find((c) => c.seq === ev.seq);
@@ -1161,7 +1259,15 @@ export class Game implements GestureHost {
         this.lastHash = { tick: msg.tick, hash: msg.hash };
         break;
       case "log":
-        for (const w of this.logWaiters.splice(0)) w(msg.jsonl);
+        for (const w of this.logWaiters.splice(0)) w({ jsonl: msg.jsonl, hashes: msg.hashes ?? [], tick: msg.tick ?? this.currentTick() });
+        break;
+      case "continue_progress":
+        this.options.progress?.(msg.tick, msg.toTick);
+        break;
+      case "continue_failed":
+        this.lab.log.add(`continue_failed ${msg.reason} tick ${msg.tick} ${msg.message}`);
+        this.restoring = null;
+        this.options.continueFailed?.(msg.reason, msg.tick);
         break;
       default:
         break;

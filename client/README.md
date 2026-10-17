@@ -34,6 +34,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 | `ui/hud/` | 介面外殼（臨時版）：`hud.ts`（編隊、全軍（寫會選到幾名）、閒置、全體回城、被攻擊箭頭、經濟分配、搶或治理、選單、勝負）、`panels.ts`（資源列（人口含訓練中、最後是遊戲時間）、選取資訊與軍團畫面、指令區（進攻／撤退／堅守））、`minimap.ts`、`names.ts`（顯示用名稱）、`economy-ratio.ts` |
 | `lab/` | 量測與確定性檢查（互斥、無效標示、對照 CI 雜湊）、log 框 |
 | `logs/` | 對局紀錄（D-056）：紀錄代號（`code.ts`）、存在 IndexedDB 的最近 50 局（`store.ts`）、上傳（`upload.ts`）、每局結束時組一筆紀錄並存、傳（`collect.ts`） |
+| `save/` | 繼續上一局（D-083）：手機上存的那一局（`save.ts`，IndexedDB 的 `war-game-continue`）、開局畫面和快轉的字 |
 | `tuning.ts` | 長按 350 ms、移動容許 10 px、點兩下 300 ms、慣性等參數 |
 | `difficulty.ts` | 開局畫面的難度：第一次是簡單，之後記住這台手機上次選的；讀寫瀏覽器儲存空間失敗時當成沒存過（D-024） |
 
@@ -223,6 +224,13 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
   - 閃紅提醒的基準扣掉因為躲進去或駐守而離開的兵（`GroupAlarms.left`），只有倒下的兵會讓它變紅。
 - 每兵種上限（軍團畫面的 ＋）：跟著人口天花板（`groupWantMax`），讀快照表頭的 `populationCeiling`（core #195；沒有時用 `rules.maxPopulation`）。人口規則關著時是 120；開著時 200，加上治理中的城鎮（`test/population-sim.test.ts` 用真的模擬驗）。
 - 頁面切到背景就存紀錄，見下面「對局紀錄」。
+- 繼續上一局（PR B）：iPhone Safari 把切到背景的頁面清掉以後，重新打開還能接著打。
+  - 存：切到背景時，以及對局中每 1 分鐘（遊戲時間），把模擬的指令紀錄、每 100 tick 的雜湊、跑到第幾 tick（`export_log`），加上這局的開局設定和畫面自己的狀態（編隊和目標、自動補兵、留守、出來的兵、閃紅的基準、進攻到底、鏡頭、速度），存在手機上（只存一局）。每分鐘那次只存手機、不上傳（ceo 2026-10-17）；切到背景那次也上傳紀錄（見下面「對局紀錄」）。打完、按重來或開新局就清掉。
+  - 開局畫面：有存著、還沒打完的局時，多一顆「繼續上一局（第 N 分）」，這時它是主要按鈕（按「開始」會清掉存的那一局）。模擬換過（`protocol` 或 `build` 不同，網站已經更新）時按鈕變灰，下面寫「網站已經更新，這一局不能繼續」。
+  - 按下去：模擬從第 0 tick 用最快的速度跑回存的地方（core #197，`continue`），開局畫面顯示「快轉中：第 a／b 分」和進度條，可以取消（存的那一局留著）。跑完還原畫面的狀態，停在暫停，按「繼續」才開始。畫面狀態的格式不同（只有畫面改版）時照樣接著打，不還原，提示「編隊沒有還原，請重新編」。
+  - 接不下去時分兩種說明：網站已經更新（`protocol`、`build`），或「紀錄對不上（第 N 分），這一局不能繼續」（`log`、`commands`、`hash`）；存的那一局清掉，紀錄在切到背景時已經上傳。
+  - 模擬的 `build`：`scripts/sim-build.ts` 用 Rolldown 從 `sim/src/worker.ts` 打包一次，取實際打包進去的模組，路徑排序後連同內容算 sha256 前 12 碼；`vite.config.ts` 以 `__SIM_BUILD__` 給頁面，`init` 和 `continue` 都帶（PROTOCOL.md 9.1）。只改畫面或量測工具的上線，舊局照樣接得下去。`node scripts/sim-build.ts` 印出它和檔案清單。
+  - 測試：`test/save.test.ts`（畫面狀態存了再還原一樣、存檔讀回的檢查、字、build 只算 worker 的檔案）；`e2e/continue.spec.ts`（真的模擬：存、重新載入、快轉、還原、接著打，紀錄接在原來的後面、重播雜湊一樣；網站更新；紀錄對不上；80 分鐘那局的量測，只在 Chromium）。
 
 ## 對局紀錄（D-056）
 
