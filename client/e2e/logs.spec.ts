@@ -156,3 +156,59 @@ test("對局紀錄：重來時，打了一分鐘以上的局存成「沒打完�
   expect((await kept(page)).length).toBe(1);
   check();
 });
+
+/** The page goes to the background (or comes back), as when the phone is put away. */
+async function visibility(page: Page, state: "hidden" | "visible"): Promise<void> {
+  await page.evaluate((s) => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => s });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, state);
+}
+
+test("對局紀錄：切到背景就存一份「還在打」的紀錄並上傳；沒有打得更遠就不再傳；打得更遠再切到背景，用新的局編號上傳，手機上這局只留一筆；打完時換成結果（D-083）", async ({ page }) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  const bodies = await catchUploads(page, [201]);
+  await start(page, `tps=400&logs=${encodeURIComponent(LOGS)}`);
+  // Before a minute of game time: nothing.
+  await page.getByRole("button", { name: "暫停", exact: true }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
+  await visibility(page, "hidden");
+  await visibility(page, "visible");
+  await page.waitForTimeout(500);
+  expect(bodies).toEqual([]);
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(1300);
+  // Paused and away: kept and uploaded, still being played.
+  await page.getByRole("button", { name: "暫停", exact: true }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
+  await visibility(page, "hidden");
+  await expect.poll(() => bodies.length, { timeout: 15_000 }).toBe(1);
+  const first = JSON.parse(bodies[0]) as GameRecord;
+  expect([first.result, first.reason]).toEqual(["abandoned", "hidden"]);
+  expect(first.ticks).toBeGreaterThan(1300);
+  await expect.poll(async () => (await kept(page)).map((e) => [e.id, e.state])).toEqual([[first.id, "sent"]]);
+  // Back and away again, still paused: no further, nothing new to send (1,000 writes a day).
+  await visibility(page, "visible");
+  await visibility(page, "hidden");
+  await page.waitForTimeout(1000);
+  expect(bodies.length).toBe(1);
+  // Further on, away again: a new 局編號, more ticks; the phone keeps this game once.
+  await visibility(page, "visible");
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(first.ticks + 400);
+  await visibility(page, "hidden");
+  await expect.poll(() => bodies.length, { timeout: 15_000 }).toBe(2);
+  const second = JSON.parse(bodies[1]) as GameRecord;
+  expect(second.id).not.toBe(first.id);
+  expect(second.ticks).toBeGreaterThan(first.ticks);
+  await expect.poll(async () => (await kept(page)).map((e) => e.id)).toEqual([second.id]);
+  // The end: the result takes its place.
+  await visibility(page, "visible");
+  await surrender(page);
+  await expect.poll(() => bodies.length, { timeout: 15_000 }).toBe(3);
+  const last = JSON.parse(bodies[2]) as GameRecord;
+  expect(last.result).toBe("loss");
+  await expect.poll(async () => (await kept(page)).map((e) => [e.id, e.rec.result])).toEqual([[last.id, "loss"]]);
+  check();
+});

@@ -13,6 +13,17 @@ export interface StoredLog {
   savedAt: number;
   state: "pending" | "sent" | "rejected";
   rec: GameRecord;
+  /**
+   * Which game it is (D-083): saved again when the page goes to the background and when the game
+   * ends, one game keeps one entry on the phone, the newest. Never uploaded: each save goes up
+   * under its own 局編號, and the newest of a game has the most ticks.
+   */
+  game?: string;
+}
+
+/** A save of the game that goes further: more ticks, or the game's end after a save that was not. */
+export function goesFurther(next: GameRecord, kept: GameRecord): boolean {
+  return next.ticks > kept.ticks || (next.result !== "abandoned" && kept.result === "abandoned");
 }
 
 export interface LogBackend {
@@ -30,11 +41,21 @@ export class LogStore {
     this.backend = backend;
   }
 
-  /** Keeps a game (once per 局編號) and drops the oldest beyond KEEP_GAMES. False: already kept. */
-  async save(rec: GameRecord, now: number): Promise<boolean> {
-    const all = await this.backend.all();
+  /**
+   * Keeps a game (once per 局編號) and drops the oldest beyond KEEP_GAMES. With `game` (D-083),
+   * it takes the place of that game's entry when it goes further (goesFurther), else nothing is
+   * kept. False: nothing kept.
+   */
+  async save(rec: GameRecord, now: number, game?: string): Promise<boolean> {
+    let all = await this.backend.all();
     if (all.some((e) => e.id === rec.id)) return false;
-    const entry: StoredLog = { id: rec.id, savedAt: now, state: "pending", rec };
+    if (game !== undefined) {
+      const same = all.filter((e) => e.game === game);
+      if (same.some((e) => !goesFurther(rec, e.rec))) return false;
+      for (const e of same) await this.backend.remove(e.id);
+      all = all.filter((e) => e.game !== game);
+    }
+    const entry: StoredLog = game === undefined ? { id: rec.id, savedAt: now, state: "pending", rec } : { id: rec.id, savedAt: now, state: "pending", rec, game };
     await this.backend.put(entry);
     for (const old of [...all, entry].sort(newestFirst).slice(KEEP_GAMES)) await this.backend.remove(old.id);
     return true;

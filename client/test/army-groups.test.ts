@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ArmyBook, type ArmyUnit, mostlyLoose, RECRUIT_RECHECK_TICKS, redirects, type TownArea } from "../src/game/army.ts";
+import { ArmyBook, type ArmyUnit, groupWantMax, mostlyLoose, RECRUIT_RECHECK_TICKS, redirects, type TownArea } from "../src/game/army.ts";
 import { CELL, UnitType } from "../src/sim.ts";
 
 const FARMER = UnitType.Farmer;
@@ -441,4 +441,54 @@ test("新兵補不進任何編隊時，加入現有兵最多的編隊，那種�
   w.add(103, MAGE, 10, 10);
   assert.equal(book.joinLargest(103, MAGE, w.typeOf), 1, "group 2 has 4 again, group 1 has 3");
   assert.equal(book.joinLargest(104, FARMER, w.typeOf), null, "farmers never");
+});
+
+// --- 躲進建築 (D-083): those who hide leave their group; 自動補兵 never takes them back ----------
+
+test("躲進建築：躲進去就離開編隊，目標不變；編隊照自動補兵補空閒的兵，不挑躲著的兵（D-083）", () => {
+  const w = new World();
+  const book = new ArmyBook();
+  book.saveGroup(0, w.many(1, 5, RANGED, 10, 10));
+  w.many(11, 2, RANGED, 30, 30); // two idle ranged in no group
+  // Ranged 1–3 hide (order Garrison: not idle).
+  const hiding = [1, 2, 3];
+  book.keepOut(hiding);
+  assert.deepEqual(book.leaveGroups(hiding), [3, 0, 0, 0], "three left group 1");
+  assert.equal(count(book, 0), "2/5", "the target stays");
+  assert.deepEqual(book.groups[0].want, { [RANGED]: 5 });
+  const idle = (id: number) => !hiding.includes(id);
+  assert.deepEqual(book.draft(w.army(), idle), [{ group: 0, ids: [11, 12] }], "the idle two fill it, not those hiding");
+  assert.equal(count(book, 0), "4/5");
+});
+
+test("出來以後：不在任何編隊；編隊還缺人、自動補兵開著，也不會被補回去；玩家自己編進編隊後才照一般規則（D-083）", () => {
+  const w = new World();
+  const book = new ArmyBook();
+  book.saveGroup(0, w.many(1, 5, RANGED, 10, 10));
+  book.keepOut([1, 2, 3, 4, 5]);
+  book.leaveGroups([1, 2, 3, 4, 5]);
+  assert.equal(count(book, 0), "0/5");
+  assert.equal(book.groups[0].refill, true);
+  // All five came out (全部出來): idle, in no group, the group short of five.
+  assert.deepEqual(book.draft(w.army(), () => true), [], "「出來的 5 名不會自己回到編隊1，要再拉進去」");
+  assert.equal(count(book, 0), "0/5");
+  for (const id of [1, 2, 3, 4, 5]) assert.equal(book.isKeptOut(id), true);
+  // The player puts two of them in group 2 himself; they are under the usual rules again.
+  book.saveGroup(1, [w.add(1, RANGED, 10, 10), w.add(2, RANGED, 11, 10)]);
+  assert.equal(book.isKeptOut(1), false);
+  assert.equal(book.isKeptOut(3), true);
+  // The fallen are forgotten.
+  w.kill(3);
+  book.prune(w.alive, () => true);
+  assert.equal(book.isKeptOut(3), false);
+});
+
+test("每兵種上限跟著人口天花板：現在是 rules 的 120；模擬給了這一局的天花板就用它（D-083）", () => {
+  assert.equal(groupWantMax({ maxPopulation: 120 }), 120);
+  assert.equal(groupWantMax({ maxPopulation: 120 }, 280), 280);
+  // A group may want the whole ceiling of one type (the old cap was 50).
+  const w = new World();
+  const book = new ArmyBook();
+  book.setWant(0, RANGED, groupWantMax({ maxPopulation: 120 }), w.typeOf);
+  assert.deepEqual(book.groups[0].want, { [RANGED]: 120 });
 });

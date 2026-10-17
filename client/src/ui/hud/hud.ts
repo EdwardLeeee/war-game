@@ -17,8 +17,6 @@ import { armyText, BUILDING_NAME, clock, GAME_OVER_REASON, UNIT_NAME } from "./n
 import { CommandArea, PLUNDERED_TEXT, ResourceBar, SelectionInfo } from "./panels.ts";
 
 const UPDATE_MS = 100;
-/** 軍團畫面 asks for at most this many of one type (more than the population cap allows). */
-const GROUP_WANT_MAX = 50;
 /** px between the resource bar and the top-right buttons. */
 const RES_GAP = 8;
 const ALERT_MS = 6000;
@@ -165,7 +163,7 @@ export class Hud {
       groupView: () => game.groupView,
       groupWant: (i: number, type: number) => game.army.groups[i].want[type] ?? 0,
       groupHas: (i: number, type: number) => game.groupHas(i, type),
-      setGroupWant: (i: number, type: number, n: number) => game.setGroupWant(i, type, Math.min(n, GROUP_WANT_MAX)),
+      setGroupWant: (i: number, type: number, n: number) => game.setGroupWant(i, type, Math.min(n, game.groupWantMax())),
       clearGroup: (i: number) => game.clearGroup(i),
       beforeGroupCount: () => game.beforeGroupCount(),
       saveBeforeIntoGroup: (i: number) => {

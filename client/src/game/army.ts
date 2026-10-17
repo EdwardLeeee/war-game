@@ -78,6 +78,15 @@ const emptyGroup = (): Group => ({ ids: [], want: {}, saved: 0, refill: true, re
 /** The soldier types 軍團設定 sets, in the order of its rows (騎兵 only while `features.cavalry`, round 7). */
 export const GROUP_TYPES = [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry] as const;
 
+/**
+ * 軍團設定 (D-083: 「一隻部隊單一兵種上限只能50隻」): one type of soldier a group may want up to
+ * the population's ceiling, so a whole army of one type fits in one group. `rules.maxPopulation`
+ * (120) until the simulation gives the ceiling of the game (core's D-083: 200 and more with towns).
+ */
+export function groupWantMax(rules: { maxPopulation: number }, ceiling: number | null = null): number {
+  return Math.max(1, ceiling ?? rules.maxPopulation);
+}
+
 /** The units 全軍 and the garrison rules are about: farmers are not soldiers. */
 export function isSoldier(type: number): boolean {
   return type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage || type === UnitType.Cavalry;
@@ -125,6 +134,12 @@ export class ArmyBook {
   /** Town id → the soldiers stationed together with a 搶 or 治理 (command `seq`) that the simulation has not answered yet. */
   private readonly pending = new Map<number, { seq: number; ids: number[] }>();
   readonly groups: Group[] = [emptyGroup(), emptyGroup(), emptyGroup(), emptyGroup()];
+  /**
+   * Soldiers who hid in a building (D-083): 自動補兵 does not take them, inside or once out (the
+   * user's choice D083-1-A: 「出來的 5 名不會自己回到編隊1，要再拉進去」), until the player puts
+   * them in a group himself (saveGroup).
+   */
+  private readonly keptOut = new Set<number>();
 
   garrisonOf(town: number): number[] {
     return [...(this.garrisons.get(town) ?? [])];
@@ -170,15 +185,28 @@ export class ArmyBook {
   }
 
   /**
-   * 哨所 (D-080): these soldiers stand guard at an outpost. Like those stationed in a town they
-   * leave their control groups, which fill up again (自動補兵).
+   * 哨所 (D-080), 躲進建築 (D-083): these soldiers stand guard at an outpost or hide in a
+   * building. Like those stationed in a town they leave their control groups, which keep what
+   * they want and fill up again (自動補兵). Returns how many left each group.
    */
-  leaveGroups(ids: readonly number[]): void {
-    for (const g of this.groups) {
-      if (!g.ids.some((id) => ids.includes(id))) continue;
+  leaveGroups(ids: readonly number[]): number[] {
+    return this.groups.map((g) => {
+      const before = g.ids.length;
+      if (!g.ids.some((id) => ids.includes(id))) return 0;
       g.ids = g.ids.filter((id) => !ids.includes(id));
       g.recruits = g.recruits.filter((r) => !ids.includes(r.id));
-    }
+      return before - g.ids.length;
+    });
+  }
+
+  /** These soldiers hid in a building (D-083): 自動補兵 leaves them alone from now on, until saveGroup. */
+  keepOut(ids: readonly number[]): void {
+    for (const id of ids) this.keptOut.add(id);
+  }
+
+  /** Whether 自動補兵 leaves this soldier alone (it hid in a building, D-083). */
+  isKeptOut(id: number): boolean {
+    return this.keptOut.has(id);
   }
 
   /** These units stop being garrison (the player ordered them away). Returns the ones that were stationed. */
@@ -204,6 +232,7 @@ export class ArmyBook {
       }
     }
     for (const g of this.groups) if (g.ids.some((id) => !alive(id))) g.ids = g.ids.filter(alive);
+    for (const id of [...this.keptOut]) if (!alive(id)) this.keptOut.delete(id);
     return released;
   }
 
@@ -238,6 +267,8 @@ export class ArmyBook {
    * with it (the player is regrouping, which must not read as losses to fill).
    */
   saveGroup(i: number, units: { id: number; type: number }[]): void {
+    // Put in a group by hand: 自動補兵's rules again (D-083).
+    for (const u of units) this.keptOut.delete(u.id);
     this.groups.forEach((g, k) => {
       if (k === i) return;
       for (const u of units) {
@@ -333,7 +364,7 @@ export class ArmyBook {
   draft(units: ArmyUnit[], idle: (id: number) => boolean = () => true): { group: number; ids: number[] }[] {
     const inGroup = new Set(this.groups.flatMap((g) => g.ids));
     const typeOf = new Map(units.map((u) => [u.id, u.type]));
-    const free = units.filter((u) => isSoldier(u.type) && !inGroup.has(u.id) && !this.isGarrisoned(u.id) && idle(u.id)).sort((a, b) => a.id - b.id);
+    const free = units.filter((u) => isSoldier(u.type) && !inGroup.has(u.id) && !this.isGarrisoned(u.id) && !this.keptOut.has(u.id) && idle(u.id)).sort((a, b) => a.id - b.id);
     const out: { group: number; ids: number[] }[] = [];
     for (const u of free) {
       const best = this.shortest(u.id, u.type, (m) => typeOf.get(m) ?? null);

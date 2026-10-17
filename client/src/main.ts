@@ -124,29 +124,52 @@ $("commit").textContent = `commit ${__COMMIT__}`;
 $("record-code").textContent = `紀錄代號 ${code}`;
 
 /**
- * A game's record, once: when it ends, or when 重來 leaves it after a minute of game time.
- * Resolves when the simulation has given the log (before its Worker may be stopped); keeping
- * and uploading go on by themselves. The fake world and 量測 are not kept.
+ * A game's record: when it ends, when 重來 leaves it, and (D-083) whenever the page goes to the
+ * background, so that a game Safari drops while the phone is put away is not lost with it. From
+ * a minute of game time on, and only when the game has gone further than the last save (the
+ * Worker's free plan writes 1,000 records a day). Each save goes up under a new 局編號; on the
+ * phone it takes the place of the game's earlier one, so the game keeps one entry, and of a
+ * game's uploads the one with the most ticks is the newest. `hidden`: saved in the background,
+ * still being played (result abandoned, reason "hidden"). Resolves when the simulation has
+ * given the log (before its Worker may be stopped); keeping and uploading go on by themselves,
+ * off the game's frames. The fake world, 量測 and watching are not kept.
  */
-const keeping = new WeakMap<Game, Promise<void>>();
-function keepLog(g: Game): Promise<void> {
-  const already = keeping.get(g);
-  if (already !== undefined) return already;
+const saves = new WeakMap<Game, { game: string; ticks: number; ended: boolean; job: Promise<void> }>();
+function keepLog(g: Game, hidden = false): Promise<void> {
   const init = g.initSent;
-  // Not kept: the fake world, 量測, and watching the computer play itself (test pages).
-  if (params.mock || params.watch || init === null || init.scenario === "perf") return Promise.resolve();
+  // Not kept: the fake world, 量測 (perf, perf200, perf360), and watching the computer play itself (test pages).
+  if (params.mock || params.watch || init === null || init.scenario.startsWith("perf")) return Promise.resolve();
   const over = g.over;
   const ticks = over === null ? g.currentTick() : over.ticks;
   if (over === null && ticks < MIN_ABANDONED_TICKS) return Promise.resolve();
-  const job = g.exportLog().then((log) => {
-    if (log === null || log === "") return;
-    const end = over === null ? { result: "abandoned" as const, reason: "", ticks } : { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks };
-    const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log });
-    void logs.keep(record);
-  });
-  keeping.set(g, job);
-  return job;
+  let s = saves.get(g);
+  if (s === undefined) {
+    s = { game: crypto.randomUUID(), ticks: -1, ended: false, job: Promise.resolve() };
+    saves.set(g, s);
+  }
+  // Nothing new since the last save: no write, no upload.
+  if (ticks <= s.ticks && (over === null || s.ended)) return s.job;
+  s.ticks = ticks;
+  s.ended = over !== null;
+  const save = s;
+  save.job = save.job.then(() =>
+    g.exportLog().then((log) => {
+      if (log === null || log === "") return;
+      const end = over !== null ? { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks } : { result: "abandoned" as const, reason: hidden ? "hidden" : "", ticks };
+      const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log });
+      void logs.keep(record, save.game);
+    }),
+  );
+  return save.job;
 }
+
+// To the background (D-083): iPhone Safari may drop the page while it is away, with the game.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && game !== null) void keepLog(game, true);
+});
+window.addEventListener("pagehide", () => {
+  if (game !== null) void keepLog(game, true);
+});
 
 /**
  * 有新版本 (D-042): checked when the page opens and whenever it comes back from the

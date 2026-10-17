@@ -105,9 +105,12 @@ export class LogCollector {
     return next;
   }
 
-  /** Keeps a game; the upload of everything waiting follows. Resolves once it is kept (or could not be). */
-  keep(rec: GameRecord): Promise<boolean> {
-    const kept = this.run((s) => s.save(rec, Date.now()), false);
+  /**
+   * Keeps a game; the upload of everything waiting follows. Resolves once it is kept (or could
+   * not be). `game`: that game's earlier save on the phone gives way to this one (D-083).
+   */
+  keep(rec: GameRecord, game?: string): Promise<boolean> {
+    const kept = this.run((s) => s.save(rec, Date.now(), game), false);
     void this.flush();
     return kept;
   }

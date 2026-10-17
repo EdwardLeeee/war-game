@@ -1,7 +1,7 @@
 // 第七輪 (D-061) on the fake world with its rules on (?test=1&mock=1&r7=1, src/mock/mock-port.ts):
 // a town plundered once offers only 治理, a governed town's income line, arrow towers only near
-// the main city or a governed town, 躲進去 and 全部出來, those hiding left out of orders given to
-// many (ceo 2026-10-07), the enemy tower's 裡面有人 and its arrows, and the stable training
+// the main city or a governed town, 躲進去 and 全部出來, those hiding left out of their groups
+// and of orders given to many (ceo 2026-10-07, D-083), the enemy tower's 裡面有人 and its arrows, and the stable training
 // cavalry. The last tests check that without the switches none of it shows. The simulation's
 // side is tested by core.
 
@@ -275,32 +275,35 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
   await shot(page, info, "d080-call-city-full");
 });
 
-test("躲著的兵：編隊照算、點編隊會選到，不會因此再拉兵補進編隊；編隊的進攻只送沒躲的；只選躲著的兵時說明怎麼叫出來；全軍、全軍撤退不含他們（ceo 2026-10-07）", async ({ page }) => {
+test("躲著的兵（D-083）：躲進去就離開編隊、目標不變，按鈕少了他們；只選躲著的兵時說明怎麼叫出來；全軍、全軍撤退不含他們；出來以後不在編隊，自動補兵挑別的兵、不把他們拉回去，全軍又算到他們", async ({ page }, info) => {
   await start(page);
   const spear = await ownIds(page, [1]);
   const ranged = await ownIds(page, [2]);
   const mages = await ownIds(page, [3]);
+  expect(ranged.length).toBeGreaterThanOrEqual(4);
   const hiding = ranged.slice(0, 2);
   const group = [...spear, ...hiding].sort((a, b) => a - b);
   await selectForCommands(page, group);
   await saveGroup(page, GROUP_1);
+  const groupInfo = () => page.evaluate(() => (window.__proto?.game?.groupInfo() ?? [])[0]);
+  const groupIds = async () => [...((await groupInfo())?.ids ?? [])].sort((a, b) => a - b);
+  const want = (await groupInfo())?.want;
+  // 自動補兵 off first, so that the button shows them gone.
+  const sw = page.locator(".sel-info").getByRole("button", { name: /^自動補兵：/ });
+  await sw.tap();
+  await expect(sw).toHaveText("自動補兵：關");
   await hideInCity(page, hiding);
-  // Still in the group, which is not short of them: the other ranged units stay free.
-  const groupIds = async () => [...((await page.evaluate(() => window.__proto?.game?.groupInfo() ?? []))[0]?.ids ?? [])].sort((a, b) => a - b);
-  // Nothing should happen: 自動補兵 checks every snapshot, and a second is many of them.
-  await page.waitForTimeout(1000);
-  expect(await groupIds()).toEqual(group);
-  await expect(toast(page, "補進編隊")).toHaveCount(0);
-  // Tapping the group selects them too.
-  await page.evaluate(() => window.__proto?.game?.select([]));
-  await tapOn(page, GROUP_1);
-  await expect.poll(() => selection(page)).toEqual({ units: group, building: null });
-  // 進攻 for the group: those hiding stay inside.
-  await expect(page.locator(".cmds")).toHaveAttribute("data-selection", group.join(","));
-  await page.locator(".cmds").getByRole("button", { name: /^進攻/ }).tap();
-  await tap(page, await at(page, { x: 18, y: 67 }));
-  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "move", u: spear, x: 18, y: 67 });
-  expect(await soldiersIn(page, await mainCityId(page))).toBe(hiding.length);
+  // Out of the group, which still wants them: the button reads short.
+  await expect.poll(groupIds).toEqual(spear);
+  expect((await groupInfo())?.want).toEqual(want);
+  await expect(page.locator(GROUP_1)).toHaveText(`1·${spear.length}/${group.length}`);
+  // The main city selected, with how many hide in it, for the picture.
+  await centre(page, MAIN_CITY.x + 8, MAIN_CITY.y - 2);
+  await tap(page, await at(page, { x: MAIN_CITY.x + 1, y: MAIN_CITY.y + 1 }));
+  await expect(page.locator(".sel-info")).toContainText(`躲了 ${hiding.length} 名士兵`);
+  await expect(toast(page, "自動補兵：關")).toHaveCount(0, { timeout: 10_000 });
+  await shot(page, info, "d083-group-after-hiding");
+  await centre(page, 22, 71);
   // Only those hiding selected: nothing sent, and how to get them out.
   const mark = (await sent(page)).length;
   await selectForCommands(page, hiding);
@@ -309,14 +312,32 @@ test("躲著的兵：編隊照算、點編隊會選到，不會因此再拉兵�
   await tap(page, await at(page, { x: 18, y: 67 }));
   await expect(toast(page, HIDE_ERROR)).toBeVisible();
   expect((await sent(page)).slice(mark).filter((c) => c.c === "move" || c.c === "attack")).toEqual([]);
-  // 全軍 and 全軍撤退: only those outside.
+  // 全軍 (and 全軍撤退, from the same list): only those outside.
   const outside = [...spear, ...ranged.slice(2), ...mages].sort((a, b) => a - b);
   await expect(armyButton(page)).toHaveText(`全軍 ${outside.length}`);
-  await page.evaluate(() => window.__proto?.game?.select([]));
-  await page.getByRole("button", { name: "全軍撤退" }).tap();
-  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: outside });
   await armyButton(page).tap();
   await expect.poll(() => selection(page)).toEqual({ units: outside, building: null });
+  // 全部出來, then 自動補兵 on: the group, short, takes other ranged units, not those who hid
+  // (the first by id, whom it would take otherwise).
+  const city = await mainCityId(page);
+  await page.evaluate((b) => window.__proto?.game?.send({ c: "leave", building: b }), city);
+  await expect.poll(() => soldiersIn(page, city), TICKS).toBe(0);
+  await tapOn(page, GROUP_1);
+  await sw.tap();
+  await expect(sw).toHaveText("自動補兵：開");
+  await expect.poll(async () => (await groupIds()).length, TICKS).toBe(group.length);
+  const now = await groupIds();
+  for (const id of hiding) expect(now).not.toContain(id);
+  expect(now).toEqual([...spear, ...ranged.slice(2, 4)].sort((a, b) => a - b));
+  // Nothing more after a while: 自動補兵 checks every snapshot.
+  await page.waitForTimeout(1000);
+  expect(await groupIds()).toEqual(now);
+  // 全軍 and 全軍撤退 count them again.
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  const all = [...spear, ...ranged, ...mages].sort((a, b) => a - b);
+  await expect(armyButton(page)).toHaveText(`全軍 ${all.length}`);
+  await page.getByRole("button", { name: "全軍撤退" }).tap();
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: all });
 });
 
 test("別人的建築裡有人：敵方箭樓右上角有記號，點它寫「裡面有人」；它射箭時畫出箭（D-061）", async ({ page }, info) => {

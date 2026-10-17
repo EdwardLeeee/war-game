@@ -63,7 +63,7 @@ import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
 import { Placement, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
-import { ArmyBook, type ArmyUnit, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
+import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
@@ -882,12 +882,25 @@ export class Game implements GestureHost {
     };
     this.setStance(this.army.prune((id) => view.unitRow(id) >= 0, held), Stance.Aggressive);
     this.army.settle((town) => view.townAwaitsMyChoice(town));
-    // 哨所 (D-080): those posted at an outpost leave their groups, as those stationed in a town do.
+    // 哨所 (D-080) and 躲進建築 (D-083): those posted at an outpost, and those hiding in a building
+    // or on their way to, leave their groups, as those stationed in a town do. Those who hid are
+    // not taken by 自動補兵 again, inside or once out, until the player puts them in a group.
     const u = view.curr?.snap.units;
     if (u === undefined) return;
     const posted: number[] = [];
-    for (let o = 0; o < u.length; o += UNIT_STRIDE) if (u[o + UnitField.owner] === view.me && isPosted(u[o + UnitField.order])) posted.push(u[o + UnitField.id]);
-    if (posted.length > 0) this.army.leaveGroups(posted);
+    const hiding: number[] = [];
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] !== view.me) continue;
+      const order = u[o + UnitField.order];
+      if (isPosted(order)) posted.push(u[o + UnitField.id]);
+      else if (isHiding(order) && isSoldier(u[o + UnitField.type])) hiding.push(u[o + UnitField.id]);
+    }
+    this.army.keepOut(hiding);
+    if (posted.length + hiding.length === 0) return;
+    // Out of the alarm's base too (D-083): only the fallen bring it.
+    this.army.leaveGroups([...posted, ...hiding]).forEach((n, i) => {
+      if (n > 0) this.alarms.left(i, n);
+    });
   }
 
   // --- 編隊自動補兵 (D-026, GDD §10) ------------------------------------------------------
@@ -940,8 +953,8 @@ export class Game implements GestureHost {
     const view = this.view;
     if (view === null) return;
     const idle = (id: number): boolean => view.unitOrder(id) === Order.None && this.stances.of(id, view.unitStance(id)) !== Stance.Hold;
-    // Those hiding still count in their group (ceo 2026-10-07), so it is not short of them; not
-    // idle (order Garrison), they are never drafted themselves.
+    // Those hiding have left their groups (D-083), which fill up again; they are never drafted
+    // themselves, inside (order Garrison, not idle) or once out (ArmyBook.keepOut).
     for (const d of this.army.draft(this.soldiers(true), idle)) {
       const others = this.army.groups[d.group].ids.filter((m) => !d.ids.includes(m) && view.unitRow(m) >= 0);
       // With nobody in the group to join, they are the group where they stand (D-080).
@@ -1038,6 +1051,11 @@ export class Game implements GestureHost {
     }
     this.command({ c: "retreat", u, x: home.x, y: home.y });
     this.toast(`編隊 ${i + 1} 撤回主城`);
+  }
+
+  /** The most of one type a group may want: the population's ceiling (D-083). */
+  groupWantMax(): number {
+    return this.view === null ? 1 : groupWantMax(this.view.rules);
   }
 
   /** Living soldiers of this type in group i (現有). */
