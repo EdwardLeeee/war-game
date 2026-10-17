@@ -6,7 +6,7 @@
 import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, TownState, UnitType } from "../protocol.ts";
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import type { GameMap } from "./map.ts";
-import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, MAX_POPULATION, TOWNS, UNITS } from "./rules.ts";
+import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -201,6 +201,11 @@ export class World {
   governPaidBack = new Int32Array(PLAYER_COUNT);
   /** Tick of the first town capture, or -1. */
   firstCapture = -1;
+  /**
+   * The population cap and ceiling of every player, whatever is built or governed (the perf200
+   * and perf360 scenarios, D-083); 0: by the rules. Set once by the scenario, never changes.
+   */
+  fixedPopulation = 0;
   /** Who made it (a statistic for comebacks, D-057; not in the hash: firstCapture is). */
   firstCaptureBy = -1;
   /**
@@ -409,8 +414,23 @@ export class World {
     return pop;
   }
 
-  /** Population cap: finished buildings and governed towns, at most MAX_POPULATION. */
+  /**
+   * Population ceiling: MAX_POPULATION; with POPULATION_200 (D-083), its base plus its town[size]
+   * for each town p governs.
+   */
+  populationCeiling(p: number): number {
+    if (this.fixedPopulation > 0) return this.fixedPopulation;
+    if (!POPULATION_200.on) return MAX_POPULATION;
+    let ceiling = POPULATION_200.base;
+    for (let t = 0; t < this.townSize.length; t++) {
+      if (this.townOwner[t] === p && this.townState[t] === TownState.Governed) ceiling += POPULATION_200.town[this.townSize[t]];
+    }
+    return ceiling;
+  }
+
+  /** Population cap: finished buildings and governed towns, at most populationCeiling. */
   populationCap(p: number): number {
+    if (this.fixedPopulation > 0) return this.fixedPopulation;
     const b = this.buildings.col;
     let cap = 0;
     for (let s = 0; s < this.buildings.count; s++) {
@@ -419,7 +439,7 @@ export class World {
     for (let t = 0; t < this.townSize.length; t++) {
       if (this.townOwner[t] === p && this.townState[t] === TownState.Governed) cap += TOWNS[this.townSize[t]].populationCap;
     }
-    return Math.min(cap, MAX_POPULATION);
+    return Math.min(cap, this.populationCeiling(p));
   }
 
   /** The main city of a player, or -1. */
