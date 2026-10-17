@@ -254,11 +254,13 @@ test("放建築 → 預覽跟著手指，紅色不能按 ✓，放開後按 ✓ 
 
 test("量測面板：量測中不能再按；log 框跟著最新一行，往上捲時不會被拉走", async ({ page }, info) => {
   await openLab(page);
-  const measure = page.getByRole("button", { name: "開始量測" });
+  const measure = page.getByRole("button", { name: /^量測 \d+ 人$/ });
   const check = page.getByRole("button", { name: "確定性檢查" });
   await expect(check).toBeDisabled();
-  await measure.tap();
-  await expect(measure).toBeDisabled();
+  await expect(measure).toHaveText(["量測 120 人", "量測 200 人", "量測 360 人"]);
+  // The fake world: any of them measures the game on screen.
+  await measure.nth(2).tap();
+  for (let i = 0; i < 3; i++) await expect(measure.nth(i)).toBeDisabled();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toBe("warmup");
 
   // All at once: one round trip per line was slow enough on CI for the 35 s measurement to

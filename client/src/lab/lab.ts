@@ -11,6 +11,16 @@ export const WARMUP_MS = 5000;
 export const WINDOW_MS = 30000;
 export const PASS = { fpsMedian: 55, fpsLow: 30, tickMedianMs: 5 };
 /**
+ * 量測's games (D-083): the perf scenario with both sides at 120, 200 or 360 population, so the
+ * iPhone measures the higher population before its rules go live (sim/PROTOCOL.md section 8).
+ */
+export const PERF_SCENARIOS = [
+  { scenario: "perf", population: 120 },
+  { scenario: "perf200", population: 200 },
+  { scenario: "perf360", population: 360 },
+] as const;
+export type PerfScenario = (typeof PERF_SCENARIOS)[number]["scenario"];
+/**
  * A frame that took longer than this is a stall (停頓): the picture stops for about three
  * frames at 60 fps or more, which the player sees. The median and the slowest 5 % do not
  * show how many there were (D-030: 30 s at a median of 59.88 fps had only 1557 frames).

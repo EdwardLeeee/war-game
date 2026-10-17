@@ -24,8 +24,8 @@ export interface PageParams {
    * 箭樓, 躲進建築), which the simulation has behind switches the page cannot reach.
    */
   round7: boolean;
-  /** `?test=1&scenario=e2e|perf|standard`: start that scenario (sim/PROTOCOL.md section 8). */
-  scenario: "standard" | "e2e" | "perf" | null;
+  /** `?test=1&scenario=e2e|perf|perf200|perf360|standard`: start that scenario (sim/PROTOCOL.md section 8). */
+  scenario: "standard" | "e2e" | "perf" | "perf200" | "perf360" | null;
   /**
    * The opponent is played by the computer. `?test=1&ai=0` turns it off (its units stand still),
    * so the main-flow e2e does not race it for the small town; the AI is tested by core's games.
@@ -66,7 +66,7 @@ export function parseParams(search: string): PageParams {
     tps = Math.min(Number(raw), MAX_TEST_TPS);
   }
   const sc = q.get("scenario");
-  const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf") ? sc : null;
+  const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf" || sc === "perf200" || sc === "perf360") ? sc : null;
   const logs = q.get("logs");
   const logsUrl = test && logs !== null && /^https?:\/\/[^\s]+$/.test(logs) ? logs : null;
   const m = q.get("map");

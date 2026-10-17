@@ -348,10 +348,10 @@ test("確定性檢查：瀏覽器算出的一局和 CI 的無畫面執行完全�
   await start(page);
   await openLab(page);
   const check = page.getByRole("button", { name: "確定性檢查" });
-  const measure = page.getByRole("button", { name: "開始量測" });
+  const measure = page.getByRole("button", { name: /^量測 \d+ 人$/ });
   await expect(check).toBeEnabled();
   await check.tap();
-  await expect(measure).toBeDisabled();
+  for (let i = 0; i < 3; i++) await expect(measure.nth(i)).toBeDisabled();
   await expect(page.getByText("確定性檢查進行中，完成後才能量測")).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.lastCheck() as { same: boolean | null } | null), { timeout: 200_000 }).not.toBeNull();
   const r = (await page.evaluate(() => window.__proto?.game?.lastCheck())) as { same: boolean | null; compared: number; ticks: number; finalHash: string };
@@ -359,7 +359,7 @@ test("確定性檢查：瀏覽器算出的一局和 CI 的無畫面執行完全�
   expect(r.same, JSON.stringify(r)).toBe(true);
   expect(r.compared).toBeGreaterThan(100);
   await expect(page.getByText("確定性：與 CI 相同 ✓")).toBeVisible();
-  await expect(measure).toBeEnabled();
+  for (let i = 0; i < 3; i++) await expect(measure.nth(i)).toBeEnabled();
   await shot(page, info, "determinism-same");
 });
 
@@ -398,12 +398,12 @@ test("量測：開一局 perf 場景（所有系統都開著），暖機 5 秒�
   test.setTimeout(150_000);
   await start(page);
   await openLab(page);
-  await page.getByRole("button", { name: "開始量測" }).tap();
+  await page.getByRole("button", { name: "量測 120 人" }).tap();
   // A new game of the perf scenario (Scenario.Perf = 2) that measures itself.
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 2);
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
   await expect(page.getByRole("button", { name: "確定性檢查" })).toBeDisabled();
-  await expect(page.locator(".lab-result")).toContainText("場景：perf（所有系統都開著）", { timeout: 90_000 });
+  await expect(page.locator(".lab-result")).toContainText("場景：perf（所有系統都開著，雙方人口 120）", { timeout: 90_000 });
   // Measured at the speed the player plays at (D-024: 正常 is 30 ticks per second).
   await expect(page.locator(".lab-result")).toContainText("tick 速度：每秒 30 tick（正常）");
   // The texture limits for the sprite atlas (client/docs/sprite-atlas.md section 8).
@@ -412,6 +412,25 @@ test("量測：開一局 perf 場景（所有系統都開著），暖機 5 秒�
   await expect(page.locator(".lab-result")).toContainText(/平均 fps：[\d.]+/);
   await expect(page.locator(".lab-result")).toContainText(/停頓（一張畫面超過 50 ms）：\d+ 次，共 [\d.]+ 秒；最長的一張 [\d.]+ ms/);
   await shot(page, info, "perf-measure");
+});
+
+test("量測 360 人、200 人（D-083）：開 perf360，雙方人口 360/360，量完結果框寫明；在這局裡按量測 200 人，換開 perf200", async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await start(page);
+  await openLab(page);
+  await shot(page, info, "d083-lab-three-measures");
+  await page.getByRole("button", { name: "量測 360 人" }).tap();
+  // A new game of perf360 (Scenario.Perf360 = 4) that measures itself, both sides full.
+  await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 4);
+  await expect(page.locator(".res-bar")).toContainText("人口 360/360");
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
+  await expect(page.locator(".lab-result")).toContainText("場景：perf360（所有系統都開著，雙方人口 360）", { timeout: 150_000 });
+  await shot(page, info, "d083-perf360-measure");
+  // Another population: a game of its own (perf200, Scenario.Perf200 = 3).
+  await page.getByRole("button", { name: "量測 200 人" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 3);
+  await expect(page.locator(".res-bar")).toContainText("人口 200/200");
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
 });
 
 // --- 點存放建築派村民 (D-066) ------------------------------------------------------------

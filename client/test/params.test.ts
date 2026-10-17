@@ -27,6 +27,7 @@ test("test=1 turns on the hook and allows a faster tick rate and the fake world"
   assert.equal(parseParams("?test=1&mock=1&outpost=1").outpost, true);
   assert.equal(parseParams("?test=1&outpost=1").outpost, false, "the fake world only");
   assert.equal(parseParams("?test=1&scenario=e2e").scenario, "e2e");
+  assert.equal(parseParams("?test=1&scenario=perf360").scenario, "perf360", "量測 360 人 (D-083)");
   assert.equal(parseParams("?test=1&scenario=bogus").scenario, null);
 });
 
