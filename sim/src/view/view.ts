@@ -94,7 +94,13 @@ export function mapInfo(map: GameMap, player: number | null): MapInfo {
   };
 }
 
-const SCENARIO_ID: Record<string, number> = { standard: Scenario.Standard, e2e: Scenario.E2e, perf: Scenario.Perf };
+const SCENARIO_ID: Record<string, number> = {
+  standard: Scenario.Standard,
+  e2e: Scenario.E2e,
+  perf: Scenario.Perf,
+  perf200: Scenario.Perf200,
+  perf360: Scenario.Perf360,
+};
 
 export function buildView(game: Game, player: number | null, info?: RunnerInfo): PlayerView {
   const w = game.w;
@@ -280,6 +286,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     for (let s = 0; s < w.units.count; s++) if (u.owner[s] === player && u.type[s] === UnitType.Mage) mages++;
     header[HeaderField.population] = w.population(player);
     header[HeaderField.populationCap] = w.populationCap(player);
+    header[HeaderField.populationCeiling] = w.populationCeiling(player);
     header[HeaderField.mages] = mages;
     header[HeaderField.mageCap] = MAGE_CAP;
     header[HeaderField.ratioFood] = w.ecoRatio[player * 3];

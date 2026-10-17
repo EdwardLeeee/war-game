@@ -433,8 +433,13 @@ export const HeaderField = {
   reserveWood: 22,
   reserveGold: 23,
   reserveCrystal: 24,
+  /**
+   * The population ceiling now (D-083): what populationCap can reach with more houses
+   * (Rules.population: the base plus the governed towns). 120 while the rule is off.
+   */
+  populationCeiling: 25,
 } as const;
-export const HEADER_LENGTH = 25;
+export const HEADER_LENGTH = 26;
 
 /**
  * Fixed starting situations, generated entirely by the simulation from the seed.
@@ -445,10 +450,12 @@ export const HEADER_LENGTH = 25;
  *   (building and training from PR-3, the town part from PR-4).
  * - perf: both sides near the population cap, mages on autocast, fog on, fighting near a
  *   town: every system running, for the iPhone measurement (from PR-4).
+ * - perf200, perf360 (D-083): perf with both sides at 200 / 360 population (the cap and ceiling
+ *   held there), for measuring D-083's higher population on the iPhone.
  */
-export const Scenario = { Standard: 0, E2e: 1, Perf: 2 } as const;
+export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4 } as const;
 export type Scenario = (typeof Scenario)[keyof typeof Scenario];
-export type ScenarioName = "standard" | "e2e" | "perf";
+export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360";
 
 /**
  * Which map a game is played on (D-074). "fixed": the prototype's 96 x 96 map, the same every
@@ -617,6 +624,7 @@ export interface Rules {
   buildings: BuildingInfo[];
   multipliers: Multiplier[];
   mageCap: number;
+  /** The population ceiling without towns: 120; with D-083's rule on, 200 (`population.base`). */
   maxPopulation: number;
   queueMax: number;
   // Round 7 (D-061). The simulation always sends all of these; they are optional only so rules
@@ -649,6 +657,11 @@ export interface Rules {
   plunderRecovery?: { startPermille: number; ticks: number };
   /** The crystal cannon's range in fixed point (round 8: 7 cells; before, 8). */
   cannonRange?: number;
+  /**
+   * The population ceiling (D-083): `base` plus `town[size]` (by TownSize) for each town the
+   * player governs; HeaderField.populationCeiling has it now. Off: base 120, town [0, 0].
+   */
+  population?: { base: number; town: number[] };
 }
 
 // --- commands (one JSON object per line in the command log) ---------------------------
