@@ -770,6 +770,24 @@ D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與�
   - 敵方主城旁的箭樓照舊不算進攻城的強弱。
   - 撞了打不下來的次數和死在據點旁的中位數沒有減半（見上面）。
 
+### 繼續上一局：從紀錄接著打（D-083）
+
+使用者 2026-10-17 選「加『繼續上一局』」：iPhone 的 Safari 會清掉放在背景太久的頁面，對局就沒了。
+
+- `src/continue.ts` 的 `continueGame`：從紀錄第一行開局，從第 0 tick 用最快的速度跑到存下來的 tick。電腦照常在模擬裡想；人類玩家的指令照紀錄，在它的 tick、電腦想之前放進去。
+- 一路檢查：
+  - 每個 tick 套用的指令（含電腦的）要和紀錄一模一樣。
+  - 每 100 tick 的雜湊要和存下來的一樣。
+  - 對不上就不接著打，回報原因（`protocol`、`build`、`log`、`commands`、`hash`）。
+- Worker 的 `continue` 訊息、`export_log` 多帶的 `hashes` 和 `tick`、`init` 的 `build`：見 `PROTOCOL.md` 6、9.1。`build` 是畫面算的「模擬這一版」的識別，只拿來比對。
+- 沒有 `continue` 的對局完全不受影響；`build` 只有畫面帶了才寫進紀錄第一行，headless 和 CI 的紀錄照舊。
+- 測試（`test/continue.test.ts`、`test/worker.test.ts`）：
+  - 在電腦出兵、撤退的時候中斷再接著打，雜湊和整份紀錄都和沒中斷的一樣（普通、困難）。
+  - 紀錄被改、雜湊被改、少一個雜湊、build 或 protocol 不同，都回報對應的原因。
+- 量測：`node src/continue-bench.ts`。
+  - 腳本玩家只守不出擊，對簡單電腦打到 80 分鐘（96,000 tick）。
+  - 量快轉要多久；CI 的 headless 工作也跑一次，結果在 Summary 的「Continue」。
+
 ### 已知限制
 
 - 整隊只有一種兵、在原地重排時，前面朝向敵方主城（`commands.ts` 的 `heading()` 用 `spawns[1 - owner]`），只適用 1 對 1。4 方混戰要換規則（ceo 2026-10-01：第三階段再改）。

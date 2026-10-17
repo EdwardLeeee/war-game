@@ -3,8 +3,10 @@
 // snapshot after every tick (typed arrays transferred), a hash every HASH_EVERY ticks, and
 // stops at game over. Pause stops the ticking; commands keep arriving and are stamped with
 // the next tick not yet run. A "determinism" request runs a whole AI-vs-AI game as fast as
-// possible instead (use a separate Worker for it).
+// possible instead (use a separate Worker for it). A "continue" request (D-083) runs a game
+// again from its log up to where it was, checking it, and goes on with it paused.
 
+import { continueGame } from "./continue.ts";
 import { rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import { hex8 } from "./core/fixed.ts";
@@ -36,6 +38,7 @@ let human: number | null = null;
 let aiFlags: boolean[] = [];
 let seed = 0;
 let scenario: ScenarioName = "standard";
+let build: string | undefined;
 let encoder: SnapshotEncoder | null = null;
 let tps = 20;
 let paused = false;
@@ -163,8 +166,10 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
         if (!difficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad difficulty ${msg.difficulty}`);
         const map = msg.map ?? "fixed";
         if (!(MAP_MODES as readonly string[]).includes(map)) throw new Error(`bad map ${msg.map}`);
+        if (msg.build !== undefined && typeof msg.build !== "string") throw new Error(`bad build ${String(msg.build)}`);
+        build = msg.build;
         // A person's barracks, ranges and mage halls train on their own; an AI's do not (round 6, D-054).
-        runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty, autoTrain: aiFlags.map((a) => !a), map });
+        runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty, autoTrain: aiFlags.map((a) => !a), map, build });
         encoder = new SnapshotEncoder(runner.game.w.nodeAmount.length);
         post({ type: "ready", protocol: PROTOCOL_VERSION, player: human, map: mapInfo(runner.game.w.map, human), rules: rules(runner.game.w.map) });
         sendSnapshot(0);
@@ -200,7 +205,36 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
       case "export_log": {
         if (runner === null) return;
         const lines = [JSON.stringify(runner.header(aiFlags)), ...runner.game.log.map((c) => JSON.stringify(c))];
-        post({ type: "log", jsonl: lines.join("\n") + "\n" });
+        const hashes = runner.hashes.map((h) => ({ tick: h.tick, hash: hex8(h.hash) }));
+        post({ type: "log", jsonl: lines.join("\n") + "\n", hashes, tick: runner.game.tick });
+        break;
+      }
+      case "continue": {
+        if (msg.protocol !== PROTOCOL_VERSION) throw new Error(`protocol ${msg.protocol}, worker speaks ${PROTOCOL_VERSION}`);
+        if (!(msg.tps > 0 && msg.tps <= 1000)) throw new Error(`bad tps ${msg.tps}`);
+        stop();
+        runner = null;
+        encoder = null;
+        const got = continueGame({ log: msg.log, hashes: msg.hashes, toTick: msg.toTick, build: msg.build }, (tick) =>
+          post({ type: "continue_progress", tick, toTick: msg.toTick }),
+        );
+        if (!got.ok) {
+          post({ type: "continue_failed", reason: got.reason, tick: got.tick, message: got.message });
+          break;
+        }
+        runner = got.runner;
+        human = got.human;
+        aiFlags = got.header.ai;
+        seed = got.header.seed;
+        scenario = got.header.scenario;
+        build = got.header.build;
+        tps = msg.tps;
+        paused = true;
+        recent.length = 0;
+        // A new encoder: the first snapshot is whole (nodes, fog), as after init.
+        encoder = new SnapshotEncoder(runner.game.w.nodeAmount.length);
+        post({ type: "ready", protocol: PROTOCOL_VERSION, player: human, map: mapInfo(runner.game.w.map, human), rules: rules(runner.game.w.map) });
+        sendSnapshot(0);
         break;
       }
     }

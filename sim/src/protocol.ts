@@ -801,7 +801,22 @@ export type ToWorker =
        * knowing only its own main city (MapInfo).
        */
       map?: MapMode;
+      /**
+       * Which simulation this is (D-083), written into the log header (LogHeader.build): a game
+       * goes on (`continue`) only on the same build. The screen sends an id of the simulation's
+       * sources, not of the site, so a release that changes only the screen keeps games going.
+       */
+      build?: string;
     }
+  /**
+   * Go on with a game whose page was closed (D-083, 繼續上一局): the game is run again from tick 0
+   * as fast as possible up to `toTick`, its AIs thinking as ever and the person's commands taken
+   * from `log`; every AI command must match the log and every hash `hashes` (PROTOCOL.md 9.1).
+   * Then `ready` and a snapshot, paused; the game goes on after `resume`. `continue_progress`
+   * meanwhile; `continue_failed` if it cannot go on. `log`, `hashes` and `toTick` as `export_log`
+   * sent them; `build` this simulation's (as `init`'s).
+   */
+  | { type: "continue"; protocol: number; build?: string; log: string; hashes: { tick: number; hash: string }[]; toTick: number; tps: number }
   /** The worker stamps t (next tick not yet run) and p (the human player). */
   | { type: "command"; cmd: CommandBody & { seq: number } }
   | { type: "pause" }
@@ -855,8 +870,16 @@ export type FromWorker =
   | { type: "game_over"; winner: number; reason: GameOverReason; stats: GameStats }
   | { type: "determinism_progress"; tick: number; hash: string }
   | { type: "determinism_done"; ticks: number; finalHash: string; totalMs: number; tickMedianMs: number; tickMaxMs: number }
-  /** Replay log: config line, then one command per line. */
-  | { type: "log"; jsonl: string }
+  /**
+   * Replay log: config line, then one command per line. With it (D-083; the simulation always
+   * sends them, optional for the screen's mocks): the hash every HASH_EVERY ticks from tick 0
+   * (8 hex digits) and the tick it got to; what `continue` needs.
+   */
+  | { type: "log"; jsonl: string; hashes?: { tick: number; hash: string }[]; tick?: number }
+  /** `continue`: the game run again up to `tick` of `toTick` (every CONTINUE_PROGRESS_EVERY ticks). */
+  | { type: "continue_progress"; tick: number; toTick: number }
+  /** `continue` could not go on (ContinueFailure): the worker has no game. */
+  | { type: "continue_failed"; reason: ContinueFailure; tick: number; message: string }
   | { type: "error"; message: string };
 
 /** First line of an exported log. */
@@ -873,7 +896,17 @@ export interface LogHeader {
   autoTrain?: boolean[];
   /** The map (D-074). Absent (every fixed-map log): "fixed". */
   map?: MapMode;
+  /** The simulation's build (`init`'s `build`, D-083). Absent: none was given. */
+  build?: string;
 }
+
+/**
+ * Why `continue` stopped (D-083): another protocol or build; the log or hashes not readable or
+ * not whole; an AI command not what the log says; a hash not what `hashes` says.
+ */
+export type ContinueFailure = "protocol" | "build" | "log" | "commands" | "hash";
+/** `continue_progress` comes every this many ticks. */
+export const CONTINUE_PROGRESS_EVERY = 1200;
 
 /**
  * What `node sim/src/headless.ts --expected <file>` writes (from PR-2): the hashes an
