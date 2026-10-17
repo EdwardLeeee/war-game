@@ -128,11 +128,50 @@ a {
   gap: 10px;
 }
 
+.start-buttons[hidden] {
+  display: none;
+}
+
 #start-game,
 #restart-game {
   min-width: 150px;
   min-height: 52px;
   font-size: 19px;
+}
+
+/* 繼續上一局 (D-083): beside 開始, when this phone kept a game that was not finished. */
+#continue-last {
+  min-height: 52px;
+  font-size: 17px;
+}
+
+/* While the simulation runs the saved game again: how far, a bar, and 取消. */
+.continue-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  font-weight: 600;
+}
+
+/* Meanwhile the start screen covers the battlefield, whose buttons wait. */
+#start.continuing {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.continue-progress[hidden] {
+  display: none;
+}
+
+.continue-progress progress {
+  flex: 1;
+  height: 12px;
+  accent-color: var(--accent);
+}
+
+.card .note.continue-note {
+  color: #f0c27a;
+  opacity: 1;
 }
 
 /* 有新版本 (D-042): above the notes, with 更新 beside it. */

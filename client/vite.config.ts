@@ -1,5 +1,7 @@
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+import { simBuild } from "./scripts/sim-build.ts";
 
 // Relative base: the build is served from GitHub Pages at /war-game/proto/ and from
 // `vite preview` at / in CI.
@@ -12,11 +14,14 @@ function commit(): string {
 }
 
 const COMMIT = process.env.GITHUB_SHA?.slice(0, 7) ?? commit();
+/** Which simulation the page runs (D-083): a saved game goes on only on the same one (scripts/sim-build.ts). */
+const SIM_BUILD = (await simBuild(fileURLToPath(new URL("..", import.meta.url)))).id;
 
 export default defineConfig({
   base: "./",
   define: {
     __COMMIT__: JSON.stringify(COMMIT),
+    __SIM_BUILD__: JSON.stringify(SIM_BUILD),
   },
   plugins: [
     {
