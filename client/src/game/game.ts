@@ -23,8 +23,10 @@ import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts"
 import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
+import type { UnitArt } from "../render/unit-art.ts";
 import { WorldRenderer } from "../render/world.ts";
 import { SAVE_EVERY_TICKS, SCREEN_VERSION, type SavedGame, type ScreenState } from "../save/save.ts";
+import { gpu, takeDraws } from "../stage.ts";
 import {
   Action,
   type AiDifficulty,
@@ -117,6 +119,12 @@ export interface GameOptions {
   continueFailed?: (reason: ContinueFailure, tick: number) => void;
   /** Every minute of game time (SAVE_EVERY_TICKS): the page keeps the game for 繼續上一局. */
   minute?: () => void;
+  /** The units drawn from war-game-ui's atlases (D-085), or none: the shapes. Only the picture: never the simulation. */
+  art?: UnitArt | null;
+  /** This build has atlases to choose in the 量測 panel. */
+  artAvailable?: boolean;
+  /** The 量測 panel's 美術 was changed since this game began: 量測 starts a game of its own. */
+  artChanged?: () => boolean;
 }
 
 /** export_log's answer: the command log, the hash every HASH_EVERY ticks and the tick it got to (D-083). */
@@ -217,13 +225,14 @@ export class Game implements GestureHost {
         check: checkPort === null ? null : () => this.determinism(checkPort),
         fake: () => options.fake,
         // Measure "every system running" (brief): a perf scenario, in a game of its own; in that
-        // game already, the game on screen.
+        // game already (and with the same 美術), the game on screen.
         requestMeasure: options.fake
           ? undefined
           : (scenario) => {
-              if (scenario === options.scenario) this.lab.startMeasure(performance.now());
+              if (scenario === options.scenario && options.artChanged?.() !== true) this.lab.startMeasure(performance.now());
               else options.life.perf(scenario);
             },
+        artAvailable: options.artAvailable === true,
       },
       null,
     );
@@ -265,6 +274,7 @@ export class Game implements GestureHost {
 
   /** End this game: stop its Worker and take its drawing, listeners and interface away. */
   destroy(): void {
+    this.lab.stopMeasuring();
     this.port.onmessage = null;
     this.port.terminate();
     for (const c of this.cleanups) c();
@@ -359,6 +369,11 @@ export class Game implements GestureHost {
   /** Arrows drawn from `shot` events so far (round 7), for the test hook. */
   get shotsForTest(): number {
     return this.renderer?.shotCount ?? 0;
+  }
+
+  /** The units' atlases as drawn (D-085), for the test hook. */
+  get artForTest(): { label: string; pages: number; units: number; corpses: number } | null {
+    return this.renderer?.artDrawn ?? null;
   }
 
   /** Each town's wall as drawn (D-084), for the test hook. */
@@ -1200,7 +1215,7 @@ export class Game implements GestureHost {
           const v = cam.visible();
           return wx >= v.x0 && wx <= v.x1 && wy >= v.y0 && wy <= v.y1;
         };
-        this.renderer = new WorldRenderer(this.app, this.view, atlasFor(this.app.renderer));
+        this.renderer = new WorldRenderer(this.app, this.view, atlasFor(this.app.renderer), this.options.art ?? null);
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
@@ -1298,6 +1313,8 @@ export class Game implements GestureHost {
       hidden: document.hidden,
       paused: header !== null && header[H.paused] === 1,
       normalSpeed: header === null || header[H.speed] === SPEED_TPS.normal * 100,
+      draws: takeDraws(),
+      contextLost: gpu.contextLost,
     });
     if (view.curr !== null && this.readyWaiters.length > 0) {
       for (const r of this.readyWaiters.splice(0)) r();

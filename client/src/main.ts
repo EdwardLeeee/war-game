@@ -17,6 +17,9 @@ import { recordCode } from "./logs/code.ts";
 import { LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "./logs/collect.ts";
 import { openIndexedDb, type StoredLog } from "./logs/store.ts";
 import { fetchPoster } from "./logs/upload.ts";
+import { ART_LABEL, artBase, loadArtChoice } from "./art/pref.ts";
+import { loadUnitArt, type UnitArt } from "./render/unit-art.ts";
+import { measureCutShort } from "./lab/panel.ts";
 import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_LOST_TEXT, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
@@ -26,6 +29,8 @@ import { deployedCommit, isNewer, updateHref } from "./version.ts";
 declare const __COMMIT__: string;
 /** Which simulation this page runs (scripts/sim-build.ts, D-083). */
 declare const __SIM_BUILD__: string;
+/** The units' atlases' Release tag (art.lock.json; D-085), or null: none in this build. */
+declare const __ART_TAG__: string | null;
 
 /** Read-only view for the Playwright tests, present only with `?test=1`. */
 export interface ProtoHook {
@@ -139,9 +144,18 @@ const env = (scenario: ScenarioName, about: string) => () => ({
   gpu: app === null ? "" : gpuLimits(app),
   tickRate: game === null ? "" : tickRateText(game.tps),
   game: about,
+  art: artText(),
 });
 
 $("commit").textContent = `commit ${__COMMIT__}`;
+// 量測 cut short by a reload (D-085: Safari out of memory with the atlases): say so on the start screen.
+{
+  const cut = measureCutShort();
+  if (cut !== null) {
+    $("measure-note").hidden = false;
+    $("measure-note").textContent = `上次量測到一半，頁面重新載入了（${cut}）`;
+  }
+}
 $("record-code").textContent = `紀錄代號 ${code}`;
 
 /**
@@ -300,6 +314,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   const enemyAi = measure || params.enemyAi;
   // 地圖 (D-074): the start screen's choice (a test page may ask for one); 量測 always the fixed map, so the numbers compare between runs.
   const map: MapMode = measure ? "fixed" : (params.map ?? mapMode);
+  const art = await artForGame();
   const g = new Game(app, port, $("hud"), {
     seed: params.seed ?? newSeed(),
     scenario,
@@ -313,6 +328,9 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     watch: params.watch && !measure,
     env: env(scenario, gameText(level, maxTicks, enemyAi, map, params.watch && !measure)),
     checkPort: params.mock ? null : () => createSimPort(showError),
+    art,
+    artAvailable,
+    artChanged,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,
@@ -332,6 +350,41 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     g.lab.show();
     g.lab.startMeasure(performance.now());
   }
+}
+
+/**
+ * 美術 (D-085): the units drawn from war-game-ui's atlases, as chosen in the 量測 panel (a test
+ * page may ask with ?art=), loaded when a game starts and kept while the choice holds. Off, or
+ * when they will not load: the shapes. Only the picture: the game itself is the same.
+ */
+const artAvailable = __ART_TAG__ !== null || params.art === "test";
+let loadedArt: { base: string; art: UnitArt } | null = null;
+/** The choice the game on screen was started with. */
+let artChoiceUsed: string | null = null;
+const artChanged = (): boolean => (params.art ?? loadArtChoice()) !== artChoiceUsed;
+let artFailed: string | null = null;
+async function artForGame(): Promise<UnitArt | null> {
+  const choice = params.art ?? loadArtChoice();
+  artChoiceUsed = choice;
+  const base = params.mock ? null : artBase(choice, __ART_TAG__);
+  if (loadedArt !== null && loadedArt.base === base) return loadedArt.art;
+  loadedArt?.art.destroy();
+  loadedArt = null;
+  artFailed = null;
+  if (base === null) return null;
+  try {
+    loadedArt = { base, art: await loadUnitArt(base, choice === "test" ? "測試圖" : ART_LABEL[choice]) };
+    return loadedArt.art;
+  } catch (err) {
+    artFailed = err instanceof Error ? err.message : String(err);
+    console.warn(`art: ${artFailed}`);
+    return null;
+  }
+}
+/** For the lab's result: which atlases and how many pages, or why none. */
+function artText(): string {
+  if (artFailed !== null) return `載入失敗（${artFailed}）`;
+  return loadedArt === null ? "關" : `${loadedArt.art.label}，${loadedArt.art.pages} 頁圖`;
 }
 
 /** 重來, 回開局畫面 and 量測, from the game's menu. */
@@ -418,6 +471,7 @@ async function resumeGame(saved: SavedGame): Promise<void> {
   if (app === null) app = await createStage($("stage"));
   const { init } = saved;
   const speed = screenUsable(saved) ? saved.screen.speed : "normal";
+  const art = await artForGame();
   const stopped = new Promise<void>((resolve) => {
     stopResume = resolve;
   });
@@ -433,6 +487,9 @@ async function resumeGame(saved: SavedGame): Promise<void> {
     watch: false,
     env: env(init.scenario, gameText(init.difficulty, init.maxTicks, init.enemyAi, init.map, false)),
     checkPort: () => createSimPort(showError),
+    art,
+    artAvailable,
+    artChanged,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,

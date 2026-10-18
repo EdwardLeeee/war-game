@@ -1,3 +1,6 @@
 # Playwright output (CI uploads these as artifacts)
 test-results/
 playwright-report/
+# Art atlases downloaded by scripts/fetch-art.ts (D-085): build products, never committed.
+public/art/
+.art-cache/

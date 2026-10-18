@@ -501,6 +501,20 @@ a {
   opacity: 0.45;
 }
 
+/* 美術 (D-085): which atlases the next game draws the units from. */
+.lab-art {
+  align-items: center;
+}
+
+.lab-art-label {
+  font-weight: 700;
+}
+
+.lab-art-note {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
 .lab-status {
   color: #f0c27a;
   min-height: 1em;
