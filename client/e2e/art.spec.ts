@@ -128,9 +128,8 @@ test("兵種展示（art-v1，3 倍）：兩陸每種兵的待機、走路、攻
   await start(page, "mock=1&gallery=1&art=x3&tps=20");
   await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(40);
   expect((await art(page))?.label).toBe("3 倍");
-  // The fallen gone at tick 20, a shield shattered at 30: stopped while both still show.
-  await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) >= 34, null, { timeout: 30_000 });
-  await page.getByRole("button", { name: "暫停", exact: true }).tap();
+  // The fallen gone at tick 20, a shield shattered at 30: the gallery stands still at 36, while both still show.
+  await page.waitForFunction(() => window.__proto?.game?.header().tick === 36, null, { timeout: 30_000 });
   await expect.poll(async () => (await art(page))?.corpses ?? 0).toBeGreaterThanOrEqual(10);
   for (const [name, table, r] of [["ours-1", OURS, 1], ["ours-2", OURS, 4], ["theirs-1", THEIRS, 1], ["theirs-2", THEIRS, 3.5]] as const) {
     const c = galleryCell(table, r, 3.5);

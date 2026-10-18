@@ -209,6 +209,8 @@ const MAGE_COLUMNS: GalleryColumn[] = [
 const GALLERY_FALL_TICK = 20;
 const GALLERY_SHATTER_TICK = 30;
 const GALLERY_HIT_EVERY = 8;
+/** Then it stops: the fallen 0.8 s into their fall (the dust rising), the shattered mage 0.3 s into it, the struck 0.2 s. */
+const GALLERY_STOP_TICK = 36;
 
 /** The fake world trains a unit in 3 seconds, so tests do not wait. */
 const MOCK_TRAIN_TICKS = 60;
@@ -516,6 +518,8 @@ export class MockPort implements SimPort {
   }
 
   private step(): void {
+    // The gallery stands still at its moment, the same for every picture (no more snapshots: the screen holds the last).
+    if (this.gallery && this.tick >= GALLERY_STOP_TICK) return;
     this.tick++;
     for (const u of this.units) {
       // Round 7: on its way to hide, it slips in once near the building (also when a test put it there).
