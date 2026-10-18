@@ -1317,7 +1317,7 @@ test("預留：選主城 → 預留 → 對話框寫現在的預留額（預設�
 });
 
 test("被攻擊：小地圖閃、畫面邊緣出現箭頭，點箭頭跳過去", async ({ page }, info) => {
-  await page.evaluate(() => window.__proto?.game?.inject({ k: "attacked", x: 80 * 1024 + 512, y: 20 * 1024 + 512, target: 1 }));
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "attacked", x: 80 * 1024 + 512, y: 20 * 1024 + 512, target: 1, by: 1 }));
   const arrow = page.getByRole("button", { name: "有東西被攻擊：點一下跳過去" });
   await expect(arrow).toBeVisible();
   await shot(page, info, "attack-arrow");
