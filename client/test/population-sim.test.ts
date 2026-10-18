@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { Game } from "../../sim/src/core/game.ts";
 import { POPULATION_200 } from "../../sim/src/core/rules.ts";
 import { buildView, SnapshotEncoder } from "../../sim/src/view/view.ts";
-import { emptyGame } from "../../sim/test/helpers.ts";
+import { emptyGame, switchedOff } from "../../sim/test/helpers.ts";
 import { groupWantMax } from "../src/game/army.ts";
 import { HeaderField as H, rules, TownState } from "../src/sim.ts";
 import { GameView } from "../src/view/view.ts";
@@ -26,11 +26,14 @@ function wantMax(v: GameView): number {
   return groupWantMax(v.rules, ceiling > 0 ? ceiling : null);
 }
 
-test("人口規則關著：天花板 120，每兵種上限 120（和以前的 rules 一樣）", () => {
-  const v = screen(emptyGame());
-  assert.equal(v.header?.[H.populationCeiling], 120);
-  assert.equal(wantMax(v), 120);
-});
+test(
+  "人口規則關著：天花板 120，每兵種上限 120（和以前的 rules 一樣）",
+  switchedOff(POPULATION_200, () => {
+    const v = screen(emptyGame());
+    assert.equal(v.header?.[H.populationCeiling], 120);
+    assert.equal(wantMax(v), 120);
+  }),
+);
 
 test("量測的 perf200、perf360：天花板和每兵種上限 200／360", () => {
   for (const [scenario, n] of [["perf200", 200], ["perf360", 360]] as const) {

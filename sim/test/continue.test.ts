@@ -44,6 +44,7 @@ function firstAiOrder(r: Runner, c: string, n: number): number {
 
 /** Continues game `whole` from tick n and plays on `more` ticks with the person's commands from `whole`; both must agree. */
 function stopAndGoOn(whole: Runner, n: number, more: number): void {
+  assert.ok(whole.over || whole.game.tick >= n + more, `the whole game is played past ${n + more}`);
   const progress: number[] = [];
   const got = continueGame(exportAt(whole, n), (t) => progress.push(t));
   assert.ok(got.ok, got.ok ? "" : `${got.reason} at ${got.tick}: ${got.message}`);
@@ -66,7 +67,7 @@ function stopAndGoOn(whole: Runner, n: number, more: number): void {
 }
 
 test("stopped while the normal AI marches and while it retreats, the game goes on as if it never stopped", () => {
-  const whole = play(1, "defend", "normal", 19000);
+  const whole = play(1, "defend", "normal", 21000);
   const march = firstAiOrder(whole, "move", 10);
   const retreat = firstAiOrder(whole, "retreat", 5);
   assert.ok(march < retreat);
@@ -75,7 +76,7 @@ test("stopped while the normal AI marches and while it retreats, the game goes o
 });
 
 test("stopped while the hard AI marches on the player, the game goes on as if it never stopped", () => {
-  const whole = play(1, "push", "hard", 12000);
+  const whole = play(1, "push", "hard", 14000);
   stopAndGoOn(whole, firstAiOrder(whole, "move", 10) + 5, 1500);
 });
 

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { PERF } from "../src/core/scenarios.ts";
-import { governPerMinute, MAIN_CRYSTAL, TOWNS } from "../src/core/rules.ts";
+import { BUILDINGS, governPerMinute, MAIN_CRYSTAL, rules, TOWNS } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import {
   BuildingType,
@@ -238,12 +238,13 @@ test("surrender ends the game for the other side; later commands are refused", (
   assert.equal(buildView(g, 1).header[3], 2, "lost");
 });
 
-test("perf scenario: 114 / 120 on each side, mages on autocast, and the battle starts by itself", () => {
+test("perf scenario: 114 / 120 on each side (114 / 186 with D-083's rules), mages on autocast, and the battle starts by itself", () => {
   const g = new Game({ seed: 1, scenario: "perf" });
   const w = g.w;
+  const cap = Math.min(BUILDINGS[BuildingType.MainCity].populationCap + PERF.houses * BUILDINGS[BuildingType.House].populationCap, rules().population.base);
   for (const p of [0, 1]) {
     assert.equal(w.population(p), PERF.farmers + PERF.spearmen + PERF.ranged + PERF.mages);
-    assert.equal(w.populationCap(p), 120);
+    assert.equal(w.populationCap(p), cap);
   }
   const u = w.units.col;
   let mages = 0;

@@ -124,7 +124,8 @@ test("an army sent to a town moves on once the town lies in ruins, instead of wa
 
 /**
  * Where the first big move of an AI with `n` spearmen out from home goes at `minute` (no enemy
- * in view): in a 30-minute game unless `maxTicks` says otherwise; `full`: population at 120 / 120.
+ * in view): in a 30-minute game unless `maxTicks` says otherwise; `full`: population and cap at the ceiling
+ * (120 with the population rules off, 200 on: D-083).
  */
 function goesAt(n: number, minute: number, opt: { maxTicks?: number; difficulty?: AiDifficulty; full?: boolean } = {}): string {
   const g = emptyGame();
@@ -137,8 +138,8 @@ function goesAt(n: number, minute: number, opt: { maxTicks?: number; difficulty?
   const ai = createAi(0, 1, know, 0, "balanced");
   const view = buildView(g, 0);
   if (opt.full === true) {
-    view.header[HeaderField.population] = 120;
-    view.header[HeaderField.populationCap] = 120;
+    view.header[HeaderField.population] = view.header[HeaderField.populationCeiling];
+    view.header[HeaderField.populationCap] = view.header[HeaderField.populationCeiling];
   }
   const m = ai.think(view).find((c) => c.c === "move" && c.u.length >= n) as { x: number; y: number } | undefined;
   if (m === undefined) return "none";
@@ -250,7 +251,7 @@ test("without a time limit (a person plays) there is no end game: towns as ever,
 
 test("without a time limit it also marches once its population is full", () => {
   assert.equal(goesAt(24, 12, { maxTicks: 0 }), "town", "can still grow: a town first");
-  assert.equal(goesAt(24, 12, { maxTicks: 0, full: true }), "enemy base", "120 of 120: it goes");
+  assert.equal(goesAt(24, 12, { maxTicks: 0, full: true }), "enemy base", "at the ceiling: it goes");
   assert.equal(goesAt(24, 12, { full: true }), "town", "with a time limit the old rules stand");
 });
 
@@ -931,7 +932,7 @@ test("round 7: hard hides its ranged units and mages in its main city when enemi
 
 // --- round 8 sieges (D-073) -------------------------------------------------------------------------------
 
-test("round 8: hard marches on the enemy base with 41–47 soldiers, not the 31–37 of round 7 (D-073)", () => {
+test("round 8: hard marches on the enemy base with 41–47 soldiers, not the 31–37 of round 7 (D-073); 45–51 with the population rules on (D-083 (c))", () => {
   const marches = (n: number) => {
     const g = emptyGame();
     const w = g.w;
@@ -952,8 +953,12 @@ test("round 8: hard marches on the enemy base with 41–47 soldiers, not the 31�
         .some((c) => c.c === "move" && c.u.length === n && c.x === s1.cellX && c.y === s1.cellY),
     );
   };
-  assert.deepEqual(marches(40), [false, false, false, false, false, false], "40: not yet");
-  assert.deepEqual(marches(48), [true, true, true, true, true, true], "48: always");
+  const no = [false, false, false, false, false, false];
+  const yes = [true, true, true, true, true, true];
+  assert.deepEqual(withPopulation(false, () => marches(40)), no, "off, 40: not yet");
+  assert.deepEqual(withPopulation(false, () => marches(48)), yes, "off, 48: always");
+  assert.deepEqual(withPopulation(true, () => marches(44)), no, "on, 44: not yet");
+  assert.deepEqual(withPopulation(true, () => marches(52)), yes, "on, 52: always");
 });
 
 // --- random maps: scouting (D-074) -------------------------------------------------------------------------

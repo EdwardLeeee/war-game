@@ -12,7 +12,7 @@ import { PERF, PERF_200, PERF_360 } from "../src/core/scenarios.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { BuildingType, HeaderField, NEUTRAL, Reject, Resource, TownSize, TownState, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, openArea, put } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, switchedOff } from "./helpers.ts";
 
 /** A test body run with POPULATION_200 on, then as it was. */
 function populationOn(body: () => void): () => void {
@@ -58,19 +58,21 @@ const ceilingOnScreen = (g: Game, p: number) => buildView(g, p).header[HeaderFie
 
 const rejected = (g: Game) => g.events.filter((e) => e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
 
-test("off: the ceiling is 120 as before, and the rules say so", () => {
-  assert.equal(POPULATION_200.on, false, "off until war-game-ai has retuned the AIs (D-083)");
-  const { g, small } = crowded();
-  assert.equal(g.w.populationCap(0), MAX_POPULATION);
-  govern(g, small, 0);
-  assert.equal(g.w.populationCap(0), MAX_POPULATION, "towns do not lift it");
-  assert.equal(ceilingOnScreen(g, 0), 120);
-  const r = rules();
-  assert.equal(r.maxPopulation, 120);
-  assert.deepEqual(r.population, { base: 120, town: [0, 0] });
-  assert.deepEqual(r.towns.map((t) => t.populationCap), [5, 10]);
-  assert.equal(r.buildings[BuildingType.House].populationCap, 5);
-});
+test(
+  "off: the ceiling is 120 as before, and the rules say so",
+  switchedOff(POPULATION_200, () => {
+    const { g, small } = crowded();
+    assert.equal(g.w.populationCap(0), MAX_POPULATION);
+    govern(g, small, 0);
+    assert.equal(g.w.populationCap(0), MAX_POPULATION, "towns do not lift it");
+    assert.equal(ceilingOnScreen(g, 0), 120);
+    const r = rules();
+    assert.equal(r.maxPopulation, 120);
+    assert.deepEqual(r.population, { base: 120, town: [0, 0] });
+    assert.deepEqual(r.towns.map((t) => t.populationCap), [5, 10]);
+    assert.equal(r.buildings[BuildingType.House].populationCap, 5);
+  }),
+);
 
 test(
   "on: a house gives 8, so a main city and 24 houses fill 200; the towns add on top",
@@ -170,11 +172,13 @@ test(
   }),
 );
 
-test("perf200 and perf360: both sides full at 200 / 360, mirror images; perf stays at 114 / 120", () => {
-  for (const [scenario, c, cap] of [
-    ["perf", PERF, 120],
-    ["perf200", PERF_200, 200],
-    ["perf360", PERF_360, 360],
+test("perf200 and perf360: both sides full at 200 / 360, mirror images; perf stays at 114 and what its 22 houses give (120 off)", () => {
+  const base = rules().population.base;
+  const perfCap = Math.min(BUILDINGS[BuildingType.MainCity].populationCap + PERF.houses * BUILDINGS[BuildingType.House].populationCap, base);
+  for (const [scenario, c, cap, ceiling] of [
+    ["perf", PERF, perfCap, base],
+    ["perf200", PERF_200, 200, 200],
+    ["perf360", PERF_360, 360, 360],
   ] as const) {
     const g = new NewGame({ seed: 1, scenario });
     const w = g.w;
@@ -184,7 +188,7 @@ test("perf200 and perf360: both sides full at 200 / 360, mirror images; perf sta
     for (const p of [0, 1]) {
       assert.equal(w.population(p), want, `${scenario} player ${p}`);
       assert.equal(w.populationCap(p), cap);
-      assert.equal(ceilingOnScreen(g, p), cap);
+      assert.equal(ceilingOnScreen(g, p), ceiling);
     }
     const kinds = (p: number) => {
       const n = new Array(UNIT_KINDS).fill(0);
