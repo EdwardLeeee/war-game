@@ -1,0 +1,20 @@
+{
+ "scripted": [
+  {
+   "name": "n",
+   "difficulty": "normal",
+   "groups": [
+    "push-towerrush",
+    "push-towerrush-farmers"
+   ]
+  },
+  {
+   "name": "h",
+   "difficulty": "hard",
+   "groups": [
+    "push-towerrush",
+    "push-towerrush-farmers"
+   ]
+  }
+ ]
+}
