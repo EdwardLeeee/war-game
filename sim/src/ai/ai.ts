@@ -568,6 +568,16 @@ export function groupsOnWay(groups: FortGroup[], a: { x: number; y: number }, b:
     .sort((p, q) => (p.x - a.x) * (p.x - a.x) + (p.y - a.y) * (p.y - a.y) - ((q.x - a.x) * (q.x - a.x) + (q.y - a.y) * (q.y - a.y)) || p.ids[0] - q.ids[0]);
 }
 
+/**
+ * D-083 (D-081's leftover (a)): what the forts reaching a town of radius `radius` at (x, y) are worth together
+ * (their groups, as D-081 counts them: towers, those hiding, an outpost's guards).
+ */
+function fortsAtTown(groups: readonly FortGroup[], x: number, y: number, radius: number): number {
+  let w = 0;
+  for (const g of groups) if ((g.x - x) * (g.x - x) + (g.y - y) * (g.y - y) <= (g.radius + radius) * (g.radius + radius)) w += g.worth;
+  return w;
+}
+
 /** Falling back round forts (aroundForts): points this many cells beyond their reach, and half as far again, and twice... */
 const VIA_SPARE = 3;
 /** ...and on home once within VIA_NEAR cells of the point, or after VIA_TICKS. */
@@ -974,6 +984,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let via: { x: number; y: number; until: number } | null = null;
   /** Towns it fell back from because of forts (D-081, ceo 2026-10-10): the forts, and when. */
   const townForts = new Map<number, { ids: number[]; tick: number }>();
+  /** D-083 (a): the most enemy soldiers seen by each town it holds in a plunder lately, and when. */
+  const plunderFoes = new Map<number, { worth: number; tick: number }>();
   const fv = fortValues(know.rules);
   const crew = createFortCrew((x, y) => {
     const f = frame(x, y);
@@ -1029,6 +1041,11 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const res: Cost = { food: h[HeaderField.food], wood: h[HeaderField.wood], gold: h[HeaderField.gold], crystal: h[HeaderField.crystal] };
       const pop = h[HeaderField.population];
       const cap = h[HeaderField.populationCap];
+      // D-083: houses reach the ceiling now (base, and more for each town it governs; off: 120), a house's room as the rules say.
+      const ceiling = h[HeaderField.populationCeiling];
+      const houseRoom = rules.buildings[BuildingType.House].populationCap;
+      // D-083 (ceo 2026-10-18): D-081's leftover (a) comes with the population rules.
+      const d083 = (rules.population?.town[TownSize.Small] ?? 0) > 0;
       // Round 7 (D-061): each switch off, everything below plays as before.
       const feat = know.rules.features;
       const once = feat?.plunderOnce === true;
@@ -1171,7 +1188,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const granary = done(BuildingType.Granary)[0];
         const base = { x: home.cellX, y: home.cellY };
         const add = (type: BuildingType, at: { x: number; y: number } | null) => plans.push({ type, at });
-        if (cap < 120 && cap - pop - queued <= 5) add(BuildingType.House, base);
+        if (cap < ceiling && cap - pop - queued <= houseRoom) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
@@ -1418,8 +1435,25 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       }
       // A town it took that it may only govern and cannot pay for yet (round 7) does not hold the army.
       const stuck = (id: number, t: Town) => once && t.state === TownState.AwaitingChoice && plundered(id) && !affordAll(governCostOf(rules, t.size));
+      /**
+       * D-083 (D-081's leftover (a), ceo 2026-10-18): not back one by one to a town whose plunder it lost the fight for
+       * (#188 seed 11: the army beaten there, the town stayed in its plunder and each new soldier went alone). Those that
+       * would go must beat, as for a fort (D-081), the forts reaching the town and 1.3 x the enemy soldiers seen by it in
+       * the last 2 minutes.
+       */
+      const holdsOut = (id: number, t: Town) => {
+        if (!d083) return true;
+        const r = (rules.towns?.[t.size]?.radius ?? 5) + FORT_ARMY_NEAR;
+        const seen = 10 * foes.filter((e) => e.order !== Order.Post && dist2(e.x, e.y, t.x, t.y) <= r * r).length;
+        const was = plunderFoes.get(id);
+        const enemy = was !== undefined && tick - was.tick < 2 * TICKS_PER_MINUTE && was.worth > seen ? was.worth : seen;
+        if (seen > 0 && (was === undefined || seen >= was.worth || tick - was.tick >= 2 * TICKS_PER_MINUTE)) plunderFoes.set(id, { worth: seen, tick });
+        const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
+        const w = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+        return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5) * 10 + enemy * 13;
+      };
       const busy = [...towns.entries()].find(
-        ([id, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice) && !stuck(id, t),
+        ([id, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice) && !stuck(id, t) && holdsOut(id, t),
       );
       if (busy !== undefined && !endgame) {
         // Stay inside until the plunder is done (not in the endgame: everything goes for the
@@ -1434,8 +1468,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const latest = toGo >= 0 && toGo <= LATEST_TO_GO;
       const lateMinutes = toGo >= 0 && toGo <= LATE_TO_GO ? Math.trunc((tick - (know.maxTicks - LATE_TO_GO)) / TICKS_PER_MINUTE) + 1 : 0;
       const baseNeed = lateMinutes === 0 ? baseArmy : Math.max(townArmy, baseArmy - lateMinutes * 3);
-      // Without a limit it also marches once it cannot grow (population at the rules' maximum).
-      const popFull = toGo < 0 && cap >= rules.maxPopulation && pop >= cap - FULL_MARGIN;
+      // Without a limit it also marches once it cannot grow (population at the ceiling).
+      const popFull = toGo < 0 && cap >= ceiling && pop >= cap - FULL_MARGIN;
       // The difficulty's earliest first town and first march on the enemy base.
       const townTime = tick >= (townTrips === 0 ? level.townMinute : level.secondTownMinute) * TICKS_PER_MINUTE;
       const baseTime = tick >= level.baseMinute * TICKS_PER_MINUTE;
@@ -1813,6 +1847,11 @@ export interface HardPlan {
   looseWho: number;
   /** D-081: after falling back from a town it leaves that town alone this many minutes (0: never, as before). */
   townRest: number;
+  /**
+   * D-083 (c): with food and gold piling up (PRODUCTION_FIRST of the two) a barracks or range comes before houses
+   * (but for one it needs now) and farms (the trace: two of four built till minute 19, the wood going elsewhere).
+   */
+  productionFirst: boolean;
 }
 
 export const HARD: HardPlan = {
@@ -1836,8 +1875,16 @@ export const HARD: HardPlan = {
   looseWho: 1,
   // D-081: measured and left off (hard against hard 50.3% of 200; with it the scripted push on random maps won 4 of 40, without 3).
   townRest: 0,
+  productionFirst: false,
 };
+/** D-083 (c): food plus gold it holds for productionFirst. */
+const PRODUCTION_FIRST = 800;
 
+/**
+ * D-083 (c), the user 2026-10-10: hard 「太晚來打我」「來打的兵太少」 (ceo 2026-10-18: earlier and with more). With the
+ * population rules on, hard plays these over HARD.
+ */
+export const HARD_POP: Partial<HardPlan> = {};
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -1870,6 +1917,8 @@ type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
   const plan: HardPlan = { ...HARD, ...know.hard };
+  // D-083 (c): with the population rules on, HARD_POP over HARD (what the caller gives still wins).
+  if ((know.rules.population?.town[TownSize.Small] ?? 0) > 0) Object.assign(plan, HARD_POP, know.hard);
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
@@ -1993,6 +2042,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const res: Cost = { food: h[HeaderField.food], wood: h[HeaderField.wood], gold: h[HeaderField.gold], crystal: h[HeaderField.crystal] };
       const pop = h[HeaderField.population];
       const cap = h[HeaderField.populationCap];
+      // D-083: houses reach the ceiling now (base, and more for each town it governs; off: 120), a house's room as the rules say.
+      const ceiling = h[HeaderField.populationCeiling];
+      const houseRoom = rules.buildings[BuildingType.House].populationCap;
+      // D-083 (ceo 2026-10-18): D-081's leftover (a) comes with the population rules.
+      const d083 = (rules.population?.town[TownSize.Small] ?? 0) > 0;
       /** Plundered already this game (TownFlag.Plundered). */
       const plunderedTown = (id: number) => {
         for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) if (view.towns[r + TownField.id] === id) return (view.towns[r + TownField.flags] & TownFlag.Plundered) !== 0;
@@ -2206,8 +2260,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         };
         // The mage hall first once there is the crystal for a mage (a plunder brings 75).
         if (!has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
+        // D-083 (c): food and gold piling up, more barracks and ranges first (a house first only when it needs one now).
+        const prodCount = count(BuildingType.Barracks) + count(BuildingType.Range);
+        if (plan.productionFirst && res.food + res.gold >= PRODUCTION_FIRST && prodCount < plan.production && has(BuildingType.Range) && cap - pop - queued > producers) {
+          add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
+        }
         // Houses before the population is full: every producer can add one at a time.
-        if (cap < rules.maxPopulation && cap - pop - queued <= 5 + producers) add(BuildingType.House, base);
+        if (cap < ceiling && cap - pop - queued <= houseRoom + producers) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
@@ -2559,10 +2618,24 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         // Plundering: stay inside until it is done (not in the endgame). A town it may only govern
         // and cannot pay for yet does not hold the army.
+        /**
+         * D-083 (D-081's leftover (a), ceo 2026-10-18), as normal: back to a town whose plunder it holds only when those that
+         * would go beat the forts reaching it and 1.3 x the enemy soldiers it knows of by it (seen in the last 2 minutes).
+         */
+        const holdsOut = (t: Town) => {
+          if (!d083) return true;
+          const r = (rules.towns?.[t.size]?.radius ?? 5) + FORT_ARMY_NEAR;
+          let enemy = 0;
+          for (const e of intel.values()) if (!e.post && tick - e.tick < 2 * TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= r * r) enemy += WORTH[e.type];
+          const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
+          const w = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+          return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5) * 10 + enemy * 13;
+        };
         const busy = [...towns.entries()].find(
           ([id, t]) =>
             t.owner === player &&
-            (t.state === TownState.Plundering || (t.state === TownState.AwaitingChoice && !(once && plunderedTown(id) && !affordAll(governCost(t.size))))),
+            (t.state === TownState.Plundering || (t.state === TownState.AwaitingChoice && !(once && plunderedTown(id) && !affordAll(governCost(t.size))))) &&
+            holdsOut(t),
         );
         if (busy !== undefined && !endgame) {
           send(busy[1].x, busy[1].y, "town");
@@ -2849,7 +2922,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           return;
         }
         // At home: march, go for a town, or wait by the city.
-        const popFull = toGo < 0 && cap >= rules.maxPopulation && pop >= cap - FULL_MARGIN;
+        const popFull = toGo < 0 && cap >= ceiling && pop >= cap - FULL_MARGIN;
         const strong = armyWorth * 100 >= enemyWorth * plan.pushRatio;
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
