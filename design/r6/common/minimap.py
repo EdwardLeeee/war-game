@@ -20,9 +20,10 @@ ROCK = (110, 102, 92)
 FOREST = (40, 74, 38)
 GOLD = (242, 194, 48)
 CRYSTAL = (122, 240, 255)
-OWN = (79, 143, 240)
-OWN_UNIT = (156, 196, 255)
-ENEMY = (224, 71, 61)
+OWN = (0x3f, 0x7f, 0xe0)            # R6-24 甲; units a step lighter than buildings, as in the prototype
+OWN_UNIT = (150, 186, 240)
+ENEMY = (0xd9, 0x43, 0x3a)
+ENEMY_UNIT = (238, 150, 144)
 NEUTRAL = (216, 210, 192)
 
 
@@ -63,7 +64,7 @@ def marks(dr, to_px, s, scene):
         dr.polygon(pts, fill=OWN if team == "blue" else ENEMY)
     for unit, team, x, y, *_ in scene["units"]:
         px, py = to_px(x, y)
-        dr.ellipse([px - s, py - s, px + s, py + s], fill=OWN_UNIT if team == "blue" else ENEMY)
+        dr.ellipse([px - s, py - s, px + s, py + s], fill=OWN_UNIT if team == "blue" else ENEMY_UNIT)
     for (x, y), r in (((36, 58), 4), ((48, 48), 6)):
         pts = [to_px(x + r * math.cos(a), y + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 40)]
         dr.line(pts + [pts[0]], fill=NEUTRAL, width=max(1, int(s)))

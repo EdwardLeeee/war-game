@@ -31,18 +31,19 @@
   const q = new URLSearchParams(location.search);
   const theme = q.get("theme") || "a";
   const b = window.R6_BOARDS[q.get("board")];
-  const style = { a: "A-銅木", b: "B-墨漆金線" }[theme];
+  const style = b.both ? "AB-兩種並排" : { a: "A-銅木", b: "B-墨漆金線" }[theme];
   const root = document.getElementById("board");
   root.innerHTML = `<h1>${b.id}-${b.name}-${style}-mobile</h1><p class="sub">${b.sub}</p>`;
   for (const row of b.rows) {
     const r = document.createElement("div");
     r.className = "row";
     for (const c of row) {
-      const [x, y, w, h] = c.crop || [0, 0, 814, 380];
+      const view = c.view || [814, 380];
+      const [x, y, w, h] = c.crop || [0, 0, view[0], view[1]];
       const z = c.zoom || 1;
       r.insertAdjacentHTML("beforeend", `<div class="cell"><p class="cap">${c.inv.join("、")}　${c.cap}${c.note ? `<small>${c.note}</small>` : ""}</p>
-        <div class="frame" style="width:${w * z}px;height:${h * z}px"><iframe src="ui.html?theme=${theme}&state=${c.state}"
-          style="transform:translate(${-x * z}px,${-y * z}px) scale(${z})"></iframe></div></div>`);
+        <div class="frame" style="width:${w * z}px;height:${h * z}px"><iframe src="ui.html?theme=${c.theme || theme}&state=${c.state}"
+          style="width:${view[0]}px;height:${view[1]}px;transform:translate(${-x * z}px,${-y * z}px) scale(${z})"></iframe></div></div>`);
     }
     root.append(r);
   }

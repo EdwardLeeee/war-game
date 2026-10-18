@@ -36,7 +36,13 @@ if __name__ == "__main__":
     for t in RING:
         img, _ = field.render(sc, art)
         img.convert("RGB").save(OUT / f"field-{t}-plain.png")
+    one = dict(sc, units=[u if i == 0 else (*u[:7], False) for i, u in enumerate(sc["units"])])   # one spearman selected
+    for t, ring in RING.items():
+        img, _ = field.render(dict(one, ring=ring), art)
+        img.convert("RGB").save(OUT / f"field-{t}-one.png")
     img, _ = field.render(scene_r6.raid(), art)
     for t in RING:
         img.convert("RGB").save(OUT / f"field-{t}-raid.png")
+    import world        # noqa: E402  R6-23: the world interface
+    world.build(art, OUT, {t: r for t, r in RING.items() if t in ("a", "b")})
     print("wrote", sorted(p.name for p in OUT.iterdir()))
