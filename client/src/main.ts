@@ -307,7 +307,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   else await saveStore.clear();
   hideSaved();
   game?.destroy();
-  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpost) : createSimPort(showError);
+  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpost, params.gallery) : createSimPort(showError);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
   // 30-minute limit, like the determinism check and CI, so the numbers compare between runs.
   const level: AiDifficulty = measure ? "normal" : difficulty;
@@ -330,6 +330,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     env: env(scenario, gameText(level, maxTicks, enemyAi, map, params.watch && !measure)),
     checkPort: params.mock ? null : () => createSimPort(showError),
     art,
+    culture: params.culture ?? undefined,
     artAvailable,
     artChanged,
     astcSample,
@@ -375,7 +376,8 @@ let artFailed: string | null = null;
 async function artForGame(): Promise<UnitArt | null> {
   const choice = params.art ?? loadArtChoice();
   artChoiceUsed = choice;
-  const base = params.mock ? null : artBase(choice, __ART_TAG__);
+  // The fake world draws the shapes, unless the page asks (?art=: its gallery, D-085).
+  const base = params.mock && params.art === null ? null : artBase(choice, __ART_TAG__);
   if (loadedArt !== null && loadedArt.base === base) return loadedArt.art;
   loadedArt?.art.destroy();
   loadedArt = null;

@@ -1,6 +1,7 @@
 // Page options read from the URL. Only `?test=1` (CI and debugging) unlocks the test hook,
 // tick rates beyond the three game speeds and the fake world; players never see them.
 
+import { CULTURE_PLANS, type CulturePlan } from "./art/spec.ts";
 import type { MapMode } from "./sim.ts";
 
 /**
@@ -60,6 +61,13 @@ export interface PageParams {
    * `test` the stand-ins scripts/make-test-atlas.ts makes, for the e2e tests.
    */
   art: "test" | "x3" | "x2" | "off" | null;
+  /** `?test=1&culture=A|B|C`: who wears which culture (art/spec.ts) instead of CULTURE_PLAN, for the user's choice's pictures. */
+  culture: CulturePlan | null;
+  /**
+   * `?test=1&mock=1&gallery=1`: the fake world as a gallery of the atlases (D-085): each unit
+   * type in each action, ours and the enemy's, the mages' shields, the farmers at work, militia.
+   */
+  gallery: boolean;
 }
 
 export function parseParams(search: string): PageParams {
@@ -80,5 +88,8 @@ export function parseParams(search: string): PageParams {
   const seed = test && s !== null && /^[1-9][0-9]{0,9}$/.test(s) && Number(s) <= 0x7fffffff ? Number(s) : null;
   const a = q.get("art");
   const art = test && (a === "test" || a === "x3" || a === "x2" || a === "off") ? a : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", art };
+  const c = q.get("culture");
+  const culture = test ? (CULTURE_PLANS.find((p) => p === c) ?? null) : null;
+  const gallery = test && q.get("mock") === "1" && q.get("gallery") === "1";
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", art, culture, gallery };
 }

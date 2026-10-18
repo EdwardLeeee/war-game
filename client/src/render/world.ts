@@ -628,7 +628,8 @@ export class WorldRenderer {
       const max = info?.hp ?? hp;
       const shield = u[o + U.shield];
       const shieldMax = info?.shield ?? 0;
-      if (shieldMax > 0 && shield > 0) {
+      // The shape's shield on the ground; drawn from its atlas, the shield is its own picture (unit-art-draw.ts).
+      if (shieldMax > 0 && shield > 0 && top === null) {
         p.shield.visible = true;
         p.shield.position.set(px, py);
         p.shield.scale.set(1.25);

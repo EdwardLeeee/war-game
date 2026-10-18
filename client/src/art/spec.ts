@@ -3,7 +3,7 @@
 // wears, which of the pictures' 8 directions a sim facing shows, which animation and which of
 // its frames. Pure, for the unit tests; render/unit-art.ts loads the pages and draws.
 
-import { Action, CELL, NodeKind, TICKS_PER_SECOND, UnitType } from "../sim.ts";
+import { Action, CELL, NEUTRAL, NO_OWNER, NodeKind, TICKS_PER_SECOND, UnitType } from "../sim.ts";
 
 export const ATLAS_FORMAT = "war-game atlas 2";
 export const EFFECTS_FORMAT = "war-game effects 1";
@@ -33,6 +33,8 @@ export interface AnimInfo {
   hit?: number;
   /** The frame the body lands (death, fall): the dust is played there. */
   impact?: number;
+  /** The dust that many times as large (big units: spec section 11). */
+  impact_scale?: number;
   /** Metres one walk cycle covers. */
   stride_m?: number;
 }
@@ -76,6 +78,23 @@ export function parseEffects(v: unknown): EffectsJson {
 
 /** 東陸 or 西陸 (D-021). Which side wears which is the user's to choose (A, B, C). */
 export type Culture = "e" | "w";
+
+/**
+ * Who wears which (brief 2026-10-art-in-game-client 3, the user's to choose): A 我方東陸、電腦西陸;
+ * B the other way round; C both 東陸, told apart by the players' colours only. The neutral
+ * militia wear ours (B1: the spearman of the same culture, in neutral grey).
+ */
+export type CulturePlan = "A" | "B" | "C";
+export const CULTURE_PLANS: readonly CulturePlan[] = ["A", "B", "C"];
+/** Until the user chooses: A. Choosing changes only this. */
+export const CULTURE_PLAN: CulturePlan = "A";
+
+export function cultureOf(plan: CulturePlan, owner: number, me: number): Culture {
+  if (plan === "C") return "e";
+  const ours: Culture = plan === "A" ? "e" : "w";
+  const theirs: Culture = plan === "A" ? "w" : "e";
+  return owner === me || owner === NEUTRAL || owner === NO_OWNER ? ours : theirs;
+}
 
 /** The atlas each unit type wears, by culture. The militia: the spearman, in neutral grey (B1). Siege is not in the prototype. */
 export const UNIT_ATLAS: Record<number, Record<Culture, string>> = {

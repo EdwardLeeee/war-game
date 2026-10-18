@@ -20,6 +20,7 @@ import {
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
+import { CULTURE_PLAN, type CulturePlan, cultureOf } from "../art/spec.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
 import { DIAMOND } from "../camera/projection.ts";
 import { LabPanel } from "../lab/panel.ts";
@@ -123,6 +124,8 @@ export interface GameOptions {
   minute?: () => void;
   /** The units drawn from war-game-ui's atlases (D-085), or none: the shapes. Only the picture: never the simulation. */
   art?: UnitArt | null;
+  /** Who wears which culture (art/spec.ts); CULTURE_PLAN when not given. */
+  culture?: CulturePlan;
   /** This build has atlases to choose in the 量測 panel. */
   artAvailable?: boolean;
   /** The 量測 panel's 美術 was changed since this game began: 量測 starts a game of its own. */
@@ -1241,7 +1244,9 @@ export class Game implements GestureHost {
           const v = cam.visible();
           return wx >= v.x0 && wx <= v.x1 && wy >= v.y0 && wy <= v.y1;
         };
-        this.renderer = new WorldRenderer(this.app, this.view, atlasFor(this.app.renderer), this.options.art ?? null, undefined, PROJECTION);
+        const view = this.view;
+        const plan = this.options.culture ?? CULTURE_PLAN;
+        this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(plan, owner, view.me), PROJECTION);
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
