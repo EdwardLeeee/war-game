@@ -30,4 +30,13 @@ if __name__ == "__main__":
     (OUT / "overlay.js").write_text("window.R6_OVERLAY = " + json.dumps({"selected": sel}) + ";\n")
     minimap.square(312, sc).save(OUT / "minimap-square.png")
     minimap.diamond(504, sc).save(OUT / "minimap-diamond.png")
+    for mode in ("start", "hit", "hint"):
+        minimap.diamond(504, sc, mode=mode).save(OUT / f"minimap-diamond-{mode}.png")
+    # the battlefield without the selection rings, and home under a raid (R6-13)
+    for t in RING:
+        img, _ = field.render(sc, art)
+        img.convert("RGB").save(OUT / f"field-{t}-plain.png")
+    img, _ = field.render(scene_r6.raid(), art)
+    for t in RING:
+        img.convert("RGB").save(OUT / f"field-{t}-raid.png")
     print("wrote", sorted(p.name for p in OUT.iterdir()))

@@ -50,3 +50,17 @@ def representative():
         x, y = cell(px, py)
         units.append(("farmer_e", "blue", x, y, (6, 7, 0)[i], "idle", i * 2, False))
     return dict(centre=CENTRE, buildings=b, nodes=nodes, units=units)
+
+
+def raid():
+    """Home is hit (NEW-02, INV-37): an enemy squad at our fields attacking the farmers; nothing of ours selected."""
+    sc = representative()
+    units = [u for u in sc["units"] if u[1] == "blue" and u[0] != "farmer_e"]
+    units = [(u[0], u[1], u[2], u[3], u[4], u[5], u[6], False) for u in units]
+    ex, ey = cell(250, 262)
+    for i, (x, y) in enumerate(squad(ex, ey, 3, 2)):
+        units.append(("pike_w" if i < 3 else "bow_w", "red", x, y, 3, "attack", (i * 3) % 10, False))
+    for i, (px, py) in enumerate(((176, 214), (205, 238))):
+        x, y = cell(px, py)
+        units.append(("farmer_e", "blue", x, y, 7, "walk", i * 3, False))
+    return dict(sc, units=units)

@@ -87,9 +87,14 @@ def square(size_px, scene, k=4):
     return can.resize((size_px, size_px), Image.LANCZOS)
 
 
-def diamond(w_px, scene, k=4):
-    """The map turned 45 degrees and flattened 2:1, like the battlefield: width w, height w / 2."""
+def diamond(w_px, scene, k=4, mode="mid"):
+    """The map turned 45 degrees and flattened 2:1, like the battlefield: width w, height w / 2.
+    mode: mid (6:42 in), start (a random map just begun: only home seen), hit (two places under attack: red
+    rings), hint (the opening hint's cyan ring on the nearest small town)."""
     img, vis = world()
+    if mode == "start":
+        yy, xx = np.mgrid[0:N, 0:N]
+        vis = np.where(np.hypot(xx - 20, yy - 72) < 14, 1.0, 0.0).astype(np.float32)
     W, H = w_px * k, w_px * k // 2
     # every output pixel back to a cell: u = x - y in [-N, N], v = x + y in [0, 2N]
     ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
@@ -110,6 +115,16 @@ def diamond(w_px, scene, k=4):
     marks(dr, to_px, 1.2 * k * w_px / 492, scene)
     cam = camera_poly(scene["centre"], to_px)
     dr.line(cam + [cam[0]], fill=(255, 255, 255, 235), width=int(2.2 * k * w_px / 492))
+    unit = k * w_px / 492
+    if mode == "hit":                       # where something is under attack: a red dot and its pulse ring
+        for x, y in ((26, 74), (40, 60)):
+            px, py = to_px(x, y)
+            dr.ellipse([px - 5 * unit, py - 5 * unit, px + 5 * unit, py + 5 * unit], fill=(255, 59, 48, 255))
+            dr.ellipse([px - 11 * unit, py - 11 * unit, px + 11 * unit, py + 11 * unit], outline=(255, 59, 48, 220), width=int(2.5 * unit))
+    if mode == "hint":                      # the opening hint: the nearest small town, a thick cyan ring
+        px, py = to_px(36, 58)
+        for r, w in ((26, 7), (18, 4)):
+            dr.ellipse([px - r * unit, py - r * 0.55 * unit, px + r * unit, py + r * 0.55 * unit], outline=(122, 240, 255, 255), width=int(w * unit))
     # a thin rim along the map's edge
     edge = [to_px(0, 0), to_px(N, 0), to_px(N, N), to_px(0, N)]
     dr.line(edge + [edge[0]], fill=(0, 0, 0, 200), width=int(1.5 * k))

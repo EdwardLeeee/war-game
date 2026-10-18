@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>R6 設計稿</title>
+<!-- board.html?board=R6-13&theme=a: one artboard of the full set, frames of ui.html side by side (boards.js). -->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f4f1ea; color: #282828; font: 400 16px/1.45 "PingFang TC", "Noto Sans CJK TC", sans-serif; }
+  #board { padding: 30px 40px 36px; width: max-content; }
+  h1 { margin: 0 0 6px; font-size: 40px; font-weight: 700; }
+  .sub { max-width: 1690px; margin: 0 0 18px; color: #555; font-size: 17px; white-space: pre-line; }
+  .row { display: flex; gap: 22px; margin: 0 0 22px; align-items: flex-start; }
+  .cell .cap { font-size: 16px; font-weight: 700; margin: 0 0 6px; max-width: 840px; }
+  .cell .cap small { display: block; font-weight: 400; color: #555; font-size: 14px; }
+  .frame { position: relative; overflow: hidden; border-radius: 4px; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); background: #000; }
+  .frame iframe { position: absolute; left: 0; top: 0; width: 814px; height: 380px; border: 0; transform-origin: 0 0; }
+  .rules { max-width: 1690px; margin: 8px 0 0; padding: 16px 20px; background: #fffaf0; border: 1px solid #d8ccb0; border-radius: 8px; font-size: 16px; }
+  .rules h2 { margin: 0 0 8px; font-size: 20px; }
+  .rules table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  .rules td, .rules th { border-top: 1px solid #e2d6bc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  .rules ul { margin: 4px 0 0; padding-left: 22px; }
+  .gap { color: #b0301f; font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="board"></div>
+<script src="boards.js"></script>
+<script>
+  "use strict";
+  const q = new URLSearchParams(location.search);
+  const theme = q.get("theme") || "a";
+  const b = window.R6_BOARDS[q.get("board")];
+  const style = { a: "A-銅木", b: "B-墨漆金線" }[theme];
+  const root = document.getElementById("board");
+  root.innerHTML = `<h1>${b.id}-${b.name}-${style}-mobile</h1><p class="sub">${b.sub}</p>`;
+  for (const row of b.rows) {
+    const r = document.createElement("div");
+    r.className = "row";
+    for (const c of row) {
+      const [x, y, w, h] = c.crop || [0, 0, 814, 380];
+      const z = c.zoom || 1;
+      r.insertAdjacentHTML("beforeend", `<div class="cell"><p class="cap">${c.inv.join("、")}　${c.cap}${c.note ? `<small>${c.note}</small>` : ""}</p>
+        <div class="frame" style="width:${w * z}px;height:${h * z}px"><iframe src="ui.html?theme=${theme}&state=${c.state}"
+          style="transform:translate(${-x * z}px,${-y * z}px) scale(${z})"></iframe></div></div>`);
+    }
+    root.append(r);
+  }
+  if (b.rules) root.insertAdjacentHTML("beforeend", `<div class="rules">${b.rules}</div>`);
+</script>
+</body>
+</html>

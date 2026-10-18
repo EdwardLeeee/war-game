@@ -1,0 +1,63 @@
+/* R6 B.3: layout of the formal interface on top of themes.css (the looks). D-087: left column C, diamond minimap. */
+
+/* left: 全體回城 (only when home is hit), 閒置 (only while someone idles), the 地圖 button and the minimap it opens */
+.recall { left: 4px; bottom: 186px; }
+.recall .b { width: 100px; min-height: 50px; flex-direction: column; gap: 0; padding: 3px 0 4px; }
+.recall .b .lb { font-size: 13px; line-height: 1.15; }
+.recall .b .sub { line-height: 1.1; }
+.idlebox { left: 4px; bottom: 132px; }
+.idlebox .b { width: 68px; flex-direction: column; gap: 1px; padding: 2px 0; }
+.idlebox .b .lb { font-size: 12px; line-height: 1.05; }
+.idlebox .cnt, .maptab .badge { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; background: #c63a2e; color: #fff; z-index: 2; }
+.maptab { left: 4px; bottom: 4px; }
+.maptab .b { width: 60px; flex-direction: column; gap: 0; }
+.maptab .b .lb { font-size: 11px; }
+.screen > .minimap { left: 4px; bottom: 52px; width: 152px; height: 76px; padding: 0; background: none; box-shadow: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .6)); }
+.screen > .minimap img { width: 100%; height: 100%; display: block; }
+.screen > .minimap::before, .screen > .minimap::after { display: none; }
+
+/* 暫停 banner, 退1–4, the prompt strip, the message strip, the attack arrows */
+.banner { left: 50%; top: 50px; transform: translateX(-50%); padding: 6px 14px; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.back .b { width: 44px; padding: 0; font-size: 13px; }
+.back-1 { right: 112px; top: 54px; } .back-2 { right: 162px; top: 54px; } .back-3 { right: 112px; top: 104px; } .back-4 { right: 162px; top: 104px; }
+.prompt { left: 50%; top: 90px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 14px; max-width: 790px; }
+.prompt .pt { display: flex; flex-direction: column; font-size: 13px; white-space: nowrap; }
+.prompt .warn { font-weight: 700; color: #ff9c86; }
+.prompt .b { min-height: 44px; flex: none; white-space: nowrap; }
+.prompt .pt { flex: 0 1 auto; min-width: 0; }
+.toast { left: 50%; bottom: 150px; transform: translateX(-50%); padding: 8px 14px; border-radius: 10px; font-weight: 700; font-size: 13px; white-space: nowrap;
+  background: rgba(90, 28, 24, .94); color: #fff4e8; box-shadow: 0 2px 6px rgba(0, 0, 0, .4); }
+.screen > .arrow { width: 52px; height: 52px; min-width: 52px; border-radius: 26px; padding: 0; background: rgba(206, 58, 46, .95); color: #fff;
+  box-shadow: 0 0 0 2px rgba(255, 230, 200, .8), 0 0 10px rgba(224, 71, 61, .7); }
+.screen > .arrow .ic { width: 24px; height: 24px; }
+.callout { padding: 3px 7px; border-radius: 6px; background: #fff3b0; color: #201a18; font-size: 11px; font-weight: 700; box-shadow: 0 1px 3px rgba(0, 0, 0, .4); }
+
+/* the folded selection info: only its head */
+.sel.folded { padding-bottom: 6px; }
+
+/* the alarm button (全體回城 when home is hit) and the 地圖 button while something is hit */
+[data-theme="a"] .b.alarm { background: linear-gradient(180deg, #c8402f, #8e231a); color: #fff3e4; box-shadow: inset 0 0 0 1.5px #f0cf8a, inset 0 2px 0 rgba(255, 220, 190, .4), 0 3px 0 #3a120c, 0 0 12px rgba(230, 70, 50, .7); }
+[data-theme="b"] .b.alarm::before { background: linear-gradient(180deg, #a8342a, #6a1a14); }
+[data-theme="b"] .b.alarm::after { border-image-source: var(--frame-red); }
+[data-theme="b"] .b.alarm { color: #fff1e6; filter: drop-shadow(0 0 5px rgba(230, 70, 50, .8)); }
+.maptab.is-alarm .b { animation: none; }
+[data-theme="a"] .maptab.is-alarm .b { background: linear-gradient(180deg, #a83a2c, #6e1f17); box-shadow: inset 0 0 0 1.5px #f0cf8a, 0 3px 0 #2a0f0a, 0 0 10px rgba(230, 70, 50, .75); }
+[data-theme="b"] .maptab.is-alarm .b::before { background: linear-gradient(180deg, #8c2a22, #521510); }
+[data-theme="b"] .maptab.is-alarm .b::after { border-image-source: var(--frame-red); }
+[data-theme="b"] .maptab.is-alarm .b { filter: drop-shadow(0 0 5px rgba(230, 70, 50, .8)); }
+
+/* prompt strip and banner looks */
+[data-theme="b"] .prompt .warn { color: #ffab92; }
+[data-theme="a"] .banner { color: #2b1c0e; background: linear-gradient(180deg, #e6bd62, #b98a35); box-shadow: inset 0 0 0 1.5px #f6dc9c, 0 2px 0 #3a2510; border-radius: 8px; }
+[data-theme="b"] .banner { color: #1d1608; }
+[data-theme="b"] .banner::before { background: linear-gradient(180deg, #e8c972, #b08933); }
+
+/* design notes: what a board points at */
+.is-marked { outline: 3px dashed #ffe45c; outline-offset: 3px; }
+.cmds:has(.b:nth-child(9)) { grid-template-columns: repeat(4, 56px); }
+/* the attack arrow in B: round and red on the lacquer layer */
+[data-theme="b"] .screen > .arrow::before { clip-path: circle(50%); background: rgba(196, 52, 40, .96); }
+[data-theme="b"] .screen > .arrow::after { border: 2px solid rgba(255, 220, 170, .85); border-image: none; border-radius: 50%; }
+[data-theme="b"] .screen > .arrow .ic { color: #fff; }
