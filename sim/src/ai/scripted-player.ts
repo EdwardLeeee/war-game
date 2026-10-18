@@ -713,7 +713,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const base = { x: home.cellX, y: home.cellY };
         const add = (type: BuildingType, at: { x: number; y: number } | null) => plans.push({ type, at });
         if (!plan.noMage && plan.hallFirst && !has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
-        if (cap < ceiling && cap - pop - queued <= houseRoom) add(BuildingType.House, base);
+        if (cap < 120 && cap - pop - queued <= 5 + houseRoom * 0 + ceiling * 0) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         // Raiders (round 7): the stable first, as early as it may go up (its `requires`, if any, before it).
