@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
-import { CAVALRY, DODGE, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
+import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
 import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
@@ -1502,4 +1502,100 @@ test("D-081: no garrison in a town under the arrows of an enemy fort (normal and
     assert.ok(garrisoned(false), `${difficulty}: a garrison goes to the town`);
     assert.ok(!garrisoned(true), `${difficulty}: none under the tower's arrows (seed 9 of the fortress-hold runs: 21 shot one by one)`);
   }
+});
+
+// --- D-083: the population rules (base 200, more for governed towns, houses +8), and D-081's leftovers ------
+
+/** Runs `f` with the population rules on or off, then puts them back (AIs made inside read them from rules()). */
+function withPopulation<T>(on: boolean, f: () => T): T {
+  const was = POPULATION_200.on;
+  POPULATION_200.on = on;
+  try {
+    return f();
+  } finally {
+    POPULATION_200.on = was;
+  }
+}
+
+test("D-083: with the population rules on, normal and hard build houses up to the ceiling (200), past the old 120", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    /** Its cap at 122 (main city 10 and 14 houses of 8), 116 farmers at work: a house next? */
+    const house = (on: boolean) =>
+      withPopulation(on, () => {
+        const g = emptyGame();
+        const w = g.w;
+        const s0 = w.map.spawns[0];
+        const per = rules().buildings[BuildingType.House].populationCap;
+        const houses = Math.ceil((122 - 10) / per);
+        for (let k = 0; k < houses; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 12 + 3 * (k % 8), s0.cellY + 6 + 3 * Math.trunc(k / 8), 200, 1000);
+        const cap = w.populationCap(0);
+        for (let k = 0; w.population(0) < cap - 6; k++) {
+          const id = put(g, 0, UnitType.Farmer, s0.cellX - 10 + (k % 20), s0.cellY - 10 - Math.trunc(k / 20));
+          w.units.col.order[slotOf(g, id)] = Order.Gather;
+        }
+        w.res.set([500, 500, 500, 0], 0);
+        g.fog.update(w);
+        const ai = difficulty === "hard" ? hardAi(g, { dodge: false }) : createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
+        return { cap, ceiling: w.populationCeiling(0), out: ai.think(buildView(g, 0)).some((c) => c.c === "build" && c.type === BuildingType.House) };
+      });
+    const on = house(true);
+    assert.deepEqual([on.cap >= 120, on.ceiling], [true, 200], `${difficulty}: on, the cap past 120 and the ceiling 200`);
+    assert.ok(on.out, `${difficulty}: on, another house (cap ${on.cap})`);
+    const off = house(false);
+    assert.ok(off.cap >= 120 && !off.out, `${difficulty}: off, none past 120 (cap ${off.cap}), as before`);
+  }
+});
+
+test("D-083 (D-081's leftover (a)): with the population rules on, a town whose plunder it holds gets no soldiers one by one against an enemy army there", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    /** It holds the small town in a plunder; 12 enemy spearmen in it, seen by a farmer of its own; `spears` of its own at home. */
+    const sent = (on: boolean, spears: number) =>
+      withPopulation(on, () => {
+        const g = emptyGame();
+        const w = g.w;
+        const [small] = w.map.towns;
+        w.townState[small.id] = TownState.Plundering;
+        w.townOwner[small.id] = 0;
+        w.townTimer[small.id] = 200;
+        w.tick = 12 * 1200;
+        const s0 = w.map.spawns[0];
+        for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 6 - Math.trunc(k / 6));
+        for (let k = 0; k < 12; k++) put(g, 1, UnitType.Spearman, small.cellX - 1 + (k % 4), small.cellY - 1 + Math.trunc(k / 4));
+        put(g, 0, UnitType.Farmer, small.cellX + 3, small.cellY + 3);
+        g.fog.update(w);
+        const ai = difficulty === "hard" ? hardAi(g, { dodge: false }) : createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
+        return ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.x === small.cellX && c.y === small.cellY && c.u.length === spears);
+      });
+    assert.ok(sent(false, 2), `${difficulty}: off, the two at home go back to it, as before`);
+    assert.ok(!sent(true, 2), `${difficulty}: on, not two against twelve`);
+    assert.ok(sent(true, 20), `${difficulty}: on, twenty go`);
+  }
+});
+
+test("D-083 (c): with the population rules on and food and gold piling up, hard builds a barracks or range before a farm", () => {
+  /** Hard with a barracks, a range, a granary, a lumber camp and a mine, 16 farmers at work and food and gold to spare: what does it build? */
+  const built = (on: boolean) =>
+    withPopulation(on, () => {
+      const g = emptyGame();
+      const w = g.w;
+      const s0 = w.map.spawns[0];
+      w.tick = 8 * 1200;
+      w.addBuilding(0, BuildingType.Barracks, s0.cellX + 4, s0.cellY - 8, 500, 1000);
+      w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 8, 500, 1000);
+      w.addBuilding(0, BuildingType.Granary, s0.cellX - 6, s0.cellY - 6, 400, 1000);
+      w.addBuilding(0, BuildingType.LumberCamp, s0.cellX - 10, s0.cellY + 2, 400, 1000);
+      w.addBuilding(0, BuildingType.Mine, s0.cellX + 12, s0.cellY + 2, 400, 1000);
+      for (let k = 0; k < 4; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 8 + 3 * k, s0.cellY + 6, 200, 1000);
+      for (let k = 0; k < 16; k++) {
+        const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 8), s0.cellY - 2 - Math.trunc(k / 8));
+        w.units.col.order[slotOf(g, id)] = Order.Gather;
+      }
+      w.res.set([700, 300, 400, 0], 0);
+      g.fog.update(w);
+      const b = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "build") as { type: BuildingType } | undefined;
+      return b?.type;
+    });
+  const on = built(true);
+  assert.ok(on === BuildingType.Barracks || on === BuildingType.Range, `on: a barracks or range first (built ${on})`);
+  assert.equal(built(false), BuildingType.Farm, "off: a farm first, as before");
 });
