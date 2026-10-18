@@ -1,0 +1,56 @@
+{
+ "scripted": [
+  {
+   "name": "c4",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "productionFirst": true
+   }
+  },
+  {
+   "name": "c4p6",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "productionFirst": true,
+    "production": 6
+   }
+  },
+  {
+   "name": "c4p6f",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "productionFirst": true,
+    "production": 6,
+    "farmers": 40
+   }
+  }
+ ],
+ "traces": [
+  {
+   "name": "c4-hr-1",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 1 --strategy push --speed h1 --formation close --difficulty hard --map random",
+   "a": {
+    "productionFirst": true
+   }
+  }
+ ]
+}
