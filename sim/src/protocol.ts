@@ -755,9 +755,11 @@ export type SimEvent =
   /**
    * Own unit or building hurt (fixed point). `by` (D-087): the attacker's owner, a player or
    * NEUTRAL (militia, the big city's tower); hurt by more than one owner in a tick, one event
-   * each. At most one per 8 x 8-cell block per 60 ticks per attacker's owner.
+   * each. At most one per 8 x 8-cell block per 60 ticks per attacker's owner. The simulation
+   * always sends `by`; it is optional only so events written by hand (the screen's tests) still
+   * compile.
    */
-  | { k: "attacked"; x: number; y: number; target: number; by: number }
+  | { k: "attacked"; x: number; y: number; target: number; by?: number }
   | { k: "unit_trained"; id: number; type: UnitType; building: number }
   | { k: "building_done"; id: number; type: BuildingType }
   | { k: "node_depleted"; id: number }
