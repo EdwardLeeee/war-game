@@ -33,3 +33,31 @@ node common/shoot.mjs a "theme=a" b "theme=b" c "theme=c" sa "theme=a&states=1" 
   L-moved "theme=b&left=moved" M-sq "theme=b&minimap=square" M-di "theme=b&minimap=diamond"
 python3 common/boards.py                    # out/
 ```
+
+## B.3 整套設計稿（等使用者核准）
+
+依據 D-087：A 銅木（預設）畫完盤點的 146 項；B 墨漆金線畫每一種元件的每一種狀態，加三個 A、B 並排的代表畫面。
+玩家色照 R6-24 使用者選的「甲 藍紅黃紫」（藍 #3f7fe0、紅 #d9433a、黃 #e8c42e、紫 #9a5ce0，中立 #d8d2c0）。
+R6-04：使用者看過方形地圖的甲「方形斜看」、乙「正上方俯視」，選了照舊用菱形（2026-10-18，ceo 轉達）。
+
+| 檔名（`out/`） | 內容 |
+|---|---|
+| `R6-99-整套總覽-A-銅木.png`、`R6-99-整套總覽-B-墨漆金線.png` | 每種風格一張總覽 |
+| `R6-10` 開局、`R6-11` 戰場上方、`R6-12` 編隊、`R6-13` 左邊、`R6-14` 單位資訊、`R6-15` 建築資訊、`R6-16` 資源與城鎮資訊、`R6-17` 軍團畫面、`R6-18` 指令區、`R6-19` 浮動元件、`R6-20` 對話框、`R6-21` 勝負、`R6-22` 提示與警報、`R6-23` 戰場世界介面、`R6-23b` 城鎮標記、`R6-30` 重設由誰接手（`-A-銅木-mobile`） | 盤點的每一項；每格上面寫盤點編號 |
+| `R6-13`、`R6-22`、`R6-30`、`R6-40`（`-B-墨漆金線-mobile`） | B：第一批三張、元件表 |
+| `R6-40-元件表-A-銅木-mobile.png` | A 的元件表 |
+| `R6-41`–`R6-43`（`-AB-兩種並排-mobile`） | 戰場、對話框、開局的 A、B 並排 |
+| `R6-24-玩家色-甲／乙／丙`、`總覽` | 玩家色的選項（使用者選甲） |
+| `R6-25-01`–`10`（`-mobile.png` 分鏡、`-動作.gif`） | 按下、對話框出現、編隊快撐不住、被攻擊箭頭、地圖鈕警報、全體回城跳出、地圖打開、訊息條、長按圓圈、指令回饋圈 |
+| `R6-04-地圖方向-甲／乙／總覽` | 方形地圖的兩個方案（使用者選了照舊用菱形） |
+| `../spec.md` | 給 client 的規格：位置從 mock 量，規則從設計稿，動畫時間從分鏡 |
+
+```bash
+python3 common/build.py ART                       # build/：戰場、世界介面、小地圖（ART：art-v2-x3 解開）
+python3 common/colours.py ART                     # R6-24
+node common/shoot-boards.mjs R6-10:a R6-11:a …    # 每張設計稿（board.html＋boards.js＋states.js），同時檢查 44 pt
+python3 common/anim.py                            # R6-25 分鏡和 GIF
+node common/coverage.mjs                          # 盤點 146 項都在某張設計稿上
+node common/layout.mjs && python3 common/spec.py  # spec.md
+python3 common/overview.py                        # R6-99
+```
