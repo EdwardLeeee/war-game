@@ -182,6 +182,32 @@ python3 common/memory_b1.py x3
 
 - 小建築（民居、伐木場、礦場、糧倉、鐵匠鋪）隔 2 格就露出上半身；兵營、法術營 3 格；主城 4 格；箭樓 5 格。農田不擋人。
 
+## R6：量產圖集（art-v2）
+
+格式見 `atlas-buildings.md`（client 2026-10-18 同意）。核准的樣子照 B1-02 A，製作方式 ceo 2026-10-18 同意：
+每棟各一張完成、施工 2、施工 3、受損；施工 1（地基）和瓦礫依占地大小和文化共用。
+
+```bash
+# 算圖（CI）：128 張，以圖集影格命名（common/run.py 的 prod_*）
+gh workflow run design-render --ref <分支> -f round=b1 \
+  -f targets='["prod_E_0","prod_E_1","prod_E_2","prod_E_3","prod_E_4","prod_E_5","prod_E_6","prod_W_0","prod_W_1","prod_W_2","prod_W_3","prod_W_4","prod_W_5","prod_W_6","prod_nodes_0","prod_nodes_1","prod_nodes_2"]'
+# 打包（CI）：一個或多個算圖 run，後面的蓋前面的 -> artifact production-buildings、production-effects-atlas
+gh workflow run design-render --ref <分支> -f round=buildings-atlas -f targets='["<run>", "<run>"]'
+# 本機看圖（下載 b1-prod_* 到 build/b1/prod/ 之後）
+python3 common/atlas_b1.py --scale 3 && python3 common/atlas_b1.py --scale 2
+python3 common/compare_b1.py sheet
+python3 common/compare_b1.py compare --approved <B1 算圖的 core3/、states/>
+```
+
+| 檔名 | 內容 |
+|---|---|
+| `R6-A1-量產對照-主城東陸-mobile.png`、`…-民居西陸-…`、`…-兵營東陸-…` | 核准的 B1-02 A 和量產圖集並排：完成、施工 1–3、受損、瓦礫，放大與實際大小（大、小、中建築各一棟） |
+| `R6-A2-建築量產總表-東陸-mobile.png`、`…-西陸-…` | 每一張建築影格，照遊戲的畫法組起來 |
+| `R6-A3-資源點量產總表-mobile.png` | 每一張資源點影格 |
+
+- 其他建築也套 B1-02 A（`blender/states.py` 的 docstring）：施工 2 最多切到 45% 高；沒有標記屋頂和牆的（西陸圓塔、大城箭樓）受損時在頂上起火。
+- 記憶體實測見 `atlas-buildings.md` 第 9 節。
+
 ## 給 client 的說明（和兵種圖集第 2 版不同的地方）
 
 這一輪不出量產圖集，只先定好做法：
