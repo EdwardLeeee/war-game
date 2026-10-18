@@ -20,9 +20,10 @@ ROCK = (110, 102, 92)
 FOREST = (40, 74, 38)
 GOLD = (242, 194, 48)
 CRYSTAL = (122, 240, 255)
-OWN = (79, 143, 240)
-OWN_UNIT = (156, 196, 255)
-ENEMY = (224, 71, 61)
+OWN = (0x3f, 0x7f, 0xe0)            # R6-24 甲; units a step lighter than buildings, as in the prototype
+OWN_UNIT = (150, 186, 240)
+ENEMY = (0xd9, 0x43, 0x3a)
+ENEMY_UNIT = (238, 150, 144)
 NEUTRAL = (216, 210, 192)
 
 
@@ -63,7 +64,7 @@ def marks(dr, to_px, s, scene):
         dr.polygon(pts, fill=OWN if team == "blue" else ENEMY)
     for unit, team, x, y, *_ in scene["units"]:
         px, py = to_px(x, y)
-        dr.ellipse([px - s, py - s, px + s, py + s], fill=OWN_UNIT if team == "blue" else ENEMY)
+        dr.ellipse([px - s, py - s, px + s, py + s], fill=OWN_UNIT if team == "blue" else ENEMY_UNIT)
     for (x, y), r in (((36, 58), 4), ((48, 48), 6)):
         pts = [to_px(x + r * math.cos(a), y + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 40)]
         dr.line(pts + [pts[0]], fill=NEUTRAL, width=max(1, int(s)))
@@ -74,8 +75,13 @@ def camera_poly(centre, to_px):
     return [to_px(x, y) for x, y in corners]
 
 
-def square(size_px, scene, k=4):
+def square(size_px, scene, k=4, mode="mid"):
+    """The map as its grid (+x right, +y down), the user's choice 2026-10-19 (「小地圖用正方形」): the battlefield
+    stays a diamond, so the camera's view is a tilted frame. mode as diamond()."""
     img, vis = world()
+    if mode == "start":
+        yy, xx = np.mgrid[0:N, 0:N]
+        vis = np.where(np.hypot(xx - 20, yy - 72) < 14, 1.0, 0.0).astype(np.float32)
     S = size_px * k
     cells = Image.fromarray((img * vis[..., None]).clip(0, 255).astype(np.uint8), "RGB").resize((S, S), Image.NEAREST)
     can = cells.convert("RGBA")
@@ -84,12 +90,27 @@ def square(size_px, scene, k=4):
     marks(dr, to_px, 1.2 * k * size_px / 312, scene)
     cam = camera_poly(scene["centre"], to_px)
     dr.line(cam + [cam[0]], fill=(255, 255, 255, 235), width=int(2.2 * k * size_px / 312))
+    unit = k * size_px / 312
+    if mode == "hit":
+        for x, y in ((26, 74), (40, 60)):
+            px, py = to_px(x, y)
+            dr.ellipse([px - 5 * unit, py - 5 * unit, px + 5 * unit, py + 5 * unit], fill=(255, 59, 48, 255))
+            dr.ellipse([px - 11 * unit, py - 11 * unit, px + 11 * unit, py + 11 * unit], outline=(255, 59, 48, 220), width=int(2.5 * unit))
+    if mode == "hint":
+        px, py = to_px(36, 58)
+        for r, w in ((20, 7), (13, 4)):
+            dr.ellipse([px - r * unit, py - r * unit, px + r * unit, py + r * unit], outline=(122, 240, 255, 255), width=int(w * unit))
     return can.resize((size_px, size_px), Image.LANCZOS)
 
 
-def diamond(w_px, scene, k=4):
-    """The map turned 45 degrees and flattened 2:1, like the battlefield: width w, height w / 2."""
+def diamond(w_px, scene, k=4, mode="mid"):
+    """The map turned 45 degrees and flattened 2:1, like the battlefield: width w, height w / 2.
+    mode: mid (6:42 in), start (a random map just begun: only home seen), hit (two places under attack: red
+    rings), hint (the opening hint's cyan ring on the nearest small town)."""
     img, vis = world()
+    if mode == "start":
+        yy, xx = np.mgrid[0:N, 0:N]
+        vis = np.where(np.hypot(xx - 20, yy - 72) < 14, 1.0, 0.0).astype(np.float32)
     W, H = w_px * k, w_px * k // 2
     # every output pixel back to a cell: u = x - y in [-N, N], v = x + y in [0, 2N]
     ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
@@ -110,6 +131,16 @@ def diamond(w_px, scene, k=4):
     marks(dr, to_px, 1.2 * k * w_px / 492, scene)
     cam = camera_poly(scene["centre"], to_px)
     dr.line(cam + [cam[0]], fill=(255, 255, 255, 235), width=int(2.2 * k * w_px / 492))
+    unit = k * w_px / 492
+    if mode == "hit":                       # where something is under attack: a red dot and its pulse ring
+        for x, y in ((26, 74), (40, 60)):
+            px, py = to_px(x, y)
+            dr.ellipse([px - 5 * unit, py - 5 * unit, px + 5 * unit, py + 5 * unit], fill=(255, 59, 48, 255))
+            dr.ellipse([px - 11 * unit, py - 11 * unit, px + 11 * unit, py + 11 * unit], outline=(255, 59, 48, 220), width=int(2.5 * unit))
+    if mode == "hint":                      # the opening hint: the nearest small town, a thick cyan ring
+        px, py = to_px(36, 58)
+        for r, w in ((26, 7), (18, 4)):
+            dr.ellipse([px - r * unit, py - r * 0.55 * unit, px + r * unit, py + r * 0.55 * unit], outline=(122, 240, 255, 255), width=int(w * unit))
     # a thin rim along the map's edge
     edge = [to_px(0, 0), to_px(N, 0), to_px(N, N), to_px(0, N)]
     dr.line(edge + [edge[0]], fill=(0, 0, 0, 200), width=int(1.5 * k))

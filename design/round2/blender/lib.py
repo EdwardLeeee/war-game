@@ -84,7 +84,7 @@ class Camera:
         cd.shift_y = (anchor[1] - h / 2) / big
         cd.clip_start = 0.1
         cd.clip_end = 400
-        rot = Euler((60 * D2R, 0, -45 * D2R))
+        rot = Euler(((90 - CAM_ELEV) * D2R, 0, CAM_AZ * D2R))
         direction = rot.to_matrix() @ Vector((0, 0, -1))
         self.obj.rotation_euler = rot
         self.obj.location = -direction * 120
@@ -98,6 +98,11 @@ def heading_for(facing):
 # ---------------------------------------------------------------- lights
 
 LIGHTS = {}
+# The camera: 30 degrees above the horizon, turned -45 degrees to the map grid (every approved render). R6-04
+# (the map-direction question, 2026-10-18) renders a few buildings with other cameras: set these before the scene
+# is made; the lights turn with the camera, so shadows fall the same way on the screen as on the unit renders.
+CAM_ELEV = 30.0
+CAM_AZ = -45.0
 
 
 def make_lights():
@@ -113,7 +118,7 @@ def make_lights():
         ld.angle = angle * D2R
         ob = bpy.data.objects.new(key, ld)
         # high sun; shadows fall toward the lower right of the screen (world south)
-        ob.rotation_euler = Euler((32 * D2R, 0, 180 * D2R))
+        ob.rotation_euler = Euler((32 * D2R, 0, (180 + CAM_AZ + 45) * D2R))
         sc.collection.objects.link(ob)
         LIGHTS[key] = ob
     make_rim()
@@ -127,7 +132,7 @@ def make_rim():
     ld.color = (0.82, 0.9, 1.0)
     ld.angle = 4 * D2R
     ob = bpy.data.objects.new("rim", ld)
-    ob.rotation_euler = Euler((65 * D2R, 0, 135 * D2R))   # from behind the units, toward the camera
+    ob.rotation_euler = Euler((65 * D2R, 0, (135 + CAM_AZ + 45) * D2R))   # from behind the units, toward the camera
     sc.collection.objects.link(ob)
     LIGHTS["rim"] = ob
 

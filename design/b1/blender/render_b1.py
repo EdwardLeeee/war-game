@@ -48,7 +48,10 @@ HOUSES = ("th22", "th21", "th12", "th11")
 
 lib.QUALITY = job.get("quality", "hq")
 ppm = job["px_per_m"]
-RM = Euler((60 * lib.D2R, 0, -45 * lib.D2R)).to_matrix()
+cam = job.get("camera") or {}             # R6-04: another camera for a few pieces (lib.CAM_ELEV, lib.CAM_AZ)
+lib.CAM_ELEV = cam.get("elev", lib.CAM_ELEV)
+lib.CAM_AZ = cam.get("az", lib.CAM_AZ)
+RM = Euler(((90 - lib.CAM_ELEV) * lib.D2R, 0, lib.CAM_AZ * lib.D2R)).to_matrix()
 RIGHT, UP = RM @ Vector((1, 0, 0)), RM @ Vector((0, 1, 0))
 TO_CAM = RM @ Vector((0, 0, 1))
 MARGIN = 0.35            # metres of room around the model in each frame
