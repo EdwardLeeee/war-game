@@ -225,9 +225,15 @@ test("輪盤的撤退：點地面撤到那裡；撤退中按取消撤退、選�
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: [spear], x: 12, y: 74 });
   // On its way, the wheel's 撤退 reads 取消撤退: it stops and holds (D-054).
   await expect.poll(async () => (await units(page)).find((v) => v.id === spear)?.order).toBe(2);
+  // Paused, it stays under the finger for the 350 ms (walking, as a diamond it left the finger on
+  // CI's WebKit); its order is still 撤退.
+  await page.getByRole("button", { name: "暫停", exact: true }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
   await longPress(page, await now());
   await page.getByRole("menuitem", { name: "取消撤退" }).tap();
   await held();
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(async () => (await units(page)).find((v) => v.id === spear)?.order).not.toBe(2);
   // Picking a spot, 取消 in the prompt: the same.
   await longPress(page, await now());
   await page.getByRole("menuitem", { name: "撤退", exact: true }).tap();
