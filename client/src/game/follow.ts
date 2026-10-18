@@ -15,7 +15,7 @@ export const FOLLOW_ARRIVED_CELLS = 6;
 export const FOLLOW_WAIT_TICKS = 20;
 
 /** One unit sent to attack. */
-interface Charge {
+export interface Charge {
   target: number;
   /** Where the target is, or was last seen (cells); null before it was ever seen. */
   at: { x: number; y: number } | null;
@@ -50,6 +50,19 @@ export class Charges {
   /** Another order of the player's for these units: they follow it, not the attack. */
   drop(ids: readonly number[]): void {
     for (const id of ids) this.list.delete(id);
+  }
+
+  /** 繼續上一局 (D-083): the units followed and their targets, as plain data. */
+  save(): [number, Charge][] {
+    return this.ids().map((id) => {
+      const c = this.list.get(id) as Charge;
+      return [id, { ...c, at: c.at === null ? null : { ...c.at } }];
+    });
+  }
+
+  restore(s: readonly (readonly [number, Charge])[]): void {
+    this.list.clear();
+    for (const [id, c] of s) this.list.set(id, { ...c, at: c.at === null ? null : { ...c.at } });
   }
 
   /** The units being followed (for the test page). */

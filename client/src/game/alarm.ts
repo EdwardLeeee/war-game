@@ -65,6 +65,18 @@ export class GroupAlarms {
     if (tell) this.told[i] = true;
     return { advancing, base, alarm, tell };
   }
+
+  /** 繼續上一局 (D-083): each group's base and whether its alarm was told. */
+  save(): { base: (number | null)[]; told: boolean[] } {
+    return { base: [...this.base], told: [...this.told] };
+  }
+
+  restore(s: { base: (number | null)[]; told: boolean[] }): void {
+    for (let i = 0; i < this.base.length; i++) {
+      this.base[i] = s.base[i] ?? null;
+      this.told[i] = s.told[i] ?? false;
+    }
+  }
 }
 
 /** The strip's line when the alarm goes up. */
