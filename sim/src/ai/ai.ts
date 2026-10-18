@@ -1884,7 +1884,12 @@ const PRODUCTION_FIRST = 800;
  * D-083 (c), the user 2026-10-10: hard 「太晚來打我」「來打的兵太少」 (ceo 2026-10-18: earlier and with more). With the
  * population rules on, hard plays these over HARD.
  */
-export const HARD_POP: Partial<HardPlan> = {};
+export const HARD_POP: Partial<HardPlan> = {
+  // A barracks or range before houses and farms once food and gold pile up (the trace: two of four till minute 19).
+  productionFirst: true,
+  // And a little more to march with (44): measured with the above, minute 16.6 -> 16.1 and 29 -> 32 at the city (sim/README.md).
+  pushArmy: 48,
+};
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */

@@ -1571,3 +1571,31 @@ test("D-083 (D-081's leftover (a)): with the population rules on, a town whose p
     assert.ok(sent(true, 20), `${difficulty}: on, twenty go`);
   }
 });
+
+test("D-083 (c): with the population rules on and food and gold piling up, hard builds a barracks or range before a farm", () => {
+  /** Hard with a barracks, a range, a granary, a lumber camp and a mine, 16 farmers at work and food and gold to spare: what does it build? */
+  const built = (on: boolean) =>
+    withPopulation(on, () => {
+      const g = emptyGame();
+      const w = g.w;
+      const s0 = w.map.spawns[0];
+      w.tick = 8 * 1200;
+      w.addBuilding(0, BuildingType.Barracks, s0.cellX + 4, s0.cellY - 8, 500, 1000);
+      w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 8, 500, 1000);
+      w.addBuilding(0, BuildingType.Granary, s0.cellX - 6, s0.cellY - 6, 400, 1000);
+      w.addBuilding(0, BuildingType.LumberCamp, s0.cellX - 10, s0.cellY + 2, 400, 1000);
+      w.addBuilding(0, BuildingType.Mine, s0.cellX + 12, s0.cellY + 2, 400, 1000);
+      for (let k = 0; k < 4; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 8 + 3 * k, s0.cellY + 6, 200, 1000);
+      for (let k = 0; k < 16; k++) {
+        const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 8), s0.cellY - 2 - Math.trunc(k / 8));
+        w.units.col.order[slotOf(g, id)] = Order.Gather;
+      }
+      w.res.set([700, 300, 400, 0], 0);
+      g.fog.update(w);
+      const b = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "build") as { type: BuildingType } | undefined;
+      return b?.type;
+    });
+  const on = built(true);
+  assert.ok(on === BuildingType.Barracks || on === BuildingType.Range, `on: a barracks or range first (built ${on})`);
+  assert.equal(built(false), BuildingType.Farm, "off: a farm first, as before");
+});
