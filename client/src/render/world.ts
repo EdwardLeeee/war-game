@@ -127,7 +127,7 @@ interface TownMark {
 // Two kinds of layers (D-085, docs/sprite-atlas.md section 1). What lies on the ground (terrain,
 // fog, town circles, footprints, rings, marks on the ground, the placement preview) is drawn in
 // world px inside `ground`, which the projection lays out (as a diamond: turned 45° and flattened
-// 2:1). What stands up (units, buildings' and nodes' marks, walls, bars, words, arrows in the air)
+// 2:1). What stands up (units, buildings' and nodes' marks, towns' 鎮 and 城, bars, words, arrows in the air)
 // is drawn on the plane at the projected point, never flattened, the nearer in front.
 
 export class WorldRenderer {
@@ -142,6 +142,8 @@ export class WorldRenderer {
   /** Buildings' footprints (the shapes), on the ground. */
   private readonly baseLayer = new Container();
   private readonly wallLayer = new Container();
+  /** As a diamond, the towns' walls lie on the ground (a stand-in until the buildings' atlas), above the fog: the player's knowledge. */
+  private readonly wallGround = new Container();
   /** Units' shadows from their atlases (D-085): pictures, standing like the units, under them. */
   private readonly shadowLayer = new Container();
   private readonly ringLayer = new Container();
@@ -221,7 +223,7 @@ export class WorldRenderer {
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
-    this.groundInner.addChild(ground, this.zones, this.baseLayer, this.ringLayer, this.fx, this.ghost, fog);
+    this.groundInner.addChild(ground, this.zones, this.baseLayer, this.ringLayer, this.fx, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
     this.root.addChild(this.groundOuter, this.wallLayer, this.shadowLayer, this.unitLayer, this.airFx, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
@@ -458,10 +460,11 @@ export class WorldRenderer {
       let mark = this.townMarks.get(id);
       if (mark === undefined) {
         const wall = new Sprite(this.atlas.wall);
-        wall.anchor.set(0.5, 1);
+        wall.anchor.set(0.5, this.projection.kind === "diamond" ? 0.5 : 1);
         const glyph = new Sprite(this.atlas.townGlyphs[info.size] ?? Texture.EMPTY);
         glyph.anchor.set(0.5);
-        this.wallLayer.addChild(wall, glyph);
+        (this.projection.kind === "diamond" ? this.wallGround : this.wallLayer).addChild(wall);
+        this.wallLayer.addChild(glyph);
         const holder = new Container();
         const label = new Text({ text: "", style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 13, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } }, resolution: 4 });
         label.anchor.set(0.5, 0);
@@ -478,18 +481,24 @@ export class WorldRenderer {
       const spot = wallSpot(info, info.size === TownSize.Large ? (this.towers.get(id) ?? ruleTower(info, towerSize)) : null);
       mark.spot = spot;
       mark.wall.visible = mark.glyph.visible = mark.holder.visible = true;
-      // Standing on its spot: its foot at the spot's nearest corner (as a diamond, its bottom one), as wide as the spot's side.
+      // On its spot, its words under its nearest corner (as a diamond, the bottom one).
       const mid = this.projection.toPlane(spot.x + spot.side / 2, spot.y + spot.side / 2);
       const foot = this.projection.toPlane(spot.x + spot.side, spot.y + spot.side);
-      const side = spot.side * (this.projection.kind === "diamond" ? PT_PER_CELL / TILE_PX : 1);
-      // Standing up, a stretch of wall is lower than it is wide (seen from above, the square symbol).
-      const high = this.projection.kind === "diamond" ? side * 0.6 : side;
-      mark.wall.position.set(mid.x, foot.y);
-      mark.wall.width = side;
-      mark.wall.height = high;
       mark.wall.tint = look.tint;
-      mark.glyph.position.set(mid.x, foot.y - high * 0.58);
-      mark.glyph.scale.set((high * 0.34) / 36);
+      if (this.projection.kind === "diamond") {
+        // Lying on the ground like the buildings' footprints (standing up, a big city's hid the fighting
+        // behind it), its 鎮 or 城 standing in the middle.
+        mark.wall.position.set(spot.x + spot.side / 2, spot.y + spot.side / 2);
+        mark.wall.width = mark.wall.height = spot.side;
+        mark.glyph.position.set(mid.x, mid.y);
+        mark.glyph.scale.set((spot.side * (PT_PER_CELL / TILE_PX) * 0.3) / 36);
+      } else {
+        // Seen from above, the square symbol over the spot.
+        mark.wall.position.set(mid.x, foot.y);
+        mark.wall.width = mark.wall.height = spot.side;
+        mark.glyph.position.set(mid.x, foot.y - spot.side * 0.58);
+        mark.glyph.scale.set((spot.side * 0.34) / 36);
+      }
       mark.holder.position.set(mid.x, foot.y);
       mark.label.text = look.label;
       const total = t[o + T.timerTotal];
