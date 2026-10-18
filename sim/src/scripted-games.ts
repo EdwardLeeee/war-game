@@ -86,6 +86,26 @@ plan.fortress = flag("fortress");
 // D-081: the army holds by the fortress until it is this many or minute 30 (--fortress-hold 60).
 plan.fortressHold = Number(arg("fortress-hold", "0"));
 if (plan.fortressHold > 0) plan.fortress = true;
+// D-086 A (the user's long wins against hard, docs/research/2026-10-ai-late.md): 24 farmers, ranged
+// first, 2 arrow towers by home, cavalry a sixth of the army, every town taken governed (town after
+// town), and the march on the AI's main city with 50 or more, more than it saw of the AI's army lately.
+if (flag("late")) {
+  plan.farmers = 24;
+  plan.production = 4;
+  plan.spearShare = 35;
+  plan.choice = "govern";
+  plan.corners = true;
+  plan.townAt = 10;
+  plan.homeTowers = 2;
+  plan.cavalryShare = 15;
+  plan.pushAt = 50;
+  plan.counterAt = 50;
+  plan.pushAhead = true;
+}
+/** D-086 A: an AI order this soon after its last order at the player's main city is the same march. */
+const MARCH_GAP = 2 * 1200;
+/** D-086 A: the late turn the measure looks for (the user's long wins): the player wins after this tick. */
+const LATE_WIN = 27 * 1200;
 const rushing = plan.towerRush > 0 || plan.rushBuildersOnly;
 /** The player puts up outposts and arrow towers: the rush or the fortress. */
 const fortifying = rushing || plan.fortress;
@@ -210,6 +230,15 @@ interface GameRecord {
   aiAway: number;
   /** D-083 (c): at minute 15 the AI's farmers, finished houses and soldiers (null: the game was over by then). */
   aiAt15: { farmers: number; houses: number; soldiers: number } | null;
+  /**
+   * D-086 A, every game (read only): the AI's marches on the player's main city: its move and attack
+   * orders with 10 or more soldiers aimed within 14 cells of it, or at it; an order within MARCH_GAP
+   * ticks of the last is the same march. From the first order to the last, the most soldiers in one
+   * order, and whether the player's main city fell by MARCH_GAP after the last.
+   */
+  aiMarches: { start: number; last: number; most: number; fell: boolean }[];
+  /** D-086 A: soldiers (not farmers, not militia) of [the player, the AI] at minutes 15 and 20 (null: over by then). */
+  armyAt: { m15: [number, number] | null; m20: [number, number] | null };
   /** Random maps (D-074): the map's layout and when the player first saw the AI's main city (-1: never). */
   layout?: string;
   found?: number;
@@ -361,12 +390,45 @@ function play(seed: number): GameRecord {
   const plunderAt = new Map<number, { x: number; y: number }>();
   let aiAway = -1;
   let aiAt15: GameRecord["aiAt15"] = null;
+  const marchLog: { start: number; last: number; most: number }[] = [];
+  let logAt = 0;
+  const armyAt: GameRecord["armyAt"] = { m15: null, m20: null };
+  const soldiersOf = (p: number) => {
+    let n = 0;
+    for (let i = 0; i < w.units.count; i++) if (u.owner[i] === p && u.type[i] !== UnitType.Farmer && u.type[i] !== UnitType.Militia) n++;
+    return n;
+  };
   while (!r.over && w.tick < CAP) {
     if (w.tick % think === 0) {
       for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
     }
     r.tick();
     if (w.tick === 12000) aiFarmersLost10 = w.lost[UNIT_KINDS + UnitType.Farmer];
+    // D-086 A: the AI's orders this tick at the player's main city with 10 or more soldiers.
+    for (; logAt < g.log.length; logAt++) {
+      const c = g.log[logAt];
+      if (c.p !== 1 || (c.c !== "move" && c.c !== "attack")) continue;
+      let at = false;
+      if (c.c === "move") at = (c.x - home.cellX - 2) ** 2 + (c.y - home.cellY - 2) ** 2 <= 14 * 14;
+      else {
+        const s = w.building(c.target);
+        at = s >= 0 && b.owner[s] === 0 && b.type[s] === BuildingType.MainCity;
+      }
+      if (!at) continue;
+      let n = 0;
+      for (const id of c.u) {
+        const s = w.unit(id);
+        if (s >= 0 && u.type[s] !== UnitType.Farmer) n++;
+      }
+      if (n < 10) continue;
+      const last = marchLog[marchLog.length - 1];
+      if (last !== undefined && c.t - last.last < MARCH_GAP) {
+        last.last = c.t;
+        last.most = Math.max(last.most, n);
+      } else marchLog.push({ start: c.t, last: c.t, most: n });
+    }
+    if (w.tick === 15 * 1200) armyAt.m15 = [soldiersOf(0), soldiersOf(1)];
+    if (w.tick === 20 * 1200) armyAt.m20 = [soldiersOf(0), soldiersOf(1)];
     for (const e of g.events) if (e.to === 0 && e.ev.k === "rejected") rejected++;
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
     for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;
@@ -606,6 +668,8 @@ function play(seed: number): GameRecord {
     plunder: { longest: plunderLongest, deaths: plunderDeaths },
     aiAway,
     aiAt15,
+    aiMarches: marchLog.map((x) => ({ ...x, fell: cityFell[0] >= 0 && cityFell[0] <= x.last + MARCH_GAP })),
+    armyAt,
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
@@ -641,6 +705,7 @@ const options = [
   plan.rushBuildersOnly ? "塔攻（只派村民）：4 名村民到電腦主城旁蓋哨所和 2 座箭樓，沒有護送、沒有駐守（D-080）" : "",
   plan.fortress ? "半路要塞：第 12 分起，在往電腦主城的路上、離家 37 格，蓋哨所（6 名槍兵駐守）和 5 座箭樓（D-081）" : "",
   plan.fortressHold > 0 ? `大軍守在要塞旁，湊到 ${plan.fortressHold} 名或第 30 分才出發（D-081）` : "",
+  plan.pushAhead ? `後期翻盤：24 名村民、遠程為主、家旁 ${plan.homeTowers} 座箭樓、騎兵佔 ${plan.cavalryShare}%、城鎮打下來就治理，兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門（D-086）` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
@@ -687,6 +752,23 @@ if (fortifying) {
   out.push(
     `${plan.fortress ? "半路要塞" : "塔攻"}：出發 ${rushed.filter((x) => x.rush!.start >= 0).length}/${rushed.length} 局。` +
       `哨所${count("outpost")}。箭樓${count("tower")}。`,
+    "",
+  );
+}
+if (plan.pushAhead) {
+  // D-086 A: the late turn (ceo 2026-10-18): won after minute 27, and before that the AI marched on
+  // the player's main city with 10 or more at least once without taking it; and where the armies stood at 15 and 20.
+  const failedMarch = (x: GameRecord) => x.aiMarches.some((a) => !a.fell);
+  const late = games.filter((x) => x.result === "won" && x.endTick > LATE_WIN);
+  const turned = late.filter(failedMarch);
+  const med = (l: number[]) => (l.length === 0 ? "—" : String([...l].sort((a, c) => a - c)[l.length >> 1]));
+  const at15 = games.filter((x) => x.armyAt.m15 !== null).map((x) => x.armyAt.m15!);
+  const at20 = games.filter((x) => x.armyAt.m20 !== null).map((x) => x.armyAt.m20!);
+  const ratio = at15.filter(([p]) => p > 0).map(([p, a]) => Math.round((a * 100) / p) / 100);
+  out.push(
+    `後期翻盤（D-086）：贏在第 ${LATE_WIN / 1200} 分以後、而且之前電腦至少一次帶 10 名以上出發打我的主城沒打下來 ${turned.length} 局` +
+      `（贏在第 ${LATE_WIN / 1200} 分以後 ${late.length} 局；電腦出兵打主城沒打下來的局 ${games.filter(failedMarch).length}）。`,
+    `第 15 分電腦的兵是我的幾倍：中位數 ${med(ratio)}（我一名兵都沒有的 ${at15.length - ratio.length} 局不算）；第 20 分兩邊的兵：我 ${med(at20.map((x) => x[0]))}、電腦 ${med(at20.map((x) => x[1]))}（中位數），電腦比我少 ${at20.filter(([p, a]) => a < p).length}/${at20.length} 局。`,
     "",
   );
 }

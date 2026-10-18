@@ -340,6 +340,89 @@ jobs:
           EOF
           node summary.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
+  # D-086 A (war-game-ai, docs/research/2026-10-ai-late.md): the user's long wins against hard as a
+  # scripted group (--late), on both maps, against normal and hard, seeds 1-40 in two jobs each.
+  # Reports only, no threshold; its own jobs, so the jobs above play as before.
+  scripted-late:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
+    name: scripted late (${{ matrix.difficulty }} ${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        difficulty: [normal, hard]
+        cell:
+          - { group: push-late, seeds: 1-20, args: --strategy push --speed h1 --formation close --late }
+          - { group: push-late, seeds: 21-40, args: --strategy push --speed h1 --formation close --late }
+          - { group: push-late-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --late --map random }
+          - { group: push-late-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --late --map random }
+    env:
+      NAME: late-${{ matrix.difficulty }}-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Scripted player (late) against the ${{ matrix.difficulty }} AI
+        run: |
+          set -o pipefail
+          node src/scripted-games.ts --seeds ${{ matrix.cell.seeds }} ${{ matrix.cell.args }} --difficulty ${{ matrix.difficulty }} --json "${NAME}.json" | tee -a "${GITHUB_STEP_SUMMARY}"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: sim/${{ env.NAME }}.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # The late group in one table (ceo 2026-10-18): won after minute 27 with a march of the AI's on the
+  # player's main city beaten off before, and where the armies stood at minutes 15 and 20.
+  scripted-late-summary:
+    needs: [scripted-late]
+    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: late-*
+          path: late
+          merge-multiple: true
+      - name: The late group
+        run: |
+          set -o pipefail
+          cat > late.mjs <<'EOF'
+          import { readdirSync, readFileSync } from "node:fs";
+          const rows = [["normal", "push-late", "普通，固定地圖"], ["normal", "push-late-random", "普通，隨機地圖"], ["hard", "push-late", "困難，固定地圖"], ["hard", "push-late-random", "困難，隨機地圖"]];
+          const med = (l) => (l.length === 0 ? "—" : String([...l].sort((a, b) => a - b)[l.length >> 1]));
+          const out = ["## 後期翻盤（D-086）", "", "| 對手、地圖 | 贏／局數 | 重現 | 贏在 27 分以後 | 電腦出兵沒打下的局 | 第 15 分電腦兵是我的幾倍 | 第 20 分兵 我／電腦 | 第 20 分電腦比我少 |", "|---|---|---|---|---|---|---|---|"];
+          for (const [level, group, name] of rows) {
+            const games = readdirSync("late")
+              .filter((f) => f.startsWith(`late-${level}-${group}-`) && /^late-[a-z]+-[a-z-]+-\d+-\d+\.json$/.test(f) && f.replace(/-\d+-\d+\.json$/, "") === `late-${level}-${group}`)
+              .flatMap((f) => JSON.parse(readFileSync(`late/${f}`, "utf8")).games);
+            if (games.length === 0) continue;
+            const failed = (x) => x.aiMarches.some((a) => !a.fell);
+            const won = games.filter((x) => x.result === "won");
+            const late = won.filter((x) => x.endTick > 27 * 1200);
+            const at15 = games.map((x) => x.armyAt.m15).filter((x) => x !== null);
+            const at20 = games.map((x) => x.armyAt.m20).filter((x) => x !== null);
+            const ratio = at15.filter(([p]) => p > 0).map(([p, a]) => Math.round((a * 100) / p) / 100);
+            out.push(
+              `| ${name} | ${won.length}/${games.length} | ${late.filter(failed).length} | ${late.length} | ${games.filter(failed).length} | ${med(ratio)}（我沒兵 ${at15.length - ratio.length} 局） | ${med(at20.map((x) => x[0]))}／${med(at20.map((x) => x[1]))}（${at20.length} 局） | ${at20.filter(([p, a]) => a < p).length} |`,
+            );
+          }
+          out.push("", "重現：贏在第 27 分以後，而且之前電腦至少一次帶 10 名以上出發打我的主城、沒打下來（隔不到 2 分鐘的出兵算同一次）。第 15、20 分的兵不含村民；中位數。");
+          console.log(out.join("\n"));
+          EOF
+          node late.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
+
   # Unit balance (round 3, D-026): small battles of equal cost, the values before this round
   # against the values in the code, every goal marked (src/balance.ts). About 10 seconds.
   # Goals 1-4 must hold with both sides advancing; goal 5 is reported (ceo: not this round).
