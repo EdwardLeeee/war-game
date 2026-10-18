@@ -1,0 +1,46 @@
+{
+ "scripted": [
+  {
+   "name": "c4p46",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "productionFirst": true,
+    "pushArmy": 46
+   }
+  },
+  {
+   "name": "c4p48",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "productionFirst": true,
+    "pushArmy": 48
+   }
+  },
+  {
+   "name": "c4p52",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "productionFirst": true,
+    "pushArmy": 52
+   }
+  }
+ ]
+}
