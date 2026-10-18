@@ -18,7 +18,9 @@ from PIL import Image, ImageFilter
 SCREEN = (814, 380)
 HALF_W = 28.284          # pt: half a cell's diamond, across
 HALF_H = 14.142          # pt: half a cell's diamond, down
-TEAM = {"blue": (46, 110, 214), "red": (200, 48, 44), "neutral": (216, 210, 192)}
+# the player colours the user chose (R6-24 甲, 2026-10-18): 藍 紅 黃 紫, and the neutral
+TEAM = {"blue": (0x3f, 0x7f, 0xe0), "red": (0xd9, 0x43, 0x3a), "yellow": (0xe8, 0xc4, 0x2e), "purple": (0x9a, 0x5c, 0xe0),
+        "neutral": (0xd8, 0xd2, 0xc0)}
 GROUND = (112, 126, 92)
 
 
@@ -151,6 +153,9 @@ def render(scene, art, scale=3):
 
     for _, im, ax, ay, gx, gy in sorted(ground_items, key=lambda t: t[0]):
         paste(im, ax, ay, gx, gy)
+    for im, ax, ay, x, y in scene.get("decals", []):          # ground effects (the warning circle), under every unit
+        gx, gy = at(x, y)
+        img.alpha_composite(im, (int(round(gx - ax)), int(round(gy - ay))))
     sh_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     for im, ax, ay, gx, gy in shadows:
         if s != 1:

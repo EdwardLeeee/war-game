@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(join(HERE, "../../../client/package.json"));
 const { chromium } = require("@playwright/test");
-const page_url = pathToFileURL(join(HERE, "../mock/screen.html")).href;
+const page_url = pathToFileURL(join(HERE, "../mock/" + (process.env.R6_PAGE || "screen.html"))).href;
 const out = join(HERE, "../build");
 const args = process.argv.slice(2);
 const browser = await chromium.launch();
