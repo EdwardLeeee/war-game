@@ -752,7 +752,12 @@ export const COMMAND_KINDS_COMPLETE: [MissingCommand] extends [never] ? true : M
 
 export type SimEvent =
   /** At most one per 8 x 8-cell block per 60 ticks. */
-  | { k: "attacked"; x: number; y: number; target: number }
+  /**
+   * Own unit or building hurt (fixed point). `by` (D-087): the attacker's owner, a player or
+   * NEUTRAL (militia, the big city's tower); hurt by more than one owner in a tick, one event
+   * each. At most one per 8 x 8-cell block per 60 ticks per attacker's owner.
+   */
+  | { k: "attacked"; x: number; y: number; target: number; by: number }
   | { k: "unit_trained"; id: number; type: UnitType; building: number }
   | { k: "building_done"; id: number; type: BuildingType }
   | { k: "node_depleted"; id: number }
