@@ -127,6 +127,15 @@ for _i in range(0, len(PROD_NODES), PROD_CHUNK):
 TARGETS["prod_fire"] = [pc for _c in CULTURES for pc in _prod_buildings(_c)
                         if pc["name"] in ("arrow_tower_W_damaged", "town_tower_E_damaged", "town_tower_W_damaged")]
 
+# R6-04 (the user, 2026-10-18: 「改正方形地圖吧」): the representative scene's buildings and resources with two other
+# cameras. 甲 方形斜看: 30 degrees up, square to the grid. 乙 正上方俯視: 60 degrees up, square to the grid.
+CAMERA = {}
+for _t, _cam in (("dir_sq", dict(elev=30, az=0)), ("dir_top", dict(elev=60, az=0))):
+    TARGETS[_t] = ([dict(kind=k, culture="E", name=f"{k}_E_{_t}") for k in ("main_city", "house", "barracks")]
+                   + [dict(kind="tree", culture="E", opts=dict(variant=v), name=f"tree_E_v{v}_{_t}") for v in (0, 1, 2)]
+                   + [dict(kind="gold", culture="E", opts=dict(variant=0, state="full"), name=f"gold_v0_full_{_t}")])
+    CAMERA[_t] = _cam
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
@@ -134,6 +143,7 @@ FOLDER.update({t: "states" for t in TARGETS if t.startswith(("states2", "states3
 FOLDER.update({"b1b": "b1b", "teamfix_b101": "b101", "teamfix_core3": "core3", "teamfix_b104": "b104", "teamfix_states": "states"})
 FOLDER.update({t: "towns" for t in TARGETS if t.startswith("towns2")})
 FOLDER.update({t: "prod" for t in TARGETS if t.startswith("prod_")})
+FOLDER.update({t: "dir" for t in CAMERA})
 
 
 def pieces(target):
@@ -188,7 +198,8 @@ def run(target, preview=False, only=None, prev_ppm=24):
             d["probe"] = pc.get("probe", False)
         pcs.append(d)
     job = dict(px_per_m=ppm * ss, emblem_dir=str(config.BUILD / "emblems"), quality="hq",
-               samples={"beauty": 12, "mask": 4, "shadow": 8, "ao": 4} if preview else SAMPLES, pieces=pcs)
+               samples={"beauty": 12, "mask": 4, "shadow": 8, "ao": 4} if preview else SAMPLES, pieces=pcs,
+               camera=CAMERA.get(target))
     jp = jobdir / f"b1_{target}{'_prev' if preview else ''}.json"
     jp.write_text(json.dumps(job))
     log = jobdir / f"b1_{target}{'_prev' if preview else ''}.log"
