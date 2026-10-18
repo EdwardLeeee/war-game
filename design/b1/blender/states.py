@@ -453,14 +453,12 @@ def _extent(root):
 
 def fire_at_top(root, P, seed):
     """A building with no tagged roof or wall to burn: flames and black smoke at the top on the camera
-    side, soot on the two camera faces (the look of 受損 A)."""
+    side (the look of 受損 A). No soot patches: on a round or tapered wall they float off the face."""
     x0, y0, x1, y1, top = _extent(root)
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     p = (cx + (x0 - cx) * 0.35, cy + (y0 - cy) * 0.35, top - 0.35)
     flames(root, P, "dm_firegen", p, size=1.8, n=8, seed=seed + 7)
     smoke(root, "dm_smokegen", (p[0], p[1], p[2] + 0.8), height=3.0, r0=0.35, r1=0.9, n=11, dark=0.16, alpha=0.9)
-    scorch(root, "dm_scgY", (cx + (x1 - cx) * 0.2, y0 - 0.05, top * 0.45), "y", 1.1, 0.9, seed=seed)
-    scorch(root, "dm_scgX", (x0 - 0.05, cy + (y1 - cy) * 0.1, top * 0.4), "x", 1.0, 0.8, seed=seed + 9)
 
 
 def apply(root, kind, c, state, **opts):

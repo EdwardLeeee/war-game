@@ -11,6 +11,12 @@ dust   the puff of dust under a unit when its body hits the ground (a fall's `im
 The frames are generated here (no Blender): soft round puffs that start in a tight ring at the
 ground point, roll outward along the ground (the ring is twice as wide as it is deep, like every
 ground circle in this camera), rise a little, grow and fade. Fixed seed: the same pixels every run.
+
+warn_sigil, warn_sigil_gold, warn_sigil_glow, warn_fill, warn_rim, warn_core   the 晶砲 warning circle B 符文漸強
+       (D-041), as six still images the game puts together, turns and fades (design/b1/README.md, 「給 client：晶砲預警圈 B」;
+       ceo and client 2026-10-18): drawn top-down and round by design/b1/common/warn.py, one frame each; the
+       game squashes them to the ground (scale.y 0.5) and scales them by the sim's radius / `radius_m`.
+       Anchor: the centre.
 """
 import argparse
 import json
@@ -20,12 +26,15 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(1, str(HERE.parents[1] / "b1" / "common"))
 import config  # noqa: E402
 import spec    # noqa: E402
+import warn    # noqa: E402  (design/b1/common: the warning circle's drawing)
+from postprocess import Packer  # noqa: E402
 
 DUST_FRAMES = 6
 DUST_FPS = 12
@@ -83,30 +92,69 @@ def dust_frames(scale=3.0, seed=7):
     return out
 
 
+CORE_RADIUS = 0.75                   # the core image is drawn at 75 % of the circle; the game grows it from 25 %
+
+
+def warn_images(scale=3.0):
+    """{name: (image, radius_m)}: the six still images of the warning circle B, top-down, at `scale`."""
+    R = warn.RADIUS_M * warn._TOP_PPM
+    out = {}
+    img, c = warn._canvas()
+    warn._sigil(ImageDraw.Draw(img), c, R, 0.0, (*warn.ORANGE, 255), 9)
+    out["warn_sigil"] = (img, warn.RADIUS_M)
+    img, c = warn._canvas()                # the same lines in gold: faded in over the orange, the lines turn gold
+    warn._sigil(ImageDraw.Draw(img), c, R, 0.0, (*warn.GOLD, 255), 9)
+    out["warn_sigil_gold"] = (img, warn.RADIUS_M)
+    img, c = warn._canvas()
+    warn._sigil(ImageDraw.Draw(img), c, R, 0.0, (*warn.ORANGE, 255), 22)
+    out["warn_sigil_glow"] = (img.filter(ImageFilter.GaussianBlur(9)), warn.RADIUS_M)
+    img, c = warn._canvas()
+    ImageDraw.Draw(img).ellipse([c - R, c - R, c + R, c + R], fill=(*warn.ORANGE, 255))
+    out["warn_fill"] = (img.filter(ImageFilter.GaussianBlur(10)), warn.RADIUS_M)
+    img, c = warn._canvas()
+    warn._ring(ImageDraw.Draw(img), c, R + 4, 14, (*warn.EMBER, 160))
+    out["warn_rim"] = (img, warn.RADIUS_M)
+    img, c = warn._canvas()
+    r = R * CORE_RADIUS
+    ImageDraw.Draw(img).ellipse([c - r, c - r, c + r, c + r], fill=(*warn.GOLD, 255))
+    out["warn_core"] = (img.filter(ImageFilter.GaussianBlur(18)), warn.RADIUS_M * CORE_RADIUS)
+    ppm = spec.PX_PER_M * scale / 3.0
+    f = ppm / warn._TOP_PPM
+    return {k: (im.resize((round(im.width * f), round(im.height * f)), Image.LANCZOS), rad) for k, (im, rad) in out.items()}
+
+
 def write_atlas(scale=3.0, page=2048):
-    """effects.json + effects_0.png: trimmed frames, one page, the colour layer's rules."""
+    """effects.json + effects_<k>.png: trimmed frames, the colour layer's rules (packed like the unit pages)."""
     out = config.BUILD / f"effects_x{scale:g}"
     out.mkdir(parents=True, exist_ok=True)
-    frames, x, shelf = {}, 0, 0
+    for p in out.glob("effects_*.png"):
+        p.unlink()
     items = []
     for i, (im, (ax, ay)) in enumerate(dust_frames(scale)):
         bb = im.getchannel("A").point(lambda v: 255 if v > 4 else 0).getbbox()
-        c = im.crop(bb)
-        items.append((f"dust_{i:02d}", c, ax - bb[0], ay - bb[1]))
-    h = (max(c.height for _, c, _, _ in items) + 2 + 3) // 4 * 4
-    pg = Image.new("RGBA", (page, h), (0, 0, 0, 0))
-    for name, c, ax, ay in items:
-        pg.paste(c, (x, 0))
-        frames[name] = dict(page=0, x=x, y=0, w=c.width, h=c.height, ax=round(ax, 2), ay=round(ay, 2))
-        x += c.width + 2
-    pg.save(out / "effects_0.png", optimize=True)
+        items.append((f"dust_{i:02d}", im.crop(bb), ax - bb[0], ay - bb[1]))
+    effects = {"dust": dict(frames=DUST_FRAMES, fps=DUST_FPS, loop=False)}
+    for name, (im, rad) in warn_images(scale).items():
+        bb = im.getchannel("A").point(lambda v: 255 if v > 4 else 0).getbbox()
+        items.append((f"{name}_00", im.crop(bb), im.width / 2 - bb[0], im.height / 2 - bb[1]))
+        effects[name] = dict(frames=1, fps=1, loop=True, top_down=True, radius_m=rad)
+    packer, frames = Packer(page), {}
+    for name, c, ax, ay in sorted(items, key=lambda t: (-t[1].height, -t[1].width, t[0])):
+        k, x, y = packer.add(c)
+        frames[name] = dict(page=k, x=x, y=y, w=c.width, h=c.height, ax=round(ax, 2), ay=round(ay, 2))
+    pages, area = [], 0
+    for k, content in enumerate(packer.pages):
+        h = min(page, (packer.used_height(k) + 3) // 4 * 4)
+        pg = Image.new("RGBA", (page, h), (0, 0, 0, 0))
+        for x, y, im in content:
+            pg.paste(im, (x, y))
+        pg.save(out / f"effects_{k}.png", optimize=True)
+        pages.append(f"effects_{k}.png")
+        area += page * h
     manifest = {"format": "war-game effects 1", "scale": scale, "px_per_m": spec.PX_PER_M * scale / 3.0,
-                "pages": ["effects_0.png"],
-                "effects": {"dust": dict(frames=DUST_FRAMES, fps=DUST_FPS, loop=False)}, "frames": frames}
+                "pages": pages, "effects": effects, "frames": dict(sorted(frames.items()))}
     (out / "effects.json").write_text(json.dumps(manifest, separators=(",", ":")))
-    used = x * h
-    print(f"effects x{scale:g}: {len(frames)} frames, page {page}x{h} ({page * h * 4 / 2 ** 20:.2f} MB RGBA8, "
-          f"frames cover {used * 4 / 2 ** 20:.2f} MB)")
+    print(f"effects x{scale:g}: {len(frames)} frames, {len(pages)} page(s), {area * 4 / 2 ** 20:.2f} MB RGBA8")
     return out
 
 

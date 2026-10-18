@@ -123,6 +123,9 @@ for _c in CULTURES:
         TARGETS[f"prod_{_c}_{_i // PROD_CHUNK}"] = _all[_i:_i + PROD_CHUNK]
 for _i in range(0, len(PROD_NODES), PROD_CHUNK):
     TARGETS[f"prod_nodes_{_i // PROD_CHUNK}"] = PROD_NODES[_i:_i + PROD_CHUNK]
+# again after the first run (2026-10-18): the pieces states.fire_at_top burns, without the soot that floated
+TARGETS["prod_fire"] = [pc for _c in CULTURES for pc in _prod_buildings(_c)
+                        if pc["name"] in ("arrow_tower_W_damaged", "town_tower_E_damaged", "town_tower_W_damaged")]
 
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
