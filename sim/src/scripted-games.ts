@@ -364,6 +364,17 @@ function play(seed: number): GameRecord {
     }
     r.tick();
     if (w.tick === 12000) aiFarmersLost10 = w.lost[UNIT_KINDS + UnitType.Farmer];
+    if (w.tick % 600 === 0) {
+      const n = [0, 0];
+      const f = [0, 0];
+      for (let i = 0; i < w.units.count; i++) {
+        const p = u.owner[i];
+        if (p !== 0 && p !== 1) continue;
+        if (u.type[i] === UnitType.Farmer) f[p]++;
+        else if (u.type[i] !== UnitType.Militia) n[p]++;
+      }
+      console.log(`PS t=${w.tick} mine=${n[0]} ai=${n[1]} farmers=${f[0]}/${f[1]} hp=${cityHp(0)}/${cityHp(1)} pop=${w.population(0)}/${w.population(1)} cap=${w.populationCap(0)}/${w.populationCap(1)} aiRes=${[0, 1, 2, 3].map((k) => w.res[4 + k]).join('/')} aiBuilding=${(() => { const o: string[] = []; for (let s = 0; s < w.buildings.count; s++) if (w.buildings.col.owner[s] === 1 && w.buildings.col.progress[s] < 1000) o.push(`${w.buildings.col.type[s]}:${w.buildings.col.progress[s]}`); return o.join(','); })()} aiHouses=${(() => { let n = 0; for (let s = 0; s < w.buildings.count; s++) if (w.buildings.col.owner[s] === 1 && w.buildings.col.type[s] === 1) n++; return n; })()} aiProd=${(() => { let n = 0; for (let s = 0; s < w.buildings.count; s++) if (w.buildings.col.owner[s] === 1 && (w.buildings.col.type[s] === 6 || w.buildings.col.type[s] === 7) && w.buildings.col.progress[s] >= 1000) n++; return n; })()}`);
+    }
     for (const e of g.events) if (e.to === 0 && e.ev.k === "rejected") rejected++;
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
     for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;

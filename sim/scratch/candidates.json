@@ -1,0 +1,52 @@
+{
+ "traces": [
+  {
+   "name": "hf-1",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 1 --strategy push --speed h1 --formation close --difficulty hard",
+   "a": {
+    "popOn": true
+   }
+  },
+  {
+   "name": "hr-1",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 1 --strategy push --speed h1 --formation close --difficulty hard --map random",
+   "a": {
+    "popOn": true
+   }
+  },
+  {
+   "name": "hf-2",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 2 --strategy push --speed h1 --formation close --difficulty hard",
+   "a": {
+    "popOn": true
+   }
+  },
+  {
+   "name": "hr-2",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 2 --strategy push --speed h1 --formation close --difficulty hard --map random",
+   "a": {
+    "popOn": true
+   }
+  },
+  {
+   "name": "hf-3",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 3 --strategy push --speed h1 --formation close --difficulty hard",
+   "a": {
+    "popOn": true
+   }
+  },
+  {
+   "name": "hr-3",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 3 --strategy push --speed h1 --formation close --difficulty hard --map random",
+   "a": {
+    "popOn": true
+   }
+  }
+ ]
+}
