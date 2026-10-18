@@ -1060,7 +1060,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const cap = h[HeaderField.populationCap];
       // D-083: houses reach the ceiling now (base, and more for each town it governs; off: 120), a house's room as the rules say.
       const ceiling = h[HeaderField.populationCeiling];
-      const houseRoom = rules.buildings[BuildingType.House].populationCap;
+      const houseRoom = 5;
       // D-083 (ceo 2026-10-18): D-081's leftovers (a) and (b) come with the population rules.
       const d083 = (rules.population?.town[TownSize.Small] ?? 0) > 0;
       // Round 7 (D-061): each switch off, everything below plays as before.
@@ -1891,6 +1891,12 @@ export const HARD: HardPlan = {
   townRest: 0,
 };
 
+// SCRATCH ONLY (ai/scratch-*, never merged): candidate plans from the environment.
+const SCRATCH_ENV = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HARD_BASE: HardPlan = { ...HARD };
+Object.assign(HARD, JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"));
+const HARD_B: HardPlan = { ...HARD_BASE, ...JSON.parse(SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN || "{}") };
+
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -1922,7 +1928,7 @@ interface HardTown extends Town {
 type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
-  const plan: HardPlan = { ...HARD, ...know.hard };
+  const plan: HardPlan = { ...(slot === 1 ? HARD_B : HARD), ...know.hard };
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
@@ -2050,7 +2056,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const cap = h[HeaderField.populationCap];
       // D-083: houses reach the ceiling now (base, and more for each town it governs; off: 120), a house's room as the rules say.
       const ceiling = h[HeaderField.populationCeiling];
-      const houseRoom = rules.buildings[BuildingType.House].populationCap;
+      const houseRoom = 5;
       // D-083 (ceo 2026-10-18): D-081's leftovers (a) and (b) come with the population rules.
       const d083 = (rules.population?.town[TownSize.Small] ?? 0) > 0;
       /** Plundered already this game (TownFlag.Plundered). */

@@ -1,0 +1,24 @@
+{
+ "scripted": [
+  {
+   "name": "n",
+   "difficulty": "normal",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ]
+  },
+  {
+   "name": "h",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ]
+  }
+ ]
+}
