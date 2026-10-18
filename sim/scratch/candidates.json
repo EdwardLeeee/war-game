@@ -1,0 +1,72 @@
+{
+ "scripted": [
+  {
+   "name": "now",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {}
+  },
+  {
+   "name": "c1",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "production": 6,
+    "farmers": 40
+   }
+  },
+  {
+   "name": "c50",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "production": 6,
+    "farmers": 40,
+    "pushArmy": 50
+   }
+  },
+  {
+   "name": "c2",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "production": 6,
+    "farmers": 40,
+    "pushArmy": 56
+   }
+  },
+  {
+   "name": "c3",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ],
+   "a": {
+    "pushArmy": 56
+   }
+  }
+ ]
+}
