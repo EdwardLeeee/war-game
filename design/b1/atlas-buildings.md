@@ -259,4 +259,6 @@ client 2026-10-18 同意照這一節做。ceo 同意瓦礫、樹、大城箭樓�
 - 第 8 節的門檻和作物換階段：client 照做。
 - 樹兩陸混著用（一片一片的）、中立大城箭樓用東陸的：ceo 同意。
   - 使用者選了兩邊穿哪一陸以後，箭樓要不要跟著改，到時再說。
-- 晶砲預警圈 B 的五張靜態圖放進 art-v2 的 `effects/`，格式照 `effects.json`（ceo、client 同意）。
+- 晶砲預警圈 B 的靜態圖放進 art-v2 的 `effects/`，格式照 `effects.json`（ceo、client 同意）。
+  - 量產時改成六張，多一張 `warn_sigil_gold`：只用五張的話法陣的線一直是橘色，和核准的 GIF 不一樣。
+  - 疊法、順序和透明度見 `design/b1/README.md`「給 client：晶砲預警圈 B」。
