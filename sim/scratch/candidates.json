@@ -1,0 +1,73 @@
+{
+ "scripted": [
+  {
+   "name": "n",
+   "difficulty": "normal",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random",
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push-fortress-hold-random"
+   ]
+  },
+  {
+   "name": "h",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random",
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push-fortress-hold-random"
+   ]
+  }
+ ],
+ "games": [
+  {
+   "name": "hh",
+   "difficulty": "hard,hard",
+   "games": 100,
+   "shards": 4
+  },
+  {
+   "name": "hn",
+   "difficulty": "hard,normal",
+   "games": 100,
+   "shards": 4
+  },
+  {
+   "name": "nn",
+   "difficulty": "normal,normal",
+   "games": 100,
+   "shards": 4
+  },
+  {
+   "name": "hhr",
+   "difficulty": "hard,hard",
+   "games": 100,
+   "shards": 4,
+   "map": "random"
+  },
+  {
+   "name": "hnr",
+   "difficulty": "hard,normal",
+   "games": 100,
+   "shards": 4,
+   "map": "random"
+  },
+  {
+   "name": "nnr",
+   "difficulty": "normal,normal",
+   "games": 100,
+   "shards": 4,
+   "map": "random"
+  }
+ ]
+}
