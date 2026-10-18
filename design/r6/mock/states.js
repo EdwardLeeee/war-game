@@ -276,6 +276,12 @@
     "INV-144f": TOWN({ tint: enemy, text: "敵方修繕中", glyph: "鎮", timer: 0.5 }),
   });
   S["NEW-20"] = { only: ["sheet"], sheet: true };
+  // ----- R6-04 地圖方向（使用者 2026-10-18 要改方形地圖）：同一個場景三種地圖
+  Object.assign(S, {
+    "MAP-dia": { hp: false, left: { idle: 3, map: "closed" } },
+    "MAP-sq": { hp: false, field: "field-THEME-mapsq", left: { idle: 3, map: "closed" } },
+    "MAP-top": { hp: false, field: "field-THEME-maptop", left: { idle: 3, map: "closed" } },
+  });
   // ----- R6-25 動畫（每個動畫的狀態；時間點用網址的 t=0..1）
   Object.assign(S, {
     "A-press0": {}, "A-press1": { pressAtk: true },

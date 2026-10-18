@@ -107,7 +107,8 @@ const PIECES = {
     add(`<div class="maptab ${l.map === "open" ? "is-open" : ""} ${l.alarm && !l.dim ? "is-alarm" : ""}">${btn("地圖", { ic: "map", cls: "sec", state: l.map === "open" ? "active" : "" })}${alarm}</div>`);
     if (l.map === "open") {
       const k = s.anim === "map" ? ease(T) : 1;
-      add(`<div class="minimap" style="transform-origin:0 100%;transform:scale(${0.6 + 0.4 * k});opacity:${k}"><img src="../build/${l.minimap || "minimap-diamond"}.png" alt=""></div>`);
+      const sq = l.mmShape === "square";       // R6-04: a square map has a square minimap
+      add(`<div class="minimap ${sq ? "sqmap panel" : ""}" style="transform-origin:0 100%;transform:scale(${0.6 + 0.4 * k});opacity:${k}"><img src="../build/${l.minimap || "minimap-diamond"}.png" alt=""></div>`);
     }
   },
   sel(s) {
