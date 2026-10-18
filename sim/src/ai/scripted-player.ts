@@ -171,6 +171,18 @@ export interface Plan {
    * or 3 minutes after `raceBy`.
    */
   raceStage: boolean;
+  /**
+   * D-086 A (the user's long wins against hard, docs/research/2026-10-ai-late.md): arrow towers it
+   * puts up by its main city, toward the map centre, once a range stands (0: none).
+   */
+  homeTowers: number;
+  /** D-086 A: cavalry kept at this percent of its soldiers, from a stable it builds once a range stands (0: none). */
+  cavalryShare: number;
+  /**
+   * D-086 A: marches on the enemy base (pushAt, counterAt) only with more soldiers than the most
+   * enemy soldiers it saw at once in the last AHEAD_SEEN ticks.
+   */
+  pushAhead: boolean;
 }
 
 /**
@@ -231,6 +243,10 @@ const FORT_TRIES: [number, number][] = [
 const FORT_HIDE = 3;
 /** The army holding by the fortress (plan.fortressHold) marches from this tick whatever its size. */
 const FORT_HOLD_UNTIL = 30 * 1200;
+/** D-086 A (plan.pushAhead): how far back it remembers the most enemy soldiers seen at once. */
+const AHEAD_SEEN = 3 * 1200;
+/** D-086 A (plan.homeTowers): cells from home toward the map centre where the towers go (the barracks: 6). */
+const HOME_TOWER_AT = 9;
 /** Random maps (D-074): the scout's next stop once within this many cells of one, or after SCOUT_STUCK ticks without getting nearer. */
 const SCOUT_NEAR = 6;
 const SCOUT_STUCK = 600;
@@ -335,6 +351,9 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     rushBuildersOnly: false,
     fortress: false,
     fortressHold: 0,
+    homeTowers: 0,
+    cavalryShare: 0,
+    pushAhead: false,
   };
 }
 
@@ -384,6 +403,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   // from the main city, inside its arrows' range (7).
   const rally = real(homeF.u + Math.sign(mid - homeF.u) * 6, homeF.v + Math.sign(mid - homeF.v) * 6);
   const post = real(homeF.u + Math.sign(mid - homeF.u) * 4, homeF.v + Math.sign(mid - homeF.v) * 4);
+  const towerAt = real(homeF.u + Math.sign(mid - homeF.u) * HOME_TOWER_AT, homeF.v + Math.sign(mid - homeF.v) * HOME_TOWER_AT);
   const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
   // The town of the plan: the small town nearest the main city (on a random map, of those seen so far).
   const nearestTown = () =>
@@ -474,6 +494,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   /** When enemy soldiers were last within WAVE_CELLS of the main city. */
   let lastWave = -100000;
   let counterReady = false;
+  /** plan.pushAhead: enemy soldiers in sight at each think of the last AHEAD_SEEN ticks. */
+  const seenFoes: { tick: number; n: number }[] = [];
   let siege = "";
   const loosed = new Set<number>();
 
@@ -552,6 +574,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const owner = view.units[r + UnitField.owner];
         if (owner === player) mine.push(u);
         else if (owner === 1 - player && u.type !== UnitType.Farmer) foes.push(u);
+      }
+      if (plan.pushAhead) {
+        seenFoes.push({ tick, n: foes.length });
+        while (tick - seenFoes[0].tick > AHEAD_SEEN) seenFoes.shift();
       }
       const own: Building[] = [];
       let enemyCity = -1;
@@ -724,6 +750,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (!plan.noRange && !has(BuildingType.Range) && farmers.length >= (plan.userEco ? 10 : 12)) add(BuildingType.Range, rally);
         const hallTime = plan.userEco ? plunders > 0 : res.crystal >= 40 || tick > 10 * 1200;
         if (!plan.noMage && !has(BuildingType.MageHall) && has(BuildingType.Range) && hallTime) add(BuildingType.MageHall, base);
+        // D-086 A: towers by home and a stable, as the user had them in the long wins.
+        if (plan.homeTowers > 0 && has(BuildingType.Range) && count(BuildingType.ArrowTower) < plan.homeTowers) add(BuildingType.ArrowTower, towerAt);
+        if (plan.cavalryShare > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
@@ -769,6 +798,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       if (raidFirst) trainAt(BuildingType.Stable, UnitType.Cavalry);
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
       if (mages + hallQueue < rules.mageCap && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage);
+      if (plan.cavalryShare > 0 && (cavalry.length + stableQueue) * 100 < plan.cavalryShare * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
       if (raidFirst) {
         // Spearmen and ranged wait for the raiders.
       } else if (spear * 100 <= plan.spearShare * (spear + ranged)) {
@@ -1368,7 +1398,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         own.some((b) => b.type === BuildingType.Outpost) &&
         army.length < plan.fortressHold &&
         tick < FORT_HOLD_UNTIL;
-      const go = !holding && found >= 0 && (rushPush || (counterReady && army.length >= plan.counterAt) || (plan.pushAt > 0 && army.length >= plan.pushAt));
+      // plan.pushAhead (D-086 A): and more than the most enemy soldiers it saw at once lately.
+      const ahead = !plan.pushAhead || army.length > seenFoes.reduce((a, x) => Math.max(a, x.n), 0);
+      const go = !holding && found >= 0 && (rushPush || (counterReady && army.length >= plan.counterAt && ahead) || (plan.pushAt > 0 && army.length >= plan.pushAt && ahead));
       if (go) rushPush = false;
       const townOpen =
         t !== undefined &&
