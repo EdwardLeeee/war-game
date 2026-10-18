@@ -242,6 +242,10 @@ export class Game implements GestureHost {
               else options.life.perf(scenario);
             },
         artAvailable: options.artAvailable === true,
+        population: () => {
+          const h = this.view?.curr?.snap.header;
+          return h === undefined ? null : { population: h[H.population], cap: h[H.populationCap] };
+        },
         astcSample:
           options.astcSample === undefined
             ? undefined

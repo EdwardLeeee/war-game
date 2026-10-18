@@ -25,6 +25,8 @@ export interface LabHooks {
   artAvailable?: boolean;
   /** ASTC 樣本 (D-085), when the build has one. */
   astcSample?: () => void;
+  /** Our population and its cap now (the perf scenarios are mirrored: both sides'), or null before the first snapshot. */
+  population?: () => { population: number; cap: number } | null;
 }
 
 /**
@@ -72,6 +74,8 @@ export class LabPanel {
   private readonly checkBtn: HTMLButtonElement;
   private readonly status: HTMLElement;
   private readonly resultBox: HTMLElement;
+  /** The population when the measurement started (the rules decide the cap: D-083). */
+  private startPopulation: { population: number; cap: number } | null = null;
   private readonly frameMs: number[] = [];
   private readonly frameAt: number[] = [];
   private readonly tickMs: number[] = [];
@@ -191,6 +195,7 @@ export class LabPanel {
 
   startMeasure(now: number): boolean {
     if (!this.lab.startMeasure(now)) return false;
+    this.startPopulation = this.hooks.population?.() ?? null;
     try {
       const env = this.hooks.env();
       session()?.setItem(MEASURING_KEY, `美術 ${String(env.art ?? "關")}、場景 ${String(env.scenario ?? "?")}`);
@@ -297,7 +302,10 @@ export class LabPanel {
     box.replaceChildren();
     make("h3", box, "", r.valid ? (r.pass ? "通過" : "未通過") : "無效");
     const perf = PERF_SCENARIOS.find((p) => p.scenario === env.scenario);
-    make("p", box, "", `場景：${String(env.scenario ?? "?")}${perf !== undefined ? `（所有系統都開著，雙方人口 ${perf.population}）` : ""}`);
+    // The population as the game had it when the measurement started: the rules set the cap (D-083).
+    const pop = this.startPopulation;
+    const detail = perf === undefined ? "" : `（所有系統都開著${pop === null ? "" : `，開始時雙方人口 ${pop.population}／${pop.cap}`}）`;
+    make("p", box, "", `場景：${String(env.scenario ?? "?")}${detail}`);
     make("p", box, "", `tick 速度：${String(env.tickRate ?? "?")}`);
     if (!r.valid) make("p", box, "bad", `原因：${r.reasons.join("、")}。請重新量測。`);
     // ✓／✗ against a standard; ・ for the numbers that have none (yet).
