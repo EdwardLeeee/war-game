@@ -90,6 +90,7 @@ export class LabPanel {
       toggle.type = "button";
       toggle.addEventListener("click", () => {
         this.panel.hidden = !this.panel.hidden;
+        if (!this.panel.hidden) this.log.shown();
       });
     }
     const head = make("div", this.panel, "lab-head");
@@ -138,7 +139,7 @@ export class LabPanel {
       astc.type = "button";
       astc.addEventListener("click", () => hooks.astcSample?.());
     }
-    make("p", this.panel, "lab-note", "量測：開一局 perf 場景（所有系統都開著，雙方人口 120、200 或 360），暖機 5 秒後量 30 秒，量測時不要操作。");
+    make("p", this.panel, "lab-note", "量測：所有系統都開著的一局，暖機 5 秒後量 30 秒，量測時不要操作。");
     this.status = make("p", this.panel, "lab-status");
     this.resultBox = make("div", this.panel, "lab-result");
     this.resultBox.hidden = true;
@@ -172,6 +173,7 @@ export class LabPanel {
 
   show(): void {
     this.panel.hidden = false;
+    this.log.shown();
   }
 
   hide(): void {
@@ -249,9 +251,10 @@ export class LabPanel {
       const f = summarize(this.frameMs);
       const t = summarize(this.tickMs);
       const secs = this.frameAt.length > 1 ? Math.round((this.frameAt[this.frameAt.length - 1] - this.frameAt[0]) / 1000) : 0;
+      // One line (D-085: the 美術 row took the room of a second one on the phone held sideways).
       this.live.textContent =
-        `最近 ${secs} 秒：fps 中位數 ${f.median > 0 ? round2(1000 / f.median) : 0}，最慢 5% ${f.p95 > 0 ? round2(1000 / f.p95) : 0}；` +
-        `模擬每 tick 中位數 ${round2(t.median)} ms、最大 ${round2(t.max)} ms` +
+        `${secs} 秒：fps ${f.median > 0 ? round2(1000 / f.median) : 0}（最慢 5% ${f.p95 > 0 ? round2(1000 / f.p95) : 0}）；` +
+        `tick ${round2(t.median)} ms（最大 ${round2(t.max)}）` +
         (this.hooks.fake() ? "（假資料）" : "");
     }
   }

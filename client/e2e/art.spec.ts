@@ -79,3 +79,16 @@ test("ASTC 樣本（測試圖）：量測面板有「ASTC 樣本」，載入 KTX
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.astc() ?? null), { timeout: 15_000 }).toMatch(/^(shown|no-astc)$/);
   check();
 });
+
+test("真的圖（art-v1，2 倍）：perf 場景交戰中的樣子，給 ceo 看（CI 的 Chromium，D-085）", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "chromium", "one picture is enough");
+  test.setTimeout(150_000);
+  const check = watchErrors(page);
+  await start(page, "art=x2&scenario=perf");
+  await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(100);
+  expect((await art(page))?.label).toBe("2 倍");
+  await page.evaluate(() => window.__proto?.game?.centerOn(48, 52, 1.6));
+  await page.waitForTimeout(3000);
+  await shot(page, info, "art-v1-x2-battle");
+  check();
+});

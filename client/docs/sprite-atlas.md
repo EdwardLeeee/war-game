@@ -2,7 +2,7 @@
 
 war-game-ui 量產兵種圖片時照這份輸出，client 照這份載入和繪製。
 
-- 狀態：第 2 版（war-game-client，2026-10-01；第 1 版是 2026-09-30），同一天修訂過一次（見「第 2 版的修訂」）。標「暫定」的地方，等實測或使用者看過設計稿再定案。
+- 狀態：第 2 版（war-game-client，2026-10-01；第 1 版是 2026-09-30），同一天修訂過一次（見「第 2 版的修訂」）。2026-10-18 第 2 節加上發布和拿圖的做法（D-085，art-v1）。標「暫定」的地方，等實測或使用者看過設計稿再定案。
 - 依據：
   - D-017：先用 3 倍素材。
   - D-021：12 兵種 × 各自的動作 × 8 方向（5 個算圖、3 個鏡像），附玩家色與影子。
@@ -103,16 +103,29 @@ war-game-ui 量產兵種圖片時照這份輸出，client 照這份載入和繪�
 - 每一層都自己排版；除了玩家色層以外，同一個兵種的所有動作和方向排在同一組頁裡。
 - 另外有一組所有兵種共用的世界效果圖集：`effects.json`、`effects_<k>.png`（第 11 節）。
 
-### 放在哪裡、怎麼交給 client（暫定，ceo 2026-09-30）
+### 放在哪裡、怎麼交給 client（D-085，war-game-ui 和 client 2026-10-18 談定）
 
 - 圖集是 Blender 流程的建置產物，模型也是每次由腳本重新產生。依 AGENTS.md，建置產物不進 repo：
   - 算好的圖集不 commit 進 repo；
   - 也不用 Git LFS。
-- 方向：
-  - CI（`design-render.yml`）算圖，把圖集當成有版本號的檔案發布，例如 GitHub Release 的附件，附上每個檔案的 sha256。
-  - client 建置時，以及之後打包 app 時，下載固定版本，核對 sha256 才使用。
-- 細節等第三階段 war-game-mobile 加入時再定。
+- **發布**（war-game-ui，`design-render.yml`）：GitHub Release，tag 是 `art-v1`、`art-v2`……。
+  - 發布後同一個 tag 不換檔案；內容有改就出新的 tag。
+  - 附件（Release 的附件不能有資料夾，所以用壓縮檔）：
 
+| 附件 | 內容 |
+|---|---|
+| `art-vN-x3.tar.gz`、`art-vN-x2.tar.gz` | 一個倍率一包。解開後最上層就是 `units/`、`effects/`（art-v2 起加 `buildings/`、`nodes/`），另有 `art-release.json`（tag、來源 CI run、commit、每個檔的 sha256） |
+| `astc-sample.tar.gz` | ASTC 樣本頁（第 8 節）：`units/spear_e/spear_e_color_0.astc.ktx`、`spear_e_team_0.astc.ktx`。2 倍、ASTC 4×4（`glInternalFormat` 0x93B0）、KTX 1、未預乘 alpha；影格位置照 2 倍包裡的 `spear_e.json` |
+| `SHA256SUMS` | `sha256sum` 的格式：一行「64 碼雜湊、兩個空白、附件名」，列出所有附件 |
+
+  - `units/<unit>/`：`<unit>.json`、說明檔列出的各層頁、`memory.json`。檔名照上面的表，沒有 `raw/`。12 種兵都放，client 只載原型用到的 10 種。
+  - 打包順序和時間戳固定：同樣的內容重打包，雜湊不變。
+- **client 拿圖**：
+  - `client/art.lock.json` 寫 `repo`、`tag`，和每個附件的 sha256（換版時從 `SHA256SUMS` 抄過來）。Release 的附件事後可以被換掉，所以以 repo 裡鎖住的雜湊為準。
+  - `client/scripts/fetch-art.ts`：從 `https://github.com/<repo>/releases/download/<tag>/<附件>` 下載（公開，不用金鑰），存在 `client/.art-cache/`，核對 sha256，不符就讓建置失敗；`tar.gz` 解到 `client/public/art/<tag>/x3/`、`x2/`、`astc-sample/`（git 不收）。
+  - `client.yml`（e2e）和 `pages.yml`（試玩網站）在建置前跑它，`actions/cache` 依鎖檔的雜湊保留下載。
+  - 本機在 Release 之前：`node scripts/fetch-art.ts --dev` 用 gh 下載 design-render 的 artifacts，解成同樣的佈局 `public/art/dev/`，`ART_TAG=dev npm run dev` 用它。
+  - 測試：`scripts/make-test-atlas.ts` 在測試時現產小圖集（`public/art/test/`），CI 的 e2e 用 `?test=1&art=test`。
 ## 3. 影格命名與方向
 
 - 影格名稱：`<unit>_<anim>_f<facing>_<ii>`，`<ii>` 是兩位數，從 `00` 開始。例：`farmer_e_walk_f7_03`。
