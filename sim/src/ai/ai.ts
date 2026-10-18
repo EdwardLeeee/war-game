@@ -1920,6 +1920,11 @@ export const HARD_POP: Partial<HardPlan> = {
   productionFirst: true,
   // And a little more to march with (44): measured with the above, minute 16.6 -> 16.1 and 29 -> 32 at the city (sim/README.md).
   pushArmy: 48,
+  // D-086 A (docs/research/2026-10-ai-late.md section 8): 8 farmers more while wood is short and food and gold pile up,
+  // and the nearest small town governed when taken from minute 12: against hard without them it won 89 games to 60 of
+  // 200; cavalry (cavalry) and a faster ratio (woodShift) were measured and left off (no stronger, with or without these).
+  woodFarmers: 8,
+  governFrom: 12,
 };
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];

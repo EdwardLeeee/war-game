@@ -1657,6 +1657,9 @@ test("D-086 A (plan.woodShift, plan.woodFarmers): with wood short and food and g
   assert.ok(trains(richHard([700, 20, 300, 0], { woodFarmers: 8 }, { farmers: 36 }), UnitType.Farmer), "wood short: one more farmer");
   assert.ok(!trains(richHard([700, 20, 300, 0], { woodFarmers: 0 }, { farmers: 36 }), UnitType.Farmer), "off: none");
   assert.ok(!trains(richHard([700, 300, 300, 0], { woodFarmers: 8 }, { farmers: 36 }), UnitType.Farmer), "wood enough: none");
+  // What hard plays (HARD_POP, D-086 A): with the population rules on, 8 more; off, as before.
+  assert.ok(trains(richHard([700, 20, 300, 0], {}, { farmers: 36 }), UnitType.Farmer), "hard as it plays: one more farmer");
+  assert.ok(!withPopulation(false, () => trains(richHard([700, 20, 300, 0], {}, { farmers: 36 }), UnitType.Farmer)), "population rules off: as before");
 });
 
 test("D-086 A (plan.governFrom, governSpare, governNearest): from that minute a first capture is governed when hard can pay; else plundered, as before", () => {
@@ -1687,4 +1690,7 @@ test("D-086 A (plan.governFrom, governSpare, governNearest): from that minute a 
   // A small town costs wood 80 and gold 80 to govern.
   assert.equal(chosen("nearest", [100, 80, 80, 0], { governFrom: 12 }), TownChoice.Govern, "just enough: governed");
   assert.equal(chosen("nearest", [100, 80, 80, 0], { governFrom: 12, governSpare: 100 }), TownChoice.Plunder, "nothing to spare: plundered");
+  // What hard plays (HARD_POP, D-086 A): with the population rules on, governed from minute 12; off, plundered as before.
+  assert.equal(chosen("nearest", rich, {}), TownChoice.Govern, "hard as it plays: governed");
+  assert.equal(withPopulation(false, () => chosen("nearest", rich, {})), TownChoice.Plunder, "population rules off: plundered");
 });
