@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
-import { CAVALRY, DODGE, GARRISON, rules, TOWN_ONCE } from "../src/core/rules.ts";
+import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
 import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
@@ -1502,4 +1502,150 @@ test("D-081: no garrison in a town under the arrows of an enemy fort (normal and
     assert.ok(garrisoned(false), `${difficulty}: a garrison goes to the town`);
     assert.ok(!garrisoned(true), `${difficulty}: none under the tower's arrows (seed 9 of the fortress-hold runs: 21 shot one by one)`);
   }
+});
+
+// --- D-083: the population rules (base 200, more for governed towns, houses +8), and D-081's leftovers ------
+
+/** Runs `f` with the population rules on or off, then puts them back (AIs made inside read them from rules()). */
+function withPopulation<T>(on: boolean, f: () => T): T {
+  const was = POPULATION_200.on;
+  POPULATION_200.on = on;
+  try {
+    return f();
+  } finally {
+    POPULATION_200.on = was;
+  }
+}
+
+test("D-083: with the population rules on, normal and hard build houses up to the ceiling (200), past the old 120", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    /** Its cap at 122 (main city 10 and 14 houses of 8), 116 farmers at work: a house next? */
+    const house = (on: boolean) =>
+      withPopulation(on, () => {
+        const g = emptyGame();
+        const w = g.w;
+        const s0 = w.map.spawns[0];
+        const per = rules().buildings[BuildingType.House].populationCap;
+        const houses = Math.ceil((122 - 10) / per);
+        for (let k = 0; k < houses; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 12 + 3 * (k % 8), s0.cellY + 6 + 3 * Math.trunc(k / 8), 200, 1000);
+        const cap = w.populationCap(0);
+        for (let k = 0; w.population(0) < cap - 6; k++) {
+          const id = put(g, 0, UnitType.Farmer, s0.cellX - 10 + (k % 20), s0.cellY - 10 - Math.trunc(k / 20));
+          w.units.col.order[slotOf(g, id)] = Order.Gather;
+        }
+        w.res.set([500, 500, 500, 0], 0);
+        g.fog.update(w);
+        const ai = difficulty === "hard" ? hardAi(g, { dodge: false }) : createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
+        return { cap, ceiling: w.populationCeiling(0), out: ai.think(buildView(g, 0)).some((c) => c.c === "build" && c.type === BuildingType.House) };
+      });
+    const on = house(true);
+    assert.deepEqual([on.cap >= 120, on.ceiling], [true, 200], `${difficulty}: on, the cap past 120 and the ceiling 200`);
+    assert.ok(on.out, `${difficulty}: on, another house (cap ${on.cap})`);
+    const off = house(false);
+    assert.ok(off.cap >= 120 && !off.out, `${difficulty}: off, none past 120 (cap ${off.cap}), as before`);
+  }
+});
+
+test("D-083 (D-081's leftover (a)): with the population rules on, a town whose plunder it holds gets no soldiers one by one against an enemy army there", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    /** It holds the small town in a plunder; 12 enemy spearmen in it, seen by a farmer of its own; `spears` of its own at home. */
+    const sent = (on: boolean, spears: number) =>
+      withPopulation(on, () => {
+        const g = emptyGame();
+        const w = g.w;
+        const [small] = w.map.towns;
+        w.townState[small.id] = TownState.Plundering;
+        w.townOwner[small.id] = 0;
+        w.townTimer[small.id] = 200;
+        w.tick = 12 * 1200;
+        const s0 = w.map.spawns[0];
+        for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 6 - Math.trunc(k / 6));
+        for (let k = 0; k < 12; k++) put(g, 1, UnitType.Spearman, small.cellX - 1 + (k % 4), small.cellY - 1 + Math.trunc(k / 4));
+        put(g, 0, UnitType.Farmer, small.cellX + 3, small.cellY + 3);
+        g.fog.update(w);
+        const ai = difficulty === "hard" ? hardAi(g, { dodge: false }) : createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
+        return ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.x === small.cellX && c.y === small.cellY && c.u.length === spears);
+      });
+    assert.ok(sent(false, 2), `${difficulty}: off, the two at home go back to it, as before`);
+    assert.ok(!sent(true, 2), `${difficulty}: on, not two against twelve`);
+    assert.ok(sent(true, 20), `${difficulty}: on, twenty go`);
+  }
+});
+
+test("D-083 (D-081's leftover (b)): with the population rules on, after breaking off from a fort on its ground it does not go again with as many however long after; 1.2 x after 5 minutes, or once the fort is weaker", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    /** Eight spearmen go for a tower by the main city, six fall and it breaks off; `more` than eight again, `later` ticks on. */
+    const again = (more: number, later: number, emptied = false) =>
+      withPopulation(true, () => {
+        const { g, w, ai, fort, spears, centre, out } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
+        assert.ok(out.some((c) => c.c === "attack" && c.target === fort), `${difficulty}: the army goes for it`);
+        w.buildings.col.soldiers[w.building(fort)] = 3;
+        const farmers: number[] = [];
+        for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) farmers.push(w.units.col.id[s]);
+        kill(g, [...spears.slice(2), ...farmers]);
+        w.tick += 10;
+        g.fog.update(w);
+        assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), `${difficulty}: ground down, it breaks off`);
+        const home = spawnCentre(w.map.frames[0], w.map.spawns[0]);
+        for (let k = 0; k < 6 + more; k++) put(g, 0, UnitType.Spearman, home.x - 4 - (k % 6), home.y - 4 - Math.trunc(k / 6));
+        if (emptied) {
+          w.buildings.col.soldiers[w.building(fort)] = 0;
+          put(g, 0, UnitType.Farmer, centre.x - 3, centre.y);
+        }
+        w.tick += later;
+        g.fog.update(w);
+        return ai.think(buildView(g, 0)).some((c) => (c.c === "attack" && c.target === fort) || (c.c === "move" && c.x === centre.x && c.y === centre.y));
+      });
+    // Off (D-081) it went again with as many once 5 minutes were past: the test above.
+    assert.ok(!again(0, 10 * 1200), `${difficulty}: not with as many, 10 minutes on`);
+    assert.ok(!again(2, 700), `${difficulty}: within 5 minutes 1.5 x (12), not 10`);
+    assert.ok(again(2, 5 * 1200 + 10), `${difficulty}: past 5 minutes 1.2 x will do (10 for 8)`);
+    assert.ok(again(0, 700, true), `${difficulty}: with as many once those hiding in it are gone`);
+  }
+});
+
+test("D-083 (D-081's leftover (b)): with the population rules on, hard does not march on the enemy base again while forts it fell back from are too strong, though the straight way misses them", () => {
+  /** After falling back from four towers beside the straight way: at the base again, 10 s on, 10 minutes on, and once they are weaker? */
+  const marches = (on: boolean) =>
+    withPopulation(on, () => {
+      const g = emptyGame();
+      const w = g.w;
+      for (const t of w.map.towns) {
+        w.townState[t.id] = TownState.Ruins;
+        w.townOwner[t.id] = NO_OWNER;
+        w.townTimer[t.id] = 100000;
+      }
+      w.tick = 12 * 1200;
+      for (let k = 0; k < 14; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
+      g.fog.update(w);
+      const ai = hardAi(g, { dodge: false, pushArmy: 12, townArmy: 99, bigArmy: 99 });
+      const s1 = w.map.spawns[1];
+      const toBase = () => ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 14 && c.x === s1.cellX && c.y === s1.cellY);
+      assert.ok(toBase(), "off to the enemy base");
+      const towers: number[] = [];
+      for (const [dx, dy] of [[0, 0], [3, 0], [0, 3], [3, 3]]) {
+        const id = w.addBuilding(1, BuildingType.ArrowTower, 50 + dx, 66 + dy, 600, 1000);
+        w.buildings.col.soldiers[w.building(id)] = 3;
+        towers.push(id);
+        put(g, 0, UnitType.Farmer, 49 + dx, 65 + dy);
+      }
+      w.tick += 10;
+      g.fog.update(w);
+      const groups = fortGroups(enemyForts(buildView(g, 0), 0, rules()), () => 0, fortValues(rules()));
+      const s0 = w.map.spawns[0];
+      assert.equal(groupsOnWay(groups, { x: s0.cellX, y: s0.cellY }, { x: s1.cellX, y: s1.cellY }).length, 0, "not on the straight way from home");
+      assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat" && c.u.length === 14), "too strong for it: back");
+      w.tick += 10;
+      g.fog.update(w);
+      const soon = toBase();
+      w.tick += 10 * 1200;
+      g.fog.update(w);
+      const late = toBase();
+      for (const id of towers) w.buildings.col.soldiers[w.building(id)] = 0;
+      w.tick += 10;
+      g.fog.update(w);
+      return [soon, late, toBase()];
+    });
+  assert.deepEqual(marches(true), [false, false, true], "on: not while they are too strong; once they are weaker, again");
+  assert.equal(marches(false)[0], true, "off: straight back at the base, as before");
 });
