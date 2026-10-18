@@ -35,6 +35,9 @@ export interface AnimInfo {
   impact?: number;
   /** The dust that many times as large (big units: spec section 11). */
   impact_scale?: number;
+  /** Effects seen from above (the cannon's warning): the radius in metres of the circle drawn. */
+  top_down?: boolean;
+  radius_m?: number;
   /** Metres one walk cycle covers. */
   stride_m?: number;
 }
