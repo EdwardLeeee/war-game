@@ -1,0 +1,119 @@
+{
+ "scripted": [
+  {
+   "name": "now",
+   "difficulty": "hard",
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push-fortress-hold-random",
+    "push-towerrush",
+    "push-towerrush-farmers"
+   ],
+   "a": {}
+  },
+  {
+   "name": "c48",
+   "difficulty": "hard",
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push-fortress-hold-random",
+    "push-towerrush",
+    "push-towerrush-farmers"
+   ],
+   "a": {
+    "productionFirst": true,
+    "pushArmy": 48
+   }
+  }
+ ],
+ "games": [
+  {
+   "name": "nowhh",
+   "difficulty": "hard,hard",
+   "games": 100,
+   "shards": 4,
+   "a": {}
+  },
+  {
+   "name": "c48hh",
+   "difficulty": "hard,hard",
+   "games": 100,
+   "shards": 4,
+   "a": {
+    "productionFirst": true,
+    "pushArmy": 48
+   }
+  },
+  {
+   "name": "nowhn",
+   "difficulty": "hard,normal",
+   "games": 100,
+   "shards": 4,
+   "a": {}
+  },
+  {
+   "name": "c48hn",
+   "difficulty": "hard,normal",
+   "games": 100,
+   "shards": 4,
+   "a": {
+    "productionFirst": true,
+    "pushArmy": 48
+   }
+  },
+  {
+   "name": "nowhhr",
+   "difficulty": "hard,hard",
+   "games": 100,
+   "shards": 4,
+   "a": {},
+   "map": "random"
+  },
+  {
+   "name": "c48hhr",
+   "difficulty": "hard,hard",
+   "games": 100,
+   "shards": 4,
+   "a": {
+    "productionFirst": true,
+    "pushArmy": 48
+   },
+   "map": "random"
+  },
+  {
+   "name": "nowhnr",
+   "difficulty": "hard,normal",
+   "games": 100,
+   "shards": 4,
+   "a": {},
+   "map": "random"
+  },
+  {
+   "name": "c48hnr",
+   "difficulty": "hard,normal",
+   "games": 100,
+   "shards": 4,
+   "a": {
+    "productionFirst": true,
+    "pushArmy": 48
+   },
+   "map": "random"
+  }
+ ],
+ "traces": [
+  {
+   "name": "think-fixed",
+   "script": "think-c.ts",
+   "args": "--seeds 1-5 --map fixed --ticks 48000 --cand '{\"productionFirst\": true, \"pushArmy\": 48}'"
+  },
+  {
+   "name": "think-random",
+   "script": "think-c.ts",
+   "args": "--seeds 1-5 --map random --ticks 48000 --cand '{\"productionFirst\": true, \"pushArmy\": 48}'"
+  }
+ ]
+}
