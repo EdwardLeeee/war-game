@@ -1,0 +1,94 @@
+// 正式美術（D-085）on core's real simulation with stand-in atlases (scripts/make-test-atlas.ts,
+// ?test=1&art=test): the units are drawn from atlases instead of the shapes, the 量測 panel has
+// 美術 (off unless chosen there, kept on the device), a measurement says
+// which atlases, how many pages and the draw calls a frame, and a measurement cut short by a
+// reload is told on the start screen. The atlases are only the picture: the game is the same.
+
+import { expect, type Page, test } from "@playwright/test";
+import { openLab, shot, watchErrors } from "./helpers.ts";
+
+const art = (page: Page) => page.evaluate(() => window.__proto?.game?.art() ?? null);
+
+async function start(page: Page, query: string): Promise<void> {
+  await page.goto(`./?test=1&${query}`);
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
+}
+
+test("美術（測試圖）：兵從圖集畫，不再是幾何圖形；載入 10 種兵的頁；關掉時照舊畫圖形", async ({ page }) => {
+  const check = watchErrors(page);
+  await start(page, "art=test&scenario=e2e");
+  // Every unit on screen from its atlas: 10 units × colour, team, shadow (+ the mages' shields) and the effects.
+  await expect.poll(async () => (await art(page))?.units ?? 0).toBeGreaterThan(0);
+  const a = await art(page);
+  expect(a?.label).toBe("測試圖");
+  expect(a?.pages).toBe(10 * 3 + 2 + 1);
+  const units = await page.evaluate(() => (window.__proto?.game?.units() ?? []).filter((u) => u.action !== 7).length);
+  expect(a?.units).toBe(units);
+  check();
+});
+
+test("美術關著（預設）：照舊畫幾何圖形；量測面板的美術預設「關」，選 3 倍會記在這台裝置，下一局起才用（D-085）", async ({ page }, info) => {
+  const check = watchErrors(page);
+  await start(page, "scenario=e2e");
+  expect(await art(page)).toBeNull();
+  await openLab(page);
+  const group = page.getByRole("radiogroup", { name: "美術" });
+  await expect(group.getByRole("radio", { name: "關" })).toHaveAttribute("aria-checked", "true");
+  // This build has the Release art.lock.json pins.
+  await expect(group.getByRole("radio", { name: "3 倍" })).toBeEnabled();
+  await expect(group.getByRole("radio", { name: "2 倍" })).toBeEnabled();
+  await shot(page, info, "art-lab-panel");
+  await group.getByRole("radio", { name: "3 倍" }).tap();
+  await expect(group.getByRole("radio", { name: "3 倍" })).toHaveAttribute("aria-checked", "true");
+  expect(await page.evaluate(() => localStorage.getItem("war-game.proto.art"))).toBe("x3");
+  // Not this game: the shapes still.
+  expect(await art(page)).toBeNull();
+  check();
+});
+
+test("量測（測試圖）：結果框寫美術是哪一套、幾頁圖，和每張畫面的繪製次數", async ({ page }) => {
+  test.setTimeout(150_000);
+  const check = watchErrors(page);
+  await start(page, "art=test&scenario=e2e");
+  await openLab(page);
+  await page.getByRole("button", { name: "量測 120 人" }).tap();
+  // A game of the perf scenario of its own, the atlases kept.
+  await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 2, null, { timeout: 60_000 });
+  const result = page.locator(".lab-result");
+  await expect(result).toContainText("美術：測試圖，33 頁圖", { timeout: 90_000 });
+  await expect(result).toContainText(/每張畫面的繪製次數：中位數 [1-9][\d.]*、最多 [1-9]/);
+  check();
+});
+
+test("量測到一半頁面重新載入了（Safari 記憶體不足）：開局畫面寫明是哪一次量測", async ({ page }) => {
+  await page.goto("./?test=1");
+  await page.evaluate(() => sessionStorage.setItem("war-game.proto.measuring", "美術 3 倍，37 頁圖、場景 perf360"));
+  await page.reload();
+  await expect(page.locator("#measure-note")).toHaveText("上次量測到一半，頁面重新載入了（美術 3 倍，37 頁圖、場景 perf360）");
+  // Once: told, then forgotten.
+  await page.reload();
+  await expect(page.locator("#measure-note")).toBeHidden();
+});
+
+test("ASTC 樣本（測試圖）：量測面板有「ASTC 樣本」，載入 KTX 的 ASTC 頁；顯示卡沒有 ASTC 時寫明（D-085）", async ({ page }) => {
+  const check = watchErrors(page);
+  await start(page, "art=test&scenario=e2e");
+  await openLab(page);
+  await page.getByRole("button", { name: "ASTC 樣本" }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.astc() ?? null), { timeout: 15_000 }).toMatch(/^(shown|no-astc)$/);
+  check();
+});
+
+test("真的圖（art-v1，2 倍）：perf 場景交戰中的樣子，給 ceo 看（CI 的 Chromium，D-085）", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "chromium", "one picture is enough");
+  test.setTimeout(150_000);
+  const check = watchErrors(page);
+  await start(page, "art=x2&scenario=perf");
+  await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(100);
+  expect((await art(page))?.label).toBe("2 倍");
+  await page.evaluate(() => window.__proto?.game?.centerOn(48, 52, 1.6));
+  await page.waitForTimeout(3000);
+  await shot(page, info, "art-v1-x2-battle");
+  check();
+});

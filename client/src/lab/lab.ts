@@ -34,6 +34,10 @@ export interface FrameContext {
   hidden: boolean;
   paused: boolean;
   normalSpeed: boolean;
+  /** WebGL draw calls the last frame took (D-085: the atlases' cost). */
+  draws?: number;
+  /** How often the GPU has dropped the page's context so far (iOS, out of GPU memory). */
+  contextLost?: number;
 }
 
 export interface MeasureResult {
@@ -53,6 +57,9 @@ export interface MeasureResult {
   tickMedianMs: number;
   tickMeanMs: number;
   tickMaxMs: number;
+  /** Draw calls a frame (D-085), when counted. */
+  drawsMedian: number;
+  drawsMax: number;
 }
 
 export class Lab {
@@ -61,6 +68,8 @@ export class Lab {
   private frames: number[] = [];
   private ticks: number[] = [];
   private batchMeans: number[] = [];
+  private draws: number[] = [];
+  private contextLost = -1;
   private reasons = new Set<string>();
 
   /** Why a button is unavailable right now, or null if it can be pressed. */
@@ -83,6 +92,8 @@ export class Lab {
     this.frames = [];
     this.ticks = [];
     this.batchMeans = [];
+    this.draws = [];
+    this.contextLost = -1;
     this.reasons.clear();
     return true;
   }
@@ -122,6 +133,11 @@ export class Lab {
     if (ctx.hidden) this.spoil("量測期間頁面切到背景");
     if (ctx.paused) this.spoil("量測期間遊戲暫停");
     if (!ctx.normalSpeed) this.spoil("量測期間速度不是「正常」");
+    if (ctx.contextLost !== undefined) {
+      if (this.contextLost >= 0 && ctx.contextLost > this.contextLost) this.spoil("量測期間顯示卡把畫面丟掉了（記憶體不足）");
+      this.contextLost = ctx.contextLost;
+    }
+    if (ctx.draws !== undefined) this.draws.push(ctx.draws);
     this.frames.push(dtMs);
     if (now - this.start < WINDOW_MS) return null;
     this.phase = "idle";
@@ -132,6 +148,7 @@ export class Lab {
     if (this.ticks.length === 0) this.reasons.add("量測期間模擬沒有跑（0 個 tick）");
     const f = summarize(this.frames);
     const t = summarize(this.ticks);
+    const d = summarize(this.draws);
     const mean = this.batchMeans.length > 0 ? summarize(this.batchMeans).mean : t.mean;
     const r = {
       frames: f.samples,
@@ -145,6 +162,8 @@ export class Lab {
       tickMedianMs: round2(t.median),
       tickMeanMs: round2(mean),
       tickMaxMs: round2(t.max),
+      drawsMedian: round2(d.median),
+      drawsMax: round2(d.max),
     };
     const reasons = [...this.reasons];
     const valid = reasons.length === 0;

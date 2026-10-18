@@ -55,6 +55,11 @@ export interface PageParams {
   seed: number | null;
   /** `?test=1&mock=1&outpost=1`: the fake world with outposts on (D-080) along with round 7's rules. */
   outpost: boolean;
+  /**
+   * `?test=1&art=test|x3|x2|off`: the units' atlases (D-085) instead of the 量測 panel's choice;
+   * `test` the stand-ins scripts/make-test-atlas.ts makes, for the e2e tests.
+   */
+  art: "test" | "x3" | "x2" | "off" | null;
 }
 
 export function parseParams(search: string): PageParams {
@@ -73,5 +78,7 @@ export function parseParams(search: string): PageParams {
   const map = test && (m === "fixed" || m === "random") ? m : null;
   const s = q.get("seed");
   const seed = test && s !== null && /^[1-9][0-9]{0,9}$/.test(s) && Number(s) <= 0x7fffffff ? Number(s) : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1" };
+  const a = q.get("art");
+  const art = test && (a === "test" || a === "x3" || a === "x2" || a === "off") ? a : null;
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", art };
 }

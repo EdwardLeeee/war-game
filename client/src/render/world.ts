@@ -16,6 +16,7 @@ import {
   HeaderField as H,
   NodeField as N,
   TOWN_STRIDE,
+  TICKS_PER_SECOND,
   TownField as T,
   TownSize,
   TownState,
@@ -30,6 +31,9 @@ import type { Placement } from "../ui/placement.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT, WARNING_TINT } from "./atlas.ts";
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
+import type { Culture } from "../art/spec.ts";
+import { ArtUnits } from "./unit-art-draw.ts";
+import type { UnitArt } from "./unit-art.ts";
 
 const UNIT_SCALE = 1;
 const BAR_W = TILE_PX * 0.8;
@@ -125,6 +129,8 @@ export class WorldRenderer {
   private readonly wallLayer = new Container();
   private readonly buildingLayer = new Container();
   private readonly nodeLayer = new Container();
+  /** Units' shadows from their atlases (D-085), on the ground under the rings and units. */
+  private readonly shadowLayer = new Container();
   private readonly ringLayer = new Container();
   private readonly unitLayer = new Container();
   private readonly fx = new Graphics();
@@ -155,9 +161,14 @@ export class WorldRenderer {
   /** Arrows drawn since the game started (tests). */
   shotCount = 0;
 
-  constructor(app: Application, view: GameView, atlas: Atlas) {
+  /** Units drawn from war-game-ui's atlases (D-085), or null: the shapes. */
+  private readonly artUnits: ArtUnits | null;
+
+  /** `art`: the units' atlases (D-085), `cultureOf` which culture each player wears. */
+  constructor(app: Application, view: GameView, atlas: Atlas, art: UnitArt | null = null, cultureOf: (owner: number) => Culture = (owner) => (owner === 1 ? "w" : "e")) {
     this.view = view;
     this.atlas = atlas;
+    this.artUnits = art === null ? null : new ArtUnits(art, view, this.shadowLayer, this.unitLayer, cultureOf);
     const size = view.map.size;
 
     const terrain = document.createElement("canvas");
@@ -184,7 +195,7 @@ export class WorldRenderer {
     const fog = new Sprite(this.fogTexture);
     fog.scale.set(TILE_PX);
 
-    this.root.addChild(ground, this.zones, this.wallLayer, this.buildingLayer, this.nodeLayer, this.ringLayer, this.unitLayer, this.fx, this.barLayer, fog, this.townLayer, this.ghost);
+    this.root.addChild(ground, this.zones, this.wallLayer, this.buildingLayer, this.nodeLayer, this.shadowLayer, this.ringLayer, this.unitLayer, this.fx, this.barLayer, fog, this.townLayer, this.ghost);
     app.stage.addChild(this.root);
   }
 
@@ -209,6 +220,7 @@ export class WorldRenderer {
 
   /** Take this game's drawing off the stage (the shared shapes stay). */
   destroy(): void {
+    this.artUnits?.destroy();
     this.root.parent?.removeChild(this.root);
     this.root.destroy({ children: true });
     this.terrainTexture.destroy(true);
@@ -429,6 +441,12 @@ export class WorldRenderer {
     for (const [id, mark] of this.townMarks) if (!seen.has(id)) mark.wall.visible = mark.glyph.visible = mark.holder.visible = false;
   }
 
+  /** The units' atlases (D-085): which, how many pages, and how many units drawn from them; null: the shapes. */
+  get artDrawn(): { label: string; pages: number; units: number; corpses: number } | null {
+    const a = this.artUnits;
+    return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn };
+  }
+
   /** Each town's wall as drawn (world px), for the test page. */
   get townWalls(): { id: number; x: number; y: number; side: number; visible: boolean }[] {
     return [...this.townMarks].map(([id, m]) => ({ id, x: m.wall.x, y: m.wall.y, side: m.wall.width, visible: m.wall.visible }));
@@ -461,6 +479,10 @@ export class WorldRenderer {
     const paused = curr.snap.header[H.paused] === 1;
     const pu = prev?.snap.units;
     const sel = view.selection.units;
+    // The atlases' clock: the simulation's time, between the last two snapshots (D-085).
+    const tick = curr.snap.header[H.tick];
+    const seconds = (paused || prev === null ? tick : tick - 1 + alpha) / TICKS_PER_SECOND;
+    this.artUnits?.snapshot(seconds);
     while (this.unitPool.length < n) {
       const ring = new Sprite(this.atlas.ring);
       ring.anchor.set(0.5);
@@ -488,7 +510,10 @@ export class WorldRenderer {
       p.body.visible = shown;
       p.ring.visible = p.shield.visible = false;
       p.hpBack.visible = p.hpFront.visible = p.shBack.visible = p.shFront.visible = false;
-      if (!shown) continue;
+      if (!shown) {
+        this.artUnits?.hideSlot(i);
+        continue;
+      }
       const id = u[o + U.id];
       let x = u[o + U.x];
       let y = u[o + U.y];
@@ -504,11 +529,15 @@ export class WorldRenderer {
       const py = y * FIXED_TO_PX;
       const type = u[o + U.type];
       const owner = u[o + U.owner];
+      // From its atlas when there is one (its picture's top for the bars), else the shape.
+      const top = this.artUnits?.unit(i, o, px, py, seconds) ?? null;
+      p.body.visible = top === null;
       p.body.texture = this.atlas.units[type] ?? this.atlas.units[UnitType.Farmer];
       p.body.tint = ownerTint(owner, view.me);
       p.body.position.set(px, py);
       p.body.scale.set(UNIT_SCALE);
       p.body.rotation = (u[o + U.facing] * Math.PI) / 8;
+      const barY = top === null ? py - TILE_PX * 0.62 : top - 2;
       const selected = owner === view.me && binaryHas(sel, id);
       p.ring.visible = selected;
       if (selected) {
@@ -528,8 +557,8 @@ export class WorldRenderer {
         p.shield.alpha = 0.35 + 0.65 * (shield / shieldMax);
       }
       if (selected || hp < max || (shieldMax > 0 && shield < shieldMax)) {
-        this.bar(p.hpBack, p.hpFront, px, py - TILE_PX * 0.62, BAR_W, max > 0 ? hp / max : 1, ownerTint(owner, view.me));
-        if (shieldMax > 0) this.bar(p.shBack, p.shFront, px, py - TILE_PX * 0.62 - BAR_H - 1, BAR_W, shield / shieldMax, SHIELD_TINT);
+        this.bar(p.hpBack, p.hpFront, px, barY, BAR_W, max > 0 ? hp / max : 1, ownerTint(owner, view.me));
+        if (shieldMax > 0) this.bar(p.shBack, p.shFront, px, barY - BAR_H - 1, BAR_W, shield / shieldMax, SHIELD_TINT);
       }
       const cast = u[o + U.castProgress];
       if (cast > 0) {
@@ -540,6 +569,7 @@ export class WorldRenderer {
           .stroke({ width: 3, color: WARNING_TINT, alpha: 0.95 });
       }
     }
+    this.artUnits?.drawCorpses(seconds);
   }
 
   private drawWarnings(now: number): void {

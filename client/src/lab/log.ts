@@ -40,6 +40,14 @@ export class LogBox {
     return this.lines.join("\n");
   }
 
+  /**
+   * The box has just come into view: lines added while it was hidden could not scroll it, so it
+   * goes to the newest line, unless the reader had scrolled away (「有新訊息」 showing).
+   */
+  shown(): void {
+    if (this.more.hidden) this.toEnd();
+  }
+
   private atEnd(): boolean {
     return this.box.scrollTop + this.box.clientHeight >= this.box.scrollHeight - STICK_PX;
   }

@@ -2,6 +2,7 @@
 // window, the engine-spike thresholds; D-083), 確定性檢查, the result box and the log. Opened from a corner
 // button for now; the HUD's menu takes it over.
 
+import { ART_CHOICES, ART_LABEL, type ArtChoice, loadArtChoice, saveArtChoice } from "../art/pref.ts";
 import { HeaderField as H, STEP_BATCH } from "../sim.ts";
 import type { CheckResult } from "./determinism.ts";
 import { type FrameContext, Lab, type MeasureResult, PASS, PERF_SCENARIOS, type PerfScenario, STALL_MS, WINDOW_MS } from "./lab.ts";
@@ -20,6 +21,36 @@ export interface LabHooks {
    * perf scenario, which measures itself once it is running).
    */
   requestMeasure?: (scenario: PerfScenario) => void;
+  /** This build has the units' atlases (D-085): 美術 can be chosen. */
+  artAvailable?: boolean;
+  /** ASTC 樣本 (D-085), when the build has one. */
+  astcSample?: () => void;
+}
+
+/**
+ * A measurement under way, kept in the tab's session (D-085): when Safari reloads the page for
+ * want of memory in the middle of one, the page finds it on opening and says so.
+ */
+export const MEASURING_KEY = "war-game.proto.measuring";
+
+function session(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** A measurement the page was reloaded in the middle of (its 美術 and scenario), and forgets it. */
+export function measureCutShort(): string | null {
+  try {
+    const s = session();
+    const v = s?.getItem(MEASURING_KEY) ?? null;
+    s?.removeItem(MEASURING_KEY);
+    return v;
+  } catch {
+    return null;
+  }
 }
 
 function make<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {
@@ -37,6 +68,7 @@ export class LabPanel {
   private readonly panel: HTMLElement;
   private readonly live: HTMLElement;
   private readonly measureBtns: HTMLButtonElement[];
+  private readonly artBtns: HTMLButtonElement[];
   private readonly checkBtn: HTMLButtonElement;
   private readonly status: HTMLElement;
   private readonly resultBox: HTMLElement;
@@ -58,6 +90,7 @@ export class LabPanel {
       toggle.type = "button";
       toggle.addEventListener("click", () => {
         this.panel.hidden = !this.panel.hidden;
+        if (!this.panel.hidden) this.log.shown();
       });
     }
     const head = make("div", this.panel, "lab-head");
@@ -68,6 +101,24 @@ export class LabPanel {
       this.panel.hidden = true;
     });
     this.live = make("p", this.panel, "lab-live", "…");
+    // 美術 (D-085): the units from the atlases, at a scale, from the next game on (量測 starts one).
+    const arts = make("div", this.panel, "lab-buttons lab-art");
+    arts.setAttribute("role", "radiogroup");
+    arts.setAttribute("aria-label", "美術");
+    make("span", arts, "lab-art-label", "美術");
+    this.artBtns = ART_CHOICES.map((c) => {
+      const b = make("button", arts, "", ART_LABEL[c]);
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.disabled = hooks.artAvailable !== true && c !== "off";
+      b.addEventListener("click", () => {
+        saveArtChoice(c);
+        this.showArt();
+        this.log.add(`美術：${ART_LABEL[c]}（下一局起，量測會開新的一局）`);
+      });
+      return b;
+    });
+    if (hooks.artAvailable !== true) make("span", arts, "lab-art-note", "這個版本沒有圖集");
     const measures = make("div", this.panel, "lab-buttons");
     this.measureBtns = PERF_SCENARIOS.map((p) => {
       const b = make("button", measures, "", `量測 ${p.population} 人`);
@@ -83,7 +134,12 @@ export class LabPanel {
     this.checkBtn.type = "button";
     const copy = make("button", row, "secondary", "複製 log");
     copy.type = "button";
-    make("p", this.panel, "lab-note", "量測：開一局 perf 場景（所有系統都開著，雙方人口 120、200 或 360），暖機 5 秒後量 30 秒，量測時不要操作。");
+    if (hooks.astcSample !== undefined) {
+      const astc = make("button", row, "secondary", "ASTC 樣本");
+      astc.type = "button";
+      astc.addEventListener("click", () => hooks.astcSample?.());
+    }
+    make("p", this.panel, "lab-note", "量測：所有系統都開著的一局，暖機 5 秒後量 30 秒，量測時不要操作。");
     this.status = make("p", this.panel, "lab-status");
     this.resultBox = make("div", this.panel, "lab-result");
     this.resultBox.hidden = true;
@@ -101,11 +157,23 @@ export class LabPanel {
         () => this.log.add("無法複製（瀏覽器不允許）"),
       );
     });
+    this.showArt();
     this.refreshButtons();
+  }
+
+  /** Which 美術 is chosen. */
+  private showArt(): void {
+    const chosen: ArtChoice = loadArtChoice();
+    ART_CHOICES.forEach((c, i) => {
+      const on = c === chosen;
+      this.artBtns[i].setAttribute("aria-checked", on ? "true" : "false");
+      this.artBtns[i].classList.toggle("secondary", !on);
+    });
   }
 
   show(): void {
     this.panel.hidden = false;
+    this.log.shown();
   }
 
   hide(): void {
@@ -123,6 +191,12 @@ export class LabPanel {
 
   startMeasure(now: number): boolean {
     if (!this.lab.startMeasure(now)) return false;
+    try {
+      const env = this.hooks.env();
+      session()?.setItem(MEASURING_KEY, `美術 ${String(env.art ?? "關")}、場景 ${String(env.scenario ?? "?")}`);
+    } catch {
+      // Not kept: a reload would go unnoticed.
+    }
     this.resultBox.hidden = true;
     this.log.add("暖機 5 秒，接著量 30 秒");
     this.refreshButtons();
@@ -177,9 +251,10 @@ export class LabPanel {
       const f = summarize(this.frameMs);
       const t = summarize(this.tickMs);
       const secs = this.frameAt.length > 1 ? Math.round((this.frameAt[this.frameAt.length - 1] - this.frameAt[0]) / 1000) : 0;
+      // One line (D-085: the 美術 row took the room of a second one on the phone held sideways).
       this.live.textContent =
-        `最近 ${secs} 秒：fps 中位數 ${f.median > 0 ? round2(1000 / f.median) : 0}，最慢 5% ${f.p95 > 0 ? round2(1000 / f.p95) : 0}；` +
-        `模擬每 tick 中位數 ${round2(t.median)} ms、最大 ${round2(t.max)} ms` +
+        `${secs} 秒：fps ${f.median > 0 ? round2(1000 / f.median) : 0}（最慢 5% ${f.p95 > 0 ? round2(1000 / f.p95) : 0}）；` +
+        `tick ${round2(t.median)} ms（最大 ${round2(t.max)}）` +
         (this.hooks.fake() ? "（假資料）" : "");
     }
   }
@@ -204,7 +279,17 @@ export class LabPanel {
     make("p", box, "small", Object.values(this.hooks.env()).join("；"));
   }
 
+  /** The measurement ends without a result (its game is over): nothing to report after a reload. */
+  stopMeasuring(): void {
+    try {
+      session()?.removeItem(MEASURING_KEY);
+    } catch {
+      // Nothing kept.
+    }
+  }
+
   private showResult(r: MeasureResult): void {
+    this.stopMeasuring();
     const env = this.hooks.env();
     this.log.add(`measure ${JSON.stringify({ ...r, ...env })}`);
     const box = this.resultBox;
@@ -225,6 +310,9 @@ export class LabPanel {
       ["每 tick 模擬中位數", `${r.tickMedianMs} ms（標準 ≤ ${PASS.tickMedianMs}）`, r.tickMedianMs <= PASS.tickMedianMs],
       ["每 tick 模擬平均", `${r.tickMeanMs} ms`, null],
       ["每 tick 模擬最大值", `${r.tickMaxMs} ms`, null],
+      // D-085: what the atlases cost the GPU.
+      ["每張畫面的繪製次數", `中位數 ${r.drawsMedian}、最多 ${r.drawsMax}`, null],
+      ["美術", `${String(env.art ?? "關")}`, null],
     ];
     for (const [k, v, ok] of rows) make("p", box, "", `${ok === null ? "・" : ok ? "✓" : "✗"} ${k}：${v}`);
     make("p", box, "small", `樣本：${r.frames} 幀、${r.ticks} tick；${Object.values(env).join("；")}`);

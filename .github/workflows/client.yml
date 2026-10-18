@@ -91,6 +91,16 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
       - run: npm ci
+      # The units' atlases (D-085, docs/sprite-atlas.md section 2): the Release art.lock.json pins
+      # (checked against its SHA-256; none pinned: nothing), and the stand-ins the tests draw.
+      - uses: actions/cache@v6
+        with:
+          path: client/.art-cache
+          key: art-${{ hashFiles('client/art.lock.json') }}
+      - name: Atlases
+        run: |
+          node scripts/fetch-art.ts
+          node scripts/make-test-atlas.ts
       - run: npm run build
       - name: Hashes the page's determinism check compares against (headless run of the same game)
         run: bash scripts/expected-hashes.sh dist/expected-hashes.json

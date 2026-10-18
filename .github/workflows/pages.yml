@@ -116,11 +116,18 @@ jobs:
           curl -sSLf -o "${GITHUB_WORKSPACE}/spike-site/licenses/godot-LICENSE.txt" "${base}/LICENSE.txt"
           curl -sSLf -o "${GITHUB_WORKSPACE}/spike-site/licenses/godot-COPYRIGHT.txt" "${base}/COPYRIGHT.txt"
 
+      # The units' atlases (D-085): the Release art.lock.json pins, checked against its SHA-256.
+      - name: Atlases from cache
+        uses: actions/cache@v6
+        with:
+          path: client/.art-cache
+          key: art-${{ hashFiles('client/art.lock.json') }}
       - name: Prototype
         working-directory: client
         run: |
           set -euo pipefail
           npm ci
+          node scripts/fetch-art.ts
           npm run build
           bash scripts/expected-hashes.sh dist/expected-hashes.json
           mkdir -p ../site
