@@ -1847,6 +1847,11 @@ export interface HardPlan {
   looseWho: number;
   /** D-081: after falling back from a town it leaves that town alone this many minutes (0: never, as before). */
   townRest: number;
+  /**
+   * D-083 (c): with food and gold piling up (PRODUCTION_FIRST of the two) a barracks or range comes before houses
+   * (but for one it needs now) and farms (the trace: two of four built till minute 19, the wood going elsewhere).
+   */
+  productionFirst: boolean;
 }
 
 export const HARD: HardPlan = {
@@ -1870,7 +1875,10 @@ export const HARD: HardPlan = {
   looseWho: 1,
   // D-081: measured and left off (hard against hard 50.3% of 200; with it the scripted push on random maps won 4 of 40, without 3).
   townRest: 0,
+  productionFirst: false,
 };
+/** D-083 (c): food plus gold it holds for productionFirst. */
+const PRODUCTION_FIRST = 800;
 
 /**
  * D-083 (c), the user 2026-10-10: hard 「太晚來打我」「來打的兵太少」 (ceo 2026-10-18: earlier and with more). With the
@@ -2252,6 +2260,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         };
         // The mage hall first once there is the crystal for a mage (a plunder brings 75).
         if (!has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
+        // D-083 (c): food and gold piling up, more barracks and ranges first (a house first only when it needs one now).
+        const prodCount = count(BuildingType.Barracks) + count(BuildingType.Range);
+        if (plan.productionFirst && res.food + res.gold >= PRODUCTION_FIRST && prodCount < plan.production && has(BuildingType.Range) && cap - pop - queued > producers) {
+          add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
+        }
         // Houses before the population is full: every producer can add one at a time.
         if (cap < ceiling && cap - pop - queued <= houseRoom + producers) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
