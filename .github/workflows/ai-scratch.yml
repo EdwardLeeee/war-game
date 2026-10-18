@@ -1,0 +1,209 @@
+name: AI scratch
+
+# war-game-ai's measurement runs on ai/scratch-* branches only (ceo 2026-10-04: never merged,
+# never in a real pull request). Candidates come from sim/scratch/candidates.json.
+on:
+  push:
+    branches: ["ai/scratch-**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-scratch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      games: ${{ steps.m.outputs.games }}
+      scripted: ${{ steps.m.outputs.scripted }}
+      think: ${{ steps.m.outputs.think }}
+      traces: ${{ steps.m.outputs.traces }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - id: m
+        run: node sim/scratch/matrix.mjs >> "$GITHUB_OUTPUT"
+
+  games:
+    needs: setup
+    name: games (${{ matrix.name }} ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup.outputs.games) }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - if: matrix.name != 'none'
+        uses: actions/checkout@v7
+      - if: matrix.name != 'none'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - if: matrix.name != 'none'
+        env:
+          HARD_PLAN: ${{ matrix.a }}
+          HARD_PLAN_B: ${{ matrix.b }}
+        run: node src/tournament.ts --games ${{ matrix.games }} --shard ${{ matrix.shard }} --shards ${{ matrix.shards }} --difficulty ${{ matrix.difficulty }} ${{ matrix.extra }} --out "${GITHUB_WORKSPACE}/out/g-${{ matrix.name }}-${{ matrix.shard }}"
+      - if: always() && matrix.name != 'none'
+        uses: actions/upload-artifact@v7
+        with:
+          name: g-${{ matrix.name }}-${{ matrix.shard }}
+          path: out/
+          retention-days: 14
+
+  scripted:
+    needs: setup
+    name: scripted (${{ matrix.name }} ${{ matrix.group }} ${{ matrix.seeds }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup.outputs.scripted) }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - if: matrix.name != 'none'
+        uses: actions/checkout@v7
+      - if: matrix.name != 'none'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - if: matrix.name != 'none'
+        env:
+          HARD_PLAN: ${{ matrix.a }}
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+          node src/scripted-games.ts --seeds ${{ matrix.seeds }} ${{ matrix.args }} --difficulty ${{ matrix.difficulty }} --json "${GITHUB_WORKSPACE}/out/s-${{ matrix.name }}-${{ matrix.group }}-${{ matrix.seeds }}.json" > /dev/null
+      - if: always() && matrix.name != 'none'
+        uses: actions/upload-artifact@v7
+        with:
+          name: s-${{ matrix.name }}-${{ matrix.group }}-${{ matrix.seeds }}
+          path: out/
+          retention-days: 14
+
+  think:
+    needs: setup
+    name: think (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup.outputs.think) }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - if: matrix.name != 'none'
+        uses: actions/checkout@v7
+      - if: matrix.name != 'none'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - if: matrix.name != 'none'
+        env:
+          HARD_PLAN: ${{ matrix.a }}
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+          node scratch/think-time.ts --seeds ${{ matrix.seeds }} --map ${{ matrix.map }} --out "${GITHUB_WORKSPACE}/out/t-${{ matrix.name }}.json" | tee -a "${GITHUB_STEP_SUMMARY}"
+      - if: always() && matrix.name != 'none'
+        uses: actions/upload-artifact@v7
+        with:
+          name: t-${{ matrix.name }}
+          path: out/
+          retention-days: 14
+
+  trace:
+    needs: setup
+    name: trace (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup.outputs.traces) }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - if: matrix.name != 'none'
+        uses: actions/checkout@v7
+      - if: matrix.name != 'none'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - if: matrix.name != 'none'
+        env:
+          HARD_PLAN: ${{ matrix.a }}
+          HARD_PLAN_B: ${{ matrix.b }}
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+          node scratch/${{ matrix.script }} ${{ matrix.args }} > "${GITHUB_WORKSPACE}/out/trace-${{ matrix.name }}.txt"
+      - if: always() && matrix.name != 'none'
+        uses: actions/upload-artifact@v7
+        with:
+          name: trace-${{ matrix.name }}
+          path: out/
+          retention-days: 14
+
+  timeline:
+    needs: setup
+    name: timeline (${{ matrix.difficulty }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        difficulty: [normal, hard]
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: |
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+          if [ -f scratch/timeline7.ts ] && grep -q '"timeline": true' scratch/candidates.json; then node scratch/timeline7.ts --difficulty ${{ matrix.difficulty }} --seeds 1-5 | tee "${GITHUB_WORKSPACE}/out/t7-${{ matrix.difficulty }}.md"; fi
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: t7-${{ matrix.difficulty }}
+          path: out/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  summary:
+    needs: [games, scripted, think, timeline, trace]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          path: all
+          merge-multiple: true
+      - run: node sim/scratch/summary.mjs all | tee -a "${GITHUB_STEP_SUMMARY}" > summary.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: summary
+          path: summary.md
+          retention-days: 14

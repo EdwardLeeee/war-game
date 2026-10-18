@@ -137,7 +137,7 @@ export const MAX_POPULATION = 120;
  * main cities as before. A town lost lowers both, and the units already there stay. Off: a flat
  * MAX_POPULATION. `town` by TownSize.
  */
-export const POPULATION_200 = { on: false, base: 200, town: [20, 40], house: 8 };
+export const POPULATION_200 = { on: JSON.parse((globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env?.HARD_PLAN || "{}").popOn === true, base: 200, town: [20, 40], house: 8 };
 /** The population ceiling without the towns: what `Rules.maxPopulation` says. */
 export function basePopulation(): number {
   return POPULATION_200.on ? POPULATION_200.base : MAX_POPULATION;

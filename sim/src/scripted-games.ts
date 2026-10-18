@@ -190,6 +190,24 @@ interface GameRecord {
    * One with 10 or more lost and no fort fallen is a failed bash.
    */
   bashLog: { start: number; end: number; most: number; lost: number; deaths: number; fell: number }[];
+  /**
+   * D-083, every game (read only): for each side [player, AI], the most population at once, the highest
+   * cap and ceiling, the most finished houses and the most soldiers (not farmers) at once; and the AI's
+   * minutes (looked at each minute) with its population full (within 2 of its cap) while its cap was a
+   * house or more below its ceiling: room it did not build for.
+   */
+  pop: { most: [number, number]; cap: [number, number]; ceiling: [number, number]; houses: [number, number]; soldiers: [number, number]; stuck: number };
+  /**
+   * D-083 (D-081's leftover (a)): the AI's towns in Plundering (a plunder takes 15–25 s with its soldiers
+   * inside): the longest stretch (ticks), and its soldiers that died within the town's radius + 4 cells
+   * once a stretch had lasted a minute (where they last stood, read every 20 ticks).
+   */
+  plunder: { longest: number; deaths: number };
+  /**
+   * D-083 (ceo 2026-10-18: games where the AI sat at home with its army): the last tick 10 or more of the AI's soldiers
+   * were more than 30 cells from its main city (-1: never).
+   */
+  aiAway: number;
   /** Random maps (D-074): the map's layout and when the player first saw the AI's main city (-1: never). */
   layout?: string;
   found?: number;
@@ -233,6 +251,30 @@ function play(seed: number): GameRecord {
   const player = createScriptedPlayer(0, { map: mapInfo(map, 0), rules: rules(map), frame: map.frames[0] }, plan);
   const home = map.spawns[0];
   const u = w.units.col;
+  // SCRATCH (dtrace): the AI's last command naming each of its units.
+  const lastCmd = new Map<number, string>();
+  const aiAct = new Map<number, string>();
+  {
+    const ai = (r as unknown as { ais: ({ think: (v: unknown) => { c: string; u?: number[] | number; x?: number; y?: number; target?: number; building?: number; node?: number }[] } | null)[] }).ais[1]!;
+    const think = ai.think.bind(ai);
+    ai.think = (v: unknown) => {
+      const out = think(v);
+      for (const c of out) {
+        if (c.c === "rally") console.log(`RL t=${w.tick} building=${c.building} at=${c.x},${c.y}`);
+        if (!Array.isArray(c.u)) continue;
+        let what = c.c;
+        if (c.x !== undefined) what += `@${c.x},${c.y}`;
+        if (c.target !== undefined) {
+          const bi = w.building(c.target);
+          what += bi >= 0 ? `>b${c.target}:${w.buildings.col.type[bi]}@${w.buildings.col.cellX[bi]},${w.buildings.col.cellY[bi]}` : `>u${c.target}`;
+        }
+        if (c.building !== undefined) what += `>b${c.building}`;
+        if (c.node !== undefined) what += `>n${c.node}`;
+        for (const id of c.u) lastCmd.set(id, `${what}(n${c.u.length},t${w.tick})`);
+      }
+      return out;
+    };
+  }
   const b = w.buildings.col;
   const count = (p: number, type: number) => {
     let n = 0;
@@ -328,12 +370,35 @@ function play(seed: number): GameRecord {
     wave = null;
   };
   const lines: string[] = [];
+  // D-083 (read only): population, houses and soldiers; the AI's plunders that do not end.
+  const popMost: [number, number] = [0, 0];
+  const capMost: [number, number] = [0, 0];
+  const ceilingMost: [number, number] = [0, 0];
+  const housesMost: [number, number] = [0, 0];
+  const soldiersMost: [number, number] = [0, 0];
+  let popStuck = 0;
+  const plunderFrom = map.towns.map(() => -1);
+  let plunderLongest = 0;
+  let plunderDeaths = 0;
+  const plunderAt = new Map<number, { x: number; y: number }>();
+  let aiAway = -1;
   while (!r.over && w.tick < CAP) {
     if (w.tick % think === 0) {
       for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
     }
     r.tick();
     if (w.tick === 12000) aiFarmersLost10 = w.lost[UNIT_KINDS + UnitType.Farmer];
+    if (w.tick % 1200 === 0) {
+      const n = [0, 0];
+      const f = [0, 0];
+      for (let i = 0; i < w.units.count; i++) {
+        const p = u.owner[i];
+        if (p !== 0 && p !== 1) continue;
+        if (u.type[i] === UnitType.Farmer) f[p]++;
+        else if (u.type[i] !== UnitType.Militia) n[p]++;
+      }
+      console.log(`PS t=${w.tick} mine=${n[0]} ai=${n[1]} farmers=${f[0]}/${f[1]} hp=${cityHp(0)}/${cityHp(1)} pop=${w.population(0)}/${w.population(1)} cap=${w.populationCap(0)}/${w.populationCap(1)}`);
+    }
     for (const e of g.events) if (e.to === 0 && e.ev.k === "rejected") rejected++;
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
     for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;
@@ -373,12 +438,16 @@ function play(seed: number): GameRecord {
           const y = u.y[i] >> 10;
           seen.add(u.id[i]);
           aiAt.set(u.id[i], { x, y });
+          aiAct.set(u.id[i], `type=${u.type[i]} act=${u.action[i]}`);
           if (forts.some((f) => within(x, y, f, f.reach))) inReach++;
         }
         for (const [id, at] of aiAt) {
           if (seen.has(id)) continue;
           aiAt.delete(id);
-          if (w.unit(id) < 0 && forts.some((f) => within(at.x, at.y, f, FORT_NEAR))) fortDeaths++;
+          if (w.unit(id) < 0 && forts.some((f) => within(at.x, at.y, f, FORT_NEAR))) {
+            fortDeaths++;
+            console.log(`DT t=${w.tick} id=${id} ${aiAct.get(id) ?? ""} at=${at.x},${at.y} last=${lastCmd.get(id) ?? "none"}`);
+          }
         }
         if (inReach > 0) {
           if (!bashing) {
@@ -426,6 +495,64 @@ function play(seed: number): GameRecord {
       cityHit = w.tick;
       cityHitAi = near(1, home.cellX, home.cellY, 16);
       cityHitMine = army(0);
+    }
+    if (w.tick % 20 === 0) {
+      for (let p = 0; p < 2; p++) {
+        let n = 0;
+        for (let i = 0; i < w.units.count; i++) if (u.owner[i] === p && u.type[i] !== UnitType.Farmer && u.type[i] !== UnitType.Militia) n++;
+        soldiersMost[p] = Math.max(soldiersMost[p], n);
+      }
+      let out = 0;
+      for (let i = 0; i < w.units.count; i++) {
+        if (u.owner[i] !== 1 || u.type[i] === UnitType.Farmer || u.type[i] === UnitType.Militia) continue;
+        const dx = (u.x[i] >> 10) - aiHome.cellX;
+        const dy = (u.y[i] >> 10) - aiHome.cellY;
+        if (dx * dx + dy * dy > 30 * 30) out++;
+      }
+      if (out >= 10) aiAway = w.tick;
+      // The AI's plunders: how long each has lasted, and its soldiers lost by one once it has lasted a minute.
+      const stale: number[] = [];
+      for (let k = 0; k < map.towns.length; k++) {
+        if (w.townOwner[k] === 1 && w.townState[k] === TownState.Plundering) {
+          if (plunderFrom[k] < 0) plunderFrom[k] = w.tick;
+          plunderLongest = Math.max(plunderLongest, w.tick - plunderFrom[k]);
+          if (w.tick - plunderFrom[k] >= 1200) stale.push(k);
+        } else plunderFrom[k] = -1;
+      }
+      if (stale.length === 0) plunderAt.clear();
+      else {
+        const seen = new Set<number>();
+        for (let i = 0; i < w.units.count; i++) {
+          if (u.owner[i] !== 1 || u.type[i] === UnitType.Farmer) continue;
+          seen.add(u.id[i]);
+          plunderAt.set(u.id[i], { x: u.x[i] >> 10, y: u.y[i] >> 10 });
+        }
+        for (const [id, at] of plunderAt) {
+          if (seen.has(id)) continue;
+          plunderAt.delete(id);
+          if (w.unit(id) >= 0) continue;
+          const by = stale.some((k) => {
+            const t = map.towns[k];
+            const r = (rules().towns?.[t.size]?.radius ?? 5) + 4;
+            return (at.x - t.cellX) ** 2 + (at.y - t.cellY) ** 2 <= r * r;
+          });
+          if (by) plunderDeaths++;
+        }
+      }
+    }
+    if (w.tick % 1200 === 0) {
+      for (let p = 0; p < 2; p++) {
+        const pop = w.population(p);
+        const cap = w.populationCap(p);
+        const ceiling = w.populationCeiling(p);
+        popMost[p] = Math.max(popMost[p], pop);
+        capMost[p] = Math.max(capMost[p], cap);
+        ceilingMost[p] = Math.max(ceilingMost[p], ceiling);
+        let houses = 0;
+        for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === BuildingType.House && b.progress[s] >= 1000) houses++;
+        housesMost[p] = Math.max(housesMost[p], houses);
+        if (p === 1 && pop >= cap - 2 && cap + rules().buildings[BuildingType.House].populationCap <= ceiling) popStuck++;
+      }
     }
     // Waves: 4 or more AI soldiers within 16 cells of the player's main city.
     if (w.tick % 20 === 0) {
@@ -499,6 +626,9 @@ function play(seed: number): GameRecord {
     fortDeaths,
     bashes,
     bashLog,
+    pop: { most: popMost, cap: capMost, ceiling: ceilingMost, houses: housesMost, soldiers: soldiersMost, stuck: popStuck },
+    plunder: { longest: plunderLongest, deaths: plunderDeaths },
+    aiAway,
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
