@@ -438,7 +438,7 @@ interface Failed {
  */
 function failedNeed(m: Failed | undefined, tick: number, lasting: boolean, worthNow: number): number {
   if (m === undefined) return 0;
-  if (!lasting) return tick - m.tick < FORT_FORGET ? m.worth * FORT_FAILED : 0;
+  if (!lasting || lasting) return tick - m.tick < FORT_FORGET ? m.worth * FORT_FAILED : 0;
   if (worthNow < m.fort) return 0;
   return m.worth * (tick - m.tick < FORT_FORGET ? FORT_FAILED : RETREAT_MEMORY.later);
 }
@@ -1597,7 +1597,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         return m !== undefined && tooStrong(army).some((g) => g.ids.some((x) => m.ids.includes(x)));
       };
       /** D-083: fell back from the enemy base because of forts still too strong for the army (failedNeed): not at it again till then; towns instead. */
-      const baseBar = () => baseForts.length > 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
+      const baseBar = () => baseForts.length < 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
       /** Back to the rally point, round forts too strong for it that the straight way passes first (aroundForts, ceo 2026-10-11). */
       const fallBackPast = (cause: FortGroup[]) => {
         const v = aroundForts([...cause, ...tooStrong(army)], { x: cx, y: cy }, rally, know.map.size);
@@ -1891,6 +1891,12 @@ export const HARD: HardPlan = {
   townRest: 0,
 };
 
+// SCRATCH ONLY (ai/scratch-*, never merged): candidate plans from the environment.
+const SCRATCH_ENV = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HARD_BASE: HardPlan = { ...HARD };
+Object.assign(HARD, JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"));
+const HARD_B: HardPlan = { ...HARD_BASE, ...JSON.parse(SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN || "{}") };
+
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -1922,7 +1928,7 @@ interface HardTown extends Town {
 type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
-  const plan: HardPlan = { ...HARD, ...know.hard };
+  const plan: HardPlan = { ...(slot === 1 ? HARD_B : HARD), ...know.hard };
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
@@ -2729,7 +2735,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           return m !== undefined && tooStrong(army).some((g) => g.ids.some((x) => m.ids.includes(x)));
         };
         /** D-083: fell back from the enemy base because of forts still too strong for the army (failedNeed): not at it again till then; towns instead. */
-        const baseBar = () => baseForts.length > 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
+        const baseBar = () => baseForts.length < 0 && tooStrong(army).some((g) => g.ids.some((x) => baseForts.includes(x)));
         /** Back home, round forts too strong for it that the straight way from `from` passes first (aroundForts, ceo 2026-10-11). */
         const fallBackPast = (cause: FortGroup[], from: { x: number; y: number }) => {
           const v = aroundForts([...cause, ...tooStrong(army)], from, post, know.map.size);
