@@ -20,6 +20,7 @@ import {
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
+import { type AstcSample, showAstcSample } from "../lab/astc.ts";
 import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
@@ -125,6 +126,8 @@ export interface GameOptions {
   artAvailable?: boolean;
   /** The 量測 panel's 美術 was changed since this game began: 量測 starts a game of its own. */
   artChanged?: () => boolean;
+  /** ASTC 樣本 (D-085): where its pages are, when the build has them. */
+  astcSample?: AstcSample;
 }
 
 /** export_log's answer: the command log, the hash every HASH_EVERY ticks and the tick it got to (D-083). */
@@ -191,6 +194,8 @@ export class Game implements GestureHost {
   groupView: number | null = null;
   /** What was selected before the group button was tapped (改成剛才選的 N 名). */
   private beforeGroup: number[] = [];
+  /** What the last ASTC 樣本 showed (D-085; the test hook reads it). */
+  lastAstc: string | null = null;
   /** The last determinism check's result (the test hook reads it). */
   lastCheck: CheckResult | null = null;
   readonly hud: Hud;
@@ -233,6 +238,14 @@ export class Game implements GestureHost {
               else options.life.perf(scenario);
             },
         artAvailable: options.artAvailable === true,
+        astcSample:
+          options.astcSample === undefined
+            ? undefined
+            : () =>
+                void showAstcSample(this.app, options.astcSample as AstcSample).then((r) => {
+                  this.lastAstc = r;
+                  this.lab.log.add(`ASTC 樣本：${r}`);
+                }),
       },
       null,
     );

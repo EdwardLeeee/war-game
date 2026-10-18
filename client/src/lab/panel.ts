@@ -23,6 +23,8 @@ export interface LabHooks {
   requestMeasure?: (scenario: PerfScenario) => void;
   /** This build has the units' atlases (D-085): 美術 can be chosen. */
   artAvailable?: boolean;
+  /** ASTC 樣本 (D-085), when the build has one. */
+  astcSample?: () => void;
 }
 
 /**
@@ -131,6 +133,11 @@ export class LabPanel {
     this.checkBtn.type = "button";
     const copy = make("button", row, "secondary", "複製 log");
     copy.type = "button";
+    if (hooks.astcSample !== undefined) {
+      const astc = make("button", row, "secondary", "ASTC 樣本");
+      astc.type = "button";
+      astc.addEventListener("click", () => hooks.astcSample?.());
+    }
     make("p", this.panel, "lab-note", "量測：開一局 perf 場景（所有系統都開著，雙方人口 120、200 或 360），暖機 5 秒後量 30 秒，量測時不要操作。");
     this.status = make("p", this.panel, "lab-status");
     this.resultBox = make("div", this.panel, "lab-result");

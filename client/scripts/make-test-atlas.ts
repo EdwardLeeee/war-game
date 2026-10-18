@@ -108,6 +108,34 @@ function unit(name: string, k: number): void {
   writeFileSync(join(dir, `${name}.json`), JSON.stringify(json));
 }
 
+/**
+ * A KTX 1 file of ASTC 4×4 blocks, each a constant colour (the void-extent block), w × h: what
+ * the ASTC sample page loads (war-game-ui's is the real spearman).
+ */
+export function astcKtx(w: number, h: number, rgba: [number, number, number, number]): Uint8Array {
+  const blocks = Math.ceil(w / 4) * Math.ceil(h / 4);
+  const head = 64;
+  const out = new Uint8Array(head + 4 + blocks * 16);
+  out.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x31, 0x31, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  const v = new DataView(out.buffer);
+  const fields = [0x04030201, 0, 1, 0, 0x93b0, 0x1908, w, h, 0, 0, 1, 1, 0];
+  fields.forEach((f, i) => v.setUint32(12 + i * 4, f, true));
+  v.setUint32(head, blocks * 16, true);
+  for (let b = 0; b < blocks; b++) {
+    const o = head + 4 + b * 16;
+    out.set([0xfc, 0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff], o);
+    rgba.forEach((c, i) => v.setUint16(o + 8 + i * 2, c * 257, true));
+  }
+  return out;
+}
+
+function astcSample(): void {
+  const dir = join(OUT, "..", "astc-sample", "units", "spear_e");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "spear_e_color_0.astc.ktx"), astcKtx(48, 64, [150, 150, 150, 255]));
+  writeFileSync(join(dir, "spear_e_team_0.astc.ktx"), astcKtx(48, 64, [255, 255, 255, 120]));
+}
+
 function effects(): void {
   const dir = join(OUT, "effects");
   mkdirSync(dir, { recursive: true });
@@ -120,5 +148,6 @@ function effects(): void {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   ATLAS_NAMES.forEach((name, k) => unit(name, k));
   effects();
+  astcSample();
   console.log(`test atlases: ${ATLAS_NAMES.length} units and effects → public/art/test/x3/`);
 }

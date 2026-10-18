@@ -82,6 +82,8 @@ export interface GameHook {
   shots(): number;
   /** The units' atlases (D-085): which, how many pages, units drawn from them; null: the shapes. */
   art(): { label: string; pages: number; units: number; corpses: number } | null;
+  /** What the last ASTC 樣本 showed: shown, no-astc, or why it failed (D-085). */
+  astc(): string | null;
   /** Each town's wall as drawn, world px (D-084). */
   townWalls(): { id: number; x: number; y: number; side: number; visible: boolean }[];
   /** The map's mode (D-074) and what the screen knows: town ids, and how many cells of rock. */
@@ -227,6 +229,7 @@ export function gameHook(game: Game): GameHook {
     shots: () => game.shotsForTest,
     townWalls: () => game.townWallsForTest,
     art: () => game.artForTest,
+    astc: () => game.lastAstc,
     mapMode: () => game.view?.map.mode ?? "fixed",
     knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],
     knownRocks: () => game.view?.rocks.reduce((a, b) => a + b, 0) ?? 0,

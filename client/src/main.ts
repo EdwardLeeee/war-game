@@ -20,6 +20,7 @@ import { fetchPoster } from "./logs/upload.ts";
 import { ART_LABEL, artBase, loadArtChoice } from "./art/pref.ts";
 import { loadUnitArt, type UnitArt } from "./render/unit-art.ts";
 import { measureCutShort } from "./lab/panel.ts";
+import type { AstcSample } from "./lab/astc.ts";
 import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_LOST_TEXT, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
@@ -331,6 +332,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     art,
     artAvailable,
     artChanged,
+    astcSample,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,
@@ -358,6 +360,13 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
  * when they will not load: the shapes. Only the picture: the game itself is the same.
  */
 const artAvailable = __ART_TAG__ !== null || params.art === "test";
+/** ASTC 樣本 (D-085): the Release's spearman at 2× (or the test page's stand-ins). */
+const astcSample: AstcSample | undefined =
+  params.art === "test"
+    ? { unit: "spear_e", png: "./art/test/x3/units/spear_e/", astc: "./art/test/astc-sample/units/spear_e/" }
+    : __ART_TAG__ === null
+      ? undefined
+      : { unit: "spear_e", png: `./art/${__ART_TAG__}/x2/units/spear_e/`, astc: `./art/${__ART_TAG__}/astc-sample/units/spear_e/` };
 let loadedArt: { base: string; art: UnitArt } | null = null;
 /** The choice the game on screen was started with. */
 let artChoiceUsed: string | null = null;
@@ -490,6 +499,7 @@ async function resumeGame(saved: SavedGame): Promise<void> {
     art,
     artAvailable,
     artChanged,
+    astcSample,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,
