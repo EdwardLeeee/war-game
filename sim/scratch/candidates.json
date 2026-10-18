@@ -1,0 +1,14 @@
+{
+ "scripted": [
+  {
+   "name": "main",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ]
+  }
+ ]
+}
