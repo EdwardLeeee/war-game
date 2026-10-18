@@ -75,8 +75,13 @@ def camera_poly(centre, to_px):
     return [to_px(x, y) for x, y in corners]
 
 
-def square(size_px, scene, k=4):
+def square(size_px, scene, k=4, mode="mid"):
+    """The map as its grid (+x right, +y down), the user's choice 2026-10-19 (「小地圖用正方形」): the battlefield
+    stays a diamond, so the camera's view is a tilted frame. mode as diamond()."""
     img, vis = world()
+    if mode == "start":
+        yy, xx = np.mgrid[0:N, 0:N]
+        vis = np.where(np.hypot(xx - 20, yy - 72) < 14, 1.0, 0.0).astype(np.float32)
     S = size_px * k
     cells = Image.fromarray((img * vis[..., None]).clip(0, 255).astype(np.uint8), "RGB").resize((S, S), Image.NEAREST)
     can = cells.convert("RGBA")
@@ -85,6 +90,16 @@ def square(size_px, scene, k=4):
     marks(dr, to_px, 1.2 * k * size_px / 312, scene)
     cam = camera_poly(scene["centre"], to_px)
     dr.line(cam + [cam[0]], fill=(255, 255, 255, 235), width=int(2.2 * k * size_px / 312))
+    unit = k * size_px / 312
+    if mode == "hit":
+        for x, y in ((26, 74), (40, 60)):
+            px, py = to_px(x, y)
+            dr.ellipse([px - 5 * unit, py - 5 * unit, px + 5 * unit, py + 5 * unit], fill=(255, 59, 48, 255))
+            dr.ellipse([px - 11 * unit, py - 11 * unit, px + 11 * unit, py + 11 * unit], outline=(255, 59, 48, 220), width=int(2.5 * unit))
+    if mode == "hint":
+        px, py = to_px(36, 58)
+        for r, w in ((20, 7), (13, 4)):
+            dr.ellipse([px - r * unit, py - r * unit, px + r * unit, py + r * unit], outline=(122, 240, 255, 255), width=int(w * unit))
     return can.resize((size_px, size_px), Image.LANCZOS)
 
 

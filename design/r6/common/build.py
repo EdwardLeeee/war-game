@@ -32,6 +32,7 @@ if __name__ == "__main__":
     minimap.diamond(504, sc).save(OUT / "minimap-diamond.png")
     for mode in ("start", "hit", "hint"):
         minimap.diamond(504, sc, mode=mode).save(OUT / f"minimap-diamond-{mode}.png")
+        minimap.square(312, sc, mode=mode).save(OUT / f"minimap-square-{mode}.png")
     # the battlefield without the selection rings, and home under a raid (R6-13)
     for t in RING:
         img, _ = field.render(sc, art)

@@ -12,9 +12,9 @@
     "INV-38": { left: { idle: 0, map: "closed" } },                          // 沒有閒置的村民：閒置鈕不出現
     "INV-39": { left: { idle: 3, map: "closed" } },                          // 有閒置的村民
     "INV-40": { left: { idle: 3, map: "open" } },                            // 地圖打開
-    "INV-41": { left: { idle: 0, map: "open", minimap: "minimap-diamond-start" }, sel: null, cmds: "none", hp: false, field: "field-THEME-plain" },
-    "INV-42": { left: { idle: 3, map: "open", minimap: "minimap-diamond-hit" }, arrows: [{ x: 600, y: 40, r: -90 }] },
-    "INV-43": { left: { idle: 0, map: "open", minimap: "minimap-diamond-hint" }, sel: null, cmds: "none", hp: false, field: "field-THEME-plain" },
+    "INV-41": { left: { idle: 0, map: "open", minimap: "minimap-square-start" }, sel: null, cmds: "none", hp: false, field: "field-THEME-plain" },
+    "INV-42": { left: { idle: 3, map: "open", minimap: "minimap-square-hit" }, arrows: [{ x: 600, y: 40, r: -90 }] },
+    "INV-43": { left: { idle: 0, map: "open", minimap: "minimap-square-hint" }, sel: null, cmds: "none", hp: false, field: "field-THEME-plain" },
     "NEW-01": { left: { idle: 3, map: "closed" }, sel: null, cmds: "none", hp: false, field: "field-THEME-plain" },   // 地圖收著
     "NEW-02": { left: { idle: 3, map: "closed", recall: "hit" }, sel: null, cmds: "none", hp: false, field: "field-THEME-raid",
                 arrows: [], toast: "家裡被攻擊：主城附近有敵兵" },
@@ -22,7 +22,7 @@
     "NEW-03": { left: { idle: 3, map: "open" }, ret: "active",                // 撤退選位置：小地圖自動打開
                 prompt: { text: "點地面或小地圖：撤到那裡；點主城回家", buttons: [B("退回主城", { ic: "home", cls: "blue" }), B("取消", { cls: "sec" })] } },
     "NEW-04": { left: { idle: 3, map: "closed", alarm: 2 }, arrows: [{ x: 600, y: 40, r: -90 }, { x: 40, y: 150, r: 180 }] },   // 收著時被攻擊
-    "NEW-05": { left: { idle: 3, map: "open", minimap: "minimap-diamond-hit" }, arrows: [{ x: 600, y: 40, r: -90 }] },
+    "NEW-05": { left: { idle: 3, map: "open", minimap: "minimap-square-hit" }, arrows: [{ x: 600, y: 40, r: -90 }] },
   });
   // ----- R6-22 地圖鈕收著時的警報（兩格：亮、暗，0.4 秒換一次；減少動態效果時一直是亮的那格）
   S["NEW-04b"] = { left: { idle: 3, map: "closed", alarm: 2, dim: true }, arrows: [{ x: 600, y: 40, r: -90 }, { x: 40, y: 150, r: 180 }] };
@@ -201,8 +201,9 @@
   const capture = (city, only) => D(only ? `攻下${city ? "大城" : "小鎮"}！只能治理` : `攻下${city ? "大城" : "小鎮"}！搶還是治理？`,
     `<div class="big2">${only ? "" : B("搶", { cls: "plunder", sub: `部隊留下搶 ${city ? 25 : 15} 秒，拿一大筆糧、金、魔晶；城鎮變成廢墟 4 分鐘` })}` +
     `${B("治理", { cls: "govern", sub: `投入金和木修繕 ${city ? 60 : 45} 秒，之後每分鐘產出、加人口；要留兵駐守` })}</div>` +
-    (only ? `<p class="small">這座城這局已經被搶過，只能治理</p>` : `<div class="stayrow">搶：留守 ${B("−", { cls: "sec" })}<span class="num">${city ? 3 : 1}</span>${B("+", { cls: "sec" })} 名</div>`) +
-    `<div class="stayrow">治理：留守 ${B("−", { cls: "sec" })}<span class="num">${city ? 3 : 1}</span>${B("+", { cls: "sec" })} 名</div>` +
+    (only ? `<p class="small">這座城這局已經被搶過，只能治理</p>` : "") +
+    // one stepper for both choices (the user 2026-10-19: 「留守只需要一個統一的就好，反正野只能選一種」); D-084: small 1, big 3
+    `<div class="stayrow">留守 ${B("−", { cls: "sec" })}<span class="num">${city ? 3 : 1}</span>${B("+", { cls: "sec" })} 名</div>` +
     `<p class="small">留守的兵改成堅守，不跟「全軍」走，也會離開原本的編隊。</p>` + btns(B("稍後再決定（點城鎮也能選）", { cls: "sec" })));
   const hint = (random, off) => D("魔晶從城鎮來", `<p>法師要用魔晶。魔晶主要從城鎮來：帶兵打倒城裡的民兵，就能選「搶」或「治理」。</p>
     <p>搶：馬上拿到一筆糧、金和魔晶，每座城一局只能搶一次。治理：修好之後，每分鐘都有魔晶。</p>
@@ -222,8 +223,8 @@
     "INV-121": { dialog: D("預留", `<p class="small">自動訓練只用超過這些的資源；預設留的夠蓋法術營、放 3 發晶砲。</p>` + rv("糧", 150) + rv("木", 200) + rv("金", 150) + rv("魔晶", 15) +
       btns(B("預設", { cls: "sec" }), B("取消", { cls: "sec" }), B("套用", { cls: "pri" }))) },
     "INV-122": { dialog: capture(false, false) }, "INV-123": { dialog: capture(true, false) }, "INV-124": { dialog: capture(false, true) },
-    "INV-125": { dialog: hint(false, false), top: { paused: true }, left: { idle: 0, map: "open", minimap: "minimap-diamond-hint" }, ...NOSEL },
-    "INV-126": { dialog: hint(true, false), top: { paused: true }, left: { idle: 0, map: "open", minimap: "minimap-diamond-start" }, ...NOSEL },
+    "INV-125": { dialog: hint(false, false), top: { paused: true }, left: { idle: 0, map: "open", minimap: "minimap-square-hint" }, ...NOSEL },
+    "INV-126": { dialog: hint(true, false), top: { paused: true }, left: { idle: 0, map: "open", minimap: "minimap-square-start" }, ...NOSEL },
     "INV-127": { dialog: hint(false, true) },
   });
   // ----- R6-21 勝負

@@ -13,7 +13,7 @@ const ITEMS = [
   ["資源列", "INV-19", ".res"], ["速度鈕", "INV-19", ".topright .b:nth-child(1)"], ["暫停鈕", "INV-19", ".topright .b:nth-child(2)"],
   ["選單鈕", "INV-19", ".topright .b:nth-child(3)"], ["暫停橫幅", "INV-26", ".banner"], ["全軍撤退", "INV-19", ".retreat-all .b"],
   ["編隊鈕（每顆）", "INV-19", ".groups .grp"], ["全軍", "INV-19", ".groups .army"], ["退1", "INV-33", ".back-1 .b"],
-  ["全體回城（跳出來）", "NEW-02", ".recall .b"], ["閒置", "INV-39", ".idlebox .b"], ["地圖鈕", "INV-39", ".maptab .b"], ["小地圖（菱形）", "INV-40", ".screen > .minimap"],
+  ["全體回城（跳出來）", "NEW-02", ".recall .b"], ["閒置", "INV-39", ".idlebox .b"], ["地圖鈕", "INV-39", ".maptab .b"], ["小地圖（方形）", "INV-40", ".screen > .minimap"],
   ["選取資訊", "INV-44", ".sel"], ["×", "INV-44", ".sel-head .x"], ["收起", "INV-44", ".sel-head .mini"], ["兵種鈕", "INV-44", ".chip"],
   ["指令區", "INV-84", ".cmds"], ["指令鈕（每顆）", "INV-84", ".cmds .b"], ["隊形鈕（兩格寬）", "INV-84", ".cmds .wide"],
   ["提示列", "INV-108", ".prompt"], ["訊息條", "INV-132", ".toast"], ["被攻擊箭頭", "NEW-04", ".screen > .arrow"],

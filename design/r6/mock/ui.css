@@ -1,11 +1,11 @@
 /* R6 B.3: layout of the formal interface on top of themes.css (the looks). D-087: left column C, diamond minimap. */
 
 /* left: 全體回城 (only when home is hit), 閒置 (only while someone idles), the 地圖 button and the minimap it opens */
-.recall { left: 4px; bottom: 186px; }
+.recall { left: 4px; bottom: 224px; }
 .recall .b { width: 100px; min-height: 50px; flex-direction: column; gap: 0; padding: 3px 0 4px; }
 .recall .b .lb { font-size: 13px; line-height: 1.15; }
 .recall .b .sub { line-height: 1.1; }
-.idlebox { left: 4px; bottom: 132px; }
+.idlebox { left: 4px; bottom: 172px; }
 .idlebox .b { width: 68px; flex-direction: column; gap: 1px; padding: 2px 0; }
 .idlebox .b .lb { font-size: 12px; line-height: 1.05; }
 .idlebox .cnt, .maptab .badge { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
@@ -237,5 +237,5 @@
 .screen:not(:has(.sel)) > .toast { bottom: 110px; }
 
 /* R6-04: the square minimap of a square map, in a framed panel */
-.screen > .minimap.sqmap { width: 120px; height: 120px; padding: 5px; filter: none; }
+.screen > .minimap.sqmap { width: 112px; height: 112px; padding: 4px; filter: none; }
 .screen > .minimap.sqmap img { border-radius: 4px; }
