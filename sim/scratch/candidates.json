@@ -1,0 +1,14 @@
+{
+ "scripted": [
+  {
+   "name": "c4p48",
+   "difficulty": "hard",
+   "groups": [
+    "push",
+    "push-random",
+    "push-auto",
+    "push-auto-random"
+   ]
+  }
+ ]
+}
