@@ -182,6 +182,32 @@ python3 common/memory_b1.py x3
 
 - 小建築（民居、伐木場、礦場、糧倉、鐵匠鋪）隔 2 格就露出上半身；兵營、法術營 3 格；主城 4 格；箭樓 5 格。農田不擋人。
 
+## R6：量產圖集（art-v2）
+
+格式見 `atlas-buildings.md`（client 2026-10-18 同意）。核准的樣子照 B1-02 A，製作方式 ceo 2026-10-18 同意：
+每棟各一張完成、施工 2、施工 3、受損；施工 1（地基）和瓦礫依占地大小和文化共用。
+
+```bash
+# 算圖（CI）：128 張，以圖集影格命名（common/run.py 的 prod_*）
+gh workflow run design-render --ref <分支> -f round=b1 \
+  -f targets='["prod_E_0","prod_E_1","prod_E_2","prod_E_3","prod_E_4","prod_E_5","prod_E_6","prod_W_0","prod_W_1","prod_W_2","prod_W_3","prod_W_4","prod_W_5","prod_W_6","prod_nodes_0","prod_nodes_1","prod_nodes_2"]'
+# 打包（CI）：一個或多個算圖 run，後面的蓋前面的 -> artifact production-buildings、production-effects-atlas
+gh workflow run design-render --ref <分支> -f round=buildings-atlas -f targets='["<run>", "<run>"]'
+# 本機看圖（下載 b1-prod_* 到 build/b1/prod/ 之後）
+python3 common/atlas_b1.py --scale 3 && python3 common/atlas_b1.py --scale 2
+python3 common/compare_b1.py sheet
+python3 common/compare_b1.py compare --approved <B1 算圖的 core3/、states/>
+```
+
+| 檔名 | 內容 |
+|---|---|
+| `R6-A1-量產對照-主城東陸-mobile.png`、`…-民居西陸-…`、`…-兵營東陸-…` | 核准的 B1-02 A 和量產圖集並排：完成、施工 1–3、受損、瓦礫，放大與實際大小（大、小、中建築各一棟） |
+| `R6-A2-建築量產總表-東陸-mobile.png`、`…-西陸-…` | 每一張建築影格，照遊戲的畫法組起來 |
+| `R6-A3-資源點量產總表-mobile.png` | 每一張資源點影格 |
+
+- 其他建築也套 B1-02 A（`blender/states.py` 的 docstring）：施工 2 最多切到 45% 高；沒有標記屋頂和牆的（西陸圓塔、大城箭樓）受損時在頂上起火。
+- 記憶體實測見 `atlas-buildings.md` 第 9 節。
+
 ## 給 client 的說明（和兵種圖集第 2 版不同的地方）
 
 這一輪不出量產圖集，只先定好做法：
@@ -202,28 +228,36 @@ python3 common/memory_b1.py x3
 
 ## 給 client：晶砲預警圈 B（建議做法，等 client 確認）
 
-使用者選了 B 符文漸強。它會轉、會變亮，建議不出 30 格的圖，由 client 用幾張靜態的圖組起來：
+使用者選了 B 符文漸強。它會轉、會變亮，不出 30 格的圖，由 client 用幾張靜態的圖組起來。
+量產（art-v2 的 `effects/`，ceo、client 2026-10-18 同意）由 `design/production/common/effects.py` 出，名稱是 `<圖>_00`，
+`effects` 表裡每張寫 `top_down: true` 和 `radius_m`（圖裡那個圓的半徑，公尺）。
 
-1. **需要的圖**（ui 量產時出，3 倍和 2 倍各一套，俯視、正圓，畫在方形的圖裡）：
+1. **需要的圖**（3 倍和 2 倍各一套，俯視、正圓，畫在方形的圖裡）：
    - `warn_sigil`：法陣的線（雙圈、六個晶形記號、兩層六邊形、三條對角線、中心小六邊形），橘紅色 #FF7026，透明背景。
-   - `warn_sigil_glow`：同一個法陣模糊後的光暈，金色 #FFD682。
+   - `warn_sigil_gold`：同樣的線，金色 #FFD682。疊在橘色上面慢慢顯出來，線就由橘轉金。
+     - 量產時加的第六張：只用五張的話，線一直是橘色，和核准的 GIF 不一樣。
+   - `warn_sigil_glow`：同一個法陣模糊後的光暈，橘紅色。
    - `warn_fill`：填滿整圈的柔和圓盤，邊緣稍微淡出，橘紅色。
-   - `warn_rim`：外圈下面那道深色線（#6E1A08），讓圈在淺色鋪面上也看得清楚。
-   - `warn_core`：中心的金白光團（最後 0.25 秒用）。
-   - 大小照半徑 1.5 格（3 公尺）畫；client 依 sim 給的半徑縮放。
+   - `warn_rim`：外圈下面那道深色線（#6E1A08，透明度 160 已經畫在圖裡），讓圈在淺色鋪面上也看得清楚。
+   - `warn_core`：中心的金白光團（最後 0.25 秒用），圖裡畫的是半徑的 75%（`radius_m` 2.25）。
+   - 其他五張照半徑 1.5 格（3 公尺）畫（`radius_m` 3）。client 照 sim 給的半徑 ÷ `radius_m` 縮放。
 2. **client 怎麼組**（PixiJS）：
    - 一個 container 放在預警圈的中心，`scale.y = 0.5`，把正圓壓成地面的橢圓（鏡頭仰角 30°）。
-   - 法陣兩張圖放在 container 裡面，每秒轉 20 度（`rotation` 加在子物件上，壓扁的是外層，所以轉起來仍貼著地面）。
+   - 由下往上依序畫：`warn_fill`、`warn_sigil_glow`、`warn_rim`、`warn_sigil`、`warn_sigil_gold`、`warn_core`。
+   - 法陣三張圖（線、金線、光暈）每秒轉 20 度（`rotation` 加在子物件上，壓扁的是外層，所以轉起來仍貼著地面）。
    - 只用透明度調亮度（sprite 的 tint 不能變亮）：
      - 校準的進度 k = 1 − ticksLeft / 30（0 → 1）；經過的秒數 t = k × 1.5。
      - 脈動 pulse = 0.5 + 0.5 × cos(2π × (3t + 2t²))：每秒 3 下加快到 9 下。
      - `warn_fill` 透明度 = (0.12 + 0.35k) × (0.75 + 0.25 × pulse)。
      - `warn_sigil` 透明度 = min(1, (0.45 + 0.55k) × (0.8 + 0.2 × pulse))。
-     - `warn_sigil_glow` 透明度 = 0.6 × k × (0.8 + 0.2 × pulse)（法陣由橘轉金的感覺）。
-     - `warn_core`：最後 5 個 tick，大小從半徑的 25% 長到 75%，透明度 0.5 → 0.9。
+     - `warn_sigil_gold` 透明度 = `warn_sigil` 的透明度 × 0.7k（法陣由橘轉金）。
+     - `warn_sigil_glow` 透明度 = 0.6 × `warn_sigil` 的透明度。
+     - `warn_rim`：透明度 1。
+     - `warn_core`：最後 5 個 tick，大小從半徑的 25% 長到 75%（圖的縮放 1/3 → 1），透明度 0.5 → 0.9。
    - 畫在地面層之上、單位之下；遊戲速度和暫停照 sim 的時間走。
-3. **好處**：五張靜態圖，3 倍未壓縮合計約 2 MB 以內（一張 400×400 左右），遠小於 30 格整圈的圖；半徑不同的預警圈也能共用。
-4. 設計稿的合成（`common/warn.py` 的 `frame_b`）就是照這個算法畫的，client 照著做，畫面會和核准的 GIF 一樣。
+3. **好處**：六張靜態圖，一張 380×380 左右，和揚塵放在同一頁；遠小於 30 格整圈的圖，半徑不同的預警圈也能共用。
+4. 核准的 GIF 是 `common/warn.py` 的 `frame_b` 畫的。照上面的組法和它並排比過四個時間點，幾乎一樣，只有外圈的深色線稍微偏橘。
+   原因是核准稿直接把深色線畫成那個顏色，遊戲是一層層疊上去。
 
 ## 貼圖記憶體
 

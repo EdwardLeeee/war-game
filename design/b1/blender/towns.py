@@ -218,6 +218,8 @@ def tower_state(root, c, state):
             if states._bbox(ob)[5] > 0.3:
                 states._drop(ob)
         states.rubble(root, P, c, 2 * kit.CELL, 2 * kit.CELL, seed=21 + (0 if c == "E" else 3))
+    elif state == "damaged":        # R6 production: the look of 受損 A (no tagged roof: the fire is at the top)
+        states.fire_at_top(root, P, seed=31 + (0 if c == "E" else 3))
     else:
         raise ValueError(state)
 

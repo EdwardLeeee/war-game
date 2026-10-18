@@ -2,8 +2,10 @@
 
 The format was agreed with war-game-client (client/docs/sprite-atlas.md section 2):
 - art-vN-x3.tar.gz, art-vN-x2.tar.gz: one per scale; at the top level units/<unit>/ (<unit>.json,
-  <unit>_<layer>_<k>.png, memory.json; no raw/) and effects/ (effects.json, effects_0.png), and
-  art-release.json (tag, commit, the source runs, every file's sha256);
+  <unit>_<layer>_<k>.png, memory.json; no raw/), effects/ (effects.json, effects_<k>.png), from art-v2
+  buildings/ (buildings_<E|W>.json and their pages, memory.json) and nodes/ (nodes.json, its pages,
+  memory.json) (design/b1/atlas-buildings.md), and art-release.json (tag, commit, the source runs,
+  every file's sha256);
 - astc-sample.tar.gz: one unit's 2x colour and player-colour pages as ASTC 4 x 4 in KTX 1
   (<unit>_<layer>_<k>.astc.ktx, astcenc -cl), for the client's ASTC test page on the iPhone;
 - SHA256SUMS: sha256sum format, every file above.
@@ -121,6 +123,29 @@ def write_targz(path, files):
         gz.write(raw.getvalue())
 
 
+ATLAS_FORMATS = {"buildings": "war-game buildings 1", "nodes": "war-game nodes 1"}
+
+
+def atlas_files(src, folder, scale):
+    """{name: bytes} of buildings/ or nodes/ at one scale (atlas_b1.py): every manifest, its pages, memory.json."""
+    found = sorted(p.parent for p in src.rglob(f"atlas_{scale}/{folder}/memory.json"))
+    if len(found) != 1:
+        die(f"{src}: {len(found)} atlas_{scale}/{folder}/")
+    d = found[0]
+    names = ["memory.json"]
+    for mp in sorted(d.glob("*.json")):
+        if mp.name == "memory.json":
+            continue
+        man = json.loads(mp.read_text())
+        if man.get("format") != ATLAS_FORMATS[folder] or man.get("scale") != float(scale[1:]):
+            die(f"{mp}: format {man.get('format')!r}, scale {man.get('scale')!r}")
+        names += [mp.name] + [pg for layer in sorted(man["pages"]) for pg in man["pages"][layer]]
+    extra = sorted({p.name for p in d.iterdir()} - set(names))
+    if extra:
+        die(f"{d} has files no manifest lists: {extra}")
+    return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
+
+
 def with_manifest(files, info):
     """Add art-release.json (the release info and every other file's sha256) to files."""
     info = dict(info, files={n: {"sha256": sha256(b), "bytes": len(b)} for n, b in sorted(files.items())})
@@ -155,10 +180,13 @@ def main():
     for p in out.iterdir():
         p.unlink()
     sources = {"units": {u: s for u, s in sorted(spec["units"].items())}, "effects": spec["effects"]}
+    if "buildings" in spec:
+        sources["buildings"] = spec["buildings"]
     base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources}
     notes = [f"{a.tag}：{spec.get('note', '')}", "", f"commit {a.commit or '(local)'}", ""]
     eff_src = fetch(spec["effects"]["run"], spec["effects"]["artifact"], dl)
     unit_src = {u: fetch(s["run"], s["artifact"], dl) for u, s in sources["units"].items()}
+    bld_src = fetch(spec["buildings"]["run"], spec["buildings"]["artifact"], dl) if "buildings" in spec else None
     for scale in SCALES:
         files, rgba, astc_b = {}, 0, 0
         for u, src in unit_src.items():
@@ -167,12 +195,21 @@ def main():
             astc_b += mem["total_astc_4x4_bytes"]
             files.update({f"units/{u}/{n}": b for n, b in fs.items()})
         files.update({f"effects/{n}": b for n, b in effects_files(eff_src, scale).items()})
+        extra = ""
+        if bld_src:
+            for folder in ("buildings", "nodes"):
+                fs = atlas_files(bld_src, folder, scale)
+                files.update({f"{folder}/{n}": b for n, b in fs.items()})
+                m = json.loads(fs["memory.json"])
+                rgba += m["total_rgba8_bytes"]
+                astc_b += m["total_astc_4x4_bytes"]
+            extra = "＋建築＋資源點"
         files = with_manifest(files, dict(base, scale=scale))
         name = f"{a.tag}-{scale}.tar.gz"
         write_targz(out / name, files)
-        notes.append(f"- {name}：{len(unit_src)} 種兵種＋揚塵，{(out / name).stat().st_size / 2 ** 20:.1f} MB；"
-                     f"{len(unit_src)} 種全部載入 {rgba / 2 ** 20:.1f} MB（未壓縮）／{astc_b / 2 ** 20:.1f} MB（ASTC 4×4）"
-                     "，照各兵種的 memory.json 加總")
+        notes.append(f"- {name}：{len(unit_src)} 種兵種＋效果{extra}，{(out / name).stat().st_size / 2 ** 20:.1f} MB；"
+                     f"全部載入 {rgba / 2 ** 20:.1f} MB（未壓縮）／{astc_b / 2 ** 20:.1f} MB（ASTC 4×4）"
+                     "，照各 memory.json 加總，效果另計")
     if a.astcenc:
         s = spec["astc_sample"]
         u, scale = s["unit"], f"x{s['scale']}"

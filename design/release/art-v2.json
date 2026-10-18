@@ -1,0 +1,21 @@
+{
+ "tag": "art-v2",
+ "note": "核准的 12 種兵種、建築與資源點（東陸、西陸各一組）、揚塵與晶砲預警圈。",
+ "units": {
+  "farmer_e": {"run": 36849835568, "artifact": "production-farmer_e"},
+  "spear_e": {"run": 36849835568, "artifact": "production-spear_e"},
+  "xbow_e": {"run": 36850248764, "artifact": "production-xbow_e"},
+  "hcav_e": {"run": 36849835568, "artifact": "production-hcav_e"},
+  "siege_e": {"run": 36849835568, "artifact": "production-siege_e"},
+  "mage_e": {"run": 36849835568, "artifact": "production-mage_e"},
+  "farmer_w": {"run": 36849835568, "artifact": "production-farmer_w"},
+  "pike_w": {"run": 36849835568, "artifact": "production-pike_w"},
+  "bow_w": {"run": 36849835568, "artifact": "production-bow_w"},
+  "knight_w": {"run": 36849835568, "artifact": "production-knight_w"},
+  "siege_w": {"run": 36849835568, "artifact": "production-siege_w"},
+  "mage_w": {"run": 36849835568, "artifact": "production-mage_w"}
+ },
+ "effects": {"run": 39132395283, "artifact": "production-effects-atlas"},
+ "buildings": {"run": 39132395283, "artifact": "production-buildings"},
+ "astc_sample": {"unit": "spear_e", "scale": 2, "layers": ["color", "team"]}
+}

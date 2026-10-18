@@ -1,6 +1,8 @@
 # Final design renders (Blender, Cycles CPU) for the ui rounds.
 # The developer laptop keeps a 2 GB memory reserve for everyone else, so big or
 # supersampled renders run here instead. Not a required check.
+# round=buildings-atlas packs a b1 run of the prod_* targets into the building and
+# resource-point atlases (design/b1/atlas-buildings.md) and makes the world effects.
 # round=release (from main only) packs finished production runs into a GitHub
 # Release art-vN for the client (design/release/pack.py).
 name: design-render
@@ -9,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       round:
-        description: "round2, round3, round4, round5, production, b1 or release"
+        description: "round2, round3, round4, round5, production, b1, buildings-atlas or release"
         default: "round5"
       tag:
         description: "release only: the tag, art-vN (design/release/<tag>.json lists the source runs)"
@@ -18,7 +20,7 @@ on:
         description: "release only: true publishes the GitHub Release (main only); false only packs, as an artifact"
         default: "false"
       targets:
-        description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare","rosterE1","rosterE2","rosterW1","rosterW2","rosterW3"]; b1: ["core3","states_main_city","states_house","states_barracks","towns_E","towns_W"] (design/b1/common/run.py TARGETS); production: unit keys, "effects", or review-<unit>, e.g. ["farmer_e","spear_e","xbow_e","hcav_e","siege_e","mage_e","farmer_w","pike_w","bow_w","knight_w","siege_w","mage_w"]'
+        description: 'JSON list: buildings-atlas ["<run id of a b1 run of the prod_* targets>", ...] (later runs replace pieces of earlier ones); round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare","rosterE1","rosterE2","rosterW1","rosterW2","rosterW3"]; b1: ["core3","states_main_city","states_house","states_barracks","towns_E","towns_W"] (design/b1/common/run.py TARGETS); production: unit keys, "effects", or review-<unit>, e.g. ["farmer_e","spear_e","xbow_e","hcav_e","siege_e","mage_e","farmer_w","pike_w","bow_w","knight_w","siege_w","mage_w"]'
         default: '["mageWA", "mageWB", "mageWC", "compare"]'
   push:
     branches: ["design/**"]
@@ -42,7 +44,7 @@ env:
 
 jobs:
   render:
-    if: github.event.inputs.round != 'release'
+    if: github.event.inputs.round != 'release' && github.event.inputs.round != 'buildings-atlas'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     strategy:
@@ -157,6 +159,61 @@ jobs:
 
       - name: Upload world effects (effects.json and its page, 3x and 2x)
         if: always() && env.ROUND == 'production' && matrix.target == 'effects'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-effects-atlas
+          path: design/production/build/effects_x*/
+          retention-days: 90
+
+  # the building and resource-point atlases from the prod_* renders of a finished b1 run, 3x and 2x
+  # (design/b1/common/atlas_b1.py), and the world effects: the dust and the warning circle
+  # (design/production/common/effects.py)
+  buildings-atlas:
+    if: github.event.inputs.round == 'buildings-atlas'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read       # download the renders of the source run
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_RUNS: ${{ join(fromJSON(github.event.inputs.targets), ' ') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q python3-pil python3-numpy
+
+      - name: Download the prod_* renders of the source runs, in order
+        run: |
+          mkdir -p design/b1/build/b1/prod
+          for run in $SOURCE_RUNS; do
+            if ! [[ "$run" =~ ^[0-9]+$ ]]; then
+              echo "::error::targets must be run ids, got '$run'"; exit 1
+            fi
+            gh run download "$run" --pattern 'b1-prod_*' --dir "$RUNNER_TEMP/renders-$run"
+            for d in "$RUNNER_TEMP/renders-$run"/b1-prod_*; do cp -r "$d"/b1/prod/. design/b1/build/b1/prod/; done
+          done
+          echo "$(ls design/b1/build/b1/prod/*_x3.json | wc -l) pieces"
+
+      - name: Atlases and effects, 3x and 2x
+        run: |
+          /usr/bin/python3 design/b1/common/atlas_b1.py --scale 3
+          /usr/bin/python3 design/b1/common/atlas_b1.py --scale 2
+          /usr/bin/python3 design/production/common/effects.py --scale 3
+          /usr/bin/python3 design/production/common/effects.py --scale 2
+
+      - name: Upload the building atlases
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-buildings
+          path: design/b1/build/atlas_x*/
+          retention-days: 90
+
+      - name: Upload the world effects
         uses: actions/upload-artifact@v4
         with:
           name: production-effects-atlas

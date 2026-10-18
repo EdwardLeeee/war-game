@@ -90,12 +90,50 @@ TARGETS["b1b"] = ([dict(kind="tower_fine", culture="E", probe=True)]
                      for st in ("sown", "growing", "ripe")])
 TARGETS["states3"] = [dict(kind=k, culture=c, state="destroyed_b") for k in ("main_city", "barracks") for c in CULTURES]
 
+
+# R6 production (art-v2, design/b1/atlas-buildings.md, agreed with client 2026-10-18): every piece is named by its
+# atlas frame. Each building: finished, construction 2 and 3, damaged (B1-02 A); per footprint size and culture the
+# shared foundation (construction 1) and rubble, from the three buildings B1-02 was drawn on; the farm's own
+# foundation and its three crop stages; the big city's tower finished, damaged and torn down; the resource points.
+def _prod_buildings(c):
+    kinds = {"main_city": "main_city", "house": "house", "lumber_camp": "lumber_camp", "mine": "mine",
+             "granary": "granary", "barracks": "barracks", "range": "range", "mage_hall": "mage_hall",
+             "arrow_tower": "tower_fine" if c == "E" else "tower", "stable": "stable"}
+    out = [dict(kind=k, culture=c, state=st, name=f"{n}_{c}_{s}") for n, k in kinds.items()
+           for s, st in (("done", "done"), ("build2", "build_a2"), ("build3", "build_a3"), ("damaged", "damaged_a"))]
+    for size, k in ((2, "house"), (3, "barracks"), (4, "main_city")):
+        out += [dict(kind=k, culture=c, state="build_a1", name=f"found_{size}x{size}_{c}"),
+                dict(kind=k, culture=c, state="destroyed_a", name=f"rubble_{size}x{size}_{c}")]
+    out.append(dict(kind="farm_fine", culture=c, state="build_a1", opts=dict(stage="sown"), name=f"farm_{c}_build1"))
+    out += [dict(kind="farm_fine", culture=c, opts=dict(stage=s), name=f"farm_{c}_{s}") for s in ("sown", "growing", "ripe")]
+    out += [dict(kind="ttower", culture=c, state=st, name=f"town_tower_{c}_{s}")
+            for s, st in (("done", "intact"), ("damaged", "damaged"), ("rubble", "rubble"))]
+    return out
+
+
+PROD_NODES = ([dict(kind="tree", culture=c, opts=dict(variant=v), name=f"tree_{c}_v{v}") for c in CULTURES for v in (0, 1, 2)]
+              + [dict(kind="tree", culture=c, opts=dict(state="stump"), name=f"tree_{c}_stump") for c in CULTURES]
+              + [dict(kind=k, culture="E", opts=dict(variant=v, state=st), name=f"{k}_v{v}_{st}") for k, sts in
+                 (("gold", ("full", "mined", "depleted")), ("berry", ("full", "depleted")),
+                  ("crystal", ("full", "depleted"))) for v in (0, 1) for st in sts])
+PROD_CHUNK = 8                        # pieces per CI job
+for _c in CULTURES:
+    _all = _prod_buildings(_c)
+    for _i in range(0, len(_all), PROD_CHUNK):
+        TARGETS[f"prod_{_c}_{_i // PROD_CHUNK}"] = _all[_i:_i + PROD_CHUNK]
+for _i in range(0, len(PROD_NODES), PROD_CHUNK):
+    TARGETS[f"prod_nodes_{_i // PROD_CHUNK}"] = PROD_NODES[_i:_i + PROD_CHUNK]
+# again after the first run (2026-10-18): the pieces states.fire_at_top burns, without the soot that floated
+TARGETS["prod_fire"] = [pc for _c in CULTURES for pc in _prod_buildings(_c)
+                        if pc["name"] in ("arrow_tower_W_damaged", "town_tower_E_damaged", "town_tower_W_damaged")]
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
 FOLDER.update({t: "states" for t in TARGETS if t.startswith(("states2", "states3"))})
 FOLDER.update({"b1b": "b1b", "teamfix_b101": "b101", "teamfix_core3": "core3", "teamfix_b104": "b104", "teamfix_states": "states"})
 FOLDER.update({t: "towns" for t in TARGETS if t.startswith("towns2")})
+FOLDER.update({t: "prod" for t in TARGETS if t.startswith("prod_")})
 
 
 def pieces(target):
@@ -103,6 +141,8 @@ def pieces(target):
 
 
 def piece_name(pc):
+    if "name" in pc:
+        return pc["name"]
     s = pc.get("state", "done")
     tag = pc.get("tag", "")
     return f"{pc['kind']}_{pc['culture']}" + ("" if s == "done" else f"_{s}") + (f"_{tag}" if tag else "")
