@@ -4,7 +4,7 @@
 // tint leaves dark. Nodes keep their own colours.
 
 import { Container, type Renderer, Graphics, Rectangle, Text, type Texture } from "pixi.js";
-import { BuildingType, NodeKind, NO_OWNER, NEUTRAL, UnitType } from "../sim.ts";
+import { BuildingType, NodeKind, NO_OWNER, NEUTRAL, TownSize, UnitType } from "../sim.ts";
 
 /** Texture pixels per world px, so shapes stay sharp at MAX_ZOOM on a 3x screen. */
 const RES = 4;
@@ -57,7 +57,10 @@ export interface Atlas {
   glyphs: Record<number, Texture>;
   /** Indexed by NodeKind; 32 x 32. */
   nodes: Texture[];
-  flag: Texture;
+  /** A town's wall (D-084): three merlons and a gate, white for the tint, 64 x 64, scaled to its side (render/town-wall.ts). */
+  wall: Texture;
+  /** Indexed by TownSize: 鎮 and 城, written on the wall. */
+  townGlyphs: Texture[];
 }
 
 function shape(renderer: Renderer, size: number, draw: (g: Graphics) => void): Texture {
@@ -161,10 +164,17 @@ function buildAtlas(renderer: Renderer): Atlas {
     g.poly([7, 12, 11, 19, 7, 26, 3, 19]).fill(0x9cf5ff).stroke({ width: 1.2, color: 0x1b6f7c });
   });
 
-  const flag = shape(renderer, 32, (g) => {
-    g.moveTo(9, 29).lineTo(9, 3).stroke({ width: 2.5, color: INK });
-    g.poly([10, 4, 28, 9, 10, 15]).fill(0xffffff).stroke({ width: 1.5, color: INK });
+  // The user's choice B (D-084): a stretch of wall, its gate dark whatever the town's colour.
+  const wall = shape(renderer, 64, (g) => {
+    g.poly([4, 62, 4, 5, 15, 5, 15, 16, 26, 16, 26, 5, 38, 5, 38, 16, 49, 16, 49, 5, 60, 5, 60, 62]).fill(0xffffff).stroke({ width: 3, color: INK });
+    g.moveTo(25, 62).lineTo(25, 53).arc(32, 53, 7, Math.PI, 0).lineTo(39, 62).closePath().fill(INK);
   });
+  const townGlyphs: Texture[] = [];
+  for (const [size, ch] of [[TownSize.Small, "鎮"], [TownSize.Large, "城"]] as const) {
+    const t = new Text({ text: ch, style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 30, fontWeight: "700", fill: INK } });
+    townGlyphs[size] = renderer.generateTexture({ target: t, resolution: RES });
+    t.destroy();
+  }
 
-  return { units, ring, white, building, farm, tower, occupied, hold, glyphs, nodes, flag };
+  return { units, ring, white, building, farm, tower, occupied, hold, glyphs, nodes, wall, townGlyphs };
 }

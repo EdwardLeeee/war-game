@@ -868,7 +868,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await expect(dialog).toBeVisible();
   const keepGovern = dialog.getByRole("status", { name: "留守幾名（治理）" });
   await expect(keepGovern).toHaveText("1");
-  await expect(dialog.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("0");
+  await expect(dialog.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("1");
   for (const b of await visibleBoxes(page, ".keep .step")) expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
   const more = dialog.getByRole("button", { name: "多留守 1 名（治理）" });
   await more.tap();
@@ -949,21 +949,21 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await expect.poll(async () => (await selection(page))?.units).toEqual(await ownIds(page, [1, 2, 3]));
 });
 
-test("留守：搶預設不留人；所有的兵都留守時，全軍會說明", async ({ page }) => {
+test("留守：搶也預設留最少駐軍數（小鎮 1 名，D-084）；所有的兵都留守時，全軍會說明", async ({ page }) => {
   const army = await ownIds(page, [1, 2, 3]);
   await place(page, army, [{ x: 30, y: 66 }, { x: 31, y: 66 }, { x: 29, y: 66 }, { x: 30, y: 67 }]);
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
   const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
   await dialog.getByRole("button", { name: /^搶/ }).tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
-  expect(await garrison(page, 0)).toEqual([]);
+  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "town_choice").at(-1)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
+  await expect.poll(() => garrison(page, 0)).toHaveLength(1);
   // Station everyone from the town's selection info: 全軍 then has nobody to take.
   await centre(page, 30, 66);
   await select(page, []);
   await tap(page, await townSpot(page));
   const panel = page.locator(".sel-info");
   const more = panel.getByRole("button", { name: "多留守 1 名" });
-  for (let i = 0; i < army.length; i++) await more.tap();
+  for (let i = 1; i < army.length; i++) await more.tap();
   await expect(panel.getByRole("status", { name: "留守幾名" })).toHaveText(`${army.length}`);
   expect((await garrison(page, 0)).slice().sort((x, y) => x - y)).toEqual(army);
   await expect(armyButton(page)).toHaveText("全軍 0");
@@ -975,6 +975,57 @@ test("留守：搶預設不留人；所有的兵都留守時，全軍會說明",
   await page.getByRole("button", { name: "全軍撤退" }).tap();
   await expect(toast(page, "沒有可以撤退的士兵")).toBeVisible();
   expect((await sent(page)).length, "no order").toBe(before);
+});
+
+test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少駐軍數，改成堅守、離開編隊、不跟全軍；搶完變廢墟，改回積極、回到全軍，不會因此回原本的編隊", async ({ page }) => {
+  const spear = await ownIds(page, [1]);
+  const inside = spear.slice(0, 2);
+  await place(page, inside, [{ x: 30, y: 67 }, { x: 31, y: 66 }]);
+  await select(page, spear);
+  await saveGroup(page, GROUP_1);
+  // 自動補兵 off: with it on, group 1 (short of him) would take him back once he is free (D-050).
+  const refill = page.locator(".sel-info").getByRole("button", { name: /^自動補兵：/ });
+  await refill.tap();
+  await expect(refill).toHaveText("自動補兵：關");
+  await select(page, []);
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  await expect(dialog.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("1");
+  await dialog.getByRole("button", { name: /^稍後再決定/ }).tap();
+  await expect(dialog).toBeHidden();
+  // Later, from the town's selection info.
+  await centre(page, 30, 66);
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).find((t) => t.id === 0)?.state).toBe(1);
+  await tap(page, await townSpot(page));
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: /^稍後再決定/ }).tap();
+  await page.locator(".sel-info").getByRole("button", { name: "搶", exact: true }).tap();
+  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "town_choice").at(-1)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
+  // The nearest stays (1 cell from the centre), holds, and leaves group 1 and 全軍.
+  await expect.poll(() => garrison(page, 0)).toEqual([inside[0]]);
+  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance").at(-1)).toMatchObject({ c: "stance", u: [inside[0]], stance: 1, auto: true });
+  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).not.toContain(inside[0]);
+  const army = await ownIds(page, [1, 2, 3]);
+  await expect(armyButton(page)).toHaveText(`全軍 ${army.length - 1}`);
+  // Plundered: ruins. He goes back to 積極 and 全軍, not to group 1.
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_plundered", town: 0, by: 0, food: 300, gold: 300, crystal: 75 }));
+  await expect.poll(() => garrison(page, 0)).toEqual([]);
+  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance").at(-1)).toMatchObject({ c: "stance", u: [inside[0]], stance: 0, auto: true });
+  await expect(armyButton(page)).toHaveText(`全軍 ${army.length}`);
+  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).not.toContain(inside[0]);
+});
+
+test("搶的留守（D-084）：大城要 3 名，城裡只有 2 名時留 2 名", async ({ page }) => {
+  const spear = await ownIds(page, [1]);
+  // The big city at (48, 48), radius 6; its tower stands at (47, 45).
+  await place(page, spear.slice(0, 2), [{ x: 48, y: 50 }, { x: 50, y: 49 }]);
+  await place(page, spear.slice(2), [{ x: 20, y: 80 }]);
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 3, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  await expect(dialog.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("3");
+  await dialog.getByRole("button", { name: /^搶/ }).tap();
+  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "town_choice").at(-1)).toMatchObject({ c: "town_choice", town: 3, choice: 0 });
+  await expect.poll(async () => (await garrison(page, 3)).slice().sort((a, b) => a - b)).toEqual(spear.slice(0, 2).sort((a, b) => a - b));
 });
 
 test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現有／目標；訓練出來就走去會合；可以關掉（D-026、D-054）", async ({ page }, info) => {

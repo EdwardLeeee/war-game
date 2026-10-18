@@ -80,6 +80,8 @@ export interface GameHook {
   remove(ids: number[]): void;
   /** Arrows drawn from `shot` events so far (round 7). */
   shots(): number;
+  /** Each town's wall as drawn, world px (D-084). */
+  townWalls(): { id: number; x: number; y: number; side: number; visible: boolean }[];
   /** The map's mode (D-074) and what the screen knows: town ids, and how many cells of rock. */
   mapMode(): string;
   knownTowns(): number[];
@@ -221,6 +223,7 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.remove(ids);
     },
     shots: () => game.shotsForTest,
+    townWalls: () => game.townWallsForTest,
     mapMode: () => game.view?.map.mode ?? "fixed",
     knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],
     knownRocks: () => game.view?.rocks.reduce((a, b) => a + b, 0) ?? 0,

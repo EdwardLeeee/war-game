@@ -361,6 +361,11 @@ export class Game implements GestureHost {
     return this.renderer?.shotCount ?? 0;
   }
 
+  /** Each town's wall as drawn (D-084), for the test hook. */
+  get townWallsForTest(): { id: number; x: number; y: number; side: number; visible: boolean }[] {
+    return this.renderer?.townWalls ?? [];
+  }
+
   /** Terrain repaints on exploring rock (random map, D-074), for the test hook. */
   get terrainRepaintsForTest(): { count: number; totalMs: number; maxMs: number } | null {
     return this.renderer?.terrainRepaints ?? null;

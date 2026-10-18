@@ -264,9 +264,9 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   // 8. 攻下城鎮後治理並留守（民兵全倒、只剩我方軍隊 → 跳出兩個大按鈕，各有「留守 − N + 名」；D-026）
   const choice = page.getByRole("dialog", { name: /搶還是治理/ });
   await expect(choice).toBeVisible({ timeout: 180_000 });
-  // 治理 keeps the least a small town needs (1); 搶 keeps nobody.
+  // 治理 and 搶 both keep the least a small town needs (1; D-084).
   await expect(choice.getByRole("status", { name: "留守幾名（治理）" })).toHaveText("1");
-  await expect(choice.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("0");
+  await expect(choice.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("1");
   await shot(page, info, "8-town-choice");
   await choice.getByRole("button", { name: /^治理/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: town.id, choice: 1 });
