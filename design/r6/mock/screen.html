@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6 介面風格</title>
+<!--
+  R6 B.2 interface mock (design only, not the game): the representative battlefield screen, 814 x 380 pt
+  (iPhone 14 Pro Max landscape inside the safe areas), every element where the prototype has it today
+  (design/r6/inventory.md), only the look changes with ?theme=a|b|c.
+  ?left=keep|fan|ondemand|moved   how the four left-hand items are put away (R6-02)
+  ?minimap=square|diamond          the minimap's shape (R6-03)
+  ?states=1                        the button-state sheet instead of the screen
+  The battlefield behind it is field-<theme>.png (design/r6/common/field.py), 3 px a pt.
+  Type: the iPhone's system font (PingFang TC; Noto Sans CJK TC on this machine), two weights only: 400 and 700.
+-->
+<link rel="stylesheet" href="themes.css">
+</head>
+<body>
+<div id="screen"></div>
+<script src="screen.js"></script>
+</body>
+</html>
