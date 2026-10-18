@@ -80,7 +80,7 @@ def approved_sprites(src, kind, c, state, ppm, team):
     return scene.with_fx(scene.piece(d, name, "x3", ppm=ppm, team=team))
 
 
-def _board(label, sub, rows, M=50, lab_w=230, gap=12):
+def _board(label, sub, rows, M=50, lab_w=330, gap=12):
     """rows: [(title, [images])] -> the board, saved as out/<label>.png."""
     W = M * 2 + lab_w + max(sum(i.width + gap for i in r) for _, r in rows)
     top = b1art.header_height(sub, W - 2 * M)

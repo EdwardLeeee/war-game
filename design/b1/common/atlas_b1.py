@@ -102,7 +102,7 @@ def layers(name):
     smokes = []
     for k, sm in enumerate(meta.get("smoke", [])):
         img, (sx, sy) = smoke2d.column(PX_PER_M, h=sm["h"], r0=sm["r0"], r1=sm["r1"], dark=sm["dark"], alpha=sm["alpha"],
-                                       drift=tuple(sm["drift"]), seed=k + 1)
+                                       drift=tuple(sm["drift"]), seed=k)   # the seed of the approved boards
         px, py = proj.to_px(sm["pos"], (ax, ay), PX_PER_M)
         smokes.append((img, int(round(px - sx)), int(round(py - sy))))
     if smokes:
