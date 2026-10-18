@@ -14,7 +14,7 @@ const browser = await chromium.launch();
 let bad = 0;
 for (const arg of process.argv.slice(2)) {
   const [board, theme] = arg.split(":");
-  const ctx = await browser.newContext({ viewport: { width: 1800, height: 1000 }, deviceScaleFactor: 2 });
+  const ctx = await browser.newContext({ viewport: { width: 1800, height: 1000 }, deviceScaleFactor: 1.25 });
   const page = await ctx.newPage();
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
