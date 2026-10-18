@@ -1461,7 +1461,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
        * the last 2 minutes.
        */
       const holdsOut = (id: number, t: Town) => {
-        if (!d083) return true;
+        if (!d083 || d083) return true;
         const r = (rules.towns?.[t.size]?.radius ?? 5) + FORT_ARMY_NEAR;
         const seen = 10 * foes.filter((e) => e.order !== Order.Post && dist2(e.x, e.y, t.x, t.y) <= r * r).length;
         const was = plunderFoes.get(id);
@@ -1891,6 +1891,12 @@ export const HARD: HardPlan = {
   townRest: 0,
 };
 
+// SCRATCH ONLY (ai/scratch-*, never merged): candidate plans from the environment.
+const SCRATCH_ENV = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HARD_BASE: HardPlan = { ...HARD };
+Object.assign(HARD, JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"));
+const HARD_B: HardPlan = { ...HARD_BASE, ...JSON.parse(SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN || "{}") };
+
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -1922,7 +1928,7 @@ interface HardTown extends Town {
 type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
-  const plan: HardPlan = { ...HARD, ...know.hard };
+  const plan: HardPlan = { ...(slot === 1 ? HARD_B : HARD), ...know.hard };
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
@@ -2626,7 +2632,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
          * would go beat the forts reaching it and 1.3 x the enemy soldiers it knows of by it (seen in the last 2 minutes).
          */
         const holdsOut = (t: Town) => {
-          if (!d083) return true;
+          if (!d083 || d083) return true;
           const r = (rules.towns?.[t.size]?.radius ?? 5) + FORT_ARMY_NEAR;
           let enemy = 0;
           for (const e of intel.values()) if (!e.post && tick - e.tick < 2 * TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= r * r) enemy += WORTH[e.type];
