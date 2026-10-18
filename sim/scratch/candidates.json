@@ -1,0 +1,56 @@
+{
+ "traces": [
+  {
+   "name": "off-4",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 4 --strategy push --speed h1 --formation close --difficulty normal"
+  },
+  {
+   "name": "on-4",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 4 --strategy push --speed h1 --formation close --difficulty normal",
+   "a": {
+    "popOn": true
+   }
+  },
+  {
+   "name": "off-10",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 10 --strategy push --speed h1 --formation close --difficulty normal"
+  },
+  {
+   "name": "on-10",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 10 --strategy push --speed h1 --formation close --difficulty normal",
+   "a": {
+    "popOn": true
+   }
+  },
+  {
+   "name": "off-12",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 12 --strategy push --speed h1 --formation close --difficulty normal"
+  },
+  {
+   "name": "on-12",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 12 --strategy push --speed h1 --formation close --difficulty normal",
+   "a": {
+    "popOn": true
+   }
+  },
+  {
+   "name": "off-20",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 20 --strategy push --speed h1 --formation close --difficulty normal"
+  },
+  {
+   "name": "on-20",
+   "script": "../src/scripted-games.ts",
+   "args": "--seeds 20 --strategy push --speed h1 --formation close --difficulty normal",
+   "a": {
+    "popOn": true
+   }
+  }
+ ]
+}
