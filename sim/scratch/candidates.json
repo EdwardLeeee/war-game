@@ -1,0 +1,32 @@
+{
+ "scripted": [
+  {
+   "name": "n",
+   "difficulty": "normal",
+   "groups": [
+    "push-towerrush",
+    "push-towerrush-farmers"
+   ]
+  },
+  {
+   "name": "h",
+   "difficulty": "hard",
+   "groups": [
+    "push-towerrush",
+    "push-towerrush-farmers"
+   ]
+  }
+ ],
+ "traces": [
+  {
+   "name": "think-fixed",
+   "script": "think-pop.ts",
+   "args": "--seeds 1-5 --map fixed --ticks 48000"
+  },
+  {
+   "name": "think-random",
+   "script": "think-pop.ts",
+   "args": "--seeds 1-5 --map random --ticks 48000"
+  }
+ ]
+}
