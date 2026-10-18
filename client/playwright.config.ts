@@ -9,6 +9,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const phone = devices["iPhone 14 Pro Max landscape"];
+/** The preview server's port; E2E_PORT when another session on this machine has 4173. */
+const PORT = Number(process.env.E2E_PORT ?? 4173);
 
 export default defineConfig({
   testDir: "e2e",
@@ -18,13 +20,13 @@ export default defineConfig({
   forbidOnly: true,
   reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
   use: {
-    baseURL: "http://127.0.0.1:4173/",
+    baseURL: `http://127.0.0.1:${PORT}/`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "npm run preview",
-    url: "http://127.0.0.1:4173/",
+    command: `npx vite preview --host 127.0.0.1 --port ${PORT} --strictPort`,
+    url: `http://127.0.0.1:${PORT}/`,
     reuseExistingServer: false,
     timeout: 60_000,
   },

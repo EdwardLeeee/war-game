@@ -403,7 +403,8 @@ test("量測：開一局 perf 場景（所有系統都開著），暖機 5 秒�
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 2);
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
   await expect(page.getByRole("button", { name: "確定性檢查" })).toBeDisabled();
-  await expect(page.locator(".lab-result")).toContainText("場景：perf（所有系統都開著，雙方人口 120）", { timeout: 90_000 });
+  // The population the game had when it started (114, sim/PROTOCOL.md section 8), the cap the rules' (D-083), not a number of the page's.
+  await expect(page.locator(".lab-result")).toContainText(/場景：perf（所有系統都開著，開始時雙方人口 114／\d+）/, { timeout: 90_000 });
   // Measured at the speed the player plays at (D-024: 正常 is 30 ticks per second).
   await expect(page.locator(".lab-result")).toContainText("tick 速度：每秒 30 tick（正常）");
   // The texture limits for the sprite atlas (client/docs/sprite-atlas.md section 8).
@@ -424,7 +425,7 @@ test("量測 360 人、200 人（D-083）：開 perf360，雙方人口 360/360�
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 4);
   await expect(page.locator(".res-bar")).toContainText("人口 360/360");
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
-  await expect(page.locator(".lab-result")).toContainText("場景：perf360（所有系統都開著，雙方人口 360）", { timeout: 150_000 });
+  await expect(page.locator(".lab-result")).toContainText("場景：perf360（所有系統都開著，開始時雙方人口 360／360）", { timeout: 150_000 });
   await shot(page, info, "d083-perf360-measure");
   // Another population: a game of its own (perf200, Scenario.Perf200 = 3).
   await page.getByRole("button", { name: "量測 200 人" }).tap();
