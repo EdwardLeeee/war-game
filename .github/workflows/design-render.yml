@@ -1,14 +1,22 @@
 # Final design renders (Blender, Cycles CPU) for the ui rounds.
 # The developer laptop keeps a 2 GB memory reserve for everyone else, so big or
 # supersampled renders run here instead. Not a required check.
+# round=release (from main only) packs finished production runs into a GitHub
+# Release art-vN for the client (design/release/pack.py).
 name: design-render
 
 on:
   workflow_dispatch:
     inputs:
       round:
-        description: "round2, round3, round4, round5, production or b1"
+        description: "round2, round3, round4, round5, production, b1 or release"
         default: "round5"
+      tag:
+        description: "release only: the tag, art-vN (design/release/<tag>.json lists the source runs)"
+        default: ""
+      publish:
+        description: "release only: true publishes the GitHub Release (main only); false only packs, as an artifact"
+        default: "false"
       targets:
         description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare","rosterE1","rosterE2","rosterW1","rosterW2","rosterW3"]; b1: ["core3","states_main_city","states_house","states_barracks","towns_E","towns_W"] (design/b1/common/run.py TARGETS); production: unit keys, "effects", or review-<unit>, e.g. ["farmer_e","spear_e","xbow_e","hcav_e","siege_e","mage_e","farmer_w","pike_w","bow_w","knight_w","siege_w","mage_w"]'
         default: '["mageWA", "mageWB", "mageWC", "compare"]'
@@ -23,8 +31,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: design-render-${{ github.ref }}
-  cancel-in-progress: true
+  # a release is never cancelled half-way by another dispatch
+  group: ${{ github.event.inputs.round == 'release' && format('design-release-{0}', github.event.inputs.tag) || format('design-render-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event.inputs.round != 'release' }}
 
 env:
   BLENDER_VERSION: "5.2.2"
@@ -33,6 +42,7 @@ env:
 
 jobs:
   render:
+    if: github.event.inputs.round != 'release'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     strategy:
@@ -152,3 +162,71 @@ jobs:
           name: production-effects-atlas
           path: design/production/build/effects_x*/
           retention-days: 90
+
+  # art-vN: the atlases of the runs named in design/release/<tag>.json, as art-vN-x3.tar.gz,
+  # art-vN-x2.tar.gz, astc-sample.tar.gz and SHA256SUMS (the format agreed with the client,
+  # client/docs/sprite-atlas.md section 2). A published tag is never replaced: a change is a new tag.
+  release:
+    if: github.event.inputs.round == 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write     # create the release and its tag
+      actions: read       # download the source runs' artifacts
+    env:
+      TAG: ${{ github.event.inputs.tag }}
+      PUBLISH: ${{ github.event.inputs.publish }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ASTCENC_VERSION: "5.7.0"
+      # release-sha256.txt of https://github.com/ARM-software/astc-encoder/releases/tag/5.7.0
+      ASTCENC_SHA256: "6c6b299b17608e1ee74db9c491cdc793b12b2b104a4b52222e358d78ae0662a9"
+    steps:
+      - name: A new art-vN; publishing only from main
+        run: |
+          if ! [[ "$TAG" =~ ^art-v[0-9]+$ ]]; then
+            echo "::error::tag must be art-vN, got '$TAG'"; exit 1
+          fi
+          if [ "$PUBLISH" != "true" ]; then
+            echo "publish=$PUBLISH: pack only, nothing is published"; exit 0
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::a release is published only from main (this is $GITHUB_REF)"; exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1 ||
+             git ls-remote --exit-code --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" >/dev/null; then
+            echo "::error::$TAG already exists; a published tag is never replaced, publish the next number"; exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: astcenc (official release, sha256 checked)
+        run: |
+          z="astcenc-${ASTCENC_VERSION}-linux-x64.zip"
+          curl -sSfL -o "$RUNNER_TEMP/$z" "https://github.com/ARM-software/astc-encoder/releases/download/${ASTCENC_VERSION}/$z"
+          echo "${ASTCENC_SHA256}  $RUNNER_TEMP/$z" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/$z" -d "$RUNNER_TEMP/astcenc"
+
+      - name: Download the source artifacts and pack
+        run: |
+          python3 design/release/pack.py --tag "$TAG" --work "$RUNNER_TEMP/release" \
+            --astcenc "$RUNNER_TEMP/astcenc/bin/astcenc-sse4.1" --commit "$GITHUB_SHA"
+
+      - name: Keep the packed files (in case publishing fails)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ env.TAG }}
+          path: ${{ runner.temp }}/release/out/
+          retention-days: 14
+
+      - name: Publish (a draft first, public once every file is up) and check the public downloads
+        if: env.PUBLISH == 'true'
+        working-directory: ${{ runner.temp }}/release
+        run: |
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md out/*
+          gh release edit "$TAG" --draft=false
+          mkdir verify
+          for f in $(cd out && ls); do
+            curl -sSfL --retry 5 --retry-delay 5 --retry-all-errors -o "verify/$f" "https://github.com/$GH_REPO/releases/download/$TAG/$f"
+          done
+          (cd verify && sha256sum -c SHA256SUMS)
