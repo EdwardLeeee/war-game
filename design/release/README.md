@@ -16,10 +16,16 @@
 ## 發布
 
 1. 在 `design/release/<tag>.json` 寫下每個兵種、效果來自哪個 run 的哪個 artifact（artifact 保留 90 天），經 PR 合併進 main。
-2. 從 main 跑：
+2. 先在分支上只打包、不發布，確認 CI 綠燈（打好的檔案留在 run 的 artifact `release-<tag>`）：
 
    ```bash
-   gh workflow run design-render.yml --ref main -f round=release -f tag=art-v1
+   gh workflow run design-render.yml --ref <分支> -f round=release -f tag=art-v1
+   ```
+
+3. 合併後從 main 發布：
+
+   ```bash
+   gh workflow run design-render.yml --ref main -f round=release -f tag=art-v1 -f publish=true
    ```
 
    workflow 會：
@@ -30,6 +36,10 @@
    - 公開後從下載網址重新抓一次，核對 SHA256SUMS。
 
 已發布的 tag 不再換檔案；內容有改就發下一號。
+
+失敗時：
+- 草稿建好了、還沒公開就失敗：會留下一個草稿，重跑會因為 tag 已存在而停下。先看失敗原因，在 Releases 頁刪掉那個草稿（草稿還沒有 tag），再重跑。
+- 已經公開、核對才失敗：這個 tag 不交給 client。修好後發下一號。
 
 本機試打包（需要 `gh` 已登入；astcenc 可省略，省略就沒有 ASTC 樣本）：
 

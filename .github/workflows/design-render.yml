@@ -12,8 +12,11 @@ on:
         description: "round2, round3, round4, round5, production, b1 or release"
         default: "round5"
       tag:
-        description: "release only: the tag to publish, art-vN (design/release/<tag>.json lists the source runs)"
+        description: "release only: the tag, art-vN (design/release/<tag>.json lists the source runs)"
         default: ""
+      publish:
+        description: "release only: true publishes the GitHub Release (main only); false only packs, as an artifact"
+        default: "false"
       targets:
         description: 'JSON list: round2 ["0","A","B","C"]; round3 ["mage0","mageA","mageB","mageC","legs"]; round4 ["mageTA","mageTB","mageTC","farmer"]; round5 ["mageWA","mageWB","mageWC","compare","rosterE1","rosterE2","rosterW1","rosterW2","rosterW3"]; b1: ["core3","states_main_city","states_house","states_barracks","towns_E","towns_W"] (design/b1/common/run.py TARGETS); production: unit keys, "effects", or review-<unit>, e.g. ["farmer_e","spear_e","xbow_e","hcav_e","siege_e","mage_e","farmer_w","pike_w","bow_w","knight_w","siege_w","mage_w"]'
         default: '["mageWA", "mageWB", "mageWC", "compare"]'
@@ -172,19 +175,23 @@ jobs:
       actions: read       # download the source runs' artifacts
     env:
       TAG: ${{ github.event.inputs.tag }}
+      PUBLISH: ${{ github.event.inputs.publish }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       ASTCENC_VERSION: "5.7.0"
       # release-sha256.txt of https://github.com/ARM-software/astc-encoder/releases/tag/5.7.0
       ASTCENC_SHA256: "6c6b299b17608e1ee74db9c491cdc793b12b2b104a4b52222e358d78ae0662a9"
     steps:
-      - name: Only from main, only a new art-vN
+      - name: A new art-vN; publishing only from main
         run: |
-          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::a release runs only from main (this is $GITHUB_REF)"; exit 1
-          fi
           if ! [[ "$TAG" =~ ^art-v[0-9]+$ ]]; then
             echo "::error::tag must be art-vN, got '$TAG'"; exit 1
+          fi
+          if [ "$PUBLISH" != "true" ]; then
+            echo "publish=$PUBLISH: pack only, nothing is published"; exit 0
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::a release is published only from main (this is $GITHUB_REF)"; exit 1
           fi
           if gh release view "$TAG" >/dev/null 2>&1 ||
              git ls-remote --exit-code --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" >/dev/null; then
@@ -213,12 +220,13 @@ jobs:
           retention-days: 14
 
       - name: Publish (a draft first, public once every file is up) and check the public downloads
+        if: env.PUBLISH == 'true'
         working-directory: ${{ runner.temp }}/release
         run: |
           gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md out/*
           gh release edit "$TAG" --draft=false
           mkdir verify
           for f in $(cd out && ls); do
-            curl -sSfL -o "verify/$f" "https://github.com/$GH_REPO/releases/download/$TAG/$f"
+            curl -sSfL --retry 5 --retry-delay 5 --retry-all-errors -o "verify/$f" "https://github.com/$GH_REPO/releases/download/$TAG/$f"
           done
           (cd verify && sha256sum -c SHA256SUMS)
