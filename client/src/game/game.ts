@@ -21,6 +21,7 @@ import {
 import { attachPointer } from "../input/pointer.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
+import { DIAMOND } from "../camera/projection.ts";
 import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
@@ -160,6 +161,9 @@ export function nextSeq(log: string): number {
   for (const m of log.matchAll(/"seq":(\d+)/g)) last = Math.max(last, Number(m[1]));
   return last + 1;
 }
+
+/** How the ground is laid on the screen: the diamond the atlases are drawn for (D-085). */
+const PROJECTION = DIAMOND;
 
 export class Game implements GestureHost {
   view: GameView | null = null;
@@ -1217,8 +1221,10 @@ export class Game implements GestureHost {
     switch (msg.type) {
       case "ready": {
         this.view = new GameView(msg.player ?? 0, msg.map, msg.rules);
+        // The map as a diamond (D-085; docs/sprite-atlas.md section 1): the camera, taps and boxes, and the drawing.
+        this.view.projection = PROJECTION;
         const world = msg.map.size * TILE_PX;
-        this.camera = new Camera(world, world);
+        this.camera = new Camera(world, world, PROJECTION);
         this.camera.resize(this.app.screen.width, this.app.screen.height);
         this.camera.zoomAt(0, 0, START_ZOOM);
         const home = msg.map.spawns.find((s) => s.player === this.view?.me);
@@ -1228,7 +1234,7 @@ export class Game implements GestureHost {
           const v = cam.visible();
           return wx >= v.x0 && wx <= v.x1 && wy >= v.y0 && wy <= v.y1;
         };
-        this.renderer = new WorldRenderer(this.app, this.view, atlasFor(this.app.renderer), this.options.art ?? null);
+        this.renderer = new WorldRenderer(this.app, this.view, atlasFor(this.app.renderer), this.options.art ?? null, undefined, PROJECTION);
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
@@ -1456,8 +1462,11 @@ export class Game implements GestureHost {
     this.overlays.hideBox();
     const view = this.view;
     if (view === null) return;
-    const a = this.world(x0, y0);
-    const b = this.world(x1, y1);
+    // The box as the screen shows it, on the plane (as a diamond it is no box of cells: D-085).
+    const cam = this.camera;
+    if (cam === null) return;
+    const a = cam.screenToPlane(x0, y0);
+    const b = cam.screenToPlane(x1, y1);
     this.apply([{ kind: "select", units: boxSelect(view, a.x, a.y, b.x, b.y) }]);
   }
 

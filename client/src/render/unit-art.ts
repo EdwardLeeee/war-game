@@ -3,8 +3,7 @@
 // its anchor (docs/sprite-atlas.md sections 4–6). Which frame to show is art/spec.ts's.
 
 import { Assets, Rectangle, Texture } from "pixi.js";
-import { ATLAS_NAMES, type AtlasJson, type EffectsJson, type FrameRect, M_PER_CELL, parseAtlas, parseEffects } from "../art/spec.ts";
-import { TILE_PX } from "../tuning.ts";
+import { ATLAS_NAMES, type AtlasJson, type EffectsJson, type FrameRect, parseAtlas, parseEffects } from "../art/spec.ts";
 
 export type ArtLayer = "color" | "team" | "shadow" | "fx" | "shield";
 
@@ -23,15 +22,12 @@ export interface UnitArt {
   effects: EffectsJson | null;
   /** Pages loaded, all layers (for the lab's result). */
   pages: number;
-  /** World px per image point: the ground's px per metre over the atlases' px_per_m. */
-  scale: number;
+  /** The atlases' image points a metre (their px_per_m): drawn at the plane's points a metre over it. */
+  pxPerM: number;
   frame(atlas: string, layer: ArtLayer, name: string): ArtFrame | null;
   effectFrame(name: string): ArtFrame | null;
   destroy(): void;
 }
-
-/** World px per metre on the ground seen from above: a cell is TILE_PX and 2 metres. */
-export const WORLD_PX_PER_M = TILE_PX / M_PER_CELL;
 
 const TABLE: Record<ArtLayer, (a: AtlasJson) => Record<string, FrameRect> | undefined> = {
   color: (a) => a.frames,
@@ -95,7 +91,7 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
     atlases,
     effects,
     pages: urls.length,
-    scale: WORLD_PX_PER_M / pxPerM,
+    pxPerM,
     frame(atlas, layer, name) {
       const key = `${atlas}|${layer}|${name}`;
       let f = cache.get(key);

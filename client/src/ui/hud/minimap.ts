@@ -32,8 +32,8 @@ const css = (c: number, a = 1) => `rgba(${rgb(c).join(",")},${a})`;
 
 export interface MinimapHost {
   view(): GameView | null;
-  /** The camera's world rectangle. */
-  visible(): { x0: number; y0: number; x1: number; y1: number } | null;
+  /** The screen's four corners on the world (px), clockwise: as a diamond, the view is no rectangle of the map (D-085). */
+  visible(): { x: number; y: number }[] | null;
   tap(cellX: number, cellY: number): void;
   longPress(cellX: number, cellY: number): void;
   /** Attack alerts to flash, in cells. */
@@ -171,11 +171,14 @@ export class Minimap {
     }
 
     const v = this.host.visible();
-    if (v !== null) {
+    if (v !== null && v.length > 0) {
       const px = k / TILE_PX;
       ctx.strokeStyle = "rgba(255,255,255,0.9)";
       ctx.lineWidth = Math.max(1, W / 110);
-      ctx.strokeRect(v.x0 * px, v.y0 * px, (v.x1 - v.x0) * px, (v.y1 - v.y0) * px);
+      ctx.beginPath();
+      v.forEach((c, i) => (i === 0 ? ctx.moveTo(c.x * px, c.y * px) : ctx.lineTo(c.x * px, c.y * px)));
+      ctx.closePath();
+      ctx.stroke();
     }
   }
 }

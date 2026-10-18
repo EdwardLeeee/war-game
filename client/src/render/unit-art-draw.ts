@@ -7,7 +7,8 @@
 // lies a while where it fell. The selection ring, bars and marks stay the renderer's.
 
 import { Container, Sprite } from "pixi.js";
-import { animFor, attackFrame, type AtlasJson, CORPSE_FADE_S, CORPSE_HOLD_S, type Culture, fpsOf, frameAt, frameName, pictureDirection, type Projection, UNIT_ATLAS, walkFps, workOfNode, type WorkKind } from "../art/spec.ts";
+import { animFor, attackFrame, type AtlasJson, CORPSE_FADE_S, CORPSE_HOLD_S, type Culture, fpsOf, frameAt, frameName, pictureDirection, UNIT_ATLAS, walkFps, workOfNode, type WorkKind } from "../art/spec.ts";
+import { type Projection, TOP } from "../camera/projection.ts";
 import { Action, BuildingType, BuildingField as B, Fog, HeaderField as H, NodeField as N, Order, TICKS_PER_SECOND, UnitField as U, UNIT_STRIDE } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
@@ -69,6 +70,8 @@ export class ArtUnits {
   private readonly unitLayer: Container;
   private readonly cultureOf: (owner: number) => Culture;
   private readonly projection: Projection;
+  /** Plane points an image point: the plane's points a metre over the atlases' px_per_m (docs/sprite-atlas.md section 6). */
+  private readonly scale: number;
   private readonly slots: Slot[] = [];
   private readonly corpseSlots: Slot[] = [];
   private readonly anims = new Map<number, AnimState>();
@@ -76,7 +79,7 @@ export class ArtUnits {
   private corpses: Corpse[] = [];
   private lastTick = -1;
 
-  constructor(art: UnitArt, view: GameView, shadowLayer: Container, unitLayer: Container, cultureOf: (owner: number) => Culture, projection: Projection = "top") {
+  constructor(art: UnitArt, view: GameView, shadowLayer: Container, unitLayer: Container, cultureOf: (owner: number) => Culture, projection: Projection = TOP) {
     this.art = art;
     this.view = view;
     this.shadowLayer = shadowLayer;
@@ -84,6 +87,7 @@ export class ArtUnits {
     this.unitLayer.sortableChildren = true;
     this.cultureOf = cultureOf;
     this.projection = projection;
+    this.scale = projection.ptPerM / art.pxPerM;
   }
 
   private slot(list: Slot[], i: number): Slot {
@@ -135,7 +139,7 @@ export class ArtUnits {
       st = { action, anim, since: seconds, dir: st?.dir ?? null };
       this.anims.set(id, st);
     }
-    const dir = pictureDirection(u[o + U.facing], st.dir, this.projection);
+    const dir = pictureDirection(u[o + U.facing], st.dir, this.projection.kind);
     st.dir = dir;
     const info = a.anims[anim];
     const elapsed = seconds - st.since;
@@ -148,10 +152,10 @@ export class ArtUnits {
     this.place(s, a, anim, dir, index, owner, px, py, 1);
     // A mage's shield while it holds (its own picture: one direction, never mirrored).
     const shieldMax = unitInfo?.shield ?? 0;
-    if (shieldMax > 0 && u[o + U.shield] > 0) put(s.shield, this.art.frame(a.unit, "shield", `${a.unit}_shield_on_00`), 0, 0, this.art.scale, false);
+    if (shieldMax > 0 && u[o + U.shield] > 0) put(s.shield, this.art.frame(a.unit, "shield", `${a.unit}_shield_on_00`), 0, 0, this.scale, false);
     else s.shield.visible = false;
     const f = this.art.frame(a.unit, "color", frameName(a, anim, dir, index).name);
-    return f === null ? null : py - f.ay * f.texture.height * this.art.scale;
+    return f === null ? null : py - f.ay * f.texture.height * this.scale;
   }
 
   private place(s: Slot, a: AtlasJson, anim: string, dir: number, index: number, owner: number, px: number, py: number, alpha: number): void {
@@ -160,10 +164,10 @@ export class ArtUnits {
     s.box.position.set(px, py);
     s.box.zIndex = py;
     s.box.alpha = alpha;
-    put(s.color, this.art.frame(a.unit, "color", name), 0, 0, this.art.scale, mirror);
-    put(s.team, this.art.frame(a.unit, "team", name), 0, 0, this.art.scale, mirror);
+    put(s.color, this.art.frame(a.unit, "color", name), 0, 0, this.scale, mirror);
+    put(s.team, this.art.frame(a.unit, "team", name), 0, 0, this.scale, mirror);
     s.team.tint = ownerTint(owner, this.view.me);
-    put(s.shadow, this.art.frame(a.unit, "shadow", frameName(a, anim, dir, index, "shadow").name), px, py, this.art.scale, false);
+    put(s.shadow, this.art.frame(a.unit, "shadow", frameName(a, anim, dir, index, "shadow").name), px, py, this.scale, false);
     s.shadow.alpha = alpha;
   }
 
@@ -241,7 +245,8 @@ export class ArtUnits {
       const fps = fpsOf(a, c.anim);
       const elapsed = seconds - c.since;
       const fade = elapsed - info.frames / fps - CORPSE_HOLD_S;
-      this.place(this.slot(this.corpseSlots, i), a, c.anim, c.dir, frameAt(info, fps, elapsed), c.owner, c.x, c.y, fade > 0 ? Math.max(0, 1 - fade / CORPSE_FADE_S) : 1);
+      const at = this.projection.toPlane(c.x, c.y);
+      this.place(this.slot(this.corpseSlots, i), a, c.anim, c.dir, frameAt(info, fps, elapsed), c.owner, at.x, at.y, fade > 0 ? Math.max(0, 1 - fade / CORPSE_FADE_S) : 1);
       this.corpseSlots[i].shield.visible = false;
     });
     for (let i = this.corpses.length; i < this.corpseSlots.length; i++) this.hide(this.corpseSlots[i]);
