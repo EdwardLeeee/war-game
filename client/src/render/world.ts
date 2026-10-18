@@ -17,6 +17,7 @@ import {
   NodeField as N,
   TOWN_STRIDE,
   TownField as T,
+  TownSize,
   TownState,
   UNIT_STRIDE,
   UnitField as U,
@@ -28,6 +29,7 @@ import { TILE_PX } from "../tuning.ts";
 import type { Placement } from "../ui/placement.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT, WARNING_TINT } from "./atlas.ts";
+import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 
 const UNIT_SCALE = 1;
 const BAR_W = TILE_PX * 0.8;
@@ -104,8 +106,11 @@ interface Shot {
 const SHOT_MS = 300;
 
 interface TownMark {
+  /** The wall and its 鎮 or 城 (D-084), on the ground under buildings and units. */
+  wall: Sprite;
+  glyph: Sprite;
+  /** The state's words and the bar, under the wall, above the fog. */
   holder: Container;
-  flag: Sprite;
   label: Text;
   barBack: Sprite;
   barFront: Sprite;
@@ -117,6 +122,7 @@ export class WorldRenderer {
   private readonly view: GameView;
   private readonly atlas: Atlas;
   private readonly zones = new Graphics();
+  private readonly wallLayer = new Container();
   private readonly buildingLayer = new Container();
   private readonly nodeLayer = new Container();
   private readonly ringLayer = new Container();
@@ -141,6 +147,8 @@ export class WorldRenderer {
   private readonly unitPool: UnitSprites[] = [];
   private readonly buildingPool: BuildingSprites[] = [];
   private readonly townMarks = new Map<number, TownMark>();
+  /** The big cities' towers, kept once seen: the wall stays under where the tower stood (D-084). */
+  private readonly towers = new Map<number, TowerCells>();
   private zonesKey = "";
   private markers: Marker[] = [];
   private shots: Shot[] = [];
@@ -176,7 +184,7 @@ export class WorldRenderer {
     const fog = new Sprite(this.fogTexture);
     fog.scale.set(TILE_PX);
 
-    this.root.addChild(ground, this.zones, this.buildingLayer, this.nodeLayer, this.ringLayer, this.unitLayer, this.fx, this.barLayer, fog, this.townLayer, this.ghost);
+    this.root.addChild(ground, this.zones, this.wallLayer, this.buildingLayer, this.nodeLayer, this.ringLayer, this.unitLayer, this.fx, this.barLayer, fog, this.townLayer, this.ghost);
     app.stage.addChild(this.root);
   }
 
@@ -364,7 +372,10 @@ export class WorldRenderer {
   }
 
   private drawTowns(): void {
-    const t = (this.view.curr as NonNullable<GameView["curr"]>).snap.towns;
+    const snap = (this.view.curr as NonNullable<GameView["curr"]>).snap;
+    const t = snap.towns;
+    const towerSize = this.view.rules.buildings[BuildingType.TownTower]?.size ?? 2;
+    if (this.noteTowers(snap.buildings, towerSize)) this.zonesKey = "";
     const key = t.join(",");
     if (key === this.zonesKey) return;
     this.zonesKey = key;
@@ -381,24 +392,31 @@ export class WorldRenderer {
       this.zones.circle(cx, cy, info.radius * TILE_PX).fill({ color: look.tint, alpha: 0.1 }).stroke({ width: 3, color: look.tint, alpha: 0.75 });
       let mark = this.townMarks.get(id);
       if (mark === undefined) {
+        const wall = new Sprite(this.atlas.wall);
+        const glyph = new Sprite(this.atlas.townGlyphs[info.size] ?? Texture.EMPTY);
+        glyph.anchor.set(0.5);
+        this.wallLayer.addChild(wall, glyph);
         const holder = new Container();
-        const flag = new Sprite(this.atlas.flag);
-        flag.anchor.set(0.3, 0.9);
-        flag.scale.set(1.2);
         const label = new Text({ text: "", style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 13, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } }, resolution: 4 });
         label.anchor.set(0.5, 0);
         label.position.set(0, 4);
         const barBack = new Sprite(this.atlas.white);
         barBack.tint = 0x201a18;
         const barFront = new Sprite(this.atlas.white);
-        holder.addChild(flag, label, barBack, barFront);
+        holder.addChild(label, barBack, barFront);
         this.townLayer.addChild(holder);
-        mark = { holder, flag, label, barBack, barFront, key: "" };
+        mark = { wall, glyph, holder, label, barBack, barFront, key: "" };
         this.townMarks.set(id, mark);
       }
-      mark.holder.visible = true;
-      mark.holder.position.set(cx, cy);
-      mark.flag.tint = look.tint;
+      // The big city's wall under its tower, as seen or as the rules place it (render/town-wall.ts).
+      const spot = wallSpot(info, info.size === TownSize.Large ? (this.towers.get(id) ?? ruleTower(info, towerSize)) : null);
+      mark.wall.visible = mark.glyph.visible = mark.holder.visible = true;
+      mark.wall.position.set(spot.x, spot.y);
+      mark.wall.width = mark.wall.height = spot.side;
+      mark.wall.tint = look.tint;
+      mark.glyph.position.set(spot.x + spot.side / 2, spot.y + spot.side * 0.42);
+      mark.glyph.scale.set((spot.side * 0.34) / 36);
+      mark.holder.position.set(spot.x + spot.side / 2, spot.y + spot.side);
       mark.label.text = look.label;
       const total = t[o + T.timerTotal];
       const showBar = total > 0 && t[o + T.timer] > 0;
@@ -408,7 +426,29 @@ export class WorldRenderer {
         this.bar(mark.barBack, mark.barFront, 0, 26, 48, done, look.tint);
       }
     }
-    for (const [id, mark] of this.townMarks) if (!seen.has(id)) mark.holder.visible = false;
+    for (const [id, mark] of this.townMarks) if (!seen.has(id)) mark.wall.visible = mark.glyph.visible = mark.holder.visible = false;
+  }
+
+  /** Each town's wall as drawn (world px), for the test page. */
+  get townWalls(): { id: number; x: number; y: number; side: number; visible: boolean }[] {
+    return [...this.townMarks].map(([id, m]) => ({ id, x: m.wall.x, y: m.wall.y, side: m.wall.width, visible: m.wall.visible }));
+  }
+
+  /** The big cities' towers in this snapshot (remembered ones too), kept; whether one was new. */
+  private noteTowers(b: Int32Array, size: number): boolean {
+    let found = false;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + B.type] !== BuildingType.TownTower) continue;
+      const x = b[o + B.cellX] + size / 2;
+      const y = b[o + B.cellY] + size / 2;
+      for (const town of this.view.knownTowns.values()) {
+        if (town.size !== TownSize.Large || this.towers.has(town.id)) continue;
+        if ((x - town.cellX - 0.5) ** 2 + (y - town.cellY - 0.5) ** 2 > town.radius ** 2) continue;
+        this.towers.set(town.id, { cellX: b[o + B.cellX], cellY: b[o + B.cellY], size });
+        found = true;
+      }
+    }
+    return found;
   }
 
   private drawUnits(now: number): void {

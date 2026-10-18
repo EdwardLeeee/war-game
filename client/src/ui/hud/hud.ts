@@ -141,7 +141,7 @@ export class Hud {
       setMode: (m: Parameters<Game["setMode"]>[0]) => game.setMode(m),
       startPlacement: (t: Parameters<Game["startPlacement"]>[0]) => game.startPlacement(t),
       openEconomy: () => this.openEconomy(),
-      chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice, this.defaultKeep(town, choice)),
+      chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice, this.defaultKeep(town)),
       garrison: (town: number) => game.army.garrisonOf(town).length,
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
@@ -660,7 +660,7 @@ export class Hud {
     const once = this.game.view?.townPlunderedOnce(town) === true;
     const card = this.openDialog(`攻下${big ? "大城" : "小鎮"}！${once ? "只能治理" : "搶還是治理？"}`, "town-choice");
     // 留守 (D-026): how many soldiers stay behind with each choice.
-    const keep = { plunder: this.defaultKeep(town, TownChoice.Plunder), govern: this.defaultKeep(town, TownChoice.Govern) };
+    const keep = { plunder: this.defaultKeep(town), govern: this.defaultKeep(town) };
     const row = el("div", card, "choice-row");
     if (!once) {
       const plunder = btn(row, "", () => this.chooseTown(town, TownChoice.Plunder, keep.plunder), "choice-plunder");
@@ -678,9 +678,12 @@ export class Hud {
     btn(card, "稍後再決定（點城鎮也能選）", () => this.closeDialog(), "secondary later");
   }
 
-  /** How many soldiers a choice leaves behind unless the player changes it: the least a governed town needs, none for a plunder. */
-  private defaultKeep(town: number, choice: TownChoice): number {
-    if (choice !== TownChoice.Govern) return 0;
+  /**
+   * How many soldiers either choice leaves behind unless the player changes it: for 搶 as for 治理
+   * (D-084), the least a governed town needs (小鎮 1、大城 3), less those stationed already. Fewer
+   * soldiers in the town: as many as there are (ArmyBook.station).
+   */
+  private defaultKeep(town: number): number {
     return Math.max(0, this.game.garrisonNeeded(town) - this.game.army.garrisonOf(town).length);
   }
 

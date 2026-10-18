@@ -244,6 +244,24 @@ export class MockPort implements SimPort {
         t.militia = 0;
       }
     }
+    // A revolt leaves the town neutral, as in the simulation.
+    if (ev.k === "town_revolted") {
+      const t = this.towns.find((v) => v.id === ev.town);
+      if (t !== undefined) {
+        t.state = TownState.Neutral;
+        t.owner = NEUTRAL;
+        t.timer = t.timerTotal = 0;
+      }
+    }
+    // A plunder done leaves ruins (D-084: those stationed for it go back to 全軍).
+    if (ev.k === "town_plundered") {
+      const t = this.towns.find((v) => v.id === ev.town);
+      if (t !== undefined) {
+        t.state = TownState.Ruins;
+        t.owner = -1;
+        t.plundered = true;
+      }
+    }
     this.events.push(ev);
   }
 
@@ -262,6 +280,8 @@ export class MockPort implements SimPort {
   /** Tests: these units of ours fall. */
   remove(ids: number[]): void {
     for (let i = this.units.length - 1; i >= 0; i--) if (this.units[i].owner === ME && ids.includes(this.units[i].id)) this.units.splice(i, 1);
+    // Buildings too, any owner's (D-084: the big city's tower falls, its wall stays).
+    for (let i = this.buildings.length - 1; i >= 0; i--) if (ids.includes(this.buildings[i].id)) this.buildings.splice(i, 1);
   }
 
   postMessage(msg: ToWorker): void {
