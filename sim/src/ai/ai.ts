@@ -69,6 +69,7 @@ import {
   WarningField,
 } from "../protocol.ts";
 import { Rng } from "../core/fixed.ts";
+import { ARMY_BASE, ARMY_HOME, ARMY_TOWN, BUILD_AS_HARD, BUILD_FARMERS, BUILD_PRODUCTION, choose, features, HEAD_ARMY, HEAD_BUILD, HEAD_MIX, HEAD_TOWN, MIX_EVEN, MIX_RANGED, MIX_SPEAR, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "./net.ts";
 import type { PlayerView } from "../view/view.ts";
 
 export interface Ai {
@@ -1852,6 +1853,22 @@ export interface HardPlan {
    * (but for one it needs now) and farms (the trace: two of four built till minute 19, the wood going elsewhere).
    */
   productionFirst: boolean;
+  /**
+   * D-086 B: the network's weights (net.ts) for its big-picture choices; null: its own rules, as before.
+   * Only learn/ and scratch branches set them (docs/research/2026-10-ai-nn.md).
+   */
+  net: NetWeights | null;
+  /** D-086 B (learn/ only): at each think, the network's inputs and its own choice for each head (-1: none at this think). */
+  netLog?: (x: number[], labels: number[]) => void;
+  /**
+   * D-086 B, choices the network may not make (ceo 2026-10-19, the user's 「人工給它一些意见」): no march on the
+   * enemy's main city with fewer than netMarch soldiers (hard's counterArmy) or before it knows where it is, no
+   * town with fewer than netTown (hard's townArmy), and below netFarmers farmers (hard's range comes at 12)
+   * farmers first.
+   */
+  netMarch: number;
+  netTown: number;
+  netFarmers: number;
 }
 
 export const HARD: HardPlan = {
@@ -1876,7 +1893,15 @@ export const HARD: HardPlan = {
   // D-081: measured and left off (hard against hard 50.3% of 200; with it the scripted push on random maps won 4 of 40, without 3).
   townRest: 0,
   productionFirst: false,
+  net: null,
+  netMarch: 14,
+  netTown: 5,
+  netFarmers: 12,
 };
+/** D-086 B: what the network's choices mean: the spearmen's share, and farmers more for "farmers first". */
+const NET_SHARE = [70, 50, 30];
+const NET_FARMERS = 4;
+const NET_MODES: readonly string[] = ["home", "town", "base", "defend", "raze"];
 /** D-083 (c): food plus gold it holds for productionFirst. */
 const PRODUCTION_FIRST = 800;
 
@@ -1960,6 +1985,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const post = real(homeF.u + su * 4, homeF.v + sv * 4);
 
   let mode: HardMode = "home";
+  /** D-086 B: the network's choices at the last think (null: off), its soldiers then, its losses and the enemy soldiers it saw fall (ticks), the enemy city's hp last seen. */
+  const netOn = plan.net !== null || plan.netLog !== undefined;
+  let netChoice: number[] | null = null;
+  let netPrev = new Set<number>();
+  const netLost: number[] = [];
+  const netKilled: number[] = [];
+  let netCityHp = -1;
   let target = { x: post.x, y: post.y };
   let targetTown = -1;
   let lastMove = -100000;
@@ -2061,7 +2093,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
        * It governs a town it takes only when it was plundered before (round 7); a first capture it
        * plunders (governing first captures won 3% of 120 games on the final round 7 rules).
        */
-      const toGovern = (id: number) => once && plunderedTown(id);
+      // D-086 B: or, the network on, a first capture when it chooses to govern and can pay.
+      const toGovern = (id: number) =>
+        (once && plunderedTown(id)) || (netChoice !== null && netChoice[HEAD_TOWN] === TOWN_GOVERN && mem.site(id) !== undefined && affordAll(governCost(mem.site(id)!.size)));
       // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
       const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(mem.site(targetTown)!.size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
@@ -2188,7 +2222,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             continue;
           }
         }
-        if ((tick - e.tick <= 20 && sees(e.x, e.y)) || tick - e.tick > INTEL_TICKS) intel.delete(id);
+        if (tick - e.tick <= 20 && sees(e.x, e.y)) {
+          if (netOn) netKilled.push(tick);
+          intel.delete(id);
+        } else if (tick - e.tick > INTEL_TICKS) intel.delete(id);
       }
       let enemySpear = 0;
       let enemyRanged = 0;
@@ -2201,6 +2238,99 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         enemyWorth += WORTH[e.type];
       }
       if (enemyMages > 0) lastEnemyMage = tick;
+
+      // --- D-086 B: the network's choices, from its own view and memory --------------------------------
+      let netX: number[] = [];
+      const labels = [-1, -1, -1, -1];
+      if (netOn) {
+        if (enemyCityHp >= 0) netCityHp = enemyCityHp;
+        const ids = new Set(soldiers.map((u) => u.id));
+        for (const id of netPrev) if (!ids.has(id)) netLost.push(tick);
+        netPrev = ids;
+        while (netLost.length > 0 && tick - netLost[0] > 2 * TICKS_PER_MINUTE) netLost.shift();
+        while (netKilled.length > 0 && tick - netKilled[0] > 2 * TICKS_PER_MINUTE) netKilled.shift();
+        let cavalryFoes = 0;
+        for (const e of intel.values()) if (e.type === UnitType.Cavalry) cavalryFoes++;
+        let cityHp = 0;
+        for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+          if (view.buildings[r + BuildingField.owner] === player && view.buildings[r + BuildingField.type] === BuildingType.MainCity) cityHp = view.buildings[r + BuildingField.hp];
+        }
+        const townCount = [0, 0, 0, 0, 0];
+        let townD = -1;
+        const neutralAt = (x: number, y: number) => {
+          const d = Math.trunc(Math.sqrt(dist2(x, y, home.cellX, home.cellY)));
+          if (townD < 0 || d < townD) townD = d;
+        };
+        const seenTowns = new Set<number>();
+        for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+          const id = view.towns[r + TownField.id];
+          const st = view.towns[r + TownField.state];
+          const ow = view.towns[r + TownField.owner];
+          seenTowns.add(id);
+          if (st === TownState.Ruins) townCount[4]++;
+          else if (st === TownState.Neutral) {
+            townCount[3]++;
+            neutralAt(view.towns[r + TownField.cellX], view.towns[r + TownField.cellY]);
+          } else if (ow === player && (st === TownState.Governed || st === TownState.Repairing)) townCount[0]++;
+          else if (ow === player) townCount[1]++;
+          else townCount[2]++;
+        }
+        for (const t of mem.unexplored) {
+          if (seenTowns.has(t.id)) continue;
+          townCount[3]++;
+          neutralAt(t.cellX, t.cellY);
+        }
+        const nearHome = soldiers.filter((u) => dist2(u.x, u.y, home.cellX, home.cellY) <= WAVE_CELLS * WAVE_CELLS).length;
+        netX = features({
+          tick,
+          food: res.food,
+          wood: res.wood,
+          gold: res.gold,
+          crystal: res.crystal,
+          pop,
+          cap,
+          ceiling,
+          farmers: farmers.length,
+          spear: soldiers.filter((u) => u.type === UnitType.Spearman).length,
+          ranged: soldiers.filter((u) => u.type === UnitType.Ranged).length,
+          mages: soldiers.filter((u) => u.type === UnitType.Mage).length,
+          cavalry: soldiers.filter((u) => u.type === UnitType.Cavalry).length,
+          buildings: [
+            BuildingType.Barracks,
+            BuildingType.Range,
+            BuildingType.MageHall,
+            BuildingType.Stable,
+            BuildingType.House,
+            BuildingType.Farm,
+            BuildingType.LumberCamp,
+            BuildingType.Mine,
+            BuildingType.ArrowTower,
+          ].map((t) => done(t).length),
+          worth: worth(soldiers),
+          home: nearHome,
+          away: soldiers.length - nearHome,
+          cityHp,
+          enemy: [enemySpear, enemyRanged, enemyMages, cavalryFoes],
+          enemyWorth,
+          enemyNear: foes.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) <= WAVE_CELLS * WAVE_CELLS).length,
+          enemyCityKnown: mem.known === Known.City ? 1 : 0,
+          enemyCityHp: netCityHp < 0 ? 0 : netCityHp,
+          enemyForts: enemyForts(view, player, rules).length,
+          towns: townCount,
+          townDist: townD,
+          mode: NET_MODES.indexOf(mode),
+          lost: netLost.length,
+          killed: netKilled.length,
+        });
+        if (plan.net !== null) {
+          const guards = new Set([...townGuards.values()].flat());
+          const free = soldiers.filter((u) => !guards.has(u.id)).length;
+          const fewFarmers = farmers.length < plan.netFarmers;
+          // army: home, town, base; mix: all; build: farmers first only, with few farmers; town: both.
+          const allowed = [true, free >= plan.netTown, mem.known !== Known.None && free >= plan.netMarch, true, true, true, true, !fewFarmers, !fewFarmers, true, true];
+          netChoice = choose(plan.net, netX, allowed);
+        }
+      }
 
       // --- economy --------------------------------------------------------------------------
       // The ratio leans hard away from what piles up (a plunder brings 300 gold and no wood, and
@@ -2224,7 +2354,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       let room = cap - pop - queued;
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
-      if (main && main.queue < 2 && farmers.length + main.queue < farmerTarget && room > 0 && afford(farmerCost)) {
+      // D-086 B: the network's "farmers first", a few more.
+      const farmersWanted = farmerTarget + (netChoice !== null && netChoice[HEAD_BUILD] === BUILD_FARMERS ? NET_FARMERS : 0);
+      if (main && main.queue < 2 && farmers.length + main.queue < farmersWanted && room > 0 && afford(farmerCost)) {
         out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
         spend(farmerCost);
         room--;
@@ -2267,7 +2399,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
         // D-083 (c): food and gold piling up, more barracks and ranges first (a house first only when it needs one now).
         const prodCount = count(BuildingType.Barracks) + count(BuildingType.Range);
-        if (plan.productionFirst && res.food + res.gold >= PRODUCTION_FIRST && prodCount < plan.production && has(BuildingType.Range) && cap - pop - queued > producers) {
+        const roomFor = prodCount < plan.production && has(BuildingType.Range) && cap - pop - queued > producers;
+        const hardFirst = plan.productionFirst && res.food + res.gold >= PRODUCTION_FIRST && roomFor;
+        labels[HEAD_BUILD] = hardFirst ? BUILD_PRODUCTION : BUILD_AS_HARD;
+        // D-086 B: or as the network chooses (barracks and ranges first, or not before farmers).
+        if (netChoice === null ? hardFirst : netChoice[HEAD_BUILD] === BUILD_PRODUCTION && roomFor) {
           add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
         // Houses before the population is full: every producer can add one at a time.
@@ -2326,6 +2462,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         else if (enemySpear + enemyRanged >= 6 && enemyRanged * 100 >= (enemySpear + enemyRanged) * 60) share += plan.counterMix;
       }
       share = Math.max(20, Math.min(80, share));
+      labels[HEAD_MIX] = share >= 60 ? MIX_SPEAR : share <= 40 ? MIX_RANGED : MIX_EVEN;
+      if (netChoice !== null) share = NET_SHARE[netChoice[HEAD_MIX]];
       if (spear * 100 <= share * (spear + ranged)) {
         trainAt(BuildingType.Barracks, UnitType.Spearman);
         trainAt(BuildingType.Range, UnitType.Ranged);
@@ -2367,6 +2505,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       for (const [id, t] of towns) {
         if (t.state === TownState.Ruins && t.visible) restoreAt.set(id, tick + t.timer);
         if (t.owner !== player || t.state !== TownState.AwaitingChoice) continue;
+        if (!(once && plunderedTown(id))) labels[HEAD_TOWN] = toGovern(id) ? TOWN_GOVERN : TOWN_PLUNDER;
         if (!toGovern(id)) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
         else if (affordAll(governCost(t.size))) {
           out.push({ c: "town_choice", town: id, choice: TownChoice.Govern });
@@ -2931,7 +3070,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const strong = armyWorth * 100 >= enemyWorth * plan.pushRatio;
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
-        const go =
+        const hardGo =
           (mem.known !== Known.None || endgame || assault) &&
           (endgame
             ? army.length >= ENDGAME_ARMY
@@ -2940,9 +3079,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               : (counterReady && army.length >= plan.counterArmy && armyWorth >= enemyWorth) ||
                 (army.length >= pushArmy && strong) ||
                 (popFull && army.length >= townArmy + 6));
+        // D-086 B: the network chooses at home (not at the end of a game with a time limit, nor in an assault).
+        const netArmy = netChoice === null || endgame || assault ? -1 : netChoice[HEAD_ARMY];
+        const go = netArmy < 0 ? hardGo : netArmy === ARMY_BASE && mem.known !== Known.None && army.length >= plan.netMarch;
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
         const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
         if (go && toBase!.go) {
+          labels[HEAD_ARMY] = ARMY_BASE;
           armyAtStart = army.length;
           marchWorth = vsForts(army);
           marched.clear();
@@ -2952,7 +3095,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           send(enemyHome.cellX, enemyHome.cellY, "base");
           return;
         }
-        if (!assault) {
+        if (!assault && (netArmy < 0 || netArmy === ARMY_TOWN)) {
           let pick = -1;
           let pickD = 0;
           for (const [id, t] of towns) {
@@ -2962,7 +3105,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             if (tick < (townRest.get(id) ?? 0)) continue;
             // Plundered before (round 7): only worth it when it can pay to govern it.
             if (once && plunderedTown(id) && !affordAll(governCost(t.size))) continue;
-            if (army.length < (t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
+            if (army.length < (netArmy === ARMY_TOWN ? plan.netTown : t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
             for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= 14 * 14) there += WORTH[e.type];
@@ -2979,6 +3122,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             }
           }
           if (pick >= 0) {
+            labels[HEAD_ARMY] = ARMY_TOWN;
             targetTown = pick;
             armyAtStart = army.length;
             marchWorth = vsForts(army);
@@ -2989,6 +3133,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             return;
           }
         }
+        labels[HEAD_ARMY] = ARMY_HOME;
         send(post.x, post.y, "home");
       };
       armyOrders();
@@ -3000,6 +3145,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const on = back.filter((id) => !late.includes(id));
       if (on.length > 0 && !sent) out.push({ c: "move", u: on, x: target.x, y: target.y });
       if (late.length > 0) out.push({ c: "move", u: late, x: post.x, y: post.y });
+      if (plan.netLog !== undefined && netX.length > 0) plan.netLog(netX, labels);
       return out;
     },
   };

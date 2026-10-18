@@ -1,0 +1,141 @@
+# D-086 B (war-game-ai, docs/research/2026-10-ai-nn.md): training the hard AI's small network on GitHub's
+# machines, CPU only. Started by hand only. One training at a time (its own concurrency group); at most 8
+# jobs at once, so Pages, Client, Sim and other work keep running. A job stops itself before GitHub's 6-hour
+# limit and leaves a checkpoint as an artifact (kept 14 days, never committed); the next run goes on from it
+# (from_run). The last job adds up the runner hours of the run.
+#   dryrun  cores and games an hour
+#   record  hard's choices from its own view in AI-against-AI games (train-record)
+#   bc      imitation of hard, then the integer network (train-bc; from_run: a record run)
+#   es      evolution strategies, one island per job (train-es-<n>; from_run: a bc run to start, or an es run to go on)
+#   eval    the network against hard, normal and the late group (from_run, net_artifact: where net.json is)
+name: AI train
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: dryrun, record, bc, es or eval
+        type: choice
+        options: [dryrun, record, bc, es, eval]
+        default: dryrun
+      from_run:
+        description: The run whose artifacts this one starts from (bc, es, eval)
+        default: ""
+      islands:
+        description: "es: jobs, each its own search (at most 8)"
+        default: "8"
+      generations:
+        description: "es: generations per job at most"
+        default: "20"
+      hours:
+        description: Hours a job plays before it saves and stops
+        default: "5.5"
+      games:
+        description: "record: games; eval: games against hard on each map"
+        default: "400"
+      config:
+        description: "es: settings over ES_DEFAULTS (JSON)"
+        default: "{}"
+      net_artifact:
+        description: "eval: the artifact of from_run with net.json (or bc.json)"
+        default: train-es-0
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ai-train
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      islands: ${{ steps.p.outputs.islands }}
+    steps:
+      - id: p
+        env:
+          MODE: ${{ inputs.mode }}
+          ISLANDS: ${{ inputs.islands }}
+        run: |
+          n=1
+          if [ "$MODE" = "es" ]; then n=$(( ISLANDS < 1 ? 1 : ISLANDS > 8 ? 8 : ISLANDS )); fi
+          echo "islands=$(seq -s, 0 $((n - 1)) | sed 's/^/[/; s/$/]/')" >> "$GITHUB_OUTPUT"
+
+  train:
+    needs: plan
+    name: ${{ inputs.mode }} (${{ matrix.island }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        island: ${{ fromJSON(needs.plan.outputs.islands) }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: The start (from_run)
+        if: inputs.from_run != ''
+        uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ inputs.from_run }}
+          github-token: ${{ github.token }}
+          path: from
+      - name: Train
+        env:
+          MODE: ${{ inputs.mode }}
+          ISLAND: ${{ matrix.island }}
+          HOURS: ${{ inputs.hours }}
+          GENERATIONS: ${{ inputs.generations }}
+          GAMES: ${{ inputs.games }}
+          CONFIG: ${{ inputs.config }}
+          NET: ${{ inputs.net_artifact }}
+        run: |
+          set -o pipefail
+          F="${GITHUB_WORKSPACE}/from"
+          O="${GITHUB_WORKSPACE}/out"
+          T=src/ai/learn/train.ts
+          case "$MODE" in
+            dryrun) node $T dryrun --out "$O" ;;
+            record) node $T record --games "$GAMES" --out "$O" ;;
+            bc) node $T bc --data "$F/train-record" --out "$O" ;;
+            es)
+              if [ -f "$F/train-es-$ISLAND/state.json" ]; then
+                node $T es --start "$F/train-es-$ISLAND/net.json" --resume "$F/train-es-$ISLAND" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
+              else
+                node $T es --start "$F/train-bc/bc.json" --seed $((ISLAND + 1)) --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
+              fi ;;
+            eval)
+              N="$F/$NET/net.json"; [ -f "$N" ] || N="$F/$NET/bc.json"
+              node $T eval --net "$N" --games "$GAMES" --out "$O" ;;
+          esac
+          cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: train-${{ inputs.mode }}${{ inputs.mode == 'es' && format('-{0}', matrix.island) || '' }}
+          path: out/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  hours:
+    needs: train
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Runner hours of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" \
+            -q '[.jobs[] | select(.completed_at != null) | ((.completed_at | fromdate) - (.started_at | fromdate))] | add / 3600' \
+            | awk '{ printf "## Runner 小時\n\n這次 run 已完成的 job 合計 %.2f 小時（不含這個 job）。\n", $1 }' | tee -a "$GITHUB_STEP_SUMMARY"
