@@ -3,7 +3,7 @@
 // and idle farmers, and every piece of the temporary interface (GDD §10 草稿).
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { armyButton, FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { armyButton, FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, openBox, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 import { doubleTap, doubleTapOn, longPress, longPressOn, tap, tapOn } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -37,10 +37,9 @@ const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() 
 const select = (page: Page, ids: number[]) => page.evaluate((u) => window.__proto?.game?.select(u), ids);
 /** The cell at the centre of the screen. */
 async function centreCell(page: Page): Promise<{ x: number; y: number }> {
-  const cam = await page.evaluate(() => window.__proto?.game?.camera());
-  const size = page.viewportSize() ?? { width: 0, height: 0 };
-  if (cam === undefined) throw new Error("no camera");
-  return { x: (cam.x + size.width / 2 / cam.scale) / 32, y: (cam.y + size.height / 2 / cam.scale) / 32 };
+  const c = await page.evaluate(() => window.__proto?.game?.centreCell());
+  if (c === undefined) throw new Error("no camera");
+  return c;
 }
 const minimapPoint = (c: { x: number; y: number }) => [(c.x + 0.5) / SIZE, (c.y + 0.5) / SIZE] as const;
 
@@ -586,7 +585,9 @@ test("全體回城：切換全體回城與回去工作", async ({ page }) => {
 test("指令區：選村民 → 建造 → 民居 → 放下 → ✓", async ({ page }, info) => {
   await centre(page, 18, 77);
   const farmers = await ownIds(page, [0]);
-  await longPress(page, await at(page, { x: 12, y: 77 }), await at(page, { x: 18, y: 79 }));
+  // A box around the five farmers (row 78), from open ground.
+  const { from, to } = await openBox(page, (await units(page)).filter((u) => farmers.includes(u.id)).map((u) => ({ x: u.sx, y: u.sy })), 20);
+  await longPress(page, from, to);
   await expect.poll(() => selection(page)).toEqual({ units: farmers, building: null });
   await page.getByRole("button", { name: "建造" }).tap();
   await shot(page, info, "build-menu");

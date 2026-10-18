@@ -71,12 +71,20 @@ test("量測到一半頁面重新載入了（Safari 記憶體不足）：開局�
   await expect(page.locator("#measure-note")).toBeHidden();
 });
 
-test("ASTC 樣本（測試圖）：量測面板有「ASTC 樣本」，載入 KTX 的 ASTC 頁；顯示卡沒有 ASTC 時寫明（D-085）", async ({ page }) => {
+test("ASTC 樣本（art-v1）：量測面板和按鈕讓開，左右各一名完整的槍兵，上面寫「一般圖」「壓縮圖（ASTC）」；點一下關閉，面板回來；顯示卡沒有 ASTC 時寫明（D-085）", async ({ page, browserName }, info) => {
   const check = watchErrors(page);
-  await start(page, "art=test&scenario=e2e");
+  await start(page, "scenario=e2e");
   await openLab(page);
+  const panel = page.getByRole("region", { name: "量測與確定性檢查" });
   await page.getByRole("button", { name: "ASTC 樣本" }).tap();
+  // On the phone the panel hid the sample (ceo 2026-10-18): the interface steps aside.
+  await expect(panel).toBeHidden();
+  await expect(page.getByRole("button", { name: "選單" })).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.astc() ?? null), { timeout: 15_000 }).toMatch(/^(shown|no-astc)$/);
+  if (browserName === "chromium") await shot(page, info, "art-astc-sample");
+  await page.touchscreen.tap(400, 200);
+  await expect(panel).toBeVisible();
+  await expect(page.getByRole("button", { name: "選單" })).toBeVisible();
   check();
 });
 

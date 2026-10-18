@@ -4,7 +4,7 @@
 // commands from what the page posted. sim.spec.ts runs the real simulation.
 
 import { expect, type Page, test } from "@playwright/test";
-import { INTERACTIVE, IPHONE_SAFE, injectSafeArea, openLab, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { INTERACTIVE, IPHONE_SAFE, injectSafeArea, openBox, openLab, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 import { doubleTap, drag, lift, longPress, move, pinch, pressShowsCue, tap } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -55,6 +55,14 @@ async function idAt(page: Page, c: { x: number; y: number }): Promise<number> {
   return u.id;
 }
 
+/** Long press and drag a box around our five farmers (row 78), from open ground. */
+async function selectFarmers(page: Page): Promise<void> {
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const farmers = (await units(page)).filter((u) => u.owner === me && u.type === 0);
+  const { from, to } = await openBox(page, farmers.map((u) => ({ x: u.sx, y: u.sy })), 20);
+  await longPress(page, from, to);
+}
+
 async function ownIds(page: Page, types: number[]): Promise<number[]> {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   return (await units(page)).filter((u) => u.owner === me && types.includes(u.type)).map((u) => u.id).sort((a, b) => a - b);
@@ -95,7 +103,7 @@ test("選了部隊後點地面 → 前進；點敵人 → 攻擊", async ({ page
 test("選了村民後點資源 → 採集", async ({ page }) => {
   await centre(page, 18, 76);
   const farmers = await ownIds(page, [0]);
-  await longPress(page, await at(page, { x: 12, y: 77 }), await at(page, { x: 18, y: 79 }));
+  await selectFarmers(page);
   await expect.poll(() => selection(page)).toEqual({ units: farmers, building: null });
   await tap(page, await at(page, GOLD));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "gather", u: farmers });
@@ -103,17 +111,20 @@ test("選了村民後點資源 → 採集", async ({ page }) => {
 
 test("長按空地 350 ms 後拖曳 → 框選，優先選軍隊", async ({ page }, info) => {
   await centre(page, 20, 73, 0.8);
-  const from = await at(page, { x: 15, y: 67 });
-  const to = await at(page, { x: 25, y: 79 });
+  // Around the army and three of the farmers (row 78).
+  const army = await ownIds(page, [1, 2, 3]);
+  expect(army.length).toBe(12);
+  const list = await units(page);
+  const inBox = list.filter((u) => army.includes(u.id) || (u.type === 0 && u.cy === 78 && u.cx >= 15));
+  expect(inBox.length).toBe(15);
+  const { from, to } = await openBox(page, inBox.map((u) => ({ x: u.sx, y: u.sy })), 20);
   expect(await pressShowsCue(page, from, 300), "the hold cue shows while the finger is still").toBe(true);
   await page.waitForTimeout(200);
   await move(page, to);
   await expect(page.locator(".marquee")).toBeVisible();
   await shot(page, info, "box");
   await lift(page, to);
-  const army = await ownIds(page, [1, 2, 3]);
-  expect(army.length).toBe(12);
-  // The box also covers three farmers (row 78): military wins.
+  // The box also covers three farmers: military wins.
   await expect.poll(() => selection(page)).toEqual({ units: army, building: null });
 });
 
@@ -229,7 +240,7 @@ test("輪盤的撤退：點地面撤到那裡；撤退中按取消撤退、選�
 test("放建築 → 預覽跟著手指，紅色不能按 ✓，放開後按 ✓ 送出、✗ 取消", async ({ page }, info) => {
   await centre(page, 18, 77);
   const farmers = await ownIds(page, [0]);
-  await longPress(page, await at(page, { x: 12, y: 77 }), await at(page, { x: 18, y: 79 }));
+  await selectFarmers(page);
   await page.evaluate((t) => window.__proto?.game?.startPlacement(t), HOUSE);
   expect(await mode(page)).toBe("place:dragging");
 

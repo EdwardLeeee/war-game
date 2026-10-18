@@ -245,11 +245,14 @@ export class Game implements GestureHost {
         astcSample:
           options.astcSample === undefined
             ? undefined
-            : () =>
-                void showAstcSample(this.app, options.astcSample as AstcSample).then((r) => {
+            : () => {
+                // The interface (DOM, above the battlefield's canvas: the panel, the buttons) steps aside while the sample shows.
+                this.hudRoot.style.display = "none";
+                void showAstcSample(this.app, options.astcSample as AstcSample, () => (this.hudRoot.style.display = "")).then((r) => {
                   this.lastAstc = r;
                   this.lab.log.add(`ASTC 樣本：${r}`);
-                }),
+                });
+              },
       },
       null,
     );
