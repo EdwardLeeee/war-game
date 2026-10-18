@@ -1604,3 +1604,87 @@ test("D-083 (c): with the population rules on and food and gold piling up, hard 
   assert.ok(on === BuildingType.Barracks || on === BuildingType.Range, `on: a barracks or range first (built ${on})`);
   assert.equal(built(false), BuildingType.Farm, "off: a farm first, as before");
 });
+
+// --- D-086 A: food and gold piling up while wood is short; governing earlier ----------------------------------
+
+/**
+ * Hard at minute 13 with 2 barracks, 2 ranges, a mage hall, granary, lumber camp, mine, 9 farms and 12
+ * houses (room to spare), `farmers` farmers at work and 10 spearmen at home, `res` in stock, a finished
+ * stable when `stable`; what it sends with `plan`.
+ */
+function richHard(res: number[], plan: Partial<HardPlan>, opt: { stable?: boolean; farmers?: number } = {}): CommandBody[] {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  w.tick = 13 * 1200;
+  const at = (type: BuildingType, x: number, y: number) => w.addBuilding(0, type, s0.cellX + x, s0.cellY + y, rules().buildings[type].hp, 1000);
+  at(BuildingType.Barracks, 4, -8);
+  at(BuildingType.Barracks, 8, -8);
+  at(BuildingType.Range, 12, -8);
+  at(BuildingType.Range, 16, -8);
+  at(BuildingType.MageHall, 4, -13);
+  at(BuildingType.Granary, -6, -6);
+  at(BuildingType.LumberCamp, -10, 2);
+  at(BuildingType.Mine, 12, 2);
+  for (let k = 0; k < 9; k++) at(BuildingType.Farm, -14 + 3 * (k % 3), -14 + 3 * Math.trunc(k / 3));
+  for (let k = 0; k < 12; k++) at(BuildingType.House, -8 + 3 * (k % 6), 6 + 3 * Math.trunc(k / 6));
+  if (opt.stable === true) at(BuildingType.Stable, 8, -13);
+  for (let k = 0; k < (opt.farmers ?? 30); k++) {
+    const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 10), s0.cellY - 2 - Math.trunc(k / 10));
+    w.units.col.order[slotOf(g, id)] = Order.Gather;
+  }
+  for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY + 2 + Math.trunc(k / 5));
+  w.res.set(res, 0);
+  g.fog.update(w);
+  return hardAi(g, { dodge: false, ...plan }).think(buildView(g, 0));
+}
+const trains = (out: CommandBody[], type: UnitType) => out.some((c) => c.c === "train" && c.type === type);
+
+test("D-086 A (plan.cavalry): with wood short and food and gold piling up, hard puts up a stable and trains cavalry; 0, as before", () => {
+  const built = (cavalry: number) => (richHard([500, 200, 300, 0], { cavalry }).find((c) => c.c === "build") as { type: BuildingType } | undefined)?.type;
+  assert.equal(built(25), BuildingType.Stable, "rich: a stable");
+  assert.notEqual(built(0), BuildingType.Stable, "off: no stable");
+  assert.ok(trains(richHard([700, 20, 300, 0], { cavalry: 25 }, { stable: true }), UnitType.Cavalry), "wood short: cavalry");
+  assert.ok(!trains(richHard([700, 20, 300, 0], { cavalry: 0 }, { stable: true }), UnitType.Cavalry), "off: no cavalry");
+  assert.ok(!trains(richHard([700, 300, 300, 0], { cavalry: 25 }, { stable: true }), UnitType.Cavalry), "wood enough: spearmen and ranged as before");
+});
+
+test("D-086 A (plan.woodShift, plan.woodFarmers): with wood short and food and gold piling up, more farmers go to wood, and more are trained", () => {
+  const ratio = (woodShift: boolean) => richHard([700, 20, 300, 0], { woodShift }).find((c) => c.c === "eco_ratio") as { food: number; wood: number; gold: number } | undefined;
+  assert.deepEqual(ratio(true) && [ratio(true)!.food, ratio(true)!.wood, ratio(true)!.gold], [15, 75, 10]);
+  assert.notDeepEqual(ratio(false) && [ratio(false)!.food, ratio(false)!.wood, ratio(false)!.gold], [15, 75, 10], "off: the ratio as before");
+  // 36 farmers: past the target (32 +-2) already.
+  assert.ok(trains(richHard([700, 20, 300, 0], { woodFarmers: 8 }, { farmers: 36 }), UnitType.Farmer), "wood short: one more farmer");
+  assert.ok(!trains(richHard([700, 20, 300, 0], { woodFarmers: 0 }, { farmers: 36 }), UnitType.Farmer), "off: none");
+  assert.ok(!trains(richHard([700, 300, 300, 0], { woodFarmers: 8 }, { farmers: 36 }), UnitType.Farmer), "wood enough: none");
+});
+
+test("D-086 A (plan.governFrom, governSpare, governNearest): from that minute a first capture is governed when hard can pay; else plundered, as before", () => {
+  /** Hard at minute 13 has just taken small town `which` (first capture), 10 spearmen in it, `res` in stock. */
+  const chosen = (which: "nearest" | "other", res: number[], plan: Partial<HardPlan>) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    const small = w.map.towns
+      .filter((t) => t.size === 0)
+      .sort((a, b) => (a.cellX - s0.cellX) ** 2 + (a.cellY - s0.cellY) ** 2 - ((b.cellX - s0.cellX) ** 2 + (b.cellY - s0.cellY) ** 2) || a.id - b.id);
+    const t = which === "nearest" ? small[0] : small[1];
+    w.tick = 13 * 1200;
+    w.townState[t.id] = TownState.AwaitingChoice;
+    w.townOwner[t.id] = 0;
+    w.res.set(res, 0);
+    for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, t.cellX + (k % 3), t.cellY + 1 + Math.trunc(k / 3));
+    g.fog.update(w);
+    const c = hardAi(g, { dodge: false, ...plan }).think(buildView(g, 0)).find((x) => x.c === "town_choice") as { choice: number } | undefined;
+    return c?.choice;
+  };
+  const rich = [1000, 1000, 1000, 0];
+  assert.equal(chosen("nearest", rich, { governFrom: 12 }), TownChoice.Govern, "from minute 12, rich: governed");
+  assert.equal(chosen("nearest", rich, { governFrom: 0 }), TownChoice.Plunder, "off: plundered, as before");
+  assert.equal(chosen("nearest", rich, { governFrom: 14 }), TownChoice.Plunder, "before its minute: plundered");
+  assert.equal(chosen("other", rich, { governFrom: 12 }), TownChoice.Plunder, "not the nearest small town: plundered");
+  assert.equal(chosen("other", rich, { governFrom: 12, governNearest: false }), TownChoice.Govern, "any town: governed");
+  // A small town costs wood 80 and gold 80 to govern.
+  assert.equal(chosen("nearest", [100, 80, 80, 0], { governFrom: 12 }), TownChoice.Govern, "just enough: governed");
+  assert.equal(chosen("nearest", [100, 80, 80, 0], { governFrom: 12, governSpare: 100 }), TownChoice.Plunder, "nothing to spare: plundered");
+});
