@@ -20,6 +20,15 @@ for (let i = 0; i < args.length; i += 2) {
   await page.goto(`${page_url}?${query}`);
   await page.waitForLoadState("networkidle");
   await page.evaluate(() => document.fonts.ready);
+  // every tappable thing at least 44 x 44 pt (brief; client/e2e checks the same)
+  // (layout size: a pressed button's shrink animation does not change where the finger can land)
+  const small = await page.evaluate(() => [...document.querySelectorAll("button, .b")].map((b) => (
+    { t: (b.textContent || "").trim().slice(0, 12), w: b.offsetWidth, h: b.offsetHeight }
+  )).filter((r) => r.w < 44 || r.h < 44));
+  if (small.length) {
+    console.log(`TOO SMALL in ${name}:`, JSON.stringify(small));
+    process.exitCode = 1;
+  }
   const el = states ? page.locator(".states") : page.locator("#screen");
   await el.screenshot({ path: join(out, `shot-${name}.png`) });
   console.log("wrote", name);
