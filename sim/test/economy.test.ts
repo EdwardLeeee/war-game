@@ -199,7 +199,7 @@ test("build: pays at placement, builders add up (at most 4), the house raises th
     times.push(done);
     const bs = g.w.building(g.w.buildingAt[at.y * g.w.size + at.x]);
     assert.equal(g.w.buildings.col.hp[bs], BUILDINGS[BuildingType.House].hp);
-    assert.equal(g.w.populationCap(0), 15);
+    assert.equal(g.w.populationCap(0), 10 + BUILDINGS[BuildingType.House].populationCap);
   }
   const build = BUILDINGS[BuildingType.House].buildTicks;
   // Walking there takes a few seconds; the building itself takes build / builders.
@@ -458,7 +458,7 @@ test("e2e scenario: resources, finished houses and barracks, squads by the small
   const g = new Game({ seed: 1, scenario: "e2e" });
   const w = g.w;
   assert.equal(w.res[Resource.Wood], 2000);
-  assert.equal(w.populationCap(0), 20);
+  assert.equal(w.populationCap(0), 10 + 2 * BUILDINGS[BuildingType.House].populationCap);
   assert.equal(w.population(0), 15);
   const u = w.units.col;
   const squad = (p: number) => {
