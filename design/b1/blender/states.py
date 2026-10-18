@@ -15,6 +15,13 @@ Rules from ceo (2026-10-01):
   the whole footprint;
 - a destroyed player building is removed at once and its cells are walkable: what is left stays
   low (rubble under 0.6 m, wall stubs under knee height, 0.45 m).
+
+R6 production (design/b1/atlas-buildings.md): B1-02 was drawn on the main city, the house and the
+barracks (APPROVED), which keep exactly that code. The other buildings get the same looks with three
+generalisations: build_a2 cuts at most at 45 % of the height and frames only the wall blocks that start
+below the cut (a tower's tagged block is its top room); damaged_a lights a fire at the top when the
+building has no tagged roof or wall to burn (the West round tower); the farm's build_a1 is the bare
+field staked out (no crop, no water, no scarecrow).
 """
 import math
 import random
@@ -29,6 +36,7 @@ import kit
 import buildings as B1
 
 KNEE = 0.45
+APPROVED = ("main_city", "house", "barracks")      # B1-02 was drawn on these: keep them as approved
 
 
 # ---------------------------------------------------------------- helpers
@@ -433,6 +441,28 @@ def _char_all(root, above=0.25):
 
 # ---------------------------------------------------------------- the states
 
+def _extent(root):
+    """(x0, y0, x1, y1, top) of the building's parts, flags left out; x and y of the parts that rise over 1 m
+    (the walls, not the paving round them)."""
+    bpy.context.view_layer.update()
+    bb = [_bbox(ob) for ob in kit.parts_under(root) if not _is_flag(ob)]
+    tall = [b for b in bb if b[5] > 1.0] or bb
+    return (min(b[0] for b in tall), min(b[1] for b in tall), max(b[3] for b in tall), max(b[4] for b in tall),
+            max(b[5] for b in bb))
+
+
+def fire_at_top(root, P, seed):
+    """A building with no tagged roof or wall to burn: flames and black smoke at the top on the camera
+    side, soot on the two camera faces (the look of 受損 A)."""
+    x0, y0, x1, y1, top = _extent(root)
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    p = (cx + (x0 - cx) * 0.35, cy + (y0 - cy) * 0.35, top - 0.35)
+    flames(root, P, "dm_firegen", p, size=1.8, n=8, seed=seed + 7)
+    smoke(root, "dm_smokegen", (p[0], p[1], p[2] + 0.8), height=3.0, r0=0.35, r1=0.9, n=11, dark=0.16, alpha=0.9)
+    scorch(root, "dm_scgY", (cx + (x1 - cx) * 0.2, y0 - 0.05, top * 0.45), "y", 1.1, 0.9, seed=seed)
+    scorch(root, "dm_scgX", (x0 - 0.05, cy + (y1 - cy) * 0.1, top * 0.4), "x", 1.0, 0.8, seed=seed + 9)
+
+
 def apply(root, kind, c, state, **opts):
     P = kit.palette(c)
     w, d = footprint(kind)
@@ -441,7 +471,12 @@ def apply(root, kind, c, state, **opts):
     H = _body_top(root)
     seed = sum(map(ord, kind)) + (0 if c == "E" else 50)
 
-    if state == "build_a1":
+    if state == "build_a1" and kind.startswith("farm"):
+        for ob in list(kit.parts_under(root)):
+            if ob.name.startswith(("ff_rice", "ff_panicle", "ff_wheat", "ff_ears", "ff_water", "ff_sc")):
+                _drop(ob)
+        stakes(root, P, w, d)
+    elif state == "build_a1":
         cut_above(root, 0.35)
         stakes(root, P, w, d)
         materials_pile(root, P, c, w, d, seed)
@@ -450,8 +485,12 @@ def apply(root, kind, c, state, **opts):
         z_cut = min(z0w + 0.45 * (top - z0w) for z0w, top in
                     [(g.matrix_world.translation.z, g.matrix_world.translation.z + v[5]) for g, v in blocks]) \
             if blocks else H * 0.3
+        framed = blocks
+        if kind not in APPROVED:
+            z_cut = min(z_cut, 0.45 * H)
+            framed = [(g, v) for g, v in blocks if g.matrix_world.translation.z < z_cut]
         cut_above(root, z_cut)
-        skeleton(root, P, c, blocks)
+        skeleton(root, P, c, framed)
         scaffold(root, P, c, -w / 2 + 0.2, w / 2 - 0.2, -d / 2 + 0.2, d / 2 - 0.2, max(wall_tops) - 0.2, canvas=False)
     elif state == "build_a3":
         z_cut = (min(g.matrix_world.translation.z for g, v in roofs) + 0.35) if roofs else H * 0.7
@@ -472,6 +511,7 @@ def apply(root, kind, c, state, **opts):
             ww, dd = (rw, rd) if ridge == "x" else (rd, rw)
             centres.append(front_slope(g.matrix_world, ww, dd, -0.25, 0.5, rh * 0.45))
         cut_holes(roof_parts, centres, 0.75)
+        lit = bool(centres)
         if blocks:
             g, (cx, cy, bw, bd, z0, wh) = max(blocks, key=lambda t: t[0].matrix_world.translation.z + t[1][5])
             top = g.matrix_world.translation.z + wh
@@ -480,6 +520,7 @@ def apply(root, kind, c, state, **opts):
                 o = g.matrix_world.translation
                 p = Vector((o.x + bw * 0.22, o.y - bd * 0.22, top + 0.45))     # clear of a front corner turret
                 flames(root, P, "dm_firetop", (p.x, p.y, p.z), size=2.2, n=9, seed=seed + 5)
+                lit = True
                 smoke(root, "dm_smoketop", (p.x, p.y, p.z + 0.8), height=3.0, r0=0.35, r1=0.9, n=11, dark=0.16,
                       alpha=0.9)
         for k, cc in enumerate(centres):
@@ -495,6 +536,8 @@ def apply(root, kind, c, state, **opts):
                    seed=seed + k)
             scorch(root, f"dm_scX{k}", tuple(M @ Vector((-bw / 2 - 0.13, bd * 0.1, wh * 0.4))), "x", 1.1, 0.9,
                    seed=seed + k + 9)
+        if not lit and kind not in APPROVED:
+            fire_at_top(root, P, seed)
     elif state == "damaged_b":
         roof_parts = []
         for g, v in roofs:
