@@ -1872,6 +1872,11 @@ export const HARD: HardPlan = {
   townRest: 0,
 };
 
+/**
+ * D-083 (c), the user 2026-10-10: hard 「太晚來打我」「來打的兵太少」 (ceo 2026-10-18: earlier and with more). With the
+ * population rules on, hard plays these over HARD.
+ */
+export const HARD_POP: Partial<HardPlan> = {};
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -1904,6 +1909,8 @@ type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
   const plan: HardPlan = { ...HARD, ...know.hard };
+  // D-083 (c): with the population rules on, HARD_POP over HARD (what the caller gives still wins).
+  if ((know.rules.population?.town[TownSize.Small] ?? 0) > 0) Object.assign(plan, HARD_POP, know.hard);
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;

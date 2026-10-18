@@ -208,6 +208,8 @@ interface GameRecord {
    * were more than 30 cells from its main city (-1: never).
    */
   aiAway: number;
+  /** D-083 (c): at minute 15 the AI's farmers, finished houses and soldiers (null: the game was over by then). */
+  aiAt15: { farmers: number; houses: number; soldiers: number } | null;
   /** Random maps (D-074): the map's layout and when the player first saw the AI's main city (-1: never). */
   layout?: string;
   found?: number;
@@ -358,6 +360,7 @@ function play(seed: number): GameRecord {
   let plunderDeaths = 0;
   const plunderAt = new Map<number, { x: number; y: number }>();
   let aiAway = -1;
+  let aiAt15: GameRecord["aiAt15"] = null;
   while (!r.over && w.tick < CAP) {
     if (w.tick % think === 0) {
       for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
@@ -501,6 +504,18 @@ function play(seed: number): GameRecord {
         }
       }
     }
+    if (w.tick === 15 * 1200) {
+      let farmers = 0;
+      let soldiers = 0;
+      for (let i = 0; i < w.units.count; i++) {
+        if (u.owner[i] !== 1) continue;
+        if (u.type[i] === UnitType.Farmer) farmers++;
+        else if (u.type[i] !== UnitType.Militia) soldiers++;
+      }
+      let houses = 0;
+      for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === 1 && b.type[s] === BuildingType.House && b.progress[s] >= 1000) houses++;
+      aiAt15 = { farmers, houses, soldiers };
+    }
     if (w.tick % 1200 === 0) {
       for (let p = 0; p < 2; p++) {
         const pop = w.population(p);
@@ -590,6 +605,7 @@ function play(seed: number): GameRecord {
     pop: { most: popMost, cap: capMost, ceiling: ceilingMost, houses: housesMost, soldiers: soldiersMost, stuck: popStuck },
     plunder: { longest: plunderLongest, deaths: plunderDeaths },
     aiAway,
+    aiAt15,
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
