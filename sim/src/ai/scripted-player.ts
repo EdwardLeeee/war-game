@@ -522,6 +522,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const res: Cost = { food: h[HeaderField.food], wood: h[HeaderField.wood], gold: h[HeaderField.gold], crystal: h[HeaderField.crystal] };
       const pop = h[HeaderField.population];
       const cap = h[HeaderField.populationCap];
+      // D-083: houses up to the ceiling now (off: 120, as before), a house's room as the rules say.
+      const ceiling = h[HeaderField.populationCeiling];
+      const houseRoom = rules.buildings[BuildingType.House].populationCap;
       const reserve: Cost = { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
         res.food - reserve.food >= c.food && res.wood - reserve.wood >= c.wood && res.gold - reserve.gold >= c.gold && res.crystal - reserve.crystal >= c.crystal;
@@ -710,7 +713,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const base = { x: home.cellX, y: home.cellY };
         const add = (type: BuildingType, at: { x: number; y: number } | null) => plans.push({ type, at });
         if (!plan.noMage && plan.hallFirst && !has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
-        if (cap < 120 && cap - pop - queued <= 5) add(BuildingType.House, base);
+        if (cap < ceiling && cap - pop - queued <= houseRoom) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         // Raiders (round 7): the stable first, as early as it may go up (its `requires`, if any, before it).
