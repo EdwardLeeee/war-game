@@ -333,6 +333,8 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     // Castle walls and gates (D-089), known like rock.
     else if (seen && terrain[i] === Terrain.Wall) bits = PlaceBit.Blocked | PlaceBit.Wall;
     else if (seen && w.gateAt[i] === 1) bits = PlaceBit.Gate;
+    // Each gate's lane (the gate, the cell in front, the cell behind) stays open: no building.
+    if (seen && w.gateLane[i] === 1) bits |= PlaceBit.GateLane;
     if (exp !== null && exp[i] === 0) bits |= PlaceBit.Unexplored;
     placement[i] = bits;
   }

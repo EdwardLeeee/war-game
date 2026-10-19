@@ -141,6 +141,11 @@ export class World {
   /** 1 on the cells of the castles' gates (D-089). */
   gateAt: Uint8Array;
   /**
+   * 1 on each gate's lane (ceo 2026-10-20: the gates stay open, so nothing is built there): the gate
+   * cells, the cell in front of each and the first cell behind it.
+   */
+  gateLane: Uint8Array;
+  /**
    * Statistics, not in the hash (D-089's measurement): soldiers lost per player within 3 cells of a
    * gate, and inside a castle's walls or within 3 cells outside them; and the cells where they count.
    */
@@ -311,6 +316,7 @@ export class World {
       this.castles.push(castleOf(s.size, map));
     });
     this.gateAt = new Uint8Array(n * n);
+    this.gateLane = new Uint8Array(n * n);
     this.nearGate = new Uint8Array(n * n);
     this.nearCastle = new Uint8Array(n * n);
     const mark = (a: Uint8Array, x0: number, y0: number, x1: number, y1: number) => {
@@ -322,6 +328,7 @@ export class World {
         this.gateAt[(s.cellY + dy) * n + s.cellX + dx] = 1;
         mark(this.nearGate, s.cellX + dx - 3, s.cellY + dy - 3, s.cellX + dx + 3, s.cellY + dy + 3);
       }
+      for (const [dx, dy] of [...c.gate, ...c.outside, ...c.behind]) this.gateLane[(s.cellY + dy) * n + s.cellX + dx] = 1;
       mark(this.nearCastle, s.cellX + c.inside.x0 - 4, s.cellY + c.inside.y0 - 4, s.cellX + c.inside.x1 + 4, s.cellY + c.inside.y1 + 4);
     });
   }

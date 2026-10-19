@@ -466,6 +466,7 @@ function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap
       corner: cells(c.corner),
       gate: cells(c.gate),
       outside: cells(c.outside),
+      behind: cells(c.behind),
       militia: posts.map(([x, y]): [number, number] => [x, y]),
       garrison: cells(c.garrison),
       towerLand: TOWER_REACH.town + 1,

@@ -209,6 +209,8 @@ export const Reject = {
   AlreadyPlundered: 16,
   /** `garrison` into a building with no room left, counting the soldiers on their way (round 7). */
   NoRoom: 17,
+  /** `build` on a gate's lane (PlaceBit.GateLane; D-089, ceo 2026-10-20: the gates stay open). */
+  GateLane: 18,
 } as const;
 export type Reject = (typeof Reject)[keyof typeof Reject];
 
@@ -491,6 +493,11 @@ export const PlaceBit = {
   Wall: 16,
   /** A castle's gate (D-089): open ground in the ring of walls, once explored. */
   Gate: 32,
+  /**
+   * A gate's lane (D-089): the gate, the cell in front of it and the first cell behind it, once
+   * explored. Open ground nobody may build on (Reject.GateLane).
+   */
+  GateLane: 64,
 } as const;
 
 // --- static data sent once, in "ready" -----------------------------------------------
@@ -606,6 +613,8 @@ export interface TownCastle {
   gate: [number, number][];
   /** For each gate cell (same order), the open cell in front of it outside the walls. */
   outside: [number, number][];
+  /** For each gate cell (same order), the first cell behind it inside the walls. */
+  behind: [number, number][];
   /** Where the militia stand, in the order they are placed. */
   militia: [number, number][];
   /** war-game-ui's drawing of where a garrison stands; the simulation does not place garrisons. */

@@ -35,8 +35,8 @@ export function cmd(g: Game, p: number, body: Record<string, unknown>): void {
 /**
  * Top-left of a size x size square of walkable cells at least 15 cells from every building, the
  * first from the top-left as before D-089. Castle walls (D-089) do not count against it: any in the
- * square or within 4 cells of it are taken down (grid only), so a test's fight is where it was and
- * is not walled in.
+ * square or within 4 cells of it are taken down (grid only), and so are the gates' lanes, so a
+ * test's fight is where it was, is not walled in, and may build there.
  */
 export function openArea(g: Game, size: number): { x: number; y: number } {
   const w = g.w;
@@ -54,6 +54,7 @@ export function openArea(g: Game, size: number): { x: number; y: number } {
       let opened = false;
       for (let yy = Math.max(0, y - 4); yy < Math.min(n, y + size + 4); yy++) {
         for (let xx = Math.max(0, x - 4); xx < Math.min(n, x + size + 4); xx++) {
+          w.gateLane[yy * n + xx] = 0;
           if ((w.grid[yy * n + xx] & BLOCK_WALL) === 0) continue;
           w.grid[yy * n + xx] &= ~BLOCK_WALL;
           opened = true;
