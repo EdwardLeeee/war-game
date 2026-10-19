@@ -18,6 +18,7 @@ import {
   type UnitInfo,
   UnitType,
 } from "../protocol.ts";
+import { type CastleMap, castleOf, FIXED_POSTS } from "./castle.ts";
 
 const S = TICKS_PER_SECOND;
 const speed = (cellsPerSecond100: number) => Math.trunc((cellsPerSecond100 * CELL) / (100 * S));
@@ -150,7 +151,7 @@ export const QUEUE_MAX = 7;
  * own size (GameMap.towerSize: 3 x 3 on random maps with adjacent starts, D-074), the tower's
  * row says so; every other value is the same for every game.
  */
-export function rules(map?: { towerSize?: number }): Required<Rules> {
+export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Required<Rules> {
   const towerSize = map?.towerSize;
   const same = towerSize === undefined || towerSize === BUILDINGS[BuildingType.TownTower].size;
   return {
@@ -168,7 +169,7 @@ export function rules(map?: { towerSize?: number }): Required<Rules> {
     garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },
     towerReach: TOWER_REACH,
     outpost: { slots: OUTPOST.slots, reach: OUTPOST.reach, chase: OUTPOST.chase },
-    towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size)),
+    towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size, map)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
     cannonRange: CANNON.range,
   };
@@ -447,12 +448,28 @@ export function townIncomePermille(plundered: number, recovered: number): number
 }
 
 /** A town's rules as sent in `Rules.towns`. */
-function townInfo(size: number): TownInfo {
+function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap>): TownInfo {
   const t = TOWNS[size];
+  // The castle on this map (D-089): the big city's is centred on this map's tower.
+  const castles = map?.tower !== undefined && map.towns !== undefined ? (map as CastleMap) : undefined;
+  const c = castleOf(size as TownSize, castles);
+  const cells = (l: readonly (readonly [number, number])[]) => l.map(([x, y]): [number, number] => [x, y]);
+  // Militia posts are offsets from the centre cell, as scenarios.ts places them.
+  const posts = (map?.posts ?? FIXED_POSTS).slice(0, t.militia);
   return {
     militia: t.militia, radius: t.radius, plunderTicks: t.plunderTicks, plunder: t.plunder, ruinsTicks: t.ruinsTicks,
     governCost: t.governCost, repairTicks: t.repairTicks, perMinute: governPerMinute(size), populationCap: t.populationCap,
     garrisonNeeded: t.garrisonNeeded, revoltTicks: t.revoltTicks,
+    castle: {
+      inside: { ...c.inside },
+      wall: cells(c.wall),
+      corner: cells(c.corner),
+      gate: cells(c.gate),
+      outside: cells(c.outside),
+      militia: posts.map(([x, y]): [number, number] => [x, y]),
+      garrison: cells(c.garrison),
+      towerLand: TOWER_REACH.town + 1,
+    },
   };
 }
 

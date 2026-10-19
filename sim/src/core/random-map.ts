@@ -13,13 +13,18 @@
 // adjacent maps the big city's tower is 3 x 3 (GameMap.towerSize), centred on the town; its hp,
 // range and damage stay the same.
 //
+// The towns' castles (D-089) are stamped in generation coordinates after the mirror copy, before
+// the fill of what the starts cannot reach; a square round each castle and the way out of each gate
+// are kept clear of rock, forest and resources.
+//
 // Integer maths and the seeded Rng only (sqrt only for the second gold mine's offset, which
 // IEEE 754 defines exactly).
 
 import { type Frame, MIRROR_XY, invert, mirrorX, rotation, then, toCanon } from "../frame.ts";
 import { NodeKind, Terrain, TownSize } from "../protocol.ts";
 import { Rng } from "./fixed.ts";
-import type { GameMap, NodeSpec, TownSpec } from "./map.ts";
+import { type CastleMap, castleOf } from "./castle.ts";
+import { type GameMap, type NodeSpec, stampCastles, type TownSpec } from "./map.ts";
 import { NODE_AMOUNT, TOWNS } from "./rules.ts";
 
 export type Layout = "diagonal" | "adjacent";
@@ -98,6 +103,8 @@ interface Generated {
   n: number;
   layout: Layout;
   rock: Uint8Array;
+  /** Castle walls (D-089). */
+  wall: Uint8Array;
   kind: Int8Array;
   spawns: Pt[];
   towns: { size: TownSize; x: number; y: number }[];
@@ -223,8 +230,26 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
       reserveDisc(p.x + Math.trunc(((q.x - p.x) * i) / steps), p.y + Math.trunc(((q.y - p.y) * i) / steps), 1);
     }
   };
+  // The castles (D-089) in generation coordinates: the tower's top-left is at the big city's centre - 1.
+  const towerSize = layout === "adjacent" ? 3 : 2;
+  const tower = { x: large.x - 1, y: large.y - 1 };
+  const castles: CastleMap = { tower: { cellX: tower.x, cellY: tower.y }, towerSize, towns: placed.map((t) => ({ size: t.size, cellX: t.x, cellY: t.y })) };
   reserveDisc(P0.x, P0.y, 9);
-  for (const t of placed) if (mine(t.x, t.y)) reserveDisc(t.x, t.y, TOWNS[t.size].radius + 2);
+  // A square two cells round each castle's walls, and five cells out from each gate.
+  for (const t of placed) {
+    const c = castleOf(t.size, castles);
+    for (let y = t.y + c.inside.y0 - 3; y <= t.y + c.inside.y1 + 3; y++) {
+      for (let x = t.x + c.inside.x0 - 3; x <= t.x + c.inside.x1 + 3; x++) if (inside(x, y)) reserved[y * n + x] = 1;
+    }
+    c.gate.forEach(([gx, gy], i) => {
+      const [ox, oy] = c.outside[i];
+      for (let k = 1; k <= 5; k++) {
+        const x = t.x + gx + (ox - gx) * k;
+        const y = t.y + gy + (oy - gy) * k;
+        if (inside(x, y)) reserved[y * n + x] = 1;
+      }
+    });
+  }
   reserveDisc(vein.x, vein.y, 3);
   const nearest = (p: Pt, options: Pt[]) =>
     options.reduce((b, o) => (d2(p, o) < d2(p, b) ? o : b), options[0]);
@@ -325,9 +350,10 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     }
   }
   for (const [x, y] of veinCells(layout, vein)) kind[y * n + x] = NodeKind.CrystalVein;
+  const wall = stampCastles(n, rock, kind, castles);
 
   // Fill what the starts cannot reach (4-connected over open, node-free cells).
-  const passable = (i: number) => rock[i] === 0 && kind[i] === -1;
+  const passable = (i: number) => rock[i] === 0 && kind[i] === -1 && wall[i] === 0;
   const seen = new Uint8Array(n * n);
   const queue = new Int32Array(n * n);
   let head = 0;
@@ -357,9 +383,7 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
 
   // The tower: 2 x 2 with its centre on the town centre's top-left corner, on the diagonal; 3 x 3
   // centred on the town centre on a vertical axis. Either way its own mirror image.
-  const towerSize = layout === "adjacent" ? 3 : 2;
-  const tower = { x: large.x - 1, y: large.y - 1 };
-  return { n, layout, rock, kind, spawns, towns: placed, tower, towerSize, M };
+  return { n, layout, rock, wall, kind, spawns, towns: placed, tower, towerSize, M };
 }
 
 function veinCells(layout: Layout, p: Pt): [number, number][] {
@@ -390,7 +414,7 @@ function orient(seed: number, g: Generated, orientation: number, across: boolean
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
       const r = toCanon(R, x, y);
-      terrain[r.v * n + r.u] = g.rock[y * n + x] === 1 ? Terrain.Blocked : Terrain.Open;
+      terrain[r.v * n + r.u] = g.wall[y * n + x] === 1 ? Terrain.Wall : g.rock[y * n + x] === 1 ? Terrain.Blocked : Terrain.Open;
       kind[r.v * n + r.u] = g.kind[y * n + x];
     }
   }

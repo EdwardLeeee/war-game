@@ -54,7 +54,6 @@ import {
   RETARGET_EVERY,
   SEPARATION,
   TOWER_ARROW,
-  TOWNS,
   UNDER_ATTACK_TICKS,
   UNITS,
   WORK_REACH,
@@ -1628,6 +1627,12 @@ export class UnitSystem {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
+        // D-089's measurement: soldiers lost at the castles and at their gates.
+        if (u.owner[i] < PLAYER_COUNT && u.type[i] !== UnitType.Farmer) {
+          const cell = (u.y[i] >> CELL_SHIFT) * w.size + (u.x[i] >> CELL_SHIFT);
+          if (w.nearGate[cell] === 1) w.gateDeaths[u.owner[i]]++;
+          if (w.nearCastle[cell] === 1) w.townDeaths[u.owner[i]]++;
+        }
         if (u.owner[i] < PLAYER_COUNT && u.type[i] === UnitType.Farmer) {
           w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
           w.farmerDeathLog.push(u.owner[i], u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, u.hitCause[i], w.tick);
@@ -1711,10 +1716,8 @@ export function atHome(w: World, i: number): boolean {
   }
   for (let t = 0; t < w.townSize.length; t++) {
     if (w.townOwner[t] !== p || w.townState[t] !== TownState.Governed) continue;
-    const r = TOWNS[w.townSize[t]].radius << CELL_SHIFT;
-    const dx = u.x[i] - ((w.townX[t] << CELL_SHIFT) + 512);
-    const dy = u.y[i] - ((w.townY[t] << CELL_SHIFT) + 512);
-    if (dx * dx + dy * dy <= r * r) return true;
+    // Inside the walls (D-089).
+    if (w.inTown(t, u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT)) return true;
   }
   return false;
 }

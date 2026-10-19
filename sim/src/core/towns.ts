@@ -59,9 +59,6 @@ export class TownSystem {
     const b = w.buildings.col;
     for (let t = 0; t < w.townSize.length; t++) {
       const rule = TOWNS[w.townSize[t]];
-      const r = rule.radius << CELL_SHIFT;
-      const cx = (w.townX[t] << CELL_SHIFT) + 512;
-      const cy = (w.townY[t] << CELL_SHIFT) + 512;
       const present = [0, 0];
       let militia = false;
       for (let s = 0; s < w.units.count; s++) {
@@ -71,9 +68,8 @@ export class TownSystem {
           continue;
         }
         if (o >= PLAYER_COUNT || u.type[s] === UnitType.Farmer || u.action[s] === Action.Garrisoned) continue;
-        const dx = u.x[s] - cx;
-        const dy = u.y[s] - cy;
-        if (dx * dx + dy * dy <= r * r) present[o]++;
+        // Inside the walls (D-089).
+        if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT)) present[o]++;
       }
       let tower = false;
       for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.TownTower && b.town[s] === t) tower = true;

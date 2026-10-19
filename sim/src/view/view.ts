@@ -29,6 +29,7 @@ import {
   PLAYER_COUNT,
   PlaceBit,
   Scenario,
+  Terrain,
   type Snapshot,
   TOWN_STRIDE,
   TownField,
@@ -44,7 +45,7 @@ import {
 import { writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, OUTPOST, TOWER_REACH, TOWERS, TOWNS, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, OUTPOST, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -326,7 +327,12 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   // On a random map rock is known only where explored (D-074).
   const rockSeen = w.map.mode === "random" ? exp : null;
   for (let i = 0; i < n * n; i++) {
-    let bits = terrain[i] === 1 && (rockSeen === null || rockSeen[i] === 1) ? PlaceBit.Blocked : 0;
+    const seen = rockSeen === null || rockSeen[i] === 1;
+    let bits = 0;
+    if (seen && terrain[i] === Terrain.Blocked) bits = PlaceBit.Blocked;
+    // Castle walls and gates (D-089), known like rock.
+    else if (seen && terrain[i] === Terrain.Wall) bits = PlaceBit.Blocked | PlaceBit.Wall;
+    else if (seen && w.gateAt[i] === 1) bits = PlaceBit.Gate;
     if (exp !== null && exp[i] === 0) bits |= PlaceBit.Unexplored;
     placement[i] = bits;
   }
@@ -359,13 +365,11 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   if (TOWERS.on && player !== null) {
     for (let t = 0; t < w.townSize.length; t++) {
       if (w.townOwner[t] !== player || (w.townState[t] !== TownState.Repairing && w.townState[t] !== TownState.Governed)) continue;
-      const r = TOWNS[w.townSize[t]].radius + TOWER_REACH.town;
-      for (let y = Math.max(0, w.townY[t] - r); y <= Math.min(n - 1, w.townY[t] + r); y++) {
-        for (let x = Math.max(0, w.townX[t] - r); x <= Math.min(n - 1, w.townX[t] + r); x++) {
-          const dx = x - w.townX[t];
-          const dy = y - w.townY[t];
-          if (dx * dx + dy * dy <= r * r) placement[y * n + x] |= PlaceBit.TowerLand;
-        }
+      // Inside the walls, and TOWER_REACH.town cells outside them (D-089; the wall is the first ring).
+      const c = w.castles[t].inside;
+      const r = TOWER_REACH.town + 1;
+      for (let y = Math.max(0, w.townY[t] + c.y0 - r); y <= Math.min(n - 1, w.townY[t] + c.y1 + r); y++) {
+        for (let x = Math.max(0, w.townX[t] + c.x0 - r); x <= Math.min(n - 1, w.townX[t] + c.x1 + r); x++) placement[y * n + x] |= PlaceBit.TowerLand;
       }
     }
   }

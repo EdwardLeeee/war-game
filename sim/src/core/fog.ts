@@ -161,15 +161,11 @@ export function writeTownRow(w: World, t: number, out: Int32Array, o: number): v
   let militia = 0;
   let garrison = 0;
   const u = w.units.col;
-  const r = rule.radius << CELL_SHIFT;
-  const cx = (w.townX[t] << CELL_SHIFT) + 512;
-  const cy = (w.townY[t] << CELL_SHIFT) + 512;
   for (let s = 0; s < w.units.count; s++) {
     if (u.home[s] === t && u.owner[s] === NEUTRAL) militia++;
     if (u.owner[s] === w.townOwner[t] && u.owner[s] !== NEUTRAL && u.type[s] !== UnitType.Farmer && u.action[s] !== Action.Garrisoned) {
-      const dx = u.x[s] - cx;
-      const dy = u.y[s] - cy;
-      if (dx * dx + dy * dy <= r * r) garrison++;
+      // Inside the walls (D-089).
+      if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT)) garrison++;
     }
   }
   out[o + TownField.garrison] = garrison;

@@ -96,6 +96,12 @@ export interface GameResult {
     farmerDeaths?: number[][];
     /** Towns lost to a revolt (D-057). */
     revolts: number;
+    /**
+     * Soldiers lost (D-089) inside a castle's walls or within 3 cells outside them, and within 3
+     * cells of a gate. Results from before have none.
+     */
+    townDeaths?: number;
+    gateDeaths?: number;
   }[];
 }
 
@@ -271,6 +277,8 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
       farmersLostBy: Array.from(w.farmerDeaths.subarray(p * 5, p * 5 + 5)),
       farmerDeaths: deathsOf(w, p),
       revolts: w.revolts[p],
+      townDeaths: w.townDeaths[p],
+      gateDeaths: w.gateDeaths[p],
 })),
   };
   writeFileSync(join(out, `game-${i}.json`), JSON.stringify(result, null, 1) + "\n");

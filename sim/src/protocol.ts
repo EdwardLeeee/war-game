@@ -103,7 +103,8 @@ export const NodeKind = {
 } as const;
 export type NodeKind = (typeof NodeKind)[keyof typeof NodeKind];
 
-export const Terrain = { Open: 0, Blocked: 1 } as const;
+/** Blocked: rock. Wall (D-089): a town's castle wall or corner tower; nobody walks or builds there, shots and sight go over it. */
+export const Terrain = { Open: 0, Blocked: 1, Wall: 2 } as const;
 export type Terrain = (typeof Terrain)[keyof typeof Terrain];
 
 export const TownSize = { Small: 0, Large: 1 } as const;
@@ -486,6 +487,10 @@ export const PlaceBit = {
    * here (round 7, D-061; only while `Rules.features.towers`).
    */
   TowerLand: 8,
+  /** A castle's wall or corner tower (D-089; also Blocked), once explored. */
+  Wall: 16,
+  /** A castle's gate (D-089): open ground in the ring of walls, once explored. */
+  Gate: 32,
 } as const;
 
 // --- static data sent once, in "ready" -----------------------------------------------
@@ -580,6 +585,40 @@ export interface TownInfo {
   populationCap: number;
   garrisonNeeded: number;
   revoltTicks: number;
+  /** The castle round the town (D-089); the simulation always sends it. */
+  castle?: TownCastle;
+}
+
+/**
+ * A town's castle (D-089): offsets in cells from the town's centre cell (TownSpec / TownField
+ * cellX, cellY), in the map's own directions, the same for both players. The big city's differ from
+ * map to map (its castle is centred on its tower): read them from this game's rules, never assume.
+ * The town is what lies inside the walls; `radius` stays the walls' distance from the centre.
+ */
+export interface TownCastle {
+  /** Cells inside the walls, inclusive: the town (capturing, holding, governing, plundering). */
+  inside: { x0: number; y0: number; x1: number; y1: number };
+  /** Walls and corner towers (Terrain.Wall): nobody walks or builds there; shots and sight go over. */
+  wall: [number, number][];
+  /** The corner towers' cells (in `wall` too). */
+  corner: [number, number][];
+  /** Gates: open cells in the ring of walls, open to everyone. */
+  gate: [number, number][];
+  /** For each gate cell (same order), the open cell in front of it outside the walls. */
+  outside: [number, number][];
+  /** Where the militia stand, in the order they are placed. */
+  militia: [number, number][];
+  /** war-game-ui's drawing of where a garrison stands; the simulation does not place garrisons. */
+  garrison: [number, number][];
+  /** Arrow towers may go up to this many cells outside `inside` (Chebyshev) while the town is held (D-061). */
+  towerLand: number;
+}
+
+/** Is cell (cellX, cellY) inside the walls of the town whose centre cell is (townCellX, townCellY)? */
+export function inTown(castle: Pick<TownCastle, "inside">, townCellX: number, townCellY: number, cellX: number, cellY: number): boolean {
+  const dx = cellX - townCellX;
+  const dy = cellY - townCellY;
+  return dx >= castle.inside.x0 && dx <= castle.inside.x1 && dy >= castle.inside.y0 && dy <= castle.inside.y1;
 }
 
 /**

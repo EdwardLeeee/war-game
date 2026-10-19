@@ -650,10 +650,8 @@ export function towerLand(w: World, p: number, cx: number, cy: number): boolean 
   }
   for (let t = 0; t < w.townSize.length; t++) {
     if (w.townOwner[t] !== p || (w.townState[t] !== TownState.Repairing && w.townState[t] !== TownState.Governed)) continue;
-    const r = TOWNS[w.townSize[t]].radius + TOWER_REACH.town;
-    const dx = cx - w.townX[t];
-    const dy = cy - w.townY[t];
-    if (dx * dx + dy * dy <= r * r) return true;
+    // Inside the walls, or within TOWER_REACH.town cells outside them (D-089; the wall is the first ring).
+    if (w.nearTown(t, cx, cy, TOWER_REACH.town + 1)) return true;
   }
   return false;
 }

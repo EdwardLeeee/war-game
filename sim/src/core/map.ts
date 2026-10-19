@@ -5,11 +5,13 @@
 // 17). No river in the prototype: rock and forest make the chokes.
 //
 // Features are generated in the half below the diagonal (x < y) and copied to the other
-// half, so symmetry holds by construction. Then every open cell the starts cannot reach
-// becomes rock, and the required places are checked to be reachable.
+// half, so symmetry holds by construction. Then the towns' castles (D-089) go up: their walls
+// are terrain and every cell of a castle and in front of its gates is cleared. Then every open
+// cell the starts cannot reach becomes rock, and the required places are checked to be reachable.
 
 import { type Frame, IDENTITY, MIRROR_XY } from "../frame.ts";
 import { type MapMode, NodeKind, Terrain, TownSize } from "../protocol.ts";
+import { type CastleMap, castleOf } from "./castle.ts";
 import { Rng } from "./fixed.ts";
 import { NODE_AMOUNT, TOWNS } from "./rules.ts";
 
@@ -158,8 +160,16 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
     kind[y * n + x] = NodeKind.CrystalVein;
   }
 
+  const towns: TownSpec[] = [
+    { id: 0, size: TownSize.Small, cellX: SMALL.x, cellY: SMALL.y, radius: TOWNS[TownSize.Small].radius },
+    { id: 1, size: TownSize.Large, cellX: LARGE.x, cellY: LARGE.y, radius: TOWNS[TownSize.Large].radius },
+    ...CORNERS.map((c, k) => ({ id: 2 + k, size: TownSize.Small, cellX: c.x, cellY: c.y, radius: TOWNS[TownSize.Small].radius })),
+  ];
+  const tower = { cellX: LARGE.x - 1, cellY: LARGE.y - 1 };
+  const wall = stampCastles(n, rock, kind, { tower, towns });
+
   // Fill what the starts cannot reach (4-connected over open, node-free cells).
-  const passable = (i: number) => rock[i] === 0 && kind[i] === -1;
+  const passable = (i: number) => rock[i] === 0 && kind[i] === -1 && wall[i] === 0;
   const seen = new Uint8Array(n * n);
   const queue = new Int32Array(n * n);
   let head = 0;
@@ -208,7 +218,7 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
     nodes.push({ kind: k as NodeKind, cellX: i % n, cellY: Math.trunc(i / n), amount });
   }
   const terrain = new Uint8Array(n * n);
-  for (let i = 0; i < n * n; i++) terrain[i] = rock[i] === 1 ? Terrain.Blocked : Terrain.Open;
+  for (let i = 0; i < n * n; i++) terrain[i] = wall[i] === 1 ? Terrain.Wall : rock[i] === 1 ? Terrain.Blocked : Terrain.Open;
 
   return {
     seed,
@@ -219,14 +229,39 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
       { player: 0, cellX: P0.x, cellY: P0.y },
       { player: 1, cellX: P0.y, cellY: P0.x },
     ],
-    towns: [
-      { id: 0, size: TownSize.Small, cellX: SMALL.x, cellY: SMALL.y, radius: TOWNS[TownSize.Small].radius },
-      { id: 1, size: TownSize.Large, cellX: LARGE.x, cellY: LARGE.y, radius: TOWNS[TownSize.Large].radius },
-      ...CORNERS.map((c, k) => ({ id: 2 + k, size: TownSize.Small, cellX: c.x, cellY: c.y, radius: TOWNS[TownSize.Small].radius })),
-    ],
-    tower: { cellX: LARGE.x - 1, cellY: LARGE.y - 1 },
+    towns,
+    tower,
     frames: [IDENTITY, MIRROR_XY],
   };
+}
+
+/**
+ * The towns' castles (D-089) on a map being made: returns the walls (1 = wall or corner tower) and
+ * clears rock and resource nodes from every cell of each castle and the cell in front of each gate.
+ */
+export function stampCastles(n: number, rock: Uint8Array, kind: Int8Array, map: CastleMap): Uint8Array {
+  const wall = new Uint8Array(n * n);
+  for (const t of map.towns) {
+    const c = castleOf(t.size, map);
+    const at = ([dx, dy]: readonly [number, number]) => {
+      const x = t.cellX + dx;
+      const y = t.cellY + dy;
+      if (x < 0 || y < 0 || x >= n || y >= n) throw new Error(`map: town at ${t.cellX},${t.cellY}: its castle leaves the map`);
+      return y * n + x;
+    };
+    const clear = (i: number) => {
+      rock[i] = 0;
+      kind[i] = -1;
+    };
+    for (const cell of c.wall) {
+      const i = at(cell);
+      clear(i);
+      wall[i] = 1;
+    }
+    for (const cell of [...c.gate, ...c.outside]) clear(at(cell));
+    for (let dy = c.inside.y0; dy <= c.inside.y1; dy++) for (let dx = c.inside.x0; dx <= c.inside.x1; dx++) clear(at([dx, dy]));
+  }
+  return wall;
 }
 
 /** A node surrounded by same-kind nodes on all four sides is reached through its neighbours. */
