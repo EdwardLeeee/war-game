@@ -66,6 +66,8 @@ jobs:
       games: ${{ steps.p.outputs.games }}
       config: ${{ steps.p.outputs.config }}
       net_artifact: ${{ steps.p.outputs.net_artifact }}
+      args: ${{ steps.p.outputs.args }}
+      nets: ${{ steps.p.outputs.nets }}
     steps:
       - if: github.event_name == 'push'
         uses: actions/checkout@v7
@@ -87,6 +89,10 @@ jobs:
           islands=$(get islands 8)
           n=1
           if [ "$mode" = "es" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
+          # eval: "nets" lists networks in the branch (paths under sim/, "none": hard itself), one job each, at most 8.
+          nets=$(echo "$S" | jq -c '.nets // []')
+          k=$(echo "$nets" | jq 'length')
+          if [ "$mode" = "eval" ] && [ "$k" -gt 0 ]; then n=$(( k > 8 ? 8 : k )); fi
           {
             echo "mode=$mode"
             echo "from_run=$(get from_run '')"
@@ -96,6 +102,8 @@ jobs:
             echo "games=$(get games 400)"
             echo "config=$(get config '{}')"
             echo "net_artifact=$(get net_artifact train-es-0)"
+            echo "args=$(get args '')"
+            echo "nets=$nets"
           } >> "$GITHUB_OUTPUT"
           echo "設定：$(echo "$S" | jq -c .)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -133,19 +141,23 @@ jobs:
           GAMES: ${{ needs.plan.outputs.games }}
           CONFIG: ${{ needs.plan.outputs.config }}
           NET: ${{ needs.plan.outputs.net_artifact }}
+          ARGS: ${{ needs.plan.outputs.args }}
+          NETS: ${{ needs.plan.outputs.nets }}
         run: |
           set -o pipefail
           F="${GITHUB_WORKSPACE}/from"
           O="${GITHUB_WORKSPACE}/out"
-          T=src/ai/learn/train.ts
+          # run.json "args": more options for train.ts (bc: --epochs, --cap; eval: --seed), split on spaces.
+          T="src/ai/learn/train.ts"
+          set -- $ARGS
           # A run with one artifact is unpacked straight into from/, with several each into from/<name>/.
           first() { find "$F" -name "$1" 2>/dev/null | sort | head -1; }
           case "$MODE" in
-            dryrun) node $T dryrun --out "$O" ;;
-            record) node $T record --games "$GAMES" --out "$O" ;;
+            dryrun) node $T dryrun --out "$O" "$@" ;;
+            record) node $T record --games "$GAMES" --out "$O" "$@" ;;
             bc)
               S=$(first samples.bin); [ -n "$S" ] || { echo "no samples.bin in from_run" >&2; exit 1; }
-              node $T bc --data "$(dirname "$S")" --out "$O" ;;
+              node $T bc --data "$(dirname "$S")" --out "$O" "$@" ;;
             es)
               R="$F/train-es-$ISLAND"
               if [ ! -f "$R/state.json" ] && [ "$ISLAND" = "0" ] && [ -f "$F/state.json" ]; then R="$F"; fi
@@ -156,17 +168,20 @@ jobs:
                 node $T es --start "$B" --seed $((ISLAND + 1)) --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
               fi ;;
             eval)
+              L=$(echo "$NETS" | jq -r ".[$ISLAND] // empty")
+              if [ "$L" = "none" ]; then node $T eval --games "$GAMES" --out "$O" "$@"; cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+              if [ -n "$L" ]; then node $T eval --net "$L" --games "$GAMES" --out "$O" "$@"; cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
               N="$F/$NET/net.json"
               [ -f "$N" ] || N="$F/$NET/bc.json"
               [ -f "$N" ] || N=$(first net.json)
               [ -n "$N" ] && [ -f "$N" ] || N=$(first bc.json)
-              node $T eval --net "$N" --games "$GAMES" --out "$O" ;;
+              node $T eval --net "$N" --games "$GAMES" --out "$O" "$@" ;;
           esac
           cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: train-${{ needs.plan.outputs.mode }}${{ needs.plan.outputs.mode == 'es' && format('-{0}', matrix.island) || '' }}
+          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
           path: out/
           retention-days: 14
           if-no-files-found: ignore
