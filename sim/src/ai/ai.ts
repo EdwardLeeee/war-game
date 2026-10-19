@@ -2113,6 +2113,12 @@ export interface HardPlan {
    * for it (this takes from the soldiers' money: measured apart; false: only with money left over, as above).
    */
   towerFirst: boolean;
+  /**
+   * D-086 A4 (the user's 75830947: 21-30 cavalry in minutes 22-26; cf56e34c: 16 by minute 16): the mix also answers
+   * enemy cavalry: CAVALRY_MIX percent or more of the enemy soldiers it knows of moves it counterMix points toward
+   * spearmen (spearmen hit cavalry x3) (false: cavalry not counted, as before).
+   */
+  counterCavalry: boolean;
 }
 
 export const HARD: HardPlan = {
@@ -2164,7 +2170,10 @@ export const HARD: HardPlan = {
   townTowers: 0,
   towerSpare: 150,
   towerFirst: false,
+  counterCavalry: false,
 };
+/** D-086 A4 (plan.counterCavalry): this share (percent) of cavalry among the enemy soldiers it knows of. */
+const CAVALRY_MIX = 30;
 /** D-086 A4 (plan.cavalryCounter): enemy soldiers it must know of before it weighs their mix. */
 const CAVALRY_SEEN = 6;
 /** D-086 A4 (plan.charge): the least cavalry that charge, how far from them the targets may be, spearmen this near count as by them, and how often (ticks) it picks again. */
@@ -2625,7 +2634,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       let enemyRanged = 0;
       let enemyMages = 0;
       let enemyWorth = 0;
+      let enemyCavalry = 0;
       for (const e of intel.values()) {
+        if (e.type === UnitType.Cavalry) enemyCavalry++;
         if (e.type === UnitType.Spearman) enemySpear++;
         else if (e.type === UnitType.Ranged) enemyRanged++;
         else if (e.type === UnitType.Mage) enemyMages++;
@@ -2957,15 +2968,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // The mix answers what it has seen: a cannon shot kills a ranged unit but not a spearman, and
       // ranged units hit spearmen 2.5 times as hard.
       let share = spearBase;
+      const cavalryMix = plan.counterCavalry && knownSoldiers + enemyCavalry >= CAVALRY_SEEN && enemyCavalry * 100 >= CAVALRY_MIX * (knownSoldiers + enemyCavalry);
       if (plan.counterMix > 0) {
-        if (enemyMages >= 2) share += plan.counterMix;
+        if (cavalryMix) share += plan.counterMix;
+        else if (enemyMages >= 2) share += plan.counterMix;
         else if (enemySpear + enemyRanged >= 6 && enemySpear * 100 >= (enemySpear + enemyRanged) * 60) share -= plan.counterMix;
         else if (enemySpear + enemyRanged >= 6 && enemyRanged * 100 >= (enemySpear + enemyRanged) * 60) share += plan.counterMix;
       }
       share = Math.max(20, Math.min(80, share));
       labels[HEAD_MIX] = share >= 60 ? 0 : share <= 40 ? 2 : 1;
       if (netChoice !== null && netChoice[HEAD_MIX] !== AS_HARD) share = NET_SHARE[netChoice[HEAD_MIX]];
-      // D-086 A (plan.cavalry): while wood is short and food and gold pile up, cavalry first, up to its share.
       // D-086 A4 (plan.cavalryCounter): cavalry first while below its share against a mostly ranged and mage enemy.
       if (cavalryWant) {
         const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry).length + done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
@@ -2973,6 +2985,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (cavalry * 100 < plan.cavalryCounter * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
         counted.cavalryTrained += before - room;
       }
+      // D-086 A (plan.cavalry): while wood is short and food and gold pile up, cavalry first, up to its share.
       if (plan.cavalry > 0 && woodShort) {
         const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry).length + done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
         if (cavalry * 100 < plan.cavalry * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);

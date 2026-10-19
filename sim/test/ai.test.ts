@@ -2212,3 +2212,25 @@ test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 ce
   }
   assert.ok(placed > 0, "it put up towers");
 });
+
+test("D-086 A4 (plan.counterCavalry): against an enemy with many cavalry hard leans to spearmen; off, cavalry is not counted", () => {
+  // 12 spearmen and 8 ranged at home (60% spearmen, over its 45-55% share): which it trains first.
+  const first = (counterCavalry: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 13 * 1200;
+    w.addBuilding(0, BuildingType.Barracks, s0.cellX + 4, s0.cellY - 9, 500, 1000);
+    w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 9, 500, 1000);
+    for (let k = 0; k < 6; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 8 + 3 * k, s0.cellY + 6, 200, 1000);
+    for (let k = 0; k < 12; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 6), s0.cellY + 2 + Math.trunc(k / 6));
+    for (let k = 0; k < 8; k++) put(g, 0, UnitType.Ranged, s0.cellX + 4 + (k % 4), s0.cellY + 4 + Math.trunc(k / 4));
+    for (let k = 0; k < 8; k++) put(g, 1, UnitType.Cavalry, s0.cellX + 6 + (k % 4), s0.cellY - 12 - Math.trunc(k / 4));
+    w.res.set([1000, 1000, 1000, 0], 0);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, counterCavalry }).think(buildView(g, 0));
+    return (out.find((c) => c.c === "train" && c.type !== UnitType.Farmer) as { type: number } | undefined)?.type;
+  };
+  assert.equal(first(true), UnitType.Spearman, "8 cavalry in sight: spearmen first");
+  assert.equal(first(false), UnitType.Ranged, "off: cavalry not counted, ranged first as before");
+});
