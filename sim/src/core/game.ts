@@ -16,6 +16,7 @@ import {
   HASH_EVERY,
   type MapMode,
   MAX_TICKS,
+  NEUTRAL,
   PLAYER_COUNT,
   type SimEvent,
   TOWN_STRIDE,
@@ -53,9 +54,14 @@ export interface Outgoing {
   ev: SimEvent;
 }
 
-/** "attacked" events: at most one per 8 x 8-cell block per 60 ticks per player. */
+/**
+ * "attacked" events: at most one per 8 x 8-cell block per 60 ticks per player and attacker's
+ * owner (D-087: militia hitting there does not hide an enemy player hitting there too).
+ */
 const ATTACK_BLOCK = 3;
 const ATTACK_EVERY = 60;
+/** Who can hurt something: the players and NEUTRAL (militia, the big city's tower). */
+const ATTACKERS = NEUTRAL + 1;
 
 export class Game {
   readonly config: GameConfig;
@@ -71,6 +77,7 @@ export class Game {
   readonly log: Command[] = [];
   /** Events of the last step. */
   events: Outgoing[] = [];
+  /** Per player hurt and attacker's owner (p * ATTACKERS + by), per block: the tick of the last "attacked". */
   private lastAttacked: Int32Array[] = [];
 
   constructor(config: GameConfig) {
@@ -88,7 +95,7 @@ export class Game {
     this.ctx = { w: this.w, fog: this.fog, econ: this.econ, nextGroup: { value: 0 } };
     const perRow = Math.ceil(this.w.size / (1 << ATTACK_BLOCK));
     const blocks = perRow * perRow;
-    for (let p = 0; p < PLAYER_COUNT; p++) this.lastAttacked.push(new Int32Array(blocks).fill(-ATTACK_EVERY));
+    for (let k = 0; k < PLAYER_COUNT * ATTACKERS; k++) this.lastAttacked.push(new Int32Array(blocks).fill(-ATTACK_EVERY));
   }
 
   get tick(): number {
@@ -138,10 +145,14 @@ export class Game {
     for (const h of hurt) {
       if (h.owner < 0 || h.owner >= PLAYER_COUNT) continue;
       const block = ((h.y >> CELL_SHIFT) >> ATTACK_BLOCK) * perRow + ((h.x >> CELL_SHIFT) >> ATTACK_BLOCK);
-      const last = this.lastAttacked[h.owner];
-      if (w.tick - last[block] < ATTACK_EVERY) continue;
-      last[block] = w.tick;
-      this.events.push({ to: h.owner, ev: { k: "attacked", x: h.x, y: h.y, target: h.id } });
+      // One event per attacker's owner, in owner order.
+      for (let by = 0; by < ATTACKERS; by++) {
+        if ((h.by & (1 << by)) === 0) continue;
+        const last = this.lastAttacked[h.owner * ATTACKERS + by];
+        if (w.tick - last[block] < ATTACK_EVERY) continue;
+        last[block] = w.tick;
+        this.events.push({ to: h.owner, ev: { k: "attacked", x: h.x, y: h.y, target: h.id, by } });
+      }
     }
 
     w.tick++;

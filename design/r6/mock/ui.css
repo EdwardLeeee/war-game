@@ -239,3 +239,23 @@
 /* R6-04: the square minimap of a square map, in a framed panel */
 .screen > .minimap.sqmap { width: 112px; height: 112px; padding: 4px; filter: none; }
 .screen > .minimap.sqmap img { border-radius: 4px; }
+
+/* 你的陸 (the user 2026-10-19): a third row on the start card; the card keeps within the 380 pt screen */
+.start .opts .k { white-space: nowrap; }
+.start .opts { grid-template-columns: 52px 1fr; gap: 5px 10px; }
+.start .opts .aside { align-self: center; margin-left: 6px; font-size: 12px; opacity: .85; white-space: nowrap; }
+.start .desc { margin: 0 0 2px 62px; }
+.start .lead { margin: 0 0 4px; }
+.start .go { margin: 6px 0 2px; }
+.start .note { margin: 2px 0; }
+
+/* the two-column start card */
+.screen > .start { width: 640px; padding: 12px 20px 8px; }
+.start .cols { display: grid; grid-template-columns: 1fr 250px; column-gap: 22px; align-items: start; margin-top: 6px; }
+.start .lcol .opts { margin: 0; }
+.start .rcol { display: flex; flex-direction: column; gap: 6px; }
+.start .rcol .go { flex-direction: column; align-items: stretch; margin: 0; gap: 8px; }
+.start .rcol .go .b.big { min-width: 0; width: 100%; font-size: 16px; }
+.start .rcol .note, .start .rcol .why { margin: 0; text-align: left; }
+.start .rcol .update { margin: 0; }
+.start .foot { margin-top: 6px; }

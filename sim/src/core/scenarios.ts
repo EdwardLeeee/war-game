@@ -202,7 +202,8 @@ export const PERF_200: typeof PERF = { ...PERF, farmers: 70, spearmen: 62, range
 export const PERF_360: typeof PERF = { ...PERF, farmers: 126, spearmen: 114, ranged: 114, army: { x: 30, y: 51 }, width: 20, population: 360 };
 
 /**
- * perf: both sides at 114 / 120 population. 22 houses by each main city; 40 farmers working
+ * perf: both sides at 114 population, the cap 186 (D-083: the main city's 10 and 22 houses of
+ * 8; 120 before, houses of 5). 22 houses by each main city; 40 farmers working
  * under the economy ratio; 34 spearmen, 34 ranged and 6 mages on autocast in a block beside
  * the big city, within reach of its militia, its tower and each other, so the battle starts
  * by itself. While OUTPOST is on (D-080), 2 outposts beside the block, each manned by 6 of its
