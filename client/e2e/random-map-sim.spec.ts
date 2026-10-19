@@ -14,7 +14,9 @@ const FARMER = 0;
 // The scouting measurement plays this seed: its random map has rocks along the scouts' ways
 // (seeds 1–10 tried: 0–18 rock cells found in 20 seconds, this one 55), so the ground is painted
 // again within the window on every run (a fresh seed found none on CI's WebKit once, run 37730054591).
-const SCOUT_SEED = 8;
+// The castles' walls (D-089) are no rock: on seed 8 the scouts met only walls in those 20 seconds
+// (0 rocks, no repaint); seed 3 meets 11 rocks, 5 repaints (Chromium on this machine, 2026-10-20).
+const SCOUT_SEED = 3;
 // The person's game plays this seed: a scout meets a town by tick 559 (seeds 2, 3, 6, 8, 10 tried:
 // 555–1171); with a fresh seed CI's WebKit once found none in 60 seconds (run 37732088471).
 const PLAY_SEED = 6;

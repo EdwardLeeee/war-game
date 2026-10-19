@@ -1,13 +1,13 @@
 // 使用者 2026-10-18 的回饋（D-084）on the phone held sideways (814 × 380): 搶 keeps soldiers by
-// default as 治理 does (the capture dialog), and the towns drawn as a stretch of wall (the user's
-// choice B): 鎮 3 × 3 cells, 城 4 × 4 right under its tower, the state's words under the wall. The
-// fake world shows every state; the real simulation shows where the big city's tower really
-// stands (in the middle).
+// default as 治理 does (the capture dialog). The towns' wall symbol (the user's choice B) gave way
+// to real castles (D-089, the user 2026-10-19: 「希望像一個城堡」; castle.spec.ts): with a castle
+// no symbol and no range circle; the walls on the simulation's cells (here without the atlases:
+// blocks, the inside tinted), a tap on them picking the town, and the state's words under the
+// south wall. The fake world shows every state; the real simulation the big city's tower inside its walls.
 
 import { expect, type Page, test } from "@playwright/test";
 import { shot, watchErrors } from "./helpers.ts";
 
-const TILE = 32;
 const TOWER = 9; // BuildingType.TownTower
 
 const walls = (page: Page) => page.evaluate(() => window.__proto?.game?.townWalls() ?? []);
@@ -31,14 +31,6 @@ async function lookAtCity(page: Page): Promise<void> {
   await expect.poll(async () => (await buildings(page)).some((b) => b.type === TOWER)).toBe(true);
 }
 
-/** The town's wall: a picture's frame and, for the test, where it stands. */
-async function wallOf(page: Page, id: number): Promise<{ x: number; y: number; side: number; visible: boolean }> {
-  await expect.poll(async () => (await walls(page)).find((w) => w.id === id)?.visible ?? false).toBe(true);
-  const w = (await walls(page)).find((v) => v.id === id);
-  if (w === undefined) throw new Error(`no wall for town ${id}`);
-  return w;
-}
-
 test("攻下對話框（D-084）：搶和治理都預設留最少駐軍數（小鎮 1 名）", async ({ page }, info) => {
   const check = watchErrors(page);
   await startFake(page);
@@ -53,59 +45,47 @@ test("攻下對話框（D-084）：搶和治理都預設留最少駐軍數（小
   check();
 });
 
-test("野城的城牆（D-084）：中立小鎮、我方搶奪中、敵方治理、廢墟都畫城牆；小鎮 3×3 格在正中間，大城 4×4 在塔的正下方；狀態字在城牆下面；點城牆就是選城鎮", async ({ page }, info) => {
+const castleCells = (page: Page, id: number) => page.evaluate((t) => window.__proto?.game?.castleCells(t) ?? null, id);
+
+test("有城堡以後（D-089）：不畫 D-084 的城牆符號；中立、我方搶奪中、敵方治理、廢墟的城牆都照模擬的格子畫成方塊（沒有美術）；點牆就是選城鎮", async ({ page }, info) => {
   const check = watchErrors(page);
   await startFake(page);
   await lookAtCity(page);
-  const all = await towns(page);
   // The fake world: 0 neutral (30, 66), 1 ours governed, 2 ruins (36, 80), 3 the big city ours plundering (48, 48), 4 the enemy's governed (38, 56).
-  for (const t of all.filter((v) => v.size === 0)) {
-    const w = await wallOf(page, t.id);
-    expect(w, `town ${t.id}`).toMatchObject({ x: (t.cx + 0.5) * TILE - 48, y: (t.cy + 0.5) * TILE - 48, side: 96 });
-  }
-  const tower = (await buildings(page)).find((b) => b.type === TOWER);
-  if (tower === undefined) throw new Error("no tower");
-  const big = await wallOf(page, 3);
-  expect(big.side).toBe(4 * TILE);
-  expect(big.y, "its top along the tower's foot").toBe((tower.cy + tower.size) * TILE);
-  expect(big.x + big.side / 2, "centred under the tower").toBe((tower.cx + tower.size / 2) * TILE);
-  // A tap on the wall picks the town (the ruins at (36, 80): no unit there).
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.castle() ?? null))?.blockTowns ?? 0).toBe((await towns(page)).length);
+  expect((await walls(page)).filter((w) => w.visible), "no D-084 symbol").toEqual([]);
+  // A tap on the ruins' west wall picks the town (no unit there).
+  const ruins = await castleCells(page, 2);
+  if (ruins === null) throw new Error("no castle");
+  const [wx, wy] = ruins.wall.filter(([x]) => x === ruins.inside.x0 - 1).sort(([, a], [, b]) => a - b)[2];
   await centre(page, 36, 80);
-  expect(await pickAt(page, await toScreen(page, 36.5, 80.5))).toBe("town");
-  // Soldiers of ours beside the ruins and the enemy's town, so that the pictures are not in the fog.
+  expect(await pickAt(page, await toScreen(page, wx, wy))).toBe("town");
+  // Soldiers of ours beside the ruins and the enemy's town, so that they are not in the fog.
   const spear = await page.evaluate(() => (window.__proto?.game?.units() ?? []).filter((u) => u.owner === window.__proto?.game?.me() && u.type === 1).map((u) => u.id));
   await page.evaluate(([a, b]) => window.__proto?.game?.place([a, b], [{ x: 40, y: 83 }, { x: 42, y: 57 }]), [spear[0], spear[1]] as const);
   await page.waitForTimeout(500);
-  for (const [name, x, y] of [["d084-neutral-town", 30, 66], ["d084-own-plundering", 48, 48], ["d084-enemy-governed", 38, 56], ["d084-ruins", 36, 80]] as const) {
-    await centre(page, x, y);
+  for (const [name, x, y] of [["d089-blocks-neutral-town", 30, 66], ["d089-blocks-own-plundering", 48, 48], ["d089-blocks-enemy-governed", 38, 56], ["d089-blocks-ruins", 36, 80]] as const) {
+    await centre(page, x, y, 0.9);
     await shot(page, info, name);
   }
   check();
 });
 
-test("大城的塔被拆掉（D-084）：城牆留在原來的位置，不跳回正中間", async ({ page }, info) => {
+test("大城的塔被拆掉（D-089）：城牆照模擬的格子，位置不變", async ({ page }) => {
   const check = watchErrors(page);
   await startFake(page);
   await lookAtCity(page);
-  // Neutral again (a revolt), its tower standing.
-  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_revolted", town: 3, from: 0 }));
-  await expect.poll(async () => (await towns(page)).find((t) => t.id === 3)?.state).toBe(0);
-  // The revolt's line goes before the pictures.
-  await expect(page.getByRole("status").filter({ hasText: "叛離" })).toHaveCount(0, { timeout: 10_000 });
-  const before = await wallOf(page, 3);
+  const before = await castleCells(page, 3);
   const tower = (await buildings(page)).find((b) => b.type === TOWER);
-  if (tower === undefined) throw new Error("no tower");
-  await centre(page, 48, 48);
-  await shot(page, info, "d084-neutral-city-fake");
+  if (tower === undefined || before === null) throw new Error("no tower or castle");
   await page.evaluate((id) => window.__proto?.game?.remove([id]), tower.id);
   await expect.poll(async () => (await buildings(page)).some((b) => b.type === TOWER)).toBe(false);
   await page.waitForTimeout(300);
-  expect(await wallOf(page, 3)).toEqual(before);
-  await shot(page, info, "d084-city-tower-down");
+  expect(await castleCells(page, 3)).toEqual(before);
   check();
 });
 
-test("真的模擬（D-084）：中立大城的塔在正中間，城牆在塔的正下方、不重疊，還在城鎮的圓裡", async ({ page }, info) => {
+test("真的模擬（D-089）：中立大城的塔在城牆裡面的正中間，牆照模擬的格子", async ({ page }, info) => {
   const check = watchErrors(page);
   // Watching the computer play itself: everything in sight, nothing taken yet.
   await page.goto("./?test=1&watch=1&tps=20");
@@ -116,13 +96,11 @@ test("真的模擬（D-084）：中立大城的塔在正中間，城牆在塔的
   const tower = (await buildings(page)).find((b) => b.type === TOWER);
   if (tower === undefined) throw new Error("no tower");
   expect(big.cx >= tower.cx && big.cx < tower.cx + tower.size && big.cy >= tower.cy && big.cy < tower.cy + tower.size, "the tower stands in the middle").toBe(true);
-  const w = await wallOf(page, big.id);
-  expect(w.side).toBe(4 * TILE);
-  expect(w.y).toBe((tower.cy + tower.size) * TILE);
-  expect(w.x + w.side / 2).toBe((tower.cx + tower.size / 2) * TILE);
-  const far = Math.hypot(w.x + w.side - (big.cx + 0.5) * TILE, w.y + w.side + TILE - (big.cy + 0.5) * TILE);
-  expect(far, "the wall and its words inside the circle").toBeLessThan(big.radius * TILE);
-  await centre(page, big.cx + 0.5, big.cy + 2);
-  await shot(page, info, "d084-neutral-city");
+  const c = await castleCells(page, big.id);
+  if (c === null) throw new Error("no castle");
+  expect(tower.cx >= c.inside.x0 && tower.cx + tower.size - 1 <= c.inside.x1 && tower.cy >= c.inside.y0 && tower.cy + tower.size - 1 <= c.inside.y1, "the tower inside the walls").toBe(true);
+  expect((await walls(page)).filter((w) => w.visible), "no D-084 symbol").toEqual([]);
+  await centre(page, big.cx + 0.5, big.cy + 2, 0.9);
+  await shot(page, info, "d089-neutral-city");
   check();
 });
