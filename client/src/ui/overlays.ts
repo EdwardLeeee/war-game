@@ -94,6 +94,9 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: 
   return e;
 }
 
+/** A message strip's look: an alarm (red, the default), an order taken (`ok`: a check), or `info`. */
+export type ToastKind = "ok" | "info";
+
 export class Overlays {
   private readonly root: HTMLElement;
   private readonly cue: HTMLElement;
@@ -108,6 +111,7 @@ export class Overlays {
   private readonly placeOk: HTMLButtonElement;
   private readonly placeCancel: HTMLButtonElement;
   private readonly toastBox: HTMLElement;
+  private readonly toastText: HTMLElement;
   private toastTimer = 0;
   private promptTimer = 0;
   wheelItems: string[] | null = null;
@@ -136,6 +140,11 @@ export class Overlays {
     this.placeCancel.setAttribute("aria-label", "取消放建築");
     this.toastBox = el("div", "toast", root);
     this.toastBox.setAttribute("role", "status");
+    // An order taken (R6-31): a green check before the words (style.css shows it on .toast-ok only).
+    const check = el("span", "toast-check", this.toastBox);
+    check.setAttribute("aria-hidden", "true");
+    check.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+    this.toastText = el("span", "toast-text", this.toastBox);
     for (const e of [this.cue, this.marquee, this.wheelBackdrop, this.wheel, this.prompt, this.place, this.toastBox]) e.hidden = true;
   }
 
@@ -272,8 +281,14 @@ export class Overlays {
     this.place.hidden = true;
   }
 
-  toast(text: string): void {
-    this.toastBox.textContent = text;
+  /**
+   * The message strip (one at a time: a new one replaces the old, 2.2 s, R6-25-08). Red is an
+   * alarm; `ok`, an order taken, is dark with a green check; `info` is dark (R6-31).
+   */
+  toast(text: string, kind?: ToastKind): void {
+    this.toastText.textContent = text;
+    this.toastBox.classList.toggle("toast-ok", kind === "ok");
+    this.toastBox.classList.toggle("toast-info", kind === "info");
     this.toastBox.hidden = false;
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => {
@@ -283,7 +298,7 @@ export class Overlays {
 
   /** Takes this message off the strip now, if it is still the one showing (a newer one stays). */
   clearToast(text: string): void {
-    if (this.toastBox.hidden || this.toastBox.textContent !== text) return;
+    if (this.toastBox.hidden || this.toastText.textContent !== text) return;
     window.clearTimeout(this.toastTimer);
     this.toastBox.hidden = true;
   }

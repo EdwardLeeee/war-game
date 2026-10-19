@@ -88,6 +88,8 @@ export interface GameHook {
   culture(): string;
   /** 正式介面's left (R6-13): the minimap open (and on its own), what 全體回城 shows (home, work or ""), how many places 地圖 counts. */
   left(): { minimap: boolean; auto: boolean; recall: string; places: number };
+  /** Orders sent and not in the snapshot yet (game/pending.ts): sites to come, soldiers to come in this building's queue, and how many were given while paused. */
+  pending(building?: number): { sites: number; trains: number; waiting: number };
   /** What the last ASTC 樣本 showed: shown, no-astc, or why it failed (D-085). */
   astc(): string | null;
   /** Each town's wall as drawn, world px (D-084). */
@@ -243,6 +245,7 @@ export function gameHook(game: Game): GameHook {
     art: () => game.artForTest,
     culture: () => game.culture,
     left: () => game.hud.leftForTest,
+    pending: (building) => ({ sites: game.pending.sites().length, trains: building === undefined ? 0 : game.pending.trains(building).length, waiting: game.pending.waiting }),
     astc: () => game.lastAstc,
     mapMode: () => game.view?.map.mode ?? "fixed",
     knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],

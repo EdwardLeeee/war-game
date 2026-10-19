@@ -215,7 +215,7 @@ test("×（R6-30）：回到什麼都沒選——選位置中按 × 也離開選
   check();
 });
 
-test("放建築的提示列有「取消」（R6-30 NEW-12）：按了收掉預覽，回到指令區", async ({ page }, info) => {
+test("放建築的提示列有「取消」（R6-30 NEW-12）：按了和 ✗ 一樣，預覽收掉、跳出「已取消蓋民居」", async ({ page }, info) => {
   const check = watchErrors(page);
   await start(page, "a");
   const farmers = (await own(page, 0)).map((u) => u.id);
@@ -229,5 +229,7 @@ test("放建築的提示列有「取消」（R6-30 NEW-12）：按了收掉預�
   await cancel.tap();
   await expect.poll(() => mode(page)).toBe("normal");
   await expect(page.locator(".prompt")).toBeHidden();
+  await expect(page.locator(".toast")).toHaveText("已取消蓋民居");
+  await expect(page.locator(".toast")).toHaveClass(/\btoast-info\b/);
   check();
 });
