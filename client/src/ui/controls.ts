@@ -1,8 +1,10 @@
 // Top-right game controls (GDD §10 草稿: 右上 暫停、速度、選單): speed cycles 正常 → 快 → 慢,
 // 暫停 / 繼續, and a banner while paused (GDD §11: while paused you can still select and
-// give orders). Temporary prototype interface; the menu comes with the HUD shell.
+// give orders). With 正式介面 on, R6-11's look (ui/r6.css); the menu comes with the HUD shell.
 
 import { SPEED_TPS } from "../params.ts";
+import { formalUi } from "./formal.ts";
+import { dress, type IconName } from "./icons.ts";
 
 export type SpeedName = keyof typeof SPEED_TPS;
 
@@ -19,6 +21,8 @@ export function tickRateText(tps: number): string {
 export function nextSpeed(s: SpeedName): SpeedName {
   return ORDER[(ORDER.indexOf(s) + 1) % ORDER.length];
 }
+
+const SPEED_ICON: Record<SpeedName, IconName> = { slow: "slow", normal: "speed", fast: "fast" };
 
 export interface ControlHandlers {
   togglePause(): void;
@@ -37,16 +41,19 @@ export class Controls {
     this.bar = document.createElement("div");
     this.bar.className = "top-right";
     hud.appendChild(this.bar);
+    // 正式介面 (R6-11): 52 × 44, the icon over the word; 暫停 the main one (gold).
+    const formal = formalUi();
     this.speedBtn = document.createElement("button");
     this.speedBtn.type = "button";
-    this.speedBtn.className = "secondary";
+    this.speedBtn.className = formal ? "b sec" : "secondary";
     this.speedBtn.addEventListener("click", () => h.cycleSpeed());
     this.pauseBtn = document.createElement("button");
     this.pauseBtn.type = "button";
+    if (formal) this.pauseBtn.className = "b pri";
     this.pauseBtn.addEventListener("click", () => h.togglePause());
     this.bar.append(this.speedBtn, this.pauseBtn);
     this.banner = document.createElement("div");
-    this.banner.className = "paused-banner";
+    this.banner.className = formal ? "paused-banner panel" : "paused-banner";
     this.banner.setAttribute("role", "status");
     this.banner.textContent = "暫停中：仍可下指令";
     // R6-31: how many orders wait for 繼續 (none: the line is not there).
@@ -60,11 +67,14 @@ export class Controls {
   }
 
   setSpeed(s: SpeedName): void {
-    this.speedBtn.textContent = `速度 ${SPEED_LABEL[s]}`;
+    // 正式介面: the word is the speed only (正常, 快, 慢); its name says what it is.
+    if (formalUi()) dress(this.speedBtn, { ic: SPEED_ICON[s], label: SPEED_LABEL[s], name: `速度 ${SPEED_LABEL[s]}` });
+    else this.speedBtn.textContent = `速度 ${SPEED_LABEL[s]}`;
   }
 
   setPaused(paused: boolean): void {
-    this.pauseBtn.textContent = paused ? "繼續" : "暫停";
+    if (formalUi()) dress(this.pauseBtn, { ic: paused ? "play" : "pause", label: paused ? "繼續" : "暫停" });
+    else this.pauseBtn.textContent = paused ? "繼續" : "暫停";
     this.banner.hidden = !paused;
   }
 
