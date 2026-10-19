@@ -6,7 +6,8 @@ like rock; water blocks; fords and bridges are 3 cells wide and walkable (fords 
   tpatch(root, c, w, d, plan)   w x d metres round the origin; plan (design/r6/common/r651.py), metres, render axes:
       ground  the gpatch plan under it (ground.py, look A)
       rocks   [(x, y), ...]           a heap of boulders on each cell
-      cliff   [(x, y), ...]           a cell of rock face (the escarpment, taller and darker than a heap)
+      cliff_line [(x, y), ...]        the escarpment's line (rock face, taller and darker than a heap)
+      bank    [[(x, y), ...], ...]    the earth bank round the water, a little bigger than it
       water   [[(x, y), ...], ...]    river or lake polygons
       ford    [[(x, y), ...], ...]    shallow water with stepping stones
       bridge  [(x0, y0, x1, y1)]      a timber bridge over that rectangle, its length along the longer side
@@ -45,15 +46,12 @@ def tpatch(root, c, variant=0, w=48.0, d=28.0, plan=None):
     P["cliff"] = lib.mat("tp_cliff", (0.42, 0.35, 0.28), 0.9, noise=0.45, noise_scale=4, pattern="brick", pattern_scale=0.6)
     P["cliffdark"] = lib.mat("tp_cliffdark", (0.3, 0.25, 0.2), 0.9, noise=0.4, noise_scale=5)
     # flat colours as dark as ground.LOOK's (the lit ground comes out about 1.5 x brighter than its albedo)
-    water = lib.mat("tp_water", (0.035, 0.1, 0.16), 0.06, noise=0.12, noise_scale=3)
-    shallow = lib.mat("tp_shallow", (0.12, 0.2, 0.22), 0.12, noise=0.15, noise_scale=4)
+    water = lib.mat("tp_water", (0.018, 0.06, 0.1), 0.22, noise=0.12, noise_scale=3)
+    shallow = lib.mat("tp_shallow", (0.07, 0.14, 0.15), 0.3, noise=0.2, noise_scale=4)
     bank = lib.mat("tp_bank", (0.17, 0.13, 0.08), 0.95, noise=0.3, noise_scale=8)
+    for k, pts in enumerate(plan.get("bank", [])):
+        _water(f"tp_bank{k}", pts, bank, root, 0.03)
     for k, pts in enumerate(plan.get("water", [])):
-        # a band of bank round the water: the same outline a little bigger, under it
-        cx = sum(p[0] for p in pts) / len(pts)
-        cy = sum(p[1] for p in pts) / len(pts)
-        _water(f"tp_bank{k}", [(cx + (x - cx) * 1.0 + (0.45 if x > cx else -0.45), cy + (y - cy) * 1.0 + (0.45 if y > cy else -0.45))
-                               for x, y in pts], bank, root, 0.026)
         _water(f"tp_water{k}", pts, water, root, 0.034)
     for k, pts in enumerate(plan.get("ford", [])):
         _water(f"tp_ford{k}", pts, shallow, root, 0.04)
@@ -82,14 +80,24 @@ def tpatch(root, c, variant=0, w=48.0, d=28.0, plan=None):
                 box(f"tp_rail{k}{s}", (0.1, L, 0.12), P["beam"], root, loc=(cx + s * (Wd / 2 - 0.2), cy, 1.1))
     for k, (x, y) in enumerate(plan.get("rocks", [])):
         _boulders(f"tp_rk{k}", x, y, P, root, rnd, n=rnd.choice((3, 4)), size=rnd.uniform(1.0, 1.35))
-    for k, (x, y) in enumerate(plan.get("cliff", [])):
-        # an escarpment: three tall broken prisms per cell, strata, a darker foot
-        for i in range(3):
-            h = rnd.uniform(2.4, 3.3)
-            box(f"tp_cl{k}_{i}", (rnd.uniform(0.75, 1.05), rnd.uniform(0.9, 1.3), h), P["cliff"], root,
-                loc=(x + (i - 1) * 0.6 + rnd.uniform(-0.1, 0.1), y + rnd.uniform(-0.25, 0.25), h / 2),
-                rot=(rnd.uniform(-4, 4), rnd.uniform(-4, 4), rnd.uniform(-25, 25)), bevel=0.06, taper=(0.75, 0.8))
-        _boulders(f"tp_clf{k}", x, y - 0.9, P, root, rnd, n=2, size=0.7, mat=P["cliffdark"])
+    line = plan.get("cliff_line", [])
+    if line:
+        # one escarpment along the line: broken blocks of rock face, strata, scree at its foot
+        segs = list(zip(line, line[1:]))
+        for k, ((x0, y0), (x1, y1)) in enumerate(segs):
+            L = math.hypot(x1 - x0, y1 - y0)
+            ang = math.degrees(math.atan2(y1 - y0, x1 - x0))
+            n = max(2, int(L / 0.9))
+            for i in range(n):
+                t = (i + 0.5) / n
+                x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+                h = rnd.uniform(2.6, 3.4)
+                box(f"tp_cl{k}_{i}", (L / n + 0.25, rnd.uniform(1.3, 1.8), h), P["cliff"], root, loc=(x, y, h / 2),
+                    rot=(rnd.uniform(-3, 3), rnd.uniform(-3, 3), ang + rnd.uniform(-8, 8)), bevel=0.08, taper=(0.82, 0.7))
+            for i in range(n):
+                t = rnd.random()
+                _boulders(f"tp_scree{k}_{i}", x0 + (x1 - x0) * t + rnd.uniform(-0.3, 0.3), y0 + (y1 - y0) * t - 1.1, P, root, rnd,
+                          n=2, size=0.55, mat=P["cliffdark"])
     for k, (x, y, v) in enumerate(plan.get("trees", [])):
         g = lib.empty(f"tp_tree{k}", parent=root, loc=(x + rnd.uniform(-0.2, 0.2), y + rnd.uniform(-0.2, 0.2), 0))
         nature.tree(g, c, variant=v, seed=200 + k)

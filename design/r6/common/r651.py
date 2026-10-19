@@ -59,11 +59,11 @@ def scene(kind):
         s["open"] = [(x, y) for x in (11, 12) for y in (2, 3, 4)]
         route = [(0, 7.5), (8.0, 7.5), (10.0, 3.5), (14.0, 3.5), (16.0, 7.5), (24, 7.5)]
     elif kind == "cliff":
-        s["cliff"] = [(8 + k * 7 // 11, k) for k in range(12)]
+        s["cliff"] = sorted({(int(8.6 + 7.0 * t), int(0.2 + 11.6 * t)) for t in [k / 48 for k in range(49)]})
         route = [(0, 7.5), (8.0, 10.0), (12.5, 13.0), (17.0, 13.0), (19.0, 10.0), (24, 7.5)]
     elif kind in ("ford", "bridge"):
-        river = [(11.6 + 0.8 * math.sin(y / 2.6), y) for y in range(D_CELLS)]
-        s["water"] = [(int(x) + dx, y) for x, y in river for dx in (-1, 0, 1)]
+        s["water"] = [(x, y) for y in range(D_CELLS) for x in range(W_CELLS)
+                      if abs(x + 0.5 - (12.1 + 0.8 * math.sin((y + 0.5) / 2.6))) <= 1.3]
         cross = [(x, y) for x, y in s["water"] if 6 <= y <= 8]
         s["water"] = [c for c in s["water"] if c not in cross]
         s["open"] = cross
@@ -95,6 +95,34 @@ def _poly_cells(cells):
     return out
 
 
+def _band(line, half, y0=None, y1=None):
+    """A polygon round a centre line (local cells) `half` cells to each side, metres; only the part with y0 <= y < y1."""
+    pts = [(x, y) for x, y in line if (y0 is None or y >= y0) and (y1 is None or y <= y1)]
+    left, right = [], []
+    for k, (x, y) in enumerate(pts):
+        a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / L, dx / L
+        left.append(to_m(x + nx * half, y + ny * half))
+        right.append(to_m(x - nx * half, y - ny * half))
+    return left + right[::-1]
+
+
+def _ellipse(cx, cy, rx, ry, n=40, j=0.06, seed=3):
+    rnd = random.Random(seed)
+    out = []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        k = 1 + rnd.uniform(-j, j)
+        out.append(to_m(cx + rx * k * math.cos(a), cy + ry * k * math.sin(a)))
+    return out
+
+
+RIVER = [(12.1 + 0.8 * math.sin(y / 2.6), y) for y in [k * 0.5 - 1.0 for k in range(34)]]
+CLIFF = [(8.6 + 7.0 * t, 0.2 + 11.6 * t) for t in [k / 12 for k in range(13)]]
+
+
 def plan(kind):
     s = scene(kind)
     rnd = random.Random(5)
@@ -108,15 +136,23 @@ def plan(kind):
     road = [[to_m(x, y) for x, y in s["route"]]]
     p = dict(ground=dict(road=road, decals=decals, dark=[], dirt=[], gravel=[]),
              rocks=[to_m(x + 0.5, y + 0.5) for x, y in s["rocks"]],
-             cliff=[to_m(x + 0.5, y + 0.5) for x, y in s["cliff"]],
-             water=_poly_cells(s["water"] + s["bridge"]), ford=_poly_cells(s["ford"]),   # water under the bridge too
+             cliff_line=[to_m(x, y) for x, y in CLIFF] if kind == "cliff" else [],
+             water=[], bank=[], ford=[],
              trees=[(*to_m(x + 0.5, y + 0.5), (x * 7 + y * 13) % 3) for x, y in s["trees"]],
              thick=[to_m(x + 0.5, y + 0.5) for x, y in s["thick"]])
-    if s["bridge"]:
-        xs = [x for x, _ in s["bridge"]]
-        ys = [y for _, y in s["bridge"]]
-        (a, b), (c, d) = to_m(min(xs), max(ys) + 1), to_m(max(xs) + 1, min(ys))
-        p["bridge"] = [(a, b, c, d)]
+    if kind in ("ford", "bridge"):
+        p["bank"] = [_band(RIVER, 1.75)]
+        if kind == "ford":
+            p["water"] = [_band(RIVER, 1.3, None, 6.0), _band(RIVER, 1.3, 9.0, None)]
+            p["ford"] = [_band(RIVER, 1.4, 5.9, 9.1)]
+        else:
+            p["water"] = [_band(RIVER, 1.3)]
+            cx = 12.1 + 0.8 * math.sin(7.5 / 2.6)
+            (a, b), (c, d) = to_m(cx - 1.9, 9.0), to_m(cx + 1.9, 6.0)
+            p["bridge"] = [(a, b, c, d)]
+    elif kind == "lake":
+        p["bank"] = [_ellipse(12.0, 7.5, 5.25, 4.0)]
+        p["water"] = [_ellipse(12.0, 7.5, 4.8, 3.6)]
     return p
 
 

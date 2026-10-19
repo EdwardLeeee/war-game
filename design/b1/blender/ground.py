@@ -31,9 +31,15 @@ LOOK = {
 }
 
 
+_LIFT = [0]
+
+
 def _poly(name, pts, m, parent, z, thick=0.02):
-    """A flat polygon facing up at height z (one face: a thin slab's sides flipped some normals, which rendered black)."""
+    """A flat polygon facing up at height z, every one a hair above the last: overlapping faces at the same height
+    rendered black (the first renders' road joints and overlapping patches)."""
     import bmesh
+    _LIFT[0] += 1
+    z += _LIFT[0] * 0.0004
     bm = bmesh.new()
     vs = [bm.verts.new((x, y, 0.0)) for x, y in pts]
     area = sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts)))
@@ -67,6 +73,7 @@ def _offset(line, d):
 def gpatch(root, c, variant=0, style="A", w=52.0, d=40.0, plan=None):
     S = LOOK[style]
     plan = plan or {}
+    _LIFT[0] = 0
     rnd = random.Random(7 + variant)
     grass = lib.mat(f"gp_grass_{style}", S["grass"], 0.92, noise=S["gn"], noise_scale=S["gs"])
     grass2 = lib.mat(f"gp_grass2_{style}", S["grass2"], 0.92, noise=S["gn"], noise_scale=S["gs"] * 1.7)
