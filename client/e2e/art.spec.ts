@@ -101,17 +101,31 @@ test.describe("新的裝置（沒選過美術）", () => {
   });
 });
 
-test("誰穿哪一陸（使用者選）：perf 場景同一場交戰，A 我方東陸、電腦西陸，B 反過來，C 兩邊都東陸；3 倍；給 ceo 看（CI 的 Chromium，D-085）", async ({ page, browserName }, info) => {
-  test.skip(browserName !== "chromium", "pictures for ceo");
+test("你的陸（使用者 2026-10-19 自選）：開局畫面一列東陸／西陸，第一次是東陸，選了記在這台裝置；電腦穿另一陸；perf 交戰的樣子給 ceo 看（CI 的 Chromium）", async ({ page, browserName }, info) => {
   test.setTimeout(240_000);
   const check = watchErrors(page);
-  for (const plan of ["A", "B", "C"]) {
-    await start(page, `art=x3&scenario=perf&culture=${plan}`);
+  await page.goto("./?test=1&art=x3&scenario=perf");
+  const row = page.getByRole("radiogroup", { name: "你的陸" });
+  await expect(row.getByRole("radio", { name: "東陸" })).toHaveAttribute("aria-checked", "true");
+  if (browserName === "chromium") await shot(page, info, "art-start-screen-e");
+  await row.getByRole("radio", { name: "西陸" }).tap();
+  await expect(row.getByRole("radio", { name: "西陸" })).toHaveAttribute("aria-checked", "true");
+  expect(await page.evaluate(() => localStorage.getItem("war-game.proto.culture"))).toBe("w");
+  if (browserName === "chromium") await shot(page, info, "art-start-screen-w");
+  await page.reload();
+  await expect(page.getByRole("radiogroup", { name: "你的陸" }).getByRole("radio", { name: "西陸" })).toHaveAttribute("aria-checked", "true");
+  if (browserName !== "chromium") return check();
+  // The perf battle as 西陸 (we) against 東陸 (the computer), then as 東陸: 3 倍.
+  for (const [label, name] of [["西陸", "w"], ["東陸", "e"]] as const) {
+    await page.goto("./?test=1&art=x3&scenario=perf");
+    await page.getByRole("radiogroup", { name: "你的陸" }).getByRole("radio", { name: label }).tap();
+    await page.getByRole("button", { name: "開始" }).tap();
+    await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
+    expect(await page.evaluate(() => window.__proto?.game?.culture())).toBe(name);
     await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(100);
-    expect((await art(page))?.label).toBe("3 倍");
     await page.evaluate(() => window.__proto?.game?.centerOn(48, 52, 1.6));
     await page.waitForTimeout(3000);
-    await shot(page, info, `art-culture-${plan}`);
+    await shot(page, info, `art-culture-${name}`);
   }
   check();
 });

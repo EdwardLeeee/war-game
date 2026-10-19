@@ -53,8 +53,9 @@ async function pause(page: Page): Promise<void> {
 }
 
 /** A game of more than a minute, our soldiers in 編隊 1, the camera moved; then away: kept for 繼續上一局. */
-async function playAndPutAway(page: Page, ticks = 1300): Promise<{ tick: number; group: number[] }> {
+async function playAndPutAway(page: Page, ticks = 1300, culture: "東陸" | "西陸" | null = null): Promise<{ tick: number; group: number[] }> {
   await page.goto(`./${QUERY}`);
+  if (culture !== null) await page.getByRole("radiogroup", { name: "你的陸" }).getByRole("radio", { name: culture }).tap();
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   const group = await page.evaluate(() => {
@@ -77,7 +78,9 @@ test("繼續上一局：切到背景存起來，重新載入後開局畫面有�
   test.setTimeout(240_000);
   const check = watchErrors(page);
   const bodies = await catchUploads(page);
-  const { tick, group } = await playAndPutAway(page);
+  // Played as 西陸 (the user 2026-10-19: 你的陸).
+  const { tick, group } = await playAndPutAway(page, 1300, "西陸");
+  expect(await page.evaluate(() => window.__proto?.game?.culture())).toBe("w");
   // 自動訓練 (on for the person) may have added new soldiers to the group by now.
   const before = { groups: await groups(page), camera: await camera(page) };
   const kept = await saved(page);
@@ -93,8 +96,11 @@ test("繼續上一局：切到背景存起來，重新載入後開局畫面有�
   await expect(resume).toHaveText(`繼續上一局（第 ${Math.floor(tick / 1200)} 分）`);
   await expect(resume).toBeEnabled();
   await shot(page, info, "d083-continue-start");
+  // The start screen's 你的陸 changed since: the game goes on as it was played.
+  await page.getByRole("radiogroup", { name: "你的陸" }).getByRole("radio", { name: "東陸" }).tap();
   await resume.tap();
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.screen === "battle", null, { timeout: 60_000 });
+  expect(await page.evaluate(() => window.__proto?.game?.culture()), "as it was played").toBe("w");
   // Where it was, paused, its screen as it was.
   const h = await header(page);
   expect(h.paused).toBe(true);
