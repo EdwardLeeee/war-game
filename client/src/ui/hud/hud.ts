@@ -136,6 +136,8 @@ export class Hud {
 
     const host = {
       view: () => game.view,
+      pending: () => game.pending,
+      paused: () => game.paused,
       mode: () => game.mode,
       command: (cmd: Parameters<Game["command"]>[0]) => game.command(cmd),
       setMode: (m: Parameters<Game["setMode"]>[0]) => game.setMode(m),

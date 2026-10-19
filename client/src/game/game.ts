@@ -54,7 +54,7 @@ import {
   type ScenarioName,
   Stance,
   TOWN_STRIDE,
-  type TownChoice,
+  TownChoice,
   TownField,
   TownSize,
   TownState,
@@ -66,6 +66,7 @@ import {
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
+import { PendingOrders } from "./pending.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
@@ -390,6 +391,8 @@ export class Game implements GestureHost {
   readonly charges = new Charges();
   /** Stances sent that the snapshot does not show yet (D-081), for what 前進 and 撤退 go by. */
   private readonly stances = new SentStances();
+  /** Orders from the buttons the snapshot does not show yet (a site, the queue, 自動訓練, 搶 or 治理): shown at once (pending.ts). */
+  readonly pending = new PendingOrders();
   /** 閃紅提醒 (D-081): each group's base and alarm, and what the group buttons show (updated every snapshot). */
   private readonly alarms = new GroupAlarms();
   private alarmState: (Alarm & { present: number })[] = [0, 1, 2, 3].map(() => ({ advancing: false, base: null, alarm: false, tell: false, present: 0 }));
@@ -604,6 +607,7 @@ export class Game implements GestureHost {
       cmd = { ...cmd, u: out };
     }
     const seq = this.post(cmd, false);
+    this.acknowledge(cmd, seq);
     // 堅守 or 取消 (stop and hold): what the next order goes by until the snapshot shows it (D-081).
     if (cmd.c === "stance") this.stances.note(cmd.u, cmd.stance, this.view?.header?.[H.tick] ?? 0);
     if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") {
@@ -630,6 +634,44 @@ export class Game implements GestureHost {
     if (named !== undefined && (cmd.c === "stance" || cmd.c === "garrison" || cmd.c === "post" || redirects(cmd))) this.charges.drop(Array.isArray(named) ? named : [named]);
     if (cmd.c === "attack") this.charges.start(cmd.u, cmd.target, this.targetCell(cmd.target), this.view?.header?.[H.tick] ?? 0);
     return seq;
+  }
+
+  /**
+   * An order from a button shows at once (the user 2026-10-19: 「不然還以為沒按到」): what it will do
+   * is kept until the snapshot shows it (pending.ts), and a line says what was ordered; while the
+   * game is paused, that it starts on 繼續.
+   */
+  private acknowledge(cmd: CommandBody, seq: number): void {
+    const view = this.view;
+    if (view === null || seq < 0) return;
+    const tick = view.header?.[H.tick] ?? 0;
+    const later = this.paused;
+    switch (cmd.c) {
+      case "build": {
+        this.pending.add({ k: "build", seq, tick, type: cmd.type, x: cmd.x, y: cmd.y });
+        const name = BUILDING_NAME[cmd.type] ?? "建築";
+        this.toast(later ? `已下令蓋${name}，按繼續後開工` : `已下令蓋${name}，${cmd.u.length > 0 ? `派 ${cmd.u.length} 名村民` : "派最近的村民"}`);
+        break;
+      }
+      case "train":
+        for (let i = 0; i < (cmd.n ?? 1); i++) this.pending.add({ k: "train", seq, tick, building: cmd.building, unit: cmd.type });
+        if (later) this.toast(`已加入訓練：${UNIT_NAME[cmd.type] ?? ""}，按繼續後開始`);
+        break;
+      case "auto_train": {
+        this.pending.add({ k: "auto", seq, tick, building: cmd.building, on: cmd.on });
+        const o = view.buildingRow(cmd.building);
+        const name = (o < 0 ? undefined : BUILDING_NAME[view.curr?.snap.buildings[o + BuildingField.type] ?? -1]) ?? "建築";
+        this.toast(`已${cmd.on ? "恢復" : "暫停"}這座${name}的自動訓練${later ? "，按繼續後生效" : ""}`);
+        break;
+      }
+      case "town_choice":
+        this.pending.add({ k: "town", seq, tick, town: cmd.town, choice: cmd.choice });
+        if (later) this.toast(`已選${cmd.choice === TownChoice.Plunder ? "搶" : "治理"}，按繼續後開始`);
+        break;
+      case "eco_ratio":
+        if (later) this.toast("已套用經濟分配，按繼續後生效");
+        break;
+    }
   }
 
   /** Where a unit or building is (cells, its centre), or null when it is not in the snapshot. */
@@ -1253,6 +1295,7 @@ export class Game implements GestureHost {
         const view = this.view;
         const mine = this.culture;
         this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), PROJECTION);
+        this.renderer.pending = this.pending;
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
@@ -1279,6 +1322,7 @@ export class Game implements GestureHost {
         }
         for (const ev of msg.events) {
           if (ev.k === "rejected") {
+            this.pending.refused(ev.seq);
             const cmd = this.sent.find((c) => c.seq === ev.seq);
             // A refused 搶 or 治理: the soldiers stationed with it go back to 積極 and to 全軍.
             this.setStance(this.army.refused(ev.seq), Stance.Aggressive);
@@ -1290,6 +1334,7 @@ export class Game implements GestureHost {
           }
         }
         this.stances.settle(view.header?.[H.tick] ?? 0, (id) => (view.unitRow(id) >= 0 ? view.unitStance(id) : null));
+        this.pending.settle(view.header?.[H.tick] ?? 0);
         this.pruneArmy();
         this.draftArmy();
         this.musterRecruits();

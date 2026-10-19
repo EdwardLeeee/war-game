@@ -6,6 +6,7 @@ import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
 import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
 import { buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots } from "../../game/features.ts";
 import { POST_TYPE } from "../../game/outpost.ts";
+import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
@@ -37,6 +38,10 @@ const CALL_WORD: Record<number, string> = { [UnitType.Ranged]: "遠程", [UnitTy
 /** What the bottom panels ask of the game. */
 export interface PanelHost {
   view(): GameView | null;
+  /** Orders sent and not in the snapshot yet (game/pending.ts): the queue one longer, 自動訓練 as sent. */
+  pending(): PendingOrders;
+  /** The game is paused (orders wait for 繼續). */
+  paused(): boolean;
   mode(): Mode;
   command(cmd: CommandBody): void;
   setMode(mode: Mode): void;
@@ -87,6 +92,12 @@ export interface PanelHost {
   toggleCollapsed(): void;
   /** 預留 (D-054): the reserve 自動訓練 leaves untouched, set in a dialog. */
   openReserve(): void;
+}
+
+/** A building's flags with 自動訓練 as just sent (game/pending.ts; null: as the snapshot has it). */
+export function withAutoTrain(flags: number, sent: boolean | null): number {
+  if (sent === null) return flags;
+  return sent ? flags | BuildingFlag.AutoTrain : flags & ~(BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
 }
 
 /**
@@ -220,7 +231,7 @@ export class SelectionInfo {
     if (sel.building !== null) {
       const o = view.buildingRow(sel.building);
       const b = view.curr?.snap.buildings;
-      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.queueLength]}:${b[o + B.progress] >= 1000 ? 1 : 0}`;
+      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.queueLength]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${this.host.pending().trains(sel.building).length}`;
     }
     const p = view.inspected;
     if (p !== null) {
@@ -447,6 +458,12 @@ export class SelectionInfo {
         q.setAttribute("aria-label", `取消訓練第 ${i + 1} 個：${UNIT_NAME[unit] ?? ""}`);
         if (i === 0) headBar = bar(q, "queue");
       }
+      // Sent and not in the queue yet (the game paused: until 繼續): there at once (pending.ts).
+      for (const unit of this.host.pending().trains(id)) {
+        const q = button(queue, UNIT_NAME[unit] ?? "?", this.host.paused() ? "繼續後開始" : "等待中", () => {}, "queue-item secondary pending");
+        q.disabled = true;
+        q.setAttribute("aria-label", `${UNIT_NAME[unit] ?? ""}：${this.host.paused() ? "繼續後開始訓練" : "等待開始訓練"}`);
+      }
     }
     const depot = own ? this.depot(id) : null;
     this.updaters.push(() => {
@@ -472,7 +489,7 @@ export class SelectionInfo {
       }
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
-      const auto = own ? (autoTrainText(type, b[o + B.flags]) ?? "") : "";
+      const auto = own ? (autoTrainText(type, withAutoTrain(b[o + B.flags], this.host.pending().autoTrain(id))) ?? "") : "";
       status.textContent = `${own ? [locked, auto].filter((t) => t !== "").join("　") : remembered}${inside}`;
       headBar?.(b[o + B.queueProgress] / 1000);
     });
@@ -680,7 +697,7 @@ export class CommandArea {
     if (sel.building !== null) {
       const o = view.buildingRow(sel.building);
       const b = view.curr?.snap.buildings;
-      const auto = o < 0 || b === undefined ? 0 : b[o + B.flags] & (BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
+      const auto = o < 0 || b === undefined ? 0 : withAutoTrain(b[o + B.flags], this.host.pending().autoTrain(sel.building)) & (BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
       return o < 0 || b === undefined ? "none" : `b:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}`;
     }
     return "none";
@@ -788,7 +805,7 @@ export class CommandArea {
       // 自動訓練 (D-054): on by default for the player; a tap pauses or resumes this building
       // (it can be set before the building is finished, too).
       if (AUTO_TRAIN.buildings.includes(type)) {
-        const on = (b[o + B.flags] & BuildingFlag.AutoTrain) !== 0;
+        const on = (withAutoTrain(b[o + B.flags], this.host.pending().autoTrain(id)) & BuildingFlag.AutoTrain) !== 0;
         const auto = button(this.el, "自動訓練", on ? "目前：開" : "目前：暫停", () => this.host.command({ c: "auto_train", building: id, on: !on }), "secondary");
         if (on) auto.classList.add("active");
       }

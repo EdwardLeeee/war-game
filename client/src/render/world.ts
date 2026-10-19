@@ -9,6 +9,7 @@ import type { Camera } from "../camera/camera.ts";
 import { PT_PER_CELL, type Projection, TOP } from "../camera/projection.ts";
 import {
   Action,
+  AUTO_TRAIN,
   BuildingField as B,
   BUILDING_STRIDE,
   BuildingFlag,
@@ -19,6 +20,7 @@ import {
   TOWN_STRIDE,
   TICKS_PER_SECOND,
   TownField as T,
+  TownChoice,
   TownSize,
   TownState,
   UNIT_STRIDE,
@@ -33,6 +35,7 @@ import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT, WARNING_TINT } from "./atlas.ts";
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 import { ArtStructures } from "./structure-art.ts";
+import type { PendingOrders } from "../game/pending.ts";
 import type { Culture } from "../art/spec.ts";
 import { ArtUnits } from "./unit-art-draw.ts";
 import type { UnitArt } from "./unit-art.ts";
@@ -183,6 +186,9 @@ export class WorldRenderer {
   private shots: Shot[] = [];
   /** Arrows drawn since the game started (tests). */
   shotCount = 0;
+
+  /** The game's orders sent and not in the snapshot yet (pending.ts): sites to come, 自動訓練, 搶 or 治理. */
+  pending: PendingOrders | null = null;
 
   /** Units drawn from war-game-ui's atlases (D-085), or null: the shapes. */
   private readonly artUnits: ArtUnits | null;
@@ -450,8 +456,12 @@ export class WorldRenderer {
       // 裡面有人 (round 7): a small shield at the top right corner, ours and the enemy's in view.
       // An outpost holding (D-080): a 守 tag there instead.
       const holding = type === BuildingType.Outpost && (b[o + B.flags] & BuildingFlag.Hold) !== 0;
-      if (((b[o + B.flags] & BuildingFlag.Occupied) !== 0 || holding) && !remembered) {
-        p.occupied.texture = holding ? this.atlas.hold : this.atlas.occupied;
+      // 自動訓練 paused on our barracks, range, mage hall or stable: a 停 tag there (as just sent, pending.ts).
+      const id = b[o + B.id];
+      const stopped =
+        b[o + B.owner] === this.view.me && !building && AUTO_TRAIN.buildings.includes(type) && !(this.pending?.autoTrain(id) ?? (b[o + B.flags] & BuildingFlag.AutoTrain) !== 0);
+      if (((b[o + B.flags] & BuildingFlag.Occupied) !== 0 || holding || stopped) && !remembered) {
+        p.occupied.texture = holding ? this.atlas.hold : (b[o + B.flags] & BuildingFlag.Occupied) !== 0 ? this.atlas.occupied : this.atlas.stopped;
         p.occupied.visible = true;
         p.occupied.position.set(right.x - 2, right.y + 2);
         p.occupied.zIndex = mid.y + 1;
@@ -475,7 +485,9 @@ export class WorldRenderer {
     const t = snap.towns;
     const towerSize = this.view.rules.buildings[BuildingType.TownTower]?.size ?? 2;
     if (this.noteTowers(snap.buildings, towerSize)) this.zonesKey = "";
-    const key = t.join(",");
+    // 搶 or 治理 chosen and not taken yet (the game paused): said under the town (pending.ts).
+    const chosen = [...this.view.knownTowns.keys()].map((id) => this.pending?.townChoice(id) ?? -1);
+    const key = `${t.join(",")}|${chosen.join(",")}`;
     if (key === this.zonesKey) return;
     this.zonesKey = key;
     this.zones.clear();
@@ -532,7 +544,8 @@ export class WorldRenderer {
         mark.glyph.scale.set((spot.side * 0.34) / 36);
       }
       mark.holder.position.set(mid.x, foot.y);
-      mark.label.text = look.label;
+      const choice = this.pending?.townChoice(id) ?? null;
+      mark.label.text = choice === null || t[o + T.state] !== TownState.AwaitingChoice ? look.label : `已選${choice === TownChoice.Plunder ? "搶" : "治理"}，按繼續後開始`;
       const total = t[o + T.timerTotal];
       const showBar = total > 0 && t[o + T.timer] > 0;
       mark.barBack.visible = mark.barFront.visible = showBar;
@@ -783,6 +796,11 @@ export class WorldRenderer {
 
   private drawGhost(placement: Placement | null): void {
     this.ghost.clear();
+    // Buildings placed and not on the map yet (the game paused, or the next step to come): a pale site (pending.ts).
+    for (const site of this.pending?.sites() ?? []) {
+      const size = (this.view.rules.buildings[site.type]?.size ?? 1) * TILE_PX;
+      this.ghost.rect(site.x * TILE_PX, site.y * TILE_PX, size, size).fill({ color: OWN_TINT, alpha: 0.3 }).stroke({ width: 3, color: 0xffffff, alpha: 0.8 });
+    }
     if (placement === null) return;
     const r = placement.rect();
     const color = placement.valid ? 0x4fd06a : 0xe0473d;

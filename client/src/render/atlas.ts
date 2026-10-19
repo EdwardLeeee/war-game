@@ -55,6 +55,8 @@ export interface Atlas {
   occupied: Texture;
   /** An outpost holding (BuildingFlag.Hold, D-080): a small tag reading 守, 16 x 16. */
   hold: Texture;
+  /** 自動訓練 paused (停). */
+  stopped: Texture;
   glyphs: Record<number, Texture>;
   /** Indexed by NodeKind; 32 x 32. */
   nodes: Texture[];
@@ -127,17 +129,20 @@ function buildAtlas(renderer: Renderer): Atlas {
     g.circle(8, 7, 2).fill(INK);
   });
 
-  const hold = (() => {
+  const tag = (ch: string) => {
     const c = new Container();
     c.addChild(new Graphics().roundRect(0, 0, 16, 16, 3).fill(0xf5f1e6).stroke({ width: 1.4, color: INK }));
-    const t = new Text({ text: "守", style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 12, fontWeight: "700", fill: INK } });
+    const t = new Text({ text: ch, style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 12, fontWeight: "700", fill: INK } });
     t.anchor.set(0.5);
     t.position.set(8, 8.5);
     c.addChild(t);
     const tex = renderer.generateTexture({ target: c, resolution: RES });
     c.destroy({ children: true });
     return tex;
-  })();
+  };
+  const hold = tag("守");
+  // 自動訓練 paused on this building (the user 2026-10-19: 「不然還以為沒按到」), where 守 goes.
+  const stopped = tag("停");
 
   const glyphs: Record<number, Texture> = {};
   for (const [type, ch] of Object.entries(BUILDING_GLYPH)) {
@@ -177,5 +182,5 @@ function buildAtlas(renderer: Renderer): Atlas {
     t.destroy();
   }
 
-  return { units, ring, white, building, farm, tower, occupied, hold, glyphs, nodes, wall, townGlyphs };
+  return { units, ring, white, building, farm, tower, occupied, hold, stopped, glyphs, nodes, wall, townGlyphs };
 }
