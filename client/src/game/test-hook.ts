@@ -92,6 +92,8 @@ export interface GameHook {
   castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null;
   /** A known town's castle on the map (map cells): its walls, gates and the cells inside; null without one. */
   castleCells(town: number): { wall: [number, number][]; gate: [number, number][]; inside: { x0: number; y0: number; x1: number; y1: number } } | null;
+  /** 正式介面's left (R6-13): the minimap open (and on its own), what 全體回城 shows (home, work or ""), how many places 地圖 counts. */
+  left(): { minimap: boolean; auto: boolean; recall: string; places: number };
   /** Orders sent and not in the snapshot yet (game/pending.ts): sites to come, soldiers to come in this building's queue, and how many were given while paused. */
   pending(building?: number): { sites: number; trains: number; waiting: number };
   /** What the last ASTC 樣本 showed: shown, no-astc, or why it failed (D-085). */
@@ -258,6 +260,7 @@ export function gameHook(game: Game): GameHook {
       const at = ([x, y]: readonly [number, number]): [number, number] => [t.cellX + x, t.cellY + y];
       return { wall: c.wall.map(at), gate: c.gate.map(at), inside: { x0: t.cellX + c.inside.x0, y0: t.cellY + c.inside.y0, x1: t.cellX + c.inside.x1, y1: t.cellY + c.inside.y1 } };
     },
+    left: () => game.hud.leftForTest,
     pending: (building) => ({ sites: game.pending.sites().length, trains: building === undefined ? 0 : game.pending.trains(building).length, waiting: game.pending.waiting }),
     astc: () => game.lastAstc,
     mapMode: () => game.view?.map.mode ?? "fixed",
