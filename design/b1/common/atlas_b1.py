@@ -51,8 +51,44 @@ def building_table(c):
     t["Farm"] = dict(type=5, footprint=[3, 3], ground=True,
                      states={"build1": f"farm_{c}_build1", "build2": f"farm_{c}_sown", "build3": f"farm_{c}_sown"},
                      crops=[f"farm_{c}_{s}" for s in ("sown", "growing", "ripe")])
-    t["TownTower"] = dict(type=9, footprint=[2, 2], states={s: f"town_tower_{c}_{s}" for s in ("done", "damaged", "rubble")})
+    t["TownTower"] = dict(type=9, footprint=[2, 2], states={s: f"town_tower_{c}_{s}" for s in ("done", "damaged", "rubble")},
+                          # art-v4: the 3 x 3 tower of the random maps' neighbouring spawns (sim GameMap.towerSize, D-074)
+                          sizes={"3": dict(footprint=[3, 3],
+                                           states={s: f"town_tower3_{c}_{s}" for s in ("done", "damaged", "rubble")})})
     return dict(sorted(t.items(), key=lambda kv: kv[1]["type"]))
+
+
+def building_frames(b):
+    """Every frame one building's entry names (its states, crops, and the states of its other sizes)."""
+    out = list(b["states"].values()) + b.get("crops", [])
+    for v in b.get("sizes", {}).values():
+        out += list(v["states"].values())
+    return out
+
+
+# ---------------------------------------------------------------- the castles (art-v4, D-089)
+
+import castle as CASTLE     # noqa: E402  (common/castle.py: the cells, the pieces on them)
+TILES = ("square", "street", "garden")
+
+
+def castle_table(c):
+    """castle_<c>.json's "pieces", "tiles" and "layouts": every piece's frame in each look and the cells it stands
+    on in each layout (CASTLE.placements), the floor tiles (CASTLE.floor)."""
+    pieces = {k: dict(footprint=list(f), frames={s: f"castle_{k}_{c}_{s}" for s in ("intact", "ruin")})
+              for k, f in CASTLE.PIECE_FOOT.items()}
+    tiles = {t: f"castle_tile_{t}_{c}" for t in TILES}
+    layouts = {}
+    for L in (CASTLE.small(), CASTLE.large(), CASTLE.large3()):
+        layouts[L["name"]] = dict(
+            walls=[dict(piece=p["piece"], anchor=p["anchor"], front=p["front"], cells=p["cells"]) for p in CASTLE.placements(L)],
+            floor=CASTLE.floor(L))
+    return pieces, tiles, layouts
+
+
+def castle_frames(c):
+    pieces, tiles, _ = castle_table(c)
+    return sorted([n for p in pieces.values() for n in p["frames"].values()] + list(tiles.values()))
 
 
 def node_table():
@@ -217,7 +253,7 @@ def run(scale=3.0, page=2048):
     mem_all = {}
     for c in CULTURES:
         table = building_table(c)
-        frames = sorted({n for b in table.values() for n in list(b["states"].values()) + b.get("crops", [])})
+        frames = sorted({n for b in table.values() for n in building_frames(b)})
         missing = [n for n in frames if not (SRC / f"{n}_x3.json").exists()]
         if missing:
             raise SystemExit(f"missing renders: {missing}")
@@ -233,13 +269,36 @@ def run(scale=3.0, page=2048):
         # each building's own frames (the shared foundation and rubble counted once, under "shared")
         shared = {n for n in frames if n.startswith(("found_", "rubble_"))}
         for bname, b in table.items():
-            own = sorted({n for n in list(b["states"].values()) + b.get("crops", []) if n not in shared})
+            own = sorted({n for n in building_frames(b) if n not in shared})
             report["buildings"][f"{bname}_{c}"] = sum(sum(per[n].values()) for n in own)
         report["buildings"][f"shared_{c}"] = sum(sum(per[n].values()) for n in shared)
     (bdir / "memory.json").write_text(json.dumps(dict(
         {f"buildings_{c}": m for c, m in mem_all.items()},
         total_rgba8_bytes=sum(m["total_rgba8_bytes"] for m in mem_all.values()),
         total_astc_4x4_bytes=sum(m["total_astc_4x4_bytes"] for m in mem_all.values())), indent=1))
+    # the castles: one set of pages per culture, the floor tiles with them (no player colour on the tiles)
+    cdir = root / "castle"
+    cdir.mkdir()
+    mem_c = {}
+    for c in CULTURES:
+        frames = castle_frames(c)
+        missing = [n for n in frames if not (SRC / f"{n}_x3.json").exists()]
+        if missing:
+            raise SystemExit(f"missing renders: {missing}")
+        view = view_of(frames)
+        tables, pages, px, per = pack(frames, f"castle_{c}", cdir, page, f)
+        pieces, tiles, layouts = castle_table(c)
+        man = {"format": "war-game castle 1", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
+               **({"view": view} if view else {}), "team_gain": TEAM_GAIN, "pages": pages,
+               "pieces": pieces, "tiles": tiles, "layouts": layouts,
+               "frames": tables["color"], "team": tables["team"], "shadows": tables["shadow"]}
+        (cdir / f"castle_{c}.json").write_text(json.dumps(man, separators=(",", ":")))
+        mem_c[c] = memory(px, tables)
+        report["frames"].update(per)
+    (cdir / "memory.json").write_text(json.dumps(dict(
+        {f"castle_{c}": m for c, m in mem_c.items()},
+        total_rgba8_bytes=sum(m["total_rgba8_bytes"] for m in mem_c.values()),
+        total_astc_4x4_bytes=sum(m["total_astc_4x4_bytes"] for m in mem_c.values())), indent=1))
     ndir = root / "nodes"
     ndir.mkdir()
     nf = node_frames()
@@ -253,6 +312,7 @@ def run(scale=3.0, page=2048):
     (ndir / "memory.json").write_text(json.dumps(mem_n, indent=1))
     report["frames"].update(per)
     report["pages"] = {**{f"buildings_{c}": mem_all[c]["total_rgba8_bytes"] for c in CULTURES},
+                       **{f"castle_{c}": mem_c[c]["total_rgba8_bytes"] for c in CULTURES},
                        "nodes": mem_n["total_rgba8_bytes"]}
     (root / "report.json").write_text(json.dumps(report, indent=1))
     b = {k: v for k, v in report["buildings"].items() if not k.startswith("shared")}
