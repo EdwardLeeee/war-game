@@ -247,12 +247,13 @@ def sw_ctower(root, c, variant=0, state="intact"):
 
 
 def sw_gate_x(root, c, variant=0, state="intact"):
-    """The north and south gates, 4 cells along x: a pier on each side cell, the 2-cell passage under the gate tower."""
+    """The north and south gates along x: a pier on each side cell, the passage under the gate tower. variant 0: the
+    2-cell passage (4 cells in all); 1: the 3-cell passage of the random maps' centred big city (5 cells, core.large3)."""
     P = kit.palette(c)
     ruin = state == "ruin"
     H = WALL_H[c] + 0.4
-    L = 4 * CELL
-    op = 2 * CELL                            # the passage, 4 m
+    L = (4 + variant) * CELL
+    op = (2 + variant) * CELL                # the passage
     pier = (L - op) / 2
     mat = P["brick"] if c == "E" else P["stone"]
     for sx in (-1, 1):
@@ -299,13 +300,13 @@ def sw_gate_x(root, c, variant=0, state="intact"):
 
 
 def sw_gate_y(root, c, variant=0, state="intact"):
-    """The east and west gates, 4 cells along y: a pier tower on each side cell and the open gap between (seen from the
-    camera the side walls are edge-on, so a span over the passage would look like a wall)."""
+    """The east and west gates along y: a pier tower on each side cell and the open gap between (seen from the camera
+    the side walls are edge-on, so a span over the passage would look like a wall). variant as sw_gate_x."""
     P = kit.palette(c)
     ruin = state == "ruin"
     H = WALL_H[c] + 0.4
-    L = 4 * CELL
-    op = 2 * CELL
+    L = (4 + variant) * CELL
+    op = (2 + variant) * CELL
     pier = (L - op) / 2
     for sy in (-1, 1):
         y = sy * (op / 2 + pier / 2)
@@ -334,6 +335,6 @@ def sw_gate_y(root, c, variant=0, state="intact"):
 
 
 FOOTPRINT = {"pal_x": (1, 1), "pal_y": (1, 1), "pal_corner": (1, 1), "pal_gate_x": (3, 1), "pal_gate_y": (1, 3),
-             "sw_x": (1, 1), "sw_y": (1, 1), "sw_ctower": (2, 2), "sw_gate_x": (4, 1), "sw_gate_y": (1, 4)}
+             "sw_x": (1, 1), "sw_y": (1, 1), "sw_ctower": (2, 2), "sw_gate_x": (5, 1), "sw_gate_y": (1, 5)}
 BUILDERS = {"pal_x": pal_x, "pal_y": pal_y, "pal_corner": pal_corner, "pal_gate_x": pal_gate_x, "pal_gate_y": pal_gate_y,
             "sw_x": sw_x, "sw_y": sw_y, "sw_ctower": sw_ctower, "sw_gate_x": sw_gate_x, "sw_gate_y": sw_gate_y}
