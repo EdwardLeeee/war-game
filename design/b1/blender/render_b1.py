@@ -37,13 +37,16 @@ import kit                           # noqa: E402
 import blds                          # noqa: E402
 import towns                         # noqa: E402
 import nature                        # noqa: E402
+import castle                        # noqa: E402
 
 REG = dict(blds.BUILDERS)
 REG.update(towns.BUILDERS)
 REG.update(nature.BUILDERS)
+REG.update(castle.BUILDERS)
 FOOT = dict(blds.FOOTPRINT)
 FOOT.update(towns.FOOTPRINT)
 FOOT.update(nature.FOOTPRINT)
+FOOT.update(castle.FOOTPRINT)
 HOUSES = ("th22", "th21", "th12", "th11")
 
 lib.QUALITY = job.get("quality", "hq")
@@ -170,6 +173,8 @@ for pc in job["pieces"]:
         towns.house_state(root, kind, c, st)
     elif kind == "ttower" and st not in ("done", "intact"):
         towns.tower_state(root, c, st)
+    elif kind == "ttower3":
+        castle.tower3_state(root, c, st)
     pts = corners()
     L, R, U, D = extents(pts)
     W, H = int(math.ceil((L + R) * ppm)), int(math.ceil((U + D) * ppm))

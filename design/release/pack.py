@@ -4,7 +4,8 @@ The format was agreed with war-game-client (client/docs/sprite-atlas.md section 
 - art-vN-x3.tar.gz, art-vN-x2.tar.gz: one per scale; at the top level units/<unit>/ (<unit>.json,
   <unit>_<layer>_<k>.png, memory.json; no raw/), effects/ (effects.json, effects_<k>.png), from art-v2
   buildings/ (buildings_<E|W>.json and their pages, memory.json) and nodes/ (nodes.json, its pages,
-  memory.json) (design/b1/atlas-buildings.md), and art-release.json (tag, commit, the source runs,
+  memory.json) (design/b1/atlas-buildings.md), from art-v4 castle/ (castle_<E|W>.json, the wall pieces and floor
+  tiles of the walled towns, D-089), and art-release.json (tag, commit, the source runs,
   every file's sha256);
 - astc-sample.tar.gz: one unit's 2x colour and player-colour pages as ASTC 4 x 4 in KTX 1
   (<unit>_<layer>_<k>.astc.ktx, astcenc -cl), for the client's ASTC test page on the iPhone;
@@ -123,11 +124,11 @@ def write_targz(path, files):
         gz.write(raw.getvalue())
 
 
-ATLAS_FORMATS = {"buildings": "war-game buildings 1", "nodes": "war-game nodes 1"}
+ATLAS_FORMATS = {"buildings": "war-game buildings 1", "nodes": "war-game nodes 1", "castle": "war-game castle 1"}
 
 
 def atlas_files(src, folder, scale):
-    """{name: bytes} of buildings/ or nodes/ at one scale (atlas_b1.py): every manifest, its pages, memory.json."""
+    """{name: bytes} of buildings/, nodes/ or castle/ at one scale (atlas_b1.py): every manifest, its pages, memory.json."""
     found = sorted(p.parent for p in src.rglob(f"atlas_{scale}/{folder}/memory.json"))
     if len(found) != 1:
         die(f"{src}: {len(found)} atlas_{scale}/{folder}/")
@@ -197,13 +198,13 @@ def main():
         files.update({f"effects/{n}": b for n, b in effects_files(eff_src, scale).items()})
         extra = ""
         if bld_src:
-            for folder in ("buildings", "nodes"):
+            for folder in ("buildings", "nodes") + (("castle",) if spec.get("castle") else ()):
                 fs = atlas_files(bld_src, folder, scale)
                 files.update({f"{folder}/{n}": b for n, b in fs.items()})
                 m = json.loads(fs["memory.json"])
                 rgba += m["total_rgba8_bytes"]
                 astc_b += m["total_astc_4x4_bytes"]
-            extra = "＋建築＋資源點"
+            extra = "＋建築＋資源點" + ("＋城牆" if spec.get("castle") else "")
         files = with_manifest(files, dict(base, scale=scale))
         name = f"{a.tag}-{scale}.tar.gz"
         write_targz(out / name, files)
