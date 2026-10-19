@@ -23,7 +23,7 @@ import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts"
 import { type Culture, cultureOf } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
-import { DIAMOND, type Projection, PROJECTIONS } from "../camera/projection.ts";
+import { type Projection, PROJECTIONS } from "../camera/projection.ts";
 import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
@@ -171,7 +171,7 @@ export function nextSeq(log: string): number {
 }
 
 /** How the ground is laid on the screen: the diamond the atlases are drawn for (D-085), until art-v3 is drawn square on (D-088). */
-const PROJECTION_DEFAULT = DIAMOND;
+const PROJECTION_DEFAULT = PROJECTIONS.oblique;
 
 export class Game implements GestureHost {
   view: GameView | null = null;

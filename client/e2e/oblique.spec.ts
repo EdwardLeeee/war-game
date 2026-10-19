@@ -1,7 +1,6 @@
-// 方形斜看（D-088）on core's real simulation (?test=1&view=oblique): the map square on, flattened
-// 2:1; the fixed map's spawns bottom left and top right, the big city between. The default stays
-// the diamond until art-v3 (its buildings drawn for this camera); till then buildings and nodes
-// are the shapes here, the units from their atlases.
+// 方形斜看（D-088）on core's real simulation, the default since art-v3 (its buildings and nodes drawn
+// for this camera): the map square on, flattened 2:1; the fixed map's spawns bottom left and top
+// right, the big city between.
 
 import { expect, type Page, test } from "@playwright/test";
 import { shot, watchErrors } from "./helpers.ts";
@@ -12,7 +11,7 @@ const LARGE = 1;
 const at = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
 
 async function start(page: Page, query: string): Promise<void> {
-  await page.goto(`./?test=1&view=oblique&${query}`);
+  await page.goto(`./?test=1&${query}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
 }
@@ -63,12 +62,12 @@ test("方形斜看：開局看得到自己的主城，點村民的身體選得�
   await page.touchscreen.tap(farmer.sx, farmer.sy - 8);
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection()))?.units).toEqual([farmer.id]);
   if (browserName !== "chromium") return check();
-  // The perf battle with the units' atlases (3 倍): the buildings shapes until art-v3.
-  await page.goto("./?test=1&view=oblique&art=x3&scenario=perf");
+  // The perf battle from the atlases (3 倍): art-v3's buildings and nodes are this camera's.
+  await page.goto("./?test=1&art=x3&scenario=perf");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.art() ?? null))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(100);
-  expect((await page.evaluate(() => window.__proto?.game?.art() ?? null))?.buildings, "art-v2's buildings are the diamond's: shapes").toBe(0);
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.art() ?? null))?.buildings ?? 0, { message: "art-v3's buildings drawn" }).toBeGreaterThan(0);
   await page.evaluate(() => window.__proto?.game?.centerOn(48, 52, 1.6));
   await page.waitForTimeout(3000);
   await shot(page, info, "oblique-battle");
