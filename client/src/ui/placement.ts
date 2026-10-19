@@ -69,8 +69,9 @@ export const GATE_LANE_TEXT = "城門要留給人走，不能蓋";
  * and rule: on a wall (Wall), or on a gate's lane (checkPlacement's GateLane); null otherwise.
  */
 export function castleReason(grid: PlacementGrid, building: Pick<BuildingInfo, "type" | "size">, cellX: number, cellY: number): string | null {
-  if (onWall(grid, building, cellX, cellY)) return WALL_TEXT;
-  return checkPlacement(grid, building, cellX, cellY) === Reject.GateLane ? GATE_LANE_TEXT : null;
+  // The simulation's own answer first: a footprint on a lane and a wall is GateLane (PROTOCOL.md 3.5).
+  if (checkPlacement(grid, building, cellX, cellY) === Reject.GateLane) return GATE_LANE_TEXT;
+  return onWall(grid, building, cellX, cellY) ? WALL_TEXT : null;
 }
 
 /** The footprint is on a castle's wall (D-089: the simulation marks it Wall, and Blocked: nothing is built there). */

@@ -131,4 +131,7 @@ test("放建築：牆上寫「城牆上不能蓋」，城門的通道（城門�
   assert.equal(castleReason(grid, house, 4, 4), WALL_TEXT);
   assert.equal(castleReason(grid, house, 7, 4), GATE_LANE_TEXT);
   assert.equal(castleReason(grid, house, 10, 10), null, "open ground");
+  // On the wall and the lane at once: the simulation answers GateLane.
+  cells[5 * n + 6] = PlaceBit.Gate | PlaceBit.GateLane;
+  assert.equal(castleReason(grid, house, 5, 5), GATE_LANE_TEXT);
 });
