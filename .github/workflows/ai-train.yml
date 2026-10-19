@@ -66,6 +66,7 @@ jobs:
       games: ${{ steps.p.outputs.games }}
       config: ${{ steps.p.outputs.config }}
       net_artifact: ${{ steps.p.outputs.net_artifact }}
+      args: ${{ steps.p.outputs.args }}
     steps:
       - if: github.event_name == 'push'
         uses: actions/checkout@v7
@@ -96,6 +97,7 @@ jobs:
             echo "games=$(get games 400)"
             echo "config=$(get config '{}')"
             echo "net_artifact=$(get net_artifact train-es-0)"
+            echo "args=$(get args '')"
           } >> "$GITHUB_OUTPUT"
           echo "設定：$(echo "$S" | jq -c .)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -133,19 +135,22 @@ jobs:
           GAMES: ${{ needs.plan.outputs.games }}
           CONFIG: ${{ needs.plan.outputs.config }}
           NET: ${{ needs.plan.outputs.net_artifact }}
+          ARGS: ${{ needs.plan.outputs.args }}
         run: |
           set -o pipefail
           F="${GITHUB_WORKSPACE}/from"
           O="${GITHUB_WORKSPACE}/out"
-          T=src/ai/learn/train.ts
+          # run.json "args": more options for train.ts (bc: --epochs, --cap; eval: --seed), split on spaces.
+          T="src/ai/learn/train.ts"
+          set -- $ARGS
           # A run with one artifact is unpacked straight into from/, with several each into from/<name>/.
           first() { find "$F" -name "$1" 2>/dev/null | sort | head -1; }
           case "$MODE" in
-            dryrun) node $T dryrun --out "$O" ;;
-            record) node $T record --games "$GAMES" --out "$O" ;;
+            dryrun) node $T dryrun --out "$O" "$@" ;;
+            record) node $T record --games "$GAMES" --out "$O" "$@" ;;
             bc)
               S=$(first samples.bin); [ -n "$S" ] || { echo "no samples.bin in from_run" >&2; exit 1; }
-              node $T bc --data "$(dirname "$S")" --out "$O" ;;
+              node $T bc --data "$(dirname "$S")" --out "$O" "$@" ;;
             es)
               R="$F/train-es-$ISLAND"
               if [ ! -f "$R/state.json" ] && [ "$ISLAND" = "0" ] && [ -f "$F/state.json" ]; then R="$F"; fi
@@ -160,7 +165,7 @@ jobs:
               [ -f "$N" ] || N="$F/$NET/bc.json"
               [ -f "$N" ] || N=$(first net.json)
               [ -n "$N" ] && [ -f "$N" ] || N=$(first bc.json)
-              node $T eval --net "$N" --games "$GAMES" --out "$O" ;;
+              node $T eval --net "$N" --games "$GAMES" --out "$O" "$@" ;;
           esac
           cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - if: always()
