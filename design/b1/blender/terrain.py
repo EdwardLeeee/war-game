@@ -26,7 +26,7 @@ FOOTPRINT = {"tpatch": (1, 1)}
 
 
 def _water(name, pts, m, parent, z=0.03):
-    return slab(name, pts, 0.02, m, parent=parent, loc=(0, 0, z), plane="XY", outline=False)
+    return ground._poly(name, pts, m, parent, z)
 
 
 def _boulders(name, x, y, P, parent, rnd, n=3, size=1.0, mat=None):
@@ -44,9 +44,10 @@ def tpatch(root, c, variant=0, w=48.0, d=28.0, plan=None):
     P["rock"] = lib.mat("tp_rock", (0.48, 0.47, 0.44), 0.85, noise=0.4, noise_scale=6)
     P["cliff"] = lib.mat("tp_cliff", (0.42, 0.35, 0.28), 0.9, noise=0.45, noise_scale=4, pattern="brick", pattern_scale=0.6)
     P["cliffdark"] = lib.mat("tp_cliffdark", (0.3, 0.25, 0.2), 0.9, noise=0.4, noise_scale=5)
-    water = lib.mat("tp_water", (0.13, 0.3, 0.42), 0.06, noise=0.12, noise_scale=3)
-    shallow = lib.mat("tp_shallow", (0.34, 0.5, 0.54), 0.12, noise=0.15, noise_scale=4)
-    bank = lib.mat("tp_bank", (0.42, 0.36, 0.25), 0.95, noise=0.3, noise_scale=8)
+    # flat colours as dark as ground.LOOK's (the lit ground comes out about 1.5 x brighter than its albedo)
+    water = lib.mat("tp_water", (0.035, 0.1, 0.16), 0.06, noise=0.12, noise_scale=3)
+    shallow = lib.mat("tp_shallow", (0.12, 0.2, 0.22), 0.12, noise=0.15, noise_scale=4)
+    bank = lib.mat("tp_bank", (0.17, 0.13, 0.08), 0.95, noise=0.3, noise_scale=8)
     for k, pts in enumerate(plan.get("water", [])):
         # a band of bank round the water: the same outline a little bigger, under it
         cx = sum(p[0] for p in pts) / len(pts)
