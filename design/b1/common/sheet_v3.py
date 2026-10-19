@@ -57,7 +57,9 @@ class Pages:
 def sheet(rows, title, sub, out):
     """rows: [(row label, [(frame image, caption)])]"""
     pad, gap, cap = 24, 18, 34
-    W = max(240 + sum(im.width + gap for im, _ in cells) for _, cells in rows) + 2 * pad
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    cw = lambda im, c: max(im.width, int(probe.textlength(c, font=font(14, False))))       # a cell: its image or caption
+    W = max(240 + sum(cw(im, c) + gap for im, c in cells) for _, cells in rows) + 2 * pad
     head = 150
     H = head + sum(max(im.height for im, _ in cells) + cap + 20 for _, cells in rows) + pad
     art = Image.new("RGB", (W, H), BG)
@@ -72,7 +74,7 @@ def sheet(rows, title, sub, out):
         for im, c in cells:
             art.paste(Image.alpha_composite(Image.new("RGBA", im.size, (*(112, 126, 92), 255)), im).convert("RGB"), (x, y + h - im.height))
             dr.text((x, y + h + 6), c, font=font(14, False), fill=GREY)
-            x += im.width + gap
+            x += cw(im, c) + gap
         y += h + cap + 20
     OUT.mkdir(exist_ok=True)
     art.save(out, optimize=True)
