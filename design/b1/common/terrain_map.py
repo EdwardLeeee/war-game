@@ -76,6 +76,22 @@ def crossing(g, pts, t, ch, width=3, across=5):
     return (cx, cy)
 
 
+def bridge_block(g, x0, x1, y0, y1, ch="=", clear=2):
+    """A bridge as one block (war-game-core 2026-10-20): every water cell in columns x0..x1 between rows y0 and y1
+    becomes `ch`, and `clear` rows past both ends of those columns are made open ground (trees and rock moved off)."""
+    ys = [y for y in range(y0, y1 + 1) for x in range(x0, x1 + 1) if g[y][x] == "~"]
+    top, bot = min(ys), max(ys)
+    for y in range(top, bot + 1):                 # the whole block, the banks under its ends too
+        for x in range(x0, x1 + 1):
+            if g[y][x] not in KEEP:
+                g[y][x] = ch
+    for x in range(x0, x1 + 1):
+        for y in list(range(top - clear, top)) + list(range(bot + 1, bot + 1 + clear)):
+            if g[y][x] in "TRF#":
+                g[y][x] = "."
+    return ((x0 + x1 + 1) / 2, (top + bot + 1) / 2)
+
+
 def mirror(g):
     """Copy player 0's side (x < y) onto player 1's (x > y); the diagonal is kept as drawn."""
     n = len(g)
@@ -134,7 +150,8 @@ def draw(g):
     # 1. each home's river, between the main city and the middle: from the west edge, round the home, to the south edge
     river = [(0.0, 57.0), (12.0, 58.5), (24.0, 61.0), (32.0, 65.5), (37.5, 72.0), (40.0, 80.0), (40.5, 88.0), (41.0, 96.0)]
     line(g, river, 2.6, "~")
-    marks["bridge (home to the middle and the north-west towns)"] = crossing(g, river, 0.28, "=")
+    # one square block across the river, the 3 cells past each end open (war-game-core 2026-10-20)
+    marks["bridge (home to the middle and the north-west towns)"] = bridge_block(g, 17, 19, 54, 66)
     marks["ford (home to the south-east town)"] = crossing(g, river, 0.86, "f")
     # 2. a rock ridge west of the middle with a 3-cell gap, and the two rock heaps there made longer
     line(g, [(22.0, 42.0), (28.0, 46.0)], 1.6, "R")
