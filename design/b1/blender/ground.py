@@ -21,17 +21,24 @@ from lib import cyl, ico, slab, sphere
 FOOTPRINT = {"gpatch": (1, 1)}
 
 LOOK = {
-    "A": dict(grass=(0.30, 0.42, 0.18), grass2=(0.25, 0.37, 0.15), gn=0.22, gs=2.2, road=(0.44, 0.36, 0.24), rw=2.6,
-              dirt=(0.40, 0.33, 0.22), gravel=None, ruts=False, edge=None, flowers=1.0, tufts=1.0, pebbles=0.0),
-    "B": dict(grass=(0.31, 0.41, 0.18), grass2=(0.26, 0.36, 0.16), gn=0.26, gs=2.6, road=(0.42, 0.34, 0.23), rw=3.0,
-              dirt=(0.39, 0.31, 0.21), gravel=(0.52, 0.5, 0.46), ruts=True, edge=None, flowers=0.6, tufts=1.2, pebbles=1.0),
-    "C": dict(grass=(0.27, 0.48, 0.16), grass2=(0.20, 0.42, 0.13), gn=0.38, gs=9.0, road=(0.62, 0.5, 0.31), rw=2.6,
-              dirt=(0.55, 0.45, 0.28), gravel=None, ruts=False, edge=(0.33, 0.24, 0.14), flowers=0.5, tufts=0.4, pebbles=0.0),
+    # albedo picked so the lit ground lands near the R6 boards' (sRGB 111, 125, 91): the first renders were 1.5 x too bright
+    "A": dict(grass=(0.11, 0.17, 0.06), grass2=(0.085, 0.14, 0.045), gn=0.22, gs=2.2, road=(0.19, 0.14, 0.085), rw=2.6,
+              dirt=(0.16, 0.12, 0.075), gravel=None, ruts=False, edge=None, flowers=1.0, tufts=1.0, pebbles=0.0),
+    "B": dict(grass=(0.115, 0.165, 0.06), grass2=(0.09, 0.135, 0.05), gn=0.26, gs=2.6, road=(0.18, 0.13, 0.08), rw=3.0,
+              dirt=(0.155, 0.11, 0.07), gravel=(0.25, 0.24, 0.21), ruts=True, edge=None, flowers=0.6, tufts=1.2, pebbles=1.0),
+    "C": dict(grass=(0.075, 0.2, 0.035), grass2=(0.05, 0.16, 0.025), gn=0.38, gs=9.0, road=(0.32, 0.22, 0.1), rw=2.6,
+              dirt=(0.27, 0.19, 0.09), gravel=None, ruts=False, edge=(0.11, 0.07, 0.035), flowers=0.5, tufts=0.4, pebbles=0.0),
 }
 
 
 def _poly(name, pts, m, parent, z, thick=0.02):
-    return slab(name, pts, thick, m, parent=parent, loc=(0, 0, z), plane="XY", outline=False)
+    """A flat polygon facing up at height z (one face: a thin slab's sides flipped some normals, which rendered black)."""
+    import bmesh
+    bm = bmesh.new()
+    vs = [bm.verts.new((x, y, 0.0)) for x, y in pts]
+    area = sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts)))
+    bm.faces.new(vs if area > 0 else list(reversed(vs)))          # counter-clockwise: the normal points up
+    return lib._mesh_obj(name, bm, m, parent, (0, 0, z), smooth=False, outline=False)
 
 
 def _ribbon(name, line, width, m, parent, z):
@@ -86,10 +93,10 @@ def gpatch(root, c, variant=0, style="A", w=52.0, d=40.0, plan=None):
                 _ribbon(f"gp_rut{k}{side}_", _offset(line, side), 0.28, rut, root, 0.028)
     # the small things on the grass
     flower = [lib.mat(f"gp_fl{i}", col, 0.6, sheen=0.3) for i, col in
-              enumerate(((0.92, 0.9, 0.82), (0.95, 0.82, 0.25), (0.86, 0.5, 0.62), (0.62, 0.62, 0.92)))]
+              enumerate(((0.8, 0.78, 0.7), (0.85, 0.62, 0.08), (0.7, 0.26, 0.38), (0.36, 0.36, 0.75)))]
     tuftm = lib.mat(f"gp_tuft_{style}", tuple(v * 1.12 for v in S["grass"]), 0.85, noise=0.2, noise_scale=20)
-    bushm = lib.mat("gp_bush", (0.16, 0.3, 0.12), 0.85, noise=0.35, noise_scale=12, sheen=0.3)
-    stone = lib.mat("gp_pebble", (0.5, 0.49, 0.46), 0.9, noise=0.4, noise_scale=20)
+    bushm = lib.mat("gp_bush", (0.06, 0.13, 0.045), 0.85, noise=0.35, noise_scale=12, sheen=0.3)
+    stone = lib.mat("gp_pebble", (0.26, 0.25, 0.23), 0.9, noise=0.4, noise_scale=20)
     for k, (kind, x, y, s) in enumerate(plan.get("decals", [])):
         if kind == "flower" and rnd.random() < S["flowers"]:
             m = flower[k % len(flower)]
