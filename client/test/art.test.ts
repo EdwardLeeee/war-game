@@ -4,8 +4,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { animFor, attackFrame, ATLAS_NAMES, type AtlasJson, CULTURE_PLAN, cultureOf, frameAt, frameName, parseAtlas, pictureDirection, UNIT_ATLAS, walkFps, workOfNode } from "../src/art/spec.ts";
+import { animFor, attackFrame, ATLAS_NAMES, type AtlasJson, cultureOf, frameAt, frameName, parseAtlas, pictureDirection, UNIT_ATLAS, walkFps, workOfNode } from "../src/art/spec.ts";
 import { artBase, loadArtChoice, saveArtChoice } from "../src/art/pref.ts";
+import { CULTURE_KEY, loadCulture, saveCulture } from "../src/culture.ts";
 import { sha256, unpackDir } from "../scripts/fetch-art.ts";
 import { png } from "../scripts/make-test-atlas.ts";
 import { Action, CELL, NEUTRAL, NodeKind, UnitType } from "../src/sim.ts";
@@ -102,13 +103,24 @@ test("原型的兵穿哪套圖：東陸、西陸各 5 種，民兵用槍兵；�
   assert.deepEqual(UNIT_ATLAS[UnitType.Militia], UNIT_ATLAS[UnitType.Spearman]);
 });
 
-test("誰穿哪一陸（使用者還沒選）：A 我方東陸、電腦西陸；B 反過來；C 兩邊都東陸；民兵穿我方的；預設 A", () => {
+test("誰穿哪一陸（使用者 2026-10-19 自選）：我方穿選的那一陸，電腦穿另一陸，民兵穿我方的", () => {
   const me = 1;
   const foe = 0;
-  assert.deepEqual([cultureOf("A", me, me), cultureOf("A", foe, me), cultureOf("A", NEUTRAL, me)], ["e", "w", "e"]);
-  assert.deepEqual([cultureOf("B", me, me), cultureOf("B", foe, me), cultureOf("B", NEUTRAL, me)], ["w", "e", "w"]);
-  assert.deepEqual([cultureOf("C", me, me), cultureOf("C", foe, me), cultureOf("C", NEUTRAL, me)], ["e", "e", "e"]);
-  assert.equal(CULTURE_PLAN, "A");
+  assert.deepEqual([cultureOf("e", me, me), cultureOf("e", foe, me), cultureOf("e", NEUTRAL, me)], ["e", "w", "e"]);
+  assert.deepEqual([cultureOf("w", me, me), cultureOf("w", foe, me), cultureOf("w", NEUTRAL, me)], ["w", "e", "w"]);
+});
+
+test("你的陸：開局畫面的選擇記在這台裝置，第一次和讀不到都是東陸", () => {
+  const map = new Map<string, string>();
+  const store = { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v) };
+  assert.equal(loadCulture(store), "e");
+  saveCulture("w", store);
+  assert.equal(loadCulture(store), "w");
+  map.set(CULTURE_KEY, "x");
+  assert.equal(loadCulture(store), "e");
+  const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+  assert.equal(loadCulture(broken), "e");
+  saveCulture("w", broken);
 });
 
 test("量測面板的美術：存在這台裝置，沒選過或讀不到就是 3 倍（D-087）；選了關就關；位置照 Release 的 tag，沒有 tag 就沒有", () => {

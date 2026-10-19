@@ -83,20 +83,12 @@ export function parseEffects(v: unknown): EffectsJson {
 export type Culture = "e" | "w";
 
 /**
- * Who wears which (brief 2026-10-art-in-game-client 3, the user's to choose): A 我方東陸、電腦西陸;
- * B the other way round; C both 東陸, told apart by the players' colours only. The neutral
- * militia wear ours (B1: the spearman of the same culture, in neutral grey).
+ * Who wears which (the user 2026-10-19 chooses 你的陸 on the start screen; the computer wears
+ * the other). The neutral militia wear the player's (B1: the spearman of the same culture, in
+ * neutral grey).
  */
-export type CulturePlan = "A" | "B" | "C";
-export const CULTURE_PLANS: readonly CulturePlan[] = ["A", "B", "C"];
-/** Until the user chooses: A. Choosing changes only this. */
-export const CULTURE_PLAN: CulturePlan = "A";
-
-export function cultureOf(plan: CulturePlan, owner: number, me: number): Culture {
-  if (plan === "C") return "e";
-  const ours: Culture = plan === "A" ? "e" : "w";
-  const theirs: Culture = plan === "A" ? "w" : "e";
-  return owner === me || owner === NEUTRAL || owner === NO_OWNER ? ours : theirs;
+export function cultureOf(mine: Culture, owner: number, me: number): Culture {
+  return owner === me || owner === NEUTRAL || owner === NO_OWNER ? mine : mine === "e" ? "w" : "e";
 }
 
 /** The atlas each unit type wears, by culture. The militia: the spearman, in neutral grey (B1). Siege is not in the prototype. */

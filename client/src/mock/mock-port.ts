@@ -506,7 +506,7 @@ export class MockPort implements SimPort {
    * The buildings' gallery (`?gallery=b`, D-085), alone on the map: ours, a row a building type,
    * a column a state, along the screen as a diamond (cell (x + 4c + 5r, y − 4c + 5r)): three
    * construction stages, done, damaged, and one destroyed at GALLERY_FALL_TICK (its rubble). The
-   * big city's tower (neutral, 東陸 always) last. Our culture is the plan's (?culture=B: 西陸).
+   * big city's tower (neutral, 東陸 always) last. Our culture is 你的陸 (?culture=w: 西陸).
    * Beside it the nodes: trees of both cultures and their stumps, the mines full, mined and spent,
    * berries and veins full and spent.
    */

@@ -20,7 +20,8 @@ import {
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
-import { CULTURE_PLAN, type CulturePlan, cultureOf } from "../art/spec.ts";
+import { type Culture, cultureOf } from "../art/spec.ts";
+import { DEFAULT_CULTURE } from "../culture.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
 import { DIAMOND } from "../camera/projection.ts";
 import { LabPanel } from "../lab/panel.ts";
@@ -124,8 +125,8 @@ export interface GameOptions {
   minute?: () => void;
   /** The units drawn from war-game-ui's atlases (D-085), or none: the shapes. Only the picture: never the simulation. */
   art?: UnitArt | null;
-  /** Who wears which culture (art/spec.ts); CULTURE_PLAN when not given. */
-  culture?: CulturePlan;
+  /** 你的陸 (the computer wears the other; art/spec.ts cultureOf); 東陸 when not given. */
+  culture?: Culture;
   /** This build has atlases to choose in the 量測 panel. */
   artAvailable?: boolean;
   /** The 量測 panel's 美術 was changed since this game began: 量測 starts a game of its own. */
@@ -399,6 +400,11 @@ export class Game implements GestureHost {
   }
 
   /** The units' atlases as drawn (D-085), for the test hook. */
+  /** 你的陸 this game was started with (kept with 繼續上一局's save). */
+  get culture(): Culture {
+    return this.options.culture ?? DEFAULT_CULTURE;
+  }
+
   get artForTest(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null {
     return this.renderer?.artDrawn ?? null;
   }
@@ -1245,8 +1251,8 @@ export class Game implements GestureHost {
           return wx >= v.x0 && wx <= v.x1 && wy >= v.y0 && wy <= v.y1;
         };
         const view = this.view;
-        const plan = this.options.culture ?? CULTURE_PLAN;
-        this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(plan, owner, view.me), PROJECTION);
+        const mine = this.culture;
+        this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), PROJECTION);
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));

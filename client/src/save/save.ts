@@ -6,6 +6,7 @@
 // the last; cleared when it ends or another starts. IndexedDB in the browser, memory in the unit
 // tests; when storage fails, nothing is kept and the game goes on as before.
 
+import type { Culture } from "../art/spec.ts";
 import type { ArmyState } from "../game/army.ts";
 import type { Charge } from "../game/follow.ts";
 import { type AiDifficulty, type ContinueFailure, type MapMode, type ScenarioName, TICKS_PER_SECOND } from "../sim.ts";
@@ -39,6 +40,8 @@ export interface SavedInit {
   map: MapMode;
   maxTicks: number;
   enemyAi: boolean;
+  /** 你的陸 it was played with (only the picture); saves from before the choice have none (東陸). */
+  culture?: Culture;
 }
 
 export interface SavedGame {
