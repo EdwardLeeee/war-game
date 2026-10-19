@@ -216,6 +216,14 @@ for _s in ("A", "B", "C"):
                                   name=f"ground_{_s}", footprint=[int(_gp.W / 2), int(_gp.D / 2)])]
     CAMERA[f"r650_{_s}"] = proj.OBLIQUE
 
+# R6-51 (the user 2026-10-20: 「石頭好少 我覺得這種天然障礙物可以多些來擋路」): a stretch of road with each kind of
+# obstacle across it
+import r651 as _r651  # noqa: E402
+for _k, *_ in _r651.KINDS:
+    TARGETS[f"r651_{_k}"] = [dict(kind="tpatch", culture="E", opts=dict(w=_r651.W_CELLS * 2.0, d=_r651.D_CELLS * 2.0, plan=_r651.plan(_k)),
+                                  name=f"tpatch_{_k}", footprint=[_r651.W_CELLS, _r651.D_CELLS])]
+    CAMERA[f"r651_{_k}"] = proj.OBLIQUE
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
@@ -228,6 +236,7 @@ FOLDER.update({t: "sqdone" for t in TARGETS if t.startswith(("sqdone_", "sqfield
 FOLDER.update({t: "r606" for t in TARGETS if t.startswith("r606_")})
 FOLDER.update({t: "castle" for t in TARGETS if t.startswith("castle_")})
 FOLDER.update({t: "r650" for t in TARGETS if t.startswith("r650_")})
+FOLDER.update({t: "r651" for t in TARGETS if t.startswith("r651_")})
 
 
 def pieces(target):
