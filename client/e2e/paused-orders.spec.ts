@@ -29,14 +29,26 @@ async function placeHouse(page: Page, near: { x: number; y: number }, answer: "�
   await page.getByRole("button", { name: answer }).tap();
 }
 
-test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）、橫幅數指令；不暫停時訊息條說做了什麼；✗ 說已取消（R6-31）", async ({ page }, info) => {
-  test.setTimeout(150_000);
-  const check = watchErrors(page);
-  await page.goto("./?test=1&scenario=e2e");
+/** A game on core's simulation (the e2e scenario), paused, our barracks selected; its row. */
+async function pausedAtBarracks(page: Page, query = "") {
+  await page.goto(`./?test=1&scenario=e2e${query}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
   await page.getByRole("button", { name: "暫停", exact: true }).tap();
   await expect.poll(async () => (await header(page)).paused).toBe(true);
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const barracks = (await buildings(page)).find((b) => b.owner === me && b.type === BARRACKS);
+  if (barracks === undefined) throw new Error("no barracks");
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.2), [barracks.cx + 1, barracks.cy + 1] as const);
+  await tap(page, await toScreen(page, { x: barracks.cx + 1, y: barracks.cy + 1 }));
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection()))?.building).toBe(barracks.id);
+  return { me, barracks };
+}
+
+test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）、橫幅數指令；不暫停時訊息條說做了什麼；✗ 說已取消（R6-31）", async ({ page }, info) => {
+  test.setTimeout(150_000);
+  const check = watchErrors(page);
+  const { me, barracks } = await pausedAtBarracks(page);
   const frozen = (await header(page)).tick;
   const banner = page.locator(".paused-banner");
   const waiting = page.locator(".paused-banner .pend");
@@ -44,14 +56,8 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   await expect(banner).toBeVisible();
   await expect(waiting, "no orders yet: no second line").toBeHidden();
 
-  // Our barracks: selected by a tap on it.
-  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
-  const barracks = (await buildings(page)).find((b) => b.owner === me && b.type === BARRACKS);
-  if (barracks === undefined) throw new Error("no barracks");
+  // Our barracks, selected by a tap on it.
   expect(barracks.flags & AUTO_TRAIN, "自動訓練 on at the start (D-054)").not.toBe(0);
-  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.2), [barracks.cx + 1, barracks.cy + 1] as const);
-  await tap(page, await toScreen(page, { x: barracks.cx + 1, y: barracks.cy + 1 }));
-  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection()))?.building).toBe(barracks.id);
 
   // 自動訓練: the button as it will be, dashed, 繼續後暫停; the simulation has not taken it.
   const auto = page.locator(".cmds").getByRole("button", { name: /^自動訓練/ });
@@ -95,6 +101,8 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   await page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ }).tap();
   await expect(toast).toHaveText(/^已下令訓練槍兵（排第 \d+）$/);
   await expect(toast).toHaveClass(/\btoast-ok\b/);
+  // The barracks higher on screen, its pause mark clear of the line.
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.2), [barracks.cx + 3, barracks.cy + 3] as const);
   await shot(page, info, "running-orders");
 
   // ✗ on a preview: 已取消, dark, no check (nothing was ordered).
@@ -107,5 +115,23 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   // A house running, no farmers selected (the barracks is): 派 1 名村民, the nearest (a house is 2 x 2).
   await placeHouse(page, { x: barracks.cx - 4, y: barracks.cy - 4 }, "確定蓋在這裡");
   await expect(toast).toHaveText(/^已下令蓋民居，派 1 名村民$/);
+  check();
+});
+
+test("下指令的回饋，正式介面和 3 倍美術打開時（R6-31）：暫停橫幅是面板，第二行數指令；預定的房子半透明；訊息條綠勾", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  const { barracks } = await pausedAtBarracks(page, "&ui=r6&art=x3");
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.art()?.buildings ?? 0), { timeout: 30_000 }).toBeGreaterThan(0);
+  const banner = page.locator(".paused-banner.panel");
+  await expect(banner).toBeVisible();
+  await expect(banner.locator(".pend")).toBeHidden();
+  await page.locator(".cmds").getByRole("button", { name: /^自動訓練/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ }).tap();
+  await placeHouse(page, { x: barracks.cx - 4, y: barracks.cy + 2 }, "確定蓋在這裡");
+  await expect(banner.locator(".pend")).toHaveText("已下 3 個指令，按繼續後執行");
+  await expect(page.locator(".toast")).toHaveText("已下令蓋民居，按繼續後開工");
+  await expect(page.locator(".toast .toast-check")).toBeVisible();
+  await shot(page, info, "paused-orders-r6");
   check();
 });
