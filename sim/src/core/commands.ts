@@ -258,7 +258,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (type === BuildingType.Outpost && !OUTPOST.on) return Reject.NotAvailable;
       const info = BUILDINGS[type];
       if (!info.requires.every((r) => hasFinished(w, p, r))) return Reject.NotAvailable;
-      if (placeCheck(ctx, p, type, cmd.x, cmd.y) !== 0) return Reject.BadPlacement;
+      const placement = placeCheck(ctx, p, type, cmd.x, cmd.y);
+      if (placement !== 0) return placement;
       if (!afford(w, p, info.cost, 1)) return Reject.CannotAfford;
       if (auto) {
         farmers = pickBuilders(w, p, type, cmd.x, cmd.y);
@@ -720,6 +721,7 @@ function placeCheck(ctx: CommandContext, p: number, type: BuildingType, x: numbe
       cells[c] =
         (w.grid[c] !== 0 || w.buildingAt[c] >= 0 ? PlaceBit.Blocked : 0) |
         (fog.explored[p][c] === 1 ? 0 : PlaceBit.Unexplored) |
+        (w.gateLane[c] === 1 ? PlaceBit.GateLane : 0) |
         (farmLand(w, p, cx, cy) ? PlaceBit.FarmLand : 0) |
         (type === BuildingType.ArrowTower && towerLand(w, p, cx, cy) ? PlaceBit.TowerLand : 0);
     }

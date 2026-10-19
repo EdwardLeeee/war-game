@@ -1,7 +1,8 @@
 // Castles round the towns (D-089, the user 2026-10-19: 「希望像一個城堡」): walls are terrain that
 // nobody walks through, gates are open to everyone, the town is what lies inside the walls, arrow
-// towers may go inside and up to 2 cells outside them, a blocked gate is broken through by its
-// blocker (D-024) and never by a wall, and every map stays walkable, fair and not too round-about.
+// towers may go inside and up to 2 cells outside them, nothing is built on a gate's lane (ceo
+// 2026-10-20), a way blocked all the same is broken through by its blocker (D-024) and never by a
+// wall, and every map stays walkable, fair and not too round-about.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -12,7 +13,8 @@ import { generateMap, type GameMap } from "../src/core/map.ts";
 import { generateRandomMap } from "../src/core/random-map.ts";
 import { BUILDINGS, rules, TOWER_REACH } from "../src/core/rules.ts";
 import { toCanon } from "../src/frame.ts";
-import { BuildingType, CELL_SHIFT, inTown, PlaceBit, Stance, Terrain, TownSize, TownState, UnitType } from "../src/protocol.ts";
+import { checkPlacement } from "../src/placement.ts";
+import { BuildingType, CELL_SHIFT, inTown, PlaceBit, Reject, Stance, Terrain, TownSize, TownState, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
 
@@ -24,7 +26,7 @@ test("rules give each castle: the small town 9 x 9 inside, the big city 12 x 12,
   const small = r.towns[TownSize.Small].castle!;
   const large = r.towns[TownSize.Large].castle!;
   assert.deepEqual(small.inside, { x0: -4, y0: -4, x1: 4, y1: 4 });
-  assert.deepEqual([small.wall.length, small.corner.length, small.gate.length, small.outside.length], [28, 4, 12, 12]);
+  assert.deepEqual([small.wall.length, small.corner.length, small.gate.length, small.outside.length, small.behind.length], [28, 4, 12, 12, 12]);
   assert.deepEqual(large.inside, { x0: -6, y0: -6, x1: 5, y1: 5 });
   assert.deepEqual([large.wall.length, large.corner.length, large.gate.length], [48, 16, 8]);
   assert.equal(small.towerLand, TOWER_REACH.town + 1);
@@ -58,6 +60,10 @@ test("on the fixed map walls are terrain nobody walks; gates and the cell before
   const at = ([dx, dy]: [number, number]) => v.placement[(t.cellY + dy) * n + t.cellX + dx];
   for (const cell of c.wall) assert.equal(at(cell) & (PlaceBit.Blocked | PlaceBit.Wall), PlaceBit.Blocked | PlaceBit.Wall);
   for (const cell of c.gate) assert.equal(at(cell) & (PlaceBit.Blocked | PlaceBit.Gate), PlaceBit.Gate);
+  // The lane through each gate: the gate, the cell in front of it and the first cell behind it.
+  for (const cell of [...c.gate, ...c.outside, ...c.behind]) assert.equal(at(cell) & (PlaceBit.Blocked | PlaceBit.GateLane), PlaceBit.GateLane);
+  for (const [dx, dy] of c.behind) assert.ok(inTown(c, 0, 0, dx, dy), `${dx},${dy} behind a gate is inside`);
+  for (const [dx, dy] of c.outside) assert.ok(!inTown(c, 0, 0, dx, dy), `${dx},${dy} in front of a gate is outside`);
 });
 
 test("walls stop walking: a soldier sent to a town's centre from beside its corner goes in by a gate", () => {
@@ -124,25 +130,88 @@ test("arrow towers may go inside a held town's walls and up to 2 cells outside t
   assert.equal(v.placement[y * w.size + t.cellX + c.inside.x1 + 2 + TOWER_REACH.town] & PlaceBit.TowerLand, 0);
 });
 
-test("gates blocked by the enemy's buildings: a soldier sent at what is inside breaks through a blocker, never a wall (D-024)", () => {
+test("nothing is built on a gate's lane: on the gate, in front of it or right behind it; one cell to the side is fine", () => {
   const g = emptyGame();
   const w = g.w;
+  const n = w.size;
   const t = w.map.towns[T];
-  const house = BUILDINGS[BuildingType.House];
-  // Two houses before each gate seal it (the gate is 3 wide; no corner cutting past the wall).
-  const blockers: number[] = [];
-  const sides = [
-    [[-1, -7], [1, -7]],
-    [[-1, 5], [1, 5]],
-    [[-7, -1], [-7, 1]],
-    [[5, -1], [5, 1]],
+  w.townOwner[T] = 0;
+  w.townState[T] = TownState.Governed;
+  w.ecoOn[0] = 0;
+  w.res.set([0, 5000, 5000, 0], 0);
+  g.fog.explored[0].fill(1);
+  const farmer = put(g, 0, UnitType.Farmer, t.cellX, t.cellY);
+  // The north gate is (-1..1, -5): in front of it (-1..1, -6), behind it (-1..1, -4); the south
+  // gate is (-1..1, 5). Houses and arrow towers are 2 x 2; the towers stand on tower land.
+  const lane: [string, number, number][] = [
+    ["on the gate", -1, -5],
+    ["in front of the gate", -1, -7],
+    ["right behind the gate", 0, -4],
   ];
-  for (const pair of sides) for (const [dx, dy] of pair) blockers.push(w.addBuilding(1, BuildingType.House, t.cellX + dx, t.cellY + dy, house.hp, 1000));
+  const side: [string, BuildingType, number, number][] = [
+    ["a house beside the cells behind the gate", BuildingType.House, 2, -4],
+    ["a house beside the cells in front of the gate", BuildingType.House, 2, -7],
+    ["an arrow tower beside the cells behind the south gate", BuildingType.ArrowTower, 2, 3],
+    ["an arrow tower beside the cells in front of the south gate", BuildingType.ArrowTower, 2, 6],
+  ];
+  const v = buildView(g, 0);
+  const grid = { size: n, cells: v.placement };
+  for (const [name, type] of [["house", BuildingType.House], ["arrow tower", BuildingType.ArrowTower]] as const) {
+    for (const [what, dx, dy] of lane) {
+      assert.equal(checkPlacement(grid, BUILDINGS[type], t.cellX + dx, t.cellY + dy), Reject.GateLane, `screen: a ${name} ${what}`);
+      cmd(g, 0, { c: "build", u: [farmer], type, x: t.cellX + dx, y: t.cellY + dy });
+    }
+  }
+  for (const [what, type, dx, dy] of side) assert.equal(checkPlacement(grid, BUILDINGS[type], t.cellX + dx, t.cellY + dy), 0, `screen: ${what}`);
+  const before = w.buildings.count;
+  run(g, 1);
+  assert.deepEqual(rejections(g, 0), Array(6).fill(Reject.GateLane), "the simulation rejects all six");
+  assert.equal(w.buildings.count, before);
+  for (const [, type, dx, dy] of side) cmd(g, 0, { c: "build", u: [farmer], type, x: t.cellX + dx, y: t.cellY + dy });
+  run(g, 1);
+  assert.deepEqual(rejections(g, 0), [], "and takes the four beside them");
+  assert.equal(w.buildings.count, before + 4);
+});
+
+test("a way into a town blocked by the enemy's buildings all the same: a soldier sent at what is inside breaks through a blocker, never a wall (D-024)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const n = w.size;
+  const t = w.map.towns[T];
+  // Off the lanes, a barracks and two houses before each gate keep it from the field (the gate is
+  // 3 wide; no corner cutting past the wall): the barracks covers the 3 cells two before the gate,
+  // the houses the cells beside the lane's front.
+  const north: [BuildingType, number, number][] = [
+    [BuildingType.Barracks, -1, -9],
+    [BuildingType.House, -3, -7],
+    [BuildingType.House, 2, -7],
+  ];
+  // The small castle is its own image under every turn: the other three gates turn the north's.
+  const turns = [
+    (x: number, y: number) => [x, y],
+    (x: number, y: number, s: number) => [x, -y - s + 1],
+    (x: number, y: number) => [y, x],
+    (x: number, y: number, s: number) => [-y - s + 1, x],
+  ];
+  const blockers: number[] = [];
+  for (const turn of turns) {
+    for (const [type, dx, dy] of north) {
+      const size = BUILDINGS[type].size;
+      const [x, y] = turn(dx, dy, size);
+      for (let yy = t.cellY + y; yy < t.cellY + y + size; yy++) {
+        for (let xx = t.cellX + x; xx < t.cellX + x + size; xx++) {
+          assert.equal(w.gateLane[yy * n + xx], 0, `${xx},${yy}: off the lanes`);
+          assert.ok(w.walkable(xx, yy), `${xx},${yy}: open ground`);
+        }
+      }
+      blockers.push(w.addBuilding(1, type, t.cellX + x, t.cellY + y, BUILDINGS[type].hp, 1000));
+    }
+  }
   const inside = put(g, 1, UnitType.Spearman, t.cellX, t.cellY);
   const iu = w.units.col;
   iu.hp[slotOf(g, inside)] = 100000;
   iu.stance[slotOf(g, inside)] = Stance.Hold;
-  const attacker = put(g, 0, UnitType.Spearman, t.cellX, t.cellY - 10);
+  const attacker = put(g, 0, UnitType.Spearman, t.cellX, t.cellY - 12);
   iu.hp[slotOf(g, attacker)] = 100000;
   g.fog.update(w);
   cmd(g, 0, { c: "attack", u: [attacker], target: inside });
@@ -158,6 +227,10 @@ test("gates blocked by the enemy's buildings: a soldier sent at what is inside b
   run(g, 100);
   assert.ok(w.building(hit) < 0 || b.hp[w.building(hit)] < hp0, "and hits it");
 });
+
+function rejections(g: Game, p: number): number[] {
+  return g.events.filter((e) => e.to === p && e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
+}
 
 /** Walks (octile, 10 / 14, no corner cutting) from every cell of `from` over a map's open cells. */
 function walks(map: GameMap, from: number[], open: Set<number>): Int32Array {

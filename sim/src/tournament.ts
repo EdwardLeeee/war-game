@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
 import { BUILDINGS } from "./core/rules.ts";
 import { UNIT_KINDS, type World } from "./core/world.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, type LogHeader, MAP_MODES, type MapMode, MAX_TICKS, UnitType } from "./protocol.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, type LogHeader, MAP_MODES, type MapMode, MAX_TICKS, Reject, UnitType } from "./protocol.ts";
 import type { Layout, RandomMap } from "./core/random-map.ts";
 import { AI_STYLES, type AiStyle } from "./ai/ai.ts";
 import { Runner } from "./runner.ts";
@@ -102,6 +102,8 @@ export interface GameResult {
      */
     townDeaths?: number;
     gateDeaths?: number;
+    /** Commands rejected, by Reject code (index); results from before have none. */
+    rejected?: number[];
   }[];
 }
 
@@ -153,6 +155,8 @@ export interface Sample {
   }[];
 }
 const TIMELINE_EVERY = 600;
+/** Reject codes counted per player (GameResult.perPlayer.rejected): 0 and every Reject value. */
+const REJECT_CODES = Math.max(...Object.values(Reject)) + 1;
 
 function sample(r: Runner): Sample {
   const w = r.game.w;
@@ -221,8 +225,10 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
   const g = r.game;
   const micros: number[] = [];
   const timeline: Sample[] = [];
+  const rejected = [new Array<number>(REJECT_CODES).fill(0), new Array<number>(REJECT_CODES).fill(0)];
   while (!r.over && g.tick < maxTicks) {
     micros.push(r.tick(() => performance.now()));
+    for (const e of g.events) if (e.ev.k === "rejected" && e.to < 2) rejected[e.to][e.ev.reason]++;
     if (g.tick % TIMELINE_EVERY === 0) timeline.push(sample(r));
   }
   if (r.hashes.at(-1)!.tick !== g.tick) r.hashes.push({ tick: g.tick, hash: g.hash() });
@@ -279,6 +285,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
       revolts: w.revolts[p],
       townDeaths: w.townDeaths[p],
       gateDeaths: w.gateDeaths[p],
+      rejected: rejected[p],
 })),
   };
   writeFileSync(join(out, `game-${i}.json`), JSON.stringify(result, null, 1) + "\n");

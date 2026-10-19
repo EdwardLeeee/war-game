@@ -31,6 +31,8 @@ export interface Castle {
   gate: Cell[];
   /** For each gate cell (same order), the open cell in front of it, outside the walls. */
   outside: Cell[];
+  /** For each gate cell (same order), the first cell behind it, inside the walls. */
+  behind: Cell[];
   garrison: Cell[];
 }
 
@@ -59,12 +61,15 @@ function place(l: CastleLayout, sx: number, sy: number): Castle {
   const wall = l.wall.map(move);
   const gate = l.gate.map(move);
   const inside = { x0: l.inside.x0 + sx, y0: l.inside.y0 + sy, x1: l.inside.x1 + sx, y1: l.inside.y1 + sy };
-  // The ring of walls is one cell outside the inside box; a gate's outward neighbour leaves the ring.
-  const outside = gate.map(([x, y]): Cell => {
-    if (x === inside.x0 - 1) return [x - 1, y];
-    if (x === inside.x1 + 1) return [x + 1, y];
-    if (y === inside.y0 - 1) return [x, y - 1];
-    return [x, y + 1];
-  });
-  return { inside, wall, corner: l.corner.map(move), gate, outside, garrison: l.garrison.map(move) };
+  // The ring of walls is one cell outside the inside box; a gate's outward neighbour leaves the
+  // ring, its inward one is inside.
+  const out = ([x, y]: Cell): Cell => {
+    if (x === inside.x0 - 1) return [-1, 0];
+    if (x === inside.x1 + 1) return [1, 0];
+    if (y === inside.y0 - 1) return [0, -1];
+    return [0, 1];
+  };
+  const outside = gate.map((c): Cell => [c[0] + out(c)[0], c[1] + out(c)[1]]);
+  const behind = gate.map((c): Cell => [c[0] - out(c)[0], c[1] - out(c)[1]]);
+  return { inside, wall, corner: l.corner.map(move), gate, outside, behind, garrison: l.garrison.map(move) };
 }

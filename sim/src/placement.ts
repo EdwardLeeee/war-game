@@ -13,21 +13,25 @@ export interface PlacementGrid {
 
 /**
  * 0 if a building of this kind fits with its top-left cell at (cellX, cellY), otherwise
- * Reject.BadPlacement. Every footprint cell must be on the map, explored and not blocked;
- * a farm's cells must also all be farm land (near your own main city or granary), an arrow
- * tower's tower land (near your own main city or a town you hold, round 7).
- * Units standing there do not block: they are pushed aside.
+ * Reject.GateLane when a footprint cell is on a gate's lane (D-089: the gate, the cell in
+ * front of it or the first cell behind it), else Reject.BadPlacement. Every footprint cell must
+ * be on the map, explored and not blocked; a farm's cells must also all be farm land (near your
+ * own main city or granary), an arrow tower's tower land (near your own main city or a town you
+ * hold, round 7). Units standing there do not block: they are pushed aside.
  */
 export function checkPlacement(
   grid: PlacementGrid,
   building: Pick<BuildingInfo, "type" | "size">,
   cellX: number,
   cellY: number,
-): 0 | typeof Reject.BadPlacement {
+): 0 | typeof Reject.BadPlacement | typeof Reject.GateLane {
   const n = grid.size;
   const s = building.size;
   if (!Number.isInteger(cellX) || !Number.isInteger(cellY)) return Reject.BadPlacement;
   if (cellX < 0 || cellY < 0 || cellX + s > n || cellY + s > n) return Reject.BadPlacement;
+  for (let y = cellY; y < cellY + s; y++) {
+    for (let x = cellX; x < cellX + s; x++) if ((grid.cells[y * n + x] & PlaceBit.GateLane) !== 0) return Reject.GateLane;
+  }
   const farm = building.type === BuildingType.Farm;
   const tower = building.type === BuildingType.ArrowTower;
   for (let y = cellY; y < cellY + s; y++) {
