@@ -3,10 +3,15 @@ buildings, resource points) the way the client draws them (client/docs/sprite-at
 
 field.render(scene, art_dir, scale=3) -> (RGBA image of the 814 x 380 pt screen at `scale` px per pt, overlay data)
 
-The screen is the diamond battlefield (D-085, ceo 2026-10-18): map (0, 0) at the top corner, sim +x down-right,
-+y down-left; at zoom 1 a cell's diamond is 56.6 pt wide (PT_PER_M 20, 2 m cells). The 3x atlases are 60 px a metre,
-so at scale 3 every sprite is drawn 1:1. Ground layer first (fields, stumps), then every shadow, then units and
-buildings far to near; the player colour tints the team layer (multiply), as the client does.
+Two cameras (VIEW, set before drawing):
+- "diamond" (art-v1, art-v2; D-085): map (0, 0) at the top corner, sim +x down-right, +y down-left; at zoom 1 a cell's
+  diamond is 56.6 pt wide (PT_PER_M 20, 2 m cells). Far to near = x + y.
+- "oblique" (方形斜看, art-v3 on; D-088, the user 2026-10-19): square to the grid, sim +x right, +y down; a cell is
+  40 x 20 pt. Far to near = the front edge's y (a building cellY + n, a resource point cellY + 1, a unit its y), then x
+  (design/b1/atlas-buildings.md 6, agreed with client 2026-10-19).
+The 3x atlases are 60 px a metre, so at scale 3 every sprite is drawn 1:1. Ground layer first (fields, stumps), then
+every shadow, then units and buildings far to near; the player colour tints the team layer (multiply), as the client
+does.
 """
 import json
 import math
@@ -18,6 +23,8 @@ from PIL import Image, ImageFilter
 SCREEN = (814, 380)
 HALF_W = 28.284          # pt: half a cell's diamond, across
 HALF_H = 14.142          # pt: half a cell's diamond, down
+CELL_W, CELL_D = 40.0, 20.0   # pt: a cell across and down, oblique
+VIEW = "diamond"
 # the player colours the user chose (R6-24 甲, 2026-10-18): 藍 紅 黃 紫, and the neutral
 TEAM = {"blue": (0x3f, 0x7f, 0xe0), "red": (0xd9, 0x43, 0x3a), "yellow": (0xe8, 0xc4, 0x2e), "purple": (0x9a, 0x5c, 0xe0),
         "neutral": (0xd8, 0xd2, 0xc0)}
@@ -27,13 +34,24 @@ GROUND = (112, 126, 92)
 def cell_to_pt(x, y, centre):
     """Sim cell (fractional) -> screen pt, the camera on `centre`."""
     dx, dy = x - centre[0], y - centre[1]
+    if VIEW == "oblique":
+        return SCREEN[0] / 2 + dx * CELL_W, SCREEN[1] / 2 + dy * CELL_D
     return SCREEN[0] / 2 + (dx - dy) * HALF_W, SCREEN[1] / 2 + (dx + dy) * HALF_H
 
 
 def pt_to_cell(px, py, centre):
+    if VIEW == "oblique":
+        return centre[0] + (px - SCREEN[0] / 2) / CELL_W, centre[1] + (py - SCREEN[1] / 2) / CELL_D
     u = (px - SCREEN[0] / 2) / HALF_W
     v = (py - SCREEN[1] / 2) / HALF_H
     return centre[0] + (u + v) / 2, centre[1] + (v - u) / 2
+
+
+def depth(x, y, n=0.0):
+    """Far to near: x, y the footprint's corner (n cells; a unit: its point, n = 0)."""
+    if VIEW == "oblique":
+        return (y + n, x)
+    return (x + y + n, 0.0)
 
 
 class Atlas:
@@ -85,16 +103,17 @@ def ground(w, h, seed=5):
     return Image.fromarray(img.clip(0, 255).astype(np.uint8), "RGB").convert("RGBA")
 
 
-def render(scene, art, scale=3):
+def render(scene, art, scale=3, atlases=None):
     """scene: dict(centre=(x, y), units=[(unit, team, x, y, facing, anim, frame, selected)], buildings=[(kind atlas
     'E'|'W', BuildingType name, state, cellX, cellY, team)], nodes=[(frame, x, y)]). Returns (image, overlay) where
-    overlay lists the selected units' screen points (pt) and the visible buildings' boxes, for the interface layer."""
+    overlay lists the selected units' screen points (pt) and the visible buildings' boxes, for the interface layer.
+    atlases: {"E": .., "W": ..} in place of the art's building atlases (the same interface as Atlas)."""
     art = Path(art)
     W, H = SCREEN[0] * scale, SCREEN[1] * scale
     s = scale / 3.0                                   # the atlases are 3x
     img = ground(W, H)
     centre = scene["centre"]
-    batl = {c: Atlas(art / "buildings" / f"buildings_{c}.json") for c in ("E", "W")}
+    batl = atlases or {c: Atlas(art / "buildings" / f"buildings_{c}.json") for c in ("E", "W")}
     natl = Atlas(art / "nodes" / "nodes.json")
     uatl = {}
     ground_items, items, shadows = [], [], []
@@ -112,7 +131,7 @@ def render(scene, art, scale=3):
         body, ax, ay = a.body(fr, team)
         mx, my = cx + n / 2, cy + n / 2
         gx, gy = at(mx, my)
-        entry = (mx + my, body, ax * s, ay * s, gx, gy)
+        entry = (depth(cx, cy, n), body, ax * s, ay * s, gx, gy)
         (ground_items if b.get("ground") else items).append(entry)
         sh = a.shadow(fr)
         if sh and not b.get("ground"):
@@ -120,7 +139,7 @@ def render(scene, art, scale=3):
     for fr, x, y in scene.get("nodes", []):
         body, ax, ay = natl.body(fr, "neutral")
         gx, gy = at(x + 0.5, y + 0.5)
-        entry = (x + y + 1, body, ax * s, ay * s, gx, gy)
+        entry = (depth(x, y, 1), body, ax * s, ay * s, gx, gy)
         (ground_items if fr.endswith(("stump", "depleted")) else items).append(entry)
         sh = natl.shadow(fr)
         if sh:
@@ -137,7 +156,7 @@ def render(scene, art, scale=3):
             body = body.transpose(Image.FLIP_LEFT_RIGHT)
             ax = body.width - ax
         gx, gy = at(x, y)
-        items.append((x + y, body, ax * s, ay * s, gx, gy))
+        items.append((depth(x, y), body, ax * s, ay * s, gx, gy))
         sh = a.shadow(f"{unit}_{anim}_f{facing}_{frame:02d}")
         if sh:
             shadows.append((sh[0], sh[1] * s, sh[2] * s, gx, gy))
