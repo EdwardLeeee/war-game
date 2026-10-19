@@ -15,7 +15,7 @@ import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
 import { rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import type { RandomMap } from "./core/random-map.ts";
-import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
+import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, Order, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 import { buildView, mapInfo } from "./view/view.ts";
 
@@ -102,10 +102,14 @@ if (flag("late")) {
   plan.counterAt = 50;
   plan.pushAhead = true;
 }
+// D-086 A3: this many soldiers go for the AI's farmers far from its main city (--late --harass 10).
+plan.harass = Number(arg("harass", "0"));
 /** D-086 A: an AI order this soon after its last order at the player's main city is the same march. */
 const MARCH_GAP = 2 * 1200;
 /** D-086 A: the late turn the measure looks for (the user's long wins): the player wins after this tick. */
 const LATE_WIN = 27 * 1200;
+/** D-086 A3: an AI farmer with no order this near (cells) its main city is idle at home. */
+const FARMER_HOME = 15;
 const rushing = plan.towerRush > 0 || plan.rushBuildersOnly;
 /** The player puts up outposts and arrow towers: the rush or the fortress. */
 const fortifying = rushing || plan.fortress;
@@ -239,6 +243,16 @@ interface GameRecord {
   aiMarches: { start: number; last: number; most: number; fell: boolean }[];
   /** D-086 A: soldiers (not farmers, not militia) of [the player, the AI] at minutes 15 and 20 (null: over by then). */
   armyAt: { m15: [number, number] | null; m20: [number, number] | null };
+  /**
+   * D-086 A3, every game (read only): the AI's farmers lost each minute (from minute 1); its hits (5 or more
+   * lost in two minutes, none counted in the three minutes before) and of those, the ones back 3 minutes
+   * later (within 2 of its farmers before the hit); its farmer-minutes idle at home (no order, within
+   * FARMER_HOME cells of its main city) and hiding (Recall: on the way to its main city or in it), read
+   * every 20 ticks.
+   */
+  aiFarmers: { lost: number[]; hits: number; back: number; idle: number; hiding: number };
+  /** D-086 A3: what the AI counted of its own rescues (its stats(); null: this AI counts none). */
+  aiRescue: Record<string, number> | null;
   /** Random maps (D-074): the map's layout and when the player first saw the AI's main city (-1: never). */
   layout?: string;
   found?: number;
@@ -393,6 +407,13 @@ function play(seed: number): GameRecord {
   const marchLog: { start: number; last: number; most: number }[] = [];
   let logAt = 0;
   const armyAt: GameRecord["armyAt"] = { m15: null, m20: null };
+  // D-086 A3 (read only): the AI's farmers lost, hit and back, idle and hiding (GameRecord).
+  const farmerLog: { farmers: number; lost: number }[] = [];
+  const farmerChecks: { at: number; before: number }[] = [];
+  const aiFarmers: GameRecord["aiFarmers"] = { lost: [], hits: 0, back: 0, idle: 0, hiding: 0 };
+  let lastFarmerHit = -100;
+  let farmerIdle = 0;
+  let farmerHiding = 0;
   const soldiersOf = (p: number) => {
     let n = 0;
     for (let i = 0; i < w.units.count; i++) if (u.owner[i] === p && u.type[i] !== UnitType.Farmer && u.type[i] !== UnitType.Militia) n++;
@@ -426,6 +447,25 @@ function play(seed: number): GameRecord {
         last.last = c.t;
         last.most = Math.max(last.most, n);
       } else marchLog.push({ start: c.t, last: c.t, most: n });
+    }
+    if (w.tick % 20 === 0) {
+      for (let i = 0; i < w.units.count; i++) {
+        if (u.owner[i] !== 1 || u.type[i] !== UnitType.Farmer) continue;
+        if (u.order[i] === Order.Recall) farmerHiding++;
+        else if (u.order[i] === Order.None && ((u.x[i] >> 10) - aiHome.cellX) ** 2 + ((u.y[i] >> 10) - aiHome.cellY) ** 2 <= FARMER_HOME * FARMER_HOME) farmerIdle++;
+      }
+    }
+    if (w.tick % 1200 === 0) {
+      const lost = w.lost[UNIT_KINDS + UnitType.Farmer];
+      aiFarmers.lost.push(lost - (farmerLog.length === 0 ? 0 : farmerLog[farmerLog.length - 1].lost));
+      farmerLog.push({ farmers: count(1, UnitType.Farmer), lost });
+      const k = farmerLog.length - 1;
+      if (k >= 2 && farmerLog[k].lost - farmerLog[k - 2].lost >= 5 && k - lastFarmerHit > 3) {
+        lastFarmerHit = k;
+        aiFarmers.hits++;
+        farmerChecks.push({ at: k + 3, before: farmerLog[k - 2].farmers });
+      }
+      for (const x of farmerChecks) if (x.at === k && farmerLog[k].farmers >= x.before - 2) aiFarmers.back++;
     }
     if (w.tick === 15 * 1200) armyAt.m15 = [soldiersOf(0), soldiersOf(1)];
     if (w.tick === 20 * 1200) armyAt.m20 = [soldiersOf(0), soldiersOf(1)];
@@ -633,6 +673,9 @@ function play(seed: number): GameRecord {
     bashLog.push({ start: bashAt.start, end: bashLast, most: bashMax, lost: lostSoldiers(1) - bashAt.lost, deaths: fortDeaths - bashAt.deaths, fell: bashAt.fell });
   }
   const st = player.state();
+  aiFarmers.idle = Math.round((farmerIdle * 20 * 10) / 1200) / 10;
+  aiFarmers.hiding = Math.round((farmerHiding * 20 * 10) / 1200) / 10;
+  const aiRescue = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]?.stats?.() ?? null;
   return {
     seed,
     style: r.styles[1] ?? "",
@@ -670,6 +713,8 @@ function play(seed: number): GameRecord {
     aiAt15,
     aiMarches: marchLog.map((x) => ({ ...x, fell: cityFell[0] >= 0 && cityFell[0] <= x.last + MARCH_GAP })),
     armyAt,
+    aiFarmers,
+    aiRescue,
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
@@ -705,6 +750,7 @@ const options = [
   plan.rushBuildersOnly ? "塔攻（只派村民）：4 名村民到電腦主城旁蓋哨所和 2 座箭樓，沒有護送、沒有駐守（D-080）" : "",
   plan.fortress ? "半路要塞：第 12 分起，在往電腦主城的路上、離家 37 格，蓋哨所（6 名槍兵駐守）和 5 座箭樓（D-081）" : "",
   plan.fortressHold > 0 ? `大軍守在要塞旁，湊到 ${plan.fortressHold} 名或第 30 分才出發（D-081）` : "",
+  plan.harass > 0 ? `殺村民：第 10 分起 ${plan.harass} 名兵（遠程先）去殺電腦離主城 20 格以上的村民，看不到就繞電腦主城找；附近敵兵比自己多或剩一半就回家，1 分鐘後補滿再去（D-086 A3）` : "",
   plan.pushAhead ? `後期翻盤：24 名村民、遠程為主、家旁 ${plan.homeTowers} 座箭樓、騎兵佔 ${plan.cavalryShare}%、城鎮打下來就治理，兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門（D-086）` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
@@ -771,6 +817,25 @@ if (plan.pushAhead) {
     `第 15 分電腦的兵是我的幾倍：中位數 ${med(ratio)}（我一名兵都沒有的 ${at15.length - ratio.length} 局不算）；第 20 分兩邊的兵：我 ${med(at20.map((x) => x[0]))}、電腦 ${med(at20.map((x) => x[1]))}（中位數），電腦比我少 ${at20.filter(([p, a]) => a < p).length}/${at20.length} 局。`,
     "",
   );
+}
+if (plan.harass > 0) {
+  // D-086 A3: the AI's farmers against the harass squad, and what its rescue counted.
+  const med = (l: number[]) => (l.length === 0 ? "—" : String([...l].sort((a, c) => a - c)[l.length >> 1]));
+  const lostAll = games.map((x) => x.aiFarmers.lost.reduce((a, c) => a + c, 0));
+  const perMinute = Array.from({ length: 30 }, (_, k) => games.reduce((a, x) => a + (x.aiFarmers.lost[k] ?? 0), 0));
+  const hits = games.reduce((a, x) => a + x.aiFarmers.hits, 0);
+  const back = games.reduce((a, x) => a + x.aiFarmers.back, 0);
+  out.push(
+    `殺村民（D-086 A3）：電腦每局死的村民 中位數 ${med(lostAll)}、最多 ${Math.max(...lostAll)}；被打（兩分鐘內死 5 名以上）合計 ${hits} 次，3 分鐘後補回（差 2 名以內）${back} 次。`,
+    `電腦的村民在家閒著（沒有指令、主城 ${FARMER_HOME} 格內）每局中位數 ${med(games.map((x) => x.aiFarmers.idle))} 村民·分鐘，躲進主城（含路上）${med(games.map((x) => x.aiFarmers.hiding))} 村民·分鐘。`,
+    `每分鐘死的村民（各局合計，第 1–30 分）：${perMinute.join(" ")}。`,
+  );
+  const rescue = games.filter((x) => x.aiRescue !== null);
+  if (rescue.length > 0) {
+    const keys = [...new Set(rescue.flatMap((x) => Object.keys(x.aiRescue!)))].sort();
+    out.push(`電腦自己的救援紀錄（${rescue.length} 局合計）：${keys.map((k) => `${k} ${rescue.reduce((a, x) => a + (x.aiRescue![k] ?? 0), 0)}`).join("、")}。`);
+  }
+  out.push("");
 }
 if (mapMode === "random") {
   const by = (l: string) => games.filter((x) => x.layout === l);
