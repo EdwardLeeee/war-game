@@ -7,16 +7,27 @@ import numpy as np
 D2R = math.pi / 180
 
 
-def _rot():
-    ax, az = 60 * D2R, -45 * D2R
+DIAMOND = dict(elev=30, az=-45)      # every render up to art-v2: turned 45 degrees to the grid
+OBLIQUE = dict(elev=30, az=0)        # art-v3 on (D-088 方形斜看): square to the grid
+
+
+def _rot(elev, az):
+    ax, az = (90 - elev) * D2R, az * D2R
     rx = np.array([[1, 0, 0], [0, math.cos(ax), -math.sin(ax)], [0, math.sin(ax), math.cos(ax)]])
     rz = np.array([[math.cos(az), -math.sin(az), 0], [math.sin(az), math.cos(az), 0], [0, 0, 1]])
     return rz @ rx
 
 
-RM = _rot()
-RIGHT = RM @ np.array([1.0, 0, 0])
-UP = RM @ np.array([0, 1.0, 0])
+def use_camera(cam=None):
+    """The camera of the frames at hand (a render's json "camera"; none = the diamond one)."""
+    global RM, RIGHT, UP
+    cam = cam or DIAMOND
+    RM = _rot(cam["elev"], cam["az"])
+    RIGHT = RM @ np.array([1.0, 0, 0])
+    UP = RM @ np.array([0, 1.0, 0])
+
+
+use_camera()
 
 
 def to_px(p, anchor, ppm):
