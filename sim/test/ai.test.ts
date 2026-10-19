@@ -2128,3 +2128,87 @@ test("D-089 (SIEGE.failed): after an attack on the enemy main city is ground dow
   assert.equal(again(0), true, "off: it goes, as before");
 });
 
+
+// --- D-086 A4: cavalry against ranged units and mages; arrow towers ------------------------------------------
+
+test("D-086 A4 (plan.cavalryCounter): cavalry once the enemy it knows of is mostly ranged and mages; not against spearmen; 0, as before", () => {
+  const withFoes = (type: UnitType, cavalryCounter: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 13 * 1200;
+    const at = (t: BuildingType, x: number, y: number) => w.addBuilding(0, t, s0.cellX + x, s0.cellY + y, rules().buildings[t].hp, 1000);
+    at(BuildingType.Barracks, 4, -8);
+    at(BuildingType.Range, 12, -8);
+    at(BuildingType.Stable, 8, -13);
+    for (let k = 0; k < 6; k++) at(BuildingType.House, -8 + 3 * k, 6);
+    for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY + 2 + Math.trunc(k / 5));
+    for (let k = 0; k < 8; k++) put(g, 1, type, s0.cellX + 6 + (k % 4), s0.cellY - 15 - Math.trunc(k / 4));
+    w.res.set([700, 300, 300, 0], 0);
+    g.fog.update(w);
+    return trains(hardAi(g, { dodge: false, cavalryCounter }).think(buildView(g, 0)), UnitType.Cavalry);
+  };
+  assert.ok(withFoes(UnitType.Ranged, 25), "ranged in sight: cavalry");
+  assert.ok(withFoes(UnitType.Mage, 25), "mages in sight: cavalry");
+  assert.ok(!withFoes(UnitType.Spearman, 25), "spearmen: no cavalry");
+  assert.ok(!withFoes(UnitType.Ranged, 0), "off: no cavalry, as before");
+});
+
+/** Player 0's `cav` cavalry with an enemy ranged unit 6 cells off, and `spears` enemy spearmen by it: what hard (plan) sends them. */
+function chargeAt(cav: number, spears: number, plan: Partial<HardPlan>): { ids: number[]; target: number; out: CommandBody[] } {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  // By the main city: in sight of what it has there.
+  const x = s0.cellX + 8;
+  const y = s0.cellY - 12;
+  const ids: number[] = [];
+  for (let k = 0; k < cav; k++) ids.push(put(g, 0, UnitType.Cavalry, x + k, y));
+  const target = put(g, 1, UnitType.Ranged, x + 1, y - 6);
+  // In front of it, in sight of the cavalry.
+  for (let k = 0; k < spears; k++) put(g, 1, UnitType.Spearman, x - 2 + k, y - 5);
+  g.fog.update(w);
+  return { ids, target, out: hardAi(g, { dodge: false, ...plan }).think(buildView(g, 0)) };
+}
+const charged = (r: { ids: number[]; target: number; out: CommandBody[] }) =>
+  r.out.some((c) => c.c === "attack" && c.target === r.target && r.ids.every((id) => c.u.includes(id)));
+
+test("D-086 A4 (plan.charge): cavalry charge an enemy ranged unit in sight; not with more spearmen than they are by it; off, as before", () => {
+  assert.ok(charged(chargeAt(4, 0, { charge: true })), "4 cavalry, no spearmen: they charge it");
+  assert.ok(charged(chargeAt(4, 3, { charge: true })), "3 spearmen by it: still");
+  assert.ok(!charged(chargeAt(4, 6, { charge: true })), "6 spearmen by it: no charge");
+  assert.ok(!charged(chargeAt(2, 0, { charge: true })), "fewer than CHARGE_MIN: no charge");
+  assert.ok(!charged(chargeAt(4, 0, { charge: false })), "off: no charge, as before");
+});
+
+test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 cells open round its main city and production buildings", () => {
+  const g = new Game({ seed: 3, scenario: "standard" });
+  const w = g.w;
+  const ais = [0, 1].map((p) => createAi(p, 3, { map: w.map, rules: rules(), frame: w.map.frames[p], maxTicks: 0, difficulty: "hard", hard: { towers: 2, towerSpare: 0 } }, p));
+  let seq = 0;
+  let placed = 0;
+  const size = (t: number) => rules().buildings[t].size;
+  for (let t = 0; t < 15 * 1200; t++) {
+    if (g.tick % 10 === 0) {
+      for (let p = 0; p < 2; p++) {
+        for (const body of ais[p].think(buildView(g, p))) {
+          if (body.c === "build" && body.type === BuildingType.ArrowTower) {
+            placed++;
+            const b = w.buildings.col;
+            for (let s = 0; s < w.buildings.count; s++) {
+              const bt = b.type[s];
+              const doors: number[] = [BuildingType.MainCity, BuildingType.Barracks, BuildingType.Range, BuildingType.Stable, BuildingType.MageHall];
+              if (b.owner[s] !== p || !doors.includes(bt)) continue;
+              const apart: boolean =
+                body.x + size(BuildingType.ArrowTower) + 2 <= b.cellX[s] || b.cellX[s] + size(bt) + 2 <= body.x || body.y + size(BuildingType.ArrowTower) + 2 <= b.cellY[s] || b.cellY[s] + size(bt) + 2 <= body.y;
+              assert.ok(apart, `player ${p}'s tower at (${body.x},${body.y}) by its building type ${bt} at (${b.cellX[s]},${b.cellY[s]})`);
+            }
+          }
+          g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+        }
+      }
+    }
+    g.step();
+  }
+  assert.ok(placed > 0, "it put up towers");
+});
