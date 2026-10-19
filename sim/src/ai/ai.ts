@@ -75,6 +75,10 @@ export interface Ai {
   /** The style this AI plays (GDD section 13). */
   style: AiStyle;
   think(view: PlayerView): CommandBody[];
+  /** What it counted of its own doings, for the measuring tools (D-086 A3: hard's rescues); none in a game. */
+  stats?(): Record<string, number>;
+  /** What it believes now, for the measuring tools (D-086 A3: hard's memory of the enemy); none in a game. */
+  peek?(): Record<string, number>;
 }
 
 /** What every player knows from the start (the `ready` message), and its symmetry frame. */
@@ -1872,6 +1876,31 @@ export interface HardPlan {
   governSpare: number;
   /** ...only the small town nearest its main city (false: any town it takes). */
   governNearest: boolean;
+  /**
+   * D-086 A3 (the user's 75830947: some 40 of hard's farmers killed 23-50 cells from its main city, minutes
+   * 14-26). Farmers FAR_FARMER cells or more from its main city are under attack at a spot when 2 of them fell
+   * within a minute there (FARMER_SPOT cells), or it sees enemy soldiers that near one; not a spot under an
+   * enemy fort's reach (D-081: not drawn into its arrows). rescue: soldiers at home (at most half, RESCUE_MIN
+   * or more) go there when they beat what it knows of the enemy there (D-083 (a)'s weighing); back home when
+   * the enemy is gone RESCUE_DONE ticks, grows too strong, the squad is half gone, or the main city is hit;
+   * never past the spot. After falling back (too strong, half gone) it leaves that spot alone rescueRest
+   * minutes (false: as before).
+   */
+  rescue: boolean;
+  rescueRest: number;
+  /** D-086 A3: the farmers by such a spot go home, and back to work (release) once FAR_CLEAR ticks pass with no enemy seen by it (false: as before). */
+  hideFar: boolean;
+  /**
+   * D-086 A3 (75830947: it forgot the user's army after INTEL_TICKS and marched into it): the enemy's worth it
+   * believes in for marching is at least the most it knew of at once, less what it saw fall since, shrinking
+   * foeDecay percent a minute (false: as before). With its population full it marches as before regardless.
+   */
+  foeMemory: boolean;
+  foeDecay: number;
+  /** D-086 A3 (75830947: food at 9-49 for 12 minutes, farmers 28 -> 8): with farmers under its target, soldiers leave this much food for the next one (0: as before). */
+  farmerFood: number;
+  /** D-086 A3: wood or food under WOOD_SHORT with food, wood and gold together RICH or more counts as wood short (false: as before). */
+  shortEither: boolean;
 }
 
 export const HARD: HardPlan = {
@@ -1902,7 +1931,25 @@ export const HARD: HardPlan = {
   governFrom: 0,
   governSpare: 0,
   governNearest: true,
+  rescue: false,
+  rescueRest: 3,
+  hideFar: false,
+  foeMemory: false,
+  foeDecay: 10,
+  farmerFood: 0,
+  shortEither: false,
 };
+/** D-086 A3 (plan.rescue, plan.hideFar): farmers this far (cells) from the main city are far; a spot is this near them. */
+const FAR_FARMER = 20;
+const FARMER_SPOT = 8;
+/** D-086 A3 (plan.rescue): the enemy weighed this near the spot; soldiers this near the main city are at home; the least that go; done after this long with no enemy by it (30 s), or this long without getting there. */
+const RESCUE_NEAR = 10;
+const RESCUE_HOME = 15;
+const RESCUE_MIN = 5;
+const RESCUE_DONE = 600;
+const RESCUE_WALK = 2 * TICKS_PER_MINUTE;
+/** D-086 A3 (plan.hideFar): farmers sent home go back to work once this long passes with no enemy seen by the spot (30 s). */
+const FAR_CLEAR = 600;
 /** D-086 A: wood under this is short; food plus gold from this pile up (the research note's measure). */
 const WOOD_SHORT = 50;
 const RICH = 600;
@@ -2039,6 +2086,25 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const townForts = new Map<number, { ids: number[]; tick: number }>();
   const townRest = new Map<number, number>();
   const fv = fortValues(know.rules);
+  // D-086 A3: where its farmers were last think, and those that fell far from home in the last minute.
+  const farmerSeen = new Map<number, { x: number; y: number }>();
+  const farmerFell: { x: number; y: number; tick: number }[] = [];
+  /** plan.rescue: the squad, the spot it went to, how many set out, when it got there, last saw the enemy by it, was told where to go; spots left alone until a tick. */
+  const rescueSquad = new Set<number>();
+  let rescueAt: { x: number; y: number; start: number; size: number; arrived: boolean } | null = null;
+  let rescueClear = 0;
+  let rescueMove = -100000;
+  const rescueRest = new Map<number, number>();
+  let rescueDeclined = -1;
+  /** plan.hideFar: farmers sent home from each spot, and when the enemy was last seen by it. */
+  const farHide: { x: number; y: number; clear: number; ids: number[] }[] = [];
+  /** plan.foeMemory: the enemy's worth it believes in, and when it last shrank. */
+  let foeMemo = 0;
+  let foeMemoTick = 0;
+  /** The same in soldiers (for peek only), and what it knew of last think. */
+  let foeMemoN = 0;
+  let known = { worth: 0, n: 0 };
+  const counted = { rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number): { x: number; y: number } | null {
@@ -2074,6 +2140,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   return {
     // It always plunders (a town plundered again every 5 minutes pays more than governing it).
     style: "plunder",
+    stats: () => ({ ...counted }),
+    peek: () => ({ knownWorth: known.worth, known: known.n, believedWorth: Math.max(known.worth, foeMemo), believed: Math.max(known.n, foeMemoN) }),
     think(view: PlayerView): CommandBody[] {
       const out: CommandBody[] = [];
       const h = view.header;
@@ -2253,7 +2321,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             continue;
           }
         }
-        if ((tick - e.tick <= 20 && sees(e.x, e.y)) || tick - e.tick > INTEL_TICKS) intel.delete(id);
+        if (tick - e.tick <= 20 && sees(e.x, e.y)) {
+          // Fallen (plan.foeMemory: no longer believed in either).
+          intel.delete(id);
+          if (plan.foeMemory) {
+            foeMemo = Math.max(0, foeMemo - WORTH[e.type]);
+            foeMemoN = Math.max(0, foeMemoN - 1);
+          }
+        } else if (tick - e.tick > INTEL_TICKS) intel.delete(id);
       }
       let enemySpear = 0;
       let enemyRanged = 0;
@@ -2266,6 +2341,20 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         enemyWorth += WORTH[e.type];
       }
       if (enemyMages > 0) lastEnemyMage = tick;
+      // D-086 A3 (plan.foeMemory): the most it knew of at once, shrinking a little each minute.
+      if (plan.foeMemory) {
+        if (enemyWorth >= foeMemo) {
+          foeMemo = enemyWorth;
+          foeMemoN = intel.size;
+          foeMemoTick = tick;
+        } else if (tick - foeMemoTick >= TICKS_PER_MINUTE) {
+          foeMemo -= Math.trunc((foeMemo * plan.foeDecay) / 100);
+          foeMemoN -= Math.trunc((foeMemoN * plan.foeDecay) / 100);
+          foeMemoTick = tick;
+        }
+      }
+      known = { worth: enemyWorth, n: intel.size };
+      const believed = plan.foeMemory ? Math.max(enemyWorth, foeMemo) : enemyWorth;
 
       // --- economy --------------------------------------------------------------------------
       // The ratio leans hard away from what piles up (a plunder brings 300 gold and no wood, and
@@ -2282,7 +2371,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       for (let k = 0; k < 3; k++) ratio[k] = Math.max(5, Math.trunc((ratio[k] * 100) / sum));
       ratio[0] = 100 - ratio[1] - ratio[2];
       // D-086 A: wood short while food and gold pile up (soldiers want wood, and the stock does not turn into any).
-      const woodShort = res.wood < WOOD_SHORT && res.food + res.gold >= RICH;
+      const woodShort = plan.shortEither
+        ? (res.wood < WOOD_SHORT || res.food < WOOD_SHORT) && res.food + res.wood + res.gold >= RICH
+        : res.wood < WOOD_SHORT && res.food + res.gold >= RICH;
       if (plan.woodShift && woodShort) for (let k = 0; k < 3; k++) ratio[k] = WOOD_SHIFT[k];
       const ratioKey = ratio.join("/");
       if (ratioKey !== ratioSet) {
@@ -2293,11 +2384,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
       const farmersWanted = farmerTarget + (woodShort ? plan.woodFarmers : 0);
+      let farmerQueued = false;
       if (main && main.queue < 2 && farmers.length + main.queue < farmersWanted && room > 0 && afford(farmerCost)) {
         out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
         spend(farmerCost);
         room--;
+        farmerQueued = true;
       }
+      // D-086 A3 (plan.farmerFood): farmers still short and room for one more in the queue: soldiers leave it its food.
+      const keepFood =
+        plan.farmerFood > 0 && main && main.queue + (farmerQueued ? 1 : 0) < 2 && farmers.length + main.queue + (farmerQueued ? 1 : 0) < farmersWanted ? plan.farmerFood : 0;
       const nearestNode = (kind: number): { x: number; y: number; id: number } | null => {
         let best: { x: number; y: number; id: number } | null = null;
         let bestD = 0;
@@ -2382,6 +2478,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const trainAt = (t: number, type: UnitType) => {
         for (const b of done(t)) {
           if (b.queue >= 2 || room <= 0 || !afford(rules.units[type].cost)) continue;
+          if (keepFood > 0 && res.food - reserve.food - rules.units[type].cost.food < keepFood) continue;
           out.push({ c: "train", building: b.id, type, n: 1 });
           spend(rules.units[type].cost);
           room--;
@@ -2466,7 +2563,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const guarded = new Set([...townGuards.values()].flat());
         const alive = (townGuards.get(id) ?? []).filter((g) => byId.has(g));
         const free = soldiers
-          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison)
+          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison && !rescueSquad.has(s.id))
           .sort((a, b) => (b.type === UnitType.Spearman ? 1 : 0) - (a.type === UnitType.Spearman ? 1 : 0) || dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < t.needed + 1 && free.length > 0) alive.push(free.shift()!.id);
         townGuards.set(id, alive);
@@ -2529,7 +2626,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
       // Hiding in a building (round 7) too: a move would bring it out.
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
+      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -2551,7 +2648,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
 
       // --- the army ------------------------------------------------------------------------------------
-      const army = guarding.size === 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id));
+      const army = guarding.size === 0 && rescueSquad.size === 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id) && !rescueSquad.has(u.id));
       const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
       let sent = false;
       const send = (x: number, y: number, why: HardMode) => {
@@ -2611,6 +2708,143 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // Those that would go: not the towns' guards.
         const vs = soldiers.filter((u) => !guarding.has(u.id)).reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
         crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
+      }
+
+      // --- D-086 A3: farmers attacked far from home (plan.rescue, plan.hideFar) -------------------------
+      let farmerSpot: { x: number; y: number } | null = null;
+      const cityHit = foesNear(home.cellX, home.cellY, 16).length > 0;
+      if (plan.rescue || plan.hideFar) {
+        const far = (x: number, y: number) => dist2(x, y, home.cellX, home.cellY) >= FAR_FARMER * FAR_FARMER;
+        const alive = new Set(farmers.map((f) => f.id));
+        for (const [id, at] of farmerSeen) {
+          if (alive.has(id)) continue;
+          farmerSeen.delete(id);
+          if (far(at.x, at.y)) farmerFell.push({ x: at.x, y: at.y, tick });
+        }
+        for (const f of farmers) farmerSeen.set(f.id, { x: f.x, y: f.y });
+        while (farmerFell.length > 0 && tick - farmerFell[0].tick > TICKS_PER_MINUTE) farmerFell.shift();
+        const spots: { x: number; y: number }[] = [];
+        for (const d of farmerFell) if (farmerFell.filter((e) => dist2(e.x, e.y, d.x, d.y) <= FARMER_SPOT * FARMER_SPOT).length >= 2) spots.push(d);
+        for (const f of farmers) if (far(f.x, f.y) && foes.some((e) => dist2(e.x, e.y, f.x, f.y) <= FARMER_SPOT * FARMER_SPOT)) spots.push({ x: f.x, y: f.y });
+        // The one nearest home (ties in player 0's frame), not under an enemy fort's reach.
+        let best = 0;
+        for (const p of spots) {
+          if (underArrows(p)) continue;
+          const d = dist2(p.x, p.y, home.cellX, home.cellY);
+          if (farmerSpot === null || d < best || (d === best && rank(p.x, p.y) < rank(farmerSpot.x, farmerSpot.y))) {
+            farmerSpot = p;
+            best = d;
+          }
+        }
+      }
+      if (plan.rescue) {
+        const spotKey = (x: number, y: number) => {
+          const f = frame(x, y);
+          return (f.v >> 3) * n + (f.u >> 3);
+        };
+        /** D-083 (a)'s weighing at a spot: those that would go against the forts reaching it and 1.3 x the enemy it knows of by it (seen in the last minute). */
+        const beats = (list: { type: number }[], x: number, y: number) => {
+          let enemy = 0;
+          for (const e of intel.values()) if (!e.post && tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, x, y) <= RESCUE_NEAR * RESCUE_NEAR) enemy += WORTH[e.type];
+          const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
+          const w = list.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+          return w * 10 >= fortsAtTown(gs, x, y, RESCUE_NEAR) * 10 + enemy * 13;
+        };
+        for (const id of rescueSquad) if (!byId.has(id)) rescueSquad.delete(id);
+        if (rescueAt !== null) {
+          const at = rescueAt;
+          const squad = soldiers.filter((u) => rescueSquad.has(u.id));
+          const sc = centre(squad, at.x, at.y);
+          if (!at.arrived && dist2(sc.x, sc.y, at.x, at.y) <= RESCUE_NEAR * RESCUE_NEAR) {
+            at.arrived = true;
+            rescueClear = tick;
+          }
+          if (foesNear(at.x, at.y, RESCUE_NEAR).length > 0 || foesNear(sc.x, sc.y, FARMER_SPOT).length > 0) rescueClear = tick;
+          // Home: the main city hit; half gone; the enemy there too strong now, or the squad under a fort's reach; done.
+          let why: "" | "rescueCityHit" | "rescueLost" | "rescueWeak" | "rescueDone" = "";
+          if (cityHit) why = "rescueCityHit";
+          else if (squad.length * 2 < at.size) why = "rescueLost";
+          else if (!beats(squad, at.x, at.y) || underArrows(sc)) why = "rescueWeak";
+          else if ((at.arrived && tick - rescueClear >= RESCUE_DONE) || (!at.arrived && tick - at.start >= RESCUE_WALK)) why = "rescueDone";
+          const ids = squad.map((u) => u.id);
+          if (why !== "") {
+            if (ids.length > 0) out.push({ c: why === "rescueDone" ? "move" : "retreat", u: ids, x: post.x, y: post.y });
+            if (why === "rescueLost" || why === "rescueWeak") rescueRest.set(spotKey(at.x, at.y), tick + plan.rescueRest * TICKS_PER_MINUTE);
+            counted[why]++;
+            rescueSquad.clear();
+            rescueAt = null;
+          } else {
+            // Never past the spot: those further from it (and from home) than it come back to it.
+            const atD = dist2(at.x, at.y, home.cellX, home.cellY);
+            const past = squad.filter((u) => dist2(u.x, u.y, at.x, at.y) > RESCUE_NEAR * RESCUE_NEAR && dist2(u.x, u.y, home.cellX, home.cellY) > atD).map((u) => u.id);
+            if (past.length > 0 && tick - rescueMove >= 100) {
+              out.push({ c: "retreat", u: past, x: at.x, y: at.y });
+              rescueMove = tick;
+            } else if (!at.arrived && tick - rescueMove >= 400) {
+              out.push({ c: "move", u: ids, x: at.x, y: at.y });
+              rescueMove = tick;
+            }
+          }
+        } else if (farmerSpot !== null && mode === "home" && !cityHit && !recalled && tick >= (rescueRest.get(spotKey(farmerSpot.x, farmerSpot.y)) ?? 0)) {
+          const spot = farmerSpot;
+          // From the soldiers at home, nearest the spot first; at most half of them, never fewer than RESCUE_MIN.
+          const pool = army
+            .filter((u) => !detached(u.id) && dist2(u.x, u.y, home.cellX, home.cellY) <= RESCUE_HOME * RESCUE_HOME)
+            .sort((a, b) => dist2(a.x, a.y, spot.x, spot.y) - dist2(b.x, b.y, spot.x, spot.y) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+          const most = pool.length >> 1;
+          const pick: HardUnit[] = [];
+          for (const u of pool) {
+            if (pick.length >= most) break;
+            pick.push(u);
+            if (pick.length >= RESCUE_MIN && beats(pick, spot.x, spot.y)) break;
+          }
+          if (pick.length >= RESCUE_MIN && beats(pick, spot.x, spot.y)) {
+            const ids = pick.map((u) => u.id);
+            for (const id of ids) rescueSquad.add(id);
+            rescueAt = { x: spot.x, y: spot.y, start: tick, size: ids.length, arrived: false };
+            rescueClear = tick;
+            rescueMove = tick;
+            out.push({ c: "move", u: ids, x: spot.x, y: spot.y });
+            counted.rescueSent++;
+            const keep = armyIds.filter((id) => !rescueSquad.has(id));
+            armyIds.length = 0;
+            armyIds.push(...keep);
+          } else {
+            // Too few for it: none go (never one by one); counted once a spot.
+            const key = spotKey(spot.x, spot.y);
+            if (key !== rescueDeclined) counted.rescueDeclined++;
+            rescueDeclined = key;
+          }
+        }
+      }
+      if (plan.hideFar) {
+        // Those sent home go back to work once no enemy has been seen by their spot for a while (not while all hide in the main city).
+        for (const h of farHide) if (recalled || foesNear(h.x, h.y, FARMER_SPOT).length > 0) h.clear = tick;
+        for (let k = farHide.length - 1; k >= 0; k--) {
+          const h = farHide[k];
+          if (tick - h.clear < FAR_CLEAR) continue;
+          const ids = h.ids.filter((id) => farmers.some((f) => f.id === id));
+          if (ids.length > 0) out.push({ c: "release", u: ids });
+          counted.farmersReleased += ids.length;
+          farHide.splice(k, 1);
+        }
+        if (farmerSpot !== null && !recalled) {
+          const spot = farmerSpot;
+          const sent = new Set(farHide.flatMap((h) => h.ids));
+          // The farmers by the spot (not those pulling down a fort, D-080) go home.
+          const go = farmers
+            .filter((f) => !sent.has(f.id) && f.order !== Order.Attack && dist2(f.x, f.y, spot.x, spot.y) <= (FARMER_SPOT + 2) * (FARMER_SPOT + 2) && dist2(f.x, f.y, home.cellX, home.cellY) >= FAR_FARMER * FAR_FARMER)
+            .map((f) => f.id);
+          if (go.length > 0) {
+            out.push({ c: "retreat", u: go, x: post.x, y: post.y });
+            counted.farmersHid += go.length;
+            const h = farHide.find((e) => dist2(e.x, e.y, spot.x, spot.y) <= FARMER_SPOT * FARMER_SPOT);
+            if (h !== undefined) {
+              h.ids.push(...go);
+              h.clear = tick;
+            } else farHide.push({ x: spot.x, y: spot.y, clear: tick, ids: go });
+          }
+        }
       }
 
       const armyOrders = (): void => {
@@ -3005,7 +3239,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         // At home: march, go for a town, or wait by the city.
         const popFull = toGo < 0 && cap >= ceiling && pop >= cap - FULL_MARGIN;
-        const strong = armyWorth * 100 >= enemyWorth * plan.pushRatio;
+        const strong = armyWorth * 100 >= believed * plan.pushRatio;
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
         const go =
@@ -3014,7 +3248,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             ? army.length >= ENDGAME_ARMY
             : assault
               ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
-              : (counterReady && army.length >= plan.counterArmy && armyWorth >= enemyWorth) ||
+              : (counterReady && army.length >= plan.counterArmy && armyWorth >= believed) ||
                 (army.length >= pushArmy && strong) ||
                 (popFull && army.length >= townArmy + 6));
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
