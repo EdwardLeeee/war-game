@@ -84,6 +84,8 @@ export interface Hurt {
   x: number;
   y: number;
   id: number;
+  /** Who hurt it this tick (D-087): bit `1 << o` for each owner o (a player, or NEUTRAL). */
+  by: number;
 }
 
 /** Per-tick scratch arrays, reused. */
@@ -121,6 +123,9 @@ export class UnitSystem {
   /** The same hits counted against a mage's shield (its own multipliers). */
   private shieldDamage = new Int32Array(256);
   private buildingDamage = new Int32Array(64);
+  /** Per unit and building slot, this tick: bit `1 << o` for each owner o whose hits landed (Hurt.by). */
+  private unitHitBy = new Uint8Array(256);
+  private buildingHitBy = new Uint8Array(64);
   private newX = new Int32Array(256);
   private newY = new Int32Array(256);
   private deadUnits = new Uint8Array(256);
@@ -154,6 +159,7 @@ export class UnitSystem {
       this.startTarget = new Int32Array(c);
       this.unitDamage = new Int32Array(c);
       this.shieldDamage = new Int32Array(c);
+      this.unitHitBy = new Uint8Array(c);
       this.newX = new Int32Array(c);
       this.newY = new Int32Array(c);
       this.deadUnits = new Uint8Array(c);
@@ -161,6 +167,7 @@ export class UnitSystem {
     if (this.buildingDamage.length < nb) {
       const c = Math.max(nb, this.buildingDamage.length * 2);
       this.buildingDamage = new Int32Array(c);
+      this.buildingHitBy = new Uint8Array(c);
       this.deadBuildings = new Uint8Array(c);
     }
   }
@@ -1416,6 +1423,8 @@ export class UnitSystem {
     this.unitDamage.fill(0, 0, count);
     this.shieldDamage.fill(0, 0, count);
     this.buildingDamage.fill(0, 0, w.buildings.count);
+    this.unitHitBy.fill(0, 0, count);
+    this.buildingHitBy.fill(0, 0, w.buildings.count);
     this.shots.length = 0;
     for (let i = 0; i < count; i++) {
       if (u.cooldown[i] > 0) u.cooldown[i]--;
@@ -1434,7 +1443,10 @@ export class UnitSystem {
         if (u.action[i] === Action.Garrisoned) this.shots.push(u.orderTarget[i], tid);
       } else {
         const bs = w.building(tid);
-        if (bs >= 0) this.buildingDamage[bs] += info.attack;
+        if (bs >= 0) {
+          this.buildingDamage[bs] += info.attack;
+          this.buildingHitBy[bs] |= 1 << u.owner[i];
+        }
         // An outpost under attack sends its guards after the attacker (D-080).
         if (OUTPOST.on && bs >= 0 && b.type[bs] === BuildingType.Outpost) b.provoker[bs] = u.id[i];
       }
@@ -1473,6 +1485,7 @@ export class UnitSystem {
       const arrows = type === BuildingType.MainCity ? 1 + Math.min(b.garrisoned[s], MAIN_ARROW.extraMax) : 1;
       this.unitDamage[bestSlot] += arrow.damage * arrows;
       this.shieldDamage[bestSlot] += arrow.damage * arrows;
+      this.unitHitBy[bestSlot] |= 1 << b.owner[s];
       u.hitBy[bestSlot] = b.owner[s];
       u.hitCause[bestSlot] = HitCause.Arrow;
       u.hitById[bestSlot] = -1;
@@ -1496,7 +1509,7 @@ export class UnitSystem {
       if (u.shield[i] > 0) u.shield[i] = Math.max(0, u.shield[i] - shieldDmg);
       else u.hp[i] -= dmg;
       u.lastHurt[i] = w.tick;
-      hurt.push({ owner: u.owner[i], x: u.x[i], y: u.y[i], id: u.id[i] });
+      hurt.push({ owner: u.owner[i], x: u.x[i], y: u.y[i], id: u.id[i], by: this.unitHitBy[i] });
     }
     // Shields regenerate after SHIELD_REGEN.afterTicks without taking or dealing damage.
     for (let i = 0; i < count; i++) {
@@ -1522,7 +1535,13 @@ export class UnitSystem {
       b.hp[s] -= dmg;
       b.lastHurt[s] = w.tick;
       const size = w.buildingSize(b.type[s]);
-      hurt.push({ owner: b.owner[s], x: (b.cellX[s] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1), y: (b.cellY[s] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1), id: b.id[s] });
+      hurt.push({
+        owner: b.owner[s],
+        x: (b.cellX[s] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1),
+        y: (b.cellY[s] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1),
+        id: b.id[s],
+        by: this.buildingHitBy[s],
+      });
     }
     // UnderAttack flag for the snapshot.
     for (let i = 0; i < count; i++) {
@@ -1540,6 +1559,7 @@ export class UnitSystem {
     u.hitById[ts] = attackerId;
     this.unitDamage[ts] += damage(attack, attackerType, u.type[ts]);
     this.shieldDamage[ts] += damage(attack, attackerType, SHIELD);
+    this.unitHitBy[ts] |= 1 << attackerOwner;
     u.hitBy[ts] = attackerOwner;
   }
 
