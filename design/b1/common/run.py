@@ -136,6 +136,19 @@ for _t, _cam in (("dir_sq", dict(elev=30, az=0)), ("dir_top", dict(elev=60, az=0
                    + [dict(kind="gold", culture="E", opts=dict(variant=0, state="full"), name=f"gold_v0_full_{_t}")])
     CAMERA[_t] = _cam
 
+# art-v3 (D-088, the user 2026-10-19: 「我覺得地圖還是正方形好」, 甲 方形斜看): every production piece with the
+# camera 30 degrees up and square to the grid (proj.OBLIQUE); art-v2 was the diamond camera.
+import proj  # noqa: E402
+CAMERA.update({t: proj.OBLIQUE for t in TARGETS if t.startswith("prod_")})
+# before the run for the atlas: the finished look of every building at that camera, to measure the player colour
+# of all of them at once; R6-05 (the side-by-side the user approves first) takes three of these
+_done = {c: [pc for pc in _prod_buildings(c) if pc["name"].endswith("_done") or pc["name"] == f"farm_{c}_ripe"]
+         for c in CULTURES}
+for _c in CULTURES:
+    for _i in range(0, len(_done[_c]), 6):
+        TARGETS[f"sqdone_{_c}_{_i // 6}"] = _done[_c][_i:_i + 6]
+        CAMERA[f"sqdone_{_c}_{_i // 6}"] = proj.OBLIQUE
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
@@ -143,7 +156,8 @@ FOLDER.update({t: "states" for t in TARGETS if t.startswith(("states2", "states3
 FOLDER.update({"b1b": "b1b", "teamfix_b101": "b101", "teamfix_core3": "core3", "teamfix_b104": "b104", "teamfix_states": "states"})
 FOLDER.update({t: "towns" for t in TARGETS if t.startswith("towns2")})
 FOLDER.update({t: "prod" for t in TARGETS if t.startswith("prod_")})
-FOLDER.update({t: "dir" for t in CAMERA})
+FOLDER.update({t: "dir" for t in CAMERA if t.startswith("dir_")})
+FOLDER.update({t: "sqdone" for t in TARGETS if t.startswith("sqdone_")})
 
 
 def pieces(target):
