@@ -48,7 +48,7 @@ HOUSES = ("th22", "th21", "th12", "th11")
 
 lib.QUALITY = job.get("quality", "hq")
 ppm = job["px_per_m"]
-cam = job.get("camera") or {}             # R6-04: another camera for a few pieces (lib.CAM_ELEV, lib.CAM_AZ)
+cam = job.get("camera") or {}             # R6-04 and art-v3 (D-088): another camera (lib.CAM_ELEV, lib.CAM_AZ)
 lib.CAM_ELEV = cam.get("elev", lib.CAM_ELEV)
 lib.CAM_AZ = cam.get("az", lib.CAM_AZ)
 RM = Euler(((90 - lib.CAM_ELEV) * lib.D2R, 0, lib.CAM_AZ * lib.D2R)).to_matrix()
@@ -186,7 +186,8 @@ for pc in job["pieces"]:
     meta = dict(kind=kind, culture=c, state=pc.get("state", "done"), footprint=[fx, fy], cell_m=kit.CELL,
                 smoke_at=smoke_at, smoke=smoke, opts={k: v for k, v in pc.get("opts", {}).items() if k != "plan"},
                 anchor=list(anchor), size=[W, H], px_per_m=ppm, shadow_anchor=list(s_anchor), shadow_size=[sW, sH],
-                top_m=round(max((p.z for p in pts), default=0.0), 2))
+                top_m=round(max((p.z for p in pts), default=0.0), 2),
+                camera=dict(elev=lib.CAM_ELEV, az=lib.CAM_AZ))
     if pc.get("probe"):
         meta["probe"] = probe(fx, fy)
     if job.get("probe_only"):

@@ -35,6 +35,7 @@ export class Controls {
   private readonly speedBtn: HTMLButtonElement;
   private readonly pauseBtn: HTMLButtonElement;
   private readonly banner: HTMLElement;
+  private readonly waiting: HTMLElement;
 
   constructor(hud: HTMLElement, h: ControlHandlers) {
     this.bar = document.createElement("div");
@@ -55,6 +56,11 @@ export class Controls {
     this.banner.className = formal ? "paused-banner panel" : "paused-banner";
     this.banner.setAttribute("role", "status");
     this.banner.textContent = "暫停中：仍可下指令";
+    // R6-31: how many orders wait for 繼續 (none: the line is not there).
+    this.waiting = document.createElement("span");
+    this.waiting.className = "pend";
+    this.waiting.hidden = true;
+    this.banner.appendChild(this.waiting);
     hud.appendChild(this.banner);
     this.setSpeed("normal");
     this.setPaused(false);
@@ -70,5 +76,12 @@ export class Controls {
     if (formalUi()) dress(this.pauseBtn, { ic: paused ? "play" : "pause", label: paused ? "繼續" : "暫停" });
     else this.pauseBtn.textContent = paused ? "繼續" : "暫停";
     this.banner.hidden = !paused;
+  }
+
+  /** Orders given while paused and not taken yet (R6-31: 已下 N 個指令，按繼續後執行). */
+  setWaiting(n: number): void {
+    const text = n > 0 ? `已下 ${n} 個指令，按繼續後執行` : "";
+    if (this.waiting.textContent !== text) this.waiting.textContent = text;
+    this.waiting.hidden = n === 0;
   }
 }

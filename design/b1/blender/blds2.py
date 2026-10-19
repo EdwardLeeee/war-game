@@ -40,7 +40,8 @@ def lumber_camp(root, c):
         box(f"lc_split{k}", (0.12, 0.45, 0.12), P["logend"], root, loc=(1.35 + (k % 3) * 0.14, -0.7 - (k // 3) * 0.2, 0.16),
             rot=(0, 0, 10 * k))
     kit.awning("lc_aw", P, root, "y", sx - 0.6, 1.75, 1.2, 0.7, y0=sy - sd / 2)
-    kit.drape("lc_val", P, root, "x", sy, 1.98, sd - 0.3, 0.75, x0=sx - sw / 2 - 0.02)
+    # the valance under the eaves, moved from the side to the front (art-v3, D-088: the side faces are edge-on to the square camera)
+    kit.drape("lc_val", P, root, "y", sx, 1.98, sw - 0.3, 0.75, y0=sy - sd / 2 - 0.02)
     kit.pennant("lc_pen", P, root, (-1.7, -0.4, 0.1), 2.8, w=1.2, fh=0.75)
 
 
@@ -95,7 +96,8 @@ def granary(root, c):
         rod("gr_ladder2", (gx + 0.65, gy - gd / 2 - 0.55, 0.1), (gx + 0.65, gy - gd / 2 - 0.05, 0.95), 0.03, P["wood"],
             parent=root, segs=6)
         kit.drape("gr_dr", P, root, "x", gy, 2.1, 1.3, 1.0, x0=gx - gw / 2 - 0.06)
-        kit.drape("gr_dry", P, root, "y", gx - 0.55, 2.1, 0.95, 0.95, y0=gy - gd / 2 - 0.06)
+        # the front hanging made bigger, left of the door (art-v3, D-088: the side faces are edge-on to the square camera; the side one no longer shows)
+        kit.drape("gr_dry", P, root, "y", gx - 0.67, 2.1, 1.1, 1.2, y0=gy - gd / 2 - 0.06)
     else:
         # a timber barn with big doors; a squat round silo at the front-left
         gx, gy, gw, gd = 0.55, 0.5, 2.5, 2.6
@@ -187,6 +189,8 @@ def range_(root, c):
         kit.roof_e("rg_roof", P, root, hx, hy, 2.2, hw, hd, 0.75, over=0.45, curl=0.3, ridge="y")
         kit.drape("rg_dr1", P, root, "x", -1.55, 2.05, 0.9, 1.2, x0=hx - 0.75 - 0.06)
         kit.drape("rg_dr2", P, root, "x", 1.55, 2.05, 0.9, 1.2, x0=hx - 0.75 - 0.06)
+        # a hanging across the gallery's front end (art-v3, D-088: the side faces are edge-on to the square camera)
+        kit.drape("rg_dry", P, root, "y", hx, 2.0, 1.3, 1.3, y0=hy - hd / 2 + 0.2)
     else:
         for y in (-2.3, -0.8, 0.8, 2.3):
             for x in (hx - 0.65, hx + 0.65):
@@ -195,6 +199,7 @@ def range_(root, c):
         kit.roof_w("rg_roof", dict(P, tile=P["thatch"]), root, hx, hy, 2.1, hw, hd, 0.8, ridge="y", over=0.25)
         kit.drape("rg_dr1", P, root, "x", -1.55, 1.95, 0.9, 1.2, x0=hx - 0.75 - 0.06)
         kit.drape("rg_dr2", P, root, "x", 1.55, 1.95, 0.9, 1.2, x0=hx - 0.75 - 0.06)
+        kit.drape("rg_dry", P, root, "y", hx, 1.9, 1.3, 1.3, y0=hy - hd / 2 + 0.2)
     # three butts with painted rings, facing the gallery (and the camera)
     for k, y in enumerate((-1.9, 0.0, 1.9)):
         kit.butt(f"rg_butt{k}", P, root, (2.35, y, 0.12), face="x")

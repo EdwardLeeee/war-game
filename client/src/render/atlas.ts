@@ -55,6 +55,8 @@ export interface Atlas {
   occupied: Texture;
   /** An outpost holding (BuildingFlag.Hold, D-080): a small tag reading 守, 16 x 16. */
   hold: Texture;
+  /** 自動訓練 paused (R6-31): a pause sign, 16 x 16 like `occupied`. */
+  paused: Texture;
   glyphs: Record<number, Texture>;
   /** Indexed by NodeKind; 32 x 32. */
   nodes: Texture[];
@@ -139,6 +141,13 @@ function buildAtlas(renderer: Renderer): Atlas {
     return tex;
   })();
 
+  // 自動訓練 paused on this building (the user 2026-10-19: 「不然還以為沒按到」; R6-31): a pause sign.
+  const paused = shape(renderer, 16, (g) => {
+    g.roundRect(0.7, 0.7, 14.6, 14.6, 3).fill(0xf5f1e6).stroke({ width: 1.4, color: INK });
+    g.roundRect(4.6, 4, 2.6, 8, 0.8).fill(INK);
+    g.roundRect(8.8, 4, 2.6, 8, 0.8).fill(INK);
+  });
+
   const glyphs: Record<number, Texture> = {};
   for (const [type, ch] of Object.entries(BUILDING_GLYPH)) {
     const t = new Text({ text: ch, style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 30, fontWeight: "700", fill: INK } });
@@ -177,5 +186,5 @@ function buildAtlas(renderer: Renderer): Atlas {
     t.destroy();
   }
 
-  return { units, ring, white, building, farm, tower, occupied, hold, glyphs, nodes, wall, townGlyphs };
+  return { units, ring, white, building, farm, tower, occupied, hold, paused, glyphs, nodes, wall, townGlyphs };
 }

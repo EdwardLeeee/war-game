@@ -74,3 +74,26 @@ test("方形斜看：開局看得到自己的主城，點村民的身體選得�
   await shot(page, info, "oblique-battle");
   check();
 });
+
+test("方形斜看，暫停中放建築（R6-31）：預定的房子照方形斜看的格子畫虛線占地框、寫「繼續後開工」；按繼續後換成地基", async ({ page }, info) => {
+  const check = watchErrors(page);
+  await start(page, "scenario=e2e");
+  await page.getByRole("button", { name: "暫停", exact: true }).tap();
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === MAIN_CITY);
+  if (city === undefined) throw new Error("no main city");
+  const spot = await page.evaluate(([x, y]) => window.__proto?.game?.buildSpotNear(1, x, y) ?? null, [city.cx + city.size + 3, city.cy] as const);
+  if (spot === null) throw new Error("no spot for a house");
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.4), [spot.x + 1, spot.y + 1] as const);
+  await page.evaluate(() => window.__proto?.game?.startPlacement(1));
+  const c = await at(page, { x: spot.x + 0.5, y: spot.y + 0.5 });
+  await page.touchscreen.tap(c.x, c.y);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.placement()?.valid ?? false)).toBe(true);
+  await page.getByRole("button", { name: "確定蓋在這裡" }).tap();
+  await expect(page.locator(".toast")).toHaveText("已下令蓋民居，按繼續後開工");
+  expect(await page.evaluate(() => window.__proto?.game?.pending())).toMatchObject({ sites: 1 });
+  await shot(page, info, "oblique-paused-site");
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.pending()))?.sites, { timeout: 15_000 }).toBe(0);
+  check();
+});

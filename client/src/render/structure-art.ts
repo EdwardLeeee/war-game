@@ -96,6 +96,8 @@ export class ArtStructures {
   private readonly scale: number;
   private readonly nodeScale: number;
   private readonly slots: Slot[] = [];
+  /** Buildings ordered and not on the map yet (planned). */
+  private readonly planSlots: Slot[] = [];
   private readonly drawn: Drawn[] = [];
   /** Cell → index + 1 in `drawn` (0: none), for the units' depth. */
   private readonly cellOwner: Int32Array;
@@ -222,6 +224,49 @@ export class ArtStructures {
     const n = this.view.map.size;
     for (let y = cellY; y < cellY + size; y++) for (let x = cellX; x < cellX + size; x++) if (x >= 0 && y >= 0 && x < n && y < n) this.cellOwner[y * n + x] = this.drawn.length;
     return { top };
+  }
+
+  /**
+   * Buildings ordered and not on the map yet (R6-31: the game paused, they wait for 繼續): each
+   * finished, see-through, in the player's colours. Not tapped, and units are not behind them.
+   */
+  planned(sites: readonly { type: number; x: number; y: number }[], alpha: number): void {
+    for (let i = 0; i < Math.max(sites.length, this.planSlots.length); i++) {
+      const site = sites[i];
+      if (site === undefined) {
+        this.hide(this.planSlots[i]);
+        continue;
+      }
+      while (this.planSlots.length <= i) this.planSlots.push({ color: sprite(this.upright), team: sprite(this.upright), shadow: sprite(this.shadows), ground: sprite(this.ground) });
+      const s = this.planSlots[i];
+      const found = this.entry(site.type, this.view.me);
+      if (found === null) {
+        this.hide(s);
+        continue;
+      }
+      const { side, entry } = found;
+      const size = entry.footprint[0];
+      const at = this.projection.toPlane((site.x + size / 2) * TILE_PX, (site.y + size / 2) * TILE_PX);
+      if (entry.ground === true) {
+        s.color.visible = s.team.visible = s.shadow.visible = false;
+        put(s.ground, this.art.buildingFrame(side, "color", (entry.crops ?? [])[0] ?? buildingFrame(entry, "done") ?? ""), at.x, at.y, this.scale);
+        s.ground.alpha = alpha;
+        continue;
+      }
+      const name = buildingFrame(entry, "done") ?? "";
+      s.ground.visible = false;
+      put(s.color, this.art.buildingFrame(side, "color", name), at.x, at.y, this.scale);
+      put(s.team, this.art.buildingFrame(side, "team", name), at.x, at.y, this.scale);
+      put(s.shadow, this.art.buildingFrame(side, "shadow", name), at.x, at.y, this.scale);
+      s.color.tint = 0xffffff;
+      s.team.tint = ownerTint(this.view.me, this.view.me);
+      s.color.alpha = s.team.alpha = alpha;
+      s.shadow.alpha = alpha * 0.6;
+      // Ordered as a building there would be (square on by its front edge, depth.ts).
+      const z = this.projection.kind === "oblique" ? depthOf(this.projection.toPlane(0, buildingFront(site.y, size) * TILE_PX).y, site.x, 0) : at.y;
+      s.color.zIndex = s.team.zIndex = z;
+      s.team.zIndex += 0.000001;
+    }
   }
 
   hideSlot(i: number): void {
