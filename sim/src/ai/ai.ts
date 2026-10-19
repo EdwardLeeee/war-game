@@ -1852,6 +1852,26 @@ export interface HardPlan {
    * (but for one it needs now) and farms (the trace: two of four built till minute 19, the wood going elsewhere).
    */
   productionFirst: boolean;
+  /**
+   * D-086 A (docs/research/2026-10-ai-late.md: wood short while food and gold pile up, mostly on the side
+   * ahead): cavalry (food and gold, no wood) up to this percent of its soldiers, trained while wood is
+   * short (WOOD_SHORT) and food plus gold pile up (RICH); its stable goes up once a range stands and food
+   * plus gold reach RICH (0: no cavalry, as before).
+   */
+  cavalry: number;
+  /** D-086 A: with wood short and food plus gold piling up, the ratio is WOOD_SHIFT at once (false: as before). */
+  woodShift: boolean;
+  /** D-086 A: with wood short and food plus gold piling up, this many farmers over its target (0: as before). */
+  woodFarmers: number;
+  /**
+   * D-086 A (the user governed a town from minute 9-26; hard none by minute 20): from this minute (0: never,
+   * as before) a town taken for the first time is governed, not plundered, when it can pay for it and keep
+   * governSpare food and gold besides...
+   */
+  governFrom: number;
+  governSpare: number;
+  /** ...only the small town nearest its main city (false: any town it takes). */
+  governNearest: boolean;
 }
 
 export const HARD: HardPlan = {
@@ -1876,7 +1896,18 @@ export const HARD: HardPlan = {
   // D-081: measured and left off (hard against hard 50.3% of 200; with it the scripted push on random maps won 4 of 40, without 3).
   townRest: 0,
   productionFirst: false,
+  cavalry: 0,
+  woodShift: false,
+  woodFarmers: 0,
+  governFrom: 0,
+  governSpare: 0,
+  governNearest: true,
 };
+/** D-086 A: wood under this is short; food plus gold from this pile up (the research note's measure). */
+const WOOD_SHORT = 50;
+const RICH = 600;
+/** D-086 A (plan.woodShift): the ratio while wood is short and food and gold pile up. */
+const WOOD_SHIFT = [15, 75, 10];
 /** D-083 (c): food plus gold it holds for productionFirst. */
 const PRODUCTION_FIRST = 800;
 
@@ -1889,6 +1920,11 @@ export const HARD_POP: Partial<HardPlan> = {
   productionFirst: true,
   // And a little more to march with (44): measured with the above, minute 16.6 -> 16.1 and 29 -> 32 at the city (sim/README.md).
   pushArmy: 48,
+  // D-086 A (docs/research/2026-10-ai-late.md section 8): 8 farmers more while wood is short and food and gold pile up,
+  // and the nearest small town governed when taken from minute 12: against hard without them it won 89 games to 60 of
+  // 200; cavalry (cavalry) and a faster ratio (woodShift) were measured and left off (no stronger, with or without these).
+  woodFarmers: 8,
+  governFrom: 12,
 };
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
@@ -2057,11 +2093,40 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) if (view.towns[r + TownField.id] === id) return (view.towns[r + TownField.flags] & TownFlag.Plundered) !== 0;
         return false;
       };
+      /** D-086 A (plan.governNearest): the small town nearest its main city of those it knows (-1: none). */
+      const nearestSmall = (): number => {
+        let best = -1;
+        let bestD = 0;
+        let bestKey = 0;
+        const consider = (id: number) => {
+          const t = mem.site(id);
+          if (t === undefined || t.size !== TownSize.Small) return;
+          const d = dist2(t.cellX, t.cellY, home.cellX, home.cellY);
+          const key = rank(t.cellX, t.cellY);
+          if (best < 0 || d < bestD || (d === bestD && key < bestKey)) {
+            best = id;
+            bestD = d;
+            bestKey = key;
+          }
+        };
+        for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) consider(view.towns[r + TownField.id]);
+        for (const t of mem.unexplored) consider(t.id);
+        return best;
+      };
+      /** D-086 A (plan.governFrom): a first capture governed, from that minute, when it can pay and keep governSpare. */
+      const governFirst = (id: number) => {
+        if (plan.governFrom <= 0 || tick < plan.governFrom * TICKS_PER_MINUTE) return false;
+        const t = mem.site(id);
+        if (t === undefined || (plan.governNearest && id !== nearestSmall())) return false;
+        const c = governCost(t.size);
+        return res.food >= c.food + plan.governSpare && res.wood >= c.wood && res.gold >= c.gold + plan.governSpare && res.crystal >= c.crystal;
+      };
       /**
        * It governs a town it takes only when it was plundered before (round 7); a first capture it
-       * plunders (governing first captures won 3% of 120 games on the final round 7 rules).
+       * plunders (governing first captures won 3% of 120 games on the final round 7 rules), unless
+       * plan.governFrom says otherwise (D-086 A).
        */
-      const toGovern = (id: number) => once && plunderedTown(id);
+      const toGovern = (id: number) => (once && plunderedTown(id)) || governFirst(id);
       // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
       const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(mem.site(targetTown)!.size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
@@ -2216,6 +2281,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const sum = ratio[0] + ratio[1] + ratio[2];
       for (let k = 0; k < 3; k++) ratio[k] = Math.max(5, Math.trunc((ratio[k] * 100) / sum));
       ratio[0] = 100 - ratio[1] - ratio[2];
+      // D-086 A: wood short while food and gold pile up (soldiers want wood, and the stock does not turn into any).
+      const woodShort = res.wood < WOOD_SHORT && res.food + res.gold >= RICH;
+      if (plan.woodShift && woodShort) for (let k = 0; k < 3; k++) ratio[k] = WOOD_SHIFT[k];
       const ratioKey = ratio.join("/");
       if (ratioKey !== ratioSet) {
         out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
@@ -2224,7 +2292,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       let room = cap - pop - queued;
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
-      if (main && main.queue < 2 && farmers.length + main.queue < farmerTarget && room > 0 && afford(farmerCost)) {
+      const farmersWanted = farmerTarget + (woodShort ? plan.woodFarmers : 0);
+      if (main && main.queue < 2 && farmers.length + main.queue < farmersWanted && room > 0 && afford(farmerCost)) {
         out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
         spend(farmerCost);
         room--;
@@ -2272,6 +2341,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         // Houses before the population is full: every producer can add one at a time.
         if (cap < ceiling && cap - pop - queued <= houseRoom + producers) add(BuildingType.House, base);
+        // D-086 A: a stable, for cavalry while wood is short (plan.cavalry).
+        const stableReady = (rules.buildings[BuildingType.Stable]?.requires ?? []).every((t) => done(t).length > 0);
+        if (plan.cavalry > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && res.food + res.gold >= RICH && stableReady) add(BuildingType.Stable, rally);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
@@ -2326,6 +2398,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         else if (enemySpear + enemyRanged >= 6 && enemyRanged * 100 >= (enemySpear + enemyRanged) * 60) share += plan.counterMix;
       }
       share = Math.max(20, Math.min(80, share));
+      // D-086 A (plan.cavalry): while wood is short and food and gold pile up, cavalry first, up to its share.
+      if (plan.cavalry > 0 && woodShort) {
+        const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry).length + done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
+        if (cavalry * 100 < plan.cavalry * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
+      }
       if (spear * 100 <= share * (spear + ranged)) {
         trainAt(BuildingType.Barracks, UnitType.Spearman);
         trainAt(BuildingType.Range, UnitType.Ranged);
