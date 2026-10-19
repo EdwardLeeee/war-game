@@ -183,6 +183,13 @@ export interface Plan {
    * enemy soldiers it saw at once in the last AHEAD_SEEN ticks.
    */
   pushAhead: boolean;
+  /**
+   * D-086 A3 (the user's 75830947: some 40 of hard's farmers killed far from its main city): from HARASS_FROM,
+   * this many soldiers kept apart from the army go for the enemy's farmers at work HARASS_FAR cells or more from
+   * its main city (on a random map, round its main city until they see some); back home when the enemy
+   * soldiers by them outnumber them, out again HARASS_REST later (0: none).
+   */
+  harass: number;
 }
 
 /**
@@ -245,6 +252,21 @@ const FORT_HIDE = 3;
 const FORT_HOLD_UNTIL = 30 * 1200;
 /** D-086 A (plan.pushAhead): how far back it remembers the most enemy soldiers seen at once. */
 const AHEAD_SEEN = 3 * 1200;
+/** D-086 A3 (plan.harass): from this tick; enemy farmers this far (cells) from their main city; the squad rests this long after falling back. */
+const HARASS_FROM = 10 * 1200;
+const HARASS_FAR = 20;
+const HARASS_REST = 1200;
+/** D-086 A3 (plan.harass): the rounds it makes about the enemy's main city looking for farmers (cells, in player 0's frame). */
+const HARASS_ROUND: readonly [number, number][] = [
+  [28, 0],
+  [20, 20],
+  [0, 28],
+  [-20, 20],
+  [-28, 0],
+  [-20, -20],
+  [0, -28],
+  [20, -20],
+];
 /** D-086 A (plan.homeTowers): cells from home toward the map centre where the towers go (the barracks: 6). */
 const HOME_TOWER_AT = 9;
 /** Random maps (D-074): the scout's next stop once within this many cells of one, or after SCOUT_STUCK ticks without getting nearer. */
@@ -354,6 +376,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     homeTowers: 0,
     cavalryShare: 0,
     pushAhead: false,
+    harass: 0,
   };
 }
 
@@ -496,6 +519,12 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   let counterReady = false;
   /** plan.pushAhead: enemy soldiers in sight at each think of the last AHEAD_SEEN ticks. */
   const seenFoes: { tick: number; n: number }[] = [];
+  /** plan.harass: the squad, when it may go out again, the target it was sent at, its next round point, when last told where to go. */
+  let harassers: number[] = [];
+  let harassAgain = 0;
+  let harassTarget = -1;
+  let harassStop = 0;
+  let harassMove = -100000;
   let siege = "";
   const loosed = new Set<number>();
 
@@ -561,6 +590,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // --- read the view ------------------------------------------------------------------
       const mine: Unit[] = [];
       const foes: Unit[] = [];
+      const enemyFarmers: Unit[] = [];
       for (let r = 0; r < view.units.length; r += UNIT_STRIDE) {
         const u: Unit = {
           id: view.units[r + UnitField.id],
@@ -574,6 +604,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const owner = view.units[r + UnitField.owner];
         if (owner === player) mine.push(u);
         else if (owner === 1 - player && u.type !== UnitType.Farmer) foes.push(u);
+        else if (owner === 1 - player && plan.harass > 0) enemyFarmers.push(u);
       }
       if (plan.pushAhead) {
         seenFoes.push({ tick, n: foes.length });
@@ -889,8 +920,19 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         });
         if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
       }
-      // Cavalry raiders (round 7) are kept apart from the army.
-      const raiders = plan.raid > 0 ? soldiers.filter((u) => u.type === UnitType.Cavalry && !isGuard(u.id)) : [];
+      // Cavalry raiders (round 7) are kept apart from the army; so is the harass squad (D-086 A3).
+      if (plan.harass > 0) {
+        harassers = harassers.filter((id) => soldiers.some((u) => u.id === id));
+        // Formed (and topped up while at home) from soldiers at home, ranged first, by id.
+        if (tick >= HARASS_FROM && tick >= harassAgain && harassers.length < plan.harass) {
+          const free = soldiers
+            .filter((u) => !isGuard(u.id) && !harassers.includes(u.id) && u.id !== scout && u.id !== sentry && !escort.includes(u.id) && !fortWalk.includes(u.id) && u.order !== Order.Post && u.order !== Order.Garrison && dist2(u.x, u.y, home.cellX, home.cellY) <= 15 * 15)
+            .sort((a, b) => (a.type === UnitType.Ranged ? 0 : 1) - (b.type === UnitType.Ranged ? 0 : 1) || a.id - b.id);
+          if (harassers.length + free.length >= plan.harass) harassers.push(...free.slice(0, plan.harass - harassers.length).map((u) => u.id));
+        }
+      }
+      const raiders =
+        plan.raid > 0 ? soldiers.filter((u) => u.type === UnitType.Cavalry && !isGuard(u.id)) : plan.harass > 0 ? soldiers.filter((u) => harassers.includes(u.id)) : [];
       // --- the tower rush (plan.towerRush or plan.rushBuildersOnly, D-080) -----------------------
       escort = escort.filter((id) => soldiers.some((u) => u.id === id));
       rushFarmers = rushFarmers.filter((id) => farmers.some((f) => f.id === id));
@@ -1115,7 +1157,50 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           }
         }
       }
-      if (raiders.length > 0) {
+      if (plan.harass > 0 && raiders.length > 0) {
+        // D-086 A3: the harass squad.
+        const ids = raiders.map((u) => u.id);
+        const sx = Math.trunc(raiders.reduce((a, u) => a + u.x, 0) / raiders.length);
+        const sy = Math.trunc(raiders.reduce((a, u) => a + u.y, 0) / raiders.length);
+        const near = foes.filter((f) => dist2(f.x, f.y, sx, sy) <= 8 * 8).length;
+        if (raiders.length * 2 < plan.harass || (raiding && near > raiders.length)) {
+          // Half gone, or outnumbered while out: home, and out again later with the squad full.
+          if (raiding) out.push({ c: "retreat", u: ids, x: post.x, y: post.y });
+          raiding = false;
+          harassAgain = tick + HARASS_REST;
+          harassTarget = -1;
+          if (raiders.length * 2 < plan.harass) harassers = [];
+        } else if (raiding || (raiders.length >= plan.harass && tick >= harassAgain)) {
+          // Out again only once the rest is over (else it would turn round at once).
+          if (!raiding) {
+            raiding = true;
+            raids++;
+            if (firstRaid < 0) firstRaid = tick;
+          }
+          // Farmers at work (gathering or building), not those walking home or hiding.
+          const working = (f: Unit) => f.order === Order.Gather || f.order === Order.Build || f.order === Order.Repair;
+          const prey = found < 0 ? [] : enemyFarmers.filter((f) => working(f) && dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) >= HARASS_FAR * HARASS_FAR);
+          prey.sort((a, b) => dist2(a.x, a.y, sx, sy) - dist2(b.x, b.y, sx, sy) || a.id - b.id);
+          if (prey.length > 0) {
+            if (prey[0].id !== harassTarget || tick - harassMove >= 200) {
+              out.push({ c: "attack", u: ids, target: prey[0].id });
+              harassTarget = prey[0].id;
+              harassMove = tick;
+            }
+          } else if (found >= 0) {
+            // Round the enemy's main city until it sees farmers.
+            const ef = frame(enemyHome.cellX, enemyHome.cellY);
+            const [du, dv] = HARASS_ROUND[harassStop % HARASS_ROUND.length];
+            const at = real(Math.max(2, Math.min(n - 3, ef.u + du)), Math.max(2, Math.min(n - 3, ef.v + dv)));
+            if (dist2(sx, sy, at.x, at.y) <= 4 * 4) harassStop++;
+            if (tick - harassMove >= 400 || harassTarget >= 0) {
+              out.push({ c: "move", u: ids, x: at.x, y: at.y });
+              harassTarget = -1;
+              harassMove = tick;
+            }
+          }
+        }
+      } else if (raiders.length > 0) {
         const ids = raiders.map((u) => u.id);
         if (!raiding && raiders.length >= plan.raid) {
           raiding = true;
