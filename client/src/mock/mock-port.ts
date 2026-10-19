@@ -150,6 +150,8 @@ interface MUnit {
   post?: number;
   /** `?gallery=1` (D-085): the action it shows (and what it works at), standing where it is. */
   pose?: { action: number; target: number };
+  /** The node a `gather` sent it to (its order's target, as the simulation has it); it stays on it. */
+  node?: number;
 }
 
 interface MBuilding {
@@ -267,6 +269,8 @@ export class MockPort implements SimPort {
   private readonly round7: boolean;
   /** `?outpost=1` (with round 7): outposts on (D-080). */
   private readonly outpost: boolean;
+  /** `?mine=1`: two mines of ours, one with a crystal vein beside it (the mine's 晶 row, 2026-10-20). */
+  private readonly mine: boolean;
   private readonly rules: Rules;
   /**
    * The same layout as a random map (D-074, sim/PROTOCOL.md): `ready` tells only our own home,
@@ -281,10 +285,12 @@ export class MockPort implements SimPort {
   /**
    * `round7`: `?r7=1`, round 7's rules on. `map`: `?map=random` plays this layout as a random map.
    * `outpost`: `?outpost=1`, outposts too (D-080). `gallery`: `?gallery=1`, the atlases' gallery too.
+   * `mine`: `?mine=1`, two mines of ours, a crystal vein by one.
    */
-  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null) {
+  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false) {
     this.round7 = round7 || outpost;
     this.outpost = outpost;
+    this.mine = mine;
     this.rules = outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
     this.randomMap = map === "random";
     this.gallery = gallery;
@@ -412,6 +418,12 @@ export class MockPort implements SimPort {
     for (const [x, y] of [[27, 76], [28, 76], [27, 77], [28, 77]]) node(NodeKind.GoldMine, x, y, 800);
     for (const [x, y] of [[4, 84], [5, 84], [4, 85]]) node(NodeKind.Berries, x, y, 150);
     for (const [x, y] of [[46, 62], [47, 62]]) node(NodeKind.CrystalVein, x, y, 400);
+    if (this.mine) {
+      // A mine of ours by the gold, a crystal vein beside it; another by the southern trees, no vein near.
+      this.building(ME, BuildingType.Mine, 20, 78);
+      node(NodeKind.CrystalVein, 23, 79, 150);
+      this.building(ME, BuildingType.Mine, 22, 90);
+    }
 
     this.building(ME, BuildingType.MainCity, 8, 80);
     this.building(ME, BuildingType.House, 14, 86);
@@ -604,9 +616,10 @@ export class MockPort implements SimPort {
           u.x = u.target.x;
           u.y = u.target.y;
           u.target = null;
-          // On guard at an outpost (D-080) or hiding, the order stays.
-          if (u.order !== Order.Garrison && u.order !== Order.Post) u.order = Order.None;
-          if (u.type === UnitType.Farmer) u.flags |= UnitFlag.IdleFarmer;
+          // On guard at an outpost (D-080), hiding or gathering at a node, the order stays.
+          const stays = u.order === Order.Garrison || u.order === Order.Post || (u.order === Order.Gather && u.node !== undefined);
+          if (!stays) u.order = Order.None;
+          if (u.type === UnitType.Farmer && !stays) u.flags |= UnitFlag.IdleFarmer;
         } else {
           u.x += Math.round((dx * STEP) / d);
           u.y += Math.round((dy * STEP) / d);
@@ -779,7 +792,8 @@ export class MockPort implements SimPort {
       units[o + U.facing] = u.facing;
       units[o + U.carryKind] = -1;
       units[o + U.order] = u.cast > 0 ? Order.Cast : u.order;
-      units[o + U.orderTarget] = u.pose !== undefined ? u.pose.target : u.order === Order.Garrison ? u.inside : u.order === Order.Post ? (u.post ?? -1) : u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
+      units[o + U.orderTarget] =
+        u.pose !== undefined ? u.pose.target : u.order === Order.Garrison ? u.inside : u.order === Order.Post ? (u.post ?? -1) : u.order === Order.Gather && u.node !== undefined ? u.node : u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
       units[o + U.stance] = u.stance;
       units[o + U.castProgress] = u.cast;
       units[o + U.flags] = u.flags;
@@ -889,6 +903,7 @@ export class MockPort implements SimPort {
       list.forEach((u, i) => {
         u.target = { x: centre(cx + (i % 4) - 1), y: centre(cy + Math.floor(i / 4)) };
         u.order = order;
+        u.node = undefined;
         u.cast = 0;
         u.flags &= ~UnitFlag.IdleFarmer;
         // Round 7: moving, retreating or attacking brings a hiding soldier out first.
@@ -917,9 +932,22 @@ export class MockPort implements SimPort {
       case "gather": {
         const n = this.nodes.find((v) => v[0] === cmd.node);
         if (n === undefined) reject(Reject.InvalidTarget);
-        else goTo(own(cmd.u), n[2], n[3], Order.Gather);
+        else {
+          const list = own(cmd.u);
+          goTo(list, n[2], n[3], Order.Gather);
+          for (const u of list) u.node = cmd.node;
+        }
         break;
       }
+      case "release":
+        // Back to the economy ratio (core #149): here, idle where it stands.
+        for (const u of own(cmd.u)) {
+          u.order = Order.None;
+          u.target = null;
+          u.node = undefined;
+          if (u.type === UnitType.Farmer) u.flags |= UnitFlag.IdleFarmer;
+        }
+        break;
       case "auto_train": {
         const b = this.buildings.find((v) => v.id === cmd.building && v.owner === ME);
         if (b !== undefined) b.flags = cmd.on ? b.flags | BuildingFlag.AutoTrain : b.flags & ~(BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);

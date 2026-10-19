@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEPOT_REACH, type Depot, depotFor, NO_FARM_TEXT, panelResources, pickToSend, pickToTake, sendTarget, toFootprint, type Worker, workersAt } from "../src/game/depot.ts";
+import { crystalSentText, DEPOT_REACH, type Depot, depotFor, NO_FARM_TEXT, panelResources, pickToSend, pickToTake, sendTarget, toFootprint, type Worker, workersAt } from "../src/game/depot.ts";
 import { BuildingType, NodeKind, Resource } from "../src/sim.ts";
 
 const W = (id: number, x: number, y: number, gathers: Resource | null, at: { x: number; y: number } | null, idle = false, busy = false): Worker => ({ id, x, y, gathers, at, idle, busy });
@@ -79,14 +79,53 @@ test("＋派去哪：木、金去 10 格內最近的樹、金礦；糧先去沒�
   assert.equal(NO_FARM_TEXT, "附近沒有空田，先蓋農田");
 });
 
-test("面板：糧倉、伐木場、礦場各一列（礦場只有金，晶脈只能手動派）；主城不顯示（D-070），但照樣算存放建築", () => {
+test("面板：糧倉、伐木場各一列，礦場金、晶兩列（使用者 2026-10-20）；主城不顯示（D-070），但照樣算存放建築", () => {
   const all = [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal];
   assert.deepEqual(panelResources(BuildingType.MainCity, all), [], "「主城的那個附近在彩的村民沒有用，拿掉」");
   assert.deepEqual(panelResources(BuildingType.Granary, [Resource.Food]), [Resource.Food]);
   assert.deepEqual(panelResources(BuildingType.LumberCamp, [Resource.Wood]), [Resource.Wood]);
-  assert.deepEqual(panelResources(BuildingType.Mine, [Resource.Gold, Resource.Crystal]), [Resource.Gold]);
+  assert.deepEqual(panelResources(BuildingType.Mine, [Resource.Gold, Resource.Crystal]), [Resource.Gold, Resource.Crystal]);
   assert.deepEqual(panelResources(BuildingType.House, []), []);
   // Wood brought to the city is the city's: the camp does not count it.
   const workers = [W(1, 17, 11, Resource.Wood, { x: 18, y: 11 }), W(2, 25, 11, Resource.Wood, { x: 26, y: 11 })];
   assert.deepEqual(workersAt(workers, depots, camp.id, Resource.Wood).map((w) => w.id), [2]);
+});
+
+// 礦場的晶 (the user 2026-10-20: 「礦場目前不能把村民叫過去採集晶礦，要修一下」; ceo).
+const mine: Depot = { id: 4, cx: 40, cy: 10, size: 2, accepts: [Resource.Gold, Resource.Crystal] };
+
+test("礦場的晶：＋派閒置的、再從採糧木金的調（採晶的、蓋房的不動），去 10 格內最近的晶脈；沒有就提示", () => {
+  const idle = W(1, 50, 30, null, null, true);
+  const wood = W(2, 39, 13, Resource.Wood, { x: 38, y: 13 });
+  const gold = W(3, 44, 11, Resource.Gold, { x: 44, y: 11 });
+  const onVein = W(4, 42, 12, Resource.Crystal, { x: 42.5, y: 12.5 });
+  const builder = W(5, 41, 12, null, null, false, true);
+  assert.equal(pickToSend([idle, wood, gold, onVein, builder], mine, Resource.Crystal), 1, "idle first, however far");
+  assert.equal(pickToSend([wood, gold, onVein, builder], mine, Resource.Crystal), 2, "then the nearest on another resource");
+  assert.equal(pickToSend([onVein, builder], mine, Resource.Crystal), null, "not one on the vein, nor a builder");
+  // 金那一列的＋照舊不會從晶脈拉人.
+  assert.equal(pickToSend([onVein, builder], mine, Resource.Gold), null);
+  const nodes = [
+    { id: 30, kind: NodeKind.CrystalVein, cx: 44, cy: 12, amount: 150 },
+    { id: 31, kind: NodeKind.CrystalVein, cx: 43, cy: 11, amount: 0 },
+    { id: 32, kind: NodeKind.GoldMine, cx: 42, cy: 11, amount: 400 },
+    { id: 33, kind: NodeKind.CrystalVein, cx: 40, cy: 10 + 2 + DEPOT_REACH + 1, amount: 150 },
+  ];
+  assert.deepEqual(sendTarget(mine, Resource.Crystal, nodes, []), { node: 30 }, "the nearest vein left, not the gold");
+  assert.deepEqual(sendTarget(mine, Resource.Crystal, [nodes[1], nodes[2], nodes[3]], []), { error: "附近沒有晶脈" }, "spent, gold or beyond reach");
+});
+
+test("礦場的晶：－拿走離礦場最遠、採晶送回這座礦場的；晶脈離主城比較近時，晶送回主城，訊息條要說", () => {
+  const all = [city, mine];
+  const near = W(1, 42, 12, Resource.Crystal, { x: 42.5, y: 12.5 });
+  const far = W(2, 46, 12, Resource.Crystal, { x: 46.5, y: 12.5 });
+  // A vein right beside the main city brings its crystal there.
+  const byCity = W(3, 15, 11, Resource.Crystal, { x: 15.5, y: 11.5 });
+  assert.deepEqual(workersAt([near, far, byCity], all, mine.id, Resource.Crystal).map((w) => w.id), [1, 2]);
+  assert.equal(pickToTake([near, far, byCity], all, mine, Resource.Crystal), 2, "the farthest from the mine");
+  assert.equal(pickToTake([byCity], all, mine, Resource.Crystal), null, "nobody brings crystal to the mine");
+  // Sent from the mine to a vein nearer the main city: the mine's count does not grow, so the line says where it goes.
+  assert.equal(depotFor({ x: 26.5, y: 11.5 }, Resource.Crystal, all), city.id);
+  assert.equal(crystalSentText(mine.id, depotFor({ x: 26.5, y: 11.5 }, Resource.Crystal, all), "主城"), "已派 1 名去採晶，晶會送回主城");
+  assert.equal(crystalSentText(mine.id, depotFor({ x: 42.5, y: 12.5 }, Resource.Crystal, all), "礦場"), "已派 1 名去採晶");
 });

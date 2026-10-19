@@ -3,6 +3,7 @@
 // be replaced under a finger); numbers that tick (health, progress) update in place.
 
 import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
+import { DEPOT_WORD } from "../../game/depot.ts";
 import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
 import { buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots } from "../../game/features.ts";
 import { POST_TYPE } from "../../game/outpost.ts";
@@ -543,7 +544,7 @@ export class SelectionInfo {
     if (resources.length === 0) return null;
     const box = el("div", this.el, "depot");
     const cells = resources.map((r) => {
-      const word = RESOURCE_WORD[r] ?? "";
+      const word = DEPOT_WORD[r] ?? "";
       const cell = el("div", box, "depot-cell");
       const count = el("span", cell, "depot-count");
       const steps = el("div", cell, "depot-steps");
