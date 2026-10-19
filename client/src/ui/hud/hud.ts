@@ -612,7 +612,8 @@ export class Hud {
   openEconomy(): void {
     const h = this.game.view?.header;
     if (h === null || h === undefined) return;
-    this.econ = { food: h[H.ratioFood], wood: h[H.ratioWood], gold: h[H.ratioGold], on: h[H.ratioOn] === 1 };
+    // As last sent, while the simulation has not taken it yet (paused, R6-31).
+    this.econ = this.game.pending.eco() ?? { food: h[H.ratioFood], wood: h[H.ratioWood], gold: h[H.ratioGold], on: h[H.ratioOn] === 1 };
     this.drawEconomy();
   }
 

@@ -99,6 +99,8 @@ interface BuildingSprites {
   glyph: Sprite;
   /** 裡面有人 (BuildingFlag.Occupied, round 7). */
   occupied: Sprite;
+  /** 自動訓練 paused (R6-31): left of 裡面有人. */
+  paused: Sprite;
   hpBack: Sprite;
   hpFront: Sprite;
 }
@@ -187,8 +189,14 @@ export class WorldRenderer {
   /** Arrows drawn since the game started (tests). */
   shotCount = 0;
 
-  /** The game's orders sent and not in the snapshot yet (pending.ts): sites to come, 自動訓練, 搶 or 治理. */
+  /** The game's orders sent and not in the snapshot yet (pending.ts): sites to come, 搶 or 治理. */
   pending: PendingOrders | null = null;
+  /** The game is paused: orders wait for 繼續, and what they will do is drawn so (R6-31). */
+  paused = false;
+  /** A building preview put away with ✗: it shrinks and fades (R6-25-11). */
+  private dropped: { x: number; y: number; w: number; h: number; color: number; at: number } | null = null;
+  /** 繼續後開工 under each building ordered while paused. */
+  private readonly siteLabels: Text[] = [];
 
   /** Units drawn from war-game-ui's atlases (D-085), or null: the shapes. */
   private readonly artUnits: ArtUnits | null;
@@ -271,7 +279,12 @@ export class WorldRenderer {
     this.drawSelectionExtras();
     this.drawMarkers(now);
     this.drawShots(now);
-    this.drawGhost(placement);
+    this.drawGhost(placement, now);
+  }
+
+  /** The building preview was put away with ✗ (world px): shrink it and fade it out (R6-25-11). */
+  dropGhost(rect: { x: number; y: number; w: number; h: number }, valid: boolean, now: number): void {
+    this.dropped = { ...rect, color: valid ? PLACE_OK : PLACE_BAD, at: now };
   }
 
   /** Take this game's drawing off the stage (the shared shapes stay). */
@@ -411,20 +424,22 @@ export class WorldRenderer {
       glyph.anchor.set(0.5);
       const occupied = new Sprite(this.atlas.occupied);
       occupied.anchor.set(1, 0);
+      const paused = new Sprite(this.atlas.paused);
+      paused.anchor.set(1, 0);
       const hpBack = new Sprite(this.atlas.white);
       hpBack.tint = 0x201a18;
       const hpFront = new Sprite(this.atlas.white);
       this.baseLayer.addChild(base);
-      this.unitLayer.addChild(glyph, occupied);
+      this.unitLayer.addChild(glyph, occupied, paused);
       this.barLayer.addChild(hpBack, hpFront);
-      this.buildingPool.push({ base, glyph, occupied, hpBack, hpFront });
+      this.buildingPool.push({ base, glyph, occupied, paused, hpBack, hpFront });
     }
     this.artStructures?.begin();
     for (let i = 0; i < this.buildingPool.length; i++) {
       const p = this.buildingPool[i];
       const shown = i < n;
       p.base.visible = p.glyph.visible = shown;
-      p.occupied.visible = false;
+      p.occupied.visible = p.paused.visible = false;
       p.hpBack.visible = p.hpFront.visible = false;
       if (!shown) {
         this.artStructures?.hideSlot(i);
@@ -456,16 +471,22 @@ export class WorldRenderer {
       // 裡面有人 (round 7): a small shield at the top right corner, ours and the enemy's in view.
       // An outpost holding (D-080): a 守 tag there instead.
       const holding = type === BuildingType.Outpost && (b[o + B.flags] & BuildingFlag.Hold) !== 0;
-      // 自動訓練 paused on our barracks, range, mage hall or stable: a 停 tag there (as just sent, pending.ts).
-      const id = b[o + B.id];
-      const stopped =
-        b[o + B.owner] === this.view.me && !building && AUTO_TRAIN.buildings.includes(type) && !(this.pending?.autoTrain(id) ?? (b[o + B.flags] & BuildingFlag.AutoTrain) !== 0);
-      if (((b[o + B.flags] & BuildingFlag.Occupied) !== 0 || holding || stopped) && !remembered) {
-        p.occupied.texture = holding ? this.atlas.hold : (b[o + B.flags] & BuildingFlag.Occupied) !== 0 ? this.atlas.occupied : this.atlas.stopped;
+      const marked = ((b[o + B.flags] & BuildingFlag.Occupied) !== 0 || holding) && !remembered;
+      const markScale = Math.max(1, size / 48);
+      if (marked) {
+        p.occupied.texture = holding ? this.atlas.hold : this.atlas.occupied;
         p.occupied.visible = true;
         p.occupied.position.set(right.x - 2, right.y + 2);
         p.occupied.zIndex = mid.y + 1;
-        p.occupied.scale.set(Math.max(1, size / 48));
+        p.occupied.scale.set(markScale);
+      }
+      // 自動訓練 paused on our finished barracks, range, mage hall or stable (R6-31): a pause mark the
+      // size of 裡面有人, in its place or left of it. As the simulation has it: paused, it comes on 繼續.
+      if (b[o + B.owner] === this.view.me && !building && AUTO_TRAIN.buildings.includes(type) && (b[o + B.flags] & BuildingFlag.AutoTrain) === 0) {
+        p.paused.visible = true;
+        p.paused.position.set(right.x - 2 - (marked ? 18 * markScale : 0), right.y + 2);
+        p.paused.zIndex = mid.y + 1;
+        p.paused.scale.set(markScale);
       }
       // From its atlas (art-v2 on): its picture instead of the footprint and the glyph; the bar over its top.
       const picture = this.artStructures?.building(i, o) ?? null;
@@ -486,7 +507,7 @@ export class WorldRenderer {
     const towerSize = this.view.rules.buildings[BuildingType.TownTower]?.size ?? 2;
     if (this.noteTowers(snap.buildings, towerSize)) this.zonesKey = "";
     // 搶 or 治理 chosen and not taken yet (the game paused): said under the town (pending.ts).
-    const chosen = [...this.view.knownTowns.keys()].map((id) => this.pending?.townChoice(id) ?? -1);
+    const chosen = this.paused ? [...this.view.knownTowns.keys()].map((id) => this.pending?.townChoice(id) ?? -1) : [];
     const key = `${t.join(",")}|${chosen.join(",")}`;
     if (key === this.zonesKey) return;
     this.zonesKey = key;
@@ -544,8 +565,8 @@ export class WorldRenderer {
         mark.glyph.scale.set((spot.side * 0.34) / 36);
       }
       mark.holder.position.set(mid.x, foot.y);
-      const choice = this.pending?.townChoice(id) ?? null;
-      mark.label.text = choice === null || t[o + T.state] !== TownState.AwaitingChoice ? look.label : `已選${choice === TownChoice.Plunder ? "搶" : "治理"}，按繼續後開始`;
+      const choice = this.paused ? (this.pending?.townChoice(id) ?? null) : null;
+      mark.label.text = choice === null || t[o + T.state] !== TownState.AwaitingChoice ? look.label : `${choice === TownChoice.Plunder ? "搶" : "治理"}（繼續後開始）`;
       const total = t[o + T.timerTotal];
       const showBar = total > 0 && t[o + T.timer] > 0;
       mark.barBack.visible = mark.barFront.visible = showBar;
@@ -794,16 +815,50 @@ export class WorldRenderer {
     }
   }
 
-  private drawGhost(placement: Placement | null): void {
+  private drawGhost(placement: Placement | null, now: number): void {
     this.ghost.clear();
-    // Buildings placed and not on the map yet (the game paused, or the next step to come): a pale site (pending.ts).
-    for (const site of this.pending?.sites() ?? []) {
-      const size = (this.view.rules.buildings[site.type]?.size ?? 1) * TILE_PX;
-      this.ghost.rect(site.x * TILE_PX, site.y * TILE_PX, size, size).fill({ color: OWN_TINT, alpha: 0.3 }).stroke({ width: 3, color: 0xffffff, alpha: 0.8 });
+    // Buildings placed and not on the map yet (pending.ts): their footprints dashed in the player's
+    // colour. Paused, they wait for 繼續 (R6-31): the building see-through on it, 繼續後開工 under it.
+    const sites = this.pending?.sites() ?? [];
+    let labels = 0;
+    for (const site of sites) {
+      const cells = this.view.rules.buildings[site.type]?.size ?? 1;
+      const size = cells * TILE_PX;
+      const x = site.x * TILE_PX;
+      const y = site.y * TILE_PX;
+      this.ghost.rect(x, y, size, size).fill({ color: OWN_TINT, alpha: 0.14 });
+      dashedRect(this.ghost, x, y, size, size, TILE_PX * 0.3, TILE_PX * 0.2);
+      this.ghost.stroke({ width: 3, color: OWN_TINT });
+      if (!this.paused) continue;
+      if (this.siteLabels.length <= labels) {
+        const label = new Text({ text: "繼續後開工", style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 12, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } }, resolution: 4 });
+        label.anchor.set(0.5, 0);
+        this.townLayer.addChild(label);
+        this.siteLabels.push(label);
+      }
+      const label = this.siteLabels[labels++];
+      const foot = this.projection.toPlane(x + size, y + size);
+      const mid = this.projection.toPlane(x + size / 2, y + size / 2);
+      label.position.set(mid.x, foot.y + 4);
+      label.visible = true;
+    }
+    for (let i = labels; i < this.siteLabels.length; i++) this.siteLabels[i].visible = false;
+    this.artStructures?.planned(this.paused ? sites : [], 0.5);
+    // Put away with ✗: smaller and fainter over DROP_MS; reduced motion, only fainter.
+    const d = this.dropped;
+    if (d !== null) {
+      const k = 1 - Math.min((now - d.at) / DROP_MS, 1);
+      if (k <= 0) this.dropped = null;
+      else {
+        const s = reducedMotion() ? 1 : 0.7 + 0.3 * k;
+        const cx = d.x + d.w / 2;
+        const cy = d.y + d.h / 2;
+        this.ghost.rect(cx - (d.w * s) / 2, cy - (d.h * s) / 2, d.w * s, d.h * s).fill({ color: d.color, alpha: 0.4 * k }).stroke({ width: 3, color: d.color, alpha: k });
+      }
     }
     if (placement === null) return;
     const r = placement.rect();
-    const color = placement.valid ? 0x4fd06a : 0xe0473d;
+    const color = placement.valid ? PLACE_OK : PLACE_BAD;
     this.ghost.rect(r.x, r.y, r.w, r.h).fill({ color, alpha: 0.4 }).stroke({ width: 3, color });
   }
 
@@ -817,6 +872,30 @@ export class WorldRenderer {
     front.width = w * f;
     front.height = BAR_H;
     front.tint = tint;
+  }
+}
+
+/** The building preview: may go there, may not. */
+const PLACE_OK = 0x4fd06a;
+const PLACE_BAD = 0xe0473d;
+/** A preview put away with ✗ shrinks and fades this long (R6-25-11). */
+const DROP_MS = 300;
+
+/** 減少動態效果 (the system's setting). */
+function reducedMotion(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** A rectangle's outline in dashes (Graphics draws no dashes), to be stroked. */
+function dashedRect(g: Graphics, x: number, y: number, w: number, h: number, dash: number, gap: number): void {
+  const corners = [x, y, x + w, y, x + w, y + h, x, y + h, x, y];
+  for (let c = 0; c < 8; c += 2) {
+    const [x0, y0, x1, y1] = [corners[c], corners[c + 1], corners[c + 2], corners[c + 3]];
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    for (let at = 0; at < len; at += dash + gap) {
+      const end = Math.min(at + dash, len);
+      g.moveTo(x0 + ((x1 - x0) * at) / len, y0 + ((y1 - y0) * at) / len).lineTo(x0 + ((x1 - x0) * end) / len, y0 + ((y1 - y0) * end) / len);
+    }
   }
 }
 

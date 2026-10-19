@@ -86,8 +86,8 @@ export interface GameHook {
   art(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null;
   /** 你的陸 this game was started with (the computer wears the other). */
   culture(): string;
-  /** Orders sent and not in the snapshot yet (game/pending.ts): sites to come, and soldiers to come in this building's queue. */
-  pending(building?: number): { sites: number; trains: number };
+  /** Orders sent and not in the snapshot yet (game/pending.ts): sites to come, soldiers to come in this building's queue, and how many were given while paused. */
+  pending(building?: number): { sites: number; trains: number; waiting: number };
   /** What the last ASTC 樣本 showed: shown, no-astc, or why it failed (D-085). */
   astc(): string | null;
   /** Each town's wall as drawn, world px (D-084). */
@@ -242,7 +242,7 @@ export function gameHook(game: Game): GameHook {
     townWalls: () => game.townWallsForTest,
     art: () => game.artForTest,
     culture: () => game.culture,
-    pending: (building) => ({ sites: game.pending.sites().length, trains: building === undefined ? 0 : game.pending.trains(building).length }),
+    pending: (building) => ({ sites: game.pending.sites().length, trains: building === undefined ? 0 : game.pending.trains(building).length, waiting: game.pending.waiting }),
     astc: () => game.lastAstc,
     mapMode: () => game.view?.map.mode ?? "fixed",
     knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],

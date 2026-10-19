@@ -231,13 +231,16 @@ export class SelectionInfo {
     if (sel.building !== null) {
       const o = view.buildingRow(sel.building);
       const b = view.curr?.snap.buildings;
-      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.queueLength]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${this.host.pending().trains(sel.building).length}`;
+      const pending = this.host.pending();
+      const eco = pending.eco();
+      const waiting = `${this.host.paused() ? 1 : 0}:${pending.trains(sel.building).length}:${eco === null ? "" : `${eco.food},${eco.wood},${eco.gold},${eco.on}`}`;
+      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.queueLength]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${waiting}`;
     }
     const p = view.inspected;
     if (p !== null) {
       if (p.kind === "town") {
         const o = view.townRow(p.id);
-        return `t:${p.id}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.state]}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.owner]}`;
+        return `t:${p.id}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.state]}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.owner]}:${this.host.paused() ? 1 : 0}:${this.host.pending().townChoice(p.id) ?? ""}`;
       }
       return `i:${p.kind}:${p.id}`;
     }
@@ -458,13 +461,17 @@ export class SelectionInfo {
         q.setAttribute("aria-label", `取消訓練第 ${i + 1} 個：${UNIT_NAME[unit] ?? ""}`);
         if (i === 0) headBar = bar(q, "queue");
       }
-      // Sent and not in the queue yet (the game paused: until 繼續): there at once (pending.ts).
+      // Sent and not in the queue yet: there at once (pending.ts); the game paused, dashed until 繼續 (R6-31).
+      const later = this.host.paused();
       for (const unit of this.host.pending().trains(id)) {
-        const q = button(queue, UNIT_NAME[unit] ?? "?", this.host.paused() ? "繼續後開始" : "等待中", () => {}, "queue-item secondary pending");
+        const q = button(queue, UNIT_NAME[unit] ?? "?", later ? "繼續後開始" : "等待中", () => {}, later ? "queue-item secondary pending" : "queue-item secondary");
         q.disabled = true;
-        q.setAttribute("aria-label", `${UNIT_NAME[unit] ?? ""}：${this.host.paused() ? "繼續後開始訓練" : "等待開始訓練"}`);
+        q.setAttribute("aria-label", `${UNIT_NAME[unit] ?? ""}：${later ? "繼續後開始訓練" : "等待開始訓練"}`);
       }
     }
+    // 經濟分配 changed while paused (R6-31): the main city says what it will be on 繼續.
+    const eco = own && type === BuildingType.MainCity && this.host.paused() ? this.host.pending().eco() : null;
+    if (eco !== null) el("p", this.el, "sel-pend", `經濟分配改成 糧 ${eco.food}%・木 ${eco.wood}%・金 ${eco.gold}%${eco.on ? "" : "（自動分配關）"}：按繼續後生效`);
     const depot = own ? this.depot(id) : null;
     this.updaters.push(() => {
       const o = view.buildingRow(id);
@@ -489,7 +496,8 @@ export class SelectionInfo {
       }
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
-      const auto = own ? (autoTrainText(type, withAutoTrain(b[o + B.flags], this.host.pending().autoTrain(id))) ?? "") : "";
+      // As just sent while the game runs; paused, as it is until 繼續 (R6-31: the button says what comes).
+      const auto = own ? (autoTrainText(type, withAutoTrain(b[o + B.flags], this.host.paused() ? null : this.host.pending().autoTrain(id))) ?? "") : "";
       status.textContent = `${own ? [locked, auto].filter((t) => t !== "").join("　") : remembered}${inside}`;
       headBar?.(b[o + B.queueProgress] / 1000);
     });
@@ -591,7 +599,13 @@ export class SelectionInfo {
     const text = el("span", this.el, "sel-num");
     const o0 = view.townRow(id);
     const t0 = view.curr?.snap.towns;
-    if (o0 >= 0 && t0 !== undefined && t0[o0 + T.state] === TownState.AwaitingChoice && t0[o0 + T.owner] === view.me) {
+    // 搶 or 治理 chosen and not taken yet (R6-31): what comes on 繼續, and no second choice.
+    const chosen = this.host.pending().townChoice(id);
+    const awaiting = o0 >= 0 && t0 !== undefined && t0[o0 + T.state] === TownState.AwaitingChoice && t0[o0 + T.owner] === view.me;
+    if (awaiting && chosen !== null && this.host.paused()) {
+      const plunder = chosen === TownChoice.Plunder;
+      el("p", this.el, "sel-pend", `已選${plunder ? "搶" : "治理"}，留守 ${this.host.garrison(id)} 名：按繼續後開始${plunder ? "搶" : "修繕"}`);
+    } else if (awaiting && chosen === null) {
       const row = el("div", this.el, "sel-choice");
       // 城鎮只能搶一次 (round 7): a town plundered this game can only be governed.
       if (!view.townPlunderedOnce(id)) button(row, "搶", "", () => this.host.chooseTown(id, TownChoice.Plunder), "choice-plunder");
@@ -626,7 +640,8 @@ export class SelectionInfo {
       }
       const owner = t[o + T.owner];
       const who = owner === view.me ? "我方" : owner === NO_OWNER || owner === NEUTRAL ? "" : "敵方";
-      status.textContent = `${who}${TOWN_STATE_NAME[t[o + T.state]] ?? ""}`;
+      const sent = owner === view.me && t[o + T.state] === TownState.AwaitingChoice && this.host.paused() ? this.host.pending().townChoice(id) : null;
+      status.textContent = sent === null ? `${who}${TOWN_STATE_NAME[t[o + T.state]] ?? ""}` : `${who}攻下：${sent === TownChoice.Plunder ? "搶" : "治理"}（繼續後）`;
       // Two different counts for our own town: every soldier of ours inside it now, and the
       // ones told to stay (留守, below), who do not leave with 全軍.
       const inside = owner === view.me ? `城裡有 ${t[o + T.garrison]} 名兵（至少要 ${t[o + T.garrisonNeeded]} 名）` : `駐軍 ${t[o + T.garrison]}/${t[o + T.garrisonNeeded]}`;
@@ -698,7 +713,8 @@ export class CommandArea {
       const o = view.buildingRow(sel.building);
       const b = view.curr?.snap.buildings;
       const auto = o < 0 || b === undefined ? 0 : withAutoTrain(b[o + B.flags], this.host.pending().autoTrain(sel.building)) & (BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
-      return o < 0 || b === undefined ? "none" : `b:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}`;
+      const later = this.host.paused() && this.host.pending().autoTrain(sel.building) !== null;
+      return o < 0 || b === undefined ? "none" : `b:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}:${later ? 1 : 0}`;
     }
     return "none";
   }
@@ -805,9 +821,13 @@ export class CommandArea {
       // 自動訓練 (D-054): on by default for the player; a tap pauses or resumes this building
       // (it can be set before the building is finished, too).
       if (AUTO_TRAIN.buildings.includes(type)) {
-        const on = (withAutoTrain(b[o + B.flags], this.host.pending().autoTrain(id)) & BuildingFlag.AutoTrain) !== 0;
-        const auto = button(this.el, "自動訓練", on ? "目前：開" : "目前：暫停", () => this.host.command({ c: "auto_train", building: id, on: !on }), "secondary");
-        if (on) auto.classList.add("active");
+        const sent = this.host.pending().autoTrain(id);
+        const on = (withAutoTrain(b[o + B.flags], sent) & BuildingFlag.AutoTrain) !== 0;
+        // Sent while paused (R6-31): as it will be, dashed, 繼續後暫停 or 繼續後恢復.
+        const later = sent !== null && this.host.paused();
+        const auto = button(this.el, "自動訓練", later ? (on ? "繼續後恢復" : "繼續後暫停") : on ? "目前：開" : "目前：暫停", () => this.host.command({ c: "auto_train", building: id, on: !on }), "secondary");
+        if (later) auto.classList.add("pending");
+        else if (on) auto.classList.add("active");
       }
       return;
     }
