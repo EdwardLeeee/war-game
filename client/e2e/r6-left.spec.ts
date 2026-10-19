@@ -62,9 +62,13 @@ for (const look of ["a", "b"] as const) {
     await map.tap();
     await expect(page.locator(".minimap")).toBeVisible();
     await expect(map).toHaveClass(/\bactive\b/);
-    await page.waitForTimeout(200);
-    const mm = await box(page, ".minimap");
-    expect(near(mm.x, 4) && near(mm.y, 216) && near(mm.width, 112) && near(mm.height, 112), `小地圖 ${JSON.stringify(mm)}`).toBe(true);
+    // Once it has grown open (150 ms; slower on CI's WebKit).
+    await expect
+      .poll(async () => {
+        const mm = await box(page, ".minimap");
+        return mm !== undefined && near(mm.x, 4) && near(mm.y, 216) && near(mm.width, 112) && near(mm.height, 112) ? true : JSON.stringify(mm);
+      }, { message: "小地圖 at 4, 216, 112 × 112" })
+      .toBe(true);
     await shot(page, info, `r6-13-map-open-${look}`);
     await map.tap();
     await expect(page.locator(".minimap")).toBeHidden();
@@ -93,9 +97,13 @@ for (const look of ["a", "b"] as const) {
     await expect(recall).toContainText("全體回城");
     await expect(recall).toContainText("家裡被攻擊");
     await expect(page.locator(".toast")).toHaveText("家裡被攻擊：主城附近有敵兵");
-    await page.waitForTimeout(250);
-    const rb = await box(page, ".recall-btn");
-    expect(near(rb.x, 4) && near(rb.y, 106) && near(rb.width, 100) && near(rb.height, 50), `全體回城 ${JSON.stringify(rb)}`).toBe(true);
+    // Once it has slid in (200 ms; slower on CI's WebKit).
+    await expect
+      .poll(async () => {
+        const rb = await box(page, ".recall-btn");
+        return rb !== undefined && near(rb.x, 4) && near(rb.y, 106) && near(rb.width, 100) && near(rb.height, 50) ? true : JSON.stringify(rb);
+      }, { message: "全體回城 at 4, 106, 100 × 50" })
+      .toBe(true);
     await shot(page, info, `r6-13-home-hit-${look}`);
     // Only a reminder: nothing was sent until the player taps it.
     expect((await lastSent(page))?.c).not.toBe("recall");
