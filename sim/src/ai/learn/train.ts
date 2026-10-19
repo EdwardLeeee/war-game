@@ -114,6 +114,11 @@ if (mode === "dryrun") {
     const same = a.same[i].reduce((x, y) => x + y, 0);
     summary(`| ${h} | ${pct(same, of)}（${of} 個） | ${pct(Math.max(...a.of[i]), of)} | ${choices[i].map((c, k) => `${c} ${pct(a.same[i][k], a.of[i][k])}（${a.of[i][k]}）`).join("、")} |`);
   });
+  summary("\n- 網路在檢驗的局面上，每個選項各選了幾次（ceo：演化前每一種都要選過）：\n");
+  heads.forEach((h, i) => {
+    const never = choices[i].filter((_, k) => a.chose[i][k] === 0 && a.of[i][k] > 0);
+    summary(`  - ${h}：${choices[i].map((c, k) => `${c} ${a.chose[i][k]}`).join("、")}${never.length > 0 ? `。困難選過、網路沒選過：${never.join("、")}` : ""}`);
+  });
 } else if (mode === "es") {
   const resume = arg("resume", "");
   const start: NetWeights = JSON.parse(readFileSync(arg("start", `${out}/bc.json`), "utf8"));

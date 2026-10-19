@@ -206,19 +206,22 @@ export function quantize(net: FloatNet, calib: Sample[]): NetWeights {
 
 /**
  * Per head and per choice of hard's: of the samples with that label, how many the integer network chooses the
- * same (same[h][c] of of[h][c]).
+ * same (same[h][c] of of[h][c]); and how often the network makes each choice where hard made one (chose[h][c],
+ * ceo 2026-10-19: a network that never makes some choice takes many generations to learn it).
  */
-export function agreement(net: NetWeights, data: Sample[]): { same: number[][]; of: number[][] } {
+export function agreement(net: NetWeights, data: Sample[]): { same: number[][]; of: number[][]; chose: number[][] } {
   const same = NET_HEADS.map((k) => new Array(k).fill(0));
   const of = NET_HEADS.map((k) => new Array(k).fill(0));
+  const chose = NET_HEADS.map((k) => new Array(k).fill(0));
   for (const s of data) {
     const c = choose(net, s.slice(0, NET_INPUTS));
     NET_HEADS.forEach((_, h) => {
       const label = s[NET_INPUTS + h];
       if (label < 0) return;
       of[h][label]++;
+      chose[h][c[h]]++;
       if (c[h] === label) same[h][label]++;
     });
   }
-  return { same, of };
+  return { same, of, chose };
 }
