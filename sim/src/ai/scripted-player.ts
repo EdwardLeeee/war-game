@@ -1170,7 +1170,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           harassAgain = tick + HARASS_REST;
           harassTarget = -1;
           if (raiders.length * 2 < plan.harass) harassers = [];
-        } else if (raiders.length >= plan.harass || raiding) {
+        } else if (raiding || (raiders.length >= plan.harass && tick >= harassAgain)) {
+          // Out again only once the rest is over (else it would turn round at once).
           if (!raiding) {
             raiding = true;
             raids++;
