@@ -87,6 +87,10 @@ export class GameView implements IntentWorld {
    * the screen is not a box of cells. Distances given (r) are the plane's.
    */
   projection: Projection = TOP;
+  /** The building whose picture (taller than its footprint, D-085) is under a point of the plane, from the renderer; null: none drawn. */
+  pictureAt: ((px: number, py: number) => number | null) | null = null;
+  /** The building whose picture, under a point of the plane, stands in front of a unit at (ux, uy) (it hides the unit there). */
+  coverAt: ((px: number, py: number, ux: number, uy: number) => number | null) | null = null;
 
   /** On the plane, a unit's body is this high above its feet (as a diamond 0.9 m: the pictures stand up); a tap there takes it too. */
   private bodyLift(): number {
@@ -271,6 +275,7 @@ export class GameView implements IntentWorld {
     const P = this.projection;
     const t = P.toPlane(wx, wy);
     const lift = this.bodyLift();
+    let bestAt = t;
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       if (u[o + U.action] === Action.Garrisoned) continue;
       const q = P.toPlane(u[o + U.x] * FIXED_TO_PX, u[o + U.y] * FIXED_TO_PX);
@@ -280,10 +285,12 @@ export class GameView implements IntentWorld {
       const d = Math.min(dx * dx + dy * dy, dx * dx + (dy - lift) * (dy - lift));
       if (d <= bestD) {
         bestD = d;
+        bestAt = q;
         best = { kind: "unit", id: u[o + U.id], owner: u[o + U.owner], type: u[o + U.type] };
       }
     }
-    if (best !== null) return best;
+    // Behind a building's picture where the finger is, the unit is hidden: the building.
+    if (best !== null) return this.buildingById(this.coverAt?.(t.x, t.y, bestAt.x, bestAt.y) ?? null) ?? best;
 
     const building = this.buildingAt(wx, wy);
     if (building !== null) return building;
@@ -294,6 +301,9 @@ export class GameView implements IntentWorld {
       const node = this.nodeAt[cy * size + cx];
       if (node >= 0) return this.nodePick(node);
     }
+    // A building's picture stands above its footprint: a tap on its roof is on it too.
+    const pictured = this.buildingById(this.pictureAt?.(t.x, t.y) ?? null);
+    if (pictured !== null) return pictured;
 
     for (const town of this.knownTowns.values()) {
       const tx = (town.cellX + 0.5) * TILE_PX;
@@ -306,6 +316,12 @@ export class GameView implements IntentWorld {
       }
     }
     return null;
+  }
+
+  private buildingById(id: number | null): Pick | null {
+    const o = id === null ? -1 : this.buildingRow(id);
+    const b = this.curr?.snap.buildings;
+    return o < 0 || b === undefined ? null : { kind: "building", id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type] };
   }
 
   buildingAt(wx: number, wy: number): Pick | null {

@@ -209,6 +209,13 @@ const MAGE_COLUMNS: GalleryColumn[] = [
 const GALLERY_FALL_TICK = 20;
 const GALLERY_SHATTER_TICK = 30;
 const GALLERY_HIT_EVERY = 8;
+/** The buildings' gallery: its rows' types, its first cell, its nodes' first row (cells). */
+const GALLERY_BUILDINGS = [
+  BuildingType.MainCity, BuildingType.House, BuildingType.LumberCamp, BuildingType.Mine, BuildingType.Granary, BuildingType.Farm,
+  BuildingType.Barracks, BuildingType.Range, BuildingType.MageHall, BuildingType.Stable, BuildingType.ArrowTower, BuildingType.TownTower,
+];
+const GALLERY_B = { x: 4, y: 24 };
+const GALLERY_NODES_Y = 66;
 /** Then it stops: the fallen 0.8 s into their fall (the dust rising), the shattered mage 0.3 s into it, the struck 0.2 s. */
 const GALLERY_STOP_TICK = 36;
 
@@ -266,16 +273,16 @@ export class MockPort implements SimPort {
    * towns come with their rows once explored, and the placement grid marks only explored rocks.
    */
   private readonly randomMap: boolean;
-  /** `?gallery=1` (D-085): the atlases' gallery south-east of our home, everything in view. */
-  private readonly gallery: boolean;
+  /** `?gallery=1` (D-085): the units' gallery south-east of our home; `gallery=b`: the buildings' and nodes', on a map of its own. Everything in view. */
+  private readonly gallery: "units" | "buildings" | null;
   /** The gallery's units that fall, and its mages struck and shattered (see GALLERY). */
-  private readonly galleryRoles = { fall: [] as MUnit[], hit: [] as MUnit[], shatter: [] as MUnit[] };
+  private readonly galleryRoles = { fall: [] as MUnit[], hit: [] as MUnit[], shatter: [] as MUnit[], fallen: [] as MBuilding[], mined: [] as number[][] };
 
   /**
    * `round7`: `?r7=1`, round 7's rules on. `map`: `?map=random` plays this layout as a random map.
    * `outpost`: `?outpost=1`, outposts too (D-080). `gallery`: `?gallery=1`, the atlases' gallery too.
    */
-  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery = false) {
+  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null) {
     this.round7 = round7 || outpost;
     this.outpost = outpost;
     this.rules = outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
@@ -387,6 +394,10 @@ export class MockPort implements SimPort {
   // --- the fake world ---------------------------------------------------------------
 
   private setup(): void {
+    if (this.gallery === "buildings") {
+      this.setupBuildingsGallery();
+      return;
+    }
     // Two rock ridges that leave a pass in the middle, mirrored.
     for (let y = 40; y < 56; y++) {
       for (const x of [40, 41, 54, 55]) this.terrain[y * SIZE + x] = 1;
@@ -461,7 +472,7 @@ export class MockPort implements SimPort {
     unit(FOE, UnitType.Mage, 30, 73);
     for (let i = 0; i < 3; i++) unit(NEUTRAL, UnitType.Militia, 29 + i, 66);
     unit(FOE, UnitType.Spearman, 80, 20);
-    if (this.gallery) this.setupGallery(unit);
+    if (this.gallery === "units") this.setupGallery(unit);
 
     // Start with the home area explored, so the three fog states are all on screen.
     for (let y = 0; y < SIZE; y++) {
@@ -491,9 +502,53 @@ export class MockPort implements SimPort {
     }
   }
 
+  /**
+   * The buildings' gallery (`?gallery=b`, D-085), alone on the map: ours, a row a building type,
+   * a column a state, along the screen as a diamond (cell (x + 4c + 5r, y − 4c + 5r)): three
+   * construction stages, done, damaged, and one destroyed at GALLERY_FALL_TICK (its rubble). The
+   * big city's tower (neutral, 東陸 always) last. Our culture is 你的陸 (?culture=w: 西陸).
+   * Beside it the nodes: trees of both cultures and their stumps, the mines full, mined and spent,
+   * berries and veins full and spent.
+   */
+  private setupBuildingsGallery(): void {
+    const states: { progress: number; hp: number; fall?: boolean }[] = [{ progress: 100, hp: 1 }, { progress: 500, hp: 1 }, { progress: 800, hp: 1 }, { progress: 1000, hp: 1 }, { progress: 1000, hp: 0.4 }, { progress: 1000, hp: 1, fall: true }];
+    GALLERY_BUILDINGS.forEach((type, r) => {
+      states.forEach((st, c) => {
+        // The big city's tower is never built: done, damaged, rubble only.
+        if (type === BuildingType.TownTower && st.progress < 1000) return;
+        const b = this.building(type === BuildingType.TownTower ? NEUTRAL : ME, type, GALLERY_B.x + 4 * c + 5 * r, GALLERY_B.y - 4 * c + 5 * r);
+        b.progress = st.progress;
+        b.hp = Math.round(MOCK_RULES.buildings[type].hp * st.hp);
+        if (st.fall === true) this.galleryRoles.fallen.push(b);
+      });
+    });
+    let nodeId = 1;
+    const node = (kind: number, cx: number, cy: number, amount: number) => {
+      const row = [nodeId++, kind, cx, cy, amount];
+      this.nodes.push(row);
+      return row;
+    };
+    // A row of trees crossing 6-cell blocks (both cultures, each variant), their stumps under them.
+    for (let x = 86; x < 95; x++) {
+      node(NodeKind.Tree, x, GALLERY_NODES_Y, 100);
+      node(NodeKind.Tree, x, GALLERY_NODES_Y + 3, 0);
+    }
+    // Mines full, mined (below half at GALLERY_FALL_TICK) and spent; berries and veins full and spent; two variants each.
+    for (const [kind, dy] of [[NodeKind.GoldMine, 7], [NodeKind.Berries, 10], [NodeKind.CrystalVein, 13]] as const) {
+      for (let v = 0; v < 2; v++) {
+        node(kind, 86 + v, GALLERY_NODES_Y + dy, 800);
+        if (kind === NodeKind.GoldMine) this.galleryRoles.mined.push(node(kind, 89 + v, GALLERY_NODES_Y + dy, 800));
+        node(kind, 92 + v, GALLERY_NODES_Y + dy, 0);
+      }
+    }
+  }
+
   /** The gallery's moments (ticks): the fallen go, a mage's shield breaks; struck mages every few ticks. */
   private galleryStep(): void {
     const roles = this.galleryRoles;
+    if (this.tick === GALLERY_FALL_TICK) for (const b of roles.fallen) this.buildings.splice(this.buildings.indexOf(b), 1);
+    // A mine mined below half of what was first seen.
+    if (this.tick === GALLERY_FALL_TICK) for (const n of roles.mined) n[4] = 300;
     if (this.tick === GALLERY_FALL_TICK) for (const u of roles.fall) this.units.splice(this.units.indexOf(u), 1);
     if (this.tick === GALLERY_SHATTER_TICK) for (const u of roles.shatter) u.shield = 0;
     if (this.tick % GALLERY_HIT_EVERY === 0) for (const u of roles.hit) u.shield = u.shield > 10 ? u.shield - 5 : MOCK_RULES.units[UnitType.Mage].shield;

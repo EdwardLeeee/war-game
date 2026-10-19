@@ -32,6 +32,7 @@ import type { Placement } from "../ui/placement.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT, WARNING_TINT } from "./atlas.ts";
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
+import { ArtStructures } from "./structure-art.ts";
 import type { Culture } from "../art/spec.ts";
 import { ArtUnits } from "./unit-art-draw.ts";
 import type { UnitArt } from "./unit-art.ts";
@@ -110,6 +111,9 @@ interface Shot {
 
 const SHOT_MS = 300;
 
+/** 晶砲預警圈 B's pictures, bottom to top (design/b1/README.md). */
+const WARN_LAYERS = ["warn_fill", "warn_sigil_glow", "warn_rim", "warn_sigil", "warn_sigil_gold", "warn_core"] as const;
+
 interface TownMark {
   /** Where the wall stands on the ground (world px; render/town-wall.ts). */
   spot: { x: number; y: number; side: number };
@@ -182,6 +186,13 @@ export class WorldRenderer {
 
   /** Units drawn from war-game-ui's atlases (D-085), or null: the shapes. */
   private readonly artUnits: ArtUnits | null;
+  /** Buildings and nodes from the atlases (art-v2 on), or null: the shapes. */
+  private readonly artStructures: ArtStructures | null;
+  /** What lies on the ground drawn as pictures (fields, rubble, stumps): under every unit and building, on the plane. */
+  private readonly groundArt = new Container();
+  /** The cannon's warnings drawn from the effects atlas (晶砲預警圈 B, art-v2 on): a container each, lying on the ground. */
+  private readonly warnLayer = new Container();
+  private readonly warnPool: Container[] = [];
 
   /** `art`: the units' atlases (D-085), `cultureOf` which culture each player wears; `projection` how the ground lies. */
   constructor(app: Application, view: GameView, atlas: Atlas, art: UnitArt | null = null, cultureOf: (owner: number) => Culture = (owner) => (owner === 1 ? "w" : "e"), projection: Projection = TOP) {
@@ -189,7 +200,15 @@ export class WorldRenderer {
     this.atlas = atlas;
     this.projection = projection;
     this.unitLayer.sortableChildren = true;
-    this.artUnits = art === null ? null : new ArtUnits(art, view, this.shadowLayer, this.unitLayer, cultureOf, projection);
+    this.artStructures = art !== null && ArtStructures.has(art) ? new ArtStructures(art, view, { ground: this.groundArt, shadows: this.shadowLayer, upright: this.unitLayer }, cultureOf, projection) : null;
+    // A unit's depth among the buildings' footprints (structure-art.ts), else its place on the screen.
+    const depth = (px: number, py: number): number => this.artStructures?.unitDepth(px, py) ?? py;
+    this.artUnits = art === null ? null : new ArtUnits(art, view, this.shadowLayer, this.unitLayer, cultureOf, projection, depth);
+    if (this.artStructures !== null) {
+      const structures = this.artStructures;
+      view.pictureAt = (px, py) => structures.pictureAt(px, py);
+      view.coverAt = (px, py, ux, uy) => structures.coverAt(px, py, ux, uy);
+    }
     const size = view.map.size;
 
     const terrain = document.createElement("canvas");
@@ -223,9 +242,9 @@ export class WorldRenderer {
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
-    this.groundInner.addChild(ground, this.zones, this.baseLayer, this.ringLayer, this.fx, this.ghost, fog, this.wallGround);
+    this.groundInner.addChild(ground, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
-    this.root.addChild(this.groundOuter, this.wallLayer, this.shadowLayer, this.unitLayer, this.airFx, this.barLayer, this.townLayer);
+    this.root.addChild(this.groundOuter, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.airFx, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
   }
 
@@ -342,6 +361,7 @@ export class WorldRenderer {
     this.fogTexture.source.update();
     // The fog lies on the ground; what stands in it (nodes' marks) is dimmed by hand.
     for (const n of this.nodeSprites.values()) n.sprite.tint = this.fogTint(n.cell);
+    this.artStructures?.tintNodes();
   }
 
   /** What stands on a cell, by its fog: as seen, or dimmed (explored, not in sight). */
@@ -353,6 +373,11 @@ export class WorldRenderer {
   private drawNodes(): void {
     if (this.view.nodesVersion === this.nodesVersion) return;
     this.nodesVersion = this.view.nodesVersion;
+    // From the atlases (art-v2 on): trees, mines, berries, veins and what is left of them.
+    if (this.artStructures?.drawsNodes === true) {
+      this.artStructures.drawNodes();
+      return;
+    }
     for (const [id, row] of this.view.nodes) {
       let n = this.nodeSprites.get(id);
       if (n === undefined) {
@@ -388,13 +413,17 @@ export class WorldRenderer {
       this.barLayer.addChild(hpBack, hpFront);
       this.buildingPool.push({ base, glyph, occupied, hpBack, hpFront });
     }
+    this.artStructures?.begin();
     for (let i = 0; i < this.buildingPool.length; i++) {
       const p = this.buildingPool[i];
       const shown = i < n;
       p.base.visible = p.glyph.visible = shown;
       p.occupied.visible = false;
       p.hpBack.visible = p.hpFront.visible = false;
-      if (!shown) continue;
+      if (!shown) {
+        this.artStructures?.hideSlot(i);
+        continue;
+      }
       const o = i * BUILDING_STRIDE;
       const type = b[o + B.type];
       const info = this.view.rules.buildings[type];
@@ -428,12 +457,15 @@ export class WorldRenderer {
         p.occupied.zIndex = mid.y + 1;
         p.occupied.scale.set(Math.max(1, size / 48));
       }
+      // From its atlas (art-v2 on): its picture instead of the footprint and the glyph; the bar over its top.
+      const picture = this.artStructures?.building(i, o) ?? null;
+      if (picture !== null) p.base.visible = p.glyph.visible = false;
       const hp = b[o + B.hp];
       const max = info?.hp ?? hp;
       const selected = this.view.selection.building === b[o + B.id];
       if (building || hp < max || selected) {
         const frac = building ? b[o + B.progress] / 1000 : max > 0 ? hp / max : 1;
-        this.bar(p.hpBack, p.hpFront, mid.x, top.y - 4, size * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
+        this.bar(p.hpBack, p.hpFront, mid.x, Math.min(top.y, picture?.top ?? top.y) - 4, size * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
       }
     }
   }
@@ -513,9 +545,9 @@ export class WorldRenderer {
   }
 
   /** The units' atlases (D-085): which, how many pages, and how many units drawn from them; null: the shapes. */
-  get artDrawn(): { label: string; pages: number; units: number; corpses: number } | null {
+  get artDrawn(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null {
     const a = this.artUnits;
-    return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn };
+    return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }) };
   }
 
   /** Each town's wall's spot on the ground (world px), for the test page. */
@@ -554,6 +586,8 @@ export class WorldRenderer {
     const tick = curr.snap.header[H.tick];
     const seconds = (paused || prev === null ? tick : tick - 1 + alpha) / TICKS_PER_SECOND;
     this.artUnits?.snapshot(seconds);
+    this.artStructures?.snapshot(seconds);
+    this.artStructures?.drawRubble(seconds);
     while (this.unitPool.length < n) {
       const ring = new Sprite(this.atlas.ring);
       ring.anchor.set(0.5);
@@ -609,7 +643,7 @@ export class WorldRenderer {
       p.body.texture = this.atlas.units[type] ?? this.atlas.units[UnitType.Farmer];
       p.body.tint = ownerTint(owner, view.me);
       p.body.position.set(at.x, at.y);
-      p.body.zIndex = at.y;
+      p.body.zIndex = this.artStructures?.unitDepth(at.x, at.y) ?? at.y;
       p.body.scale.set(UNIT_SCALE);
       // Its facing as it looks on the plane (as a diamond, the ground's directions are turned and flattened).
       const f = (u[o + U.facing] * Math.PI) / 8;
@@ -653,6 +687,7 @@ export class WorldRenderer {
 
   private drawWarnings(now: number): void {
     const w = (this.view.curr as NonNullable<GameView["curr"]>).snap.warnings;
+    if (this.drawWarningsArt(w)) return;
     const pulse = 0.5 + 0.5 * Math.sin(now / 120);
     for (let o = 0; o < w.length; o += WARNING_STRIDE) {
       const x = w[o + W.x] * FIXED_TO_PX;
@@ -663,6 +698,69 @@ export class WorldRenderer {
       const left = Math.min(Math.max(w[o + W.ticksLeft], 0), 30);
       this.fx.circle(x, y, r * (1 - left / 30)).fill({ color: WARNING_TINT, alpha: 0.35 });
     }
+  }
+
+  /**
+   * 晶砲預警圈 B (the user's choice; design/b1/README.md 「給 client：晶砲預警圈 B」): six still
+   * pictures, seen from above, laid on the ground (the ground's projection flattens them), the
+   * sigil turning 20° a second, brightening as the calibration nears its end, the core growing in
+   * its last 5 ticks. False when the effects atlas has none (the circles above).
+   */
+  private drawWarningsArt(w: Int32Array): boolean {
+    const fx = this.artUnits?.art.effects ?? null;
+    const art = this.artUnits?.art;
+    if (fx === null || art === undefined || fx.effects.warn_sigil === undefined) {
+      for (const c of this.warnPool) c.visible = false;
+      return false;
+    }
+    const full = fx.effects.warn_sigil.radius_m ?? 3;
+    const seconds = (this.view.curr?.snap.header[H.tick] ?? 0) / TICKS_PER_SECOND;
+    let i = 0;
+    for (let o = 0; o < w.length; o += WARNING_STRIDE, i++) {
+      while (this.warnPool.length <= i) {
+        const c = new Container();
+        for (const name of WARN_LAYERS) {
+          const s = new Sprite(art.effectFrame(`${name}_00`)?.texture ?? Texture.EMPTY);
+          s.anchor.set(0.5);
+          s.label = name;
+          c.addChild(s);
+        }
+        this.warnLayer.addChild(c);
+        this.warnPool.push(c);
+      }
+      const c = this.warnPool[i];
+      c.visible = true;
+      c.position.set(w[o + W.x] * FIXED_TO_PX, w[o + W.y] * FIXED_TO_PX);
+      // The pictures' circle (radius_m) to the warning's radius, in world px.
+      c.scale.set((w[o + W.radius] * FIXED_TO_PX) / (full * fx.px_per_m));
+      const left = Math.min(Math.max(w[o + W.ticksLeft], 0), 30);
+      const k = 1 - left / 30;
+      const t = k * 1.5;
+      const pulse = 0.5 + 0.5 * Math.cos(2 * Math.PI * (3 * t + 2 * t * t));
+      const sigil = Math.min(1, (0.45 + 0.55 * k) * (0.8 + 0.2 * pulse));
+      const alpha: Record<string, number> = {
+        warn_fill: (0.12 + 0.35 * k) * (0.75 + 0.25 * pulse),
+        warn_sigil_glow: 0.6 * sigil,
+        warn_rim: 1,
+        warn_sigil: sigil,
+        warn_sigil_gold: sigil * 0.7 * k,
+      };
+      const turn = ((20 * Math.PI) / 180) * seconds;
+      for (const s of c.children as Sprite[]) {
+        if (s.label === "warn_core") {
+          // The last 5 ticks: from a quarter of the radius to three quarters (the picture's 1/3 to 1).
+          const g = left <= 5 ? (5 - left) / 5 : -1;
+          s.visible = g >= 0;
+          s.scale.set(1 / 3 + (2 / 3) * Math.max(0, g));
+          s.alpha = 0.5 + 0.4 * Math.max(0, g);
+          continue;
+        }
+        s.alpha = alpha[s.label] ?? 1;
+        s.rotation = s.label.startsWith("warn_sigil") ? turn : 0;
+      }
+    }
+    for (; i < this.warnPool.length; i++) this.warnPool[i].visible = false;
+    return true;
   }
 
   private drawSelectionExtras(): void {
