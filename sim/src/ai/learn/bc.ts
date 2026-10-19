@@ -60,9 +60,23 @@ function forwardF(net: FloatNet, x: Float64Array): Float64Array[] {
   return acts;
 }
 
-/** Adam on the summed cross-entropy of the heads that have a label. */
-export function trainFloat(data: Sample[], opt: { epochs: number; lr: number; batch: number; seed: number }, log: (s: string) => void = () => {}): FloatNet {
+/**
+ * Per head, a weight for each choice: hard's choices are lopsided (at home it waits at nearly every think and
+ * marches at a few), so each choice counts as if all were equally common, at most `cap` times a sample.
+ */
+export function classWeights(data: Sample[], cap = 50): number[][] {
+  return NET_HEADS.map((k, h) => {
+    const n = new Array(k).fill(0);
+    for (const s of data) if (s[NET_INPUTS + h] >= 0) n[s[NET_INPUTS + h]]++;
+    const total = n.reduce((a, b) => a + b, 0);
+    return n.map((c) => (c === 0 ? 0 : Math.min(cap, total / (k * c))));
+  });
+}
+
+/** Adam on the summed cross-entropy of the heads that have a label, each choice weighted (classWeights). */
+export function trainFloat(data: Sample[], opt: { epochs: number; lr: number; batch: number; seed: number; cap?: number }, log: (s: string) => void = () => {}): FloatNet {
   const net = initFloat(opt.seed);
+  const weight = classWeights(data, opt.cap ?? 50);
   const r = rng(opt.seed + 1);
   const L = net.w.length;
   const mw = net.w.map((x) => new Float64Array(x.length));
@@ -92,14 +106,15 @@ export function trainFloat(data: Sample[], opt: { epochs: number; lr: number; ba
         NET_HEADS.forEach((kk, h) => {
           const label = s[NET_INPUTS + h];
           if (label >= 0) {
+            const wt = weight[h][label];
             let mx = -Infinity;
             for (let i = 0; i < kk; i++) mx = Math.max(mx, y[off + i]);
             let z = 0;
             for (let i = 0; i < kk; i++) z += Math.exp(y[off + i] - mx);
             for (let i = 0; i < kk; i++) {
               const p = Math.exp(y[off + i] - mx) / z;
-              delta[off + i] = p - (i === label ? 1 : 0);
-              if (i === label) loss -= Math.log(Math.max(p, 1e-12));
+              delta[off + i] = wt * (p - (i === label ? 1 : 0));
+              if (i === label) loss -= wt * Math.log(Math.max(p, 1e-12));
             }
           }
           off += kk;
@@ -189,17 +204,20 @@ export function quantize(net: FloatNet, calib: Sample[]): NetWeights {
   return { layers };
 }
 
-/** Per head: of the samples with a label, how many the integer network chooses the same; and how many. */
-export function agreement(net: NetWeights, data: Sample[]): { same: number[]; of: number[] } {
-  const same = NET_HEADS.map(() => 0);
-  const of = NET_HEADS.map(() => 0);
+/**
+ * Per head and per choice of hard's: of the samples with that label, how many the integer network chooses the
+ * same (same[h][c] of of[h][c]).
+ */
+export function agreement(net: NetWeights, data: Sample[]): { same: number[][]; of: number[][] } {
+  const same = NET_HEADS.map((k) => new Array(k).fill(0));
+  const of = NET_HEADS.map((k) => new Array(k).fill(0));
   for (const s of data) {
     const c = choose(net, s.slice(0, NET_INPUTS));
     NET_HEADS.forEach((_, h) => {
       const label = s[NET_INPUTS + h];
       if (label < 0) return;
-      of[h]++;
-      if (c[h] === label) same[h]++;
+      of[h][label]++;
+      if (c[h] === label) same[h][label]++;
     });
   }
   return { same, of };

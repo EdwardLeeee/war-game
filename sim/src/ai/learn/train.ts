@@ -91,13 +91,20 @@ if (mode === "dryrun") {
   const cut = Math.floor(data.length * 0.9);
   const train = data.slice(0, cut);
   const test = data.slice(cut);
-  const f = trainFloat(train, { epochs: Number(arg("epochs", "8")), lr: Number(arg("lr", "0.003")), batch: 64, seed: Number(arg("seed", "1")) }, (s) => console.log(s));
+  const f = trainFloat(train, { epochs: Number(arg("epochs", "8")), lr: Number(arg("lr", "0.003")), batch: 64, seed: Number(arg("seed", "1")), cap: Number(arg("cap", "50")) }, (s) => console.log(s));
   const net = quantize(f, train);
   writeFileSync(`${out}/bc.json`, JSON.stringify(net));
   const a = agreement(net, test);
   const heads = ["軍隊", "練兵比例", "下一個蓋的", "城鎮"];
-  summary(`## 行為複製\n\n- 訓練 ${train.length} 個決策點，檢驗 ${test.length} 個（沒拿來訓練的局）`);
-  summary(`- 整數網路和困難選得一樣的比例：${heads.map((h, i) => `${h} ${a.of[i] === 0 ? "-" : `${((a.same[i] * 100) / a.of[i]).toFixed(1)}%（${a.of[i]} 個）`}`).join("、")}`);
+  const choices = [["守家", "拿城鎮", "打主城"], ["槍兵多", "平均", "遠程多"], ["村民先", "照困難", "兵營射場先"], ["搶", "治理"]];
+  const pct = (x: number, n: number) => (n === 0 ? "-" : `${((x * 100) / n).toFixed(1)}%`);
+  summary(`## 行為複製\n\n- 訓練 ${train.length} 個決策點，檢驗 ${test.length} 個（沒拿來訓練的局）。少見的選擇加重計分（classWeights）。`);
+  summary("- 整數網路和困難選得一樣的比例（檢驗的決策點）：\n\n| 決定 | 全部 | 一直選最常見的那個 | 困難每個選擇各自的一致比例 |\n|---|---|---|---|");
+  heads.forEach((h, i) => {
+    const of = a.of[i].reduce((x, y) => x + y, 0);
+    const same = a.same[i].reduce((x, y) => x + y, 0);
+    summary(`| ${h} | ${pct(same, of)}（${of} 個） | ${pct(Math.max(...a.of[i]), of)} | ${choices[i].map((c, k) => `${c} ${pct(a.same[i][k], a.of[i][k])}（${a.of[i][k]}）`).join("、")} |`);
+  });
 } else if (mode === "es") {
   const resume = arg("resume", "");
   const start: NetWeights = JSON.parse(readFileSync(arg("start", `${out}/bc.json`), "utf8"));
