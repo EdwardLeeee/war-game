@@ -193,6 +193,18 @@ for _i in range(0, len(_R606C), 7):
     TARGETS[f"castle_{_i // 7}"] = _R606C[_i:_i + 7]
     CAMERA[f"castle_{_i // 7}"] = proj.OBLIQUE
 
+# art-v4 (D-089, the user 2026-10-20 approved the castle boards: 「可以，照這樣做」): the wall pieces in both states
+# (the four owner looks are one image tinted), the floor tiles inside the walls, and the 3 x 3 big city tower
+_V4 = ([dict(kind=k, culture=c, opts=dict(state=s), name=f"castle_{k}_{c}_{s}", footprint=list(_castle.PIECE_FOOT[k]))
+        for c in CULTURES for k in _castle.PIECE_FOOT for s in ("intact", "ruin")]
+       + [dict(kind="tground", culture=c, opts=dict(plan=[(0.0, 0.0, t)]), name=f"castle_tile_{t}_{c}")
+          for c in CULTURES for t in ("square", "street", "garden")]
+       + [dict(kind="ttower3", culture=c, state=st, name=f"town_tower3_{c}_{s}")
+          for c in CULTURES for s, st in (("done", "intact"), ("damaged", "damaged"), ("rubble", "rubble"))])
+for _i in range(0, len(_V4), 8):
+    TARGETS[f"prod_castle_{_i // 8}"] = _V4[_i:_i + 8]
+    CAMERA[f"prod_castle_{_i // 8}"] = proj.OBLIQUE
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})

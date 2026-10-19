@@ -334,7 +334,25 @@ def sw_gate_y(root, c, variant=0, state="intact"):
         _soot(root)
 
 
+def ttower3(root, c, variant=0):
+    """The big city's tower of the random maps' neighbouring spawns, 3 x 3 cells (sim GameMap.towerSize 3, D-074):
+    the 2 x 2 tower (towns.ttower) widened to 3 cells and a little taller; its states as the 2 x 2's (towns.tower_state)."""
+    import towns
+    towns.ttower(root, c)
+    root.scale = (1.5, 1.5, 1.3)
+
+
+def gate_x3(root, c, variant=0, state="intact"):
+    sw_gate_x(root, c, variant=1, state=state)
+
+
+def gate_y3(root, c, variant=0, state="intact"):
+    sw_gate_y(root, c, variant=1, state=state)
+
+
 FOOTPRINT = {"pal_x": (1, 1), "pal_y": (1, 1), "pal_corner": (1, 1), "pal_gate_x": (3, 1), "pal_gate_y": (1, 3),
-             "sw_x": (1, 1), "sw_y": (1, 1), "sw_ctower": (2, 2), "sw_gate_x": (5, 1), "sw_gate_y": (1, 5)}
+             "sw_x": (1, 1), "sw_y": (1, 1), "sw_ctower": (2, 2), "sw_gate_x": (4, 1), "sw_gate_y": (1, 4), "sw_gate_x3": (5, 1), "sw_gate_y3": (1, 5),
+             "ttower3": (3, 3)}
 BUILDERS = {"pal_x": pal_x, "pal_y": pal_y, "pal_corner": pal_corner, "pal_gate_x": pal_gate_x, "pal_gate_y": pal_gate_y,
-            "sw_x": sw_x, "sw_y": sw_y, "sw_ctower": sw_ctower, "sw_gate_x": sw_gate_x, "sw_gate_y": sw_gate_y}
+            "sw_x": sw_x, "sw_y": sw_y, "sw_ctower": sw_ctower, "sw_gate_x": sw_gate_x, "sw_gate_y": sw_gate_y,
+            "sw_gate_x3": gate_x3, "sw_gate_y3": gate_y3, "ttower3": ttower3}

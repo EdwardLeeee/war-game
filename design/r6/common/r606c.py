@@ -41,31 +41,10 @@ def pieces(L, c, state, atl, origin):
     s = "ruin" if state == "ruins" else "intact"
     team = OWNER[state] or "neutral"
     out = [dict(atlas=atl, frame=f"tground_{c}_castle_{L['name']}", x=ox, y=oy, front=-99, ground=True)]
-    R = L["wall"]                                 # 5 (cell offsets) or 6.5 (cell middles from the corner)
-
-    def put(kind, a, b, n_deep=1):
-        x, y = ox + a + (0.5 if not big else 0.0), oy + b + (0.5 if not big else 0.0)
-        out.append(dict(atlas=atl, frame=f"{kind}_{c}_{s}", x=x, y=y, front=y + n_deep / 2, team=team))
-    pre = "sw" if big else "pal"
-    for (dx, dy), k in sorted(L["cells"].items()):
-        a, b = dx + off, dy + off                 # the cell's middle, from the layout's middle
-        if k == "gate":
-            if abs(b) == R and abs(a) == (0.5 if big else 0):
-                put(f"{pre}_gate_x", 0.0 if big else a, b)             # one sprite for the gate's cells
-            elif abs(a) == R and abs(b) == (0.5 if big else 0):
-                put(f"{pre}_gate_y", a, 0.0 if big else b, 4 if big else 3)
-            continue
-        if k == "ctower":
-            if abs(a) == 6.5 and abs(b) == 6.5:
-                put("sw_ctower", 6.0 * (1 if a > 0 else -1), 6.0 * (1 if b > 0 else -1), 2)
-            continue
-        if k == "corner":
-            put("pal_corner", a, b)
-            continue
-        if k == "wall":
-            if big and ((abs(b) == R and abs(a) == 1.5) or (abs(a) == R and abs(b) == 1.5)):
-                continue                          # a gate's pier: drawn with the gate
-            put(f"{pre}_x" if abs(b) == R else f"{pre}_y", a, b)
+    tx, ty = (30.0, 30.0)                         # the town's centre cell (its top-left corner), sim cells
+    for pl in castle.placements(L):               # design/b1/common/castle.py: the cells every piece takes (art-v4)
+        x, y = tx + pl["anchor"][0], ty + pl["anchor"][1]
+        out.append(dict(atlas=atl, frame=f"{pl['piece']}_{c}_{s}", x=x, y=y, front=ty + pl["front"], team=team))
     if big and state == "neutral":
         out.append(dict(atlas=atl, frame=f"ttower_{c}_intact", x=ox, y=oy, front=oy + 1, team="neutral"))
     return out

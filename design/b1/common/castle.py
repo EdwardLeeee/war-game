@@ -153,6 +153,89 @@ def ground_plan(L):
     return out
 
 
+# ---------------------------------------------------------------- the pieces on their cells (art-v4, castle_<c>.json)
+
+PIECE_FOOT = {"pal_x": (1, 1), "pal_y": (1, 1), "pal_corner": (1, 1), "pal_gate_x": (3, 1), "pal_gate_y": (1, 3),
+              "sw_x": (1, 1), "sw_y": (1, 1), "sw_ctower": (2, 2), "sw_gate_x": (4, 1), "sw_gate_y": (1, 4),
+              "sw_gate_x3": (5, 1), "sw_gate_y3": (1, 5)}
+
+
+def placements(L):
+    """Every wall piece of layout L on its cells: [dict(piece, cells, anchor, front, footprint)]. Cells are (dx, dy)
+    offsets from the town's centre cell (cell (dx, dy) covers x in [townX + dx, townX + dx + 1)); the anchor is the
+    footprint's middle on the ground in the same offsets (sim cells: add townX, townY); front is the footprint's
+    front edge y (the draw order, design/b1/atlas-buildings.md 6). One piece for a gate and its piers, one for a corner
+    tower's 2 x 2 cells, one per cell of plain wall."""
+    cells = L["cells"]
+    lo = min(dy for _, dy in cells)
+    hi = max(dy for _, dy in cells)
+    stone = L["name"] != "small"
+    taken, out = set(), []
+
+    def add(piece, cs):
+        xs = [x for x, _ in cs]
+        ys = [y for _, y in cs]
+        w, h = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+        assert (w, h) == PIECE_FOOT[piece], (piece, w, h)
+        ax, ay = min(xs) + w / 2, min(ys) + h / 2
+        out.append(dict(piece=piece, cells=sorted([list(c) for c in cs]), anchor=[ax, ay], front=min(ys) + h, footprint=[w, h]))
+        taken.update(cs)
+
+    def side(c):
+        dx, dy = c
+        return "x" if dy in (lo, hi) else "y"
+    # the gates, with their piers on the stone walls
+    gates = [c for c, k in cells.items() if k == "gate"]
+    for edge in ("n", "s", "w", "e"):
+        g = [c for c in gates if {"n": c[1] == lo, "s": c[1] == hi, "w": c[0] == lo, "e": c[0] == hi}[edge]]
+        if not g:
+            continue
+        axis = "x" if edge in ("n", "s") else "y"
+        if stone:
+            if axis == "x":
+                xs = [x for x, _ in g]
+                g = g + [(min(xs) - 1, g[0][1]), (max(xs) + 1, g[0][1])]
+            else:
+                ys = [y for _, y in g]
+                g = g + [(g[0][0], min(ys) - 1), (g[0][0], max(ys) + 1)]
+            piece = f"sw_gate_{axis}" + ("3" if len(g) == 5 else "")
+        else:
+            piece = f"pal_gate_{axis}"
+        add(piece, g)
+    # the corner towers (2 x 2) and the palisade's corner posts
+    for (dx, dy), k in sorted(cells.items()):
+        if k == "ctower" and (dx, dy) not in taken and dx in (lo, hi) and dy in (lo, hi):
+            sx = 1 if dx == lo else -1
+            sy = 1 if dy == lo else -1
+            add("sw_ctower", [(dx, dy), (dx + sx, dy), (dx, dy + sy), (dx + sx, dy + sy)])
+        elif k == "corner":
+            add("pal_corner", [(dx, dy)])
+    for (dx, dy), k in sorted(cells.items()):
+        if k == "wall" and (dx, dy) not in taken:
+            add(("sw_" if stone else "pal_") + side((dx, dy)), [(dx, dy)])
+    left = [c for c, k in cells.items() if k in ("wall", "gate", "corner", "ctower") and c not in taken]
+    assert not left, left
+    return sorted(out, key=lambda p: (p["front"], p["anchor"][0]))
+
+
+def floor(L):
+    """The floor tiles inside the walls and the road out of every gate: [dict(cell, tile)], tile square / street /
+    garden; the tower's cells paved (seen once it is torn down); 2 cells of street out of each gate cell."""
+    cells = L["cells"]
+    lo = min(dy for _, dy in cells)
+    hi = max(dy for _, dy in cells)
+    out = []
+    for (dx, dy), k in sorted(cells.items()):
+        t = {"gate": "street", "tower": "square"}.get(k, k)
+        if t in ("square", "street", "garden"):
+            out.append(dict(cell=[dx, dy], tile=t))
+        if k == "gate":
+            nx, ny = (0, -1) if dy == lo else (0, 1) if dy == hi else (-1, 0) if dx == lo else (1, 0)
+            for s in (1, 2):
+                out.append(dict(cell=[dx + nx * s, dy + ny * s], tile="street"))
+    return out
+
+
 COL = {"wall": (96, 88, 80), "corner": (70, 62, 56), "ctower": (60, 52, 46), "tower": (120, 60, 50), "gate": (232, 196, 120),
        "square": (214, 206, 186), "street": (196, 186, 164), "garden": (150, 178, 112)}
 NAMES = {"wall": "牆（擋路）", "corner": "牆角（擋路）", "ctower": "角樓 2×2（擋路）", "tower": "大城箭樓（擋路，拆掉後可走）",
