@@ -207,14 +207,14 @@ def main(art, raw, tdir):
     new = json.loads((tdir / "fixed-map-terrain-grid.json").read_text())
     a, b = map_picture(base), map_picture(new["rows"])
     W = boards.M * 2 + a.width + b.width + 60
-    det = new["detours"]
-    mm = det["main to main"][1]
-    towns = [v[1] for k, v in det.items() if k.startswith("main 0 to")]
+    # the detours as war-game-core measured them (2026-10-20, its own walker: 8-way, 10 / 14, no corner cutting, uncut
+    # trees block), against an obstacle-free walk
+    mm, towns = 1.118, [1.000, 1.025, 1.048, 1.250]
     head = boards.header(W, "R6-51-地形-整張地圖-mobile",
                          "固定地圖縮到最小（一格 6 px）。左：現在；右：加了地形以後（war-game-core 檢查過：兩家完全對稱、沒有被圍死的地方、每座城的門外都走得到）。"
                          "每家門前一條河：往中間和西北兩座小鎮走橋，往東南小鎮走淺灘；中間西邊兩段岩脊留缺口；往東南小鎮的路旁一道懸崖；"
                          "中間和東南小鎮之間一個湖；河邊一片密林乙。\n"
-                         f"繞路（和什麼都不擋時比）：主城到主城 {mm:.2f} 倍（ceo 定 1.10–1.40），主城到各城鎮 {min(towns):.2f}–{max(towns):.2f} 倍（最多 1.60）。"
+                         f"繞路（core 量的，和什麼都不擋時比）：主城到主城 {mm:.3f} 倍（ceo 定 1.10–1.40），主城到各城鎮 {min(towns):.3f}–{max(towns):.3f} 倍（最多 1.60）；兩家到最近小鎮一樣遠。"
                          "藍：水；淺藍：淺灘；褐：橋；灰：岩石；深褐：懸崖；深綠：密林乙；綠：樹（密林甲）。" + COMMON)
     row = boards.row([boards.captioned(a, "現在", 26), boards.captioned(b, "加了地形", 26)], W, gap=60)
     boards.save(boards.stack([head, row], W), "R6-51-地形-整張地圖-mobile")
