@@ -70,7 +70,7 @@ for (const style of ["fill", "outline"] as const) {
     const row = cells.inside.y1;
     await page.evaluate(([ids, c]) => window.__proto?.game?.place(ids, c), [spears, [27, 29, 32, 33].map((x) => ({ x, y: row }))] as const);
     await page.evaluate((ids) => window.__proto?.game?.select(ids), spears.slice(0, 2));
-    await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.8), [small.cx + 0.5, row + 2.5] as const);
+    await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.6), [small.cx + 0.5, row + 1] as const);
     await expect.poll(async () => (await castle(page))?.ghosts ?? 0, { timeout: 10_000 }).toBeGreaterThanOrEqual(4);
     await shot(page, info, `castle-ghost-${style}`);
     check();
