@@ -38,6 +38,15 @@ async function toned(b: Locator, bg: string): Promise<void> {
   expect(Math.min(l.w, l.h), "at least 44 pt").toBeGreaterThanOrEqual(44);
 }
 
+/** A button already in R6's look (ui/r6.css): its theme's red or blue (a gradient, R6-40), not a flat colour. */
+async function tonedR6(b: Locator, tone: "red" | "blue"): Promise<void> {
+  await expect(b).toHaveClass(new RegExp(`(^|\\s)b(\\s|$)`));
+  await expect(b).toHaveClass(new RegExp(`(^|\\s)${tone}(\\s|$)`));
+  const l = await b.evaluate((e) => ({ image: getComputedStyle(e).backgroundImage, w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height }));
+  expect(l.image, "the theme's colour").toContain("gradient");
+  expect(Math.min(l.w, l.h), "at least 44 pt").toBeGreaterThanOrEqual(44);
+}
+
 test("進攻紅、撤退藍：指令區（軍團畫面也是這一區）、取消進攻／取消撤退、全軍撤退、退回主城都上色，堅守照舊（D-080）", async ({ page }, info) => {
   const cmds = page.locator(".cmds");
   await selectForCommands(page, await spearmen(page));
@@ -45,7 +54,8 @@ test("進攻紅、撤退藍：指令區（軍團畫面也是這一區）、取�
   await toned(cmds.getByRole("button", { name: /^撤退/ }), BLUE);
   const hold = await look(cmds.getByRole("button", { name: /^堅守/ }));
   expect([RED, BLUE]).not.toContain(hold.bg);
-  await toned(page.getByRole("button", { name: "全軍撤退" }), BLUE);
+  // R6-11: 全軍撤退 in the theme's blue.
+  await tonedR6(page.getByRole("button", { name: "全軍撤退" }), "blue");
   await shot(page, info, "d080-colours-commands");
   // 撤退 asks where to: 退回主城 is blue too, 取消 is not.
   await cmds.getByRole("button", { name: /^撤退/ }).tap();
