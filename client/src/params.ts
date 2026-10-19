@@ -71,6 +71,8 @@ export interface PageParams {
    * cultures, and the nodes, on a map of their own.
    */
   gallery: "units" | "buildings" | null;
+  /** `?test=1&view=diamond|oblique|top`: how the ground lies instead of the default (camera/projection.ts; D-088). */
+  view: "diamond" | "oblique" | "top" | null;
 }
 
 export function parseParams(search: string): PageParams {
@@ -95,5 +97,7 @@ export function parseParams(search: string): PageParams {
   const culture = test ? (CULTURES.find((v) => v === c) ?? null) : null;
   const g = test && q.get("mock") === "1" ? q.get("gallery") : null;
   const gallery = g === "1" ? "units" : g === "b" ? "buildings" : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", art, culture, gallery };
+  const v = q.get("view");
+  const view = test && (v === "diamond" || v === "oblique" || v === "top") ? v : null;
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", art, culture, gallery, view };
 }

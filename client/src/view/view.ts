@@ -37,7 +37,7 @@ import {
 } from "../sim.ts";
 import { features } from "../game/features.ts";
 import { TILE_PX } from "../tuning.ts";
-import { type Projection, TOP } from "../camera/projection.ts";
+import { type Projection, tilted, TOP } from "../camera/projection.ts";
 
 /** World px per fixed-point unit. */
 export const FIXED_TO_PX = TILE_PX / CELL;
@@ -94,7 +94,7 @@ export class GameView implements IntentWorld {
 
   /** On the plane, a unit's body is this high above its feet (as a diamond 0.9 m: the pictures stand up); a tap there takes it too. */
   private bodyLift(): number {
-    return this.projection.kind === "diamond" ? 0.9 * this.projection.ptPerM : 0;
+    return tilted(this.projection) ? 0.9 * this.projection.ptPerM : 0;
   }
 
   constructor(player: number, map: MapInfo, rules: Rules) {
@@ -360,7 +360,7 @@ export class GameView implements IntentWorld {
     const cy = Math.floor(wy / TILE_PX);
     if (cx >= 0 && cy >= 0 && cx < size && cy < size && this.nodeAt[cy * size + cx] >= 0) return this.nodePick(this.nodeAt[cy * size + cx]);
     // r is the plane's: as a diamond a cell is flattened to half its height, so look twice as far.
-    const reach = Math.ceil(r / TILE_PX) * (this.projection.kind === "diamond" ? 2 : 1);
+    const reach = Math.ceil(r / TILE_PX) * (tilted(this.projection) ? 2 : 1);
     let best = -1;
     let bestD = r * r;
     const P = this.projection;

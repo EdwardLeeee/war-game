@@ -11,9 +11,11 @@ import { sha256, unpackDir } from "../scripts/fetch-art.ts";
 import { png } from "../scripts/make-test-atlas.ts";
 import { Action, CELL, NEUTRAL, NodeKind, UnitType } from "../src/sim.ts";
 
-test("朝向：俯視時 +x 是右（方向 0），菱形時 +x 是右下（方向 7）；偶數剛好一個方向（規格第 3 節的表）", () => {
+test("朝向：俯視和方形斜看（D-088）時 +x 是右（方向 0），菱形時 +x 是右下（方向 7）；偶數剛好一個方向（規格第 3 節的表）", () => {
   assert.deepEqual([0, 2, 4, 6, 8, 10, 12, 14].map((k) => pictureDirection(k, null, "diamond")), [7, 6, 5, 4, 3, 2, 1, 0]);
   assert.deepEqual([0, 2, 4, 6, 8, 10, 12, 14].map((k) => pictureDirection(k, null, "top")), [0, 7, 6, 5, 4, 3, 2, 1]);
+  // Square on, +y (down the screen) faces the camera: direction 6.
+  assert.deepEqual([0, 2, 4, 6, 8, 10, 12, 14].map((k) => pictureDirection(k, null, "oblique")), [0, 7, 6, 5, 4, 3, 2, 1]);
 });
 
 test("朝向：奇數在兩個方向中間——原本就是其中一個就保留（不來回閃），不然取比較靠近面向鏡頭（6）的", () => {

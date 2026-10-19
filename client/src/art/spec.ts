@@ -105,12 +105,13 @@ export const UNIT_ATLAS: Record<number, Record<Culture, string>> = {
 export const ATLAS_NAMES = [...new Set(Object.values(UNIT_ATLAS).flatMap((c) => [c.e, c.w]))].sort();
 
 /** How the ground is drawn: seen from straight above (the prototype so far) or as a diamond (spec section 1). */
-export type Projection = "top" | "diamond";
+export type Projection = "top" | "diamond" | "oblique";
 
 /**
  * The pictures' direction (0 right, then counter-clockwise on screen, 6 facing the camera) for a
  * sim facing (0–15, 22.5° each, 0 = +x, clockwise with y down), spec section 3. Seen from
- * above, +x is right (direction 0); as a diamond, +x is down-right (direction 7). An odd facing
+ * above or square on (方形斜看, D-088), +x is right (direction 0); as a diamond, +x is
+ * down-right (direction 7). An odd facing
  * falls between two directions: the unit keeps the one it showed if it is one of them, else
  * the one nearer to facing the camera (6).
  */

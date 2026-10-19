@@ -6,7 +6,7 @@
 
 import { type Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import type { Camera } from "../camera/camera.ts";
-import { PT_PER_CELL, type Projection, TOP } from "../camera/projection.ts";
+import { PT_PER_CELL, type Projection, tilted, TOP } from "../camera/projection.ts";
 import {
   Action,
   BuildingField as B,
@@ -200,7 +200,7 @@ export class WorldRenderer {
     this.atlas = atlas;
     this.projection = projection;
     this.unitLayer.sortableChildren = true;
-    this.artStructures = art !== null && ArtStructures.has(art) ? new ArtStructures(art, view, { ground: this.groundArt, shadows: this.shadowLayer, upright: this.unitLayer }, cultureOf, projection) : null;
+    this.artStructures = art !== null && ArtStructures.has(art, projection) ? new ArtStructures(art, view, { ground: this.groundArt, shadows: this.shadowLayer, upright: this.unitLayer }, cultureOf, projection) : null;
     // A unit's depth among the buildings' footprints (structure-art.ts), else its place on the screen.
     const depth = (px: number, py: number): number => this.artStructures?.unitDepth(px, py) ?? py;
     this.artUnits = art === null ? null : new ArtUnits(art, view, this.shadowLayer, this.unitLayer, cultureOf, projection, depth);
@@ -235,10 +235,11 @@ export class WorldRenderer {
     const fog = new Sprite(this.fogTexture);
     fog.scale.set(TILE_PX);
 
-    // The projection's matrix as two containers (a container scales, then turns): turned 45° at
-    // 1.25 (40 points a cell's side), then flattened to half its height.
-    if (projection.kind === "diamond") {
-      this.groundInner.rotation = Math.PI / 4;
+    // The projection's matrix as two containers (a container scales, then turns): as a diamond
+    // turned 45° at 1.25 (40 points a cell's side), square on (D-088) not turned; then flattened
+    // to half its height.
+    if (tilted(projection)) {
+      if (projection.kind === "diamond") this.groundInner.rotation = Math.PI / 4;
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
@@ -492,10 +493,10 @@ export class WorldRenderer {
       let mark = this.townMarks.get(id);
       if (mark === undefined) {
         const wall = new Sprite(this.atlas.wall);
-        wall.anchor.set(0.5, this.projection.kind === "diamond" ? 0.5 : 1);
+        wall.anchor.set(0.5, tilted(this.projection) ? 0.5 : 1);
         const glyph = new Sprite(this.atlas.townGlyphs[info.size] ?? Texture.EMPTY);
         glyph.anchor.set(0.5);
-        (this.projection.kind === "diamond" ? this.wallGround : this.wallLayer).addChild(wall);
+        (tilted(this.projection) ? this.wallGround : this.wallLayer).addChild(wall);
         this.wallLayer.addChild(glyph);
         const holder = new Container();
         const label = new Text({ text: "", style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 13, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } }, resolution: 4 });
@@ -517,7 +518,7 @@ export class WorldRenderer {
       const mid = this.projection.toPlane(spot.x + spot.side / 2, spot.y + spot.side / 2);
       const foot = this.projection.toPlane(spot.x + spot.side, spot.y + spot.side);
       mark.wall.tint = look.tint;
-      if (this.projection.kind === "diamond") {
+      if (tilted(this.projection)) {
         // Lying on the ground like the buildings' footprints (standing up, a big city's hid the fighting
         // behind it), its 鎮 or 城 standing in the middle.
         mark.wall.position.set(spot.x + spot.side / 2, spot.y + spot.side / 2);
