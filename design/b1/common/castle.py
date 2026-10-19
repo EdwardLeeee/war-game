@@ -81,10 +81,44 @@ def large():
                 mid=lambda dx, dy: (dx + 0.5, dy + 0.5))
 
 
+def large3():
+    """The big city of the random maps' neighbouring spawns (war-game-core 2026-10-19): the tower is 3 x 3 on the
+    centre cell, on the map's middle column, so the walls must be symmetric about a column: odd widths. Offsets from
+    the centre cell. The wall ring on max(|dx|, |dy|) == 7 (15 x 15 outside, 13 x 13 = 169 inside), the square 7 x 7,
+    the avenues 5 wide, the gates 3 wide with a pier on each side, the corner towers 2 x 2."""
+    W = 7
+    cells = {}
+    for dx in range(-W, W + 1):
+        for dy in range(-W, W + 1):
+            m = max(abs(dx), abs(dy))
+            if m == W:
+                if abs(dx) >= W - 1 and abs(dy) >= W - 1:
+                    k = "ctower"
+                elif (abs(dy) == W and abs(dx) <= 1) or (abs(dx) == W and abs(dy) <= 1):
+                    k = "gate"
+                else:
+                    k = "wall"                    # |d| == 2 on the gate's sides: the gate towers' piers
+            elif abs(dx) == W - 1 and abs(dy) == W - 1:
+                k = "ctower"
+            elif m <= 1:
+                k = "tower"
+            elif m <= 3:
+                k = "square"
+            elif abs(dx) <= 2 or abs(dy) <= 2:
+                k = "street"
+            else:
+                k = "garden"
+            cells[(dx, dy)] = k
+    # 12 militia, the same under every turn and mirror of the square (the map is mirrored about the middle column)
+    militia = [(2, 0), (-2, 0), (0, 2), (0, -2), (2, 2), (-2, 2), (2, -2), (-2, -2), (3, 3), (-3, 3), (3, -3), (-3, -3)]
+    return dict(name="large3", wall=W, cells=cells, militia=militia, garrison=[(-3, -4), (-4, -3), (-4, -4)], flag=None,
+                mid=lambda dx, dy: (dx, dy))
+
+
 def circle_count(L):
     """Cells whose middle lies within the old radius (the sim's rule today), measured from the town's middle."""
     r = 5 if L["name"] == "small" else 7
-    if L["name"] == "small":
+    if L["name"] != "large":
         return sum(1 for (dx, dy) in L["cells"] if dx * dx + dy * dy <= r * r)
     return sum(1 for (dx, dy) in L["cells"] if (dx + 0.5) ** 2 + (dy + 0.5) ** 2 <= r * r)
 
@@ -92,7 +126,7 @@ def circle_count(L):
 def counts(L):
     """(cells of each kind, cells inside the wall ring: the town's area from now on)."""
     from collections import Counter
-    off = 0.0 if L["name"] == "small" else 0.5
+    off = 0.5 if L["name"] == "large" else 0.0
     inner = L["wall"] - 1
     inside = sum(1 for (dx, dy) in L["cells"] if max(abs(dx + off), abs(dy + off)) <= inner)
     return dict(Counter(L["cells"].values())), inside
@@ -102,7 +136,7 @@ def ground_plan(L):
     """[(x, y, kind)] in metres from the layout's middle, for towns.tground: the square, the streets (the gates too) and
     the gardens inside the walls; the tower's cells paved (seen once it is torn down)."""
     from layouts import CELL
-    off = 0.0 if L["name"] == "small" else 0.5
+    off = 0.5 if L["name"] == "large" else 0.0
     out = []
     for (dx, dy), k in L["cells"].items():
         k = {"gate": "street", "tower": "square"}.get(k, k)
@@ -113,7 +147,7 @@ def ground_plan(L):
 
 COL = {"wall": (96, 88, 80), "corner": (70, 62, 56), "ctower": (60, 52, 46), "tower": (120, 60, 50), "gate": (232, 196, 120),
        "square": (214, 206, 186), "street": (196, 186, 164), "garden": (150, 178, 112)}
-NAMES = {"wall": "牆（擋路）", "corner": "牆角（擋路）", "ctower": "角樓 2×2（擋路）", "tower": "大城箭樓 2×2（擋路，拆掉後可走）",
+NAMES = {"wall": "牆（擋路）", "corner": "牆角（擋路）", "ctower": "角樓 2×2（擋路）", "tower": "大城箭樓（擋路，拆掉後可走）",
          "gate": "城門（可走，一直開著）", "square": "廣場", "street": "街", "garden": "菜園"}
 
 
@@ -142,8 +176,8 @@ def diagram(L, title, sub, out):
             dr.line([px + 4, py + 4, px + C - 5, py + C - 5], fill=(30, 26, 24), width=2)
     # the old circle, for comparison
     r = 5 if L["name"] == "small" else 7
-    cx = left + (0 - x0 + (0.5 if L["name"] == "small" else 0)) * C
-    cy = top + (0 - y0 + (0.5 if L["name"] == "small" else 0)) * C
+    cx = left + (0 - x0 + (0 if L["name"] == "large" else 0.5)) * C
+    cy = top + (0 - y0 + (0 if L["name"] == "large" else 0.5)) * C
     dr.ellipse([cx - r * C, cy - r * C, cx + r * C, cy + r * C], outline=(200, 60, 50), width=3)
     for mx, my in L["militia"]:
         px, py = left + (mx - x0 + 0.5) * C, top + (my - y0 + 0.5) * C
@@ -181,7 +215,8 @@ def export(Ls):
     for L in Ls:
         c, inside = counts(L)
         out[L["name"]] = dict(
-            origin="small: the town's centre cell; large: the town's centre cell, tower on dx, dy in {-1, 0}",
+            origin={"small": "the town's centre cell", "large": "the town's centre cell, the 2 x 2 tower on dx, dy in {-1, 0}",
+                    "large3": "the town's centre cell, the 3 x 3 tower on |dx|, |dy| <= 1"}[L["name"]],
             cells={k: sorted([list(p) for p, kk in L["cells"].items() if kk == k]) for k in sorted(set(L["cells"].values()))},
             militia=L["militia"], garrison=L["garrison"], counts=c, inside_walls=inside, old_circle=circle_count(L))
     p = HERE.parent / "castle-layout.json"
@@ -192,14 +227,15 @@ def export(Ls):
 
 if __name__ == "__main__":
     OUT = HERE.parents[1] / "r6" / "out"
-    S, Lg = small(), large()
-    info = export((S, Lg))
-    for L, nm in ((S, "小鎮"), (Lg, "大城")):
+    S, Lg, L3 = small(), large(), large3()
+    info = export((S, Lg, L3))
+    for L, nm in ((S, "小鎮"), (Lg, "大城"), (L3, "大城3（相鄰出生）")):
         i = info[L["name"]]
         c = i["counts"]
         sub = [f"牆以內 {i['inside_walls']} 格（原本的圓圈 {i['old_circle']} 格）；擋路的牆 {c.get('wall', 0) + c.get('corner', 0)} 格"
                + (f"、角樓 {c.get('ctower', 0)} 格" if 'ctower' in c else "") + f"；城門 {c.get('gate', 0)} 格（四個門，一直開著）。",
-               "格子是 sim 的格，原點：" + ("小鎮中心那一格。" if L["name"] == "small" else "城鎮中心那一格（箭樓占 dx、dy 為 −1、0 的四格）。")
+               "格子是 sim 的格，原點：" + {"small": "小鎮中心那一格。", "large": "城鎮中心那一格（箭樓占 dx、dy 為 −1、0 的四格）。",
+                                       "large3": "城鎮中心那一格，箭樓 3×3 在中間（隨機地圖相鄰出生時）。"}[L["name"]]
                + "+x 往東（畫面右），+y 往南（離鏡頭近）。打叉的格子擋路。",
                "牆只擋走路，不擋射擊（遠程兵、法師、箭樓可以隔著牆打）；牆不會壞，廢墟時照舊站著。",
                "城鎮範圍改成牆以內（含牆和門那一圈不算在內）。"]
