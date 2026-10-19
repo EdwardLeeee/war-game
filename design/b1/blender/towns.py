@@ -417,7 +417,7 @@ def _arch(root, P, W, up):
     for k in range(n):                      # the voussoirs round the opening
         a = math.pi * (k + 0.5) / n
         x, z = r * math.cos(a), H + 0.16 + r * math.sin(a) * 0.55
-        box(f"ta_v{k}", (0.42, 0.9, 0.34), P["brick"], root, loc=(x, 0, z), rot=(0, -math.degrees(a - math.pi / 2) * 0.8, 0))
+        box(f"ta_v{k}", (0.46, 0.92, 0.38), P["brick"], root, loc=(x, 0, z), outline=False)
     top = H + 0.16 + r * 0.55 + 0.2
     for sx in (-1, 1):                      # the spandrels over the piers
         box(f"ta_sp{sx}", (pw + r * 0.45, 0.9, top - H - 0.16), P["stone"], root,

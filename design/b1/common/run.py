@@ -172,6 +172,8 @@ _R606 = ([dict(kind="tgate", culture="E", opts=dict(variant=v, state=s), name=f"
             for k in ("th22", "th21", "th12") for v in (0, 1) for s in ("intact", "ruin")]
          + [dict(kind="ttower", culture="E", state="intact", name="ttower_E_intact")]
          + [dict(kind="tpost", culture="E", opts=dict(state=s), name=f"tpost_E_{s}") for s in ("lantern", "pennant", "fallen")])
+TARGETS["r606_w"] = [pc for pc in _R606 if pc["name"] == "tgate_W_small_intact"]       # again: the arch's stones
+CAMERA["r606_w"] = proj.OBLIQUE
 for _i in range(0, len(_R606), 7):
     TARGETS[f"r606_{_i // 7}"] = _R606[_i:_i + 7]
     CAMERA[f"r606_{_i // 7}"] = proj.OBLIQUE
