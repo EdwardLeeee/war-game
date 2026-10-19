@@ -149,6 +149,12 @@ for _c in CULTURES:
         TARGETS[f"sqdone_{_c}_{_i // 6}"] = _done[_c][_i:_i + 6]
         CAMERA[f"sqdone_{_c}_{_i // 6}"] = proj.OBLIQUE
 
+# the R6 battlefield boards before art-v3 is packed (D-088): the other frames their scenes draw (design/r6/common)
+_SQF = ("found_2x2_E", "house_E_build2", "farm_E_growing", "tree_E_v0", "tree_E_v1", "tree_E_v2", "tree_W_v0", "tree_W_v1",
+        "tree_W_v2", "gold_v0_full", "gold_v1_full")
+TARGETS["sqfield"] = [pc for pc in _prod_buildings("E") + PROD_NODES if pc["name"] in _SQF]
+CAMERA["sqfield"] = proj.OBLIQUE
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
@@ -157,7 +163,7 @@ FOLDER.update({"b1b": "b1b", "teamfix_b101": "b101", "teamfix_core3": "core3", "
 FOLDER.update({t: "towns" for t in TARGETS if t.startswith("towns2")})
 FOLDER.update({t: "prod" for t in TARGETS if t.startswith("prod_")})
 FOLDER.update({t: "dir" for t in CAMERA if t.startswith("dir_")})
-FOLDER.update({t: "sqdone" for t in TARGETS if t.startswith("sqdone_")})
+FOLDER.update({t: "sqdone" for t in TARGETS if t.startswith(("sqdone_", "sqfield"))})
 
 
 def pieces(target):
