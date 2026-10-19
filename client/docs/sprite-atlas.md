@@ -91,7 +91,7 @@ war-game-ui 量產兵種圖片時照這份輸出，client 照這份載入和繪�
   - **前後**（`render/depth.ts`）：地面層（農田、採完的資源點、瓦礫）先畫；其他依「前緣 y」由小到大：建築 cellY + n、資源點 cellY + 1、單位自己的 y；一樣時 x 小的先、再依 ID。x 不參與排序。
   - **點選**：從最後畫的往前找，第一個圖案方框（或占地）包含手指的那個；和畫的順序同一套。
   - **說明檔**：buildings_E/W.json、nodes.json 加 `"view": "oblique"`（format 字串不變）。沒有 view 代表菱形（art-v2）。client 只用鏡頭和畫面投影相同的建築、資源點圖；對不上時照舊畫圖形。
-  - 測試頁 `?test=1&view=oblique` 用方形斜看，`view=diamond` 用菱形。預設照舊是菱形，art-v3 上線時才改成方形斜看。
+  - 預設是方形斜看（art-v3 起，O-2）。測試頁 `?test=1&view=diamond` 用菱形，`view=top` 用正上方俯視；art-v3 的建築和資源點只在方形斜看畫，其他投影畫圖形。
 - **素材倍率**：
   - 說明檔的 `px_per_m`：3 倍是 60，2 倍是 40。
   - client 畫的時候把圖縮成 `PT_PER_M / px_per_m`：3 倍素材縮成 1/3，2 倍縮成 1/2。

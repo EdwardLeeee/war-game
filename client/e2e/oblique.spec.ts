@@ -1,7 +1,6 @@
-// 方形斜看（D-088）on core's real simulation (?test=1&view=oblique): the map square on, flattened
-// 2:1; the fixed map's spawns bottom left and top right, the big city between. The default stays
-// the diamond until art-v3 (its buildings drawn for this camera); till then buildings and nodes
-// are the shapes here, the units from their atlases.
+// 方形斜看（D-088）on core's real simulation, the default since art-v3 (its buildings and nodes drawn
+// for this camera): the map square on, flattened 2:1; the fixed map's spawns bottom left and top
+// right, the big city between.
 
 import { expect, type Page, test } from "@playwright/test";
 import { shot, watchErrors } from "./helpers.ts";
@@ -12,7 +11,7 @@ const LARGE = 1;
 const at = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
 
 async function start(page: Page, query: string): Promise<void> {
-  await page.goto(`./?test=1&view=oblique&${query}`);
+  await page.goto(`./?test=1&${query}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
 }
@@ -63,21 +62,23 @@ test("方形斜看：開局看得到自己的主城，點村民的身體選得�
   await page.touchscreen.tap(farmer.sx, farmer.sy - 8);
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection()))?.units).toEqual([farmer.id]);
   if (browserName !== "chromium") return check();
-  // The perf battle with the units' atlases (3 倍): the buildings shapes until art-v3.
-  await page.goto("./?test=1&view=oblique&art=x3&scenario=perf");
+  // The perf battle from the atlases (3 倍): art-v3's buildings and nodes are this camera's.
+  await page.goto("./?test=1&art=x3&scenario=perf");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.art() ?? null))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(100);
-  expect((await page.evaluate(() => window.__proto?.game?.art() ?? null))?.buildings, "art-v2's buildings are the diamond's: shapes").toBe(0);
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.art() ?? null))?.buildings ?? 0, { message: "art-v3's buildings drawn" }).toBeGreaterThan(0);
   await page.evaluate(() => window.__proto?.game?.centerOn(48, 52, 1.6));
   await page.waitForTimeout(3000);
   await shot(page, info, "oblique-battle");
   check();
 });
 
-test("方形斜看，暫停中放建築（R6-31）：預定的房子照方形斜看的格子畫虛線占地框、寫「繼續後開工」；按繼續後換成地基", async ({ page }, info) => {
+test("方形斜看，暫停中放建築（R6-31）：預定的房子照方形斜看的格子畫虛線占地框、寫「繼續後開工」，art-v3 的完工圖半透明；按繼續後換成地基", async ({ page, browserName }, info) => {
   const check = watchErrors(page);
-  await start(page, "scenario=e2e");
+  // With art-v3 (3 倍) in Chromium, for the picture; WebKit, the shapes.
+  await start(page, browserName === "chromium" ? "scenario=e2e&art=x3" : "scenario=e2e");
+  if (browserName === "chromium") await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.art() ?? null))?.buildings ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
   await page.getByRole("button", { name: "暫停", exact: true }).tap();
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === MAIN_CITY);
@@ -95,5 +96,37 @@ test("方形斜看，暫停中放建築（R6-31）：預定的房子照方形斜
   await shot(page, info, "oblique-paused-site");
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.pending()))?.sites, { timeout: 15_000 }).toBe(0);
+  check();
+});
+
+test("方形斜看＋art-v3（3 倍）給使用者看（O-2）：整張地圖縮到最小、開局、中立大城、城鎮四種狀態", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "chromium", "pictures for the user");
+  test.setTimeout(180_000);
+  const check = watchErrors(page);
+  const artDrawn = () => expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.art() ?? null))?.buildings ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
+  // The whole map, watched (no fog), at its smallest; then the big city, neutral at the start.
+  await start(page, "watch=1&art=x3");
+  await artDrawn();
+  const size = await page.evaluate(() => window.__proto?.game?.mapSize() ?? 0);
+  await page.evaluate((s) => window.__proto?.game?.centerOn(s / 2 - 0.5, s / 2 - 0.5, 0.01), size);
+  await page.waitForTimeout(1000);
+  await shot(page, info, "o2-whole-map");
+  const big = (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).find((t) => t.size === LARGE);
+  if (big === undefined) throw new Error("no big city");
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.1), [big.cx, big.cy] as const);
+  await page.waitForTimeout(1000);
+  await shot(page, info, "o2-big-city");
+  // The start of a game.
+  await start(page, "art=x3");
+  await artDrawn();
+  await page.waitForTimeout(1000);
+  await shot(page, info, "o2-start");
+  // Towns in their states on the fake world (src/mock/mock-port.ts): neutral (30, 66), ours
+  // governed (18, 62), the enemy's (38, 56), ruins (36, 80), the big one plundered by us (48, 48).
+  await start(page, "mock=1&tps=20&art=x3");
+  await artDrawn();
+  await page.evaluate(() => window.__proto?.game?.centerOn(30, 68, 0.55));
+  await page.waitForTimeout(1000);
+  await shot(page, info, "o2-town-states");
   check();
 });

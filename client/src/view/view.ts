@@ -93,7 +93,7 @@ export class GameView implements IntentWorld {
   coverAt: ((px: number, py: number, ux: number, uy: number) => number | null) | null = null;
 
   /** On the plane, a unit's body is this high above its feet (as a diamond 0.9 m: the pictures stand up); a tap there takes it too. */
-  private bodyLift(): number {
+  bodyLift(): number {
     return tilted(this.projection) ? 0.9 * this.projection.ptPerM : 0;
   }
 
