@@ -17,12 +17,16 @@ parentPort?.on("message", (job: Job) => {
     parentPort!.postMessage({ kind: "play", outcome } satisfies JobResult);
     return;
   }
-  // Every `every`-th think of each hard side: its inputs and its own choices (-1: none at that think).
+  // Each hard side's inputs and its own choices (-1: none at that think): every think where it goes for a town
+  // or marches, puts barracks and ranges first, or chooses for a town it took (each happens at one think, and
+  // rarely), and every `every`-th of the others.
   const samples: number[][] = [];
   const logger = () => {
     let k = 0;
     return (x: number[], labels: number[]) => {
-      if (k++ % job.every === 0) samples.push([...x, ...labels]);
+      const rare = labels[0] > 0 || labels[2] === 2 || labels[3] >= 0;
+      if (rare || k % job.every === 0) samples.push([...x, ...labels]);
+      k++;
     };
   };
   const opp: Opponent = job.opp.kind === "hard" ? { kind: "hard", plan: { ...job.opp.plan, netLog: logger() } } : job.opp;

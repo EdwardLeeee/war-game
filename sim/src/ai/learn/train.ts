@@ -84,13 +84,22 @@ if (mode === "dryrun") {
   const res = await runAll(jobs);
   const samples = res.flatMap((r) => (r.kind === "record" ? r.samples : []));
   saveSamples(`${out}/samples.bin`, samples);
+  // How many samples each game gave, in order: bc holds out whole games (ceo 2026-10-19).
+  writeFileSync(`${out}/games.json`, JSON.stringify(res.map((r) => (r.kind === "record" ? r.samples.length : 0))));
   summary(`## 記錄\n\n- ${games} 局，${samples.length} 個決策點（每 ${arg("every", "10")} 次思考取一次）`);
 } else if (mode === "bc") {
-  const data = loadSamples(`${arg("data", out)}/samples.bin`);
-  // Hold out every 10th game's worth: the last 10% of the samples (games are in order).
-  const cut = Math.floor(data.length * 0.9);
-  const train = data.slice(0, cut);
-  const test = data.slice(cut);
+  const dir = arg("data", out);
+  const data = loadSamples(`${dir}/samples.bin`);
+  // Hold out whole games, every 10th (they mix both maps, both spawns and both opponents): none of their
+  // positions is trained on (ceo 2026-10-19).
+  const counts: number[] = existsSync(`${dir}/games.json`) ? JSON.parse(readFileSync(`${dir}/games.json`, "utf8")) : [data.length];
+  const train: Sample[] = [];
+  const test: Sample[] = [];
+  let at = 0;
+  counts.forEach((n, g) => {
+    (counts.length > 1 && g % 10 === 9 ? test : train).push(...data.slice(at, at + n));
+    at += n;
+  });
   const f = trainFloat(train, { epochs: Number(arg("epochs", "8")), lr: Number(arg("lr", "0.003")), batch: 64, seed: Number(arg("seed", "1")), cap: Number(arg("cap", "50")) }, (s) => console.log(s));
   const net = quantize(f, train);
   writeFileSync(`${out}/bc.json`, JSON.stringify(net));
@@ -98,7 +107,7 @@ if (mode === "dryrun") {
   const heads = ["軍隊", "練兵比例", "下一個蓋的", "城鎮"];
   const choices = [["守家", "拿城鎮", "打主城"], ["槍兵多", "平均", "遠程多"], ["村民先", "照困難", "兵營射場先"], ["搶", "治理"]];
   const pct = (x: number, n: number) => (n === 0 ? "-" : `${((x * 100) / n).toFixed(1)}%`);
-  summary(`## 行為複製\n\n- 訓練 ${train.length} 個決策點，檢驗 ${test.length} 個（沒拿來訓練的局）。少見的選擇加重計分（classWeights）。`);
+  summary(`## 行為複製\n\n- ${counts.length} 局：訓練 ${train.length} 個決策點；檢驗 ${test.length} 個，出自另外留下的 ${counts.length > 1 ? Math.floor(counts.length / 10) : 0} 局（每 10 局留 1 局，整局都沒拿來訓練）。少見的選擇加重計分（classWeights）。`);
   summary("- 整數網路和困難選得一樣的比例（檢驗的決策點）：\n\n| 決定 | 全部 | 一直選最常見的那個 | 困難每個選擇各自的一致比例 |\n|---|---|---|---|");
   heads.forEach((h, i) => {
     const of = a.of[i].reduce((x, y) => x + y, 0);
