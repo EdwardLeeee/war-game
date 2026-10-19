@@ -1176,7 +1176,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
             raids++;
             if (firstRaid < 0) firstRaid = tick;
           }
-          const prey = found < 0 ? [] : enemyFarmers.filter((f) => dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) >= HARASS_FAR * HARASS_FAR);
+          // Farmers at work (gathering or building), not those walking home or hiding.
+          const working = (f: Unit) => f.order === Order.Gather || f.order === Order.Build || f.order === Order.Repair;
+          const prey = found < 0 ? [] : enemyFarmers.filter((f) => working(f) && dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) >= HARASS_FAR * HARASS_FAR);
           prey.sort((a, b) => dist2(a.x, a.y, sx, sy) - dist2(b.x, b.y, sx, sy) || a.id - b.id);
           if (prey.length > 0) {
             if (prey[0].id !== harassTarget || tick - harassMove >= 200) {
