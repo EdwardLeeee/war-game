@@ -7,18 +7,23 @@
 // their wood to the main city.
 //
 // +: one at a time; idle villagers first, then those gathering another resource, nearest to
-// the depot first. Never those on the crystal vein (by hand only, GDD §4) or building or
-// repairing. Wood and gold go to the nearest tree or gold mine within DEPOT_REACH of the
-// depot; food to the nearest farm nobody works, else berries.
+// the depot first. Never those on the crystal vein (sent there by hand only, GDD §4) or building
+// or repairing. Wood, gold and crystal go to the nearest tree, gold mine or crystal vein within
+// DEPOT_REACH of the depot; food to the nearest farm nobody works, else berries.
 // −: the one gathering here farthest from the depot (ceo 2026-10-07).
+// The mine's 晶 row (the user 2026-10-20: 「礦場目前不能把村民叫過去採集晶礦，要修一下」): its +
+// is a player's own order like a tap on the vein, so the economy ratio leaves the villager there.
 
 import { BuildingType, NodeKind, Resource } from "../sim.ts";
 
 /** Cells from a depot's footprint within which + looks for trees, gold, farms and berries. */
 export const DEPOT_REACH = 10;
 
-/** The resources a depot row is shown for (the crystal vein is by hand only). */
-export const DEPOT_RESOURCES: readonly Resource[] = [Resource.Food, Resource.Wood, Resource.Gold];
+/** The resources a depot row is shown for. */
+export const DEPOT_RESOURCES: readonly Resource[] = [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal];
+
+/** A depot row's word for its resource, as the resource bar writes it. */
+export const DEPOT_WORD: Record<number, string> = { [Resource.Food]: "糧", [Resource.Wood]: "木", [Resource.Gold]: "金", [Resource.Crystal]: "晶" };
 
 /** The resource rows the panel of this building of ours shows: none for the main city (D-070). */
 export function panelResources(type: number, accepts: readonly number[]): Resource[] {
@@ -113,8 +118,8 @@ export interface DepotFarm {
 
 export type SendTarget = { node: number } | { farm: number } | { error: string };
 
-const NODE_FOR: Partial<Record<Resource, number>> = { [Resource.Wood]: NodeKind.Tree, [Resource.Gold]: NodeKind.GoldMine };
-const NOTHING_NEAR: Partial<Record<Resource, string>> = { [Resource.Wood]: "附近沒有樹", [Resource.Gold]: "附近沒有金礦" };
+const NODE_FOR: Partial<Record<Resource, number>> = { [Resource.Wood]: NodeKind.Tree, [Resource.Gold]: NodeKind.GoldMine, [Resource.Crystal]: NodeKind.CrystalVein };
+const NOTHING_NEAR: Partial<Record<Resource, string>> = { [Resource.Wood]: "附近沒有樹", [Resource.Gold]: "附近沒有金礦", [Resource.Crystal]: "附近沒有晶脈" };
 export const NO_FARM_TEXT = "附近沒有空田，先蓋農田";
 
 /** Where + sends a villager to gather `resource` for this depot: the nearest within DEPOT_REACH (ties: lower id). */
@@ -143,4 +148,13 @@ export function sendTarget(depot: Depot, resource: Resource, nodes: readonly Dep
     nodeAt,
   );
   return node !== null ? { node: node.id } : { error: NOTHING_NEAR[resource] ?? "附近沒有可以採的資源" };
+}
+
+/**
+ * What + on the mine's 晶 row says (ceo 2026-10-20): sent; and when the vein is nearer another
+ * building that takes crystal (the main city), that the crystal goes there, for the mine's count
+ * does not grow then.
+ */
+export function crystalSentText(here: number, goesTo: number | null, name: string): string {
+  return goesTo === null || goesTo === here ? "已派 1 名去採晶" : `已派 1 名去採晶，晶會送回${name}`;
 }

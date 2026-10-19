@@ -76,7 +76,7 @@ import { Placement, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
-import { type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
+import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
 import { features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
 import { Charges } from "./follow.ts";
@@ -379,8 +379,8 @@ export class Game implements GestureHost {
   private depotToast: { building: number; text: string } | null = null;
 
   /** The message of a depot's − or ＋. */
-  private depotSay(building: number, text: string): void {
-    this.toast(text);
+  private depotSay(building: number, text: string, kind?: ToastKind): void {
+    this.toast(text, kind);
     this.depotToast = { building, text };
   }
 
@@ -1009,6 +1009,14 @@ export class Game implements GestureHost {
     // A farm is worked with `repair`, a node with `gather` (sim/PROTOCOL.md 3.1); both make the villager the player's own (HandPicked, core #149).
     const cmd: CommandBody = "farm" in to ? { c: "repair", u: [id], building: to.farm } : { c: "gather", u: [id], node: to.node };
     this.apply([{ kind: "command", cmd }]);
+    if (resource === Resource.Crystal && "node" in to) {
+      // The vein may be nearer the main city: the crystal goes there and the mine's count stays (ceo 2026-10-20).
+      const row = view.nodes.get(to.node);
+      const goesTo = row === undefined ? null : depotFor({ x: row[NodeField.cellX] + 0.5, y: row[NodeField.cellY] + 0.5 }, resource, this.depots());
+      const go = goesTo === null ? -1 : view.buildingRow(goesTo);
+      this.depotSay(building, crystalSentText(building, goesTo, go < 0 ? "建築" : (BUILDING_NAME[b[go + BuildingField.type]] ?? "建築")), "ok");
+      return;
+    }
     this.depotSay(building, `派 1 名村民去${"farm" in to ? "種田" : `採${RESOURCE_WORD[resource] ?? ""}`}`);
   }
 
@@ -1021,11 +1029,11 @@ export class Game implements GestureHost {
     if (depot === undefined) return;
     const id = pickToTake(this.workers(), this.depots(), depot, resource);
     if (id === null) {
-      this.depotSay(building, `這裡沒有村民在採${RESOURCE_WORD[resource] ?? ""}`);
+      this.depotSay(building, `這裡沒有村民在採${DEPOT_WORD[resource] ?? ""}`);
       return;
     }
     this.apply([{ kind: "command", cmd: { c: "release", u: [id] } }]);
-    this.depotSay(building, `1 名採${RESOURCE_WORD[resource] ?? ""}的村民放下工作，交給經濟分配`);
+    this.depotSay(building, `1 名採${DEPOT_WORD[resource] ?? ""}的村民放下工作，交給經濟分配`);
   }
 
   /** 派村民 (D-061): whom a tap on this node can send, nearest first; null for an unknown node. */
