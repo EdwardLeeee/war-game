@@ -25,7 +25,7 @@ LOOK = {
     "A": dict(grass=(0.11, 0.17, 0.06), grass2=(0.085, 0.14, 0.045), gn=0.22, gs=2.2, road=(0.19, 0.14, 0.085), rw=2.6,
               dirt=(0.16, 0.12, 0.075), gravel=None, ruts=False, edge=None, flowers=1.0, tufts=1.0, pebbles=0.0),
     "B": dict(grass=(0.115, 0.165, 0.06), grass2=(0.09, 0.135, 0.05), gn=0.26, gs=2.6, road=(0.18, 0.13, 0.08), rw=3.0,
-              dirt=(0.155, 0.11, 0.07), gravel=(0.25, 0.24, 0.21), ruts=True, edge=None, flowers=0.6, tufts=1.2, pebbles=1.0),
+              dirt=(0.155, 0.11, 0.07), gravel=(0.14, 0.135, 0.12), ruts=True, edge=None, flowers=0.6, tufts=1.2, pebbles=1.0),
     "C": dict(grass=(0.075, 0.2, 0.035), grass2=(0.05, 0.16, 0.025), gn=0.38, gs=9.0, road=(0.32, 0.22, 0.1), rw=2.6,
               dirt=(0.27, 0.19, 0.09), gravel=None, ruts=False, edge=(0.11, 0.07, 0.035), flowers=0.5, tufts=0.4, pebbles=0.0),
 }
