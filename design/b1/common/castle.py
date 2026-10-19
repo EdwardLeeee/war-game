@@ -98,6 +98,19 @@ def counts(L):
     return dict(Counter(L["cells"].values())), inside
 
 
+def ground_plan(L):
+    """[(x, y, kind)] in metres from the layout's middle, for towns.tground: the square, the streets (the gates too) and
+    the gardens inside the walls; the tower's cells paved (seen once it is torn down)."""
+    from layouts import CELL
+    off = 0.0 if L["name"] == "small" else 0.5
+    out = []
+    for (dx, dy), k in L["cells"].items():
+        k = {"gate": "street", "tower": "square"}.get(k, k)
+        if k in ("square", "street", "garden"):
+            out.append(((dx + off) * CELL, -(dy + off) * CELL, k))    # the render's +y is the sim's north
+    return out
+
+
 COL = {"wall": (96, 88, 80), "corner": (70, 62, 56), "ctower": (60, 52, 46), "tower": (120, 60, 50), "gate": (232, 196, 120),
        "square": (214, 206, 186), "street": (196, 186, 164), "garden": (150, 178, 112)}
 NAMES = {"wall": "牆（擋路）", "corner": "牆角（擋路）", "ctower": "角樓 2×2（擋路）", "tower": "大城箭樓 2×2（擋路，拆掉後可走）",
