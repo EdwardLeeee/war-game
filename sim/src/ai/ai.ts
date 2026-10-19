@@ -1897,6 +1897,17 @@ export interface HardPlan {
    */
   foeMemory: boolean;
   foeDecay: number;
+  /**
+   * D-086 A3 (ceo 2026-10-19: in 75830947 the user trained 41 -> 65 out of its sight): with foeMemory, once it has
+   * seen the enemy's soldiers, what it believes in grows by every soldier it trains itself (the enemy trains as fast) (false: no).
+   */
+  foeGrow: boolean;
+  /**
+   * D-086 A3 (ceo 2026-10-19): about to march on the enemy's main city with no enemy soldier seen for this many minutes,
+   * one soldier goes to look first, and the march waits until enemy soldiers are seen, it falls, or PEEK_WALK passes;
+   * then it weighs again (0: never, as before). Not with its population full, nor at the end of an AI game.
+   */
+  peekFirst: number;
   /** D-086 A3 (75830947: food at 9-49 for 12 minutes, farmers 28 -> 8): with farmers under its target, soldiers leave this much food for the next one (0: as before). */
   farmerFood: number;
   /** D-086 A3: wood or food under WOOD_SHORT with food, wood and gold together RICH or more counts as wood short (false: as before). */
@@ -1936,6 +1947,8 @@ export const HARD: HardPlan = {
   hideFar: false,
   foeMemory: false,
   foeDecay: 10,
+  foeGrow: false,
+  peekFirst: 0,
   farmerFood: 0,
   shortEither: false,
 };
@@ -1950,6 +1963,9 @@ const RESCUE_DONE = 600;
 const RESCUE_WALK = 2 * TICKS_PER_MINUTE;
 /** D-086 A3 (plan.hideFar): farmers sent home go back to work once this long passes with no enemy seen by the spot (30 s). */
 const FAR_CLEAR = 600;
+/** D-086 A3 (plan.peekFirst): how long the one sent to look may walk, and how long before another goes. */
+const PEEK_WALK = 3 * TICKS_PER_MINUTE;
+const PEEK_AGAIN = 2 * TICKS_PER_MINUTE;
 /** D-086 A: wood under this is short; food plus gold from this pile up (the research note's measure). */
 const WOOD_SHORT = 50;
 const RICH = 600;
@@ -2103,8 +2119,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let foeMemoTick = 0;
   /** The same in soldiers (for peek only), and what it knew of last think. */
   let foeMemoN = 0;
+  /** plan.foeGrow: its own soldiers counted so far. plan.peekFirst: when it last saw enemy soldiers; the one sent to look, until when, and when another may go. */
+  const ownSeen = new Set<number>();
+  let lastFoeSeen = 0;
+  let peekId = -1;
+  let peekUntil = 0;
+  let peekAgain = 0;
   let known = { worth: 0, n: 0 };
-  const counted = { rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0 };
+  const counted = { rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number): { x: number; y: number } | null {
@@ -2341,6 +2363,22 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         enemyWorth += WORTH[e.type];
       }
       if (enemyMages > 0) lastEnemyMage = tick;
+      if (foes.some((f) => f.order !== Order.Post)) lastFoeSeen = tick;
+      // D-086 A3 (plan.foeGrow): once it has seen them, the enemy grows by what it trains itself.
+      if (plan.foeMemory && plan.foeGrow) {
+        let grown = 0;
+        let grownN = 0;
+        for (const u of soldiers) {
+          if (ownSeen.has(u.id)) continue;
+          ownSeen.add(u.id);
+          grown += WORTH[u.type];
+          grownN++;
+        }
+        if (foeMemo > 0) {
+          foeMemo += grown;
+          foeMemoN += grownN;
+        }
+      }
       // D-086 A3 (plan.foeMemory): the most it knew of at once, shrinking a little each minute.
       if (plan.foeMemory) {
         if (enemyWorth >= foeMemo) {
@@ -2563,7 +2601,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const guarded = new Set([...townGuards.values()].flat());
         const alive = (townGuards.get(id) ?? []).filter((g) => byId.has(g));
         const free = soldiers
-          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison && !rescueSquad.has(s.id))
+          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison && !rescueSquad.has(s.id) && s.id !== peekId)
           .sort((a, b) => (b.type === UnitType.Spearman ? 1 : 0) - (a.type === UnitType.Spearman ? 1 : 0) || dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < t.needed + 1 && free.length > 0) alive.push(free.shift()!.id);
         townGuards.set(id, alive);
@@ -2626,7 +2664,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
       // Hiding in a building (round 7) too: a move would bring it out.
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
+      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -2648,7 +2686,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
 
       // --- the army ------------------------------------------------------------------------------------
-      const army = guarding.size === 0 && rescueSquad.size === 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id) && !rescueSquad.has(u.id));
+      // D-086 A3 (plan.peekFirst): the one sent to look comes home once enemy soldiers are seen, or after PEEK_WALK.
+      if (peekId >= 0) {
+        if (!byId.has(peekId)) {
+          counted.peekFell++;
+          peekId = -1;
+          peekAgain = tick + PEEK_AGAIN;
+        } else if (lastFoeSeen === tick || tick >= peekUntil) {
+          counted[lastFoeSeen === tick ? "peekSaw" : "peekTimeout"]++;
+          out.push({ c: "move", u: [peekId], x: post.x, y: post.y });
+          peekId = -1;
+          peekAgain = tick + PEEK_AGAIN;
+        }
+      }
+      const army =
+        guarding.size === 0 && rescueSquad.size === 0 && peekId < 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id) && !rescueSquad.has(u.id) && u.id !== peekId);
       const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
       let sent = false;
       const send = (x: number, y: number, why: HardMode) => {
@@ -3242,7 +3294,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const strong = armyWorth * 100 >= believed * plan.pushRatio;
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
-        const go =
+        let go =
           (mem.known !== Known.None || endgame || assault) &&
           (endgame
             ? army.length >= ENDGAME_ARMY
@@ -3251,6 +3303,26 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               : (counterReady && army.length >= plan.counterArmy && armyWorth >= believed) ||
                 (army.length >= pushArmy && strong) ||
                 (popFull && army.length >= townArmy + 6));
+        // D-086 A3 (plan.peekFirst): no enemy soldier seen for a while: one goes to look (ignoring enemies on the way), the march waits.
+        if (go && plan.peekFirst > 0 && !endgame && !assault && !popFull && tick - lastFoeSeen > plan.peekFirst * TICKS_PER_MINUTE) {
+          if (peekId >= 0) go = false;
+          else if (tick >= peekAgain) {
+            const kind = (u: HardUnit) => (u.type === UnitType.Cavalry ? 0 : u.type === UnitType.Spearman ? 1 : 2);
+            const pool = army
+              .filter((u) => !detached(u.id) && u.type !== UnitType.Mage)
+              .sort((a, b) => kind(a) - kind(b) || dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+            if (pool.length > 0) {
+              peekId = pool[0].id;
+              peekUntil = tick + PEEK_WALK;
+              out.push({ c: "retreat", u: [peekId], x: enemyHome.cellX, y: enemyHome.cellY });
+              counted.peekSent++;
+              const keep = armyIds.filter((id) => id !== peekId);
+              armyIds.length = 0;
+              armyIds.push(...keep);
+              go = false;
+            }
+          }
+        }
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
         const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
         if (go && toBase!.go) {
