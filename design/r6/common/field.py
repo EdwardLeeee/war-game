@@ -157,6 +157,16 @@ def render(scene, art, scale=3, atlases=None):
         sh = natl.shadow(fr)
         if sh:
             shadows.append((sh[0], sh[1] * s, sh[2] * s, gx, gy))
+    # other pieces (R6-06: a town's paving, houses, landmark, posts): dict(atlas, frame, x, y (the anchor, cells),
+    # front (the footprint's front-edge y, for the order), team, ground)
+    for pc in scene.get("props", []):
+        body, ax, ay = pc["atlas"].body(pc["frame"], pc.get("team", "neutral"))
+        gx, gy = at(pc["x"], pc["y"])
+        entry = ((pc["front"], pc["x"]) if VIEW == "oblique" else (pc["x"] + pc["y"], 0.0), body, ax * s, ay * s, gx, gy)
+        (ground_items if pc.get("ground") else items).append(entry)
+        sh = pc["atlas"].shadow(pc["frame"]) if not pc.get("ground") else None
+        if sh:
+            shadows.append((sh[0], sh[1] * s, sh[2] * s, gx, gy))
     for unit, team, x, y, facing, anim, frame, selected in scene.get("units", []):
         if unit not in uatl:
             uatl[unit] = Atlas(art / "units" / unit / f"{unit}.json")
