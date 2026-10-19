@@ -155,6 +155,22 @@ _SQF = ("found_2x2_E", "house_E_build2", "farm_E_growing", "tree_E_v0", "tree_E_
 TARGETS["sqfield"] = [pc for pc in _prod_buildings("E") + PROD_NODES if pc["name"] in _SQF]
 CAMERA["sqfield"] = proj.OBLIQUE
 
+# R6-06 (the user 2026-10-19: 「阿中立城市沒有圖耶」): the neutral towns, oblique, east (the prototype's towns). 甲: the
+# landmark (towns.tgate) and the low B1-03 pieces round it; 乙: B1-03 as approved (the houses block); the west's
+# landmark once, neutral, as a preview
+_R606 = ([dict(kind="tgate", culture="E", opts=dict(variant=v, state=s), name=f"tgate_E_{n}_{s}")
+          for v, n in ((0, "small"), (1, "large")) for s in ("intact", "ruin")]
+         + [dict(kind="tgate", culture="W", opts=dict(variant=0), name="tgate_W_small_intact")]
+         + [dict(kind="tground", culture="E", opts=dict(plan=layouts.ground_plan(L, h)), name=f"tground_E_{L['name']}_{t}")
+            for L in (layouts.small(), layouts.large()) for t, h in (("A", "garden"), ("B", None))]
+         + [dict(kind=k, culture="E", state=s, opts=dict(variant=v), name=f"{k}_E_{s}_v{v}")
+            for k in ("th22", "th21", "th12") for v in (0, 1) for s in ("intact", "ruin")]
+         + [dict(kind="ttower", culture="E", state="intact", name="ttower_E_intact")]
+         + [dict(kind="tpost", culture="E", opts=dict(state=s), name=f"tpost_E_{s}") for s in ("lantern", "pennant", "fallen")])
+for _i in range(0, len(_R606), 7):
+    TARGETS[f"r606_{_i // 7}"] = _R606[_i:_i + 7]
+    CAMERA[f"r606_{_i // 7}"] = proj.OBLIQUE
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
@@ -164,6 +180,7 @@ FOLDER.update({t: "towns" for t in TARGETS if t.startswith("towns2")})
 FOLDER.update({t: "prod" for t in TARGETS if t.startswith("prod_")})
 FOLDER.update({t: "dir" for t in CAMERA if t.startswith("dir_")})
 FOLDER.update({t: "sqdone" for t in TARGETS if t.startswith(("sqdone_", "sqfield"))})
+FOLDER.update({t: "r606" for t in TARGETS if t.startswith("r606_")})
 
 
 def pieces(target):

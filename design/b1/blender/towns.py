@@ -26,7 +26,7 @@ import states
 
 FOOTPRINT = {"th22": (2, 2), "th21": (2, 1), "th12": (1, 2), "th11": (1, 1), "ttower": (2, 2), "tflag": (1, 1),
              "tpost": (1, 1), "tcart": (1, 1), "ttax": (1, 1), "tlumber": (1, 1), "tground": (1, 1),
-             }
+             "tgate": (4, 1)}
 
 
 def _neutral(P):
@@ -337,3 +337,95 @@ def tground(root, c, variant=0, plan=()):
 
 BUILDERS = {"tground": tground, "th22": th22, "th21": th21, "th12": th12, "th11": th11, "ttower": ttower, "tflag": tflag, "tpost": tpost,
             "tcart": tcart, "ttax": ttax, "tlumber": tlumber}
+
+
+# ---------------------------------------------------------------- R6-06 甲: the town's landmark
+
+def tgate(root, c, variant=0, state="intact"):
+    """R6-06 甲 (the user 2026-10-19: 「阿中立城市沒有圖耶」): the landmark across the street at the front of the
+    town's square, which units walk through: nothing in the sim blocks there, so it must not look as if it did (B1).
+    East: a 牌坊, three bays on four slim red posts, three small hip roofs, the name board and two hangings in the
+    holder's colour (the neutral town's beige is the same player-colour layer, tinted). West (only the neutral look, a
+    preview of the west's towns): a stone arch on slim piers, an attic with the board, the same hangings.
+    variant 0: the small town's (5.6 m, its street is 3 cells); 1: the big city's (7.2 m, its avenue is 4 cells).
+    state: intact; ruin (east: the right-hand bay fallen, the board burnt, the hangings rags). Spans x, on y = 0."""
+    P = kit.palette(c)
+    W = 5.6 if variant == 0 else 7.2
+    up = 0.0 if variant == 0 else 0.6
+    rag = lib.mat("rag", (0.32, 0.3, 0.28), 0.95)
+    ruin = state == "ruin"
+    if c == "W":
+        _arch(root, P, W, up)
+        return
+    xi, xo = W * 0.17, W * 0.46              # inner and outer posts
+    Hc, Ho = 4.4 + up, 3.6 + up              # the middle bay's posts and the side bays'
+    for k, (x, h, r) in enumerate(((-xo, Ho, 0.15), (-xi, Hc, 0.17), (xi, Hc, 0.17), (xo, Ho, 0.15))):
+        box(f"tg_base{k}", (0.55, 0.62, 0.42), P["stone"], root, loc=(x, 0, 0.21), bevel=0.04)
+        if ruin and k == 3:                  # the right-hand post broken off, lying across the street
+            rod("tg_stump", (x, 0, 0.42), (x, 0, 1.3), r, P["char"], parent=root)
+            rod("tg_fallen", (x - 0.2, -0.6, 0.18), (x - 2.6, -1.9, 0.16), r, P["char"], parent=root)
+            continue
+        cyl(f"tg_post{k}", r, h - 0.42, P["post"], root, loc=(x, 0, 0.42), segs=12)
+        if k in (1, 2):                      # drum stones holding the middle posts, front and back
+            for sy in (-1, 1):
+                cyl(f"tg_drum{k}{sy}", 0.26, 0.16, P["stone"], root, loc=(x, sy * 0.42, 0.62), rot=(90, 0, 0),
+                    at=(0, 0, -0.08), segs=14)
+    # the middle bay: two beams with the name board between, a roof on top
+    box("tg_beam1", (2 * xi + 0.7, 0.3, 0.32), P["beam"], root, loc=(0, 0, Hc - 0.35))
+    box("tg_beam2", (2 * xi + 0.5, 0.26, 0.26), P["beam"], root, loc=(0, 0, Hc - 1.45))
+    if ruin:
+        box("tg_board", (2 * xi * 0.62, 0.1, 0.62), P["char"], root, loc=(-0.25, -0.16, Hc - 0.9), rot=(0, 9, 0))
+    else:
+        box("tg_rim", (2 * xi * 0.72, 0.08, 0.76), P["gold"], root, loc=(0, -0.13, Hc - 0.9))
+        box("tg_board", (2 * xi * 0.64, 0.1, 0.62), P["team"], root, loc=(0, -0.17, Hc - 0.9))
+    kit.roof_e("tg_roofc", P, root, 0, 0, Hc - 0.18, 2 * xi + 1.1, 0.95, 0.75, over=0.3, curl=0.45)
+    # the side bays: a beam and a small roof each, the hangings below (well above a soldier's head)
+    for sx in (-1, 1):
+        mid = sx * (xi + xo) / 2
+        span = xo - xi + 0.5
+        if ruin and sx > 0:                  # its roof and beam on the ground
+            box("tg_beamr", (span, 0.26, 0.28), P["char"], root, loc=(mid + 0.4, -0.9, 0.16), rot=(0, 0, 18))
+            g = lib.empty("tg_roofr_fall", parent=root, loc=(mid + 0.2, -1.2, 0.35), rot=(0, 24, 12))
+            kit.roof_e("tg_roofr", P, g, 0, 0, 0, span + 0.5, 0.85, 0.6, over=0.25, curl=0.35)
+            continue
+        box(f"tg_beams{sx}", (span, 0.26, 0.28), P["beam"], root, loc=(mid, 0, Ho - 0.3))
+        kit.roof_e(f"tg_roofs{sx}", P, root, mid, 0, Ho - 0.16, span + 0.5, 0.85, 0.6, over=0.25, curl=0.35)
+        if ruin:
+            pts = [(-0.3, 0), (0.3, 0), (0.22, -0.7), (-0.05, -0.5), (-0.3, -0.85)]
+            slab(f"tg_rag{sx}", pts, 0.02, rag, parent=root, loc=(mid, -0.2, Ho - 0.5), plane="XZ")
+        else:
+            kit.drape(f"tg_hang{sx}", P, root, "y", mid, Ho - 0.48, xo - xi - 0.35, 1.3, y0=-0.08)
+    if not ruin:                              # lanterns under the middle beam
+        lam = lib.mat("paper_lantern", (0.94, 0.9, 0.78), 0.8, emission=0.5)
+        for sx in (-1, 1):
+            rod(f"tg_lr{sx}", (sx * xi * 0.55, -0.1, Hc - 1.58), (sx * xi * 0.55, -0.1, Hc - 1.78), 0.012, P["rope"],
+                parent=root, outline=False)
+            sphere(f"tg_lan{sx}", 0.22, lam, root, loc=(sx * xi * 0.55, -0.1, Hc - 1.98), scale=(1, 1, 1.25))
+
+
+def _arch(root, P, W, up):
+    """The west's landmark: a stone arch on slim piers, an attic with the board, two hangings."""
+    H = 3.4 + up                            # the springing of the arch
+    pw = 0.75
+    r = W / 2 - pw                          # the opening's half width = the arch's radius
+    for sx in (-1, 1):
+        x = sx * (W / 2 - pw / 2)
+        box(f"ta_pier{sx}", (pw, 0.9, H), P["stone"], root, loc=(x, 0, H / 2), bevel=0.04)
+        box(f"ta_cap{sx}", (pw + 0.16, 1.0, 0.16), P["brick"], root, loc=(x, 0, H + 0.08))
+        kit.drape(f"ta_hang{sx}", P, root, "y", x, H - 0.35, pw - 0.1, 1.7, y0=-0.45)
+    n = 11
+    for k in range(n):                      # the voussoirs round the opening
+        a = math.pi * (k + 0.5) / n
+        x, z = r * math.cos(a), H + 0.16 + r * math.sin(a) * 0.55
+        box(f"ta_v{k}", (0.42, 0.9, 0.34), P["brick"], root, loc=(x, 0, z), rot=(0, -math.degrees(a - math.pi / 2) * 0.8, 0))
+    top = H + 0.16 + r * 0.55 + 0.2
+    for sx in (-1, 1):                      # the spandrels over the piers
+        box(f"ta_sp{sx}", (pw + r * 0.45, 0.9, top - H - 0.16), P["stone"], root,
+            loc=(sx * (W / 2 - (pw + r * 0.45) / 2), 0, (top + H + 0.16) / 2))
+    box("ta_attic", (W + 0.2, 1.0, 1.0), P["stone"], root, loc=(0, 0, top + 0.5), bevel=0.03)
+    box("ta_cornice", (W + 0.45, 1.2, 0.18), P["brick"], root, loc=(0, 0, top + 1.09))
+    box("ta_rim", (W * 0.5 + 0.12, 0.06, 0.66), P["gold"], root, loc=(0, -0.52, top + 0.5))
+    box("ta_board", (W * 0.5, 0.08, 0.54), P["team"], root, loc=(0, -0.55, top + 0.5))
+
+
+BUILDERS["tgate"] = tgate
