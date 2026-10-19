@@ -171,8 +171,10 @@ for pc in job["pieces"]:
         states.apply(root, kind, c, st, **pc.get("state_opts", {}))
     elif kind in HOUSES and st not in ("done", "intact"):
         towns.house_state(root, kind, c, st)
-    elif kind in ("ttower", "ttower3") and st not in ("done", "intact"):
+    elif kind == "ttower" and st not in ("done", "intact"):
         towns.tower_state(root, c, st)
+    elif kind == "ttower3":
+        castle.tower3_state(root, c, st)
     pts = corners()
     L, R, U, D = extents(pts)
     W, H = int(math.ceil((L + R) * ppm)), int(math.ceil((U + D) * ppm))

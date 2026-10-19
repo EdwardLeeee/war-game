@@ -336,10 +336,31 @@ def sw_gate_y(root, c, variant=0, state="intact"):
 
 def ttower3(root, c, variant=0):
     """The big city's tower of the random maps' neighbouring spawns, 3 x 3 cells (sim GameMap.towerSize 3, D-074):
-    the 2 x 2 tower (towns.ttower) widened to 3 cells and a little taller; its states as the 2 x 2's (towns.tower_state)."""
+    the 2 x 2 tower (towns.ttower) widened to 3 cells and a little taller, under its own scaled empty so the states
+    (tower3_state) put the fire and the rubble where the scaled tower is."""
     import towns
-    towns.ttower(root, c)
-    root.scale = (1.5, 1.5, 1.3)
+    g = lib.empty("tt3_scaled", parent=root)
+    towns.ttower(g, c)
+    g.scale = (1.5, 1.5, 1.3)
+
+
+def tower3_state(root, c, state):
+    """towns.tower_state for the 3 x 3 tower: the fire at its top, or the rubble over its 3 x 3 cells."""
+    if state in ("done", "intact"):
+        return
+    import bpy
+    import states
+    P = kit.palette(c)
+    bpy.context.view_layer.update()
+    if state == "rubble":
+        for ob in list(kit.parts_under(root)):
+            if states._bbox(ob)[5] > 0.3:
+                states._drop(ob)
+        states.rubble(root, P, c, 3 * CELL, 3 * CELL, seed=27 + (0 if c == "E" else 3))
+    elif state == "damaged":
+        states.fire_at_top(root, P, seed=37 + (0 if c == "E" else 3))
+    else:
+        raise ValueError(state)
 
 
 def gate_x3(root, c, variant=0, state="intact"):

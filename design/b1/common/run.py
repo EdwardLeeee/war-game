@@ -201,6 +201,8 @@ _V4 = ([dict(kind=k, culture=c, opts=dict(state=s), name=f"castle_{k}_{c}_{s}", 
           for c in CULTURES for t in ("square", "street", "garden")]
        + [dict(kind="ttower3", culture=c, state=st, name=f"town_tower3_{c}_{s}")
           for c in CULTURES for s, st in (("done", "intact"), ("damaged", "damaged"), ("rubble", "rubble"))])
+TARGETS["prod_castle_t3"] = [pc for pc in _V4 if pc["kind"] == "ttower3"]     # again: the fire sat above the roof
+CAMERA["prod_castle_t3"] = proj.OBLIQUE
 for _i in range(0, len(_V4), 8):
     TARGETS[f"prod_castle_{_i // 8}"] = _V4[_i:_i + 8]
     CAMERA[f"prod_castle_{_i // 8}"] = proj.OBLIQUE
