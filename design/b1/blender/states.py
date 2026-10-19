@@ -530,7 +530,9 @@ def apply(root, kind, c, state, **opts):
             smoke(root, f"dm_smoke{k}", (cc.x, cc.y, cc.z + 0.6), height=3.0, r0=0.35, r1=0.9, n=11, dark=0.16, alpha=0.9)
         for k, (g, (cx, cy, bw, bd, z0, wh)) in enumerate(blocks[:2]):
             M = g.matrix_world
-            scorch(root, f"dm_scY{k}", tuple(M @ Vector((bw * 0.15, -bd / 2 - 0.13, wh * 0.45))), "y", 1.3, 1.0,
+            # the soot on the wall itself, behind the hangings (art-v3: a hanging moved to the front face must not be
+            # blacked out; house_E_damaged's player colour fell to 4.9%)
+            scorch(root, f"dm_scY{k}", tuple(M @ Vector((bw * 0.15, -bd / 2 - 0.035, wh * 0.45))), "y", 1.3, 1.0,
                    seed=seed + k)
             scorch(root, f"dm_scX{k}", tuple(M @ Vector((-bw / 2 - 0.13, bd * 0.1, wh * 0.4))), "x", 1.1, 0.9,
                    seed=seed + k + 9)

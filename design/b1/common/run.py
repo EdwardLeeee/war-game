@@ -123,6 +123,11 @@ for _c in CULTURES:
         TARGETS[f"prod_{_c}_{_i // PROD_CHUNK}"] = _all[_i:_i + PROD_CHUNK]
 for _i in range(0, len(PROD_NODES), PROD_CHUNK):
     TARGETS[f"prod_nodes_{_i // PROD_CHUNK}"] = PROD_NODES[_i:_i + PROD_CHUNK]
+# art-v3 again (2026-10-19): every damaged look, with the soot behind the hangings (blender/states.py damaged_a)
+for _c in CULTURES:
+    _dm = [pc for pc in _prod_buildings(_c) if pc["name"].endswith("_damaged")]
+    for _i in range(0, len(_dm), 6):
+        TARGETS[f"prod_dmg_{_c}_{_i // 6}"] = _dm[_i:_i + 6]
 # again after the first run (2026-10-18): the pieces states.fire_at_top burns, without the soot that floated
 TARGETS["prod_fire"] = [pc for _c in CULTURES for pc in _prod_buildings(_c)
                         if pc["name"] in ("arrow_tower_W_damaged", "town_tower_E_damaged", "town_tower_W_damaged")]
