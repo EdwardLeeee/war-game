@@ -101,6 +101,9 @@ export const MOCK_RULES: Rules = {
   mageCap: 6,
   maxPopulation: 120,
   queueMax: 5,
+  // The castles round the towns (D-089, PROTOCOL.md 3.5), as the simulation sends them; the big
+  // city's for its tower one up and left of its centre. The fake world's ground has no walls: only the picture.
+  towns: rules().towns,
 };
 
 /** `?r7=1`: round 7's switches on, with the simulation's values. */

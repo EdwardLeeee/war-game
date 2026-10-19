@@ -59,6 +59,17 @@ export class Placement {
  * town we govern or repair (sim/PROTOCOL.md section 7). Checked here as well, so the preview is
  * red there whatever `checkPlacement` of this version says. Other buildings: always true.
  */
+/** The footprint is on a castle's wall (D-089: the simulation marks it Wall, and Blocked: nothing is built there). */
+export function onWall(grid: PlacementGrid, building: Pick<BuildingInfo, "size">, cellX: number, cellY: number): boolean {
+  const n = grid.size;
+  for (let y = cellY; y < cellY + building.size; y++) {
+    for (let x = cellX; x < cellX + building.size; x++) {
+      if (x >= 0 && y >= 0 && x < n && y < n && (grid.cells[y * n + x] & PlaceBit.Wall) !== 0) return true;
+    }
+  }
+  return false;
+}
+
 export function towerLandOk(grid: PlacementGrid, building: Pick<BuildingInfo, "type" | "size">, cellX: number, cellY: number): boolean {
   if (building.type !== BuildingType.ArrowTower) return true;
   const n = grid.size;

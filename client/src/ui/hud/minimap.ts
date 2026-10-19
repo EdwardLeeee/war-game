@@ -116,6 +116,25 @@ export class Minimap {
       d[i + 1] = c[1];
       d[i + 2] = c[2];
     };
+    // Castles (D-089): their walls in their owner's colour, once explored (as rock is), darker out of sight.
+    for (const info of view.knownTowns.values()) {
+      const c = view.castleOf(info);
+      if (c === null) continue;
+      const o = view.townRow(info.id);
+      const tint = rgb(o < 0 ? NEUTRAL_TINT : townLook(snap.towns[o + T.state], snap.towns[o + T.owner], view.me).tint);
+      for (const [dx, dy] of c.wall) {
+        const x = info.cellX + dx;
+        const y = info.cellY + dy;
+        if (x < 0 || y < 0 || x >= size || y >= size) continue;
+        const i = y * size + x;
+        const f = fog === null ? Fog.Visible : fog[i];
+        const k = f === Fog.Visible ? 1 : f === Fog.Explored ? 0.55 : 0;
+        if (k === 0) continue;
+        d[i * 4] = tint[0] * k;
+        d[i * 4 + 1] = tint[1] * k;
+        d[i * 4 + 2] = tint[2] * k;
+      }
+    }
     for (const row of view.nodes.values()) {
       if (row[N.amount] <= 0) continue;
       const kind = row[N.kind];
@@ -146,7 +165,8 @@ export class Minimap {
     ctx.lineWidth = Math.max(1, k * 0.8);
     for (let o = 0; o < t.length; o += TOWN_STRIDE) {
       const info = view.knownTowns.get(t[o + T.id]);
-      if (info === undefined) continue;
+      // A castle shows by its walls (above); before them, a ring.
+      if (info === undefined || view.castleOf(info) !== null) continue;
       ctx.strokeStyle = css(townLook(t[o + T.state], t[o + T.owner], view.me).tint);
       ctx.beginPath();
       ctx.arc((info.cellX + 0.5) * k, (info.cellY + 0.5) * k, info.radius * k, 0, Math.PI * 2);

@@ -71,7 +71,7 @@ import { PendingOrders } from "./pending.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText, type ToastKind } from "../ui/overlays.ts";
-import { Placement, towerLandOk } from "../ui/placement.ts";
+import { onWall, Placement, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
@@ -131,6 +131,8 @@ export interface GameOptions {
   culture?: Culture;
   /** How the ground lies (a test page's ?view=, D-088); the default when not given. */
   view?: Projection["kind"];
+  /** Units behind a castle's wall as their rims only (?ghost=outline, D-089), instead of whole. */
+  ghost?: "outline";
   /** This build has atlases to choose in the 量測 panel. */
   artAvailable?: boolean;
   /** The 量測 panel's 美術 was changed since this game began: 量測 starts a game of its own. */
@@ -148,6 +150,8 @@ export interface ExportedLog {
 
 /** Why a 箭樓 preview is red off TowerLand (round 7, D-061). */
 export const TOWER_LAND_TEXT = "箭樓要蓋在主城或治理的城鎮附近";
+/** Why the preview is red on a castle's wall (D-089). */
+export const WALL_TEXT = "城牆上不能蓋";
 /** With outposts on (D-080), arrow towers may also go by our outposts. */
 export const TOWER_LAND_TEXT_OUTPOST = "箭樓要蓋在主城、治理的城鎮或哨所附近";
 
@@ -418,6 +422,12 @@ export class Game implements GestureHost {
   /** Each town's wall as drawn (D-084), for the test hook. */
   get townWallsForTest(): { id: number; x: number; y: number; side: number; visible: boolean }[] {
     return this.renderer?.townWalls ?? [];
+  }
+
+  /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
+  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null {
+    const r = this.renderer;
+    return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount };
   }
 
   /** Terrain repaints on exploring rock (random map, D-074), for the test hook. */
@@ -765,7 +775,12 @@ export class Game implements GestureHost {
   }
 
   private townArea(town: number): TownArea | null {
-    return this.view?.knownTowns.get(town) ?? null;
+    const view = this.view;
+    const t = view?.knownTowns.get(town);
+    if (view === null || t === undefined) return null;
+    // Inside its walls (D-089), as the simulation counts a garrison.
+    const c = view.castleOf(t);
+    return { ...t, inside: c === null ? null : { x0: t.cellX + c.inside.x0, y0: t.cellY + c.inside.y0, x1: t.cellX + c.inside.x1, y1: t.cellY + c.inside.y1 } };
   }
 
   /** How many soldiers stay by default: the least a governed town needs (GDD §5: small 1, large 3). */
@@ -1323,6 +1338,7 @@ export class Game implements GestureHost {
         const mine = this.culture;
         this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), projection);
         this.renderer.pending = this.pending;
+        if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
@@ -1856,7 +1872,9 @@ export class Game implements GestureHost {
     // 箭樓 off TowerLand (round 7): why the spot is red comes first.
     const offTowerLand = view.placement !== null && !towerLandOk(view.placement, p.info, p.cellX, p.cellY);
     const landText = outpostSlots(view.rules) > 0 ? TOWER_LAND_TEXT_OUTPOST : TOWER_LAND_TEXT;
-    this.overlays.promptWarning(offTowerLand ? landText : town === null ? null : MILITIA_WARNING);
+    // On a castle's wall (D-089): that first, the simulation's own reason.
+    const wall = view.placement !== null && onWall(view.placement, p.info, p.cellX, p.cellY);
+    this.overlays.promptWarning(wall ? WALL_TEXT : offTowerLand ? landText : town === null ? null : MILITIA_WARNING);
   }
 
   private showPlaceButtons(): void {

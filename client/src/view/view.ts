@@ -31,6 +31,7 @@ import {
   TownSize,
   TownState,
   Terrain,
+  type TownCastle,
   UNIT_STRIDE,
   UnitField as U,
   UnitFlag,
@@ -89,6 +90,8 @@ export class GameView implements IntentWorld {
   projection: Projection = TOP;
   /** The building whose picture (taller than its footprint, D-085) is under a point of the plane, from the renderer; null: none drawn. */
   pictureAt: ((px: number, py: number) => number | null) | null = null;
+  /** The town whose wall's picture is under a point of the plane (D-089: a stone wall stands tall over the cells behind it), or null. */
+  wallPictureAt: ((px: number, py: number) => number | null) | null = null;
   /** The building whose picture, under a point of the plane, stands in front of a unit at (ux, uy) (it hides the unit there). */
   coverAt: ((px: number, py: number, ux: number, uy: number) => number | null) | null = null;
 
@@ -147,6 +150,28 @@ export class GameView implements IntentWorld {
     this.pruneSelection();
   }
 
+  /** A town's castle (D-089, PROTOCOL.md 3.5): offsets from its centre cell, as this game's rules have it; null before #239's rules. */
+  castleOf(town: { size: number }): TownCastle | null {
+    return this.rules.towns?.[town.size]?.castle ?? null;
+  }
+
+  /** The cells a town's castle covers, walls and gates included (map cells, inclusive), or null with no castle. */
+  castleBox(town: { size: number; cellX: number; cellY: number }): { x0: number; y0: number; x1: number; y1: number } | null {
+    const c = this.castleOf(town);
+    if (c === null) return null;
+    let x0 = c.inside.x0;
+    let y0 = c.inside.y0;
+    let x1 = c.inside.x1;
+    let y1 = c.inside.y1;
+    for (const [x, y] of [...c.wall, ...c.gate]) {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+    return { x0: town.cellX + x0, y0: town.cellY + y0, x1: town.cellX + x1, y1: town.cellY + y1 };
+  }
+
   /** Towns explored (D-074): each row carries its place; the radius is the rules' for its size. */
   private learnTowns(t: Int32Array): void {
     for (let o = 0; o < t.length; o += TOWN_STRIDE) {
@@ -185,7 +210,8 @@ export class GameView implements IntentWorld {
         this.rocks[i] = 0;
         changed = true;
       }
-      if (this.rocks[i] === 1 || (cells[i] & PlaceBit.Blocked) === 0 || this.nodeAt[i] >= 0 || built[i] === 1) continue;
+      // A castle's wall (D-089) is Blocked too, and drawn as a wall: not rock.
+      if (this.rocks[i] === 1 || (cells[i] & PlaceBit.Blocked) === 0 || (cells[i] & PlaceBit.Wall) !== 0 || this.nodeAt[i] >= 0 || built[i] === 1) continue;
       this.rocks[i] = 1;
       changed = true;
     }
@@ -305,11 +331,17 @@ export class GameView implements IntentWorld {
     const pictured = this.buildingById(this.pictureAt?.(t.x, t.y) ?? null);
     if (pictured !== null) return pictured;
 
+    // A town (D-089): within its walls, on them, or on their pictures (a stone wall stands tall
+    // over the cells behind it): only once no unit, building or node is there.
+    const walled = this.wallPictureAt?.(t.x, t.y) ?? null;
     for (const town of this.knownTowns.values()) {
-      const tx = (town.cellX + 0.5) * TILE_PX;
-      const ty = (town.cellY + 0.5) * TILE_PX;
-      const tr = town.radius * TILE_PX;
-      if ((wx - tx) ** 2 + (wy - ty) ** 2 <= tr * tr) {
+      const box = this.castleBox(town);
+      const hit =
+        town.id === walled ||
+        (box !== null
+          ? cx >= box.x0 && cx <= box.x1 && cy >= box.y0 && cy <= box.y1
+          : (wx - (town.cellX + 0.5) * TILE_PX) ** 2 + (wy - (town.cellY + 0.5) * TILE_PX) ** 2 <= (town.radius * TILE_PX) ** 2);
+      if (hit) {
         const row = this.townRow(town.id);
         const owner = row < 0 ? NO_OWNER : snap.towns[row + T.owner];
         return { kind: "town", id: town.id, owner, type: town.size };

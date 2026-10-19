@@ -5,6 +5,7 @@
 
 import { Assets, Rectangle, Texture } from "pixi.js";
 import { ATLAS_NAMES, type AtlasJson, type EffectsJson, type FrameRect, parseAtlas, parseEffects } from "../art/spec.ts";
+import { type CastleJson, parseCastle } from "../art/castle.ts";
 import { type BuildingsJson, type NodesJson, parseBuildings, parseNodes, type Side } from "../art/structures.ts";
 
 export type ArtLayer = "color" | "team" | "shadow" | "fx" | "shield";
@@ -33,6 +34,9 @@ export interface UnitArt {
   nodes: NodesJson | null;
   buildingFrame(side: Side, layer: "color" | "team" | "shadow", name: string): ArtFrame | null;
   nodeFrame(layer: "color" | "shadow", name: string): ArtFrame | null;
+  /** The castles' walls (art-v4 on, D-089): 東陸's only, as the prototype's towns all look (GDD section 12); null: drawn as blocks. */
+  castle: CastleJson | null;
+  castleFrame(layer: "color" | "team" | "shadow", name: string): ArtFrame | null;
   destroy(): void;
 }
 
@@ -94,6 +98,8 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
   const buildingPages = new Map<string, Texture[]>();
   let nodes: NodesJson | null = null;
   const nodePages = new Map<string, Texture[]>();
+  let castle: CastleJson | null = null;
+  const castlePages = new Map<string, Texture[]>();
   const pagesOf = async (dir: string, files: string[]): Promise<Texture[]> => {
     const list = files.map((f) => `${dir}${f}`);
     urls.push(...list);
@@ -119,6 +125,16 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
       }
       nodes = n;
       for (const layer of ["color", "shadow"] as const) nodePages.set(layer, await pagesOf(`${base}nodes/`, n.pages[layer]));
+    })(),
+    (async () => {
+      let c: CastleJson;
+      try {
+        c = parseCastle(await json(`${base}castle/castle_E.json`));
+      } catch {
+        return;
+      }
+      castle = c;
+      for (const layer of ["color", "team", "shadow"] as const) castlePages.set(layer, await pagesOf(`${base}castle/`, c.pages[layer]));
     })(),
   ]);
   const pxPerM = atlases.values().next().value?.px_per_m ?? 60;
@@ -162,6 +178,19 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
       const table = b === undefined ? undefined : layer === "color" ? b.frames : layer === "team" ? b.team : b.shadows;
       const r = table?.[name];
       f = r === undefined ? null : cut(buildingPages.get(`${side}|${layer}`)?.[r.page], r);
+      cache.set(key, f);
+      return f;
+    },
+    get castle() {
+      return castle;
+    },
+    castleFrame(layer, name) {
+      const key = `castle|${layer}|${name}`;
+      let f = cache.get(key);
+      if (f !== undefined) return f;
+      const c = castle as CastleJson | null;
+      const r = c === null ? undefined : (layer === "color" ? c.frames : layer === "team" ? c.team : c.shadows)[name];
+      f = r === undefined ? null : cut(castlePages.get(layer)?.[r.page], r);
       cache.set(key, f);
       return f;
     },

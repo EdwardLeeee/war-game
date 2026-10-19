@@ -144,7 +144,8 @@ export class ArtStructures {
   private entry(type: number, owner: number): { side: Side; entry: BuildingEntry } | null {
     const side = this.side(type, owner);
     const json = this.art.buildings[side];
-    const entry = json === undefined ? undefined : buildingEntry(json, type);
+    // The rules' size for this map (the big city's tower is 3 × 3 with neighbouring spawns, D-074).
+    const entry = json === undefined ? undefined : buildingEntry(json, type, this.view.rules.buildings[type]?.size);
     return entry === undefined ? null : { side, entry };
   }
 
