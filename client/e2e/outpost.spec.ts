@@ -147,7 +147,7 @@ test("駐守：選了槍兵和遠程兵，按駐守只有槍兵去；點錯地�
   await expect.poll(async () => (await units(page)).filter((u) => spear.slice(0, 2).includes(u.id)).every((u) => u.order === 10)).toBe(true);
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0].filter((m) => spear.slice(0, 2).includes(m))).toEqual([]);
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0].length).toBe(3);
-  await expect(armyButton(page)).toHaveText(`全軍 ${before - 2}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${before - 2}`);
 });
 
 test("敵人的哨所：看得到時寫堅守中；沒開哨所的開關時，建造選單沒有哨所、選了槍兵也沒有駐守（D-080）", async ({ page }, info) => {

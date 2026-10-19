@@ -1,8 +1,9 @@
 // Top-right game controls (GDD §10 草稿: 右上 暫停、速度、選單): speed cycles 正常 → 快 → 慢,
 // 暫停 / 繼續, and a banner while paused (GDD §11: while paused you can still select and
-// give orders). Temporary prototype interface; the menu comes with the HUD shell.
+// give orders). R6-11's look (ui/r6.css); the menu comes with the HUD shell.
 
 import { SPEED_TPS } from "../params.ts";
+import { dress, type IconName } from "./icons.ts";
 
 export type SpeedName = keyof typeof SPEED_TPS;
 
@@ -20,6 +21,8 @@ export function nextSpeed(s: SpeedName): SpeedName {
   return ORDER[(ORDER.indexOf(s) + 1) % ORDER.length];
 }
 
+const SPEED_ICON: Record<SpeedName, IconName> = { slow: "slow", normal: "speed", fast: "fast" };
+
 export interface ControlHandlers {
   togglePause(): void;
   cycleSpeed(): void;
@@ -36,16 +39,18 @@ export class Controls {
     this.bar = document.createElement("div");
     this.bar.className = "top-right";
     hud.appendChild(this.bar);
+    // R6-11: 52 × 44, the icon over the word; 暫停 the main one (gold).
     this.speedBtn = document.createElement("button");
     this.speedBtn.type = "button";
-    this.speedBtn.className = "secondary";
+    this.speedBtn.className = "b sec";
     this.speedBtn.addEventListener("click", () => h.cycleSpeed());
     this.pauseBtn = document.createElement("button");
     this.pauseBtn.type = "button";
+    this.pauseBtn.className = "b pri";
     this.pauseBtn.addEventListener("click", () => h.togglePause());
     this.bar.append(this.speedBtn, this.pauseBtn);
     this.banner = document.createElement("div");
-    this.banner.className = "paused-banner";
+    this.banner.className = "paused-banner panel";
     this.banner.setAttribute("role", "status");
     this.banner.textContent = "暫停中：仍可下指令";
     hud.appendChild(this.banner);
@@ -54,11 +59,12 @@ export class Controls {
   }
 
   setSpeed(s: SpeedName): void {
-    this.speedBtn.textContent = `速度 ${SPEED_LABEL[s]}`;
+    // The word is the speed only (正常, 快, 慢); its name says what it is.
+    dress(this.speedBtn, { ic: SPEED_ICON[s], label: SPEED_LABEL[s], name: `速度 ${SPEED_LABEL[s]}` });
   }
 
   setPaused(paused: boolean): void {
-    this.pauseBtn.textContent = paused ? "繼續" : "暫停";
+    dress(this.pauseBtn, { ic: paused ? "play" : "pause", label: paused ? "繼續" : "暫停" });
     this.banner.hidden = !paused;
   }
 }

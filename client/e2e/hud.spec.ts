@@ -141,7 +141,7 @@ for (const size of [
     const [armyBtn] = await visibleBoxes(page, ".army-btn");
     const apart = Math.max(armyBtn.x - (retreatAll.x + retreatAll.width), retreatAll.x - (armyBtn.x + armyBtn.width), armyBtn.y - (retreatAll.y + retreatAll.height), retreatAll.y - (armyBtn.y + armyBtn.height));
     expect(apart, "全軍撤退 far from 全軍").toBeGreaterThan(100);
-    await expect(page.locator(".res-bar")).toHaveText(/^糧 200　木 200　金 100　晶 20　人口 \d+\/20　時間 \d+:\d\d$/);
+    await expect(page.locator(".res-bar")).toHaveAttribute("aria-label", /^糧 200　木 200　金 100　晶 20　人口 \d+\/20　時間 \d+:\d\d$/);
     await shot(page, info, `hud-${size.who}-${width}x${height}`);
   });
 }
@@ -280,7 +280,7 @@ for (const viewport of [null, FULL_SCREEN]) {
     expect(await card.evaluate((c) => c.scrollHeight - c.clientHeight), "the menu does not scroll").toBeLessThanOrEqual(1);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     const boxes = await visibleBoxes(page, ".menu button");
-    expect(boxes.map((b) => b.label)).toEqual(["魔晶怎麼拿", "兵種相剋", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
+    expect(boxes.map((b) => b.label)).toEqual(["魔晶怎麼拿", "兵種相剋", "設定", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
     for (const b of boxes) {
       expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
       expect(b.x, `${b.label} left`).toBeGreaterThanOrEqual(IPHONE_SAFE.left);
@@ -529,7 +529,7 @@ test("閒置村民：點一下跳到下一個並選取，長按全部選取", as
 
 test("全軍：選取所有軍隊；按鈕上寫會選到幾名（ceo 2026-10-03）", async ({ page }) => {
   const army = await ownIds(page, [1, 2, 3]);
-  await expect(armyButton(page)).toHaveText(`全軍 ${army.length}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${army.length}`);
   await armyButton(page).tap();
   await expect.poll(() => selection(page)).toEqual({ units: army, building: null });
 });
@@ -537,10 +537,10 @@ test("全軍：選取所有軍隊；按鈕上寫會選到幾名（ceo 2026-10-03
 test("遊戲時間：資源列最後一項，開局後會前進，暫停時不動；是遊戲時間，每秒 20 tick（ceo 2026-10-03）", async ({ page }) => {
   const bar = page.locator(".res-bar");
   const seconds = async () => {
-    const m = /　時間 (\d+):(\d\d)$/.exec((await bar.textContent()) ?? "");
+    const m = /　時間 (\d+):(\d\d)$/.exec((await bar.getAttribute("aria-label")) ?? "");
     return m === null ? -1 : Number(m[1]) * 60 + Number(m[2]);
   };
-  await expect(bar).toHaveText(/人口 \d+\/\d+　時間 \d+:\d\d$/);
+  await expect(bar).toHaveAttribute("aria-label", /人口 \d+\/\d+　時間 \d+:\d\d$/);
   const tick = (await page.evaluate(() => window.__proto?.game?.header().tick)) ?? -1;
   expect(Math.abs((await seconds()) - tick / 20), "the simulation's ticks, 20 a second").toBeLessThanOrEqual(1);
   const start = await seconds();
@@ -556,17 +556,19 @@ test("遊戲時間：資源列最後一項，開局後會前進，暫停時不�
   await expect.poll(seconds, { timeout: 5000 }).toBeGreaterThan(paused);
 });
 
-test("遊戲時間：畫面窄到放不下時，只留數字，不換行、不碰到右上的按鈕", async ({ page }, info) => {
+test("遊戲時間：畫面窄到放不下時，先拿掉訓練中的字、再拿掉時鐘的圖示，不換行、不碰到右上的按鈕", async ({ page }, info) => {
   await injectSafeArea(page);
   const bar = page.locator(".res-bar");
-  await expect(bar).toHaveText(/　時間 \d+:\d\d$/);
+  await expect(bar).toHaveAttribute("aria-label", /　時間 \d+:\d\d$/);
   const [full] = await visibleBoxes(page, ".res-bar");
   const [controls] = await visibleBoxes(page, ".top-right");
   const size = page.viewportSize() ?? { width: 0, height: 0 };
-  // Narrow the page until the full line misses its room (the gap before the buttons is 8) by 10 px.
+  // Narrow the page until the full bar misses its room (the gap before the buttons is 8) by 10 px.
   const room = controls.x - full.x - 8;
   await page.setViewportSize({ width: Math.floor(size.width - (room - (full.width - 10))), height: size.height });
-  await expect(bar).toHaveText(/人口 \d+\/20　\d+:\d\d$/);
+  await expect(bar).toHaveClass(/no-clock-icon/);
+  // Its name is the whole line still.
+  await expect(bar).toHaveAttribute("aria-label", /人口 \d+\/20　時間 \d+:\d\d$/);
   const [short] = await visibleBoxes(page, ".res-bar");
   const [after] = await visibleBoxes(page, ".top-right");
   expect(short.height, "one line").toBe(full.height);
@@ -895,7 +897,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   const rest = spear.filter((id) => !inside.includes(id));
   expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(rest);
   const army = (await ownIds(page, [1, 2, 3])).filter((id) => !inside.includes(id));
-  await expect(armyButton(page), "the garrison left out").toHaveText(`全軍 ${army.length}`);
+  await expect(armyButton(page), "the garrison left out").toHaveAccessibleName(`全軍 ${army.length}`);
   await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await select(page, []);
@@ -967,7 +969,7 @@ test("留守：搶也預設留最少駐軍數（小鎮 1 名，D-084）；所有
   for (let i = 1; i < army.length; i++) await more.tap();
   await expect(panel.getByRole("status", { name: "留守幾名" })).toHaveText(`${army.length}`);
   expect((await garrison(page, 0)).slice().sort((x, y) => x - y)).toEqual(army);
-  await expect(armyButton(page)).toHaveText("全軍 0");
+  await expect(armyButton(page)).toHaveAccessibleName("全軍 0");
   await armyButton(page).tap();
   await expect(toast(page, "所有的兵都在留守")).toBeVisible();
   await expect.poll(async () => (await selection(page))?.units).toEqual([]);
@@ -1007,12 +1009,12 @@ test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance").at(-1)).toMatchObject({ c: "stance", u: [inside[0]], stance: 1, auto: true });
   expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).not.toContain(inside[0]);
   const army = await ownIds(page, [1, 2, 3]);
-  await expect(armyButton(page)).toHaveText(`全軍 ${army.length - 1}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${army.length - 1}`);
   // Plundered: ruins. He goes back to 積極 and 全軍, not to group 1.
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_plundered", town: 0, by: 0, food: 300, gold: 300, crystal: 75 }));
   await expect.poll(() => garrison(page, 0)).toEqual([]);
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance").at(-1)).toMatchObject({ c: "stance", u: [inside[0]], stance: 0, auto: true });
-  await expect(armyButton(page)).toHaveText(`全軍 ${army.length}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${army.length}`);
   expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).not.toContain(inside[0]);
 });
 
@@ -1242,15 +1244,16 @@ for (const viewport of [null, FULL_SCREEN]) {
 
 test("人口：資源列的人口含訓練中的兵，後面寫訓練中幾名；訓練完括號就不見（D-050）", async ({ page }, info) => {
   const bar = page.locator(".res-bar");
-  await expect(bar).toHaveText(/人口 17\/20　時間/);
+  await expect(bar).toHaveAttribute("aria-label", /人口 17\/20　時間/);
   await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
   await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
   const train = page.getByRole("button", { name: /^訓練槍兵/ });
   await train.tap();
   await train.tap();
-  await expect(bar).toHaveText(/人口 19\/20（訓練中 2）　時間 \d+:\d\d$/);
+  await expect(bar).toHaveAttribute("aria-label", /人口 19\/20（訓練中 2）　時間 \d+:\d\d$/);
+  await expect(bar.locator(".tr")).toHaveText("訓練中 2");
   await shot(page, info, "population-training");
-  await expect(bar).toHaveText(/人口 19\/20　時間/, { timeout: 30_000 });
+  await expect(bar).toHaveAttribute("aria-label", /人口 19\/20　時間/, { timeout: 30_000 });
   expect((await ownIds(page, [1])).length).toBe(8);
 });
 

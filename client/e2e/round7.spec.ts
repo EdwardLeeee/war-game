@@ -314,7 +314,7 @@ test("躲著的兵（D-083）：躲進去就離開編隊、目標不變，按鈕
   expect((await sent(page)).slice(mark).filter((c) => c.c === "move" || c.c === "attack")).toEqual([]);
   // 全軍 (and 全軍撤退, from the same list): only those outside.
   const outside = [...spear, ...ranged.slice(2), ...mages].sort((a, b) => a - b);
-  await expect(armyButton(page)).toHaveText(`全軍 ${outside.length}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${outside.length}`);
   await armyButton(page).tap();
   await expect.poll(() => selection(page)).toEqual({ units: outside, building: null });
   // 全部出來, then 自動補兵 on: the group, short, takes other ranged units, not those who hid
@@ -335,7 +335,7 @@ test("躲著的兵（D-083）：躲進去就離開編隊、目標不變，按鈕
   // 全軍 and 全軍撤退 count them again.
   await page.evaluate(() => window.__proto?.game?.select([]));
   const all = [...spear, ...ranged, ...mages].sort((a, b) => a - b);
-  await expect(armyButton(page)).toHaveText(`全軍 ${all.length}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${all.length}`);
   await page.getByRole("button", { name: "全軍撤退" }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: all });
 });
@@ -395,7 +395,7 @@ test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎
   await expect(row.locator(".group-has")).toHaveText("現有 1");
   await expect(row.locator(".group-want")).toHaveText("1");
   await shot(page, info, "r7-cavalry-group");
-  await expect(armyButton(page)).toHaveText(`全軍 ${soldiers + 1}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${soldiers + 1}`);
 });
 
 /** 選單 → 兵種相剋: the rows as the player reads them. */

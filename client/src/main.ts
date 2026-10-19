@@ -3,6 +3,7 @@
 // fake world in mock/ instead (same messages), for the gesture tests.
 
 import "./style.css";
+import "./ui/r6.css";
 import { type Application, VERSION } from "pixi.js";
 import { Game } from "./game/game.ts";
 import type { HudLifecycle } from "./ui/hud/hud.ts";
@@ -26,7 +27,9 @@ import type { AstcSample } from "./lab/astc.ts";
 import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_LOST_TEXT, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
 import { createStage, gpuLimits } from "./stage.ts";
+import { applyTheme, loadTheme } from "./theme.ts";
 import { tickRateText } from "./ui/controls.ts";
+import { watchPresses } from "./ui/press.ts";
 import { deployedCommit, isNewer, updateHref } from "./version.ts";
 
 declare const __COMMIT__: string;
@@ -69,6 +72,9 @@ declare global {
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const params = parseParams(location.search);
+// 介面風格 (R6-20): the device's choice before anything shows; buttons look pressed under a finger (R6-25-01).
+applyTheme(loadTheme());
+watchPresses();
 /**
  * 對局紀錄 (D-056): each game's command log is kept on this phone and uploaded to the user's
  * Worker; the player sees only 紀錄代號 on the start screen. Waiting uploads go when the page opens.

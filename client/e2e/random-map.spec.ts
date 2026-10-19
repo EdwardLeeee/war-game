@@ -25,7 +25,7 @@ async function start(page: Page): Promise<void> {
   await page.waitForFunction(() => window.__proto?.ready === true);
 }
 
-/** The start card inside the safe area of the phone held sideways (814 × 380 less the home indicator), with nothing to scroll and the 原型介面 label clear of it. */
+/** The start card inside the safe area of the phone held sideways (814 × 380 less the home indicator), with nothing to scroll. */
 async function cardFits(page: Page, when: string): Promise<void> {
   await injectSafeArea(page);
   const screen = await page.locator("#start").boundingBox();
@@ -34,9 +34,6 @@ async function cardFits(page: Page, when: string): Promise<void> {
   expect(card.y, `${when}: card top`).toBeGreaterThanOrEqual(screen.y);
   expect(card.y + card.height, `${when}: card bottom`).toBeLessThanOrEqual(screen.y + screen.height);
   expect(await page.locator("#start .card").evaluate((c) => c.scrollHeight - c.clientHeight), `${when}: nothing to scroll`).toBeLessThanOrEqual(1);
-  // Clear of the 原型介面 label at the top left.
-  const label = await page.locator("#proto-label").boundingBox();
-  if (label !== null) expect(label.x + label.width <= card.x || label.y >= card.y + card.height || label.y + label.height <= card.y, `${when}: label clear of the card`).toBe(true);
 }
 
 const knownTowns = (page: Page) => page.evaluate(() => window.__proto?.game?.knownTowns() ?? []);

@@ -10,6 +10,8 @@ import type { PerfScenario } from "../../lab/lab.ts";
 import { AUTO_TRAIN, BUILDING_STRIDE, BuildingField, BuildingFlag, type GameStats, HeaderField as H, type Resource, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
+import { applyTheme, loadTheme, saveTheme, THEME_LABEL, THEMES } from "../../theme.ts";
+import { dress } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
@@ -95,7 +97,8 @@ export class Hud {
     this.res = new ResourceBar(root);
     this.controlsBar = controlsBar;
 
-    const menu = btn(controlsBar, "選單", () => this.openMenu(), "secondary");
+    const menu = btn(controlsBar, "", () => this.openMenu(), "b sec");
+    dress(menu, { ic: "menu", label: "選單" });
     menu.setAttribute("aria-haspopup", "dialog");
 
     const left = el("div", root, "side-left");
@@ -114,7 +117,9 @@ export class Hud {
     const right = el("div", root, "side-right");
     const grid = el("div", right, "groups");
     for (let i = 0; i < 4; i++) {
-      const b = el("button", grid, "group-btn secondary", `${i + 1}`);
+      // R6-12: the number large, what it has under it; empty, the number only.
+      const b = el("button", grid, "group-btn b grp empty");
+      el("span", b, "n", `${i + 1}`);
       b.type = "button";
       b.setAttribute("aria-label", `編隊 ${i + 1}：點一下選取並打開軍團畫面，點兩下跳過去`);
       // 軍團畫面 (D-054): the tap opens it; the long press that saved the selection is gone
@@ -125,14 +130,15 @@ export class Hud {
     // 「退」 (D-081, 3b-A): left of the buttons, 退1 and 退3 right beside them, 退2 and 退4 one further
     // out, each with its number so that two side by side read at a glance.
     for (let i = 0; i < 4; i++) {
-      const r = btn(grid, `退${i + 1}`, () => game.retreatGroup(i), `group-retreat ${ORDER_TONE.retreat} ${i % 2 === 0 ? "near" : "far"}`);
+      const r = btn(grid, `退${i + 1}`, () => game.retreatGroup(i), `group-retreat b blue ${ORDER_TONE.retreat} ${i % 2 === 0 ? "near" : "far"}`);
       r.setAttribute("aria-label", `編隊 ${i + 1} 撤回主城`);
       r.hidden = true;
       this.retreatBtns.push(r);
     }
-    this.armyBtn = btn(right, armyText(0), () => this.selectArmy(), "army-btn secondary");
+    this.armyBtn = btn(right, "", () => this.selectArmy(), "army-btn b army");
+    dress(this.armyBtn, { ic: "army", label: "全軍", count: 0, name: armyText(0) });
     // 全軍撤退 (user 2026-10-01): nothing to select first. Top left, far from 全軍.
-    btn(root, "全軍撤退", () => game.retreatAll(), `retreat-all-btn ${ORDER_TONE.retreat}`);
+    dress(btn(root, "", () => game.retreatAll(), `retreat-all-btn b blue ${ORDER_TONE.retreat}`), { ic: "retreat", label: "全軍撤退" });
 
     const host = {
       view: () => game.view,
@@ -218,8 +224,8 @@ export class Hud {
     if (this.idleBtn.textContent !== idleText) this.idleBtn.textContent = idleText;
     this.idleBtn.classList.toggle("has-idle", idle > 0);
     // 全軍 N (ceo 2026-10-03): the soldiers it selects, those stationed in towns left out.
-    const armyLabel = armyText(this.game.armyIds().length);
-    if (this.armyBtn.textContent !== armyLabel) this.armyBtn.textContent = armyLabel;
+    const soldiers = this.game.armyIds().length;
+    if (this.armyBtn.getAttribute("aria-label") !== armyText(soldiers)) dress(this.armyBtn, { ic: "army", label: "全軍", count: soldiers, name: armyText(soldiers) });
     for (let i = 0; i < 4; i++) {
       // 現有／原本 (D-026): what the group has now against what it was saved with. 閃紅提醒 (D-081):
       // down to fewer than half of what it started its attack with, it flashes red and reads 剩 a/b.
@@ -230,18 +236,19 @@ export class Hud {
       if (a.advancing) r.style.top = `${this.groupBtns[i].offsetTop}px`;
       const b = this.groupBtns[i];
       b.classList.toggle("alarm", a.alarm);
+      // R6-12: lit while what is selected is this group.
+      b.classList.toggle("is-active", g.saved > 0 && this.isSelected(g.ids));
       const count = a.alarm && a.base !== null ? `剩 ${a.present}/${a.base}` : `${this.alive(g.ids).length}/${g.saved}`;
       const text = g.saved > 0 || a.alarm ? `${i + 1}·${count}` : `${i + 1}`;
       if (b.textContent === text) continue;
-      if (g.saved === 0 && !a.alarm) {
-        b.textContent = text;
-        continue;
-      }
+      const empty = g.saved === 0 && !a.alarm;
+      b.classList.toggle("empty", empty);
       // Two lines (16/16 does not fit a 48 pt button on one); the dot is there for the text only.
       b.replaceChildren();
-      el("span", b, "group-no", `${i + 1}`);
+      el("span", b, "n group-no", `${i + 1}`);
+      if (empty) continue;
       el("span", b, "group-dot", "·");
-      el("span", b, "group-count", count);
+      el("span", b, "sub group-count", count);
     }
     this.info.update();
     this.cmds.update();
@@ -254,6 +261,13 @@ export class Hud {
       this.toastAbove = above;
       this.root.style.setProperty("--toast-above", `${above}px`);
     }
+  }
+
+  /** The selection is these units (those alive), no more, no fewer. */
+  private isSelected(ids: number[]): boolean {
+    const sel = this.game.view?.selection.units ?? [];
+    const alive = this.alive(ids);
+    return alive.length > 0 && alive.length === sel.length && alive.every((id) => sel.includes(id));
   }
 
   onEvent(ev: SimEvent): void {
@@ -561,6 +575,7 @@ export class Hud {
       this.game.showTownHint();
     }, "secondary");
     btn(list, "兵種相剋", () => this.openCounters(), "secondary");
+    btn(list, "設定", () => this.openSettings(), "secondary");
     btn(list, "量測與確定性檢查", () => {
       this.closeDialog();
       this.game.lab.show();
@@ -575,6 +590,35 @@ export class Hud {
       this.life.toStart();
     }, "secondary");
     btn(list, "關閉", () => this.closeDialog());
+  }
+
+  /** 設定 (R6-20): 介面風格, A 銅木 or B 墨漆金線, at once and remembered on this device (theme.ts). */
+  private openSettings(): void {
+    const card = this.openDialog("設定", "menu");
+    const row = el("div", card, "difficulty theme-choice");
+    row.setAttribute("role", "radiogroup");
+    row.setAttribute("aria-label", "介面風格");
+    el("span", row, "", "介面風格");
+    const buttons = THEMES.map((t) => {
+      const b = btn(row, THEME_LABEL[t], () => {
+        saveTheme(t);
+        applyTheme(t);
+        show();
+      });
+      b.setAttribute("role", "radio");
+      return b;
+    });
+    const show = () => {
+      const now = loadTheme();
+      THEMES.forEach((t, i) => {
+        buttons[i].setAttribute("aria-checked", t === now ? "true" : "false");
+        buttons[i].classList.toggle("secondary", t !== now);
+      });
+    };
+    show();
+    const end = el("div", card, "dialog-buttons");
+    btn(end, "回選單", () => this.openMenu(), "secondary");
+    btn(end, "關閉", () => this.closeDialog());
   }
 
   /**
