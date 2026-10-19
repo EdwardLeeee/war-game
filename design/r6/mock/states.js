@@ -180,10 +180,10 @@
                   cmds: [B("訓練槍兵", { ic: "build", cls: "pri", sub: "糧40 木20" }), B("取消", { ic: "rally", cls: "sec", sub: "集結點", state: "active" }), B("自動訓練", { cls: "sec", sub: "目前：開", state: "active" })] },
     "INV-110": { prompt: P("點自己的主城或箭樓：只有遠程兵和法師會躲進去", [CANCEL]), extraCmds: [B("取消", { cls: "sec", sub: "躲進去", state: "active" })] },
     "INV-111": { prompt: P("點自己的哨所：只有槍兵會去駐守", [CANCEL]), extraCmds: [B("取消", { cls: "sec", sub: "駐守", state: "active" })] },
-    "INV-112": { ...NOSEL, cmds: null, prompt: P("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", [CANCEL]), place: { x: 380, y: 236, w: 113, h: 57, ok: true } },
-    "INV-113": { ...NOSEL, cmds: null, prompt: P("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", [CANCEL], "這裡離城鎮的民兵太近，去蓋的村民會被攻擊"), place: { x: 380, y: 236, w: 113, h: 57, ok: true } },
-    "INV-114": { ...NOSEL, cmds: null, prompt: P("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", [CANCEL]), place: { x: 380, y: 236, w: 113, h: 57, ok: true, okx: true } },
-    "INV-115": { ...NOSEL, cmds: null, prompt: P("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", [CANCEL]), place: { x: 380, y: 236, w: 113, h: 57, ok: false, okx: true } },
+    "INV-112": { ...NOSEL, cmds: null, prompt: P("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", [CANCEL]), place: { x: 380, y: 236, n: 2, ok: true } },
+    "INV-113": { ...NOSEL, cmds: null, prompt: P("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", [CANCEL], "這裡離城鎮的民兵太近，去蓋的村民會被攻擊"), place: { x: 380, y: 236, n: 2, ok: true } },
+    "INV-114": { ...NOSEL, cmds: null, prompt: P("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", [CANCEL]), place: { x: 380, y: 236, n: 2, ok: true, okx: true } },
+    "INV-115": { ...NOSEL, cmds: null, prompt: P("拖曳預覽到想蓋的位置，放開後按 ✓ 或 ✗；會派最近的村民去蓋", [CANCEL]), place: { x: 380, y: 236, n: 2, ok: false, okx: true } },
   });
   // ----- R6-20 對話框（含 D-087 新加的：選單裡的全體回城、設定 → 介面風格）
   const D = (title, html, cls) => ({ title, html, cls });
@@ -293,6 +293,34 @@
     "MAP-sq": { hp: false, field: "field-THEME-mapsq", left: { idle: 3, map: "closed" } },
     "MAP-top": { hp: false, field: "field-THEME-maptop", left: { idle: 3, map: "closed" } },
   });
+  // ----- R6-31 下指令的回饋（使用者 2026-10-19：「按暫停造兵跟放建築應該要顯示，不然還以為沒按到」）。訊息條的字和
+  // client 原型對齊（ceo 2026-10-19）。暫停中的五個狀態是依序下的五個指令，暫停橫幅的數字跟著加。
+  const PZ = (n) => ({ top: { paused: true, pending: n } });
+  const OK = (t, kind = "ok") => ({ toast: t, toastKind: kind });
+  const PLANNED = { field: "field-THEME-planned", world: [{ k: "planned" }] };
+  const queue = (...items) => `<div class="queue">${items.join("")}</div>`;
+  const barracksSel = (status, q) => sel("兵營", bar("", 100) + (q || line("生命 <b>500</b>/500")), st(status));
+  const PAUSE_MARK = { k: "marker", b: "Barracks", glyph: "pause" };
+  Object.assign(S, {
+    "NEW-21": { ...NOSEL, ...PZ(1), ...PLANNED, ...OK("已下令蓋民居，按繼續後開工") },
+    "NEW-22": { ...PLAIN, ...PZ(2), ...PLANNED, cmds: CMD.barracks(true), ...OK("已下令訓練槍兵，按繼續後開始"),
+                sel: barracksSel("自動訓練中", queue(B("槍兵", { cls: "sec first", sub: "訓練中" }), B("槍兵", { cls: "sec pending", sub: "繼續後開始" }))) },
+    "NEW-23": { ...PLAIN, ...PZ(3), ...PLANNED, sel: barracksSel("自動訓練中"), ...OK("已暫停這座兵營的自動訓練，按繼續後生效"),
+                cmds: [CMD.barracks(true)[0], CMD.barracks(true)[1], B("自動訓練", { cls: "sec pending", sub: "繼續後暫停" })] },
+    "NEW-24": { ...TOWN({ tint: own, text: "治理（繼續後開始）", glyph: "鎮" }), ...PZ(4), ...OK("已選治理，按繼續後開始修繕"), cmds: "none",
+                sel: sel("小鎮", line("城裡有 <b>3</b> 名兵") + `<div class="pendline">已選治理，留守 1 名：按繼續後開始修繕</div>`, st("攻下：治理（繼續後）")) },
+    "NEW-25": { ...PLAIN, ...PZ(5), ...PLANNED, cmds: CMD.city, ...OK("已改經濟分配，按繼續後生效"),
+                sel: sel("主城", bar("", 100) + line("生命 <b>1200</b>/1200") + `<div class="pendline">經濟分配改成 糧 50%・木 30%・金 20%：按繼續後生效</div>`) },
+    // 自動訓練暫停的角落記號（和「裡面有人」同一套，R6-23）
+    "NEW-26": { ...WF, world: [PAUSE_MARK, { k: "marker", b: "MainCity" }] },
+    // 不暫停時的訊息條
+    "NEW-27": { ...NOSEL, field: "field-THEME-placed", ...OK("已下令蓋民居，派 1 名村民") },
+    "NEW-28": { ...PLAIN, cmds: CMD.barracks(true), ...OK("已下令訓練槍兵（排第 2）"),
+                sel: barracksSel("自動訓練中", queue(B("槍兵", { cls: "sec first", sub: "訓練中" }), B("槍兵", { cls: "sec", sub: "取消" }))) },
+    "NEW-29": { ...PLAIN, sel: barracksSel("自動訓練暫停"), cmds: CMD.barracks(false), world: [PAUSE_MARK], ...OK("已暫停這座兵營的自動訓練") },
+    "NEW-30": { ...PLAIN, sel: barracksSel("自動訓練中"), cmds: CMD.barracks(true), ...OK("已恢復這座兵營的自動訓練") },
+    "NEW-31": { ...NOSEL, ...OK("已取消蓋民居", "info") },
+  });
   // ----- R6-25 動畫（每個動畫的狀態；時間點用網址的 t=0..1）
   Object.assign(S, {
     "A-press0": {}, "A-press1": { pressAtk: true },
@@ -303,6 +331,9 @@
     "A-cue": { ...S["INV-101"], anim: "cue" },
     "A-rings": { ...S["INV-141"], anim: "rings" },
     "A-arrow0": { ...S["NEW-04"] }, "A-arrow1": { ...S["NEW-04"], arrowDim: true },
+    // R6-25-11 取消放建築：按 ✗ 之前，和按了以後（預覽縮小淡出、訊息條淡入）。預覽放高一點，免得和訊息條疊在一起
+    "A-cancel0": { ...S["INV-114"], place: { ...S["INV-114"].place, y: 190 } },
+    "A-cancel": { ...NOSEL, place: { ...S["INV-114"].place, y: 190 }, anim: "cancelPlace", ...OK("已取消蓋民居", "info") },
   });
   for (const v of Object.values(S)) if (v.field) v.field = v.field.replace("THEME", new URLSearchParams(location.search).get("theme") || "a");
   window.R6_STATES = S;

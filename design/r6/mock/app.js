@@ -80,7 +80,7 @@ const PIECES = {
     const t = Object.assign({ speed: "正常", paused: false }, s.top || {});
     const sp = { 正常: "speed", 快: "fast", 慢: "slow" }[t.speed];
     add(`<div class="topright">${btn(t.speed, { ic: sp, cls: "sec", sub: "速度" })}${btn(t.paused ? "繼續" : "暫停", { ic: t.paused ? "play" : "pause", cls: "pri" })}${btn("選單", { ic: "menu", cls: "sec" })}</div>`);
-    if (t.paused) add('<div class="panel banner">暫停中：仍可下指令</div>');
+    if (t.paused) add(`<div class="panel banner">暫停中：仍可下指令${t.pending ? `<span class="pend">已下 ${t.pending} 個指令，按繼續後執行</span>` : ""}</div>`);
   },
   retreatAll(s) {
     if (s.retreatAll === false) return;
@@ -148,7 +148,9 @@ const PIECES = {
     add(`<div class="panel prompt"><div class="pt"><span>${p.text}</span>${p.warn ? `<span class="warn">${p.warn}</span>` : ""}</div>${(p.buttons || []).join("")}</div>`);
   },
   toast(s) {
-    if (s.toast) add(`<div class="toast" style="opacity:${s.anim === "toast" ? T : 1}">${s.toast}</div>`);
+    if (!s.toast) return;
+    const k = s.anim === "toast" ? T : s.anim === "cancelPlace" ? Math.min(1, T * 2) : 1;
+    add(`<div class="toast ${s.toastKind || ""}" style="opacity:${k}">${s.toastKind === "ok" ? icon("check") : ""}${s.toast}</div>`);
   },
   arrows(s) {
     for (const a of s.arrows || []) add(`<button class="b arrow ${s.arrowDim ? "dim" : ""}" style="left:${a.x}px;top:${a.y}px;transform:rotate(${a.r}deg)" aria-label="有東西被攻擊：點一下跳過去">${icon("pointer")}</button>`);
@@ -180,8 +182,13 @@ PIECES.wheel = (s) => {
 };
 PIECES.place = (s) => {
   if (!s.place) return;
-  const { x, y, w, h, ok, okx } = s.place;
-  add(`<div class="preview ${ok ? "ok" : "bad"}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"></div>`);
+  const { x, y, ok, okx } = s.place;
+  const ob = window.R6_VIEW === "oblique", n = s.place.n;
+  const w = n ? n * (ob ? 40 : 56.57) : s.place.w, h = n ? n * (ob ? 20 : 28.28) : s.place.h;
+  const k = s.anim === "cancelPlace" ? 1 - ease(T) : 1;
+  if (k <= 0) return;
+  add(`<div class="preview ${ok ? "ok" : "bad"}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;opacity:${k};transform:scale(${0.7 + 0.3 * k})"></div>`);
+  if (s.anim === "cancelPlace") return;
   if (okx) add(`<div class="okx" style="left:${x + w + 10}px;top:${y + h / 2 - 26}px">${btn("✓", { cls: "okb", state: ok ? "" : "disabled", attr: 'aria-label="確定蓋在這裡"' })}${btn("✗", { cls: "nob", attr: 'aria-label="不蓋"' })}</div>`);
 };
 PIECES.dialog = (s) => {
@@ -237,10 +244,17 @@ PIECES.world = (s) => {
       g.push(`<line x1="${b.mid[0]}" y1="${b.mid[1]}" x2="${rx}" y2="${ry}" stroke="#fff3b0" stroke-width="2" stroke-dasharray="5 4"/>` +
         `<circle cx="${rx}" cy="${ry}" r="5" fill="#fff3b0" stroke="#201a18" stroke-width="1.5"/><path d="M${rx} ${ry} v-18 h11 l-3 4 3 4 h-11" fill="#fff3b0" stroke="#201a18" stroke-width="1"/>`);
     } else if (it.k === "marker") {
-      const b = W.buildings[it.b][0], x = b.foot[1][0] - 6, y = b.foot[1][1] - 34;
+      const b = W.buildings[it.b][0], m = b.mark || b.foot[1], x = m[0] - 6, y = m[1] - 34;
       g.push(`<g transform="translate(${x} ${y})"><rect x="-10" y="-10" width="20" height="20" rx="5" fill="#201a18" stroke="#f0cf8a" stroke-width="1.5"/>` +
         (it.text ? `<text x="0" y="5" text-anchor="middle" font-size="13" font-weight="700" fill="#fff3b0">${it.text}</text>`
+          : it.glyph === "pause" ? `<rect x="-5" y="-6" width="3.6" height="12" rx="1" fill="#f0cf8a"/><rect x="1.4" y="-6" width="3.6" height="12" rx="1" fill="#f0cf8a"/>`
           : `<path d="M0 -6 l6 2.3 v3.5 c0 3 -2.6 5 -6 6 c-3.4 -1 -6 -3 -6 -6 v-3.5z" fill="#5fe3f0"/>`) + `</g>`);
+    } else if (it.k === "planned") {
+      // R6-31: a building ordered while paused: its footprint dashed in the player colour (the see-through building is
+      // in the battlefield image), and what happens next
+      const b = W.planned;
+      g.push(`<polygon points="${b.foot.map((p) => p.join(",")).join(" ")}" fill="rgba(63,127,224,.14)" stroke="${TEAMC.own}" stroke-width="2.5" stroke-dasharray="6 4"/>` +
+        `<text x="${b.mid[0]}" y="${b.foot[2][1] + 16}" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" stroke="#000" stroke-width="3" paint-order="stroke">${it.text || "繼續後開工"}</text>`);
     } else if (it.k === "rings") {
       for (const [x, y, col, lab, r0] of it.list) {
         const r = s.anim === "rings" ? r0 * (0.35 + 0.65 * T) : r0, op = s.anim === "rings" ? 1 - T * 0.9 : 0.95;
@@ -309,6 +323,7 @@ function render(id) {
   const s = Object.assign({}, window.R6_STATES.base, window.R6_STATES[id] || {});
   if (!window.R6_STATES[id]) console.error("unknown state", id);
   screen.className = "screen";
+  screen.dataset.view = window.R6_VIEW || "diamond";
   const only = s.only;                                    // e.g. the start screen: just the field and the card
   for (const k of ORDER) if (!only || only.includes(k)) PIECES[k](s);
 }

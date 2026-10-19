@@ -25,6 +25,7 @@ HALF_W = 28.284          # pt: half a cell's diamond, across
 HALF_H = 14.142          # pt: half a cell's diamond, down
 CELL_W, CELL_D = 40.0, 20.0   # pt: a cell across and down, oblique
 VIEW = "diamond"
+OVERRIDE = {}            # "E", "W", "nodes": atlases to draw from in place of the art's (rawart.use)
 # the player colours the user chose (R6-24 甲, 2026-10-18): 藍 紅 黃 紫, and the neutral
 TEAM = {"blue": (0x3f, 0x7f, 0xe0), "red": (0xd9, 0x43, 0x3a), "yellow": (0xe8, 0xc4, 0x2e), "purple": (0x9a, 0x5c, 0xe0),
         "neutral": (0xd8, 0xd2, 0xc0)}
@@ -80,6 +81,9 @@ class Atlas:
             img.alpha_composite(Image.fromarray(arr.astype(np.uint8), "RGBA"), (int(round(ax - tax)), int(round(ay - tay))))
         return img, ax, ay
 
+    def frame(self, name):
+        return self.m["frames"][name]
+
     def shadow(self, name):
         s = self._crop("shadow", "shadows", name)
         if not s:
@@ -88,6 +92,15 @@ class Atlas:
         a = si.getchannel("A")
         img = Image.merge("RGBA", (Image.new("L", a.size, 0),) * 3 + (a,))
         return img.resize((img.width * 2, img.height * 2), Image.BILINEAR), sax * 2, say * 2
+
+
+def building_atlas(art, c):
+    return OVERRIDE.get(c) or Atlas(Path(art) / "buildings" / f"buildings_{c}.json")
+
+
+def foot_w(n):
+    """pt: an n-cell footprint across the screen."""
+    return n * CELL_W if VIEW == "oblique" else n * 2 * HALF_W
 
 
 def ground(w, h, seed=5):
@@ -113,8 +126,8 @@ def render(scene, art, scale=3, atlases=None):
     s = scale / 3.0                                   # the atlases are 3x
     img = ground(W, H)
     centre = scene["centre"]
-    batl = atlases or {c: Atlas(art / "buildings" / f"buildings_{c}.json") for c in ("E", "W")}
-    natl = Atlas(art / "nodes" / "nodes.json")
+    batl = atlases or {c: building_atlas(art, c) for c in ("E", "W")}
+    natl = OVERRIDE.get("nodes") or Atlas(art / "nodes" / "nodes.json")
     uatl = {}
     ground_items, items, shadows = [], [], []
     overlay = {"selected": [], "units": []}
@@ -198,13 +211,17 @@ def render(scene, art, scale=3, atlases=None):
 
 
 def squad(cx, cy, cols, rows, gap=1.0):
-    """Cells of a block formation (密集: 1 cell apart) centred on (cx, cy), front row first along +x - y."""
+    """Cells of a block formation (密集: 1 cell apart) centred on (cx, cy), front row first along the screen's
+    across (diamond: +x - y; oblique: +x)."""
     out = []
     for r in range(rows):
         for c in range(cols):
             u = (c - (cols - 1) / 2) * gap
             v = (r - (rows - 1) / 2) * gap
-            out.append((cx + u * 0.7 + v * 0.7, cy - u * 0.7 + v * 0.7))
+            if VIEW == "oblique":
+                out.append((cx + u, cy + v))
+            else:
+                out.append((cx + u * 0.7 + v * 0.7, cy - u * 0.7 + v * 0.7))
     return out
 
 

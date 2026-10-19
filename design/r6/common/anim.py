@@ -1,6 +1,7 @@
 """R6-25: storyboards and GIFs of every interface animation (pref: animations come with a storyboard or a GIF).
 
-python3 common/anim.py   -> out/R6-25-<nn>-<名>-<A-銅木|B-墨漆金線>-mobile.png (storyboard), …-動作.gif
+python3 common/anim.py [nn ...]   -> out/R6-25-<nn>-<名>-<A-銅木|B-墨漆金線>-mobile.png (storyboard), …-動作.gif
+                                  (only the animations nn when given)
 The frames are shot from the mock (anim.mjs); timings are the spec (spec.md section 動畫).
 """
 import json
@@ -42,14 +43,21 @@ ANIMS = [
      "手指按住 80 ms 後出現，縮到 0.35 倍時（350 ms）就是長按。", "照舊。"),
     ("10", "指令回饋圈", "a", [200, 100, 380, 200], [("A-rings", 0, "0 ms", 150), ("A-rings", 0.33, "200 ms", 150), ("A-rings", 0.66, "400 ms", 150), ("A-rings", 1, "600 ms：消失", 500)],
      "下指令的那一點，往外長、淡出；顏色照指令。", "照舊。"),
+    # R6-31 (the user 2026-10-19: 放建築要看得出來有沒有按到)
+    ("11", "取消放建築", "ab", [250, 80, 420, 240], [("A-cancel0", 1, "按「不蓋」（或提示列的取消）之前", 700), ("A-cancel", 0, "0 ms：按下", 100),
+     ("A-cancel", 0.33, "100 ms", 100), ("A-cancel", 0.66, "200 ms", 100), ("A-cancel", 1, "300 ms：預覽消失，訊息條出現", 1600)],
+     "預覽縮到 70%、淡出（ease-out，300 ms）；訊息條「已取消蓋民居」同時淡入，停 2.2 秒。", "預覽直接消失；訊息條照舊淡入。"),
 ]
 THEMES = {"a": "A-銅木", "b": "B-墨漆金線"}
+ONLY = set(sys.argv[1:])
 
 
 def shoot():
     BUILD.mkdir(parents=True, exist_ok=True)
     frames = []
     for aid, name, themes, crop, fr, _, _ in ANIMS:
+        if ONLY and aid not in ONLY:
+            continue
         for th in themes:
             for i, (st, t, _, _) in enumerate(fr):
                 frames.append(dict(state=st, t=t, theme=th, crop=crop, out=str(BUILD / f"{aid}-{th}-{i}.png")))
@@ -58,6 +66,8 @@ def shoot():
 
 def boards():
     for aid, name, themes, crop, fr, note, reduced in ANIMS:
+        if ONLY and aid not in ONLY:
+            continue
         for th in themes:
             ims = [Image.open(BUILD / f"{aid}-{th}-{i}.png").convert("RGB") for i in range(len(fr))]
             label = f"R6-25-{aid}-{name}-{THEMES[th]}-mobile"
