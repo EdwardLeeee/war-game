@@ -234,22 +234,32 @@
     <tr><th>城鎮（搶／治理）</th><td>1／1</td><td>0／1</td></tr></table>` + btns(B("回開局畫面", { cls: "sec" }), B("重來", { cls: "pri" })), `result ${won ? "won" : ""}`);
   Object.assign(S, { "INV-129": { ...NOSEL, dialog: result("失敗", false) }, "INV-130": { ...NOSEL, dialog: result("勝利", true) }, "INV-131": { ...NOSEL, dialog: result("平手", false) } });
   // ----- R6-10 開局
-  const opts = (diff, map) => `<div class="opts"><span class="k">難度</span><div class="row">${["簡單", "普通", "困難"].map((d) => B(d, { cls: d === diff ? "pri" : "sec" })).join("")}</div>
+  // 你的陸 (the user 2026-10-19: 「我覺得可以自選」): the computer plays the other side
+  const opts = (diff, map, side = "東陸") => `<div class="opts"><span class="k">你的陸</span><div class="row">${["東陸", "西陸"].map((d) => B(d, { cls: d === side ? "pri" : "sec" })).join("")}<span class="aside">電腦：${side === "東陸" ? "西陸" : "東陸"}</span></div>
+    <span class="k">難度</span><div class="row">${["簡單", "普通", "困難"].map((d) => B(d, { cls: d === diff ? "pri" : "sec" })).join("")}</div>
     <span class="k">地圖</span><div class="row">${["固定地圖", "隨機地圖"].map((d) => B(d, { cls: d === map ? "pri" : "sec" })).join("")}</div></div>
     <p class="desc">${map === "固定地圖" ? "每局同一張，適合比較電腦強弱" : "每局不同，只看得到自己家附近"}</p>`;
-  const foot = `<p class="note">對局沒有時間上限，打到一方的主城被摧毀或投降為止。</p><p class="foot">commit 1a2b3c4 · 紀錄代號 7f3k9q2m · <a>回測試頁首頁</a></p>`;
+  // the start card in two columns (options left, the start buttons right), so it keeps within the 380 pt screen
+  // with the third row 你的陸 (2026-10-19)
+  const note = `<p class="note">對局沒有時間上限，打到一方的主城被摧毀或投降為止。</p>`;
+  const foot = `<p class="foot">commit 1a2b3c4 · 紀錄代號 7f3k9q2m · <a>回測試頁首頁</a></p>`;
+  const card = ({ side = "東陸", diff = "簡單", map = "固定地圖", go, extra = "", noFoot = false }) =>
+    `<div class="cols"><div class="lcol">${opts(diff, map, side)}</div><div class="rcol"><div class="go">${go}</div>${extra}${noFoot ? "" : note}</div></div>${noFoot ? "" : foot}`;
   const START = { only: ["field", "start", "portrait", "error"], field: "field-THEME-plain" };
+  const GO = B("開始", { cls: "pri big" });
   Object.assign(S, {
-    "INV-01": { ...START, start: { dim: true, html: opts("簡單", "固定地圖") + `<div class="go">${B("開始", { cls: "pri big" })}</div>` + foot } },
-    "INV-05": { ...START, start: { dim: true, html: opts("普通", "隨機地圖") + `<div class="go">${B("開始", { cls: "pri big" })}</div>` + foot } },
-    "INV-07": { ...START, start: { dim: true, html: opts("簡單", "固定地圖") + `<div class="go">${B("開始", { cls: "sec big" })}${B("繼續上一局（第 12 分）", { cls: "pri cont" })}</div>` + foot } },
-    "INV-09": { ...START, start: { dim: true, html: opts("簡單", "固定地圖") + `<div class="go">${B("開始", { cls: "pri big" })}${B("繼續上一局（第 12 分）", { cls: "sec cont", state: "disabled" })}</div><p class="why">網站已經更新，這一局不能繼續</p>` + foot } },
-    "INV-10": { ...START, start: { dim: true, html: opts("簡單", "固定地圖") + `<div class="go">${B("開始", { cls: "pri big" })}</div><p class="why">紀錄對不上（第 4 分），這一局不能繼續</p>` + foot } },
+    "INV-01": { ...START, start: { dim: true, html: card({ go: GO }) } },
+    "INV-05": { ...START, start: { dim: true, html: card({ diff: "普通", map: "隨機地圖", go: GO }) } },
+    "NEW-09": { ...START, start: { dim: true, html: card({ side: "西陸", go: GO }) } },
+    "INV-07": { ...START, start: { dim: true, html: card({ go: B("繼續上一局（第 12 分）", { cls: "pri big" }) + B("開始", { cls: "sec big" }) }) } },
+    "INV-09": { ...START, start: { dim: true, html: card({ go: GO + B("繼續上一局（第 12 分）", { cls: "sec big", state: "disabled" }), extra: `<p class="why">網站已經更新，這一局不能繼續</p>` }) } },
+    "INV-10": { ...START, start: { dim: true, html: card({ go: GO, extra: `<p class="why">紀錄對不上（第 4 分），這一局不能繼續</p>` }) } },
     "INV-11": { ...START, start: { dim: true, html: `<div class="ff"><b>快轉中：第 4／80 分</b><span class="track"><i></i></span>${B("取消", { cls: "sec" })}</div>` } },
-    "INV-12": { only: null, top: { paused: true }, start: { dim: false, html: opts("簡單", "固定地圖") + `<div class="go">${B("繼續這局", { cls: "pri big" })}${B("重來", { cls: "sec cont" })}</div><p class="note">改了難度或地圖，要按「重來」才會用在新的一局。</p>` } },
-    "INV-13": { ...START, start: { dim: true, html: opts("簡單", "固定地圖") + `<div class="go">${B("開始", { cls: "pri big" })}</div><div class="update">有新版本${B("更新", { cls: "pri" })}</div>` + foot } },
+    "INV-12": { only: null, top: { paused: true }, start: { dim: false, html: card({ go: B("繼續這局", { cls: "pri big" }) + B("重來", { cls: "sec big" }),
+      extra: `<p class="note">改了陸、難度或地圖，要按「重來」才會用在新的一局。</p>`, noFoot: true }) } },
+    "INV-13": { ...START, start: { dim: true, html: card({ go: GO, extra: `<div class="update">有新版本${B("更新", { cls: "pri" })}</div>` }) } },
     "INV-17": { only: ["portrait"], portrait: true },
-    "INV-18": { ...START, start: { dim: true, html: opts("簡單", "固定地圖") + `<div class="go">${B("開始", { cls: "pri big" })}</div>` + foot }, error: "出錯了：模擬沒有回應（示意的錯誤訊息）" },
+    "INV-18": { ...START, start: { dim: true, html: card({ go: GO }) }, error: "出錯了：模擬沒有回應（示意的錯誤訊息）" },
   });
   // ----- R6-23 戰場世界介面（遊戲畫在戰場上的，A、B 一樣）
   const WF = { hp: false, sel: null, cmds: "none", field: "field-THEME-world", left: { idle: 0, map: "closed" } };
