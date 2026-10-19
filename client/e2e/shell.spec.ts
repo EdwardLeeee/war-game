@@ -15,13 +15,13 @@ test.afterEach(() => {
   checkErrors();
 });
 
-test("開局畫面：一個模式、難度、開始鈕；原型介面的標示拿掉了（INV-16）", async ({ page }, info) => {
+test("開局畫面：一個模式、難度、開始鈕、原型標示", async ({ page }, info) => {
   info.annotations.push({ type: "viewport", description: JSON.stringify(page.viewportSize()) });
   await expect(page.getByRole("heading", { name: "war-game 原型" })).toBeVisible();
   await expect(page.getByText("1 對 1 對電腦")).toBeVisible();
   await expect(page.getByRole("radiogroup", { name: "難度" })).toBeVisible();
   await expect(page.getByRole("button", { name: "開始" })).toBeVisible();
-  await expect(page.getByText("原型介面（非正式設計）")).toHaveCount(0);
+  await expect(page.getByText("原型介面（非正式設計）")).toBeVisible();
   await expect(page.locator("#commit")).toHaveText(/^commit ([0-9a-f]{7}|unknown)$/);
   await shot(page, info, "start");
 });
@@ -42,7 +42,7 @@ for (const size of [
       expect.soft(b.width, `${b.label} width`).toBeGreaterThanOrEqual(44);
       expect.soft(b.height, `${b.label} height`).toBeGreaterThanOrEqual(44);
     }
-    const inSafeArea = targets;
+    const inSafeArea = [...targets, ...(await visibleBoxes(page, "#proto-label"))];
     for (const b of inSafeArea) {
       expect.soft(b.x, `${b.label} left edge`).toBeGreaterThanOrEqual(IPHONE_SAFE.left);
       expect.soft(b.x + b.width, `${b.label} right edge`).toBeLessThanOrEqual(width - IPHONE_SAFE.right);
@@ -83,7 +83,7 @@ test("點開始進入戰場", async ({ page }, info) => {
   await expect(page.locator("#start")).toBeHidden();
   await expect(page.locator("#stage canvas")).toBeVisible();
   await page.waitForFunction(() => window.__proto?.screen === "battle" && window.__proto.ready);
-  await expect(page.getByText("原型介面（非正式設計）")).toHaveCount(0);
+  await expect(page.getByText("原型介面（非正式設計）")).toBeVisible();
   await shot(page, info, "battle");
 });
 

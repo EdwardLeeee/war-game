@@ -1,20 +1,21 @@
 /*
  * R6 正式介面 (D-087; design/r6/spec.md, the looks from design/r6/mock/themes.css): A 銅木 (the
  * default, also with no data-theme) and B 墨漆金線, chosen in 選單 → 設定 (theme.ts). One layout,
- * two looks. What is not redrawn yet keeps the prototype's look (style.css) until its R6 PR.
+ * two looks. Only with 正式介面 on (the root's data-ui="r6", ui/formal.ts); off, the page is the
+ * prototype's (style.css) as it was.
  * Two weights only (spec section 1): 400 and 700; the iPhone's own font, none shipped.
  */
 
-body {
+:root[data-ui="r6"] body {
   font-family: "PingFang TC", "Noto Sans CJK TC", "Noto Sans TC", -apple-system, sans-serif;
   font-weight: 400;
 }
 
-button {
+:root[data-ui="r6"] button {
   font-weight: 700;
 }
 
-.ic {
+:root[data-ui="r6"] .ic {
   width: 16px;
   height: 16px;
   fill: none;
@@ -27,7 +28,7 @@ button {
 
 /* --- the shared layout of a button and a panel (R6-40) ---------------------------------- */
 
-.b {
+:root[data-ui="r6"] .b {
   position: relative;
   display: inline-flex;
   flex-direction: row;
@@ -47,23 +48,23 @@ button {
     filter 120ms ease-out;
 }
 
-.b .lb {
+:root[data-ui="r6"] .b .lb {
   font-weight: 700;
 }
 
-.b .sub {
+:root[data-ui="r6"] .b .sub {
   font-size: 10px;
   font-weight: 400;
 }
 
-.b .cnt {
+:root[data-ui="r6"] .b .cnt {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .b,
-  .b.is-pressed {
+  :root[data-ui="r6"] .b,
+  :root[data-ui="r6"] .b.is-pressed {
     transition: none;
     transform: none !important;
   }
@@ -72,7 +73,7 @@ button {
 /* --- the top of the battlefield (R6-11) ----------------------------------------------- */
 
 /* 資源列 (INV-19): icons, no words; 376 × 36 at the top left. */
-#hud .res-bar {
+:root[data-ui="r6"] #hud .res-bar {
   display: flex;
   align-items: center;
   gap: 11px;
@@ -83,37 +84,37 @@ button {
   font-weight: 700;
 }
 
-.res-bar .r {
+:root[data-ui="r6"] .res-bar .r {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.res-bar .r small {
+:root[data-ui="r6"] .res-bar .r small {
   font-size: 12px;
   font-weight: 400;
   opacity: 0.8;
 }
 
-.res-bar .sep {
+:root[data-ui="r6"] .res-bar .sep {
   width: 1px;
   align-self: stretch;
   margin: 8px 0;
 }
 
-.res-bar .ic {
+:root[data-ui="r6"] .res-bar .ic {
   width: 17px;
   height: 17px;
 }
 
 /* Too narrow (a page narrower than the phone's): the 訓練中 words, then the clock's icon, go. */
-.res-bar.no-training .tr,
-.res-bar.no-clock-icon .ic.time {
+:root[data-ui="r6"] .res-bar.no-training .tr,
+:root[data-ui="r6"] .res-bar.no-clock-icon .ic.time {
   display: none;
 }
 
 /* 速度、暫停、選單 (INV-19): 52 × 44, the icon over the word. */
-.top-right .b {
+:root[data-ui="r6"] .top-right .b {
   flex-direction: column;
   gap: 0;
   padding: 0 9px;
@@ -121,31 +122,37 @@ button {
   font-size: 13px;
 }
 
-.top-right .b .ic {
+:root[data-ui="r6"] .top-right .b .ic {
   width: 15px;
   height: 15px;
 }
 
-.top-right .b .lb {
+:root[data-ui="r6"] .top-right .b .lb {
   font-size: 12px;
   line-height: 1.1;
 }
 
 /* 暫停橫幅 (INV-26). */
-#hud .paused-banner.panel {
+:root[data-ui="r6"] #hud .paused-banner.panel {
   padding: 6px 14px;
   font-size: 13px;
 }
 
+/* Buttons the prototype places on their own (全軍撤退, 退1–退4) stay so; .b alone would make them flow. */
+:root[data-ui="r6"] .retreat-all-btn.b,
+:root[data-ui="r6"] .groups .group-retreat.b {
+  position: absolute;
+}
+
 /* 全軍撤退 (INV-19): 136, 46. */
-.retreat-all-btn.b {
+:root[data-ui="r6"] .retreat-all-btn.b {
   top: calc(var(--safe-t) + 46px);
   padding: 0 12px;
 }
 
 /* --- 編隊 (R6-12) ---------------------------------------------------------------------- */
 
-.groups .b.grp {
+:root[data-ui="r6"] .groups .b.grp {
   flex-direction: column;
   gap: 0;
   padding: 0;
@@ -153,27 +160,27 @@ button {
   min-width: 48px;
 }
 
-.grp .n {
+:root[data-ui="r6"] .grp .n {
   font-size: 17px;
   line-height: 1;
 }
 
-.grp .sub {
+:root[data-ui="r6"] .grp .sub {
   margin-top: 2px;
 }
 
-.side-right .b.army {
+:root[data-ui="r6"] .side-right .b.army {
   width: 102px;
 }
 
-.b.army .ic {
+:root[data-ui="r6"] .b.army .ic {
   width: 15px;
   height: 15px;
 }
 
 /* =========================================================================== A 銅木 */
 
-:root:not([data-theme="b"]) {
+:root[data-ui="r6"]:not([data-theme="b"]) {
   --ink: #f4e7c9;
   --ink2: #d8c49c;
   --rim: #b98d4c;
@@ -188,7 +195,7 @@ button {
   --gold2: #8d6421;
 }
 
-:root:not([data-theme="b"]) .panel {
+:root[data-ui="r6"]:not([data-theme="b"]) .panel {
   color: var(--ink);
   border-radius: 9px;
   background:
@@ -201,23 +208,23 @@ button {
     0 3px 8px rgba(0, 0, 0, 0.45);
 }
 
-:root:not([data-theme="b"]) .res-bar .sep {
+:root[data-ui="r6"]:not([data-theme="b"]) .res-bar .sep {
   background: rgba(185, 141, 76, 0.55);
 }
-:root:not([data-theme="b"]) .res-bar .ic.food {
+:root[data-ui="r6"]:not([data-theme="b"]) .res-bar .ic.food {
   color: #e7c86a;
 }
-:root:not([data-theme="b"]) .res-bar .ic.wood {
+:root[data-ui="r6"]:not([data-theme="b"]) .res-bar .ic.wood {
   color: #cf9a62;
 }
-:root:not([data-theme="b"]) .res-bar .ic.gold {
+:root[data-ui="r6"]:not([data-theme="b"]) .res-bar .ic.gold {
   color: #f2cf57;
 }
-:root:not([data-theme="b"]) .res-bar .ic.crys {
+:root[data-ui="r6"]:not([data-theme="b"]) .res-bar .ic.crys {
   color: #7fe6f0;
 }
 
-:root:not([data-theme="b"]) .b {
+:root[data-ui="r6"]:not([data-theme="b"]) .b {
   color: var(--ink);
   border-radius: 8px;
   background: linear-gradient(180deg, #6e4d30, #4b3321);
@@ -229,24 +236,24 @@ button {
     0 4px 6px rgba(0, 0, 0, 0.4);
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
 }
-:root:not([data-theme="b"]) .b.red,
-:root:not([data-theme="b"]) .b.alarm {
+:root[data-ui="r6"]:not([data-theme="b"]) .b.red,
+:root[data-ui="r6"]:not([data-theme="b"]) .b.alarm {
   background: linear-gradient(180deg, var(--red1), var(--red2));
 }
-:root:not([data-theme="b"]) .b.blue {
+:root[data-ui="r6"]:not([data-theme="b"]) .b.blue {
   background: linear-gradient(180deg, var(--blue1), var(--blue2));
 }
-:root:not([data-theme="b"]) .b.gold,
-:root:not([data-theme="b"]) .b.pri {
+:root[data-ui="r6"]:not([data-theme="b"]) .b.gold,
+:root[data-ui="r6"]:not([data-theme="b"]) .b.pri {
   background: linear-gradient(180deg, var(--gold1), var(--gold2));
   color: #fff6dc;
 }
-:root:not([data-theme="b"]) .grp.empty {
+:root[data-ui="r6"]:not([data-theme="b"]) .grp.empty {
   background: linear-gradient(180deg, #4a3523, #33241a);
   color: var(--ink2);
 }
-:root:not([data-theme="b"]) .b.is-active,
-:root:not([data-theme="b"]) .b.active {
+:root[data-ui="r6"]:not([data-theme="b"]) .b.is-active,
+:root[data-ui="r6"]:not([data-theme="b"]) .b.active {
   outline: 0;
   box-shadow:
     inset 0 0 0 2px var(--rim-hi),
@@ -255,7 +262,7 @@ button {
     0 0 0 2px rgba(240, 207, 138, 0.55),
     0 0 12px rgba(240, 207, 138, 0.55);
 }
-:root:not([data-theme="b"]) .b.is-pressed {
+:root[data-ui="r6"]:not([data-theme="b"]) .b.is-pressed {
   transform: translateY(3px);
   filter: brightness(0.88);
   box-shadow:
@@ -263,7 +270,7 @@ button {
     inset 0 3px 6px rgba(0, 0, 0, 0.55),
     0 0 0 #1f140c;
 }
-:root:not([data-theme="b"]) .b:disabled {
+:root[data-ui="r6"]:not([data-theme="b"]) .b:disabled {
   filter: grayscale(0.85) brightness(0.75);
   opacity: 0.7;
   color: #b9a98a;
@@ -276,7 +283,7 @@ button {
 /* =========================================================================== B 墨漆金線 */
 /* The lacquer sits on ::before (cut corners), the gold frame with a stud on each cut on ::after. */
 
-[data-theme="b"] {
+:root[data-ui="r6"][data-theme="b"] {
   --ink: #f1ead9;
   --ink2: #b8ad94;
   --gold: #d8b65e;
@@ -291,14 +298,14 @@ button {
   --lac: linear-gradient(180deg, rgba(22, 27, 38, 0.9), rgba(10, 12, 18, 0.9));
 }
 
-[data-theme="b"] .panel,
-[data-theme="b"] .b {
+:root[data-ui="r6"][data-theme="b"] .panel,
+:root[data-ui="r6"][data-theme="b"] .b {
   isolation: isolate;
   background: none;
   color: var(--ink);
 }
-[data-theme="b"] .panel::before,
-[data-theme="b"] .b::before {
+:root[data-ui="r6"][data-theme="b"] .panel::before,
+:root[data-ui="r6"][data-theme="b"] .b::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -306,8 +313,8 @@ button {
   clip-path: var(--cut);
   background: var(--lac);
 }
-[data-theme="b"] .panel::after,
-[data-theme="b"] .b::after {
+:root[data-ui="r6"][data-theme="b"] .panel::after,
+:root[data-ui="r6"][data-theme="b"] .b::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -316,92 +323,97 @@ button {
   border: 10px solid transparent;
   border-image: var(--frame) 10 / 10px stretch;
 }
-[data-theme="b"] .b::before {
+:root[data-ui="r6"][data-theme="b"] .b::before {
   clip-path: var(--cut-s);
   background: linear-gradient(180deg, rgba(38, 44, 60, 0.96), rgba(18, 22, 31, 0.96));
 }
-[data-theme="b"] .b::after {
+:root[data-ui="r6"][data-theme="b"] .b::after {
   border-image-width: 7px;
 }
-[data-theme="b"] .res-bar .sep {
+:root[data-ui="r6"][data-theme="b"] .res-bar .sep {
   background: var(--gold-dim);
 }
-[data-theme="b"] .res-bar .ic {
+:root[data-ui="r6"][data-theme="b"] .res-bar .ic {
   color: var(--gold);
 }
-[data-theme="b"] .res-bar .ic.crys {
+:root[data-ui="r6"][data-theme="b"] .res-bar .ic.crys {
   color: #7fe6f0;
 }
-[data-theme="b"] .b .ic {
+:root[data-ui="r6"][data-theme="b"] .b .ic {
   color: var(--gold);
 }
-[data-theme="b"] .b.red::before,
-[data-theme="b"] .b.alarm::before {
+:root[data-ui="r6"][data-theme="b"] .b.red::before,
+:root[data-ui="r6"][data-theme="b"] .b.alarm::before {
   background: linear-gradient(180deg, #942d24, #5c1813);
 }
-[data-theme="b"] .b.red::after,
-[data-theme="b"] .b.alarm::after {
+:root[data-ui="r6"][data-theme="b"] .b.red::after,
+:root[data-ui="r6"][data-theme="b"] .b.alarm::after {
   border-image-source: var(--frame-red);
 }
-[data-theme="b"] .b.blue::before {
+:root[data-ui="r6"][data-theme="b"] .b.blue::before {
   background: linear-gradient(180deg, #2c5394, #182f59);
 }
-[data-theme="b"] .b.blue::after {
+:root[data-ui="r6"][data-theme="b"] .b.blue::after {
   border-image-source: var(--frame-blue);
 }
-[data-theme="b"] .b.gold::before,
-[data-theme="b"] .b.pri::before {
+:root[data-ui="r6"][data-theme="b"] .b.gold::before,
+:root[data-ui="r6"][data-theme="b"] .b.pri::before {
   background: linear-gradient(180deg, #e8c972, #b08933);
 }
-[data-theme="b"] .b.gold,
-[data-theme="b"] .b.pri {
+:root[data-ui="r6"][data-theme="b"] .b.gold,
+:root[data-ui="r6"][data-theme="b"] .b.pri {
   color: #1d1608;
 }
-[data-theme="b"] .b.red .ic,
-[data-theme="b"] .b.blue .ic {
+:root[data-ui="r6"][data-theme="b"] .b.red .ic,
+:root[data-ui="r6"][data-theme="b"] .b.blue .ic {
   color: #fff1e0;
 }
-[data-theme="b"] .b.gold .ic,
-[data-theme="b"] .b.pri .ic {
+:root[data-ui="r6"][data-theme="b"] .b.gold .ic,
+:root[data-ui="r6"][data-theme="b"] .b.pri .ic {
   color: #3a2a08;
 }
-[data-theme="b"] .grp.empty {
+:root[data-ui="r6"][data-theme="b"] .grp.empty {
   color: var(--ink2);
 }
-[data-theme="b"] .grp.empty::before {
+:root[data-ui="r6"][data-theme="b"] .grp.empty::before {
   background: rgba(12, 15, 21, 0.72);
 }
-[data-theme="b"] .grp.empty::after {
+:root[data-ui="r6"][data-theme="b"] .grp.empty::after {
   border-image-source: var(--frame-grey);
 }
-[data-theme="b"] .b.is-active,
-[data-theme="b"] .b.active {
+:root[data-ui="r6"][data-theme="b"] .b.is-active,
+:root[data-ui="r6"][data-theme="b"] .b.active {
   outline: 0;
   filter: drop-shadow(0 0 4px rgba(240, 205, 120, 0.85));
 }
-[data-theme="b"] .b.is-active::after,
-[data-theme="b"] .b.active::after {
+:root[data-ui="r6"][data-theme="b"] .b.is-active::after,
+:root[data-ui="r6"][data-theme="b"] .b.active::after {
   border-image-source: var(--frame-bright);
   border-image-width: 8px;
 }
-[data-theme="b"] .b.is-pressed {
+:root[data-ui="r6"][data-theme="b"] .b.is-pressed {
   transform: scale(0.95);
 }
-[data-theme="b"] .b.is-pressed::before {
+:root[data-ui="r6"][data-theme="b"] .b.is-pressed::before {
   filter: brightness(1.45);
   box-shadow: inset 0 0 14px rgba(255, 220, 140, 0.6);
 }
-[data-theme="b"] .b:disabled {
+:root[data-ui="r6"][data-theme="b"] .b:disabled {
   color: #6f6a60;
 }
-[data-theme="b"] .b:disabled::before {
+:root[data-ui="r6"][data-theme="b"] .b:disabled::before {
   background:
     repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 3px, transparent 3px 7px),
     rgba(18, 20, 24, 0.7);
 }
-[data-theme="b"] .b:disabled::after {
+:root[data-ui="r6"][data-theme="b"] .b:disabled::after {
   border-image-source: var(--frame-grey);
 }
-[data-theme="b"] .b:disabled .ic {
+:root[data-ui="r6"][data-theme="b"] .b:disabled .ic {
   color: #6f6a60;
+}
+
+/* INV-16: no 原型介面 label in the formal interface. */
+:root[data-ui="r6"] #proto-label {
+  display: none;
 }

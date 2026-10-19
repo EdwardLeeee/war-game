@@ -229,7 +229,7 @@ test("介面：資源列是模擬的數字；選主城 → 訓練村民 → 佇�
   await pause(page);
   const h = await page.evaluate(() => window.__proto?.game?.header());
   expect(h).toBeDefined();
-  await expect(page.locator(".res-bar")).toHaveAttribute("aria-label", /糧 \d+　木 \d+　金 \d+　晶 \d+　人口 \d+\/\d+/);
+  await expect(page.locator(".res-bar")).toContainText(/糧 \d+　木 \d+　金 \d+　晶 \d+　人口 \d+\/\d+/);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
   if (city === undefined) throw new Error("no main city");
@@ -278,12 +278,12 @@ test("速度：正常 → 快 → 慢 → 正常（每秒 30、40、20 tick，D-
   await start(page);
   await expect.poll(async () => (await header(page)).speed).toBe(3000);
   const speed = page.getByRole("button", { name: /^速度/ });
-  await expect(speed).toHaveAccessibleName("速度 正常");
+  await expect(speed).toHaveText("速度 正常");
   await speed.tap();
-  await expect(speed).toHaveAccessibleName("速度 快");
+  await expect(speed).toHaveText("速度 快");
   await expect.poll(async () => (await header(page)).speed).toBe(4000);
   await speed.tap();
-  await expect(speed).toHaveAccessibleName("速度 慢");
+  await expect(speed).toHaveText("速度 慢");
   await expect.poll(async () => (await header(page)).speed).toBe(2000);
   await speed.tap();
   await expect.poll(async () => (await header(page)).speed).toBe(3000);
@@ -423,14 +423,14 @@ test("量測 360 人、200 人（D-083）：開 perf360，雙方人口 360/360�
   await page.getByRole("button", { name: "量測 360 人" }).tap();
   // A new game of perf360 (Scenario.Perf360 = 4) that measures itself, both sides full.
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 4);
-  await expect(page.locator(".res-bar")).toHaveAttribute("aria-label", /人口 360\/360/);
+  await expect(page.locator(".res-bar")).toContainText("人口 360/360");
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
   await expect(page.locator(".lab-result")).toContainText("場景：perf360（所有系統都開著，開始時雙方人口 360／360）", { timeout: 150_000 });
   await shot(page, info, "d083-perf360-measure");
   // Another population: a game of its own (perf200, Scenario.Perf200 = 3).
   await page.getByRole("button", { name: "量測 200 人" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 3);
-  await expect(page.locator(".res-bar")).toHaveAttribute("aria-label", /人口 200\/200/);
+  await expect(page.locator(".res-bar")).toContainText("人口 200/200");
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
 });
 

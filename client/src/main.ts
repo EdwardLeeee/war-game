@@ -29,6 +29,7 @@ import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode, MAX_TICKS,
 import { createStage, gpuLimits } from "./stage.ts";
 import { applyTheme, loadTheme } from "./theme.ts";
 import { tickRateText } from "./ui/controls.ts";
+import { applyFormalUi, FORMAL_UI_DEFAULT } from "./ui/formal.ts";
 import { watchPresses } from "./ui/press.ts";
 import { deployedCommit, isNewer, updateHref } from "./version.ts";
 
@@ -72,7 +73,9 @@ declare global {
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const params = parseParams(location.search);
-// 介面風格 (R6-20): the device's choice before anything shows; buttons look pressed under a finger (R6-25-01).
+// 正式介面 (R6, ui/formal.ts): off unless a test page asks; with it, 介面風格 (R6-20) the device's
+// choice, before anything shows, and buttons that look pressed under a finger (R6-25-01).
+applyFormalUi(params.ui === "r6" || (params.ui === null && FORMAL_UI_DEFAULT));
 applyTheme(loadTheme());
 watchPresses();
 /**

@@ -73,6 +73,7 @@ a {
 }
 
 .card {
+  /* No wider: the 原型介面 label at the top left stays clear of it on the phone held sideways. */
   width: min(420px, 100%);
   /* Never taller than the safe area (the phone held sideways is 380 high): scroll rather than cut off. */
   max-height: 100%;
@@ -224,6 +225,16 @@ a {
   white-space: pre-wrap;
   -webkit-user-select: text;
   user-select: text;
+}
+
+#proto-label {
+  position: fixed;
+  top: calc(var(--safe-t) + 42px);
+  left: calc(var(--safe-l) + 8px);
+  font-size: 11px;
+  opacity: 0.8;
+  pointer-events: none;
+  text-shadow: 0 1px 2px #000;
 }
 
 /* Portrait: cover everything and ask for landscape. */

@@ -72,7 +72,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   expect((await header(page)).scenario, "the e2e scenario").toBe(1);
   // The chosen 難度 and no time limit reach the simulation (player 1 does not play here: ai=0).
   expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ difficulty: ["normal", "easy"], maxTicks: 0, ai: [false, false] });
-  await expect(page.locator(".res-bar")).toHaveAttribute("aria-label", /糧 \d{4}/);
+  await expect(page.locator(".res-bar")).toContainText(/糧 \d{4}/);
   await shot(page, info, "1-start");
 
   // 2. 選村民（點兩下一名村民 = 畫面內所有村民）

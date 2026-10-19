@@ -1,6 +1,7 @@
-// R6 正式介面 (D-087, design/r6/spec.md) on the fake world (?test=1&mock=1): R6-1, the looks.
-// A 銅木 the first time; 選單 → 設定 → 介面風格 changes it at once and the device keeps it; the
-// top of the battlefield (R6-11) and the groups (R6-12) in both, and a button pressed, lit.
+// R6 正式介面 (D-087, design/r6/spec.md) on the fake world (?test=1&mock=1&ui=r6): R6-1, the looks.
+// Off by default (ceo 2026-10-19: the prototype's until R6 is all in). On: A 銅木 the first time;
+// 選單 → 設定 → 介面風格 changes it at once and the device keeps it; the top of the battlefield
+// (R6-11) and the groups (R6-12) in both, and a button pressed, lit.
 
 import { expect, type Page, test } from "@playwright/test";
 import { injectSafeArea, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
@@ -8,7 +9,7 @@ import { injectSafeArea, saveGroup, selectForCommands, shot, visibleBoxes, watch
 const theme = (page: Page) => page.evaluate(() => document.documentElement.dataset.theme);
 
 async function start(page: Page): Promise<void> {
-  await page.goto("./?test=1&mock=1&tps=20");
+  await page.goto("./?test=1&mock=1&tps=20&ui=r6");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
 }
@@ -25,6 +26,21 @@ async function twoGroups(page: Page): Promise<void> {
   await selectForCommands(page, own.slice(6));
   await saveGroup(page, ".groups > button:nth-child(1)");
 }
+
+test("正式介面關著（預設）：畫面照原型——原型標示還在、資源列是一行字、選單沒有設定、R6 的樣子不套用（ceo 2026-10-19）", async ({ page }) => {
+  const check = watchErrors(page);
+  await page.goto("./?test=1&mock=1&tps=20");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  expect(await page.evaluate(() => document.documentElement.dataset.ui ?? null)).toBeNull();
+  await expect(page.getByText("原型介面（非正式設計）")).toBeVisible();
+  await expect(page.locator(".res-bar")).toHaveText(/^糧 \d+　木 \d+　金 \d+　晶 \d+　人口 \d+\/\d+/);
+  await expect(page.getByRole("button", { name: "速度 正常" })).toHaveText("速度 正常");
+  await expect(page.locator("#hud .b")).toHaveCount(0);
+  await page.getByRole("button", { name: "選單" }).tap();
+  await expect(page.getByRole("button", { name: "設定" })).toHaveCount(0);
+  check();
+});
 
 test("介面風格（R6-20）：第一次是 A 銅木；選單 → 設定 → B 墨漆金線立刻換、記在這台裝置，重新整理後還是 B", async ({ page }) => {
   const check = watchErrors(page);
@@ -46,7 +62,7 @@ test("介面風格（R6-20）：第一次是 A 銅木；選單 → 設定 → B 
 for (const look of ["a", "b"] as const) {
   test(`戰場上方和編隊（R6-11、R6-12）：${look === "a" ? "A 銅木" : "B 墨漆金線"}；資源列是圖示加數字，速度、暫停、選單 52×44，編隊 48×44、全軍 102×44，位置照規格`, async ({ page }, info) => {
     const check = watchErrors(page);
-    await page.goto("./?test=1&mock=1&tps=20");
+    await page.goto("./?test=1&mock=1&tps=20&ui=r6");
     await page.evaluate((t) => localStorage.setItem("war-game.proto.theme", t), look);
     await page.reload();
     await page.getByRole("button", { name: "開始" }).tap();

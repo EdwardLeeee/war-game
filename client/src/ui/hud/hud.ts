@@ -11,6 +11,7 @@ import { AUTO_TRAIN, BUILDING_STRIDE, BuildingField, BuildingFlag, type GameStat
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
 import { applyTheme, loadTheme, saveTheme, THEME_LABEL, THEMES } from "../../theme.ts";
+import { formalUi } from "../formal.ts";
 import { dress } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
@@ -76,6 +77,8 @@ export class Hud {
   private populationFull = false;
   private readonly info: SelectionInfo;
   private readonly cmds: CommandArea;
+  /** 正式介面 (R6) on: the buttons built in R6's look (ui/formal.ts). */
+  private readonly formal: boolean;
   private readonly recallBtn: HTMLButtonElement;
   private readonly idleBtn: HTMLButtonElement;
   private readonly groupBtns: HTMLButtonElement[] = [];
@@ -97,8 +100,10 @@ export class Hud {
     this.res = new ResourceBar(root);
     this.controlsBar = controlsBar;
 
-    const menu = btn(controlsBar, "", () => this.openMenu(), "b sec");
-    dress(menu, { ic: "menu", label: "選單" });
+    // 正式介面 (R6, ui/formal.ts): the buttons below in R6's look; off, the prototype's as they were.
+    this.formal = formalUi();
+    const menu = btn(controlsBar, "選單", () => this.openMenu(), this.formal ? "b sec" : "secondary");
+    if (this.formal) dress(menu, { ic: "menu", label: "選單" });
     menu.setAttribute("aria-haspopup", "dialog");
 
     const left = el("div", root, "side-left");
@@ -118,8 +123,8 @@ export class Hud {
     const grid = el("div", right, "groups");
     for (let i = 0; i < 4; i++) {
       // R6-12: the number large, what it has under it; empty, the number only.
-      const b = el("button", grid, "group-btn b grp empty");
-      el("span", b, "n", `${i + 1}`);
+      const b = el("button", grid, this.formal ? "group-btn b grp empty" : "group-btn secondary", this.formal ? "" : `${i + 1}`);
+      if (this.formal) el("span", b, "n", `${i + 1}`);
       b.type = "button";
       b.setAttribute("aria-label", `編隊 ${i + 1}：點一下選取並打開軍團畫面，點兩下跳過去`);
       // 軍團畫面 (D-054): the tap opens it; the long press that saved the selection is gone
@@ -130,15 +135,16 @@ export class Hud {
     // 「退」 (D-081, 3b-A): left of the buttons, 退1 and 退3 right beside them, 退2 and 退4 one further
     // out, each with its number so that two side by side read at a glance.
     for (let i = 0; i < 4; i++) {
-      const r = btn(grid, `退${i + 1}`, () => game.retreatGroup(i), `group-retreat b blue ${ORDER_TONE.retreat} ${i % 2 === 0 ? "near" : "far"}`);
+      const r = btn(grid, `退${i + 1}`, () => game.retreatGroup(i), `group-retreat ${this.formal ? "b blue " : ""}${ORDER_TONE.retreat} ${i % 2 === 0 ? "near" : "far"}`);
       r.setAttribute("aria-label", `編隊 ${i + 1} 撤回主城`);
       r.hidden = true;
       this.retreatBtns.push(r);
     }
-    this.armyBtn = btn(right, "", () => this.selectArmy(), "army-btn b army");
-    dress(this.armyBtn, { ic: "army", label: "全軍", count: 0, name: armyText(0) });
+    this.armyBtn = btn(right, armyText(0), () => this.selectArmy(), this.formal ? "army-btn b army" : "army-btn secondary");
+    if (this.formal) dress(this.armyBtn, { ic: "army", label: "全軍", count: 0, name: armyText(0) });
     // 全軍撤退 (user 2026-10-01): nothing to select first. Top left, far from 全軍.
-    dress(btn(root, "", () => game.retreatAll(), `retreat-all-btn b blue ${ORDER_TONE.retreat}`), { ic: "retreat", label: "全軍撤退" });
+    const retreatAll = btn(root, "全軍撤退", () => game.retreatAll(), `retreat-all-btn ${this.formal ? "b blue " : ""}${ORDER_TONE.retreat}`);
+    if (this.formal) dress(retreatAll, { ic: "retreat", label: "全軍撤退" });
 
     const host = {
       view: () => game.view,
@@ -225,7 +231,9 @@ export class Hud {
     this.idleBtn.classList.toggle("has-idle", idle > 0);
     // 全軍 N (ceo 2026-10-03): the soldiers it selects, those stationed in towns left out.
     const soldiers = this.game.armyIds().length;
-    if (this.armyBtn.getAttribute("aria-label") !== armyText(soldiers)) dress(this.armyBtn, { ic: "army", label: "全軍", count: soldiers, name: armyText(soldiers) });
+    if (!this.formal) {
+      if (this.armyBtn.textContent !== armyText(soldiers)) this.armyBtn.textContent = armyText(soldiers);
+    } else if (this.armyBtn.getAttribute("aria-label") !== armyText(soldiers)) dress(this.armyBtn, { ic: "army", label: "全軍", count: soldiers, name: armyText(soldiers) });
     for (let i = 0; i < 4; i++) {
       // 現有／原本 (D-026): what the group has now against what it was saved with. 閃紅提醒 (D-081):
       // down to fewer than half of what it started its attack with, it flashes red and reads 剩 a/b.
@@ -237,18 +245,22 @@ export class Hud {
       const b = this.groupBtns[i];
       b.classList.toggle("alarm", a.alarm);
       // R6-12: lit while what is selected is this group.
-      b.classList.toggle("is-active", g.saved > 0 && this.isSelected(g.ids));
+      if (this.formal) b.classList.toggle("is-active", g.saved > 0 && this.isSelected(g.ids));
       const count = a.alarm && a.base !== null ? `剩 ${a.present}/${a.base}` : `${this.alive(g.ids).length}/${g.saved}`;
       const text = g.saved > 0 || a.alarm ? `${i + 1}·${count}` : `${i + 1}`;
       if (b.textContent === text) continue;
       const empty = g.saved === 0 && !a.alarm;
-      b.classList.toggle("empty", empty);
+      if (this.formal) b.classList.toggle("empty", empty);
+      else if (empty) {
+        b.textContent = text;
+        continue;
+      }
       // Two lines (16/16 does not fit a 48 pt button on one); the dot is there for the text only.
       b.replaceChildren();
-      el("span", b, "n group-no", `${i + 1}`);
+      el("span", b, this.formal ? "n group-no" : "group-no", `${i + 1}`);
       if (empty) continue;
       el("span", b, "group-dot", "·");
-      el("span", b, "sub group-count", count);
+      el("span", b, this.formal ? "sub group-count" : "group-count", count);
     }
     this.info.update();
     this.cmds.update();
@@ -575,7 +587,8 @@ export class Hud {
       this.game.showTownHint();
     }, "secondary");
     btn(list, "兵種相剋", () => this.openCounters(), "secondary");
-    btn(list, "設定", () => this.openSettings(), "secondary");
+    // 介面風格 comes with 正式介面 (ceo 2026-10-19).
+    if (this.formal) btn(list, "設定", () => this.openSettings(), "secondary");
     btn(list, "量測與確定性檢查", () => {
       this.closeDialog();
       this.game.lab.show();

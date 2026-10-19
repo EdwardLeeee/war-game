@@ -29,6 +29,7 @@ import {
   UnitType,
 } from "../../sim.ts";
 import type { GameView } from "../../view/view.ts";
+import { formalUi } from "../formal.ts";
 import { icon, type IconName } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { ACTION_NAME, BUILDABLE, BUILDING_NAME, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
@@ -833,12 +834,22 @@ export class CommandArea {
 
 export class ResourceBar {
   readonly el: HTMLElement;
-  private readonly numbers: Record<"food" | "wood" | "gold" | "crystal" | "pop" | "cap" | "training" | "time", HTMLElement>;
+  private readonly numbers: Record<"food" | "wood" | "gold" | "crystal" | "pop" | "cap" | "training" | "time", HTMLElement> | null;
   private text = "";
   private room = 0;
 
+  /** 正式介面 (ui/formal.ts) on: R6-11's icons and figures; off, the prototype's line of words. */
+  private readonly formal: boolean;
+
   /** R6-11 (INV-19): icons and figures, no words; its name is the whole line in words (resourceLine). */
   constructor(parent: HTMLElement) {
+    this.formal = formalUi();
+    if (!this.formal) {
+      this.el = el("div", parent, "res-bar");
+      this.el.setAttribute("aria-label", "資源");
+      this.numbers = null;
+      return;
+    }
     this.el = el("div", parent, "res-bar res panel");
     this.el.setAttribute("role", "status");
     const item = (ic: IconName, cls: string): HTMLElement => {
@@ -868,8 +879,16 @@ export class ResourceBar {
     if (lines[0] === this.text && room === this.room) return;
     this.text = lines[0];
     this.room = room;
-    this.el.setAttribute("aria-label", lines[0]);
     const n = this.numbers;
+    if (n === null) {
+      // The prototype's: one line, shortened as it must.
+      for (const line of lines) {
+        this.el.textContent = line;
+        if (this.el.offsetWidth <= room) break;
+      }
+      return;
+    }
+    this.el.setAttribute("aria-label", lines[0]);
     n.food.textContent = String(h[H.food]);
     n.wood.textContent = String(h[H.wood]);
     n.gold.textContent = String(h[H.gold]);
