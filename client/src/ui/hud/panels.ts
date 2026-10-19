@@ -14,6 +14,7 @@ import {
   BuildingFlag,
   BuildingType,
   type CommandBody,
+  HeaderField as H,
   NEUTRAL,
   NO_OWNER,
   NodeField as N,
@@ -28,6 +29,8 @@ import {
   UnitType,
 } from "../../sim.ts";
 import type { GameView } from "../../view/view.ts";
+import { formalUi } from "../formal.ts";
+import { icon, type IconName } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { ACTION_NAME, BUILDABLE, BUILDING_NAME, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
 
@@ -831,26 +834,73 @@ export class CommandArea {
 
 export class ResourceBar {
   readonly el: HTMLElement;
+  private readonly numbers: Record<"food" | "wood" | "gold" | "crystal" | "pop" | "cap" | "training" | "time", HTMLElement> | null;
   private text = "";
   private room = 0;
 
+  /** 正式介面 (ui/formal.ts) on: R6-11's icons and figures; off, the prototype's line of words. */
+  private readonly formal: boolean;
+
+  /** R6-11 (INV-19): icons and figures, no words; its name is the whole line in words (resourceLine). */
   constructor(parent: HTMLElement) {
-    this.el = el("div", parent, "res-bar");
-    this.el.setAttribute("aria-label", "資源");
+    this.formal = formalUi();
+    if (!this.formal) {
+      this.el = el("div", parent, "res-bar");
+      this.el.setAttribute("aria-label", "資源");
+      this.numbers = null;
+      return;
+    }
+    this.el = el("div", parent, "res-bar res panel");
+    this.el.setAttribute("role", "status");
+    const item = (ic: IconName, cls: string): HTMLElement => {
+      const r = el("span", this.el, "r");
+      r.appendChild(icon(ic, cls));
+      return el("b", r, "");
+    };
+    const food = item("food", "food");
+    const wood = item("wood", "wood");
+    const gold = item("gold", "gold");
+    const crystal = item("crystal", "crys");
+    el("span", this.el, "sep");
+    const pop = item("pop", "");
+    const popItem = pop.parentElement as HTMLElement;
+    const cap = el("small", popItem, "");
+    const training = el("small", popItem, "tr");
+    const time = item("time", "time");
+    this.numbers = { food, wood, gold, crystal, pop, cap, training, time };
   }
 
-  /** `room`: px the bar may take before the top-right buttons; one line, shortened as it must (resourceLine). */
+  /** `room`: px the bar may take before the top-right buttons; one line, the 訓練中 words, then the clock's icon, left out as it must. */
   update(view: GameView | null, room: number): void {
     const h = view?.header;
     if (view === null || h === null || h === undefined) return;
-    const lines = resourceLine(h, view.trainingCount());
+    const training = view.trainingCount();
+    const lines = resourceLine(h, training);
     if (lines[0] === this.text && room === this.room) return;
     this.text = lines[0];
     this.room = room;
-    for (const line of lines) {
-      this.el.textContent = line;
-      if (this.el.offsetWidth <= room) break;
+    const n = this.numbers;
+    if (n === null) {
+      // The prototype's: one line, shortened as it must.
+      for (const line of lines) {
+        this.el.textContent = line;
+        if (this.el.offsetWidth <= room) break;
+      }
+      return;
     }
+    this.el.setAttribute("aria-label", lines[0]);
+    n.food.textContent = String(h[H.food]);
+    n.wood.textContent = String(h[H.wood]);
+    n.gold.textContent = String(h[H.gold]);
+    n.crystal.textContent = String(h[H.crystal]);
+    n.pop.textContent = String(h[H.population] + training);
+    n.cap.textContent = `/${h[H.populationCap]}`;
+    n.training.textContent = training > 0 ? `訓練中 ${training}` : "";
+    n.training.hidden = training === 0;
+    n.time.textContent = clock(h[H.tick]);
+    this.el.classList.remove("no-training", "no-clock-icon");
+    if (this.el.offsetWidth > room) this.el.classList.add("no-training");
+    if (this.el.offsetWidth > room) this.el.classList.add("no-clock-icon");
   }
 }
 
