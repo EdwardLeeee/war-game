@@ -2,7 +2,7 @@
 // coloured by sim/src/placement.ts on the snapshot's placement grid; when the finger lifts,
 // ✓ sends `build`, ✗ cancels. Pure state, drawn by render/ and ui/overlays.ts.
 
-import { type BuildingInfo, BuildingType, checkPlacement, type CommandBody, PlaceBit, type PlacementGrid } from "../sim.ts";
+import { type BuildingInfo, BuildingType, checkPlacement, type CommandBody, PlaceBit, type PlacementGrid, Reject } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 
 export type PlacementPhase = "dragging" | "confirm";
@@ -59,6 +59,20 @@ export class Placement {
  * town we govern or repair (sim/PROTOCOL.md section 7). Checked here as well, so the preview is
  * red there whatever `checkPlacement` of this version says. Other buildings: always true.
  */
+/** Why the preview is red on a castle's wall (D-089). */
+export const WALL_TEXT = "城牆上不能蓋";
+/** Why a building may not go on a gate's lane (D-089, ceo 2026-10-20: 城門一直開著，誰都能走). */
+export const GATE_LANE_TEXT = "城門要留給人走，不能蓋";
+
+/**
+ * Why a building may not go there because of a castle (D-089), from the simulation's own marks
+ * and rule: on a wall (Wall), or on a gate's lane (checkPlacement's GateLane); null otherwise.
+ */
+export function castleReason(grid: PlacementGrid, building: Pick<BuildingInfo, "type" | "size">, cellX: number, cellY: number): string | null {
+  if (onWall(grid, building, cellX, cellY)) return WALL_TEXT;
+  return checkPlacement(grid, building, cellX, cellY) === Reject.GateLane ? GATE_LANE_TEXT : null;
+}
+
 /** The footprint is on a castle's wall (D-089: the simulation marks it Wall, and Blocked: nothing is built there). */
 export function onWall(grid: PlacementGrid, building: Pick<BuildingInfo, "size">, cellX: number, cellY: number): boolean {
   const n = grid.size;

@@ -117,3 +117,18 @@ test("留守算城鎮裡的兵：牆以內才算，站在城門上不算（PROTO
   assert.equal(inTown(unit(21, 16), area), false);
   assert.equal(inTown(unit(21, 16), { ...area, inside: null }), true, "without a castle, the radius");
 });
+
+test("放建築：牆上寫「城牆上不能蓋」，城門的通道（城門、門外一格、門內一格）寫「城門要留給人走，不能蓋」，都照模擬的標記和規則", async () => {
+  const { castleReason, GATE_LANE_TEXT, WALL_TEXT } = await import("../src/ui/placement.ts");
+  const { PlaceBit, BuildingType } = await import("../src/sim.ts");
+  const n = 16;
+  const cells = new Uint8Array(n * n);
+  // A wall at (5, 5), a gate's lane at (8, 5).
+  cells[5 * n + 5] = PlaceBit.Blocked | PlaceBit.Wall;
+  cells[5 * n + 8] = PlaceBit.Gate | PlaceBit.GateLane;
+  const grid = { size: n, cells };
+  const house = { type: BuildingType.House, size: 2 };
+  assert.equal(castleReason(grid, house, 4, 4), WALL_TEXT);
+  assert.equal(castleReason(grid, house, 7, 4), GATE_LANE_TEXT);
+  assert.equal(castleReason(grid, house, 10, 10), null, "open ground");
+});

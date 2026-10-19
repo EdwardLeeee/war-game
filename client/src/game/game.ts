@@ -71,7 +71,7 @@ import { PendingOrders } from "./pending.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText, type ToastKind } from "../ui/overlays.ts";
-import { onWall, Placement, towerLandOk } from "../ui/placement.ts";
+import { castleReason, Placement, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
@@ -150,8 +150,6 @@ export interface ExportedLog {
 
 /** Why a 箭樓 preview is red off TowerLand (round 7, D-061). */
 export const TOWER_LAND_TEXT = "箭樓要蓋在主城或治理的城鎮附近";
-/** Why the preview is red on a castle's wall (D-089). */
-export const WALL_TEXT = "城牆上不能蓋";
 /** With outposts on (D-080), arrow towers may also go by our outposts. */
 export const TOWER_LAND_TEXT_OUTPOST = "箭樓要蓋在主城、治理的城鎮或哨所附近";
 
@@ -1872,9 +1870,9 @@ export class Game implements GestureHost {
     // 箭樓 off TowerLand (round 7): why the spot is red comes first.
     const offTowerLand = view.placement !== null && !towerLandOk(view.placement, p.info, p.cellX, p.cellY);
     const landText = outpostSlots(view.rules) > 0 ? TOWER_LAND_TEXT_OUTPOST : TOWER_LAND_TEXT;
-    // On a castle's wall (D-089): that first, the simulation's own reason.
-    const wall = view.placement !== null && onWall(view.placement, p.info, p.cellX, p.cellY);
-    this.overlays.promptWarning(wall ? WALL_TEXT : offTowerLand ? landText : town === null ? null : MILITIA_WARNING);
+    // On a castle's wall or a gate's lane (D-089): those first, the simulation's own reasons.
+    const castle = view.placement === null ? null : castleReason(view.placement, p.info, p.cellX, p.cellY);
+    this.overlays.promptWarning(castle ?? (offTowerLand ? landText : town === null ? null : MILITIA_WARNING));
   }
 
   private showPlaceButtons(): void {

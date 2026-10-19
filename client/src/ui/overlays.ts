@@ -44,6 +44,8 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.NoFarmer]: "附近沒有可以派去蓋的村民",
   [Reject.AlreadyPlundered]: "這座城這局已經被搶過，只能治理",
   [Reject.NoRoom]: "建築裡沒有空位了（走在路上的也算）",
+  // D-089 (ceo 2026-10-20): the gate, the cell in front of it and the first behind it.
+  [Reject.GateLane]: "城門要留給人走，不能蓋",
 };
 
 /**
