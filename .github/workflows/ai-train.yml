@@ -138,18 +138,28 @@ jobs:
           F="${GITHUB_WORKSPACE}/from"
           O="${GITHUB_WORKSPACE}/out"
           T=src/ai/learn/train.ts
+          # A run with one artifact is unpacked straight into from/, with several each into from/<name>/.
+          first() { find "$F" -name "$1" 2>/dev/null | sort | head -1; }
           case "$MODE" in
             dryrun) node $T dryrun --out "$O" ;;
             record) node $T record --games "$GAMES" --out "$O" ;;
-            bc) node $T bc --data "$F/train-record" --out "$O" ;;
+            bc)
+              S=$(first samples.bin); [ -n "$S" ] || { echo "no samples.bin in from_run" >&2; exit 1; }
+              node $T bc --data "$(dirname "$S")" --out "$O" ;;
             es)
-              if [ -f "$F/train-es-$ISLAND/state.json" ]; then
-                node $T es --start "$F/train-es-$ISLAND/net.json" --resume "$F/train-es-$ISLAND" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
+              R="$F/train-es-$ISLAND"
+              if [ ! -f "$R/state.json" ] && [ "$ISLAND" = "0" ] && [ -f "$F/state.json" ]; then R="$F"; fi
+              if [ -f "$R/state.json" ]; then
+                node $T es --start "$R/net.json" --resume "$R" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
               else
-                node $T es --start "$F/train-bc/bc.json" --seed $((ISLAND + 1)) --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
+                B=$(first bc.json); [ -n "$B" ] || { echo "no bc.json or state.json in from_run" >&2; exit 1; }
+                node $T es --start "$B" --seed $((ISLAND + 1)) --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
               fi ;;
             eval)
-              N="$F/$NET/net.json"; [ -f "$N" ] || N="$F/$NET/bc.json"
+              N="$F/$NET/net.json"
+              [ -f "$N" ] || N="$F/$NET/bc.json"
+              [ -f "$N" ] || N=$(first net.json)
+              [ -n "$N" ] && [ -f "$N" ] || N=$(first bc.json)
               node $T eval --net "$N" --games "$GAMES" --out "$O" ;;
           esac
           cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"
