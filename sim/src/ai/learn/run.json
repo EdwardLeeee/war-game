@@ -1,0 +1,5 @@
+{
+  "mode": "eval",
+  "games": 100,
+  "nets": ["none", "src/ai/learn/nets/bc-cap50.json", "src/ai/learn/nets/bc-cap15.json", "src/ai/learn/nets/bc-cap5.json"]
+}
