@@ -3,11 +3,11 @@
 // every candidate on the same games (seeds, spawns, opponents), scored, ranked; the weights move toward
 // the better side of each pair. A game counts 1 for a win and 0 for a loss or a draw (draws are losses: no
 // learning to sit at home); on top, small rewards from what D-086 A measured, shrinking to nothing over the
-// generations (ceo 2026-10-19). Opponents from easy to hard: normal until the weights win often enough,
-// then hard, then a mix of hard, normal and the late scripted group.
+// generations (ceo 2026-10-19). It starts from the network that always chooses AS_HARD, so from hard's own
+// strength; opponents from easy to hard (normal, hard, then a mix of hard, normal and the late scripted group)
+// with the stage to start at in the settings (ES_DEFAULTS: the mix, as the start is as strong as hard already).
 
-import { NET_SHAPE, type NetWeights } from "../net.ts";
-import { rng } from "./bc.ts";
+import { NET_HEADS, NET_SHAPE, type NetWeights } from "../net.ts";
 import { runAll } from "./pool.ts";
 import type { GameOutcome, Opponent } from "./play.ts";
 import type { Job } from "./worker.ts";
@@ -29,6 +29,8 @@ export interface EsConfig {
   /** Time limit of a training game (ticks), and the share of games on the random map. */
   maxTicks: number;
   randomShare: number;
+  /** The opponents' stage to start at: 0 normal, 1 hard, 2 the mix. */
+  startStage: number;
 }
 
 export const ES_DEFAULTS: EsConfig = {
@@ -43,6 +45,7 @@ export const ES_DEFAULTS: EsConfig = {
   toMix: 0.45,
   maxTicks: 36000,
   randomShare: 0.5,
+  startStage: 2,
 };
 
 export interface EsState {
@@ -64,8 +67,23 @@ export interface GenerationReport {
   draws: number;
   /** Games where 10 or more of the trained side's soldiers stood by the enemy's main city (ceo: not hoarding at home). */
   reached: number;
+  /** Per head, over all candidates' games: thinks with each choice (choice 0: AS_HARD). */
+  choices: number[][];
   shaping: number;
   seconds: number;
+}
+
+/** A small seeded generator for training (not the game's: learn/ never runs in a game). */
+export function rng(seed: number): () => number {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s ^= s << 13;
+    s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    s >>>= 0;
+    return s / 4294967296;
+  };
 }
 
 /** The weights vector's layout: per layer, its weights then its biases. */
@@ -155,6 +173,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   let won = 0;
   let draws = 0;
   let reached = 0;
+  const choices = NET_HEADS.map((k) => new Array(k).fill(0));
   for (let k = 0; k < candidates.length; k++) {
     let f = 0;
     for (let g = 0; g < games.length; g++) {
@@ -163,6 +182,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
       if (o.won === 1) won++;
       if (o.won < 0) draws++;
       if (o.reached) reached++;
+      o.choices.forEach((h, i) => h.forEach((v, k) => (choices[i][k] += v)));
     }
     fitness.push(f);
   }
@@ -177,7 +197,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
     for (let i = 0; i < n; i++) state.theta[i] += (c.lr * d * eps[p][i]) / ((bias[i] ? c.sigmaBias : c.sigma) * c.pairs);
   }
   const total = candidates.length * games.length;
-  const report: GenerationReport = { generation: state.generation, stage: state.stage, games: total, won, draws, reached, shaping, seconds: Math.round((performance.now() - t0) / 1000) };
+  const report: GenerationReport = { generation: state.generation, stage: state.stage, games: total, won, draws, reached, shaping, choices, seconds: Math.round((performance.now() - t0) / 1000) };
   // Curriculum: on to the next opponents once the candidates win often enough against these.
   if (state.stage === 0 && won >= total * c.toHard) state.stage = 1;
   else if (state.stage === 1 && won >= total * c.toMix) state.stage = 2;
@@ -187,7 +207,8 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
 }
 
 export function newState(start: NetWeights, seed: number, config: Partial<EsConfig> = {}): EsState {
-  return { config: { ...ES_DEFAULTS, ...config }, theta: toVector(start), generation: 0, stage: 0, seed, history: [] };
+  const c = { ...ES_DEFAULTS, ...config };
+  return { config: c, theta: toVector(start), generation: 0, stage: c.startStage, seed, history: [] };
 }
 
 /** The shape every network here has (net.ts NET_SHAPE). */

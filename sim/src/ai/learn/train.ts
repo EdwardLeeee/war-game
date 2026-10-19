@@ -1,15 +1,14 @@
 // D-086 B training: what .github/workflows/ai-train.yml runs (docs/research/2026-10-ai-nn.md).
 //   node src/ai/learn/train.ts dryrun --out DIR                      cores, and games an hour (hard against hard)
-//   node src/ai/learn/train.ts record --games 400 --out DIR           hard's choices from its own view (samples.bin)
-//   node src/ai/learn/train.ts bc --data DIR --out DIR                imitation, then the integer network (bc.json)
-//   node src/ai/learn/train.ts es --start FILE --out DIR [--resume DIR] [--seed N] [--hours H] [--generations N]
+//   node src/ai/learn/train.ts record --games 400 --out DIR           hard's inputs and what it did (samples.bin, games.json), for looking into
+//   node src/ai/learn/train.ts es --out DIR [--start FILE] [--resume DIR] [--seed N] [--hours H] [--generations N]
+//                                                                    from the network that always plays as hard (asHardNet) unless --start
 //   node src/ai/learn/train.ts eval --net FILE --games N --out DIR    against hard (both spawns), normal, the late group
 // Every mode writes summary.md (Markdown) and its files under --out; checkpoints and records are CI artifacts, never commits.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { cpus } from "node:os";
-import { NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
-import { agreement, quantize, type Sample, trainFloat } from "./bc.ts";
+import { asHardNet, NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
 import { type EsState, fromVector, generation, newState, sameShape } from "./es.ts";
 import type { Opponent } from "./play.ts";
 import { runAll, threads } from "./pool.ts";
@@ -29,20 +28,15 @@ const summary = (line: string) => {
 const started = performance.now();
 const hours = () => (performance.now() - started) / 3_600_000;
 
-/** Samples as bytes: NET_INPUTS inputs (0..255), then each head's label + 1 (0: none). */
+/** A sample: NET_INPUTS inputs, then what hard did for each head (ai.ts netLog; -1: nothing at that think). */
+type Sample = number[];
+/** Samples as bytes: NET_INPUTS inputs (0..255), then each label + 1 (0: none). */
 const WIDTH = NET_INPUTS + NET_HEADS.length;
 function saveSamples(file: string, samples: Sample[]): void {
   const b = new Uint8Array(samples.length * WIDTH);
   samples.forEach((s, k) => s.forEach((v, i) => (b[k * WIDTH + i] = i < NET_INPUTS ? v : v + 1)));
   writeFileSync(file, b);
 }
-function loadSamples(file: string): Sample[] {
-  const b = readFileSync(file);
-  const out: Sample[] = [];
-  for (let k = 0; k + WIDTH <= b.length; k += WIDTH) out.push(Array.from(b.subarray(k, k + WIDTH), (v, i) => (i < NET_INPUTS ? v : v - 1)));
-  return out;
-}
-
 /** Against hard, both spawns, `n` games on each map; against normal and the late group, `n / 2` on each. */
 async function evaluate(net: NetWeights | null, n: number, seed0: number) {
   const sets: [string, Opponent, number][] = [
@@ -87,50 +81,24 @@ if (mode === "dryrun") {
   // How many samples each game gave, in order: bc holds out whole games (ceo 2026-10-19).
   writeFileSync(`${out}/games.json`, JSON.stringify(res.map((r) => (r.kind === "record" ? r.samples.length : 0))));
   summary(`## 記錄\n\n- ${games} 局，${samples.length} 個決策點（每 ${arg("every", "10")} 次思考取一次）`);
-} else if (mode === "bc") {
-  const dir = arg("data", out);
-  const data = loadSamples(`${dir}/samples.bin`);
-  // Hold out whole games, every 10th (they mix both maps, both spawns and both opponents): none of their
-  // positions is trained on (ceo 2026-10-19).
-  const counts: number[] = existsSync(`${dir}/games.json`) ? JSON.parse(readFileSync(`${dir}/games.json`, "utf8")) : [data.length];
-  const train: Sample[] = [];
-  const test: Sample[] = [];
-  let at = 0;
-  counts.forEach((n, g) => {
-    (counts.length > 1 && g % 10 === 9 ? test : train).push(...data.slice(at, at + n));
-    at += n;
-  });
-  const f = trainFloat(train, { epochs: Number(arg("epochs", "8")), lr: Number(arg("lr", "0.003")), batch: 64, seed: Number(arg("seed", "1")), cap: Number(arg("cap", "50")) }, (s) => console.log(s));
-  const net = quantize(f, train);
-  writeFileSync(`${out}/bc.json`, JSON.stringify(net));
-  const a = agreement(net, test);
-  const heads = ["軍隊", "練兵比例", "下一個蓋的", "城鎮"];
-  const choices = [["守家", "拿城鎮", "打主城"], ["槍兵多", "平均", "遠程多"], ["村民先", "照困難", "兵營射場先"], ["搶", "治理"]];
-  const pct = (x: number, n: number) => (n === 0 ? "-" : `${((x * 100) / n).toFixed(1)}%`);
-  summary(`## 行為複製\n\n- ${counts.length} 局：訓練 ${train.length} 個決策點；檢驗 ${test.length} 個，出自另外留下的 ${counts.length > 1 ? Math.floor(counts.length / 10) : 0} 局（每 10 局留 1 局，整局都沒拿來訓練）。少見的選擇加重計分（classWeights）。`);
-  summary("- 整數網路和困難選得一樣的比例（檢驗的決策點）：\n\n| 決定 | 全部 | 一直選最常見的那個 | 困難每個選擇各自的一致比例 |\n|---|---|---|---|");
-  heads.forEach((h, i) => {
-    const of = a.of[i].reduce((x, y) => x + y, 0);
-    const same = a.same[i].reduce((x, y) => x + y, 0);
-    summary(`| ${h} | ${pct(same, of)}（${of} 個） | ${pct(Math.max(...a.of[i]), of)} | ${choices[i].map((c, k) => `${c} ${pct(a.same[i][k], a.of[i][k])}（${a.of[i][k]}）`).join("、")} |`);
-  });
-  summary("\n- 網路在檢驗的局面上，每個選項各選了幾次（ceo：演化前每一種都要選過）：\n");
-  heads.forEach((h, i) => {
-    const never = choices[i].filter((_, k) => a.chose[i][k] === 0 && a.of[i][k] > 0);
-    summary(`  - ${h}：${choices[i].map((c, k) => `${c} ${a.chose[i][k]}`).join("、")}${never.length > 0 ? `。困難選過、網路沒選過：${never.join("、")}` : ""}`);
-  });
 } else if (mode === "es") {
   const resume = arg("resume", "");
-  const start: NetWeights = JSON.parse(readFileSync(arg("start", `${out}/bc.json`), "utf8"));
+  const startFile = arg("start", "");
+  const start: NetWeights = startFile === "" ? asHardNet() : JSON.parse(readFileSync(startFile, "utf8"));
   if (!sameShape(start)) throw new Error("the start network has another shape");
   let state: EsState = resume !== "" && existsSync(`${resume}/state.json`) ? JSON.parse(readFileSync(`${resume}/state.json`, "utf8")) : newState(start, Number(arg("seed", "1")), JSON.parse(arg("config", "{}")));
   const limitH = Number(arg("hours", "5.5"));
   const maxGen = state.generation + Number(arg("generations", "1000000"));
-  summary(`## 演化策略（種子 ${state.seed}，從第 ${state.generation} 代起）\n\n| 代 | 對手 | 局 | 贏 | 平手 | 打到對方主城 | 加分權重 | 秒 |\n|---|---|---|---|---|---|---|---|`);
+  summary(`## 演化策略（種子 ${state.seed}，從第 ${state.generation} 代起）\n\n「不照困難」：每組決定，不照困難的選擇在所有思考裡的次數和比例（ceo 2026-10-19）。\n\n| 代 | 對手 | 局 | 贏 | 平手 | 輸 | 打到對方主城 | 軍隊：守家／出兵 | 練兵：槍兵多／遠程多 | 蓋：村民先／兵營射場先 | 城鎮：搶／治理 | 加分權重 | 秒 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|`);
   const stageName = ["普通", "困難", "混合"];
   while (state.generation < maxGen) {
     const r = await generation(state, start);
-    summary(`| ${r.generation} | ${stageName[r.stage]} | ${r.games} | ${r.won} | ${r.draws} | ${r.reached} | ${r.shaping.toFixed(3)} | ${r.seconds} |`);
+    const dev = (h: number) => {
+      const c = r.choices[h];
+      const all = c.reduce((a, b) => a + b, 0);
+      return `${c.slice(1).join("／")}（${all === 0 ? "-" : `${(((all - c[0]) * 100) / all).toFixed(1)}%`}）`;
+    };
+    summary(`| ${r.generation} | ${stageName[r.stage]} | ${r.games} | ${r.won} | ${r.draws} | ${r.games - r.won - r.draws} | ${r.reached} | ${dev(0)} | ${dev(1)} | ${dev(2)} | ${dev(3)} | ${r.shaping.toFixed(3)} | ${r.seconds} |`);
     writeFileSync(`${out}/state.json`, JSON.stringify(state));
     writeFileSync(`${out}/net.json`, JSON.stringify(fromVector(state.theta, start)));
     // Stop before the job's limit with time for one more generation and the upload.
@@ -144,5 +112,5 @@ if (mode === "dryrun") {
   const rows = await evaluate(net, Number(arg("games", "100")), Number(arg("seed", "1")));
   summary(`## 比強弱（${file === "" ? "困難本身" : file}）\n\n${rows.join("\n")}`);
 } else {
-  throw new Error(`mode ${mode}: dryrun, record, bc, es or eval`);
+  throw new Error(`mode ${mode}: dryrun, record, es or eval`);
 }

@@ -6,22 +6,22 @@
 # limit and leaves a checkpoint as an artifact (kept 14 days, never committed); the next run goes on from it
 # (from_run). The last job adds up the runner hours of the run.
 #   dryrun  cores and games an hour
-#   record  hard's choices from its own view in AI-against-AI games (train-record)
-#   bc      imitation of hard, then the integer network (train-bc; from_run: a record run)
-#   es      evolution strategies, one island per job (train-es-<n>; from_run: a bc run to start, or an es run to go on)
-#   eval    the network against hard, normal and the late group (from_run, net_artifact: where net.json is)
+#   record  hard's inputs and what it did, in AI-against-AI games (train-record), for looking into
+#   es      evolution strategies, one island per job (train-es-<n>), from the network that plays exactly as hard
+#           (from_run: an es run to go on from)
+#   eval    networks against hard, normal and the late group (nets: files in the branch; or from_run, net_artifact)
 name: AI train
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: dryrun, record, bc, es or eval
+        description: dryrun, record, es or eval
         type: choice
-        options: [dryrun, record, bc, es, eval]
+        options: [dryrun, record, es, eval]
         default: dryrun
       from_run:
-        description: The run whose artifacts this one starts from (bc, es, eval)
+        description: The run whose artifacts this one starts from (es, eval)
         default: ""
       islands:
         description: "es: jobs, each its own search (at most 8)"
@@ -85,7 +85,7 @@ jobs:
           fi
           get() { echo "$S" | jq -r --arg k "$1" --arg d "$2" '.[$k] // $d | if type == "string" then . else tojson end'; }
           mode=$(get mode dryrun)
-          case "$mode" in dryrun|record|bc|es|eval) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
+          case "$mode" in dryrun|record|es|eval) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
           islands=$(get islands 8)
           n=1
           if [ "$mode" = "es" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
@@ -147,7 +147,7 @@ jobs:
           set -o pipefail
           F="${GITHUB_WORKSPACE}/from"
           O="${GITHUB_WORKSPACE}/out"
-          # run.json "args": more options for train.ts (bc: --epochs, --cap; eval: --seed), split on spaces.
+          # run.json "args": more options for train.ts (eval: --seed), split on spaces.
           T="src/ai/learn/train.ts"
           set -- $ARGS
           # A run with one artifact is unpacked straight into from/, with several each into from/<name>/.
@@ -155,17 +155,13 @@ jobs:
           case "$MODE" in
             dryrun) node $T dryrun --out "$O" "$@" ;;
             record) node $T record --games "$GAMES" --out "$O" "$@" ;;
-            bc)
-              S=$(first samples.bin); [ -n "$S" ] || { echo "no samples.bin in from_run" >&2; exit 1; }
-              node $T bc --data "$(dirname "$S")" --out "$O" "$@" ;;
             es)
               R="$F/train-es-$ISLAND"
               if [ ! -f "$R/state.json" ] && [ "$ISLAND" = "0" ] && [ -f "$F/state.json" ]; then R="$F"; fi
               if [ -f "$R/state.json" ]; then
                 node $T es --start "$R/net.json" --resume "$R" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
               else
-                B=$(first bc.json); [ -n "$B" ] || { echo "no bc.json or state.json in from_run" >&2; exit 1; }
-                node $T es --start "$B" --seed $((ISLAND + 1)) --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
+                node $T es --seed $((ISLAND + 1)) --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
               fi ;;
             eval)
               L=$(echo "$NETS" | jq -r ".[$ISLAND] // empty")

@@ -4,30 +4,30 @@
 // head (the lowest index on a tie); no floating point, no Math functions.
 //
 // The inputs are what the hard AI already knows: its own PlayerView and its memory of enemy soldiers it
-// has seen (NetState, filled by ai.ts from those alone). The network only chooses, at each think:
-//   - army: at home, wait / go for a town / march on the enemy's main city (HEAD_ARMY);
-//   - mix: spearmen first / even / ranged first (HEAD_MIX);
-//   - build: farmers first / as hard builds / barracks and ranges first (HEAD_BUILD);
-//   - town: plunder / govern a town it takes for the first time (HEAD_TOWN).
+// has seen (NetState, filled by ai.ts from those alone). The network only chooses, at each think, and the
+// first choice of every head is AS_HARD, hard's own rule (ceo 2026-10-19): a network that always makes it
+// plays exactly as hard, and what it learns is when to do otherwise.
+//   - army: as hard / wait at home / march on the enemy's main city (HEAD_ARMY);
+//   - mix: as hard / spearmen first / ranged first (HEAD_MIX);
+//   - build: as hard / farmers first / barracks and ranges first (HEAD_BUILD);
+//   - town: as hard / plunder / govern a town it takes for the first time (HEAD_TOWN).
 // How soldiers walk and fight stays the hard AI's.
 
-/** Each head's choices, in the order of the network's outputs. */
-export const NET_HEADS: readonly number[] = [3, 3, 3, 2];
+/** Each head's choices, in the order of the network's outputs; choice AS_HARD (0) is hard's own rule. */
+export const NET_HEADS: readonly number[] = [3, 3, 3, 3];
 export const HEAD_ARMY = 0;
 export const HEAD_MIX = 1;
 export const HEAD_BUILD = 2;
 export const HEAD_TOWN = 3;
-export const ARMY_HOME = 0;
-export const ARMY_TOWN = 1;
+export const AS_HARD = 0;
+export const ARMY_HOME = 1;
 export const ARMY_BASE = 2;
-export const MIX_SPEAR = 0;
-export const MIX_EVEN = 1;
+export const MIX_SPEAR = 1;
 export const MIX_RANGED = 2;
-export const BUILD_FARMERS = 0;
-export const BUILD_AS_HARD = 1;
+export const BUILD_FARMERS = 1;
 export const BUILD_PRODUCTION = 2;
-export const TOWN_PLUNDER = 0;
-export const TOWN_GOVERN = 1;
+export const TOWN_PLUNDER = 1;
+export const TOWN_GOVERN = 2;
 
 /** One layer: outputs x inputs weights (-128..127, row by row), a 32-bit bias per output, the right shift after ReLU. */
 export interface NetLayer {
@@ -157,3 +157,22 @@ export function choose(net: NetWeights, x: readonly number[], allowed?: readonly
 
 /** Layer sizes of the network trained in learn/ (NET_INPUTS in, the heads out). */
 export const NET_SHAPE: readonly number[] = [NET_INPUTS, 32, 16, NET_HEADS.reduce((a, b) => a + b, 0)];
+
+/** The network that plays exactly as hard: every weight 0, each head's AS_HARD output biased to 1 (training starts here). */
+export function asHardNet(): NetWeights {
+  const layers: NetLayer[] = [];
+  for (let l = 0; l + 1 < NET_SHAPE.length; l++) {
+    const inputs = NET_SHAPE[l];
+    const outputs = NET_SHAPE[l + 1];
+    const b: number[] = new Array(outputs).fill(0);
+    if (l + 2 === NET_SHAPE.length) {
+      let at = 0;
+      for (const k of NET_HEADS) {
+        b[at + AS_HARD] = 1;
+        at += k;
+      }
+    }
+    layers.push({ inputs, outputs, w: new Array(inputs * outputs).fill(0), b, shift: 8 });
+  }
+  return { layers };
+}

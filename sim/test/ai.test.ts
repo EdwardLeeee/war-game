@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan } from "../src/ai/ai.ts";
-import { ARMY_BASE, ARMY_HOME, ARMY_TOWN, BUILD_AS_HARD, BUILD_FARMERS, choose, features, forward, MIX_EVEN, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
+import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
@@ -1650,8 +1650,8 @@ function forcedNet(picks: number[]): NetWeights {
 
 test("D-086 B: the network's sums are integers: these weights and inputs give exactly these scores and choices", () => {
   const x = Array.from({ length: NET_INPUTS }, (_, i) => (i * 37 + 11) % 256);
-  assert.deepEqual(forward(testNet(), x), [7650, 18777, 21182, -5613, -24566, -13711, -53064, -57420, -40037, -17775, 62115]);
-  assert.deepEqual(choose(testNet(), x), [2, 0, 2, 1]);
+  assert.deepEqual(forward(testNet(), x), [8716, 18894, 22123, -5343, -24979, -12751, -52341, -56921, -40853, -17770, 61455, 69509]);
+  assert.deepEqual(choose(testNet(), x), [2, 0, 2, 2]);
   assert.deepEqual(choose(forcedNet([0, 0, 0, 0]), x), [0, 0, 0, 0], "a tie: the lowest index");
 });
 
@@ -1720,12 +1720,14 @@ test("D-086 B: with the network on, its choice at home wins: it marches with 16,
     g.fog.update(w);
     return hardAi(g, { dodge: false, net }).think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === n && c.x === s1.cellX && c.y === s1.cellY);
   };
-  const march = forcedNet([ARMY_BASE, MIX_EVEN, BUILD_AS_HARD, TOWN_PLUNDER]);
+  const march = forcedNet([ARMY_BASE, AS_HARD, AS_HARD, AS_HARD]);
   assert.equal(marches(16, null), false, "off: not with 16");
   assert.equal(marches(16, march), true, "on, march: with 16");
   assert.equal(marches(12, march), false, "on, march, but 12 is under netMarch: not allowed");
   assert.equal(marches(60, null), true, "off: with 60");
-  assert.equal(marches(60, forcedNet([ARMY_HOME, MIX_EVEN, BUILD_AS_HARD, TOWN_PLUNDER])), false, "on, wait: not even with 60");
+  assert.equal(marches(60, forcedNet([ARMY_HOME, AS_HARD, AS_HARD, AS_HARD])), false, "on, wait: not even with 60");
+  assert.equal(marches(60, forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD])), true, "on, as hard: with 60, as hard does");
+  assert.equal(marches(16, forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD])), false, "on, as hard: not with 16, as hard does not");
 });
 
 test("D-086 B: with the network on, a first capture is governed when it chooses so and can pay", () => {
@@ -1740,8 +1742,9 @@ test("D-086 B: with the network on, a first capture is governed when it chooses 
     return (hardAi(g, { dodge: false, net }).think(buildView(g, 0)).find((c) => c.c === "town_choice") as { choice: number } | undefined)?.choice;
   };
   assert.equal(chosen(null), TownChoice.Plunder, "off: plundered, as before");
-  assert.equal(chosen(forcedNet([ARMY_HOME, MIX_EVEN, BUILD_AS_HARD, TOWN_GOVERN])), TownChoice.Govern);
-  assert.equal(chosen(forcedNet([ARMY_HOME, MIX_EVEN, BUILD_AS_HARD, TOWN_PLUNDER])), TownChoice.Plunder);
+  assert.equal(chosen(forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD])), TownChoice.Plunder, "as hard: plundered, as hard does");
+  assert.equal(chosen(forcedNet([AS_HARD, AS_HARD, AS_HARD, TOWN_GOVERN])), TownChoice.Govern);
+  assert.equal(chosen(forcedNet([AS_HARD, AS_HARD, AS_HARD, TOWN_PLUNDER])), TownChoice.Plunder);
 });
 
 test("D-086 B: the network's inputs follow the AI's state (features)", () => {
@@ -1784,8 +1787,8 @@ test("D-086 B: the network's inputs follow the AI's state (features)", () => {
 test("D-086 B: with the network on, hard plays 12 minutes of a game against hard without an error, both maps", () => {
   // Choices that take it to towns and govern them (its march to a town once read the cost before it could).
   const runs: [("fixed" | "random"), NetWeights][] = [
-    ["fixed", forcedNet([ARMY_TOWN, MIX_EVEN, BUILD_AS_HARD, TOWN_GOVERN])],
-    ["random", forcedNet([ARMY_TOWN, MIX_SPEAR, BUILD_FARMERS, TOWN_GOVERN])],
+    ["fixed", forcedNet([AS_HARD, AS_HARD, AS_HARD, TOWN_GOVERN])],
+    ["random", forcedNet([AS_HARD, MIX_SPEAR, BUILD_FARMERS, TOWN_GOVERN])],
     ["fixed", testNet()],
   ];
   for (const [map, net] of runs) {
@@ -1802,9 +1805,29 @@ test("D-086 B: with the network on, hard plays 12 minutes of a game against hard
   }
 });
 
+test("D-086 B: the network that always chooses AS_HARD (every weight 0) plays exactly as hard: the same game, both maps, one side or both", () => {
+  /** The final hash of 12 minutes of hard against hard, each side with `nets[p]` (null: off). */
+  const play = (map: "fixed" | "random", nets: (NetWeights | null)[]) => {
+    const g = new Game({ seed: 5, scenario: "standard", map });
+    const ais = [0, 1].map((p) => createAi(p, 5, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: { net: nets[p] } }, p));
+    let seq = 0;
+    for (let t = 0; t < 12 * 1200 && !g.w.over; t++) {
+      if (g.tick % 10 === 0) for (let p = 0; p < 2; p++) for (const body of ais[p].think(buildView(g, p))) g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+      g.step();
+    }
+    return g.hash();
+  };
+  for (const map of ["fixed", "random"] as const) {
+    const off = play(map, [null, null]);
+    assert.equal(play(map, [asHardNet(), null]), off, `${map}: one side`);
+    assert.equal(play(map, [asHardNet(), asHardNet()]), off, `${map}: both sides`);
+  }
+  assert.notEqual(play("fixed", [forcedNet([ARMY_HOME, AS_HARD, AS_HARD, AS_HARD]), null]), play("fixed", [null, null]), "a network that waits plays another game");
+});
+
 test("D-086 B: choices can be ruled out (masking): the best allowed one is made", () => {
   const x = Array.from({ length: NET_INPUTS }, (_, i) => (i * 37 + 11) % 256);
-  const all = new Array(11).fill(true);
+  const all = new Array(NET_HEADS.reduce((s, k) => s + k, 0)).fill(true);
   assert.deepEqual(choose(testNet(), x, all), choose(testNet(), x));
   const noBase = [...all];
   noBase[2] = false;
@@ -1812,7 +1835,7 @@ test("D-086 B: choices can be ruled out (masking): the best allowed one is made"
   const farmersOnly = [...all];
   farmersOnly[7] = false;
   farmersOnly[8] = false;
-  assert.equal(choose(testNet(), x, farmersOnly)[2], 0, "build: farmers first, the only one allowed");
+  assert.equal(choose(testNet(), x, farmersOnly)[2], AS_HARD, "build: as hard, the only one allowed");
 });
 
 // --- D-086 A: food and gold piling up while wood is short; governing earlier ----------------------------------

@@ -45,6 +45,8 @@ export interface GameOutcome {
   farmerHits: number;
   farmerBack: number;
   reached: boolean;
+  /** The trained side's network: per head, how many thinks it made each choice (empty: no network). */
+  choices: number[][];
 }
 
 /** As scripted-games --strategy push --speed h1 --formation close --late (D-086 A). */
@@ -64,7 +66,16 @@ export function playGame(spec: GameSpec): GameOutcome {
     const ai = createAi(p, spec.seed, { ...aiKnowledge(w.map, p, maxTicks, "hard"), hard: plan }, p);
     thinkers.push({ p, every: AI_THINK_EVERY, think: () => ai.think(buildView(g, p)) });
   };
-  hard(me, spec.me);
+  const choices: number[][] = [];
+  hard(me, {
+    ...spec.me,
+    netSeen: (c) => {
+      c.forEach((k, h) => {
+        choices[h] ??= [];
+        choices[h][k] = (choices[h][k] ?? 0) + 1;
+      });
+    },
+  });
   const them = 1 - me;
   if (spec.opp.kind === "hard") hard(them, spec.opp.plan ?? {});
   else if (spec.opp.kind === "normal") {
@@ -136,5 +147,5 @@ export function playGame(spec: GameSpec): GameOutcome {
   const full = rules(w.map).buildings[0].hp || 1;
   const margin = (soldiers[me] - soldiers[them]) / (soldiers[me] + soldiers[them] + 1) + (hp[me] - hp[them]) / full;
   const won = !w.over || (w.winner !== 0 && w.winner !== 1) ? -1 : w.winner === me ? 1 : 0;
-  return { won, ticks: g.tick, margin, ...out };
+  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)) };
 }
