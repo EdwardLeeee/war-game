@@ -60,6 +60,31 @@ export async function shot(page: Page, info: TestInfo, name: string): Promise<vo
 }
 
 /**
+ * A box on screen around these points, `margin` px wider on every side, for the long press and
+ * drag that selects: it starts from a corner on open ground (a long press on a unit opens its
+ * wheel, on a resource does nothing) and ends at the opposite one. As a diamond (D-085) the
+ * cells' own corners do not make a box around them on screen, so the box is the points'.
+ */
+export async function openBox(page: Page, points: { x: number; y: number }[], margin: number): Promise<{ from: { x: number; y: number }; to: { x: number; y: number } }> {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const [x0, x1, y0, y1] = [Math.min(...xs) - margin, Math.max(...xs) + margin, Math.min(...ys) - margin, Math.max(...ys) + margin];
+  for (const [from, to] of [
+    [{ x: x0, y: y1 }, { x: x1, y: y0 }],
+    [{ x: x1, y: y1 }, { x: x0, y: y0 }],
+    [{ x: x0, y: y0 }, { x: x1, y: y1 }],
+    [{ x: x1, y: y0 }, { x: x0, y: y1 }],
+  ]) {
+    const hit = await page.evaluate(([x, y]) => {
+      const g = window.__proto?.game;
+      return g == null ? "no hook" : g.pickAt(x, y);
+    }, [from.x, from.y] as const);
+    if (hit === null) return { from, to };
+  }
+  throw new Error("no open corner around the points");
+}
+
+/**
  * 點編隊按鈕 → 軍團畫面 → 改成剛才選的 N 名: the units selected before become the group, as
  * the long press did before (D-026, D-054). The group stays selected with its panel.
  */

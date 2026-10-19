@@ -3,7 +3,7 @@
 // wears, which of the pictures' 8 directions a sim facing shows, which animation and which of
 // its frames. Pure, for the unit tests; render/unit-art.ts loads the pages and draws.
 
-import { Action, CELL, NodeKind, TICKS_PER_SECOND, UnitType } from "../sim.ts";
+import { Action, CELL, NEUTRAL, NO_OWNER, NodeKind, TICKS_PER_SECOND, UnitType } from "../sim.ts";
 
 export const ATLAS_FORMAT = "war-game atlas 2";
 export const EFFECTS_FORMAT = "war-game effects 1";
@@ -33,6 +33,8 @@ export interface AnimInfo {
   hit?: number;
   /** The frame the body lands (death, fall): the dust is played there. */
   impact?: number;
+  /** The dust that many times as large (big units: spec section 11). */
+  impact_scale?: number;
   /** Metres one walk cycle covers. */
   stride_m?: number;
 }
@@ -76,6 +78,15 @@ export function parseEffects(v: unknown): EffectsJson {
 
 /** 東陸 or 西陸 (D-021). Which side wears which is the user's to choose (A, B, C). */
 export type Culture = "e" | "w";
+
+/**
+ * Who wears which (the user 2026-10-19 chooses 你的陸 on the start screen; the computer wears
+ * the other). The neutral militia wear the player's (B1: the spearman of the same culture, in
+ * neutral grey).
+ */
+export function cultureOf(mine: Culture, owner: number, me: number): Culture {
+  return owner === me || owner === NEUTRAL || owner === NO_OWNER ? mine : mine === "e" ? "w" : "e";
+}
 
 /** The atlas each unit type wears, by culture. The militia: the spearman, in neutral grey (B1). Siege is not in the prototype. */
 export const UNIT_ATLAS: Record<number, Record<Culture, string>> = {

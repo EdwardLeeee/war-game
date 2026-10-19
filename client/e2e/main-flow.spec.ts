@@ -11,7 +11,7 @@
 // step 8d pauses it, so the counts before that say "at least".
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { armyButton, openBox, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
 import { doubleTap, longPress, tap, tapOn } from "./touch.ts";
 
 const FARMER = 0;
@@ -141,30 +141,9 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await centre(page, { x: SQUAD.x, y: SQUAD.y - 1 }, 0.8);
   const squad = (await own(page, [SPEARMAN, RANGED])).filter((u) => Math.abs(u.cx - SQUAD.x) <= 5 && Math.abs(u.cy - SQUAD.y) <= 3);
   expect(squad.length).toBeGreaterThanOrEqual(10);
-  const xs = squad.map((u) => u.sx);
-  const ys = squad.map((u) => u.sy);
-  const [x0, x1, y0, y1] = [Math.min(...xs) - 30, Math.max(...xs) + 30, Math.min(...ys) - 30, Math.max(...ys) + 30];
-  // A long press on a resource (the forest north of the squad) does nothing, so start the
-  // box from a corner that is open ground and drag to the opposite one.
-  let from: { x: number; y: number } | null = null;
-  let to: { x: number; y: number } | null = null;
-  for (const [a, b] of [
-    [{ x: x0, y: y1 }, { x: x1, y: y0 }],
-    [{ x: x1, y: y1 }, { x: x0, y: y0 }],
-    [{ x: x0, y: y0 }, { x: x1, y: y1 }],
-    [{ x: x1, y: y0 }, { x: x0, y: y1 }],
-  ]) {
-    const hit = await page.evaluate(([x, y]) => {
-      const g = window.__proto?.game;
-      return g == null ? "no hook" : g.pickAt(x, y);
-    }, [a.x, a.y] as const);
-    if (hit === null) {
-      from = a;
-      to = b;
-      break;
-    }
-  }
-  if (from === null || to === null) throw new Error("no open corner around the squad");
+  // From a corner that is open ground (the forest is north of the squad).
+  const { from, to } = await openBox(page, squad.map((u) => ({ x: u.sx, y: u.sy })), 30);
+  const [x0, x1, y0, y1] = [Math.min(from.x, to.x), Math.max(from.x, to.x), Math.min(from.y, to.y), Math.max(from.y, to.y)];
   // The box takes every own soldier inside it (soldiers before farmers), not only the squad.
   const squadIds = (await units(page))
     .filter((u) => u.owner === me && u.type !== FARMER && u.sx >= x0 && u.sx <= x1 && u.sy >= y0 && u.sy <= y1)

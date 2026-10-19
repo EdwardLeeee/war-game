@@ -6,6 +6,7 @@
 
 import { type Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import type { Camera } from "../camera/camera.ts";
+import { PT_PER_CELL, type Projection, TOP } from "../camera/projection.ts";
 import {
   Action,
   BuildingField as B,
@@ -110,7 +111,9 @@ interface Shot {
 const SHOT_MS = 300;
 
 interface TownMark {
-  /** The wall and its 鎮 or 城 (D-084), on the ground under buildings and units. */
+  /** Where the wall stands on the ground (world px; render/town-wall.ts). */
+  spot: { x: number; y: number; side: number };
+  /** The wall and its 鎮 or 城 (D-084), standing behind buildings and units. */
   wall: Sprite;
   glyph: Sprite;
   /** The state's words and the bar, under the wall, above the fog. */
@@ -121,19 +124,35 @@ interface TownMark {
   key: string;
 }
 
+// Two kinds of layers (D-085, docs/sprite-atlas.md section 1). What lies on the ground (terrain,
+// fog, town circles, footprints, rings, marks on the ground, the placement preview) is drawn in
+// world px inside `ground`, which the projection lays out (as a diamond: turned 45° and flattened
+// 2:1). What stands up (units, buildings' and nodes' marks, towns' 鎮 and 城, bars, words, arrows in the air)
+// is drawn on the plane at the projected point, never flattened, the nearer in front.
+
 export class WorldRenderer {
   readonly root = new Container();
   private readonly view: GameView;
   private readonly atlas: Atlas;
+  private readonly projection: Projection;
+  /** The ground: `groundInner` turns (and scales), `groundOuter` flattens. World px inside. */
+  private readonly groundOuter = new Container();
+  private readonly groundInner = new Container();
   private readonly zones = new Graphics();
+  /** Buildings' footprints (the shapes), on the ground. */
+  private readonly baseLayer = new Container();
   private readonly wallLayer = new Container();
-  private readonly buildingLayer = new Container();
-  private readonly nodeLayer = new Container();
-  /** Units' shadows from their atlases (D-085), on the ground under the rings and units. */
+  /** As a diamond, the towns' walls lie on the ground (a stand-in until the buildings' atlas), above the fog: the player's knowledge. */
+  private readonly wallGround = new Container();
+  /** Units' shadows from their atlases (D-085): pictures, standing like the units, under them. */
   private readonly shadowLayer = new Container();
   private readonly ringLayer = new Container();
+  /** What stands up: units, buildings' and nodes' marks, sorted by their place on the plane. */
   private readonly unitLayer = new Container();
+  /** Marks on the ground (orders, warnings, the cannon's calibration, a selected building). */
   private readonly fx = new Graphics();
+  /** Arrows in the air, on the plane. */
+  private readonly airFx = new Graphics();
   private readonly barLayer = new Container();
   private readonly townLayer = new Container();
   private readonly ghost = new Graphics();
@@ -149,7 +168,7 @@ export class WorldRenderer {
   /** Terrain repaints after a rock was explored (random map) and their CPU time in ms, for the test page. */
   readonly terrainRepaints = { count: 0, totalMs: 0, maxMs: 0 };
   private nodesVersion = -1;
-  private readonly nodeSprites = new Map<number, Sprite>();
+  private readonly nodeSprites = new Map<number, { sprite: Sprite; cell: number }>();
   private readonly unitPool: UnitSprites[] = [];
   private readonly buildingPool: BuildingSprites[] = [];
   private readonly townMarks = new Map<number, TownMark>();
@@ -164,11 +183,13 @@ export class WorldRenderer {
   /** Units drawn from war-game-ui's atlases (D-085), or null: the shapes. */
   private readonly artUnits: ArtUnits | null;
 
-  /** `art`: the units' atlases (D-085), `cultureOf` which culture each player wears. */
-  constructor(app: Application, view: GameView, atlas: Atlas, art: UnitArt | null = null, cultureOf: (owner: number) => Culture = (owner) => (owner === 1 ? "w" : "e")) {
+  /** `art`: the units' atlases (D-085), `cultureOf` which culture each player wears; `projection` how the ground lies. */
+  constructor(app: Application, view: GameView, atlas: Atlas, art: UnitArt | null = null, cultureOf: (owner: number) => Culture = (owner) => (owner === 1 ? "w" : "e"), projection: Projection = TOP) {
     this.view = view;
     this.atlas = atlas;
-    this.artUnits = art === null ? null : new ArtUnits(art, view, this.shadowLayer, this.unitLayer, cultureOf);
+    this.projection = projection;
+    this.unitLayer.sortableChildren = true;
+    this.artUnits = art === null ? null : new ArtUnits(art, view, this.shadowLayer, this.unitLayer, cultureOf, projection);
     const size = view.map.size;
 
     const terrain = document.createElement("canvas");
@@ -195,7 +216,16 @@ export class WorldRenderer {
     const fog = new Sprite(this.fogTexture);
     fog.scale.set(TILE_PX);
 
-    this.root.addChild(ground, this.zones, this.wallLayer, this.buildingLayer, this.nodeLayer, this.shadowLayer, this.ringLayer, this.unitLayer, this.fx, this.barLayer, fog, this.townLayer, this.ghost);
+    // The projection's matrix as two containers (a container scales, then turns): turned 45° at
+    // 1.25 (40 points a cell's side), then flattened to half its height.
+    if (projection.kind === "diamond") {
+      this.groundInner.rotation = Math.PI / 4;
+      this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
+      this.groundOuter.scale.set(1, 0.5);
+    }
+    this.groundInner.addChild(ground, this.zones, this.baseLayer, this.ringLayer, this.fx, this.ghost, fog, this.wallGround);
+    this.groundOuter.addChild(this.groundInner);
+    this.root.addChild(this.groundOuter, this.wallLayer, this.shadowLayer, this.unitLayer, this.airFx, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
   }
 
@@ -210,6 +240,7 @@ export class WorldRenderer {
     this.drawBuildings();
     this.drawTowns();
     this.fx.clear();
+    this.airFx.clear();
     this.drawUnits(now);
     this.drawWarnings(now);
     this.drawSelectionExtras();
@@ -244,17 +275,20 @@ export class WorldRenderer {
     this.shots = this.shots.filter((s) => now - s.at < SHOT_MS);
     for (const s of this.shots) {
       const k = (now - s.at) / SHOT_MS;
-      const dx = s.tx - s.fx;
-      const dy = s.ty - s.fy;
+      // In the air: from and to on the plane, the arrow drawn there (not flattened).
+      const from = this.projection.toPlane(s.fx, s.fy);
+      const to = this.projection.toPlane(s.tx, s.ty);
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
       const len = Math.hypot(dx, dy) || 1;
-      const x = s.fx + dx * k;
-      const y = s.fy + dy * k;
+      const x = from.x + dx * k;
+      const y = from.y + dy * k;
       const ux = dx / len;
       const uy = dy / len;
       // A shaft 12 px long with a head: it leaves the building and flies to the target.
-      this.fx.moveTo(x - ux * 12, y - uy * 12).lineTo(x, y).stroke({ width: 2.5, color: 0x2a1c10 });
-      this.fx.moveTo(x - ux * 12, y - uy * 12).lineTo(x, y).stroke({ width: 1.2, color: 0xf4e2b0 });
-      this.fx.poly([x + ux * 4, y + uy * 4, x - ux * 2 - uy * 3, y - uy * 2 + ux * 3, x - ux * 2 + uy * 3, y - uy * 2 - ux * 3]).fill(0xf4e2b0);
+      this.airFx.moveTo(x - ux * 12, y - uy * 12).lineTo(x, y).stroke({ width: 2.5, color: 0x2a1c10 });
+      this.airFx.moveTo(x - ux * 12, y - uy * 12).lineTo(x, y).stroke({ width: 1.2, color: 0xf4e2b0 });
+      this.airFx.poly([x + ux * 4, y + uy * 4, x - ux * 2 - uy * 3, y - uy * 2 + ux * 3, x - ux * 2 + uy * 3, y - uy * 2 - ux * 3]).fill(0xf4e2b0);
     }
   }
 
@@ -306,20 +340,34 @@ export class WorldRenderer {
     }
     (this.fogCanvas.getContext("2d") as CanvasRenderingContext2D).putImageData(this.fogPixels, 0, 0);
     this.fogTexture.source.update();
+    // The fog lies on the ground; what stands in it (nodes' marks) is dimmed by hand.
+    for (const n of this.nodeSprites.values()) n.sprite.tint = this.fogTint(n.cell);
+  }
+
+  /** What stands on a cell, by its fog: as seen, or dimmed (explored, not in sight). */
+  private fogTint(cell: number): number {
+    const fog = this.view.fog;
+    return fog === null || fog[cell] === Fog.Visible ? 0xffffff : 0x6f6f6f;
   }
 
   private drawNodes(): void {
     if (this.view.nodesVersion === this.nodesVersion) return;
     this.nodesVersion = this.view.nodesVersion;
     for (const [id, row] of this.view.nodes) {
-      let s = this.nodeSprites.get(id);
-      if (s === undefined) {
-        s = new Sprite(this.atlas.nodes[row[N.kind]]);
-        s.position.set(row[N.cellX] * TILE_PX, row[N.cellY] * TILE_PX);
-        this.nodeLayer.addChild(s);
-        this.nodeSprites.set(id, s);
+      let n = this.nodeSprites.get(id);
+      if (n === undefined) {
+        const s = new Sprite(this.atlas.nodes[row[N.kind]]);
+        // Standing on its cell's middle (a node's mark is a picture, not ground).
+        s.anchor.set(0.5, 0.6);
+        const p = this.projection.toPlane((row[N.cellX] + 0.5) * TILE_PX, (row[N.cellY] + 0.5) * TILE_PX);
+        s.position.set(p.x, p.y);
+        s.zIndex = p.y;
+        this.unitLayer.addChild(s);
+        n = { sprite: s, cell: row[N.cellY] * this.view.map.size + row[N.cellX] };
+        this.nodeSprites.set(id, n);
+        s.tint = this.fogTint(n.cell);
       }
-      s.visible = row[N.amount] > 0;
+      n.sprite.visible = row[N.amount] > 0;
     }
   }
 
@@ -335,7 +383,8 @@ export class WorldRenderer {
       const hpBack = new Sprite(this.atlas.white);
       hpBack.tint = 0x201a18;
       const hpFront = new Sprite(this.atlas.white);
-      this.buildingLayer.addChild(base, glyph, occupied);
+      this.baseLayer.addChild(base);
+      this.unitLayer.addChild(glyph, occupied);
       this.barLayer.addChild(hpBack, hpFront);
       this.buildingPool.push({ base, glyph, occupied, hpBack, hpFront });
     }
@@ -360,8 +409,13 @@ export class WorldRenderer {
       p.base.height = size;
       p.base.tint = type === BuildingType.Farm ? 0xffffff : ownerTint(b[o + B.owner], this.view.me);
       p.base.alpha = remembered ? 0.55 : building ? 0.6 : 1;
+      // The footprint lies on the ground; its glyph stands in its middle, the shield at its right corner.
+      const mid = this.projection.toPlane(x + size / 2, y + size / 2);
+      const top = this.projection.toPlane(x, y);
+      const right = this.projection.toPlane(x + size, y);
       p.glyph.texture = this.atlas.glyphs[type] ?? Texture.EMPTY;
-      p.glyph.position.set(x + size / 2, y + size / 2);
+      p.glyph.position.set(mid.x, mid.y);
+      p.glyph.zIndex = mid.y;
       p.glyph.scale.set(Math.min(size * 0.5, 36) / 36);
       p.glyph.alpha = p.base.alpha;
       // 裡面有人 (round 7): a small shield at the top right corner, ours and the enemy's in view.
@@ -370,7 +424,8 @@ export class WorldRenderer {
       if (((b[o + B.flags] & BuildingFlag.Occupied) !== 0 || holding) && !remembered) {
         p.occupied.texture = holding ? this.atlas.hold : this.atlas.occupied;
         p.occupied.visible = true;
-        p.occupied.position.set(x + size - 2, y + 2);
+        p.occupied.position.set(right.x - 2, right.y + 2);
+        p.occupied.zIndex = mid.y + 1;
         p.occupied.scale.set(Math.max(1, size / 48));
       }
       const hp = b[o + B.hp];
@@ -378,7 +433,7 @@ export class WorldRenderer {
       const selected = this.view.selection.building === b[o + B.id];
       if (building || hp < max || selected) {
         const frac = building ? b[o + B.progress] / 1000 : max > 0 ? hp / max : 1;
-        this.bar(p.hpBack, p.hpFront, x + size / 2, y - 4, size * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
+        this.bar(p.hpBack, p.hpFront, mid.x, top.y - 4, size * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
       }
     }
   }
@@ -405,9 +460,11 @@ export class WorldRenderer {
       let mark = this.townMarks.get(id);
       if (mark === undefined) {
         const wall = new Sprite(this.atlas.wall);
+        wall.anchor.set(0.5, this.projection.kind === "diamond" ? 0.5 : 1);
         const glyph = new Sprite(this.atlas.townGlyphs[info.size] ?? Texture.EMPTY);
         glyph.anchor.set(0.5);
-        this.wallLayer.addChild(wall, glyph);
+        (this.projection.kind === "diamond" ? this.wallGround : this.wallLayer).addChild(wall);
+        this.wallLayer.addChild(glyph);
         const holder = new Container();
         const label = new Text({ text: "", style: { fontFamily: "-apple-system, 'Noto Sans TC', sans-serif", fontSize: 13, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } }, resolution: 4 });
         label.anchor.set(0.5, 0);
@@ -417,18 +474,32 @@ export class WorldRenderer {
         const barFront = new Sprite(this.atlas.white);
         holder.addChild(label, barBack, barFront);
         this.townLayer.addChild(holder);
-        mark = { wall, glyph, holder, label, barBack, barFront, key: "" };
+        mark = { spot: { x: 0, y: 0, side: 0 }, wall, glyph, holder, label, barBack, barFront, key: "" };
         this.townMarks.set(id, mark);
       }
       // The big city's wall under its tower, as seen or as the rules place it (render/town-wall.ts).
       const spot = wallSpot(info, info.size === TownSize.Large ? (this.towers.get(id) ?? ruleTower(info, towerSize)) : null);
+      mark.spot = spot;
       mark.wall.visible = mark.glyph.visible = mark.holder.visible = true;
-      mark.wall.position.set(spot.x, spot.y);
-      mark.wall.width = mark.wall.height = spot.side;
+      // On its spot, its words under its nearest corner (as a diamond, the bottom one).
+      const mid = this.projection.toPlane(spot.x + spot.side / 2, spot.y + spot.side / 2);
+      const foot = this.projection.toPlane(spot.x + spot.side, spot.y + spot.side);
       mark.wall.tint = look.tint;
-      mark.glyph.position.set(spot.x + spot.side / 2, spot.y + spot.side * 0.42);
-      mark.glyph.scale.set((spot.side * 0.34) / 36);
-      mark.holder.position.set(spot.x + spot.side / 2, spot.y + spot.side);
+      if (this.projection.kind === "diamond") {
+        // Lying on the ground like the buildings' footprints (standing up, a big city's hid the fighting
+        // behind it), its 鎮 or 城 standing in the middle.
+        mark.wall.position.set(spot.x + spot.side / 2, spot.y + spot.side / 2);
+        mark.wall.width = mark.wall.height = spot.side;
+        mark.glyph.position.set(mid.x, mid.y);
+        mark.glyph.scale.set((spot.side * (PT_PER_CELL / TILE_PX) * 0.3) / 36);
+      } else {
+        // Seen from above, the square symbol over the spot.
+        mark.wall.position.set(mid.x, foot.y);
+        mark.wall.width = mark.wall.height = spot.side;
+        mark.glyph.position.set(mid.x, foot.y - spot.side * 0.58);
+        mark.glyph.scale.set((spot.side * 0.34) / 36);
+      }
+      mark.holder.position.set(mid.x, foot.y);
       mark.label.text = look.label;
       const total = t[o + T.timerTotal];
       const showBar = total > 0 && t[o + T.timer] > 0;
@@ -447,9 +518,9 @@ export class WorldRenderer {
     return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn };
   }
 
-  /** Each town's wall as drawn (world px), for the test page. */
+  /** Each town's wall's spot on the ground (world px), for the test page. */
   get townWalls(): { id: number; x: number; y: number; side: number; visible: boolean }[] {
-    return [...this.townMarks].map(([id, m]) => ({ id, x: m.wall.x, y: m.wall.y, side: m.wall.width, visible: m.wall.visible }));
+    return [...this.townMarks].map(([id, m]) => ({ id, x: m.spot.x, y: m.spot.y, side: m.spot.side, visible: m.wall.visible }));
   }
 
   /** The big cities' towers in this snapshot (remembered ones too), kept; whether one was new. */
@@ -497,8 +568,9 @@ export class WorldRenderer {
         return s;
       };
       const p: UnitSprites = { body, ring, shield, hpBack: mk(0x201a18), hpFront: mk(0xffffff), shBack: mk(0x201a18), shFront: mk(SHIELD_TINT) };
-      this.ringLayer.addChild(ring);
-      this.unitLayer.addChild(body, shield);
+      // The selection ring and the shape's shield lie on the ground; the shape stands.
+      this.ringLayer.addChild(ring, shield);
+      this.unitLayer.addChild(body);
       this.barLayer.addChild(p.hpBack, p.hpFront, p.shBack, p.shFront);
       this.unitPool.push(p);
     }
@@ -527,17 +599,23 @@ export class WorldRenderer {
       }
       const px = x * FIXED_TO_PX;
       const py = y * FIXED_TO_PX;
+      // Where it stands on the plane (what stands up is drawn there; the ground's marks at px, py).
+      const at = this.projection.toPlane(px, py);
       const type = u[o + U.type];
       const owner = u[o + U.owner];
       // From its atlas when there is one (its picture's top for the bars), else the shape.
-      const top = this.artUnits?.unit(i, o, px, py, seconds) ?? null;
+      const top = this.artUnits?.unit(i, o, at.x, at.y, seconds) ?? null;
       p.body.visible = top === null;
       p.body.texture = this.atlas.units[type] ?? this.atlas.units[UnitType.Farmer];
       p.body.tint = ownerTint(owner, view.me);
-      p.body.position.set(px, py);
+      p.body.position.set(at.x, at.y);
+      p.body.zIndex = at.y;
       p.body.scale.set(UNIT_SCALE);
-      p.body.rotation = (u[o + U.facing] * Math.PI) / 8;
-      const barY = top === null ? py - TILE_PX * 0.62 : top - 2;
+      // Its facing as it looks on the plane (as a diamond, the ground's directions are turned and flattened).
+      const f = (u[o + U.facing] * Math.PI) / 8;
+      const m = this.projection.matrix;
+      p.body.rotation = Math.atan2(m.b * Math.cos(f) + m.d * Math.sin(f), m.a * Math.cos(f) + m.c * Math.sin(f));
+      const barY = top === null ? at.y - TILE_PX * 0.62 : top - 2;
       const selected = owner === view.me && binaryHas(sel, id);
       p.ring.visible = selected;
       if (selected) {
@@ -550,15 +628,16 @@ export class WorldRenderer {
       const max = info?.hp ?? hp;
       const shield = u[o + U.shield];
       const shieldMax = info?.shield ?? 0;
-      if (shieldMax > 0 && shield > 0) {
+      // The shape's shield on the ground; drawn from its atlas, the shield is its own picture (unit-art-draw.ts).
+      if (shieldMax > 0 && shield > 0 && top === null) {
         p.shield.visible = true;
         p.shield.position.set(px, py);
         p.shield.scale.set(1.25);
         p.shield.alpha = 0.35 + 0.65 * (shield / shieldMax);
       }
       if (selected || hp < max || (shieldMax > 0 && shield < shieldMax)) {
-        this.bar(p.hpBack, p.hpFront, px, barY, BAR_W, max > 0 ? hp / max : 1, ownerTint(owner, view.me));
-        if (shieldMax > 0) this.bar(p.shBack, p.shFront, px, barY - BAR_H - 1, BAR_W, shield / shieldMax, SHIELD_TINT);
+        this.bar(p.hpBack, p.hpFront, at.x, barY, BAR_W, max > 0 ? hp / max : 1, ownerTint(owner, view.me));
+        if (shieldMax > 0) this.bar(p.shBack, p.shFront, at.x, barY - BAR_H - 1, BAR_W, shield / shieldMax, SHIELD_TINT);
       }
       const cast = u[o + U.castProgress];
       if (cast > 0) {

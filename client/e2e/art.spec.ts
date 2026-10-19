@@ -28,7 +28,7 @@ test("美術（測試圖）：兵從圖集畫，不再是幾何圖形；載入 1
   check();
 });
 
-test("美術關著（預設）：照舊畫幾何圖形；量測面板的美術預設「關」，選 3 倍會記在這台裝置，下一局起才用（D-085）", async ({ page }, info) => {
+test("美術選了關：照舊畫幾何圖形；量測面板的美術是「關」，選 3 倍會記在這台裝置，下一局起才用（D-085）", async ({ page }, info) => {
   const check = watchErrors(page);
   await start(page, "scenario=e2e");
   expect(await art(page)).toBeNull();
@@ -88,15 +88,68 @@ test("ASTC 樣本（art-v1）：量測面板和按鈕讓開，左右各一名完
   check();
 });
 
-test("真的圖（art-v1，2 倍）：perf 場景交戰中的樣子，給 ceo 看（CI 的 Chromium，D-085）", async ({ page, browserName }, info) => {
-  test.skip(browserName !== "chromium", "one picture is enough");
-  test.setTimeout(150_000);
+test.describe("新的裝置（沒選過美術）", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+  test("預設 3 倍：兵從圖集畫，量測面板的美術是「3 倍」（D-087）", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "33 pages at 3 倍: one browser is enough (WebKit on CI draws in software)");
+    const check = watchErrors(page);
+    await start(page, "scenario=e2e");
+    await expect.poll(async () => (await art(page))?.label ?? null, { timeout: 30_000 }).toBe("3 倍");
+    await openLab(page);
+    await expect(page.getByRole("radiogroup", { name: "美術" }).getByRole("radio", { name: "3 倍" })).toHaveAttribute("aria-checked", "true");
+    check();
+  });
+});
+
+test("你的陸（使用者 2026-10-19 自選）：開局畫面一列東陸／西陸，第一次是東陸，選了記在這台裝置；電腦穿另一陸；perf 交戰的樣子給 ceo 看（CI 的 Chromium）", async ({ page, browserName }, info) => {
+  test.setTimeout(240_000);
   const check = watchErrors(page);
-  await start(page, "art=x2&scenario=perf");
-  await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(100);
-  expect((await art(page))?.label).toBe("2 倍");
-  await page.evaluate(() => window.__proto?.game?.centerOn(48, 52, 1.6));
-  await page.waitForTimeout(3000);
-  await shot(page, info, "art-v1-x2-battle");
+  await page.goto("./?test=1&art=x3&scenario=perf");
+  const row = page.getByRole("radiogroup", { name: "你的陸" });
+  await expect(row.getByRole("radio", { name: "東陸" })).toHaveAttribute("aria-checked", "true");
+  if (browserName === "chromium") await shot(page, info, "art-start-screen-e");
+  await row.getByRole("radio", { name: "西陸" }).tap();
+  await expect(row.getByRole("radio", { name: "西陸" })).toHaveAttribute("aria-checked", "true");
+  expect(await page.evaluate(() => localStorage.getItem("war-game.proto.culture"))).toBe("w");
+  if (browserName === "chromium") await shot(page, info, "art-start-screen-w");
+  await page.reload();
+  await expect(page.getByRole("radiogroup", { name: "你的陸" }).getByRole("radio", { name: "西陸" })).toHaveAttribute("aria-checked", "true");
+  if (browserName !== "chromium") return check();
+  // The perf battle as 西陸 (we) against 東陸 (the computer), then as 東陸: 3 倍.
+  for (const [label, name] of [["西陸", "w"], ["東陸", "e"]] as const) {
+    await page.goto("./?test=1&art=x3&scenario=perf");
+    await page.getByRole("radiogroup", { name: "你的陸" }).getByRole("radio", { name: label }).tap();
+    await page.getByRole("button", { name: "開始" }).tap();
+    await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
+    expect(await page.evaluate(() => window.__proto?.game?.culture())).toBe(name);
+    await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(100);
+    await page.evaluate(() => window.__proto?.game?.centerOn(48, 52, 1.6));
+    await page.waitForTimeout(3000);
+    await shot(page, info, `art-culture-${name}`);
+  }
+  check();
+});
+
+/** The gallery (?gallery=1, src/mock/mock-port.ts): table origin and rows, cell (x + c + 2r, y − c + 2r). */
+const OURS = { x: 50, y: 80 };
+const THEIRS = { x: 72, y: 84 };
+const galleryCell = (t: { x: number; y: number }, r: number, c: number) => ({ x: t.x + c + 2 * r, y: t.y - c + 2 * r });
+
+test("兵種展示（art-v1，3 倍）：兩陸每種兵的待機、走路、攻擊、倒下，村民工作，法師施法、受擊、碎盾，民兵；給 ceo 看（D-085）", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "chromium", "pictures for ceo");
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  await start(page, "mock=1&gallery=1&art=x3&tps=20");
+  await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(40);
+  expect((await art(page))?.label).toBe("3 倍");
+  // The fallen gone at tick 20, a shield shattered at 30: the gallery stands still at 36, while both still show.
+  await page.waitForFunction(() => window.__proto?.game?.header().tick === 36, null, { timeout: 30_000 });
+  await expect.poll(async () => (await art(page))?.corpses ?? 0).toBeGreaterThanOrEqual(10);
+  for (const [name, table, r] of [["ours-1", OURS, 1], ["ours-2", OURS, 4], ["theirs-1", THEIRS, 1], ["theirs-2", THEIRS, 3.5]] as const) {
+    const c = galleryCell(table, r, 3.5);
+    await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x - 0.5, y - 0.5, 1.3), [c.x, c.y] as const);
+    await page.waitForTimeout(300);
+    await shot(page, info, `art-gallery-${name}`);
+  }
   check();
 });

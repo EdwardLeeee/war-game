@@ -21,6 +21,9 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
   use: {
     baseURL: `http://127.0.0.1:${PORT}/`,
+    // The units' atlases are on by default (D-087), 33 pages at 3 倍: the tests draw the shapes
+    // unless they ask for the atlases (?art=, or a fresh storage state: e2e/art.spec.ts).
+    storageState: { cookies: [], origins: [{ origin: `http://127.0.0.1:${PORT}`, localStorage: [{ name: "war-game.proto.art", value: "off" }] }] },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

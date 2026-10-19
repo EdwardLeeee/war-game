@@ -10,8 +10,9 @@ import { BuildingType, NodeKind, NO_OWNER, NEUTRAL, TownSize, UnitType } from ".
 const RES = 4;
 const INK = 0x14110e;
 
-export const OWN_TINT = 0x4f8ff0;
-export const ENEMY_TINT = 0xe0473d;
+/** Players' colours (R6-24, the user's 甲 2026-10-18): 1 v 1, we are blue and the computer red; the shapes, the atlases' player-colour layer and the minimap. */
+export const OWN_TINT = 0x3f7fe0;
+export const ENEMY_TINT = 0xd9433a;
 export const NEUTRAL_TINT = 0xd8d2c0;
 export const SHIELD_TINT = 0x5fe3f0;
 export const WARNING_TINT = 0xff8a2a;

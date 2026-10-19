@@ -179,7 +179,7 @@ export class Hud {
     };
     this.minimap = new Minimap(root, {
       view: () => game.view,
-      visible: () => game.camera?.visible() ?? null,
+      visible: () => game.camera?.corners() ?? null,
       tap: (x, y) => game.minimapTap(x, y),
       longPress: (x, y) => game.minimapLongPress(x, y),
       alerts: () => this.alerts.map((a) => ({ cx: Math.floor(a.wx / TILE_PX), cy: Math.floor(a.wy / TILE_PX) })),

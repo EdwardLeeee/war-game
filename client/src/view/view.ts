@@ -37,6 +37,7 @@ import {
 } from "../sim.ts";
 import { features } from "../game/features.ts";
 import { TILE_PX } from "../tuning.ts";
+import { type Projection, TOP } from "../camera/projection.ts";
 
 /** World px per fixed-point unit. */
 export const FIXED_TO_PX = TILE_PX / CELL;
@@ -80,6 +81,17 @@ export class GameView implements IntentWorld {
   inspected: Pick | null = null;
   /** Is this world point on screen? Set by the game from the camera. */
   onScreen: (wx: number, wy: number) => boolean = () => true;
+  /**
+   * How the ground is laid on the screen (D-085). Taps and boxes are measured on its plane, as
+   * the screen shows them: as a diamond a round tap is not round on the ground, and a box on
+   * the screen is not a box of cells. Distances given (r) are the plane's.
+   */
+  projection: Projection = TOP;
+
+  /** On the plane, a unit's body is this high above its feet (as a diamond 0.9 m: the pictures stand up); a tap there takes it too. */
+  private bodyLift(): number {
+    return this.projection.kind === "diamond" ? 0.9 * this.projection.ptPerM : 0;
+  }
 
   constructor(player: number, map: MapInfo, rules: Rules) {
     this.me = player;
@@ -256,11 +268,16 @@ export class GameView implements IntentWorld {
     const u = snap.units;
     let best: Pick | null = null;
     let bestD = r * r;
+    const P = this.projection;
+    const t = P.toPlane(wx, wy);
+    const lift = this.bodyLift();
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       if (u[o + U.action] === Action.Garrisoned) continue;
-      const dx = u[o + U.x] * FIXED_TO_PX - wx;
-      const dy = u[o + U.y] * FIXED_TO_PX - wy;
-      const d = dx * dx + dy * dy;
+      const q = P.toPlane(u[o + U.x] * FIXED_TO_PX, u[o + U.y] * FIXED_TO_PX);
+      const dx = q.x - t.x;
+      const dy = q.y - t.y;
+      // Its feet, or its body above them.
+      const d = Math.min(dx * dx + dy * dy, dx * dx + (dy - lift) * (dy - lift));
       if (d <= bestD) {
         bestD = d;
         best = { kind: "unit", id: u[o + U.id], owner: u[o + U.owner], type: u[o + U.type] };
@@ -326,15 +343,19 @@ export class GameView implements IntentWorld {
     const cx = Math.floor(wx / TILE_PX);
     const cy = Math.floor(wy / TILE_PX);
     if (cx >= 0 && cy >= 0 && cx < size && cy < size && this.nodeAt[cy * size + cx] >= 0) return this.nodePick(this.nodeAt[cy * size + cx]);
-    const reach = Math.ceil(r / TILE_PX);
+    // r is the plane's: as a diamond a cell is flattened to half its height, so look twice as far.
+    const reach = Math.ceil(r / TILE_PX) * (this.projection.kind === "diamond" ? 2 : 1);
     let best = -1;
     let bestD = r * r;
+    const P = this.projection;
+    const t = P.toPlane(wx, wy);
     for (let y = Math.max(0, cy - reach); y <= Math.min(size - 1, cy + reach); y++) {
       for (let x = Math.max(0, cx - reach); x <= Math.min(size - 1, cx + reach); x++) {
         const id = this.nodeAt[y * size + x];
         if (id < 0) continue;
-        const dx = (x + 0.5) * TILE_PX - wx;
-        const dy = (y + 0.5) * TILE_PX - wy;
+        const q = P.toPlane((x + 0.5) * TILE_PX, (y + 0.5) * TILE_PX);
+        const dx = q.x - t.x;
+        const dy = q.y - t.y;
         const d = dx * dx + dy * dy;
         if (d <= bestD) {
           bestD = d;
@@ -396,14 +417,14 @@ export class GameView implements IntentWorld {
     return -1;
   }
 
+  /** Own units whose feet are in this box of the plane (the screen's box: D-085). */
   ownUnitsIn(x0: number, y0: number, x1: number, y1: number): { id: number; type: number }[] {
     const out: { id: number; type: number }[] = [];
     const u = this.curr?.snap.units;
     if (u === undefined) return out;
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       if (u[o + U.owner] !== this.me || u[o + U.action] === Action.Garrisoned) continue;
-      const x = u[o + U.x] * FIXED_TO_PX;
-      const y = u[o + U.y] * FIXED_TO_PX;
+      const { x, y } = this.projection.toPlane(u[o + U.x] * FIXED_TO_PX, u[o + U.y] * FIXED_TO_PX);
       if (x >= x0 && x <= x1 && y >= y0 && y <= y1) out.push({ id: u[o + U.id], type: u[o + U.type] });
     }
     return out;

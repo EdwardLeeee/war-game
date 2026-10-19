@@ -148,6 +148,8 @@ interface MUnit {
   hidden: boolean;
   /** D-080: the outpost it stands guard at (or walks to, order Post), else -1. */
   post?: number;
+  /** `?gallery=1` (D-085): the action it shows (and what it works at), standing where it is. */
+  pose?: { action: number; target: number };
 }
 
 interface MBuilding {
@@ -169,6 +171,46 @@ interface MBuilding {
   /** An outpost holding (D-080, `outpost_mode`): its Hold flag. */
   hold?: boolean;
 }
+
+/**
+ * The gallery (`?gallery=1`, D-085): ours and the enemy's, the militia (neutral) under ours. As a
+ * diamond, sim facing 2 faces the camera, 0 is down-right, 14 right, 4 down-left (mirrored).
+ */
+const GALLERY = [
+  { owner: ME, x: 50, y: 80, rows: [UnitType.Farmer, UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry, UnitType.Militia] },
+  { owner: FOE, x: 72, y: 84, rows: [UnitType.Farmer, UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry] },
+];
+interface GalleryColumn {
+  action: number;
+  facing: number;
+  node?: NodeKind;
+  role?: "fall" | "hit" | "shatter" | "cast";
+}
+/** 待機, 走路, 攻擊, 倒下 (gone at GALLERY_FALL_TICK). */
+const GALLERY_COLUMNS: GalleryColumn[] = [
+  { action: Action.Idle, facing: 2 },
+  { action: Action.Move, facing: 0 },
+  { action: Action.Attack, facing: 14 },
+  { action: Action.Idle, facing: 4, role: "fall" },
+];
+/** The farmers at work: wood, gold, a field (berries), building. */
+const FARMER_COLUMNS: GalleryColumn[] = [
+  { action: Action.Gather, facing: 2, node: NodeKind.Tree },
+  { action: Action.Gather, facing: 2, node: NodeKind.GoldMine },
+  { action: Action.Gather, facing: 2, node: NodeKind.Berries },
+  { action: Action.Build, facing: 2 },
+];
+/** The mages: calibrating the cannon, the shield struck, the shield shattered. */
+const MAGE_COLUMNS: GalleryColumn[] = [
+  { action: Action.Calibrate, facing: 2, role: "cast" },
+  { action: Action.Idle, facing: 2, role: "hit" },
+  { action: Action.Idle, facing: 2, role: "shatter" },
+];
+const GALLERY_FALL_TICK = 20;
+const GALLERY_SHATTER_TICK = 30;
+const GALLERY_HIT_EVERY = 8;
+/** Then it stops: the fallen 0.8 s into their fall (the dust rising), the shattered mage 0.3 s into it, the struck 0.2 s. */
+const GALLERY_STOP_TICK = 36;
 
 /** The fake world trains a unit in 3 seconds, so tests do not wait. */
 const MOCK_TRAIN_TICKS = 60;
@@ -224,13 +266,21 @@ export class MockPort implements SimPort {
    * towns come with their rows once explored, and the placement grid marks only explored rocks.
    */
   private readonly randomMap: boolean;
+  /** `?gallery=1` (D-085): the atlases' gallery south-east of our home, everything in view. */
+  private readonly gallery: boolean;
+  /** The gallery's units that fall, and its mages struck and shattered (see GALLERY). */
+  private readonly galleryRoles = { fall: [] as MUnit[], hit: [] as MUnit[], shatter: [] as MUnit[] };
 
-  /** `round7`: `?r7=1`, round 7's rules on. `map`: `?map=random` plays this layout as a random map. `outpost`: `?outpost=1`, outposts too (D-080). */
-  constructor(round7 = false, map: MapMode = "fixed", outpost = false) {
+  /**
+   * `round7`: `?r7=1`, round 7's rules on. `map`: `?map=random` plays this layout as a random map.
+   * `outpost`: `?outpost=1`, outposts too (D-080). `gallery`: `?gallery=1`, the atlases' gallery too.
+   */
+  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery = false) {
     this.round7 = round7 || outpost;
     this.outpost = outpost;
     this.rules = outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
     this.randomMap = map === "random";
+    this.gallery = gallery;
   }
 
   /** Tests: deliver an event with the next snapshot (an attack, a captured town...). */
@@ -411,11 +461,42 @@ export class MockPort implements SimPort {
     unit(FOE, UnitType.Mage, 30, 73);
     for (let i = 0; i < 3; i++) unit(NEUTRAL, UnitType.Militia, 29 + i, 66);
     unit(FOE, UnitType.Spearman, 80, 20);
+    if (this.gallery) this.setupGallery(unit);
 
     // Start with the home area explored, so the three fog states are all on screen.
     for (let y = 0; y < SIZE; y++) {
       for (let x = 0; x < SIZE; x++) if ((x - 18) ** 2 + (y - 74) ** 2 <= 30 * 30) this.fog[y * SIZE + x] = 1;
     }
+  }
+
+  /**
+   * The atlases' gallery (D-085, for the pictures the user chooses from): a table of ours and one
+   * of the enemy's, a row a unit type (the militia, neutral, under ours), a column an action. As a
+   * diamond a row runs along the screen: cell (x + c + 2r, y − c + 2r) is row r, column c.
+   */
+  private setupGallery(unit: (owner: number, type: UnitType, cx: number, cy: number) => MUnit): void {
+    const kind = (k: NodeKind) => this.nodes.find((n) => n[1] === k)?.[0] ?? -1;
+    for (const table of GALLERY) {
+      table.rows.forEach((type, r) => {
+        const owner = type === UnitType.Militia ? NEUTRAL : table.owner;
+        const columns = [...GALLERY_COLUMNS, ...(type === UnitType.Farmer ? FARMER_COLUMNS : type === UnitType.Mage ? MAGE_COLUMNS : [])];
+        columns.forEach((col, c) => {
+          const u = unit(owner, type, table.x + c + 2 * r, table.y - c + 2 * r);
+          u.facing = col.facing;
+          u.pose = { action: col.action, target: col.node === undefined ? -1 : kind(col.node) };
+          if (col.role === "cast") u.cast = 1;
+          else if (col.role !== undefined) this.galleryRoles[col.role].push(u);
+        });
+      });
+    }
+  }
+
+  /** The gallery's moments (ticks): the fallen go, a mage's shield breaks; struck mages every few ticks. */
+  private galleryStep(): void {
+    const roles = this.galleryRoles;
+    if (this.tick === GALLERY_FALL_TICK) for (const u of roles.fall) this.units.splice(this.units.indexOf(u), 1);
+    if (this.tick === GALLERY_SHATTER_TICK) for (const u of roles.shatter) u.shield = 0;
+    if (this.tick % GALLERY_HIT_EVERY === 0) for (const u of roles.hit) u.shield = u.shield > 10 ? u.shield - 5 : MOCK_RULES.units[UnitType.Mage].shield;
   }
 
   private building(owner: number, type: BuildingType, cx: number, cy: number): MBuilding {
@@ -437,6 +518,8 @@ export class MockPort implements SimPort {
   }
 
   private step(): void {
+    // The gallery stands still at its moment, the same for every picture (no more snapshots: the screen holds the last).
+    if (this.gallery && this.tick >= GALLERY_STOP_TICK) return;
     this.tick++;
     for (const u of this.units) {
       // Round 7: on its way to hide, it slips in once near the building (also when a test put it there).
@@ -500,6 +583,7 @@ export class MockPort implements SimPort {
       for (const t of this.towns) if (t.state === TownState.Governed && t.income < 1000 && this.tick % Math.ceil(climb.ticks / (1000 - climb.startPermille)) === 0) t.income++;
     }
     if (this.round7 && this.tick % SHOT_TICKS === 0) this.shoot();
+    if (this.gallery) this.galleryStep();
     this.warningTicks = this.warningTicks <= 0 ? 60 : this.warningTicks - 1;
     if (this.tick % FOG_EVERY === 0) this.updateFog();
     this.emit(this.snapshot(this.tick % FOG_EVERY === 0));
@@ -554,6 +638,11 @@ export class MockPort implements SimPort {
   }
 
   private updateFog(): void {
+    // The gallery shows everything (the enemy's table too, and where the fallen fall).
+    if (this.gallery) {
+      this.fog.fill(2);
+      return;
+    }
     for (let i = 0; i < this.fog.length; i++) if (this.fog[i] === 2) this.fog[i] = 1;
     const see = (cx: number, cy: number) => {
       for (let y = Math.max(0, cy - SIGHT); y <= Math.min(SIZE - 1, cy + SIGHT); y++) {
@@ -630,11 +719,11 @@ export class MockPort implements SimPort {
       units[o + U.y] = u.y;
       units[o + U.hp] = u.hp;
       units[o + U.shield] = u.shield;
-      units[o + U.action] = u.hidden ? Action.Garrisoned : u.cast > 0 ? Action.Calibrate : u.target !== null ? Action.Move : Action.Idle;
+      units[o + U.action] = u.hidden ? Action.Garrisoned : u.cast > 0 ? Action.Calibrate : (u.pose?.action ?? (u.target !== null ? Action.Move : Action.Idle));
       units[o + U.facing] = u.facing;
       units[o + U.carryKind] = -1;
       units[o + U.order] = u.cast > 0 ? Order.Cast : u.order;
-      units[o + U.orderTarget] = u.order === Order.Garrison ? u.inside : u.order === Order.Post ? (u.post ?? -1) : u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
+      units[o + U.orderTarget] = u.pose !== undefined ? u.pose.target : u.order === Order.Garrison ? u.inside : u.order === Order.Post ? (u.post ?? -1) : u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
       units[o + U.stance] = u.stance;
       units[o + U.castProgress] = u.cast;
       units[o + U.flags] = u.flags;

@@ -18,6 +18,8 @@ import { LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, 
 import { openIndexedDb, type StoredLog } from "./logs/store.ts";
 import { fetchPoster } from "./logs/upload.ts";
 import { ART_LABEL, artBase, loadArtChoice } from "./art/pref.ts";
+import type { Culture } from "./art/spec.ts";
+import { CULTURES, DEFAULT_CULTURE, loadCulture, saveCulture } from "./culture.ts";
 import { loadUnitArt, type UnitArt } from "./render/unit-art.ts";
 import { measureCutShort } from "./lab/panel.ts";
 import type { AstcSample } from "./lab/astc.ts";
@@ -127,6 +129,27 @@ for (const b of mapButtons) {
 }
 showMapMode();
 
+/** 你的陸 on the start screen (the user 2026-10-19): 東陸 the first time, then the last choice on this device; the computer wears the other. */
+let culture: Culture = loadCulture();
+const cultureButtons = [...document.querySelectorAll<HTMLButtonElement>("#start [data-culture]")];
+function showCulture(): void {
+  for (const b of cultureButtons) {
+    const on = b.dataset.culture === culture;
+    b.setAttribute("aria-checked", on ? "true" : "false");
+    b.classList.toggle("secondary", !on);
+  }
+}
+for (const b of cultureButtons) {
+  b.addEventListener("click", () => {
+    const c = CULTURES.find((v) => v === b.dataset.culture);
+    if (c === undefined) return;
+    culture = c;
+    saveCulture(c);
+    showCulture();
+  });
+}
+showCulture();
+
 /** This game's opponent and time limit, in words, for the lab's result and log. */
 function gameText(level: AiDifficulty, maxTicks: number, enemyAi: boolean, map: MapMode, watch: boolean): string {
   const who = watch ? `電腦${DIFFICULTY_LABEL[level]}對電腦（觀戰）` : enemyAi ? `電腦${DIFFICULTY_LABEL[level]}` : "對手不動（測試）";
@@ -228,7 +251,7 @@ function keepGame(g: Game, why: KeepWhy): Promise<void> {
         protocol: PROTOCOL_VERSION,
         build: __SIM_BUILD__,
         game: k.game,
-        init: { seed: init.seed, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", map: init.map ?? "fixed", maxTicks: init.maxTicks ?? 0, enemyAi: init.ai[1] ?? true },
+        init: { seed: init.seed, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", map: init.map ?? "fixed", maxTicks: init.maxTicks ?? 0, enemyAi: init.ai[1] ?? true, culture: g.culture },
         log: log.jsonl,
         hashes: log.hashes,
         tick: log.tick,
@@ -307,7 +330,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   else await saveStore.clear();
   hideSaved();
   game?.destroy();
-  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpost) : createSimPort(showError);
+  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpost, params.gallery) : createSimPort(showError);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
   // 30-minute limit, like the determinism check and CI, so the numbers compare between runs.
   const level: AiDifficulty = measure ? "normal" : difficulty;
@@ -330,6 +353,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     env: env(scenario, gameText(level, maxTicks, enemyAi, map, params.watch && !measure)),
     checkPort: params.mock ? null : () => createSimPort(showError),
     art,
+    culture: params.culture ?? culture,
     artAvailable,
     artChanged,
     astcSample,
@@ -375,7 +399,8 @@ let artFailed: string | null = null;
 async function artForGame(): Promise<UnitArt | null> {
   const choice = params.art ?? loadArtChoice();
   artChoiceUsed = choice;
-  const base = params.mock ? null : artBase(choice, __ART_TAG__);
+  // The fake world draws the shapes, unless the page asks (?art=: its gallery, D-085).
+  const base = params.mock && params.art === null ? null : artBase(choice, __ART_TAG__);
   if (loadedArt !== null && loadedArt.base === base) return loadedArt.art;
   loadedArt?.art.destroy();
   loadedArt = null;
@@ -497,6 +522,8 @@ async function resumeGame(saved: SavedGame): Promise<void> {
     env: env(init.scenario, gameText(init.difficulty, init.maxTicks, init.enemyAi, init.map, false)),
     checkPort: () => createSimPort(showError),
     art,
+    // As it was played, not the start screen's choice now (a save from before the choice: 東陸).
+    culture: CULTURES.find((c) => c === init.culture) ?? DEFAULT_CULTURE,
     artAvailable,
     artChanged,
     astcSample,

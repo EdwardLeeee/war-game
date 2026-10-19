@@ -28,6 +28,8 @@ export interface GameHook {
   /** Commands posted to the simulation, oldest first. */
   sent(): unknown[];
   camera(): { x: number; y: number; scale: number; flinging: boolean };
+  /** The world under the screen's centre, in cells (fractional; the camera's x, y are the plane's). */
+  centreCell(): { x: number; y: number };
   mode(): string;
   wheel(): string[] | null;
   /** Put a cell in the middle of the screen at a zoom (test set-up). */
@@ -82,6 +84,8 @@ export interface GameHook {
   shots(): number;
   /** The units' atlases (D-085): which, how many pages, units drawn from them; null: the shapes. */
   art(): { label: string; pages: number; units: number; corpses: number } | null;
+  /** 你的陸 this game was started with (the computer wears the other). */
+  culture(): string;
   /** What the last ASTC 樣本 showed: shown, no-astc, or why it failed (D-085). */
   astc(): string | null;
   /** Each town's wall as drawn, world px (D-084). */
@@ -109,6 +113,12 @@ export function gameHook(game: Game): GameHook {
     inspected: () => (game.view?.inspected ? { kind: game.view.inspected.kind, id: game.view.inspected.id } : null),
     sent: () => game.sent.map((c) => ({ ...c })),
     camera: () => ({ x: game.camera?.x ?? 0, y: game.camera?.y ?? 0, scale: game.camera?.scale ?? 1, flinging: game.camera?.flinging ?? false }),
+    centreCell: () => {
+      const cam = game.camera;
+      if (cam === null) return { x: 0, y: 0 };
+      const c = cam.screenToWorld(cam.width / 2, cam.height / 2);
+      return { x: c.x / TILE_PX, y: c.y / TILE_PX };
+    },
     mode: () => (game.placement !== null ? `place:${game.placement.phase}` : game.mode),
     wheel: () => game.wheelItems(),
     centerOn: (cx, cy, scale = 1) => {
@@ -229,6 +239,7 @@ export function gameHook(game: Game): GameHook {
     shots: () => game.shotsForTest,
     townWalls: () => game.townWallsForTest,
     art: () => game.artForTest,
+    culture: () => game.culture,
     astc: () => game.lastAstc,
     mapMode: () => game.view?.map.mode ?? "fixed",
     knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],

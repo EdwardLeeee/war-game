@@ -4,11 +4,12 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { animFor, attackFrame, ATLAS_NAMES, type AtlasJson, frameAt, frameName, parseAtlas, pictureDirection, UNIT_ATLAS, walkFps, workOfNode } from "../src/art/spec.ts";
+import { animFor, attackFrame, ATLAS_NAMES, type AtlasJson, cultureOf, frameAt, frameName, parseAtlas, pictureDirection, UNIT_ATLAS, walkFps, workOfNode } from "../src/art/spec.ts";
 import { artBase, loadArtChoice, saveArtChoice } from "../src/art/pref.ts";
+import { CULTURE_KEY, loadCulture, saveCulture } from "../src/culture.ts";
 import { sha256, unpackDir } from "../scripts/fetch-art.ts";
 import { png } from "../scripts/make-test-atlas.ts";
-import { Action, CELL, NodeKind, UnitType } from "../src/sim.ts";
+import { Action, CELL, NEUTRAL, NodeKind, UnitType } from "../src/sim.ts";
 
 test("朝向：俯視時 +x 是右（方向 0），菱形時 +x 是右下（方向 7）；偶數剛好一個方向（規格第 3 節的表）", () => {
   assert.deepEqual([0, 2, 4, 6, 8, 10, 12, 14].map((k) => pictureDirection(k, null, "diamond")), [7, 6, 5, 4, 3, 2, 1, 0]);
@@ -102,16 +103,38 @@ test("原型的兵穿哪套圖：東陸、西陸各 5 種，民兵用槍兵；�
   assert.deepEqual(UNIT_ATLAS[UnitType.Militia], UNIT_ATLAS[UnitType.Spearman]);
 });
 
-test("量測面板的美術：存在這台裝置，讀不到就是關；位置照 Release 的 tag，沒有 tag 就沒有", () => {
+test("誰穿哪一陸（使用者 2026-10-19 自選）：我方穿選的那一陸，電腦穿另一陸，民兵穿我方的", () => {
+  const me = 1;
+  const foe = 0;
+  assert.deepEqual([cultureOf("e", me, me), cultureOf("e", foe, me), cultureOf("e", NEUTRAL, me)], ["e", "w", "e"]);
+  assert.deepEqual([cultureOf("w", me, me), cultureOf("w", foe, me), cultureOf("w", NEUTRAL, me)], ["w", "e", "w"]);
+});
+
+test("你的陸：開局畫面的選擇記在這台裝置，第一次和讀不到都是東陸", () => {
   const map = new Map<string, string>();
   const store = { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v) };
-  assert.equal(loadArtChoice(store), "off");
+  assert.equal(loadCulture(store), "e");
+  saveCulture("w", store);
+  assert.equal(loadCulture(store), "w");
+  map.set(CULTURE_KEY, "x");
+  assert.equal(loadCulture(store), "e");
+  const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+  assert.equal(loadCulture(broken), "e");
+  saveCulture("w", broken);
+});
+
+test("量測面板的美術：存在這台裝置，沒選過或讀不到就是 3 倍（D-087）；選了關就關；位置照 Release 的 tag，沒有 tag 就沒有", () => {
+  const map = new Map<string, string>();
+  const store = { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v) };
+  assert.equal(loadArtChoice(store), "x3");
   saveArtChoice("x2", store);
   assert.equal(loadArtChoice(store), "x2");
-  map.set("war-game.proto.art", "x9");
+  saveArtChoice("off", store);
   assert.equal(loadArtChoice(store), "off");
+  map.set("war-game.proto.art", "x9");
+  assert.equal(loadArtChoice(store), "x3");
   const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
-  assert.equal(loadArtChoice(broken), "off");
+  assert.equal(loadArtChoice(broken), "x3");
   saveArtChoice("x3", broken);
   assert.equal(artBase("x3", "art-v1"), "./art/art-v1/x3/");
   assert.equal(artBase("x3", null), null);
