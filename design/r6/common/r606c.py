@@ -91,7 +91,7 @@ def panel(L, c, state, atl, art):
     img, _ = field.render(sc, art, scale=SCALE)
     cx, cy = field.cell_to_pt(*origin, sc["centre"])
     R = L["wall"] + 1
-    half_w, below, above = R * field.CELL_W + 20, R * field.CELL_D + 40, R * field.CELL_D + (150 if L["name"] == "large" else 110)
+    half_w, below, above = R * field.CELL_W + 30, R * field.CELL_D + 70, R * field.CELL_D + (200 if L["name"] == "large" else 130)
     out = img.crop(tuple(int(round(v * SCALE)) for v in (cx - half_w, cy - above, cx + half_w, cy + below))).convert("RGB")
     dr = ImageDraw.Draw(out)
     f = boards.font(13 * SCALE)
