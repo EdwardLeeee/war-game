@@ -2158,10 +2158,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
        * plunders (governing first captures won 3% of 120 games on the final round 7 rules), unless
        * plan.governFrom says otherwise (D-086 A).
        */
+      /** D-086 B: what governing town id costs can be paid now (res as the think starts). */
+      const payable = (id: number) => {
+        const t = mem.site(id);
+        if (t === undefined) return false;
+        const c = governCost(t.size);
+        return res.food >= c.food && res.wood >= c.wood && res.gold >= c.gold && res.crystal >= c.crystal;
+      };
       // D-086 B: with the network on, a first capture is governed when it chooses so and can pay (in place of plan.governFrom).
-      const toGovern = (id: number) =>
-        (once && plunderedTown(id)) ||
-        (netChoice !== null ? netChoice[HEAD_TOWN] === TOWN_GOVERN && mem.site(id) !== undefined && affordAll(governCost(mem.site(id)!.size)) : governFirst(id));
+      const toGovern = (id: number) => (once && plunderedTown(id)) || (netChoice !== null ? netChoice[HEAD_TOWN] === TOWN_GOVERN && payable(id) : governFirst(id));
       // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
       const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(mem.site(targetTown)!.size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>

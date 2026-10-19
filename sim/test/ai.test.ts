@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan } from "../src/ai/ai.ts";
-import { ARMY_BASE, ARMY_HOME, BUILD_AS_HARD, choose, features, forward, MIX_EVEN, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
+import { ARMY_BASE, ARMY_HOME, ARMY_TOWN, BUILD_AS_HARD, BUILD_FARMERS, choose, features, forward, MIX_EVEN, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
@@ -1779,6 +1779,27 @@ test("D-086 B: the network's inputs follow the AI's state (features)", () => {
   assert.equal(x.length, NET_INPUTS);
   assert.deepEqual(x.slice(0, 5), [12, 25, 10, 5, 5]);
   assert.deepEqual(x.slice(-7), [255, 0, 0, 0, 0, 2, 3], "mode home, then the losses and the falls");
+});
+
+test("D-086 B: with the network on, hard plays 12 minutes of a game against hard without an error, both maps", () => {
+  // Choices that take it to towns and govern them (its march to a town once read the cost before it could).
+  const runs: [("fixed" | "random"), NetWeights][] = [
+    ["fixed", forcedNet([ARMY_TOWN, MIX_EVEN, BUILD_AS_HARD, TOWN_GOVERN])],
+    ["random", forcedNet([ARMY_TOWN, MIX_SPEAR, BUILD_FARMERS, TOWN_GOVERN])],
+    ["fixed", testNet()],
+  ];
+  for (const [map, net] of runs) {
+    {
+      const g = new Game({ seed: 3, scenario: "standard", map });
+      const ais = [0, 1].map((p) => createAi(p, 3, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: p === 0 ? { net } : {} }, p));
+      let seq = 0;
+      for (let t = 0; t < 12 * 1200 && !g.w.over; t++) {
+        if (g.tick % 10 === 0) for (let p = 0; p < 2; p++) for (const body of ais[p].think(buildView(g, p))) g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+        g.step();
+      }
+      assert.ok(g.tick > 0);
+    }
+  }
 });
 
 test("D-086 B: choices can be ruled out (masking): the best allowed one is made", () => {
