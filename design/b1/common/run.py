@@ -178,6 +178,35 @@ for _i in range(0, len(_R606), 7):
     TARGETS[f"r606_{_i // 7}"] = _R606[_i:_i + 7]
     CAMERA[f"r606_{_i // 7}"] = proj.OBLIQUE
 
+# R6-06 城堡 (the user 2026-10-19: 「希望像一個城堡」, D-089): the wall pieces (blender/castle.py), both cultures, whole
+# and burnt, the paving inside the walls (common/castle.py), and the west's town tower
+import castle as _castle  # noqa: E402
+_R606C = ([dict(kind=k, culture=c, opts=dict(state=s), name=f"{k}_{c}_{s}")
+           for c in CULTURES for k in ("pal_x", "pal_y", "pal_corner", "pal_gate_x", "pal_gate_y", "sw_x", "sw_y", "sw_ctower",
+                                       "sw_gate_x", "sw_gate_y") for s in ("intact", "ruin")]
+          + [dict(kind="tground", culture=c, opts=dict(plan=_castle.ground_plan(L)), name=f"tground_{c}_castle_{L['name']}")
+             for c in CULTURES for L in (_castle.small(), _castle.large())]
+          + [dict(kind="ttower", culture=c, state="intact", name=f"ttower_{c}_intact") for c in CULTURES])
+TARGETS["castle_g"] = [pc for pc in _R606C if pc["kind"] == "tground"]      # again: the roads out of the gates
+CAMERA["castle_g"] = proj.OBLIQUE
+for _i in range(0, len(_R606C), 7):
+    TARGETS[f"castle_{_i // 7}"] = _R606C[_i:_i + 7]
+    CAMERA[f"castle_{_i // 7}"] = proj.OBLIQUE
+
+# art-v4 (D-089, the user 2026-10-20 approved the castle boards: 「可以，照這樣做」): the wall pieces in both states
+# (the four owner looks are one image tinted), the floor tiles inside the walls, and the 3 x 3 big city tower
+_V4 = ([dict(kind=k, culture=c, opts=dict(state=s), name=f"castle_{k}_{c}_{s}", footprint=list(_castle.PIECE_FOOT[k]))
+        for c in CULTURES for k in _castle.PIECE_FOOT for s in ("intact", "ruin")]
+       + [dict(kind="tground", culture=c, opts=dict(plan=[(0.0, 0.0, t)]), name=f"castle_tile_{t}_{c}")
+          for c in CULTURES for t in ("square", "street", "garden")]
+       + [dict(kind="ttower3", culture=c, state=st, name=f"town_tower3_{c}_{s}")
+          for c in CULTURES for s, st in (("done", "intact"), ("damaged", "damaged"), ("rubble", "rubble"))])
+TARGETS["prod_castle_t3"] = [pc for pc in _V4 if pc["kind"] == "ttower3"]     # again: the fire sat above the roof
+CAMERA["prod_castle_t3"] = proj.OBLIQUE
+for _i in range(0, len(_V4), 8):
+    TARGETS[f"prod_castle_{_i // 8}"] = _V4[_i:_i + 8]
+    CAMERA[f"prod_castle_{_i // 8}"] = proj.OBLIQUE
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
@@ -188,6 +217,7 @@ FOLDER.update({t: "prod" for t in TARGETS if t.startswith("prod_")})
 FOLDER.update({t: "dir" for t in CAMERA if t.startswith("dir_")})
 FOLDER.update({t: "sqdone" for t in TARGETS if t.startswith(("sqdone_", "sqfield"))})
 FOLDER.update({t: "r606" for t in TARGETS if t.startswith("r606_")})
+FOLDER.update({t: "castle" for t in TARGETS if t.startswith("castle_")})
 
 
 def pieces(target):
