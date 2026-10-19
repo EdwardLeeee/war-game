@@ -97,7 +97,7 @@ def _poly_cells(cells):
 
 def _band(line, half, y0=None, y1=None):
     """A polygon round a centre line (local cells) `half` cells to each side, metres; only the part with y0 <= y < y1."""
-    pts = [(x, y) for x, y in line if (y0 is None or y >= y0) and (y1 is None or y <= y1)]
+    pts = [(x, y) for x, y in line if (y0 is None or y >= y0) and (y1 is None or y <= y1) and 0 <= y <= D_CELLS]
     left, right = [], []
     for k, (x, y) in enumerate(pts):
         a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]

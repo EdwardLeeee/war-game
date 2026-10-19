@@ -43,11 +43,12 @@ def tpatch(root, c, variant=0, w=48.0, d=28.0, plan=None):
     ground.gpatch(root, c, style="A", w=w, d=d, plan=plan.get("ground"))
     P = dict(kit.palette(c))
     P["rock"] = lib.mat("tp_rock", (0.48, 0.47, 0.44), 0.85, noise=0.4, noise_scale=6)
-    P["cliff"] = lib.mat("tp_cliff", (0.42, 0.35, 0.28), 0.9, noise=0.45, noise_scale=4, pattern="brick", pattern_scale=0.6)
+    P["cliff"] = lib.mat("tp_cliff", (0.36, 0.31, 0.26), 0.9, noise=0.5, noise_scale=3)
     P["cliffdark"] = lib.mat("tp_cliffdark", (0.3, 0.25, 0.2), 0.9, noise=0.4, noise_scale=5)
     # flat colours as dark as ground.LOOK's (the lit ground comes out about 1.5 x brighter than its albedo)
-    water = lib.mat("tp_water", (0.018, 0.06, 0.1), 0.22, noise=0.12, noise_scale=3)
-    shallow = lib.mat("tp_shallow", (0.07, 0.14, 0.15), 0.3, noise=0.2, noise_scale=4)
+    # rough enough that the white world light does not wash the water out (0.22 rendered it white)
+    water = lib.mat("tp_water", (0.02, 0.075, 0.13), 0.6, noise=0.15, noise_scale=3)
+    shallow = lib.mat("tp_shallow", (0.07, 0.15, 0.16), 0.65, noise=0.2, noise_scale=4)
     bank = lib.mat("tp_bank", (0.17, 0.13, 0.08), 0.95, noise=0.3, noise_scale=8)
     for k, pts in enumerate(plan.get("bank", [])):
         _water(f"tp_bank{k}", pts, bank, root, 0.03)
@@ -79,7 +80,7 @@ def tpatch(root, c, variant=0, w=48.0, d=28.0, plan=None):
             else:
                 box(f"tp_rail{k}{s}", (0.1, L, 0.12), P["beam"], root, loc=(cx + s * (Wd / 2 - 0.2), cy, 1.1))
     for k, (x, y) in enumerate(plan.get("rocks", [])):
-        _boulders(f"tp_rk{k}", x, y, P, root, rnd, n=rnd.choice((3, 4)), size=rnd.uniform(1.0, 1.35))
+        _boulders(f"tp_rk{k}", x, y, P, root, rnd, n=4, size=rnd.uniform(1.15, 1.45))
     line = plan.get("cliff_line", [])
     if line:
         # one escarpment along the line: broken blocks of rock face, strata, scree at its foot
@@ -92,8 +93,9 @@ def tpatch(root, c, variant=0, w=48.0, d=28.0, plan=None):
                 t = (i + 0.5) / n
                 x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
                 h = rnd.uniform(2.6, 3.4)
-                box(f"tp_cl{k}_{i}", (L / n + 0.25, rnd.uniform(1.3, 1.8), h), P["cliff"], root, loc=(x, y, h / 2),
-                    rot=(rnd.uniform(-3, 3), rnd.uniform(-3, 3), ang + rnd.uniform(-8, 8)), bevel=0.08, taper=(0.82, 0.7))
+                # tall weathered rock, not blocks: stretched, overlapping boulders
+                ico(f"tp_cl{k}_{i}", 0.8, P["cliff"], root, loc=(x, y, h * 0.42), subdiv=2,
+                    scale=(rnd.uniform(0.9, 1.15), rnd.uniform(0.85, 1.05), h / 1.55), rot=(0, 0, ang + rnd.uniform(-20, 20)))
             for i in range(n):
                 t = rnd.random()
                 _boulders(f"tp_scree{k}_{i}", x0 + (x1 - x0) * t + rnd.uniform(-0.3, 0.3), y0 + (y1 - y0) * t - 1.1, P, root, rnd,
@@ -107,9 +109,9 @@ def tpatch(root, c, variant=0, w=48.0, d=28.0, plan=None):
         for k, (x, y) in enumerate(plan["thick"]):
             g = lib.empty(f"tp_thick{k}", parent=root, loc=(x + rnd.uniform(-0.15, 0.15), y + rnd.uniform(-0.15, 0.15), 0))
             nature.tree(g, c, variant=(k * 2) % 3, seed=400 + k)
-            for i in range(3):                    # undergrowth filling the gaps between the trunks
-                sphere(f"tp_ug{k}_{i}", rnd.uniform(0.45, 0.65), bush, root,
-                       loc=(x + rnd.uniform(-0.8, 0.8), y + rnd.uniform(-0.8, 0.8), 0.35), scale=(1, 1, 0.7))
+            for i in range(5):                    # undergrowth filling the gaps between the trunks, up to the crowns
+                sphere(f"tp_ug{k}_{i}", rnd.uniform(0.6, 0.85), bush, root,
+                       loc=(x + rnd.uniform(-0.9, 0.9), y + rnd.uniform(-0.9, 0.9), 0.5), scale=(1, 1, 0.85))
             for i in range(4):                    # brambles: dark thorny sticks
                 a = rnd.uniform(0, math.pi)
                 rod(f"tp_br{k}_{i}", (x + math.cos(a) * 0.8, y + math.sin(a) * 0.8, 0.05),
