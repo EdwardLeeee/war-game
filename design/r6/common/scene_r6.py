@@ -28,7 +28,8 @@ LAYOUT = {
         trees=((560, 52), (600, 70), (640, 48), (668, 84), (615, 104), (700, 60), (560, 92), (645, 128), (520, 70), (690, 116)),
         gold=((626, 168), (652, 184)), squad=(470, 190), enemy=(642, 252),
         farmers=((176, 214), (232, 236), (300, 236)), near_house=(120, 178),
-        mage=(470, 196), guards=(430, 176), raid=(250, 262), raid_farmers=((176, 214), (205, 238))),
+        mage=(470, 196), guards=(430, 176), raid=(250, 262), raid_farmers=((176, 214), (205, 238)),
+        rally=(560, 150), world_tower=None),
     "oblique": dict(
         buildings=(("MainCity", "done", (170, 150), 4), ("House", "done", (300, 92), 2), ("House", "done", (84, 252), 2),
                    ("Barracks", "done", (318, 182), 3), ("Farm", "ripe", (230, 262), 3), ("Farm", "growing", (360, 282), 3),
@@ -36,7 +37,9 @@ LAYOUT = {
         trees=((560, 52), (604, 72), (648, 48), (676, 92), (612, 112), (700, 58), (556, 98), (652, 136), (520, 66), (734, 104)),
         gold=((630, 196), (672, 206)), squad=(500, 165), enemy=(670, 262),
         farmers=((200, 262), (256, 252), (150, 222)), near_house=(84, 252),
-        mage=(500, 176), guards=(452, 150), raid=(250, 292), raid_farmers=((200, 262), (230, 280))),
+        mage=(500, 176), guards=(452, 150), raid=(250, 292), raid_farmers=((200, 262), (230, 280)),
+        # R6-23: the arrow tower within range of the enemy squad (it shoots, INV-145), the rally point clear of it
+        rally=(455, 228), world_tower=(600, 140)),
 }
 
 
@@ -92,6 +95,11 @@ def world():
     sc = representative()
     lay = L()
     b = sc["buildings"]
+    nodes = sc["nodes"]
+    if lay["world_tower"]:
+        tx, ty = footprint_at(*lay["world_tower"], 2)
+        b = [x if x[1] != "ArrowTower" else (*x[:3], tx, ty, x[5]) for x in b]
+        nodes = [n for n in nodes if not (tx - 1.5 <= n[1] <= tx + 2.5 and ty - 2.5 <= n[2] <= ty + 2.5)]
     hx, hy = footprint_at(*lay["near_house"], 2)         # the house nearest the camera is going up
     b = [x for x in b if not (x[1] == "House" and x[3] == hx and x[4] == hy)] + [("E", "House", "build2", hx, hy, "blue")]
     mx, my = cell(*lay["mage"])
@@ -104,7 +112,7 @@ def world():
     for i, (px, py) in enumerate(lay["farmers"][:2]):
         x, y = cell(px, py)
         units.append(("farmer_e", "blue", x, y, (6, 7)[i], "idle", i * 2, False))
-    return dict(sc, buildings=b, units=units, warn=(ex, ey))
+    return dict(sc, buildings=b, nodes=nodes, units=units, warn=(ex, ey))
 
 
 def town():

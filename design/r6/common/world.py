@@ -95,7 +95,7 @@ def build(art, out, rings):
             right=round(mid[0] + (e["w"] - e["ax"]) / 3, 1), mid=[round(v, 1) for v in mid], w=round(field.foot_w(n), 1),
             mark=[round(v, 1) for v in mark]))
     data["world"] = dict(mage=dict(x=round(mage["x"], 1), y=round(mage["y"], 1), top=round(mage["top"], 1)), buildings=bl,
-                         rally=[round(v, 1) for v in field.cell_to_pt(*scene_r6.cell(560, 150), c)],
+                         rally=[round(v, 1) for v in field.cell_to_pt(*scene_r6.cell(*scene_r6.L()["rally"]), c)],
                          enemy=[round(v, 1) for v in field.cell_to_pt(*sc["warn"], c)])
     ts = scene_r6.town()
     for t, ring in rings.items():

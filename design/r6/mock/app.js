@@ -2,7 +2,7 @@
 // or B (墨漆金線) (D-087). ui.html?theme=a|b&state=<id> draws one state; the states are in states.js.
 // Layout follows the prototype (inventory.md) except where D-087 changes it: the left column is gone (閒置
 // only when someone idles, 全體回城 only when home is hit, 重設 handed to × and 取消) and the minimap is a
-// diamond behind a 「地圖」 button.
+// square behind a 「地圖」 button.
 "use strict";
 
 const Q = new URLSearchParams(location.search);
@@ -217,7 +217,7 @@ PIECES.error = (s) => {
 const TEAMC = { own: "#3f7fe0", enemy: "#d9433a", neutral: "#d8d2c0", ruin: "#6d6258" };   // R6-24 甲
 PIECES.world = (s) => {
   if (!s.world || !window.R6_WORLD) return;
-  const W = window.R6_WORLD.world, T = window.R6_WORLD.town;
+  const W = window.R6_WORLD.world, TW = window.R6_WORLD.town;   // T is the animation's time
   const g = [];
   const bar = (x, y, w, frac, col) => g.push(`<rect x="${x - w / 2}" y="${y}" width="${w}" height="4" rx="2" fill="#201a18" opacity=".85"/>` +
     `<rect x="${x - w / 2}" y="${y}" width="${w * frac}" height="4" rx="2" fill="${col}"/>`);
@@ -271,10 +271,10 @@ PIECES.world = (s) => {
         `<path d="M5 -3 L10 0 L5 3 z" fill="#f4e2b0" stroke="#2a1c10" stroke-width=".8"/></g>`);
     } else if (it.k === "town") {
       const L = it.look;
-      g.push(`<polygon points="${T.ring.map((p) => p.join(",")).join(" ")}" fill="${L.tint}" fill-opacity=".1" stroke="${L.tint}" stroke-width="3" stroke-opacity=".75"/>` +
-        `<polygon points="${T.wall.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${L.tint}" stroke-width="6" stroke-linejoin="round" opacity=".95"/>` +
-        `<polygon points="${T.wall.map((p) => p.join(",")).join(" ")}" fill="none" stroke="#201a18" stroke-width="1.5" stroke-dasharray="4 3"/>`);
-      const [lx, ly] = T.label;
+      g.push(`<polygon points="${TW.ring.map((p) => p.join(",")).join(" ")}" fill="${L.tint}" fill-opacity=".1" stroke="${L.tint}" stroke-width="3" stroke-opacity=".75"/>` +
+        `<polygon points="${TW.wall.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${L.tint}" stroke-width="6" stroke-linejoin="round" opacity=".95"/>` +
+        `<polygon points="${TW.wall.map((p) => p.join(",")).join(" ")}" fill="none" stroke="#201a18" stroke-width="1.5" stroke-dasharray="4 3"/>`);
+      const [lx, ly] = TW.label;
       const glyph = `<div class="townglyph" style="left:${lx - 13}px;top:${ly - 110}px;--tint:${L.tint}">${L.glyph || "鎮"}</div>`;
       const label = L.text ? `<div class="townlabel" style="left:${lx}px;top:${ly + 4}px">${L.text}${L.timer !== undefined ? `<span class="tbar"><i style="width:${L.timer * 100}%"></i></span>` : ""}</div>` : "";
       add(glyph); if (label) add(label);
