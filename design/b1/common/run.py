@@ -187,6 +187,8 @@ _R606C = ([dict(kind=k, culture=c, opts=dict(state=s), name=f"{k}_{c}_{s}")
           + [dict(kind="tground", culture=c, opts=dict(plan=_castle.ground_plan(L)), name=f"tground_{c}_castle_{L['name']}")
              for c in CULTURES for L in (_castle.small(), _castle.large())]
           + [dict(kind="ttower", culture=c, state="intact", name=f"ttower_{c}_intact") for c in CULTURES])
+TARGETS["castle_g"] = [pc for pc in _R606C if pc["kind"] == "tground"]      # again: the roads out of the gates
+CAMERA["castle_g"] = proj.OBLIQUE
 for _i in range(0, len(_R606C), 7):
     TARGETS[f"castle_{_i // 7}"] = _R606C[_i:_i + 7]
     CAMERA[f"castle_{_i // 7}"] = proj.OBLIQUE

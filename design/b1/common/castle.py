@@ -138,10 +138,18 @@ def ground_plan(L):
     from layouts import CELL
     off = 0.5 if L["name"] == "large" else 0.0
     out = []
+    R = L["wall"]
     for (dx, dy), k in L["cells"].items():
         k = {"gate": "street", "tower": "square"}.get(k, k)
         if k in ("square", "street", "garden"):
             out.append(((dx + off) * CELL, -(dy + off) * CELL, k))    # the render's +y is the sim's north
+        if L["cells"][(dx, dy)] == "gate":
+            # the road goes on 2 cells out of every gate: seen from the camera, the east and west walls are edge-on
+            # and their gaps hidden, so the road says where the gate is
+            a, b = dx + off, dy + off
+            nx, ny = (0, 1 if b > 0 else -1) if abs(b) == R else (1 if a > 0 else -1, 0)
+            for k2 in (1, 2):
+                out.append(((a + nx * k2) * CELL, -(b + ny * k2) * CELL, "street"))
     return out
 
 
