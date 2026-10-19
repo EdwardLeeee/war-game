@@ -1699,7 +1699,8 @@ export class UnitSystem {
  */
 /**
  * Is unit slot i at home (HOME_GUARD, round 8): within HOME_GUARD.mainCity cells (Chebyshev, from
- * the footprint) of its owner's finished main city, or within the radius of a town its owner governs?
+ * the footprint) of its owner's finished main city, or inside the walls of a town its owner governs
+ * (D-089)?
  */
 export function atHome(w: World, i: number): boolean {
   const u = w.units.col;
