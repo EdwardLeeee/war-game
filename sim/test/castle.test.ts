@@ -14,7 +14,7 @@ import { generateRandomMap } from "../src/core/random-map.ts";
 import { BUILDINGS, rules, TOWER_REACH } from "../src/core/rules.ts";
 import { toCanon } from "../src/frame.ts";
 import { checkPlacement } from "../src/placement.ts";
-import { BuildingType, CELL_SHIFT, inTown, PlaceBit, Reject, Stance, Terrain, TownSize, TownState, UnitType } from "../src/protocol.ts";
+import { BuildingType, CELL_SHIFT, inTown, PlaceBit, Reject, Stance, Terrain, TOWN_STRIDE, TownField, TownFlag, TownSize, TownState, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
 
@@ -64,6 +64,29 @@ test("on the fixed map walls are terrain nobody walks; gates and the cell before
   for (const cell of [...c.gate, ...c.outside, ...c.behind]) assert.equal(at(cell) & (PlaceBit.Blocked | PlaceBit.GateLane), PlaceBit.GateLane);
   for (const [dx, dy] of c.behind) assert.ok(inTown(c, 0, 0, dx, dy), `${dx},${dy} behind a gate is inside`);
   for (const [dx, dy] of c.outside) assert.ok(!inTown(c, 0, 0, dx, dy), `${dx},${dy} in front of a gate is outside`);
+});
+
+test("seeing a town is seeing any of its castle: a farmer just outside the wall finds it, one 7 cells out does not, and it stays known", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const t = w.map.towns[T];
+  const known = () => {
+    const v = buildView(g, 0);
+    for (let r = 0; r < v.towns.length; r += TOWN_STRIDE) if (v.towns[r + TownField.id] === T) return (v.towns[r + TownField.flags] & TownFlag.Visible) !== 0 ? "in sight" : "remembered";
+    return "unknown";
+  };
+  // The north wall is 5 cells from the centre, as far as a farmer sees: from outside it the centre
+  // is out of sight.
+  put(g, 0, UnitType.Farmer, t.cellX, t.cellY - 12);
+  g.fog.update(w);
+  assert.equal(known(), "unknown", "7 cells off the wall");
+  const near = put(g, 0, UnitType.Farmer, t.cellX, t.cellY - 6);
+  g.fog.update(w);
+  assert.equal(known(), "in sight", "a cell outside the wall");
+  const u = w.units.col;
+  u.y[slotOf(g, near)] = (t.cellY - 12) << CELL_SHIFT;
+  g.fog.update(w);
+  assert.equal(known(), "remembered", "and remembered once out of sight");
 });
 
 test("walls stop walking: a soldier sent to a town's centre from beside its corner goes in by a gate", () => {

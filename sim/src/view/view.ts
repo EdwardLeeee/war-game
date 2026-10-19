@@ -42,7 +42,7 @@ import {
   WARNING_STRIDE,
   WarningField,
 } from "../protocol.ts";
-import { writeTownRow } from "../core/fog.ts";
+import { townInSight, writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
 import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, OUTPOST, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
@@ -231,15 +231,14 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   const buildings = new Int32Array(rows.length * BUILDING_STRIDE);
   rows.forEach((row, r) => buildings.set(row, r * BUILDING_STRIDE));
 
-  // Towns: explored ones, live when seen, else as last seen.
+  // Towns: the ones seen, live while in sight (any cell of the castle, D-089), else as last seen.
   const townRows: Int32Array[] = [];
   for (let t = 0; t < w.townSize.length; t++) {
     const row = new Int32Array(TOWN_STRIDE);
-    const cell = w.townY[t] * n + w.townX[t];
-    if (player === null || vis![cell] === 1) {
+    if (player === null || townInSight(w, vis!, t)) {
       writeTownRow(w, t, row, 0);
       row[TownField.flags] |= TownFlag.Visible;
-    } else if (exp![cell] === 1) {
+    } else if (fog.townKnown[player][t] === 1) {
       row.set(fog.townSeen[player].subarray(t * TOWN_STRIDE, (t + 1) * TOWN_STRIDE));
       row[TownField.flags] &= ~TownFlag.Visible;
     } else {

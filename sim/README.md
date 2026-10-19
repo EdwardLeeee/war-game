@@ -819,7 +819,8 @@ D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與�
   - 通道以外的建築還是把路擋住時，D-024 照舊打擋路的建築；牆不是建築，沒有人會打。
   - 原本用圓的地方改成牆以內（`World.inTown`）：攻下、持有、搶的倒數、駐軍、叛離、PlayerView 的駐軍數、在家打仗少受傷（`HOME_GUARD` 的 `atHome`）。
   - 城鎮附近的箭樓（`World.nearTown`）：牆以內往外 `TOWER_REACH.town + 1` 格，也就是城牆外 2 格（ceo 選乙）。
-  - PlayerView 的 `placement` 只在看得到的格子（隨機地圖是探過的）標 `Wall`、`Gate`。
+  - PlayerView 的 `placement` 只在看得到的格子（隨機地圖是探過的）標 `Wall`、`Gate`、`GateLane`。
+  - 看到城堡的任何一格就算看到城鎮（`fog.ts` 的 `townInSight`、`Fog.townKnown`；PlayerView 的城鎮列、城鎮的事件）。以前要看到中心格：小鎮的牆離中心 5 格，和村民的視野一樣遠，村民從牆外永遠看不到中心，隨機地圖上就找不到城鎮。
 - **統計**（不算進雜湊）：
   - `World.townDeaths` 死在城鎮牆以內和牆外 3 格的兵，`World.gateDeaths` 其中死在城門 3 格內的。
   - `tournament.ts` 每方記下被拒絕的指令，照拒絕的原因分（`rejected`）。
@@ -839,6 +840,7 @@ D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與�
     - 繞路：主城到主城最多 1.40 倍，主城到任一城鎮最多 1.60 倍。
     - 雙方到最近小鎮一樣遠，牆有鏡像。
   - 隨機地圖轉向後大城的城堡跟著箭樓，`rules`、`World`、`inTown` 說的一樣；沒探過的格子沒有 `Wall`、`Gate`。
+  - 村民站在牆外一格看得到城鎮，離牆 7 格看不到；走開以後城鎮的列照最後看到的留著。
 - **電腦還沒跟上**：`ai.ts` 判斷城鎮時照舊用 `rules.towns[size].radius` 的圓，也不知道要從城門進。war-game-ai 之後改；這一版的電腦對電腦和腳本玩家，是照舊的電腦打新的地圖。
 
 ### 已知限制

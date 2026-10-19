@@ -141,6 +141,12 @@ export class World {
   /** 1 on the cells of the castles' gates (D-089). */
   gateAt: Uint8Array;
   /**
+   * Each town's castle cells (D-089): inside the walls and the ring of walls and gates, as cell
+   * indices. Seeing any of them is seeing the town (fog.ts): the walls stand 5 cells from a small
+   * town's centre, as far as a farmer sees, so its centre is out of sight from outside them.
+   */
+  castleCells: Int32Array[] = [];
+  /**
    * 1 on each gate's lane (ceo 2026-10-20: the gates stay open, so nothing is built there): the gate
    * cells, the cell in front of each and the first cell behind it.
    */
@@ -330,6 +336,11 @@ export class World {
       }
       for (const [dx, dy] of [...c.gate, ...c.outside, ...c.behind]) this.gateLane[(s.cellY + dy) * n + s.cellX + dx] = 1;
       mark(this.nearCastle, s.cellX + c.inside.x0 - 4, s.cellY + c.inside.y0 - 4, s.cellX + c.inside.x1 + 4, s.cellY + c.inside.y1 + 4);
+      const cells: number[] = [];
+      for (let y = Math.max(0, s.cellY + c.inside.y0 - 1); y <= Math.min(n - 1, s.cellY + c.inside.y1 + 1); y++) {
+        for (let x = Math.max(0, s.cellX + c.inside.x0 - 1); x <= Math.min(n - 1, s.cellX + c.inside.x1 + 1); x++) cells.push(y * n + x);
+      }
+      this.castleCells.push(Int32Array.from(cells));
     });
   }
 
