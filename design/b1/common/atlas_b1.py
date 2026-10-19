@@ -97,6 +97,7 @@ def layers(name):
     m = np.asarray(Image.open(SRC / f"{name}_x3_mask.png").convert("RGBA"), np.float32)
     w = (m[..., 0] / 255.0) * (m[..., 3] / 255.0) * (c[..., 3] / 255.0)
     ax, ay = meta["anchor"]
+    proj.use_camera(meta.get("camera"))           # the smoke columns stand where this render's camera saw them
     colour = Image.fromarray(np.clip(c, 0, 255).astype(np.uint8), "RGBA")
     weight = Image.fromarray((w * 255).astype(np.uint8), "L")
     smokes = []
@@ -189,6 +190,23 @@ def memory(px, tables):
     return mem
 
 
+def view_of(frames):
+    """The camera every frame was rendered with, for the manifests' "view" (D-088): "oblique" (方形斜看) or None
+    (the diamond camera; the art-v2 manifests have no "view"). Frames from two cameras are an error."""
+    views = set()
+    for n in frames:
+        cam = json.loads((SRC / f"{n}_x3.json").read_text()).get("camera") or proj.DIAMOND
+        if cam == proj.OBLIQUE:
+            views.add("oblique")
+        elif cam == proj.DIAMOND:
+            views.add(None)
+        else:
+            raise SystemExit(f"{n}: camera {cam} is neither the diamond nor the oblique one")
+    if len(views) != 1:
+        raise SystemExit(f"frames from two cameras: {views}")
+    return views.pop()
+
+
 def run(scale=3.0, page=2048):
     f = scale / 3.0
     root = config.BUILD / f"atlas_x{scale:g}"
@@ -203,8 +221,10 @@ def run(scale=3.0, page=2048):
         missing = [n for n in frames if not (SRC / f"{n}_x3.json").exists()]
         if missing:
             raise SystemExit(f"missing renders: {missing}")
+        view = view_of(frames)
         tables, pages, px, per = pack(frames, f"buildings_{c}", bdir, page, f)
         man = {"format": "war-game buildings 1", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
+               **({"view": view} if view else {}),
                "team_gain": TEAM_GAIN, "pages": pages, "buildings": table,
                "frames": tables["color"], "team": tables["team"], "shadows": tables["shadow"]}
         (bdir / f"buildings_{c}.json").write_text(json.dumps(man, separators=(",", ":")))
@@ -223,8 +243,10 @@ def run(scale=3.0, page=2048):
     ndir = root / "nodes"
     ndir.mkdir()
     nf = node_frames()
+    view = view_of(nf)
     tables, pages, px, per = pack(nf, "nodes", ndir, page, f, with_team=False)
-    man = {"format": "war-game nodes 1", "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2, "pages": pages,
+    man = {"format": "war-game nodes 1", "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
+           **({"view": view} if view else {}), "pages": pages,
            "nodes": node_table(), "frames": tables["color"], "shadows": tables["shadow"]}
     (ndir / "nodes.json").write_text(json.dumps(man, separators=(",", ":")))
     mem_n = memory(px, tables)
