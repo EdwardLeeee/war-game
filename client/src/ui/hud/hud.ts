@@ -7,7 +7,24 @@ import { counterLines } from "../../game/counters.ts";
 import type { Game } from "../../game/game.ts";
 import { pressable } from "../../input/pressable.ts";
 import type { PerfScenario } from "../../lab/lab.ts";
-import { AUTO_TRAIN, BUILDING_STRIDE, BuildingField, BuildingFlag, type GameStats, HeaderField as H, type Resource, type SimEvent, TownChoice, TownSize } from "../../sim.ts";
+import {
+  AUTO_TRAIN,
+  BUILDING_STRIDE,
+  BuildingField,
+  BuildingFlag,
+  BuildingType,
+  CELL,
+  type GameStats,
+  HeaderField as H,
+  NEUTRAL,
+  NO_OWNER,
+  type Resource,
+  type SimEvent,
+  TownChoice,
+  TownSize,
+  UnitField,
+  UnitType,
+} from "../../sim.ts";
 import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
 import { applyTheme, loadTheme, saveTheme, THEME_LABEL, THEMES } from "../../theme.ts";
@@ -29,6 +46,16 @@ const ALERT_MERGE_CELLS = 8;
 const MAX_ARROWS = 3;
 /** 開局提示: the minimap keeps flashing the town this long after the hint is closed (ms). */
 const TOWN_FLASH_AFTER_MS = 10_000;
+/**
+ * 全體回城 跳出來 (R6-13, D-087): an enemy player's soldiers hurting our buildings or farmers this
+ * close to our main city (cells from its footprint, the larger of across and down), and for this
+ * long after the last such hit (ms). Suggested values, to be tried in play.
+ */
+const HOME_CELLS = 12;
+const HOME_HIT_MS = 15_000;
+const HOME_HIT_TEXT = "家裡被攻擊：主城附近有敵兵";
+/** 地圖 flashes red, this long each way (R6-25-05). */
+const MAP_ALARM_BLINK_MS = 400;
 
 export interface HudLifecycle {
   restart(): void;
@@ -81,6 +108,17 @@ export class Hud {
   private readonly formal: boolean;
   private readonly recallBtn: HTMLButtonElement;
   private readonly idleBtn: HTMLButtonElement;
+  /** 正式介面 (R6-13): 地圖 and how many places are under attack on it; 閒置's count. */
+  private readonly mapBtn: HTMLButtonElement | null;
+  private readonly mapBadge: HTMLElement | null;
+  private readonly idleBadge: HTMLElement | null;
+  /** 正式介面: the minimap shows (behind 地圖), and whether it opened on its own. */
+  private minimapOpen = false;
+  private minimapAuto = false;
+  /** 家裡被攻擊 (R6-13): 全體回城 shows until then (performance.now ms). */
+  private homeHitUntil = 0;
+  /** What 全體回城 shows now: "home" (家裡被攻擊), "work" (回去工作), or "" (put away). */
+  private recallLook = "";
   private readonly groupBtns: HTMLButtonElement[] = [];
   /** 「退1」–「退4」 (D-081): beside each group button while that group advances. */
   private readonly retreatBtns: HTMLButtonElement[] = [];
@@ -107,10 +145,26 @@ export class Hud {
     menu.setAttribute("aria-haspopup", "dialog");
 
     const left = el("div", root, "side-left");
-    // 重設 (D-024): one tap back to nothing selected; kept apart from 全體回城 below it.
-    btn(left, "重設", () => game.reset(), "reset-btn");
-    this.recallBtn = btn(left, "全體回城", () => this.toggleRecall(), "secondary");
-    this.idleBtn = el("button", left, "idle-btn", "閒置 0");
+    if (!this.formal) {
+      // 重設 (D-024): one tap back to nothing selected; kept apart from 全體回城 below it.
+      btn(left, "重設", () => game.reset(), "reset-btn");
+      this.recallBtn = btn(left, "全體回城", () => this.toggleRecall(), "secondary");
+      this.idleBtn = el("button", left, "idle-btn", "閒置 0");
+      this.mapBtn = this.mapBadge = this.idleBadge = null;
+    } else {
+      // R6-13 (D-087 C, 需要時才出現): no 重設 (× and 取消 do what it did, R6-30); 全體回城 only while
+      // home is hit or the farmers hide (it is in the menu too); 閒置 only while someone idles; the
+      // minimap behind 地圖.
+      this.recallBtn = btn(left, "", () => this.tapRecall(), "recall-btn b alarm");
+      this.idleBtn = el("button", left, "idle-btn b pri");
+      dress(this.idleBtn, { ic: "idle", label: "閒置" });
+      this.idleBadge = el("span", this.idleBtn, "badge");
+      this.idleBtn.hidden = true;
+      this.mapBtn = btn(left, "", () => this.toggleMinimap(), "map-btn b sec");
+      dress(this.mapBtn, { ic: "map", label: "地圖" });
+      this.mapBadge = el("span", this.mapBtn, "badge");
+      this.mapBadge.hidden = true;
+    }
     this.idleBtn.type = "button";
     this.cleanups.push(
       pressable(this.idleBtn, {
@@ -172,7 +226,8 @@ export class Hud {
       groupRefill: (i: number) => game.army.groups[i].refill,
       toggleRefill: (i: number) => this.toggleRefill(i),
       selectOnly: (units: number[]) => game.apply([{ kind: "select", units }]),
-      clearSelection: () => game.apply([{ kind: "clear" }]),
+      // 正式介面 (R6-30): × is what 重設 was, back to nothing selected (選位置, the preview, the build menu too).
+      clearSelection: () => (this.formal ? game.reset() : game.apply([{ kind: "clear" }])),
       groupView: () => game.groupView,
       groupWant: (i: number, type: number) => game.army.groups[i].want[type] ?? 0,
       groupHas: (i: number, type: number) => game.groupHas(i, type),
@@ -197,6 +252,7 @@ export class Hud {
       alerts: () => this.alerts.map((a) => ({ cx: Math.floor(a.wx / TILE_PX), cy: Math.floor(a.wy / TILE_PX) })),
       highlight: () => (this.flash !== null && performance.now() < this.flash.until ? this.flash : null),
     });
+    if (this.formal) this.minimap.canvas.classList.add("closed");
     this.info = new SelectionInfo(root, host);
     this.cmds = new CommandArea(root, host);
     this.arrowLayer = el("div", root, "alert-arrows");
@@ -213,22 +269,32 @@ export class Hud {
   frame(now: number): void {
     this.minimap.update(now);
     this.drawArrows(now);
+    if (this.formal) this.updateLeft(now);
     if (now - this.lastUpdate < UPDATE_MS) return;
     this.lastUpdate = now;
     const view = this.game.view;
     const h = view?.header;
     // The resource bar keeps a gap before the top-right buttons.
     this.res.update(view, Math.floor(this.controlsBar.getBoundingClientRect().left - this.res.el.getBoundingClientRect().left - RES_GAP));
-    if (h !== null && h !== undefined) {
+    if (h !== null && h !== undefined && !this.formal) {
       const recall = h[H.recall] === 1;
       const label = recall ? "回去工作" : "全體回城";
       if (this.recallBtn.textContent !== label) this.recallBtn.textContent = label;
       this.recallBtn.classList.toggle("active", recall);
     }
     const idle = view?.curr?.snap.idleFarmers.length ?? 0;
-    const idleText = `閒置 ${idle}`;
-    if (this.idleBtn.textContent !== idleText) this.idleBtn.textContent = idleText;
-    this.idleBtn.classList.toggle("has-idle", idle > 0);
+    if (this.idleBadge !== null) {
+      // R6-13: there while someone idles, how many on its corner.
+      this.idleBtn.hidden = idle === 0;
+      if (this.idleBadge.textContent !== `${idle}`) {
+        this.idleBadge.textContent = `${idle}`;
+        this.idleBtn.setAttribute("aria-label", `閒置 ${idle}：點一下跳到下一名，長按全選`);
+      }
+    } else {
+      const idleText = `閒置 ${idle}`;
+      if (this.idleBtn.textContent !== idleText) this.idleBtn.textContent = idleText;
+      this.idleBtn.classList.toggle("has-idle", idle > 0);
+    }
     // 全軍 N (ceo 2026-10-03): the soldiers it selects, those stationed in towns left out.
     const soldiers = this.game.armyIds().length;
     if (!this.formal) {
@@ -287,6 +353,7 @@ export class Hud {
     switch (ev.k) {
       case "attacked":
         this.addAlert(ev.x * FIXED_TO_PX, ev.y * FIXED_TO_PX);
+        if (this.formal && this.homeHit(ev)) this.homeHitUntil = performance.now() + HOME_HIT_MS;
         break;
       case "town_captured":
         if (ev.by === me) this.openTownChoice(ev.town);
@@ -322,6 +389,95 @@ export class Hud {
   private toggleRecall(): void {
     const on = this.game.view?.header?.[H.recall] === 1;
     this.game.command({ c: "recall", on: !on });
+  }
+
+  /** 全體回城 or 回去工作 from the left (R6-13): what the player says goes; it is put away until home is hit again. */
+  private tapRecall(): void {
+    this.homeHitUntil = 0;
+    this.toggleRecall();
+  }
+
+  /**
+   * 家裡被攻擊 (R6-13): an enemy player's soldiers, not a town's militia or the big city's tower,
+   * hurt our building or farmer (a soldier near home is no reason to hide the farmers) within
+   * HOME_CELLS of our main city. Only a reminder: the farmers go in only when the player says.
+   */
+  private homeHit(ev: { x: number; y: number; target: number; by: number }): boolean {
+    const view = this.game.view;
+    const snap = view?.curr?.snap;
+    if (view === null || snap === undefined || ev.by === view.me || ev.by === NEUTRAL || ev.by === NO_OWNER) return false;
+    const u = view.unitRow(ev.target);
+    if (u >= 0 && (snap.units[u + UnitField.owner] !== view.me || snap.units[u + UnitField.type] !== UnitType.Farmer)) return false;
+    const b = view.buildingRow(ev.target);
+    if (u < 0 && b >= 0 && snap.buildings[b + BuildingField.owner] !== view.me) return false;
+    const x = ev.x / CELL;
+    const y = ev.y / CELL;
+    const bs = snap.buildings;
+    for (let o = 0; o < bs.length; o += BUILDING_STRIDE) {
+      if (bs[o + BuildingField.owner] !== view.me || bs[o + BuildingField.type] !== BuildingType.MainCity) continue;
+      const size = view.rules.buildings[BuildingType.MainCity]?.size ?? 4;
+      const x0 = bs[o + BuildingField.cellX];
+      const y0 = bs[o + BuildingField.cellY];
+      if (Math.max(x0 - x, 0, x - (x0 + size)) <= HOME_CELLS && Math.max(y0 - y, 0, y - (y0 + size)) <= HOME_CELLS) return true;
+    }
+    return false;
+  }
+
+  private toggleMinimap(): void {
+    this.setMinimap(!this.minimapOpen);
+    this.minimapAuto = false;
+  }
+
+  private setMinimap(open: boolean): void {
+    this.minimapOpen = open;
+    this.minimap.canvas.classList.toggle("closed", !open);
+    this.mapBtn?.classList.toggle("active", open);
+  }
+
+  /** 正式介面's left (tests): the minimap open (and on its own), what 全體回城 shows, how many places 地圖 counts. */
+  get leftForTest(): { minimap: boolean; auto: boolean; recall: string; places: number } {
+    return { minimap: this.minimapOpen, auto: this.minimapAuto, recall: this.recallLook, places: this.minimapOpen ? 0 : this.alerts.length };
+  }
+
+  /** 正式介面, every frame: the minimap opening and closing on its own, 地圖's alarm, 全體回城 (R6-13, R6-22). */
+  private updateLeft(now: number): void {
+    // Open on its own while 進攻 or 撤退 picks a spot (NEW-03) and while 開局提示 flashes a town on it
+    // (INV-43); closed again after, if it opened on its own.
+    const mode = this.game.mode;
+    const want = mode === "advance" || mode === "retreat" || (this.flash !== null && now < this.flash.until);
+    if (want && !this.minimapOpen) {
+      this.setMinimap(true);
+      this.minimapAuto = true;
+    } else if (!want && this.minimapAuto) {
+      this.setMinimap(false);
+      this.minimapAuto = false;
+    }
+    // 地圖 while the minimap is put away and something is hit: red, flashing, how many places (R6-22;
+    // 減少動態效果: red, not flashing). Open, the minimap's red rings flash instead.
+    const places = this.minimapOpen ? 0 : this.alerts.length;
+    const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.mapBtn?.classList.toggle("alarm", places > 0 && (still || Math.floor(now / MAP_ALARM_BLINK_MS) % 2 === 0));
+    if (this.mapBadge !== null && this.mapBtn !== null) {
+      this.mapBadge.hidden = places === 0;
+      if (this.mapBadge.textContent !== `${places}`) this.mapBadge.textContent = `${places}`;
+      const name = places > 0 ? `地圖：${places} 處被攻擊` : "地圖";
+      if (this.mapBtn.getAttribute("aria-label") !== name) this.mapBtn.setAttribute("aria-label", name);
+    }
+    // 全體回城: while the farmers hide it reads 回去工作; while home is hit, 全體回城 in red.
+    const recall = this.game.view?.header?.[H.recall] === 1;
+    const look = recall ? "work" : now < this.homeHitUntil ? "home" : "";
+    if (look === this.recallLook) return;
+    if (look === "home" && this.recallLook === "") this.game.toast(HOME_HIT_TEXT);
+    this.recallLook = look;
+    const b = this.recallBtn;
+    // Put away, it slides out with what it said (R6-25-06).
+    if (look === "work") dress(b, { ic: "work", label: "回去工作", sub: "村民躲著" });
+    else if (look === "home") dress(b, { ic: "home", label: "全體回城", sub: "家裡被攻擊" });
+    if (look !== "") {
+      b.classList.toggle("pri", look === "work");
+      b.classList.toggle("alarm", look === "home");
+    }
+    b.classList.toggle("shown", look !== "");
   }
 
   /** 閒置村民, tap: select the next idle farmer and look at it. */
@@ -587,6 +743,14 @@ export class Hud {
       this.game.showTownHint();
     }, "secondary");
     btn(list, "兵種相剋", () => this.openCounters(), "secondary");
+    // 全體回城 (D-087): always here; while the farmers hide, 回去工作.
+    if (this.formal) {
+      const recall = this.game.view?.header?.[H.recall] === 1;
+      btn(list, recall ? "回去工作" : "全體回城", () => {
+        this.closeDialog();
+        this.tapRecall();
+      }, "secondary");
+    }
     // 介面風格 comes with 正式介面 (ceo 2026-10-19).
     if (this.formal) btn(list, "設定", () => this.openSettings(), "secondary");
     btn(list, "量測與確定性檢查", () => {

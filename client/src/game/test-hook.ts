@@ -86,6 +86,8 @@ export interface GameHook {
   art(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null;
   /** 你的陸 this game was started with (the computer wears the other). */
   culture(): string;
+  /** 正式介面's left (R6-13): the minimap open (and on its own), what 全體回城 shows (home, work or ""), how many places 地圖 counts. */
+  left(): { minimap: boolean; auto: boolean; recall: string; places: number };
   /** What the last ASTC 樣本 showed: shown, no-astc, or why it failed (D-085). */
   astc(): string | null;
   /** Each town's wall as drawn, world px (D-084). */
@@ -240,6 +242,7 @@ export function gameHook(game: Game): GameHook {
     townWalls: () => game.townWallsForTest,
     art: () => game.artForTest,
     culture: () => game.culture,
+    left: () => game.hud.leftForTest,
     astc: () => game.lastAstc,
     mapMode: () => game.view?.map.mode ?? "fixed",
     knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],
