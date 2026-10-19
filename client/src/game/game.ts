@@ -68,6 +68,7 @@ import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.
 import { BUILDING_NAME, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
+import { formalUi } from "../ui/formal.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText } from "../ui/overlays.ts";
 import { Placement, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
@@ -1760,7 +1761,9 @@ export class Game implements GestureHost {
     // 箭樓 (round 7) says where it may go in the same short line (a longer one ran under the group buttons).
     // With outposts on (D-080) the line names them too, as short as before.
     const drag = type !== BuildingType.ArrowTower ? "拖曳預覽到想蓋的位置" : outpostSlots(view.rules) > 0 ? "拖曳箭樓到主城、城鎮或哨所附近" : "拖曳箭樓到主城或治理的城鎮附近";
-    this.overlays.showPrompt(builders.length > 0 ? `${drag}，放開後按 ✓ 或 ✗` : `${drag}，放開後按 ✓ 或 ✗；會派最近的村民去蓋`, []);
+    // 正式介面 (R6-30, NEW-12): 取消 here too, as 重設 is gone; after letting go, ✓ and ✗ as before.
+    const cancel: PromptButton[] = formalUi() ? [{ label: "取消", onTap: () => this.endPlacement() }] : [];
+    this.overlays.showPrompt(builders.length > 0 ? `${drag}，放開後按 ✓ 或 ✗` : `${drag}，放開後按 ✓ 或 ✗；會派最近的村民去蓋`, cancel);
     this.warnMilitia();
   }
 

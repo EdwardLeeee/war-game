@@ -214,3 +214,20 @@ test("×（R6-30）：回到什麼都沒選——選位置中按 × 也離開選
   await expect(page.locator(".cmds").getByRole("button", { name: /^建造/ })).toBeVisible();
   check();
 });
+
+test("放建築的提示列有「取消」（R6-30 NEW-12）：按了收掉預覽，回到指令區", async ({ page }, info) => {
+  const check = watchErrors(page);
+  await start(page, "a");
+  const farmers = (await own(page, 0)).map((u) => u.id);
+  await selectForCommands(page, farmers);
+  await page.locator(".cmds").getByRole("button", { name: /^建造/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^民居/ }).tap();
+  await expect.poll(() => mode(page)).toMatch(/^place:/);
+  const cancel = page.locator(".prompt").getByRole("button", { name: "取消", exact: true });
+  await expect(cancel).toBeVisible();
+  await shot(page, info, "r6-30-place-cancel-a");
+  await cancel.tap();
+  await expect.poll(() => mode(page)).toBe("normal");
+  await expect(page.locator(".prompt")).toBeHidden();
+  check();
+});
