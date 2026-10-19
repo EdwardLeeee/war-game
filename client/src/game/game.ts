@@ -405,7 +405,7 @@ export class Game implements GestureHost {
     return this.options.culture ?? DEFAULT_CULTURE;
   }
 
-  get artForTest(): { label: string; pages: number; units: number; corpses: number } | null {
+  get artForTest(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null {
     return this.renderer?.artDrawn ?? null;
   }
 

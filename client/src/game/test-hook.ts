@@ -83,7 +83,7 @@ export interface GameHook {
   /** Arrows drawn from `shot` events so far (round 7). */
   shots(): number;
   /** The units' atlases (D-085): which, how many pages, units drawn from them; null: the shapes. */
-  art(): { label: string; pages: number; units: number; corpses: number } | null;
+  art(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null;
   /** 你的陸 this game was started with (the computer wears the other). */
   culture(): string;
   /** What the last ASTC 樣本 showed: shown, no-astc, or why it failed (D-085). */

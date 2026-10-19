@@ -7,15 +7,15 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, art: null, culture: null, gallery: false });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, art: null, culture: null, gallery: null });
 });
 
 test("tps, mock, r7, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, art: null, culture: null, gallery: false });
+  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, art: null, culture: null, gallery: null });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, art: null, culture: null, gallery: false });
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, art: null, culture: null, gallery: null });
   assert.equal(parseParams("?test=1&mock=1").mock, true);
   assert.equal(parseParams("?test=1&mock=1").round7, false);
   assert.equal(parseParams("?test=1&mock=1&r7=1").round7, true);
@@ -28,8 +28,9 @@ test("test=1 turns on the hook and allows a faster tick rate and the fake world"
   assert.equal(parseParams("?test=1&outpost=1").outpost, false, "the fake world only");
   assert.equal(parseParams("?test=1&culture=w").culture, "w");
   assert.equal(parseParams("?test=1&culture=B").culture, null);
-  assert.equal(parseParams("?test=1&mock=1&gallery=1").gallery, true);
-  assert.equal(parseParams("?test=1&gallery=1").gallery, false, "the fake world only");
+  assert.equal(parseParams("?test=1&mock=1&gallery=1").gallery, "units");
+  assert.equal(parseParams("?test=1&mock=1&gallery=b").gallery, "buildings");
+  assert.equal(parseParams("?test=1&gallery=1").gallery, null, "the fake world only");
   assert.equal(parseParams("?test=1&scenario=e2e").scenario, "e2e");
   assert.equal(parseParams("?test=1&scenario=perf360").scenario, "perf360", "量測 360 人 (D-083)");
   assert.equal(parseParams("?test=1&art=test").art, "test", "the e2e tests' stand-in atlases (D-085)");

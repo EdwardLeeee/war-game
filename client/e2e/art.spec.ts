@@ -153,3 +153,50 @@ test("兵種展示（art-v1，3 倍）：兩陸每種兵的待機、走路、攻
   }
   check();
 });
+
+test("建築展示（art-v2，3 倍）：每種建築的施工三階段、完成、受損、瓦礫，東陸（A）和西陸（B）；資源點；給 ceo 看（D-085）", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "chromium", "pictures for ceo");
+  test.setTimeout(150_000);
+  const check = watchErrors(page);
+  for (const side of ["e", "w"]) {
+    await start(page, `mock=1&gallery=b&art=x3&culture=${side}&tps=20`);
+    // Destroyed at tick 20 (their rubble), standing still at 36.
+    await page.waitForFunction(() => window.__proto?.game?.header().tick === 36, null, { timeout: 30_000 });
+    const a = await art(page);
+    expect(a?.rubble, "a rubble a type, the field none (it leaves no rubble)").toBe(11);
+    expect(a?.nodes ?? 0).toBeGreaterThanOrEqual(30);
+    // Rows of 4 types each (the gallery's cell (4 + 4c + 5r, 24 − 4c + 5r)); the nodes beside.
+    for (let g = 0; g < 3; g++) {
+      // A little above the rows' middle: the pictures stand above their footprints.
+      const r = 1.2 + 4 * g;
+      await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 0.52), [4 + 10 + 5 * r + 1, 24 - 10 + 5 * r + 1] as const);
+      await page.waitForTimeout(300);
+      await shot(page, info, `art-buildings-${side}-${g + 1}`);
+    }
+    if (side === "e") {
+      await page.evaluate(() => window.__proto?.game?.centerOn(89.5, 71.5, 0.95));
+      await page.waitForTimeout(300);
+      await shot(page, info, "art-nodes");
+    }
+  }
+  check();
+});
+
+test("真的模擬開局（3 倍）：家裡的主城、樹林和資源點從圖集畫；點主城的屋頂也選得到（D-085）", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "chromium", "33 + 20 pages at 3 倍: one browser is enough (WebKit on CI draws in software)");
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  await start(page, "art=x3&scenario=standard");
+  await expect.poll(async () => (await art(page))?.buildings ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
+  expect((await art(page))?.nodes ?? 0).toBeGreaterThan(20);
+  await page.waitForTimeout(1000);
+  await shot(page, info, "art-start");
+  // The main city's roof stands above its footprint: a tap there selects it.
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
+  if (city === undefined) throw new Error("no main city");
+  // Its footprint's middle on screen, and the roof well above it (no farmer stands inside the city).
+  const mid = await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [city.cx + city.size / 2 - 0.5, city.cy + city.size / 2 - 0.5] as const);
+  expect(await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y - 80) ?? null, [mid.x, mid.y] as const)).toBe("building");
+  check();
+});

@@ -244,7 +244,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 
 ## 正式美術：量測（D-085，PR 1）
 
-- 兵種圖從 war-game-ui 的 Release 來（`art.lock.json` 鎖 tag 和 sha256，`scripts/fetch-art.ts` 下載、核對、解到 `public/art/<tag>/`，不進 repo；格式見 `docs/sprite-atlas.md` 第 2 節）。現在是 art-v1。
+- 兵種圖從 war-game-ui 的 Release 來（`art.lock.json` 鎖 tag 和 sha256，`scripts/fetch-art.ts` 下載、核對、解到 `public/art/<tag>/`，不進 repo；格式見 `docs/sprite-atlas.md` 第 2 節）。現在是 art-v2（兵種、建築、資源點、效果）。
 - 量測面板（選單 → 量測與確定性檢查）多一列「美術：關／3 倍／2 倍」（PR 3 起預設 3 倍，見下一節）：
   - 記在這台裝置，下一局起用；按「量測 N 人」時，美術換過就開新的一局。從主畫面圖示打開也選得到（ceo 2026-10-18：沒有網址列，加不了 `?art=`）。
   - 開著時，兵從圖集畫（`render/unit-art.ts` 載入、`render/unit-art-draw.ts` 畫）：影子在地面層，顏色層、玩家色層（玩家色當 tint）、法師的防護罩；動作照快照的 action 和 sim 的時間播（`art/spec.ts`）；朝向對到圖片的 8 個方向（規格第 3 節的表）。
@@ -272,6 +272,17 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
   - 畫圖集時，地上的防護罩圈（幾何圖形用的）不畫。
 - **兵種展示**：`?test=1&mock=1&gallery=1&art=x3`。假世界在我方家的東南邊多擺兩張表（我方、電腦），一列一種兵，一欄一個動作：待機、走路、攻擊、倒下，村民的四種工作，法師的施法、受擊、碎盾，民兵。第 20 tick 倒下、第 30 tick 碎盾，第 36 tick 停住（每張截圖都是同一刻），所有地方都看得到。
 - 測試：`test/camera.test.ts`（菱形的數字、上角、出生點、來回換算、縮放、範圍）、`test/art.test.ts`（誰穿哪一陸、預設 3 倍）；`e2e/diamond.spec.ts`（縮到最小、開局點村民）、`e2e/art.spec.ts`（新裝置預設 3 倍、兵種展示、A／B／C 的交戰截圖）。e2e 預設把美術存成「關」（`playwright.config.ts`），要畫圖集的測試自己帶 `?art=` 或換新的儲存狀態。
+
+## 正式美術：建築與資源點（D-085，PR 4）
+
+- art-v2 起，建築和資源點也從圖集畫（`art/structures.ts` 選影格、`render/structure-art.ts` 畫；規格 `docs/sprite-atlas.md` 第 12 節）：
+  - 建築：施工三階段、完成、受損（生命一半以下）、被摧毀留瓦礫 30 秒（新建築開工就清掉）；農田的作物在有人工作時每 20 秒換一階段。
+  - 資源點：樹兩陸一塊一塊混著、採完是樹樁；金礦採過一半換圖、採完換圖；野果、晶脈採完換圖。
+  - 兵和建築照占地排前後（兵在大建築旁邊不會一下前一下後）；點建築高出占地的部分也選得到。
+  - 晶砲預警圈 B：六張靜態圖疊起來，法陣會轉、越接近發射越亮（`render/world.ts`）。
+  - 哨所、岩石、城鎮的城牆符號照舊是圖形。
+- **建築展示**：`?test=1&mock=1&gallery=b&art=x3`（`&culture=w` 換成西陸）。假世界只有一張表：一列一種建築，一欄一個狀態（施工三階段、完成、受損、瓦礫），旁邊是資源點。第 20 tick 摧毀最後一欄，第 36 tick 停住。
+- 測試：`test/structures.test.ts`（狀態門檻、作物、樹用哪一陸、變體、金礦）；`e2e/art.spec.ts`（建築展示的截圖，東陸和西陸）。
 
 ## 對局紀錄（D-056）
 

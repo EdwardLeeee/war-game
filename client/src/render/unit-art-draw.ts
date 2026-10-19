@@ -93,7 +93,11 @@ export class ArtUnits {
   private corpses: Corpse[] = [];
   private lastTick = -1;
 
-  constructor(art: UnitArt, view: GameView, shadowLayer: Container, unitLayer: Container, cultureOf: (owner: number) => Culture, projection: Projection = TOP) {
+  /** A unit's depth at a point of the plane (among the buildings' footprints when they are pictures too). */
+  private readonly depth: (px: number, py: number) => number;
+
+  constructor(art: UnitArt, view: GameView, shadowLayer: Container, unitLayer: Container, cultureOf: (owner: number) => Culture, projection: Projection = TOP, depth: (px: number, py: number) => number = (_x, y) => y) {
+    this.depth = depth;
     this.art = art;
     this.view = view;
     this.shadowLayer = shadowLayer;
@@ -243,7 +247,7 @@ export class ArtUnits {
     const { name, mirror } = frameName(a, anim, dir, index);
     s.box.visible = true;
     s.box.position.set(px, py);
-    s.box.zIndex = py;
+    s.box.zIndex = this.depth(px, py);
     s.box.alpha = alpha;
     put(s.color, this.art.frame(a.unit, "color", name), 0, 0, this.scale, mirror);
     put(s.team, this.art.frame(a.unit, "team", name), 0, 0, this.scale, mirror);
@@ -356,7 +360,7 @@ export class ArtUnits {
     const d = this.dustSprites[i];
     put(d, this.art.effectFrame(`dust_${String(index).padStart(2, "0")}`), x, y, (this.projection.ptPerM / fx.px_per_m) * scale, false);
     // Over the body it rises from, under who stands in front (spec section 11).
-    d.zIndex = y + 0.01;
+    d.zIndex = this.depth(x, y) + 0.005;
     return d.visible;
   }
 
