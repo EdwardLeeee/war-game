@@ -5,7 +5,7 @@
 // while they hide; 地圖 flashes red and counts the places under attack while the minimap is put
 // away; × goes back to nothing selected.
 
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type TestInfo, test } from "@playwright/test";
 import { injectSafeArea, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells: our main city at (8, 80), 4 x 4; five idle
@@ -27,6 +27,11 @@ const own = (page: Page, type: number) =>
 const hit = (page: Page, u: { id: number; cx: number; cy: number }, by: number) =>
   page.evaluate(([id, x, y, b]) => window.__proto?.game?.inject({ k: "attacked", x, y, target: id, by: b }), [u.id, Math.round((u.cx + 0.5) * FIXED), Math.round((u.cy + 0.5) * FIXED), by] as const);
 const box = async (page: Page, sel: string) => (await visibleBoxes(page, sel))[0];
+/**
+ * The pictures for ceo, from Chromium only: CI's WebKit (software, at the phone's scale 3) now and
+ * then crashed taking one here (Target crashed, run 39320481231 twice, main 617945c once); the checks run in both.
+ */
+const picture = (page: Page, info: TestInfo, name: string) => (info.project.name === "chromium" ? shot(page, info, name) : Promise.resolve());
 const near = (v: number, want: number) => Math.abs(v - want) <= 2;
 
 async function start(page: Page, look: "a" | "b"): Promise<void> {
@@ -58,7 +63,7 @@ for (const look of ["a", "b"] as const) {
     // Put away at the start.
     await expect(page.locator(".minimap")).toBeHidden();
     expect((await left(page)).minimap).toBe(false);
-    await shot(page, info, `r6-13-left-${look}`);
+    await picture(page, info, `r6-13-left-${look}`);
     await map.tap();
     await expect(page.locator(".minimap")).toBeVisible();
     await expect(map).toHaveClass(/\bactive\b/);
@@ -69,7 +74,7 @@ for (const look of ["a", "b"] as const) {
         return mm !== undefined && near(mm.x, 4) && near(mm.y, 216) && near(mm.width, 112) && near(mm.height, 112) ? true : JSON.stringify(mm);
       }, { message: "小地圖 at 4, 216, 112 × 112" })
       .toBe(true);
-    await shot(page, info, `r6-13-map-open-${look}`);
+    await picture(page, info, `r6-13-map-open-${look}`);
     await map.tap();
     await expect(page.locator(".minimap")).toBeHidden();
     check();
@@ -104,7 +109,7 @@ for (const look of ["a", "b"] as const) {
         return rb !== undefined && near(rb.x, 4) && near(rb.y, 106) && near(rb.width, 100) && near(rb.height, 50) ? true : JSON.stringify(rb);
       }, { message: "全體回城 at 4, 106, 100 × 50" })
       .toBe(true);
-    await shot(page, info, `r6-13-home-hit-${look}`);
+    await picture(page, info, `r6-13-home-hit-${look}`);
     // Only a reminder: nothing was sent until the player taps it.
     expect((await lastSent(page))?.c).not.toBe("recall");
     await recall.tap();
@@ -112,7 +117,7 @@ for (const look of ["a", "b"] as const) {
     await expect(recall).toContainText("回去工作");
     await expect(recall).toContainText("村民躲著");
     await page.waitForTimeout(250);
-    await shot(page, info, `r6-13-go-back-${look}`);
+    await picture(page, info, `r6-13-go-back-${look}`);
     await recall.tap();
     await expect.poll(() => lastSent(page)).toMatchObject({ c: "recall", on: false });
     await expect(recall).toBeHidden();
@@ -144,7 +149,7 @@ for (const look of ["a", "b"] as const) {
     // The lit one for the picture: 減少動態效果 keeps it so.
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(map).toHaveClass(/\balarm\b/);
-    await shot(page, info, `r6-22-map-alarm-${look}`);
+    await picture(page, info, `r6-22-map-alarm-${look}`);
     await page.emulateMedia({ reducedMotion: null });
     await map.tap();
     await expect.poll(async () => (await left(page)).places).toBe(0);
@@ -177,7 +182,7 @@ test("進攻、撤退選位置時小地圖自動打開，選完或取消後收�
   await expect.poll(() => mode(page)).toBe("retreat");
   await expect.poll(async () => await left(page)).toMatchObject({ minimap: true, auto: true });
   await expect(page.locator(".minimap")).toBeVisible();
-  await shot(page, info, "r6-13-retreat-map-a");
+  await picture(page, info, "r6-13-retreat-map-a");
   // Picked on the minimap: done, and it goes away again.
   const mm = await page.locator(".minimap").boundingBox();
   if (mm === null) throw new Error("no minimap");
@@ -233,7 +238,7 @@ test("放建築的提示列有「取消」（R6-30 NEW-12）：按了和 ✗ 一
   await expect.poll(() => mode(page)).toMatch(/^place:/);
   const cancel = page.locator(".prompt").getByRole("button", { name: "取消", exact: true });
   await expect(cancel).toBeVisible();
-  await shot(page, info, "r6-30-place-cancel-a");
+  await picture(page, info, "r6-30-place-cancel-a");
   await cancel.tap();
   await expect.poll(() => mode(page)).toBe("normal");
   await expect(page.locator(".prompt")).toBeHidden();
