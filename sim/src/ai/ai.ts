@@ -2083,6 +2083,36 @@ export interface HardPlan {
    */
   netMarch: number;
   netFarmers: number;
+  /**
+   * D-086 A4 (the user 2026-10-20: 「ai困難都不會用騎兵跟防禦建築」): cavalry beats mages x2 (D-061). Once ranged
+   * units and mages are cavalryWhen percent or more of the enemy soldiers it knows of (CAVALRY_SEEN or more), it
+   * puts up a stable and trains cavalry up to cavalryCounter percent of its soldiers (0: never, as before).
+   */
+  cavalryCounter: number;
+  cavalryWhen: number;
+  /**
+   * D-086 A4: its cavalry (CHARGE_MIN or more) charge the enemy ranged units and mages in sight CHARGE_NEAR cells
+   * from them, the nearest first, when no more enemy spearmen than cavalry are by the target and it is out of
+   * enemy forts' reach; back to the army when enemy spearmen by them outnumber them, they come into a fort's
+   * reach, half of them are gone, or no such target is left. A charge given up (spearmen, forts, half gone)
+   * leaves that spot alone chargeRest minutes (false: as before).
+   */
+  charge: boolean;
+  chargeRest: number;
+  /**
+   * D-086 A4: arrow towers by its main city (this many), and by each town it governs (townTowers), toward where
+   * the last wave came from (else the enemy's main city, else the map's middle); only with its farmers at their
+   * target, wood and gold enough for one and towerSpare more of each besides, no enemy soldier in sight by the
+   * spot, and not by the doors of its main city or production buildings (0: none, as before).
+   */
+  towers: number;
+  townTowers: number;
+  towerSpare: number;
+  /**
+   * D-086 A4: within TOWER_FIRST ticks of a wave by its main city, a tower comes right after houses and it saves up
+   * for it (this takes from the soldiers' money: measured apart; false: only with money left over, as above).
+   */
+  towerFirst: boolean;
 }
 
 export const HARD: HardPlan = {
@@ -2126,7 +2156,28 @@ export const HARD: HardPlan = {
   net: null,
   netMarch: 14,
   netFarmers: 12,
+  cavalryCounter: 0,
+  cavalryWhen: 50,
+  charge: false,
+  chargeRest: 2,
+  towers: 0,
+  townTowers: 0,
+  towerSpare: 150,
+  towerFirst: false,
 };
+/** D-086 A4 (plan.cavalryCounter): enemy soldiers it must know of before it weighs their mix. */
+const CAVALRY_SEEN = 6;
+/** D-086 A4 (plan.charge): the least cavalry that charge, how far from them the targets may be, spearmen this near count as by them, and how often (ticks) it picks again. */
+const CHARGE_MIN = 3;
+const CHARGE_NEAR = 8;
+const CHARGE_SPEAR = 4;
+const CHARGE_MOVE = 40;
+/** D-086 A4 (plan.towers): how far (cells) from the main city toward the threat, how near an enemy may be to the spot, and the clear ring (cells) left by the doors of its main city and production buildings. */
+const TOWER_AT = 6;
+const TOWER_SAFE = 12;
+const TOWER_CLEAR = 2;
+/** D-086 A4 (plan.towerFirst): how long after a wave by its main city (3 minutes). */
+const TOWER_FIRST = 3 * 1200;
 /** D-086 A3 (plan.rescue, plan.hideFar): farmers this far (cells) from the main city are far; a spot is this near them. */
 const FAR_FARMER = 20;
 const FARMER_SPOT = 8;
@@ -2328,10 +2379,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let peekUntil = 0;
   let peekAgain = 0;
   let known = { worth: 0, n: 0 };
-  const counted = { rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  /** plan.charge: the cavalry charging, where the charge began and how many set out, its target, when last told; spots left alone until a tick. plan.towers: where the last wave came from. */
+  const chargers = new Set<number>();
+  let chargeAt: { x: number; y: number; size: number; target: number } | null = null;
+  let chargeMove = -100000;
+  const chargeRestAt = new Map<number, number>();
+  let waveFrom: { x: number; y: number } | null = null;
+  const counted = { chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
-  function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number): { x: number; y: number } | null {
+  function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
     const info = rules.buildings[type];
     const size = info.size;
     const grid = { size: n, cells: view.placement };
@@ -2348,7 +2405,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             for (let xx = x - 1; xx <= x + size && ok; xx++) if ((view.placement[yy * n + xx] & PlaceBit.Blocked) !== 0) ok = false;
           }
         }
-        if (!ok) continue;
+        if (!ok || (fits !== undefined && !fits(x, y))) continue;
         const du = 2 * u + size - 2 * a.u;
         const dv = 2 * v + size - 2 * a.v;
         const d = du * du + dv * dv;
@@ -2575,6 +2632,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         enemyWorth += WORTH[e.type];
       }
       if (enemyMages > 0) lastEnemyMage = tick;
+      // D-086 A4 (plan.cavalryCounter): its enemy is mostly ranged units and mages.
+      const knownSoldiers = enemySpear + enemyRanged + enemyMages;
+      const cavalryWant =
+        plan.cavalryCounter > 0 &&
+        rules.features?.cavalry === true &&
+        knownSoldiers >= CAVALRY_SEEN &&
+        (enemyRanged + enemyMages) * 100 >= plan.cavalryWhen * knownSoldiers;
       if (foes.some((f) => f.order !== Order.Post)) lastFoeSeen = tick;
       // D-086 A3 (plan.foeGrow): once it has seen them, the enemy grows by what it trains itself.
       if (plan.foeMemory && plan.foeGrow) {
@@ -2757,8 +2821,50 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         return best;
       };
+      /** D-086 A4 (plan.towers): an enemy soldier in sight this near (cells) a spot. */
+      const foeBy = (x: number, y: number) => foes.some((f) => dist2(f.x, f.y, x, y) <= TOWER_SAFE * TOWER_SAFE);
+      /** D-086 A4 (plan.towers, plan.townTowers): where the next tower goes (null: none wanted, or no spot), toward the threat, clear of doors and of enemies. */
+      const towerSpotFor = (): { x: number; y: number } | null => {
+        if ((plan.towers <= 0 && plan.townTowers <= 0) || rules.features?.towers !== true || !has(BuildingType.Range)) return null;
+        const towersBy = (x: number, y: number, r: number) => own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, x, y) <= r * r).length;
+        // Not by the doors of its main city or production buildings: TOWER_CLEAR cells round their footprints stay open.
+        const doors = own.filter((b) => b.type === BuildingType.MainCity || b.type === BuildingType.Barracks || b.type === BuildingType.Range || b.type === BuildingType.Stable || b.type === BuildingType.MageHall);
+        const tsize = rules.buildings[BuildingType.ArrowTower].size;
+        const clear = (x: number, y: number) =>
+          doors.every((b) => {
+            const bs = rules.buildings[b.type].size;
+            return x + tsize + TOWER_CLEAR <= b.x || b.x + bs + TOWER_CLEAR <= x || y + tsize + TOWER_CLEAR <= b.y || b.y + bs + TOWER_CLEAR <= y;
+          });
+        const from = waveFrom ?? (mem.known !== Known.None ? { x: enemyHome.cellX, y: enemyHome.cellY } : real(mid, mid));
+        const toward = (x: number, y: number, k: number) => {
+          const dx = from.x - x;
+          const dy = from.y - y;
+          const d = Math.sqrt(dx * dx + dy * dy) || 1;
+          return { x: x + Math.trunc((dx * k) / d), y: y + Math.trunc((dy * k) / d) };
+        };
+        const sites: { x: number; y: number }[] = [];
+        if (plan.towers > 0 && towersBy(home.cellX, home.cellY, TOWER_AT + 6) < plan.towers) sites.push(toward(home.cellX, home.cellY, TOWER_AT));
+        if (plan.townTowers > 0) {
+          for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+            if (view.towns[r + TownField.owner] !== player || view.towns[r + TownField.state] !== TownState.Governed) continue;
+            const t = mem.site(view.towns[r + TownField.id]);
+            if (t === undefined) continue;
+            const radius = rules.towns?.[t.size]?.radius ?? 5;
+            if (towersBy(t.cellX, t.cellY, radius + 3) < plan.townTowers) sites.push(toward(t.cellX, t.cellY, radius));
+          }
+        }
+        // The nearest free spot to it (its production stands that way too); round a town, within its reach.
+        for (const at of sites) {
+          if (foeBy(at.x, at.y)) continue;
+          const spot = spotNear(view, BuildingType.ArrowTower, at.x, at.y, TOWER_AT + 2, clear);
+          if (spot !== null) return spot;
+        }
+        return null;
+      };
       for (const site of own.filter((b) => b.progress < 1000)) {
         if (farmers.some((f) => f.order === Order.Build && f.orderTarget === site.id)) continue;
+        // D-086 A4: no farmers to a tower with enemies by it; later, once they are gone.
+        if (site.type === BuildingType.ArrowTower && (plan.towers > 0 || plan.townTowers > 0) && foeBy(site.x, site.y)) continue;
         const crew = gatherers.slice(0, 2);
         if (crew.length > 0) out.push({ c: "repair", u: crew, building: site.id });
         gatherers.splice(0, crew.length);
@@ -2786,9 +2892,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         // Houses before the population is full: every producer can add one at a time.
         if (cap < ceiling && cap - pop - queued <= houseRoom + producers) add(BuildingType.House, base);
+        // D-086 A4 (plan.towerFirst): a wave by its main city lately: a tower next, saved up for.
+        if (plan.towerFirst && tick - lastWave <= TOWER_FIRST) {
+          const spot = towerSpotFor();
+          if (spot !== null) add(BuildingType.ArrowTower, spot);
+        }
         // D-086 A: a stable, for cavalry while wood is short (plan.cavalry).
         const stableReady = (rules.buildings[BuildingType.Stable]?.requires ?? []).every((t) => done(t).length > 0);
         if (plan.cavalry > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && res.food + res.gold >= RICH && stableReady) add(BuildingType.Stable, rally);
+        // D-086 A4 (plan.cavalryCounter): a stable once it wants cavalry against the enemy's mix.
+        if (cavalryWant && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
@@ -2802,7 +2915,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         for (const p of plans) {
           if (p.at === null) continue;
           // A mine is only worth it by its node.
-          const spot = spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20));
+          // D-086 A4: a tower only where it was picked.
+          const spot = p.type === BuildingType.ArrowTower ? p.at : (spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20)));
           if (spot === null) continue;
           const cost = rules.buildings[p.type].cost;
           if (!afford(cost)) {
@@ -2816,6 +2930,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           out.push({ c: "build", u: gatherers.slice(0, crew), type: p.type, x: spot.x, y: spot.y });
           gatherers.splice(0, crew);
           spend(cost);
+          if (p.type === BuildingType.ArrowTower) counted.towersPlaced++;
           break;
         }
       }
@@ -2851,6 +2966,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       labels[HEAD_MIX] = share >= 60 ? 0 : share <= 40 ? 2 : 1;
       if (netChoice !== null && netChoice[HEAD_MIX] !== AS_HARD) share = NET_SHARE[netChoice[HEAD_MIX]];
       // D-086 A (plan.cavalry): while wood is short and food and gold pile up, cavalry first, up to its share.
+      // D-086 A4 (plan.cavalryCounter): cavalry first while below its share against a mostly ranged and mage enemy.
+      if (cavalryWant) {
+        const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry).length + done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
+        const before = room;
+        if (cavalry * 100 < plan.cavalryCounter * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
+        counted.cavalryTrained += before - room;
+      }
       if (plan.cavalry > 0 && woodShort) {
         const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry).length + done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
         if (cavalry * 100 < plan.cavalry * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
@@ -2861,6 +2983,25 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       } else {
         trainAt(BuildingType.Range, UnitType.Ranged);
         trainAt(BuildingType.Barracks, UnitType.Spearman);
+      }
+      // D-086 A4 (plan.towers, plan.townTowers): with what is left once farmers and soldiers are trained this think
+      // (and what it saves up for kept aside); it never saves up for a tower here.
+      const towerCost = rules.buildings[BuildingType.ArrowTower]?.cost;
+      if (
+        (plan.towers > 0 || plan.townTowers > 0) &&
+        towerCost !== undefined &&
+        gatherers.length >= 2 &&
+        own.filter((b) => b.progress < 1000).length < plan.sites &&
+        res.wood - reserve.wood >= towerCost.wood + plan.towerSpare &&
+        res.gold - reserve.gold >= towerCost.gold + plan.towerSpare
+      ) {
+        const towerSpot = towerSpotFor();
+        if (towerSpot !== null) {
+          out.push({ c: "build", u: gatherers.slice(0, 2), type: BuildingType.ArrowTower, x: towerSpot.x, y: towerSpot.y });
+          gatherers.splice(0, 2);
+          spend(towerCost);
+          counted.towersPlaced++;
+        }
       }
       veinCrew = veinCrew.filter((id) => farmers.some((f) => f.id === id && f.order === Order.Gather));
       const vein = nearestNode(NodeKind.CrystalVein);
@@ -2982,7 +3123,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
       // Hiding in a building (round 7) too: a move would bring it out.
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
+      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || chargers.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -3061,6 +3202,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       if (nearHome > 0) {
         waveMax = Math.max(waveMax, nearHome);
         lastWave = tick;
+        if (plan.towers > 0 || plan.townTowers > 0) waveFrom = centre(foesNear(home.cellX, home.cellY, WAVE_CELLS), home.cellX, home.cellY);
       } else if (tick - lastWave >= 200 && waveMax > 0) {
         if (waveMax >= 6) counterReady = true;
         waveMax = 0;
@@ -3078,6 +3220,64 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // Those that would go: not the towns' guards.
         const vs = soldiers.filter((u) => !guarding.has(u.id)).reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
         crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
+      }
+
+      // --- D-086 A4: cavalry charge the enemy's ranged units and mages (plan.charge) -------------------------
+      if (plan.charge) {
+        for (const id of chargers) if (!byId.has(id)) chargers.delete(id);
+        const spotKey = (x: number, y: number) => {
+          const f = frame(x, y);
+          return (f.v >> 3) * n + (f.u >> 3);
+        };
+        /** Ranged units and mages in sight this near (x, y), out of enemy forts' reach, nearest first (ties in player 0's frame). */
+        const prey = (x: number, y: number) =>
+          foes
+            .filter((f) => (f.type === UnitType.Ranged || f.type === UnitType.Mage) && f.order !== Order.Garrison && dist2(f.x, f.y, x, y) <= CHARGE_NEAR * CHARGE_NEAR && !underArrows(f))
+            .sort((a, b) => dist2(a.x, a.y, x, y) - dist2(b.x, b.y, x, y) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+        const spearsBy = (x: number, y: number) => foes.filter((f) => f.type === UnitType.Spearman && dist2(f.x, f.y, x, y) <= CHARGE_SPEAR * CHARGE_SPEAR).length;
+        if (chargeAt !== null) {
+          const at = chargeAt;
+          const squad = soldiers.filter((u) => chargers.has(u.id));
+          const sc = centre(squad, at.x, at.y);
+          // Weighed again on the way: spearmen closing in, forts' reach, half gone; done once no target is left.
+          let why: "" | "chargeBack" | "chargeLost" | "chargeDone" = "";
+          if (squad.length * 2 < at.size) why = "chargeLost";
+          else if (spearsBy(sc.x, sc.y) > squad.length || underArrows(sc)) why = "chargeBack";
+          const left = why === "" ? prey(sc.x, sc.y) : [];
+          if (why === "" && left.length === 0) why = "chargeDone";
+          const ids = squad.map((u) => u.id);
+          if (why !== "") {
+            if (ids.length > 0) out.push({ c: why === "chargeDone" ? "move" : "retreat", u: ids, x: ac.x, y: ac.y });
+            if (why !== "chargeDone") chargeRestAt.set(spotKey(at.x, at.y), tick + plan.chargeRest * TICKS_PER_MINUTE);
+            counted[why]++;
+            counted.chargeCavalryLost += at.size - squad.length;
+            chargers.clear();
+            chargeAt = null;
+            if (why === "chargeDone") rejoin.push(...ids);
+          } else if (left[0].id !== at.target || tick - chargeMove >= CHARGE_MOVE) {
+            out.push({ c: "attack", u: ids, target: left[0].id });
+            at.target = left[0].id;
+            chargeMove = tick;
+          }
+        } else {
+          const cavalry = army.filter((u) => u.type === UnitType.Cavalry && !detached(u.id));
+          if (cavalry.length >= CHARGE_MIN) {
+            const cc = centre(cavalry, ac.x, ac.y);
+            const target = prey(cc.x, cc.y)[0];
+            // Weighed first: no more spearmen than cavalry by the target, not a spot it gave up lately.
+            if (target !== undefined && spearsBy(target.x, target.y) <= cavalry.length && tick >= (chargeRestAt.get(spotKey(target.x, target.y)) ?? 0)) {
+              const ids = cavalry.map((u) => u.id);
+              for (const id of ids) chargers.add(id);
+              chargeAt = { x: target.x, y: target.y, size: ids.length, target: target.id };
+              chargeMove = tick;
+              out.push({ c: "attack", u: ids, target: target.id });
+              counted.chargeSent++;
+              const keep = armyIds.filter((id) => !chargers.has(id));
+              armyIds.length = 0;
+              armyIds.push(...keep);
+            }
+          }
+        }
       }
 
       // --- D-086 A3: farmers attacked far from home (plan.rescue, plan.hideFar) -------------------------
