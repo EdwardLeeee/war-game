@@ -170,7 +170,7 @@ export function nextSeq(log: string): number {
   return last + 1;
 }
 
-/** How the ground is laid on the screen: the diamond the atlases are drawn for (D-085), until art-v3 is drawn square on (D-088). */
+/** How the ground is laid on the screen: 方形斜看 since art-v3 is drawn for it (D-088); the diamond (D-085) on test pages only (?view=diamond). */
 const PROJECTION_DEFAULT = PROJECTIONS.oblique;
 
 export class Game implements GestureHost {
