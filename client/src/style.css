@@ -428,6 +428,36 @@ a {
   font-weight: 600;
 }
 
+/* R6-31 (the user 2026-10-19: 「不然還以為沒按到」): an order taken is said on a dark strip with a
+   green check, apart from the red alarms; 已取消 is dark without it. */
+.toast.toast-ok,
+.toast.toast-info {
+  background: rgba(22, 30, 24, 0.94);
+  color: #f2f6ec;
+}
+
+.toast-check {
+  display: none;
+}
+
+.toast.toast-ok .toast-check {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  vertical-align: -3px;
+}
+
+.toast-check svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: #7fdc78;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* --- lab (measurement) panel --------------------------------------------------------- */
 
 /* Top-right controls: speed, pause, lab. */
@@ -456,6 +486,15 @@ a {
   font-weight: 700;
   font-size: 14px;
   white-space: nowrap;
+}
+
+/* 已下 N 個指令，按繼續後執行 (R6-31): orders given while paused, under the banner's line. */
+.paused-banner .pend {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  text-align: center;
 }
 
 .lab {
@@ -632,6 +671,31 @@ a {
 
 button.active {
   outline: 3px solid #fff3b0;
+}
+
+/* Sent while paused, waiting for 繼續 (R6-31): dashed and paler, its line saying 繼續後…. */
+button.pending {
+  outline: 2px dashed rgba(255, 233, 168, 0.95);
+  outline-offset: 2px;
+}
+
+button.pending .label {
+  opacity: 0.7;
+}
+
+button.pending .sub {
+  opacity: 1;
+}
+
+.sel-info button.pending:disabled {
+  opacity: 0.8;
+}
+
+.sel-pend {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: #ffe9a8;
 }
 
 /*
