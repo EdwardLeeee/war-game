@@ -76,3 +76,47 @@ for (const style of ["fill", "outline"] as const) {
     check();
   });
 }
+
+test("隨機地圖相鄰出生（種子 2）：大城是 3×3 箭樓、large3 的城牆，照模擬的格子畫出來", async ({ page, browserName }, info) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  await start(page, "map=random&seed=2&watch=1&art=x3");
+  await expect.poll(async () => (await castle(page))?.pieces ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
+  const all = await towns(page);
+  expect((await castle(page))?.misfit, "every castle fits one of ui's layouts").toBe(0);
+  expect((await castle(page))?.blockTowns).toBe(0);
+  const large = all.find((t) => t.size === LARGE);
+  if (large === undefined) throw new Error("no big city");
+  const cells = await page.evaluate((id) => window.__proto?.game?.castleCells(id) ?? null, large.id);
+  // 13 × 13 inside (large3).
+  expect(cells && cells.inside.x1 - cells.inside.x0 + 1).toBe(13);
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 0.9), [(cells?.inside.x0 ?? 0) + 6.5, (cells?.inside.y0 ?? 0) + 8] as const);
+  await page.waitForTimeout(500);
+  if (browserName === "chromium") await shot(page, info, "castle-large3");
+  check();
+});
+
+test("城鎮四種狀態的城牆（假世界，3 倍）：我方治理、中立、敵方治理、廢墟；擁有者的顏色在城門和角上", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "chromium", "pictures for ceo");
+  const check = watchErrors(page);
+  await start(page, "mock=1&tps=20&art=x3");
+  await expect.poll(async () => (await castle(page))?.pieces ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
+  expect((await castle(page))?.misfit).toBe(0);
+  // Some of ours by the enemy's town and the ruins, so that they are in sight (the fog).
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const ours = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === 1).map((u) => u.id);
+  const spots = [{ x: 40, y: 62 }, { x: 44, y: 56 }, { x: 36, y: 74 }, { x: 42, y: 80 }];
+  await page.evaluate(([ids, c]) => window.__proto?.game?.place(ids, c), [ours.slice(0, 4), spots] as const);
+  await page.waitForTimeout(1500);
+  // Ours governed (18, 62) and the neutral one (30, 66); the enemy's (38, 56); the ruins (36, 80).
+  for (const [name, x, y, z] of [
+    ["castle-own-neutral", 24, 65, 0.7],
+    ["castle-enemy", 38, 57, 1.0],
+    ["castle-ruins", 36, 81, 1.0],
+  ] as const) {
+    await page.evaluate(([cx, cy, s]) => window.__proto?.game?.centerOn(cx, cy, s), [x, y, z] as const);
+    await page.waitForTimeout(300);
+    await shot(page, info, name);
+  }
+  check();
+});
