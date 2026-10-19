@@ -57,10 +57,7 @@ def fog(img, centre, home=(20, 72), seen=7, explored=11):
     W, H = img.size
     scale = W / field.SCREEN[0]
     ys, xs = np.mgrid[0:H, 0:W].astype(np.float32) / scale
-    u = (xs - field.SCREEN[0] / 2) / field.HALF_W
-    v = (ys - field.SCREEN[1] / 2) / field.HALF_H
-    cx = centre[0] + (u + v) / 2
-    cy = centre[1] + (v - u) / 2
+    cx, cy = field.pt_to_cell(xs, ys, centre)
     d = np.hypot(cx - home[0], cy - home[1])
     k = np.where(d < seen, 1.0, np.where(d < explored, 0.45, 0.0))
     soft = np.asarray(Image.fromarray((k * 255).astype(np.uint8)).resize((W // 8, H // 8), Image.BILINEAR).resize((W, H), Image.BILINEAR),
@@ -84,18 +81,21 @@ def build(art, out, rings):
         img.convert("RGB").save(out / f"field-{t}-world.png")
     mage = ov["selected"][0]
     bl = {}
-    batl = field.Atlas(art / "buildings" / "buildings_E.json")
+    batl = field.building_atlas(art, "E")
     for cc, btype, st, x, y, team in sc["buildings"]:
         b = batl.m["buildings"][btype]
         n = b["footprint"][0]
         fr = b["states"].get(st) or b["crops"][-1]
-        e = batl.m["frames"][fr]
+        e = batl.frame(fr)
         mid = field.cell_to_pt(x + n / 2, y + n / 2, c)
+        # the corner mark's point: the diamond's right corner; oblique, the middle of the right edge (INV-140)
+        mark = field.cell_to_pt(x + n, y + (n / 2 if field.VIEW == "oblique" else 0), c)
         bl.setdefault(btype + ("" if btype != "House" else f"-{st}"), []).append(dict(
             foot=pts(((x, y), (x + n, y), (x + n, y + n), (x, y + n)), c), top=round(mid[1] - e["ay"] / 3, 1),
-            right=round(mid[0] + (e["w"] - e["ax"]) / 3, 1), mid=[round(v, 1) for v in mid], w=round(n * 2 * field.HALF_W, 1)))
+            right=round(mid[0] + (e["w"] - e["ax"]) / 3, 1), mid=[round(v, 1) for v in mid], w=round(field.foot_w(n), 1),
+            mark=[round(v, 1) for v in mark]))
     data["world"] = dict(mage=dict(x=round(mage["x"], 1), y=round(mage["y"], 1), top=round(mage["top"], 1)), buildings=bl,
-                         rally=[round(v, 1) for v in field.cell_to_pt(*scene_r6.cell(560, 150), c)],
+                         rally=[round(v, 1) for v in field.cell_to_pt(*scene_r6.cell(*scene_r6.L()["rally"]), c)],
                          enemy=[round(v, 1) for v in field.cell_to_pt(*sc["warn"], c)])
     ts = scene_r6.town()
     for t, ring in rings.items():
@@ -107,6 +107,27 @@ def build(art, out, rings):
     wall = pts(((tc[0] - 1, tc[1] - 1), (tc[0] + 2, tc[1] - 1), (tc[0] + 2, tc[1] + 2), (tc[0] - 1, tc[1] + 2)), tc)
     data["town"] = dict(ring=[[round(x, 1), round(y, 1)] for x, y in ring_pts], wall=wall,
                         label=[round(v, 1) for v in field.cell_to_pt(tc[0] + 2, tc[1] + 2, tc)])
+    # R6-31: a house ordered while the game is paused: the building see-through where it will stand, in the open
+    # ground left of the fields (clear of the message bar and the buttons), on the plain battlefield
+    px, py = 130, 335
+    hx, hy = scene_r6.footprint_at(px, py, 2)
+    plain, _ = field.render(scene_r6.representative(), art)
+    body, ax, ay = batl.body(batl.m["buildings"]["House"]["states"]["done"], "blue")
+    arr = np.asarray(body, np.float32).copy()
+    arr[..., 3] *= 0.5
+    gx, gy = field.cell_to_pt(hx + 1, hy + 1, c)
+    plain.alpha_composite(Image.fromarray(arr.astype(np.uint8), "RGBA"), (int(round(gx * 3 - ax)), int(round(gy * 3 - ay))))
+    for t in rings:
+        plain.convert("RGB").save(out / f"field-{t}-planned.png")
+    data["world"]["planned"] = dict(foot=pts(((hx, hy), (hx + 2, hy), (hx + 2, hy + 2), (hx, hy + 2)), c),
+                                    mid=[round(v, 1) for v in (gx, gy)])
+    # R6-31: the same house placed while the game runs: its foundation, and the farmer sent to build it on the way
+    sc2 = scene_r6.representative()
+    wx, wy = field.pt_to_cell(px - 80, py - 6, c)
+    placed, _ = field.render(dict(sc2, buildings=sc2["buildings"] + [("E", "House", "build1", hx, hy, "blue")],
+                                  units=sc2["units"] + [("farmer_e", "blue", wx, wy, 0, "walk", 2, False)]), art)
+    for t in rings:
+        placed.convert("RGB").save(out / f"field-{t}-placed.png")
     base, _ = field.render(scene_r6.representative(), art)
     for t in rings:
         fog(base, scene_r6.CENTRE).save(out / f"field-{t}-fog.png")
