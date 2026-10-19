@@ -137,15 +137,24 @@ test("選了村民點野果、點金礦（旁邊有村民在採）→ 送出採�
     const all = await farmers(page);
     const nearest = (n: (typeof list)[number]) => Math.min(...all.map((f) => Math.hypot(f.fx - (n.cx + 0.5), f.fy - (n.cy + 0.5))));
     const target = [...list].sort((a, b) => nearest(a) - nearest(b))[0];
-    const d = nearest(target);
-    // A cell is 32 world px; the radii are screen pt, so (22 + 12) / 2 pt is d cells at this zoom.
-    const scale = name === "berries" ? 17 / 32 / d : 1;
+    // How far the nearest farmer is from the finger on the target, on screen: its feet or its body
+    // above them, as a tap measures it (view.ts pick), whichever way the ground is laid (D-088).
+    const lift = await page.evaluate(() => window.__proto?.game?.bodyLift() ?? 0);
+    const onScreen = async () => {
+      const scale = await page.evaluate(() => window.__proto?.game?.camera().scale ?? 1);
+      const tp = await toScreen(page, { x: target.cx, y: target.cy });
+      const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+      const fs = (await units(page)).filter((u) => u.owner === me && u.type === FARMER);
+      return Math.min(...fs.map((f) => Math.min(Math.hypot(f.sx - tp.x, f.sy - tp.y), Math.hypot(f.sx - tp.x, f.sy - lift * scale - tp.y))));
+    };
+    await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [target.cx, target.cy] as const);
+    // The radii are screen pt, so the farmer (22 + 12) / 2 pt away at this zoom.
+    const scale = name === "berries" ? 17 / (await onScreen()) : 1;
     await page.evaluate(([x, y, z]) => window.__proto?.game?.centerOn(x, y, z), [target.cx, target.cy, scale] as const);
     if (name === "berries") {
-      const actual = await page.evaluate(() => window.__proto?.game?.camera().scale ?? 0);
-      const cells = (pt: number) => pt / actual / 32;
-      expect(d, "a farmer is inside the old pick radius, so the old rule would have re-selected it").toBeLessThan(cells(22));
-      expect(d, "and not right under the finger, so the new rule gathers").toBeGreaterThan(cells(12));
+      const d = await onScreen();
+      expect(d, "a farmer is inside the old pick radius, so the old rule would have re-selected it").toBeLessThan(22);
+      expect(d, "and not right under the finger, so the new rule gathers").toBeGreaterThan(12);
     }
     await tap(page, await toScreen(page, { x: target.cx, y: target.cy }));
     await expect.poll(() => lastSent(page), { message: name }).toMatchObject({ c: "gather", u: ids, node: target.id });

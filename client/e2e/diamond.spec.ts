@@ -1,4 +1,4 @@
-// 菱形畫面（D-085）on core's real simulation: the map turned 45° and flattened (camera/projection.ts),
+// 菱形畫面（D-085; ?view=diamond since 方形斜看 is the default, D-088）on core's real simulation: the map turned 45° and flattened (camera/projection.ts),
 // the fixed map's two spawns left and right of the big city, at about its height. Whether (0, 0)
 // belongs at the top corner is the user's to see (ceo 2026-10-18), hence the pictures.
 
@@ -11,7 +11,7 @@ const LARGE = 1;
 const at = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
 
 async function start(page: Page, query: string): Promise<void> {
-  await page.goto(`./?test=1&${query}`);
+  await page.goto(`./?test=1&view=diamond&${query}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
 }

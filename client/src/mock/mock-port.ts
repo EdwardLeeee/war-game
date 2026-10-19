@@ -214,7 +214,7 @@ const GALLERY_BUILDINGS = [
   BuildingType.MainCity, BuildingType.House, BuildingType.LumberCamp, BuildingType.Mine, BuildingType.Granary, BuildingType.Farm,
   BuildingType.Barracks, BuildingType.Range, BuildingType.MageHall, BuildingType.Stable, BuildingType.ArrowTower, BuildingType.TownTower,
 ];
-const GALLERY_B = { x: 4, y: 24 };
+const GALLERY_B = { x: 4, y: 4 };
 const GALLERY_NODES_Y = 66;
 /** Then it stops: the fallen 0.8 s into their fall (the dust rising), the shattered mage 0.3 s into it, the struck 0.2 s. */
 const GALLERY_STOP_TICK = 36;
@@ -504,7 +504,8 @@ export class MockPort implements SimPort {
 
   /**
    * The buildings' gallery (`?gallery=b`, D-085), alone on the map: ours, a row a building type,
-   * a column a state, along the screen as a diamond (cell (x + 4c + 5r, y − 4c + 5r)): three
+   * a column a state, square on as 方形斜看 shows it (D-088; cell (x + 5c, y + 7r), room above each
+   * row for the tall ones): three
    * construction stages, done, damaged, and one destroyed at GALLERY_FALL_TICK (its rubble). The
    * big city's tower (neutral, 東陸 always) last. Our culture is 你的陸 (?culture=w: 西陸).
    * Beside it the nodes: trees of both cultures and their stumps, the mines full, mined and spent,
@@ -516,7 +517,7 @@ export class MockPort implements SimPort {
       states.forEach((st, c) => {
         // The big city's tower is never built: done, damaged, rubble only.
         if (type === BuildingType.TownTower && st.progress < 1000) return;
-        const b = this.building(type === BuildingType.TownTower ? NEUTRAL : ME, type, GALLERY_B.x + 4 * c + 5 * r, GALLERY_B.y - 4 * c + 5 * r);
+        const b = this.building(type === BuildingType.TownTower ? NEUTRAL : ME, type, GALLERY_B.x + 5 * c, GALLERY_B.y + 7 * r);
         b.progress = st.progress;
         b.hp = Math.round(MOCK_RULES.buildings[type].hp * st.hp);
         if (st.fall === true) this.galleryRoles.fallen.push(b);

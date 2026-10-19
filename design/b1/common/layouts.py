@@ -118,10 +118,13 @@ def piece_fp(kind):
     return {"th22": (2, 2), "th21": (2, 1), "th12": (1, 2), "th11": (1, 1)}[kind]
 
 
-def ground_plan(L):
-    """[(x, y, kind)] in metres for the ground piece."""
+def ground_plan(L, houses_as=None):
+    """[(x, y, kind)] in metres for the ground piece. houses_as: the kind the house cells are paved as (R6-06 甲,
+    a town without houses: "garden"), or None to leave them out (the houses stand there)."""
     out = []
     for (i, j), k in L["cells"].items():
+        if k == "house" and houses_as:
+            k = houses_as
         if k in ("square", "street", "garden", "tower"):
             k = "square" if k == "tower" else k        # paved under the tower (seen once it is torn down)
             a, b = L["cell_centre"](i, j)

@@ -423,6 +423,89 @@ jobs:
           EOF
           node late.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
+  # D-086 A3 (war-game-ai, docs/research/2026-10-ai-late.md): the late group with a squad of 10 that goes
+  # for the AI's farmers far from its main city from minute 10 (--late --harass 10; the user's 75830947),
+  # on both maps, against normal and hard, seeds 1-40 in two jobs each. Reports only, no threshold; its
+  # own jobs, so the jobs above play as before.
+  scripted-harass:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
+    name: scripted harass (${{ matrix.difficulty }} ${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        difficulty: [normal, hard]
+        cell:
+          - { group: push-late-harass, seeds: 1-20, args: --strategy push --speed h1 --formation close --late --harass 10 }
+          - { group: push-late-harass, seeds: 21-40, args: --strategy push --speed h1 --formation close --late --harass 10 }
+          - { group: push-late-harass-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --late --harass 10 --map random }
+          - { group: push-late-harass-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --late --harass 10 --map random }
+    env:
+      NAME: harass-${{ matrix.difficulty }}-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Scripted player (late, harass) against the ${{ matrix.difficulty }} AI
+        run: |
+          set -o pipefail
+          node src/scripted-games.ts --seeds ${{ matrix.cell.seeds }} ${{ matrix.cell.args }} --difficulty ${{ matrix.difficulty }} --json "${NAME}.json" | tee -a "${GITHUB_STEP_SUMMARY}"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: sim/${{ env.NAME }}.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # The harass group in one table: the AI's farmers lost, hit and back, idle at home and hiding, and
+  # what the AI counted of its own rescues (hard's stats(), when it has one).
+  scripted-harass-summary:
+    needs: [scripted-harass]
+    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: harass-*
+          path: harass
+          merge-multiple: true
+      - name: The harass group
+        run: |
+          set -o pipefail
+          cat > harass.mjs <<'EOF'
+          import { readdirSync, readFileSync } from "node:fs";
+          const rows = [["normal", "push-late-harass", "普通，固定地圖"], ["normal", "push-late-harass-random", "普通，隨機地圖"], ["hard", "push-late-harass", "困難，固定地圖"], ["hard", "push-late-harass-random", "困難，隨機地圖"]];
+          const med = (l) => (l.length === 0 ? "—" : String([...l].sort((a, b) => a - b)[l.length >> 1]));
+          const sum = (l) => l.reduce((a, c) => a + c, 0);
+          const out = ["## 殺村民（D-086 A3）", "", "| 對手、地圖 | 贏／局數 | 一局多長（分） | 電腦每局死的村民 | 被打／3 分鐘後補回 | 在家閒著（村民·分鐘） | 躲進主城（村民·分鐘） | 電腦自己的救援紀錄 |", "|---|---|---|---|---|---|---|---|"];
+          for (const [level, group, name] of rows) {
+            const games = readdirSync("harass")
+              .filter((f) => f.replace(/-\d+-\d+\.json$/, "") === `harass-${level}-${group}`)
+              .flatMap((f) => JSON.parse(readFileSync(`harass/${f}`, "utf8")).games);
+            if (games.length === 0) continue;
+            const won = games.filter((x) => x.result === "won");
+            const lost = games.map((x) => sum(x.aiFarmers.lost));
+            const rescue = games.filter((x) => x.aiRescue !== null);
+            const keys = [...new Set(rescue.flatMap((x) => Object.keys(x.aiRescue)))].sort();
+            out.push(
+              `| ${name} | ${won.length}/${games.length} | ${med(games.map((x) => Math.round(x.endTick / 120) / 10))} | 中位數 ${med(lost)}、最多 ${Math.max(...lost)} | ${sum(games.map((x) => x.aiFarmers.hits))}／${sum(games.map((x) => x.aiFarmers.back))} | ${med(games.map((x) => x.aiFarmers.idle))} | ${med(games.map((x) => x.aiFarmers.hiding))} | ${keys.length === 0 ? "—" : keys.map((k) => `${k} ${sum(rescue.map((x) => x.aiRescue[k] ?? 0))}`).join("、")} |`,
+            );
+          }
+          out.push("", "被打：兩分鐘內死 5 名以上村民（之前三分鐘沒算過）；補回：3 分鐘後村民和被打前差 2 名以內。在家閒著：沒有指令、主城 15 格內。中位數；救援紀錄是各局合計。");
+          console.log(out.join("\n"));
+          EOF
+          node harass.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
+
   # Unit balance (round 3, D-026): small battles of equal cost, the values before this round
   # against the values in the code, every goal marked (src/balance.ts). About 10 seconds.
   # Goals 1-4 must hold with both sides advancing; goal 5 is reported (ceo: not this round).

@@ -23,8 +23,12 @@ export interface BuildingEntry {
   crops?: string[];
 }
 
+/** Which camera the pictures were drawn for (D-088): none, the diamond's (art-v2). */
+export type AtlasView = "diamond" | "oblique";
+
 export interface BuildingsJson {
   format: string;
+  view?: AtlasView;
   culture: Side;
   px_per_m: number;
   pages: { color: string[]; team: string[]; shadow: string[] };
@@ -47,6 +51,7 @@ export interface NodeEntry {
 
 export interface NodesJson {
   format: string;
+  view?: AtlasView;
   px_per_m: number;
   pages: { color: string[]; shadow: string[] };
   nodes: Record<string, NodeEntry>;
@@ -67,6 +72,9 @@ export function parseNodes(v: unknown): NodesJson {
   if (!(n.px_per_m > 0) || typeof n.nodes !== "object" || typeof n.frames !== "object") throw new Error("incomplete nodes description");
   return n;
 }
+
+/** The pictures fit the ground as it is drawn: their camera's (no view: the diamond's) is the projection's. */
+export const viewFits = (view: AtlasView | undefined, projection: "top" | "diamond" | "oblique"): boolean => (view ?? "diamond") === projection;
 
 /** The entry for a sim building type, or undefined (the outpost has none yet: its shape). */
 export function buildingEntry(b: BuildingsJson, type: number): BuildingEntry | undefined {

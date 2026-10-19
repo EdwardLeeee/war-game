@@ -4,7 +4,10 @@
 // above it is the world itself. As a diamond the grid is turned 45° and flattened 2:1 (the
 // camera 30° above the ground): a cell 40 points along its sides (20 a metre, 2 metres a
 // cell), so a cell's step is 28.28 across and 14.14 down; the map's (0, 0) at the top corner,
-// +x down-right and +y down-left, the two spawns left and right. Pure arithmetic, no PixiJS.
+// +x down-right and +y down-left, the two spawns left and right. Seen square on (方形斜看,
+// D-088, the user's choice): the same camera, not turned, so the grid stays square to the screen
+// and only flattened 2:1: a cell 40 across and 20 down, +x right and +y down (nearer the
+// camera), the spawns bottom left and top right. Pure arithmetic, no PixiJS.
 
 import { TILE_PX } from "../tuning.ts";
 import type { Point } from "./camera.ts";
@@ -15,7 +18,7 @@ export const PT_PER_CELL = 40;
 export const PT_PER_M = 20;
 
 export interface Projection {
-  readonly kind: "top" | "diamond";
+  readonly kind: "top" | "diamond" | "oblique";
   /** World (px) → the plane (pt at zoom 1). */
   toPlane(wx: number, wy: number): Point;
   /** The plane → world. */
@@ -43,3 +46,20 @@ export const DIAMOND: Projection = {
   matrix: { a: A, b: A / 2, c: -A, d: A / 2 },
   ptPerM: PT_PER_M,
 };
+
+const S = PT_PER_CELL / TILE_PX;
+
+/** 方形斜看 (D-088; docs/sprite-atlas.md section 1): x' = 1.25 x, y' = 0.625 y (a cell 40 × 20 points). */
+export const OBLIQUE: Projection = {
+  kind: "oblique",
+  toPlane: (wx, wy) => ({ x: wx * S, y: (wy * S) / 2 }),
+  toWorld: (px, py) => ({ x: px / S, y: (2 * py) / S }),
+  matrix: { a: S, b: 0, c: 0, d: S / 2 },
+  ptPerM: PT_PER_M,
+};
+
+/** Seen from 30° above (diamond or square on): pictures stand up, the ground lies flattened. */
+export const tilted = (p: Projection): boolean => p.kind !== "top";
+
+/** The projection by name, for the test page's ?view= (D-088). */
+export const PROJECTIONS: Record<Projection["kind"], Projection> = { top: TOP, diamond: DIAMOND, oblique: OBLIQUE };

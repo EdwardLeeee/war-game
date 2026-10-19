@@ -23,7 +23,7 @@ import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts"
 import { type Culture, cultureOf } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
-import { DIAMOND } from "../camera/projection.ts";
+import { type Projection, PROJECTIONS } from "../camera/projection.ts";
 import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
@@ -130,6 +130,8 @@ export interface GameOptions {
   art?: UnitArt | null;
   /** 你的陸 (the computer wears the other; art/spec.ts cultureOf); 東陸 when not given. */
   culture?: Culture;
+  /** How the ground lies (a test page's ?view=, D-088); the default when not given. */
+  view?: Projection["kind"];
   /** This build has atlases to choose in the 量測 panel. */
   artAvailable?: boolean;
   /** The 量測 panel's 美術 was changed since this game began: 量測 starts a game of its own. */
@@ -169,8 +171,8 @@ export function nextSeq(log: string): number {
   return last + 1;
 }
 
-/** How the ground is laid on the screen: the diamond the atlases are drawn for (D-085). */
-const PROJECTION = DIAMOND;
+/** How the ground is laid on the screen: 方形斜看 since art-v3 is drawn for it (D-088); the diamond (D-085) on test pages only (?view=diamond). */
+const PROJECTION_DEFAULT = PROJECTIONS.oblique;
 
 export class Game implements GestureHost {
   view: GameView | null = null;
@@ -1297,9 +1299,10 @@ export class Game implements GestureHost {
       case "ready": {
         this.view = new GameView(msg.player ?? 0, msg.map, msg.rules);
         // The map as a diamond (D-085; docs/sprite-atlas.md section 1): the camera, taps and boxes, and the drawing.
-        this.view.projection = PROJECTION;
+        const projection = this.options.view === undefined ? PROJECTION_DEFAULT : PROJECTIONS[this.options.view];
+        this.view.projection = projection;
         const world = msg.map.size * TILE_PX;
-        this.camera = new Camera(world, world, PROJECTION);
+        this.camera = new Camera(world, world, projection);
         this.camera.resize(this.app.screen.width, this.app.screen.height);
         this.camera.zoomAt(0, 0, START_ZOOM);
         const home = msg.map.spawns.find((s) => s.player === this.view?.me);
@@ -1311,7 +1314,7 @@ export class Game implements GestureHost {
         };
         const view = this.view;
         const mine = this.culture;
-        this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), PROJECTION);
+        this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), projection);
         this.renderer.pending = this.pending;
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);

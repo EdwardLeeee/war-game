@@ -28,6 +28,8 @@ export interface GameHook {
   /** Commands posted to the simulation, oldest first. */
   sent(): unknown[];
   camera(): { x: number; y: number; scale: number; flinging: boolean };
+  /** How high a unit's body stands above its feet on the plane (×scale on screen); a tap there takes it too. */
+  bodyLift(): number;
   /** The world under the screen's centre, in cells (fractional; the camera's x, y are the plane's). */
   centreCell(): { x: number; y: number };
   mode(): string;
@@ -117,6 +119,7 @@ export function gameHook(game: Game): GameHook {
     inspected: () => (game.view?.inspected ? { kind: game.view.inspected.kind, id: game.view.inspected.id } : null),
     sent: () => game.sent.map((c) => ({ ...c })),
     camera: () => ({ x: game.camera?.x ?? 0, y: game.camera?.y ?? 0, scale: game.camera?.scale ?? 1, flinging: game.camera?.flinging ?? false }),
+    bodyLift: () => game.view?.bodyLift() ?? 0,
     centreCell: () => {
       const cam = game.camera;
       if (cam === null) return { x: 0, y: 0 };

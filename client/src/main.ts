@@ -363,6 +363,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     checkPort: params.mock ? null : () => createSimPort(showError),
     art,
     culture: params.culture ?? culture,
+    view: params.view ?? undefined,
     artAvailable,
     artChanged,
     astcSample,
