@@ -105,3 +105,49 @@ test("菱形：縮到最小時整個菱形放得進畫面；畫面中心不離�
   const v = d.visible();
   for (const p of d.corners()) assert.ok(p.x >= v.x0 - 1e-6 && p.x <= v.x1 + 1e-6 && p.y >= v.y0 - 1e-6 && p.y <= v.y1 + 1e-6);
 });
+
+import { OBLIQUE } from "../src/camera/projection.ts";
+
+function oblique(): Camera {
+  const c = new Camera(WORLD, WORLD, OBLIQUE);
+  c.resize(814, 380);
+  c.centerOn(WORLD / 2, WORLD / 2);
+  return c;
+}
+
+test("方形斜看（D-088）：一格在縮放 1 時寬 40、高 20 pt，+x 往右、+y 往下；兩個出生點在左下和右上，大城在中間", () => {
+  const cell = (x: number, y: number) => OBLIQUE.toPlane(x * TILE_PX, y * TILE_PX);
+  assert.deepEqual(cell(1, 0), { x: 40, y: 0 });
+  assert.deepEqual(cell(0, 1), { x: 0, y: 20 });
+  assert.equal(OBLIQUE.ptPerM, 20, "20 pt a metre across, 2 metres a cell");
+  // The whole map: 3840 × 1920, as wide again as high (the phone held sideways).
+  assert.deepEqual(cell(96, 96), { x: 3840, y: 1920 });
+  const ours = cell(16, 78);
+  const theirs = cell(78, 16);
+  const city = cell(48, 48);
+  assert.ok(ours.x < city.x && city.x < theirs.x, "left, middle, right");
+  assert.ok(ours.y > city.y && city.y > theirs.y, "bottom, middle, top");
+});
+
+test("方形斜看：格座標換到畫面再換回來，誤差小於 1e-9（ui 2026-10-19）；縮放時手指下的地面不動；縮到最小整張地圖放得進畫面", () => {
+  const c = oblique();
+  c.zoomAt(100, 100, 1.7);
+  for (const [cx, cy] of [[0, 0], [16.25, 78.5], [95.99, 0.01], [48, 48]]) {
+    const s = c.worldToScreen(cx * TILE_PX, cy * TILE_PX);
+    const w = c.screenToWorld(s.x, s.y);
+    assert.ok(Math.abs(w.x / TILE_PX - cx) < 1e-9 && Math.abs(w.y / TILE_PX - cy) < 1e-9, `${cx},${cy}`);
+  }
+  const before = c.screenToWorld(600, 300);
+  c.zoomAt(600, 300, 2);
+  const after = c.screenToWorld(600, 300);
+  assert.ok(Math.abs(before.x - after.x) < 1e-6 && Math.abs(before.y - after.y) < 1e-6);
+  const d = oblique();
+  d.zoomAt(0, 0, 0.001);
+  const a = d.worldToScreen(0, 0);
+  const b = d.worldToScreen(WORLD, WORLD);
+  assert.ok(b.x - a.x <= 814 + 1e-6 && b.y - a.y <= 380 + 1e-6);
+  assert.ok(Math.abs(b.y - a.y - 380) < 1e-6 || Math.abs(b.x - a.x - 814) < 1e-6, "as large as fits");
+  // The screen's corners on the map: a box with the screen's sides (the minimap's view, not a diamond).
+  const k = d.corners();
+  assert.ok(Math.abs(k[0].y - k[1].y) < 1e-6 && Math.abs(k[0].x - k[3].x) < 1e-6);
+});

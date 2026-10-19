@@ -9,7 +9,8 @@
 
 import { Container, Sprite } from "pixi.js";
 import { type Culture } from "../art/spec.ts";
-import { buildingEntry, buildingFrame, buildingState, type BuildingEntry, cropStage, nodeFrame, type NodeEntry, RUBBLE_FADE_S, RUBBLE_HOLD_S, type Side } from "../art/structures.ts";
+import { buildingEntry, buildingFrame, buildingState, type BuildingEntry, cropStage, nodeFrame, type NodeEntry, RUBBLE_FADE_S, RUBBLE_HOLD_S, type Side, viewFits } from "../art/structures.ts";
+import { buildingFront, depthOf, nodeFront } from "./depth.ts";
 import type { Projection } from "../camera/projection.ts";
 import { Action, BUILDING_STRIDE, BuildingField as B, BuildingFlag, BuildingType, Fog, HeaderField as H, NodeField as N, TICKS_PER_SECOND, UNIT_STRIDE, UnitField as U } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
@@ -124,9 +125,14 @@ export class ArtStructures {
     this.cellOwner = new Int32Array(view.map.size * view.map.size);
   }
 
-  /** The atlases have buildings (art-v2 on). */
-  static has(art: UnitArt | null): boolean {
-    return art !== null && (art.buildings.E !== undefined || art.buildings.W !== undefined);
+  /**
+   * The atlases have buildings (art-v2 on) drawn for this projection's camera (D-088: art-v2's for
+   * the diamond; square on, the shapes until art-v3).
+   */
+  static has(art: UnitArt | null, projection: Projection): boolean {
+    if (art === null) return false;
+    const b = art.buildings.E ?? art.buildings.W;
+    return b !== undefined && viewFits(b.view, projection.kind);
   }
 
   /** A building's culture: its owner's; the big city's tower 東陸 (ceo 2026-10-18). */
@@ -206,13 +212,15 @@ export class ArtStructures {
     put(s.shadow, this.art.buildingFrame(side, "shadow", name ?? ""), at.x, at.y, this.scale);
     s.color.tint = tint;
     s.team.tint = remembered ? OUT_OF_VIEW : ownerTint(owner, this.view.me);
-    // Behind what stands in front of its footprint (the units' depth: unitDepth).
-    s.color.zIndex = s.team.zIndex = at.y;
-    s.team.zIndex += 0.001;
+    // Behind what stands in front of its footprint (the units' depth: unitDepth). Square on
+    // (D-088) by its front edge (depth.ts); as a diamond by its middle, the units corrected.
+    const z = this.projection.kind === "oblique" ? depthOf(this.projection.toPlane(0, buildingFront(cellY, size) * TILE_PX).y, cellX, b[o + B.id]) : at.y;
+    s.color.zIndex = s.team.zIndex = z;
+    s.team.zIndex += 0.000001;
     const w = color.texture.width * this.scale;
     const h = color.texture.height * this.scale;
     const top = at.y - color.ay * h;
-    this.drawn.push({ id: b[o + B.id], cellX, cellY, size, z: at.y, x0: at.x - color.ax * w, y0: top, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h });
+    this.drawn.push({ id: b[o + B.id], cellX, cellY, size, z, x0: at.x - color.ax * w, y0: top, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h });
     const n = this.view.map.size;
     for (let y = cellY; y < cellY + size; y++) for (let x = cellX; x < cellX + size; x++) if (x >= 0 && y >= 0 && x < n && y < n) this.cellOwner[y * n + x] = this.drawn.length;
     return { top };
@@ -254,8 +262,10 @@ export class ArtStructures {
       s.team.tint = ownerTint(this.view.me, this.view.me);
       s.color.alpha = s.team.alpha = alpha;
       s.shadow.alpha = alpha * 0.6;
-      s.color.zIndex = s.team.zIndex = at.y;
-      s.team.zIndex += 0.001;
+      // Ordered as a building there would be (square on by its front edge, depth.ts).
+      const z = this.projection.kind === "oblique" ? depthOf(this.projection.toPlane(0, buildingFront(site.y, size) * TILE_PX).y, site.x, 0) : at.y;
+      s.color.zIndex = s.team.zIndex = z;
+      s.team.zIndex += 0.000001;
     }
   }
 
@@ -274,7 +284,8 @@ export class ArtStructures {
    * on the screen. Buildings within a few cells only.
    */
   unitDepth(px: number, py: number): number {
-    if (this.drawn.length === 0) return py;
+    // Square on (D-088): its own y is its front edge (depth.ts); nothing to correct.
+    if (this.drawn.length === 0 || this.projection.kind === "oblique") return py;
     const w = this.projection.toWorld(px, py);
     const ux = w.x / TILE_PX;
     const uy = w.y / TILE_PX;
@@ -366,7 +377,7 @@ export class ArtStructures {
   /** The nodes the player knows: standing, or spent on the ground; darker out of view. */
   drawNodes(): void {
     const nodes = this.art.nodes;
-    if (nodes === null) return;
+    if (nodes === null || !this.drawsNodes) return;
     const byKind = new Map<number, NodeEntry>(Object.values(nodes.nodes).map((e) => [e.kind, e]));
     const size = this.view.map.size;
     for (const [id, row] of this.view.nodes) {
@@ -386,7 +397,8 @@ export class ArtStructures {
       if (ns.color.parent !== parent) parent.addChild(ns.color);
       const at = this.projection.toPlane((row[N.cellX] + 0.5) * TILE_PX, (row[N.cellY] + 0.5) * TILE_PX);
       put(ns.color, this.art.nodeFrame("color", name ?? ""), at.x, at.y, this.nodeScale);
-      ns.color.zIndex = at.y;
+      // Square on by its cell's front edge (depth.ts); as a diamond by its middle.
+      ns.color.zIndex = this.projection.kind === "oblique" ? depthOf(this.projection.toPlane(0, nodeFront(row[N.cellY]) * TILE_PX).y, row[N.cellX], id) : at.y;
       put(ns.shadow, spent ? null : this.art.nodeFrame("shadow", name ?? ""), at.x, at.y, this.nodeScale);
     }
     this.tintNodes();
@@ -398,9 +410,9 @@ export class ArtStructures {
     for (const ns of this.nodeSprites.values()) ns.color.tint = fog === null || fog[ns.cell] === Fog.Visible ? 0xffffff : OUT_OF_VIEW;
   }
 
-  /** Whether nodes are drawn from the atlases (the renderer then draws no marks for them). */
+  /** Whether nodes are drawn from the atlases, drawn for this camera (the renderer then draws no marks for them). */
   get drawsNodes(): boolean {
-    return this.art.nodes !== null;
+    return this.art.nodes !== null && viewFits(this.art.nodes.view, this.projection.kind);
   }
 
   /** For the test page: buildings drawn from the atlases this frame, rubble lying, nodes. */
