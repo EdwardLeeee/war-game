@@ -12,6 +12,7 @@ import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
 import { emptyGame, put, slotOf, switchedOff } from "./helpers.ts";
+import { createScriptedPlayer, planFor, SCRIPTED_THINK_EVERY } from "../src/ai/scripted-player.ts";
 
 /** Units of a player as sortable strings in player 0's frame (x <-> y for player 1). */
 function units(g: Game, p: number): string {
@@ -1731,5 +1732,27 @@ test("D-086 A3 (plan.peekFirst): no enemy soldier seen for a minute, one goes to
   assert.equal(ai.stats?.().peekSaw, 1, "it saw them");
   w.tick += 10;
   assert.ok(march(second) || march(ai.think(buildView(g, 0))), "then it marches");
+});
+
+test("D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home", () => {
+  // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
+  const r = new Runner({ seed: 1, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
+  const g = r.game;
+  const m = g.w.map;
+  const plan = planFor("push", "h1", "close");
+  Object.assign(plan, { farmers: 24, production: 4, spearShare: 35, choice: "govern", corners: true, townAt: 10, homeTowers: 2, cavalryShare: 15, pushAt: 50, counterAt: 50, pushAhead: true, harass: 10 });
+  const player = createScriptedPlayer(0, { map: mapInfo(m, 0), rules: rules(m), frame: m.frames[0] }, plan);
+  const sent: { at: number; json: string }[] = [];
+  let seen = 0;
+  let seq = 0;
+  while (!r.over && g.tick < 20 * 1200) {
+    if (g.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ } as never);
+    r.tick();
+    for (; seen < g.log.length; seen++) if (g.log[seen].p === 1) sent.push({ at: seen, json: JSON.stringify(g.log[seen]) });
+  }
+  const stats = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]!.stats!();
+  assert.ok(stats.farmersHid > 0, "its farmers were sent home");
+  const changed = sent.filter((x) => JSON.stringify(g.log[x.at]) !== x.json);
+  assert.deepEqual(changed.map((x) => x.json).slice(0, 2), [], "orders as sent");
 });
 

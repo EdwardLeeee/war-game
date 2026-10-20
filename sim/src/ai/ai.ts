@@ -2899,7 +2899,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             if (h !== undefined) {
               h.ids.push(...go);
               h.clear = tick;
-            } else farHide.push({ x: spot.x, y: spot.y, clear: tick, ids: go });
+            } else farHide.push({ x: spot.x, y: spot.y, clear: tick, ids: [...go] }); // its own copy: go is in the order sent
           }
         }
       }
