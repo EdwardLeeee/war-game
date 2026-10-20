@@ -16,7 +16,8 @@ import math
 
 CELL = 2.0
 N = 48                     # samples across a tile
-OVER = 0.03                # the overlap past each edge, a fraction of the tile (0.06 m, about 2 px at 2x)
+OVER = 0.15                # the overlap past each edge, a fraction of the tile (0.3 m: 9 px deep at 3x, room for the
+                           # cut to the exact square, terrain_prep in atlas_b1)
 
 
 def _smooth(t):

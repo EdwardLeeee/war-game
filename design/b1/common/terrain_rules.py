@@ -10,7 +10,8 @@ client's code and for atlas-buildings.md section 12; the R6 boards draw the terr
 Run as a script it composes a stretch of the fixed map from the renders, for checking the joins:
   python3 common/terrain_rules.py GRID.json RAW ART OUT.png [cx cy]
     GRID  war-game-core's fixed-map-final-grid.json (rows, terrain)
-    RAW   the terrain renders (run.py prod_terrain_*), ART an extracted art-vN-x3 (trees, buildings)
+    RAW   the terrain renders (run.py prod_terrain_*) or a packed terrain/terrain.json (3x); ART an extracted
+          art-vN-x3 (trees, buildings)
 """
 VALUES = dict(Open=0, Rock=1, Wall=2, Water=3, Ford=4, BridgeNS=5, BridgeEW=6, Cliff=7)
 WET = (3, 4, 5, 6)                       # water for the banks: fords and bridges stand in the river
@@ -90,13 +91,14 @@ def frames():
 def scene(grid, raw, cx, cy, span=(22, 22)):
     """A field.render scene of the fixed map round (cx, cy): the terrain from the renders in `raw`, the trees and
     resource points from the art (the battlefield's own nodes), no buildings."""
+    import field
     import rawart
     rows, terr = grid["rows"], grid["terrain"]
     W = H = len(rows)
 
     def T(x, y):
         return terr[y * W + x]
-    atl = rawart.RawAtlas(raw)
+    atl = field.Atlas(raw) if str(raw).endswith(".json") else rawart.RawAtlas(raw)
     x0, x1, y0, y1 = cx - span[0] // 2, cx + span[0] // 2, cy - span[1] // 2, cy + span[1] // 2
     props = []
     order = {k: i for i, k in enumerate(GROUND_ORDER)}
