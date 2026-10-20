@@ -29,7 +29,7 @@ os.environ["EMBLEM_DIR"] = job.get("emblem_dir", "")
 
 import bpy                                # noqa: E402
 import numpy as np                        # noqa: E402
-from mathutils import Euler, Vector       # noqa: E402
+from mathutils import Euler, Matrix, Vector       # noqa: E402
 
 import lib                                # noqa: E402
 import units                              # noqa: E402,F401
@@ -92,16 +92,81 @@ def make_unit(kind, team, x, y, facing, anim, frame, n):
     sks = [o for o in gc.get_objects() if isinstance(o, body2.Skinner) and id(o) not in before]
     if V == 1:
         u.rigs["body"].j["head"].scale = (HEAD, HEAD, HEAD)
-    if V == 2:
+    if V == 2 or (V == 3 and kind != "spear_e"):  # version 3 generated the spearman only; the crossbowman is version 2's
         import human_r7
         more, _ = human_r7.dress(u, kind)
         sks += more
+    if V == 3 and kind == "spear_e":
+        sks += ai_unit(u, kind)
     u.root.location = (x, y, 0.0)
     u.frames = dict(getattr(u, "frames", {}), **{anim: n})
     u.face(facing)
     u.pose(anim, frame)
     objs = [o for o in bpy.data.objects if under(o, u.root)] + [s.obj for s in sks]
     return dict(u=u, team=team, objs=objs, skinners=sks)
+
+
+AI = os.path.join(os.path.dirname(OUT), "ai")
+CONCEPT = os.path.join(os.path.dirname(OUT), "concept")
+AI_LOG = {}
+
+
+def _material(name):
+    """Our material for an ID picture's name (the concept's team copies are 'team2.001' ...)."""
+    base = name.split(".")[0]
+    m = lib.MATS.get(base, {}).get("mat") or bpy.data.materials.get(base)
+    if m is None and base == "r7_skin":
+        m = lib.mat("r7_skin", (0.55, 0.38, 0.27), 0.5)
+    return m
+
+
+def _png(path):
+    """A PNG as uint8 RGBA rows from the top (Blender's own reader: its python has no PIL)."""
+    im = bpy.data.images.load(path, check_existing=False)
+    im.colorspace_settings.name = "Non-Color"
+    w, h = im.size
+    a = np.empty(w * h * 4, np.float32)
+    im.pixels.foreach_get(a)
+    bpy.data.images.remove(im)
+    return np.flipud((a.reshape(h, w, 4) * 255 + 0.5).astype(np.uint8))
+
+
+def _ai(kind, tris):
+    import ai_r7
+    t0 = time.time()
+    ob = ai_r7.load(os.path.join(AI, f"{kind}_shape.glb"), tris)
+    meta = json.load(open(os.path.join(CONCEPT, f"concept_{kind}.json")))
+    alpha = _png(os.path.join(CONCEPT, f"concept_{kind}.png"))[..., 3]
+    reg = ai_r7.register(ob, alpha, meta)
+    ids = json.load(open(os.path.join(CONCEPT, f"concept_{kind}_id.json")))
+    mats = {name: _material(name) for name in ids.values()}
+    part = ai_r7.parts(ob, _png(os.path.join(CONCEPT, f"concept_{kind}_id.png")), ids, meta, mats)
+    AI_LOG[kind] = dict(register=reg, parts=part, seconds=round(time.time() - t0, 1))
+    print("R7 v3 AI", kind, AI_LOG[kind], flush=True)
+    return ob
+
+
+def ai_unit(u, kind):
+    """Version 3: the generated soldier in place of ours, skinned to our rig; our weapons and banner kept."""
+    import ai_r7
+    rig = u.rigs["body"]
+    keep = [o for o in bpy.data.objects if under(o, u.root) and any(w in o.name for w in WEAPON)]
+    for o in [o for o in bpy.data.objects if under(o, u.root)] + [s.obj for s in getattr(rig, "skinners", [])]:
+        if o not in keep and o.type in ("MESH", "CURVE"):
+            o.hide_render = True
+    body2.zero_pose(rig)
+    ob = _ai(kind, 24000)
+    ob.name = f"{kind}_r7ai"
+    co = np.array([v.co[:] for v in ob.data.vertices])
+    ours = next(sk.obj for sk in getattr(rig, "skinners", []) if sk.obj.name.split(".")[0] == f"{kind}_body")
+    bpy.context.view_layer.update()
+    oc = np.array([ours.matrix_world @ v.co for v in ours.data.vertices])
+    print("R7 v3 bbox ai", co.min(0).round(3), co.max(0).round(3), "ours", oc.min(0).round(3), oc.max(0).round(3),
+          "joints", {k: [round(c, 2) for c in rig.j[k].matrix_world.translation] for k in ("hips", "neck", "wristR", "ankleL")})
+    sk = ai_r7.skin(ob, rig)
+    rig.skinners = list(getattr(rig, "skinners", [])) + [sk]
+    rig.pose()
+    return [sk]
 
 
 def tint_team(made):
@@ -171,6 +236,12 @@ def scene():
     broot = lib.empty("r7_barracks", parent=root, loc=(-6.0, 3.0, 0.0))
     blds.BUILDERS["barracks"](broot, "E")
     bobjs = [o for o in bpy.data.objects if under(o, broot)]
+    if V == 3:                                    # the generated barracks where ours stood; ours only lends materials
+        for o in bobjs:
+            o.hide_render = True
+        ab = _ai("barracks", 60000)
+        ab.data.transform(Matrix.Translation((-6.0, 3.0, 0.0)))
+        bobjs = [ab]
     made = [make_unit("spear_e", "blue", -3.2, -4.4, 1, "attack", 5, 10),
             make_unit("xbow_e", "blue", -1.2, -5.2, 1, "attack", 3, 10),
             make_unit("spear_e", "red", 3.0, -4.0, 5, "attack", 2, 10),
@@ -275,9 +346,40 @@ def concept(it):
         target = Vector((0, 0, target_z))
     cd.ortho_scale = size
     co.location = target + rm @ Vector((0, 0, 30))
+    json.dump(dict(rotation=[math.radians(75), 0, math.radians(-30)], ortho_scale=size, target=list(target),
+                   px=it.get("px", 768)), open(os.path.join(OUT, f"concept_{it['kind']}.json"), "w"))
     sc.render.film_transparent = True             # put on white afterwards (common/concepts.py): the light stays R7's
     sc.render.filepath = os.path.join(OUT, f"concept_{it['kind']}.png")
     bpy.ops.render.render(write_still=True)
+    # the material ID picture, the same camera: every material one flat colour (version 3 reads its parts off it)
+    ids, k = {}, 0
+    for ob in [o for o in bpy.data.objects if o.type == "MESH" and not o.hide_render]:
+        for slot in ob.material_slots:
+            m = slot.material
+            if m is None:
+                continue
+            if m.name not in ids:
+                k += 1
+                ids[m.name] = (k * 37 % 251 + 4, k * 91 % 251 + 4, k * 53 % 251 + 4)
+            em = bpy.data.materials.get("id_" + m.name) or bpy.data.materials.new("id_" + m.name)
+            em.use_nodes = True
+            nt = em.node_tree
+            for n in list(nt.nodes):
+                if n.bl_idname != "ShaderNodeOutputMaterial":
+                    nt.nodes.remove(n)
+            e = nt.nodes.new("ShaderNodeEmission")
+            e.inputs["Color"].default_value = (*[lin(c) for c in ids[m.name]], 1)
+            nt.links.new(e.outputs[0], next(n for n in nt.nodes if n.bl_idname == "ShaderNodeOutputMaterial").inputs[0])
+            slot.material = em
+    sc.view_settings.view_transform = "Standard"
+    sc.view_settings.look = "None"
+    sc.cycles.samples = 1
+    sc.cycles.use_denoising = False
+    sc.cycles.filter_width = 0.01
+    sc.render.filepath = os.path.join(OUT, f"concept_{it['kind']}_id.png")
+    bpy.ops.render.render(write_still=True)
+    json.dump({"%d,%d,%d" % c: name for name, c in ids.items()},
+              open(os.path.join(OUT, f"concept_{it['kind']}_id.json"), "w"), indent=1)
 
 
 t0 = time.time()

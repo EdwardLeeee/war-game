@@ -15,11 +15,12 @@ import lib
 import look
 
 W_M, D_M = 24.0, 16.0
+NORTH_M = 12.0                    # the ground goes on past the patch to the north: a tall building's top shows ground
 PX = 16                                  # mask pixels a metre
 ROAD = [(-13.0, -2.6), (-6.0, -1.2), (0.0, -1.6), (6.0, -0.4), (13.0, 1.2)]
 GRAVEL = [(-6.0, 0.6, 2.4, 1.6), (-2.5, 2.8, 1.4, 1.0), (8.0, -4.8, 1.8, 1.2)]   # (x, y, rx, ry)
 # the river: water north of this line in the north-east corner, the bank 1.6 m wide along it
-RIVER = [(2.0, 8.5), (5.5, 6.2), (9.0, 5.0), (12.5, 4.4)]
+RIVER = [(-4.0, 21.0), (2.0, 8.5), (5.5, 6.2), (9.0, 5.0), (12.5, 4.4)]     # it turns away north-west
 BANK_M = 1.6
 
 
@@ -56,10 +57,11 @@ def _side(px, py, pts):
 
 
 def masks():
-    """road, gravel, bank, water in [0, 1], rows from north to south (image order flipped later)."""
-    h, w = int(D_M * PX), int(W_M * PX)
+    """road, gravel, bank, water in [0, 1] over the plane (the patch and its northern run-on), rows from north to
+    south (image order flipped later)."""
+    h, w = int((D_M + NORTH_M) * PX), int(W_M * PX)
     px = (np.arange(w) + 0.5) / PX - W_M / 2
-    py = D_M / 2 - (np.arange(h) + 0.5) / PX
+    py = D_M / 2 + NORTH_M - (np.arange(h) + 0.5) / PX
     px, py = np.meshgrid(px, py)
     n1 = _noise((h, w), 10, 1) - 0.5
     n2 = _noise((h, w), 3, 2) - 0.5
@@ -159,23 +161,40 @@ def _blend(nt, base, layer, mask_sock, height, sharp=6.0, lift=0.0):
     return m.outputs["Result"], f.outputs[0]
 
 
-GRASS = (0.075, 0.115, 0.04)       # linear albedo: a calm, slightly dry green (AoE-like meadow, not saturated)
-GRASS2 = (0.09, 0.12, 0.045)
+GRASS = (0.068, 0.118, 0.034)      # linear albedo: a calm meadow green, a little dry
+GRASS2 = (0.085, 0.122, 0.04)
 EARTH = (0.13, 0.095, 0.06)
 GRAVEL_C = (0.17, 0.15, 0.12)
 BANK_C = (0.13, 0.1, 0.07)
+
+
+
+
+def _plane(name, z, root):
+    """The patch's plane, NORTH_M longer to the north; its UV spans the whole plane, as the masks do."""
+    import bmesh
+    bm = bmesh.new()
+    xs, ys = (-W_M / 2, W_M / 2), (-D_M / 2, D_M / 2 + NORTH_M)
+    vs = [bm.verts.new((x, y, z)) for x, y in ((xs[0], ys[0]), (xs[1], ys[0]), (xs[1], ys[1]), (xs[0], ys[1]))]
+    f = bm.faces.new(vs)
+    uv = bm.loops.layers.uv.new("UVMap")
+    for loop in f.loops:
+        x, y = loop.vert.co.x, loop.vert.co.y
+        loop[uv].uv = (x / W_M + 0.5, (y + D_M / 2) / (D_M + NORTH_M))
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(ob)
+    ob.parent = root
+    return ob
 
 
 def build(root, seed=3):
     """The ground plane, the water, the tufts and pebbles under root."""
     M = masks()
     imgs = {k: _mask_image(f"r7_mask_{k}", v) for k, v in M.items()}
-    bpy.ops.mesh.primitive_plane_add(size=1.0)
-    plane = bpy.context.active_object
-    plane.name = "r7_ground"
-    plane.scale = (W_M, D_M, 1)
-    bpy.ops.object.transform_apply(scale=True)
-    plane.parent = root
+    plane = _plane("r7_ground", 0.0, root)
     m = bpy.data.materials.new("r7_ground")
     m.use_nodes = True
     nt = m.node_tree
@@ -227,12 +246,7 @@ def build(root, seed=3):
 
 def _water(root, water):
     """A sheet of water over the river part of the patch (its mask as the alpha), a hair above the ground."""
-    bpy.ops.mesh.primitive_plane_add(size=1.0, location=(0, 0, 0.03))
-    w = bpy.context.active_object
-    w.name = "r7_water"
-    w.scale = (W_M, D_M, 1)
-    bpy.ops.object.transform_apply(scale=True)
-    w.parent = root
+    w = _plane("r7_water", 0.03, root)
     m = bpy.data.materials.new("r7_water")
     m.use_nodes = True
     nt = m.node_tree
@@ -272,12 +286,12 @@ def _scatter(root, M, seed):
     h, w = M["road"].shape
 
     def at(x, y, k):
-        i = min(h - 1, max(0, int((D_M / 2 - y) * PX)))
+        i = min(h - 1, max(0, int((D_M / 2 + NORTH_M - y) * PX)))
         j = min(w - 1, max(0, int((x + W_M / 2) * PX)))
         return M[k][i, j]
     n = 0
-    for _ in range(900):
-        x, y = rnd.uniform(-W_M / 2, W_M / 2), rnd.uniform(-D_M / 2, D_M / 2)
+    for _ in range(1100):
+        x, y = rnd.uniform(-W_M / 2, W_M / 2), rnd.uniform(-D_M / 2, D_M / 2 + 4.0)
         if at(x, y, "water") > 0.1:
             continue
         open_ = 1 - max(at(x, y, "road"), at(x, y, "gravel"), at(x, y, "bank"))

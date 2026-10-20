@@ -47,6 +47,7 @@ def main(version, samples, only=None):
     jp.write_text(json.dumps(job, indent=1))
     log = jp.with_suffix(".log")
     config.MEM_MAX = "3500M"
+    config.THREADS = "6"
     wall = config.blender(R7 / "blender" / "render_r7.py", jp, log=log)
     txt = log.read_text()
     if "Traceback" in txt:

@@ -238,7 +238,7 @@ def lights():
     sc.collection.objects.link(fo)
     lib.world_color((0.62, 0.72, 0.88), 0.38)          # the sky lower than the sun: shadows read at phone size
     sc.view_settings.view_transform = "AgX"
-    sc.view_settings.look = "AgX - Base Contrast"
+    sc.view_settings.look = "AgX - Medium High Contrast"     # Base Contrast read grey and hazy at phone size
     sc.cycles.max_bounces = 6
     sc.cycles.diffuse_bounces = 3
     sc.cycles.glossy_bounces = 2
