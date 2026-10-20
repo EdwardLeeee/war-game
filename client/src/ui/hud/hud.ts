@@ -215,6 +215,7 @@ export class Hud {
       garrisonLess: (town: number) => game.garrisonLess(town),
       notify: (text: string) => game.toast(text),
       retreat: () => game.retreatSelection(),
+      reform: () => game.reform(),
       dispatchPool: (node: number) => game.dispatchPool(node),
       dispatch: (node: number, share: number) => game.dispatch(node, share),
       depotResources: (building: number) => game.depotResources(building),

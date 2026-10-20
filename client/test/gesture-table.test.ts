@@ -90,10 +90,16 @@ test("選了村民後點自己需要人手的建築（沒蓋好、受損、農�
   assert.deepEqual(army.out, [{ kind: "selectBuilding", id: 10 }]);
 });
 
-test("選了部隊後點地面 → 前進", () => {
+test("選了部隊後點地面 → 移動：模擬的撤退（路上不還手），不是前進（D-094）", () => {
   const p = play(world(), { units: [2, 3], building: null });
   p.tap(at(40), at(41));
-  assert.deepEqual(p.out, [{ kind: "command", cmd: { c: "move", u: [2, 3], x: 40, y: 41 } }]);
+  assert.deepEqual(p.out, [{ kind: "command", cmd: { c: "retreat", u: [2, 3], x: 40, y: 41 } }]);
+});
+
+test("按了攻擊再點地面 → 攻擊移動（模擬的 move）；再點敵人 → 集中打它（D-094）", () => {
+  const w = world();
+  assert.deepEqual(tapIntents(w, { units: [2, 3], building: null }, "advance", at(40), at(41), 1, R), [{ kind: "command", cmd: { c: "move", u: [2, 3], x: 40, y: 41 } }, { kind: "endMode" }]);
+  assert.deepEqual(tapIntents(w, { units: [2, 3], building: null }, "advance", at(20), at(20), 1, R), [{ kind: "command", cmd: { c: "attack", u: [2, 3], target: 9 } }, { kind: "endMode" }]);
 });
 
 test("選了部隊後點敵人 → 攻擊（單位或建築）", () => {
@@ -111,7 +117,7 @@ test("選了村民後點資源 → 採集（一起選的軍隊走過去）", () 
   p.tap(at(12), at(12));
   assert.deepEqual(p.out, [
     { kind: "command", cmd: { c: "gather", u: [1], node: 100 } },
-    { kind: "command", cmd: { c: "move", u: [2], x: 12, y: 12 } },
+    { kind: "command", cmd: { c: "retreat", u: [2], x: 12, y: 12 } },
   ]);
 });
 
@@ -198,13 +204,13 @@ test("點兩下單位 → 選取畫面內所有同類單位", () => {
   ]);
 });
 
-test("長按單位 → 技能輪盤：法師有晶砲、自動施放、撤退、堅守；槍兵和遠程兵有進攻、撤退、堅守；村民只有撤退（D-050）", () => {
+test("長按單位 → 技能輪盤：士兵（法師也是）有攻擊、移動、堅守，沒有晶砲和自動施放；村民只有移動（D-050、D-094、D-095）", () => {
   const w = world();
   const p = play(w, { units: [], building: null });
   p.g.down(1, at(7), at(2), 0);
   p.g.update(LONG_PRESS_MS);
   assert.equal(p.longPressed(), "wheel");
-  assert.deepEqual(wheelItems(UnitType.Mage), ["cast", "autocast", "retreat", "hold"]);
+  assert.deepEqual(wheelItems(UnitType.Mage), ["advance", "retreat", "hold"]);
   assert.deepEqual(wheelItems(UnitType.Spearman), ["advance", "retreat", "hold"]);
   assert.deepEqual(wheelItems(UnitType.Ranged), ["advance", "retreat", "hold"]);
   assert.deepEqual(wheelItems(UnitType.Farmer), ["retreat"]);

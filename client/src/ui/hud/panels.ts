@@ -15,6 +15,7 @@ import {
   BuildingField as B,
   BuildingFlag,
   BuildingType,
+  CANNON,
   type CommandBody,
   HeaderField as H,
   NEUTRAL,
@@ -22,6 +23,7 @@ import {
   NodeField as N,
   type Resource,
   Stance,
+  TICKS_PER_SECOND,
   TownChoice,
   TownField as T,
   TownSize,
@@ -63,6 +65,8 @@ export interface PanelHost {
   notify(text: string): void;
   /** 撤退 with units selected: pick where to (D-059). */
   retreat(): void;
+  /** 整理隊形 (D-095): the selected soldiers re-form where they are. */
+  reform(): void;
   /** 派村民 (D-061): whom a tap on this node can send, and sending a share of them. */
   dispatchPool(node: number): DispatchPool | null;
   dispatch(node: number, share: number): void;
@@ -115,19 +119,16 @@ export function autoTrainText(type: number, flags: number): string | null {
 }
 
 /**
- * 進攻／撤退／堅守, the three orders for soldiers (D-050: 「指揮軍團進攻與撤退還有堅守的指令仍然
- * 不明確」), a line each in the player's words, under the selection.
+ * 攻擊／移動／堅守, the three orders for soldiers (D-050: 「指揮軍團進攻與撤退還有堅守的指令仍然
+ * 不明確」; D-094 renamed 進攻、撤退), a line each in the player's words, under the selection.
  */
 export const ORDER_TEXT = {
-  advance: "進攻：點地面或小地圖，整隊前進，遇到敵人一起打",
-  retreat: "撤退：點地面或小地圖撤到那裡，點主城回家",
+  advance: "攻擊：點地面或小地圖攻擊移動，遇到敵人就打；點敵人集中打它",
+  retreat: "移動：點地面或小地圖走過去，路上不還手，到了敵人靠近就打；點主城回家",
   hold: "堅守：停在原地，敵人進到射程就打，不追出去",
 } as const;
-/**
- * While every soldier selected is retreating, the 撤退 line says what a tap does now (D-061):
- * it moves the retreat, it is no 進攻. In place of the line, so the panel does not grow.
- */
-export const RETREAT_NOW_TEXT = "撤退中：點地面或小地圖改撤退位置，到了原地堅守";
+/** A mage's crystal cannon (D-095: only automatic; 「把消耗放進說明裡面」), its numbers the simulation's own. */
+export const CANNON_TEXT = `晶砲自動施放：每發 ${CANNON.crystal} 魔晶、冷卻 ${CANNON.cooldownTicks / TICKS_PER_SECOND} 秒、範圍內 ${CANNON.autocastMinTargets} 名以上敵人才放、移動中不放`;
 /** Under a town plundered this game (round 7, D-061): only 治理 is offered. */
 export const PLUNDERED_TEXT = "這座城這局已經被搶過，只能治理";
 
@@ -143,7 +144,7 @@ export function incomeText(permille: number, state: number): string | null {
 }
 
 /** The 「目前：」 line's words, in its order (D-054 adds 待命: standing, not 進攻中). */
-export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻中", retreat: "撤退中", hold: "堅守", idle: "待命", garrison: "躲在建築裡" };
+export const ORDER_NAME: Record<OrderState, string> = { advance: "攻擊中", retreat: "移動中", hold: "堅守", idle: "待命", garrison: "躲在建築裡" };
 
 /**
  * 隊形 in the player's words (GDD §9, D-027, D-028), a line each. 散開 has a second line for
@@ -389,18 +390,16 @@ export class SelectionInfo {
     const note = el("p", this.el, "sel-note");
     const now = el("span", note, "order-now");
     el("span", note, "order-meaning", ORDER_TEXT.advance);
-    const retreat = el("span", note, "order-meaning", ORDER_TEXT.retreat);
+    el("span", note, "order-meaning", ORDER_TEXT.retreat);
     el("span", note, "order-meaning", ORDER_TEXT.hold);
+    // D-095 (the user: 「把消耗放進說明裡面」): the mages' cannon, always on its own.
+    if (ids.some((id) => view.unitType(id) === UnitType.Mage)) el("span", note, "order-meaning cannon-meaning", CANNON_TEXT);
     const formation = el("span", note, "formation-meaning");
     const formationMore = el("span", note, "formation-more");
     this.updaters.push(() => {
       const counts = orderCounts(view, ids);
       const text = counts === null ? "" : orderNowText(counts);
       if (now.textContent !== text) now.textContent = text;
-      const retreating = allIn(view, ids, "retreat");
-      const retreatLine = retreating ? RETREAT_NOW_TEXT : ORDER_TEXT.retreat;
-      if (retreat.textContent !== retreatLine) retreat.textContent = retreatLine;
-      retreat.classList.toggle("order-hint", retreating);
       const f = formationOf(view, ids);
       const lines: readonly string[] = f === null ? [] : f === "mixed" ? [FORMATION_MIXED_TEXT] : FORMATION_TEXT[f ? "loose" : "close"];
       if (formation.textContent !== (lines[0] ?? "")) formation.textContent = lines[0] ?? "";
@@ -731,23 +730,23 @@ export class CommandArea {
     if (sel.units.length > 0) {
       const types = new Set(sel.units.map((id) => view.unitType(id)));
       const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
-      // 進攻／撤退／堅守 (D-050), then 停止, in the first row; the one all the soldiers are in is
-      // lit. 進攻 and 撤退 both ask where to (D-059: 撤退 「跟攻擊一樣」). 取消即堅守 (D-054):
-      // while they advance or retreat, or while the spot is being picked, the same button
-      // reads 取消 and stops them where they are, holding.
+      // 攻擊／移動／堅守 (D-050; D-094 renamed 進攻、撤退), then 停止, in the first row; the one all
+      // the soldiers are in is lit. 攻擊 and 移動 both ask where to (D-059). 取消即堅守 (D-054):
+      // while they attack or move, or while the spot is being picked, the same button reads 取消
+      // and stops them where they are, holding.
       const counts = orderCounts(view, sel.units);
       const advancing = mode === "advance" || (mode === "normal" && allIn(view, sel.units, "advance"));
       const retreating = mode === "retreat" || (mode === "normal" && allIn(view, sel.units, "retreat"));
       if (counts !== null) {
-        // 進攻紅、撤退藍 (D-080); 堅守 stays as it was.
+        // 攻擊紅、移動藍 (D-080); 堅守 stays as it was.
         const advance = advancing
-          ? button(this.el, "取消進攻", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
-          : button(this.el, "進攻", "點地面", () => this.host.setMode("advance"), ORDER_TONE.advance);
+          ? button(this.el, "取消攻擊", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
+          : button(this.el, "攻擊", "點地面或敵人", () => this.host.setMode("advance"), ORDER_TONE.advance);
         if (advancing) advance.classList.add("active");
       }
       const retreat = retreating
-        ? button(this.el, "取消撤退", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
-        : button(this.el, "撤退", "點地面", () => this.host.retreat(), ORDER_TONE.retreat);
+        ? button(this.el, "取消移動", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
+        : button(this.el, "移動", "點地面", () => this.host.retreat(), ORDER_TONE.retreat);
       if (retreating) retreat.classList.add("active");
       if (counts !== null) {
         const hold = button(this.el, "堅守", "原地不動", () => {
@@ -769,15 +768,11 @@ export class CommandArea {
           this.host.notify(`已${to}。${FORMATION_TEXT[loose ? "loose" : "close"][0]}`);
         }, "wide");
       }
+      // 整理隊形 (D-095, the user: 「常常跑一跑法師就跑到前排」): the soldiers re-form where they
+      // are, spearmen in front, mages behind, facing the nearest enemy seen (game.ts reform()).
+      if (soldiers.length > 1) button(this.el, "整理隊形", "槍兵在前", () => this.host.reform(), "secondary");
       if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
-      if (types.has(UnitType.Mage)) {
-        const mages = sel.units.filter((id) => view.unitType(id) === UnitType.Mage);
-        const cast = button(this.el, mode === "cast" ? "取消晶砲" : "晶砲", "魔晶 5", () => this.host.setMode(mode === "cast" ? "normal" : "cast"));
-        if (mode === "cast") cast.classList.add("active");
-        const on = mages.every((id) => view.unitAutocast(id));
-        // 「自動施放：關」 broke into two lines in one column: the state goes under the name.
-        button(this.el, "自動施放", on ? "目前：開" : "目前：關", () => this.host.command({ c: "autocast", u: mages, on: !on }), "secondary");
-      }
+      // No 晶砲 or 自動施放 (D-095: 「晶泡的按鈕可以拿掉了」): mages always fire on their own.
       // 駐守 (D-080): spearmen go and stand guard at our outpost.
       if (outpostSlots(view.rules) > 0 && sel.units.some((id) => view.unitType(id) === POST_TYPE)) {
         const picking = mode === "post";
