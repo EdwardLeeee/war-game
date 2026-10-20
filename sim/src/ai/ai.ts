@@ -411,12 +411,13 @@ const STAGE_DIST = 16;
 /** Whether they gather first (measurements turn it off for the baseline; the game always has it on). */
 export const STAGING = { on: true };
 /**
- * D-089, normal (being measured): in the last minutes of an AI-against-AI game it goes for the enemy main city with
- * `assault` soldiers (from 6 minutes before the end, and in the last 4, with `endgame`); after an attack on the
- * enemy main city ground down, it goes again only with `failed` percent of those that set out then (0: as before),
- * but in the last 4 minutes.
+ * D-089, normal: in the last minutes of an AI-against-AI game it goes for the enemy main city with `assault` soldiers
+ * (from 6 minutes before the end, and in the last 4, with `endgame`); after an attack on the enemy main city ground
+ * down, it goes again only with `failed` percent of those that set out then (0: as before), but in the last 4 minutes.
+ * Measured (scratch run 39463615390, fixed map, normal against normal, 100 games each): draws 33 and 36 (seeds 1-50,
+ * 51-100) with `failed` 0, 7 and 6 with 120; a bigger `assault` (25) alone 35 and 39.
  */
-export const SIEGE = { assault: 15, endgame: 8, failed: 0 };
+export const SIEGE = { assault: 15, endgame: 8, failed: 120 };
 /** Gathered: this share (percent) of those that set out within STAGE_NEAR cells of it, or STAGE_WAIT ticks after the first got there, or STAGE_MAX after setting out. */
 const STAGE_SHARE = 70;
 const STAGE_NEAR = 6;
@@ -2060,6 +2061,8 @@ export interface HardPlan {
   farmerFood: number;
   /** D-086 A3: wood or food under WOOD_SHORT with food, wood and gold together RICH or more counts as wood short (false: as before). */
   shortEither: boolean;
+  /** D-089: after its front broke off from the enemy main city, it marches on it again only with this percent of those that set out then (0: as before), but at the end of an AI game. */
+  cityAgain: number;
   /**
    * D-086 B: the network's weights (net.ts) for its big-picture choices; null: its own rules, as before.
    * Only learn/ and scratch branches set them (docs/research/2026-10-ai-nn.md).
@@ -2119,6 +2122,7 @@ export const HARD: HardPlan = {
   peekFirst: 0,
   farmerFood: 0,
   shortEither: false,
+  cityAgain: 0,
   net: null,
   netMarch: 14,
   netFarmers: 12,
@@ -2244,6 +2248,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let setOut = 0;
   let stageFirst = -1;
   let staged = true;
+  /** D-089 (plan.cityAgain): how many set out on the last march that broke off from the enemy main city. */
+  let cityFailed = 0;
   /** D-086 B: the network's choices at the last think (null: off), its soldiers then, its losses and the enemy soldiers it saw fall (ticks), the enemy city's hp last seen. */
   const netOn = plan.net !== null || plan.netLog !== undefined;
   let netChoice: number[] | null = null;
@@ -3519,6 +3525,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // Forts by the front too strong for it (D-081; not the siege's): it breaks off as from a stronger enemy.
           const byFront = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, fc.x, fc.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, front));
           if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0) || byFront.length > 0))) {
+            cityFailed = armyAtStart;
             remember(front, byFront);
             counterReady = false;
             razing = -1;
@@ -3616,8 +3623,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const strong = armyWorth * 100 >= believed * plan.pushRatio;
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
+        // D-089 (plan.cityAgain): not again with fewer than broke off last time, but at the end of an AI game.
+        const notLess = endgame || plan.cityAgain <= 0 || army.length * 100 >= cityFailed * plan.cityAgain;
         let hardGo =
           (mem.known !== Known.None || endgame || assault) &&
+          notLess &&
           (endgame
             ? army.length >= ENDGAME_ARMY
             : assault

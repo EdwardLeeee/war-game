@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan, STAGING, stagePoint } from "../src/ai/ai.ts";
+import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan, SIEGE, STAGING, stagePoint } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
@@ -2105,3 +2105,26 @@ test("D-089: the gathering point is open ground it knows, out of enemy forts' re
   assert.ok(r === null || (r.x - p!.x) ** 2 + (r.y - p!.y) ** 2 > 10 * 10, "out of the tower's reach");
   assert.equal(staging(() => stagePoint({ placement }, { size: n, mode: "fixed" }, [], { x: 95, y: 25 }, enemy, rank)), null, "already that near: none");
 });
+
+test("D-089 (SIEGE.failed): after an attack on the enemy main city is ground down, normal goes again only with 120% of those that set out", () => {
+  const again = (failed: number) => {
+    const was = SIEGE.failed;
+    SIEGE.failed = failed;
+    try {
+      const { g, ai, ids, s0, s1 } = marchOnBase();
+      kill(g, ids.slice(0, 20)); // 10 of the 30 left: breaks off
+      assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "breaks off");
+      // 40 at home now: the full army for the base (at most 37), and 40 is 133% of the 30 that set out.
+      for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 6), s0.cellY - 4 - Math.trunc(k / 6));
+      g.w.tick += 10;
+      g.fog.update(g.w);
+      return ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length >= 30 && c.x === s1.cellX && c.y === s1.cellY);
+    } finally {
+      SIEGE.failed = was;
+    }
+  };
+  assert.equal(again(120), true, "120%: 40 of 30 is enough, it goes");
+  assert.equal(again(200), false, "200%: 40 of 30 is not");
+  assert.equal(again(0), true, "off: it goes, as before");
+});
+
