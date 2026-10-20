@@ -20,7 +20,7 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
-import { enemyTooClose, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
+import { enemyTooClose, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
@@ -44,6 +44,7 @@ import {
   CELL,
   type CommandBody,
   type ContinueFailure,
+  dir16,
   type FromWorker,
   type GameOverReason,
   type MapMode,
@@ -1728,10 +1729,11 @@ export class Game implements GestureHost {
 
   /**
    * 整理隊形 (D-095): the soldiers selected re-form where they are, spearmen in front, ranged next,
-   * mages last, at their spacing, facing the way reform.ts picks. A walk of one cell that way (the
-   * simulation lays a walk's formation out facing its way); with nothing to face, the simulation's
-   * own re-forming in place, which keeps the way they face now. Not with an enemy within
-   * REFORM_CLEAR_CELLS (reform.ts): a line says why, and nothing is sent.
+   * mages last, at their spacing, facing the way reform.ts picks: standing together, the
+   * simulation's re-forming in place with that `face`; spread out, a walk of one cell that way
+   * (the simulation lays a walk's formation out facing its way), which gathers them; with nothing
+   * to face, the re-forming in place without `face`, which keeps the way they face now. Not with
+   * an enemy within REFORM_CLEAR_CELLS (reform.ts): a line says why, and nothing is sent.
    */
   reform(): void {
     const view = this.view;
@@ -1752,11 +1754,12 @@ export class Game implements GestureHost {
     const tick = view.header?.[H.tick] ?? 0;
     const last = soldiers.map((id) => this.lastSent.get(id)).find((d) => d !== undefined) ?? null;
     const { dir, from } = reformFacing(centre, inSight, [...this.sightings.values()], tick, last, this.enemyCity(view));
-    if (dir === null) {
-      // Keep the way they face: the formation command with the spacing they have re-forms in place (PROTOCOL.md 第三輪).
-      const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
-      this.command({ c: "formation", u: soldiers, loose });
-    } else {
+    // The formation command re-forms them in place at the spacing most of them have (PROTOCOL.md 第三輪): the way they face now, or `face`.
+    const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
+    if (dir === null) this.command({ c: "formation", u: soldiers, loose });
+    else if (oneCluster(at)) this.command({ c: "formation", u: soldiers, loose, face: dir16(Math.round(dir.x * 1024), Math.round(dir.y * 1024)) });
+    else {
+      // Spread out (spearmen gone after the enemy): a walk of one cell gathers them into one.
       const c = reformCell(centre, dir);
       this.command({ c: "retreat", u: soldiers, x: c.x, y: c.y });
     }

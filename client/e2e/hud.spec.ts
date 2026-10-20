@@ -841,7 +841,7 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await expect(panel).not.toContainText("隊形");
 });
 
-test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；走開到看不到敵人後，面向剛才看到敵人的地方往那邊走一格（移動）", async ({ page }, info) => {
+test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；看不到敵人時面向剛才看到敵人的地方：站在一起原地排（face），分散時往那邊走一格集合（移動）", async ({ page }, info) => {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const ids = await ownIds(page, [1, 2, 3]);
   await selectForCommands(page, ids);
@@ -862,12 +862,20 @@ test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；走
   const centre = { x: ours.reduce((n, u) => n + u.cx + 0.5, 0) / ours.length, y: ours.reduce((n, u) => n + u.cy + 0.5, 0) / ours.length };
   expect(centre).toEqual({ x: 13, y: 65.5 });
   await reform.tap();
-  // None in sight: they face where enemies were seen a moment ago (east), a walk (移動: the simulation
-  // lays its formation out facing the way it walks, spearmen in front) one cell that way.
+  // None in sight: they face where enemies were seen a moment ago (east, a little south). Standing
+  // together: the simulation re-forms them in place facing that way (D-095 B).
   await expect(toast(page, "整理隊形：槍兵在前，面向剛才看到敵人的地方")).toBeVisible();
   const order = await lastOrder(page);
-  expect(order).toMatchObject({ c: "retreat", u: ids, y: 65 });
-  expect(order?.x, "a cell east of the middle (13 or 14: the way is east, a little south)").toBeGreaterThanOrEqual(13);
+  expect(order).toMatchObject({ c: "formation", u: ids, loose: false });
+  expect([0, 1], "east, or a step south of it").toContain(order?.face);
+
+  // Spread out (the spearmen 6 cells off, as after a chase): a walk of one cell east gathers them into one formation.
+  const spread = [[11, 64], [12, 64], [13, 64], [14, 64], [11, 65], [12, 65], [11, 71], [12, 71], [13, 71], [14, 71], [11, 72], [12, 72]].map(([x, y]) => ({ x, y }));
+  await place(page, ids, spread);
+  await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id) && u.cy >= 71).length).toBe(6);
+  const mark = (await sent(page)).length;
+  await reform.tap();
+  await expect.poll(async () => (await sent(page)).slice(mark).filter((c) => c.auto !== true).at(-1)).toMatchObject({ c: "retreat", u: ids, x: 13, y: 68 });
 });
 
 test("隊形：編隊裡超過一半是散開時，補進來的新兵也送散開（D-027）", async ({ page }) => {
