@@ -183,6 +183,9 @@ def scene_of(k, art, ref):
 
 def board(k, art, ref, cost):
     sc = scene_of(k, art, ref)
+    if k < 3:                                     # the style-test release's backgrounds (common/pack_style.py)
+        OUT.mkdir(parents=True, exist_ok=True)
+        sc.save(OUT / f"scene-v{k}_x3.png", optimize=True)
     W = max(sc.width + 2 * boards.M, 1900)
     name, what = NAMES[k]
     text = f"版本 {k}「{name}」：{what}\n{cost}"
