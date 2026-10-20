@@ -132,14 +132,19 @@ for (const look of ["a", "b"] as const) {
     const check = watchErrors(page);
     await start(page, look);
     const map = page.locator(".map-btn");
-    // Two places far apart.
+    // Two places far apart. An alert lasts 6 s (ALERT_MS): on a slow CI runner the checks below
+    // took longer than that (run 39449356968), so each check hits them afresh first.
     const [spear] = await own(page, 1);
-    await hit(page, { id: spear.id, cx: 80, cy: 20 }, FOE);
-    await hit(page, { id: spear.id, cx: 60, cy: 40 }, FOE);
+    const hitTwo = async () => {
+      await hit(page, { id: spear.id, cx: 80, cy: 20 }, FOE);
+      await hit(page, { id: spear.id, cx: 60, cy: 40 }, FOE);
+    };
+    await hitTwo();
     await expect.poll(async () => (await left(page)).places).toBe(2);
     await expect(map.locator(".badge")).toHaveText("2");
     await expect(map).toHaveAttribute("aria-label", "地圖：2 處被攻擊");
     // Flashing: lit and not, 0.4 s each.
+    await hitTwo();
     const seen = new Set<boolean>();
     for (let i = 0; i < 12 && seen.size < 2; i++) {
       seen.add(await map.evaluate((e) => e.classList.contains("alarm")));
@@ -147,6 +152,7 @@ for (const look of ["a", "b"] as const) {
     }
     expect([...seen].sort()).toEqual([false, true]);
     // The lit one for the picture: 減少動態效果 keeps it so.
+    await hitTwo();
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(map).toHaveClass(/\balarm\b/);
     await picture(page, info, `r6-22-map-alarm-${look}`);
