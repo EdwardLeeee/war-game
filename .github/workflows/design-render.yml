@@ -14,7 +14,7 @@ on:
         description: "round2, round3, round4, round5, production, b1, r7, buildings-atlas or release"
         default: "round5"
       tag:
-        description: "release only: the tag, art-vN or style-test-N (design/release/<tag>.json lists the source runs)"
+        description: "release only: the tag, art-vN (design/release/<tag>.json lists the source runs)"
         default: ""
       publish:
         description: "release only: true publishes the GitHub Release (main only); false only packs, as an artifact"
@@ -268,10 +268,10 @@ jobs:
       # release-sha256.txt of https://github.com/ARM-software/astc-encoder/releases/tag/5.7.0
       ASTCENC_SHA256: "6c6b299b17608e1ee74db9c491cdc793b12b2b104a4b52222e358d78ae0662a9"
     steps:
-      - name: A new art-vN or style-test-N; publishing only from main
+      - name: A new art-vN; publishing only from main
         run: |
-          if ! [[ "$TAG" =~ ^(art-v|style-test-)[0-9]+$ ]]; then
-            echo "::error::tag must be art-vN or style-test-N, got '$TAG'"; exit 1
+          if ! [[ "$TAG" =~ ^art-v[0-9]+$ ]]; then
+            echo "::error::tag must be art-vN, got '$TAG'"; exit 1
           fi
           if [ "$PUBLISH" != "true" ]; then
             echo "publish=$PUBLISH: pack only, nothing is published"; exit 0
@@ -295,12 +295,8 @@ jobs:
 
       - name: Download the source artifacts and pack
         run: |
-          if [[ "$TAG" == style-test-* ]]; then      # R7 (D-092): the realism versions side by side for the client
-            python3 design/r7/common/pack_style.py --tag "$TAG" --work "$RUNNER_TEMP/release" --commit "$GITHUB_SHA"
-          else
-            python3 design/release/pack.py --tag "$TAG" --work "$RUNNER_TEMP/release" \
-              --astcenc "$RUNNER_TEMP/astcenc/bin/astcenc-sse4.1" --commit "$GITHUB_SHA"
-          fi
+          python3 design/release/pack.py --tag "$TAG" --work "$RUNNER_TEMP/release" \
+            --astcenc "$RUNNER_TEMP/astcenc/bin/astcenc-sse4.1" --commit "$GITHUB_SHA"
 
       - name: Keep the packed files (in case publishing fails)
         uses: actions/upload-artifact@v4
