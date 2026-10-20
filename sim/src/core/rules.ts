@@ -339,6 +339,18 @@ export const DODGE = { on: true, margin: 256, farmers: false };
  * The unit column it keeps (avenge) is in the hash only while it is on.
  */
 export const AVENGE = { on: true, reach: 8 * CELL };
+/**
+ * Shooting back on the way (D-095; the user: attack-move is 「路上遇到敵人就打」): a player's
+ * soldier on a move, not on hold, with no enemy within AGGRO_RANGE and no squad fight to join,
+ * that an enemy unit hit in the last RETARGET_EVERY ticks from within `reach` of it goes for
+ * that unit while its owner sees it (a mage shows itself when it fires, REVEAL_CAST) and it is
+ * within `leash` of where the soldier was when it turned; then on with the move. Its mates
+ * follow as they fight together (SQUAD). Arrows of buildings and shots from soldiers hiding in
+ * one do not count, so an army is not drawn among towers (D-081). A retreat never fights. The
+ * unit column it keeps (fireBack) is in the hash only while it is on, and so is hitById, which
+ * it reads.
+ */
+export const FIRE_BACK = { on: true, reach: 9 * CELL, leash: 8 * CELL };
 /** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
 export const SHORT_CANNON = { on: true, range: 7 * CELL };
 /**

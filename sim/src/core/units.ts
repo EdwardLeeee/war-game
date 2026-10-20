@@ -35,6 +35,7 @@ import {
   AVENGE,
   CANNON,
   DODGE,
+  FIRE_BACK,
   HOME_GUARD,
   COUNTER_ATTACK,
   MAGE_BOUNTY,
@@ -247,6 +248,23 @@ export class UnitSystem {
       }
     }
     return bestId;
+  }
+
+  /**
+   * Shooting back on a move (FIRE_BACK): the enemy unit that hit unit i in the last
+   * RETARGET_EVERY ticks, if i's owner sees it, it stands within FIRE_BACK.reach of i and it does
+   * not hide in a building (buildings' arrows leave no unit to go for); else -1.
+   */
+  private shooter(w: World, fog: Fog, i: number): number {
+    const u = w.units.col;
+    if (w.tick - u.lastHurt[i] > RETARGET_EVERY) return -1;
+    const a = u.hitById[i];
+    const as = a >= 0 ? w.unit(a) : -1;
+    if (as < 0 || u.owner[as] === u.owner[i] || u.action[as] === Action.Garrisoned) return -1;
+    if (!this.sees(fog, u.owner[i], u.x[as], u.y[as], w.size)) return -1;
+    const dx = u.x[as] - u.x[i];
+    const dy = u.y[as] - u.y[i];
+    return dx * dx + dy * dy <= FIRE_BACK.reach * FIRE_BACK.reach ? a : -1;
   }
 
   /**
@@ -1021,6 +1039,14 @@ export class UnitSystem {
       // A soldier without a squad hits back at what hit it or a friend (COUNTER_ATTACK); a squad's
       // soldiers fight together instead (SQUAD).
       if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT && u.squad[i] === 0 && COUNTER_ATTACK.on) tid = this.counterAttack(w, fog, i);
+      // Shot on a move from further off (FIRE_BACK, D-095): it turns where it is.
+      if (tid < 0 && order === Order.Move && FIRE_BACK.on && u.stance[i] !== Stance.Hold && u.owner[i] < PLAYER_COUNT && u.fireBack[i] < 0) {
+        u.fireBack[i] = this.shooter(w, fog, i);
+        if (u.fireBack[i] >= 0) {
+          u.anchorX[i] = u.x[i];
+          u.anchorY[i] = u.y[i];
+        }
+      }
     }
     // A cannon shot sent it after the mage (AVENGE, round 8): while it has no order, sees the
     // mage, and the mage is within AVENGE.reach of its place; hold stance too.
@@ -1035,6 +1061,27 @@ export class UnitSystem {
       } else {
         tid = m;
         avenging = true;
+      }
+    }
+    // After the unit that shot it on a move (FIRE_BACK): while still on the move, it sees the
+    // shooter, and the shooter is within FIRE_BACK.leash of where it turned; then on with the move.
+    // Once within AGGRO_RANGE the shooter is just an enemy on the way.
+    if (FIRE_BACK.on && u.fireBack[i] >= 0) {
+      const m = u.fireBack[i];
+      const ms = order === Order.Move && !gone(m) ? w.unit(m) : -1;
+      const ax = ms >= 0 ? u.x[ms] - u.anchorX[i] : 0;
+      const ay = ms >= 0 ? u.y[ms] - u.anchorY[i] : 0;
+      const dx = ms >= 0 ? u.x[ms] - u.x[i] : 0;
+      const dy = ms >= 0 ? u.y[ms] - u.y[i] : 0;
+      const aggro = Math.max(AGGRO_RANGE, info.range);
+      if (ms >= 0 && dx * dx + dy * dy <= aggro * aggro) {
+        u.fireBack[i] = -1;
+        if (tid < 0) tid = m;
+      } else if (ms < 0 || ax * ax + ay * ay > FIRE_BACK.leash * FIRE_BACK.leash) {
+        u.fireBack[i] = -1;
+        if (tid === m) tid = -1;
+      } else if (tid < 0) {
+        tid = m;
       }
     }
     u.target[i] = tid;

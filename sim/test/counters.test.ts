@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AVENGE, CANNON, COUNTER_ATTACK, DODGE, RETREAT_OWN_SPEED, REVEAL_CAST, SHIELD, SHORT_CANNON, UNITS } from "../src/core/rules.ts";
+import { AVENGE, CANNON, COUNTER_ATTACK, DODGE, FIRE_BACK, RETREAT_OWN_SPEED, REVEAL_CAST, SHIELD, SHORT_CANNON, UNITS } from "../src/core/rules.ts";
 import { damage } from "../src/core/units.ts";
 import { CELL_SHIFT, Stance, UnitType } from "../src/protocol.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
@@ -265,19 +265,16 @@ test("counter-attack: mirror-image blocks shelled by mirror-image mages charge a
   assert.ok(charged > 0, "the block went for the mage");
 }));
 
-test("counter-attacks off: hitById stays out of the hash", () => {
-  const saved = COUNTER_ATTACK.on;
-  COUNTER_ATTACK.on = false;
-  try {
+test(
+  "counter-attacks and shooting back on a move (FIRE_BACK, D-095) off: hitById stays out of the hash",
+  switchedOff([COUNTER_ATTACK, FIRE_BACK], () => {
     const g = emptyGame();
     const id = put(g, 0, UnitType.Spearman, 20, 60);
     const h = g.hash();
     g.w.units.col.hitById[slotOf(g, id)] = 5;
     assert.equal(g.hash(), h);
-  } finally {
-    COUNTER_ATTACK.on = saved;
-  }
-});
+  }),
+);
 
 test("ranged hit a mage's shield x3: 15 a shot (was 7, x3/2)", () => {
   assert.equal(damage(UNITS[UnitType.Ranged].attack, UnitType.Ranged, SHIELD), 15);

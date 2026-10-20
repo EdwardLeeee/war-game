@@ -40,6 +40,9 @@ export const UNIT_COLS = [
   // The mage a cannon shot sent this soldier after (AVENGE, round 8), -1 none; in the hash only
   // while AVENGE is on.
   "avenge",
+  // The unit that shot this soldier on a move and that it goes for (FIRE_BACK, D-095), -1 none;
+  // in the hash only while FIRE_BACK is on.
+  "fireBack",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 /** Unit types counted per player in `trained` and `lost` (UnitType 0..5; the hash leaves out cavalry while CAVALRY is off). */
@@ -382,6 +385,7 @@ export class World {
     c.hitCause[s] = HitCause.None;
     c.hitById[s] = -1;
     c.avenge[s] = -1;
+    c.fireBack[s] = -1;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
     c.autoBuild[s] = -1;
