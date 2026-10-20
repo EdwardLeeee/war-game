@@ -2,12 +2,15 @@
 // art-v6: R7's five CC0 ground photos from Poly Haven (design/r7, D-092), each checked against the
 // sha256 ui pinned (design/r7/common/textures_sha.json), recoloured on the GPU as R7 does
 // (render/ground-draw.ts look()). Downloads are kept in .art-cache/ground-r7/ (never committed);
-// the set goes to public/art/ground-dev/ (git ignores it). Local only: CI draws the test page's
-// stand-ins (scripts/make-test-atlas.ts).
+// the set goes to public/art/ground-dev/ (git ignores it). CI's tests draw the test page's
+// stand-ins (scripts/make-test-atlas.ts); the Pages build fetches this set too, so ui and the user
+// can see the ground on the iPhone (?test=1&ground=real, ceo 2026-10-21), until art-v6 ships ui's.
+// A download that fails or does not match its pin never fails the build: a warning, and that
+// build has no development set (ground=real then draws the two greens).
 //   node scripts/fetch-ground-dev.ts
 
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GROUND_FORMAT, type GroundJson, type GroundTexture } from "../src/art/ground.ts";
@@ -45,13 +48,20 @@ async function fetchChecked(name: string, want: string): Promise<string> {
 }
 
 mkdirSync(CACHE, { recursive: true });
-mkdirSync(OUT, { recursive: true });
 const layers: GroundTexture[] = [];
-for (const t of R7) {
-  const file = await fetchChecked(t.name, t.sha256);
-  copyFileSync(file, join(OUT, `${t.id}.jpg`));
-  layers.push({ id: t.id, file: `${t.id}.jpg`, tile_m: t.tile_m, mean: t.mean, tint: t.tint, contrast: t.contrast });
-  console.log(`ground dev: ${t.id} ← ${t.name} ✓`);
+try {
+  for (const t of R7) {
+    const file = await fetchChecked(t.name, t.sha256);
+    mkdirSync(OUT, { recursive: true });
+    copyFileSync(file, join(OUT, `${t.id}.jpg`));
+    layers.push({ id: t.id, file: `${t.id}.jpg`, tile_m: t.tile_m, mean: t.mean, tint: t.tint, contrast: t.contrast });
+    console.log(`ground dev: ${t.id} ← ${t.name} ✓`);
+  }
+} catch (err) {
+  // No half set: without it the page draws the two greens.
+  rmSync(OUT, { recursive: true, force: true });
+  console.log(`::warning::ground dev: ${err instanceof Error ? err.message : String(err)}; this build has no development ground (?ground=real draws the two greens)`);
+  process.exit(0);
 }
 // ui's numbers (2026-10-21); the noise and macro are made by the page.
 const ground: GroundJson = {
