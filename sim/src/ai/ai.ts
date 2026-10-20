@@ -1988,6 +1988,11 @@ export const HARD_POP: Partial<HardPlan> = {
   // 200; cavalry (cavalry) and a faster ratio (woodShift) were measured and left off (no stronger, with or without these).
   woodFarmers: 8,
   governFrom: 12,
+  // D-086 A3 (docs/research/2026-10-ai-late.md section 9): farmers by a spot attacked far from home go home and back
+  // to work 30 s after; and before a march with no enemy seen for a minute, one goes to look first. Against main's hard
+  // 173 games to 145 over seeds 1-50 and 101-150 (main against itself 81 to 70), draws 108 to main's 113 of 800.
+  hideFar: true,
+  peekFirst: 1,
 };
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];

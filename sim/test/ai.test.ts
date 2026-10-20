@@ -569,7 +569,7 @@ function siege(fallen: number, defenders: number): CommandBody[] {
   const ids: number[] = [];
   for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6)));
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+  const ai = hardAi(g, { dodge: false, pushArmy: 24, peekFirst: 0 });
   const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
   assert.deepEqual(go && [go.x, go.y], [s1.cellX, s1.cellY], "marches on the enemy base");
   ids.forEach((id, k) => {
@@ -606,7 +606,7 @@ test("hard: soldiers trained while the army is away wait at home and follow six 
     const s1 = w.map.spawns[1];
     for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
     g.fog.update(w);
-    const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+    const ai = hardAi(g, { dodge: false, pushArmy: 24, peekFirst: 0 });
     ai.think(buildView(g, 0));
     const fresh: number[] = [];
     const toBase = () => {
@@ -901,7 +901,7 @@ test("round 7: hard's siege when soldiers can hide in the city: ground down it b
     const s1 = w.map.spawns[1];
     for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
     g.fog.update(w);
-    const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+    const ai = hardAi(g, { dodge: false, pushArmy: 24, peekFirst: 0 });
     ai.think(buildView(g, 0));
     const fresh: number[] = [];
     for (let k = 0; k < 6; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3 + k, s0.cellY - 3));
@@ -948,7 +948,7 @@ test("round 8: hard marches on the enemy base with 41â€“47 soldiers, not the 31â
     g.fog.update(w);
     // Several games: the number is drawn per game.
     return [1, 2, 3, 4, 5, 6].map((seed) =>
-      createAi(0, seed, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty: "hard", hard: { dodge: false } }, 0)
+      createAi(0, seed, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty: "hard", hard: { dodge: false, peekFirst: 0 } }, 0)
         .think(buildView(g, 0))
         .some((c) => c.c === "move" && c.u.length === n && c.x === s1.cellX && c.y === s1.cellY),
     );
@@ -1030,7 +1030,7 @@ test("random maps: hard marches on the enemy only once it has seen where it is, 
     put(g, 0, UnitType.Spearman, c.x, c.y);
   }
   g.fog.update(w);
-  const ai = createAi(0, 1, { ...aiKnowledge(w.map, 0, 0, "hard"), hard: { dodge: false, pushArmy: 6, townArmy: 99, bigArmy: 99 } }, 0);
+  const ai = createAi(0, 1, { ...aiKnowledge(w.map, 0, 0, "hard"), hard: { dodge: false, pushArmy: 6, townArmy: 99, bigArmy: 99, peekFirst: 0 } }, 0);
   // Moves of the army far from home (not to its waiting place by the city).
   const marches = () => (ai.think(buildView(g, 0)).filter((c) => c.c === "move" && c.u.length >= 6) as { x: number; y: number }[]).filter((c) => (c.x - home.x) ** 2 + (c.y - home.y) ** 2 > 30 * 30);
   assert.equal(marches().length, 0, "nothing seen: no march");
@@ -1179,7 +1179,7 @@ test("D-080: hard's army away at the enemy base, the soldiers waiting at home pu
   const s1 = w.map.spawns[1];
   for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, pushArmy: 24 });
+  const ai = hardAi(g, { dodge: false, pushArmy: 24, peekFirst: 0 });
   assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 30 && c.x === s1.cellX && c.y === s1.cellY), "off to the enemy base");
   const home = spawnCentre(w.map.frames[0], s0);
   const fresh = [0, 1, 2, 3, 4].map((k) => put(g, 0, UnitType.Spearman, home.x + 3 + k, home.y - 3));
@@ -1290,7 +1290,7 @@ function fortsOnTheWay(towers: number, hidden: boolean) {
     put(g, 0, UnitType.Farmer, 33 + 3 * k, 59 - 3 * k);
   }
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99 });
+  const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0 });
   return { g, w, ai, s1: w.map.spawns[1], ids };
 }
 
@@ -1694,3 +1694,42 @@ test("D-086 A (plan.governFrom, governSpare, governNearest): from that minute a 
   assert.equal(chosen("nearest", rich, {}), TownChoice.Govern, "hard as it plays: governed");
   assert.equal(withPopulation(false, () => chosen("nearest", rich, {})), TownChoice.Plunder, "population rules off: plundered");
 });
+
+// --- D-086 A3: looking before a march -----------------------------------------------------------------------
+
+test("D-086 A3 (plan.peekFirst): no enemy soldier seen for a minute, one goes to look and the march waits; seen, it marches", () => {
+  const g = emptyGame();
+  const w = g.w;
+  for (const t of w.map.towns) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    w.townTimer[t.id] = 4800;
+  }
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 10 + (k % 6), s0.cellY - 10 - Math.trunc(k / 6));
+  g.fog.update(w);
+  const march = (out: CommandBody[]) => out.some((c) => c.c === "move" && c.u.length >= 29 && c.x === s1.cellX && c.y === s1.cellY);
+  assert.ok(march(hardAi(g, { dodge: false, pushArmy: 24, peekFirst: 0 }).think(buildView(g, 0))), "off: marches at once, as before");
+  const ai = hardAi(g, { dodge: false, pushArmy: 24, peekFirst: 1 });
+  const first = ai.think(buildView(g, 0));
+  const look = first.find((c) => c.c === "retreat" && c.u.length === 1 && c.x === s1.cellX && c.y === s1.cellY) as { u: number[] } | undefined;
+  assert.ok(look !== undefined, "one goes to look");
+  assert.ok(!march(first), "the march waits");
+  assert.equal(ai.stats?.().peekSent, 1);
+  // Halfway there it sees enemy soldiers: the one comes home, and the army marches.
+  const scout = slotOf(g, look!.u[0]);
+  const mx = (s0.cellX + s1.cellX) >> 1;
+  const my = (s0.cellY + s1.cellY) >> 1;
+  w.units.col.x[scout] = (mx << 10) + 512;
+  w.units.col.y[scout] = (my << 10) + 512;
+  for (let k = 0; k < 3; k++) put(g, 1, UnitType.Spearman, mx + 2 + k, my);
+  w.tick += 10;
+  g.fog.update(w);
+  const second = ai.think(buildView(g, 0));
+  assert.equal(ai.stats?.().peekSaw, 1, "it saw them");
+  w.tick += 10;
+  assert.ok(march(second) || march(ai.think(buildView(g, 0))), "then it marches");
+});
+
