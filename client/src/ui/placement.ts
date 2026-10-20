@@ -58,14 +58,19 @@ export class Placement {
 export const WALL_TEXT = "城牆上不能蓋";
 /** Why a building may not go on a gate's lane (D-089, ceo 2026-10-20: 城門一直開著，誰都能走). */
 export const GATE_LANE_TEXT = "城門要留給人走，不能蓋";
+/** Why a building may not go on a ford or a bridge (R6-51, ceo 2026-10-20: crossings stay open). */
+export const CROSSING_TEXT = "橋和淺灘要留給人走，不能蓋";
 
 /**
- * Why a building may not go there because of a castle (D-089), from the simulation's own marks
- * and rule: on a wall (Wall), or on a gate's lane (checkPlacement's GateLane); null otherwise.
+ * Why a building may not go there, from the simulation's own marks and rule: on a gate's lane
+ * (checkPlacement's GateLane, D-089), on a ford or a bridge (its Crossing, R6-51), on a castle's
+ * wall (Wall); null otherwise (the other reasons, or none).
  */
-export function castleReason(grid: PlacementGrid, building: Pick<BuildingInfo, "type" | "size">, cellX: number, cellY: number): string | null {
-  // The simulation's own answer first: a footprint on a lane and a wall is GateLane (PROTOCOL.md 3.5).
-  if (checkPlacement(grid, building, cellX, cellY) === Reject.GateLane) return GATE_LANE_TEXT;
+export function placeReason(grid: PlacementGrid, building: Pick<BuildingInfo, "type" | "size">, cellX: number, cellY: number): string | null {
+  // The simulation's own answer first, in its order: GateLane, then Crossing (PROTOCOL.md section 7).
+  const r = checkPlacement(grid, building, cellX, cellY);
+  if (r === Reject.GateLane) return GATE_LANE_TEXT;
+  if (r === Reject.Crossing) return CROSSING_TEXT;
   return onWall(grid, building, cellX, cellY) ? WALL_TEXT : null;
 }
 

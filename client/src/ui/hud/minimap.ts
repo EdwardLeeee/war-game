@@ -17,14 +17,13 @@ import {
 } from "../../sim.ts";
 import { TILE_PX } from "../../tuning.ts";
 import type { GameView } from "../../view/view.ts";
-import { townLook } from "../../render/world.ts";
+import { TERRAIN_RGB, townLook } from "../../render/world.ts";
 import { ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint } from "../../render/atlas.ts";
 
 export const MINIMAP_CSS_PX = 112;
 /** How often the minimap redraws (ms). */
 const REDRAW_MS = 200;
 // Shared, not made anew for each cell on every redraw (a 129 × 129 random map has 16 641).
-const ROCK_RGB = [110, 102, 92] as const;
 const GROUND_RGB = [86, 118, 66] as const;
 
 const rgb = (c: number): [number, number, number] => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
@@ -100,8 +99,8 @@ export class Minimap {
     const d = (this.img as ImageData).data;
     const fog = view.fog;
     for (let i = 0; i < size * size; i++) {
-      // The rocks the player knows (D-074: a random map's only once explored).
-      const base = view.rocks[i] === 1 ? ROCK_RGB : GROUND_RGB;
+      // The ground the player knows (D-074: a random map's only once explored; R6-51: water, fords, bridges, cliffs).
+      const base = TERRAIN_RGB[view.ground[i]] ?? GROUND_RGB;
       const f = fog === null ? Fog.Unexplored : fog[i];
       const k = f === Fog.Visible ? 1 : f === Fog.Explored ? 0.55 : 0;
       d[i * 4] = base[0] * k;

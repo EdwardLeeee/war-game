@@ -72,7 +72,7 @@ import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { formalUi } from "../ui/formal.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText, type ToastKind } from "../ui/overlays.ts";
-import { castleReason, Placement, towerLandOk } from "../ui/placement.ts";
+import { Placement, placeReason, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
@@ -1873,9 +1873,9 @@ export class Game implements GestureHost {
     // 箭樓 off TowerLand (round 7): why the spot is red comes first.
     const offTowerLand = view.placement !== null && !towerLandOk(view.placement, p.info, p.cellX, p.cellY);
     const landText = outpostSlots(view.rules) > 0 ? TOWER_LAND_TEXT_OUTPOST : TOWER_LAND_TEXT;
-    // On a castle's wall or a gate's lane (D-089): those first, the simulation's own reasons.
-    const castle = view.placement === null ? null : castleReason(view.placement, p.info, p.cellX, p.cellY);
-    this.overlays.promptWarning(castle ?? (offTowerLand ? landText : town === null ? null : MILITIA_WARNING));
+    // On a gate's lane, a ford or a bridge, or a castle's wall (D-089, R6-51): those first, the simulation's own reasons.
+    const blocked = view.placement === null ? null : placeReason(view.placement, p.info, p.cellX, p.cellY);
+    this.overlays.promptWarning(blocked ?? (offTowerLand ? landText : town === null ? null : MILITIA_WARNING));
   }
 
   private showPlaceButtons(): void {

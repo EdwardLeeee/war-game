@@ -25,6 +25,7 @@ import {
   TownChoice,
   TownSize,
   TownState,
+  Terrain,
   UNIT_STRIDE,
   UnitField as U,
   UnitType,
@@ -49,10 +50,25 @@ const BAR_H = 3;
 /** How dark the fog is: never explored, explored but out of sight (0-255). */
 const FOG_ALPHA = { unexplored: 255, explored: 140 };
 // Ground colours, shared rather than made anew for each cell: on a random map the terrain is
-// painted again whenever a rock is explored (D-074), 16 641 cells each time.
-const ROCK_RGB = [104, 96, 86] as const;
+// painted again whenever more of it is explored (D-074), 16 641 cells each time.
 const GROUND_RGB = [86, 116, 64] as const;
 const GROUND_LIGHT_RGB = [92, 123, 69] as const;
+type Rgb = readonly [number, number, number];
+/**
+ * The ground a Terrain value, flat colours until war-game-ui's tiles (R6-51: art-v5); open ground
+ * and a castle's cells (drawn by castle-draw.ts) are grass. The minimap takes the same.
+ */
+export const TERRAIN_RGB: Readonly<Record<number, Rgb>> = {
+  [Terrain.Blocked]: [104, 96, 86],
+  [Terrain.Water]: [46, 88, 124],
+  [Terrain.Ford]: [88, 128, 140],
+  [Terrain.BridgeNS]: [128, 94, 58],
+  [Terrain.BridgeEW]: [128, 94, 58],
+  [Terrain.Cliff]: [66, 58, 50],
+};
+/** A bridge's rails, along the way it is crossed (R6-51: its value says which). */
+const RAIL_COLOR = 0x3e2a18;
+const RAIL_W = TILE_PX * 0.14;
 
 export interface TownLook {
   label: string;
@@ -175,10 +191,12 @@ export class WorldRenderer {
   private fogVersion = -1;
   private readonly terrainCanvas: HTMLCanvasElement;
   private readonly terrainPixels: ImageData;
-  /** The rocks drawn (D-074: a random map's grow as they are explored). */
-  private rocksVersion = 0;
-  /** Terrain repaints after a rock was explored (random map) and their CPU time in ms, for the test page. */
+  /** The ground drawn (D-074: a random map's grows as it is explored). */
+  private groundVersion = 0;
+  /** Terrain repaints after more ground was explored (random map) and their CPU time in ms, for the test page. */
   readonly terrainRepaints = { count: 0, totalMs: 0, maxMs: 0 };
+  /** Bridges' rails over the ground's colours. */
+  private readonly rails = new Graphics();
   private nodesVersion = -1;
   private readonly nodeSprites = new Map<number, { sprite: Sprite; cell: number }>();
   private readonly unitPool: UnitSprites[] = [];
@@ -287,7 +305,7 @@ export class WorldRenderer {
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
-    this.groundInner.addChild(ground, this.castleBlocks, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
+    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
     this.root.addChild(this.groundOuter, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
@@ -371,27 +389,43 @@ export class WorldRenderer {
     }
   }
 
-  /** Ground and the rocks the player knows (GameView.rocks), one texel per cell. */
+  /** The ground the player knows (GameView.ground), one texel per cell, and the bridges' rails. */
   private paintTerrain(): void {
     const size = this.view.map.size;
+    const g = this.view.ground;
     const d = this.terrainPixels.data;
+    const rails = this.rails.clear();
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const c = this.view.rocks[y * size + x] === 1 ? ROCK_RGB : (x + y) % 2 === 0 ? GROUND_RGB : GROUND_LIGHT_RGB;
+        const t = g[y * size + x];
+        const c = TERRAIN_RGB[t] ?? ((x + y) % 2 === 0 ? GROUND_RGB : GROUND_LIGHT_RGB);
         const o = (y * size + x) * 4;
         d[o] = c[0];
         d[o + 1] = c[1];
         d[o + 2] = c[2];
         d[o + 3] = 255;
+        // A rail on each side the bridge ends: west and east of a north-south one, north and south of an east-west one.
+        if (t !== Terrain.BridgeNS && t !== Terrain.BridgeEW) continue;
+        const bridge = (cx: number, cy: number) => cx >= 0 && cy >= 0 && cx < size && cy < size && g[cy * size + cx] === t;
+        const x0 = x * TILE_PX;
+        const y0 = y * TILE_PX;
+        if (t === Terrain.BridgeNS) {
+          if (!bridge(x - 1, y)) rails.rect(x0, y0, RAIL_W, TILE_PX);
+          if (!bridge(x + 1, y)) rails.rect(x0 + TILE_PX - RAIL_W, y0, RAIL_W, TILE_PX);
+        } else {
+          if (!bridge(x, y - 1)) rails.rect(x0, y0, TILE_PX, RAIL_W);
+          if (!bridge(x, y + 1)) rails.rect(x0, y0 + TILE_PX - RAIL_W, TILE_PX, RAIL_W);
+        }
       }
     }
+    rails.fill(RAIL_COLOR);
     (this.terrainCanvas.getContext("2d") as CanvasRenderingContext2D).putImageData(this.terrainPixels, 0, 0);
-    this.rocksVersion = this.view.rocksVersion;
+    this.groundVersion = this.view.groundVersion;
   }
 
-  /** Rocks explored since the last frame (random map): the terrain texture again. */
+  /** Ground explored since the last frame (random map): the terrain texture again. */
   private drawTerrain(): void {
-    if (this.view.rocksVersion === this.rocksVersion) return;
+    if (this.view.groundVersion === this.groundVersion) return;
     const t0 = performance.now();
     this.paintTerrain();
     this.terrainTexture.source.update();

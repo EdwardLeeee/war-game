@@ -205,7 +205,7 @@ export function gameHook(game: Game): GameHook {
           for (let x = cx - r; x <= cx + r; x++) {
             if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r || x < 1 || y < 1 || x >= size - 1 || y >= size - 1) continue;
             const i = y * size + x;
-            if (view.rocks[i] === 1 || view.map.terrain[i] !== Terrain.Open || view.nodeAt[i] >= 0 || taken[i] === 1 || (explored && view.fog[i] === 0)) continue;
+            if (view.ground[i] !== Terrain.Open || view.map.terrain[i] !== Terrain.Open || view.nodeAt[i] >= 0 || taken[i] === 1 || (explored && view.fog[i] === 0)) continue;
             return { x, y };
           }
         }
@@ -265,7 +265,7 @@ export function gameHook(game: Game): GameHook {
     astc: () => game.lastAstc,
     mapMode: () => game.view?.map.mode ?? "fixed",
     knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],
-    knownRocks: () => game.view?.rocks.reduce((a, b) => a + b, 0) ?? 0,
+    knownRocks: () => game.view?.ground.reduce((n, t) => n + (t === Terrain.Blocked ? 1 : 0), 0) ?? 0,
     frameTimes: (clear = false) => {
       const s = game.frameTimes.summary();
       if (clear) game.frameTimes.clear();

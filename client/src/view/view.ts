@@ -71,10 +71,13 @@ export class GameView implements IntentWorld {
   readonly knownTowns = new Map<number, TownSpot>();
   /** Bumped when a town becomes known. */
   townsVersion = 0;
-  /** 1 per cell known to be rock (D-074: on a random map, the explored ones). */
-  readonly rocks: Uint8Array;
-  /** Bumped when a rock becomes known. */
-  rocksVersion = 0;
+  /**
+   * The ground the player knows, a Terrain value a cell (R6-51: rock, castle walls, water, fords,
+   * bridges, cliffs; D-074: on a random map the explored cells, Open elsewhere).
+   */
+  readonly ground: Uint8Array;
+  /** Bumped when the known ground changes. */
+  groundVersion = 0;
   /** learnRocks' cells under a known building, kept between snapshots (it runs on each one). */
   private built: Uint8Array | null = null;
   selection: { units: number[]; building: number | null } = { units: [], building: null };
@@ -105,10 +108,9 @@ export class GameView implements IntentWorld {
     this.map = map;
     this.rules = rules;
     this.nodeAt = new Int32Array(map.size * map.size).fill(-1);
-    this.rocks = new Uint8Array(map.size * map.size);
+    // On a random map the terrain is all open ground: the rest comes with exploration (learnGround).
+    this.ground = map.terrain.slice();
     for (const town of map.towns) this.knownTowns.set(town.id, town);
-    // On a random map the terrain is all open ground: rocks come with exploration (learnRocks).
-    if (!this.randomMap) for (let i = 0; i < this.rocks.length; i++) this.rocks[i] = map.terrain[i] === Terrain.Blocked ? 1 : 0;
   }
 
   /** A random map (D-074): towns, rocks and the enemy come into view only once explored. */
@@ -133,10 +135,10 @@ export class GameView implements IntentWorld {
       if (old !== undefined) this.nodeAt[old[N.cellY] * size + old[N.cellX]] = -1;
       this.nodes.set(id, row);
       if (row[N.amount] > 0) this.nodeAt[row[N.cellY] * size + row[N.cellX]] = id;
-      // A node's cell taken for rock before its row came (random map): it is not rock.
-      if (this.rocks[row[N.cellY] * size + row[N.cellX]] === 1) {
-        this.rocks[row[N.cellY] * size + row[N.cellX]] = 0;
-        this.rocksVersion++;
+      // A node's cell taken for rock before its row came (the fake world's random map): it is not rock.
+      if (this.ground[row[N.cellY] * size + row[N.cellX]] === Terrain.Blocked) {
+        this.ground[row[N.cellY] * size + row[N.cellX]] = Terrain.Open;
+        this.groundVersion++;
       }
     }
     if (rows.length > 0) this.nodesVersion++;
@@ -146,7 +148,9 @@ export class GameView implements IntentWorld {
     }
     if (snap.placement !== null) this.placement = { size, cells: snap.placement };
     this.learnTowns(snap.towns);
-    if (this.randomMap && snap.placement !== null) this.learnRocks(snap);
+    if (snap.terrain !== undefined && snap.terrain !== null) this.learnGround(snap.terrain);
+    // The fake world sends no terrain: its random map's rocks from the placement grid.
+    else if (this.randomMap && snap.terrain === undefined && snap.placement !== null) this.learnRocks(snap);
     this.pruneSelection();
   }
 
@@ -184,10 +188,23 @@ export class GameView implements IntentWorld {
     }
   }
 
+  /** The ground as the simulation tells it (R6-51: Snapshot.terrain, with each fog update). */
+  private learnGround(terrain: Uint8Array): void {
+    const g = this.ground;
+    if (terrain.length !== g.length) return;
+    let changed = false;
+    for (let i = 0; i < g.length; i++) {
+      if (g[i] === terrain[i]) continue;
+      g[i] = terrain[i];
+      changed = true;
+    }
+    if (changed) this.groundVersion++;
+  }
+
   /**
-   * Rocks explored on a random map (D-074): the placement grid blocks a cell for a rock, a
-   * resource node or a known building; what is neither of the other two is rock. Kept once known
-   * (rocks never move).
+   * The fake world's rocks explored on a random map (D-074; the simulation sends Snapshot.terrain):
+   * the placement grid blocks a cell for a rock, a resource node or a known building; what is
+   * neither of the other two is rock. Kept once known (rocks never move).
    */
   private learnRocks(snap: Snapshot): void {
     const size = this.map.size;
@@ -203,19 +220,20 @@ export class GameView implements IntentWorld {
         for (let x = b[o + B.cellX]; x < b[o + B.cellX] + s; x++) if (x >= 0 && y >= 0 && x < size && y < size) built[y * size + x] = 1;
       }
     }
+    const g = this.ground;
     let changed = false;
     for (let i = 0; i < cells.length; i++) {
       // A building's cells taken for rock before its row came: they are not rock.
-      if (built[i] === 1 && this.rocks[i] === 1) {
-        this.rocks[i] = 0;
+      if (built[i] === 1 && g[i] === Terrain.Blocked) {
+        g[i] = Terrain.Open;
         changed = true;
       }
       // A castle's wall (D-089) is Blocked too, and drawn as a wall: not rock.
-      if (this.rocks[i] === 1 || (cells[i] & PlaceBit.Blocked) === 0 || (cells[i] & PlaceBit.Wall) !== 0 || this.nodeAt[i] >= 0 || built[i] === 1) continue;
-      this.rocks[i] = 1;
+      if (g[i] === Terrain.Blocked || (cells[i] & PlaceBit.Blocked) === 0 || (cells[i] & PlaceBit.Wall) !== 0 || this.nodeAt[i] >= 0 || built[i] === 1) continue;
+      g[i] = Terrain.Blocked;
       changed = true;
     }
-    if (changed) this.rocksVersion++;
+    if (changed) this.groundVersion++;
   }
 
   get header(): Int32Array | null {

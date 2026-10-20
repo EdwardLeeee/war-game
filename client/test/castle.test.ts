@@ -119,7 +119,7 @@ test("留守算城鎮裡的兵：牆以內才算，站在城門上不算（PROTO
 });
 
 test("放建築：牆上寫「城牆上不能蓋」，城門的通道（城門、門外一格、門內一格）寫「城門要留給人走，不能蓋」，都照模擬的標記和規則", async () => {
-  const { castleReason, GATE_LANE_TEXT, WALL_TEXT } = await import("../src/ui/placement.ts");
+  const { placeReason, GATE_LANE_TEXT, WALL_TEXT } = await import("../src/ui/placement.ts");
   const { PlaceBit, BuildingType } = await import("../src/sim.ts");
   const n = 16;
   const cells = new Uint8Array(n * n);
@@ -128,10 +128,10 @@ test("放建築：牆上寫「城牆上不能蓋」，城門的通道（城門�
   cells[5 * n + 8] = PlaceBit.Gate | PlaceBit.GateLane;
   const grid = { size: n, cells };
   const house = { type: BuildingType.House, size: 2 };
-  assert.equal(castleReason(grid, house, 4, 4), WALL_TEXT);
-  assert.equal(castleReason(grid, house, 7, 4), GATE_LANE_TEXT);
-  assert.equal(castleReason(grid, house, 10, 10), null, "open ground");
+  assert.equal(placeReason(grid, house, 4, 4), WALL_TEXT);
+  assert.equal(placeReason(grid, house, 7, 4), GATE_LANE_TEXT);
+  assert.equal(placeReason(grid, house, 10, 10), null, "open ground");
   // On the wall and the lane at once: the simulation answers GateLane.
   cells[5 * n + 6] = PlaceBit.Gate | PlaceBit.GateLane;
-  assert.equal(castleReason(grid, house, 5, 5), GATE_LANE_TEXT);
+  assert.equal(placeReason(grid, house, 5, 5), GATE_LANE_TEXT);
 });
