@@ -13,7 +13,7 @@ import body2
 import lib
 import look
 
-TEAM_TUNIC = ()                    # R8: the units whose tunic is in the player's colour (decided by the measurement)
+TEAM_TUNIC = ("spear_e", "bow_e")  # R8: the tunic in the player's colour: the East robe (design/r8/blender/east_r8.py)
 GROUND_RES = ("leafy_grass", "aerial_grass_rock", "stony_dirt_path", "gravel_ground_01", "brown_mud_rocks_01")
 
 
@@ -38,6 +38,10 @@ def apply(u, kind, version):
         import r8
         if kind in r8.BOWS:
             r8.bow_string(u, kind)
+    if os.environ.get("R8_DEBUG"):
+        for ob in lib.ALL_PARTS:
+            if ob.type == "MESH" and not ob.hide_render:
+                print("R8 part", ob.name, [m.name for m in ob.data.materials if m])
     look.rest_coords(sks)
     for ob in bpy.data.objects:
         if ob.type == "MESH" and "rest" not in ob.data.attributes:

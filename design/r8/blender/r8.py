@@ -210,8 +210,12 @@ def spear_two_hands(u, kind):
 
 def before_extend(u, kind):
     """R8 changes that anims.extend must see (it keeps the unit's own pose for the deaths' first frame)."""
+    import east_r8
     if kind == "spear_e":
+        east_r8.dress_spear(u)
         spear_two_hands(u, kind)
+    elif kind == "bow_e":
+        east_r8.dress_bow(u)
 
 
 def rim(energy=2.6):

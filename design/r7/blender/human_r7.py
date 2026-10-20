@@ -15,6 +15,7 @@ colours (a fitted tunic and trousers under the armour, which stays ours).
 import addon_utils
 import importlib
 import math
+import os
 
 import bpy
 import numpy as np
@@ -304,6 +305,8 @@ def dress(u, kind, helmet_scale=0.78, team_tunic=False):
         rest = base[len(kind) + 1:]
         if rest in ("body", "head", "beard") or rest.startswith(("head_", "hand", "thumb", "knuckle")):
             ob.hide_render = True
+            if ob in lib.ALL_PARTS:               # lib.set_pass shows every listed part again (R8: the old head showed)
+                lib.ALL_PARTS.remove(ob)
             hidden.append(rest)
     for ch in rig.j["head"].children:             # the helmet's parts hang on the head joint (units2.east_helmet2)
         if not ch.hide_render and ch.type == "MESH":
@@ -311,5 +314,15 @@ def dress(u, kind, helmet_scale=0.78, team_tunic=False):
             ch.scale = ch.scale * helmet_scale
             helmet.append(ch.name)
     print("R7 v2", kind, "hid", hidden, "helmet", helmet)
+    if os.environ.get("R8_DEBUG"):                # the real head's box in the old head's frame (helmets are made there)
+        hw = W[:, c["head"]] > 0.5
+        hi = rig.j["head"].matrix_world.inverted()
+        P = np.array([hi @ Vector(v) for v in co[hw]]) / helmet_scale
+        print("R8 head box", P.min(0).round(3).tolist(), P.max(0).round(3).tolist())
+        for z0 in np.arange(0.3, 1.5, 0.1):          # the body's girth by height, for the garments over it
+            trunk = W[:, [c["hips"], c["torso"], c["hipR"], c["hipL"], c["kneeR"], c["kneeL"]]].sum(1) > 0.5
+            b = co[(co[:, 2] >= z0) & (co[:, 2] < z0 + 0.1) & trunk]
+            if len(b):
+                print("R8 girth z %.1f x %.3f y %.3f..%.3f" % (z0, np.abs(b[:, 0]).max(), b[:, 1].min(), b[:, 1].max()))
     rig.pose()
     return sks, [bodyob, cloth]
