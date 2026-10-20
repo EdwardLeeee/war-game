@@ -224,6 +224,20 @@ for _k, *_ in _r651.KINDS:
                                   name=f"tpatch_{_k}", footprint=[_r651.W_CELLS, _r651.D_CELLS])]
     CAMERA[f"r651_{_k}"] = proj.OBLIQUE
 
+# art-v5 (R6-51, the user 2026-10-20: 「全部照整張地圖加」, the forests ordinary trees): the terrain tiles, each frame
+# named terrain_<kind>... (atlas_b1 terrain/terrain.json; the Terrain values are core's, core/d089-obstacles)
+import terrain_tiles as _tt  # noqa: E402
+_V5 = ([dict(kind="trock", culture="E", opts=dict(variant=v), name=f"terrain_rock_v{v}") for v in range(6)]
+       + [dict(kind="tcliff_post", culture="E", opts=dict(variant=v), name=f"terrain_cliff_post_v{v}") for v in range(2)]
+       + [dict(kind="tcliff_arm", culture="E", opts=dict(direction=d), name=f"terrain_cliff_arm_{d}") for d in ("E", "S", "SE", "SW")]
+       + [dict(kind="twater", culture="E", opts=dict(mask=m, plan=_tt.water_polygons(m)), name=f"terrain_water_m{m}") for m in range(1, 16)]
+       + [dict(kind="tford", culture="E", opts=dict(variant=v), name=f"terrain_ford_v{v}") for v in range(2)]
+       + [dict(kind="tbridge_deck", culture="E", opts=dict(axis=a), name=f"terrain_bridge_deck_{a}") for a in ("ns", "ew")]
+       + [dict(kind="tbridge_rail", culture="E", opts=dict(axis=a), name=f"terrain_bridge_rail_{a}") for a in ("x", "y")])
+for _i in range(0, len(_V5), 9):
+    TARGETS[f"prod_terrain_{_i // 9}"] = _V5[_i:_i + 9]
+    CAMERA[f"prod_terrain_{_i // 9}"] = proj.OBLIQUE
+
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
