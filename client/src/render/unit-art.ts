@@ -3,9 +3,10 @@
 // out as a texture cut from its page with its anchor (docs/sprite-atlas.md sections 4–6, 12).
 // Which frame to show is art/spec.ts's and art/structures.ts's.
 
-import { Assets, Rectangle, Texture } from "pixi.js";
+import { ImageSource, Rectangle, Texture } from "pixi.js";
 import { ATLAS_NAMES, type AtlasJson, type EffectsJson, type FrameRect, parseAtlas, parseEffects } from "../art/spec.ts";
 import { type BuildingsJson, type NodesJson, parseBuildings, parseNodes, type Side } from "../art/structures.ts";
+import type { LoadRecorder } from "../lab/load-times.ts";
 
 export type ArtLayer = "color" | "team" | "shadow" | "fx" | "shield";
 
@@ -52,40 +53,65 @@ const PAGES: Record<ArtLayer, (a: AtlasJson) => string[]> = {
 };
 const LAYERS: ArtLayer[] = ["color", "team", "shadow", "fx", "shield"];
 
-async function json(url: string): Promise<unknown> {
+async function json(url: string, times: LoadRecorder | null): Promise<unknown> {
+  const start = performance.now();
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  return res.json();
+  const text = await res.text();
+  times?.file(url, start, performance.now(), text.length, null);
+  return JSON.parse(text);
+}
+
+/**
+ * A page: downloaded on the page's own thread, so that the browser's record of it (D-091's load
+ * times) and a service worker's cache see it; decoded by the browser off that thread
+ * (createImageBitmap), into a texture as PixiJS's own loader makes one. As fast as PixiJS's
+ * loader in CI's WebKit (median 4.6 s against 4.7 s for the 63 files at 3 倍); handing PixiJS the
+ * download instead (a blob's URL) cost a copy, 5.3 s.
+ */
+async function page(url: string, times: LoadRecorder | null): Promise<Texture> {
+  const start = performance.now();
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const blob = await res.blob();
+  const downloaded = performance.now();
+  const bitmap = await createImageBitmap(blob);
+  const source = new ImageSource({ resource: bitmap, alphaMode: "premultiply-alpha-on-upload", label: url });
+  times?.file(url, start, downloaded, blob.size, performance.now());
+  return new Texture({ source, label: url });
 }
 
 /**
  * The atlases under `base` (…/x3/ or …/x2/: units/<name>/, effects/), every page loaded up
- * front so that the game never waits for one in the middle of a fight.
+ * front so that the game never waits for one in the middle of a fight. `times`: each file's
+ * download and decoding, for the load times (D-091).
  */
-export async function loadUnitArt(base: string, label: string, names: readonly string[] = ATLAS_NAMES): Promise<UnitArt> {
+export async function loadUnitArt(base: string, label: string, names: readonly string[] = ATLAS_NAMES, times: LoadRecorder | null = null): Promise<UnitArt> {
   const atlases = new Map<string, AtlasJson>();
   const pages = new Map<string, Texture[]>();
-  const urls: string[] = [];
+  /** Every page, to let go of them all. */
+  const all: Texture[] = [];
+  const load = async (list: string[]): Promise<Texture[]> => {
+    const got = await Promise.all(list.map((u) => page(u, times)));
+    all.push(...got);
+    return got;
+  };
   await Promise.all(
     names.map(async (name) => {
       const dir = `${base}units/${name}/`;
-      const a = parseAtlas(await json(`${dir}${name}.json`));
+      const a = parseAtlas(await json(`${dir}${name}.json`, times));
       atlases.set(name, a);
       for (const layer of LAYERS) {
         const files = PAGES[layer](a);
-        const list = files.map((f) => `${dir}${f}`);
-        urls.push(...list);
-        pages.set(`${name}|${layer}`, await Promise.all(list.map((u) => Assets.load<Texture>(u))));
+        pages.set(`${name}|${layer}`, await load(files.map((f) => `${dir}${f}`)));
       }
     }),
   );
   let effects: EffectsJson | null = null;
   let effectPages: Texture[] = [];
   try {
-    effects = parseEffects(await json(`${base}effects/effects.json`));
-    const list = effects.pages.map((f) => `${base}effects/${f}`);
-    urls.push(...list);
-    effectPages = await Promise.all(list.map((u) => Assets.load<Texture>(u)));
+    effects = parseEffects(await json(`${base}effects/effects.json`, times));
+    effectPages = await load(effects.pages.map((f) => `${base}effects/${f}`));
   } catch {
     effects = null;
   }
@@ -94,16 +120,12 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
   const buildingPages = new Map<string, Texture[]>();
   let nodes: NodesJson | null = null;
   const nodePages = new Map<string, Texture[]>();
-  const pagesOf = async (dir: string, files: string[]): Promise<Texture[]> => {
-    const list = files.map((f) => `${dir}${f}`);
-    urls.push(...list);
-    return Promise.all(list.map((u) => Assets.load<Texture>(u)));
-  };
+  const pagesOf = (dir: string, files: string[]): Promise<Texture[]> => load(files.map((f) => `${dir}${f}`));
   await Promise.all([
     ...(["E", "W"] as const).map(async (side) => {
       let b: BuildingsJson;
       try {
-        b = parseBuildings(await json(`${base}buildings/buildings_${side}.json`));
+        b = parseBuildings(await json(`${base}buildings/buildings_${side}.json`, times));
       } catch {
         return;
       }
@@ -113,7 +135,7 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
     (async () => {
       let n: NodesJson;
       try {
-        n = parseNodes(await json(`${base}nodes/nodes.json`));
+        n = parseNodes(await json(`${base}nodes/nodes.json`, times));
       } catch {
         return;
       }
@@ -129,7 +151,7 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
     label,
     atlases,
     effects,
-    pages: urls.length,
+    pages: all.length,
     pxPerM,
     frame(atlas, layer, name) {
       const key = `${atlas}|${layer}|${name}`;
@@ -178,7 +200,12 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
     destroy() {
       for (const f of cache.values()) f?.texture.destroy(false);
       cache.clear();
-      for (const u of urls) void Assets.unload(u);
+      // The pages, and their decoded pictures at once (Safari keeps them besides the GPU's copy).
+      for (const t of all) {
+        const bitmap = t.source.resource as ImageBitmap | null;
+        t.destroy(true);
+        bitmap?.close();
+      }
     },
   };
 }
