@@ -400,6 +400,69 @@ export function enemyForts(view: PlayerView, player: number, rules: Rules): Fort
 }
 
 /** Squared distance (cells) from (x, y) to a fort's footprint. */
+/**
+ * D-089 (ceo 2026-10-21: core's #239 + #245 traces, the long ways round obstacles and through gates): the stronger
+ * side's attacks reached the enemy main city strung out along the way, at most 10-12 there at once, and some 80 fell
+ * there in the last 8 minutes of a drawn game. So those that set out first gather STAGE_DIST cells out from the enemy
+ * main city on the side they come from: the nearest open cell to that point that it knows to be open ground (on a
+ * random map, explored) and out of the enemy forts' reach; null when there is none, or it is that near already.
+ */
+const STAGE_DIST = 16;
+/** Whether they gather first (measurements turn it off for the baseline; the game always has it on). */
+export const STAGING = { on: true };
+/** Gathered: this share (percent) of those that set out within STAGE_NEAR cells of it, or STAGE_WAIT ticks after the first got there, or STAGE_MAX after setting out. */
+const STAGE_SHARE = 70;
+const STAGE_NEAR = 6;
+const STAGE_WAIT = 600;
+const STAGE_MAX = 3 * 1200;
+/** As many as a building can queue (no limit of its own). */
+const QUEUE_MOST = 99;
+/** Normal: soldiers trained after it set out wait at the gathering point and go on together once this many are there. */
+const STAGE_JOIN = 6;
+export function stagePoint(
+  view: { placement: Uint8Array },
+  map: { size: number; mode?: string },
+  forts: readonly Fort[],
+  from: { x: number; y: number },
+  enemy: { cellX: number; cellY: number },
+  rank: (x: number, y: number) => number,
+): { x: number; y: number } | null {
+  const n = map.size;
+  const dx = from.x - enemy.cellX;
+  const dy = from.y - enemy.cellY;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (!STAGING.on || d <= STAGE_DIST + 4) return null;
+  // Rock, walls, water and cliffs are Blocked in the view (the fixed map is known whole; a random one where explored).
+  const open = (x: number, y: number) => {
+    const c = view.placement[y * n + x];
+    return (c & PlaceBit.Blocked) === 0 && (map.mode !== "random" || (c & PlaceBit.Unexplored) === 0);
+  };
+  for (const k of [STAGE_DIST, STAGE_DIST + 4, STAGE_DIST - 4]) {
+    const px = enemy.cellX + Math.trunc((dx * k) / d);
+    const py = enemy.cellY + Math.trunc((dy * k) / d);
+    let best: { x: number; y: number } | null = null;
+    let bestD = 0;
+    let bestKey = 0;
+    for (let oy = -3; oy <= 3; oy++) {
+      for (let ox = -3; ox <= 3; ox++) {
+        const x = px + ox;
+        const y = py + oy;
+        if (x < 1 || y < 1 || x >= n - 1 || y >= n - 1 || !open(x, y)) continue;
+        if (forts.some((o) => fortDist2(o, x, y) <= (o.hits + 2) * (o.hits + 2))) continue;
+        const dd = ox * ox + oy * oy;
+        const key = rank(x, y);
+        if (best === null || dd < bestD || (dd === bestD && key < bestKey)) {
+          best = { x, y };
+          bestD = dd;
+          bestKey = key;
+        }
+      }
+    }
+    if (best !== null) return best;
+  }
+  return null;
+}
+
 export function fortDist2(f: Fort, x: number, y: number): number {
   const dx = Math.max(f.x - x, 0, x - (f.x + f.size - 1));
   const dy = Math.max(f.y - y, 0, y - (f.y + f.size - 1));
@@ -957,6 +1020,11 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let townTrips = 0;
   let ratioSet = "";
   let recalled = false;
+  /** D-089: where those that set out for the enemy base gather first (null: straight on), when it set out and the first got there, and whether they have gathered. */
+  let stage: { x: number; y: number } | null = null;
+  let setOut = 0;
+  let stageFirst = -1;
+  let staged = true;
   /** Soldier ids kept as the garrison of a governed or repairing town, per town. */
   const garrison = new Map<number, number[]>();
   /** Towns this AI has plundered: how often, and when last (it prefers governing a town it keeps coming back to). */
@@ -1238,17 +1306,21 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       let armyRoom = armyCap - (soldiers.length - guarding) - training;
       const spear = soldiers.filter((u) => u.type === UnitType.Spearman).length;
       const ranged = soldiers.filter((u) => u.type === UnitType.Ranged).length;
-      const mages = soldiers.filter((u) => u.type === UnitType.Mage).length;
-      const trainAt = (t: number, type: UnitType) => {
+      const trainAt = (t: number, type: UnitType, most = QUEUE_MOST) => {
         for (const b of done(t)) {
+          if (most <= 0) break;
           if (b.queue >= 2 || room <= 0 || armyRoom <= 0 || !afford(rules.units[type].cost)) continue;
           out.push({ c: "train", building: b.id, type, n: 1 });
           spend(rules.units[type].cost);
           room--;
           armyRoom--;
+          most--;
         }
       };
-      if (mages < rules.mageCap && res.crystal >= rules.units[UnitType.Mage].cost.crystal) trainAt(BuildingType.MageHall, UnitType.Mage);
+      // The mage cap counts mages queued too (D-089, ceo 2026-10-21: orders refused for the cap went up with the longer games).
+      // The scout counts too, if it is a mage (random maps).
+      const mageRoom = rules.mageCap - allSoldiers.filter((u) => u.type === UnitType.Mage).length - done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
+      if (mageRoom > 0 && res.crystal >= rules.units[UnitType.Mage].cost.crystal) trainAt(BuildingType.MageHall, UnitType.Mage, mageRoom);
       // About one soldier in four a horseman, once it has a stable (round 7).
       if (useCavalry) {
         if (foes.some((u) => u.type === UnitType.Ranged || u.type === UnitType.Mage)) sawShooters = true;
@@ -1724,11 +1796,37 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // fights what it meets) and the city once they are down. Told to attack the city from
           // afar, the soldiers streamed in one by one, ignored the defenders and were picked off
           // (normal against easy, 2026-10-01).
+          // D-089: those that set out gather outside first; those trained since wait there and go on STAGE_JOIN or more together.
+          const at = stage;
+          if (at !== null) {
+            const near = (u: { x: number; y: number }) => dist2(u.x, u.y, at.x, at.y) <= STAGE_NEAR * STAGE_NEAR;
+            if (!staged) {
+              const setters = soldiers.filter((u) => marched.has(u.id));
+              const by = setters.filter(near).length;
+              if (by > 0 && stageFirst < 0) stageFirst = tick;
+              if (by * 100 >= STAGE_SHARE * setters.length || (stageFirst >= 0 && tick - stageFirst >= STAGE_WAIT) || tick - setOut >= STAGE_MAX) staged = true;
+            }
+            const fresh = army.filter((u) => !marched.has(u.id) && armyIds.includes(u.id));
+            const ready = fresh.filter(near);
+            if (staged && ready.length >= STAGE_JOIN) {
+              for (const u of ready) marched.add(u.id);
+              armyAtStart += ready.length;
+            } else if (fresh.length > 0) {
+              const ids = fresh.map((u) => u.id);
+              const keep = armyIds.filter((id) => !ids.includes(id));
+              armyIds.length = 0;
+              armyIds.push(...keep);
+              const away = fresh.filter((u) => !near(u)).map((u) => u.id);
+              if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: at.x, y: at.y });
+            }
+          }
           const front = soldiers.filter((u) => marched.has(u.id));
           const fx = front.length === 0 ? cx : Math.trunc(front.reduce((a, u) => a + u.x, 0) / front.length);
           const fy = front.length === 0 ? cy : Math.trunc(front.reduce((a, u) => a + u.y, 0) / front.length);
           const there = dist2(fx, fy, enemyHome.cellX, enemyHome.cellY) <= 12 * 12;
-          if (enemyCity >= 0 && there) {
+          if (at !== null && !staged) {
+            send(at.x, at.y, "base");
+          } else if (enemyCity >= 0 && there) {
             if (tick - lastMove >= 200) {
               if (foesNear(enemyHome.cellX, enemyHome.cellY, 12) > 0) out.push({ c: "move", u: armyIds, x: enemyHome.cellX, y: enemyHome.cellY });
               else out.push({ c: "attack", u: armyIds, target: enemyCity });
@@ -1768,7 +1866,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           marchWorth = vsForts(army);
           marched.clear();
           for (const id of armyIds) marched.add(id);
-          send(enemyHome.cellX, enemyHome.cellY, "base");
+          // D-089: to the gathering point first, when there is one.
+          stage = stagePoint(view, know.map, forts, { x: cx, y: cy }, enemyHome, (x, y) => {
+            const f = frame(x, y);
+            return f.v * n + f.u;
+          });
+          setOut = tick;
+          stageFirst = -1;
+          staged = stage === null;
+          send(stage?.x ?? enemyHome.cellX, stage?.y ?? enemyHome.cellY, "base");
         } else if (!assault && townTime && army.length >= townArmy && open.length > 0 && strongEnough) {
           const pick = army.length >= 24 || open.length === 1 ? open[open.length - 1] : open[0];
           targetTown = pick[0];
@@ -2092,6 +2198,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const post = real(homeF.u + su * 4, homeF.v + sv * 4);
 
   let mode: HardMode = "home";
+  /** D-089: where the front gathers before the enemy main city (null: straight on), when it set out and the first got there, and whether it has gathered. */
+  let stage: { x: number; y: number } | null = null;
+  let setOut = 0;
+  let stageFirst = -1;
+  let staged = true;
   /** D-086 B: the network's choices at the last think (null: off), its soldiers then, its losses and the enemy soldiers it saw fall (ticks), the enemy city's hp last seen. */
   const netOn = plan.net !== null || plan.netLog !== undefined;
   let netChoice: number[] | null = null;
@@ -2662,17 +2773,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const spear = soldiers.filter((u) => u.type === UnitType.Spearman).length;
       const ranged = soldiers.filter((u) => u.type === UnitType.Ranged).length;
       const mages = soldiers.filter((u) => u.type === UnitType.Mage).length;
-      const trainAt = (t: number, type: UnitType) => {
+      const trainAt = (t: number, type: UnitType, most = QUEUE_MOST) => {
         for (const b of done(t)) {
+          if (most <= 0) break;
           if (b.queue >= 2 || room <= 0 || !afford(rules.units[type].cost)) continue;
           if (keepFood > 0 && res.food - reserve.food - rules.units[type].cost.food < keepFood) continue;
           out.push({ c: "train", building: b.id, type, n: 1 });
           spend(rules.units[type].cost);
           room--;
+          most--;
         }
       };
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
-      if (mages + hallQueue < rules.mageCap && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage);
+      // No more than the cap leaves room for, with those queued (D-089: two halls each queued one with one place left).
+      const mageRoom = rules.mageCap - allSoldiers.filter((u) => u.type === UnitType.Mage).length - hallQueue;
+      if (mageRoom > 0 && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage, mageRoom);
       // The mix answers what it has seen: a cannon shot kills a ranged unit but not a spearman, and
       // ranged units hit spearmen 2.5 times as hard.
       let share = spearBase;
@@ -3407,8 +3522,22 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             }
             reservesRazing = mine.id;
           } else reservesRazing = -1;
+          // D-089: the front gathers outside first.
+          const at = stage;
+          if (at !== null && !staged) {
+            const by = front.filter((u) => dist2(u.x, u.y, at.x, at.y) <= STAGE_NEAR * STAGE_NEAR).length;
+            if (by > 0 && stageFirst < 0) stageFirst = tick;
+            if (by * 100 >= STAGE_SHARE * front.length || (stageFirst >= 0 && tick - stageFirst >= STAGE_WAIT) || tick - setOut >= STAGE_MAX) staged = true;
+          }
           if (way !== undefined) {
             razeWith(frontIds, way);
+          } else if (at !== null && !staged) {
+            if (frontIds.length > 0 && (target.x !== at.x || target.y !== at.y || tick - lastMove >= 400)) {
+              out.push({ c: "move", u: frontIds, x: at.x, y: at.y });
+              lastMove = tick;
+              sent = true;
+              target = { x: at.x, y: at.y };
+            }
           } else if (enemyCity >= 0 && there) {
             if (tick - lastMove >= 100 && frontIds.length > 0) {
               // Defenders first (a move fights what it meets), then the city; those still on the way
@@ -3488,7 +3617,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           for (const u of army) marched.add(u.id);
           counterReady = false;
           reservesRazing = -1;
-          send(enemyHome.cellX, enemyHome.cellY, "base");
+          // D-089: to the gathering point first, when there is one.
+          stage = stagePoint(view, know.map, forts, ac, enemyHome, rank);
+          setOut = tick;
+          stageFirst = -1;
+          staged = stage === null;
+          send(stage?.x ?? enemyHome.cellX, stage?.y ?? enemyHome.cellY, "base");
           return;
         }
         // D-086 B: a town only as hard goes for one (the network's "wait" and a march it could not make stay home).

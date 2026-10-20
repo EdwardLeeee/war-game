@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan } from "../src/ai/ai.ts";
+import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan, STAGING, stagePoint } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
@@ -15,6 +15,10 @@ import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
 import { emptyGame, put, slotOf, switchedOff } from "./helpers.ts";
 import { createScriptedPlayer, planFor, SCRIPTED_THINK_EVERY } from "../src/ai/scripted-player.ts";
+
+// D-089: gathering outside the enemy main city first has its own tests (at the end); the tests before them
+// are about when and how it marches, and expect it to march straight on.
+STAGING.on = false;
 
 /** Units of a player as sortable strings in player 0's frame (x <-> y for player 1). */
 function units(g: Game, p: number): string {
@@ -1992,3 +1996,112 @@ test("D-086 A3: hard never changes an order after sending it (the log must repla
   assert.deepEqual(changed.map((x) => x.json).slice(0, 2), [], "orders as sent");
 });
 
+
+// --- D-089: gathering outside the enemy main city before the attack ----------------------------------
+
+/** Runs `f` with the gathering point on (the game always has it; the tests above turn it off). */
+function staging<T>(f: () => T): T {
+  STAGING.on = true;
+  try {
+    return f();
+  } finally {
+    STAGING.on = false;
+  }
+}
+
+/** The 30 spearmen of marchOnBase (a normal AI, or hard), towns in ruins, set out; what it sends first, and its gathering point. */
+function stagedMarch(difficulty: AiDifficulty) {
+  const g = emptyGame();
+  const w = g.w;
+  for (const t of w.map.towns) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    w.townTimer[t.id] = 4800;
+    put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+  }
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  const ids: number[] = [];
+  for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6)));
+  g.fog.update(w);
+  const know = { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty, ...(difficulty === "hard" ? { hard: { dodge: false, pushArmy: 24, peekFirst: 0 } } : {}) };
+  const ai = createAi(0, 1, know, 0, "balanced");
+  const first = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 30) as { x: number; y: number } | undefined;
+  return { g, w, ai, ids, s0, s1, first };
+}
+
+for (const difficulty of ["normal", "hard"] as AiDifficulty[]) {
+  test(`D-089 (${difficulty}): marching on the enemy base, those that set out gather some 16 cells out first, then go on together`, () =>
+    staging(() => {
+      const { g, w, ai, ids, s1, first } = stagedMarch(difficulty);
+      assert.ok(first !== undefined, "it sets out");
+      const d2 = (first!.x - s1.cellX) ** 2 + (first!.y - s1.cellY) ** 2;
+      assert.ok(d2 >= 12 * 12 && d2 <= 20 * 20, `to the gathering point, not the city (${first!.x},${first!.y})`);
+      const think = (ticks: number) => {
+        w.tick += ticks;
+        g.fog.update(w);
+        return ai.think(buildView(g, 0));
+      };
+      // On the way: still to the gathering point.
+      assert.ok(!think(400).some((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY), "not on to the city yet");
+      // 25 of the 30 by it: gathered, on to the city.
+      ids.forEach((id, k) => {
+        const s = slotOf(g, id);
+        const at = k < 25 ? { x: first!.x + (k % 5) - 2, y: first!.y + Math.trunc(k / 5) - 2 } : { x: first!.x - 20, y: first!.y + 20 };
+        w.units.col.x[s] = (at.x << 10) + 512;
+        w.units.col.y[s] = (at.y << 10) + 512;
+      });
+      const on = think(20);
+      assert.ok(on.some((c) => c.c === "move" && c.u.length >= 25 && c.x === s1.cellX && c.y === s1.cellY), "gathered: on to the city");
+    }));
+}
+
+test("D-089 (normal): soldiers trained after it set out wait at the gathering point and go on six or more together", () =>
+  staging(() => {
+    const { g, w, ai, ids, s0, s1, first } = stagedMarch("normal");
+    // Gathered and on to the city.
+    ids.forEach((id, k) => {
+      const s = slotOf(g, id);
+      w.units.col.x[s] = ((first!.x + (k % 6) - 3) << 10) + 512;
+      w.units.col.y[s] = ((first!.y + Math.trunc(k / 6) - 2) << 10) + 512;
+    });
+    w.tick += 20;
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    // Four newcomers at home: told to the gathering point, not the city.
+    const fresh: number[] = [];
+    for (let k = 0; k < 4; k++) fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 4 + k, s0.cellY - 4));
+    w.tick = Math.ceil((w.tick + 1) / 100) * 100;
+    g.fog.update(w);
+    const out = ai.think(buildView(g, 0));
+    assert.ok(out.some((c) => c.c === "move" && fresh.every((id) => c.u.includes(id)) && c.x === first!.x && c.y === first!.y), "newcomers to the gathering point");
+    assert.ok(!out.some((c) => c.c === "move" && fresh.some((id) => c.u.includes(id)) && c.x === s1.cellX && c.y === s1.cellY), "not on their own to the city");
+  }));
+
+test("D-089: the gathering point is open ground it knows, out of enemy forts' reach; none when already that near", () => {
+  const n = 128;
+  const placement = new Uint8Array(n * n);
+  const enemy = { cellX: 100, cellY: 20 };
+  const rank = (x: number, y: number) => y * n + x;
+  const from = { x: 20, y: 100 };
+  const p = staging(() => stagePoint({ placement }, { size: n, mode: "fixed" }, [], from, enemy, rank));
+  assert.ok(p !== null);
+  const d = Math.sqrt((p!.x - enemy.cellX) ** 2 + (p!.y - enemy.cellY) ** 2);
+  assert.ok(d >= 14 && d <= 18, `about 16 cells out (${d})`);
+  // Blocked there (a river, say): the nearest open cell instead; all blocked round both nearer and further: none at all.
+  placement[p!.y * n + p!.x] = 1;
+  const q = staging(() => stagePoint({ placement }, { size: n, mode: "fixed" }, [], from, enemy, rank));
+  assert.ok(q !== null && (q.x !== p!.x || q.y !== p!.y));
+  placement.fill(1);
+  assert.equal(staging(() => stagePoint({ placement }, { size: n, mode: "fixed" }, [], from, enemy, rank)), null);
+  // A random map: only explored ground.
+  placement.fill(2);
+  assert.equal(staging(() => stagePoint({ placement }, { size: n, mode: "random" }, [], from, enemy, rank)), null, "nothing explored there: none");
+  placement.fill(0);
+  // An enemy tower reaching it: further out or nearer, not under its arrows.
+  const tower = { id: 1, type: BuildingType.ArrowTower, x: p!.x, y: p!.y, size: 2, done: true, hits: 8, seen: true, occupied: false } as unknown as Fort;
+  const r = staging(() => stagePoint({ placement }, { size: n, mode: "fixed" }, [tower], from, enemy, rank));
+  assert.ok(r === null || (r.x - p!.x) ** 2 + (r.y - p!.y) ** 2 > 10 * 10, "out of the tower's reach");
+  assert.equal(staging(() => stagePoint({ placement }, { size: n, mode: "fixed" }, [], { x: 95, y: 25 }, enemy, rank)), null, "already that near: none");
+});
