@@ -104,6 +104,9 @@ export interface GameHook {
   mapMode(): string;
   knownTowns(): number[];
   knownRocks(): number;
+  /** The ground the player knows at a cell (R6-51: a Terrain value), and how many cells of each value. */
+  ground(x: number, y: number): number;
+  groundCounts(): Record<number, number>;
   /** The last frames' intervals and drawing times (ms); `clear` starts a new window. */
   frameTimes(clear?: boolean): { frames: number; gapMedian: number; gapP95: number; fps: number; drawMedian: number; drawP95: number; drawMax: number };
   /** Terrain repaints on exploring rock since the last clear (random map), their total and slowest CPU time (ms). */
@@ -266,6 +269,15 @@ export function gameHook(game: Game): GameHook {
     mapMode: () => game.view?.map.mode ?? "fixed",
     knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],
     knownRocks: () => game.view?.ground.reduce((n, t) => n + (t === Terrain.Blocked ? 1 : 0), 0) ?? 0,
+    ground: (x, y) => {
+      const v = game.view;
+      return v === null ? -1 : (v.ground[y * v.map.size + x] ?? -1);
+    },
+    groundCounts: () => {
+      const out: Record<number, number> = {};
+      for (const t of game.view?.ground ?? []) out[t] = (out[t] ?? 0) + 1;
+      return out;
+    },
     frameTimes: (clear = false) => {
       const s = game.frameTimes.summary();
       if (clear) game.frameTimes.clear();
