@@ -99,6 +99,15 @@ const saveStore = new SaveStore(openSaveDb());
 const loadTimes = new LoadTimes();
 if (params.loadTimes) new LoadTimesBox(loadTimes);
 
+/**
+ * The atlases kept on the phone (D-091, amending D-042): a service worker (public/sw.js) takes this
+ * build's art tag's files from its cache after the first time; the page and its code still come
+ * from the network every time, so a deploy is the new version at once.
+ */
+if (import.meta.env.PROD && __ART_TAG__ !== null && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register(`sw.js?tag=${encodeURIComponent(__ART_TAG__)}`).catch((err: unknown) => console.warn(`service worker: ${String(err)}`));
+}
+
 const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false, recordCode: code, logs: () => logs.list(), simBuild: __SIM_BUILD__, saved: () => saveStore.load(), lastSave: null, loadTimes: () => loadTimes.report };
 if (params.test) window.__proto = hook;
 

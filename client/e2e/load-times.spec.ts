@@ -1,12 +1,15 @@
 // 開一局要等多久 (D-091; the user 2026-10-20: 「我現在開一局新的都會等蠻久的ㄟ」): ?test=1&loadtimes=1
 // lists where starting a game spends its time, live while it loads and after, over everything;
 // the 量測 panel has it too. Three starts at 3 倍 (CI's numbers, not the iPhone's): the page just
-// opened, a second game on the same page (the atlases kept), and after a reload (vite preview's
-// cache headers are not GitHub Pages': a reference only).
+// opened, a second game on the same page (the atlases kept), and after a reload: the atlases
+// from the service worker's copy on the phone (public/sw.js).
 
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
 import type { LoadReport } from "../src/lab/load-times.ts";
 import { openLab, shot, watchErrors } from "./helpers.ts";
+
+// The atlases from the service worker's copy after the reload (the other tests block it).
+test.use({ serviceWorkers: "allow" });
 
 const report = (page: Page) => page.evaluate(() => window.__proto?.loadTimes() ?? null);
 
@@ -32,6 +35,9 @@ test("載入計時（D-091）：剛打開、同一頁再開一局、重新整理
   test.setTimeout(240_000);
   const check = watchErrors(page);
   await page.goto("./?test=1&loadtimes=1&art=x3");
+  // The service worker in charge before the first game, as when the player reads the start screen.
+  const sw = await page.evaluate(() => "serviceWorker" in navigator);
+  if (sw) await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 10_000 });
   await page.getByRole("button", { name: "開始" }).tap();
   // While it loads: the lines are there already.
   await expect(page.locator(".load-times")).toContainText("載入計時：開始（這頁第 1 局，剛打開）");
@@ -40,7 +46,10 @@ test("載入計時（D-091）：剛打開、同一頁再開一局、重新整理
   expect(first.art).toBe("載入");
   const pictures = first.files.filter((f) => f.decoded !== null);
   expect(pictures.length).toBeGreaterThan(20);
-  for (const f of first.files) expect(f.bytes, f.name).toBeGreaterThan(0);
+  for (const f of first.files) {
+    expect(f.bytes, f.name).toBeGreaterThan(0);
+    expect(f.source, f.name).toBe("網路");
+  }
   const box = page.locator(".load-times");
   await expect(box).toContainText("合計");
   await expect(box).toContainText("第一格繪製");
@@ -74,6 +83,8 @@ test("載入計時（D-091）：剛打開、同一頁再開一局、重新整理
   expect(reloaded.game).toBe(1);
   expect(reloaded.page).toBe("reload");
   expect(reloaded.files.length).toBe(first.files.length);
+  // With the service worker: every file from the phone, nothing downloaded.
+  if (sw) for (const f of reloaded.files) expect(f.source, f.name).toBe("手機裡");
   check();
 });
 

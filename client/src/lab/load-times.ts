@@ -7,11 +7,11 @@
 // The lines are pure, for the unit tests; LoadTimesBox is the screen's.
 
 /**
- * Where a file came from, by the browser's record (Resource Timing): 網路 (downloaded), 快取 (the
- * phone's own copy, nothing sent), 問過 (the server said the copy is still good: a round trip,
- * no download), ? (the browser does not tell).
+ * Where a file came from: 手機裡 (the service worker's copy, public/sw.js); else by the browser's
+ * record (Resource Timing): 網路 (downloaded), 瀏覽器快取 (its own copy, nothing sent), 問過伺服器
+ * (the server said the copy is still good: a round trip, no download), 不明 (the browser does not tell).
  */
-export type FileSource = "網路" | "快取" | "問過" | "?";
+export type FileSource = "手機裡" | "網路" | "瀏覽器快取" | "問過伺服器" | "不明";
 
 export interface FileTime {
   /** Its path under the atlases' folder (units/spear_e/spear_e_color_0.png). */
@@ -66,10 +66,10 @@ export function loadLines(r: LoadReport): string[] {
   const pictures = r.files.filter((f) => f.decoded !== null);
   const bytes = r.files.reduce((s, f) => s + f.bytes, 0);
   const count = (src: FileSource) => r.files.filter((f) => f.source === src).length;
-  const sources = (["網路", "快取", "問過", "?"] as const)
+  const sources = (["手機裡", "網路", "瀏覽器快取", "問過伺服器", "不明"] as const)
     .map((s) => [s, count(s)] as const)
     .filter(([, n]) => n > 0)
-    .map(([s, n]) => `${s === "?" ? "不明" : s} ${n}`)
+    .map(([s, n]) => `${s} ${n}`)
     .join("、");
   if (m.artDone === undefined) {
     out.push(`美術載入中…已載入 ${r.files.length} 檔 ${mb(bytes)}`);
@@ -97,16 +97,21 @@ export function loadLines(r: LoadReport): string[] {
   return out;
 }
 
-/** The browser's record of this file: from where (Resource Timing; Safari has the sizes from 16.4). */
-export function sourceOf(e: { transferSize?: number; encodedBodySize?: number } | undefined): FileSource {
-  if (e === undefined || typeof e.transferSize !== "number" || typeof e.encodedBodySize !== "number") return "?";
-  if (e.transferSize === 0) return "快取";
-  return e.transferSize < e.encodedBodySize ? "問過" : "網路";
+/**
+ * Where a file came from: the service worker says so (its x-war-game-sw header: hit, or stored as
+ * it came from the network); else the browser's record (Resource Timing; Safari has the sizes from 16.4).
+ */
+export function sourceOf(sw: string | null, e: { transferSize?: number; encodedBodySize?: number } | undefined): FileSource {
+  if (sw === "hit") return "手機裡";
+  if (sw === "stored") return "網路";
+  if (e === undefined || typeof e.transferSize !== "number" || typeof e.encodedBodySize !== "number") return "不明";
+  if (e.transferSize === 0) return "瀏覽器快取";
+  return e.transferSize < e.encodedBodySize ? "問過伺服器" : "網路";
 }
 
-/** The atlases' loader tells it each file (render/unit-art.ts). Times are performance.now()'s. */
+/** The atlases' loader tells it each file (render/unit-art.ts): times are performance.now()'s; `sw` the service worker's header. */
 export interface LoadRecorder {
-  file(url: string, start: number, downloaded: number, bytes: number, decoded: number | null): void;
+  file(url: string, start: number, downloaded: number, bytes: number, decoded: number | null, sw: string | null): void;
 }
 
 /** The game being started: one at a time; a new start replaces the measurement. */
@@ -114,6 +119,7 @@ export class LoadTimes implements LoadRecorder {
   private t0 = 0;
   private games = 0;
   private urls: string[] = [];
+  private sw: (string | null)[] = [];
   private base = "";
   report: LoadReport | null = null;
   /** Called on each step, for the screen while it loads. */
@@ -123,6 +129,7 @@ export class LoadTimes implements LoadRecorder {
     this.t0 = now;
     this.games += 1;
     this.urls = [];
+    this.sw = [];
     const nav = typeof performance.getEntriesByType === "function" ? (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined) : undefined;
     this.report = { trigger, game: this.games, page: nav?.type ?? "?", art: null, marks: {}, files: [] };
     // Room for every file's record, a game after another (the default keeps 250).
@@ -153,17 +160,18 @@ export class LoadTimes implements LoadRecorder {
     const entries = new Map<string, PerformanceResourceTiming>();
     for (const e of performance.getEntriesByType("resource") as PerformanceResourceTiming[]) entries.set(e.name, e);
     this.report.files.forEach((f, i) => {
-      f.source = sourceOf(entries.get(this.urls[i]));
+      f.source = sourceOf(this.sw[i], entries.get(this.urls[i]));
     });
     this.mark("artDone", now);
   }
 
-  file(url: string, start: number, downloaded: number, bytes: number, decoded: number | null): void {
+  file(url: string, start: number, downloaded: number, bytes: number, decoded: number | null, sw: string | null): void {
     if (this.report === null || !this.measuring) return;
     const abs = new URL(url, location.href).href;
     this.urls.push(abs);
+    this.sw.push(sw);
     const name = abs.startsWith(this.base) ? abs.slice(this.base.length) : abs;
-    this.report.files.push({ name, bytes, source: "?", start: start - this.t0, downloaded: downloaded - this.t0, decoded: decoded === null ? null : decoded - this.t0 });
+    this.report.files.push({ name, bytes, source: "不明", start: start - this.t0, downloaded: downloaded - this.t0, decoded: decoded === null ? null : decoded - this.t0 });
     this.onChange?.();
   }
 

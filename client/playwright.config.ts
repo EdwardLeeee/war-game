@@ -26,6 +26,9 @@ export default defineConfig({
     storageState: { cookies: [], origins: [{ origin: `http://127.0.0.1:${PORT}`, localStorage: [{ name: "war-game.proto.art", value: "off" }] }] },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // The service worker that keeps the atlases (D-091, public/sw.js) would hide the page's requests
+    // from page.route (version.json, the game records); the tests of it allow it themselves.
+    serviceWorkers: "block",
   },
   webServer: {
     command: `npx vite preview --host 127.0.0.1 --port ${PORT} --strictPort`,

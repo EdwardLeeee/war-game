@@ -58,13 +58,13 @@ async function json(url: string, times: LoadRecorder | null): Promise<unknown> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const text = await res.text();
-  times?.file(url, start, performance.now(), text.length, null);
+  times?.file(url, start, performance.now(), text.length, null, res.headers.get("x-war-game-sw"));
   return JSON.parse(text);
 }
 
 /**
  * A page: downloaded on the page's own thread, so that the browser's record of it (D-091's load
- * times) and a service worker's cache see it; decoded by the browser off that thread
+ * times) and the service worker (public/sw.js) see it; decoded by the browser off that thread
  * (createImageBitmap), into a texture as PixiJS's own loader makes one. As fast as PixiJS's
  * loader in CI's WebKit (median 4.6 s against 4.7 s for the 63 files at 3 倍); handing PixiJS the
  * download instead (a blob's URL) cost a copy, 5.3 s.
@@ -77,7 +77,7 @@ async function page(url: string, times: LoadRecorder | null): Promise<Texture> {
   const downloaded = performance.now();
   const bitmap = await createImageBitmap(blob);
   const source = new ImageSource({ resource: bitmap, alphaMode: "premultiply-alpha-on-upload", label: url });
-  times?.file(url, start, downloaded, blob.size, performance.now());
+  times?.file(url, start, downloaded, blob.size, performance.now(), res.headers.get("x-war-game-sw"));
   return new Texture({ source, label: url });
 }
 
