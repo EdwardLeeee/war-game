@@ -42,10 +42,11 @@
   font: inherit;
   font-size: 13px;
   font-weight: 700;
-  /* 按下 (R6-25-01): back 120 ms after the finger lifts (ui/press.ts). */
-  transition:
-    transform 120ms ease-out,
-    filter 120ms ease-out;
+  /* 按下 (R6-25-01): back 120 ms after the finger lifts (ui/press.ts). The filters (A's darker
+     press, B's glow when on) change at once: easing a filter hung CI's WebKit (software, scale 3)
+     while other things moved, 全體回城 then 地圖 with the minimap (runs 39421266579 and
+     39445446336: 4 in 20, 11 in 80; without: 0 in 20, 0 in 80, runs 39421274081, 39445476579). */
+  transition: transform 120ms ease-out;
 }
 
 :root[data-ui="r6"] .b .lb {
@@ -176,10 +177,7 @@
   min-height: 50px;
   padding: 3px 0 4px;
   /* 跳出來 (R6-25-06): slides in from the left and fades in, 200 ms; put away the other way.
-     The press darkens it at once, not over 120 ms as the other buttons: easing the filter here
-     hung CI's WebKit (software, scale 3) after a tap on 全體回城 in A 銅木 until it was killed
-     (Target crashed), 4 and 6 times in 20; without it 0 in 20 (runs 39421266579, 39421281620,
-     39421274081). */
+     The press darkens it at once, as every button's (.b above). */
   transition:
     transform 200ms ease-out,
     opacity 200ms ease-out,
