@@ -1,0 +1,39 @@
+{
+ "ground_lab": [
+  52.1,
+  -13.0,
+  18.6
+ ],
+ "grade": {
+  "brightness": 1.1,
+  "saturation": 0.85
+ },
+ "bow_e": {
+  "contrast_blue": {
+   "min": 9.372,
+   "max": 11.327,
+   "min_at": "attack 朝向 1 第 2 格"
+  },
+  "contrast_red": {
+   "min": 10.5,
+   "max": 12.387,
+   "min_at": "attack 朝向 3 第 2 格"
+  },
+  "visible_blue": {
+   "min": 0.828,
+   "max": 0.893,
+   "min_at": "attack 朝向 5 第 4 格"
+  },
+  "visible_red": {
+   "min": 0.829,
+   "max": 0.894,
+   "min_at": "attack 朝向 5 第 4 格"
+  },
+  "team": {
+   "min": 0.185,
+   "max": 0.244,
+   "min_at": "attack 朝向 5 第 0 格"
+  },
+  "frames": 40
+ }
+}
