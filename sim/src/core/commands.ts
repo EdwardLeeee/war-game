@@ -10,6 +10,7 @@ import {
   type Command,
   CELL,
   CELL_SHIFT,
+  crossingTerrain,
   GameOverReason,
   NodeKind,
   Order,
@@ -49,6 +50,7 @@ import {
   TOWNS,
   UNITS,
 } from "./rules.ts";
+import { openLine } from "./steer.ts";
 import { mages, queuedUnits } from "./training.ts";
 import { rectDist2, startCast } from "./units.ts";
 import type { World } from "./world.ts";
@@ -720,6 +722,7 @@ function placeCheck(ctx: CommandContext, p: number, type: BuildingType, x: numbe
       const c = cy * n + cx;
       cells[c] =
         (w.grid[c] !== 0 || w.buildingAt[c] >= 0 ? PlaceBit.Blocked : 0) |
+        (crossingTerrain(w.map.terrain[c]) ? PlaceBit.Crossing : 0) |
         (fog.explored[p][c] === 1 ? 0 : PlaceBit.Unexplored) |
         (w.gateLane[c] === 1 ? PlaceBit.GateLane : 0) |
         (farmLand(w, p, cx, cy) ? PlaceBit.FarmLand : 0) |
@@ -879,6 +882,34 @@ function heading(w: World, cluster: number[], cx: number, cy: number): number {
 const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
 
 /**
+ * The walkable cell nearest (x, y), up to 8 cells off, that the straight way from (gx, gy) (fixed
+ * point) reaches and no other slot has; ties go to the one nearer `prefer`, then the lower index,
+ * as nearestWalkable. -1 if none.
+ */
+function nearestInSight(w: World, gx: number, gy: number, x: number, y: number, taken: Set<number>, prefer: { cellX: number; cellY: number }): number {
+  const n = w.size;
+  let best = -1;
+  let bestD = 0;
+  let bestP = 0;
+  for (let dy = -8; dy <= 8; dy++) {
+    for (let dx = -8; dx <= 8; dx++) {
+      const cx = x + dx;
+      const cy = y + dy;
+      if (cx < 0 || cy < 0 || cx >= n || cy >= n || !w.walkable(cx, cy) || taken.has(cy * n + cx)) continue;
+      const d = dx * dx + dy * dy;
+      const pd = (cx - prefer.cellX) * (cx - prefer.cellX) + (cy - prefer.cellY) * (cy - prefer.cellY);
+      const c = cy * n + cx;
+      if (best >= 0 && (d > bestD || (d === bestD && (pd > bestP || (pd === bestP && c > best))))) continue;
+      if (!openLine(w, gx, gy, (cx << CELL_SHIFT) + 512, (cy << CELL_SHIFT) + 512)) continue;
+      best = c;
+      bestD = d;
+      bestP = pd;
+    }
+  }
+  return best;
+}
+
+/**
  * Slots for a group facing heading k (dir16), with `order` (Move or Retreat) to them. With a
  * goal cell, (x, y) is its centre and the middle of the front row stands there; with goal -1
  * (re-forming in place), (x, y) is where the middle of the whole formation goes and the goal
@@ -927,9 +958,15 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     gy = clamp(y + idiv(fy * mb, 1024) - idiv(ly * ms, 1024), 0, max);
     goal = nearestWalkable(w, gx >> CELL_SHIFT, gy >> CELL_SHIFT, spawn);
   }
-  // Slot i: rows back from the front, each row left to right.
+  // Slot i: rows back from the front, each row left to right. Units walk the group's field to the
+  // goal cell, then straight to their slots: a slot the straight way from the goal cell does not
+  // reach (R6-51: behind a ridge, across a river bank) moves to the nearest cell it does reach, one
+  // slot a cell, so nobody presses against the obstacle from the goal cell.
   const sx: number[] = [];
   const sy: number[] = [];
+  const gcx = ((goal % n) << CELL_SHIFT) + 512;
+  const gcy = (Math.trunc(goal / n) << CELL_SHIFT) + 512;
+  const taken = new Set<number>();
   for (let i = 0; i < m; i++) {
     let px = clamp(gx - idiv(fx * back(i), 1024) + idiv(lx * side(i), 1024), 0, max);
     let py = clamp(gy - idiv(fy * back(i), 1024) + idiv(ly * side(i), 1024), 0, max);
@@ -938,6 +975,12 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
       px = ((c % n) << CELL_SHIFT) + 512;
       py = (Math.trunc(c / n) << CELL_SHIFT) + 512;
     }
+    if (goal >= 0 && !openLine(w, gcx, gcy, px, py)) {
+      const c = nearestInSight(w, gcx, gcy, px >> CELL_SHIFT, py >> CELL_SHIFT, taken, spawn);
+      px = c < 0 ? gcx : ((c % n) << CELL_SHIFT) + 512;
+      py = c < 0 ? gcy : (Math.trunc(c / n) << CELL_SHIFT) + 512;
+    }
+    taken.add((py >> CELL_SHIFT) * n + (px >> CELL_SHIFT));
     sx.push(px);
     sy.push(py);
   }

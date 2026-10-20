@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
-import { generateMap, MAP_SIZE } from "../src/core/map.ts";
+import { generateMap, MAP_SIZE, turnedTerrain } from "../src/core/map.ts";
 import { TOWNS } from "../src/core/rules.ts";
 import { NodeKind, Terrain, TownSize, UnitType } from "../src/protocol.ts";
 
@@ -14,8 +14,8 @@ test("the map is the same every time", () => {
   assert.deepEqual(again.nodes, m.nodes);
 });
 
-test("mirror-symmetric across the main diagonal", () => {
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) assert.equal(m.terrain[y * n + x], m.terrain[x * n + y]);
+test("mirror-symmetric across the main diagonal (a north-south bridge's image runs east-west)", () => {
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) assert.equal(m.terrain[y * n + x], turnedTerrain(m.terrain[x * n + y]), `${x},${y}`);
   const key = (k: number, x: number, y: number, a: number) => `${k}:${x}:${y}:${a}`;
   const set = new Set(m.nodes.map((s) => key(s.kind, s.cellX, s.cellY, s.amount)));
   for (const s of m.nodes) assert.ok(set.has(key(s.kind, s.cellY, s.cellX, s.amount)), `mirror of ${s.cellX},${s.cellY}`);

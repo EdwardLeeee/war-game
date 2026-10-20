@@ -14,7 +14,7 @@ import { generateRandomMap } from "../src/core/random-map.ts";
 import { BUILDINGS, rules, TOWER_REACH } from "../src/core/rules.ts";
 import { toCanon } from "../src/frame.ts";
 import { checkPlacement } from "../src/placement.ts";
-import { BuildingType, CELL_SHIFT, inTown, PlaceBit, Reject, Stance, Terrain, TOWN_STRIDE, TownField, TownFlag, TownSize, TownState, UnitType } from "../src/protocol.ts";
+import { BuildingType, CELL_SHIFT, inTown, PlaceBit, Reject, Stance, Terrain, TOWN_STRIDE, TownField, TownFlag, TownSize, TownState, UnitType, walkableTerrain } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
 
@@ -259,7 +259,7 @@ function rejections(g: Game, p: number): number[] {
 function walks(map: GameMap, from: number[], open: Set<number>): Int32Array {
   const n = map.size;
   const blocked = new Uint8Array(n * n);
-  for (let i = 0; i < n * n; i++) if (map.terrain[i] !== Terrain.Open) blocked[i] = 1;
+  for (let i = 0; i < n * n; i++) if (!walkableTerrain(map.terrain[i])) blocked[i] = 1;
   for (const s of map.nodes) blocked[s.cellY * n + s.cellX] = 1;
   for (const s of map.spawns) for (let y = s.cellY - 2; y < s.cellY + 2; y++) for (let x = s.cellX - 2; x < s.cellX + 2; x++) blocked[y * n + x] = 1;
   const ts = map.towerSize ?? 2;
@@ -321,9 +321,10 @@ function checkMap(map: GameMap, label: string): { mainMain: number; town: number
   const open = new Set([...footprint(n, s0), ...footprint(n, s1), ...towerCells]);
   const d0 = walks(map, footprint(n, s0), open);
   const d1 = walks(map, footprint(n, s1), open);
-  // Nothing walled off: every open, node-free cell is reachable from both main cities.
+  // Nothing walled off: every walkable, node-free cell (fords and bridges too) is reachable from
+  // both main cities.
   for (let k = 0; k < n * n; k++) {
-    if (map.terrain[k] !== Terrain.Open || nodeAt.has(k)) continue;
+    if (!walkableTerrain(map.terrain[k]) || nodeAt.has(k)) continue;
     assert.ok(d0[k] < 1 << 30 && d1[k] < 1 << 30, `${label}: cell ${k % n},${Math.trunc(k / n)} cut off`);
   }
   // Walks from the main city's centre cell, against the walk with nothing in the way.
@@ -343,14 +344,16 @@ function checkMap(map: GameMap, label: string): { mainMain: number; town: number
   return { mainMain, town };
 }
 
-test("the fixed map: castles, nothing walled off, walks within the caps, fair", () => {
-  checkMap(generateMap(), "fixed");
+test("the fixed map: castles, nothing walled off, walks within the caps, fair; its obstacles make the way between the main cities at least 1.10 times the open walk", () => {
+  const { mainMain } = checkMap(generateMap(), "fixed");
+  assert.ok(mainMain >= 1.1, `main city to main city ${mainMain.toFixed(3)}`);
 });
 
-test("random maps (seeds 1-300): castles, nothing walled off, walks within the caps, fair; castles are mirror images", () => {
+test("random maps (seeds 1-300): castles, nothing walled off, walks within the caps, fair; castles are mirror images; the obstacles make the way between the main cities at least 1.10 times the open walk on half of them", () => {
+  const mainMain: number[] = [];
   for (let seed = 1; seed <= 300; seed++) {
     const map = generateRandomMap(seed, 129);
-    checkMap(map, `seed ${seed} ${map.layout}`);
+    mainMain.push(checkMap(map, `seed ${seed} ${map.layout}`).mainMain);
     // Each wall cell's mirror image is a wall cell too.
     const n = map.size;
     for (let k = 0; k < n * n; k++) {
@@ -359,6 +362,8 @@ test("random maps (seeds 1-300): castles, nothing walled off, walks within the c
       assert.equal(map.terrain[m.v * n + m.u], Terrain.Wall, `seed ${seed}: wall ${k % n},${Math.trunc(k / n)}`);
     }
   }
+  const median = [...mainMain].sort((a, b) => a - b)[mainMain.length >> 1];
+  assert.ok(median >= 1.1, `median main city to main city ${median.toFixed(3)}`);
 });
 
 test("the big city's castle follows its tower on a turned random map: rules, the world and the terrain agree", () => {

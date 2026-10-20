@@ -10,9 +10,10 @@
 // cell the starts cannot reach becomes rock, and the required places are checked to be reachable.
 
 import { type Frame, IDENTITY, MIRROR_XY } from "../frame.ts";
-import { type MapMode, NodeKind, Terrain, TownSize } from "../protocol.ts";
+import { type MapMode, NodeKind, Terrain, TownSize, walkableTerrain } from "../protocol.ts";
 import { type CastleMap, castleOf } from "./castle.ts";
 import { Rng } from "./fixed.ts";
+import { FIXED_TERRAIN } from "./fixed-terrain.ts";
 import { NODE_AMOUNT, TOWNS } from "./rules.ts";
 
 export const MAP_SIZE = 96;
@@ -69,6 +70,11 @@ const CORNERS = [
 ];
 /** Top-left of the 2 x 2 crystal vein, on the axis. */
 const VEIN = { x: 66, y: 66 };
+
+/** A cell's Terrain value on the map turned a quarter or mirrored across a diagonal: bridges change way. */
+export function turnedTerrain(t: number): number {
+  return t === Terrain.BridgeNS ? Terrain.BridgeEW : t === Terrain.BridgeEW ? Terrain.BridgeNS : t;
+}
 
 export function generateMap(seed: number = MAP_SEED): GameMap {
   const n = MAP_SIZE;
@@ -168,8 +174,33 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
   const tower = { cellX: LARGE.x - 1, cellY: LARGE.y - 1 };
   const wall = stampCastles(n, rock, kind, { tower, towns });
 
-  // Fill what the starts cannot reach (4-connected over open, node-free cells).
-  const passable = (i: number) => rock[i] === 0 && kind[i] === -1 && wall[i] === 0;
+  // The natural obstacles (R6-51, fixed-terrain.ts): rock, cliffs, water, the fords and bridges,
+  // the dense forest. They keep off the castles, the main cities and the resources.
+  const ground = new Uint8Array(n * n);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const i = y * n + x;
+      const c = FIXED_TERRAIN[y][x];
+      if (c === ".") continue;
+      if (wall[i] === 1) throw new Error(`map: obstacle ${c} on a castle wall at ${x},${y}`);
+      if (c === "T") {
+        if (rock[i] === 1 || kind[i] !== -1) throw new Error(`map: a tree added on taken ground at ${x},${y}`);
+        kind[i] = NodeKind.Tree;
+      } else if (c === "x") {
+        if (kind[i] !== NodeKind.Tree) throw new Error(`map: no tree to take away at ${x},${y}`);
+        kind[i] = -1;
+      } else {
+        if (kind[i] !== -1 && kind[i] !== NodeKind.Tree) throw new Error(`map: obstacle ${c} on a resource at ${x},${y}`);
+        kind[i] = -1;
+        rock[i] = c === "R" ? 1 : 0;
+        ground[i] = c === "K" ? Terrain.Cliff : c === "~" ? Terrain.Water : c === "f" ? Terrain.Ford : c === "|" ? Terrain.BridgeNS : c === "=" ? Terrain.BridgeEW : 0;
+      }
+    }
+  }
+
+  // Fill what the starts cannot reach (4-connected over open, node-free cells; fords and bridges
+  // are walked).
+  const passable = (i: number) => rock[i] === 0 && kind[i] === -1 && wall[i] === 0 && walkableTerrain(ground[i]);
   const seen = new Uint8Array(n * n);
   const queue = new Int32Array(n * n);
   let head = 0;
@@ -218,7 +249,7 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
     nodes.push({ kind: k as NodeKind, cellX: i % n, cellY: Math.trunc(i / n), amount });
   }
   const terrain = new Uint8Array(n * n);
-  for (let i = 0; i < n * n; i++) terrain[i] = wall[i] === 1 ? Terrain.Wall : rock[i] === 1 ? Terrain.Blocked : Terrain.Open;
+  for (let i = 0; i < n * n; i++) terrain[i] = wall[i] === 1 ? Terrain.Wall : ground[i] !== 0 ? ground[i] : rock[i] === 1 ? Terrain.Blocked : Terrain.Open;
 
   return {
     seed,

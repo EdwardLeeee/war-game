@@ -175,12 +175,14 @@ test("post: at most OUTPOST.slots, finished own outposts only, spearmen only; wh
 test("mirror-image outposts fight mirror-image fights, tick by tick", () => {
   const g = emptyGame();
   const w = g.w;
-  // A 16 x 16 open block well off the diagonal (x <-> y is the fixed map's mirror); its image is open too.
+  // A 16 x 16 open block well off the diagonal (x <-> y is the fixed map's mirror); its image is open
+  // too. 27 cells off: R6-51's obstacles leave no such block farther off; the two fights still stand
+  // about 28 cells apart, beyond an outpost's reach (8) and chase (12).
   let bx = -1;
   let by = -1;
   for (let y = 0; y + 16 <= w.size && bx < 0; y++) {
     for (let x = 0; x + 16 <= w.size && bx < 0; x++) {
-      if (y - x < 30) continue;
+      if (y - x < 27) continue;
       let ok = true;
       for (let yy = y; yy < y + 16 && ok; yy++) for (let xx = x; xx < x + 16 && ok; xx++) if (!w.walkable(xx, yy) || !w.walkable(yy, xx)) ok = false;
       if (ok) {

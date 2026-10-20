@@ -18,6 +18,7 @@ import {
   BuildingField,
   BuildingFlag,
   CELL_SHIFT,
+  crossingTerrain,
   Fog as FogState,
   GameState,
   HEADER_LENGTH,
@@ -63,6 +64,8 @@ export interface PlayerView {
   fogTick: number;
   /** size * size PlaceBit values (PROTOCOL.md section 7). */
   placement: Uint8Array;
+  /** size * size Terrain values the player knows: explored cells on a random map, all on the fixed map. */
+  terrain: Uint8Array;
   /** Own idle farmers, in id order. */
   idleFarmers: Int32Array;
   mapSize: number;
@@ -323,14 +326,18 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   // unexplored cells are marked; farm land comes from own finished main cities and granaries.
   const placement = new Uint8Array(n * n);
   const terrain = w.map.terrain;
-  // On a random map rock is known only where explored (D-074).
+  // On a random map the ground is known only where explored (D-074).
   const rockSeen = w.map.mode === "random" ? exp : null;
+  const known = new Uint8Array(n * n);
   for (let i = 0; i < n * n; i++) {
     const seen = rockSeen === null || rockSeen[i] === 1;
     let bits = 0;
-    if (seen && terrain[i] === Terrain.Blocked) bits = PlaceBit.Blocked;
-    // Castle walls and gates (D-089), known like rock.
-    else if (seen && terrain[i] === Terrain.Wall) bits = PlaceBit.Blocked | PlaceBit.Wall;
+    if (seen) known[i] = terrain[i];
+    // Castle walls and gates (D-089), known like rock; nothing is built on any ground but open
+    // ground (R6-51: water and cliffs block, fords and bridges are crossings).
+    if (seen && terrain[i] === Terrain.Wall) bits = PlaceBit.Blocked | PlaceBit.Wall;
+    else if (seen && crossingTerrain(terrain[i])) bits = PlaceBit.Crossing;
+    else if (seen && terrain[i] !== Terrain.Open) bits = PlaceBit.Blocked;
     else if (seen && w.gateAt[i] === 1) bits = PlaceBit.Gate;
     // Each gate's lane (the gate, the cell in front, the cell behind) stays open: no building.
     if (seen && w.gateLane[i] === 1) bits |= PlaceBit.GateLane;
@@ -387,6 +394,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     fog: fogGrid,
     fogTick: fog.fogTick,
     placement,
+    terrain: known,
     idleFarmers: Int32Array.from(idle),
     mapSize: n,
   };
@@ -430,6 +438,7 @@ export class SnapshotEncoder {
       nodes,
       fog: fogNew ? view.fog : null,
       placement: fogNew ? view.placement : null,
+      terrain: fogNew ? view.terrain : null,
       idleFarmers: view.idleFarmers,
       events,
     };
@@ -441,5 +450,6 @@ export function transferables(s: Snapshot): ArrayBuffer[] {
   const out = [s.header, s.units, s.buildings, s.towns, s.warnings, s.nodes, s.idleFarmers].map((a) => a.buffer as ArrayBuffer);
   if (s.fog !== null) out.push(s.fog.buffer as ArrayBuffer);
   if (s.placement !== null) out.push(s.placement.buffer as ArrayBuffer);
+  if (s.terrain != null) out.push(s.terrain.buffer as ArrayBuffer);
   return out;
 }

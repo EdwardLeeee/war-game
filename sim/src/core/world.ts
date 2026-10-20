@@ -3,7 +3,7 @@
 // iterating a table is deterministic. Units and buildings share one id sequence; resource
 // nodes and towns have their own small, fixed id ranges.
 
-import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, Terrain, TownState, UnitType } from "../protocol.ts";
+import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, Terrain, TownState, UnitType, walkableTerrain } from "../protocol.ts";
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
@@ -275,8 +275,9 @@ export class World {
       this.homes.push({ cellX: c.x, cellY: c.y });
     }
     for (let i = 0; i < n * n; i++) {
-      if (map.terrain[i] === Terrain.Blocked) this.grid[i] = BLOCK_ROCK;
-      else if (map.terrain[i] === Terrain.Wall) this.grid[i] = BLOCK_WALL;
+      if (map.terrain[i] === Terrain.Wall) this.grid[i] = BLOCK_WALL;
+      // Rock, water and cliffs (R6-51) all stop walking alike.
+      else if (!walkableTerrain(map.terrain[i])) this.grid[i] = BLOCK_ROCK;
     }
     for (let p = 0; p < PLAYER_COUNT; p++) {
       this.ecoRatio.set([ECO_DEFAULT.food, ECO_DEFAULT.wood, ECO_DEFAULT.gold], p * 3);
