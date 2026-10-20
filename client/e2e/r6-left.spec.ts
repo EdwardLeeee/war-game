@@ -28,8 +28,8 @@ const hit = (page: Page, u: { id: number; cx: number; cy: number }, by: number) 
   page.evaluate(([id, x, y, b]) => window.__proto?.game?.inject({ k: "attacked", x, y, target: id, by: b }), [u.id, Math.round((u.cx + 0.5) * FIXED), Math.round((u.cy + 0.5) * FIXED), by] as const);
 const box = async (page: Page, sel: string) => (await visibleBoxes(page, sel))[0];
 /**
- * The pictures for ceo, from Chromium only: CI's WebKit (software, at the phone's scale 3) now and
- * then crashed taking one here (Target crashed, run 39320481231 twice, main 617945c once); the checks run in both.
+ * The pictures for ceo, from Chromium only; the checks run in both. (CI's WebKit crashed here now
+ * and then, run 39320481231 among others: not the pictures but 全體回城's eased filter, r6.css.)
  */
 const picture = (page: Page, info: TestInfo, name: string) => (info.project.name === "chromium" ? shot(page, info, name) : Promise.resolve());
 const near = (v: number, want: number) => Math.abs(v - want) <= 2;
