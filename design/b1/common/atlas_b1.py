@@ -119,12 +119,15 @@ def terrain_table():
         cliff=dict(value=7, posts=[f"terrain_cliff_post_v{v}" for v in range(TR.CLIFF_POSTS)], post_front="y + 1",
                    post_when="the cell's links (the cliff neighbours on its four sides, and on a corner only where neither "
                              "side cell between is cliff) are not exactly two opposite ones",
-                   arms={"E": dict(frame="terrain_cliff_arm_E", when="(x+1, y) is 7", anchor="(x + 1, y + 0.5)", front="y + 0.99"),
-                         "S": dict(frame="terrain_cliff_arm_S", when="(x, y+1) is 7", anchor="(x + 0.5, y + 1)", front="y + 1.99"),
-                         "SE": dict(frame="terrain_cliff_arm_SE", when="(x+1, y+1) is 7, (x+1, y) and (x, y+1) are not",
-                                    anchor="(x + 1, y + 1)", front="y + 1.99"),
-                         "SW": dict(frame="terrain_cliff_arm_SW", when="(x-1, y+1) is 7, (x-1, y) and (x, y+1) are not",
-                                    anchor="(x, y + 1)", front="y + 1.99")}))
+                   arm_variant="variant(x, y, 3) of the cell (x, y) the arm starts from",
+                   arms={"E": dict(frames=[f"terrain_cliff_arm_E_v{v}" for v in range(TR.CLIFF_ARMS)], when="(x+1, y) is 7",
+                                   anchor="(x + 1, y + 0.5)", front="y + 0.99"),
+                         "S": dict(frames=[f"terrain_cliff_arm_S_v{v}" for v in range(TR.CLIFF_ARMS)], when="(x, y+1) is 7",
+                                   anchor="(x + 0.5, y + 1)", front="y + 1.99"),
+                         "SE": dict(frames=[f"terrain_cliff_arm_SE_v{v}" for v in range(TR.CLIFF_ARMS)],
+                                    when="(x+1, y+1) is 7, (x+1, y) and (x, y+1) are not", anchor="(x + 1, y + 1)", front="y + 1.99"),
+                         "SW": dict(frames=[f"terrain_cliff_arm_SW_v{v}" for v in range(TR.CLIFF_ARMS)],
+                                    when="(x-1, y+1) is 7, (x-1, y) and (x, y+1) are not", anchor="(x, y + 1)", front="y + 1.99")}))
 
 
 def terrain_prep(name, col, sh, anchor, s_anchor):

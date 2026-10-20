@@ -229,7 +229,8 @@ for _k, *_ in _r651.KINDS:
 import terrain_tiles as _tt  # noqa: E402
 _V5 = ([dict(kind="trock", culture="E", opts=dict(variant=v), name=f"terrain_rock_v{v}") for v in range(6)]
        + [dict(kind="tcliff_post", culture="E", opts=dict(variant=v), name=f"terrain_cliff_post_v{v}") for v in range(2)]
-       + [dict(kind="tcliff_arm", culture="E", opts=dict(direction=d), name=f"terrain_cliff_arm_{d}") for d in ("E", "S", "SE", "SW")]
+       + [dict(kind="tcliff_arm", culture="E", opts=dict(direction=d, variant=v), name=f"terrain_cliff_arm_{d}_v{v}")
+          for d in ("E", "S", "SE", "SW") for v in range(3)]
        + [dict(kind="twater", culture="E", opts=dict(mask=m, plan=_tt.water_polygons(m)), name=f"terrain_water_m{m}") for m in range(1, 16)]
        + [dict(kind="tford", culture="E", opts=dict(variant=v), name=f"terrain_ford_v{v}") for v in range(2)]
        + [dict(kind="tbridge_deck", culture="E", opts=dict(axis=a), name=f"terrain_bridge_deck_{a}") for a in ("ns", "ew")]

@@ -141,8 +141,9 @@ def _cliff(root, line, P, rnd, taper_ends=True, name="tp_cliff", ends=None):
     for r0, r1 in zip(rings, rings[1:]):
         for i in range(len(r0) - 1):
             bm.faces.new((r0[i], r0[i + 1], r1[i + 1], r1[i]))
-    bm.faces.new(list(reversed(rings[0])))
-    bm.faces.new(rings[-1])
+    if not ends:                                  # an arm's ends are always under its neighbour or a post: no cap
+        bm.faces.new(list(reversed(rings[0])))    # (a cap's outline drew a line at every joint)
+        bm.faces.new(rings[-1])
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     rock = lib.mat("tp_cliffface", (0.34, 0.3, 0.26), 0.92, noise=0.55, noise_scale=2.2)
     lib._mesh_obj(name, bm, rock, root, (0, 0, 0), smooth=False, outline=True)

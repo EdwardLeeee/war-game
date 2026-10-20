@@ -17,6 +17,7 @@ VALUES = dict(Open=0, Rock=1, Wall=2, Water=3, Ford=4, BridgeNS=5, BridgeEW=6, C
 WET = (3, 4, 5, 6)                       # water for the banks: fords and bridges stand in the river
 ROCK_VARIANTS = 6
 CLIFF_POSTS = 2
+CLIFF_ARMS = 3                           # looks of each arm, so a long straight face does not repeat every cell
 FORDS = 2
 GROUND_ORDER = ("water", "ford", "deck")
 
@@ -84,14 +85,15 @@ def pieces(T, W, H):
                 straight = len(links) == 2 and links[0][0] == -links[1][0] and links[0][1] == -links[1][1]
                 if not straight:
                     out.append(dict(frame=f"terrain_cliff_post_v{variant(x, y, CLIFF_POSTS)}", x=cx, y=cy, front=y + 1))
+                arm = variant(x, y, CLIFF_ARMS)
                 if at(x + 1, y) == 7 and x + 1 < W:
-                    out.append(dict(frame="terrain_cliff_arm_E", x=x + 1, y=cy, front=y + 0.99))
+                    out.append(dict(frame=f"terrain_cliff_arm_E_v{arm}", x=x + 1, y=cy, front=y + 0.99))
                 if at(x, y + 1) == 7 and y + 1 < H:
-                    out.append(dict(frame="terrain_cliff_arm_S", x=cx, y=y + 1, front=y + 1.99))
+                    out.append(dict(frame=f"terrain_cliff_arm_S_v{arm}", x=cx, y=y + 1, front=y + 1.99))
                 if at(x + 1, y + 1) == 7 and at(x + 1, y) != 7 and at(x, y + 1) != 7 and x + 1 < W and y + 1 < H:
-                    out.append(dict(frame="terrain_cliff_arm_SE", x=x + 1, y=y + 1, front=y + 1.99))
+                    out.append(dict(frame=f"terrain_cliff_arm_SE_v{arm}", x=x + 1, y=y + 1, front=y + 1.99))
                 if at(x - 1, y + 1) == 7 and at(x - 1, y) != 7 and at(x, y + 1) != 7 and x > 0 and y + 1 < H:
-                    out.append(dict(frame="terrain_cliff_arm_SW", x=x, y=y + 1, front=y + 1.99))
+                    out.append(dict(frame=f"terrain_cliff_arm_SW_v{arm}", x=x, y=y + 1, front=y + 1.99))
     return out
 
 
@@ -100,7 +102,7 @@ def frames():
     return sorted([f"terrain_water_m{m}" for m in range(1, 16)]
                   + [f"terrain_rock_v{v}" for v in range(ROCK_VARIANTS)]
                   + [f"terrain_cliff_post_v{v}" for v in range(CLIFF_POSTS)]
-                  + [f"terrain_cliff_arm_{d}" for d in ("E", "S", "SE", "SW")]
+                  + [f"terrain_cliff_arm_{d}_v{v}" for d in ("E", "S", "SE", "SW") for v in range(CLIFF_ARMS)]
                   + [f"terrain_ford_v{v}" for v in range(FORDS)]
                   + [f"terrain_bridge_deck_{a}" for a in ("ns", "ew")]
                   + [f"terrain_bridge_rail_{a}" for a in ("x", "y")])
