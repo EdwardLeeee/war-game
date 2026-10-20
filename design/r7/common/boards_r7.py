@@ -124,10 +124,14 @@ def ground_swatch(k, w, h):
         return Image.new("RGBA", (w, h), GROUND[0] + (255,))
     meta = json.loads((BUILD / f"v{k}" / "scene_x3.json").read_text())
     ax, ay = meta["anchor"]
-    x, y = int(ax - 9.0 * PPM), int(ay + 5.8 * PPM * 0.5)       # open grass west of the units
+    # a clean strip of grass in the south-west corner (2.4 m deep), repeated down the swatch
+    x, y = int(ax - 9.5 * PPM), int(ay + 6.6 * PPM * 0.5)
     x = min(max(x, w // 2), sc.width - w // 2)
-    y = min(max(y, h // 2), sc.height - h // 2)
-    return sc.crop((x - w // 2, y - h // 2, x + w // 2, y + h // 2))
+    band = sc.crop((x - w // 2, y - 36, x + w // 2, y + 36))
+    out = Image.new("RGBA", (w, h))
+    for k in range(0, h, band.height):
+        out.paste(band if (k // band.height) % 2 == 0 else band.transpose(Image.FLIP_TOP_BOTTOM), (0, k))
+    return out
 
 
 def strip(k, art, scale=1.0):
@@ -198,6 +202,15 @@ def board(k, art, ref, cost):
 
 COST = {
     0: "代價：不用重做。圖集照 art-v4 實測：兵 12 種 3 倍未壓縮 309 MB、2 倍 ASTC 36 MB；建築每個文化 3 倍約 46 MB。",
+    1: "代價（估計）：12 種兵 1.5–2 天（補材質對應、頭的比例、全部動作重算並逐張檢查）、14 種建築 1–1.5 天、城牆 0.5 天、"
+       "資源點 0.5 天、地形 0.5 天、地面 1 天（做成可以無縫重複的地面圖塊加混合遮罩給 client）；合計約 5–6 天加 CI。"
+       "圖集：影格大小和現在一樣，記憶體約不變（兵 2 倍 ASTC 約 36 MB），地面多一頁約 1–2 MB（ASTC）。授權：CC0，沒有限制。",
+    2: "代價（估計）：12 種兵 4–6 天（每種兵的衣服貼身要逐一調；長袍、裙甲、騎兵的騎手要重做；馬沒有寫實底模，要另找 CC0 的馬或沿用現在的）、"
+       "建築、城牆、資源點、地形、地面同版本 1（約 3.5–4 天）；合計約 8–10 天加 CI。圖集約不變。授權：MPFB 的人體素材 CC0，沒有限制。",
+    3: "代價（估計，這次實測）：AI 生成一個形狀約 20 秒（試用頁不登入只能生成形狀，加貼圖要 270 秒 GPU，超過免費額度）；"
+       "放回原位、分部位、綁骨架的程式約 2 秒，但手動修正（手臂和身體長在一起、伸手時拉出一片）一個兵花了約 20 分鐘試，還沒修乾淨。"
+       "12 種兵、14 種建築估計 6–9 天。完整的 AI 貼圖要付費方案（HF PRO 約每月 9 美元，或 Meshy、Tripo 的付費方案），"
+       "要不要花由使用者看過比較再決定。弩手沒有用 AI 生成（brief 只要槍兵和兵營），沿用版本 2。",
 }
 
 

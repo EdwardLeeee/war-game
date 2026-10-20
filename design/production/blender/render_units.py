@@ -46,6 +46,10 @@ if job.get("new_anims"):              # the approved new animations (anims.py)
     if job.get("infantry_fall") is not None:
         anims.INFANTRY_FALL = bool(job["infantry_fall"])
     u = anims.extend(u, job["kind"], job.get("mage_style"))
+if os.environ.get("R7_VERSION"):      # R7 (D-092) style test: a realism version's look (design/r7/blender/r7_prod.py)
+    sys.path.insert(0, os.path.join(HERE, "..", "..", "r7", "blender"))
+    import r7_prod  # noqa: E402
+    r7_prod.apply(u, job["kind"], int(os.environ["R7_VERSION"]))
 if job.get("frames"):
     u.frames = dict(getattr(u, "frames", {}), **job["frames"])
 # the flying 晶砲 bolt is a projectile the game draws itself (client/docs/sprite-atlas.md): not in the unit images
