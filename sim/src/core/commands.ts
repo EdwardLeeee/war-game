@@ -434,12 +434,13 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       // Spearmen posted at an outpost (D-080) keep their places.
       const slots = ownUnits(w, p, cmd.u).filter((s) => w.units.col.order[s] !== Order.Post);
       if (typeof cmd.loose !== "boolean") return Reject.InvalidTarget;
+      if (cmd.face !== undefined && (!Number.isInteger(cmd.face) || cmd.face < 0 || cmd.face > 15)) return Reject.InvalidTarget;
       const u = w.units.col;
       for (const s of slots) {
         if (cmd.loose) u.flags[s] |= UnitFlag.Loose;
         else u.flags[s] &= ~UnitFlag.Loose;
       }
-      reform(ctx, slots);
+      reform(ctx, slots, cmd.face);
       return 0;
     }
     case "autocast": {
@@ -775,7 +776,7 @@ function targetable(ctx: CommandContext, p: number, id: number): boolean {
  * one's own, RETREAT_OWN_SPEED); at the goal the units stand in rows facing the way they came,
  * melee in front, then ranged, then mages, each rank in id order.
  */
-function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: number, order: number): void {
+function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: number, order: number, face?: number): void {
   const { w } = ctx;
   const u = w.units.col;
   const n = w.size;
@@ -791,7 +792,7 @@ function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: n
   const goal = nearestWalkable(w, cellX, cellY, spawn);
   const gx = ((goal % n) << CELL_SHIFT) + 512;
   const gy = (Math.trunc(goal / n) << CELL_SHIFT) + 512;
-  layout(ctx, slots, gx, gy, dir16(gx - cx, gy - cy), order, goal);
+  layout(ctx, slots, gx, gy, face ?? dir16(gx - cx, gy - cy), order, goal);
 }
 
 /** Units standing this close (or closer, through one another) re-form as one formation. */
@@ -807,9 +808,9 @@ const REFORM_LINK = 3 * CELL;
  *   melee stand from its ranged and mages (one kind only: toward the enemy's main city);
  *   a unit standing alone only keeps the new flag.
  * Farmers, units casting or attacking something, and new units walking to a rally point
- * only keep the new flag.
+ * only keep the new flag. With `face` (dir16, D-095) both kinds face that way instead.
  */
-function reform(ctx: CommandContext, slots: number[]): void {
+function reform(ctx: CommandContext, slots: number[], face?: number): void {
   const { w } = ctx;
   const u = w.units.col;
   const n = w.size;
@@ -822,7 +823,7 @@ function reform(ctx: CommandContext, slots: number[]): void {
     const members = slots.filter((m) => soldier(m) && u.group[m] === g && (moving(m) || u.order[m] === Order.None));
     for (const m of members) done.add(m);
     const goal = u.orderTarget[s];
-    if (goal >= 0) formation(ctx, members, goal % n, Math.trunc(goal / n), u.order[s]);
+    if (goal >= 0) formation(ctx, members, goal % n, Math.trunc(goal / n), u.order[s], face);
   }
   const idle = slots.filter((s) => soldier(s) && !done.has(s) && u.order[s] === Order.None);
   // Clusters: union-find over pairs within REFORM_LINK, roots kept at the lowest slot.
@@ -850,7 +851,7 @@ function reform(ctx: CommandContext, slots: number[]): void {
     }
     const cx = idiv(sx, cluster.length);
     const cy = idiv(sy, cluster.length);
-    layout(ctx, cluster, cx, cy, heading(w, cluster, cx, cy), Order.Move, -1);
+    layout(ctx, cluster, cx, cy, face ?? heading(w, cluster, cx, cy), Order.Move, -1);
   }
 }
 
