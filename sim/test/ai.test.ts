@@ -2088,7 +2088,7 @@ test("D-089: the gathering point is open ground it knows, out of enemy forts' re
   const p = staging(() => stagePoint({ placement }, { size: n, mode: "fixed" }, [], from, enemy, rank));
   assert.ok(p !== null);
   const d = Math.sqrt((p!.x - enemy.cellX) ** 2 + (p!.y - enemy.cellY) ** 2);
-  assert.ok(d >= 14 && d <= 18, `about 16 cells out (${d})`);
+  assert.ok(d >= 12 && d <= 20, `some 16 cells out (${d})`);
   // Blocked there (a river, say): the nearest open cell instead; all blocked round both nearer and further: none at all.
   placement[p!.y * n + p!.x] = 1;
   const q = staging(() => stagePoint({ placement }, { size: n, mode: "fixed" }, [], from, enemy, rank));

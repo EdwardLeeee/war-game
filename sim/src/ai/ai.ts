@@ -428,39 +428,58 @@ export function stagePoint(
   rank: (x: number, y: number) => number,
 ): { x: number; y: number } | null {
   const n = map.size;
-  const dx = from.x - enemy.cellX;
-  const dy = from.y - enemy.cellY;
-  const d = Math.sqrt(dx * dx + dy * dy);
-  if (!STAGING.on || d <= STAGE_DIST + 4) return null;
+  if (!STAGING.on || (from.x - enemy.cellX) ** 2 + (from.y - enemy.cellY) ** 2 <= (STAGE_DIST + 4) * (STAGE_DIST + 4)) return null;
   // Rock, walls, water and cliffs are Blocked in the view (the fixed map is known whole; a random one where explored).
-  const open = (x: number, y: number) => {
-    const c = view.placement[y * n + x];
-    return (c & PlaceBit.Blocked) === 0 && (map.mode !== "random" || (c & PlaceBit.Unexplored) === 0);
-  };
-  for (const k of [STAGE_DIST, STAGE_DIST + 4, STAGE_DIST - 4]) {
-    const px = enemy.cellX + Math.trunc((dx * k) / d);
-    const py = enemy.cellY + Math.trunc((dy * k) / d);
-    let best: { x: number; y: number } | null = null;
-    let bestD = 0;
-    let bestKey = 0;
-    for (let oy = -3; oy <= 3; oy++) {
-      for (let ox = -3; ox <= 3; ox++) {
-        const x = px + ox;
-        const y = py + oy;
-        if (x < 1 || y < 1 || x >= n - 1 || y >= n - 1 || !open(x, y)) continue;
-        if (forts.some((o) => fortDist2(o, x, y) <= (o.hits + 2) * (o.hits + 2))) continue;
-        const dd = ox * ox + oy * oy;
-        const key = rank(x, y);
+  // Steps from the enemy main city over ground not known to be blocked (8 neighbours), so the point is STAGE_DIST
+  // steps away along the way round obstacles, not straight across them (on core's #245 maps that was up to a
+  // minute and a half's walk); the point itself on ground known to be open.
+  const blocked = (i: number) => (view.placement[i] & PlaceBit.Blocked) !== 0;
+  const known = (i: number) => map.mode !== "random" || (view.placement[i] & PlaceBit.Unexplored) === 0;
+  const steps = new Int16Array(n * n).fill(-1);
+  const queue = new Int32Array(n * n);
+  let head = 0;
+  let tail = 0;
+  for (let y = enemy.cellY - 3; y <= enemy.cellY + 3; y++) {
+    for (let x = enemy.cellX - 3; x <= enemy.cellX + 3; x++) {
+      if (x < 0 || y < 0 || x >= n || y >= n) continue;
+      steps[y * n + x] = 0;
+      queue[tail++] = y * n + x;
+    }
+  }
+  let best: { x: number; y: number } | null = null;
+  let bestD = 0;
+  let bestKey = 0;
+  while (head < tail) {
+    const i = queue[head++];
+    const d = steps[i];
+    if (d >= STAGE_DIST + 4) continue;
+    const x = i % n;
+    const y = (i - x) / n;
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        const xx = x + ox;
+        const yy = y + oy;
+        if (xx < 1 || yy < 1 || xx >= n - 1 || yy >= n - 1) continue;
+        const j = yy * n + xx;
+        if (steps[j] >= 0 || blocked(j)) continue;
+        steps[j] = d + 1;
+        queue[tail++] = j;
+        // STAGE_DIST (+-4) cells out, at most STAGE_DIST + 4 steps' walk (no long way round from there).
+        const out2 = (xx - enemy.cellX) * (xx - enemy.cellX) + (yy - enemy.cellY) * (yy - enemy.cellY);
+        if (out2 < (STAGE_DIST - 4) * (STAGE_DIST - 4) || out2 > (STAGE_DIST + 4) * (STAGE_DIST + 4) || !known(j)) continue;
+        if (forts.some((o) => fortDist2(o, xx, yy) <= (o.hits + 2) * (o.hits + 2))) continue;
+        // Of those, the nearest to the army.
+        const dd = (xx - from.x) * (xx - from.x) + (yy - from.y) * (yy - from.y);
+        const key = rank(xx, yy);
         if (best === null || dd < bestD || (dd === bestD && key < bestKey)) {
-          best = { x, y };
+          best = { x: xx, y: yy };
           bestD = dd;
           bestKey = key;
         }
       }
     }
-    if (best !== null) return best;
   }
-  return null;
+  return best;
 }
 
 export function fortDist2(f: Fort, x: number, y: number): number {
@@ -1800,18 +1819,23 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           const at = stage;
           if (at !== null) {
             const near = (u: { x: number; y: number }) => dist2(u.x, u.y, at.x, at.y) <= STAGE_NEAR * STAGE_NEAR;
+            // Gathered now, or the enemy main city nearly down: those trained since go along, however few.
+            let all = cityLow;
             if (!staged) {
               const setters = soldiers.filter((u) => marched.has(u.id));
               const by = setters.filter(near).length;
               if (by > 0 && stageFirst < 0) stageFirst = tick;
-              if (by * 100 >= STAGE_SHARE * setters.length || (stageFirst >= 0 && tick - stageFirst >= STAGE_WAIT) || tick - setOut >= STAGE_MAX) staged = true;
+              if (by * 100 >= STAGE_SHARE * setters.length || (stageFirst >= 0 && tick - stageFirst >= STAGE_WAIT) || tick - setOut >= STAGE_MAX) {
+                staged = true;
+                all = true;
+              }
             }
             const fresh = army.filter((u) => !marched.has(u.id) && armyIds.includes(u.id));
             const ready = fresh.filter(near);
-            if (staged && ready.length >= STAGE_JOIN) {
+            if (staged && ready.length > 0 && (all || ready.length >= STAGE_JOIN)) {
               for (const u of ready) marched.add(u.id);
               armyAtStart += ready.length;
-            } else if (fresh.length > 0) {
+            } else if (fresh.length > 0 && !cityLow) {
               const ids = fresh.map((u) => u.id);
               const keep = armyIds.filter((id) => !ids.includes(id));
               armyIds.length = 0;
