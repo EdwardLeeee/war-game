@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan } from "../src/ai/ai.ts";
+import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
+import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
@@ -1606,6 +1608,238 @@ test("D-083 (c): with the population rules on and food and gold piling up, hard 
   assert.equal(built(false), BuildingType.Farm, "off: a farm first, as before");
 });
 
+// --- D-086 B: the network (net.ts), off unless HardPlan.net holds weights --------------------------------------
+
+/** Weights from a fixed integer sequence (the shapes training uses). */
+function testNet(): NetWeights {
+  let r = 12345;
+  const next = () => {
+    r = (Math.imul(r, 1103515245) + 12345) >>> 0;
+    return r >>> 16;
+  };
+  const layers = [];
+  for (let l = 0; l + 1 < NET_SHAPE.length; l++) {
+    const inputs = NET_SHAPE[l];
+    const outputs = NET_SHAPE[l + 1];
+    const w: number[] = [];
+    const b: number[] = [];
+    for (let k = 0; k < inputs * outputs; k++) w.push((next() % 255) - 127);
+    for (let k = 0; k < outputs; k++) b.push((next() % 2001) - 1000);
+    layers.push({ inputs, outputs, w, b, shift: 8 });
+  }
+  return { layers };
+}
+
+/** A network that always makes these choices (one per head): every weight 0, the chosen outputs' biases 1. */
+function forcedNet(picks: number[]): NetWeights {
+  const layers = [];
+  for (let l = 0; l + 1 < NET_SHAPE.length; l++) {
+    const inputs = NET_SHAPE[l];
+    const outputs = NET_SHAPE[l + 1];
+    const b = new Array(outputs).fill(0);
+    if (l + 2 === NET_SHAPE.length) {
+      let at = 0;
+      NET_HEADS.forEach((k, h) => {
+        b[at + picks[h]] = 1;
+        at += k;
+      });
+    }
+    layers.push({ inputs, outputs, w: new Array(inputs * outputs).fill(0), b, shift: 8 });
+  }
+  return { layers };
+}
+
+test("D-086 B: the network's sums are integers: these weights and inputs give exactly these scores and choices", () => {
+  const x = Array.from({ length: NET_INPUTS }, (_, i) => (i * 37 + 11) % 256);
+  assert.deepEqual(forward(testNet(), x), [8716, 18894, 22123, -5343, -24979, -12751, -52341, -56921, -40853, -17770, 61455, 69509]);
+  assert.deepEqual(choose(testNet(), x), [2, 0, 2, 2]);
+  assert.deepEqual(choose(forcedNet([0, 0, 0, 0]), x), [0, 0, 0, 0], "a tie: the lowest index");
+});
+
+test("D-086 B: net.ts uses no floating point and no Math functions", () => {
+  const code = readFileSync(new URL("../src/ai/net.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+  assert.ok(!/Math\./.test(code), "no Math.*");
+  assert.ok(!/\d\.\d/.test(code), "no decimal literals");
+  assert.ok(!/Float(32|64)Array/.test(code), "no float arrays");
+});
+
+test("D-086 B: the network's inputs, 0..255 each, come from the AI's own view: enemy soldiers in the fog change nothing", () => {
+  /** Hard (network on) at minute 12 with 12 spearmen at home; `hidden`: 30 enemy spearmen far off in the fog; `near`: 6 in sight. */
+  const think = (hidden: boolean, near = false) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 12; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 6), s0.cellY - 4 - Math.trunc(k / 6));
+    if (hidden) for (let k = 0; k < 30; k++) put(g, 1, UnitType.Spearman, s1.cellX - 6 + (k % 6), s1.cellY + 6 + Math.trunc(k / 6));
+    if (near) for (let k = 0; k < 6; k++) put(g, 1, UnitType.Spearman, s0.cellX + 8 + k, s0.cellY - 10);
+    g.fog.update(w);
+    const xs: number[][] = [];
+    const out = hardAi(g, { dodge: false, net: testNet(), netLog: (x) => xs.push(x) }).think(buildView(g, 0));
+    return { out, x: xs[0] };
+  };
+  const a = think(false);
+  const b = think(true);
+  assert.equal(a.x.length, NET_INPUTS);
+  assert.ok(a.x.every((v) => Number.isInteger(v) && v >= 0 && v <= 255));
+  assert.deepEqual(b.x, a.x, "the same inputs");
+  assert.deepEqual(b.out, a.out, "the same commands");
+  assert.notDeepEqual(think(false, true).x, a.x, "enemy soldiers in sight do count");
+});
+
+test("D-086 B: the simulation worker never imports the training code (sim/src/ai/learn/)", () => {
+  const seen = new Set<string>();
+  const walk = (url: URL) => {
+    if (seen.has(url.href)) return;
+    seen.add(url.href);
+    const code = readFileSync(url, "utf8");
+    for (const m of code.matchAll(/(?:from|import)\s*\(?\s*"(\.{1,2}\/[^"]+)"/g)) walk(new URL(m[1], url));
+  };
+  walk(new URL("../src/worker.ts", import.meta.url));
+  assert.ok(seen.size > 10, `walked ${seen.size} files`);
+  assert.ok([...seen].some((f) => f.endsWith("/ai/net.ts")), "net.ts is in the worker");
+  assert.deepEqual([...seen].filter((f) => f.includes("/ai/learn/")), []);
+});
+
+test("D-086 B: with the network on, its choice at home wins: it marches with 16, or waits with 60; never with fewer than netMarch (14)", () => {
+  /** Hard at minute 12 on the fixed map (it knows where the enemy is) with `n` spearmen at home, no towns open. */
+  const marches = (n: number, net: NetWeights | null) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < n; k++) put(g, 0, UnitType.Spearman, s0.cellX + 8 + (k % 8), s0.cellY - 8 - Math.trunc(k / 8));
+    g.fog.update(w);
+    // Looking first (D-086 A3) off: this is about the march itself.
+    return hardAi(g, { dodge: false, net, peekFirst: 0 }).think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === n && c.x === s1.cellX && c.y === s1.cellY);
+  };
+  const march = forcedNet([ARMY_BASE, AS_HARD, AS_HARD, AS_HARD]);
+  assert.equal(marches(16, null), false, "off: not with 16");
+  assert.equal(marches(16, march), true, "on, march: with 16");
+  assert.equal(marches(12, march), false, "on, march, but 12 is under netMarch: not allowed");
+  assert.equal(marches(60, null), true, "off: with 60");
+  assert.equal(marches(60, forcedNet([ARMY_HOME, AS_HARD, AS_HARD, AS_HARD])), false, "on, wait: not even with 60");
+  assert.equal(marches(60, forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD])), true, "on, as hard: with 60, as hard does");
+  assert.equal(marches(16, forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD])), false, "on, as hard: not with 16, as hard does not");
+});
+
+test("D-086 B: with the network on, a first capture is governed when it chooses so and can pay", () => {
+  const chosen = (net: NetWeights | null) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.townState[0] = TownState.AwaitingChoice;
+    w.townOwner[0] = 0;
+    w.res.set([1000, 1000, 1000, 0], 0);
+    for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, w.townX[0] + (k % 3), w.townY[0] + 1 + Math.trunc(k / 3));
+    g.fog.update(w);
+    return (hardAi(g, { dodge: false, net }).think(buildView(g, 0)).find((c) => c.c === "town_choice") as { choice: number } | undefined)?.choice;
+  };
+  assert.equal(chosen(null), TownChoice.Plunder, "off: plundered, as before");
+  assert.equal(chosen(forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD])), TownChoice.Plunder, "as hard: plundered, as hard does");
+  assert.equal(chosen(forcedNet([AS_HARD, AS_HARD, AS_HARD, TOWN_GOVERN])), TownChoice.Govern);
+  assert.equal(chosen(forcedNet([AS_HARD, AS_HARD, AS_HARD, TOWN_PLUNDER])), TownChoice.Plunder);
+});
+
+test("D-086 B: the network's inputs follow the AI's state (features)", () => {
+  const x = features({
+    tick: 12 * 1200,
+    food: 400,
+    wood: 160,
+    gold: 80,
+    crystal: 20,
+    pop: 40,
+    cap: 60,
+    ceiling: 200,
+    farmers: 30,
+    spear: 6,
+    ranged: 4,
+    mages: 1,
+    cavalry: 0,
+    buildings: [1, 1, 0, 0, 3, 4, 1, 1, 0],
+    worth: 125,
+    home: 10,
+    away: 1,
+    cityHp: 1200,
+    enemy: [5, 3, 0, 0],
+    enemyWorth: 80,
+    enemyNear: 0,
+    enemyCityKnown: 1,
+    enemyCityHp: 1200,
+    enemyForts: 0,
+    towns: [0, 0, 1, 5, 1],
+    townDist: 30,
+    mode: 0,
+    lost: 2,
+    killed: 3,
+  });
+  assert.equal(x.length, NET_INPUTS);
+  assert.deepEqual(x.slice(0, 5), [12, 25, 10, 5, 5]);
+  assert.deepEqual(x.slice(-7), [255, 0, 0, 0, 0, 2, 3], "mode home, then the losses and the falls");
+});
+
+test("D-086 B: with the network on, hard plays 12 minutes of a game against hard without an error, both maps", () => {
+  // Choices that take it to towns and govern them (its march to a town once read the cost before it could).
+  const runs: [("fixed" | "random"), NetWeights][] = [
+    ["fixed", forcedNet([AS_HARD, AS_HARD, AS_HARD, TOWN_GOVERN])],
+    ["random", forcedNet([AS_HARD, MIX_SPEAR, BUILD_FARMERS, TOWN_GOVERN])],
+    ["fixed", testNet()],
+  ];
+  for (const [map, net] of runs) {
+    {
+      const g = new Game({ seed: 3, scenario: "standard", map });
+      const ais = [0, 1].map((p) => createAi(p, 3, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: p === 0 ? { net } : {} }, p));
+      let seq = 0;
+      for (let t = 0; t < 12 * 1200 && !g.w.over; t++) {
+        if (g.tick % 10 === 0) for (let p = 0; p < 2; p++) for (const body of ais[p].think(buildView(g, p))) g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+        g.step();
+      }
+      assert.ok(g.tick > 0);
+    }
+  }
+});
+
+test("D-086 B: the network that always chooses AS_HARD (every weight 0) plays exactly as hard: the same game, both maps, one side or both", () => {
+  /** The final hash of 12 minutes of hard against hard, each side with `nets[p]` (null: off). */
+  const play = (map: "fixed" | "random", nets: (NetWeights | null)[]) => {
+    const g = new Game({ seed: 5, scenario: "standard", map });
+    const ais = [0, 1].map((p) => createAi(p, 5, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: { net: nets[p] } }, p));
+    let seq = 0;
+    for (let t = 0; t < 12 * 1200 && !g.w.over; t++) {
+      if (g.tick % 10 === 0) for (let p = 0; p < 2; p++) for (const body of ais[p].think(buildView(g, p))) g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+      g.step();
+    }
+    return g.hash();
+  };
+  for (const map of ["fixed", "random"] as const) {
+    const off = play(map, [null, null]);
+    assert.equal(play(map, [asHardNet(), null]), off, `${map}: one side`);
+    assert.equal(play(map, [asHardNet(), asHardNet()]), off, `${map}: both sides`);
+  }
+  assert.notEqual(play("fixed", [forcedNet([ARMY_HOME, AS_HARD, AS_HARD, AS_HARD]), null]), play("fixed", [null, null]), "a network that waits plays another game");
+});
+
+test("D-086 B: choices can be ruled out (masking): the best allowed one is made", () => {
+  const x = Array.from({ length: NET_INPUTS }, (_, i) => (i * 37 + 11) % 256);
+  const all = new Array(NET_HEADS.reduce((s, k) => s + k, 0)).fill(true);
+  assert.deepEqual(choose(testNet(), x, all), choose(testNet(), x));
+  const noBase = [...all];
+  noBase[2] = false;
+  assert.notEqual(choose(testNet(), x, noBase)[0], 2, "army: not the ruled-out march");
+  const farmersOnly = [...all];
+  farmersOnly[7] = false;
+  farmersOnly[8] = false;
+  assert.equal(choose(testNet(), x, farmersOnly)[2], AS_HARD, "build: as hard, the only one allowed");
+});
+
 // --- D-086 A: food and gold piling up while wood is short; governing earlier ----------------------------------
 
 /**
@@ -1736,7 +1970,9 @@ test("D-086 A3 (plan.peekFirst): no enemy soldier seen for a minute, one goes to
 
 test("D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home", () => {
   // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
-  const r = new Runner({ seed: 1, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
+
+  // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
+  const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
   const g = r.game;
   const m = g.w.map;
   const plan = planFor("push", "h1", "close");
