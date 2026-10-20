@@ -117,6 +117,8 @@ def terrain_table():
                           rails="north edge (x + 0.5, y) front y + 0.01 where cell (x, y-1) is not 6; south edge (x + 0.5, y + 1) front y + 1 where (x, y+1) is not 6"),
                 "layer": "deck", "deck_top_m": DECK_TOP_M},
         cliff=dict(value=7, posts=[f"terrain_cliff_post_v{v}" for v in range(TR.CLIFF_POSTS)], post_front="y + 1",
+                   post_when="the cell's links (the cliff neighbours on its four sides, and on a corner only where neither "
+                             "side cell between is cliff) are not exactly two opposite ones",
                    arms={"E": dict(frame="terrain_cliff_arm_E", when="(x+1, y) is 7", anchor="(x + 1, y + 0.5)", front="y + 0.99"),
                          "S": dict(frame="terrain_cliff_arm_S", when="(x, y+1) is 7", anchor="(x + 0.5, y + 1)", front="y + 1.99"),
                          "SE": dict(frame="terrain_cliff_arm_SE", when="(x+1, y+1) is 7, (x+1, y) and (x, y+1) are not",

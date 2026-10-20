@@ -26,6 +26,20 @@ def variant(x, y, n):
     return (x * 31 + y * 17 + ((x ^ y) & 7)) % n
 
 
+def cliff_links(at, x, y):
+    """The directions (dx, dy) a cliff cell joins its neighbours in: the four sides, and a corner only where neither
+    side cell between is cliff."""
+    out = []
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            if (dx, dy) == (0, 0) or at(x + dx, y + dy) != 7:
+                continue
+            if dx and dy and (at(x + dx, y) == 7 or at(x, y + dy) == 7):
+                continue
+            out.append((dx, dy))
+    return out
+
+
 def pieces(T, W, H):
     out = []
 
@@ -62,10 +76,14 @@ def pieces(T, W, H):
                     if at(x, y + 1) != 6:
                         out.append(dict(frame="terrain_bridge_rail_x", x=cx, y=y + 1, front=y + 1))
             elif v == 7:
-                # the rock face: a post on every cliff cell, an arm to each cliff neighbour E, S, and SE / SW only
-                # where the two cells between are not cliff (a staircase line joins through them instead); the
-                # arms are drawn just before the posts of their southern row so the posts cover the joins
-                out.append(dict(frame=f"terrain_cliff_post_v{variant(x, y, CLIFF_POSTS)}", x=cx, y=cy, front=y + 1))
+                # the rock face: an arm to each cliff neighbour E, S, and SE / SW only where the two cells between
+                # are not cliff (a staircase line joins through them instead); a post where the line turns, ends or
+                # branches (arms in a straight run overlap into one face); the arms are drawn just before the posts
+                # of their southern row so the posts cover the joins
+                links = cliff_links(at, x, y)
+                straight = len(links) == 2 and links[0][0] == -links[1][0] and links[0][1] == -links[1][1]
+                if not straight:
+                    out.append(dict(frame=f"terrain_cliff_post_v{variant(x, y, CLIFF_POSTS)}", x=cx, y=cy, front=y + 1))
                 if at(x + 1, y) == 7 and x + 1 < W:
                     out.append(dict(frame="terrain_cliff_arm_E", x=x + 1, y=cy, front=y + 0.99))
                 if at(x, y + 1) == 7 and y + 1 < H:

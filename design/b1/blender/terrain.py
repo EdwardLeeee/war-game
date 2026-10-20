@@ -189,9 +189,9 @@ ARM_END = (2.8, 0.95)          # every arm's height and half-width at its two en
 
 
 def tcliff_post(root, c, variant=0):
-    """Cliff (7): the rock mass on the cell's middle, where the arms to the neighbours meet: the arms' cross-section
-    turned round the middle, a little taller and wider than an arm's end so it covers the join (and rounds off the
-    line's two ends)."""
+    """Cliff (7): the rock mass on a cell's middle where a line turns or ends (terrain_rules.py): the arms'
+    cross-section turned round the middle, a little taller and wider than an arm's end so it covers the join and
+    rounds off the line's two ends."""
     import bmesh
     P = _mats()
     rnd = random.Random(600 + variant)
@@ -223,13 +223,21 @@ ARMS = {"E": ((-1.0, 0.0), (1.0, 0.0)), "S": ((0.0, 1.0), (0.0, -1.0)), "SE": ((
         "SW": ((1.0, 1.0), (-1.0, -1.0))}       # render axes (+y north): from this cell's middle to the neighbour's
 
 
+ARM_PAST = 0.15                # metres an arm reaches past each cell middle: two arms in a line overlap there
+
+
 def tcliff_arm(root, c, variant=0, direction="E"):
     """Cliff (7): the rock face between a cliff cell and its neighbour to the E, S, SE or SW, its middle on the anchor
-    (half-way between the two cells' middles); no taper at its ends, the posts cover the joins."""
+    (half-way between the two cells' middles). Its two ends hold the same cross-section (ARM_END) and reach a little
+    past the cell middles, so the arms of a straight run overlap into one face with no post between them; a post
+    covers the turns and the two ends of a line (terrain_rules.py)."""
     P = _mats()
     rnd = random.Random(700 + variant + 13 * list(ARMS).index(direction))
-    a, b = ARMS[direction]
-    _cliff(root, [a, b], P, rnd, taper_ends=False, name=f"tc_arm_{direction}", ends=ARM_END)
+    (ax, ay), (bx, by) = ARMS[direction]
+    L = math.hypot(bx - ax, by - ay)
+    ex, ey = (bx - ax) / L * ARM_PAST, (by - ay) / L * ARM_PAST
+    _cliff(root, [(ax - ex, ay - ey), (bx + ex, by + ey)], P, rnd, taper_ends=False, name=f"tc_arm_{direction}",
+           ends=ARM_END)
 
 
 def _faces(name, polys, m, root, z):
