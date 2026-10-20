@@ -90,8 +90,12 @@ def make_unit(kind, team, x, y, facing, anim, frame, n):
         ob["fx_on"] = False
         ob.hide_render = True
     sks = [o for o in gc.get_objects() if isinstance(o, body2.Skinner) and id(o) not in before]
-    if V >= 1:
+    if V == 1:
         u.rigs["body"].j["head"].scale = (HEAD, HEAD, HEAD)
+    if V == 2:
+        import human_r7
+        more, _ = human_r7.dress(u, kind)
+        sks += more
     u.root.location = (x, y, 0.0)
     u.frames = dict(getattr(u, "frames", {}), **{anim: n})
     u.face(facing)
