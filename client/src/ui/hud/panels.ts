@@ -124,7 +124,7 @@ export function autoTrainText(type: number, flags: number): string | null {
  */
 export const ORDER_TEXT = {
   advance: "攻擊：點地面或小地圖攻擊移動，遇到敵人就打；點敵人集中打它",
-  retreat: "移動：點地面或小地圖走過去，路上不還手，到了敵人靠近就打；點主城回家",
+  retreat: "移動：點地面或小地圖走過去，路上不還手；點主城回家",
   hold: "堅守：停在原地，敵人進到射程就打，不追出去",
 } as const;
 /** A mage's crystal cannon (D-095: only automatic; 「把消耗放進說明裡面」), its numbers the simulation's own. */

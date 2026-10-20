@@ -308,10 +308,10 @@ test("躲著的兵（D-083）：躲進去就離開編隊、目標不變，按鈕
   const mark = (await sent(page)).length;
   await selectForCommands(page, hiding);
   await expect(page.locator(".sel-info .order-now")).toHaveText(`目前：躲在建築裡 ${hiding.length}`);
-  await page.locator(".cmds").getByRole("button", { name: /^進攻/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^攻擊/ }).tap();
   await tap(page, await at(page, { x: 18, y: 67 }));
   await expect(toast(page, HIDE_ERROR)).toBeVisible();
-  expect((await sent(page)).slice(mark).filter((c) => c.c === "move" || c.c === "attack")).toEqual([]);
+  expect((await sent(page)).slice(mark).filter((c) => c.c === "move" || c.c === "attack" || c.c === "retreat")).toEqual([]);
   // 全軍 (and 全軍撤退, from the same list): only those outside.
   const outside = [...spear, ...ranged.slice(2), ...mages].sort((a, b) => a - b);
   await expect(armyButton(page)).toHaveText(`全軍 ${outside.length}`);
@@ -449,9 +449,9 @@ for (const viewport of [null, FULL_SCREEN]) {
     await expect(page.locator(".cmds").getByRole("button", { name: /^躲進去/ })).toBeVisible();
     await expect(page.locator(".sel-note")).toBeVisible();
     await checkLayout(page);
-    // 進攻、撤退、堅守、停止, then 隊形 (two columns wide) and the mages' two; 躲進去 starts a third row.
+    // 攻擊、移動、堅守、停止, then 整理隊形, 隊形 (two columns wide) and 躲進去 (D-095: no mage buttons).
     const rows = new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y)));
-    expect(rows.size, "three rows of commands").toBe(3);
+    expect(rows.size, "two rows of commands").toBe(2);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     await shot(page, info, `r7-layout-army-${width}x${height}`);
     await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
