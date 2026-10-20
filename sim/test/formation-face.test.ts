@@ -79,6 +79,8 @@ test("`face` with loose: two cells apart, facing that way", () => {
   g.fog.update(g.w);
   cmd(g, 0, { c: "formation", u: ids, loose: true, face: 12 });
   for (let t = 0; t < 20 * 20 && (t < 2 || !settled(g, ids)); t++) run(g, 1);
+  // Those that stand push apart to two cells within a second or two.
+  run(g, 2 * 20);
   const u = g.w.units.col;
   assert.ok(ids.every((id) => (u.flags[slotOf(g, id)] & UnitFlag.Loose) !== 0));
   const r = ranks(g, ids, 12);

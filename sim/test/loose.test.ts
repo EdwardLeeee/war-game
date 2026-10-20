@@ -165,7 +165,9 @@ test("mirror-image loose squads march, fight and keep apart as mirror images, ti
   cmd(g, 0, { c: "move", u: squad[0], x: bx + 3, y: by + 3 });
   cmd(g, 1, { c: "move", u: squad[1], x: by + 3, y: bx + 3 });
   let fighting = 0;
-  for (let t = 0; t < 400; t++) {
+  // 30 s: they march, fight and stand (with the ranks on the march, MARCH_ORDER, the loose ranged
+  // let the spearmen pass first and it all comes about 4 s later than at the 20 s this had).
+  for (let t = 0; t < 600; t++) {
     g.step();
     for (const [a, b] of pairs) {
       const sa = slotOf(g, a);

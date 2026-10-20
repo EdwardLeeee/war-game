@@ -351,6 +351,18 @@ export const AVENGE = { on: true, reach: 8 * CELL };
  * it reads.
  */
 export const FIRE_BACK = { on: true, reach: 9 * CELL, leash: 8 * CELL };
+/** A formation's ranks (GDD section 9): melee in front (0), then ranged (1), then mages (2). */
+export const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
+/**
+ * Ranks on the march (D-095; the user: 「常常跑一跑法師就跑到前排」): on a move, a ranged unit or
+ * mage more than DIRECT_STEER from its place stands and lets the lower ranks of its group pass
+ * (spearmen and cavalry; for a mage, ranged too) while it is not `margin` behind the middle of
+ * those of them that walk, along its way to its place; at most `maxWait` ticks a command. Lower
+ * ranks that stand do not count, so a front that stopped holds no one up, and once one of the
+ * group fights nobody waits. A retreat is left as it is. The unit column it keeps (waited) is in
+ * the hash only while it is on.
+ */
+export const MARCH_ORDER = { on: true, margin: CELL >> 1, maxWait: 10 * S };
 /** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
 export const SHORT_CANNON = { on: true, range: 7 * CELL };
 /**

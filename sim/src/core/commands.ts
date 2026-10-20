@@ -40,6 +40,7 @@ import {
   MAGE_CAP,
   OUTPOST,
   QUEUE_MAX,
+  rank,
   RETREAT_OWN_SPEED,
   CAVALRY,
   GARRISON,
@@ -879,8 +880,6 @@ function heading(w: World, cluster: number[], cx: number, cy: number): number {
   return dir16((enemy.cellX << CELL_SHIFT) + 512 - cx, (enemy.cellY << CELL_SHIFT) + 512 - cy);
 }
 
-/** Melee in front, then ranged, then mages. */
-const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
 
 /**
  * The walkable cell nearest (x, y), up to 8 cells off, that the straight way from (gx, gy) (fixed
@@ -1024,5 +1023,6 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     u.target[s] = -1;
     u.stuck[s] = 0;
     u.fireBack[s] = -1;
+    u.waited[s] = 0;
   });
 }

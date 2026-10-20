@@ -47,11 +47,13 @@ import {
   LEASH,
   LOOSE_KEEP,
   MAIN_ARROW,
+  MARCH_ORDER,
   MAX_PUSH,
   MULT_DEN,
   MULT_NUM,
   OUTPOST,
   PUSH,
+  rank,
   RETARGET_EVERY,
   SEPARATION,
   TOWER_ARROW,
@@ -119,6 +121,12 @@ export class UnitSystem {
   private readonly squadFights = new Map<number, { x: number[]; y: number[]; buildings: number[] }>();
   /** Per enemy unit id, how many units had it as their target at the start of the tick. */
   private readonly attackers = new Map<number, number>();
+  /**
+   * Per group, at the start of the tick (MARCH_ORDER): of its spearmen and cavalry, then of its
+   * ranged, that walk on the move, the sums of x and y and the number; then how many of the group
+   * fight.
+   */
+  private readonly marching = new Map<number, number[]>();
   private unitDamage = new Int32Array(256);
   /** The same hits counted against a mage's shield (its own multipliers). */
   private shieldDamage = new Int32Array(256);
@@ -178,6 +186,7 @@ export class UnitSystem {
     this.bucket(w);
     this.startTarget.set(w.units.col.target.subarray(0, w.units.count));
     this.collectSquadFights(w);
+    this.collectMarching(w);
     this.collectWarnings(w);
     this.dodging.fill(0, 0, w.units.count);
     if (OUTPOST.on) this.collectPosts(w, fog);
@@ -312,6 +321,57 @@ export class UnitSystem {
       }
     }
     return bestId;
+  }
+
+  /**
+   * Where each group's lower ranks walk at the start of the tick (MARCH_ORDER): last tick's walkers
+   * on the move with no target; and whether any of the group (on the move or there) fights.
+   */
+  private collectMarching(w: World): void {
+    this.marching.clear();
+    if (!MARCH_ORDER.on) return;
+    const u = w.units.col;
+    for (let j = 0; j < w.units.count; j++) {
+      if (u.group[j] < 0 || u.type[j] === UnitType.Farmer) continue;
+      const fights = this.startTarget[j] >= 0;
+      const r = rank(u.type[j]);
+      const walks = u.order[j] === Order.Move && !fights && r <= 1 && (u.vx[j] !== 0 || u.vy[j] !== 0);
+      if (!fights && !walks) continue;
+      let m = this.marching.get(u.group[j]);
+      if (m === undefined) {
+        m = [0, 0, 0, 0, 0, 0, 0];
+        this.marching.set(u.group[j], m);
+      }
+      if (fights) {
+        m[6]++;
+        continue;
+      }
+      m[3 * r] += u.x[j];
+      m[3 * r + 1] += u.y[j];
+      m[3 * r + 2]++;
+    }
+  }
+
+  /**
+   * MARCH_ORDER: unit i (on a move, (dx, dy) from its place, not fighting) stands this tick to let
+   * the lower ranks of its group pass; counts the tick.
+   */
+  private letPass(w: World, i: number, dx: number, dy: number): boolean {
+    const u = w.units.col;
+    const r = rank(u.type[i]);
+    if (r === 0 || u.waited[i] >= MARCH_ORDER.maxWait || dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) return false;
+    // A group in a fight fights as it stands.
+    const m = this.marching.get(u.group[i]);
+    if (m === undefined || m[6] > 0) return false;
+    const c = r === 1 ? m[2] : m[2] + m[5];
+    if (c === 0) return false;
+    const mx = idiv(r === 1 ? m[0] : m[0] + m[3], c);
+    const my = idiv(r === 1 ? m[1] : m[1] + m[4], c);
+    // How far ahead of their middle it is, along its way: behind by `margin` or more, it walks.
+    const ahead = (u.x[i] - mx) * dx + (u.y[i] - my) * dy;
+    if (ahead <= -MARCH_ORDER.margin * isqrt(dx * dx + dy * dy)) return false;
+    u.waited[i]++;
+    return true;
   }
 
   /** What each squad's soldiers had as targets at the start of the tick (SQUAD). */
@@ -1165,6 +1225,10 @@ export class UnitSystem {
       const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT));
       if (goal >= 0 && here >= 0 && this.regions.of(w, goal) !== here) {
         this.breakThrough(w, fields, i, here, u.orderX[i], u.orderY[i], order === Order.Move && !farmer);
+        return;
+      }
+      if (order === Order.Move && MARCH_ORDER.on && this.letPass(w, i, dx, dy)) {
+        u.action[i] = Action.Idle;
         return;
       }
       if (this.slotInReach(w, i, dx, dy)) {
