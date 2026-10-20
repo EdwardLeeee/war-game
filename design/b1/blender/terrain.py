@@ -83,23 +83,7 @@ def tpatch(root, c, variant=0, w=48.0, d=28.0, plan=None):
         _boulders(f"tp_rk{k}", x, y, P, root, rnd, n=4, size=rnd.uniform(1.15, 1.45))
     line = plan.get("cliff_line", [])
     if line:
-        # one escarpment along the line: broken blocks of rock face, strata, scree at its foot
-        segs = list(zip(line, line[1:]))
-        for k, ((x0, y0), (x1, y1)) in enumerate(segs):
-            L = math.hypot(x1 - x0, y1 - y0)
-            ang = math.degrees(math.atan2(y1 - y0, x1 - x0))
-            n = max(2, int(L / 0.9))
-            for i in range(n):
-                t = (i + 0.5) / n
-                x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
-                h = rnd.uniform(2.6, 3.4)
-                # tall weathered rock, not blocks: stretched, overlapping boulders
-                ico(f"tp_cl{k}_{i}", 0.8, P["cliff"], root, loc=(x, y, h * 0.42), subdiv=2,
-                    scale=(rnd.uniform(0.9, 1.15), rnd.uniform(0.85, 1.05), h / 1.55), rot=(0, 0, ang + rnd.uniform(-20, 20)))
-            for i in range(n):
-                t = rnd.random()
-                _boulders(f"tp_scree{k}_{i}", x0 + (x1 - x0) * t + rnd.uniform(-0.3, 0.3), y0 + (y1 - y0) * t - 1.1, P, root, rnd,
-                          n=2, size=0.55, mat=P["cliffdark"])
+        _cliff(root, line, P, rnd)
     for k, (x, y, v) in enumerate(plan.get("trees", [])):
         g = lib.empty(f"tp_tree{k}", parent=root, loc=(x + rnd.uniform(-0.2, 0.2), y + rnd.uniform(-0.2, 0.2), 0))
         nature.tree(g, c, variant=v, seed=200 + k)
@@ -116,6 +100,64 @@ def tpatch(root, c, variant=0, w=48.0, d=28.0, plan=None):
                 a = rnd.uniform(0, math.pi)
                 rod(f"tp_br{k}_{i}", (x + math.cos(a) * 0.8, y + math.sin(a) * 0.8, 0.05),
                     (x - math.cos(a) * 0.8, y - math.sin(a) * 0.8, rnd.uniform(0.4, 0.8)), 0.035, bramble, parent=root, segs=5)
+
+
+def _cliff(root, line, P, rnd):
+    """One continuous rock face along the line (the user 2026-10-20 picked the cliff; the first draft looked like a row
+    of standing stones): a swept cross-section whose height and width wander, a ledge half-way up for the strata, broken
+    rock jutting from the face, scree at both feet."""
+    import bmesh
+    pts = []
+    for (x0, y0), (x1, y1) in zip(line, line[1:]):
+        L = math.hypot(x1 - x0, y1 - y0)
+        n = max(1, int(L / 0.35))
+        for i in range(n):
+            t = i / n
+            pts.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t))
+    pts.append(line[-1])
+    bm = bmesh.new()
+    rings = []
+    for k, (x, y) in enumerate(pts):
+        a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / L, dx / L
+        s = k * 0.35
+        end = min(k, len(pts) - 1 - k)
+        taper = min(1.0, 0.35 + end * 0.12)            # the ends come down to the ground
+        h = (2.7 + 0.35 * math.sin(s * 1.3) + 0.25 * math.sin(s * 3.1 + 1.0) + rnd.uniform(-0.12, 0.12)) * taper
+        w = 0.95 + 0.15 * math.sin(s * 0.9)
+        prof = [(-w, 0.0), (-w * 0.78, h * 0.5), (-w * 0.62, h * 0.55), (-w * 0.42, h * 0.97), (0.0, h),
+                (w * 0.4, h * 0.94), (w * 0.6, h * 0.5), (w * 0.8, h * 0.46), (w, 0.0)]
+        rings.append([bm.verts.new((x + nx * o, y + ny * o, z)) for o, z in prof])
+    for r0, r1 in zip(rings, rings[1:]):
+        for i in range(len(r0) - 1):
+            bm.faces.new((r0[i], r0[i + 1], r1[i + 1], r1[i]))
+    bm.faces.new(list(reversed(rings[0])))
+    bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    rock = lib.mat("tp_cliffface", (0.34, 0.3, 0.26), 0.92, noise=0.55, noise_scale=2.2)
+    lib._mesh_obj("tp_cliff", bm, rock, root, (0, 0, 0), smooth=False, outline=True)
+    for k in range(0, len(pts), 3):                       # broken rock on the face, on both sides
+        x, y = pts[k]
+        side = 1 if k % 2 else -1
+        a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / L, dx / L
+        z = rnd.uniform(0.6, 2.0)
+        ico(f"tp_jut{k}", rnd.uniform(0.3, 0.5), P["cliffdark"], root, loc=(x + nx * side * 0.75, y + ny * side * 0.75, z),
+            subdiv=1, scale=(1.2, 0.8, 0.7))
+    for k in range(0, len(pts), 2):                       # scree at the feet
+        x, y = pts[k]
+        a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / L, dx / L
+        for side in (-1, 1):
+            if rnd.random() < 0.6:
+                ico(f"tp_scr{k}{side}", rnd.uniform(0.14, 0.3), P["cliffdark"], root,
+                    loc=(x + nx * side * rnd.uniform(1.0, 1.5), y + ny * side * rnd.uniform(1.0, 1.5), 0.08), subdiv=1, scale=(1, 1, 0.6))
 
 
 BUILDERS = {"tpatch": tpatch}
