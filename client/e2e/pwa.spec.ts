@@ -1,6 +1,7 @@
 // 加到主畫面 (D-042): the manifest, the icons and the iOS tags that let the prototype open
 // without the browser's address bar, and the 有新版本 notice that takes the place of an
-// offline cache. Whether it really opens without the address bar can only be seen on the
+// offline cache: no page is cached, only the pictures (D-091: a service worker keeps this
+// build's art tag's atlases; e2e/load-times.spec.ts times a start with them). Whether it really opens without the address bar can only be seen on the
 // user's iPhone (and in an installed Chrome window): no browser here runs a page as an
 // installed web app.
 
@@ -37,7 +38,7 @@ interface Manifest {
 const newerDeployed = (page: Page) =>
   page.route("**/version.json*", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ commit: "0000000" }) }));
 
-test("加到主畫面：頁面連到 manifest；名稱、起始網址、範圍、全螢幕、橫向、192 和 512 的圖示都對；iOS 的標籤和 180 的圖示也在；沒有 service worker（D-042）", async ({ page, request }) => {
+test("加到主畫面：頁面連到 manifest；名稱、起始網址、範圍、全螢幕、橫向、192 和 512 的圖示都對；iOS 的標籤和 180 的圖示也在（D-042）", async ({ page, request }) => {
   await page.goto("./?test=1");
   const href = await page.locator('link[rel="manifest"]').getAttribute("href");
   expect(href, "a manifest link").not.toBeNull();
@@ -66,8 +67,51 @@ test("加到主畫面：頁面連到 manifest；名稱、起始網址、範圍�
   const t = await request.get(new URL(touch ?? "", page.url()).href);
   expect(t.ok(), "180 icon loads").toBe(true);
   expect(pngSize(await t.body())).toEqual({ w: 180, h: 180 });
-  // Nothing is cached: no service worker (D-042).
-  expect(await page.evaluate(async () => (await navigator.serviceWorker?.getRegistrations())?.length ?? 0)).toBe(0);
+});
+
+/** The service worker in charge of the page; false where the browser has none (Playwright's docs promise them in Chromium only; its WebKit runs them too). */
+const controlled = async (page: Page): Promise<boolean> => {
+  if (!(await page.evaluate(() => "serviceWorker" in navigator))) return false;
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 10_000 });
+  return true;
+};
+
+test.describe("service worker", () => {
+  test.use({ serviceWorkers: "allow" });
+
+  test("只存圖（D-091 取代 D-042 的一部分）：service worker 只存這一版美術 tag 的圖；頁面、程式、version.json 照舊從網路拿；換 tag 時舊的圖刪掉", async ({ page, browserName }) => {
+    test.setTimeout(120_000);
+    await page.goto("./?test=1&art=x3");
+    const on = await controlled(page);
+    test.skip(!on, `no service workers in Playwright's ${browserName}`);
+    const reg = await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).map((r) => r.active?.scriptURL ?? ""));
+    expect(reg).toHaveLength(1);
+    const tag = new URL(reg[0]).searchParams.get("tag");
+    expect(new URL(reg[0]).pathname).toMatch(/\/sw\.js$/);
+    expect(tag).toMatch(/^art-v\d+$/);
+    await page.getByRole("button", { name: "開始" }).tap();
+    await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
+    // The atlases, all of them, under art/<tag>/; nothing else.
+    const kept = await page.evaluate(async () => {
+      const out: Record<string, string[]> = {};
+      for (const name of await caches.keys()) out[name] = (await (await caches.open(name)).keys()).map((r) => new URL(r.url).pathname);
+      return out;
+    });
+    expect(Object.keys(kept)).toEqual([`war-game-${tag}`]);
+    const files = kept[`war-game-${tag}`];
+    expect(files.length).toBeGreaterThan(20);
+    for (const f of files) expect(f).toContain(`/art/${tag}/`);
+    // The page, its code and version.json: from the network, as before.
+    const via = await page.evaluate(async () => {
+      const js = performance.getEntriesByType("resource").map((e) => e.name).find((n) => n.endsWith(".js")) ?? "";
+      return Promise.all(["./", "version.json", js].map(async (u) => (await fetch(u, { cache: "no-store" })).headers.get("x-war-game-sw")));
+    });
+    expect(via).toEqual([null, null, null]);
+    expect(await page.evaluate(async (t) => (await fetch(`art/${t}/x3/effects/effects.json`)).headers.get("x-war-game-sw"), tag)).toBe("hit");
+    // A new tag's worker deletes the old tag's pictures.
+    await page.evaluate(() => navigator.serviceWorker.register("sw.js?tag=art-v999"));
+    await expect.poll(() => page.evaluate(async () => await caches.keys()), { timeout: 10_000 }).not.toContain(`war-game-${tag}`);
+  });
 });
 
 test("有新版本：版本檔和頁面的 commit 一樣時不提示；線上換了版本，從背景回來或打開頁面時，開局畫面出現「更新」，按了重新載入（D-042）", async ({ page, request }, info) => {

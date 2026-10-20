@@ -74,6 +74,7 @@ export class LabPanel {
   private readonly checkBtn: HTMLButtonElement;
   private readonly status: HTMLElement;
   private readonly resultBox: HTMLElement;
+  private readonly loadBox: HTMLElement;
   /** The population when the measurement started (the rules decide the cap: D-083). */
   private startPopulation: { population: number; cap: number } | null = null;
   private readonly frameMs: number[] = [];
@@ -147,6 +148,9 @@ export class LabPanel {
     this.status = make("p", this.panel, "lab-status");
     this.resultBox = make("div", this.panel, "lab-result");
     this.resultBox.hidden = true;
+    // 開一局要等多久 (D-091): this game's start.
+    this.loadBox = make("pre", this.panel, "lab-load");
+    this.loadBox.hidden = true;
     const logWrap = make("div", this.panel, "lab-log-wrap");
     const logBox = make("div", logWrap, "lab-log");
     logBox.setAttribute("role", "log");
@@ -178,6 +182,12 @@ export class LabPanel {
   show(): void {
     this.panel.hidden = false;
     this.log.shown();
+  }
+
+  /** Where this game's start spent its time (lab/load-times.ts). */
+  showLoad(lines: string[]): void {
+    this.loadBox.textContent = lines.join("\n");
+    this.loadBox.hidden = false;
   }
 
   hide(): void {

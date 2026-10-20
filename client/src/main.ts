@@ -23,6 +23,7 @@ import type { Culture } from "./art/spec.ts";
 import { CULTURES, DEFAULT_CULTURE, loadCulture, saveCulture } from "./culture.ts";
 import { loadUnitArt, type UnitArt } from "./render/unit-art.ts";
 import { measureCutShort } from "./lab/panel.ts";
+import { type LoadReport, loadLines, LoadTimes, LoadTimesBox } from "./lab/load-times.ts";
 import type { AstcSample } from "./lab/astc.ts";
 import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_LOST_TEXT, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
@@ -53,6 +54,8 @@ export interface ProtoHook {
   simBuild: string;
   saved: () => Promise<SavedGame | null>;
   lastSave: SaveCost | null;
+  /** 開一局要等多久 (D-091): the last start's load times. */
+  loadTimes: () => LoadReport | null;
 }
 
 /** What the last save for 繼續上一局 cost (ms): export_log's round trip (the Worker's work), and on the page's main thread building it and IndexedDB's put. */
@@ -89,11 +92,54 @@ void logs.flush();
 /** 繼續上一局 (D-083): the game being played, kept on this phone (one, the last). */
 const saveStore = new SaveStore(openSaveDb());
 
-const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false, recordCode: code, logs: () => logs.list(), simBuild: __SIM_BUILD__, saved: () => saveStore.load(), lastSave: null };
+/**
+ * 開一局要等多久 (D-091): every start measured, from the tap to the first frame with the
+ * battlefield; in the 量測 panel, and on the screen with ?test=1&loadtimes=1.
+ */
+const loadTimes = new LoadTimes();
+if (params.loadTimes) new LoadTimesBox(loadTimes);
+
+/**
+ * The atlases kept on the phone (D-091, amending D-042): a service worker (public/sw.js) takes this
+ * build's art tag's files from its cache after the first time; the page and its code still come
+ * from the network every time, so a deploy is the new version at once.
+ */
+if (import.meta.env.PROD && __ART_TAG__ !== null && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register(`sw.js?tag=${encodeURIComponent(__ART_TAG__)}`).catch((err: unknown) => console.warn(`service worker: ${String(err)}`));
+}
+
+const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false, recordCode: code, logs: () => logs.list(), simBuild: __SIM_BUILD__, saved: () => saveStore.load(), lastSave: null, loadTimes: () => loadTimes.report };
 if (params.test) window.__proto = hook;
 
 let app: Application | null = null;
 let game: Game | null = null;
+
+/** The canvas, made the first time a game starts; its renders timed while a start is measured. */
+async function stage(): Promise<Application> {
+  if (app !== null) return app;
+  const a = await createStage($("stage"));
+  const renderer = a.renderer as unknown as { render: (...args: unknown[]) => unknown };
+  const render = renderer.render.bind(renderer);
+  // The first render with the battlefield ends the measurement: its pictures go to the GPU then.
+  renderer.render = (...args: unknown[]) => {
+    if (!loadTimes.measuring) return render(...args);
+    const start = performance.now();
+    const out = render(...args);
+    const g = game;
+    if (g !== null && loadTimes.render(start, performance.now(), g.view?.curr != null, g.started)) loadMeasured(g);
+    return out;
+  };
+  app = a;
+  return a;
+}
+
+/** A start measured: in the 量測 panel, and the console on test pages (the e2e and CI read it). */
+function loadMeasured(g: Game): void {
+  const r = loadTimes.report;
+  if (r === null) return;
+  g.lab.showLoad(loadLines(r));
+  if (params.test) console.log(`[loadtimes] ${JSON.stringify(r)}`);
+}
 
 /** 難度 on the start screen: 簡單 the first time, then the last choice on this device (D-024). */
 let difficulty: AiDifficulty = loadDifficulty();
@@ -329,10 +375,11 @@ $("restart-game").addEventListener("click", () => {
  * scenario for 量測, which opens the lab and starts measuring once the game runs.
  */
 async function newGame(scenario: ScenarioName = "standard", measure = false): Promise<void> {
+  loadTimes.begin(measure ? "量測" : game === null ? "開始" : "重來");
   $("start").hidden = true;
   hook.screen = "battle";
   hook.ready = false;
-  if (app === null) app = await createStage($("stage"));
+  const app = await stage();
   // 重來 leaves the game on screen: keep its record first (D-056). A new game takes the place
   // of the one kept for 繼續上一局 (D-083).
   if (game !== null) await forgetGame(game, "restart");
@@ -407,21 +454,31 @@ let artChoiceUsed: string | null = null;
 const artChanged = (): boolean => (params.art ?? loadArtChoice()) !== artChoiceUsed;
 let artFailed: string | null = null;
 async function artForGame(): Promise<UnitArt | null> {
+  loadTimes.mark("art");
   const choice = params.art ?? loadArtChoice();
   artChoiceUsed = choice;
   // The fake world draws the shapes, unless the page asks (?art=: its gallery, D-085).
   const base = params.mock && params.art === null ? null : artBase(choice, __ART_TAG__);
-  if (loadedArt !== null && loadedArt.base === base) return loadedArt.art;
+  if (loadedArt !== null && loadedArt.base === base) {
+    loadTimes.artDone("沿用");
+    return loadedArt.art;
+  }
   loadedArt?.art.destroy();
   loadedArt = null;
   artFailed = null;
-  if (base === null) return null;
+  if (base === null) {
+    loadTimes.artDone("關");
+    return null;
+  }
   try {
-    loadedArt = { base, art: await loadUnitArt(base, choice === "test" ? "測試圖" : ART_LABEL[choice]) };
+    loadTimes.artFrom(base);
+    loadedArt = { base, art: await loadUnitArt(base, choice === "test" ? "測試圖" : ART_LABEL[choice], undefined, loadTimes) };
+    loadTimes.artDone("載入");
     return loadedArt.art;
   } catch (err) {
     artFailed = err instanceof Error ? err.message : String(err);
     console.warn(`art: ${artFailed}`);
+    loadTimes.artDone("失敗");
     return null;
   }
 }
@@ -509,10 +566,11 @@ $("continue-cancel").addEventListener("click", () => {
  * game's record went up in the background already.
  */
 async function resumeGame(saved: SavedGame): Promise<void> {
+  loadTimes.begin("繼續上一局");
   continueNote(null);
   continueProgress(0, saved.tick);
   hook.ready = false;
-  if (app === null) app = await createStage($("stage"));
+  const app = await stage();
   const { init } = saved;
   const speed = screenUsable(saved) ? saved.screen.speed : "normal";
   const art = await artForGame();

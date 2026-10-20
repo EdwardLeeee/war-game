@@ -176,6 +176,8 @@ const PROJECTION_DEFAULT = PROJECTIONS.oblique;
 
 export class Game implements GestureHost {
   view: GameView | null = null;
+  /** When the simulation was asked to start and when it answered (performance.now(); D-091's load times). */
+  readonly started = { init: Number.NaN, ready: Number.NaN };
   camera: Camera | null = null;
   mode: Mode = "normal";
   placement: Placement | null = null;
@@ -511,6 +513,7 @@ export class Game implements GestureHost {
       build: this.options.build,
     };
     this.initSent = init;
+    this.started.init = performance.now();
     const resume = this.options.resume;
     if (resume === undefined) {
       this.port.postMessage(init);
@@ -1305,6 +1308,7 @@ export class Game implements GestureHost {
   private receive(msg: FromWorker): void {
     switch (msg.type) {
       case "ready": {
+        this.started.ready = performance.now();
         this.view = new GameView(msg.player ?? 0, msg.map, msg.rules);
         // The map as a diamond (D-085; docs/sprite-atlas.md section 1): the camera, taps and boxes, and the drawing.
         const projection = this.options.view === undefined ? PROJECTION_DEFAULT : PROJECTIONS[this.options.view];

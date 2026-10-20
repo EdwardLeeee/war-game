@@ -77,6 +77,12 @@ export interface PageParams {
   view: "diamond" | "oblique" | "top" | null;
   /** `?test=1&ui=r6|proto`: 正式介面 (R6) on or off instead of its default (ui/formal.ts). */
   ui: "r6" | "proto" | null;
+  /**
+   * `?test=1&loadtimes=1`: where starting a game spends its time (D-091: download, decode, the
+   * simulation starting, the first frame), on the screen while it loads and after; the user's
+   * iPhone screenshot. The 量測 panel and the console have them on any test page.
+   */
+  loadTimes: boolean;
 }
 
 export function parseParams(search: string): PageParams {
@@ -105,5 +111,5 @@ export function parseParams(search: string): PageParams {
   const view = test && (v === "diamond" || v === "oblique" || v === "top") ? v : null;
   const u = q.get("ui");
   const ui = test && (u === "r6" || u === "proto") ? u : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view };
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, loadTimes: test && q.get("loadtimes") === "1" };
 }
