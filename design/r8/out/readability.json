@@ -8,32 +8,60 @@
   "brightness": 1.1,
   "saturation": 0.85
  },
- "bow_e": {
+ "spear_e": {
   "contrast_blue": {
-   "min": 9.372,
-   "max": 11.327,
-   "min_at": "attack 朝向 1 第 2 格"
+   "min": 2.885,
+   "max": 17.819,
+   "min_at": "death 朝向 1 第 9 格"
   },
   "contrast_red": {
-   "min": 10.5,
-   "max": 12.387,
-   "min_at": "attack 朝向 3 第 2 格"
+   "min": 3.93,
+   "max": 18.548,
+   "min_at": "death 朝向 1 第 8 格"
   },
   "visible_blue": {
-   "min": 0.828,
-   "max": 0.893,
-   "min_at": "attack 朝向 5 第 4 格"
+   "min": 0.952,
+   "max": 0.985,
+   "min_at": "attack 朝向 1 第 5 格"
   },
   "visible_red": {
-   "min": 0.829,
-   "max": 0.894,
-   "min_at": "attack 朝向 5 第 4 格"
+   "min": 0.954,
+   "max": 0.986,
+   "min_at": "attack 朝向 1 第 5 格"
   },
   "team": {
-   "min": 0.185,
-   "max": 0.244,
-   "min_at": "attack 朝向 5 第 0 格"
+   "min": 0.113,
+   "max": 0.344,
+   "min_at": "death 朝向 2 第 2 格"
   },
-  "frames": 40
+  "frames": 288
+ },
+ "bow_e": {
+  "contrast_blue": {
+   "min": 0.076,
+   "max": 13.124,
+   "min_at": "death 朝向 2 第 7 格"
+  },
+  "contrast_red": {
+   "min": 0.076,
+   "max": 13.911,
+   "min_at": "death 朝向 1 第 9 格"
+  },
+  "visible_blue": {
+   "min": 0.802,
+   "max": 0.964,
+   "min_at": "death 朝向 2 第 3 格"
+  },
+  "visible_red": {
+   "min": 0.804,
+   "max": 0.967,
+   "min_at": "death 朝向 2 第 3 格"
+  },
+  "team": {
+   "min": 0.127,
+   "max": 0.321,
+   "min_at": "walk 朝向 5 第 2 格"
+  },
+  "frames": 288
  }
 }
