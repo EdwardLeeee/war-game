@@ -26,7 +26,7 @@ def apply(u, kind, version):
     sks = [o for o in gc.get_objects() if isinstance(o, body2.Skinner)]
     if version == 1:
         u.rigs["body"].j["head"].scale = (0.88, 0.88, 0.88)
-    if version in (2, 8):
+    if version in (2, 8) and "body" in u.rigs:     # siege engines have no one to dress
         import human_r7
         if version == 8:                           # R8 (D-093): design/r8/blender/r8.py
             import sys

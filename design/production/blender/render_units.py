@@ -41,6 +41,10 @@ bpy_scene = __import__("bpy").context.scene
 bpy_scene.cycles.seed = 0
 import units5    # noqa: E402
 u = units5.build(job["kind"], job.get("variant", 0), job.get("mage_style"))
+if os.environ.get("R7_VERSION") == "8":   # R8 (D-093): pose changes the deaths must start from (design/r8/blender/r8.py)
+    sys.path.insert(0, os.path.join(HERE, "..", "..", "r8", "blender"))
+    import r8  # noqa: E402
+    r8.before_extend(u, job["kind"])
 if job.get("new_anims"):              # the approved new animations (anims.py)
     import anims  # noqa: E402
     if job.get("infantry_fall") is not None:

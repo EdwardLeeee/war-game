@@ -253,6 +253,7 @@ def dress(u, kind, helmet_scale=0.78, team_tunic=False):
     """Version 2 on one built unit: our body, head and hands hidden, the MPFB body and its clothes skinned to our rig,
     the helmet scaled to a real head; the clothes in our body's own tunic and trouser materials."""
     rig = u.rigs["body"]
+    kind = rig.name                               # the parts are named after the rig (a rider: <kind>_r_...)
     body2.zero_pose(rig)
     co, polys, W = fit(rig)
     J = [rig.j[k] for k in JOINTS]
