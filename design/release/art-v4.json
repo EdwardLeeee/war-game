@@ -1,0 +1,22 @@
+{
+ "tag": "art-v4",
+ "note": "城牆（D-089）：小鎮木柵、大城石牆的圖塊與牆內地磚（castle/，每座城的擺法寫在 castle_<c>.json），3×3 大城箭樓（TownTower.sizes）；兵種、效果、其他建築和資源點照 art-v3。",
+ "units": {
+  "farmer_e": {"run": 36849835568, "artifact": "production-farmer_e"},
+  "spear_e": {"run": 36849835568, "artifact": "production-spear_e"},
+  "xbow_e": {"run": 36850248764, "artifact": "production-xbow_e"},
+  "hcav_e": {"run": 36849835568, "artifact": "production-hcav_e"},
+  "siege_e": {"run": 36849835568, "artifact": "production-siege_e"},
+  "mage_e": {"run": 36849835568, "artifact": "production-mage_e"},
+  "farmer_w": {"run": 36849835568, "artifact": "production-farmer_w"},
+  "pike_w": {"run": 36849835568, "artifact": "production-pike_w"},
+  "bow_w": {"run": 36849835568, "artifact": "production-bow_w"},
+  "knight_w": {"run": 36849835568, "artifact": "production-knight_w"},
+  "siege_w": {"run": 36849835568, "artifact": "production-siege_w"},
+  "mage_w": {"run": 36849835568, "artifact": "production-mage_w"}
+ },
+ "effects": {"run": 39132395283, "artifact": "production-effects-atlas"},
+ "buildings": {"run": 39296667247, "artifact": "production-buildings"},
+ "castle": true,
+ "astc_sample": {"unit": "spear_e", "scale": 2, "layers": ["color", "team"]}
+}

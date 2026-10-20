@@ -12,6 +12,9 @@ from pathlib import Path
 
 ROUND = Path(__file__).resolve().parents[1]          # design/round1
 BUILD = ROUND / "build"                              # intermediate, git-ignored
+R7_VERSION = os.environ.get("R7_VERSION")             # R7 (D-092) style test: the units in a realism version's look
+if R7_VERSION:
+    BUILD = BUILD / f"r7v{R7_VERSION}"                # ... rendered beside the production ones, never over them
 OUT = ROUND / "out"                                  # final labelled images
 
 BLENDER = Path(os.environ.get("BLENDER", Path.home() / ".local/opt/blender-5.2.2/blender"))

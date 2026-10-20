@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       round:
-        description: "round2, round3, round4, round5, production, b1, buildings-atlas or release"
+        description: "round2, round3, round4, round5, production, b1, r7, buildings-atlas or release"
         default: "round5"
       tag:
         description: "release only: the tag, art-vN (design/release/<tag>.json lists the source runs)"
@@ -41,6 +41,9 @@ env:
   BLENDER_VERSION: "5.2.2"
   BLENDER_SERIES: "5.2"
   ROUND: ${{ github.event.inputs.round || 'round5' }}
+  # R7 version 2's realistic body (THIRD_PARTY_NOTICES.md): MPFB 2.0.18 from extensions.blender.org, sha256 as published
+  MPFB_URL: "https://extensions.blender.org/download/sha256:c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad/add-on-mpfb-v2.0.18.zip?repository=%2Fapi%2Fv1%2Fextensions%2F&blender_version_min=4.2.0"
+  MPFB_SHA256: "c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad"
 
 jobs:
   render:
@@ -95,6 +98,22 @@ jobs:
             round4) /usr/bin/python3 blender/render_r4.py --target "${{ matrix.target }}" ;;
             # B1: buildings, towns and resources (design/b1/common/run.py), 3x with 2x supersampling
             b1) /usr/bin/python3 common/run.py "${{ matrix.target }}" ;;
+            # R7 style test (D-092): v<k>-<unit>, the production unit render in realism version k's look, idle, walk,
+            # attack (design/r7/README.md); the CC0 textures and MPFB (version 2) fetched and checked by sha256
+            r7)
+              t="${{ matrix.target }}"; v="${t%%-*}"; v="${v#v}"; unit="${t#*-}"
+              /usr/bin/python3 common/textures.py fetch
+              (cd ../round1 && /usr/bin/python3 common/emblems.py ../production/build/emblems)
+              if [ "$v" = 2 ]; then
+                curl -sSfL -o "$RUNNER_TEMP/mpfb.zip" "$MPFB_URL"
+                echo "${MPFB_SHA256}  $RUNNER_TEMP/mpfb.zip" | sha256sum -c -
+                "$BLENDER" --command extension install-file -r user_default -e "$RUNNER_TEMP/mpfb.zip"
+              fi
+              cd ../production
+              export R7_VERSION="$v" R7_TEX="$GITHUB_WORKSPACE/design/r7/build/tex"
+              /usr/bin/python3 blender/render_prod.py --target "$unit" --anims idle,walk,attack
+              /usr/bin/python3 common/postprocess.py --target "$unit" --scale 3
+              /usr/bin/python3 common/postprocess.py --target "$unit" --scale 2 ;;
             production)
               t="${{ matrix.target }}"
               case "$t" in
@@ -124,8 +143,18 @@ jobs:
             design/b1/build/jobs/*.log
           retention-days: 30
 
+      - name: Upload the R7 style-test atlases
+        if: always() && env.ROUND == 'r7'
+        uses: actions/upload-artifact@v4
+        with:
+          name: r7-${{ matrix.target }}
+          path: |
+            design/production/build/r7v*/prod/*/atlas_x*/
+            design/production/build/r7v*/jobs/*.log
+          retention-days: 90
+
       - name: Upload renders
-        if: always() && env.ROUND != 'production' && env.ROUND != 'b1'
+        if: always() && env.ROUND != 'production' && env.ROUND != 'b1' && env.ROUND != 'r7'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ROUND }}-${{ matrix.target }}

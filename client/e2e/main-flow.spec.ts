@@ -1,7 +1,7 @@
 // The brief's main flow, on core's real simulation with its `e2e` scenario (plenty of
 // resources, two houses and a barracks, a squad of 6 spearmen and 4 ranged ten cells from
 // the small town), in WebKit and Chromium at iPhone landscape size with touch:
-// 開局（選難度）→ 選村民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 改姿態 → 前進 →
+// 開局（選難度）→ 選村民 → 蓋房子（中間用重設離開放建築）→ 訓練 → 框選 → 改姿態 → 移動 →
 // 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開、城鎮不叛離 → 編隊缺人後不選村民蓋民居，
 // 自動訓練出來的新兵補進來 → 暫停自動訓練 → 軍團畫面 → 散開隊形 → 全軍撤退
 // （D-024、D-026、D-027、D-054）.
@@ -54,7 +54,7 @@ async function resume(page: Page): Promise<void> {
   await expect.poll(async () => (await header(page)).paused).toBe(false);
 }
 
-test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 前進 → 暫停時下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 不選村民蓋民居、自動訓練的新兵補進編隊 → 暫停自動訓練 → 軍團畫面 → 散開隊形 → 全軍撤退", async ({ page }, info) => {
+test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 移動 → 暫停時按攻擊下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 不選村民蓋民居、自動訓練的新兵補進編隊 → 暫停自動訓練 → 軍團畫面 → 散開隊形 → 全軍撤退", async ({ page }, info) => {
   test.setTimeout(300_000);
   const check = watchErrors(page);
 
@@ -157,7 +157,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await saveGroup(page, ".groups > button:nth-child(1)");
   expect((await groups(page))[0], "saved as group 1").toEqual(squadIds);
 
-  // 5b. 堅守（D-050）：選取資訊寫著三顆按鈕的意思；按了停下並改成堅守。下一步點地面就是進攻，改回積極。
+  // 5b. 堅守（D-050）：選取資訊寫著三顆按鈕的意思；按了停下並改成堅守。下一步點地面是移動，改回積極（D-094）。
   const hold = page.getByRole("button", { name: /^堅守/ });
   const stanceOfSquad = async () => [...new Set((await units(page)).filter((u) => squadIds.includes(u.id)).map((u) => u.stance))];
   const now = page.locator(".sel-info .order-now");
@@ -175,7 +175,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await shot(page, info, "5b-hold");
   await pause(page);
 
-  // 6. 前進（點地面：整隊走到那裡，遇到敵人會打）
+  // 6. 移動（D-094：點地面，走到那裡，路上不還手，到了照積極待命）
   // The small town nearest the squad, whatever towns the map has (D-044 adds one near each
   // main city): not the first one in the list or a fixed id.
   const town = (await towns(page))
@@ -202,10 +202,10 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   if (away6 === null) throw new Error("no open ground away from the town");
   const halfway = away6;
   await tap(page, await toScreen(page, halfway));
-  // A tap on the ground is 進攻 (D-050): the 堅守 squad goes 積極 with it.
+  // A tap on the ground is 移動 (D-094, the simulation's retreat): the 堅守 squad goes 積極 with it.
   await expect
     .poll(async () => (await sent(page)).slice(-2))
-    .toMatchObject([{ c: "move", u: squadIds, x: halfway.x, y: halfway.y }, { c: "stance", u: squadIds, stance: 0, auto: true }]);
+    .toMatchObject([{ c: "retreat", u: squadIds, x: halfway.x, y: halfway.y }, { c: "stance", u: squadIds, stance: 0, auto: true }]);
   await resume(page);
   await expect.poll(stanceOfSquad).toEqual([0]);
   const distTo = async (c: { x: number; y: number }) => {
@@ -217,7 +217,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   // the point stays around 1.5 cells.
   await expect.poll(() => distTo(halfway), { timeout: 30_000 }).toBeLessThan(Math.max(startDist - 2, 2.5));
 
-  // 7. 暫停時下指令（暫停後模擬停住，對小鎮下前進指令，按繼續後才執行）
+  // 7. 暫停時下指令（暫停後模擬停住，按攻擊再點小鎮：攻擊移動，按繼續後才執行；D-094）
   // Not fought yet: no dialog covers the buttons, and the town is untouched: not seen yet (the
   // hook's -1: from 14 cells off it stays in the fog, CI runs 37504823291 and 37504822387) or
   // neutral (TownState.Neutral, 0) with its militia all there.
@@ -233,6 +233,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   const target = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y, false) ?? null, [town.cx, town.cy] as const);
   if (target === null) throw new Error("no open cell in the town");
   expect(Math.hypot(target.x - town.cx, target.y - town.cy), "a cell inside the town").toBeLessThan(town.radius - 1);
+  await page.locator(".cmds").getByRole("button", { name: /^攻擊/ }).tap();
   await tap(page, await toScreen(page, target));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: squadIds, x: target.x, y: target.y });
   await page.waitForTimeout(500);
@@ -262,7 +263,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await expect.poll(async () => (await units(page)).find((u) => u.id === kept)?.stance).toBe(1);
   await shot(page, info, "8-governing");
 
-  // 8b. 全軍不帶走留守的兵：全軍 → 前進到遠處 → 部隊都離開城鎮後，駐軍還夠，沒有開始叛離
+  // 8b. 全軍不帶走留守的兵：全軍 → 移動到遠處 → 部隊都離開城鎮後，駐軍還夠，沒有開始叛離
   await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(0);
   const marching = (await selection(page))?.units ?? [];
@@ -272,7 +273,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await page.evaluate((u) => window.__proto?.game?.select(u), marching);
   await centre(page, away, 0.8);
   await tap(page, await toScreen(page, away));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: marching, x: away.x, y: away.y });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: marching, x: away.x, y: away.y });
   // Everyone who marched is outside the town's circle.
   await expect
     .poll(
@@ -316,7 +317,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   if (inside === null) throw new Error("no open ground inside the town to walk to");
   const dest = inside;
   await tap(page, await toScreen(page, dest));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: [sp], x: dest.x, y: dest.y });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: [sp], x: dest.x, y: dest.y });
   // Wait until it stands on that cell. Still walking in, it can pass the spot tapped next to
   // pick the town, and that tap selects it instead (stability run 36850843922, WebKit).
   const fromDest = async () => {
@@ -429,7 +430,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await expect(panel.locator(".group-row").first()).toBeVisible();
   await resume(page);
 
-  // 10. 散開隊形（D-027、D-028）：全軍 → 隊形：散開（按下去就原地重排）→ 前進 → 站好後彼此相隔約 2 格。
+  // 10. 散開隊形（D-027、D-028）：全軍 → 隊形：散開（按下去就原地重排）→ 移動 → 站好後彼此相隔約 2 格。
   //     Last, so that a wider squad does not change the town steps (a radius-4 town).
   await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(3);
@@ -459,7 +460,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   if (field === null) throw new Error("no open ground to march to");
   const ground = field;
   await tap(page, await toScreen(page, ground));
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: troops, x: ground.x, y: ground.y });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: troops, x: ground.x, y: ground.y });
   // Wait until every one of them has arrived: no order, and the same positions twice in a row.
   let before = "";
   await expect

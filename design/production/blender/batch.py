@@ -12,7 +12,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "common"))
 import config  # noqa: E402
 
-EMBLEMS = config.BUILD / "emblems"
+EMBLEMS = config.ROUND / "build" / "emblems"
 
 
 def run(kind, items, px_per_m, level="A", quality="hq", variant=0, frame_m=None, samples=None, tag="job",
