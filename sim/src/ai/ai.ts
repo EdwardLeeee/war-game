@@ -410,6 +410,13 @@ export function enemyForts(view: PlayerView, player: number, rules: Rules): Fort
 const STAGE_DIST = 16;
 /** Whether they gather first (measurements turn it off for the baseline; the game always has it on). */
 export const STAGING = { on: true };
+/**
+ * D-089, normal (being measured): in the last minutes of an AI-against-AI game it goes for the enemy main city with
+ * `assault` soldiers (from 6 minutes before the end, and in the last 4, with `endgame`); after an attack on the
+ * enemy main city ground down, it goes again only with `failed` percent of those that set out then (0: as before),
+ * but in the last 4 minutes.
+ */
+export const SIEGE = { assault: 15, endgame: 8, failed: 0 };
 /** Gathered: this share (percent) of those that set out within STAGE_NEAR cells of it, or STAGE_WAIT ticks after the first got there, or STAGE_MAX after setting out. */
 const STAGE_SHARE = 70;
 const STAGE_NEAR = 6;
@@ -428,7 +435,9 @@ export function stagePoint(
   rank: (x: number, y: number) => number,
 ): { x: number; y: number } | null {
   const n = map.size;
-  if (!STAGING.on || (from.x - enemy.cellX) ** 2 + (from.y - enemy.cellY) ** 2 <= (STAGE_DIST + 4) * (STAGE_DIST + 4)) return null;
+  const fx = from.x - enemy.cellX;
+  const fy = from.y - enemy.cellY;
+  if (!STAGING.on || fx * fx + fy * fy <= (STAGE_DIST + 4) * (STAGE_DIST + 4)) return null;
   // Rock, walls, water and cliffs are Blocked in the view (the fixed map is known whole; a random one where explored).
   // Steps from the enemy main city over ground not known to be blocked (8 neighbours), so the point is STAGE_DIST
   // steps away along the way round obstacles, not straight across them (on core's #245 maps that was up to a
@@ -1044,6 +1053,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let setOut = 0;
   let stageFirst = -1;
   let staged = true;
+  /** D-089 (SIEGE.failed): how many set out on the last attack on the enemy main city that was ground down. */
+  let cityFailed = 0;
   /** Soldier ids kept as the garrison of a governed or repairing town, per town. */
   const garrison = new Map<number, number[]>();
   /** Towns this AI has plundered: how often, and when last (it prefers governing a town it keeps coming back to). */
@@ -1732,7 +1743,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, cx, cy) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army));
         if (!endgame && !(mode === "base" && cityLow) && (standing * 5 < armyAtStart * 2 || outnumbered || byArmy.length > 0)) {
           // Ground down or outnumbered: break off (retreat ignores enemies) and rebuild.
-          if (mode === "base") baseBroken = true;
+          if (mode === "base") {
+            baseBroken = true;
+            cityFailed = armyAtStart;
+          }
           remember(army, byArmy);
           if (mode === "town" && byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
           fallBackPast(byArmy);
@@ -1876,12 +1890,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
+        // D-089 (SIEGE.failed): not again with fewer than broke off last time, but in the last 4 minutes.
+        const notLess = endgame || SIEGE.failed <= 0 || army.length * 100 >= cityFailed * SIEGE.failed;
         const go =
           (mem.known !== Known.None || endgame || assault) &&
+          notLess &&
           (endgame
-            ? army.length >= ENDGAME_ARMY
+            ? army.length >= SIEGE.endgame
             : assault
-              ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
+              ? army.length >= SIEGE.assault || (latest && army.length >= SIEGE.endgame)
               : baseTime && strongEnough && (army.length >= baseNeed || (((open.length === 0 && !baseBroken) || popFull) && army.length >= townArmy + 6)));
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
         const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
