@@ -3,7 +3,7 @@
 python3 design/r7/common/boards_r7.py ART [versions...]
   ART  an extracted art-v4-x3 (version 0: the game's own art, on the game's two-green cells)
   reads design/r7/build/v<k>/ (common/run.py), writes design/r7/out/R7-0<k>-寫實-<k>-<名>-mobile.png,
-  R7-00-寫實-總覽.png, R7-0<k>-寫實-<k>-<名>-動作.gif
+  R7-99-寫實-總覽.png, R7-0<k>-寫實-<k>-<名>-動作.gif
 """
 import json
 import math
@@ -222,7 +222,7 @@ def main(art, versions):
         acts[k] = (act, s1)
         gif(k, art)
     W = boards.M * 2 + 2 * (max(a.width for a, _ in acts.values()) + 40)
-    parts = [boards.header(W, "R7-00-寫實-總覽", "四個版本並排，實際大小（1 pt = 1 px）。每格下面是四名兵並排（實際大小）。"
+    parts = [boards.header(W, "R7-99-寫實-總覽", "四個版本並排，實際大小（1 pt = 1 px）。每格下面是四名兵並排（實際大小）。"
                           + LIGHT_NOTE)]
     ks = sorted(acts)
     for i in range(0, len(ks), 2):
@@ -234,7 +234,7 @@ def main(art, versions):
             col.paste(s1, (0, a.height + 10))
             cells.append(boards.captioned(col, f"{k}「{NAMES[k][0]}」", 26))
         parts.append(boards.row(cells, W))
-    boards.save(boards.stack(parts, W), "R7-00-寫實-總覽")
+    boards.save(boards.stack(parts, W), "R7-99-寫實-總覽")
 
 
 if __name__ == "__main__":
