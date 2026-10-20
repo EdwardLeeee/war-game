@@ -10,57 +10,57 @@
  },
  "spear_e": {
   "contrast_blue": {
-   "min": 2.885,
-   "max": 17.819,
-   "min_at": "death 朝向 1 第 9 格"
+   "min": 2.832,
+   "max": 16.775,
+   "min_at": "death 朝向 1 第 8 格"
   },
   "contrast_red": {
-   "min": 3.93,
-   "max": 18.548,
+   "min": 4.009,
+   "max": 18.168,
    "min_at": "death 朝向 1 第 8 格"
   },
   "visible_blue": {
-   "min": 0.952,
-   "max": 0.985,
-   "min_at": "attack 朝向 1 第 5 格"
+   "min": 0.989,
+   "max": 0.998,
+   "min_at": "attack 朝向 0 第 6 格"
   },
   "visible_red": {
-   "min": 0.954,
-   "max": 0.986,
-   "min_at": "attack 朝向 1 第 5 格"
+   "min": 0.989,
+   "max": 0.998,
+   "min_at": "attack 朝向 0 第 6 格"
   },
   "team": {
-   "min": 0.113,
-   "max": 0.344,
-   "min_at": "death 朝向 2 第 2 格"
+   "min": 0.178,
+   "max": 0.371,
+   "min_at": "death 朝向 1 第 4 格"
   },
   "frames": 288
  },
  "bow_e": {
   "contrast_blue": {
-   "min": 0.076,
-   "max": 13.124,
-   "min_at": "death 朝向 2 第 7 格"
+   "min": 4.183,
+   "max": 14.644,
+   "min_at": "death 朝向 1 第 8 格"
   },
   "contrast_red": {
-   "min": 0.076,
-   "max": 13.911,
-   "min_at": "death 朝向 1 第 9 格"
+   "min": 6.358,
+   "max": 17.1,
+   "min_at": "death 朝向 1 第 8 格"
   },
   "visible_blue": {
-   "min": 0.802,
-   "max": 0.964,
-   "min_at": "death 朝向 2 第 3 格"
+   "min": 0.959,
+   "max": 0.993,
+   "min_at": "death 朝向 2 第 5 格"
   },
   "visible_red": {
-   "min": 0.804,
-   "max": 0.967,
-   "min_at": "death 朝向 2 第 3 格"
+   "min": 0.959,
+   "max": 0.995,
+   "min_at": "death 朝向 2 第 5 格"
   },
   "team": {
-   "min": 0.127,
-   "max": 0.321,
-   "min_at": "walk 朝向 5 第 2 格"
+   "min": 0.405,
+   "max": 0.673,
+   "min_at": "death 朝向 2 第 5 格"
   },
   "frames": 288
  }

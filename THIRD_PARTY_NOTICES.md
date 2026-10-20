@@ -13,6 +13,17 @@
 
 MPFB 的程式本身是 GPLv3。我們只在 Blender 裡把它當工具用，沒有散布它的程式，遊戲裡也不含它的程式。下載網址：https://extensions.blender.org/add-ons/mpfb/，檔案 sha256 c075b3e9…2a2dad，和官方網址上的一致。
 
+## 只當參考、放在核准稿上的圖
+
+R8 東陸槍兵、弓手的核准稿（`design/r8/out/R8-03-*`、`R8-05-*`）旁邊放了幾張裁切過的參考圖，給使用者對照。美術是照著重新做 3D，圖本身不放進遊戲。原檔不進 repo（ceo 的考據資料夾 `research/east-reference/`，授權清單 `LICENSES.md`）。CC BY-SA 的圖（07、08、09、13、14、15）只拿來看，不放進 repo，也不放進核准稿。
+
+| 圖 | 來源頁 | 授權 | 作者 | 讀授權的日期 |
+|---|---|---|---|---|
+| 01 敦煌莫高窟 156 窟〈張議潮統軍出行圖〉（裁兩處） | https://commons.wikimedia.org/wiki/File:Mogao_Cave_156_battle.jpg | 公有領域（PD-Art） | 晚唐佚名畫工；照片 茹遂初，1978 | 2026-10-21 |
+| 02 敦煌晚唐壁畫，持長牌步兵出城（哪一窟待查） | https://commons.wikimedia.org/wiki/File:Dunhuang_Zhang_Yichao_departure_02.jpg | 公有領域（PD-Art） | 佚名畫工 | 2026-10-21 |
+| 04 榆林窟 25 窟甲士 | https://commons.wikimedia.org/wiki/File:Yulin_caves,_Tang_cavalryman.jpg | 公有領域（PD-Art） | 9 世紀佚名畫工 | 2026-10-21 |
+| 06 前蜀王建墓抬棺力士背面 | https://commons.wikimedia.org/wiki/File:Wang_Jian_Royal_Tomb_(13944716273).jpg | CC0 1.0 | Gary Todd | 2026-10-21 |
+
 ## 只做測試、不進任何公開發布的
 
 | 工具 | 用在哪 | 授權與限制 | 授權原文 | 讀授權的日期 |

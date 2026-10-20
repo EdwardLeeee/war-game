@@ -41,9 +41,58 @@ UNITS = {
     "siege_w": (10, "投石機", "西陸"), "mage_e": (11, "術士", "東陸"), "mage_w": (12, "晶術師", "西陸"),
 }
 WHAT = {
-    "spear_e": "東陸槍兵：MPFB 寫實人體（真人比例、手握住槍桿），札甲、尖盔、靛藍衣，玩家色是包住腰下一圈的裙甲和背旗。",
-    "bow_e": "東陸弓手（新兵種，東陸改拿弓）：弩手的東陸服裝（赭色長衣、漆背心、黑帽），左手一把東方反曲弓（1.25 m，弓梢反翹），"
-             "右腰箭袋；拉弓放箭沿用長弓兵核准的動作，弓弦跟著右手拉開、搭箭，放箭後箭由遊戲另外畫。玩家色是一圈裙子和背旗。",
+    "spear_e": "東陸槍兵（唐末五代的樣子，照 ceo 的考據筆記）：MPFB 寫實人體；札甲（一排排小甲片）、三層披膊、及膝腿裙，"
+               "碗形兜鍪加頓項，甲下圓領袍，行縢加靴，左腰直的橫刀；雙手持槍，紮槍由後手推。玩家色是袍子（袖子、袍腳）和頓項。",
+    "bow_e": "東陸弓手（唐末五代的樣子，照 ceo 的考據筆記）：MPFB 寫實人體；圓領缺胯袍、黑革帶、黑色軟幞頭，右腰有蓋的胡祿、"
+             "左腰弓袋，行縢加靴；角弓上下對稱、握中間。拉弓拉到臉頰，放箭時手往耳後甩；弓弦跟著右手，放箭後箭由遊戲另外畫。"
+             "玩家色是袍子。",
+}
+# the reference pictures beside each board (ceo's note, research/east-reference/: R8_REFS points there; only the
+# public-domain and CC0 ones, LICENSES.md: the CC BY-SA ones stay out of the repo and the pictures) and the points
+# taken from them, each with how well it is known: 一手 (period text, object or picture), 二手 (modern work), 推論
+# (inferred), 設計選擇 (ours)
+REFS = {
+    "spear_e": dict(
+        images=[
+            ("01-張議潮統軍出行圖-甲騎旗隊與樂舞.jpg", (1000, 880, 1560, 1260),
+             "圖 01　敦煌莫高窟 156 窟〈張議潮統軍出行圖〉局部（約 851–867 年）：甲騎的札甲畫成一排排橫條，兜鍪連頓項包住頭和後頸，"
+             "槍豎著拿。公有領域（PD-Art），Wikimedia Commons。"),
+            ("06-前蜀永陵-抬棺力士背面-兜鍪頓項.jpg", (900, 240, 1920, 1350),
+             "圖 06　前蜀王建墓（永陵，918 年）抬棺力士背面：碗形兜鍪，後面垂一大片頓項蓋住後頸到肩。"
+             "CC0，攝影 Gary Todd，Wikimedia Commons。"),
+            ("04-榆林窟25窟-中唐甲士-長牌與札甲.jpg", (384, 256, 1056, 1376),
+             "圖 04　榆林窟 25 窟（中唐，781–848 年）甲士：札甲的排數、披膊、腿裙一段一段分開。公有領域（PD-Art），Wikimedia Commons。"),
+        ],
+        points=[
+            "① 札甲：一排排小甲片用繩子串起來；甲身、三層披膊、及膝的腿裙前面開口。〔一手：圖 01、04，唐代甲片實物〕拿掉整片上漆的板甲和方方的肩板。",
+            "② 兜鍪加頓項：碗形鐵盔，頂上一顆小圓珠；後面和兩側垂頓項，蓋住後頸、耳朵和肩頭，臉露出來。〔一手：圖 06、04〕"
+            "頓項做成布、用玩家色，是設計選擇〔筆記：布或甲片都有〕。拿掉盔纓和三層階梯形的頸甲。",
+            "③ 甲下穿圓領袍：袖子、甲裙下的袍腳到小腿，兩側開衩。〔一手：《新唐書·車服志》「缺骻衫」〕"
+            "袍子用玩家色：一支部隊一個顏色合乎史實〔一手：李克用的「鴉軍」皆衣黑〕。",
+            "④ 雙手持槍：後手握在離槍尾 0.5 m，前手在槍桿上；紮槍由後手推，槍桿從前手裡滑過去。"
+            "〔推論：《太白陰經》只有兩成配盾；沒有找到畫雙手刺槍的圖〕",
+            "⑤ 槍全長 3 m，素木桿，細長的葉形槍頭，拿掉槍上的大纓。〔長度是設計選擇；一手：《唐六典》「木槍長，步兵用之」〕",
+            "⑥ 左腰掛直的橫刀，環首。〔一手：《唐六典》「橫刀，佩刀也，兵士所佩」；唐代環首刀實物〕",
+            "⑦ 小腿綁行縢，穿靴。〔一手：《新唐書·兵志》、《舊唐書·輿服志》〕　⑧ 拿掉背旗：旗由旗手拿。〔筆記〕",
+        ]),
+    "bow_e": dict(
+        images=[
+            ("01-張議潮統軍出行圖-甲騎旗隊與樂舞.jpg", (0, 450, 560, 960),
+             "圖 01　同一幅〈出行圖〉局部：沒穿甲的隨行和樂隊，圓領長袍、頭包黑色幞頭（壁畫很小，細節看不清）。"
+             "公有領域（PD-Art），Wikimedia Commons。"),
+            ("02-敦煌晚唐壁畫-持長牌步兵出城-出處待查.jpg", (400, 640, 654, 992),
+             "圖 02　敦煌晚唐壁畫（哪一窟待查，只當晚唐敦煌畫風參考）：出城的隊伍，圓領長袍、黑色幞頭。公有領域（PD-Art），Wikimedia Commons。"),
+        ],
+        points=[
+            "① 角弓：上下對稱，握在正中間；彎的那段短，弓梢長而直、往前翹；上弦後全長 1.22 m。"
+            "〔二手：Selby；長度是推論，筆記建議 1.2–1.4 m〕這批參考圖裡沒有清楚的唐五代弓，形狀照文字做。",
+            "② 拉弓：右手拉到臉頰、手肘抬在後面，放箭時手往耳後甩；手指勾弦，不做扳指。〔一手：《射經》的「中國法」；動作是設計〕",
+            "③ 圓領缺胯袍到小腿，兩側開衩，黑革帶。〔一手：《新唐書·車服志》；圖 01、02〕袍子用玩家色（同槍兵）。",
+            "④ 黑色軟幞頭：包住頭頂的髻，後面垂兩條軟腳。〔一手：《新唐書·車服志》、《夢溪筆談》、《宋史·輿服志》：五代是軟腳或略硬的短腳〕"
+            "不戴紅抹額：紅色會和紅方的玩家色混在一起。",
+            "⑤ 右腰有蓋的胡祿（看不到箭），左腰空的弓袋。〔一手：《新唐書·兵志》「弓一，矢三十，胡祿」；掛法是二手：Dwyer〕",
+            "⑥ 小腿綁行縢，穿靴。　⑦ 拿掉：漆背心、黑圓帽、背旗、開口的箭袋。",
+        ]),
 }
 # what is still missing next to Age of Empires and StarCraft (honest; on every board)
 GAP = ("和世紀帝國、星海爭霸比還差：①貼圖是現成的 CC0 照片材質平鋪，不是美術依模型畫的貼圖，所以沒有手繪的磨損、縫線、刻紋；"
@@ -212,6 +261,41 @@ def faceoff(a, unit, bg_full):
     return img.crop((x0, y0, x0 + int(15.0 * PPM), y1)).convert("RGB")
 
 
+def refrow(unit, W):
+    """The reference pictures and the points (REFS), or None without R8_REFS."""
+    import os
+    ref = REFS.get(unit)
+    folder = os.environ.get("R8_REFS")
+    if not ref or not folder:
+        return None
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    tiles = []
+    for name, box, caption in ref["images"]:
+        im = Image.open(Path(folder) / name).convert("RGB").crop(box)
+        h = 560
+        im = im.resize((round(im.width * h / im.height), h), Image.LANCZOS)
+        w = max(im.width, 420)
+        th = boards.wrap(probe, 0, 0, caption, w, size=22) + 10
+        tile = Image.new("RGB", (w, h + th + 12), boards.BG)
+        tile.paste(im, (0, 0))
+        boards.wrap(ImageDraw.Draw(tile), 0, h + 12, caption, w, size=22)
+        tiles.append(tile)
+    text = "\n".join(ref["points"])
+    th = boards.wrap(probe, 0, 0, text, W - 2 * boards.M, size=26) + 20
+    gap = 30
+    inner = Image.new("RGB", (sum(t.width for t in tiles) + gap * (len(tiles) - 1), max(t.height for t in tiles)),
+                      boards.BG)
+    x = 0
+    for t in tiles:
+        inner.paste(t, (x, 0))
+        x += t.width + gap
+    top = boards.row([boards.captioned(inner, "參考（文物和壁畫，只當參考：照著重新做 3D，圖不放進遊戲）", 26)], W)
+    out = Image.new("RGB", (W, top.height + th + 20), boards.BG)
+    out.paste(top, (0, 0))
+    boards.wrap(ImageDraw.Draw(out), boards.M, top.height, text, W - 2 * boards.M, size=26, fill=boards.INK)
+    return out
+
+
 def board(unit, a, nums):
     n, name, side = UNITS[unit]
     label = f"R8-{n:02d}-{name}-{side}"
@@ -226,6 +310,9 @@ def board(unit, a, nums):
             "上：8 個方向（idle，3 倍）；中：每個動作（朝向 1，3 倍）；下：同文化藍紅對上（3 倍和實際大小）、8 個方向實際大小。")
     W = 2500
     parts = [boards.header(W, label + "-mobile", text)]
+    refs = refrow(unit, W)
+    if refs is not None:
+        parts.append(refs)
     parts.append(boards.row([boards.captioned(strip([cell(a, unit, "idle", f, 0, "blue", bg) for f in FACINGS]),
                                               "8 個方向（藍）", 24)], W))
     for anim, d in a.m["anims"].items():
