@@ -9,7 +9,7 @@ import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
+import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
@@ -2181,12 +2181,13 @@ test("D-086 A4 (plan.charge): cavalry charge an enemy ranged unit in sight; not 
   assert.ok(!charged(chargeAt(4, 0, { charge: false })), "off: no charge, as before");
 });
 
-test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 cells open round its main city and production buildings", () => {
+test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 cells open round its main city and production buildings, and none is refused for its place (gates' lanes, crossings)", () => {
   const g = new Game({ seed: 3, scenario: "standard" });
   const w = g.w;
   const ais = [0, 1].map((p) => createAi(p, 3, { map: w.map, rules: rules(), frame: w.map.frames[p], maxTicks: 0, difficulty: "hard", hard: { towers: 2, towerSpare: 0 } }, p));
   let seq = 0;
   let placed = 0;
+  let badPlace = 0;
   const size = (t: number) => rules().buildings[t].size;
   for (let t = 0; t < 15 * 1200; t++) {
     if (g.tick % 10 === 0) {
@@ -2209,8 +2210,11 @@ test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 ce
       }
     }
     g.step();
+    // D-089: a gate's lane or a crossing is refused by the simulation (Reject.GateLane, Reject.Crossing); none of its builds may be.
+    for (const e of g.events) if (e.ev.k === "rejected" && [Reject.BadPlacement, Reject.GateLane, Reject.Crossing].includes(e.ev.reason as never)) badPlace++;
   }
   assert.ok(placed > 0, "it put up towers");
+  assert.equal(badPlace, 0, "no build refused for its place");
 });
 
 test("D-086 A4 (plan.counterCavalry): against an enemy with many cavalry hard leans to spearmen; off, cavalry is not counted", () => {
