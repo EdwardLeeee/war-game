@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { reformCell, reformFacing, SIGHTING_TICKS } from "../src/game/reform.ts";
+import { enemyTooClose, REFORM_CLEAR_CELLS, reformCell, reformFacing, SIGHTING_TICKS } from "../src/game/reform.ts";
 
 const centre = { x: 10, y: 10 };
 
@@ -23,4 +23,14 @@ test("整理隊形的方向：先看最近看得到的敵人；看不到就用 6
 test("整理隊形走向的格子：中心往那個方向一格", () => {
   assert.deepEqual(reformCell({ x: 18.5, y: 59.5 }, { x: 1, y: 0 }), { x: 19, y: 59 });
   assert.deepEqual(reformCell({ x: 18.5, y: 59.5 }, { x: 0, y: -1 }), { x: 18, y: 58 });
+});
+
+test("整理隊形：任何一名士兵 8 格內有敵人就不整理（量過：4～6 格外的弓兵讓整理中的隊伍 6 秒掉 96 血，站著只掉 12～17）", () => {
+  assert.equal(REFORM_CLEAR_CELLS, 8);
+  const group = [{ x: 10, y: 10 }, { x: 10, y: 14 }];
+  // 7.9 cells from the second soldier (the first is farther): too close.
+  assert.equal(enemyTooClose(group, [{ x: 10, y: 21.9 }]), true);
+  // 8 cells from the nearest: clear; none in sight: clear.
+  assert.equal(enemyTooClose(group, [{ x: 10, y: 22 }, { x: 18, y: 10 }]), false);
+  assert.equal(enemyTooClose(group, []), false);
 });

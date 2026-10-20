@@ -696,7 +696,8 @@ test("攻擊、移動、堅守：第一列是這三顆和停止，選取資訊�
   const now = panel.locator(".order-now");
   const holdSent = async (ids: number[], since: number) =>
     expect.poll(async () => (await sent(page)).slice(since)).toMatchObject([{ c: "stop", u: ids }, { c: "stance", u: ids, stance: 1 }]);
-  await expect(advance).toHaveText("攻擊點地面或敵人");
+  await expect(advance).toHaveText("攻擊地面或敵人");
+  expect(await lines(advance.locator(".sub")), "the line under 攻擊 on one line").toBe(1);
   await expect(retreat).toHaveText("移動點地面");
   await expect(hold).toHaveText("堅守原地不動");
   for (const line of ["攻擊：點地面或小地圖攻擊移動，遇到敵人就打；點敵人集中打它", "移動：點地面或小地圖走過去，路上不還手；點主城回家", "堅守：停在原地，敵人進到射程就打，不追出去"]) {
@@ -706,7 +707,7 @@ test("攻擊、移動、堅守：第一列是這三顆和停止，選取資訊�
   await expect(now).toHaveText("目前：待命 6");
   for (const b of [advance, retreat, hold]) await expect(b).not.toHaveClass(/active/);
   const first = (await visibleBoxes(page, ".cmds button")).slice(0, 4);
-  expect(first.map((b) => b.label)).toEqual(["攻擊點地面或敵人", "移動點地面", "堅守原地不動", "停止"]);
+  expect(first.map((b) => b.label)).toEqual(["攻擊地面或敵人", "移動點地面", "堅守原地不動", "停止"]);
   expect(new Set(first.map((b) => Math.round(b.y))).size, "one row").toBe(1);
   for (const part of await panel.locator(".order-now, .order-meaning").all()) expect(await lines(part), (await part.textContent()) ?? "").toBe(1);
   await shot(page, info, "orders-idle");
@@ -724,7 +725,8 @@ test("攻擊、移動、堅守：第一列是這三顆和停止，選取資訊�
   const army = await ownIds(page, [1, 2, 3]);
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await expect(now).toHaveText(`目前：攻擊中 1、堅守 6、待命 ${army.length - 7}`);
-  await expect(panel).toContainText("晶砲自動施放：每發 5 魔晶、冷卻 8 秒、範圍內 3 名以上敵人才放、移動中不放");
+  await expect(panel).toContainText("自動晶砲：每發 5 魔晶、冷卻 8 秒，炸到 3 名以上才放，移動中不放");
+  expect(await lines(panel.locator(".cannon-meaning")), "the cannon line on one line").toBe(1);
   await expect(page.locator(".cmds").getByRole("button", { name: /晶砲|自動施放/ })).toHaveCount(0);
   for (const b of [advance, retreat, hold]) await expect(b).not.toHaveClass(/active/);
   expect(new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y))).size, "two rows").toBe(2);
@@ -837,6 +839,35 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await expect(page.getByRole("button", { name: "建造" })).toBeVisible();
   await expect(formation).toBeHidden();
   await expect(panel).not.toContainText("隊形");
+});
+
+test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；走開到看不到敵人後，面向剛才看到敵人的地方往那邊走一格（移動）", async ({ page }, info) => {
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const ids = await ownIds(page, [1, 2, 3]);
+  await selectForCommands(page, ids);
+  const reform = page.getByRole("button", { name: /^整理隊形/ });
+  // The fake world's enemy soldiers stand 4 cells from ours: nothing sent, and a line says why.
+  const before = (await sent(page)).length;
+  await reform.tap();
+  await expect(toast(page, "敵人在 8 格內，不整理隊形：整理時不還手，先打完或先移動開")).toBeVisible();
+  expect((await sent(page)).slice(before).filter((c) => c.auto !== true)).toEqual([]);
+  await shot(page, info, "reform-enemy-near");
+
+  // West, out of sight of them all (the enemy's soldiers and the militia, 14 cells east and more).
+  const cells = [];
+  for (let y = 64; y <= 66; y++) for (let x = 11; x <= 14; x++) cells.push({ x, y });
+  await place(page, ids, cells);
+  await expect.poll(async () => (await units(page)).filter((u) => u.owner !== me).length).toBe(0);
+  const ours = (await units(page)).filter((u) => ids.includes(u.id));
+  const centre = { x: ours.reduce((n, u) => n + u.cx + 0.5, 0) / ours.length, y: ours.reduce((n, u) => n + u.cy + 0.5, 0) / ours.length };
+  expect(centre).toEqual({ x: 13, y: 65.5 });
+  await reform.tap();
+  // None in sight: they face where enemies were seen a moment ago (east), a walk (移動: the simulation
+  // lays its formation out facing the way it walks, spearmen in front) one cell that way.
+  await expect(toast(page, "整理隊形：槍兵在前，面向剛才看到敵人的地方")).toBeVisible();
+  const order = await lastOrder(page);
+  expect(order).toMatchObject({ c: "retreat", u: ids, y: 65 });
+  expect(order?.x, "a cell east of the middle (13 or 14: the way is east, a little south)").toBeGreaterThanOrEqual(13);
 });
 
 test("隊形：編隊裡超過一半是散開時，補進來的新兵也送散開（D-027）", async ({ page }) => {

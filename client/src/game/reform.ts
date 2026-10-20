@@ -7,8 +7,8 @@
 //   4. else the enemy's main city, if this side has seen it (ceo: no peeking into the fog);
 //   5. else the way they face now (null: the simulation's own re-forming in place keeps it).
 // The game then walks them one cell that way (game.ts reform()): the simulation lays a formation
-// out facing the way it walks, spearmen in front, ranged next, mages last. Cells; pure, for the
-// unit tests.
+// out facing the way it walks, spearmen in front, ranged next, mages last. Not with an enemy near
+// (enemyTooClose): on the way they do not fight back. Cells; pure, for the unit tests.
 
 export interface Spot {
   x: number;
@@ -70,6 +70,22 @@ export function reformFacing(
   const toCity = city === null ? null : unit(city.x - centre.x, city.y - centre.y);
   if (toCity !== null) return { dir: toCity, from: "city" };
   return { dir: null, from: "keep" };
+}
+
+/**
+ * No 整理隊形 with an enemy this close (cells) to any of the soldiers. Measured on the simulation
+ * (docs/research/2026-10-formation-march.md): four enemy archers holding 4 to 6 cells off, the
+ * re-forming group (a retreat: it does not fight back, about 4 s) lost 96 hp in 6 s where standing
+ * lost 12 to 17; 7 cells off and more, nothing. An attack-move instead is no better: 6 cells off it
+ * lost 96 too, and nearer it fights rather than forms. The line is a cell further than measured:
+ * enemy mages' cannon reaches 7 cells, and enemies move.
+ */
+export const REFORM_CLEAR_CELLS = 8;
+
+/** Whether an enemy in sight is within REFORM_CLEAR_CELLS of any of the soldiers. */
+export function enemyTooClose(soldiers: readonly Spot[], inSight: readonly Spot[]): boolean {
+  const r2 = REFORM_CLEAR_CELLS * REFORM_CLEAR_CELLS;
+  return soldiers.some((s) => inSight.some((e) => (e.x - s.x) ** 2 + (e.y - s.y) ** 2 < r2));
 }
 
 /** The cell a cell ahead of the centre that way: where the formation's front row forms up. */

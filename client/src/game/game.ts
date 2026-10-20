@@ -20,7 +20,7 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
-import { reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
+import { enemyTooClose, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
@@ -162,6 +162,7 @@ const REFORM_TEXT: Record<string, string> = {
   last: "整理隊形：槍兵在前，面向剛才走的方向",
   city: "整理隊形：槍兵在前，面向敵方主城",
   keep: "整理隊形：槍兵在前，方向不變",
+  near: `敵人在 ${REFORM_CLEAR_CELLS} 格內，不整理隊形：整理時不還手，先打完或先移動開`,
 };
 
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
@@ -408,6 +409,7 @@ export class Game implements GestureHost {
   private readonly stances = new SentStances();
   /** 整理隊形 (D-095): where enemies were last seen (cells, by unit id), and the way each soldier was last sent. */
   private readonly sightings = new Map<number, Sighting>();
+  private prunedAt = 0;
   private readonly lastSent = new Map<number, Spot>();
   /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
   private readonly autocastAsked = new Set<number>();
@@ -447,7 +449,7 @@ export class Game implements GestureHost {
     this.overlays.toast(text, kind);
   }
 
-  /** Minimap tap (GDD §10): jump there; in 進攻／撤退／晶砲／集結點 mode, pick that spot. */
+  /** Minimap tap (GDD §10): jump there; in 攻擊／移動／集結點 mode, pick that spot. */
   minimapTap(cx: number, cy: number): void {
     const view = this.view;
     if (view === null) return;
@@ -1728,7 +1730,8 @@ export class Game implements GestureHost {
    * 整理隊形 (D-095): the soldiers selected re-form where they are, spearmen in front, ranged next,
    * mages last, at their spacing, facing the way reform.ts picks. A walk of one cell that way (the
    * simulation lays a walk's formation out facing its way); with nothing to face, the simulation's
-   * own re-forming in place, which keeps the way they face now.
+   * own re-forming in place, which keeps the way they face now. Not with an enemy within
+   * REFORM_CLEAR_CELLS (reform.ts): a line says why, and nothing is sent.
    */
   reform(): void {
     const view = this.view;
@@ -1736,17 +1739,19 @@ export class Game implements GestureHost {
     if (view === null || u === undefined) return;
     const soldiers = view.selection.units.filter((id) => isSoldier(view.unitType(id)) && !isHiding(view.unitOrder(id)));
     if (soldiers.length === 0) return;
-    let sx = 0;
-    let sy = 0;
-    for (const id of soldiers) {
+    const at = soldiers.map((id) => {
       const o = view.unitRow(id);
-      sx += u[o + UnitField.x] / CELL;
-      sy += u[o + UnitField.y] / CELL;
+      return { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL };
+    });
+    const inSight = this.enemiesInSight(view);
+    if (enemyTooClose(at, inSight)) {
+      this.toast(REFORM_TEXT.near);
+      return;
     }
-    const centre = { x: sx / soldiers.length, y: sy / soldiers.length };
+    const centre = { x: at.reduce((n, p) => n + p.x, 0) / at.length, y: at.reduce((n, p) => n + p.y, 0) / at.length };
     const tick = view.header?.[H.tick] ?? 0;
     const last = soldiers.map((id) => this.lastSent.get(id)).find((d) => d !== undefined) ?? null;
-    const { dir, from } = reformFacing(centre, this.enemiesInSight(view), [...this.sightings.values()], tick, last, this.enemyCity(view));
+    const { dir, from } = reformFacing(centre, inSight, [...this.sightings.values()], tick, last, this.enemyCity(view));
     if (dir === null) {
       // Keep the way they face: the formation command with the spacing they have re-forms in place (PROTOCOL.md 第三輪).
       const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
@@ -1755,12 +1760,8 @@ export class Game implements GestureHost {
       const c = reformCell(centre, dir);
       this.command({ c: "retreat", u: soldiers, x: c.x, y: c.y });
     }
-    this.lastReform = { from, at: tick };
     this.toast(REFORM_TEXT[from]);
   }
-
-  /** The last 整理隊形: what it faced (the test hook). */
-  lastReform: { from: string; at: number } | null = null;
 
   /** Enemies in sight now (cells): units of the other players and the towns' militia. */
   private enemiesInSight(view: GameView): Spot[] {
@@ -1794,7 +1795,9 @@ export class Game implements GestureHost {
       if (u[o + UnitField.owner] === view.me) continue;
       this.sightings.set(u[o + UnitField.id], { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL, tick });
     }
-    if (tick % 100 === 0) for (const [id, s] of this.sightings) if (tick - s.tick > SIGHTING_TICKS) this.sightings.delete(id);
+    if (tick - this.prunedAt < 100) return;
+    this.prunedAt = tick;
+    for (const [id, s] of this.sightings) if (tick - s.tick > SIGHTING_TICKS) this.sightings.delete(id);
   }
 
   /**

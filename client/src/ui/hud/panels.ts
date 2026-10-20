@@ -128,7 +128,7 @@ export const ORDER_TEXT = {
   hold: "堅守：停在原地，敵人進到射程就打，不追出去",
 } as const;
 /** A mage's crystal cannon (D-095: only automatic; 「把消耗放進說明裡面」), its numbers the simulation's own. */
-export const CANNON_TEXT = `晶砲自動施放：每發 ${CANNON.crystal} 魔晶、冷卻 ${CANNON.cooldownTicks / TICKS_PER_SECOND} 秒、範圍內 ${CANNON.autocastMinTargets} 名以上敵人才放、移動中不放`;
+export const CANNON_TEXT = `自動晶砲：每發 ${CANNON.crystal} 魔晶、冷卻 ${CANNON.cooldownTicks / TICKS_PER_SECOND} 秒，炸到 ${CANNON.autocastMinTargets} 名以上才放，移動中不放`;
 /** Under a town plundered this game (round 7, D-061): only 治理 is offered. */
 export const PLUNDERED_TEXT = "這座城這局已經被搶過，只能治理";
 
@@ -741,7 +741,7 @@ export class CommandArea {
         // 攻擊紅、移動藍 (D-080); 堅守 stays as it was.
         const advance = advancing
           ? button(this.el, "取消攻擊", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
-          : button(this.el, "攻擊", "點地面或敵人", () => this.host.setMode("advance"), ORDER_TONE.advance);
+          : button(this.el, "攻擊", "地面或敵人", () => this.host.setMode("advance"), ORDER_TONE.advance);
         if (advancing) advance.classList.add("active");
       }
       const retreat = retreating
