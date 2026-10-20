@@ -38,15 +38,21 @@ import blds                          # noqa: E402
 import towns                         # noqa: E402
 import nature                        # noqa: E402
 import castle                        # noqa: E402
+import ground                        # noqa: E402
+import terrain                       # noqa: E402
 
 REG = dict(blds.BUILDERS)
 REG.update(towns.BUILDERS)
 REG.update(nature.BUILDERS)
 REG.update(castle.BUILDERS)
+REG.update(ground.BUILDERS)
+REG.update(terrain.BUILDERS)
 FOOT = dict(blds.FOOTPRINT)
 FOOT.update(towns.FOOTPRINT)
 FOOT.update(nature.FOOTPRINT)
 FOOT.update(castle.FOOTPRINT)
+FOOT.update(ground.FOOTPRINT)
+FOOT.update(terrain.FOOTPRINT)
 HOUSES = ("th22", "th21", "th12", "th11")
 
 lib.QUALITY = job.get("quality", "hq")

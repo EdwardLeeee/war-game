@@ -5,6 +5,7 @@ python3 common/atlas_b1.py [--scale 3] [--page 2048]
   reads  build/b1/prod/<frame>_x3_{beauty,mask,shadow,ao}.png and <frame>_x3.json
   writes build/atlas_x<scale>/buildings/buildings_<E|W>.json, buildings_<c>_{color,team,shadow}_<k>.png, memory.json
          build/atlas_x<scale>/nodes/nodes.json, nodes_{color,shadow}_<k>.png, memory.json
+         build/atlas_x<scale>/castle/castle_<E|W>.json and pages (art-v4), terrain/terrain.json and pages (art-v5)
          build/atlas_x<scale>/report.json   every frame's trimmed size and each building's bytes (min, max, total)
 
 The layers are made as the units' (design/production/common/postprocess.py): colour with the ambient
@@ -16,6 +17,7 @@ fades with it. 2x is the 3x frame scaled by 2/3.
 """
 import argparse
 import json
+import math
 import shutil
 import sys
 from pathlib import Path
@@ -89,6 +91,70 @@ def castle_table(c):
 def castle_frames(c):
     pieces, tiles, _ = castle_table(c)
     return sorted([n for p in pieces.values() for n in p["frames"].values()] + list(tiles.values()))
+
+
+# ---------------------------------------------------------------- the terrain (art-v5, R6-51, war-game-core #245)
+
+import terrain_rules as TR  # noqa: E402  (common/terrain_rules.py: which frame on which cell)
+TILE_PX = (120, 60)         # a water tile at 3x: one cell across (2 m x 60 px/m) and one deep (2 m x 30 px/m)
+DECK_TOP_M = 0.44           # the bridge's planks stand this high over the ground (terrain.tbridge_deck)
+
+
+def terrain_table():
+    """terrain.json's "rules": what each Terrain value draws (the code is TR.pieces; atlas-buildings.md 12)."""
+    return dict(
+        values=TR.VALUES, wet=list(TR.WET), ground_order=list(TR.GROUND_ORDER),
+        variant="(x * 31 + y * 17 + ((x ^ y) & 7)) % n",
+        rock=dict(value=1, frames=[f"terrain_rock_v{v}" for v in range(TR.ROCK_VARIANTS)], anchor="centre", front="y + 1"),
+        water=dict(values=list(TR.WET), frames={str(m): f"terrain_water_m{m}" for m in range(1, 16)}, anchor="corner",
+                   mask="bit 0 cell (X-1, Y-1), bit 1 (X, Y-1), bit 2 (X-1, Y), bit 3 (X, Y): wet; off the map: the nearest cell",
+                   tile_px_3x=list(TILE_PX), layer="water"),
+        ford=dict(value=4, frames=[f"terrain_ford_v{v}" for v in range(TR.FORDS)], anchor="centre", layer="ford"),
+        bridge={"5": dict(deck="terrain_bridge_deck_ns", rail="terrain_bridge_rail_y",
+                          rails="west edge (x, y + 0.5) where cell (x-1, y) is not 5; east edge (x + 1, y + 0.5) where (x+1, y) is not 5",
+                          front="y + 1"),
+                "6": dict(deck="terrain_bridge_deck_ew", rail="terrain_bridge_rail_x",
+                          rails="north edge (x + 0.5, y) front y + 0.01 where cell (x, y-1) is not 6; south edge (x + 0.5, y + 1) front y + 1 where (x, y+1) is not 6"),
+                "layer": "deck", "deck_top_m": DECK_TOP_M},
+        cliff=dict(value=7, posts=[f"terrain_cliff_post_v{v}" for v in range(TR.CLIFF_POSTS)], post_front="y + 1",
+                   post_when="the cell's links (the cliff neighbours on its four sides, and on a corner only where neither "
+                             "side cell between is cliff) are not exactly two opposite ones",
+                   arm_variant="variant(x, y, 3) of the cell (x, y) the arm starts from",
+                   arms={"E": dict(frames=[f"terrain_cliff_arm_E_v{v}" for v in range(TR.CLIFF_ARMS)], when="(x+1, y) is 7",
+                                   anchor="(x + 1, y + 0.5)", front="y + 0.99"),
+                         "S": dict(frames=[f"terrain_cliff_arm_S_v{v}" for v in range(TR.CLIFF_ARMS)], when="(x, y+1) is 7",
+                                   anchor="(x + 0.5, y + 1)", front="y + 1.99"),
+                         "SE": dict(frames=[f"terrain_cliff_arm_SE_v{v}" for v in range(TR.CLIFF_ARMS)],
+                                    when="(x+1, y+1) is 7, (x+1, y) and (x, y+1) are not", anchor="(x + 1, y + 1)", front="y + 1.99"),
+                         "SW": dict(frames=[f"terrain_cliff_arm_SW_v{v}" for v in range(TR.CLIFF_ARMS)],
+                                    when="(x-1, y+1) is 7, (x-1, y) and (x, y+1) are not", anchor="(x, y + 1)", front="y + 1.99")}))
+
+
+def terrain_prep(name, col, sh, anchor, s_anchor):
+    """The water tiles cut to exactly their cell-sized square round the corner (shifted by the anchor's fraction of
+    a pixel first, premultiplied, so neighbours meet edge to edge with no half-transparent seam; the render reaches
+    a little past the square); the bridge decks with their own shadow drawn under them (the deck is on the ground
+    layer, under the shadow layer); the other ground pieces without a shadow."""
+    ax, ay = anchor
+    if name.startswith("terrain_water_"):
+        fx, fy = ax - math.floor(ax), ay - math.floor(ay)
+        w, h = TILE_PX
+        x0, y0 = math.floor(ax) - w // 2, math.floor(ay) - h // 2
+        pm = col.convert("RGBa").transform(col.size, Image.AFFINE, (1, 0, fx, 0, 1, fy), resample=Image.BICUBIC)
+        return pm.convert("RGBA").crop((x0, y0, x0 + w, y0 + h)), (w / 2, h / 2), False, False
+    if name.startswith("terrain_bridge_deck_"):
+        sax, say = s_anchor
+        a = sh.getchannel("A").resize((sh.width * 2, sh.height * 2), Image.BILINEAR)
+        ox, oy = int(round(ax - sax * 2)), int(round(ay - say * 2))     # the shadow's corner in the colour's pixels
+        x0, y0 = min(0, ox), min(0, oy)
+        x1, y1 = max(col.width, ox + a.width), max(col.height, oy + a.height)
+        big = Image.new("RGBA", (x1 - x0, y1 - y0), (0, 0, 0, 0))
+        big.paste(Image.merge("RGBA", (Image.new("L", a.size, 0),) * 3 + (a,)), (ox - x0, oy - y0))
+        big.alpha_composite(col, (-x0, -y0))
+        return big, (ax - x0, ay - y0), False, True
+    if name.startswith("terrain_ford_"):
+        return col, anchor, False, True
+    return col, anchor, True, True
 
 
 def node_table():
@@ -174,13 +240,18 @@ def _anchor(ax, ay, bb, f):
     return dict(ax=round((ax - bb[0]) * f, 2), ay=round((ay - bb[1]) * f, 2))
 
 
-def pack(frames, prefix, out, page, f, with_team=True):
-    """frames: list of names -> pages <prefix>_<layer>_<k>.png; returns (tables, pages, px, per-frame px)."""
+def pack(frames, prefix, out, page, f, with_team=True, prep=None):
+    """frames: list of names -> pages <prefix>_<layer>_<k>.png; returns (tables, pages, px, per-frame px).
+    prep(name, colour, shadow, anchor, shadow anchor) -> (colour, anchor, keep the shadow, trim): a frame's own cut
+    (the terrain's water tiles, the bridge decks)."""
     todo = {"color": [], "team": [], "shadow": []} if with_team else {"color": [], "shadow": []}
     per = {}
     for name in frames:
         col, team, sh, (ax, ay), (sax, say) = layers(name)
-        bb = _bbox(col.getchannel("A"))
+        keep_shadow, trim = True, True
+        if prep:
+            col, (ax, ay), keep_shadow, trim = prep(name, col, sh, (ax, ay), (sax, say))
+        bb = _bbox(col.getchannel("A")) if trim else (0, 0, col.width, col.height)
         im = _scaled(col.crop(bb), f)
         todo["color"].append((name, im, _anchor(ax, ay, bb, f)))
         per[name] = {"color": im.width * im.height}
@@ -190,7 +261,7 @@ def pack(frames, prefix, out, page, f, with_team=True):
                 ti = _scaled(team.crop(tbb), f)
                 todo["team"].append((name, ti, _anchor(ax, ay, tbb, f)))
                 per[name]["team"] = ti.width * ti.height
-        sbb = _bbox(sh.getchannel("A"))
+        sbb = _bbox(sh.getchannel("A")) if keep_shadow else None
         if sbb:
             si = _scaled(sh.crop(sbb), f)
             todo["shadow"].append((name, si, dict(_anchor(sax, say, sbb, f), half_res=True)))
@@ -299,6 +370,22 @@ def run(scale=3.0, page=2048):
         {f"castle_{c}": m for c, m in mem_c.items()},
         total_rgba8_bytes=sum(m["total_rgba8_bytes"] for m in mem_c.values()),
         total_astc_4x4_bytes=sum(m["total_astc_4x4_bytes"] for m in mem_c.values())), indent=1))
+    # the terrain: one set of pages for both cultures, no player colour
+    tdir = root / "terrain"
+    tdir.mkdir()
+    tf = TR.frames()
+    missing = [n for n in tf if not (SRC / f"{n}_x3.json").exists()]
+    if missing:
+        raise SystemExit(f"missing renders: {missing}")
+    view = view_of(tf)
+    tables, pages, px, per = pack(tf, "terrain", tdir, page, f, with_team=False, prep=terrain_prep)
+    man = {"format": "war-game terrain 1", "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
+           **({"view": view} if view else {}), "pages": pages, "rules": terrain_table(),
+           "frames": tables["color"], "shadows": tables["shadow"]}
+    (tdir / "terrain.json").write_text(json.dumps(man, separators=(",", ":")))
+    mem_t = memory(px, tables)
+    (tdir / "memory.json").write_text(json.dumps(mem_t, indent=1))
+    report["frames"].update(per)
     ndir = root / "nodes"
     ndir.mkdir()
     nf = node_frames()
@@ -313,13 +400,13 @@ def run(scale=3.0, page=2048):
     report["frames"].update(per)
     report["pages"] = {**{f"buildings_{c}": mem_all[c]["total_rgba8_bytes"] for c in CULTURES},
                        **{f"castle_{c}": mem_c[c]["total_rgba8_bytes"] for c in CULTURES},
-                       "nodes": mem_n["total_rgba8_bytes"]}
+                       "nodes": mem_n["total_rgba8_bytes"], "terrain": mem_t["total_rgba8_bytes"]}
     (root / "report.json").write_text(json.dumps(report, indent=1))
     b = {k: v for k, v in report["buildings"].items() if not k.startswith("shared")}
     lo, hi = min(b, key=b.get), max(b, key=b.get)
     print(f"x{scale:g}: buildings {sum(m['total_rgba8_bytes'] for m in mem_all.values()) / 2 ** 20:.1f} MB RGBA8 "
           f"(E {mem_all['E']['total_rgba8_bytes'] / 2 ** 20:.1f}, W {mem_all['W']['total_rgba8_bytes'] / 2 ** 20:.1f}), "
-          f"nodes {mem_n['total_rgba8_bytes'] / 2 ** 20:.1f} MB; one building's frames: {lo} {b[lo] * 4 / 2 ** 20:.2f} MB "
+          f"nodes {mem_n['total_rgba8_bytes'] / 2 ** 20:.1f} MB, terrain {mem_t['total_rgba8_bytes'] / 2 ** 20:.1f} MB; one building's frames: {lo} {b[lo] * 4 / 2 ** 20:.2f} MB "
           f"to {hi} {b[hi] * 4 / 2 ** 20:.2f} MB")
     return report
 
