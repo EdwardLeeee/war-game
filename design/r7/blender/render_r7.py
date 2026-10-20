@@ -218,10 +218,74 @@ def unit_frames(it):
         bpy.ops.render.render(write_still=True)
 
 
+WEAPON = ("bpole", "bflag", "shaft", "_tip", "speartassel", "tassel", "_flag", "_pole", "_finial", "_bfinial",
+          "_socket", "_blade", "banner", "xbow_e_stock", "xbow_e_prod", "xbow_e_str", "_xbow", "_quiver", "bolt")
+
+
+def concept(it):
+    """Version 3's input: our own model as a picture for the image-to-3D generator, front three-quarter, plain white,
+    the weapons and banner left out (they are put back on the generated body's hands)."""
+    fresh()
+    look.TEX.update({tid: {k: tex_path(tid, k) for k in ("diff", "rough", "nor_gl")} for tid in look.SIZE})
+    if it["kind"] == "barracks":
+        import blds
+        root = lib.empty("r7_concept")
+        blds.BUILDERS["barracks"](root, "E")
+        objs = [o for o in bpy.data.objects if under(o, root)]
+        made = [dict(team="blue", objs=objs, skinners=[])]
+        rest_everywhere(made)
+        size, target_z = None, None
+    else:
+        t = make_unit(it["kind"], "blue", 0.0, 0.0, 7, "idle", 0, 8)     # facing 7: toward the camera
+        body2.zero_pose(t["u"].rigs["body"])                               # arms down: the pose it is bound in
+        bpy.context.view_layer.update()
+        for sk in t["skinners"]:
+            sk.update()
+        rest_everywhere([t])
+        made = [t]
+        for ob in t["objs"]:
+            if any(w in ob.name for w in WEAPON):
+                ob.hide_render = True
+        size, target_z = 2.3, 0.95
+    setup_look()
+    if V >= 1:
+        look.realistic(tex_path, dirt=0.35, skinned_attr="rest")
+        if it["kind"] == "barracks":
+            look.bevel_all(made[0]["objs"])
+    tint_team(made)
+    sc = bpy.context.scene
+    sc.render.resolution_x = sc.render.resolution_y = it.get("px", 768)
+    cd = bpy.data.cameras.new("concept")
+    cd.type = "ORTHO"
+    co = bpy.data.objects.new("concept", cd)
+    sc.collection.objects.link(co)
+    sc.camera = co
+    co.rotation_euler = Euler((math.radians(75), 0, math.radians(-30)))
+    rm = co.rotation_euler.to_matrix()
+    if size is None:                              # fit the camera to what shows
+        bpy.context.view_layer.update()
+        pts = [ob.matrix_world @ Vector(c) for ob in made[0]["objs"] if ob.type == "MESH" and not ob.hide_render
+               for c in ob.bound_box]
+        right, up = rm @ Vector((1, 0, 0)), rm @ Vector((0, 1, 0))
+        xs, ys = [p.dot(right) for p in pts], [p.dot(up) for p in pts]
+        size = max(max(xs) - min(xs), max(ys) - min(ys)) * 1.12
+        mid = right * ((max(xs) + min(xs)) / 2) + up * ((max(ys) + min(ys)) / 2)
+        target = mid
+    else:
+        target = Vector((0, 0, target_z))
+    cd.ortho_scale = size
+    co.location = target + rm @ Vector((0, 0, 30))
+    sc.render.film_transparent = True             # put on white afterwards (common/concepts.py): the light stays R7's
+    sc.render.filepath = os.path.join(OUT, f"concept_{it['kind']}.png")
+    bpy.ops.render.render(write_still=True)
+
+
 t0 = time.time()
 for it in job["items"]:
     if it["what"] == "scene":
         scene()
+    elif it["what"] == "concept":
+        concept(it)
     else:
         unit_frames(it)
     print(f"R7 v{V} {it['what']} {it.get('kind', '')} {it.get('anim', '')} done at {time.time() - t0:.0f}s", flush=True)

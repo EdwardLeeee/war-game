@@ -208,10 +208,13 @@ def dress(u, kind, helmet_scale=0.78):
     J = [rig.j[k] for k in JOINTS]
     skin = lib.mat("r7_skin", (0.55, 0.38, 0.27), 0.5)
     skin.node_tree.nodes["Principled BSDF"].inputs["Subsurface Weight"].default_value = 0.15
-    bodyob = _mesh(f"{kind}_r7body", co, polys, [skin])
+    # the feet go: our boots stand on the ankles, the bare feet stuck out under them
+    c = {k: i for i, k in enumerate(JOINTS)}
+    foot = W[:, c["ankleR"]] + W[:, c["ankleL"]]
+    bpolys = [p for p in polys if foot[list(p)].mean() < 0.5]
+    bodyob = _mesh(f"{kind}_r7body", co, bpolys, [skin])
     sks = [WeightSkinner(bodyob, J, co, W)]
     # the clothes: faces whose vertices are mostly torso / upper arm (tunic) or hips / legs above the ankle (trousers)
-    c = {k: i for i, k in enumerate(JOINTS)}
     tunic = W[:, [c["torso"], c["shoulderR"], c["shoulderL"], c["neck"]]].sum(1) * (1 - W[:, c["neck"]])
     trousers = W[:, [c["hips"], c["hipR"], c["hipL"], c["kneeR"], c["kneeL"]]].sum(1)
     keep, mat = [], []
