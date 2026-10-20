@@ -7,10 +7,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { FIXED_TERRAIN } from "../src/core/fixed-terrain.ts";
 import { Game } from "../src/core/game.ts";
-import { generateMap } from "../src/core/map.ts";
+import { generateMap, type GameMap } from "../src/core/map.ts";
+import { ATTEMPTS, generateRandomMap } from "../src/core/random-map.ts";
 import { BUILDINGS } from "../src/core/rules.ts";
 import { checkPlacement } from "../src/placement.ts";
-import { BuildingType, CELL_SHIFT, NodeKind, PlaceBit, Reject, Stance, Terrain, UnitType } from "../src/protocol.ts";
+import { BuildingType, CELL_SHIFT, crossingTerrain, NodeKind, PlaceBit, Reject, Stance, Terrain, UnitType } from "../src/protocol.ts";
 import { buildView, SnapshotEncoder } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
 
@@ -41,11 +42,15 @@ test("the fixed map carries war-game-ui's layout: every obstacle cell, every tre
   assert.deepEqual([count.R, count.K, count["~"], count.f, count["|"], count["="], count.T, count.x], [116, 26, 363, 18, 9, 9, 44, 8]);
 });
 
-test("fords and bridges: 3 cells wide, across the water, their way from bank to bank", () => {
-  const m = generateMap();
+/**
+ * Every ford and bridge of a map: 3 cells wide across its way (a bridge's value is its way; a ford
+ * goes across the water on its sides), open ground at both ends. Returns how many there are.
+ */
+function checkCrossings(m: GameMap, label: string): number {
   const n = m.size;
   const seen = new Uint8Array(n * n);
   let blocks = 0;
+  const ground = (x: number, y: number) => (x < 0 || y < 0 || x >= n || y >= n ? Terrain.Blocked : m.terrain[y * n + x]);
   for (let k = 0; k < n * n; k++) {
     const t = m.terrain[k];
     if (seen[k] === 1 || (t !== Terrain.Ford && t !== Terrain.BridgeNS && t !== Terrain.BridgeEW)) continue;
@@ -57,7 +62,7 @@ test("fords and bridges: 3 cells wide, across the water, their way from bank to 
       cells.push(c);
       for (const d of [1, -1, n, -n]) {
         const o = c + d;
-        if (o >= 0 && o < n * n && seen[o] === 0 && m.terrain[o] === t) {
+        if (o >= 0 && o < n * n && seen[o] === 0 && m.terrain[o] === t && Math.abs((o % n) - (c % n)) <= 1) {
           seen[o] = 1;
           stack.push(o);
         }
@@ -67,19 +72,52 @@ test("fords and bridges: 3 cells wide, across the water, their way from bank to 
     const xs = cells.map((c) => c % n);
     const ys = cells.map((c) => Math.trunc(c / n));
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-    const ground = (x: number, y: number) => m.terrain[y * n + x];
-    // Which way it goes: water on the two other sides. Fords have no way of their own.
-    const waterNS = [...Array(x1 - x0 + 1).keys()].every((i) => ground(x0 + i, y0 - 1) !== Terrain.Water && ground(x0 + i, y1 + 1) !== Terrain.Water);
-    const ns = t === Terrain.BridgeNS || (t === Terrain.Ford && waterNS);
-    if (t !== Terrain.Ford) assert.equal(waterNS, t === Terrain.BridgeNS, `bridge at ${x0},${y0}: its value is its way`);
-    // 3 wide across its way, and walkable ground (not water) at both ends.
-    assert.equal(ns ? x1 - x0 + 1 : y1 - y0 + 1, 3, `crossing at ${x0},${y0}: 3 cells wide`);
+    const dryNS = [...Array(x1 - x0 + 1).keys()].every((i) => ground(x0 + i, y0 - 1) !== Terrain.Water && ground(x0 + i, y1 + 1) !== Terrain.Water);
+    const dryEW = [...Array(y1 - y0 + 1).keys()].every((i) => ground(x0 - 1, y0 + i) !== Terrain.Water && ground(x1 + 1, y0 + i) !== Terrain.Water);
+    const ns = t === Terrain.BridgeNS || (t === Terrain.Ford && dryNS && !dryEW);
+    const at = `${label}: crossing at ${x0},${y0}`;
+    if (t === Terrain.BridgeNS) assert.ok(dryNS, `${at}: a north-south bridge`);
+    if (t === Terrain.BridgeEW) assert.ok(dryEW, `${at}: an east-west bridge`);
+    assert.equal(ns ? x1 - x0 + 1 : y1 - y0 + 1, 3, `${at}: 3 cells wide`);
+    // Every cell of each of its 3 lines is the crossing's own, from bank to bank.
     for (let i = 0; i < 3; i++) {
-      const ends = ns ? [ground(x0 + i, y0 - 1), ground(x0 + i, y1 + 1)] : [ground(x0 - 1, y0 + i), ground(x1 + 1, y0 + i)];
-      for (const e of ends) assert.ok(e === Terrain.Open, `crossing at ${x0},${y0}: open ground at its ends`);
+      const line = cells.filter((c) => (ns ? c % n === x0 + i : Math.trunc(c / n) === y0 + i)).map((c) => (ns ? Math.trunc(c / n) : c % n));
+      const lo = Math.min(...line);
+      const hi = Math.max(...line);
+      assert.equal(line.length, hi - lo + 1, `${at}: line ${i} unbroken`);
+      const ends = ns ? [ground(x0 + i, lo - 1), ground(x0 + i, hi + 1)] : [ground(lo - 1, y0 + i), ground(hi + 1, y0 + i)];
+      for (const e of ends) assert.equal(e, Terrain.Open, `${at}: open ground at its ends`);
     }
   }
-  assert.equal(blocks, 4, "a bridge and a ford a side");
+  return blocks;
+}
+
+test("fords and bridges: 3 cells wide, across the water, their way from bank to bank", () => {
+  assert.equal(checkCrossings(generateMap(), "fixed"), 4, "a bridge and a ford a side");
+});
+
+test("random maps (seeds 1-300): crossings 3 wide from bank to bank, water at least 2 wide, cliffs 1 wide; few maps fall back to no obstacles", () => {
+  let fallbacks = 0;
+  let rivers = 0;
+  for (let seed = 1; seed <= 300; seed++) {
+    const m = generateRandomMap(seed, 129);
+    const n = m.size;
+    if (m.redraws >= ATTEMPTS - 1) fallbacks++;
+    if (checkCrossings(m, `seed ${seed}`) > 0) rivers++;
+    const wet = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && (m.terrain[y * n + x] === Terrain.Water || crossingTerrain(m.terrain[y * n + x]));
+    const cliff = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && m.terrain[y * n + x] === Terrain.Cliff;
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        if (m.terrain[y * n + x] === Terrain.Water) {
+          const in2x2 = [[0, 0], [-1, 0], [0, -1], [-1, -1]].some(([dx, dy]) => wet(x + dx, y + dy) && wet(x + dx + 1, y + dy) && wet(x + dx, y + dy + 1) && wet(x + dx + 1, y + dy + 1));
+          assert.ok(in2x2, `seed ${seed}: water at ${x},${y} at least 2 wide`);
+        }
+        if (cliff(x, y)) assert.ok(!(cliff(x + 1, y) && cliff(x, y + 1) && cliff(x + 1, y + 1)), `seed ${seed}: a cliff 1 wide at ${x},${y}`);
+      }
+    }
+  }
+  assert.ok(rivers >= 150, `a river on most maps (${rivers} of 300)`);
+  assert.ok(fallbacks <= 6, `under 2% fall back to no obstacles (${fallbacks})`);
 });
 
 test("a soldier sent across the river walks over the bridge, never in the water", () => {

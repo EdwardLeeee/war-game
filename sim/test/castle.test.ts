@@ -349,10 +349,11 @@ test("the fixed map: castles, nothing walled off, walks within the caps, fair; i
   assert.ok(mainMain >= 1.1, `main city to main city ${mainMain.toFixed(3)}`);
 });
 
-test("random maps (seeds 1-300): castles, nothing walled off, walks within the caps, fair; castles are mirror images", () => {
+test("random maps (seeds 1-300): castles, nothing walled off, walks within the caps, fair; castles are mirror images; the obstacles make the way between the main cities at least 1.10 times the open walk on half of them", () => {
+  const mainMain: number[] = [];
   for (let seed = 1; seed <= 300; seed++) {
     const map = generateRandomMap(seed, 129);
-    checkMap(map, `seed ${seed} ${map.layout}`);
+    mainMain.push(checkMap(map, `seed ${seed} ${map.layout}`).mainMain);
     // Each wall cell's mirror image is a wall cell too.
     const n = map.size;
     for (let k = 0; k < n * n; k++) {
@@ -361,6 +362,8 @@ test("random maps (seeds 1-300): castles, nothing walled off, walks within the c
       assert.equal(map.terrain[m.v * n + m.u], Terrain.Wall, `seed ${seed}: wall ${k % n},${Math.trunc(k / n)}`);
     }
   }
+  const median = [...mainMain].sort((a, b) => a - b)[mainMain.length >> 1];
+  assert.ok(median >= 1.1, `median main city to main city ${median.toFixed(3)}`);
 });
 
 test("the big city's castle follows its tower on a turned random map: rules, the world and the terrain agree", () => {

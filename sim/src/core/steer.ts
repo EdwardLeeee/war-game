@@ -10,9 +10,9 @@ import type { World } from "./world.ts";
 /**
  * Head for (tx, ty): straight when within DIRECT_STEER, else along the field `key`. Without
  * `goals` the key is a cell index (-1 = the cell of (tx, ty)) and the goal is the walkable
- * cell nearest it. `drop` marks a drop-off field (see FieldCache.get). When the straight way to
- * the point is shut (R6-51: a ridge, a river bank between a group's goal cell and a unit's slot),
- * it goes along a field to the point's own cell instead of pressing against the obstacle.
+ * cell nearest it. `drop` marks a drop-off field (see FieldCache.get). A slot (the point) that the
+ * straight way from the group's goal cell does not reach (R6-51: a ridge, a river bank between)
+ * gets a field to its own cell, so the unit does not press against the obstacle from the goal cell.
  */
 export function steerTo(
   w: World,
@@ -34,14 +34,11 @@ export function steerTo(
     const c = nearestWalkable(w, goalCell % n, Math.trunc(goalCell / n));
     return c < 0 ? [] : [c];
   };
-  let fieldKey = key;
   if (goals === null && dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) {
-    if (openLine(w, u.x[i], u.y[i], tx, ty)) {
-      steerDirect(w, i, dx, dy, speed);
-      return;
-    }
-    fieldKey = pointCell;
+    steerDirect(w, i, dx, dy, speed);
+    return;
   }
+  let fieldKey = key;
   let g = goals;
   if (g === null) {
     if (fieldKey < 0) fieldKey = pointCell;
