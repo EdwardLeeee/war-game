@@ -227,6 +227,8 @@ export const Reject = {
   NoRoom: 17,
   /** `build` on a gate's lane (PlaceBit.GateLane; D-089, ceo 2026-10-20: the gates stay open). */
   GateLane: 18,
+  /** `build` on a ford or a bridge (PlaceBit.Crossing; R6-51, ceo 2026-10-20: crossings stay open). */
+  Crossing: 19,
 } as const;
 export type Reject = (typeof Reject)[keyof typeof Reject];
 
@@ -493,7 +495,7 @@ export const MAP_MODES = ["fixed", "random"] as const satisfies readonly MapMode
  * red preview and the final ruling come from one piece of code.
  */
 export const PlaceBit = {
-  /** Rock, a tree, a known building (farms included), or any ground but Open (R6-51: water, cliff, fords and bridges too). */
+  /** Rock, a tree, a known building (farms included), a castle wall, water or a cliff (R6-51). */
   Blocked: 1,
   /** Not yet explored: you cannot build there. */
   Unexplored: 2,
@@ -514,6 +516,8 @@ export const PlaceBit = {
    * explored. Open ground nobody may build on (Reject.GateLane).
    */
   GateLane: 64,
+  /** A ford or a bridge (R6-51), once explored: walked, but nobody builds there (Reject.Crossing). */
+  Crossing: 128,
 } as const;
 
 // --- static data sent once, in "ready" -----------------------------------------------

@@ -321,9 +321,10 @@ function checkMap(map: GameMap, label: string): { mainMain: number; town: number
   const open = new Set([...footprint(n, s0), ...footprint(n, s1), ...towerCells]);
   const d0 = walks(map, footprint(n, s0), open);
   const d1 = walks(map, footprint(n, s1), open);
-  // Nothing walled off: every open, node-free cell is reachable from both main cities.
+  // Nothing walled off: every walkable, node-free cell (fords and bridges too) is reachable from
+  // both main cities.
   for (let k = 0; k < n * n; k++) {
-    if (map.terrain[k] !== Terrain.Open || nodeAt.has(k)) continue;
+    if (!walkableTerrain(map.terrain[k]) || nodeAt.has(k)) continue;
     assert.ok(d0[k] < 1 << 30 && d1[k] < 1 << 30, `${label}: cell ${k % n},${Math.trunc(k / n)} cut off`);
   }
   // Walks from the main city's centre cell, against the walk with nothing in the way.
@@ -343,8 +344,9 @@ function checkMap(map: GameMap, label: string): { mainMain: number; town: number
   return { mainMain, town };
 }
 
-test("the fixed map: castles, nothing walled off, walks within the caps, fair", () => {
-  checkMap(generateMap(), "fixed");
+test("the fixed map: castles, nothing walled off, walks within the caps, fair; its obstacles make the way between the main cities at least 1.10 times the open walk", () => {
+  const { mainMain } = checkMap(generateMap(), "fixed");
+  assert.ok(mainMain >= 1.1, `main city to main city ${mainMain.toFixed(3)}`);
 });
 
 test("random maps (seeds 1-300): castles, nothing walled off, walks within the caps, fair; castles are mirror images", () => {

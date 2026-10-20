@@ -187,6 +187,10 @@ test("loose soldiers by a rock spread out and then stand still (#116)", () => {
   // rock at (21-23, 39) and are told to move to (26, 44). One of them ends below the rock, and
   // the push of the mate nearest it ran into the rock; it was pushed off the place it stood on,
   // walked back, and was pushed off again, for good.
+  // Since R6-51, (26, 44) is inside a rock ridge running from (21, 41) to (28, 46): the group's
+  // goal cell is west of it and some slots east. Those soldiers walked to the goal cell and then
+  // pressed straight at their slots through the ridge; now a slot the straight way from the goal
+  // cell cannot reach gets a field of its own (steer.ts).
   const g = new Game({ seed: 1, scenario: "e2e" });
   const w = g.w;
   const u = w.units.col;
