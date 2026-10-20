@@ -104,14 +104,16 @@ jobs:
               t="${{ matrix.target }}"; v="${t%%-*}"; v="${v#v}"; unit="${t#*-}"
               /usr/bin/python3 common/textures.py fetch
               (cd ../round1 && /usr/bin/python3 common/emblems.py ../production/build/emblems)
-              if [ "$v" = 2 ]; then
+              if [ "$v" -ge 2 ]; then                     # versions 2 and 8 (R8) use MPFB
                 curl -sSfL -o "$RUNNER_TEMP/mpfb.zip" "$MPFB_URL"
                 echo "${MPFB_SHA256}  $RUNNER_TEMP/mpfb.zip" | sha256sum -c -
                 "$BLENDER" --command extension install-file -r user_default -e "$RUNNER_TEMP/mpfb.zip"
               fi
               cd ../production
               export R7_VERSION="$v" R7_TEX="$GITHUB_WORKSPACE/design/r7/build/tex"
-              /usr/bin/python3 blender/render_prod.py --target "$unit" --anims idle,walk,attack
+              # R7's style test rendered idle, walk and attack; R8 (v8) every animation of the unit
+              if [ "$v" = 8 ]; then anims=""; else anims="--anims idle,walk,attack"; fi
+              /usr/bin/python3 blender/render_prod.py --target "$unit" $anims
               /usr/bin/python3 common/postprocess.py --target "$unit" --scale 3
               /usr/bin/python3 common/postprocess.py --target "$unit" --scale 2 ;;
             production)

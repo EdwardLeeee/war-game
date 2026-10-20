@@ -90,11 +90,21 @@ def template():
     co = co.reshape(n, 3).astype(np.float64)
     col = {j: k for k, j in enumerate(JOINTS)}
     W = np.zeros((n, len(JOINTS)))
+    F = {}                          # (side, finger, phalanx) or (side, finger, 0) for its metacarpal -> weights (R8 grip)
     for v in me.vertices:
         for g in v.groups:
-            j = our_joint(names[g.group])
+            name = names[g.group]
+            j = our_joint(name)
             if j is not None:
                 W[v.index, col[j]] += g.weight
+            if name.startswith(("finger", "metacarpal")) and name[-2:] in (".L", ".R"):
+                side = name[-1]
+                if name.startswith("finger"):
+                    f, p = name[6:-2].split("-")
+                    key = (side, int(f), int(p))
+                else:
+                    key = (side, int(name[10:-2]) + 1, 0)            # metacarpal1 carries finger 2
+                F.setdefault(key, np.zeros(n))[v.index] += g.weight
     s = W.sum(1, keepdims=True)
     W = np.where(s > 0, W / np.maximum(s, 1e-9), 0)
     W[s[:, 0] == 0, col["torso"]] = 1.0
@@ -102,7 +112,7 @@ def template():
     for ob in (body, rig):
         bpy.data.objects.remove(ob)
     bpy.data.meshes.remove(me)
-    _TEMPLATE.update(co=co, polys=polys, W=W)
+    _TEMPLATE.update(co=co, polys=polys, W=W, F=F)
     return co, polys, W
 
 
@@ -168,7 +178,47 @@ def fit(rig):
     for k, j in enumerate(JOINTS):
         m = np.array(A[j])
         out += (hom @ m.T)[:, :3] * W[:, k:k + 1]
+    if GRIP:
+        out = curl_fingers(out, _TEMPLATE["F"])
     return out, polys, W
+
+
+GRIP = False                      # R8: the fingers closed round a grip (curl_fingers)
+CURL = {"finger": (65, 100, 120), "thumb": (25, 40, 45)}     # degrees at each phalanx, added up toward the tip
+
+
+def curl_fingers(co, F):
+    """The fitted hands (arms down, palms toward the thighs) closed: every finger turned at its knuckle toward the
+    palm, more at each phalanx; the thumb a little. The knuckle is the ring the finger shares with its metacarpal
+    (the thumb: with the wrist's own vertices)."""
+    out = co.copy()
+    for side, sgn in (("R", 1.0), ("L", -1.0)):
+        for f in range(1, 6):
+            ws = [F.get((side, f, p)) for p in (1, 2, 3)]
+            if any(w is None for w in ws):
+                continue
+            base = F.get((side, f, 0))
+            w1 = ws[0]
+            if base is not None:
+                m = np.minimum(base, w1)
+            else:
+                m = np.minimum(w1, 1 - w1) * (w1 > 0)
+            if m.sum() < 1e-6:
+                continue
+            pivot = (co * m[:, None]).sum(0) / m.sum()
+            steps = CURL["thumb" if f == 1 else "finger"]
+            ang = np.radians(sum(ws[p] * steps[p] for p in range(3)))
+            sel = ang > 1e-4
+            d = co[sel] - pivot
+            a = sgn * ang[sel]
+            c, s = np.cos(a), np.sin(a)
+            # about the front-back axis (y): the tip goes toward the body
+            x = d[:, 0] * c + d[:, 2] * s
+            z = -d[:, 0] * s + d[:, 2] * c
+            out[sel, 0] = pivot[0] + x
+            out[sel, 2] = pivot[2] + z
+            out[sel, 1] = co[sel, 1]
+    return out
 
 
 class WeightSkinner(body2.Skinner):
@@ -199,7 +249,7 @@ def _mesh(name, co, polys, mats, face_mat=None):
     return ob
 
 
-def dress(u, kind, helmet_scale=0.78):
+def dress(u, kind, helmet_scale=0.78, team_tunic=False):
     """Version 2 on one built unit: our body, head and hands hidden, the MPFB body and its clothes skinned to our rig,
     the helmet scaled to a real head; the clothes in our body's own tunic and trouser materials."""
     rig = u.rigs["body"]
@@ -236,7 +286,10 @@ def dress(u, kind, helmet_scale=0.78):
     bpy.data.meshes.remove(tmp)
     cco = co[used] + nrm[used] * 0.014
     ours = next(o for o in bpy.data.objects if o.name.split(".")[0] == f"{kind}_body" and not o.hide_render)
-    cloth = _mesh(f"{kind}_r7clothes", cco, cpolys, [ours.data.materials[0], ours.data.materials[1]], mat)
+    tunic_m = ours.data.materials[0]
+    if team_tunic:                                # R8: the tunic in the player's colour (front, sides and sleeves)
+        tunic_m = next((v["mat"] for v in lib.MATS.values() if v.get("kind") == "team"), tunic_m)
+    cloth = _mesh(f"{kind}_r7clothes", cco, cpolys, [tunic_m, ours.data.materials[1]], mat)
     sks.append(WeightSkinner(cloth, J, cco, W[used]))
     rig.skinners = list(getattr(rig, "skinners", [])) + sks
     # hide our own body, head, hands and face; shrink the helmet to a real head

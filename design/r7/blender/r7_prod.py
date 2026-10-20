@@ -13,6 +13,7 @@ import body2
 import lib
 import look
 
+TEAM_TUNIC = ()                    # R8: the units whose tunic is in the player's colour (decided by the measurement)
 GROUND_RES = ("leafy_grass", "aerial_grass_rock", "stony_dirt_path", "gravel_ground_01", "brown_mud_rocks_01")
 
 
@@ -25,10 +26,18 @@ def apply(u, kind, version):
     sks = [o for o in gc.get_objects() if isinstance(o, body2.Skinner)]
     if version == 1:
         u.rigs["body"].j["head"].scale = (0.88, 0.88, 0.88)
-    if version == 2:
+    if version in (2, 8):
         import human_r7
-        more, _ = human_r7.dress(u, kind)
+        if version == 8:                           # R8 (D-093): design/r8/blender/r8.py
+            import sys
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "r8", "blender"))
+            human_r7.GRIP = True
+        more, _ = human_r7.dress(u, kind, team_tunic=version == 8 and kind in TEAM_TUNIC)
         sks += more
+    if version == 8:
+        import r8
+        if kind in r8.BOWS:
+            r8.bow_string(u, kind)
     look.rest_coords(sks)
     for ob in bpy.data.objects:
         if ob.type == "MESH" and "rest" not in ob.data.attributes:
@@ -38,6 +47,9 @@ def apply(u, kind, version):
             me.attributes.new("rest", "FLOAT_VECTOR", "POINT").data.foreach_set("vector", co)
     look.realistic(tex_path, dirt=0.35, skinned_attr="rest")
     look.lights()
+    if version == 8:
+        import r8
+        r8.rim()
     world = bpy.context.scene.world
     orig = lib.set_pass
 

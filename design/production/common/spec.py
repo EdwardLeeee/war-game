@@ -60,7 +60,7 @@ FPS = {"idle": 8, "walk": 12, "attack": 20, "death": 12, "cast": 20, "hit": 20, 
 # trebuchet releases near the top of its swing (t 0.4), catapult arm stops at t 0.35; riders have no strike
 # motion yet (lance held couched); mages: the 晶彈 shot leaves at frame 4 (P1-01)
 HIT = {"farmer_e": 7, "spear_e": 5, "xbow_e": 4, "hcav_e": 5, "siege_e": 4, "mage_e": 4,
-       "farmer_w": 7, "pike_w": 5, "bow_w": 6, "knight_w": 5, "siege_w": 3, "mage_w": 4}
+       "farmer_w": 7, "pike_w": 5, "bow_w": 6, "knight_w": 5, "siege_w": 3, "mage_w": 4, "bow_e": 6}
 
 
 # key: kind, variant, mage style, frame (w, h metres, anchor x, y fractions), animations
@@ -74,6 +74,8 @@ UNITS = {
     "farmer_w": dict(kind="farmer_w", frame=[3.8, 3.4, 0.5, 0.8], anims=_farmer()),
     "pike_w": dict(kind="pike_w", frame=[8.0, 4.4, 0.5, 0.62], anims=_std()),
     "bow_w": dict(kind="bow_w", frame=[3.2, 3.2, 0.5, 0.74], anims=_std()),
+    # R8 (D-093): the East ranged unit carries a bow (弓手), the crossbowman above stays for art-v5 and earlier
+    "bow_e": dict(kind="bow_e", frame=[3.2, 3.2, 0.5, 0.74], anims=_std()),
     "knight_w": dict(kind="knight_w", frame=[7.6, 4.4, 0.5, 0.75], anims=_std()),
     "siege_w": dict(kind="siege_w", frame=[5.6, 4.4, 0.5, 0.72], anims=_std()),
     "mage_w": dict(kind="mage_w", style="WB", frame=[4.6, 3.6, 0.5, 0.74], anims=_mage()),
@@ -97,7 +99,7 @@ P2_ANIMS = {
     "farmer_e": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8), ("idle", 8), ("walk", 8)],
     "farmer_w": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8), ("idle", 8), ("walk", 8)],
 }
-INFANTRY = ("spear_e", "xbow_e", "farmer_e", "pike_w", "bow_w", "farmer_w")
+INFANTRY = ("spear_e", "xbow_e", "farmer_e", "pike_w", "bow_w", "farmer_w", "bow_e")
 REVIEW_ANIMS = {u: [("death", 10)] for u in INFANTRY}
 # client/docs/sprite-atlas.md, sections 7 and 11: the frame of a fall where the body lands (the game
 # plays the shared dust there), how much larger the dust is for big units, and the frame of a work
