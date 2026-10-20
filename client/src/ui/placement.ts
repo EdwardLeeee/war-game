@@ -54,11 +54,6 @@ export class Placement {
   }
 }
 
-/**
- * 箭樓 (round 7, D-061): every footprint cell must be TowerLand, near the own main city or a
- * town we govern or repair (sim/PROTOCOL.md section 7). Checked here as well, so the preview is
- * red there whatever `checkPlacement` of this version says. Other buildings: always true.
- */
 /** Why the preview is red on a castle's wall (D-089). */
 export const WALL_TEXT = "城牆上不能蓋";
 /** Why a building may not go on a gate's lane (D-089, ceo 2026-10-20: 城門一直開著，誰都能走). */
@@ -85,6 +80,11 @@ export function onWall(grid: PlacementGrid, building: Pick<BuildingInfo, "size">
   return false;
 }
 
+/**
+ * 箭樓 (round 7, D-061): every footprint cell must be TowerLand, near the own main city or a
+ * town we govern or repair (sim/PROTOCOL.md section 7). Checked here as well, so the preview is
+ * red there whatever `checkPlacement` of this version says. Other buildings: always true.
+ */
 export function towerLandOk(grid: PlacementGrid, building: Pick<BuildingInfo, "type" | "size">, cellX: number, cellY: number): boolean {
   if (building.type !== BuildingType.ArrowTower) return true;
   const n = grid.size;

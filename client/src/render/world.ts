@@ -667,6 +667,8 @@ export class WorldRenderer {
     const sel = view.selection.units;
     this.ghostRings.clear();
     this.ghostCount = 0;
+    // A layer with no one behind a wall this frame is hidden: its filter's pass is skipped.
+    const ghosts = { own: 0, enemy: 0, neutral: 0 };
     const walls = this.castle.hasPieces && this.artUnits !== null;
     // The selection ring's size on the plane (the ground's ring: 16 world px at 1.05).
     const ringX = this.projection.toPlane(17, 0).x - this.projection.toPlane(0, 0).x;
@@ -750,10 +752,11 @@ export class WorldRenderer {
       if (walls && top !== null) {
         const box = this.artUnits?.pictureBox(i) ?? null;
         const behind = box !== null && this.castle.covers(box, box.z);
-        const layer = owner === view.me ? this.ghostLayers.own : owner === NEUTRAL || owner === NO_OWNER ? this.ghostLayers.neutral : this.ghostLayers.enemy;
-        this.artUnits?.ghost(i, behind ? layer : null, this.ghostStyle === "outline");
+        const side = owner === view.me ? "own" : owner === NEUTRAL || owner === NO_OWNER ? "neutral" : "enemy";
+        this.artUnits?.ghost(i, behind ? this.ghostLayers[side] : null, this.ghostStyle === "outline");
         if (behind) {
           this.ghostCount++;
+          ghosts[side]++;
           if (selected) this.ghostRings.ellipse(at.x, at.y, ringX, ringY).stroke({ width: 2, color: 0xfff3b0 });
         }
       }
@@ -783,6 +786,9 @@ export class WorldRenderer {
       }
     }
     this.artUnits?.drawCorpses(seconds);
+    this.ghostLayers.own.visible = ghosts.own > 0;
+    this.ghostLayers.enemy.visible = ghosts.enemy > 0;
+    this.ghostLayers.neutral.visible = ghosts.neutral > 0;
   }
 
   private drawWarnings(now: number): void {
