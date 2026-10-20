@@ -1,8 +1,8 @@
 // 天然障礙物 (R6-51) on core's real simulation, the fixed map (war-game-ui's whole map,
 // sim/src/core/fixed-terrain.ts): the river, its bridges and fords drawn from the ground the
-// simulation sends, in flat colours until war-game-ui's tiles (art-v5), each bridge with rails
-// along the way it is crossed; the minimap in the same colours; a house on a bridge is red and
-// says why.
+// simulation sends, from war-game-ui's pictures (art-v5) or, without them, in flat colours with
+// each bridge's rails along the way it is crossed; the minimap in the same colours; a house on a
+// bridge is red and says why.
 
 import { expect, type Page, test } from "@playwright/test";
 import { selectForCommands, shot, watchErrors } from "./helpers.ts";
@@ -50,6 +50,53 @@ test("固定地圖的河、橋、淺灘（R6-51）：照模擬送來的地形畫
   await page.evaluate(() => window.__proto?.game?.centerOn(48, 48, 0.35));
   await page.waitForTimeout(300);
   await shot(page, info, "terrain-whole-map");
+  check();
+});
+
+test("地形用 art-v5 的圖（3 倍，方形斜看）：固定地圖的 804 塊照 ui 的規則擺；水、淺灘、橋面躺在地上，石堆、懸崖、欄杆站著（觀戰，給 ceo 看）", async ({ page, browserName }, info) => {
+  test.setTimeout(180_000);
+  const check = watchErrors(page);
+  await start(page, "watch=1&ai=0&art=x3");
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.terrain() ?? null))?.pieces ?? 0, { timeout: 30_000 }).toBe(804);
+  const t = await page.evaluate(() => window.__proto?.game?.terrain() ?? null);
+  // Water 582, fords 18, decks 18 lie flat; the rest stand (python3 design/b1/common/terrain_rules.py on the same grid).
+  expect(t).toEqual({ pictures: true, pieces: 804, flat: 618, standing: 186 });
+  if (browserName !== "chromium") return check();
+  for (const [name, x, y, z] of [
+    ["terrain-art-bridge-ns", 18.5, 59.5, 1.3],
+    ["terrain-art-bridge-ew", 59.5, 18.5, 1.3],
+    ["terrain-art-ford", 40.5, 86.5, 1.3],
+    ["terrain-art-cliffs-rock", 46, 24, 0.9],
+    ["terrain-art-whole-map", 48, 48, 0.35],
+  ] as const) {
+    await page.evaluate(([cx, cy, s]) => window.__proto?.game?.centerOn(cx, cy, s), [x, y, z] as const);
+    await page.waitForTimeout(300);
+    await shot(page, info, name);
+  }
+  check();
+});
+
+test("走上橋的兵（art-v5）：畫在橋面上，往上抬橋面的高度 0.44 公尺；岸上不抬", async ({ page, browserName }, info) => {
+  test.setTimeout(180_000);
+  const check = watchErrors(page);
+  await start(page, "ai=0&art=x3&tps=200");
+  // 0.44 m × 20 pt × cos 30° (atlas-buildings.md sections 0 and 12).
+  expect(await page.evaluate(() => window.__proto?.game?.lift(18, 59) ?? -1)).toBeCloseTo(0.44 * 20 * Math.cos(Math.PI / 6), 3);
+  expect(await page.evaluate(() => window.__proto?.game?.lift(18, 64) ?? -1)).toBe(0);
+  // Three farmers onto the bridge's middle.
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const farmers = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === 0).slice(0, 3).map((u) => u.id);
+  await page.evaluate((ids) => window.__proto?.game?.send({ c: "move", u: ids, x: 18, y: 59 }), farmers);
+  const onBridge = async () => {
+    const us = await page.evaluate(() => window.__proto?.game?.units() ?? []);
+    return us.filter((u) => farmers.includes(u.id) && u.cx >= 17 && u.cx <= 19 && u.cy >= 58 && u.cy <= 60).length;
+  };
+  await expect.poll(onBridge, { timeout: 60_000 }).toBeGreaterThan(0);
+  if (browserName === "chromium") {
+    await page.evaluate(() => window.__proto?.game?.centerOn(18.5, 59.5, 1.6));
+    await page.waitForTimeout(300);
+    await shot(page, info, "terrain-art-farmers-on-bridge");
+  }
   check();
 });
 

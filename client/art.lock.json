@@ -1,9 +1,9 @@
 {
   "repo": "EdwardLeeee/war-game",
-  "tag": "art-v4",
+  "tag": "art-v5",
   "assets": {
-    "art-v4-x3.tar.gz": "0c5860c2dbfdf9d26d0b8febd2cb4cdfab73b21976e65081aa572f50f48d4ec4",
-    "art-v4-x2.tar.gz": "621f30bc0d2c521815a7376ba64b5cb4b14c6fd6eaea4ceba7db6ebf2b0986fe",
-    "astc-sample.tar.gz": "158e1b433057973a8bfa9b385143f188268d5afc411e59f535c34706a700b002"
+    "art-v5-x3.tar.gz": "832fe56428a7c4df94260febee7952dbc8a86e3c3373a19c52e026021d94efeb",
+    "art-v5-x2.tar.gz": "80180f2a91c4d3b3c4690bd49e9830580b919e41f3de049c62336d75b347e8b3",
+    "astc-sample.tar.gz": "d144e8aa773414b4a989d262959f956eca975247d520948169e7fdea0f36ea89"
   }
 }

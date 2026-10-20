@@ -39,6 +39,7 @@ import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT,
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 import { ArtStructures } from "./structure-art.ts";
 import { CastleDraw } from "./castle-draw.ts";
+import { TerrainDraw } from "./terrain-draw.ts";
 import type { PendingOrders } from "../game/pending.ts";
 import type { Culture } from "../art/spec.ts";
 import { ArtUnits } from "./unit-art-draw.ts";
@@ -229,6 +230,9 @@ export class WorldRenderer {
   private readonly warnLayer = new Container();
   /** The towns' castles (D-089): pictures (art-v4, square on), or blocks on the ground. */
   private readonly castle: CastleDraw;
+  /** The ground's pictures (art-v5, R6-51): the water, fords and decks lying in `terrainGround`, under the farms and castles' floors. */
+  private readonly terrain: TerrainDraw;
+  private readonly terrainGround = new Container();
   /** The castles' blocks, on the ground under the fog (castle-draw.ts). */
   private readonly castleBlocks = new Graphics();
   /**
@@ -259,6 +263,7 @@ export class WorldRenderer {
       view.coverAt = (px, py, ux, uy) => structures.coverAt(px, py, ux, uy);
     }
     this.castle = new CastleDraw(art, view, projection, { floor: this.groundArt, shadows: this.shadowLayer, upright: this.unitLayer, blocks: this.castleBlocks });
+    this.terrain = new TerrainDraw(art, view, projection, { ground: this.terrainGround, shadows: this.shadowLayer, upright: this.unitLayer });
     const ghostLayer = (color: number): Container => {
       const c = new Container();
       const f = new ColorMatrixFilter();
@@ -307,7 +312,7 @@ export class WorldRenderer {
     }
     this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
-    this.root.addChild(this.groundOuter, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.barLayer, this.townLayer);
+    this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
   }
 
@@ -322,6 +327,7 @@ export class WorldRenderer {
     this.drawBuildings();
     this.drawTowns();
     this.castle.update();
+    this.terrain.update();
     this.fx.clear();
     this.airFx.clear();
     this.drawUnits(now);
@@ -341,6 +347,7 @@ export class WorldRenderer {
   destroy(): void {
     this.artUnits?.destroy();
     this.castle.destroy();
+    this.terrain.destroy();
     this.root.parent?.removeChild(this.root);
     this.root.destroy({ children: true });
     this.terrainTexture.destroy(true);
@@ -389,8 +396,12 @@ export class WorldRenderer {
     }
   }
 
-  /** The ground the player knows (GameView.ground), one texel per cell, and the bridges' rails. */
+  /**
+   * The ground the player knows (GameView.ground), one texel per cell, and the bridges' rails: in flat
+   * colours, or grass under ui's pictures (art-v5, terrain-draw.ts).
+   */
   private paintTerrain(): void {
+    const flat = !this.terrain.pictures;
     const size = this.view.map.size;
     const g = this.view.ground;
     const d = this.terrainPixels.data;
@@ -398,14 +409,14 @@ export class WorldRenderer {
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const t = g[y * size + x];
-        const c = TERRAIN_RGB[t] ?? ((x + y) % 2 === 0 ? GROUND_RGB : GROUND_LIGHT_RGB);
+        const c = (flat ? TERRAIN_RGB[t] : undefined) ?? ((x + y) % 2 === 0 ? GROUND_RGB : GROUND_LIGHT_RGB);
         const o = (y * size + x) * 4;
         d[o] = c[0];
         d[o + 1] = c[1];
         d[o + 2] = c[2];
         d[o + 3] = 255;
         // A rail on each side the bridge ends: west and east of a north-south one, north and south of an east-west one.
-        if (t !== Terrain.BridgeNS && t !== Terrain.BridgeEW) continue;
+        if (!flat || (t !== Terrain.BridgeNS && t !== Terrain.BridgeEW)) continue;
         const bridge = (cx: number, cy: number) => cx >= 0 && cy >= 0 && cx < size && cy < size && g[cy * size + cx] === t;
         const x0 = x * TILE_PX;
         const y0 = y * TILE_PX;
@@ -662,6 +673,16 @@ export class WorldRenderer {
     return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }) };
   }
 
+  /** The ground's pictures drawn (art-v5), for the test page. */
+  get terrainCounts(): { pictures: boolean; pieces: number; flat: number; standing: number } {
+    return { pictures: this.terrain.pictures, ...this.terrain.counts };
+  }
+
+  /** How far up someone at (px, py) world px is drawn (a bridge's deck), for the test page. */
+  liftAt(px: number, py: number): number {
+    return this.terrain.liftAt(px, py);
+  }
+
   /** The castles as drawn (castle-draw.ts), for the test page. */
   get castleCounts(): { pieces: number; tiles: number; blockTowns: number; misfit: number } {
     return this.castle.counts;
@@ -762,8 +783,10 @@ export class WorldRenderer {
       const at = this.projection.toPlane(px, py);
       const type = u[o + U.type];
       const owner = u[o + U.owner];
+      // On a bridge's deck (art-v5): drawn up there.
+      const lift = this.terrain.liftAt(px, py);
       // From its atlas when there is one (its picture's top for the bars), else the shape.
-      const top = this.artUnits?.unit(i, o, at.x, at.y, seconds) ?? null;
+      const top = this.artUnits?.unit(i, o, at.x, at.y, seconds, lift) ?? null;
       p.body.visible = top === null;
       p.body.texture = this.atlas.units[type] ?? this.atlas.units[UnitType.Farmer];
       p.body.tint = ownerTint(owner, view.me);

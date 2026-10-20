@@ -423,6 +423,16 @@ export class Game implements GestureHost {
     return this.renderer?.townWalls ?? [];
   }
 
+  /** The ground's pictures (art-v5, R6-51) as drawn; null before the first snapshot. */
+  get terrainForTest(): { pictures: boolean; pieces: number; flat: number; standing: number } | null {
+    return this.renderer?.terrainCounts ?? null;
+  }
+
+  /** How far up (points on the plane) someone standing in the middle of cell (cx, cy) is drawn: a bridge's deck. */
+  liftForTest(cx: number, cy: number): number {
+    return this.renderer?.liftAt((cx + 0.5) * TILE_PX, (cy + 0.5) * TILE_PX) ?? 0;
+  }
+
   /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
   get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null {
     const r = this.renderer;

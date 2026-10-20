@@ -6,6 +6,7 @@
 import { Assets, Rectangle, Texture } from "pixi.js";
 import { ATLAS_NAMES, type AtlasJson, type EffectsJson, type FrameRect, parseAtlas, parseEffects } from "../art/spec.ts";
 import { type CastleJson, parseCastle } from "../art/castle.ts";
+import { parseTerrain, type TerrainJson } from "../art/terrain.ts";
 import { type BuildingsJson, type NodesJson, parseBuildings, parseNodes, type Side } from "../art/structures.ts";
 
 export type ArtLayer = "color" | "team" | "shadow" | "fx" | "shield";
@@ -37,6 +38,9 @@ export interface UnitArt {
   /** The castles' walls (art-v4 on, D-089): 東陸's only, as the prototype's towns all look (GDD section 12); null: drawn as blocks. */
   castle: CastleJson | null;
   castleFrame(layer: "color" | "team" | "shadow", name: string): ArtFrame | null;
+  /** The ground's pictures (art-v5 on, R6-51: rock, cliffs, water, fords, bridges); null: flat colours. */
+  terrain: TerrainJson | null;
+  terrainFrame(layer: "color" | "shadow", name: string): ArtFrame | null;
   destroy(): void;
 }
 
@@ -100,6 +104,8 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
   const nodePages = new Map<string, Texture[]>();
   let castle: CastleJson | null = null;
   const castlePages = new Map<string, Texture[]>();
+  let terrain: TerrainJson | null = null;
+  const terrainPages = new Map<string, Texture[]>();
   const pagesOf = async (dir: string, files: string[]): Promise<Texture[]> => {
     const list = files.map((f) => `${dir}${f}`);
     urls.push(...list);
@@ -135,6 +141,16 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
       }
       castle = c;
       for (const layer of ["color", "team", "shadow"] as const) castlePages.set(layer, await pagesOf(`${base}castle/`, c.pages[layer]));
+    })(),
+    (async () => {
+      let t: TerrainJson;
+      try {
+        t = parseTerrain(await json(`${base}terrain/terrain.json`));
+      } catch {
+        return;
+      }
+      terrain = t;
+      for (const layer of ["color", "shadow"] as const) terrainPages.set(layer, await pagesOf(`${base}terrain/`, t.pages[layer]));
     })(),
   ]);
   const pxPerM = atlases.values().next().value?.px_per_m ?? 60;
@@ -183,6 +199,19 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
     },
     get castle() {
       return castle;
+    },
+    get terrain() {
+      return terrain;
+    },
+    terrainFrame(layer, name) {
+      const key = `terrain|${layer}|${name}`;
+      let f = cache.get(key);
+      if (f !== undefined) return f;
+      const t = terrain as TerrainJson | null;
+      const r = t === null ? undefined : (layer === "color" ? t.frames : t.shadows)[name];
+      f = r === undefined ? null : cut(terrainPages.get(layer)?.[r.page], r);
+      cache.set(key, f);
+      return f;
     },
     castleFrame(layer, name) {
       const key = `castle|${layer}|${name}`;

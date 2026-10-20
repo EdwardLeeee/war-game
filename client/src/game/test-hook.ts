@@ -90,6 +90,10 @@ export interface GameHook {
   culture(): string;
   /** The castles as drawn (D-089): wall pieces and floor tiles shown, towns drawn as blocks, towns no layout fits, units drawn behind a wall. */
   castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null;
+  /** The ground's pictures (art-v5, R6-51): drawn from them or not, and how many pieces lie flat or stand. */
+  terrain(): { pictures: boolean; pieces: number; flat: number; standing: number } | null;
+  /** How far up someone in the middle of a cell is drawn (on a bridge's deck: rules.bridge.deck_top_m), in points on the plane. */
+  lift(cx: number, cy: number): number;
   /** A known town's castle on the map (map cells): its walls, gates and the cells inside; null without one. */
   castleCells(town: number): { wall: [number, number][]; gate: [number, number][]; inside: { x0: number; y0: number; x1: number; y1: number } } | null;
   /** 正式介面's left (R6-13): the minimap open (and on its own), what 全體回城 shows (home, work or ""), how many places 地圖 counts. */
@@ -255,6 +259,8 @@ export function gameHook(game: Game): GameHook {
     art: () => game.artForTest,
     culture: () => game.culture,
     castle: () => game.castleForTest,
+    terrain: () => game.terrainForTest,
+    lift: (cx, cy) => game.liftForTest(cx, cy),
     castleCells: (town) => {
       const view = game.view;
       const t = view?.knownTowns.get(town);
