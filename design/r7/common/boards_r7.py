@@ -21,6 +21,7 @@ import field    # noqa: E402
 
 BUILD = R7 / "build"
 OUT = R7 / "out"
+PRIVATE = BUILD / "private"           # version 3 (Hunyuan3D outputs): shown on the desktop only, never in the repo
 boards.OUT = OUT
 PPM = 60
 CENTRE = (48.0, 48.0)                  # version 0: the cell under the patch's middle
@@ -45,6 +46,14 @@ LIGHT_NOTE = "注意：版本 1–3 的打光也改了（同一套寫實打光�
 
 def label(k):
     return f"R7-0{k}-寫實-{k}-{NAMES[k][0]}"
+
+
+def out_dir(k):
+    """Version 3's pictures go to build/private (git-ignored): the licence keeps its outputs out of anything public."""
+    d = PRIVATE if k == 3 else OUT
+    d.mkdir(parents=True, exist_ok=True)
+    boards.OUT = d
+    return d
 
 
 # ---------------------------------------------------------------- version 0 from art-v4
@@ -168,8 +177,7 @@ def gif(k, art):
     for d in dr:
         for i, txt in enumerate(("槍兵 walk", "槍兵 attack", "弩手 walk", "弩手 attack")):
             d.text((8 + i * 240, 6), txt, font=boards.font(18), fill=(255, 255, 255))
-    p = OUT / f"{label(k)}-動作.gif"
-    OUT.mkdir(parents=True, exist_ok=True)
+    p = out_dir(k) / f"{label(k)}-動作.gif"
     frames[0].save(p, save_all=True, append_images=frames[1:], duration=50, loop=0, optimize=True)
     print("wrote", p.name)
     return frames[0]
@@ -197,6 +205,7 @@ def board(k, art, ref, cost):
     s3, s1 = strip(k, art), strip(k, art, 1 / 3)
     parts.append(boards.row([boards.captioned(s3, "四名兵（3 倍）：槍兵藍、弩手藍、槍兵紅、弩手紅", 24),
                              boards.captioned(s1, "實際大小", 24)], W))
+    out_dir(k)
     return boards.save(boards.stack(parts, W), label(k) + "-mobile"), act, s1
 
 
@@ -222,9 +231,11 @@ def main(art, versions):
         acts[k] = (act, s1)
         gif(k, art)
     W = boards.M * 2 + 2 * (max(a.width for a, _ in acts.values()) + 40)
-    parts = [boards.header(W, "R7-99-寫實-總覽", "四個版本並排，實際大小（1 pt = 1 px）。每格下面是四名兵並排（實際大小）。"
-                          + LIGHT_NOTE)]
-    ks = sorted(acts)
+    public = sorted(k for k in acts if k != 3)
+    text = (f"版本 {'、'.join(map(str, public))} 並排，實際大小（1 pt = 1 px）。每格下面是四名兵並排（實際大小）。" + LIGHT_NOTE
+            + ("版本 3（AI 生成）的圖只在電腦上給使用者看過，不放進 repo（Hunyuan3D 授權）。" if 3 in acts else ""))
+    parts = [boards.header(W, "R7-99-寫實-總覽", text)]
+    ks = public
     for i in range(0, len(ks), 2):
         cells = []
         for k in ks[i:i + 2]:
@@ -234,6 +245,7 @@ def main(art, versions):
             col.paste(s1, (0, a.height + 10))
             cells.append(boards.captioned(col, f"{k}「{NAMES[k][0]}」", 26))
         parts.append(boards.row(cells, W))
+    boards.OUT = OUT
     boards.save(boards.stack(parts, W), "R7-99-寫實-總覽")
 
 

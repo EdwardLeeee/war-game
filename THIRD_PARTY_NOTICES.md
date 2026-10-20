@@ -19,4 +19,4 @@ MPFB 的程式本身是 GPLv3。我們只在 Blender 裡把它當工具用，沒
 |---|---|---|---|---|
 | Tencent Hunyuan3D 2.1（Hugging Face 公開試用頁，不登入） | R7 版本 3：從我們自己算的概念圖生成模型，只做比較測試 | Tencent Hunyuan 3D 2.1 Community License：<br>• Tencent 對生成物不主張權利（6(d)）<br>• 歐盟、英國、南韓不適用，在那裡使用生成物不在授權範圍內（1(l)、5(c)）<br>• 月活躍用戶超過 100 萬要另外向 Tencent 申請（4）<br>• 不能用來改進其他 AI 模型（5(b)） | https://huggingface.co/tencent/Hunyuan3D-2.1/blob/main/LICENSE | 2026-10-20 |
 
-正式量產不會用 Hunyuan3D。它的生成物不放進任何 Release，包括 `style-test-1`。
+正式量產不會用 Hunyuan3D。它的生成物不放進任何 Release，用生成物算出來的比較圖也不放進這個 repo；使用者已經在電腦上看過。
