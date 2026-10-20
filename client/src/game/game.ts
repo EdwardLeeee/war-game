@@ -31,6 +31,7 @@ import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
 import type { UnitArt } from "../render/unit-art.ts";
 import { WorldRenderer } from "../render/world.ts";
+import type { GroundQuality, GroundTextures } from "../render/ground-draw.ts";
 import { SAVE_EVERY_TICKS, SCREEN_VERSION, type SavedGame, type ScreenState } from "../save/save.ts";
 import { gpu, takeDraws } from "../stage.ts";
 import {
@@ -137,6 +138,9 @@ export interface GameOptions {
   view?: Projection["kind"];
   /** Units behind a castle's wall as their rims only (?ghost=outline, D-089), instead of whole. */
   ghost?: "outline";
+  /** 寫實地面 (D-093, ?test=1&ground=real): its textures, and the quality to start with. */
+  ground?: GroundTextures | null;
+  groundQuality?: GroundQuality;
   /** This build has atlases to choose in the 量測 panel. */
   artAvailable?: boolean;
   /** The 量測 panel's 美術 was changed since this game began: 量測 starts a game of its own. */
@@ -266,6 +270,22 @@ export class Game implements GestureHost {
               else options.life.perf(scenario);
             },
         artAvailable: options.artAvailable === true,
+        ground:
+          (options.ground ?? null) === null
+            ? undefined
+            : {
+                quality: () => (this.renderer?.groundLook.quality as GroundQuality | null | undefined) ?? null,
+                setQuality: (q) => this.setGroundQuality(q),
+                measure: () => {
+                  const r = this.app.renderer;
+                  const w = r.canvas.width;
+                  const h = r.canvas.height;
+                  const m = this.renderer?.measureGround(r, w, h) ?? null;
+                  if (m === null) return null;
+                  const ms = (v: number) => v.toFixed(2);
+                  return `地面（${w}×${h} 像素，每格）：高 ${ms(m.high)} ms、低 ${ms(m.low)} ms、只貼一張圖 ${ms(m.plain)} ms；材質 ${m.mb.toFixed(1)} MB`;
+                },
+              },
         population: () => {
           const h = this.view?.curr?.snap.header;
           return h === undefined ? null : { population: h[H.population], cap: h[H.populationCap] };
@@ -450,6 +470,16 @@ export class Game implements GestureHost {
   /** How far up (points on the plane) someone standing in the middle of cell (cx, cy) is drawn: a bridge's deck. */
   liftForTest(cx: number, cy: number): number {
     return this.renderer?.liftAt((cx + 0.5) * TILE_PX, (cy + 0.5) * TILE_PX) ?? 0;
+  }
+
+  /** 寫實地面 (D-093): drawn or not, and its quality; null before the first snapshot. */
+  get groundForTest(): { real: boolean; quality: string | null } | null {
+    return this.renderer?.groundLook ?? null;
+  }
+
+  /** 寫實地面's quality (the 量測 panel, the test page). */
+  setGroundQuality(q: GroundQuality): void {
+    this.renderer?.setGroundQuality(q);
   }
 
   /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
@@ -1377,6 +1407,8 @@ export class Game implements GestureHost {
         this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), projection);
         this.renderer.pending = this.pending;
         if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
+        const ground = this.options.ground ?? null;
+        if (ground !== null && !this.renderer.useGround(ground, this.options.groundQuality ?? "high")) console.warn("ground: 寫實地面 needs ui's terrain pictures (art-v5, square on); the flat ground stays");
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));

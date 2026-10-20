@@ -61,7 +61,7 @@ const PAGES: Record<ArtLayer, (a: AtlasJson) => string[]> = {
 };
 const LAYERS: ArtLayer[] = ["color", "team", "shadow", "fx", "shield"];
 
-async function json(url: string, times: LoadRecorder | null): Promise<unknown> {
+export async function json(url: string, times: LoadRecorder | null): Promise<unknown> {
   const start = performance.now();
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
@@ -77,14 +77,19 @@ async function json(url: string, times: LoadRecorder | null): Promise<unknown> {
  * loader in CI's WebKit (median 4.6 s against 4.7 s for the 63 files at 3 倍); handing PixiJS the
  * download instead (a blob's URL) cost a copy, 5.3 s.
  */
-async function page(url: string, times: LoadRecorder | null): Promise<Texture> {
+export async function page(url: string, times: LoadRecorder | null, size?: number, straight = false): Promise<Texture> {
   const start = performance.now();
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const blob = await res.blob();
   const downloaded = performance.now();
-  const bitmap = await createImageBitmap(blob);
-  const source = new ImageSource({ resource: bitmap, alphaMode: "premultiply-alpha-on-upload", label: url });
+  // `size`: scaled to that square as it is decoded (the ground's development textures come at 2048).
+  // `straight`: A is not alpha but data (the ground's height), never multiplied into the colour.
+  const bitmap = await createImageBitmap(blob, {
+    ...(size === undefined ? {} : { resizeWidth: size, resizeHeight: size, resizeQuality: "high" as const }),
+    ...(straight ? { premultiplyAlpha: "none" as const } : {}),
+  });
+  const source = new ImageSource({ resource: bitmap, alphaMode: straight ? "no-premultiply-alpha" : "premultiply-alpha-on-upload", label: url });
   times?.file(url, start, downloaded, blob.size, performance.now(), res.headers.get("x-war-game-sw"));
   return new Texture({ source, label: url });
 }

@@ -90,6 +90,9 @@ export interface GameHook {
   culture(): string;
   /** The castles as drawn (D-089): wall pieces and floor tiles shown, towns drawn as blocks, towns no layout fits, units drawn behind a wall. */
   castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null;
+  /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
+  groundLook(): { real: boolean; quality: string | null } | null;
+  setGroundQuality(q: "high" | "low"): void;
   /** The ground's pictures (art-v5, R6-51): drawn from them or not, and how many pieces lie flat or stand. */
   terrain(): { pictures: boolean; pieces: number; flat: number; standing: number } | null;
   /** How far up someone in the middle of a cell is drawn (on a bridge's deck: rules.bridge.deck_top_m), in points on the plane. */
@@ -259,6 +262,8 @@ export function gameHook(game: Game): GameHook {
     art: () => game.artForTest,
     culture: () => game.culture,
     castle: () => game.castleForTest,
+    groundLook: () => game.groundForTest,
+    setGroundQuality: (q) => game.setGroundQuality(q),
     terrain: () => game.terrainForTest,
     lift: (cx, cy) => game.liftForTest(cx, cy),
     castleCells: (town) => {

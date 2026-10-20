@@ -4,7 +4,7 @@
 // Terrain and fog are one small texture each (one texel per cell, scaled up), so they cost
 // one sprite. Units, bars and buildings come from pools that only grow.
 
-import { type Application, ColorMatrixFilter, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
+import { type Application, ColorMatrixFilter, Container, Graphics, type Renderer, Sprite, Text, Texture } from "pixi.js";
 import type { Camera } from "../camera/camera.ts";
 import { PT_PER_CELL, type Projection, tilted, TOP } from "../camera/projection.ts";
 import {
@@ -19,6 +19,7 @@ import {
   NO_OWNER,
   HeaderField as H,
   NodeField as N,
+  NodeKind,
   TOWN_STRIDE,
   TICKS_PER_SECOND,
   TownField as T,
@@ -40,6 +41,7 @@ import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 import { ArtStructures } from "./structure-art.ts";
 import { CastleDraw } from "./castle-draw.ts";
 import { TerrainDraw } from "./terrain-draw.ts";
+import { GroundDraw, type GroundQuality, type GroundTextures } from "./ground-draw.ts";
 import type { PendingOrders } from "../game/pending.ts";
 import type { Culture } from "../art/spec.ts";
 import { ArtUnits } from "./unit-art-draw.ts";
@@ -233,6 +235,12 @@ export class WorldRenderer {
   /** The ground's pictures (art-v5, R6-51): the water, fords and decks lying in `terrainGround`, under the farms and castles' floors. */
   private readonly terrain: TerrainDraw;
   private readonly terrainGround = new Container();
+  /** The two greens (and, without ui's pictures, the terrain's flat colours): under 寫實地面 when it is on. */
+  private readonly flatGround: Sprite;
+  /** 寫實地面 (D-093, ?test=1&ground=real): null while the flat ground is drawn. */
+  private groundDraw: GroundDraw | null = null;
+  /** The ground and resource points its weights were made from. */
+  private groundKey = "";
   /** The castles' blocks, on the ground under the fog (castle-draw.ts). */
   private readonly castleBlocks = new Graphics();
   /**
@@ -289,6 +297,7 @@ export class WorldRenderer {
     terrainTex.source.scaleMode = "nearest";
     const ground = new Sprite(terrainTex);
     ground.scale.set(TILE_PX);
+    this.flatGround = ground;
 
     this.fogCanvas = document.createElement("canvas");
     this.fogCanvas.width = size;
@@ -328,6 +337,7 @@ export class WorldRenderer {
     this.drawTowns();
     this.castle.update();
     this.terrain.update();
+    this.updateGround();
     this.fx.clear();
     this.airFx.clear();
     this.drawUnits(now);
@@ -348,6 +358,7 @@ export class WorldRenderer {
     this.artUnits?.destroy();
     this.castle.destroy();
     this.terrain.destroy();
+    this.groundDraw?.destroy();
     this.root.parent?.removeChild(this.root);
     this.root.destroy({ children: true });
     this.terrainTexture.destroy(true);
@@ -671,6 +682,49 @@ export class WorldRenderer {
   get artDrawn(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null {
     const a = this.artUnits;
     return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }) };
+  }
+
+  /**
+   * 寫實地面 (D-093): ui's ground blended on the GPU instead of the two greens. Only over ui's terrain
+   * pictures (art-v5 on, square on): the water is theirs; without them the flat colours stay. False then.
+   */
+  useGround(textures: GroundTextures, quality: GroundQuality): boolean {
+    if (!this.terrain.pictures) return false;
+    this.groundDraw = new GroundDraw(textures, this.view.map.size, quality);
+    this.groundInner.addChildAt(this.groundDraw.mesh, 0);
+    this.flatGround.visible = false;
+    this.groundKey = "";
+    this.updateGround();
+    return true;
+  }
+
+  /** 寫實地面's quality (高: two samples a texture, 低: one), for the 量測 panel. */
+  setGroundQuality(q: GroundQuality): void {
+    this.groundDraw?.setQuality(q);
+  }
+
+  /** 寫實地面's cost over a `w` × `h` pixel screen (GroundDraw.measure) and its textures' MB; null when it is not drawn. */
+  measureGround(renderer: Renderer, w: number, h: number): { high: number; low: number; plain: number; mb: number } | null {
+    const g = this.groundDraw;
+    return g === null ? null : { ...g.measure(renderer, w, h), mb: g.memoryMB };
+  }
+
+  /** What draws the ground now (the test page and the 量測 panel). */
+  get groundLook(): { real: boolean; quality: GroundQuality | null } {
+    return { real: this.groundDraw !== null, quality: this.groundDraw?.currentQuality ?? null };
+  }
+
+  /** The ground's weights again when the known ground or the resource points changed. */
+  private updateGround(): void {
+    const g = this.groundDraw;
+    if (g === null) return;
+    const key = `${this.view.groundVersion}|${this.view.nodesVersion}`;
+    if (key === this.groundKey) return;
+    this.groundKey = key;
+    const n = this.view.map.size;
+    const nodes: number[] = [];
+    for (const row of this.view.nodes.values()) if (row[N.kind] !== NodeKind.Tree && row[N.amount] > 0) nodes.push(row[N.cellY] * n + row[N.cellX]);
+    g.setGround(this.view.ground, nodes);
   }
 
   /** The ground's pictures drawn (art-v5), for the test page. */
