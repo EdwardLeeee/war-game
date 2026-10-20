@@ -2172,6 +2172,10 @@ export const HARD_POP: Partial<HardPlan> = {
   // 173 games to 145 over seeds 1-50 and 101-150 (main against itself 81 to 70), draws 108 to main's 113 of 800.
   hideFar: true,
   peekFirst: 1,
+  // D-089 (docs/research/2026-10-ai-d089.md): after its front broke off from the enemy main city, again only with 120% of
+  // those that set out then. Hard against hard, draws (seeds 1-50, 51-100): fixed map 15, 13 -> 2, 4; random 24, 27 -> 27, 20;
+  // against hard without it 41 to 47 (fixed) and 38 to 37 (random); the four active groups 0 of 160 as before.
+  cityAgain: 120,
 };
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
