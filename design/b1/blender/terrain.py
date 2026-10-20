@@ -247,21 +247,20 @@ def _faces(name, polys, m, root, z):
 
 def twater(root, c, variant=0, mask=15, plan=None):
     """Water (3, and 4, 5, 6 under the ford and the bridges): the tile on a cell corner for one mask of its four
-    cells (common/terrain_tiles.py): the earth bank, the water, its lighter shallow rim and the darker deep."""
+    cells (common/terrain_tiles.py): the earth bank and the water. Flat colours: lib's noise follows each object's own
+    box, so it would jump at every tile's edge."""
     plan = plan or {}
-    bank = lib.mat("tw_bank", (0.17, 0.13, 0.08), 0.95, noise=0.3, noise_scale=8)
-    rim = lib.mat("tw_rim", (0.05, 0.12, 0.16), 0.6, noise=0.1, noise_scale=3)
-    deep = lib.mat("tw_deep", (0.015, 0.055, 0.1), 0.6, noise=0.08, noise_scale=3)
+    bank = lib.mat("tw_bank", (0.17, 0.13, 0.08), 0.95)
+    water = lib.mat("tw_water", (0.05, 0.12, 0.16), 0.6)
     _faces("tw_bank", plan.get("bank", []), bank, root, 0.006)
-    _faces("tw_rim", plan.get("water", []), rim, root, 0.012)
-    _faces("tw_deep", plan.get("deep", []), deep, root, 0.018)
+    _faces("tw_water", plan.get("water", []), water, root, 0.012)
 
 
 def tford(root, c, variant=0):
     """Ford (4): over the water tiles, a cell of shallow water with stones and gravel showing."""
     rnd = random.Random(800 + variant)
     P = _mats()
-    shallow = lib.mat("tp_shallow", (0.07, 0.15, 0.16), 0.65, noise=0.2, noise_scale=4)
+    shallow = lib.mat("tf_shallow", (0.07, 0.15, 0.16), 0.65)          # flat: the fords of a crossing touch
     ground._poly("tf_water", [(-1.05, -1.05), (1.05, -1.05), (1.05, 1.05), (-1.05, 1.05)], shallow, root, 0.03)   # overlaps its neighbours
     for i in range(7):
         ico(f"tf_step{i}", rnd.uniform(0.15, 0.28), P["rock"], root, loc=(rnd.uniform(-0.8, 0.8), rnd.uniform(-0.8, 0.8), 0.05),

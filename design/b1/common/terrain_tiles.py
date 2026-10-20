@@ -84,8 +84,9 @@ def _contour(mask, level):
 
 def water_polygons(mask):
     """Small convex pieces (one per grid square crossed or inside), drawn as one mesh by the tile builder: the bank
-    (field >= 0.32), the water's light rim (>= 0.5) and its dark deep (>= 0.66), one over the other."""
-    return dict(bank=_contour(mask, 0.32), water=_contour(mask, 0.5), deep=_contour(mask, 0.66))
+    (field >= 0.12: about 0.55 m of earth on the dry side, as wide as on the approved R6-51 boards) and the water
+    (>= 0.5: the edge on the line between a wet and a dry cell), one over the other."""
+    return dict(bank=_contour(mask, 0.12), water=_contour(mask, 0.5))
 
 
 if __name__ == "__main__":
