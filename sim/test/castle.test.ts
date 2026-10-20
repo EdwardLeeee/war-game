@@ -14,7 +14,7 @@ import { generateRandomMap } from "../src/core/random-map.ts";
 import { BUILDINGS, rules, TOWER_REACH } from "../src/core/rules.ts";
 import { toCanon } from "../src/frame.ts";
 import { checkPlacement } from "../src/placement.ts";
-import { BuildingType, CELL_SHIFT, inTown, PlaceBit, Reject, Stance, Terrain, TOWN_STRIDE, TownField, TownFlag, TownSize, TownState, UnitType } from "../src/protocol.ts";
+import { BuildingType, CELL_SHIFT, inTown, PlaceBit, Reject, Stance, Terrain, TOWN_STRIDE, TownField, TownFlag, TownSize, TownState, UnitType, walkableTerrain } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
 
@@ -259,7 +259,7 @@ function rejections(g: Game, p: number): number[] {
 function walks(map: GameMap, from: number[], open: Set<number>): Int32Array {
   const n = map.size;
   const blocked = new Uint8Array(n * n);
-  for (let i = 0; i < n * n; i++) if (map.terrain[i] !== Terrain.Open) blocked[i] = 1;
+  for (let i = 0; i < n * n; i++) if (!walkableTerrain(map.terrain[i])) blocked[i] = 1;
   for (const s of map.nodes) blocked[s.cellY * n + s.cellX] = 1;
   for (const s of map.spawns) for (let y = s.cellY - 2; y < s.cellY + 2; y++) for (let x = s.cellX - 2; x < s.cellX + 2; x++) blocked[y * n + x] = 1;
   const ts = map.towerSize ?? 2;

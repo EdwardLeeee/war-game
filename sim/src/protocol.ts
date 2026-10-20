@@ -103,9 +103,25 @@ export const NodeKind = {
 } as const;
 export type NodeKind = (typeof NodeKind)[keyof typeof NodeKind];
 
-/** Blocked: rock. Wall (D-089): a town's castle wall or corner tower; nobody walks or builds there, shots and sight go over it. */
-export const Terrain = { Open: 0, Blocked: 1, Wall: 2 } as const;
+/**
+ * A cell's ground. Blocked: rock (heaps, ridges). Wall (D-089): a town's castle wall or corner tower.
+ * Water (rivers, lakes) and Cliff (R6-51). Nobody walks or builds on those four; shots and sight go
+ * over them. Ford, BridgeNS, BridgeEW (R6-51): walked as open ground, but nobody builds there, so a
+ * crossing cannot be shut. A bridge's value is its way: units cross it going north-south, or
+ * east-west (the map's mirror and turns swap the two).
+ */
+export const Terrain = { Open: 0, Blocked: 1, Wall: 2, Water: 3, Ford: 4, BridgeNS: 5, BridgeEW: 6, Cliff: 7 } as const;
 export type Terrain = (typeof Terrain)[keyof typeof Terrain];
+
+/** Can units walk ground of this Terrain value (open ground, fords, bridges)? */
+export function walkableTerrain(t: number): boolean {
+  return t === Terrain.Open || t === Terrain.Ford || t === Terrain.BridgeNS || t === Terrain.BridgeEW;
+}
+
+/** A ford or a bridge (R6-51): walkable, but nobody builds there. */
+export function crossingTerrain(t: number): boolean {
+  return t === Terrain.Ford || t === Terrain.BridgeNS || t === Terrain.BridgeEW;
+}
 
 export const TownSize = { Small: 0, Large: 1 } as const;
 export type TownSize = (typeof TownSize)[keyof typeof TownSize];
@@ -477,7 +493,7 @@ export const MAP_MODES = ["fixed", "random"] as const satisfies readonly MapMode
  * red preview and the final ruling come from one piece of code.
  */
 export const PlaceBit = {
-  /** Rock, a tree, or a known building (farms included). */
+  /** Rock, a tree, a known building (farms included), or any ground but Open (R6-51: water, cliff, fords and bridges too). */
   Blocked: 1,
   /** Not yet explored: you cannot build there. */
   Unexplored: 2,
@@ -653,7 +669,7 @@ export interface MapInfo {
   size: number;
   /**
    * size * size cells, row by row: Terrain values. Trees are nodes, not terrain. On a random map
-   * a player gets all Open here: rock comes with exploration (Snapshot.placement).
+   * a player gets all Open here: the ground comes with exploration (Snapshot.terrain).
    */
   terrain: Uint8Array;
   /**
@@ -906,6 +922,12 @@ export interface Snapshot {
   fog: Uint8Array | null;
   /** size * size PlaceBit values for this player, sent together with fog. */
   placement: Uint8Array | null;
+  /**
+   * size * size Terrain values the player knows (R6-51), sent together with fog: on a random map
+   * the explored cells (Open elsewhere), on the fixed map every cell. The simulation always sends
+   * it (null between fog updates); optional only so that snapshots made by hand still type-check.
+   */
+  terrain?: Uint8Array | null;
   /** Own idle farmers, in id order (from PR-3). */
   idleFarmers: Int32Array;
   events: SimEvent[];

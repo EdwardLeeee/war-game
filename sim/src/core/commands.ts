@@ -10,6 +10,7 @@ import {
   type Command,
   CELL,
   CELL_SHIFT,
+  crossingTerrain,
   GameOverReason,
   NodeKind,
   Order,
@@ -719,7 +720,7 @@ function placeCheck(ctx: CommandContext, p: number, type: BuildingType, x: numbe
     for (let cx = x; cx < x + info.size; cx++) {
       const c = cy * n + cx;
       cells[c] =
-        (w.grid[c] !== 0 || w.buildingAt[c] >= 0 ? PlaceBit.Blocked : 0) |
+        (w.grid[c] !== 0 || w.buildingAt[c] >= 0 || crossingTerrain(w.map.terrain[c]) ? PlaceBit.Blocked : 0) |
         (fog.explored[p][c] === 1 ? 0 : PlaceBit.Unexplored) |
         (w.gateLane[c] === 1 ? PlaceBit.GateLane : 0) |
         (farmLand(w, p, cx, cy) ? PlaceBit.FarmLand : 0) |
