@@ -175,11 +175,14 @@
   width: 100px;
   min-height: 50px;
   padding: 3px 0 4px;
-  /* 跳出來 (R6-25-06): slides in from the left and fades in, 200 ms; put away the other way. */
+  /* 跳出來 (R6-25-06): slides in from the left and fades in, 200 ms; put away the other way.
+     The press darkens it at once, not over 120 ms as the other buttons: easing the filter here
+     hung CI's WebKit (software, scale 3) after a tap on 全體回城 in A 銅木 until it was killed
+     (Target crashed), 4 and 6 times in 20; without it 0 in 20 (runs 39421266579, 39421281620,
+     39421274081). */
   transition:
     transform 200ms ease-out,
     opacity 200ms ease-out,
-    filter 120ms ease-out,
     visibility 0s;
 }
 
