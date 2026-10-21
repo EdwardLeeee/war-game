@@ -2580,3 +2580,29 @@ test("D-096: hard plays a game against hard with the gates closed: it goes for g
   assert.ok(taken, "a town taken by minute 16");
   assert.ok(g.log.some((c) => c.c === "attack" && gates.has((c as { target: number }).target)), "an attack on a gate");
 });
+
+test("normal: on a random map each normal AI goes first for a town nearer itself (by town id both went for the one by player 0, war-game-core 2026-10-22)", () => {
+  for (const seed of [7, 2]) {
+    const r = new Runner({ seed, scenario: "standard", ai: [true, true], maxTicks: 36000, difficulty: ["normal", "normal"], map: "random" });
+    const g = r.game;
+    const m = g.w.map;
+    const centre = [0, 1].map((p) => spawnCentre(m.frames[p], m.spawns.find((s) => s.player === p)!));
+    const d2 = (p: number, t: { cellX: number; cellY: number }) => (t.cellX - centre[p].x) ** 2 + (t.cellY - centre[p].y) ** 2;
+    const first = [-1, -1];
+    let at = 0;
+    while (g.tick < 12 * 1200 && (first[0] < 0 || first[1] < 0)) {
+      r.tick();
+      for (; at < g.log.length; at++) {
+        const c = g.log[at];
+        if (c.c !== "move" || c.u.length < 5 || first[c.p] >= 0) continue;
+        const t = m.towns.find((t0) => (t0.cellX - c.x) ** 2 + (t0.cellY - c.y) ** 2 <= 9);
+        if (t) first[c.p] = t.id;
+      }
+    }
+    assert.ok(first[0] >= 0 && first[1] >= 0, `seed ${seed}: both march on a town`);
+    for (const p of [0, 1]) {
+      const t = m.towns.find((x) => x.id === first[p])!;
+      assert.ok(d2(p, t) < d2(1 - p, t), `seed ${seed}: player ${p} goes for town ${t.id}, nearer itself`);
+    }
+  }
+});

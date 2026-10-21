@@ -2268,6 +2268,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         }
       }
       if (mode === "gather" || mode === "defend") {
+        const townRank = (t: Town) => {
+          const f = frame(t.x, t.y);
+          return f.v * n + f.u;
+        };
         // Towns to take: not ours, not ruins, and not one we plundered in the last 6 minutes.
         const open = [...towns.entries()]
           .filter(([, t]) => !(t.owner === player && t.state !== TownState.Neutral) && t.state !== TownState.Ruins)
@@ -2282,7 +2286,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
           .filter(([, t]) => !GATE_AI.arrows || vsForts(army) * 10 >= gateArrowWorth(view, rules, player, t, foes.filter((e) => dist2(e.x, e.y, t.x, t.y) <= 100).length) * 13)
           .filter(([, t]) => !GATE_AI.retreat.includes("b") || gateLoss(view, rules, player, t, army) <= GATE_LOSS)
-          .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
+          // Small first, then the nearest to its main city, ties the mirror-image way (war-game-core 2026-10-22: by town id,
+          // on random maps both went first for the same town by player 0, 48 games of #266's 100 normal against normal).
+          .sort(([, ta], [, tb]) => ta.size - tb.size || dist2(ta.x, ta.y, home.cellX, home.cellY) - dist2(tb.x, tb.y, home.cellX, home.cellY) || townRank(ta) - townRank(tb));
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
         // D-089 (SIEGE.failed): not again with fewer than broke off last time, but in the last 4 minutes.
@@ -2312,7 +2318,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           staged = stage === null;
           send(stage?.x ?? enemyHome.cellX, stage?.y ?? enemyHome.cellY, "base");
         } else if (!assault && townTime && army.length >= townArmy && open.length > 0 && strongEnough) {
-          const pick = army.length >= 24 || open.length === 1 ? open[open.length - 1] : open[0];
+          // 24 or more: the nearest of the biggest.
+          const pick = army.length >= 24 ? open.find(([, t]) => t.size === open[open.length - 1][1].size)! : open[0];
           targetTown = pick[0];
           armyAtStart = army.length;
           marchWorth = vsForts(army);
