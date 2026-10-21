@@ -156,6 +156,12 @@ def _materials():
         wood=lib.mat("wood5", (0.42, 0.27, 0.14), 0.7, noise=0.3, noise_scale=6),
         horn=lib.mat("cream_e", (0.74, 0.67, 0.52), 0.6),
         rope=lib.mat("rope5", (0.55, 0.46, 0.3), 0.9, noise=0.2, noise_scale=60),
+        steel=P["steel"],
+        horse_armour=lamellar("lamellar_black_r8", (0.07, 0.062, 0.058), (0.26, 0.1, 0.05)),
+        lacquer=lib.mat("lacquer_e", (0.16, 0.05, 0.035), 0.32),             # red-black lacquer: lance, crown
+        headcloth=lib.mat("sack_e", (0.3, 0.26, 0.2), 0.85),                # the farmer's head cloth
+        robe=lib.mat("russet_e", (0.32, 0.16, 0.09), 0.8),                  # 木蘭: the Daoist's robe
+        skirt=lib.mat("ochre_e", (0.55, 0.4, 0.14), 0.8),                   # 黃裙, earthy, not the emperor's yellow
     )
 
 
@@ -195,20 +201,18 @@ def _sword(r, kind, M):
           rot=(0, 90, 0), loc=(0, 0, 0.2), cap=False)
 
 
-def dress_spear(u):
-    kind = "spear_e"
-    r = u.rigs["body"]
-    M = _materials()
-    _gone(kind, ["cuirass", "tassets", "belt", "pauldR", "pauldL", "drape", "helm", "helmrim", "brow", "ng*", "spike",
-                 "tassel", "rivet*", "bpole", "bfinial", "bflag", "fringe*", "speartassel", "bracerR", "bracerL"])
-    body2.zero_pose(r)
+def _armour(r, M, robe=True, legs=True):
+    """札甲 on any East rig (named after it): body, belt, 腿裙 open at the front, three-tier 披膊, the robe's sleeves
+    in the player's colour; on foot also the robe's hem under the 腿裙, 行縢 and the 橫刀. Built in the zero pose."""
+    n = r.name
     tb, lg = units2._bones_torso(r), units2._bones_legs(r)
-    _robe_hem(r, f"{kind}_r8robe", M, top=0.62)
-    h2.skinned_lathe(f"{kind}_r8cuirass", [(0.18, 0.96), (0.19, 1.06), (0.2, 1.2), (0.205, 1.33), (0.18, 1.44),
-                                           (0.125, 1.5)], M["armour"], r, tb, scale=(1, 0.8, 1))
-    h2.skinned_lathe(f"{kind}_r8belt", [(0.2, 0.99), (0.204, 1.045)], M["belt"], r, tb, scale=(1, 0.82, 1))
+    if robe:
+        _robe_hem(r, f"{n}_r8robe", M, top=0.62)
+    h2.skinned_lathe(f"{n}_r8cuirass", [(0.18, 0.96), (0.19, 1.06), (0.2, 1.2), (0.205, 1.33), (0.18, 1.44),
+                                        (0.125, 1.5)], M["armour"], r, tb, scale=(1, 0.8, 1))
+    h2.skinned_lathe(f"{n}_r8belt", [(0.2, 0.99), (0.204, 1.045)], M["belt"], r, tb, scale=(1, 0.82, 1))
     # the 腿裙, open at the front (cut before it is skinned: the skinner keeps the vertices it is given)
-    mage4.folded_lathe(f"{kind}_r8skirt", [(0.2, 1.0), (0.222, 0.88), (0.246, 0.64), (0.252, 0.53)], M["armour"], r,
+    mage4.folded_lathe(f"{n}_r8skirt", [(0.2, 1.0), (0.222, 0.88), (0.246, 0.64), (0.252, 0.53)], M["armour"], r,
                        tb[:1] + lg, folds=(1, 0.0), segs=32, scale=(1, 0.86, 1),
                        cut=lambda c: abs(c.x) < 0.028 and c.y > 0 and c.z < 0.9)
     for side, s in (("R", 1), ("L", -1)):
@@ -216,26 +220,169 @@ def dress_spear(u):
         tiers = [[(0.0, 0.075), (0.07, 0.066), (0.1, 0.012), (0.108, -0.05)],
                  [(0.1, -0.01), (0.116, -0.1)], [(0.108, -0.07), (0.124, -0.165)]]
         for k, prof in enumerate(tiers):
-            ob = lathe(f"{kind}_r8pibo{side}{k}", prof, M["armour"], sh, segs=18, at=(0.018 * s, 0, 0), cap=k == 0)
+            ob = lathe(f"{n}_r8pibo{side}{k}", prof, M["armour"], sh, segs=18, at=(0.018 * s, 0, 0), cap=k == 0)
             _cut(ob, lambda c, s=s, k=k: c.x * s < -0.035 and (k > 0 or c.z < 0.0))
-        lathe(f"{kind}_r8sleeve{side}", [(0.05, -0.02), (0.046, -0.22)], M["team"], r.j["elbow" + side], segs=12,
+        lathe(f"{n}_r8sleeve{side}", [(0.05, -0.02), (0.046, -0.22)], M["team"], r.j["elbow" + side], segs=12,
               cap=False)
-    _puttees(r, f"{kind}_r8puttee", M)
-    _sword(r, kind, M)
-    r.pose()
+    if legs:
+        _puttees(r, f"{n}_r8puttee", M)
+    _sword(r, n, M)
+
+
+def _helmet(r, M):
+    """兜鍪 (an iron bowl, a leather band at the rim, a small knob on top, no plume) and a cloth 頓項 in the player's
+    colour over the neck, the ears and the tops of the shoulders, open at the face. In the old head's frame (human_r7
+    shrinks it to a real head); over the MPFB head (R8_DEBUG "R8 head box" in this frame: x +-0.141, y -0.139..0.221
+    with the nose, top 0.325)."""
+    n = r.name
     head = r.j["head"]
-    # 兜鍪: an iron bowl, a leather band at the rim, a small knob on top (no plume)
-    # (over the MPFB head, R8_DEBUG "R8 head box" in this frame: x +-0.141, y -0.139..0.221 with the nose, top 0.325)
-    lathe(f"{kind}_r8helm", [(0.166, 0.075), (0.172, 0.15), (0.164, 0.23), (0.142, 0.29), (0.1, 0.338), (0.05, 0.36),
-                             (0.0, 0.366)], M["iron"], head, segs=24, at=(0, 0.02, 0))
-    lathe(f"{kind}_r8helmband", [(0.173, 0.068), (0.178, 0.086), (0.174, 0.104)], M["belt"], head, segs=24,
+    lathe(f"{n}_r8helm", [(0.166, 0.075), (0.172, 0.15), (0.164, 0.23), (0.142, 0.29), (0.1, 0.338), (0.05, 0.36),
+                          (0.0, 0.366)], M["iron"], head, segs=24, at=(0, 0.02, 0))
+    lathe(f"{n}_r8helmband", [(0.173, 0.068), (0.178, 0.086), (0.174, 0.104)], M["belt"], head, segs=24,
           at=(0, 0.02, 0), cap=False)
-    sphere(f"{kind}_r8knob", 0.028, M["iron"], head, at=(0, 0.02, 0.375))
-    cyl(f"{kind}_r8point", 0.011, 0.07, M["iron"], head, at=(0, 0.02, 0.39), r2=0.003)
-    # 頓項: cloth hanging from the rim over the neck, the ears and the tops of the shoulders, open at the face
-    ng = lathe(f"{kind}_r8dunxiang", [(0.172, 0.085), (0.182, 0.0), (0.2, -0.1), (0.228, -0.18)], M["team"], head,
+    sphere(f"{n}_r8knob", 0.028, M["iron"], head, at=(0, 0.02, 0.375))
+    cyl(f"{n}_r8point", 0.011, 0.07, M["iron"], head, at=(0, 0.02, 0.39), r2=0.003)
+    ng = lathe(f"{n}_r8dunxiang", [(0.172, 0.085), (0.182, 0.0), (0.2, -0.1), (0.228, -0.18)], M["team"], head,
                segs=28, at=(0, 0.01, 0), cap=False)
     _cut(ng, lambda c: c.y > 0.045)
+
+
+def _hair_cap(r, M, mat, name, cut_face=True):
+    """A cap (or hair) over the MPFB head, sized as the 幞頭; returns the head joint."""
+    head = r.j["head"]
+    cap = lathe(name, [(0.164, 0.06), (0.17, 0.15), (0.162, 0.23), (0.14, 0.29), (0.1, 0.332), (0.05, 0.352),
+                       (0.0, 0.357)], mat, head, segs=24, at=(0, 0.02, 0))
+    if cut_face:
+        _cut(cap, lambda c: c.y > 0.1 and c.z < 0.15)                # the forehead and face
+    return head
+
+
+OLD_ARMOUR = ["cuirass", "tassets", "belt", "pauldR", "pauldL", "drape", "helm", "helmrim", "brow", "ng*", "spike",
+              "tassel", "rivet*", "bpole", "bfinial", "bflag", "fringe*", "bracerR", "bracerL"]
+
+
+def dress_spear(u):
+    kind = "spear_e"
+    r = u.rigs["body"]
+    M = _materials()
+    _gone(kind, OLD_ARMOUR + ["speartassel"])
+    body2.zero_pose(r)
+    _armour(r, M)
+    r.pose()
+    _helmet(r, M)
+    return u
+
+
+def dress_farmer(u):
+    """村民: the straw hat goes (the user read it as Japanese; the note allows a 斗笠 on a farmer, but a Tang
+    labourer's head is a cloth wrapped over the topknot, 頭巾包髻: 圖 14, and the Sui-Tang groom figure); the hemp
+    tunic, the player-colour wrap and sash and the leg wraps stay."""
+    kind = "farmer_e"
+    r = u.rigs["body"]
+    M = _materials()
+    _gone(kind, ["hat", "hatrim", "hatring*", "cord*"])
+    head = _hair_cap(r, M, M["headcloth"], f"{kind}_r8cloth")
+    sphere(f"{kind}_r8bun", 0.075, M["headcloth"], head, at=(0, -0.01, 0.35), scale=(0.95, 1.0, 0.85))
+    sphere(f"{kind}_r8knot", 0.032, M["headcloth"], head, at=(0, -0.16, 0.2), scale=(1.4, 0.8, 0.8))
+    for s in (-1, 1):                      # the cloth's short tied ends
+        box(f"{kind}_r8clothend{s}", (0.035, 0.008, 0.13), M["headcloth"], head, at=(0.03 * s, -0.175, 0.12),
+            rot=(-14, 0, 8 * s), bevel=0.003)
+    return u
+
+
+def dress_mage(u):
+    """術士 as a Tang Daoist (法服: 《洞玄靈寶三洞奉道科戒營始》, 《三洞法服科戒文》): the hair in a topknot under a
+    small lotus crown (芙蓉冠) held by a pin; the wide-sleeved robe (褐) in 木蘭 brown; the 帔 over both shoulders,
+    hanging to the knees, in the player's colour; the yellow skirt (黃裙) showing at the robe's open front. The sword
+    on the back (a 修仙 comic look), the long ponytail and the pale jade robe go; the single two-finger sign (D-018)
+    stays."""
+    kind = "mage_e"
+    r = u.rigs["body"]
+    M = _materials()
+    _gone(kind, ["scabbard", "guard", "hilt", "pommel", "swordtassel", "tail", "guan", "hair", "pin", "tie*"])
+    for ob in bpy.data.objects:
+        base = ob.name.split(".")[0]
+        if ob.type != "MESH" or not ob.data.materials:
+            continue
+        if base in ("mage_e_robe", "mage_e_sleeveR", "mage_e_sleeveL", "mage_e_body"):
+            # (mage_e_body: hidden, but human_r7 dresses the MPFB body in its tunic material, which showed at the
+            # shoulders in slate grey)
+            ob.data.materials[0] = M["robe"]
+        elif base == "mage_e_inner":
+            ob.data.materials[0] = M["skirt"]
+    body2.zero_pose(r)
+    tb, lg = units2._bones_torso(r), units2._bones_legs(r)
+    # the 帔: up the front from the knees, over the right shoulder, across the back, over the left and down again
+    pts = [(0.11, 0.215, 0.55), (0.115, 0.19, 0.8), (0.12, 0.17, 1.05), (0.125, 0.163, 1.3), (0.125, 0.07, 1.5),
+           (0.1, -0.09, 1.49), (0.0, -0.155, 1.44)]
+    path = pts + [(-x, y, z) for x, y, z in reversed(pts[:-1])]
+    mage4.ribbon(f"{kind}_r8pei", path, 0.12, M["team"], r, tb + lg)
+    r.pose()
+    head = _hair_cap(r, M, M["P"]["hair"], f"{kind}_r8hair")
+    sphere(f"{kind}_r8bun", 0.07, M["P"]["hair"], head, at=(0, 0.0, 0.36), scale=(0.9, 1.0, 0.9))
+    for k in range(6):                     # 芙蓉冠: six lacquered petals round the bun
+        a = 2 * math.pi * k / 6
+        sphere(f"{kind}_r8petal{k}", 0.04, M["lacquer"], head, at=(0.055 * math.cos(a), 0.055 * math.sin(a), 0.4),
+               scale=(0.55, 0.55, 1.3))
+    lathe(f"{kind}_r8crownbase", [(0.07, 0.36), (0.075, 0.38), (0.068, 0.395)], M["lacquer"], head, segs=18, cap=False)
+    rod(f"{kind}_r8pin", (-0.11, 0.0, 0.405), (0.11, 0.0, 0.405), 0.008, M["horn"], parent=head)
+    return u
+
+
+def _horse_armour(u, M):
+    """馬甲 (具裝) after the 《武經總要》 parts (宋, 1044): 面簾 (face), 雞項 (neck), 盪胸 (chest), 馬身甲 (sides),
+    搭後 (rump), black-lacquered lamellar; the hem of the side panels edged in the player's colour. R2's barded horse
+    turned into lamellar: its top and skirts and neck cover take the new material; the plume and gold beads go."""
+    hr = u.rigs["horse"]
+    kind = "hcav_e"
+    _gone(kind, ["plume", "h_hemt*"])
+    for ob in bpy.data.objects:
+        base = ob.name.split(".")[0]
+        if base in (f"{kind}_h_captop", f"{kind}_h_capskirtR", f"{kind}_h_capskirtL", f"{kind}_h_neckcover"):
+            ob.data.materials[0] = M["horse_armour"]
+        elif base == f"{kind}_chamfron":
+            ob.data.materials[0] = M["iron"]
+    body2.zero_pose(hr)
+    bones = units2.horse_bones(hr)
+    gap, a0, hem = 0.035, -28, 0.8
+    for side in (1, -1):
+        rows = []
+        for y, zc, rx, ry in units2.BARREL:
+            rx, ry = rx + gap, ry + gap
+            xe, ze = rx * math.cos(math.radians(a0)), zc + ry * math.sin(math.radians(a0))
+            rows.append([(side * (xe + 0.045 * t + 0.008), y, ze + (hem - ze) * t) for t in (0.84, 1.0)])
+        units2._surface(f"{kind}_h_r8hem{'R' if side > 0 else 'L'}", rows, M["team"], hr, bones)
+    # 盪胸 over the chest, 搭後 round the rump
+    for name, y0, d, zs in (("chest", 0.62, 0.12, (1.36, 1.16, 0.94)), ("rump", -0.74, -0.13, (1.44, 1.22, 1.0))):
+        rows = []
+        for z in zs:
+            row = []
+            for k in range(11):
+                a = math.radians(-78 + 156 * k / 10)
+                row.append((0.27 * math.sin(a), y0 + d * math.cos(a), z))
+            rows.append(row)
+        units2._surface(f"{kind}_h_r8{name}", rows, M["horse_armour"], hr, bones)
+    hr.pose()
+
+
+def dress_cav(u):
+    """具裝騎兵: the rider as the spearman (札甲, 兜鍪 and 頓項, the robe's sleeves; no robe hem or leg wraps in the
+    saddle), no banner on his back; the lance lacquered and shorter (《唐六典》「漆槍短，騎兵用之」: 2.6 m here); the
+    horse in full lamellar armour (_horse_armour)."""
+    kind = "hcav_e"
+    r = u.rigs["body"]
+    M = _materials()
+    _gone(kind, ["r_" + n for n in OLD_ARMOUR] + ["lance", "lancetip"])
+    body2.zero_pose(r)
+    _armour(r, M, robe=False, legs=False)
+    r.pose()
+    _helmet(r, M)
+    g = r.j["grip_lance"]
+    rod(f"{kind}_r8lance", (0, 0, 0.7), (0, 0, -1.9), 0.022, M["lacquer"], parent=g, r2=0.018)
+    cyl(f"{kind}_r8socket", 0.022, 0.07, M["iron"], g, at=(0, 0, -1.9))
+    lathe(f"{kind}_r8lancetip", [(0.0, 0.0), (0.03, 0.09), (0.034, 0.18), (0.012, 0.27)], M["steel"], g, segs=8,
+          at=(0, 0, -2.2), scale=(1, 0.35, 1))
+    _horse_armour(u, M)
     return u
 
 

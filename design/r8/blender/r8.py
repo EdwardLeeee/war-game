@@ -57,6 +57,8 @@ def bow_string(u, kind):
     rest = (tip_a + tip_b) / 2
     m = string.active_material
     string.hide_render = True
+    if string in lib.ALL_PARTS:            # lib.set_pass shows every listed part again in each pass
+        lib.ALL_PARTS.remove(string)
     sa = _unit_rod(f"{kind}_r8stra", 0.009, m, grip)      # thicker than a real string: it must read at actual size
     sb = _unit_rod(f"{kind}_r8strb", 0.009, m, grip)
     wood = lib.MATS.get("wood5", {}).get("mat") or m
@@ -119,9 +121,11 @@ def bow_string(u, kind):
         set_rod(sa, tip_a, nock)
         set_rod(sb, nock, tip_b)
         on = anim == "attack" and (t < 0.6 or t > 0.85)          # nocked; gone after the loose; a new one picked up
-        for ob in (shaft, head, fletch):
-            ob.hide_render = not on
-        if on:
+        if not on:
+            # shrunk to nothing, not hidden: lib.set_pass, run after the pose, shows every listed part again
+            for ob in (shaft, head, fletch):
+                ob.matrix_basis = Matrix.Diagonal((1e-5, 1e-5, 1e-5, 1.0))
+        else:
             start = nock if drawing else rest
             # the arrow from the string through the bow's grip (its middle, the grip's origin) and on
             fwd = (Vector((0.0, 0.0, 0.0)) - start).normalized() if drawing else Vector((0.0, 0.0, -1.0))
@@ -216,6 +220,12 @@ def before_extend(u, kind):
         spear_two_hands(u, kind)
     elif kind == "bow_e":
         east_r8.dress_bow(u)
+    elif kind == "farmer_e":
+        east_r8.dress_farmer(u)
+    elif kind == "mage_e":
+        east_r8.dress_mage(u)
+    elif kind == "hcav_e":
+        east_r8.dress_cav(u)
 
 
 def rim(energy=2.6):
