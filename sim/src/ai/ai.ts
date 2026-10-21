@@ -2141,7 +2141,7 @@ export interface HardPlan {
   /**
    * D-086 A4 (691b4349: a barracks put down three times where the enemy army stood, paid for each): no new building, nor
    * farmers to a site, with enemy soldiers in sight within BUILD_SAFE cells of it; and a site of its own gone before it
-   * was done, none of that kind within SITE_NEAR cells of it for SITE_REST (false: as before).
+   * was done (or one it put down last think not there), nothing within SITE_NEAR cells of it for SITE_REST (false: as before).
    */
   buildSafe: boolean;
 }
@@ -2209,7 +2209,7 @@ const MINE_NEAR = 6;
 const MINE_MOST = 3;
 const MINE_FAR = 40;
 const MINE_TOWN = 12;
-/** D-086 A4 (plan.buildSafe): a site lost before it was done, none of its kind this near (cells) for this long. */
+/** D-086 A4 (plan.buildSafe): a site lost before it was done, nothing this near (cells) for this long. */
 const SITE_NEAR = 8;
 const SITE_REST = 3 * 1200;
 /** D-086 A4 (plan.buildSafe): enemy soldiers this near (cells) a spot. */
@@ -3060,9 +3060,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // D-086 A4: a tower only where it was picked.
           const spot = p.type === BuildingType.ArrowTower ? p.at : (spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20)));
           if (spot === null) continue;
-          // D-086 A4 (plan.buildSafe): not where enemy soldiers stand by, nor where one of its kind was lost; the next on the list instead.
+          // D-086 A4 (plan.buildSafe): not where enemy soldiers stand by, nor where a site was lost; the next on the list instead.
           if (plan.buildSafe && foes.some((f) => dist2(f.x, f.y, spot.x, spot.y) <= BUILD_SAFE * BUILD_SAFE)) continue;
-          if (plan.buildSafe && lostSites.some((l) => l.type === p.type && dist2(l.x, l.y, spot.x, spot.y) <= SITE_NEAR * SITE_NEAR)) continue;
+          if (plan.buildSafe && lostSites.some((l) => dist2(l.x, l.y, spot.x, spot.y) <= SITE_NEAR * SITE_NEAR)) continue;
           const cost = rules.buildings[p.type].cost;
           if (!afford(cost)) {
             reserve.food += cost.food;
