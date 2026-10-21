@@ -2,14 +2,15 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan, SIEGE, STAGING, stagePoint } from "../src/ai/ai.ts";
+import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, SIEGE, STAGING, stagePoint } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
+import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, TownChoice, TownState, UnitType } from "../src/protocol.ts";
+import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownState, UnitType } from "../src/protocol.ts";
 import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
@@ -1276,7 +1277,7 @@ test("D-081: a group on the straight way is on the way; one beside another way i
 });
 
 /** Hard with 20 spearmen at home, and enemy arrow towers (someone hiding in each) on the straight way to the enemy's main city, seen by farmers of its own. */
-function fortsOnTheWay(towers: number, hidden: boolean) {
+function fortsOnTheWay(towers: number, hidden: boolean, more: Partial<HardPlan> = {}, difficulty: AiDifficulty = "hard", at: [number, number] = [34, 56]) {
   const g = emptyGame();
   const w = g.w;
   for (const t of w.map.towns) {
@@ -1290,14 +1291,17 @@ function fortsOnTheWay(towers: number, hidden: boolean) {
   // On the way from (16, 78) to (78, 16): about a third of it.
   const ids: number[] = [];
   for (let k = 0; k < towers; k++) {
-    const id = w.addBuilding(1, BuildingType.ArrowTower, 34 + 3 * k, 56 - 3 * k, 600, 1000);
+    const id = w.addBuilding(1, BuildingType.ArrowTower, at[0] + 3 * k, at[1] - 3 * k, 600, 1000);
     if (hidden) w.buildings.col.soldiers[w.building(id)] = 3;
     ids.push(id);
     // A farmer of its own sees each.
-    put(g, 0, UnitType.Farmer, 33 + 3 * k, 59 - 3 * k);
+    put(g, 0, UnitType.Farmer, at[0] - 1 + 3 * k, at[1] + 3 - 3 * k);
   }
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0 });
+  const ai =
+    difficulty === "hard"
+      ? hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0, ...more })
+      : createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
   return { g, w, ai, s1: w.map.spawns[1], ids };
 }
 
@@ -1310,6 +1314,62 @@ test("D-081: hard does not march into forts too strong for it on the way; it doe
   const weak = fortsOnTheWay(2, false);
   const straight = weak.ai.think(buildView(weak.g, 0)).find((c) => c.c === "move" && c.u.length === 20) as { x: number; y: number } | undefined;
   assert.deepEqual(straight && [straight.x, straight.y], [weak.s1.cellX, weak.s1.cellY], "straight to the enemy base");
+});
+
+test("D-081 / A4: the gathering point before forts is open ground beyond their reach (2 to 6 cells), the nearest to the army", () => {
+  const n = 128;
+  const placement = new Uint8Array(n * n);
+  const rank = (x: number, y: number) => y * n + x;
+  const tower = { id: 1, type: BuildingType.ArrowTower, x: 60, y: 60, size: 2, done: true, hits: 8, reach: 8, seen: true, occupied: false } as Fort;
+  const g = fortGroups([tower], () => 0, fortValues(rules()));
+  const reach = (x: number, y: number) => {
+    const dx = Math.max(60 - x, 0, x - 61);
+    const dy = Math.max(60 - y, 0, y - 61);
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+  const p = fortStagePoint({ placement }, { size: n, mode: "fixed" }, [tower], g[0], { x: 20, y: 60 }, rank);
+  assert.ok(p !== null && reach(p.x, p.y) > 10 && reach(p.x, p.y) <= 14 && p.x < 60, `beyond its reach, on the army's side (${JSON.stringify(p)})`);
+  // A wall of rock round it beyond 9 cells: nothing it can get to from the tower's side.
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (reach(x, y) > 9 && reach(x, y) <= 10.5) placement[y * n + x] = 1;
+  assert.equal(fortStagePoint({ placement }, { size: n, mode: "fixed" }, [tower], g[0], { x: 20, y: 60 }, rank), null);
+});
+
+test("D-081 / A4 (fortStage): forts on the way it can take, it gathers outside their reach first, then goes for them together; off, straight on (normal and hard)", () => {
+  for (const difficulty of ["hard", "normal"] as const) {
+    const run = (on: boolean) => {
+      NORMAL_FORT.stage = on;
+      // Normal goes for the town at (29, 29) first: the towers on that way.
+      const t = fortsOnTheWay(2, false, { fortStage: on }, difficulty, difficulty === "hard" ? [34, 56] : [25, 44]);
+      NORMAL_FORT.stage = false;
+      const first = t.ai.think(buildView(t.g, 0));
+      t.w.tick += 10;
+      t.g.fog.update(t.w);
+      return { ...t, first, out: t.ai.think(buildView(t.g, 0)) };
+    };
+    const off = run(false);
+    assert.ok(off.first.some((c) => c.c === "move" && c.u.length === 20 && (difficulty === "hard" ? c.x === off.s1.cellX && c.y === off.s1.cellY : c.x === 29 && c.y === 29)), `${difficulty}: sets out`);
+    assert.ok(!off.out.some((c) => c.c === "move" && c.u.length === 20), `${difficulty} off: straight on`);
+    const on = run(true);
+    const to = on.out.find((c) => c.c === "move" && c.u.length === 20) as { x: number; y: number; u: number[] } | undefined;
+    assert.ok(to !== undefined, `${difficulty} on: to a gathering point`);
+    const forts = enemyForts(buildView(on.g, 0), 0, rules());
+    const d2 = (f: Fort) => {
+      const dx = Math.max(f.x - to.x, 0, to.x - (f.x + f.size - 1));
+      const dy = Math.max(f.y - to.y, 0, to.y - (f.y + f.size - 1));
+      return dx * dx + dy * dy;
+    };
+    assert.ok(forts.every((f) => d2(f) > (f.hits + 2) * (f.hits + 2)) && forts.some((f) => d2(f) <= (f.hits + 6) * (f.hits + 6)), `${difficulty}: beyond their reach, by them`);
+    // All there: on for the towers together.
+    for (const id of to.u) {
+      const s = slotOf(on.g, id);
+      on.w.units.col.x[s] = to.x * CELL + (CELL >> 1);
+      on.w.units.col.y[s] = to.y * CELL + (CELL >> 1);
+    }
+    on.w.tick += 10;
+    on.g.fog.update(on.w);
+    const go = on.ai.think(buildView(on.g, 0));
+    assert.ok(go.some((c) => (c.c === "attack" && on.ids.includes(c.target) && c.u.length === 20) || (c.c === "move" && c.u.length === 20 && forts.some((f) => Math.abs(c.x - f.x) <= 2 && Math.abs(c.y - f.y) <= 2))), `${difficulty}: then for the towers`);
+  }
 });
 
 test("D-081: with townRest (off by default), hard leaves a town it fell back from alone for a while", () => {
@@ -1370,6 +1430,34 @@ test("D-081: after breaking off from a fort on its ground, it goes again within 
     assert.ok(!again(0, 700), `${difficulty}: not with as many as set out, 35 s on`);
     assert.ok(again(4, 700), `${difficulty}: with 1.5 x (12 spearmen)`);
     assert.ok(again(0, 5 * 1200 + 10), `${difficulty}: with as many once 5 minutes are past`);
+  }
+});
+
+test("D-081 / A4 (fortAgain): after breaking off from a fort, the next go takes 2 x the army and it remembers for 10 minutes (normal and hard)", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    const again = (more: number, later: number) => {
+      NORMAL_FORT.again = true;
+      const saved = HARD.fortAgain;
+      HARD.fortAgain = true;
+      const { g, w, ai, fort, spears, centre } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
+      NORMAL_FORT.again = false;
+      HARD.fortAgain = saved;
+      const farmers: number[] = [];
+      for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) farmers.push(w.units.col.id[s]);
+      kill(g, [...spears.slice(2), ...farmers]);
+      w.tick += 10;
+      g.fog.update(w);
+      assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), `${difficulty}: ground down, it breaks off`);
+      const home = spawnCentre(w.map.frames[0], w.map.spawns[0]);
+      for (let k = 0; k < 6 + more; k++) put(g, 0, UnitType.Spearman, home.x - 4 - (k % 6), home.y - 4 - Math.trunc(k / 6));
+      w.tick += later;
+      g.fog.update(w);
+      return ai.think(buildView(g, 0)).some((c) => (c.c === "attack" && c.target === fort) || (c.c === "move" && c.x === centre.x && c.y === centre.y));
+    };
+    assert.ok(!again(4, 700), `${difficulty}: not with 1.5 x (12 spearmen)`);
+    assert.ok(again(8, 700), `${difficulty}: with 2 x (16)`);
+    assert.ok(!again(0, 5 * 1200 + 10), `${difficulty}: not with as many 5 minutes on`);
+    assert.ok(again(0, 10 * 1200 + 10), `${difficulty}: with as many once 10 minutes are past`);
   }
 });
 
@@ -1972,29 +2060,37 @@ test("D-086 A3 (plan.peekFirst): no enemy soldier seen for a minute, one goes to
   assert.ok(march(second) || march(ai.think(buildView(g, 0))), "then it marches");
 });
 
-test("D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home", () => {
-  // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
+/** D-096 (core 2026-10-22): gates, when the rules have them (GATE). */
+const GATES = (RULES as unknown as { GATE?: { on: boolean } }).GATE;
 
-  // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
-  const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
-  const g = r.game;
-  const m = g.w.map;
-  const plan = planFor("push", "h1", "close");
-  Object.assign(plan, { farmers: 24, production: 4, spearShare: 35, choice: "govern", corners: true, townAt: 10, homeTowers: 2, cavalryShare: 15, pushAt: 50, counterAt: 50, pushAhead: true, harass: 10 });
-  const player = createScriptedPlayer(0, { map: mapInfo(m, 0), rules: rules(m), frame: m.frames[0] }, plan);
-  const sent: { at: number; json: string }[] = [];
-  let seen = 0;
-  let seq = 0;
-  while (!r.over && g.tick < 20 * 1200) {
-    if (g.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ } as never);
-    r.tick();
-    for (; seen < g.log.length; seen++) if (g.log[seen].p === 1) sent.push({ at: seen, json: JSON.stringify(g.log[seen]) });
-  }
-  const stats = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]!.stats!();
-  assert.ok(stats.farmersHid > 0, "its farmers were sent home");
-  const changed = sent.filter((x) => JSON.stringify(g.log[x.at]) !== x.json);
-  assert.deepEqual(changed.map((x) => x.json).slice(0, 2), [], "orders as sent");
-});
+test(
+  "D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home",
+  // The bug was the AI's, not the map's: with gates hard plays seed 7 otherwise and never sends its farmers home
+  // (war-game-core 2026-10-22), so they are off here.
+  switchedOff(GATES === undefined ? [] : [GATES], () => {
+    // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
+
+    // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
+    const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
+    const g = r.game;
+    const m = g.w.map;
+    const plan = planFor("push", "h1", "close");
+    Object.assign(plan, { farmers: 24, production: 4, spearShare: 35, choice: "govern", corners: true, townAt: 10, homeTowers: 2, cavalryShare: 15, pushAt: 50, counterAt: 50, pushAhead: true, harass: 10 });
+    const player = createScriptedPlayer(0, { map: mapInfo(m, 0), rules: rules(m), frame: m.frames[0] }, plan);
+    const sent: { at: number; json: string }[] = [];
+    let seen = 0;
+    let seq = 0;
+    while (!r.over && g.tick < 20 * 1200) {
+      if (g.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ } as never);
+      r.tick();
+      for (; seen < g.log.length; seen++) if (g.log[seen].p === 1) sent.push({ at: seen, json: JSON.stringify(g.log[seen]) });
+    }
+    const stats = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]!.stats!();
+    assert.ok(stats.farmersHid > 0, "its farmers were sent home");
+    const changed = sent.filter((x) => JSON.stringify(g.log[x.at]) !== x.json);
+    assert.deepEqual(changed.map((x) => x.json).slice(0, 2), [], "orders as sent");
+  }),
+);
 
 
 // --- D-089: gathering outside the enemy main city before the attack ----------------------------------
@@ -2128,3 +2224,245 @@ test("D-089 (SIEGE.failed): after an attack on the enemy main city is ground dow
   assert.equal(again(0), true, "off: it goes, as before");
 });
 
+
+// --- D-086 A4: cavalry against ranged units and mages; arrow towers ------------------------------------------
+
+test("D-086 A4 (plan.cavalryCounter): cavalry once the enemy it knows of is mostly ranged and mages; not against spearmen; 0, as before", () => {
+  const withFoes = (type: UnitType, cavalryCounter: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 13 * 1200;
+    const at = (t: BuildingType, x: number, y: number) => w.addBuilding(0, t, s0.cellX + x, s0.cellY + y, rules().buildings[t].hp, 1000);
+    at(BuildingType.Barracks, 4, -8);
+    at(BuildingType.Range, 12, -8);
+    at(BuildingType.Stable, 8, -13);
+    for (let k = 0; k < 6; k++) at(BuildingType.House, -8 + 3 * k, 6);
+    for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY + 2 + Math.trunc(k / 5));
+    for (let k = 0; k < 8; k++) put(g, 1, type, s0.cellX + 6 + (k % 4), s0.cellY - 15 - Math.trunc(k / 4));
+    w.res.set([700, 300, 300, 0], 0);
+    g.fog.update(w);
+    return trains(hardAi(g, { dodge: false, cavalryCounter }).think(buildView(g, 0)), UnitType.Cavalry);
+  };
+  assert.ok(withFoes(UnitType.Ranged, 25), "ranged in sight: cavalry");
+  assert.ok(withFoes(UnitType.Mage, 25), "mages in sight: cavalry");
+  assert.ok(!withFoes(UnitType.Spearman, 25), "spearmen: no cavalry");
+  assert.ok(!withFoes(UnitType.Ranged, 0), "off: no cavalry, as before");
+});
+
+/** Player 0's `cav` cavalry with an enemy ranged unit 6 cells off, and `spears` enemy spearmen by it: what hard (plan) sends them. */
+function chargeAt(cav: number, spears: number, plan: Partial<HardPlan>): { ids: number[]; target: number; out: CommandBody[] } {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  // By the main city: in sight of what it has there.
+  const x = s0.cellX + 8;
+  const y = s0.cellY - 12;
+  const ids: number[] = [];
+  for (let k = 0; k < cav; k++) ids.push(put(g, 0, UnitType.Cavalry, x + k, y));
+  const target = put(g, 1, UnitType.Ranged, x + 1, y - 6);
+  // In front of it, in sight of the cavalry.
+  for (let k = 0; k < spears; k++) put(g, 1, UnitType.Spearman, x - 2 + k, y - 5);
+  g.fog.update(w);
+  return { ids, target, out: hardAi(g, { dodge: false, ...plan }).think(buildView(g, 0)) };
+}
+const charged = (r: { ids: number[]; target: number; out: CommandBody[] }) =>
+  r.out.some((c) => c.c === "attack" && c.target === r.target && r.ids.every((id) => c.u.includes(id)));
+
+test("D-086 A4 (plan.charge): cavalry charge an enemy ranged unit in sight; not with more spearmen than they are by it; off, as before", () => {
+  assert.ok(charged(chargeAt(4, 0, { charge: true })), "4 cavalry, no spearmen: they charge it");
+  assert.ok(charged(chargeAt(4, 3, { charge: true })), "3 spearmen by it: still");
+  assert.ok(!charged(chargeAt(4, 6, { charge: true })), "6 spearmen by it: no charge");
+  assert.ok(!charged(chargeAt(2, 0, { charge: true })), "fewer than CHARGE_MIN: no charge");
+  assert.ok(!charged(chargeAt(4, 0, { charge: false })), "off: no charge, as before");
+});
+
+test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 cells open round its main city and production buildings, and none is refused for its place (gates' lanes, crossings)", () => {
+  const g = new Game({ seed: 3, scenario: "standard" });
+  const w = g.w;
+  const ais = [0, 1].map((p) => createAi(p, 3, { map: w.map, rules: rules(), frame: w.map.frames[p], maxTicks: 0, difficulty: "hard", hard: { towers: 2, towerSpare: 0 } }, p));
+  let seq = 0;
+  let placed = 0;
+  let badPlace = 0;
+  const size = (t: number) => rules().buildings[t].size;
+  for (let t = 0; t < 15 * 1200; t++) {
+    if (g.tick % 10 === 0) {
+      for (let p = 0; p < 2; p++) {
+        for (const body of ais[p].think(buildView(g, p))) {
+          if (body.c === "build" && body.type === BuildingType.ArrowTower) {
+            placed++;
+            const b = w.buildings.col;
+            for (let s = 0; s < w.buildings.count; s++) {
+              const bt = b.type[s];
+              const doors: number[] = [BuildingType.MainCity, BuildingType.Barracks, BuildingType.Range, BuildingType.Stable, BuildingType.MageHall];
+              if (b.owner[s] !== p || !doors.includes(bt)) continue;
+              const apart: boolean =
+                body.x + size(BuildingType.ArrowTower) + 2 <= b.cellX[s] || b.cellX[s] + size(bt) + 2 <= body.x || body.y + size(BuildingType.ArrowTower) + 2 <= b.cellY[s] || b.cellY[s] + size(bt) + 2 <= body.y;
+              assert.ok(apart, `player ${p}'s tower at (${body.x},${body.y}) by its building type ${bt} at (${b.cellX[s]},${b.cellY[s]})`);
+            }
+          }
+          g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+        }
+      }
+    }
+    g.step();
+    // D-089: a gate's lane or a crossing is refused by the simulation (Reject.GateLane, Reject.Crossing); none of its builds may be.
+    for (const e of g.events) if (e.ev.k === "rejected" && [Reject.BadPlacement, Reject.GateLane, Reject.Crossing].includes(e.ev.reason as never)) badPlace++;
+  }
+  assert.ok(placed > 0, "it put up towers");
+  assert.equal(badPlace, 0, "no build refused for its place");
+});
+
+test("D-086 A4 (plan.counterCavalry): against an enemy with many cavalry hard leans to spearmen; off, cavalry is not counted", () => {
+  // 12 spearmen and 8 ranged at home (60% spearmen, over its 45-55% share): which it trains first.
+  const first = (counterCavalry: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 13 * 1200;
+    w.addBuilding(0, BuildingType.Barracks, s0.cellX + 4, s0.cellY - 9, 500, 1000);
+    w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 9, 500, 1000);
+    for (let k = 0; k < 6; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 8 + 3 * k, s0.cellY + 6, 200, 1000);
+    for (let k = 0; k < 12; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 6), s0.cellY + 2 + Math.trunc(k / 6));
+    for (let k = 0; k < 8; k++) put(g, 0, UnitType.Ranged, s0.cellX + 4 + (k % 4), s0.cellY + 4 + Math.trunc(k / 4));
+    for (let k = 0; k < 8; k++) put(g, 1, UnitType.Cavalry, s0.cellX + 6 + (k % 4), s0.cellY - 12 - Math.trunc(k / 4));
+    w.res.set([1000, 1000, 1000, 0], 0);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, counterCavalry }).think(buildView(g, 0));
+    return (out.find((c) => c.c === "train" && c.type !== UnitType.Farmer) as { type: number } | undefined)?.type;
+  };
+  assert.equal(first(true), UnitType.Spearman, "8 cavalry in sight: spearmen first");
+  assert.equal(first(false), UnitType.Ranged, "off: cavalry not counted, ranged first as before");
+});
+
+test("D-086 A4 (plan.mineMove): the gold by its mine gone, hard puts up another mine by the nearest gold left; off, as before", () => {
+  const built = (mineMove: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 13 * 1200;
+    const at = (type: BuildingType, x: number, y: number) => w.addBuilding(0, type, s0.cellX + x, s0.cellY + y, rules().buildings[type].hp, 1000);
+    for (const [t, x, y] of [[BuildingType.Barracks, 4, -8], [BuildingType.Barracks, 8, -8], [BuildingType.Range, 12, -8], [BuildingType.Range, 16, -8], [BuildingType.MageHall, 4, -13], [BuildingType.Granary, -6, -6], [BuildingType.LumberCamp, -10, 2]] as [BuildingType, number, number][]) at(t, x, y);
+    for (let k = 0; k < 10; k++) at(BuildingType.Farm, -14 + 3 * (k % 3), -14 + 3 * Math.trunc(k / 3));
+    for (let k = 0; k < 12; k++) at(BuildingType.House, -8 + 3 * (k % 6), 6 + 3 * Math.trunc(k / 6));
+    // Its mine by the nearest gold, all of that gold gone; more gold further out.
+    let first = -1;
+    let bestD = 0;
+    for (let i = 0; i < w.nodeKind.length; i++) {
+      if (w.nodeKind[i] !== NodeKind.GoldMine) continue;
+      const d = (w.nodeX[i] - s0.cellX) ** 2 + (w.nodeY[i] - s0.cellY) ** 2;
+      if (first < 0 || d < bestD) {
+        first = i;
+        bestD = d;
+      }
+    }
+    w.addBuilding(0, BuildingType.Mine, w.nodeX[first] + 1, w.nodeY[first] + 1, rules().buildings[BuildingType.Mine].hp, 1000);
+    for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.GoldMine && (w.nodeX[i] - w.nodeX[first]) ** 2 + (w.nodeY[i] - w.nodeY[first]) ** 2 <= 49) w.nodeAmount[i] = 0;
+    for (let k = 0; k < 30; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 10), s0.cellY - 2 - Math.trunc(k / 10));
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    w.res.set([700, 600, 300, 0], 0);
+    // A soldier of its own by the next gold (some 25 cells off): it has seen it and the ground there.
+    let next = -1;
+    let nextD = 0;
+    for (let i = 0; i < w.nodeKind.length; i++) {
+      if (w.nodeKind[i] !== NodeKind.GoldMine || w.nodeAmount[i] <= 0) continue;
+      const d = (w.nodeX[i] - s0.cellX) ** 2 + (w.nodeY[i] - s0.cellY) ** 2;
+      if (next < 0 || d < nextD) {
+        next = i;
+        nextD = d;
+      }
+    }
+    put(g, 0, UnitType.Spearman, w.nodeX[next] + 2, w.nodeY[next] + 2);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, mineMove }).think(buildView(g, 0));
+    return out.some((c) => c.c === "build" && c.type === BuildingType.Mine);
+  };
+  assert.equal(built(true), true, "on: a new mine");
+  assert.equal(built(false), false, "off: none, as before");
+});
+
+test("D-086 A4 (plan.mineMove): the only gold left nearer the enemy's main city, hard puts no mine there", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  w.tick = 13 * 1200;
+  const at = (type: BuildingType, x: number, y: number) => w.addBuilding(0, type, s0.cellX + x, s0.cellY + y, rules().buildings[type].hp, 1000);
+  for (const [t, x, y] of [[BuildingType.Barracks, 4, -8], [BuildingType.Barracks, 8, -8], [BuildingType.Range, 12, -8], [BuildingType.Range, 16, -8], [BuildingType.MageHall, 4, -13], [BuildingType.Granary, -6, -6], [BuildingType.LumberCamp, -10, 2]] as [BuildingType, number, number][]) at(t, x, y);
+  for (let k = 0; k < 10; k++) at(BuildingType.Farm, -14 + 3 * (k % 3), -14 + 3 * Math.trunc(k / 3));
+  for (let k = 0; k < 12; k++) at(BuildingType.House, -8 + 3 * (k % 6), 6 + 3 * Math.trunc(k / 6));
+  // A mine of its own, and all the gold on its side of the map gone (a09c2367 at minute 30).
+  const d2 = (i: number, s: { cellX: number; cellY: number }) => (w.nodeX[i] - s.cellX) ** 2 + (w.nodeY[i] - s.cellY) ** 2;
+  let first = -1;
+  for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.GoldMine && (first < 0 || d2(i, s0) < d2(first, s0))) first = i;
+  w.addBuilding(0, BuildingType.Mine, w.nodeX[first] + 1, w.nodeY[first] + 1, rules().buildings[BuildingType.Mine].hp, 1000);
+  for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.GoldMine && d2(i, s0) < d2(i, s1)) w.nodeAmount[i] = 0;
+  for (let k = 0; k < 30; k++) {
+    const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 10), s0.cellY - 2 - Math.trunc(k / 10));
+    w.units.col.order[slotOf(g, id)] = Order.Gather;
+  }
+  w.res.set([700, 600, 300, 0], 0);
+  // It sees the nearest gold left (on the enemy's side) and the ground there.
+  let next = -1;
+  for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.GoldMine && w.nodeAmount[i] > 0 && (next < 0 || d2(i, s0) < d2(next, s0))) next = i;
+  put(g, 0, UnitType.Spearman, w.nodeX[next] + 2, w.nodeY[next] + 2);
+  g.fog.update(w);
+  const out = hardAi(g, { dodge: false, mineMove: true }).think(buildView(g, 0));
+  assert.equal(out.some((c) => c.c === "build" && c.type === BuildingType.Mine), false);
+});
+
+test("D-086 A4 (plan.buildSafe): a site razed before it was done, hard puts nothing there again for a while; off, as before", () => {
+  const again = (buildSafe: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 4 * 1200;
+    for (let k = 0; k < 12; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + k, s0.cellY + 4);
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    w.res.set([1000, 1000, 1000, 0], 0);
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, buildSafe });
+    let seq = 0;
+    const first = ai.think(buildView(g, 0)).find((c) => c.c === "build");
+    assert.ok(first !== undefined && first.c === "build", "it builds something");
+    g.push({ ...first, t: g.tick, p: 0, seq: seq++ } as never);
+    g.step();
+    const site = w.building(w.buildings.col.id[w.buildings.count - 1]);
+    assert.equal(w.buildings.col.type[site], first.type);
+    assert.ok(w.buildings.col.progress[site] < 1000);
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    // Razed before it was done.
+    w.buildings.col.hp[site] = 0;
+    for (let k = 0; k < 100; k++) g.step();
+    w.res.set([1000, 1000, 1000, 0], 0);
+    g.fog.update(w);
+    return ai.think(buildView(g, 0)).some((c) => c.c === "build" && (c.x - first.x) ** 2 + (c.y - first.y) ** 2 <= 64);
+  };
+  assert.equal(again(false), true, "off: put down there again, as before");
+  assert.equal(again(true), false, "on: not there again yet");
+});
+
+test("D-086 A4 (plan.buildSafe): with enemy soldiers in sight by the spot, hard puts nothing down there; off, as before", () => {
+  const builds = (buildSafe: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 4 * 1200;
+    for (let k = 0; k < 8; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + k, s0.cellY + 4);
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    // Enemy spearmen all round its main city, in sight.
+    for (let k = 0; k < 12; k++) put(g, 1, UnitType.Spearman, s0.cellX - 6 + k, s0.cellY - 3);
+    w.res.set([1000, 1000, 1000, 0], 0);
+    g.fog.update(w);
+    return hardAi(g, { dodge: false, buildSafe }).think(buildView(g, 0)).some((c) => c.c === "build");
+  };
+  assert.equal(builds(false), true, "off: it builds, as before");
+  assert.equal(builds(true), false, "on: nothing put down by the enemy");
+});
