@@ -29,6 +29,7 @@ import {
   Terrain,
   UNIT_STRIDE,
   UnitField as U,
+  UnitFlag,
   UnitType,
   WARNING_STRIDE,
   WarningField as W,
@@ -134,6 +135,8 @@ interface Shot {
   tx: number;
   ty: number;
   at: number;
+  /** Arrows in it (D-096 `shot.n`). */
+  n: number;
 }
 
 const SHOT_MS = 300;
@@ -243,6 +246,9 @@ export class WorldRenderer {
   private groundKey = "";
   /** The castles' blocks, on the ground under the fog (castle-draw.ts). */
   private readonly castleBlocks = new Graphics();
+  /** Gates broken (D-096): rubble on their openings, on the ground; redrawn when the snapshot changes. */
+  private readonly brokenGates = new Graphics();
+  private brokenKey = "";
   /**
    * Units behind a castle's wall (D-089, atlas-buildings.md section 11): their pictures again over
    * the walls, one layer a colour (ours, the enemy's, the neutral militia's), at 45 %; the selected
@@ -253,6 +259,8 @@ export class WorldRenderer {
   ghostStyle: "fill" | "outline" = "fill";
   /** Units drawn behind a wall this frame (test page). */
   ghostCount = 0;
+  /** Units drawn up on a castle's wall this frame (D-096, test page). */
+  wallLifted = 0;
   private readonly warnPool: Container[] = [];
 
   /** `art`: the units' atlases (D-085), `cultureOf` which culture each player wears; `projection` how the ground lies. */
@@ -319,7 +327,7 @@ export class WorldRenderer {
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
-    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
+    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
     this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
@@ -334,6 +342,7 @@ export class WorldRenderer {
     this.drawFog();
     this.drawNodes();
     this.drawBuildings();
+    this.drawBrokenGates();
     this.drawTowns();
     this.castle.update();
     this.terrain.update();
@@ -372,9 +381,10 @@ export class WorldRenderer {
   }
 
   /** An arrow from a building (world px) to a unit, drawn flying for a moment (round 7). */
-  shot(fromX: number, fromY: number, toX: number, toY: number, now: number): void {
-    this.shots.push({ fx: fromX, fy: fromY, tx: toX, ty: toY, at: now });
-    this.shotCount++;
+  /** An arrow (or `n` together: a town gate's volley, a main city's with villagers inside, D-096) from a building at a unit. */
+  shot(fromX: number, fromY: number, toX: number, toY: number, now: number, n = 1): void {
+    this.shots.push({ fx: fromX, fy: fromY, tx: toX, ty: toY, at: now, n: Math.max(1, Math.min(n, 12)) });
+    this.shotCount += Math.max(1, n);
     if (this.shots.length > 40) this.shots.shift();
   }
 
@@ -392,10 +402,18 @@ export class WorldRenderer {
       const y = from.y + dy * k;
       const ux = dx / len;
       const uy = dy / len;
-      // A shaft 12 px long with a head: it leaves the building and flies to the target.
-      this.airFx.moveTo(x - ux * 12, y - uy * 12).lineTo(x, y).stroke({ width: 2.5, color: 0x2a1c10 });
-      this.airFx.moveTo(x - ux * 12, y - uy * 12).lineTo(x, y).stroke({ width: 1.2, color: 0xf4e2b0 });
-      this.airFx.poly([x + ux * 4, y + uy * 4, x - ux * 2 - uy * 3, y - uy * 2 + ux * 3, x - ux * 2 + uy * 3, y - uy * 2 - ux * 3]).fill(0xf4e2b0);
+      // n arrows side by side across the way they fly, 6 px apart, the middle one on the line, the
+      // others a little behind (a volley, not a wall of arrows).
+      for (let a = 0; a < s.n; a++) {
+        const side = (a - (s.n - 1) / 2) * 6;
+        const back = Math.abs(side) * 0.8;
+        const ax = x - uy * side - ux * back;
+        const ay = y + ux * side - uy * back;
+        // A shaft 12 px long with a head: it leaves the building and flies to the target.
+        this.airFx.moveTo(ax - ux * 12, ay - uy * 12).lineTo(ax, ay).stroke({ width: 2.5, color: 0x2a1c10 });
+        this.airFx.moveTo(ax - ux * 12, ay - uy * 12).lineTo(ax, ay).stroke({ width: 1.2, color: 0xf4e2b0 });
+        this.airFx.poly([ax + ux * 4, ay + uy * 4, ax - ux * 2 - uy * 3, ay - uy * 2 + ux * 3, ax - ux * 2 + uy * 3, ay - uy * 2 - ux * 3]).fill(0xf4e2b0);
+      }
     }
   }
 
@@ -536,22 +554,25 @@ export class WorldRenderer {
       }
       const o = i * BUILDING_STRIDE;
       const type = b[o + B.type];
-      const info = this.view.rules.buildings[type];
-      const size = (info?.size ?? 1) * TILE_PX;
-      const x = b[o + B.cellX] * TILE_PX;
-      const y = b[o + B.cellY] * TILE_PX;
+      // A gate (D-096) lies across its opening, a row or a column of cells (view.footprint).
+      const f = this.view.footprint(b, o);
+      const width = f.w * TILE_PX;
+      const depth = f.h * TILE_PX;
+      const size = Math.min(width, depth);
+      const x = f.x * TILE_PX;
+      const y = f.y * TILE_PX;
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0;
       const building = b[o + B.progress] < 1000;
       p.base.texture = type === BuildingType.Farm ? this.atlas.farm : type === BuildingType.ArrowTower ? this.atlas.tower : this.atlas.building;
       p.base.position.set(x, y);
-      p.base.width = size;
-      p.base.height = size;
+      p.base.width = width;
+      p.base.height = depth;
       p.base.tint = type === BuildingType.Farm ? 0xffffff : ownerTint(b[o + B.owner], this.view.me);
       p.base.alpha = remembered ? 0.55 : building ? 0.6 : 1;
       // The footprint lies on the ground; its glyph stands in its middle, the shield at its right corner.
-      const mid = this.projection.toPlane(x + size / 2, y + size / 2);
+      const mid = this.projection.toPlane(x + width / 2, y + depth / 2);
       const top = this.projection.toPlane(x, y);
-      const right = this.projection.toPlane(x + size, y);
+      const right = this.projection.toPlane(x + width, y);
       p.glyph.texture = this.atlas.glyphs[type] ?? Texture.EMPTY;
       p.glyph.position.set(mid.x, mid.y);
       p.glyph.zIndex = mid.y;
@@ -581,13 +602,61 @@ export class WorldRenderer {
       const picture = this.artStructures?.building(i, o) ?? null;
       if (picture !== null) p.base.visible = p.glyph.visible = false;
       const hp = b[o + B.hp];
-      const max = info?.hp ?? hp;
+      // A gate's full hit points are its town's size's (rules.towns[size].gateHp), not buildings[Gate].hp.
+      const max = this.view.buildingMaxHp(b, o);
       const selected = this.view.selection.building === b[o + B.id];
       if (building || hp < max || selected) {
         const frac = building ? b[o + B.progress] / 1000 : max > 0 ? hp / max : 1;
-        this.bar(p.hpBack, p.hpFront, mid.x, Math.min(top.y, picture?.top ?? top.y) - 4, size * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
+        this.bar(p.hpBack, p.hpFront, mid.x, Math.min(top.y, picture?.top ?? top.y) - 4, Math.max(width, depth) * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
       }
     }
+  }
+
+  /**
+   * Gates broken (D-096): an opening of a known town, in view now, with no gate building on it, while
+   * gates are on and the town is not in ruins (ruins draw as such). Grey rubble on its cells, plain
+   * until war-game-ui's pictures. Out of view, nothing is said (a gate remembered is a building).
+   */
+  private drawBrokenGates(): void {
+    const snap = (this.view.curr as NonNullable<GameView["curr"]>).snap;
+    const fog = this.view.fog;
+    const n = this.view.map.size;
+    const openings: number[][] = [];
+    if (this.view.rules.features?.gates === true) {
+      const standing = new Set<number>();
+      const b = snap.buildings;
+      for (let o = 0; o < b.length; o += BUILDING_STRIDE) if (b[o + B.type] === BuildingType.Gate) standing.add(b[o + B.cellY] * n + b[o + B.cellX]);
+      for (const town of this.view.knownTowns.values()) {
+        const o = this.view.townRow(town.id);
+        if (o >= 0 && snap.towns[o + T.state] === TownState.Ruins) continue;
+        for (const opening of this.view.castleOf(town)?.gates ?? []) {
+          const cells = opening.map(([x, y]) => (town.cellY + y) * n + town.cellX + x);
+          if (cells.length === 0 || !cells.every((c) => fog === null || fog[c] === Fog.Visible)) continue;
+          if (standing.has(Math.min(...opening.map(([, y]) => town.cellY + y)) * n + Math.min(...opening.map(([x]) => town.cellX + x)))) continue;
+          openings.push(cells);
+        }
+      }
+    }
+    const key = openings.map((c) => c.join(".")).join(",");
+    if (key === this.brokenKey) return;
+    this.brokenKey = key;
+    const g = this.brokenGates;
+    g.clear();
+    for (const cells of openings) {
+      for (const c of cells) {
+        const x = (c % n) * TILE_PX;
+        const y = Math.floor(c / n) * TILE_PX;
+        // A few stones across the cell, the same for every gate (no randomness in drawing either).
+        for (const [dx, dy, r] of [[0.25, 0.3, 0.14], [0.62, 0.22, 0.11], [0.45, 0.62, 0.16], [0.78, 0.7, 0.1], [0.2, 0.78, 0.09]]) {
+          g.circle(x + dx * TILE_PX, y + dy * TILE_PX, r * TILE_PX).fill(0x7a7268).stroke({ width: 1, color: 0x3a332b });
+        }
+      }
+    }
+  }
+
+  /** Openings drawn as broken gates (D-096), for the test hook. */
+  get brokenGateCount(): number {
+    return this.brokenKey === "" ? 0 : this.brokenKey.split(",").length;
   }
 
   private drawTowns(): void {
@@ -776,6 +845,7 @@ export class WorldRenderer {
     const sel = view.selection.units;
     this.ghostRings.clear();
     this.ghostCount = 0;
+    this.wallLifted = 0;
     // A layer with no one behind a wall this frame is hidden: its filter's pass is skipped.
     const ghosts = { own: 0, enemy: 0, neutral: 0 };
     const walls = this.castle.hasPieces && this.artUnits !== null;
@@ -837,15 +907,17 @@ export class WorldRenderer {
       const at = this.projection.toPlane(px, py);
       const type = u[o + U.type];
       const owner = u[o + U.owner];
-      // On a bridge's deck (art-v5): drawn up there.
-      const lift = this.terrain.liftAt(px, py);
+      // On a castle's wall (D-096): up on its walk, in front of the wall; on a bridge's deck (art-v5): up there.
+      const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(Math.floor(px / TILE_PX), Math.floor(py / TILE_PX)) : null;
+      if (onWall !== null) this.wallLifted++;
+      const lift = onWall?.lift ?? this.terrain.liftAt(px, py);
       // From its atlas when there is one (its picture's top for the bars), else the shape.
-      const top = this.artUnits?.unit(i, o, at.x, at.y, seconds, lift) ?? null;
+      const top = this.artUnits?.unit(i, o, at.x, at.y, seconds, lift, onWall?.z ?? null) ?? null;
       p.body.visible = top === null;
       p.body.texture = this.atlas.units[type] ?? this.atlas.units[UnitType.Farmer];
       p.body.tint = ownerTint(owner, view.me);
       p.body.position.set(at.x, at.y);
-      p.body.zIndex = this.artStructures?.unitDepth(at.x, at.y) ?? at.y;
+      p.body.zIndex = onWall?.z ?? this.artStructures?.unitDepth(at.x, at.y) ?? at.y;
       p.body.scale.set(UNIT_SCALE);
       // Its facing as it looks on the plane (as a diamond, the ground's directions are turned and flattened).
       const f = (u[o + U.facing] * Math.PI) / 8;
@@ -859,10 +931,11 @@ export class WorldRenderer {
         p.ring.scale.set(1.05);
         p.ring.tint = 0xfff3b0;
       }
-      // Behind a castle's wall (D-089): drawn again over it, its ring too when selected.
+      // Behind a castle's wall (D-089): drawn again over it, its ring too when selected. Not one
+      // standing on the wall (D-096): it is drawn in front of it.
       if (walls && top !== null) {
         const box = this.artUnits?.pictureBox(i) ?? null;
-        const behind = box !== null && this.castle.covers(box, box.z);
+        const behind = onWall === null && box !== null && this.castle.covers(box, box.z);
         const side = owner === view.me ? "own" : owner === NEUTRAL || owner === NO_OWNER ? "neutral" : "enemy";
         this.artUnits?.ghost(i, behind ? this.ghostLayers[side] : null, this.ghostStyle === "outline");
         if (behind) {
@@ -986,14 +1059,14 @@ export class WorldRenderer {
     const o = this.view.buildingRow(id);
     if (o < 0) return;
     const b = (this.view.curr as NonNullable<GameView["curr"]>).snap.buildings;
-    const size = (this.view.rules.buildings[b[o + B.type]]?.size ?? 1) * TILE_PX;
-    const x = b[o + B.cellX] * TILE_PX;
-    const y = b[o + B.cellY] * TILE_PX;
-    this.fx.rect(x - 2, y - 2, size + 4, size + 4).stroke({ width: 3, color: 0xfff3b0 });
+    const f = this.view.footprint(b, o);
+    const x = f.x * TILE_PX;
+    const y = f.y * TILE_PX;
+    this.fx.rect(x - 2, y - 2, f.w * TILE_PX + 4, f.h * TILE_PX + 4).stroke({ width: 3, color: 0xfff3b0 });
     if (b[o + B.rallyX] >= 0) {
       const rx = b[o + B.rallyX] * FIXED_TO_PX;
       const ry = b[o + B.rallyY] * FIXED_TO_PX;
-      this.fx.moveTo(x + size / 2, y + size / 2).lineTo(rx, ry).stroke({ width: 2, color: 0xfff3b0, alpha: 0.8 });
+      this.fx.moveTo(x + (f.w * TILE_PX) / 2, y + (f.h * TILE_PX) / 2).lineTo(rx, ry).stroke({ width: 2, color: 0xfff3b0, alpha: 0.8 });
       this.fx.circle(rx, ry, 5).fill(0xfff3b0);
     }
   }

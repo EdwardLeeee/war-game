@@ -29,6 +29,8 @@ export const BUILDING_NAME: Record<number, string> = {
   [BuildingType.Stable]: "馬廄",
   // D-080: spearmen stand guard around it.
   [BuildingType.Outpost]: "哨所",
+  // D-096: one in each opening of a castle's walls.
+  [BuildingType.Gate]: "城門",
 };
 
 /** What a player may build, in the order the build menu lists it (GDD §17 prototype buildings). */

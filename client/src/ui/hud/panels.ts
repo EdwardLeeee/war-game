@@ -10,6 +10,7 @@ import { POST_TYPE } from "../../game/outpost.ts";
 import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import { costText as costLine } from "../../game/govern-wait.ts";
+import { goesOnWalls } from "../../game/walls.ts";
 import { counterShort } from "../../game/counters.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
@@ -24,6 +25,7 @@ import {
   NEUTRAL,
   NO_OWNER,
   NodeField as N,
+  Order,
   type Resource,
   Stance,
   TICKS_PER_SECOND,
@@ -57,6 +59,9 @@ export interface PanelHost {
   startPlacement(type: BuildingType): void;
   openEconomy(): void;
   chooseTown(town: number, choice: TownChoice): void;
+  /** 上城牆 (D-096): those on a wall come down; our units on a town's wall and its cells (null: not ours). */
+  leaveWall(): void;
+  wallCount(town: number): { on: number; capacity: number } | null;
   /**
    * 等錢治理 (ceo 2026-10-21): 治理's cost for the town (null when not known), what is missing
    * now, whether the town waits for it, and 取消.
@@ -453,7 +458,6 @@ export class SelectionInfo {
     const b0 = view.curr?.snap.buildings;
     if (o0 < 0 || b0 === undefined) return;
     const type = b0[o0 + B.type];
-    const info = view.rules.buildings[type];
     const own = b0[o0 + B.owner] === view.me;
     const head = el("div", this.el, "sel-head");
     el("b", head, "", BUILDING_NAME[type] ?? "建築");
@@ -507,7 +511,7 @@ export class SelectionInfo {
       if (o < 0 || b === undefined) return;
       depot?.();
       outpost?.();
-      const max = info?.hp ?? b[o + B.hp];
+      const max = view.buildingMaxHp(b, o);
       const building = b[o + B.progress] < 1000;
       hpBar(building ? b[o + B.progress] / 1000 : max > 0 ? b[o + B.hp] / max : 0);
       hpText.textContent = building ? `建造中 ${Math.floor(b[o + B.progress] / 10)}%` : `生命 ${b[o + B.hp]}/${max}`;
@@ -692,10 +696,12 @@ export class SelectionInfo {
       const waits = owner === view.me && t[o + T.state] === TownState.AwaitingChoice && this.host.governWaiting(id);
       const state = sent !== null ? `${who}攻下：${sent === TownChoice.Plunder ? "搶" : "治理"}（繼續後）` : waits ? `${who}攻下，等錢治理` : `${who}${TOWN_STATE_NAME[t[o + T.state]] ?? ""}`;
       if (status.textContent !== state) status.textContent = state;
+      // 牆上 N／M (D-096): ours on its wall (or going up) and its wall cells; only for a town we hold (ceo: nothing about others').
+      const wall = this.host.wallCount(id);
       // Two different counts for our own town: every soldier of ours inside it now, and the
       // ones told to stay (留守, below), who do not leave with 全軍.
       const inside = owner === view.me ? `城裡有 ${t[o + T.garrison]} 名兵（至少要 ${t[o + T.garrisonNeeded]} 名）` : `駐軍 ${t[o + T.garrison]}/${t[o + T.garrisonNeeded]}`;
-      const parts = [`民兵 ${t[o + T.militia]}`, inside];
+      const parts = [`民兵 ${t[o + T.militia]}`, inside, ...(wall === null ? [] : [`牆上 ${wall.on}／${wall.capacity}`])];
       if (t[o + T.timer] > 0) parts.push(`剩 ${clock(t[o + T.timer])}`);
       if (t[o + T.revoltTimer] > 0) parts.push(`駐軍不足，${clock(t[o + T.revoltTimer])} 後叛離`);
       // 治理 income (round 7, D-061), while the rule is on.
@@ -755,7 +761,7 @@ export class CommandArea {
       const stances = sel.units.map((id) => {
         const o = view.unitRow(id);
         const flags = o < 0 ? 0 : u[o + U.flags];
-        return o < 0 ? "" : `${u[o + U.type]}${orderState(view, id)}${(flags & UnitFlag.Autocast) !== 0 ? "a" : ""}${(flags & UnitFlag.Loose) !== 0 ? "l" : ""}`;
+        return o < 0 ? "" : `${u[o + U.type]}${orderState(view, id)}${(flags & UnitFlag.Autocast) !== 0 ? "a" : ""}${(flags & UnitFlag.Loose) !== 0 ? "l" : ""}${u[o + U.order] === Order.Wall ? "w" : ""}`;
       });
       return `u:${[...new Set(stances)].sort().join(",")}`;
     }
@@ -837,6 +843,18 @@ export class CommandArea {
           ? button(this.el, "取消", "躲進去", () => this.host.setMode("normal"), "secondary")
           : button(this.el, "躲進去", "主城或箭樓", () => this.host.setMode("garrison"), "secondary");
         if (picking) hide.classList.add("active");
+      }
+      // 上城牆／下城牆 (D-096): ranged units and mages stand on the walls of a town we hold, with war-game-ui's icon.
+      if (view.rules.features?.walls === true && sel.units.some((id) => goesOnWalls(view.unitType(id)))) {
+        const up = sel.units.some((id) => view.unitOrder(id) === Order.Wall);
+        const picking = mode === "wall";
+        const wall = up
+          ? button(this.el, "下城牆", "回城裡", () => this.host.leaveWall(), "secondary")
+          : picking
+            ? button(this.el, "取消", "上城牆", () => this.host.setMode("normal"), "secondary")
+            : button(this.el, "上城牆", "點自己的城", () => this.host.setMode("wall"), "secondary");
+        wall.prepend(icon("wall", "cmd-ic"));
+        if (picking) wall.classList.add("active");
       }
       return;
     }

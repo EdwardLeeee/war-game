@@ -57,6 +57,8 @@ export interface PageParams {
   seed: number | null;
   /** `?test=1&mock=1&outpost=1`: the fake world with outposts on (D-080) along with round 7's rules. */
   outpost: boolean;
+  /** `?test=1&mock=1&walls=1`: the fake world with D-096's gates and walls on (a gate in each opening, 上城牆). */
+  walls: boolean;
   /** `?test=1&mock=1&mine=1`: the fake world with two mines of ours, a crystal vein by one (the mine's 晶 row). */
   mine: boolean;
   /**
@@ -121,5 +123,5 @@ export function parseParams(search: string): PageParams {
   const ghost = test && q.get("ghost") === "outline" ? "outline" : null;
   const u = q.get("ui");
   const ui = test && (u === "r6" || u === "proto") ? u : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, ghost, loadTimes: test && q.get("loadtimes") === "1", ground: test && q.get("ground") === "real" ? "real" : null, groundQuality: q.get("groundq") === "low" ? "low" : "high" };
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", walls: test && q.get("mock") === "1" && q.get("walls") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, ghost, loadTimes: test && q.get("loadtimes") === "1", ground: test && q.get("ground") === "real" ? "real" : null, groundQuality: q.get("groundq") === "low" ? "low" : "high" };
 }
