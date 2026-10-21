@@ -1003,8 +1003,12 @@ export class Game implements GestureHost {
     const tick = h[H.tick];
     const b = snap.buildings;
     const u = snap.units;
-    // Taken by now (or refused): the queue in the snapshot has it.
-    this.autoSent = this.autoSent.filter((t) => tick <= t.tick + 1);
+    // Taken by now (or refused): the queue in the snapshot has it. A train is sent only to an empty
+    // queue, so one that shows in its building's queue is taken: counted there, not twice (that made
+    // a full population for a snapshot and a false 人口滿了: CI run 39659340330).
+    const queuedAt = new Set<number>();
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) if (b[o + BuildingField.owner] === view.me && b[o + BuildingField.queueLength] > 0) queuedAt.add(b[o + BuildingField.id]);
+    this.autoSent = this.autoSent.filter((t) => tick <= t.tick + 1 && !queuedAt.has(t.building));
     const queued: Record<number, number> = {};
     const add = (t: number) => {
       queued[t] = (queued[t] ?? 0) + 1;
