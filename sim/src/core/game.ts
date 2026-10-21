@@ -186,8 +186,7 @@ export class Game {
         const vis = this.fog.visible[p];
         let sees = ts >= 0 && vis[(u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT)] === 1;
         if (!sees && bs >= 0) {
-          const size = w.buildingSize(b.type[bs]);
-          for (let y = b.cellY[bs]; y < b.cellY[bs] + size && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + size && !sees; x++) sees = vis[y * n + x] === 1;
+          for (let y = b.cellY[bs]; y < b.cellY[bs] + w.tall(bs) && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + w.wide(bs) && !sees; x++) sees = vis[y * n + x] === 1;
         }
         if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1] } });
       }

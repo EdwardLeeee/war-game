@@ -150,6 +150,8 @@ export class World {
   readonly castles: Castle[] = [];
   /** 1 on the cells of the castles' gates (D-089). */
   gateAt: Uint8Array;
+  /** At each gate opening's top-left cell (D-096), its sides in cells (x | y << 8); 0 elsewhere. */
+  gateSides: Int32Array;
   /**
    * Each town's castle cells (D-089): inside the walls and the ring of walls and gates, as cell
    * indices. Seeing any of them is seeing the town (fog.ts): the walls stand 5 cells from a small
@@ -333,6 +335,7 @@ export class World {
       this.castles.push(castleOf(s.size, map));
     });
     this.gateAt = new Uint8Array(n * n);
+    this.gateSides = new Int32Array(n * n);
     this.gateLane = new Uint8Array(n * n);
     this.nearGate = new Uint8Array(n * n);
     this.nearCastle = new Uint8Array(n * n);
@@ -346,6 +349,13 @@ export class World {
         mark(this.nearGate, s.cellX + dx - 3, s.cellY + dy - 3, s.cellX + dx + 3, s.cellY + dy + 3);
       }
       for (const [dx, dy] of [...c.gate, ...c.outside, ...c.behind]) this.gateLane[(s.cellY + dy) * n + s.cellX + dx] = 1;
+      for (const g of c.gates) {
+        const x0 = Math.min(...g.map((k) => k[0]));
+        const y0 = Math.min(...g.map((k) => k[1]));
+        const sx = Math.max(...g.map((k) => k[0])) - x0 + 1;
+        const sy = Math.max(...g.map((k) => k[1])) - y0 + 1;
+        this.gateSides[(s.cellY + y0) * n + s.cellX + x0] = sx | (sy << 8);
+      }
       mark(this.nearCastle, s.cellX + c.inside.x0 - 4, s.cellY + c.inside.y0 - 4, s.cellX + c.inside.x1 + 4, s.cellY + c.inside.y1 + 4);
       const cells: number[] = [];
       for (let y = Math.max(0, s.cellY + c.inside.y0 - 1); y <= Math.min(n - 1, s.cellY + c.inside.y1 + 1); y++) {
@@ -433,15 +443,36 @@ export class World {
   }
 
   /**
+   * A footprint's width in cells (x): its type's size (buildingSize), but a gate's (D-096) is the
+   * line of its opening's cells, found by its top-left cell. sideY: its height.
+   */
+  sideX(type: number, cellX: number, cellY: number): number {
+    return type === BuildingType.Gate ? this.gateSides[cellY * this.size + cellX] & 0xff : this.buildingSize(type);
+  }
+  sideY(type: number, cellX: number, cellY: number): number {
+    return type === BuildingType.Gate ? this.gateSides[cellY * this.size + cellX] >> 8 : this.buildingSize(type);
+  }
+  /** Building slot s's footprint width and height in cells (sideX, sideY). */
+  wide(s: number): number {
+    const b = this.buildings.col;
+    return this.sideX(b.type[s], b.cellX[s], b.cellY[s]);
+  }
+  tall(s: number): number {
+    const b = this.buildings.col;
+    return this.sideY(b.type[s], b.cellX[s], b.cellY[s]);
+  }
+
+  /**
    * Marks or clears a building's footprint: buildingAt always, the grid's BLOCK_BUILDING
    * bit unless the building is walkable (farms).
    */
   setFootprint(id: number, type: BuildingType, cellX: number, cellY: number, on: boolean): void {
     const info = BUILDINGS[type];
-    const size = this.buildingSize(type);
+    const sx = this.sideX(type, cellX, cellY);
+    const sy = this.sideY(type, cellX, cellY);
     const n = this.size;
-    for (let y = cellY; y < cellY + size; y++) {
-      for (let x = cellX; x < cellX + size; x++) {
+    for (let y = cellY; y < cellY + sy; y++) {
+      for (let x = cellX; x < cellX + sx; x++) {
         this.buildingAt[y * n + x] = on ? id : -1;
         if (info.walkable) continue;
         if (on) this.grid[y * n + x] |= BLOCK_BUILDING;

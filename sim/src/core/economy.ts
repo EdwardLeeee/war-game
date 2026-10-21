@@ -91,10 +91,9 @@ export function nodeOpen(w: World, node: number): boolean {
 
 function footprintCells(w: World, bs: number): number[] {
   const b = w.buildings.col;
-  const size = w.buildingSize(b.type[bs]);
   const out: number[] = [];
-  for (let y = b.cellY[bs]; y < b.cellY[bs] + size; y++) {
-    for (let x = b.cellX[bs]; x < b.cellX[bs] + size; x++) out.push(y * w.size + x);
+  for (let y = b.cellY[bs]; y < b.cellY[bs] + w.tall(bs); y++) {
+    for (let x = b.cellX[bs]; x < b.cellX[bs] + w.wide(bs); x++) out.push(y * w.size + x);
   }
   return out;
 }
@@ -103,19 +102,18 @@ function footprintCells(w: World, bs: number): number[] {
 function buildingGoals(w: World, bs: number): () => number[] {
   const b = w.buildings.col;
   if (b.type[bs] === BuildingType.Farm) return () => footprintCells(w, bs);
-  return () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.buildingSize(b.type[bs]));
+  return () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs));
 }
 
 function buildingCentre(w: World, bs: number): [number, number] {
   const b = w.buildings.col;
-  const half = (w.buildingSize(b.type[bs]) << CELL_SHIFT) >> 1;
-  return [(b.cellX[bs] << CELL_SHIFT) + half, (b.cellY[bs] << CELL_SHIFT) + half];
+  return [(b.cellX[bs] << CELL_SHIFT) + ((w.wide(bs) << CELL_SHIFT) >> 1), (b.cellY[bs] << CELL_SHIFT) + ((w.tall(bs) << CELL_SHIFT) >> 1)];
 }
 
 function distToBuilding2(w: World, i: number, bs: number): number {
   const u = w.units.col;
   const b = w.buildings.col;
-  return rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], w.buildingSize(b.type[bs]));
+  return rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs));
 }
 
 export type Emit = (to: number, ev: SimEvent) => void;

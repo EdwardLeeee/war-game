@@ -87,6 +87,12 @@ export const BuildingType = {
    * (`outpost_mode`); arrow towers may go within `Rules.towerReach.outpost` of it.
    */
   Outpost: 12,
+  /**
+   * A castle gate (D-096): one per opening in a town's ring of walls, its footprint that opening's
+   * cells (a line, `Rules.towns[size].castle.gates`; cellX, cellY its first cell). Owned with the
+   * town (NEUTRAL for a neutral town); open to its owner, closed to everyone else; gone when broken.
+   */
+  Gate: 13,
 } as const;
 export type BuildingType = (typeof BuildingType)[keyof typeof BuildingType];
 

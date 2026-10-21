@@ -193,12 +193,12 @@ export function nearestWalkable(w: World, x: number, y: number, prefer?: { cellX
 }
 
 /** Walkable cells touching a rectangle (8-neighbourhood), in cell order. */
-export function cellsAround(w: World, cellX: number, cellY: number, size: number): number[] {
+export function cellsAround(w: World, cellX: number, cellY: number, size: number, sizeY = size): number[] {
   const n = w.size;
   const out: number[] = [];
-  for (let y = cellY - 1; y <= cellY + size; y++) {
+  for (let y = cellY - 1; y <= cellY + sizeY; y++) {
     for (let x = cellX - 1; x <= cellX + size; x++) {
-      if (x >= cellX && x < cellX + size && y >= cellY && y < cellY + size) continue;
+      if (x >= cellX && x < cellX + size && y >= cellY && y < cellY + sizeY) continue;
       if (x < 0 || y < 0 || x >= n || y >= n) continue;
       if (w.grid[y * n + x] === 0) out.push(y * n + x);
     }

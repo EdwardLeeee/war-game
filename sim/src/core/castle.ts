@@ -29,6 +29,11 @@ export interface Castle {
   wall: Cell[];
   corner: Cell[];
   gate: Cell[];
+  /**
+   * The gate cells by opening (D-096: one gate building each): cells touching side by side are one
+   * opening, in the order their first cell comes in `gate`, each opening's cells in `gate` order.
+   */
+  gates: Cell[][];
   /** For each gate cell (same order), the open cell in front of it, outside the walls. */
   outside: Cell[];
   /** For each gate cell (same order), the first cell behind it, inside the walls. */
@@ -71,5 +76,30 @@ function place(l: CastleLayout, sx: number, sy: number): Castle {
   };
   const outside = gate.map((c): Cell => [c[0] + out(c)[0], c[1] + out(c)[1]]);
   const behind = gate.map((c): Cell => [c[0] - out(c)[0], c[1] - out(c)[1]]);
-  return { inside, wall, corner: l.corner.map(move), gate, outside, behind, garrison: l.garrison.map(move) };
+  return { inside, wall, corner: l.corner.map(move), gate, gates: openings(gate), outside, behind, garrison: l.garrison.map(move) };
+}
+
+/** Gate cells grouped into openings: cells that touch side by side (castle.gates). */
+function openings(gate: Cell[]): Cell[][] {
+  const group = gate.map((_, k) => k);
+  const find = (k: number): number => (group[k] === k ? k : (group[k] = find(group[k])));
+  for (let a = 0; a < gate.length; a++) {
+    for (let b = a + 1; b < gate.length; b++) {
+      if (Math.abs(gate[a][0] - gate[b][0]) + Math.abs(gate[a][1] - gate[b][1]) !== 1) continue;
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) group[Math.max(ra, rb)] = Math.min(ra, rb);
+    }
+  }
+  const out: Cell[][] = [];
+  const at = new Map<number, number>();
+  gate.forEach((c, k) => {
+    const r = find(k);
+    if (!at.has(r)) {
+      at.set(r, out.length);
+      out.push([]);
+    }
+    out[at.get(r)!].push(c);
+  });
+  return out;
 }

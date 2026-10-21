@@ -461,7 +461,7 @@ export class UnitSystem {
     for (const id of f.buildings) {
       const s = w.building(id);
       if (s < 0 || b.owner[s] === me) continue;
-      const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]));
+      const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
       if (d2 > r2 || d2 > best || (d2 === best && (high ? id < bestId : id > bestId))) continue;
       best = d2;
       bestId = id;
@@ -503,7 +503,7 @@ export class UnitSystem {
     const b = w.buildings.col;
     for (let s = 0; s < w.buildings.count; s++) {
       if (b.owner[s] === me) continue;
-      const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]));
+      const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
       if (d2 > r2) continue;
       const bx = (b.cellX[s] << CELL_SHIFT) + 512;
       const by = (b.cellY[s] << CELL_SHIFT) + 512;
@@ -669,10 +669,11 @@ export class UnitSystem {
         d2 = (tx - u.x[i]) * (tx - u.x[i]) + (ty - u.y[i]) * (ty - u.y[i]);
       } else {
         const ks = w.building(tid);
-        const size = w.buildingSize(b.type[ks]);
-        tx = (b.cellX[ks] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
-        ty = (b.cellY[ks] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
-        d2 = rectDist2(u.x[i], u.y[i], b.cellX[ks], b.cellY[ks], size);
+        const sx = w.wide(ks);
+        const sy = w.tall(ks);
+        tx = (b.cellX[ks] << CELL_SHIFT) + ((sx << CELL_SHIFT) >> 1);
+        ty = (b.cellY[ks] << CELL_SHIFT) + ((sy << CELL_SHIFT) >> 1);
+        d2 = rectDist2(u.x[i], u.y[i], b.cellX[ks], b.cellY[ks], sx, sy);
       }
       u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
       if (d2 <= info.range * info.range) {
@@ -686,7 +687,7 @@ export class UnitSystem {
             steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), info.speed);
           } else {
             const ks = w.building(tid);
-            steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () => cellsAround(w, b.cellX[ks], b.cellY[ks], w.buildingSize(b.type[ks])));
+            steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () => cellsAround(w, b.cellX[ks], b.cellY[ks], w.wide(ks), w.tall(ks)));
           }
         } else {
           steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
@@ -1161,10 +1162,11 @@ export class UnitSystem {
       } else {
         const bs = w.building(tid);
         const b = w.buildings.col;
-        const size = w.buildingSize(b.type[bs]);
-        tx = (b.cellX[bs] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
-        ty = (b.cellY[bs] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
-        d2 = rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], size);
+        const sx = w.wide(bs);
+        const sy = w.tall(bs);
+        tx = (b.cellX[bs] << CELL_SHIFT) + ((sx << CELL_SHIFT) >> 1);
+        ty = (b.cellY[bs] << CELL_SHIFT) + ((sy << CELL_SHIFT) >> 1);
+        d2 = rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], sx, sy);
       }
       u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
       if (d2 <= info.range * info.range) {
@@ -1201,9 +1203,7 @@ export class UnitSystem {
         } else {
           const bs = w.building(tid);
           const b = w.buildings.col;
-          steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () =>
-            cellsAround(w, b.cellX[bs], b.cellY[bs], w.buildingSize(b.type[bs])),
-          );
+          steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs)));
         }
       } else {
         steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
@@ -1286,7 +1286,7 @@ export class UnitSystem {
     }
     const bs = w.building(tid);
     const b = w.buildings.col;
-    for (const c of cellsAround(w, b.cellX[bs], b.cellY[bs], w.buildingSize(b.type[bs]))) {
+    for (const c of cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs))) {
       if (this.regions.of(w, c) === here) return -1;
     }
     return here;
@@ -1320,9 +1320,9 @@ export class UnitSystem {
         const o = b.owner[s];
         const bi = BUILDINGS[b.type[s]];
         if (o === u.owner[i] || o >= PLAYER_COUNT || b.hp[s] <= 0 || bi.walkable) continue;
-        const d = rectDist2(tx, ty, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]));
+        const d = rectDist2(tx, ty, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
         if (d >= reach) continue;
-        if (!cellsAround(w, b.cellX[s], b.cellY[s], w.buildingSize(b.type[s])).some((k) => this.regions.of(w, k) === here)) continue;
+        if (!cellsAround(w, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s)).some((k) => this.regions.of(w, k) === here)) continue;
         if (blocker < 0 || d < bestD || (d === bestD && b.id[s] < blocker)) {
           blocker = b.id[s];
           bestD = d;
@@ -1334,19 +1334,20 @@ export class UnitSystem {
     const c = known.cell;
     const best = fight && known.blocker >= 0 ? w.building(known.blocker) : -1;
     if (best >= 0) {
-      const size = w.buildingSize(b.type[best]);
-      const bx = (b.cellX[best] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
-      const by = (b.cellY[best] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1);
+      const sx = w.wide(best);
+      const sy = w.tall(best);
+      const bx = (b.cellX[best] << CELL_SHIFT) + ((sx << CELL_SHIFT) >> 1);
+      const by = (b.cellY[best] << CELL_SHIFT) + ((sy << CELL_SHIFT) >> 1);
       u.target[i] = b.id[best];
       u.facing[i] = dir16(bx - u.x[i], by - u.y[i]);
-      if (rectDist2(u.x[i], u.y[i], b.cellX[best], b.cellY[best], size) <= info.range * info.range) {
+      if (rectDist2(u.x[i], u.y[i], b.cellX[best], b.cellY[best], sx, sy) <= info.range * info.range) {
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
         return;
       }
       const cx = b.cellX[best];
       const cy = b.cellY[best];
-      steerTo(w, fields, i, bx, by, buildingKey(b.id[best]), info.speed, () => cellsAround(w, cx, cy, size));
+      steerTo(w, fields, i, bx, by, buildingKey(b.id[best]), info.speed, () => cellsAround(w, cx, cy, sx, sy));
       return;
     }
     if (c < 0) {
@@ -1676,11 +1677,10 @@ export class UnitSystem {
       if (dmg === 0) continue;
       b.hp[s] -= dmg;
       b.lastHurt[s] = w.tick;
-      const size = w.buildingSize(b.type[s]);
       hurt.push({
         owner: b.owner[s],
-        x: (b.cellX[s] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1),
-        y: (b.cellY[s] << CELL_SHIFT) + ((size << CELL_SHIFT) >> 1),
+        x: (b.cellX[s] << CELL_SHIFT) + ((w.wide(s) << CELL_SHIFT) >> 1),
+        y: (b.cellY[s] << CELL_SHIFT) + ((w.tall(s) << CELL_SHIFT) >> 1),
         id: b.id[s],
         by: this.buildingHitBy[s],
       });
@@ -1923,11 +1923,11 @@ function cellDist2(c: number, n: number, tx: number, ty: number): number {
   return dx * dx + dy * dy;
 }
 
-export function rectDist2(x: number, y: number, cellX: number, cellY: number, size: number): number {
+export function rectDist2(x: number, y: number, cellX: number, cellY: number, size: number, sizeY = size): number {
   const x0 = cellX << CELL_SHIFT;
   const y0 = cellY << CELL_SHIFT;
   const x1 = (cellX + size) << CELL_SHIFT;
-  const y1 = (cellY + size) << CELL_SHIFT;
+  const y1 = (cellY + sizeY) << CELL_SHIFT;
   const dx = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
   const dy = y < y0 ? y0 - y : y > y1 ? y - y1 : 0;
   return dx * dx + dy * dy;
