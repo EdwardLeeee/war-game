@@ -1048,9 +1048,17 @@ export class MockPort implements SimPort {
       case "autocast":
         for (const u of own(cmd.u)) u.flags = cmd.on ? u.flags | UnitFlag.Autocast : u.flags & ~UnitFlag.Autocast;
         break;
-      // 隊形 (D-027): only the flag; the fake world does not re-form the troops.
+      // 隊形 (D-027): only the flag; the fake world does not re-form the troops. `face` (D-095):
+      // they turn that way, and one not 0-15 is turned down, as by the simulation.
       case "formation":
-        for (const u of own(cmd.u)) u.flags = cmd.loose ? u.flags | UnitFlag.Loose : u.flags & ~UnitFlag.Loose;
+        if (cmd.face !== undefined && (!Number.isInteger(cmd.face) || cmd.face < 0 || cmd.face > 15)) {
+          reject(Reject.InvalidTarget);
+          break;
+        }
+        for (const u of own(cmd.u)) {
+          u.flags = cmd.loose ? u.flags | UnitFlag.Loose : u.flags & ~UnitFlag.Loose;
+          if (cmd.face !== undefined) u.facing = cmd.face;
+        }
         break;
       case "cast": {
         const mage = own([cmd.u])[0];

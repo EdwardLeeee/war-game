@@ -6,9 +6,11 @@
 //   3. else the way these soldiers were last sent (移動 or 攻擊);
 //   4. else the enemy's main city, if this side has seen it (ceo: no peeking into the fog);
 //   5. else the way they face now (null: the simulation's own re-forming in place keeps it).
-// The game then walks them one cell that way (game.ts reform()): the simulation lays a formation
-// out facing the way it walks, spearmen in front, ranged next, mages last. Not with an enemy near
-// (enemyTooClose): on the way they do not fight back. Cells; pure, for the unit tests.
+// The game then has them re-form facing it (game.ts reform()), spearmen in front, ranged next,
+// mages last: standing together (oneCluster), the simulation's re-forming in place with that
+// `face` (D-095 B); farther apart, a walk of one cell that way, so they gather into one formation
+// (ceo: 「整隊沒有排成一個」 is what the user minds). Not with an enemy near (enemyTooClose).
+// Cells; pure, for the unit tests.
 
 export interface Spot {
   x: number;
@@ -86,6 +88,32 @@ export const REFORM_CLEAR_CELLS = 8;
 export function enemyTooClose(soldiers: readonly Spot[], inSight: readonly Spot[]): boolean {
   const r2 = REFORM_CLEAR_CELLS * REFORM_CLEAR_CELLS;
   return soldiers.some((s) => inSight.some((e) => (e.x - s.x) ** 2 + (e.y - s.y) ** 2 < r2));
+}
+
+/**
+ * Units standing this close (cells), or linked through others, are re-formed in place as one
+ * formation by the simulation when the formation command has a `face` (sim/src/core/commands.ts;
+ * ceo 2026-10-21: 8 cells, enough for spearmen who went 6 cells after the enemy). Farther apart, the
+ * game walks them together instead.
+ */
+export const REFORM_LINK_CELLS = 8;
+
+/** Whether the soldiers stand as one lot: each linked to the others within REFORM_LINK_CELLS, through others if need be. */
+export function oneCluster(spots: readonly Spot[]): boolean {
+  if (spots.length === 0) return false;
+  const r2 = REFORM_LINK_CELLS * REFORM_LINK_CELLS;
+  const reached = new Set<number>([0]);
+  const todo = [0];
+  while (todo.length > 0) {
+    const a = spots[todo.pop() as number];
+    spots.forEach((b, j) => {
+      if (!reached.has(j) && (a.x - b.x) ** 2 + (a.y - b.y) ** 2 <= r2) {
+        reached.add(j);
+        todo.push(j);
+      }
+    });
+  }
+  return reached.size === spots.length;
 }
 
 /** The cell a cell ahead of the centre that way: where the formation's front row forms up. */
