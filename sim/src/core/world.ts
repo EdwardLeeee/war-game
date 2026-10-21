@@ -46,6 +46,10 @@ export const UNIT_COLS = [
   // Ticks this unit stood to let lower ranks pass on its move (MARCH_ORDER, D-095); in the hash
   // only while MARCH_ORDER is on.
   "waited",
+  // Giving up a place it does not get to (SLOT_GIVE_UP, D-095): the nearest it came to its place
+  // on this move or retreat (fixed point, 0 none yet) and the ticks since it last came nearer; in
+  // the hash only while SLOT_GIVE_UP is on.
+  "slotBest", "slotIdle",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 /** Unit types counted per player in `trained` and `lost` (UnitType 0..5; the hash leaves out cavalry while CAVALRY is off). */

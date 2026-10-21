@@ -73,10 +73,19 @@ export function openArea(g: Game, size: number): { x: number; y: number } {
  * going for the mage).
  */
 export function switchedOff(sw: { on: boolean } | { on: boolean }[], body: () => void): () => void {
+  return switched(sw, false, body);
+}
+
+/** The same with switches on: for tests of a rule that is off for now (D-095: MARCH_ORDER). */
+export function switchedOn(sw: { on: boolean } | { on: boolean }[], body: () => void): () => void {
+  return switched(sw, true, body);
+}
+
+function switched(sw: { on: boolean } | { on: boolean }[], on: boolean, body: () => void): () => void {
   const all = Array.isArray(sw) ? sw : [sw];
   return () => {
     const was = all.map((x) => x.on);
-    for (const x of all) x.on = false;
+    for (const x of all) x.on = on;
     try {
       body();
     } finally {

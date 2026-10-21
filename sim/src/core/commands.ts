@@ -798,6 +798,8 @@ function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: n
 
 /** Units standing this close (or closer, through one another) re-form as one formation. */
 const REFORM_LINK = 3 * CELL;
+/** With `face` (D-095), this close: those who spread out chasing after a fight (6 cells) re-form as one. */
+const FACE_LINK = 8 * CELL;
 
 /**
  * The `formation` command re-forms the units named in it with the new spacing (round 3, D-027),
@@ -809,7 +811,8 @@ const REFORM_LINK = 3 * CELL;
  *   melee stand from its ranged and mages (one kind only: toward the enemy's main city);
  *   a unit standing alone only keeps the new flag.
  * Farmers, units casting or attacking something, and new units walking to a rally point
- * only keep the new flag. With `face` (dir16, D-095) both kinds face that way instead.
+ * only keep the new flag. With `face` (dir16, D-095) both kinds face that way instead, and
+ * standing units within FACE_LINK of one another are one formation.
  */
 function reform(ctx: CommandContext, slots: number[], face?: number): void {
   const { w } = ctx;
@@ -827,14 +830,15 @@ function reform(ctx: CommandContext, slots: number[], face?: number): void {
     if (goal >= 0) formation(ctx, members, goal % n, Math.trunc(goal / n), u.order[s], face);
   }
   const idle = slots.filter((s) => soldier(s) && !done.has(s) && u.order[s] === Order.None);
-  // Clusters: union-find over pairs within REFORM_LINK, roots kept at the lowest slot.
+  // Clusters: union-find over pairs within REFORM_LINK (FACE_LINK with `face`), roots kept at the lowest slot.
+  const link = face === undefined ? REFORM_LINK : FACE_LINK;
   const root = idle.map((_, k) => k);
   const find = (k: number): number => (root[k] === k ? k : (root[k] = find(root[k])));
   for (let a = 0; a < idle.length; a++) {
     for (let b = a + 1; b < idle.length; b++) {
       const dx = u.x[idle[a]] - u.x[idle[b]];
       const dy = u.y[idle[a]] - u.y[idle[b]];
-      if (dx * dx + dy * dy > REFORM_LINK * REFORM_LINK) continue;
+      if (dx * dx + dy * dy > link * link) continue;
       const ra = find(a);
       const rb = find(b);
       if (ra !== rb) root[Math.max(ra, rb)] = Math.min(ra, rb);
@@ -1024,5 +1028,7 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     u.stuck[s] = 0;
     u.fireBack[s] = -1;
     u.waited[s] = 0;
+    u.slotBest[s] = 0;
+    u.slotIdle[s] = 0;
   });
 }

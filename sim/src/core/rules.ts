@@ -351,6 +351,18 @@ export const AVENGE = { on: true, reach: 8 * CELL };
  * it reads.
  */
 export const FIRE_BACK = { on: true, reach: 9 * CELL, leash: 8 * CELL };
+/**
+ * Giving up a place it does not get to (D-095; the client's e2e, after R6-51's ridges): a unit on
+ * a move or retreat, with no target, within its formation (no farther from the group's goal cell
+ * than its place is, plus DIRECT_STEER), that has not come `progress` (3/8 of a cell) nearer its
+ * place than it ever was for `ticks` ticks (3 s), counts as arrived where it stands. Shorter or
+ * more, and units crossing a loose formation turned round in place gave up halfway (ranks out of
+ * order); less, and the shuttling one still took 530 ticks. A ranged unit whose place was
+ * behind a ridge's end walked the group's way round to the goal cell and then shuttled between
+ * the way and its place, behind mates already standing, for good. The unit columns it keeps
+ * (slotBest, slotIdle) are in the hash only while it is on.
+ */
+export const SLOT_GIVE_UP = { on: true, ticks: 60, progress: 384 };
 /** A formation's ranks (GDD section 9): melee in front (0), then ranged (1), then mages (2). */
 export const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
 /**
@@ -360,9 +372,11 @@ export const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.M
  * those of them that walk, along its way to its place; at most `maxWait` ticks a command. Lower
  * ranks that stand do not count, so a front that stopped holds no one up, and once one of the
  * group fights nobody waits. A retreat is left as it is. The unit column it keeps (waited) is in
- * the hash only while it is on.
+ * the hash only while it is on. Off for now (ceo 2026-10-21): with orders sent again on the way,
+ * soldiers far behind in them, and all at the slowest one's speed, its marches came strung out
+ * and lost (README); it is to be redesigned.
  */
-export const MARCH_ORDER = { on: true, margin: CELL >> 1, maxWait: 10 * S };
+export const MARCH_ORDER = { on: false, margin: CELL >> 1, maxWait: 10 * S };
 /** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
 export const SHORT_CANNON = { on: true, range: 7 * CELL };
 /**
