@@ -339,6 +339,18 @@ export const DODGE = { on: true, margin: 256, farmers: false };
  * The unit column it keeps (avenge) is in the hash only while it is on.
  */
 export const AVENGE = { on: true, reach: 8 * CELL };
+/**
+ * Giving up a place it does not get to (D-095; the client's e2e, after R6-51's ridges): a unit on
+ * a move or retreat, with no target, within its formation (no farther from the group's goal cell
+ * than its place is, plus DIRECT_STEER), that has not come `progress` (3/8 of a cell) nearer its
+ * place than it ever was for `ticks` ticks (3 s), counts as arrived where it stands. Shorter or
+ * more, and units crossing a loose formation turned round in place gave up halfway (ranks out of
+ * order); less, and the shuttling one still took 530 ticks. A ranged unit whose place was
+ * behind a ridge's end walked the group's way round to the goal cell and then shuttled between
+ * the way and its place, behind mates already standing, for good. The unit columns it keeps
+ * (slotBest, slotIdle) are in the hash only while it is on.
+ */
+export const SLOT_GIVE_UP = { on: true, ticks: 60, progress: 384 };
 /** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
 export const SHORT_CANNON = { on: true, range: 7 * CELL };
 /**

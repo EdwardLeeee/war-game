@@ -1022,5 +1022,7 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     u.speedCap[s] = order === Order.Retreat && RETREAT_OWN_SPEED.on ? 0 : speed;
     u.target[s] = -1;
     u.stuck[s] = 0;
+    u.slotBest[s] = 0;
+    u.slotIdle[s] = 0;
   });
 }
