@@ -1,0 +1,1649 @@
+{
+ "traces": [
+  {
+   "name": "base-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-push-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map fixed",
+   "a": {}
+  },
+  {
+   "name": "base-push-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map fixed",
+   "a": {}
+  },
+  {
+   "name": "base-push-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random",
+   "a": {}
+  },
+  {
+   "name": "base-push-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random",
+   "a": {}
+  },
+  {
+   "name": "base-push-auto-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map fixed",
+   "a": {}
+  },
+  {
+   "name": "base-push-auto-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map fixed",
+   "a": {}
+  },
+  {
+   "name": "base-push-auto-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map random",
+   "a": {}
+  },
+  {
+   "name": "base-push-auto-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map random",
+   "a": {}
+  },
+  {
+   "name": "tscout-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-push-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map fixed",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-push-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map fixed",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-push-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-push-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-push-auto-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map fixed",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-push-auto-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map fixed",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-push-auto-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map random",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-push-auto-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map random",
+   "a": {
+    "townScout": true
+   }
+  },
+  {
+   "name": "tscout-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "townScout": true
+   },
+   "b": {}
+  },
+  {
+   "name": "tscout-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "townScout": true
+   },
+   "b": {}
+  },
+  {
+   "name": "tscout-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "townScout": true
+   },
+   "b": {}
+  },
+  {
+   "name": "tscout-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "townScout": true
+   },
+   "b": {}
+  },
+  {
+   "name": "ruins-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-push-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map fixed",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-push-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map fixed",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-push-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-push-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-push-auto-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map fixed",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-push-auto-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map fixed",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-push-auto-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map random",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-push-auto-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map random",
+   "a": {
+    "ruinsAgain": true
+   }
+  },
+  {
+   "name": "ruins-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "ruinsAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "ruins-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "ruinsAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "ruins-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "ruinsAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "ruins-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "ruinsAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "mine-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-push-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map fixed",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-push-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map fixed",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-push-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-push-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-push-auto-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map fixed",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-push-auto-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map fixed",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-push-auto-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map random",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-push-auto-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map random",
+   "a": {
+    "mineMove": true
+   }
+  },
+  {
+   "name": "mine-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "mineMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "mine-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "mineMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "mine-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "mineMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "mine-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "mineMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "safe-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-push-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map fixed",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-push-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map fixed",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-push-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-push-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-push-auto-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map fixed",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-push-auto-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map fixed",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-push-auto-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map random",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-push-auto-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map random",
+   "a": {
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "safe-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "buildSafe": true
+   },
+   "b": {}
+  },
+  {
+   "name": "safe-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "buildSafe": true
+   },
+   "b": {}
+  },
+  {
+   "name": "safe-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "buildSafe": true
+   },
+   "b": {}
+  },
+  {
+   "name": "safe-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "buildSafe": true
+   },
+   "b": {}
+  },
+  {
+   "name": "all4-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-push-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map fixed",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-push-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map fixed",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-push-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-push-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-push-auto-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map fixed",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-push-auto-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map fixed",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-push-auto-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map random",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-push-auto-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map random",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   }
+  },
+  {
+   "name": "all4-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   },
+   "b": {}
+  },
+  {
+   "name": "all4-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   },
+   "b": {}
+  },
+  {
+   "name": "all4-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   },
+   "b": {}
+  },
+  {
+   "name": "all4-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   },
+   "b": {}
+  }
+ ],
+ "scripted": [
+  {
+   "name": "base",
+   "a": {},
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "tscout",
+   "a": {
+    "townScout": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "ruins",
+   "a": {
+    "ruinsAgain": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "mine",
+   "a": {
+    "mineMove": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "safe",
+   "a": {
+    "buildSafe": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "all4",
+   "a": {
+    "townScout": true,
+    "ruinsAgain": true,
+    "mineMove": true,
+    "buildSafe": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
