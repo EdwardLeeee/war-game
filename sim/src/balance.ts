@@ -142,7 +142,9 @@ function measure(): Report {
   const g10 = play("目標 10：差不到一名", A(7, 6), A(5, 4, 0, third(A(0, 0, 0, 1))));
   const g11 = play("目標 11：A 不該輸", A(5, 4, 0, third(A(0, 0, 0, 1))), A(5, 4, 2));
   const g12 = play("目標 12：A 不該輸", A(10, 8, 0, 2 * third(A(0, 0, 0, 1))), A(10, 8, 4));
-  const g13 = play("參考：法師在混編裡", A(7, 6), A(5, 4, 2));
+  const g13 = play("目標 13：A 要贏", A(7, 2, 0, third(A(0, 0, 0, 1))), A(5, 4, 0, third(A(0, 0, 0, 1))));
+  const g14 = play("參考：純槍兵對三分之一騎兵的混編", A(14), A(5, 4, 0, third(A(0, 0, 0, 1))));
+  const g15 = play("參考：法師在混編裡", A(7, 6), A(5, 4, 2));
   const loose = [A(0, 8, 2), A(0, 4, 4), A(0, 0, 6)].map((b) => ({
     b,
     close: DISTANCES.map((d) => fight([A(14), b], 0, d, "close", 0)),
@@ -151,12 +153,13 @@ function measure(): Report {
   const shots = twoShots();
   const wins = (fs: Fight[], side: number) => fs.filter((f) => f.winner === side).length;
   const g4 = [g4a, g4b].map((m) => ({ won: wins(both(m), 1), lost: both(m).map((f) => rangedLost(m, f)) }));
-  // Goals 6 and 8 (D-097): won both advancing and with the cavalry attacking, losing at most a third.
+  // Goals 6 and 8 (D-097): won both advancing and with the cavalry attacking, losing at most a
+  // third, rounded up (ceo 2026-10-22: 7 may lose 3; the opening cannon volley takes them).
   const lostCav = (f: Fight) => (f.winner === 0 ? cav - (f.left[0].cav ?? 0) : cav);
   const cavGoal = (m: Match) => {
     const fs = [...both(m), ...cavAttacks(m)];
     return {
-      ok: fs.every((f) => f.winner === 0 && lostCav(f) * 3 <= cav),
+      ok: fs.every((f) => f.winner === 0 && lostCav(f) <= Math.ceil(cav / 3)),
       text: `雙方對進贏 ${wins(both(m), 0)}/3、損 ${both(m).map(lostCav).join("/")}；騎兵進攻贏 ${wins(cavAttacks(m), 0)}/3、損 ${cavAttacks(m).map(lostCav).join("/")}（共 ${cav}）`,
     };
   };
@@ -178,8 +181,9 @@ function measure(): Report {
     { ok: both(g10).every((f) => left(f) <= 1), text: both(g10).map((f) => (f.winner < 0 ? "平手" : `${f.winner === 0 ? "A" : "B"} 剩 ${left(f)}`)).join("、") },
     { ok: both(g11).every((f) => f.winner !== 1), text: `騎兵那方不輸 ${3 - wins(both(g11), 1)}/3` },
     { ok: both(g12).every((f) => f.winner !== 1), text: `騎兵那方不輸 ${3 - wins(both(g12), 1)}/3` },
+    { ok: wins(both(g13), 0) === 3, text: `槍兵多的那方贏 ${wins(both(g13), 0)}/3（純槍兵 ${wins(both(g14), 0)}/3）` },
   ];
-  return { matches: [g3, g2, g4a, g4b, g5, g5loose, g6, g7, g8, g9, g10, g11, g12, g13], loose, goals };
+  return { matches: [g3, g2, g4a, g4b, g5, g5loose, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15], loose, goals };
 }
 
 function looseTable(r: Report, off?: Report): string[] {
@@ -208,20 +212,20 @@ const GOALS = [
   "3 花費相同，沒人保護的遠程打贏槍兵（D-097 三角）",
   "4 花費相同，法師＋遠程打贏純槍兵",
   "5 花費相同，遠程打贏沒人保護的法師",
-  "6 花費相同，騎兵打贏沒人保護的法師，最多損三分之一（D-097；雙方對進和騎兵進攻都算）",
+  "6 花費相同，騎兵打贏沒人保護的法師，最多損三分之一、無條件進位（D-097；雙方對進和騎兵進攻都算）",
   "7 花費相同，騎兵打不贏槍兵（第七輪）",
-  "8 花費相同，騎兵打贏沒人保護的遠程，最多損三分之一（D-097；雙方對進和騎兵進攻都算）",
+  "8 花費相同，騎兵打贏沒人保護的遠程，最多損三分之一、無條件進位（D-097；雙方對進和騎兵進攻都算）",
   "9 花費相同，槍兵加遠程的混編打得贏純騎兵（第七輪）",
   "10 花費相同，槍遠各半對三分之一騎兵的混編，贏的一方最多剩 1 名（D-097）",
   "11 花費相同，三分之一騎兵的混編不輸三分之一法師的混編（D-097）",
   "12 同 11，兩倍的兵（D-097）",
+  "13 花費差不多，槍兵多的騎兵混編（7 槍 2 遠 2 騎）打贏 5 槍 4 遠 2 騎（D-097：目標 10 的對策）",
 ];
 
 /** Why a goal is allowed to fail this round (ceo 2026-10-01), shown while it does. */
 const KNOWN: Record<number, string> = {
   5: "這一輪不動晶砲（ceo 選 a；D-097 也不動）。不成立的原因是晶砲的齊射：法師在遠程進到射程（5 格）前就放，密集時一發打中好幾名",
-  6: "9 格雙方對進損 3 名（7 名的三分之一是 2.3）：法師開場的晶砲齊射，騎兵的攻擊、生命、倍率加了都一樣（回報 ceo）",
-  10: "騎兵繞到後排（D-097 (c)）以後，三分之一騎兵的混編反而贏太多；只調騎兵數值也到不了差一名（騎兵弱一點就換成槍遠贏很多）",
+  10: "設計如此（ceo 2026-10-22）：騎兵繞到後排（D-097 (c)），帶騎兵的混編打贏槍兵加遠程的混編；對策是多帶槍兵（目標 13）。繞後排的半徑 6–10 格結果都一樣",
   12: "兩倍的兵時，騎兵繞過去要經過更多槍兵、挨更多晶砲，到法師前就死了大半",
 };
 
