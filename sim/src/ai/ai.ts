@@ -2119,6 +2119,22 @@ export interface HardPlan {
    * spearmen (spearmen hit cavalry x3) (false: cavalry not counted, as before).
    */
   counterCavalry: boolean;
+  /**
+   * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
+   * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
+   * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
+   */
+  townScout: boolean;
+  /**
+   * D-086 A4 (a09c2367: two towns it plundered stayed ruins in its view, out of sight, though neutral again from minute
+   * 14): a town it last saw in ruins, out of sight now and past the time it read off the ruins, is worth going to see
+   * again (false: as before).
+   */
+  ruinsAgain: boolean;
+  /** D-086 A4 (a09c2367: one mine all game, the gold by it gone at minute 31, none gathered after 36): no gold left within MINE_NEAR cells of its mines, another mine by the nearest gold it knows of (false: as before). */
+  mineMove: boolean;
+  /** D-086 A4 (691b4349: a barracks put down three times where the enemy army stood, paid for each): no new building, nor farmers to a site, with enemy soldiers in sight within BUILD_SAFE cells of it (false: as before). */
+  buildSafe: boolean;
 }
 
 export const HARD: HardPlan = {
@@ -2171,7 +2187,19 @@ export const HARD: HardPlan = {
   towerSpare: 150,
   towerFirst: false,
   counterCavalry: false,
+  townScout: false,
+  ruinsAgain: false,
+  mineMove: false,
+  buildSafe: false,
 };
+/** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
+const TOWN_SCOUT_AGAIN = 2 * 1200;
+const TOWN_SCOUT_EVERY = 200;
+/** D-086 A4 (plan.mineMove): gold this near (cells) a mine is its own; at most this many mines. */
+const MINE_NEAR = 6;
+const MINE_MOST = 3;
+/** D-086 A4 (plan.buildSafe): enemy soldiers this near (cells) a spot. */
+const BUILD_SAFE = 10;
 /** D-086 A4 (plan.counterCavalry): this share (percent) of cavalry among the enemy soldiers it knows of. */
 const CAVALRY_MIX = 30;
 /** D-086 A4 (plan.cavalryCounter): enemy soldiers it must know of before it weighs their mix. */
@@ -2285,6 +2313,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const enemyHome = mem.enemy;
   const rules = know.rules;
   const real = (u: number, v: number) => fromCanon(know.frame, u, v);
+  /** D-086 A4 (plan.townScout): the points it looks at, in player 0's frame; the soldier, and when the next may go or it was last told. */
+  const townGrid = [1, 3, 5, 7].flatMap((v) => [1, 3, 5, 7].map((u) => real((know.map.size * u) >> 3, (know.map.size * v) >> 3)));
+  let townScoutId = -1;
+  let townScoutAgain = 0;
+  let townScoutMove = -100000;
   const frame = (x: number, y: number) => toCanon(know.frame, x, y);
   /** Order of a point in player 0's frame (for ties: player 1 breaks them the mirror-image way). */
   const rank = (x: number, y: number) => {
@@ -2569,7 +2602,35 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // Random maps (D-074): one soldier scouts (scout.ts) and is left out of everything else.
       const allSoldiers = mine.filter((u) => u.type !== UnitType.Farmer);
       scout.think(tick, allSoldiers, (u) => ![...townGuards.values()].some((ids) => ids.includes(u.id)), out);
-      const soldiers = scout.id < 0 ? allSoldiers : allSoldiers.filter((u) => u.id !== scout.id);
+      // D-086 A4 (plan.townScout): once the enemy's main city is known on a random map, one soldier goes on looking for towns.
+      if (plan.townScout && mem.random && mem.known === Known.City) {
+        if (townScoutId >= 0 && !allSoldiers.some((u) => u.id === townScoutId)) {
+          townScoutId = -1;
+          townScoutAgain = tick + TOWN_SCOUT_AGAIN;
+        }
+        const left = townGrid.filter((p) => (view.placement[p.y * n + p.x] & PlaceBit.Unexplored) !== 0);
+        if (left.length === 0) townScoutId = -1;
+        else {
+          if (townScoutId < 0 && tick >= townScoutAgain) {
+            const guards = new Set([...townGuards.values()].flat());
+            const kind = (u: HardUnit) => (u.type === UnitType.Cavalry ? 0 : u.type === UnitType.Spearman ? 1 : 2);
+            const pick = allSoldiers
+              .filter((u) => u.id !== scout.id && !guards.has(u.id) && u.type !== UnitType.Mage && u.order !== Order.Garrison)
+              .sort((a, b) => kind(a) - kind(b) || dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.fx, a.fy) - rank(b.fx, b.fy))[0];
+            if (pick !== undefined) {
+              townScoutId = pick.id;
+              townScoutMove = -100000;
+            }
+          }
+          const s = allSoldiers.find((u) => u.id === townScoutId);
+          if (s !== undefined && tick - townScoutMove >= TOWN_SCOUT_EVERY) {
+            const to = left.sort((a, b) => dist2(a.x, a.y, s.x, s.y) - dist2(b.x, b.y, s.x, s.y) || rank(a.x, a.y) - rank(b.x, b.y))[0];
+            out.push({ c: "retreat", u: [s.id], x: to.x, y: to.y });
+            townScoutMove = tick;
+          }
+        }
+      }
+      const soldiers = allSoldiers.filter((u) => u.id !== scout.id && u.id !== townScoutId);
       const byId = new Map<number, HardUnit>();
       for (const u of soldiers) byId.set(u.id, u);
       const has = (t: number) => own.some((b) => b.type === t);
@@ -2874,6 +2935,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       };
       for (const site of own.filter((b) => b.progress < 1000)) {
         if (farmers.some((f) => f.order === Order.Build && f.orderTarget === site.id)) continue;
+        // D-086 A4 (plan.buildSafe): no farmers to a site with enemies by it.
+        if (plan.buildSafe && foes.some((f) => dist2(f.x, f.y, site.x, site.y) <= BUILD_SAFE * BUILD_SAFE)) continue;
         // D-086 A4: no farmers to a tower with enemies by it; later, once they are gone.
         if (site.type === BuildingType.ArrowTower && (plan.towers > 0 || plan.townTowers > 0) && foeBy(site.x, site.y)) continue;
         const crew = gatherers.slice(0, 2);
@@ -2920,6 +2983,18 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
+        // D-086 A4 (plan.mineMove): the gold by its mines gone: another by the nearest gold it knows of.
+        else if (plan.mineMove && farmers.length >= 14 && count(BuildingType.Mine) < MINE_MOST) {
+          const mines = own.filter((b) => b.type === BuildingType.Mine);
+          let near = false;
+          for (let r = 0; r < view.nodes.length && !near; r += NODE_STRIDE) {
+            if (view.nodes[r + NodeField.kind] !== NodeKind.GoldMine || view.nodes[r + NodeField.amount] <= 0) continue;
+            const x = view.nodes[r + NodeField.cellX];
+            const y = view.nodes[r + NodeField.cellY];
+            near = mines.some((m) => dist2(m.x, m.y, x, y) <= MINE_NEAR * MINE_NEAR);
+          }
+          if (!near) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
+        }
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
           add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
@@ -2929,6 +3004,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // D-086 A4: a tower only where it was picked.
           const spot = p.type === BuildingType.ArrowTower ? p.at : (spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20)));
           if (spot === null) continue;
+          // D-086 A4 (plan.buildSafe): not where enemy soldiers stand by; the next on the list instead.
+          if (plan.buildSafe && foes.some((f) => dist2(f.x, f.y, spot.x, spot.y) <= BUILD_SAFE * BUILD_SAFE)) continue;
           const cost = rules.buildings[p.type].cost;
           if (!afford(cost)) {
             reserve.food += cost.food;
@@ -3058,6 +3135,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         } else if (!(once && plunderedTown(id))) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
         // Plundered before and it cannot pay yet: it waits (a plunder would be refused).
       }
+      /** D-086 A4 (plan.ruinsAgain): last seen in ruins, out of sight now, and past the time read off them: maybe neutral again. */
+      const staleRuin = (id: number, t: HardTown) => plan.ruinsAgain && t.state === TownState.Ruins && !t.visible && restoreAt.has(id) && tick >= restoreAt.get(id)!;
       // Enemy forts (D-080, D-081).
       const forts = enemyForts(view, player, rules);
       /** A town under the arrows or guards of an enemy fort (D-081). */
@@ -3682,7 +3761,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const t = towns.get(targetTown);
           // Forts by the army too strong for it (D-081): it breaks off as from a stronger enemy.
           const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, ac.x, ac.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army));
-          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "home";
+          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || (t.state === TownState.Ruins && !staleRuin(targetTown, t))) mode = "home";
           else if (standing * 5 < armyAtStart * 2 || local > armyWorth || byArmy.length > 0) {
             razing = -1;
             remember(army, byArmy);
@@ -3898,7 +3977,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           let pick = -1;
           let pickD = 0;
           for (const [id, t] of towns) {
-            if (t.state === TownState.Ruins || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
+            if ((t.state === TownState.Ruins && !staleRuin(id, t)) || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
             if (tick < (restoreAt.get(id) ?? 0)) continue;
             // D-081: not straight back to a town it fell back from.
             if (tick < (townRest.get(id) ?? 0)) continue;

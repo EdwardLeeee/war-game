@@ -2238,3 +2238,71 @@ test("D-086 A4 (plan.counterCavalry): against an enemy with many cavalry hard le
   assert.equal(first(true), UnitType.Spearman, "8 cavalry in sight: spearmen first");
   assert.equal(first(false), UnitType.Ranged, "off: cavalry not counted, ranged first as before");
 });
+
+test("D-086 A4 (plan.mineMove): the gold by its mine gone, hard puts up another mine by the nearest gold left; off, as before", () => {
+  const built = (mineMove: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 13 * 1200;
+    const at = (type: BuildingType, x: number, y: number) => w.addBuilding(0, type, s0.cellX + x, s0.cellY + y, rules().buildings[type].hp, 1000);
+    for (const [t, x, y] of [[BuildingType.Barracks, 4, -8], [BuildingType.Barracks, 8, -8], [BuildingType.Range, 12, -8], [BuildingType.Range, 16, -8], [BuildingType.MageHall, 4, -13], [BuildingType.Granary, -6, -6], [BuildingType.LumberCamp, -10, 2]] as [BuildingType, number, number][]) at(t, x, y);
+    for (let k = 0; k < 10; k++) at(BuildingType.Farm, -14 + 3 * (k % 3), -14 + 3 * Math.trunc(k / 3));
+    for (let k = 0; k < 12; k++) at(BuildingType.House, -8 + 3 * (k % 6), 6 + 3 * Math.trunc(k / 6));
+    // Its mine by the nearest gold, all of that gold gone; more gold further out.
+    let first = -1;
+    let bestD = 0;
+    for (let i = 0; i < w.nodeKind.length; i++) {
+      if (w.nodeKind[i] !== NodeKind.GoldMine) continue;
+      const d = (w.nodeX[i] - s0.cellX) ** 2 + (w.nodeY[i] - s0.cellY) ** 2;
+      if (first < 0 || d < bestD) {
+        first = i;
+        bestD = d;
+      }
+    }
+    w.addBuilding(0, BuildingType.Mine, w.nodeX[first] + 1, w.nodeY[first] + 1, rules().buildings[BuildingType.Mine].hp, 1000);
+    for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.GoldMine && (w.nodeX[i] - w.nodeX[first]) ** 2 + (w.nodeY[i] - w.nodeY[first]) ** 2 <= 49) w.nodeAmount[i] = 0;
+    for (let k = 0; k < 30; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 10), s0.cellY - 2 - Math.trunc(k / 10));
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    w.res.set([700, 600, 300, 0], 0);
+    // A soldier of its own by the next gold (some 25 cells off): it has seen it and the ground there.
+    let next = -1;
+    let nextD = 0;
+    for (let i = 0; i < w.nodeKind.length; i++) {
+      if (w.nodeKind[i] !== NodeKind.GoldMine || w.nodeAmount[i] <= 0) continue;
+      const d = (w.nodeX[i] - s0.cellX) ** 2 + (w.nodeY[i] - s0.cellY) ** 2;
+      if (next < 0 || d < nextD) {
+        next = i;
+        nextD = d;
+      }
+    }
+    put(g, 0, UnitType.Spearman, w.nodeX[next] + 2, w.nodeY[next] + 2);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, mineMove }).think(buildView(g, 0));
+    return out.some((c) => c.c === "build" && c.type === BuildingType.Mine);
+  };
+  assert.equal(built(true), true, "on: a new mine");
+  assert.equal(built(false), false, "off: none, as before");
+});
+
+test("D-086 A4 (plan.buildSafe): with enemy soldiers in sight by the spot, hard puts nothing down there; off, as before", () => {
+  const builds = (buildSafe: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 4 * 1200;
+    for (let k = 0; k < 8; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + k, s0.cellY + 4);
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    // Enemy spearmen all round its main city, in sight.
+    for (let k = 0; k < 12; k++) put(g, 1, UnitType.Spearman, s0.cellX - 6 + k, s0.cellY - 3);
+    w.res.set([1000, 1000, 1000, 0], 0);
+    g.fog.update(w);
+    return hardAi(g, { dodge: false, buildSafe }).think(buildView(g, 0)).some((c) => c.c === "build");
+  };
+  assert.equal(builds(false), true, "off: it builds, as before");
+  assert.equal(builds(true), false, "on: nothing put down by the enemy");
+});
