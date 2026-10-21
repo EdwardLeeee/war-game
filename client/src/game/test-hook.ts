@@ -89,8 +89,11 @@ export interface GameHook {
   groupInfo(): { ids: number[]; want: Record<number, number>; saved: number; refill: boolean; recruits: number[] }[];
   /** Fake world only: remove own units (as if they fell). */
   remove(ids: number[]): void;
-  /** Arrows drawn from `shot` events so far (round 7). */
+  /** Arrows drawn from `shot` events so far (round 7; D-096: each of a volley's `n`). */
   shots(): number;
+  /** D-096: openings drawn as broken gates, and units drawn up on a castle's wall in the last frame. */
+  brokenGates(): number;
+  wallLifted(): number;
   /** The units' atlases (D-085): which, how many pages, units drawn from them; null: the shapes. */
   art(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null;
   /** 你的陸 this game was started with (the computer wears the other). */
@@ -273,6 +276,8 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.remove(ids);
     },
     shots: () => game.shotsForTest,
+    brokenGates: () => game.brokenGatesForTest,
+    wallLifted: () => game.wallLiftedForTest,
     townWalls: () => game.townWallsForTest,
     art: () => game.artForTest,
     culture: () => game.culture,

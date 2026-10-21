@@ -1101,6 +1101,18 @@ button.order-retreat {
   line-height: 1.15;
 }
 
+/* 上城牆 (D-096): war-game-ui's icon over the words, small enough for the button's height. */
+.cmds .cmd-ic {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  flex: none;
+}
+
 /* 姿態 (D-026): the label and the line under it each stay on one line. */
 .cmds button.wide {
   grid-column: span 2;

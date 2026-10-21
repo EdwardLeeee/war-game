@@ -141,9 +141,9 @@ export class Minimap {
     }
     const b = snap.buildings;
     for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-      const s = view.rules.buildings[b[o + B.type]]?.size ?? 1;
+      const f = view.footprint(b, o);
       const c = rgb(ownerTint(b[o + B.owner], view.me));
-      for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) put(b[o + B.cellX] + x, b[o + B.cellY] + y, c);
+      for (let y = 0; y < f.h; y++) for (let x = 0; x < f.w; x++) put(f.x + x, f.y + y, c);
     }
     // Units a shade lighter than their owner's buildings, so both show.
     const dot = (owner: number) => {

@@ -49,7 +49,7 @@ export interface Selection {
  * buttons' old names stay in the code), 集結點; `garrison`, picking the building to hide in (round
  * 7), and `post`, the outpost (D-080): the game handles those taps itself.
  */
-export type Mode = "normal" | "advance" | "retreat" | "rally" | "garrison" | "post";
+export type Mode = "normal" | "advance" | "retreat" | "rally" | "garrison" | "post" | "wall";
 
 export type Intent =
   | { kind: "select"; units: number[] }
@@ -101,7 +101,8 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
       return sel.building !== null ? [{ kind: "command", cmd: { c: "rally", building: sel.building, x, y } }, { kind: "endMode" }] : [{ kind: "endMode" }];
     case "garrison":
     case "post":
-      // Game.tap picks the building itself (garrison.ts, outpost.ts); nothing from here.
+    case "wall":
+      // Game.tap picks the building or the town itself (garrison.ts, outpost.ts, walls.ts); nothing from here.
       return [];
     case "advance": {
       // 攻擊 (D-094; D-050's 進攻): an enemy there is attacked; anywhere else, the troops advance
