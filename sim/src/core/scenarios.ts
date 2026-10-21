@@ -7,7 +7,7 @@ import { IDENTITY, toCanon } from "../frame.ts";
 import { BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
 import { FIXED_POSTS } from "./castle.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
-import { BUILDINGS, OUTPOST, START, TOWNS, UNITS } from "./rules.ts";
+import { BUILDINGS, GATE, OUTPOST, START, TOWNS, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
@@ -76,6 +76,8 @@ export function placeTownGuards(w: World): void {
   for (let t = 0; t < w.townSize.length; t++) {
     const rule = TOWNS[w.townSize[t]];
     spawnMilitia(w, t, rule.militia);
+    // Closed gates in its walls (D-096).
+    if (GATE.on) for (let k = 0; k < w.castles[t].gates.length; k++) w.addGate(t, k);
     if (rule.tower && w.townSize[t] === TownSize.Large) {
       const tower = BUILDINGS[BuildingType.TownTower];
       const id = w.addBuilding(NEUTRAL, BuildingType.TownTower, w.map.tower.cellX, w.map.tower.cellY, tower.hp, 1000);

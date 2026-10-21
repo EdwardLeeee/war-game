@@ -441,7 +441,7 @@ export class Economy {
     let best = -1;
     let bestD = 0;
     for (let s = 0; s < w.buildings.count; s++) {
-      if (b.owner[s] !== u.owner[i] || b.progress[s] < 1000 || b.hp[s] >= BUILDINGS[b.type[s]].hp) continue;
+      if (b.owner[s] !== u.owner[i] || b.progress[s] < 1000 || b.hp[s] >= w.maxHp(s)) continue;
       const d = distToBuilding2(w, i, s);
       if (d > reach * reach) continue;
       let crew = 0;
@@ -741,7 +741,7 @@ export class Economy {
       this.afterBuild(w, i, bs);
       return;
     }
-    if (!build && (b.progress[bs] < 1000 || b.hp[bs] >= BUILDINGS[b.type[bs]].hp)) {
+    if (!build && (b.progress[bs] < 1000 || b.hp[bs] >= w.maxHp(bs))) {
       this.idle(w, i);
       return;
     }
@@ -903,7 +903,7 @@ export class Economy {
         case Order.Repair: {
           const bs = w.building(t);
           if (bs < 0 || b.hp[bs] <= 0 || this.helpers[bs] >= BUILDERS_MAX) break;
-          const max = BUILDINGS[b.type[bs]].hp;
+          const max = w.maxHp(bs);
           if (b.hp[bs] >= max) break;
           // A main city under attack cannot be patched up on the spot: its repairers wait.
           if (b.type[bs] === BuildingType.MainCity && w.tick - b.lastHurt[bs] < MAIN_CITY_REPAIR_LOCK) break;

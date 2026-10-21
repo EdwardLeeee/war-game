@@ -248,7 +248,7 @@ test("a move to a walled-in point: soldiers break through enemy walls; with only
     assert.ok(Math.max(Math.abs(cx - x0), Math.abs(cy - y0)) <= 4, `unit ${id} at ${cx - x0},${cy - y0}`);
     assert.equal(u.action[s], Action.Idle, `unit ${id} waits`);
   }
-  for (let s = 0; s < w.buildings.count; s++) assert.equal(w.buildings.col.hp[s], BUILDINGS[w.buildings.col.type[s]].hp, "own buildings untouched");
+  for (let s = 0; s < w.buildings.count; s++) assert.equal(w.buildings.col.hp[s], w.maxHp(s), "own buildings untouched");
 });
 
 /** Runs (at least the tick that applies the commands just given) until none of the units has an order, at most `cap` ticks; true when they all got there. */

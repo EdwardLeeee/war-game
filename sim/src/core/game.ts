@@ -30,7 +30,7 @@ import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, CAVALRY, OUTPOST, COUNTER_ATTACK, FIRE_BACK, GARRISON, MARCH_ORDER, SLOT_GIVE_UP, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAVALRY, OUTPOST, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, MARCH_ORDER, SLOT_GIVE_UP, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -233,6 +233,8 @@ export class Game {
     // Round 7 town state (D-061), only while its rules are on.
     if (TOWN_ONCE.on || PLUNDER_RECOVERY.on) h = fnvInt32(h, w.townPlundered);
     if (PLUNDER_RECOVERY.on) h = fnvInt32(h, w.townRecover);
+    // Gates (D-096): the rebuild counts, only while they are on (the grid has the rest).
+    if (GATE.on) h = fnvInt32(h, w.gateRebuild);
     h = fnvWord(h, w.units.count);
     for (const name of w.units.names) {
       if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on && !FIRE_BACK.on) || (name === "avenge" && !AVENGE.on) || (name === "fireBack" && !FIRE_BACK.on) || (name === "waited" && !MARCH_ORDER.on) || ((name === "slotBest" || name === "slotIdle") && !SLOT_GIVE_UP.on)) continue;

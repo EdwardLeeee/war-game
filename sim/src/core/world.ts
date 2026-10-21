@@ -7,7 +7,7 @@ import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, Terrain, TownState, 
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
-import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
+import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -121,6 +121,13 @@ export const BLOCK_NODE = 2;
 export const BLOCK_BUILDING = 4;
 /** A castle wall or corner tower (D-089): terrain, never removed. */
 export const BLOCK_WALL = 8;
+/**
+ * A standing gate closed to someone (D-096): walkable only by the player in World.gateOwner (the
+ * town's holder) on that player's own grid (World.passGrid); closed to everyone else.
+ */
+export const BLOCK_GATE = 16;
+/** Openings in every castle's walls (D-096; castle.gates). */
+export const GATES = 4;
 
 export class World {
   readonly map: GameMap;
@@ -152,6 +159,23 @@ export class World {
   gateAt: Uint8Array;
   /** At each gate opening's top-left cell (D-096), its sides in cells (x | y << 8); 0 elsewhere. */
   gateSides: Int32Array;
+  /** Every gate cell (D-096), town by town, opening by opening. */
+  gateCells: Int32Array;
+  /**
+   * On a cell under a standing gate that is closed to someone (BLOCK_GATE, D-096): the player it
+   * lets through (the town's holder), or -1 (closed to everyone: a neutral town's).
+   */
+  gateOwner: Int32Array;
+  /**
+   * D-096: per town and opening (town * GATES + opening), the ticks left until a governed town
+   * rebuilds that broken gate (counting while no enemy stands inside its walls), 0 when not.
+   */
+  gateRebuild: Int32Array;
+  /** Gate cells each player may walk that others may not (passClass). */
+  private readonly ownGates = new Int32Array(PLAYER_COUNT);
+  private readonly passGrids: Uint8Array[] = [];
+  private readonly passBlock: number[] = [];
+  private readonly passOpen: number[] = [];
   /**
    * Each town's castle cells (D-089): inside the walls and the ring of walls and gates, as cell
    * indices. Seeing any of them is seeing the town (fog.ts): the walls stand 5 cells from a small
@@ -336,6 +360,7 @@ export class World {
     });
     this.gateAt = new Uint8Array(n * n);
     this.gateSides = new Int32Array(n * n);
+    this.gateOwner = new Int32Array(n * n).fill(-1);
     this.gateLane = new Uint8Array(n * n);
     this.nearGate = new Uint8Array(n * n);
     this.nearCastle = new Uint8Array(n * n);
@@ -363,6 +388,12 @@ export class World {
       }
       this.castleCells.push(Int32Array.from(cells));
     });
+    const gc: number[] = [];
+    map.towns.forEach((s, i) => {
+      for (const g of this.castles[i].gates) for (const [dx, dy] of g) gc.push((s.cellY + dy) * n + s.cellX + dx);
+    });
+    this.gateCells = Int32Array.from(gc);
+    this.gateRebuild = new Int32Array(t * GATES);
   }
 
   private newId(): number {
@@ -452,6 +483,99 @@ export class World {
   sideY(type: number, cellX: number, cellY: number): number {
     return type === BuildingType.Gate ? this.gateSides[cellY * this.size + cellX] >> 8 : this.buildingSize(type);
   }
+  /** A building's full hp: its type's, but a gate's (D-096) by its town's size (GATE.hp). */
+  maxHp(s: number): number {
+    const b = this.buildings.col;
+    return b.type[s] === BuildingType.Gate ? GATE.hp[this.townSize[b.town[s]]] : BUILDINGS[b.type[s]].hp;
+  }
+
+  /** Town t's opening k's top-left cell (D-096). */
+  private gateCorner(t: number, k: number): [number, number] {
+    const g = this.castles[t].gates[k];
+    let x0 = g[0][0];
+    let y0 = g[0][1];
+    for (const [x, y] of g) {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+    }
+    return [this.townX[t] + x0, this.townY[t] + y0];
+  }
+
+  /** The gate building standing in town t's opening k (D-096), as a slot, or -1 (broken). */
+  gateIn(t: number, k: number): number {
+    const [x, y] = this.gateCorner(t, k);
+    const s = this.building(this.buildingAt[y * this.size + x]);
+    return s >= 0 && this.buildings.col.type[s] === BuildingType.Gate ? s : -1;
+  }
+
+  /** Builds town t's gate in opening k at full hp (D-096), owned as the town is. */
+  addGate(t: number, k: number): void {
+    const [x, y] = this.gateCorner(t, k);
+    const id = this.addBuilding(NEUTRAL, BuildingType.Gate, x, y, GATE.hp[this.townSize[t]], 1000);
+    this.buildings.col.town[this.building(id)] = t;
+    this.gateRebuild[t * GATES + k] = 0;
+    this.refreshGates(t);
+  }
+
+  /**
+   * Sets town t's gates' owners and who walks their cells from the town's state (D-096): a
+   * standing gate of a town held by p (awaiting the choice, plundering, repairing, governed) is
+   * p's and open to p only; of a neutral town NEUTRAL's and closed to everyone; of ruins open to
+   * all; a broken one (no gate) open to all. Bumps the path versions when anything changed.
+   */
+  refreshGates(t: number): void {
+    const n = this.size;
+    const st = this.townState[t];
+    const held = st !== TownState.Neutral && st !== TownState.Ruins ? this.townOwner[t] : -1;
+    let changed = false;
+    this.castles[t].gates.forEach((g, k) => {
+      const s = this.gateIn(t, k);
+      if (s >= 0) this.buildings.col.owner[s] = held >= 0 ? held : NEUTRAL;
+      const closed = s >= 0 && st !== TownState.Ruins;
+      for (const [dx, dy] of g) {
+        const c = (this.townY[t] + dy) * n + this.townX[t] + dx;
+        const was = this.grid[c];
+        const wasOwner = this.gateOwner[c];
+        if (closed) this.grid[c] |= BLOCK_GATE;
+        else this.grid[c] &= ~BLOCK_GATE;
+        this.gateOwner[c] = closed ? held : -1;
+        if (this.grid[c] !== was || this.gateOwner[c] !== wasOwner) changed = true;
+      }
+    });
+    if (!changed) return;
+    this.ownGates.fill(0);
+    for (const c of this.gateCells) if ((this.grid[c] & BLOCK_GATE) !== 0 && this.gateOwner[c] >= 0) this.ownGates[this.gateOwner[c]]++;
+    this.blockVersion++;
+    this.openVersion++;
+  }
+
+  /**
+   * Which walkable grid unit owner `owner` walks (D-096): 0 (World.grid, every standing gate closed
+   * to someone closed) unless some gate opens to it alone, then owner + 1 (passGrid).
+   */
+  passClass(owner: number): number {
+    return owner >= 0 && owner < PLAYER_COUNT && this.ownGates[owner] > 0 ? owner + 1 : 0;
+  }
+
+  /** The grid of pass class cls (passClass): World.grid, or a copy with that player's own gates open. */
+  passGrid(cls: number): Uint8Array {
+    if (cls === 0) return this.grid;
+    let g = this.passGrids[cls];
+    if (g === undefined || g.length !== this.grid.length) {
+      g = new Uint8Array(this.grid.length);
+      this.passGrids[cls] = g;
+      this.passBlock[cls] = -1;
+    }
+    if (this.passBlock[cls] !== this.blockVersion || this.passOpen[cls] !== this.openVersion) {
+      g.set(this.grid);
+      const p = cls - 1;
+      for (const c of this.gateCells) if (this.gateOwner[c] === p) g[c] &= ~BLOCK_GATE;
+      this.passBlock[cls] = this.blockVersion;
+      this.passOpen[cls] = this.openVersion;
+    }
+    return g;
+  }
+
   /** Building slot s's footprint width and height in cells (sideX, sideY). */
   wide(s: number): number {
     const b = this.buildings.col;
@@ -471,15 +595,17 @@ export class World {
     const sx = this.sideX(type, cellX, cellY);
     const sy = this.sideY(type, cellX, cellY);
     const n = this.size;
+    // A gate's cells are walked as refreshGates says (D-096).
+    const gate = type === BuildingType.Gate;
     for (let y = cellY; y < cellY + sy; y++) {
       for (let x = cellX; x < cellX + sx; x++) {
         this.buildingAt[y * n + x] = on ? id : -1;
-        if (info.walkable) continue;
+        if (info.walkable || gate) continue;
         if (on) this.grid[y * n + x] |= BLOCK_BUILDING;
         else this.grid[y * n + x] &= ~BLOCK_BUILDING;
       }
     }
-    if (info.walkable) return;
+    if (info.walkable || gate) return;
     if (on) this.blockVersion++;
     else this.openVersion++;
   }

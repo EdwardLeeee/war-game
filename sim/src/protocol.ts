@@ -635,8 +635,17 @@ export interface TownCastle {
   wall: [number, number][];
   /** The corner towers' cells (in `wall` too). */
   corner: [number, number][];
-  /** Gates: open cells in the ring of walls, open to everyone. */
+  /**
+   * Gate cells in the ring of walls. D-089: open to everyone; D-096 (while `Rules.features.gates`):
+   * a Gate building stands in each opening, open to its owner (the town's holder) only, closed to
+   * everyone else, open to all once broken (no building there) and while the town lies in ruins.
+   */
   gate: [number, number][];
+  /**
+   * The same cells by opening (D-096): one Gate building each, whose cellX, cellY is the opening's
+   * top-left cell. Openings in a fixed order; each opening's cells in `gate` order.
+   */
+  gates?: [number, number][][];
   /** For each gate cell (same order), the open cell in front of it outside the walls. */
   outside: [number, number][];
   /** For each gate cell (same order), the first cell behind it inside the walls. */
@@ -896,6 +905,13 @@ export type ToWorker =
        * knowing only its own main city (MapInfo).
        */
       map?: MapMode;
+      /**
+       * Per player (aligned with `ai`): whether its barracks, ranges, mage halls and stables train
+       * by themselves (round 6, D-054). Absent: on for the people, off for the AIs. D-098: the
+       * client sends all off and trains for its groups itself. Written into the log header
+       * (LogHeader.autoTrain) as before.
+       */
+      autoTrain?: boolean[];
       /**
        * Which simulation this is (D-083), written into the log header (LogHeader.build): a game
        * goes on (`continue`) only on the same build. The screen sends an id of the simulation's

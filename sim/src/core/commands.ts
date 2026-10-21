@@ -292,10 +292,9 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       const bs = ownBuilding(w, p, cmd.building);
       if (bs < 0) return w.building(cmd.building) >= 0 ? Reject.NotOwner : Reject.InvalidTarget;
       const b = w.buildings.col;
-      const info = BUILDINGS[b.type[bs]];
       let order: number = Order.None;
       if (b.progress[bs] < 1000) order = Order.Build;
-      else if (b.hp[bs] < info.hp) order = Order.Repair;
+      else if (b.hp[bs] < w.maxHp(bs)) order = Order.Repair;
       else if (b.type[bs] === BuildingType.Farm) order = Order.Gather;
       if (order === Order.None) return Reject.NotAvailable;
       placed(w, farmers, false);

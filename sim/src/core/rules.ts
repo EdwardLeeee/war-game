@@ -107,6 +107,9 @@ BUILDINGS[BuildingType.Stable] = building({
 BUILDINGS[BuildingType.Outpost] = building({
   type: BuildingType.Outpost, hp: 400, size: 2, cost: cost(0, 50), buildTicks: 20 * S, sight: 10,
 });
+// D-096: a castle gate; never built by players. hp is the big city's (GATE.hp by town size), and
+// size 1 only for the type: a gate's footprint is its opening's cells (World.sideX).
+BUILDINGS[BuildingType.Gate] = building({ type: BuildingType.Gate, hp: 1450, size: 1, sight: 2 });
 
 /**
  * Ranged against a mage's shield (early balance, D-057; round 4, D-037): x3, was x3/2 (num 3,
@@ -289,6 +292,18 @@ export const GOVERN_INCOME = {
  * changes hands.
  */
 export const PLUNDER_RECOVERY = { on: true, startPermille: 250, ticks: 10 * 60 * S };
+/**
+ * Castle gates (D-096; the user 2026-10-21: the walls were 「雞肋」, in everyone's way alike): a
+ * gate building in each opening of a town's walls, closed to all but the town's holder (a neutral
+ * town's to everyone, militia too), open to all once broken and while the town lies in ruins.
+ * `hp` by TownSize: a full front of spearmen (6-7 at an opening of 2-3 cells, 4 damage a second
+ * each) breaks a small town's in about 30 s, the big city's in about 60 s (ceo 2026-10-21, 乙).
+ * Hits on a gate: melee in full, ranged units and mages `rangedNum` / `rangedDen` (at least 1),
+ * siege engines (to come) `siege` times. A governed town rebuilds a broken gate once no enemy
+ * has stood inside its walls for `rebuildTicks`; the end of repairing and ruins turning neutral
+ * rebuild them all. Off: no gates, the openings stay open to everyone (D-089).
+ */
+export const GATE = { on: true, hp: [850, 1450], rangedNum: 1, rangedDen: 5, siege: 8, rebuildTicks: 60 * S };
 /** Players can build arrow towers (BuildingType.ArrowTower). */
 export const TOWERS = { on: true };
 /**
@@ -503,6 +518,7 @@ function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap
       wall: cells(c.wall),
       corner: cells(c.corner),
       gate: cells(c.gate),
+      gates: c.gates.map((g) => cells(g)),
       outside: cells(c.outside),
       behind: cells(c.behind),
       militia: posts.map(([x, y]): [number, number] => [x, y]),

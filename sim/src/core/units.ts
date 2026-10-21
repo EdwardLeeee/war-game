@@ -36,6 +36,7 @@ import {
   CANNON,
   DODGE,
   FIRE_BACK,
+  GATE,
   HOME_GUARD,
   COUNTER_ATTACK,
   MAGE_BOUNTY,
@@ -62,7 +63,7 @@ import {
   UNITS,
   WORK_REACH,
 } from "./rules.ts";
-import { IDENTITY, fromCanon, toCanon } from "../frame.ts";
+import { type Frame, IDENTITY, fromCanon, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
 import { HitCause, UNIT_KINDS, type World } from "./world.ts";
 
@@ -244,6 +245,7 @@ export class UnitSystem {
           const as = a >= 0 ? w.unit(a) : -1;
           if (as < 0 || u.owner[as] === me || u.action[as] === Action.Garrisoned) continue;
           if (!this.sees(fog, me, u.x[as], u.y[as], n)) continue;
+          if (UNITS[u.type[i]].range <= CELL && !this.reaches(w, i, as)) continue;
           const ax = u.x[as] - u.anchorX[i];
           const ay = u.y[as] - u.anchorY[i];
           if (ax * ax + ay * ay > LEASH * LEASH) continue;
@@ -308,6 +310,7 @@ export class UnitSystem {
           const ts = w.unit(t);
           if (ts < 0 || u.owner[ts] === me || u.action[ts] === Action.Garrisoned) continue;
           if (!this.sees(fog, me, u.x[ts], u.y[ts], n)) continue;
+          if (UNITS[u.type[i]].range <= CELL && !this.reaches(w, i, ts)) continue;
           const ax = u.x[ts] - u.anchorX[i];
           const ay = u.y[ts] - u.anchorY[i];
           if (ax * ax + ay * ay > LEASH * LEASH) continue;
@@ -449,7 +452,7 @@ export class UnitSystem {
               const fy = u.y[j] - f.y[k];
               if (fx * fx + fy * fy <= near2) fought = true;
             }
-            if (!fought || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+            if (!fought || !this.sees(fog, me, u.x[j], u.y[j], n) || (melee && !this.reaches(w, i, j))) continue;
             best = d2;
             bestId = u.id[j];
           }
@@ -461,12 +464,28 @@ export class UnitSystem {
     for (const id of f.buildings) {
       const s = w.building(id);
       if (s < 0 || b.owner[s] === me) continue;
+      // Mates breaking a gate (D-096): the melee join in, ranged units and mages hardly scratch it.
+      if (b.type[s] === BuildingType.Gate && !melee) continue;
       const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
       if (d2 > r2 || d2 > best || (d2 === best && (high ? id < bestId : id > bestId))) continue;
       best = d2;
       bestId = id;
     }
     return bestId;
+  }
+
+  /**
+   * Can unit i walk to unit j (D-096: closed gates stand between a castle and the world): both in
+   * the same area of i's owner's grid. A unit on a cell that grid does not walk counts as reachable.
+   */
+  private reaches(w: World, i: number, j: number): boolean {
+    if (!GATE.on) return true;
+    const u = w.units.col;
+    const n = w.size;
+    const cls = w.passClass(u.owner[i]);
+    const a = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT), cls);
+    const b = this.regions.of(w, (u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT), cls);
+    return a < 0 || b < 0 || a === b;
   }
 
   /** Nearest enemy unit within reach (ties to the lower id), else the nearest enemy building; returns an id or -1. */
@@ -481,6 +500,7 @@ export class UnitSystem {
     const cy = my >> CELL_SHIFT;
     const r2 = reach * reach;
     const high = preferHighId(w, u.id[i]);
+    const melee = UNITS[u.type[i]].range <= CELL;
     let best = r2 + 1;
     let bestId = -1;
     for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
@@ -492,6 +512,8 @@ export class UnitSystem {
           const d2 = dx * dx + dy * dy;
           if (d2 > r2) continue;
           if (!this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+          // Melee goes only for what it can walk to (D-096: not over a closed gate).
+          if (melee && !this.reaches(w, i, j)) continue;
           if (d2 < best || (d2 === best && (high ? u.id[j] > bestId : u.id[j] < bestId))) {
             best = d2;
             bestId = u.id[j];
@@ -502,7 +524,8 @@ export class UnitSystem {
     if (bestId >= 0) return bestId;
     const b = w.buildings.col;
     for (let s = 0; s < w.buildings.count; s++) {
-      if (b.owner[s] === me) continue;
+      // A gate is never just in the way to hit (D-096): only an attack on it, or a goal behind it.
+      if (b.owner[s] === me || b.type[s] === BuildingType.Gate) continue;
       const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
       if (d2 > r2) continue;
       const bx = (b.cellX[s] << CELL_SHIFT) + 512;
@@ -1197,7 +1220,8 @@ export class UnitSystem {
           return;
         }
       }
-      if (order === Order.Attack && d2 > DIRECT_STEER * DIRECT_STEER) {
+      // Far off: along the field; a building (D-096: the gate a move breaks through) on a move too.
+      if ((order === Order.Attack || (ts < 0 && GATE.on)) && d2 > DIRECT_STEER * DIRECT_STEER) {
         if (ts >= 0) {
           steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), info.speed);
         } else {
@@ -1223,8 +1247,9 @@ export class UnitSystem {
       // retreats go as near as they can get.
       const key = u.orderTarget[i] >= 0 ? u.orderTarget[i] : (u.orderY[i] >> CELL_SHIFT) * n + (u.orderX[i] >> CELL_SHIFT);
       const goal = nearestWalkable(w, key % n, Math.trunc(key / n));
-      const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT));
-      if (goal >= 0 && here >= 0 && this.regions.of(w, goal) !== here) {
+      const cls = w.passClass(u.owner[i]);
+      const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT), cls);
+      if (goal >= 0 && here >= 0 && this.regions.of(w, goal, cls) !== here) {
         this.breakThrough(w, fields, i, here, u.orderX[i], u.orderY[i], order === Order.Move && !farmer);
         return;
       }
@@ -1278,16 +1303,17 @@ export class UnitSystem {
   private walledOff(w: World, i: number, ts: number, tid: number): number {
     const u = w.units.col;
     const n = w.size;
-    const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT));
+    const cls = w.passClass(u.owner[i]);
+    const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT), cls);
     if (here < 0) return -1;
     if (ts >= 0) {
-      const there = this.regions.of(w, (u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT));
+      const there = this.regions.of(w, (u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT), cls);
       return there >= 0 && there !== here ? here : -1;
     }
     const bs = w.building(tid);
     const b = w.buildings.col;
     for (const c of cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs))) {
-      if (this.regions.of(w, c) === here) return -1;
+      if (this.regions.of(w, c, cls) === here) return -1;
     }
     return here;
   }
@@ -1309,10 +1335,19 @@ export class UnitSystem {
       this.walledBlock = w.blockVersion;
       this.walledOpen = w.openVersion;
     }
+    const cls = w.passClass(u.owner[i]);
+    // A goal inside a castle with standing gates (D-096): break the gate nearest this unit.
+    if (fight && GATE.on) {
+      const gate = this.gateToBreak(w, i, tx, ty, here, cls);
+      if (gate >= 0) {
+        this.hitBlocker(w, fields, i, gate);
+        return;
+      }
+    }
     const key = `${u.owner[i]},${here},${tx},${ty}`;
     let known = this.walled.get(key);
     if (known === undefined) {
-      const c = this.nearestIn(w, here, tx, ty);
+      const c = this.nearestIn(w, here, tx, ty, cls, u.owner[i]);
       const reach = c < 0 ? 0 : cellDist2(c, n, tx, ty);
       let blocker = -1;
       let bestD = 0;
@@ -1322,7 +1357,7 @@ export class UnitSystem {
         if (o === u.owner[i] || o >= PLAYER_COUNT || b.hp[s] <= 0 || bi.walkable) continue;
         const d = rectDist2(tx, ty, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
         if (d >= reach) continue;
-        if (!cellsAround(w, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s)).some((k) => this.regions.of(w, k) === here)) continue;
+        if (!cellsAround(w, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s)).some((k) => this.regions.of(w, k, cls) === here)) continue;
         if (blocker < 0 || d < bestD || (d === bestD && b.id[s] < blocker)) {
           blocker = b.id[s];
           bestD = d;
@@ -1334,20 +1369,7 @@ export class UnitSystem {
     const c = known.cell;
     const best = fight && known.blocker >= 0 ? w.building(known.blocker) : -1;
     if (best >= 0) {
-      const sx = w.wide(best);
-      const sy = w.tall(best);
-      const bx = (b.cellX[best] << CELL_SHIFT) + ((sx << CELL_SHIFT) >> 1);
-      const by = (b.cellY[best] << CELL_SHIFT) + ((sy << CELL_SHIFT) >> 1);
-      u.target[i] = b.id[best];
-      u.facing[i] = dir16(bx - u.x[i], by - u.y[i]);
-      if (rectDist2(u.x[i], u.y[i], b.cellX[best], b.cellY[best], sx, sy) <= info.range * info.range) {
-        this.attacking[i] = 1;
-        u.action[i] = Action.Attack;
-        return;
-      }
-      const cx = b.cellX[best];
-      const cy = b.cellY[best];
-      steerTo(w, fields, i, bx, by, buildingKey(b.id[best]), info.speed, () => cellsAround(w, cx, cy, sx, sy));
+      this.hitBlocker(w, fields, i, best);
       return;
     }
     if (c < 0) {
@@ -1367,8 +1389,66 @@ export class UnitSystem {
     steerTo(w, fields, i, gx, gy, c, info.speed);
   }
 
-  /** The cell of area `region` nearest the point (tx, ty): the nearest ring around it that has one, then the nearest (ties: lower index). */
-  private nearestIn(w: World, region: number, tx: number, ty: number): number {
+  /** Unit i goes for building slot bs that stands in its way (breakThrough): hits it in range, else walks to it. */
+  private hitBlocker(w: World, fields: FieldCache, i: number, bs: number): void {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const info = UNITS[u.type[i]];
+    const sx = w.wide(bs);
+    const sy = w.tall(bs);
+    const bx = (b.cellX[bs] << CELL_SHIFT) + ((sx << CELL_SHIFT) >> 1);
+    const by = (b.cellY[bs] << CELL_SHIFT) + ((sy << CELL_SHIFT) >> 1);
+    u.target[i] = b.id[bs];
+    u.facing[i] = dir16(bx - u.x[i], by - u.y[i]);
+    if (rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], sx, sy) <= info.range * info.range) {
+      this.attacking[i] = 1;
+      u.action[i] = Action.Attack;
+      return;
+    }
+    const cx = b.cellX[bs];
+    const cy = b.cellY[bs];
+    steerTo(w, fields, i, bx, by, buildingKey(b.id[bs]), info.speed, () => cellsAround(w, cx, cy, sx, sy));
+  }
+
+  /**
+   * D-096: a goal (tx, ty) inside a castle's walls (or in its gate) walled off from area `here`:
+   * the standing gate of that castle with a cell of `here` around it nearest unit i (ties: lower
+   * id), as a slot; -1 when the goal is in no castle or no such gate stands.
+   */
+  private gateToBreak(w: World, i: number, tx: number, ty: number, here: number, cls: number): number {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const gx = tx >> CELL_SHIFT;
+    const gy = ty >> CELL_SHIFT;
+    let town = -1;
+    for (let t = 0; t < w.townSize.length && town < 0; t++) {
+      const c = w.castles[t].inside;
+      if (gx >= w.townX[t] + c.x0 - 1 && gx <= w.townX[t] + c.x1 + 1 && gy >= w.townY[t] + c.y0 - 1 && gy <= w.townY[t] + c.y1 + 1) town = t;
+    }
+    if (town < 0) return -1;
+    let best = -1;
+    let bestD = 0;
+    for (let k = 0; k < w.castles[town].gates.length; k++) {
+      const s = w.gateIn(town, k);
+      if (s < 0 || b.owner[s] === u.owner[i]) continue;
+      if (!cellsAround(w, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s)).some((c) => this.regions.of(w, c, cls) === here)) continue;
+      const d = rectDist2(u.x[i], u.y[i], b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
+      if (best < 0 || d < bestD || (d === bestD && b.id[s] < b.id[best])) {
+        best = s;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The cell of area `region` nearest the point (tx, ty): the nearest ring around it that has one,
+   * then the nearest; ties go to the first in `owner`'s canonical frame (lower v, then u), so
+   * mirror-image units pick mirror-image cells (D-096: a castle with its gates closed has many
+   * equally near cells round it).
+   */
+  private nearestIn(w: World, region: number, tx: number, ty: number, cls: number, owner: number): number {
+    const f = w.map.frames[owner] ?? IDENTITY;
     const n = w.size;
     const cx = tx >> CELL_SHIFT;
     const cy = ty >> CELL_SHIFT;
@@ -1381,9 +1461,9 @@ export class UnitSystem {
         for (let x = cx - r; x <= cx + r; x += Math.max(step, 1)) {
           if (x < 0 || x >= n) continue;
           const c = y * n + x;
-          if (this.regions.of(w, c) !== region) continue;
+          if (this.regions.of(w, c, cls) !== region) continue;
           const d = cellDist2(c, n, tx, ty);
-          if (best < 0 || d < bestD || (d === bestD && c < best)) {
+          if (best < 0 || d < bestD || (d === bestD && (GATE.on ? canonBefore(f, c, best, n) : c < best))) {
             best = c;
             bestD = d;
           }
@@ -1519,12 +1599,14 @@ export class UnitSystem {
       // owner's canonical frame (frame.ts), so mirror-image situations slide the same way.
       const ax = Math.abs(tx - xi);
       const ay = Math.abs(ty - yi);
+      // The grid this unit walks: its owner's own gates open (D-096).
+      const grid = w.passGrid(w.passClass(u.owner[i]));
       if (ax > ay || (ax === ay && !w.yFirst[u.owner[i]])) {
-        if (w.grid[(yi >> CELL_SHIFT) * n + (tx >> CELL_SHIFT)] !== 0) tx = xi;
-        if (w.grid[(ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT)] !== 0) ty = yi;
+        if (grid[(yi >> CELL_SHIFT) * n + (tx >> CELL_SHIFT)] !== 0) tx = xi;
+        if (grid[(ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT)] !== 0) ty = yi;
       } else {
-        if (w.grid[(ty >> CELL_SHIFT) * n + (xi >> CELL_SHIFT)] !== 0) ty = yi;
-        if (w.grid[(ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT)] !== 0) tx = xi;
+        if (grid[(ty >> CELL_SHIFT) * n + (xi >> CELL_SHIFT)] !== 0) ty = yi;
+        if (grid[(ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT)] !== 0) tx = xi;
       }
       this.newX[i] = tx;
       this.newY[i] = ty;
@@ -1587,7 +1669,7 @@ export class UnitSystem {
       } else {
         const bs = w.building(tid);
         if (bs >= 0) {
-          this.buildingDamage[bs] += info.attack;
+          this.buildingDamage[bs] += b.type[bs] === BuildingType.Gate ? gateDamage(info.attack, u.type[i]) : info.attack;
           this.buildingHitBy[bs] |= 1 << u.owner[i];
         }
         // An outpost under attack sends its guards after the attacker (D-080).
@@ -1800,10 +1882,13 @@ export class UnitSystem {
     let lost0 = false;
     let lost1 = false;
     let anyBuilding = false;
+    const brokenIn: number[] = [];
     for (let s = 0; s < w.buildings.count; s++) {
       this.deadBuildings[s] = b.hp[s] <= 0 ? 1 : 0;
       if (this.deadBuildings[s] === 0) continue;
       anyBuilding = true;
+      // A broken gate (D-096): its opening is open to everyone.
+      if (b.type[s] === BuildingType.Gate && !brokenIn.includes(b.town[s])) brokenIn.push(b.town[s]);
       w.setFootprint(b.id[s], b.type[s] as BuildingType, b.cellX[s], b.cellY[s], false);
       if (b.garrisoned[s] > 0 || b.soldiers[s] > 0) {
         for (let i = 0; i < w.units.count; i++) {
@@ -1827,6 +1912,7 @@ export class UnitSystem {
         w.buildingSlot[b.id[to]] = to;
       });
     }
+    for (const t of brokenIn) w.refreshGates(t);
     if ((lost0 || lost1) && !w.over) {
       w.winner = lost0 && lost1 ? -1 : lost0 ? 1 : 0;
       w.endReason = GameOverReason.MainCityDestroyed;
@@ -1871,6 +1957,13 @@ const POST_PLACES: readonly (readonly [number, number])[] = [
   [-1, -1], [2, -1], [-1, 2], [2, 2], [0, -1], [1, 2],
 ];
 
+/** Is cell a before cell b in frame f's canonical order (lower v, then u)? */
+function canonBefore(f: Frame, a: number, b: number, n: number): boolean {
+  const p = toCanon(f, a % n, Math.trunc(a / n));
+  const q = toCanon(f, b % n, Math.trunc(b / n));
+  return p.v !== q.v ? p.v < q.v : p.u < q.u;
+}
+
 function canonFirst(w: World, owner: number, j: number, k: number): boolean {
   if (k < 0) return true;
   const u = w.units.col;
@@ -1889,6 +1982,15 @@ function canonFirst(w: World, owner: number, j: number, k: number): boolean {
  */
 export function preferHighId(w: World, chooser: number): boolean {
   return ((Math.trunc(w.tick / RETARGET_EVERY) + chooser) & 1) === 1;
+}
+
+/**
+ * A hit on a castle gate (D-096, GATE): melee in full, ranged units and mages GATE.rangedNum /
+ * rangedDen of it, at least 1. Kept apart from the unit-vs-unit multipliers (MULTIPLIERS).
+ */
+export function gateDamage(attack: number, attacker: number): number {
+  if (attacker !== UnitType.Ranged && attacker !== UnitType.Mage) return attack;
+  return Math.max(1, idiv(attack * GATE.rangedNum, GATE.rangedDen));
 }
 
 /** Damage after the attacker-vs-target multiplier (integer, at least 1). */

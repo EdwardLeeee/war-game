@@ -1,8 +1,8 @@
 // Test helpers: a standard game with every unit removed, so a test can place its own.
 
 import { Game } from "../src/core/game.ts";
-import { BLOCK_WALL } from "../src/core/world.ts";
-import { CELL_SHIFT, type UnitType } from "../src/protocol.ts";
+import { BLOCK_GATE, BLOCK_WALL } from "../src/core/world.ts";
+import { BuildingType, CELL_SHIFT, type UnitType } from "../src/protocol.ts";
 import { UNITS } from "../src/core/rules.ts";
 
 export function emptyGame(): Game {
@@ -34,19 +34,21 @@ export function cmd(g: Game, p: number, body: Record<string, unknown>): void {
 
 /**
  * Top-left of a size x size square of walkable cells at least 15 cells from every building, the
- * first from the top-left as before D-089. Castle walls (D-089) do not count against it: any in the
- * square or within 4 cells of it are taken down (grid only), and so are the gates' lanes, so a
- * test's fight is where it was, is not walled in, and may build there.
+ * first from the top-left as before D-089. Castle walls (D-089) and gates (D-096) do not count
+ * against it: any in the square or within 4 cells of it are taken down (walls in the grid only,
+ * gates broken: gone at the next step), and so are the gates' lanes, so a test's fight is where it
+ * was, is not walled in, and may build there.
  */
 export function openArea(g: Game, size: number): { x: number; y: number } {
   const w = g.w;
   const b = w.buildings.col;
   const n = w.size;
-  const open = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && (w.grid[y * n + x] & ~BLOCK_WALL) === 0;
+  const open = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && (w.grid[y * n + x] & ~(BLOCK_WALL | BLOCK_GATE)) === 0;
   for (let y = 0; y + size <= w.size; y++) {
     for (let x = 0; x + size <= w.size; x++) {
       let ok = true;
       for (let s = 0; s < w.buildings.count && ok; s++) {
+        if (b.type[s] === BuildingType.Gate) continue;
         if (Math.abs(b.cellX[s] - (x + size / 2)) < 15 + size / 2 && Math.abs(b.cellY[s] - (y + size / 2)) < 15 + size / 2) ok = false;
       }
       for (let yy = y; yy < y + size && ok; yy++) for (let xx = x; xx < x + size && ok; xx++) if (!open(xx, yy)) ok = false;
@@ -55,8 +57,10 @@ export function openArea(g: Game, size: number): { x: number; y: number } {
       for (let yy = Math.max(0, y - 4); yy < Math.min(n, y + size + 4); yy++) {
         for (let xx = Math.max(0, x - 4); xx < Math.min(n, x + size + 4); xx++) {
           w.gateLane[yy * n + xx] = 0;
-          if ((w.grid[yy * n + xx] & BLOCK_WALL) === 0) continue;
-          w.grid[yy * n + xx] &= ~BLOCK_WALL;
+          const gate = w.building(w.buildingAt[yy * n + xx]);
+          if (gate >= 0 && b.type[gate] === BuildingType.Gate) b.hp[gate] = 0;
+          if ((w.grid[yy * n + xx] & (BLOCK_WALL | BLOCK_GATE)) === 0) continue;
+          w.grid[yy * n + xx] &= ~(BLOCK_WALL | BLOCK_GATE);
           opened = true;
         }
       }

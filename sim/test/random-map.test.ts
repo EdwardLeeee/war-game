@@ -279,16 +279,16 @@ test("at the start every building and every unit has its mirror image across the
     const other = (o: number) => (o === NEUTRAL ? NEUTRAL : 1 - o);
     // Buildings: type, owner (players swapped) and footprint.
     const b = w.buildings.col;
-    const rect = (x: number, y: number, size: number) => {
+    const rect = (x: number, y: number, sx: number, sy: number) => {
       const p = toCanon(m.mirror, x, y);
-      const q = toCanon(m.mirror, x + size - 1, y + size - 1);
+      const q = toCanon(m.mirror, x + sx - 1, y + sy - 1);
       return `${Math.min(p.u, q.u)},${Math.min(p.v, q.v)}`;
     };
     const buildings = new Set<string>();
     for (let s = 0; s < w.buildings.count; s++) buildings.add(`${b.type[s]}:${b.owner[s]}:${b.cellX[s]},${b.cellY[s]}`);
     assert.ok(buildings.size >= 3, "two main cities and the tower");
     for (let s = 0; s < w.buildings.count; s++) {
-      const want = `${b.type[s]}:${other(b.owner[s])}:${rect(b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]))}`;
+      const want = `${b.type[s]}:${other(b.owner[s])}:${rect(b.cellX[s], b.cellY[s], w.wide(s), w.tall(s))}`;
       assert.ok(buildings.has(want), `seed ${seed} (${m.layout}): mirror image of building ${b.id[s]} (${want})`);
     }
     // The tower blocks exactly its footprint, and the rules say how big it is.
