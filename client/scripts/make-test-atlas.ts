@@ -145,9 +145,26 @@ function effects(): void {
   writeFileSync(join(dir, "effects.json"), JSON.stringify({ format: EFFECTS_FORMAT, scale: 3, px_per_m: 60, pages: ["effects_0.png"], effects: { dust: { frames: 2, fps: 12, loop: false } }, frames }));
 }
 
+/**
+ * 寫實地面's stand-ins (D-093, ?test=1&ground=real on the test page): a flat colour a ground with a
+ * little height noise in A, as ui ships theirs lit (no tint), 64 square, 8 m a tile.
+ */
+function ground(): void {
+  const dir = join(OUT, "..", "ground");
+  mkdirSync(dir, { recursive: true });
+  const colours: Record<string, [number, number, number]> = { grass: [88, 120, 66], grass_dry: [120, 128, 70], dirt: [120, 92, 62], gravel: [140, 132, 118], bank: [104, 84, 60] };
+  const layers = Object.entries(colours).map(([id, c], k) => {
+    writeFileSync(join(dir, `${id}.png`), png(64, 64, (x, y) => [c[0] + ((x * 7 + y * 13 + k) % 11) - 5, c[1] + ((x * 5 + y * 3) % 9) - 4, c[2], 96 + ((x * 31 + y * 17 + k * 5) % 64)]));
+    return { id, file: `${id}.png`, tile_m: 8, mean: c.map((v) => (v / 255) ** 2.2) };
+  });
+  const rules = { bank_cells: 1, gravel_cells: 1, edge_m: 0.6, height_k: 0.8, dirt: { node_cells: 1, noise_threshold: 0.72 } };
+  writeFileSync(join(dir, "ground.json"), JSON.stringify({ format: "war-game ground 1", layers, rules, grade: { brightness: 1, saturation: 1 } }));
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   ATLAS_NAMES.forEach((name, k) => unit(name, k));
   effects();
   astcSample();
+  ground();
   console.log(`test atlases: ${ATLAS_NAMES.length} units and effects → public/art/test/x3/`);
 }
