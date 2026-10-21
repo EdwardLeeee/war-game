@@ -199,8 +199,8 @@ export const Order = {
   Post: 10,
   /**
    * Going up onto a castle wall or standing on it (D-096, `wall`; action OnWall once there):
-   * orderTarget is the town. Any move, attack, retreat or stop (or `leave` with the town) takes the
-   * soldier down to the cell inside the walls it climbed from.
+   * orderTarget is the town. Any move, attack, retreat or stop (or `leave_wall`) takes the soldier
+   * down to the cell inside the walls it climbed from.
    */
   Wall: 11,
 } as const;
@@ -610,8 +610,13 @@ export interface ArrowInfo {
   range: number;
   /** Ticks between arrows. */
   cooldown: number;
-  /** Extra arrows per farmer hiding inside, up to this many (main city only; 0 for others). */
+  /**
+   * Extra arrows per farmer hiding inside, up to this many (main city); a gate's (D-096) one per
+   * `perSoldiers` soldiers; 0 for others.
+   */
   extraMax: number;
+  /** A governed town's gate (D-096): one arrow more for every this many of the holder's soldiers in the town. */
+  perSoldiers?: number;
 }
 
 /** A town's rules by size (TownSize), as the simulation plays them. */
@@ -631,6 +636,8 @@ export interface TownInfo {
   revoltTicks: number;
   /** The castle round the town (D-089); the simulation always sends it. */
   castle?: TownCastle;
+  /** Each gate's hit points (D-096, while `features.gates`; `buildings[Gate].hp` is the big city's). */
+  gateHp?: number;
 }
 
 /**
@@ -691,6 +698,10 @@ export interface Features {
   cavalry: boolean;
   /** Outposts can be built and manned (D-080). Absent: off. */
   outpost?: boolean;
+  /** Castle gates close (D-096): a Gate building in each opening, `Rules.gate`. Absent: off. */
+  gates?: boolean;
+  /** Ranged units and mages go up onto town walls (`wall`, D-096), `Rules.walls`. Absent: off. */
+  walls?: boolean;
 }
 
 export interface MapInfo {
@@ -727,7 +738,7 @@ export interface Rules {
   /** Arrows of the main city, the big city's tower and arrow towers (round 7). */
   /**
    * `gate` (D-096, while `features.gates`): a governed town's gates shoot, one arrow more for every
-   * `gatePerSoldiers` of the holder's soldiers inside the walls or on them, up to `extraMax` more.
+   * `perSoldiers` of the holder's soldiers inside the walls or on them, up to `extraMax` more.
    */
   arrows?: { mainCity: ArrowInfo; townTower: ArrowInfo; arrowTower: ArrowInfo; gate?: ArrowInfo };
   /** Unit types that may hide in buildings with `garrison` (round 7). */
@@ -755,6 +766,18 @@ export interface Rules {
   plunderRecovery?: { startPermille: number; ticks: number };
   /** The crystal cannon's range in fixed point (round 8: 7 cells; before, 8). */
   cannonRange?: number;
+  /**
+   * Castle gates (D-096; in play while `features.gates`): hits on a gate by ranged units and mages count
+   * `rangedNum` / `rangedDen` (at least 1; melee in full); a governed town rebuilds a broken gate
+   * once no enemy has stood inside its walls for `rebuildTicks`. Each gate's hp: `towns[size].gateHp`.
+   */
+  gate?: { rangedNum: number; rangedDen: number; rebuildTicks: number };
+  /**
+   * On town walls (D-096; in play while `features.walls`): `range` (fixed point) more range; hits of ranged
+   * units, mages and arrows at `takenNum` / `takenDen` (the cannon in full); neutral militia on
+   * the walls throw stones to `sling` (fixed point).
+   */
+  walls?: { range: number; takenNum: number; takenDen: number; sling: number };
   /**
    * The population ceiling (D-083): `base` plus `town[size]` (by TownSize) for each town the
    * player governs; HeaderField.populationCeiling has it now. Off: base 120, town [0, 0].
@@ -809,7 +832,7 @@ export type CommandBody =
   /**
    * Ranged units and mages of `u` go up onto the walls of town `town`, held by the player (D-096;
    * awaiting the choice, plundering, repairing, governed): each to the free wall cell nearest it.
-   * Down again with `leave` { u, town } or any move, attack, retreat or stop.
+   * Down again with `leave_wall` or any move, attack, retreat or stop.
    */
   | { c: "wall"; u: number[]; town: number }
   /** Units of `u` standing on (or going up onto) town `town`'s walls come down (D-096). */

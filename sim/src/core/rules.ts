@@ -165,13 +165,16 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     maxPopulation: basePopulation(),
     population: { base: basePopulation(), town: [TownSize.Small, TownSize.Large].map((size) => (POPULATION_200.on ? POPULATION_200.town[size] : 0)) },
     queueMax: QUEUE_MAX,
-    // `outpost` only while on: absent is off, and the screen's tables of the round 7 four stay as they were.
-    features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on, ...(OUTPOST.on ? { outpost: true } : {}) },
+    // `outpost`, `gates` and `walls` only while on: absent is off, and the screen's tables of the round 7 four stay as they were.
+    features: {
+      plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on,
+      ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
+    },
     arrows: {
       mainCity: MAIN_ARROW,
       townTower: { ...TOWER_ARROW, extraMax: 0 },
       arrowTower: { ...ARROW_TOWER, extraMax: 0 },
-      ...(GATE.on ? { gate: { damage: GATE_ARROW.damage, range: GATE_ARROW.range, cooldown: GATE_ARROW.cooldown, extraMax: GATE_ARROW.extraMax } } : {}),
+      ...(GATE.on ? { gate: { ...GATE_ARROW } } : {}),
     },
     garrisonTypes: GARRISON_TYPES,
     garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },
@@ -180,6 +183,9 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size, map)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
     cannonRange: CANNON.range,
+    // Sent as `outpost` is; `features` says whether they are on.
+    gate: { rangedNum: GATE.rangedNum, rangedDen: GATE.rangedDen, rebuildTicks: GATE.rebuildTicks },
+    walls: { range: WALLS.range, takenNum: WALLS.takenNum, takenDen: WALLS.takenDen, sling: WALLS.sling },
   };
 }
 
@@ -549,6 +555,7 @@ function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap
       garrison: cells(c.garrison),
       towerLand: TOWER_REACH.town + 1,
     },
+    ...(GATE.on ? { gateHp: GATE.hp[size] } : {}),
   };
 }
 
