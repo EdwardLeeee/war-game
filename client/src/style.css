@@ -1038,13 +1038,15 @@ button.order-retreat {
 }
 
 /* What the stance and the formation mean (D-026, D-027), small lines. They sit below the ✕, so they use the full width. */
-.sel-note {
+.sel-note,
+.sel-counters {
   margin: 4px -46px 0 0;
   font-size: 11px;
   line-height: 15px;
 }
 
-.sel-note span {
+.sel-note span,
+.sel-counters span {
   display: block;
 }
 
@@ -1110,6 +1112,13 @@ button .sub {
   font-size: 10px;
   font-weight: 500;
   opacity: 0.85;
+}
+
+/* 剋／怕 under a train button's cost (D-097): one line in the two-column button. */
+.cmds .counter-sub {
+  font-size: 9px;
+  white-space: nowrap;
+  letter-spacing: -0.2px;
 }
 
 .alert-arrows .alert-arrow {

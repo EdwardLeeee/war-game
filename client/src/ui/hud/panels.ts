@@ -10,6 +10,7 @@ import { POST_TYPE } from "../../game/outpost.ts";
 import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import { costText as costLine } from "../../game/govern-wait.ts";
+import { counterShort } from "../../game/counters.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
   AUTO_TRAIN,
@@ -385,7 +386,16 @@ export class SelectionInfo {
       const autocast = mine && (u[o + U.flags] & UnitFlag.Autocast) !== 0 ? "　自動施放開" : "";
       status.textContent = `${ACTION_NAME[u[o + U.action]] ?? ""}${autocast}`;
     });
+    this.counterNote(view, [view.unitType(id)]);
     this.orderNote(view, [id]);
+  }
+
+  /** 剋／怕 (D-097) for the soldier type selected, ours or not: 「槍兵　剋：騎兵／怕：遠程」. */
+  private counterNote(view: GameView, types: number[]): void {
+    const lines = types.filter((t) => isSoldier(t)).map((t) => [t, counterShort(view.rules, t)] as const).filter(([, text]) => text !== "");
+    if (lines.length === 0) return;
+    const note = el("p", this.el, "sel-counters");
+    for (const [t, text] of lines) el("span", note, "counter-short", `${UNIT_NAME[t] ?? "兵"}　${text}`);
   }
 
   /**
@@ -432,6 +442,9 @@ export class SelectionInfo {
       // Tapping a type keeps only that type selected.
       button(chips, `${UNIT_NAME[type] ?? "單位"} ×${list.length}`, "", () => this.host.selectOnly(list), "chip secondary");
     }
+    // One type only: its 剋／怕 (a mixed selection has the chips: a tap on one shows its line; the
+    // panel would not fit a line for each at 380 pt).
+    if (counts.size === 1) this.counterNote(view, [...counts.keys()]);
     this.orderNote(view, ids);
   }
 
@@ -838,7 +851,10 @@ export class CommandArea {
       if (done && info !== undefined) {
         for (const unit of info.trains) {
           const u = view.rules.units[unit];
-          button(this.el, `訓練${UNIT_NAME[unit] ?? ""}`, u === undefined ? "" : costText(u.cost), () => this.host.command({ c: "train", building: id, type: unit, n: 1 }));
+          // 剋／怕 under the cost (D-097), the button two columns wide for it.
+          const counters = isSoldier(unit) ? counterShort(view.rules, unit, true) : "";
+          const train = button(this.el, `訓練${UNIT_NAME[unit] ?? ""}`, u === undefined ? "" : costText(u.cost), () => this.host.command({ c: "train", building: id, type: unit, n: 1 }), counters === "" ? "" : "wide");
+          if (counters !== "") el("span", train, "sub counter-sub", counters);
         }
         if (info.trains.length > 0) {
           const rally = button(this.el, mode === "rally" ? "取消集結點" : "集結點", "", () => this.host.setMode(mode === "rally" ? "normal" : "rally"), "secondary");
