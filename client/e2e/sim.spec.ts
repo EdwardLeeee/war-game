@@ -304,6 +304,8 @@ test("速度：正常 → 快 → 慢 → 正常（每秒 30、40、20 tick，D-
 // (test/messages.test.ts) and this test only uses a rule that exists.
 test("已經有的規則被拒時說明原因：主城連排 5 個村民，第 5 個糧食不夠", async ({ page }) => {
   await start(page);
+  // The screen's 自動訓練 (D-098) would queue villagers of its own from the same food.
+  await page.evaluate(() => window.__proto?.game?.autoArmy(false));
   await pause(page);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);

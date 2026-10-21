@@ -89,7 +89,9 @@ test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵躲進
   const city = await ownBuilding(page, MAIN_CITY);
   if (city === undefined) throw new Error("no main city");
   const home = { x: city.cx + city.size / 2, y: city.cy + city.size / 2 };
-  // The scenario's barracks trains on its own (D-054) and would fill the population (20) before the cavalry.
+  // 自動訓練 (the screen's since D-098: villagers up to 40, and the barracks' own before the screen
+  // turns it off) would fill the population (20) before the cavalry: off, both.
+  await page.evaluate(() => window.__proto?.game?.autoArmy(false));
   const barracks = await ownBuilding(page, BARRACKS);
   if (barracks === undefined) throw new Error("no barracks");
   await page.evaluate((id) => window.__proto?.game?.send({ c: "auto_train", building: id, on: false }), barracks.id);
