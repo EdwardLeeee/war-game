@@ -6,6 +6,7 @@
 
 import { BUILDINGS } from "./core/rules.ts";
 import { Game } from "./core/game.ts";
+import { BLOCK_ROCK, BLOCK_WALL } from "./core/world.ts";
 import { BuildingType, CELL_SHIFT, UnitType } from "./protocol.ts";
 
 function setup(walled: boolean) {
@@ -13,10 +14,13 @@ function setup(walled: boolean) {
   const w = g.w;
   for (let s = 0; s < w.units.count; s++) w.unitSlot[w.units.col.id[s]] = -1;
   w.units.count = 0;
-  // A 24 x 24 walkable square at least 15 cells from every building (as test/helpers.ts
-  // openArea): searching only the middle of the map found none.
+  // A 24 x 24 square of node-free cells at least 15 cells from every building (as test/helpers.ts
+  // openArea): searching only the middle of the map found none. Rock, water, cliffs and castle
+  // walls (R6-51, D-089) do not count against it: they are taken down there (grid only), so the
+  // square is where it was before them and nothing stands in the open walk.
   const n = w.size;
   const b = w.buildings.col;
+  const ground = BLOCK_ROCK | BLOCK_WALL;
   let a = { x: -1, y: -1 };
   for (let y = 0; y + 24 <= n && a.x < 0; y++) {
     for (let x = 0; x + 24 <= n && a.x < 0; x++) {
@@ -24,11 +28,13 @@ function setup(walled: boolean) {
       for (let s = 0; s < w.buildings.count && ok; s++) {
         if (Math.abs(b.cellX[s] - (x + 12)) < 27 && Math.abs(b.cellY[s] - (y + 12)) < 27) ok = false;
       }
-      for (let yy = y; yy < y + 24 && ok; yy++) for (let xx = x; xx < x + 24 && ok; xx++) if (!w.walkable(xx, yy)) ok = false;
+      for (let yy = y; yy < y + 24 && ok; yy++) for (let xx = x; xx < x + 24 && ok; xx++) if ((w.grid[yy * n + xx] & ~ground) !== 0) ok = false;
       if (ok) a = { x, y };
     }
   }
   if (a.x < 0) throw new Error("no open square");
+  for (let yy = a.y; yy < a.y + 24; yy++) for (let xx = a.x; xx < a.x + 24; xx++) w.grid[yy * n + xx] &= ~ground;
+  w.openVersion++;
   const x0 = a.x + 6;
   const y0 = a.y + 6;
   if (walled) {

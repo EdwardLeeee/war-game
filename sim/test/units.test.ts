@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { BUILDINGS, JOIN_FIGHT, LONG_BOWS, SQUAD, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, JOIN_FIGHT, LONG_BOWS, MARCH_ORDER, SQUAD, UNITS } from "../src/core/rules.ts";
 import { fight } from "../src/balance-lib.ts";
 import type { Game } from "../src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
@@ -577,7 +577,9 @@ test("a squad's ranged stop at their range: none walks into close combat", () =>
   assert.ok(ranged >= 10, `${ranged} ranged struck`);
 });
 
-test("a squad beats an equal standing force that it loses to when its back rows wait (24 against 24)", switchedOff([LONG_BOWS], () => {
+// Ranks on the march (MARCH_ORDER, D-095) off: this squad has its ranged in front, so its
+// spearmen would pass them on the way, come in a ragged line, and lose (0 to 7 left).
+test("a squad beats an equal standing force that it loses to when its back rows wait (24 against 24)", switchedOff([LONG_BOWS, MARCH_ORDER], () => {
   const finish = (s: ReturnType<typeof squadScene>) => {
     run(s.g, 2400);
     return [s.mine.filter((id) => slotOf(s.g, id) >= 0).length, s.enemy.filter((id) => slotOf(s.g, id) >= 0).length];

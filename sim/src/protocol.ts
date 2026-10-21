@@ -103,8 +103,25 @@ export const NodeKind = {
 } as const;
 export type NodeKind = (typeof NodeKind)[keyof typeof NodeKind];
 
-export const Terrain = { Open: 0, Blocked: 1 } as const;
+/**
+ * A cell's ground. Blocked: rock (heaps, ridges). Wall (D-089): a town's castle wall or corner tower.
+ * Water (rivers, lakes) and Cliff (R6-51). Nobody walks or builds on those four; shots and sight go
+ * over them. Ford, BridgeNS, BridgeEW (R6-51): walked as open ground, but nobody builds there, so a
+ * crossing cannot be shut. A bridge's value is its way: units cross it going north-south, or
+ * east-west (the map's mirror and turns swap the two).
+ */
+export const Terrain = { Open: 0, Blocked: 1, Wall: 2, Water: 3, Ford: 4, BridgeNS: 5, BridgeEW: 6, Cliff: 7 } as const;
 export type Terrain = (typeof Terrain)[keyof typeof Terrain];
+
+/** Can units walk ground of this Terrain value (open ground, fords, bridges)? */
+export function walkableTerrain(t: number): boolean {
+  return t === Terrain.Open || t === Terrain.Ford || t === Terrain.BridgeNS || t === Terrain.BridgeEW;
+}
+
+/** A ford or a bridge (R6-51): walkable, but nobody builds there. */
+export function crossingTerrain(t: number): boolean {
+  return t === Terrain.Ford || t === Terrain.BridgeNS || t === Terrain.BridgeEW;
+}
 
 export const TownSize = { Small: 0, Large: 1 } as const;
 export type TownSize = (typeof TownSize)[keyof typeof TownSize];
@@ -208,6 +225,10 @@ export const Reject = {
   AlreadyPlundered: 16,
   /** `garrison` into a building with no room left, counting the soldiers on their way (round 7). */
   NoRoom: 17,
+  /** `build` on a gate's lane (PlaceBit.GateLane; D-089, ceo 2026-10-20: the gates stay open). */
+  GateLane: 18,
+  /** `build` on a ford or a bridge (PlaceBit.Crossing; R6-51, ceo 2026-10-20: crossings stay open). */
+  Crossing: 19,
 } as const;
 export type Reject = (typeof Reject)[keyof typeof Reject];
 
@@ -474,7 +495,7 @@ export const MAP_MODES = ["fixed", "random"] as const satisfies readonly MapMode
  * red preview and the final ruling come from one piece of code.
  */
 export const PlaceBit = {
-  /** Rock, a tree, or a known building (farms included). */
+  /** Rock, a tree, a known building (farms included), a castle wall, water or a cliff (R6-51). */
   Blocked: 1,
   /** Not yet explored: you cannot build there. */
   Unexplored: 2,
@@ -486,6 +507,17 @@ export const PlaceBit = {
    * here (round 7, D-061; only while `Rules.features.towers`).
    */
   TowerLand: 8,
+  /** A castle's wall or corner tower (D-089; also Blocked), once explored. */
+  Wall: 16,
+  /** A castle's gate (D-089): open ground in the ring of walls, once explored. */
+  Gate: 32,
+  /**
+   * A gate's lane (D-089): the gate, the cell in front of it and the first cell behind it, once
+   * explored. Open ground nobody may build on (Reject.GateLane).
+   */
+  GateLane: 64,
+  /** A ford or a bridge (R6-51), once explored: walked, but nobody builds there (Reject.Crossing). */
+  Crossing: 128,
 } as const;
 
 // --- static data sent once, in "ready" -----------------------------------------------
@@ -580,6 +612,42 @@ export interface TownInfo {
   populationCap: number;
   garrisonNeeded: number;
   revoltTicks: number;
+  /** The castle round the town (D-089); the simulation always sends it. */
+  castle?: TownCastle;
+}
+
+/**
+ * A town's castle (D-089): offsets in cells from the town's centre cell (TownSpec / TownField
+ * cellX, cellY), in the map's own directions, the same for both players. The big city's differ from
+ * map to map (its castle is centred on its tower): read them from this game's rules, never assume.
+ * The town is what lies inside the walls; `radius` stays the walls' distance from the centre.
+ */
+export interface TownCastle {
+  /** Cells inside the walls, inclusive: the town (capturing, holding, governing, plundering). */
+  inside: { x0: number; y0: number; x1: number; y1: number };
+  /** Walls and corner towers (Terrain.Wall): nobody walks or builds there; shots and sight go over. */
+  wall: [number, number][];
+  /** The corner towers' cells (in `wall` too). */
+  corner: [number, number][];
+  /** Gates: open cells in the ring of walls, open to everyone. */
+  gate: [number, number][];
+  /** For each gate cell (same order), the open cell in front of it outside the walls. */
+  outside: [number, number][];
+  /** For each gate cell (same order), the first cell behind it inside the walls. */
+  behind: [number, number][];
+  /** Where the militia stand, in the order they are placed. */
+  militia: [number, number][];
+  /** war-game-ui's drawing of where a garrison stands; the simulation does not place garrisons. */
+  garrison: [number, number][];
+  /** Arrow towers may go up to this many cells outside `inside` (Chebyshev) while the town is held (D-061). */
+  towerLand: number;
+}
+
+/** Is cell (cellX, cellY) inside the walls of the town whose centre cell is (townCellX, townCellY)? */
+export function inTown(castle: Pick<TownCastle, "inside">, townCellX: number, townCellY: number, cellX: number, cellY: number): boolean {
+  const dx = cellX - townCellX;
+  const dy = cellY - townCellY;
+  return dx >= castle.inside.x0 && dx <= castle.inside.x1 && dy >= castle.inside.y0 && dy <= castle.inside.y1;
 }
 
 /**
@@ -605,7 +673,7 @@ export interface MapInfo {
   size: number;
   /**
    * size * size cells, row by row: Terrain values. Trees are nodes, not terrain. On a random map
-   * a player gets all Open here: rock comes with exploration (Snapshot.placement).
+   * a player gets all Open here: the ground comes with exploration (Snapshot.terrain).
    */
   terrain: Uint8Array;
   /**
@@ -681,8 +749,11 @@ export type CommandBody =
   | { c: "attack"; u: number[]; target: number }
   | { c: "stop"; u: number[] }
   | { c: "stance"; u: number[]; stance: Stance }
-  /** Loose (true) or close (false) formation for these units: sets or clears UnitFlag.Loose and re-forms them (PROTOCOL.md 3). */
-  | { c: "formation"; u: number[]; loose: boolean }
+  /**
+   * Loose (true) or close (false) formation for these units: sets or clears UnitFlag.Loose and
+   * re-forms them (PROTOCOL.md 3); `face` (0-15, as `facing`, D-095): the way they face then.
+   */
+  | { c: "formation"; u: number[]; loose: boolean; face?: number }
   | { c: "gather"; u: number[]; node: number }
   /** `u` may be empty: the simulation then sends the nearest free farmers (PROTOCOL.md 3.1). */
   | { c: "build"; u: number[]; type: BuildingType; x: number; y: number }
@@ -858,6 +929,12 @@ export interface Snapshot {
   fog: Uint8Array | null;
   /** size * size PlaceBit values for this player, sent together with fog. */
   placement: Uint8Array | null;
+  /**
+   * size * size Terrain values the player knows (R6-51), sent together with fog: on a random map
+   * the explored cells (Open elsewhere), on the fixed map every cell. The simulation always sends
+   * it (null between fog updates); optional only so that snapshots made by hand still type-check.
+   */
+  terrain?: Uint8Array | null;
   /** Own idle farmers, in id order (from PR-3). */
   idleFarmers: Int32Array;
   events: SimEvent[];

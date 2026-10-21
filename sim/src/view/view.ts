@@ -18,6 +18,7 @@ import {
   BuildingField,
   BuildingFlag,
   CELL_SHIFT,
+  crossingTerrain,
   Fog as FogState,
   GameState,
   HEADER_LENGTH,
@@ -29,6 +30,7 @@ import {
   PLAYER_COUNT,
   PlaceBit,
   Scenario,
+  Terrain,
   type Snapshot,
   TOWN_STRIDE,
   TownField,
@@ -41,10 +43,10 @@ import {
   WARNING_STRIDE,
   WarningField,
 } from "../protocol.ts";
-import { writeTownRow } from "../core/fog.ts";
+import { townInSight, writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, OUTPOST, TOWER_REACH, TOWERS, TOWNS, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, OUTPOST, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -62,6 +64,8 @@ export interface PlayerView {
   fogTick: number;
   /** size * size PlaceBit values (PROTOCOL.md section 7). */
   placement: Uint8Array;
+  /** size * size Terrain values the player knows: explored cells on a random map, all on the fixed map. */
+  terrain: Uint8Array;
   /** Own idle farmers, in id order. */
   idleFarmers: Int32Array;
   mapSize: number;
@@ -230,15 +234,14 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   const buildings = new Int32Array(rows.length * BUILDING_STRIDE);
   rows.forEach((row, r) => buildings.set(row, r * BUILDING_STRIDE));
 
-  // Towns: explored ones, live when seen, else as last seen.
+  // Towns: the ones seen, live while in sight (any cell of the castle, D-089), else as last seen.
   const townRows: Int32Array[] = [];
   for (let t = 0; t < w.townSize.length; t++) {
     const row = new Int32Array(TOWN_STRIDE);
-    const cell = w.townY[t] * n + w.townX[t];
-    if (player === null || vis![cell] === 1) {
+    if (player === null || townInSight(w, vis!, t)) {
       writeTownRow(w, t, row, 0);
       row[TownField.flags] |= TownFlag.Visible;
-    } else if (exp![cell] === 1) {
+    } else if (fog.townKnown[player][t] === 1) {
       row.set(fog.townSeen[player].subarray(t * TOWN_STRIDE, (t + 1) * TOWN_STRIDE));
       row[TownField.flags] &= ~TownFlag.Visible;
     } else {
@@ -323,10 +326,21 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   // unexplored cells are marked; farm land comes from own finished main cities and granaries.
   const placement = new Uint8Array(n * n);
   const terrain = w.map.terrain;
-  // On a random map rock is known only where explored (D-074).
+  // On a random map the ground is known only where explored (D-074).
   const rockSeen = w.map.mode === "random" ? exp : null;
+  const known = new Uint8Array(n * n);
   for (let i = 0; i < n * n; i++) {
-    let bits = terrain[i] === 1 && (rockSeen === null || rockSeen[i] === 1) ? PlaceBit.Blocked : 0;
+    const seen = rockSeen === null || rockSeen[i] === 1;
+    let bits = 0;
+    if (seen) known[i] = terrain[i];
+    // Castle walls and gates (D-089), known like rock; nothing is built on any ground but open
+    // ground (R6-51: water and cliffs block, fords and bridges are crossings).
+    if (seen && terrain[i] === Terrain.Wall) bits = PlaceBit.Blocked | PlaceBit.Wall;
+    else if (seen && crossingTerrain(terrain[i])) bits = PlaceBit.Crossing;
+    else if (seen && terrain[i] !== Terrain.Open) bits = PlaceBit.Blocked;
+    else if (seen && w.gateAt[i] === 1) bits = PlaceBit.Gate;
+    // Each gate's lane (the gate, the cell in front, the cell behind) stays open: no building.
+    if (seen && w.gateLane[i] === 1) bits |= PlaceBit.GateLane;
     if (exp !== null && exp[i] === 0) bits |= PlaceBit.Unexplored;
     placement[i] = bits;
   }
@@ -359,13 +373,11 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   if (TOWERS.on && player !== null) {
     for (let t = 0; t < w.townSize.length; t++) {
       if (w.townOwner[t] !== player || (w.townState[t] !== TownState.Repairing && w.townState[t] !== TownState.Governed)) continue;
-      const r = TOWNS[w.townSize[t]].radius + TOWER_REACH.town;
-      for (let y = Math.max(0, w.townY[t] - r); y <= Math.min(n - 1, w.townY[t] + r); y++) {
-        for (let x = Math.max(0, w.townX[t] - r); x <= Math.min(n - 1, w.townX[t] + r); x++) {
-          const dx = x - w.townX[t];
-          const dy = y - w.townY[t];
-          if (dx * dx + dy * dy <= r * r) placement[y * n + x] |= PlaceBit.TowerLand;
-        }
+      // Inside the walls, and TOWER_REACH.town cells outside them (D-089; the wall is the first ring).
+      const c = w.castles[t].inside;
+      const r = TOWER_REACH.town + 1;
+      for (let y = Math.max(0, w.townY[t] + c.y0 - r); y <= Math.min(n - 1, w.townY[t] + c.y1 + r); y++) {
+        for (let x = Math.max(0, w.townX[t] + c.x0 - r); x <= Math.min(n - 1, w.townX[t] + c.x1 + r); x++) placement[y * n + x] |= PlaceBit.TowerLand;
       }
     }
   }
@@ -382,6 +394,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     fog: fogGrid,
     fogTick: fog.fogTick,
     placement,
+    terrain: known,
     idleFarmers: Int32Array.from(idle),
     mapSize: n,
   };
@@ -425,6 +438,7 @@ export class SnapshotEncoder {
       nodes,
       fog: fogNew ? view.fog : null,
       placement: fogNew ? view.placement : null,
+      terrain: fogNew ? view.terrain : null,
       idleFarmers: view.idleFarmers,
       events,
     };
@@ -436,5 +450,6 @@ export function transferables(s: Snapshot): ArrayBuffer[] {
   const out = [s.header, s.units, s.buildings, s.towns, s.warnings, s.nodes, s.idleFarmers].map((a) => a.buffer as ArrayBuffer);
   if (s.fog !== null) out.push(s.fog.buffer as ArrayBuffer);
   if (s.placement !== null) out.push(s.placement.buffer as ArrayBuffer);
+  if (s.terrain != null) out.push(s.terrain.buffer as ArrayBuffer);
   return out;
 }

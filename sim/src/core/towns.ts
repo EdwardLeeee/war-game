@@ -28,7 +28,7 @@ import {
   UnitType,
 } from "../protocol.ts";
 import type { Emit } from "./economy.ts";
-import type { Fog } from "./fog.ts";
+import { type Fog, townInSight } from "./fog.ts";
 import { governPerMinute, PLUNDER_RECOVERY, TOWNS, townIncomePermille } from "./rules.ts";
 import { spawnMilitia } from "./scenarios.ts";
 import type { World } from "./world.ts";
@@ -46,11 +46,10 @@ export class TownSystem {
     this.emit = emit;
   }
 
-  /** Sends a town event to the players involved and to every player who sees the town. */
+  /** Sends a town event to the players involved and to every player who sees the town (any cell of its castle, D-089). */
   private tell(w: World, t: number, ev: SimEvent, involved: number[]): void {
-    const n = w.size;
     for (let p = 0; p < PLAYER_COUNT; p++) {
-      if (involved.includes(p) || this.fog.visible[p][w.townY[t] * n + w.townX[t]] === 1) this.emit(p, ev);
+      if (involved.includes(p) || townInSight(w, this.fog.visible[p], t)) this.emit(p, ev);
     }
   }
 
@@ -59,9 +58,6 @@ export class TownSystem {
     const b = w.buildings.col;
     for (let t = 0; t < w.townSize.length; t++) {
       const rule = TOWNS[w.townSize[t]];
-      const r = rule.radius << CELL_SHIFT;
-      const cx = (w.townX[t] << CELL_SHIFT) + 512;
-      const cy = (w.townY[t] << CELL_SHIFT) + 512;
       const present = [0, 0];
       let militia = false;
       for (let s = 0; s < w.units.count; s++) {
@@ -71,9 +67,8 @@ export class TownSystem {
           continue;
         }
         if (o >= PLAYER_COUNT || u.type[s] === UnitType.Farmer || u.action[s] === Action.Garrisoned) continue;
-        const dx = u.x[s] - cx;
-        const dy = u.y[s] - cy;
-        if (dx * dx + dy * dy <= r * r) present[o]++;
+        // Inside the walls (D-089).
+        if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT)) present[o]++;
       }
       let tower = false;
       for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.TownTower && b.town[s] === t) tower = true;

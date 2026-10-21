@@ -165,7 +165,9 @@ test("mirror-image loose squads march, fight and keep apart as mirror images, ti
   cmd(g, 0, { c: "move", u: squad[0], x: bx + 3, y: by + 3 });
   cmd(g, 1, { c: "move", u: squad[1], x: by + 3, y: bx + 3 });
   let fighting = 0;
-  for (let t = 0; t < 400; t++) {
+  // 30 s: they march, fight and stand (with the ranks on the march, MARCH_ORDER, the loose ranged
+  // let the spearmen pass first and it all comes about 4 s later than at the 20 s this had).
+  for (let t = 0; t < 600; t++) {
     g.step();
     for (const [a, b] of pairs) {
       const sa = slotOf(g, a);
@@ -187,6 +189,10 @@ test("loose soldiers by a rock spread out and then stand still (#116)", () => {
   // rock at (21-23, 39) and are told to move to (26, 44). One of them ends below the rock, and
   // the push of the mate nearest it ran into the rock; it was pushed off the place it stood on,
   // walked back, and was pushed off again, for good.
+  // Since R6-51, (26, 44) is inside a rock ridge running from (21, 41) to (28, 46): the group's
+  // goal cell is west of it and some slots east. Those soldiers walked to the goal cell and then
+  // pressed straight at their slots through the ridge; now a slot the straight way from the goal
+  // cell cannot reach moves to the nearest cell it can (commands.ts layout).
   const g = new Game({ seed: 1, scenario: "e2e" });
   const w = g.w;
   const u = w.units.col;
