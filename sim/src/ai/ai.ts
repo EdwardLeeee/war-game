@@ -2131,9 +2131,18 @@ export interface HardPlan {
    * again (false: as before).
    */
   ruinsAgain: boolean;
-  /** D-086 A4 (a09c2367: one mine all game, the gold by it gone at minute 31, none gathered after 36): no gold left within MINE_NEAR cells of its mines, another mine by the nearest gold it knows of (false: as before). */
+  /**
+   * D-086 A4 (a09c2367: one mine all game, the gold by it gone at minute 31, none gathered after 36): no gold left within
+   * MINE_NEAR cells of its mines, another mine by the nearest gold it knows of on its own side: nearer its main city
+   * than the enemy's, within MINE_FAR cells of it or MINE_TOWN of a town it governs, no enemy soldier in sight within
+   * BUILD_SAFE cells (false: as before).
+   */
   mineMove: boolean;
-  /** D-086 A4 (691b4349: a barracks put down three times where the enemy army stood, paid for each): no new building, nor farmers to a site, with enemy soldiers in sight within BUILD_SAFE cells of it (false: as before). */
+  /**
+   * D-086 A4 (691b4349: a barracks put down three times where the enemy army stood, paid for each): no new building, nor
+   * farmers to a site, with enemy soldiers in sight within BUILD_SAFE cells of it; and a site of its own gone before it
+   * was done, none of that kind within SITE_NEAR cells of it for SITE_REST (false: as before).
+   */
   buildSafe: boolean;
 }
 
@@ -2198,6 +2207,11 @@ const TOWN_SCOUT_EVERY = 200;
 /** D-086 A4 (plan.mineMove): gold this near (cells) a mine is its own; at most this many mines. */
 const MINE_NEAR = 6;
 const MINE_MOST = 3;
+const MINE_FAR = 40;
+const MINE_TOWN = 12;
+/** D-086 A4 (plan.buildSafe): a site lost before it was done, none of its kind this near (cells) for this long. */
+const SITE_NEAR = 8;
+const SITE_REST = 3 * 1200;
 /** D-086 A4 (plan.buildSafe): enemy soldiers this near (cells) a spot. */
 const BUILD_SAFE = 10;
 /** D-086 A4 (plan.counterCavalry): this share (percent) of cavalry among the enemy soldiers it knows of. */
@@ -2318,6 +2332,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let townScoutId = -1;
   let townScoutAgain = 0;
   let townScoutMove = -100000;
+  /** D-086 A4 (plan.buildSafe): its sites not done yet at the last think, and those lost since, till when. */
+  const sitesSeen = new Map<number, { type: number; x: number; y: number }>();
+  const lostSites: { type: number; x: number; y: number; until: number }[] = [];
   const frame = (x: number, y: number) => toCanon(know.frame, x, y);
   /** Order of a point in player 0's frame (for ties: player 1 breaks them the mirror-image way). */
   const rank = (x: number, y: number) => {
@@ -2933,6 +2950,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         return null;
       };
+      // D-086 A4 (plan.buildSafe): a site seen last think and gone now, not done: lost (the enemy razed it).
+      if (plan.buildSafe) {
+        for (let i = lostSites.length - 1; i >= 0; i--) if (lostSites[i].until <= tick) lostSites.splice(i, 1);
+        const now = new Set(own.map((b) => b.id));
+        for (const [id, l] of sitesSeen) if (!now.has(id)) lostSites.push({ ...l, until: tick + SITE_REST });
+        sitesSeen.clear();
+        for (const b of own) if (b.progress < 1000) sitesSeen.set(b.id, { type: b.type, x: b.x, y: b.y });
+      }
       for (const site of own.filter((b) => b.progress < 1000)) {
         if (farmers.some((f) => f.order === Order.Build && f.orderTarget === site.id)) continue;
         // D-086 A4 (plan.buildSafe): no farmers to a site with enemies by it.
@@ -2993,7 +3018,34 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const y = view.nodes[r + NodeField.cellY];
             near = mines.some((m) => dist2(m.x, m.y, x, y) <= MINE_NEAR * MINE_NEAR);
           }
-          if (!near) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
+          if (!near) {
+            // Not by the enemy (a09c2367 with the first try: 90 mines put down by the player's main city, each paid and razed).
+            const held: { x: number; y: number }[] = [];
+            for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+              if (view.towns[r + TownField.owner] !== player || view.towns[r + TownField.state] !== TownState.Governed) continue;
+              const t = mem.site(view.towns[r + TownField.id])!;
+              held.push({ x: t.cellX, y: t.cellY });
+            }
+            let best: { x: number; y: number; id: number } | null = null;
+            let bestD = 0;
+            let bestKey = 0;
+            for (let r = 0; r < view.nodes.length; r += NODE_STRIDE) {
+              if (view.nodes[r + NodeField.kind] !== NodeKind.GoldMine || view.nodes[r + NodeField.amount] <= 0) continue;
+              const x = view.nodes[r + NodeField.cellX];
+              const y = view.nodes[r + NodeField.cellY];
+              const d = dist2(x, y, home.cellX, home.cellY);
+              if (mem.known === Known.City && d >= dist2(x, y, enemyHome.cellX, enemyHome.cellY)) continue;
+              if (d > MINE_FAR * MINE_FAR && !held.some((t) => dist2(x, y, t.x, t.y) <= MINE_TOWN * MINE_TOWN)) continue;
+              if (foes.some((f) => dist2(f.x, f.y, x, y) <= BUILD_SAFE * BUILD_SAFE)) continue;
+              const key = rank(x, y);
+              if (best === null || d < bestD || (d === bestD && key < bestKey)) {
+                best = { x, y, id: view.nodes[r + NodeField.id] };
+                bestD = d;
+                bestKey = key;
+              }
+            }
+            if (best !== null) add(BuildingType.Mine, best);
+          }
         }
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
           add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
@@ -3004,8 +3056,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // D-086 A4: a tower only where it was picked.
           const spot = p.type === BuildingType.ArrowTower ? p.at : (spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20)));
           if (spot === null) continue;
-          // D-086 A4 (plan.buildSafe): not where enemy soldiers stand by; the next on the list instead.
+          // D-086 A4 (plan.buildSafe): not where enemy soldiers stand by, nor where one of its kind was lost; the next on the list instead.
           if (plan.buildSafe && foes.some((f) => dist2(f.x, f.y, spot.x, spot.y) <= BUILD_SAFE * BUILD_SAFE)) continue;
+          if (plan.buildSafe && lostSites.some((l) => l.type === p.type && dist2(l.x, l.y, spot.x, spot.y) <= SITE_NEAR * SITE_NEAR)) continue;
           const cost = rules.buildings[p.type].cost;
           if (!afford(cost)) {
             reserve.food += cost.food;
