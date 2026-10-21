@@ -1313,3 +1313,28 @@ button.danger {
   font-size: 11px;
   opacity: 0.8;
 }
+
+/* 開一局要等多久 (D-091): the start's steps, in the 量測 panel and (?test=1&loadtimes=1) over everything. */
+.lab-load,
+.load-times {
+  margin: 0;
+  font: 11px/1.35 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+.load-times {
+  position: fixed;
+  top: calc(var(--safe-t) + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 16px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+}
+
+.load-times[hidden] {
+  display: none;
+}

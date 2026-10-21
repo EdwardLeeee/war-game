@@ -205,6 +205,8 @@ def run(target, scale=3.0, page=2048, team_gain=TEAM_GAIN, astc=None, facings=No
                                 "-medium"], check=True)
     anims = {}
     for a, n, _, ph in u["anims"]:
+        if not any(k.startswith(f"{target}_{a}_f") for k in tables["color"]):
+            continue                      # not rendered (the R7 style test renders idle, walk and attack only)
         d = dict(frames=n, fps=spec.FPS.get(a, 12), loop=a in ("idle", "walk") or a.startswith("work_"),
                  placeholder=ph)
         if a == "attack":

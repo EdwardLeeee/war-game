@@ -7,7 +7,7 @@
 
 | 附件 | 內容 |
 |---|---|
-| `art-vN-x3.tar.gz`、`art-vN-x2.tar.gz` | 一個倍率一個檔。最上層是 `units/<unit>/`（`<unit>.json`、`<unit>_<layer>_<k>.png`、`memory.json`，不放 `raw/`）和 `effects/`（`effects.json`、`effects_0.png`）。art-v2 起加 `buildings/`、`nodes/`；art-v3 起建築和資源點是方形斜看（D-088，說明檔有 `"view": "oblique"`）；art-v4 起加 `castle/`（城牆，D-089；發布清單寫 `"castle": true`）。另有 `art-release.json`：tag、commit、來源 run、每個檔的 sha256。 |
+| `art-vN-x3.tar.gz`、`art-vN-x2.tar.gz` | 一個倍率一個檔。最上層是 `units/<unit>/`（`<unit>.json`、`<unit>_<layer>_<k>.png`、`memory.json`，不放 `raw/`）和 `effects/`（`effects.json`、`effects_0.png`）。art-v2 起加 `buildings/`、`nodes/`；art-v3 起建築和資源點是方形斜看（D-088，說明檔有 `"view": "oblique"`）；art-v4 起加 `castle/`（城牆，D-089；發布清單寫 `"castle": true`）；art-v5 起加 `terrain/`（地形，R6-51；發布清單寫 `"terrain": true`，說明檔 `design/b1/atlas-buildings.md` 第 12 節）。另有 `art-release.json`：tag、commit、來源 run、每個檔的 sha256。 |
 | `astc-sample.tar.gz` | 一個兵種的 2 倍顏色層和玩家色層，ASTC 4×4，KTX 1（`<unit>_<layer>_<k>.astc.ktx`，`astcenc -cl`，未預乘 alpha）。 |
 | `SHA256SUMS` | sha256sum 格式，列出上面每個附件。 |
 
@@ -44,6 +44,8 @@
 | art-v1 | 2026-10-18 13:06 | e78d939 | 39130015427 | 12 種兵種、揚塵 |
 | art-v2 | 2026-10-18 13:51 | c21cd9f | 39133286241 | 加建築與資源點（菱形，斜 45°）、晶砲預警圈 |
 | art-v3 | 2026-10-19 11:25 | 2da2698 | 39242920677 | 建築與資源點改成方形斜看（D-088，`view: oblique`）；兵種、效果和 art-v2 相同 |
+| art-v4 | 2026-10-19 18:33 | 5ed0880 | 39303076729 | 加城牆（`castle/`，D-089）與 3×3 大城箭樓；其他和 art-v3 相同 |
+| art-v5 | 2026-10-20 15:17 | 98f755b | 39446538988 | 加地形（`terrain/`，R6-51，core #245）；其他和 art-v4 相同 |
 
 每一號發布後都從公開網址重新下載，`sha256sum -c SHA256SUMS` 全部 OK。
 

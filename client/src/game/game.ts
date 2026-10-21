@@ -11,6 +11,7 @@ import {
   type Intent,
   type Pick,
   longPressKind,
+  moveIntents,
   type Mode,
   retreatHome,
   tapIntents,
@@ -19,6 +20,7 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
+import { enemyTooClose, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
@@ -154,13 +156,21 @@ export const TOWER_LAND_TEXT = "箭樓要蓋在主城或治理的城鎮附近";
 /** With outposts on (D-080), arrow towers may also go by our outposts. */
 export const TOWER_LAND_TEXT_OUTPOST = "箭樓要蓋在主城、治理的城鎮或哨所附近";
 
-/** A tap while every soldier selected is retreating moves the retreat (D-061). */
-export const RETREAT_RETARGET_TEXT = "改撤到這裡，撤到後原地堅守";
+
+/** 整理隊形 (D-095): what it faced, on the message bar. */
+const REFORM_TEXT: Record<string, string> = {
+  enemy: "整理隊形：槍兵在前，面向最近的敵人",
+  seen: "整理隊形：槍兵在前，面向剛才看到敵人的地方",
+  last: "整理隊形：槍兵在前，面向剛才走的方向",
+  city: "整理隊形：槍兵在前，面向敵方主城",
+  keep: "整理隊形：槍兵在前，方向不變",
+  near: `敵人在 ${REFORM_CLEAR_CELLS} 格內，不整理隊形：整理時不還手，先打完或先移動開`,
+};
 
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
-  advance: "點地面或小地圖：整隊前進，遇到敵人一起打",
-  retreat: "點地面或小地圖：撤到那裡；點主城回家",
-  cast: "點地面選晶砲落點",
+  // D-094: 攻擊 then a tap; 移動 the old 撤退.
+  advance: "點地面或小地圖：攻擊移動，遇到敵人就打；點敵人集中打它",
+  retreat: "點地面或小地圖：走過去，路上不還手；點主城回家",
   rally: "點地面設集結點",
   garrison: GARRISON_PROMPT,
   post: POST_PROMPT,
@@ -178,6 +188,8 @@ const PROJECTION_DEFAULT = PROJECTIONS.oblique;
 
 export class Game implements GestureHost {
   view: GameView | null = null;
+  /** When the simulation was asked to start and when it answered (performance.now(); D-091's load times). */
+  readonly started = { init: Number.NaN, ready: Number.NaN };
   camera: Camera | null = null;
   mode: Mode = "normal";
   placement: Placement | null = null;
@@ -397,6 +409,12 @@ export class Game implements GestureHost {
   readonly charges = new Charges();
   /** Stances sent that the snapshot does not show yet (D-081), for what 前進 and 撤退 go by. */
   private readonly stances = new SentStances();
+  /** 整理隊形 (D-095): where enemies were last seen (cells, by unit id), and the way each soldier was last sent. */
+  private readonly sightings = new Map<number, Sighting>();
+  private prunedAt = 0;
+  private readonly lastSent = new Map<number, Spot>();
+  /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
+  private readonly autocastAsked = new Set<number>();
   /** Orders from the buttons the snapshot does not show yet (a site, the queue, 自動訓練, 搶 or 治理): shown at once (pending.ts). */
   readonly pending = new PendingOrders();
   /** 閃紅提醒 (D-081): each group's base and alarm, and what the group buttons show (updated every snapshot). */
@@ -449,7 +467,7 @@ export class Game implements GestureHost {
     this.overlays.toast(text, kind);
   }
 
-  /** Minimap tap (GDD §10): jump there; in 進攻／撤退／晶砲／集結點 mode, pick that spot. */
+  /** Minimap tap (GDD §10): jump there; in 攻擊／移動／集結點 mode, pick that spot. */
   minimapTap(cx: number, cy: number): void {
     const view = this.view;
     if (view === null) return;
@@ -466,14 +484,15 @@ export class Game implements GestureHost {
     this.camera?.centerOn(wx, wy);
   }
 
-  /** Minimap long press with units selected (GDD §10): they advance there. */
+  /** Minimap long press with units selected (GDD §10): they move there (D-094: as a tap on the ground). */
   minimapLongPress(cx: number, cy: number): void {
-    const units = this.view?.selection.units ?? [];
-    if (units.length === 0) {
+    const view = this.view;
+    const units = view?.selection.units ?? [];
+    if (view === null || units.length === 0) {
       this.toast("先選部隊，再長按小地圖");
       return;
     }
-    this.apply(this.keepRetreating([{ kind: "command", cmd: { c: "move", u: units, x: cx, y: cy } }]));
+    this.apply(moveIntents(view, units, cx, cy));
   }
 
   pause(): void {
@@ -529,6 +548,7 @@ export class Game implements GestureHost {
       build: this.options.build,
     };
     this.initSent = init;
+    this.started.init = performance.now();
     const resume = this.options.resume;
     if (resume === undefined) {
       this.port.postMessage(init);
@@ -614,8 +634,12 @@ export class Game implements GestureHost {
     });
   }
 
-  /** An order from the player's own hand. Returns its sequence number, or -1 when nobody it names may take it. */
-  command(given: CommandBody): number {
+  /**
+   * An order from the player's own hand. Returns its sequence number, or -1 when nobody it names
+   * may take it. `hold`: a retreat whose soldiers hold once there (全軍撤退、退1–退4); any other
+   * retreat is 移動 (D-094), whose soldiers stand 積極 there.
+   */
+  command(given: CommandBody, hold = false): number {
     // 前進、攻擊、撤退 leave those hiding in a building where they are: only the building's
     // 全部出來 lets them out (round 7, ceo 2026-10-07), so tapping a group and ordering it on
     // does not empty the towers.
@@ -638,19 +662,22 @@ export class Game implements GestureHost {
       // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
       const released = this.army.release(cmd.u);
       const view = this.view;
-      if (cmd.c === "retreat") {
-        // 撤到就堅守 (D-061: 「撤到之後兵自己回頭打」): a retreating soldier fights no one, and once
-        // there, holding, it shoots only what comes in range and does not chase. 進攻 makes it
-        // 積極 again (below). Those released from a garrison hold already.
+      if (cmd.c === "retreat" && hold) {
+        // 撤到就堅守 (D-061: 「撤到之後兵自己回頭打」), for 全軍撤退 and 退1–退4 (D-094 keeps them):
+        // a retreating soldier fights no one, and once there, holding, it shoots only what comes
+        // in range and does not chase. Those released from a garrison hold already.
         const soldiers = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && this.stances.of(id, view.unitStance(id)) !== Stance.Hold);
         this.setStance(soldiers, Stance.Hold);
       } else {
-        // 前進 and 攻擊 are 進攻 (D-050), with or without the button: those holding go 積極.
+        // 攻擊 and 移動 (D-094; 移動 is a retreat: it fights no one on the way): there, those
+        // holding go 積極 (D-094: 「站著，敵人靠近就自己打」), as 進攻 always did (D-050).
         // With the stance just sent (取消, 堅守) counted, though the snapshot may not show it yet (D-081).
         const holding = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && this.stances.of(id, view.unitStance(id)) === Stance.Hold);
         this.setStance([...released, ...holding], Stance.Aggressive);
       }
     }
+    // 整理隊形's fallback (D-095): the way each was sent last, from where the lot stood.
+    if (cmd.c === "move" || cmd.c === "retreat" || cmd.c === "attack") this.noteSent(cmd);
     // His own order sending a recruit somewhere: 自動補兵 no longer leads it to its group (GDD §10).
     this.army.playerCommand(cmd);
     // 進攻到底 (D-080): another order of his, 堅守 or 躲進去 included, ends it; an attack starts it.
@@ -1286,7 +1313,7 @@ export class Game implements GestureHost {
       this.toast("主城不在了，沒有地方可以撤退");
       return;
     }
-    this.command({ c: "retreat", u, x: home.x, y: home.y });
+    this.command({ c: "retreat", u, x: home.x, y: home.y }, true);
     this.toast(`編隊 ${i + 1} 撤回主城`);
   }
 
@@ -1328,6 +1355,7 @@ export class Game implements GestureHost {
   private receive(msg: FromWorker): void {
     switch (msg.type) {
       case "ready": {
+        this.started.ready = performance.now();
         this.view = new GameView(msg.player ?? 0, msg.map, msg.rules);
         // The map as a diamond (D-085; docs/sprite-atlas.md section 1): the camera, taps and boxes, and the drawing.
         const projection = this.options.view === undefined ? PROJECTION_DEFAULT : PROJECTIONS[this.options.view];
@@ -1386,6 +1414,8 @@ export class Game implements GestureHost {
           }
         }
         this.stances.settle(view.header?.[H.tick] ?? 0, (id) => (view.unitRow(id) >= 0 ? view.unitStance(id) : null));
+        this.watchEnemies(view, tick);
+        this.cannonsOn(view);
         this.pending.settle(view.header?.[H.tick] ?? 0);
         this.controls.setWaiting(this.pending.waiting);
         this.pruneArmy();
@@ -1480,7 +1510,7 @@ export class Game implements GestureHost {
     }
     if (this.mode === "garrison") return this.garrisonAt(w.x, w.y);
     if (this.mode === "post") return this.postAt(w.x, w.y);
-    this.apply(this.keepRetreating(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1))));
+    this.apply(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
   }
 
   /** 躲進去 (round 7): the building tapped takes the ranged units and mages selected, or the player is told why not. */
@@ -1516,21 +1546,6 @@ export class Game implements GestureHost {
     }
     this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
     if (r.cmd.c === "post") this.toast(`${r.cmd.u.length} 名槍兵去駐守哨所`);
-  }
-
-  /**
-   * 撤退中點地面 (D-061: 「撤退按下去之後，點地面應該是撤退的方向，不是改為進攻」): while every
-   * soldier selected is retreating (the button reads 取消撤退), the 前進 a tap on the ground or
-   * a long press on the minimap would give is a retreat to that spot instead. With only some of
-   * them retreating it stays 前進, as the button shows.
-   */
-  private keepRetreating(intents: Intent[]): Intent[] {
-    const view = this.view;
-    if (view === null || this.mode !== "normal" || intents.length !== 1) return intents;
-    const [only] = intents;
-    if (only.kind !== "command" || only.cmd.c !== "move" || !allIn(view, view.selection.units, "retreat")) return intents;
-    this.toast(RETREAT_RETARGET_TEXT);
-    return [{ kind: "command", cmd: { c: "retreat", u: only.cmd.u, x: only.cmd.x, y: only.cmd.y } }];
   }
 
   longPress(x: number, y: number): LongPressResult {
@@ -1735,7 +1750,117 @@ export class Game implements GestureHost {
     return { x: (b[o + BuildingField.cellX] + s / 2) * TILE_PX, y: (b[o + BuildingField.cellY] + s / 2) * TILE_PX };
   }
 
-  /** 撤退 in the command area, with units selected: pick where to, as for 進攻 (D-059). */
+  /**
+   * 整理隊形 (D-095): the soldiers selected re-form where they are, spearmen in front, ranged next,
+   * mages last, at their spacing, facing the way reform.ts picks. A walk of one cell that way (the
+   * simulation lays a walk's formation out facing its way); with nothing to face, the simulation's
+   * own re-forming in place, which keeps the way they face now. Not with an enemy within
+   * REFORM_CLEAR_CELLS (reform.ts): a line says why, and nothing is sent.
+   */
+  reform(): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return;
+    const soldiers = view.selection.units.filter((id) => isSoldier(view.unitType(id)) && !isHiding(view.unitOrder(id)));
+    if (soldiers.length === 0) return;
+    const at = soldiers.map((id) => {
+      const o = view.unitRow(id);
+      return { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL };
+    });
+    const inSight = this.enemiesInSight(view);
+    if (enemyTooClose(at, inSight)) {
+      this.toast(REFORM_TEXT.near);
+      return;
+    }
+    const centre = { x: at.reduce((n, p) => n + p.x, 0) / at.length, y: at.reduce((n, p) => n + p.y, 0) / at.length };
+    const tick = view.header?.[H.tick] ?? 0;
+    const last = soldiers.map((id) => this.lastSent.get(id)).find((d) => d !== undefined) ?? null;
+    const { dir, from } = reformFacing(centre, inSight, [...this.sightings.values()], tick, last, this.enemyCity(view));
+    if (dir === null) {
+      // Keep the way they face: the formation command with the spacing they have re-forms in place (PROTOCOL.md 第三輪).
+      const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
+      this.command({ c: "formation", u: soldiers, loose });
+    } else {
+      const c = reformCell(centre, dir);
+      this.command({ c: "retreat", u: soldiers, x: c.x, y: c.y });
+    }
+    this.toast(REFORM_TEXT[from]);
+  }
+
+  /** Enemies in sight now (cells): units of the other players and the towns' militia. */
+  private enemiesInSight(view: GameView): Spot[] {
+    const u = view.curr?.snap.units;
+    const out: Spot[] = [];
+    if (u === undefined) return out;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] === view.me) continue;
+      out.push({ x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL });
+    }
+    return out;
+  }
+
+  /** The enemy's main city if this side knows where it is (seen, remembered), else null. */
+  private enemyCity(view: GameView): Spot | null {
+    const b = view.curr?.snap.buildings;
+    if (b === undefined) return null;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + BuildingField.type] !== BuildingType.MainCity || b[o + BuildingField.owner] === view.me) continue;
+      const size = view.rules.buildings[BuildingType.MainCity]?.size ?? 4;
+      return { x: b[o + BuildingField.cellX] + size / 2, y: b[o + BuildingField.cellY] + size / 2 };
+    }
+    return null;
+  }
+
+  /** Every snapshot: where each enemy in sight stands now; those not seen for a minute dropped. */
+  private watchEnemies(view: GameView, tick: number): void {
+    const u = view.curr?.snap.units;
+    if (u === undefined) return;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] === view.me) continue;
+      this.sightings.set(u[o + UnitField.id], { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL, tick });
+    }
+    if (tick - this.prunedAt < 100) return;
+    this.prunedAt = tick;
+    for (const [id, s] of this.sightings) if (tick - s.tick > SIGHTING_TICKS) this.sightings.delete(id);
+  }
+
+  /**
+   * D-095 (「拿掉，永遠自動」): a mage of ours with its cannon off (a game saved before, when it could
+   * be turned off) gets it on again, once; the log keeps the order, so the replay is the same.
+   */
+  private cannonsOn(view: GameView): void {
+    const u = view.curr?.snap.units;
+    if (u === undefined || this.restoring !== null) return;
+    const off: number[] = [];
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      const id = u[o + UnitField.id];
+      if (u[o + UnitField.owner] !== view.me || u[o + UnitField.type] !== UnitType.Mage || (u[o + UnitField.flags] & UnitFlag.Autocast) !== 0 || this.autocastAsked.has(id)) continue;
+      off.push(id);
+      this.autocastAsked.add(id);
+    }
+    if (off.length > 0) this.autoCommand({ c: "autocast", u: off, on: true });
+  }
+
+  /** The way each was sent (移動, 攻擊), from the middle of those sent. */
+  private noteSent(cmd: CommandBody): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined || !("u" in cmd) || !Array.isArray(cmd.u)) return;
+    const rows = cmd.u.map((id) => view.unitRow(id)).filter((o) => o >= 0);
+    if (rows.length === 0) return;
+    const cx = rows.reduce((n, o) => n + u[o + UnitField.x], 0) / rows.length / CELL;
+    const cy = rows.reduce((n, o) => n + u[o + UnitField.y], 0) / rows.length / CELL;
+    let to: Spot | null = null;
+    if (cmd.c === "move" || cmd.c === "retreat") to = { x: cmd.x + 0.5, y: cmd.y + 0.5 };
+    else if (cmd.c === "attack") {
+      const t = this.targetCell(cmd.target);
+      to = t === null ? null : { x: t.x + 0.5, y: t.y + 0.5 };
+    }
+    if (to === null || (to.x === cx && to.y === cy)) return;
+    for (const id of cmd.u) this.lastSent.set(id, { x: to.x - cx, y: to.y - cy });
+  }
+
+  /** 移動 in the command area (D-094; D-059's 撤退), with units selected: pick where to, as for 攻擊. */
   retreatSelection(): void {
     if ((this.view?.selection.units.length ?? 0) > 0) this.setMode("retreat");
   }
@@ -1757,7 +1882,7 @@ export class Game implements GestureHost {
       this.toast("主城不在了，沒有地方可以撤退");
       return;
     }
-    this.apply([{ kind: "command", cmd: { c: "retreat", u, x: home.x, y: home.y } }]);
+    this.command({ c: "retreat", u, x: home.x, y: home.y }, true);
     this.toast(`全軍 ${u.length} 名退回主城`);
   }
 
@@ -1768,12 +1893,12 @@ export class Game implements GestureHost {
       return;
     }
     const buttons: PromptButton[] = [];
-    // 退回主城 (D-059), while there is a main city to go back to.
+    // 回主城 (D-059; D-094's name), while there is a main city to go back to.
     const home = this.view?.homeCell() ?? null;
     if (mode === "retreat" && home !== null) {
-      buttons.push({ label: "退回主城", primary: true, tone: "retreat", onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, home)) });
+      buttons.push({ label: "回主城", primary: true, tone: "retreat", onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, home)) });
     }
-    // 取消 while picking where to advance or retreat to: they stop and hold (D-054).
+    // 取消 while picking where to attack or move to: they stop and hold (D-054).
     const holds = mode === "advance" || mode === "retreat";
     buttons.push({ label: "取消", onTap: () => (holds ? this.cancelToHold() : this.setMode("normal")) });
     const view = this.view;
@@ -1802,13 +1927,10 @@ export class Game implements GestureHost {
     const view = this.view;
     if (view === null) return;
     const items = wheelItems(pressedType);
-    const mages = view.selection.units.filter((id) => view.unitType(id) === UnitType.Mage);
-    const autocastOn = mages.length > 0 && mages.every((id) => view.unitAutocast(id));
+    // D-094: 攻擊、移動 (the old 進攻、撤退); D-095: no cannon or autocast on a mage's.
     const label: Record<WheelItem, string> = {
-      cast: "晶砲",
-      autocast: autocastOn ? "自動施放：開" : "自動施放：關",
-      advance: allIn(view, view.selection.units, "advance") ? "取消進攻" : "進攻",
-      retreat: allIn(view, view.selection.units, "retreat") ? "取消撤退" : "撤退",
+      advance: allIn(view, view.selection.units, "advance") ? "取消攻擊" : "攻擊",
+      retreat: allIn(view, view.selection.units, "retreat") ? "取消移動" : "移動",
       hold: "堅守",
     };
     this.overlays.openWheel(
@@ -1816,7 +1938,7 @@ export class Game implements GestureHost {
       y,
       items.map((id) => ({ id, label: label[id], ...(id === "advance" || id === "retreat" ? { tone: id } : {}) })),
       (id) => {
-        // 進攻 while they advance, 撤退 while they retreat: they stop and hold (D-054).
+        // 攻擊 while they attack, 移動 while they move: they stop and hold (D-054).
         if ((id === "advance" || id === "retreat") && allIn(view, view.selection.units, id)) return this.cancelToHold();
         const r = wheelIntents(view, view.selection, id as WheelItem);
         this.apply(r.intents);

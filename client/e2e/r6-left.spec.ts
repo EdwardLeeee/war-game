@@ -1,6 +1,6 @@
 // R6-2 on the fake world (?test=1&mock=1&ui=r6): the left (R6-13, D-087 C: 需要時才出現), the alarms
 // (R6-22) and what took over from 重設 (R6-30). No 重設; 閒置 only while someone idles; the
-// minimap behind 地圖, open on its own while 進攻 or 撤退 picks a spot; 全體回城 jumps out when an
+// minimap behind 地圖, open on its own while 攻擊 or 移動 (D-094) picks a spot; 全體回城 jumps out when an
 // enemy player's soldiers hurt our farmers or buildings near the main city, and reads 回去工作
 // while they hide; 地圖 flashes red and counts the places under attack while the minimap is put
 // away; × goes back to nothing selected.
@@ -132,14 +132,19 @@ for (const look of ["a", "b"] as const) {
     const check = watchErrors(page);
     await start(page, look);
     const map = page.locator(".map-btn");
-    // Two places far apart.
+    // Two places far apart. An alert lasts 6 s (ALERT_MS): on a slow CI runner the checks below
+    // took longer than that (run 39449356968), so each check hits them afresh first.
     const [spear] = await own(page, 1);
-    await hit(page, { id: spear.id, cx: 80, cy: 20 }, FOE);
-    await hit(page, { id: spear.id, cx: 60, cy: 40 }, FOE);
+    const hitTwo = async () => {
+      await hit(page, { id: spear.id, cx: 80, cy: 20 }, FOE);
+      await hit(page, { id: spear.id, cx: 60, cy: 40 }, FOE);
+    };
+    await hitTwo();
     await expect.poll(async () => (await left(page)).places).toBe(2);
     await expect(map.locator(".badge")).toHaveText("2");
     await expect(map).toHaveAttribute("aria-label", "地圖：2 處被攻擊");
     // Flashing: lit and not, 0.4 s each.
+    await hitTwo();
     const seen = new Set<boolean>();
     for (let i = 0; i < 12 && seen.size < 2; i++) {
       seen.add(await map.evaluate((e) => e.classList.contains("alarm")));
@@ -147,6 +152,7 @@ for (const look of ["a", "b"] as const) {
     }
     expect([...seen].sort()).toEqual([false, true]);
     // The lit one for the picture: 減少動態效果 keeps it so.
+    await hitTwo();
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(map).toHaveClass(/\balarm\b/);
     await picture(page, info, `r6-22-map-alarm-${look}`);
@@ -173,12 +179,12 @@ test("地圖鈕警報，減少動態效果（R6-22）：不閃，一直是紅的
   check();
 });
 
-test("進攻、撤退選位置時小地圖自動打開，選完或取消後收回；自己打開的不收（R6-13 NEW-03）", async ({ page }, info) => {
+test("攻擊、移動選位置時小地圖自動打開，選完或取消後收回；自己打開的不收（R6-13 NEW-03、D-094）", async ({ page }, info) => {
   const check = watchErrors(page);
   await start(page, "a");
   const soldiers = (await own(page, 1)).map((u) => u.id);
   await selectForCommands(page, soldiers);
-  await page.locator(".cmds").getByRole("button", { name: /^撤退/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^移動/ }).tap();
   await expect.poll(() => mode(page)).toBe("retreat");
   await expect.poll(async () => await left(page)).toMatchObject({ minimap: true, auto: true });
   await expect(page.locator(".minimap")).toBeVisible();
@@ -190,15 +196,15 @@ test("進攻、撤退選位置時小地圖自動打開，選完或取消後收�
   await expect.poll(() => mode(page)).toBe("normal");
   await expect.poll(async () => (await left(page)).minimap).toBe(false);
   await expect(page.locator(".minimap")).toBeHidden();
-  // 進攻, then 取消.
-  await page.locator(".cmds").getByRole("button", { name: /^進攻/ }).tap();
+  // 攻擊, then 取消.
+  await page.locator(".cmds").getByRole("button", { name: /^攻擊/ }).tap();
   await expect.poll(() => mode(page)).toBe("advance");
   await expect.poll(async () => (await left(page)).minimap).toBe(true);
   await page.locator(".prompt").getByRole("button", { name: "取消" }).tap();
   await expect.poll(async () => (await left(page)).minimap).toBe(false);
   // Opened by hand: it stays after.
   await page.getByRole("button", { name: "地圖", exact: true }).tap();
-  await page.locator(".cmds").getByRole("button", { name: /^撤退/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^移動/ }).tap();
   await page.locator(".prompt").getByRole("button", { name: "取消" }).tap();
   await expect.poll(() => mode(page)).toBe("normal");
   expect(await left(page)).toMatchObject({ minimap: true, auto: false });
@@ -210,7 +216,7 @@ test("×（R6-30）：回到什麼都沒選——選位置中按 × 也離開選
   await start(page, "a");
   const soldiers = (await own(page, 1)).map((u) => u.id);
   await selectForCommands(page, soldiers);
-  await page.locator(".cmds").getByRole("button", { name: /^進攻/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^攻擊/ }).tap();
   await expect.poll(() => mode(page)).toBe("advance");
   await page.getByRole("button", { name: "取消選取" }).tap();
   await expect.poll(() => mode(page)).toBe("normal");

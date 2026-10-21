@@ -1,7 +1,7 @@
-// D-080 on the fake world (?test=1&mock=1): 進攻紅、撤退藍 (user 2026-10-09: 「攻擊跟撤退可以做成
-// 紅色跟藍色的按鈕，不然有點搞不清楚」) on every 進攻 and 撤退 button: the command area (and so the
-// 軍團畫面 beside it), the long-press wheel, 全軍撤退 and 退回主城; 堅守 stays as it was. The words
-// stay, and every one of them is still at least 44 pt.
+// D-080 on the fake world (?test=1&mock=1): 攻擊紅、移動藍 (user 2026-10-09: 「攻擊跟撤退可以做成
+// 紅色跟藍色的按鈕，不然有點搞不清楚」; D-094 renamed 進攻、撤退) on every 攻擊, 移動 and 撤退 button:
+// the command area (and so the 軍團畫面 beside it), the long-press wheel, 全軍撤退 and 回主城; 堅守
+// stays as it was. Every one of them is still at least 44 pt.
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { selectForCommands, shot, watchErrors } from "./helpers.ts";
@@ -38,34 +38,34 @@ async function toned(b: Locator, bg: string): Promise<void> {
   expect(Math.min(l.w, l.h), "at least 44 pt").toBeGreaterThanOrEqual(44);
 }
 
-test("進攻紅、撤退藍：指令區（軍團畫面也是這一區）、取消進攻／取消撤退、全軍撤退、退回主城都上色，堅守照舊（D-080）", async ({ page }, info) => {
+test("攻擊紅、移動藍：指令區（軍團畫面也是這一區）、取消攻擊／取消移動、全軍撤退、回主城都上色，堅守照舊（D-080、D-094）", async ({ page }, info) => {
   const cmds = page.locator(".cmds");
   await selectForCommands(page, await spearmen(page));
-  await toned(cmds.getByRole("button", { name: /^進攻/ }), RED);
-  await toned(cmds.getByRole("button", { name: /^撤退/ }), BLUE);
+  await toned(cmds.getByRole("button", { name: /^攻擊/ }), RED);
+  await toned(cmds.getByRole("button", { name: /^移動/ }), BLUE);
   const hold = await look(cmds.getByRole("button", { name: /^堅守/ }));
   expect([RED, BLUE]).not.toContain(hold.bg);
   await toned(page.getByRole("button", { name: "全軍撤退" }), BLUE);
   await shot(page, info, "d080-colours-commands");
-  // 撤退 asks where to: 退回主城 is blue too, 取消 is not.
-  await cmds.getByRole("button", { name: /^撤退/ }).tap();
-  await toned(page.locator(".prompt").getByRole("button", { name: "退回主城", exact: true }), BLUE);
+  // 移動 asks where to: 回主城 is blue too, 取消 is not.
+  await cmds.getByRole("button", { name: /^移動/ }).tap();
+  await toned(page.locator(".prompt").getByRole("button", { name: "回主城", exact: true }), BLUE);
   expect([RED, BLUE]).not.toContain((await look(page.locator(".prompt").getByRole("button", { name: "取消", exact: true }))).bg);
   await shot(page, info, "d080-colours-retreat-prompt");
-  // Advancing, the button reads 取消進攻 and stays red.
+  // Attacking (攻擊移動), the button reads 取消攻擊 and stays red.
   await page.locator(".prompt").getByRole("button", { name: "取消", exact: true }).tap();
   const ids = await spearmen(page);
   await page.evaluate((u) => window.__proto?.game?.send({ c: "move", u, x: 22, y: 50 }), ids);
-  await expect(cmds.getByRole("button", { name: /^取消進攻/ })).toBeVisible();
-  await toned(cmds.getByRole("button", { name: /^取消進攻/ }), RED);
+  await expect(cmds.getByRole("button", { name: /^取消攻擊/ })).toBeVisible();
+  await toned(cmds.getByRole("button", { name: /^取消攻擊/ }), RED);
 });
 
-test("進攻紅、撤退藍：長按輪盤的進攻、撤退上色，堅守照舊（D-080）", async ({ page }, info) => {
+test("攻擊紅、移動藍：長按輪盤的攻擊、移動上色，堅守照舊（D-080、D-094）", async ({ page }, info) => {
   const p = await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [SPEAR.x, SPEAR.y] as const);
   await longPress(page, p);
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.wheel())).toEqual(["advance", "retreat", "hold"]);
-  await toned(page.getByRole("menuitem", { name: "進攻" }), RED);
-  await toned(page.getByRole("menuitem", { name: "撤退" }), BLUE);
+  await toned(page.getByRole("menuitem", { name: "攻擊" }), RED);
+  await toned(page.getByRole("menuitem", { name: "移動" }), BLUE);
   expect([RED, BLUE]).not.toContain((await look(page.getByRole("menuitem", { name: "堅守" }))).bg);
   await shot(page, info, "d080-colours-wheel");
 });

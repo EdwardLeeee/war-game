@@ -1,0 +1,23 @@
+{
+ "tag": "art-v5",
+ "note": "地形（R6-51，core #245）：石堆、懸崖、水岸（河與湖）、淺灘、橋面與欄杆的圖塊與擺法規則（terrain/terrain.json，說明檔 design/b1/atlas-buildings.md 第 12 節）；兵種、效果、建築、資源點、城牆照 art-v4。",
+ "units": {
+  "farmer_e": {"run": 36849835568, "artifact": "production-farmer_e"},
+  "spear_e": {"run": 36849835568, "artifact": "production-spear_e"},
+  "xbow_e": {"run": 36850248764, "artifact": "production-xbow_e"},
+  "hcav_e": {"run": 36849835568, "artifact": "production-hcav_e"},
+  "siege_e": {"run": 36849835568, "artifact": "production-siege_e"},
+  "mage_e": {"run": 36849835568, "artifact": "production-mage_e"},
+  "farmer_w": {"run": 36849835568, "artifact": "production-farmer_w"},
+  "pike_w": {"run": 36849835568, "artifact": "production-pike_w"},
+  "bow_w": {"run": 36849835568, "artifact": "production-bow_w"},
+  "knight_w": {"run": 36849835568, "artifact": "production-knight_w"},
+  "siege_w": {"run": 36849835568, "artifact": "production-siege_w"},
+  "mage_w": {"run": 36849835568, "artifact": "production-mage_w"}
+ },
+ "effects": {"run": 39132395283, "artifact": "production-effects-atlas"},
+ "buildings": {"run": 39442321932, "artifact": "production-buildings"},
+ "castle": true,
+ "terrain": true,
+ "astc_sample": {"unit": "spear_e", "scale": 2, "layers": ["color", "team"]}
+}

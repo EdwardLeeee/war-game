@@ -299,7 +299,13 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 ## 加到主畫面（D-042）
 
 - iPhone 的 Safari 用「加入主畫面」、或筆電的 Chrome 安裝之後，從圖示打開沒有網址列。名稱 `war-game` 和晶體圖示是暫時的（GDD 第 16 節）。
-- 不用 service worker，什麼都不快取：常常部署，快取會讓人一直開到舊版。
+- 不快取頁面，只快取圖（D-091 取代 D-042 的一部分）：常常部署，快取頁面會讓人一直開到舊版。
+  - `public/sw.js` 這個 service worker 只攔 `art/<tag>/` 的圖集，tag 是這次建置 `art.lock.json` 的。第一次載入時邊下載邊存進手機，之後都從手機拿。同一個 tag 的檔案不會變（`scripts/fetch-art.ts` 照 lock 的雜湊檢查），所以不會拿到舊的圖。
+  - 頁面、程式、`version.json`、對局紀錄都不攔，照舊每次從網路拿。
+  - 換 tag 的新版本一啟動，就刪掉舊 tag 的圖。
+  - iPhone 從主畫面打開時，Safari「7 天沒用就清掉網站資料」的規則不適用，WebKit 說主畫面的 web app「We do not expect the first-party in such a web application to have its website data deleted」（webkit.org/blog/10218）。從 Safari 分頁打開就會被那條規則清掉，只是下次要重新下載。
+  - 開局要等多久：`?test=1&loadtimes=1` 在畫面上列出每一步的時間，每個檔從哪裡來（手機裡、網路、瀏覽器快取），量測面板也有（`src/lab/load-times.ts`）。
+  - e2e 預設關掉 service worker（`playwright.config.ts`），不然 `page.route` 攔不到頁面的請求；測它的 `e2e/pwa.spec.ts`、`e2e/load-times.spec.ts` 自己打開。
 - 建置時多一個 `version.json`（只有 commit）。頁面打開、從背景回來時繞過快取讀它，和自己的 commit 不同就在開局畫面顯示「有新版本」和「更新」。「更新」換到加上 `v=<新的 commit>` 的網址（其他參數保留），新網址不會拿到快取裡的舊 `index.html`；對局中只提示一次，不重新載入（`src/version.ts`）。
 
 ## e2e 怎麼模擬觸控

@@ -469,7 +469,8 @@ export class MockPort implements SimPort {
       const info = MOCK_RULES.units[type];
       const u: MUnit = {
         id: this.nextId++, owner, type, x: centre(cx), y: centre(cy), hp: info.hp, shield: info.shield,
-        facing: 0, stance: Stance.Aggressive, flags: 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
+        // A mage's cannon on, as the simulation trains them (D-026; D-095: always).
+        facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Mage ? UnitFlag.Autocast : 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
       };
       this.units.push(u);
       return u;
@@ -641,7 +642,7 @@ export class MockPort implements SimPort {
           const info = MOCK_RULES.units[type];
           const u: MUnit = {
             id: this.nextId++, owner: b.owner, type, x: centre(b.cx - 1), y: centre(b.cy), hp: info.hp, shield: info.shield,
-            facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Farmer ? UnitFlag.IdleFarmer : 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
+            facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Farmer ? UnitFlag.IdleFarmer : type === UnitType.Mage ? UnitFlag.Autocast : 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
           };
           this.units.push(u);
           this.events.push({ k: "unit_trained", id: u.id, type, building: b.id });
