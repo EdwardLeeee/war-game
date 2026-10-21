@@ -1,0 +1,1128 @@
+{
+ "traces": [
+  {
+   "name": "g0-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g0-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "g-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": ""
+   }
+  },
+  {
+   "name": "ga-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "ga-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "a"
+   }
+  },
+  {
+   "name": "gb-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gb-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "b"
+   }
+  },
+  {
+   "name": "gab-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "gab-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "gateRetreat": "ab"
+   }
+  },
+  {
+   "name": "think-fixed",
+   "script": "think-gate.ts",
+   "args": "--seeds 1-5 --map fixed",
+   "a": {}
+  },
+  {
+   "name": "think-random",
+   "script": "think-gate.ts",
+   "args": "--seeds 1-5 --map random",
+   "a": {}
+  }
+ ],
+ "scripted": [
+  {
+   "name": "g0",
+   "a": {
+    "gateFocus": false,
+    "gateWalls": false,
+    "gateArrows": false,
+    "gateRetreat": ""
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "g",
+   "a": {
+    "gateRetreat": ""
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "ga",
+   "a": {
+    "gateRetreat": "a"
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "gb",
+   "a": {
+    "gateRetreat": "b"
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "gab",
+   "a": {
+    "gateRetreat": "ab"
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
