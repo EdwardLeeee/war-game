@@ -7,6 +7,7 @@ import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, featur
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
+import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
 import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownState, UnitType } from "../src/protocol.ts";
@@ -2059,29 +2060,37 @@ test("D-086 A3 (plan.peekFirst): no enemy soldier seen for a minute, one goes to
   assert.ok(march(second) || march(ai.think(buildView(g, 0))), "then it marches");
 });
 
-test("D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home", () => {
-  // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
+/** D-096 (core 2026-10-22): gates, when the rules have them (GATE). */
+const GATES = (RULES as unknown as { GATE?: { on: boolean } }).GATE;
 
-  // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
-  const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
-  const g = r.game;
-  const m = g.w.map;
-  const plan = planFor("push", "h1", "close");
-  Object.assign(plan, { farmers: 24, production: 4, spearShare: 35, choice: "govern", corners: true, townAt: 10, homeTowers: 2, cavalryShare: 15, pushAt: 50, counterAt: 50, pushAhead: true, harass: 10 });
-  const player = createScriptedPlayer(0, { map: mapInfo(m, 0), rules: rules(m), frame: m.frames[0] }, plan);
-  const sent: { at: number; json: string }[] = [];
-  let seen = 0;
-  let seq = 0;
-  while (!r.over && g.tick < 20 * 1200) {
-    if (g.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ } as never);
-    r.tick();
-    for (; seen < g.log.length; seen++) if (g.log[seen].p === 1) sent.push({ at: seen, json: JSON.stringify(g.log[seen]) });
-  }
-  const stats = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]!.stats!();
-  assert.ok(stats.farmersHid > 0, "its farmers were sent home");
-  const changed = sent.filter((x) => JSON.stringify(g.log[x.at]) !== x.json);
-  assert.deepEqual(changed.map((x) => x.json).slice(0, 2), [], "orders as sent");
-});
+test(
+  "D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home",
+  // The bug was the AI's, not the map's: with gates hard plays seed 7 otherwise and never sends its farmers home
+  // (war-game-core 2026-10-22), so they are off here.
+  switchedOff(GATES === undefined ? [] : [GATES], () => {
+    // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
+
+    // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
+    const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
+    const g = r.game;
+    const m = g.w.map;
+    const plan = planFor("push", "h1", "close");
+    Object.assign(plan, { farmers: 24, production: 4, spearShare: 35, choice: "govern", corners: true, townAt: 10, homeTowers: 2, cavalryShare: 15, pushAt: 50, counterAt: 50, pushAhead: true, harass: 10 });
+    const player = createScriptedPlayer(0, { map: mapInfo(m, 0), rules: rules(m), frame: m.frames[0] }, plan);
+    const sent: { at: number; json: string }[] = [];
+    let seen = 0;
+    let seq = 0;
+    while (!r.over && g.tick < 20 * 1200) {
+      if (g.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ } as never);
+      r.tick();
+      for (; seen < g.log.length; seen++) if (g.log[seen].p === 1) sent.push({ at: seen, json: JSON.stringify(g.log[seen]) });
+    }
+    const stats = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]!.stats!();
+    assert.ok(stats.farmersHid > 0, "its farmers were sent home");
+    const changed = sent.filter((x) => JSON.stringify(g.log[x.at]) !== x.json);
+    assert.deepEqual(changed.map((x) => x.json).slice(0, 2), [], "orders as sent");
+  }),
+);
 
 
 // --- D-089: gathering outside the enemy main city before the attack ----------------------------------
