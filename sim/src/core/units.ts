@@ -482,9 +482,14 @@ export class UnitSystem {
     if (!GATE.on) return true;
     const u = w.units.col;
     const n = w.size;
+    const ci = (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT);
+    const cj = (u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT);
+    // Both outside every castle, or inside the same one: as everywhere else, taken as reachable
+    // (the areas are only worked out where walls and gates stand between them).
+    if (w.insideAt[ci] === w.insideAt[cj]) return true;
     const cls = w.passClass(u.owner[i]);
-    const a = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT), cls);
-    const b = this.regions.of(w, (u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT), cls);
+    const a = this.regions.of(w, ci, cls);
+    const b = this.regions.of(w, cj, cls);
     return a < 0 || b < 0 || a === b;
   }
 

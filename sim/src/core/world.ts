@@ -161,6 +161,8 @@ export class World {
   gateSides: Int32Array;
   /** Every gate cell (D-096), town by town, opening by opening. */
   gateCells: Int32Array;
+  /** Per cell, the town whose walls it lies inside (castle.inside), or -1 (D-096: who reaches whom). */
+  insideAt: Int32Array;
   /**
    * On a cell under a standing gate that is closed to someone (BLOCK_GATE, D-096): the player it
    * lets through (the town's holder), or -1 (closed to everyone: a neutral town's).
@@ -393,6 +395,13 @@ export class World {
       for (const g of this.castles[i].gates) for (const [dx, dy] of g) gc.push((s.cellY + dy) * n + s.cellX + dx);
     });
     this.gateCells = Int32Array.from(gc);
+    this.insideAt = new Int32Array(n * n).fill(-1);
+    map.towns.forEach((s, i) => {
+      const c = this.castles[i].inside;
+      for (let y = Math.max(0, s.cellY + c.y0); y <= Math.min(n - 1, s.cellY + c.y1); y++) {
+        for (let x = Math.max(0, s.cellX + c.x0); x <= Math.min(n - 1, s.cellX + c.x1); x++) this.insideAt[y * n + x] = i;
+      }
+    });
     this.gateRebuild = new Int32Array(t * GATES);
   }
 
