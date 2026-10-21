@@ -535,7 +535,10 @@ function withoutSquads<T>(f: () => T): T {
   }
 }
 
-test("a squad fights together: 24 soldiers told to stand 3 cells before 12 standing enemies: at least nine in ten of the living strike within 15 s (more than without)", () => {
+// Ranks on the march (MARCH_ORDER, D-095) off: this squad has its ranged in front, and with the
+// rule its spearmen pass them on the way, so all 24 strike without squads too; the test measures
+// fighting together.
+test("a squad fights together: 24 soldiers told to stand 3 cells before 12 standing enemies: at least nine in ten of the living strike within 15 s (more than without)", switchedOff(MARCH_ORDER, () => {
   const scene = squadScene(24, 12);
   const { share } = struckShare(scene.g, scene.mine);
   const before = withoutSquads(() => {
@@ -544,7 +547,7 @@ test("a squad fights together: 24 soldiers told to stand 3 cells before 12 stand
   });
   assert.ok(share >= 0.9, `with squads ${share}`);
   assert.ok(share > before, `with squads ${share}, without ${before}`);
-});
+}));
 
 test("a squad fights together, mirrored: the mirror image plays the mirror image, tick by tick", () => {
   const a = squadScene(24, 12);
@@ -577,9 +580,7 @@ test("a squad's ranged stop at their range: none walks into close combat", () =>
   assert.ok(ranged >= 10, `${ranged} ranged struck`);
 });
 
-// Ranks on the march (MARCH_ORDER, D-095) off: this squad has its ranged in front, so its
-// spearmen would pass them on the way, come in a ragged line, and lose (0 to 7 left).
-test("a squad beats an equal standing force that it loses to when its back rows wait (24 against 24)", switchedOff([LONG_BOWS, MARCH_ORDER], () => {
+test("a squad beats an equal standing force that it loses to when its back rows wait (24 against 24)", switchedOff([LONG_BOWS], () => {
   const finish = (s: ReturnType<typeof squadScene>) => {
     run(s.g, 2400);
     return [s.mine.filter((id) => slotOf(s.g, id) >= 0).length, s.enemy.filter((id) => slotOf(s.g, id) >= 0).length];

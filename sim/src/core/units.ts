@@ -121,12 +121,14 @@ export class UnitSystem {
   private readonly squadFights = new Map<number, { x: number[]; y: number[]; buildings: number[] }>();
   /** Per enemy unit id, how many units had it as their target at the start of the tick. */
   private readonly attackers = new Map<number, number>();
+  /** Groups with a soldier that fights at the start of the tick (MARCH_ORDER). */
+  private readonly groupFights = new Set<number>();
   /**
-   * Per group, at the start of the tick (MARCH_ORDER): of its spearmen and cavalry, then of its
-   * ranged, that walk on the move, the sums of x and y and the number; then how many of the group
-   * fight.
+   * Per group on a move, at the start of the tick (MARCH_ORDER): the front of its walking
+   * spearmen and cavalry, then of those and its walking ranged: how far the first quarter of them
+   * is from the group's goal cell (fixed point).
    */
-  private readonly marching = new Map<number, number[]>();
+  private readonly marchFront = new Map<number, number[]>();
   private unitDamage = new Int32Array(256);
   /** The same hits counted against a mage's shield (its own multipliers). */
   private shieldDamage = new Int32Array(256);
@@ -324,52 +326,59 @@ export class UnitSystem {
   }
 
   /**
-   * Where each group's lower ranks walk at the start of the tick (MARCH_ORDER): last tick's walkers
-   * on the move with no target; and whether any of the group (on the move or there) fights.
+   * Where each group's front walks at the start of the tick (MARCH_ORDER): of last tick's walkers
+   * on the move with no target, spearmen and cavalry, then those and ranged; and which groups (on
+   * the move or there) have one of theirs fighting.
    */
   private collectMarching(w: World): void {
-    this.marching.clear();
+    this.groupFights.clear();
+    this.marchFront.clear();
     if (!MARCH_ORDER.on) return;
     const u = w.units.col;
+    const n = w.size;
+    const walkers = new Map<number, [number[], number[]]>();
     for (let j = 0; j < w.units.count; j++) {
       if (u.group[j] < 0 || u.type[j] === UnitType.Farmer) continue;
-      const fights = this.startTarget[j] >= 0;
-      const r = rank(u.type[j]);
-      const walks = u.order[j] === Order.Move && !fights && r <= 1 && (u.vx[j] !== 0 || u.vy[j] !== 0);
-      if (!fights && !walks) continue;
-      let m = this.marching.get(u.group[j]);
-      if (m === undefined) {
-        m = [0, 0, 0, 0, 0, 0, 0];
-        this.marching.set(u.group[j], m);
-      }
-      if (fights) {
-        m[6]++;
+      if (this.startTarget[j] >= 0) {
+        this.groupFights.add(u.group[j]);
         continue;
       }
-      m[3 * r] += u.x[j];
-      m[3 * r + 1] += u.y[j];
-      m[3 * r + 2]++;
+      const r = rank(u.type[j]);
+      const t = u.orderTarget[j];
+      if (u.order[j] !== Order.Move || r > 1 || t < 0 || (u.vx[j] === 0 && u.vy[j] === 0)) continue;
+      let lists = walkers.get(u.group[j]);
+      if (lists === undefined) {
+        lists = [[], []];
+        walkers.set(u.group[j], lists);
+      }
+      const d = goalDistance(u.x[j], u.y[j], t, n);
+      if (r === 0) lists[0].push(d);
+      lists[1].push(d);
+    }
+    for (const [group, [low, both]] of walkers) {
+      low.sort((p, q) => p - q);
+      both.sort((p, q) => p - q);
+      this.marchFront.set(group, [low.length > 0 ? low[low.length >> 2] : -1, both[both.length >> 2]]);
     }
   }
 
   /**
-   * MARCH_ORDER: unit i (on a move, (dx, dy) from its place, not fighting) stands this tick to let
-   * the lower ranks of its group pass; counts the tick.
+   * MARCH_ORDER: unit i (on a move, (dx, dy) from its place, not fighting) stands this tick while
+   * it is not `margin` behind the front of its group's lower ranks (nearer the goal cell than the
+   * first quarter of them that walk); counts the tick. The first quarter: soldiers far behind
+   * (new ones sent along from home) do not hold up those in front.
    */
   private letPass(w: World, i: number, dx: number, dy: number): boolean {
     const u = w.units.col;
     const r = rank(u.type[i]);
     if (r === 0 || u.waited[i] >= MARCH_ORDER.maxWait || dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) return false;
     // A group in a fight fights as it stands.
-    const m = this.marching.get(u.group[i]);
-    if (m === undefined || m[6] > 0) return false;
-    const c = r === 1 ? m[2] : m[2] + m[5];
-    if (c === 0) return false;
-    const mx = idiv(r === 1 ? m[0] : m[0] + m[3], c);
-    const my = idiv(r === 1 ? m[1] : m[1] + m[4], c);
-    // How far ahead of their middle it is, along its way: behind by `margin` or more, it walks.
-    const ahead = (u.x[i] - mx) * dx + (u.y[i] - my) * dy;
-    if (ahead <= -MARCH_ORDER.margin * isqrt(dx * dx + dy * dy)) return false;
+    if (this.groupFights.has(u.group[i])) return false;
+    const front = this.marchFront.get(u.group[i]);
+    const t = u.orderTarget[i];
+    if (front === undefined || t < 0) return false;
+    const f = front[r - 1];
+    if (f < 0 || goalDistance(u.x[i], u.y[i], t, w.size) >= f + MARCH_ORDER.margin) return false;
     u.waited[i]++;
     return true;
   }
@@ -1857,6 +1866,13 @@ function canonFirst(w: World, owner: number, j: number, k: number): boolean {
  */
 export function preferHighId(w: World, chooser: number): boolean {
   return ((Math.trunc(w.tick / RETARGET_EVERY) + chooser) & 1) === 1;
+}
+
+/** Distance (fixed point) from (x, y) to the centre of cell `cell` on an n-wide map. */
+function goalDistance(x: number, y: number, cell: number, n: number): number {
+  const dx = ((cell % n) << CELL_SHIFT) + (CELL >> 1) - x;
+  const dy = (Math.trunc(cell / n) << CELL_SHIFT) + (CELL >> 1) - y;
+  return isqrt(dx * dx + dy * dy);
 }
 
 /** Damage after the attacker-vs-target multiplier (integer, at least 1). */

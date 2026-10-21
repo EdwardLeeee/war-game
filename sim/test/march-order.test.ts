@@ -119,6 +119,28 @@ test("nobody waits longer than MARCH_ORDER.maxWait: a mixed crowd of 40 gets the
   assert.ok(most > 0 && most <= MARCH_ORDER.maxWait, `waited at most ${most} ticks`);
 });
 
+test("soldiers far behind (new ones sent along from home) hold no one up: the front walks in its ranks", () => {
+  // Player 0's front: 6 spearmen, 6 ranged a cell behind them, 3 mages behind those; and 4 more
+  // spearmen 12 cells back, in the same move north. Measured against the middle of all the
+  // spearmen walking (the first way this rule was written), the front's ranged and mages stood
+  // while the front spearmen walked on alone.
+  const g = emptyGame();
+  const a = openArea(g, 30);
+  const ids: number[] = [];
+  for (let k = 0; k < 6; k++) ids.push(put(g, 0, UnitType.Spearman, a.x + 12 + k, a.y + 14));
+  for (let k = 0; k < 6; k++) ids.push(put(g, 0, UnitType.Ranged, a.x + 12 + k, a.y + 15));
+  for (let k = 0; k < 3; k++) ids.push(put(g, 0, UnitType.Mage, a.x + 13 + k, a.y + 16));
+  for (let k = 0; k < 4; k++) ids.push(put(g, 0, UnitType.Spearman, a.x + 13 + k, a.y + 28));
+  g.fog.update(g.w);
+  cmd(g, 0, { c: "move", u: ids, x: a.x + 14, y: a.y + 2 });
+  const u = g.w.units.col;
+  const front = ids.slice(6, 15);
+  for (let t = 0; t < 8 * 20; t++) {
+    run(g, 1);
+    for (const id of front) assert.equal(u.waited[slotOf(g, id)], 0, `tick ${g.tick}: unit ${id} stood`);
+  }
+});
+
 test("switched off: the unit column it keeps (waited) stays out of the hash", switchedOff(MARCH_ORDER, () => {
   const g = emptyGame();
   const id = put(g, 0, UnitType.Ranged, 20, 60);
