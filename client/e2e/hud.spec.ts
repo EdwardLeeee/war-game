@@ -1446,10 +1446,14 @@ test("自動訓練（D-098）：兵營只補軍團缺的；沒設軍團不訓練
   await expect.poll(async () => (await autoTrains(page)).filter((c) => c.building === barracks).at(-1)).toMatchObject({ c: "train", building: barracks, type: 1, n: 1 });
   await expect(line).toHaveText(/^補軍團缺的：槍 [12]$/);
   await shot(page, info, "auto-army-short");
+  // No pause mark on the barracks while it trains (the simulation's own 自動訓練 is off for the player, D-098).
+  const marks = () => page.evaluate(() => window.__proto?.game?.pauseMarks() ?? -1);
+  expect(await marks()).toBe(0);
   // 暫停: the screen's own (no order to the simulation); the line says so, and nothing more is queued.
   const before = (await sent(page)).length;
   await auto.tap();
   await expect(auto).toHaveText("自動訓練目前：暫停");
+  await expect.poll(marks).toBe(1);
   await expect(line).toHaveText("自動訓練暫停");
   await expect(toast(page, "已暫停這座兵營的自動訓練")).toBeVisible();
   await page.waitForTimeout(4000);

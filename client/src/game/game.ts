@@ -465,6 +465,11 @@ export class Game implements GestureHost {
   private readonly alarms = new GroupAlarms();
   private alarmState: (Alarm & { present: number })[] = [0, 1, 2, 3].map(() => ({ advancing: false, base: null, alarm: false, tell: false, present: 0 }));
 
+  /** Pause marks on buildings (D-098), for the test hook. */
+  get pauseMarksForTest(): number {
+    return this.renderer?.pauseMarks ?? 0;
+  }
+
   /** Arrows drawn from `shot` events so far (round 7), for the test hook. */
   get shotsForTest(): number {
     return this.renderer?.shotCount ?? 0;
@@ -1683,6 +1688,7 @@ export class Game implements GestureHost {
         const mine = this.culture;
         this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), projection);
         this.renderer.pending = this.pending;
+        this.renderer.autoPaused = (id) => this.autoArmy.paused.has(id);
         if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
         const ground = this.options.ground ?? null;
         if (ground !== null && !this.renderer.useGround(ground, this.options.groundQuality ?? "high")) console.warn("ground: 寫實地面 needs ui's terrain pictures (art-v5, square on); the flat ground stays");
