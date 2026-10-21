@@ -1,0 +1,100 @@
+{
+ "traces": [
+  {
+   "name": "b260-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {}
+  },
+  {
+   "name": "b260-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {}
+  },
+  {
+   "name": "b260-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {}
+  },
+  {
+   "name": "b260-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {}
+  },
+  {
+   "name": "b260-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {}
+  },
+  {
+   "name": "b260-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {}
+  },
+  {
+   "name": "b260-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random",
+   "a": {}
+  },
+  {
+   "name": "b260-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random",
+   "a": {}
+  },
+  {
+   "name": "b260-push-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map fixed",
+   "a": {}
+  },
+  {
+   "name": "b260-push-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map fixed",
+   "a": {}
+  },
+  {
+   "name": "b260-push-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random",
+   "a": {}
+  },
+  {
+   "name": "b260-push-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random",
+   "a": {}
+  },
+  {
+   "name": "b260-push-auto-fixed-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map fixed",
+   "a": {}
+  },
+  {
+   "name": "b260-push-auto-fixed-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map fixed",
+   "a": {}
+  },
+  {
+   "name": "b260-push-auto-random-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 1-20 --map random",
+   "a": {}
+  },
+  {
+   "name": "b260-push-auto-random-21",
+   "script": "late-metrics.ts",
+   "args": "--mode push-auto --seeds 21-40 --map random",
+   "a": {}
+  }
+ ]
+}
