@@ -83,6 +83,8 @@ export interface PageParams {
    * iPhone screenshot. The 量測 panel and the console have them on any test page.
    */
   loadTimes: boolean;
+  /** `?test=1&ghost=outline`: units behind a castle's wall drawn as their rims only, instead of whole (D-089, for ceo to compare). */
+  ghost: "outline" | null;
 }
 
 export function parseParams(search: string): PageParams {
@@ -109,7 +111,8 @@ export function parseParams(search: string): PageParams {
   const gallery = g === "1" ? "units" : g === "b" ? "buildings" : null;
   const v = q.get("view");
   const view = test && (v === "diamond" || v === "oblique" || v === "top") ? v : null;
+  const ghost = test && q.get("ghost") === "outline" ? "outline" : null;
   const u = q.get("ui");
   const ui = test && (u === "r6" || u === "proto") ? u : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, loadTimes: test && q.get("loadtimes") === "1" };
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, ghost, loadTimes: test && q.get("loadtimes") === "1" };
 }

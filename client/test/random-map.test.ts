@@ -1,6 +1,7 @@
 // 隨機地圖 (D-074) on the screen: the start screen's 地圖 kept on this device, and what the view
-// knows of towns and rocks — on the fixed map all of them from `ready`; on a random map only
-// those explored, from the town rows and the placement grid, kept once known.
+// knows of towns and the ground — on the fixed map all of it from `ready`; on a random map only
+// what was explored, from the town rows and the snapshots' terrain (R6-51; the fake world's
+// placement grid), kept once known.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -53,7 +54,10 @@ test("地圖選項：第一次是固定地圖；選了就記在這台裝置；�
 
 const SIZE = 16;
 
-function snapshot(o: { towns?: number[][]; nodes?: number[][]; buildings?: number[][]; placement?: Uint8Array | null }): Snapshot {
+/** Cells the view knows to be rock. */
+const rocks = (v: GameView) => v.ground.reduce((n, t) => n + (t === Terrain.Blocked ? 1 : 0), 0);
+
+function snapshot(o: { towns?: number[][]; nodes?: number[][]; buildings?: number[][]; placement?: Uint8Array | null; terrain?: Uint8Array | null }): Snapshot {
   const towns = new Int32Array((o.towns ?? []).length * TOWN_STRIDE);
   (o.towns ?? []).forEach(([id, size, cx, cy], i) => {
     towns[i * TOWN_STRIDE + T.id] = id;
@@ -86,6 +90,7 @@ function snapshot(o: { towns?: number[][]; nodes?: number[][]; buildings?: numbe
     nodes,
     fog: null,
     placement: o.placement ?? null,
+    ...(o.terrain === undefined ? {} : { terrain: o.terrain }),
     idleFarmers: new Int32Array(0),
     events: [],
   };
@@ -98,8 +103,8 @@ test("固定地圖：城鎮和岩石一開始就全知道（照 ready）", () =>
   const v = new GameView(0, map, MOCK_RULES);
   assert.equal(v.randomMap, false);
   assert.deepEqual(v.townList(), map.towns);
-  assert.equal(v.rocks[3], 1);
-  assert.equal(v.rocks.reduce((a, b) => a + b, 0), 1);
+  assert.equal(v.ground[3], 1);
+  assert.equal(rocks(v), 1);
 });
 
 test("隨機地圖：開局什麼城鎮、岩石都不知道；城鎮列出現才知道，半徑照 rules；岩石照放置格，資源點和建築的格子不算", () => {
@@ -108,26 +113,50 @@ test("隨機地圖：開局什麼城鎮、岩石都不知道；城鎮列出現�
   const v = new GameView(0, map, rules);
   assert.equal(v.randomMap, true);
   assert.deepEqual(v.townList(), []);
-  assert.equal(v.rocks.reduce((a, b) => a + b, 0), 0);
+  assert.equal(rocks(v), 0);
   // An explored large town, a rock at cell 20, a tree at 21, our house over 34-35 and 50-51.
   const placement = new Uint8Array(SIZE * SIZE);
   for (const i of [20, 21, 34, 35, 50, 51]) placement[i] = PlaceBit.Blocked;
   v.push(snapshot({ towns: [[3, TownSize.Large, 9, 9]], nodes: [[7, NodeKind.Tree, 5, 1, 100]], buildings: [[40, BuildingType.House, 2, 2]], placement }), 0);
   assert.deepEqual(v.townList(), [{ id: 3, size: TownSize.Large, cellX: 9, cellY: 9, radius: 6 }]);
-  assert.deepEqual([...v.rocks.keys()].filter((i) => v.rocks[i] === 1), [20]);
-  const version = v.rocksVersion;
+  assert.deepEqual([...v.ground.keys()].filter((i) => v.ground[i] === Terrain.Blocked), [20]);
+  const version = v.groundVersion;
   // Out of sight later (no row, no grid): what is known stays.
   v.push(snapshot({}), 1);
   assert.equal(v.townList().length, 1);
-  assert.equal(v.rocks[20], 1);
-  assert.equal(v.rocksVersion, version);
+  assert.equal(v.ground[20], 1);
+  assert.equal(v.groundVersion, version);
   // A tree whose row came after the grid (cell 22 taken for rock): no longer rock once its row comes.
   const later = new Uint8Array(SIZE * SIZE);
   later[20] = PlaceBit.Blocked;
   later[22] = PlaceBit.Blocked;
   v.push(snapshot({ placement: later }), 2);
-  assert.equal(v.rocks[22], 1);
+  assert.equal(v.ground[22], 1);
   v.push(snapshot({ nodes: [[8, NodeKind.Tree, 6, 1, 100]] }), 3);
-  assert.equal(v.rocks[22], 0);
-  assert.ok(v.rocksVersion > version);
+  assert.equal(v.ground[22], 0);
+  assert.ok(v.groundVersion > version);
+});
+
+test("天然障礙物（R6-51）：隨機地圖的地形照快照的 terrain（探到的格子），水、淺灘、橋、懸崖都記住；迷霧更新之間是 null，照舊", () => {
+  const map: MapInfo = { seed: 1, size: SIZE, terrain: new Uint8Array(SIZE * SIZE), spawns: [{ player: 0, cellX: 2, cellY: 2 }], towns: [], mode: "random" };
+  const v = new GameView(0, map, MOCK_RULES);
+  const terrain = new Uint8Array(SIZE * SIZE);
+  terrain[4] = Terrain.Water;
+  terrain[5] = Terrain.Ford;
+  terrain[6] = Terrain.BridgeNS;
+  terrain[7] = Terrain.BridgeEW;
+  terrain[8] = Terrain.Cliff;
+  terrain[9] = Terrain.Blocked;
+  // The placement grid blocks cell 12 too (a building of the enemy's, say): the terrain says what is rock.
+  const placement = new Uint8Array(SIZE * SIZE);
+  placement[9] = PlaceBit.Blocked;
+  placement[12] = PlaceBit.Blocked;
+  v.push(snapshot({ terrain, placement }), 0);
+  assert.deepEqual([...v.ground.slice(4, 13)], [Terrain.Water, Terrain.Ford, Terrain.BridgeNS, Terrain.BridgeEW, Terrain.Cliff, Terrain.Blocked, 0, 0, 0]);
+  const version = v.groundVersion;
+  assert.ok(version > 0);
+  v.push(snapshot({ terrain: null }), 1);
+  v.push(snapshot({ terrain: terrain.slice() }), 2);
+  assert.equal(v.groundVersion, version, "nothing new");
+  assert.equal(v.ground[4], Terrain.Water);
 });

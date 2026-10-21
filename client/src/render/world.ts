@@ -4,7 +4,7 @@
 // Terrain and fog are one small texture each (one texel per cell, scaled up), so they cost
 // one sprite. Units, bars and buildings come from pools that only grow.
 
-import { type Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
+import { type Application, ColorMatrixFilter, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import type { Camera } from "../camera/camera.ts";
 import { PT_PER_CELL, type Projection, tilted, TOP } from "../camera/projection.ts";
 import {
@@ -15,6 +15,8 @@ import {
   BuildingFlag,
   BuildingType,
   Fog,
+  NEUTRAL,
+  NO_OWNER,
   HeaderField as H,
   NodeField as N,
   TOWN_STRIDE,
@@ -23,6 +25,7 @@ import {
   TownChoice,
   TownSize,
   TownState,
+  Terrain,
   UNIT_STRIDE,
   UnitField as U,
   UnitType,
@@ -35,6 +38,8 @@ import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT, WARNING_TINT } from "./atlas.ts";
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 import { ArtStructures } from "./structure-art.ts";
+import { CastleDraw } from "./castle-draw.ts";
+import { TerrainDraw } from "./terrain-draw.ts";
 import type { PendingOrders } from "../game/pending.ts";
 import type { Culture } from "../art/spec.ts";
 import { ArtUnits } from "./unit-art-draw.ts";
@@ -46,10 +51,25 @@ const BAR_H = 3;
 /** How dark the fog is: never explored, explored but out of sight (0-255). */
 const FOG_ALPHA = { unexplored: 255, explored: 140 };
 // Ground colours, shared rather than made anew for each cell: on a random map the terrain is
-// painted again whenever a rock is explored (D-074), 16 641 cells each time.
-const ROCK_RGB = [104, 96, 86] as const;
+// painted again whenever more of it is explored (D-074), 16 641 cells each time.
 const GROUND_RGB = [86, 116, 64] as const;
 const GROUND_LIGHT_RGB = [92, 123, 69] as const;
+type Rgb = readonly [number, number, number];
+/**
+ * The ground a Terrain value, flat colours until war-game-ui's tiles (R6-51: art-v5); open ground
+ * and a castle's cells (drawn by castle-draw.ts) are grass. The minimap takes the same.
+ */
+export const TERRAIN_RGB: Readonly<Record<number, Rgb>> = {
+  [Terrain.Blocked]: [104, 96, 86],
+  [Terrain.Water]: [46, 88, 124],
+  [Terrain.Ford]: [88, 128, 140],
+  [Terrain.BridgeNS]: [128, 94, 58],
+  [Terrain.BridgeEW]: [128, 94, 58],
+  [Terrain.Cliff]: [66, 58, 50],
+};
+/** A bridge's rails, along the way it is crossed (R6-51: its value says which). */
+const RAIL_COLOR = 0x3e2a18;
+const RAIL_W = TILE_PX * 0.14;
 
 export interface TownLook {
   label: string;
@@ -172,10 +192,12 @@ export class WorldRenderer {
   private fogVersion = -1;
   private readonly terrainCanvas: HTMLCanvasElement;
   private readonly terrainPixels: ImageData;
-  /** The rocks drawn (D-074: a random map's grow as they are explored). */
-  private rocksVersion = 0;
-  /** Terrain repaints after a rock was explored (random map) and their CPU time in ms, for the test page. */
+  /** The ground drawn (D-074: a random map's grows as it is explored). */
+  private groundVersion = 0;
+  /** Terrain repaints after more ground was explored (random map) and their CPU time in ms, for the test page. */
   readonly terrainRepaints = { count: 0, totalMs: 0, maxMs: 0 };
+  /** Bridges' rails over the ground's colours. */
+  private readonly rails = new Graphics();
   private nodesVersion = -1;
   private readonly nodeSprites = new Map<number, { sprite: Sprite; cell: number }>();
   private readonly unitPool: UnitSprites[] = [];
@@ -206,6 +228,23 @@ export class WorldRenderer {
   private readonly groundArt = new Container();
   /** The cannon's warnings drawn from the effects atlas (晶砲預警圈 B, art-v2 on): a container each, lying on the ground. */
   private readonly warnLayer = new Container();
+  /** The towns' castles (D-089): pictures (art-v4, square on), or blocks on the ground. */
+  private readonly castle: CastleDraw;
+  /** The ground's pictures (art-v5, R6-51): the water, fords and decks lying in `terrainGround`, under the farms and castles' floors. */
+  private readonly terrain: TerrainDraw;
+  private readonly terrainGround = new Container();
+  /** The castles' blocks, on the ground under the fog (castle-draw.ts). */
+  private readonly castleBlocks = new Graphics();
+  /**
+   * Units behind a castle's wall (D-089, atlas-buildings.md section 11): their pictures again over
+   * the walls, one layer a colour (ours, the enemy's, the neutral militia's), at 45 %; the selected
+   * ones' rings over the walls too. "outline" (test pages, ?ghost=outline): only their rims.
+   */
+  private readonly ghostLayers: Record<"own" | "enemy" | "neutral", Container>;
+  private readonly ghostRings = new Graphics();
+  ghostStyle: "fill" | "outline" = "fill";
+  /** Units drawn behind a wall this frame (test page). */
+  ghostCount = 0;
   private readonly warnPool: Container[] = [];
 
   /** `art`: the units' atlases (D-085), `cultureOf` which culture each player wears; `projection` how the ground lies. */
@@ -223,6 +262,20 @@ export class WorldRenderer {
       view.pictureAt = (px, py) => structures.pictureAt(px, py);
       view.coverAt = (px, py, ux, uy) => structures.coverAt(px, py, ux, uy);
     }
+    this.castle = new CastleDraw(art, view, projection, { floor: this.groundArt, shadows: this.shadowLayer, upright: this.unitLayer, blocks: this.castleBlocks });
+    this.terrain = new TerrainDraw(art, view, projection, { ground: this.terrainGround, shadows: this.shadowLayer, upright: this.unitLayer });
+    const ghostLayer = (color: number): Container => {
+      const c = new Container();
+      const f = new ColorMatrixFilter();
+      // Every pixel the colour, its alpha kept.
+      f.matrix = [0, 0, 0, 0, ((color >> 16) & 255) / 255, 0, 0, 0, 0, ((color >> 8) & 255) / 255, 0, 0, 0, 0, (color & 255) / 255, 0, 0, 0, 1, 0];
+      c.filters = [f];
+      c.alpha = GHOST_ALPHA;
+      return c;
+    };
+    this.ghostLayers = { own: ghostLayer(OWN_TINT), enemy: ghostLayer(ENEMY_TINT), neutral: ghostLayer(NEUTRAL_TINT) };
+    const castle = this.castle;
+    view.wallPictureAt = (px, py) => castle.wallPictureAt(px, py);
     const size = view.map.size;
 
     const terrain = document.createElement("canvas");
@@ -257,9 +310,9 @@ export class WorldRenderer {
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
-    this.groundInner.addChild(ground, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
+    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
-    this.root.addChild(this.groundOuter, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.airFx, this.barLayer, this.townLayer);
+    this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
   }
 
@@ -273,6 +326,8 @@ export class WorldRenderer {
     this.drawNodes();
     this.drawBuildings();
     this.drawTowns();
+    this.castle.update();
+    this.terrain.update();
     this.fx.clear();
     this.airFx.clear();
     this.drawUnits(now);
@@ -291,6 +346,8 @@ export class WorldRenderer {
   /** Take this game's drawing off the stage (the shared shapes stay). */
   destroy(): void {
     this.artUnits?.destroy();
+    this.castle.destroy();
+    this.terrain.destroy();
     this.root.parent?.removeChild(this.root);
     this.root.destroy({ children: true });
     this.terrainTexture.destroy(true);
@@ -339,27 +396,47 @@ export class WorldRenderer {
     }
   }
 
-  /** Ground and the rocks the player knows (GameView.rocks), one texel per cell. */
+  /**
+   * The ground the player knows (GameView.ground), one texel per cell, and the bridges' rails: in flat
+   * colours, or grass under ui's pictures (art-v5, terrain-draw.ts).
+   */
   private paintTerrain(): void {
+    const flat = !this.terrain.pictures;
     const size = this.view.map.size;
+    const g = this.view.ground;
     const d = this.terrainPixels.data;
+    const rails = this.rails.clear();
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const c = this.view.rocks[y * size + x] === 1 ? ROCK_RGB : (x + y) % 2 === 0 ? GROUND_RGB : GROUND_LIGHT_RGB;
+        const t = g[y * size + x];
+        const c = (flat ? TERRAIN_RGB[t] : undefined) ?? ((x + y) % 2 === 0 ? GROUND_RGB : GROUND_LIGHT_RGB);
         const o = (y * size + x) * 4;
         d[o] = c[0];
         d[o + 1] = c[1];
         d[o + 2] = c[2];
         d[o + 3] = 255;
+        // A rail on each side the bridge ends: west and east of a north-south one, north and south of an east-west one.
+        if (!flat || (t !== Terrain.BridgeNS && t !== Terrain.BridgeEW)) continue;
+        const bridge = (cx: number, cy: number) => cx >= 0 && cy >= 0 && cx < size && cy < size && g[cy * size + cx] === t;
+        const x0 = x * TILE_PX;
+        const y0 = y * TILE_PX;
+        if (t === Terrain.BridgeNS) {
+          if (!bridge(x - 1, y)) rails.rect(x0, y0, RAIL_W, TILE_PX);
+          if (!bridge(x + 1, y)) rails.rect(x0 + TILE_PX - RAIL_W, y0, RAIL_W, TILE_PX);
+        } else {
+          if (!bridge(x, y - 1)) rails.rect(x0, y0, TILE_PX, RAIL_W);
+          if (!bridge(x, y + 1)) rails.rect(x0, y0 + TILE_PX - RAIL_W, TILE_PX, RAIL_W);
+        }
       }
     }
+    rails.fill(RAIL_COLOR);
     (this.terrainCanvas.getContext("2d") as CanvasRenderingContext2D).putImageData(this.terrainPixels, 0, 0);
-    this.rocksVersion = this.view.rocksVersion;
+    this.groundVersion = this.view.groundVersion;
   }
 
-  /** Rocks explored since the last frame (random map): the terrain texture again. */
+  /** Ground explored since the last frame (random map): the terrain texture again. */
   private drawTerrain(): void {
-    if (this.view.rocksVersion === this.rocksVersion) return;
+    if (this.view.groundVersion === this.groundVersion) return;
     const t0 = performance.now();
     this.paintTerrain();
     this.terrainTexture.source.update();
@@ -522,7 +599,9 @@ export class WorldRenderer {
       const look = townLook(t[o + T.state], t[o + T.owner], this.view.me);
       const cx = (info.cellX + 0.5) * TILE_PX;
       const cy = (info.cellY + 0.5) * TILE_PX;
-      this.zones.circle(cx, cy, info.radius * TILE_PX).fill({ color: look.tint, alpha: 0.1 }).stroke({ width: 3, color: look.tint, alpha: 0.75 });
+      // A castle (D-089) is its own range: its walls (castle-draw.ts). Before them, the circle.
+      const box = this.view.castleBox(info);
+      if (box === null) this.zones.circle(cx, cy, info.radius * TILE_PX).fill({ color: look.tint, alpha: 0.1 }).stroke({ width: 3, color: look.tint, alpha: 0.75 });
       let mark = this.townMarks.get(id);
       if (mark === undefined) {
         const wall = new Sprite(this.atlas.wall);
@@ -546,7 +625,10 @@ export class WorldRenderer {
       // The big city's wall under its tower, as seen or as the rules place it (render/town-wall.ts).
       const spot = wallSpot(info, info.size === TownSize.Large ? (this.towers.get(id) ?? ruleTower(info, towerSize)) : null);
       mark.spot = spot;
-      mark.wall.visible = mark.glyph.visible = mark.holder.visible = true;
+      mark.holder.visible = true;
+      // With a castle (D-089) no symbol: the walls show the town; 鎮 or 城 in its middle only with no pictures of them.
+      mark.wall.visible = box === null;
+      mark.glyph.visible = box === null || !this.castle.pictures;
       // On its spot, its words under its nearest corner (as a diamond, the bottom one).
       const mid = this.projection.toPlane(spot.x + spot.side / 2, spot.y + spot.side / 2);
       const foot = this.projection.toPlane(spot.x + spot.side, spot.y + spot.side);
@@ -565,7 +647,13 @@ export class WorldRenderer {
         mark.glyph.position.set(mid.x, foot.y - spot.side * 0.58);
         mark.glyph.scale.set((spot.side * 0.34) / 36);
       }
-      mark.holder.position.set(mid.x, foot.y);
+      if (box === null) mark.holder.position.set(mid.x, foot.y);
+      else {
+        // Its words under its south wall (R6-06).
+        const at = this.projection.toPlane((box.x0 + box.x1 + 1) * 0.5 * TILE_PX, (box.y1 + 1) * TILE_PX);
+        mark.holder.position.set(at.x, at.y);
+        if (!this.castle.pictures) mark.glyph.position.set(this.projection.toPlane(cx, cy).x, this.projection.toPlane(cx, cy).y);
+      }
       const choice = this.paused ? (this.pending?.townChoice(id) ?? null) : null;
       mark.label.text = choice === null || t[o + T.state] !== TownState.AwaitingChoice ? look.label : `${choice === TownChoice.Plunder ? "搶" : "治理"}（繼續後開始）`;
       const total = t[o + T.timerTotal];
@@ -583,6 +671,21 @@ export class WorldRenderer {
   get artDrawn(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null {
     const a = this.artUnits;
     return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }) };
+  }
+
+  /** The ground's pictures drawn (art-v5), for the test page. */
+  get terrainCounts(): { pictures: boolean; pieces: number; flat: number; standing: number } {
+    return { pictures: this.terrain.pictures, ...this.terrain.counts };
+  }
+
+  /** How far up someone at (px, py) world px is drawn (a bridge's deck), for the test page. */
+  liftAt(px: number, py: number): number {
+    return this.terrain.liftAt(px, py);
+  }
+
+  /** The castles as drawn (castle-draw.ts), for the test page. */
+  get castleCounts(): { pieces: number; tiles: number; blockTowns: number; misfit: number } {
+    return this.castle.counts;
   }
 
   /** Each town's wall's spot on the ground (world px), for the test page. */
@@ -617,6 +720,14 @@ export class WorldRenderer {
     const paused = curr.snap.header[H.paused] === 1;
     const pu = prev?.snap.units;
     const sel = view.selection.units;
+    this.ghostRings.clear();
+    this.ghostCount = 0;
+    // A layer with no one behind a wall this frame is hidden: its filter's pass is skipped.
+    const ghosts = { own: 0, enemy: 0, neutral: 0 };
+    const walls = this.castle.hasPieces && this.artUnits !== null;
+    // The selection ring's size on the plane (the ground's ring: 16 world px at 1.05).
+    const ringX = this.projection.toPlane(17, 0).x - this.projection.toPlane(0, 0).x;
+    const ringY = this.projection.toPlane(0, 17).y - this.projection.toPlane(0, 0).y;
     // The atlases' clock: the simulation's time, between the last two snapshots (D-085).
     const tick = curr.snap.header[H.tick];
     const seconds = (paused || prev === null ? tick : tick - 1 + alpha) / TICKS_PER_SECOND;
@@ -672,8 +783,10 @@ export class WorldRenderer {
       const at = this.projection.toPlane(px, py);
       const type = u[o + U.type];
       const owner = u[o + U.owner];
+      // On a bridge's deck (art-v5): drawn up there.
+      const lift = this.terrain.liftAt(px, py);
       // From its atlas when there is one (its picture's top for the bars), else the shape.
-      const top = this.artUnits?.unit(i, o, at.x, at.y, seconds) ?? null;
+      const top = this.artUnits?.unit(i, o, at.x, at.y, seconds, lift) ?? null;
       p.body.visible = top === null;
       p.body.texture = this.atlas.units[type] ?? this.atlas.units[UnitType.Farmer];
       p.body.tint = ownerTint(owner, view.me);
@@ -691,6 +804,18 @@ export class WorldRenderer {
         p.ring.position.set(px, py);
         p.ring.scale.set(1.05);
         p.ring.tint = 0xfff3b0;
+      }
+      // Behind a castle's wall (D-089): drawn again over it, its ring too when selected.
+      if (walls && top !== null) {
+        const box = this.artUnits?.pictureBox(i) ?? null;
+        const behind = box !== null && this.castle.covers(box, box.z);
+        const side = owner === view.me ? "own" : owner === NEUTRAL || owner === NO_OWNER ? "neutral" : "enemy";
+        this.artUnits?.ghost(i, behind ? this.ghostLayers[side] : null, this.ghostStyle === "outline");
+        if (behind) {
+          this.ghostCount++;
+          ghosts[side]++;
+          if (selected) this.ghostRings.ellipse(at.x, at.y, ringX, ringY).stroke({ width: 2, color: 0xfff3b0 });
+        }
       }
       const info = view.rules.units[type];
       const hp = u[o + U.hp];
@@ -718,6 +843,9 @@ export class WorldRenderer {
       }
     }
     this.artUnits?.drawCorpses(seconds);
+    this.ghostLayers.own.visible = ghosts.own > 0;
+    this.ghostLayers.enemy.visible = ghosts.enemy > 0;
+    this.ghostLayers.neutral.visible = ghosts.neutral > 0;
   }
 
   private drawWarnings(now: number): void {
@@ -875,6 +1003,9 @@ export class WorldRenderer {
     front.tint = tint;
   }
 }
+
+/** Units behind a castle's wall, drawn again over it this see-through (atlas-buildings.md section 11). */
+const GHOST_ALPHA = 0.45;
 
 /** The building preview: may go there, may not. */
 const PLACE_OK = 0x4fd06a;
