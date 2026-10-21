@@ -125,17 +125,24 @@ const both = (m: Match) => m.fights[WAYS.length - 1];
 const cavAttacks = (m: Match) => m.fights[0];
 
 function measure(): Report {
-  const g3 = play("目標 3：B 不該贏", A(14), A(0, 12));
+  const g3 = play("目標 3：B 要贏", A(14), A(0, 12));
   const g2 = play("目標 2：B 不該輸", A(14), A(7, 6));
-  const g4a = play("目標 4：B 要贏，遠程至少損一半", A(14), A(0, 8, 2));
-  const g4b = play("目標 4：B 要贏，遠程至少損一半", A(14), A(0, 4, 4));
+  const g4a = play("目標 4：B 要贏", A(14), A(0, 8, 2));
+  const g4b = play("目標 4：B 要贏", A(14), A(0, 4, 4));
   const g5 = play("目標 5：B 要贏", A(0, 0, 6), A(0, 12));
   const g5loose = play("目標 5（參考）：B 要贏", A(0, 0, 6), A(0, 12), "loose");
-  // Round 7 (D-061): cavalry, 6 of them (840).
-  const g6 = play("目標 6：A 進攻要贏", A(0, 0, 0, 6), A(0, 0, 6));
-  const g7 = play("目標 7：A 不該贏", A(0, 0, 0, 6), A(14));
-  const g8 = play("目標 8：A 進攻要贏，騎兵至少損三分之一", A(0, 0, 0, 6), A(0, 12));
-  const g9 = play("目標 9：B 要贏", A(0, 0, 0, 6), A(7, 6));
+  // Round 7 (D-061): cavalry, as many as 840 buys (7 since D-097, 6 before).
+  const cav = Math.round(840 / armyCost(A(0, 0, 0, 1)));
+  const g6 = play("目標 6：A 要贏，騎兵最多損三分之一", A(0, 0, 0, cav), A(0, 0, 6));
+  const g7 = play("目標 7：A 不該贏", A(0, 0, 0, cav), A(14));
+  const g8 = play("目標 8：A 要贏，騎兵最多損三分之一", A(0, 0, 0, cav), A(0, 12));
+  const g9 = play("目標 9：B 要贏", A(0, 0, 0, cav), A(7, 6));
+  // D-097: the triangle in mixed armies; a third of the money on cavalry or mages (as near as whole units go).
+  const third = (one: Army) => Math.round(280 / armyCost(one));
+  const g10 = play("目標 10：差不到一名", A(7, 6), A(5, 4, 0, third(A(0, 0, 0, 1))));
+  const g11 = play("目標 11：A 不該輸", A(5, 4, 0, third(A(0, 0, 0, 1))), A(5, 4, 2));
+  const g12 = play("目標 12：A 不該輸", A(10, 8, 0, 2 * third(A(0, 0, 0, 1))), A(10, 8, 4));
+  const g13 = play("參考：法師在混編裡", A(7, 6), A(5, 4, 2));
   const loose = [A(0, 8, 2), A(0, 4, 4), A(0, 0, 6)].map((b) => ({
     b,
     close: DISTANCES.map((d) => fight([A(14), b], 0, d, "close", 0)),
@@ -144,25 +151,35 @@ function measure(): Report {
   const shots = twoShots();
   const wins = (fs: Fight[], side: number) => fs.filter((f) => f.winner === side).length;
   const g4 = [g4a, g4b].map((m) => ({ won: wins(both(m), 1), lost: both(m).map((f) => rangedLost(m, f)) }));
+  // Goals 6 and 8 (D-097): won both advancing and with the cavalry attacking, losing at most a third.
+  const lostCav = (f: Fight) => (f.winner === 0 ? cav - (f.left[0].cav ?? 0) : cav);
+  const cavGoal = (m: Match) => {
+    const fs = [...both(m), ...cavAttacks(m)];
+    return {
+      ok: fs.every((f) => f.winner === 0 && lostCav(f) * 3 <= cav),
+      text: `雙方對進贏 ${wins(both(m), 0)}/3、損 ${both(m).map(lostCav).join("/")}；騎兵進攻贏 ${wins(cavAttacks(m), 0)}/3、損 ${cavAttacks(m).map(lostCav).join("/")}（共 ${cav}）`,
+    };
+  };
+  const left = (f: Fight) => {
+    if (f.winner < 0) return 0;
+    const a = f.left[f.winner];
+    return a.spear + a.ranged + a.mage + (a.cav ?? 0);
+  };
   const goals = [
     { ok: shots.survives, text: `兩發 ${shots.damage}，生命 ${shots.hp}` },
     { ok: both(g2).every((f) => f.winner !== 0), text: `混編不輸 ${3 - wins(both(g2), 0)}/3` },
-    { ok: wins(both(g3), 1) === 0, text: `遠程贏 ${wins(both(g3), 1)}/3` },
-    {
-      ok: g4.every((x) => x.won === 3 && x.lost.every((l) => l >= 50)),
-      text: g4.map((x, k) => `${k === 0 ? "2 法師" : "4 法師"}贏 ${x.won}/3、遠程損 ${x.lost.join("/")}%`).join("；"),
-    },
+    { ok: wins(both(g3), 1) === 3, text: `遠程贏 ${wins(both(g3), 1)}/3` },
+    { ok: g4.every((x) => x.won === 3), text: g4.map((x, k) => `${k === 0 ? "2 法師" : "4 法師"}贏 ${x.won}/3、遠程損 ${x.lost.join("/")}%`).join("；") },
     { ok: wins(both(g5), 1) === 3, text: `遠程贏 ${wins(both(g5), 1)}/3（散開時 ${wins(both(g5loose), 1)}/3）` },
-    // Goals 6 and 8 as the brief puts them: the cavalry attacks (A 進攻); 7 and 9 both advancing.
-    { ok: wins(cavAttacks(g6), 0) === 3, text: `騎兵進攻贏 ${wins(cavAttacks(g6), 0)}/3（雙方對進 ${wins(both(g6), 0)}/3）` },
+    cavGoal(g6),
     { ok: wins(both(g7), 0) === 0, text: `騎兵贏 ${wins(both(g7), 0)}/3` },
-    {
-      ok: wins(cavAttacks(g8), 0) === 3 && cavAttacks(g8).every((f) => 6 - (f.left[0].cav ?? 0) >= 2),
-      text: `騎兵進攻贏 ${wins(cavAttacks(g8), 0)}/3、損 ${cavAttacks(g8).map((f) => 6 - (f.left[0].cav ?? 0)).join("/")} 名（共 6；雙方對進贏 ${wins(both(g8), 0)}/3、損 ${both(g8).map((f) => (f.winner === 0 ? 6 - (f.left[0].cav ?? 0) : 6)).join("/")}）`,
-    },
+    cavGoal(g8),
     { ok: wins(both(g9), 1) === 3, text: `混編贏 ${wins(both(g9), 1)}/3` },
+    { ok: both(g10).every((f) => left(f) <= 1), text: both(g10).map((f) => (f.winner < 0 ? "平手" : `${f.winner === 0 ? "A" : "B"} 剩 ${left(f)}`)).join("、") },
+    { ok: both(g11).every((f) => f.winner !== 1), text: `騎兵那方不輸 ${3 - wins(both(g11), 1)}/3` },
+    { ok: both(g12).every((f) => f.winner !== 1), text: `騎兵那方不輸 ${3 - wins(both(g12), 1)}/3` },
   ];
-  return { matches: [g3, g2, g4a, g4b, g5, g5loose, g6, g7, g8, g9], loose, goals };
+  return { matches: [g3, g2, g4a, g4b, g5, g5loose, g6, g7, g8, g9, g10, g11, g12, g13], loose, goals };
 }
 
 function looseTable(r: Report, off?: Report): string[] {
@@ -183,21 +200,29 @@ function looseTable(r: Report, off?: Report): string[] {
   return [...rows, ""];
 }
 
+// D-097 (the triangle, ceo 2026-10-21): 3 was 「沒人保護的遠程打不贏槍兵」, 4 asked the ranged to lose
+// at least half, 6 only asked the cavalry to win, 8 asked it to lose at least a third.
 const GOALS = [
   "1 滿血槍兵挨兩發晶砲不倒",
   "2 花費相同，混編（槍兵在前、遠程在後）不輸純槍兵",
-  "3 花費相同，沒人保護的遠程打不贏槍兵",
-  "4 花費相同，法師＋遠程打贏純槍兵，但遠程至少損一半",
+  "3 花費相同，沒人保護的遠程打贏槍兵（D-097 三角）",
+  "4 花費相同，法師＋遠程打贏純槍兵",
   "5 花費相同，遠程打贏沒人保護的法師",
-  "6 花費相同，騎兵進攻沒人保護的法師要贏（第七輪；以騎兵進攻判定）",
+  "6 花費相同，騎兵打贏沒人保護的法師，最多損三分之一（D-097；雙方對進和騎兵進攻都算）",
   "7 花費相同，騎兵打不贏槍兵（第七輪）",
-  "8 花費相同，騎兵打得贏沒人保護的遠程，但至少損三分之一（第七輪；以騎兵進攻判定）",
+  "8 花費相同，騎兵打贏沒人保護的遠程，最多損三分之一（D-097；雙方對進和騎兵進攻都算）",
   "9 花費相同，槍兵加遠程的混編打得贏純騎兵（第七輪）",
+  "10 花費相同，槍遠各半對三分之一騎兵的混編，贏的一方最多剩 1 名（D-097）",
+  "11 花費相同，三分之一騎兵的混編不輸三分之一法師的混編（D-097）",
+  "12 同 11，兩倍的兵（D-097）",
 ];
 
 /** Why a goal is allowed to fail this round (ceo 2026-10-01), shown while it does. */
 const KNOWN: Record<number, string> = {
-  5: "這一輪不動晶砲（ceo 選 a）。不成立的原因是晶砲的齊射：法師在遠程進到射程（5 格）前就放（8 格），密集時一發打中好幾名",
+  5: "這一輪不動晶砲（ceo 選 a；D-097 也不動）。不成立的原因是晶砲的齊射：法師在遠程進到射程（5 格）前就放，密集時一發打中好幾名",
+  6: "9 格雙方對進損 3 名（7 名的三分之一是 2.3）：法師開場的晶砲齊射，騎兵的攻擊、生命、倍率加了都一樣（回報 ceo）",
+  10: "騎兵繞到後排（D-097 (c)）以後，三分之一騎兵的混編反而贏太多；只調騎兵數值也到不了差一名（騎兵弱一點就換成槍遠贏很多）",
+  12: "兩倍的兵時，騎兵繞過去要經過更多槍兵、挨更多晶砲，到法師前就死了大半",
 };
 
 /**
@@ -286,7 +311,7 @@ function main(): void {
   const out: string[] = [
     "## 兵種平衡量測（原型第三輪，D-026）",
     "",
-    "- 每方花費 840（四種資源都算）：槍兵 60、遠程 70、法師 140、騎兵 140（第七輪）。兩方的前排相距 8、9、10 格各打一場，最多 2 分鐘。",
+    `- 每方花費 840（四種資源都算）：槍兵 60、遠程 70、法師 140、騎兵 ${armyCost(A(0, 0, 0, 1))}（D-097；第七輪是 140）。兩方的前排相距 8、9、10 格各打一場，最多 2 分鐘。`,
     "- A 進攻：A 走向站著的 B。B 進攻：反過來。雙方對進：同時往對方走。站著的一方是積極姿態，6 格內有敵人才會動。目標以雙方對進判定。",
     "- 法師開著自動施放，魔晶足夠。",
     `- 一起迎戰（第三輪）：待命、積極姿態的兵，6 格內沒有敵人時，去打 ${JOIN_FIGHT.range / 1024} 格內隊友正在追或打的敵人（離自己原位 8 格內）。「現在」沒有這條規則；「這個版本」兩種都列。`,
