@@ -70,6 +70,13 @@ export interface GameHook {
   inject(ev: SimEvent): void;
   /** Fake world only: put own units on these cells (one cell each, cycling). */
   place(ids: number[], cells: { x: number; y: number }[]): void;
+  /** Fake world only (等錢治理): what we have, and a little economy (income a second, 自動訓練 spending above the reserve) or none. */
+  stock(c: { food: number; wood: number; gold: number; crystal: number }): void;
+  economy(e: { income: { food: number; wood: number; gold: number; crystal: number }; train: { food: number; wood: number; gold: number; crystal: number } } | null): void;
+  /** What we have now (the resource bar's numbers). */
+  resources(): { food: number; wood: number; gold: number; crystal: number };
+  /** 等錢治理: the towns waiting for 治理's cost. */
+  governWaits(): number[];
   /** Control groups 1–4 as stored by the interface. */
   groups(): number[][];
   /** The soldiers stationed in a town (留守, D-026). */
@@ -245,6 +252,14 @@ export function gameHook(game: Game): GameHook {
     place: (ids, cells) => {
       if (game.portForTest instanceof MockPort) game.portForTest.place(ids, cells);
     },
+    stock: (c) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.setStock(c);
+    },
+    economy: (e) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.setEconomy(e);
+    },
+    resources: () => game.stock(),
+    governWaits: () => game.governWaits.list(),
     groups: () => game.army.groups.map((g) => [...g.ids]),
     garrison: (town) => game.army.garrisonOf(town),
     townHint: () => game.townHint(),
