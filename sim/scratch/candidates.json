@@ -1,0 +1,28 @@
+{
+ "traces": [
+  {
+   "name": "tf-normal-f",
+   "script": "think-fort.ts",
+   "args": "--seeds 1-5 --strategy push --speed h1 --formation close --fortress --difficulty normal",
+   "a": {}
+  },
+  {
+   "name": "tf-normal-fr",
+   "script": "think-fort.ts",
+   "args": "--seeds 1-5 --strategy push --speed h1 --formation close --fortress --map random --difficulty normal",
+   "a": {}
+  },
+  {
+   "name": "tf-hard-f",
+   "script": "think-fort.ts",
+   "args": "--seeds 1-5 --strategy push --speed h1 --formation close --fortress --difficulty hard",
+   "a": {}
+  },
+  {
+   "name": "tf-hard-fr",
+   "script": "think-fort.ts",
+   "args": "--seeds 1-5 --strategy push --speed h1 --formation close --fortress --map random --difficulty hard",
+   "a": {}
+  }
+ ]
+}
