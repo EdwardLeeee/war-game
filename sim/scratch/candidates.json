@@ -1,0 +1,76 @@
+{
+ "traces": [
+  {
+   "name": "base-normal-f-1",
+   "script": "fort-why.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --fortress --difficulty normal",
+   "a": {}
+  },
+  {
+   "name": "base-normal-f-21",
+   "script": "fort-why.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --fortress --difficulty normal",
+   "a": {}
+  },
+  {
+   "name": "base-normal-fr-1",
+   "script": "fort-why.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --fortress --map random --difficulty normal",
+   "a": {}
+  },
+  {
+   "name": "base-normal-fr-21",
+   "script": "fort-why.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --fortress --map random --difficulty normal",
+   "a": {}
+  },
+  {
+   "name": "base-normal-fh-1",
+   "script": "fort-why.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty normal",
+   "a": {}
+  },
+  {
+   "name": "base-normal-fh-21",
+   "script": "fort-why.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty normal",
+   "a": {}
+  },
+  {
+   "name": "base-hard-f-1",
+   "script": "fort-why.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --fortress --difficulty hard",
+   "a": {}
+  },
+  {
+   "name": "base-hard-f-21",
+   "script": "fort-why.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --fortress --difficulty hard",
+   "a": {}
+  },
+  {
+   "name": "base-hard-fr-1",
+   "script": "fort-why.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --fortress --map random --difficulty hard",
+   "a": {}
+  },
+  {
+   "name": "base-hard-fr-21",
+   "script": "fort-why.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --fortress --map random --difficulty hard",
+   "a": {}
+  },
+  {
+   "name": "base-hard-fh-1",
+   "script": "fort-why.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard",
+   "a": {}
+  },
+  {
+   "name": "base-hard-fh-21",
+   "script": "fort-why.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard",
+   "a": {}
+  }
+ ]
+}
