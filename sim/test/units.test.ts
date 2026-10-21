@@ -6,10 +6,10 @@ import { buildView } from "../src/view/view.ts";
 import { BUILDINGS, JOIN_FIGHT, LONG_BOWS, MARCH_ORDER, SQUAD, UNITS } from "../src/core/rules.ts";
 import { fight } from "../src/balance-lib.ts";
 import type { Game } from "../src/core/game.ts";
-import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
+import { beforeTriangle, cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
 
-test("multipliers: ranged deal 12 to spearmen (5 x 5/2, round 3), 5 to others; at least 1", () => {
-  assert.equal(damage(5, UnitType.Ranged, UnitType.Spearman), 12);
+test("multipliers: ranged deal 17 to spearmen (5 x 7/2, D-097; x5/2 from round 3), 5 to others; at least 1", () => {
+  assert.equal(damage(5, UnitType.Ranged, UnitType.Spearman), 17);
   assert.equal(damage(5, UnitType.Ranged, UnitType.Ranged), 5);
   assert.equal(damage(6, UnitType.Spearman, UnitType.Ranged), 6);
   assert.equal(damage(0, UnitType.Farmer, UnitType.Farmer), 1);
@@ -126,7 +126,8 @@ test("joining a fight does not chain: in a line of soldiers 4 cells apart, only 
   assert.ok(moved1, "the one 8 cells away joins");
 });
 
-test("joining a fight: ranged walking up to standing spearmen meet all of them (equal cost, 8 cells): the spearmen win; without it the ranged win", () => {
+// Set for round 3's ranged x5/2 on spearmen; with the triangle's x7/2 (D-097) the ranged win either way.
+test("joining a fight: ranged walking up to standing spearmen meet all of them (equal cost, 8 cells): the spearmen win; without it the ranged win", beforeTriangle(() => {
   const spear = { spear: 14, ranged: 0, mage: 0 };
   const ranged = { spear: 0, ranged: 12, mage: 0 };
   assert.equal(fight([spear, ranged], 1, 8).winner, 0, "with joining");
@@ -141,7 +142,7 @@ test("joining a fight: ranged walking up to standing spearmen meet all of them (
     JOIN_FIGHT.range = range;
     SQUAD.reach = reach;
   }
-});
+}));
 
 test("main city arrows hit intruders; destroying a main city ends the game", () => {
   const g = emptyGame();
@@ -535,7 +536,8 @@ function withoutSquads<T>(f: () => T): T {
   }
 }
 
-test("a squad fights together: 24 soldiers told to stand 3 cells before 12 standing enemies: at least nine in ten of the living strike within 15 s (more than without)", () => {
+// The squad scenes are set for round 3's ranged x5/2 on spearmen (D-097 made it x7/2).
+test("a squad fights together: 24 soldiers told to stand 3 cells before 12 standing enemies: at least nine in ten of the living strike within 15 s (more than without)", beforeTriangle(() => {
   const scene = squadScene(24, 12);
   const { share } = struckShare(scene.g, scene.mine);
   const before = withoutSquads(() => {
@@ -544,7 +546,7 @@ test("a squad fights together: 24 soldiers told to stand 3 cells before 12 stand
   });
   assert.ok(share >= 0.9, `with squads ${share}`);
   assert.ok(share > before, `with squads ${share}, without ${before}`);
-});
+}));
 
 test("a squad fights together, mirrored: the mirror image plays the mirror image, tick by tick", () => {
   const a = squadScene(24, 12);
@@ -579,7 +581,7 @@ test("a squad's ranged stop at their range: none walks into close combat", () =>
 
 // Ranks on the march (MARCH_ORDER, D-095) off: this squad has its ranged in front, so its
 // spearmen would pass them on the way, come in a ragged line, and lose (0 to 7 left).
-test("a squad beats an equal standing force that it loses to when its back rows wait (24 against 24)", switchedOff([LONG_BOWS, MARCH_ORDER], () => {
+test("a squad beats an equal standing force that it loses to when its back rows wait (24 against 24)", switchedOff([LONG_BOWS, MARCH_ORDER], beforeTriangle(() => {
   const finish = (s: ReturnType<typeof squadScene>) => {
     run(s.g, 2400);
     return [s.mine.filter((id) => slotOf(s.g, id) >= 0).length, s.enemy.filter((id) => slotOf(s.g, id) >= 0).length];
@@ -588,7 +590,7 @@ test("a squad beats an equal standing force that it loses to when its back rows 
   const [mine0, foes0] = withoutSquads(() => finish(squadScene(24, 24)));
   assert.ok(mine > 0 && foes === 0, `with squads ${mine}:${foes}`);
   assert.ok(mine0 === 0 && foes0 > 0, `without ${mine0}:${foes0}`);
-}));
+})));
 
 test("an idle squad is not drawn away: its members join a fight within 12 cells of where they stood, no further", () => {
   const g = emptyGame();

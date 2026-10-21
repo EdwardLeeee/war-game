@@ -2,8 +2,8 @@
 
 import { Game } from "../src/core/game.ts";
 import { BLOCK_GATE, BLOCK_WALL } from "../src/core/world.ts";
-import { BuildingType, CELL_SHIFT, type UnitType } from "../src/protocol.ts";
-import { UNITS } from "../src/core/rules.ts";
+import { BuildingType, CELL_SHIFT, UnitType } from "../src/protocol.ts";
+import { MULT_DEN, MULT_NUM, SHIELD, UNITS } from "../src/core/rules.ts";
 
 export function emptyGame(): Game {
   const g = new Game({ seed: 1, scenario: "standard" });
@@ -80,6 +80,37 @@ export function openArea(g: Game, size: number): { x: number; y: number } {
  */
 export function switchedOff(sw: { on: boolean } | { on: boolean }[], body: () => void): () => void {
   return switched(sw, false, body);
+}
+
+/**
+ * The multipliers before the unit triangle (D-097) while `body` runs: for scenes of other rules
+ * (joining a fight, squads) set for that balance. Ranged x5/2 on spearmen, x9/5 on cavalry, x3
+ * on shields; spearmen x3 on cavalry; cavalry x2 on mages and shields.
+ */
+export function beforeTriangle(body: () => void): () => void {
+  const old: [number, number, number, number][] = [
+    [UnitType.Ranged, UnitType.Spearman, 5, 2],
+    [UnitType.Ranged, UnitType.Cavalry, 9, 5],
+    [UnitType.Ranged, SHIELD, 3, 1],
+    [UnitType.Spearman, UnitType.Cavalry, 3, 1],
+    [UnitType.Cavalry, UnitType.Mage, 2, 1],
+    [UnitType.Cavalry, SHIELD, 2, 1],
+  ];
+  return () => {
+    const was = old.map(([a, t]) => [MULT_NUM[a][t], MULT_DEN[a][t]]);
+    for (const [a, t, num, den] of old) {
+      MULT_NUM[a][t] = num;
+      MULT_DEN[a][t] = den;
+    }
+    try {
+      body();
+    } finally {
+      old.forEach(([a, t], k) => {
+        MULT_NUM[a][t] = was[k][0];
+        MULT_DEN[a][t] = was[k][1];
+      });
+    }
+  };
 }
 
 /** The same with switches on: for tests of a rule that is off for now (D-095: MARCH_ORDER). */

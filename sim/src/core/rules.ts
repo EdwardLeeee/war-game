@@ -49,10 +49,11 @@ UNITS[UnitType.Militia] = {
   cooldown: 30, cost: cost(), trainTicks: 0, population: 0,
 };
 // Round 7 (D-061): GDD appendix A's heavy cavalry; cooldown as spearmen, sight as ranged (not in
-// the GDD). Trained only while CAVALRY is on.
+// the GDD). Trained only while CAVALRY is on. D-097 (the unit triangle): 60 food 60 gold, was 70
+// and 70; 150 hp, was 130 (src/balance.ts).
 UNITS[UnitType.Cavalry] = {
-  type: UnitType.Cavalry, hp: 130, shield: 0, attack: 11, range: CELL, speed: speed(160), sight: 7,
-  cooldown: 30, cost: cost(70, 0, 70), trainTicks: 28 * S, population: 1,
+  type: UnitType.Cavalry, hp: 150, shield: 0, attack: 11, range: CELL, speed: speed(160), sight: 7,
+  cooldown: 30, cost: cost(60, 0, 60), trainTicks: 28 * S, population: 1,
 };
 
 const ALL: Resource[] = [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal];
@@ -112,22 +113,18 @@ BUILDINGS[BuildingType.Outpost] = building({
 BUILDINGS[BuildingType.Gate] = building({ type: BuildingType.Gate, hp: 2100, size: 1, sight: 2 });
 
 /**
- * Ranged against a mage's shield (early balance, D-057; round 4, D-037): x3, was x3/2 (num 3,
- * den 2 gives that back).
- */
-export const RANGED_VS_SHIELD = { num: 3, den: 1 };
-/**
- * Damage x num / den. Cavalry's (round 7, D-061) from GDD appendix A, plus ranged x9/5 against
- * cavalry (not in the GDD): without it 6 cavalry beat 12 ranged of the same cost losing 0-1
- * (D-035 too); with it they still win, losing 2-3 (brief: at least a third; src/balance.ts).
+ * Damage x num / den: only the unit triangle (D-097; the user 2026-10-21: 「簡化成一個三角＋修騎兵」),
+ * spearmen beat cavalry, cavalry beat ranged units and mages (their shields too), ranged units
+ * beat spearmen. Ranged x9/5 on cavalry (round 7) and x3 on shields (D-057, D-037) are gone.
+ * At equal cost (src/balance.ts): 7 cavalry beat 12 ranged and 6 mages losing at most 2, 14
+ * spearmen beat 7 cavalry keeping 12, 12 ranged beat 14 spearmen. Ranged on spearmen x7/2, was
+ * x5/2; spearmen on cavalry x5/2, was x3; cavalry on mages and shields x3, was x2.
  */
 export const MULTIPLIERS: Multiplier[] = [
-  { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 5, den: 2 },
-  { attacker: UnitType.Ranged, target: "shield", ...RANGED_VS_SHIELD },
-  { attacker: UnitType.Ranged, target: UnitType.Cavalry, num: 9, den: 5 },
-  { attacker: UnitType.Spearman, target: UnitType.Cavalry, num: 3, den: 1 },
-  { attacker: UnitType.Cavalry, target: UnitType.Mage, num: 2, den: 1 },
-  { attacker: UnitType.Cavalry, target: "shield", num: 2, den: 1 },
+  { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 7, den: 2 },
+  { attacker: UnitType.Spearman, target: UnitType.Cavalry, num: 5, den: 2 },
+  { attacker: UnitType.Cavalry, target: UnitType.Mage, num: 3, den: 1 },
+  { attacker: UnitType.Cavalry, target: "shield", num: 3, den: 1 },
 ];
 
 export const MAGE_CAP = 6;
