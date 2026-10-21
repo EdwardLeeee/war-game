@@ -353,7 +353,9 @@ def _horse_armour(u, M, hem=0.8):
         for y, zc, rx, ry in rows:
             rx, ry = rx + gap, ry + gap
             xe, ze = rx * math.cos(math.radians(a0)), zc + ry * math.sin(math.radians(a0))
-            band.append([(side * (xe + 0.045 * t + 0.008), y, ze + (hem - ze) * t) for t in (0.84, 1.0)])
+            # the lower half of the side panels: cloth of the player's colour under the lamellar's hem (the rider's
+            # sleeves and 頓項 alone gave 3-6% of the unit in the player's colour, too little to tell blue from red)
+            band.append([(side * (xe + 0.045 * t + 0.008), y, ze + (hem - ze) * t) for t in (0.45, 0.72, 1.0)])
         units2._surface(f"{kind}_h_r8hem{'R' if side > 0 else 'L'}", band, M["team"], hr, bones)
     # 盪胸 over the chest, 搭後 round the rump: in front of the first station and behind the last
     (yb, zb, rxb, ryb), (yf, zf, rxf, ryf) = rows[0], rows[-1]
@@ -460,4 +462,20 @@ def dress_bow(u):
     for s in (-1, 1):
         box(f"{kind}_r8futoutail{s}", (0.04, 0.008, 0.32), M["black"], head, at=(0.034 * s, -0.175, 0.0),
             rot=(-10, 0, 4 * s), bevel=0.003)
+    return u
+
+
+def dress_siege(u):
+    """霹靂車: more of the player's colour (the flag alone gave 0-10% of the machine, and none from some sides): a cloth
+    hung along each side of the cart, and a pennant on each end of the axle. Design choices; the machine is R5's."""
+    kind = "siege_e"
+    M = _materials()
+    base = bpy.data.objects[f"{kind}_base"]
+    for s in (-1, 1):
+        slab(f"{kind}_r8drape{s}", [(-0.95, 0.0), (0.95, 0.0), (0.95, -0.34), (0.6, -0.4), (0.2, -0.34), (-0.2, -0.4),
+                                    (-0.6, -0.34), (-0.95, -0.4)], 0.012, M["team"], parent=base,
+             loc=(0.575 * s, 0.0, 0.66), rot=(0, 0, 90))
+        rod(f"{kind}_r8pennpole{s}", (0.45 * s, 0.0, 2.55), (0.45 * s, 0.0, 3.35), 0.015, M["wood"], parent=base)
+        slab(f"{kind}_r8pennant{s}", [(0.0, 0.0), (0.0, -0.26), (0.4, -0.2), (0.3, -0.13), (0.4, -0.06)], 0.01,
+             M["team"], parent=base, loc=(0.45 * s, 0.0, 3.32), rot=(0, 0, 90))
     return u

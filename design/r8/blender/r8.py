@@ -227,6 +227,8 @@ def before_extend(u, kind):
         east_r8.dress_mage(u)
     elif kind == "hcav_e":
         east_r8.dress_cav(u)
+    elif kind == "siege_e":
+        east_r8.dress_siege(u)
     import west_r8
     if kind == "pike_w":
         west_r8.dress_pike(u)

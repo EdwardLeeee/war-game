@@ -525,43 +525,47 @@ def main(args):
 
 
 
+PAIRS = [("farmer_e", "farmer_w"), ("spear_e", "pike_w"), ("bow_e", "bow_w"), ("hcav_e", "knight_w"),
+         ("siege_e", "siege_w"), ("mage_e", "mage_w")]
+
+
 def overview(atlases):
-    """R8-99: the units of this batch together, blue against red on the R8 ground, 3x and actual size, with the
-    readability numbers of each (readability.json)."""
-    g, meta = ground()
-    ax, ay = meta["anchor"]
-    img = g.copy()
+    """R8-99: the units of this batch side by side, East and West of each role in one row, blue and red of each on
+    the R8 ground (attack, frame 3), 3x and actual size, with the readability numbers of each (readability.json)."""
     units = list(atlases)
-    items = []
-    for i, u in enumerate(units):
-        for j in range(3):
-            items.append((u, "blue", -4.6 + 1.0 * j, -2.4 - 1.6 * i, 1))
-            items.append((u, "red", 2.6 + 1.0 * j, -2.0 - 1.6 * i, 5))
-    for u, team, x, y, f in sorted(items, key=lambda t: -t[3]):
-        a = atlases[u]
-        got = frame(a, u, "attack", f, 4, team)
-        if got is None:
-            continue
-        body, (bx, by), sh = got
-        px, py = ax + x * PPM, ay - y * PPM * 0.5
-        if sh is not None:
-            im, sax, say = sh
-            img.alpha_composite(im, (int(round(px - sax)), int(round(py - say))))
-        img.alpha_composite(body, (int(round(px - bx)), int(round(py - by))))
-    x0, y0 = int(ax - 7.0 * PPM), int(ay - 1.5 * PPM * 0.5)
-    y1 = min(img.height, int(ay + (2.4 + 1.6 * len(units)) * PPM * 0.5 + 40))
-    crop = img.crop((x0, y0, x0 + int(14.0 * PPM), y1)).convert("RGB")
+    bg = swatch(430, 380)
+    rows = []
+    for e, w in PAIRS:
+        tiles = []
+        for u in (e, w):
+            if u not in atlases:
+                continue
+            a = atlases[u]
+            anim = "attack" if "attack" in a.m["anims"] else list(a.m["anims"])[0]
+            pair = strip([cell(a, u, anim, 1, 3, "blue", bg), cell(a, u, anim, 7, 3, "red", bg)])
+            n, name, side = UNITS[u]
+            tiles.append(boards.captioned(pair, f"R8-{n:02d} {side}{name}（藍、紅）", 24))
+        if tiles:
+            rows.append(tiles)
+    gap = 30
+    tw = max(t.width for r in rows for t in r)
+    th = max(t.height for r in rows for t in r)
+    grid = Image.new("RGB", (2 * tw + gap, len(rows) * (th + gap)), boards.BG)
+    for i, r in enumerate(rows):
+        for j, t in enumerate(r):
+            grid.paste(t, (j * (tw + gap), i * (th + gap)))
     rep = json.loads((OUT / "readability.json").read_text())
     names = "、".join(f"{UNITS[u][2]}{UNITS[u][1]}" for u in units)
     lines = [f"{UNITS[u][2]}{UNITS[u][1]}：ΔL* {rep[u]['contrast_blue']['min']:.0f}–{rep[u]['contrast_blue']['max']:.0f}、色差 ΔE≥20 "
              f"{rep[u]['visible_blue']['min']:.0%}–{rep[u]['visible_blue']['max']:.0%}、玩家色 {rep[u]['team']['min']:.0%}–{rep[u]['team']['max']:.0%}"
              for u in units]
     W = 2500
-    text = (f"這一批：{names}。左邊藍、右邊紅，同文化對上（攻擊的姿勢），寫實地面（地面調色 亮度 {GRADE['brightness']}、彩度 {GRADE['saturation']}）。\n"
+    text = (f"這一批：{names}。每一列是同一個兵種，左東陸、右西陸；每格左藍右紅（攻擊第 3 格），寫實地面（地面調色 亮度 {GRADE['brightness']}、"
+            f"彩度 {GRADE['saturation']}）。\n"
             "好不好認（全部方向全部影格，最小–最大）：" + "；".join(lines) + "。\n" + GAP)
     parts = [boards.header(W, "R8-99-兵-總覽", text)]
-    parts.append(boards.row([boards.captioned(crop, "手機像素（3 倍）", 26)], W))
-    parts.append(boards.row([boards.captioned(crop.resize((crop.width // 3, crop.height // 3), Image.LANCZOS),
+    parts.append(boards.row([boards.captioned(grid, "手機像素（3 倍）", 26)], W))
+    parts.append(boards.row([boards.captioned(grid.resize((grid.width // 3, grid.height // 3), Image.LANCZOS),
                                               "實際大小（兵約 31 pt）", 26)], W))
     return boards.save(boards.stack(parts, W), "R8-99-兵-總覽")
 

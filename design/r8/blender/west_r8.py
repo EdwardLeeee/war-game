@@ -367,6 +367,10 @@ def dress_siege(u):
     for z in (-0.32, -0.78):
         box(f"{kind}_boxband{z}", (0.82, 0.72, 0.05), iron, hinge, at=(0, 0, z))
     rod(f"{kind}_hang", (0, 0, 0), (0, 0, -0.26), 0.03, iron, parent=hinge)
+    # the player's colour: cloth hung round the counterweight box (the flag alone gave 0-6% of the machine)
+    for name, size, at in (("f", (0.84, 0.012, 0.5), (0, 0.36, -0.58)), ("b", (0.84, 0.012, 0.5), (0, -0.36, -0.58)),
+                           ("r", (0.012, 0.74, 0.5), (0.41, 0, -0.58)), ("l", (0.012, 0.74, 0.5), (-0.41, 0, -0.58))):
+        box(f"{kind}_r8boxcloth{name}", size, M["team"], hinge, at=at)
     sling = lib.empty(f"{kind}_r8sling", parent=arm, loc=(0, 0, 2.55))
     for s in (-1, 1):
         rod(f"{kind}_cord{s}", (0, 0, 0), (0.06 * s, 0, -0.75), 0.008, M["rope"], parent=sling, outline=False)
