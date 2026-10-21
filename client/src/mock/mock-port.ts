@@ -101,6 +101,9 @@ export const MOCK_RULES: Rules = {
   mageCap: 6,
   maxPopulation: 120,
   queueMax: 5,
+  // The castles round the towns (D-089, PROTOCOL.md 3.5), as the simulation sends them; the big
+  // city's for its tower one up and left of its centre. The fake world's ground has no walls: only the picture.
+  towns: rules().towns,
 };
 
 /** `?r7=1`: round 7's switches on, with the simulation's values. */
@@ -1048,9 +1051,17 @@ export class MockPort implements SimPort {
       case "autocast":
         for (const u of own(cmd.u)) u.flags = cmd.on ? u.flags | UnitFlag.Autocast : u.flags & ~UnitFlag.Autocast;
         break;
-      // 隊形 (D-027): only the flag; the fake world does not re-form the troops.
+      // 隊形 (D-027): only the flag; the fake world does not re-form the troops. `face` (D-095):
+      // they turn that way, and one not 0-15 is turned down, as by the simulation.
       case "formation":
-        for (const u of own(cmd.u)) u.flags = cmd.loose ? u.flags | UnitFlag.Loose : u.flags & ~UnitFlag.Loose;
+        if (cmd.face !== undefined && (!Number.isInteger(cmd.face) || cmd.face < 0 || cmd.face > 15)) {
+          reject(Reject.InvalidTarget);
+          break;
+        }
+        for (const u of own(cmd.u)) {
+          u.flags = cmd.loose ? u.flags | UnitFlag.Loose : u.flags & ~UnitFlag.Loose;
+          if (cmd.face !== undefined) u.facing = cmd.face;
+        }
         break;
       case "cast": {
         const mage = own([cmd.u])[0];

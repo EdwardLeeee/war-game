@@ -5,6 +5,7 @@
 
 import { IDENTITY, toCanon } from "../frame.ts";
 import { BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
+import { FIXED_POSTS } from "./castle.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
 import { BUILDINGS, OUTPOST, START, TOWNS, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
@@ -70,11 +71,6 @@ function standard(w: World): void {
   placeTownGuards(w);
 }
 
-/** Militia posts on the fixed map: a set closed under x <-> y, so towns on the axis stay symmetric (random maps: GameMap.posts). */
-const POSTS = [
-  [2, 0], [0, 2], [-2, 0], [0, -2], [2, 2], [-2, -2],
-  [2, -2], [-2, 2], [3, 0], [0, 3], [-3, 0], [0, -3],
-];
 
 export function placeTownGuards(w: World): void {
   for (let t = 0; t < w.townSize.length; t++) {
@@ -91,7 +87,7 @@ export function placeTownGuards(w: World): void {
 /** Militia at the town's posts (the nearest open cell if a post has been built over). */
 export function spawnMilitia(w: World, town: number, count: number): void {
   const militia = UNITS[UnitType.Militia];
-  const posts = w.map.posts ?? POSTS;
+  const posts = w.map.posts ?? FIXED_POSTS;
   for (let k = 0; k < count && k < posts.length; k++) {
     const c = nearestWalkable(w, w.townX[town] + posts[k][0], w.townY[town] + posts[k][1]);
     const id = w.addUnit(NEUTRAL, UnitType.Militia, center(c % w.size), center(Math.trunc(c / w.size)), militia.hp);

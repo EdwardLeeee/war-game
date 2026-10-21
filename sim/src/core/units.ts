@@ -35,26 +35,29 @@ import {
   AVENGE,
   CANNON,
   DODGE,
+  FIRE_BACK,
   HOME_GUARD,
   COUNTER_ATTACK,
   MAGE_BOUNTY,
   SHIELD,
   SHIELD_REGEN,
+  SLOT_GIVE_UP,
   DIRECT_STEER,
   JOIN_FIGHT,
   SQUAD,
   LEASH,
   LOOSE_KEEP,
   MAIN_ARROW,
+  MARCH_ORDER,
   MAX_PUSH,
   MULT_DEN,
   MULT_NUM,
   OUTPOST,
   PUSH,
+  rank,
   RETARGET_EVERY,
   SEPARATION,
   TOWER_ARROW,
-  TOWNS,
   UNDER_ATTACK_TICKS,
   UNITS,
   WORK_REACH,
@@ -119,6 +122,12 @@ export class UnitSystem {
   private readonly squadFights = new Map<number, { x: number[]; y: number[]; buildings: number[] }>();
   /** Per enemy unit id, how many units had it as their target at the start of the tick. */
   private readonly attackers = new Map<number, number>();
+  /**
+   * Per group, at the start of the tick (MARCH_ORDER): of its spearmen and cavalry, then of its
+   * ranged, that walk on the move, the sums of x and y and the number; then how many of the group
+   * fight.
+   */
+  private readonly marching = new Map<number, number[]>();
   private unitDamage = new Int32Array(256);
   /** The same hits counted against a mage's shield (its own multipliers). */
   private shieldDamage = new Int32Array(256);
@@ -178,6 +187,7 @@ export class UnitSystem {
     this.bucket(w);
     this.startTarget.set(w.units.col.target.subarray(0, w.units.count));
     this.collectSquadFights(w);
+    this.collectMarching(w);
     this.collectWarnings(w);
     this.dodging.fill(0, 0, w.units.count);
     if (OUTPOST.on) this.collectPosts(w, fog);
@@ -251,6 +261,23 @@ export class UnitSystem {
   }
 
   /**
+   * Shooting back on a move (FIRE_BACK): the enemy unit that hit unit i in the last
+   * RETARGET_EVERY ticks, if i's owner sees it, it stands within FIRE_BACK.reach of i and it does
+   * not hide in a building (buildings' arrows leave no unit to go for); else -1.
+   */
+  private shooter(w: World, fog: Fog, i: number): number {
+    const u = w.units.col;
+    if (w.tick - u.lastHurt[i] > RETARGET_EVERY) return -1;
+    const a = u.hitById[i];
+    const as = a >= 0 ? w.unit(a) : -1;
+    if (as < 0 || u.owner[as] === u.owner[i] || u.action[as] === Action.Garrisoned) return -1;
+    if (!this.sees(fog, u.owner[i], u.x[as], u.y[as], w.size)) return -1;
+    const dx = u.x[as] - u.x[i];
+    const dy = u.y[as] - u.y[i];
+    return dx * dx + dy * dy <= FIRE_BACK.reach * FIRE_BACK.reach ? a : -1;
+  }
+
+  /**
    * Joining a fight (JOIN_FIGHT): the enemy unit that a friend within JOIN_FIGHT.range had as
    * its target at the start of the tick, nearest unit i (ties: lower id), among those i's owner
    * sees within LEASH of i's place (anchor); -1 if none. Farmers' targets do not count.
@@ -295,6 +322,57 @@ export class UnitSystem {
       }
     }
     return bestId;
+  }
+
+  /**
+   * Where each group's lower ranks walk at the start of the tick (MARCH_ORDER): last tick's walkers
+   * on the move with no target; and whether any of the group (on the move or there) fights.
+   */
+  private collectMarching(w: World): void {
+    this.marching.clear();
+    if (!MARCH_ORDER.on) return;
+    const u = w.units.col;
+    for (let j = 0; j < w.units.count; j++) {
+      if (u.group[j] < 0 || u.type[j] === UnitType.Farmer) continue;
+      const fights = this.startTarget[j] >= 0;
+      const r = rank(u.type[j]);
+      const walks = u.order[j] === Order.Move && !fights && r <= 1 && (u.vx[j] !== 0 || u.vy[j] !== 0);
+      if (!fights && !walks) continue;
+      let m = this.marching.get(u.group[j]);
+      if (m === undefined) {
+        m = [0, 0, 0, 0, 0, 0, 0];
+        this.marching.set(u.group[j], m);
+      }
+      if (fights) {
+        m[6]++;
+        continue;
+      }
+      m[3 * r] += u.x[j];
+      m[3 * r + 1] += u.y[j];
+      m[3 * r + 2]++;
+    }
+  }
+
+  /**
+   * MARCH_ORDER: unit i (on a move, (dx, dy) from its place, not fighting) stands this tick to let
+   * the lower ranks of its group pass; counts the tick.
+   */
+  private letPass(w: World, i: number, dx: number, dy: number): boolean {
+    const u = w.units.col;
+    const r = rank(u.type[i]);
+    if (r === 0 || u.waited[i] >= MARCH_ORDER.maxWait || dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) return false;
+    // A group in a fight fights as it stands.
+    const m = this.marching.get(u.group[i]);
+    if (m === undefined || m[6] > 0) return false;
+    const c = r === 1 ? m[2] : m[2] + m[5];
+    if (c === 0) return false;
+    const mx = idiv(r === 1 ? m[0] : m[0] + m[3], c);
+    const my = idiv(r === 1 ? m[1] : m[1] + m[4], c);
+    // How far ahead of their middle it is, along its way: behind by `margin` or more, it walks.
+    const ahead = (u.x[i] - mx) * dx + (u.y[i] - my) * dy;
+    if (ahead <= -MARCH_ORDER.margin * isqrt(dx * dx + dy * dy)) return false;
+    u.waited[i]++;
+    return true;
   }
 
   /** What each squad's soldiers had as targets at the start of the tick (SQUAD). */
@@ -1022,6 +1100,14 @@ export class UnitSystem {
       // A soldier without a squad hits back at what hit it or a friend (COUNTER_ATTACK); a squad's
       // soldiers fight together instead (SQUAD).
       if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT && u.squad[i] === 0 && COUNTER_ATTACK.on) tid = this.counterAttack(w, fog, i);
+      // Shot on a move from further off (FIRE_BACK, D-095): it turns where it is.
+      if (tid < 0 && order === Order.Move && FIRE_BACK.on && u.stance[i] !== Stance.Hold && u.owner[i] < PLAYER_COUNT && u.fireBack[i] < 0) {
+        u.fireBack[i] = this.shooter(w, fog, i);
+        if (u.fireBack[i] >= 0) {
+          u.anchorX[i] = u.x[i];
+          u.anchorY[i] = u.y[i];
+        }
+      }
     }
     // A cannon shot sent it after the mage (AVENGE, round 8): while it has no order, sees the
     // mage, and the mage is within AVENGE.reach of its place; hold stance too.
@@ -1036,6 +1122,27 @@ export class UnitSystem {
       } else {
         tid = m;
         avenging = true;
+      }
+    }
+    // After the unit that shot it on a move (FIRE_BACK): while still on the move, it sees the
+    // shooter, and the shooter is within FIRE_BACK.leash of where it turned; then on with the move.
+    // Once within AGGRO_RANGE the shooter is just an enemy on the way.
+    if (FIRE_BACK.on && u.fireBack[i] >= 0) {
+      const m = u.fireBack[i];
+      const ms = order === Order.Move && !gone(m) ? w.unit(m) : -1;
+      const ax = ms >= 0 ? u.x[ms] - u.anchorX[i] : 0;
+      const ay = ms >= 0 ? u.y[ms] - u.anchorY[i] : 0;
+      const dx = ms >= 0 ? u.x[ms] - u.x[i] : 0;
+      const dy = ms >= 0 ? u.y[ms] - u.y[i] : 0;
+      const aggro = Math.max(AGGRO_RANGE, info.range);
+      if (ms >= 0 && dx * dx + dy * dy <= aggro * aggro) {
+        u.fireBack[i] = -1;
+        if (tid < 0) tid = m;
+      } else if (ms < 0 || ax * ax + ay * ay > FIRE_BACK.leash * FIRE_BACK.leash) {
+        u.fireBack[i] = -1;
+        if (tid === m) tid = -1;
+      } else if (tid < 0) {
+        tid = m;
       }
     }
     u.target[i] = tid;
@@ -1119,6 +1226,10 @@ export class UnitSystem {
       const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT));
       if (goal >= 0 && here >= 0 && this.regions.of(w, goal) !== here) {
         this.breakThrough(w, fields, i, here, u.orderX[i], u.orderY[i], order === Order.Move && !farmer);
+        return;
+      }
+      if (order === Order.Move && MARCH_ORDER.on && this.letPass(w, i, dx, dy)) {
+        u.action[i] = Action.Idle;
         return;
       }
       if (this.slotInReach(w, i, dx, dy)) {
@@ -1282,6 +1393,32 @@ export class UnitSystem {
     return -1;
   }
 
+  /**
+   * SLOT_GIVE_UP: unit i, (dx, dy) from its place and within its formation, has come no nearer its
+   * place for SLOT_GIVE_UP.ticks ticks; counts the ticks and the nearest it came.
+   */
+  private givesUp(w: World, i: number, dx: number, dy: number): boolean {
+    const u = w.units.col;
+    const t = u.orderTarget[i];
+    if (t < 0) return false;
+    const n = w.size;
+    const gx = ((t % n) << CELL_SHIFT) + (CELL >> 1);
+    const gy = (Math.trunc(t / n) << CELL_SHIFT) + (CELL >> 1);
+    const d = isqrt(dx * dx + dy * dy);
+    const sx = u.orderX[i] - gx;
+    const sy = u.orderY[i] - gy;
+    const ux = u.x[i] - gx;
+    const uy = u.y[i] - gy;
+    const area = isqrt(sx * sx + sy * sy) + DIRECT_STEER;
+    if (ux * ux + uy * uy > area * area) return false;
+    if (u.slotBest[i] === 0 || d + SLOT_GIVE_UP.progress <= u.slotBest[i]) {
+      u.slotBest[i] = Math.max(d, 1);
+      u.slotIdle[i] = 0;
+      return false;
+    }
+    return ++u.slotIdle[i] >= SLOT_GIVE_UP.ticks;
+  }
+
   private arrive(w: World, i: number): void {
     const u = w.units.col;
     u.order[i] = Order.None;
@@ -1410,6 +1547,11 @@ export class UnitSystem {
         const near = dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER;
         u.stuck[i] = near && moved < 8 ? u.stuck[i] + 1 : 0;
         if (u.stuck[i] >= 40) this.arrive(w, i);
+        else if (SLOT_GIVE_UP.on && this.givesUp(w, i, dx, dy)) this.arrive(w, i);
+      } else if (SLOT_GIVE_UP.on && u.slotBest[i] !== 0) {
+        // Fighting on the way: it starts over once it walks on.
+        u.slotBest[i] = 0;
+        u.slotIdle[i] = 0;
       }
     }
   }
@@ -1628,6 +1770,12 @@ export class UnitSystem {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
+        // D-089's measurement: soldiers lost at the castles and at their gates.
+        if (u.owner[i] < PLAYER_COUNT && u.type[i] !== UnitType.Farmer) {
+          const cell = (u.y[i] >> CELL_SHIFT) * w.size + (u.x[i] >> CELL_SHIFT);
+          if (w.nearGate[cell] === 1) w.gateDeaths[u.owner[i]]++;
+          if (w.nearCastle[cell] === 1) w.townDeaths[u.owner[i]]++;
+        }
         if (u.owner[i] < PLAYER_COUNT && u.type[i] === UnitType.Farmer) {
           w.farmerDeaths[u.owner[i] * 5 + u.hitCause[i]]++;
           w.farmerDeathLog.push(u.owner[i], u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, u.hitCause[i], w.tick);
@@ -1694,7 +1842,8 @@ export class UnitSystem {
  */
 /**
  * Is unit slot i at home (HOME_GUARD, round 8): within HOME_GUARD.mainCity cells (Chebyshev, from
- * the footprint) of its owner's finished main city, or within the radius of a town its owner governs?
+ * the footprint) of its owner's finished main city, or inside the walls of a town its owner governs
+ * (D-089)?
  */
 export function atHome(w: World, i: number): boolean {
   const u = w.units.col;
@@ -1711,10 +1860,8 @@ export function atHome(w: World, i: number): boolean {
   }
   for (let t = 0; t < w.townSize.length; t++) {
     if (w.townOwner[t] !== p || w.townState[t] !== TownState.Governed) continue;
-    const r = TOWNS[w.townSize[t]].radius << CELL_SHIFT;
-    const dx = u.x[i] - ((w.townX[t] << CELL_SHIFT) + 512);
-    const dy = u.y[i] - ((w.townY[t] << CELL_SHIFT) + 512);
-    if (dx * dx + dy * dy <= r * r) return true;
+    // Inside the walls (D-089).
+    if (w.inTown(t, u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT)) return true;
   }
   return false;
 }

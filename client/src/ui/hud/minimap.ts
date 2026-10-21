@@ -17,14 +17,13 @@ import {
 } from "../../sim.ts";
 import { TILE_PX } from "../../tuning.ts";
 import type { GameView } from "../../view/view.ts";
-import { townLook } from "../../render/world.ts";
+import { TERRAIN_RGB, townLook } from "../../render/world.ts";
 import { ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint } from "../../render/atlas.ts";
 
 export const MINIMAP_CSS_PX = 112;
 /** How often the minimap redraws (ms). */
 const REDRAW_MS = 200;
 // Shared, not made anew for each cell on every redraw (a 129 × 129 random map has 16 641).
-const ROCK_RGB = [110, 102, 92] as const;
 const GROUND_RGB = [86, 118, 66] as const;
 
 const rgb = (c: number): [number, number, number] => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
@@ -100,8 +99,8 @@ export class Minimap {
     const d = (this.img as ImageData).data;
     const fog = view.fog;
     for (let i = 0; i < size * size; i++) {
-      // The rocks the player knows (D-074: a random map's only once explored).
-      const base = view.rocks[i] === 1 ? ROCK_RGB : GROUND_RGB;
+      // The ground the player knows (D-074: a random map's only once explored; R6-51: water, fords, bridges, cliffs).
+      const base = TERRAIN_RGB[view.ground[i]] ?? GROUND_RGB;
       const f = fog === null ? Fog.Unexplored : fog[i];
       const k = f === Fog.Visible ? 1 : f === Fog.Explored ? 0.55 : 0;
       d[i * 4] = base[0] * k;
@@ -116,6 +115,25 @@ export class Minimap {
       d[i + 1] = c[1];
       d[i + 2] = c[2];
     };
+    // Castles (D-089): their walls in their owner's colour, once explored (as rock is), darker out of sight.
+    for (const info of view.knownTowns.values()) {
+      const c = view.castleOf(info);
+      if (c === null) continue;
+      const o = view.townRow(info.id);
+      const tint = rgb(o < 0 ? NEUTRAL_TINT : townLook(snap.towns[o + T.state], snap.towns[o + T.owner], view.me).tint);
+      for (const [dx, dy] of c.wall) {
+        const x = info.cellX + dx;
+        const y = info.cellY + dy;
+        if (x < 0 || y < 0 || x >= size || y >= size) continue;
+        const i = y * size + x;
+        const f = fog === null ? Fog.Visible : fog[i];
+        const k = f === Fog.Visible ? 1 : f === Fog.Explored ? 0.55 : 0;
+        if (k === 0) continue;
+        d[i * 4] = tint[0] * k;
+        d[i * 4 + 1] = tint[1] * k;
+        d[i * 4 + 2] = tint[2] * k;
+      }
+    }
     for (const row of view.nodes.values()) {
       if (row[N.amount] <= 0) continue;
       const kind = row[N.kind];
@@ -146,7 +164,8 @@ export class Minimap {
     ctx.lineWidth = Math.max(1, k * 0.8);
     for (let o = 0; o < t.length; o += TOWN_STRIDE) {
       const info = view.knownTowns.get(t[o + T.id]);
-      if (info === undefined) continue;
+      // A castle shows by its walls (above); before them, a ring.
+      if (info === undefined || view.castleOf(info) !== null) continue;
       ctx.strokeStyle = css(townLook(t[o + T.state], t[o + T.owner], view.me).tint);
       ctx.beginPath();
       ctx.arc((info.cellX + 0.5) * k, (info.cellY + 0.5) * k, info.radius * k, 0, Math.PI * 2);

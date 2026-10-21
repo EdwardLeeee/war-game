@@ -7,6 +7,7 @@
 import { Game } from "./core/game.ts";
 import { BUILDINGS, CANNON, UNITS } from "./core/rules.ts";
 import { damage } from "./core/units.ts";
+import { BLOCK_WALL } from "./core/world.ts";
 import { Action, BuildingType, CELL_SHIFT, type CommandBody, NEUTRAL, Order, Resource, Stance, type TownSize, TownState, UnitFlag, UnitType } from "./protocol.ts";
 
 /** Spearmen, ranged, mages and (round 7) cavalry of one side. */
@@ -87,8 +88,21 @@ function field(g: Game): { x: number; y: number } {
         const r = t.radius + 3;
         if (t.cellX + r >= x && t.cellX - r < x + FIELD_W && t.cellY + r >= y && t.cellY - r < y + FIELD_H) ok = false;
       }
-      for (let yy = y; yy < y + FIELD_H && ok; yy++) for (let xx = x; xx < x + FIELD_W && ok; xx++) if (!w.walkable(xx, yy)) ok = false;
-      if (ok) return { x, y };
+      // Castle walls (D-089) do not count: the fight is about soldiers, so the walls in and near
+      // the field are taken down (grid only), and it lies where it always did.
+      const open = (xx: number, yy: number) => (w.grid[yy * n + xx] & ~BLOCK_WALL) === 0;
+      for (let yy = y; yy < y + FIELD_H && ok; yy++) for (let xx = x; xx < x + FIELD_W && ok; xx++) if (!open(xx, yy)) ok = false;
+      if (!ok) continue;
+      let opened = false;
+      for (let yy = Math.max(0, y - 4); yy < Math.min(n, y + FIELD_H + 4); yy++) {
+        for (let xx = Math.max(0, x - 4); xx < Math.min(n, x + FIELD_W + 4); xx++) {
+          if ((w.grid[yy * n + xx] & BLOCK_WALL) === 0) continue;
+          w.grid[yy * n + xx] &= ~BLOCK_WALL;
+          opened = true;
+        }
+      }
+      if (opened) w.openVersion++;
+      return { x, y };
     }
   }
   throw new Error("no open field on the map");

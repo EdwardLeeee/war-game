@@ -411,6 +411,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     art,
     culture: params.culture ?? culture,
     view: params.view ?? undefined,
+    ghost: params.ghost ?? undefined,
     artAvailable,
     artChanged,
     astcSample,

@@ -18,6 +18,7 @@ import {
   type UnitInfo,
   UnitType,
 } from "../protocol.ts";
+import { type CastleMap, castleOf, FIXED_POSTS } from "./castle.ts";
 
 const S = TICKS_PER_SECOND;
 const speed = (cellsPerSecond100: number) => Math.trunc((cellsPerSecond100 * CELL) / (100 * S));
@@ -150,7 +151,7 @@ export const QUEUE_MAX = 7;
  * own size (GameMap.towerSize: 3 x 3 on random maps with adjacent starts, D-074), the tower's
  * row says so; every other value is the same for every game.
  */
-export function rules(map?: { towerSize?: number }): Required<Rules> {
+export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Required<Rules> {
   const towerSize = map?.towerSize;
   const same = towerSize === undefined || towerSize === BUILDINGS[BuildingType.TownTower].size;
   return {
@@ -168,7 +169,7 @@ export function rules(map?: { towerSize?: number }): Required<Rules> {
     garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },
     towerReach: TOWER_REACH,
     outpost: { slots: OUTPOST.slots, reach: OUTPOST.reach, chase: OUTPOST.chase },
-    towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size)),
+    towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size, map)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
     cannonRange: CANNON.range,
   };
@@ -338,6 +339,44 @@ export const DODGE = { on: true, margin: 256, farmers: false };
  * The unit column it keeps (avenge) is in the hash only while it is on.
  */
 export const AVENGE = { on: true, reach: 8 * CELL };
+/**
+ * Shooting back on the way (D-095; the user: attack-move is 「路上遇到敵人就打」): a player's
+ * soldier on a move, not on hold, with no enemy within AGGRO_RANGE and no squad fight to join,
+ * that an enemy unit hit in the last RETARGET_EVERY ticks from within `reach` of it goes for
+ * that unit while its owner sees it (a mage shows itself when it fires, REVEAL_CAST) and it is
+ * within `leash` of where the soldier was when it turned; then on with the move. Its mates
+ * follow as they fight together (SQUAD). Arrows of buildings and shots from soldiers hiding in
+ * one do not count, so an army is not drawn among towers (D-081). A retreat never fights. The
+ * unit column it keeps (fireBack) is in the hash only while it is on, and so is hitById, which
+ * it reads.
+ */
+export const FIRE_BACK = { on: true, reach: 9 * CELL, leash: 8 * CELL };
+/**
+ * Giving up a place it does not get to (D-095; the client's e2e, after R6-51's ridges): a unit on
+ * a move or retreat, with no target, within its formation (no farther from the group's goal cell
+ * than its place is, plus DIRECT_STEER), that has not come `progress` (3/8 of a cell) nearer its
+ * place than it ever was for `ticks` ticks (3 s), counts as arrived where it stands. Shorter or
+ * more, and units crossing a loose formation turned round in place gave up halfway (ranks out of
+ * order); less, and the shuttling one still took 530 ticks. A ranged unit whose place was
+ * behind a ridge's end walked the group's way round to the goal cell and then shuttled between
+ * the way and its place, behind mates already standing, for good. The unit columns it keeps
+ * (slotBest, slotIdle) are in the hash only while it is on.
+ */
+export const SLOT_GIVE_UP = { on: true, ticks: 60, progress: 384 };
+/** A formation's ranks (GDD section 9): melee in front (0), then ranged (1), then mages (2). */
+export const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
+/**
+ * Ranks on the march (D-095; the user: 「常常跑一跑法師就跑到前排」): on a move, a ranged unit or
+ * mage more than DIRECT_STEER from its place stands and lets the lower ranks of its group pass
+ * (spearmen and cavalry; for a mage, ranged too) while it is not `margin` behind the middle of
+ * those of them that walk, along its way to its place; at most `maxWait` ticks a command. Lower
+ * ranks that stand do not count, so a front that stopped holds no one up, and once one of the
+ * group fights nobody waits. A retreat is left as it is. The unit column it keeps (waited) is in
+ * the hash only while it is on. Off for now (ceo 2026-10-21): with orders sent again on the way,
+ * soldiers far behind in them, and all at the slowest one's speed, its marches came strung out
+ * and lost (README); it is to be redesigned.
+ */
+export const MARCH_ORDER = { on: false, margin: CELL >> 1, maxWait: 10 * S };
 /** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
 export const SHORT_CANNON = { on: true, range: 7 * CELL };
 /**
@@ -447,12 +486,29 @@ export function townIncomePermille(plundered: number, recovered: number): number
 }
 
 /** A town's rules as sent in `Rules.towns`. */
-function townInfo(size: number): TownInfo {
+function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap>): TownInfo {
   const t = TOWNS[size];
+  // The castle on this map (D-089): the big city's is centred on this map's tower.
+  const castles = map?.tower !== undefined && map.towns !== undefined ? (map as CastleMap) : undefined;
+  const c = castleOf(size as TownSize, castles);
+  const cells = (l: readonly (readonly [number, number])[]) => l.map(([x, y]): [number, number] => [x, y]);
+  // Militia posts are offsets from the centre cell, as scenarios.ts places them.
+  const posts = (map?.posts ?? FIXED_POSTS).slice(0, t.militia);
   return {
     militia: t.militia, radius: t.radius, plunderTicks: t.plunderTicks, plunder: t.plunder, ruinsTicks: t.ruinsTicks,
     governCost: t.governCost, repairTicks: t.repairTicks, perMinute: governPerMinute(size), populationCap: t.populationCap,
     garrisonNeeded: t.garrisonNeeded, revoltTicks: t.revoltTicks,
+    castle: {
+      inside: { ...c.inside },
+      wall: cells(c.wall),
+      corner: cells(c.corner),
+      gate: cells(c.gate),
+      outside: cells(c.outside),
+      behind: cells(c.behind),
+      militia: posts.map(([x, y]): [number, number] => [x, y]),
+      garrison: cells(c.garrison),
+      towerLand: TOWER_REACH.town + 1,
+    },
   };
 }
 

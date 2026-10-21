@@ -33,6 +33,8 @@ export class Fog {
   nodeSeen: Int32Array[] = [];
   /** Last seen town rows (TownField layout) per player; flags 0 = never explored. */
   townSeen: Int32Array[] = [];
+  /** 1 once the player has seen the town (any cell of its castle, D-089), per player. */
+  townKnown: Uint8Array[] = [];
   fogTick = -1;
 
   constructor(w: World) {
@@ -43,6 +45,7 @@ export class Fog {
       this.memory.push([]);
       this.nodeSeen.push(new Int32Array(w.nodeAmount.length).fill(-1));
       this.townSeen.push(new Int32Array(w.townSize.length * TOWN_STRIDE));
+      this.townKnown.push(new Uint8Array(w.townSize.length));
     }
   }
 
@@ -138,16 +141,23 @@ export class Fog {
       const towns = this.townSeen[p];
       for (let t = 0; t < w.townSize.length; t++) {
         const o = t * TOWN_STRIDE;
-        const visibleNow = vis[w.townY[t] * n + w.townX[t]] === 1;
-        if (visibleNow) {
+        if (townInSight(w, vis, t)) {
           writeTownRow(w, t, towns, o);
           towns[o + TownField.flags] |= TownFlag.Visible;
+          this.townKnown[p][t] = 1;
         } else {
           towns[o + TownField.flags] &= ~TownFlag.Visible;
         }
       }
     }
   }
+}
+
+/** Does a player with these visible cells see town t: any cell of its castle (D-089)? */
+export function townInSight(w: World, vis: Uint8Array, t: number): boolean {
+  const cells = w.castleCells[t];
+  for (let i = 0; i < cells.length; i++) if (vis[cells[i]] === 1) return true;
+  return false;
 }
 
 /** The live row of a town (TownField layout), as everyone who sees it gets it. */
@@ -161,15 +171,11 @@ export function writeTownRow(w: World, t: number, out: Int32Array, o: number): v
   let militia = 0;
   let garrison = 0;
   const u = w.units.col;
-  const r = rule.radius << CELL_SHIFT;
-  const cx = (w.townX[t] << CELL_SHIFT) + 512;
-  const cy = (w.townY[t] << CELL_SHIFT) + 512;
   for (let s = 0; s < w.units.count; s++) {
     if (u.home[s] === t && u.owner[s] === NEUTRAL) militia++;
     if (u.owner[s] === w.townOwner[t] && u.owner[s] !== NEUTRAL && u.type[s] !== UnitType.Farmer && u.action[s] !== Action.Garrisoned) {
-      const dx = u.x[s] - cx;
-      const dy = u.y[s] - cy;
-      if (dx * dx + dy * dy <= r * r) garrison++;
+      // Inside the walls (D-089).
+      if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT)) garrison++;
     }
   }
   out[o + TownField.garrison] = garrison;

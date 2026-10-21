@@ -20,7 +20,7 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
-import { enemyTooClose, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
+import { enemyTooClose, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
@@ -44,6 +44,7 @@ import {
   CELL,
   type CommandBody,
   type ContinueFailure,
+  dir16,
   type FromWorker,
   type GameOverReason,
   type MapMode,
@@ -74,7 +75,7 @@ import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { formalUi } from "../ui/formal.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText, type ToastKind } from "../ui/overlays.ts";
-import { Placement, towerLandOk } from "../ui/placement.ts";
+import { Placement, placeReason, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
@@ -134,6 +135,8 @@ export interface GameOptions {
   culture?: Culture;
   /** How the ground lies (a test page's ?view=, D-088); the default when not given. */
   view?: Projection["kind"];
+  /** Units behind a castle's wall as their rims only (?ghost=outline, D-089), instead of whole. */
+  ghost?: "outline";
   /** This build has atlases to choose in the 量測 panel. */
   artAvailable?: boolean;
   /** The 量測 panel's 美術 was changed since this game began: 量測 starts a game of its own. */
@@ -437,6 +440,22 @@ export class Game implements GestureHost {
   /** Each town's wall as drawn (D-084), for the test hook. */
   get townWallsForTest(): { id: number; x: number; y: number; side: number; visible: boolean }[] {
     return this.renderer?.townWalls ?? [];
+  }
+
+  /** The ground's pictures (art-v5, R6-51) as drawn; null before the first snapshot. */
+  get terrainForTest(): { pictures: boolean; pieces: number; flat: number; standing: number } | null {
+    return this.renderer?.terrainCounts ?? null;
+  }
+
+  /** How far up (points on the plane) someone standing in the middle of cell (cx, cy) is drawn: a bridge's deck. */
+  liftForTest(cx: number, cy: number): number {
+    return this.renderer?.liftAt((cx + 0.5) * TILE_PX, (cy + 0.5) * TILE_PX) ?? 0;
+  }
+
+  /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
+  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null {
+    const r = this.renderer;
+    return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount };
   }
 
   /** Terrain repaints on exploring rock (random map, D-074), for the test hook. */
@@ -793,7 +812,12 @@ export class Game implements GestureHost {
   }
 
   private townArea(town: number): TownArea | null {
-    return this.view?.knownTowns.get(town) ?? null;
+    const view = this.view;
+    const t = view?.knownTowns.get(town);
+    if (view === null || t === undefined) return null;
+    // Inside its walls (D-089), as the simulation counts a garrison.
+    const c = view.castleOf(t);
+    return { ...t, inside: c === null ? null : { x0: t.cellX + c.inside.x0, y0: t.cellY + c.inside.y0, x1: t.cellX + c.inside.x1, y1: t.cellY + c.inside.y1 } };
   }
 
   /** How many soldiers stay by default: the least a governed town needs (GDD §5: small 1, large 3). */
@@ -1352,6 +1376,7 @@ export class Game implements GestureHost {
         const mine = this.culture;
         this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), projection);
         this.renderer.pending = this.pending;
+        if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
@@ -1728,10 +1753,11 @@ export class Game implements GestureHost {
 
   /**
    * 整理隊形 (D-095): the soldiers selected re-form where they are, spearmen in front, ranged next,
-   * mages last, at their spacing, facing the way reform.ts picks. A walk of one cell that way (the
-   * simulation lays a walk's formation out facing its way); with nothing to face, the simulation's
-   * own re-forming in place, which keeps the way they face now. Not with an enemy within
-   * REFORM_CLEAR_CELLS (reform.ts): a line says why, and nothing is sent.
+   * mages last, at their spacing, facing the way reform.ts picks: standing together, the
+   * simulation's re-forming in place with that `face`; spread out, a walk of one cell that way
+   * (the simulation lays a walk's formation out facing its way), which gathers them; with nothing
+   * to face, the re-forming in place without `face`, which keeps the way they face now. Not with
+   * an enemy within REFORM_CLEAR_CELLS (reform.ts): a line says why, and nothing is sent.
    */
   reform(): void {
     const view = this.view;
@@ -1752,11 +1778,12 @@ export class Game implements GestureHost {
     const tick = view.header?.[H.tick] ?? 0;
     const last = soldiers.map((id) => this.lastSent.get(id)).find((d) => d !== undefined) ?? null;
     const { dir, from } = reformFacing(centre, inSight, [...this.sightings.values()], tick, last, this.enemyCity(view));
-    if (dir === null) {
-      // Keep the way they face: the formation command with the spacing they have re-forms in place (PROTOCOL.md 第三輪).
-      const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
-      this.command({ c: "formation", u: soldiers, loose });
-    } else {
+    // The formation command re-forms them in place at the spacing most of them have (PROTOCOL.md 第三輪): the way they face now, or `face`.
+    const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
+    if (dir === null) this.command({ c: "formation", u: soldiers, loose });
+    else if (oneCluster(at)) this.command({ c: "formation", u: soldiers, loose, face: dir16(Math.round(dir.x * 1024), Math.round(dir.y * 1024)) });
+    else {
+      // Spread out (spearmen gone after the enemy): a walk of one cell gathers them into one.
       const c = reformCell(centre, dir);
       this.command({ c: "retreat", u: soldiers, x: c.x, y: c.y });
     }
@@ -1981,7 +2008,9 @@ export class Game implements GestureHost {
     // 箭樓 off TowerLand (round 7): why the spot is red comes first.
     const offTowerLand = view.placement !== null && !towerLandOk(view.placement, p.info, p.cellX, p.cellY);
     const landText = outpostSlots(view.rules) > 0 ? TOWER_LAND_TEXT_OUTPOST : TOWER_LAND_TEXT;
-    this.overlays.promptWarning(offTowerLand ? landText : town === null ? null : MILITIA_WARNING);
+    // On a gate's lane, a ford or a bridge, or a castle's wall (D-089, R6-51): those first, the simulation's own reasons.
+    const blocked = view.placement === null ? null : placeReason(view.placement, p.info, p.cellX, p.cellY);
+    this.overlays.promptWarning(blocked ?? (offTowerLand ? landText : town === null ? null : MILITIA_WARNING));
   }
 
   private showPlaceButtons(): void {

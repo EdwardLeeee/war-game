@@ -2,7 +2,7 @@
 // coloured by sim/src/placement.ts on the snapshot's placement grid; when the finger lifts,
 // ✓ sends `build`, ✗ cancels. Pure state, drawn by render/ and ui/overlays.ts.
 
-import { type BuildingInfo, BuildingType, checkPlacement, type CommandBody, PlaceBit, type PlacementGrid } from "../sim.ts";
+import { type BuildingInfo, BuildingType, checkPlacement, type CommandBody, PlaceBit, type PlacementGrid, Reject } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 
 export type PlacementPhase = "dragging" | "confirm";
@@ -52,6 +52,37 @@ export class Placement {
     const s = this.info.size * TILE_PX;
     return { x: this.cellX * TILE_PX, y: this.cellY * TILE_PX, w: s, h: s };
   }
+}
+
+/** Why the preview is red on a castle's wall (D-089). */
+export const WALL_TEXT = "城牆上不能蓋";
+/** Why a building may not go on a gate's lane (D-089, ceo 2026-10-20: 城門一直開著，誰都能走). */
+export const GATE_LANE_TEXT = "城門要留給人走，不能蓋";
+/** Why a building may not go on a ford or a bridge (R6-51, ceo 2026-10-20: crossings stay open). */
+export const CROSSING_TEXT = "橋和淺灘要留給人走，不能蓋";
+
+/**
+ * Why a building may not go there, from the simulation's own marks and rule: on a gate's lane
+ * (checkPlacement's GateLane, D-089), on a ford or a bridge (its Crossing, R6-51), on a castle's
+ * wall (Wall); null otherwise (the other reasons, or none).
+ */
+export function placeReason(grid: PlacementGrid, building: Pick<BuildingInfo, "type" | "size">, cellX: number, cellY: number): string | null {
+  // The simulation's own answer first, in its order: GateLane, then Crossing (PROTOCOL.md section 7).
+  const r = checkPlacement(grid, building, cellX, cellY);
+  if (r === Reject.GateLane) return GATE_LANE_TEXT;
+  if (r === Reject.Crossing) return CROSSING_TEXT;
+  return onWall(grid, building, cellX, cellY) ? WALL_TEXT : null;
+}
+
+/** The footprint is on a castle's wall (D-089: the simulation marks it Wall, and Blocked: nothing is built there). */
+export function onWall(grid: PlacementGrid, building: Pick<BuildingInfo, "size">, cellX: number, cellY: number): boolean {
+  const n = grid.size;
+  for (let y = cellY; y < cellY + building.size; y++) {
+    for (let x = cellX; x < cellX + building.size; x++) {
+      if (x >= 0 && y >= 0 && x < n && y < n && (grid.cells[y * n + x] & PlaceBit.Wall) !== 0) return true;
+    }
+  }
+  return false;
 }
 
 /**
