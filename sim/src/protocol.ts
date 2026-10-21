@@ -725,7 +725,11 @@ export interface Rules {
   // written by hand (the screen's mocks) still compile. Read them with a default (absent = off).
   features?: Features;
   /** Arrows of the main city, the big city's tower and arrow towers (round 7). */
-  arrows?: { mainCity: ArrowInfo; townTower: ArrowInfo; arrowTower: ArrowInfo };
+  /**
+   * `gate` (D-096, while `features.gates`): a governed town's gates shoot, one arrow more for every
+   * `gatePerSoldiers` of the holder's soldiers inside the walls or on them, up to `extraMax` more.
+   */
+  arrows?: { mainCity: ArrowInfo; townTower: ArrowInfo; arrowTower: ArrowInfo; gate?: ArrowInfo };
   /** Unit types that may hide in buildings with `garrison` (round 7). */
   garrisonTypes?: UnitType[];
   /** A mage hiding in a building fires the cannon at `permille` of its damage, its cooldown `cooldownTimes` as long (round 7). */

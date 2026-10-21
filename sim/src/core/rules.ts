@@ -109,7 +109,7 @@ BUILDINGS[BuildingType.Outpost] = building({
 });
 // D-096: a castle gate; never built by players. hp is the big city's (GATE.hp by town size), and
 // size 1 only for the type: a gate's footprint is its opening's cells (World.sideX).
-BUILDINGS[BuildingType.Gate] = building({ type: BuildingType.Gate, hp: 1450, size: 1, sight: 2 });
+BUILDINGS[BuildingType.Gate] = building({ type: BuildingType.Gate, hp: 2100, size: 1, sight: 2 });
 
 /**
  * Ranged against a mage's shield (early balance, D-057; round 4, D-037): x3, was x3/2 (num 3,
@@ -167,7 +167,12 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     queueMax: QUEUE_MAX,
     // `outpost` only while on: absent is off, and the screen's tables of the round 7 four stay as they were.
     features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on, ...(OUTPOST.on ? { outpost: true } : {}) },
-    arrows: { mainCity: MAIN_ARROW, townTower: { ...TOWER_ARROW, extraMax: 0 }, arrowTower: { ...ARROW_TOWER, extraMax: 0 } },
+    arrows: {
+      mainCity: MAIN_ARROW,
+      townTower: { ...TOWER_ARROW, extraMax: 0 },
+      arrowTower: { ...ARROW_TOWER, extraMax: 0 },
+      ...(GATE.on ? { gate: { damage: GATE_ARROW.damage, range: GATE_ARROW.range, cooldown: GATE_ARROW.cooldown, extraMax: GATE_ARROW.extraMax } } : {}),
+    },
     garrisonTypes: GARRISON_TYPES,
     garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },
     towerReach: TOWER_REACH,
@@ -296,14 +301,15 @@ export const PLUNDER_RECOVERY = { on: true, startPermille: 250, ticks: 10 * 60 *
  * Castle gates (D-096; the user 2026-10-21: the walls were 「雞肋」, in everyone's way alike): a
  * gate building in each opening of a town's walls, closed to all but the town's holder (a neutral
  * town's to everyone, militia too), open to all once broken and while the town lies in ruins.
- * `hp` by TownSize: a full front of spearmen (6-7 at an opening of 2-3 cells, 4 damage a second
- * each) breaks a small town's in about 30 s, the big city's in about 60 s (ceo 2026-10-21, 乙).
+ * `hp` by TownSize (ceo 2026-10-21): 7 spearmen (4 damage a second each) break a small town's in
+ * about 30 s (an early grab of 7-10 men still takes it, at a cost), 15 the big city's in about 60 s
+ * (a mid-game target for a big army; up to 9 reach its 2-cell gate at once, under its tower's fire).
  * Hits on a gate: melee in full, ranged units and mages `rangedNum` / `rangedDen` (at least 1),
  * siege engines (to come) `siege` times. A governed town rebuilds a broken gate once no enemy
  * has stood inside its walls for `rebuildTicks`; the end of repairing and ruins turning neutral
  * rebuild them all. Off: no gates, the openings stay open to everyone (D-089).
  */
-export const GATE = { on: true, hp: [850, 1450], rangedNum: 1, rangedDen: 5, siege: 8, rebuildTicks: 60 * S };
+export const GATE = { on: true, hp: [850, 2100], rangedNum: 1, rangedDen: 5, siege: 8, rebuildTicks: 60 * S };
 /**
  * On the walls (D-096; the user: 「中立城鎮也要攻城，不然電腦打太快了」; AoE4: on walls -25% ranged
  * damage, +1-2 range): ranged units and mages of the town's holder go up (`wall`), one a wall cell,
@@ -314,6 +320,14 @@ export const GATE = { on: true, hp: [850, 1450], rangedNum: 1, rangedDen: 5, sie
  * walls, next to them. They count as inside the town (capturing, keeping it). Off: no `wall`.
  */
 export const WALLS = { on: true, range: CELL, takenNum: 3, takenDen: 4, sling: 4 * CELL, militia: 2 };
+/**
+ * A governed town's gate towers shoot (D-096; the user: 城樓會射箭, more the more soldiers hold the
+ * town, as AoE2's garrison arrows): each standing gate of a town its holder governs, at the
+ * nearest enemy unit its holder sees within `range` of the gate, `damage` every `cooldown`; one
+ * arrow more for every `perSoldiers` of the holder's soldiers inside the walls or on them, at most
+ * `extraMax` more. A broken gate shoots nothing until it stands again.
+ */
+export const GATE_ARROW = { damage: 5, range: 9 * CELL, cooldown: 2 * S, perSoldiers: 3, extraMax: 3 };
 /** Players can build arrow towers (BuildingType.ArrowTower). */
 export const TOWERS = { on: true };
 /**

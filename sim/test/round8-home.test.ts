@@ -58,6 +58,9 @@ test("in a town its owner governs: a fifth less; while the town is being repaire
       const t = g.w.map.towns.findIndex((x) => x.cellX === 29 && x.cellY === 29);
       g.w.townOwner[t] = 0;
       g.w.townState[t] = state;
+      // Its gates do not shoot the mage meanwhile (GATE_ARROW, D-096: a governed town's gates shoot).
+      g.w.refreshGates(t);
+      for (let k = 0; k < g.w.castles[t].gates.length; k++) g.w.buildings.col.cooldown[g.w.gateIn(t, k)] = 1 << 20;
     };
     assert.equal(shot(UnitType.Spearman, 31, 31, town(TownState.Governed)), REDUCED);
     assert.equal(shot(UnitType.Spearman, 31, 31, town(TownState.Repairing)), CANNON.damage);

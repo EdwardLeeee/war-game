@@ -37,6 +37,7 @@ import {
   DODGE,
   FIRE_BACK,
   GATE,
+  GATE_ARROW,
   WALLS,
   HOME_GUARD,
   COUNTER_ATTACK,
@@ -1526,6 +1527,17 @@ export class UnitSystem {
     steerTo(w, fields, i, gx, gy, c, info.speed);
   }
 
+  /** Player p's soldiers inside town t's walls or on them (D-096, GATE_ARROW): its gates' extra arrows. */
+  private holders(w: World, t: number, p: number): number {
+    const u = w.units.col;
+    let k = 0;
+    for (let j = 0; j < w.units.count; j++) {
+      if (u.owner[j] !== p || u.type[j] === UnitType.Farmer || u.action[j] === Action.Garrisoned) continue;
+      if (w.inTown(t, u.x[j] >> CELL_SHIFT, u.y[j] >> CELL_SHIFT) || (onWall(w, j) && w.wallTown[u.wall[j]] === t)) k++;
+    }
+    return k;
+  }
+
   /** Unit i goes for building slot bs that stands in its way (breakThrough): hits it in range, else walks to it. */
   private hitBlocker(w: World, fields: FieldCache, i: number, bs: number): void {
     const u = w.units.col;
@@ -1816,36 +1828,43 @@ export class UnitSystem {
       u.lastDealt[i] = w.tick;
       u.cooldown[i] = info.cooldown;
     }
-    // Arrows from main cities, the big city's tower and players' arrow towers (round 7, once built).
+    // Arrows from main cities, the big city's tower and players' arrow towers (round 7, once built),
+    // and governed towns' gates (D-096).
     const n = w.size;
     for (let s = 0; s < w.buildings.count; s++) {
       const type = b.type[s];
-      if (type !== BuildingType.MainCity && type !== BuildingType.TownTower && type !== BuildingType.ArrowTower) continue;
+      const gate = type === BuildingType.Gate && GATE.on && w.townState[b.town[s]] === TownState.Governed;
+      if (type !== BuildingType.MainCity && type !== BuildingType.TownTower && type !== BuildingType.ArrowTower && !gate) continue;
       if (b.progress[s] < 1000) continue;
       if (b.cooldown[s] > 0) {
         b.cooldown[s]--;
         continue;
       }
-      const arrow = type === BuildingType.MainCity ? MAIN_ARROW : type === BuildingType.TownTower ? TOWER_ARROW : ARROW_TOWER;
-      const size = w.buildingSize(type);
+      const arrow = gate ? GATE_ARROW : type === BuildingType.MainCity ? MAIN_ARROW : type === BuildingType.TownTower ? TOWER_ARROW : ARROW_TOWER;
+      const size = w.wide(s);
+      const sizeY = w.tall(s);
       let best = arrow.range * arrow.range + 1;
       let bestSlot = -1;
       // Slots are in id order: `<=` keeps the last (highest id) of equally near units. A
       // player's arrow tower (round 7) takes the first in its owner's canonical frame instead,
       // so mirror-image towers shoot mirror-image units.
       const high = preferHighId(w, b.id[s]);
-      const canon = type === BuildingType.ArrowTower;
+      const canon = type === BuildingType.ArrowTower || gate;
       for (let j = 0; j < count; j++) {
         if (u.owner[j] === b.owner[s] || u.action[j] === Action.Garrisoned) continue;
         if (b.owner[s] !== NEUTRAL && fog.visible[b.owner[s]][(u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT)] !== 1) continue;
-        const d2 = rectDist2(u.x[j], u.y[j], b.cellX[s], b.cellY[s], size);
+        const d2 = rectDist2(u.x[j], u.y[j], b.cellX[s], b.cellY[s], size, sizeY);
         if (d2 < best || (d2 === best && (canon ? canonFirst(w, b.owner[s], j, bestSlot) : high))) {
           best = d2;
           bestSlot = j;
         }
       }
       if (bestSlot < 0) continue;
-      const arrows = type === BuildingType.MainCity ? 1 + Math.min(b.garrisoned[s], MAIN_ARROW.extraMax) : 1;
+      const arrows = gate
+        ? 1 + Math.min(Math.trunc(this.holders(w, b.town[s], b.owner[s]) / GATE_ARROW.perSoldiers), GATE_ARROW.extraMax)
+        : type === BuildingType.MainCity
+          ? 1 + Math.min(b.garrisoned[s], MAIN_ARROW.extraMax)
+          : 1;
       // On a wall (D-096): arrows for less too.
       const hits = onWall(w, bestSlot) ? coverDamage(arrow.damage * arrows) : arrow.damage * arrows;
       this.unitDamage[bestSlot] += hits;

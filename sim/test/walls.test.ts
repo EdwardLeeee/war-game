@@ -165,6 +165,8 @@ test("a soldier on the wall keeps the town: enemies inside do not take it while 
   // Player 1's ranged unit inside, out of the archer's way (it shoots nobody: cooldown).
   const foe = put(g, 1, UnitType.Ranged, t.cellX, t.cellY);
   w.units.col.cooldown[slotOf(g, foe)] = 1 << 20;
+  // It stands the gates' arrows (GATE_ARROW) meanwhile.
+  w.units.col.hp[slotOf(g, foe)] = 1 << 20;
   g.fog.update(w);
   run(g, 3 * 20);
   assert.equal(w.townOwner[T], 0, "still player 0's");
