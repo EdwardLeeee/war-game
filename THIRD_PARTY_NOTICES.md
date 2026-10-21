@@ -16,7 +16,7 @@ MPFB 的程式本身是 GPLv3。我們只在 Blender 裡把它當工具用，沒
 
 ## 只當參考、放在核准稿上的圖
 
-R8 東陸槍兵、弓手的核准稿（`design/r8/out/R8-03-*`、`R8-05-*`）旁邊放了幾張裁切過的參考圖，給使用者對照。美術是照著重新做 3D，圖本身不放進遊戲。原檔不進 repo（ceo 的考據資料夾 `research/east-reference/`，授權清單 `LICENSES.md`）。CC BY-SA 的圖（07、08、09、13、14、15）只拿來看，不放進 repo，也不放進核准稿。
+R8 的核准稿（`design/r8/out/R8-*`）上方放了幾張裁切過的參考圖，給使用者對照。美術是照著重新做 3D，圖本身不放進遊戲。原檔不進 repo（ceo 的考據資料夾 `research/east-reference/`、`research/west-reference/`，各有授權清單 `LICENSES.md`；另外找的在 `design/r8/build/refs/`，不進 repo）。CC BY-SA、CC BY 的圖（東陸 07、08、09、13、14、15，西陸 03、07）只拿來看，不放進 repo，也不放進核准稿。
 
 | 圖 | 來源頁 | 授權 | 作者 | 讀授權的日期 |
 |---|---|---|---|---|
@@ -24,6 +24,16 @@ R8 東陸槍兵、弓手的核准稿（`design/r8/out/R8-03-*`、`R8-05-*`）旁
 | 02 敦煌晚唐壁畫，持長牌步兵出城（哪一窟待查） | https://commons.wikimedia.org/wiki/File:Dunhuang_Zhang_Yichao_departure_02.jpg | 公有領域（PD-Art） | 佚名畫工 | 2026-10-21 |
 | 04 榆林窟 25 窟甲士 | https://commons.wikimedia.org/wiki/File:Yulin_caves,_Tang_cavalryman.jpg | 公有領域（PD-Art） | 9 世紀佚名畫工 | 2026-10-21 |
 | 06 前蜀王建墓抬棺力士背面 | https://commons.wikimedia.org/wiki/File:Wang_Jian_Royal_Tomb_(13944716273).jpg | CC0 1.0 | Gary Todd | 2026-10-21 |
+| 北魏甲馬騎俑 20.39.2、20.39.3（具裝騎兵稿） | https://www.metmuseum.org/art/collection/search/52555 、 https://www.metmuseum.org/art/collection/search/52556 | CC0 1.0（大都會博物館 Open Access，API 標 isPublicDomain） | 大都會博物館 | 2026-10-21 |
+| 隋唐之際馬伕俑 1970.58（東陸村民稿） | https://clevelandart.org/art/1970.58 | CC0 1.0（克里夫蘭美術館 Open Access） | 克里夫蘭美術館 | 2026-10-21 |
+| 〈道釋圖冊〉第 20 開 2004.1.20（東陸術士稿） | https://clevelandart.org/art/2004.1.20 | CC0 1.0（克里夫蘭美術館 Open Access） | 克里夫蘭美術館 | 2026-10-21 |
+| 《武經總要》〈旋風五砲〉、〈虎蹲砲〉（霹靂車稿） | https://commons.wikimedia.org/wiki/File:Xuanfengwupao.jpg 、 https://commons.wikimedia.org/wiki/File:Hudunpao-wujingzongyao.jpg | 公有領域 | 曾公亮、丁度等（1044） | 2026-10-21 |
+| 西陸 05、06（裁三處）、11：摩根聖經 MS M.638 10r、23v、17v | 見 `research/west-reference/LICENSES.md` 的來源頁 | 公有領域 | 13 世紀中葉巴黎佚名畫工 | 2026-10-21 |
+| 西陸 08：達伯農銅像版畫 | 同上 | 公有領域 | 19 世紀佚名版畫 | 2026-10-21 |
+| 西陸 10、12：勒特雷爾詩篇（長弓練習、打穀 f.74v） | 同上 | 10 公有領域；12 CC0（大英圖書館） | 約 1325–35 佚名畫工 | 2026-10-21 |
+| 西陸 13：卡斯泰爾諾城堡的重建配重投石機 | 同上 | CC0 | Jebulon | 2026-10-21 |
+| 西陸 14：托雷多道德化聖經獻辭頁（摩根圖書館 M.240） | 同上 | 公有領域 | 1227–34 巴黎佚名畫工 | 2026-10-21 |
+| 西陸 15：沃爾托利納〈波隆那大學講課〉 | 同上 | 公有領域標章（收藏館標示） | Laurentius de Voltolina | 2026-10-21 |
 
 ## 只做測試、不進任何公開發布的
 
