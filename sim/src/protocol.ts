@@ -913,7 +913,8 @@ export type SimEvent =
    * A building's own arrow, or a soldier hiding in it, shot at `target` (unit id) this tick
    * (round 7, D-061). To every player who sees the building or the target.
    */
-  | { k: "shot"; building: number; target: number }
+  /** `n` (D-096): this many arrows at once, absent for one (PROTOCOL.md 5). */
+  | { k: "shot"; building: number; target: number; n?: number }
   | { k: "rejected"; seq: number; reason: Reject }
   | { k: "game_over"; winner: number; reason: GameOverReason };
 export type EventKind = SimEvent["k"];
