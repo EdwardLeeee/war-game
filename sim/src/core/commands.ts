@@ -1028,5 +1028,7 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     u.stuck[s] = 0;
     u.fireBack[s] = -1;
     u.waited[s] = 0;
+    u.slotBest[s] = 0;
+    u.slotIdle[s] = 0;
   });
 }

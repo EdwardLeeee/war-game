@@ -41,6 +41,7 @@ import {
   MAGE_BOUNTY,
   SHIELD,
   SHIELD_REGEN,
+  SLOT_GIVE_UP,
   DIRECT_STEER,
   JOIN_FIGHT,
   SQUAD,
@@ -1392,6 +1393,32 @@ export class UnitSystem {
     return -1;
   }
 
+  /**
+   * SLOT_GIVE_UP: unit i, (dx, dy) from its place and within its formation, has come no nearer its
+   * place for SLOT_GIVE_UP.ticks ticks; counts the ticks and the nearest it came.
+   */
+  private givesUp(w: World, i: number, dx: number, dy: number): boolean {
+    const u = w.units.col;
+    const t = u.orderTarget[i];
+    if (t < 0) return false;
+    const n = w.size;
+    const gx = ((t % n) << CELL_SHIFT) + (CELL >> 1);
+    const gy = (Math.trunc(t / n) << CELL_SHIFT) + (CELL >> 1);
+    const d = isqrt(dx * dx + dy * dy);
+    const sx = u.orderX[i] - gx;
+    const sy = u.orderY[i] - gy;
+    const ux = u.x[i] - gx;
+    const uy = u.y[i] - gy;
+    const area = isqrt(sx * sx + sy * sy) + DIRECT_STEER;
+    if (ux * ux + uy * uy > area * area) return false;
+    if (u.slotBest[i] === 0 || d + SLOT_GIVE_UP.progress <= u.slotBest[i]) {
+      u.slotBest[i] = Math.max(d, 1);
+      u.slotIdle[i] = 0;
+      return false;
+    }
+    return ++u.slotIdle[i] >= SLOT_GIVE_UP.ticks;
+  }
+
   private arrive(w: World, i: number): void {
     const u = w.units.col;
     u.order[i] = Order.None;
@@ -1520,6 +1547,11 @@ export class UnitSystem {
         const near = dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER;
         u.stuck[i] = near && moved < 8 ? u.stuck[i] + 1 : 0;
         if (u.stuck[i] >= 40) this.arrive(w, i);
+        else if (SLOT_GIVE_UP.on && this.givesUp(w, i, dx, dy)) this.arrive(w, i);
+      } else if (SLOT_GIVE_UP.on && u.slotBest[i] !== 0) {
+        // Fighting on the way: it starts over once it walks on.
+        u.slotBest[i] = 0;
+        u.slotIdle[i] = 0;
       }
     }
   }
