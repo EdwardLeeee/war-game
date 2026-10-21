@@ -35,9 +35,12 @@ def apply(u, kind, version):
         more, _ = human_r7.dress(u, kind, team_tunic=version == 8 and kind in TEAM_TUNIC)
         sks += more
     if version == 8:
+        import clip_r8
         import r8
+        r8.grips_in_fists(u)                       # the weapons through the MPFB fists, not beside them
         if kind in r8.BOWS:
             r8.bow_string(u, kind)
+        clip_r8.unclip(u, kind)                    # the weapons out of the bodies, every frame
     if os.environ.get("R8_DEBUG"):
         for ob in lib.ALL_PARTS:
             if ob.type == "MESH" and not ob.hide_render:

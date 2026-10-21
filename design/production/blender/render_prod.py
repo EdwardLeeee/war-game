@@ -9,6 +9,7 @@ Scaling and compression are not done here: see common/postprocess.py.
 """
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -57,6 +58,29 @@ def fit_frame(target, extra, preview=False, review=False):
     return frame, e
 
 
+def clip_check(target, extra, preview=False):
+    """R8 (R7_VERSION 8): every frame of every animation in every facing, the weapon against the bodies
+    (design/r8/blender/clip_r8.py); the report goes next to the atlases (prod/<unit>/clip.json)."""
+    u = spec.UNITS[target]
+    items = [dict(facing=f, anim=src, frame=i, n=n) for f in spec.ALL_FACINGS
+             for _, n, src, _ in u["anims"] for i in ([0] if preview else range(n))]
+    out = config.BUILD / "prod" / target / "clip.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    job = dict(kind=u["kind"], px_per_m=spec.PX_PER_M, emblem_dir=str(batch.EMBLEMS), items=items, level="C",
+               quality="hq", frame_m=u["frame"], clip=True, clip_out=str(out), **extra)
+    path = config.BUILD / "jobs" / f"clip_{target}.json"
+    path.write_text(json.dumps(job))
+    log = config.BUILD / "jobs" / f"clip_{target}.log"
+    config.blender(HERE / "render_units.py", path, log=log)
+    txt = log.read_text()
+    if "Traceback" in txt or not out.exists():
+        print(txt[-3000:])
+        raise SystemExit(f"clip check failed to run: {log}")
+    rep = json.loads(out.read_text())
+    print(f"[{target}] clipping: {rep['failing']} of {rep['frames']} frames", flush=True)
+    return rep
+
+
 def run(target, facings=None, anims=None, preview=False, review=False):
     u = spec.UNITS[target]
     outdir = config.BUILD / "prod" / (f"review-{target}" if review else target)
@@ -75,6 +99,8 @@ def run(target, facings=None, anims=None, preview=False, review=False):
     t_fit = time.time()
     frame_m, reach = fit_frame(target, extra, preview, review)
     fit_seconds = round(time.time() - t_fit, 1)
+    if os.environ.get("R7_VERSION") == "8" and not review:
+        clip_check(target, extra, preview)
     todo = [f for f in spec.ALL_FACINGS if facings is None or f in facings]
     timing = {}
     t_all = time.time()

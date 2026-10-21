@@ -300,9 +300,11 @@ def dress_knight(u):
                outline=False)
     # the lance: ash, the R2 steel head kept; a two-tailed pennon a little behind the head
     g = r.j["grip_lance"]
-    rod(f"{kind}_r8lance", (0, 0, 1.0), (0, 0, -2.3), 0.022, M["wood"], parent=g, r2=0.016)
+    # the butt only 0.3 m behind the hand (it ran 1 m back through the rider's upper arm: clip_r8); R2's steel head
+    # at -2.6 kept, so the lance reaches it
+    rod(f"{kind}_r8lance", (0, 0, 0.12), (0, 0, -2.6), 0.022, M["wood"], parent=g, r2=0.016)
     slab(f"{kind}_r8pennon", [(0.0, 0.0), (0.0, -0.32), (0.34, -0.3), (0.22, -0.16), (0.34, -0.02)], 0.006, M["team"],
-         parent=g, loc=(0.02, 0, -1.8), rot=(0, 90, 0))
+         parent=g, loc=(0.02, 0, -2.1), rot=(0, 90, 0))
     # the sword: cross-hilted, about 95 cm, at the left hip
     root = lib.empty(f"{kind}_r8swordroot", parent=r.j["hips"], loc=(-0.22, 0.05, 0.04), rot=(-60, 0, -8))
     box(f"{kind}_r8scabbard", (0.05, 0.022, 0.8), M["bag"], root, at=(0, 0, -0.42), bevel=0.008)

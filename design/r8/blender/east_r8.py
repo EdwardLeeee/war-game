@@ -382,10 +382,15 @@ def dress_cav(u):
     r.pose()
     _helmet(r, M)
     g = r.j["grip_lance"]
-    rod(f"{kind}_r8lance", (0, 0, 0.7), (0, 0, -1.9), 0.022, M["lacquer"], parent=g, r2=0.018)
-    cyl(f"{kind}_r8socket", 0.022, 0.07, M["iron"], g, at=(0, 0, -1.9))
+    # the butt only 0.12 m behind the hand (it ran 0.7 m back through the rider's upper arm: clip_r8)
+    rod(f"{kind}_r8lance", (0, 0, 0.12), (0, 0, -2.3), 0.022, M["lacquer"], parent=g, r2=0.018)
+    cyl(f"{kind}_r8socket", 0.022, 0.07, M["iron"], g, at=(0, 0, -2.3))
     lathe(f"{kind}_r8lancetip", [(0.0, 0.0), (0.03, 0.09), (0.034, 0.18), (0.012, 0.27)], M["steel"], g, segs=8,
-          at=(0, 0, -2.2), scale=(1, 0.35, 1))
+          at=(0, 0, -2.6), scale=(1, 0.35, 1))
+    # ceo 2026-10-21: a small pennant of the player's colour on the lance (the rider's sleeves and 頓項 and the horse's
+    # hem gave 3-14% of the unit; the black lacquer stays)
+    slab(f"{kind}_r8pennant", [(0.0, 0.0), (0.0, -0.3), (0.32, -0.26), (0.22, -0.15), (0.32, -0.04)], 0.006,
+         M["team"], parent=g, loc=(0.02, 0, -2.0), rot=(0, 90, 0))
     import horse_r8
     _rows, hem, _old = horse_r8.refit(u, kind, M["horse_armour"], M["horse_armour"])
     _gone(kind, ["chamfron", "h_r8mane"])           # the 雞項 covers the mane; the 面簾 replaces R2's box

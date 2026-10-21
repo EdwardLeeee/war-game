@@ -166,6 +166,7 @@ jobs:
           name: r7-${{ matrix.target }}
           path: |
             design/production/build/r7v*/prod/*/atlas_x*/
+            design/production/build/r7v*/prod/*/clip.json
             design/production/build/r7v*/jobs/*.log
           retention-days: 90
 

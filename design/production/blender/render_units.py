@@ -112,6 +112,13 @@ def extents():
     return -min(xs), max(xs), max(ys), -min(ys)
 
 
+if job.get("clip"):
+    # R8: the weapon against the bodies on every item (design/r8/blender/clip_r8.py); nothing rendered
+    sys.path.insert(0, os.path.join(HERE, "..", "..", "r8", "blender"))
+    import clip_r8  # noqa: E402
+    clip_r8.run(u, job["kind"], job["items"], job["clip_out"])
+    os._exit(0)
+
 if job.get("fit"):
     # measure only: pose every item and keep the largest reach in each direction
     ext = [0.0, 0.0, 0.0, 0.0]
