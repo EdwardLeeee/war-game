@@ -2299,6 +2299,12 @@ test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 ce
   let badPlace = 0;
   const size = (t: number) => rules().buildings[t].size;
   for (let t = 0; t < 15 * 1200; t++) {
+    // Towers go up only with wood and gold to spare, and whether there is any is the game's turn (D-096 changed it):
+    // some each minute, so they do; this is about where they go.
+    if (g.tick % 1200 === 0) for (let p = 0; p < 2; p++) {
+      w.res[p * 4 + 1] += 150;
+      w.res[p * 4 + 2] += 60;
+    }
     if (g.tick % 10 === 0) {
       for (let p = 0; p < 2; p++) {
         for (const body of ais[p].think(buildView(g, p))) {

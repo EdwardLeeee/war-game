@@ -832,11 +832,15 @@ function fortsAtTown(groups: readonly FortGroup[], x: number, y: number, radius:
  * go up its walls while enemy soldiers are by it; arrows: a governed enemy town's gate arrows count in what it takes;
  * retreat, the break-off at a gate (ceo 2026-10-22, measured): "" as before, "a" not for its losses while the gate
  * falls (GATE_FALL_SHARE of its hp in GATE_FALL), "b" not off to a town where the slings and gate arrows would take
- * more than GATE_LOSS of its army's hp while it breaks in, "ab" both.
+ * more than GATE_LOSS of its army's hp while it breaks in, "ab" both. calm: focus only with no enemy soldiers within
+ * GATE_FIGHT cells of the army; with them, in as before (a move fights what it meets; an attack on the gate kept
+ * hitting it: hard against normal on the fixed map won 98% of the decided games without the gate play, 65% and 54%
+ * with it, scratch run 39665798433).
  */
-export const GATE_AI = { focus: true, walls: true, arrows: true, retreat: "" };
+export const GATE_AI = { focus: true, calm: true, walls: true, arrows: true, retreat: "" };
 /** The army goes for the gate within this many cells of a town's walls (its radius + this). */
 const GATE_NEAR = 10;
+const GATE_FIGHT = 12;
 const GATE_FALL = 400;
 const GATE_FALL_SHARE = 10;
 const GATE_LOSS = 25;
@@ -2044,10 +2048,13 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       };
       /** D-096 (GATE_AI.focus): at town `t` with gates closed to it, the army on the gate (orders again every FORT_EVERY); false: none (in as before). */
       const gateFocus = (t: Town) => {
-        const go = gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), { x: cx, y: cy }, (x, y) => {
-          const f = frame(x, y);
-          return f.v * n + f.u;
-        });
+        const calm = !GATE_AI.calm || foesNear(cx, cy, GATE_FIGHT) === 0;
+        const go = !calm
+          ? null
+          : gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), { x: cx, y: cy }, (x, y) => {
+              const f = frame(x, y);
+              return f.v * n + f.u;
+            });
         if (go === null) {
           // The gate down: in, now.
           if (gateAim >= 0) lastMove = -100000;
@@ -4257,7 +4264,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         /** D-096 (GATE_AI.focus): at town `t` with gates closed to it, the army on the gate (orders again every FORT_EVERY); false: none (in as before). */
         const gateFocus = (t: HardTown) => {
-          const go = gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), ac, rank);
+          const calm = !GATE_AI.calm || foesNear(ac.x, ac.y, GATE_FIGHT).length === 0;
+          const go = calm ? gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), ac, rank) : null;
           if (go === null) {
             // The gate down: in, now.
             if (gateAim >= 0) lastMove = -100000;
