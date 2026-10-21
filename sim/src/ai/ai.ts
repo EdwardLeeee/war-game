@@ -69,12 +69,17 @@ import {
   WarningField,
 } from "../protocol.ts";
 import { Rng } from "../core/fixed.ts";
+import { ARMY_BASE, AS_HARD, BUILD_FARMERS, BUILD_PRODUCTION, choose, features, HEAD_ARMY, HEAD_BUILD, HEAD_MIX, HEAD_TOWN, type NetWeights, TOWN_GOVERN } from "./net.ts";
 import type { PlayerView } from "../view/view.ts";
 
 export interface Ai {
   /** The style this AI plays (GDD section 13). */
   style: AiStyle;
   think(view: PlayerView): CommandBody[];
+  /** What it counted of its own doings, for the measuring tools (D-086 A3: hard's rescues); none in a game. */
+  stats?(): Record<string, number>;
+  /** What it believes now, for the measuring tools (D-086 A3: hard's memory of the enemy); none in a game. */
+  peek?(): Record<string, number>;
 }
 
 /** What every player knows from the start (the `ready` message), and its symmetry frame. */
@@ -395,6 +400,98 @@ export function enemyForts(view: PlayerView, player: number, rules: Rules): Fort
 }
 
 /** Squared distance (cells) from (x, y) to a fort's footprint. */
+/**
+ * D-089 (ceo 2026-10-21: core's #239 + #245 traces, the long ways round obstacles and through gates): the stronger
+ * side's attacks reached the enemy main city strung out along the way, at most 10-12 there at once, and some 80 fell
+ * there in the last 8 minutes of a drawn game. So those that set out first gather STAGE_DIST cells out from the enemy
+ * main city on the side they come from: the nearest open cell to that point that it knows to be open ground (on a
+ * random map, explored) and out of the enemy forts' reach; null when there is none, or it is that near already.
+ */
+const STAGE_DIST = 16;
+/** Whether they gather first (measurements turn it off for the baseline; the game always has it on). */
+export const STAGING = { on: true };
+/**
+ * D-089, normal: in the last minutes of an AI-against-AI game it goes for the enemy main city with `assault` soldiers
+ * (from 6 minutes before the end, and in the last 4, with `endgame`); after an attack on the enemy main city ground
+ * down, it goes again only with `failed` percent of those that set out then (0: as before), but in the last 4 minutes.
+ * Measured (scratch run 39463615390, fixed map, normal against normal, 100 games each): draws 33 and 36 (seeds 1-50,
+ * 51-100) with `failed` 0, 7 and 6 with 120; a bigger `assault` (25) alone 35 and 39.
+ */
+export const SIEGE = { assault: 15, endgame: 8, failed: 120 };
+/** Gathered: this share (percent) of those that set out within STAGE_NEAR cells of it, or STAGE_WAIT ticks after the first got there, or STAGE_MAX after setting out. */
+const STAGE_SHARE = 70;
+const STAGE_NEAR = 6;
+const STAGE_WAIT = 600;
+const STAGE_MAX = 3 * 1200;
+/** As many as a building can queue (no limit of its own). */
+const QUEUE_MOST = 99;
+/** Normal: soldiers trained after it set out wait at the gathering point and go on together once this many are there. */
+const STAGE_JOIN = 6;
+export function stagePoint(
+  view: { placement: Uint8Array },
+  map: { size: number; mode?: string },
+  forts: readonly Fort[],
+  from: { x: number; y: number },
+  enemy: { cellX: number; cellY: number },
+  rank: (x: number, y: number) => number,
+): { x: number; y: number } | null {
+  const n = map.size;
+  const fx = from.x - enemy.cellX;
+  const fy = from.y - enemy.cellY;
+  if (!STAGING.on || fx * fx + fy * fy <= (STAGE_DIST + 4) * (STAGE_DIST + 4)) return null;
+  // Rock, walls, water and cliffs are Blocked in the view (the fixed map is known whole; a random one where explored).
+  // Steps from the enemy main city over ground not known to be blocked (8 neighbours), so the point is STAGE_DIST
+  // steps away along the way round obstacles, not straight across them (on core's #245 maps that was up to a
+  // minute and a half's walk); the point itself on ground known to be open.
+  const blocked = (i: number) => (view.placement[i] & PlaceBit.Blocked) !== 0;
+  const known = (i: number) => map.mode !== "random" || (view.placement[i] & PlaceBit.Unexplored) === 0;
+  const steps = new Int16Array(n * n).fill(-1);
+  const queue = new Int32Array(n * n);
+  let head = 0;
+  let tail = 0;
+  for (let y = enemy.cellY - 3; y <= enemy.cellY + 3; y++) {
+    for (let x = enemy.cellX - 3; x <= enemy.cellX + 3; x++) {
+      if (x < 0 || y < 0 || x >= n || y >= n) continue;
+      steps[y * n + x] = 0;
+      queue[tail++] = y * n + x;
+    }
+  }
+  let best: { x: number; y: number } | null = null;
+  let bestD = 0;
+  let bestKey = 0;
+  while (head < tail) {
+    const i = queue[head++];
+    const d = steps[i];
+    if (d >= STAGE_DIST + 4) continue;
+    const x = i % n;
+    const y = (i - x) / n;
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        const xx = x + ox;
+        const yy = y + oy;
+        if (xx < 1 || yy < 1 || xx >= n - 1 || yy >= n - 1) continue;
+        const j = yy * n + xx;
+        if (steps[j] >= 0 || blocked(j)) continue;
+        steps[j] = d + 1;
+        queue[tail++] = j;
+        // STAGE_DIST (+-4) cells out, at most STAGE_DIST + 4 steps' walk (no long way round from there).
+        const out2 = (xx - enemy.cellX) * (xx - enemy.cellX) + (yy - enemy.cellY) * (yy - enemy.cellY);
+        if (out2 < (STAGE_DIST - 4) * (STAGE_DIST - 4) || out2 > (STAGE_DIST + 4) * (STAGE_DIST + 4) || !known(j)) continue;
+        if (forts.some((o) => fortDist2(o, xx, yy) <= (o.hits + 2) * (o.hits + 2))) continue;
+        // Of those, the nearest to the army.
+        const dd = (xx - from.x) * (xx - from.x) + (yy - from.y) * (yy - from.y);
+        const key = rank(xx, yy);
+        if (best === null || dd < bestD || (dd === bestD && key < bestKey)) {
+          best = { x: xx, y: yy };
+          bestD = dd;
+          bestKey = key;
+        }
+      }
+    }
+  }
+  return best;
+}
+
 export function fortDist2(f: Fort, x: number, y: number): number {
   const dx = Math.max(f.x - x, 0, x - (f.x + f.size - 1));
   const dy = Math.max(f.y - y, 0, y - (f.y + f.size - 1));
@@ -952,6 +1049,13 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let townTrips = 0;
   let ratioSet = "";
   let recalled = false;
+  /** D-089: where those that set out for the enemy base gather first (null: straight on), when it set out and the first got there, and whether they have gathered. */
+  let stage: { x: number; y: number } | null = null;
+  let setOut = 0;
+  let stageFirst = -1;
+  let staged = true;
+  /** D-089 (SIEGE.failed): how many set out on the last attack on the enemy main city that was ground down. */
+  let cityFailed = 0;
   /** Soldier ids kept as the garrison of a governed or repairing town, per town. */
   const garrison = new Map<number, number[]>();
   /** Towns this AI has plundered: how often, and when last (it prefers governing a town it keeps coming back to). */
@@ -1233,17 +1337,21 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       let armyRoom = armyCap - (soldiers.length - guarding) - training;
       const spear = soldiers.filter((u) => u.type === UnitType.Spearman).length;
       const ranged = soldiers.filter((u) => u.type === UnitType.Ranged).length;
-      const mages = soldiers.filter((u) => u.type === UnitType.Mage).length;
-      const trainAt = (t: number, type: UnitType) => {
+      const trainAt = (t: number, type: UnitType, most = QUEUE_MOST) => {
         for (const b of done(t)) {
+          if (most <= 0) break;
           if (b.queue >= 2 || room <= 0 || armyRoom <= 0 || !afford(rules.units[type].cost)) continue;
           out.push({ c: "train", building: b.id, type, n: 1 });
           spend(rules.units[type].cost);
           room--;
           armyRoom--;
+          most--;
         }
       };
-      if (mages < rules.mageCap && res.crystal >= rules.units[UnitType.Mage].cost.crystal) trainAt(BuildingType.MageHall, UnitType.Mage);
+      // The mage cap counts mages queued too (D-089, ceo 2026-10-21: orders refused for the cap went up with the longer games).
+      // The scout counts too, if it is a mage (random maps).
+      const mageRoom = rules.mageCap - allSoldiers.filter((u) => u.type === UnitType.Mage).length - done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
+      if (mageRoom > 0 && res.crystal >= rules.units[UnitType.Mage].cost.crystal) trainAt(BuildingType.MageHall, UnitType.Mage, mageRoom);
       // About one soldier in four a horseman, once it has a stable (round 7).
       if (useCavalry) {
         if (foes.some((u) => u.type === UnitType.Ranged || u.type === UnitType.Mage)) sawShooters = true;
@@ -1636,7 +1744,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, cx, cy) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army));
         if (!endgame && !(mode === "base" && cityLow) && (standing * 5 < armyAtStart * 2 || outnumbered || byArmy.length > 0)) {
           // Ground down or outnumbered: break off (retreat ignores enemies) and rebuild.
-          if (mode === "base") baseBroken = true;
+          if (mode === "base") {
+            baseBroken = true;
+            cityFailed = armyAtStart;
+          }
           remember(army, byArmy);
           if (mode === "town" && byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
           fallBackPast(byArmy);
@@ -1719,11 +1830,42 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // fights what it meets) and the city once they are down. Told to attack the city from
           // afar, the soldiers streamed in one by one, ignored the defenders and were picked off
           // (normal against easy, 2026-10-01).
+          // D-089: those that set out gather outside first; those trained since wait there and go on STAGE_JOIN or more together.
+          const at = stage;
+          if (at !== null) {
+            const near = (u: { x: number; y: number }) => dist2(u.x, u.y, at.x, at.y) <= STAGE_NEAR * STAGE_NEAR;
+            // Gathered now, or the enemy main city nearly down: those trained since go along, however few.
+            let all = cityLow;
+            if (!staged) {
+              const setters = soldiers.filter((u) => marched.has(u.id));
+              const by = setters.filter(near).length;
+              if (by > 0 && stageFirst < 0) stageFirst = tick;
+              if (by * 100 >= STAGE_SHARE * setters.length || (stageFirst >= 0 && tick - stageFirst >= STAGE_WAIT) || tick - setOut >= STAGE_MAX) {
+                staged = true;
+                all = true;
+              }
+            }
+            const fresh = army.filter((u) => !marched.has(u.id) && armyIds.includes(u.id));
+            const ready = fresh.filter(near);
+            if (staged && ready.length > 0 && (all || ready.length >= STAGE_JOIN)) {
+              for (const u of ready) marched.add(u.id);
+              armyAtStart += ready.length;
+            } else if (fresh.length > 0 && !cityLow) {
+              const ids = fresh.map((u) => u.id);
+              const keep = armyIds.filter((id) => !ids.includes(id));
+              armyIds.length = 0;
+              armyIds.push(...keep);
+              const away = fresh.filter((u) => !near(u)).map((u) => u.id);
+              if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: at.x, y: at.y });
+            }
+          }
           const front = soldiers.filter((u) => marched.has(u.id));
           const fx = front.length === 0 ? cx : Math.trunc(front.reduce((a, u) => a + u.x, 0) / front.length);
           const fy = front.length === 0 ? cy : Math.trunc(front.reduce((a, u) => a + u.y, 0) / front.length);
           const there = dist2(fx, fy, enemyHome.cellX, enemyHome.cellY) <= 12 * 12;
-          if (enemyCity >= 0 && there) {
+          if (at !== null && !staged) {
+            send(at.x, at.y, "base");
+          } else if (enemyCity >= 0 && there) {
             if (tick - lastMove >= 200) {
               if (foesNear(enemyHome.cellX, enemyHome.cellY, 12) > 0) out.push({ c: "move", u: armyIds, x: enemyHome.cellX, y: enemyHome.cellY });
               else out.push({ c: "attack", u: armyIds, target: enemyCity });
@@ -1749,12 +1891,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
+        // D-089 (SIEGE.failed): not again with fewer than broke off last time, but in the last 4 minutes.
+        const notLess = endgame || SIEGE.failed <= 0 || army.length * 100 >= cityFailed * SIEGE.failed;
         const go =
           (mem.known !== Known.None || endgame || assault) &&
+          notLess &&
           (endgame
-            ? army.length >= ENDGAME_ARMY
+            ? army.length >= SIEGE.endgame
             : assault
-              ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
+              ? army.length >= SIEGE.assault || (latest && army.length >= SIEGE.endgame)
               : baseTime && strongEnough && (army.length >= baseNeed || (((open.length === 0 && !baseBroken) || popFull) && army.length >= townArmy + 6)));
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
         const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
@@ -1763,7 +1908,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           marchWorth = vsForts(army);
           marched.clear();
           for (const id of armyIds) marched.add(id);
-          send(enemyHome.cellX, enemyHome.cellY, "base");
+          // D-089: to the gathering point first, when there is one.
+          stage = stagePoint(view, know.map, forts, { x: cx, y: cy }, enemyHome, (x, y) => {
+            const f = frame(x, y);
+            return f.v * n + f.u;
+          });
+          setOut = tick;
+          stageFirst = -1;
+          staged = stage === null;
+          send(stage?.x ?? enemyHome.cellX, stage?.y ?? enemyHome.cellY, "base");
         } else if (!assault && townTime && army.length >= townArmy && open.length > 0 && strongEnough) {
           const pick = army.length >= 24 || open.length === 1 ? open[open.length - 1] : open[0];
           targetTown = pick[0];
@@ -1872,6 +2025,64 @@ export interface HardPlan {
   governSpare: number;
   /** ...only the small town nearest its main city (false: any town it takes). */
   governNearest: boolean;
+  /**
+   * D-086 A3 (the user's 75830947: some 40 of hard's farmers killed 23-50 cells from its main city, minutes
+   * 14-26). Farmers FAR_FARMER cells or more from its main city are under attack at a spot when 2 of them fell
+   * within a minute there (FARMER_SPOT cells), or it sees enemy soldiers that near one; not a spot under an
+   * enemy fort's reach (D-081: not drawn into its arrows). rescue: soldiers at home (at most half, RESCUE_MIN
+   * or more) go there when they beat what it knows of the enemy there (D-083 (a)'s weighing); back home when
+   * the enemy is gone RESCUE_DONE ticks, grows too strong, the squad is half gone, or the main city is hit;
+   * never past the spot. After falling back (too strong, half gone) it leaves that spot alone rescueRest
+   * minutes (false: as before).
+   */
+  rescue: boolean;
+  rescueRest: number;
+  /** D-086 A3: the farmers by such a spot go home, and back to work (release) once FAR_CLEAR ticks pass with no enemy seen by it (false: as before). */
+  hideFar: boolean;
+  /**
+   * D-086 A3 (75830947: it forgot the user's army after INTEL_TICKS and marched into it): the enemy's worth it
+   * believes in for marching is at least the most it knew of at once, less what it saw fall since, shrinking
+   * foeDecay percent a minute (false: as before). With its population full it marches as before regardless.
+   */
+  foeMemory: boolean;
+  foeDecay: number;
+  /**
+   * D-086 A3 (ceo 2026-10-19: in 75830947 the user trained 41 -> 65 out of its sight): with foeMemory, once it has
+   * seen the enemy's soldiers, what it believes in grows by every soldier it trains itself (the enemy trains as fast) (false: no).
+   */
+  foeGrow: boolean;
+  /**
+   * D-086 A3 (ceo 2026-10-19): about to march on the enemy's main city with no enemy soldier seen for this many minutes,
+   * one soldier goes to look first, and the march waits until enemy soldiers are seen, it falls, or PEEK_WALK passes;
+   * then it weighs again (0: never, as before). Not with its population full, nor at the end of an AI game.
+   */
+  peekFirst: number;
+  /** D-086 A3 (75830947: food at 9-49 for 12 minutes, farmers 28 -> 8): with farmers under its target, soldiers leave this much food for the next one (0: as before). */
+  farmerFood: number;
+  /** D-086 A3: wood or food under WOOD_SHORT with food, wood and gold together RICH or more counts as wood short (false: as before). */
+  shortEither: boolean;
+  /** D-089: after its front broke off from the enemy main city, it marches on it again only with this percent of those that set out then (0: as before), but at the end of an AI game. */
+  cityAgain: number;
+  /**
+   * D-086 B: the network's weights (net.ts) for its big-picture choices; null: its own rules, as before.
+   * Only learn/ and scratch branches set them (docs/research/2026-10-ai-nn.md).
+   */
+  net: NetWeights | null;
+  /**
+   * D-086 B (learn/ only): at each think, the network's inputs and what hard itself did (-1: nothing at this think):
+   * army 0 wait, 1 a town, 2 a march; mix 0 spearmen first, 1 even, 2 ranged first; build 0 as usual, 1 barracks
+   * and ranges first; town 0 plunder, 1 govern.
+   */
+  netLog?: (x: number[], labels: number[]) => void;
+  /** D-086 B (learn/ only): at each think with the network on, its choices (net.ts heads). */
+  netSeen?: (choice: number[]) => void;
+  /**
+   * D-086 B, choices other than AS_HARD the network may not make (ceo 2026-10-19, the user's 「人工給它一些意见」):
+   * no march on the enemy's main city with fewer than netMarch soldiers (hard's counterArmy) or before it knows
+   * where it is, and no barracks and ranges first below netFarmers farmers (hard's range comes at 12).
+   */
+  netMarch: number;
+  netFarmers: number;
 }
 
 export const HARD: HardPlan = {
@@ -1902,12 +2113,43 @@ export const HARD: HardPlan = {
   governFrom: 0,
   governSpare: 0,
   governNearest: true,
+  rescue: false,
+  rescueRest: 3,
+  hideFar: false,
+  foeMemory: false,
+  foeDecay: 10,
+  foeGrow: false,
+  peekFirst: 0,
+  farmerFood: 0,
+  shortEither: false,
+  cityAgain: 0,
+  net: null,
+  netMarch: 14,
+  netFarmers: 12,
 };
+/** D-086 A3 (plan.rescue, plan.hideFar): farmers this far (cells) from the main city are far; a spot is this near them. */
+const FAR_FARMER = 20;
+const FARMER_SPOT = 8;
+/** D-086 A3 (plan.rescue): the enemy weighed this near the spot; soldiers this near the main city are at home; the least that go; done after this long with no enemy by it (30 s), or this long without getting there. */
+const RESCUE_NEAR = 10;
+const RESCUE_HOME = 15;
+const RESCUE_MIN = 5;
+const RESCUE_DONE = 600;
+const RESCUE_WALK = 2 * TICKS_PER_MINUTE;
+/** D-086 A3 (plan.hideFar): farmers sent home go back to work once this long passes with no enemy seen by the spot (30 s). */
+const FAR_CLEAR = 600;
+/** D-086 A3 (plan.peekFirst): how long the one sent to look may walk, and how long before another goes. */
+const PEEK_WALK = 3 * TICKS_PER_MINUTE;
+const PEEK_AGAIN = 2 * TICKS_PER_MINUTE;
 /** D-086 A: wood under this is short; food plus gold from this pile up (the research note's measure). */
 const WOOD_SHORT = 50;
 const RICH = 600;
 /** D-086 A (plan.woodShift): the ratio while wood is short and food and gold pile up. */
 const WOOD_SHIFT = [15, 75, 10];
+/** D-086 B: what the network's choices mean: the spearmen's share (by MIX_*), and farmers more for "farmers first". */
+const NET_SHARE = [0, 70, 30];
+const NET_FARMERS = 4;
+const NET_MODES: readonly string[] = ["home", "town", "base", "defend", "raze"];
 /** D-083 (c): food plus gold it holds for productionFirst. */
 const PRODUCTION_FIRST = 800;
 
@@ -1925,6 +2167,15 @@ export const HARD_POP: Partial<HardPlan> = {
   // 200; cavalry (cavalry) and a faster ratio (woodShift) were measured and left off (no stronger, with or without these).
   woodFarmers: 8,
   governFrom: 12,
+  // D-086 A3 (docs/research/2026-10-ai-late.md section 9): farmers by a spot attacked far from home go home and back
+  // to work 30 s after; and before a march with no enemy seen for a minute, one goes to look first. Against main's hard
+  // 173 games to 145 over seeds 1-50 and 101-150 (main against itself 81 to 70), draws 108 to main's 113 of 800.
+  hideFar: true,
+  peekFirst: 1,
+  // D-089 (docs/research/2026-10-ai-d089.md): after its front broke off from the enemy main city, again only with 120% of
+  // those that set out then. Hard against hard, draws (seeds 1-50, 51-100): fixed map 15, 13 -> 2, 4; random 24, 27 -> 27, 20;
+  // against hard without it 41 to 47 (fixed) and 38 to 37 (random); the four active groups 0 of 160 as before.
+  cityAgain: 120,
 };
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
@@ -1996,6 +2247,20 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const post = real(homeF.u + su * 4, homeF.v + sv * 4);
 
   let mode: HardMode = "home";
+  /** D-089: where the front gathers before the enemy main city (null: straight on), when it set out and the first got there, and whether it has gathered. */
+  let stage: { x: number; y: number } | null = null;
+  let setOut = 0;
+  let stageFirst = -1;
+  let staged = true;
+  /** D-089 (plan.cityAgain): how many set out on the last march that broke off from the enemy main city. */
+  let cityFailed = 0;
+  /** D-086 B: the network's choices at the last think (null: off), its soldiers then, its losses and the enemy soldiers it saw fall (ticks), the enemy city's hp last seen. */
+  const netOn = plan.net !== null || plan.netLog !== undefined;
+  let netChoice: number[] | null = null;
+  let netPrev = new Set<number>();
+  const netLost: number[] = [];
+  const netKilled: number[] = [];
+  let netCityHp = -1;
   let target = { x: post.x, y: post.y };
   let targetTown = -1;
   let lastMove = -100000;
@@ -2039,6 +2304,31 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const townForts = new Map<number, { ids: number[]; tick: number }>();
   const townRest = new Map<number, number>();
   const fv = fortValues(know.rules);
+  // D-086 A3: where its farmers were last think, and those that fell far from home in the last minute.
+  const farmerSeen = new Map<number, { x: number; y: number }>();
+  const farmerFell: { x: number; y: number; tick: number }[] = [];
+  /** plan.rescue: the squad, the spot it went to, how many set out, when it got there, last saw the enemy by it, was told where to go; spots left alone until a tick. */
+  const rescueSquad = new Set<number>();
+  let rescueAt: { x: number; y: number; start: number; size: number; arrived: boolean } | null = null;
+  let rescueClear = 0;
+  let rescueMove = -100000;
+  const rescueRest = new Map<number, number>();
+  let rescueDeclined = -1;
+  /** plan.hideFar: farmers sent home from each spot, and when the enemy was last seen by it. */
+  const farHide: { x: number; y: number; clear: number; ids: number[] }[] = [];
+  /** plan.foeMemory: the enemy's worth it believes in, and when it last shrank. */
+  let foeMemo = 0;
+  let foeMemoTick = 0;
+  /** The same in soldiers (for peek only), and what it knew of last think. */
+  let foeMemoN = 0;
+  /** plan.foeGrow: its own soldiers counted so far. plan.peekFirst: when it last saw enemy soldiers; the one sent to look, until when, and when another may go. */
+  const ownSeen = new Set<number>();
+  let lastFoeSeen = 0;
+  let peekId = -1;
+  let peekUntil = 0;
+  let peekAgain = 0;
+  let known = { worth: 0, n: 0 };
+  const counted = { rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number): { x: number; y: number } | null {
@@ -2074,6 +2364,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   return {
     // It always plunders (a town plundered again every 5 minutes pays more than governing it).
     style: "plunder",
+    stats: () => ({ ...counted }),
+    peek: () => ({ knownWorth: known.worth, known: known.n, believedWorth: Math.max(known.worth, foeMemo), believed: Math.max(known.n, foeMemoN) }),
     think(view: PlayerView): CommandBody[] {
       const out: CommandBody[] = [];
       const h = view.header;
@@ -2126,7 +2418,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
        * plunders (governing first captures won 3% of 120 games on the final round 7 rules), unless
        * plan.governFrom says otherwise (D-086 A).
        */
-      const toGovern = (id: number) => (once && plunderedTown(id)) || governFirst(id);
+      /** D-086 B: what governing town id costs can be paid now (res as the think starts). */
+      const payable = (id: number) => {
+        const t = mem.site(id);
+        if (t === undefined) return false;
+        const c = governCost(t.size);
+        return res.food >= c.food && res.wood >= c.wood && res.gold >= c.gold && res.crystal >= c.crystal;
+      };
+      // D-086 B: with the network on, a first capture is governed when it chooses so and can pay (in place of plan.governFrom).
+      const toGovern = (id: number) =>
+        (once && plunderedTown(id)) || (netChoice === null || netChoice[HEAD_TOWN] === AS_HARD ? governFirst(id) : netChoice[HEAD_TOWN] === TOWN_GOVERN && payable(id));
       // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
       const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(mem.site(targetTown)!.size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
@@ -2253,7 +2554,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             continue;
           }
         }
-        if ((tick - e.tick <= 20 && sees(e.x, e.y)) || tick - e.tick > INTEL_TICKS) intel.delete(id);
+        if (tick - e.tick <= 20 && sees(e.x, e.y)) {
+          if (netOn) netKilled.push(tick);
+          // Fallen (plan.foeMemory: no longer believed in either).
+          intel.delete(id);
+          if (plan.foeMemory) {
+            foeMemo = Math.max(0, foeMemo - WORTH[e.type]);
+            foeMemoN = Math.max(0, foeMemoN - 1);
+          }
+        } else if (tick - e.tick > INTEL_TICKS) intel.delete(id);
       }
       let enemySpear = 0;
       let enemyRanged = 0;
@@ -2266,6 +2575,130 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         enemyWorth += WORTH[e.type];
       }
       if (enemyMages > 0) lastEnemyMage = tick;
+      if (foes.some((f) => f.order !== Order.Post)) lastFoeSeen = tick;
+      // D-086 A3 (plan.foeGrow): once it has seen them, the enemy grows by what it trains itself.
+      if (plan.foeMemory && plan.foeGrow) {
+        let grown = 0;
+        let grownN = 0;
+        for (const u of soldiers) {
+          if (ownSeen.has(u.id)) continue;
+          ownSeen.add(u.id);
+          grown += WORTH[u.type];
+          grownN++;
+        }
+        if (foeMemo > 0) {
+          foeMemo += grown;
+          foeMemoN += grownN;
+        }
+      }
+      // D-086 A3 (plan.foeMemory): the most it knew of at once, shrinking a little each minute.
+      if (plan.foeMemory) {
+        if (enemyWorth >= foeMemo) {
+          foeMemo = enemyWorth;
+          foeMemoN = intel.size;
+          foeMemoTick = tick;
+        } else if (tick - foeMemoTick >= TICKS_PER_MINUTE) {
+          foeMemo -= Math.trunc((foeMemo * plan.foeDecay) / 100);
+          foeMemoN -= Math.trunc((foeMemoN * plan.foeDecay) / 100);
+          foeMemoTick = tick;
+        }
+      }
+      known = { worth: enemyWorth, n: intel.size };
+      const believed = plan.foeMemory ? Math.max(enemyWorth, foeMemo) : enemyWorth;
+
+      // --- D-086 B: the network's choices, from its own view and memory --------------------------------
+      let netX: number[] = [];
+      const labels = [-1, -1, -1, -1];
+      if (netOn) {
+        if (enemyCityHp >= 0) netCityHp = enemyCityHp;
+        const ids = new Set(soldiers.map((u) => u.id));
+        for (const id of netPrev) if (!ids.has(id)) netLost.push(tick);
+        netPrev = ids;
+        while (netLost.length > 0 && tick - netLost[0] > 2 * TICKS_PER_MINUTE) netLost.shift();
+        while (netKilled.length > 0 && tick - netKilled[0] > 2 * TICKS_PER_MINUTE) netKilled.shift();
+        let cavalryFoes = 0;
+        for (const e of intel.values()) if (e.type === UnitType.Cavalry) cavalryFoes++;
+        let cityHp = 0;
+        for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+          if (view.buildings[r + BuildingField.owner] === player && view.buildings[r + BuildingField.type] === BuildingType.MainCity) cityHp = view.buildings[r + BuildingField.hp];
+        }
+        const townCount = [0, 0, 0, 0, 0];
+        let townD = -1;
+        const neutralAt = (x: number, y: number) => {
+          const d = Math.trunc(Math.sqrt(dist2(x, y, home.cellX, home.cellY)));
+          if (townD < 0 || d < townD) townD = d;
+        };
+        const seenTowns = new Set<number>();
+        for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+          const id = view.towns[r + TownField.id];
+          const st = view.towns[r + TownField.state];
+          const ow = view.towns[r + TownField.owner];
+          seenTowns.add(id);
+          if (st === TownState.Ruins) townCount[4]++;
+          else if (st === TownState.Neutral) {
+            townCount[3]++;
+            neutralAt(view.towns[r + TownField.cellX], view.towns[r + TownField.cellY]);
+          } else if (ow === player && (st === TownState.Governed || st === TownState.Repairing)) townCount[0]++;
+          else if (ow === player) townCount[1]++;
+          else townCount[2]++;
+        }
+        for (const t of mem.unexplored) {
+          if (seenTowns.has(t.id)) continue;
+          townCount[3]++;
+          neutralAt(t.cellX, t.cellY);
+        }
+        const nearHome = soldiers.filter((u) => dist2(u.x, u.y, home.cellX, home.cellY) <= WAVE_CELLS * WAVE_CELLS).length;
+        netX = features({
+          tick,
+          food: res.food,
+          wood: res.wood,
+          gold: res.gold,
+          crystal: res.crystal,
+          pop,
+          cap,
+          ceiling,
+          farmers: farmers.length,
+          spear: soldiers.filter((u) => u.type === UnitType.Spearman).length,
+          ranged: soldiers.filter((u) => u.type === UnitType.Ranged).length,
+          mages: soldiers.filter((u) => u.type === UnitType.Mage).length,
+          cavalry: soldiers.filter((u) => u.type === UnitType.Cavalry).length,
+          buildings: [
+            BuildingType.Barracks,
+            BuildingType.Range,
+            BuildingType.MageHall,
+            BuildingType.Stable,
+            BuildingType.House,
+            BuildingType.Farm,
+            BuildingType.LumberCamp,
+            BuildingType.Mine,
+            BuildingType.ArrowTower,
+          ].map((t) => done(t).length),
+          worth: worth(soldiers),
+          home: nearHome,
+          away: soldiers.length - nearHome,
+          cityHp,
+          enemy: [enemySpear, enemyRanged, enemyMages, cavalryFoes],
+          enemyWorth,
+          enemyNear: foes.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) <= WAVE_CELLS * WAVE_CELLS).length,
+          enemyCityKnown: mem.known === Known.City ? 1 : 0,
+          enemyCityHp: netCityHp < 0 ? 0 : netCityHp,
+          enemyForts: enemyForts(view, player, rules).length,
+          towns: townCount,
+          townDist: townD,
+          mode: NET_MODES.indexOf(mode),
+          lost: netLost.length,
+          killed: netKilled.length,
+        });
+        if (plan.net !== null) {
+          const guards = new Set([...townGuards.values()].flat());
+          const free = soldiers.filter((u) => !guards.has(u.id)).length;
+          const fewFarmers = farmers.length < plan.netFarmers;
+          // AS_HARD always; army: wait, or march once it may; mix: all; build: no barracks and ranges first with few farmers; town: all.
+          const allowed = [true, true, mem.known !== Known.None && free >= plan.netMarch, true, true, true, true, true, !fewFarmers, true, true, true];
+          netChoice = choose(plan.net, netX, allowed);
+          plan.netSeen?.(netChoice);
+        }
+      }
 
       // --- economy --------------------------------------------------------------------------
       // The ratio leans hard away from what piles up (a plunder brings 300 gold and no wood, and
@@ -2282,7 +2715,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       for (let k = 0; k < 3; k++) ratio[k] = Math.max(5, Math.trunc((ratio[k] * 100) / sum));
       ratio[0] = 100 - ratio[1] - ratio[2];
       // D-086 A: wood short while food and gold pile up (soldiers want wood, and the stock does not turn into any).
-      const woodShort = res.wood < WOOD_SHORT && res.food + res.gold >= RICH;
+      const woodShort = plan.shortEither
+        ? (res.wood < WOOD_SHORT || res.food < WOOD_SHORT) && res.food + res.wood + res.gold >= RICH
+        : res.wood < WOOD_SHORT && res.food + res.gold >= RICH;
       if (plan.woodShift && woodShort) for (let k = 0; k < 3; k++) ratio[k] = WOOD_SHIFT[k];
       const ratioKey = ratio.join("/");
       if (ratioKey !== ratioSet) {
@@ -2292,12 +2727,18 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       let room = cap - pop - queued;
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
-      const farmersWanted = farmerTarget + (woodShort ? plan.woodFarmers : 0);
+      // D-086 A: more while wood is short and food and gold pile up; D-086 B: the network's "farmers first", a few more.
+      const farmersWanted = farmerTarget + (woodShort ? plan.woodFarmers : 0) + (netChoice !== null && netChoice[HEAD_BUILD] === BUILD_FARMERS ? NET_FARMERS : 0);
+      let farmerQueued = false;
       if (main && main.queue < 2 && farmers.length + main.queue < farmersWanted && room > 0 && afford(farmerCost)) {
         out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
         spend(farmerCost);
         room--;
+        farmerQueued = true;
       }
+      // D-086 A3 (plan.farmerFood): farmers still short and room for one more in the queue: soldiers leave it its food.
+      const keepFood =
+        plan.farmerFood > 0 && main && main.queue + (farmerQueued ? 1 : 0) < 2 && farmers.length + main.queue + (farmerQueued ? 1 : 0) < farmersWanted ? plan.farmerFood : 0;
       const nearestNode = (kind: number): { x: number; y: number; id: number } | null => {
         let best: { x: number; y: number; id: number } | null = null;
         let bestD = 0;
@@ -2336,7 +2777,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
         // D-083 (c): food and gold piling up, more barracks and ranges first (a house first only when it needs one now).
         const prodCount = count(BuildingType.Barracks) + count(BuildingType.Range);
-        if (plan.productionFirst && res.food + res.gold >= PRODUCTION_FIRST && prodCount < plan.production && has(BuildingType.Range) && cap - pop - queued > producers) {
+        const roomFor = prodCount < plan.production && has(BuildingType.Range) && cap - pop - queued > producers;
+        const hardFirst = plan.productionFirst && res.food + res.gold >= PRODUCTION_FIRST && roomFor;
+        labels[HEAD_BUILD] = hardFirst ? 1 : 0;
+        // D-086 B: or as the network chooses (barracks and ranges first, or not before farmers).
+        if (netChoice === null || netChoice[HEAD_BUILD] === AS_HARD ? hardFirst : netChoice[HEAD_BUILD] === BUILD_PRODUCTION && roomFor) {
           add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
         // Houses before the population is full: every producer can add one at a time.
@@ -2379,16 +2824,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const spear = soldiers.filter((u) => u.type === UnitType.Spearman).length;
       const ranged = soldiers.filter((u) => u.type === UnitType.Ranged).length;
       const mages = soldiers.filter((u) => u.type === UnitType.Mage).length;
-      const trainAt = (t: number, type: UnitType) => {
+      const trainAt = (t: number, type: UnitType, most = QUEUE_MOST) => {
         for (const b of done(t)) {
+          if (most <= 0) break;
           if (b.queue >= 2 || room <= 0 || !afford(rules.units[type].cost)) continue;
+          if (keepFood > 0 && res.food - reserve.food - rules.units[type].cost.food < keepFood) continue;
           out.push({ c: "train", building: b.id, type, n: 1 });
           spend(rules.units[type].cost);
           room--;
+          most--;
         }
       };
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
-      if (mages + hallQueue < rules.mageCap && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage);
+      // No more than the cap leaves room for, with those queued (D-089: two halls each queued one with one place left).
+      const mageRoom = rules.mageCap - allSoldiers.filter((u) => u.type === UnitType.Mage).length - hallQueue;
+      if (mageRoom > 0 && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage, mageRoom);
       // The mix answers what it has seen: a cannon shot kills a ranged unit but not a spearman, and
       // ranged units hit spearmen 2.5 times as hard.
       let share = spearBase;
@@ -2398,6 +2848,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         else if (enemySpear + enemyRanged >= 6 && enemyRanged * 100 >= (enemySpear + enemyRanged) * 60) share += plan.counterMix;
       }
       share = Math.max(20, Math.min(80, share));
+      labels[HEAD_MIX] = share >= 60 ? 0 : share <= 40 ? 2 : 1;
+      if (netChoice !== null && netChoice[HEAD_MIX] !== AS_HARD) share = NET_SHARE[netChoice[HEAD_MIX]];
       // D-086 A (plan.cavalry): while wood is short and food and gold pile up, cavalry first, up to its share.
       if (plan.cavalry > 0 && woodShort) {
         const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry).length + done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
@@ -2444,6 +2896,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       for (const [id, t] of towns) {
         if (t.state === TownState.Ruins && t.visible) restoreAt.set(id, tick + t.timer);
         if (t.owner !== player || t.state !== TownState.AwaitingChoice) continue;
+        if (!(once && plunderedTown(id))) labels[HEAD_TOWN] = toGovern(id) ? 1 : 0;
         if (!toGovern(id)) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
         else if (affordAll(governCost(t.size))) {
           out.push({ c: "town_choice", town: id, choice: TownChoice.Govern });
@@ -2466,7 +2919,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const guarded = new Set([...townGuards.values()].flat());
         const alive = (townGuards.get(id) ?? []).filter((g) => byId.has(g));
         const free = soldiers
-          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison)
+          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison && !rescueSquad.has(s.id) && s.id !== peekId)
           .sort((a, b) => (b.type === UnitType.Spearman ? 1 : 0) - (a.type === UnitType.Spearman ? 1 : 0) || dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < t.needed + 1 && free.length > 0) alive.push(free.shift()!.id);
         townGuards.set(id, alive);
@@ -2529,7 +2982,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
       // Hiding in a building (round 7) too: a move would bring it out.
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
+      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -2551,7 +3004,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
 
       // --- the army ------------------------------------------------------------------------------------
-      const army = guarding.size === 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id));
+      // D-086 A3 (plan.peekFirst): the one sent to look comes home once enemy soldiers are seen, or after PEEK_WALK.
+      if (peekId >= 0) {
+        if (!byId.has(peekId)) {
+          counted.peekFell++;
+          peekId = -1;
+          peekAgain = tick + PEEK_AGAIN;
+        } else if (lastFoeSeen === tick || tick >= peekUntil) {
+          counted[lastFoeSeen === tick ? "peekSaw" : "peekTimeout"]++;
+          out.push({ c: "move", u: [peekId], x: post.x, y: post.y });
+          peekId = -1;
+          peekAgain = tick + PEEK_AGAIN;
+        }
+      }
+      const army =
+        guarding.size === 0 && rescueSquad.size === 0 && peekId < 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id) && !rescueSquad.has(u.id) && u.id !== peekId);
       const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
       let sent = false;
       const send = (x: number, y: number, why: HardMode) => {
@@ -2611,6 +3078,143 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // Those that would go: not the towns' guards.
         const vs = soldiers.filter((u) => !guarding.has(u.id)).reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
         crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
+      }
+
+      // --- D-086 A3: farmers attacked far from home (plan.rescue, plan.hideFar) -------------------------
+      let farmerSpot: { x: number; y: number } | null = null;
+      const cityHit = foesNear(home.cellX, home.cellY, 16).length > 0;
+      if (plan.rescue || plan.hideFar) {
+        const far = (x: number, y: number) => dist2(x, y, home.cellX, home.cellY) >= FAR_FARMER * FAR_FARMER;
+        const alive = new Set(farmers.map((f) => f.id));
+        for (const [id, at] of farmerSeen) {
+          if (alive.has(id)) continue;
+          farmerSeen.delete(id);
+          if (far(at.x, at.y)) farmerFell.push({ x: at.x, y: at.y, tick });
+        }
+        for (const f of farmers) farmerSeen.set(f.id, { x: f.x, y: f.y });
+        while (farmerFell.length > 0 && tick - farmerFell[0].tick > TICKS_PER_MINUTE) farmerFell.shift();
+        const spots: { x: number; y: number }[] = [];
+        for (const d of farmerFell) if (farmerFell.filter((e) => dist2(e.x, e.y, d.x, d.y) <= FARMER_SPOT * FARMER_SPOT).length >= 2) spots.push(d);
+        for (const f of farmers) if (far(f.x, f.y) && foes.some((e) => dist2(e.x, e.y, f.x, f.y) <= FARMER_SPOT * FARMER_SPOT)) spots.push({ x: f.x, y: f.y });
+        // The one nearest home (ties in player 0's frame), not under an enemy fort's reach.
+        let best = 0;
+        for (const p of spots) {
+          if (underArrows(p)) continue;
+          const d = dist2(p.x, p.y, home.cellX, home.cellY);
+          if (farmerSpot === null || d < best || (d === best && rank(p.x, p.y) < rank(farmerSpot.x, farmerSpot.y))) {
+            farmerSpot = p;
+            best = d;
+          }
+        }
+      }
+      if (plan.rescue) {
+        const spotKey = (x: number, y: number) => {
+          const f = frame(x, y);
+          return (f.v >> 3) * n + (f.u >> 3);
+        };
+        /** D-083 (a)'s weighing at a spot: those that would go against the forts reaching it and 1.3 x the enemy it knows of by it (seen in the last minute). */
+        const beats = (list: { type: number }[], x: number, y: number) => {
+          let enemy = 0;
+          for (const e of intel.values()) if (!e.post && tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, x, y) <= RESCUE_NEAR * RESCUE_NEAR) enemy += WORTH[e.type];
+          const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
+          const w = list.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+          return w * 10 >= fortsAtTown(gs, x, y, RESCUE_NEAR) * 10 + enemy * 13;
+        };
+        for (const id of rescueSquad) if (!byId.has(id)) rescueSquad.delete(id);
+        if (rescueAt !== null) {
+          const at = rescueAt;
+          const squad = soldiers.filter((u) => rescueSquad.has(u.id));
+          const sc = centre(squad, at.x, at.y);
+          if (!at.arrived && dist2(sc.x, sc.y, at.x, at.y) <= RESCUE_NEAR * RESCUE_NEAR) {
+            at.arrived = true;
+            rescueClear = tick;
+          }
+          if (foesNear(at.x, at.y, RESCUE_NEAR).length > 0 || foesNear(sc.x, sc.y, FARMER_SPOT).length > 0) rescueClear = tick;
+          // Home: the main city hit; half gone; the enemy there too strong now, or the squad under a fort's reach; done.
+          let why: "" | "rescueCityHit" | "rescueLost" | "rescueWeak" | "rescueDone" = "";
+          if (cityHit) why = "rescueCityHit";
+          else if (squad.length * 2 < at.size) why = "rescueLost";
+          else if (!beats(squad, at.x, at.y) || underArrows(sc)) why = "rescueWeak";
+          else if ((at.arrived && tick - rescueClear >= RESCUE_DONE) || (!at.arrived && tick - at.start >= RESCUE_WALK)) why = "rescueDone";
+          const ids = squad.map((u) => u.id);
+          if (why !== "") {
+            if (ids.length > 0) out.push({ c: why === "rescueDone" ? "move" : "retreat", u: ids, x: post.x, y: post.y });
+            if (why === "rescueLost" || why === "rescueWeak") rescueRest.set(spotKey(at.x, at.y), tick + plan.rescueRest * TICKS_PER_MINUTE);
+            counted[why]++;
+            rescueSquad.clear();
+            rescueAt = null;
+          } else {
+            // Never past the spot: those further from it (and from home) than it come back to it.
+            const atD = dist2(at.x, at.y, home.cellX, home.cellY);
+            const past = squad.filter((u) => dist2(u.x, u.y, at.x, at.y) > RESCUE_NEAR * RESCUE_NEAR && dist2(u.x, u.y, home.cellX, home.cellY) > atD).map((u) => u.id);
+            if (past.length > 0 && tick - rescueMove >= 100) {
+              out.push({ c: "retreat", u: past, x: at.x, y: at.y });
+              rescueMove = tick;
+            } else if (!at.arrived && tick - rescueMove >= 400) {
+              out.push({ c: "move", u: ids, x: at.x, y: at.y });
+              rescueMove = tick;
+            }
+          }
+        } else if (farmerSpot !== null && mode === "home" && !cityHit && !recalled && tick >= (rescueRest.get(spotKey(farmerSpot.x, farmerSpot.y)) ?? 0)) {
+          const spot = farmerSpot;
+          // From the soldiers at home, nearest the spot first; at most half of them, never fewer than RESCUE_MIN.
+          const pool = army
+            .filter((u) => !detached(u.id) && dist2(u.x, u.y, home.cellX, home.cellY) <= RESCUE_HOME * RESCUE_HOME)
+            .sort((a, b) => dist2(a.x, a.y, spot.x, spot.y) - dist2(b.x, b.y, spot.x, spot.y) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+          const most = pool.length >> 1;
+          const pick: HardUnit[] = [];
+          for (const u of pool) {
+            if (pick.length >= most) break;
+            pick.push(u);
+            if (pick.length >= RESCUE_MIN && beats(pick, spot.x, spot.y)) break;
+          }
+          if (pick.length >= RESCUE_MIN && beats(pick, spot.x, spot.y)) {
+            const ids = pick.map((u) => u.id);
+            for (const id of ids) rescueSquad.add(id);
+            rescueAt = { x: spot.x, y: spot.y, start: tick, size: ids.length, arrived: false };
+            rescueClear = tick;
+            rescueMove = tick;
+            out.push({ c: "move", u: ids, x: spot.x, y: spot.y });
+            counted.rescueSent++;
+            const keep = armyIds.filter((id) => !rescueSquad.has(id));
+            armyIds.length = 0;
+            armyIds.push(...keep);
+          } else {
+            // Too few for it: none go (never one by one); counted once a spot.
+            const key = spotKey(spot.x, spot.y);
+            if (key !== rescueDeclined) counted.rescueDeclined++;
+            rescueDeclined = key;
+          }
+        }
+      }
+      if (plan.hideFar) {
+        // Those sent home go back to work once no enemy has been seen by their spot for a while (not while all hide in the main city).
+        for (const h of farHide) if (recalled || foesNear(h.x, h.y, FARMER_SPOT).length > 0) h.clear = tick;
+        for (let k = farHide.length - 1; k >= 0; k--) {
+          const h = farHide[k];
+          if (tick - h.clear < FAR_CLEAR) continue;
+          const ids = h.ids.filter((id) => farmers.some((f) => f.id === id));
+          if (ids.length > 0) out.push({ c: "release", u: ids });
+          counted.farmersReleased += ids.length;
+          farHide.splice(k, 1);
+        }
+        if (farmerSpot !== null && !recalled) {
+          const spot = farmerSpot;
+          const sent = new Set(farHide.flatMap((h) => h.ids));
+          // The farmers by the spot (not those pulling down a fort, D-080) go home.
+          const go = farmers
+            .filter((f) => !sent.has(f.id) && f.order !== Order.Attack && dist2(f.x, f.y, spot.x, spot.y) <= (FARMER_SPOT + 2) * (FARMER_SPOT + 2) && dist2(f.x, f.y, home.cellX, home.cellY) >= FAR_FARMER * FAR_FARMER)
+            .map((f) => f.id);
+          if (go.length > 0) {
+            out.push({ c: "retreat", u: go, x: post.x, y: post.y });
+            counted.farmersHid += go.length;
+            const h = farHide.find((e) => dist2(e.x, e.y, spot.x, spot.y) <= FARMER_SPOT * FARMER_SPOT);
+            if (h !== undefined) {
+              h.ids.push(...go);
+              h.clear = tick;
+            } else farHide.push({ x: spot.x, y: spot.y, clear: tick, ids: [...go] }); // its own copy: go is in the order sent
+          }
+        }
       }
 
       const armyOrders = (): void => {
@@ -2925,6 +3529,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // Forts by the front too strong for it (D-081; not the siege's): it breaks off as from a stronger enemy.
           const byFront = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, fc.x, fc.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, front));
           if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0) || byFront.length > 0))) {
+            cityFailed = armyAtStart;
             remember(front, byFront);
             counterReady = false;
             razing = -1;
@@ -2969,8 +3574,22 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             }
             reservesRazing = mine.id;
           } else reservesRazing = -1;
+          // D-089: the front gathers outside first.
+          const at = stage;
+          if (at !== null && !staged) {
+            const by = front.filter((u) => dist2(u.x, u.y, at.x, at.y) <= STAGE_NEAR * STAGE_NEAR).length;
+            if (by > 0 && stageFirst < 0) stageFirst = tick;
+            if (by * 100 >= STAGE_SHARE * front.length || (stageFirst >= 0 && tick - stageFirst >= STAGE_WAIT) || tick - setOut >= STAGE_MAX) staged = true;
+          }
           if (way !== undefined) {
             razeWith(frontIds, way);
+          } else if (at !== null && !staged) {
+            if (frontIds.length > 0 && (target.x !== at.x || target.y !== at.y || tick - lastMove >= 400)) {
+              out.push({ c: "move", u: frontIds, x: at.x, y: at.y });
+              lastMove = tick;
+              sent = true;
+              target = { x: at.x, y: at.y };
+            }
           } else if (enemyCity >= 0 && there) {
             if (tick - lastMove >= 100 && frontIds.length > 0) {
               // Defenders first (a move fights what it meets), then the city; those still on the way
@@ -3005,31 +3624,64 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         // At home: march, go for a town, or wait by the city.
         const popFull = toGo < 0 && cap >= ceiling && pop >= cap - FULL_MARGIN;
-        const strong = armyWorth * 100 >= enemyWorth * plan.pushRatio;
+        const strong = armyWorth * 100 >= believed * plan.pushRatio;
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
-        const go =
+        // D-089 (plan.cityAgain): not again with fewer than broke off last time, but at the end of an AI game.
+        const notLess = endgame || plan.cityAgain <= 0 || army.length * 100 >= cityFailed * plan.cityAgain;
+        let hardGo =
           (mem.known !== Known.None || endgame || assault) &&
+          notLess &&
           (endgame
             ? army.length >= ENDGAME_ARMY
             : assault
               ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
-              : (counterReady && army.length >= plan.counterArmy && armyWorth >= enemyWorth) ||
+              : (counterReady && army.length >= plan.counterArmy && armyWorth >= believed) ||
                 (army.length >= pushArmy && strong) ||
                 (popFull && army.length >= townArmy + 6));
+        // D-086 A3 (plan.peekFirst): no enemy soldier seen for a while: one goes to look (ignoring enemies on the way), the march waits.
+        if (hardGo && plan.peekFirst > 0 && !endgame && !assault && !popFull && tick - lastFoeSeen > plan.peekFirst * TICKS_PER_MINUTE) {
+          if (peekId >= 0) hardGo = false;
+          else if (tick >= peekAgain) {
+            const kind = (u: HardUnit) => (u.type === UnitType.Cavalry ? 0 : u.type === UnitType.Spearman ? 1 : 2);
+            const pool = army
+              .filter((u) => !detached(u.id) && u.type !== UnitType.Mage)
+              .sort((a, b) => kind(a) - kind(b) || dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+            if (pool.length > 0) {
+              peekId = pool[0].id;
+              peekUntil = tick + PEEK_WALK;
+              out.push({ c: "retreat", u: [peekId], x: enemyHome.cellX, y: enemyHome.cellY });
+              counted.peekSent++;
+              const keep = armyIds.filter((id) => id !== peekId);
+              armyIds.length = 0;
+              armyIds.push(...keep);
+              hardGo = false;
+            }
+          }
+        }
+        // D-086 B: the network chooses at home (not at the end of a game with a time limit, nor in an assault).
+        const netArmy = netChoice === null || endgame || assault || netChoice[HEAD_ARMY] === AS_HARD ? -1 : netChoice[HEAD_ARMY];
+        const go = netArmy < 0 ? hardGo : netArmy === ARMY_BASE && mem.known !== Known.None && army.length >= plan.netMarch;
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
         const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
         if (go && toBase!.go) {
+          labels[HEAD_ARMY] = 2;
           armyAtStart = army.length;
           marchWorth = vsForts(army);
           marched.clear();
           for (const u of army) marched.add(u.id);
           counterReady = false;
           reservesRazing = -1;
-          send(enemyHome.cellX, enemyHome.cellY, "base");
+          // D-089: to the gathering point first, when there is one.
+          stage = stagePoint(view, know.map, forts, ac, enemyHome, rank);
+          setOut = tick;
+          stageFirst = -1;
+          staged = stage === null;
+          send(stage?.x ?? enemyHome.cellX, stage?.y ?? enemyHome.cellY, "base");
           return;
         }
-        if (!assault) {
+        // D-086 B: a town only as hard goes for one (the network's "wait" and a march it could not make stay home).
+        if (!assault && netArmy < 0) {
           let pick = -1;
           let pickD = 0;
           for (const [id, t] of towns) {
@@ -3056,6 +3708,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             }
           }
           if (pick >= 0) {
+            labels[HEAD_ARMY] = 1;
             targetTown = pick;
             armyAtStart = army.length;
             marchWorth = vsForts(army);
@@ -3066,6 +3719,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             return;
           }
         }
+        labels[HEAD_ARMY] = 0;
         send(post.x, post.y, "home");
       };
       armyOrders();
@@ -3077,6 +3731,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const on = back.filter((id) => !late.includes(id));
       if (on.length > 0 && !sent) out.push({ c: "move", u: on, x: target.x, y: target.y });
       if (late.length > 0) out.push({ c: "move", u: late, x: post.x, y: post.y });
+      if (plan.netLog !== undefined && netX.length > 0) plan.netLog(netX, labels);
       return out;
     },
   };
