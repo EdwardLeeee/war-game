@@ -30,7 +30,7 @@ import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, CAVALRY, OUTPOST, COUNTER_ATTACK, FIRE_BACK, GARRISON, MARCH_ORDER, SLOT_GIVE_UP, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, MARCH_ORDER, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -53,6 +53,9 @@ export interface Outgoing {
   to: number;
   ev: SimEvent;
 }
+
+/** CAV_FLANK's unit columns (D-097), left out of the hash while it is off. */
+const FLANK_COLS: ReadonlySet<string> = new Set(["flank", "flankSide", "flankX", "flankY", "flankTick"]);
 
 /**
  * "attacked" events: at most one per 8 x 8-cell block per 60 ticks per player and attacker's
@@ -186,8 +189,7 @@ export class Game {
         const vis = this.fog.visible[p];
         let sees = ts >= 0 && vis[(u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT)] === 1;
         if (!sees && bs >= 0) {
-          const size = w.buildingSize(b.type[bs]);
-          for (let y = b.cellY[bs]; y < b.cellY[bs] + size && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + size && !sees; x++) sees = vis[y * n + x] === 1;
+          for (let y = b.cellY[bs]; y < b.cellY[bs] + w.tall(bs) && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + w.wide(bs) && !sees; x++) sees = vis[y * n + x] === 1;
         }
         if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1] } });
       }
@@ -234,9 +236,11 @@ export class Game {
     // Round 7 town state (D-061), only while its rules are on.
     if (TOWN_ONCE.on || PLUNDER_RECOVERY.on) h = fnvInt32(h, w.townPlundered);
     if (PLUNDER_RECOVERY.on) h = fnvInt32(h, w.townRecover);
+    // Gates (D-096): the rebuild counts, only while they are on (the grid has the rest).
+    if (GATE.on) h = fnvInt32(h, w.gateRebuild);
     h = fnvWord(h, w.units.count);
     for (const name of w.units.names) {
-      if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on && !FIRE_BACK.on) || (name === "avenge" && !AVENGE.on) || (name === "fireBack" && !FIRE_BACK.on) || (name === "waited" && !MARCH_ORDER.on) || ((name === "slotBest" || name === "slotIdle") && !SLOT_GIVE_UP.on)) continue;
+      if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on && !FIRE_BACK.on) || (name === "avenge" && !AVENGE.on) || (name === "fireBack" && !FIRE_BACK.on) || (name === "wall" && !WALLS.on) || (FLANK_COLS.has(name) && !CAV_FLANK.on) || (name === "waited" && !MARCH_ORDER.on) || ((name === "slotBest" || name === "slotIdle") && !SLOT_GIVE_UP.on)) continue;
       h = fnvInt32(h, w.units.col[name], w.units.count);
     }
     h = fnvWord(h, w.buildings.count);

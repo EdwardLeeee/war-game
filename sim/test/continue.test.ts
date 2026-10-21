@@ -67,7 +67,8 @@ function stopAndGoOn(whole: Runner, n: number, more: number): void {
 }
 
 test("stopped while the normal AI marches and while it retreats, the game goes on as if it never stopped", () => {
-  const whole = play(1, "defend", "normal", 21000);
+  // 24000: since D-096 the AI retreats later in this game (about 19600).
+  const whole = play(1, "defend", "normal", 24000);
   const march = firstAiOrder(whole, "move", 10);
   const retreat = firstAiOrder(whole, "retreat", 5);
   assert.ok(march < retreat);

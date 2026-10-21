@@ -3,11 +3,11 @@
 // iterating a table is deterministic. Units and buildings share one id sequence; resource
 // nodes and towns have their own small, fixed id ranges.
 
-import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, Terrain, TownState, UnitType, walkableTerrain } from "../protocol.ts";
+import { Action, BuildingFlag, BuildingType, CELL, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Terrain, TownState, UnitType, walkableTerrain } from "../protocol.ts";
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
-import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
+import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -43,6 +43,9 @@ export const UNIT_COLS = [
   // The unit that shot this soldier on a move and that it goes for (FIRE_BACK, D-095), -1 none;
   // in the hash only while FIRE_BACK is on.
   "fireBack",
+  // The wall cell it stands on or is going up onto (D-096, WALLS), -1 none; in the hash only while
+  // WALLS is on.
+  "wall",
   // Ticks this unit stood to let lower ranks pass on its move (MARCH_ORDER, D-095); in the hash
   // only while MARCH_ORDER is on.
   "waited",
@@ -50,6 +53,11 @@ export const UNIT_COLS = [
   // on this move or retreat (fixed point, 0 none yet) and the ticks since it last came nearer; in
   // the hash only while SLOT_GIVE_UP is on.
   "slotBest", "slotIdle",
+  // Going for the back row (CAV_FLANK, D-097): the target it rides for (-1 none), the side it
+  // goes round the front (1, -1; 0 not chosen yet), the point beside the front it heads for
+  // (fixed point, -1 none) and the tick it set off or last landed a hit (not going: the tick it
+  // may go again). In the hash only while CAV_FLANK is on.
+  "flank", "flankSide", "flankX", "flankY", "flankTick",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 /** Unit types counted per player in `trained` and `lost` (UnitType 0..5; the hash leaves out cavalry while CAVALRY is off). */
@@ -121,6 +129,13 @@ export const BLOCK_NODE = 2;
 export const BLOCK_BUILDING = 4;
 /** A castle wall or corner tower (D-089): terrain, never removed. */
 export const BLOCK_WALL = 8;
+/**
+ * A standing gate closed to someone (D-096): walkable only by the player in World.gateOwner (the
+ * town's holder) on that player's own grid (World.passGrid); closed to everyone else.
+ */
+export const BLOCK_GATE = 16;
+/** Openings in every castle's walls (D-096; castle.gates). */
+export const GATES = 4;
 
 export class World {
   readonly map: GameMap;
@@ -150,6 +165,37 @@ export class World {
   readonly castles: Castle[] = [];
   /** 1 on the cells of the castles' gates (D-089). */
   gateAt: Uint8Array;
+  /** At each gate opening's top-left cell (D-096), its sides in cells (x | y << 8); 0 elsewhere. */
+  gateSides: Int32Array;
+  /** Every gate cell (D-096), town by town, opening by opening. */
+  gateCells: Int32Array;
+  /** Per cell, the town whose walls it lies inside (castle.inside), or -1 (D-096: who reaches whom). */
+  insideAt: Int32Array;
+  /**
+   * D-096, the walls soldiers stand on: per wall cell they can go up onto, its town (wallTown), the
+   * cell inside the walls next to it they climb from (wallFoot, a side neighbour where there is one),
+   * and the unit standing there or on its way up (wallAt, -1 free); -1 for every other cell.
+   */
+  wallTown: Int32Array;
+  wallFoot: Int32Array;
+  wallAt: Int32Array;
+  /** Each town's wall cells soldiers can stand on, in the castle's wall order (D-096). */
+  wallCells: Int32Array[] = [];
+  /**
+   * On a cell under a standing gate that is closed to someone (BLOCK_GATE, D-096): the player it
+   * lets through (the town's holder), or -1 (closed to everyone: a neutral town's).
+   */
+  gateOwner: Int32Array;
+  /**
+   * D-096: per town and opening (town * GATES + opening), the ticks left until a governed town
+   * rebuilds that broken gate (counting while no enemy stands inside its walls), 0 when not.
+   */
+  gateRebuild: Int32Array;
+  /** Gate cells each player may walk that others may not (passClass). */
+  private readonly ownGates = new Int32Array(PLAYER_COUNT);
+  private readonly passGrids: Uint8Array[] = [];
+  private readonly passBlock: number[] = [];
+  private readonly passOpen: number[] = [];
   /**
    * Each town's castle cells (D-089): inside the walls and the ring of walls and gates, as cell
    * indices. Seeing any of them is seeing the town (fog.ts): the walls stand 5 cells from a small
@@ -333,6 +379,8 @@ export class World {
       this.castles.push(castleOf(s.size, map));
     });
     this.gateAt = new Uint8Array(n * n);
+    this.gateSides = new Int32Array(n * n);
+    this.gateOwner = new Int32Array(n * n).fill(-1);
     this.gateLane = new Uint8Array(n * n);
     this.nearGate = new Uint8Array(n * n);
     this.nearCastle = new Uint8Array(n * n);
@@ -346,6 +394,13 @@ export class World {
         mark(this.nearGate, s.cellX + dx - 3, s.cellY + dy - 3, s.cellX + dx + 3, s.cellY + dy + 3);
       }
       for (const [dx, dy] of [...c.gate, ...c.outside, ...c.behind]) this.gateLane[(s.cellY + dy) * n + s.cellX + dx] = 1;
+      for (const g of c.gates) {
+        const x0 = Math.min(...g.map((k) => k[0]));
+        const y0 = Math.min(...g.map((k) => k[1]));
+        const sx = Math.max(...g.map((k) => k[0])) - x0 + 1;
+        const sy = Math.max(...g.map((k) => k[1])) - y0 + 1;
+        this.gateSides[(s.cellY + y0) * n + s.cellX + x0] = sx | (sy << 8);
+      }
       mark(this.nearCastle, s.cellX + c.inside.x0 - 4, s.cellY + c.inside.y0 - 4, s.cellX + c.inside.x1 + 4, s.cellY + c.inside.y1 + 4);
       const cells: number[] = [];
       for (let y = Math.max(0, s.cellY + c.inside.y0 - 1); y <= Math.min(n - 1, s.cellY + c.inside.y1 + 1); y++) {
@@ -353,6 +408,43 @@ export class World {
       }
       this.castleCells.push(Int32Array.from(cells));
     });
+    const gc: number[] = [];
+    map.towns.forEach((s, i) => {
+      for (const g of this.castles[i].gates) for (const [dx, dy] of g) gc.push((s.cellY + dy) * n + s.cellX + dx);
+    });
+    this.gateCells = Int32Array.from(gc);
+    this.insideAt = new Int32Array(n * n).fill(-1);
+    map.towns.forEach((s, i) => {
+      const c = this.castles[i].inside;
+      for (let y = Math.max(0, s.cellY + c.y0); y <= Math.min(n - 1, s.cellY + c.y1); y++) {
+        for (let x = Math.max(0, s.cellX + c.x0); x <= Math.min(n - 1, s.cellX + c.x1); x++) this.insideAt[y * n + x] = i;
+      }
+    });
+    this.wallTown = new Int32Array(n * n).fill(-1);
+    this.wallFoot = new Int32Array(n * n).fill(-1);
+    this.wallAt = new Int32Array(n * n).fill(-1);
+    map.towns.forEach((s, i) => {
+      const cells: number[] = [];
+      for (const [dx, dy] of this.castles[i].wall) {
+        const x = s.cellX + dx;
+        const y = s.cellY + dy;
+        if (x < 0 || y < 0 || x >= n || y >= n) continue;
+        // The cell inside to climb from: a side neighbour, else a corner one (E, S, W, N; then SE, SW, NW, NE).
+        let foot = -1;
+        for (const [ox, oy] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [-1, -1], [1, -1]]) {
+          const fx = x + ox;
+          const fy = y + oy;
+          if (foot >= 0 || fx < 0 || fy < 0 || fx >= n || fy >= n) continue;
+          if (this.insideAt[fy * n + fx] === i && (this.grid[fy * n + fx] & BLOCK_WALL) === 0) foot = fy * n + fx;
+        }
+        if (foot < 0) continue;
+        this.wallTown[y * n + x] = i;
+        this.wallFoot[y * n + x] = foot;
+        cells.push(y * n + x);
+      }
+      this.wallCells.push(Int32Array.from(cells));
+    });
+    this.gateRebuild = new Int32Array(t * GATES);
   }
 
   private newId(): number {
@@ -393,6 +485,12 @@ export class World {
     c.hitById[s] = -1;
     c.avenge[s] = -1;
     c.fireBack[s] = -1;
+    c.wall[s] = -1;
+    c.flank[s] = -1;
+    c.flankSide[s] = 0;
+    c.flankX[s] = -1;
+    c.flankY[s] = -1;
+    c.flankTick[s] = 0;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
     c.autoBuild[s] = -1;
@@ -433,22 +531,170 @@ export class World {
   }
 
   /**
+   * A footprint's width in cells (x): its type's size (buildingSize), but a gate's (D-096) is the
+   * line of its opening's cells, found by its top-left cell. sideY: its height.
+   */
+  sideX(type: number, cellX: number, cellY: number): number {
+    return type === BuildingType.Gate ? this.gateSides[cellY * this.size + cellX] & 0xff : this.buildingSize(type);
+  }
+  sideY(type: number, cellX: number, cellY: number): number {
+    return type === BuildingType.Gate ? this.gateSides[cellY * this.size + cellX] >> 8 : this.buildingSize(type);
+  }
+  /** A building's full hp: its type's, but a gate's (D-096) by its town's size (GATE.hp). */
+  maxHp(s: number): number {
+    const b = this.buildings.col;
+    return b.type[s] === BuildingType.Gate ? GATE.hp[this.townSize[b.town[s]]] : BUILDINGS[b.type[s]].hp;
+  }
+
+  /** Town t's opening k's top-left cell (D-096). */
+  private gateCorner(t: number, k: number): [number, number] {
+    const g = this.castles[t].gates[k];
+    let x0 = g[0][0];
+    let y0 = g[0][1];
+    for (const [x, y] of g) {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+    }
+    return [this.townX[t] + x0, this.townY[t] + y0];
+  }
+
+  /** The gate building standing in town t's opening k (D-096), as a slot, or -1 (broken). */
+  gateIn(t: number, k: number): number {
+    const [x, y] = this.gateCorner(t, k);
+    const s = this.building(this.buildingAt[y * this.size + x]);
+    return s >= 0 && this.buildings.col.type[s] === BuildingType.Gate ? s : -1;
+  }
+
+  /** Builds town t's gate in opening k at full hp (D-096), owned as the town is. */
+  addGate(t: number, k: number): void {
+    const [x, y] = this.gateCorner(t, k);
+    const id = this.addBuilding(NEUTRAL, BuildingType.Gate, x, y, GATE.hp[this.townSize[t]], 1000);
+    this.buildings.col.town[this.building(id)] = t;
+    this.gateRebuild[t * GATES + k] = 0;
+    this.refreshGates(t);
+  }
+
+  /**
+   * Sets town t's gates' owners and who walks their cells from the town's state (D-096): a
+   * standing gate of a town held by p (awaiting the choice, plundering, repairing, governed) is
+   * p's and open to p only; of a neutral town NEUTRAL's and closed to everyone; of ruins open to
+   * all; a broken one (no gate) open to all. Bumps the path versions when anything changed.
+   */
+  refreshGates(t: number): void {
+    const n = this.size;
+    const st = this.townState[t];
+    const held = st !== TownState.Neutral && st !== TownState.Ruins ? this.townOwner[t] : -1;
+    let changed = false;
+    this.castles[t].gates.forEach((g, k) => {
+      const s = this.gateIn(t, k);
+      if (s >= 0) this.buildings.col.owner[s] = held >= 0 ? held : NEUTRAL;
+      const closed = s >= 0 && st !== TownState.Ruins;
+      for (const [dx, dy] of g) {
+        const c = (this.townY[t] + dy) * n + this.townX[t] + dx;
+        const was = this.grid[c];
+        const wasOwner = this.gateOwner[c];
+        if (closed) this.grid[c] |= BLOCK_GATE;
+        else this.grid[c] &= ~BLOCK_GATE;
+        this.gateOwner[c] = closed ? held : -1;
+        if (this.grid[c] !== was || this.gateOwner[c] !== wasOwner) changed = true;
+      }
+    });
+    if (!changed) return;
+    this.ownGates.fill(0);
+    for (const c of this.gateCells) if ((this.grid[c] & BLOCK_GATE) !== 0 && this.gateOwner[c] >= 0) this.ownGates[this.gateOwner[c]]++;
+    this.blockVersion++;
+    this.openVersion++;
+  }
+
+  /**
+   * Which walkable grid unit owner `owner` walks (D-096): 0 (World.grid, every standing gate closed
+   * to someone closed) unless some gate opens to it alone, then owner + 1 (passGrid).
+   */
+  passClass(owner: number): number {
+    return owner >= 0 && owner < PLAYER_COUNT && this.ownGates[owner] > 0 ? owner + 1 : 0;
+  }
+
+  /** The grid of pass class cls (passClass): World.grid, or a copy with that player's own gates open. */
+  passGrid(cls: number): Uint8Array {
+    if (cls === 0) return this.grid;
+    let g = this.passGrids[cls];
+    if (g === undefined || g.length !== this.grid.length) {
+      g = new Uint8Array(this.grid.length);
+      this.passGrids[cls] = g;
+      this.passBlock[cls] = -1;
+    }
+    if (this.passBlock[cls] !== this.blockVersion || this.passOpen[cls] !== this.openVersion) {
+      g.set(this.grid);
+      const p = cls - 1;
+      for (const c of this.gateCells) if (this.gateOwner[c] === p) g[c] &= ~BLOCK_GATE;
+      this.passBlock[cls] = this.blockVersion;
+      this.passOpen[cls] = this.openVersion;
+    }
+    return g;
+  }
+
+  /** Does player p hold town t (D-096: its walls and gates are p's): awaiting the choice, plundering, repairing or governed? */
+  heldBy(t: number, p: number): boolean {
+    const st = this.townState[t];
+    return this.townOwner[t] === p && st !== TownState.Neutral && st !== TownState.Ruins;
+  }
+
+  /**
+   * Unit slot i comes off the wall it stands on or was going up onto (D-096): down to the cell
+   * inside it climbs from, standing there with no order (the next order is the caller's).
+   */
+  offWall(i: number): void {
+    const u = this.units.col;
+    const c = u.wall[i];
+    if (c < 0) return;
+    const n = this.size;
+    if (this.wallAt[c] === u.id[i]) this.wallAt[c] = -1;
+    if (u.action[i] === Action.OnWall) {
+      const f = this.wallFoot[c];
+      u.x[i] = ((f % n) << CELL_SHIFT) + (CELL >> 1);
+      u.y[i] = (Math.trunc(f / n) << CELL_SHIFT) + (CELL >> 1);
+      u.action[i] = Action.Idle;
+    }
+    u.wall[i] = -1;
+    if (u.order[i] === Order.Wall) {
+      u.order[i] = Order.None;
+      u.orderTarget[i] = -1;
+    }
+    u.target[i] = -1;
+    u.anchorX[i] = u.x[i];
+    u.anchorY[i] = u.y[i];
+  }
+
+  /** Building slot s's footprint width and height in cells (sideX, sideY). */
+  wide(s: number): number {
+    const b = this.buildings.col;
+    return this.sideX(b.type[s], b.cellX[s], b.cellY[s]);
+  }
+  tall(s: number): number {
+    const b = this.buildings.col;
+    return this.sideY(b.type[s], b.cellX[s], b.cellY[s]);
+  }
+
+  /**
    * Marks or clears a building's footprint: buildingAt always, the grid's BLOCK_BUILDING
    * bit unless the building is walkable (farms).
    */
   setFootprint(id: number, type: BuildingType, cellX: number, cellY: number, on: boolean): void {
     const info = BUILDINGS[type];
-    const size = this.buildingSize(type);
+    const sx = this.sideX(type, cellX, cellY);
+    const sy = this.sideY(type, cellX, cellY);
     const n = this.size;
-    for (let y = cellY; y < cellY + size; y++) {
-      for (let x = cellX; x < cellX + size; x++) {
+    // A gate's cells are walked as refreshGates says (D-096).
+    const gate = type === BuildingType.Gate;
+    for (let y = cellY; y < cellY + sy; y++) {
+      for (let x = cellX; x < cellX + sx; x++) {
         this.buildingAt[y * n + x] = on ? id : -1;
-        if (info.walkable) continue;
+        if (info.walkable || gate) continue;
         if (on) this.grid[y * n + x] |= BLOCK_BUILDING;
         else this.grid[y * n + x] &= ~BLOCK_BUILDING;
       }
     }
-    if (info.walkable) return;
+    if (info.walkable || gate) return;
     if (on) this.blockVersion++;
     else this.openVersion++;
   }

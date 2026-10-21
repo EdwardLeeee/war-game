@@ -3,11 +3,11 @@
 // D-074), so neither side starts with a better layout. "skirmish" is internal (tests and
 // headless benchmarks), not part of the protocol. Random maps take "standard" only.
 
-import { IDENTITY, toCanon } from "../frame.ts";
-import { BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
+import { type Frame, fromCanon, IDENTITY, toCanon } from "../frame.ts";
+import { Action, BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
 import { FIXED_POSTS } from "./castle.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
-import { BUILDINGS, OUTPOST, START, TOWNS, UNITS } from "./rules.ts";
+import { BUILDINGS, GATE, OUTPOST, START, TOWNS, UNITS, WALLS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
@@ -76,6 +76,8 @@ export function placeTownGuards(w: World): void {
   for (let t = 0; t < w.townSize.length; t++) {
     const rule = TOWNS[w.townSize[t]];
     spawnMilitia(w, t, rule.militia);
+    // Closed gates in its walls (D-096).
+    if (GATE.on) for (let k = 0; k < w.castles[t].gates.length; k++) w.addGate(t, k);
     if (rule.tower && w.townSize[t] === TownSize.Large) {
       const tower = BUILDINGS[BuildingType.TownTower];
       const id = w.addBuilding(NEUTRAL, BuildingType.TownTower, w.map.tower.cellX, w.map.tower.cellY, tower.hp, 1000);
@@ -84,15 +86,148 @@ export function placeTownGuards(w: World): void {
   }
 }
 
-/** Militia at the town's posts (the nearest open cell if a post has been built over). */
+/**
+ * By TownSize, the militia (as militia posts, FIXED_POSTS order, read in a player's canonical frame)
+ * who stand on the walls instead (D-096, WALLS), straight out from post k to the ring of walls; and
+ * the posts of those who stay inside.
+ */
+const WALL_POSTS = [
+  [0, 1, 4],
+  [0, 1, 2, 3, 6, 7],
+];
+const INSIDE_POSTS = [
+  [2, 3, 5],
+  [4, 5, 8, 9, 10, 11],
+];
+
+/**
+ * Militia at the town's posts (the nearest open cell if a post has been built over). With walls
+ * and gates (D-096), one of every WALLS.militia stands on the walls instead, and the posts are read
+ * in a player's frame (mirrorPick), so mirror-image towns get mirror-image militia.
+ */
 export function spawnMilitia(w: World, town: number, count: number): void {
   const militia = UNITS[UnitType.Militia];
   const posts = w.map.posts ?? FIXED_POSTS;
-  for (let k = 0; k < count && k < posts.length; k++) {
-    const c = nearestWalkable(w, w.townX[town] + posts[k][0], w.townY[town] + posts[k][1]);
-    const id = w.addUnit(NEUTRAL, UnitType.Militia, center(c % w.size), center(Math.trunc(c / w.size)), militia.hp);
-    w.units.col.home[w.unit(id)] = town;
+  const u = w.units.col;
+  if (!WALLS.on || !GATE.on) {
+    for (let k = 0; k < count && k < posts.length; k++) {
+      const c = nearestWalkable(w, w.townX[town] + posts[k][0], w.townY[town] + posts[k][1]);
+      const id = w.addUnit(NEUTRAL, UnitType.Militia, center(c % w.size), center(Math.trunc(c / w.size)), militia.hp);
+      u.home[w.unit(id)] = town;
+    }
+    return;
   }
+  const up = Math.trunc(count / WALLS.militia);
+  const walls = mirrorPick(w, town, up, (f, k) => wallsFor(w, town, f, k));
+  const inside = mirrorPick(w, town, count - walls.length, (f, k) => insideFor(w, town, f, k));
+  for (const c of inside) {
+    const id = w.addUnit(NEUTRAL, UnitType.Militia, center(c % w.size), center(Math.trunc(c / w.size)), militia.hp);
+    u.home[w.unit(id)] = town;
+  }
+  for (const c of walls) {
+    const id = w.addUnit(NEUTRAL, UnitType.Militia, center(c % w.size), center(Math.trunc(c / w.size)), militia.hp);
+    const s = w.unit(id);
+    u.home[s] = town;
+    u.wall[s] = c;
+    w.wallAt[c] = id;
+    u.order[s] = Order.Wall;
+    u.orderTarget[s] = town;
+    u.action[s] = Action.OnWall;
+  }
+}
+
+/**
+ * `count` cells for town t's militia (D-096) from `pick` (the cells it gives in a frame, best
+ * first), mirror images for mirror-image towns: a town nearer one player's main city takes them in
+ * that player's canonical frame (its mirror image is nearer the other, and takes the images); a
+ * town as near both (on the axis) takes, in pick's order, each cell that is its own image and each
+ * other one together with its image, so its militia are their own image too (one fewer when only a
+ * pair would fit the last place).
+ */
+function mirrorPick(w: World, t: number, count: number, pick: (f: Frame, count: number) => number[]): number[] {
+  if (count <= 0) return [];
+  const n = w.size;
+  const f0 = w.map.frames[0] ?? IDENTITY;
+  const f1 = w.map.frames[1] ?? IDENTITY;
+  const d = (p: number) => {
+    const dx = w.homes[p].cellX - w.townX[t];
+    const dy = w.homes[p].cellY - w.townY[t];
+    return dx * dx + dy * dy;
+  };
+  const d0 = d(0);
+  const d1 = d(1);
+  if (d0 !== d1) return pick(d0 < d1 ? f0 : f1, count);
+  // On the axis: cell c's image is the cell with the same canonical place in the other frame.
+  const image = (c: number) => {
+    const k = toCanon(f0, c % n, Math.trunc(c / n));
+    const m = fromCanon(f1, k.u, k.v);
+    return m.y * n + m.x;
+  };
+  const out: number[] = [];
+  for (const c of pick(f0, 4 * count)) {
+    if (out.length >= count || out.includes(c)) continue;
+    const m = image(c);
+    if (m === c) out.push(c);
+    else if (out.length + 2 <= count && !out.includes(m)) out.push(c, m);
+  }
+  return out;
+}
+
+/** Up to `count` cells inside town t for militia, in frame f: the INSIDE_POSTS as canonical offsets, each the nearest open cell to it. */
+function insideFor(w: World, t: number, f: Frame, count: number): number[] {
+  const at = toCanon(f, w.townX[t], w.townY[t]);
+  const out: number[] = [];
+  for (const k of INSIDE_POSTS[w.townSize[t]]) {
+    if (out.length >= count) break;
+    const [pu, pv] = FIXED_POSTS[k];
+    const p = fromCanon(f, at.u + pu, at.v + pv);
+    const c = nearestWalkable(w, p.x, p.y);
+    // A post under a building (the big city's tower): out to the nearest open cell, as before.
+    if (c >= 0) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * Up to `count` free wall cells of town t, in frame f: for each militia post of WALL_POSTS (as a
+ * canonical offset), the free wall cell nearest the point straight out from it on the ring (from
+ * the middle of the walls); equally near, the lower canonical u + v, then u. Then any free ones,
+ * nearest the first, if more are asked for.
+ */
+function wallsFor(w: World, t: number, f: Frame, count: number): number[] {
+  const n = w.size;
+  const c = w.castles[t].inside;
+  // The walls' middle and half sides in canonical cells, twice over (a cell's middle is 2u + 1).
+  const a = toCanon(f, w.townX[t] + c.x0, w.townY[t] + c.y0);
+  const b = toCanon(f, w.townX[t] + c.x1, w.townY[t] + c.y1);
+  const cu2 = Math.min(a.u, b.u) + Math.max(a.u, b.u) + 1;
+  const cv2 = Math.min(a.v, b.v) + Math.max(a.v, b.v) + 1;
+  const hu2 = Math.abs(a.u - b.u) + 2;
+  const hv2 = Math.abs(a.v - b.v) + 2;
+  const taken: number[] = [];
+  const posts = WALL_POSTS[w.townSize[t]];
+  for (let k = 0; taken.length < count && k < Math.max(posts.length, count); k++) {
+    const [pu, pv] = k < posts.length ? FIXED_POSTS[posts[k]] : FIXED_POSTS[posts[0]];
+    const m = Math.max(Math.abs(pu), Math.abs(pv));
+    let best = -1;
+    let bestD = 0;
+    let bestK = 0;
+    for (const cell of w.wallCells[t]) {
+      if (w.wallAt[cell] >= 0 || taken.includes(cell)) continue;
+      const q = toCanon(f, cell % n, Math.trunc(cell / n));
+      const du = m * (2 * q.u + 1 - cu2) - pu * hu2;
+      const dv = m * (2 * q.v + 1 - cv2) - pv * hv2;
+      const dd = du * du + dv * dv;
+      const key = (q.u + q.v) * 2 * n + q.u;
+      if (best >= 0 && (dd > bestD || (dd === bestD && key >= bestK))) continue;
+      best = cell;
+      bestD = dd;
+      bestK = key;
+    }
+    if (best < 0) break;
+    taken.push(best);
+  }
+  return taken;
 }
 
 /** Internal: each side also gets 30 spearmen and 20 ranged, in a block toward the centre. */
