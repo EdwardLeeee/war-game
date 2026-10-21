@@ -2335,6 +2335,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** D-086 A4 (plan.buildSafe): its sites not done yet at the last think, and those lost since, till when. */
   const sitesSeen = new Map<number, { type: number; x: number; y: number }>();
   const lostSites: { type: number; x: number; y: number; until: number }[] = [];
+  /** D-086 A4 (plan.buildSafe): what it put down last think (691b4349: a barracks razed before the next think). */
+  const ordered: { type: number; x: number; y: number }[] = [];
   const frame = (x: number, y: number) => toCanon(know.frame, x, y);
   /** Order of a point in player 0's frame (for ties: player 1 breaks them the mirror-image way). */
   const rank = (x: number, y: number) => {
@@ -2955,6 +2957,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         for (let i = lostSites.length - 1; i >= 0; i--) if (lostSites[i].until <= tick) lostSites.splice(i, 1);
         const now = new Set(own.map((b) => b.id));
         for (const [id, l] of sitesSeen) if (!now.has(id)) lostSites.push({ ...l, until: tick + SITE_REST });
+        for (const o of ordered) if (!own.some((b) => b.type === o.type && b.x === o.x && b.y === o.y)) lostSites.push({ ...o, until: tick + SITE_REST });
+        ordered.length = 0;
         sitesSeen.clear();
         for (const b of own) if (b.progress < 1000) sitesSeen.set(b.id, { type: b.type, x: b.x, y: b.y });
       }
@@ -3071,6 +3075,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           out.push({ c: "build", u: gatherers.slice(0, crew), type: p.type, x: spot.x, y: spot.y });
           gatherers.splice(0, crew);
           spend(cost);
+          if (plan.buildSafe) ordered.push({ type: p.type, x: spot.x, y: spot.y });
           if (p.type === BuildingType.ArrowTower) counted.towersPlaced++;
           break;
         }
