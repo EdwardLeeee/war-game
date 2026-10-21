@@ -329,39 +329,41 @@ def dress_mage(u):
     return u
 
 
-def _horse_armour(u, M):
+def _horse_armour(u, M, hem=0.8):
     """馬甲 (具裝) after the 《武經總要》 parts (宋, 1044): 面簾 (face), 雞項 (neck), 盪胸 (chest), 馬身甲 (sides),
-    搭後 (rump), black-lacquered lamellar; the hem of the side panels edged in the player's colour. R2's barded horse
-    turned into lamellar: its top and skirts and neck cover take the new material; the plume and gold beads go."""
+    搭後 (rump), black-lacquered lamellar; the hem of the side panels edged in the player's colour. The horse's
+    caparison (top, skirts, neck cover: horse_r8.refit, on the realistic horse's barrel) takes the new material; the
+    plume and gold beads go."""
     hr = u.rigs["horse"]
     kind = "hcav_e"
     _gone(kind, ["plume", "h_hemt*"])
     for ob in bpy.data.objects:
         base = ob.name.split(".")[0]
-        if base in (f"{kind}_h_captop", f"{kind}_h_capskirtR", f"{kind}_h_capskirtL", f"{kind}_h_neckcover"):
+        if base in (f"{kind}_h_captop", f"{kind}_h_capskirtR", f"{kind}_h_capskirtL", f"{kind}_h_neckcover",
+                    f"{kind}_h_r8neckcover"):
             ob.data.materials[0] = M["horse_armour"]
         elif base == f"{kind}_chamfron":
             ob.data.materials[0] = M["iron"]
-    body2.zero_pose(hr)
+    hr.pose()                                  # the rest pose, as the caparison was built
     bones = units2.horse_bones(hr)
-    gap, a0, hem = 0.035, -28, 0.8
+    rows = units2.BARREL
+    gap, a0 = 0.035, -28
     for side in (1, -1):
-        rows = []
-        for y, zc, rx, ry in units2.BARREL:
+        band = []
+        for y, zc, rx, ry in rows:
             rx, ry = rx + gap, ry + gap
             xe, ze = rx * math.cos(math.radians(a0)), zc + ry * math.sin(math.radians(a0))
-            rows.append([(side * (xe + 0.045 * t + 0.008), y, ze + (hem - ze) * t) for t in (0.84, 1.0)])
-        units2._surface(f"{kind}_h_r8hem{'R' if side > 0 else 'L'}", rows, M["team"], hr, bones)
-    # 盪胸 over the chest, 搭後 round the rump
-    for name, y0, d, zs in (("chest", 0.62, 0.12, (1.36, 1.16, 0.94)), ("rump", -0.74, -0.13, (1.44, 1.22, 1.0))):
-        rows = []
-        for z in zs:
-            row = []
-            for k in range(11):
-                a = math.radians(-78 + 156 * k / 10)
-                row.append((0.27 * math.sin(a), y0 + d * math.cos(a), z))
-            rows.append(row)
-        units2._surface(f"{kind}_h_r8{name}", rows, M["horse_armour"], hr, bones)
+            band.append([(side * (xe + 0.045 * t + 0.008), y, ze + (hem - ze) * t) for t in (0.84, 1.0)])
+        units2._surface(f"{kind}_h_r8hem{'R' if side > 0 else 'L'}", band, M["team"], hr, bones)
+    # 盪胸 over the chest, 搭後 round the rump: in front of the first station and behind the last
+    (yb, zb, rxb, ryb), (yf, zf, rxf, ryf) = rows[0], rows[-1]
+    for name, y0, d, rx, zc, ry in (("chest", yf + 0.05, 0.12, rxf + 0.05, zf, ryf),
+                                    ("rump", yb - 0.02, -0.13, rxb + 0.05, zb, ryb)):
+        out = []
+        for z in (zc + 0.6 * ry, zc - 0.1 * ry, hem + 0.06):
+            out.append([(rx * math.sin(math.radians(-78 + 156 * k / 10)),
+                         y0 + d * math.cos(math.radians(-78 + 156 * k / 10)), z) for k in range(11)])
+        units2._surface(f"{kind}_h_r8{name}", out, M["horse_armour"], hr, bones)
     hr.pose()
 
 
@@ -382,7 +384,11 @@ def dress_cav(u):
     cyl(f"{kind}_r8socket", 0.022, 0.07, M["iron"], g, at=(0, 0, -1.9))
     lathe(f"{kind}_r8lancetip", [(0.0, 0.0), (0.03, 0.09), (0.034, 0.18), (0.012, 0.27)], M["steel"], g, segs=8,
           at=(0, 0, -2.2), scale=(1, 0.35, 1))
-    _horse_armour(u, M)
+    import horse_r8
+    _rows, hem, _old = horse_r8.refit(u, kind, M["horse_armour"], M["horse_armour"])
+    _gone(kind, ["chamfron", "h_r8mane"])           # the 雞項 covers the mane; the 面簾 replaces R2's box
+    horse_r8.face_mask(u.rigs["horse"], M["iron"], u.horse_fit)
+    _horse_armour(u, M, hem)
     return u
 
 

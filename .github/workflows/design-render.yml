@@ -44,6 +44,11 @@ env:
   # R7 version 2's realistic body (THIRD_PARTY_NOTICES.md): MPFB 2.0.18 from extensions.blender.org, sha256 as published
   MPFB_URL: "https://extensions.blender.org/download/sha256:c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad/add-on-mpfb-v2.0.18.zip?repository=%2Fapi%2Fv1%2Fextensions%2F&blender_version_min=4.2.0"
   MPFB_SHA256: "c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad"
+  # R8's realistic horse (CC0, OpenGameArt; THIRD_PARTY_NOTICES.md): the rigged blend and the textures
+  HORSE_BLEND_URL: "https://opengameart.org/sites/default/files/riggedHorse.blend"
+  HORSE_BLEND_SHA256: "9cca670b93a74d50e89263e50d55ab035a6c46aa7d2b21e354bdac6987037f4a"
+  HORSE_ZIP_URL: "https://opengameart.org/sites/default/files/horse.zip"
+  HORSE_ZIP_SHA256: "469704f523c97b18627c14d47dcda69271357f2bb2787309f461b310a0043d27"
 
 jobs:
   render:
@@ -108,6 +113,15 @@ jobs:
                 curl -sSfL -o "$RUNNER_TEMP/mpfb.zip" "$MPFB_URL"
                 echo "${MPFB_SHA256}  $RUNNER_TEMP/mpfb.zip" | sha256sum -c -
                 "$BLENDER" --command extension install-file -r user_default -e "$RUNNER_TEMP/mpfb.zip"
+              fi
+              if [ "$v" = 8 ] && { [ "$unit" = hcav_e ] || [ "$unit" = knight_w ]; }; then     # R8's horse
+                h="$RUNNER_TEMP/horse"; mkdir -p "$h/zip"
+                curl -sSfL -o "$h/riggedHorse.blend" "$HORSE_BLEND_URL"
+                curl -sSfL -o "$h/horse.zip" "$HORSE_ZIP_URL"
+                echo "${HORSE_BLEND_SHA256}  $h/riggedHorse.blend" | sha256sum -c -
+                echo "${HORSE_ZIP_SHA256}  $h/horse.zip" | sha256sum -c -
+                (cd "$h/zip" && unzip -q ../horse.zip)
+                export R8_HORSE="$h"
               fi
               cd ../production
               export R7_VERSION="$v" R7_TEX="$GITHUB_WORKSPACE/design/r7/build/tex"
