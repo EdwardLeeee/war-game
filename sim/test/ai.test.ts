@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, SIEGE, STAGING, stagePoint } from "../src/ai/ai.ts";
+import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
@@ -10,7 +10,7 @@ import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../s
 import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownState, UnitType } from "../src/protocol.ts";
+import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UnitType } from "../src/protocol.ts";
 import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
@@ -2478,4 +2478,105 @@ test("D-086 A4 (plan.buildSafe): with enemy soldiers in sight by the spot, hard 
   };
   assert.equal(builds(false), true, "off: it builds, as before");
   assert.equal(builds(true), false, "on: nothing put down by the enemy");
+});
+
+
+// --- D-096: castle gates ------------------------------------------------------------------------------------------
+
+/** A new game (the militia on the walls, the gates closed) and player 0's soldiers 9 cells west of the small town: `spears` and `ranged`. */
+function atGate(spears: number, ranged: number) {
+  const g = new Game({ seed: 1, scenario: "standard" });
+  const w = g.w;
+  const t = w.map.towns.find((x) => x.size === TownSize.Small)!;
+  const ids = [
+    ...Array.from({ length: spears }, (_, k) => put(g, 0, UnitType.Spearman, t.cellX - 9 - (k % 2), t.cellY - 2 + Math.trunc(k / 2))),
+    ...Array.from({ length: ranged }, (_, k) => put(g, 0, UnitType.Ranged, t.cellX - 11 - (k % 2), t.cellY - 2 + Math.trunc(k / 2))),
+  ];
+  g.fog.update(w);
+  const town = { x: t.cellX, y: t.cellY, size: t.size, state: w.townState[t.id], owner: w.townOwner[t.id] };
+  const army = ids.map((id) => ({ id, type: w.units.col.type[slotOf(g, id)] }));
+  return { g, w, t, town, army, view: buildView(g, 0), r: rules(w.map) };
+}
+
+test("D-096: an AI reads a town's gates from the view by their openings, and those on its walls", () => {
+  if (!rules().features?.gates) return;
+  const { g, t, town, r } = atGate(0, 0);
+  const all = townGates(buildView(g, null), r, town);
+  assert.equal(all.length, 4, "four gates");
+  assert.ok(all.every((x) => x.owner === NO_OWNER || x.owner === 255 || x.owner < 0 || x.owner > 1), "none of the players'");
+  assert.ok(all.every((x) => x.hp === r.towns[t.size].gateHp), "full");
+  assert.equal(onWalls(buildView(g, null), 0, r, town).length, r.towns[t.size].militia >> 1, "half the militia on the walls");
+});
+
+test("D-096 (GATE_AI.focus): by a town with its gates closed, the melee go for the gate nearest the army, ranged units for those on the walls", () => {
+  if (!rules().features?.gates) return;
+  const { town, army, view, r } = atGate(6, 6);
+  const rank = (x: number, y: number) => y * 1000 + x;
+  const go = gateOrders(view, r, 0, town, army, { x: town.x - 10, y: town.y }, rank);
+  assert.ok(go !== null);
+  assert.ok(go.gate.x < town.x, "the west gate");
+  const melee = go.orders.find((c) => c.c === "attack" && c.target === go.gate.id) as { u: number[] } | undefined;
+  assert.deepEqual(melee?.u, army.slice(0, 6).map((u) => u.id), "the spearmen on it");
+  const walls = new Set(onWalls(view, 0, r, town).map((u) => u.id));
+  const shots = go.orders.filter((c) => c.c === "attack" && c.target !== go.gate.id) as { u: number[]; target: number }[];
+  if (walls.size > 0) {
+    assert.ok(shots.length > 0 && shots.every((c) => walls.has(c.target)), "the archers on those on the walls");
+    assert.deepEqual(shots.flatMap((c) => c.u).sort((a, b) => a - b), army.slice(6).map((u) => u.id).sort((a, b) => a - b), "every archer");
+  }
+  assert.equal(gateOrders(view, r, 0, town, army, { x: town.x - 40, y: town.y }, rank), null, "not by the town: none");
+  const was = GATE_AI.focus;
+  GATE_AI.focus = false;
+  assert.equal(gateOrders(view, r, 0, town, army, { x: town.x - 10, y: town.y }, rank), null, "off: none");
+  GATE_AI.focus = was;
+});
+
+test("D-096 (GATE_AI.retreat b): what breaking in would cost falls with a bigger army and with archers for the slingers", () => {
+  if (!rules().features?.gates) return;
+  const few = atGate(4, 0);
+  const many = atGate(24, 0);
+  const mixed = atGate(18, 6);
+  const loss = (x: ReturnType<typeof atGate>) => gateLoss(x.view, x.r, 0, x.town, x.army);
+  assert.ok(loss(few) > loss(many), `${loss(few)} > ${loss(many)}`);
+  assert.ok(loss(mixed) < loss(many), `${loss(mixed)} < ${loss(many)}`);
+  assert.equal(gateLoss(few.view, few.r, 0, { ...few.town, state: TownState.Ruins }, few.army), 0, "ruins: open");
+});
+
+test("D-096 (GATE_AI.walls): plundering a town with enemy soldiers coming, hard sends its ranged units and mages there up the walls", () => {
+  if (!rules().features?.walls) return;
+  const up = (foes: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const t = w.map.towns.find((x) => x.size === TownSize.Small)!;
+    w.townState[t.id] = TownState.Plundering;
+    w.townOwner[t.id] = 0;
+    w.townTimer[t.id] = 600;
+    w.refreshGates(t.id);
+    w.tick = 12 * 1200;
+    const archers = [put(g, 0, UnitType.Ranged, t.cellX, t.cellY), put(g, 0, UnitType.Ranged, t.cellX + 1, t.cellY), put(g, 0, UnitType.Mage, t.cellX, t.cellY + 1)];
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, t.cellX - 1 + (k % 3), t.cellY - 1);
+    if (foes) for (let k = 0; k < 8; k++) put(g, 1, UnitType.Spearman, t.cellX + 9 + (k % 4), t.cellY + Math.trunc(k / 4));
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false }).think(buildView(g, 0));
+    return { archers, wall: out.find((c) => c.c === "wall") as { u: number[]; town: number } | undefined, t };
+  };
+  const yes = up(true);
+  assert.ok(yes.wall !== undefined && yes.wall.town === yes.t.id, "up the walls");
+  assert.deepEqual([...yes.wall.u].sort((a, b) => a - b), [...yes.archers].sort((a, b) => a - b), "the ranged units and the mage");
+  assert.equal(up(false).wall, undefined, "nobody coming: no");
+});
+
+test("D-096: hard plays a game against hard with the gates closed: it goes for gates (attack) and takes towns", () => {
+  if (!rules().features?.gates) return;
+  const r = new Runner({ seed: 3, scenario: "standard", ai: [true, true], maxTicks: 0, difficulty: ["hard", "hard"] });
+  const g = r.game;
+  const w = g.w;
+  const gates = new Set<number>();
+  for (let s = 0; s < w.buildings.count; s++) if (w.buildings.col.type[s] === BuildingType.Gate) gates.add(w.buildings.col.id[s]);
+  let taken = false;
+  while (!r.over && g.tick < 16 * 1200 && !taken) {
+    r.tick();
+    for (let t = 0; t < w.townSize.length; t++) if (w.townOwner[t] === 0 || w.townOwner[t] === 1) taken = true;
+  }
+  assert.ok(taken, "a town taken by minute 16");
+  assert.ok(g.log.some((c) => c.c === "attack" && gates.has((c as { target: number }).target)), "an attack on a gate");
 });

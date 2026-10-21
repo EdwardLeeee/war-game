@@ -36,6 +36,7 @@
 import { type Frame, footprintCentre, fromCanon, rectFromCanon, spawnCentre, toCanon } from "../frame.ts";
 import { checkPlacement } from "../placement.ts";
 import {
+  Action,
   type AiDifficulty,
   BUILDING_STRIDE,
   BuildingField,
@@ -819,6 +820,177 @@ function fortsAtTown(groups: readonly FortGroup[], x: number, y: number, radius:
   return w;
 }
 
+// --- castle gates (D-096) ------------------------------------------------------------------------------------------
+//
+// The user (2026-10-21): gates that close and can be broken, walls the owner's ranged units stand on, and a governed
+// town's gates that shoot. The simulation already breaks the gate nearest a soldier whose goal is behind it (ranged
+// units and mages at 1/5); these are what both AIs do on top (ceo 2026-10-22: on, the gates are a rule).
+
+/**
+ * D-096. focus: at a town with gates closed to it, the melee go for the gate nearest the army together, ranged units
+ * and mages for those on its walls first (else the gate too); walls: ranged units and mages in a town it is plundering
+ * go up its walls while enemy soldiers are by it; arrows: a governed enemy town's gate arrows count in what it takes;
+ * retreat, the break-off at a gate (ceo 2026-10-22, measured): "" as before, "a" not for its losses while the gate
+ * falls (GATE_FALL_SHARE of its hp in GATE_FALL), "b" not off to a town where the slings and gate arrows would take
+ * more than GATE_LOSS of its army's hp while it breaks in, "ab" both.
+ */
+export const GATE_AI = { focus: true, walls: true, arrows: true, retreat: "" };
+/** The army goes for the gate within this many cells of a town's walls (its radius + this). */
+const GATE_NEAR = 10;
+const GATE_FALL = 400;
+const GATE_FALL_SHARE = 10;
+const GATE_LOSS = 25;
+
+/** A castle gate in the view (in sight or remembered; a broken one is gone). */
+export interface Gate {
+  id: number;
+  owner: number;
+  x: number;
+  y: number;
+  hp: number;
+}
+
+/** D-096: the gates of town `t` standing in the view, by their openings (rules.towns[size].castle.gates); [] without gates. */
+export function townGates(view: PlayerView, rules: Rules, t: { x: number; y: number; size: number }): Gate[] {
+  const openings = rules.towns?.[t.size]?.castle?.gates;
+  if (rules.features?.gates !== true || openings === undefined) return [];
+  const out: Gate[] = [];
+  for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+    if (view.buildings[r + BuildingField.type] !== BuildingType.Gate) continue;
+    const x = view.buildings[r + BuildingField.cellX];
+    const y = view.buildings[r + BuildingField.cellY];
+    if (!openings.some((o) => o.length > 0 && t.x + o[0][0] === x && t.y + o[0][1] === y)) continue;
+    out.push({ id: view.buildings[r + BuildingField.id], owner: view.buildings[r + BuildingField.owner], x, y, hp: view.buildings[r + BuildingField.hp] });
+  }
+  return out;
+}
+
+/** D-096: units in sight on town `t`'s walls that are not `player`'s (militia too). */
+export function onWalls(view: PlayerView, player: number, rules: Rules, t: { x: number; y: number; size: number }): { id: number; x: number; y: number }[] {
+  // The walls are a square round the town (its radius out, a cell more for the big city's).
+  const reach = (rules.towns?.[t.size]?.radius ?? 5) + 1;
+  const out: { id: number; x: number; y: number }[] = [];
+  for (let r = 0; r < view.units.length; r += UNIT_STRIDE) {
+    if (view.units[r + UnitField.owner] === player || view.units[r + UnitField.action] !== Action.OnWall) continue;
+    const x = view.units[r + UnitField.x] >> CELL_SHIFT;
+    const y = view.units[r + UnitField.y] >> CELL_SHIFT;
+    if (Math.abs(x - t.x) > reach || Math.abs(y - t.y) > reach) continue;
+    out.push({ id: view.units[r + UnitField.id], x, y });
+  }
+  return out;
+}
+
+/**
+ * D-096 (GATE_AI.focus): the orders for `army` (centre `at`) by town `t` while gates closed to `player` stand: the melee
+ * on the gate nearest it, ranged units and mages on those on the walls nearest that gate, a third of them on each (else
+ * on the gate); null when it is not by the town or no gate is closed to it (in as before).
+ */
+export function gateOrders(
+  view: PlayerView,
+  rules: Rules,
+  player: number,
+  t: { x: number; y: number; size: number; state: number },
+  army: readonly { id: number; type: number }[],
+  at: { x: number; y: number },
+  rank: (x: number, y: number) => number,
+): { gate: Gate; orders: CommandBody[] } | null {
+  if (!GATE_AI.focus || t.state === TownState.Ruins || army.length === 0) return null;
+  const r0 = (rules.towns?.[t.size]?.radius ?? 5) + GATE_NEAR;
+  if ((at.x - t.x) * (at.x - t.x) + (at.y - t.y) * (at.y - t.y) > r0 * r0) return null;
+  let gate: Gate | undefined;
+  let bestD = 0;
+  for (const g of townGates(view, rules, t)) {
+    if (g.owner === player) continue;
+    const d = (g.x - at.x) * (g.x - at.x) + (g.y - at.y) * (g.y - at.y);
+    if (gate === undefined || d < bestD || (d === bestD && rank(g.x, g.y) < rank(gate.x, gate.y))) {
+      gate = g;
+      bestD = d;
+    }
+  }
+  if (gate === undefined) return null;
+  const g = gate;
+  const melee = army.filter((u) => u.type === UnitType.Spearman || u.type === UnitType.Cavalry).map((u) => u.id);
+  const shooters = army.filter((u) => u.type === UnitType.Ranged || u.type === UnitType.Mage).map((u) => u.id);
+  const dg = (w: { x: number; y: number }) => (w.x - g.x) * (w.x - g.x) + (w.y - g.y) * (w.y - g.y);
+  const walls = onWalls(view, player, rules, t).sort((a, b) => dg(a) - dg(b) || a.id - b.id);
+  const orders: CommandBody[] = [];
+  if (melee.length > 0) orders.push({ c: "attack", u: melee, target: g.id });
+  if (shooters.length > 0 && walls.length === 0) orders.push({ c: "attack", u: shooters, target: g.id });
+  else if (shooters.length > 0) {
+    const k = Math.min(walls.length, Math.max(1, Math.ceil(shooters.length / 3)));
+    for (let i = 0; i < k; i++) orders.push({ c: "attack", u: shooters.filter((_, j) => j % k === i), target: walls[i].id });
+  }
+  return { gate: g, orders };
+}
+
+/**
+ * D-096 (GATE_AI.retreat "b"): what the slings on town `t`'s walls and its gate arrows would take of `army`'s hp
+ * (percent) while its melee (and ranged units, at 1/5) break the weakest gate closed to `player`, its ranged units and
+ * mages shooting the slingers meanwhile; 0 with no gate closed to it.
+ */
+export function gateLoss(view: PlayerView, rules: Rules, player: number, t: { x: number; y: number; size: number; state: number; owner: number }, army: readonly { type: number }[]): number {
+  const tr = rules.towns?.[t.size];
+  if (rules.features?.gates !== true || tr === undefined || t.state === TownState.Ruins || (t.owner === player && t.state !== TownState.Neutral)) return 0;
+  const known = townGates(view, rules, t).filter((g) => g.owner !== player);
+  const hp = known.length > 0 ? Math.min(...known.map((g) => g.hp)) : (tr.gateHp ?? 0);
+  if (hp <= 0) return 0;
+  const num = rules.gate?.rangedNum ?? 1;
+  const den = rules.gate?.rangedDen ?? 5;
+  const takenNum = rules.walls?.takenNum ?? 3;
+  const takenDen = rules.walls?.takenDen ?? 4;
+  let melee = 0;
+  let onGate = 0;
+  let onWall = 0;
+  let armyHp = 0;
+  for (const u of army) {
+    const s = rules.units[u.type];
+    if (s === undefined) continue;
+    armyHp += s.hp + (s.shield ?? 0);
+    if (u.type === UnitType.Spearman || u.type === UnitType.Cavalry) melee += s.attack / s.cooldown;
+    else if (u.type === UnitType.Ranged || u.type === UnitType.Mage) {
+      onGate += Math.max(1, Math.trunc((s.attack * num) / den)) / s.cooldown;
+      onWall += (s.attack * takenNum) / takenDen / s.cooldown;
+    }
+  }
+  if (melee + onGate <= 0) return 100;
+  const ticks = hp / (melee + onGate);
+  const m = rules.units[UnitType.Militia];
+  const seen = onWalls(view, player, rules, t).length;
+  const slingers = t.state === TownState.Neutral && seen === 0 ? tr.militia >> 1 : seen;
+  let damage = 0;
+  if (slingers > 0 && m !== undefined) {
+    const each = m.attack / m.cooldown;
+    const down = onWall > 0 ? (slingers * m.hp) / onWall : ticks;
+    damage += down < ticks ? (slingers * each * down) / 2 : slingers * each * ticks;
+  }
+  const arrows = rules.arrows?.gate;
+  // Two gates' arrows on the army at one gate, one arrow each (their extra arrows count in gateArrowWorth).
+  if (arrows !== undefined && t.state === TownState.Governed && t.owner !== player) damage += ((2 * arrows.damage) / arrows.cooldown) * ticks;
+  return Math.round((damage * 100) / Math.max(1, armyHp));
+}
+
+/**
+ * D-096 (GATE_AI.arrows): what town `t`'s standing gates are worth as forts (fortValues' measure) while it is a
+ * governed enemy town: each shoots, and 1 more arrow for every perSoldiers of `guards` (its soldiers in sight by it).
+ */
+export function gateArrowWorth(view: PlayerView, rules: Rules, player: number, t: { x: number; y: number; size: number; state: number; owner: number }, guards: number): number {
+  const a = rules.arrows?.gate;
+  if (a === undefined || t.state !== TownState.Governed || t.owner === player) return 0;
+  const spear = rules.units[UnitType.Spearman];
+  const base = (spear.attack / spear.cooldown) * spear.hp;
+  const shots = 1 + Math.min(a.extraMax ?? 0, Math.trunc(guards / Math.max(1, a.perSoldiers ?? 3)));
+  let worth = 0;
+  for (const g of townGates(view, rules, t)) if (g.owner !== player) worth += Math.round(10 * Math.sqrt(((a.damage / a.cooldown) * shots * g.hp) / base));
+  return worth;
+}
+
+/** D-096 (GATE_AI.retreat "a"): the gate's hp seen (`seen`, pruned to GATE_FALL); whether it lost GATE_FALL_SHARE of `full` since. */
+function gateFalling(seen: { tick: number; hp: number }[], tick: number, hp: number, full: number): boolean {
+  while (seen.length > 0 && tick - seen[0].tick > GATE_FALL) seen.shift();
+  seen.push({ tick, hp });
+  return full > 0 && (seen[0].hp - hp) * 100 >= full * GATE_FALL_SHARE;
+}
+
 /** Falling back round forts (aroundForts): points this many cells beyond their reach, and half as far again, and twice... */
 const VIA_SPARE = 3;
 /** ...and on home once within VIA_NEAR cells of the point, or after VIA_TICKS. */
@@ -1223,6 +1395,12 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   const fortForget = NORMAL_FORT.again ? FORT_FORGET_AGAIN : FORT_FORGET;
   const fortStage = NORMAL_FORT.stage;
   let fortStop: FortStop | null = null;
+  /** D-096: the gate it goes for (-1: none), when it last told the army so, that gate's hp as seen (GATE_AI.retreat "a"), when it last sent soldiers up a wall. */
+  let gateAim = -1;
+  let gateMove = -100000;
+  let gateFell = false;
+  const gateSeen: { tick: number; hp: number }[] = [];
+  let wallMove = -100000;
   let razeAgain = -100000;
   /** While the army is away: the soldiers trained since, at home, pulling down a fort on its ground. */
   let reservesRazing = -1;
@@ -1709,12 +1887,32 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const w = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
         return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5) * 10 + enemy * 13;
       };
+      /**
+       * D-096 (GATE_AI.walls): with enemy soldiers by town `id` it holds, its ranged units and mages there go up the walls
+       * (told again every 100 ticks); those on its walls, or going up, are left out of the army's orders this think.
+       */
+      const wallUp = (id: number, t: Town) => {
+        if (!GATE_AI.walls || rules.features?.walls !== true) return;
+        const r = rules.towns?.[t.size]?.radius ?? 5;
+        const threat = foes.some((e) => dist2(e.x, e.y, t.x, t.y) <= (r + GATE_NEAR) * (r + GATE_NEAR));
+        const up = threat ? army.filter((u) => (u.type === UnitType.Ranged || u.type === UnitType.Mage) && u.order !== Order.Wall && dist2(u.x, u.y, t.x, t.y) <= (r + 3) * (r + 3)).map((u) => u.id) : [];
+        if (up.length > 0 && tick - wallMove >= 100) {
+          out.push({ c: "wall", u: up, town: id });
+          wallMove = tick;
+        }
+        const away = new Set([...up, ...army.filter((u) => u.order === Order.Wall && u.orderTarget === id).map((u) => u.id)]);
+        if (away.size === 0) return;
+        const keep = armyIds.filter((x) => !away.has(x));
+        armyIds.length = 0;
+        armyIds.push(...keep);
+      };
       const busy = [...towns.entries()].find(
         ([id, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice) && !stuck(id, t) && holdsOut(id, t),
       );
       if (busy !== undefined && !endgame) {
         // Stay inside until the plunder is done (not in the endgame: everything goes for the
-        // enemy main city then).
+        // enemy main city then). D-096 (GATE_AI.walls): enemy soldiers by it, its ranged units and mages up on the walls.
+        wallUp(busy[0], busy[1]);
         send(busy[1].x, busy[1].y, "town");
         return out;
       }
@@ -1844,6 +2042,28 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         via = v === undefined ? null : { x: v.x, y: v.y, until: tick + VIA_TICKS };
         out.push({ c: "retreat", u: armyIds, x: v?.x ?? rally.x, y: v?.y ?? rally.y });
       };
+      /** D-096 (GATE_AI.focus): at town `t` with gates closed to it, the army on the gate (orders again every FORT_EVERY); false: none (in as before). */
+      const gateFocus = (t: Town) => {
+        const go = gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), { x: cx, y: cy }, (x, y) => {
+          const f = frame(x, y);
+          return f.v * n + f.u;
+        });
+        if (go === null) {
+          // The gate down: in, now.
+          if (gateAim >= 0) lastMove = -100000;
+          gateAim = -1;
+          gateSeen.length = 0;
+          return false;
+        }
+        if (go.gate.id !== gateAim) gateSeen.length = 0;
+        gateFell = gateFalling(gateSeen, tick, go.gate.hp, rules.towns?.[t.size]?.gateHp ?? 0);
+        if (go.gate.id !== gateAim || tick - gateMove >= FORT_EVERY) {
+          out.push(...go.orders);
+          gateMove = tick;
+        }
+        gateAim = go.gate.id;
+        return true;
+      };
       if (mode === "raze" || ((mode === "gather" || mode === "defend") && !endgame && forts.length > 0)) {
         // With farmers going for a fort, the soldiers at home go with them, however few, to the end.
         const withCrew = crew.aim >= 0 ? ours.find((x) => x.id === crew.aim) : undefined;
@@ -1891,7 +2111,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       if (mode === "town" || mode === "base") {
         // Forts by the army too strong for it (D-081; not the siege's): it breaks off as when outnumbered.
         const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, cx, cy) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army));
-        if (!endgame && !(mode === "base" && cityLow) && (standing * 5 < armyAtStart * 2 || outnumbered || byArmy.length > 0)) {
+        // D-096 (GATE_AI.retreat "a"): not for its losses while the gate it is breaking falls.
+        const gateHolds = mode === "town" && GATE_AI.retreat.includes("a") && gateAim >= 0 && gateFell;
+        if (!endgame && !(mode === "base" && cityLow) && ((standing * 5 < armyAtStart * 2 && !gateHolds) || outnumbered || byArmy.length > 0)) {
+          gateAim = -1;
           // Ground down or outnumbered: break off (retreat ignores enemies) and rebuild.
           if (mode === "base") {
             baseBroken = true;
@@ -1991,7 +2214,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // parked whole armies in the middle of the map until the game ran out.
           const t = towns.get(targetTown);
           if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "gather";
-          else send(t.x, t.y, "town");
+          else if (!gateFocus(t)) send(t.x, t.y, "town");
         } else {
           // March together (a group move keeps to the slowest and in formation) until those that
           // set out stand by the enemy main city; then fight the defenders there first (a move
@@ -2056,6 +2279,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // Nor back to one it fell back from because of forts, while it remembers them (ceo 2026-10-10: the straight way
           // from home can miss forts the walk passes by).
           .filter(([id]) => !fortsBar(id))
+          // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
+          .filter(([, t]) => !GATE_AI.arrows || vsForts(army) * 10 >= gateArrowWorth(view, rules, player, t, foes.filter((e) => dist2(e.x, e.y, t.x, t.y) <= 100).length) * 13)
+          .filter(([, t]) => !GATE_AI.retreat.includes("b") || gateLoss(view, rules, player, t, army) <= GATE_LOSS)
           .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
@@ -2580,6 +2806,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const fortFailed = plan.fortAgain ? FORT_FAILED_AGAIN : FORT_FAILED;
   const fortForget = plan.fortAgain ? FORT_FORGET_AGAIN : FORT_FORGET;
   let fortStop: FortStop | null = null;
+  /** D-096: the gate it goes for (-1: none), when it last told the army so, that gate's hp as seen (GATE_AI.retreat "a"), when it last sent soldiers up a wall. */
+  let gateAim = -1;
+  let gateMove = -100000;
+  let gateFell = false;
+  const gateSeen: { tick: number; hp: number }[] = [];
+  let wallMove = -100000;
   let razeAgain = -100000;
   /** While the army is away: the soldiers left at home pulling down a fort on its ground, and that fort. */
   let reservesRazing = -1;
@@ -2625,7 +2857,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3846,6 +4078,26 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const w = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
           return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5) * 10 + enemy * 13;
         };
+        /**
+         * D-096 (GATE_AI.walls): with enemy soldiers by town `id` it holds, its ranged units and mages there go up the walls
+         * (told again every 100 ticks); those on its walls, or going up, are left out of the army's orders this think.
+         */
+        const wallUp = (id: number, t: HardTown) => {
+          if (!GATE_AI.walls || rules.features?.walls !== true) return;
+          const r = rules.towns?.[t.size]?.radius ?? 5;
+          const threat = foes.some((e) => dist2(e.x, e.y, t.x, t.y) <= (r + GATE_NEAR) * (r + GATE_NEAR));
+          const up = threat ? army.filter((u) => (u.type === UnitType.Ranged || u.type === UnitType.Mage) && u.order !== Order.Wall && dist2(u.x, u.y, t.x, t.y) <= (r + 3) * (r + 3)).map((u) => u.id) : [];
+          if (up.length > 0 && tick - wallMove >= 100) {
+            out.push({ c: "wall", u: up, town: id });
+            wallMove = tick;
+            counted.wallUp++;
+          }
+          const away = new Set([...up, ...army.filter((u) => u.order === Order.Wall && u.orderTarget === id).map((u) => u.id)]);
+          if (away.size === 0) return;
+          const keep = armyIds.filter((x) => !away.has(x));
+          armyIds.length = 0;
+          armyIds.push(...keep);
+        };
         const busy = [...towns.entries()].find(
           ([id, t]) =>
             t.owner === player &&
@@ -3853,6 +4105,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             holdsOut(t),
         );
         if (busy !== undefined && !endgame) {
+          // D-096 (GATE_AI.walls): enemy soldiers by it, its ranged units and mages up on the walls.
+          wallUp(busy[0], busy[1]);
           send(busy[1].x, busy[1].y, "town");
           return;
         }
@@ -3994,13 +4248,37 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (mode === "raze") mode = "home";
           razing = -1;
         }
+        /** D-096 (GATE_AI.focus): at town `t` with gates closed to it, the army on the gate (orders again every FORT_EVERY); false: none (in as before). */
+        const gateFocus = (t: HardTown) => {
+          const go = gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), ac, rank);
+          if (go === null) {
+            // The gate down: in, now.
+            if (gateAim >= 0) lastMove = -100000;
+            gateAim = -1;
+            gateSeen.length = 0;
+            return false;
+          }
+          if (go.gate.id !== gateAim) gateSeen.length = 0;
+          gateFell = gateFalling(gateSeen, tick, go.gate.hp, rules.towns?.[t.size]?.gateHp ?? 0);
+          if (go.gate.id !== gateAim || tick - gateMove >= FORT_EVERY) {
+            out.push(...go.orders);
+            gateMove = tick;
+            sent = true;
+            counted.gateFocus++;
+          }
+          gateAim = go.gate.id;
+          return true;
+        };
         if (mode === "town") {
           const t = towns.get(targetTown);
           // Forts by the army too strong for it (D-081): it breaks off as from a stronger enemy.
           const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, ac.x, ac.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army));
           if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || (t.state === TownState.Ruins && !staleRuin(targetTown, t))) mode = "home";
-          else if (standing * 5 < armyAtStart * 2 || local > armyWorth || byArmy.length > 0) {
+          // D-096 (GATE_AI.retreat "a"): not for its losses while the gate it is breaking falls.
+          else if ((standing * 5 < armyAtStart * 2 && !(GATE_AI.retreat.includes("a") && gateAim >= 0 && gateFell)) || local > armyWorth || byArmy.length > 0) {
             razing = -1;
+            if (gateAim >= 0) counted.gateBrokeOff++;
+            gateAim = -1;
             // D-081 / A4 (plan.fortStage): broke off from the forts it gathered for: remembered too.
             const stopped = fortStop;
             remember(army, stopped !== null && stopped.go ? [...byArmy, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byArmy);
@@ -4047,7 +4325,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               return;
             }
             razing = -1;
-            send(t.x, t.y, "town");
+            if (!gateFocus(t)) send(t.x, t.y, "town");
             return;
           }
         }
@@ -4262,6 +4540,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             let there = 0;
             for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= 14 * 14) there += WORTH[e.type];
             if (there * 10 > armyWorth * 8) continue;
+            // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
+            if (GATE_AI.arrows && (there + gateArrowWorth(view, rules, player, t, Math.trunc(there / 10))) * 10 > armyWorth * 8) continue;
+            if (GATE_AI.retreat.includes("b") && gateLoss(view, rules, player, t, army) > GATE_LOSS) {
+              counted.gateSkipped++;
+              continue;
+            }
             // D-081: not where forts too strong for it stand on the way or by the town, unless it can go round.
             if (groups.length > 0 && !routeFor({ x: home.cellX, y: home.cellY }, t, army).go) continue;
             // Nor back to one it fell back from because of forts, while it remembers them (ceo 2026-10-10: the straight way
