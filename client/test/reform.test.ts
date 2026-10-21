@@ -36,12 +36,13 @@ test("整理隊形：任何一名士兵 8 格內有敵人就不整理（量過�
   assert.equal(enemyTooClose(group, []), false);
 });
 
-test("整理隊形：彼此 3 格內連得起來（可以經過別人）算同一堆，模擬原地排；有一名離群就不是", () => {
-  assert.equal(REFORM_LINK_CELLS, 3);
-  // A line 3 cells apart each: linked through the middle one, though the ends are 6 apart.
-  assert.equal(oneCluster([{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 6, y: 0 }]), true);
-  // Spearmen 6 cells ahead after a chase: two lots.
-  assert.equal(oneCluster([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 6 }, { x: 1, y: 6.5 }]), false);
+test("整理隊形：彼此 8 格內連得起來（可以經過別人）算同一堆，模擬原地排；有一群離得更遠就不是", () => {
+  assert.equal(REFORM_LINK_CELLS, 8);
+  // A line 8 cells apart each: linked through the middle one, though the ends are 16 apart.
+  assert.equal(oneCluster([{ x: 0, y: 0 }, { x: 8, y: 0 }, { x: 16, y: 0 }]), true);
+  // Spearmen 6 cells ahead after a chase: still one lot. 9 cells: two.
+  assert.equal(oneCluster([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 6 }, { x: 1, y: 6.5 }]), true);
+  assert.equal(oneCluster([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 9 }, { x: 1, y: 9.5 }]), false);
   assert.equal(oneCluster([{ x: 5, y: 5 }]), true);
   assert.equal(oneCluster([]), false);
 });

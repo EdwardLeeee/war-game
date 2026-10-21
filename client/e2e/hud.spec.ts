@@ -841,7 +841,7 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await expect(panel).not.toContainText("隊形");
 });
 
-test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；看不到敵人時面向剛才看到敵人的地方：站在一起原地排（face），分散時往那邊走一格集合（移動）", async ({ page }, info) => {
+test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；看不到敵人時面向剛才看到敵人的地方：8 格內連得起來就原地排（face），更分散時往那邊走一格集合（移動）", async ({ page }, info) => {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const ids = await ownIds(page, [1, 2, 3]);
   await selectForCommands(page, ids);
@@ -869,10 +869,10 @@ test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；看
   expect(order).toMatchObject({ c: "formation", u: ids, loose: false });
   expect([0, 1], "east, or a step south of it").toContain(order?.face);
 
-  // Spread out (the spearmen 6 cells off, as after a chase): a walk of one cell east gathers them into one formation.
-  const spread = [[11, 64], [12, 64], [13, 64], [14, 64], [11, 65], [12, 65], [11, 71], [12, 71], [13, 71], [14, 71], [11, 72], [12, 72]].map(([x, y]) => ({ x, y }));
+  // Farther apart than 8 cells (two lots 10 cells apart): a walk of one cell east gathers them into one formation.
+  const spread = [[11, 62], [12, 62], [13, 62], [14, 62], [11, 63], [12, 63], [11, 73], [12, 73], [13, 73], [14, 73], [11, 74], [12, 74]].map(([x, y]) => ({ x, y }));
   await place(page, ids, spread);
-  await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id) && u.cy >= 71).length).toBe(6);
+  await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id) && u.cy >= 73).length).toBe(6);
   const mark = (await sent(page)).length;
   await reform.tap();
   await expect.poll(async () => (await sent(page)).slice(mark).filter((c) => c.auto !== true).at(-1)).toMatchObject({ c: "retreat", u: ids, x: 13, y: 68 });

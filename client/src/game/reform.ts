@@ -8,7 +8,7 @@
 //   5. else the way they face now (null: the simulation's own re-forming in place keeps it).
 // The game then has them re-form facing it (game.ts reform()), spearmen in front, ranged next,
 // mages last: standing together (oneCluster), the simulation's re-forming in place with that
-// `face` (D-095 B); spread out, a walk of one cell that way, so they gather into one formation
+// `face` (D-095 B); farther apart, a walk of one cell that way, so they gather into one formation
 // (ceo: 「整隊沒有排成一個」 is what the user minds). Not with an enemy near (enemyTooClose).
 // Cells; pure, for the unit tests.
 
@@ -92,9 +92,11 @@ export function enemyTooClose(soldiers: readonly Spot[], inSight: readonly Spot[
 
 /**
  * Units standing this close (cells), or linked through others, are re-formed in place as one
- * formation by the simulation (REFORM_LINK in sim/src/core/commands.ts).
+ * formation by the simulation when the formation command has a `face` (sim/src/core/commands.ts;
+ * ceo 2026-10-21: 8 cells, enough for spearmen who went 6 cells after the enemy). Farther apart, the
+ * game walks them together instead.
  */
-export const REFORM_LINK_CELLS = 3;
+export const REFORM_LINK_CELLS = 8;
 
 /** Whether the soldiers stand as one lot: each linked to the others within REFORM_LINK_CELLS, through others if need be. */
 export function oneCluster(spots: readonly Spot[]): boolean {
