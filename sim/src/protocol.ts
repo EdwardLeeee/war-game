@@ -164,6 +164,11 @@ export const Action = {
   Calibrate: 6,
   /** Hidden inside a building (recall); not drawn. */
   Garrisoned: 7,
+  /**
+   * Standing on a castle wall (D-096, `wall`; neutral militia too): on that wall cell, never
+   * moving, shooting from it; hit by arrows and spells for less, by melee only from inside.
+   */
+  OnWall: 8,
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 
@@ -192,6 +197,12 @@ export const Order = {
    * out of its army groups.
    */
   Post: 10,
+  /**
+   * Going up onto a castle wall or standing on it (D-096, `wall`; action OnWall once there):
+   * orderTarget is the town. Any move, attack, retreat or stop (or `leave` with the town) takes the
+   * soldier down to the cell inside the walls it climbed from.
+   */
+  Wall: 11,
 } as const;
 export type Order = (typeof Order)[keyof typeof Order];
 
@@ -791,6 +802,14 @@ export type CommandBody =
   | { c: "garrison"; u: number[]; building: number }
   /** Soldiers hiding in the building come out: all of them, or those in `u` (round 7). */
   | { c: "leave"; building: number; u?: number[] }
+  /**
+   * Ranged units and mages of `u` go up onto the walls of town `town`, held by the player (D-096;
+   * awaiting the choice, plundering, repairing, governed): each to the free wall cell nearest it.
+   * Down again with `leave` { u, town } or any move, attack, retreat or stop.
+   */
+  | { c: "wall"; u: number[]; town: number }
+  /** Units of `u` standing on (or going up onto) town `town`'s walls come down (D-096). */
+  | { c: "leave_wall"; u: number[]; town: number }
   /** Spearmen in `u` go and stand guard at an own finished outpost (D-080; others in `u` are left as they are). */
   | { c: "post"; u: number[]; building: number }
   /** Every spearman posted at the outpost stops guarding it (D-080). */
@@ -826,6 +845,8 @@ export const COMMAND_KINDS = [
   "town_choice",
   "garrison",
   "leave",
+  "wall",
+  "leave_wall",
   "post",
   "unpost",
   "outpost_mode",

@@ -189,6 +189,8 @@ export class Economy {
   /** Lets a hidden farmer, or a soldier hiding in a building (round 7), out where it went in. */
   release(w: World, i: number): void {
     const u = w.units.col;
+    // Off the wall first (D-096): any order takes a soldier down.
+    if (u.wall[i] >= 0) w.offWall(i);
     if (u.action[i] !== Action.Garrisoned) return;
     const farmer = u.type[i] === UnitType.Farmer;
     // A calibrating mage keeps its building in prevTarget (units.ts, startCast).

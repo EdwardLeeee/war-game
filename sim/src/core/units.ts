@@ -37,6 +37,7 @@ import {
   DODGE,
   FIRE_BACK,
   GATE,
+  WALLS,
   HOME_GUARD,
   COUNTER_ATTACK,
   MAGE_BOUNTY,
@@ -484,6 +485,8 @@ export class UnitSystem {
     const n = w.size;
     const ci = (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT);
     const cj = (u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT);
+    // One on a wall: only from inside its town (WALLS).
+    if (onWall(w, j)) return w.insideAt[ci] === w.wallTown[cj];
     // Both outside every castle, or inside the same one: as everywhere else, taken as reachable
     // (the areas are only worked out where walls and gates stand between them).
     if (w.insideAt[ci] === w.insideAt[cj]) return true;
@@ -922,6 +925,121 @@ export class UnitSystem {
     this.attacking[i] = 1;
   }
 
+  // --- on the walls (D-096) ----------------------------------------------------------------
+
+  /**
+   * A soldier going up onto its wall cell (Order.Wall): it walks to the cell inside it climbs from,
+   * ignoring enemies, as to a shelter, and steps up once there. The town no longer its owner's
+   * (a militia's: always theirs), it stays where it is.
+   */
+  private toWall(w: World, fields: FieldCache, i: number): void {
+    const u = w.units.col;
+    const n = w.size;
+    const c = u.wall[i];
+    u.target[i] = -1;
+    if (u.owner[i] < PLAYER_COUNT && !w.heldBy(w.wallTown[c], u.owner[i])) {
+      w.offWall(i);
+      u.action[i] = Action.Idle;
+      return;
+    }
+    const f = w.wallFoot[c];
+    const fx = ((f % n) << CELL_SHIFT) + (CELL >> 1);
+    const fy = (Math.trunc(f / n) << CELL_SHIFT) + (CELL >> 1);
+    const dx = fx - u.x[i];
+    const dy = fy - u.y[i];
+    if (dx * dx + dy * dy <= ARRIVE_DISTANCE * ARRIVE_DISTANCE) {
+      u.x[i] = ((c % n) << CELL_SHIFT) + (CELL >> 1);
+      u.y[i] = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
+      u.action[i] = Action.OnWall;
+      u.anchorX[i] = u.x[i];
+      u.anchorY[i] = u.y[i];
+      return;
+    }
+    steerTo(w, fields, i, fx, fy, f, UNITS[u.type[i]].speed);
+  }
+
+  /**
+   * A soldier on a wall (WALLS): it shoots the visible enemy unit nearest it within its range plus
+   * WALLS.range (militia throw stones to WALLS.sling); a mage on autocast fires the cannon as ever.
+   * It never moves. A player's town lost (or in ruins), it comes down.
+   */
+  private fromWall(w: World, fog: Fog, i: number): void {
+    const u = w.units.col;
+    if (u.order[i] === Order.Cast) {
+      u.target[i] = -1;
+      u.action[i] = Action.Calibrate;
+      u.facing[i] = dir16(u.castX[i] - u.x[i], u.castY[i] - u.y[i]);
+      return;
+    }
+    if (u.owner[i] < PLAYER_COUNT && !w.heldBy(w.wallTown[u.wall[i]], u.owner[i])) {
+      w.offWall(i);
+      return;
+    }
+    u.action[i] = Action.OnWall;
+    const info = UNITS[u.type[i]];
+    const look = (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0;
+    if (
+      u.type[i] === UnitType.Mage &&
+      (u.flags[i] & UnitFlag.Autocast) !== 0 &&
+      u.castCooldown[i] === 0 &&
+      look &&
+      w.res[u.owner[i] * 4 + Resource.Crystal] >= CANNON.crystal
+    ) {
+      const aim = this.autocastAim(w, fog, i);
+      if (aim >= 0) {
+        startCast(w, i, u.x[aim], u.y[aim], true);
+        u.action[i] = Action.Calibrate;
+        return;
+      }
+    }
+    const reach = wallReach(u.type[i], info.range);
+    let tid = u.target[i];
+    if (tid >= 0) {
+      const ts = w.unit(tid);
+      const dx = ts >= 0 ? u.x[ts] - u.x[i] : 0;
+      const dy = ts >= 0 ? u.y[ts] - u.y[i] : 0;
+      if (ts < 0 || u.action[ts] === Action.Garrisoned || !this.sees(fog, u.owner[i], u.x[ts], u.y[ts], w.size) || dx * dx + dy * dy > reach * reach) tid = -1;
+    }
+    if (tid < 0 && look) tid = this.nearestUnit(w, fog, i, reach);
+    u.target[i] = tid;
+    if (tid < 0) return;
+    const ts = w.unit(tid);
+    u.facing[i] = dir16(u.x[ts] - u.x[i], u.y[ts] - u.y[i]);
+    this.attacking[i] = 1;
+  }
+
+  /** The visible enemy unit nearest unit i within `reach` (ties as findTarget), as an id, or -1. */
+  private nearestUnit(w: World, fog: Fog, i: number, reach: number): number {
+    const u = w.units.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const mx = u.x[i];
+    const my = u.y[i];
+    const cells = (reach >> CELL_SHIFT) + 1;
+    const cx = mx >> CELL_SHIFT;
+    const cy = my >> CELL_SHIFT;
+    const r2 = reach * reach;
+    const high = preferHighId(w, u.id[i]);
+    let best = r2 + 1;
+    let bestId = -1;
+    for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
+      for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (u.owner[j] === me || u.action[j] === Action.Garrisoned) continue;
+          const dx = u.x[j] - mx;
+          const dy = u.y[j] - my;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > r2 || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+          if (d2 < best || (d2 === best && (high ? u.id[j] > bestId : u.id[j] < bestId))) {
+            best = d2;
+            bestId = u.id[j];
+          }
+        }
+      }
+    }
+    return bestId;
+  }
+
   /** The visible enemy unit nearest building bs's footprint within `reach` of it (id), or -1. */
   private nearestFrom(w: World, fog: Fog, i: number, bs: number, reach: number): number {
     const u = w.units.col;
@@ -1053,6 +1171,12 @@ export class UnitSystem {
       if (u.type[i] !== UnitType.Farmer) this.fromInside(w, fog, i);
       return;
     }
+    // On a castle wall, or going up (D-096).
+    if (u.wall[i] >= 0) {
+      if (onWall(w, i)) this.fromWall(w, fog, i);
+      else this.toWall(w, fields, i);
+      return;
+    }
     const order = u.order[i];
     const farmer = u.type[i] === UnitType.Farmer;
     if (this.warns.length > 0 && this.dodges(w, i) && this.dodge(w, fog, i)) return;
@@ -1174,6 +1298,11 @@ export class UnitSystem {
         tid = m;
       }
     }
+    // Melee and a target on a wall it cannot reach from here (D-096): let it be, unless told to attack it.
+    if (tid >= 0 && order !== Order.Attack && info.range <= CELL) {
+      const t0 = w.unit(tid);
+      if (t0 >= 0 && onWall(w, t0) && !this.reaches(w, i, t0)) tid = -1;
+    }
     u.target[i] = tid;
 
     if (tid >= 0) {
@@ -1197,7 +1326,8 @@ export class UnitSystem {
         d2 = rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], sx, sy);
       }
       u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
-      if (d2 <= info.range * info.range) {
+      // Melee at one on a wall from outside its town (D-096) cannot hit it (an attack goes in by a gate, below).
+      if (d2 <= info.range * info.range && !(ts >= 0 && info.range <= CELL && onWall(w, ts) && !this.reaches(w, i, ts))) {
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
         return;
@@ -1312,7 +1442,9 @@ export class UnitSystem {
     const here = this.regions.of(w, (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT), cls);
     if (here < 0) return -1;
     if (ts >= 0) {
-      const there = this.regions.of(w, (u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT), cls);
+      const c = (u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT);
+      // One on a wall (D-096): melee gets at it from the cell inside next to it.
+      const there = this.regions.of(w, onWall(w, ts) && UNITS[u.type[i]].range <= CELL ? w.wallFoot[c] : c, cls);
       return there >= 0 && there !== here ? here : -1;
     }
     const bs = w.building(tid);
@@ -1547,7 +1679,8 @@ export class UnitSystem {
     for (let i = 0; i < count; i++) {
       const xi = u.x[i];
       const yi = u.y[i];
-      if (u.action[i] === Action.Garrisoned) {
+      // Hiding in a building, or standing on a wall (D-096): it does not move.
+      if (u.action[i] === Action.Garrisoned || onWall(w, i)) {
         this.newX[i] = xi;
         this.newY[i] = yi;
         continue;
@@ -1562,7 +1695,7 @@ export class UnitSystem {
       for (let y = Math.max(cy - 1, 0); y <= Math.min(cy + 1, n - 1); y++) {
         for (let x = Math.max(cx - 1, 0); x <= Math.min(cx + 1, n - 1); x++) {
           for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
-            if (j === i || u.action[j] === Action.Garrisoned) continue;
+            if (j === i || u.action[j] === Action.Garrisoned || onWall(w, j)) continue;
             if (ti !== 0 && this.team[j] === ti && u.owner[j] === u.owner[i]) continue;
             const dx = xi - u.x[j];
             const dy = yi - u.y[j];
@@ -1713,8 +1846,10 @@ export class UnitSystem {
       }
       if (bestSlot < 0) continue;
       const arrows = type === BuildingType.MainCity ? 1 + Math.min(b.garrisoned[s], MAIN_ARROW.extraMax) : 1;
-      this.unitDamage[bestSlot] += arrow.damage * arrows;
-      this.shieldDamage[bestSlot] += arrow.damage * arrows;
+      // On a wall (D-096): arrows for less too.
+      const hits = onWall(w, bestSlot) ? coverDamage(arrow.damage * arrows) : arrow.damage * arrows;
+      this.unitDamage[bestSlot] += hits;
+      this.shieldDamage[bestSlot] += hits;
       this.unitHitBy[bestSlot] |= 1 << b.owner[s];
       u.hitBy[bestSlot] = b.owner[s];
       u.hitCause[bestSlot] = HitCause.Arrow;
@@ -1786,8 +1921,10 @@ export class UnitSystem {
     if (OUTPOST.on) this.provoke(w, ts, attackerId);
     u.hitCause[ts] = cause;
     u.hitById[ts] = attackerId;
-    this.unitDamage[ts] += damage(attack, attackerType, u.type[ts]);
-    this.shieldDamage[ts] += damage(attack, attackerType, SHIELD);
+    // On a wall (D-096): ranged units' and mages' shots (not the cannon) for less.
+    const cover = cause !== HitCause.Cannon && (attackerType === UnitType.Ranged || attackerType === UnitType.Mage) && onWall(w, ts);
+    this.unitDamage[ts] += cover ? coverDamage(damage(attack, attackerType, u.type[ts])) : damage(attack, attackerType, u.type[ts]);
+    this.shieldDamage[ts] += cover ? coverDamage(damage(attack, attackerType, SHIELD)) : damage(attack, attackerType, SHIELD);
     this.unitHitBy[ts] |= 1 << attackerOwner;
     u.hitBy[ts] = attackerOwner;
   }
@@ -1856,6 +1993,8 @@ export class UnitSystem {
       if (this.deadUnits[i] === 1) {
         anyUnit = true;
         w.unitSlot[u.id[i]] = -1;
+        // Its wall cell is free again (D-096).
+        if (u.wall[i] >= 0 && w.wallAt[u.wall[i]] === u.id[i]) w.wallAt[u.wall[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
         // D-089's measurement: soldiers lost at the castles and at their gates.
         if (u.owner[i] < PLAYER_COUNT && u.type[i] !== UnitType.Farmer) {
@@ -1961,6 +2100,22 @@ export function atHome(w: World, i: number): boolean {
 const POST_PLACES: readonly (readonly [number, number])[] = [
   [-1, -1], [2, -1], [-1, 2], [2, 2], [0, -1], [1, 2],
 ];
+
+/** Is unit slot i standing on its castle wall (D-096): its wall cell is where it is? */
+export function onWall(w: World, i: number): boolean {
+  const u = w.units.col;
+  return u.wall[i] >= 0 && (u.y[i] >> CELL_SHIFT) * w.size + (u.x[i] >> CELL_SHIFT) === u.wall[i];
+}
+
+/** A hit on a soldier on a wall by an arrow or a shot (WALLS.takenNum / takenDen, at least 1). */
+export function coverDamage(d: number): number {
+  return Math.max(1, idiv(d * WALLS.takenNum, WALLS.takenDen));
+}
+
+/** How far a soldier on a wall shoots (WALLS): its range plus WALLS.range; militia throw stones to WALLS.sling. */
+export function wallReach(type: number, range: number): number {
+  return type === UnitType.Militia ? WALLS.sling : range + WALLS.range;
+}
 
 /** Is cell a before cell b in frame f's canonical order (lower v, then u)? */
 function canonBefore(f: Frame, a: number, b: number, n: number): boolean {

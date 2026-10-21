@@ -31,6 +31,7 @@ import type { Emit } from "./economy.ts";
 import { type Fog, townInSight } from "./fog.ts";
 import { GATE, governPerMinute, PLUNDER_RECOVERY, TOWNS, townIncomePermille } from "./rules.ts";
 import { spawnMilitia } from "./scenarios.ts";
+import { onWall } from "./units.ts";
 import { GATES, type World } from "./world.ts";
 
 /** Production is paid out every this many ticks. */
@@ -67,8 +68,8 @@ export class TownSystem {
           continue;
         }
         if (o >= PLAYER_COUNT || u.type[s] === UnitType.Farmer || u.action[s] === Action.Garrisoned) continue;
-        // Inside the walls (D-089).
-        if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT)) present[o]++;
+        // Inside the walls (D-089), or on them (D-096).
+        if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT) || (u.wall[s] >= 0 && w.wallTown[u.wall[s]] === t && onWall(w, s))) present[o]++;
       }
       let tower = false;
       for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.TownTower && b.town[s] === t) tower = true;

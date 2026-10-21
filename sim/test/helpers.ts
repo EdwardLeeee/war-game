@@ -10,6 +10,8 @@ export function emptyGame(): Game {
   const w = g.w;
   for (let s = 0; s < w.units.count; s++) w.unitSlot[w.units.col.id[s]] = -1;
   w.units.count = 0;
+  // The militia on the walls are gone too (D-096).
+  w.wallAt.fill(-1);
   g.fog.update(w);
   return g;
 }

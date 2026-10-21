@@ -3,7 +3,7 @@
 // iterating a table is deterministic. Units and buildings share one id sequence; resource
 // nodes and towns have their own small, fixed id ranges.
 
-import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, Terrain, TownState, UnitType, walkableTerrain } from "../protocol.ts";
+import { Action, BuildingFlag, BuildingType, CELL, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Terrain, TownState, UnitType, walkableTerrain } from "../protocol.ts";
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
@@ -43,6 +43,9 @@ export const UNIT_COLS = [
   // The unit that shot this soldier on a move and that it goes for (FIRE_BACK, D-095), -1 none;
   // in the hash only while FIRE_BACK is on.
   "fireBack",
+  // The wall cell it stands on or is going up onto (D-096, WALLS), -1 none; in the hash only while
+  // WALLS is on.
+  "wall",
   // Ticks this unit stood to let lower ranks pass on its move (MARCH_ORDER, D-095); in the hash
   // only while MARCH_ORDER is on.
   "waited",
@@ -163,6 +166,16 @@ export class World {
   gateCells: Int32Array;
   /** Per cell, the town whose walls it lies inside (castle.inside), or -1 (D-096: who reaches whom). */
   insideAt: Int32Array;
+  /**
+   * D-096, the walls soldiers stand on: per wall cell they can go up onto, its town (wallTown), the
+   * cell inside the walls next to it they climb from (wallFoot, a side neighbour where there is one),
+   * and the unit standing there or on its way up (wallAt, -1 free); -1 for every other cell.
+   */
+  wallTown: Int32Array;
+  wallFoot: Int32Array;
+  wallAt: Int32Array;
+  /** Each town's wall cells soldiers can stand on, in the castle's wall order (D-096). */
+  wallCells: Int32Array[] = [];
   /**
    * On a cell under a standing gate that is closed to someone (BLOCK_GATE, D-096): the player it
    * lets through (the town's holder), or -1 (closed to everyone: a neutral town's).
@@ -402,6 +415,30 @@ export class World {
         for (let x = Math.max(0, s.cellX + c.x0); x <= Math.min(n - 1, s.cellX + c.x1); x++) this.insideAt[y * n + x] = i;
       }
     });
+    this.wallTown = new Int32Array(n * n).fill(-1);
+    this.wallFoot = new Int32Array(n * n).fill(-1);
+    this.wallAt = new Int32Array(n * n).fill(-1);
+    map.towns.forEach((s, i) => {
+      const cells: number[] = [];
+      for (const [dx, dy] of this.castles[i].wall) {
+        const x = s.cellX + dx;
+        const y = s.cellY + dy;
+        if (x < 0 || y < 0 || x >= n || y >= n) continue;
+        // The cell inside to climb from: a side neighbour, else a corner one (E, S, W, N; then SE, SW, NW, NE).
+        let foot = -1;
+        for (const [ox, oy] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [-1, -1], [1, -1]]) {
+          const fx = x + ox;
+          const fy = y + oy;
+          if (foot >= 0 || fx < 0 || fy < 0 || fx >= n || fy >= n) continue;
+          if (this.insideAt[fy * n + fx] === i && (this.grid[fy * n + fx] & BLOCK_WALL) === 0) foot = fy * n + fx;
+        }
+        if (foot < 0) continue;
+        this.wallTown[y * n + x] = i;
+        this.wallFoot[y * n + x] = foot;
+        cells.push(y * n + x);
+      }
+      this.wallCells.push(Int32Array.from(cells));
+    });
     this.gateRebuild = new Int32Array(t * GATES);
   }
 
@@ -443,6 +480,7 @@ export class World {
     c.hitById[s] = -1;
     c.avenge[s] = -1;
     c.fireBack[s] = -1;
+    c.wall[s] = -1;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
     c.autoBuild[s] = -1;
@@ -583,6 +621,38 @@ export class World {
       this.passOpen[cls] = this.openVersion;
     }
     return g;
+  }
+
+  /** Does player p hold town t (D-096: its walls and gates are p's): awaiting the choice, plundering, repairing or governed? */
+  heldBy(t: number, p: number): boolean {
+    const st = this.townState[t];
+    return this.townOwner[t] === p && st !== TownState.Neutral && st !== TownState.Ruins;
+  }
+
+  /**
+   * Unit slot i comes off the wall it stands on or was going up onto (D-096): down to the cell
+   * inside it climbs from, standing there with no order (the next order is the caller's).
+   */
+  offWall(i: number): void {
+    const u = this.units.col;
+    const c = u.wall[i];
+    if (c < 0) return;
+    const n = this.size;
+    if (this.wallAt[c] === u.id[i]) this.wallAt[c] = -1;
+    if (u.action[i] === Action.OnWall) {
+      const f = this.wallFoot[c];
+      u.x[i] = ((f % n) << CELL_SHIFT) + (CELL >> 1);
+      u.y[i] = (Math.trunc(f / n) << CELL_SHIFT) + (CELL >> 1);
+      u.action[i] = Action.Idle;
+    }
+    u.wall[i] = -1;
+    if (u.order[i] === Order.Wall) {
+      u.order[i] = Order.None;
+      u.orderTarget[i] = -1;
+    }
+    u.target[i] = -1;
+    u.anchorX[i] = u.x[i];
+    u.anchorY[i] = u.y[i];
   }
 
   /** Building slot s's footprint width and height in cells (sideX, sideY). */

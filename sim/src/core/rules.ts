@@ -304,6 +304,16 @@ export const PLUNDER_RECOVERY = { on: true, startPermille: 250, ticks: 10 * 60 *
  * rebuild them all. Off: no gates, the openings stay open to everyone (D-089).
  */
 export const GATE = { on: true, hp: [850, 1450], rangedNum: 1, rangedDen: 5, siege: 8, rebuildTicks: 60 * S };
+/**
+ * On the walls (D-096; the user: 「中立城鎮也要攻城，不然電腦打太快了」; AoE4: on walls -25% ranged
+ * damage, +1-2 range): ranged units and mages of the town's holder go up (`wall`), one a wall cell,
+ * from the cell inside next to it; a neutral town's militia stand on them from the start (`militia`
+ * of every 2, from the posts listed first), throwing stones to `sling`. There they never move,
+ * shoot `range` further (the crystal cannon as ever), take hits of ranged units, mages and arrows
+ * at `takenNum` / `takenDen` (the cannon in full), and melee reaches them only from inside the
+ * walls, next to them. They count as inside the town (capturing, keeping it). Off: no `wall`.
+ */
+export const WALLS = { on: true, range: CELL, takenNum: 3, takenDen: 4, sling: 4 * CELL, militia: 2 };
 /** Players can build arrow towers (BuildingType.ArrowTower). */
 export const TOWERS = { on: true };
 /**
