@@ -2317,7 +2317,7 @@ test("D-086 A4 (plan.mineMove): the only gold left nearer the enemy's main city,
   assert.equal(out.some((c) => c.c === "build" && c.type === BuildingType.Mine), false);
 });
 
-test("D-086 A4 (plan.buildSafe): a site razed before it was done, hard puts none of its kind there again for a while; off, as before", () => {
+test("D-086 A4 (plan.buildSafe): a site razed before it was done, hard puts nothing there again for a while; off, as before", () => {
   const again = (buildSafe: boolean) => {
     const g = emptyGame();
     const w = g.w;
@@ -2345,7 +2345,7 @@ test("D-086 A4 (plan.buildSafe): a site razed before it was done, hard puts none
     for (let k = 0; k < 100; k++) g.step();
     w.res.set([1000, 1000, 1000, 0], 0);
     g.fog.update(w);
-    return ai.think(buildView(g, 0)).some((c) => c.c === "build" && c.type === first.type && (c.x - first.x) ** 2 + (c.y - first.y) ** 2 <= 64);
+    return ai.think(buildView(g, 0)).some((c) => c.c === "build" && (c.x - first.x) ** 2 + (c.y - first.y) ** 2 <= 64);
   };
   assert.equal(again(false), true, "off: put down there again, as before");
   assert.equal(again(true), false, "on: not there again yet");
