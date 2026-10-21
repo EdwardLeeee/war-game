@@ -390,11 +390,11 @@ export class SelectionInfo {
     this.orderNote(view, [id]);
   }
 
-  /** 剋／怕 (D-097), a line for each soldier type selected, ours or not: 「槍兵　剋：騎兵／怕：遠程」. */
+  /** 剋／怕 (D-097) for the soldier type selected, ours or not: 「槍兵　剋：騎兵／怕：遠程」. */
   private counterNote(view: GameView, types: number[]): void {
     const lines = types.filter((t) => isSoldier(t)).map((t) => [t, counterShort(view.rules, t)] as const).filter(([, text]) => text !== "");
     if (lines.length === 0) return;
-    const note = el("p", this.el, "sel-note counter-note");
+    const note = el("p", this.el, "sel-counters");
     for (const [t, text] of lines) el("span", note, "counter-short", `${UNIT_NAME[t] ?? "兵"}　${text}`);
   }
 
@@ -442,7 +442,9 @@ export class SelectionInfo {
       // Tapping a type keeps only that type selected.
       button(chips, `${UNIT_NAME[type] ?? "單位"} ×${list.length}`, "", () => this.host.selectOnly(list), "chip secondary");
     }
-    this.counterNote(view, [...counts.keys()].sort((a, b) => a - b));
+    // One type only: its 剋／怕 (a mixed selection has the chips: a tap on one shows its line; the
+    // panel would not fit a line for each at 380 pt).
+    if (counts.size === 1) this.counterNote(view, [...counts.keys()]);
     this.orderNote(view, ids);
   }
 

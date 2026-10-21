@@ -36,7 +36,7 @@ const NOT_MULTIPLIERS: { type: number; side: "beats" | "fears"; text: string; na
 const SHORT_NAME: Record<number, string> = { [UnitType.Spearman]: "槍兵", [UnitType.Ranged]: "遠程", [UnitType.Mage]: "法師", [UnitType.Cavalry]: "騎兵" };
 
 /** 騎兵繞後 (core, D-097's batch: `features.cavalryFlank`): on its own, cavalry goes around the front line for mages, then ranged. */
-const flank = (rules: Pick<Rules, "features"> | null | undefined): boolean => (rules?.features as { cavalryFlank?: boolean } | undefined)?.cavalryFlank === true;
+const flank = (rules: Pick<Rules, "features"> | null | undefined): boolean => features(rules).cavalryFlank === true;
 
 /** The soldier types listed, in the order of the 軍團畫面. */
 export function counterTypes(rules: Pick<Rules, "features"> | null | undefined): number[] {

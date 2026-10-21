@@ -109,7 +109,8 @@ export const MOCK_RULES: Rules = {
 /** `?r7=1`: round 7's switches on, with the simulation's values. */
 export const MOCK_RULES_R7: Rules = {
   ...MOCK_RULES,
-  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true },
+  // 騎兵繞後 (D-097) on, as in the simulation.
+  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, cavalryFlank: true },
   arrows: rules().arrows,
   garrisonTypes: rules().garrisonTypes,
   towerReach: rules().towerReach,
@@ -120,7 +121,7 @@ export const MOCK_RULES_R7: Rules = {
 /** `?r7=1&outpost=1`: round 7's and the outpost's switches on (D-080), with the simulation's values. */
 export const MOCK_RULES_OUTPOST: Rules = {
   ...MOCK_RULES_R7,
-  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true },
+  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true, cavalryFlank: true },
   outpost: rules().outpost,
   towerReach: { ...(rules().towerReach ?? { mainCity: 8, town: 2 }), outpost: rules().towerReach?.outpost ?? 6 },
 };

@@ -22,20 +22,25 @@ test("兵種相剋：騎兵開著時四種兵；倍數從 rules.multipliers 來�
     [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry],
   );
   const by = (t: number) => lines.find((l) => l.type === t);
-  assert.deepEqual(by(UnitType.Spearman), { type: UnitType.Spearman, beats: ["騎兵 ×3"], fears: ["遠程兵 ×2.5", "晶砲（擠在一起時）"] });
-  // 遠程打騎兵 ×1.8 (core, round 7 PR K): read from the table like the rest.
-  assert.deepEqual(by(UnitType.Ranged), { type: UnitType.Ranged, beats: ["槍兵 ×2.5", "法師的護盾 ×3", "騎兵 ×1.8"], fears: ["騎兵（跑得快，很快衝到面前；生命少）"] });
-  assert.deepEqual(by(UnitType.Mage), { type: UnitType.Mage, beats: ["擠在一起的部隊（晶砲範圍傷害）"], fears: ["遠程兵打護盾 ×3", "騎兵 ×2", "騎兵打護盾 ×2"] });
-  assert.deepEqual(by(UnitType.Cavalry), { type: UnitType.Cavalry, beats: ["遠程兵（跑得快）", "法師 ×2", "法師的護盾 ×2"], fears: ["遠程兵 ×1.8", "槍兵 ×3"] });
+  // D-097's triangle (the simulation's table: 遠程打槍 ×3.5、槍打騎 ×2.5、騎打法師和護盾 ×3); cavalry
+  // beats ranged by speed, no multiplier.
+  assert.deepEqual(by(UnitType.Spearman), { type: UnitType.Spearman, beats: ["騎兵 ×2.5"], fears: ["遠程兵 ×3.5", "晶砲（擠在一起時）"] });
+  assert.deepEqual(by(UnitType.Ranged), { type: UnitType.Ranged, beats: ["槍兵 ×3.5"], fears: ["騎兵（跑得快，很快衝到面前；生命少）"] });
+  assert.deepEqual(by(UnitType.Mage), { type: UnitType.Mage, beats: ["擠在一起的部隊（晶砲範圍傷害）"], fears: ["騎兵 ×3", "騎兵打護盾 ×3"] });
+  assert.deepEqual(by(UnitType.Cavalry), { type: UnitType.Cavalry, beats: ["遠程兵（跑得快）", "法師 ×3", "法師的護盾 ×3"], fears: ["槍兵 ×2.5"] });
+  // 騎兵繞後 (features.cavalryFlank): said beside them.
+  const flank = counterLines({ ...withCavalry(true), features: { plunderOnce: false, towers: false, garrison: false, cavalry: true, cavalryFlank: true } }, UNIT_NAME);
+  assert.deepEqual(flank.find((l) => l.type === UnitType.Cavalry)?.beats, ["遠程兵（跑得快）", "法師 ×3", "法師的護盾 ×3", "會自己繞過前排去打法師、遠程兵"]);
 });
 
 test("兵種相剋：騎兵關著時只有三種兵，和騎兵有關的倍數和說明都不列", () => {
   assert.deepEqual(counterTypes(withCavalry(false)), [UnitType.Spearman, UnitType.Ranged, UnitType.Mage]);
   const lines = counterLines(withCavalry(false), UNIT_NAME);
   const by = (t: number) => lines.find((l) => l.type === t);
-  assert.deepEqual(by(UnitType.Spearman), { type: UnitType.Spearman, beats: [], fears: ["遠程兵 ×2.5", "晶砲（擠在一起時）"] });
-  assert.deepEqual(by(UnitType.Ranged), { type: UnitType.Ranged, beats: ["槍兵 ×2.5", "法師的護盾 ×3"], fears: [] });
-  assert.deepEqual(by(UnitType.Mage), { type: UnitType.Mage, beats: ["擠在一起的部隊（晶砲範圍傷害）"], fears: ["遠程兵打護盾 ×3"] });
+  assert.deepEqual(by(UnitType.Spearman), { type: UnitType.Spearman, beats: [], fears: ["遠程兵 ×3.5", "晶砲（擠在一起時）"] });
+  assert.deepEqual(by(UnitType.Ranged), { type: UnitType.Ranged, beats: ["槍兵 ×3.5"], fears: [] });
+  // Nothing in the table hits a mage harder without cavalry (the menu says 沒有; the short line leaves it out).
+  assert.deepEqual(by(UnitType.Mage), { type: UnitType.Mage, beats: ["擠在一起的部隊（晶砲範圍傷害）"], fears: [] });
   // No damage table (rules from an old simulation): only the counters that are no multiplier.
   assert.deepEqual(
     counterLines(null, UNIT_NAME).map((l) => [l.beats, l.fears]),
@@ -76,4 +81,10 @@ test("D-097 的短句：照倍數表和不是倍數的說明寫「剋：…／�
   assert.equal(counterShort(off, UnitType.Mage), "剋：擠在一起的部隊");
   assert.equal(counterShort(off, UnitType.Cavalry), "");
   assert.equal(counterShort(on, UnitType.Farmer), "");
+  // The simulation's own rules give the same.
+  const sim = simRules();
+  assert.deepEqual(
+    [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry].map((t) => counterShort(sim, t)),
+    ["剋：騎兵／怕：遠程", "剋：槍兵／怕：騎兵", "剋：擠在一起的部隊／怕：騎兵", "剋：遠程、法師（會自己繞過前排去打）／怕：槍兵"],
+  );
 });
