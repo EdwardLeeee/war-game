@@ -1011,6 +1011,8 @@ export class UnitSystem {
     const ts = w.unit(tid);
     u.facing[i] = dir16(u.x[ts] - u.x[i], u.y[ts] - u.y[i]);
     this.attacking[i] = 1;
+    // Shooting from it, as any soldier fighting (the screen raises it by UnitFlag.OnWall).
+    u.action[i] = Action.Attack;
   }
 
   // --- cavalry for the back row (CAV_FLANK, D-097) ------------------------------------------

@@ -649,7 +649,8 @@ export class World {
     if (c < 0) return;
     const n = this.size;
     if (this.wallAt[c] === u.id[i]) this.wallAt[c] = -1;
-    if (u.action[i] === Action.OnWall) {
+    // Up on it (standing, shooting or calibrating the cannon): down to the cell inside.
+    if ((u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT) === c) {
       const f = this.wallFoot[c];
       u.x[i] = ((f % n) << CELL_SHIFT) + (CELL >> 1);
       u.y[i] = (Math.trunc(f / n) << CELL_SHIFT) + (CELL >> 1);

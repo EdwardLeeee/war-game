@@ -301,6 +301,11 @@ export const UnitFlag = {
    * command to it (`release` too), and when it has nothing left to gather there (it goes idle).
    */
   HandPicked: 16,
+  /**
+   * Up on a castle wall (D-096, `wall`; neutral militia too), whatever its action: OnWall standing,
+   * Attack shooting from it, Calibrate firing the cannon. Snapshot only (PROTOCOL.md 4.2).
+   */
+  OnWall: 32,
 } as const;
 
 /** Buildings: own, visible enemy/neutral ones, and remembered enemy ones (flag Remembered). */
