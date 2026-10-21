@@ -1159,7 +1159,7 @@ test("D-080: too few soldiers for an unguarded fort site: farmers go for its bui
   assert.ok(!guarded.out.some((c) => c.c === "attack" && c.u.some((id) => guarded.farmers.includes(id))), "not against guards");
 });
 
-test("D-080: marching, an arrow tower by the way comes first; then on to the enemy base", () => {
+test("D-080: marching, an arrow tower by the way comes first; then on to the enemy base", withFortsOff(() => {
   const { g, w, ai, ids, s0, s1 } = marchOnBase();
   // A tower beside the army's way (not by the enemy's main city).
   const tower = w.addBuilding(1, BuildingType.ArrowTower, s0.cellX + 22, s0.cellY - 18, 500, 1000);
@@ -1172,7 +1172,7 @@ test("D-080: marching, an arrow tower by the way comes first; then on to the ene
   g.fog.update(w);
   w.tick += 10;
   assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.x === s1.cellX && c.y === s1.cellY), "then on");
-});
+}));
 
 test("D-080: hard's army away at the enemy base, the soldiers waiting at home pull down a tower by the main city", () => {
   const g = emptyGame();
@@ -1276,6 +1276,19 @@ test("D-081: a group on the straight way is on the way; one beside another way i
   assert.equal(groupsOnWay(g, { x: 10, y: 10 }, { x: 90, y: 10 }).length, 0, "another way: clear");
 });
 
+/** D-081 / A4: a test of the rules before fortStage and fortAgain (on since ceo 2026-10-22), with both off for normal and hard. */
+function withFortsOff(body: () => void): () => void {
+  return () => {
+    const saved = [NORMAL_FORT.stage, NORMAL_FORT.again, HARD.fortStage, HARD.fortAgain] as const;
+    NORMAL_FORT.stage = NORMAL_FORT.again = HARD.fortStage = HARD.fortAgain = false;
+    try {
+      body();
+    } finally {
+      [NORMAL_FORT.stage, NORMAL_FORT.again, HARD.fortStage, HARD.fortAgain] = saved;
+    }
+  };
+}
+
 /** Hard with 20 spearmen at home, and enemy arrow towers (someone hiding in each) on the straight way to the enemy's main city, seen by farmers of its own. */
 function fortsOnTheWay(towers: number, hidden: boolean, more: Partial<HardPlan> = {}, difficulty: AiDifficulty = "hard", at: [number, number] = [34, 56]) {
   const g = emptyGame();
@@ -1337,10 +1350,11 @@ test("D-081 / A4: the gathering point before forts is open ground beyond their r
 test("D-081 / A4 (fortStage): forts on the way it can take, it gathers outside their reach first, then goes for them together; off, straight on (normal and hard)", () => {
   for (const difficulty of ["hard", "normal"] as const) {
     const run = (on: boolean) => {
+      const was = NORMAL_FORT.stage;
       NORMAL_FORT.stage = on;
       // Normal goes for the town at (29, 29) first: the towers on that way.
       const t = fortsOnTheWay(2, false, { fortStage: on }, difficulty, difficulty === "hard" ? [34, 56] : [25, 44]);
-      NORMAL_FORT.stage = false;
+      NORMAL_FORT.stage = was;
       const first = t.ai.think(buildView(t.g, 0));
       t.w.tick += 10;
       t.g.fog.update(t.w);
@@ -1407,7 +1421,7 @@ test("D-081: with townRest (off by default), hard leaves a town it fell back fro
   assert.ok(toTown(ai2.think(buildView(g2, 0)), go.x, go.y), "off: straight back");
 });
 
-test("D-081: after breaking off from a fort on its ground, it goes again within 5 minutes only with 1.5 x the army (ceo 2026-10-10)", () => {
+test("D-081: after breaking off from a fort on its ground, it goes again within 5 minutes only with 1.5 x the army (ceo 2026-10-10)", withFortsOff(() => {
   for (const difficulty of ["normal", "hard"] as const) {
     /** Eight spearmen go for a tower by the main city, six fall and it breaks off; `more` than eight again, `later` ticks on. */
     const again = (more: number, later: number) => {
@@ -1431,17 +1445,16 @@ test("D-081: after breaking off from a fort on its ground, it goes again within 
     assert.ok(again(4, 700), `${difficulty}: with 1.5 x (12 spearmen)`);
     assert.ok(again(0, 5 * 1200 + 10), `${difficulty}: with as many once 5 minutes are past`);
   }
-});
+}));
 
 test("D-081 / A4 (fortAgain): after breaking off from a fort, the next go takes 2 x the army and it remembers for 10 minutes (normal and hard)", () => {
   for (const difficulty of ["normal", "hard"] as const) {
     const again = (more: number, later: number) => {
+      const saved = [NORMAL_FORT.again, HARD.fortAgain];
       NORMAL_FORT.again = true;
-      const saved = HARD.fortAgain;
       HARD.fortAgain = true;
       const { g, w, ai, fort, spears, centre } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
-      NORMAL_FORT.again = false;
-      HARD.fortAgain = saved;
+      [NORMAL_FORT.again, HARD.fortAgain] = saved;
       const farmers: number[] = [];
       for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) farmers.push(w.units.col.id[s]);
       kill(g, [...spears.slice(2), ...farmers]);
@@ -1498,7 +1511,7 @@ test("D-081: hard does not go back to a town it fell back from because of forts 
   assert.ok(toTown(), "once the forts are weaker, again");
 });
 
-test("D-081: farmers do not lead the soldiers at home back to a fort the army broke off from, within 5 minutes (ceo 2026-10-10)", () => {
+test("D-081: farmers do not lead the soldiers at home back to a fort the army broke off from, within 5 minutes (ceo 2026-10-10)", withFortsOff(() => {
   for (const difficulty of ["normal", "hard"] as const) {
     const { g, w, ai, fort, spears } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
     w.buildings.col.soldiers[w.building(fort)] = 3;
@@ -1526,7 +1539,7 @@ test("D-081: farmers do not lead the soldiers at home back to a fort the army br
     g.fog.update(w);
     assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "attack" && c.target === fort), `${difficulty}: once 5 minutes are past, again`);
   }
-});
+}));
 
 test("D-081: falling back past forts, the way round them: a point beside the first group on the way, on the army's side and out of its reach", () => {
   const v = fortValues(rules());

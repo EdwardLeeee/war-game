@@ -346,12 +346,12 @@ const FORT_FAILED = 150;
 const FORT_FORGET = 5 * 1200;
 /**
  * D-081 / A4 (ceo 2026-10-21, #260's half-way fortress, normal's soldiers dead by it 26.5 -> 75.0 a game): normal's two
- * trials, off by default (hard's: HardPlan.fortStage, fortAgain). stage: forts on the way it can take, it gathers
+ * trials, on since ceo 2026-10-22 (docs/research/2026-10-ai-a4.md section 4.3; hard's: HardPlan.fortStage, fortAgain). stage: forts on the way it can take, it gathers
  * outside their reach first and pulls them down together (it marched past them in a column and began only once its
  * centre stood by them); again: after breaking off from forts, the next go takes FORT_FAILED_AGAIN of that army and
  * it remembers for FORT_FORGET_AGAIN (hard went at the same fortress every 5 minutes with 15–27).
  */
-export const NORMAL_FORT = { stage: false, again: false };
+export const NORMAL_FORT = { stage: true, again: true };
 const FORT_FAILED_AGAIN = 200;
 const FORT_FORGET_AGAIN = 10 * 1200;
 /** fortStage: the gathering point at most this many cells beyond the reach of the group's forts (and 2 at least, as stagePoint). */
@@ -2368,12 +2368,13 @@ export const HARD: HardPlan = {
   towerSpare: 150,
   towerFirst: false,
   counterCavalry: false,
-  townScout: false,
+  // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
+  townScout: true,
   ruinsAgain: false,
   mineMove: false,
-  buildSafe: false,
-  fortStage: false,
-  fortAgain: false,
+  buildSafe: true,
+  fortStage: true,
+  fortAgain: true,
 };
 /** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
 const TOWN_SCOUT_AGAIN = 2 * 1200;
