@@ -360,9 +360,11 @@ export const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.M
  * those of them that walk, along its way to its place; at most `maxWait` ticks a command. Lower
  * ranks that stand do not count, so a front that stopped holds no one up, and once one of the
  * group fights nobody waits. A retreat is left as it is. The unit column it keeps (waited) is in
- * the hash only while it is on.
+ * the hash only while it is on. Off for now (ceo 2026-10-21): with orders sent again on the way,
+ * soldiers far behind in them, and all at the slowest one's speed, its marches came strung out
+ * and lost (README); it is to be redesigned.
  */
-export const MARCH_ORDER = { on: true, margin: CELL >> 1, maxWait: 10 * S };
+export const MARCH_ORDER = { on: false, margin: CELL >> 1, maxWait: 10 * S };
 /** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
 export const SHORT_CANNON = { on: true, range: 7 * CELL };
 /**

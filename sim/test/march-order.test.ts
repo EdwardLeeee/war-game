@@ -1,13 +1,14 @@
 // Ranks on the march (D-095; core/rules.ts MARCH_ORDER; the user: 「常常跑一跑法師就跑到前排」):
 // on a move, ranged and mages ahead of their group's spearmen stand and let them pass; a group
 // already in order walks as before; a retreat is left as it is; nobody waits longer than
-// MARCH_ORDER.maxWait a command.
+// MARCH_ORDER.maxWait a command. The rule is off for now (ceo 2026-10-21: its marches arrive
+// strung out, README); these tests switch it on.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MARCH_ORDER } from "../src/core/rules.ts";
 import { Order, UnitType } from "../src/protocol.ts";
-import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff, switchedOn } from "./helpers.ts";
 
 type G = ReturnType<typeof emptyGame>;
 const KIND: Record<number, string> = { [UnitType.Spearman]: "spear", [UnitType.Ranged]: "ranged", [UnitType.Mage]: "mage" };
@@ -53,7 +54,7 @@ function turnBack(order: "move" | "retreat") {
   return { g, ids, magesAhead, stood, track, last: meanY(g, ids) };
 }
 
-test("turned back on a move, the spearmen pass the ranged and mages within a few seconds and it takes about as long", () => {
+test("turned back on a move, the spearmen pass the ranged and mages within a few seconds and it takes about as long", switchedOn(MARCH_ORDER, () => {
   const on = turnBack("move");
   let before = { magesAhead: 0, stood: 0 };
   switchedOff(MARCH_ORDER, () => {
@@ -66,9 +67,9 @@ test("turned back on a move, the spearmen pass the ranged and mages within a few
   assert.ok(on.last.spear < on.last.ranged && on.last.ranged < on.last.mage, JSON.stringify(on.last));
   const u = on.g.w.units.col;
   assert.ok(on.ids.every((id) => u.waited[slotOf(on.g, id)] <= MARCH_ORDER.maxWait));
-});
+}));
 
-test("a retreat is left as it is: the same, tick by tick, with the rule on and off", () => {
+test("a retreat is left as it is: the same, tick by tick, with the rule on and off", switchedOn(MARCH_ORDER, () => {
   const on = turnBack("retreat");
   let off = on;
   switchedOff(MARCH_ORDER, () => {
@@ -76,9 +77,9 @@ test("a retreat is left as it is: the same, tick by tick, with the rule on and o
   })();
   assert.equal(on.stood, off.stood);
   assert.deepEqual(on.track, off.track);
-});
+}));
 
-test("a move with the spearmen already in front walks as before, tick by tick", () => {
+test("a move with the spearmen already in front walks as before, tick by tick", switchedOn(MARCH_ORDER, () => {
   const walk = () => {
     const { g, ids, a } = block();
     cmd(g, 0, { c: "move", u: ids, x: a.x + 14, y: a.y + 27 });
@@ -96,9 +97,9 @@ test("a move with the spearmen already in front walks as before, tick by tick", 
     off = walk();
   })();
   assert.deepEqual(on, off);
-});
+}));
 
-test("nobody waits longer than MARCH_ORDER.maxWait: a mixed crowd of 40 gets there", () => {
+test("nobody waits longer than MARCH_ORDER.maxWait: a mixed crowd of 40 gets there", switchedOn(MARCH_ORDER, () => {
   const g = emptyGame();
   const a = openArea(g, 30);
   const ids: number[] = [];
@@ -117,7 +118,7 @@ test("nobody waits longer than MARCH_ORDER.maxWait: a mixed crowd of 40 gets the
     assert.ok(ids.every((id) => u.order[slotOf(g, id)] === Order.None), "all got there");
   }
   assert.ok(most > 0 && most <= MARCH_ORDER.maxWait, `waited at most ${most} ticks`);
-});
+}));
 
 test("switched off: the unit column it keeps (waited) stays out of the hash", switchedOff(MARCH_ORDER, () => {
   const g = emptyGame();

@@ -107,6 +107,41 @@ test("a group on its way re-forms at its goal, facing `face`", () => {
   assert.ok(r.spear > r.ranged && r.ranged > r.mage, JSON.stringify(r));
 });
 
+test("with `face`, those within 8 cells of one another re-form as one (spread out after a chase); further off, apart; without `face`, 3 cells as before", () => {
+  // 7 ranged and mages standing together, 8 spearmen 6 cells south of them (chased and stopped
+  // there), and 4 more spearmen 11 cells east of those: too far.
+  const scene = () => {
+    const g = emptyGame();
+    const a = openArea(g, 30);
+    const near: number[] = [];
+    for (let k = 0; k < 3; k++) near.push(put(g, 0, UnitType.Mage, a.x + 10 + k, a.y + 8));
+    for (let k = 0; k < 4; k++) near.push(put(g, 0, UnitType.Ranged, a.x + 10 + k, a.y + 9));
+    for (let k = 0; k < 8; k++) near.push(put(g, 0, UnitType.Spearman, a.x + 10 + (k % 4), a.y + 15 + Math.trunc(k / 4)));
+    const far: number[] = [];
+    for (let k = 0; k < 4; k++) far.push(put(g, 0, UnitType.Spearman, a.x + 24 + (k % 2), a.y + 15 + Math.trunc(k / 2)));
+    g.fog.update(g.w);
+    return { g, near, far };
+  };
+  const spread = (g: G, ids: number[]) => {
+    const u = g.w.units.col;
+    const ys = ids.map((id) => u.y[slotOf(g, id)] / 1024);
+    return Math.max(...ys) - Math.min(...ys);
+  };
+  const withFace = scene();
+  const farAt = middle(withFace.g, withFace.far);
+  cmd(withFace.g, 0, { c: "formation", u: [...withFace.near, ...withFace.far], loose: false, face: 12 });
+  for (let t = 0; t < 30 * 20 && (t < 2 || !settled(withFace.g, [...withFace.near, ...withFace.far])); t++) run(withFace.g, 1);
+  assert.ok(spread(withFace.g, withFace.near) < 5, `one formation: ${spread(withFace.g, withFace.near).toFixed(1)} cells deep`);
+  const r = ranks(withFace.g, withFace.near, 12);
+  assert.ok(r.spear > r.ranged && r.ranged > r.mage, JSON.stringify(r));
+  const farNow = middle(withFace.g, withFace.far);
+  assert.ok(Math.hypot(farNow[0] - farAt[0], farNow[1] - farAt[1]) <= 1, "the four 11 cells off re-formed where they stood");
+  const without = scene();
+  cmd(without.g, 0, { c: "formation", u: [...without.near, ...without.far], loose: false });
+  for (let t = 0; t < 30 * 20 && (t < 2 || !settled(without.g, [...without.near, ...without.far])); t++) run(without.g, 1);
+  assert.ok(spread(without.g, without.near) > 5, "without `face`, the two lots re-form apart");
+});
+
 test("a `face` that is not 0-15 is rejected and changes nothing", () => {
   const g = emptyGame();
   const a = openArea(g, 30);
