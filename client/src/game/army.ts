@@ -310,6 +310,11 @@ export class ArmyBook {
     return [];
   }
 
+  /** Command `seq` was refused but its soldiers stay stationed (等錢治理): forget it without releasing them. */
+  keepStationed(seq: number): void {
+    for (const [town, p] of [...this.pending]) if (p.seq === seq) this.pending.delete(town);
+  }
+
   /** Forget the choices that went through: their towns no longer wait for one. */
   settle(awaiting: (town: number) => boolean): void {
     for (const town of [...this.pending.keys()]) if (!awaiting(town)) this.pending.delete(town);

@@ -9,6 +9,7 @@
 import type { Culture } from "../art/spec.ts";
 import type { ArmyState } from "../game/army.ts";
 import type { Charge } from "../game/follow.ts";
+import type { GovernWaitState } from "../game/govern-wait.ts";
 import { type AiDifficulty, type ContinueFailure, type MapMode, type ScenarioName, TICKS_PER_SECOND } from "../sim.ts";
 import type { SpeedName } from "../ui/controls.ts";
 
@@ -30,6 +31,8 @@ export interface ScreenState {
   seq: number;
   /** The tick of the last message about a recruit; null for none. */
   recruitMessageTick: number | null;
+  /** 等錢治理 (ceo 2026-10-21): the towns waiting for 治理's cost and the player's own reserve; saves from before have none. */
+  govern?: GovernWaitState;
 }
 
 /** What the game was started with (its init). */

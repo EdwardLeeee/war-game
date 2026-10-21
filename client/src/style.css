@@ -1287,6 +1287,23 @@ button.danger {
   background: #6fb3e8;
 }
 
+/* 治理 without its cost (等錢治理, ceo 2026-10-21): what is missing, in red; the button still works. */
+.choice-short {
+  color: #a3160c;
+  font-weight: 700;
+}
+
+.sel-info .choice-short {
+  display: block;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.reserve-raised {
+  color: #ffe9a8;
+  font-weight: 700;
+}
+
 .later {
   margin-top: 8px;
 }

@@ -686,6 +686,122 @@ test("攻下城鎮：稍後再決定之後，點城鎮會再跳出搶或治理",
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
 });
 
+const resources = (page: Page) => page.evaluate(() => window.__proto?.game?.resources() ?? { food: 0, wood: 0, gold: 0, crystal: 0 });
+const governWaits = (page: Page) => page.evaluate(() => window.__proto?.game?.governWaits() ?? []);
+const setStock = (page: Page, c: { food: number; wood: number; gold: number; crystal: number }) => page.evaluate((v) => window.__proto?.game?.stock(v), c);
+const townChoices = async (page: Page) => (await sent(page)).filter((c) => c.c === "town_choice");
+const reserves = async (page: Page) => (await sent(page)).filter((c) => c.c === "reserve");
+
+test("治理的花費從規則讀（小鎮 木 80、金 80）；錢夠時沒有紅字；大城錢不夠時紅字寫還差多少（等錢治理）", async ({ page }, info) => {
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  const govern = dialog.getByRole("button", { name: /^治理/ });
+  await expect(govern).toContainText("投入 木 80、金 80，修繕 45 秒");
+  await expect(dialog.getByRole("button", { name: /^搶/ })).toContainText("部隊留下搶 15 秒");
+  await expect(govern.locator(".choice-short")).toBeHidden();
+  await shot(page, info, "govern-affordable-small-town");
+  await dialog.getByRole("button", { name: /^稍後再決定/ }).tap();
+  // The large city (150 each) with wood 100 and gold 120.
+  await setStock(page, { food: 200, wood: 100, gold: 120, crystal: 20 });
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 3, by: 0 }));
+  const big = page.getByRole("dialog", { name: /攻下大城/ });
+  await expect(big.getByRole("button", { name: /^治理/ })).toContainText("投入 木 150、金 150，修繕 60 秒");
+  await expect(big.locator(".choice-short")).toHaveText("還差 木 50、金 30");
+  for (const b of await visibleBoxes(page, ".choice-row button")) expect(b.height).toBeGreaterThanOrEqual(88);
+  await shot(page, info, "govern-short-large-city");
+  // More comes in while it is open: the line follows.
+  await setStock(page, { food: 200, wood: 150, gold: 140, crystal: 20 });
+  await expect(big.locator(".choice-short")).toHaveText("還差 金 10");
+});
+
+test("等錢治理：錢不夠也能按治理，不送指令、兵照樣留守；面板寫等錢治理和還差多少，有取消；改選搶也取消等待", async ({ page }, info) => {
+  await setStock(page, { food: 200, wood: 100, gold: 50, crystal: 20 });
+  await place(page, await ownIds(page, [1]), [{ x: 29, y: 66 }, { x: 30, y: 67 }, { x: 31, y: 65 }]);
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  await expect(dialog.locator(".choice-short")).toHaveText("還差 金 30");
+  const before = (await sent(page)).length;
+  await dialog.getByRole("button", { name: /^治理/ }).tap();
+  await expect(dialog).toBeHidden();
+  await expect(toast(page, "錢不夠：先留守，還差 金 30，夠了自動治理")).toBeVisible();
+  await expect.poll(() => governWaits(page)).toEqual([0]);
+  // No 治理 sent (it would be refused), and the soldiers stay (留守 1, as for a small town).
+  expect((await sent(page)).slice(before).filter((c) => c.c === "town_choice")).toEqual([]);
+  await expect.poll(async () => (await garrison(page, 0)).length).toBe(1);
+  // The small town's 80 each is under the default reserve (150、100): it stays as it is.
+  expect(await reserves(page)).toEqual([]);
+  // Tapping the town shows the wait, not the dialog again.
+  await centre(page, 30, 66);
+  await tap(page, await townSpot(page));
+  const panel = page.locator(".sel-info");
+  await expect(panel.locator(".govern-wait")).toHaveText("等錢治理（還差 金 30）");
+  await expect(panel.locator(".sel-status")).toHaveText("我方攻下，等錢治理");
+  await expect(dialog).toBeHidden();
+  await shot(page, info, "govern-waiting-panel");
+  // 取消: no more waiting; the soldiers still stay (the town still waits for a choice).
+  await panel.getByRole("button", { name: /^取消\s*等錢治理/ }).tap();
+  await expect.poll(() => governWaits(page)).toEqual([]);
+  await expect(toast(page, "已取消等錢治理，留守的兵照樣守著")).toBeVisible();
+  expect((await garrison(page, 0)).length).toBe(1);
+  const govern = panel.getByRole("button", { name: /^治理/ });
+  await expect(govern).toContainText("木80 金80");
+  await expect(govern.locator(".choice-short")).toHaveText("還差 金 30");
+  // 治理 from the panel waits again; 搶 then ends the wait and goes.
+  await govern.tap();
+  await expect.poll(() => governWaits(page)).toEqual([0]);
+  await panel.getByRole("button", { name: "搶", exact: true }).tap();
+  await expect.poll(() => governWaits(page)).toEqual([]);
+  await expect.poll(async () => (await townChoices(page)).at(-1)).toMatchObject({ town: 0, choice: 0 });
+});
+
+test("等錢治理：自動訓練開著時預留暫時提高到大城的花費，金存到 150 就自動開始治理，預留再改回玩家自己的", async ({ page }, info) => {
+  test.setTimeout(60_000);
+  // 自動訓練 spends a ranged unit's 木 40、金 30 from what is above the reserve, every second; 木 15、金 10 come in a second.
+  await setStock(page, { food: 200, wood: 300, gold: 100, crystal: 20 });
+  const economy = (on: boolean) =>
+    page.evaluate((o) => window.__proto?.game?.economy(o ? { income: { food: 0, wood: 15, gold: 10, crystal: 0 }, train: { food: 0, wood: 40, gold: 30, crystal: 0 } } : null), on);
+  await economy(true);
+  // Over the default reserve (金 100) it never gets to 150: 自動訓練 takes it at 130.
+  let most = 0;
+  for (let i = 0; i < 10; i++) {
+    most = Math.max(most, (await resources(page)).gold);
+    await page.waitForTimeout(500);
+  }
+  expect(most, "gold under 自動訓練 with the default reserve").toBeLessThan(150);
+  // Still while the city is taken and the dialogs looked at: 金 120.
+  await economy(false);
+  await setStock(page, { food: 200, wood: 300, gold: 120, crystal: 20 });
+  // Three spearmen in the large city at (48, 48): ours, in sight, and its 留守.
+  await place(page, (await ownIds(page, [1])).slice(0, 3), [{ x: 47, y: 48 }, { x: 48, y: 49 }, { x: 49, y: 47 }]);
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 3, by: 0 }));
+  const big = page.getByRole("dialog", { name: /攻下大城/ });
+  await expect(big.locator(".choice-short")).toHaveText("還差 金 30");
+  await big.getByRole("button", { name: /^治理/ }).tap();
+  await expect.poll(() => governWaits(page)).toEqual([3]);
+  await expect.poll(async () => (await garrison(page, 3)).length).toBe(3);
+  // The reserve in effect goes up to 150 each for the wait; 預留 says so, and keeps the player's own.
+  await expect.poll(async () => (await reserves(page)).at(-1)).toMatchObject({ food: 0, wood: 150, gold: 150, crystal: 15, auto: true });
+  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
+  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await expect(page.getByRole("button", { name: /^預留/ })).toContainText("暫時提高");
+  await page.getByRole("button", { name: /^預留/ }).tap();
+  const reserve = page.getByRole("dialog", { name: "預留" });
+  await expect(reserve.locator(".reserve-raised")).toHaveText("預留暫時提高到 木 150、金 150（等治理）");
+  await expect(reserve.getByRole("status", { name: "金預留" })).toHaveText("100");
+  await expect(page.locator(".toast")).toBeHidden({ timeout: 10_000 });
+  await shot(page, info, "govern-reserve-raised");
+  await reserve.getByRole("button", { name: "取消" }).tap();
+  // 自動訓練 and the income on again: gold climbs to 150 (自動訓練 now leaves it), 治理 goes by
+  // itself, and the reserve is the player's own again.
+  await economy(true);
+  await expect(toast(page, "開始治理大城")).toBeVisible({ timeout: 20_000 });
+  expect((await townChoices(page)).at(-1)).toMatchObject({ town: 3, choice: 1, auto: true });
+  await expect.poll(() => governWaits(page)).toEqual([]);
+  await expect.poll(async () => (await reserves(page)).at(-1)).toMatchObject({ food: 0, wood: 150, gold: 100, crystal: 15 });
+  // TownState.Repairing = 3.
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).find((t) => t.id === 3)?.state).toBe(3);
+});
+
 test("攻擊、移動、堅守：第一列是這三顆和停止，選取資訊寫目前的狀態和三句說明（有法師時加晶砲的消耗）；全部同一種時那顆亮；攻擊中、移動中再按，或選位置時取消，都停下改成堅守（D-050、D-054、D-094、D-095）", async ({ page }, info) => {
   const spear = await selectSpearmen(page);
   const panel = page.locator(".sel-info");

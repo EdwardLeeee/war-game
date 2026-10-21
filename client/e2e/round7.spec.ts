@@ -136,7 +136,7 @@ test("城鎮只能搶一次：搶過的城鎮再攻下，只有治理，寫明�
   await expect(dialog).toBeVisible();
   const panel = page.locator(".sel-info");
   await expect(panel.getByRole("button", { name: "搶", exact: true })).toHaveCount(0);
-  await expect(panel.getByRole("button", { name: "治理", exact: true })).toBeAttached();
+  await expect(panel.getByRole("button", { name: /^治理/ })).toBeAttached();
   await expect(panel).toContainText("這座城這局已經被搶過，只能治理");
   // 搶 sent anyway (Reject.AlreadyPlundered): the reason, and the town still waits.
   await page.evaluate(() => window.__proto?.game?.send({ c: "town_choice", town: 0, choice: 0 }));

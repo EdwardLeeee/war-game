@@ -9,6 +9,7 @@ import { buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots }
 import { POST_TYPE } from "../../game/outpost.ts";
 import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
+import { costText as costLine } from "../../game/govern-wait.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
   AUTO_TRAIN,
@@ -17,6 +18,7 @@ import {
   BuildingType,
   CANNON,
   type CommandBody,
+  type Cost,
   HeaderField as H,
   NEUTRAL,
   NO_OWNER,
@@ -54,6 +56,16 @@ export interface PanelHost {
   startPlacement(type: BuildingType): void;
   openEconomy(): void;
   chooseTown(town: number, choice: TownChoice): void;
+  /**
+   * 等錢治理 (ceo 2026-10-21): 治理's cost for the town (null when not known), what is missing
+   * now, whether the town waits for it, and 取消.
+   */
+  governCost(town: number): Cost | null;
+  governShortfall(town: number): Cost | null;
+  governWaiting(town: number): boolean;
+  cancelGovernWait(town: number): void;
+  /** The reserve raised for a waiting 治理 (預留's button says so). */
+  reserveRaised(): boolean;
   selectOnly(units: number[]): void;
   /** Nothing selected (tapping the ground would order the selected units to go there). */
   clearSelection(): void;
@@ -239,13 +251,13 @@ export class SelectionInfo {
       const pending = this.host.pending();
       const eco = pending.eco();
       const waiting = `${this.host.paused() ? 1 : 0}:${pending.trains(sel.building).length}:${eco === null ? "" : `${eco.food},${eco.wood},${eco.gold},${eco.on}`}`;
-      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.queueLength]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${waiting}`;
+      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.queueLength]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${waiting}:${this.host.reserveRaised() ? "r" : ""}`;
     }
     const p = view.inspected;
     if (p !== null) {
       if (p.kind === "town") {
         const o = view.townRow(p.id);
-        return `t:${p.id}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.state]}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.owner]}:${this.host.paused() ? 1 : 0}:${this.host.pending().townChoice(p.id) ?? ""}`;
+        return `t:${p.id}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.state]}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.owner]}:${this.host.paused() ? 1 : 0}:${this.host.pending().townChoice(p.id) ?? ""}:${this.host.governWaiting(p.id) ? "w" : ""}`;
       }
       return `i:${p.kind}:${p.id}`;
     }
@@ -608,11 +620,31 @@ export class SelectionInfo {
     if (awaiting && chosen !== null && this.host.paused()) {
       const plunder = chosen === TownChoice.Plunder;
       el("p", this.el, "sel-pend", `已選${plunder ? "搶" : "治理"}，留守 ${this.host.garrison(id)} 名：按繼續後開始${plunder ? "搶" : "修繕"}`);
+    } else if (awaiting && chosen === null && this.host.governWaiting(id)) {
+      // 等錢治理 (ceo 2026-10-21): what is missing; 治理 starts by itself once it is there. 搶 or 取消 end the wait.
+      const line = el("p", this.el, "sel-pend govern-wait");
+      const row = el("div", this.el, "sel-choice");
+      if (!view.townPlunderedOnce(id)) button(row, "搶", "", () => this.host.chooseTown(id, TownChoice.Plunder), "choice-plunder");
+      button(row, "取消", "等錢治理", () => this.host.cancelGovernWait(id), "secondary");
+      this.updaters.push(() => {
+        const missing = costLine(this.host.governShortfall(id) ?? { food: 0, wood: 0, gold: 0, crystal: 0 });
+        const text = missing === "" ? "等錢治理：錢夠了，開始治理" : `等錢治理（還差 ${missing}）`;
+        if (line.textContent !== text) line.textContent = text;
+      });
     } else if (awaiting && chosen === null) {
       const row = el("div", this.el, "sel-choice");
       // 城鎮只能搶一次 (round 7): a town plundered this game can only be governed.
       if (!view.townPlunderedOnce(id)) button(row, "搶", "", () => this.host.chooseTown(id, TownChoice.Plunder), "choice-plunder");
-      button(row, "治理", "", () => this.host.chooseTown(id, TownChoice.Govern), "choice-govern");
+      // 治理's cost from the rules; without it, what is missing in red (the button still works: 等錢治理).
+      const cost = this.host.governCost(id);
+      const govern = button(row, "治理", cost === null ? "" : costText(cost), () => this.host.chooseTown(id, TownChoice.Govern), "choice-govern");
+      const short = el("span", govern, "choice-short");
+      this.updaters.push(() => {
+        const missing = costLine(this.host.governShortfall(id) ?? { food: 0, wood: 0, gold: 0, crystal: 0 });
+        const text = missing === "" ? "" : `還差 ${missing}`;
+        if (short.textContent !== text) short.textContent = text;
+        short.hidden = text === "";
+      });
       if (view.townPlunderedOnce(id)) el("p", this.el, "sel-note", PLUNDERED_TEXT);
     }
     // 留守 − N + 名 (D-026), for a town we hold.
@@ -644,7 +676,9 @@ export class SelectionInfo {
       const owner = t[o + T.owner];
       const who = owner === view.me ? "我方" : owner === NO_OWNER || owner === NEUTRAL ? "" : "敵方";
       const sent = owner === view.me && t[o + T.state] === TownState.AwaitingChoice && this.host.paused() ? this.host.pending().townChoice(id) : null;
-      status.textContent = sent === null ? `${who}${TOWN_STATE_NAME[t[o + T.state]] ?? ""}` : `${who}攻下：${sent === TownChoice.Plunder ? "搶" : "治理"}（繼續後）`;
+      const waits = owner === view.me && t[o + T.state] === TownState.AwaitingChoice && this.host.governWaiting(id);
+      const state = sent !== null ? `${who}攻下：${sent === TownChoice.Plunder ? "搶" : "治理"}（繼續後）` : waits ? `${who}攻下，等錢治理` : `${who}${TOWN_STATE_NAME[t[o + T.state]] ?? ""}`;
+      if (status.textContent !== state) status.textContent = state;
       // Two different counts for our own town: every soldier of ours inside it now, and the
       // ones told to stay (留守, below), who do not leave with 全軍.
       const inside = owner === view.me ? `城裡有 ${t[o + T.garrison]} 名兵（至少要 ${t[o + T.garrisonNeeded]} 名）` : `駐軍 ${t[o + T.garrison]}/${t[o + T.garrisonNeeded]}`;
@@ -813,7 +847,8 @@ export class CommandArea {
         if (type === BuildingType.MainCity) {
           button(this.el, "經濟分配", "", () => this.host.openEconomy(), "secondary");
           // 預留 (D-054): what 自動訓練 leaves for building.
-          button(this.el, "預留", "自動訓練", () => this.host.openReserve(), "secondary");
+          // While 治理 waits for its cost (ceo 2026-10-21), the reserve is raised: the button says so.
+          button(this.el, "預留", this.host.reserveRaised() ? "暫時提高" : "自動訓練", () => this.host.openReserve(), "secondary");
           button(this.el, "建造", "", () => this.setPage("build"));
         }
       }

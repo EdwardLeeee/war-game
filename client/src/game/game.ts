@@ -45,6 +45,7 @@ import {
   CELL,
   type CommandBody,
   type ContinueFailure,
+  type Cost,
   dir16,
   type FromWorker,
   type GameOverReason,
@@ -55,6 +56,7 @@ import {
   NodeField,
   Order,
   PROTOCOL_VERSION,
+  Reject,
   Resource,
   type ScenarioName,
   Stance,
@@ -87,6 +89,7 @@ import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn, orderState } from "./orders.ts";
+import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
@@ -434,6 +437,8 @@ export class Game implements GestureHost {
   private readonly sightings = new Map<number, Sighting>();
   private prunedAt = 0;
   private readonly lastSent = new Map<number, Spot>();
+  /** 等錢治理 (ceo 2026-10-21): towns whose 治理 waits for its cost, and the reserve raised meanwhile. */
+  readonly governWaits = new GovernWaits();
   /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
   private readonly autocastAsked = new Set<number>();
   /** Orders from the buttons the snapshot does not show yet (a site, the queue, 自動訓練, 搶 or 治理): shown at once (pending.ts). */
@@ -623,6 +628,7 @@ export class Game implements GestureHost {
       speed: this.speed,
       seq: this.seq,
       recruitMessageTick: Number.isFinite(this.recruitMessageTick) ? this.recruitMessageTick : null,
+      govern: this.governWaits.save(),
     };
   }
 
@@ -642,6 +648,7 @@ export class Game implements GestureHost {
     this.alarms.restore(s.alarms);
     this.charges.restore(s.charges);
     this.recruitMessageTick = s.recruitMessageTick ?? Number.NEGATIVE_INFINITY;
+    this.governWaits.restore(s.govern);
     this.seq = Math.max(this.seq, s.seq);
     this.speed = s.speed;
     this.controls.setSpeed(s.speed);
@@ -878,10 +885,107 @@ export class Game implements GestureHost {
     return ids;
   }
 
-  /** 搶 or 治理, leaving `keep` soldiers behind. If the simulation refuses the choice, they are released again. */
+  /**
+   * 搶 or 治理, leaving `keep` soldiers behind. If the simulation refuses the choice, they are
+   * released again. 治理 without its cost (ceo 2026-10-21): the soldiers stay all the same and the
+   * town waits for it (等錢治理); 治理 starts by itself once it is there.
+   */
   chooseTown(town: number, choice: TownChoice, keep: number): void {
+    const cost = this.governCost(town);
+    if (choice === TownChoice.Govern && cost !== null && !affords(cost, this.stock())) {
+      this.stationGarrison(town, keep);
+      this.startGovernWait(town, cost);
+      return;
+    }
+    // 搶 instead: no more waiting.
+    if (choice === TownChoice.Plunder) this.endGovernWait(town);
     const seq = this.command({ c: "town_choice", town, choice });
     this.army.awaitChoice(town, seq, this.stationGarrison(town, keep));
+  }
+
+  /** 治理's cost for this town, from the rules (小鎮 木 80、金 80; 大城 木 150、金 150), or null when not known. */
+  governCost(town: number): Cost | null {
+    const view = this.view;
+    const size = view?.knownTowns.get(town)?.size;
+    return size === undefined ? null : (view?.rules.towns?.[size]?.governCost ?? null);
+  }
+
+  /** What we have now (the resource bar's numbers). */
+  stock(): Cost {
+    const h = this.view?.header;
+    return h === null || h === undefined ? { food: 0, wood: 0, gold: 0, crystal: 0 } : { food: h[H.food], wood: h[H.wood], gold: h[H.gold], crystal: h[H.crystal] };
+  }
+
+  /** What is missing for this town's 治理 (0 everywhere when it is there), or null when its cost is not known. */
+  governShortfall(town: number): Cost | null {
+    const cost = this.governWaits.costOf(town) ?? this.governCost(town);
+    return cost === null ? null : shortfall(cost, this.stock());
+  }
+
+  /** The reserve the simulation has now (預留, D-054). */
+  private reserveInEffect(): Cost {
+    const h = this.view?.header;
+    return h === null || h === undefined ? { food: 0, wood: 0, gold: 0, crystal: 0 } : { food: h[H.reserveFood], wood: h[H.reserveWood], gold: h[H.reserveGold], crystal: h[H.reserveCrystal] };
+  }
+
+  /** The player's own reserve (預留's dialog): while towns wait for 治理, not the raised one in effect. */
+  ownReserve(): Cost {
+    return this.governWaits.ownReserve(this.reserveInEffect());
+  }
+
+  /** The reserve raised while towns wait for 治理 (「木 150、金 150」), or "" while none does. */
+  raisedReserveText(): string {
+    return this.governWaits.raisedText();
+  }
+
+  /** 預留 → 套用: the player's own reserve; while towns wait for 治理, the raise stays on top. */
+  setReserve(r: Cost): void {
+    this.command({ c: "reserve", ...this.governWaits.setOwn(r) });
+  }
+
+  private sendReserve(r: Cost | null): void {
+    if (r !== null) this.autoCommand({ c: "reserve", ...r });
+  }
+
+  private startGovernWait(town: number, cost: Cost): void {
+    this.sendReserve(this.governWaits.start(town, cost, this.reserveInEffect()));
+    this.toast(`錢不夠：先留守，還差 ${costText(shortfall(cost, this.stock()))}，夠了自動治理`);
+  }
+
+  private endGovernWait(town: number): void {
+    this.sendReserve(this.governWaits.end(town));
+  }
+
+  /** 取消 on the town's panel: no more waiting; the 留守 soldiers stay (the town still waits for a choice). */
+  cancelGovernWait(town: number): void {
+    if (!this.governWaits.has(town)) return;
+    this.endGovernWait(town);
+    this.toast("已取消等錢治理，留守的兵照樣守著");
+  }
+
+  /**
+   * Every snapshot: a waiting town still ours and waiting for a choice gets its 治理 once the cost
+   * is there; one where 治理 has started, or no longer ours or waiting, is let go.
+   */
+  private tickGovernWaits(): void {
+    const view = this.view;
+    const t = view?.curr?.snap.towns;
+    if (view === null || t === undefined || this.governWaits.size === 0) return;
+    const tick = view.header?.[H.tick] ?? 0;
+    const have = this.stock();
+    for (const town of this.governWaits.list()) {
+      const o = view.townRow(town);
+      if (o < 0) continue;
+      const ours = t[o + TownField.owner] === view.me;
+      const state = t[o + TownField.state];
+      if (ours && state === TownState.AwaitingChoice) {
+        if (this.governWaits.due(town, have, tick)) this.governWaits.sent(town, this.autoCommand({ c: "town_choice", town, choice: TownChoice.Govern }));
+        continue;
+      }
+      const started = ours && state === TownState.Repairing && this.governWaits.isSent(town);
+      this.endGovernWait(town);
+      if (started) this.toast(`開始治理${view.knownTowns.get(town)?.size === TownSize.Large ? "大城" : "小鎮"}`, "ok");
+    }
   }
 
   /** Our villagers, with what each gathers now (派村民, D-061). Those hiding in a building are left out. */
@@ -1437,6 +1541,20 @@ export class Game implements GestureHost {
           if (ev.k === "rejected") {
             this.pending.refused(ev.seq);
             const cmd = this.sent.find((c) => c.seq === ev.seq);
+            const waiting = this.governWaits.townOf(ev.seq);
+            if (waiting >= 0) {
+              // 等錢治理's own 治理: spent the same step (自動訓練), try again; else (taken, lost) stop waiting.
+              if (ev.reason === Reject.CannotAfford) this.governWaits.retry(waiting, view.header?.[H.tick] ?? 0);
+              else this.endGovernWait(waiting);
+              continue;
+            }
+            if (cmd?.c === "town_choice" && cmd.choice === TownChoice.Govern && cmd.auto !== true && ev.reason === Reject.CannotAfford) {
+              // 治理 the screen thought affordable, spent the same step: the soldiers stay, and it waits (ceo 2026-10-21).
+              this.army.keepStationed(ev.seq);
+              const cost = this.governCost(cmd.town);
+              if (cost !== null) this.startGovernWait(cmd.town, cost);
+              continue;
+            }
             // A refused 搶 or 治理: the soldiers stationed with it go back to 積極 and to 全軍.
             this.setStance(this.army.refused(ev.seq), Stance.Aggressive);
             if (cmd?.auto !== true) this.overlays.toast(rejectText(ev.reason, cmd));
@@ -1452,6 +1570,7 @@ export class Game implements GestureHost {
         this.pending.settle(view.header?.[H.tick] ?? 0);
         this.controls.setWaiting(this.pending.waiting);
         this.pruneArmy();
+        this.tickGovernWaits();
         this.draftArmy();
         this.musterRecruits();
         this.followCharges();
@@ -1673,7 +1792,8 @@ export class Game implements GestureHost {
           this.overlays.toast(this.describe(it.pick));
           // A town of ours still waiting for 搶 or 治理: the choice again (GDD §10, after 稍後再決定 or 重設).
           // Not once chosen while paused (R6-31: it waits for 繼續).
-          if (it.pick.kind === "town" && view.townAwaitsMyChoice(it.pick.id) && this.pending.townChoice(it.pick.id) === null) this.hud.openTownChoice(it.pick.id);
+          // Not while it waits for 治理's cost (等錢治理): its panel has 搶 and 取消.
+          if (it.pick.kind === "town" && view.townAwaitsMyChoice(it.pick.id) && this.pending.townChoice(it.pick.id) === null && !this.governWaits.has(it.pick.id)) this.hud.openTownChoice(it.pick.id);
           break;
         case "clear":
           view.selection = { units: [], building: null };
