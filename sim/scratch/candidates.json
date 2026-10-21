@@ -1,0 +1,872 @@
+{
+ "traces": [
+  {
+   "name": "base-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "stage-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   }
+  },
+  {
+   "name": "stage-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   },
+   "b": {}
+  },
+  {
+   "name": "stage-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   },
+   "b": {}
+  },
+  {
+   "name": "stage-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   },
+   "b": {}
+  },
+  {
+   "name": "stage-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   },
+   "b": {}
+  },
+  {
+   "name": "again-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "again-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "again-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "again-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "again-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "both-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   }
+  },
+  {
+   "name": "both-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "both-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "both-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "b": {}
+  },
+  {
+   "name": "both-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "b": {}
+  }
+ ],
+ "scripted": [
+  {
+   "name": "baseN",
+   "a": {},
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold"
+   ],
+   "difficulty": "normal"
+  },
+  {
+   "name": "base",
+   "a": {},
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "stageN",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   },
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold"
+   ],
+   "difficulty": "normal"
+  },
+  {
+   "name": "stage",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   },
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "againN",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold"
+   ],
+   "difficulty": "normal"
+  },
+  {
+   "name": "again",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "bothN",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold"
+   ],
+   "difficulty": "normal"
+  },
+  {
+   "name": "both",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  }
+ ],
+ "think": [
+  {
+   "name": "stage",
+   "seeds": "1-3",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   },
+   "map": "fixed"
+  },
+  {
+   "name": "stageR",
+   "seeds": "1-3",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true
+   },
+   "map": "random"
+  },
+  {
+   "name": "again",
+   "seeds": "1-3",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "map": "fixed"
+  },
+  {
+   "name": "againR",
+   "seeds": "1-3",
+   "a": {
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "map": "random"
+  },
+  {
+   "name": "both",
+   "seeds": "1-3",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "map": "fixed"
+  },
+  {
+   "name": "bothR",
+   "seeds": "1-3",
+   "a": {
+    "fortStage": true,
+    "normalFortStage": true,
+    "fortAgain": true,
+    "normalFortAgain": true
+   },
+   "map": "random"
+  }
+ ]
+}
