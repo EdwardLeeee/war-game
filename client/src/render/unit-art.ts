@@ -85,10 +85,14 @@ export async function page(url: string, times: LoadRecorder | null, size?: numbe
   const downloaded = performance.now();
   // `size`: scaled to that square as it is decoded (the ground's development textures come at 2048).
   // `straight`: A is not alpha but data (the ground's height), never multiplied into the colour.
-  const bitmap = await createImageBitmap(blob, {
-    ...(size === undefined ? {} : { resizeWidth: size, resizeHeight: size, resizeQuality: "high" as const }),
-    ...(straight ? { premultiplyAlpha: "none" as const } : {}),
-  });
+  // The atlases (neither): the one-argument call, as before the ground.
+  const bitmap =
+    size === undefined && !straight
+      ? await createImageBitmap(blob)
+      : await createImageBitmap(blob, {
+          ...(size === undefined ? {} : { resizeWidth: size, resizeHeight: size, resizeQuality: "high" as const }),
+          ...(straight ? { premultiplyAlpha: "none" as const } : {}),
+        });
   const source = new ImageSource({ resource: bitmap, alphaMode: straight ? "no-premultiply-alpha" : "premultiply-alpha-on-upload", label: url });
   times?.file(url, start, downloaded, blob.size, performance.now(), res.headers.get("x-war-game-sw"));
   return new Texture({ source, label: url });

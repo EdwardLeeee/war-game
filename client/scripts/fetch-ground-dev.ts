@@ -19,6 +19,8 @@ const CLIENT = join(resolve(dirname(fileURLToPath(import.meta.url))), "..");
 const CACHE = join(CLIENT, ".art-cache", "ground-r7");
 const OUT = join(CLIENT, "public", "art", "ground-dev");
 const POLY = "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k";
+/** How long one download may take (ms), body included. */
+const FETCH_TIMEOUT_MS = 60_000;
 
 /**
  * R7's ground (design/r7/blender/ground_r7.py build(), look.py SIZE and MEAN): the texture, its
@@ -38,7 +40,9 @@ const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 async function fetchChecked(name: string, want: string): Promise<string> {
   const file = join(CACHE, `${name}_diff_2k.jpg`);
   if (existsSync(file) && sha(readFileSync(file)) === want) return file;
-  const res = await fetch(`${POLY}/${name}/${name}_diff_2k.jpg`);
+  // A download that hangs is cut after a minute, so a slow Poly Haven never holds up a Pages deploy:
+  // the abort lands in the warning below like any failure.
+  const res = await fetch(`${POLY}/${name}/${name}_diff_2k.jpg`, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
   const body = new Uint8Array(await res.arrayBuffer());
   const got = sha(body);
