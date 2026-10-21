@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortValues, groupsOnWay, type HardPlan, SIEGE, STAGING, stagePoint } from "../src/ai/ai.ts";
+import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, SIEGE, STAGING, stagePoint } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
@@ -1276,7 +1276,7 @@ test("D-081: a group on the straight way is on the way; one beside another way i
 });
 
 /** Hard with 20 spearmen at home, and enemy arrow towers (someone hiding in each) on the straight way to the enemy's main city, seen by farmers of its own. */
-function fortsOnTheWay(towers: number, hidden: boolean) {
+function fortsOnTheWay(towers: number, hidden: boolean, more: Partial<HardPlan> = {}, difficulty: AiDifficulty = "hard", at: [number, number] = [34, 56]) {
   const g = emptyGame();
   const w = g.w;
   for (const t of w.map.towns) {
@@ -1290,14 +1290,17 @@ function fortsOnTheWay(towers: number, hidden: boolean) {
   // On the way from (16, 78) to (78, 16): about a third of it.
   const ids: number[] = [];
   for (let k = 0; k < towers; k++) {
-    const id = w.addBuilding(1, BuildingType.ArrowTower, 34 + 3 * k, 56 - 3 * k, 600, 1000);
+    const id = w.addBuilding(1, BuildingType.ArrowTower, at[0] + 3 * k, at[1] - 3 * k, 600, 1000);
     if (hidden) w.buildings.col.soldiers[w.building(id)] = 3;
     ids.push(id);
     // A farmer of its own sees each.
-    put(g, 0, UnitType.Farmer, 33 + 3 * k, 59 - 3 * k);
+    put(g, 0, UnitType.Farmer, at[0] - 1 + 3 * k, at[1] + 3 - 3 * k);
   }
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0 });
+  const ai =
+    difficulty === "hard"
+      ? hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0, ...more })
+      : createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty }, 0, "balanced");
   return { g, w, ai, s1: w.map.spawns[1], ids };
 }
 
@@ -1310,6 +1313,62 @@ test("D-081: hard does not march into forts too strong for it on the way; it doe
   const weak = fortsOnTheWay(2, false);
   const straight = weak.ai.think(buildView(weak.g, 0)).find((c) => c.c === "move" && c.u.length === 20) as { x: number; y: number } | undefined;
   assert.deepEqual(straight && [straight.x, straight.y], [weak.s1.cellX, weak.s1.cellY], "straight to the enemy base");
+});
+
+test("D-081 / A4: the gathering point before forts is open ground beyond their reach (2 to 6 cells), the nearest to the army", () => {
+  const n = 128;
+  const placement = new Uint8Array(n * n);
+  const rank = (x: number, y: number) => y * n + x;
+  const tower = { id: 1, type: BuildingType.ArrowTower, x: 60, y: 60, size: 2, done: true, hits: 8, reach: 8, seen: true, occupied: false } as Fort;
+  const g = fortGroups([tower], () => 0, fortValues(rules()));
+  const reach = (x: number, y: number) => {
+    const dx = Math.max(60 - x, 0, x - 61);
+    const dy = Math.max(60 - y, 0, y - 61);
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+  const p = fortStagePoint({ placement }, { size: n, mode: "fixed" }, [tower], g[0], { x: 20, y: 60 }, rank);
+  assert.ok(p !== null && reach(p.x, p.y) > 10 && reach(p.x, p.y) <= 14 && p.x < 60, `beyond its reach, on the army's side (${JSON.stringify(p)})`);
+  // A wall of rock round it beyond 9 cells: nothing it can get to from the tower's side.
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (reach(x, y) > 9 && reach(x, y) <= 10.5) placement[y * n + x] = 1;
+  assert.equal(fortStagePoint({ placement }, { size: n, mode: "fixed" }, [tower], g[0], { x: 20, y: 60 }, rank), null);
+});
+
+test("D-081 / A4 (fortStage): forts on the way it can take, it gathers outside their reach first, then goes for them together; off, straight on (normal and hard)", () => {
+  for (const difficulty of ["hard", "normal"] as const) {
+    const run = (on: boolean) => {
+      NORMAL_FORT.stage = on;
+      // Normal goes for the town at (29, 29) first: the towers on that way.
+      const t = fortsOnTheWay(2, false, { fortStage: on }, difficulty, difficulty === "hard" ? [34, 56] : [25, 44]);
+      NORMAL_FORT.stage = false;
+      const first = t.ai.think(buildView(t.g, 0));
+      t.w.tick += 10;
+      t.g.fog.update(t.w);
+      return { ...t, first, out: t.ai.think(buildView(t.g, 0)) };
+    };
+    const off = run(false);
+    assert.ok(off.first.some((c) => c.c === "move" && c.u.length === 20 && (difficulty === "hard" ? c.x === off.s1.cellX && c.y === off.s1.cellY : c.x === 29 && c.y === 29)), `${difficulty}: sets out`);
+    assert.ok(!off.out.some((c) => c.c === "move" && c.u.length === 20), `${difficulty} off: straight on`);
+    const on = run(true);
+    const to = on.out.find((c) => c.c === "move" && c.u.length === 20) as { x: number; y: number; u: number[] } | undefined;
+    assert.ok(to !== undefined, `${difficulty} on: to a gathering point`);
+    const forts = enemyForts(buildView(on.g, 0), 0, rules());
+    const d2 = (f: Fort) => {
+      const dx = Math.max(f.x - to.x, 0, to.x - (f.x + f.size - 1));
+      const dy = Math.max(f.y - to.y, 0, to.y - (f.y + f.size - 1));
+      return dx * dx + dy * dy;
+    };
+    assert.ok(forts.every((f) => d2(f) > (f.hits + 2) * (f.hits + 2)) && forts.some((f) => d2(f) <= (f.hits + 6) * (f.hits + 6)), `${difficulty}: beyond their reach, by them`);
+    // All there: on for the towers together.
+    for (const id of to.u) {
+      const s = slotOf(on.g, id);
+      on.w.units.col.x[s] = to.x * CELL + (CELL >> 1);
+      on.w.units.col.y[s] = to.y * CELL + (CELL >> 1);
+    }
+    on.w.tick += 10;
+    on.g.fog.update(on.w);
+    const go = on.ai.think(buildView(on.g, 0));
+    assert.ok(go.some((c) => (c.c === "attack" && on.ids.includes(c.target) && c.u.length === 20) || (c.c === "move" && c.u.length === 20 && forts.some((f) => Math.abs(c.x - f.x) <= 2 && Math.abs(c.y - f.y) <= 2))), `${difficulty}: then for the towers`);
+  }
 });
 
 test("D-081: with townRest (off by default), hard leaves a town it fell back from alone for a while", () => {
@@ -1370,6 +1429,34 @@ test("D-081: after breaking off from a fort on its ground, it goes again within 
     assert.ok(!again(0, 700), `${difficulty}: not with as many as set out, 35 s on`);
     assert.ok(again(4, 700), `${difficulty}: with 1.5 x (12 spearmen)`);
     assert.ok(again(0, 5 * 1200 + 10), `${difficulty}: with as many once 5 minutes are past`);
+  }
+});
+
+test("D-081 / A4 (fortAgain): after breaking off from a fort, the next go takes 2 x the army and it remembers for 10 minutes (normal and hard)", () => {
+  for (const difficulty of ["normal", "hard"] as const) {
+    const again = (more: number, later: number) => {
+      NORMAL_FORT.again = true;
+      const saved = HARD.fortAgain;
+      HARD.fortAgain = true;
+      const { g, w, ai, fort, spears, centre } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
+      NORMAL_FORT.again = false;
+      HARD.fortAgain = saved;
+      const farmers: number[] = [];
+      for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) farmers.push(w.units.col.id[s]);
+      kill(g, [...spears.slice(2), ...farmers]);
+      w.tick += 10;
+      g.fog.update(w);
+      assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), `${difficulty}: ground down, it breaks off`);
+      const home = spawnCentre(w.map.frames[0], w.map.spawns[0]);
+      for (let k = 0; k < 6 + more; k++) put(g, 0, UnitType.Spearman, home.x - 4 - (k % 6), home.y - 4 - Math.trunc(k / 6));
+      w.tick += later;
+      g.fog.update(w);
+      return ai.think(buildView(g, 0)).some((c) => (c.c === "attack" && c.target === fort) || (c.c === "move" && c.x === centre.x && c.y === centre.y));
+    };
+    assert.ok(!again(4, 700), `${difficulty}: not with 1.5 x (12 spearmen)`);
+    assert.ok(again(8, 700), `${difficulty}: with 2 x (16)`);
+    assert.ok(!again(0, 5 * 1200 + 10), `${difficulty}: not with as many 5 minutes on`);
+    assert.ok(again(0, 10 * 1200 + 10), `${difficulty}: with as many once 10 minutes are past`);
   }
 });
 
