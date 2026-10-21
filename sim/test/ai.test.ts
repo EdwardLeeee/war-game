@@ -2287,6 +2287,70 @@ test("D-086 A4 (plan.mineMove): the gold by its mine gone, hard puts up another 
   assert.equal(built(false), false, "off: none, as before");
 });
 
+test("D-086 A4 (plan.mineMove): the only gold left nearer the enemy's main city, hard puts no mine there", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  w.tick = 13 * 1200;
+  const at = (type: BuildingType, x: number, y: number) => w.addBuilding(0, type, s0.cellX + x, s0.cellY + y, rules().buildings[type].hp, 1000);
+  for (const [t, x, y] of [[BuildingType.Barracks, 4, -8], [BuildingType.Barracks, 8, -8], [BuildingType.Range, 12, -8], [BuildingType.Range, 16, -8], [BuildingType.MageHall, 4, -13], [BuildingType.Granary, -6, -6], [BuildingType.LumberCamp, -10, 2]] as [BuildingType, number, number][]) at(t, x, y);
+  for (let k = 0; k < 10; k++) at(BuildingType.Farm, -14 + 3 * (k % 3), -14 + 3 * Math.trunc(k / 3));
+  for (let k = 0; k < 12; k++) at(BuildingType.House, -8 + 3 * (k % 6), 6 + 3 * Math.trunc(k / 6));
+  // A mine of its own, and all the gold on its side of the map gone (a09c2367 at minute 30).
+  const d2 = (i: number, s: { cellX: number; cellY: number }) => (w.nodeX[i] - s.cellX) ** 2 + (w.nodeY[i] - s.cellY) ** 2;
+  let first = -1;
+  for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.GoldMine && (first < 0 || d2(i, s0) < d2(first, s0))) first = i;
+  w.addBuilding(0, BuildingType.Mine, w.nodeX[first] + 1, w.nodeY[first] + 1, rules().buildings[BuildingType.Mine].hp, 1000);
+  for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.GoldMine && d2(i, s0) < d2(i, s1)) w.nodeAmount[i] = 0;
+  for (let k = 0; k < 30; k++) {
+    const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 10), s0.cellY - 2 - Math.trunc(k / 10));
+    w.units.col.order[slotOf(g, id)] = Order.Gather;
+  }
+  w.res.set([700, 600, 300, 0], 0);
+  // It sees the nearest gold left (on the enemy's side) and the ground there.
+  let next = -1;
+  for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.GoldMine && w.nodeAmount[i] > 0 && (next < 0 || d2(i, s0) < d2(next, s0))) next = i;
+  put(g, 0, UnitType.Spearman, w.nodeX[next] + 2, w.nodeY[next] + 2);
+  g.fog.update(w);
+  const out = hardAi(g, { dodge: false, mineMove: true }).think(buildView(g, 0));
+  assert.equal(out.some((c) => c.c === "build" && c.type === BuildingType.Mine), false);
+});
+
+test("D-086 A4 (plan.buildSafe): a site razed before it was done, hard puts none of its kind there again for a while; off, as before", () => {
+  const again = (buildSafe: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 4 * 1200;
+    for (let k = 0; k < 12; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + k, s0.cellY + 4);
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    w.res.set([1000, 1000, 1000, 0], 0);
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, buildSafe });
+    let seq = 0;
+    const first = ai.think(buildView(g, 0)).find((c) => c.c === "build");
+    assert.ok(first !== undefined && first.c === "build", "it builds something");
+    g.push({ ...first, t: g.tick, p: 0, seq: seq++ } as never);
+    g.step();
+    const site = w.building(w.buildings.col.id[w.buildings.count - 1]);
+    assert.equal(w.buildings.col.type[site], first.type);
+    assert.ok(w.buildings.col.progress[site] < 1000);
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    // Razed before it was done.
+    w.buildings.col.hp[site] = 0;
+    for (let k = 0; k < 100; k++) g.step();
+    w.res.set([1000, 1000, 1000, 0], 0);
+    g.fog.update(w);
+    return ai.think(buildView(g, 0)).some((c) => c.c === "build" && c.type === first.type && (c.x - first.x) ** 2 + (c.y - first.y) ** 2 <= 64);
+  };
+  assert.equal(again(false), true, "off: put down there again, as before");
+  assert.equal(again(true), false, "on: not there again yet");
+});
+
 test("D-086 A4 (plan.buildSafe): with enemy soldiers in sight by the spot, hard puts nothing down there; off, as before", () => {
   const builds = (buildSafe: boolean) => {
     const g = emptyGame();
