@@ -104,6 +104,8 @@ if (flag("late")) {
 }
 // D-086 A3: this many soldiers go for the AI's farmers far from its main city (--late --harass 10).
 plan.harass = Number(arg("harass", "0"));
+// D-097: cavalry this share of its soldiers (percent), a stable once it has a range (--cavalry-share 18).
+plan.cavalryShare = Number(arg("cavalry-share", String(plan.cavalryShare)));
 /** D-086 A: an AI order this soon after its last order at the player's main city is the same march. */
 const MARCH_GAP = 2 * 1200;
 /** D-086 A: the late turn the measure looks for (the user's long wins): the player wins after this tick. */
@@ -173,7 +175,8 @@ interface GameRecord {
   /** At the end: both main cities' hp, both armies (spearmen / ranged / mages). */
   cityHp: [number, number];
   armies: [string, string];
-  trained: { mages: [number, number] };
+  /** Mages and (D-097) cavalry each side trained. */
+  trained: { mages: [number, number]; cavalry: [number, number] };
   cannonShots: [number, number];
   /** Units each side's crystal cannon killed (round 8). */
   cannonKills: [number, number];
@@ -720,7 +723,7 @@ function play(seed: number): GameRecord {
     waves,
     cityHp: [cityHp(0), cityHp(1)],
     armies: [army(0), army(1)],
-    trained: { mages: [w.trained[UnitType.Mage], w.trained[UNIT_KINDS + UnitType.Mage]] },
+    trained: { mages: [w.trained[UnitType.Mage], w.trained[UNIT_KINDS + UnitType.Mage]], cavalry: [w.trained[UnitType.Cavalry], w.trained[UNIT_KINDS + UnitType.Cavalry]] },
     cannonShots: [w.cannonShots[0], w.cannonShots[1]],
     cannonKills: [w.cannonKills[0], w.cannonKills[1]],
     rejected,
@@ -752,10 +755,16 @@ const options = [
   plan.fortressHold > 0 ? `大軍守在要塞旁，湊到 ${plan.fortressHold} 名或第 30 分才出發（D-081）` : "",
   plan.harass > 0 ? `殺村民：第 10 分起 ${plan.harass} 名兵（遠程先）去殺電腦離主城 20 格以上的村民，看不到就繞電腦主城找；附近敵兵比自己多或剩一半就回家，1 分鐘後補滿再去（D-086 A3）` : "",
   plan.pushAhead ? `後期翻盤：24 名村民、遠程為主、家旁 ${plan.homeTowers} 座箭樓、騎兵佔 ${plan.cavalryShare}%、城鎮打下來就治理，兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門（D-086）` : "",
+  !plan.pushAhead && plan.cavalryShare > 0 ? `帶騎兵：騎兵佔自己兵的 ${plan.cavalryShare}%，有射場以後蓋馬廄（D-097）` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
 out.push(`${games.length} 局贏 ${won} 局，輸 ${games.length - won - open.length} 局${open.length > 0 ? `，到第 ${m(CAP)} 分還沒分出勝負 ${open.length} 局` : ""}。`, "");
+// D-097: how many cavalry each side trained, on average.
+if (plan.cavalryShare > 0 || games.some((x) => x.trained.cavalry[1] > 0)) {
+  const mean = (k: number) => (games.reduce((a, x) => a + x.trained.cavalry[k], 0) / Math.max(games.length, 1)).toFixed(1);
+  out.push(`騎兵：每局平均我訓練 ${mean(0)} 名、電腦 ${mean(1)} 名。`, "");
+}
 const byStyle = AI_STYLES.map((s) => {
   const of = games.filter((x) => x.style === s);
   return of.length === 0 ? "" : `${STYLE_NAMES[s]} ${of.filter((x) => x.result === "won").length}/${of.length}`;
