@@ -46,3 +46,34 @@ test("兵種相剋：騎兵關著時只有三種兵，和騎兵有關的倍數�
     ],
   );
 });
+
+test("D-097 的短句：照倍數表和不是倍數的說明寫「剋：…／怕：…」，護盾算法師；騎兵繞後開著時加說明；空的一邊不寫", async () => {
+  const { counterShort } = await import("../src/game/counters.ts");
+  // The triangle as the user chose it (D-097): spear > cavalry, cavalry > mages (and ranged, by speed), ranged > spear.
+  const triangle = (cavalry: boolean, cavalryFlank: boolean) =>
+    ({
+      ...simRules(),
+      features: { plunderOnce: false, towers: false, garrison: false, cavalry, ...(cavalryFlank ? { cavalryFlank: true } : {}) },
+      multipliers: [
+        { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 7, den: 2 },
+        { attacker: UnitType.Spearman, target: UnitType.Cavalry, num: 5, den: 2 },
+        { attacker: UnitType.Cavalry, target: UnitType.Mage, num: 3, den: 1 },
+        { attacker: UnitType.Cavalry, target: "shield", num: 3, den: 1 },
+      ],
+    }) as Rules;
+  const on = triangle(true, true);
+  assert.equal(counterShort(on, UnitType.Spearman), "剋：騎兵／怕：遠程");
+  assert.equal(counterShort(on, UnitType.Ranged), "剋：槍兵／怕：騎兵");
+  assert.equal(counterShort(on, UnitType.Mage), "剋：擠在一起的部隊／怕：騎兵");
+  assert.equal(counterShort(on, UnitType.Cavalry), "剋：遠程、法師（會自己繞過前排去打）／怕：槍兵");
+  // On a train button: without the note.
+  assert.equal(counterShort(on, UnitType.Cavalry, true), "剋：遠程、法師／怕：槍兵");
+  assert.equal(counterShort(triangle(true, false), UnitType.Cavalry), "剋：遠程、法師／怕：槍兵");
+  // Cavalry off: nothing about it; the mage fears nobody by this table, so no 怕 at all.
+  const off = triangle(false, false);
+  assert.equal(counterShort(off, UnitType.Spearman), "怕：遠程");
+  assert.equal(counterShort(off, UnitType.Ranged), "剋：槍兵");
+  assert.equal(counterShort(off, UnitType.Mage), "剋：擠在一起的部隊");
+  assert.equal(counterShort(off, UnitType.Cavalry), "");
+  assert.equal(counterShort(on, UnitType.Farmer), "");
+});
