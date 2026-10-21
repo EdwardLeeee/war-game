@@ -166,6 +166,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     features: {
       plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on,
       ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
+      ...(CAV_FLANK.on ? { cavalryFlank: true } : {}),
     },
     arrows: {
       mainCity: MAIN_ARROW,
@@ -393,6 +394,32 @@ export const AVENGE = { on: true, reach: 8 * CELL };
  * it reads.
  */
 export const FIRE_BACK = { on: true, reach: 9 * CELL, leash: 8 * CELL };
+/**
+ * Cavalry go for the back row (D-097 (c); the user 2026-10-22: 「騎兵自動繞去打後排」): a
+ * player's cavalry choosing its own target (idle and aggressive; on a move when it would fight
+ * anyway; with its squad, joining a fight, hitting back), not on hold, takes the nearest enemy
+ * mage its owner sees within `reach`, else the nearest ranged unit, that it can walk to, within
+ * `leash` of its place (on a move: of where it turned) and not within `towerMargin` of the range
+ * of an enemy building it knows that shoots. On the way it rides round the enemy melee between
+ * it and the target (within `line` of the straight way; those within `scan` either side count as
+ * the same block): past the side the block reaches less far out, `margin` beyond its edge and
+ * level with its furthest man, on straight open lines only (else the usual way). `giveUpTicks`
+ * without landing a hit, it takes the nearest enemy as before and leaves the back row alone for
+ * `restTicks`. An attack order, hold stance, a retreat, a garrison or a wall are left as they
+ * are; after the dive a move goes on. Its unit columns are in the hash only while it is on.
+ */
+export const CAV_FLANK = {
+  on: true,
+  reach: 10 * CELL,
+  leash: 12 * CELL,
+  towerMargin: CELL,
+  line: CELL + (CELL >> 1),
+  scan: 5 * CELL,
+  margin: 2 * CELL,
+  arrive: CELL + (CELL >> 1),
+  giveUpTicks: 8 * S,
+  restTicks: 5 * S,
+};
 /**
  * Giving up a place it does not get to (D-095; the client's e2e, after R6-51's ridges): a unit on
  * a move or retreat, with no target, within its formation (no farther from the group's goal cell

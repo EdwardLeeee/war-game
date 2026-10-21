@@ -702,6 +702,8 @@ export interface Features {
   gates?: boolean;
   /** Ranged units and mages go up onto town walls (`wall`, D-096), `Rules.walls`. Absent: off. */
   walls?: boolean;
+  /** Cavalry choosing its own target goes round the front for mages, then ranged units (D-097). Absent: off. */
+  cavalryFlank?: boolean;
 }
 
 export interface MapInfo {

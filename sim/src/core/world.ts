@@ -53,6 +53,11 @@ export const UNIT_COLS = [
   // on this move or retreat (fixed point, 0 none yet) and the ticks since it last came nearer; in
   // the hash only while SLOT_GIVE_UP is on.
   "slotBest", "slotIdle",
+  // Going for the back row (CAV_FLANK, D-097): the target it rides for (-1 none), the side it
+  // goes round the front (1, -1; 0 not chosen yet), the point beside the front it heads for
+  // (fixed point, -1 none) and the tick it set off or last landed a hit (not going: the tick it
+  // may go again). In the hash only while CAV_FLANK is on.
+  "flank", "flankSide", "flankX", "flankY", "flankTick",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 /** Unit types counted per player in `trained` and `lost` (UnitType 0..5; the hash leaves out cavalry while CAVALRY is off). */
@@ -481,6 +486,11 @@ export class World {
     c.avenge[s] = -1;
     c.fireBack[s] = -1;
     c.wall[s] = -1;
+    c.flank[s] = -1;
+    c.flankSide[s] = 0;
+    c.flankX[s] = -1;
+    c.flankY[s] = -1;
+    c.flankTick[s] = 0;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
     c.autoBuild[s] = -1;

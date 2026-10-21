@@ -34,6 +34,7 @@ import {
   BUILDINGS,
   AVENGE,
   CANNON,
+  CAV_FLANK,
   DODGE,
   FIRE_BACK,
   GATE,
@@ -150,6 +151,8 @@ export class UnitSystem {
    * cells are blocked or opened (every building placed or gone changes one of the two).
    */
   private readonly walled = new Map<string, { cell: number; blocker: number }>();
+  /** Building slots that shoot arrows this tick (CAV_FLANK keeps cavalry out of their range). */
+  private readonly shooters: number[] = [];
   private walledBlock = -1;
   private walledOpen = -1;
 
@@ -194,6 +197,7 @@ export class UnitSystem {
     this.collectWarnings(w);
     this.dodging.fill(0, 0, w.units.count);
     if (OUTPOST.on) this.collectPosts(w, fog);
+    if (CAV_FLANK.on) this.collectShooters(w);
     for (let i = 0; i < w.units.count; i++) this.decide(w, fog, fields, farmers, i);
     if (this.warns.length > 0) this.keepOut(w, fog);
     this.move(w);
@@ -1009,6 +1013,240 @@ export class UnitSystem {
     this.attacking[i] = 1;
   }
 
+  // --- cavalry for the back row (CAV_FLANK, D-097) ------------------------------------------
+
+  private collectShooters(w: World): void {
+    this.shooters.length = 0;
+    for (let s = 0; s < w.buildings.count; s++) if (arrowOf(w, s) !== null) this.shooters.push(s);
+  }
+
+  /** Does player `me` know of an enemy building that shoots within its range plus CAV_FLANK.towerMargin of (x, y)? */
+  private underArrows(w: World, fog: Fog, me: number, x: number, y: number): boolean {
+    const b = w.buildings.col;
+    const seen = fog.memory[me];
+    for (const s of this.shooters) {
+      if (b.owner[s] === me) continue;
+      const r = arrowOf(w, s)!.range + CAV_FLANK.towerMargin;
+      if (rectDist2(x, y, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s)) > r * r) continue;
+      // Remembered (fog.memory, in id order) or seen now.
+      const id = b.id[s];
+      let lo = 0;
+      let hi = seen.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (seen[mid][0] < id) lo = mid + 1;
+        else hi = mid;
+      }
+      if (lo < seen.length && seen[lo][0] === id) return true;
+    }
+    return false;
+  }
+
+  /** Cavalry choosing its own target (CAV_FLANK): a player's, not on hold, idle or on a move, not resting from a flank. */
+  private flanker(w: World, i: number, order: number): boolean {
+    const u = w.units.col;
+    return (
+      u.type[i] === UnitType.Cavalry &&
+      u.owner[i] < PLAYER_COUNT &&
+      u.stance[i] !== Stance.Hold &&
+      (order === Order.None || order === Order.Move) &&
+      !(u.flank[i] < 0 && u.flankTick[i] > w.tick)
+    );
+  }
+
+  /**
+   * The back row for cavalry unit i (CAV_FLANK): the nearest enemy mage its owner sees within
+   * CAV_FLANK.reach, else the nearest ranged unit, that it can walk to, within CAV_FLANK.leash of
+   * (bx, by) and not under known enemy arrows (ties as findTarget); an id or -1.
+   */
+  private backRow(w: World, fog: Fog, i: number, bx: number, by: number): number {
+    const u = w.units.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const mx = u.x[i];
+    const my = u.y[i];
+    const reach = CAV_FLANK.reach;
+    const r2 = reach * reach;
+    const l2 = CAV_FLANK.leash * CAV_FLANK.leash;
+    const cells = (reach >> CELL_SHIFT) + 1;
+    const cx = mx >> CELL_SHIFT;
+    const cy = my >> CELL_SHIFT;
+    const high = preferHighId(w, u.id[i]);
+    let bestRank = 2;
+    let best = 0;
+    let bestId = -1;
+    for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
+      for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          const t = u.type[j];
+          const rank = t === UnitType.Mage ? 0 : t === UnitType.Ranged ? 1 : 2;
+          if (rank > bestRank || u.owner[j] === me || u.action[j] === Action.Garrisoned) continue;
+          const dx = u.x[j] - mx;
+          const dy = u.y[j] - my;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > r2) continue;
+          if (rank === bestRank && (d2 > best || (d2 === best && (high ? u.id[j] < bestId : u.id[j] > bestId)))) continue;
+          const ax = u.x[j] - bx;
+          const ay = u.y[j] - by;
+          if (ax * ax + ay * ay > l2) continue;
+          if (!this.sees(fog, me, u.x[j], u.y[j], n) || !this.reaches(w, i, j)) continue;
+          if (this.underArrows(w, fog, me, u.x[j], u.y[j])) continue;
+          bestRank = rank;
+          best = d2;
+          bestId = u.id[j];
+        }
+      }
+    }
+    return bestId;
+  }
+
+  /**
+   * Cavalry unit i with target tid (CAV_FLANK, every tick): a mage or ranged unit chosen by itself
+   * starts or goes on with a dive for the back row (on a move it turns here: the anchor); anything
+   * else ends one. CAV_FLANK.giveUpTicks without a hit it gives up, rests, and takes the nearest
+   * enemy instead. Returns the target.
+   */
+  private flankDive(w: World, fog: Fog, i: number, order: number, tid: number): number {
+    const u = w.units.col;
+    const ts = tid >= 0 ? w.unit(tid) : -1;
+    const back = ts >= 0 && (u.type[ts] === UnitType.Mage || u.type[ts] === UnitType.Ranged) && order !== Order.Attack && this.flanker(w, i, order);
+    if (!back) {
+      if (u.flank[i] >= 0) this.endDive(w, i, false);
+      return tid;
+    }
+    if (u.flank[i] < 0) {
+      u.flankTick[i] = w.tick;
+      u.flankSide[i] = 0;
+      u.flankX[i] = -1;
+      u.flankY[i] = -1;
+      if (order === Order.Move) {
+        u.anchorX[i] = u.x[i];
+        u.anchorY[i] = u.y[i];
+      }
+    } else if (w.tick - u.lastDealt[i] <= 1) {
+      u.flankTick[i] = w.tick;
+    }
+    u.flank[i] = tid;
+    if (w.tick - u.flankTick[i] <= CAV_FLANK.giveUpTicks) return tid;
+    this.endDive(w, i, true);
+    return this.findTarget(w, fog, i, Math.max(AGGRO_RANGE, UNITS[u.type[i]].range));
+  }
+
+  private endDive(w: World, i: number, rest: boolean): void {
+    const u = w.units.col;
+    u.flank[i] = -1;
+    u.flankSide[i] = 0;
+    u.flankX[i] = -1;
+    u.flankY[i] = -1;
+    u.flankTick[i] = rest ? w.tick + CAV_FLANK.restTicks : 0;
+  }
+
+  /**
+   * Cavalry unit i riding for its back-row target ts (CAV_FLANK): to its flank point while it has
+   * one (flankPoint: looked for every RETARGET_EVERY ticks while it has none, and again on
+   * reaching one), else straight at the target when the way is open, else along the field.
+   */
+  private flankStep(w: World, fog: Fog, fields: FieldCache, i: number, ts: number): void {
+    const u = w.units.col;
+    const n = w.size;
+    const speed = UNITS[u.type[i]].speed;
+    // A point is kept until it is reached: worked out again on the way, it would creep in toward
+    // the target and the turn would cut past the front.
+    if (u.flankX[i] < 0 && (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) this.flankPoint(w, fog, i, ts);
+    const near = () => {
+      const dx = u.flankX[i] - u.x[i];
+      const dy = u.flankY[i] - u.y[i];
+      return dx * dx + dy * dy <= CAV_FLANK.arrive * CAV_FLANK.arrive;
+    };
+    // At its point: the next one from here at once, so it does not cut the corner.
+    if (u.flankX[i] >= 0 && near()) this.flankPoint(w, fog, i, ts);
+    if (u.flankX[i] >= 0 && !near()) {
+      steerDirect(w, i, u.flankX[i] - u.x[i], u.flankY[i] - u.y[i], speed);
+      return;
+    }
+    u.flankX[i] = -1;
+    u.flankY[i] = -1;
+    const tx = u.x[ts];
+    const ty = u.y[ts];
+    if (openLine(w, u.x[i], u.y[i], tx, ty)) steerDirect(w, i, tx - u.x[i], ty - u.y[i], speed);
+    else steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), speed);
+  }
+
+  /**
+   * The point beside the front for cavalry unit i riding for ts (CAV_FLANK): none (-1) when no
+   * enemy melee its owner sees stands within CAV_FLANK.line of the straight way. Else, of the
+   * enemy melee within CAV_FLANK.scan either side of the way (between the two), on the side they
+   * reach less far out (kept for the dive once chosen; equally far, the point first in the
+   * owner's canonical frame), CAV_FLANK.margin beyond the furthest out of them, level with the one
+   * furthest along. None too when that point is not open ground reached in straight lines both
+   * ways, or lies under known enemy arrows.
+   */
+  private flankPoint(w: World, fog: Fog, i: number, ts: number): void {
+    const u = w.units.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const x0 = u.x[i];
+    const y0 = u.y[i];
+    const dx = u.x[ts] - x0;
+    const dy = u.y[ts] - y0;
+    const len = isqrt(dx * dx + dy * dy);
+    u.flankX[i] = -1;
+    u.flankY[i] = -1;
+    if (len <= CELL) return;
+    const scan = CAV_FLANK.scan;
+    const line = CAV_FLANK.line;
+    const ax = Math.max((Math.min(x0, u.x[ts]) - scan) >> CELL_SHIFT, 0);
+    const bx = Math.min((Math.max(x0, u.x[ts]) + scan) >> CELL_SHIFT, n - 1);
+    const ay = Math.max((Math.min(y0, u.y[ts]) - scan) >> CELL_SHIFT, 0);
+    const by = Math.min((Math.max(y0, u.y[ts]) + scan) >> CELL_SHIFT, n - 1);
+    let blocked = false;
+    let left = 0;
+    let right = 0;
+    let far = 0;
+    for (let y = ay; y <= by; y++) {
+      for (let x = ax; x <= bx; x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          const t = u.type[j];
+          if (u.owner[j] === me || t === UnitType.Farmer || UNITS[t].range > CELL || u.action[j] === Action.Garrisoned || onWall(w, j)) continue;
+          const rx = u.x[j] - x0;
+          const ry = u.y[j] - y0;
+          const along = idiv(rx * dx + ry * dy, len);
+          if (along <= 0 || along >= len) continue;
+          // Positive to the side (dy, -dx) points to.
+          const side = idiv(rx * dy - ry * dx, len);
+          if (side > scan || side < -scan || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+          if (side <= line && side >= -line) blocked = true;
+          left = Math.max(left, side);
+          right = Math.min(right, side);
+          far = Math.max(far, along);
+        }
+      }
+    }
+    if (!blocked) return;
+    const at = (k: number) => {
+      const off = k > 0 ? left + CAV_FLANK.margin : right - CAV_FLANK.margin;
+      return { x: x0 + idiv(dx * far + dy * off, len), y: y0 + idiv(dy * far - dx * off, len) };
+    };
+    let k = u.flankSide[i];
+    if (k === 0) {
+      if (left !== -right) {
+        k = left < -right ? 1 : -1;
+      } else {
+        const p = at(1);
+        const q = at(-1);
+        const f = w.map.frames[me] ?? IDENTITY;
+        const inMap = (c: { x: number; y: number }) => c.x >= 0 && c.y >= 0 && c.x >> CELL_SHIFT < n && c.y >> CELL_SHIFT < n;
+        k = !inMap(q) || (inMap(p) && canonBefore(f, (p.y >> CELL_SHIFT) * n + (p.x >> CELL_SHIFT), (q.y >> CELL_SHIFT) * n + (q.x >> CELL_SHIFT), n)) ? 1 : -1;
+      }
+    }
+    const p = at(k);
+    if (p.x < 0 || p.y < 0 || p.x >> CELL_SHIFT >= n || p.y >> CELL_SHIFT >= n || !w.walkable(p.x >> CELL_SHIFT, p.y >> CELL_SHIFT)) return;
+    if (!openLine(w, x0, y0, p.x, p.y) || !openLine(w, p.x, p.y, u.x[ts], u.y[ts]) || this.underArrows(w, fog, me, p.x, p.y)) return;
+    u.flankSide[i] = k;
+    u.flankX[i] = p.x;
+    u.flankY[i] = p.y;
+  }
+
   /** The visible enemy unit nearest unit i within `reach` (ties as findTarget), as an id, or -1. */
   private nearestUnit(w: World, fog: Fog, i: number, reach: number): number {
     const u = w.units.col;
@@ -1254,6 +1492,13 @@ export class UnitSystem {
       // A soldier without a squad hits back at what hit it or a friend (COUNTER_ATTACK); a squad's
       // soldiers fight together instead (SQUAD).
       if (tid < 0 && order === Order.None && !hold && u.owner[i] < PLAYER_COUNT && u.squad[i] === 0 && COUNTER_ATTACK.on) tid = this.counterAttack(w, fog, i);
+      // Cavalry choosing for itself go for the back row (CAV_FLANK): idle, or on a move when it
+      // fights anyway or is diving already; measured from where a move turns for it.
+      if (CAV_FLANK.on && this.flanker(w, i, order) && (order === Order.None || tid >= 0 || u.flank[i] >= 0)) {
+        const turn = order === Order.Move && u.flank[i] < 0;
+        const back = this.backRow(w, fog, i, turn ? u.x[i] : u.anchorX[i], turn ? u.y[i] : u.anchorY[i]);
+        if (back >= 0) tid = back;
+      }
       // Shot on a move from further off (FIRE_BACK, D-095): it turns where it is.
       if (tid < 0 && order === Order.Move && FIRE_BACK.on && u.stance[i] !== Stance.Hold && u.owner[i] < PLAYER_COUNT && u.fireBack[i] < 0) {
         u.fireBack[i] = this.shooter(w, fog, i);
@@ -1304,6 +1549,7 @@ export class UnitSystem {
       const t0 = w.unit(tid);
       if (t0 >= 0 && onWall(w, t0) && !this.reaches(w, i, t0)) tid = -1;
     }
+    if (CAV_FLANK.on && u.type[i] === UnitType.Cavalry) tid = this.flankDive(w, fog, i, order, tid);
     u.target[i] = tid;
 
     if (tid >= 0) {
@@ -1339,15 +1585,20 @@ export class UnitSystem {
         u.action[i] = Action.Idle;
         return;
       }
+      const diving = CAV_FLANK.on && ts >= 0 && u.flank[i] === tid;
       if (idle) {
         const ax = tx - u.anchorX[i];
         const ay = ty - u.anchorY[i];
-        const leash = u.squad[i] !== 0 && SQUAD.reach > 0 ? SQUAD.leash : LEASH;
+        const leash = diving ? CAV_FLANK.leash : u.squad[i] !== 0 && SQUAD.reach > 0 ? SQUAD.leash : LEASH;
         if (ax * ax + ay * ay > leash * leash) {
           u.target[i] = -1;
           steerTo(w, fields, i, u.anchorX[i], u.anchorY[i], -1, info.speed);
           return;
         }
+      }
+      if (diving) {
+        this.flankStep(w, fog, fields, i, ts);
+        return;
       }
       if (order === Order.Attack) {
         const here = this.walledOff(w, i, ts, tid);
@@ -1832,15 +2083,14 @@ export class UnitSystem {
     // and governed towns' gates (D-096).
     const n = w.size;
     for (let s = 0; s < w.buildings.count; s++) {
-      const type = b.type[s];
-      const gate = type === BuildingType.Gate && GATE.on && w.townState[b.town[s]] === TownState.Governed;
-      if (type !== BuildingType.MainCity && type !== BuildingType.TownTower && type !== BuildingType.ArrowTower && !gate) continue;
-      if (b.progress[s] < 1000) continue;
+      const arrow = arrowOf(w, s);
+      if (arrow === null) continue;
       if (b.cooldown[s] > 0) {
         b.cooldown[s]--;
         continue;
       }
-      const arrow = gate ? GATE_ARROW : type === BuildingType.MainCity ? MAIN_ARROW : type === BuildingType.TownTower ? TOWER_ARROW : ARROW_TOWER;
+      const type = b.type[s];
+      const gate = type === BuildingType.Gate;
       const size = w.wide(s);
       const sizeY = w.tall(s);
       let best = arrow.range * arrow.range + 1;
@@ -2129,6 +2379,27 @@ export function onWall(w: World, i: number): boolean {
 /** A hit on a soldier on a wall by an arrow or a shot (WALLS.takenNum / takenDen, at least 1). */
 export function coverDamage(d: number): number {
   return Math.max(1, idiv(d * WALLS.takenNum, WALLS.takenDen));
+}
+
+/**
+ * The arrows building slot s shoots, null if none: a finished main city, the big city's tower or
+ * an arrow tower (round 7), or a governed town's gate (D-096).
+ */
+function arrowOf(w: World, s: number): { damage: number; range: number; cooldown: number } | null {
+  const b = w.buildings.col;
+  if (b.progress[s] < 1000) return null;
+  switch (b.type[s]) {
+    case BuildingType.MainCity:
+      return MAIN_ARROW;
+    case BuildingType.TownTower:
+      return TOWER_ARROW;
+    case BuildingType.ArrowTower:
+      return ARROW_TOWER;
+    case BuildingType.Gate:
+      return GATE.on && w.townState[b.town[s]] === TownState.Governed ? GATE_ARROW : null;
+    default:
+      return null;
+  }
 }
 
 /** How far a soldier on a wall shoots (WALLS): its range plus WALLS.range; militia throw stones to WALLS.sling. */
