@@ -28,7 +28,8 @@ async function start(page: Page, query = "?test=1"): Promise<void> {
 const header = (page: Page) => page.evaluate(() => window.__proto?.game?.header() ?? { tick: -1, paused: false, speed: 0, scenario: -1 });
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const selection = (page: Page) => page.evaluate(() => window.__proto?.game?.selection());
-const lastSent = (page: Page) => page.evaluate(() => window.__proto?.game?.sent().at(-1) as Record<string, unknown> | undefined);
+/** The last order of the player's own hand: the screen's 自動訓練 (D-098) sends trains of its own. */
+const lastSent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []).filter((c) => (c as { auto?: boolean }).auto !== true).at(-1) as Record<string, unknown> | undefined);
 const toScreen = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
 
 async function farmers(page: Page) {

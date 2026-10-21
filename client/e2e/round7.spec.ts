@@ -367,12 +367,13 @@ test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎
   await page.getByRole("button", { name: "建造" }).tap();
   await expect(page.getByRole("button", { name: /^馬廄/ })).toBeEnabled();
   await page.getByRole("button", { name: "返回" }).tap();
-  // The stable trains cavalry, and on its own too, as the barracks does (D-054).
+  // The stable trains cavalry, and on its own too, as the barracks does (D-054): what the groups
+  // are missing (D-098), and no group is set here.
   await centre(page, STABLE.x + 1, STABLE.y + 1);
   await tap(page, await at(page, { x: STABLE.x + 1, y: STABLE.y + 1 }));
   const panel = page.locator(".sel-info");
   await expect(panel).toContainText("馬廄");
-  await expect(panel).toContainText("自動訓練中");
+  await expect(panel).toContainText("還沒設軍團，不會自動訓練");
   await page.getByRole("button", { name: /^訓練騎兵/ }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "train", type: 5, n: 1 });
   await shot(page, info, "r7-stable");

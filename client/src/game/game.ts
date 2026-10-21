@@ -36,6 +36,7 @@ import { SAVE_EVERY_TICKS, SCREEN_VERSION, type SavedGame, type ScreenState } fr
 import { gpu, takeDraws } from "../stage.ts";
 import {
   Action,
+  AUTO_TRAIN,
   autoBuilders,
   type AiDifficulty,
   BUILDING_STRIDE,
@@ -90,6 +91,7 @@ import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn, orderState } from "./orders.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
+import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, type Site, villagersMissing } from "./auto-army.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
@@ -252,6 +254,8 @@ export class Game implements GestureHost {
     this.app = app;
     this.port = port;
     this.options = options;
+    // The fake world trains nothing by itself (mock/): the screen's 自動訓練 only when a test turns it on.
+    this.autoArmyOn = !options.fake;
     this.tps = options.tps;
     this.hudRoot = hud;
     this.overlays = new Overlays(hud);
@@ -439,6 +443,20 @@ export class Game implements GestureHost {
   private readonly lastSent = new Map<number, Spot>();
   /** 等錢治理 (ceo 2026-10-21): towns whose 治理 waits for its cost, and the reserve raised meanwhile. */
   readonly governWaits = new GovernWaits();
+  /**
+   * 自動訓練 by the screen (D-098): paused buildings and the villagers' target, the trains sent and
+   * not in a snapshot yet, the simulation's own 自動訓練 turned off (when last sent, per building),
+   * and what the last decision saw, for the panels. On the fake world only when a test turns it on.
+   */
+  readonly autoArmy = new AutoArmyBook();
+  autoArmyOn = true;
+  private autoSent: { seq: number; tick: number; building: number; unit: number }[] = [];
+  private readonly autoOff = new Map<number, number>();
+  private armyNeedSeen: ArmyNeed = { reason: "none", missing: {}, want: {} };
+  private armyBlocked = new Map<number, Block>();
+  private villagersSeen = { living: 0, queued: 0, block: null as Block | null };
+  /** 自動訓練 stopped by a full population (D-054's message strip), as last seen. */
+  autoPopulationFull = false;
   /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
   private readonly autocastAsked = new Set<number>();
   /** Orders from the buttons the snapshot does not show yet (a site, the queue, 自動訓練, 搶 or 治理): shown at once (pending.ts). */
@@ -629,6 +647,7 @@ export class Game implements GestureHost {
       seq: this.seq,
       recruitMessageTick: Number.isFinite(this.recruitMessageTick) ? this.recruitMessageTick : null,
       govern: this.governWaits.save(),
+      autoArmy: this.autoArmy.save(),
     };
   }
 
@@ -649,6 +668,7 @@ export class Game implements GestureHost {
     this.charges.restore(s.charges);
     this.recruitMessageTick = s.recruitMessageTick ?? Number.NEGATIVE_INFINITY;
     this.governWaits.restore(s.govern);
+    this.autoArmy.restore(s.autoArmy);
     this.seq = Math.max(this.seq, s.seq);
     this.speed = s.speed;
     this.controls.setSpeed(s.speed);
@@ -954,6 +974,159 @@ export class Game implements GestureHost {
 
   private endGovernWait(town: number): void {
     this.sendReserve(this.governWaits.end(town));
+  }
+
+  // --- 自動訓練 by the screen (D-098) -------------------------------------------------------
+
+  /** The unit types in an own building's queue (up to 7, 4 bits each, head first). */
+  private static queueOf(b: Int32Array, o: number): number[] {
+    const n = Math.min(b[o + BuildingField.queueLength], 7);
+    const packed = b[o + BuildingField.queuePacked];
+    return Array.from({ length: n }, (_, i) => (packed >>> (4 * i)) & 15);
+  }
+
+  /**
+   * Every snapshot while the game runs: the simulation's own 自動訓練 off for each of our
+   * buildings (ceo's (B): `auto_train off`, again every 2 s while its flag shows), then the
+   * main city's villagers up to the target and the groups' missing soldiers, as `train` orders.
+   */
+  private tickAutoArmy(): void {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    const h = view?.header;
+    if (view === null || snap === undefined || h === null || h === undefined || this.options.watch || !this.autoArmyOn) return;
+    const tick = h[H.tick];
+    const b = snap.buildings;
+    const u = snap.units;
+    // Taken by now (or refused): the queue in the snapshot has it.
+    this.autoSent = this.autoSent.filter((t) => tick <= t.tick + 1);
+    const queued: Record<number, number> = {};
+    const add = (t: number) => {
+      queued[t] = (queued[t] ?? 0) + 1;
+    };
+    const inFlight = (id: number) => this.autoSent.some((t) => t.building === id) || this.pending.trains(id).length > 0;
+    const sites: Site[] = [];
+    const cities: number[] = [];
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + BuildingField.owner] !== view.me) continue;
+      const id = b[o + BuildingField.id];
+      const type = b[o + BuildingField.type];
+      if ((b[o + BuildingField.flags] & BuildingFlag.AutoTrain) !== 0 && tick - (this.autoOff.get(id) ?? Number.NEGATIVE_INFINITY) >= 40) {
+        this.autoOff.set(id, tick);
+        this.autoCommand({ c: "auto_train", building: id, on: false });
+      }
+      for (const t of Game.queueOf(b, o)) add(t);
+      for (const t of this.pending.trains(id)) add(t);
+      const trains = view.rules.buildings[type]?.trains[0];
+      const finished = b[o + BuildingField.progress] >= 1000 && b[o + BuildingField.hp] > 0;
+      const free = finished && b[o + BuildingField.queueLength] === 0 && !inFlight(id);
+      if (type === BuildingType.MainCity) {
+        if (free) cities.push(id);
+      } else if (AUTO_TRAIN.buildings.includes(type) && trains !== undefined) {
+        sites.push({ id, trains, free: free && !this.autoArmy.paused.has(id) });
+      }
+    }
+    for (const t of this.autoSent) add(t.unit);
+    let farmers = 0;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) if (u[o + UnitField.owner] === view.me && u[o + UnitField.type] === UnitType.Farmer) farmers++;
+    const queuedAll = Object.values(queued).reduce((n, k) => n + k, 0);
+    const budget = {
+      have: this.stock(),
+      reserve: this.reserveInEffect(),
+      room: h[H.populationCap] - h[H.population] - queuedAll,
+      mageRoom: h[H.mageCap] - h[H.mages] - (queued[UnitType.Mage] ?? 0),
+    };
+    const cost = (t: number) => view.rules.units[t]?.cost ?? { food: 0, wood: 0, gold: 0, crystal: 0 };
+    const send = (building: number, unit: number) => {
+      const seq = this.autoCommand({ c: "train", building, type: unit as UnitType, n: 1 });
+      this.autoSent.push({ seq, tick, building, unit });
+      const c = cost(unit);
+      budget.have = { food: budget.have.food - c.food, wood: budget.have.wood - c.wood, gold: budget.have.gold - c.gold, crystal: budget.have.crystal - c.crystal };
+      budget.room--;
+    };
+    const paused = h[H.paused] === 1;
+    // The main city's villagers first (one at a time in each city), then the groups' soldiers.
+    const missingVillagers = villagersMissing(this.autoArmy.villagerTarget, farmers, queued[UnitType.Farmer] ?? 0);
+    let villagerBlock: Block | null = null;
+    if (!this.autoArmy.villagersPaused && missingVillagers > 0) {
+      let left = missingVillagers;
+      for (const city of cities) {
+        if (left <= 0 || paused) break;
+        if (budget.room <= 0) villagerBlock = "population";
+        else if (!affordsAbove(cost(UnitType.Farmer), budget.have, budget.reserve)) villagerBlock = "money";
+        else {
+          send(city, UnitType.Farmer);
+          left--;
+        }
+      }
+      if (cities.length === 0 && budget.room <= 0) villagerBlock = "population";
+    }
+    this.villagersSeen = { living: farmers, queued: queued[UnitType.Farmer] ?? 0, block: villagerBlock };
+    const groups: GroupNeed[] = this.army.groups.map((g) => {
+      const have: Record<number, number> = {};
+      for (const id of g.ids) {
+        if (view.unitRow(id) < 0) continue;
+        const t = view.unitType(id);
+        have[t] = (have[t] ?? 0) + 1;
+      }
+      return { refill: g.refill, want: g.want, have };
+    });
+    const need = armyNeed(groups, queued);
+    const picked = pickTrains(need, paused ? [] : sites, cost, budget);
+    for (const t of picked.trains) send(t.building, t.type);
+    this.armyNeedSeen = need;
+    this.armyBlocked = picked.blocked;
+    this.autoPopulationFull = villagerBlock === "population" || [...picked.blocked.values()].includes("population");
+  }
+
+  /** 自動訓練 paused for this building (D-098: the screen's own, kept in the save). */
+  autoPaused(building: number): boolean {
+    return this.autoArmy.paused.has(building);
+  }
+
+  toggleAutoPaused(building: number): void {
+    const now = this.autoArmy.togglePaused(building);
+    const o = this.view?.buildingRow(building) ?? -1;
+    const name = (o < 0 ? undefined : BUILDING_NAME[this.view?.curr?.snap.buildings[o + BuildingField.type] ?? -1]) ?? "建築";
+    this.toast(`已${now ? "暫停" : "恢復"}這座${name}的自動訓練`, "ok");
+  }
+
+  /**
+   * What a barracks, range, mage hall or stable of ours does about 自動訓練 (D-098), in the
+   * player's words: 「補軍團缺的：槍 3、遠 2」, 「軍團都滿，不訓練」, 「還沒設軍團，不會自動訓練」.
+   */
+  trainingLine(building: number): string {
+    if (this.autoArmy.paused.has(building)) return "自動訓練暫停";
+    const need = this.armyNeedSeen;
+    if (need.reason === "none") return "還沒設軍團，不會自動訓練";
+    if (need.reason === "off") return "軍團都關了自動補兵，不會自動訓練";
+    if (need.reason === "full") return "軍團都滿，不訓練";
+    const view = this.view;
+    const o = view?.buildingRow(building) ?? -1;
+    const type = o < 0 ? undefined : view?.curr?.snap.buildings[o + BuildingField.type];
+    const trains = type === undefined ? undefined : view?.rules.buildings[type]?.trains[0];
+    const block = trains === undefined ? undefined : this.armyBlocked.get(trains);
+    const why = block === "population" ? "（人口滿了：蓋民居）" : block === "money" ? "（錢不夠：只用預留以上的）" : block === "mages" ? "（法師已到上限）" : "";
+    return `補軍團缺的：${missingText(need.missing)}${why}`;
+  }
+
+  /** The main city's villagers (D-098): 「村民 32／40，訓練中」. */
+  villagerLine(): string {
+    const a = this.autoArmy;
+    const v = this.villagersSeen;
+    if (a.villagersPaused) return `村民 ${v.living}／${a.villagerTarget}，自動訓練暫停`;
+    if (villagersMissing(a.villagerTarget, v.living, v.queued) === 0) return `村民 ${v.living}／${a.villagerTarget}${v.queued > 0 ? "，訓練中" : "，夠了"}`;
+    const why = v.block === "population" ? "，人口滿了：蓋民居" : v.block === "money" ? "，錢不夠：只用預留以上的" : "，訓練中";
+    return `村民 ${v.living}／${a.villagerTarget}${why}`;
+  }
+
+  stepVillagerTarget(by: number): void {
+    this.autoArmy.stepTarget(by);
+  }
+
+  toggleVillagers(): void {
+    this.autoArmy.villagersPaused = !this.autoArmy.villagersPaused;
+    this.toast(`已${this.autoArmy.villagersPaused ? "暫停" : "恢復"}主城自動訓練村民`, "ok");
   }
 
   /** 取消 on the town's panel: no more waiting; the 留守 soldiers stay (the town still waits for a choice). */
@@ -1541,6 +1714,8 @@ export class Game implements GestureHost {
           if (ev.k === "rejected") {
             this.pending.refused(ev.seq);
             const cmd = this.sent.find((c) => c.seq === ev.seq);
+            // 自動訓練's own train (D-098): forget it; the next snapshot decides again.
+            this.autoSent = this.autoSent.filter((t) => t.seq !== ev.seq);
             const waiting = this.governWaits.townOf(ev.seq);
             if (waiting >= 0) {
               // 等錢治理's own 治理: spent the same step (自動訓練), try again; else (taken, lost) stop waiting.
@@ -1571,6 +1746,7 @@ export class Game implements GestureHost {
         this.controls.setWaiting(this.pending.waiting);
         this.pruneArmy();
         this.tickGovernWaits();
+        this.tickAutoArmy();
         this.draftArmy();
         this.musterRecruits();
         this.followCharges();
