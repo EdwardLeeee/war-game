@@ -149,17 +149,18 @@ def _spear_keys(t):
     return _mix(SPEAR_THRUST, SPEAR_READY, ease((t - 0.5) / 0.5))
 
 
-def spear_two_hands(u, kind):
-    """The spearman's own pose with both hands on the spear (u.pose replaced; anims.extend wraps it afterward)."""
+def spear_two_hands(u, kind, grip_name="grip_spear", shift=SPEAR_SHIFT):
+    """The spearman's own pose with both hands on the spear (u.pose replaced; anims.extend wraps it afterward). The
+    West pikeman's too (grip_pike; its pike is rebuilt with the rear hand near the butt: shift 0)."""
     import humanoid2 as h2
     import motion
     import units as U1
     import units2
     from humanoid import idle, walk
     r = u.rigs["body"]
-    grip = r.j["grip_spear"]
+    grip = r.j[grip_name]
     for ob in grip.children:
-        ob.location.z -= SPEAR_SHIFT
+        ob.location.z -= shift
     hips0 = Vector(r.rest_loc["hips"])
     debug = os.environ.get("R8_DEBUG")
 
@@ -226,6 +227,20 @@ def before_extend(u, kind):
         east_r8.dress_mage(u)
     elif kind == "hcav_e":
         east_r8.dress_cav(u)
+    import west_r8
+    if kind == "pike_w":
+        west_r8.dress_pike(u)
+        spear_two_hands(u, kind, "grip_pike", 0.0)
+    elif kind == "bow_w":
+        west_r8.dress_bow(u)
+    elif kind == "farmer_w":
+        west_r8.dress_farmer(u)
+    elif kind == "mage_w":
+        west_r8.dress_mage(u)
+    elif kind == "knight_w":
+        west_r8.dress_knight(u)
+    elif kind == "siege_w":
+        west_r8.dress_siege(u)
 
 
 def rim(energy=2.6):

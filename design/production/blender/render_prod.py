@@ -39,7 +39,7 @@ def fit_frame(target, extra, preview=False, review=False):
     jobdir.mkdir(parents=True, exist_ok=True)
     fit_out = config.BUILD / "prod" / (f"review-{target}" if review else target) / "fit.json"
     fit_out.parent.mkdir(parents=True, exist_ok=True)
-    job = dict(kind=u["kind"], px_per_m=spec.PX_PER_M, emblem_dir=str(config.BUILD / "emblems"), items=items,
+    job = dict(kind=u["kind"], px_per_m=spec.PX_PER_M, emblem_dir=str(batch.EMBLEMS), items=items,
                level="C", quality="hq", frame_m=u["frame"], fit=True, fit_out=str(fit_out), **extra)
     path = jobdir / f"fit_{'review_' if review else ''}{target}.json"
     path.write_text(json.dumps(job))
