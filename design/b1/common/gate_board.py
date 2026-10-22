@@ -76,9 +76,11 @@ def board(c, suffix):
             "東西門（左右兩面牆）從這個鏡頭看是側面，門扇是一條線、石城門的門洞被前面的墩子擋住，所以關著和開著看起來一樣。"
             "受損和破了的時候，火、碎木、倒下的門扇和落石掉在牆外，看得到。\n"
             "最下面：城樓射箭（只有治理的城鎮會射）。箭從城樓上的射點出去，射點亮一下（5 格，每秒 20 格），箭照 client 現在的畫法飛。")
+    rows = [(name, [boards.captioned(tile(c, kind, s, suffix, 3, foot), sname, 22) for s, sname in STATES])
+            for kind, name, foot in GATES]
+    W = max(W, max(sum(t.width + 16 for t in tiles) for _, tiles in rows) + 4 * boards.M + 20)   # the widest row fits (a row in a row: two margins each side)
     parts = [boards.header(W, label, text)]
-    for kind, name, foot in GATES:
-        tiles = [boards.captioned(tile(c, kind, s, suffix, 3, foot), sname, 22) for s, sname in STATES]
+    for name, tiles in rows:
         parts.append(boards.row([boards.captioned(boards.row(tiles, W - 2 * boards.M, gap=16), f"{name}（3 倍）", 26)], W))
     small = [boards.captioned(tile(c, kind, s, suffix, 1, foot), f"{name[:4]} {sname[:2]}", 18)
              for kind, name, foot in GATES for s, sname in STATES]
