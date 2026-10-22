@@ -2555,6 +2555,13 @@ export interface HardPlan {
   /** D-097 (the same run: 20% cavalry won 50-24 on random maps, lost 39-43 on the fixed one): cavalryCounter on random maps only (false: on both). */
   cavalryRandomOnly: boolean;
   /**
+   * D-096 (the user's 6a024b3c: one lumber camp all game, its trees 6 cells off at minute 3 and 17-38 from minute 36, wood
+   * 0-45 while 25-29 farmers cut): no tree left within LUMBER_NEAR cells of its lumber camps, another (LUMBER_MOST at
+   * most) by the nearest tree it knows of on its own side, with no enemy soldier in sight within BUILD_SAFE cells
+   * (false: as before).
+   */
+  lumberMove: boolean;
+  /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
    * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
@@ -2637,6 +2644,7 @@ export const HARD: HardPlan = {
   counterCavalry: false,
   cavalryMix: 30,
   cavalryRandomOnly: false,
+  lumberMove: false,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -2652,6 +2660,9 @@ const TOWN_SCOUT_EVERY = 200;
 const MINE_NEAR = 6;
 const MINE_MOST = 3;
 const MINE_FAR = 40;
+/** D-096 (plan.lumberMove): trees this near (cells) a lumber camp are its own; at most this many camps. */
+const LUMBER_NEAR = 8;
+const LUMBER_MOST = 3;
 const MINE_TOWN = 12;
 /** D-086 A4 (plan.buildSafe): a site lost before it was done, nothing this near (cells) for this long. */
 const SITE_NEAR = 8;
@@ -3461,6 +3472,33 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // D-086 A4 (plan.cavalryCounter): a stable once it wants cavalry against the enemy's mix.
         if (cavalryWant && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
+        // D-096 (plan.lumberMove): the trees by its camps gone: another camp by the nearest it knows of on its own side.
+        else if (plan.lumberMove && farmers.length >= 12 && count(BuildingType.LumberCamp) < LUMBER_MOST) {
+          const camps = own.filter((b) => b.type === BuildingType.LumberCamp);
+          let near = false;
+          let best: { x: number; y: number; id: number } | null = null;
+          let bestD = 0;
+          let bestKey = 0;
+          for (let r = 0; r < view.nodes.length; r += NODE_STRIDE) {
+            if (view.nodes[r + NodeField.kind] !== NodeKind.Tree || view.nodes[r + NodeField.amount] <= 0) continue;
+            const x = view.nodes[r + NodeField.cellX];
+            const y = view.nodes[r + NodeField.cellY];
+            if (camps.some((c) => dist2(c.x, c.y, x, y) <= LUMBER_NEAR * LUMBER_NEAR)) {
+              near = true;
+              break;
+            }
+            const d = dist2(x, y, home.cellX, home.cellY);
+            if (mem.known === Known.City && d >= dist2(x, y, enemyHome.cellX, enemyHome.cellY)) continue;
+            if (foes.some((f) => dist2(f.x, f.y, x, y) <= BUILD_SAFE * BUILD_SAFE)) continue;
+            const key = rank(x, y);
+            if (best === null || d < bestD || (d === bestD && key < bestKey)) {
+              best = { x, y, id: view.nodes[r + NodeField.id] };
+              bestD = d;
+              bestKey = key;
+            }
+          }
+          if (!near && best !== null) add(BuildingType.LumberCamp, best);
+        }
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
