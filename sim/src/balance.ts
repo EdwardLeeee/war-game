@@ -5,8 +5,8 @@
 //   node src/balance.ts [--check 1,2,3,4]
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
-import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, guardPoint, type Held, type Hold, hold, siege, twoShots } from "./balance-lib.ts";
-import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, TOWER_VALUE, UNITS } from "./core/rules.ts";
+import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, guardPoint, type Held, type Hold, hold, siege, siegeGate, siegeRaid, twoShots } from "./balance-lib.ts";
+import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, SIEGE, TOWER_VALUE, UNITS } from "./core/rules.ts";
 import { BuildingType, TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -461,6 +461,46 @@ function main(): void {
     }).join("／");
     for (const a of [A(14, 8, 2), A(17, 10, 3)]) out.push(`| 攻打主城：${armyText(a)} | ${withValue(false, () => siegeCell(a))} | ${withValue(true, () => siegeCell(a))} |`);
     out.push("");
+  }
+  {
+    // D-099 (ceo 2026-10-22): siege engines against towers, gates, cavalry and an army, measured with
+    // SIEGE on (off until art-v6). Reports only.
+    const was = SIEGE.on;
+    SIEGE.on = true;
+    try {
+      const S = (spear: number, ranged = 0, cav = 0, siegeN = 0): Army => ({ spear, ranged, mage: 0, cav, siege: siegeN });
+      const engine = UNITS[UnitType.Siege];
+      out.push(
+        "### 攻城砲（D-099，SIEGE 開著量）",
+        "",
+        `- 攻城砲：木 ${engine.cost.wood}、金 ${engine.cost.gold}，生命 ${engine.hp}，攻擊 ${engine.attack}，範圍 ${(engine.splash ?? 0) / 1024} 格，打建築 ×${SIEGE.vsBuildings}，射程 ${engine.range / 1024}（最短 ${(engine.minRange ?? 0) / 1024}），${engine.cooldown / 20} 秒一發，飛 ${SIEGE.flightTicks / 20} 秒。箭樓射程 ${ARROW_TOWER.range / 1024}、傷害 ${ARROW_TOWER.damage}、生命 ${BUILDINGS[BuildingType.ArrowTower].hp}。`,
+        "- 打箭樓：箭樓排在空地東邊（5 座一排、10 座兩排），攻城砲從 22 格外前進、自己挑目標，6 名槍兵跟在後面一格；第一發丟出後守方的軍隊衝向攻城砲。最多 4 分鐘。",
+        "",
+        "| 箭樓 | 攻城砲 | 沒有駐軍 | 每座躲 3 名遠程 | 守方 3 槍 3 遠（和護衛同花費） | 守方和整支進攻方同花費 |",
+        "|---|---|---|---|---|---|",
+      );
+      const cellOf = (r: ReturnType<typeof siegeRaid>) => `${r.towersLeft === 0 ? "全拆" : `剩 ${r.towersLeft} 座`}，${(r.ticks / 20).toFixed(0)} 秒；砲剩 ${r.siegeLeft}、護衛剩 ${r.escortLeft}、守方剩 ${r.defendersLeft}`;
+      for (const towers of [5, 10]) {
+        for (const n of [2, 4, 6]) {
+          const half = Math.round((armyCost(S(0, 0, 0, n)) + armyCost(S(6))) / 2);
+          const big = S(Math.round(half / armyCost(S(1))), Math.round(half / armyCost(S(0, 1))));
+          const cells = [siegeRaid(n, S(6), towers, 0, S(0)), siegeRaid(n, S(6), towers, 3, S(0)), siegeRaid(n, S(6), towers, 0, S(3, 3)), siegeRaid(n, S(6), towers, 0, big)];
+          out.push(`| ${towers} | ${n} 門＋6 槍 | ${cells.map(cellOf).join(" | ")}（${armyText(big)}） |`);
+        }
+      }
+      out.push("", "| 城門 | 1 門 | 2 門 |", "|---|---|---|");
+      for (const [size, name] of [[TownSize.Small, "小鎮"], [TownSize.Large, "大城"]] as const) {
+        out.push(`| ${name} | ${[1, 2].map((n) => `${(siegeGate(size, n) / 20).toFixed(1)} 秒`).join(" | ")} |`);
+      }
+      const show = (f: Fight) => (f.winner === 0 ? `A 贏，剩 ${armyText(f.left[0])}` : f.winner === 1 ? `B 贏，剩 ${armyText(f.left[1])}` : "平手");
+      out.push("", "| 對戰（10 格） | A 進攻 | B 進攻 | 雙方對進 |", "|---|---|---|---|");
+      for (const [a, b] of [[S(0, 0, 5), S(2, 0, 0, 2)], [S(0, 0, 0, 4), S(8, 7)]] as [Army, Army][]) {
+        out.push(`| A ${armyText(a)}（${armyCost(a)}）對 B ${armyText(b)}（${armyCost(b)}） | ${[0, 1, BOTH].map((att) => show(fight([a, b], att, 10))).join(" | ")} |`);
+      }
+      out.push("");
+    } finally {
+      SIEGE.on = was;
+    }
   }
   const failed = check.filter((g) => !now.goals[g - 1]?.ok);
   if (check.length > 0) out.push(failed.length === 0 ? `檢查的目標（${check.join("、")}）都成立。` : `未成立：目標 ${failed.join("、")}。`, "");
