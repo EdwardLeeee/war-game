@@ -1,0 +1,512 @@
+{
+ "traces": [
+  {
+   "name": "fin-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "fin-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "fin-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "fin-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "fin-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "fin-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "fin-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "fin-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "fin-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "fin-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "fin-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "fin-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "fin-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "fin-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "fin-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "fin-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "fin-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "fin-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "fin-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "fin-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "old-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "old-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "fin-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {},
+   "b": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "fin-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {},
+   "b": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "fin-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {},
+   "b": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "fin-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {},
+   "b": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   }
+  },
+  {
+   "name": "fin-thinkf",
+   "script": "think-plan.ts",
+   "args": "--seeds 1-4 --map fixed --plan '{\"cavalryCounter\":0,\"cavalryWhen\":50,\"charge\":false,\"counterCavalry\":false,\"cavalryMix\":30,\"cavalryRandomOnly\":false,\"lumberMove\":false}'",
+   "a": {}
+  },
+  {
+   "name": "fin-thinkr",
+   "script": "think-plan.ts",
+   "args": "--seeds 1-4 --map random --plan '{\"cavalryCounter\":0,\"cavalryWhen\":50,\"charge\":false,\"counterCavalry\":false,\"cavalryMix\":30,\"cavalryRandomOnly\":false,\"lumberMove\":false}'",
+   "a": {}
+  }
+ ],
+ "scripted": [
+  {
+   "name": "fin",
+   "a": {},
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "old",
+   "a": {
+    "cavalryCounter": 0,
+    "cavalryWhen": 50,
+    "charge": false,
+    "counterCavalry": false,
+    "cavalryMix": 30,
+    "cavalryRandomOnly": false,
+    "lumberMove": false
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
