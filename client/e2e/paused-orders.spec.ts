@@ -50,6 +50,9 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   test.setTimeout(150_000);
   const check = watchErrors(page);
   const { me, barracks } = await pausedAtBarracks(page);
+  // No villagers from the main city (D-098): filling the population, they would say 「人口滿了」 over
+  // this test's messages (#275's run 39779654415: over 「已下令訓練槍兵（排第 N）」).
+  await page.evaluate(() => window.__proto?.game?.villagersPaused(true));
   const frozen = (await header(page)).tick;
   const banner = page.locator(".paused-banner");
   const waiting = page.locator(".paused-banner .pend");

@@ -79,6 +79,8 @@ export interface GameHook {
   governWaits(): number[];
   /** 自動訓練 by the screen (D-098): on or off (the fake world has it off unless a test turns it on). */
   autoArmy(on: boolean): void;
+  /** The main city's villagers (D-098) paused or not, as its 自動村民 button, without its message. */
+  villagersPaused(on: boolean): void;
   /** Pause marks drawn on buildings (自動訓練 paused, D-098: the player's own pause). */
   pauseMarks(): number;
   /** Control groups 1–4 as stored by the interface. */
@@ -266,6 +268,9 @@ export function gameHook(game: Game): GameHook {
     governWaits: () => game.governWaits.list(),
     autoArmy: (on) => {
       game.autoArmyOn = on;
+    },
+    villagersPaused: (on) => {
+      game.autoArmy.villagersPaused = on;
     },
     pauseMarks: () => game.pauseMarksForTest,
     groups: () => game.army.groups.map((g) => [...g.ids]),

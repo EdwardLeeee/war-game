@@ -61,6 +61,9 @@ export function makeRecord(o: {
   end: GameEnd;
   lastHash: { tick: number; hash: string } | null;
   log: string;
+  /** 美術 in use (x3, x2, off, test), and the last unexpected end's note (logs/heartbeat.ts), if any. */
+  art?: string;
+  crash?: object | null;
 }): GameRecord {
   return {
     v: RECORD_VERSION,
@@ -75,6 +78,8 @@ export function makeRecord(o: {
     ticks: o.end.ticks,
     lastHash: o.lastHash,
     log: o.log,
+    ...(o.art === undefined ? {} : { art: o.art }),
+    ...(o.crash === undefined || o.crash === null ? {} : { crash: { ...o.crash } }),
   };
 }
 
