@@ -25,6 +25,15 @@ const BLOCK_WALL = 0x8c8478;
 const BLOCK_CORNER = 0x6f675c;
 const BLOCK_EDGE = 0x3a332b;
 const BLOCK_GATE = 0xd8d2c0;
+/**
+ * Where someone standing on the wall (D-096) is drawn, metres above the ground
+ * (design/b1/blender/castle.py): a big city's stone wall, on its walk (WALL_H 4.2 東陸, 4.6 西陸, the
+ * walk 0.12 on top); a small town's palisade (stakes 2.6 東陸, 2.9 西陸, no walk), on a step behind
+ * it, chest above the points.
+ */
+const WALL_WALK_M: Record<"stone" | "palisade", Record<"E" | "W", number>> = { stone: { E: 4.32, W: 4.72 }, palisade: { E: 1.9, W: 2.2 } };
+/** Up on the plane per metre up (as the bridge's deck, terrain-draw.ts). */
+const UP_PER_M = Math.sqrt(3) / 2;
 
 interface PieceSprites {
   color: Sprite;
@@ -75,6 +84,8 @@ export class CastleDraw {
   private lastSnap: unknown = null;
   /** Towns whose castle no layout fits (logged once each). */
   private readonly misfit = new Set<number>();
+  /** Each wall cell drawn from the pictures (map cell): the depth of its piece in front, and whether it is a big city's stone wall (D-096). */
+  private readonly wallDepth = new Map<number, { z: number; stone: boolean }>();
 
   constructor(art: UnitArt | null, view: GameView, projection: Projection, layers: { floor: Container; shadows: Container; upright: Container; blocks: Graphics }) {
     this.art = art;
@@ -167,6 +178,7 @@ export class CastleDraw {
       color.zIndex = z;
       team.zIndex = z + 0.000001;
       const cells = p.cells.map(([x, y]) => [ox + x, oy + y]).filter(([x, y]) => x >= 0 && y >= 0 && x < n && y < n).map(([x, y]) => y * n + x);
+      for (const cell of cells) this.wallDepth.set(cell, { z: Math.max(this.wallDepth.get(cell)?.z ?? Number.NEGATIVE_INFINITY, z), stone: town.size === TownSize.Large });
       d.pieces.push({ color, team, shadow, box: { x0: 0, y0: 0, x1: 0, y1: 0 }, z, cells });
     });
     return d;
@@ -247,6 +259,18 @@ export class CastleDraw {
     return false;
   }
 
+  /**
+   * Someone standing on the wall at map cell (cellX, cellY) (D-096, UnitFlag.OnWall): how far up to
+   * draw them (the walk) and their depth, just in front of the wall's piece there; null where the
+   * wall is drawn as blocks on the ground (drawn where they stand, at their own depth).
+   */
+  onWall(cellX: number, cellY: number): { lift: number; z: number } | null {
+    const at = this.wallDepth.get(cellY * this.view.map.size + cellX);
+    const c = this.art?.castle ?? null;
+    if (at === undefined || c === null) return null;
+    return { lift: WALL_WALK_M[at.stone ? "stone" : "palisade"][c.culture] * this.projection.ptPerM * UP_PER_M, z: at.z + 0.0005 };
+  }
+
   /** Some town's castle is drawn from the pictures (units can stand behind its walls). */
   get hasPieces(): boolean {
     for (const d of this.towns.values()) if (d.pieces.length > 0) return true;
@@ -272,5 +296,6 @@ export class CastleDraw {
       for (const f of d.floor) f.sprite.destroy();
     }
     this.towns.clear();
+    this.wallDepth.clear();
   }
 }

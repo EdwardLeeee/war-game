@@ -182,7 +182,7 @@ export class Game {
     const b = w.buildings.col;
     const u = w.units.col;
     const shots = this.units.shots;
-    for (let k = 0; k < shots.length; k += 2) {
+    for (let k = 0; k < shots.length; k += 3) {
       const bs = w.building(shots[k]);
       const ts = w.unit(shots[k + 1]);
       for (let p = 0; p < PLAYER_COUNT; p++) {
@@ -191,7 +191,8 @@ export class Game {
         if (!sees && bs >= 0) {
           for (let y = b.cellY[bs]; y < b.cellY[bs] + w.tall(bs) && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + w.wide(bs) && !sees; x++) sees = vis[y * n + x] === 1;
         }
-        if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1] } });
+        // n (D-096): more than one arrow at once (a main city with farmers inside, a governed town's gate).
+        if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1], ...(shots[k + 2] > 1 ? { n: shots[k + 2] } : {}) } });
       }
     }
   }

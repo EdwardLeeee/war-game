@@ -46,6 +46,7 @@ import {
 import { townInSight, writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
+import { onWall } from "../core/units.ts";
 import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, OUTPOST, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
@@ -143,7 +144,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     units[o + UnitField.stance] = u.stance[s];
     units[o + UnitField.castProgress] = u.castProgress[s];
     const idleFarmer = u.owner[s] === player && u.type[s] === UnitType.Farmer && u.order[s] === Order.None && u.action[s] !== Action.Garrisoned;
-    units[o + UnitField.flags] = u.flags[s] | (idleFarmer ? UnitFlag.IdleFarmer : 0);
+    units[o + UnitField.flags] = u.flags[s] | (idleFarmer ? UnitFlag.IdleFarmer : 0) | (onWall(w, s) ? UnitFlag.OnWall : 0);
     units[o + UnitField.castCooldown] = u.castCooldown[s];
   });
 

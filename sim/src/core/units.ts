@@ -116,8 +116,9 @@ export class UnitSystem {
    */
   private readonly warns: number[] = [];
   /**
-   * This tick's shots of buildings' own arrows and of soldiers hiding in buildings, as pairs
-   * (building id, target unit id), for the `shot` event (round 7, D-061; game.ts sends them).
+   * This tick's shots of buildings' own arrows and of soldiers hiding in buildings, as triples
+   * (building id, target unit id, arrows), for the `shot` event (round 7, D-061; game.ts sends
+   * them; the arrows as `n` since D-096).
    */
   readonly shots: number[] = [];
   /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
@@ -1011,6 +1012,8 @@ export class UnitSystem {
     const ts = w.unit(tid);
     u.facing[i] = dir16(u.x[ts] - u.x[i], u.y[ts] - u.y[i]);
     this.attacking[i] = 1;
+    // Shooting from it, as any soldier fighting (the screen raises it by UnitFlag.OnWall).
+    u.action[i] = Action.Attack;
   }
 
   // --- cavalry for the back row (CAV_FLANK, D-097) ------------------------------------------
@@ -2066,7 +2069,7 @@ export class UnitSystem {
       const ts = w.unit(tid);
       if (ts >= 0) {
         this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
-        if (u.action[i] === Action.Garrisoned) this.shots.push(u.orderTarget[i], tid);
+        if (u.action[i] === Action.Garrisoned) this.shots.push(u.orderTarget[i], tid, 1);
       } else {
         const bs = w.building(tid);
         if (bs >= 0) {
@@ -2126,7 +2129,7 @@ export class UnitSystem {
       if (OUTPOST.on) this.provoke(w, bestSlot, b.id[s]);
       b.target[s] = u.id[bestSlot];
       b.cooldown[s] = arrow.cooldown;
-      this.shots.push(b.id[s], u.id[bestSlot]);
+      this.shots.push(b.id[s], u.id[bestSlot], arrows);
     }
 
     const hurt: Hurt[] = [];

@@ -190,10 +190,16 @@ test("a governed town's gates shoot: one arrow, and one more for every 3 of its 
     u.cooldown[slotOf(g, foe)] = 1 << 20;
     g.fog.update(g.w);
     const hp = u.hp[slotOf(g, foe)];
-    run(g, GATE_ARROW.cooldown);
+    // The shot events carry the arrows as n, absent for one.
+    const ns: (number | undefined)[] = [];
+    for (let k = 0; k < GATE_ARROW.cooldown; k++) {
+      g.step();
+      for (const e of g.events) if (e.to === 1 && e.ev.k === "shot" && e.ev.target === foe) ns.push(e.ev.n);
+    }
     const took = hp - u.hp[slotOf(g, foe)];
     assert.ok(took > 0, "shot");
     assert.equal(took % (GATE_ARROW.damage * arrows), 0, `${held0} inside: ${took} taken, volleys of ${arrows}`);
+    assert.ok(ns.length > 0 && ns.every((n) => n === (arrows > 1 ? arrows : undefined)), `${held0} inside: n ${JSON.stringify(ns)}`);
   }
 });
 

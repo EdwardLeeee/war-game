@@ -142,10 +142,11 @@ export class ArtUnits {
 
   /**
    * Draws snapshot row `o` into slot `i` at (px, py), `seconds` on the simulation's clock, `lift`
-   * points up (on a bridge's deck; its depth stays its feet's). Returns the top of its picture
+   * points up (on a bridge's deck; its depth stays its feet's), at depth `z` when given (on a
+   * castle's wall, D-096: just in front of the wall's piece). Returns the top of its picture
    * (world px), for the bars above it, or null when it has no atlas.
    */
-  unit(i: number, o: number, px: number, py: number, seconds: number, lift = 0): number | null {
+  unit(i: number, o: number, px: number, py: number, seconds: number, lift = 0, z: number | null = null): number | null {
     const u = (this.view.curr as NonNullable<GameView["curr"]>).snap.units;
     const id = u[o + U.id];
     const type = u[o + U.type];
@@ -188,7 +189,7 @@ export class ArtUnits {
       else if (anim === "walk") index = frameAt(info, walkFps(a, unitInfo?.speed ?? 0), elapsed, id % info.frames);
       else index = frameAt(info, fpsOf(a, anim), elapsed, info.loop ? id % info.frames : 0);
     }
-    this.place(s, a, anim, dir, index, owner, px, py, 1, lift);
+    this.place(s, a, anim, dir, index, owner, px, py, 1, lift, z);
     this.drawShield(s, a, st, seconds);
     const f = this.art.frame(a.unit, "color", frameName(a, anim, dir, index).name);
     return f === null ? null : py - lift - f.ay * f.texture.height * this.scale;
@@ -249,11 +250,11 @@ export class ArtUnits {
     s.shield.alpha = alpha;
   }
 
-  private place(s: Slot, a: AtlasJson, anim: string, dir: number, index: number, owner: number, px: number, py: number, alpha: number, lift = 0): void {
+  private place(s: Slot, a: AtlasJson, anim: string, dir: number, index: number, owner: number, px: number, py: number, alpha: number, lift = 0, z: number | null = null): void {
     const { name, mirror } = frameName(a, anim, dir, index);
     s.box.visible = true;
     s.box.position.set(px, py - lift);
-    s.box.zIndex = this.depth(px, py);
+    s.box.zIndex = z ?? this.depth(px, py);
     s.box.alpha = alpha;
     put(s.color, this.art.frame(a.unit, "color", name), 0, 0, this.scale, mirror);
     put(s.team, this.art.frame(a.unit, "team", name), 0, 0, this.scale, mirror);

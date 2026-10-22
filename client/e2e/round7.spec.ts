@@ -21,6 +21,8 @@ const TOWER_ON = { x: 12, y: 84 };
 const TOWER_OFF = { x: 21, y: 76 };
 /** Ours, training cavalry. */
 const STABLE = { x: 14, y: 70, size: 3 };
+/** Our barracks in the fake world. */
+const BARRACKS = { x: 4, y: 74 };
 const GROUP_1 = ".groups > button:nth-child(1)";
 /**
  * Waits on the fake world's ticks (shooting, slipping inside, training): Chromium on a busy runner ran
@@ -411,17 +413,48 @@ test("兵種相剋：選單 → 兵種相剋，每種兵一行寫剋誰、怕誰
   await start(page);
   await injectSafeArea(page);
   const dialog = await openCounters(page);
+  // D-097's triangle: 遠程打槍 ×3.5、槍打騎 ×2.5、騎打法師和護盾 ×3; 騎兵剋遠程 by speed, and goes around the front (cavalryFlank).
   await expect(dialog.locator(".counter-row")).toHaveText([
-    "槍兵剋：騎兵 ×3怕：遠程兵 ×2.5、晶砲（擠在一起時）",
-    "遠程兵剋：槍兵 ×2.5、法師的護盾 ×3、騎兵 ×1.8怕：騎兵（跑得快，很快衝到面前；生命少）",
-    "法師剋：擠在一起的部隊（晶砲範圍傷害）怕：遠程兵打護盾 ×3、騎兵 ×2、騎兵打護盾 ×2",
-    "騎兵剋：遠程兵（跑得快）、法師 ×2、法師的護盾 ×2怕：遠程兵 ×1.8、槍兵 ×3",
+    "槍兵剋：騎兵 ×2.5怕：遠程兵 ×3.5、晶砲（擠在一起時）",
+    "遠程兵剋：槍兵 ×3.5怕：騎兵（跑得快，很快衝到面前；生命少）",
+    "法師剋：擠在一起的部隊（晶砲範圍傷害）怕：騎兵 ×3、騎兵打護盾 ×3",
+    "騎兵剋：遠程兵（跑得快）、法師 ×3、法師的護盾 ×3、會自己繞過前排去打法師、遠程兵怕：槍兵 ×2.5",
   ]);
   expect(await dialog.locator(".dialog-card").evaluate((c) => c.scrollHeight - c.clientHeight), "no scrolling at 814 × 380").toBeLessThanOrEqual(1);
   for (const b of await visibleBoxes(page, ".counters button")) expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
   await shot(page, info, "r7-counters");
   await dialog.getByRole("button", { name: "回選單" }).tap();
   await expect(page.getByRole("dialog", { name: "選單" })).toBeVisible();
+});
+
+test("剋／怕（D-097）：訓練鈕寫「剋：…／怕：…」，只選一種兵時選取資訊寫那一行；數字以外的照規則算", async ({ page }, info) => {
+  await start(page);
+  await injectSafeArea(page);
+  // The barracks' 訓練槍兵, two columns wide for the line.
+  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
+  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  const spear = page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ });
+  await expect(spear.locator(".counter-sub")).toHaveText("剋：騎兵／怕：遠程");
+  await checkLayout(page);
+  await shot(page, info, "d097-barracks");
+  // The stable's 訓練騎兵: without the note (a button).
+  await centre(page, STABLE.x + 1, STABLE.y + 1);
+  await tap(page, await at(page, { x: STABLE.x + 1, y: STABLE.y + 1 }));
+  await expect(page.locator(".cmds").getByRole("button", { name: /^訓練騎兵/ }).locator(".counter-sub")).toHaveText("剋：遠程、法師／怕：槍兵");
+  await checkLayout(page);
+  await shot(page, info, "d097-stable");
+  // Ranged selected: its line. Spearmen and ranged together: none (the chips; one tapped shows its own).
+  await selectForCommands(page, await ownIds(page, [2]));
+  await expect(page.locator(".sel-info .counter-short")).toHaveText(["遠程兵　剋：槍兵／怕：騎兵"]);
+  await shot(page, info, "d097-selection");
+  await selectForCommands(page, await ownIds(page, [1, 2]));
+  await expect(page.locator(".sel-info .sel-chips")).toBeVisible();
+  await expect(page.locator(".sel-info .counter-short")).toHaveCount(0);
+  await selectForCommands(page, await ownIds(page, [1]));
+  await expect(page.locator(".sel-info .counter-short")).toHaveText(["槍兵　剋：騎兵／怕：遠程"]);
+  // A mage: 剋 the crowded (the cannon), 怕 cavalry.
+  await selectForCommands(page, await ownIds(page, [3]));
+  await expect(page.locator(".sel-info .counter-short")).toHaveText(["法師　剋：擠在一起的部隊／怕：騎兵"]);
 });
 
 for (const viewport of [null, FULL_SCREEN]) {
@@ -505,8 +538,8 @@ test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、�
   // 兵種相剋: three kinds, nothing about 騎兵.
   const counters = await openCounters(page);
   await expect(counters.locator(".counter-row")).toHaveText([
-    "槍兵剋：沒有怕：遠程兵 ×2.5、晶砲（擠在一起時）",
-    "遠程兵剋：槍兵 ×2.5、法師的護盾 ×3怕：沒有",
-    "法師剋：擠在一起的部隊（晶砲範圍傷害）怕：遠程兵打護盾 ×3",
+    "槍兵剋：沒有怕：遠程兵 ×3.5、晶砲（擠在一起時）",
+    "遠程兵剋：槍兵 ×3.5怕：沒有",
+    "法師剋：擠在一起的部隊（晶砲範圍傷害）怕：沒有",
   ]);
 });

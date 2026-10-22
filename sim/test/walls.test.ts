@@ -8,7 +8,8 @@ import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
 import { GATE, UNITS, WALLS } from "../src/core/rules.ts";
 import { onWall } from "../src/core/units.ts";
-import { Action, CELL, CELL_SHIFT, NEUTRAL, Order, Reject, TownSize, TownState, UnitType } from "../src/protocol.ts";
+import { Action, CELL, CELL_SHIFT, NEUTRAL, Order, Reject, Resource, TownSize, TownState, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
+import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 type G = ReturnType<typeof emptyGame>;
@@ -104,6 +105,49 @@ test("on a wall a ranged unit shoots WALLS.range further: it hits one 7 cells of
   assert.equal(u.hp[slotOf(g, mine)], hp0[0], "not hit");
   assert.ok(slotOf(g, theirs) < 0 || u.hp[slotOf(g, theirs)] < hp0[1], "it hit the other");
   assert.equal(WALLS.range, CELL);
+});
+
+test("shooting from a wall it shows Attack, standing OnWall; the snapshot flags it OnWall either way", () => {
+  const range = UNITS[UnitType.Ranged].range >> CELL_SHIFT;
+  const { g, mine } = duel(range + 1, true);
+  const u = g.w.units.col;
+  const flags = () => {
+    const v = buildView(g, 0).units;
+    for (let o = 0; o < v.length; o += UNIT_STRIDE) if (v[o + UnitField.id] === mine) return v[o + UnitField.flags];
+    return -1;
+  };
+  assert.ok((flags() & UnitFlag.OnWall) !== 0, "standing: flagged");
+  let shot = false;
+  for (let t = 0; t < 200 && !shot; t++) {
+    g.step();
+    if (u.action[slotOf(g, mine)] === Action.Attack) shot = true;
+  }
+  assert.ok(shot, "Attack while it shoots");
+  assert.ok(onWall(g.w, slotOf(g, mine)), "still on the wall");
+  assert.ok((flags() & UnitFlag.OnWall) !== 0, "shooting: flagged");
+});
+
+test("a mage calibrating the cannon on a wall comes down on a move, to the cell it climbed from", () => {
+  const g = governed();
+  const w = g.w;
+  const t = w.map.towns[T];
+  const m = put(g, 0, UnitType.Mage, t.cellX, t.cellY);
+  w.res[Resource.Crystal] = 100;
+  g.fog.update(w);
+  cmd(g, 0, { c: "wall", u: [m], town: T });
+  run(g, 200);
+  const u = w.units.col;
+  const s = slotOf(g, m);
+  assert.ok(onWall(w, s), "up");
+  const foot = w.wallFoot[u.wall[s]];
+  cmd(g, 0, { c: "cast", u: m, fx: u.x[s], fy: u.y[s] + 3 * CELL });
+  run(g, 3);
+  assert.equal(u.action[slotOf(g, m)], Action.Calibrate, "calibrating");
+  cmd(g, 0, { c: "move", u: [m], x: t.cellX, y: t.cellY });
+  run(g, 1);
+  const s2 = slotOf(g, m);
+  assert.equal(u.wall[s2], -1, "down");
+  assert.equal((u.y[s2] >> CELL_SHIFT) * w.size + (u.x[s2] >> CELL_SHIFT), foot, "where it climbed from");
 });
 
 test("on a wall it takes arrows and shots for 3/4: ranged against ranged, two cells off", () => {

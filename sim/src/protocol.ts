@@ -301,6 +301,11 @@ export const UnitFlag = {
    * command to it (`release` too), and when it has nothing left to gather there (it goes idle).
    */
   HandPicked: 16,
+  /**
+   * Up on a castle wall (D-096, `wall`; neutral militia too), whatever its action: OnWall standing,
+   * Attack shooting from it, Calibrate firing the cannon. Snapshot only (PROTOCOL.md 4.2).
+   */
+  OnWall: 32,
 } as const;
 
 /** Buildings: own, visible enemy/neutral ones, and remembered enemy ones (flag Remembered). */
@@ -908,7 +913,8 @@ export type SimEvent =
    * A building's own arrow, or a soldier hiding in it, shot at `target` (unit id) this tick
    * (round 7, D-061). To every player who sees the building or the target.
    */
-  | { k: "shot"; building: number; target: number }
+  /** `n` (D-096): this many arrows at once, absent for one (PROTOCOL.md 5). */
+  | { k: "shot"; building: number; target: number; n?: number }
   | { k: "rejected"; seq: number; reason: Reject }
   | { k: "game_over"; winner: number; reason: GameOverReason };
 export type EventKind = SimEvent["k"];
