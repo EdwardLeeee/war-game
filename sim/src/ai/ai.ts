@@ -835,9 +835,11 @@ function fortsAtTown(groups: readonly FortGroup[], x: number, y: number, radius:
  * more than GATE_LOSS of its army's hp while it breaks in, "ab" both. calm: focus only with no enemy soldiers within
  * GATE_FIGHT cells of the army; with them, in as before (a move fights what it meets; an attack on the gate kept
  * hitting it: hard against normal on the fixed map won 98% of the decided games without the gate play, 65% and 54%
- * with it, scratch run 39665798433).
+ * with it, scratch run 39665798433). focus is off (scratch run 39696604780: with it, calm or not, hard against normal
+ * on the fixed map 41–59% of the decided games, off 98%, and the first town 2 minutes later: once a gate fell it went
+ * for the next one standing, round the walls); one gate down, in by it (gateDone) is measured with it.
  */
-export const GATE_AI = { focus: true, calm: true, walls: true, arrows: true, retreat: "" };
+export const GATE_AI = { focus: false, calm: true, walls: true, arrows: true, retreat: "" };
 /** The army goes for the gate within this many cells of a town's walls (its radius + this). */
 const GATE_NEAR = 10;
 const GATE_FIGHT = 12;
@@ -1405,6 +1407,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let gateFell = false;
   const gateSeen: { tick: number; hp: number }[] = [];
   let wallMove = -100000;
+  /** D-096: the town whose gate it broke (in by it: no more gates there), -1 none. */
+  let gateDone = -1;
   let razeAgain = -100000;
   /** While the army is away: the soldiers trained since, at home, pulling down a fort on its ground. */
   let reservesRazing = -1;
@@ -2048,7 +2052,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       };
       /** D-096 (GATE_AI.focus): at town `t` with gates closed to it, the army on the gate (orders again every FORT_EVERY); false: none (in as before). */
       const gateFocus = (t: Town) => {
-        const calm = !GATE_AI.calm || foesNear(cx, cy, GATE_FIGHT) === 0;
+        // The gate it went for gone (broken): in by it, not on to the next.
+        if (gateAim >= 0 && !townGates(view, rules, t).some((g) => g.id === gateAim)) gateDone = targetTown;
+        const calm = (!GATE_AI.calm || foesNear(cx, cy, GATE_FIGHT) === 0) && gateDone !== targetTown;
         const go = !calm
           ? null
           : gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), { x: cx, y: cy }, (x, y) => {
@@ -2328,6 +2334,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // 24 or more: the nearest of the biggest.
           const pick = army.length >= 24 ? open.find(([, t]) => t.size === open[open.length - 1][1].size)! : open[0];
           targetTown = pick[0];
+          gateDone = -1;
           armyAtStart = army.length;
           marchWorth = vsForts(army);
           marched.clear();
@@ -2826,6 +2833,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let gateFell = false;
   const gateSeen: { tick: number; hp: number }[] = [];
   let wallMove = -100000;
+  /** D-096: the town whose gate it broke (in by it: no more gates there), -1 none. */
+  let gateDone = -1;
   let razeAgain = -100000;
   /** While the army is away: the soldiers left at home pulling down a fort on its ground, and that fort. */
   let reservesRazing = -1;
@@ -4264,7 +4273,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         /** D-096 (GATE_AI.focus): at town `t` with gates closed to it, the army on the gate (orders again every FORT_EVERY); false: none (in as before). */
         const gateFocus = (t: HardTown) => {
-          const calm = !GATE_AI.calm || foesNear(ac.x, ac.y, GATE_FIGHT).length === 0;
+          // The gate it went for gone (broken): in by it, not on to the next.
+          if (gateAim >= 0 && !townGates(view, rules, t).some((g) => g.id === gateAim)) gateDone = targetTown;
+          const calm = (!GATE_AI.calm || foesNear(ac.x, ac.y, GATE_FIGHT).length === 0) && gateDone !== targetTown;
           const go = calm ? gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), ac, rank) : null;
           if (go === null) {
             // The gate down: in, now.
@@ -4575,6 +4586,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (pick >= 0) {
             labels[HEAD_ARMY] = 1;
             targetTown = pick;
+            gateDone = -1;
             armyAtStart = army.length;
             marchWorth = vsForts(army);
             marched.clear();
