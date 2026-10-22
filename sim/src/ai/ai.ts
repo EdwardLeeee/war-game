@@ -2546,10 +2546,14 @@ export interface HardPlan {
   towerFirst: boolean;
   /**
    * D-086 A4 (the user's 75830947: 21-30 cavalry in minutes 22-26; cf56e34c: 16 by minute 16): the mix also answers
-   * enemy cavalry: CAVALRY_MIX percent or more of the enemy soldiers it knows of moves it counterMix points toward
+   * enemy cavalry: cavalryMix percent or more of the enemy soldiers it knows of moves it counterMix points toward
    * spearmen (spearmen hit cavalry x3) (false: cavalry not counted, as before).
    */
   counterCavalry: boolean;
+  /** D-097 (scratch run 39718915278: the scripted push with 18% cavalry never moved it): the share (percent) of enemy cavalry for counterCavalry (30, as before). */
+  cavalryMix: number;
+  /** D-097 (the same run: 20% cavalry won 50-24 on random maps, lost 39-43 on the fixed one): cavalryCounter on random maps only (false: on both). */
+  cavalryRandomOnly: boolean;
   /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
@@ -2631,6 +2635,8 @@ export const HARD: HardPlan = {
   towerSpare: 150,
   towerFirst: false,
   counterCavalry: false,
+  cavalryMix: 30,
+  cavalryRandomOnly: false,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -2652,8 +2658,6 @@ const SITE_NEAR = 8;
 const SITE_REST = 3 * 1200;
 /** D-086 A4 (plan.buildSafe): enemy soldiers this near (cells) a spot. */
 const BUILD_SAFE = 10;
-/** D-086 A4 (plan.counterCavalry): this share (percent) of cavalry among the enemy soldiers it knows of. */
-const CAVALRY_MIX = 30;
 /** D-086 A4 (plan.cavalryCounter): enemy soldiers it must know of before it weighs their mix. */
 const CAVALRY_SEEN = 6;
 /** D-086 A4 (plan.charge): the least cavalry that charge, how far from them the targets may be, spearmen this near count as by them, and how often (ticks) it picks again. */
@@ -3178,6 +3182,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const cavalryWant =
         plan.cavalryCounter > 0 &&
         rules.features?.cavalry === true &&
+        (!plan.cavalryRandomOnly || mem.random) &&
         knownSoldiers >= CAVALRY_SEEN &&
         (enemyRanged + enemyMages) * 100 >= plan.cavalryWhen * knownSoldiers;
       if (foes.some((f) => f.order !== Order.Post)) lastFoeSeen = tick;
@@ -3553,7 +3558,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // The mix answers what it has seen: a cannon shot kills a ranged unit but not a spearman, and
       // ranged units hit spearmen 2.5 times as hard.
       let share = spearBase;
-      const cavalryMix = plan.counterCavalry && knownSoldiers + enemyCavalry >= CAVALRY_SEEN && enemyCavalry * 100 >= CAVALRY_MIX * (knownSoldiers + enemyCavalry);
+      const cavalryMix = plan.counterCavalry && knownSoldiers + enemyCavalry >= CAVALRY_SEEN && enemyCavalry * 100 >= plan.cavalryMix * (knownSoldiers + enemyCavalry);
       if (plan.counterMix > 0) {
         if (cavalryMix) share += plan.counterMix;
         else if (enemyMages >= 2) share += plan.counterMix;
