@@ -2255,7 +2255,8 @@ test("D-086 A4 (plan.cavalryCounter): cavalry once the enemy it knows of is most
     for (let k = 0; k < 8; k++) put(g, 1, type, s0.cellX + 6 + (k % 4), s0.cellY - 15 - Math.trunc(k / 4));
     w.res.set([700, 300, 300, 0], 0);
     g.fog.update(w);
-    return trains(hardAi(g, { dodge: false, cavalryCounter }).think(buildView(g, 0)), UnitType.Cavalry);
+    // The rule by counters (cavalryWhen 50) on this fixed map (the defaults since D-097: 20% on random maps only).
+    return trains(hardAi(g, { dodge: false, cavalryCounter, cavalryWhen: 50, cavalryRandomOnly: false }).think(buildView(g, 0)), UnitType.Cavalry);
   };
   assert.ok(withFoes(UnitType.Ranged, 25), "ranged in sight: cavalry");
   assert.ok(withFoes(UnitType.Mage, 25), "mages in sight: cavalry");
