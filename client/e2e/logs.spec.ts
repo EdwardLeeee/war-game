@@ -52,7 +52,8 @@ async function orderFarmers(page: Page): Promise<void> {
   });
   if (target === null) throw new Error("no open cell near the farmers");
   await tap(page, await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [target.x, target.y] as const));
-  await expect.poll(() => page.evaluate(() => (window.__proto?.game?.sent().at(-1) as { c?: string } | undefined)?.c)).toBe("move");
+  // The player's own last order (自動訓練's own train, D-098, may follow it: run 39774971035's WebKit).
+  await expect.poll(() => page.evaluate(() => (window.__proto?.game?.sent().filter((c) => (c as { auto?: boolean }).auto !== true).at(-1) as { c?: string } | undefined)?.c)).toBe("move");
 }
 
 async function surrender(page: Page): Promise<void> {
