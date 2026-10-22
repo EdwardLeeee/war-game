@@ -7,7 +7,9 @@ import { test } from "node:test";
 import type { Game } from "../src/core/game.ts";
 import { ARROW_TOWER, BUILDINGS, GATE, SIEGE, rules, UNITS } from "../src/core/rules.ts";
 import { damage } from "../src/core/units.ts";
-import { BuildingType, CELL, Order, Reject, Stance, UnitType } from "../src/protocol.ts";
+import { BuildingType, CELL, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
+import { dir16 } from "../src/core/fixed.ts";
+import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf, switchedOn } from "./helpers.ts";
 
 const SIEGE_INFO = UNITS[UnitType.Siege];
@@ -249,4 +251,40 @@ test("mirror images: an engine and its image take down a tower and its image, ti
     fell = hpOf(g, ta) === 0;
   }
   assert.ok(fell, "both towers fell");
+}));
+
+test("information boundary: one who sees where a stone lands but not the engine learns the way it came (16 ways) and nothing else", switchedOn(SIEGE, () => {
+  // Player 0's engine throws at a tower of player 1 9.5 cells off; player 1 sees the tower, not the engine.
+  const { g, w, engine, tower } = towerScene(10);
+  const u = w.units.col;
+  const s = slotOf(g, engine);
+  const ex = u.x[s] >> 10;
+  const ey = u.y[s] >> 10;
+  assert.equal(g.fog.visible[1][ey * w.size + ex], 0, "player 1 does not see the engine");
+  let mine: Record<string, unknown> | null = null;
+  let theirs: Record<string, unknown> | null = null;
+  for (let t = 0; t < 200 && (mine === null || theirs === null); t++) {
+    g.step();
+    for (const e of g.events) {
+      if (e.ev.k !== "siege_shot") continue;
+      if (e.to === 0) mine = e.ev as unknown as Record<string, unknown>;
+      if (e.to === 1) theirs = e.ev as unknown as Record<string, unknown>;
+    }
+  }
+  assert.ok(mine !== null && theirs !== null, "both got it");
+  assert.deepEqual(Object.keys(mine).sort(), ["k", "lands", "u", "x", "y"], "the owner sees the engine: no from");
+  assert.deepEqual(Object.keys(theirs).sort(), ["from", "k", "lands", "u", "x", "y"], "only the way it came, no cells, no distance");
+  const from = theirs.from as number;
+  assert.ok(Number.isInteger(from) && from >= 0 && from < 16);
+  // The engine is due west of the tower: the stone comes from the west.
+  const b = w.buildings.col;
+  const ts = w.building(tower);
+  const lx = (b.cellX[ts] << 10) + 1024;
+  const ly = (b.cellY[ts] << 10) + 1024;
+  assert.equal(theirs.x, lx);
+  assert.equal(theirs.y, ly);
+  assert.equal(from, dir16(u.x[s] - lx, u.y[s] - ly));
+  // Nor does its snapshot hold the engine.
+  const view = buildView(g, 1);
+  for (let o = 0; o < view.units.length; o += UNIT_STRIDE) assert.notEqual(view.units[o + UnitField.id], engine, "no row for the engine");
 }));

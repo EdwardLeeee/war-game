@@ -939,9 +939,10 @@ export type SimEvent =
   /**
    * A siege engine `u` threw a stone (D-099): it lands at (x, y), fixed point; `lands` is the tick of
    * the first snapshot that shows it landed (this event's snapshot tick + Rules.siege.flightTicks). To
-   * every player who sees the engine or where it lands.
+   * every player who sees the engine or where it lands; one who does not see the engine also gets
+   * `from`, the way the stone comes from (0-15, as `facing`), and nothing of where the engine is.
    */
-  | { k: "siege_shot"; u: number; x: number; y: number; lands: number }
+  | { k: "siege_shot"; u: number; x: number; y: number; lands: number; from?: number }
   | { k: "rejected"; seq: number; reason: Reject }
   | { k: "game_over"; winner: number; reason: GameOverReason };
 export type EventKind = SimEvent["k"];

@@ -25,7 +25,7 @@ import {
 } from "../protocol.ts";
 import { type CommandContext, applyCommand } from "./commands.ts";
 import { Economy } from "./economy.ts";
-import { FNV_OFFSET, fnvBytes, fnvInt32, fnvWord } from "./fixed.ts";
+import { dir16, FNV_OFFSET, fnvBytes, fnvInt32, fnvWord } from "./fixed.ts";
 import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
@@ -195,15 +195,20 @@ export class Game {
         if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1], ...(shots[k + 2] > 1 ? { n: shots[k + 2] } : {}) } });
       }
     }
-    // Siege stones thrown (D-099): to every player who sees the engine or where the stone lands.
+    // Siege stones thrown (D-099): to every player who sees the engine or where the stone lands; one
+    // who sees only where it lands gets the way it comes from (`from`, 16 ways) and nothing more.
     const stones = this.units.siegeShots;
     for (let k = 0; k < stones.length; k += 4) {
       const es = w.unit(stones[k]);
-      const at = (stones[k + 2] >> CELL_SHIFT) * n + (stones[k + 1] >> CELL_SHIFT);
+      const x = stones[k + 1];
+      const y = stones[k + 2];
+      const at = (y >> CELL_SHIFT) * n + (x >> CELL_SHIFT);
       for (let p = 0; p < PLAYER_COUNT; p++) {
         const vis = this.fog.visible[p];
-        const sees = vis[at] === 1 || (es >= 0 && vis[(u.y[es] >> CELL_SHIFT) * n + (u.x[es] >> CELL_SHIFT)] === 1);
-        if (sees) this.events.push({ to: p, ev: { k: "siege_shot", u: stones[k], x: stones[k + 1], y: stones[k + 2], lands: stones[k + 3] } });
+        const seesEngine = es >= 0 && vis[(u.y[es] >> CELL_SHIFT) * n + (u.x[es] >> CELL_SHIFT)] === 1;
+        if (!seesEngine && vis[at] !== 1) continue;
+        const from = !seesEngine && es >= 0 ? { from: dir16(u.x[es] - x, u.y[es] - y) } : {};
+        this.events.push({ to: p, ev: { k: "siege_shot", u: stones[k], x, y, lands: stones[k + 3], ...from } });
       }
     }
   }
