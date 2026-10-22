@@ -20,7 +20,8 @@ TERRAIN = {"plain": 0, "rock": 1, "water": 3, "cliff": 7}       # the sim's Terr
 # the layers' tile sizes (m) and the rules, as client reads them (GroundJson)
 RULES = dict(bank_cells=1, gravel_cells=1, edge_m=1.2, height_k=0.9, dirt=dict(node_cells=1, noise_threshold=0.8, noise_soft=0.3),
              weights=dict(texels_per_cell=4, soft_m=1.6, blur_m=1.0))
-# weights: the weight map soft (proposed to war-game-client 2026-10-22, the user's 「河岸一格一格的方塊」): texels_per_cell
+# weights: the weight map soft (proposed to war-game-client 2026-10-22, the ceo's note on R8-23: the river bank came out
+# in square steps along the cells; the user approved R8-28 the same day): texels_per_cell
 # texels a cell; a channel's value a smoothstep of the distance from the nearest seed cell's square, 0.5 at `reach` cells
 # past it (where the old on/off map's edge was), soft_m wide; then a Gaussian blur of blur_m (a diagonal river's
 # staircase becomes a band). dirt.noise_soft: the width of the dirt patches' ramp (was a fixed 0.06: hard blob edges).

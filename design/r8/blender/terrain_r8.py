@@ -11,6 +11,7 @@ there, so the arms of a straight run meet with no seam whatever their variants; 
 import math
 import os
 import random
+import sys
 
 import bmesh
 import bpy
@@ -20,10 +21,12 @@ from mathutils.bvhtree import BVHTree
 from mathutils.interpolate import poly_3d_calc
 
 import lib
+from lib import box, cyl
 
 CELL = 2.0
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCANS = os.path.join(HERE, "..", "build", "scans")         # common/scans.py fetch puts them here
+SCANS = os.path.join(HERE, "..", "build", "scans")
+sys.path.insert(0, os.path.join(HERE, "..", "..", "b1", "common"))       # terrain_tiles: the water tiles' field         # common/scans.py fetch puts them here
 RES = 0.01                                                 # the fields' spacing, metres
 
 
@@ -170,6 +173,7 @@ def field(sid):
 
 RELIEF = 0.32               # metres
 TOP_FIELD = 0.9             # how much of the scan above the face's top row the top surface carries
+FX_LO, FX_HI = 0.45, 4.45   # the stretch of the scan (metres across) with no holes the rays missed
 H_END, W_END = 3.8, 1.0     # an arm's height and half-width (at its foot) within JOIN_IN of a cell middle
 W_TOP = 0.62                # its half-width at the top
 JOIN_IN, JOIN_OUT = 0.15, 0.35  # the shared strip holds within JOIN_IN of a cell middle, fades out by JOIN_OUT
@@ -351,6 +355,7 @@ def _scree_mat():
     mix.inputs["A"].default_value = (0.11, 0.1, 0.085, 1.0)
     nt.links.new(k.outputs[0], mix.inputs["B"])
     hue = nt.nodes.new("ShaderNodeMix")                              # a tenth of the photo's own hue (ground_run)
+    hue.name = "hue"
     hue.data_type = "RGBA"
     hue.inputs["Factor"].default_value = 0.1
     nt.links.new(mix.outputs["Result"], hue.inputs["A"])
@@ -553,19 +558,16 @@ ARMS = {"E": ((-1.0, 0.0), (1.0, 0.0)), "S": ((0.0, 1.0), (0.0, -1.0)), "SE": ((
         "SW": ((1.0, 1.0), (-1.0, -1.0))}       # render axes (+y north), as terrain.py's
 
 
-def cliff_post(root, variant=0):
-    """A post (terrain.ts): the rock mass on a cell's middle where a line turns or ends, a little taller and wider than
-    an arm's end so it covers every join. Its plan a polygon of joint faces (rock breaks along flat joints, so no
-    round tower), the scanned face round its front, the scan's top on its top, the talus round its front."""
-    P = mats()
-    rnd = random.Random(1100 + variant)
-    H = H_END + 0.25
-    nk = 6 + variant % 2
+def _mass(tag, root, P, rnd, cx=0.0, cy=0.0, radius=(1.12, 1.3), H=4.0, nk=6, sgn=1, fx_mid=2.9, round_top=0.12,
+          taper=0.22, cap=0.18, tilt=0.0):
+    """A block of rock: its plan a polygon of nk joint faces (rock breaks along flat joints) radius[0]..radius[1]
+    from (cx, cy), H high, narrowing by `taper` up its height and rounding over at the top; the scanned face wrapped
+    round it (its front 240 degrees on 3.3 m of the scan round fx_mid, mirrored when sgn is -1), the scan's top with
+    soil on its top. -> plan(angle) (the radius at the foot, 0: towards the camera) and the top height by angle."""
     th0 = rnd.uniform(0, 2 * math.pi / nk)
-    faces = [(th0 + 2 * math.pi * k / nk + rnd.uniform(-0.2, 0.2), rnd.uniform(1.12, 1.3)) for k in range(nk)]
+    faces = [(th0 + 2 * math.pi * k / nk + rnd.uniform(-0.2, 0.2), rnd.uniform(*radius)) for k in range(nk)]
 
     def plan(aa):
-        """The polygon's radius at angle aa (0: towards the camera, -y)."""
         r = np.full(np.shape(aa), 9.0)
         for th, d in faces:
             c = np.cos(aa - th)
@@ -574,73 +576,358 @@ def cliff_post(root, variant=0):
     na = 180
     a = np.linspace(-math.pi, math.pi, na)
     F = field(SID)
-    ph = random.Random(61 + variant).uniform(0, 6.3)
-    sgn = -1 if variant % 2 else 1
+    ph = rnd.uniform(0, 6.3)
     R = plan(a)
-    # the arc length round the plan, 0 in front: the field's x (the front 240 degrees span 1.25..4.6 of the scan)
     seg = np.hypot(np.diff(R * np.sin(a)), np.diff(-R * np.cos(a)))
     arc = np.concatenate([[0], np.cumsum(seg)])
     arc -= np.interp(0.0, a, arc)
     front = np.interp(2 * math.pi / 3, a, arc) - np.interp(-2 * math.pi / 3, a, arc)
-    k = 3.3 / front
+    k = min(1.0, 3.3 / front)                             # never stretched; squeezed only round a big mass
 
-    def fx_of(aa):
-        return 2.9 + sgn * np.interp(aa, a, arc) * k
+    def fx_of(aa):                                        # folded back at the scan's good edges, no smeared fill
+        x = (fx_mid + sgn * np.interp(aa, a, arc) * k - FX_LO) % (2 * (FX_HI - FX_LO))
+        return FX_LO + np.where(x > FX_HI - FX_LO, 2 * (FX_HI - FX_LO) - x, x)
     jag, _ = _sample(F, fx_of(a), np.full_like(a, H + Z_OFF))
-    top = H + 0.15 * np.sin(a * 2 + ph) + 0.6 * jag
-    nz = int(H * 1.2 / DU)
+    top = H + 0.04 * H * np.sin(a * 2 + ph) + 0.6 * jag * min(1.0, H / 3.0) ** 2 + tilt * np.sin(a + ph)
+    nz = max(12, int(H * 1.2 / DU))
     t = np.linspace(0, 1, nz)[:, None]
     Z = t * top[None, :]
     A = np.broadcast_to(a[None, :], Z.shape)
     out, _ = _sample(F, fx_of(A), Z + Z_OFF)
-    taper = 1 - 0.22 * (Z / H) - 0.12 * _smooth(H - 0.6, H, Z)
-    rr = R[None, :] * taper + out * _smooth(0.0, 0.25, Z)
-    pos = np.stack([rr * np.sin(A), -rr * np.cos(A), Z], -1)
-    af = np.linspace(-math.pi, math.pi, int(arc[-1] - arc[0]) * 100)
-    tf = np.linspace(0, 1, int(H * 1.2 / RES))[:, None]
+    rel = min(1.0, H / 3.0)                               # small stones: less relief
+    shrink = 1 - taper * (Z / H) - round_top * _smooth(H * 0.6, H, Z) * (H / max(H, 1e-3))
+    rr = R[None, :] * shrink + out * rel * _smooth(0.0, 0.25, Z)
+    pos = np.stack([cx + rr * np.sin(A), cy - rr * np.cos(A), Z], -1)
+    af = np.linspace(-math.pi, math.pi, max(64, int((arc[-1] - arc[0]) * k / RES)))
+    tf = np.linspace(0, 1, max(32, int(H * 1.2 / RES)))[:, None]
     topf = np.interp(af, a, top)
     _, rgbf = _sample(F, fx_of(np.broadcast_to(af[None, :], (len(tf), len(af)))), tf * topf[None, :] + Z_OFF)
-    img = _image(f"cliffskin_post{variant}", rgbf)
     uv = np.stack([(A + math.pi) / (2 * math.pi), np.broadcast_to(t, Z.shape)], -1)
-    _grid_obj("cl_post", pos, uv, _skin_mat(f"cliffskin_post{variant}", img), root)
-    # the top: rings in to the middle, a low hump, the scan above its face (moss, grass) mapped flat onto it
+    _grid_obj(f"{tag}_side", pos, uv, _skin_mat(f"skin_{tag}", _image(f"skin_{tag}", rgbf)), root)
     rc = np.linspace(1, 0, 12)[:, None]
     edge = rr[-1][None, :]
     xs, ys = edge * rc * np.sin(a)[None, :], -edge * rc * np.cos(a)[None, :]
-    zc = top[None, :] * rc + float(top.mean()) * (1 - rc) + 0.18 * (1 - rc ** 2)
-    pos = np.stack([xs, ys, zc], -1)
+    zc = top[None, :] * rc + float(top.mean()) * (1 - rc) + cap * (1 - rc ** 2)
+    pos = np.stack([cx + xs, cy + ys, zc], -1)
     span = float(edge.max()) * 1.05
-    n = int(2 * span / RES)
+    n = max(16, int(2 * span / RES))
     gx = np.linspace(-span, span, n)
     GX, GY = np.meshgrid(gx, gx)
-    _, rgbT = _sample(F, 2.9 + GX * 0.8, H + Z_OFF + 0.05 + (GY + span) / (2 * span) * TOP_FIELD)
-    topmat = _skin_mat(f"clifftop_post{variant}", _image(f"clifftop_post{variant}", _topsoil(rgbT, 80 + variant)))
+    _, rgbT = _sample(F, fx_mid + GX * 0.8, H + Z_OFF + 0.05 + (GY + span) / (2 * span) * min(TOP_FIELD, 2 * span))
+    topmat = _skin_mat(f"top_{tag}", _image(f"top_{tag}", _topsoil(rgbT, rnd.randint(0, 999))))
     uv = np.stack([(xs + span) / (2 * span), (ys + span) / (2 * span)], -1)
-    _grid_obj("cl_cap", pos, uv, topmat, root, outward=(0, 0, 1))
-    # the talus round the front, fading at its edge and towards the back
+    _grid_obj(f"{tag}_cap", pos, uv, topmat, root, outward=(0, 0, 1))
+    return plan, a, top
+
+
+def _apron(tag, root, P, rnd, plan, reach, height, cx=0.0, cy=0.0, half=0.62 * math.pi, stones=40, ph=0.0):
+    """The scree round a rock's front: from just inside its foot out `reach`, `height` against it, fading out at its
+    edge and towards the back; broken stones on it."""
     nr = 14
     r = np.linspace(0, 1, nr)[:, None]
-    ar = np.linspace(-0.62 * math.pi, 0.62 * math.pi, 80)
-    reach = TALUS[0] * (1 + 0.25 * np.sin(ar * 3 + ph))
-    d = plan(ar)[None, :] - 0.12 + r * reach[None, :]
-    z = np.broadcast_to(TALUS[1] * (1 - r) ** 1.7 + 0.01, d.shape)
+    ar = np.linspace(-half, half, 80)
+    rch = reach * (1 + 0.25 * np.sin(ar * 3 + ph))
+    d = plan(ar)[None, :] - 0.12 + r * rch[None, :]
+    z = np.broadcast_to(height * (1 - r) ** 1.7 + 0.01, d.shape)
     AR = np.broadcast_to(ar[None, :], d.shape)
-    pos = np.stack([d * np.sin(AR), -d * np.cos(AR), z], -1)
-    ob = _grid_obj("cl_ptalus", pos, np.zeros(pos.shape[:2] + (2,)), _scree_mat(), root, outward=(0, 0, 1))
+    pos = np.stack([cx + d * np.sin(AR), cy - d * np.cos(AR), z], -1)
+    ob = _grid_obj(f"{tag}_talus", pos, np.zeros(pos.shape[:2] + (2,)), _scree_mat(), root, outward=(0, 0, 1))
     ob.visible_shadow = False
-    _fade_attr(ob, (1 - _smooth(0.65, 1.0, np.broadcast_to(r, d.shape))) * _smooth(0.62 * math.pi, 0.4 * math.pi, np.abs(AR)))
-    for k in range(40):
-        ak = rnd.uniform(-0.5 * math.pi, 0.5 * math.pi)
+    _fade_attr(ob, (1 - _smooth(0.65, 1.0, np.broadcast_to(r, d.shape))) * _smooth(half, half * 0.65, np.abs(AR)))
+    for k in range(stones):
+        ak = rnd.uniform(-half * 0.8, half * 0.8)
         rk = rnd.random() ** 1.3
-        rad = (0.035 + 0.13 * (1 - rk) ** 2) * rnd.uniform(0.6, 1.2)
-        dk = float(plan(np.array(ak))) - 0.05 + rk * TALUS[0] * 0.85
-        _rock(f"cl_pstone{k}", rad, P["dark"] if rnd.random() < 0.85 else P["top"], root,
-              (dk * math.sin(ak), -dk * math.cos(ak), TALUS[1] * (1 - rk) ** 1.7 + rad * 0.25), rnd)
+        rad = (0.035 + 0.13 * (1 - rk) ** 2) * rnd.uniform(0.6, 1.2) * min(1.0, 0.5 + reach)
+        dk = float(plan(np.array(ak))) - 0.05 + rk * reach * 0.85
+        _rock(f"{tag}_stone{k}", rad, P["dark"] if rnd.random() < 0.85 else P["top"], root,
+              (cx + dk * math.sin(ak), cy - dk * math.cos(ak), height * (1 - rk) ** 1.7 + rad * 0.25), rnd)
+
+
+def cliff_post(root, variant=0):
+    """A post (terrain.ts): the rock mass on a cell's middle where a line turns or ends, a little taller and wider than
+    an arm's end so it covers every join. Its plan a polygon of joint faces (rock breaks along flat joints, so no
+    round tower), the scanned face round its front, the scan's top on its top, the talus round its front."""
+    P = mats()
+    rnd = random.Random(1100 + variant)
+    plan, a, top = _mass("cl_post", root, P, rnd, radius=(1.12, 1.3), H=H_END + 0.25, nk=6 + variant % 2,
+                         sgn=-1 if variant % 2 else 1, fx_mid=2.9 + 0.25 * (variant % 2))
+    _apron("cl_p", root, P, rnd, plan, TALUS[0], TALUS[1], ph=rnd.uniform(0, 6.3))
     for k in range(6):
         ak = rnd.uniform(-1.2, 1.2)
         rk = rnd.uniform(0.15, 0.7)
         _tuft(f"cl_ptuft{k}", P, root, (rk * math.sin(ak), -rk * math.cos(ak), float(np.interp(ak, a, top)) + 0.15),
               rnd, dry=k % 2 == 0)
+
+
+def rock_heap(root, variant=0):
+    """Blocked ground (1, terrain.ts terrain_rock_v*): a heap of broken rock on one cell, the same rock as the cliffs:
+    variants 0-2 a big heap (a block about 1.5 m high and two or three smaller against it), 3-5 a smaller one;
+    neighbouring cells make heaps and ridges. Scree round the front, a tuft or two."""
+    P = mats()
+    rnd = random.Random(1300 + variant)
+    big = variant < 3
+    sc = 1.0 if big else 0.75
+    blocks = [(0.0, 0.15, 0.72 * sc, 1.3 * sc)]
+    n = rnd.randint(4, 5) if big else rnd.randint(3, 4)
+    for k in range(n):                                     # broken blocks round it, more toward the front
+        ang = -2.4 + 4.8 * (k + rnd.uniform(0.2, 0.8)) / n
+        dist = rnd.uniform(0.6, 0.9) * sc
+        size = rnd.uniform(0.28, 0.5) * sc
+        blocks.append((dist * math.sin(ang), 0.15 - dist * math.cos(ang) * 0.85, size, size * rnd.uniform(0.8, 1.4)))
+    tops = []
+    for k, (bx, by, R, H) in enumerate(blocks):
+        plan, a, top = _mass(f"tr_b{k}", root, P, rnd, cx=bx, cy=by, radius=(R * 0.75, R), H=H, nk=rnd.randint(5, 6),
+                             sgn=rnd.choice((-1, 1)), fx_mid=rnd.uniform(1.8, 3.6), round_top=0.1, taper=0.12,
+                             cap=0.05 * H, tilt=rnd.uniform(0.1, 0.25) * H)
+        tops.append((bx, by, float(top.mean())))
+        if k == 0:
+            main_plan = plan
+    _apron("tr", root, P, rnd, lambda aa: main_plan(aa) + 0.25, 0.55 if big else 0.4, 0.22 if big else 0.15,
+           stones=26 if big else 16, ph=rnd.uniform(0, 6.3))
+    for k in range(rnd.randint(1, 3)):                     # grass in the cracks between the blocks, on a top or two
+        bx, by, tz = tops[rnd.randrange(len(tops))]
+        _tuft(f"tr_tuft{k}", P, root, (bx + rnd.uniform(-0.15, 0.15), by + rnd.uniform(-0.15, 0.15), tz + 0.05), rnd,
+              dry=rnd.random() < 0.5)
+
+
+# ---------------------------------------------------------------- water, fords, bridges
+
+def _pnoise(size, cells, seed):
+    """Tileable value noise (size square, a lattice of `cells` a side, smoothstep between), 0..1."""
+    rnd = np.random.default_rng(seed)
+    lat = rnd.random((cells, cells))
+    f = np.arange(size) * cells / size
+    i = f.astype(int)
+    t = f - i
+    t = t * t * (3 - 2 * t)
+    i0, i1 = i % cells, (i + 1) % cells
+    a = lat[np.ix_(i0, i0)] * (1 - t[None, :]) + lat[np.ix_(i0, i1)] * t[None, :]
+    b = lat[np.ix_(i1, i0)] * (1 - t[None, :]) + lat[np.ix_(i1, i1)] * t[None, :]
+    return a * (1 - t[:, None]) + b * t[:, None]
+
+
+def _ripples():
+    """The water's small waves as a height image, tileable over one cell (2 m), so the tiles meet."""
+    if "ripples_r8" in bpy.data.images:
+        return bpy.data.images["ripples_r8"]
+    h = sum(_pnoise(512, c, 40 + c) * w for c, w in ((4, 0.55), (8, 0.3), (16, 0.15)))
+    img = bpy.data.images.new("ripples_r8", 512, 512, alpha=False)
+    img.colorspace_settings.name = "Non-Color"
+    a = np.ones((512, 512, 4), np.float32)
+    a[..., :3] = h[..., None]
+    img.pixels.foreach_set(a.ravel())
+    return img
+
+
+def _node(nt, kind, **inputs):
+    n = nt.nodes.new(kind)
+    for k, v in inputs.items():
+        n.inputs[k].default_value = v
+    return n
+
+
+def _range(nt, src, lo, hi):
+    """smoothstep(lo, hi, src) as a Map Range node."""
+    m = nt.nodes.new("ShaderNodeMapRange")
+    m.interpolation_type = "SMOOTHSTEP"
+    m.inputs["From Min"].default_value = lo
+    m.inputs["From Max"].default_value = hi
+    nt.links.new(src, m.inputs["Value"])
+    return m.outputs["Result"]
+
+
+def _ripple_normal(nt, strength):
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    mp = _node(nt, "ShaderNodeMapping", Scale=(0.5, 0.5, 0.5))      # one image a cell: the tiles meet
+    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
+    im = nt.nodes.new("ShaderNodeTexImage")
+    im.image = _ripples()
+    im.interpolation = "Cubic"
+    nt.links.new(mp.outputs["Vector"], im.inputs["Vector"])
+    b = _node(nt, "ShaderNodeBump", Strength=strength, Distance=0.02)
+    nt.links.new(im.outputs["Color"], b.inputs["Height"])
+    return b.outputs["Normal"]
+
+
+def _sky_sheen(nt, body, strength, ripple):
+    """The sky in the water: its colour by the fresnel of the rippled surface, added to `body` (a shader output)."""
+    lw = _node(nt, "ShaderNodeLayerWeight", Blend=0.35)
+    nt.links.new(_ripple_normal(nt, ripple), lw.inputs["Normal"])
+    em = nt.nodes.new("ShaderNodeEmission")
+    em.inputs["Color"].default_value = (0.42, 0.5, 0.58, 1.0)
+    k = nt.nodes.new("ShaderNodeMath")
+    k.operation = "MULTIPLY"
+    k.inputs[1].default_value = strength
+    nt.links.new(lw.outputs["Fresnel"], k.inputs[0])
+    nt.links.new(k.outputs[0], em.inputs["Strength"])
+    add = nt.nodes.new("ShaderNodeAddShader")
+    nt.links.new(body, add.inputs[0])
+    nt.links.new(em.outputs[0], add.inputs[1])
+    return add
+
+
+def _water_mat():
+    """Water over the ground's own river bank (ground.json's bank layer): clear of the bank where the blend of the four
+    cells (terrain_tiles.field, the vertex attribute "f") is under the water's edge, a dark wet band just outside it,
+    then silty shallows going darker and bluer to the middle; small waves catching the sky."""
+    if "water_r8" in bpy.data.materials:
+        return bpy.data.materials["water_r8"]
+    m = bpy.data.materials.new("water_r8")
+    m.use_nodes = True
+    nt = m.node_tree
+    for n in list(nt.nodes):
+        if n.bl_idname != "ShaderNodeOutputMaterial":
+            nt.nodes.remove(n)
+    out = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+    f = nt.nodes.new("ShaderNodeAttribute")
+    f.attribute_name = "f"
+    deep = _range(nt, f.outputs["Fac"], 0.55, 0.95)
+    col = nt.nodes.new("ShaderNodeMix")
+    col.data_type = "RGBA"
+    col.inputs["A"].default_value = (0.035, 0.045, 0.032, 1.0)     # silty shallows
+    col.inputs["B"].default_value = (0.006, 0.016, 0.02, 1.0)       # the deep middle
+    nt.links.new(deep, col.inputs["Factor"])
+    base = nt.nodes.new("ShaderNodeBsdfPrincipled")        # the water's body: no lamp glints (the sun mirrors into
+    nt.links.new(col.outputs["Result"], base.inputs["Base Color"])   # the camera here: the whole river went white)
+    base.inputs["Roughness"].default_value = 0.4
+    base.inputs["Specular IOR Level"].default_value = 0.0
+    w = _sky_sheen(nt, base.outputs[0], 0.4, 0.18)
+    wet = _node(nt, "ShaderNodeBsdfPrincipled", Roughness=0.35)
+    wet.inputs["Base Color"].default_value = (0.03, 0.024, 0.017, 1.0)
+    m1 = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(_range(nt, f.outputs["Fac"], 0.45, 0.53), m1.inputs["Fac"])
+    nt.links.new(wet.outputs[0], m1.inputs[1])
+    nt.links.new(w.outputs[0], m1.inputs[2])
+    half = nt.nodes.new("ShaderNodeMath")
+    half.operation = "MULTIPLY"
+    half.inputs[1].default_value = 0.5
+    nt.links.new(_range(nt, f.outputs["Fac"], 0.28, 0.47), half.inputs[0])
+    mx = nt.nodes.new("ShaderNodeMath")
+    mx.operation = "MAXIMUM"
+    nt.links.new(half.outputs[0], mx.inputs[0])
+    nt.links.new(_range(nt, f.outputs["Fac"], 0.47, 0.56), mx.inputs[1])
+    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
+    m2 = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(mx.outputs[0], m2.inputs["Fac"])
+    nt.links.new(tr.outputs[0], m2.inputs[1])
+    nt.links.new(m1.outputs[0], m2.inputs[2])
+    nt.links.new(m2.outputs[0], out.inputs["Surface"])
+    return m
+
+
+def water_tile(root, mask=15):
+    """Water (terrain.ts terrain_water_m<mask>): the tile on a cell corner for one mask of its four cells, as
+    terrain_tiles.py lays them; the water's surface only (the R8 ground paints the river bank round the water)."""
+    import terrain_tiles as tt
+    n = 64
+    us = np.linspace(-tt.OVER, 1 + tt.OVER, n + 1)
+    pos = np.zeros((n + 1, n + 1, 3))
+    fv = np.zeros((n + 1, n + 1))
+    for j, v in enumerate(us):
+        for i, u in enumerate(us):
+            pos[j, i] = ((u - 0.5) * CELL, -(v - 0.5) * CELL, 0.01)
+            fv[j, i] = tt.field(mask, u, v)
+    ob = _grid_obj("tw_water", pos, np.zeros(pos.shape[:2] + (2,)), _water_mat(), root, outward=(0, 0, 1))
+    ob.visible_shadow = False
+    a = ob.data.attributes.new("f", "FLOAT", "POINT")
+    a.data.foreach_set("value", fv.astype(np.float32).ravel())
+
+
+def _ford_mat():
+    """A ford's bed: the ground's gravel (rocks_ground_02), wet and a little greener, under a skin of shallow water
+    (its small waves, its sheen); opaque on its cell, fading out over the skirt (the scree's "fade" attribute)."""
+    if "ford_r8" in bpy.data.materials:
+        return bpy.data.materials["ford_r8"]
+    m = _scree_mat().copy()
+    m.name = "ford_r8"
+    nt = m.node_tree
+    p = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
+    hue = nt.nodes["hue"]
+    film = nt.nodes.new("ShaderNodeMix")
+    film.data_type = "RGBA"
+    film.inputs["Factor"].default_value = 0.62
+    film.inputs["B"].default_value = (0.02, 0.04, 0.042, 1.0)      # the water over it
+    nt.links.new(hue.outputs["Result"], film.inputs["A"])
+    nt.links.new(film.outputs["Result"], p.inputs["Base Color"])
+    for lk in list(nt.links):
+        if lk.to_node == p and lk.to_socket.name == "Roughness":
+            nt.links.remove(lk)
+    p.inputs["Roughness"].default_value = 0.4
+    p.inputs["Specular IOR Level"].default_value = 0.1
+    ms = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeMixShader")      # body + the sky's sheen, then the fade
+    sheen = _sky_sheen(nt, p.outputs[0], 0.3, 0.15)
+    nt.links.new(sheen.outputs[0], ms.inputs[2])
+    return m
+
+
+def ford_tile(root, variant=0):
+    """Ford (4, terrain.ts terrain_ford_v*): a cell of shallow water over gravel with stepping stones, on the ground
+    layer over the water; opaque on its cell, its skirt (half a metre round) fading into the water beside it."""
+    P = mats()
+    rnd = random.Random(1500 + variant)
+    n = 60
+    xs = np.linspace(-1.5, 1.5, n + 1)
+    X, Y = np.meshgrid(xs, -xs)
+    pos = np.stack([X, Y, np.full_like(X, 0.02)], -1)
+    ob = _grid_obj("tf_bed", pos, np.zeros(pos.shape[:2] + (2,)), _ford_mat(), root, outward=(0, 0, 1))
+    ob.visible_shadow = False
+    edge = np.maximum(np.abs(X), np.abs(Y))
+    wob = 0.12 * np.sin(X * 3.1 + variant) * np.cos(Y * 2.7 + variant)
+    _fade_attr(ob, _smooth(1.5, 1.05, edge + wob))
+    for k in range(rnd.randint(7, 10)):                   # stepping stones, wet, just out of the water
+        _rock(f"tf_stone{k}", rnd.uniform(0.12, 0.24), P["dark"], root,
+              (rnd.uniform(-0.85, 0.85), rnd.uniform(-0.85, 0.85), 0.02), rnd)
+
+
+def bridge_deck(root, axis="ns"):
+    """Bridge (5 north-south, 6 east-west; terrain_bridge_deck_*): one cell of timber deck, planks across the way on
+    two stringers and a pile bent in the water, on the ground layer (the rails are bridge_rail)."""
+    wood = lib.mat("wood", (0.13, 0.085, 0.05), 0.75)          # weathered planks
+    beam = lib.mat("timber", (0.09, 0.06, 0.04), 0.8)
+    rnd = random.Random(1700 + (axis == "ew"))
+    for i in range(9):                                     # planks across the way, uneven, a little gap between
+        t = -0.89 + i * 0.2225
+        L = 2.0 + rnd.uniform(-0.04, 0.04)
+        sz = (L, 0.2, 0.06) if axis == "ns" else (0.2, L, 0.06)
+        ob = box(f"tb_plank{i}", sz, wood, root, loc=(rnd.uniform(-0.03, 0.03), t, 0.42) if axis == "ns"
+                 else (t, rnd.uniform(-0.03, 0.03), 0.42))
+        ob.rotation_euler = (math.radians(rnd.uniform(-1, 1)), math.radians(rnd.uniform(-1, 1)), 0.0)
+    for sx in (-1, 1):
+        if axis == "ns":
+            box(f"tb_str{sx}", (0.18, 2.04, 0.22), beam, root, loc=(sx * 0.72, 0, 0.28))
+        else:
+            box(f"tb_str{sx}", (2.04, 0.18, 0.22), beam, root, loc=(0, sx * 0.72, 0.28))
+    for sx in (-1, 1):                                     # a pile under each stringer, the cap beam across them
+        x, y = (sx * 0.72, 0.0) if axis == "ns" else (0.0, sx * 0.72)
+        cyl(f"tb_pile{sx}", 0.1, 0.4, beam, root, loc=(x, y, -0.15), segs=10)
+    box("tb_cap", (1.7, 0.2, 0.14) if axis == "ns" else (0.2, 1.7, 0.14), beam, root, loc=(0, 0, 0.12))
+
+
+def bridge_rail(root, axis="x"):
+    """A bridge's rail along one edge of a cell (terrain_bridge_rail_*, its anchor the edge's middle): posts a metre
+    apart, a hand rail and a mid rail, rough timber."""
+    beam = lib.mat("timber", (0.09, 0.06, 0.04), 0.8)
+    for i in (-0.5, 0.5):
+        x, y = (i, 0.0) if axis == "x" else (0.0, i)
+        box(f"tb_post{i}", (0.12, 0.12, 1.1), beam, root, loc=(x, y, 0.55 + 0.4))
+    box("tb_rail", (2.02, 0.1, 0.1) if axis == "x" else (0.1, 2.02, 0.1), beam, root, loc=(0, 0, 1.45))
+    box("tb_mid", (2.02, 0.07, 0.07) if axis == "x" else (0.07, 2.02, 0.07), beam, root, loc=(0, 0, 1.0))
+
+
+def r8_water(root, c, mask=15):
+    water_tile(root, mask)
+
+
+def r8_ford(root, c, variant=0):
+    ford_tile(root, variant)
+
+
+def r8_bridge_deck(root, c, axis="ns"):
+    bridge_deck(root, axis)
+
+
+def r8_bridge_rail(root, c, axis="x"):
+    bridge_rail(root, axis)
 
 
 def r8_cliff_post(root, c, variant=0):
@@ -651,5 +938,11 @@ def r8_cliff_arm(root, c, variant=0, direction="E"):
     cliff_arm(root, direction, variant)
 
 
-FOOTPRINT = {"r8_cliff_post": (1, 1), "r8_cliff_arm": (1, 1)}
-BUILDERS = {"r8_cliff_post": r8_cliff_post, "r8_cliff_arm": r8_cliff_arm}
+def r8_rock(root, c, variant=0):
+    rock_heap(root, variant)
+
+
+FOOTPRINT = {"r8_cliff_post": (1, 1), "r8_cliff_arm": (1, 1), "r8_rock": (1, 1), "r8_water": (1, 1), "r8_ford": (1, 1),
+             "r8_bridge_deck": (1, 1), "r8_bridge_rail": (1, 1)}
+BUILDERS = {"r8_cliff_post": r8_cliff_post, "r8_cliff_arm": r8_cliff_arm, "r8_rock": r8_rock, "r8_water": r8_water,
+            "r8_ford": r8_ford, "r8_bridge_deck": r8_bridge_deck, "r8_bridge_rail": r8_bridge_rail}

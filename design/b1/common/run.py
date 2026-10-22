@@ -302,6 +302,18 @@ TARGETS["r8c_cliff"] = ([dict(kind="r8_cliff_post", culture="E", opts=dict(varia
                                 name=f"terrain_cliff_arm_{d}_v{v}") for d in ("E", "S", "SE", "SW") for v in range(3)])
 CAMERA["r8c_cliff"] = proj.OBLIQUE
 LOOK["r8c_cliff"] = "r8"
+# the rest of the terrain in the same rock (ceo 2026-10-22: terrain production in the approved approach)
+TARGETS["r8c_rock"] = [dict(kind="r8_rock", culture="E", opts=dict(variant=v), name=f"terrain_rock_v{v}") for v in range(6)]
+CAMERA["r8c_rock"] = proj.OBLIQUE
+LOOK["r8c_rock"] = "r8"
+TARGETS["r8c_water"] = ([dict(kind="r8_water", culture="E", opts=dict(mask=m), name=f"terrain_water_m{m}") for m in range(1, 16)]
+                        + [dict(kind="r8_ford", culture="E", opts=dict(variant=v), name=f"terrain_ford_v{v}") for v in range(2)]
+                        + [dict(kind="r8_bridge_deck", culture="E", opts=dict(axis=a), name=f"terrain_bridge_deck_{a}")
+                           for a in ("ns", "ew")]
+                        + [dict(kind="r8_bridge_rail", culture="E", opts=dict(axis=a), name=f"terrain_bridge_rail_{a}")
+                           for a in ("x", "y")])
+CAMERA["r8c_water"] = proj.OBLIQUE
+LOOK["r8c_water"] = "r8"
 
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})

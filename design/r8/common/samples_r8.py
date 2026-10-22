@@ -379,6 +379,118 @@ def cliff_scene(gdir, ppm=40, n=16):
     return cam.convert("RGB")
 
 
+def terrain_pieces(g):
+    """client/src/art/terrain.ts terrainPieces(): every terrain picture, [(frame, x, y (cells), front, ground)]."""
+    h, w = g.shape
+
+    def at(x, y):
+        return g[min(h - 1, max(0, y)), min(w - 1, max(0, x))]
+
+    def wet(v):
+        return 3 <= v <= 6
+    out = []
+    for Y in range(h + 1):
+        for X in range(w + 1):
+            m = (wet(at(X - 1, Y - 1)) << 0) | (wet(at(X, Y - 1)) << 1) | (wet(at(X - 1, Y)) << 2) | (wet(at(X, Y)) << 3)
+            if m:
+                out.append((f"terrain_water_m{m}", X, Y, Y, "water"))
+    for y in range(h):
+        for x in range(w):
+            v, cx, cy = g[y, x], x + 0.5, y + 0.5
+            if v == 1:
+                out.append((f"terrain_rock_v{_variant(x, y, 6)}", cx, cy, y + 1, None))
+            elif v == 4:
+                out.append((f"terrain_ford_v{_variant(x, y, 2)}", cx, cy, y + 1, "ford"))
+            elif v in (5, 6):
+                ns = v == 5
+                out.append((f"terrain_bridge_deck_{'ns' if ns else 'ew'}", cx, cy, y + 1, "deck"))
+                if ns:
+                    if at(x - 1, y) != 5:
+                        out.append(("terrain_bridge_rail_y", x, cy, y + 1, None))
+                    if at(x + 1, y) != 5:
+                        out.append(("terrain_bridge_rail_y", x + 1, cy, y + 1, None))
+                else:
+                    if at(x, y - 1) != 6:
+                        out.append(("terrain_bridge_rail_x", cx, y, y + 0.01, None))
+                    if at(x, y + 1) != 6:
+                        out.append(("terrain_bridge_rail_x", cx, y + 1, y + 1, None))
+    out += [(f, x, y, fr, None) for f, x, y, fr in cliff_pieces(g)]
+    return out
+
+
+def terrain_scene(gdir, g, ppm=40, units=(), extra=()):
+    """The ground and its terrain pictures as the game draws them: the ground (ground_r8), the water, fords and bridge
+    decks on the ground layer (water tiles cut to their square, as atlas_b1.terrain_prep), then everything that stands
+    by its front edge. units: (unit, anim, facing, frame, team, x m, y m); extra: (dir, name, x m, y m, front)."""
+    import ground_r8
+    rules = dict(ground_r8.RULES, dirt=dict(ground_r8.RULES["dirt"], noise_threshold=0.99))
+    top = ground_r8.compose(g, [], _ground_layers(gdir), ppm=ppm, rules=rules)
+    cam = Image.fromarray((top * 255).round().astype(np.uint8), "RGB").resize((top.shape[1], top.shape[0] // 2), Image.LANCZOS)
+    cam = cam.convert("RGBA")
+    f = ppm / 60.0
+    flat = {"water": [], "ford": [], "deck": []}
+    items, shadows = [], []
+    for frame, x, y, front, ground in terrain_pieces(g):
+        im, anc, sh = _sprite(CLIFF_DIR, frame, "x3", 1.0)
+        if ground == "water":                              # cut to the tile's square round the corner (3x: 120 x 60)
+            ax, ay = int(anc[0]), int(anc[1])
+            im = im.crop((ax - 60, ay - 30, ax + 60, ay + 30))
+            anc = (60, 30)
+        im = im.resize((max(1, round(im.width * f)), max(1, round(im.height * f))), Image.LANCZOS)
+        anc = (anc[0] * f, anc[1] * f)
+        X, Y = x * 2.0 * ppm, y * 2.0 * ppm * 0.5
+        xy = (int(round(X - anc[0])), int(round(Y - anc[1])))
+        if ground:
+            flat[ground].append((im, xy))
+            if ground == "deck" and sh:
+                shs = sh[0].resize((max(1, round(sh[0].width * f)), max(1, round(sh[0].height * f))))
+                flat["deck"].insert(0, (shs, (int(round(X - sh[1] * f)), int(round(Y - sh[2] * f)))))
+        else:
+            items.append((front, im, xy))
+            if sh:
+                shs = sh[0].resize((max(1, round(sh[0].width * f)), max(1, round(sh[0].height * f))))
+                shadows.append((shs, (int(round(X - sh[1] * f)), int(round(Y - sh[2] * f)))))
+    for d, name, x, y, front in extra:
+        im, anc, sh = _sprite(d, name, "x3", f)
+        items.append((front, im, (int(round(x * ppm - anc[0])), int(round(y * ppm * 0.5 - anc[1])))))
+        if sh:
+            shadows.append((sh[0], (int(round(x * ppm - sh[1])), int(round(y * ppm * 0.5 - sh[2])))))
+    if UNITS_DIR:
+        import boards_r8 as B
+        atl = {}
+        for (u, anim, facing, k, team, x, y) in units:
+            if u not in atl:
+                atl[u] = B.field.Atlas(Path(UNITS_DIR) / u / "r7v8" / "prod" / u / "atlas_x3" / f"{u}.json")
+            body, (ax, ay), _ = B.frame(atl[u], u, anim, facing, k, team)
+            body = body.resize((max(1, int(body.width * f)), max(1, int(body.height * f))), Image.LANCZOS)
+            items.append((y / 2.0, body, (int(round(x * ppm - ax * f)), int(round(y * ppm * 0.5 - ay * f)))))
+    seq = flat["water"] + flat["ford"] + flat["deck"] + shadows + [(im, xy) for _, im, xy in sorted(items, key=lambda t: t[0])]
+    for im, xy in seq:
+        layer = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+        layer.paste(im, xy, im)
+        cam = Image.alpha_composite(cam, layer)
+    return cam.convert("RGB")
+
+
+def river_map(n=18):
+    """A river west to east with a bend, a ford and a bridge across it, rocks, a short cliff."""
+    g = np.zeros((n, n), dtype=int)
+    for x in range(n):
+        y0 = 7 + (1 if 6 <= x <= 11 else 0) + (1 if 8 <= x <= 9 else 0)
+        g[y0:y0 + 2, x] = 3
+    for x in range(2, 5):                                  # the ford, three cells wide
+        for y in range(n):
+            if g[y, x] == 3:
+                g[y, x] = 4
+    for x in range(13, 16):                                # the bridge, north-south
+        for y in range(n):
+            if g[y, x] == 3:
+                g[y, x] = 5
+    g[3, 8:12] = 7
+    g[13, 4] = g[13, 5] = g[14, 5] = g[3, 14] = g[12, 12] = 1
+    return g
+
+
 def board_cliff_redo(gdir, research, W=2800):
     label = "R8-26-懸崖重做-mobile"
     text = ("懸崖重做（使用者 2026-10-22：「懸崖看起來不太真實」）。這次岩壁不是自己捏的，是真的岩壁：Poly Haven 的兩片實地掃描岩壁"
@@ -428,7 +540,7 @@ def board_ground_fix(gdir, W=2600):
     game's water tiles cut them."""
     import ground_r8 as G
     label = "R8-28-地面修正-mobile"
-    text = ("地面的兩個修正（使用者 2026-10-22：河岸沿著格子一格一格的方塊、露土的邊太硬）。原因查到了，"
+    text = ("地面的兩個修正（ceo 2026-10-22 看 R8-23 時發現：河岸沿著格子一格一格的方塊、露土的邊太硬）。原因查到了，"
             "和 client 談好改法：\n"
             "・河岸的方塊：河岸、碎石、資源點旁的露土是照「哪幾格靠近水、岩石、資源點」畫的，"
             "原本一格只有一個點、不是有就是沒有，所以邊界跟著格子走。改成每格 4 個點，照離水的實際距離慢慢變淡，"
@@ -464,7 +576,12 @@ def board_ground_fix(gdir, W=2600):
     return boards.save(boards.stack(parts, W), label)
 
 
-if __name__ == "__main__" and sys.argv[1] == "groundfix":
+if __name__ == "__main__" and sys.argv[1] == "terrain":
+    UNITS_DIR = sys.argv[3] if len(sys.argv) > 3 else None
+    terrain_scene(Path(sys.argv[2]), river_map(), units=[("spear_e", "walk", 6, 2, "blue", 7.0, 14.0),
+                                                         ("spear_e", "idle", 6, 0, "blue", 28.5, 17.8),
+                                                         ("bow_w", "idle", 2, 0, "red", 8.2, 25.0)]).save(sys.argv[4])
+elif __name__ == "__main__" and sys.argv[1] == "groundfix":
     print(board_ground_fix(Path(sys.argv[2])))
 elif __name__ == "__main__" and sys.argv[1] == "redo":
     gd, rs = Path(sys.argv[2]), Path(sys.argv[3])
