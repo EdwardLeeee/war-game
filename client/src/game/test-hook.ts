@@ -48,6 +48,8 @@ export interface GameHook {
   log(line: string): void;
   /** Latest snapshot header values. */
   header(): { tick: number; paused: boolean; speed: number; scenario: number };
+  /** Pause the game now, as 暫停 does (a test that must stop the clock at once: a tap's round trip is ticks at 400 a second). */
+  pause(): void;
   /** Buildings in the latest snapshot: top-left cell and footprint size. */
   /** `soldiers`: hiding inside (round 7; ours only). */
   buildings(): { id: number; owner: number; type: number; cx: number; cy: number; size: number; progress: number; flags: number; soldiers: number; posted: number }[];
@@ -271,6 +273,7 @@ export function gameHook(game: Game): GameHook {
       game.autoArmyOn = on;
     },
     pauseMarks: () => game.pauseMarksForTest,
+    pause: () => game.pause(),
     groups: () => game.army.groups.map((g) => [...g.ids]),
     garrison: (town) => game.army.garrisonOf(town),
     townHint: () => game.townHint(),
