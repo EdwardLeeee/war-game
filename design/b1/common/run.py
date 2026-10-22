@@ -277,6 +277,25 @@ OUTPOST = [dict(kind="outpost", culture=c, state=st, name=f"outpost_{c}_{s}") fo
 TARGETS["prod_outpost"] = OUTPOST
 CAMERA["prod_outpost"] = proj.OBLIQUE      # registered after the prod_* camera line above: set here
 
+# R8 batch 2 (D-093): the realistic look (render_b1.py LOOK "r8"; the CC0 textures of design/r7/common/textures.py)
+R7_TEX = HERE.parents[1] / "r7" / "build" / "tex"
+LOOK = {}
+TARGETS["r8b_look"] = [dict(kind=k, culture=c, state="done", name=f"r8b_{k}_{c}") for c in CULTURES
+                       for k in ("main_city", "house", "barracks")]
+CAMERA["r8b_look"] = proj.OBLIQUE
+LOOK["r8b_look"] = "r8"
+# the style samples (ceo 2026-10-22: main city, house, barracks of both cultures first, for the user)
+TARGETS["r8b_samples"] = [dict(kind=f"r8_{k}", culture=c, state="done", name=f"r8b_{k}_{c}_new") for c in CULTURES
+                          for k in ("main_city", "house", "barracks")]
+CAMERA["r8b_samples"] = proj.OBLIQUE
+LOOK["r8b_samples"] = "r8"
+# the cliff beside the stone wall (ceo 2026-10-22: the user's complaint, the cliff looked like a wall)
+TARGETS["r8b_compare"] = ([dict(kind="r8_cliff_sample", culture="E", name="r8b_cliff")]
+                          + [dict(kind=k, culture=c, opts=dict(state="intact"), name=f"r8b_{k}_{c}", footprint=[1, 1])
+                             for c in CULTURES for k in ("sw_s", "pal_s")])
+CAMERA["r8b_compare"] = proj.OBLIQUE
+LOOK["r8b_compare"] = "r8"
+
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
 FOLDER.update({t: "states" for t in TARGETS if t.startswith(("states2", "states3"))})
@@ -345,7 +364,7 @@ def run(target, preview=False, only=None, prev_ppm=24):
         pcs.append(d)
     job = dict(px_per_m=ppm * ss, emblem_dir=str(config.BUILD / "emblems"), quality="hq",
                samples={"beauty": 12, "mask": 4, "shadow": 8, "ao": 4} if preview else SAMPLES, pieces=pcs,
-               camera=CAMERA.get(target))
+               camera=CAMERA.get(target), look=LOOK.get(target), tex_dir=str(R7_TEX))
     jp = jobdir / f"b1_{target}{'_prev' if preview else ''}.json"
     jp.write_text(json.dumps(job))
     log = jobdir / f"b1_{target}{'_prev' if preview else ''}.log"
