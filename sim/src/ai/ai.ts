@@ -2562,6 +2562,13 @@ export interface HardPlan {
    */
   lumberMove: boolean;
   /**
+   * D-086 A5 (the user's f331df3c: 11 and 16 arrow towers by the player's main city, 6 with soldiers in them, left out
+   * when it weighed its waves at minutes 40 and 49, and about half of each wave fell to their arrows): the forts by the
+   * enemy's main city (FORT_SIEGE) count with the enemy soldiers it believes in when it weighs a march, a counter or a
+   * march with the population full, as D-081 counts them (false: the siege's, as before).
+   */
+  cityForts: boolean;
+  /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
    * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
@@ -2647,6 +2654,7 @@ export const HARD: HardPlan = {
   cavalryMix: 15,
   cavalryRandomOnly: true,
   lumberMove: true,
+  cityForts: false,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -4556,6 +4564,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // At home: march, go for a town, or wait by the city.
         const popFull = toGo < 0 && cap >= ceiling && pop >= cap - FULL_MARGIN;
         const strong = armyWorth * 100 >= believed * plan.pushRatio;
+        // D-086 A5 (plan.cityForts): what defends the enemy's main city, its forts with the soldiers it believes in.
+        const cityFortWorth = plan.cityForts ? groups.filter((g) => bySiege(g)).reduce((a, g) => a + g.worth, 0) : 0;
+        const fortsOk = !plan.cityForts || vsForts(army) * 100 >= (cityFortWorth + believed) * plan.pushRatio;
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
         // D-089 (plan.cityAgain): not again with fewer than broke off last time, but at the end of an AI game.
@@ -4567,9 +4578,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             ? army.length >= ENDGAME_ARMY
             : assault
               ? army.length >= ASSAULT_ARMY || (latest && army.length >= ENDGAME_ARMY)
-              : (counterReady && army.length >= plan.counterArmy && armyWorth >= believed) ||
-                (army.length >= pushArmy && strong) ||
-                (popFull && army.length >= townArmy + 6));
+              : fortsOk &&
+                ((counterReady && army.length >= plan.counterArmy && armyWorth >= believed) ||
+                  (army.length >= pushArmy && strong) ||
+                  (popFull && army.length >= townArmy + 6)));
         // D-086 A3 (plan.peekFirst): no enemy soldier seen for a while: one goes to look (ignoring enemies on the way), the march waits.
         if (hardGo && plan.peekFirst > 0 && !endgame && !assault && !popFull && tick - lastFoeSeen > plan.peekFirst * TICKS_PER_MINUTE) {
           if (peekId >= 0) hardGo = false;
