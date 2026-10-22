@@ -19,7 +19,7 @@ LAYERS = ("grass", "grass_dry", "dirt", "gravel", "bank")
 TERRAIN = {"plain": 0, "rock": 1, "water": 3, "cliff": 7}       # the sim's Terrain values the weights look at
 # the layers' tile sizes (m) and the rules, as client reads them (GroundJson)
 RULES = dict(bank_cells=1, gravel_cells=1, edge_m=1.2, height_k=0.9, dirt=dict(node_cells=1, noise_threshold=0.8))
-GRADE = dict(brightness=1.0, saturation=1.0)
+GRADE = dict(brightness=1.0, saturation=0.9)      # the ground a little greyer than the units (R8: 找得到兵)
 
 
 def value_noise(size, cells, seed):

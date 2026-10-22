@@ -4,7 +4,7 @@ the main city, a house and the barracks in the realistic look (blender/arch_r8.p
 layers blended as the client blends them (ground_r8.py); the cliff beside the walls (terrain_r8.py); an overview; and a
 memory table per category (uncompressed RGBA8 and ASTC 4x4, at 2x).
 
-python3 design/r8/common/samples_r8.py SUFFIX GROUND_DIR RESEARCH_DIR
+python3 design/r8/common/samples_r8.py SUFFIX GROUND_DIR RESEARCH_DIR [UNITS_DIR]
   SUFFIX        x3 (run.py r8b_samples, r8b_compare) or prev (--preview --ppm 60)
   GROUND_DIR    ground_run.py's output (ground/, sample_top.png)
   RESEARCH_DIR  the research worktree (east-arch-reference, west-arch-reference, nature-reference, wall-reference)
@@ -29,6 +29,7 @@ import boards   # noqa: E402
 boards.OUT = HERE.parent / "out"
 proj.use_camera(proj.OBLIQUE)
 DIR = config.BUILD / "b1" / "r8b"
+UNITS_DIR = None   # the R8 unit atlases (CI artifacts r7-v8-<unit>), for units on the ground sample
 NAMES = {"main_city": "主城", "house": "民居", "barracks": "兵營"}
 FOOT = {"main_city": (4, 4), "house": (2, 2), "barracks": (3, 3)}
 SIDE = {"E": "東陸", "W": "西陸"}
@@ -168,15 +169,29 @@ def board_ground(gdir, research, W=2800):
         sw.append(boards.captioned(two, f"{L['id']}：一塊 {L['tile_m']} 公尺（接起來 2×2）", 20))
     top = Image.open(gdir / "sample_top.png")
     cam = Image.open(gdir / "sample_cam.png")
+    cam = cam.resize((cam.width * 3 // 2, cam.height * 3 // 2), Image.LANCZOS).convert("RGBA")
+    if UNITS_DIR:                                         # R8 units standing on it, at the same scale (36 px a metre)
+        import boards_r8 as B
+        f = 36 / 60
+        for i, (u, anim, k, team, x, y) in enumerate((("spear_e", "idle", 0, "blue", 9.0, 15.0), ("spear_e", "walk", 3, "blue", 10.4, 15.6),
+                                                       ("bow_e", "attack", 4, "blue", 11.6, 14.8), ("pike_w", "walk", 2, "red", 21.0, 16.5),
+                                                       ("bow_w", "idle", 0, "red", 22.4, 17.2), ("farmer_e", "idle", 0, "blue", 20.5, 22.4))):
+            a = B.field.Atlas(Path(UNITS_DIR) / u / "r7v8" / "prod" / u / "atlas_x3" / f"{u}.json")
+            body, (ax, ay), _ = B.frame(a, u, anim, 6 if team == "blue" else 2, k, team)
+            body = body.resize((max(1, int(body.width * f)), max(1, int(body.height * f))), Image.LANCZOS)
+            cam.alpha_composite(body, (int(x * 36 - ax * f), int(y * 18 - ay * f)))
+    cam = cam.convert("RGB")
     text = ("地面（R8 第二批）：五層可以無縫接的材質，已經打好光（和兵、建築同一個太陽），高度放在透明度裡；"
             "格式照 client 2026-10-21 談好的 war-game ground 1（ground.json）。混合照 client 的著色器："
             "草地到處都是，大片的乾草地用一個慢的雜訊混進去；資源點旁和零星的地方露土；岩石、懸崖腳下是碎石；水邊是河岸泥。"
             "交界用雜訊和高度打散，不是直線。\n"
             "左：五層各自（接起來 2×2 看接縫）；下：一段 40×40 公尺的樣本，上面是從正上方看，右邊是遊戲的鏡頭（方形斜看，前後壓成一半）。"
-            "水面是暫時的平塗，寫實的水在第二批的地形裡。地面比兵暗、飽和度比兵低，讓兵一眼找得到。")
+            "水面是暫時的平塗，寫實的水在第二批的地形裡。地面比兵暗、飽和度比兵低，讓兵一眼找得到（右圖站了幾名寫實兵）。\n"
+            "這張用的就是要出貨的設定：ground.json 的 grade 亮度 1.0、飽和度 0.9；零星露土的門檻 0.8（越高露土越少）。"
+            "五層的材質都是 Poly Haven 的 CC0 照片，重新上色、打光。")
     parts = [boards.header(W, label, text), boards.row(sw, W, gap=20)]
     parts.append(boards.row([boards.captioned(top.resize((top.width // 2 * 2 // 2, top.height // 2)), "從正上方看（每公尺 12 點）", 22),
-                             boards.captioned(cam.resize((cam.width * 3 // 2, cam.height * 3 // 2)), "遊戲的鏡頭（實際大小約 1.5 倍）", 22)], W, gap=30))
+                             boards.captioned(cam, "遊戲的鏡頭，上面站著寫實兵（實際大小約 1.8 倍）", 22)], W, gap=30))
     return boards.save(boards.stack(parts, W), label)
 
 
@@ -202,6 +217,8 @@ def board_cliff(suffix, research, W=2800):
     nature = research / "nature-reference"
     if REFS.get("nature"):
         parts += refs_row(W, nature, REFS["nature"])
+    else:
+        parts.append(text_block(W, "懸崖的參考圖（天然岩壁的照片，公有領域和 CC0）還在整理，隨第二批正式稿補上。", 22))
     return boards.save(boards.stack(parts, W), label)
 
 
@@ -210,7 +227,7 @@ def board_overview(suffix, gdir, mem, W=3000):
     text = ("R8 第二批的樣本（寫實畫風），給使用者先看方向：東陸、西陸的主城、民居、兵營，地面五層的混合，懸崖和城牆。"
             "都是 2 倍。細節和參考圖在 R8-21 到 R8-24。看過方向對了，再量產第二批全部：建築（含哨所、砲坊）的所有狀態、"
             "照 D-096 格局的寫實城牆、資源點、地形、地面。\n"
-            "記憶體（2 倍，這幾樣各自；未壓縮 RGBA8／ASTC 4×4）：" +
+            "記憶體（2 倍，每張圖、一個狀態；一棟建築有六個狀態；未壓縮 RGBA8／ASTC 4×4）：" +
             "、".join(f"{NAMES.get(k.rsplit('_', 1)[0], k)}{'' if k == 'ground' else SIDE[k[-1]]} {v['rgba8_mb']}／{v['astc_mb']} MB"
                      for k, v in mem.items() if k != "ground") +
             f"；地面五層合計 {mem['ground']['rgba8_mb']}／{mem['ground']['astc_mb']} MB。")
@@ -244,6 +261,7 @@ def memory(suffix, gdir):
 
 if __name__ == "__main__":
     sfx, gd, rs = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
+    UNITS_DIR = sys.argv[4] if len(sys.argv) > 4 else None
     for c in ("E", "W"):
         print(board_buildings(c, sfx, rs))
     print(board_ground(gd, rs))
