@@ -839,6 +839,14 @@ function fortsAtTown(groups: readonly FortGroup[], x: number, y: number, radius:
  * on the fixed map 41–59% of the decided games, off 98%, and the first town 2 minutes later: once a gate fell it went
  * for the next one standing, round the walls); one gate down, in by it (gateDone) is measured with it.
  */
+/**
+ * D-096 (scratch, off by default): normal on random maps, where #266 with ai/d096 drew 48% of normal against normal
+ * (main 38%; the armies went from town to town, lost, took again, and marched on the enemy base only in the last 8
+ * minutes): baseLess fewer for the march on the enemy base on random maps; walledTowns: an enemy-held town with its gates
+ * up only with the army for the base; townRest: minutes it leaves a town alone after breaking off from it.
+ */
+export const NORMAL_TUNE = { baseLess: 0, walledTowns: false, townRest: 0 };
+
 export const GATE_AI = { focus: false, calm: true, walls: true, arrows: true, retreat: "" };
 /** The army goes for the gate within this many cells of a town's walls (its radius + this). */
 const GATE_NEAR = 10;
@@ -1409,6 +1417,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let wallMove = -100000;
   /** D-096: the town whose gate it broke (in by it: no more gates there), -1 none. */
   let gateDone = -1;
+  /** D-096 (NORMAL_TUNE.townRest): towns it left alone until a tick. */
+  const townRestN = new Map<number, number>();
   let razeAgain = -100000;
   /** While the army is away: the soldiers trained since, at home, pulling down a fort on its ground. */
   let reservesRazing = -1;
@@ -1930,7 +1940,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const assault = toGo >= 0 && toGo <= ASSAULT_TO_GO;
       const latest = toGo >= 0 && toGo <= LATEST_TO_GO;
       const lateMinutes = toGo >= 0 && toGo <= LATE_TO_GO ? Math.trunc((tick - (know.maxTicks - LATE_TO_GO)) / TICKS_PER_MINUTE) + 1 : 0;
-      const baseNeed = lateMinutes === 0 ? baseArmy : Math.max(townArmy, baseArmy - lateMinutes * 3);
+      // D-096 (NORMAL_TUNE.baseLess): fewer on random maps.
+      const baseFull = know.map.mode === "random" && NORMAL_TUNE.baseLess > 0 ? Math.max(townArmy, baseArmy - NORMAL_TUNE.baseLess) : baseArmy;
+      const baseNeed = lateMinutes === 0 ? baseFull : Math.max(townArmy, baseFull - lateMinutes * 3);
       // Without a limit it also marches once it cannot grow (population at the ceiling).
       const popFull = toGo < 0 && cap >= ceiling && pop >= cap - FULL_MARGIN;
       // The difficulty's earliest first town and first march on the enemy base.
@@ -2138,6 +2150,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           remember(army, stopped !== null && stopped.go ? [...byArmy, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byArmy);
           fortStop = null;
           if (mode === "town" && byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
+          if (mode === "town" && NORMAL_TUNE.townRest > 0) townRestN.set(targetTown, tick + NORMAL_TUNE.townRest * TICKS_PER_MINUTE);
           fallBackPast(byArmy);
           lastMove = tick;
           mode = "gather";
@@ -2299,6 +2312,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
           .filter(([, t]) => !GATE_AI.arrows || vsForts(army) * 10 >= gateArrowWorth(view, rules, player, t, foes.filter((e) => dist2(e.x, e.y, t.x, t.y) <= 100).length) * 13)
           .filter(([, t]) => !GATE_AI.retreat.includes("b") || gateLoss(view, rules, player, t, army) <= GATE_LOSS)
+          // D-096 (NORMAL_TUNE.walledTowns): an enemy-held town with its gates up, only with the army for the base; (townRest) not one it fell back from lately.
+          .filter(([, t]) => !NORMAL_TUNE.walledTowns || t.owner !== 1 - player || army.length >= baseNeed || !townGates(view, rules, t).some((g) => g.owner !== player))
+          .filter(([id]) => tick >= (townRestN.get(id) ?? 0))
           // Small first, then the nearest to its main city, ties the mirror-image way (war-game-core 2026-10-22: by town id,
           // on random maps both went first for the same town by player 0, 48 games of #266's 100 normal against normal).
           .sort(([, ta], [, tb]) => ta.size - tb.size || dist2(ta.x, ta.y, home.cellX, home.cellY) - dist2(tb.x, tb.y, home.cellX, home.cellY) || townRank(ta) - townRank(tb));
@@ -2530,10 +2546,21 @@ export interface HardPlan {
   towerFirst: boolean;
   /**
    * D-086 A4 (the user's 75830947: 21-30 cavalry in minutes 22-26; cf56e34c: 16 by minute 16): the mix also answers
-   * enemy cavalry: CAVALRY_MIX percent or more of the enemy soldiers it knows of moves it counterMix points toward
+   * enemy cavalry: cavalryMix percent or more of the enemy soldiers it knows of moves it counterMix points toward
    * spearmen (spearmen hit cavalry x3) (false: cavalry not counted, as before).
    */
   counterCavalry: boolean;
+  /** D-097 (scratch run 39718915278: the scripted push with 18% cavalry never moved it): the share (percent) of enemy cavalry for counterCavalry (30, as before). */
+  cavalryMix: number;
+  /** D-097 (the same run: 20% cavalry won 50-24 on random maps, lost 39-43 on the fixed one): cavalryCounter on random maps only (false: on both). */
+  cavalryRandomOnly: boolean;
+  /**
+   * D-096 (the user's 6a024b3c: one lumber camp all game, its trees 6 cells off at minute 3 and 17-38 from minute 36, wood
+   * 0-45 while 25-29 farmers cut): no tree left within LUMBER_NEAR cells of its lumber camps, another (LUMBER_MOST at
+   * most) by the nearest tree it knows of on its own side, with no enemy soldier in sight within BUILD_SAFE cells
+   * (false: as before).
+   */
+  lumberMove: boolean;
   /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
@@ -2606,15 +2633,20 @@ export const HARD: HardPlan = {
   net: null,
   netMarch: 14,
   netFarmers: 12,
-  cavalryCounter: 0,
-  cavalryWhen: 50,
-  charge: false,
+  // D-097 (ceo 2026-10-22, docs/research/2026-10-ai-d096.md section 5): 20% cavalry on random maps, charging; spearmen
+  // against 15% enemy cavalry; another lumber camp by the trees.
+  cavalryCounter: 20,
+  cavalryWhen: 0,
+  charge: true,
   chargeRest: 2,
   towers: 0,
   townTowers: 0,
   towerSpare: 150,
   towerFirst: false,
-  counterCavalry: false,
+  counterCavalry: true,
+  cavalryMix: 15,
+  cavalryRandomOnly: true,
+  lumberMove: true,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -2630,14 +2662,15 @@ const TOWN_SCOUT_EVERY = 200;
 const MINE_NEAR = 6;
 const MINE_MOST = 3;
 const MINE_FAR = 40;
+/** D-096 (plan.lumberMove): trees this near (cells) a lumber camp are its own; at most this many camps. */
+const LUMBER_NEAR = 8;
+const LUMBER_MOST = 3;
 const MINE_TOWN = 12;
 /** D-086 A4 (plan.buildSafe): a site lost before it was done, nothing this near (cells) for this long. */
 const SITE_NEAR = 8;
 const SITE_REST = 3 * 1200;
 /** D-086 A4 (plan.buildSafe): enemy soldiers this near (cells) a spot. */
 const BUILD_SAFE = 10;
-/** D-086 A4 (plan.counterCavalry): this share (percent) of cavalry among the enemy soldiers it knows of. */
-const CAVALRY_MIX = 30;
 /** D-086 A4 (plan.cavalryCounter): enemy soldiers it must know of before it weighs their mix. */
 const CAVALRY_SEEN = 6;
 /** D-086 A4 (plan.charge): the least cavalry that charge, how far from them the targets may be, spearmen this near count as by them, and how often (ticks) it picks again. */
@@ -3162,6 +3195,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const cavalryWant =
         plan.cavalryCounter > 0 &&
         rules.features?.cavalry === true &&
+        (!plan.cavalryRandomOnly || mem.random) &&
         knownSoldiers >= CAVALRY_SEEN &&
         (enemyRanged + enemyMages) * 100 >= plan.cavalryWhen * knownSoldiers;
       if (foes.some((f) => f.order !== Order.Post)) lastFoeSeen = tick;
@@ -3440,6 +3474,33 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // D-086 A4 (plan.cavalryCounter): a stable once it wants cavalry against the enemy's mix.
         if (cavalryWant && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
+        // D-096 (plan.lumberMove): the trees by its camps gone: another camp by the nearest it knows of on its own side.
+        else if (plan.lumberMove && farmers.length >= 12 && count(BuildingType.LumberCamp) < LUMBER_MOST) {
+          const camps = own.filter((b) => b.type === BuildingType.LumberCamp);
+          let near = false;
+          let best: { x: number; y: number; id: number } | null = null;
+          let bestD = 0;
+          let bestKey = 0;
+          for (let r = 0; r < view.nodes.length; r += NODE_STRIDE) {
+            if (view.nodes[r + NodeField.kind] !== NodeKind.Tree || view.nodes[r + NodeField.amount] <= 0) continue;
+            const x = view.nodes[r + NodeField.cellX];
+            const y = view.nodes[r + NodeField.cellY];
+            if (camps.some((c) => dist2(c.x, c.y, x, y) <= LUMBER_NEAR * LUMBER_NEAR)) {
+              near = true;
+              break;
+            }
+            const d = dist2(x, y, home.cellX, home.cellY);
+            if (mem.known === Known.City && d >= dist2(x, y, enemyHome.cellX, enemyHome.cellY)) continue;
+            if (foes.some((f) => dist2(f.x, f.y, x, y) <= BUILD_SAFE * BUILD_SAFE)) continue;
+            const key = rank(x, y);
+            if (best === null || d < bestD || (d === bestD && key < bestKey)) {
+              best = { x, y, id: view.nodes[r + NodeField.id] };
+              bestD = d;
+              bestKey = key;
+            }
+          }
+          if (!near && best !== null) add(BuildingType.LumberCamp, best);
+        }
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
@@ -3537,7 +3598,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // The mix answers what it has seen: a cannon shot kills a ranged unit but not a spearman, and
       // ranged units hit spearmen 2.5 times as hard.
       let share = spearBase;
-      const cavalryMix = plan.counterCavalry && knownSoldiers + enemyCavalry >= CAVALRY_SEEN && enemyCavalry * 100 >= CAVALRY_MIX * (knownSoldiers + enemyCavalry);
+      const cavalryMix = plan.counterCavalry && knownSoldiers + enemyCavalry >= CAVALRY_SEEN && enemyCavalry * 100 >= plan.cavalryMix * (knownSoldiers + enemyCavalry);
       if (plan.counterMix > 0) {
         if (cavalryMix) share += plan.counterMix;
         else if (enemyMages >= 2) share += plan.counterMix;

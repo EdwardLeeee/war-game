@@ -2255,7 +2255,8 @@ test("D-086 A4 (plan.cavalryCounter): cavalry once the enemy it knows of is most
     for (let k = 0; k < 8; k++) put(g, 1, type, s0.cellX + 6 + (k % 4), s0.cellY - 15 - Math.trunc(k / 4));
     w.res.set([700, 300, 300, 0], 0);
     g.fog.update(w);
-    return trains(hardAi(g, { dodge: false, cavalryCounter }).think(buildView(g, 0)), UnitType.Cavalry);
+    // The rule by counters (cavalryWhen 50) on this fixed map (the defaults since D-097: 20% on random maps only).
+    return trains(hardAi(g, { dodge: false, cavalryCounter, cavalryWhen: 50, cavalryRandomOnly: false }).think(buildView(g, 0)), UnitType.Cavalry);
   };
   assert.ok(withFoes(UnitType.Ranged, 25), "ranged in sight: cavalry");
   assert.ok(withFoes(UnitType.Mage, 25), "mages in sight: cavalry");
@@ -2613,4 +2614,37 @@ test("normal: on a random map each normal AI goes first for a town nearer itself
       assert.ok(d2(p, t) < d2(1 - p, t), `seed ${seed}: player ${p} goes for town ${t.id}, nearer itself`);
     }
   }
+});
+
+test("D-096 (plan.lumberMove): the trees by its lumber camp gone, hard puts up another by the nearest trees left on its side; off, as before", () => {
+  const built = (lumberMove: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 13 * 1200;
+    const at = (type: BuildingType, x: number, y: number) => w.addBuilding(0, type, s0.cellX + x, s0.cellY + y, rules().buildings[type].hp, 1000);
+    for (const [t, x, y] of [[BuildingType.Barracks, 4, -8], [BuildingType.Barracks, 8, -8], [BuildingType.Range, 12, -8], [BuildingType.Range, 16, -8], [BuildingType.MageHall, 4, -13], [BuildingType.Granary, -6, -6], [BuildingType.Mine, 12, 2]] as [BuildingType, number, number][]) at(t, x, y);
+    for (let k = 0; k < 10; k++) at(BuildingType.Farm, -14 + 3 * (k % 3), -14 + 3 * Math.trunc(k / 3));
+    for (let k = 0; k < 12; k++) at(BuildingType.House, -8 + 3 * (k % 6), 6 + 3 * Math.trunc(k / 6));
+    // Its lumber camp by the nearest trees, all of those cut; more trees further out.
+    const d2 = (i: number) => (w.nodeX[i] - s0.cellX) ** 2 + (w.nodeY[i] - s0.cellY) ** 2;
+    let first = -1;
+    for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.Tree && (first < 0 || d2(i) < d2(first))) first = i;
+    w.addBuilding(0, BuildingType.LumberCamp, w.nodeX[first] + 1, w.nodeY[first] + 1, rules().buildings[BuildingType.LumberCamp].hp, 1000);
+    for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.Tree && (w.nodeX[i] - w.nodeX[first]) ** 2 + (w.nodeY[i] - w.nodeY[first]) ** 2 <= 100) w.nodeAmount[i] = 0;
+    for (let k = 0; k < 30; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 10), s0.cellY - 2 - Math.trunc(k / 10));
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    w.res.set([700, 600, 300, 0], 0);
+    // It sees the nearest trees left and the ground there.
+    let next = -1;
+    for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.Tree && w.nodeAmount[i] > 0 && (next < 0 || d2(i) < d2(next))) next = i;
+    put(g, 0, UnitType.Spearman, w.nodeX[next] + 2, w.nodeY[next] + 2);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, lumberMove }).think(buildView(g, 0));
+    return out.some((c) => c.c === "build" && c.type === BuildingType.LumberCamp);
+  };
+  assert.equal(built(true), true, "on: another lumber camp");
+  assert.equal(built(false), false, "off: none, as before");
 });
