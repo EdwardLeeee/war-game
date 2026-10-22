@@ -1,0 +1,179 @@
+{
+ "spear_e": {
+  "before": 218,
+  "after": 0,
+  "frames": 288,
+  "before_by_anim": {
+   "idle": 56,
+   "walk": 50,
+   "attack": 80,
+   "death": 32
+  },
+  "after_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0
+  }
+ },
+ "pike_w": {
+  "before": 191,
+  "after": 0,
+  "frames": 288,
+  "before_by_anim": {
+   "idle": 35,
+   "walk": 48,
+   "attack": 76,
+   "death": 32
+  },
+  "after_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0
+  }
+ },
+ "hcav_e": {
+  "before": 229,
+  "after": 0,
+  "frames": 288,
+  "before_by_anim": {
+   "idle": 64,
+   "walk": 64,
+   "attack": 80,
+   "death": 21
+  },
+  "after_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0
+  }
+ },
+ "knight_w": {
+  "before": 231,
+  "after": 0,
+  "frames": 288,
+  "before_by_anim": {
+   "idle": 64,
+   "walk": 64,
+   "attack": 80,
+   "death": 23
+  },
+  "after_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0
+  }
+ },
+ "bow_e": {
+  "before": 0,
+  "after": 0,
+  "frames": 288,
+  "before_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0
+  },
+  "after_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0
+  }
+ },
+ "bow_w": {
+  "before": 0,
+  "after": 0,
+  "frames": 288,
+  "before_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0
+  },
+  "after_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0
+  }
+ },
+ "mage_w": {
+  "before": 2,
+  "after": 0,
+  "frames": 752,
+  "before_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "cast": 0,
+   "hit": 0,
+   "shatter": 2,
+   "fall": 0,
+   "dead": 0
+  },
+  "after_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "cast": 0,
+   "hit": 0,
+   "shatter": 0,
+   "fall": 0,
+   "dead": 0
+  }
+ },
+ "farmer_e": {
+  "before": 48,
+  "after": 0,
+  "frames": 544,
+  "before_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 8,
+   "work_chop": 8,
+   "work_mine": 24,
+   "work_farm": 8,
+   "work_build": 0
+  },
+  "after_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0,
+   "work_chop": 0,
+   "work_mine": 0,
+   "work_farm": 0,
+   "work_build": 0
+  }
+ },
+ "farmer_w": {
+  "before": 264,
+  "after": 0,
+  "frames": 544,
+  "before_by_anim": {
+   "idle": 64,
+   "walk": 64,
+   "attack": 80,
+   "death": 16,
+   "work_chop": 8,
+   "work_mine": 24,
+   "work_farm": 8,
+   "work_build": 0
+  },
+  "after_by_anim": {
+   "idle": 0,
+   "walk": 0,
+   "attack": 0,
+   "death": 0,
+   "work_chop": 0,
+   "work_mine": 0,
+   "work_farm": 0,
+   "work_build": 0
+  }
+ }
+}

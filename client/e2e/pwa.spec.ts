@@ -88,7 +88,8 @@ test.describe("service worker", () => {
     expect(reg).toHaveLength(1);
     const tag = new URL(reg[0]).searchParams.get("tag");
     expect(new URL(reg[0]).pathname).toMatch(/\/sw\.js$/);
-    expect(tag).toMatch(/^art-v\d+$/);
+    // art-v5.1 (a point release: art-v5 and the outposts) too.
+    expect(tag).toMatch(/^art-v\d+(\.\d+)?$/);
     await page.getByRole("button", { name: "開始" }).tap();
     await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
     // The atlases, all of them, under art/<tag>/; nothing else.

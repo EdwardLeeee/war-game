@@ -21,7 +21,8 @@ Format: client/docs/sprite-atlas.md version 2 (war-game-client, 2026-10-01).
   contains the shield (render_units.py split_shield).
 - anims: fps; hit on attack (the blow) and on the work loops (the tool lands); impact (and
   impact_scale when not 1) on a death or a mage's fall, where the game plays the shared dust
-  (common/effects.py); stride_m on a siege engine's walk.
+  (common/effects.py); stride_m on a siege engine's walk; on the spearman's and pikeman's sling (D-096, the militia
+  on the walls) hit, the frame the stone leaves on, and stone_from_m, where it leaves from (unit space).
 
 The scale and the compression are parameters: the renders stay at 3x, and when the client has
 measured on the iPhone (D-017 is provisional) only this step is run again. --astc runs astcenc
@@ -213,6 +214,9 @@ def run(target, scale=3.0, page=2048, team_gain=TEAM_GAIN, astc=None, facings=No
             d["hit"] = spec.HIT[target]
         if a in spec.WORK_HIT:
             d["hit"] = spec.WORK_HIT[a]
+        if a == "sling":                 # D-096: the frame the stone leaves on and where from (the game draws it)
+            d["hit"] = spec.SLING_RELEASE
+            d["stone_from_m"] = list(spec.SLING_FROM_M)
         if target in spec.IMPACT and spec.IMPACT[target][0] == a:
             d["impact"] = spec.IMPACT[target][1]
             if spec.IMPACT[target][2] != 1.0:

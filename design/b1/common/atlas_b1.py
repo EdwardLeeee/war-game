@@ -53,6 +53,9 @@ def building_table(c):
     t["Farm"] = dict(type=5, footprint=[3, 3], ground=True,
                      states={"build1": f"farm_{c}_build1", "build2": f"farm_{c}_sown", "build3": f"farm_{c}_sown"},
                      crops=[f"farm_{c}_{s}" for s in ("sown", "growing", "ripe")])
+    # art-v5.1: 哨所 (D-080; the user approved the drafts 2026-10-22), its own foundation and rubble (blds2.outpost)
+    t["Outpost"] = dict(type=12, footprint=[2, 2],
+                        states={s: f"outpost_{c}_{s}" for s in ("build1", "build2", "build3", "done", "damaged", "rubble")})
     t["TownTower"] = dict(type=9, footprint=[2, 2], states={s: f"town_tower_{c}_{s}" for s in ("done", "damaged", "rubble")},
                           # art-v4: the 3 x 3 tower of the random maps' neighbouring spawns (sim GameMap.towerSize, D-074)
                           sizes={"3": dict(footprint=[3, 3],
@@ -74,11 +77,42 @@ import castle as CASTLE     # noqa: E402  (common/castle.py: the cells, the piec
 TILES = ("square", "street", "garden")
 
 
+def _marks(name):
+    """The points a piece's render marked (blender/castle.py: stand_at, shoot_at_<k>), metres from its anchor, in the
+    render's axes (y away from the camera); {} when the render is not here (castle_table outside a pack)."""
+    p = SRC / f"{name}_x3.json"
+    return json.loads(p.read_text()).get("marks", {}) if p.exists() else {}
+
+
 def castle_table(c):
     """castle_<c>.json's "pieces", "tiles" and "layouts": every piece's frame in each look and the cells it stands
-    on in each layout (CASTLE.placements), the floor tiles (CASTLE.floor)."""
-    pieces = {k: dict(footprint=list(f), frames={s: f"castle_{k}_{c}_{s}" for s in ("intact", "ruin")})
-              for k, f in CASTLE.PIECE_FOOT.items()}
+    on in each layout (CASTLE.placements), the floor tiles (CASTLE.floor). D-096: the gates' closed, damaged and
+    broken looks; `intact_front` on the pieces with something in front of a unit standing on them; on the plain walls
+    `walk_m` (the walk's height) and `stand_in_m` (where a unit stands, from the cell's middle toward the town); on the
+    corners and the gates `stand_m` ({"dx,dy": [x, y, z]}: the cell from the footprint's north-west one, the spot on
+    it); on the gates `shoot_at_m` (where the gate tower's arrows leave). Spots: x east, y south, z up, metres from the
+    piece's anchor."""
+    pieces = {}
+    for k, f in CASTLE.PIECE_FOOT.items():
+        looks = ("intact", "ruin") + (CASTLE.GATE_STATES if k in CASTLE.GATE_PIECES else ())
+        e = dict(footprint=list(f), frames={s: f"castle_{k}_{c}_{s}" for s in looks})
+        if k in CASTLE.FRONTS:                   # intact_front for every look of a held town, ruin_front for the ruins
+            e["frames"]["intact_front"] = f"castle_{k}_{c}_intact_front"
+            e["frames"]["ruin_front"] = f"castle_{k}_{c}_ruin_front"
+        m = _marks(f"castle_{k}_{c}_intact")
+        if "stand_at" in m:
+            x, y, z = m["stand_at"]
+            ix, iy = CASTLE.INWARD[k.split("_")[1]]
+            e["walk_m"] = round(z, 2)
+            e["stand_in_m"] = round(x * ix - y * iy, 2)          # the render's y is the sim's -y
+        shots = [m[n] for n in sorted(m) if n.startswith("shoot_at_")]
+        if shots:
+            e["shoot_at_m"] = [[round(x, 2), round(-y, 2), round(z, 2)] for x, y, z in shots]
+        cells = {n[len("stand_at_"):].replace("_", ","): v for n, v in m.items() if n.startswith("stand_at_")}
+        if cells:                                # the corners and the gates' piers: a spot on each cell units stand on
+            e["stand_m"] = {k2: [round(x, 2), round(-y, 2), round(z, 2)] for k2, (x, y, z) in sorted(cells.items())}
+            e["walk_m"] = round(max(z for _, _, z in cells.values()), 2)
+        pieces[k] = e
     tiles = {t: f"castle_tile_{t}_{c}" for t in TILES}
     layouts = {}
     for L in (CASTLE.small(), CASTLE.large(), CASTLE.large3()):
@@ -230,8 +264,12 @@ def layers(name):
     team[..., :3] = np.clip(ca[..., :3] * TEAM_GAIN, 0, 255)
     team[..., 3] = np.asarray(weight, np.float32)
     team = Image.fromarray(team.astype(np.uint8), "RGBA")
-    a = Image.open(SRC / f"{name}_x3_shadow.png").convert("RGBA").getchannel("A")
-    a = a.point(lambda v: v if v >= SHADOW_FLOOR else 0)
+    s_p = SRC / f"{name}_x3_shadow.png"
+    if s_p.exists():
+        a = Image.open(s_p).convert("RGBA").getchannel("A")
+        a = a.point(lambda v: v if v >= SHADOW_FLOOR else 0)
+    else:                                         # a wall's front layer (D-096): the wall's own render has the shadow
+        a = Image.new("L", (1, 1), 0)
     shadow = Image.merge("LA", (Image.new("L", a.size, 0), a))
     return colour, team, shadow, (ax, ay), tuple(meta["shadow_anchor"])
 
@@ -252,6 +290,8 @@ def pack(frames, prefix, out, page, f, with_team=True, prep=None):
         if prep:
             col, (ax, ay), keep_shadow, trim = prep(name, col, sh, (ax, ay), (sax, say))
         bb = _bbox(col.getchannel("A")) if trim else (0, 0, col.width, col.height)
+        if bb is None:                           # nothing in it (a wall's front layer with nothing in front)
+            continue
         im = _scaled(col.crop(bb), f)
         todo["color"].append((name, im, _anchor(ax, ay, bb, f)))
         per[name] = {"color": im.width * im.height}
@@ -359,6 +399,8 @@ def run(scale=3.0, page=2048):
         view = view_of(frames)
         tables, pages, px, per = pack(frames, f"castle_{c}", cdir, page, f)
         pieces, tiles, layouts = castle_table(c)
+        for pc in pieces.values():               # a front layer with nothing in it (pack skips it) is not listed
+            pc["frames"] = {k: v for k, v in pc["frames"].items() if v in tables["color"]}
         man = {"format": "war-game castle 1", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
                **({"view": view} if view else {}), "team_gain": TEAM_GAIN, "pages": pages,
                "pieces": pieces, "tiles": tiles, "layouts": layouts,

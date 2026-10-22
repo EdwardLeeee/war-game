@@ -82,6 +82,17 @@ async function ownIds(page: Page, types: number[]): Promise<number[]> {
   return (await units(page)).filter((u) => u.owner === me && types.includes(u.type)).map((u) => u.id).sort((a, b) => a - b);
 }
 
+/** A spot on screen of open ground outside the small town at (30, 66) (5 cells or more from its centre), with nothing to pick there. */
+async function groundOutsideTown(page: Page): Promise<{ x: number; y: number }> {
+  for (const [cx, cy] of [[25, 62], [24, 63], [25, 70], [36, 62], [36, 70], [24, 66]]) {
+    const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [cx, cy] as const);
+    if (cell === null || Math.hypot(cell.x - 30, cell.y - 66) < 5) continue;
+    const p = await at(page, { x: cell.x + 0.5, y: cell.y + 0.5 });
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === null) return p;
+  }
+  throw new Error("no open ground outside the town");
+}
+
 async function selectSpearmen(page: Page): Promise<number[]> {
   await doubleTap(page, await at(page, SPEAR));
   const ids = await ownIds(page, [1]);
@@ -1083,19 +1094,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
 
   // The player's own 前進 ends a soldier's stay, and its stance goes back to 積極.
   await select(page, [inside[2]]);
-  // Open ground outside the town (5 cells or more from its centre).
-  let ground: { x: number; y: number } | null = null;
-  for (const [cx, cy] of [[25, 62], [24, 63], [25, 70], [36, 62], [36, 70], [24, 66]]) {
-    const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [cx, cy] as const);
-    if (cell === null || Math.hypot(cell.x - 30, cell.y - 66) < 5) continue;
-    const p = await at(page, { x: cell.x + 0.5, y: cell.y + 0.5 });
-    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === null) {
-      ground = p;
-      break;
-    }
-  }
-  if (ground === null) throw new Error("no open ground outside the town");
-  await tap(page, ground);
+  await tap(page, await groundOutsideTown(page));
   await expect.poll(async () => (await sent(page)).at(-2)).toMatchObject({ c: "retreat", u: [inside[2]] });
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [inside[2]], stance: 0, auto: true });
   expect(await garrison(page, 0)).toEqual([inside[0], inside[1]]);
@@ -1109,6 +1108,60 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
     .toMatchObject({ c: "stance", u: [inside[0], inside[1]], stance: 0, auto: true });
   await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units).toEqual(await ownIds(page, [1, 2, 3]));
+});
+
+test("留守的兵離開選取（使用者 2026-10-22 回報）：選著編隊 1 攻下城鎮、選治理留 1 名，軍團畫面還開著；接著點地面移動，送出的移動沒有留守的兵；編隊鈕、全軍、全軍撤退也不帶他", async ({ page }) => {
+  const spear = await ownIds(page, [1]);
+  // One spearman in the small town at (30, 66), the others just north of its wall: he is the one who stays.
+  const stays = spear[0];
+  const rest = spear.slice(1);
+  await place(page, [stays], [{ x: 30, y: 66 }]);
+  await place(page, rest, [{ x: 27, y: 58 }, { x: 28, y: 58 }, { x: 29, y: 58 }, { x: 30, y: 58 }, { x: 31, y: 58 }]);
+  await select(page, spear);
+  await saveGroup(page, GROUP_1);
+  await select(page, []);
+  // Group 1 selected, its 軍團畫面 open, when the town falls (as the user had it).
+  await tapOn(page, GROUP_1);
+  const panel = page.locator(".sel-info");
+  await expect(panel.locator(".sel-head")).toContainText("編隊 1");
+  await expect.poll(async () => (await selection(page))?.units).toEqual(spear);
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  await expect(dialog.getByRole("status", { name: "留守幾名（治理）" })).toHaveText("1");
+  await dialog.getByRole("button", { name: /^治理/ }).tap();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [stays], stance: 1, auto: true });
+  // He left the selection; the 軍團畫面 is still open.
+  await expect.poll(async () => (await selection(page))?.units).toEqual(rest);
+  await expect(panel.locator(".sel-head")).toContainText("編隊 1");
+  // 移動 right after: the group goes, he stays.
+  await centre(page, 30, 66);
+  await tap(page, await groundOutsideTown(page));
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: rest });
+  expect(await garrison(page, 0)).toEqual([stays]);
+  // Group 1's button, 全軍 and 全軍撤退 leave him too.
+  await tapOn(page, GROUP_1);
+  await expect.poll(async () => (await selection(page))?.units).toEqual(rest);
+  await armyButton(page).tap();
+  await expect.poll(async () => (await selection(page))?.units.includes(stays)).toBe(false);
+  await page.getByRole("button", { name: "全軍撤退" }).tap();
+  await expect.poll(async () => (await lastOrder(page))?.c).toBe("retreat");
+  expect((await lastOrder(page))?.u as number[]).not.toContain(stays);
+  expect(await garrison(page, 0)).toEqual([stays]);
+});
+
+test("留守的兵離開選取：只選了他時選取變空，選取資訊收掉，不留著舊的單位", async ({ page }) => {
+  const [stays] = await ownIds(page, [1]);
+  await place(page, [stays], [{ x: 30, y: 66 }]);
+  await select(page, [stays]);
+  await expect(page.locator(".sel-info .sel-head")).toContainText("槍兵");
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
+  const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
+  await dialog.getByRole("button", { name: /^治理/ }).tap();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => garrison(page, 0)).toEqual([stays]);
+  await expect.poll(async () => (await selection(page))?.units).toEqual([]);
+  await expect(page.locator(".sel-info")).toBeHidden();
 });
 
 test("留守：搶也預設留最少駐軍數（小鎮 1 名，D-084）；所有的兵都留守時，全軍會說明", async ({ page }) => {

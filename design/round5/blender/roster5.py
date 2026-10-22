@@ -262,6 +262,55 @@ def build_bow_w(P):
     return _generic(u, r, U1.bow_attack)
 
 
+# ---------------------------------------------------------------- 弓手 (East archer, R8 / D-093)
+
+def build_bow_e(P):
+    """The East archer (the user 2026-10-21: 「弓箭手要拿弓箭 不是十字努」): the crossbowman's dress (ochre coat,
+    lacquered vest, player-colour skirt all round, dark cap) with a short East composite bow in the left hand, its
+    tips curving forward, and a case of arrows on the right hip; the longbowman's approved draw and loose."""
+    import units as U1
+    X = X5()
+    u, r, tb, lg = _body("bow_e", P, X["ochre"], P["indigo"], P["dark"])
+    h2.skinned_lathe("bow_e_vest", [(0.155, 1.02), (0.178, 1.12), (0.19, 1.26), (0.19, 1.37), (0.16, 1.45)],
+                     P["lacquer"], r, tb, scale=(1, 0.74, 1))
+    h2.skinned_lathe("bow_e_belt", [(0.16, 1.0), (0.164, 1.06)], P["leather"], r, tb, scale=(1, 0.76, 1))
+    mage4.folded_lathe("bow_e_skirt", [(0.165, 1.02), (0.2, 0.9), (0.238, 0.64), (0.245, 0.58)], P["team"], r,
+                       tb[:1] + lg, folds=(9, 0.05), scale=(1, 0.8, 1))
+    for side in ("R", "L"):
+        lathe(f"bow_e_bracer{side}", [(0.05, -0.05), (0.052, -0.2)], P["leather"], r.j["elbow" + side], segs=12)
+    r.pose()
+    J = r.j
+    head = J["head"]
+    lathe("bow_e_cap", [(0.148, 0.1), (0.154, 0.18), (0.132, 0.27), (0.062, 0.31), (0.0, 0.32)], P["dark"], head,
+          segs=24)
+    box("bow_e_capknot", (0.12, 0.08, 0.1), P["dark"], head, at=(0, -0.02, 0.33), bevel=0.03)
+    for s in (-1, 1):
+        box(f"bow_e_capt{s}", (0.028, 0.22, 0.045), P["dark"], head, at=(0.075 * s, -0.24, 0.2), rot=(22, 0, 0),
+            bevel=0.008)
+    units2.banner2(r, P, h=0.6, w=0.22, fh=0.3, detail="C")
+    case = lib.empty("bow_e_caseroot", parent=J["hips"], loc=(0.2, 0.02, -0.02), rot=(8, 0, 0))
+    box("bow_e_case", (0.09, 0.13, 0.36), P["leather"], case, at=(0, 0, -0.1), bevel=0.012)
+    for k in range(5):
+        dx, dy = -0.026 + 0.013 * k, -0.02 + 0.012 * (k % 2)
+        rod(f"bow_e_arrow{k}", (dx, dy, 0.07), (dx, dy, 0.16), 0.004, X["wood"], parent=case, outline=False)
+        slab(f"bow_e_fletch{k}", [(0, 0), (0.02, 0.015), (0.02, 0.07), (0, 0.06)], 0.004, X["feather"], parent=case,
+             loc=(dx, dy, 0.1), rot=(0, 0, 60 * k), outline=False)
+    g = grip(r, "L", "bow")
+    # the composite bow: 1.25 m tip to tip, a short reflexed grip, the last quarter of each limb turned forward
+    pts = []
+    for k in range(15):
+        s = -1.0 + k / 7.0
+        z = 0.13 * s * s - 0.05 * max(0.0, abs(s) - 0.75) / 0.25
+        pts.append((0.0, 0.62 * s, z))
+    for k in range(14):
+        rod(f"bow_e_limb{k}", pts[k], pts[k + 1], 0.017 - 0.006 * abs(k - 6.5) / 6.5, X["wood_dark"], parent=g)
+    for s in (0, 14):
+        sphere(f"bow_e_nock{s}", 0.014, P["bronze"], g, at=pts[s])
+    rod("bow_e_string", pts[0], pts[-1], 0.004, X["rope"], parent=g)
+    cyl("bow_e_bowgrip", 0.022, 0.12, P["leather"], g, rot=(90, 0, 0), at=(0, 0, -0.06))
+    return _generic(u, r, U1.bow_attack)
+
+
 # ---------------------------------------------------------------- 長矛兵 (West pikeman)
 
 def build_pike_w(P):
@@ -459,6 +508,7 @@ def build_spear_e_drape(P):
 
 
 BUILDERS = {"farmer_e": build_farmer_e, "farmer_w": build_farmer_w, "xbow_e": build_xbow_e, "bow_w": build_bow_w,
+            "bow_e": build_bow_e,
             "pike_w": build_pike_w, "siege_e": build_siege_e, "siege_w": build_siege_w}
 
 

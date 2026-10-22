@@ -34,6 +34,12 @@ def _std():
             ("death", 10, "death", False)]
 
 
+def _militia():
+    """The spearman and the pikeman: the militia wear them (client art/spec.ts), so they also throw a sling from the
+    walls (D-096; anims.py SLING_*: released on frame 6, the game draws the stone)."""
+    return _std() + [("sling", 10, "sling", False)]
+
+
 def _farmer():
     return _std() + [(w, 8, w, False) for w in ("work_chop", "work_mine", "work_farm", "work_build")]
 
@@ -52,7 +58,7 @@ SHIELD_FACING = 7
 
 
 # playback speed (frames per second of sim time) per animation, client/docs/sprite-atlas.md section 7
-FPS = {"idle": 8, "walk": 12, "attack": 20, "death": 12, "cast": 20, "hit": 20, "shatter": 16, "fall": 12,
+FPS = {"idle": 8, "walk": 12, "attack": 20, "sling": 20, "death": 12, "cast": 20, "hit": 20, "shatter": 16, "fall": 12,
        "dead": 12, "work_chop": 10, "work_mine": 10, "work_farm": 10, "work_build": 10}
 
 # the attack frame (from 0) where the blow lands or the shot leaves, read off the attack curves:
@@ -60,20 +66,22 @@ FPS = {"idle": 8, "walk": 12, "attack": 20, "death": 12, "cast": 20, "hit": 20, 
 # trebuchet releases near the top of its swing (t 0.4), catapult arm stops at t 0.35; riders have no strike
 # motion yet (lance held couched); mages: the 晶彈 shot leaves at frame 4 (P1-01)
 HIT = {"farmer_e": 7, "spear_e": 5, "xbow_e": 4, "hcav_e": 5, "siege_e": 4, "mage_e": 4,
-       "farmer_w": 7, "pike_w": 5, "bow_w": 6, "knight_w": 5, "siege_w": 3, "mage_w": 4}
+       "farmer_w": 7, "pike_w": 5, "bow_w": 6, "knight_w": 5, "siege_w": 3, "mage_w": 4, "bow_e": 6}
 
 
 # key: kind, variant, mage style, frame (w, h metres, anchor x, y fractions), animations
 UNITS = {
     "farmer_e": dict(kind="farmer_e", frame=[3.0, 3.2, 0.5, 0.8], anims=_farmer()),
-    "spear_e": dict(kind="spear_e", variant=1, frame=[6.4, 3.6, 0.5, 0.72], anims=_std()),
+    "spear_e": dict(kind="spear_e", variant=1, frame=[6.4, 3.6, 0.5, 0.72], anims=_militia()),
     "xbow_e": dict(kind="xbow_e", frame=[3.4, 3.2, 0.5, 0.72], anims=_std()),
     "hcav_e": dict(kind="hcav_e", frame=[7.2, 4.4, 0.5, 0.75], anims=_std()),
     "siege_e": dict(kind="siege_e", frame=[5.6, 6.4, 0.5, 0.8], anims=_std()),
     "mage_e": dict(kind="mage_e", style="TB", frame=[4.6, 3.6, 0.5, 0.74], anims=_mage()),
     "farmer_w": dict(kind="farmer_w", frame=[3.8, 3.4, 0.5, 0.8], anims=_farmer()),
-    "pike_w": dict(kind="pike_w", frame=[8.0, 4.4, 0.5, 0.62], anims=_std()),
+    "pike_w": dict(kind="pike_w", frame=[8.0, 4.4, 0.5, 0.62], anims=_militia()),
     "bow_w": dict(kind="bow_w", frame=[3.2, 3.2, 0.5, 0.74], anims=_std()),
+    # R8 (D-093): the East ranged unit carries a bow (弓手), the crossbowman above stays for art-v5 and earlier
+    "bow_e": dict(kind="bow_e", frame=[3.2, 3.2, 0.5, 0.74], anims=_std()),
     "knight_w": dict(kind="knight_w", frame=[7.6, 4.4, 0.5, 0.75], anims=_std()),
     "siege_w": dict(kind="siege_w", frame=[5.6, 4.4, 0.5, 0.72], anims=_std()),
     "mage_w": dict(kind="mage_w", style="WB", frame=[4.6, 3.6, 0.5, 0.74], anims=_mage()),
@@ -97,7 +105,7 @@ P2_ANIMS = {
     "farmer_e": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8), ("idle", 8), ("walk", 8)],
     "farmer_w": [("work_chop", 8), ("work_mine", 8), ("work_farm", 8), ("work_build", 8), ("idle", 8), ("walk", 8)],
 }
-INFANTRY = ("spear_e", "xbow_e", "farmer_e", "pike_w", "bow_w", "farmer_w")
+INFANTRY = ("spear_e", "xbow_e", "farmer_e", "pike_w", "bow_w", "farmer_w", "bow_e")
 REVIEW_ANIMS = {u: [("death", 10)] for u in INFANTRY}
 # client/docs/sprite-atlas.md, sections 7 and 11: the frame of a fall where the body lands (the game
 # plays the shared dust there), how much larger the dust is for big units, and the frame of a work
@@ -105,6 +113,11 @@ REVIEW_ANIMS = {u: [("death", 10)] for u in INFANTRY}
 IMPACT = {"mage_e": ("fall", 8, 1.0), "mage_w": ("fall", 8, 1.0), "hcav_e": ("death", 7, 1.6),
           "knight_w": ("death", 7, 1.6), "siege_e": ("death", 6, 2.0), "siege_w": ("death", 6, 2.0)}
 IMPACT.update({u: ("death", 7, 1.0) for u in INFANTRY})
+# D-096 the militia's sling (blender/anims.py SLING_RELEASE, sling_from): the stone leaves on frame 6, from this point
+# of the unit's own space (x right, y forward, z up, metres; measured 2026-10-22, the same on the R1 and R8 bodies). On
+# the mirrored facings x is to the left.
+SLING_RELEASE = 6
+SLING_FROM_M = (0.41, 0.96, 1.78)
 WORK_HIT = {"work_chop": 4, "work_mine": 4, "work_farm": 3, "work_build": 2}
 # a siege engine's walk cycle turns the wheels 90 degrees: it moves 2 pi r / 4 per cycle (client: stride_m)
 STRIDE_M = {"siege_e": round(2 * 3.14159265 * 0.42 / 4, 3), "siege_w": round(2 * 3.14159265 * 0.36 / 4, 3)}
