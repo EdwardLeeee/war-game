@@ -77,6 +77,10 @@ export interface GameHook {
   resources(): { food: number; wood: number; gold: number; crystal: number };
   /** 等錢治理: the towns waiting for 治理's cost. */
   governWaits(): number[];
+  /** 自動訓練 by the screen (D-098): on or off (the fake world has it off unless a test turns it on). */
+  autoArmy(on: boolean): void;
+  /** Pause marks drawn on buildings (自動訓練 paused, D-098: the player's own pause). */
+  pauseMarks(): number;
   /** Control groups 1–4 as stored by the interface. */
   groups(): number[][];
   /** The soldiers stationed in a town (留守, D-026). */
@@ -263,6 +267,10 @@ export function gameHook(game: Game): GameHook {
     },
     resources: () => game.stock(),
     governWaits: () => game.governWaits.list(),
+    autoArmy: (on) => {
+      game.autoArmyOn = on;
+    },
+    pauseMarks: () => game.pauseMarksForTest,
     groups: () => game.army.groups.map((g) => [...g.ids]),
     garrison: (town) => game.army.garrisonOf(town),
     townHint: () => game.townHint(),

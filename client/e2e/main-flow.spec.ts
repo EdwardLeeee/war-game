@@ -7,8 +7,8 @@
 // （D-024、D-026、D-027、D-054）.
 // Every step goes through the interface the player uses; the test hook only reads state
 // and moves the camera. The opponent stands still (?test=1&ai=0, see step 1). As in a real
-// game, the barracks trains spearmen on its own (自動訓練, on by default: D-054) until
-// step 8d pauses it, so the counts before that say "at least".
+// game, the screen trains on its own (自動訓練, D-054; since D-098 what the groups are missing,
+// and villagers up to 40) until step 8d pauses the barracks, so the counts before that say "at least".
 
 import { expect, type Page, test } from "@playwright/test";
 import { armyButton, openBox, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
@@ -133,7 +133,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await resume(page);
   await expect(page.getByRole("button", { name: /取消訓練第 1 個：槍兵/ })).toBeVisible();
   await shot(page, info, "4-train");
-  // At least one more: 自動訓練 queues spearmen of its own too.
+  // At least one more (the simulation's own 自動訓練 may queue one at the start, before the screen turns it off: D-098).
   await expect.poll(async () => (await own(page, [SPEARMAN])).length, { timeout: 60_000 }).toBeGreaterThanOrEqual(spearmenBefore + 1);
 
   // 5. 框選（長按空地 350 ms 後拖曳，框住在小鎮南邊的部隊）
@@ -398,20 +398,20 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
     )
     .toBeLessThan(5);
 
-  // 8d. 暫停自動訓練（D-054）：選兵營 → 「自動訓練　目前：開」→ 送出暫停、兵營的旗標清掉、按鈕寫目前：暫停 →
-  //     佇列裡已經在練的那名練完，就不再排新的（後面的步驟要數全部的兵）
+  // 8d. 暫停自動訓練（D-054；D-098 起是畫面自己的暫停）：選兵營 → 「自動訓練　目前：開」→ 按鈕寫目前：暫停、
+  //     選取資訊寫自動訓練暫停 → 佇列裡已經在練的那名練完，就不再排新的（後面的步驟要數全部的兵）
   await centre(page, bc);
   await tap(page, await toScreen(page, bc));
   await expect(page.locator(".sel-info")).toContainText("兵營");
   const autoTrain = page.locator(".cmds").getByRole("button", { name: /^自動訓練/ });
   await expect(autoTrain).toHaveText("自動訓練目前：開");
   await autoTrain.tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "auto_train", building: barracks.id, on: false });
-  // BuildingFlag.AutoTrain (8) cleared in the simulation.
-  await expect.poll(async () => ((await buildings(page)).find((b) => b.id === barracks.id)?.flags ?? 8) & 8).toBe(0);
   await expect(autoTrain).toHaveText("自動訓練目前：暫停");
-  await expect(page.locator(".sel-info .sel-status")).toContainText("自動訓練暫停");
+  await expect(page.locator(".sel-info .auto-train-line")).toHaveText("自動訓練暫停");
+  // No order to the simulation: its own 自動訓練 has been off all along (D-098). And no more trains for this barracks.
+  const trainsSoFar = (await sent(page)).filter((c) => c.c === "train" && c.building === barracks.id).length;
   await expect(page.getByRole("button", { name: /^取消訓練第 1 個/ })).toBeHidden({ timeout: 30_000 });
+  expect((await sent(page)).filter((c) => c.c === "train" && c.building === barracks.id).length, "nothing more for a paused barracks").toBe(trainsSoFar);
   await shot(page, info, "8d-auto-train-paused");
 
   // 9. 軍團畫面（D-054）：點編隊 1 → 選取編隊 1，選取資訊換成軍團畫面（三種兵的現有和目標）→ 收起 → 展開

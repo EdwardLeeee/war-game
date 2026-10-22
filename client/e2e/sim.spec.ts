@@ -28,7 +28,8 @@ async function start(page: Page, query = "?test=1"): Promise<void> {
 const header = (page: Page) => page.evaluate(() => window.__proto?.game?.header() ?? { tick: -1, paused: false, speed: 0, scenario: -1 });
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const selection = (page: Page) => page.evaluate(() => window.__proto?.game?.selection());
-const lastSent = (page: Page) => page.evaluate(() => window.__proto?.game?.sent().at(-1) as Record<string, unknown> | undefined);
+/** The last order of the player's own hand: the screen's 自動訓練 (D-098) sends trains of its own. */
+const lastSent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []).filter((c) => (c as { auto?: boolean }).auto !== true).at(-1) as Record<string, unknown> | undefined);
 const toScreen = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
 
 async function farmers(page: Page) {
@@ -303,6 +304,8 @@ test("速度：正常 → 快 → 慢 → 正常（每秒 30、40、20 tick，D-
 // (test/messages.test.ts) and this test only uses a rule that exists.
 test("已經有的規則被拒時說明原因：主城連排 5 個村民，第 5 個糧食不夠", async ({ page }) => {
   await start(page);
+  // The screen's 自動訓練 (D-098) would queue villagers of its own from the same food.
+  await page.evaluate(() => window.__proto?.game?.autoArmy(false));
   await pause(page);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);

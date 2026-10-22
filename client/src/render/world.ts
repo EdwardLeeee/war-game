@@ -207,6 +207,11 @@ export class WorldRenderer {
   private readonly nodeSprites = new Map<number, { sprite: Sprite; cell: number }>();
   private readonly unitPool: UnitSprites[] = [];
   private readonly buildingPool: BuildingSprites[] = [];
+
+  /** Pause marks shown on buildings (自動訓練 paused), for the test hook. */
+  get pauseMarks(): number {
+    return this.buildingPool.filter((p) => p.paused.visible).length;
+  }
   private readonly townMarks = new Map<number, TownMark>();
   /** The big cities' towers, kept once seen: the wall stays under where the tower stood (D-084). */
   private readonly towers = new Map<number, TowerCells>();
@@ -218,6 +223,8 @@ export class WorldRenderer {
 
   /** The game's orders sent and not in the snapshot yet (pending.ts): sites to come, 搶 or 治理. */
   pending: PendingOrders | null = null;
+  /** 自動訓練 paused for this building by the player (D-098: the screen's own; the simulation's flag is off for him). */
+  autoPaused: (building: number) => boolean = () => false;
   /** The game is paused: orders wait for 繼續, and what they will do is drawn so (R6-31). */
   paused = false;
   /** A building preview put away with ✗: it shrinks and fades (R6-25-11). */
@@ -591,8 +598,8 @@ export class WorldRenderer {
         p.occupied.scale.set(markScale);
       }
       // 自動訓練 paused on our finished barracks, range, mage hall or stable (R6-31): a pause mark the
-      // size of 裡面有人, in its place or left of it. As the simulation has it: paused, it comes on 繼續.
-      if (b[o + B.owner] === this.view.me && !building && AUTO_TRAIN.buildings.includes(type) && (b[o + B.flags] & BuildingFlag.AutoTrain) === 0) {
+      // size of 裡面有人, in its place or left of it. The player's pause, kept by the screen (D-098).
+      if (b[o + B.owner] === this.view.me && !building && AUTO_TRAIN.buildings.includes(type) && this.autoPaused(b[o + B.id])) {
         p.paused.visible = true;
         p.paused.position.set(right.x - 2 - (marked ? 18 * markScale : 0), right.y + 2);
         p.paused.zIndex = mid.y + 1;

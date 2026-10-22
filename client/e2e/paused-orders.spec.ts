@@ -1,7 +1,8 @@
 // 下指令的回饋 (the user 2026-10-19: 「然後按暫停造兵跟放建築應該要顯示，不然還以為沒按到」; R6-31,
 // ceo): on core's real simulation, which takes no order while paused. Paused, each order shows at
-// once, dashed, saying it waits for 繼續 (自動訓練 繼續後暫停, the spearman's cell 繼續後開始, the
-// house's site), a dark line with a check says what was ordered, and the banner counts them; on
+// once, dashed, saying it waits for 繼續 (the spearman's cell 繼續後開始, the house's site; 自動訓練's
+// pause is the screen's own since D-098, at once), a dark line with a check says what was ordered,
+// and the banner counts them; on
 // 繼續 they are real. Running, the lines say what was done (排第 N, 派 N 名村民), and ✗ on a
 // preview says 已取消 without the check.
 
@@ -56,39 +57,36 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   await expect(banner).toBeVisible();
   await expect(waiting, "no orders yet: no second line").toBeHidden();
 
-  // Our barracks, selected by a tap on it.
-  expect(barracks.flags & AUTO_TRAIN, "自動訓練 on at the start (D-054)").not.toBe(0);
-
-  // 自動訓練: the button as it will be, dashed, 繼續後暫停; the simulation has not taken it.
+  // 自動訓練 (D-098): the screen's own pause, at once and not an order (the banner counts none).
   const auto = page.locator(".cmds").getByRole("button", { name: /^自動訓練/ });
   await auto.tap();
-  await expect(auto).toContainText("繼續後暫停");
-  await expect(auto).toHaveClass(/\bpending\b/);
-  await expect(toast).toHaveText("已暫停這座兵營的自動訓練，按繼續後生效");
+  await expect(auto).toContainText("目前：暫停");
+  await expect(auto).not.toHaveClass(/\bpending\b/);
+  await expect(toast).toHaveText("已暫停這座兵營的自動訓練");
   await expect(toast).toHaveClass(/\btoast-ok\b/);
   await expect(toast.locator(".toast-check")).toBeVisible();
-  await expect(waiting).toHaveText("已下 1 個指令，按繼續後執行");
-  expect(((await buildings(page)).find((b) => b.id === barracks.id)?.flags ?? 0) & AUTO_TRAIN, "not taken yet").not.toBe(0);
+  await expect(waiting).toBeHidden();
 
   // 訓練槍兵: a dashed cell in the queue at once, 繼續後開始.
   await page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ }).tap();
   await expect(page.locator(".sel-queue .pending")).toHaveCount(1);
   await expect(page.locator(".sel-queue .pending")).toContainText("繼續後開始");
   await expect(toast).toHaveText("已下令訓練槍兵，按繼續後開始");
-  await expect(waiting).toHaveText("已下 2 個指令，按繼續後執行");
+  await expect(waiting).toHaveText("已下 1 個指令，按繼續後執行");
   expect(await pending(page, barracks.id)).toMatchObject({ trains: 1 });
 
   // 民居, placed and ✓: its site at once (see-through, dashed, 繼續後開工).
   await placeHouse(page, { x: barracks.cx - 4, y: barracks.cy + 2 }, "確定蓋在這裡");
   await expect(toast).toHaveText("已下令蓋民居，按繼續後開工");
-  await expect(waiting).toHaveText("已下 3 個指令，按繼續後執行");
-  expect(await pending(page)).toMatchObject({ sites: 1, waiting: 3 });
+  await expect(waiting).toHaveText("已下 2 個指令，按繼續後執行");
+  expect(await pending(page)).toMatchObject({ sites: 1, waiting: 2 });
   await shot(page, info, "paused-orders");
   expect((await header(page)).tick, "no ticks while paused").toBe(frozen);
 
   // 繼續: the simulation takes them in order; what was shown gives way to what is.
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await pending(page, barracks.id)).sites, { timeout: 15_000 }).toBe(0);
+  // The simulation's own 自動訓練 is off for the player (D-098: the screen sends what to train).
   await expect.poll(async () => ((await buildings(page)).find((b) => b.id === barracks.id)?.flags ?? AUTO_TRAIN) & AUTO_TRAIN, { timeout: 15_000 }).toBe(0);
   await expect.poll(async () => (await buildings(page)).some((b) => b.owner === me && b.type === HOUSE && b.progress < 1000), { timeout: 15_000 }).toBe(true);
   expect(await pending(page)).toMatchObject({ waiting: 0 });
@@ -129,7 +127,7 @@ test("下指令的回饋，正式介面和 3 倍美術打開時（R6-31）：暫
   await page.locator(".cmds").getByRole("button", { name: /^自動訓練/ }).tap();
   await page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ }).tap();
   await placeHouse(page, { x: barracks.cx - 4, y: barracks.cy + 2 }, "確定蓋在這裡");
-  await expect(banner.locator(".pend")).toHaveText("已下 3 個指令，按繼續後執行");
+  await expect(banner.locator(".pend")).toHaveText("已下 2 個指令，按繼續後執行");
   await expect(page.locator(".toast")).toHaveText("已下令蓋民居，按繼續後開工");
   await expect(page.locator(".toast .toast-check")).toBeVisible();
   await shot(page, info, "paused-orders-r6");
