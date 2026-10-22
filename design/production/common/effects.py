@@ -17,6 +17,11 @@ warn_sigil, warn_sigil_gold, warn_sigil_glow, warn_fill, warn_rim, warn_core   t
        ceo and client 2026-10-18): drawn top-down and round by design/b1/common/warn.py, one frame each; the
        game squashes them to the ground (scale.y 0.5) and scales them by the sim's radius / `radius_m`.
        Anchor: the centre.
+
+tower_shot   D-096: a gate tower looses an arrow (the sim's `shot` event from a gate): a short warm glint where the
+       arrow leaves, so the eye finds the tower that shot; the game draws the arrow itself, as for the main city and the
+       arrow tower. 5 frames at 20 a second, about 1.5 m across at its widest; drawn at the gate piece's
+       `shoot_at_<k>` point (castle_<c>.json, the one nearest the target). Anchor: the centre. No facings, no shadow.
 """
 import argparse
 import json
@@ -92,6 +97,54 @@ def dust_frames(scale=3.0, seed=7):
     return out
 
 
+SHOT_FRAMES = 5
+SHOT_FPS = 20
+SHOT_CORE = (255, 251, 232)
+SHOT_RAY = (255, 230, 160)
+SHOT_GLOW = (255, 168, 60)           # behind it all: keeps the glint visible on the pale paving inside the walls
+SHOT_RING = (244, 226, 176)          # the client's arrow colour (render/world.ts drawShots)
+
+
+def shot_frames(scale=3.0):
+    """[(image, (anchor x, anchor y))]: the gate tower's glint, frame by frame at `scale` pixels per point: a star of
+    eight rays (long and short) round a bright core with a warm glow behind, a ring spreading out; the last frame faint,
+    not empty."""
+    ppm = spec.PX_PER_M * scale / 3.0
+    k = 4                                            # supersampled, then reduced
+    S = int(1.8 * ppm) * k
+    c = S / 2
+    m = ppm * k
+    out = []
+    for f in range(SHOT_FRAMES):
+        t = f / (SHOT_FRAMES - 1)
+        fade = max(0.22, (1 - t) ** 1.1)
+        glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        rg = (0.28 + 0.12 * t) * m
+        ImageDraw.Draw(glow).ellipse([c - rg, c - rg, c + rg, c + rg], fill=(*SHOT_GLOW, int(150 * fade)))
+        can = glow.filter(ImageFilter.GaussianBlur(0.12 * m))
+        d = ImageDraw.Draw(can)
+        if f > 0:                                    # the ring of the twang, spreading and thinning
+            r = (0.18 + 0.55 * t) * m
+            w = max(1, int((0.06 - 0.03 * t) * m))
+            d.ellipse([c - r, c - r * 0.8, c + r, c + r * 0.8], outline=(*SHOT_RING, int(210 * fade)), width=w)
+        for i in range(8):
+            a = math.radians(22.5 + 45 * i)
+            long_ = i % 2 == 0
+            r0 = (0.04 + 0.22 * t) * m
+            r1 = (0.42 + 0.4 * t) * m * (1.0 if long_ else 0.6)
+            hw = 0.055 * (1 - 0.5 * t) * m
+            ca, sa = math.cos(a), math.sin(a) * 0.8
+            px, py = -math.sin(a), math.cos(a)
+            pts = [(c + ca * r0 + px * hw, c + sa * r0 + py * hw), (c + ca * r1, c + sa * r1),
+                   (c + ca * r0 - px * hw, c + sa * r0 - py * hw)]
+            d.polygon(pts, fill=(*SHOT_RAY, int(255 * fade)))
+        rc = 0.13 * (1 - 0.6 * t) * m
+        d.ellipse([c - rc, c - rc, c + rc, c + rc], fill=(*SHOT_CORE, int(255 * fade)))
+        can = can.filter(ImageFilter.GaussianBlur(0.4 * k * scale / 3.0)).resize((S // k, S // k), Image.LANCZOS)
+        out.append((can, (S / k / 2, S / k / 2)))
+    return out
+
+
 CORE_RADIUS = 0.75                   # the core image is drawn at 75 % of the circle; the game grows it from 25 %
 
 
@@ -134,6 +187,10 @@ def write_atlas(scale=3.0, page=2048):
         bb = im.getchannel("A").point(lambda v: 255 if v > 4 else 0).getbbox()
         items.append((f"dust_{i:02d}", im.crop(bb), ax - bb[0], ay - bb[1]))
     effects = {"dust": dict(frames=DUST_FRAMES, fps=DUST_FPS, loop=False)}
+    for i, (im, (ax, ay)) in enumerate(shot_frames(scale)):
+        bb = im.getchannel("A").point(lambda v: 255 if v > 4 else 0).getbbox()
+        items.append((f"tower_shot_{i:02d}", im.crop(bb), ax - bb[0], ay - bb[1]))
+    effects["tower_shot"] = dict(frames=SHOT_FRAMES, fps=SHOT_FPS, loop=False)
     for name, (im, rad) in warn_images(scale).items():
         bb = im.getchannel("A").point(lambda v: 255 if v > 4 else 0).getbbox()
         items.append((f"{name}_00", im.crop(bb), im.width / 2 - bb[0], im.height / 2 - bb[1]))

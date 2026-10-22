@@ -926,6 +926,95 @@ def extend_infantry(u, kind):
     return u
 
 
+# ---------------------------------------------------------------- the militia's sling (D-096)
+
+# D-096: the militia on a town's walls throw stones with a sling (sim: WALLS.sling, range 4, every 30 ticks). They wear
+# the spearman of their culture (client art/spec.ts), so the spearman and the pikeman get a `sling` animation: the spear
+# stood upright in the left hand, its butt on the ground; the sling whirled once round over the head; the stone let go
+# on SLING_RELEASE with the arm thrown forward (the game draws the stone from there along the facing: there is no
+# event); the arm following through with the empty sling hanging from it. The sling shows in this animation only.
+SLING_KINDS = {"spear_e": "grip_spear", "pike_w": "grip_pike"}
+SLING_RELEASE = 6                  # of 10 frames
+SLING_CORD = 0.75                  # metres from the hand to the pouch
+SPEAR_BUTT = {"spear_e": 1.0, "pike_w": 1.3}     # the shaft's butt end above its grip point (round1 units, roster5)
+SLING_STANCE = {"hipR": (-14, 0, -6), "hipL": (22, 0, 6), "kneeL": (-18, 0, 0), "kneeR": (-6, 0, 0),
+                "shoulderL": (18, 0, 14), "elbowL": (62, 0, 0)}
+
+
+def sling_pose(t):
+    """Joint angles (degrees) of the throw at t in [0, 1): the whirl over the head (t < 0.55: the raised arm turns once
+    round the shoulder), the release (t 0.6), the follow-through."""
+    whirl = {"torso": (-4, 0, -14), "shoulderR": (150, 22, 0), "elbowR": (28, 0, 0)}
+    throw = {"torso": (-12, 0, 18), "shoulderR": (122, 0, 0), "elbowR": (6, 0, 0)}
+    follow = {"torso": (-6, 0, 6), "shoulderR": (38, 0, 4), "elbowR": (30, 0, 0)}
+    if t < 0.55:
+        phi = 360.0 * t / 0.55
+        a = dict(whirl, torso=(-4, 0, -14 + 6 * math.sin(math.radians(phi))), shoulderR=(150, 22, -phi))
+    elif t < 0.6:
+        a = blend(whirl, throw, ease((t - 0.55) / 0.05))
+    else:
+        a = blend(throw, follow, ease(motion.clamp((t - 0.6) / 0.35)))
+    a = dict(SLING_STANCE, **a)
+    a["neck"] = (0, 0, -0.7 * a["torso"][2])
+    return a
+
+
+def extend_sling(u, kind):
+    r = u.rigs["body"]
+    inner = u.pose
+    cord = lib.mat("sling_cord", (0.36, 0.25, 0.14), 0.8)
+    rock = lib.mat("sling_stone", (0.56, 0.54, 0.5), 0.85)
+    root = lib.empty(f"{kind}_sling", parent=u.root)
+    for s in (-1, 1):                     # the two cords, from the hand (origin) along -Z to the pouch
+        rod(f"{kind}_sling_cord{s}", (0, 0.012 * s, 0), (0, 0.045 * s, -SLING_CORD), 0.012, cord, parent=root, segs=5)
+    lib.sphere(f"{kind}_sling_pouch", 0.055, cord, root, loc=(0, 0, -SLING_CORD - 0.02), scale=(1, 1.25, 0.6), segs=10)
+    stone = lib.sphere(f"{kind}_sling_stone", 0.045, rock, root, loc=(0, 0, -SLING_CORD - 0.01), segs=10)
+    grip = r.j[SLING_KINDS[kind]]
+
+    def point(joint, off=(0, 0, -0.07)):
+        bpy.context.view_layer.update()
+        return motion.unit_point(u, r.j[joint].matrix_world @ Vector(off))
+
+    def pose(anim, frame):
+        if anim != "sling":
+            root.scale = (1e-5,) * 3
+            inner(anim, frame)
+            return
+        inner("idle", 0)                  # every other layer of the unit at rest first
+        n = u.frames.get("sling", 10)
+        t = (frame % n) / n
+        r.root.rotation_euler = (0, 0, 0)
+        r.pose(sling_pose(t), {"hips": (0, 0, -0.03)})
+        # the spear upright in the left hand, its butt on the ground
+        hand = point("wristL")
+        motion.place(u, grip, (hand.x, hand.y, SPEAR_BUTT[kind] + 0.02), Matrix.Rotation(math.pi, 3, "X"))
+        # the sling: out from the whirling hand and trailing it (35 degrees behind, a little down); thrown forward and
+        # up at the release; then hanging from the hand
+        hand = point("wristR")
+        if frame < SLING_RELEASE:
+            d = hand - point("shoulderR", (0, 0, 0))
+            out = Vector((d.x, d.y, 0.0))
+            out = (Matrix.Rotation(math.radians(35), 3, "Z") @ out.normalized()) if out.length > 1e-4 else Vector((0, 1, 0))
+            way = (out * math.cos(math.radians(12)) - Vector((0, 0, math.sin(math.radians(12))))).normalized()
+        else:
+            k = motion.clamp((frame - SLING_RELEASE) / 3.0)
+            way = Vector((0, 0.75, 0.66)).lerp(Vector((0, 0.15, -1.0)), ease(k)).normalized()
+        motion.place(u, root, hand, motion.frame(-way, (0, 0, 1) if abs(way.z) < 0.9 else (0, 1, 0)))
+        root.scale = (1, 1, 1)
+        stone.scale = (1, 1, 1) if frame < SLING_RELEASE else (1e-5,) * 3
+        h2.update(r)
+    u.pose = pose
+    return u
+
+
+def sling_from(u, kind):
+    """Where the stone leaves (unit space: x right, y forward, z up, metres): the pouch on the release frame."""
+    u.pose("sling", SLING_RELEASE - 1)
+    bpy.context.view_layer.update()
+    ob = bpy.data.objects[f"{kind}_sling_stone"]
+    return [round(v, 2) for v in motion.unit_point(u, ob.matrix_world.translation)]
+
+
 def extend(u, kind, style=None):
     if kind.startswith("mage"):
         return extend_mage(u, style or "")
@@ -936,5 +1025,6 @@ def extend(u, kind, style=None):
     if kind.startswith("farmer"):
         u = extend_farmer(u, kind)
     if kind in DROPS:
-        return extend_infantry(u, kind)
+        u = extend_infantry(u, kind)
+        return extend_sling(u, kind) if kind in SLING_KINDS else u
     return u
