@@ -1,7 +1,7 @@
 """R8 batch 2 (D-093): the photo-scanned rock faces the cliff is skinned with (blender/terrain_r8.py), fetched by URL
 and checked by sha256 (the files do not go into the repo; design/r8/build/scans/ is git-ignored). Poly Haven models,
-licence CC0 (https://polyhaven.com/license, read 2026-10-22; THIRD_PARTY_NOTICES.md). glTF at 1k: the .gltf, its
-.bin and its colour, normal and ARM maps, laid out as the .gltf expects (<id>/<id>_1k.gltf, <id>/textures/...).
+licence CC0 (https://polyhaven.com/license and each asset page, read 2026-10-22; THIRD_PARTY_NOTICES.md). glTF at 1k:
+the .gltf, its .bin and its colour, normal and ARM maps, laid out as the .gltf expects (<id>/<id>_1k.gltf, textures/).
 
 python3 design/r8/common/scans.py fetch [DIR]     download what is missing, check every file's sha256
 python3 design/r8/common/scans.py pin [DIR]       (maintainer) download everything and write scans_sha.json

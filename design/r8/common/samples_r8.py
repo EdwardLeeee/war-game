@@ -264,7 +264,170 @@ def memory(suffix, gdir):
     return out
 
 
-if __name__ == "__main__":
+# ---------------------------------------------------------------- the redone cliff and the drum (2026-10-22)
+
+CLIFF_DIR = config.BUILD / "b1" / "r8c"
+CLIFF = 7
+
+
+def _variant(x, y, n):
+    """client/src/art/terrain.ts variant()"""
+    return (x * 31 + y * 17 + ((x ^ y) & 7)) % n
+
+
+def cliff_pieces(g):
+    """client/src/art/terrain.ts terrainPieces(), the cliffs only: [(frame, x, y (cells), front)]."""
+    h, w = g.shape
+
+    def at(x, y):
+        return g[min(h - 1, max(0, y)), min(w - 1, max(0, x))]
+    out = []
+    for y in range(h):
+        for x in range(w):
+            if g[y, x] != CLIFF:
+                continue
+            links = []
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    if (dx == 0 and dy == 0) or at(x + dx, y + dy) != CLIFF:
+                        continue
+                    if dx != 0 and dy != 0 and (at(x + dx, y) == CLIFF or at(x, y + dy) == CLIFF):
+                        continue
+                    links.append((dx, dy))
+            straight = len(links) == 2 and links[0][0] == -links[1][0] and links[0][1] == -links[1][1]
+            cx, cy = x + 0.5, y + 0.5
+            if not straight:
+                out.append((f"terrain_cliff_post_v{_variant(x, y, 2)}", cx, cy, y + 1))
+            arm = _variant(x, y, 3)
+            if at(x + 1, y) == CLIFF and x + 1 < w:
+                out.append((f"terrain_cliff_arm_E_v{arm}", x + 1, cy, y + 0.99))
+            if at(x, y + 1) == CLIFF and y + 1 < h:
+                out.append((f"terrain_cliff_arm_S_v{arm}", cx, y + 1, y + 1.99))
+            if at(x + 1, y + 1) == CLIFF and at(x + 1, y) != CLIFF and at(x, y + 1) != CLIFF and x + 1 < w and y + 1 < h:
+                out.append((f"terrain_cliff_arm_SE_v{arm}", x + 1, y + 1, y + 1.99))
+            if at(x - 1, y + 1) == CLIFF and at(x - 1, y) != CLIFF and at(x, y + 1) != CLIFF and x > 0 and y + 1 < h:
+                out.append((f"terrain_cliff_arm_SW_v{arm}", x, y + 1, y + 1.99))
+    return out
+
+
+def _sprite(d, name, suffix, f):
+    """A rendered piece scaled by f: (colour with AO, anchor), (shadow, its anchor) or None."""
+    meta = json.loads((d / f"{name}_{suffix}.json").read_text())
+    b = np.asarray(Image.open(d / f"{name}_{suffix}_beauty.png").convert("RGBA"), np.float32)
+    ao_p = d / f"{name}_{suffix}_ao.png"
+    if ao_p.exists():
+        b[..., :3] *= (0.7 + 0.3 * np.asarray(Image.open(ao_p).convert("L"), np.float32) / 255.0)[..., None]
+    im = Image.fromarray(np.clip(b, 0, 255).astype(np.uint8), "RGBA")
+    im = im.resize((max(1, round(im.width * f)), max(1, round(im.height * f))), Image.LANCZOS)
+    ax, ay = meta["anchor"][0] * f, meta["anchor"][1] * f
+    sh = None
+    s_p = d / f"{name}_{suffix}_shadow.png"
+    if s_p.exists():
+        s_ = np.asarray(Image.open(s_p).convert("RGBA"), np.float32)[..., 3] / 255.0 * 0.6
+        sim = Image.fromarray(np.dstack([np.zeros(s_.shape + (3,)), s_[..., None] * 255]).astype(np.uint8), "RGBA")
+        sim = sim.resize((max(1, round(sim.width * 2 * f)), max(1, round(sim.height * 2 * f))), Image.BILINEAR)
+        sh = (sim, meta["shadow_anchor"][0] * 2 * f, meta["shadow_anchor"][1] * 2 * f)
+    return im, (ax, ay), sh
+
+
+def _ground_layers(gdir):
+    gj = json.loads((gdir / "ground" / "ground.json").read_text())
+    return {L["id"]: dict(img=np.asarray(Image.open(gdir / "ground" / L["file"]).convert("RGBA"), np.float32) / 255.0,
+                          tile_m=L["tile_m"]) for L in gj["layers"]}
+
+
+def cliff_scene(gdir, ppm=40, n=16):
+    """A stretch of ground as the game draws it (方形斜看): a cliff line (four cells east-west, two south, a diagonal),
+    a run of East stone wall, East spearmen at their feet (1.7 m): everything at one scale, ppm pixels a metre."""
+    import ground_r8
+    g = np.zeros((n, n), dtype=int)
+    for x in range(2, 8):
+        g[4, x] = CLIFF
+    g[5, 7] = g[6, 7] = CLIFF
+    g[7, 8] = g[8, 9] = CLIFF
+    rules = dict(ground_r8.RULES, dirt=dict(ground_r8.RULES["dirt"], noise_threshold=0.99))   # no stray dirt here
+    top = ground_r8.compose(g, [], _ground_layers(gdir), ppm=ppm, rules=rules)
+    cam = Image.fromarray((top * 255).round().astype(np.uint8), "RGB").resize((top.shape[1], top.shape[0] // 2), Image.LANCZOS)
+    cam = cam.convert("RGBA")
+    items = []                                   # (front, image, (x px, y px)), shadows apart
+    shadows = []
+    f = ppm / 60.0
+
+    def place(im, anc, sh, wx, wy, front):
+        X, Y = wx * ppm, wy * ppm * 0.5
+        items.append((front, im, (int(round(X - anc[0])), int(round(Y - anc[1])))))
+        if sh:
+            shadows.append((sh[0], (int(round(X - sh[1])), int(round(Y - sh[2])))))
+    for frame, x, y, front in cliff_pieces(g):
+        im, anc, sh = _sprite(CLIFF_DIR, frame, "x3", f)
+        place(im, anc, sh, x * 2.0, y * 2.0, front)
+    for k in range(3):                                   # the wall: three cells of East stone wall, south side
+        im, anc, sh = _sprite(DIR, "r8b_sw_s_E", "x3", f)
+        place(im, anc, sh, (11.5 + k) * 2.0, 10.5 * 2.0, 11)
+    if UNITS_DIR:
+        import boards_r8 as B
+        a = B.field.Atlas(Path(UNITS_DIR) / "spear_e" / "r7v8" / "prod" / "spear_e" / "atlas_x3" / "spear_e.json")
+        for (wx, wy, facing, anim, k) in ((7.0, 11.2, 6, "idle", 0), (9.4, 12.6, 7, "idle", 0), (5.2, 13.4, 5, "walk", 3),
+                                          (17.8, 14.4, 6, "idle", 0), (23.5, 22.9, 6, "idle", 0), (26.0, 23.6, 7, "walk", 2)):
+            body, (ax, ay), _ = B.frame(a, "spear_e", anim, facing, k, "blue")
+            body = body.resize((max(1, int(body.width * f)), max(1, int(body.height * f))), Image.LANCZOS)
+            place(body, (ax * f, ay * f), None, wx, wy, wy / 2.0)
+    for _, im, xy in [(None, im, xy) for im, xy in shadows] + sorted(items, key=lambda t: t[0]):
+        layer = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+        layer.paste(im, xy, im)
+        cam = Image.alpha_composite(cam, layer)
+    return cam.convert("RGB")
+
+
+def board_cliff_redo(gdir, research, W=2800):
+    label = "R8-26-懸崖重做-mobile"
+    text = ("懸崖重做（使用者 2026-10-22：「懸崖看起來不太真實」）。這次岩壁不是自己捏的，是真的岩壁：Poly Haven 的兩片實地掃描岩壁"
+            "（CC0），從正面量出每一公分的凹凸和顏色，貼在懸崖的兩面。所以岩層、裂縫、層間凹進去的岩架都是真的，大小也照實物，"
+            "和 1.7 公尺的兵擺在一起比例是對的。\n"
+            "・岩面：一整片連續的岩層，有斷層和裂縫；顏色往太行山紅砂岩的灰褐色拉；往下有水流過的深色直紋，崖腳潮濕較暗。\n"
+            "・崖頂：接著掃描岩壁上方的那一段（苔和土），高低不平，幾叢草長在岩縫和岩架上，不放圓灌木。\n"
+            "・崖腳：碎石坡（岩屑錐），和地面的碎石同一種材質，邊緣淡進地面，沒有一條線；上面散著崩落的碎石。\n"
+            "・高約 4 公尺，比城牆（東陸 4.2）略矮，看得出是天然的岩石，不是一道牆。\n"
+            "・格式照 client 現在的懸崖（柱和臂，terrain.ts）：每格的臂在格子中央都接回同一段岩壁，一長條懸崖接起來沒有縫；"
+            "轉角和兩端由岩柱蓋住。三種臂、兩種柱輪流用，長條不會一格一格重複。")
+    scene_im = cliff_scene(gdir, ppm=40)
+    zoom = scene_im.crop((40, 60, 760, 460)).resize((1440, 800), Image.LANCZOS)
+    parts = [boards.header(W, label, text)]
+    parts.append(boards.row([boards.captioned(scene_im, "遊戲的鏡頭（2 倍）：懸崖一條（東西四格、轉南兩格、再斜一段）、東陸石牆三格、東陸槍兵（1.7 公尺）", 22)], W))
+    parts.append(boards.row([boards.captioned(zoom, "放大：懸崖和兵（4 倍）", 22)], W))
+    tiles = []
+    for name, cap in (("terrain_cliff_post_v0", "岩柱 1"), ("terrain_cliff_post_v1", "岩柱 2"), ("terrain_cliff_arm_E_v0", "東西臂 1"),
+                      ("terrain_cliff_arm_E_v1", "東西臂 2"), ("terrain_cliff_arm_E_v2", "東西臂 3"), ("terrain_cliff_arm_S_v0", "南北臂"),
+                      ("terrain_cliff_arm_SE_v0", "斜臂（東南）"), ("terrain_cliff_arm_SW_v0", "斜臂（西南）")):
+        im, _, _ = _sprite(CLIFF_DIR, name, "x3", 1.0)
+        bg = Image.new("RGBA", im.size, (92, 96, 74, 255))
+        bg.alpha_composite(im)
+        tiles.append(boards.captioned(bg.convert("RGB"), cap, 20))
+    parts.append(boards.row(tiles[:5], W, gap=24))
+    parts.append(boards.row(tiles[5:], W, gap=24))
+    parts += refs_row(W, research / "nature-reference", REFS["nature"])
+    return boards.save(boards.stack(parts, W), label)
+
+
+def board_drum(W=2000):
+    label = "R8-27-兵營戰鼓-東陸-mobile"
+    text = ("東陸兵營的戰鼓重做（使用者 2026-10-22：「東陸兵營怎麼有一紅色的球？」）。之前的鼓太短、鼓面朝旁邊，遠看是一顆紅球。"
+            "現在照唐代的軍鼓：朱漆鼓身、鼓面是淺色的皮，朝著鏡頭；鼓皮邊上一圈銅釘，鼓身兩道銅箍；架在四條腳的木鼓架上，"
+            "兩支鼓槌交叉擱在鼓上。哨所的鼓量產時用同一個做法。")
+    full = tile("r8b_barracks_E_new", "x3", 6, (3, 3)).convert("RGB")
+    w, h = full.size
+    zoom = full.crop((int(w * 0.38), int(h * 0.55), int(w * 0.64), int(h * 0.85))).resize((720, 830), Image.LANCZOS)
+    parts = [boards.header(W, label, text),
+             boards.row([boards.captioned(full, "東陸兵營（6 倍）", 22), boards.captioned(zoom, "戰鼓放大", 22)], W, gap=30)]
+    return boards.save(boards.stack(parts, W), label)
+
+
+if __name__ == "__main__" and sys.argv[1] == "redo":
+    gd, rs = Path(sys.argv[2]), Path(sys.argv[3])
+    UNITS_DIR = sys.argv[4] if len(sys.argv) > 4 else None
+    print(board_cliff_redo(gd, rs))
+    print(board_drum())
+elif __name__ == "__main__":
     sfx, gd, rs = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
     UNITS_DIR = sys.argv[4] if len(sys.argv) > 4 else None
     for c in ("E", "W"):

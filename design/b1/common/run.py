@@ -290,11 +290,18 @@ TARGETS["r8b_samples"] = [dict(kind=f"r8_{k}", culture=c, state="done", name=f"r
 CAMERA["r8b_samples"] = proj.OBLIQUE
 LOOK["r8b_samples"] = "r8"
 # the cliff beside the stone wall (ceo 2026-10-22: the user's complaint, the cliff looked like a wall)
-TARGETS["r8b_compare"] = ([dict(kind="r8_cliff_sample", culture="E", name="r8b_cliff")]
-                          + [dict(kind=k, culture=c, opts=dict(state="intact"), name=f"r8b_{k}_{c}", footprint=[1, 1])
-                             for c in CULTURES for k in ("sw_s", "pal_s")])
+TARGETS["r8b_compare"] = [dict(kind=k, culture=c, opts=dict(state="intact"), name=f"r8b_{k}_{c}", footprint=[1, 1])
+                          for c in CULTURES for k in ("sw_s", "pal_s")]
 CAMERA["r8b_compare"] = proj.OBLIQUE
 LOOK["r8b_compare"] = "r8"
+# the cliff redone from scanned rock (the user 2026-10-22: 「懸崖看起來不太真實」), as the client's tiles: posts and
+# arms (client/src/art/terrain.ts), named as art-v5's terrain_cliff_* frames
+TARGETS["r8c_cliff"] = ([dict(kind="r8_cliff_post", culture="E", opts=dict(variant=v), name=f"terrain_cliff_post_v{v}")
+                         for v in range(2)]
+                        + [dict(kind="r8_cliff_arm", culture="E", opts=dict(direction=d, variant=v),
+                                name=f"terrain_cliff_arm_{d}_v{v}") for d in ("E", "S", "SE", "SW") for v in range(3)])
+CAMERA["r8c_cliff"] = proj.OBLIQUE
+LOOK["r8c_cliff"] = "r8"
 
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})

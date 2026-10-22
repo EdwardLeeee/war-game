@@ -97,7 +97,7 @@ def realistic(root):
             ob.modifiers.remove(mod)
     lib.HULLS.clear()
     look.realistic(tex_path, dirt=0.3)
-    look.bevel_all([o for o in lib.ALL_PARTS if o.type == "MESH"], width=0.02)
+    look.bevel_all([o for o in lib.ALL_PARTS if o.type == "MESH" and not o.get("no_bevel")], width=0.02)
     look.lights()
 
 
@@ -118,7 +118,7 @@ def corners():
     bpy.context.view_layer.update()
     pts = []
     for ob in lib.ALL_PARTS:
-        if ob.hide_render:
+        if ob.hide_render or ob.get("caster_only"):
             continue
         mw = ob.matrix_world
         pts += [mw @ Vector(c) for c in ob.bound_box]
@@ -255,6 +255,9 @@ for pc in job["pieces"]:
                 ob.hide_render = True
             if ob.get("back_holdout"):           # a wall's front layer (castle.front_only): the rest see-through
                 ob.is_holdout = True
+            if ob.get("caster_only"):            # stands in for a neighbour (terrain_r8): its shadow, never seen
+                ob.visible_camera = False
+                ob.hide_render = p != "beauty"
         if p == "shadow":
             cam.set(sW, sH, ppm / 2, s_anchor)
             if "rim" in lib.LIGHTS:
