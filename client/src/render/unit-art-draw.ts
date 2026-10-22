@@ -11,7 +11,7 @@
 import { Container, Sprite } from "pixi.js";
 import { animFor, attackFrame, type AtlasJson, CORPSE_FADE_S, CORPSE_HOLD_S, type Culture, fpsOf, frameAt, frameName, pictureDirection, UNIT_ATLAS, walkFps, workOfNode, type WorkKind } from "../art/spec.ts";
 import { type Projection, TOP } from "../camera/projection.ts";
-import { Action, BuildingType, BuildingField as B, Fog, HeaderField as H, NodeField as N, Order, TICKS_PER_SECOND, UnitField as U, UNIT_STRIDE } from "../sim.ts";
+import { Action, BuildingType, BuildingField as B, Fog, HeaderField as H, NodeField as N, Order, TICKS_PER_SECOND, UnitField as U, UnitFlag, UNIT_STRIDE } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { ownerTint } from "./atlas.ts";
@@ -42,6 +42,16 @@ interface AnimState {
   shieldSince: number;
   /** The body's `hit` or `shatter`, played once over idling or attacking (spec section 7). */
   struck: { anim: "hit" | "shatter"; since: number } | null;
+  /** The sling's throws so far in this attack (D-096): a stone leaves once a throw. */
+  thrown: number;
+}
+
+/** A stone leaving a militia's sling this frame (D-096): the picture's direction, mirrored or not, where from (anims.sling.stone_from_m). */
+export interface SlingRelease {
+  id: number;
+  direction: number;
+  mirror: boolean;
+  from: [number, number, number];
 }
 
 /** A shield back after it broke fades in over this much game time (spec section 4, tentative). */
@@ -94,6 +104,8 @@ export class ArtUnits {
   /** The landing dust (spec section 11), one a falling unit, from the world effects atlas. */
   private readonly dustSprites: Sprite[] = [];
   private readonly anims = new Map<number, AnimState>();
+  /** Stones that left a sling since the last takeReleases (D-096). */
+  private releases: SlingRelease[] = [];
   private seen = new Map<number, Seen>();
   private corpses: Corpse[] = [];
   private lastTick = -1;
@@ -140,12 +152,20 @@ export class ArtUnits {
     return o >= 0 && b !== undefined && b[o + B.type] === BuildingType.Farm ? "farm" : null;
   }
 
+  /** The stones that left a sling since the last call (D-096), for the world to throw. */
+  takeReleases(): SlingRelease[] {
+    const r = this.releases;
+    this.releases = [];
+    return r;
+  }
+
   /**
    * Draws snapshot row `o` into slot `i` at (px, py), `seconds` on the simulation's clock, `lift`
-   * points up (on a bridge's deck; its depth stays its feet's). Returns the top of its picture
-   * (world px), for the bars above it, or null when it has no atlas.
+   * points up (on a bridge's deck; its depth stays its feet's), at depth `z` when given (on a
+   * castle's wall, D-096: over the wall's pieces, and no shadow: `shadow` false). Returns the top of
+   * its picture (world px), for the bars above it, or null when it has no atlas.
    */
-  unit(i: number, o: number, px: number, py: number, seconds: number, lift = 0): number | null {
+  unit(i: number, o: number, px: number, py: number, seconds: number, lift = 0, z: number | null = null, shadow = true): number | null {
     const u = (this.view.curr as NonNullable<GameView["curr"]>).snap.units;
     const id = u[o + U.id];
     const type = u[o + U.type];
@@ -158,15 +178,16 @@ export class ArtUnits {
       return null;
     }
     const shield = u[o + U.shield];
-    let anim = animFor(a, action, action === Action.Gather ? this.workOf(u[o + U.orderTarget]) : null);
+    let anim = animFor(a, action, action === Action.Gather ? this.workOf(u[o + U.orderTarget]) : null, (u[o + U.flags] & UnitFlag.OnWall) !== 0);
     let st = this.anims.get(id);
     if (st === undefined) {
-      st = { action, anim, since: seconds, dir: null, shield, shieldAnim: shield > 0 ? "on" : null, shieldSince: seconds, struck: null };
+      st = { action, anim, since: seconds, dir: null, shield, shieldAnim: shield > 0 ? "on" : null, shieldSince: seconds, struck: null, thrown: 0 };
       this.anims.set(id, st);
     } else if (st.action !== action || st.anim !== anim) {
       st.action = action;
       st.anim = anim;
       st.since = seconds;
+      st.thrown = 0;
     }
     const unitInfo = this.view.rules.units[type];
     if ((unitInfo?.shield ?? 0) > 0) this.shieldChanged(a, st, shield, seconds);
@@ -183,12 +204,23 @@ export class ArtUnits {
       st.struck = null;
       const info = a.anims[anim];
       const elapsed = seconds - st.since;
-      if (anim === "attack") index = attackFrame(info, fpsOf(a, anim), elapsed, (unitInfo?.cooldown ?? 20) / TICKS_PER_SECOND);
+      if (anim === "attack" || anim === "sling") index = attackFrame(info, fpsOf(a, anim), elapsed, (unitInfo?.cooldown ?? 20) / TICKS_PER_SECOND);
       else if (anim === "cast") index = Math.min(u[o + U.castProgress], info.frames - 1);
       else if (anim === "walk") index = frameAt(info, walkFps(a, unitInfo?.speed ?? 0), elapsed, id % info.frames);
       else index = frameAt(info, fpsOf(a, anim), elapsed, info.loop ? id % info.frames : 0);
     }
-    this.place(s, a, anim, dir, index, owner, px, py, 1, lift);
+    this.place(s, a, anim, dir, index, owner, px, py, 1, lift, z);
+    if (!shadow) s.shadow.visible = false;
+    // The sling's stone leaves at its hit frame, once a throw (one a cooldown).
+    const sling = a.anims.sling;
+    if (anim === "sling" && sling?.hit !== undefined && sling.stone_from_m !== undefined && index >= sling.hit) {
+      const cooldown = (unitInfo?.cooldown ?? 20) / TICKS_PER_SECOND;
+      const throwNo = Math.floor((seconds - st.since) / cooldown) + 1;
+      if (throwNo > st.thrown) {
+        st.thrown = throwNo;
+        this.releases.push({ id, direction: dir, mirror: frameName(a, anim, dir, index).mirror, from: sling.stone_from_m });
+      }
+    }
     this.drawShield(s, a, st, seconds);
     const f = this.art.frame(a.unit, "color", frameName(a, anim, dir, index).name);
     return f === null ? null : py - lift - f.ay * f.texture.height * this.scale;
@@ -249,11 +281,11 @@ export class ArtUnits {
     s.shield.alpha = alpha;
   }
 
-  private place(s: Slot, a: AtlasJson, anim: string, dir: number, index: number, owner: number, px: number, py: number, alpha: number, lift = 0): void {
+  private place(s: Slot, a: AtlasJson, anim: string, dir: number, index: number, owner: number, px: number, py: number, alpha: number, lift = 0, z: number | null = null): void {
     const { name, mirror } = frameName(a, anim, dir, index);
     s.box.visible = true;
     s.box.position.set(px, py - lift);
-    s.box.zIndex = this.depth(px, py);
+    s.box.zIndex = z ?? this.depth(px, py);
     s.box.alpha = alpha;
     put(s.color, this.art.frame(a.unit, "color", name), 0, 0, this.scale, mirror);
     put(s.team, this.art.frame(a.unit, "team", name), 0, 0, this.scale, mirror);

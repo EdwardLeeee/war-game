@@ -144,13 +144,18 @@ test("對局紀錄：重來時，打了一分鐘以上的局存成「沒打完�
   await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(1300);
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "重來（開新的一局）" }).tap();
-  await page.waitForFunction(() => window.__proto?.ready === true && (window.__proto?.game?.header().tick ?? 9999) < 1000);
+  // Again before a minute of game time: not kept. Paused at once from the page as the new game is
+  // ready, so that a slow runner does not let it pass the minute (dispatch run 37221206636, Chromium;
+  // #266's run 39724698009, WebKit: 1278 ticks with a tap on 暫停, at 400 ticks a second).
+  await page.waitForFunction(() => {
+    const game = window.__proto?.game;
+    if (window.__proto?.ready !== true || game === undefined || game.header().tick >= 1000) return false;
+    game.pause();
+    return true;
+  });
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
   await expect.poll(async () => (await kept(page)).map((e) => [e.rec.result, e.rec.reason, e.state])).toEqual([["abandoned", "", "pending"]]);
   expect((await kept(page))[0].rec.ticks).toBeGreaterThan(1300);
-  // Again before a minute of game time: not kept. Paused first, so that a slow runner does
-  // not let it pass the minute (dispatch run 37221206636, Chromium: it did at 400 ticks a second).
-  await page.getByRole("button", { name: "暫停", exact: true }).tap();
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
   expect(await tick(page)).toBeLessThan(1200);
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "重來（開新的一局）" }).tap();

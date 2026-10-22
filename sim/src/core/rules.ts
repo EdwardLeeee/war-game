@@ -49,10 +49,11 @@ UNITS[UnitType.Militia] = {
   cooldown: 30, cost: cost(), trainTicks: 0, population: 0,
 };
 // Round 7 (D-061): GDD appendix A's heavy cavalry; cooldown as spearmen, sight as ranged (not in
-// the GDD). Trained only while CAVALRY is on.
+// the GDD). Trained only while CAVALRY is on. D-097 (the unit triangle): 60 food 60 gold, was 70
+// and 70; 150 hp, was 130 (src/balance.ts).
 UNITS[UnitType.Cavalry] = {
-  type: UnitType.Cavalry, hp: 130, shield: 0, attack: 11, range: CELL, speed: speed(160), sight: 7,
-  cooldown: 30, cost: cost(70, 0, 70), trainTicks: 28 * S, population: 1,
+  type: UnitType.Cavalry, hp: 150, shield: 0, attack: 11, range: CELL, speed: speed(160), sight: 7,
+  cooldown: 30, cost: cost(60, 0, 60), trainTicks: 28 * S, population: 1,
 };
 
 const ALL: Resource[] = [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal];
@@ -107,24 +108,23 @@ BUILDINGS[BuildingType.Stable] = building({
 BUILDINGS[BuildingType.Outpost] = building({
   type: BuildingType.Outpost, hp: 400, size: 2, cost: cost(0, 50), buildTicks: 20 * S, sight: 10,
 });
+// D-096: a castle gate; never built by players. hp is the big city's (GATE.hp by town size), and
+// size 1 only for the type: a gate's footprint is its opening's cells (World.sideX).
+BUILDINGS[BuildingType.Gate] = building({ type: BuildingType.Gate, hp: 2100, size: 1, sight: 2 });
 
 /**
- * Ranged against a mage's shield (early balance, D-057; round 4, D-037): x3, was x3/2 (num 3,
- * den 2 gives that back).
- */
-export const RANGED_VS_SHIELD = { num: 3, den: 1 };
-/**
- * Damage x num / den. Cavalry's (round 7, D-061) from GDD appendix A, plus ranged x9/5 against
- * cavalry (not in the GDD): without it 6 cavalry beat 12 ranged of the same cost losing 0-1
- * (D-035 too); with it they still win, losing 2-3 (brief: at least a third; src/balance.ts).
+ * Damage x num / den: only the unit triangle (D-097; the user 2026-10-21: 「簡化成一個三角＋修騎兵」),
+ * spearmen beat cavalry, cavalry beat ranged units and mages (their shields too), ranged units
+ * beat spearmen. Ranged x9/5 on cavalry (round 7) and x3 on shields (D-057, D-037) are gone.
+ * At equal cost (src/balance.ts): 7 cavalry beat 12 ranged and 6 mages losing at most 2, 14
+ * spearmen beat 7 cavalry keeping 12, 12 ranged beat 14 spearmen. Ranged on spearmen x7/2, was
+ * x5/2; spearmen on cavalry x5/2, was x3; cavalry on mages and shields x3, was x2.
  */
 export const MULTIPLIERS: Multiplier[] = [
-  { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 5, den: 2 },
-  { attacker: UnitType.Ranged, target: "shield", ...RANGED_VS_SHIELD },
-  { attacker: UnitType.Ranged, target: UnitType.Cavalry, num: 9, den: 5 },
-  { attacker: UnitType.Spearman, target: UnitType.Cavalry, num: 3, den: 1 },
-  { attacker: UnitType.Cavalry, target: UnitType.Mage, num: 2, den: 1 },
-  { attacker: UnitType.Cavalry, target: "shield", num: 2, den: 1 },
+  { attacker: UnitType.Ranged, target: UnitType.Spearman, num: 7, den: 2 },
+  { attacker: UnitType.Spearman, target: UnitType.Cavalry, num: 5, den: 2 },
+  { attacker: UnitType.Cavalry, target: UnitType.Mage, num: 3, den: 1 },
+  { attacker: UnitType.Cavalry, target: "shield", num: 3, den: 1 },
 ];
 
 export const MAGE_CAP = 6;
@@ -162,9 +162,18 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     maxPopulation: basePopulation(),
     population: { base: basePopulation(), town: [TownSize.Small, TownSize.Large].map((size) => (POPULATION_200.on ? POPULATION_200.town[size] : 0)) },
     queueMax: QUEUE_MAX,
-    // `outpost` only while on: absent is off, and the screen's tables of the round 7 four stay as they were.
-    features: { plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on, ...(OUTPOST.on ? { outpost: true } : {}) },
-    arrows: { mainCity: MAIN_ARROW, townTower: { ...TOWER_ARROW, extraMax: 0 }, arrowTower: { ...ARROW_TOWER, extraMax: 0 } },
+    // `outpost`, `gates` and `walls` only while on: absent is off, and the screen's tables of the round 7 four stay as they were.
+    features: {
+      plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on,
+      ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
+      ...(CAV_FLANK.on ? { cavalryFlank: true } : {}),
+    },
+    arrows: {
+      mainCity: MAIN_ARROW,
+      townTower: { ...TOWER_ARROW, extraMax: 0 },
+      arrowTower: { ...ARROW_TOWER, extraMax: 0 },
+      ...(GATE.on ? { gate: { ...GATE_ARROW } } : {}),
+    },
     garrisonTypes: GARRISON_TYPES,
     garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },
     towerReach: TOWER_REACH,
@@ -172,6 +181,9 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size, map)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
     cannonRange: CANNON.range,
+    // Sent as `outpost` is; `features` says whether they are on.
+    gate: { rangedNum: GATE.rangedNum, rangedDen: GATE.rangedDen, rebuildTicks: GATE.rebuildTicks },
+    walls: { range: WALLS.range, takenNum: WALLS.takenNum, takenDen: WALLS.takenDen, sling: WALLS.sling },
   };
 }
 
@@ -289,6 +301,37 @@ export const GOVERN_INCOME = {
  * changes hands.
  */
 export const PLUNDER_RECOVERY = { on: true, startPermille: 250, ticks: 10 * 60 * S };
+/**
+ * Castle gates (D-096; the user 2026-10-21: the walls were 「雞肋」, in everyone's way alike): a
+ * gate building in each opening of a town's walls, closed to all but the town's holder (a neutral
+ * town's to everyone, militia too), open to all once broken and while the town lies in ruins.
+ * `hp` by TownSize (ceo 2026-10-21): 7 spearmen (4 damage a second each) break a small town's in
+ * about 30 s (an early grab of 7-10 men still takes it, at a cost), 15 the big city's in about 60 s
+ * (a mid-game target for a big army; up to 9 reach its 2-cell gate at once, under its tower's fire).
+ * Hits on a gate: melee in full, ranged units and mages `rangedNum` / `rangedDen` (at least 1),
+ * siege engines (to come) `siege` times. A governed town rebuilds a broken gate once no enemy
+ * has stood inside its walls for `rebuildTicks`; the end of repairing and ruins turning neutral
+ * rebuild them all. Off: no gates, the openings stay open to everyone (D-089).
+ */
+export const GATE = { on: true, hp: [850, 2100], rangedNum: 1, rangedDen: 5, siege: 8, rebuildTicks: 60 * S };
+/**
+ * On the walls (D-096; the user: 「中立城鎮也要攻城，不然電腦打太快了」; AoE4: on walls -25% ranged
+ * damage, +1-2 range): ranged units and mages of the town's holder go up (`wall`), one a wall cell,
+ * from the cell inside next to it; a neutral town's militia stand on them from the start (`militia`
+ * of every 2, from the posts listed first), throwing stones to `sling`. There they never move,
+ * shoot `range` further (the crystal cannon as ever), take hits of ranged units, mages and arrows
+ * at `takenNum` / `takenDen` (the cannon in full), and melee reaches them only from inside the
+ * walls, next to them. They count as inside the town (capturing, keeping it). Off: no `wall`.
+ */
+export const WALLS = { on: true, range: CELL, takenNum: 3, takenDen: 4, sling: 4 * CELL, militia: 2 };
+/**
+ * A governed town's gate towers shoot (D-096; the user: 城樓會射箭, more the more soldiers hold the
+ * town, as AoE2's garrison arrows): each standing gate of a town its holder governs, at the
+ * nearest enemy unit its holder sees within `range` of the gate, `damage` every `cooldown`; one
+ * arrow more for every `perSoldiers` of the holder's soldiers inside the walls or on them, at most
+ * `extraMax` more. A broken gate shoots nothing until it stands again.
+ */
+export const GATE_ARROW = { damage: 5, range: 9 * CELL, cooldown: 2 * S, perSoldiers: 3, extraMax: 3 };
 /** Players can build arrow towers (BuildingType.ArrowTower). */
 export const TOWERS = { on: true };
 /**
@@ -351,6 +394,32 @@ export const AVENGE = { on: true, reach: 8 * CELL };
  * it reads.
  */
 export const FIRE_BACK = { on: true, reach: 9 * CELL, leash: 8 * CELL };
+/**
+ * Cavalry go for the back row (D-097 (c); the user 2026-10-22: 「騎兵自動繞去打後排」): a
+ * player's cavalry choosing its own target (idle and aggressive; on a move when it would fight
+ * anyway; with its squad, joining a fight, hitting back), not on hold, takes the nearest enemy
+ * mage its owner sees within `reach`, else the nearest ranged unit, that it can walk to, within
+ * `leash` of its place (on a move: of where it turned) and not within `towerMargin` of the range
+ * of an enemy building it knows that shoots. On the way it rides round the enemy melee between
+ * it and the target (within `line` of the straight way; those within `scan` either side count as
+ * the same block): past the side the block reaches less far out, `margin` beyond its edge and
+ * level with its furthest man, on straight open lines only (else the usual way). `giveUpTicks`
+ * without landing a hit, it takes the nearest enemy as before and leaves the back row alone for
+ * `restTicks`. An attack order, hold stance, a retreat, a garrison or a wall are left as they
+ * are; after the dive a move goes on. Its unit columns are in the hash only while it is on.
+ */
+export const CAV_FLANK = {
+  on: true,
+  reach: 10 * CELL,
+  leash: 12 * CELL,
+  towerMargin: CELL,
+  line: CELL + (CELL >> 1),
+  scan: 5 * CELL,
+  margin: 2 * CELL,
+  arrive: CELL + (CELL >> 1),
+  giveUpTicks: 8 * S,
+  restTicks: 5 * S,
+};
 /**
  * Giving up a place it does not get to (D-095; the client's e2e, after R6-51's ridges): a unit on
  * a move or retreat, with no target, within its formation (no farther from the group's goal cell
@@ -503,12 +572,14 @@ function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap
       wall: cells(c.wall),
       corner: cells(c.corner),
       gate: cells(c.gate),
+      gates: c.gates.map((g) => cells(g)),
       outside: cells(c.outside),
       behind: cells(c.behind),
       militia: posts.map(([x, y]): [number, number] => [x, y]),
       garrison: cells(c.garrison),
       towerLand: TOWER_REACH.town + 1,
     },
+    ...(GATE.on ? { gateHp: GATE.hp[size] } : {}),
   };
 }
 

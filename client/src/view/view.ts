@@ -159,6 +159,75 @@ export class GameView implements IntentWorld {
     return this.rules.towns?.[town.size]?.castle ?? null;
   }
 
+  /** Gate openings by their top-left cell (D-096): width and height in cells; rebuilt as towns become known. */
+  private gateBoxes = new Map<number, { w: number; h: number }>();
+  private gateBoxesFor = -1;
+
+  /**
+   * A building's footprint in cells. A gate (D-096, PROTOCOL.md 3.7) is its opening, a row or a
+   * column of cells from its town's `castle.gates` (`buildings[Gate].size` is 1); any other its square.
+   */
+  footprint(b: Int32Array, o: number): { x: number; y: number; w: number; h: number } {
+    const x = b[o + B.cellX];
+    const y = b[o + B.cellY];
+    const type = b[o + B.type];
+    if (type === BuildingType.Gate) {
+      const box = this.gateOpenings().get(y * this.map.size + x);
+      if (box !== undefined) return { x, y, ...box };
+    }
+    const s = this.rules.buildings[type]?.size ?? 1;
+    return { x, y, w: s, h: s };
+  }
+
+  /** A footprint's middle (cells). */
+  footprintCentre(b: Int32Array, o: number): { x: number; y: number } {
+    const f = this.footprint(b, o);
+    return { x: f.x + f.w / 2, y: f.y + f.h / 2 };
+  }
+
+  /** Every known town's gate openings (D-096), keyed by top-left cell. */
+  private gateOpenings(): Map<number, { w: number; h: number }> {
+    if (this.gateBoxesFor === this.townsVersion) return this.gateBoxes;
+    this.gateBoxesFor = this.townsVersion;
+    this.gateBoxes = new Map();
+    const n = this.map.size;
+    for (const town of this.knownTowns.values()) {
+      for (const opening of this.castleOf(town)?.gates ?? []) {
+        if (opening.length === 0) continue;
+        const xs = opening.map(([x]) => x);
+        const ys = opening.map(([, y]) => y);
+        const x0 = Math.min(...xs);
+        const y0 = Math.min(...ys);
+        this.gateBoxes.set((town.cellY + y0) * n + town.cellX + x0, { w: Math.max(...xs) - x0 + 1, h: Math.max(...ys) - y0 + 1 });
+      }
+    }
+    return this.gateBoxes;
+  }
+
+  /** The town a gate building stands in (D-096): the known town whose opening starts at its cell, or null. */
+  gateTown(b: Int32Array, o: number): TownSpot | null {
+    const x = b[o + B.cellX];
+    const y = b[o + B.cellY];
+    for (const town of this.knownTowns.values()) {
+      for (const opening of this.castleOf(town)?.gates ?? []) {
+        if (opening.length === 0) continue;
+        if (town.cellX + Math.min(...opening.map(([cx]) => cx)) === x && town.cellY + Math.min(...opening.map(([, cy]) => cy)) === y) return town;
+      }
+    }
+    return null;
+  }
+
+  /** A building's full hit points: a gate's are its town's size's (`rules.towns[size].gateHp`, D-096), any other its type's. */
+  buildingMaxHp(b: Int32Array, o: number): number {
+    const type = b[o + B.type];
+    if (type === BuildingType.Gate) {
+      const town = this.gateTown(b, o);
+      const hp = town === null ? undefined : this.rules.towns?.[town.size]?.gateHp;
+      if (hp !== undefined) return hp;
+    }
+    return this.rules.buildings[type]?.hp ?? b[o + B.hp];
+  }
+
   /** The cells a town's castle covers, walls and gates included (map cells, inclusive), or null with no castle. */
   castleBox(town: { size: number; cellX: number; cellY: number }): { x0: number; y0: number; x1: number; y1: number } | null {
     const c = this.castleOf(town);
@@ -215,9 +284,9 @@ export class GameView implements IntentWorld {
     built.fill(0);
     const b = snap.buildings;
     for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-      const s = this.rules.buildings[b[o + B.type]]?.size ?? 1;
-      for (let y = b[o + B.cellY]; y < b[o + B.cellY] + s; y++) {
-        for (let x = b[o + B.cellX]; x < b[o + B.cellX] + s; x++) if (x >= 0 && y >= 0 && x < size && y < size) built[y * size + x] = 1;
+      const f = this.footprint(b, o);
+      for (let y = f.y; y < f.y + f.h; y++) {
+        for (let x = f.x; x < f.x + f.w; x++) if (x >= 0 && y >= 0 && x < size && y < size) built[y * size + x] = 1;
       }
     }
     const g = this.ground;
@@ -380,8 +449,8 @@ export class GameView implements IntentWorld {
     const cx = Math.floor(wx / TILE_PX);
     const cy = Math.floor(wy / TILE_PX);
     for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-      const s = this.rules.buildings[b[o + B.type]]?.size ?? 1;
-      if (cx >= b[o + B.cellX] && cx < b[o + B.cellX] + s && cy >= b[o + B.cellY] && cy < b[o + B.cellY] + s) {
+      const f = this.footprint(b, o);
+      if (cx >= f.x && cx < f.x + f.w && cy >= f.y && cy < f.y + f.h) {
         return { kind: "building", id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type] };
       }
     }

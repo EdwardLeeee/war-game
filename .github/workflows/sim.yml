@@ -257,6 +257,11 @@ jobs:
           # D-074: the push on random maps; the player and the AI both scout.
           - { group: push-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --map random }
           - { group: push-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --map random }
+          # D-097 (war-game-ai): the push with cavalry, about 2 for every 9 foot (the triangle and
+          # cavalry riding for the back row, CAV_FLANK); war-game-ai's measure for hard's cavalry.
+          - { group: push-cavalry, seeds: 1-40, args: --strategy push --speed h1 --formation close --cavalry-share 18 }
+          - { group: push-cavalry-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --cavalry-share 18 --map random }
+          - { group: push-cavalry-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --cavalry-share 18 --map random }
     env:
       # scripted-<group>-<seeds> against normal (as before), scripted-hard-<group>-<seeds> against hard.
       NAME: scripted-${{ matrix.difficulty == 'hard' && 'hard-' || '' }}${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
@@ -312,7 +317,7 @@ jobs:
           set -o pipefail
           cat > summary.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
-          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["push-towerrush", "主動（塔攻，護送）", 20], ["push-towerrush-farmers", "主動（塔攻，只派村民）", 20], ["push-fortress", "主動（半路要塞）", 20], ["push-fortress-random", "主動（半路要塞），隨機地圖", 20], ["push-fortress-hold", "主動（半路要塞，大軍守著）", 20], ["push-fortress-hold-random", "主動（半路要塞，大軍守著），隨機地圖", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15], ["push-random", "主動，隨機地圖", 20]];
+          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["push-towerrush", "主動（塔攻，護送）", 20], ["push-towerrush-farmers", "主動（塔攻，只派村民）", 20], ["push-fortress", "主動（半路要塞）", 20], ["push-fortress-random", "主動（半路要塞），隨機地圖", 20], ["push-fortress-hold", "主動（半路要塞，大軍守著）", 20], ["push-fortress-hold-random", "主動（半路要塞，大軍守著），隨機地圖", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15], ["push-random", "主動，隨機地圖", 20], ["push-cavalry", "主動（帶騎兵）", 20], ["push-cavalry-random", "主動（帶騎兵），隨機地圖", 20]];
           // scripted-<group>-<seeds>.json against normal, scripted-hard-<group>-<seeds>.json against hard.
           const levels = [["", "普通"], ["hard-", "困難"]];
           const games = new Map(levels.flatMap(([l]) => groups.map(([g]) => [l + g, []])));
@@ -507,8 +512,9 @@ jobs:
           node harass.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # Unit balance (round 3, D-026): small battles of equal cost, the values before this round
-  # against the values in the code, every goal marked (src/balance.ts). About 10 seconds.
-  # Goals 1-4 must hold with both sides advancing; goal 5 is reported (ceo: not this round).
+  # against the values in the code, every goal marked (src/balance.ts). About a minute.
+  # The goals listed must hold; 5, 10 and 12 are reported (5: ceo, not this round; 10: by design,
+  # 13 is its answer; 12: known, D-097).
   balance:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -523,7 +529,7 @@ jobs:
       - name: Battles of equal cost
         run: |
           set -o pipefail
-          node src/balance.ts --check 1,2,3,4,6,7,8,9 | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/balance.ts --check 1,2,3,4,6,7,8,9,11,13 | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # 100 games of the normal AI against the easy one (round 2): the same seeds, styles and swaps;
   # each spawn plays easy half the time. Replayed like the others.

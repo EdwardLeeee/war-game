@@ -78,8 +78,9 @@ test("a squad's soldier goes for the mage; a unit on the move keeps to its move"
 test("it gives up once the mage is more than AVENGE.reach from its place, and goes back", switchedOff(DODGE, () => {
   withAvenge(true, () => {
     const { g, unit, mage } = shelled((g, unit) => cmd(g, 0, { c: "stance", u: [unit], stance: Stance.Hold }));
-    // The mage walks off north as soon as it has fired.
-    cmd(g, 1, { c: "move", u: [mage], x: 31, y: 20 });
+    // The mage walks off north as soon as it has fired, fighting no one (a retreat: since D-096 its
+    // way goes round the closed castle north of it, within reach of the spearman a while).
+    cmd(g, 1, { c: "retreat", u: [mage], x: 31, y: 20 });
     run(g, 400);
     const u = g.w.units.col;
     assert.equal(u.avenge[slotOf(g, unit)], -1, "given up");

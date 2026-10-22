@@ -184,7 +184,7 @@ test("躲進去、全部出來：畫面送的 garrison 只帶遠程兵和法師�
   assert.deepEqual(rejections(g, 0), []);
 });
 
-test("馬廄訓練出騎兵：畫面算騎兵是士兵、軍團畫面有這一列；兵種相剋讀到遠程打騎兵的倍數", () => {
+test("馬廄訓練出騎兵：畫面算騎兵是士兵、軍團畫面有這一列；兵種相剋讀到和騎兵有關的倍數（D-097：槍打騎、騎打法師）", () => {
   const g = emptyGame();
   g.w.res[Resource.Food] = 1000;
   g.w.res[Resource.Gold] = 1000;
@@ -207,6 +207,8 @@ test("馬廄訓練出騎兵：畫面算騎兵是士兵、軍團畫面有這一�
   assert.ok(GROUP_TYPES.includes(UnitType.Cavalry));
   assert.equal(UNIT_NAME[UnitType.Cavalry], "騎兵");
   const lines = counterLines(v.rules, UNIT_NAME);
-  assert.ok(lines.find((l) => l.type === UnitType.Ranged)?.beats.includes("騎兵 ×1.8"));
-  assert.ok(lines.find((l) => l.type === UnitType.Cavalry)?.fears.includes("遠程兵 ×1.8"));
+  // D-097's triangle, from the simulation's own table: spearmen hit cavalry harder, cavalry mages.
+  assert.ok(lines.find((l) => l.type === UnitType.Spearman)?.beats.includes("騎兵 ×2.5"));
+  assert.ok(lines.find((l) => l.type === UnitType.Cavalry)?.beats.includes("法師 ×3"));
+  assert.ok(lines.find((l) => l.type === UnitType.Cavalry)?.fears.includes("槍兵 ×2.5"));
 });

@@ -11,12 +11,12 @@ import { towerLand } from "../src/core/commands.ts";
 import { Game } from "../src/core/game.ts";
 import { generateMap, type GameMap } from "../src/core/map.ts";
 import { generateRandomMap } from "../src/core/random-map.ts";
-import { BUILDINGS, rules, TOWER_REACH } from "../src/core/rules.ts";
+import { BUILDINGS, GATE, rules, TOWER_REACH } from "../src/core/rules.ts";
 import { toCanon } from "../src/frame.ts";
 import { checkPlacement } from "../src/placement.ts";
 import { BuildingType, CELL_SHIFT, inTown, PlaceBit, Reject, Stance, Terrain, TOWN_STRIDE, TownField, TownFlag, TownSize, TownState, UnitType, walkableTerrain } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 /** Town 0 on the fixed map: the small town at (29, 29). */
 const T = 0;
@@ -39,7 +39,7 @@ test("rules give each castle: the small town 9 x 9 inside, the big city 12 x 12,
   for (const c of [small, large]) for (const [x, y] of c.militia) assert.ok(inTown(c, 0, 0, x, y), `post ${x},${y}`);
 });
 
-test("on the fixed map walls are terrain nobody walks; gates and the cell before each are open", () => {
+test("on the fixed map walls are terrain nobody walks; the gates stand closed (D-096), the cell before each is open", () => {
   const g = new Game({ seed: 1, scenario: "standard" });
   const w = g.w;
   const n = w.size;
@@ -51,17 +51,23 @@ test("on the fixed map walls are terrain nobody walks; gates and the cell before
       assert.equal(w.map.terrain[(t.cellY + dy) * n + t.cellX + dx], Terrain.Wall);
       assert.equal(w.walkable(t.cellX + dx, t.cellY + dy), false);
     }
-    for (const [dx, dy] of [...c.gate, ...c.outside]) assert.ok(w.walkable(t.cellX + dx, t.cellY + dy), `town ${i}: ${dx},${dy} open`);
+    for (const [dx, dy] of c.outside) assert.ok(w.walkable(t.cellX + dx, t.cellY + dy), `town ${i}: ${dx},${dy} open`);
+    for (const [dx, dy] of c.gate) assert.equal(w.walkable(t.cellX + dx, t.cellY + dy), false, `town ${i}: gate ${dx},${dy} closed`);
   });
-  // Placement: the walls are Blocked and Wall, the gates Gate.
+  // Placement: the walls are Blocked and Wall, the gates Gate and (a gate stands there) Blocked.
   const v = buildView(g, 0);
   const t = w.map.towns[T];
   const c = r.towns[TownSize.Small].castle!;
   const at = ([dx, dy]: [number, number]) => v.placement[(t.cellY + dy) * n + t.cellX + dx];
   for (const cell of c.wall) assert.equal(at(cell) & (PlaceBit.Blocked | PlaceBit.Wall), PlaceBit.Blocked | PlaceBit.Wall);
-  for (const cell of c.gate) assert.equal(at(cell) & (PlaceBit.Blocked | PlaceBit.Gate), PlaceBit.Gate);
+  for (const cell of c.gate) assert.equal(at(cell) & (PlaceBit.Gate | PlaceBit.GateLane), PlaceBit.Gate | PlaceBit.GateLane);
+  // Once seen, a gate standing there is a known building too: Blocked.
+  put(g, 0, UnitType.Farmer, t.cellX, t.cellY - 7);
+  g.fog.update(w);
+  const seen = buildView(g, 0);
+  for (const [dx, dy] of c.gates![0]) assert.equal(seen.placement[(t.cellY + dy) * n + t.cellX + dx] & PlaceBit.Blocked, PlaceBit.Blocked, `seen gate ${dx},${dy}`);
   // The lane through each gate: the gate, the cell in front of it and the first cell behind it.
-  for (const cell of [...c.gate, ...c.outside, ...c.behind]) assert.equal(at(cell) & (PlaceBit.Blocked | PlaceBit.GateLane), PlaceBit.GateLane);
+  for (const cell of [...c.outside, ...c.behind]) assert.equal(at(cell) & (PlaceBit.Blocked | PlaceBit.GateLane), PlaceBit.GateLane);
   for (const [dx, dy] of c.behind) assert.ok(inTown(c, 0, 0, dx, dy), `${dx},${dy} behind a gate is inside`);
   for (const [dx, dy] of c.outside) assert.ok(!inTown(c, 0, 0, dx, dy), `${dx},${dy} in front of a gate is outside`);
 });
@@ -89,7 +95,7 @@ test("seeing a town is seeing any of its castle: a farmer just outside the wall 
   assert.equal(known(), "remembered", "and remembered once out of sight");
 });
 
-test("walls stop walking: a soldier sent to a town's centre from beside its corner goes in by a gate", () => {
+test("walls stop walking: a soldier sent to a town's centre from beside its corner goes in by a gate (open: GATE off, as D-089)", switchedOff(GATE, () => {
   const g = emptyGame();
   const w = g.w;
   const n = w.size;
@@ -111,7 +117,7 @@ test("walls stop walking: a soldier sent to a town's centre from beside its corn
   const s = slotOf(g, id);
   assert.ok(w.inTown(T, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT), "inside");
   assert.ok(throughGate, "by a gate");
-});
+}));
 
 test("a town is what lies inside its walls: a soldier in front of a gate does not take it, one inside does", () => {
   const g = emptyGame();

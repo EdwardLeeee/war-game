@@ -95,6 +95,8 @@ export const MOCK_RULES: Rules = {
     buildingInfo(BuildingType.Stable, 500, 3, cost(0, 150, 50), { trains: [UnitType.Cavalry] }),
     // D-080: shown only while `features.outpost` is on.
     buildingInfo(BuildingType.Outpost, 400, 2, cost(0, 50, 0), { sight: 10 }),
+    // D-096: one in each opening of a castle (`?walls=1` only); its hit points are the town's (`towns[size].gateHp`).
+    buildingInfo(BuildingType.Gate, 2100, 1, cost(0, 0, 0)),
   ],
   // The simulation's damage table, so 兵種相剋 reads what the game plays.
   multipliers: rules().multipliers,
@@ -109,7 +111,8 @@ export const MOCK_RULES: Rules = {
 /** `?r7=1`: round 7's switches on, with the simulation's values. */
 export const MOCK_RULES_R7: Rules = {
   ...MOCK_RULES,
-  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true },
+  // 騎兵繞後 (D-097) on, as in the simulation.
+  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, cavalryFlank: true },
   arrows: rules().arrows,
   garrisonTypes: rules().garrisonTypes,
   towerReach: rules().towerReach,
@@ -120,9 +123,17 @@ export const MOCK_RULES_R7: Rules = {
 /** `?r7=1&outpost=1`: round 7's and the outpost's switches on (D-080), with the simulation's values. */
 export const MOCK_RULES_OUTPOST: Rules = {
   ...MOCK_RULES_R7,
-  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true },
+  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true, cavalryFlank: true },
   outpost: rules().outpost,
   towerReach: { ...(rules().towerReach ?? { mainCity: 8, town: 2 }), outpost: rules().towerReach?.outpost ?? 6 },
+};
+
+/** `?walls=1`: D-096's gates and walls on (with round 7's), the simulation's values. */
+export const MOCK_RULES_WALLS: Rules = {
+  ...MOCK_RULES_R7,
+  features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, cavalryFlank: true, gates: true, walls: true },
+  gate: rules().gate,
+  walls: rules().walls,
 };
 
 /** Cells from a building's centre within which a soldier on its way slips inside. */
@@ -151,6 +162,8 @@ interface MUnit {
   hidden: boolean;
   /** D-080: the outpost it stands guard at (or walks to, order Post), else -1. */
   post?: number;
+  /** D-096: the town whose wall it stands on (order Wall), and the cell inside it went up from. */
+  wall?: { town: number; from: { x: number; y: number } };
   /** `?gallery=1` (D-085): the action it shows (and what it works at), standing where it is. */
   pose?: { action: number; target: number };
   /** The node a `gather` sent it to (its order's target, as the simulation has it); it stays on it. */
@@ -284,6 +297,8 @@ export class MockPort implements SimPort {
   private readonly outpost: boolean;
   /** `?mine=1`: two mines of ours, one with a crystal vein beside it (the mine's 晶 row, 2026-10-20). */
   private readonly mine: boolean;
+  /** `?walls=1` (D-096): gates in the castles' openings, 上城牆. */
+  private readonly walls: boolean;
   private readonly rules: Rules;
   /**
    * The same layout as a random map (D-074, sim/PROTOCOL.md): `ready` tells only our own home,
@@ -300,11 +315,12 @@ export class MockPort implements SimPort {
    * `outpost`: `?outpost=1`, outposts too (D-080). `gallery`: `?gallery=1`, the atlases' gallery too.
    * `mine`: `?mine=1`, two mines of ours, a crystal vein by one.
    */
-  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false) {
-    this.round7 = round7 || outpost;
+  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false) {
+    this.round7 = round7 || outpost || walls;
     this.outpost = outpost;
     this.mine = mine;
-    this.rules = outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
+    this.walls = walls;
+    this.rules = walls ? MOCK_RULES_WALLS : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
     this.randomMap = map === "random";
     this.gallery = gallery;
   }
@@ -377,11 +393,38 @@ export class MockPort implements SimPort {
     return this.stock.food >= c.food && this.stock.wood >= c.wood && this.stock.gold >= c.gold && this.stock.crystal >= c.crystal;
   }
 
+  /** Down from a wall (D-096): onto the cell inside it went up from. */
+  private offWall(u: MUnit): void {
+    if (u.wall === undefined) return;
+    u.x = centre(u.wall.from.x);
+    u.y = centre(u.wall.from.y);
+    u.wall = undefined;
+    u.flags &= ~UnitFlag.OnWall;
+    if (u.order === Order.Wall) u.order = Order.None;
+  }
+
   /** Tests: these units of ours fall. */
   remove(ids: number[]): void {
     for (let i = this.units.length - 1; i >= 0; i--) if (this.units[i].owner === ME && ids.includes(this.units[i].id)) this.units.splice(i, 1);
     // Buildings too, any owner's (D-084: the big city's tower falls, its wall stays).
     for (let i = this.buildings.length - 1; i >= 0; i--) if (ids.includes(this.buildings[i].id)) this.buildings.splice(i, 1);
+  }
+
+  /** The militia on walls (D-096): one of ours within the sling's reach, facing it and throwing (action Attack, no damage here); else standing. */
+  private slings(): void {
+    const reach = (this.rules.walls?.sling ?? 4 * CELL) + CELL / 2;
+    for (const m of this.units) {
+      if (m.owner !== NEUTRAL || (m.flags & UnitFlag.OnWall) === 0) continue;
+      const near = this.units.filter((u) => u.owner === ME && !u.hidden && (u.x - m.x) ** 2 + (u.y - m.y) ** 2 <= reach * reach).sort((a, b) => (a.x - m.x) ** 2 + (a.y - m.y) ** 2 - ((b.x - m.x) ** 2 + (b.y - m.y) ** 2))[0];
+      m.pose = near === undefined ? undefined : { action: Action.Attack, target: -1 };
+      if (near !== undefined) m.facing = facing(near.x - m.x, near.y - m.y);
+    }
+  }
+
+  /** Tests: a building's hit points now (a gate damaged, D-096). */
+  damage(id: number, hp: number): void {
+    const b = this.buildings.find((v) => v.id === id);
+    if (b !== undefined) b.hp = hp;
   }
 
   postMessage(msg: ToWorker): void {
@@ -498,6 +541,19 @@ export class MockPort implements SimPort {
     town(TownSize.Small, 36, 80, TownState.Ruins, -1, 3000, 4800);
     town(TownSize.Large, 48, 48, TownState.Plundering, ME, 300, 500);
     town(TownSize.Small, 38, 56, TownState.Governed, FOE);
+    // D-096 (?walls=1): a gate in each opening of every castle but the ruins', its town's holder's
+    // (the neutral's for a neutral town), at its town's size's hit points.
+    if (this.walls) {
+      for (const t of this.towns) {
+        if (t.state === TownState.Ruins) continue;
+        const info = this.rules.towns?.[t.size];
+        for (const opening of info?.castle?.gates ?? []) {
+          if (opening.length === 0) continue;
+          const g = this.building(t.owner === ME || t.owner === FOE ? t.owner : NEUTRAL, BuildingType.Gate, t.cx + Math.min(...opening.map(([x]) => x)), t.cy + Math.min(...opening.map(([, y]) => y)));
+          g.hp = info?.gateHp ?? g.hp;
+        }
+      }
+    }
 
     const unit = (owner: number, type: UnitType, cx: number, cy: number) => {
       const info = MOCK_RULES.units[type];
@@ -521,6 +577,10 @@ export class MockPort implements SimPort {
     for (let i = 0; i < 2; i++) unit(FOE, UnitType.Ranged, 29 + i, 72).hp = 20;
     unit(FOE, UnitType.Mage, 30, 73);
     for (let i = 0; i < 3; i++) unit(NEUTRAL, UnitType.Militia, 29 + i, 66);
+    // D-096 (?walls=1): two more of the neutral town's militia on its walls (north and south),
+    // throwing stones at any of ours within its sling's reach (rules.walls.sling); out of 2 cells
+    // of its north gate (the tests' closed gate).
+    if (this.walls) for (const [x, y] of [[26, 61], [33, 71]]) unit(NEUTRAL, UnitType.Militia, x, y).flags |= UnitFlag.OnWall;
     unit(FOE, UnitType.Spearman, 80, 20);
     if (this.gallery === "units") this.setupGallery(unit);
 
@@ -691,6 +751,7 @@ export class MockPort implements SimPort {
       for (const t of this.towns) if (t.state === TownState.Governed && t.income < 1000 && this.tick % Math.ceil(climb.ticks / (1000 - climb.startPermille)) === 0) t.income++;
     }
     if (this.round7 && this.tick % SHOT_TICKS === 0) this.shoot();
+    if (this.walls) this.slings();
     if (this.gallery) this.galleryStep();
     this.warningTicks = this.warningTicks <= 0 ? 60 : this.warningTicks - 1;
     if (this.tick % FOG_EVERY === 0) this.updateFog();
@@ -827,12 +888,12 @@ export class MockPort implements SimPort {
       units[o + U.y] = u.y;
       units[o + U.hp] = u.hp;
       units[o + U.shield] = u.shield;
-      units[o + U.action] = u.hidden ? Action.Garrisoned : u.cast > 0 ? Action.Calibrate : (u.pose?.action ?? (u.target !== null ? Action.Move : Action.Idle));
+      units[o + U.action] = u.hidden ? Action.Garrisoned : u.cast > 0 ? Action.Calibrate : (u.pose?.action ?? ((u.flags & UnitFlag.OnWall) !== 0 ? Action.OnWall : u.target !== null ? Action.Move : Action.Idle));
       units[o + U.facing] = u.facing;
       units[o + U.carryKind] = -1;
       units[o + U.order] = u.cast > 0 ? Order.Cast : u.order;
       units[o + U.orderTarget] =
-        u.pose !== undefined ? u.pose.target : u.order === Order.Garrison ? u.inside : u.order === Order.Post ? (u.post ?? -1) : u.order === Order.Gather && u.node !== undefined ? u.node : u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
+        u.pose !== undefined ? u.pose.target : u.order === Order.Garrison ? u.inside : u.order === Order.Post ? (u.post ?? -1) : u.order === Order.Wall ? (u.wall?.town ?? -1) : u.order === Order.Gather && u.node !== undefined ? u.node : u.target === null ? -1 : (u.target.y >> 10) * SIZE + (u.target.x >> 10);
       units[o + U.stance] = u.stance;
       units[o + U.castProgress] = u.cast;
       units[o + U.flags] = u.flags;
@@ -952,6 +1013,8 @@ export class MockPort implements SimPort {
         }
         // D-080: and off his post.
         if (order !== Order.Post) u.post = -1;
+        // D-096: and down from a wall, from the cell inside it went up from.
+        this.offWall(u);
       });
     };
     const reject = (reason: Reject) => this.events.push({ k: "rejected", seq: cmd.seq, reason });
@@ -995,9 +1058,49 @@ export class MockPort implements SimPort {
       case "reserve":
         this.reserve = { food: cmd.food, wood: cmd.wood, gold: cmd.gold, crystal: cmd.crystal };
         break;
+      // 上城牆 (D-096, PROTOCOL.md 3.7): our ranged units and mages up on a town we hold, each on the
+      // free wall cell nearest it; 下城牆 back to the cell inside they went up from.
+      case "wall": {
+        const t = this.towns.find((v) => v.id === cmd.town);
+        const castle = t === undefined ? undefined : this.rules.towns?.[t.size]?.castle;
+        const held = t !== undefined && t.owner === ME && ([TownState.AwaitingChoice, TownState.Plundering, TownState.Repairing, TownState.Governed] as TownState[]).includes(t.state);
+        const list = own(cmd.u).filter((u) => u.type === UnitType.Ranged || u.type === UnitType.Mage);
+        if (!this.walls) reject(Reject.NotAvailable);
+        else if (t === undefined || castle === undefined) reject(Reject.InvalidTarget);
+        else if (!held) reject(Reject.TownNotYours);
+        else if (list.length === 0) reject(Reject.NotAvailable);
+        else {
+          const taken = new Set(this.units.filter((u) => u.wall?.town === t.id).map((u) => `${u.x >> 10},${u.y >> 10}`));
+          const free = castle.wall.map(([x, y]) => ({ x: t.cx + x, y: t.cy + y })).filter((c) => !taken.has(`${c.x},${c.y}`));
+          if (free.length === 0) reject(Reject.NoRoom);
+          for (const u of list) {
+            if (free.length === 0) break;
+            const ux = u.x >> 10;
+            const uy = u.y >> 10;
+            free.sort((a, b) => (a.x - ux) ** 2 + (a.y - uy) ** 2 - ((b.x - ux) ** 2 + (b.y - uy) ** 2));
+            const cell = free.shift() as { x: number; y: number };
+            this.offWall(u);
+            u.wall = { town: t.id, from: { x: t.cx, y: t.cy } };
+            u.x = centre(cell.x);
+            u.y = centre(cell.y);
+            u.target = null;
+            u.order = Order.Wall;
+            u.flags |= UnitFlag.OnWall;
+          }
+        }
+        break;
+      }
+      case "leave_wall":
+        for (const u of own(cmd.u)) {
+          if (u.wall?.town !== cmd.town) continue;
+          this.offWall(u);
+          u.order = Order.None;
+        }
+        break;
       case "stop":
         // Like the simulation: no order left (a retreat or a march ends there). Those hiding stay in.
         for (const u of own(cmd.u)) {
+          this.offWall(u);
           if (u.hidden) continue;
           u.target = null;
           u.order = Order.None;

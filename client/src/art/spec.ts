@@ -40,6 +40,11 @@ export interface AnimInfo {
   radius_m?: number;
   /** Metres one walk cycle covers. */
   stride_m?: number;
+  /**
+   * The militia's `sling` (D-096, art-v5.2): where the stone leaves the hand at its `hit` frame,
+   * metres from the feet: right, forward, up as the picture faces (a mirrored picture's right is its left).
+   */
+  stone_from_m?: [number, number, number];
 }
 
 export interface AtlasJson {
@@ -135,6 +140,26 @@ export function frameName(a: AtlasJson, anim: string, direction: number, index: 
   return from === undefined ? { name: `${a.unit}_${anim}_f${direction}_${ii}`, mirror: false } : { name: `${a.unit}_${anim}_f${from}_${ii}`, mirror: true };
 }
 
+/** The ground's way a picture direction faces (x east, y south), the inverse of pictureDirection. */
+export function directionVector(direction: number, projection: Projection): [number, number] {
+  const s = Math.SQRT1_2;
+  const WAYS: [number, number][] = [[1, 0], [s, s], [0, 1], [-s, s], [-1, 0], [-s, -s], [0, -1], [s, -s]];
+  const base = projection === "diamond" ? 7 : 8;
+  return WAYS[(((base - direction) % 8) + 8) % 8];
+}
+
+/**
+ * Where a sling's stone leaves the hand (D-096; anims.sling.stone_from_m: right, forward, up), from
+ * the feet in metres on the ground (x east, y south) and up, for the picture's direction; a mirrored
+ * picture's right is the other way.
+ */
+export function stoneFrom(direction: number, mirror: boolean, m: readonly [number, number, number], projection: Projection): { x: number; y: number; up: number } {
+  const [fx, fy] = directionVector(direction, projection);
+  const right = mirror ? -m[0] : m[0];
+  // Right of the way it faces, y down: (−fy, fx).
+  return { x: right * -fy + m[1] * fx, y: right * fx + m[1] * fy, up: m[2] };
+}
+
 /** Default frames a second (spec section 7) for actions whose description gives none. */
 const DEFAULT_FPS: Record<string, number> = { idle: 8, walk: 12, attack: 20, cast: 20, death: 12, fall: 12, dead: 12, hit: 20, shatter: 16 };
 export const fpsOf = (a: AtlasJson, anim: string): number => a.anims[anim]?.fps ?? DEFAULT_FPS[anim] ?? 10;
@@ -147,13 +172,14 @@ export const workOfNode = (kind: number): WorkKind => (kind === NodeKind.Tree ? 
  * The animation for a unit's action (spec section 7). `work`: what a gathering farmer works at
  * (a farm counts as farm). Falls back to idle when the atlas has no such animation.
  */
-export function animFor(a: AtlasJson, action: number, work: WorkKind): string {
+export function animFor(a: AtlasJson, action: number, work: WorkKind, onWall = false): string {
   const pick = (name: string) => (a.anims[name] !== undefined ? name : "idle");
   switch (action) {
     case Action.Move:
       return pick("walk");
     case Action.Attack:
-      return pick("attack");
+      // On a wall (D-096: only the militia have it), throwing stones.
+      return onWall && a.anims.sling !== undefined ? "sling" : pick("attack");
     case Action.Gather:
       return pick(work === null ? "work_chop" : `work_${work}`);
     case Action.Build:

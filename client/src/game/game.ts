@@ -80,7 +80,7 @@ import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { formalUi } from "../ui/formal.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText, type ToastKind } from "../ui/overlays.ts";
 import { Placement, placeReason, towerLandOk } from "../ui/placement.ts";
-import { GameView } from "../view/view.ts";
+import { GameView, type TownSpot } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
@@ -90,6 +90,7 @@ import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn, orderState } from "./orders.ts";
+import { goesOnWalls, heldTown, leaveWalls, WALL_PROMPT, WALL_PROMPT_MIXED, WALL_WRONG_TARGET, wallTap } from "./walls.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, type Site, villagersMissing } from "./auto-army.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
@@ -184,6 +185,7 @@ const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   rally: "點地面設集結點",
   garrison: GARRISON_PROMPT,
   post: POST_PROMPT,
+  wall: WALL_PROMPT,
 };
 
 /** The sequence number after the log's last (繼續上一局, D-083): the game's commands go on numbered after it. */
@@ -465,6 +467,15 @@ export class Game implements GestureHost {
   private readonly alarms = new GroupAlarms();
   private alarmState: (Alarm & { present: number })[] = [0, 1, 2, 3].map(() => ({ advancing: false, base: null, alarm: false, tell: false, present: 0 }));
 
+  /** D-096: openings drawn as broken gates, and units drawn up on a wall in the last frame, for the test hook. */
+  get brokenGatesForTest(): number {
+    return this.renderer?.brokenGateCount ?? 0;
+  }
+
+  get wallLiftedForTest(): number {
+    return this.renderer?.wallLifted ?? 0;
+  }
+
   /** Pause marks on buildings (D-098), for the test hook. */
   get pauseMarksForTest(): number {
     return this.renderer?.pauseMarks ?? 0;
@@ -475,13 +486,23 @@ export class Game implements GestureHost {
     return this.renderer?.shotCount ?? 0;
   }
 
+  /** Stones thrown from slings on walls (D-096), for the test hook. */
+  get stonesForTest(): number {
+    return this.renderer?.stoneCount ?? 0;
+  }
+
+  /** Shots that left a gate's tower (D-096 shoot_at_m, its `tower_shot` flash), for the test hook. */
+  get towerShotsForTest(): number {
+    return this.renderer?.towerShotCount ?? 0;
+  }
+
   /** The units' atlases as drawn (D-085), for the test hook. */
   /** 你的陸 this game was started with (kept with 繼續上一局's save). */
   get culture(): Culture {
     return this.options.culture ?? DEFAULT_CULTURE;
   }
 
-  get artForTest(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null {
+  get artForTest(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
     return this.renderer?.artDrawn ?? null;
   }
 
@@ -511,7 +532,7 @@ export class Game implements GestureHost {
   }
 
   /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
-  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null {
+  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number> } | null {
     const r = this.renderer;
     return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount };
   }
@@ -532,8 +553,8 @@ export class Game implements GestureHost {
     if (view === null) return;
     const wx = (cx + 0.5) * TILE_PX;
     const wy = (cy + 0.5) * TILE_PX;
-    if (this.mode === "garrison" || this.mode === "post") {
-      this.toast(this.mode === "post" ? POST_WRONG_TARGET : GARRISON_WRONG_TARGET);
+    if (this.mode === "garrison" || this.mode === "post" || this.mode === "wall") {
+      this.toast(this.mode === "post" ? POST_WRONG_TARGET : this.mode === "wall" ? WALL_WRONG_TARGET : GARRISON_WRONG_TARGET);
       return;
     }
     if (this.mode !== "normal") {
@@ -810,8 +831,7 @@ export class Game implements GestureHost {
     if (u >= 0) return { x: snap.units[u + UnitField.x] / CELL, y: snap.units[u + UnitField.y] / CELL };
     const b = view.buildingRow(id);
     if (b < 0) return null;
-    const size = view.rules.buildings[snap.buildings[b + BuildingField.type]]?.size ?? 1;
-    return { x: snap.buildings[b + BuildingField.cellX] + size / 2, y: snap.buildings[b + BuildingField.cellY] + size / 2 };
+    return view.footprintCentre(snap.buildings, b);
   }
 
   /**
@@ -1752,7 +1772,7 @@ export class Game implements GestureHost {
             if (cmd?.auto !== true) this.overlays.toast(rejectText(ev.reason, cmd));
           } else {
             if (ev.k === "unit_trained") this.enlist(ev.id, ev.type);
-            if (ev.k === "shot") this.drawShot(ev.building, ev.target, now);
+            if (ev.k === "shot") this.drawShot(ev.building, ev.target, now, ev.n ?? 1);
             this.hud.onEvent(ev);
           }
         }
@@ -1855,6 +1875,7 @@ export class Game implements GestureHost {
     }
     if (this.mode === "garrison") return this.garrisonAt(w.x, w.y);
     if (this.mode === "post") return this.postAt(w.x, w.y);
+    if (this.mode === "wall") return this.wallAt(w.x, w.y);
     this.apply(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
   }
 
@@ -1874,6 +1895,69 @@ export class Game implements GestureHost {
     }
     this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
     if (r.cmd.c === "garrison") this.toast(`${r.cmd.u.length} 名躲進${BUILDING_NAME[target?.type ?? -1] ?? "建築"}`);
+  }
+
+  /** The known town whose castle (walls and gates included) holds the cell at (wx, wy) world px, or null. */
+  private townAtCell(wx: number, wy: number): TownSpot | null {
+    const view = this.view;
+    if (view === null) return null;
+    const cx = Math.floor(wx / TILE_PX);
+    const cy = Math.floor(wy / TILE_PX);
+    for (const town of view.knownTowns.values()) {
+      const box = view.castleBox(town);
+      if (box !== null && cx >= box.x0 && cx <= box.x1 && cy >= box.y0 && cy <= box.y1) return town;
+    }
+    return null;
+  }
+
+  /**
+   * 牆上 (D-096): our units on a town's wall or on their way up (they hold a place, as the
+   * simulation counts them), and its wall cells (walls and corner towers); null for a town not ours
+   * (ceo: nothing about others' walls).
+   */
+  wallCount(town: number): { on: number; capacity: number } | null {
+    const view = this.view;
+    const spot = view?.knownTowns.get(town);
+    const u = view?.curr?.snap.units;
+    const t = view?.curr?.snap.towns;
+    const o = view?.townRow(town) ?? -1;
+    if (view === null || spot === undefined || u === undefined || t === undefined || o < 0) return null;
+    if (view.rules.features?.walls !== true || !heldTown(t[o + TownField.owner], t[o + TownField.state], view.me)) return null;
+    let on = 0;
+    for (let k = 0; k < u.length; k += UNIT_STRIDE) if (u[k + UnitField.owner] === view.me && u[k + UnitField.order] === Order.Wall && u[k + UnitField.orderTarget] === town) on++;
+    return { on, capacity: view.castleOf(spot)?.wall.length ?? 0 };
+  }
+
+  /** 上城牆 (D-096): the town tapped takes the ranged units and mages selected on its wall, or the player is told why not. */
+  private wallAt(wx: number, wy: number): void {
+    const view = this.view;
+    if (view === null) return;
+    const spot = this.townAtCell(wx, wy);
+    const o = spot === null ? -1 : view.townRow(spot.id);
+    const t = view.curr?.snap.towns;
+    const count = spot === null ? null : this.wallCount(spot.id);
+    const town = spot === null ? null : { id: spot.id, held: o >= 0 && t !== undefined && heldTown(t[o + TownField.owner], t[o + TownField.state], view.me), onWall: count?.on ?? 0, capacity: count?.capacity ?? 0 };
+    const r = wallTap(view.selection.units, town, (id) => goesOnWalls(view.unitType(id)));
+    if ("error" in r) {
+      this.toast(r.error);
+      return;
+    }
+    this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
+    if (r.cmd.c === "wall") this.toast(`${r.cmd.u.length} 名上城牆`);
+  }
+
+  /** 下城牆 (D-096): those selected on a wall (or going up) come down, into the town. */
+  leaveWall(): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return;
+    const rows = view.selection.units
+      .map((id) => ({ id, o: view.unitRow(id) }))
+      .filter((r) => r.o >= 0)
+      .map((r) => ({ id: r.id, order: u[r.o + UnitField.order], town: u[r.o + UnitField.orderTarget] }));
+    const cmds = leaveWalls(rows);
+    for (const cmd of cmds) this.command(cmd);
+    if (cmds.length > 0) this.toast(`${cmds.reduce((n, c) => n + ("u" in c && Array.isArray(c.u) ? c.u.length : 0), 0)} 名下城牆`);
   }
 
   /** 駐守 (D-080): the outpost tapped takes the spearmen selected, or the player is told why not. */
@@ -2077,14 +2161,17 @@ export class Game implements GestureHost {
     if (at !== null) r.mark(at.x, at.y, color, now);
   }
 
-  /** 射箭 (round 7, `shot`): an arrow from the building's centre to the unit it shot at. */
-  private drawShot(building: number, target: number, now: number): void {
+  /** 射箭 (round 7, `shot`): an arrow from the building's centre to the unit it shot at; a town gate's from its tower (D-096 shoot_at_m). */
+  private drawShot(building: number, target: number, now: number, n = 1): void {
     const view = this.view;
     const from = this.buildingCentre(building);
     const o = view?.unitRow(target) ?? -1;
     if (view === null || this.renderer === null || from === null || o < 0) return;
     const to = view.unitPos(o);
-    this.renderer.shot(from.x, from.y, to.x, to.y, now);
+    const b = view.curr?.snap.buildings;
+    const row = view.buildingRow(building);
+    const tower = b !== undefined && row >= 0 && b[row + BuildingField.type] === BuildingType.Gate ? this.renderer.gateShootFrom(b[row + BuildingField.cellX], b[row + BuildingField.cellY], to.x, to.y) : null;
+    this.renderer.shot(tower?.x ?? from.x, tower?.y ?? from.y, to.x, to.y, now, n, tower?.lift ?? 0);
   }
 
   private buildingCentre(id: number): { x: number; y: number } | null {
@@ -2092,8 +2179,8 @@ export class Game implements GestureHost {
     const o = view?.buildingRow(id) ?? -1;
     const b = view?.curr?.snap.buildings;
     if (view === null || o < 0 || b === undefined) return null;
-    const s = view.rules.buildings[b[o + BuildingField.type]]?.size ?? 1;
-    return { x: (b[o + BuildingField.cellX] + s / 2) * TILE_PX, y: (b[o + BuildingField.cellY] + s / 2) * TILE_PX };
+    const c = view.footprintCentre(b, o);
+    return { x: c.x * TILE_PX, y: c.y * TILE_PX };
   }
 
   /**
@@ -2254,7 +2341,9 @@ export class Game implements GestureHost {
     const mixed = mode === "garrison" && view !== null && view.selection.units.some((id) => !garrisonTypes(view.rules).includes(view.unitType(id)));
     // 駐守 with others than spearmen selected: only the spearmen go (D-080).
     const mixedPost = mode === "post" && view !== null && view.selection.units.some((id) => view.unitType(id) !== POST_TYPE);
-    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : mixedPost ? POST_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
+    // 上城牆 with others than ranged units and mages (D-096): only those go up.
+    const mixedWall = mode === "wall" && view !== null && view.selection.units.some((id) => !goesOnWalls(view.unitType(id)));
+    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : mixedPost ? POST_PROMPT_MIXED : mixedWall ? WALL_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
   }
 
   /**

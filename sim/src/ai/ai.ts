@@ -36,6 +36,7 @@
 import { type Frame, footprintCentre, fromCanon, rectFromCanon, spawnCentre, toCanon } from "../frame.ts";
 import { checkPlacement } from "../placement.ts";
 import {
+  Action,
   type AiDifficulty,
   BUILDING_STRIDE,
   BuildingField,
@@ -344,6 +345,28 @@ const FORT_FAILED = 150;
  * once its population was full short of 1.5 x (fortress-hold draws 3 -> 26, sim/README.md), so 5 minutes it is.
  */
 const FORT_FORGET = 5 * 1200;
+/**
+ * D-081 / A4 (ceo 2026-10-21, #260's half-way fortress, normal's soldiers dead by it 26.5 -> 75.0 a game): normal's two
+ * trials, on since ceo 2026-10-22 (docs/research/2026-10-ai-a4.md section 4.3; hard's: HardPlan.fortStage, fortAgain). stage: forts on the way it can take, it gathers
+ * outside their reach first and pulls them down together (it marched past them in a column and began only once its
+ * centre stood by them); again: after breaking off from forts, the next go takes FORT_FAILED_AGAIN of that army and
+ * it remembers for FORT_FORGET_AGAIN (hard went at the same fortress every 5 minutes with 15–27).
+ */
+export const NORMAL_FORT = { stage: true, again: true };
+const FORT_FAILED_AGAIN = 200;
+const FORT_FORGET_AGAIN = 10 * 1200;
+/** fortStage: the gathering point at most this many cells beyond the reach of the group's forts (and 2 at least, as stagePoint). */
+const FORT_STAGE_OUT = 6;
+/** fortStage: the group it gathers for, the point, when it set off for it and the first got there, and whether it went on. */
+interface FortStop {
+  ids: number[];
+  x: number;
+  y: number;
+  from: number;
+  first: number;
+  go: boolean;
+  mode: string;
+}
 /** It goes for a fort with no fewer soldiers than this. */
 const FORT_ARMY = 4;
 /** Enemy soldiers this near a fort (cells) count as its defenders. */
@@ -492,6 +515,128 @@ export function stagePoint(
   return best;
 }
 
+/**
+ * D-081 / A4 (fortStage): where an army gathers before going for a group of forts: ground known to be open, 2 to
+ * FORT_STAGE_OUT cells beyond the reach of one of the group's forts and out of every fort's reach + 2, reached by steps
+ * from the group (8 neighbours, over ground not known to be blocked: not across a river or a cliff), the nearest to
+ * the army; null for none.
+ */
+export function fortStagePoint(
+  view: { placement: Uint8Array },
+  map: { size: number; mode?: string },
+  forts: readonly Fort[],
+  group: FortGroup,
+  from: { x: number; y: number },
+  rank: (x: number, y: number) => number,
+): { x: number; y: number } | null {
+  const n = map.size;
+  const mine = forts.filter((f) => group.ids.includes(f.id));
+  if (mine.length === 0) return null;
+  const blocked = (i: number) => (view.placement[i] & PlaceBit.Blocked) !== 0;
+  const known = (i: number) => map.mode !== "random" || (view.placement[i] & PlaceBit.Unexplored) === 0;
+  let far = 0;
+  for (const f of mine) far = Math.max(far, f.hits + FORT_STAGE_OUT + 4);
+  const steps = new Int16Array(n * n).fill(-1);
+  const queue = new Int32Array(n * n);
+  let head = 0;
+  let tail = 0;
+  for (const f of mine) {
+    for (let y = f.y; y < f.y + f.size; y++) {
+      for (let x = f.x; x < f.x + f.size; x++) {
+        if (x < 0 || y < 0 || x >= n || y >= n || steps[y * n + x] >= 0) continue;
+        steps[y * n + x] = 0;
+        queue[tail++] = y * n + x;
+      }
+    }
+  }
+  let best: { x: number; y: number } | null = null;
+  let bestD = 0;
+  let bestKey = 0;
+  while (head < tail) {
+    const i = queue[head++];
+    const d = steps[i];
+    if (d >= far) continue;
+    const x = i % n;
+    const y = (i - x) / n;
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        const xx = x + ox;
+        const yy = y + oy;
+        if (xx < 1 || yy < 1 || xx >= n - 1 || yy >= n - 1) continue;
+        const j = yy * n + xx;
+        if (steps[j] >= 0 || blocked(j)) continue;
+        steps[j] = d + 1;
+        queue[tail++] = j;
+        if (!known(j) || forts.some((o) => fortDist2(o, xx, yy) <= (o.hits + 2) * (o.hits + 2))) continue;
+        if (!mine.some((f) => fortDist2(f, xx, yy) <= (f.hits + FORT_STAGE_OUT) * (f.hits + FORT_STAGE_OUT))) continue;
+        const dd = (xx - from.x) * (xx - from.x) + (yy - from.y) * (yy - from.y);
+        const key = rank(xx, yy);
+        if (best === null || dd < bestD || (dd === bestD && key < bestKey)) {
+          best = { x: xx, y: yy };
+          bestD = dd;
+          bestKey = key;
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * D-081 / A4 (fortStage), one think: the group of forts it gathers for (`stop`, reset when the mode changed or the group
+ * is gone), or the first it can take on the straight way from `at` to `aim`; then where the army goes: the gathering
+ * point until STAGE_SHARE of `army` stand within STAGE_NEAR of it (or STAGE_WAIT after the first, or STAGE_MAX), then the
+ * group's fort it was pulling down or the nearest. Nothing: on as before.
+ */
+function fortStopNext(
+  stop: FortStop | null,
+  mode: string,
+  tick: number,
+  groups: readonly FortGroup[],
+  forts: readonly Fort[],
+  canTake: (g: FortGroup) => boolean,
+  army: readonly { x: number; y: number }[],
+  at: { x: number; y: number },
+  aim: { x: number; y: number } | undefined,
+  view: { placement: Uint8Array },
+  map: { size: number; mode?: string },
+  rank: (x: number, y: number) => number,
+  razing: number,
+): { stop: FortStop | null; gather?: { x: number; y: number }; raze?: Fort } {
+  let s = stop;
+  if (s !== null && (s.mode !== mode || !groups.some((g) => g.ids.some((id) => s!.ids.includes(id))))) s = null;
+  if (s === null && aim !== undefined && army.length > 0) {
+    const next = groupsOnWay(groups.filter(canTake), at, aim)[0];
+    const p = next === undefined ? null : fortStagePoint(view, map, forts, next, at, rank);
+    if (next !== undefined && p !== null) s = { ids: [...next.ids], x: p.x, y: p.y, from: tick, first: -1, go: false, mode };
+  }
+  if (s === null) return { stop: null };
+  if (!s.go) {
+    const point = s;
+    const by = army.filter((u) => (u.x - point.x) * (u.x - point.x) + (u.y - point.y) * (u.y - point.y) <= STAGE_NEAR * STAGE_NEAR).length;
+    if (by > 0 && s.first < 0) s.first = tick;
+    if (by * 100 >= STAGE_SHARE * army.length || (s.first >= 0 && tick - s.first >= STAGE_WAIT) || tick - s.from >= STAGE_MAX) s.go = true;
+    else return { stop: s, gather: { x: s.x, y: s.y } };
+  }
+  const ids = s.ids;
+  const mine = forts.filter((f) => ids.includes(f.id));
+  let f = mine.find((x) => x.id === razing);
+  if (f === undefined) {
+    let bestD = 0;
+    let bestKey = 0;
+    for (const o of mine) {
+      const d = fortDist2(o, at.x, at.y);
+      const key = rank(o.x, o.y);
+      if (f === undefined || d < bestD || (d === bestD && key < bestKey)) {
+        f = o;
+        bestD = d;
+        bestKey = key;
+      }
+    }
+  }
+  return f === undefined ? { stop: null } : { stop: s, raze: f };
+}
+
 export function fortDist2(f: Fort, x: number, y: number): number {
   const dx = Math.max(f.x - x, 0, x - (f.x + f.size - 1));
   const dy = Math.max(f.y - y, 0, y - (f.y + f.size - 1));
@@ -525,12 +670,12 @@ interface Failed {
  * The army (worth against forts) that broke off from `f` or from forts whose arrows or guards reach it,
  * within FORT_FORGET (D-081); 0 for none.
  */
-function failedNear(f: Fort, forts: readonly Fort[], failedAt: ReadonlyMap<number, Failed>, tick: number): number {
+function failedNear(f: Fort, forts: readonly Fort[], failedAt: ReadonlyMap<number, Failed>, tick: number, forget = FORT_FORGET): number {
   const c = fortCentre(f);
   let failed = 0;
   for (const o of forts) {
     const m = failedAt.get(o.id);
-    if (m === undefined || tick - m.tick >= FORT_FORGET) continue;
+    if (m === undefined || tick - m.tick >= forget) continue;
     if (o.id === f.id || fortDist2(o, c.x, c.y) <= (o.hits + FORT_WAY) * (o.hits + FORT_WAY)) failed = Math.max(failed, m.worth);
   }
   return failed;
@@ -673,6 +818,191 @@ function fortsAtTown(groups: readonly FortGroup[], x: number, y: number, radius:
   let w = 0;
   for (const g of groups) if ((g.x - x) * (g.x - x) + (g.y - y) * (g.y - y) <= (g.radius + radius) * (g.radius + radius)) w += g.worth;
   return w;
+}
+
+// --- castle gates (D-096) ------------------------------------------------------------------------------------------
+//
+// The user (2026-10-21): gates that close and can be broken, walls the owner's ranged units stand on, and a governed
+// town's gates that shoot. The simulation already breaks the gate nearest a soldier whose goal is behind it (ranged
+// units and mages at 1/5); these are what both AIs do on top (ceo 2026-10-22: on, the gates are a rule).
+
+/**
+ * D-096. focus: at a town with gates closed to it, the melee go for the gate nearest the army together, ranged units
+ * and mages for those on its walls first (else the gate too); walls: ranged units and mages in a town it is plundering
+ * go up its walls while enemy soldiers are by it; arrows: a governed enemy town's gate arrows count in what it takes;
+ * retreat, the break-off at a gate (ceo 2026-10-22, measured): "" as before, "a" not for its losses while the gate
+ * falls (GATE_FALL_SHARE of its hp in GATE_FALL), "b" not off to a town where the slings and gate arrows would take
+ * more than GATE_LOSS of its army's hp while it breaks in, "ab" both. calm: focus only with no enemy soldiers within
+ * GATE_FIGHT cells of the army; with them, in as before (a move fights what it meets; an attack on the gate kept
+ * hitting it: hard against normal on the fixed map won 98% of the decided games without the gate play, 65% and 54%
+ * with it, scratch run 39665798433). focus is off (scratch run 39696604780: with it, calm or not, hard against normal
+ * on the fixed map 41–59% of the decided games, off 98%, and the first town 2 minutes later: once a gate fell it went
+ * for the next one standing, round the walls); one gate down, in by it (gateDone) is measured with it.
+ */
+/**
+ * D-096 (scratch, off by default): normal on random maps, where #266 with ai/d096 drew 48% of normal against normal
+ * (main 38%; the armies went from town to town, lost, took again, and marched on the enemy base only in the last 8
+ * minutes): baseLess fewer for the march on the enemy base on random maps; walledTowns: an enemy-held town with its gates
+ * up only with the army for the base; townRest: minutes it leaves a town alone after breaking off from it.
+ */
+export const NORMAL_TUNE = { baseLess: 0, walledTowns: false, townRest: 0 };
+
+export const GATE_AI = { focus: false, calm: true, walls: true, arrows: true, retreat: "" };
+/** The army goes for the gate within this many cells of a town's walls (its radius + this). */
+const GATE_NEAR = 10;
+const GATE_FIGHT = 12;
+const GATE_FALL = 400;
+const GATE_FALL_SHARE = 10;
+const GATE_LOSS = 25;
+
+/** A castle gate in the view (in sight or remembered; a broken one is gone). */
+export interface Gate {
+  id: number;
+  owner: number;
+  x: number;
+  y: number;
+  hp: number;
+}
+
+/** D-096: the gates of town `t` standing in the view, by their openings (rules.towns[size].castle.gates); [] without gates. */
+export function townGates(view: PlayerView, rules: Rules, t: { x: number; y: number; size: number }): Gate[] {
+  const openings = rules.towns?.[t.size]?.castle?.gates;
+  if (rules.features?.gates !== true || openings === undefined) return [];
+  const out: Gate[] = [];
+  for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+    if (view.buildings[r + BuildingField.type] !== BuildingType.Gate) continue;
+    const x = view.buildings[r + BuildingField.cellX];
+    const y = view.buildings[r + BuildingField.cellY];
+    if (!openings.some((o) => o.length > 0 && t.x + o[0][0] === x && t.y + o[0][1] === y)) continue;
+    out.push({ id: view.buildings[r + BuildingField.id], owner: view.buildings[r + BuildingField.owner], x, y, hp: view.buildings[r + BuildingField.hp] });
+  }
+  return out;
+}
+
+/** D-096: units in sight on town `t`'s walls that are not `player`'s (militia too). */
+export function onWalls(view: PlayerView, player: number, rules: Rules, t: { x: number; y: number; size: number }): { id: number; x: number; y: number }[] {
+  // The walls are a square round the town (its radius out, a cell more for the big city's).
+  const reach = (rules.towns?.[t.size]?.radius ?? 5) + 1;
+  const out: { id: number; x: number; y: number }[] = [];
+  for (let r = 0; r < view.units.length; r += UNIT_STRIDE) {
+    if (view.units[r + UnitField.owner] === player || view.units[r + UnitField.action] !== Action.OnWall) continue;
+    const x = view.units[r + UnitField.x] >> CELL_SHIFT;
+    const y = view.units[r + UnitField.y] >> CELL_SHIFT;
+    if (Math.abs(x - t.x) > reach || Math.abs(y - t.y) > reach) continue;
+    out.push({ id: view.units[r + UnitField.id], x, y });
+  }
+  return out;
+}
+
+/**
+ * D-096 (GATE_AI.focus): the orders for `army` (centre `at`) by town `t` while gates closed to `player` stand: the melee
+ * on the gate nearest it, ranged units and mages on those on the walls nearest that gate, a third of them on each (else
+ * on the gate); null when it is not by the town or no gate is closed to it (in as before).
+ */
+export function gateOrders(
+  view: PlayerView,
+  rules: Rules,
+  player: number,
+  t: { x: number; y: number; size: number; state: number },
+  army: readonly { id: number; type: number }[],
+  at: { x: number; y: number },
+  rank: (x: number, y: number) => number,
+): { gate: Gate; orders: CommandBody[] } | null {
+  if (!GATE_AI.focus || t.state === TownState.Ruins || army.length === 0) return null;
+  const r0 = (rules.towns?.[t.size]?.radius ?? 5) + GATE_NEAR;
+  if ((at.x - t.x) * (at.x - t.x) + (at.y - t.y) * (at.y - t.y) > r0 * r0) return null;
+  let gate: Gate | undefined;
+  let bestD = 0;
+  for (const g of townGates(view, rules, t)) {
+    if (g.owner === player) continue;
+    const d = (g.x - at.x) * (g.x - at.x) + (g.y - at.y) * (g.y - at.y);
+    if (gate === undefined || d < bestD || (d === bestD && rank(g.x, g.y) < rank(gate.x, gate.y))) {
+      gate = g;
+      bestD = d;
+    }
+  }
+  if (gate === undefined) return null;
+  const g = gate;
+  const melee = army.filter((u) => u.type === UnitType.Spearman || u.type === UnitType.Cavalry).map((u) => u.id);
+  const shooters = army.filter((u) => u.type === UnitType.Ranged || u.type === UnitType.Mage).map((u) => u.id);
+  const dg = (w: { x: number; y: number }) => (w.x - g.x) * (w.x - g.x) + (w.y - g.y) * (w.y - g.y);
+  const walls = onWalls(view, player, rules, t).sort((a, b) => dg(a) - dg(b) || a.id - b.id);
+  const orders: CommandBody[] = [];
+  if (melee.length > 0) orders.push({ c: "attack", u: melee, target: g.id });
+  if (shooters.length > 0 && walls.length === 0) orders.push({ c: "attack", u: shooters, target: g.id });
+  else if (shooters.length > 0) {
+    const k = Math.min(walls.length, Math.max(1, Math.ceil(shooters.length / 3)));
+    for (let i = 0; i < k; i++) orders.push({ c: "attack", u: shooters.filter((_, j) => j % k === i), target: walls[i].id });
+  }
+  return { gate: g, orders };
+}
+
+/**
+ * D-096 (GATE_AI.retreat "b"): what the slings on town `t`'s walls and its gate arrows would take of `army`'s hp
+ * (percent) while its melee (and ranged units, at 1/5) break the weakest gate closed to `player`, its ranged units and
+ * mages shooting the slingers meanwhile; 0 with no gate closed to it.
+ */
+export function gateLoss(view: PlayerView, rules: Rules, player: number, t: { x: number; y: number; size: number; state: number; owner: number }, army: readonly { type: number }[]): number {
+  const tr = rules.towns?.[t.size];
+  if (rules.features?.gates !== true || tr === undefined || t.state === TownState.Ruins || (t.owner === player && t.state !== TownState.Neutral)) return 0;
+  const known = townGates(view, rules, t).filter((g) => g.owner !== player);
+  const hp = known.length > 0 ? Math.min(...known.map((g) => g.hp)) : (tr.gateHp ?? 0);
+  if (hp <= 0) return 0;
+  const num = rules.gate?.rangedNum ?? 1;
+  const den = rules.gate?.rangedDen ?? 5;
+  const takenNum = rules.walls?.takenNum ?? 3;
+  const takenDen = rules.walls?.takenDen ?? 4;
+  let melee = 0;
+  let onGate = 0;
+  let onWall = 0;
+  let armyHp = 0;
+  for (const u of army) {
+    const s = rules.units[u.type];
+    if (s === undefined) continue;
+    armyHp += s.hp + (s.shield ?? 0);
+    if (u.type === UnitType.Spearman || u.type === UnitType.Cavalry) melee += s.attack / s.cooldown;
+    else if (u.type === UnitType.Ranged || u.type === UnitType.Mage) {
+      onGate += Math.max(1, Math.trunc((s.attack * num) / den)) / s.cooldown;
+      onWall += (s.attack * takenNum) / takenDen / s.cooldown;
+    }
+  }
+  if (melee + onGate <= 0) return 100;
+  const ticks = hp / (melee + onGate);
+  const m = rules.units[UnitType.Militia];
+  const seen = onWalls(view, player, rules, t).length;
+  const slingers = t.state === TownState.Neutral && seen === 0 ? tr.militia >> 1 : seen;
+  let damage = 0;
+  if (slingers > 0 && m !== undefined) {
+    const each = m.attack / m.cooldown;
+    const down = onWall > 0 ? (slingers * m.hp) / onWall : ticks;
+    damage += down < ticks ? (slingers * each * down) / 2 : slingers * each * ticks;
+  }
+  const arrows = rules.arrows?.gate;
+  // Two gates' arrows on the army at one gate, one arrow each (their extra arrows count in gateArrowWorth).
+  if (arrows !== undefined && t.state === TownState.Governed && t.owner !== player) damage += ((2 * arrows.damage) / arrows.cooldown) * ticks;
+  return Math.round((damage * 100) / Math.max(1, armyHp));
+}
+
+/**
+ * D-096 (GATE_AI.arrows): what town `t`'s standing gates are worth as forts (fortValues' measure) while it is a
+ * governed enemy town: each shoots, and 1 more arrow for every perSoldiers of `guards` (its soldiers in sight by it).
+ */
+export function gateArrowWorth(view: PlayerView, rules: Rules, player: number, t: { x: number; y: number; size: number; state: number; owner: number }, guards: number): number {
+  const a = rules.arrows?.gate;
+  if (a === undefined || t.state !== TownState.Governed || t.owner === player) return 0;
+  const spear = rules.units[UnitType.Spearman];
+  const base = (spear.attack / spear.cooldown) * spear.hp;
+  const shots = 1 + Math.min(a.extraMax ?? 0, Math.trunc(guards / Math.max(1, a.perSoldiers ?? 3)));
+  let worth = 0;
+  for (const g of townGates(view, rules, t)) if (g.owner !== player) worth += Math.round(10 * Math.sqrt(((a.damage / a.cooldown) * shots * g.hp) / base));
+  return worth;
+}
+
+/** D-096 (GATE_AI.retreat "a"): the gate's hp seen (`seen`, pruned to GATE_FALL); whether it lost GATE_FALL_SHARE of `full` since. */
+function gateFalling(seen: { tick: number; hp: number }[], tick: number, hp: number, full: number): boolean {
+  while (seen.length > 0 && tick - seen[0].tick > GATE_FALL) seen.shift();
+  seen.push({ tick, hp });
+  return full > 0 && (seen[0].hp - hp) * 100 >= full * GATE_FALL_SHARE;
 }
 
 /** Falling back round forts (aroundForts): points this many cells beyond their reach, and half as far again, and twice... */
@@ -1074,6 +1404,21 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let lastHomeThreat = -100000;
   /** The enemy fort (D-080) the army is pulling down, and when it may try again after breaking off. */
   let razing = -1;
+  /** D-081 / A4 (NORMAL_FORT.again, NORMAL_FORT.stage): what it takes after breaking off from forts and how long it remembers; the forts it gathers for. */
+  const fortFailed = NORMAL_FORT.again ? FORT_FAILED_AGAIN : FORT_FAILED;
+  const fortForget = NORMAL_FORT.again ? FORT_FORGET_AGAIN : FORT_FORGET;
+  const fortStage = NORMAL_FORT.stage;
+  let fortStop: FortStop | null = null;
+  /** D-096: the gate it goes for (-1: none), when it last told the army so, that gate's hp as seen (GATE_AI.retreat "a"), when it last sent soldiers up a wall. */
+  let gateAim = -1;
+  let gateMove = -100000;
+  let gateFell = false;
+  const gateSeen: { tick: number; hp: number }[] = [];
+  let wallMove = -100000;
+  /** D-096: the town whose gate it broke (in by it: no more gates there), -1 none. */
+  let gateDone = -1;
+  /** D-096 (NORMAL_TUNE.townRest): towns it left alone until a tick. */
+  const townRestN = new Map<number, number>();
   let razeAgain = -100000;
   /** While the army is away: the soldiers trained since, at home, pulling down a fort on its ground. */
   let reservesRazing = -1;
@@ -1476,7 +1821,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         // Farmers going take the soldiers at home along to the end: not where the army broke off, as its own goes (D-081, ceo 2026-10-10).
         // Those that would go: not the towns' garrisons (seed 9 of the fortress-hold runs: counted in, the farmers went with 14).
         const vs = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
-        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
+        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick, fortForget) * fortFailed);
       }
 
       // --- defence, towns and attack --------------------------------------------------------------
@@ -1560,12 +1905,32 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const w = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
         return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5) * 10 + enemy * 13;
       };
+      /**
+       * D-096 (GATE_AI.walls): with enemy soldiers by town `id` it holds, its ranged units and mages there go up the walls
+       * (told again every 100 ticks); those on its walls, or going up, are left out of the army's orders this think.
+       */
+      const wallUp = (id: number, t: Town) => {
+        if (!GATE_AI.walls || rules.features?.walls !== true) return;
+        const r = rules.towns?.[t.size]?.radius ?? 5;
+        const threat = foes.some((e) => dist2(e.x, e.y, t.x, t.y) <= (r + GATE_NEAR) * (r + GATE_NEAR));
+        const up = threat ? army.filter((u) => (u.type === UnitType.Ranged || u.type === UnitType.Mage) && u.order !== Order.Wall && dist2(u.x, u.y, t.x, t.y) <= (r + 3) * (r + 3)).map((u) => u.id) : [];
+        if (up.length > 0 && tick - wallMove >= 100) {
+          out.push({ c: "wall", u: up, town: id });
+          wallMove = tick;
+        }
+        const away = new Set([...up, ...army.filter((u) => u.order === Order.Wall && u.orderTarget === id).map((u) => u.id)]);
+        if (away.size === 0) return;
+        const keep = armyIds.filter((x) => !away.has(x));
+        armyIds.length = 0;
+        armyIds.push(...keep);
+      };
       const busy = [...towns.entries()].find(
         ([id, t]) => t.owner === player && (t.state === TownState.Plundering || t.state === TownState.AwaitingChoice) && !stuck(id, t) && holdsOut(id, t),
       );
       if (busy !== undefined && !endgame) {
         // Stay inside until the plunder is done (not in the endgame: everything goes for the
-        // enemy main city then).
+        // enemy main city then). D-096 (GATE_AI.walls): enemy soldiers by it, its ranged units and mages up on the walls.
+        wallUp(busy[0], busy[1]);
         send(busy[1].x, busy[1].y, "town");
         return out;
       }
@@ -1575,7 +1940,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const assault = toGo >= 0 && toGo <= ASSAULT_TO_GO;
       const latest = toGo >= 0 && toGo <= LATEST_TO_GO;
       const lateMinutes = toGo >= 0 && toGo <= LATE_TO_GO ? Math.trunc((tick - (know.maxTicks - LATE_TO_GO)) / TICKS_PER_MINUTE) + 1 : 0;
-      const baseNeed = lateMinutes === 0 ? baseArmy : Math.max(townArmy, baseArmy - lateMinutes * 3);
+      // D-096 (NORMAL_TUNE.baseLess): fewer on random maps.
+      const baseFull = know.map.mode === "random" && NORMAL_TUNE.baseLess > 0 ? Math.max(townArmy, baseArmy - NORMAL_TUNE.baseLess) : baseArmy;
+      const baseNeed = lateMinutes === 0 ? baseFull : Math.max(townArmy, baseFull - lateMinutes * 3);
       // Without a limit it also marches once it cannot grow (population at the ceiling).
       const popFull = toGo < 0 && cap >= ceiling && pop >= cap - FULL_MARGIN;
       // The difficulty's earliest first town and first march on the enemy base.
@@ -1642,11 +2009,11 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         let failed = 0;
         for (const id of g.ids) {
           const f = failedAt.get(id);
-          if (f !== undefined && tick - f.tick < FORT_FORGET) failed = Math.max(failed, f.worth);
+          if (f !== undefined && tick - f.tick < fortForget) failed = Math.max(failed, f.worth);
         }
         // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
         // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
-        return w * 10 >= g.worth * 10 + armyBy(g) * 13 && w * 100 >= failed * FORT_FAILED;
+        return w * 10 >= g.worth * 10 + armyBy(g) * 13 && w * 100 >= failed * fortFailed;
       };
       const tooStrong = (list: { type: number }[]) => groups.filter((g) => !bySiege(g) && !beats(g, list));
       const routeFor = (from: { x: number; y: number }, to: { x: number; y: number }, list: { type: number }[]) => ({ go: groupsOnWay(tooStrong(list), from, to).length === 0 });
@@ -1669,7 +2036,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         let failed = 0;
         for (const id of [f.id, ...covering(c.x, c.y, f).flatMap((g) => g.ids)]) {
           const m = failedAt.get(id);
-          if (m !== undefined && tick - m.tick < FORT_FORGET) failed = Math.max(failed, m.worth);
+          if (m !== undefined && tick - m.tick < fortForget) failed = Math.max(failed, m.worth);
         }
         return failed;
       };
@@ -1682,7 +2049,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const g = groupOf(f);
         const army = 10 * foes.filter((e) => e.order !== Order.Post && dist2(e.x, e.y, c.x, c.y) <= FORT_GUARDS * FORT_GUARDS).length;
         const w = vsForts(list);
-        return w * 10 >= (g === undefined ? 0 : g.worth) * 10 + army * 13 && w * 100 >= failedBy(f) * FORT_FAILED;
+        return w * 10 >= (g === undefined ? 0 : g.worth) * 10 + army * 13 && w * 100 >= failedBy(f) * fortFailed;
       };
       /** Fell back from town `id` because of forts, and they are still too strong for the army (with FORT_FAILED within FORT_FORGET). */
       const fortsBar = (id: number) => {
@@ -1694,6 +2061,33 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const v = aroundForts([...cause, ...tooStrong(army)], { x: cx, y: cy }, rally, know.map.size);
         via = v === undefined ? null : { x: v.x, y: v.y, until: tick + VIA_TICKS };
         out.push({ c: "retreat", u: armyIds, x: v?.x ?? rally.x, y: v?.y ?? rally.y });
+      };
+      /** D-096 (GATE_AI.focus): at town `t` with gates closed to it, the army on the gate (orders again every FORT_EVERY); false: none (in as before). */
+      const gateFocus = (t: Town) => {
+        // The gate it went for gone (broken): in by it, not on to the next.
+        if (gateAim >= 0 && !townGates(view, rules, t).some((g) => g.id === gateAim)) gateDone = targetTown;
+        const calm = (!GATE_AI.calm || foesNear(cx, cy, GATE_FIGHT) === 0) && gateDone !== targetTown;
+        const go = !calm
+          ? null
+          : gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), { x: cx, y: cy }, (x, y) => {
+              const f = frame(x, y);
+              return f.v * n + f.u;
+            });
+        if (go === null) {
+          // The gate down: in, now.
+          if (gateAim >= 0) lastMove = -100000;
+          gateAim = -1;
+          gateSeen.length = 0;
+          return false;
+        }
+        if (go.gate.id !== gateAim) gateSeen.length = 0;
+        gateFell = gateFalling(gateSeen, tick, go.gate.hp, rules.towns?.[t.size]?.gateHp ?? 0);
+        if (go.gate.id !== gateAim || tick - gateMove >= FORT_EVERY) {
+          out.push(...go.orders);
+          gateMove = tick;
+        }
+        gateAim = go.gate.id;
+        return true;
       };
       if (mode === "raze" || ((mode === "gather" || mode === "defend") && !endgame && forts.length > 0)) {
         // With farmers going for a fort, the soldiers at home go with them, however few, to the end.
@@ -1742,14 +2136,21 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       if (mode === "town" || mode === "base") {
         // Forts by the army too strong for it (D-081; not the siege's): it breaks off as when outnumbered.
         const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, cx, cy) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army));
-        if (!endgame && !(mode === "base" && cityLow) && (standing * 5 < armyAtStart * 2 || outnumbered || byArmy.length > 0)) {
+        // D-096 (GATE_AI.retreat "a"): not for its losses while the gate it is breaking falls.
+        const gateHolds = mode === "town" && GATE_AI.retreat.includes("a") && gateAim >= 0 && gateFell;
+        if (!endgame && !(mode === "base" && cityLow) && ((standing * 5 < armyAtStart * 2 && !gateHolds) || outnumbered || byArmy.length > 0)) {
+          gateAim = -1;
           // Ground down or outnumbered: break off (retreat ignores enemies) and rebuild.
           if (mode === "base") {
             baseBroken = true;
             cityFailed = armyAtStart;
           }
-          remember(army, byArmy);
+          // D-081 / A4 (NORMAL_FORT.stage): broke off from the forts it gathered for: remembered too.
+          const stopped = fortStop;
+          remember(army, stopped !== null && stopped.go ? [...byArmy, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byArmy);
+          fortStop = null;
           if (mode === "town" && byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
+          if (mode === "town" && NORMAL_TUNE.townRest > 0) townRestN.set(targetTown, tick + NORMAL_TUNE.townRest * TICKS_PER_MINUTE);
           fallBackPast(byArmy);
           lastMove = tick;
           mode = "gather";
@@ -1807,6 +2208,22 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
             return out;
           }
         }
+        // D-081 / A4 (NORMAL_FORT.stage): forts on the way it can take: it gathers outside their reach first, then pulls them down together.
+        if (fortStage && !endgame) {
+          const next = fortStopNext(fortStop, mode, tick, groups, forts, (g) => !bySiege(g) && beats(g, army), army.filter((u) => armyIds.includes(u.id)), { x: cx, y: cy }, aim, view, know.map, (x, y) => {
+            const f = frame(x, y);
+            return f.v * n + f.u;
+          }, razing);
+          fortStop = next.stop;
+          if (next.gather !== undefined) {
+            send(next.gather.x, next.gather.y, mode);
+            return out;
+          }
+          if (next.raze !== undefined) {
+            razeOrders(next.raze);
+            return out;
+          }
+        }
         const way = armyIds.length > 0 ? fortsOnTheWay(forts, cx, cy, enemyHome).filter((o) => {
           const g = groupOf(o);
           return g === undefined || beats(g, army);
@@ -1823,7 +2240,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // parked whole armies in the middle of the map until the game ran out.
           const t = towns.get(targetTown);
           if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "gather";
-          else send(t.x, t.y, "town");
+          else if (!gateFocus(t)) send(t.x, t.y, "town");
         } else {
           // March together (a group move keeps to the slowest and in formation) until those that
           // set out stand by the enemy main city; then fight the defenders there first (a move
@@ -1877,6 +2294,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         }
       }
       if (mode === "gather" || mode === "defend") {
+        const townRank = (t: Town) => {
+          const f = frame(t.x, t.y);
+          return f.v * n + f.u;
+        };
         // Towns to take: not ours, not ruins, and not one we plundered in the last 6 minutes.
         const open = [...towns.entries()]
           .filter(([, t]) => !(t.owner === player && t.state !== TownState.Neutral) && t.state !== TownState.Ruins)
@@ -1888,7 +2309,15 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // Nor back to one it fell back from because of forts, while it remembers them (ceo 2026-10-10: the straight way
           // from home can miss forts the walk passes by).
           .filter(([id]) => !fortsBar(id))
-          .sort(([a, ta], [b, tb]) => ta.size - tb.size || a - b);
+          // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
+          .filter(([, t]) => !GATE_AI.arrows || vsForts(army) * 10 >= gateArrowWorth(view, rules, player, t, foes.filter((e) => dist2(e.x, e.y, t.x, t.y) <= 100).length) * 13)
+          .filter(([, t]) => !GATE_AI.retreat.includes("b") || gateLoss(view, rules, player, t, army) <= GATE_LOSS)
+          // D-096 (NORMAL_TUNE.walledTowns): an enemy-held town with its gates up, only with the army for the base; (townRest) not one it fell back from lately.
+          .filter(([, t]) => !NORMAL_TUNE.walledTowns || t.owner !== 1 - player || army.length >= baseNeed || !townGates(view, rules, t).some((g) => g.owner !== player))
+          .filter(([id]) => tick >= (townRestN.get(id) ?? 0))
+          // Small first, then the nearest to its main city, ties the mirror-image way (war-game-core 2026-10-22: by town id,
+          // on random maps both went first for the same town by player 0, 48 games of #266's 100 normal against normal).
+          .sort(([, ta], [, tb]) => ta.size - tb.size || dist2(ta.x, ta.y, home.cellX, home.cellY) - dist2(tb.x, tb.y, home.cellX, home.cellY) || townRank(ta) - townRank(tb));
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
         // D-089 (SIEGE.failed): not again with fewer than broke off last time, but in the last 4 minutes.
@@ -1918,8 +2347,10 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           staged = stage === null;
           send(stage?.x ?? enemyHome.cellX, stage?.y ?? enemyHome.cellY, "base");
         } else if (!assault && townTime && army.length >= townArmy && open.length > 0 && strongEnough) {
-          const pick = army.length >= 24 || open.length === 1 ? open[open.length - 1] : open[0];
+          // 24 or more: the nearest of the biggest.
+          const pick = army.length >= 24 ? open.find(([, t]) => t.size === open[open.length - 1][1].size)! : open[0];
           targetTown = pick[0];
+          gateDone = -1;
           armyAtStart = army.length;
           marchWorth = vsForts(army);
           marched.clear();
@@ -2083,6 +2514,82 @@ export interface HardPlan {
    */
   netMarch: number;
   netFarmers: number;
+  /**
+   * D-086 A4 (the user 2026-10-20: 「ai困難都不會用騎兵跟防禦建築」): cavalry beats mages x2 (D-061). Once ranged
+   * units and mages are cavalryWhen percent or more of the enemy soldiers it knows of (CAVALRY_SEEN or more), it
+   * puts up a stable and trains cavalry up to cavalryCounter percent of its soldiers (0: never, as before).
+   */
+  cavalryCounter: number;
+  cavalryWhen: number;
+  /**
+   * D-086 A4: its cavalry (CHARGE_MIN or more) charge the enemy ranged units and mages in sight CHARGE_NEAR cells
+   * from them, the nearest first, when no more enemy spearmen than cavalry are by the target and it is out of
+   * enemy forts' reach; back to the army when enemy spearmen by them outnumber them, they come into a fort's
+   * reach, half of them are gone, or no such target is left. A charge given up (spearmen, forts, half gone)
+   * leaves that spot alone chargeRest minutes (false: as before).
+   */
+  charge: boolean;
+  chargeRest: number;
+  /**
+   * D-086 A4: arrow towers by its main city (this many), and by each town it governs (townTowers), toward where
+   * the last wave came from (else the enemy's main city, else the map's middle); only with its farmers at their
+   * target, wood and gold enough for one and towerSpare more of each besides, no enemy soldier in sight by the
+   * spot, and not by the doors of its main city or production buildings (0: none, as before).
+   */
+  towers: number;
+  townTowers: number;
+  towerSpare: number;
+  /**
+   * D-086 A4: within TOWER_FIRST ticks of a wave by its main city, a tower comes right after houses and it saves up
+   * for it (this takes from the soldiers' money: measured apart; false: only with money left over, as above).
+   */
+  towerFirst: boolean;
+  /**
+   * D-086 A4 (the user's 75830947: 21-30 cavalry in minutes 22-26; cf56e34c: 16 by minute 16): the mix also answers
+   * enemy cavalry: cavalryMix percent or more of the enemy soldiers it knows of moves it counterMix points toward
+   * spearmen (spearmen hit cavalry x3) (false: cavalry not counted, as before).
+   */
+  counterCavalry: boolean;
+  /** D-097 (scratch run 39718915278: the scripted push with 18% cavalry never moved it): the share (percent) of enemy cavalry for counterCavalry (30, as before). */
+  cavalryMix: number;
+  /** D-097 (the same run: 20% cavalry won 50-24 on random maps, lost 39-43 on the fixed one): cavalryCounter on random maps only (false: on both). */
+  cavalryRandomOnly: boolean;
+  /**
+   * D-096 (the user's 6a024b3c: one lumber camp all game, its trees 6 cells off at minute 3 and 17-38 from minute 36, wood
+   * 0-45 while 25-29 farmers cut): no tree left within LUMBER_NEAR cells of its lumber camps, another (LUMBER_MOST at
+   * most) by the nearest tree it knows of on its own side, with no enemy soldier in sight within BUILD_SAFE cells
+   * (false: as before).
+   */
+  lumberMove: boolean;
+  /**
+   * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
+   * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
+   * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
+   */
+  townScout: boolean;
+  /**
+   * D-086 A4 (a09c2367: two towns it plundered stayed ruins in its view, out of sight, though neutral again from minute
+   * 14): a town it last saw in ruins, out of sight now and past the time it read off the ruins, is worth going to see
+   * again (false: as before).
+   */
+  ruinsAgain: boolean;
+  /**
+   * D-086 A4 (a09c2367: one mine all game, the gold by it gone at minute 31, none gathered after 36): no gold left within
+   * MINE_NEAR cells of its mines, another mine by the nearest gold it knows of on its own side: nearer its main city
+   * than the enemy's, within MINE_FAR cells of it or MINE_TOWN of a town it governs, no enemy soldier in sight within
+   * BUILD_SAFE cells (false: as before).
+   */
+  mineMove: boolean;
+  /**
+   * D-086 A4 (691b4349: a barracks put down three times where the enemy army stood, paid for each): no new building, nor
+   * farmers to a site, with enemy soldiers in sight within BUILD_SAFE cells of it; and a site of its own gone before it
+   * was done (or one it put down last think not there), nothing within SITE_NEAR cells of it for SITE_REST (false: as before).
+   */
+  buildSafe: boolean;
+  /** D-081 / A4 (ceo 2026-10-21): forts on the way it can take: it gathers outside their reach first (fortStagePoint), then pulls them down together (false: as before). */
+  fortStage: boolean;
+  /** D-081 / A4: after breaking off from forts, the next go takes FORT_FAILED_AGAIN of that army, remembered FORT_FORGET_AGAIN (false: FORT_FAILED, FORT_FORGET). */
+  fortAgain: boolean;
 }
 
 export const HARD: HardPlan = {
@@ -2126,7 +2633,57 @@ export const HARD: HardPlan = {
   net: null,
   netMarch: 14,
   netFarmers: 12,
+  // D-097 (ceo 2026-10-22, docs/research/2026-10-ai-d096.md section 5): 20% cavalry on random maps, charging; spearmen
+  // against 15% enemy cavalry; another lumber camp by the trees.
+  cavalryCounter: 20,
+  cavalryWhen: 0,
+  charge: true,
+  chargeRest: 2,
+  towers: 0,
+  townTowers: 0,
+  towerSpare: 150,
+  towerFirst: false,
+  counterCavalry: true,
+  cavalryMix: 15,
+  cavalryRandomOnly: true,
+  lumberMove: true,
+  // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
+  townScout: true,
+  ruinsAgain: false,
+  mineMove: false,
+  buildSafe: true,
+  fortStage: true,
+  fortAgain: true,
 };
+/** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
+const TOWN_SCOUT_AGAIN = 2 * 1200;
+const TOWN_SCOUT_EVERY = 200;
+/** D-086 A4 (plan.mineMove): gold this near (cells) a mine is its own; at most this many mines. */
+const MINE_NEAR = 6;
+const MINE_MOST = 3;
+const MINE_FAR = 40;
+/** D-096 (plan.lumberMove): trees this near (cells) a lumber camp are its own; at most this many camps. */
+const LUMBER_NEAR = 8;
+const LUMBER_MOST = 3;
+const MINE_TOWN = 12;
+/** D-086 A4 (plan.buildSafe): a site lost before it was done, nothing this near (cells) for this long. */
+const SITE_NEAR = 8;
+const SITE_REST = 3 * 1200;
+/** D-086 A4 (plan.buildSafe): enemy soldiers this near (cells) a spot. */
+const BUILD_SAFE = 10;
+/** D-086 A4 (plan.cavalryCounter): enemy soldiers it must know of before it weighs their mix. */
+const CAVALRY_SEEN = 6;
+/** D-086 A4 (plan.charge): the least cavalry that charge, how far from them the targets may be, spearmen this near count as by them, and how often (ticks) it picks again. */
+const CHARGE_MIN = 3;
+const CHARGE_NEAR = 8;
+const CHARGE_SPEAR = 4;
+const CHARGE_MOVE = 40;
+/** D-086 A4 (plan.towers): how far (cells) from the main city toward the threat, how near an enemy may be to the spot, and the clear ring (cells) left by the doors of its main city and production buildings. */
+const TOWER_AT = 6;
+const TOWER_SAFE = 12;
+const TOWER_CLEAR = 2;
+/** D-086 A4 (plan.towerFirst): how long after a wave by its main city (3 minutes). */
+const TOWER_FIRST = 3 * 1200;
 /** D-086 A3 (plan.rescue, plan.hideFar): farmers this far (cells) from the main city are far; a spot is this near them. */
 const FAR_FARMER = 20;
 const FARMER_SPOT = 8;
@@ -2225,6 +2782,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const enemyHome = mem.enemy;
   const rules = know.rules;
   const real = (u: number, v: number) => fromCanon(know.frame, u, v);
+  /** D-086 A4 (plan.townScout): the points it looks at, in player 0's frame; the soldier, and when the next may go or it was last told. */
+  const townGrid = [1, 3, 5, 7].flatMap((v) => [1, 3, 5, 7].map((u) => real((know.map.size * u) >> 3, (know.map.size * v) >> 3)));
+  let townScoutId = -1;
+  let townScoutAgain = 0;
+  let townScoutMove = -100000;
+  /** D-086 A4 (plan.buildSafe): its sites not done yet at the last think, and those lost since, till when. */
+  const sitesSeen = new Map<number, { type: number; x: number; y: number }>();
+  const lostSites: { type: number; x: number; y: number; until: number }[] = [];
+  /** D-086 A4 (plan.buildSafe): what it put down last think (691b4349: a barracks razed before the next think). */
+  const ordered: { type: number; x: number; y: number }[] = [];
   const frame = (x: number, y: number) => toCanon(know.frame, x, y);
   /** Order of a point in player 0's frame (for ties: player 1 breaks them the mirror-image way). */
   const rank = (x: number, y: number) => {
@@ -2289,6 +2856,18 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let squadMove = -100000;
   /** The enemy fort (D-080) the army is pulling down, and when it may try again after breaking off. */
   let razing = -1;
+  /** D-081 / A4 (plan.fortAgain, plan.fortStage): what it takes after breaking off from forts and how long it remembers; the forts it gathers for. */
+  const fortFailed = plan.fortAgain ? FORT_FAILED_AGAIN : FORT_FAILED;
+  const fortForget = plan.fortAgain ? FORT_FORGET_AGAIN : FORT_FORGET;
+  let fortStop: FortStop | null = null;
+  /** D-096: the gate it goes for (-1: none), when it last told the army so, that gate's hp as seen (GATE_AI.retreat "a"), when it last sent soldiers up a wall. */
+  let gateAim = -1;
+  let gateMove = -100000;
+  let gateFell = false;
+  const gateSeen: { tick: number; hp: number }[] = [];
+  let wallMove = -100000;
+  /** D-096: the town whose gate it broke (in by it: no more gates there), -1 none. */
+  let gateDone = -1;
   let razeAgain = -100000;
   /** While the army is away: the soldiers left at home pulling down a fort on its ground, and that fort. */
   let reservesRazing = -1;
@@ -2328,10 +2907,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let peekUntil = 0;
   let peekAgain = 0;
   let known = { worth: 0, n: 0 };
-  const counted = { rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  /** plan.charge: the cavalry charging, where the charge began and how many set out, its target, when last told; spots left alone until a tick. plan.towers: where the last wave came from. */
+  const chargers = new Set<number>();
+  let chargeAt: { x: number; y: number; size: number; target: number } | null = null;
+  let chargeMove = -100000;
+  const chargeRestAt = new Map<number, number>();
+  let waveFrom: { x: number; y: number } | null = null;
+  const counted = { gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
-  function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number): { x: number; y: number } | null {
+  function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
     const info = rules.buildings[type];
     const size = info.size;
     const grid = { size: n, cells: view.placement };
@@ -2348,7 +2933,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             for (let xx = x - 1; xx <= x + size && ok; xx++) if ((view.placement[yy * n + xx] & PlaceBit.Blocked) !== 0) ok = false;
           }
         }
-        if (!ok) continue;
+        if (!ok || (fits !== undefined && !fits(x, y))) continue;
         const du = 2 * u + size - 2 * a.u;
         const dv = 2 * v + size - 2 * a.v;
         const d = du * du + dv * dv;
@@ -2503,7 +3088,35 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // Random maps (D-074): one soldier scouts (scout.ts) and is left out of everything else.
       const allSoldiers = mine.filter((u) => u.type !== UnitType.Farmer);
       scout.think(tick, allSoldiers, (u) => ![...townGuards.values()].some((ids) => ids.includes(u.id)), out);
-      const soldiers = scout.id < 0 ? allSoldiers : allSoldiers.filter((u) => u.id !== scout.id);
+      // D-086 A4 (plan.townScout): once the enemy's main city is known on a random map, one soldier goes on looking for towns.
+      if (plan.townScout && mem.random && mem.known === Known.City) {
+        if (townScoutId >= 0 && !allSoldiers.some((u) => u.id === townScoutId)) {
+          townScoutId = -1;
+          townScoutAgain = tick + TOWN_SCOUT_AGAIN;
+        }
+        const left = townGrid.filter((p) => (view.placement[p.y * n + p.x] & PlaceBit.Unexplored) !== 0);
+        if (left.length === 0) townScoutId = -1;
+        else {
+          if (townScoutId < 0 && tick >= townScoutAgain) {
+            const guards = new Set([...townGuards.values()].flat());
+            const kind = (u: HardUnit) => (u.type === UnitType.Cavalry ? 0 : u.type === UnitType.Spearman ? 1 : 2);
+            const pick = allSoldiers
+              .filter((u) => u.id !== scout.id && !guards.has(u.id) && u.type !== UnitType.Mage && u.order !== Order.Garrison)
+              .sort((a, b) => kind(a) - kind(b) || dist2(a.x, a.y, home.cellX, home.cellY) - dist2(b.x, b.y, home.cellX, home.cellY) || rank(a.fx, a.fy) - rank(b.fx, b.fy))[0];
+            if (pick !== undefined) {
+              townScoutId = pick.id;
+              townScoutMove = -100000;
+            }
+          }
+          const s = allSoldiers.find((u) => u.id === townScoutId);
+          if (s !== undefined && tick - townScoutMove >= TOWN_SCOUT_EVERY) {
+            const to = left.sort((a, b) => dist2(a.x, a.y, s.x, s.y) - dist2(b.x, b.y, s.x, s.y) || rank(a.x, a.y) - rank(b.x, b.y))[0];
+            out.push({ c: "retreat", u: [s.id], x: to.x, y: to.y });
+            townScoutMove = tick;
+          }
+        }
+      }
+      const soldiers = allSoldiers.filter((u) => u.id !== scout.id && u.id !== townScoutId);
       const byId = new Map<number, HardUnit>();
       for (const u of soldiers) byId.set(u.id, u);
       const has = (t: number) => own.some((b) => b.type === t);
@@ -2568,13 +3181,23 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       let enemyRanged = 0;
       let enemyMages = 0;
       let enemyWorth = 0;
+      let enemyCavalry = 0;
       for (const e of intel.values()) {
+        if (e.type === UnitType.Cavalry) enemyCavalry++;
         if (e.type === UnitType.Spearman) enemySpear++;
         else if (e.type === UnitType.Ranged) enemyRanged++;
         else if (e.type === UnitType.Mage) enemyMages++;
         enemyWorth += WORTH[e.type];
       }
       if (enemyMages > 0) lastEnemyMage = tick;
+      // D-086 A4 (plan.cavalryCounter): its enemy is mostly ranged units and mages.
+      const knownSoldiers = enemySpear + enemyRanged + enemyMages;
+      const cavalryWant =
+        plan.cavalryCounter > 0 &&
+        rules.features?.cavalry === true &&
+        (!plan.cavalryRandomOnly || mem.random) &&
+        knownSoldiers >= CAVALRY_SEEN &&
+        (enemyRanged + enemyMages) * 100 >= plan.cavalryWhen * knownSoldiers;
       if (foes.some((f) => f.order !== Order.Post)) lastFoeSeen = tick;
       // D-086 A3 (plan.foeGrow): once it has seen them, the enemy grows by what it trains itself.
       if (plan.foeMemory && plan.foeGrow) {
@@ -2757,8 +3380,62 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         return best;
       };
+      /** D-086 A4 (plan.towers): an enemy soldier in sight this near (cells) a spot. */
+      const foeBy = (x: number, y: number) => foes.some((f) => dist2(f.x, f.y, x, y) <= TOWER_SAFE * TOWER_SAFE);
+      /** D-086 A4 (plan.towers, plan.townTowers): where the next tower goes (null: none wanted, or no spot), toward the threat, clear of doors and of enemies. */
+      const towerSpotFor = (): { x: number; y: number } | null => {
+        if ((plan.towers <= 0 && plan.townTowers <= 0) || rules.features?.towers !== true || !has(BuildingType.Range)) return null;
+        const towersBy = (x: number, y: number, r: number) => own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, x, y) <= r * r).length;
+        // Not by the doors of its main city or production buildings: TOWER_CLEAR cells round their footprints stay open.
+        const doors = own.filter((b) => b.type === BuildingType.MainCity || b.type === BuildingType.Barracks || b.type === BuildingType.Range || b.type === BuildingType.Stable || b.type === BuildingType.MageHall);
+        const tsize = rules.buildings[BuildingType.ArrowTower].size;
+        const clear = (x: number, y: number) =>
+          doors.every((b) => {
+            const bs = rules.buildings[b.type].size;
+            return x + tsize + TOWER_CLEAR <= b.x || b.x + bs + TOWER_CLEAR <= x || y + tsize + TOWER_CLEAR <= b.y || b.y + bs + TOWER_CLEAR <= y;
+          });
+        const from = waveFrom ?? (mem.known !== Known.None ? { x: enemyHome.cellX, y: enemyHome.cellY } : real(mid, mid));
+        const toward = (x: number, y: number, k: number) => {
+          const dx = from.x - x;
+          const dy = from.y - y;
+          const d = Math.sqrt(dx * dx + dy * dy) || 1;
+          return { x: x + Math.trunc((dx * k) / d), y: y + Math.trunc((dy * k) / d) };
+        };
+        const sites: { x: number; y: number }[] = [];
+        if (plan.towers > 0 && towersBy(home.cellX, home.cellY, TOWER_AT + 6) < plan.towers) sites.push(toward(home.cellX, home.cellY, TOWER_AT));
+        if (plan.townTowers > 0) {
+          for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+            if (view.towns[r + TownField.owner] !== player || view.towns[r + TownField.state] !== TownState.Governed) continue;
+            const t = mem.site(view.towns[r + TownField.id]);
+            if (t === undefined) continue;
+            const radius = rules.towns?.[t.size]?.radius ?? 5;
+            if (towersBy(t.cellX, t.cellY, radius + 3) < plan.townTowers) sites.push(toward(t.cellX, t.cellY, radius));
+          }
+        }
+        // The nearest free spot to it (its production stands that way too); round a town, within its reach.
+        for (const at of sites) {
+          if (foeBy(at.x, at.y)) continue;
+          const spot = spotNear(view, BuildingType.ArrowTower, at.x, at.y, TOWER_AT + 2, clear);
+          if (spot !== null) return spot;
+        }
+        return null;
+      };
+      // D-086 A4 (plan.buildSafe): a site seen last think and gone now, not done: lost (the enemy razed it).
+      if (plan.buildSafe) {
+        for (let i = lostSites.length - 1; i >= 0; i--) if (lostSites[i].until <= tick) lostSites.splice(i, 1);
+        const now = new Set(own.map((b) => b.id));
+        for (const [id, l] of sitesSeen) if (!now.has(id)) lostSites.push({ ...l, until: tick + SITE_REST });
+        for (const o of ordered) if (!own.some((b) => b.type === o.type && b.x === o.x && b.y === o.y)) lostSites.push({ ...o, until: tick + SITE_REST });
+        ordered.length = 0;
+        sitesSeen.clear();
+        for (const b of own) if (b.progress < 1000) sitesSeen.set(b.id, { type: b.type, x: b.x, y: b.y });
+      }
       for (const site of own.filter((b) => b.progress < 1000)) {
         if (farmers.some((f) => f.order === Order.Build && f.orderTarget === site.id)) continue;
+        // D-086 A4 (plan.buildSafe): no farmers to a site with enemies by it.
+        if (plan.buildSafe && foes.some((f) => dist2(f.x, f.y, site.x, site.y) <= BUILD_SAFE * BUILD_SAFE)) continue;
+        // D-086 A4: no farmers to a tower with enemies by it; later, once they are gone.
+        if (site.type === BuildingType.ArrowTower && (plan.towers > 0 || plan.townTowers > 0) && foeBy(site.x, site.y)) continue;
         const crew = gatherers.slice(0, 2);
         if (crew.length > 0) out.push({ c: "repair", u: crew, building: site.id });
         gatherers.splice(0, crew.length);
@@ -2786,24 +3463,101 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         // Houses before the population is full: every producer can add one at a time.
         if (cap < ceiling && cap - pop - queued <= houseRoom + producers) add(BuildingType.House, base);
+        // D-086 A4 (plan.towerFirst): a wave by its main city lately: a tower next, saved up for.
+        if (plan.towerFirst && tick - lastWave <= TOWER_FIRST) {
+          const spot = towerSpotFor();
+          if (spot !== null) add(BuildingType.ArrowTower, spot);
+        }
         // D-086 A: a stable, for cavalry while wood is short (plan.cavalry).
         const stableReady = (rules.buildings[BuildingType.Stable]?.requires ?? []).every((t) => done(t).length > 0);
         if (plan.cavalry > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && res.food + res.gold >= RICH && stableReady) add(BuildingType.Stable, rally);
+        // D-086 A4 (plan.cavalryCounter): a stable once it wants cavalry against the enemy's mix.
+        if (cavalryWant && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
+        // D-096 (plan.lumberMove): the trees by its camps gone: another camp by the nearest it knows of on its own side.
+        else if (plan.lumberMove && farmers.length >= 12 && count(BuildingType.LumberCamp) < LUMBER_MOST) {
+          const camps = own.filter((b) => b.type === BuildingType.LumberCamp);
+          let near = false;
+          let best: { x: number; y: number; id: number } | null = null;
+          let bestD = 0;
+          let bestKey = 0;
+          for (let r = 0; r < view.nodes.length; r += NODE_STRIDE) {
+            if (view.nodes[r + NodeField.kind] !== NodeKind.Tree || view.nodes[r + NodeField.amount] <= 0) continue;
+            const x = view.nodes[r + NodeField.cellX];
+            const y = view.nodes[r + NodeField.cellY];
+            if (camps.some((c) => dist2(c.x, c.y, x, y) <= LUMBER_NEAR * LUMBER_NEAR)) {
+              near = true;
+              break;
+            }
+            const d = dist2(x, y, home.cellX, home.cellY);
+            if (mem.known === Known.City && d >= dist2(x, y, enemyHome.cellX, enemyHome.cellY)) continue;
+            if (foes.some((f) => dist2(f.x, f.y, x, y) <= BUILD_SAFE * BUILD_SAFE)) continue;
+            const key = rank(x, y);
+            if (best === null || d < bestD || (d === bestD && key < bestKey)) {
+              best = { x, y, id: view.nodes[r + NodeField.id] };
+              bestD = d;
+              bestKey = key;
+            }
+          }
+          if (!near && best !== null) add(BuildingType.LumberCamp, best);
+        }
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
         if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
+        // D-086 A4 (plan.mineMove): the gold by its mines gone: another by the nearest gold it knows of.
+        else if (plan.mineMove && farmers.length >= 14 && count(BuildingType.Mine) < MINE_MOST) {
+          const mines = own.filter((b) => b.type === BuildingType.Mine);
+          let near = false;
+          for (let r = 0; r < view.nodes.length && !near; r += NODE_STRIDE) {
+            if (view.nodes[r + NodeField.kind] !== NodeKind.GoldMine || view.nodes[r + NodeField.amount] <= 0) continue;
+            const x = view.nodes[r + NodeField.cellX];
+            const y = view.nodes[r + NodeField.cellY];
+            near = mines.some((m) => dist2(m.x, m.y, x, y) <= MINE_NEAR * MINE_NEAR);
+          }
+          if (!near) {
+            // Not by the enemy (a09c2367 with the first try: 90 mines put down by the player's main city, each paid and razed).
+            const held: { x: number; y: number }[] = [];
+            for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+              if (view.towns[r + TownField.owner] !== player || view.towns[r + TownField.state] !== TownState.Governed) continue;
+              const t = mem.site(view.towns[r + TownField.id])!;
+              held.push({ x: t.cellX, y: t.cellY });
+            }
+            let best: { x: number; y: number; id: number } | null = null;
+            let bestD = 0;
+            let bestKey = 0;
+            for (let r = 0; r < view.nodes.length; r += NODE_STRIDE) {
+              if (view.nodes[r + NodeField.kind] !== NodeKind.GoldMine || view.nodes[r + NodeField.amount] <= 0) continue;
+              const x = view.nodes[r + NodeField.cellX];
+              const y = view.nodes[r + NodeField.cellY];
+              const d = dist2(x, y, home.cellX, home.cellY);
+              if (mem.known === Known.City && d >= dist2(x, y, enemyHome.cellX, enemyHome.cellY)) continue;
+              if (d > MINE_FAR * MINE_FAR && !held.some((t) => dist2(x, y, t.x, t.y) <= MINE_TOWN * MINE_TOWN)) continue;
+              if (foes.some((f) => dist2(f.x, f.y, x, y) <= BUILD_SAFE * BUILD_SAFE)) continue;
+              const key = rank(x, y);
+              if (best === null || d < bestD || (d === bestD && key < bestKey)) {
+                best = { x, y, id: view.nodes[r + NodeField.id] };
+                bestD = d;
+                bestKey = key;
+              }
+            }
+            if (best !== null) add(BuildingType.Mine, best);
+          }
+        }
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
           add(count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
         for (const p of plans) {
           if (p.at === null) continue;
           // A mine is only worth it by its node.
-          const spot = spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20));
+          // D-086 A4: a tower only where it was picked.
+          const spot = p.type === BuildingType.ArrowTower ? p.at : (spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.type === BuildingType.Mine ? null : spotNear(view, p.type, base.x, base.y, 20)));
           if (spot === null) continue;
+          // D-086 A4 (plan.buildSafe): not where enemy soldiers stand by, nor where a site was lost; the next on the list instead.
+          if (plan.buildSafe && foes.some((f) => dist2(f.x, f.y, spot.x, spot.y) <= BUILD_SAFE * BUILD_SAFE)) continue;
+          if (plan.buildSafe && lostSites.some((l) => dist2(l.x, l.y, spot.x, spot.y) <= SITE_NEAR * SITE_NEAR)) continue;
           const cost = rules.buildings[p.type].cost;
           if (!afford(cost)) {
             reserve.food += cost.food;
@@ -2816,6 +3570,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           out.push({ c: "build", u: gatherers.slice(0, crew), type: p.type, x: spot.x, y: spot.y });
           gatherers.splice(0, crew);
           spend(cost);
+          if (plan.buildSafe) ordered.push({ type: p.type, x: spot.x, y: spot.y });
+          if (p.type === BuildingType.ArrowTower) counted.towersPlaced++;
           break;
         }
       }
@@ -2842,14 +3598,23 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // The mix answers what it has seen: a cannon shot kills a ranged unit but not a spearman, and
       // ranged units hit spearmen 2.5 times as hard.
       let share = spearBase;
+      const cavalryMix = plan.counterCavalry && knownSoldiers + enemyCavalry >= CAVALRY_SEEN && enemyCavalry * 100 >= plan.cavalryMix * (knownSoldiers + enemyCavalry);
       if (plan.counterMix > 0) {
-        if (enemyMages >= 2) share += plan.counterMix;
+        if (cavalryMix) share += plan.counterMix;
+        else if (enemyMages >= 2) share += plan.counterMix;
         else if (enemySpear + enemyRanged >= 6 && enemySpear * 100 >= (enemySpear + enemyRanged) * 60) share -= plan.counterMix;
         else if (enemySpear + enemyRanged >= 6 && enemyRanged * 100 >= (enemySpear + enemyRanged) * 60) share += plan.counterMix;
       }
       share = Math.max(20, Math.min(80, share));
       labels[HEAD_MIX] = share >= 60 ? 0 : share <= 40 ? 2 : 1;
       if (netChoice !== null && netChoice[HEAD_MIX] !== AS_HARD) share = NET_SHARE[netChoice[HEAD_MIX]];
+      // D-086 A4 (plan.cavalryCounter): cavalry first while below its share against a mostly ranged and mage enemy.
+      if (cavalryWant) {
+        const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry).length + done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
+        const before = room;
+        if (cavalry * 100 < plan.cavalryCounter * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
+        counted.cavalryTrained += before - room;
+      }
       // D-086 A (plan.cavalry): while wood is short and food and gold pile up, cavalry first, up to its share.
       if (plan.cavalry > 0 && woodShort) {
         const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry).length + done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
@@ -2861,6 +3626,25 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       } else {
         trainAt(BuildingType.Range, UnitType.Ranged);
         trainAt(BuildingType.Barracks, UnitType.Spearman);
+      }
+      // D-086 A4 (plan.towers, plan.townTowers): with what is left once farmers and soldiers are trained this think
+      // (and what it saves up for kept aside); it never saves up for a tower here.
+      const towerCost = rules.buildings[BuildingType.ArrowTower]?.cost;
+      if (
+        (plan.towers > 0 || plan.townTowers > 0) &&
+        towerCost !== undefined &&
+        gatherers.length >= 2 &&
+        own.filter((b) => b.progress < 1000).length < plan.sites &&
+        res.wood - reserve.wood >= towerCost.wood + plan.towerSpare &&
+        res.gold - reserve.gold >= towerCost.gold + plan.towerSpare
+      ) {
+        const towerSpot = towerSpotFor();
+        if (towerSpot !== null) {
+          out.push({ c: "build", u: gatherers.slice(0, 2), type: BuildingType.ArrowTower, x: towerSpot.x, y: towerSpot.y });
+          gatherers.splice(0, 2);
+          spend(towerCost);
+          counted.towersPlaced++;
+        }
       }
       veinCrew = veinCrew.filter((id) => farmers.some((f) => f.id === id && f.order === Order.Gather));
       const vein = nearestNode(NodeKind.CrystalVein);
@@ -2904,6 +3688,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         } else if (!(once && plunderedTown(id))) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
         // Plundered before and it cannot pay yet: it waits (a plunder would be refused).
       }
+      /** D-086 A4 (plan.ruinsAgain): last seen in ruins, out of sight now, and past the time read off them: maybe neutral again. */
+      const staleRuin = (id: number, t: HardTown) => plan.ruinsAgain && t.state === TownState.Ruins && !t.visible && restoreAt.has(id) && tick >= restoreAt.get(id)!;
       // Enemy forts (D-080, D-081).
       const forts = enemyForts(view, player, rules);
       /** A town under the arrows or guards of an enemy fort (D-081). */
@@ -2982,7 +3768,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
       // Hiding in a building (round 7) too: a move would bring it out.
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
+      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || chargers.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -3061,6 +3847,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       if (nearHome > 0) {
         waveMax = Math.max(waveMax, nearHome);
         lastWave = tick;
+        if (plan.towers > 0 || plan.townTowers > 0) waveFrom = centre(foesNear(home.cellX, home.cellY, WAVE_CELLS), home.cellX, home.cellY);
       } else if (tick - lastWave >= 200 && waveMax > 0) {
         if (waveMax >= 6) counterReady = true;
         waveMax = 0;
@@ -3077,7 +3864,65 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // Farmers going take the soldiers at home along to the end: not where the army broke off, as its own goes (D-081, ceo 2026-10-10).
         // Those that would go: not the towns' guards.
         const vs = soldiers.filter((u) => !guarding.has(u.id)).reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
-        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick) * FORT_FAILED);
+        crew.think(tick, ours, forts, home, foes, enemyFarmers, soldiers, farmers, out, (f) => vs * 100 < failedNear(f, forts, failedAt, tick, fortForget) * fortFailed);
+      }
+
+      // --- D-086 A4: cavalry charge the enemy's ranged units and mages (plan.charge) -------------------------
+      if (plan.charge) {
+        for (const id of chargers) if (!byId.has(id)) chargers.delete(id);
+        const spotKey = (x: number, y: number) => {
+          const f = frame(x, y);
+          return (f.v >> 3) * n + (f.u >> 3);
+        };
+        /** Ranged units and mages in sight this near (x, y), out of enemy forts' reach, nearest first (ties in player 0's frame). */
+        const prey = (x: number, y: number) =>
+          foes
+            .filter((f) => (f.type === UnitType.Ranged || f.type === UnitType.Mage) && f.order !== Order.Garrison && dist2(f.x, f.y, x, y) <= CHARGE_NEAR * CHARGE_NEAR && !underArrows(f))
+            .sort((a, b) => dist2(a.x, a.y, x, y) - dist2(b.x, b.y, x, y) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+        const spearsBy = (x: number, y: number) => foes.filter((f) => f.type === UnitType.Spearman && dist2(f.x, f.y, x, y) <= CHARGE_SPEAR * CHARGE_SPEAR).length;
+        if (chargeAt !== null) {
+          const at = chargeAt;
+          const squad = soldiers.filter((u) => chargers.has(u.id));
+          const sc = centre(squad, at.x, at.y);
+          // Weighed again on the way: spearmen closing in, forts' reach, half gone; done once no target is left.
+          let why: "" | "chargeBack" | "chargeLost" | "chargeDone" = "";
+          if (squad.length * 2 < at.size) why = "chargeLost";
+          else if (spearsBy(sc.x, sc.y) > squad.length || underArrows(sc)) why = "chargeBack";
+          const left = why === "" ? prey(sc.x, sc.y) : [];
+          if (why === "" && left.length === 0) why = "chargeDone";
+          const ids = squad.map((u) => u.id);
+          if (why !== "") {
+            if (ids.length > 0) out.push({ c: why === "chargeDone" ? "move" : "retreat", u: ids, x: ac.x, y: ac.y });
+            if (why !== "chargeDone") chargeRestAt.set(spotKey(at.x, at.y), tick + plan.chargeRest * TICKS_PER_MINUTE);
+            counted[why]++;
+            counted.chargeCavalryLost += at.size - squad.length;
+            chargers.clear();
+            chargeAt = null;
+            if (why === "chargeDone") rejoin.push(...ids);
+          } else if (left[0].id !== at.target || tick - chargeMove >= CHARGE_MOVE) {
+            out.push({ c: "attack", u: ids, target: left[0].id });
+            at.target = left[0].id;
+            chargeMove = tick;
+          }
+        } else {
+          const cavalry = army.filter((u) => u.type === UnitType.Cavalry && !detached(u.id));
+          if (cavalry.length >= CHARGE_MIN) {
+            const cc = centre(cavalry, ac.x, ac.y);
+            const target = prey(cc.x, cc.y)[0];
+            // Weighed first: no more spearmen than cavalry by the target, not a spot it gave up lately.
+            if (target !== undefined && spearsBy(target.x, target.y) <= cavalry.length && tick >= (chargeRestAt.get(spotKey(target.x, target.y)) ?? 0)) {
+              const ids = cavalry.map((u) => u.id);
+              for (const id of ids) chargers.add(id);
+              chargeAt = { x: target.x, y: target.y, size: ids.length, target: target.id };
+              chargeMove = tick;
+              out.push({ c: "attack", u: ids, target: target.id });
+              counted.chargeSent++;
+              const keep = armyIds.filter((id) => !chargers.has(id));
+              armyIds.length = 0;
+              armyIds.push(...keep);
+            }
+          }
+        }
       }
 
       // --- D-086 A3: farmers attacked far from home (plan.rescue, plan.hideFar) -------------------------
@@ -3317,6 +4162,26 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const w = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
           return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5) * 10 + enemy * 13;
         };
+        /**
+         * D-096 (GATE_AI.walls): with enemy soldiers by town `id` it holds, its ranged units and mages there go up the walls
+         * (told again every 100 ticks); those on its walls, or going up, are left out of the army's orders this think.
+         */
+        const wallUp = (id: number, t: HardTown) => {
+          if (!GATE_AI.walls || rules.features?.walls !== true) return;
+          const r = rules.towns?.[t.size]?.radius ?? 5;
+          const threat = foes.some((e) => dist2(e.x, e.y, t.x, t.y) <= (r + GATE_NEAR) * (r + GATE_NEAR));
+          const up = threat ? army.filter((u) => (u.type === UnitType.Ranged || u.type === UnitType.Mage) && u.order !== Order.Wall && dist2(u.x, u.y, t.x, t.y) <= (r + 3) * (r + 3)).map((u) => u.id) : [];
+          if (up.length > 0 && tick - wallMove >= 100) {
+            out.push({ c: "wall", u: up, town: id });
+            wallMove = tick;
+            counted.wallUp++;
+          }
+          const away = new Set([...up, ...army.filter((u) => u.order === Order.Wall && u.orderTarget === id).map((u) => u.id)]);
+          if (away.size === 0) return;
+          const keep = armyIds.filter((x) => !away.has(x));
+          armyIds.length = 0;
+          armyIds.push(...keep);
+        };
         const busy = [...towns.entries()].find(
           ([id, t]) =>
             t.owner === player &&
@@ -3324,6 +4189,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             holdsOut(t),
         );
         if (busy !== undefined && !endgame) {
+          // D-096 (GATE_AI.walls): enemy soldiers by it, its ranged units and mages up on the walls.
+          wallUp(busy[0], busy[1]);
           send(busy[1].x, busy[1].y, "town");
           return;
         }
@@ -3365,11 +4232,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           let failed = 0;
           for (const id of g.ids) {
             const f = failedAt.get(id);
-            if (f !== undefined && tick - f.tick < FORT_FORGET) failed = Math.max(failed, f.worth);
+            if (f !== undefined && tick - f.tick < fortForget) failed = Math.max(failed, f.worth);
           }
           // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
           // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
-          return w * 10 >= g.worth * 10 + armyBy(g) * 13 && w * 100 >= failed * FORT_FAILED;
+          return w * 10 >= g.worth * 10 + armyBy(g) * 13 && w * 100 >= failed * fortFailed;
         };
         /** The groups too strong for `list` (not the siege's). */
         const tooStrong = (list: { type: number }[]) => groups.filter((g) => !bySiege(g) && !beats(g, list));
@@ -3395,7 +4262,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           let failed = 0;
           for (const id of [f.id, ...covering(c.x, c.y, f).flatMap((g) => g.ids)]) {
             const m = failedAt.get(id);
-            if (m !== undefined && tick - m.tick < FORT_FORGET) failed = Math.max(failed, m.worth);
+            if (m !== undefined && tick - m.tick < fortForget) failed = Math.max(failed, m.worth);
           }
           return failed;
         };
@@ -3408,7 +4275,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const g = groupOf(f);
           const army = worth(foesNear(c.x, c.y, FORT_GUARDS).filter((e) => e.order !== Order.Post));
           const w = vsForts(list);
-          return w * 10 >= (g === undefined ? 0 : g.worth) * 10 + army * 13 && w * 100 >= failedBy(f) * FORT_FAILED;
+          return w * 10 >= (g === undefined ? 0 : g.worth) * 10 + army * 13 && w * 100 >= failedBy(f) * fortFailed;
         };
         /** Fell back from town `id` because of forts, and they are still too strong for the army (with FORT_FAILED within FORT_FORGET). */
         const fortsBar = (id: number) => {
@@ -3465,14 +4332,44 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (mode === "raze") mode = "home";
           razing = -1;
         }
+        /** D-096 (GATE_AI.focus): at town `t` with gates closed to it, the army on the gate (orders again every FORT_EVERY); false: none (in as before). */
+        const gateFocus = (t: HardTown) => {
+          // The gate it went for gone (broken): in by it, not on to the next.
+          if (gateAim >= 0 && !townGates(view, rules, t).some((g) => g.id === gateAim)) gateDone = targetTown;
+          const calm = (!GATE_AI.calm || foesNear(ac.x, ac.y, GATE_FIGHT).length === 0) && gateDone !== targetTown;
+          const go = calm ? gateOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)), ac, rank) : null;
+          if (go === null) {
+            // The gate down: in, now.
+            if (gateAim >= 0) lastMove = -100000;
+            gateAim = -1;
+            gateSeen.length = 0;
+            return false;
+          }
+          if (go.gate.id !== gateAim) gateSeen.length = 0;
+          gateFell = gateFalling(gateSeen, tick, go.gate.hp, rules.towns?.[t.size]?.gateHp ?? 0);
+          if (go.gate.id !== gateAim || tick - gateMove >= FORT_EVERY) {
+            out.push(...go.orders);
+            gateMove = tick;
+            sent = true;
+            counted.gateFocus++;
+          }
+          gateAim = go.gate.id;
+          return true;
+        };
         if (mode === "town") {
           const t = towns.get(targetTown);
           // Forts by the army too strong for it (D-081): it breaks off as from a stronger enemy.
           const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, ac.x, ac.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army));
-          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "home";
-          else if (standing * 5 < armyAtStart * 2 || local > armyWorth || byArmy.length > 0) {
+          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || (t.state === TownState.Ruins && !staleRuin(targetTown, t))) mode = "home";
+          // D-096 (GATE_AI.retreat "a"): not for its losses while the gate it is breaking falls.
+          else if ((standing * 5 < armyAtStart * 2 && !(GATE_AI.retreat.includes("a") && gateAim >= 0 && gateFell)) || local > armyWorth || byArmy.length > 0) {
             razing = -1;
-            remember(army, byArmy);
+            if (gateAim >= 0) counted.gateBrokeOff++;
+            gateAim = -1;
+            // D-081 / A4 (plan.fortStage): broke off from the forts it gathered for: remembered too.
+            const stopped = fortStop;
+            remember(army, stopped !== null && stopped.go ? [...byArmy, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byArmy);
+            fortStop = null;
             if (byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
             // D-081: not straight back to the same town (in 03a70878, 13 orders between it and home in 12 s).
             if (plan.townRest > 0) townRest.set(targetTown, tick + plan.townRest * TICKS_PER_MINUTE);
@@ -3489,6 +4386,19 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               fallBackPast(ahead, ac);
               return;
             }
+            // D-081 / A4 (plan.fortStage): forts on the way it can take: it gathers outside their reach first, then pulls them down together.
+            if (plan.fortStage && !endgame) {
+              const next = fortStopNext(fortStop, mode, tick, groups, forts, (g) => !bySiege(g) && beats(g, army), army.filter((u) => armyIds.includes(u.id)), ac, t, view, know.map, rank, razing);
+              fortStop = next.stop;
+              if (next.gather !== undefined) {
+                send(next.gather.x, next.gather.y, "town");
+                return;
+              }
+              if (next.raze !== undefined) {
+                razeWith(armyIds, next.raze);
+                return;
+              }
+            }
             const f = nearestFort(
               fortsOnTheWay(forts, ac.x, ac.y, enemyHome).filter((o) => {
                 const g = groupOf(o);
@@ -3502,7 +4412,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               return;
             }
             razing = -1;
-            send(t.x, t.y, "town");
+            if (!gateFocus(t)) send(t.x, t.y, "town");
             return;
           }
         }
@@ -3530,7 +4440,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const byFront = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, fc.x, fc.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, front));
           if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0) || byFront.length > 0))) {
             cityFailed = armyAtStart;
-            remember(front, byFront);
+            // D-081 / A4 (plan.fortStage): broke off from the forts it gathered for: remembered too.
+            const stopped = fortStop;
+            remember(front, stopped !== null && stopped.go ? [...byFront, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byFront);
+            fortStop = null;
             counterReady = false;
             razing = -1;
             reservesRazing = -1;
@@ -3552,8 +4465,19 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           }
           // Forts (D-080): those by the front's way first; those on its ground at home, the soldiers
           // waiting there, once clearly stronger.
+          // D-081 / A4 (plan.fortStage): forts on the front's way it can take: gathered outside their reach first, then together.
+          let stopAt: { x: number; y: number } | undefined;
+          let stopRaze: Fort | undefined;
+          if (plan.fortStage && !endgame && frontIds.length > 0) {
+            const next = fortStopNext(fortStop, mode, tick, groups, forts, (g) => !bySiege(g) && beats(g, front), front.filter((u) => frontIds.includes(u.id)), fc, enemy, view, know.map, rank, razing);
+            fortStop = next.stop;
+            stopAt = next.gather;
+            stopRaze = next.raze;
+          }
           const way =
-            frontIds.length > 0
+            stopRaze !== undefined
+              ? stopRaze
+              : frontIds.length > 0
               ? nearestFort(
                   fortsOnTheWay(forts, fc.x, fc.y, enemyHome).filter((o) => {
                     const g = groupOf(o);
@@ -3583,6 +4507,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           }
           if (way !== undefined) {
             razeWith(frontIds, way);
+          } else if (stopAt !== undefined) {
+            if (target.x !== stopAt.x || target.y !== stopAt.y || tick - lastMove >= 400) {
+              out.push({ c: "move", u: frontIds, x: stopAt.x, y: stopAt.y });
+              lastMove = tick;
+              sent = true;
+              target = { x: stopAt.x, y: stopAt.y };
+            }
           } else if (at !== null && !staged) {
             if (frontIds.length > 0 && (target.x !== at.x || target.y !== at.y || tick - lastMove >= 400)) {
               out.push({ c: "move", u: frontIds, x: at.x, y: at.y });
@@ -3685,7 +4616,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           let pick = -1;
           let pickD = 0;
           for (const [id, t] of towns) {
-            if (t.state === TownState.Ruins || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
+            if ((t.state === TownState.Ruins && !staleRuin(id, t)) || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
             if (tick < (restoreAt.get(id) ?? 0)) continue;
             // D-081: not straight back to a town it fell back from.
             if (tick < (townRest.get(id) ?? 0)) continue;
@@ -3696,6 +4627,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             let there = 0;
             for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= 14 * 14) there += WORTH[e.type];
             if (there * 10 > armyWorth * 8) continue;
+            // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
+            if (GATE_AI.arrows && (there + gateArrowWorth(view, rules, player, t, Math.trunc(there / 10))) * 10 > armyWorth * 8) continue;
+            if (GATE_AI.retreat.includes("b") && gateLoss(view, rules, player, t, army) > GATE_LOSS) {
+              counted.gateSkipped++;
+              continue;
+            }
             // D-081: not where forts too strong for it stand on the way or by the town, unless it can go round.
             if (groups.length > 0 && !routeFor({ x: home.cellX, y: home.cellY }, t, army).go) continue;
             // Nor back to one it fell back from because of forts, while it remembers them (ceo 2026-10-10: the straight way
@@ -3710,6 +4647,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (pick >= 0) {
             labels[HEAD_ARMY] = 1;
             targetTown = pick;
+            gateDone = -1;
             armyAtStart = army.length;
             marchWorth = vsForts(army);
             marched.clear();

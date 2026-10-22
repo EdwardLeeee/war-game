@@ -46,6 +46,7 @@ import {
 import { townInSight, writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
+import { onWall } from "../core/units.ts";
 import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, OUTPOST, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
@@ -143,7 +144,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     units[o + UnitField.stance] = u.stance[s];
     units[o + UnitField.castProgress] = u.castProgress[s];
     const idleFarmer = u.owner[s] === player && u.type[s] === UnitType.Farmer && u.order[s] === Order.None && u.action[s] !== Action.Garrisoned;
-    units[o + UnitField.flags] = u.flags[s] | (idleFarmer ? UnitFlag.IdleFarmer : 0);
+    units[o + UnitField.flags] = u.flags[s] | (idleFarmer ? UnitFlag.IdleFarmer : 0) | (onWall(w, s) ? UnitFlag.OnWall : 0);
     units[o + UnitField.castCooldown] = u.castCooldown[s];
   });
 
@@ -153,11 +154,10 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   const seenNow = new Set<number>();
   for (let s = 0; s < w.buildings.count; s++) {
     const own = b.owner[s] === player;
-    const size = w.buildingSize(b.type[s]);
     let visible = own || player === null;
     if (!visible) {
-      for (let y = b.cellY[s]; y < b.cellY[s] + size && !visible; y++) {
-        for (let x = b.cellX[s]; x < b.cellX[s] + size; x++) {
+      for (let y = b.cellY[s]; y < b.cellY[s] + w.tall(s) && !visible; y++) {
+        for (let x = b.cellX[s]; x < b.cellX[s] + w.wide(s); x++) {
           if (seesCell(x, y)) {
             visible = true;
             break;
@@ -349,11 +349,13 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     if (amount > 0) placement[w.nodeY[k] * n + w.nodeX[k]] |= PlaceBit.Blocked;
   }
   for (const row of rows) {
-    const size = w.buildingSize(row[BuildingField.type]);
     const x0 = row[BuildingField.cellX];
     const y0 = row[BuildingField.cellY];
-    for (let y = y0; y < y0 + size; y++) for (let x = x0; x < x0 + size; x++) placement[y * n + x] |= PlaceBit.Blocked;
     const t = row[BuildingField.type];
+    const sx = w.sideX(t, x0, y0);
+    const sy = w.sideY(t, x0, y0);
+    const size = sx;
+    for (let y = y0; y < y0 + sy; y++) for (let x = x0; x < x0 + sx; x++) placement[y * n + x] |= PlaceBit.Blocked;
     // Tower land (round 7, PlaceBit.TowerLand): near an own finished main city, or (D-080) outpost.
     const towerBase = t === BuildingType.MainCity || (OUTPOST.on && t === BuildingType.Outpost);
     if (TOWERS.on && row[BuildingField.owner] === player && row[BuildingField.progress] >= 1000 && towerBase) {

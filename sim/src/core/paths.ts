@@ -30,6 +30,8 @@ export const REBUILDS_PER_OWNER = 2;
 
 export interface Field {
   key: number;
+  /** The pass class it was built for (World.passClass, D-096): whose gates it walks through. */
+  cls: number;
   block: number;
   open: number;
   drop: number;
@@ -58,10 +60,10 @@ const ringLen = new Int32Array(RING);
  * order E, SE, S, SW, W, NW, N, NE (DIR8 order); a diagonal step needs both orthogonal
  * cells open (no corner cutting).
  */
-export function buildField(w: World, goals: number[], key: number): Field {
+export function buildField(w: World, goals: number[], key: number, cls = 0): Field {
   const n = w.size;
   const total = n * n;
-  const grid = w.grid;
+  const grid = w.passGrid(cls);
   if (ringTotal !== total) {
     ring = [];
     for (let i = 0; i < RING; i++) ring.push(new Int32Array(total));
@@ -108,7 +110,7 @@ export function buildField(w: World, goals: number[], key: number): Field {
     }
     d++;
   }
-  return { key, block: w.blockVersion, open: w.openVersion, drop: w.dropVersion, built: w.tick, dist, lastUsed: 0 };
+  return { key, cls, block: w.blockVersion, open: w.openVersion, drop: w.dropVersion, built: w.tick, dist, lastUsed: 0 };
 }
 
 /**
@@ -123,7 +125,7 @@ export function fieldStep(w: World, f: Field, c: number, order: readonly number[
   const dc = dist[c];
   if (dc === 0 || dc === INF) return NO_DIR;
   const n = w.size;
-  const grid = w.grid;
+  const grid = w.passGrid(f.cls);
   const x = c % n;
   const oE = x < n - 1 && grid[c + 1] === 0;
   const oW = x > 0 && grid[c - 1] === 0;
@@ -193,12 +195,12 @@ export function nearestWalkable(w: World, x: number, y: number, prefer?: { cellX
 }
 
 /** Walkable cells touching a rectangle (8-neighbourhood), in cell order. */
-export function cellsAround(w: World, cellX: number, cellY: number, size: number): number[] {
+export function cellsAround(w: World, cellX: number, cellY: number, size: number, sizeY = size): number[] {
   const n = w.size;
   const out: number[] = [];
-  for (let y = cellY - 1; y <= cellY + size; y++) {
+  for (let y = cellY - 1; y <= cellY + sizeY; y++) {
     for (let x = cellX - 1; x <= cellX + size; x++) {
-      if (x >= cellX && x < cellX + size && y >= cellY && y < cellY + size) continue;
+      if (x >= cellX && x < cellX + size && y >= cellY && y < cellY + sizeY) continue;
       if (x < 0 || y < 0 || x >= n || y >= n) continue;
       if (w.grid[y * n + x] === 0) out.push(y * n + x);
     }
@@ -213,26 +215,26 @@ export function cellsAround(w: World, cellX: number, cellY: number, size: number
  * out again, when asked, after cells were blocked or opened.
  */
 export class Regions {
-  private label = new Int32Array(0);
+  /** Per pass class (World.passClass, D-096): labels, and the path versions they were flooded at. */
+  private labels: Int32Array[] = [];
   private stack = new Int32Array(0);
-  private block = -1;
-  private open = -1;
+  private block: number[] = [];
+  private open: number[] = [];
 
-  /** The area of cell c, or -1 for a cell that is not walkable. */
-  of(w: World, c: number): number {
-    if (w.blockVersion !== this.block || w.openVersion !== this.open || this.label.length !== w.size * w.size) this.flood(w);
-    return this.label[c];
+  /** The area of cell c on pass class cls's grid, or -1 for a cell it does not walk. */
+  of(w: World, c: number, cls = 0): number {
+    const l = this.labels[cls];
+    if (l === undefined || w.blockVersion !== this.block[cls] || w.openVersion !== this.open[cls] || l.length !== w.size * w.size) return this.flood(w, cls)[c];
+    return l[c];
   }
 
-  private flood(w: World): void {
+  private flood(w: World, cls: number): Int32Array {
     const n = w.size;
     const total = n * n;
-    const grid = w.grid;
-    if (this.label.length !== total) {
-      this.label = new Int32Array(total);
-      this.stack = new Int32Array(total);
-    }
-    const label = this.label;
+    const grid = w.passGrid(cls);
+    if (this.labels[cls] === undefined || this.labels[cls].length !== total) this.labels[cls] = new Int32Array(total);
+    if (this.stack.length !== total) this.stack = new Int32Array(total);
+    const label = this.labels[cls];
     const stack = this.stack;
     label.fill(-1);
     let next = 0;
@@ -263,8 +265,9 @@ export class Regions {
       }
       next++;
     }
-    this.block = w.blockVersion;
-    this.open = w.openVersion;
+    this.block[cls] = w.blockVersion;
+    this.open[cls] = w.openVersion;
+    return label;
   }
 }
 
@@ -284,9 +287,11 @@ export class FieldCache {
    * spent. `drop`: the field also depends on the set of finished drop-off buildings.
    */
   get(w: World, key: number, goals: () => number[], drop = false, owner = 0): Field | null {
+    // Whose gates the field walks through (D-096): the owner's pass class.
+    const cls = w.passClass(owner);
     let f: Field | undefined;
     for (const g of this.fields) {
-      if (g.key === key) {
+      if (g.key === key && g.cls === cls) {
         f = g;
         break;
       }
@@ -313,7 +318,7 @@ export class FieldCache {
       this.built[owner]++;
       if (f !== undefined) this.fields.splice(this.fields.indexOf(f), 1);
       if (this.fields.length >= CACHE_SIZE) this.evict();
-      f = buildField(w, goals(), key);
+      f = buildField(w, goals(), key, cls);
       this.builds++;
       this.fields.push(f);
     } else {
@@ -328,7 +333,7 @@ export class FieldCache {
     for (let i = 1; i < this.fields.length; i++) {
       const a = this.fields[i];
       const b = this.fields[v];
-      if (a.lastUsed < b.lastUsed || (a.lastUsed === b.lastUsed && a.key < b.key)) v = i;
+      if (a.lastUsed < b.lastUsed || (a.lastUsed === b.lastUsed && (a.key < b.key || (a.key === b.key && a.cls < b.cls)))) v = i;
     }
     this.fields.splice(v, 1);
   }

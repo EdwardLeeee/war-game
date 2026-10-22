@@ -106,9 +106,11 @@ export class Fog {
       // visible but whose building is gone are dropped; the rest are kept.
       const next: number[][] = [];
       const old = this.memory[p];
-      const footprintVisible = (cellX: number, cellY: number, size: number) => {
-        for (let y = cellY; y < cellY + size; y++) {
-          for (let x = cellX; x < cellX + size; x++) if (vis[y * n + x] === 1) return true;
+      const footprintVisible = (type: number, cellX: number, cellY: number) => {
+        const sx = w.sideX(type, cellX, cellY);
+        const sy = w.sideY(type, cellX, cellY);
+        for (let y = cellY; y < cellY + sy; y++) {
+          for (let x = cellX; x < cellX + sx; x++) if (vis[y * n + x] === 1) return true;
         }
         return false;
       };
@@ -117,11 +119,11 @@ export class Fog {
         const id = b.id[s];
         while (oi < old.length && old[oi][0] < id) {
           const m = old[oi++];
-          if (!footprintVisible(m[3], m[4], w.buildingSize(m[2]))) next.push(m);
+          if (!footprintVisible(m[2], m[3], m[4])) next.push(m);
         }
         const keepOld = oi < old.length && old[oi][0] === id ? old[oi++] : null;
         if (b.owner[s] === p) continue;
-        if (footprintVisible(b.cellX[s], b.cellY[s], w.buildingSize(b.type[s]))) {
+        if (footprintVisible(b.type[s], b.cellX[s], b.cellY[s])) {
           next.push([id, b.owner[s], b.type[s], b.cellX[s], b.cellY[s], b.hp[s]]);
         } else if (keepOld !== null) {
           next.push(keepOld);
@@ -129,7 +131,7 @@ export class Fog {
       }
       while (oi < old.length) {
         const m = old[oi++];
-        if (!footprintVisible(m[3], m[4], w.buildingSize(m[2]))) next.push(m);
+        if (!footprintVisible(m[2], m[3], m[4])) next.push(m);
       }
       this.memory[p] = next;
 
