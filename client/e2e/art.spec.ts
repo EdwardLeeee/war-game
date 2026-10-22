@@ -154,7 +154,7 @@ test("兵種展示（art-v1，3 倍）：兩陸每種兵的待機、走路、攻
   check();
 });
 
-test("建築展示（art-v3，3 倍，方形斜看）：每種建築的施工三階段、完成、受損、瓦礫，東陸（A）和西陸（B）；資源點；給 ceo 看（D-085、D-088）", async ({ page, browserName }, info) => {
+test("建築展示（art-v5.1，3 倍，方形斜看）：每種建築（art-v5.1 起含哨所）的施工三階段、完成、受損、瓦礫，東陸（A）和西陸（B）；資源點；給 ceo 看（D-085、D-088）", async ({ page, browserName }, info) => {
   test.skip(browserName !== "chromium", "pictures for ceo");
   test.setTimeout(150_000);
   const check = watchErrors(page);
@@ -163,12 +163,12 @@ test("建築展示（art-v3，3 倍，方形斜看）：每種建築的施工三
     // Destroyed at tick 20 (their rubble), standing still at 36.
     await page.waitForFunction(() => window.__proto?.game?.header().tick === 36, null, { timeout: 30_000 });
     const a = await art(page);
-    expect(a?.rubble, "a rubble a type, the field none (it leaves no rubble)").toBe(11);
+    expect(a?.rubble, "a rubble a type, the field none (it leaves no rubble)").toBe(12);
     expect(a?.nodes ?? 0).toBeGreaterThanOrEqual(30);
-    // Rows of 4 types each (the gallery's cell (4 + 5c, 4 + 7r)); the nodes beside.
-    for (let g = 0; g < 3; g++) {
-      // A little above the rows' middle: the pictures stand above their footprints.
-      const r = 1.2 + 4 * g;
+    // Rows of 4 types each (the gallery's cell (4 + 5c, 4 + 7r)), the outpost (art-v5.1) alone in the last; the nodes beside.
+    for (let g = 0; g < 4; g++) {
+      // A little above the rows' middle: the pictures stand above their footprints (13 rows: the last group one).
+      const r = (4 * g + Math.min(4 * g + 3, 12)) / 2 - 0.3;
       await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 0.52), [4 + 15, 4 + 7 * r - 1] as const);
       await page.waitForTimeout(300);
       await shot(page, info, `art-buildings-${side}-${g + 1}`);

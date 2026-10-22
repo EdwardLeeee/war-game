@@ -218,6 +218,8 @@ const GALLERY_HIT_EVERY = 8;
 const GALLERY_BUILDINGS = [
   BuildingType.MainCity, BuildingType.House, BuildingType.LumberCamp, BuildingType.Mine, BuildingType.Granary, BuildingType.Farm,
   BuildingType.Barracks, BuildingType.Range, BuildingType.MageHall, BuildingType.Stable, BuildingType.ArrowTower, BuildingType.TownTower,
+  // art-v5.1 (war-game-ui 2026-10-22): the outpost's own pictures.
+  BuildingType.Outpost,
 ];
 const GALLERY_B = { x: 4, y: 4 };
 const GALLERY_NODES_Y = 66;
