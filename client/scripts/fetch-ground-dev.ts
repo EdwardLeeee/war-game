@@ -67,11 +67,19 @@ try {
   console.log(`::warning::ground dev: ${err instanceof Error ? err.message : String(err)}; this build has no development ground (?ground=real draws the two greens)`);
   process.exit(0);
 }
-// ui's numbers (2026-10-21); the noise and macro are made by the page.
+// ui's numbers (R8-28, design/r8/common/ground_r8.py RULES, the user approved it 2026-10-22: the
+// weights soft, the dirt patches' edges soft); the noise and macro are made by the page.
 const ground: GroundJson = {
   format: GROUND_FORMAT,
   layers,
-  rules: { bank_cells: 1, gravel_cells: 1, edge_m: 0.6, height_k: 0.8, dirt: { node_cells: 1, noise_threshold: 0.72 } },
+  rules: {
+    bank_cells: 1,
+    gravel_cells: 1,
+    edge_m: 1.2,
+    height_k: 0.9,
+    dirt: { node_cells: 1, noise_threshold: 0.8, noise_soft: 0.3 },
+    weights: { texels_per_cell: 4, soft_m: 1.6, blur_m: 1.0 },
+  },
   grade: { brightness: 1, saturation: 1 },
 };
 writeFileSync(join(OUT, "ground.json"), JSON.stringify(ground, null, 1));

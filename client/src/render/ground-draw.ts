@@ -12,7 +12,7 @@
 // sampled only where they show.
 
 import { BufferImageSource, Geometry, GlProgram, Mesh, type Renderer, RenderTexture, Shader, Sprite, Texture, type TextureSource, UniformGroup } from "pixi.js";
-import { type GroundJson, groundWeights, valueNoise } from "../art/ground.ts";
+import { type GroundJson, GroundWeights, valueNoise } from "../art/ground.ts";
 import { TILE_PX } from "../tuning.ts";
 
 export type GroundQuality = "high" | "low";
@@ -56,6 +56,7 @@ uniform sampler2D uBank;
 uniform vec4 uTileA;      // grass, grass_dry, dirt, gravel (m)
 uniform vec4 uTileB;      // bank, noise, macro, cells across the map
 uniform vec4 uRules;      // edge_m, height_k, dirt noise threshold, quality (1 high)
+uniform vec4 uDirtEdge;   // the dirt patches' edge in the noise: from, to (R8-28: noise_soft about the threshold)
 uniform vec4 uGrade;      // brightness, saturation, -, -
 uniform vec4 uDevA;       // contrast per layer for an unlit photo (0: lit, as ui ships them)
 uniform float uDevB;
@@ -105,7 +106,7 @@ void main(void) {
   vec4 c = mix(g, gd, dry);
   // Dirt round the resource points, and in patches where a slower noise is over the threshold.
   float patchN = texture(uNoise, vM / (uTileB.y * 12.0) + 0.31).r;
-  float dirt = max(w.b, smoothstep(uRules.z, uRules.z + 0.06, patchN));
+  float dirt = max(w.b, smoothstep(uDirtEdge.x, uDirtEdge.y, patchN));
   if (dirt > 0.01) c = over(c, look(texture(uDirt, vM / uTileA.z), uDevA.z, uTint2, uMeanA.z), dirt, n);
   if (w.g > 0.01) c = over(c, look(texture(uGravel, vM / uTileA.w), uDevA.w, uTint3, uMeanA.w), w.g, n);
   if (w.r > 0.01) c = over(c, look(texture(uBank, vM / uTileB.x), uDevB, uTint4, uMeanB), w.r, n);
@@ -126,14 +127,12 @@ export class GroundDraw {
   private readonly textures: GroundTextures;
   private readonly uniforms: UniformGroup;
   private readonly weights: BufferImageSource;
-  private readonly json: GroundJson;
-  private readonly n: number;
+  /** The weight map (art/ground.ts), made again only near the seeds that change. */
+  private readonly weightMap: GroundWeights;
   private quality: GroundQuality;
 
   constructor(textures: GroundTextures, n: number, quality: GroundQuality) {
-    this.json = textures.json;
     this.textures = textures;
-    this.n = n;
     this.quality = quality;
     const size = n * TILE_PX;
     const metres = n * CELL_M;
@@ -145,7 +144,10 @@ export class GroundDraw {
       indexBuffer: [0, 1, 2, 0, 2, 3],
     });
     // Data, not a picture: A (unused, 0) must not be multiplied into the weights as they go up.
-    this.weights = new BufferImageSource({ resource: new Uint8Array(n * n * 4), width: n, height: n, format: "rgba8unorm", scaleMode: "linear", addressMode: "clamp-to-edge", alphaMode: "no-premultiply-alpha" });
+    // rules.weights (R8-28): several texels a cell; the shader's coordinates are the map's, whatever the size.
+    this.weightMap = new GroundWeights(n, textures.json.rules);
+    const side = this.weightMap.side;
+    this.weights = new BufferImageSource({ resource: this.weightMap.data, width: side, height: side, format: "rgba8unorm", scaleMode: "linear", addressMode: "clamp-to-edge", alphaMode: "no-premultiply-alpha" });
     const by = (id: string) => textures.json.layers.find((l) => l.id === id);
     const tileOf = (id: string) => by(id)?.tile_m ?? 8;
     const dev = (id: string) => by(id)?.contrast ?? (by(id)?.tint === undefined ? 0 : 0.55);
@@ -159,6 +161,11 @@ export class GroundDraw {
       uTileA: { value: new Float32Array([tileOf("grass"), tileOf("grass_dry"), tileOf("dirt"), tileOf("gravel")]), type: "vec4<f32>" },
       uTileB: { value: new Float32Array([tileOf("bank"), textures.json.noise?.tile_m ?? 6, textures.json.macro?.tile_m ?? 64, n]), type: "vec4<f32>" },
       uRules: { value: new Float32Array([r.edge_m, r.height_k, r.dirt.noise_threshold, quality === "high" ? 1 : 0]), type: "vec4<f32>" },
+      // The dirt patches' edge: noise_soft wide about the threshold (R8-28), else 0.06 from it up.
+      uDirtEdge: {
+        value: new Float32Array(r.dirt.noise_soft === undefined ? [r.dirt.noise_threshold, r.dirt.noise_threshold + 0.06, 0, 0] : [r.dirt.noise_threshold - r.dirt.noise_soft / 2, r.dirt.noise_threshold + r.dirt.noise_soft / 2, 0, 0]),
+        type: "vec4<f32>",
+      },
       uGrade: { value: new Float32Array([textures.json.grade.brightness, textures.json.grade.saturation, 0, 0]), type: "vec4<f32>" },
       uDevA: { value: new Float32Array([dev("grass"), dev("grass_dry"), dev("dirt"), dev("gravel")]), type: "vec4<f32>" },
       uDevB: { value: dev("bank"), type: "f32" },
@@ -190,9 +197,7 @@ export class GroundDraw {
 
   /** The cells' grounds again (a random map's grows as it is explored; resource points come and go). */
   setGround(ground: Uint8Array, nodes: readonly number[]): void {
-    const w = groundWeights(ground, this.n, nodes, this.json.rules);
-    (this.weights.resource as Uint8Array).set(w);
-    this.weights.update();
+    if (this.weightMap.set(ground, nodes)) this.weights.update();
   }
 
   setQuality(q: GroundQuality): void {
