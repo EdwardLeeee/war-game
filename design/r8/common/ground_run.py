@@ -23,7 +23,7 @@ LAYERS = [
     dict(id="grass", tex="leafy_grass", tile_m=2.0, tint=(0.075, 0.12, 0.035), contrast=0.85),
     dict(id="grass_dry", tex="aerial_grass_rock", tile_m=8.0, tint=(0.14, 0.13, 0.06), contrast=0.8),
     dict(id="dirt", tex="stony_dirt_path", tile_m=2.17, tint=(0.16, 0.115, 0.07), contrast=0.85),
-    dict(id="gravel", tex="gravel_ground_01", tile_m=3.0, tint=(0.125, 0.115, 0.1), contrast=0.9),
+    dict(id="gravel", tex="rocks_ground_02", tile_m=2.0, tint=(0.11, 0.1, 0.085), contrast=0.95, hue=0.1),
     dict(id="bank", tex="brown_mud_rocks_01", tile_m=1.3, tint=(0.12, 0.1, 0.075), contrast=0.85),
 ]
 

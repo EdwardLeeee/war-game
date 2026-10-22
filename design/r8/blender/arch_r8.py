@@ -4,7 +4,9 @@ light rig, no outlines; render_b1.py LOOK "r8"). New models, real proportions, a
         beams, big bracket sets (斗栱, about 0.4 of a column), white plaster walls, 直櫺窗 windows, 板門 doors with
         studs; grey tile roofs, a shallow pitch with a gentle concave curve (舉折) and a little lift at the corners
         (起翹; not the steep Ming/Qing upsweep), 鴟尾 at the ridge ends of the high-ranking halls; rammed earth (夯土)
-        for walls and the poorer houses.
+        for walls and the poorer houses. Numbers from the notes: average roof pitch 22–28° for halls, 25–30° for houses
+        (never over 34°); brackets about half a column on the main hall, smaller by rank, none on houses; the corner lift
+        a few centimetres; 鴟尾 about a fifth of the front's width; 七朱八白 on a ranking hall's lintels.
   West  c.1250 (research/west-arch-reference): timber frames with limewashed wattle and daub, stone footings and
         stone halls for rank, steep roofs (thatch, slate), lancet windows, smoke louvres rather than chimneys.
 
@@ -31,7 +33,8 @@ def palette(c):
     m = lib.mat
     if c == "E":
         P.update(
-            tile=m("tile", (0.12, 0.125, 0.13), 0.6),            # grey fired tiles
+            # grey fired tiles: the rows are modelled (tang_roof), so no photo texture on top (it made a moiré)
+            tile=m("tile_tang", (0.12, 0.125, 0.13), 0.6, noise=0.12, noise_scale=6),
             ridge=m("ridge", (0.085, 0.085, 0.09), 0.6),
             red=m("red_post", (0.36, 0.075, 0.045), 0.55),        # 土朱: red ochre on columns, beams, brackets
             timber=m("timber", (0.24, 0.1, 0.06), 0.6),           # the brackets' faces, darker than the columns
@@ -50,7 +53,7 @@ def palette(c):
             ridge=m("ridge", (0.06, 0.06, 0.065), 0.6),
             timber=m("timber", (0.1, 0.065, 0.04), 0.65),         # oak, darkened
             plaster=m("plaster", (0.66, 0.62, 0.52), 0.9),        # limewash
-            stone=m("stone", (0.42, 0.39, 0.33), 0.85),
+            stone=m("rubble", (0.42, 0.39, 0.33), 0.85),          # rubble stone (rustic_stone_wall_02), not bricks
             brick=m("brick", (0.3, 0.28, 0.24), 0.85),
             earth=m("earth", (0.36, 0.28, 0.18), 0.95),
             wood=m("wood", (0.16, 0.1, 0.06), 0.65),
@@ -132,7 +135,7 @@ def dougong(name, P, parent, x, y, z, s, normal):
     return zz - z
 
 
-def hall_e(name, P, parent, cx, cy, z0, bays_x, bays_y, col_h, col_r, dg, front_door=True, walls=True):
+def hall_e(name, P, parent, cx, cy, z0, bays_x, bays_y, col_h, col_r, dg, front_door=True, walls=True, qizhu=False):
     """A timber hall on a platform top at z0: columns on the bay lines (bays_*: widths), red lintels, bracket sets on the
     column heads and one between, plaster walls with 直櫺窗 windows on the sides of the front, a 板門 in the middle bay.
     Returns (w, d, z_top) of the column frame and the bracket top."""
@@ -154,6 +157,11 @@ def hall_e(name, P, parent, cx, cy, z0, bays_x, bays_y, col_h, col_r, dg, front_
                           ("ll", (0.2, d, 0.32), (xs[0], 0, col_h - 0.2)), ("lr", (0.2, d, 0.32), (xs[-1], 0, col_h - 0.2))):
         box(f"{name}_{nm}", size, P["red"], g, loc=loc, bevel=0.01)
     box(name + "_pu", (w + 0.3, d + 0.3, 0.12), P["timber"], g, loc=(0, 0, col_h + 0.06))
+    if qizhu:                                      # 七朱八白: white blocks along the red lintel of a ranking hall
+        nq = int(w / 0.62)
+        for q in range(nq):
+            box(f"{name}_qz{q}", (0.34, 0.03, 0.17), P["plaster"], g,
+                loc=(-w / 2 + (q + 0.5) * w / nq, ys[0] - 0.11, col_h - 0.2), outline=False)
     # bracket sets: on every perimeter column, one between columns on the front and back
     top = 0
     for k, (x, y) in enumerate(cols):
@@ -212,7 +220,7 @@ def _prof(v, kind="tang"):
 
 
 def tang_roof(name, P, parent, cx, cy, z, w, d, rise, over, kind="xieshan", lift=0.18, chiwei=True, gable_v=0.55,
-              tile_pitch=0.26, tile_amp=0.035, thick=0.16):
+              tile_pitch=0.26, tile_amp=0.035, thick=0.16, chiwei_s=None):
     """A tiled roof over the rectangle w x d (the eave purlins) at height z, `over` metres of eave beyond it, `rise` to
     the ridge. kind: wudian (hip), xieshan (hip below, gable above from gable_v), xuanshan (two slopes, the gables
     open and overhanging). The tile rows are the surface's ridges (筒瓦), the corners lift a little at the eave."""
@@ -291,7 +299,7 @@ def tang_roof(name, P, parent, cx, cy, z, w, d, rise, over, kind="xieshan", lift
     box(name + "_ridge", (rl, 0.3, 0.32), P["ridge"], g, loc=(0, 0, rise + 0.12), bevel=0.03)
     if chiwei:
         for sx in (-1, 1):
-            chiwei_e(f"{name}_cw{sx}", P, g, (sx * rl / 2, 0, rise + 0.2), sx, s=min(1.0, 0.25 + rise * 0.28))
+            chiwei_e(f"{name}_cw{sx}", P, g, (sx * rl / 2, 0, rise + 0.2), sx, s=chiwei_s or min(1.0, 0.25 + rise * 0.28))
     # the eave's front: a dark board under the tiles (連檐), round tile ends implied by the rows
     for sy in (-1, 1):
         box(f"{name}_eave{sy}", (W * (0.97 if kind != 'xuanshan' else 1.0), 0.08, 0.14), P["timber"], g,
@@ -432,10 +440,11 @@ def main_city(root, c):
         # 州府正堂: a three-bay hall on a high platform, 歇山 roof with 鴟尾; a paved forecourt with lanterns, the owner's
         # banners at the front corners, hangings between the front columns
         kit.pad("mc_pave", P, root, 4 * CELL, 4 * CELL, h=0.12, material="pave")
-        platform_e("mc_plat", P, root, 7.2, 5.0, 0.95, cy=0.9, steps=2.2)
-        w, d, top = hall_e("mc_hall", P, root, 0, 1.0, 0.95, (1.9, 2.4, 1.9), (1.8, 1.8), 3.1, 0.24, 1.15)
-        tang_roof("mc_roof", P, root, 0, 1.0, 0.95 + top, w + 0.6, d + 0.6, 2.35, 1.25, kind="xieshan", lift=0.22, chiwei=True)
-        _team_hangings_e(P, root, (-2.15, 2.15), 1.0 - d / 2 - 0.2, 0.95 + 3.0, w=0.7, h=1.7)
+        platform_e("mc_plat", P, root, 7.2, 5.0, 1.1, cy=0.9, steps=2.2)
+        w, d, top = hall_e("mc_hall", P, root, 0, 1.0, 1.1, (1.9, 2.4, 1.9), (1.8, 1.8), 3.0, 0.25, 1.45, qizhu=True)
+        tang_roof("mc_roof", P, root, 0, 1.0, 1.1 + top, w + 0.6, d + 0.6, 1.65, 1.25, kind="xieshan", lift=0.07, chiwei=True,
+                  chiwei_s=1.15, tile_pitch=0.3)
+        _team_hangings_e(P, root, (-2.15, 2.15), 1.0 - d / 2 - 0.2, 1.1 + 2.9, w=0.7, h=1.7)
         for sx in (-1, 1):
             kit.flag(f"mc_flag{sx}", P, root, (sx * 3.5, -3.4, 0.12), 5.2, c, w=1.2, fh=1.8)
             cyl(f"mc_lamp{sx}", 0.22, 1.1, P["stone"], root, loc=(sx * 1.6, -3.0, 0.12), r2=0.16, segs=8)
@@ -484,7 +493,7 @@ def house(root, c):
         # rammed-earth yard wall, a water jar, a small owner's pennant
         platform_e("hs_plat", P, root, 3.6, 2.8, 0.35, cy=0.45, steps=1.0)
         w, d, top = hall_e("hs_hall", P, root, 0, 0.45, 0.35, (1.0, 1.4, 1.0), (2.3,), 2.4, 0.13, 0.0)
-        tang_roof("hs_roof", P, root, 0, 0.45, 0.35 + 2.45, w + 0.2, d + 0.2, 1.25, 0.55, kind="xuanshan", lift=0.0,
+        tang_roof("hs_roof", P, root, 0, 0.45, 0.35 + 2.45, w + 0.2, d + 0.2, 0.96, 0.55, kind="xuanshan", lift=0.0,
                   chiwei=False, tile_amp=0.03)
         rammed_wall_e("hs_yw", P, root, -1.9, -1.85, -0.7, -1.85, 1.0, t=0.32)
         rammed_wall_e("hs_yw2", P, root, 0.7, -1.85, 1.9, -1.85, 1.0, t=0.32)
@@ -520,7 +529,7 @@ def barracks(root, c):
         kit.pad("bk_yard", P, root, 3 * CELL, 3 * CELL, h=0.08, material="earth")
         platform_e("bk_plat", P, root, 5.8, 2.8, 0.4, cy=1.35, steps=1.4)
         w, d, top = hall_e("bk_hall", P, root, 0, 1.35, 0.4, (1.1, 1.1, 1.2, 1.1, 1.1), (2.4,), 2.6, 0.14, 0.55)
-        tang_roof("bk_roof", P, root, 0, 1.35, 0.4 + top, w + 0.3, d + 0.3, 1.45, 0.7, kind="xuanshan", lift=0.0,
+        tang_roof("bk_roof", P, root, 0, 1.35, 0.4 + top, w + 0.3, d + 0.3, 1.04, 0.7, kind="xuanshan", lift=0.0,
                   chiwei=False)
         rack = lib.empty("bk_rack", parent=root, loc=(-1.8, -1.6, 0.08))
         for k in range(2):

@@ -131,6 +131,18 @@
   "sha256": "34e1733bf4064b6950a575ff57e78c8b7ff71b63749eb48a49221bd65de6fb4f",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/leafy_grass/leafy_grass_rough_2k.jpg"
  },
+ "lichen_rock_diff_1k.jpg": {
+  "sha256": "780128a5757920a7e30c50042e8975e8333ef4ae5809b30bb5be6a2f9fec3ec5",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/lichen_rock/lichen_rock_diff_1k.jpg"
+ },
+ "lichen_rock_nor_gl_1k.jpg": {
+  "sha256": "a3510a296030a1e312ef589a872ae416f2d23203a7b7c0c9e3646e8109c6a61c",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/lichen_rock/lichen_rock_nor_gl_1k.jpg"
+ },
+ "lichen_rock_rough_1k.jpg": {
+  "sha256": "13a12b95d951f6fa4407d210fc97244274ff73583b60208eff651f3779c01a2e",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/lichen_rock/lichen_rock_rough_1k.jpg"
+ },
  "medieval_wood_diff_1k.jpg": {
   "sha256": "66a36635dc3f2db696dbb6939b1d4f86c0b666c898c1b55c6b5d6d9f1896b43e",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/medieval_wood/medieval_wood_diff_1k.jpg"
@@ -167,6 +179,30 @@
   "sha256": "2f1d087fe0b48d6723273ac1857dad45f6edecc04513c48852a7da4643246061",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/old_planks_02/old_planks_02_rough_1k.jpg"
  },
+ "rock_face_03_diff_1k.jpg": {
+  "sha256": "ea48e0e47ad42c8bd312476178b1248ec66f0eb19156a26a1c222f2a40caaf2d",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_face_03/rock_face_03_diff_1k.jpg"
+ },
+ "rock_face_03_nor_gl_1k.jpg": {
+  "sha256": "c6423169583f31715cf0636954bad524e806848a5f2861fcea6794275f726ff0",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_face_03/rock_face_03_nor_gl_1k.jpg"
+ },
+ "rock_face_03_rough_1k.jpg": {
+  "sha256": "9e3d9a2fd75244892e7acb6bab2eaed1279299510a7970672c0ee27ff1c19fea",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_face_03/rock_face_03_rough_1k.jpg"
+ },
+ "rocks_ground_02_diff_1k.jpg": {
+  "sha256": "729e26281b28b9c05a53e755658da184ccd673ac291e6ec0532229743c06bf66",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rocks_ground_02/rocks_ground_02_col_1k.jpg"
+ },
+ "rocks_ground_02_nor_gl_1k.jpg": {
+  "sha256": "28f6f35894cb60da7ecd639506c385e3c9e868f7e3ce24a6ceae1d08198b9e69",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rocks_ground_02/rocks_ground_02_nor_gl_1k.jpg"
+ },
+ "rocks_ground_02_rough_1k.jpg": {
+  "sha256": "8ecc647ca1a5407512b2d3feffd140b99a918cc608c70f3b968c8a680b1fa093",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rocks_ground_02/rocks_ground_02_rough_1k.jpg"
+ },
  "rough_linen_diff_1k.jpg": {
   "sha256": "04897d7611d7390ddf5b2c6f7273f448dfc48341fdbd1f4f207fa30b331d7f57",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rough_linen/rough_linen_diff_1k.jpg"
@@ -178,6 +214,18 @@
  "rough_linen_rough_1k.jpg": {
   "sha256": "734ad6718841a6e296aacaa6e9ee2e1686eed5f62bb8d71c915c5605e162bcb4",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rough_linen/rough_linen_rough_1k.jpg"
+ },
+ "rustic_stone_wall_02_diff_1k.jpg": {
+  "sha256": "a091e04d73ddf7485d1b99a66d6cfe270e9ba36cdc26f98dbc17934427e43bc9",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rustic_stone_wall_02/rustic_stone_wall_02_diff_1k.jpg"
+ },
+ "rustic_stone_wall_02_nor_gl_1k.jpg": {
+  "sha256": "a7e5c96b8ba3ab3d066c673c4da9b1b7735f176ed6b6b2b9f74216fc151225f7",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rustic_stone_wall_02/rustic_stone_wall_02_nor_gl_1k.jpg"
+ },
+ "rustic_stone_wall_02_rough_1k.jpg": {
+  "sha256": "7a8fb2fd4870fc599eeed319b52382c546c3e481f7bf39c2f3d4476b9fb6a54c",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rustic_stone_wall_02/rustic_stone_wall_02_rough_1k.jpg"
  },
  "rusty_metal_02_diff_1k.jpg": {
   "sha256": "adaf094391518b6afe787a123942110aa88ef521c844f970b124420f5ed5d3d9",
