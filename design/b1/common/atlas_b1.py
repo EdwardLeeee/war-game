@@ -53,6 +53,9 @@ def building_table(c):
     t["Farm"] = dict(type=5, footprint=[3, 3], ground=True,
                      states={"build1": f"farm_{c}_build1", "build2": f"farm_{c}_sown", "build3": f"farm_{c}_sown"},
                      crops=[f"farm_{c}_{s}" for s in ("sown", "growing", "ripe")])
+    # art-v5.1: 哨所 (D-080; the user approved the drafts 2026-10-22), its own foundation and rubble (blds2.outpost)
+    t["Outpost"] = dict(type=12, footprint=[2, 2],
+                        states={s: f"outpost_{c}_{s}" for s in ("build1", "build2", "build3", "done", "damaged", "rubble")})
     t["TownTower"] = dict(type=9, footprint=[2, 2], states={s: f"town_tower_{c}_{s}" for s in ("done", "damaged", "rubble")},
                           # art-v4: the 3 x 3 tower of the random maps' neighbouring spawns (sim GameMap.towerSize, D-074)
                           sizes={"3": dict(footprint=[3, 3],
