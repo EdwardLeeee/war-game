@@ -315,6 +315,40 @@ def chiwei_e(name, P, parent, loc, sx, s=1.0):
     slab(name, pts, 0.16 * s, P["ridge"], parent=parent, loc=loc, plane="XZ", outline=False)      # faces the camera
 
 
+def war_drum(name, P, parent, x, y, r=0.42, h=0.8):
+    """A war drum (戰鼓) on its stand, its head toward the camera (the user 2026-10-22: the first one read as a red ball):
+    a red-lacquered barrel with brass bands, pale hide heads nailed round the rims, a wooden frame of four splayed legs
+    and two cross rails holding it, two beaters resting on the frame."""
+    g = lib.empty(name, parent=parent, loc=(x, y, 0.0))
+    hide = lib.mat("drumhide", (0.55, 0.44, 0.3), 0.7)
+    zc = h + r                                         # the drum's axis height
+    L = r * 1.3                                        # its length, along y
+    cyl(name + "_body", r, L, P["red"], g, loc=(0, L / 2, zc), rot=(90, 0, 0), r2=r, segs=28)
+    cyl(name + "_belly", r * 1.08, L * 0.5, P["red"], g, loc=(0, L * 0.25, zc), rot=(90, 0, 0), segs=28)
+    for e in (-1, 1):                                  # the heads, the nail rings, the brass bands
+        y0 = e * L / 2
+        cyl(f"{name}_head{e}", r * 1.01, 0.03, hide, g, loc=(0, y0 + 0.015, zc), rot=(90, 0, 0), segs=28)
+        cyl(f"{name}_band{e}", r * 1.03, 0.04, P["gold"], g, loc=(0, y0 - 0.075 * e + 0.02, zc), rot=(90, 0, 0), segs=28)
+        for k in range(18):                            # the nails holding the hide, round the shell just behind the rim
+            a = 2 * math.pi * k / 18
+            sphere(f"{name}_nail{e}{k}", 0.026, P["gold"], g, loc=(r * 1.0 * math.cos(a), y0 - 0.03 * e, zc + r * 1.0 * math.sin(a)),
+                   segs=8, rings=5)
+    for sx in (-1, 1):                                 # the stand: splayed legs, rails under the drum, a cradle
+        for sy in (-1, 1):
+            rod(f"{name}_leg{sx}{sy}", (sx * (r + 0.18), sy * L * 0.55, 0.0), (sx * r * 0.75, sy * L * 0.3, zc - r * 0.55), 0.045,
+                P["wood"], parent=g, segs=6)
+        rod(f"{name}_rail{sx}", (sx * r * 0.85, -L * 0.45, zc - r * 0.62), (sx * r * 0.85, L * 0.45, zc - r * 0.62), 0.045,
+            P["wood"], parent=g, segs=6)
+    for sy in (-1, 1):
+        rod(f"{name}_cross{sy}", (-(r + 0.12), sy * L * 0.45, 0.35), ((r + 0.12), sy * L * 0.45, 0.35), 0.035, P["wood"], parent=g,
+            segs=6)
+    zt = zc + r * 1.08 + 0.03                          # the beaters, crossed on top of the barrel, knobs to the front
+    for k, sx in enumerate((-1, 1)):
+        rod(f"{name}_stick{k}", (sx * 0.24, -L * 0.3, zt), (-sx * 0.2, L * 0.3, zt), 0.022, P["wood"], parent=g, segs=6)
+        sphere(f"{name}_knob{k}", 0.045, P["wood"], g, loc=(sx * 0.24, -L * 0.3, zt), segs=8, rings=6)
+    return g
+
+
 def rammed_wall_e(name, P, parent, x0, y0, x1, y1, h, t=0.5):
     """夯土 wall with a tile coping, from (x0, y0) to (x1, y1)."""
     L = math.hypot(x1 - x0, y1 - y0)
@@ -540,10 +574,7 @@ def barracks(root, c):
             rod(f"bk_spear{k}", (-0.65 + k * 0.26, 0.05, 0.05), (-0.65 + k * 0.26, -0.05, 2.6), 0.02, P["wood"], parent=rack,
                 segs=5)
             cyl(f"bk_tip{k}", 0.03, 0.22, P["iron"], rack, loc=(-0.65 + k * 0.26, -0.05, 2.6), r2=0.0, segs=5)
-        cyl("bk_drum", 0.42, 0.55, P["red"], root, loc=(1.2, -1.7, 0.6), rot=(90, 0, 0), segs=20)
-        for sx in (-1, 1):
-            rod(f"bk_drumleg{sx}", (1.2 + sx * 0.35, -1.7, 0.08), (1.2 + sx * 0.15, -1.7, 0.75), 0.04, P["wood"], parent=root,
-                segs=5)
+        war_drum("bk_drum", P, root, 1.15, -1.55, r=0.4, h=0.55)
         kit.flag("bk_flag", P, root, (2.4, -2.3, 0.08), 5.0, c, w=1.3, fh=1.9)
         _team_hangings_e(P, root, (-1.65, 1.65), 1.35 - d / 2 - 0.2, 0.4 + 2.45, w=0.6, h=1.3)
     else:

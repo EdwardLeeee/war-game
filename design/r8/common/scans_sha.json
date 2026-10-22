@@ -1,0 +1,42 @@
+{
+ "rock_face_01/rock_face_01.bin": {
+  "sha256": "873eac0319333e92bc96ddeedf8ebf69dc3c68ff1dfe32d8c14ddc165cdb20ac",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/rock_face_01/rock_face_01.bin"
+ },
+ "rock_face_01/rock_face_01_1k.gltf": {
+  "sha256": "96c332c01d173a2431115f3bac29be101fba341e5500e2a08e384f4edd17299e",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/rock_face_01/rock_face_01_1k.gltf"
+ },
+ "rock_face_01/textures/rock_face_01_arm_1k.jpg": {
+  "sha256": "59128c79d207a50a69a38002986135ade3b19642d26158cec141eca41578c9ca",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rock_face_01/rock_face_01_arm_1k.jpg"
+ },
+ "rock_face_01/textures/rock_face_01_diff_1k.jpg": {
+  "sha256": "41bd26ed2db1332b1ebb4b1326fd8af4d21f0f0eb57b8ea385033115c722cfdb",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rock_face_01/rock_face_01_diff_1k.jpg"
+ },
+ "rock_face_01/textures/rock_face_01_nor_gl_1k.jpg": {
+  "sha256": "9a9d85b9a01f4e24fc9ceec8baf96c019f552bca69591ff544c7a725e28b1d97",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rock_face_01/rock_face_01_nor_gl_1k.jpg"
+ },
+ "rock_face_02/rock_face_02.bin": {
+  "sha256": "cfa3dea8f0f91525b5dfe93d889acacf961d20f7174aae100eae2c6e101edf31",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/rock_face_02/rock_face_02.bin"
+ },
+ "rock_face_02/rock_face_02_1k.gltf": {
+  "sha256": "ebeab82d463c89eb5f894b85807da111280a73b552d694257118f3f2d47bf760",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/rock_face_02/rock_face_02_1k.gltf"
+ },
+ "rock_face_02/textures/rock_face_02_arm_1k.jpg": {
+  "sha256": "0f3f64b9f56e3c5cecbb99e45d8fa0d4cbf025d4455439d1c5f6672a408365ee",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rock_face_02/rock_face_02_arm_1k.jpg"
+ },
+ "rock_face_02/textures/rock_face_02_diff_1k.jpg": {
+  "sha256": "d777f2c9b598773c2143751c34913cf5eef0ae392af31fb73c28b98afab6fb7b",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rock_face_02/rock_face_02_diff_1k.jpg"
+ },
+ "rock_face_02/textures/rock_face_02_nor_gl_1k.jpg": {
+  "sha256": "a9dc200810f5488395fdc928b5a9441c007c33047d0375d946f33dcd2ff1c853",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rock_face_02/rock_face_02_nor_gl_1k.jpg"
+ }
+}

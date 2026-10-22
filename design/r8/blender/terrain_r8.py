@@ -7,14 +7,91 @@ read as natural rock, never as masonry (research/nature-reference): so everythin
   - talus at the foot: a slope of broken rock spilling outward (a wall stands clean on the ground).
 """
 import math
+import os
 import random
 
 import bmesh
+import bpy
+import numpy as np
+from mathutils import Matrix, Vector
+from mathutils.bvhtree import BVHTree
+from mathutils.interpolate import poly_3d_calc
 
 import lib
 from lib import ico
 
 CELL = 2.0
+HERE = os.path.dirname(os.path.abspath(__file__))
+SCANS = os.path.join(HERE, "..", "build", "scans")         # common/scans.py fetch puts them here
+RES = 0.01                                                 # the fields' spacing, metres
+
+
+def scan_field(sid):
+    """A scanned rock face (common/scans.py) as a field seen from the front: the scan stood upright (its mean plane
+    turned to face -y), rays cast along +y on a RES grid; per sample the depth (y of the hit) and the colour there
+    (its colour map at the hit's UV, sRGB 0..1). Cached in build/scans/fields/<sid>.npz.
+    -> dict(depth [nz, nx], rgb [nz, nx, 3], hit [nz, nx] bool, x0, z0 (the grid's corner, metres))"""
+    cache = os.path.join(SCANS, "fields", f"{sid}.npz")
+    if os.path.exists(cache):
+        d = np.load(cache)
+        return {k: d[k] for k in d.files}
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=os.path.join(SCANS, sid, f"{sid}_1k.gltf"))
+    obs = [o for o in bpy.data.objects if o not in before]
+    ob = next(o for o in obs if o.type == "MESH")
+    me = ob.data
+    M = ob.matrix_world.copy()
+    co = np.array([M @ v.co for v in me.vertices])
+    c = co.mean(0)
+    n = np.zeros(3)
+    for p in me.polygons:
+        n += np.array(M.to_3x3() @ p.normal) * p.area
+    n /= np.linalg.norm(n)
+    # turn the mean normal to -y about the z axis, then about the x axis (the face upright, still facing the camera)
+    rz = Matrix.Rotation(math.atan2(n[0], -n[1]), 4, "Z")
+    n2 = rz.to_3x3() @ Vector(n)
+    rx = Matrix.Rotation(math.atan2(n2.z, -n2.y), 4, "X")
+    R = rx @ rz @ Matrix.Translation(Vector(-c)) @ M
+    verts = [R @ v.co for v in me.vertices]
+    polys = [tuple(p.vertices) for p in me.polygons]
+    bvh = BVHTree.FromPolygons(verts, polys)
+    uv = me.uv_layers.active.data
+    loops = [list(p.loop_indices) for p in me.polygons]
+    img = next(t.image for m in me.materials for t in m.node_tree.nodes
+               if t.bl_idname == "ShaderNodeTexImage" and t.image and "diff" in t.image.name)
+    w, h = img.size
+    px = np.empty(w * h * 4, np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(h, w, 4)[..., :3]
+    V = np.array(verts)
+    x0, x1 = V[:, 0].min(), V[:, 0].max()
+    z0, z1 = V[:, 2].min(), V[:, 2].max()
+    nx, nz = int((x1 - x0) / RES), int((z1 - z0) / RES)
+    depth = np.zeros((nz, nx), np.float32)
+    rgb = np.zeros((nz, nx, 3), np.float32)
+    hit = np.zeros((nz, nx), bool)
+    ystart = V[:, 1].min() - 1.0
+    d = Vector((0, 1, 0))
+    for j in range(nz):
+        z = z0 + (j + 0.5) * RES
+        for i in range(nx):
+            loc, _, fi, _ = bvh.ray_cast(Vector((x0 + (i + 0.5) * RES, ystart, z)), d)
+            if loc is None:
+                continue
+            pv = polys[fi]
+            wts = poly_3d_calc([verts[k] for k in pv], loc)
+            u = sum(wt * uv[li].uv[0] for wt, li in zip(wts, loops[fi]))
+            v = sum(wt * uv[li].uv[1] for wt, li in zip(wts, loops[fi]))
+            depth[j, i] = loc.y
+            rgb[j, i] = px[int((v % 1.0) * (h - 1)), int((u % 1.0) * (w - 1))]
+            hit[j, i] = True
+    for o in obs:
+        bpy.data.objects.remove(o, do_unlink=True)
+    bpy.data.orphans_purge(do_recursive=True)
+    out = dict(depth=depth, rgb=rgb, hit=hit, x0=np.float32(x0), z0=np.float32(z0))
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    np.savez_compressed(cache, **out)
+    return out
 
 
 def _noise(seed):
