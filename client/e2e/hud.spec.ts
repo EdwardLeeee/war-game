@@ -1415,34 +1415,77 @@ test("人口：資源列的人口含訓練中的兵，後面寫訓練中幾名�
   expect((await ownIds(page, [1])).length).toBe(8);
 });
 
-test("自動訓練：兵營預設開著，指令區寫目前：開、選取資訊寫自動訓練中；按了送出暫停，再按又開（D-054）", async ({ page }, info) => {
+const autoArmy = (page: Page, on: boolean) => page.evaluate((o) => window.__proto?.game?.autoArmy(o), on);
+const autoTrains = async (page: Page) => (await sent(page)).filter((c) => c.c === "train" && c.auto === true);
+
+test("自動訓練（D-098）：兵營只補軍團缺的；沒設軍團不訓練、軍團都滿不訓練，選取資訊寫為什麼；暫停是畫面自己的，不送指令", async ({ page }, info) => {
+  await autoArmy(page, true);
   await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
   await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
   const panel = page.locator(".sel-info");
+  const line = panel.locator(".auto-train-line");
   await expect(panel).toContainText("兵營");
+  await expect(line).toHaveText("還沒設軍團，不會自動訓練");
+  const barracks = (await page.evaluate(() => window.__proto?.game?.selection()))?.building;
   const auto = page.locator(".cmds").getByRole("button", { name: /^自動訓練/ });
   await expect(auto).toHaveText("自動訓練目前：開");
-  await expect(auto).toHaveClass(/active/);
-  await expect(panel.locator(".sel-status")).toContainText("自動訓練中");
-  await shot(page, info, "auto-train-panel");
-  const barracks = (await page.evaluate(() => window.__proto?.game?.selection()))?.building;
+  await shot(page, info, "auto-army-no-group");
+  // The six spearmen as group 1: it wants six and has them.
+  await centre(page, 22, 71);
+  const spear = await selectSpearmen(page);
+  await saveGroup(page, GROUP_1);
+  await select(page, []);
+  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
+  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await expect(line).toHaveText("軍團都滿，不訓練");
+  // (The main city trains villagers meanwhile: its own target, below.)
+  expect((await autoTrains(page)).filter((c) => c.building === barracks)).toEqual([]);
+  await shot(page, info, "auto-army-full");
+  // Two fall: the barracks trains spearmen for group 1, one at a time.
+  await remove(page, spear.slice(0, 2));
+  await expect.poll(async () => (await autoTrains(page)).filter((c) => c.building === barracks).at(-1)).toMatchObject({ c: "train", building: barracks, type: 1, n: 1 });
+  await expect(line).toHaveText(/^補軍團缺的：槍 [12]$/);
+  await shot(page, info, "auto-army-short");
+  // No pause mark on the barracks while it trains (the simulation's own 自動訓練 is off for the player, D-098).
+  const marks = () => page.evaluate(() => window.__proto?.game?.pauseMarks() ?? -1);
+  expect(await marks()).toBe(0);
+  // 暫停: the screen's own (no order to the simulation); the line says so, and nothing more is queued.
+  const before = (await sent(page)).length;
   await auto.tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "auto_train", building: barracks, on: false });
   await expect(auto).toHaveText("自動訓練目前：暫停");
-  await expect(panel.locator(".sel-status")).toContainText("自動訓練暫停");
+  await expect.poll(marks).toBe(1);
+  await expect(line).toHaveText("自動訓練暫停");
+  await expect(toast(page, "已暫停這座兵營的自動訓練")).toBeVisible();
+  await page.waitForTimeout(4000);
+  expect((await sent(page)).slice(before).filter((c) => c.c === "auto_train" || (c.c === "train" && c.building === barracks))).toEqual([]);
   await auto.tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "auto_train", building: barracks, on: true });
   await expect(auto).toHaveText("自動訓練目前：開");
 });
 
-test("人口滿了：自動訓練停下來時，訊息列提示一次，兵營寫人口滿了（D-054）", async ({ page }) => {
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
-  const train = page.getByRole("button", { name: /^訓練槍兵/ });
-  // 17 now, 20 at most: three more fill it.
-  for (let i = 0; i < 3; i++) await train.tap();
+test("自動訓練（D-098）：主城自動補村民到目標（預設 40，−／+ 一次 5，可暫停）；人口滿了，訊息列提示一次，主城寫人口滿了", async ({ page }, info) => {
+  await autoArmy(page, true);
+  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
+  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  const panel = page.locator(".sel-info");
+  const target = panel.getByRole("group", { name: "村民目標" });
+  await expect(target.locator("output")).toHaveText("40");
+  // 5 villagers, 17 of 20 in all: the main city trains one.
+  await expect.poll(async () => (await autoTrains(page)).at(-1)).toMatchObject({ c: "train", type: 0, n: 1 });
+  await expect(panel.locator(".auto-train-line")).toHaveText(/^村民 \d+／40，訓練中$/);
+  await shot(page, info, "auto-army-main-city");
+  await target.getByRole("button", { name: "村民目標多 5 名" }).tap();
+  await expect(target.locator("output")).toHaveText("45");
+  await target.getByRole("button", { name: "村民目標少 5 名" }).tap();
+  await expect(target.locator("output")).toHaveText("40");
+  // Three more fill the population (20): the strip says it once, the main city's line too.
   await expect(toast(page, "人口滿了，自動訓練停下來：蓋民居")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".sel-info .sel-status")).toContainText("人口滿了，蓋民居");
+  // The last one in the queue already takes the room: 7, then 8 once it is out (slow on a busy CI: run 39647183375).
+  await expect(panel.locator(".auto-train-line")).toHaveText(/^村民 [78]／40，人口滿了：蓋民居$/);
+  // 自動村民 paused.
+  const villagers = page.locator(".cmds").getByRole("button", { name: /^自動村民/ });
+  await villagers.tap();
+  await expect(villagers).toHaveText("自動村民目前：暫停");
+  await expect(panel.locator(".auto-train-line")).toHaveText(/^村民 [78]／40，自動訓練暫停$/);
 });
 
 test("預留：選主城 → 預留 → 對話框寫現在的預留額（預設木 150、金 100、晶 15），−／+ 後套用送出 reserve；預設鈕回到預設（D-054）", async ({ page }, info) => {

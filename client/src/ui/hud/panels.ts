@@ -72,6 +72,18 @@ export interface PanelHost {
   cancelGovernWait(town: number): void;
   /** The reserve raised for a waiting 治理 (預留's button says so). */
   reserveRaised(): boolean;
+  /**
+   * 自動訓練 by the screen (D-098): a building paused or not, why it trains or not; the main
+   * city's villagers, their target (−／+) and pause.
+   */
+  autoPaused(building: number): boolean;
+  toggleAutoPaused(building: number): void;
+  trainingLine(building: number): string;
+  villagerLine(): string;
+  villagerTarget(): number;
+  stepVillagers(by: number): void;
+  villagersPaused(): boolean;
+  toggleVillagers(): void;
   selectOnly(units: number[]): void;
   /** Nothing selected (tapping the ground would order the selected units to go there). */
   clearSelection(): void;
@@ -118,22 +130,6 @@ export interface PanelHost {
   toggleCollapsed(): void;
   /** 預留 (D-054): the reserve 自動訓練 leaves untouched, set in a dialog. */
   openReserve(): void;
-}
-
-/** A building's flags with 自動訓練 as just sent (game/pending.ts; null: as the snapshot has it). */
-export function withAutoTrain(flags: number, sent: boolean | null): number {
-  if (sent === null) return flags;
-  return sent ? flags | BuildingFlag.AutoTrain : flags & ~(BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
-}
-
-/**
- * 自動訓練 (D-054): what an own barracks, range or mage hall is doing about it, from its flags;
- * null for other buildings.
- */
-export function autoTrainText(type: number, flags: number): string | null {
-  if (!AUTO_TRAIN.buildings.includes(type)) return null;
-  if ((flags & BuildingFlag.AutoPopulationFull) !== 0) return "人口滿了，蓋民居";
-  return (flags & BuildingFlag.AutoTrain) !== 0 ? "自動訓練中" : "自動訓練暫停";
 }
 
 /**
@@ -464,6 +460,24 @@ export class SelectionInfo {
     const status = el("span", head, "sel-status");
     const hpBar = bar(this.el, "hp");
     const hpText = el("span", this.el, "sel-num");
+    // 自動訓練 by the screen (D-098): why it trains or not; the main city's villagers and their target.
+    const trainsOnItsOwn = own && (type === BuildingType.MainCity || AUTO_TRAIN.buildings.includes(type));
+    const autoLine = trainsOnItsOwn ? el("p", this.el, "sel-pend auto-train-line") : null;
+    if (own && type === BuildingType.MainCity) {
+      const row = el("div", this.el, "sel-keep villager-target");
+      row.setAttribute("role", "group");
+      row.setAttribute("aria-label", "村民目標");
+      el("span", row, "", "村民目標");
+      button(row, "−", "", () => this.host.stepVillagers(-1), "secondary step").setAttribute("aria-label", "村民目標少 5 名");
+      const count = el("output", row);
+      count.setAttribute("aria-label", "村民目標幾名");
+      button(row, "+", "", () => this.host.stepVillagers(1), "secondary step").setAttribute("aria-label", "村民目標多 5 名");
+      el("span", row, "", "名");
+      this.updaters.push(() => {
+        const n = `${this.host.villagerTarget()}`;
+        if (count.textContent !== n) count.textContent = n;
+      });
+    }
     const queue = own ? el("div", this.el, "sel-queue") : null;
     const queueLength = b0[o0 + B.queueLength];
     const packed = b0[o0 + B.queuePacked];
@@ -528,9 +542,12 @@ export class SelectionInfo {
       }
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
-      // As just sent while the game runs; paused, as it is until 繼續 (R6-31: the button says what comes).
-      const auto = own ? (autoTrainText(type, withAutoTrain(b[o + B.flags], this.host.paused() ? null : this.host.pending().autoTrain(id))) ?? "") : "";
-      status.textContent = `${own ? [locked, auto].filter((t) => t !== "").join("　") : remembered}${inside}`;
+      status.textContent = `${own ? locked : remembered}${inside}`;
+      // 自動訓練 by the screen (D-098): why it trains or not, on a line of its own.
+      if (autoLine !== null) {
+        const line = type === BuildingType.MainCity ? this.host.villagerLine() : this.host.trainingLine(id);
+        if (autoLine.textContent !== line) autoLine.textContent = line;
+      }
       headBar?.(b[o + B.queueProgress] / 1000);
     });
   }
@@ -768,9 +785,10 @@ export class CommandArea {
     if (sel.building !== null) {
       const o = view.buildingRow(sel.building);
       const b = view.curr?.snap.buildings;
-      const auto = o < 0 || b === undefined ? 0 : withAutoTrain(b[o + B.flags], this.host.pending().autoTrain(sel.building)) & (BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
-      const later = this.host.paused() && this.host.pending().autoTrain(sel.building) !== null;
-      return o < 0 || b === undefined ? "none" : `b:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}:${later ? 1 : 0}`;
+      // 自動訓練 (D-098): the screen's pause, and the main city's villagers'.
+      const auto = this.host.autoPaused(sel.building) ? 1 : 0;
+      const villagers = this.host.villagersPaused() ? 1 : 0;
+      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}:${villagers}:${this.host.reserveRaised() ? "r" : ""}`;
     }
     return "none";
   }
@@ -888,14 +906,13 @@ export class CommandArea {
       }
       // 自動訓練 (D-054): on by default for the player; a tap pauses or resumes this building
       // (it can be set before the building is finished, too).
-      if (AUTO_TRAIN.buildings.includes(type)) {
-        const sent = this.host.pending().autoTrain(id);
-        const on = (withAutoTrain(b[o + B.flags], sent) & BuildingFlag.AutoTrain) !== 0;
-        // Sent while paused (R6-31): as it will be, dashed, 繼續後暫停 or 繼續後恢復.
-        const later = sent !== null && this.host.paused();
-        const auto = button(this.el, "自動訓練", later ? (on ? "繼續後恢復" : "繼續後暫停") : on ? "目前：開" : "目前：暫停", () => this.host.command({ c: "auto_train", building: id, on: !on }), "secondary");
-        if (later) auto.classList.add("pending");
-        else if (on) auto.classList.add("active");
+      // D-098: the screen's own pause (kept in the save), no order to the simulation; for the main
+      // city, its villagers (訓練村民 up to the target).
+      if (AUTO_TRAIN.buildings.includes(type) || type === BuildingType.MainCity) {
+        const city = type === BuildingType.MainCity;
+        const on = city ? !this.host.villagersPaused() : !this.host.autoPaused(id);
+        const auto = button(this.el, city ? "自動村民" : "自動訓練", on ? "目前：開" : "目前：暫停", () => (city ? this.host.toggleVillagers() : this.host.toggleAutoPaused(id)), "secondary");
+        if (on) auto.classList.add("active");
       }
       return;
     }
