@@ -2648,3 +2648,64 @@ test("D-096 (plan.lumberMove): the trees by its lumber camp gone, hard puts up a
   assert.equal(built(true), true, "on: another lumber camp");
   assert.equal(built(false), false, "off: none, as before");
 });
+
+// --- D-086 A5: hard that stopped attacking after failed waves (the user's f331df3c) --------------------------------
+
+test("D-086 A5 (plan.cityForts): with arrow towers by the enemy's main city and few enemy soldiers in sight, hard does not march; off, as before", () => {
+  const march = (cityForts: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 40; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 8), s0.cellY - 6 - Math.trunc(k / 8));
+    // Eight towers round the enemy's main city, three soldiers in each, seen by a farmer of its own.
+    for (let k = 0; k < 8; k++) {
+      const id = w.addBuilding(1, BuildingType.ArrowTower, s1.cellX - 6 + 3 * (k % 4), s1.cellY + 8 + 3 * Math.trunc(k / 4), 600, 1000);
+      w.buildings.col.soldiers[w.building(id)] = 3;
+    }
+    put(g, 0, UnitType.Farmer, s1.cellX - 4, s1.cellY + 13);
+    put(g, 0, UnitType.Farmer, s1.cellX + 1, s1.cellY + 13);
+    g.fog.update(w);
+    assert.equal(enemyForts(buildView(g, 0), 0, rules()).length, 8, "it sees the towers");
+    const out = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0, cityAgain: 0, cityForts }).think(buildView(g, 0));
+    return out.some((c) => c.c === "move" && c.u.length === 40 && c.x === s1.cellX && c.y === s1.cellY);
+  };
+  assert.equal(march(false), true, "off: on to the enemy base");
+  assert.equal(march(true), false, "on: not into the towers");
+});
+
+test("D-086 A5 (plan.foeMemory): what hard believes of the enemy comes only from soldiers it saw; enemy soldiers in the fog change nothing", () => {
+  const believed = (hidden: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 5), s0.cellY - 6 - Math.trunc(k / 5));
+    // Six enemy spearmen in sight by its army; `hidden` more by their own main city, in the fog.
+    for (let k = 0; k < 6; k++) put(g, 1, UnitType.Spearman, s0.cellX + 6 + k, s0.cellY - 10);
+    for (let k = 0; k < hidden; k++) put(g, 1, UnitType.Spearman, s1.cellX - 4 + (k % 8), s1.cellY + 4 + Math.trunc(k / 8));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, foeMemory: true, foeDecay: 10 }) as unknown as { think: (v: unknown) => unknown; peek: () => Record<string, number> };
+    ai.think(buildView(g, 0));
+    // Those in sight leave; a minute and more on it still remembers them, less 10% a minute.
+    for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 1 && (w.units.col.y[s] >> 10) === s0.cellY - 10) w.units.col.hp[s] = 0;
+    g.step();
+    for (let t = 0; t < 3; t++) {
+      w.tick += 1200;
+      g.fog.update(w);
+      ai.think(buildView(g, 0));
+    }
+    return ai.peek();
+  };
+  const none = believed(0);
+  const many = believed(40);
+  assert.ok(none.believedWorth > 0, "it remembers those it saw");
+  assert.deepEqual(many, none, "the 40 in the fog change nothing");
+});
