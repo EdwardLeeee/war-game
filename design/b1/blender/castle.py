@@ -133,7 +133,8 @@ def pal_y(root, c, variant=0, state="intact"):
         _soot(root)
 
 
-PAL_WALK = {"E": 1.45, "W": 1.7}     # the fighting platform: the stakes (2.6, 2.9 m) reach a standing man's chest
+PAL_WALK = {"E": 1.3, "W": 1.6}      # the fighting platform: the stakes (2.6, 2.9 m) stand 1.3 m over it, a man's chest
+                                     # (Mahan 1862: the banquette 4 ft 3 in under the parapet's top; research wall-reference)
 PAL_IN = 0.42                        # where he stands: on the platform, close behind the stakes
 
 
@@ -313,16 +314,18 @@ def sw_y(root, c, variant=0, state="intact"):
         _soot(root)
 
 
-SW_OUT = {"E": 1.55, "W": 1.7}       # the outer parapet's merlons above the walk (垛牆; the European merlons)
-SW_SILL = 0.9                         # its crenels' sill above the walk: an archer shoots over it from the chest
+SW_OUT = {"E": 1.55, "W": 2.0}       # the merlons above the walk: 女頭 about 1.55 m (《守城錄》), European about 2 m (Viollet-le-Duc)
+SW_SILL = 1.0                         # the crenel's sill above the walk, at a man's waist (Viollet-le-Duc)
+SW_CRENEL = {"E": 0.45, "W": 0.7}     # the crenel's width: one in the middle of each cell, where the unit stands; the merlon
+                                      # spans the cell's edge with the next (1.55 m east, 1.3 m west)
 SW_IN = {"E": 0.9, "W": 0.6}          # the low parapet on the town side (女牆; a curb on the European walk)
 SW_STAND = -0.25                      # where a unit stands: close behind the crenels
 
 
 def _wall_side(name, P, parent, side, c):
-    """One cell of stone wall on `side` (D-096): the art-v4 body and walk; on the outer edge a crenellated parapet (two
-    merlons a cell, a crenel between them and half of one at each end, shared with the next cell), a loophole (east)
-    or an arrow slit (west) in each merlon; on the town side a low parapet."""
+    """One cell of stone wall on `side` (D-096): the art-v4 body and walk; on the outer edge a crenellated parapet (the
+    crenel in the middle of the cell, where the unit stands; a half merlon to each edge, whole with the next cell's), a
+    loophole (east) or an arrow slit (west) in each half; on the town side a low parapet."""
     H = WALL_H[c]
     T = 1.6
     mat = P["brick"] if c == "E" else P["stone"]
@@ -333,14 +336,16 @@ def _wall_side(name, P, parent, side, c):
     po = -(T / 2 - 0.175)
     box(name + "_sill", _size(side, CELL, 0.35, SW_SILL), mat, parent, loc=_at(side, 0, po, top + SW_SILL / 2), bevel=0.02)
     hm = SW_OUT[c] - SW_SILL
-    for k, t in enumerate((-0.5, 0.5)):
-        box(f"{name}_m{k}", _size(side, 0.6, 0.35, hm), mat, parent, loc=_at(side, t, po, top + SW_SILL + hm / 2), bevel=0.02)
+    half = (CELL - SW_CRENEL[c]) / 2
+    for k, sgn in enumerate((-1, 1)):
+        t = sgn * (SW_CRENEL[c] / 2 + half / 2)
+        box(f"{name}_m{k}", _size(side, half, 0.35, hm), mat, parent, loc=_at(side, t, po, top + SW_SILL + hm / 2), bevel=0.02)
         if c == "E":
-            box(f"{name}_mc{k}", _size(side, 0.68, 0.43, 0.08), P["tile"], parent, loc=_at(side, t, po, top + SW_OUT[c] + 0.04))
+            box(f"{name}_mc{k}", _size(side, half + 0.04, 0.43, 0.08), P["tile"], parent, loc=_at(side, t, po, top + SW_OUT[c] + 0.04))
             box(f"{name}_eye{k}", _size(side, 0.14, 0.37, 0.16), P["dark"], parent, loc=_at(side, t, po, top + SW_SILL + hm * 0.45),
                 outline=False)
         else:
-            box(f"{name}_slit{k}", _size(side, 0.07, 0.37, 0.42), P["dark"], parent, loc=_at(side, t, po, top + SW_SILL + hm * 0.5),
+            box(f"{name}_slit{k}", _size(side, 0.07, 0.37, 0.55), P["dark"], parent, loc=_at(side, t, po, top + SW_SILL + hm * 0.5),
                 outline=False)
     if c == "E":                              # the crenels' sill under a tile coping too
         box(name + "_sc", _size(side, CELL, 0.41, 0.06), P["tile"], parent, loc=_at(side, 0, po, top + SW_SILL + 0.03))

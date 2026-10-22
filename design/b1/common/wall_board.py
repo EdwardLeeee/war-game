@@ -7,6 +7,7 @@ and from outside (a south wall: the attackers' side), at the phone's 3x pixels a
 python3 design/b1/common/wall_board.py SUFFIX UNITS_DIR [REFS_DIR]
   SUFFIX     prev (run.py d096_<c> --preview --ppm 60) or x3 (the full render)
   UNITS_DIR  folder with <unit>/r7v8/prod/<unit>/atlas_x3/<unit>.json (R8, the CI artifacts r7-v8-<unit>)
+  REFS_DIR   research/wall-reference (the reference pictures, REFS)
 writes design/r8/out/R8-15-牆上的兵-東陸-mobile.png and R8-16-牆上的兵-西陸-mobile.png
 """
 import json
@@ -107,7 +108,80 @@ def wall_scene(c, suffix, atlases, stone, side, attackers):
     return compose([(s[0], s[1], s[2], s[3]) for s in shadows] + layers, bg)
 
 
-def board(c, suffix, atlases):
+FACE_OUT = {"n": 2, "s": 6, "w": 4, "e": 0}       # an archer on a wall looks out of the town
+
+
+def town_scene(c, suffix, atlases, stone):
+    """The whole town's walls as the client lays them out (common/castle.py placements: closed gates, the corners),
+    archers on every other cell of plain wall looking out; each piece, then the archers on it, then its front."""
+    import castle as CASTLE
+    L = CASTLE.large() if stone else CASTLE.small()
+    pieces = sorted(CASTLE.placements(L), key=lambda q: (q["front"], q["anchor"][0]))
+    layers = []
+    k = 0
+    for q in pieces:
+        kind = q["piece"]
+        state = "closed" if kind in CASTLE.GATE_PIECES else "intact"
+        sp = piece(c, kind, suffix, state=state)
+        at = (q["anchor"][0] * 2.0, -q["anchor"][1] * 2.0, 0.0)          # the sim's cells (+y south) to metres
+        layers.append((sp.img, sp.ax, sp.ay, at))
+        side = kind.split("_")[1] if kind.count("_") == 1 and kind.split("_")[1] in FACE_OUT else None
+        if side is None:
+            continue
+        k += 1
+        if k % 2:
+            st = stand(sp)
+            body, ax, ay, _ = unit(atlases, ARCHER[c], "attack", FACE_OUT[side], (k * 3) % 8, "blue")
+            layers.append((body, ax, ay, (at[0] + st[0], at[1] + st[1], st[2])))
+        fp = DIR / f"castle_{kind}_{c}_intact_front_{suffix}.json"
+        if fp.exists():
+            fr = scene.piece(DIR, f"castle_{kind}_{c}_intact_front", suffix, team="blue", ppm=PPM, shadow=False)
+            layers.append((fr.img, fr.ax, fr.ay, at))
+    return compose(layers, INSIDE_BG)
+
+
+# research/wall-reference (not in this repo; public domain and CC0 only, THIRD_PARTY_NOTICES.md): what is on the boards
+REFS = [
+    ("02-史坦威克斯堡重建-圓木胸牆內側站台與人的比例.jpg", "02 史坦威克斯堡重建（美國國家公園管理局，公有領域）：圓木胸牆內側的站台［二手］"),
+    ("03-史坦威克斯堡重建-外圍尖木樁在下-守軍胸牆在上.jpg", "03 同一座堡從外面看：尖樁在下、守軍在胸牆後［二手］"),
+    ("05-迪利希1641築城書-胸牆踏台剖面與木樁位置.jpg", "05 迪利希 1641 築城書剖面：胸牆、踏台、木樁［一手］"),
+    ("06-武經總要-城制-女頭垛口與馬面敵棚.jpg", "06《武經總要》城制：女頭、垛口［一手，清代重繪］"),
+    ("09-西安明城牆-城頂走道-外側垛牆與內側宇牆.jpg", "09 西安明城牆頂：外側垛牆、內側宇牆（Gary Todd，CC0）［一手］"),
+    ("14-維奧萊勒杜克-卡卡松城堡垛口-附4公尺比例尺.jpg", "14 維奧萊勒杜克：卡卡松的垛口，附 4 公尺比例尺［二手］"),
+]
+POINTS = ("依據（考據筆記 research/wall-reference/notes.md）：\n"
+          "・木柵：守軍站在胸牆後的踏台上，胸牆頂比踏台高約 1.3 公尺，矮個子也能從牆頂射擊（Mahan 1862 野戰築城教本）。"
+          "我們：尖樁高出射擊台 1.3 公尺。\n"
+          "・中國城牆：外側垛牆的「女頭」約 1.55 公尺，每 1.86 公尺一個（《守城錄》）；城裡那一側的宇牆 0.8–1 公尺（明代北京城）。"
+          "我們（東陸）：垛 1.55 公尺、垛口寬 0.45 公尺、垛口下緣 1 公尺、女牆 0.9 公尺。\n"
+          "・歐洲城牆：垛約 2 公尺高，可以把人整個藏住；垛口寬 0.7–1 公尺，下緣離走道約 1 公尺；一個垛口站一個人（維奧萊勒杜克）。"
+          "我們（西陸）：垛 2 公尺、垛口 0.7 公尺、下緣 1 公尺。\n"
+          "・世紀帝國 4 只看了文字說明，沒有放它的圖（版權）。")
+
+
+def refs_part(W, folder):
+    from PIL import ImageDraw
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    h = 250
+    tiles = []
+    for name, cap in REFS:
+        im = Image.open(Path(folder) / name).convert("RGB")
+        im = im.resize((round(im.width * h / im.height), h), Image.LANCZOS)
+        w = max(im.width, 280)
+        th = boards.wrap(probe, 0, 0, cap, w, size=20) + 8
+        t = Image.new("RGB", (w, h + th + 8), boards.BG)
+        t.paste(im, (0, 0))
+        boards.wrap(ImageDraw.Draw(t), 0, h + 8, cap, w, size=20, fill=boards.INK)
+        tiles.append(t)
+    row = boards.row(tiles, W, gap=18)
+    th = boards.wrap(probe, 0, 0, POINTS, W - 2 * boards.M, size=24) + 16
+    txt = Image.new("RGB", (W, th), boards.BG)
+    boards.wrap(ImageDraw.Draw(txt), boards.M, 4, POINTS, W - 2 * boards.M, size=24, fill=boards.INK)
+    return boards.stack([boards.row([boards.captioned(Image.new("RGB", (W - 2 * boards.M, 2), boards.BG),
+                                                      "真實的樣子（只放公有領域和 CC0 的圖）", 26)], W), row, txt], W)
+
+
+def board(c, suffix, atlases, refs=None):
     label, side_name = LABEL[c]
     W = 2500
     text = (f"牆上的兵（D-096），{side_name}，暫用版（現在建築的畫風）。使用者 2026-10-22 看了 #266 的截圖說"
@@ -119,8 +193,12 @@ def board(c, suffix, atlases):
             + ("女牆" if c == "E" else "護牆") + "。\n"
             "・從城裡看（北牆）：看到弓手的背；從城外看（南牆，進攻方的角度）：胸牆或尖樁擋住下半身。\n"
             "client 的畫法（和 war-game-client 談好）：先畫牆，再畫牆上的兵，最後把牆的前片蓋上去。"
-            "四面牆分開成不同的圖，因為走道在城裡那一側。上：手機 3 倍；下：實際大小。")
+            "四面牆分開成不同的圖，因為走道在城裡那一側。\n"
+            "東西兩面牆從這個鏡頭看是側面：弓手站在尖樁或胸牆旁邊，看得到全身。\n"
+            "最下面是整座城的實際大小：城門關著，弓手站在每隔一格的牆上、面向城外。上：手機 3 倍；中、下：實際大小。")
     parts = [boards.header(W, label, text)]
+    if refs:
+        parts.append(refs_part(W, refs))
     big, small = [], []
     for stone, name in ((False, "木柵（小鎮）"), (True, "石牆（大城）")):
         for side, view, att in (("n", "從城裡看（北牆）", False), ("s", "從城外看（南牆，進攻方）", True)):
@@ -130,6 +208,12 @@ def board(c, suffix, atlases):
     parts.append(boards.row(big[:2], W, gap=24))
     parts.append(boards.row(big[2:], W, gap=24))
     parts.append(boards.row([boards.captioned(boards.row(small, W - 2 * boards.M, gap=24), "實際大小（1 倍，手機的點）", 24)], W))
+    towns = []
+    for stone, name in ((False, "整座小鎮（木柵）"), (True, "整座大城（石牆）")):
+        img = town_scene(c, suffix, atlases, stone)
+        towns.append(boards.captioned(img.resize((img.width // 3, img.height // 3), Image.LANCZOS),
+                                      f"{name}　實際大小", 22))
+    parts.append(boards.row(towns, W, gap=40))
     return boards.save(boards.stack(parts, W), label)
 
 
@@ -144,6 +228,7 @@ def atlases_from(d):
 
 if __name__ == "__main__":
     sfx, udir = sys.argv[1], sys.argv[2]
+    rdir = sys.argv[3] if len(sys.argv) > 3 else None
     at = atlases_from(udir)
     for c in ("E", "W"):
-        print(board(c, sfx, at))
+        print(board(c, sfx, at, rdir))

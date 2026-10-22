@@ -34,6 +34,12 @@ R8 的核准稿（`design/r8/out/R8-*`）上方放了幾張裁切過的參考圖
 | 西陸 13：卡斯泰爾諾城堡的重建配重投石機 | 同上 | CC0 | Jebulon | 2026-10-21 |
 | 西陸 14：托雷多道德化聖經獻辭頁（摩根圖書館 M.240） | 同上 | 公有領域 | 1227–34 巴黎佚名畫工 | 2026-10-21 |
 | 西陸 15：沃爾托利納〈波隆那大學講課〉 | 同上 | 公有領域標章（收藏館標示） | Laurentius de Voltolina | 2026-10-21 |
+| 城牆 02：史坦威克斯堡重建，胸牆內側的站台（牆上的兵稿 R8-15、R8-16） | https://commons.wikimedia.org/wiki/File:Fort_Stanwix_National_Monument_FTST3695.jpg | 公有領域（美國國家公園管理局照片） | National Park Service | 2026-10-22 |
+| 城牆 03：史坦威克斯堡從外面看 | https://commons.wikimedia.org/wiki/File:Fort_Stanwix,_Rome_NY_-_interior.jpg | 公有領域（作者放棄權利） | Ernest Mettendorf | 2026-10-22 |
+| 城牆 05：迪利希《Peribologia》1641 剖面 | https://commons.wikimedia.org/wiki/File:Fotothek_df_tg_0008986_Architektur_%5E_Geometrie_%5E_Festungsbau_%5E_Befestigung_%5E_Schanze_%5E_Wall_%5E_Graben.jpg | 公有領域 | Wilhelm Dilich；掃描 Deutsche Fotothek | 2026-10-22 |
+| 城牆 06：《武經總要》〈城制〉 | https://commons.wikimedia.org/wiki/File:武经总要_曾公亮和丁度_宋朝_二_36.jpg | 公有領域（PD-Art） | 曾公亮、丁度等（1044）；《四庫全書》本重繪 | 2026-10-22 |
+| 城牆 09：西安明城牆頂 | https://commons.wikimedia.org/wiki/File:Xi'an_City_Wall_(9911940185).jpg | CC0 1.0 | Gary Todd | 2026-10-22 |
+| 城牆 14：維奧萊勒杜克〈垛口〉卡卡松 | https://commons.wikimedia.org/wiki/File:Creneau.Carcassonne.png | 公有領域 | Viollet-le-Duc《法國建築辭典》，刻版 Pégard | 2026-10-22 |
 
 ## 只做測試、不進任何公開發布的
 
