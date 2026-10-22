@@ -577,9 +577,10 @@ export class MockPort implements SimPort {
     for (let i = 0; i < 2; i++) unit(FOE, UnitType.Ranged, 29 + i, 72).hp = 20;
     unit(FOE, UnitType.Mage, 30, 73);
     for (let i = 0; i < 3; i++) unit(NEUTRAL, UnitType.Militia, 29 + i, 66);
-    // D-096 (?walls=1): two more of the neutral town's militia on its north wall, throwing stones
-    // at any of ours within its sling's reach (rules.walls.sling); out of 2 cells of its gate.
-    if (this.walls) for (const x of [26, 34]) unit(NEUTRAL, UnitType.Militia, x, 61).flags |= UnitFlag.OnWall;
+    // D-096 (?walls=1): two more of the neutral town's militia on its walls (north and south),
+    // throwing stones at any of ours within its sling's reach (rules.walls.sling); out of 2 cells
+    // of its north gate (the tests' closed gate).
+    if (this.walls) for (const [x, y] of [[26, 61], [33, 71]]) unit(NEUTRAL, UnitType.Militia, x, y).flags |= UnitFlag.OnWall;
     unit(FOE, UnitType.Spearman, 80, 20);
     if (this.gallery === "units") this.setupGallery(unit);
 

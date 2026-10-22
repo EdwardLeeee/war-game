@@ -31,15 +31,17 @@ export interface CastleLayout {
 /**
  * A piece's pictures and, from art-v5.2 (D-096, atlas-buildings.md section 11), where someone stands on
  * it: a plain stretch's `walk_m` (its walk above the ground) and `stand_in_m` (from the cell's
- * middle towards the town, negative outwards); a gate's `shoot_at_m` (the arrows' two starting
- * points, from its anchor: x east, y south, z up). `intact_front`: the part in front of those on the
- * wall (colour only); a gate's `closed`, `damaged`, `broken` (`intact` is open).
+ * middle towards the town, negative outwards); a corner's or a gate's `stand_m`, a point a cell
+ * ("dx,dy" from its north-west cell: x east, y south, z up, metres from its anchor); a gate's
+ * `shoot_at_m` (the arrows' two starting points, the same way). `intact_front`, `ruin_front`: the
+ * part in front of those on it (colour only); a gate's `closed`, `damaged`, `broken` (`intact` is open).
  */
 export interface CastlePieceInfo {
   footprint: [number, number];
-  frames: { intact: string; ruin: string; intact_front?: string; closed?: string; damaged?: string; broken?: string };
+  frames: { intact: string; ruin: string; intact_front?: string; ruin_front?: string; closed?: string; damaged?: string; broken?: string };
   walk_m?: number;
   stand_in_m?: number;
+  stand_m?: Record<string, [number, number, number]>;
   shoot_at_m?: [number, number, number][];
 }
 

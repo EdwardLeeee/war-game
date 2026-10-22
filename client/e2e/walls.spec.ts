@@ -237,11 +237,11 @@ test("民兵在牆上投石（D-096，art-v5.2）：我方的兵走近，中立�
   await start(page, "&art=x3");
   await expect.poll(async () => (await castle(page))?.pieces ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
   test.skip(!(await page.evaluate(() => window.__proto?.game?.art()?.sling === true)), "art.lock 的民兵還沒有投石動作（art-v5.2 之前）");
-  // The fake world's militia on the neutral town's north wall at (34, 61) (the other, at 26, stands behind the enemy's tower): one of ours 3 cells north of it.
+  // The fake world's militia on the neutral town's south wall at (33, 71): one of ours 3 cells south of it.
   const [spear] = await ownIds(page, [SPEARMAN]);
-  await page.evaluate(([id]) => window.__proto?.game?.place([id], [{ x: 34, y: 58 }]), [spear] as const);
+  await page.evaluate(([id]) => window.__proto?.game?.place([id], [{ x: 33, y: 74 }]), [spear] as const);
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.stones() ?? 0), { timeout: 20_000 }).toBeGreaterThan(0);
-  await centre(page, 34.5, 59.5, 2.2);
+  await centre(page, 33.5, 70.5, 2.2);
   await page.waitForTimeout(500);
   await shot(page, info, "walls-sling");
   check();

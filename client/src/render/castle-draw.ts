@@ -201,9 +201,21 @@ export class CastleDraw {
       const info: CastlePieceInfo | undefined = c.pieces[p.piece];
       // A plain stretch: its walk, and where they stand on it (towards the town by stand_in_m).
       const way = inward(p.piece);
+      const minY = Math.min(...p.cells.map(([, y]) => y));
       if (info?.walk_m !== undefined && way !== null) {
         const inPx = ((info.stand_in_m ?? 0) / cellM) * TILE_PX;
         for (const cell of cells) this.wallStand.set(cell, { z, walkM: info.walk_m, dx: way[0] * inPx, dy: way[1] * inPx });
+      } else if (info?.stand_m !== undefined) {
+        // A corner or a gate's piers: its own point a cell, from its anchor (world px from the cell's middle).
+        for (const [key, [mx, my, mz]] of Object.entries(info.stand_m)) {
+          const [dx, dy] = key.split(",").map(Number);
+          const x = ox + minX + dx;
+          const y = oy + minY + dy;
+          if (x < 0 || y < 0 || x >= n || y >= n) continue;
+          const sx = (ox + p.anchor[0] + mx / cellM) * TILE_PX;
+          const sy = (oy + p.anchor[1] + my / cellM) * TILE_PX;
+          this.wallStand.set(y * n + x, { z, walkM: mz, dx: sx - (x + 0.5) * TILE_PX, dy: sy - (y + 0.5) * TILE_PX });
+        }
       } else {
         for (const cell of cells) if (!openings.has(cell)) borrow.push({ cell, z });
       }
@@ -211,7 +223,7 @@ export class CastleDraw {
       if (opening.length > 0) for (const cell of cells) this.gateCells.set(cell, { town: town.id, piece: i });
       d.pieces.push({ color, team, shadow, front: frontPart, gate: opening.length > 0 ? { cells: opening, look: "closed" } : null, box: { x0: 0, y0: 0, x1: 0, y1: 0 }, z, cells });
     });
-    // Corners, towers and a gate's piers have no walk of their own (art-v5.2): its neighbour's height, in the cell's middle.
+    // Corners, towers and a gate's piers without their own points (art-v5 to v5.1): a neighbour's height, in the cell's middle.
     for (const { cell, z } of borrow) {
       const near = [cell - 1, cell + 1, cell - n, cell + n].map((c2) => this.wallStand.get(c2)).find((v) => v !== undefined);
       if (near !== undefined) this.wallStand.set(cell, { z, walkM: near.walkM, dx: 0, dy: 0 });
@@ -297,7 +309,7 @@ export class CastleDraw {
       // A gate's own look when its pictures have it (art-v5.2), else open as before; a stretch's front part while standing.
       const look = s.gate === null || state === "ruin" ? state : s.gate.look;
       const name = frames?.[look] ?? frames?.[state] ?? "";
-      const frontName = state === "intact" ? frames?.intact_front : undefined;
+      const frontName = state === "intact" ? frames?.intact_front : frames?.ruin_front;
       const at = this.projection.toPlane((ox + p.anchor[0]) * TILE_PX, (oy + p.anchor[1]) * TILE_PX);
       const shown = s.cells.some(seen);
       const color = shown ? (this.art?.castleFrame("color", name) ?? null) : null;
