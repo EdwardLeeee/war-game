@@ -15,7 +15,7 @@ const art = (page: Page) => page.evaluate(() => window.__proto?.game?.art() ?? n
 const at = (page: Page, x: number, y: number) => page.evaluate(([cx, cy]) => window.__proto?.game?.cellToScreen(cx, cy) ?? { x: 0, y: 0 }, [x, y] as const);
 const centre = (page: Page, x: number, y: number, scale = 2) => page.evaluate(([cx, cy, s]) => window.__proto?.game?.centerOn(cx, cy, s), [x, y, scale] as const);
 
-test("哨所（art-v5.1）：自己的（蓋好、蓋到一半）和敵方的都從圖集畫，不是形狀", async ({ page }, info) => {
+test("哨所（art-v5.1）：自己的（蓋好、施工中）和敵方的都從圖集畫，不是形狀", async ({ page }, info) => {
   test.setTimeout(120_000);
   const check = watchErrors(page);
   await page.goto("./?test=1&mock=1&r7=1&outpost=1&tps=100&art=x3");
@@ -35,7 +35,7 @@ test("哨所（art-v5.1）：自己的（蓋好、蓋到一半）和敵方的都
   await expect(page.locator(".sel-info .sel-status")).toContainText("堅守中");
   await page.waitForTimeout(400);
   await shot(page, info, "outpost-art-enemy");
-  // One of ours going up on open ground south of the main city (8, 80), nothing in front of it: its first stage, then done.
+  // One of ours going up on open ground south of the main city (8, 80), nothing in front of it: its first stage.
   await page.evaluate(() => window.__proto?.game?.select([]));
   const spot = await page.evaluate(([x, y]) => window.__proto?.game?.buildSpotNear(12, x, y) ?? null, [8, 90] as const);
   if (spot === null) throw new Error("no spot for an outpost");
@@ -47,10 +47,10 @@ test("哨所（art-v5.1）：自己的（蓋好、蓋到一半）和敵方的都
   await centre(page, spot.x + 1, spot.y + 0.3);
   await expect(page.locator(".toast")).toBeHidden({ timeout: 10_000 });
   await shot(page, info, "outpost-art-building");
-  await page.getByRole("button", { name: "繼續", exact: true }).tap();
-  await expect.poll(async () => (await site())?.progress ?? -1, { timeout: 30_000 }).toBe(1000);
-  await page.waitForTimeout(300);
+  // Ours, done: the fake world's, north of the barracks (building one takes 500 ticks, over a minute
+  // on CI's Chromium at 3 倍: run 39737494573).
+  await centre(page, OUTPOST.x + 1, OUTPOST.y + 0.3);
+  await page.waitForTimeout(400);
   await shot(page, info, "outpost-art-ours");
-  expect(OUTPOST.x).toBe(12);
   check();
 });
