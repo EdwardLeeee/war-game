@@ -422,7 +422,51 @@ def board_drum(W=2000):
     return boards.save(boards.stack(parts, W), label)
 
 
-if __name__ == "__main__" and sys.argv[1] == "redo":
+def board_ground_fix(gdir, W=2600):
+    """The ground before and after the fix proposed to war-game-client (ground_r8.RULES weights, dirt.noise_soft): a
+    diagonal river with its bank, rocks with their gravel, dirt patches; the water drawn with rounded corners as the
+    game's water tiles cut them."""
+    import ground_r8 as G
+    label = "R8-28-地面修正-mobile"
+    text = ("地面的兩個修正（使用者 2026-10-22：河岸沿著格子一格一格的方塊、露土的邊太硬）。原因查到了，"
+            "和 client 談好改法：\n"
+            "・河岸的方塊：河岸、碎石、資源點旁的露土是照「哪幾格靠近水、岩石、資源點」畫的，"
+            "原本一格只有一個點、不是有就是沒有，所以邊界跟著格子走。改成每格 4 個點，照離水的實際距離慢慢變淡，"
+            "再糊開一點：斜著流的河，河岸是一條順的帶子，不是樓梯。\n"
+            "・露土的硬邊：零星的露土原本從草地變成土只有約 30 公分，邊像剪下來的。改成約 1–2 公尺慢慢過渡，"
+            "邊緣被細的雜訊打散，像草慢慢變稀。\n"
+            "左邊是現在，右邊是修正後；同一塊地、同樣的材質，只改這兩處。水面是暫時的平塗。")
+    n = 20
+    g = np.zeros((n, n), dtype=int)
+    for i in range(n):
+        y = int(3 + i * 0.7)
+        g[y:y + 2, i] = 3
+        if 8 <= i <= 12:
+            g[y + 2, i] = 3
+    g[2:4, 14:16] = 1
+    nodes = [(4, 16), (16, 4)]
+    ppm = 30
+    layers = _ground_layers(gdir)
+    wm = np.kron((g == 3).astype(float), np.ones((2 * ppm, 2 * ppm)))
+    wm = (G.blur(wm, 0.6 * ppm) > 0.5).astype(float)
+    water = G.blur(wm, 0.08 * ppm)[..., None]
+    old = dict(G.RULES, weights=None, dirt=dict(G.RULES["dirt"], noise_soft=None))
+    ims = []
+    for rules in (old, G.RULES):
+        top = G.compose(g, nodes, layers, ppm=ppm, rules=rules)
+        top = top * (1 - water * 0.85) + np.array([0.16, 0.27, 0.33]) * water * 0.85
+        ims.append(G.camera_view(top, ppm))
+    parts = [boards.header(W, label, text)]
+    for box, what in (((0, 0, 600, 300), "河岸"), ((600, 0, 1200, 300), "碎石和露土")):
+        pair = [boards.captioned(im.crop(box).resize((1200, 600), Image.LANCZOS), f"{what}：{k}", 24)
+                for im, k in zip(ims, ("現在", "修正後"))]
+        parts.append(boards.row(pair, W, gap=30))
+    return boards.save(boards.stack(parts, W), label)
+
+
+if __name__ == "__main__" and sys.argv[1] == "groundfix":
+    print(board_ground_fix(Path(sys.argv[2])))
+elif __name__ == "__main__" and sys.argv[1] == "redo":
     gd, rs = Path(sys.argv[2]), Path(sys.argv[3])
     UNITS_DIR = sys.argv[4] if len(sys.argv) > 4 else None
     print(board_cliff_redo(gd, rs))
