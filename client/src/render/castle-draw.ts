@@ -6,7 +6,7 @@
 // them (no atlases, another projection on a test page, or a layout that fits none: an error), the
 // castle's own cells as blocks on the ground, so a wall is never invisible. Walls and tiles show
 // once explored, like rock; out of sight, darker, like a building remembered.
-// D-096 (art-v6, atlas-buildings.md section 11): those on a wall stand on its walk (walk_m up,
+// D-096 (art-v5.2, atlas-buildings.md section 11): those on a wall stand on its walk (walk_m up,
 // stand_in_m towards the town), drawn over the wall's pieces in their row and under the pieces'
 // front parts (intact_front); a gate closed, open, damaged or broken (gate pieces' frames), the
 // tower's arrows leaving from its shoot_at_m.
@@ -211,7 +211,7 @@ export class CastleDraw {
       if (opening.length > 0) for (const cell of cells) this.gateCells.set(cell, { town: town.id, piece: i });
       d.pieces.push({ color, team, shadow, front: frontPart, gate: opening.length > 0 ? { cells: opening, look: "closed" } : null, box: { x0: 0, y0: 0, x1: 0, y1: 0 }, z, cells });
     });
-    // Corners, towers and a gate's piers have no walk of their own (art-v6): its neighbour's height, in the cell's middle.
+    // Corners, towers and a gate's piers have no walk of their own (art-v5.2): its neighbour's height, in the cell's middle.
     for (const { cell, z } of borrow) {
       const near = [cell - 1, cell + 1, cell - n, cell + n].map((c2) => this.wallStand.get(c2)).find((v) => v !== undefined);
       if (near !== undefined) this.wallStand.set(cell, { z, walkM: near.walkM, dx: 0, dy: 0 });
@@ -294,7 +294,7 @@ export class CastleDraw {
     fit.layout.walls.forEach((p, i) => {
       const s = d.pieces[i];
       const frames = c.pieces[p.piece]?.frames;
-      // A gate's own look when its pictures have it (art-v6), else open as before; a stretch's front part while standing.
+      // A gate's own look when its pictures have it (art-v5.2), else open as before; a stretch's front part while standing.
       const look = s.gate === null || state === "ruin" ? state : s.gate.look;
       const name = frames?.[look] ?? frames?.[state] ?? "";
       const frontName = state === "intact" ? frames?.intact_front : undefined;
@@ -369,7 +369,7 @@ export class CastleDraw {
     return { dx: at.dx, dy: at.dy, lift: at.walkM * this.projection.ptPerM * UP_PER_M, z: at.z + ON_WALL_Z };
   }
 
-  /** The castle's gate piece over this map cell, drawn from pictures with the gate's own looks (art-v6); null otherwise. */
+  /** The castle's gate piece over this map cell, drawn from pictures with the gate's own looks (art-v5.2); null otherwise. */
   private gatePiece(cellX: number, cellY: number): { town: number; d: TownDraw; i: number; info: CastlePieceInfo } | null {
     const g = this.gateCells.get(cellY * this.view.map.size + cellX);
     const d = g === undefined ? undefined : this.towns.get(g.town);
@@ -433,7 +433,7 @@ export class CastleDraw {
     return counts;
   }
 
-  /** Whether the castles' pictures say where those on a wall stand (art-v6). */
+  /** Whether the castles' pictures say where those on a wall stand (art-v5.2). */
   get walkable(): boolean {
     return this.wallStand.size > 0;
   }

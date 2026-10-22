@@ -408,6 +408,17 @@ export class MockPort implements SimPort {
     for (let i = this.buildings.length - 1; i >= 0; i--) if (ids.includes(this.buildings[i].id)) this.buildings.splice(i, 1);
   }
 
+  /** The militia on walls (D-096): one of ours within the sling's reach, facing it and throwing (action Attack, no damage here); else standing. */
+  private slings(): void {
+    const reach = (this.rules.walls?.sling ?? 4 * CELL) + CELL / 2;
+    for (const m of this.units) {
+      if (m.owner !== NEUTRAL || (m.flags & UnitFlag.OnWall) === 0) continue;
+      const near = this.units.filter((u) => u.owner === ME && !u.hidden && (u.x - m.x) ** 2 + (u.y - m.y) ** 2 <= reach * reach).sort((a, b) => (a.x - m.x) ** 2 + (a.y - m.y) ** 2 - ((b.x - m.x) ** 2 + (b.y - m.y) ** 2))[0];
+      m.pose = near === undefined ? undefined : { action: Action.Attack, target: -1 };
+      if (near !== undefined) m.facing = facing(near.x - m.x, near.y - m.y);
+    }
+  }
+
   /** Tests: a building's hit points now (a gate damaged, D-096). */
   damage(id: number, hp: number): void {
     const b = this.buildings.find((v) => v.id === id);
@@ -564,6 +575,9 @@ export class MockPort implements SimPort {
     for (let i = 0; i < 2; i++) unit(FOE, UnitType.Ranged, 29 + i, 72).hp = 20;
     unit(FOE, UnitType.Mage, 30, 73);
     for (let i = 0; i < 3; i++) unit(NEUTRAL, UnitType.Militia, 29 + i, 66);
+    // D-096 (?walls=1): two more of the neutral town's militia on its north wall, throwing stones
+    // at any of ours within its sling's reach (rules.walls.sling); out of 2 cells of its gate.
+    if (this.walls) for (const x of [26, 34]) unit(NEUTRAL, UnitType.Militia, x, 61).flags |= UnitFlag.OnWall;
     unit(FOE, UnitType.Spearman, 80, 20);
     if (this.gallery === "units") this.setupGallery(unit);
 
@@ -734,6 +748,7 @@ export class MockPort implements SimPort {
       for (const t of this.towns) if (t.state === TownState.Governed && t.income < 1000 && this.tick % Math.ceil(climb.ticks / (1000 - climb.startPermille)) === 0) t.income++;
     }
     if (this.round7 && this.tick % SHOT_TICKS === 0) this.shoot();
+    if (this.walls) this.slings();
     if (this.gallery) this.galleryStep();
     this.warningTicks = this.warningTicks <= 0 ? 60 : this.warningTicks - 1;
     if (this.tick % FOG_EVERY === 0) this.updateFog();
@@ -870,7 +885,7 @@ export class MockPort implements SimPort {
       units[o + U.y] = u.y;
       units[o + U.hp] = u.hp;
       units[o + U.shield] = u.shield;
-      units[o + U.action] = u.hidden ? Action.Garrisoned : u.cast > 0 ? Action.Calibrate : (u.flags & UnitFlag.OnWall) !== 0 ? Action.OnWall : (u.pose?.action ?? (u.target !== null ? Action.Move : Action.Idle));
+      units[o + U.action] = u.hidden ? Action.Garrisoned : u.cast > 0 ? Action.Calibrate : (u.pose?.action ?? ((u.flags & UnitFlag.OnWall) !== 0 ? Action.OnWall : u.target !== null ? Action.Move : Action.Idle));
       units[o + U.facing] = u.facing;
       units[o + U.carryKind] = -1;
       units[o + U.order] = u.cast > 0 ? Order.Cast : u.order;

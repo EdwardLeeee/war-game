@@ -33,6 +33,7 @@ import {
   UnitType,
   WARNING_STRIDE,
   WarningField as W,
+  CELL,
 } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import type { Placement } from "../ui/placement.ts";
@@ -44,8 +45,8 @@ import { CastleDraw } from "./castle-draw.ts";
 import { TerrainDraw } from "./terrain-draw.ts";
 import { GroundDraw, type GroundQuality, type GroundTextures } from "./ground-draw.ts";
 import type { PendingOrders } from "../game/pending.ts";
-import type { Culture } from "../art/spec.ts";
-import { ArtUnits } from "./unit-art-draw.ts";
+import { type Culture, M_PER_CELL, stoneFrom } from "../art/spec.ts";
+import { ArtUnits, type SlingRelease } from "./unit-art-draw.ts";
 import type { UnitArt } from "./unit-art.ts";
 
 const UNIT_SCALE = 1;
@@ -143,6 +144,19 @@ interface Shot {
 
 const SHOT_MS = 300;
 
+/** A militia's stone from the wall (D-096 sling), flying for STONE_MS: from (world px, `lift` points up) to a unit. */
+interface Stone {
+  fx: number;
+  fy: number;
+  lift: number;
+  tx: number;
+  ty: number;
+  at: number;
+}
+const STONE_MS = 450;
+/** Up on the plane per metre up (as castle-draw.ts). */
+const UP_PER_M = Math.sqrt(3) / 2;
+
 /** 晶砲預警圈 B's pictures, bottom to top (design/b1/README.md). */
 const WARN_LAYERS = ["warn_fill", "warn_sigil_glow", "warn_rim", "warn_sigil", "warn_sigil_gold", "warn_core"] as const;
 
@@ -194,6 +208,9 @@ export class WorldRenderer {
   private readonly shotFlashes: Sprite[] = [];
   /** Shots from a gate's tower (D-096 shoot_at_m) so far, for the test page. */
   towerShotCount = 0;
+  private stones: Stone[] = [];
+  /** Stones thrown from slings so far (D-096), for the test page. */
+  stoneCount = 0;
   private readonly barLayer = new Container();
   private readonly townLayer = new Container();
   private readonly ghost = new Graphics();
@@ -273,7 +290,7 @@ export class WorldRenderer {
   ghostStyle: "fill" | "outline" = "fill";
   /** Units drawn behind a wall this frame (test page). */
   ghostCount = 0;
-  /** Units drawn up on a castle's wall this frame (D-096, test page). */
+  /** Our units drawn up on a castle's wall this frame (D-096, test page; the militia on theirs not counted). */
   wallLifted = 0;
   private readonly warnPool: Container[] = [];
 
@@ -405,9 +422,54 @@ export class WorldRenderer {
     if (this.shots.length > 40) this.shots.shift();
   }
 
+  /**
+   * A stone from a militia's sling on a wall (D-096), from its hand (stone_from_m) at the unit at
+   * (x, y) world px, `lift` points up, to the nearest unit not its owner's within the sling's reach
+   * (rules.walls.sling, as the simulation picks; it sends no event a throw): none, no stone.
+   */
+  private throwStone(r: SlingRelease, x: number, y: number, lift: number, owner: number, now: number): void {
+    const snap = this.view.curr?.snap;
+    if (snap === undefined) return;
+    const reach = ((this.view.rules.walls?.sling ?? 4 * CELL) + CELL) * FIXED_TO_PX;
+    const u = snap.units;
+    let best: { x: number; y: number } | null = null;
+    let bestD = reach * reach;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + U.owner] === owner || u[o + U.action] === Action.Garrisoned) continue;
+      const tx = u[o + U.x] * FIXED_TO_PX;
+      const ty = u[o + U.y] * FIXED_TO_PX;
+      const d = (tx - x) ** 2 + (ty - y) ** 2;
+      if (d <= bestD) {
+        bestD = d;
+        best = { x: tx, y: ty };
+      }
+    }
+    if (best === null) return;
+    const off = stoneFrom(r.direction, r.mirror, r.from, this.projection.kind);
+    const perM = TILE_PX / M_PER_CELL;
+    this.stones.push({ fx: x + off.x * perM, fy: y + off.y * perM, lift: lift + off.up * this.projection.ptPerM * UP_PER_M, tx: best.x, ty: best.y, at: now });
+    this.stoneCount++;
+    if (this.stones.length > 40) this.stones.shift();
+  }
+
+  /** The stones in the air: a small grey stone on an arc, landing at the unit's chest. */
+  private drawStones(now: number): void {
+    this.stones = this.stones.filter((s) => now - s.at < STONE_MS);
+    const chest = 1 * this.projection.ptPerM * UP_PER_M;
+    for (const s of this.stones) {
+      const k = (now - s.at) / STONE_MS;
+      const from = this.projection.toPlane(s.fx, s.fy);
+      const to = this.projection.toPlane(s.tx, s.ty);
+      const x = from.x + (to.x - from.x) * k;
+      const y = from.y - s.lift + (to.y - chest - (from.y - s.lift)) * k - 4 * 14 * k * (1 - k);
+      this.airFx.circle(x, y, 2.4).fill(0x6e655a).stroke({ width: 1, color: 0x2e2a24 });
+    }
+  }
+
   private drawShots(now: number): void {
     this.shots = this.shots.filter((s) => now - s.at < SHOT_MS);
     this.drawShotFlashes(now);
+    this.drawStones(now);
     for (const s of this.shots) {
       const k = (now - s.at) / SHOT_MS;
       // In the air: from and to on the plane, the arrow drawn there (not flattened).
@@ -693,7 +755,7 @@ export class WorldRenderer {
     const g = this.brokenGates;
     g.clear();
     for (const cells of openings) {
-      // Its picture (art-v6) shows the gate broken: no rubble.
+      // Its picture (art-v5.2) shows the gate broken: no rubble.
       if (this.castle.drawsGate(cells[0] % n, Math.floor(cells[0] / n))) continue;
       for (const c of cells) {
         const x = (c % n) * TILE_PX;
@@ -800,9 +862,10 @@ export class WorldRenderer {
   }
 
   /** The units' atlases (D-085): which, how many pages, and how many units drawn from them; null: the shapes. */
-  get artDrawn(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null {
+  /** `sling`: some unit's atlas has the militia's sling (D-096, art-v5.2). */
+  get artDrawn(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
     const a = this.artUnits;
-    return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }) };
+    return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }), sling: [...a.art.atlases.values()].some((j) => j.anims.sling !== undefined) };
   }
 
   /**
@@ -966,11 +1029,12 @@ export class WorldRenderer {
       // On a castle's wall (D-096): on its walk (stand_in_m towards the town, walk_m up), over the
       // wall and under its front parts, no shadow (the walk is not the ground); on a bridge's deck (art-v5): up there.
       const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(Math.floor(px / TILE_PX), Math.floor(py / TILE_PX)) : null;
-      if (onWall !== null) this.wallLifted++;
+      if (onWall !== null && owner === view.me) this.wallLifted++;
       const at = this.projection.toPlane(px + (onWall?.dx ?? 0), py + (onWall?.dy ?? 0));
       const lift = onWall?.lift ?? this.terrain.liftAt(px, py);
       // From its atlas when there is one (its picture's top for the bars), else the shape.
       const top = this.artUnits?.unit(i, o, at.x, at.y, seconds, lift, onWall?.z ?? null, onWall === null) ?? null;
+      for (const r of this.artUnits?.takeReleases() ?? []) this.throwStone(r, px + (onWall?.dx ?? 0), py + (onWall?.dy ?? 0), lift, owner, now);
       p.body.visible = top === null;
       p.body.texture = this.atlas.units[type] ?? this.atlas.units[UnitType.Farmer];
       p.body.tint = ownerTint(owner, view.me);

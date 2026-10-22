@@ -2,7 +2,7 @@
 // and walls on (?walls=1): a gate in each opening, as wide as it (tap any of its cells), its town's
 // hit points, attacked with 攻擊; broken (gone), rubble on its opening; 上城牆 (war-game-ui's icon) takes
 // the ranged units and mages selected up on a town we hold, 「牆上 N／M」 on its panel, 下城牆 back;
-// a tower's volley drawn as its arrows. With art-v6's castle (war-game-ui 2026-10-22): those on a
+// a tower's volley drawn as its arrows. With art-v5.2's castle (war-game-ui 2026-10-22): those on a
 // wall on its walk, behind its front parts; a gate closed, open, damaged, broken; a tower's arrows
 // from its shoot_at_m. Pictures for the user: soldiers on a wall (東陸、西陸: a palisade's south and
 // north stretches, a big city's stone wall), the gates' looks, the buttons.
@@ -22,8 +22,8 @@ const OUR_TOWN = { id: 1, x: 18, y: 62 };
 /** The big city (ours, plundering) at (48, 48): a stone wall. */
 const BIG_CITY = { id: 3, x: 48, y: 48 };
 const castle = (page: Page) => page.evaluate(() => window.__proto?.game?.castle() ?? null);
-/** The castle's pictures say where those on a wall stand and have the gates' looks (art-v6); art-v5's have neither. */
-const artV6 = async (page: Page) => (await castle(page))?.walkable === true;
+/** The castle's pictures say where those on a wall stand and have the gates' looks (art-v5.2); art-v5's have neither. */
+const artV52 = async (page: Page) => (await castle(page))?.walkable === true;
 
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const buildings = (page: Page) => page.evaluate(() => window.__proto?.game?.buildings() ?? []);
@@ -161,8 +161,8 @@ for (const culture of ["e", "w"] as const) {
     // Our small town's south stretch (they come from the south-east), its stakes in front of them.
     const south = ranged.slice(0, 2);
     await wallUp(south, OUR_TOWN);
-    // With art-v6's castle, drawn up there (art-v5's has no walk: where they stand; blocks: none).
-    const v6 = await artV6(page);
+    // With art-v5.2's castle, drawn up there (art-v5's has no walk: where they stand; blocks: none).
+    const v6 = await artV52(page);
     if (v6) await expect.poll(() => page.evaluate(() => window.__proto?.game?.wallLifted() ?? 0)).toBe(south.length);
     const on = (await units(page)).filter((u) => south.includes(u.id));
     await centre(page, on.reduce((n, u) => n + u.cx, 0) / on.length + 0.5, on.reduce((n, u) => n + u.cy, 0) / on.length - 1, 1.6);
@@ -189,12 +189,12 @@ for (const culture of ["e", "w"] as const) {
   });
 }
 
-test("城門的樣子（D-096，art-v6）：關著；城主的兵在門口開著；血量一半以下受損；打破了是倒下的門（不畫碎石）；城樓的箭從城樓射出", async ({ page }, info) => {
+test("城門的樣子（D-096，art-v5.2）：關著；城主的兵在門口開著；血量一半以下受損；打破了是倒下的門（不畫碎石）；城樓的箭從城樓射出", async ({ page }, info) => {
   test.setTimeout(150_000);
   const check = watchErrors(page);
   await start(page, "&art=x3");
   await expect.poll(async () => (await castle(page))?.pieces ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
-  test.skip(!(await artV6(page)), "art.lock 的城牆圖還沒有城門的樣子（art-v6 之前）");
+  test.skip(!(await artV52(page)), "art.lock 的城牆圖還沒有城門的樣子（art-v5.2 之前）");
   const looks = async () => (await castle(page))?.gates ?? {};
   // The neutral town's north gate: nobody of its holder's by it, closed.
   const neutral = (await gatesOf(page, NEUTRAL_TOWN)).reduce((a, b) => (b.cy < a.cy ? b : a));
@@ -228,5 +228,21 @@ test("城門的樣子（D-096，art-v6）：關著；城主的兵在門口開著
   const towers = await page.evaluate(() => window.__proto?.game?.towerShots() ?? 0);
   await page.evaluate(([b, t]) => window.__proto?.game?.inject({ k: "shot", building: b, target: t, n: 3 }), [gate.id, target.id] as const);
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.towerShots() ?? 0)).toBe(towers + 1);
+  check();
+});
+
+test("民兵在牆上投石（D-096，art-v5.2）：我方的兵走近，中立城鎮牆上的民兵用投石動作，石頭從手上飛向他", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  await start(page, "&art=x3");
+  await expect.poll(async () => (await castle(page))?.pieces ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
+  test.skip(!(await page.evaluate(() => window.__proto?.game?.art()?.sling === true)), "art.lock 的民兵還沒有投石動作（art-v5.2 之前）");
+  // The fake world's militia on the neutral town's north wall at (34, 61) (the other, at 26, stands behind the enemy's tower): one of ours 3 cells north of it.
+  const [spear] = await ownIds(page, [SPEARMAN]);
+  await page.evaluate(([id]) => window.__proto?.game?.place([id], [{ x: 34, y: 58 }]), [spear] as const);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.stones() ?? 0), { timeout: 20_000 }).toBeGreaterThan(0);
+  await centre(page, 34.5, 59.5, 2.2);
+  await page.waitForTimeout(500);
+  await shot(page, info, "walls-sling");
   check();
 });

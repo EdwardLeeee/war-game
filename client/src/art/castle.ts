@@ -29,7 +29,7 @@ export interface CastleLayout {
 }
 
 /**
- * A piece's pictures and, from art-v6 (D-096, atlas-buildings.md section 11), where someone stands on
+ * A piece's pictures and, from art-v5.2 (D-096, atlas-buildings.md section 11), where someone stands on
  * it: a plain stretch's `walk_m` (its walk above the ground) and `stand_in_m` (from the cell's
  * middle towards the town, negative outwards); a gate's `shoot_at_m` (the arrows' two starting
  * points, from its anchor: x east, y south, z up). `intact_front`: the part in front of those on the

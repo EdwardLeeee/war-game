@@ -486,6 +486,11 @@ export class Game implements GestureHost {
     return this.renderer?.shotCount ?? 0;
   }
 
+  /** Stones thrown from slings on walls (D-096), for the test hook. */
+  get stonesForTest(): number {
+    return this.renderer?.stoneCount ?? 0;
+  }
+
   /** Shots that left a gate's tower (D-096 shoot_at_m, its `tower_shot` flash), for the test hook. */
   get towerShotsForTest(): number {
     return this.renderer?.towerShotCount ?? 0;
@@ -497,7 +502,7 @@ export class Game implements GestureHost {
     return this.options.culture ?? DEFAULT_CULTURE;
   }
 
-  get artForTest(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null {
+  get artForTest(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
     return this.renderer?.artDrawn ?? null;
   }
 
