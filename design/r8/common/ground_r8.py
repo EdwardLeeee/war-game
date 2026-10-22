@@ -18,7 +18,12 @@ CELL_M = 2.0
 LAYERS = ("grass", "grass_dry", "dirt", "gravel", "bank")
 TERRAIN = {"plain": 0, "rock": 1, "water": 3, "cliff": 7}       # the sim's Terrain values the weights look at
 # the layers' tile sizes (m) and the rules, as client reads them (GroundJson)
-RULES = dict(bank_cells=1, gravel_cells=1, edge_m=1.2, height_k=0.9, dirt=dict(node_cells=1, noise_threshold=0.8))
+RULES = dict(bank_cells=1, gravel_cells=1, edge_m=1.2, height_k=0.9, dirt=dict(node_cells=1, noise_threshold=0.8, noise_soft=0.3),
+             weights=dict(texels_per_cell=4, soft_m=1.6, blur_m=1.0))
+# weights: the weight map soft (proposed to war-game-client 2026-10-22, the user's 「河岸一格一格的方塊」): texels_per_cell
+# texels a cell; a channel's value a smoothstep of the distance from the nearest seed cell's square, 0.5 at `reach` cells
+# past it (where the old on/off map's edge was), soft_m wide; then a Gaussian blur of blur_m (a diagonal river's
+# staircase becomes a band). dirt.noise_soft: the width of the dirt patches' ramp (was a fixed 0.06: hard blob edges).
 GRADE = dict(brightness=1.0, saturation=0.9)      # the ground a little greyer than the units (R8: 找得到兵)
 
 
@@ -74,16 +79,49 @@ def smoothstep(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
+def blur(a, sigma):
+    """Gaussian blur, sigma in texels, edges clamped (separable)."""
+    if sigma <= 0:
+        return a
+    r = int(3 * sigma) + 1
+    x = np.arange(-r, r + 1)
+    k = np.exp(-x * x / (2 * sigma * sigma))
+    k /= k.sum()
+    for ax in (0, 1):
+        pad = [(0, 0), (0, 0)]
+        pad[ax] = (r, r)
+        b = np.pad(a, pad, mode="edge")
+        a = sum(k[i] * np.take(b, range(i, i + a.shape[ax]), axis=ax) for i in range(len(k)))
+    return a
+
+
 def weights(grid, nodes, rules=RULES):
-    """client's groundWeights: R bank (cells by water), G gravel (by rock and cliffs), B dirt (by resource points);
+    """client's groundWeights: R bank (cells by water), G gravel (by rock and cliffs), B dirt (by resource points).
+    With rules.weights (see RULES): soft, texels_per_cell a cell. Without: the first version, one texel a cell,
     Chebyshev reach, 1 or 0."""
     n = grid.shape[0]
-    out = np.zeros((n, n, 3))
+    wr = rules.get("weights")
+    if wr:
+        k = wr["texels_per_cell"]
+        t = (np.arange(n * k) + 0.5) / k * CELL_M
+        X, Y = np.meshgrid(t, t)
+        out = np.zeros((n * k, n * k, 3))
 
-    def near(ch, seeds, reach):
-        ys, xs = np.nonzero(seeds)
-        for y, x in zip(ys, xs):
-            out[max(0, y - reach):y + reach + 1, max(0, x - reach):x + reach + 1, ch] = 1.0
+        def near(ch, seeds, reach):
+            d = np.full(X.shape, 1e9)
+            for y, x in zip(*np.nonzero(seeds)):
+                dx = np.maximum(np.abs(X - (x + 0.5) * CELL_M) - CELL_M / 2, 0)
+                dy = np.maximum(np.abs(Y - (y + 0.5) * CELL_M) - CELL_M / 2, 0)
+                d = np.minimum(d, np.hypot(dx, dy))
+            r = reach * CELL_M
+            out[..., ch] = blur(smoothstep(r + wr["soft_m"] / 2, r - wr["soft_m"] / 2, d), wr["blur_m"] * k / CELL_M)
+    else:
+        out = np.zeros((n, n, 3))
+
+        def near(ch, seeds, reach):
+            ys, xs = np.nonzero(seeds)
+            for y, x in zip(ys, xs):
+                out[max(0, y - reach):y + reach + 1, max(0, x - reach):x + reach + 1, ch] = 1.0
     near(0, (grid >= 3) & (grid <= 6), rules["bank_cells"])
     near(1, (grid == 1) | (grid == 7), rules["gravel_cells"])
     seeds = np.zeros_like(grid, dtype=bool)
@@ -127,7 +165,9 @@ def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True):
     gd = tile(L["grass_dry"]["img"], L["grass_dry"]["tile_m"], 1.0 - nz)
     c = g * (1 - dry) + gd * dry
     patch = sample(noise, mx / 72.0 + 0.31, my / 72.0 + 0.31)[..., 0]
-    dirt = np.maximum(w[..., 2], smoothstep(rules["dirt"]["noise_threshold"], rules["dirt"]["noise_threshold"] + 0.06, patch))
+    th, soft = rules["dirt"]["noise_threshold"], rules["dirt"].get("noise_soft")
+    ramp = smoothstep(th - soft / 2, th + soft / 2, patch) if soft else smoothstep(th, th + 0.06, patch)
+    dirt = np.maximum(w[..., 2], ramp)
     c = over(c, sample(L["dirt"]["img"], mx / L["dirt"]["tile_m"], my / L["dirt"]["tile_m"]), dirt, nz)
     c = over(c, sample(L["gravel"]["img"], mx / L["gravel"]["tile_m"], my / L["gravel"]["tile_m"]), w[..., 1], nz)
     c = over(c, sample(L["bank"]["img"], mx / L["bank"]["tile_m"], my / L["bank"]["tile_m"]), w[..., 0], nz)
