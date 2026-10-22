@@ -10,7 +10,6 @@ python3 design/b1/common/wall_board.py SUFFIX UNITS_DIR [REFS_DIR]
   REFS_DIR   research/wall-reference (the reference pictures, REFS)
 writes design/r8/out/R8-15-牆上的兵-東陸-mobile.png and R8-16-牆上的兵-西陸-mobile.png
 """
-import json
 import sys
 from pathlib import Path
 
