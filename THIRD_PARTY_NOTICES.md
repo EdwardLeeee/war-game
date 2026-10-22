@@ -52,6 +52,9 @@ R8 的核准稿（`design/r8/out/R8-*`）上方放了幾張裁切過的參考圖
 | 西陸建築 11：大科克斯韋爾穀倉 | https://commons.wikimedia.org/wiki/File:Greatbarn-greatcoxwell-01.jpg | 公有領域（作者放棄權利） | TheCreator | 2026-10-22 |
 | 西陸建築 03：維拉爾手稿的屋架 | https://commons.wikimedia.org/wiki/File:Villard_de_Honnecourt_Album_de_..._charpente._BNF.jpg | CC0 1.0 | Villard de Honnecourt；掃描 Gallica／BnF | 2026-10-22 |
 | 西陸建築 13：勒特雷爾詩篇的編籬羊圈 | https://commons.wikimedia.org/wiki/File:Sheep_pen_(Luttrell_Psalter).png | 公有領域（PD-Art） | 約 1325–35 佚名畫工 | 2026-10-22 |
+| 懸崖 11：太行山紅砂岩（R8-24） | https://commons.wikimedia.org/wiki/File:Dong_Taihang_10.jpg | CC0 1.0 | H2v5o68z | 2026-10-22 |
+| 懸崖 12：猊鼻溪石灰岩崖 | https://commons.wikimedia.org/wiki/File:Geibikei_-_Geibikei7679.jpg | CC0 1.0 | lumoplank | 2026-10-22 |
+| 懸崖 13：石灰岩崖腳的岩屑錐 | https://commons.wikimedia.org/wiki/File:Begunjscica,_Born_Path_traversing_a_scree_03.jpg | CC0 1.0 | Ajznponar | 2026-10-22 |
 
 ## 只做測試、不進任何公開發布的
 
