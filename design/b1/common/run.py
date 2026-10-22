@@ -207,6 +207,22 @@ for _i in range(0, len(_V4), 8):
     TARGETS[f"prod_castle_{_i // 8}"] = _V4[_i:_i + 8]
     CAMERA[f"prod_castle_{_i // 8}"] = proj.OBLIQUE
 
+# D-096 (the user 2026-10-21: the gates shut, ranged units and mages go up on the walls): drafts first, for the user.
+# Every gate in its open look (intact, art-v4's frame), closed, damaged and broken (blender/gates.py); the two-row
+# palisade with its walk; each wall's front layer (castle.front_only), drawn over a unit standing on that wall
+D096_GATES = ("pal_gate_x", "pal_gate_y", "sw_gate_x", "sw_gate_y", "sw_gate_x3", "sw_gate_y3")
+D096_STATES = ("closed", "damaged", "broken")
+D096_FRONTS = ("pal_x", "pal_y", "sw_x", "sw_y")
+for _c in CULTURES:
+    TARGETS[f"d096_{_c}"] = (
+        [dict(kind=k, culture=_c, opts=dict(state=s), name=f"castle_{k}_{_c}_{s}", footprint=list(_castle.PIECE_FOOT[k]))
+         for k in D096_GATES[:4] for s in ("intact",) + D096_STATES]
+        + [dict(kind=k, culture=_c, opts=dict(state="intact"), name=f"castle_{k}_{_c}_intact", footprint=[1, 1])
+           for k in D096_FRONTS[:2]]
+        + [dict(kind=k, culture=_c, opts=dict(state="intact", front=True), name=f"castle_{k}_{_c}_front", footprint=[1, 1],
+                passes=["beauty", "mask"]) for k in D096_FRONTS])
+    CAMERA[f"d096_{_c}"] = proj.OBLIQUE
+
 # R6-50 (the user 2026-10-20: 「地面也可以美化一下現在感覺太陽春」): the R6 battlefield's ground in three looks
 sys.path.insert(1, str(HERE.parents[1] / "r6" / "common"))
 import ground_plan as _gp  # noqa: E402
@@ -308,7 +324,7 @@ def run(target, preview=False, only=None, prev_ppm=24):
             continue
         d = dict(pc)
         d["out"] = str(out / f"{piece_name(pc)}_raw")
-        d["passes"] = ["beauty", "mask"] if preview else PASSES
+        d["passes"] = ["beauty", "mask"] if preview else pc.get("passes", PASSES)
         if preview:
             d["probe"] = pc.get("probe", False)
         pcs.append(d)

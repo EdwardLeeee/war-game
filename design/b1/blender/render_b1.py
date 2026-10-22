@@ -199,6 +199,11 @@ for pc in job["pieces"]:
                 anchor=list(anchor), size=[W, H], px_per_m=ppm, shadow_anchor=list(s_anchor), shadow_size=[sW, sH],
                 top_m=round(max((p.z for p in pts), default=0.0), 2),
                 camera=dict(elev=lib.CAM_ELEV, az=lib.CAM_AZ))
+    # D-096 (castle.py): where a unit on the wall stands, where a gate tower's arrows leave (metres from the anchor)
+    marks = {o.name: [round(v, 3) for v in o.matrix_world.translation] for o in bpy.data.objects
+             if o.type == "EMPTY" and o.name.startswith(("stand_at", "shoot_at_"))}
+    if marks:
+        meta["marks"] = dict(sorted(marks.items()))
     if pc.get("probe"):
         meta["probe"] = probe(fx, fy)
     if job.get("probe_only"):
@@ -211,6 +216,8 @@ for pc in job["pieces"]:
         for ob in lib.ALL_PARTS:                 # smoke and flames: colour image only
             if ob.get("beauty_only") and p != "beauty":
                 ob.hide_render = True
+            if ob.get("back_holdout"):           # a wall's front layer (castle.front_only): the rest see-through
+                ob.is_holdout = True
         if p == "shadow":
             cam.set(sW, sH, ppm / 2, s_anchor)
             if "rim" in lib.LIGHTS:
