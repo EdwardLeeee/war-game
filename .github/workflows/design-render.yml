@@ -14,7 +14,7 @@ on:
         description: "round2, round3, round4, round5, production, b1, r7, buildings-atlas or release"
         default: "round5"
       tag:
-        description: "release only: the tag, art-vN (design/release/<tag>.json lists the source runs)"
+        description: "release only: the tag, art-vN or art-vN.M (design/release/<tag>.json lists the source runs)"
         default: ""
       publish:
         description: "release only: true publishes the GitHub Release (main only); false only packs, as an artifact"
@@ -44,6 +44,11 @@ env:
   # R7 version 2's realistic body (THIRD_PARTY_NOTICES.md): MPFB 2.0.18 from extensions.blender.org, sha256 as published
   MPFB_URL: "https://extensions.blender.org/download/sha256:c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad/add-on-mpfb-v2.0.18.zip?repository=%2Fapi%2Fv1%2Fextensions%2F&blender_version_min=4.2.0"
   MPFB_SHA256: "c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad"
+  # R8's realistic horse (CC0, OpenGameArt; THIRD_PARTY_NOTICES.md): the rigged blend and the textures
+  HORSE_BLEND_URL: "https://opengameart.org/sites/default/files/riggedHorse.blend"
+  HORSE_BLEND_SHA256: "9cca670b93a74d50e89263e50d55ab035a6c46aa7d2b21e354bdac6987037f4a"
+  HORSE_ZIP_URL: "https://opengameart.org/sites/default/files/horse.zip"
+  HORSE_ZIP_SHA256: "469704f523c97b18627c14d47dcda69271357f2bb2787309f461b310a0043d27"
 
 jobs:
   render:
@@ -104,14 +109,25 @@ jobs:
               t="${{ matrix.target }}"; v="${t%%-*}"; v="${v#v}"; unit="${t#*-}"
               /usr/bin/python3 common/textures.py fetch
               (cd ../round1 && /usr/bin/python3 common/emblems.py ../production/build/emblems)
-              if [ "$v" = 2 ]; then
+              if [ "$v" -ge 2 ]; then                     # versions 2 and 8 (R8) use MPFB
                 curl -sSfL -o "$RUNNER_TEMP/mpfb.zip" "$MPFB_URL"
                 echo "${MPFB_SHA256}  $RUNNER_TEMP/mpfb.zip" | sha256sum -c -
                 "$BLENDER" --command extension install-file -r user_default -e "$RUNNER_TEMP/mpfb.zip"
               fi
+              if [ "$v" = 8 ] && { [ "$unit" = hcav_e ] || [ "$unit" = knight_w ]; }; then     # R8's horse
+                h="$RUNNER_TEMP/horse"; mkdir -p "$h/zip"
+                curl -sSfL -o "$h/riggedHorse.blend" "$HORSE_BLEND_URL"
+                curl -sSfL -o "$h/horse.zip" "$HORSE_ZIP_URL"
+                echo "${HORSE_BLEND_SHA256}  $h/riggedHorse.blend" | sha256sum -c -
+                echo "${HORSE_ZIP_SHA256}  $h/horse.zip" | sha256sum -c -
+                (cd "$h/zip" && unzip -q ../horse.zip)
+                export R8_HORSE="$h"
+              fi
               cd ../production
               export R7_VERSION="$v" R7_TEX="$GITHUB_WORKSPACE/design/r7/build/tex"
-              /usr/bin/python3 blender/render_prod.py --target "$unit" --anims idle,walk,attack
+              # R7's style test rendered idle, walk and attack; R8 (v8) every animation of the unit
+              if [ "$v" = 8 ]; then anims=""; else anims="--anims idle,walk,attack"; fi
+              /usr/bin/python3 blender/render_prod.py --target "$unit" $anims
               /usr/bin/python3 common/postprocess.py --target "$unit" --scale 3
               /usr/bin/python3 common/postprocess.py --target "$unit" --scale 2 ;;
             production)
@@ -150,6 +166,7 @@ jobs:
           name: r7-${{ matrix.target }}
           path: |
             design/production/build/r7v*/prod/*/atlas_x*/
+            design/production/build/r7v*/prod/*/clip.json
             design/production/build/r7v*/jobs/*.log
           retention-days: 90
 
@@ -270,8 +287,8 @@ jobs:
     steps:
       - name: A new art-vN; publishing only from main
         run: |
-          if ! [[ "$TAG" =~ ^art-v[0-9]+$ ]]; then
-            echo "::error::tag must be art-vN, got '$TAG'"; exit 1
+          if ! [[ "$TAG" =~ ^art-v[0-9]+(\.[0-9]+)?$ ]]; then        # art-vN, or art-vN.M for a small addition
+            echo "::error::tag must be art-vN or art-vN.M, got '$TAG'"; exit 1
           fi
           if [ "$PUBLISH" != "true" ]; then
             echo "publish=$PUBLISH: pack only, nothing is published"; exit 0

@@ -17,6 +17,37 @@ const base = site.endsWith("/") ? site : `${site}/`;
 
 const browser = await webkit.launch();
 const page = await browser.newPage({ ...devices["iPhone 14 Pro Max landscape"] });
+// What the page did, for a start that does not get ready in time: its last console lines, the
+// requests that failed, and those still on their way (the atlases are tens of MB, fetched the
+// first time after a deployment).
+const consoleTail: string[] = [];
+page.on("console", (m) => {
+  consoleTail.push(`${m.type()}: ${m.text()}`);
+  if (consoleTail.length > 30) consoleTail.shift();
+});
+const failedRequests: string[] = [];
+page.on("requestfailed", (r) => failedRequests.push(`${r.url()} (${r.failure()?.errorText ?? "failed"})`));
+const inFlight = new Map<string, number>();
+page.on("request", (r) => inFlight.set(r.url(), Date.now()));
+page.on("requestfinished", (r) => inFlight.delete(r.url()));
+page.on("requestfailed", (r) => inFlight.delete(r.url()));
+
+/** Where the start stands while it is not ready: the page's own load times (D-091), what is still loading, what failed. */
+async function startReport(since: number): Promise<void> {
+  console.log(`  ${((Date.now() - since) / 1000).toFixed(1)} s since 開始; ready: ${await page.evaluate(() => window.__proto?.ready ?? null)}`);
+  const report = await page.evaluate(() => window.__proto?.loadTimes() ?? null);
+  if (report === null) console.log("  load times: none (the game has not begun loading)");
+  else {
+    console.log(`  load marks (ms since the tap): ${JSON.stringify(report.marks)}; art: ${JSON.stringify(report.art)}`);
+    const files = report.files;
+    const bytes = files.reduce((n, f) => n + f.bytes, 0);
+    console.log(`  files: ${files.length}, ${(bytes / 1048576).toFixed(1)} MB; slowest: ${[...files].sort((a, b) => b.downloaded - b.start - (a.downloaded - a.start)).slice(0, 3).map((f) => `${f.name} ${Math.round(f.downloaded - f.start)} ms (${f.source})`).join(", ") || "none"}`);
+  }
+  const now = Date.now();
+  console.log(`  requests on their way: ${inFlight.size}${[...inFlight].slice(0, 5).map(([u, t]) => `\n    ${u} (${Math.round((now - t) / 1000)} s)`).join("")}`);
+  console.log(`  requests failed: ${failedRequests.length}${failedRequests.slice(-5).map((f) => `\n    ${f}`).join("")}`);
+  console.log(`  console (last ${consoleTail.length}):${consoleTail.map((l) => `\n    ${l}`).join("")}`);
+}
 const failures: string[] = [];
 const check = (ok: boolean, what: string): void => {
   console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
@@ -42,8 +73,27 @@ try {
   const manifest = await page.request.get(`${base}proto/manifest.webmanifest`);
   check(manifest.ok(), `proto/manifest.webmanifest -> ${manifest.status()}`);
   await page.getByRole("button", { name: "開始" }).tap();
-  await page.waitForFunction(() => window.__proto?.ready === true, undefined, { timeout: 30_000 });
-  check(true, "proto/ battlefield drawn");
+  // Ready within 30 s; past that, say where the start stands, and wait up to 60 s more before
+  // failing (Pages run 39723212295: the first start after a deployment timed out once, its re-run
+  // ready in 5 s).
+  const tapped = Date.now();
+  let ready = await page
+    .waitForFunction(() => window.__proto?.ready === true, undefined, { timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!ready) {
+    console.log("proto/ not ready 30 s after 開始:");
+    await startReport(tapped);
+    await page.screenshot({ path: `${out}/proto-start-slow.png` });
+    ready = await page
+      .waitForFunction(() => window.__proto?.ready === true, undefined, { timeout: 60_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (ready) console.log(`::warning::proto/ was ready only ${((Date.now() - tapped) / 1000).toFixed(1)} s after 開始 (see the report above)`);
+    else await startReport(tapped);
+  }
+  check(ready, `proto/ battlefield drawn (${((Date.now() - tapped) / 1000).toFixed(1)} s after 開始)`);
+  if (!ready) throw new Error("proto/ never got ready");
   await page.screenshot({ path: `${out}/proto-battle.png` });
 
   let res = await page.goto(base);

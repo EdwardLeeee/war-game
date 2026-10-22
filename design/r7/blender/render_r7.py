@@ -226,7 +226,8 @@ def setup_look():
     sc.cycles.use_denoising = True
 
 
-def scene():
+def scene(empty=False):
+    """The battlefield; empty: the ground only (R8's boards put the units on it from their atlases)."""
     import blds
     import ground_r7
     fresh()
@@ -234,7 +235,8 @@ def scene():
     look.TEX.update({tid: {k: tex_path(tid, k) for k in ("diff", "rough", "nor_gl")} for tid in look.SIZE})
     ground_r7.build(root)
     broot = lib.empty("r7_barracks", parent=root, loc=(-6.0, 3.0, 0.0))
-    blds.BUILDERS["barracks"](broot, "E")
+    if not empty:
+        blds.BUILDERS["barracks"](broot, "E")
     bobjs = [o for o in bpy.data.objects if under(o, broot)]
     if V == 3:                                    # the generated barracks where ours stood; ours only lends materials
         for o in bobjs:
@@ -242,10 +244,10 @@ def scene():
         ab = _ai("barracks", 60000)
         ab.data.transform(Matrix.Translation((-6.0, 3.0, 0.0)))
         bobjs = [ab]
-    made = [make_unit("spear_e", "blue", -3.2, -4.4, 1, "attack", 5, 10),
-            make_unit("xbow_e", "blue", -1.2, -5.2, 1, "attack", 3, 10),
-            make_unit("spear_e", "red", 3.0, -4.0, 5, "attack", 2, 10),
-            make_unit("xbow_e", "red", 5.4, -5.0, 5, "idle", 0, 8)]
+    made = [] if empty else [make_unit("spear_e", "blue", -3.2, -4.4, 1, "attack", 5, 10),
+                             make_unit("xbow_e", "blue", -1.2, -5.2, 1, "attack", 3, 10),
+                             make_unit("spear_e", "red", 3.0, -4.0, 5, "attack", 2, 10),
+                             make_unit("xbow_e", "red", 5.4, -5.0, 5, "idle", 0, 8)]
     rest_everywhere(made)
     setup_look()
     if V >= 1:
@@ -262,9 +264,10 @@ def scene():
     cam, size, anchor = camera_for(pts, margin=0.0)
     sc = bpy.context.scene
     sc.render.film_transparent = False
-    sc.render.filepath = os.path.join(OUT, "scene_x3.png")
+    name = "ground_x3" if empty else "scene_x3"
+    sc.render.filepath = os.path.join(OUT, f"{name}.png")
     bpy.ops.render.render(write_still=True)
-    json.dump(dict(size=size, anchor=anchor, px_per_m=PPM, version=V), open(os.path.join(OUT, "scene_x3.json"), "w"))
+    json.dump(dict(size=size, anchor=anchor, px_per_m=PPM, version=V), open(os.path.join(OUT, f"{name}.json"), "w"))
 
 
 def unit_frames(it):
@@ -385,7 +388,7 @@ def concept(it):
 t0 = time.time()
 for it in job["items"]:
     if it["what"] == "scene":
-        scene()
+        scene(it.get("empty", False))
     elif it["what"] == "concept":
         concept(it)
     else:
