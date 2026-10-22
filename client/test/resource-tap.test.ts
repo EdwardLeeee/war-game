@@ -51,7 +51,7 @@ test("手指正好點在單位身上（12 pt 內）→ 選取那個單位", () =
 test("一起選的軍隊不去採集，而是走過去", () => {
   assert.deepEqual(tapIntents(world(), { units: [1, 3], building: null }, "normal", nearEdge.x, nearEdge.y, 1, R, CORE), [
     { kind: "command", cmd: { c: "gather", u: [1], node: 100 } },
-    { kind: "command", cmd: { c: "move", u: [3], x: 12, y: 12 } },
+    { kind: "command", cmd: { c: "retreat", u: [3], x: 12, y: 12 } },
   ]);
 });
 

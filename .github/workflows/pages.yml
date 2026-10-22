@@ -128,6 +128,9 @@ jobs:
           set -euo pipefail
           npm ci
           node scripts/fetch-art.ts
+          # 寫實地面's development set (R7's CC0 photos, by ui's sha256; ?test=1&ground=real only) until
+          # art-v6 ships ui's ground: a failed download is a warning, never a failed build.
+          node scripts/fetch-ground-dev.ts
           npm run build
           bash scripts/expected-hashes.sh dist/expected-hashes.json
           mkdir -p ../site

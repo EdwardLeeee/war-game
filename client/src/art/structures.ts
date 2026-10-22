@@ -21,6 +21,8 @@ export interface BuildingEntry {
   states: Partial<Record<BuildingState, string>>;
   /** A field's crops, sown to ripe. */
   crops?: string[];
+  /** Other sizes of the same building (art-v4: the big city's tower 3 × 3 on random maps with neighbouring spawns, D-074). */
+  sizes?: Record<string, { footprint: [number, number]; states: Partial<Record<BuildingState, string>> }>;
 }
 
 /** Which camera the pictures were drawn for (D-088): none, the diamond's (art-v2). */
@@ -76,9 +78,14 @@ export function parseNodes(v: unknown): NodesJson {
 /** The pictures fit the ground as it is drawn: their camera's (no view: the diamond's) is the projection's. */
 export const viewFits = (view: AtlasView | undefined, projection: "top" | "diamond" | "oblique"): boolean => (view ?? "diamond") === projection;
 
-/** The entry for a sim building type, or undefined (the outpost has none yet: its shape). */
-export function buildingEntry(b: BuildingsJson, type: number): BuildingEntry | undefined {
-  return Object.values(b.buildings).find((e) => e.type === type);
+/**
+ * The entry for a sim building type, or undefined (the outpost has none yet: its shape); with
+ * `size` (the rules' for this map), the entry of that size when it is another one.
+ */
+export function buildingEntry(b: BuildingsJson, type: number, size?: number): BuildingEntry | undefined {
+  const e = Object.values(b.buildings).find((v) => v.type === type);
+  const other = size === undefined || e === undefined || e.footprint[0] === size ? undefined : e.sizes?.[String(size)];
+  return other === undefined || e === undefined ? e : { ...e, footprint: other.footprint, states: other.states };
 }
 
 /**

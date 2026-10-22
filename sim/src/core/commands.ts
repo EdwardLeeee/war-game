@@ -10,6 +10,7 @@ import {
   type Command,
   CELL,
   CELL_SHIFT,
+  crossingTerrain,
   GameOverReason,
   NodeKind,
   Order,
@@ -39,6 +40,7 @@ import {
   MAGE_CAP,
   OUTPOST,
   QUEUE_MAX,
+  rank,
   RETREAT_OWN_SPEED,
   CAVALRY,
   GARRISON,
@@ -49,6 +51,7 @@ import {
   TOWNS,
   UNITS,
 } from "./rules.ts";
+import { openLine } from "./steer.ts";
 import { mages, queuedUnits } from "./training.ts";
 import { rectDist2, startCast } from "./units.ts";
 import type { World } from "./world.ts";
@@ -258,7 +261,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (type === BuildingType.Outpost && !OUTPOST.on) return Reject.NotAvailable;
       const info = BUILDINGS[type];
       if (!info.requires.every((r) => hasFinished(w, p, r))) return Reject.NotAvailable;
-      if (placeCheck(ctx, p, type, cmd.x, cmd.y) !== 0) return Reject.BadPlacement;
+      const placement = placeCheck(ctx, p, type, cmd.x, cmd.y);
+      if (placement !== 0) return placement;
       if (!afford(w, p, info.cost, 1)) return Reject.CannotAfford;
       if (auto) {
         farmers = pickBuilders(w, p, type, cmd.x, cmd.y);
@@ -431,12 +435,13 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       // Spearmen posted at an outpost (D-080) keep their places.
       const slots = ownUnits(w, p, cmd.u).filter((s) => w.units.col.order[s] !== Order.Post);
       if (typeof cmd.loose !== "boolean") return Reject.InvalidTarget;
+      if (cmd.face !== undefined && (!Number.isInteger(cmd.face) || cmd.face < 0 || cmd.face > 15)) return Reject.InvalidTarget;
       const u = w.units.col;
       for (const s of slots) {
         if (cmd.loose) u.flags[s] |= UnitFlag.Loose;
         else u.flags[s] &= ~UnitFlag.Loose;
       }
-      reform(ctx, slots);
+      reform(ctx, slots, cmd.face);
       return 0;
     }
     case "autocast": {
@@ -650,10 +655,8 @@ export function towerLand(w: World, p: number, cx: number, cy: number): boolean 
   }
   for (let t = 0; t < w.townSize.length; t++) {
     if (w.townOwner[t] !== p || (w.townState[t] !== TownState.Repairing && w.townState[t] !== TownState.Governed)) continue;
-    const r = TOWNS[w.townSize[t]].radius + TOWER_REACH.town;
-    const dx = cx - w.townX[t];
-    const dy = cy - w.townY[t];
-    if (dx * dx + dy * dy <= r * r) return true;
+    // Inside the walls, or within TOWER_REACH.town cells outside them (D-089; the wall is the first ring).
+    if (w.nearTown(t, cx, cy, TOWER_REACH.town + 1)) return true;
   }
   return false;
 }
@@ -721,7 +724,9 @@ function placeCheck(ctx: CommandContext, p: number, type: BuildingType, x: numbe
       const c = cy * n + cx;
       cells[c] =
         (w.grid[c] !== 0 || w.buildingAt[c] >= 0 ? PlaceBit.Blocked : 0) |
+        (crossingTerrain(w.map.terrain[c]) ? PlaceBit.Crossing : 0) |
         (fog.explored[p][c] === 1 ? 0 : PlaceBit.Unexplored) |
+        (w.gateLane[c] === 1 ? PlaceBit.GateLane : 0) |
         (farmLand(w, p, cx, cy) ? PlaceBit.FarmLand : 0) |
         (type === BuildingType.ArrowTower && towerLand(w, p, cx, cy) ? PlaceBit.TowerLand : 0);
     }
@@ -772,7 +777,7 @@ function targetable(ctx: CommandContext, p: number, id: number): boolean {
  * one's own, RETREAT_OWN_SPEED); at the goal the units stand in rows facing the way they came,
  * melee in front, then ranged, then mages, each rank in id order.
  */
-function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: number, order: number): void {
+function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: number, order: number, face?: number): void {
   const { w } = ctx;
   const u = w.units.col;
   const n = w.size;
@@ -788,11 +793,13 @@ function formation(ctx: CommandContext, slots: number[], cellX: number, cellY: n
   const goal = nearestWalkable(w, cellX, cellY, spawn);
   const gx = ((goal % n) << CELL_SHIFT) + 512;
   const gy = (Math.trunc(goal / n) << CELL_SHIFT) + 512;
-  layout(ctx, slots, gx, gy, dir16(gx - cx, gy - cy), order, goal);
+  layout(ctx, slots, gx, gy, face ?? dir16(gx - cx, gy - cy), order, goal);
 }
 
 /** Units standing this close (or closer, through one another) re-form as one formation. */
 const REFORM_LINK = 3 * CELL;
+/** With `face` (D-095), this close: those who spread out chasing after a fight (6 cells) re-form as one. */
+const FACE_LINK = 8 * CELL;
 
 /**
  * The `formation` command re-forms the units named in it with the new spacing (round 3, D-027),
@@ -804,9 +811,10 @@ const REFORM_LINK = 3 * CELL;
  *   melee stand from its ranged and mages (one kind only: toward the enemy's main city);
  *   a unit standing alone only keeps the new flag.
  * Farmers, units casting or attacking something, and new units walking to a rally point
- * only keep the new flag.
+ * only keep the new flag. With `face` (dir16, D-095) both kinds face that way instead, and
+ * standing units within FACE_LINK of one another are one formation.
  */
-function reform(ctx: CommandContext, slots: number[]): void {
+function reform(ctx: CommandContext, slots: number[], face?: number): void {
   const { w } = ctx;
   const u = w.units.col;
   const n = w.size;
@@ -819,17 +827,18 @@ function reform(ctx: CommandContext, slots: number[]): void {
     const members = slots.filter((m) => soldier(m) && u.group[m] === g && (moving(m) || u.order[m] === Order.None));
     for (const m of members) done.add(m);
     const goal = u.orderTarget[s];
-    if (goal >= 0) formation(ctx, members, goal % n, Math.trunc(goal / n), u.order[s]);
+    if (goal >= 0) formation(ctx, members, goal % n, Math.trunc(goal / n), u.order[s], face);
   }
   const idle = slots.filter((s) => soldier(s) && !done.has(s) && u.order[s] === Order.None);
-  // Clusters: union-find over pairs within REFORM_LINK, roots kept at the lowest slot.
+  // Clusters: union-find over pairs within REFORM_LINK (FACE_LINK with `face`), roots kept at the lowest slot.
+  const link = face === undefined ? REFORM_LINK : FACE_LINK;
   const root = idle.map((_, k) => k);
   const find = (k: number): number => (root[k] === k ? k : (root[k] = find(root[k])));
   for (let a = 0; a < idle.length; a++) {
     for (let b = a + 1; b < idle.length; b++) {
       const dx = u.x[idle[a]] - u.x[idle[b]];
       const dy = u.y[idle[a]] - u.y[idle[b]];
-      if (dx * dx + dy * dy > REFORM_LINK * REFORM_LINK) continue;
+      if (dx * dx + dy * dy > link * link) continue;
       const ra = find(a);
       const rb = find(b);
       if (ra !== rb) root[Math.max(ra, rb)] = Math.min(ra, rb);
@@ -847,7 +856,7 @@ function reform(ctx: CommandContext, slots: number[]): void {
     }
     const cx = idiv(sx, cluster.length);
     const cy = idiv(sy, cluster.length);
-    layout(ctx, cluster, cx, cy, heading(w, cluster, cx, cy), Order.Move, -1);
+    layout(ctx, cluster, cx, cy, face ?? heading(w, cluster, cx, cy), Order.Move, -1);
   }
 }
 
@@ -875,8 +884,34 @@ function heading(w: World, cluster: number[], cx: number, cy: number): number {
   return dir16((enemy.cellX << CELL_SHIFT) + 512 - cx, (enemy.cellY << CELL_SHIFT) + 512 - cy);
 }
 
-/** Melee in front, then ranged, then mages. */
-const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
+
+/**
+ * The walkable cell nearest (x, y), up to 8 cells off, that the straight way from (gx, gy) (fixed
+ * point) reaches and no other slot has; ties go to the one nearer `prefer`, then the lower index,
+ * as nearestWalkable. -1 if none.
+ */
+function nearestInSight(w: World, gx: number, gy: number, x: number, y: number, taken: Set<number>, prefer: { cellX: number; cellY: number }): number {
+  const n = w.size;
+  let best = -1;
+  let bestD = 0;
+  let bestP = 0;
+  for (let dy = -8; dy <= 8; dy++) {
+    for (let dx = -8; dx <= 8; dx++) {
+      const cx = x + dx;
+      const cy = y + dy;
+      if (cx < 0 || cy < 0 || cx >= n || cy >= n || !w.walkable(cx, cy) || taken.has(cy * n + cx)) continue;
+      const d = dx * dx + dy * dy;
+      const pd = (cx - prefer.cellX) * (cx - prefer.cellX) + (cy - prefer.cellY) * (cy - prefer.cellY);
+      const c = cy * n + cx;
+      if (best >= 0 && (d > bestD || (d === bestD && (pd > bestP || (pd === bestP && c > best))))) continue;
+      if (!openLine(w, gx, gy, (cx << CELL_SHIFT) + 512, (cy << CELL_SHIFT) + 512)) continue;
+      best = c;
+      bestD = d;
+      bestP = pd;
+    }
+  }
+  return best;
+}
 
 /**
  * Slots for a group facing heading k (dir16), with `order` (Move or Retreat) to them. With a
@@ -927,9 +962,15 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     gy = clamp(y + idiv(fy * mb, 1024) - idiv(ly * ms, 1024), 0, max);
     goal = nearestWalkable(w, gx >> CELL_SHIFT, gy >> CELL_SHIFT, spawn);
   }
-  // Slot i: rows back from the front, each row left to right.
+  // Slot i: rows back from the front, each row left to right. Units walk the group's field to the
+  // goal cell, then straight to their slots: a slot the straight way from the goal cell does not
+  // reach (R6-51: behind a ridge, across a river bank) moves to the nearest cell it does reach, one
+  // slot a cell, so nobody presses against the obstacle from the goal cell.
   const sx: number[] = [];
   const sy: number[] = [];
+  const gcx = ((goal % n) << CELL_SHIFT) + 512;
+  const gcy = (Math.trunc(goal / n) << CELL_SHIFT) + 512;
+  const taken = new Set<number>();
   for (let i = 0; i < m; i++) {
     let px = clamp(gx - idiv(fx * back(i), 1024) + idiv(lx * side(i), 1024), 0, max);
     let py = clamp(gy - idiv(fy * back(i), 1024) + idiv(ly * side(i), 1024), 0, max);
@@ -938,6 +979,12 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
       px = ((c % n) << CELL_SHIFT) + 512;
       py = (Math.trunc(c / n) << CELL_SHIFT) + 512;
     }
+    if (goal >= 0 && !openLine(w, gcx, gcy, px, py)) {
+      const c = nearestInSight(w, gcx, gcy, px >> CELL_SHIFT, py >> CELL_SHIFT, taken, spawn);
+      px = c < 0 ? gcx : ((c % n) << CELL_SHIFT) + 512;
+      py = c < 0 ? gcy : (Math.trunc(c / n) << CELL_SHIFT) + 512;
+    }
+    taken.add((py >> CELL_SHIFT) * n + (px >> CELL_SHIFT));
     sx.push(px);
     sy.push(py);
   }
@@ -979,5 +1026,9 @@ function layout(ctx: CommandContext, slots: number[], x: number, y: number, k: n
     u.speedCap[s] = order === Order.Retreat && RETREAT_OWN_SPEED.on ? 0 : speed;
     u.target[s] = -1;
     u.stuck[s] = 0;
+    u.fireBack[s] = -1;
+    u.waited[s] = 0;
+    u.slotBest[s] = 0;
+    u.slotIdle[s] = 0;
   });
 }

@@ -3,8 +3,9 @@
 // iterating a table is deterministic. Units and buildings share one id sequence; resource
 // nodes and towns have their own small, fixed id ranges.
 
-import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, TownState, UnitType } from "../protocol.ts";
+import { BuildingFlag, BuildingType, NEUTRAL, PLAYER_COUNT, Terrain, TownState, UnitType, walkableTerrain } from "../protocol.ts";
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
+import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
 import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
 
@@ -39,6 +40,16 @@ export const UNIT_COLS = [
   // The mage a cannon shot sent this soldier after (AVENGE, round 8), -1 none; in the hash only
   // while AVENGE is on.
   "avenge",
+  // The unit that shot this soldier on a move and that it goes for (FIRE_BACK, D-095), -1 none;
+  // in the hash only while FIRE_BACK is on.
+  "fireBack",
+  // Ticks this unit stood to let lower ranks pass on its move (MARCH_ORDER, D-095); in the hash
+  // only while MARCH_ORDER is on.
+  "waited",
+  // Giving up a place it does not get to (SLOT_GIVE_UP, D-095): the nearest it came to its place
+  // on this move or retreat (fixed point, 0 none yet) and the ticks since it last came nearer; in
+  // the hash only while SLOT_GIVE_UP is on.
+  "slotBest", "slotIdle",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
 /** Unit types counted per player in `trained` and `lost` (UnitType 0..5; the hash leaves out cavalry while CAVALRY is off). */
@@ -108,6 +119,8 @@ export class Table<C extends string> {
 export const BLOCK_ROCK = 1;
 export const BLOCK_NODE = 2;
 export const BLOCK_BUILDING = 4;
+/** A castle wall or corner tower (D-089): terrain, never removed. */
+export const BLOCK_WALL = 8;
 
 export class World {
   readonly map: GameMap;
@@ -133,6 +146,29 @@ export class World {
   townX: Int32Array;
   townY: Int32Array;
   townRadius: Int32Array;
+  /** Each town's castle on this map (D-089): offsets from its centre cell (castle.ts). */
+  readonly castles: Castle[] = [];
+  /** 1 on the cells of the castles' gates (D-089). */
+  gateAt: Uint8Array;
+  /**
+   * Each town's castle cells (D-089): inside the walls and the ring of walls and gates, as cell
+   * indices. Seeing any of them is seeing the town (fog.ts): the walls stand 5 cells from a small
+   * town's centre, as far as a farmer sees, so its centre is out of sight from outside them.
+   */
+  castleCells: Int32Array[] = [];
+  /**
+   * 1 on each gate's lane (ceo 2026-10-20: the gates stay open, so nothing is built there): the gate
+   * cells, the cell in front of each and the first cell behind it.
+   */
+  gateLane: Uint8Array;
+  /**
+   * Statistics, not in the hash (D-089's measurement): soldiers lost per player within 3 cells of a
+   * gate, and inside a castle's walls or within 3 cells outside them; and the cells where they count.
+   */
+  gateDeaths = new Int32Array(PLAYER_COUNT);
+  townDeaths = new Int32Array(PLAYER_COUNT);
+  nearGate: Uint8Array;
+  nearCastle: Uint8Array;
   townState: Int32Array;
   townOwner: Int32Array;
   townTimer: Int32Array;
@@ -248,7 +284,11 @@ export class World {
       const c = spawnCentre(map.frames[p] ?? IDENTITY, map.spawns[p]);
       this.homes.push({ cellX: c.x, cellY: c.y });
     }
-    for (let i = 0; i < n * n; i++) if (map.terrain[i] === 1) this.grid[i] = BLOCK_ROCK;
+    for (let i = 0; i < n * n; i++) {
+      if (map.terrain[i] === Terrain.Wall) this.grid[i] = BLOCK_WALL;
+      // Rock, water and cliffs (R6-51) all stop walking alike.
+      else if (!walkableTerrain(map.terrain[i])) this.grid[i] = BLOCK_ROCK;
+    }
     for (let p = 0; p < PLAYER_COUNT; p++) {
       this.ecoRatio.set([ECO_DEFAULT.food, ECO_DEFAULT.wood, ECO_DEFAULT.gold], p * 3);
       this.ecoOn[p] = 1;
@@ -290,6 +330,28 @@ export class World {
       this.townX[i] = s.cellX;
       this.townY[i] = s.cellY;
       this.townRadius[i] = s.radius;
+      this.castles.push(castleOf(s.size, map));
+    });
+    this.gateAt = new Uint8Array(n * n);
+    this.gateLane = new Uint8Array(n * n);
+    this.nearGate = new Uint8Array(n * n);
+    this.nearCastle = new Uint8Array(n * n);
+    const mark = (a: Uint8Array, x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = Math.max(0, y0); y <= Math.min(n - 1, y1); y++) for (let x = Math.max(0, x0); x <= Math.min(n - 1, x1); x++) a[y * n + x] = 1;
+    };
+    map.towns.forEach((s, i) => {
+      const c = this.castles[i];
+      for (const [dx, dy] of c.gate) {
+        this.gateAt[(s.cellY + dy) * n + s.cellX + dx] = 1;
+        mark(this.nearGate, s.cellX + dx - 3, s.cellY + dy - 3, s.cellX + dx + 3, s.cellY + dy + 3);
+      }
+      for (const [dx, dy] of [...c.gate, ...c.outside, ...c.behind]) this.gateLane[(s.cellY + dy) * n + s.cellX + dx] = 1;
+      mark(this.nearCastle, s.cellX + c.inside.x0 - 4, s.cellY + c.inside.y0 - 4, s.cellX + c.inside.x1 + 4, s.cellY + c.inside.y1 + 4);
+      const cells: number[] = [];
+      for (let y = Math.max(0, s.cellY + c.inside.y0 - 1); y <= Math.min(n - 1, s.cellY + c.inside.y1 + 1); y++) {
+        for (let x = Math.max(0, s.cellX + c.inside.x0 - 1); x <= Math.min(n - 1, s.cellX + c.inside.x1 + 1); x++) cells.push(y * n + x);
+      }
+      this.castleCells.push(Int32Array.from(cells));
     });
   }
 
@@ -330,6 +392,7 @@ export class World {
     c.hitCause[s] = HitCause.None;
     c.hitById[s] = -1;
     c.avenge[s] = -1;
+    c.fireBack[s] = -1;
     c.home[s] = -1;
     c.prevTarget[s] = -1;
     c.autoBuild[s] = -1;
@@ -440,6 +503,22 @@ export class World {
       if (this.townOwner[t] === p && this.townState[t] === TownState.Governed) cap += TOWNS[this.townSize[t]].populationCap;
     }
     return Math.min(cap, this.populationCeiling(p));
+  }
+
+  /** Is cell (cellX, cellY) inside town t's walls (D-089: the town is what lies inside them)? */
+  inTown(t: number, cellX: number, cellY: number): boolean {
+    const c = this.castles[t].inside;
+    const dx = cellX - this.townX[t];
+    const dy = cellY - this.townY[t];
+    return dx >= c.x0 && dx <= c.x1 && dy >= c.y0 && dy <= c.y1;
+  }
+
+  /** Is cell (cellX, cellY) within `reach` cells (Chebyshev) of what lies inside town t's walls? */
+  nearTown(t: number, cellX: number, cellY: number, reach: number): boolean {
+    const c = this.castles[t].inside;
+    const dx = cellX - this.townX[t];
+    const dy = cellY - this.townY[t];
+    return dx >= c.x0 - reach && dx <= c.x1 + reach && dy >= c.y0 - reach && dy <= c.y1 + reach;
   }
 
   /** The main city of a player, or -1. */

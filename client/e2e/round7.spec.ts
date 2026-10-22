@@ -136,7 +136,7 @@ test("城鎮只能搶一次：搶過的城鎮再攻下，只有治理，寫明�
   await expect(dialog).toBeVisible();
   const panel = page.locator(".sel-info");
   await expect(panel.getByRole("button", { name: "搶", exact: true })).toHaveCount(0);
-  await expect(panel.getByRole("button", { name: "治理", exact: true })).toBeAttached();
+  await expect(panel.getByRole("button", { name: /^治理/ })).toBeAttached();
   await expect(panel).toContainText("這座城這局已經被搶過，只能治理");
   // 搶 sent anyway (Reject.AlreadyPlundered): the reason, and the town still waits.
   await page.evaluate(() => window.__proto?.game?.send({ c: "town_choice", town: 0, choice: 0 }));
@@ -308,10 +308,10 @@ test("躲著的兵（D-083）：躲進去就離開編隊、目標不變，按鈕
   const mark = (await sent(page)).length;
   await selectForCommands(page, hiding);
   await expect(page.locator(".sel-info .order-now")).toHaveText(`目前：躲在建築裡 ${hiding.length}`);
-  await page.locator(".cmds").getByRole("button", { name: /^進攻/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^攻擊/ }).tap();
   await tap(page, await at(page, { x: 18, y: 67 }));
   await expect(toast(page, HIDE_ERROR)).toBeVisible();
-  expect((await sent(page)).slice(mark).filter((c) => c.c === "move" || c.c === "attack")).toEqual([]);
+  expect((await sent(page)).slice(mark).filter((c) => c.c === "move" || c.c === "attack" || c.c === "retreat")).toEqual([]);
   // 全軍 (and 全軍撤退, from the same list): only those outside.
   const outside = [...spear, ...ranged.slice(2), ...mages].sort((a, b) => a - b);
   await expect(armyButton(page)).toHaveText(`全軍 ${outside.length}`);
@@ -367,12 +367,13 @@ test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎
   await page.getByRole("button", { name: "建造" }).tap();
   await expect(page.getByRole("button", { name: /^馬廄/ })).toBeEnabled();
   await page.getByRole("button", { name: "返回" }).tap();
-  // The stable trains cavalry, and on its own too, as the barracks does (D-054).
+  // The stable trains cavalry, and on its own too, as the barracks does (D-054): what the groups
+  // are missing (D-098), and no group is set here.
   await centre(page, STABLE.x + 1, STABLE.y + 1);
   await tap(page, await at(page, { x: STABLE.x + 1, y: STABLE.y + 1 }));
   const panel = page.locator(".sel-info");
   await expect(panel).toContainText("馬廄");
-  await expect(panel).toContainText("自動訓練中");
+  await expect(panel).toContainText("還沒設軍團，不會自動訓練");
   await page.getByRole("button", { name: /^訓練騎兵/ }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "train", type: 5, n: 1 });
   await shot(page, info, "r7-stable");
@@ -449,9 +450,9 @@ for (const viewport of [null, FULL_SCREEN]) {
     await expect(page.locator(".cmds").getByRole("button", { name: /^躲進去/ })).toBeVisible();
     await expect(page.locator(".sel-note")).toBeVisible();
     await checkLayout(page);
-    // 進攻、撤退、堅守、停止, then 隊形 (two columns wide) and the mages' two; 躲進去 starts a third row.
+    // 攻擊、移動、堅守、停止, then 整理隊形, 隊形 (two columns wide) and 躲進去 (D-095: no mage buttons).
     const rows = new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y)));
-    expect(rows.size, "three rows of commands").toBe(3);
+    expect(rows.size, "two rows of commands").toBe(2);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     await shot(page, info, `r7-layout-army-${width}x${height}`);
     await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);

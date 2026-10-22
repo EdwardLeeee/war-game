@@ -14,7 +14,7 @@ on:
         description: "round2, round3, round4, round5, production, b1, r7, buildings-atlas or release"
         default: "round5"
       tag:
-        description: "release only: the tag, art-vN (design/release/<tag>.json lists the source runs)"
+        description: "release only: the tag, art-vN or art-vN.M (design/release/<tag>.json lists the source runs)"
         default: ""
       publish:
         description: "release only: true publishes the GitHub Release (main only); false only packs, as an artifact"
@@ -287,8 +287,8 @@ jobs:
     steps:
       - name: A new art-vN; publishing only from main
         run: |
-          if ! [[ "$TAG" =~ ^art-v[0-9]+$ ]]; then
-            echo "::error::tag must be art-vN, got '$TAG'"; exit 1
+          if ! [[ "$TAG" =~ ^art-v[0-9]+(\.[0-9]+)?$ ]]; then        # art-vN, or art-vN.M for a small addition
+            echo "::error::tag must be art-vN or art-vN.M, got '$TAG'"; exit 1
           fi
           if [ "$PUBLISH" != "true" ]; then
             echo "publish=$PUBLISH: pack only, nothing is published"; exit 0

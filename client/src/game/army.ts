@@ -25,6 +25,8 @@ export interface TownArea {
   cellY: number;
   /** Cells. */
   radius: number;
+  /** The cells inside its walls (D-089, map cells, inclusive): the town is what lies inside them; without, the radius. */
+  inside?: { x0: number; y0: number; x1: number; y1: number } | null;
 }
 
 /** How often recruits are checked against where their group is now: 2 s of game time. */
@@ -126,6 +128,13 @@ function toCentre2(u: ArmyUnit, town: TownArea): number {
 }
 
 export function inTown(u: ArmyUnit, town: TownArea): boolean {
+  const box = town.inside;
+  if (box !== undefined && box !== null) {
+    // Inside the walls, as the simulation counts (PROTOCOL.md 3.5; on a gate is not in).
+    const cx = Math.floor(u.x / CELL);
+    const cy = Math.floor(u.y / CELL);
+    return cx >= box.x0 && cx <= box.x1 && cy >= box.y0 && cy <= box.y1;
+  }
   const r = town.radius * CELL;
   return toCentre2(u, town) <= r * r;
 }
@@ -299,6 +308,11 @@ export class ArmyBook {
       return this.release(p.ids);
     }
     return [];
+  }
+
+  /** Command `seq` was refused but its soldiers stay stationed (等錢治理): forget it without releasing them. */
+  keepStationed(seq: number): void {
+    for (const [town, p] of [...this.pending]) if (p.seq === seq) this.pending.delete(town);
   }
 
   /** Forget the choices that went through: their towns no longer wait for one. */

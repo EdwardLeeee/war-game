@@ -44,9 +44,12 @@ export interface Selection {
   building: number | null;
 }
 
-/** Map taps that finish a command started from a button (進攻, 撤退, 晶砲, 集結點). */
-/** `garrison`: picking the building to hide in (round 7); the game handles that tap itself. */
-export type Mode = "normal" | "advance" | "retreat" | "cast" | "rally" | "garrison" | "post";
+/**
+ * Map taps that finish a command started from a button: `advance` 攻擊, `retreat` 移動 (D-094: the
+ * buttons' old names stay in the code), 集結點; `garrison`, picking the building to hide in (round
+ * 7), and `post`, the outpost (D-080): the game handles those taps itself.
+ */
+export type Mode = "normal" | "advance" | "retreat" | "rally" | "garrison" | "post";
 
 export type Intent =
   | { kind: "select"; units: number[] }
@@ -56,13 +59,27 @@ export type Intent =
   | { kind: "command"; cmd: CommandBody }
   | { kind: "endMode" };
 
-export type WheelItem = "cast" | "autocast" | "advance" | "retreat" | "hold";
+export type WheelItem = "advance" | "retreat" | "hold";
 
 export const isMilitary = (type: number): boolean => type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage || type === UnitType.Cavalry;
 
 export const toCell = (w: number): number => Math.floor(w / TILE_PX);
 /** World px to simulation fixed point (integers only go to the simulation). */
 export const toFixed = (w: number): number => Math.floor((w * CELL) / TILE_PX);
+
+/**
+ * 移動 (D-094, the user 2026-10-21: 「我們的撤退也改成移動」): units go there and do not fight on
+ * the way; there, they stand 積極 (game.ts sends the stance). The simulation's `retreat` is that
+ * walk. Farmers, who fight nobody, get a plain `move` as before.
+ */
+export function moveIntents(world: IntentWorld, units: number[], x: number, y: number): Intent[] {
+  const farmers = units.filter((id) => world.unitType(id) === UnitType.Farmer);
+  const others = units.filter((id) => world.unitType(id) !== UnitType.Farmer);
+  const out: Intent[] = [];
+  if (others.length > 0) out.push({ kind: "command", cmd: { c: "retreat", u: others, x, y } });
+  if (farmers.length > 0) out.push({ kind: "command", cmd: { c: "move", u: farmers, x, y } });
+  return out;
+}
 
 /**
  * @param r the pick radius in world px (HIT_RADIUS_PT on screen)
@@ -73,17 +90,12 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
   const y = toCell(wy);
   switch (mode) {
     case "retreat": {
-      // 撤退 (D-059: 「它就跟攻擊一樣 點到哪就撤退到哪」): to the cell tapped; on the own main
-      // city, home to the cell in front of it.
+      // 移動 (D-094; D-059: 點到哪就到哪): to the cell tapped; on the own main city, home to the
+      // cell in front of it.
       if (sel.units.length === 0) return [{ kind: "endMode" }];
       const b = world.buildingAt(wx, wy);
       const home = b !== null && b.owner === world.me && b.type === BuildingType.MainCity ? world.homeCell() : null;
       return [{ kind: "command", cmd: { c: "retreat", u: sel.units, x: home?.x ?? x, y: home?.y ?? y } }, { kind: "endMode" }];
-    }
-    case "cast": {
-      const mages = sel.units.filter((id) => world.unitType(id) === UnitType.Mage);
-      const casts: Intent[] = mages.map((u) => ({ kind: "command", cmd: { c: "cast", u, fx: toFixed(wx), fy: toFixed(wy) } }));
-      return [...casts, { kind: "endMode" }];
     }
     case "rally":
       return sel.building !== null ? [{ kind: "command", cmd: { c: "rally", building: sel.building, x, y } }, { kind: "endMode" }] : [{ kind: "endMode" }];
@@ -92,7 +104,8 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
       // Game.tap picks the building itself (garrison.ts, outpost.ts); nothing from here.
       return [];
     case "advance": {
-      // 進攻 (D-050): an enemy there is attacked; anywhere else, the troops advance to it.
+      // 攻擊 (D-094; D-050's 進攻): an enemy there is attacked; anywhere else, the troops advance
+      // to it fighting on the way (攻擊移動).
       if (sel.units.length === 0) return [{ kind: "endMode" }];
       const target = world.pick(wx, wy, r);
       const cmd: CommandBody =
@@ -114,7 +127,7 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
     const node = world.pickNode(wx, wy, r);
     if (node !== null) {
       const out: Intent[] = [{ kind: "command", cmd: { c: "gather", u: farmersSelected, node: node.id } }];
-      if (others.length > 0) out.push({ kind: "command", cmd: { c: "move", u: others, x, y } });
+      if (others.length > 0) out.push(...moveIntents(world, others, x, y));
       return out;
     }
     // Only where there is work (build, farm, repair); a healthy barracks is selected instead,
@@ -154,10 +167,11 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
     const others = u.filter((id) => world.unitType(id) !== UnitType.Farmer);
     const out: Intent[] = [];
     if (farmers.length > 0) out.push({ kind: "command", cmd: { c: "gather", u: farmers, node: pick.id } });
-    if (others.length > 0) out.push({ kind: "command", cmd: { c: "move", u: others, x, y } });
+    if (others.length > 0) out.push(...moveIntents(world, others, x, y));
     return out;
   }
-  return [{ kind: "command", cmd: { c: "move", u, x, y } }];
+  // The ground: 移動 (D-094). 攻擊移動 needs 攻擊 first.
+  return moveIntents(world, u, x, y);
 }
 
 /** Long press: own unit -> skill wheel; empty ground (or a town's open ground) -> box; else nothing. */
@@ -177,11 +191,10 @@ export function boxSelect(world: IntentWorld, x0: number, y0: number, x1: number
 }
 
 /**
- * Skill wheel for the long-pressed unit (GDD §10): mages cast, autocast, retreat and 堅守;
- * spearmen, ranged and cavalry 進攻, 撤退, 堅守 (D-050); farmers, who have neither, only 撤退.
+ * Skill wheel for the long-pressed unit (GDD §10): soldiers 攻擊, 移動, 堅守 (D-094's names for
+ * D-050's 進攻, 撤退; D-095: mages too, their cannon only automatic); farmers only 移動.
  */
 export function wheelItems(pressedType: number): WheelItem[] {
-  if (pressedType === UnitType.Mage) return ["cast", "autocast", "retreat", "hold"];
   return isMilitary(pressedType) ? ["advance", "retreat", "hold"] : ["retreat"];
 }
 
@@ -199,22 +212,14 @@ export function holdIntents(world: IntentWorld, units: number[]): Intent[] {
 }
 
 /**
- * A wheel choice applied to the selection. 進攻 and 晶砲 need a map tap next, so they return
- * the mode to enter; 撤退 goes home at once; autocast and 堅守 are commands at once.
+ * A wheel choice applied to the selection. 攻擊 and 移動 need a map tap next, so they return the
+ * mode to enter; 堅守 is a command at once.
  */
 export function wheelIntents(world: IntentWorld, sel: Selection, item: WheelItem): { mode: Mode | null; intents: Intent[] } {
   const u = sel.units;
   switch (item) {
-    case "cast":
-      return { mode: "cast", intents: [] };
     case "retreat":
       return { mode: u.length > 0 ? "retreat" : null, intents: [] };
-    case "autocast": {
-      const mages = u.filter((id) => world.unitType(id) === UnitType.Mage);
-      if (mages.length === 0) return { mode: null, intents: [] };
-      const on = mages.some((id) => !world.unitAutocast(id));
-      return { mode: null, intents: [{ kind: "command", cmd: { c: "autocast", u: mages, on } }] };
-    }
     case "advance":
       return { mode: u.length > 0 ? "advance" : null, intents: [] };
     case "hold":
@@ -222,7 +227,7 @@ export function wheelIntents(world: IntentWorld, sel: Selection, item: WheelItem
   }
 }
 
-/** 退回主城 (the prompt while picking where to retreat to): the selection to the cell in front of the main city. */
+/** 回主城 (the prompt while picking where to move to, D-094): the selection to the cell in front of the main city. */
 export function retreatHome(sel: Selection, home: { x: number; y: number } | null): Intent[] {
   if (home === null || sel.units.length === 0) return [{ kind: "endMode" }];
   return [{ kind: "command", cmd: { c: "retreat", u: sel.units, x: home.x, y: home.y } }, { kind: "endMode" }];

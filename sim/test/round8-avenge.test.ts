@@ -66,7 +66,8 @@ test("a squad's soldier goes for the mage; a unit on the move keeps to its move"
     assert.ok(squad.g.w.units.col.squad[slotOf(squad.g, squad.unit)] > 0);
     run(squad.g, 100);
     assert.ok(dist(squad.g, squad.unit, squad.mage) < 3, "the squad's soldier went for the mage");
-    // On the move, walking north through the blast: hit, it keeps to its move.
+    // On the move, walking north through the blast: hit, AVENGE leaves it to its move (shooting
+    // back on a move is FIRE_BACK's, D-095: test/fire-back.test.ts).
     const moving = shelled((g, unit) => cmd(g, 0, { c: "move", u: [unit], x: 31, y: 40 }), 46);
     const s = slotOf(moving.g, moving.unit);
     assert.equal(moving.g.w.units.col.avenge[s], -1);

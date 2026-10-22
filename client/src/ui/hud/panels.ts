@@ -9,19 +9,23 @@ import { buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots }
 import { POST_TYPE } from "../../game/outpost.ts";
 import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
+import { costText as costLine } from "../../game/govern-wait.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
   AUTO_TRAIN,
   BuildingField as B,
   BuildingFlag,
   BuildingType,
+  CANNON,
   type CommandBody,
+  type Cost,
   HeaderField as H,
   NEUTRAL,
   NO_OWNER,
   NodeField as N,
   type Resource,
   Stance,
+  TICKS_PER_SECOND,
   TownChoice,
   TownField as T,
   TownSize,
@@ -52,6 +56,28 @@ export interface PanelHost {
   startPlacement(type: BuildingType): void;
   openEconomy(): void;
   chooseTown(town: number, choice: TownChoice): void;
+  /**
+   * 等錢治理 (ceo 2026-10-21): 治理's cost for the town (null when not known), what is missing
+   * now, whether the town waits for it, and 取消.
+   */
+  governCost(town: number): Cost | null;
+  governShortfall(town: number): Cost | null;
+  governWaiting(town: number): boolean;
+  cancelGovernWait(town: number): void;
+  /** The reserve raised for a waiting 治理 (預留's button says so). */
+  reserveRaised(): boolean;
+  /**
+   * 自動訓練 by the screen (D-098): a building paused or not, why it trains or not; the main
+   * city's villagers, their target (−／+) and pause.
+   */
+  autoPaused(building: number): boolean;
+  toggleAutoPaused(building: number): void;
+  trainingLine(building: number): string;
+  villagerLine(): string;
+  villagerTarget(): number;
+  stepVillagers(by: number): void;
+  villagersPaused(): boolean;
+  toggleVillagers(): void;
   selectOnly(units: number[]): void;
   /** Nothing selected (tapping the ground would order the selected units to go there). */
   clearSelection(): void;
@@ -63,6 +89,8 @@ export interface PanelHost {
   notify(text: string): void;
   /** 撤退 with units selected: pick where to (D-059). */
   retreat(): void;
+  /** 整理隊形 (D-095): the selected soldiers re-form where they are. */
+  reform(): void;
   /** 派村民 (D-061): whom a tap on this node can send, and sending a share of them. */
   dispatchPool(node: number): DispatchPool | null;
   dispatch(node: number, share: number): void;
@@ -98,36 +126,17 @@ export interface PanelHost {
   openReserve(): void;
 }
 
-/** A building's flags with 自動訓練 as just sent (game/pending.ts; null: as the snapshot has it). */
-export function withAutoTrain(flags: number, sent: boolean | null): number {
-  if (sent === null) return flags;
-  return sent ? flags | BuildingFlag.AutoTrain : flags & ~(BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
-}
-
 /**
- * 自動訓練 (D-054): what an own barracks, range or mage hall is doing about it, from its flags;
- * null for other buildings.
- */
-export function autoTrainText(type: number, flags: number): string | null {
-  if (!AUTO_TRAIN.buildings.includes(type)) return null;
-  if ((flags & BuildingFlag.AutoPopulationFull) !== 0) return "人口滿了，蓋民居";
-  return (flags & BuildingFlag.AutoTrain) !== 0 ? "自動訓練中" : "自動訓練暫停";
-}
-
-/**
- * 進攻／撤退／堅守, the three orders for soldiers (D-050: 「指揮軍團進攻與撤退還有堅守的指令仍然
- * 不明確」), a line each in the player's words, under the selection.
+ * 攻擊／移動／堅守, the three orders for soldiers (D-050: 「指揮軍團進攻與撤退還有堅守的指令仍然
+ * 不明確」; D-094 renamed 進攻、撤退), a line each in the player's words, under the selection.
  */
 export const ORDER_TEXT = {
-  advance: "進攻：點地面或小地圖，整隊前進，遇到敵人一起打",
-  retreat: "撤退：點地面或小地圖撤到那裡，點主城回家",
+  advance: "攻擊：點地面或小地圖攻擊移動，遇到敵人就打；點敵人集中打它",
+  retreat: "移動：點地面或小地圖走過去，路上不還手；點主城回家",
   hold: "堅守：停在原地，敵人進到射程就打，不追出去",
 } as const;
-/**
- * While every soldier selected is retreating, the 撤退 line says what a tap does now (D-061):
- * it moves the retreat, it is no 進攻. In place of the line, so the panel does not grow.
- */
-export const RETREAT_NOW_TEXT = "撤退中：點地面或小地圖改撤退位置，到了原地堅守";
+/** A mage's crystal cannon (D-095: only automatic; 「把消耗放進說明裡面」), its numbers the simulation's own. */
+export const CANNON_TEXT = `自動晶砲：每發 ${CANNON.crystal} 魔晶、冷卻 ${CANNON.cooldownTicks / TICKS_PER_SECOND} 秒，炸到 ${CANNON.autocastMinTargets} 名以上才放，移動中不放`;
 /** Under a town plundered this game (round 7, D-061): only 治理 is offered. */
 export const PLUNDERED_TEXT = "這座城這局已經被搶過，只能治理";
 
@@ -143,7 +152,7 @@ export function incomeText(permille: number, state: number): string | null {
 }
 
 /** The 「目前：」 line's words, in its order (D-054 adds 待命: standing, not 進攻中). */
-export const ORDER_NAME: Record<OrderState, string> = { advance: "進攻中", retreat: "撤退中", hold: "堅守", idle: "待命", garrison: "躲在建築裡" };
+export const ORDER_NAME: Record<OrderState, string> = { advance: "攻擊中", retreat: "移動中", hold: "堅守", idle: "待命", garrison: "躲在建築裡" };
 
 /**
  * 隊形 in the player's words (GDD §9, D-027, D-028), a line each. 散開 has a second line for
@@ -238,13 +247,13 @@ export class SelectionInfo {
       const pending = this.host.pending();
       const eco = pending.eco();
       const waiting = `${this.host.paused() ? 1 : 0}:${pending.trains(sel.building).length}:${eco === null ? "" : `${eco.food},${eco.wood},${eco.gold},${eco.on}`}`;
-      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.queueLength]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${waiting}`;
+      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.queueLength]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${waiting}:${this.host.reserveRaised() ? "r" : ""}`;
     }
     const p = view.inspected;
     if (p !== null) {
       if (p.kind === "town") {
         const o = view.townRow(p.id);
-        return `t:${p.id}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.state]}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.owner]}:${this.host.paused() ? 1 : 0}:${this.host.pending().townChoice(p.id) ?? ""}`;
+        return `t:${p.id}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.state]}:${o < 0 ? -1 : view.curr?.snap.towns[o + T.owner]}:${this.host.paused() ? 1 : 0}:${this.host.pending().townChoice(p.id) ?? ""}:${this.host.governWaiting(p.id) ? "w" : ""}`;
       }
       return `i:${p.kind}:${p.id}`;
     }
@@ -389,18 +398,16 @@ export class SelectionInfo {
     const note = el("p", this.el, "sel-note");
     const now = el("span", note, "order-now");
     el("span", note, "order-meaning", ORDER_TEXT.advance);
-    const retreat = el("span", note, "order-meaning", ORDER_TEXT.retreat);
+    el("span", note, "order-meaning", ORDER_TEXT.retreat);
     el("span", note, "order-meaning", ORDER_TEXT.hold);
+    // D-095 (the user: 「把消耗放進說明裡面」): the mages' cannon, always on its own.
+    if (ids.some((id) => view.unitType(id) === UnitType.Mage)) el("span", note, "order-meaning cannon-meaning", CANNON_TEXT);
     const formation = el("span", note, "formation-meaning");
     const formationMore = el("span", note, "formation-more");
     this.updaters.push(() => {
       const counts = orderCounts(view, ids);
       const text = counts === null ? "" : orderNowText(counts);
       if (now.textContent !== text) now.textContent = text;
-      const retreating = allIn(view, ids, "retreat");
-      const retreatLine = retreating ? RETREAT_NOW_TEXT : ORDER_TEXT.retreat;
-      if (retreat.textContent !== retreatLine) retreat.textContent = retreatLine;
-      retreat.classList.toggle("order-hint", retreating);
       const f = formationOf(view, ids);
       const lines: readonly string[] = f === null ? [] : f === "mixed" ? [FORMATION_MIXED_TEXT] : FORMATION_TEXT[f ? "loose" : "close"];
       if (formation.textContent !== (lines[0] ?? "")) formation.textContent = lines[0] ?? "";
@@ -436,6 +443,24 @@ export class SelectionInfo {
     const status = el("span", head, "sel-status");
     const hpBar = bar(this.el, "hp");
     const hpText = el("span", this.el, "sel-num");
+    // 自動訓練 by the screen (D-098): why it trains or not; the main city's villagers and their target.
+    const trainsOnItsOwn = own && (type === BuildingType.MainCity || AUTO_TRAIN.buildings.includes(type));
+    const autoLine = trainsOnItsOwn ? el("p", this.el, "sel-pend auto-train-line") : null;
+    if (own && type === BuildingType.MainCity) {
+      const row = el("div", this.el, "sel-keep villager-target");
+      row.setAttribute("role", "group");
+      row.setAttribute("aria-label", "村民目標");
+      el("span", row, "", "村民目標");
+      button(row, "−", "", () => this.host.stepVillagers(-1), "secondary step").setAttribute("aria-label", "村民目標少 5 名");
+      const count = el("output", row);
+      count.setAttribute("aria-label", "村民目標幾名");
+      button(row, "+", "", () => this.host.stepVillagers(1), "secondary step").setAttribute("aria-label", "村民目標多 5 名");
+      el("span", row, "", "名");
+      this.updaters.push(() => {
+        const n = `${this.host.villagerTarget()}`;
+        if (count.textContent !== n) count.textContent = n;
+      });
+    }
     const queue = own ? el("div", this.el, "sel-queue") : null;
     const queueLength = b0[o0 + B.queueLength];
     const packed = b0[o0 + B.queuePacked];
@@ -500,9 +525,12 @@ export class SelectionInfo {
       }
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
-      // As just sent while the game runs; paused, as it is until 繼續 (R6-31: the button says what comes).
-      const auto = own ? (autoTrainText(type, withAutoTrain(b[o + B.flags], this.host.paused() ? null : this.host.pending().autoTrain(id))) ?? "") : "";
-      status.textContent = `${own ? [locked, auto].filter((t) => t !== "").join("　") : remembered}${inside}`;
+      status.textContent = `${own ? locked : remembered}${inside}`;
+      // 自動訓練 by the screen (D-098): why it trains or not, on a line of its own.
+      if (autoLine !== null) {
+        const line = type === BuildingType.MainCity ? this.host.villagerLine() : this.host.trainingLine(id);
+        if (autoLine.textContent !== line) autoLine.textContent = line;
+      }
       headBar?.(b[o + B.queueProgress] / 1000);
     });
   }
@@ -609,11 +637,31 @@ export class SelectionInfo {
     if (awaiting && chosen !== null && this.host.paused()) {
       const plunder = chosen === TownChoice.Plunder;
       el("p", this.el, "sel-pend", `已選${plunder ? "搶" : "治理"}，留守 ${this.host.garrison(id)} 名：按繼續後開始${plunder ? "搶" : "修繕"}`);
+    } else if (awaiting && chosen === null && this.host.governWaiting(id)) {
+      // 等錢治理 (ceo 2026-10-21): what is missing; 治理 starts by itself once it is there. 搶 or 取消 end the wait.
+      const line = el("p", this.el, "sel-pend govern-wait");
+      const row = el("div", this.el, "sel-choice");
+      if (!view.townPlunderedOnce(id)) button(row, "搶", "", () => this.host.chooseTown(id, TownChoice.Plunder), "choice-plunder");
+      button(row, "取消", "等錢治理", () => this.host.cancelGovernWait(id), "secondary");
+      this.updaters.push(() => {
+        const missing = costLine(this.host.governShortfall(id) ?? { food: 0, wood: 0, gold: 0, crystal: 0 });
+        const text = missing === "" ? "等錢治理：錢夠了，開始治理" : `等錢治理（還差 ${missing}）`;
+        if (line.textContent !== text) line.textContent = text;
+      });
     } else if (awaiting && chosen === null) {
       const row = el("div", this.el, "sel-choice");
       // 城鎮只能搶一次 (round 7): a town plundered this game can only be governed.
       if (!view.townPlunderedOnce(id)) button(row, "搶", "", () => this.host.chooseTown(id, TownChoice.Plunder), "choice-plunder");
-      button(row, "治理", "", () => this.host.chooseTown(id, TownChoice.Govern), "choice-govern");
+      // 治理's cost from the rules; without it, what is missing in red (the button still works: 等錢治理).
+      const cost = this.host.governCost(id);
+      const govern = button(row, "治理", cost === null ? "" : costText(cost), () => this.host.chooseTown(id, TownChoice.Govern), "choice-govern");
+      const short = el("span", govern, "choice-short");
+      this.updaters.push(() => {
+        const missing = costLine(this.host.governShortfall(id) ?? { food: 0, wood: 0, gold: 0, crystal: 0 });
+        const text = missing === "" ? "" : `還差 ${missing}`;
+        if (short.textContent !== text) short.textContent = text;
+        short.hidden = text === "";
+      });
       if (view.townPlunderedOnce(id)) el("p", this.el, "sel-note", PLUNDERED_TEXT);
     }
     // 留守 − N + 名 (D-026), for a town we hold.
@@ -645,7 +693,9 @@ export class SelectionInfo {
       const owner = t[o + T.owner];
       const who = owner === view.me ? "我方" : owner === NO_OWNER || owner === NEUTRAL ? "" : "敵方";
       const sent = owner === view.me && t[o + T.state] === TownState.AwaitingChoice && this.host.paused() ? this.host.pending().townChoice(id) : null;
-      status.textContent = sent === null ? `${who}${TOWN_STATE_NAME[t[o + T.state]] ?? ""}` : `${who}攻下：${sent === TownChoice.Plunder ? "搶" : "治理"}（繼續後）`;
+      const waits = owner === view.me && t[o + T.state] === TownState.AwaitingChoice && this.host.governWaiting(id);
+      const state = sent !== null ? `${who}攻下：${sent === TownChoice.Plunder ? "搶" : "治理"}（繼續後）` : waits ? `${who}攻下，等錢治理` : `${who}${TOWN_STATE_NAME[t[o + T.state]] ?? ""}`;
+      if (status.textContent !== state) status.textContent = state;
       // Two different counts for our own town: every soldier of ours inside it now, and the
       // ones told to stay (留守, below), who do not leave with 全軍.
       const inside = owner === view.me ? `城裡有 ${t[o + T.garrison]} 名兵（至少要 ${t[o + T.garrisonNeeded]} 名）` : `駐軍 ${t[o + T.garrison]}/${t[o + T.garrisonNeeded]}`;
@@ -716,9 +766,10 @@ export class CommandArea {
     if (sel.building !== null) {
       const o = view.buildingRow(sel.building);
       const b = view.curr?.snap.buildings;
-      const auto = o < 0 || b === undefined ? 0 : withAutoTrain(b[o + B.flags], this.host.pending().autoTrain(sel.building)) & (BuildingFlag.AutoTrain | BuildingFlag.AutoPopulationFull);
-      const later = this.host.paused() && this.host.pending().autoTrain(sel.building) !== null;
-      return o < 0 || b === undefined ? "none" : `b:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}:${later ? 1 : 0}`;
+      // 自動訓練 (D-098): the screen's pause, and the main city's villagers'.
+      const auto = this.host.autoPaused(sel.building) ? 1 : 0;
+      const villagers = this.host.villagersPaused() ? 1 : 0;
+      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}:${villagers}:${this.host.reserveRaised() ? "r" : ""}`;
     }
     return "none";
   }
@@ -731,23 +782,23 @@ export class CommandArea {
     if (sel.units.length > 0) {
       const types = new Set(sel.units.map((id) => view.unitType(id)));
       const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
-      // 進攻／撤退／堅守 (D-050), then 停止, in the first row; the one all the soldiers are in is
-      // lit. 進攻 and 撤退 both ask where to (D-059: 撤退 「跟攻擊一樣」). 取消即堅守 (D-054):
-      // while they advance or retreat, or while the spot is being picked, the same button
-      // reads 取消 and stops them where they are, holding.
+      // 攻擊／移動／堅守 (D-050; D-094 renamed 進攻、撤退), then 停止, in the first row; the one all
+      // the soldiers are in is lit. 攻擊 and 移動 both ask where to (D-059). 取消即堅守 (D-054):
+      // while they attack or move, or while the spot is being picked, the same button reads 取消
+      // and stops them where they are, holding.
       const counts = orderCounts(view, sel.units);
       const advancing = mode === "advance" || (mode === "normal" && allIn(view, sel.units, "advance"));
       const retreating = mode === "retreat" || (mode === "normal" && allIn(view, sel.units, "retreat"));
       if (counts !== null) {
-        // 進攻紅、撤退藍 (D-080); 堅守 stays as it was.
+        // 攻擊紅、移動藍 (D-080); 堅守 stays as it was.
         const advance = advancing
-          ? button(this.el, "取消進攻", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
-          : button(this.el, "進攻", "點地面", () => this.host.setMode("advance"), ORDER_TONE.advance);
+          ? button(this.el, "取消攻擊", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
+          : button(this.el, "攻擊", "地面或敵人", () => this.host.setMode("advance"), ORDER_TONE.advance);
         if (advancing) advance.classList.add("active");
       }
       const retreat = retreating
-        ? button(this.el, "取消撤退", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
-        : button(this.el, "撤退", "點地面", () => this.host.retreat(), ORDER_TONE.retreat);
+        ? button(this.el, "取消移動", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
+        : button(this.el, "移動", "點地面", () => this.host.retreat(), ORDER_TONE.retreat);
       if (retreating) retreat.classList.add("active");
       if (counts !== null) {
         const hold = button(this.el, "堅守", "原地不動", () => {
@@ -769,15 +820,11 @@ export class CommandArea {
           this.host.notify(`已${to}。${FORMATION_TEXT[loose ? "loose" : "close"][0]}`);
         }, "wide");
       }
+      // 整理隊形 (D-095, the user: 「常常跑一跑法師就跑到前排」): the soldiers re-form where they
+      // are, spearmen in front, mages behind, facing the nearest enemy seen (game.ts reform()).
+      if (soldiers.length > 1) button(this.el, "整理隊形", "槍兵在前", () => this.host.reform(), "secondary");
       if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
-      if (types.has(UnitType.Mage)) {
-        const mages = sel.units.filter((id) => view.unitType(id) === UnitType.Mage);
-        const cast = button(this.el, mode === "cast" ? "取消晶砲" : "晶砲", "魔晶 5", () => this.host.setMode(mode === "cast" ? "normal" : "cast"));
-        if (mode === "cast") cast.classList.add("active");
-        const on = mages.every((id) => view.unitAutocast(id));
-        // 「自動施放：關」 broke into two lines in one column: the state goes under the name.
-        button(this.el, "自動施放", on ? "目前：開" : "目前：關", () => this.host.command({ c: "autocast", u: mages, on: !on }), "secondary");
-      }
+      // No 晶砲 or 自動施放 (D-095: 「晶泡的按鈕可以拿掉了」): mages always fire on their own.
       // 駐守 (D-080): spearmen go and stand guard at our outpost.
       if (outpostSlots(view.rules) > 0 && sel.units.some((id) => view.unitType(id) === POST_TYPE)) {
         const picking = mode === "post";
@@ -818,20 +865,20 @@ export class CommandArea {
         if (type === BuildingType.MainCity) {
           button(this.el, "經濟分配", "", () => this.host.openEconomy(), "secondary");
           // 預留 (D-054): what 自動訓練 leaves for building.
-          button(this.el, "預留", "自動訓練", () => this.host.openReserve(), "secondary");
+          // While 治理 waits for its cost (ceo 2026-10-21), the reserve is raised: the button says so.
+          button(this.el, "預留", this.host.reserveRaised() ? "暫時提高" : "自動訓練", () => this.host.openReserve(), "secondary");
           button(this.el, "建造", "", () => this.setPage("build"));
         }
       }
       // 自動訓練 (D-054): on by default for the player; a tap pauses or resumes this building
       // (it can be set before the building is finished, too).
-      if (AUTO_TRAIN.buildings.includes(type)) {
-        const sent = this.host.pending().autoTrain(id);
-        const on = (withAutoTrain(b[o + B.flags], sent) & BuildingFlag.AutoTrain) !== 0;
-        // Sent while paused (R6-31): as it will be, dashed, 繼續後暫停 or 繼續後恢復.
-        const later = sent !== null && this.host.paused();
-        const auto = button(this.el, "自動訓練", later ? (on ? "繼續後恢復" : "繼續後暫停") : on ? "目前：開" : "目前：暫停", () => this.host.command({ c: "auto_train", building: id, on: !on }), "secondary");
-        if (later) auto.classList.add("pending");
-        else if (on) auto.classList.add("active");
+      // D-098: the screen's own pause (kept in the save), no order to the simulation; for the main
+      // city, its villagers (訓練村民 up to the target).
+      if (AUTO_TRAIN.buildings.includes(type) || type === BuildingType.MainCity) {
+        const city = type === BuildingType.MainCity;
+        const on = city ? !this.host.villagersPaused() : !this.host.autoPaused(id);
+        const auto = button(this.el, city ? "自動村民" : "自動訓練", on ? "目前：開" : "目前：暫停", () => (city ? this.host.toggleVillagers() : this.host.toggleAutoPaused(id)), "secondary");
+        if (on) auto.classList.add("active");
       }
       return;
     }

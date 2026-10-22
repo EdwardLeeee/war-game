@@ -27,6 +27,15 @@ export interface LabHooks {
   astcSample?: () => void;
   /** Our population and its cap now (the perf scenarios are mirrored: both sides'), or null before the first snapshot. */
   population?: () => { population: number; cap: number } | null;
+  /**
+   * 寫實地面 (D-093, ?test=1&ground=real): its quality now (null: not drawn), set it, and what it
+   * costs: the GPU's ms a frame at each quality and its textures' MB (ceo: compare on the iPhone).
+   */
+  ground?: {
+    quality(): "high" | "low" | null;
+    setQuality(q: "high" | "low"): void;
+    measure(): string | null;
+  };
 }
 
 /**
@@ -71,6 +80,7 @@ export class LabPanel {
   private readonly live: HTMLElement;
   private readonly measureBtns: HTMLButtonElement[];
   private readonly artBtns: HTMLButtonElement[];
+  private groundBtns: HTMLButtonElement[] = [];
   private readonly checkBtn: HTMLButtonElement;
   private readonly status: HTMLElement;
   private readonly resultBox: HTMLElement;
@@ -124,6 +134,29 @@ export class LabPanel {
       return b;
     });
     if (hooks.artAvailable !== true) make("span", arts, "lab-art-note", "這個版本沒有圖集");
+    // 寫實地面 (D-093): 高、低 and 量地面, on test pages with it.
+    const ground = hooks.ground;
+    if (ground !== undefined) {
+      const row = make("div", this.panel, "lab-buttons lab-ground");
+      make("span", row, "lab-art-label", "地面");
+      const btns = (["high", "low"] as const).map((q) => {
+        const b = make("button", row, "", q === "high" ? "高" : "低");
+        b.type = "button";
+        b.setAttribute("role", "radio");
+        b.addEventListener("click", () => {
+          ground.setQuality(q);
+          this.showGround();
+        });
+        return b;
+      });
+      const measure = make("button", row, "secondary", "量地面");
+      measure.type = "button";
+      measure.addEventListener("click", () => {
+        const r = ground.measure();
+        this.log.add(r ?? "地面：沒有用寫實地面（?ground=real，要有地形的圖）");
+      });
+      this.groundBtns = btns;
+    }
     const measures = make("div", this.panel, "lab-buttons");
     this.measureBtns = PERF_SCENARIOS.map((p) => {
       const b = make("button", measures, "", `量測 ${p.population} 人`);
@@ -182,6 +215,19 @@ export class LabPanel {
   show(): void {
     this.panel.hidden = false;
     this.log.shown();
+    this.showGround();
+  }
+
+  /** 寫實地面's quality buttons: the one in use lit; none while it is not drawn. */
+  private showGround(): void {
+    const q = this.hooks.ground?.quality() ?? null;
+    (["high", "low"] as const).forEach((v, i) => {
+      const b = this.groundBtns[i];
+      if (b === undefined) return;
+      b.disabled = q === null;
+      b.setAttribute("aria-checked", q === v ? "true" : "false");
+      b.classList.toggle("secondary", q !== v);
+    });
   }
 
   /** Where this game's start spent its time (lab/load-times.ts). */

@@ -147,3 +147,15 @@ test("模擬的 build：只算 worker 打包進去的模擬檔案，12 碼，每
   assert.ok(!a.files.includes("sim/src/continue-bench.ts"));
   assert.equal((await simBuild()).id, a.id);
 });
+
+test("等錢治理存進畫面狀態（等待中的城鎮、花費、玩家自己的預留），讀回來一樣；沒有這一項的舊存檔照樣能接著打", async () => {
+  const govern = { towns: [{ town: 3, cost: { food: 0, wood: 150, gold: 150, crystal: 0 } }], own: { food: 0, wood: 150, gold: 100, crystal: 15 } };
+  const withWait = saved();
+  withWait.screen.govern = govern;
+  const store = new SaveStore(Promise.resolve(new MemorySaveBackend()));
+  assert.equal(await store.save(withWait), true);
+  const back = await store.load();
+  assert.deepEqual(back?.screen.govern, govern);
+  assert.equal(screenUsable(saved()), true, "a save from before, without it");
+  assert.equal(saved().screen.govern, undefined);
+});

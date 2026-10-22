@@ -24,7 +24,12 @@ interface Slot {
   shield: Sprite;
   fx: Sprite;
   shadow: Sprite;
+  /** Behind a castle's wall (D-089): its picture again over the walls, in its owner's colour (made when first needed). */
+  ghost?: { holder: Container; body: Sprite; rim: Sprite[] };
 }
+
+/** Plane points the outline's copies stand off the body (ghost "outline"). */
+const RIM_PT = 1.5;
 
 interface AnimState {
   action: number;
@@ -136,10 +141,11 @@ export class ArtUnits {
   }
 
   /**
-   * Draws snapshot row `o` into slot `i` at (px, py), `seconds` on the simulation's clock.
-   * Returns the top of its picture (world px), for the bars above it, or null when it has no atlas.
+   * Draws snapshot row `o` into slot `i` at (px, py), `seconds` on the simulation's clock, `lift`
+   * points up (on a bridge's deck; its depth stays its feet's). Returns the top of its picture
+   * (world px), for the bars above it, or null when it has no atlas.
    */
-  unit(i: number, o: number, px: number, py: number, seconds: number): number | null {
+  unit(i: number, o: number, px: number, py: number, seconds: number, lift = 0): number | null {
     const u = (this.view.curr as NonNullable<GameView["curr"]>).snap.units;
     const id = u[o + U.id];
     const type = u[o + U.type];
@@ -182,10 +188,10 @@ export class ArtUnits {
       else if (anim === "walk") index = frameAt(info, walkFps(a, unitInfo?.speed ?? 0), elapsed, id % info.frames);
       else index = frameAt(info, fpsOf(a, anim), elapsed, info.loop ? id % info.frames : 0);
     }
-    this.place(s, a, anim, dir, index, owner, px, py, 1);
+    this.place(s, a, anim, dir, index, owner, px, py, 1, lift);
     this.drawShield(s, a, st, seconds);
     const f = this.art.frame(a.unit, "color", frameName(a, anim, dir, index).name);
-    return f === null ? null : py - f.ay * f.texture.height * this.scale;
+    return f === null ? null : py - lift - f.ay * f.texture.height * this.scale;
   }
 
   /**
@@ -243,10 +249,10 @@ export class ArtUnits {
     s.shield.alpha = alpha;
   }
 
-  private place(s: Slot, a: AtlasJson, anim: string, dir: number, index: number, owner: number, px: number, py: number, alpha: number): void {
+  private place(s: Slot, a: AtlasJson, anim: string, dir: number, index: number, owner: number, px: number, py: number, alpha: number, lift = 0): void {
     const { name, mirror } = frameName(a, anim, dir, index);
     s.box.visible = true;
-    s.box.position.set(px, py);
+    s.box.position.set(px, py - lift);
     s.box.zIndex = this.depth(px, py);
     s.box.alpha = alpha;
     put(s.color, this.art.frame(a.unit, "color", name), 0, 0, this.scale, mirror);
@@ -254,13 +260,14 @@ export class ArtUnits {
     s.team.tint = ownerTint(owner, this.view.me);
     // The effects layer (mages: the circle, the flash, the shards), mirrored as the colour; listed only where there is one.
     put(s.fx, this.art.frame(a.unit, "fx", name), 0, 0, this.scale, mirror);
-    put(s.shadow, this.art.frame(a.unit, "shadow", frameName(a, anim, dir, index, "shadow").name), px, py, this.scale, false);
+    put(s.shadow, this.art.frame(a.unit, "shadow", frameName(a, anim, dir, index, "shadow").name), px, py - lift, this.scale, false);
     s.shadow.alpha = alpha;
   }
 
   private hide(s: Slot): void {
     s.box.visible = false;
     s.shadow.visible = false;
+    if (s.ghost !== undefined) s.ghost.holder.visible = false;
   }
 
   /** Units drawn from the atlases this frame, and the fallen lying there (for the test page). */
@@ -272,6 +279,61 @@ export class ArtUnits {
   hideSlot(i: number): void {
     const s = this.slots[i];
     if (s !== undefined) this.hide(s);
+  }
+
+  /** Slot `i`'s picture as drawn this frame, on the plane, and its depth; null when it shows none. */
+  pictureBox(i: number): { x0: number; y0: number; x1: number; y1: number; z: number } | null {
+    const s = this.slots[i];
+    if (s === undefined || !s.box.visible || !s.color.visible) return null;
+    const c = s.color;
+    const w = c.texture.width * Math.abs(c.scale.x);
+    const h = c.texture.height * c.scale.y;
+    // Mirrored (scale.x < 0), the anchor counts from the right.
+    const left = c.scale.x < 0 ? (1 - c.anchor.x) * w : c.anchor.x * w;
+    return { x0: s.box.x - left, y0: s.box.y - c.anchor.y * h, x1: s.box.x - left + w, y1: s.box.y + (1 - c.anchor.y) * h, z: s.box.zIndex };
+  }
+
+  /**
+   * Slot `i` behind a castle's wall (D-089, atlas-buildings.md section 11): its picture once more
+   * in `layer` (one a colour, drawn over the walls, see WorldRenderer), whole or (outline) only its
+   * rim; null, none.
+   */
+  ghost(i: number, layer: Container | null, outline = false): void {
+    const s = this.slots[i];
+    if (s === undefined) return;
+    if (layer === null || !s.box.visible || !s.color.visible) {
+      if (s.ghost !== undefined) s.ghost.holder.visible = false;
+      return;
+    }
+    if (s.ghost === undefined) {
+      const holder = new Container();
+      const rim = [0, 1, 2, 3].map(() => new Sprite());
+      const body = new Sprite();
+      holder.addChild(...rim, body);
+      s.ghost = { holder, body, rim };
+    }
+    const g = s.ghost;
+    if (g.holder.parent !== layer) layer.addChild(g.holder);
+    g.holder.visible = true;
+    g.holder.position.set(s.box.x, s.box.y);
+    const copy = (t: Sprite, dx: number, dy: number) => {
+      t.texture = s.color.texture;
+      t.anchor.copyFrom(s.color.anchor);
+      t.scale.copyFrom(s.color.scale);
+      t.position.set(dx, dy);
+    };
+    copy(g.body, 0, 0);
+    // The outline: the picture four times off its place, the body itself erased from them.
+    g.body.blendMode = outline ? "erase" : "normal";
+    [
+      [RIM_PT, 0],
+      [-RIM_PT, 0],
+      [0, RIM_PT],
+      [0, -RIM_PT],
+    ].forEach(([dx, dy], k) => {
+      copy(g.rim[k], dx, dy);
+      g.rim[k].visible = outline;
+    });
   }
 
   /**

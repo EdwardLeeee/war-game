@@ -5,6 +5,8 @@
 
 import { ImageSource, Rectangle, Texture } from "pixi.js";
 import { ATLAS_NAMES, type AtlasJson, type EffectsJson, type FrameRect, parseAtlas, parseEffects } from "../art/spec.ts";
+import { type CastleJson, parseCastle } from "../art/castle.ts";
+import { parseTerrain, type TerrainJson } from "../art/terrain.ts";
 import { type BuildingsJson, type NodesJson, parseBuildings, parseNodes, type Side } from "../art/structures.ts";
 import type { LoadRecorder } from "../lab/load-times.ts";
 
@@ -34,6 +36,12 @@ export interface UnitArt {
   nodes: NodesJson | null;
   buildingFrame(side: Side, layer: "color" | "team" | "shadow", name: string): ArtFrame | null;
   nodeFrame(layer: "color" | "shadow", name: string): ArtFrame | null;
+  /** The castles' walls (art-v4 on, D-089): 東陸's only, as the prototype's towns all look (GDD section 12); null: drawn as blocks. */
+  castle: CastleJson | null;
+  castleFrame(layer: "color" | "team" | "shadow", name: string): ArtFrame | null;
+  /** The ground's pictures (art-v5 on, R6-51: rock, cliffs, water, fords, bridges); null: flat colours. */
+  terrain: TerrainJson | null;
+  terrainFrame(layer: "color" | "shadow", name: string): ArtFrame | null;
   destroy(): void;
 }
 
@@ -53,7 +61,7 @@ const PAGES: Record<ArtLayer, (a: AtlasJson) => string[]> = {
 };
 const LAYERS: ArtLayer[] = ["color", "team", "shadow", "fx", "shield"];
 
-async function json(url: string, times: LoadRecorder | null): Promise<unknown> {
+export async function json(url: string, times: LoadRecorder | null): Promise<unknown> {
   const start = performance.now();
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
@@ -69,14 +77,23 @@ async function json(url: string, times: LoadRecorder | null): Promise<unknown> {
  * loader in CI's WebKit (median 4.6 s against 4.7 s for the 63 files at 3 倍); handing PixiJS the
  * download instead (a blob's URL) cost a copy, 5.3 s.
  */
-async function page(url: string, times: LoadRecorder | null): Promise<Texture> {
+export async function page(url: string, times: LoadRecorder | null, size?: number, straight = false): Promise<Texture> {
   const start = performance.now();
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const blob = await res.blob();
   const downloaded = performance.now();
-  const bitmap = await createImageBitmap(blob);
-  const source = new ImageSource({ resource: bitmap, alphaMode: "premultiply-alpha-on-upload", label: url });
+  // `size`: scaled to that square as it is decoded (the ground's development textures come at 2048).
+  // `straight`: A is not alpha but data (the ground's height), never multiplied into the colour.
+  // The atlases (neither): the one-argument call, as before the ground.
+  const bitmap =
+    size === undefined && !straight
+      ? await createImageBitmap(blob)
+      : await createImageBitmap(blob, {
+          ...(size === undefined ? {} : { resizeWidth: size, resizeHeight: size, resizeQuality: "high" as const }),
+          ...(straight ? { premultiplyAlpha: "none" as const } : {}),
+        });
+  const source = new ImageSource({ resource: bitmap, alphaMode: straight ? "no-premultiply-alpha" : "premultiply-alpha-on-upload", label: url });
   times?.file(url, start, downloaded, blob.size, performance.now(), res.headers.get("x-war-game-sw"));
   return new Texture({ source, label: url });
 }
@@ -120,6 +137,10 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
   const buildingPages = new Map<string, Texture[]>();
   let nodes: NodesJson | null = null;
   const nodePages = new Map<string, Texture[]>();
+  let castle: CastleJson | null = null;
+  const castlePages = new Map<string, Texture[]>();
+  let terrain: TerrainJson | null = null;
+  const terrainPages = new Map<string, Texture[]>();
   const pagesOf = (dir: string, files: string[]): Promise<Texture[]> => load(files.map((f) => `${dir}${f}`));
   await Promise.all([
     ...(["E", "W"] as const).map(async (side) => {
@@ -141,6 +162,26 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
       }
       nodes = n;
       for (const layer of ["color", "shadow"] as const) nodePages.set(layer, await pagesOf(`${base}nodes/`, n.pages[layer]));
+    })(),
+    (async () => {
+      let c: CastleJson;
+      try {
+        c = parseCastle(await json(`${base}castle/castle_E.json`, times));
+      } catch {
+        return;
+      }
+      castle = c;
+      for (const layer of ["color", "team", "shadow"] as const) castlePages.set(layer, await pagesOf(`${base}castle/`, c.pages[layer]));
+    })(),
+    (async () => {
+      let t: TerrainJson;
+      try {
+        t = parseTerrain(await json(`${base}terrain/terrain.json`, times));
+      } catch {
+        return;
+      }
+      terrain = t;
+      for (const layer of ["color", "shadow"] as const) terrainPages.set(layer, await pagesOf(`${base}terrain/`, t.pages[layer]));
     })(),
   ]);
   const pxPerM = atlases.values().next().value?.px_per_m ?? 60;
@@ -184,6 +225,32 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
       const table = b === undefined ? undefined : layer === "color" ? b.frames : layer === "team" ? b.team : b.shadows;
       const r = table?.[name];
       f = r === undefined ? null : cut(buildingPages.get(`${side}|${layer}`)?.[r.page], r);
+      cache.set(key, f);
+      return f;
+    },
+    get castle() {
+      return castle;
+    },
+    get terrain() {
+      return terrain;
+    },
+    terrainFrame(layer, name) {
+      const key = `terrain|${layer}|${name}`;
+      let f = cache.get(key);
+      if (f !== undefined) return f;
+      const t = terrain as TerrainJson | null;
+      const r = t === null ? undefined : (layer === "color" ? t.frames : t.shadows)[name];
+      f = r === undefined ? null : cut(terrainPages.get(layer)?.[r.page], r);
+      cache.set(key, f);
+      return f;
+    },
+    castleFrame(layer, name) {
+      const key = `castle|${layer}|${name}`;
+      let f = cache.get(key);
+      if (f !== undefined) return f;
+      const c = castle as CastleJson | null;
+      const r = c === null ? undefined : (layer === "color" ? c.frames : layer === "team" ? c.team : c.shadows)[name];
+      f = r === undefined ? null : cut(castlePages.get(layer)?.[r.page], r);
       cache.set(key, f);
       return f;
     },

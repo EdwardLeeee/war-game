@@ -22,6 +22,8 @@ import { ART_LABEL, artBase, loadArtChoice } from "./art/pref.ts";
 import type { Culture } from "./art/spec.ts";
 import { CULTURES, DEFAULT_CULTURE, loadCulture, saveCulture } from "./culture.ts";
 import { loadUnitArt, type UnitArt } from "./render/unit-art.ts";
+import { loadGround } from "./render/ground-load.ts";
+import type { GroundTextures } from "./render/ground-draw.ts";
 import { measureCutShort } from "./lab/panel.ts";
 import { type LoadReport, loadLines, LoadTimes, LoadTimesBox } from "./lab/load-times.ts";
 import type { AstcSample } from "./lab/astc.ts";
@@ -395,6 +397,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   // 地圖 (D-074): the start screen's choice (a test page may ask for one); 量測 always the fixed map, so the numbers compare between runs.
   const map: MapMode = measure ? "fixed" : (params.map ?? mapMode);
   const art = await artForGame();
+  const ground = await groundForGame();
   const g = new Game(app, port, $("hud"), {
     seed: params.seed ?? newSeed(),
     scenario,
@@ -411,6 +414,9 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     art,
     culture: params.culture ?? culture,
     view: params.view ?? undefined,
+    ghost: params.ghost ?? undefined,
+    ground,
+    groundQuality: params.groundQuality,
     artAvailable,
     artChanged,
     astcSample,
@@ -482,6 +488,24 @@ async function artForGame(): Promise<UnitArt | null> {
     return null;
   }
 }
+/**
+ * 寫實地面 (D-093, ?test=1&ground=real): war-game-ui's ground set beside the atlases (art-v6 on),
+ * else the development set from R7's CC0 textures (scripts/fetch-ground-dev.ts, local), else the
+ * test page's stand-ins. Loaded once a page.
+ */
+let loadedGround: Promise<GroundTextures | null> | null = null;
+function groundForGame(): Promise<GroundTextures | null> {
+  if (params.ground !== "real") return Promise.resolve(null);
+  if (loadedGround === null) {
+    const art = loadedArt === null ? [] : [`${loadedArt.base}ground/`];
+    loadedGround = loadGround([...art, "./art/ground-dev/", "./art/test/ground/"], loadTimes).catch((err: unknown) => {
+      console.warn(`ground: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    });
+  }
+  return loadedGround;
+}
+
 /** For the lab's result: which atlases and how many pages, or why none. */
 function artText(): string {
   if (artFailed !== null) return `載入失敗（${artFailed}）`;
@@ -590,6 +614,8 @@ async function resumeGame(saved: SavedGame): Promise<void> {
     env: env(init.scenario, gameText(init.difficulty, init.maxTicks, init.enemyAi, init.map, false)),
     checkPort: () => createSimPort(showError),
     art,
+    ground: await groundForGame(),
+    groundQuality: params.groundQuality,
     // As it was played, not the start screen's choice now (a save from before the choice: 東陸).
     culture: CULTURES.find((c) => c === init.culture) ?? DEFAULT_CULTURE,
     artAvailable,

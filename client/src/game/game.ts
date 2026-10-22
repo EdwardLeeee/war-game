@@ -11,6 +11,7 @@ import {
   type Intent,
   type Pick,
   longPressKind,
+  moveIntents,
   type Mode,
   retreatHome,
   tapIntents,
@@ -19,6 +20,7 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
+import { enemyTooClose, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
@@ -29,10 +31,12 @@ import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
 import type { UnitArt } from "../render/unit-art.ts";
 import { WorldRenderer } from "../render/world.ts";
+import type { GroundQuality, GroundTextures } from "../render/ground-draw.ts";
 import { SAVE_EVERY_TICKS, SCREEN_VERSION, type SavedGame, type ScreenState } from "../save/save.ts";
 import { gpu, takeDraws } from "../stage.ts";
 import {
   Action,
+  AUTO_TRAIN,
   autoBuilders,
   type AiDifficulty,
   BUILDING_STRIDE,
@@ -42,6 +46,8 @@ import {
   CELL,
   type CommandBody,
   type ContinueFailure,
+  type Cost,
+  dir16,
   type FromWorker,
   type GameOverReason,
   type MapMode,
@@ -51,6 +57,7 @@ import {
   NodeField,
   Order,
   PROTOCOL_VERSION,
+  Reject,
   Resource,
   type ScenarioName,
   Stance,
@@ -72,7 +79,7 @@ import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { formalUi } from "../ui/formal.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText, type ToastKind } from "../ui/overlays.ts";
-import { Placement, towerLandOk } from "../ui/placement.ts";
+import { Placement, placeReason, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
@@ -83,6 +90,8 @@ import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn, orderState } from "./orders.ts";
+import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
+import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, type Site, villagersMissing } from "./auto-army.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
@@ -132,6 +141,11 @@ export interface GameOptions {
   culture?: Culture;
   /** How the ground lies (a test page's ?view=, D-088); the default when not given. */
   view?: Projection["kind"];
+  /** Units behind a castle's wall as their rims only (?ghost=outline, D-089), instead of whole. */
+  ghost?: "outline";
+  /** 寫實地面 (D-093, ?test=1&ground=real): its textures, and the quality to start with. */
+  ground?: GroundTextures | null;
+  groundQuality?: GroundQuality;
   /** This build has atlases to choose in the 量測 panel. */
   artAvailable?: boolean;
   /** The 量測 panel's 美術 was changed since this game began: 量測 starts a game of its own. */
@@ -152,13 +166,21 @@ export const TOWER_LAND_TEXT = "箭樓要蓋在主城或治理的城鎮附近";
 /** With outposts on (D-080), arrow towers may also go by our outposts. */
 export const TOWER_LAND_TEXT_OUTPOST = "箭樓要蓋在主城、治理的城鎮或哨所附近";
 
-/** A tap while every soldier selected is retreating moves the retreat (D-061). */
-export const RETREAT_RETARGET_TEXT = "改撤到這裡，撤到後原地堅守";
+
+/** 整理隊形 (D-095): what it faced, on the message bar. */
+const REFORM_TEXT: Record<string, string> = {
+  enemy: "整理隊形：槍兵在前，面向最近的敵人",
+  seen: "整理隊形：槍兵在前，面向剛才看到敵人的地方",
+  last: "整理隊形：槍兵在前，面向剛才走的方向",
+  city: "整理隊形：槍兵在前，面向敵方主城",
+  keep: "整理隊形：槍兵在前，方向不變",
+  near: `敵人在 ${REFORM_CLEAR_CELLS} 格內，不整理隊形：整理時不還手，先打完或先移動開`,
+};
 
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
-  advance: "點地面或小地圖：整隊前進，遇到敵人一起打",
-  retreat: "點地面或小地圖：撤到那裡；點主城回家",
-  cast: "點地面選晶砲落點",
+  // D-094: 攻擊 then a tap; 移動 the old 撤退.
+  advance: "點地面或小地圖：攻擊移動，遇到敵人就打；點敵人集中打它",
+  retreat: "點地面或小地圖：走過去，路上不還手；點主城回家",
   rally: "點地面設集結點",
   garrison: GARRISON_PROMPT,
   post: POST_PROMPT,
@@ -232,6 +254,8 @@ export class Game implements GestureHost {
     this.app = app;
     this.port = port;
     this.options = options;
+    // The fake world trains nothing by itself (mock/): the screen's 自動訓練 only when a test turns it on.
+    this.autoArmyOn = !options.fake;
     this.tps = options.tps;
     this.hudRoot = hud;
     this.overlays = new Overlays(hud);
@@ -253,6 +277,22 @@ export class Game implements GestureHost {
               else options.life.perf(scenario);
             },
         artAvailable: options.artAvailable === true,
+        ground:
+          (options.ground ?? null) === null
+            ? undefined
+            : {
+                quality: () => (this.renderer?.groundLook.quality as GroundQuality | null | undefined) ?? null,
+                setQuality: (q) => this.setGroundQuality(q),
+                measure: () => {
+                  const r = this.app.renderer;
+                  const w = r.canvas.width;
+                  const h = r.canvas.height;
+                  const m = this.renderer?.measureGround(r, w, h) ?? null;
+                  if (m === null) return null;
+                  const ms = (v: number) => v.toFixed(2);
+                  return `地面（${w}×${h} 像素，每格）：高 ${ms(m.high)} ms、低 ${ms(m.low)} ms、只貼一張圖 ${ms(m.plain)} ms；材質 ${m.mb.toFixed(1)} MB`;
+                },
+              },
         population: () => {
           const h = this.view?.curr?.snap.header;
           return h === undefined ? null : { population: h[H.population], cap: h[H.populationCap] };
@@ -397,11 +437,38 @@ export class Game implements GestureHost {
   readonly charges = new Charges();
   /** Stances sent that the snapshot does not show yet (D-081), for what 前進 and 撤退 go by. */
   private readonly stances = new SentStances();
+  /** 整理隊形 (D-095): where enemies were last seen (cells, by unit id), and the way each soldier was last sent. */
+  private readonly sightings = new Map<number, Sighting>();
+  private prunedAt = 0;
+  private readonly lastSent = new Map<number, Spot>();
+  /** 等錢治理 (ceo 2026-10-21): towns whose 治理 waits for its cost, and the reserve raised meanwhile. */
+  readonly governWaits = new GovernWaits();
+  /**
+   * 自動訓練 by the screen (D-098): paused buildings and the villagers' target, the trains sent and
+   * not in a snapshot yet, the simulation's own 自動訓練 turned off (when last sent, per building),
+   * and what the last decision saw, for the panels. On the fake world only when a test turns it on.
+   */
+  readonly autoArmy = new AutoArmyBook();
+  autoArmyOn = true;
+  private autoSent: { seq: number; tick: number; building: number; unit: number }[] = [];
+  private readonly autoOff = new Map<number, number>();
+  private armyNeedSeen: ArmyNeed = { reason: "none", missing: {}, want: {} };
+  private armyBlocked = new Map<number, Block>();
+  private villagersSeen = { living: 0, queued: 0, block: null as Block | null };
+  /** 自動訓練 stopped by a full population (D-054's message strip), as last seen. */
+  autoPopulationFull = false;
+  /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
+  private readonly autocastAsked = new Set<number>();
   /** Orders from the buttons the snapshot does not show yet (a site, the queue, 自動訓練, 搶 or 治理): shown at once (pending.ts). */
   readonly pending = new PendingOrders();
   /** 閃紅提醒 (D-081): each group's base and alarm, and what the group buttons show (updated every snapshot). */
   private readonly alarms = new GroupAlarms();
   private alarmState: (Alarm & { present: number })[] = [0, 1, 2, 3].map(() => ({ advancing: false, base: null, alarm: false, tell: false, present: 0 }));
+
+  /** Pause marks on buildings (D-098), for the test hook. */
+  get pauseMarksForTest(): number {
+    return this.renderer?.pauseMarks ?? 0;
+  }
 
   /** Arrows drawn from `shot` events so far (round 7), for the test hook. */
   get shotsForTest(): number {
@@ -423,6 +490,32 @@ export class Game implements GestureHost {
     return this.renderer?.townWalls ?? [];
   }
 
+  /** The ground's pictures (art-v5, R6-51) as drawn; null before the first snapshot. */
+  get terrainForTest(): { pictures: boolean; pieces: number; flat: number; standing: number } | null {
+    return this.renderer?.terrainCounts ?? null;
+  }
+
+  /** How far up (points on the plane) someone standing in the middle of cell (cx, cy) is drawn: a bridge's deck. */
+  liftForTest(cx: number, cy: number): number {
+    return this.renderer?.liftAt((cx + 0.5) * TILE_PX, (cy + 0.5) * TILE_PX) ?? 0;
+  }
+
+  /** 寫實地面 (D-093): drawn or not, and its quality; null before the first snapshot. */
+  get groundForTest(): { real: boolean; quality: string | null } | null {
+    return this.renderer?.groundLook ?? null;
+  }
+
+  /** 寫實地面's quality (the 量測 panel, the test page). */
+  setGroundQuality(q: GroundQuality): void {
+    this.renderer?.setGroundQuality(q);
+  }
+
+  /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
+  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null {
+    const r = this.renderer;
+    return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount };
+  }
+
   /** Terrain repaints on exploring rock (random map, D-074), for the test hook. */
   get terrainRepaintsForTest(): { count: number; totalMs: number; maxMs: number } | null {
     return this.renderer?.terrainRepaints ?? null;
@@ -433,7 +526,7 @@ export class Game implements GestureHost {
     this.overlays.toast(text, kind);
   }
 
-  /** Minimap tap (GDD §10): jump there; in 進攻／撤退／晶砲／集結點 mode, pick that spot. */
+  /** Minimap tap (GDD §10): jump there; in 攻擊／移動／集結點 mode, pick that spot. */
   minimapTap(cx: number, cy: number): void {
     const view = this.view;
     if (view === null) return;
@@ -450,14 +543,15 @@ export class Game implements GestureHost {
     this.camera?.centerOn(wx, wy);
   }
 
-  /** Minimap long press with units selected (GDD §10): they advance there. */
+  /** Minimap long press with units selected (GDD §10): they move there (D-094: as a tap on the ground). */
   minimapLongPress(cx: number, cy: number): void {
-    const units = this.view?.selection.units ?? [];
-    if (units.length === 0) {
+    const view = this.view;
+    const units = view?.selection.units ?? [];
+    if (view === null || units.length === 0) {
       this.toast("先選部隊，再長按小地圖");
       return;
     }
-    this.apply(this.keepRetreating([{ kind: "command", cmd: { c: "move", u: units, x: cx, y: cy } }]));
+    this.apply(moveIntents(view, units, cx, cy));
   }
 
   pause(): void {
@@ -557,6 +651,8 @@ export class Game implements GestureHost {
       speed: this.speed,
       seq: this.seq,
       recruitMessageTick: Number.isFinite(this.recruitMessageTick) ? this.recruitMessageTick : null,
+      govern: this.governWaits.save(),
+      autoArmy: this.autoArmy.save(),
     };
   }
 
@@ -576,6 +672,8 @@ export class Game implements GestureHost {
     this.alarms.restore(s.alarms);
     this.charges.restore(s.charges);
     this.recruitMessageTick = s.recruitMessageTick ?? Number.NEGATIVE_INFINITY;
+    this.governWaits.restore(s.govern);
+    this.autoArmy.restore(s.autoArmy);
     this.seq = Math.max(this.seq, s.seq);
     this.speed = s.speed;
     this.controls.setSpeed(s.speed);
@@ -599,8 +697,12 @@ export class Game implements GestureHost {
     });
   }
 
-  /** An order from the player's own hand. Returns its sequence number, or -1 when nobody it names may take it. */
-  command(given: CommandBody): number {
+  /**
+   * An order from the player's own hand. Returns its sequence number, or -1 when nobody it names
+   * may take it. `hold`: a retreat whose soldiers hold once there (全軍撤退、退1–退4); any other
+   * retreat is 移動 (D-094), whose soldiers stand 積極 there.
+   */
+  command(given: CommandBody, hold = false): number {
     // 前進、攻擊、撤退 leave those hiding in a building where they are: only the building's
     // 全部出來 lets them out (round 7, ceo 2026-10-07), so tapping a group and ordering it on
     // does not empty the towers.
@@ -623,19 +725,22 @@ export class Game implements GestureHost {
       // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5).
       const released = this.army.release(cmd.u);
       const view = this.view;
-      if (cmd.c === "retreat") {
-        // 撤到就堅守 (D-061: 「撤到之後兵自己回頭打」): a retreating soldier fights no one, and once
-        // there, holding, it shoots only what comes in range and does not chase. 進攻 makes it
-        // 積極 again (below). Those released from a garrison hold already.
+      if (cmd.c === "retreat" && hold) {
+        // 撤到就堅守 (D-061: 「撤到之後兵自己回頭打」), for 全軍撤退 and 退1–退4 (D-094 keeps them):
+        // a retreating soldier fights no one, and once there, holding, it shoots only what comes
+        // in range and does not chase. Those released from a garrison hold already.
         const soldiers = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && this.stances.of(id, view.unitStance(id)) !== Stance.Hold);
         this.setStance(soldiers, Stance.Hold);
       } else {
-        // 前進 and 攻擊 are 進攻 (D-050), with or without the button: those holding go 積極.
+        // 攻擊 and 移動 (D-094; 移動 is a retreat: it fights no one on the way): there, those
+        // holding go 積極 (D-094: 「站著，敵人靠近就自己打」), as 進攻 always did (D-050).
         // With the stance just sent (取消, 堅守) counted, though the snapshot may not show it yet (D-081).
         const holding = view === null ? [] : cmd.u.filter((id) => !released.includes(id) && isSoldier(view.unitType(id)) && this.stances.of(id, view.unitStance(id)) === Stance.Hold);
         this.setStance([...released, ...holding], Stance.Aggressive);
       }
     }
+    // 整理隊形's fallback (D-095): the way each was sent last, from where the lot stood.
+    if (cmd.c === "move" || cmd.c === "retreat" || cmd.c === "attack") this.noteSent(cmd);
     // His own order sending a recruit somewhere: 自動補兵 no longer leads it to its group (GDD §10).
     this.army.playerCommand(cmd);
     // 進攻到底 (D-080): another order of his, 堅守 or 躲進去 included, ends it; an attack starts it.
@@ -769,7 +874,12 @@ export class Game implements GestureHost {
   }
 
   private townArea(town: number): TownArea | null {
-    return this.view?.knownTowns.get(town) ?? null;
+    const view = this.view;
+    const t = view?.knownTowns.get(town);
+    if (view === null || t === undefined) return null;
+    // Inside its walls (D-089), as the simulation counts a garrison.
+    const c = view.castleOf(t);
+    return { ...t, inside: c === null ? null : { x0: t.cellX + c.inside.x0, y0: t.cellY + c.inside.y0, x1: t.cellX + c.inside.x1, y1: t.cellY + c.inside.y1 } };
   }
 
   /** How many soldiers stay by default: the least a governed town needs (GDD §5: small 1, large 3). */
@@ -800,10 +910,264 @@ export class Game implements GestureHost {
     return ids;
   }
 
-  /** 搶 or 治理, leaving `keep` soldiers behind. If the simulation refuses the choice, they are released again. */
+  /**
+   * 搶 or 治理, leaving `keep` soldiers behind. If the simulation refuses the choice, they are
+   * released again. 治理 without its cost (ceo 2026-10-21): the soldiers stay all the same and the
+   * town waits for it (等錢治理); 治理 starts by itself once it is there.
+   */
   chooseTown(town: number, choice: TownChoice, keep: number): void {
+    const cost = this.governCost(town);
+    if (choice === TownChoice.Govern && cost !== null && !affords(cost, this.stock())) {
+      this.stationGarrison(town, keep);
+      this.startGovernWait(town, cost);
+      return;
+    }
+    // 搶 instead: no more waiting.
+    if (choice === TownChoice.Plunder) this.endGovernWait(town);
     const seq = this.command({ c: "town_choice", town, choice });
     this.army.awaitChoice(town, seq, this.stationGarrison(town, keep));
+  }
+
+  /** 治理's cost for this town, from the rules (小鎮 木 80、金 80; 大城 木 150、金 150), or null when not known. */
+  governCost(town: number): Cost | null {
+    const view = this.view;
+    const size = view?.knownTowns.get(town)?.size;
+    return size === undefined ? null : (view?.rules.towns?.[size]?.governCost ?? null);
+  }
+
+  /** What we have now (the resource bar's numbers). */
+  stock(): Cost {
+    const h = this.view?.header;
+    return h === null || h === undefined ? { food: 0, wood: 0, gold: 0, crystal: 0 } : { food: h[H.food], wood: h[H.wood], gold: h[H.gold], crystal: h[H.crystal] };
+  }
+
+  /** What is missing for this town's 治理 (0 everywhere when it is there), or null when its cost is not known. */
+  governShortfall(town: number): Cost | null {
+    const cost = this.governWaits.costOf(town) ?? this.governCost(town);
+    return cost === null ? null : shortfall(cost, this.stock());
+  }
+
+  /** The reserve the simulation has now (預留, D-054). */
+  private reserveInEffect(): Cost {
+    const h = this.view?.header;
+    return h === null || h === undefined ? { food: 0, wood: 0, gold: 0, crystal: 0 } : { food: h[H.reserveFood], wood: h[H.reserveWood], gold: h[H.reserveGold], crystal: h[H.reserveCrystal] };
+  }
+
+  /** The player's own reserve (預留's dialog): while towns wait for 治理, not the raised one in effect. */
+  ownReserve(): Cost {
+    return this.governWaits.ownReserve(this.reserveInEffect());
+  }
+
+  /** The reserve raised while towns wait for 治理 (「木 150、金 150」), or "" while none does. */
+  raisedReserveText(): string {
+    return this.governWaits.raisedText();
+  }
+
+  /** 預留 → 套用: the player's own reserve; while towns wait for 治理, the raise stays on top. */
+  setReserve(r: Cost): void {
+    this.command({ c: "reserve", ...this.governWaits.setOwn(r) });
+  }
+
+  private sendReserve(r: Cost | null): void {
+    if (r !== null) this.autoCommand({ c: "reserve", ...r });
+  }
+
+  private startGovernWait(town: number, cost: Cost): void {
+    this.sendReserve(this.governWaits.start(town, cost, this.reserveInEffect()));
+    this.toast(`錢不夠：先留守，還差 ${costText(shortfall(cost, this.stock()))}，夠了自動治理`);
+  }
+
+  private endGovernWait(town: number): void {
+    this.sendReserve(this.governWaits.end(town));
+  }
+
+  // --- 自動訓練 by the screen (D-098) -------------------------------------------------------
+
+  /** The unit types in an own building's queue (up to 7, 4 bits each, head first). */
+  private static queueOf(b: Int32Array, o: number): number[] {
+    const n = Math.min(b[o + BuildingField.queueLength], 7);
+    const packed = b[o + BuildingField.queuePacked];
+    return Array.from({ length: n }, (_, i) => (packed >>> (4 * i)) & 15);
+  }
+
+  /**
+   * Every snapshot while the game runs: the simulation's own 自動訓練 off for each of our
+   * buildings (ceo's (B): `auto_train off`, again every 2 s while its flag shows), then the
+   * main city's villagers up to the target and the groups' missing soldiers, as `train` orders.
+   */
+  private tickAutoArmy(): void {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    const h = view?.header;
+    if (view === null || snap === undefined || h === null || h === undefined || this.options.watch || !this.autoArmyOn) return;
+    const tick = h[H.tick];
+    const b = snap.buildings;
+    const u = snap.units;
+    // Taken by now (or refused): the queue in the snapshot has it. A train is sent only to an empty
+    // queue, so one that shows in its building's queue is taken: counted there, not twice (that made
+    // a full population for a snapshot and a false 人口滿了: CI run 39659340330).
+    const queuedAt = new Set<number>();
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) if (b[o + BuildingField.owner] === view.me && b[o + BuildingField.queueLength] > 0) queuedAt.add(b[o + BuildingField.id]);
+    this.autoSent = this.autoSent.filter((t) => tick <= t.tick + 1 && !queuedAt.has(t.building));
+    const queued: Record<number, number> = {};
+    const add = (t: number) => {
+      queued[t] = (queued[t] ?? 0) + 1;
+    };
+    const inFlight = (id: number) => this.autoSent.some((t) => t.building === id) || this.pending.trains(id).length > 0;
+    const sites: Site[] = [];
+    const cities: number[] = [];
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + BuildingField.owner] !== view.me) continue;
+      const id = b[o + BuildingField.id];
+      const type = b[o + BuildingField.type];
+      if ((b[o + BuildingField.flags] & BuildingFlag.AutoTrain) !== 0 && tick - (this.autoOff.get(id) ?? Number.NEGATIVE_INFINITY) >= 40) {
+        this.autoOff.set(id, tick);
+        this.autoCommand({ c: "auto_train", building: id, on: false });
+      }
+      for (const t of Game.queueOf(b, o)) add(t);
+      for (const t of this.pending.trains(id)) add(t);
+      const trains = view.rules.buildings[type]?.trains[0];
+      const finished = b[o + BuildingField.progress] >= 1000 && b[o + BuildingField.hp] > 0;
+      const free = finished && b[o + BuildingField.queueLength] === 0 && !inFlight(id);
+      if (type === BuildingType.MainCity) {
+        if (free) cities.push(id);
+      } else if (AUTO_TRAIN.buildings.includes(type) && trains !== undefined) {
+        sites.push({ id, trains, free: free && !this.autoArmy.paused.has(id) });
+      }
+    }
+    for (const t of this.autoSent) add(t.unit);
+    let farmers = 0;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) if (u[o + UnitField.owner] === view.me && u[o + UnitField.type] === UnitType.Farmer) farmers++;
+    const queuedAll = Object.values(queued).reduce((n, k) => n + k, 0);
+    const budget = {
+      have: this.stock(),
+      reserve: this.reserveInEffect(),
+      room: h[H.populationCap] - h[H.population] - queuedAll,
+      mageRoom: h[H.mageCap] - h[H.mages] - (queued[UnitType.Mage] ?? 0),
+    };
+    const cost = (t: number) => view.rules.units[t]?.cost ?? { food: 0, wood: 0, gold: 0, crystal: 0 };
+    const send = (building: number, unit: number) => {
+      const seq = this.autoCommand({ c: "train", building, type: unit as UnitType, n: 1 });
+      this.autoSent.push({ seq, tick, building, unit });
+      const c = cost(unit);
+      budget.have = { food: budget.have.food - c.food, wood: budget.have.wood - c.wood, gold: budget.have.gold - c.gold, crystal: budget.have.crystal - c.crystal };
+      budget.room--;
+    };
+    const paused = h[H.paused] === 1;
+    // The main city's villagers first (one at a time in each city), then the groups' soldiers.
+    const missingVillagers = villagersMissing(this.autoArmy.villagerTarget, farmers, queued[UnitType.Farmer] ?? 0);
+    let villagerBlock: Block | null = null;
+    if (!this.autoArmy.villagersPaused && missingVillagers > 0) {
+      let left = missingVillagers;
+      for (const city of cities) {
+        if (left <= 0 || paused) break;
+        if (budget.room <= 0) villagerBlock = "population";
+        else if (!affordsAbove(cost(UnitType.Farmer), budget.have, budget.reserve)) villagerBlock = "money";
+        else {
+          send(city, UnitType.Farmer);
+          left--;
+        }
+      }
+      if (cities.length === 0 && budget.room <= 0) villagerBlock = "population";
+    }
+    this.villagersSeen = { living: farmers, queued: queued[UnitType.Farmer] ?? 0, block: villagerBlock };
+    const groups: GroupNeed[] = this.army.groups.map((g) => {
+      const have: Record<number, number> = {};
+      for (const id of g.ids) {
+        if (view.unitRow(id) < 0) continue;
+        const t = view.unitType(id);
+        have[t] = (have[t] ?? 0) + 1;
+      }
+      return { refill: g.refill, want: g.want, have };
+    });
+    const need = armyNeed(groups, queued);
+    const picked = pickTrains(need, paused ? [] : sites, cost, budget);
+    for (const t of picked.trains) send(t.building, t.type);
+    this.armyNeedSeen = need;
+    this.armyBlocked = picked.blocked;
+    this.autoPopulationFull = villagerBlock === "population" || [...picked.blocked.values()].includes("population");
+  }
+
+  /** 自動訓練 paused for this building (D-098: the screen's own, kept in the save). */
+  autoPaused(building: number): boolean {
+    return this.autoArmy.paused.has(building);
+  }
+
+  toggleAutoPaused(building: number): void {
+    const now = this.autoArmy.togglePaused(building);
+    const o = this.view?.buildingRow(building) ?? -1;
+    const name = (o < 0 ? undefined : BUILDING_NAME[this.view?.curr?.snap.buildings[o + BuildingField.type] ?? -1]) ?? "建築";
+    this.toast(`已${now ? "暫停" : "恢復"}這座${name}的自動訓練`, "ok");
+  }
+
+  /**
+   * What a barracks, range, mage hall or stable of ours does about 自動訓練 (D-098), in the
+   * player's words: 「補軍團缺的：槍 3、遠 2」, 「軍團都滿，不訓練」, 「還沒設軍團，不會自動訓練」.
+   */
+  trainingLine(building: number): string {
+    if (this.autoArmy.paused.has(building)) return "自動訓練暫停";
+    const need = this.armyNeedSeen;
+    if (need.reason === "none") return "還沒設軍團，不會自動訓練";
+    if (need.reason === "off") return "軍團都關了自動補兵，不會自動訓練";
+    if (need.reason === "full") return "軍團都滿，不訓練";
+    const view = this.view;
+    const o = view?.buildingRow(building) ?? -1;
+    const type = o < 0 ? undefined : view?.curr?.snap.buildings[o + BuildingField.type];
+    const trains = type === undefined ? undefined : view?.rules.buildings[type]?.trains[0];
+    const block = trains === undefined ? undefined : this.armyBlocked.get(trains);
+    const why = block === "population" ? "（人口滿了：蓋民居）" : block === "money" ? "（錢不夠：只用預留以上的）" : block === "mages" ? "（法師已到上限）" : "";
+    return `補軍團缺的：${missingText(need.missing)}${why}`;
+  }
+
+  /** The main city's villagers (D-098): 「村民 32／40，訓練中」. */
+  villagerLine(): string {
+    const a = this.autoArmy;
+    const v = this.villagersSeen;
+    if (a.villagersPaused) return `村民 ${v.living}／${a.villagerTarget}，自動訓練暫停`;
+    if (villagersMissing(a.villagerTarget, v.living, v.queued) === 0) return `村民 ${v.living}／${a.villagerTarget}${v.queued > 0 ? "，訓練中" : "，夠了"}`;
+    const why = v.block === "population" ? "，人口滿了：蓋民居" : v.block === "money" ? "，錢不夠：只用預留以上的" : "，訓練中";
+    return `村民 ${v.living}／${a.villagerTarget}${why}`;
+  }
+
+  stepVillagerTarget(by: number): void {
+    this.autoArmy.stepTarget(by);
+  }
+
+  toggleVillagers(): void {
+    this.autoArmy.villagersPaused = !this.autoArmy.villagersPaused;
+    this.toast(`已${this.autoArmy.villagersPaused ? "暫停" : "恢復"}主城自動訓練村民`, "ok");
+  }
+
+  /** 取消 on the town's panel: no more waiting; the 留守 soldiers stay (the town still waits for a choice). */
+  cancelGovernWait(town: number): void {
+    if (!this.governWaits.has(town)) return;
+    this.endGovernWait(town);
+    this.toast("已取消等錢治理，留守的兵照樣守著");
+  }
+
+  /**
+   * Every snapshot: a waiting town still ours and waiting for a choice gets its 治理 once the cost
+   * is there; one where 治理 has started, or no longer ours or waiting, is let go.
+   */
+  private tickGovernWaits(): void {
+    const view = this.view;
+    const t = view?.curr?.snap.towns;
+    if (view === null || t === undefined || this.governWaits.size === 0) return;
+    const tick = view.header?.[H.tick] ?? 0;
+    const have = this.stock();
+    for (const town of this.governWaits.list()) {
+      const o = view.townRow(town);
+      if (o < 0) continue;
+      const ours = t[o + TownField.owner] === view.me;
+      const state = t[o + TownField.state];
+      if (ours && state === TownState.AwaitingChoice) {
+        if (this.governWaits.due(town, have, tick)) this.governWaits.sent(town, this.autoCommand({ c: "town_choice", town, choice: TownChoice.Govern }));
+        continue;
+      }
+      const started = ours && state === TownState.Repairing && this.governWaits.isSent(town);
+      this.endGovernWait(town);
+      if (started) this.toast(`開始治理${view.knownTowns.get(town)?.size === TownSize.Large ? "大城" : "小鎮"}`, "ok");
+    }
   }
 
   /** Our villagers, with what each gathers now (派村民, D-061). Those hiding in a building are left out. */
@@ -1266,7 +1630,7 @@ export class Game implements GestureHost {
       this.toast("主城不在了，沒有地方可以撤退");
       return;
     }
-    this.command({ c: "retreat", u, x: home.x, y: home.y });
+    this.command({ c: "retreat", u, x: home.x, y: home.y }, true);
     this.toast(`編隊 ${i + 1} 撤回主城`);
   }
 
@@ -1328,6 +1692,10 @@ export class Game implements GestureHost {
         const mine = this.culture;
         this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), projection);
         this.renderer.pending = this.pending;
+        this.renderer.autoPaused = (id) => this.autoArmy.paused.has(id);
+        if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
+        const ground = this.options.ground ?? null;
+        if (ground !== null && !this.renderer.useGround(ground, this.options.groundQuality ?? "high")) console.warn("ground: 寫實地面 needs ui's terrain pictures (art-v5, square on); the flat ground stays");
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
@@ -1356,6 +1724,22 @@ export class Game implements GestureHost {
           if (ev.k === "rejected") {
             this.pending.refused(ev.seq);
             const cmd = this.sent.find((c) => c.seq === ev.seq);
+            // 自動訓練's own train (D-098): forget it; the next snapshot decides again.
+            this.autoSent = this.autoSent.filter((t) => t.seq !== ev.seq);
+            const waiting = this.governWaits.townOf(ev.seq);
+            if (waiting >= 0) {
+              // 等錢治理's own 治理: spent the same step (自動訓練), try again; else (taken, lost) stop waiting.
+              if (ev.reason === Reject.CannotAfford) this.governWaits.retry(waiting, view.header?.[H.tick] ?? 0);
+              else this.endGovernWait(waiting);
+              continue;
+            }
+            if (cmd?.c === "town_choice" && cmd.choice === TownChoice.Govern && cmd.auto !== true && ev.reason === Reject.CannotAfford) {
+              // 治理 the screen thought affordable, spent the same step: the soldiers stay, and it waits (ceo 2026-10-21).
+              this.army.keepStationed(ev.seq);
+              const cost = this.governCost(cmd.town);
+              if (cost !== null) this.startGovernWait(cmd.town, cost);
+              continue;
+            }
             // A refused 搶 or 治理: the soldiers stationed with it go back to 積極 and to 全軍.
             this.setStance(this.army.refused(ev.seq), Stance.Aggressive);
             if (cmd?.auto !== true) this.overlays.toast(rejectText(ev.reason, cmd));
@@ -1366,9 +1750,13 @@ export class Game implements GestureHost {
           }
         }
         this.stances.settle(view.header?.[H.tick] ?? 0, (id) => (view.unitRow(id) >= 0 ? view.unitStance(id) : null));
+        this.watchEnemies(view, tick);
+        this.cannonsOn(view);
         this.pending.settle(view.header?.[H.tick] ?? 0);
         this.controls.setWaiting(this.pending.waiting);
         this.pruneArmy();
+        this.tickGovernWaits();
+        this.tickAutoArmy();
         this.draftArmy();
         this.musterRecruits();
         this.followCharges();
@@ -1460,7 +1848,7 @@ export class Game implements GestureHost {
     }
     if (this.mode === "garrison") return this.garrisonAt(w.x, w.y);
     if (this.mode === "post") return this.postAt(w.x, w.y);
-    this.apply(this.keepRetreating(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1))));
+    this.apply(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
   }
 
   /** 躲進去 (round 7): the building tapped takes the ranged units and mages selected, or the player is told why not. */
@@ -1496,21 +1884,6 @@ export class Game implements GestureHost {
     }
     this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
     if (r.cmd.c === "post") this.toast(`${r.cmd.u.length} 名槍兵去駐守哨所`);
-  }
-
-  /**
-   * 撤退中點地面 (D-061: 「撤退按下去之後，點地面應該是撤退的方向，不是改為進攻」): while every
-   * soldier selected is retreating (the button reads 取消撤退), the 前進 a tap on the ground or
-   * a long press on the minimap would give is a retreat to that spot instead. With only some of
-   * them retreating it stays 前進, as the button shows.
-   */
-  private keepRetreating(intents: Intent[]): Intent[] {
-    const view = this.view;
-    if (view === null || this.mode !== "normal" || intents.length !== 1) return intents;
-    const [only] = intents;
-    if (only.kind !== "command" || only.cmd.c !== "move" || !allIn(view, view.selection.units, "retreat")) return intents;
-    this.toast(RETREAT_RETARGET_TEXT);
-    return [{ kind: "command", cmd: { c: "retreat", u: only.cmd.u, x: only.cmd.x, y: only.cmd.y } }];
   }
 
   longPress(x: number, y: number): LongPressResult {
@@ -1605,7 +1978,8 @@ export class Game implements GestureHost {
           this.overlays.toast(this.describe(it.pick));
           // A town of ours still waiting for 搶 or 治理: the choice again (GDD §10, after 稍後再決定 or 重設).
           // Not once chosen while paused (R6-31: it waits for 繼續).
-          if (it.pick.kind === "town" && view.townAwaitsMyChoice(it.pick.id) && this.pending.townChoice(it.pick.id) === null) this.hud.openTownChoice(it.pick.id);
+          // Not while it waits for 治理's cost (等錢治理): its panel has 搶 and 取消.
+          if (it.pick.kind === "town" && view.townAwaitsMyChoice(it.pick.id) && this.pending.townChoice(it.pick.id) === null && !this.governWaits.has(it.pick.id)) this.hud.openTownChoice(it.pick.id);
           break;
         case "clear":
           view.selection = { units: [], building: null };
@@ -1715,7 +2089,119 @@ export class Game implements GestureHost {
     return { x: (b[o + BuildingField.cellX] + s / 2) * TILE_PX, y: (b[o + BuildingField.cellY] + s / 2) * TILE_PX };
   }
 
-  /** 撤退 in the command area, with units selected: pick where to, as for 進攻 (D-059). */
+  /**
+   * 整理隊形 (D-095): the soldiers selected re-form where they are, spearmen in front, ranged next,
+   * mages last, at their spacing, facing the way reform.ts picks: standing together, the
+   * simulation's re-forming in place with that `face`; spread out, a walk of one cell that way
+   * (the simulation lays a walk's formation out facing its way), which gathers them; with nothing
+   * to face, the re-forming in place without `face`, which keeps the way they face now. Not with
+   * an enemy within REFORM_CLEAR_CELLS (reform.ts): a line says why, and nothing is sent.
+   */
+  reform(): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return;
+    const soldiers = view.selection.units.filter((id) => isSoldier(view.unitType(id)) && !isHiding(view.unitOrder(id)));
+    if (soldiers.length === 0) return;
+    const at = soldiers.map((id) => {
+      const o = view.unitRow(id);
+      return { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL };
+    });
+    const inSight = this.enemiesInSight(view);
+    if (enemyTooClose(at, inSight)) {
+      this.toast(REFORM_TEXT.near);
+      return;
+    }
+    const centre = { x: at.reduce((n, p) => n + p.x, 0) / at.length, y: at.reduce((n, p) => n + p.y, 0) / at.length };
+    const tick = view.header?.[H.tick] ?? 0;
+    const last = soldiers.map((id) => this.lastSent.get(id)).find((d) => d !== undefined) ?? null;
+    const { dir, from } = reformFacing(centre, inSight, [...this.sightings.values()], tick, last, this.enemyCity(view));
+    // The formation command re-forms them in place at the spacing most of them have (PROTOCOL.md 第三輪): the way they face now, or `face`.
+    const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
+    if (dir === null) this.command({ c: "formation", u: soldiers, loose });
+    else if (oneCluster(at)) this.command({ c: "formation", u: soldiers, loose, face: dir16(Math.round(dir.x * 1024), Math.round(dir.y * 1024)) });
+    else {
+      // Spread out (spearmen gone after the enemy): a walk of one cell gathers them into one.
+      const c = reformCell(centre, dir);
+      this.command({ c: "retreat", u: soldiers, x: c.x, y: c.y });
+    }
+    this.toast(REFORM_TEXT[from]);
+  }
+
+  /** Enemies in sight now (cells): units of the other players and the towns' militia. */
+  private enemiesInSight(view: GameView): Spot[] {
+    const u = view.curr?.snap.units;
+    const out: Spot[] = [];
+    if (u === undefined) return out;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] === view.me) continue;
+      out.push({ x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL });
+    }
+    return out;
+  }
+
+  /** The enemy's main city if this side knows where it is (seen, remembered), else null. */
+  private enemyCity(view: GameView): Spot | null {
+    const b = view.curr?.snap.buildings;
+    if (b === undefined) return null;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + BuildingField.type] !== BuildingType.MainCity || b[o + BuildingField.owner] === view.me) continue;
+      const size = view.rules.buildings[BuildingType.MainCity]?.size ?? 4;
+      return { x: b[o + BuildingField.cellX] + size / 2, y: b[o + BuildingField.cellY] + size / 2 };
+    }
+    return null;
+  }
+
+  /** Every snapshot: where each enemy in sight stands now; those not seen for a minute dropped. */
+  private watchEnemies(view: GameView, tick: number): void {
+    const u = view.curr?.snap.units;
+    if (u === undefined) return;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] === view.me) continue;
+      this.sightings.set(u[o + UnitField.id], { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL, tick });
+    }
+    if (tick - this.prunedAt < 100) return;
+    this.prunedAt = tick;
+    for (const [id, s] of this.sightings) if (tick - s.tick > SIGHTING_TICKS) this.sightings.delete(id);
+  }
+
+  /**
+   * D-095 (「拿掉，永遠自動」): a mage of ours with its cannon off (a game saved before, when it could
+   * be turned off) gets it on again, once; the log keeps the order, so the replay is the same.
+   */
+  private cannonsOn(view: GameView): void {
+    const u = view.curr?.snap.units;
+    if (u === undefined || this.restoring !== null) return;
+    const off: number[] = [];
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      const id = u[o + UnitField.id];
+      if (u[o + UnitField.owner] !== view.me || u[o + UnitField.type] !== UnitType.Mage || (u[o + UnitField.flags] & UnitFlag.Autocast) !== 0 || this.autocastAsked.has(id)) continue;
+      off.push(id);
+      this.autocastAsked.add(id);
+    }
+    if (off.length > 0) this.autoCommand({ c: "autocast", u: off, on: true });
+  }
+
+  /** The way each was sent (移動, 攻擊), from the middle of those sent. */
+  private noteSent(cmd: CommandBody): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined || !("u" in cmd) || !Array.isArray(cmd.u)) return;
+    const rows = cmd.u.map((id) => view.unitRow(id)).filter((o) => o >= 0);
+    if (rows.length === 0) return;
+    const cx = rows.reduce((n, o) => n + u[o + UnitField.x], 0) / rows.length / CELL;
+    const cy = rows.reduce((n, o) => n + u[o + UnitField.y], 0) / rows.length / CELL;
+    let to: Spot | null = null;
+    if (cmd.c === "move" || cmd.c === "retreat") to = { x: cmd.x + 0.5, y: cmd.y + 0.5 };
+    else if (cmd.c === "attack") {
+      const t = this.targetCell(cmd.target);
+      to = t === null ? null : { x: t.x + 0.5, y: t.y + 0.5 };
+    }
+    if (to === null || (to.x === cx && to.y === cy)) return;
+    for (const id of cmd.u) this.lastSent.set(id, { x: to.x - cx, y: to.y - cy });
+  }
+
+  /** 移動 in the command area (D-094; D-059's 撤退), with units selected: pick where to, as for 攻擊. */
   retreatSelection(): void {
     if ((this.view?.selection.units.length ?? 0) > 0) this.setMode("retreat");
   }
@@ -1737,7 +2223,7 @@ export class Game implements GestureHost {
       this.toast("主城不在了，沒有地方可以撤退");
       return;
     }
-    this.apply([{ kind: "command", cmd: { c: "retreat", u, x: home.x, y: home.y } }]);
+    this.command({ c: "retreat", u, x: home.x, y: home.y }, true);
     this.toast(`全軍 ${u.length} 名退回主城`);
   }
 
@@ -1748,12 +2234,12 @@ export class Game implements GestureHost {
       return;
     }
     const buttons: PromptButton[] = [];
-    // 退回主城 (D-059), while there is a main city to go back to.
+    // 回主城 (D-059; D-094's name), while there is a main city to go back to.
     const home = this.view?.homeCell() ?? null;
     if (mode === "retreat" && home !== null) {
-      buttons.push({ label: "退回主城", primary: true, tone: "retreat", onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, home)) });
+      buttons.push({ label: "回主城", primary: true, tone: "retreat", onTap: () => this.apply(retreatHome(this.view?.selection ?? { units: [], building: null }, home)) });
     }
-    // 取消 while picking where to advance or retreat to: they stop and hold (D-054).
+    // 取消 while picking where to attack or move to: they stop and hold (D-054).
     const holds = mode === "advance" || mode === "retreat";
     buttons.push({ label: "取消", onTap: () => (holds ? this.cancelToHold() : this.setMode("normal")) });
     const view = this.view;
@@ -1782,13 +2268,10 @@ export class Game implements GestureHost {
     const view = this.view;
     if (view === null) return;
     const items = wheelItems(pressedType);
-    const mages = view.selection.units.filter((id) => view.unitType(id) === UnitType.Mage);
-    const autocastOn = mages.length > 0 && mages.every((id) => view.unitAutocast(id));
+    // D-094: 攻擊、移動 (the old 進攻、撤退); D-095: no cannon or autocast on a mage's.
     const label: Record<WheelItem, string> = {
-      cast: "晶砲",
-      autocast: autocastOn ? "自動施放：開" : "自動施放：關",
-      advance: allIn(view, view.selection.units, "advance") ? "取消進攻" : "進攻",
-      retreat: allIn(view, view.selection.units, "retreat") ? "取消撤退" : "撤退",
+      advance: allIn(view, view.selection.units, "advance") ? "取消攻擊" : "攻擊",
+      retreat: allIn(view, view.selection.units, "retreat") ? "取消移動" : "移動",
       hold: "堅守",
     };
     this.overlays.openWheel(
@@ -1796,7 +2279,7 @@ export class Game implements GestureHost {
       y,
       items.map((id) => ({ id, label: label[id], ...(id === "advance" || id === "retreat" ? { tone: id } : {}) })),
       (id) => {
-        // 進攻 while they advance, 撤退 while they retreat: they stop and hold (D-054).
+        // 攻擊 while they attack, 移動 while they move: they stop and hold (D-054).
         if ((id === "advance" || id === "retreat") && allIn(view, view.selection.units, id)) return this.cancelToHold();
         const r = wheelIntents(view, view.selection, id as WheelItem);
         this.apply(r.intents);
@@ -1863,7 +2346,9 @@ export class Game implements GestureHost {
     // 箭樓 off TowerLand (round 7): why the spot is red comes first.
     const offTowerLand = view.placement !== null && !towerLandOk(view.placement, p.info, p.cellX, p.cellY);
     const landText = outpostSlots(view.rules) > 0 ? TOWER_LAND_TEXT_OUTPOST : TOWER_LAND_TEXT;
-    this.overlays.promptWarning(offTowerLand ? landText : town === null ? null : MILITIA_WARNING);
+    // On a gate's lane, a ford or a bridge, or a castle's wall (D-089, R6-51): those first, the simulation's own reasons.
+    const blocked = view.placement === null ? null : placeReason(view.placement, p.info, p.cellX, p.cellY);
+    this.overlays.promptWarning(blocked ?? (offTowerLand ? landText : town === null ? null : MILITIA_WARNING));
   }
 
   private showPlaceButtons(): void {

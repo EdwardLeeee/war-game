@@ -11,10 +11,12 @@ const files = (dir: string) => readdirSync(join(src, dir)).filter((f) => f.endsW
 const imports = (file: string) => [...readFileSync(file, "utf8").matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
 
 test("ai/ imports only the protocol, the placement check, symmetry frames, view types and fixed-point helpers", () => {
-  const allowed = new Set(["../protocol.ts", "../placement.ts", "../frame.ts", "../view/view.ts", "../core/fixed.ts"]);
+  // D-086 B: and the hard AI's network (net.ts), which imports nothing at all.
+  const allowed = new Set(["../protocol.ts", "../placement.ts", "../frame.ts", "../view/view.ts", "../core/fixed.ts", "./net.ts"]);
   for (const f of files("ai")) {
     for (const i of imports(f)) assert.ok(allowed.has(i), `${f} imports ${i}`);
   }
+  assert.deepEqual(imports(join(src, "ai", "net.ts")), [], "net.ts imports nothing");
 });
 
 test("core/ imports nothing from view/, ai/, the worker or the runner", () => {

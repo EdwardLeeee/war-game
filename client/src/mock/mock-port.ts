@@ -101,6 +101,9 @@ export const MOCK_RULES: Rules = {
   mageCap: 6,
   maxPopulation: 120,
   queueMax: 5,
+  // The castles round the towns (D-089, PROTOCOL.md 3.5), as the simulation sends them; the big
+  // city's for its tower one up and left of its centre. The fake world's ground has no walls: only the picture.
+  towns: rules().towns,
 };
 
 /** `?r7=1`: round 7's switches on, with the simulation's values. */
@@ -255,6 +258,14 @@ export class MockPort implements SimPort {
   private readonly buildings: MBuilding[] = [];
   /** 預留 (D-054): what 自動訓練 would leave; the fake world only reports it. */
   private reserve = { ...AUTO_TRAIN.reserve };
+  /** What we have (the resource bar); tests set it (等錢治理). */
+  private stock: Cost = cost(200, 200, 100, 20);
+  /**
+   * Tests' little economy (等錢治理), off unless a test turns it on: `income` a second, and
+   * 自動訓練 spending `train` (a unit's cost) once a second from what is above the reserve (預留,
+   * D-054) only, as the simulation's does; no unit comes of it.
+   */
+  private economy: { income: Cost; train: Cost } | null = null;
   private readonly towns: MTown[] = [];
   /** [id, kind, cx, cy, amount] */
   private readonly nodes: number[][] = [];
@@ -294,6 +305,22 @@ export class MockPort implements SimPort {
     this.rules = outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
     this.randomMap = map === "random";
     this.gallery = gallery;
+  }
+
+  /** Tests (等錢治理): what we have now. */
+  setStock(c: Cost): void {
+    this.stock = { ...c };
+  }
+
+  /** Tests (等錢治理): the little economy, or off (null). */
+  setEconomy(e: { income: Cost; train: Cost } | null): void {
+    this.economy = e === null ? null : { income: { ...e.income }, train: { ...e.train } };
+  }
+
+  private runEconomy(e: { income: Cost; train: Cost }): void {
+    const keys = ["food", "wood", "gold", "crystal"] as const;
+    for (const k of keys) this.stock[k] += e.income[k];
+    if (keys.every((k) => this.stock[k] - this.reserve[k] >= e.train[k])) for (const k of keys) this.stock[k] -= e.train[k];
   }
 
   /** Tests: deliver an event with the next snapshot (an attack, a captured town...). */
@@ -338,6 +365,14 @@ export class MockPort implements SimPort {
       u.y = centre(c.y);
       u.target = null;
     });
+  }
+
+  private townCost(size: TownSize): Cost {
+    return this.rules.towns?.[size]?.governCost ?? cost(0, 0, 0);
+  }
+
+  private affords(c: Cost): boolean {
+    return this.stock.food >= c.food && this.stock.wood >= c.wood && this.stock.gold >= c.gold && this.stock.crystal >= c.crystal;
   }
 
   /** Tests: these units of ours fall. */
@@ -466,7 +501,8 @@ export class MockPort implements SimPort {
       const info = MOCK_RULES.units[type];
       const u: MUnit = {
         id: this.nextId++, owner, type, x: centre(cx), y: centre(cy), hp: info.hp, shield: info.shield,
-        facing: 0, stance: Stance.Aggressive, flags: 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
+        // A mage's cannon on, as the simulation trains them (D-026; D-095: always).
+        facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Mage ? UnitFlag.Autocast : 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
       };
       this.units.push(u);
       return u;
@@ -589,6 +625,7 @@ export class MockPort implements SimPort {
     // The gallery stands still at its moment, the same for every picture (no more snapshots: the screen holds the last).
     if (this.gallery && this.tick >= GALLERY_STOP_TICK) return;
     this.tick++;
+    if (this.economy !== null && this.tick % 20 === 0) this.runEconomy(this.economy);
     for (const u of this.units) {
       // Round 7: on its way to hide, it slips in once near the building (also when a test put it there).
       if (u.order === Order.Garrison && !u.hidden) {
@@ -638,7 +675,7 @@ export class MockPort implements SimPort {
           const info = MOCK_RULES.units[type];
           const u: MUnit = {
             id: this.nextId++, owner: b.owner, type, x: centre(b.cx - 1), y: centre(b.cy), hp: info.hp, shield: info.shield,
-            facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Farmer ? UnitFlag.IdleFarmer : 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
+            facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Farmer ? UnitFlag.IdleFarmer : type === UnitType.Mage ? UnitFlag.Autocast : 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
           };
           this.units.push(u);
           this.events.push({ k: "unit_trained", id: u.id, type, building: b.id });
@@ -756,10 +793,10 @@ export class MockPort implements SimPort {
     header[H.tick] = this.tick;
     header[H.paused] = this.paused ? 1 : 0;
     header[H.speed] = this.tps * 100;
-    header[H.food] = 200;
-    header[H.wood] = 200;
-    header[H.gold] = 100;
-    header[H.crystal] = 20;
+    header[H.food] = this.stock.food;
+    header[H.wood] = this.stock.wood;
+    header[H.gold] = this.stock.gold;
+    header[H.crystal] = this.stock.crystal;
     header[H.population] = this.units.filter((u) => u.owner === ME).length;
     header[H.populationCap] = 20;
     header[H.populationCeiling] = MOCK_RULES.maxPopulation;
@@ -1047,9 +1084,17 @@ export class MockPort implements SimPort {
       case "autocast":
         for (const u of own(cmd.u)) u.flags = cmd.on ? u.flags | UnitFlag.Autocast : u.flags & ~UnitFlag.Autocast;
         break;
-      // 隊形 (D-027): only the flag; the fake world does not re-form the troops.
+      // 隊形 (D-027): only the flag; the fake world does not re-form the troops. `face` (D-095):
+      // they turn that way, and one not 0-15 is turned down, as by the simulation.
       case "formation":
-        for (const u of own(cmd.u)) u.flags = cmd.loose ? u.flags | UnitFlag.Loose : u.flags & ~UnitFlag.Loose;
+        if (cmd.face !== undefined && (!Number.isInteger(cmd.face) || cmd.face < 0 || cmd.face > 15)) {
+          reject(Reject.InvalidTarget);
+          break;
+        }
+        for (const u of own(cmd.u)) {
+          u.flags = cmd.loose ? u.flags | UnitFlag.Loose : u.flags & ~UnitFlag.Loose;
+          if (cmd.face !== undefined) u.facing = cmd.face;
+        }
         break;
       case "cast": {
         const mage = own([cmd.u])[0];
@@ -1123,7 +1168,11 @@ export class MockPort implements SimPort {
         if (t === undefined) reject(Reject.InvalidTarget);
         // Round 7: plundered once already, only 治理.
         else if (cmd.choice === 0 && t.plundered && this.rules.features?.plunderOnce === true) reject(Reject.AlreadyPlundered);
+        else if (t.owner !== ME || t.state !== TownState.AwaitingChoice) reject(t.owner !== ME ? Reject.TownNotYours : Reject.TownChoiceMade);
+        else if (cmd.choice === 1 && !this.affords(this.townCost(t.size))) reject(Reject.CannotAfford);
         else {
+          // 治理 is paid when chosen, as in the simulation.
+          if (cmd.choice === 1) for (const k of ["food", "wood", "gold", "crystal"] as const) this.stock[k] -= this.townCost(t.size)[k];
           t.owner = ME;
           t.state = cmd.choice === 0 ? TownState.Plundering : TownState.Repairing;
           if (cmd.choice === 0 && this.round7) t.plundered = true;

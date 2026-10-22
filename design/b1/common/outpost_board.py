@@ -16,9 +16,11 @@ sys.path.insert(0, str(HERE.parents[1] / "r6" / "common"))
 import b1art    # noqa: E402
 import boards   # noqa: E402
 import config   # noqa: E402
+import proj     # noqa: E402
 import scene    # noqa: E402
 
 boards.OUT = HERE.parents[1] / "r8" / "out"
+proj.use_camera(proj.OBLIQUE)            # the grid and the placing: the buildings' square camera (art-v3 on)
 STATES = [("build1", "施工 1（地基）"), ("build2", "施工 2"), ("build3", "施工 3"), ("done", "完成"), ("damaged", "受損"),
           ("rubble", "被摧毀（瓦礫）")]
 LABEL = {"E": ("R8-13-哨所-東陸-mobile", "東陸"), "W": ("R8-14-哨所-西陸-mobile", "西陸")}

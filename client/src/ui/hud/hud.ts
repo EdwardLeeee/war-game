@@ -11,7 +11,6 @@ import {
   AUTO_TRAIN,
   BUILDING_STRIDE,
   BuildingField,
-  BuildingFlag,
   BuildingType,
   CELL,
   type GameStats,
@@ -19,6 +18,7 @@ import {
   NEUTRAL,
   NO_OWNER,
   type Resource,
+  TICKS_PER_SECOND,
   type SimEvent,
   TownChoice,
   TownSize,
@@ -33,6 +33,7 @@ import { dress } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
+import { costText } from "../../game/govern-wait.ts";
 import { Minimap } from "./minimap.ts";
 import { armyText, BUILDING_NAME, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
 import { CommandArea, PLUNDERED_TEXT, ResourceBar, SelectionInfo } from "./panels.ts";
@@ -98,6 +99,8 @@ export class Hud {
   private flash: { id: number; cx: number; cy: number; radius: number; until: number } | null = null;
   /** Called once when the dialog on screen goes away, however it goes (the hint resumes the game). */
   private dialogGone: (() => void) | null = null;
+  /** What the open dialog redraws as the game goes on (搶還是治理's 還差), with the panels. */
+  private dialogTick: (() => void) | null = null;
   /** 收起 (D-054): the selection info shows its title line only, for this game. */
   private collapsed = false;
   /** 自動訓練 stopped by a full population somewhere (D-054), as last seen: told once when it starts. */
@@ -210,11 +213,25 @@ export class Hud {
       startPlacement: (t: Parameters<Game["startPlacement"]>[0]) => game.startPlacement(t),
       openEconomy: () => this.openEconomy(),
       chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice, this.defaultKeep(town)),
+      governCost: (town: number) => game.governCost(town),
+      governShortfall: (town: number) => game.governShortfall(town),
+      governWaiting: (town: number) => game.governWaits.has(town),
+      cancelGovernWait: (town: number) => game.cancelGovernWait(town),
+      reserveRaised: () => game.governWaits.size > 0,
+      autoPaused: (building: number) => game.autoPaused(building),
+      toggleAutoPaused: (building: number) => game.toggleAutoPaused(building),
+      trainingLine: (building: number) => game.trainingLine(building),
+      villagerLine: () => game.villagerLine(),
+      villagerTarget: () => game.autoArmy.villagerTarget,
+      stepVillagers: (by: number) => game.stepVillagerTarget(by),
+      villagersPaused: () => game.autoArmy.villagersPaused,
+      toggleVillagers: () => game.toggleVillagers(),
       garrison: (town: number) => game.army.garrisonOf(town).length,
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
       notify: (text: string) => game.toast(text),
       retreat: () => game.retreatSelection(),
+      reform: () => game.reform(),
       dispatchPool: (node: number) => game.dispatchPool(node),
       dispatch: (node: number, share: number) => game.dispatch(node, share),
       depotResources: (building: number) => game.depotResources(building),
@@ -274,6 +291,7 @@ export class Hud {
     if (this.formal) this.updateLeft(now);
     if (now - this.lastUpdate < UPDATE_MS) return;
     this.lastUpdate = now;
+    this.dialogTick?.();
     const view = this.game.view;
     const h = view?.header;
     // The resource bar keeps a gap before the top-right buttons.
@@ -511,17 +529,11 @@ export class Hud {
   }
 
   /**
-   * 人口滿了 (D-054: the brief asks for a word in the message strip): one of our barracks,
-   * ranges or mage halls has stopped 自動訓練 for want of room; said once each time it starts.
+   * 人口滿了 (D-054: the brief asks for a word in the message strip): 自動訓練 (the screen's, D-098)
+   * has stopped for want of room; said once each time it starts.
    */
   private warnPopulationFull(): void {
-    const view = this.game.view;
-    const b = view?.curr?.snap.buildings;
-    if (view === null || b === undefined) return;
-    let full = false;
-    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-      if (b[o + BuildingField.owner] === view.me && (b[o + BuildingField.flags] & BuildingFlag.AutoPopulationFull) !== 0) full = true;
-    }
+    const full = this.game.autoPopulationFull;
     if (full && !this.populationFull) this.game.toast("人口滿了，自動訓練停下來：蓋民居");
     this.populationFull = full;
   }
@@ -533,7 +545,8 @@ export class Hud {
   openReserve(): void {
     const h = this.game.view?.header;
     if (h === null || h === undefined) return;
-    this.reserve = { food: h[H.reserveFood], wood: h[H.reserveWood], gold: h[H.reserveGold], crystal: h[H.reserveCrystal] };
+    // While towns wait for 治理, the player's own reserve (the raise is shown under it).
+    this.reserve = this.game.ownReserve();
     this.drawReserve();
   }
 
@@ -545,6 +558,9 @@ export class Hud {
     const card = this.openDialog("預留", "economy reserve");
     // One line, so that four rows fit a phone held sideways without scrolling.
     el("p", card, "small", "自動訓練只用超過這些的資源；預設留的夠蓋法術營、放 3 發晶砲。");
+    // 等錢治理 (ceo 2026-10-21): the reserve in effect is raised to the waiting 治理's cost.
+    const raised = this.game.raisedReserveText();
+    if (raised !== "") el("p", card, "small reserve-raised", `預留暫時提高到 ${raised}（等治理）`);
     const rows: [keyof typeof r, string, number][] = [
       ["food", "糧", 10],
       ["wood", "木", 10],
@@ -566,7 +582,7 @@ export class Hud {
     }
     const row = el("div", card, "dialog-buttons");
     btn(row, "套用", () => {
-      this.game.command({ c: "reserve", ...r });
+      this.game.setReserve(r);
       this.closeDialog();
     });
     btn(row, "預設", () => {
@@ -675,6 +691,7 @@ export class Hud {
   }
 
   private dialogClosed(): void {
+    this.dialogTick = null;
     const gone = this.dialogGone;
     this.dialogGone = null;
     gone?.();
@@ -875,11 +892,16 @@ export class Hud {
     btn(row, "取消", () => this.closeDialog(), "secondary");
   }
 
-  /** GDD §5: 城鎮被攻下時，畫面會跳出兩個大按鈕：搶或治理. */
-  /** 搶還是治理 (also reopened by tapping the town while it waits, GDD §10). */
+  /**
+   * 搶還是治理 (also reopened by tapping the town while it waits, GDD §10). The times and 治理's
+   * cost come from the rules; without the cost, 治理 says what is missing in red and still works:
+   * the soldiers stay and 治理 starts by itself once it is there (等錢治理, ceo 2026-10-21).
+   */
   openTownChoice(town: number): void {
     const size = this.game.view?.knownTowns.get(town)?.size;
     const big = size === TownSize.Large;
+    const rule = size === undefined ? undefined : this.game.view?.rules.towns?.[size];
+    const sec = (ticks: number | undefined, fallback: number) => (ticks === undefined ? fallback : Math.round(ticks / TICKS_PER_SECOND));
     // 城鎮只能搶一次 (round 7, D-061): a town plundered this game offers 治理 only.
     const once = this.game.view?.townPlunderedOnce(town) === true;
     const card = this.openDialog(`攻下${big ? "大城" : "小鎮"}！${once ? "只能治理" : "搶還是治理？"}`, "town-choice");
@@ -889,11 +911,22 @@ export class Hud {
     if (!once) {
       const plunder = btn(row, "", () => this.chooseTown(town, TownChoice.Plunder, keep.plunder), "choice-plunder");
       el("b", plunder, "", "搶");
-      el("span", plunder, "", `部隊留下搶 ${big ? 25 : 15} 秒，拿一大筆糧、金、魔晶；城鎮變成廢墟 4 分鐘`);
+      el("span", plunder, "", `部隊留下搶 ${sec(rule?.plunderTicks, big ? 25 : 15)} 秒，拿一大筆糧、金、魔晶；城鎮變成廢墟 ${Math.round(sec(rule?.ruinsTicks, 240) / 60)} 分鐘`);
     }
     const govern = btn(row, "", () => this.chooseTown(town, TownChoice.Govern, keep.govern), "choice-govern");
     el("b", govern, "", "治理");
-    el("span", govern, "", `投入金和木修繕 ${big ? 60 : 45} 秒，之後每分鐘產出、加人口；要留兵駐守`);
+    const cost = this.game.governCost(town);
+    el("span", govern, "", `${cost === null ? "投入金和木" : `投入 ${costText(cost)}，`}修繕 ${sec(rule?.repairTicks, big ? 60 : 45)} 秒，之後每分鐘產出、加人口；要留兵駐守`);
+    const short = el("span", govern, "choice-short");
+    const showShort = () => {
+      const missing = this.game.governShortfall(town);
+      const text = missing === null ? "" : costText(missing);
+      const line = text === "" ? "" : `還差 ${text}`;
+      if (short.textContent !== line) short.textContent = line;
+      short.hidden = line === "";
+    };
+    showShort();
+    this.dialogTick = showShort;
     if (once) el("p", card, "small plundered-note", PLUNDERED_TEXT);
     const keeps = el("div", card, "keep-row");
     if (!once) this.keepStepper(keeps, "搶", town, keep.plunder, (n) => (keep.plunder = n));
