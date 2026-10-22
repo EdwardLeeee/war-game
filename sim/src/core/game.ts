@@ -30,7 +30,7 @@ import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, MARCH_ORDER, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, MARCH_ORDER, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -195,6 +195,17 @@ export class Game {
         if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1], ...(shots[k + 2] > 1 ? { n: shots[k + 2] } : {}) } });
       }
     }
+    // Siege stones thrown (D-099): to every player who sees the engine or where the stone lands.
+    const stones = this.units.siegeShots;
+    for (let k = 0; k < stones.length; k += 4) {
+      const es = w.unit(stones[k]);
+      const at = (stones[k + 2] >> CELL_SHIFT) * n + (stones[k + 1] >> CELL_SHIFT);
+      for (let p = 0; p < PLAYER_COUNT; p++) {
+        const vis = this.fog.visible[p];
+        const sees = vis[at] === 1 || (es >= 0 && vis[(u.y[es] >> CELL_SHIFT) * n + (u.x[es] >> CELL_SHIFT)] === 1);
+        if (sees) this.events.push({ to: p, ev: { k: "siege_shot", u: stones[k], x: stones[k + 1], y: stones[k + 2], lands: stones[k + 3] } });
+      }
+    }
   }
 
   shouldHash(): boolean {
@@ -218,10 +229,11 @@ export class Game {
     h = fnvBytes(h, w.ecoOn);
     h = fnvBytes(h, w.recall);
     h = fnvInt32(h, w.gathered);
-    // Cavalry's counts (round 7) only while CAVALRY is on: off, the words are the old ones.
+    // Cavalry's counts (round 7) only while CAVALRY is on, siege engines' (D-099) only while SIEGE is
+    // on: off, the words are the old ones (each player's kinds up to cavalry, then up to siege).
     for (const a of [w.trained, w.lost]) {
-      if (CAVALRY.on) h = fnvInt32(h, a);
-      else for (let p = 0; p < PLAYER_COUNT; p++) for (let t = 0; t < UnitType.Cavalry; t++) h = fnvWord(h, a[p * UNIT_KINDS + t]);
+      const kinds = SIEGE.on ? UNIT_KINDS : CAVALRY.on ? UnitType.Siege : UnitType.Cavalry;
+      for (let p = 0; p < PLAYER_COUNT; p++) for (let t = 0; t < kinds; t++) h = fnvWord(h, a[p * UNIT_KINDS + t]);
     }
     h = fnvBytes(h, w.grid);
     h = fnvInt32(h, w.nodeAmount);
@@ -239,6 +251,11 @@ export class Game {
     if (PLUNDER_RECOVERY.on) h = fnvInt32(h, w.townRecover);
     // Gates (D-096): the rebuild counts, only while they are on (the grid has the rest).
     if (GATE.on) h = fnvInt32(h, w.gateRebuild);
+    // Siege engines' stones in the air (D-099), only while they are on.
+    if (SIEGE.on) {
+      h = fnvWord(h, w.stones.length);
+      for (const v of w.stones) h = fnvWord(h, v);
+    }
     h = fnvWord(h, w.units.count);
     for (const name of w.units.names) {
       if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on && !FIRE_BACK.on) || (name === "avenge" && !AVENGE.on) || (name === "fireBack" && !FIRE_BACK.on) || (name === "wall" && !WALLS.on) || (FLANK_COLS.has(name) && !CAV_FLANK.on) || (name === "waited" && !MARCH_ORDER.on) || ((name === "slotBest" || name === "slotIdle") && !SLOT_GIVE_UP.on)) continue;
