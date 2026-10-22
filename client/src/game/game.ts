@@ -900,13 +900,20 @@ export class Game implements GestureHost {
 
   /**
    * Station up to n more soldiers in the town: they turn to 堅守, leave their control groups
-   * and are no longer taken by 全軍. Returns how many were stationed.
+   * and are no longer taken by 全軍. They leave what is selected too (the user 2026-10-22:
+   * 「我選駐守以後馬上把那個兵團的兵拉走 有時候還是會把原本要駐守的兵拉走」: the group selected
+   * before the town fell still held them, and the next 移動 took them along); the 軍團畫面 stays
+   * open. Returns how many were stationed.
    */
   stationGarrison(town: number, n: number): number[] {
     const area = this.townArea(town);
     if (area === null || n <= 0) return [];
     const ids = this.army.station(this.soldiers(), area, n);
     this.setStance(ids, Stance.Hold);
+    const view = this.view;
+    if (view !== null && ids.length > 0 && view.selection.units.some((id) => ids.includes(id))) {
+      view.selection = { ...view.selection, units: view.selection.units.filter((id) => !ids.includes(id)) };
+    }
     return ids;
   }
 
