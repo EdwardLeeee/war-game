@@ -1,0 +1,23 @@
+{
+ "tag": "art-v5.2",
+ "note": "D-096（使用者 2026-10-22 核准 R8-15 到 R8-20）：城牆的一般牆段改成四面分開（pal_n/s/w/e、sw_n/s/w/e），木柵加射擊台、石牆加垛口和女牆；牆、角落、城門的站點（walk_m、stand_in_m、stand_m）和前片（intact_front、ruin_front）；城門多 closed、damaged、broken 三種樣子和射點 shoot_at_m；效果多 tower_shot（城樓射箭）；槍兵 spear_e、長矛兵 pike_w 多動作 sling（民兵投石，hit 6、stone_from_m）。說明檔 design/b1/atlas-buildings.md 第 11 節。其他（其餘兵種、建築、資源點、地形）照 art-v5.1。",
+ "units": {
+  "farmer_e": {"run": 36849835568, "artifact": "production-farmer_e"},
+  "spear_e": {"run": 39743159133, "artifact": "production-spear_e"},
+  "xbow_e": {"run": 36850248764, "artifact": "production-xbow_e"},
+  "hcav_e": {"run": 36849835568, "artifact": "production-hcav_e"},
+  "siege_e": {"run": 36849835568, "artifact": "production-siege_e"},
+  "mage_e": {"run": 36849835568, "artifact": "production-mage_e"},
+  "farmer_w": {"run": 36849835568, "artifact": "production-farmer_w"},
+  "pike_w": {"run": 39743159133, "artifact": "production-pike_w"},
+  "bow_w": {"run": 36849835568, "artifact": "production-bow_w"},
+  "knight_w": {"run": 36849835568, "artifact": "production-knight_w"},
+  "siege_w": {"run": 36849835568, "artifact": "production-siege_w"},
+  "mage_w": {"run": 36849835568, "artifact": "production-mage_w"}
+ },
+ "effects": {"run": 39773456155, "artifact": "production-effects-atlas"},
+ "buildings": {"run": 39773456155, "artifact": "production-buildings"},
+ "castle": true,
+ "terrain": true,
+ "astc_sample": {"unit": "spear_e", "scale": 2, "layers": ["color", "team"]}
+}

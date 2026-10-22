@@ -486,13 +486,23 @@ export class Game implements GestureHost {
     return this.renderer?.shotCount ?? 0;
   }
 
+  /** Stones thrown from slings on walls (D-096), for the test hook. */
+  get stonesForTest(): number {
+    return this.renderer?.stoneCount ?? 0;
+  }
+
+  /** Shots that left a gate's tower (D-096 shoot_at_m, its `tower_shot` flash), for the test hook. */
+  get towerShotsForTest(): number {
+    return this.renderer?.towerShotCount ?? 0;
+  }
+
   /** The units' atlases as drawn (D-085), for the test hook. */
   /** 你的陸 this game was started with (kept with 繼續上一局's save). */
   get culture(): Culture {
     return this.options.culture ?? DEFAULT_CULTURE;
   }
 
-  get artForTest(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number } | null {
+  get artForTest(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
     return this.renderer?.artDrawn ?? null;
   }
 
@@ -522,7 +532,7 @@ export class Game implements GestureHost {
   }
 
   /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
-  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null {
+  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number> } | null {
     const r = this.renderer;
     return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount };
   }
@@ -2151,14 +2161,17 @@ export class Game implements GestureHost {
     if (at !== null) r.mark(at.x, at.y, color, now);
   }
 
-  /** 射箭 (round 7, `shot`): an arrow from the building's centre to the unit it shot at. */
+  /** 射箭 (round 7, `shot`): an arrow from the building's centre to the unit it shot at; a town gate's from its tower (D-096 shoot_at_m). */
   private drawShot(building: number, target: number, now: number, n = 1): void {
     const view = this.view;
     const from = this.buildingCentre(building);
     const o = view?.unitRow(target) ?? -1;
     if (view === null || this.renderer === null || from === null || o < 0) return;
     const to = view.unitPos(o);
-    this.renderer.shot(from.x, from.y, to.x, to.y, now, n);
+    const b = view.curr?.snap.buildings;
+    const row = view.buildingRow(building);
+    const tower = b !== undefined && row >= 0 && b[row + BuildingField.type] === BuildingType.Gate ? this.renderer.gateShootFrom(b[row + BuildingField.cellX], b[row + BuildingField.cellY], to.x, to.y) : null;
+    this.renderer.shot(tower?.x ?? from.x, tower?.y ?? from.y, to.x, to.y, now, n, tower?.lift ?? 0);
   }
 
   private buildingCentre(id: number): { x: number; y: number } | null {

@@ -2,8 +2,10 @@
 // and walls on (?walls=1): a gate in each opening, as wide as it (tap any of its cells), its town's
 // hit points, attacked with 攻擊; broken (gone), rubble on its opening; 上城牆 (war-game-ui's icon) takes
 // the ranged units and mages selected up on a town we hold, 「牆上 N／M」 on its panel, 下城牆 back;
-// a tower's volley drawn as its arrows. Pictures for the user: soldiers on a wall (東陸、西陸), a gate
-// closed and broken, the button.
+// a tower's volley drawn as its arrows. With art-v5.2's castle (war-game-ui 2026-10-22): those on a
+// wall on its walk, behind its front parts; a gate closed, open, damaged, broken; a tower's arrows
+// from its shoot_at_m. Pictures for the user: soldiers on a wall (東陸、西陸: a palisade's south and
+// north stretches, a big city's stone wall), the gates' looks, the buttons.
 
 import { expect, type Page, test } from "@playwright/test";
 import { selectForCommands, shot, watchErrors } from "./helpers.ts";
@@ -17,6 +19,11 @@ const NEUTRAL_TOWN = { id: 0, x: 30, y: 66 };
 /** Open ground inside the neutral town, away from its militia (29–31, 66) and the enemy's arrow tower (26, 63). */
 const NEUTRAL_OPEN = { x: 33, y: 64 };
 const OUR_TOWN = { id: 1, x: 18, y: 62 };
+/** The big city (ours, plundering) at (48, 48): a stone wall. */
+const BIG_CITY = { id: 3, x: 48, y: 48 };
+const castle = (page: Page) => page.evaluate(() => window.__proto?.game?.castle() ?? null);
+/** The castle's pictures say where those on a wall stand and have the gates' looks (art-v5.2); art-v5's have neither. */
+const artV52 = async (page: Page) => (await castle(page))?.walkable === true;
 
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const buildings = (page: Page) => page.evaluate(() => window.__proto?.game?.buildings() ?? []);
@@ -137,25 +144,105 @@ test("城樓一次射好幾支箭（D-096 shot.n）：分開畫出 n 支", async
 });
 
 for (const culture of ["e", "w"] as const) {
-  test(`牆上的兵（D-096）：抬到牆頂、畫在牆前面，不當成躲在牆後（${culture === "e" ? "東陸" : "西陸"}，3 倍圖）`, async ({ page, browserName }, info) => {
-    test.setTimeout(120_000);
+  test(`牆上的兵（D-096）：站在牆頂走道上、前面的尖樁或垛口擋住下半身，不當成躲在牆後（${culture === "e" ? "東陸" : "西陸"}，3 倍圖）`, async ({ page }, info) => {
+    test.setTimeout(150_000);
     const check = watchErrors(page);
     await start(page, `&art=x3&culture=${culture}`);
+    // The ranged only (a mage's cannon on autocast fires from the wall, and the fake world calls that 施法).
     const ranged = await ownIds(page, [RANGED]);
-    await selectForCommands(page, ranged);
-    await page.locator(".cmds").getByRole("button", { name: /^上城牆/ }).tap();
-    await centre(page, OUR_TOWN.x + 0.5, OUR_TOWN.y + 0.5, 1);
-    await tap(page, await at(page, { x: OUR_TOWN.x, y: OUR_TOWN.y }));
-    await expect.poll(async () => (await units(page)).filter((u) => ranged.includes(u.id) && u.order === 11).length).toBe(ranged.length);
-    await page.evaluate(() => window.__proto?.game?.select([]));
-    // With the castle's pictures, drawn up there (none when it is drawn as blocks).
-    const pictures = (await page.evaluate(() => window.__proto?.game?.castle() ?? null))?.pieces ?? 0;
-    if (pictures > 0) await expect.poll(() => page.evaluate(() => window.__proto?.game?.wallLifted() ?? 0)).toBe(ranged.length);
-    // Where they went up: the wall cells nearest them (they came from the south-east).
-    const on = (await units(page)).filter((u) => ranged.includes(u.id));
+    const wallUp = async (ids: number[], town: { id: number; x: number; y: number }) => {
+      await selectForCommands(page, ids);
+      await page.locator(".cmds").getByRole("button", { name: /^上城牆/ }).tap();
+      await centre(page, town.x + 0.5, town.y + 0.5, 1);
+      await tap(page, await at(page, { x: town.x, y: town.y }));
+      await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id) && u.order === 11).length).toBe(ids.length);
+      await page.evaluate(() => window.__proto?.game?.select([]));
+    };
+    // Our small town's south stretch (they come from the south-east), its stakes in front of them.
+    const south = ranged.slice(0, 2);
+    await wallUp(south, OUR_TOWN);
+    // With art-v5.2's castle, drawn up there (art-v5's has no walk: where they stand; blocks: none).
+    const v6 = await artV52(page);
+    if (v6) await expect.poll(() => page.evaluate(() => window.__proto?.game?.wallLifted() ?? 0)).toBe(south.length);
+    const on = (await units(page)).filter((u) => south.includes(u.id));
     await centre(page, on.reduce((n, u) => n + u.cx, 0) / on.length + 0.5, on.reduce((n, u) => n + u.cy, 0) / on.length - 1, 1.6);
     await page.waitForTimeout(400);
-    if (browserName === "webkit" || browserName === "chromium") await shot(page, info, `walls-on-wall-${culture}`);
+    await shot(page, info, `walls-on-wall-${culture}`);
+    // Its north stretch, the walk in front of the stakes (put by it first).
+    const north = ranged.slice(2);
+    await page.evaluate(([ids, y]) => window.__proto?.game?.place(ids, [14, 15, 21, 22].map((x) => ({ x, y }))), [north, OUR_TOWN.y - 7] as const);
+    await wallUp(north, OUR_TOWN);
+    await centre(page, OUR_TOWN.x + 0.5, OUR_TOWN.y - 4.5, 1.6);
+    await page.waitForTimeout(400);
+    await shot(page, info, `walls-on-wall-north-${culture}`);
+    // The big city's stone wall: behind its merlons (all of them, from its south).
+    await page.evaluate(([ids, town]) => window.__proto?.game?.send({ c: "leave_wall", u: ids, town }), [ranged, OUR_TOWN.id] as const);
+    await expect.poll(async () => (await units(page)).filter((u) => ranged.includes(u.id) && u.order === 11).length).toBe(0);
+    await page.evaluate(([ids, y]) => window.__proto?.game?.place(ids, [43, 44, 45, 50, 51, 52].map((x) => ({ x, y }))), [ranged, BIG_CITY.y + 8] as const);
+    await wallUp(ranged, BIG_CITY);
+    if (v6) await expect.poll(() => page.evaluate(() => window.__proto?.game?.wallLifted() ?? 0)).toBe(ranged.length);
+    const up = (await units(page)).filter((u) => ranged.includes(u.id));
+    await centre(page, Math.min(...up.map((u) => u.cx)) + 2, BIG_CITY.y + 2.5, 2.2);
+    await page.waitForTimeout(400);
+    await shot(page, info, `walls-on-wall-stone-${culture}`);
     check();
   });
 }
+
+test("城門的樣子（D-096，art-v5.2）：關著；城主的兵在門口開著；血量一半以下受損；打破了是倒下的門（不畫碎石）；城樓的箭從城樓射出", async ({ page }, info) => {
+  test.setTimeout(150_000);
+  const check = watchErrors(page);
+  await start(page, "&art=x3");
+  await expect.poll(async () => (await castle(page))?.pieces ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
+  test.skip(!(await artV52(page)), "art.lock 的城牆圖還沒有城門的樣子（art-v5.2 之前）");
+  const looks = async () => (await castle(page))?.gates ?? {};
+  // The neutral town's north gate: nobody of its holder's by it, closed.
+  const neutral = (await gatesOf(page, NEUTRAL_TOWN)).reduce((a, b) => (b.cy < a.cy ? b : a));
+  await centre(page, NEUTRAL_TOWN.x + 0.5, NEUTRAL_TOWN.y - 4, 1.4);
+  await expect.poll(async () => (await looks()).closed ?? 0).toBeGreaterThan(0);
+  await page.waitForTimeout(300);
+  await shot(page, info, "walls-gate-art-closed");
+  // Our town's north gate: closed; a spearman of ours by it, open.
+  const before = await looks();
+  const ourNorth = (await gatesOf(page, OUR_TOWN)).reduce((a, b) => (b.cy < a.cy ? b : a));
+  const [spear] = await ownIds(page, [SPEARMAN]);
+  await page.evaluate(([id, x, y]) => window.__proto?.game?.place([id], [{ x, y }]), [spear, ourNorth.cx + 1, ourNorth.cy - 1] as const);
+  await expect.poll(async () => (await looks()).intact ?? 0).toBe((before.intact ?? 0) + 1);
+  await centre(page, OUR_TOWN.x + 0.5, OUR_TOWN.y - 4, 1.4);
+  await page.waitForTimeout(300);
+  await shot(page, info, "walls-gate-art-open");
+  // The neutral's damaged (half its hit points or less), then broken: its picture, no rubble.
+  await page.evaluate((id) => window.__proto?.game?.damage(id, 400), neutral.id);
+  await expect.poll(async () => (await looks()).damaged ?? 0).toBe(1);
+  await centre(page, NEUTRAL_TOWN.x + 0.5, NEUTRAL_TOWN.y - 4, 1.4);
+  await page.waitForTimeout(300);
+  await shot(page, info, "walls-gate-art-damaged");
+  await page.evaluate((id) => window.__proto?.game?.remove([id]), neutral.id);
+  await expect.poll(async () => (await looks()).broken ?? 0).toBe(1);
+  expect(await page.evaluate(() => window.__proto?.game?.brokenGates() ?? -1), "counted broken, drawn by its picture").toBe(1);
+  await page.waitForTimeout(300);
+  await shot(page, info, "walls-gate-art-broken");
+  // Our town's gate shoots: from its tower (shoot_at_m), its flash there.
+  const gate = (await gatesOf(page, OUR_TOWN))[0];
+  const [target] = (await units(page)).filter((u) => u.owner !== (0 as number) && u.type === SPEARMAN);
+  const towers = await page.evaluate(() => window.__proto?.game?.towerShots() ?? 0);
+  await page.evaluate(([b, t]) => window.__proto?.game?.inject({ k: "shot", building: b, target: t, n: 3 }), [gate.id, target.id] as const);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.towerShots() ?? 0)).toBe(towers + 1);
+  check();
+});
+
+test("民兵在牆上投石（D-096，art-v5.2）：我方的兵走近，中立城鎮牆上的民兵用投石動作，石頭從手上飛向他", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  await start(page, "&art=x3");
+  await expect.poll(async () => (await castle(page))?.pieces ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
+  test.skip(!(await page.evaluate(() => window.__proto?.game?.art()?.sling === true)), "art.lock 的民兵還沒有投石動作（art-v5.2 之前）");
+  // The fake world's militia on the neutral town's south wall at (33, 71): one of ours 3 cells south of it.
+  const [spear] = await ownIds(page, [SPEARMAN]);
+  await page.evaluate(([id]) => window.__proto?.game?.place([id], [{ x: 33, y: 74 }]), [spear] as const);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.stones() ?? 0), { timeout: 20_000 }).toBeGreaterThan(0);
+  await centre(page, 33.5, 70.5, 2.2);
+  await page.waitForTimeout(500);
+  await shot(page, info, "walls-sling");
+  check();
+});

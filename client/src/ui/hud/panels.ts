@@ -871,7 +871,7 @@ export class CommandArea {
           : picking
             ? button(this.el, "取消", "上城牆", () => this.host.setMode("normal"), "secondary")
             : button(this.el, "上城牆", "點自己的城", () => this.host.setMode("wall"), "secondary");
-        wall.prepend(icon("wall", "cmd-ic"));
+        wall.prepend(icon(up ? "wallDown" : "wallUp", "cmd-ic"));
         if (picking) wall.classList.add("active");
       }
       return;

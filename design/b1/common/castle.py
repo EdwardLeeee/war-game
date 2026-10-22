@@ -155,9 +155,17 @@ def ground_plan(L):
 
 # ---------------------------------------------------------------- the pieces on their cells (art-v4, castle_<c>.json)
 
-PIECE_FOOT = {"pal_x": (1, 1), "pal_y": (1, 1), "pal_corner": (1, 1), "pal_gate_x": (3, 1), "pal_gate_y": (1, 3),
-              "sw_x": (1, 1), "sw_y": (1, 1), "sw_ctower": (2, 2), "sw_gate_x": (4, 1), "sw_gate_y": (1, 4),
-              "sw_gate_x3": (5, 1), "sw_gate_y3": (1, 5)}
+PIECE_FOOT = {"pal_corner": (1, 1), "pal_gate_x": (3, 1), "pal_gate_y": (1, 3), "sw_ctower": (2, 2),
+              "sw_gate_x": (4, 1), "sw_gate_y": (1, 4), "sw_gate_x3": (5, 1), "sw_gate_y3": (1, 5)}
+# D-096 (units on the walls; the user 2026-10-22: 「上城牆不是這樣畫圖參考一下現實」): one plain-wall piece per side,
+# since the walk is on the town side (art-v4 had pal_x, pal_y, sw_x, sw_y for both sides of an axis)
+SIDES = ("n", "s", "w", "e")
+PIECE_FOOT.update({f"{w}_{d}": (1, 1) for w in ("pal", "sw") for d in SIDES})
+GATE_PIECES = ("pal_gate_x", "pal_gate_y", "sw_gate_x", "sw_gate_y", "sw_gate_x3", "sw_gate_y3")
+GATE_STATES = ("closed", "damaged", "broken")      # blender/gates.py; "intact" is the open gate
+FRONTS = ("pal_s", "sw_n", "sw_s", "pal_corner", "sw_ctower", "sw_gate_x", "sw_gate_y", "sw_gate_x3", "sw_gate_y3")
+# ^ the pieces whose front layer (castle.front_only) may hold something; an empty one is left out when packing
+INWARD = {"n": (0, 1), "s": (0, -1), "w": (1, 0), "e": (-1, 0)}   # toward the town, in the sim's cells (+y south)
 
 
 def placements(L):
@@ -165,7 +173,7 @@ def placements(L):
     offsets from the town's centre cell (cell (dx, dy) covers x in [townX + dx, townX + dx + 1)); the anchor is the
     footprint's middle on the ground in the same offsets (sim cells: add townX, townY); front is the footprint's
     front edge y (the draw order, design/b1/atlas-buildings.md 6). One piece for a gate and its piers, one for a corner
-    tower's 2 x 2 cells, one per cell of plain wall."""
+    tower's 2 x 2 cells, one per cell of plain wall (D-096: <pal|sw>_<n|s|w|e>, by the side it is on)."""
     cells = L["cells"]
     lo = min(dy for _, dy in cells)
     hi = max(dy for _, dy in cells)
@@ -181,9 +189,12 @@ def placements(L):
         out.append(dict(piece=piece, cells=sorted([list(c) for c in cs]), anchor=[ax, ay], front=min(ys) + h, footprint=[w, h]))
         taken.update(cs)
 
+    lox = min(dx for dx, _ in cells)
+    hix = max(dx for dx, _ in cells)
+
     def side(c):
         dx, dy = c
-        return "x" if dy in (lo, hi) else "y"
+        return "n" if dy == lo else "s" if dy == hi else "w" if dx == lox else "e"
     # the gates, with their piers on the stone walls
     gates = [c for c, k in cells.items() if k == "gate"]
     for edge in ("n", "s", "w", "e"):
