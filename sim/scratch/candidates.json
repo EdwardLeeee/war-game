@@ -1,0 +1,768 @@
+{
+ "traces": [
+  {
+   "name": "base-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {}
+  },
+  {
+   "name": "base-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {}
+  },
+  {
+   "name": "base-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "cf-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "cityForts": true
+   }
+  },
+  {
+   "name": "cf-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cityForts": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cf-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cityForts": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cf-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cityForts": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cf-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cityForts": true
+   },
+   "b": {}
+  },
+  {
+   "name": "fm-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "fm-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "foeMemory": true
+   },
+   "b": {}
+  },
+  {
+   "name": "fm-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "foeMemory": true
+   },
+   "b": {}
+  },
+  {
+   "name": "fm-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "foeMemory": true
+   },
+   "b": {}
+  },
+  {
+   "name": "fm-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "foeMemory": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cffm-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-hnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 51",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   }
+  },
+  {
+   "name": "cffm-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cffm-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cffm-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cffm-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   },
+   "b": {}
+  }
+ ],
+ "scripted": [
+  {
+   "name": "base",
+   "a": {},
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "base",
+   "a": {},
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "cf",
+   "a": {
+    "cityForts": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "cf",
+   "a": {
+    "cityForts": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "fm",
+   "a": {
+    "foeMemory": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "fm",
+   "a": {
+    "foeMemory": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "cffm",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "cffm",
+   "a": {
+    "cityForts": true,
+    "foeMemory": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
