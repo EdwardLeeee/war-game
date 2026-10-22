@@ -1,15 +1,17 @@
 // Test helpers: a standard game with every unit removed, so a test can place its own.
 
 import { Game } from "../src/core/game.ts";
-import { BLOCK_WALL } from "../src/core/world.ts";
-import { CELL_SHIFT, type UnitType } from "../src/protocol.ts";
-import { UNITS } from "../src/core/rules.ts";
+import { BLOCK_GATE, BLOCK_WALL } from "../src/core/world.ts";
+import { BuildingType, CELL_SHIFT, UnitType } from "../src/protocol.ts";
+import { MULT_DEN, MULT_NUM, SHIELD, UNITS } from "../src/core/rules.ts";
 
 export function emptyGame(): Game {
   const g = new Game({ seed: 1, scenario: "standard" });
   const w = g.w;
   for (let s = 0; s < w.units.count; s++) w.unitSlot[w.units.col.id[s]] = -1;
   w.units.count = 0;
+  // The militia on the walls are gone too (D-096).
+  w.wallAt.fill(-1);
   g.fog.update(w);
   return g;
 }
@@ -34,19 +36,21 @@ export function cmd(g: Game, p: number, body: Record<string, unknown>): void {
 
 /**
  * Top-left of a size x size square of walkable cells at least 15 cells from every building, the
- * first from the top-left as before D-089. Castle walls (D-089) do not count against it: any in the
- * square or within 4 cells of it are taken down (grid only), and so are the gates' lanes, so a
- * test's fight is where it was, is not walled in, and may build there.
+ * first from the top-left as before D-089. Castle walls (D-089) and gates (D-096) do not count
+ * against it: any in the square or within 4 cells of it are taken down (walls in the grid only,
+ * gates broken: gone at the next step), and so are the gates' lanes, so a test's fight is where it
+ * was, is not walled in, and may build there.
  */
 export function openArea(g: Game, size: number): { x: number; y: number } {
   const w = g.w;
   const b = w.buildings.col;
   const n = w.size;
-  const open = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && (w.grid[y * n + x] & ~BLOCK_WALL) === 0;
+  const open = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && (w.grid[y * n + x] & ~(BLOCK_WALL | BLOCK_GATE)) === 0;
   for (let y = 0; y + size <= w.size; y++) {
     for (let x = 0; x + size <= w.size; x++) {
       let ok = true;
       for (let s = 0; s < w.buildings.count && ok; s++) {
+        if (b.type[s] === BuildingType.Gate) continue;
         if (Math.abs(b.cellX[s] - (x + size / 2)) < 15 + size / 2 && Math.abs(b.cellY[s] - (y + size / 2)) < 15 + size / 2) ok = false;
       }
       for (let yy = y; yy < y + size && ok; yy++) for (let xx = x; xx < x + size && ok; xx++) if (!open(xx, yy)) ok = false;
@@ -55,8 +59,10 @@ export function openArea(g: Game, size: number): { x: number; y: number } {
       for (let yy = Math.max(0, y - 4); yy < Math.min(n, y + size + 4); yy++) {
         for (let xx = Math.max(0, x - 4); xx < Math.min(n, x + size + 4); xx++) {
           w.gateLane[yy * n + xx] = 0;
-          if ((w.grid[yy * n + xx] & BLOCK_WALL) === 0) continue;
-          w.grid[yy * n + xx] &= ~BLOCK_WALL;
+          const gate = w.building(w.buildingAt[yy * n + xx]);
+          if (gate >= 0 && b.type[gate] === BuildingType.Gate) b.hp[gate] = 0;
+          if ((w.grid[yy * n + xx] & (BLOCK_WALL | BLOCK_GATE)) === 0) continue;
+          w.grid[yy * n + xx] &= ~(BLOCK_WALL | BLOCK_GATE);
           opened = true;
         }
       }
@@ -74,6 +80,37 @@ export function openArea(g: Game, size: number): { x: number; y: number } {
  */
 export function switchedOff(sw: { on: boolean } | { on: boolean }[], body: () => void): () => void {
   return switched(sw, false, body);
+}
+
+/**
+ * The multipliers before the unit triangle (D-097) while `body` runs: for scenes of other rules
+ * (joining a fight, squads) set for that balance. Ranged x5/2 on spearmen, x9/5 on cavalry, x3
+ * on shields; spearmen x3 on cavalry; cavalry x2 on mages and shields.
+ */
+export function beforeTriangle(body: () => void): () => void {
+  const old: [number, number, number, number][] = [
+    [UnitType.Ranged, UnitType.Spearman, 5, 2],
+    [UnitType.Ranged, UnitType.Cavalry, 9, 5],
+    [UnitType.Ranged, SHIELD, 3, 1],
+    [UnitType.Spearman, UnitType.Cavalry, 3, 1],
+    [UnitType.Cavalry, UnitType.Mage, 2, 1],
+    [UnitType.Cavalry, SHIELD, 2, 1],
+  ];
+  return () => {
+    const was = old.map(([a, t]) => [MULT_NUM[a][t], MULT_DEN[a][t]]);
+    for (const [a, t, num, den] of old) {
+      MULT_NUM[a][t] = num;
+      MULT_DEN[a][t] = den;
+    }
+    try {
+      body();
+    } finally {
+      old.forEach(([a, t], k) => {
+        MULT_NUM[a][t] = was[k][0];
+        MULT_DEN[a][t] = was[k][1];
+      });
+    }
+  };
 }
 
 /** The same with switches on: for tests of a rule that is off for now (D-095: MARCH_ORDER). */

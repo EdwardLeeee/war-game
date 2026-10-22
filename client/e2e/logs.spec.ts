@@ -52,7 +52,8 @@ async function orderFarmers(page: Page): Promise<void> {
   });
   if (target === null) throw new Error("no open cell near the farmers");
   await tap(page, await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [target.x, target.y] as const));
-  await expect.poll(() => page.evaluate(() => (window.__proto?.game?.sent().at(-1) as { c?: string } | undefined)?.c)).toBe("move");
+  // The player's own last order (自動訓練's own train, D-098, may follow it: run 39774971035's WebKit).
+  await expect.poll(() => page.evaluate(() => (window.__proto?.game?.sent().filter((c) => (c as { auto?: boolean }).auto !== true).at(-1) as { c?: string } | undefined)?.c)).toBe("move");
 }
 
 async function surrender(page: Page): Promise<void> {
@@ -84,7 +85,9 @@ test("對局紀錄：投降後存在手機上並上傳；內容是這局的版�
   const commit = await page.evaluate(() => window.__proto?.commit);
   expect(rec).toMatchObject({ v: 1, code, commit, scenario: "e2e", difficulty: "easy", result: "loss", reason: "surrender" });
   expect(rec.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  expect(Object.keys(rec).sort(), "nothing else: no account, no device name").toEqual(["code", "commit", "difficulty", "id", "lastHash", "log", "protocol", "reason", "result", "scenario", "ticks", "v"]);
+  expect(Object.keys(rec).sort(), "nothing else: no account, no device name").toEqual(["art", "code", "commit", "difficulty", "id", "lastHash", "log", "protocol", "reason", "result", "scenario", "ticks", "v"]);
+  // 美術 the game was drawn with (ceo 2026-10-22: the long games' crashes could not tell 3 倍 from 2 倍).
+  expect(rec.art).toMatch(/^(x3|x2|off|test)$/);
   const lines = rec.log.trim().split("\n");
   expect(JSON.parse(lines[0])).toMatchObject({ protocol: rec.protocol, scenario: "e2e", ai: [false, false] });
   expect(lines.slice(1).map((l) => (JSON.parse(l) as { c: string }).c)).toEqual(expect.arrayContaining(["move", "surrender"]));
@@ -141,13 +144,18 @@ test("對局紀錄：重來時，打了一分鐘以上的局存成「沒打完�
   await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(1300);
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "重來（開新的一局）" }).tap();
-  await page.waitForFunction(() => window.__proto?.ready === true && (window.__proto?.game?.header().tick ?? 9999) < 1000);
+  // Again before a minute of game time: not kept. Paused at once from the page as the new game is
+  // ready, so that a slow runner does not let it pass the minute (dispatch run 37221206636, Chromium;
+  // #266's run 39724698009, WebKit: 1278 ticks with a tap on 暫停, at 400 ticks a second).
+  await page.waitForFunction(() => {
+    const game = window.__proto?.game;
+    if (window.__proto?.ready !== true || game === undefined || game.header().tick >= 1000) return false;
+    game.pause();
+    return true;
+  });
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
   await expect.poll(async () => (await kept(page)).map((e) => [e.rec.result, e.rec.reason, e.state])).toEqual([["abandoned", "", "pending"]]);
   expect((await kept(page))[0].rec.ticks).toBeGreaterThan(1300);
-  // Again before a minute of game time: not kept. Paused first, so that a slow runner does
-  // not let it pass the minute (dispatch run 37221206636, Chromium: it did at 400 ticks a second).
-  await page.getByRole("button", { name: "暫停", exact: true }).tap();
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
   expect(await tick(page)).toBeLessThan(1200);
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "重來（開新的一局）" }).tap();
@@ -211,4 +219,47 @@ test("對局紀錄：切到背景就存一份「還在打」的紀錄並上傳�
   expect(last.result).toBe("loss");
   await expect.poll(async () => (await kept(page)).map((e) => [e.id, e.rec.result])).toEqual([[last.id, "loss"]]);
   check();
+});
+
+test("閃退的線索（ceo 2026-10-22）：遊戲中每幾秒把狀況寫進裝置；上一次頁面帶著對局死掉，下一筆上傳的紀錄附一段，只附一次", async ({ page }) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  const bodies = await catchUploads(page, [201]);
+  await page.goto(`./?test=1&scenario=e2e&ai=0&tps=200&logs=${encodeURIComponent(LOGS)}`);
+  // As a page that died in a game would leave it (logs/heartbeat.ts).
+  await page.evaluate(() =>
+    localStorage.setItem("war-game.proto.beat", JSON.stringify({ v: 1, state: "playing", at: 5_000_000, since: 1_000_000, tick: 72_000, units: 213, buildings: 73, art: "x3", gpuPages: 104, gpuMB: 402, contextLost: 1, lastError: null, commit: "f4348fa" })),
+  );
+  await page.reload();
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  // This game's own heartbeat, written while it is on screen.
+  await expect
+    .poll(async () => JSON.parse((await page.evaluate(() => localStorage.getItem("war-game.proto.beat"))) ?? "{}"), { timeout: 15_000 })
+    .toMatchObject({ v: 1, state: "playing", commit: await page.evaluate(() => window.__proto?.commit) });
+  await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(1300);
+  await surrender(page);
+  await expect.poll(() => bodies.length, { timeout: 20_000 }).toBe(1);
+  const rec = JSON.parse(bodies[0]) as GameRecord;
+  expect(rec.crash).toEqual({ at: 5_000_000, upS: 4000, tick: 72_000, units: 213, buildings: 73, art: "x3", gpuPages: 104, gpuMB: 402, contextLost: 1, lastError: null, commit: "f4348fa" });
+  // Once: gone from the device; the game over, the heartbeat says so.
+  expect(await page.evaluate(() => localStorage.getItem("war-game.proto.crash"))).toBeNull();
+  await expect.poll(async () => JSON.parse((await page.evaluate(() => localStorage.getItem("war-game.proto.beat"))) ?? "{}").state, { timeout: 15_000 }).toBe("ended");
+  check();
+});
+
+test("畫面資源不足（WebGL 失去畫面）：遊戲暫停、存進度，說「畫面資源不足，請重新整理（進度已存）」；重新整理後可以繼續上一局", async ({ page }) => {
+  test.setTimeout(120_000);
+  await start(page, "tps=400");
+  await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(1300);
+  await page.evaluate(() => {
+    const c = document.querySelector("#stage canvas") as HTMLCanvasElement;
+    const gl = (c.getContext("webgl2") ?? c.getContext("webgl")) as WebGL2RenderingContext | null;
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+  });
+  const box = page.locator("#error");
+  await expect(box).toContainText("畫面資源不足，請重新整理（進度已存）", { timeout: 15_000 });
+  expect(await page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
+  await box.getByRole("button", { name: "重新整理" }).tap();
+  await expect(page.getByRole("button", { name: /^繼續上一局/ })).toBeVisible({ timeout: 15_000 });
 });

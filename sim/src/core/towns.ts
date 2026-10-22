@@ -29,9 +29,10 @@ import {
 } from "../protocol.ts";
 import type { Emit } from "./economy.ts";
 import { type Fog, townInSight } from "./fog.ts";
-import { governPerMinute, PLUNDER_RECOVERY, TOWNS, townIncomePermille } from "./rules.ts";
+import { GATE, governPerMinute, PLUNDER_RECOVERY, TOWNS, townIncomePermille } from "./rules.ts";
 import { spawnMilitia } from "./scenarios.ts";
-import type { World } from "./world.ts";
+import { onWall } from "./units.ts";
+import { GATES, type World } from "./world.ts";
 
 /** Production is paid out every this many ticks. */
 export const TOWN_PAY_EVERY = 20;
@@ -67,8 +68,8 @@ export class TownSystem {
           continue;
         }
         if (o >= PLAYER_COUNT || u.type[s] === UnitType.Farmer || u.action[s] === Action.Garrisoned) continue;
-        // Inside the walls (D-089).
-        if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT)) present[o]++;
+        // Inside the walls (D-089), or on them (D-096).
+        if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT) || (u.wall[s] >= 0 && w.wallTown[u.wall[s]] === t && onWall(w, s))) present[o]++;
       }
       let tower = false;
       for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.TownTower && b.town[s] === t) tower = true;
@@ -76,6 +77,8 @@ export class TownSystem {
       w.townContested[t] = contested ? 1 : 0;
       const state = w.townState[t];
 
+      // A governed town rebuilds a broken gate once no enemy has stood inside for a while (D-096).
+      if (GATE.on && state === TownState.Governed) this.rebuildGates(w, t, present[1 - w.townOwner[t]] > 0);
       if (state === TownState.Ruins) {
         if (--w.townTimer[t] <= 0) {
           this.neutral(w, t);
@@ -107,6 +110,8 @@ export class TownSystem {
             w.townTimer[t] = 0;
             w.townTimerTotal[t] = 0;
             w.governed[p]++;
+            // Repaired: its broken gates too (D-096).
+            this.allGates(w, t);
             this.tell(w, t, { k: "town_repaired", town: t, by: p }, [p]);
           }
           this.revoltCheck(w, t, p, manned);
@@ -140,6 +145,32 @@ export class TownSystem {
           break;
       }
     }
+  }
+
+  /**
+   * D-096: a governed town's broken gates count down GATE.rebuildTicks while no enemy stands
+   * inside its walls (`enemy`: one does; the count starts over), then stand again.
+   */
+  private rebuildGates(w: World, t: number, enemy: boolean): void {
+    for (let k = 0; k < w.castles[t].gates.length; k++) {
+      const o = t * GATES + k;
+      if (w.gateIn(t, k) >= 0) {
+        w.gateRebuild[o] = 0;
+        continue;
+      }
+      if (enemy || w.gateRebuild[o] === 0) {
+        w.gateRebuild[o] = GATE.rebuildTicks;
+        continue;
+      }
+      if (--w.gateRebuild[o] === 0) w.addGate(t, k);
+    }
+  }
+
+  /** Every broken gate of town t stands again, at full hp (D-096); the standing ones keep their hp. */
+  private allGates(w: World, t: number): void {
+    if (!GATE.on) return;
+    for (let k = 0; k < w.castles[t].gates.length; k++) if (w.gateIn(t, k) < 0) w.addGate(t, k);
+    w.refreshGates(t);
   }
 
   /** Below the minimum garrison a repairing or governed town counts down to revolt. */
@@ -180,6 +211,8 @@ export class TownSystem {
     w.townTimerTotal[t] = 0;
     w.townRevolt[t] = 0;
     w.townAcc.fill(0, t * 3, t * 3 + 3);
+    // Its standing gates are the taker's now (D-096).
+    w.refreshGates(t);
     this.tell(w, t, { k: "town_captured", town: t, by: p }, before >= 0 && before < PLAYER_COUNT ? [p, before] : [p]);
   }
 
@@ -196,6 +229,8 @@ export class TownSystem {
     w.townOwner[t] = NO_OWNER;
     w.townTimer[t] = rule.ruinsTicks;
     w.townTimerTotal[t] = rule.ruinsTicks;
+    // Ruins: open to all (D-096), so the plunderers walk out.
+    w.refreshGates(t);
     this.tell(
       w,
       t,
@@ -214,5 +249,7 @@ export class TownSystem {
     w.townRevolt[t] = 0;
     w.townAcc.fill(0, t * 3, t * 3 + 3);
     spawnMilitia(w, t, TOWNS[w.townSize[t]].militia >> 1);
+    // Neutral again: its gates stand and close (D-096); a broken one is rebuilt at full hp.
+    this.allGates(w, t);
   }
 }

@@ -168,8 +168,13 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
         if (!(MAP_MODES as readonly string[]).includes(map)) throw new Error(`bad map ${msg.map}`);
         if (msg.build !== undefined && typeof msg.build !== "string") throw new Error(`bad build ${String(msg.build)}`);
         build = msg.build;
-        // A person's barracks, ranges and mage halls train on their own; an AI's do not (round 6, D-054).
-        runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty, autoTrain: aiFlags.map((a) => !a), map, build });
+        // A person's barracks, ranges and mage halls train on their own, an AI's do not (round 6,
+        // D-054), unless the client says (D-098: it trains for its groups itself).
+        const autoTrain = msg.autoTrain ?? aiFlags.map((a) => !a);
+        if (!Array.isArray(autoTrain) || autoTrain.length !== aiFlags.length || !autoTrain.every((a) => typeof a === "boolean")) {
+          throw new Error(`bad autoTrain ${JSON.stringify(msg.autoTrain)}`);
+        }
+        runner = new Runner({ seed, scenario, ai: aiFlags, maxTicks, difficulty, autoTrain, map, build });
         encoder = new SnapshotEncoder(runner.game.w.nodeAmount.length);
         post({ type: "ready", protocol: PROTOCOL_VERSION, player: human, map: mapInfo(runner.game.w.map, human), rules: rules(runner.game.w.map) });
         sendSnapshot(0);

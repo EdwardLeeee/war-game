@@ -4,7 +4,7 @@
 
 import "./style.css";
 import "./ui/r6.css";
-import { type Application, VERSION } from "pixi.js";
+import { type Application, type Texture, VERSION } from "pixi.js";
 import { Game } from "./game/game.ts";
 import type { HudLifecycle } from "./ui/hud/hud.ts";
 import { type GameHook, gameHook } from "./game/test-hook.ts";
@@ -16,6 +16,7 @@ import { loadMapMode, MAP_LABEL, MAP_NOTE, saveMapMode } from "./map-mode.ts";
 import { loadTownHintOff } from "./hint-pref.ts";
 import { recordCode } from "./logs/code.ts";
 import { LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, resultFor } from "./logs/collect.ts";
+import { BEAT_EVERY_MS, Heartbeat } from "./logs/heartbeat.ts";
 import { openIndexedDb, type StoredLog } from "./logs/store.ts";
 import { fetchPoster } from "./logs/upload.ts";
 import { ART_LABEL, artBase, loadArtChoice } from "./art/pref.ts";
@@ -28,8 +29,8 @@ import { measureCutShort } from "./lab/panel.ts";
 import { type LoadReport, loadLines, LoadTimes, LoadTimesBox } from "./lab/load-times.ts";
 import type { AstcSample } from "./lab/astc.ts";
 import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_LOST_TEXT, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
-import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND } from "./sim.ts";
-import { createStage, gpuLimits } from "./stage.ts";
+import { AI_DIFFICULTIES, type AiDifficulty, BUILDING_STRIDE, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND, UNIT_STRIDE } from "./sim.ts";
+import { createStage, gpu, gpuLimits } from "./stage.ts";
 import { applyTheme, loadTheme } from "./theme.ts";
 import { tickRateText } from "./ui/controls.ts";
 import { applyFormalUi, FORMAL_UI_DEFAULT } from "./ui/formal.ts";
@@ -88,6 +89,9 @@ watchPresses();
  * Worker; the player sees only 紀錄代號 on the start screen. Waiting uploads go when the page opens.
  */
 const code = recordCode();
+/** 閃退的線索 (logs/heartbeat.ts): a heartbeat left 「playing」 by the page before becomes the note for the next record. */
+const heartbeat = new Heartbeat();
+heartbeat.startup();
 const logs = new LogCollector(openIndexedDb(), logsUrlFor(params.test, params.logsUrl), fetchPoster());
 void logs.flush();
 
@@ -131,8 +135,33 @@ async function stage(): Promise<Application> {
     if (g !== null && loadTimes.render(start, performance.now(), g.view?.curr != null, g.started)) loadMeasured(g);
     return out;
   };
+  // The GPU dropped the page's context (iOS, out of memory): the pictures cannot go up again
+  // (unit-art.ts lets their decoded copies go), so the game is paused and saved, and the page asks for a reload.
+  a.canvas.addEventListener("webglcontextlost", gpuLost);
   app = a;
   return a;
+}
+
+/** 「畫面資源不足，請重新整理（進度已存）」 once the game is saved (a game too short to be kept: without 進度已存). */
+const GPU_LOST_TEXT = "畫面資源不足，請重新整理（進度已存）";
+function gpuLost(): void {
+  const g = game;
+  if (g === null) return;
+  g.pause();
+  const box = $("error");
+  box.hidden = false;
+  const saving = !params.mock && g.over === null && g.currentTick() >= MIN_ABANDONED_TICKS;
+  box.textContent = saving ? "畫面資源不足，正在存進度…" : "畫面資源不足，請重新整理";
+  const done = () => {
+    box.textContent = saving ? GPU_LOST_TEXT : "畫面資源不足，請重新整理";
+    const reload = document.createElement("button");
+    reload.type = "button";
+    reload.textContent = "重新整理";
+    reload.addEventListener("click", () => location.reload());
+    box.append(" ", reload);
+  };
+  if (saving) void keepGame(g, "minute").then(done, done);
+  else done();
 }
 
 /** A start measured: in the 量測 panel, and the console on test pages (the e2e and CI read it). */
@@ -298,7 +327,8 @@ function keepGame(g: Game, why: KeepWhy): Promise<void> {
       const got = performance.now();
       if (upload) {
         const end = over !== null ? { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks } : { result: "abandoned" as const, reason: why === "hidden" ? "hidden" : "", ticks };
-        const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log: log.jsonl });
+        // 美術 in use, and the note of the page that last died with a game on screen (once, logs/heartbeat.ts).
+        const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log: log.jsonl, art: artInUse(), crash: heartbeat.takeCrash() });
         void logs.keep(record, k.game);
       }
       if (screen === null || g.over !== null) return;
@@ -335,11 +365,51 @@ function forgetGame(g: Game, why: "end" | "restart"): Promise<void> {
 
 // To the background (D-083): iPhone Safari may drop the page while it is away, with the game.
 document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") heartbeat.leave("away");
   if (document.visibilityState === "hidden" && game !== null) void keepGame(game, "hidden");
 });
 window.addEventListener("pagehide", () => {
+  heartbeat.leave("away");
   if (game !== null) void keepGame(game, "hidden");
 });
+
+/** 美術 the game on screen is drawn with: x3, x2, test, or off (none chosen, or they would not load). */
+function artInUse(): string {
+  return loadedArt === null ? "off" : (artChoiceUsed ?? "off");
+}
+
+/** The last error the page met (for the heartbeat), without its stack. */
+let lastError: string | null = null;
+window.addEventListener("error", (e) => {
+  lastError = String(e.message).slice(0, 200);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  lastError = String(e.reason instanceof Error ? e.reason.message : e.reason).slice(0, 200);
+});
+
+/** Every BEAT_EVERY_MS while a game is on screen and seen: what it is doing (logs/heartbeat.ts). */
+function beatNow(): void {
+  const g = game;
+  if (g === null || !hook.ready || hook.screen !== "battle" || g.over !== null || document.visibilityState === "hidden") {
+    heartbeat.leave(g === null || g.over !== null ? "ended" : "away");
+    return;
+  }
+  const snap = g.view?.curr?.snap;
+  heartbeat.beat({
+    state: "playing",
+    since: Math.round(performance.timeOrigin),
+    tick: g.currentTick(),
+    units: snap === undefined ? 0 : snap.units.length / UNIT_STRIDE,
+    buildings: snap === undefined ? 0 : snap.buildings.length / BUILDING_STRIDE,
+    art: artInUse(),
+    gpuPages: loadedArt?.art.resident.pages ?? 0,
+    gpuMB: Math.round((loadedArt?.art.resident.bytes ?? 0) / 1e6),
+    contextLost: gpu.contextLost,
+    lastError,
+    commit: __COMMIT__,
+  });
+}
+setInterval(beatNow, BEAT_EVERY_MS);
 
 /**
  * 有新版本 (D-042): checked when the page opens and whenever it comes back from the
@@ -388,7 +458,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   else await saveStore.clear();
   hideSaved();
   game?.destroy();
-  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpost, params.gallery, params.mine) : createSimPort(showError);
+  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpost, params.gallery, params.mine, params.walls) : createSimPort(showError);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
   // 30-minute limit, like the determinism check and CI, so the numbers compare between runs.
   const level: AiDifficulty = measure ? "normal" : difficulty;
@@ -478,7 +548,10 @@ async function artForGame(): Promise<UnitArt | null> {
   }
   try {
     loadTimes.artFrom(base);
-    loadedArt = { base, art: await loadUnitArt(base, choice === "test" ? "測試圖" : ART_LABEL[choice], undefined, loadTimes) };
+    // Each page to the GPU as it is decoded, its decoded picture let go (unit-art.ts: the iPhone dropped long games).
+    const renderer = app?.renderer ?? null;
+    const upload = renderer === null ? null : (t: Texture) => renderer.texture.initSource(t.source);
+    loadedArt = { base, art: await loadUnitArt(base, choice === "test" ? "測試圖" : ART_LABEL[choice], undefined, loadTimes, upload) };
     loadTimes.artDone("載入");
     return loadedArt.art;
   } catch (err) {

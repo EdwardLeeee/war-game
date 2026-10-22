@@ -87,6 +87,12 @@ export const BuildingType = {
    * (`outpost_mode`); arrow towers may go within `Rules.towerReach.outpost` of it.
    */
   Outpost: 12,
+  /**
+   * A castle gate (D-096): one per opening in a town's ring of walls, its footprint that opening's
+   * cells (a line, `Rules.towns[size].castle.gates`; cellX, cellY its first cell). Owned with the
+   * town (NEUTRAL for a neutral town); open to its owner, closed to everyone else; gone when broken.
+   */
+  Gate: 13,
 } as const;
 export type BuildingType = (typeof BuildingType)[keyof typeof BuildingType];
 
@@ -158,6 +164,11 @@ export const Action = {
   Calibrate: 6,
   /** Hidden inside a building (recall); not drawn. */
   Garrisoned: 7,
+  /**
+   * Standing on a castle wall (D-096, `wall`; neutral militia too): on that wall cell, never
+   * moving, shooting from it; hit by arrows and spells for less, by melee only from inside.
+   */
+  OnWall: 8,
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 
@@ -186,6 +197,12 @@ export const Order = {
    * out of its army groups.
    */
   Post: 10,
+  /**
+   * Going up onto a castle wall or standing on it (D-096, `wall`; action OnWall once there):
+   * orderTarget is the town. Any move, attack, retreat or stop (or `leave_wall`) takes the soldier
+   * down to the cell inside the walls it climbed from.
+   */
+  Wall: 11,
 } as const;
 export type Order = (typeof Order)[keyof typeof Order];
 
@@ -284,6 +301,11 @@ export const UnitFlag = {
    * command to it (`release` too), and when it has nothing left to gather there (it goes idle).
    */
   HandPicked: 16,
+  /**
+   * Up on a castle wall (D-096, `wall`; neutral militia too), whatever its action: OnWall standing,
+   * Attack shooting from it, Calibrate firing the cannon. Snapshot only (PROTOCOL.md 4.2).
+   */
+  OnWall: 32,
 } as const;
 
 /** Buildings: own, visible enemy/neutral ones, and remembered enemy ones (flag Remembered). */
@@ -593,8 +615,13 @@ export interface ArrowInfo {
   range: number;
   /** Ticks between arrows. */
   cooldown: number;
-  /** Extra arrows per farmer hiding inside, up to this many (main city only; 0 for others). */
+  /**
+   * Extra arrows per farmer hiding inside, up to this many (main city); a gate's (D-096) one per
+   * `perSoldiers` soldiers; 0 for others.
+   */
   extraMax: number;
+  /** A governed town's gate (D-096): one arrow more for every this many of the holder's soldiers in the town. */
+  perSoldiers?: number;
 }
 
 /** A town's rules by size (TownSize), as the simulation plays them. */
@@ -614,6 +641,8 @@ export interface TownInfo {
   revoltTicks: number;
   /** The castle round the town (D-089); the simulation always sends it. */
   castle?: TownCastle;
+  /** Each gate's hit points (D-096, while `features.gates`; `buildings[Gate].hp` is the big city's). */
+  gateHp?: number;
 }
 
 /**
@@ -629,8 +658,17 @@ export interface TownCastle {
   wall: [number, number][];
   /** The corner towers' cells (in `wall` too). */
   corner: [number, number][];
-  /** Gates: open cells in the ring of walls, open to everyone. */
+  /**
+   * Gate cells in the ring of walls. D-089: open to everyone; D-096 (while `Rules.features.gates`):
+   * a Gate building stands in each opening, open to its owner (the town's holder) only, closed to
+   * everyone else, open to all once broken (no building there) and while the town lies in ruins.
+   */
   gate: [number, number][];
+  /**
+   * The same cells by opening (D-096): one Gate building each, whose cellX, cellY is the opening's
+   * top-left cell. Openings in a fixed order; each opening's cells in `gate` order.
+   */
+  gates?: [number, number][][];
   /** For each gate cell (same order), the open cell in front of it outside the walls. */
   outside: [number, number][];
   /** For each gate cell (same order), the first cell behind it inside the walls. */
@@ -665,6 +703,12 @@ export interface Features {
   cavalry: boolean;
   /** Outposts can be built and manned (D-080). Absent: off. */
   outpost?: boolean;
+  /** Castle gates close (D-096): a Gate building in each opening, `Rules.gate`. Absent: off. */
+  gates?: boolean;
+  /** Ranged units and mages go up onto town walls (`wall`, D-096), `Rules.walls`. Absent: off. */
+  walls?: boolean;
+  /** Cavalry choosing its own target goes round the front for mages, then ranged units (D-097). Absent: off. */
+  cavalryFlank?: boolean;
 }
 
 export interface MapInfo {
@@ -699,7 +743,11 @@ export interface Rules {
   // written by hand (the screen's mocks) still compile. Read them with a default (absent = off).
   features?: Features;
   /** Arrows of the main city, the big city's tower and arrow towers (round 7). */
-  arrows?: { mainCity: ArrowInfo; townTower: ArrowInfo; arrowTower: ArrowInfo };
+  /**
+   * `gate` (D-096, while `features.gates`): a governed town's gates shoot, one arrow more for every
+   * `perSoldiers` of the holder's soldiers inside the walls or on them, up to `extraMax` more.
+   */
+  arrows?: { mainCity: ArrowInfo; townTower: ArrowInfo; arrowTower: ArrowInfo; gate?: ArrowInfo };
   /** Unit types that may hide in buildings with `garrison` (round 7). */
   garrisonTypes?: UnitType[];
   /** A mage hiding in a building fires the cannon at `permille` of its damage, its cooldown `cooldownTimes` as long (round 7). */
@@ -725,6 +773,18 @@ export interface Rules {
   plunderRecovery?: { startPermille: number; ticks: number };
   /** The crystal cannon's range in fixed point (round 8: 7 cells; before, 8). */
   cannonRange?: number;
+  /**
+   * Castle gates (D-096; in play while `features.gates`): hits on a gate by ranged units and mages count
+   * `rangedNum` / `rangedDen` (at least 1; melee in full); a governed town rebuilds a broken gate
+   * once no enemy has stood inside its walls for `rebuildTicks`. Each gate's hp: `towns[size].gateHp`.
+   */
+  gate?: { rangedNum: number; rangedDen: number; rebuildTicks: number };
+  /**
+   * On town walls (D-096; in play while `features.walls`): `range` (fixed point) more range; hits of ranged
+   * units, mages and arrows at `takenNum` / `takenDen` (the cannon in full); neutral militia on
+   * the walls throw stones to `sling` (fixed point).
+   */
+  walls?: { range: number; takenNum: number; takenDen: number; sling: number };
   /**
    * The population ceiling (D-083): `base` plus `town[size]` (by TownSize) for each town the
    * player governs; HeaderField.populationCeiling has it now. Off: base 120, town [0, 0].
@@ -776,6 +836,14 @@ export type CommandBody =
   | { c: "garrison"; u: number[]; building: number }
   /** Soldiers hiding in the building come out: all of them, or those in `u` (round 7). */
   | { c: "leave"; building: number; u?: number[] }
+  /**
+   * Ranged units and mages of `u` go up onto the walls of town `town`, held by the player (D-096;
+   * awaiting the choice, plundering, repairing, governed): each to the free wall cell nearest it.
+   * Down again with `leave_wall` or any move, attack, retreat or stop.
+   */
+  | { c: "wall"; u: number[]; town: number }
+  /** Units of `u` standing on (or going up onto) town `town`'s walls come down (D-096). */
+  | { c: "leave_wall"; u: number[]; town: number }
   /** Spearmen in `u` go and stand guard at an own finished outpost (D-080; others in `u` are left as they are). */
   | { c: "post"; u: number[]; building: number }
   /** Every spearman posted at the outpost stops guarding it (D-080). */
@@ -811,6 +879,8 @@ export const COMMAND_KINDS = [
   "town_choice",
   "garrison",
   "leave",
+  "wall",
+  "leave_wall",
   "post",
   "unpost",
   "outpost_mode",
@@ -843,7 +913,8 @@ export type SimEvent =
    * A building's own arrow, or a soldier hiding in it, shot at `target` (unit id) this tick
    * (round 7, D-061). To every player who sees the building or the target.
    */
-  | { k: "shot"; building: number; target: number }
+  /** `n` (D-096): this many arrows at once, absent for one (PROTOCOL.md 5). */
+  | { k: "shot"; building: number; target: number; n?: number }
   | { k: "rejected"; seq: number; reason: Reject }
   | { k: "game_over"; winner: number; reason: GameOverReason };
 export type EventKind = SimEvent["k"];
@@ -890,6 +961,13 @@ export type ToWorker =
        * knowing only its own main city (MapInfo).
        */
       map?: MapMode;
+      /**
+       * Per player (aligned with `ai`): whether its barracks, ranges, mage halls and stables train
+       * by themselves (round 6, D-054). Absent: on for the people, off for the AIs. D-098: the
+       * client sends all off and trains for its groups itself. Written into the log header
+       * (LogHeader.autoTrain) as before.
+       */
+      autoTrain?: boolean[];
       /**
        * Which simulation this is (D-083), written into the log header (LogHeader.build): a game
        * goes on (`continue`) only on the same build. The screen sends an id of the simulation's

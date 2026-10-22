@@ -190,6 +190,13 @@ export interface Plan {
    * soldiers by them outnumber them, out again HARASS_REST later (0: none).
    */
   harass: number;
+  /**
+   * D-086 A5 (ceo 2026-10-22; the user's long wins against hard, f331df3c 77.5 min and 6a024b3c 81 min):
+   * arrow towers by home by the clock (TURTLE), spread round the main city; TURTLE.townTowers by every
+   * town it governs; outposts by home, each manned by TURTLE.outpostGuards spearmen; with `corners`, the
+   * big city too once the army is TURTLE.bigAt strong.
+   */
+  turtle: boolean;
 }
 
 /**
@@ -269,6 +276,19 @@ const HARASS_ROUND: readonly [number, number][] = [
 ];
 /** D-086 A (plan.homeTowers): cells from home toward the map centre where the towers go (the barracks: 6). */
 const HOME_TOWER_AT = 9;
+/**
+ * plan.turtle (D-086 A5): towers by home, none before `from`, `at30` by minute 30 and `at45` by minute 45
+ * (the user's: about 10 and 18 or more), at most `max`; `townTowers` by each governed town; an outpost by
+ * home from each tick of `outposts`, `outpostAt` cells out, with `outpostGuards` spearmen; the big city
+ * too with an army of `bigAt`.
+ */
+const TURTLE = { from: 10 * 1200, at30: 10, at45: 18, max: 20, townTowers: 2, outposts: [20 * 1200, 35 * 1200], outpostAt: 14, outpostGuards: 3, bigAt: 40 };
+/** plan.turtle: the towers by home it wants at this tick. */
+function turtleTowers(tick: number): number {
+  if (tick < TURTLE.from) return 0;
+  if (tick < 30 * 1200) return Math.trunc(((tick - TURTLE.from) * TURTLE.at30) / (30 * 1200 - TURTLE.from));
+  return Math.min(TURTLE.max, TURTLE.at30 + Math.trunc(((tick - 30 * 1200) * (TURTLE.at45 - TURTLE.at30)) / (15 * 1200)));
+}
 /** Random maps (D-074): the scout's next stop once within this many cells of one, or after SCOUT_STUCK ticks without getting nearer. */
 const SCOUT_NEAR = 6;
 const SCOUT_STUCK = 600;
@@ -377,6 +397,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     cavalryShare: 0,
     pushAhead: false,
     harass: 0,
+    turtle: false,
   };
 }
 
@@ -427,6 +448,12 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   const rally = real(homeF.u + Math.sign(mid - homeF.u) * 6, homeF.v + Math.sign(mid - homeF.v) * 6);
   const post = real(homeF.u + Math.sign(mid - homeF.u) * 4, homeF.v + Math.sign(mid - homeF.v) * 4);
   const towerAt = real(homeF.u + Math.sign(mid - homeF.u) * HOME_TOWER_AT, homeF.v + Math.sign(mid - homeF.v) * HOME_TOWER_AT);
+  // plan.turtle (D-086 A5): the towers round home, by turns toward the centre, along u and along v;
+  // the outposts out toward the centre, then along u.
+  const su = Math.sign(mid - homeF.u);
+  const sv = Math.sign(mid - homeF.v);
+  const turtleAt = [real(homeF.u + su * HOME_TOWER_AT, homeF.v + sv * HOME_TOWER_AT), real(homeF.u + su * HOME_TOWER_AT, homeF.v), real(homeF.u, homeF.v + sv * HOME_TOWER_AT)];
+  const outpostAt = [real(homeF.u + su * TURTLE.outpostAt, homeF.v + sv * TURTLE.outpostAt), real(homeF.u + su * TURTLE.outpostAt, homeF.v)];
   const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
   // The town of the plan: the small town nearest the main city (on a random map, of those seen so far).
   const nearestTown = () =>
@@ -698,13 +725,20 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const size = townOf(id).size;
         if (plan.choice !== "govern" && !(plunderOnce && plundered)) continue;
         const waiting = owner === player && state === TownState.AwaitingChoice;
-        const next = plan.townAt > 0 && state === TownState.Neutral && size === TownSize.Small;
+        // plan.turtle (D-086 A5): only for a town taken, not the next one, so the towers get their wood.
+        const next = plan.townAt > 0 && state === TownState.Neutral && size === TownSize.Small && !plan.turtle;
         if (waiting || next) govWood = Math.max(govWood, GOVERN_COST[size].wood);
       }
       if (govWood > 0 && res.wood < govWood) {
         ratio[0] = 20;
         ratio[1] = 60;
         ratio[2] = 20;
+      }
+      // plan.turtle (D-086 A5): wood first while the towers by home are behind the clock (60 wood, 20 gold each).
+      if (plan.turtle && own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, home.cellX, home.cellY) <= 12 * 12).length < turtleTowers(tick) && res.wood < 200) {
+        ratio[0] = 30;
+        ratio[1] = 55;
+        ratio[2] = 15;
       }
       if (govWood > 0) reserve.wood += govWood;
       // The midway fortress (plan.fortress): the same.
@@ -784,6 +818,19 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         // D-086 A: towers by home and a stable, as the user had them in the long wins.
         if (plan.homeTowers > 0 && has(BuildingType.Range) && count(BuildingType.ArrowTower) < plan.homeTowers) add(BuildingType.ArrowTower, towerAt);
         if (plan.cavalryShare > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
+        // D-086 A5 (plan.turtle): towers round home by the clock, TURTLE.townTowers by every governed town, outposts by home.
+        if (plan.turtle && has(BuildingType.Range)) {
+          const near = (x: number, y: number, r: number) => own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, x, y) <= r * r).length;
+          const byHome = near(home.cellX, home.cellY, 12);
+          if (byHome < turtleTowers(tick)) add(BuildingType.ArrowTower, turtleAt[byHome % turtleAt.length]);
+          for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+            if (view.towns[r + TownField.owner] !== player || view.towns[r + TownField.state] !== TownState.Governed) continue;
+            const t = townOf(view.towns[r + TownField.id]);
+            if (near(t.cellX, t.cellY, 8) < TURTLE.townTowers) add(BuildingType.ArrowTower, { x: t.cellX, y: t.cellY });
+          }
+          const outposts = TURTLE.outposts.filter((at) => tick >= at).length;
+          if (rules.features?.outpost === true && count(BuildingType.Outpost) < outposts) add(BuildingType.Outpost, outpostAt[count(BuildingType.Outpost) % outpostAt.length]);
+        }
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
@@ -919,6 +966,18 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           return dist2(s.x, s.y, t.x, t.y) > 9;
         });
         if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
+      }
+      // D-086 A5 (plan.turtle): spearmen from home stand guard at each finished outpost.
+      if (plan.turtle) {
+        for (const b of done(BuildingType.Outpost)) {
+          const posted = soldiers.filter((u) => u.order === Order.Post && u.orderTarget === b.id).length;
+          if (posted >= TURTLE.outpostGuards) continue;
+          const free = soldiers
+            .filter((u) => u.type === UnitType.Spearman && !isGuard(u.id) && u.order !== Order.Post && u.id !== scout && dist2(u.x, u.y, home.cellX, home.cellY) <= 20 * 20)
+            .sort((a, c) => a.id - c.id)
+            .slice(0, TURTLE.outpostGuards - posted);
+          if (free.length > 0) out.push({ c: "post", u: free.map((u) => u.id), building: b.id });
+        }
       }
       // Cavalry raiders (round 7) are kept apart from the army; so is the harass squad (D-086 A3).
       if (plan.harass > 0) {
@@ -1414,9 +1473,11 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // worth a trip, nor waiting at, while governing it cannot be paid for.
       const blocked = (x: Town) => (plan.choice === "govern" || (rules.features?.plunderOnce === true && x.plundered)) && !affordAll(GOVERN_COST[x.size]);
       if (plan.corners && mode !== "town") {
+        // plan.turtle (D-086 A5): the big city too, once the army is TURTLE.bigAt strong (small towns first).
+        const big = plan.turtle && army.length >= TURTLE.bigAt;
         const open = known
-          .filter((x) => x.size === TownSize.Small && !ours(towns.get(x.id)!) && !blocked(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
-          .sort((a, b) => dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id);
+          .filter((x) => (x.size === TownSize.Small || big) && !ours(towns.get(x.id)!) && !blocked(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
+          .sort((a, b) => a.size - b.size || dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id);
         aim = open[0] ?? myTown;
       }
       // No town seen yet (random maps): the army waits at home.

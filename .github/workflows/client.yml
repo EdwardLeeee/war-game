@@ -59,8 +59,10 @@ jobs:
       - run: npm test
 
   e2e:
+    name: e2e (${{ matrix.browser }}${{ matrix.part }})
     runs-on: ubuntu-latest
-    # Pulling the image, the build and the tests (WebKit about 4 minutes, Chromium about 8).
+    # Pulling the image, the build and the tests. Chromium's whole run took 28 minutes on main
+    # (#269's run 39741400206) and went over 30 on #266 (run 39764109694): it runs in two halves.
     timeout-minutes: 30
     # Playwright's own image: the browsers and the system libraries they need are already in
     # it, so nothing comes from the Ubuntu package mirror. Installing them on the runner took
@@ -72,7 +74,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [webkit, chromium]
+        include:
+          - browser: webkit
+            shard: 1/1
+            part: ""
+            artifact: webkit
+          - browser: chromium
+            shard: 1/2
+            part: " 1/2"
+            artifact: chromium-1
+          - browser: chromium
+            shard: 2/2
+            part: " 2/2"
+            artifact: chromium-2
     defaults:
       run:
         working-directory: client
@@ -104,11 +118,11 @@ jobs:
       - run: npm run build
       - name: Hashes the page's determinism check compares against (headless run of the same game)
         run: bash scripts/expected-hashes.sh dist/expected-hashes.json
-      - run: npx playwright test --project=${{ matrix.browser }}
+      - run: npx playwright test --project=${{ matrix.browser }} --shard=${{ matrix.shard }}
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: client-e2e-${{ matrix.browser }}
+          name: client-e2e-${{ matrix.artifact }}
           path: |
             client/playwright-report/
             client/test-results/

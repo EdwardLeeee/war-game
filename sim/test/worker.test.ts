@@ -107,6 +107,22 @@ test("the time limit comes with init: none when a person plays, MAX_TICKS for AI
   assert.match(of("error").at(-1)!.message, /difficulty/);
 });
 
+test("automatic training comes with init (D-098): absent, on for the person and off for the AI; as given, in the log header too", () => {
+  const header = () => {
+    send({ type: "export_log" });
+    return JSON.parse(of("log").at(-1)!.jsonl.split("\n")[0]);
+  };
+  out.length = 0;
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: 0, ai: [false, true], tps: 20, scenario: "standard" });
+  send({ type: "pause" });
+  assert.deepEqual(header().autoTrain, [true, false]);
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: 0, ai: [false, true], tps: 20, scenario: "standard", autoTrain: [false, false] });
+  send({ type: "pause" });
+  assert.equal(header().autoTrain, undefined, "all off: the header leaves it out");
+  send({ type: "init", protocol: PROTOCOL_VERSION, seed: 3, human: 0, ai: [false, true], tps: 20, scenario: "standard", autoTrain: [false] });
+  assert.match(of("error").at(-1)!.message, /autoTrain/);
+});
+
 test("random maps (D-074): a person gets only their own main city, a spectator the whole map, the log header says random", () => {
   out.length = 0;
   send({ type: "init", protocol: PROTOCOL_VERSION, seed: 4, human: 0, ai: [false, true], tps: 20, scenario: "standard", map: "random" });

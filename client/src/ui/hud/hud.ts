@@ -213,6 +213,8 @@ export class Hud {
       startPlacement: (t: Parameters<Game["startPlacement"]>[0]) => game.startPlacement(t),
       openEconomy: () => this.openEconomy(),
       chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice, this.defaultKeep(town)),
+      leaveWall: () => game.leaveWall(),
+      wallCount: (town: number) => game.wallCount(town),
       governCost: (town: number) => game.governCost(town),
       governShortfall: (town: number) => game.governShortfall(town),
       governWaiting: (town: number) => game.governWaits.has(town),

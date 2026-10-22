@@ -1,6 +1,7 @@
 // The rules against mages of the early balance round (D-051, D-057; from #91, round 4): a
 // retreat at each unit's own speed, a casting mage showing itself with idle soldiers hitting
-// back, and ranged x3 against a mage's shield. Each has a switch in core/rules.ts.
+// back, and (until D-097's triangle) ranged x3 against a mage's shield. Each has a switch in
+// core/rules.ts.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -276,8 +277,8 @@ test(
   }),
 );
 
-test("ranged hit a mage's shield x3: 15 a shot (was 7, x3/2)", () => {
-  assert.equal(damage(UNITS[UnitType.Ranged].attack, UnitType.Ranged, SHIELD), 15);
+test("ranged hit a mage's shield as anything else since D-097 (x3 before, x3/2 before that)", () => {
+  assert.equal(damage(UNITS[UnitType.Ranged].attack, UnitType.Ranged, SHIELD), 5);
   assert.equal(damage(UNITS[UnitType.Ranged].attack, UnitType.Ranged, UnitType.Mage), 5, "the hp after the shield as before");
   assert.equal(damage(UNITS[UnitType.Spearman].attack, UnitType.Spearman, SHIELD), 6, "others as before");
 });

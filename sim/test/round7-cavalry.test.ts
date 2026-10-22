@@ -12,8 +12,8 @@ import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
 
 const CAV = UNITS[UnitType.Cavalry];
 
-test("cavalry: GDD appendix A, trained at a stable in 28 s for 70 food and 70 gold", () => {
-  assert.deepEqual([CAV.hp, CAV.attack, CAV.trainTicks, CAV.cost.food, CAV.cost.gold], [130, 11, 28 * 20, 70, 70]);
+test("cavalry: trained at a stable in 28 s for 60 food and 60 gold, 150 hp (D-097; GDD appendix A had 70, 70, 130)", () => {
+  assert.deepEqual([CAV.hp, CAV.attack, CAV.trainTicks, CAV.cost.food, CAV.cost.gold], [150, 11, 28 * 20, 60, 60]);
   const g = emptyGame();
   g.w.ecoOn[0] = 0;
   const farmer = put(g, 0, UnitType.Farmer, 20, 80);
@@ -30,7 +30,7 @@ test("cavalry: GDD appendix A, trained at a stable in 28 s for 70 food and 70 go
   run(g, 1);
   const rejected = g.events.filter((e) => e.to === 0 && e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
   assert.deepEqual(rejected, [Reject.NotAvailable], "a stable trains cavalry only");
-  assert.deepEqual([g.w.res[Resource.Food], g.w.res[Resource.Gold]], [930, 1000 - BUILDINGS[BuildingType.Stable].cost.gold - 70]);
+  assert.deepEqual([g.w.res[Resource.Food], g.w.res[Resource.Gold]], [1000 - CAV.cost.food, 1000 - BUILDINGS[BuildingType.Stable].cost.gold - CAV.cost.gold]);
   run(g, CAV.trainTicks + 1);
   assert.equal(g.w.trained[UnitType.Cavalry], 1);
 });
@@ -62,12 +62,12 @@ test("a person's stable trains on its own, as the barracks; a stable may need a 
   }
 });
 
-test("multipliers: spearmen x3 on cavalry, cavalry x2 on mages and shields, ranged x9/5 on cavalry", () => {
-  assert.equal(damage(UNITS[UnitType.Spearman].attack, UnitType.Spearman, UnitType.Cavalry), 18);
-  assert.equal(damage(CAV.attack, UnitType.Cavalry, UnitType.Mage), 22);
-  assert.equal(damage(CAV.attack, UnitType.Cavalry, SHIELD), 22);
+test("multipliers (D-097, the triangle): spearmen x5/2 on cavalry, cavalry x3 on mages and shields, nothing on ranged; ranged nothing on cavalry", () => {
+  assert.equal(damage(UNITS[UnitType.Spearman].attack, UnitType.Spearman, UnitType.Cavalry), 15);
+  assert.equal(damage(CAV.attack, UnitType.Cavalry, UnitType.Mage), 33);
+  assert.equal(damage(CAV.attack, UnitType.Cavalry, SHIELD), 33);
   assert.equal(damage(CAV.attack, UnitType.Cavalry, UnitType.Ranged), 11);
-  assert.equal(damage(UNITS[UnitType.Ranged].attack, UnitType.Ranged, UnitType.Cavalry), 9);
+  assert.equal(damage(UNITS[UnitType.Ranged].attack, UnitType.Ranged, UnitType.Cavalry), 5);
 });
 
 test("mirror images: cavalry charging ranged and spearmen play as mirror images, tick by tick", () => {

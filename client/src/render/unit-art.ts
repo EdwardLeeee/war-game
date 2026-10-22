@@ -42,6 +42,8 @@ export interface UnitArt {
   /** The ground's pictures (art-v5 on, R6-51: rock, cliffs, water, fords, bridges); null: flat colours. */
   terrain: TerrainJson | null;
   terrainFrame(layer: "color" | "shadow", name: string): ArtFrame | null;
+  /** Pages already on the GPU with their decoded pictures let go (loaded with `upload`), and their bytes there. */
+  resident: { pages: number; bytes: number };
   destroy(): void;
 }
 
@@ -101,15 +103,39 @@ export async function page(url: string, times: LoadRecorder | null, size?: numbe
 /**
  * The atlases under `base` (…/x3/ or …/x2/: units/<name>/, effects/), every page loaded up
  * front so that the game never waits for one in the middle of a fight. `times`: each file's
- * download and decoding, for the load times (D-091).
+ * download and decoding, for the load times (D-091). `upload` (the renderer's): each page goes
+ * to the GPU as soon as it is decoded, and its decoded picture is let go. Kept, the pictures
+ * stayed in memory beside the GPU's copies all game (3 倍: 398 MB), and the copies grew as new
+ * pages were first drawn (126 MB at minute 5, 302 at minute 68 of the user's f331df3c): the
+ * iPhone dropped the page in games of an hour and more (the user 2026-10-22: 「剛剛兩場對局都打到
+ * 一半跳掉」). Without the pictures a page cannot go up again: a lost WebGL context is not
+ * restored (main.ts asks for a reload; the game is saved).
  */
-export async function loadUnitArt(base: string, label: string, names: readonly string[] = ATLAS_NAMES, times: LoadRecorder | null = null): Promise<UnitArt> {
+export async function loadUnitArt(
+  base: string,
+  label: string,
+  names: readonly string[] = ATLAS_NAMES,
+  times: LoadRecorder | null = null,
+  upload: ((t: Texture) => void) | null = null,
+): Promise<UnitArt> {
   const atlases = new Map<string, AtlasJson>();
   const pages = new Map<string, Texture[]>();
   /** Every page, to let go of them all. */
   const all: Texture[] = [];
+  const resident = { pages: 0, bytes: 0 };
+  const settle = (t: Texture): Texture => {
+    if (upload === null) return t;
+    // Kept on the GPU: PixiJS lets an image's texture go when it has not been drawn for a while
+    // and sends it up again from its picture when it is, which is no more.
+    t.source.autoGarbageCollect = false;
+    upload(t);
+    (t.source.resource as ImageBitmap | null)?.close?.();
+    resident.pages++;
+    resident.bytes += t.source.pixelWidth * t.source.pixelHeight * 4;
+    return t;
+  };
   const load = async (list: string[]): Promise<Texture[]> => {
-    const got = await Promise.all(list.map((u) => page(u, times)));
+    const got = await Promise.all(list.map(async (u) => settle(await page(u, times))));
     all.push(...got);
     return got;
   };
@@ -264,6 +290,7 @@ export async function loadUnitArt(base: string, label: string, names: readonly s
       cache.set(key, f);
       return f;
     },
+    resident,
     destroy() {
       for (const f of cache.values()) f?.texture.destroy(false);
       cache.clear();

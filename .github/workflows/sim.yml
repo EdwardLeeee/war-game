@@ -257,6 +257,11 @@ jobs:
           # D-074: the push on random maps; the player and the AI both scout.
           - { group: push-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --map random }
           - { group: push-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --map random }
+          # D-097 (war-game-ai): the push with cavalry, about 2 for every 9 foot (the triangle and
+          # cavalry riding for the back row, CAV_FLANK); war-game-ai's measure for hard's cavalry.
+          - { group: push-cavalry, seeds: 1-40, args: --strategy push --speed h1 --formation close --cavalry-share 18 }
+          - { group: push-cavalry-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --cavalry-share 18 --map random }
+          - { group: push-cavalry-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --cavalry-share 18 --map random }
     env:
       # scripted-<group>-<seeds> against normal (as before), scripted-hard-<group>-<seeds> against hard.
       NAME: scripted-${{ matrix.difficulty == 'hard' && 'hard-' || '' }}${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
@@ -312,7 +317,7 @@ jobs:
           set -o pipefail
           cat > summary.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
-          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["push-towerrush", "主動（塔攻，護送）", 20], ["push-towerrush-farmers", "主動（塔攻，只派村民）", 20], ["push-fortress", "主動（半路要塞）", 20], ["push-fortress-random", "主動（半路要塞），隨機地圖", 20], ["push-fortress-hold", "主動（半路要塞，大軍守著）", 20], ["push-fortress-hold-random", "主動（半路要塞，大軍守著），隨機地圖", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15], ["push-random", "主動，隨機地圖", 20]];
+          const groups = [["push", "主動", 20], ["push-corners", "主動（一直搶城鎮）", 20], ["push-auto", "主動（自動訓練）", 20], ["push-auto-corners", "主動（自動訓練＋一直搶城鎮）", 20], ["push-corners-govern", "主動（一直搶城鎮，打下來就治理）", 20], ["push-govern", "主動（打下來就治理）", 20], ["push-auto-govern", "主動（自動訓練，打下來就治理）", 20], ["push-auto-corners-govern", "主動（自動訓練＋一直搶城鎮，打下來就治理）", 20], ["push-raid", "主動（騎兵突襲）", 20], ["push-race", "主動（偷家）", 20], ["push-towerrush", "主動（塔攻，護送）", 20], ["push-towerrush-farmers", "主動（塔攻，只派村民）", 20], ["push-fortress", "主動（半路要塞）", 20], ["push-fortress-random", "主動（半路要塞），隨機地圖", 20], ["push-fortress-hold", "主動（半路要塞，大軍守著）", 20], ["push-fortress-hold-random", "主動（半路要塞，大軍守著），隨機地圖", 20], ["defend", "守家", 15], ["defend-loose", "守家散開", 15], ["defend-eco", "守家經濟養大散開", 15], ["notown", "不拿城鎮", 15], ["push-random", "主動，隨機地圖", 20], ["push-cavalry", "主動（帶騎兵）", 20], ["push-cavalry-random", "主動（帶騎兵），隨機地圖", 20]];
           // scripted-<group>-<seeds>.json against normal, scripted-hard-<group>-<seeds>.json against hard.
           const levels = [["", "普通"], ["hard-", "困難"]];
           const games = new Map(levels.flatMap(([l]) => groups.map(([g]) => [l + g, []])));
@@ -423,6 +428,92 @@ jobs:
           EOF
           node late.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
+  # D-086 A5 (ceo 2026-10-22; the user's long wins against hard, f331df3c 77.5 min and 6a024b3c 81 min): the
+  # turtle (--turtle: 40 farmers, towers by home and by every governed town, outposts, every town governed,
+  # the march with 100 or more, a third cavalry), against hard only, games up to 90 minutes, both maps, seeds
+  # 1-40 in four jobs each; war-game-ai's measure for A5. Reports only, no threshold; its own jobs.
+  scripted-turtle:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
+    name: scripted turtle (${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cell:
+          - { group: push-turtle, seeds: 1-10, args: --strategy push --speed h1 --formation close --turtle --cap 90 }
+          - { group: push-turtle, seeds: 11-20, args: --strategy push --speed h1 --formation close --turtle --cap 90 }
+          - { group: push-turtle, seeds: 21-30, args: --strategy push --speed h1 --formation close --turtle --cap 90 }
+          - { group: push-turtle, seeds: 31-40, args: --strategy push --speed h1 --formation close --turtle --cap 90 }
+          - { group: push-turtle-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --turtle --cap 90 --map random }
+          - { group: push-turtle-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --turtle --cap 90 --map random }
+          - { group: push-turtle-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --turtle --cap 90 --map random }
+          - { group: push-turtle-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --turtle --cap 90 --map random }
+    env:
+      NAME: turtle-hard-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Scripted player (turtle) against the hard AI
+        run: |
+          set -o pipefail
+          node src/scripted-games.ts --seeds ${{ matrix.cell.seeds }} ${{ matrix.cell.args }} --difficulty hard --json "${NAME}.json" | tee -a "${GITHUB_STEP_SUMMARY}"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: sim/${{ env.NAME }}.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # The turtle in one table (D-086 A5): games won, those after minute 60, the towers at minutes 30 and 45,
+  # towns governed at the end, the first march on the AI's main city and cavalry trained.
+  scripted-turtle-summary:
+    needs: [scripted-turtle]
+    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: turtle-*
+          path: turtle
+          merge-multiple: true
+      - name: The turtle group
+        run: |
+          set -o pipefail
+          cat > turtle.mjs <<'EOF'
+          import { readdirSync, readFileSync } from "node:fs";
+          const rows = [["push-turtle", "困難，固定地圖"], ["push-turtle-random", "困難，隨機地圖"]];
+          const med = (l) => (l.length === 0 ? "—" : String([...l].sort((a, b) => a - b)[l.length >> 1]));
+          const out = ["## 守塔慢拿城（A5）", "", "| 對手、地圖 | 贏／局數 | 贏在 60 分以後 | 輸／到 90 分沒分出 | 箭樓 第 30 分 我／電腦 | 箭樓 第 45 分 我／電腦 | 局末治理 我／電腦 | 第一次出發打電腦主城（分） | 騎兵 我 |", "|---|---|---|---|---|---|---|---|---|"];
+          for (const [group, name] of rows) {
+            const games = readdirSync("turtle")
+              .filter((f) => f.replace(/-\d+-\d+\.json$/, "") === `turtle-hard-${group}`)
+              .flatMap((f) => JSON.parse(readFileSync(`turtle/${f}`, "utf8")).games);
+            if (games.length === 0) continue;
+            const won = games.filter((x) => x.result === "won");
+            const open = games.filter((x) => x.result === "open").length;
+            const t30 = games.map((x) => x.towersAt.m30).filter((x) => x !== null);
+            const t45 = games.map((x) => x.towersAt.m45).filter((x) => x !== null);
+            const march = games.filter((x) => x.firstMarch > 0).map((x) => Math.round(x.firstMarch / 120) / 10);
+            out.push(
+              `| ${name} | ${won.length}/${games.length} | ${won.filter((x) => x.endTick > 60 * 1200).length} | ${games.length - won.length - open}／${open} | ${med(t30.map((x) => x[0]))}／${med(t30.map((x) => x[1]))}（${t30.length} 局） | ${med(t45.map((x) => x[0]))}／${med(t45.map((x) => x[1]))}（${t45.length} 局） | ${med(games.map((x) => x.governedEnd[0]))}／${med(games.map((x) => x.governedEnd[1]))} | ${med(march)}（${march.length} 局） | ${med(games.map((x) => x.trained.cavalry[0]))} |`,
+            );
+          }
+          out.push("", "箭樓、治理、出發時間和騎兵都是中位數；箭樓只算到那一分還沒結束的局。");
+          console.log(out.join("\n"));
+          EOF
+          node turtle.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
+
   # D-086 A3 (war-game-ai, docs/research/2026-10-ai-late.md): the late group with a squad of 10 that goes
   # for the AI's farmers far from its main city from minute 10 (--late --harass 10; the user's 75830947),
   # on both maps, against normal and hard, seeds 1-40 in two jobs each. Reports only, no threshold; its
@@ -507,8 +598,9 @@ jobs:
           node harass.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # Unit balance (round 3, D-026): small battles of equal cost, the values before this round
-  # against the values in the code, every goal marked (src/balance.ts). About 10 seconds.
-  # Goals 1-4 must hold with both sides advancing; goal 5 is reported (ceo: not this round).
+  # against the values in the code, every goal marked (src/balance.ts). About a minute.
+  # The goals listed must hold; 5, 10 and 12 are reported (5: ceo, not this round; 10: by design,
+  # 13 is its answer; 12: known, D-097).
   balance:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -523,7 +615,7 @@ jobs:
       - name: Battles of equal cost
         run: |
           set -o pipefail
-          node src/balance.ts --check 1,2,3,4,6,7,8,9 | tee -a "${GITHUB_STEP_SUMMARY}"
+          node src/balance.ts --check 1,2,3,4,6,7,8,9,11,13 | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # 100 games of the normal AI against the easy one (round 2): the same seeds, styles and swaps;
   # each spawn plays easy half the time. Replayed like the others.

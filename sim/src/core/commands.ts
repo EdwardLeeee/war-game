@@ -23,7 +23,7 @@ import {
   UnitFlag,
   UnitType,
 } from "../protocol.ts";
-import { IDENTITY, footprintCentre, isReflection } from "../frame.ts";
+import { IDENTITY, footprintCentre, isReflection, toCanon } from "../frame.ts";
 import { checkPlacement } from "../placement.ts";
 import { type Economy, nodeOpen, shiftQueue } from "./economy.ts";
 import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
@@ -50,6 +50,8 @@ import {
   TOWN_ONCE,
   TOWNS,
   UNITS,
+  GATE,
+  WALLS,
 } from "./rules.ts";
 import { openLine } from "./steer.ts";
 import { mages, queuedUnits } from "./training.ts";
@@ -292,10 +294,9 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       const bs = ownBuilding(w, p, cmd.building);
       if (bs < 0) return w.building(cmd.building) >= 0 ? Reject.NotOwner : Reject.InvalidTarget;
       const b = w.buildings.col;
-      const info = BUILDINGS[b.type[bs]];
       let order: number = Order.None;
       if (b.progress[bs] < 1000) order = Order.Build;
-      else if (b.hp[bs] < info.hp) order = Order.Repair;
+      else if (b.hp[bs] < w.maxHp(bs)) order = Order.Repair;
       else if (b.type[bs] === BuildingType.Farm) order = Order.Gather;
       if (order === Order.None) return Reject.NotAvailable;
       placed(w, farmers, false);
@@ -509,6 +510,63 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
         u.squad[s] = 0;
         u.speedCap[s] = 0;
       }
+      return 0;
+    }
+    case "wall": {
+      // D-096: ranged units and mages go up onto the walls of a town the player holds.
+      if (!WALLS.on || !GATE.on) return Reject.NotAvailable;
+      const slots = ownUnits(w, p, cmd.u);
+      if (slots.length === 0) return Reject.NotOwner;
+      const t = cmd.town;
+      if (!Number.isInteger(t) || t < 0 || t >= w.townSize.length) return Reject.InvalidTarget;
+      if (!w.heldBy(t, p)) return Reject.TownNotYours;
+      const u = w.units.col;
+      const fit = slots.filter((s) => (u.type[s] === UnitType.Ranged || u.type[s] === UnitType.Mage) && !hiding(w, s) && !(u.order[s] === Order.Wall && u.orderTarget[s] === t));
+      if (fit.length === 0) return Reject.NotAvailable;
+      const free = Array.from(w.wallCells[t]).filter((c) => w.wallAt[c] < 0);
+      if (free.length === 0) return Reject.NoRoom;
+      const n = w.size;
+      const f = w.map.frames[p] ?? IDENTITY;
+      for (const s of fit) {
+        // The free wall cell nearest it; equally near, the first in its owner's canonical frame.
+        let best = -1;
+        let bestD = 0;
+        for (const c of free) {
+          if (w.wallAt[c] >= 0) continue;
+          const dx = ((c % n) << CELL_SHIFT) + 512 - u.x[s];
+          const dy = (Math.trunc(c / n) << CELL_SHIFT) + 512 - u.y[s];
+          const d = dx * dx + dy * dy;
+          if (best >= 0 && d > bestD) continue;
+          if (best >= 0 && d === bestD) {
+            const a = toCanon(f, c % n, Math.trunc(c / n));
+            const b = toCanon(f, best % n, Math.trunc(best / n));
+            if (a.v > b.v || (a.v === b.v && a.u > b.u)) continue;
+          }
+          best = c;
+          bestD = d;
+        }
+        if (best < 0) break;
+        ctx.econ.release(w, s);
+        if (u.order[s] === Order.Cast) u.castProgress[s] = 0;
+        u.order[s] = Order.Wall;
+        u.orderTarget[s] = t;
+        u.wall[s] = best;
+        w.wallAt[best] = u.id[s];
+        u.target[s] = -1;
+        u.group[s] = -1;
+        u.squad[s] = 0;
+        u.speedCap[s] = 0;
+      }
+      return 0;
+    }
+    case "leave_wall": {
+      if (!WALLS.on || !GATE.on) return Reject.NotAvailable;
+      const slots = ownUnits(w, p, cmd.u);
+      if (slots.length === 0) return Reject.NotOwner;
+      const u = w.units.col;
+      const down = slots.filter((s) => u.wall[s] >= 0 && w.wallTown[u.wall[s]] === cmd.town);
+      if (down.length === 0) return Reject.NotAvailable;
+      for (const s of down) w.offWall(s);
       return 0;
     }
     case "leave": {
