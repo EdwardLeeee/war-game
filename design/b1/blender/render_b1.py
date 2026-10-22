@@ -41,6 +41,10 @@ import castle                        # noqa: E402
 import ground                        # noqa: E402
 import terrain                       # noqa: E402
 
+sys.path.insert(3, os.path.join(HERE, "..", "..", "r8", "blender"))      # R8 batch 2: the realistic buildings
+import arch_r8                       # noqa: E402
+import terrain_r8                    # noqa: E402
+
 REG = dict(blds.BUILDERS)
 REG.update(towns.BUILDERS)
 REG.update(nature.BUILDERS)
@@ -53,6 +57,10 @@ FOOT.update(nature.FOOTPRINT)
 FOOT.update(castle.FOOTPRINT)
 FOOT.update(ground.FOOTPRINT)
 FOOT.update(terrain.FOOTPRINT)
+REG.update(arch_r8.BUILDERS)
+FOOT.update(arch_r8.FOOTPRINT)
+REG.update(terrain_r8.BUILDERS)
+FOOT.update(terrain_r8.FOOTPRINT)
 HOUSES = ("th22", "th21", "th12", "th11")
 
 lib.QUALITY = job.get("quality", "hq")
@@ -64,6 +72,33 @@ RM = Euler(((90 - lib.CAM_ELEV) * lib.D2R, 0, lib.CAM_AZ * lib.D2R)).to_matrix()
 RIGHT, UP = RM @ Vector((1, 0, 0)), RM @ Vector((0, 1, 0))
 TO_CAM = RM @ Vector((0, 0, 1))
 MARGIN = 0.35            # metres of room around the model in each frame
+
+# R8 batch 2 (D-093): job["look"] "r8" renders a piece in the realistic look the user chose for R8 (R7 version 2,
+# design/r7/blender/look.py): the CC0 textures in place of the flat colours, small bevels, the R7 light rig, no outlines
+LOOK = job.get("look")
+if LOOK == "r8":
+    sys.path.insert(0, os.path.join(HERE, "..", "..", "r7", "blender"))
+    import glob                      # noqa: E402
+    import look                      # noqa: E402
+
+    def tex_path(tid, k):
+        """A texture's file in job["tex_dir"] (design/r7/common/textures.py fetches them; any resolution)."""
+        got = sorted(glob.glob(os.path.join(job["tex_dir"], f"{tid}_{k}_*.jpg")))
+        if not got:
+            raise SystemExit(f"texture missing: {tid} {k} in {job['tex_dir']}")
+        return got[-1]
+
+
+def realistic(root):
+    """The R8 look on the piece just built (LOOK "r8"): outlines off, textures on, edges softened, R7's lights."""
+    for ob in list(lib.HULLS):
+        mod = ob.modifiers.get("hull")
+        if mod is not None:
+            ob.modifiers.remove(mod)
+    lib.HULLS.clear()
+    look.realistic(tex_path, dirt=0.3)
+    look.bevel_all([o for o in lib.ALL_PARTS if o.type == "MESH" and not o.get("no_bevel")], width=0.02)
+    look.lights()
 
 
 def fresh():
@@ -83,7 +118,7 @@ def corners():
     bpy.context.view_layer.update()
     pts = []
     for ob in lib.ALL_PARTS:
-        if ob.hide_render:
+        if ob.hide_render or ob.get("caster_only"):
             continue
         mw = ob.matrix_world
         pts += [mw @ Vector(c) for c in ob.bound_box]
@@ -181,6 +216,8 @@ for pc in job["pieces"]:
         towns.tower_state(root, c, st)
     elif kind == "ttower3":
         castle.tower3_state(root, c, st)
+    if LOOK == "r8":
+        realistic(root)
     pts = corners()
     L, R, U, D = extents(pts)
     W, H = int(math.ceil((L + R) * ppm)), int(math.ceil((U + D) * ppm))
@@ -218,6 +255,9 @@ for pc in job["pieces"]:
                 ob.hide_render = True
             if ob.get("back_holdout"):           # a wall's front layer (castle.front_only): the rest see-through
                 ob.is_holdout = True
+            if ob.get("caster_only"):            # stands in for a neighbour (terrain_r8): its shadow, never seen
+                ob.visible_camera = False
+                ob.hide_render = p != "beauty"
         if p == "shadow":
             cam.set(sW, sH, ppm / 2, s_anchor)
             if "rim" in lib.LIGHTS:
