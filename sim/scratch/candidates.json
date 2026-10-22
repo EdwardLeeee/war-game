@@ -1,0 +1,1043 @@
+{
+ "traces": [
+  {
+   "name": "base-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {}
+  },
+  {
+   "name": "base-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {}
+  },
+  {
+   "name": "base-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {}
+  },
+  {
+   "name": "base-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random",
+   "a": {}
+  },
+  {
+   "name": "base-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "cav-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25
+   }
+  },
+  {
+   "name": "cav-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25
+   }
+  },
+  {
+   "name": "cav-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25
+   }
+  },
+  {
+   "name": "cav-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25
+   }
+  },
+  {
+   "name": "cav-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "cavalry": 25
+   }
+  },
+  {
+   "name": "cav-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "cavalry": 25
+   }
+  },
+  {
+   "name": "cav-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "cavalry": 25
+   }
+  },
+  {
+   "name": "cav-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "cavalry": 25
+   }
+  },
+  {
+   "name": "cav-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25
+   },
+   "b": {}
+  },
+  {
+   "name": "cav-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25
+   },
+   "b": {}
+  },
+  {
+   "name": "cav-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25
+   },
+   "b": {}
+  },
+  {
+   "name": "cav-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25
+   },
+   "b": {}
+  },
+  {
+   "name": "lum-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "lum-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "lum-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "lum-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "lum-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "lum-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "lum-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "lum-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "lum-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "lumberMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "lum-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "lumberMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "lum-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "lumberMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "lum-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "lumberMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cl-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cl-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cl-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cl-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   },
+   "b": {}
+  },
+  {
+   "name": "cl-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   }
+  },
+  {
+   "name": "cl-thinkf",
+   "script": "think-plan.ts",
+   "args": "--seeds 1-4 --map fixed --plan '{\"cavalry\":25,\"lumberMove\":true}'",
+   "a": {}
+  },
+  {
+   "name": "cl-thinkr",
+   "script": "think-plan.ts",
+   "args": "--seeds 1-4 --map random --plan '{\"cavalry\":25,\"lumberMove\":true}'",
+   "a": {}
+  },
+  {
+   "name": "cc15-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "cc15-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "cc15-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "cc15-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "cc15-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "cc15-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "cc15-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "cc15-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "cc15-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "cc15-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "cc15-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "cc15-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "clcc-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "clcc-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "clcc-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "clcc-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "clcc-hh60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hh60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --ticks 72000",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hhr60-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-hhr60-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --ticks 72000",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "clcc-thinkf",
+   "script": "think-plan.ts",
+   "args": "--seeds 1-4 --map fixed --plan '{\"cavalry\":25,\"lumberMove\":true,\"counterCavalry\":true,\"cavalryMix\":15}'",
+   "a": {}
+  },
+  {
+   "name": "clcc-thinkr",
+   "script": "think-plan.ts",
+   "args": "--seeds 1-4 --map random --plan '{\"cavalry\":25,\"lumberMove\":true,\"counterCavalry\":true,\"cavalryMix\":15}'",
+   "a": {}
+  },
+  {
+   "name": "fixrcc-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "fixrcc-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "fixrcc-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "fixrcc-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "fixrcc-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "fixrcc-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "fixrcc-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "fixrcc-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   }
+  },
+  {
+   "name": "fixrcc-vb-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "fixrcc-vb-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "fixrcc-vbr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  },
+  {
+   "name": "fixrcc-vbr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "b": {}
+  }
+ ],
+ "scripted": [
+  {
+   "name": "base",
+   "a": {},
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "cav",
+   "a": {
+    "cavalry": 25
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "lum",
+   "a": {
+    "lumberMove": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "cl",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "cc15",
+   "a": {
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "clcc",
+   "a": {
+    "cavalry": 25,
+    "lumberMove": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "fixrcc",
+   "a": {
+    "cavalryCounter": 20,
+    "cavalryWhen": 0,
+    "charge": true,
+    "cavalryRandomOnly": true,
+    "counterCavalry": true,
+    "cavalryMix": 15
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
