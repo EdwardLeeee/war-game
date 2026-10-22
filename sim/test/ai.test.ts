@@ -2299,6 +2299,12 @@ test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 ce
   let badPlace = 0;
   const size = (t: number) => rules().buildings[t].size;
   for (let t = 0; t < 15 * 1200; t++) {
+    // Towers go up only with wood and gold to spare, and whether there is any is the game's turn (D-096 changed it):
+    // some each minute, so they do; this is about where they go.
+    if (g.tick % 1200 === 0) for (let p = 0; p < 2; p++) {
+      w.res[p * 4 + 1] += 150;
+      w.res[p * 4 + 2] += 60;
+    }
     if (g.tick % 10 === 0) {
       for (let p = 0; p < 2; p++) {
         for (const body of ais[p].think(buildView(g, p))) {
@@ -2508,10 +2514,13 @@ test("D-096: an AI reads a town's gates from the view by their openings, and tho
   assert.equal(onWalls(buildView(g, null), 0, r, town).length, r.towns[t.size].militia >> 1, "half the militia on the walls");
 });
 
-test("D-096 (GATE_AI.focus): by a town with its gates closed, the melee go for the gate nearest the army, ranged units for those on the walls", () => {
+test("D-096 (GATE_AI.focus, off by default): by a town with its gates closed, the melee go for the gate nearest the army, ranged units for those on the walls", () => {
   if (!rules().features?.gates) return;
   const { town, army, view, r } = atGate(6, 6);
   const rank = (x: number, y: number) => y * 1000 + x;
+  // Off by default (scratch run 39696604780); on here.
+  const was = GATE_AI.focus;
+  GATE_AI.focus = true;
   const go = gateOrders(view, r, 0, town, army, { x: town.x - 10, y: town.y }, rank);
   assert.ok(go !== null);
   assert.ok(go.gate.x < town.x, "the west gate");
@@ -2524,7 +2533,6 @@ test("D-096 (GATE_AI.focus): by a town with its gates closed, the melee go for t
     assert.deepEqual(shots.flatMap((c) => c.u).sort((a, b) => a - b), army.slice(6).map((u) => u.id).sort((a, b) => a - b), "every archer");
   }
   assert.equal(gateOrders(view, r, 0, town, army, { x: town.x - 40, y: town.y }, rank), null, "not by the town: none");
-  const was = GATE_AI.focus;
   GATE_AI.focus = false;
   assert.equal(gateOrders(view, r, 0, town, army, { x: town.x - 10, y: town.y }, rank), null, "off: none");
   GATE_AI.focus = was;
@@ -2565,7 +2573,7 @@ test("D-096 (GATE_AI.walls): plundering a town with enemy soldiers coming, hard 
   assert.equal(up(false).wall, undefined, "nobody coming: no");
 });
 
-test("D-096: hard plays a game against hard with the gates closed: it goes for gates (attack) and takes towns", () => {
+test("D-096: hard plays a game against hard with the gates closed: it breaks a gate and takes a town", () => {
   if (!rules().features?.gates) return;
   const r = new Runner({ seed: 3, scenario: "standard", ai: [true, true], maxTicks: 0, difficulty: ["hard", "hard"] });
   const g = r.game;
@@ -2578,7 +2586,7 @@ test("D-096: hard plays a game against hard with the gates closed: it goes for g
     for (let t = 0; t < w.townSize.length; t++) if (w.townOwner[t] === 0 || w.townOwner[t] === 1) taken = true;
   }
   assert.ok(taken, "a town taken by minute 16");
-  assert.ok(g.log.some((c) => c.c === "attack" && gates.has((c as { target: number }).target)), "an attack on a gate");
+  assert.ok([...gates].some((id) => w.building(id) < 0), "a gate broken");
 });
 
 test("normal: on a random map each normal AI goes first for a town nearer itself (by town id both went for the one by player 0, war-game-core 2026-10-22)", () => {
