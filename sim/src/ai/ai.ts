@@ -839,6 +839,14 @@ function fortsAtTown(groups: readonly FortGroup[], x: number, y: number, radius:
  * on the fixed map 41–59% of the decided games, off 98%, and the first town 2 minutes later: once a gate fell it went
  * for the next one standing, round the walls); one gate down, in by it (gateDone) is measured with it.
  */
+/**
+ * D-096 (scratch, off by default): normal on random maps, where #266 with ai/d096 drew 48% of normal against normal
+ * (main 38%; the armies went from town to town, lost, took again, and marched on the enemy base only in the last 8
+ * minutes): baseLess fewer for the march on the enemy base on random maps; walledTowns: an enemy-held town with its gates
+ * up only with the army for the base; townRest: minutes it leaves a town alone after breaking off from it.
+ */
+export const NORMAL_TUNE = { baseLess: 0, walledTowns: false, townRest: 0 };
+
 export const GATE_AI = { focus: false, calm: true, walls: true, arrows: true, retreat: "" };
 /** The army goes for the gate within this many cells of a town's walls (its radius + this). */
 const GATE_NEAR = 10;
@@ -1409,6 +1417,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let wallMove = -100000;
   /** D-096: the town whose gate it broke (in by it: no more gates there), -1 none. */
   let gateDone = -1;
+  /** D-096 (NORMAL_TUNE.townRest): towns it left alone until a tick. */
+  const townRestN = new Map<number, number>();
   let razeAgain = -100000;
   /** While the army is away: the soldiers trained since, at home, pulling down a fort on its ground. */
   let reservesRazing = -1;
@@ -1930,7 +1940,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       const assault = toGo >= 0 && toGo <= ASSAULT_TO_GO;
       const latest = toGo >= 0 && toGo <= LATEST_TO_GO;
       const lateMinutes = toGo >= 0 && toGo <= LATE_TO_GO ? Math.trunc((tick - (know.maxTicks - LATE_TO_GO)) / TICKS_PER_MINUTE) + 1 : 0;
-      const baseNeed = lateMinutes === 0 ? baseArmy : Math.max(townArmy, baseArmy - lateMinutes * 3);
+      // D-096 (NORMAL_TUNE.baseLess): fewer on random maps.
+      const baseFull = know.map.mode === "random" && NORMAL_TUNE.baseLess > 0 ? Math.max(townArmy, baseArmy - NORMAL_TUNE.baseLess) : baseArmy;
+      const baseNeed = lateMinutes === 0 ? baseFull : Math.max(townArmy, baseFull - lateMinutes * 3);
       // Without a limit it also marches once it cannot grow (population at the ceiling).
       const popFull = toGo < 0 && cap >= ceiling && pop >= cap - FULL_MARGIN;
       // The difficulty's earliest first town and first march on the enemy base.
@@ -2138,6 +2150,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           remember(army, stopped !== null && stopped.go ? [...byArmy, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byArmy);
           fortStop = null;
           if (mode === "town" && byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
+          if (mode === "town" && NORMAL_TUNE.townRest > 0) townRestN.set(targetTown, tick + NORMAL_TUNE.townRest * TICKS_PER_MINUTE);
           fallBackPast(byArmy);
           lastMove = tick;
           mode = "gather";
@@ -2299,6 +2312,9 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
           .filter(([, t]) => !GATE_AI.arrows || vsForts(army) * 10 >= gateArrowWorth(view, rules, player, t, foes.filter((e) => dist2(e.x, e.y, t.x, t.y) <= 100).length) * 13)
           .filter(([, t]) => !GATE_AI.retreat.includes("b") || gateLoss(view, rules, player, t, army) <= GATE_LOSS)
+          // D-096 (NORMAL_TUNE.walledTowns): an enemy-held town with its gates up, only with the army for the base; (townRest) not one it fell back from lately.
+          .filter(([, t]) => !NORMAL_TUNE.walledTowns || t.owner !== 1 - player || army.length >= baseNeed || !townGates(view, rules, t).some((g) => g.owner !== player))
+          .filter(([id]) => tick >= (townRestN.get(id) ?? 0))
           // Small first, then the nearest to its main city, ties the mirror-image way (war-game-core 2026-10-22: by town id,
           // on random maps both went first for the same town by player 0, 48 games of #266's 100 normal against normal).
           .sort(([, ta], [, tb]) => ta.size - tb.size || dist2(ta.x, ta.y, home.cellX, home.cellY) - dist2(tb.x, tb.y, home.cellX, home.cellY) || townRank(ta) - townRank(tb));
