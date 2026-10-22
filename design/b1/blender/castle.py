@@ -29,22 +29,35 @@ import gates
 import kit
 
 CELL = kit.CELL
-ROW = 0.42                           # the palisade's two rows of stakes, either side of the cell's centre line
-PAL_H = {"E": 2.6, "W": 2.9}         # their height
-PAL_WALK = {"E": 1.25, "W": 1.45}    # the earth-filled walk between them: the stakes reach a standing man's chest
 GATE_STATES = ("closed", "damaged", "broken")
+# D-096: the way to the town from a wall piece on each side (Blender -y is toward the camera, the sim's +y, south)
+INWARD = {"n": (0.0, -1.0), "s": (0.0, 1.0), "w": (1.0, 0.0), "e": (-1.0, 0.0)}
+SIDES = ("n", "s", "w", "e")
 
 
-def front_only(root, cut=-0.12):
-    """Keep, for the camera, only what stands in front of a unit on the wall (D-096): the parts whose middle is nearer
-    the camera than the centre line (by `cut`). The rest stays in the scene as a holdout (transparent, still casting its
-    shadows), so the kept parts look exactly as in the whole piece, which the client draws under the unit."""
+def _at(side, t, o, z=0.0):
+    """A point of a wall piece on `side`: t along the wall, o toward the town (both from the cell's middle), z up."""
+    ix, iy = INWARD[side]
+    ax, ay = (1.0, 0.0) if side in ("n", "s") else (0.0, 1.0)
+    return (ax * t + ix * o, ay * t + iy * o, z)
+
+
+def _size(side, along, across, h):
+    return (along, across, h) if side in ("n", "s") else (across, along, h)
+
+
+def front_only(root, stand, walk, reach=0.4, gap=0.15):
+    """Keep, for the camera, only what stands in front of a unit on the wall (D-096): the parts nearer the camera than
+    the spot `stand` (by `gap`), across his width (`reach` either side of him; on a north or south wall the whole cell,
+    where his bow and arms reach) and rising above the walk he stands on.
+    The rest stays in the scene as a holdout (transparent, still casting its shadows), so the kept parts look exactly as
+    in the whole piece, which the client draws under the unit."""
     import bpy
     import states
     bpy.context.view_layer.update()
     for ob in kit.parts_under(root):
-        b = states._bbox(ob)
-        if (b[1] + b[4]) / 2 > cut:
+        x0, y0, z0, x1, y1, z1 = states._bbox(ob)
+        if not ((y0 + y1) / 2 < stand[1] - gap and x0 < stand[0] + reach and x1 > stand[0] - reach and z1 > walk + 0.05):
             ob["back_holdout"] = True
 
 
@@ -84,55 +97,92 @@ def _stones(name, P, parent, pts, seed=1):
 # ---------------------------------------------------------------- the palisade (the small town)
 
 def _stakes(name, P, parent, axis, c, length=CELL, h=None):
-    """Two rows of pointed stakes along x or y, ROW either side of the origin, on a low earth bank; the earth between
-    them rammed up to a plank walk at PAL_WALK (D-096: a unit on the wall stands there); two rails bind each row on its
-    outer face."""
-    h = h or PAL_H[c]
-    walk = PAL_WALK[c]
+    """A row of pointed stakes along x or y through the origin, on a low earth bank, two rails binding them."""
+    h = h or (2.6 if c == "E" else 2.9)
     wood = P["bark"] if c == "W" else P["wood"]
-    at = (lambda t, o: (t, o)) if axis == "x" else (lambda t, o: (o, t))
-    size = (lambda a, b, z: (a, b, z)) if axis == "x" else (lambda a, b, z: (b, a, z))
-    earth = lib.mat("pal_earth", (0.34, 0.27, 0.19), 0.95, noise=0.3, noise_scale=6)
-    # no outline on the earth: its ends meet the next cell's, and the fill's outline would show black on the bank
-    box(name + "_bank", size(length, 1.5, 0.22), earth, parent, loc=(0, 0, 0.11), outline=False)
-    box(name + "_fill", size(length, 2 * ROW - 0.1, walk - 0.28), earth, parent, loc=(0, 0, 0.22 + (walk - 0.28) / 2),
-        outline=False)
-    for k in range(4):                       # the walk: planks laid across, on the rammed earth
-        t = -length / 2 + length * (k + 0.5) / 4
-        x, y = at(t, 0.0)
-        box(f"{name}_walk{k}", size(length / 4 - 0.04, 2 * ROW - 0.12, 0.06), P["beam"], parent, loc=(x, y, walk - 0.03))
-    rail = P["post"] if c == "E" else P["beam"]
+    box(name + "_bank", (length, 0.9, 0.22) if axis == "x" else (0.9, length, 0.22), P["earth"] if "earth" in P else P["stone"],
+        parent, loc=(0, 0, 0.11))
     n = 7
-    for side in (-1, 1):
-        for i in range(n):
-            t = -length / 2 + length * (i + 0.5) / n
-            hh = h * (0.94 + 0.06 * ((i * 37 + (3 if side > 0 else 0)) % 5) / 4)
-            x, y = at(t, side * ROW)
-            cyl(f"{name}_s{side}{i}", 0.13, hh - 0.3, wood, parent, loc=(x, y, 0.15), segs=8)
-            cyl(f"{name}_t{side}{i}", 0.13, 0.32, wood, parent, loc=(x, y, 0.15 + hh - 0.3), r2=0.02, segs=8)
-        for z in (0.8, h - 0.75):
-            x, y = at(0, side * (ROW + 0.16))
-            box(f"{name}_r{side}{z:.1f}", size(length, 0.1, 0.12), rail, parent, loc=(x, y, z))
+    for i in range(n):
+        t = -length / 2 + length * (i + 0.5) / n
+        hh = h * (0.94 + 0.06 * ((i * 37) % 5) / 4)
+        x, y = (t, 0.0) if axis == "x" else (0.0, t)
+        cyl(f"{name}_s{i}", 0.13, hh - 0.3, wood, parent, loc=(x, y, 0.15), segs=8)
+        cyl(f"{name}_t{i}", 0.13, 0.32, wood, parent, loc=(x, y, 0.15 + hh - 0.3), r2=0.02, segs=8)
+    rail = P["post"] if c == "E" else P["beam"]
+    for z in (0.8, h - 0.75):
+        if axis == "x":
+            box(f"{name}_r{z:.1f}", (length, 0.1, 0.12), rail, parent, loc=(0, 0.16, z))
+            box(f"{name}_rf{z:.1f}", (length, 0.1, 0.12), rail, parent, loc=(0, -0.16, z))
+        else:
+            box(f"{name}_r{z:.1f}", (0.1, length, 0.12), rail, parent, loc=(0.16, 0, z))
+            box(f"{name}_rf{z:.1f}", (0.1, length, 0.12), rail, parent, loc=(-0.16, 0, z))
 
 
-def pal_x(root, c, variant=0, state="intact", front=False):
+def pal_x(root, c, variant=0, state="intact"):
     P = kit.palette(c)
     _stakes("px", P, root, "x", c)
-    _mark("stand_at", root, (0, 0, PAL_WALK[c]))
     if state == "ruin":
         _soot(root)
-    if front:
-        front_only(root)
 
 
-def pal_y(root, c, variant=0, state="intact", front=False):
+def pal_y(root, c, variant=0, state="intact"):
     P = kit.palette(c)
     _stakes("py", P, root, "y", c)
-    _mark("stand_at", root, (0, 0, PAL_WALK[c]))
+    if state == "ruin":
+        _soot(root)
+
+
+PAL_WALK = {"E": 1.45, "W": 1.7}     # the fighting platform: the stakes (2.6, 2.9 m) reach a standing man's chest
+PAL_IN = 0.42                        # where he stands: on the platform, close behind the stakes
+
+
+def _banquette(name, P, parent, side, c):
+    """The fighting platform behind the stakes (D-096; the reconstructed palisade forts: a plank walk on posts along the
+    inside, the stakes up to a standing man's chest): from the stakes' inner face to the cell's inner edge, planks laid
+    across, a ledger on the stakes and a joist on two posts with knee braces."""
+    walk = PAL_WALK[c]
+    wood = P["bark"] if c == "W" else P["wood"]
+    o0, o1 = 0.17, 0.99
+    for k in range(5):
+        t = -CELL / 2 + CELL * (k + 0.5) / 5
+        box(f"{name}_plank{k}", _size(side, CELL / 5 - 0.03, o1 - o0, 0.07), P["beam"], parent,
+            loc=_at(side, t, (o0 + o1) / 2, walk - 0.035))
+    box(f"{name}_ledger", _size(side, CELL, 0.1, 0.16), P["beam"], parent, loc=_at(side, 0, o0 + 0.05, walk - 0.15))
+    box(f"{name}_joist", _size(side, CELL, 0.1, 0.16), P["beam"], parent, loc=_at(side, 0, o1 - 0.1, walk - 0.15))
+    for k, t in enumerate((-0.55, 0.55)):
+        cyl(f"{name}_post{k}", 0.07, walk - 0.07, wood, parent, loc=_at(side, t, o1 - 0.1), segs=8)
+        rod(f"{name}_brace{k}", _at(side, t, o1 - 0.1, 0.45), _at(side, t, o0 + 0.1, walk - 0.22), 0.04, P["beam"],
+            parent=parent, segs=6)
+
+
+def _pal_side(root, c, side, state, front):
+    """One cell of palisade on `side` (D-096): the art-v4 stakes and, on the town side, the fighting platform."""
+    P = kit.palette(c)
+    _stakes("ps", P, root, "x" if side in ("n", "s") else "y", c)
+    _banquette("pb", P, root, side, c)
+    stand = _at(side, 0, PAL_IN, PAL_WALK[c])
+    _mark("stand_at", root, stand)
     if state == "ruin":
         _soot(root)
     if front:
-        front_only(root)
+        front_only(root, stand, PAL_WALK[c], reach=1.0 if side in ("n", "s") else 0.4)
+
+
+def pal_n(root, c, variant=0, state="intact", front=False):
+    _pal_side(root, c, "n", state, front)
+
+
+def pal_s(root, c, variant=0, state="intact", front=False):
+    _pal_side(root, c, "s", state, front)
+
+
+def pal_w(root, c, variant=0, state="intact", front=False):
+    _pal_side(root, c, "w", state, front)
+
+
+def pal_e(root, c, variant=0, state="intact", front=False):
+    _pal_side(root, c, "e", state, front)
 
 
 def pal_corner(root, c, variant=0, state="intact"):
@@ -159,8 +209,8 @@ def pal_corner(root, c, variant=0, state="intact"):
 
 
 def _pal_gate(root, c, axis, state):
-    """The 3-cell gate of the palisade, along `axis`: a pair of posts (one for each row of stakes) on each edge of the
-    opening, a walkway over it; the leaves open (intact, ruin) or in a D-096 state (gates.py)."""
+    """The 3-cell gate of the palisade, along `axis`: the posts on the edges of the opening, a walkway over it; the
+    leaves open (intact, ruin) or in a D-096 state (gates.py)."""
     P = kit.palette(c)
     ruin = state == "ruin"
     L = 3 * CELL
@@ -168,49 +218,47 @@ def _pal_gate(root, c, axis, state):
     H = 4.1
     along = (lambda t, o=0.0, z=0.0: (t, o, z)) if axis == "x" else (lambda t, o=0.0, z=0.0: (o, t, z))
     for sx in (-1, 1):
-        for oy in (-ROW, ROW):
-            x, y, _ = along(sx * L / 2, oy)
-            k = f"{sx}{'b' if oy > 0 else 'f'}"
-            cyl(f"pg_post{k}", 0.24, H, wood, root, loc=(x, y, 0.0), segs=10)
-            cyl(f"pg_cap{k}", 0.26, 0.3, P["beam"], root, loc=(x, y, H), r2=0.05, segs=10)
+        x, y, _ = along(sx * L / 2)
+        cyl(f"pg_post{sx}", 0.24, H, wood, root, loc=(x, y, 0.0), segs=10)
+        cyl(f"pg_cap{sx}", 0.26, 0.3, P["beam"], root, loc=(x, y, H), r2=0.05, segs=10)
     # the walkway on top: a deck, its rails, a roof (east) or a pointed hood (west)
-    size = (L + 0.6, 1.6, 0.16) if axis == "x" else (1.6, L + 0.6, 0.16)
+    size = (L + 0.6, 1.3, 0.16) if axis == "x" else (1.3, L + 0.6, 0.16)
     box("pg_deck", size, P["beam"], root, loc=(0, 0, 3.55))
-    for o in (-0.76, 0.76):
+    for o in (-0.62, 0.62):
         x, y, _ = along(0, o)
         box(f"pg_rail{o}", (L + 0.6, 0.08, 0.55) if axis == "x" else (0.08, L + 0.6, 0.55), P["beam"], root, loc=(x, y, 3.9))
     if c == "E":
-        kit.roof_e("pg_roof", P, root, 0, 0, 4.25, L * 0.55 if axis == "x" else 1.7, 1.7 if axis == "x" else L * 0.55, 0.8,
+        kit.roof_e("pg_roof", P, root, 0, 0, 4.25, L * 0.55 if axis == "x" else 1.4, 1.4 if axis == "x" else L * 0.55, 0.8,
                    over=0.35, curl=0.4, ridge="x" if axis == "x" else "y")
     else:
-        kit.roof_w("pg_roof", dict(P, tile=P["thatch"]), root, 0, 0, 4.25, L * 0.5 if axis == "x" else 1.7,
-                   1.7 if axis == "x" else L * 0.5, 0.95, over=0.2, ridge="x" if axis == "x" else "y")
+        kit.roof_w("pg_roof", dict(P, tile=P["thatch"]), root, 0, 0, 4.25, L * 0.5 if axis == "x" else 1.4,
+                   1.4 if axis == "x" else L * 0.5, 0.95, over=0.2, ridge="x" if axis == "x" else "y")
     if state in GATE_STATES:
         gates.shut(root, P, c, axis, L - 0.5, 2.95 if c == "E" else 3.1, "plank_e" if c == "E" else "log_w", state,
                    mouth=-0.8, seed=21 if c == "E" else 23)
     else:
         # the leaves stand open, flat against the stakes on either side (outside the opening)
         for sx in (-1, 1):
-            x, y, _ = along(sx * (L / 2 + 0.75), -ROW - 0.3)
+            x, y, _ = along(sx * (L / 2 + 0.75), -0.3)
             leaf = (1.4, 0.12, 2.6) if axis == "x" else (0.12, 1.4, 2.6)
             if ruin and sx > 0:
                 box("pg_leaf_fallen", (1.4, 2.6, 0.12) if axis == "x" else (2.6, 1.4, 0.12), P["char"], root, loc=(x, y - 1.2, 0.08),
                     rot=(0, 0, 8))
             else:
                 box(f"pg_leaf{sx}", leaf, wood, root, loc=(x, y, 1.35))
-    # the owner's colour: two hangings under the walkway (seen from the front gates) and a banner on each front post
+    # the owner's colour: two hangings under the walkway (seen from the front gates) and a banner on each post
     if axis == "x":
         for sx in (-1, 1):
-            _hang(f"pg_hang{sx}", P, root, "y", sx * 1.7, 3.45, 1.1, 1.5, ruin, y0=-0.76)
+            _hang(f"pg_hang{sx}", P, root, "y", sx * 1.7, 3.45, 1.1, 1.5, ruin, y0=-0.62)
     for sx in (-1, 1):
-        x, y, _ = along(sx * L / 2, -ROW)
+        x, y, _ = along(sx * L / 2)
         if ruin:
             _rag(f"pg_brag{sx}", P, root, x + 0.15, y - 0.3, 4.2)
         else:
-            kit.flag(f"pg_flag{sx}", P, root, (x, y - 0.3 if axis == "x" else y, H + 0.2), 1.9, c, w=0.9, fh=1.3)
+            kit.flag(f"pg_flag{sx}", P, root, (x, y - 0.3, H + 0.2), 1.9, c, w=0.9, fh=1.3)
     # where the gate's arrows leave (D-096: it shoots while the town is governed): over the walkway's front rail
     for k, sx in enumerate((-1, 1)):
-        _mark(f"shoot_at_{k}", root, along(sx * 1.4, -0.76 if axis == "x" else 0.0, 4.2))
+        _mark(f"shoot_at_{k}", root, along(sx * 1.4, -0.62 if axis == "x" else 0.0, 4.2))
     if ruin:
         _soot(root)
 
@@ -249,26 +297,85 @@ def _wall(name, P, parent, axis, c, length=CELL):
                     loc=(loc[0], loc[1], H + 0.75))
 
 
-def sw_x(root, c, variant=0, state="intact", front=False):
+def sw_x(root, c, variant=0, state="intact"):
     P = kit.palette(c)
     _wall("wx", P, root, "x", c)
-    _mark("stand_at", root, (0, 0, WALL_H[c] + 0.12))
     if state == "ruin":
         _stones("wx_st", P, root, ((-0.6, -1.0), (0.5, -0.95), (0.1, 1.0)), seed=3)
         _soot(root)
-    if front:
-        front_only(root)
 
 
-def sw_y(root, c, variant=0, state="intact", front=False):
+def sw_y(root, c, variant=0, state="intact"):
     P = kit.palette(c)
     _wall("wy", P, root, "y", c)
-    _mark("stand_at", root, (0, 0, WALL_H[c] + 0.12))
     if state == "ruin":
         _stones("wy_st", P, root, ((-1.0, -0.4), (0.95, 0.5)), seed=5)
         _soot(root)
+
+
+SW_OUT = {"E": 1.55, "W": 1.7}       # the outer parapet's merlons above the walk (垛牆; the European merlons)
+SW_SILL = 0.9                         # its crenels' sill above the walk: an archer shoots over it from the chest
+SW_IN = {"E": 0.9, "W": 0.6}          # the low parapet on the town side (女牆; a curb on the European walk)
+SW_STAND = -0.25                      # where a unit stands: close behind the crenels
+
+
+def _wall_side(name, P, parent, side, c):
+    """One cell of stone wall on `side` (D-096): the art-v4 body and walk; on the outer edge a crenellated parapet (two
+    merlons a cell, a crenel between them and half of one at each end, shared with the next cell), a loophole (east)
+    or an arrow slit (west) in each merlon; on the town side a low parapet."""
+    H = WALL_H[c]
+    T = 1.6
+    mat = P["brick"] if c == "E" else P["stone"]
+    top = H + 0.12
+    box(name + "_body", _size(side, CELL, T, H), mat, parent, loc=(0, 0, H / 2), bevel=0.03,
+        taper=(1.0, 0.94) if side in ("n", "s") else (0.94, 1.0))
+    box(name + "_walk", _size(side, CELL, T - 0.1, 0.12), P["pave"], parent, loc=(0, 0, H + 0.06))
+    po = -(T / 2 - 0.175)
+    box(name + "_sill", _size(side, CELL, 0.35, SW_SILL), mat, parent, loc=_at(side, 0, po, top + SW_SILL / 2), bevel=0.02)
+    hm = SW_OUT[c] - SW_SILL
+    for k, t in enumerate((-0.5, 0.5)):
+        box(f"{name}_m{k}", _size(side, 0.6, 0.35, hm), mat, parent, loc=_at(side, t, po, top + SW_SILL + hm / 2), bevel=0.02)
+        if c == "E":
+            box(f"{name}_mc{k}", _size(side, 0.68, 0.43, 0.08), P["tile"], parent, loc=_at(side, t, po, top + SW_OUT[c] + 0.04))
+            box(f"{name}_eye{k}", _size(side, 0.14, 0.37, 0.16), P["dark"], parent, loc=_at(side, t, po, top + SW_SILL + hm * 0.45),
+                outline=False)
+        else:
+            box(f"{name}_slit{k}", _size(side, 0.07, 0.37, 0.42), P["dark"], parent, loc=_at(side, t, po, top + SW_SILL + hm * 0.5),
+                outline=False)
+    if c == "E":                              # the crenels' sill under a tile coping too
+        box(name + "_sc", _size(side, CELL, 0.41, 0.06), P["tile"], parent, loc=_at(side, 0, po, top + SW_SILL + 0.03))
+    pi = T / 2 - 0.15
+    box(name + "_inner", _size(side, CELL, 0.3, SW_IN[c]), mat, parent, loc=_at(side, 0, pi, top + SW_IN[c] / 2), bevel=0.02)
+    if c == "E":
+        box(name + "_ic", _size(side, CELL, 0.38, 0.07), P["tile"], parent, loc=_at(side, 0, pi, top + SW_IN[c] + 0.035))
+
+
+def _sw_side(root, c, side, state, front):
+    P = kit.palette(c)
+    _wall_side("ws", P, root, side, c)
+    stand = _at(side, 0, SW_STAND, WALL_H[c] + 0.12)
+    _mark("stand_at", root, stand)
+    if state == "ruin":
+        _stones("ws_st", P, root, (_at(side, -0.6, -1.0)[:2], _at(side, 0.5, -0.95)[:2], _at(side, 0.1, 1.0)[:2]), seed=3)
+        _soot(root)
     if front:
-        front_only(root)
+        front_only(root, stand, WALL_H[c] + 0.12, reach=1.0 if side in ("n", "s") else 0.4)
+
+
+def sw_n(root, c, variant=0, state="intact", front=False):
+    _sw_side(root, c, "n", state, front)
+
+
+def sw_s(root, c, variant=0, state="intact", front=False):
+    _sw_side(root, c, "s", state, front)
+
+
+def sw_w(root, c, variant=0, state="intact", front=False):
+    _sw_side(root, c, "w", state, front)
+
+
+def sw_e(root, c, variant=0, state="intact", front=False):
+    _sw_side(root, c, "e", state, front)
 
 
 def sw_ctower(root, c, variant=0, state="intact"):
@@ -461,6 +568,10 @@ def gate_y3(root, c, variant=0, state="intact"):
 FOOTPRINT = {"pal_x": (1, 1), "pal_y": (1, 1), "pal_corner": (1, 1), "pal_gate_x": (3, 1), "pal_gate_y": (1, 3),
              "sw_x": (1, 1), "sw_y": (1, 1), "sw_ctower": (2, 2), "sw_gate_x": (4, 1), "sw_gate_y": (1, 4), "sw_gate_x3": (5, 1), "sw_gate_y3": (1, 5),
              "ttower3": (3, 3)}
+FOOTPRINT.update({f"{w}_{d}": (1, 1) for w in ("pal", "sw") for d in SIDES})
+
 BUILDERS = {"pal_x": pal_x, "pal_y": pal_y, "pal_corner": pal_corner, "pal_gate_x": pal_gate_x, "pal_gate_y": pal_gate_y,
             "sw_x": sw_x, "sw_y": sw_y, "sw_ctower": sw_ctower, "sw_gate_x": sw_gate_x, "sw_gate_y": sw_gate_y,
             "sw_gate_x3": gate_x3, "sw_gate_y3": gate_y3, "ttower3": ttower3}
+BUILDERS.update({"pal_n": pal_n, "pal_s": pal_s, "pal_w": pal_w, "pal_e": pal_e, "sw_n": sw_n, "sw_s": sw_s, "sw_w": sw_w,
+                 "sw_e": sw_e})

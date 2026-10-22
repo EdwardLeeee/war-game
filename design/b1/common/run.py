@@ -195,8 +195,13 @@ for _i in range(0, len(_R606C), 7):
 
 # art-v4 (D-089, the user 2026-10-20 approved the castle boards: 「可以，照這樣做」): the wall pieces in both states
 # (the four owner looks are one image tinted), the floor tiles inside the walls, and the 3 x 3 big city tower
+# D-096: the pieces of common/castle.py now (the plain walls one per side), the gates' closed, damaged and broken looks,
+# and the front layer of the pieces with something in front of a unit on them (beauty and mask only)
 _V4 = ([dict(kind=k, culture=c, opts=dict(state=s), name=f"castle_{k}_{c}_{s}", footprint=list(_castle.PIECE_FOOT[k]))
-        for c in CULTURES for k in _castle.PIECE_FOOT for s in ("intact", "ruin")]
+        for c in CULTURES for k in _castle.PIECE_FOOT
+        for s in ("intact", "ruin") + (_castle.GATE_STATES if k in _castle.GATE_PIECES else ())]
+       + [dict(kind=k, culture=c, opts=dict(state="intact", front=True), name=f"castle_{k}_{c}_intact_front",
+               footprint=list(_castle.PIECE_FOOT[k]), passes=["beauty", "mask"]) for c in CULTURES for k in _castle.FRONTS]
        + [dict(kind="tground", culture=c, opts=dict(plan=[(0.0, 0.0, t)]), name=f"castle_tile_{t}_{c}")
           for c in CULTURES for t in ("square", "street", "garden")]
        + [dict(kind="ttower3", culture=c, state=st, name=f"town_tower3_{c}_{s}")
@@ -208,20 +213,27 @@ for _i in range(0, len(_V4), 8):
     CAMERA[f"prod_castle_{_i // 8}"] = proj.OBLIQUE
 
 # D-096 (the user 2026-10-21: the gates shut, ranged units and mages go up on the walls): drafts first, for the user.
-# Every gate in its open look (intact, art-v4's frame), closed, damaged and broken (blender/gates.py); the two-row
-# palisade with its walk; each wall's front layer (castle.front_only), drawn over a unit standing on that wall
-D096_GATES = ("pal_gate_x", "pal_gate_y", "sw_gate_x", "sw_gate_y", "sw_gate_x3", "sw_gate_y3")
-D096_STATES = ("closed", "damaged", "broken")
-D096_FRONTS = ("pal_x", "pal_y", "sw_x", "sw_y")
+# Every gate in its open look (intact, art-v4's frame), closed, damaged and broken (blender/gates.py); the walls one
+# piece per side (the walk is on the town side; the user 2026-10-22: 「上城牆不是這樣畫圖參考一下現實」): the palisade
+# with its fighting platform, the stone wall with its crenellated parapet; and the front layer (castle.front_only) of
+# the pieces that have something in front of a unit standing on them: the south palisade's stakes, the south stone
+# wall's crenellated parapet, the north stone wall's low inner parapet
+D096_GATES = _castle.GATE_PIECES
+D096_STATES = _castle.GATE_STATES
+D096_WALLS = tuple(f"{w}_{d}" for w in ("pal", "sw") for d in ("n", "s", "w", "e"))
+D096_FRONTS = _castle.FRONTS
 for _c in CULTURES:
     TARGETS[f"d096_{_c}"] = (
         [dict(kind=k, culture=_c, opts=dict(state=s), name=f"castle_{k}_{_c}_{s}", footprint=list(_castle.PIECE_FOOT[k]))
          for k in D096_GATES[:4] for s in ("intact",) + D096_STATES]
         + [dict(kind=k, culture=_c, opts=dict(state="intact"), name=f"castle_{k}_{_c}_intact", footprint=[1, 1])
-           for k in D096_FRONTS[:2]]
-        + [dict(kind=k, culture=_c, opts=dict(state="intact", front=True), name=f"castle_{k}_{_c}_front", footprint=[1, 1],
-                passes=["beauty", "mask"]) for k in D096_FRONTS])
-    CAMERA[f"d096_{_c}"] = proj.OBLIQUE
+           for k in D096_WALLS]
+        + [dict(kind=k, culture=_c, opts=dict(state="intact", front=True), name=f"castle_{k}_{_c}_intact_front",
+                footprint=[1, 1], passes=["beauty", "mask"]) for k in D096_FRONTS]
+        + [dict(kind=k, culture=_c, opts=dict(state="intact"), name=f"castle_{k}_{_c}_intact", footprint=list(_castle.PIECE_FOOT[k]))
+           for k in ("pal_corner", "sw_ctower")])                     # unchanged: the corners on the boards
+    TARGETS[f"d096w_{_c}"] = [pc for pc in TARGETS[f"d096_{_c}"] if pc["kind"] not in D096_GATES]
+    CAMERA[f"d096_{_c}"] = CAMERA[f"d096w_{_c}"] = proj.OBLIQUE
 
 # R6-50 (the user 2026-10-20: 「地面也可以美化一下現在感覺太陽春」): the R6 battlefield's ground in three looks
 sys.path.insert(1, str(HERE.parents[1] / "r6" / "common"))
@@ -262,6 +274,7 @@ OUTPOST = [dict(kind="outpost", culture=c, state=st, name=f"outpost_{c}_{s}") fo
            for s, st in (("build1", "build_a1"), ("build2", "build_a2"), ("build3", "build_a3"), ("done", "done"),
                          ("damaged", "damaged_a"), ("rubble", "destroyed_a"))]
 TARGETS["prod_outpost"] = OUTPOST
+CAMERA["prod_outpost"] = proj.OBLIQUE      # registered after the prod_* camera line above: set here
 
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
@@ -273,6 +286,7 @@ FOLDER.update({t: "dir" for t in CAMERA if t.startswith("dir_")})
 FOLDER.update({t: "sqdone" for t in TARGETS if t.startswith(("sqdone_", "sqfield"))})
 FOLDER.update({t: "r606" for t in TARGETS if t.startswith("r606_")})
 FOLDER.update({t: "castle" for t in TARGETS if t.startswith("castle_")})
+FOLDER.update({t: "d096" for t in TARGETS if t.startswith("d096")})
 FOLDER.update({t: "r650" for t in TARGETS if t.startswith("r650_")})
 FOLDER.update({t: "r651" for t in TARGETS if t.startswith("r651_")})
 
