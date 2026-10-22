@@ -2709,3 +2709,75 @@ test("D-086 A5 (plan.foeMemory): what hard believes of the enemy comes only from
   assert.ok(none.believedWorth > 0, "it remembers those it saw");
   assert.deepEqual(many, none, "the 40 in the fog change nothing");
 });
+
+test("D-086 A5 (plan.cityCap, cityForget): after a march is ground down, cityAgain asks no more than the share it can field, and not after cityForget minutes; off, as before", () => {
+  const again = (plan: Partial<HardPlan>, later: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 48000;
+      put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    const ids: number[] = [];
+    for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6)));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0, cityAgain: 200, ...plan });
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 30 && c.x === s1.cellX && c.y === s1.cellY), "marches");
+    kill(g, ids.slice(0, 20));
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "ground down, it breaks off");
+    // 40 at home now: 133% of the 30 that set out, under cityAgain's 200%.
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 6), s0.cellY - 4 - Math.trunc(k / 6));
+    w.tick += later;
+    g.fog.update(w);
+    return ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length >= 30 && c.x === s1.cellX && c.y === s1.cellY);
+  };
+  assert.equal(again({}, 10), false, "off: 40 of 30 is short of 200%");
+  // The ceiling less its farmers is what it can field: 20% of it is under 40.
+  assert.equal(again({ cityCap: 20 }, 10), true, "cityCap 20: no more than 20% of what it can field");
+  assert.equal(again({ cityForget: 1 }, 10), false, "cityForget 1, 10 ticks on: still held");
+  assert.equal(again({ cityForget: 1 }, 1200), true, "cityForget 1, a minute on: forgotten");
+});
+
+test("D-086 A5 (plan.townSave): at home with a town it could take but for the cost of governing it, hard keeps that cost aside, then goes; off, it spends it", () => {
+  const run = (townSave: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 12 * 1200;
+    // Every town neutral and plundered before (so only to be governed), seen by a farmer of its own.
+    for (const t of w.map.towns) {
+      w.townPlundered[t.id] = 1;
+      put(g, 0, UnitType.Farmer, t.cellX + 3, t.cellY + 3);
+    }
+    w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 8, rules().buildings[BuildingType.Range].hp, 1000);
+    for (let k = 0; k < 6; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 8 + 3 * k, s0.cellY + 6, rules().buildings[BuildingType.House].hp, 1000);
+    for (let k = 0; k < 20; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY + 2 + Math.trunc(k / 5));
+    w.res.set([300, 40, 200, 0], 0);
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, townArmy: 10, bigArmy: 99, pushArmy: 99, peekFirst: 0, townSave });
+    ai.think(buildView(g, 0));
+    w.res.set([300, 40, 200, 0], 0);
+    w.tick += 10;
+    g.fog.update(w);
+    const second = ai.think(buildView(g, 0));
+    // Wood enough to govern a small town now.
+    w.res.set([300, 120, 200, 0], 0);
+    w.tick += 10;
+    g.fog.update(w);
+    const third = ai.think(buildView(g, 0));
+    return {
+      ranged: trains(second, UnitType.Ranged),
+      goes: third.some((c) => c.c === "move" && c.u.length >= 10 && w.map.towns.some((t) => (c.x - t.cellX) ** 2 + (c.y - t.cellY) ** 2 <= 9)),
+    };
+  };
+  const off = run(false);
+  const on = run(true);
+  assert.equal(off.ranged, true, "off: its 40 wood on a ranged unit, as before");
+  assert.equal(on.ranged, false, "on: kept for governing");
+  assert.equal(on.goes, true, "on: it can pay now, it goes");
+});

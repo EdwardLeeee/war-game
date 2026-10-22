@@ -2569,6 +2569,19 @@ export interface HardPlan {
    */
   cityForts: boolean;
   /**
+   * D-086 A5 (f331df3c: after waves of 125 and 152 cityAgain asked 150 and then 183, more than it could field, and it never
+   * marched again): cityCap, the most cityAgain asks, as a percent of the soldiers it can field (its population ceiling
+   * less its farmers; 0: no cap); cityForget, minutes after a broken-off march when cityAgain no longer holds (0: never).
+   */
+  cityCap: number;
+  cityForget: number;
+  /**
+   * D-086 A5 (f331df3c: every town plundered before, so only to be governed, and too little wood to pay; it saved up for
+   * that only once on its way, so it never went, with 100-150 soldiers at home): at home, for the nearest town it could
+   * take but for the cost of governing it, that cost is kept aside till it can pay, then it goes (false: as before).
+   */
+  townSave: boolean;
+  /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
    * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
@@ -2655,6 +2668,9 @@ export const HARD: HardPlan = {
   cavalryRandomOnly: true,
   lumberMove: true,
   cityForts: false,
+  cityCap: 0,
+  cityForget: 0,
+  townSave: false,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -2829,6 +2845,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let staged = true;
   /** D-089 (plan.cityAgain): how many set out on the last march that broke off from the enemy main city. */
   let cityFailed = 0;
+  /** D-086 A5: when the last march on the enemy's main city broke off (plan.cityForget); the town it saves up to govern (plan.townSave), -1 none. */
+  let cityFailedAt = -100000;
+  let saveFor = -1;
   /** D-086 B: the network's choices at the last think (null: off), its soldiers then, its losses and the enemy soldiers it saw fall (ticks), the enemy city's hp last seen. */
   const netOn = plan.net !== null || plan.netLog !== undefined;
   let netChoice: number[] | null = null;
@@ -3022,7 +3041,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const toGovern = (id: number) =>
         (once && plunderedTown(id)) || (netChoice === null || netChoice[HEAD_TOWN] === AS_HARD ? governFirst(id) : netChoice[HEAD_TOWN] === TOWN_GOVERN && payable(id));
       // On the way to a town it will govern it keeps the cost aside (the choice comes the tick it falls).
-      const reserve: Cost = mode === "town" && targetTown >= 0 && toGovern(targetTown) ? { ...governCost(mem.site(targetTown)!.size) } : { food: 0, wood: 0, gold: 0, crystal: 0 };
+      const reserve: Cost =
+        mode === "town" && targetTown >= 0 && toGovern(targetTown)
+          ? { ...governCost(mem.site(targetTown)!.size) }
+          : plan.townSave && mode === "home" && saveFor >= 0 && mem.site(saveFor) !== undefined
+            ? { ...governCost(mem.site(saveFor)!.size) }
+            : { food: 0, wood: 0, gold: 0, crystal: 0 };
       const afford = (c: Cost) =>
         res.food - reserve.food >= c.food && res.wood - reserve.wood >= c.wood && res.gold - reserve.gold >= c.gold && res.crystal - reserve.crystal >= c.crystal;
       const affordAll = (c: Cost) => res.food >= c.food && res.wood >= c.wood && res.gold >= c.gold && res.crystal >= c.crystal;
@@ -4448,6 +4472,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const byFront = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, fc.x, fc.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, front));
           if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0) || byFront.length > 0))) {
             cityFailed = armyAtStart;
+            cityFailedAt = tick;
             // D-081 / A4 (plan.fortStage): broke off from the forts it gathered for: remembered too.
             const stopped = fortStop;
             remember(front, stopped !== null && stopped.go ? [...byFront, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byFront);
@@ -4570,7 +4595,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // Random maps (D-074): not before it has seen where the enemy is, but for the end of an
         // AI-against-AI game (then the corner across the map, the last resort).
         // D-089 (plan.cityAgain): not again with fewer than broke off last time, but at the end of an AI game.
-        const notLess = endgame || plan.cityAgain <= 0 || army.length * 100 >= cityFailed * plan.cityAgain;
+        // D-086 A5 (plan.cityCap, cityForget): no more than it can field, and not for ever.
+        const fieldMax = Math.max(0, ceiling - farmers.length);
+        const cityNeed = plan.cityCap > 0 ? Math.min(cityFailed * plan.cityAgain, fieldMax * plan.cityCap) : cityFailed * plan.cityAgain;
+        const forgot = plan.cityForget > 0 && tick - cityFailedAt >= plan.cityForget * TICKS_PER_MINUTE;
+        const notLess = endgame || plan.cityAgain <= 0 || forgot || army.length * 100 >= cityNeed;
         let hardGo =
           (mem.known !== Known.None || endgame || assault) &&
           notLess &&
@@ -4627,13 +4656,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!assault && netArmy < 0) {
           let pick = -1;
           let pickD = 0;
+          let save = -1;
+          let saveD = 0;
           for (const [id, t] of towns) {
             if ((t.state === TownState.Ruins && !staleRuin(id, t)) || t.state === TownState.Plundering || (t.owner === player && t.state !== TownState.Neutral)) continue;
             if (tick < (restoreAt.get(id) ?? 0)) continue;
             // D-081: not straight back to a town it fell back from.
             if (tick < (townRest.get(id) ?? 0)) continue;
-            // Plundered before (round 7): only worth it when it can pay to govern it.
-            if (once && plunderedTown(id) && !affordAll(governCost(t.size))) continue;
+            // Plundered before (round 7): only worth it when it can pay to govern it (plan.townSave: the rest weighed, it saves up for it).
+            const unpaid = once && plunderedTown(id) && !affordAll(governCost(t.size));
+            if (unpaid && !plan.townSave) continue;
             if (army.length < (t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
@@ -4651,11 +4683,20 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             // from home can miss forts the walk passes by; in 931495929 it went to and fro for 12 minutes).
             if (fortsBar(id)) continue;
             const d = dist2(t.x, t.y, home.cellX, home.cellY);
+            if (unpaid) {
+              if (save < 0 || d < saveD || (d === saveD && rank(t.x, t.y) < rank(towns.get(save)!.x, towns.get(save)!.y))) {
+                save = id;
+                saveD = d;
+              }
+              continue;
+            }
             if (pick < 0 || d < pickD || (d === pickD && rank(t.x, t.y) < rank(towns.get(pick)!.x, towns.get(pick)!.y))) {
               pick = id;
               pickD = d;
             }
           }
+          // D-086 A5 (plan.townSave): none to go for now but one it can take once it can pay: it saves up for that one.
+          saveFor = pick < 0 ? save : -1;
           if (pick >= 0) {
             labels[HEAD_ARMY] = 1;
             targetTown = pick;
