@@ -246,6 +246,7 @@ OUTPOST = [dict(kind="outpost", culture=c, state=st, name=f"outpost_{c}_{s}") fo
            for s, st in (("build1", "build_a1"), ("build2", "build_a2"), ("build3", "build_a3"), ("done", "done"),
                          ("damaged", "damaged_a"), ("rubble", "destroyed_a"))]
 TARGETS["prod_outpost"] = OUTPOST
+CAMERA["prod_outpost"] = proj.OBLIQUE      # registered after the prod_* camera line above: set here
 
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
