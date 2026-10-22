@@ -721,6 +721,96 @@ def farm_fine(root, c, stage="growing"):
                  loc=(x + 0.03, y - 0.02, 0.98), rot=(0, 0, -25 if side == "y" else 65), plane="XZ")
 
 
+# ---------------------------------------------------------------- 哨所 (outpost, D-080)
+
+def outpost(root, c):
+    """哨所 (D-080: built anywhere explored, up to six soldiers hold it; 2x2): a small walled post, low so the soldiers
+    around it still show, with a lookout on the camera corner (-x, -y: 前高後低) to tell it from the arrow tower.
+    East: a rammed-earth wall (夯土) with a timber coping, a gap on the camera face, a timber lookout with a small
+    hip-roofed room, the banner, a drum and a spear rack. West: a palisade of sharpened stakes, a gap on the camera
+    face, a timber watch platform with a ladder and a plank hut under a gable roof, the banner, a canvas tent.
+    The player's colour: the banner, a hanging on the lookout and one on the wall (B1's 5% rule)."""
+    P = kit.palette(c)
+    W = cells(2)
+    kit.pad("op_pad", P, root, W, W, 0.12, material="earth")
+    e = W / 2 - 0.3                     # the wall's line, inside the footprint
+    lx, ly = -e + 0.85, -e + 0.85       # the lookout's centre, on the camera corner
+    if c == "E":
+        earth = lib.mat("rammed_e", (0.56, 0.42, 0.27), 0.95, noise=0.3, noise_scale=7)      # 夯土: no block joints
+        h = 1.25
+        for k, (p0, p1) in enumerate((((-e, e), (e, e)), ((e, -e), (e, e)), ((-e, -e), (-0.5, -e)), ((0.5, -e), (e, -e)),
+                                      ((-e, -e), (-e, e)))):
+            cx, cy = (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2
+            L = math.hypot(p1[0] - p0[0], p1[1] - p0[1]) + 0.35
+            along_x = abs(p1[0] - p0[0]) > abs(p1[1] - p0[1])
+            box(f"op_wall{k}", (L if along_x else 0.35, 0.35 if along_x else L, h), earth, root, loc=(cx, cy, h / 2 + 0.1),
+                bevel=0.04, taper=(0.94, 0.94) if along_x else (0.94, 0.94))
+            box(f"op_cope{k}", (L + 0.06 if along_x else 0.42, 0.42 if along_x else L + 0.06, 0.1), P["beam"], root,
+                loc=(cx, cy, h + 0.15 + 0.004 * k), outline=False)        # (outlines of the overlapping ends showed black)
+            for zz in (0.45, 0.85):             # the rammed courses' lines
+                box(f"op_course{k}{zz}", (L + 0.01 if along_x else 0.36, 0.36 if along_x else L + 0.01, 0.02), P["earth"],
+                    root, loc=(cx, cy, zz + 0.1), outline=False)
+        # the lookout: four red posts, a deck, a small room under a hip roof
+        for k, (dx, dy) in enumerate(((-0.6, -0.6), (0.6, -0.6), (0.6, 0.6), (-0.6, 0.6))):
+            rod(f"op_post{k}", (lx + dx, ly + dy, 0.1), (lx + dx * 0.9, ly + dy * 0.9, 2.6), 0.08, P["post"], parent=root,
+                segs=10)
+        rod("op_brace0", (lx - 0.6, ly - 0.6, 0.4), (lx + 0.55, ly - 0.55, 2.2), 0.04, P["beam"], parent=root, segs=6)
+        rod("op_brace1", (lx - 0.6, ly - 0.6, 0.4), (lx - 0.55, ly + 0.55, 2.2), 0.04, P["beam"], parent=root, segs=6)
+        box("op_deck", (1.55, 1.55, 0.14), P["wood"], root, loc=(lx, ly, 2.6))
+        kit.block_e("op_room", P, root, lx, ly, 1.2, 1.2, 2.67, 0.95, posts=False, windows=False)
+        kit.roof_e("op_roof", P, root, lx, ly, 3.62, 1.2, 1.2, 0.7, over=0.35, curl=0.3)
+        kit.drape("op_dr", P, root, "y", lx, 3.55, 0.9, 0.85, y0=ly - 0.62)
+        kit.drape("op_dr2", P, root, "x", 0.6, h + 0.1, 1.1, 0.75, x0=-e - 0.2)
+        kit.flag("op_flag", P, root, (e - 0.25, e - 0.25, 0.1), 3.4, c, w=0.8, fh=1.0)
+        # a drum on a stand and a spear rack inside
+        cyl("op_drum", 0.3, 0.4, P["post"], root, loc=(0.75, -0.1, 0.75), rot=(90, 0, 0), at=(0, 0, -0.2), segs=14)
+        for s_ in (-1, 1):
+            rod(f"op_drumleg{s_}", (0.75 + 0.25 * s_, -0.1, 0.1), (0.75 + 0.15 * s_, -0.1, 0.6), 0.03, P["beam"],
+                parent=root, segs=6)
+        kit.weapon_rack("op_rack", P, root, (0.5, 1.0, 0.1), axis="x", n=4, east=True)
+    else:
+        # a palisade of sharpened stakes, a gap on the camera face
+        stake = P["wood"]
+        k = 0
+        for (p0, p1, gap) in (((-e, e), (e, e), None), ((e, -e), (e, e), None), ((-e, -e), (e, -e), (-0.55, 0.55)),
+                              ((-e, -e), (-e, e), None)):
+            L = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+            n = int(L / 0.24) + 1
+            for i in range(n):
+                f = i / (n - 1)
+                x, y = p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f
+                if gap and p0[1] == p1[1] and gap[0] < x < gap[1]:
+                    continue
+                hh = 1.35 + 0.12 * ((i * 7) % 3) / 2
+                rod(f"op_stake{k}", (x, y, 0.05), (x, y, hh), 0.11, stake, parent=root, segs=7)
+                cyl(f"op_point{k}", 0.11, 0.22, stake, root, loc=(x, y, hh), r2=0.0, segs=7)
+                k += 1
+            rod(f"op_rail{k}", (p0[0], p0[1], 0.95), (p1[0], p1[1], 0.95), 0.04, P["beam"], parent=root, segs=6)
+        # the watch platform: four posts, a deck, a plank hut under a gable roof, a ladder
+        for j, (dx, dy) in enumerate(((-0.6, -0.6), (0.6, -0.6), (0.6, 0.6), (-0.6, 0.6))):
+            rod(f"op_post{j}", (lx + dx, ly + dy, 0.05), (lx + dx, ly + dy, 2.6), 0.09, P["beam"], parent=root, segs=8)
+        rod("op_brace0", (lx - 0.6, ly - 0.6, 0.3), (lx + 0.6, ly - 0.6, 2.3), 0.04, P["beam"], parent=root, segs=6)
+        rod("op_brace1", (lx - 0.6, ly - 0.6, 0.3), (lx - 0.6, ly + 0.6, 2.3), 0.04, P["beam"], parent=root, segs=6)
+        box("op_deck", (1.6, 1.6, 0.14), P["wood"], root, loc=(lx, ly, 2.6))
+        kit.block_w("op_room", P, root, lx, ly, 1.2, 1.2, 2.67, 0.95, timber_from=0.0, windows=False, quoins=False)
+        kit.roof_w("op_roof", P, root, lx, ly, 3.62, 1.2, 1.2, 0.65, over=0.25)
+        for s_ in (-1, 1):
+            rod(f"op_ladder{s_}", (lx + 0.85 + 0.2 * s_, ly - 0.1, 0.05), (lx + 0.72 + 0.2 * s_, ly - 0.1, 2.6), 0.03,
+                P["beam"], parent=root, segs=6)
+        for i in range(7):
+            z = 0.35 + 0.33 * i
+            x = lx + 0.85 - 0.13 * z / 2.6
+            rod(f"op_rung{i}", (x - 0.2, ly - 0.1, z), (x + 0.2, ly - 0.1, z), 0.02, P["beam"], parent=root, segs=6)
+        kit.drape("op_dr", P, root, "y", lx, 3.55, 0.9, 0.85, y0=ly - 0.62)
+        kit.drape("op_dr2", P, root, "x", 0.6, 1.3, 1.1, 0.75, x0=-e - 0.2)
+        kit.flag("op_flag", P, root, (e - 0.25, e - 0.25, 0.05), 3.4, c, w=0.8, fh=1.0)
+        # a small canvas tent inside, its ridge along x
+        tent = [(-0.75, 0.0), (0.75, 0.0), (0.0, 1.0)]
+        slab("op_tent", tent, 1.3, P["canvas"], parent=root, loc=(0.55, 0.75, 0.12), plane="YZ")
+        rod("op_tentpole", (0.55, 0.05, 0.12), (0.55, 0.05, 1.2), 0.03, P["beam"], parent=root, segs=6)
+
+
 BUILDERS = {"lumber_camp": lumber_camp, "mine": mine, "granary": granary, "farm": farm, "range": range_,
             "mage_hall": mage_hall, "tower": tower, "wall": wall, "gate": gate, "branch_city": branch_city,
-            "smithy": smithy, "stable": stable, "workshop": workshop, "tower_fine": tower_fine, "farm_fine": farm_fine}
+            "smithy": smithy, "stable": stable, "workshop": workshop, "tower_fine": tower_fine, "farm_fine": farm_fine,
+            "outpost": outpost}

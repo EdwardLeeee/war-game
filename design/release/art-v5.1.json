@@ -1,0 +1,23 @@
+{
+ "tag": "art-v5.1",
+ "note": "哨所（D-080，使用者 2026-10-22 核准 R8-13、R8-14）：建築圖集加 Outpost（type 12，2×2，六個狀態都是自己的圖：outpost_<E|W>_build1/build2/build3/done/damaged/rubble），暫用版，用現在建築的畫風。其他（兵種、效果、資源點、城牆、地形）照 art-v5。",
+ "units": {
+  "farmer_e": {"run": 36849835568, "artifact": "production-farmer_e"},
+  "spear_e": {"run": 36849835568, "artifact": "production-spear_e"},
+  "xbow_e": {"run": 36850248764, "artifact": "production-xbow_e"},
+  "hcav_e": {"run": 36849835568, "artifact": "production-hcav_e"},
+  "siege_e": {"run": 36849835568, "artifact": "production-siege_e"},
+  "mage_e": {"run": 36849835568, "artifact": "production-mage_e"},
+  "farmer_w": {"run": 36849835568, "artifact": "production-farmer_w"},
+  "pike_w": {"run": 36849835568, "artifact": "production-pike_w"},
+  "bow_w": {"run": 36849835568, "artifact": "production-bow_w"},
+  "knight_w": {"run": 36849835568, "artifact": "production-knight_w"},
+  "siege_w": {"run": 36849835568, "artifact": "production-siege_w"},
+  "mage_w": {"run": 36849835568, "artifact": "production-mage_w"}
+ },
+ "effects": {"run": 39132395283, "artifact": "production-effects-atlas"},
+ "buildings": {"run": 39730695449, "artifact": "production-buildings"},
+ "castle": true,
+ "terrain": true,
+ "astc_sample": {"unit": "spear_e", "scale": 2, "layers": ["color", "team"]}
+}

@@ -240,6 +240,14 @@ for _i in range(0, len(_V5), 9):
     CAMERA[f"prod_terrain_{_i // 9}"] = proj.OBLIQUE
 
 # the output folder of a target: the parts of one item share a folder (states_* -> states, towns_* -> towns)
+# 哨所 (D-080; ceo 2026-10-21): the outpost in the art-v3/v5 style, every state, the pieces named as production's
+# (prod_<culture>_*: <kind>_<culture>_<state>), for the drafts and then art-v5.1
+OUTPOST = [dict(kind="outpost", culture=c, state=st, name=f"outpost_{c}_{s}") for c in CULTURES
+           for s, st in (("build1", "build_a1"), ("build2", "build_a2"), ("build3", "build_a3"), ("done", "done"),
+                         ("damaged", "damaged_a"), ("rubble", "destroyed_a"))]
+TARGETS["prod_outpost"] = OUTPOST
+CAMERA["prod_outpost"] = proj.OBLIQUE      # registered after the prod_* camera line above: set here
+
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
 FOLDER.update({t: "states" for t in TARGETS if t.startswith(("states2", "states3"))})

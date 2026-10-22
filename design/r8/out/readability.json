@@ -1,0 +1,347 @@
+{
+ "ground_lab": [
+  52.1,
+  -13.0,
+  18.6
+ ],
+ "grade": {
+  "brightness": 1.1,
+  "saturation": 0.85
+ },
+ "spear_e": {
+  "contrast_blue": {
+   "min": 2.77,
+   "max": 16.532,
+   "min_at": "death 朝向 1 第 8 格"
+  },
+  "contrast_red": {
+   "min": 3.949,
+   "max": 17.864,
+   "min_at": "death 朝向 1 第 8 格"
+  },
+  "visible_blue": {
+   "min": 0.99,
+   "max": 0.998,
+   "min_at": "attack 朝向 0 第 6 格"
+  },
+  "visible_red": {
+   "min": 0.99,
+   "max": 0.998,
+   "min_at": "attack 朝向 0 第 6 格"
+  },
+  "team": {
+   "min": 0.177,
+   "max": 0.369,
+   "min_at": "death 朝向 1 第 4 格"
+  },
+  "frames": 288
+ },
+ "bow_e": {
+  "contrast_blue": {
+   "min": 4.085,
+   "max": 14.68,
+   "min_at": "death 朝向 1 第 8 格"
+  },
+  "contrast_red": {
+   "min": 6.292,
+   "max": 17.226,
+   "min_at": "death 朝向 3 第 8 格"
+  },
+  "visible_blue": {
+   "min": 0.959,
+   "max": 0.994,
+   "min_at": "attack 朝向 1 第 8 格"
+  },
+  "visible_red": {
+   "min": 0.96,
+   "max": 0.994,
+   "min_at": "death 朝向 2 第 5 格"
+  },
+  "team": {
+   "min": 0.416,
+   "max": 0.678,
+   "min_at": "death 朝向 2 第 5 格"
+  },
+  "frames": 288
+ },
+ "farmer_e": {
+  "contrast_blue": {
+   "min": 0.001,
+   "max": 10.135,
+   "min_at": "work_mine 朝向 1 第 2 格"
+  },
+  "contrast_red": {
+   "min": 0.009,
+   "max": 9.194,
+   "min_at": "attack 朝向 0 第 5 格"
+  },
+  "visible_blue": {
+   "min": 0.783,
+   "max": 0.923,
+   "min_at": "work_build 朝向 6 第 6 格"
+  },
+  "visible_red": {
+   "min": 0.783,
+   "max": 0.923,
+   "min_at": "work_build 朝向 6 第 6 格"
+  },
+  "team": {
+   "min": 0.074,
+   "max": 0.369,
+   "min_at": "work_farm 朝向 2 第 1 格"
+  },
+  "frames": 544
+ },
+ "hcav_e": {
+  "contrast_blue": {
+   "min": 11.943,
+   "max": 25.077,
+   "min_at": "death 朝向 5 第 6 格"
+  },
+  "contrast_red": {
+   "min": 12.284,
+   "max": 25.718,
+   "min_at": "death 朝向 5 第 6 格"
+  },
+  "visible_blue": {
+   "min": 0.977,
+   "max": 0.999,
+   "min_at": "death 朝向 5 第 8 格"
+  },
+  "visible_red": {
+   "min": 0.977,
+   "max": 0.999,
+   "min_at": "death 朝向 5 第 8 格"
+  },
+  "team": {
+   "min": 0.045,
+   "max": 0.148,
+   "min_at": "walk 朝向 6 第 3 格"
+  },
+  "frames": 288
+ },
+ "siege_e": {
+  "contrast_blue": {
+   "min": 5.942,
+   "max": 13.341,
+   "min_at": "death 朝向 2 第 7 格"
+  },
+  "contrast_red": {
+   "min": 6.123,
+   "max": 14.138,
+   "min_at": "death 朝向 2 第 4 格"
+  },
+  "visible_blue": {
+   "min": 0.777,
+   "max": 0.925,
+   "min_at": "death 朝向 6 第 2 格"
+  },
+  "visible_red": {
+   "min": 0.777,
+   "max": 0.926,
+   "min_at": "death 朝向 6 第 2 格"
+  },
+  "team": {
+   "min": 0.006,
+   "max": 0.272,
+   "min_at": "death 朝向 2 第 2 格"
+  },
+  "frames": 288
+ },
+ "mage_e": {
+  "contrast_blue": {
+   "min": 5.101,
+   "max": 25.046,
+   "min_at": "fall 朝向 3 第 11 格"
+  },
+  "contrast_red": {
+   "min": 5.821,
+   "max": 25.339,
+   "min_at": "fall 朝向 1 第 11 格"
+  },
+  "visible_blue": {
+   "min": 0.892,
+   "max": 1.0,
+   "min_at": "fall 朝向 5 第 4 格"
+  },
+  "visible_red": {
+   "min": 0.899,
+   "max": 1.0,
+   "min_at": "fall 朝向 5 第 4 格"
+  },
+  "team": {
+   "min": 0.063,
+   "max": 0.27,
+   "min_at": "attack 朝向 2 第 7 格"
+  },
+  "frames": 752
+ },
+ "farmer_w": {
+  "contrast_blue": {
+   "min": 0.469,
+   "max": 11.544,
+   "min_at": "attack 朝向 6 第 3 格"
+  },
+  "contrast_red": {
+   "min": 0.16,
+   "max": 10.926,
+   "min_at": "attack 朝向 6 第 3 格"
+  },
+  "visible_blue": {
+   "min": 0.92,
+   "max": 0.998,
+   "min_at": "work_mine 朝向 5 第 4 格"
+  },
+  "visible_red": {
+   "min": 0.92,
+   "max": 0.998,
+   "min_at": "work_mine 朝向 5 第 4 格"
+  },
+  "team": {
+   "min": 0.018,
+   "max": 0.254,
+   "min_at": "attack 朝向 0 第 4 格"
+  },
+  "frames": 544
+ },
+ "pike_w": {
+  "contrast_blue": {
+   "min": 0.376,
+   "max": 9.331,
+   "min_at": "death 朝向 2 第 9 格"
+  },
+  "contrast_red": {
+   "min": 0.053,
+   "max": 10.056,
+   "min_at": "death 朝向 3 第 7 格"
+  },
+  "visible_blue": {
+   "min": 0.876,
+   "max": 0.974,
+   "min_at": "attack 朝向 6 第 7 格"
+  },
+  "visible_red": {
+   "min": 0.875,
+   "max": 0.975,
+   "min_at": "attack 朝向 6 第 7 格"
+  },
+  "team": {
+   "min": 0.163,
+   "max": 0.403,
+   "min_at": "death 朝向 2 第 6 格"
+  },
+  "frames": 288
+ },
+ "bow_w": {
+  "contrast_blue": {
+   "min": 0.067,
+   "max": 9.366,
+   "min_at": "death 朝向 0 第 7 格"
+  },
+  "contrast_red": {
+   "min": 0.608,
+   "max": 10.519,
+   "min_at": "death 朝向 0 第 6 格"
+  },
+  "visible_blue": {
+   "min": 0.925,
+   "max": 0.981,
+   "min_at": "death 朝向 6 第 6 格"
+  },
+  "visible_red": {
+   "min": 0.925,
+   "max": 0.981,
+   "min_at": "death 朝向 6 第 6 格"
+  },
+  "team": {
+   "min": 0.081,
+   "max": 0.314,
+   "min_at": "death 朝向 6 第 6 格"
+  },
+  "frames": 288
+ },
+ "knight_w": {
+  "contrast_blue": {
+   "min": 2.914,
+   "max": 11.144,
+   "min_at": "death 朝向 6 第 5 格"
+  },
+  "contrast_red": {
+   "min": 5.199,
+   "max": 12.421,
+   "min_at": "death 朝向 6 第 6 格"
+  },
+  "visible_blue": {
+   "min": 0.976,
+   "max": 0.995,
+   "min_at": "death 朝向 6 第 8 格"
+  },
+  "visible_red": {
+   "min": 0.978,
+   "max": 0.996,
+   "min_at": "death 朝向 6 第 8 格"
+  },
+  "team": {
+   "min": 0.284,
+   "max": 0.619,
+   "min_at": "idle 朝向 6 第 6 格"
+  },
+  "frames": 288
+ },
+ "siege_w": {
+  "contrast_blue": {
+   "min": 1.429,
+   "max": 10.019,
+   "min_at": "attack 朝向 6 第 3 格"
+  },
+  "contrast_red": {
+   "min": 1.899,
+   "max": 10.764,
+   "min_at": "death 朝向 6 第 5 格"
+  },
+  "visible_blue": {
+   "min": 0.792,
+   "max": 0.936,
+   "min_at": "death 朝向 6 第 1 格"
+  },
+  "visible_red": {
+   "min": 0.794,
+   "max": 0.936,
+   "min_at": "death 朝向 6 第 1 格"
+  },
+  "team": {
+   "min": 0.013,
+   "max": 0.168,
+   "min_at": "death 朝向 6 第 0 格"
+  },
+  "frames": 288
+ },
+ "mage_w": {
+  "contrast_blue": {
+   "min": 7.039,
+   "max": 27.793,
+   "min_at": "fall 朝向 1 第 10 格"
+  },
+  "contrast_red": {
+   "min": 7.75,
+   "max": 28.207,
+   "min_at": "fall 朝向 1 第 10 格"
+  },
+  "visible_blue": {
+   "min": 0.966,
+   "max": 0.998,
+   "min_at": "shatter 朝向 2 第 2 格"
+  },
+  "visible_red": {
+   "min": 0.967,
+   "max": 0.998,
+   "min_at": "shatter 朝向 2 第 2 格"
+  },
+  "team": {
+   "min": 0.037,
+   "max": 0.257,
+   "min_at": "fall 朝向 6 第 8 格"
+  },
+  "frames": 752
+ }
+}

@@ -21,13 +21,13 @@ FOOTPRINT = {
     "main_city": (4, 4), "house": (2, 2), "lumber_camp": (2, 2), "mine": (2, 2), "granary": (2, 2),
     "farm": (3, 3), "barracks": (3, 3), "range": (3, 3), "mage_hall": (3, 3),
     "tower": (2, 2), "wall": (1, 1), "gate": (4, 1), "branch_city": (3, 3), "smithy": (2, 2),
-    "stable": (3, 3), "workshop": (3, 3), "tower_fine": (2, 2), "farm_fine": (3, 3),
+    "stable": (3, 3), "workshop": (3, 3), "tower_fine": (2, 2), "farm_fine": (3, 3), "outpost": (2, 2),
 }
 NAMES = {
     "main_city": "主城", "house": "民居", "lumber_camp": "伐木場", "mine": "礦場", "granary": "糧倉",
     "farm": "農田", "barracks": "兵營", "range": "射場", "mage_hall": ("術院", "晶塔"),
     "tower": "箭樓", "wall": "城牆", "gate": "城門", "branch_city": "分城", "smithy": "鐵匠鋪",
-    "stable": "馬廄", "workshop": "砲坊",
+    "stable": "馬廄", "workshop": "砲坊", "outpost": "哨所",
 }
 
 
