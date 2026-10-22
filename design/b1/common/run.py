@@ -200,8 +200,9 @@ for _i in range(0, len(_R606C), 7):
 _V4 = ([dict(kind=k, culture=c, opts=dict(state=s), name=f"castle_{k}_{c}_{s}", footprint=list(_castle.PIECE_FOOT[k]))
         for c in CULTURES for k in _castle.PIECE_FOOT
         for s in ("intact", "ruin") + (_castle.GATE_STATES if k in _castle.GATE_PIECES else ())]
-       + [dict(kind=k, culture=c, opts=dict(state="intact", front=True), name=f"castle_{k}_{c}_intact_front",
-               footprint=list(_castle.PIECE_FOOT[k]), passes=["beauty", "mask"]) for c in CULTURES for k in _castle.FRONTS]
+       + [dict(kind=k, culture=c, opts=dict(state=s, front=True), name=f"castle_{k}_{c}_{s}_front",
+               footprint=list(_castle.PIECE_FOOT[k]), passes=["beauty", "mask"])
+          for c in CULTURES for k in _castle.FRONTS for s in ("intact", "ruin")]
        + [dict(kind="tground", culture=c, opts=dict(plan=[(0.0, 0.0, t)]), name=f"castle_tile_{t}_{c}")
           for c in CULTURES for t in ("square", "street", "garden")]
        + [dict(kind="ttower3", culture=c, state=st, name=f"town_tower3_{c}_{s}")
@@ -229,7 +230,7 @@ for _c in CULTURES:
         + [dict(kind=k, culture=_c, opts=dict(state="intact"), name=f"castle_{k}_{_c}_intact", footprint=[1, 1])
            for k in D096_WALLS]
         + [dict(kind=k, culture=_c, opts=dict(state="intact", front=True), name=f"castle_{k}_{_c}_intact_front",
-                footprint=[1, 1], passes=["beauty", "mask"]) for k in D096_FRONTS]
+                footprint=list(_castle.PIECE_FOOT[k]), passes=["beauty", "mask"]) for k in D096_FRONTS]
         + [dict(kind=k, culture=_c, opts=dict(state="intact"), name=f"castle_{k}_{_c}_intact", footprint=list(_castle.PIECE_FOOT[k]))
            for k in ("pal_corner", "sw_ctower")])                     # unchanged: the corners on the boards
     TARGETS[f"d096w_{_c}"] = [pc for pc in TARGETS[f"d096_{_c}"] if pc["kind"] not in D096_GATES]

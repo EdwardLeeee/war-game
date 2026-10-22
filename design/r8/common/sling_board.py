@@ -1,8 +1,9 @@
 """D-096 民兵投石 draft: the militia's sling throw (production/blender/anims.py extend_sling) on the R8 spearman and
 pikeman, every frame of three facings at the phone's 3x pixels and at actual size, and a GIF per culture.
 
-python3 design/r8/common/sling_board.py RAW_E RAW_W
-  RAW_*  folders of <unit>_sling_f<facing>_<ii>_x3_beauty.png (render_prod-style frames, e.g. the local preview)
+python3 design/r8/common/sling_board.py SRC_E SRC_W
+  SRC_*  the unit's atlas json (CI r7-v8-<unit>: atlas_x3/<unit>.json), or a folder of
+         <unit>_sling_f<facing>_<ii>_x3_beauty.png (render_prod-style frames, e.g. a local preview)
 writes design/r8/out/R8-19-民兵投石-mobile.png and R8-19-民兵投石-<東陸|西陸>.gif
 """
 import sys
@@ -22,10 +23,21 @@ FROM_M = (0.41, 0.96, 1.78)          # anims.sling_from: the pouch on the frame 
 BG = (104, 120, 84)
 
 
-def frames(raw, unit, facing):
+_ATLAS = {}
+
+
+def frames(src, unit, facing):
+    """The ten frames of one facing on the board's ground: from a folder of raw renders, or from a unit atlas json
+    (the CI artifact r7-v8-<unit>: atlas_x3/<unit>.json, in the militia's neutral colour)."""
     out = []
     for i in range(10):
-        im = Image.open(Path(raw) / f"{unit}_sling_f{facing}_{i:02d}_x3_beauty.png").convert("RGBA")
+        if str(src).endswith(".json"):
+            a = _ATLAS.setdefault(src, B.field.Atlas(src))
+            body, (ax, ay), _ = B.frame(a, unit, "sling", facing, i, "neutral")     # the militia are neutral
+            im = Image.new("RGBA", (360, 300), (0, 0, 0, 0))
+            im.alpha_composite(body, (int(180 - ax), int(250 - ay)))
+        else:
+            im = Image.open(Path(src) / f"{unit}_sling_f{facing}_{i:02d}_x3_beauty.png").convert("RGBA")
         bg = Image.new("RGBA", im.size, (*BG, 255))
         bg.alpha_composite(im)
         out.append(bg.convert("RGB"))
@@ -69,7 +81,8 @@ def main(raw_e, raw_w):
             "石頭由 client 畫（模擬沒有投射物事件，照朝向飛）。\n"
             f"給 client：放開在第 {RELEASE} 格；石頭從兵腳下往右 {FROM_M[0]} 公尺、往前 {FROM_M[1]} 公尺、往上 {FROM_M[2]} 公尺出發"
             "（鏡像的朝向 3、4、5 往左）；站在牆上時再加牆的走道高度 `walk_m`。\n"
-            "圖是 R8 寫實版（已核准、量產中）；現在線上的兵用同一套骨架，同一個動作也能套上。上：手機 3 倍；下：實際大小。另附 GIF。")
+            "圖是 R8 寫實版（CI run 39729248473 的圖集，穿模檢查 0 格）；現在線上的兵（art-v4 畫風）也試過，同一個動作套得上。"
+            "上：手機 3 倍；下：實際大小。另附 GIF。")
     parts = [boards.header(W, LABEL, text)]
     for raw, unit, name in ((raw_e, "spear_e", "東陸槍兵"), (raw_w, "pike_w", "西陸長矛兵")):
         rows = []

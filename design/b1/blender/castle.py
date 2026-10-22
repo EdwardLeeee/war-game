@@ -49,16 +49,42 @@ def _size(side, along, across, h):
 def front_only(root, stand, walk, reach=0.4, gap=0.15):
     """Keep, for the camera, only what stands in front of a unit on the wall (D-096): the parts nearer the camera than
     the spot `stand` (by `gap`), across his width (`reach` either side of him; on a north or south wall the whole cell,
-    where his bow and arms reach) and rising above the walk he stands on.
+    where his bow and arms reach) and rising above the walk he stands on. `stand` may be a list of spots (a corner tower,
+    a gate's piers): a part in front of any of them is kept.
     The rest stays in the scene as a holdout (transparent, still casting its shadows), so the kept parts look exactly as
     in the whole piece, which the client draws under the unit."""
     import bpy
     import states
     bpy.context.view_layer.update()
+    spots = stand if isinstance(stand[0], (list, tuple)) else [stand]
+    ce, se = math.cos(math.radians(lib.CAM_ELEV)), math.sin(math.radians(lib.CAM_ELEV))
+
+    def v(y, z):                             # how high a point shows in the picture (the camera looks along +y)
+        return y * se + z * ce
+
+    def hides(box, spot):
+        """In front of the unit at `spot` and over him in the picture (a part in front of one unit on a piece with
+        several, but not over him, must not be drawn over the others)."""
+        x0, y0, z0, x1, y1, z1 = box
+        sx, sy, sz = spot
+        if not ((y0 + y1) / 2 < sy - gap and x0 < sx + reach and x1 > sx - reach and z1 > walk + 0.05):
+            return False
+        lo = min(v(y, z) for y in (y0, y1) for z in (z0, z1))
+        hi = max(v(y, z) for y in (y0, y1) for z in (z0, z1))
+        return lo < v(sy, sz) + 1.9 * ce and hi > v(sy, sz)
     for ob in kit.parts_under(root):
-        x0, y0, z0, x1, y1, z1 = states._bbox(ob)
-        if not ((y0 + y1) / 2 < stand[1] - gap and x0 < stand[0] + reach and x1 > stand[0] - reach and z1 > walk + 0.05):
+        box = states._bbox(ob)
+        if not any(hides(box, sp) for sp in spots):
             ob["back_holdout"] = True
+
+
+def _stand_cells(root, foot, spots):
+    """Where a unit stands on each cell of a piece that sims lets units onto (D-096: the corners and the gates' piers
+    are wall cells too): {(dx, dy): (x, y, z)}, dx, dy the cell from the footprint's north-west one (the sim's axes),
+    x, y, z the spot in the piece's metres. Marked as empties stand_at_<dx>_<dy>."""
+    for (dx, dy), at in sorted(spots.items()):
+        _mark(f"stand_at_{dx}_{dy}", root, at)
+    return list(spots.values())
 
 
 def _mark(name, parent, at):
@@ -186,7 +212,11 @@ def pal_e(root, c, variant=0, state="intact", front=False):
     _pal_side(root, c, "e", state, front)
 
 
-def pal_corner(root, c, variant=0, state="intact"):
+PC_DECK = 3.07                       # the watch post's deck: a unit on the corner stands there (D-096)
+PC_ROOF = 5.2                        # its roof, high enough over the deck for a man (art-v4: 3.9, nobody stood there)
+
+
+def pal_corner(root, c, variant=0, state="intact", front=False):
     """A watch post on the corner: four legs, a deck at 3 m, a rail, a small roof; the owner's hanging in front."""
     P = kit.palette(c)
     ruin = state == "ruin"
@@ -194,19 +224,22 @@ def pal_corner(root, c, variant=0, state="intact"):
     s = 0.75
     for sx in (-1, 1):
         for sy in (-1, 1):
-            cyl(f"pc_leg{sx}{sy}", 0.12, 3.9, wood, root, loc=(sx * s, sy * s, 0.0), segs=8)
+            cyl(f"pc_leg{sx}{sy}", 0.12, PC_ROOF, wood, root, loc=(sx * s, sy * s, 0.0), segs=8)
     box("pc_deck", (1.9, 1.9, 0.14), P["beam"], root, loc=(0, 0, 3.0))
     for k, (a, b, axis) in enumerate(((0, -0.92, "x"), (0, 0.92, "x"), (-0.92, 0, "y"), (0.92, 0, "y"))):
         box(f"pc_rail{k}", (1.9, 0.08, 0.5) if axis == "x" else (0.08, 1.9, 0.5), P["beam"], root, loc=(a, b, 3.3))
     for sx in (-1, 1):                       # braces under the deck
         rod(f"pc_br{sx}", (sx * s, -s, 0.4), (-sx * s, -s, 2.9), 0.05, P["beam"], parent=root)
     if c == "E":
-        kit.roof_e("pc_roof", P, root, 0, 0, 3.9, 1.8, 1.8, 0.8, over=0.3, curl=0.35)
+        kit.roof_e("pc_roof", P, root, 0, 0, PC_ROOF, 1.8, 1.8, 0.8, over=0.3, curl=0.35)
     else:
-        kit.roof_w("pc_roof", dict(P, tile=P["thatch"]), root, 0, 0, 3.9, 1.8, 1.8, 0.9, over=0.2, ridge="x")
+        kit.roof_w("pc_roof", dict(P, tile=P["thatch"]), root, 0, 0, PC_ROOF, 1.8, 1.8, 0.9, over=0.2, ridge="x")
     _hang("pc_hang", P, root, "y", 0, 2.95, 1.2, 1.4, ruin, y0=-0.92)
+    spots = _stand_cells(root, (1, 1), {(0, 0): (0.0, 0.0, PC_DECK)})
     if ruin:
         _soot(root)
+    if front:
+        front_only(root, spots, PC_DECK, reach=0.45)
 
 
 def _pal_gate(root, c, axis, state):
@@ -383,8 +416,10 @@ def sw_e(root, c, variant=0, state="intact", front=False):
     _sw_side(root, c, "e", state, front)
 
 
-def sw_ctower(root, c, variant=0, state="intact"):
-    """The corner tower, 2 x 2 cells. East: a 角樓, a brick base with a two-roofed pavilion; west: a round tower."""
+def sw_ctower(root, c, variant=0, state="intact", front=False):
+    """The corner tower, 2 x 2 cells. East: a 角樓, a brick base with a two-roofed pavilion; west: a round tower.
+    D-096: units stand on its top round the pavilion (east) or the roof cone (west, narrowed to leave a walk); its
+    front cells on the front of the top, the back ones at its sides, so that none stands behind the pavilion."""
     P = kit.palette(c)
     ruin = state == "ruin"
     if c == "E":
@@ -405,22 +440,34 @@ def sw_ctower(root, c, variant=0, state="intact"):
             a = 2 * math.pi * k / 10
             box(f"ct_m{k}", (0.45, 0.35, 0.6), P["stone"], root, loc=(R * 0.9 * math.cos(a), R * 0.9 * math.sin(a), Hb + 0.3),
                 rot=(0, 0, math.degrees(a) + 90), bevel=0.02)
-        cyl("ct_roof", R * 0.85, 2.4, P["tile"], root, loc=(0, 0, Hb + 0.1), r2=0.03, segs=24)
+        cyl("ct_roof", R * 0.5, 2.4, P["tile"], root, loc=(0, 0, Hb + 0.1), r2=0.03, segs=24)     # art-v4: R * 0.85
         for z in (2.0, 4.0):
             box(f"ct_slit{z}", (0.12, 0.1, 0.7), P["dark"], root, loc=(0, -R + 0.02, z), outline=False)
         _hang("ct_hang", P, root, "y", 0, Hb - 0.7, 1.2, 2.4, ruin, y0=-R + 0.05)
         top = Hb + 2.5
+    # the cells (from the north-west one): (0, 0) NW, (1, 0) NE, (0, 1) SW, (1, 1) SE; SW and SE are the front ones
+    if c == "E":
+        z, f, sd = Hb + 0.2, 1.55, 1.55
+        spots = {(0, 1): (-0.9, -f, z), (1, 1): (0.9, -f, z), (0, 0): (-sd, -0.35, z), (1, 0): (sd, -0.35, z)}
+    else:
+        z = Hb + 0.02
+        spots = {(0, 1): (-0.8, -0.8, z), (1, 1): (0.8, -0.8, z), (0, 0): (-1.1, -0.3, z), (1, 0): (1.1, -0.3, z)}
+    spots = _stand_cells(root, (2, 2), spots)
     if ruin:
         _rag("ct_frag", P, root, 0.1, -0.3, top + 0.6)
         _stones("ct_st", P, root, ((-1.9, -1.8), (1.4, -2.0), (2.0, -1.2)), seed=7)
         _soot(root)
     else:
         kit.flag("ct_flag", P, root, (0, 0, top - 0.1), 2.2, c, w=1.2, fh=1.5)
+    if front:
+        front_only(root, spots, spots[0][2], reach=0.4)
 
 
-def sw_gate_x(root, c, variant=0, state="intact"):
+def sw_gate_x(root, c, variant=0, state="intact", front=False):
     """The north and south gates along x: a pier on each side cell, the passage under the gate tower. variant 0: the
-    2-cell passage (4 cells in all); 1: the 3-cell passage of the random maps' centred big city (5 cells, core.large3)."""
+    2-cell passage (4 cells in all); 1: the 3-cell passage of the random maps' centred big city (5 cells, core.large3).
+    D-096: the piers are wall cells; a unit on one stands on the gate tower's deck in front of the hall (east), on the
+    round tower's top round its cone (west, narrowed to leave a walk)."""
     P = kit.palette(c)
     ruin = state == "ruin"
     H = WALL_H[c] + 0.4
@@ -455,7 +502,7 @@ def sw_gate_x(root, c, variant=0, state="intact"):
                 a = 2 * math.pi * k / 8
                 box(f"gx_tm{sx}{k}", (0.35, 0.3, 0.5), P["stone"], root, loc=(x + 0.9 * math.cos(a), -0.2 + 0.9 * math.sin(a),
                                                                                   H + 2.25), rot=(0, 0, math.degrees(a)))
-            cyl(f"gx_tr{sx}", 0.95, 1.8, P["tile"], root, loc=(x, -0.2, H + 2.05), r2=0.03, segs=20)
+            cyl(f"gx_tr{sx}", 0.4, 1.8, P["tile"], root, loc=(x, -0.2, H + 2.05), r2=0.03, segs=20)     # art-v4: 0.95
         kit.roof_flat_parapet("gx_par", P, root, 0, 0, H, op + 0.4, 2.0, merlon=0.45, gap=0.4, h=0.55, culture="W")
         if state in GATE_STATES:             # D-096: the portcullis let down in front of the leaves (torn out: broken)
             gates.portcullis("gx_port", P, root, "x", op, H - 1.15, -0.75, state)
@@ -478,9 +525,15 @@ def sw_gate_x(root, c, variant=0, state="intact"):
     else:
         for sx in (-1, 1):
             kit.flag(f"gx_flag{sx}", P, root, (sx * (L / 2 - 0.5), -0.2, top - (1.5 if c == "E" else 0.3)), 2.0, c, w=1.0, fh=1.4)
+    n = 4 + variant
+    xp = op / 2 + pier / 2
+    spots = _stand_cells(root, (n, 1), {(0, 0): (-xp, -1.0, H + 0.2), (n - 1, 0): (xp, -1.0, H + 0.2)} if c == "E" else
+                         {(0, 0): (-xp, -0.77, H + 2.0), (n - 1, 0): (xp, -0.77, H + 2.0)})
+    if front:
+        front_only(root, spots, spots[0][2], reach=0.4)
 
 
-def sw_gate_y(root, c, variant=0, state="intact"):
+def sw_gate_y(root, c, variant=0, state="intact", front=False):
     """The east and west gates along y: a pier tower on each side cell and the open gap between (seen from the camera
     the side walls are edge-on, so a span over the passage would look like a wall). variant as sw_gate_x."""
     P = kit.palette(c)
@@ -494,8 +547,10 @@ def sw_gate_y(root, c, variant=0, state="intact"):
         if c == "E":
             box(f"gy_pier{sy}", (2.0, pier, H), P["brick"], root, loc=(0, y, H / 2), bevel=0.04)
             kit.roof_flat_parapet(f"gy_par{sy}", P, root, 0, y, H, 2.0, pier, merlon=0.4, gap=0.35, h=0.45, culture="E")
-            kit.block_e(f"gy_kiosk{sy}", P, root, 0, y, 1.4, 1.4, H + 0.2, 1.2, windows=False)
-            kit.roof_e(f"gy_roof{sy}", P, root, 0, y, H + 1.4, 1.9, 1.9, 0.8, over=0.35, curl=0.45)
+            # the kiosk set back from the camera side, leaving a walk in front of it for a unit on the pier (D-096;
+            # art-v4: 1.4 m square in the middle)
+            kit.block_e(f"gy_kiosk{sy}", P, root, 0, y + 0.3, 1.1, 1.1, H + 0.2, 1.2, windows=False)
+            kit.roof_e(f"gy_roof{sy}", P, root, 0, y + 0.3, H + 1.4, 1.6, 1.6, 0.8, over=0.35, curl=0.45)
             top = H + 2.3
         else:
             cyl(f"gy_tw{sy}", 1.0, H + 1.8, P["stone"], root, loc=(0, y, 0.0), segs=20)
@@ -503,14 +558,14 @@ def sw_gate_y(root, c, variant=0, state="intact"):
                 a = 2 * math.pi * k / 8
                 box(f"gy_tm{sy}{k}", (0.33, 0.3, 0.5), P["stone"], root, loc=(0.85 * math.cos(a), y + 0.85 * math.sin(a), H + 2.05),
                     rot=(0, 0, math.degrees(a)))
-            cyl(f"gy_tr{sy}", 0.9, 1.7, P["tile"], root, loc=(0, y, H + 1.85), r2=0.03, segs=20)
+            cyl(f"gy_tr{sy}", 0.4, 1.7, P["tile"], root, loc=(0, y, H + 1.85), r2=0.03, segs=20)     # art-v4: 0.9
             top = H + 3.6
         _hang(f"gy_hang{sy}", P, root, "y", 0, H - 0.8, 1.2, 1.9, ruin, y0=y - pier / 2 - (0.05 if c == "E" else 0.0))
         if ruin:
             _rag(f"gy_rag{sy}", P, root, 0.1, y - 0.2, top + 0.4)
         else:
             kit.flag(f"gy_flag{sy}", P, root, (0, y, top - 0.1), 2.0, c, w=1.0, fh=1.4)
-        _mark(f"shoot_at_{(sy + 1) // 2}", root, (0, y, H + 0.8) if c == "E" else (0, y, H + 2.2))
+        _mark(f"shoot_at_{(sy + 1) // 2}", root, (0, y + 0.3, H + 0.8) if c == "E" else (0, y, H + 2.2))
     if state in GATE_STATES:
         # D-096: the leaves across the passage. Edge-on to the camera and behind the near pier, so what shows is what
         # spills out of the passage's mouths: the fire and the splinters (damaged), the fallen leaf (broken)
@@ -531,6 +586,14 @@ def sw_gate_y(root, c, variant=0, state="intact"):
     if ruin:
         _stones("gy_st", P, root, ((-1.5, -0.4), (1.4, 0.6)), seed=11)
         _soot(root)
+    # D-096: a unit on a pier stands in front of its kiosk (east), on its round tower round the cone (west); the
+    # north pier is the footprint's first cell
+    n = 4 + variant
+    yp = op / 2 + pier / 2
+    spots = _stand_cells(root, (1, n), {(0, 0): (0.0, yp - 0.47, H + 0.2), (0, n - 1): (0.0, -yp - 0.47, H + 0.2)} if c == "E"
+                         else {(0, 0): (0.0, yp - 0.57, H + 1.8), (0, n - 1): (0.0, -yp - 0.57, H + 1.8)})
+    if front:
+        front_only(root, spots, spots[0][2], reach=0.4)
 
 
 def ttower3(root, c, variant=0):
@@ -562,12 +625,12 @@ def tower3_state(root, c, state):
         raise ValueError(state)
 
 
-def gate_x3(root, c, variant=0, state="intact"):
-    sw_gate_x(root, c, variant=1, state=state)
+def gate_x3(root, c, variant=0, state="intact", front=False):
+    sw_gate_x(root, c, variant=1, state=state, front=front)
 
 
-def gate_y3(root, c, variant=0, state="intact"):
-    sw_gate_y(root, c, variant=1, state=state)
+def gate_y3(root, c, variant=0, state="intact", front=False):
+    sw_gate_y(root, c, variant=1, state=state, front=front)
 
 
 FOOTPRINT = {"pal_x": (1, 1), "pal_y": (1, 1), "pal_corner": (1, 1), "pal_gate_x": (3, 1), "pal_gate_y": (1, 3),

@@ -163,7 +163,8 @@ SIDES = ("n", "s", "w", "e")
 PIECE_FOOT.update({f"{w}_{d}": (1, 1) for w in ("pal", "sw") for d in SIDES})
 GATE_PIECES = ("pal_gate_x", "pal_gate_y", "sw_gate_x", "sw_gate_y", "sw_gate_x3", "sw_gate_y3")
 GATE_STATES = ("closed", "damaged", "broken")      # blender/gates.py; "intact" is the open gate
-FRONTS = ("pal_s", "sw_n", "sw_s")                  # something stands in front of a unit on them (castle.front_only)
+FRONTS = ("pal_s", "sw_n", "sw_s", "pal_corner", "sw_ctower", "sw_gate_x", "sw_gate_y", "sw_gate_x3", "sw_gate_y3")
+# ^ the pieces whose front layer (castle.front_only) may hold something; an empty one is left out when packing
 INWARD = {"n": (0, 1), "s": (0, -1), "w": (1, 0), "e": (-1, 0)}   # toward the town, in the sim's cells (+y south)
 
 
