@@ -1,0 +1,592 @@
+{
+ "traces": [
+  {
+   "name": "base-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "a8-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "a8-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8
+   }
+  },
+  {
+   "name": "w-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "w-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "r3-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "r3-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "aw-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "aw-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true
+   }
+  },
+  {
+   "name": "awr-nnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-nnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-nnrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-nnrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map random --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-nn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-nn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-nnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-nnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty normal,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  },
+  {
+   "name": "awr-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "normalBaseLess": 8,
+    "normalWalledTowns": true,
+    "normalTownRest": 3
+   }
+  }
+ ]
+}
