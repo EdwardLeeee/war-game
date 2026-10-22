@@ -11,7 +11,6 @@ import {
   AUTO_TRAIN,
   BUILDING_STRIDE,
   BuildingField,
-  BuildingFlag,
   BuildingType,
   CELL,
   type GameStats,
@@ -219,6 +218,14 @@ export class Hud {
       governWaiting: (town: number) => game.governWaits.has(town),
       cancelGovernWait: (town: number) => game.cancelGovernWait(town),
       reserveRaised: () => game.governWaits.size > 0,
+      autoPaused: (building: number) => game.autoPaused(building),
+      toggleAutoPaused: (building: number) => game.toggleAutoPaused(building),
+      trainingLine: (building: number) => game.trainingLine(building),
+      villagerLine: () => game.villagerLine(),
+      villagerTarget: () => game.autoArmy.villagerTarget,
+      stepVillagers: (by: number) => game.stepVillagerTarget(by),
+      villagersPaused: () => game.autoArmy.villagersPaused,
+      toggleVillagers: () => game.toggleVillagers(),
       garrison: (town: number) => game.army.garrisonOf(town).length,
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
@@ -522,17 +529,11 @@ export class Hud {
   }
 
   /**
-   * 人口滿了 (D-054: the brief asks for a word in the message strip): one of our barracks,
-   * ranges or mage halls has stopped 自動訓練 for want of room; said once each time it starts.
+   * 人口滿了 (D-054: the brief asks for a word in the message strip): 自動訓練 (the screen's, D-098)
+   * has stopped for want of room; said once each time it starts.
    */
   private warnPopulationFull(): void {
-    const view = this.game.view;
-    const b = view?.curr?.snap.buildings;
-    if (view === null || b === undefined) return;
-    let full = false;
-    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-      if (b[o + BuildingField.owner] === view.me && (b[o + BuildingField.flags] & BuildingFlag.AutoPopulationFull) !== 0) full = true;
-    }
+    const full = this.game.autoPopulationFull;
     if (full && !this.populationFull) this.game.toast("人口滿了，自動訓練停下來：蓋民居");
     this.populationFull = full;
   }
