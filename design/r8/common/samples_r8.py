@@ -75,8 +75,22 @@ POINTS["W"] = (
     "・真實的建築比遊戲占地大 2–5 倍：量體壓縮到格子裡，比例和材料照真的。玩家色在旗子和掛布上。")
 
 
+RELOOK = ("2026-10-23 重出：使用者 2026-10-22 核准的那一版是在 ui 本機出的圖，工具漏了寫實設定，沒有 CC0 材質、也不是寫實打光。"
+          "這一版是量產真正的樣子（形狀和配置沒變）。\n")
+
+
+def realistic(meta, name):
+    """Every piece on an R8 board was rendered in the R8 look (render_b1.py LOOK "r8": the CC0 textures, R7's lights,
+    no outlines), as production renders it: the boards say 寫實、CC0 材質, so a piece without it stops the board
+    (2026-10-23: a single-piece helper dropped the look; R8-21, -22, -26, -27 were approved without it)."""
+    if meta.get("look") != "r8":
+        raise SystemExit(f"{name}: rendered without the R8 look (look={meta.get('look')!r}); render it again with the look")
+
+
 def piece(name, suffix, pp, team="blue"):
-    return scene.piece(DIR, name, suffix, team=team, ppm=20 * pp)
+    sp = scene.piece(DIR, name, suffix, team=team, ppm=20 * pp)
+    realistic(sp.meta, name)
+    return sp
 
 
 def tile(name, suffix, pp, foot, team="blue"):
@@ -87,6 +101,7 @@ def tile(name, suffix, pp, foot, team="blue"):
 def run_tile(name, suffix, pp, n=3, team="blue"):
     """n cells of one wall piece side by side (a run of wall, as long as the cliff beside it)."""
     items = [scene.piece(DIR, name, suffix, team=team, ppm=20 * pp, x=(i - (n - 1) / 2) * 2.0) for i in range(n)]
+    realistic(items[0].meta, name)
     return b1art.tile(items, pp, footprint=(n, 1), min_size=(140 * pp, 140 * pp))
 
 
@@ -148,7 +163,7 @@ def frame_bytes(name, suffix):
 def board_buildings(c, suffix, research, W=2800):
     label = f"R8-2{1 if c == 'E' else 2}-建築樣本-{SIDE[c]}-mobile"
     folder = research / ("east-arch-reference" if c == "E" else "west-arch-reference")
-    parts = [boards.header(W, label, POINTS[c])]
+    parts = [boards.header(W, label, RELOOK + POINTS[c])]
     parts += refs_row(W, folder, REFS[c])
     big = [boards.captioned(tile(f"r8b_{k}_{c}_new", suffix, 3, FOOT[k]), f"{NAMES[k]}（3 倍，{FOOT[k][0]}×{FOOT[k][1]} 格）", 24)
            for k in NAMES]
@@ -229,8 +244,8 @@ def board_cliff(suffix, research, W=2800):
 
 def board_overview(suffix, gdir, mem, W=3000):
     label = "R8-25-第二批樣本-總覽"
-    text = ("R8 第二批的樣本（寫實畫風），給使用者先看方向：東陸、西陸的主城、民居、兵營，地面五層的混合，懸崖和城牆。"
-            "都是 2 倍。細節和參考圖在 R8-21 到 R8-24。看過方向對了，再量產第二批全部：建築（含哨所、砲坊）的所有狀態、"
+    text = (RELOOK + "R8 第二批的樣本（寫實畫風）：東陸、西陸的主城、民居、兵營，地面五層的混合，懸崖（R8-26 的掃描岩壁）和城牆。"
+            "都是 2 倍。細節和參考圖在 R8-21 到 R8-23、R8-26 到 R8-28（R8-24 的舊懸崖已由 R8-26 取代）。核准後量產第二批全部：建築（含哨所、砲坊）的所有狀態、"
             "照 D-096 格局的寫實城牆、資源點、地形、地面。\n"
             "記憶體（2 倍，每張圖、一個狀態；一棟建築有六個狀態；未壓縮 RGBA8／ASTC 4×4）：" +
             "、".join(f"{NAMES.get(k.rsplit('_', 1)[0], k)}{'' if k == 'ground' else SIDE[k[-1]]} {v['rgba8_mb']}／{v['astc_mb']} MB"
@@ -241,10 +256,9 @@ def board_overview(suffix, gdir, mem, W=3000):
         row = [boards.captioned(tile(f"r8b_{k}_{c}_new", suffix, 2, FOOT[k]), f"{SIDE[c]}{NAMES[k]}", 22) for k in NAMES]
         parts.append(boards.row(row, W, gap=24))
     cam = Image.open(gdir / "sample_cam.png")
-    cl = tile("r8b_cliff", suffix, 2, (3, 1))
-    sw = run_tile("r8b_sw_s_E", suffix, 2)
-    parts.append(boards.row([boards.captioned(cam, "地面（遊戲的鏡頭）", 22), boards.captioned(cl, "懸崖", 22),
-                             boards.captioned(sw, "石牆", 22)], W, gap=24))
+    cl = cliff_scene(gdir, ppm=40).crop((0, 0, 1240, 560))
+    parts.append(boards.row([boards.captioned(cam, "地面（遊戲的鏡頭）", 22),
+                             boards.captioned(cl, "懸崖、石牆、槍兵（2 倍，同一個比例）", 22)], W, gap=24))
     return boards.save(boards.stack(parts, W), label)
 
 
@@ -313,6 +327,7 @@ def cliff_pieces(g):
 def _sprite(d, name, suffix, f):
     """A rendered piece scaled by f: (colour with AO, anchor), (shadow, its anchor) or None."""
     meta = json.loads((d / f"{name}_{suffix}.json").read_text())
+    realistic(meta, name)
     b = np.asarray(Image.open(d / f"{name}_{suffix}_beauty.png").convert("RGBA"), np.float32)
     ao_p = d / f"{name}_{suffix}_ao.png"
     if ao_p.exists():
@@ -504,7 +519,7 @@ def board_cliff_redo(gdir, research, W=2800):
             "轉角和兩端由岩柱蓋住。三種臂、兩種柱輪流用，長條不會一格一格重複。")
     scene_im = cliff_scene(gdir, ppm=40)
     zoom = scene_im.crop((40, 60, 760, 460)).resize((1440, 800), Image.LANCZOS)
-    parts = [boards.header(W, label, text)]
+    parts = [boards.header(W, label, RELOOK + text)]
     parts.append(boards.row([boards.captioned(scene_im, "遊戲的鏡頭（2 倍）：懸崖一條（東西四格、轉南兩格、再斜一段）、東陸石牆三格、東陸槍兵（1.7 公尺）", 22)], W))
     parts.append(boards.row([boards.captioned(zoom, "放大：懸崖和兵（4 倍）", 22)], W))
     tiles = []
@@ -529,7 +544,7 @@ def board_drum(W=2000):
     full = tile("r8b_barracks_E_new", "x3", 6, (3, 3)).convert("RGB")
     w, h = full.size
     zoom = full.crop((int(w * 0.38), int(h * 0.55), int(w * 0.64), int(h * 0.85))).resize((720, 830), Image.LANCZOS)
-    parts = [boards.header(W, label, text),
+    parts = [boards.header(W, label, RELOOK + text),
              boards.row([boards.captioned(full, "東陸兵營（6 倍）", 22), boards.captioned(zoom, "戰鼓放大", 22)], W, gap=30)]
     return boards.save(boards.stack(parts, W), label)
 
@@ -593,8 +608,7 @@ elif __name__ == "__main__":
     UNITS_DIR = sys.argv[4] if len(sys.argv) > 4 else None
     for c in ("E", "W"):
         print(board_buildings(c, sfx, rs))
-    print(board_ground(gd, rs))
-    print(board_cliff(sfx, rs))
+    print(board_ground(gd, rs))       # R8-24 (the first cliff) is a record now: R8-26 replaced it
     mem = memory(sfx, gd)
     print(json.dumps(mem, ensure_ascii=False))
     print(board_overview(sfx, gd, mem))
