@@ -38,6 +38,16 @@ export interface GameRecord {
   lastHash: { tick: number; hash: string } | null;
   /** The command log: LogHeader, then one command per line (sim/src/protocol.ts). */
   log: string;
+  /**
+   * 美術 the page drew the game with: x3, x2, off, test (ceo 2026-10-22: the long games' crashes;
+   * from client f4348fa on). The Worker keeps what it is sent, as with any field it does not check.
+   */
+  art?: string;
+  /**
+   * The page before died with a game on screen (client/src/logs/heartbeat.ts CrashNote: its tick,
+   * units, buildings, art, bytes on the GPU, WebGL contexts lost, last error): with the next record.
+   */
+  crash?: Record<string, unknown>;
 }
 
 export const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
