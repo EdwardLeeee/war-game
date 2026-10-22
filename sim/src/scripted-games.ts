@@ -104,6 +104,23 @@ if (flag("late")) {
 }
 // D-086 A3: this many soldiers go for the AI's farmers far from its main city (--late --harass 10).
 plan.harass = Number(arg("harass", "0"));
+// D-086 A5 (ceo 2026-10-22; the user's long wins against hard, f331df3c 77.5 min and 6a024b3c 81 min):
+// 40 farmers, arrow towers by home by the clock and by every town it governs, outposts by home, every
+// town taken governed (town after town, the big city too), and the march with 100 or more, a third
+// cavalry, more than it saw of the AI's army lately. With --cap 90 in CI.
+if (flag("turtle")) {
+  plan.farmers = 40;
+  plan.production = 4;
+  plan.choice = "govern";
+  plan.corners = true;
+  plan.townAt = 10;
+  plan.guards = 3;
+  plan.cavalryShare = 30;
+  plan.pushAt = 100;
+  plan.counterAt = 100;
+  plan.pushAhead = true;
+  plan.turtle = true;
+}
 // D-097: cavalry this share of its soldiers (percent), a stable once it has a range (--cavalry-share 18).
 plan.cavalryShare = Number(arg("cavalry-share", String(plan.cavalryShare)));
 /** D-086 A: an AI order this soon after its last order at the player's main city is the same march. */
@@ -246,6 +263,10 @@ interface GameRecord {
   aiMarches: { start: number; last: number; most: number; fell: boolean }[];
   /** D-086 A: soldiers (not farmers, not militia) of [the player, the AI] at minutes 15 and 20 (null: over by then). */
   armyAt: { m15: [number, number] | null; m20: [number, number] | null };
+  /** D-086 A5: arrow towers of [the player, the AI] at minutes 30 and 45 (null: over by then). */
+  towersAt: { m30: [number, number] | null; m45: [number, number] | null };
+  /** D-086 A5: towns [the player, the AI] governed at the end. */
+  governedEnd: [number, number];
   /**
    * D-086 A3, every game (read only): the AI's farmers lost each minute (from minute 1); its hits (5 or more
    * lost in two minutes, none counted in the three minutes before) and of those, the ones back 3 minutes
@@ -410,6 +431,12 @@ function play(seed: number): GameRecord {
   const marchLog: { start: number; last: number; most: number }[] = [];
   let logAt = 0;
   const armyAt: GameRecord["armyAt"] = { m15: null, m20: null };
+  const towersAt: GameRecord["towersAt"] = { m30: null, m45: null };
+  const towersOf = (p: number) => {
+    let n = 0;
+    for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === BuildingType.ArrowTower) n++;
+    return n;
+  };
   // D-086 A3 (read only): the AI's farmers lost, hit and back, idle and hiding (GameRecord).
   const farmerLog: { farmers: number; lost: number }[] = [];
   const farmerChecks: { at: number; before: number }[] = [];
@@ -472,6 +499,8 @@ function play(seed: number): GameRecord {
     }
     if (w.tick === 15 * 1200) armyAt.m15 = [soldiersOf(0), soldiersOf(1)];
     if (w.tick === 20 * 1200) armyAt.m20 = [soldiersOf(0), soldiersOf(1)];
+    if (w.tick === 30 * 1200) towersAt.m30 = [towersOf(0), towersOf(1)];
+    if (w.tick === 45 * 1200) towersAt.m45 = [towersOf(0), towersOf(1)];
     for (const e of g.events) if (e.to === 0 && e.ev.k === "rejected") rejected++;
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
     for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;
@@ -716,6 +745,8 @@ function play(seed: number): GameRecord {
     aiAt15,
     aiMarches: marchLog.map((x) => ({ ...x, fell: cityFell[0] >= 0 && cityFell[0] <= x.last + MARCH_GAP })),
     armyAt,
+    towersAt,
+    governedEnd: [0, 1].map((p) => w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length) as [number, number],
     aiFarmers,
     aiRescue,
     marches: st.marches,
@@ -754,12 +785,23 @@ const options = [
   plan.fortress ? "半路要塞：第 12 分起，在往電腦主城的路上、離家 37 格，蓋哨所（6 名槍兵駐守）和 5 座箭樓（D-081）" : "",
   plan.fortressHold > 0 ? `大軍守在要塞旁，湊到 ${plan.fortressHold} 名或第 30 分才出發（D-081）` : "",
   plan.harass > 0 ? `殺村民：第 10 分起 ${plan.harass} 名兵（遠程先）去殺電腦離主城 20 格以上的村民，看不到就繞電腦主城找；附近敵兵比自己多或剩一半就回家，1 分鐘後補滿再去（D-086 A3）` : "",
-  plan.pushAhead ? `後期翻盤：24 名村民、遠程為主、家旁 ${plan.homeTowers} 座箭樓、騎兵佔 ${plan.cavalryShare}%、城鎮打下來就治理，兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門（D-086）` : "",
+  plan.pushAhead && !plan.turtle ? `後期翻盤：24 名村民、遠程為主、家旁 ${plan.homeTowers} 座箭樓、騎兵佔 ${plan.cavalryShare}%、城鎮打下來就治理，兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門（D-086）` : "",
   !plan.pushAhead && plan.cavalryShare > 0 ? `帶騎兵：騎兵佔自己兵的 ${plan.cavalryShare}%，有射場以後蓋馬廄（D-097）` : "",
+  plan.turtle ? `守塔慢拿城（A5）：40 名村民、家旁箭樓第 30 分約 10 座、第 45 分 18 座、治理的城鎮旁各 2 座、家旁 2 座哨所各 3 名槍兵，城鎮打下來就治理（大城在兵 40 名以後），兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門，騎兵 ${plan.cavalryShare}%` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
 out.push(`${games.length} 局贏 ${won} 局，輸 ${games.length - won - open.length} 局${open.length > 0 ? `，到第 ${m(CAP)} 分還沒分出勝負 ${open.length} 局` : ""}。`, "");
+// D-086 A5: towers and towns of the turtle.
+if (plan.turtle) {
+  const med = (l: number[]) => (l.length === 0 ? "—" : String([...l].sort((a, c) => a - c)[l.length >> 1]));
+  const t30 = games.filter((x) => x.towersAt.m30 !== null).map((x) => x.towersAt.m30!);
+  const t45 = games.filter((x) => x.towersAt.m45 !== null).map((x) => x.towersAt.m45!);
+  out.push(
+    `箭樓（中位數）：第 30 分 我 ${med(t30.map((x) => x[0]))}／電腦 ${med(t30.map((x) => x[1]))}（${t30.length} 局），第 45 分 我 ${med(t45.map((x) => x[0]))}／電腦 ${med(t45.map((x) => x[1]))}（${t45.length} 局）；局末治理的城鎮 我 ${med(games.map((x) => x.governedEnd[0]))}／電腦 ${med(games.map((x) => x.governedEnd[1]))}；第一次出發打電腦主城（分，中位數）${med(games.filter((x) => x.firstMarch > 0).map((x) => Math.round(x.firstMarch / 120) / 10))}。`,
+    "",
+  );
+}
 // D-097: how many cavalry each side trained, on average.
 if (plan.cavalryShare > 0 || games.some((x) => x.trained.cavalry[1] > 0)) {
   const mean = (k: number) => (games.reduce((a, x) => a + x.trained.cavalry[k], 0) / Math.max(games.length, 1)).toFixed(1);
