@@ -143,10 +143,10 @@ export class ArtUnits {
   /**
    * Draws snapshot row `o` into slot `i` at (px, py), `seconds` on the simulation's clock, `lift`
    * points up (on a bridge's deck; its depth stays its feet's), at depth `z` when given (on a
-   * castle's wall, D-096: just in front of the wall's piece). Returns the top of its picture
-   * (world px), for the bars above it, or null when it has no atlas.
+   * castle's wall, D-096: over the wall's pieces, and no shadow: `shadow` false). Returns the top of
+   * its picture (world px), for the bars above it, or null when it has no atlas.
    */
-  unit(i: number, o: number, px: number, py: number, seconds: number, lift = 0, z: number | null = null): number | null {
+  unit(i: number, o: number, px: number, py: number, seconds: number, lift = 0, z: number | null = null, shadow = true): number | null {
     const u = (this.view.curr as NonNullable<GameView["curr"]>).snap.units;
     const id = u[o + U.id];
     const type = u[o + U.type];
@@ -190,6 +190,7 @@ export class ArtUnits {
       else index = frameAt(info, fpsOf(a, anim), elapsed, info.loop ? id % info.frames : 0);
     }
     this.place(s, a, anim, dir, index, owner, px, py, 1, lift, z);
+    if (!shadow) s.shadow.visible = false;
     this.drawShield(s, a, st, seconds);
     const f = this.art.frame(a.unit, "color", frameName(a, anim, dir, index).name);
     return f === null ? null : py - lift - f.ay * f.texture.height * this.scale;

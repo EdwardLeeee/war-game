@@ -25,8 +25,9 @@ const ICON = {
   army: '<path d="M4 18l4-10 4 6 4-6 4 10z"/>',
   map: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
-  // 上城牆／下城牆 (D-096, war-game-ui 2026-10-22): three merlons on a stretch of wall, a joint in it.
-  wall: '<path d="M4 20V6h3v3h3.5V6h3v3H17V6h3v14z"/><path d="M4 14h16M9.5 14v6M14.5 14v6"/>',
+  // 上城牆／下城牆 (D-096, war-game-ui 2026-10-22): a stretch of wall with merlons, an arrow up onto it or down from it.
+  wallUp: '<path d="M4 21v-8h3v3h3.3v-3h3.4v3H17v-3h3v8z"/><path d="M12 10V2M8.5 5.5L12 2l3.5 3.5"/>',
+  wallDown: '<path d="M4 21v-8h3v3h3.3v-3h3.4v3H17v-3h3v8z"/><path d="M12 2v8M8.5 6.5L12 10l3.5-3.5"/>',
 } as const;
 
 export type IconName = keyof typeof ICON;

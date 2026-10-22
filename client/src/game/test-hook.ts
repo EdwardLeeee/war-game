@@ -95,8 +95,12 @@ export interface GameHook {
   groupInfo(): { ids: number[]; want: Record<number, number>; saved: number; refill: boolean; recruits: number[] }[];
   /** Fake world only: remove own units (as if they fell). */
   remove(ids: number[]): void;
+  /** Fake world only: a building's hit points (a gate damaged, D-096). */
+  damage(id: number, hp: number): void;
   /** Arrows drawn from `shot` events so far (round 7; D-096: each of a volley's `n`). */
   shots(): number;
+  /** Of them, shots that left a gate's tower (D-096, shoot_at_m). */
+  towerShots(): number;
   /** D-096: openings drawn as broken gates, and units drawn up on a castle's wall in the last frame. */
   brokenGates(): number;
   wallLifted(): number;
@@ -105,7 +109,8 @@ export interface GameHook {
   /** 你的陸 this game was started with (the computer wears the other). */
   culture(): string;
   /** The castles as drawn (D-089): wall pieces and floor tiles shown, towns drawn as blocks, towns no layout fits, units drawn behind a wall. */
-  castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number } | null;
+  /** `walkable`: the pictures say where those on a wall stand (art-v6); `gates`: the gates drawn from pictures, by look (D-096). */
+  castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number> } | null;
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
   groundLook(): { real: boolean; quality: string | null } | null;
   setGroundQuality(q: "high" | "low"): void;
@@ -286,7 +291,11 @@ export function gameHook(game: Game): GameHook {
     remove: (ids) => {
       if (game.portForTest instanceof MockPort) game.portForTest.remove(ids);
     },
+    damage: (id, hp) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
+    },
     shots: () => game.shotsForTest,
+    towerShots: () => game.towerShotsForTest,
     brokenGates: () => game.brokenGatesForTest,
     wallLifted: () => game.wallLiftedForTest,
     townWalls: () => game.townWallsForTest,

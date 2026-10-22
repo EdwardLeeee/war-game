@@ -408,6 +408,12 @@ export class MockPort implements SimPort {
     for (let i = this.buildings.length - 1; i >= 0; i--) if (ids.includes(this.buildings[i].id)) this.buildings.splice(i, 1);
   }
 
+  /** Tests: a building's hit points now (a gate damaged, D-096). */
+  damage(id: number, hp: number): void {
+    const b = this.buildings.find((v) => v.id === id);
+    if (b !== undefined) b.hp = hp;
+  }
+
   postMessage(msg: ToWorker): void {
     switch (msg.type) {
       case "init":

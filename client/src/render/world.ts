@@ -137,6 +137,8 @@ interface Shot {
   at: number;
   /** Arrows in it (D-096 `shot.n`). */
   n: number;
+  /** How far up it leaves (points on the plane): a town gate's tower (D-096 shoot_at_m), its flash there (`tower_shot`). */
+  lift: number;
 }
 
 const SHOT_MS = 300;
@@ -187,6 +189,11 @@ export class WorldRenderer {
   private readonly fx = new Graphics();
   /** Arrows in the air, on the plane. */
   private readonly airFx = new Graphics();
+  /** The flashes where a gate's tower shoots (effects `tower_shot`, D-096), over airFx. */
+  private readonly airArt = new Container();
+  private readonly shotFlashes: Sprite[] = [];
+  /** Shots from a gate's tower (D-096 shoot_at_m) so far, for the test page. */
+  towerShotCount = 0;
   private readonly barLayer = new Container();
   private readonly townLayer = new Container();
   private readonly ghost = new Graphics();
@@ -336,7 +343,7 @@ export class WorldRenderer {
     }
     this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
-    this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.barLayer, this.townLayer);
+    this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.airArt, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
   }
 
@@ -387,20 +394,25 @@ export class WorldRenderer {
     if (this.markers.length > 8) this.markers.shift();
   }
 
-  /** An arrow from a building (world px) to a unit, drawn flying for a moment (round 7). */
-  /** An arrow (or `n` together: a town gate's volley, a main city's with villagers inside, D-096) from a building at a unit. */
-  shot(fromX: number, fromY: number, toX: number, toY: number, now: number, n = 1): void {
-    this.shots.push({ fx: fromX, fy: fromY, tx: toX, ty: toY, at: now, n: Math.max(1, Math.min(n, 12)) });
+  /**
+   * An arrow (or `n` together: a town gate's volley, a main city's with villagers inside, D-096) from
+   * a building at a unit (world px), `lift` points up where it leaves (a gate's tower: its flash there).
+   */
+  shot(fromX: number, fromY: number, toX: number, toY: number, now: number, n = 1, lift = 0): void {
+    this.shots.push({ fx: fromX, fy: fromY, tx: toX, ty: toY, at: now, n: Math.max(1, Math.min(n, 12)), lift });
+    if (lift > 0) this.towerShotCount++;
     this.shotCount += Math.max(1, n);
     if (this.shots.length > 40) this.shots.shift();
   }
 
   private drawShots(now: number): void {
     this.shots = this.shots.filter((s) => now - s.at < SHOT_MS);
+    this.drawShotFlashes(now);
     for (const s of this.shots) {
       const k = (now - s.at) / SHOT_MS;
       // In the air: from and to on the plane, the arrow drawn there (not flattened).
       const from = this.projection.toPlane(s.fx, s.fy);
+      from.y -= s.lift;
       const to = this.projection.toPlane(s.tx, s.ty);
       const dx = to.x - from.x;
       const dy = to.y - from.y;
@@ -608,15 +620,46 @@ export class WorldRenderer {
       // From its atlas (art-v2 on): its picture instead of the footprint and the glyph; the bar over its top.
       const picture = this.artStructures?.building(i, o) ?? null;
       if (picture !== null) p.base.visible = p.glyph.visible = false;
+      // A gate drawn as its castle's picture (closed, open, damaged: D-096): no block over it, its bar above the picture.
+      const gateTop = type === BuildingType.Gate ? this.castle.gateTop(f.x, f.y) : null;
+      if (gateTop !== null) p.base.visible = p.glyph.visible = false;
       const hp = b[o + B.hp];
       // A gate's full hit points are its town's size's (rules.towns[size].gateHp), not buildings[Gate].hp.
       const max = this.view.buildingMaxHp(b, o);
       const selected = this.view.selection.building === b[o + B.id];
       if (building || hp < max || selected) {
         const frac = building ? b[o + B.progress] / 1000 : max > 0 ? hp / max : 1;
-        this.bar(p.hpBack, p.hpFront, mid.x, Math.min(top.y, picture?.top ?? top.y) - 4, Math.max(width, depth) * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
+        this.bar(p.hpBack, p.hpFront, mid.x, Math.min(top.y, picture?.top ?? top.y, gateTop ?? top.y) - 4, Math.max(width, depth) * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
       }
     }
+  }
+
+  /** A gate tower's flash where its arrows leave (effects `tower_shot`, D-096: anchor in the middle), played once. */
+  private drawShotFlashes(now: number): void {
+    const fx = this.artUnits?.art.effects ?? null;
+    const info = fx?.effects.tower_shot;
+    let i = 0;
+    if (fx !== null && info !== undefined && this.artUnits !== null) {
+      for (const s of this.shots) {
+        const k = Math.floor(((now - s.at) / 1000) * (info.fps ?? 20));
+        if (s.lift <= 0 || k >= info.frames) continue;
+        const f = this.artUnits.art.effectFrame(`tower_shot_${String(k).padStart(2, "0")}`);
+        if (f === null) continue;
+        while (this.shotFlashes.length <= i) {
+          const sprite = new Sprite();
+          this.airArt.addChild(sprite);
+          this.shotFlashes.push(sprite);
+        }
+        const sprite = this.shotFlashes[i++];
+        const at = this.projection.toPlane(s.fx, s.fy);
+        sprite.visible = true;
+        sprite.texture = f.texture;
+        sprite.anchor.set(f.ax, f.ay);
+        sprite.position.set(at.x, at.y - s.lift);
+        sprite.scale.set((this.projection.ptPerM / fx.px_per_m) * (f.half ? 2 : 1));
+      }
+    }
+    for (; i < this.shotFlashes.length; i++) this.shotFlashes[i].visible = false;
   }
 
   /**
@@ -650,6 +693,8 @@ export class WorldRenderer {
     const g = this.brokenGates;
     g.clear();
     for (const cells of openings) {
+      // Its picture (art-v6) shows the gate broken: no rubble.
+      if (this.castle.drawsGate(cells[0] % n, Math.floor(cells[0] / n))) continue;
       for (const c of cells) {
         const x = (c % n) * TILE_PX;
         const y = Math.floor(c / n) * TILE_PX;
@@ -813,9 +858,14 @@ export class WorldRenderer {
     return this.terrain.liftAt(px, py);
   }
 
-  /** The castles as drawn (castle-draw.ts), for the test page. */
-  get castleCounts(): { pieces: number; tiles: number; blockTowns: number; misfit: number } {
-    return this.castle.counts;
+  /** The castles as drawn (castle-draw.ts), for the test page: with their gates' looks and whether those on a wall stand on its walk (D-096). */
+  get castleCounts(): { pieces: number; tiles: number; blockTowns: number; misfit: number; walkable: boolean; gates: Record<string, number> } {
+    return { ...this.castle.counts, walkable: this.castle.walkable, gates: this.castle.gateLookCounts };
+  }
+
+  /** Where a gate's arrows leave (D-096, castle-draw.ts gateShootFrom): world px on the ground and points up; null: its building's middle. */
+  gateShootFrom(cellX: number, cellY: number, toX: number, toY: number): { x: number; y: number; lift: number } | null {
+    return this.castle.gateShootFrom(cellX, cellY, toX, toY);
   }
 
   /** Each town's wall's spot on the ground (world px), for the test page. */
@@ -911,15 +961,16 @@ export class WorldRenderer {
       const px = x * FIXED_TO_PX;
       const py = y * FIXED_TO_PX;
       // Where it stands on the plane (what stands up is drawn there; the ground's marks at px, py).
-      const at = this.projection.toPlane(px, py);
       const type = u[o + U.type];
       const owner = u[o + U.owner];
-      // On a castle's wall (D-096): up on its walk, in front of the wall; on a bridge's deck (art-v5): up there.
+      // On a castle's wall (D-096): on its walk (stand_in_m towards the town, walk_m up), over the
+      // wall and under its front parts, no shadow (the walk is not the ground); on a bridge's deck (art-v5): up there.
       const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(Math.floor(px / TILE_PX), Math.floor(py / TILE_PX)) : null;
       if (onWall !== null) this.wallLifted++;
+      const at = this.projection.toPlane(px + (onWall?.dx ?? 0), py + (onWall?.dy ?? 0));
       const lift = onWall?.lift ?? this.terrain.liftAt(px, py);
       // From its atlas when there is one (its picture's top for the bars), else the shape.
-      const top = this.artUnits?.unit(i, o, at.x, at.y, seconds, lift, onWall?.z ?? null) ?? null;
+      const top = this.artUnits?.unit(i, o, at.x, at.y, seconds, lift, onWall?.z ?? null, onWall === null) ?? null;
       p.body.visible = top === null;
       p.body.texture = this.atlas.units[type] ?? this.atlas.units[UnitType.Farmer];
       p.body.tint = ownerTint(owner, view.me);

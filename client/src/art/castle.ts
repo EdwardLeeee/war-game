@@ -28,13 +28,30 @@ export interface CastleLayout {
   floor: { cell: [number, number]; tile: string }[];
 }
 
+/**
+ * A piece's pictures and, from art-v6 (D-096, atlas-buildings.md section 11), where someone stands on
+ * it: a plain stretch's `walk_m` (its walk above the ground) and `stand_in_m` (from the cell's
+ * middle towards the town, negative outwards); a gate's `shoot_at_m` (the arrows' two starting
+ * points, from its anchor: x east, y south, z up). `intact_front`: the part in front of those on the
+ * wall (colour only); a gate's `closed`, `damaged`, `broken` (`intact` is open).
+ */
+export interface CastlePieceInfo {
+  footprint: [number, number];
+  frames: { intact: string; ruin: string; intact_front?: string; closed?: string; damaged?: string; broken?: string };
+  walk_m?: number;
+  stand_in_m?: number;
+  shoot_at_m?: [number, number, number][];
+}
+
 export interface CastleJson {
   format: string;
   culture: Side;
   view?: AtlasView;
   px_per_m: number;
   pages: { color: string[]; team: string[]; shadow: string[] };
-  pieces: Record<string, { footprint: [number, number]; frames: { intact: string; ruin: string } }>;
+  /** Metres a cell (2). */
+  cell_m?: number;
+  pieces: Record<string, CastlePieceInfo>;
   tiles: Record<string, string>;
   layouts: Partial<Record<CastleLayoutName, CastleLayout>>;
   frames: Record<string, FrameRect>;
@@ -91,3 +108,28 @@ export function fitLayout(c: Pick<CastleJson, "layouts">, castle: CastleCells, l
 
 /** A town's look (D-089, atlas-buildings.md section 11): standing, or burnt (ruins: no player colour). */
 export type CastleState = "intact" | "ruin";
+
+/** A gate's look (D-096): open (intact), closed, damaged, broken (gone), or its town's ruins. */
+export type GateLook = "intact" | "closed" | "damaged" | "broken" | "ruin";
+
+/**
+ * Which look a gate takes (D-096; war-game-ui's suggestion, 2026-10-22): its town in ruins, ruin;
+ * the gate gone, broken; at half its hit points or less, damaged; its holder's soldiers by it, open;
+ * else closed. Gates off (the rules have none): open, as before D-096.
+ */
+export function gateLook(o: { gates: boolean; ruins: boolean; standing: boolean; hp: number; max: number; holderNear: boolean }): GateLook {
+  if (o.ruins) return "ruin";
+  if (!o.gates) return "intact";
+  if (!o.standing) return "broken";
+  if (o.max > 0 && o.hp * 2 <= o.max) return "damaged";
+  return o.holderNear ? "intact" : "closed";
+}
+
+/** Within this many cells of a gate's opening (Chebyshev), its holder's soldiers have it open. */
+export const GATE_OPEN_CELLS = 2;
+
+/** The way into the town from a plain stretch of wall (its name's side: `pal_n` the north wall, the town to its south), in cells; null for others. */
+export function inward(piece: string): [number, number] | null {
+  const side = /_([nswe])$/.exec(piece)?.[1];
+  return side === "n" ? [0, 1] : side === "s" ? [0, -1] : side === "w" ? [1, 0] : side === "e" ? [-1, 0] : null;
+}
