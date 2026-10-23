@@ -30,7 +30,17 @@ export async function loadGround(bases: readonly string[], times: LoadRecorder |
     );
     const noise = g.noise === undefined ? noiseTexture(256, 16, 1) : tileTexture(await page(`${base}${g.noise.file}`, times, undefined, true));
     const macro = g.macro === undefined ? noiseTexture(128, 4, 2) : tileTexture(await page(`${base}${g.macro.file}`, times, undefined, true));
-    return { json: g, layers, noise, macro };
+    // The water's ripples (art-v6): only with rules.water; it will not load, the terrain's water tiles.
+    const w = g.rules.water === undefined ? undefined : g.layers.find((l) => l.id === "water");
+    let water: GroundTextures["water"] = null;
+    if (w !== undefined) {
+      try {
+        water = tileTexture(await page(`${base}${w.file}`, times, undefined, true));
+      } catch (err) {
+        console.warn(`ground: water: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return { json: g, layers, noise, macro, water };
   }
   return null;
 }

@@ -123,3 +123,113 @@ test("權重圖：沒有 rules.weights 時照舊一格一個點、有或沒有�
   w.set(ground, nodes);
   assert.deepEqual(w.data, groundWeights(ground, n, nodes, plain));
 });
+
+const WATER: NonNullable<GroundJson["rules"]["water"]> = {
+  range_m: 4.5,
+  blur_m: 1.5,
+  edge_m: 0.35,
+  wet_m: 0.9,
+  wet_dark: 0.62,
+  depth_m: 2.5,
+  shallow: [0.045, 0.058, 0.045],
+  bed: 0.55,
+  bed_shallow: 0.45,
+  noise_m: 0.08,
+  flow: [
+    [0.05, 0.02],
+    [-0.03, 0.04],
+  ],
+};
+
+/** The water's A written plainly: the map padded with its edge cells, every texel against every cell, the blur over all, cropped. */
+function waterReference(ground: Uint8Array, n: number, rules: GroundJson["rules"]): Uint8Array {
+  const w = rules.weights as NonNullable<GroundJson["rules"]["weights"]>;
+  const wa = rules.water as NonNullable<GroundJson["rules"]["water"]>;
+  const k = w.texels_per_cell;
+  const pad = Math.ceil((wa.range_m + 3 * (wa.blur_m ?? w.blur_m)) / GROUND_CELL_M) + 1;
+  const N = n + 2 * pad;
+  const wetP = (x: number, y: number) => {
+    const t = ground[Math.min(n - 1, Math.max(0, y - pad)) * n + Math.min(n - 1, Math.max(0, x - pad))];
+    return t >= 3 && t <= 6;
+  };
+  const S = N * k;
+  const sd = new Float64Array(S * S);
+  for (let ty = 0; ty < S; ty++) {
+    for (let tx = 0; tx < S; tx++) {
+      const X = ((tx + 0.5) / k) * GROUND_CELL_M;
+      const Y = ((ty + 0.5) / k) * GROUND_CELL_M;
+      const inWet = wetP(Math.floor(tx / k), Math.floor(ty / k));
+      let d = 1e9;
+      for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+          if (wetP(x, y) === inWet) continue;
+          const dx = Math.max(Math.abs(X - (x + 0.5) * GROUND_CELL_M) - GROUND_CELL_M / 2, 0);
+          const dy = Math.max(Math.abs(Y - (y + 0.5) * GROUND_CELL_M) - GROUND_CELL_M / 2, 0);
+          d = Math.min(d, Math.hypot(dx, dy));
+        }
+      }
+      sd[ty * S + tx] = Math.min(wa.range_m, Math.max(-wa.range_m, inWet ? d : -d));
+    }
+  }
+  const sigma = ((wa.blur_m ?? w.blur_m) * k) / GROUND_CELL_M;
+  const R = Math.floor(3 * sigma) + 1;
+  const kern: number[] = [];
+  for (let i = -R; i <= R; i++) kern.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
+  const sum = kern.reduce((a, b) => a + b, 0);
+  const a = new Float64Array(S * S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) for (let i = -R; i <= R; i++) a[y * S + x] += (sd[Math.min(S - 1, Math.max(0, y + i)) * S + x] * kern[i + R]) / sum;
+  const side = n * k;
+  const out = new Uint8Array(side * side);
+  for (let y = 0; y < side; y++) {
+    for (let x = 0; x < side; x++) {
+      const yy = y + pad * k;
+      const xx = x + pad * k;
+      let v = 0;
+      for (let i = -R; i <= R; i++) v += (a[yy * S + Math.min(S - 1, Math.max(0, xx + i))] * kern[i + R]) / sum;
+      out[y * side + x] = Math.round(Math.min(1, Math.max(0, 0.5 + v / wa.range_m / 2)) * 255);
+    }
+  }
+  return out;
+}
+
+test("水的有號距離（A，art-v6）：水裡是到最近陸地的距離、岸上是負的到最近水的距離，夾在 range 內再糊開；和照公式直接算的一樣", () => {
+  const n = 12;
+  const rules = { ...RULES, water: WATER };
+  // A diagonal river running off the map's west and east edges, and a pond.
+  const ground = new Uint8Array(n * n);
+  for (let x = 0; x < n; x++) {
+    const y = Math.floor(2 + x * 0.6);
+    for (const yy of [y, y + 1]) if (yy < n) ground[yy * n + x] = 3;
+  }
+  for (const [x, y] of [[9, 9], [10, 9], [9, 10], [10, 10]]) ground[y * n + x] = 3;
+  const w = new GroundWeights(n, rules, true);
+  w.set(ground, []);
+  const a = new Uint8Array(w.side * w.side);
+  for (let i = 0; i < a.length; i++) a[i] = w.data[i * 4 + 3];
+  const ref = waterReference(ground, n, rules);
+  const diff = a.reduce((m, v, i) => Math.max(m, Math.abs(v - ref[i])), 0);
+  assert.ok(diff <= 1, `the same as the plain formula (max diff ${diff})`);
+  // In the river's middle above half, on land far from it below, half on its edge.
+  assert.ok(a[(2 * 4 + 4) * w.side + 0 * 4 + 2] > 128, "in the water");
+  assert.ok(a[(8 * 4) * w.side + 0 * 4 + 2] < 60, "far on land");
+  // The river runs off the west edge: no bank grows along the edge (the ground off the map is the edge cell's).
+  assert.ok(a[(2 * 4 + 2) * w.side + 0] > 128, "at the map's edge, still water");
+});
+
+test("水的有號距離：只重算水變了的附近，和整張重算一樣；沒有 water 層時 A 一直是 0", () => {
+  const n = 12;
+  const rules = { ...RULES, water: WATER };
+  const ground = new Uint8Array(n * n);
+  for (let x = 0; x < n; x++) ground[5 * n + x] = 3;
+  const w = new GroundWeights(n, rules, true);
+  w.set(ground, []);
+  const g2 = ground.slice();
+  g2[9 * n + 3] = 3;
+  w.set(g2, []);
+  const fresh = new GroundWeights(n, rules, true);
+  fresh.set(g2, []);
+  assert.deepEqual(w.data, fresh.data);
+  const off = new GroundWeights(n, rules, false);
+  off.set(g2, []);
+  assert.ok(off.data.every((v, i) => i % 4 !== 3 || v === 0));
+});

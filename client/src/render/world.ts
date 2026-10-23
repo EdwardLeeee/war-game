@@ -378,6 +378,7 @@ export class WorldRenderer {
     this.castle.update();
     this.terrain.update();
     this.updateGround();
+    this.groundDraw?.tick(now / 1000);
     this.fx.clear();
     this.airFx.clear();
     this.drawUnits(now);
@@ -877,6 +878,8 @@ export class WorldRenderer {
     this.groundDraw = new GroundDraw(textures, this.view.map.size, quality);
     this.groundInner.addChildAt(this.groundDraw.mesh, 0);
     this.flatGround.visible = false;
+    // The water in the ground's shader (art-v6): not its tiles too.
+    this.terrain.showWater(!this.groundDraw.water);
     this.groundKey = "";
     this.updateGround();
     return true;
@@ -894,8 +897,8 @@ export class WorldRenderer {
   }
 
   /** What draws the ground now (the test page and the 量測 panel). */
-  get groundLook(): { real: boolean; quality: GroundQuality | null } {
-    return { real: this.groundDraw !== null, quality: this.groundDraw?.currentQuality ?? null };
+  get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean } {
+    return { real: this.groundDraw !== null, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true };
   }
 
   /** The ground's weights again when the known ground or the resource points changed. */
