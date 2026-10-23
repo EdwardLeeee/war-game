@@ -339,6 +339,14 @@ def _prod_r8(c):
     return out
 
 
+# the castles (D-096 pieces, approved; D-100's bigger layouts use the same pieces) in the R8 look, named as art-v5's;
+# not the 4-cell stone gate (D-100 has 3-cell gates with piers only) nor the 3 x 3 town tower (the keep replaces it)
+R8_CASTLE = [dict(pc, opts=dict(pc["opts"], r8=True)) if pc["kind"] == "tground" else pc
+             for pc in _V4 if pc["kind"] not in ("sw_gate_x", "sw_gate_y", "ttower3")]
+for _i in range(0, len(R8_CASTLE), 10):
+    TARGETS[f"r8w_{_i // 10}"] = R8_CASTLE[_i:_i + 10]
+    CAMERA[f"r8w_{_i // 10}"] = proj.OBLIQUE
+    LOOK[f"r8w_{_i // 10}"] = "r8"
 # the resource points (nature_r8.py), named as art-v5's PROD_NODES
 R8_NODES = ([dict(kind="r8_tree", culture=c, opts=dict(variant=v), name=f"tree_{c}_v{v}") for c in CULTURES for v in (0, 1, 2)]
             + [dict(kind="r8_tree", culture=c, opts=dict(state="stump"), name=f"tree_{c}_stump") for c in CULTURES]

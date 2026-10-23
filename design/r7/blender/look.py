@@ -72,6 +72,11 @@ MATCH = {
     "cliffrock": ("rock_face_03", 1.0, 0.25, 0.8), "cliffrockdark": ("lichen_rock", 1.0, 0.25, 0.7),
     "moss_r8": ("leafy_grass", 0.5, 0.2, 0.4), "grass_r8": ("leafy_grass", 0.6, 0.2, 0.4), "shrub_r8": ("leafy_grass", 0.4, 0.2, 0.6),
     "rubble": ("rustic_stone_wall_02", 1.0, 0.25, 0.7),
+    # R8 batch 2: the castles' West names (kit.palette W, castle.py) and the town floor tiles
+    "slate": ("clay_roof_tiles_02", 0.6, 0.0, 0.6), "frame": ("medieval_wood", 1.0, 0.2, 0.35),
+    "ashlar": ("castle_brick_01", 1.6, 0.2, 0.5), "garden": ("stony_dirt_path", 1.0, 0.25, 0.4),
+    "street": ("stony_dirt_path", 1.0, 0.2, 0.35), "pave_r8": ("castle_brick_01", 1.2, 0.2, 0.5),
+    "pave_r8w": ("rustic_stone_wall_02", 1.0, 0.2, 0.5),
     # R8 batch 2: the trees (design/r8/blender/nature_r8.py)
     "bark_pine": ("pine_bark", 1.0, 0.2, 0.8), "bark_camphor": ("japanese_camphor_bark", 1.0, 0.2, 0.7),
     "bark_oak": ("jolcham_oak_bark_01", 1.0, 0.2, 0.9), "bark_birch": ("bark_platanus", 1.0, 0.1, 0.5),
@@ -79,9 +84,12 @@ MATCH = {
 
 
 def key_of(name):
-    """lib.mat name -> MATCH key: the name without its round suffix (2, 5, _b1, _e) and any .001."""
+    """lib.mat name -> MATCH key: the name without its round suffix (2, 5, _b1, _e, _w, _E, _W), a sooty_ copy's
+    prefix (states.py: the soot keeps the texture) and any .001."""
     n = name.split(".")[0]
-    for suf in ("_b1", "_e", "2", "5"):
+    if n.startswith("sooty_"):
+        n = n[len("sooty_"):]
+    for suf in ("_b1", "_e", "_w", "_E", "_W", "2", "5"):
         if n.endswith(suf) and n[: -len(suf)] in MATCH:
             return n[: -len(suf)]
     return n if n in MATCH else None
