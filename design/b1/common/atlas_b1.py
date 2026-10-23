@@ -115,7 +115,7 @@ def castle_table(c):
         pieces[k] = e
     tiles = {t: f"castle_tile_{t}_{c}" for t in TILES}
     layouts = {}
-    for L in (CASTLE.small(), CASTLE.large(), CASTLE.large3()):
+    for L in (f() for f in CASTLE.LAYOUTS):
         layouts[L["name"]] = dict(
             walls=[dict(piece=p["piece"], anchor=p["anchor"], front=p["front"], cells=p["cells"]) for p in CASTLE.placements(L)],
             floor=CASTLE.floor(L))
