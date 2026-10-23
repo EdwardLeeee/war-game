@@ -224,7 +224,10 @@ export class GroundDraw {
     });
     const [grass, grassDry, dirt, gravel, bank] = textures.layers;
     const shader = new Shader({
-      glProgram: GlProgram.from({ vertex: VERTEX, fragment: FRAGMENT, name: "ground" }),
+      // highp: the ground's coordinates are metres across the whole map (up to 256): at PixiJS's
+      // default mediump (16-bit) they step every 3–6 cm there, and the textures came out in blocks
+      // at 3 倍 (ceo 2026-10-23, R8-29-02's grass). Apple's GPUs run fragment shaders at 32 bits anyway.
+      glProgram: GlProgram.from({ vertex: VERTEX, fragment: FRAGMENT, name: "ground", preferredFragmentPrecision: "highp" }),
       resources: {
         groundUniforms: this.uniforms,
         uWeights: this.weights,
