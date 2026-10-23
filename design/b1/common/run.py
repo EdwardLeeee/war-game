@@ -314,6 +314,37 @@ TARGETS["r8c_water"] = ([dict(kind="r8_water", culture="E", opts=dict(mask=m), n
                            for a in ("x", "y")])
 CAMERA["r8c_water"] = proj.OBLIQUE
 LOOK["r8c_water"] = "r8"
+# the rest of the buildings in the approved style (ceo 2026-10-22: full production), finished, for the first look
+R8_KINDS = ("lumber_camp", "mine", "granary", "range", "mage_hall", "arrow_tower", "stable", "outpost", "siege_works", "farm")
+TARGETS["r8d_done"] = [dict(kind=f"r8_{k}", culture=c, state="done", name=f"r8d_{k}_{c}") for c in CULTURES for k in R8_KINDS]
+CAMERA["r8d_done"] = proj.OBLIQUE
+LOOK["r8d_done"] = "r8"
+
+
+# art-v6 (D-093, R8 batch 2): every building piece again in the realistic style, named as art-v5's frames (so the
+# client's tables stay), plus the siege works (D-099, 砲坊: siege_works_<culture>_<state>); 2x supersampled on CI
+def _prod_r8(c):
+    kinds = ("main_city", "house", "lumber_camp", "mine", "granary", "barracks", "range", "mage_hall", "arrow_tower",
+             "stable", "siege_works")
+    out = [dict(kind=f"r8_{k}", culture=c, state=st, name=f"{k}_{c}_{s}") for k in kinds
+           for s, st in (("done", "done"), ("build2", "build_a2"), ("build3", "build_a3"), ("damaged", "damaged_a"))]
+    for size, k in ((2, "house"), (3, "barracks"), (4, "main_city")):
+        out += [dict(kind=f"r8_{k}", culture=c, state="build_a1", name=f"found_{size}x{size}_{c}"),
+                dict(kind=f"r8_{k}", culture=c, state="destroyed_a", name=f"rubble_{size}x{size}_{c}")]
+    out.append(dict(kind="r8_farm", culture=c, state="build_a1", opts=dict(stage="sown"), name=f"farm_{c}_build1"))
+    out += [dict(kind="r8_farm", culture=c, opts=dict(stage=s), name=f"farm_{c}_{s}") for s in ("sown", "growing", "ripe")]
+    out += [dict(kind="r8_outpost", culture=c, state=st, name=f"outpost_{c}_{s}")
+            for s, st in (("build1", "build_a1"), ("build2", "build_a2"), ("build3", "build_a3"), ("done", "done"),
+                          ("damaged", "damaged_a"), ("rubble", "destroyed_a"))]
+    return out
+
+
+for _c in CULTURES:
+    _all = _prod_r8(_c)
+    for _i in range(0, len(_all), PROD_CHUNK):
+        TARGETS[f"r8p_{_c}_{_i // PROD_CHUNK}"] = _all[_i:_i + PROD_CHUNK]
+        CAMERA[f"r8p_{_c}_{_i // PROD_CHUNK}"] = proj.OBLIQUE
+        LOOK[f"r8p_{_c}_{_i // PROD_CHUNK}"] = "r8"
 
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
