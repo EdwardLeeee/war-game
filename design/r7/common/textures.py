@@ -33,6 +33,11 @@ TEXTURES = [
     ("stony_dirt_path", "2k", "ground: the dirt road"),
     ("gravel_ground_01", "2k", "ground: gravel"),
     ("brown_mud_rocks_01", "2k", "ground: the river bank"),
+    # R8 batch 2 (D-093): the cliff and the West's stone
+    ("rock_face_03", "1k", "R8 cliff: the rock face"),
+    ("lichen_rock", "1k", "R8 cliff: the damp foot, the scree"),
+    ("rustic_stone_wall_02", "1k", "R8 West: rubble stone walls"),
+    ("rocks_ground_02", "1k", "R8 ground: gravel by rocks and cliffs"),
 ]
 MAPS = {"diff": "Diffuse", "nor_gl": "nor_gl", "rough": "Rough"}
 PIN = {}                      # file name -> {url, sha256}, filled by `pin` from Poly Haven's file API

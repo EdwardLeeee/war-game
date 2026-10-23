@@ -277,6 +277,44 @@ OUTPOST = [dict(kind="outpost", culture=c, state=st, name=f"outpost_{c}_{s}") fo
 TARGETS["prod_outpost"] = OUTPOST
 CAMERA["prod_outpost"] = proj.OBLIQUE      # registered after the prod_* camera line above: set here
 
+# R8 batch 2 (D-093): the realistic look (render_b1.py LOOK "r8"; the CC0 textures of design/r7/common/textures.py)
+R7_TEX = HERE.parents[1] / "r7" / "build" / "tex"
+LOOK = {}
+TARGETS["r8b_look"] = [dict(kind=k, culture=c, state="done", name=f"r8b_{k}_{c}") for c in CULTURES
+                       for k in ("main_city", "house", "barracks")]
+CAMERA["r8b_look"] = proj.OBLIQUE
+LOOK["r8b_look"] = "r8"
+# the style samples (ceo 2026-10-22: main city, house, barracks of both cultures first, for the user)
+TARGETS["r8b_samples"] = [dict(kind=f"r8_{k}", culture=c, state="done", name=f"r8b_{k}_{c}_new") for c in CULTURES
+                          for k in ("main_city", "house", "barracks")]
+CAMERA["r8b_samples"] = proj.OBLIQUE
+LOOK["r8b_samples"] = "r8"
+# the cliff beside the stone wall (ceo 2026-10-22: the user's complaint, the cliff looked like a wall)
+TARGETS["r8b_compare"] = [dict(kind=k, culture=c, opts=dict(state="intact"), name=f"r8b_{k}_{c}", footprint=[1, 1])
+                          for c in CULTURES for k in ("sw_s", "pal_s")]
+CAMERA["r8b_compare"] = proj.OBLIQUE
+LOOK["r8b_compare"] = "r8"
+# the cliff redone from scanned rock (the user 2026-10-22: 「懸崖看起來不太真實」), as the client's tiles: posts and
+# arms (client/src/art/terrain.ts), named as art-v5's terrain_cliff_* frames
+TARGETS["r8c_cliff"] = ([dict(kind="r8_cliff_post", culture="E", opts=dict(variant=v), name=f"terrain_cliff_post_v{v}")
+                         for v in range(2)]
+                        + [dict(kind="r8_cliff_arm", culture="E", opts=dict(direction=d, variant=v),
+                                name=f"terrain_cliff_arm_{d}_v{v}") for d in ("E", "S", "SE", "SW") for v in range(3)])
+CAMERA["r8c_cliff"] = proj.OBLIQUE
+LOOK["r8c_cliff"] = "r8"
+# the rest of the terrain in the same rock (ceo 2026-10-22: terrain production in the approved approach)
+TARGETS["r8c_rock"] = [dict(kind="r8_rock", culture="E", opts=dict(variant=v), name=f"terrain_rock_v{v}") for v in range(6)]
+CAMERA["r8c_rock"] = proj.OBLIQUE
+LOOK["r8c_rock"] = "r8"
+TARGETS["r8c_water"] = ([dict(kind="r8_water", culture="E", opts=dict(mask=m), name=f"terrain_water_m{m}") for m in range(1, 16)]
+                        + [dict(kind="r8_ford", culture="E", opts=dict(variant=v), name=f"terrain_ford_v{v}") for v in range(2)]
+                        + [dict(kind="r8_bridge_deck", culture="E", opts=dict(axis=a), name=f"terrain_bridge_deck_{a}")
+                           for a in ("ns", "ew")]
+                        + [dict(kind="r8_bridge_rail", culture="E", opts=dict(axis=a), name=f"terrain_bridge_rail_{a}")
+                           for a in ("x", "y")])
+CAMERA["r8c_water"] = proj.OBLIQUE
+LOOK["r8c_water"] = "r8"
+
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
 FOLDER.update({t: "states" for t in TARGETS if t.startswith(("states2", "states3"))})
@@ -345,7 +383,7 @@ def run(target, preview=False, only=None, prev_ppm=24):
         pcs.append(d)
     job = dict(px_per_m=ppm * ss, emblem_dir=str(config.BUILD / "emblems"), quality="hq",
                samples={"beauty": 12, "mask": 4, "shadow": 8, "ao": 4} if preview else SAMPLES, pieces=pcs,
-               camera=CAMERA.get(target))
+               camera=CAMERA.get(target), look=LOOK.get(target), tex_dir=str(R7_TEX))
     jp = jobdir / f"b1_{target}{'_prev' if preview else ''}.json"
     jp.write_text(json.dumps(job))
     log = jobdir / f"b1_{target}{'_prev' if preview else ''}.log"

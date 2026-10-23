@@ -43,6 +43,7 @@ import {
   rank,
   RETREAT_OWN_SPEED,
   CAVALRY,
+  SIEGE,
   GARRISON,
   GARRISON_TYPES,
   TOWER_REACH,
@@ -261,6 +262,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if ((type === BuildingType.ArrowTower && !TOWERS.on) || (type === BuildingType.Stable && !CAVALRY.on)) return Reject.NotAvailable;
       // D-080: outposts only while their rules are on (post, unpost and outpost_mode fall to the default below).
       if (type === BuildingType.Outpost && !OUTPOST.on) return Reject.NotAvailable;
+      // D-099: the siege works only while SIEGE is on.
+      if (type === BuildingType.SiegeWorks && !SIEGE.on) return Reject.NotAvailable;
       const info = BUILDINGS[type];
       if (!info.requires.every((r) => hasFinished(w, p, r))) return Reject.NotAvailable;
       const placement = placeCheck(ctx, p, type, cmd.x, cmd.y);

@@ -19,6 +19,9 @@ import {
   UnitType,
 } from "../protocol.ts";
 import { type CastleMap, castleOf, FIXED_POSTS } from "./castle.ts";
+import { KEEP } from "./keep.ts";
+
+export { KEEP };
 
 const S = TICKS_PER_SECOND;
 const speed = (cellsPerSecond100: number) => Math.trunc((cellsPerSecond100 * CELL) / (100 * S));
@@ -54,6 +57,13 @@ UNITS[UnitType.Militia] = {
 UNITS[UnitType.Cavalry] = {
   type: UnitType.Cavalry, hp: 150, shield: 0, attack: 11, range: CELL, speed: speed(160), sight: 7,
   cooldown: 30, cost: cost(60, 0, 60), trainTicks: 28 * S, population: 1,
+};
+// D-099 (ceo 2026-10-22, the user: 「蓋一大堆防禦塔根本打不去」): GDD appendix A's siege engine; a
+// stone every 5 s, sight 10 (it sees what it outranges: arrow towers shoot 9), splash 1 cell, nothing
+// within 3. Trained only while SIEGE is on.
+UNITS[UnitType.Siege] = {
+  type: UnitType.Siege, hp: 140, shield: 0, attack: 35, range: 10 * CELL, speed: speed(60), sight: 10,
+  cooldown: 5 * S, cost: cost(0, 150, 100), trainTicks: 40 * S, population: 1, minRange: 3 * CELL, splash: CELL,
 };
 
 const ALL: Resource[] = [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal];
@@ -95,7 +105,9 @@ BUILDINGS[BuildingType.Range] = building({
 BUILDINGS[BuildingType.MageHall] = building({
   type: BuildingType.MageHall, hp: 500, size: 3, cost: cost(0, 150, 100), buildTicks: 45 * S, trains: [UnitType.Mage],
 });
-BUILDINGS[BuildingType.TownTower] = building({ type: BuildingType.TownTower, hp: 400, size: 2, sight: 8 });
+// The big city's tower; with KEEP on (D-100) every town's keep, 3 x 3, its hp by its town's size
+// (KEEP.hp, World.maxHp; this row then the big city's).
+BUILDINGS[BuildingType.Keep] = building({ type: BuildingType.Keep, hp: 400, size: 2, sight: 8 });
 // Round 7 (D-061): a player's arrow tower (only while TOWERS is on) and the stable (only while
 // CAVALRY is on). Footprints from GDD section 8; the rest are the prototype's values.
 BUILDINGS[BuildingType.ArrowTower] = building({
@@ -103,6 +115,11 @@ BUILDINGS[BuildingType.ArrowTower] = building({
 });
 BUILDINGS[BuildingType.Stable] = building({
   type: BuildingType.Stable, hp: 500, size: 3, cost: cost(0, 150, 50), buildTicks: 40 * S, trains: [UnitType.Cavalry],
+});
+// D-099: the siege works (砲坊; only while SIEGE is on): GDD section 8 and appendix A, hp as the
+// stable's; after a range, as the prototype has no ages.
+BUILDINGS[BuildingType.SiegeWorks] = building({
+  type: BuildingType.SiegeWorks, hp: 500, size: 3, cost: cost(0, 200), buildTicks: 45 * S, trains: [UnitType.Siege], requires: [BuildingType.Range],
 });
 // D-080: the outpost (only while OUTPOST is on). The brief's starting values.
 BUILDINGS[BuildingType.Outpost] = building({
@@ -125,6 +142,8 @@ export const MULTIPLIERS: Multiplier[] = [
   { attacker: UnitType.Spearman, target: UnitType.Cavalry, num: 5, den: 2 },
   { attacker: UnitType.Cavalry, target: UnitType.Mage, num: 3, den: 1 },
   { attacker: UnitType.Cavalry, target: "shield", num: 3, den: 1 },
+  // D-099: siege engines sit outside the triangle, as mages; cavalry ride them down (GDD's table).
+  { attacker: UnitType.Cavalry, target: UnitType.Siege, num: 2, den: 1 },
 ];
 
 export const MAGE_CAP = 6;
@@ -154,10 +173,13 @@ export const QUEUE_MAX = 7;
 export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Required<Rules> {
   const towerSize = map?.towerSize;
   const same = towerSize === undefined || towerSize === BUILDINGS[BuildingType.TownTower].size;
+  // D-099: the siege engine and the siege works only while SIEGE is on (they are the last of each).
+  const units = SIEGE.on ? UNITS : UNITS.slice(0, UnitType.Siege);
+  const buildings = SIEGE.on ? BUILDINGS : BUILDINGS.slice(0, BuildingType.SiegeWorks);
   return {
-    units: UNITS,
-    buildings: same ? BUILDINGS : BUILDINGS.map((b) => (b.type === BuildingType.TownTower ? { ...b, size: towerSize } : b)),
-    multipliers: MULTIPLIERS,
+    units,
+    buildings: same ? buildings : buildings.map((b) => (b.type === BuildingType.TownTower ? { ...b, size: towerSize } : b)),
+    multipliers: SIEGE.on ? MULTIPLIERS : MULTIPLIERS.filter((m) => m.target !== UnitType.Siege),
     mageCap: MAGE_CAP,
     maxPopulation: basePopulation(),
     population: { base: basePopulation(), town: [TownSize.Small, TownSize.Large].map((size) => (POPULATION_200.on ? POPULATION_200.town[size] : 0)) },
@@ -166,7 +188,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     features: {
       plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on,
       ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
-      ...(CAV_FLANK.on ? { cavalryFlank: true } : {}),
+      ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}), ...(KEEP.on ? { keep: true } : {}),
     },
     arrows: {
       mainCity: MAIN_ARROW,
@@ -184,6 +206,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     // Sent as `outpost` is; `features` says whether they are on.
     gate: { rangedNum: GATE.rangedNum, rangedDen: GATE.rangedDen, rebuildTicks: GATE.rebuildTicks },
     walls: { range: WALLS.range, takenNum: WALLS.takenNum, takenDen: WALLS.takenDen, sling: WALLS.sling },
+    siege: { vsBuildings: SIEGE.vsBuildings, flightTicks: SIEGE.flightTicks },
   };
 }
 
@@ -345,6 +368,14 @@ export const TOWERS = { on: true };
 export const GARRISON = { on: true, cannon: true, cannonPermille: 333, cannonCooldown: 1 };
 /** Players can build stables and train cavalry. */
 export const CAVALRY = { on: true };
+/**
+ * Siege engines (D-099; off until art-v6): siege works can be built and siege engines trained. A
+ * stone lands `flightTicks` after it is thrown, where it was aimed then; there it hits every enemy
+ * unit within the engine's splash (never its own side), or the building it was thrown at, that one
+ * only, `vsBuildings` times (a gate GATE.siege times). Off: no siege works, rules() leaves the
+ * engine, the works and their multiplier out, and games play as before.
+ */
+export const SIEGE = { on: false, vsBuildings: 3, flightTicks: S };
 /** Unit types that may hide in buildings. */
 export const GARRISON_TYPES: UnitType[] = [UnitType.Ranged, UnitType.Mage];
 /**
@@ -433,7 +464,7 @@ export const CAV_FLANK = {
  */
 export const SLOT_GIVE_UP = { on: true, ticks: 60, progress: 384 };
 /** A formation's ranks (GDD section 9): melee in front (0), then ranged (1), then mages (2). */
-export const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : 0);
+export const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : t === UnitType.Siege ? 3 : 0);
 /**
  * Ranks on the march (D-095; the user: 「常常跑一跑法師就跑到前排」): on a move, a ranged unit or
  * mage more than DIRECT_STEER from its place stands and lets the lower ranks of its group pass
@@ -469,8 +500,12 @@ function switched<T extends object>(table: T, key: keyof T & string, sw: { on: b
 }
 switched(UNITS[UnitType.Ranged], "range", LONG_BOWS, () => LONG_BOWS.rangedRange);
 switched(UNITS[UnitType.Ranged], "sight", LONG_BOWS, () => LONG_BOWS.rangedSight);
-for (const arrow of [MAIN_ARROW, TOWER_ARROW, ARROW_TOWER]) switched(arrow, "range", LONG_BOWS, () => LONG_BOWS.arrowRange);
-for (const type of [BuildingType.MainCity, BuildingType.TownTower, BuildingType.ArrowTower]) switched(BUILDINGS[type], "sight", LONG_BOWS, () => LONG_BOWS.towerSight);
+for (const arrow of [MAIN_ARROW, TOWER_ARROW, ARROW_TOWER, ...KEEP.arrow]) switched(arrow, "range", LONG_BOWS, () => LONG_BOWS.arrowRange);
+// D-100: the keep (the big city's tower before) and its arrows, and the bigger towns.
+switched(BUILDINGS[BuildingType.Keep], "size", KEEP, () => KEEP.size);
+switched(BUILDINGS[BuildingType.Keep], "hp", KEEP, () => KEEP.hp[TownSize.Large]);
+switched(TOWER_ARROW, "damage", KEEP, () => KEEP.arrow[TownSize.Large].damage);
+for (const type of [BuildingType.MainCity, BuildingType.Keep, BuildingType.ArrowTower]) switched(BUILDINGS[type], "sight", LONG_BOWS, () => LONG_BOWS.towerSight);
 /**
  * Arrow towers worth building (rule 6, D-071; the user 2026-10-07: "箭塔太貴傷害又太低根本不可能選"):
  * a player's arrow tower costs `cost` (was wood 100, gold 50: two ranged units' worth for one's
@@ -508,7 +543,9 @@ export const MAGE_BOUNTY = 15;
 
 export interface TownRule {
   militia: number;
+  /** The big city's tower (while KEEP is off; with it on every town has a keep). */
   tower: boolean;
+  /** The walls' distance from the centre (D-100, KEEP on: KEEP.radius). */
   radius: number;
   plunderTicks: number;
   plunder: Cost;
@@ -532,6 +569,8 @@ TOWNS[TownSize.Large] = {
   governCost: cost(0, 150, 150), repairTicks: 60 * S, perMinute: cost(90, 0, 90, 30), populationCap: 10,
   garrisonNeeded: 3, revoltTicks: 60 * S,
 };
+
+for (const size of [TownSize.Small, TownSize.Large]) switched(TOWNS[size], "radius", KEEP, () => KEEP.radius[size]);
 
 // D-083: what a governed town and a house add to the population cap while POPULATION_200 is on (getters).
 for (const size of [TownSize.Small, TownSize.Large]) switched(TOWNS[size], "populationCap", POPULATION_200, () => POPULATION_200.town[size]);
@@ -580,6 +619,7 @@ function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap
       towerLand: TOWER_REACH.town + 1,
     },
     ...(GATE.on ? { gateHp: GATE.hp[size] } : {}),
+    ...(KEEP.on ? { keep: { hp: KEEP.hp[size], size: KEEP.size, arrow: { ...KEEP.arrow[size], extraMax: 0 }, rebuildTicks: KEEP.rebuildTicks } } : {}),
   };
 }
 

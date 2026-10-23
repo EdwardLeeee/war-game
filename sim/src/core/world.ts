@@ -7,7 +7,7 @@ import { Action, BuildingFlag, BuildingType, CELL, CELL_SHIFT, NEUTRAL, Order, P
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
-import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
+import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, KEEP, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -60,8 +60,11 @@ export const UNIT_COLS = [
   "flank", "flankSide", "flankX", "flankY", "flankTick",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
-/** Unit types counted per player in `trained` and `lost` (UnitType 0..5; the hash leaves out cavalry while CAVALRY is off). */
-export const UNIT_KINDS = 6;
+/**
+ * Unit types counted per player in `trained` and `lost` (UnitType 0..6; the hash leaves out cavalry
+ * while CAVALRY is off, and siege engines while SIEGE is off, D-099).
+ */
+export const UNIT_KINDS = 7;
 /** Unit columns that are statistics only, left out of the hash so a game plays and hashes as without them. */
 export const UNIT_HASH_SKIP: ReadonlySet<string> = new Set(["hitCause"]);
 /** What last hurt a unit (unit column hitCause; farmers' deaths are counted by it). */
@@ -136,6 +139,8 @@ export const BLOCK_WALL = 8;
 export const BLOCK_GATE = 16;
 /** Openings in every castle's walls (D-096; castle.gates). */
 export const GATES = 4;
+/** Numbers per stone in World.stones (D-099). */
+export const STONE = 7;
 
 export class World {
   readonly map: GameMap;
@@ -191,6 +196,17 @@ export class World {
    * rebuilds that broken gate (counting while no enemy stands inside its walls), 0 when not.
    */
   gateRebuild: Int32Array;
+  /**
+   * D-100 (KEEP): per town, the ticks left until a governed town builds its fallen keep again
+   * (counting while no enemy stands inside its walls), 0 when not.
+   */
+  keepRebuild: Int32Array;
+  /**
+   * D-099 (SIEGE): stones in the air, STONE numbers each in the order thrown: the engine's id, its
+   * owner, where it lands (fixed point x, y), the tick it lands, the building it was thrown at (-1: at
+   * units) and the damage. In the hash only while SIEGE is on.
+   */
+  stones: number[] = [];
   /** Gate cells each player may walk that others may not (passClass). */
   private readonly ownGates = new Int32Array(PLAYER_COUNT);
   private readonly passGrids: Uint8Array[] = [];
@@ -445,6 +461,7 @@ export class World {
       this.wallCells.push(Int32Array.from(cells));
     });
     this.gateRebuild = new Int32Array(t * GATES);
+    this.keepRebuild = new Int32Array(t);
   }
 
   private newId(): number {
@@ -540,10 +557,13 @@ export class World {
   sideY(type: number, cellX: number, cellY: number): number {
     return type === BuildingType.Gate ? this.gateSides[cellY * this.size + cellX] >> 8 : this.buildingSize(type);
   }
-  /** A building's full hp: its type's, but a gate's (D-096) by its town's size (GATE.hp). */
+  /** A building's full hp: its type's, but a gate's (D-096) and a keep's (D-100, KEEP on) by its town's size (GATE.hp, KEEP.hp). */
   maxHp(s: number): number {
     const b = this.buildings.col;
-    return b.type[s] === BuildingType.Gate ? GATE.hp[this.townSize[b.town[s]]] : BUILDINGS[b.type[s]].hp;
+    const type = b.type[s];
+    if (type === BuildingType.Gate) return GATE.hp[this.townSize[b.town[s]]];
+    if (type === BuildingType.Keep && KEEP.on && b.town[s] >= 0) return KEEP.hp[this.townSize[b.town[s]]];
+    return BUILDINGS[type].hp;
   }
 
   /** Town t's opening k's top-left cell (D-096). */

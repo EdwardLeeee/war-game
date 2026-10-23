@@ -2,8 +2,11 @@
 // with ui 2026-10-21) and which ground each cell gets. The ground is blended on the GPU
 // (render/ground-draw.ts): grass everywhere, the river bank by water, gravel by rock and cliffs,
 // dirt by the resource points and in patches. Here, from the cells' Terrain values and the
-// resource points only, a weight a cell for each, one texel a cell; the GPU smooths and frays the
-// edges between. Pure, for the unit tests.
+// resource points only, a weight for each: one texel a cell, the GPU smoothing and fraying the
+// edges between; or (rules.weights, R8-28, the user 2026-10-22: 「河岸一格一格的方塊」) several
+// texels a cell, soft with the distance from the seed cells and blurred, so that a diagonal river's
+// bank follows the water, not the cells (war-game-ui's ground_r8.py weights(), the same numbers).
+// Pure, for the unit tests.
 
 export const GROUND_FORMAT = "war-game ground 1";
 
@@ -40,8 +43,18 @@ export interface GroundJson {
     /** How wide an edge between two grounds is (m), and how much the heights move it. */
     edge_m: number;
     height_k: number;
-    /** Dirt round the resource points, and in patches where the noise is over the threshold (0–1). */
-    dirt: { node_cells: number; noise_threshold: number };
+    /**
+     * Dirt round the resource points, and in patches where the noise is over the threshold (0–1);
+     * `noise_soft` (R8-28): the patches' edge that wide in the noise, about the threshold (absent:
+     * 0.06 from it up, a hard edge).
+     */
+    dirt: { node_cells: number; noise_threshold: number; noise_soft?: number };
+    /**
+     * The weights soft (R8-28): `texels_per_cell` texels a cell; a channel 0.5 at its reach (cells)
+     * past the nearest seed cell's square, from 1 to 0 over `soft_m` metres; then a Gaussian blur of
+     * `blur_m` metres (edges clamped). Absent: one texel a cell, on or off (Chebyshev).
+     */
+    weights?: { texels_per_cell: number; soft_m: number; blur_m: number };
   };
   /** The whole ground multiplied last: ui sets them against the units' contrast (R8: 找得到兵). */
   grade: { brightness: number; saturation: number };
@@ -57,6 +70,164 @@ export function parseGround(v: unknown): GroundJson {
 
 const wet = (t: number) => t >= 3 && t <= 6;
 const stony = (t: number) => t === 1 || t === 7;
+
+/** Metres a cell (the ground's tiles and noise are in metres). */
+export const GROUND_CELL_M = 2;
+
+/** Texels a side of the weight map: the cells times rules.weights.texels_per_cell (1 without). */
+export const weightsSide = (n: number, rules: GroundJson["rules"]): number => n * Math.max(1, Math.floor(rules.weights?.texels_per_cell ?? 1));
+
+const smooth = (e0: number, e1: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * The weight map kept for a game (render/ground-draw.ts uploads `data`): `set` the cells' grounds
+ * and resource points as they are now, and only the texels near the seeds that changed are made
+ * again (a mine running out, a random map's rocks found), the same as making it all again.
+ */
+export class GroundWeights {
+  readonly side: number;
+  /** RGBA, row by row, `side` texels a side: R bank, G gravel, B dirt. */
+  readonly data: Uint8Array;
+  private readonly n: number;
+  private readonly rules: GroundJson["rules"];
+  /** The seeds as last set, a byte a cell: bit 0 wet, 1 stony, 2 a resource point. */
+  private seeds: Uint8Array | null = null;
+
+  constructor(n: number, rules: GroundJson["rules"]) {
+    this.n = n;
+    this.rules = rules;
+    this.side = weightsSide(n, rules);
+    this.data = new Uint8Array(this.side * this.side * 4);
+  }
+
+  /** The grounds and resource points now; false when no seed changed (nothing to upload). */
+  set(ground: Uint8Array, nodes: readonly number[]): boolean {
+    const n = this.n;
+    const seeds = new Uint8Array(n * n);
+    for (let i = 0; i < n * n; i++) seeds[i] = (wet(ground[i]) ? 1 : 0) | (stony(ground[i]) ? 2 : 0);
+    for (const c of nodes) if (c >= 0 && c < n * n) seeds[c] |= 4;
+    const before = this.seeds;
+    this.seeds = seeds;
+    if (this.rules.weights === undefined) {
+      if (before !== null && before.every((v, i) => v === seeds[i])) return false;
+      this.data.set(groundWeights(ground, n, nodes, this.rules));
+      return true;
+    }
+    // The cells whose seeds changed (all, the first time).
+    let x0 = n;
+    let y0 = n;
+    let x1 = -1;
+    let y1 = -1;
+    for (let i = 0; i < n * n; i++) {
+      if (before !== null && before[i] === seeds[i]) continue;
+      const x = i % n;
+      const y = Math.floor(i / n);
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+    if (x1 < 0) return false;
+    // What a seed reaches: its falloff, then the blur.
+    const w = this.rules.weights;
+    const k = this.side / n;
+    const reach = Math.max(this.rules.bank_cells, this.rules.gravel_cells, this.rules.dirt.node_cells);
+    const sigma = (w.blur_m * k) / GROUND_CELL_M;
+    const blurR = sigma > 0 ? Math.floor(3 * sigma) + 1 : 0;
+    const pad = Math.ceil((reach * GROUND_CELL_M + w.soft_m / 2) / GROUND_CELL_M) + Math.ceil(blurR / k) + 1;
+    this.region(Math.max(0, x0 - pad) * k, Math.max(0, y0 - pad) * k, Math.min(n, x1 + 1 + pad) * k, Math.min(n, y1 + 1 + pad) * k);
+    return true;
+  }
+
+  /** The texels [tx0, tx1) × [ty0, ty1) made again from the seeds (rules.weights on). */
+  private region(tx0: number, ty0: number, tx1: number, ty1: number): void {
+    const w = this.rules.weights as NonNullable<GroundJson["rules"]["weights"]>;
+    const seeds = this.seeds as Uint8Array;
+    const n = this.n;
+    const side = this.side;
+    const k = side / n;
+    const sigma = (w.blur_m * k) / GROUND_CELL_M;
+    const blurR = sigma > 0 ? Math.floor(3 * sigma) + 1 : 0;
+    const kernel: number[] = [];
+    let sum = 0;
+    for (let i = -blurR; i <= blurR; i++) {
+      const v = blurR === 0 ? 1 : Math.exp(-(i * i) / (2 * sigma * sigma));
+      kernel.push(v);
+      sum += v;
+    }
+    for (let i = 0; i < kernel.length; i++) kernel[i] /= sum;
+    // The falloff over the region and the blur's reach round it (within the map).
+    const ex0 = Math.max(0, tx0 - blurR);
+    const ey0 = Math.max(0, ty0 - blurR);
+    const ex1 = Math.min(side, tx1 + blurR);
+    const ey1 = Math.min(side, ty1 + blurR);
+    const ew = ex1 - ex0;
+    const eh = ey1 - ey0;
+    const texelM = GROUND_CELL_M / k;
+    const channels: [number, number][] = [
+      [1, this.rules.bank_cells],
+      [2, this.rules.gravel_cells],
+      [4, this.rules.dirt.node_cells],
+    ];
+    channels.forEach(([bit, reachCells], ch) => {
+      const r = reachCells * GROUND_CELL_M;
+      const far = r + w.soft_m / 2;
+      const d = new Float64Array(ew * eh).fill(1e9);
+      const padCells = Math.ceil(far / GROUND_CELL_M) + 1;
+      const cx0 = Math.max(0, Math.floor(ex0 / k) - padCells);
+      const cy0 = Math.max(0, Math.floor(ey0 / k) - padCells);
+      const cx1 = Math.min(n - 1, Math.floor((ex1 - 1) / k) + padCells);
+      const cy1 = Math.min(n - 1, Math.floor((ey1 - 1) / k) + padCells);
+      for (let cy = cy0; cy <= cy1; cy++) {
+        for (let cx = cx0; cx <= cx1; cx++) {
+          if ((seeds[cy * n + cx] & bit) === 0) continue;
+          // The seed's square in metres, and the texels it may reach.
+          const sx0 = cx * GROUND_CELL_M;
+          const sy0 = cy * GROUND_CELL_M;
+          const reachT = Math.ceil(far / texelM) + 1;
+          for (let ty = Math.max(ey0, cy * k - reachT); ty < Math.min(ey1, (cy + 1) * k + reachT); ty++) {
+            const my = (ty + 0.5) * texelM;
+            const dy = Math.max(Math.abs(my - (sy0 + GROUND_CELL_M / 2)) - GROUND_CELL_M / 2, 0);
+            for (let tx = Math.max(ex0, cx * k - reachT); tx < Math.min(ex1, (cx + 1) * k + reachT); tx++) {
+              const mx = (tx + 0.5) * texelM;
+              const dx = Math.max(Math.abs(mx - (sx0 + GROUND_CELL_M / 2)) - GROUND_CELL_M / 2, 0);
+              const dist = Math.hypot(dx, dy);
+              const at = (ty - ey0) * ew + (tx - ex0);
+              if (dist < d[at]) d[at] = dist;
+            }
+          }
+        }
+      }
+      const f = new Float64Array(ew * eh);
+      for (let i = 0; i < f.length; i++) f[i] = smooth(far, r - w.soft_m / 2, d[i]);
+      // The blur, rows (y) then columns (x) as ground_r8.py's, the map's edges clamped.
+      const rows = new Float64Array(ew * (ty1 - ty0));
+      for (let ty = ty0; ty < ty1; ty++) {
+        for (let tx = ex0; tx < ex1; tx++) {
+          let v = 0;
+          for (let i = -blurR; i <= blurR; i++) {
+            const yy = Math.min(side - 1, Math.max(0, ty + i));
+            v += f[(yy - ey0) * ew + (tx - ex0)] * kernel[i + blurR];
+          }
+          rows[(ty - ty0) * ew + (tx - ex0)] = v;
+        }
+      }
+      for (let ty = ty0; ty < ty1; ty++) {
+        for (let tx = tx0; tx < tx1; tx++) {
+          let v = 0;
+          for (let i = -blurR; i <= blurR; i++) {
+            const xx = Math.min(side - 1, Math.max(0, tx + i));
+            v += rows[(ty - ty0) * ew + (xx - ex0)] * kernel[i + blurR];
+          }
+          this.data[(ty * side + tx) * 4 + ch] = Math.round(Math.min(1, Math.max(0, v)) * 255);
+        }
+      }
+    });
+  }
+}
 
 /**
  * A cell's weights, 4 bytes a cell (RGBA, row by row): R the river bank, G gravel, B dirt (A

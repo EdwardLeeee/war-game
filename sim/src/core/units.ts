@@ -35,6 +35,7 @@ import {
   AVENGE,
   CANNON,
   CAV_FLANK,
+  SIEGE,
   DODGE,
   FIRE_BACK,
   GATE,
@@ -62,13 +63,14 @@ import {
   RETARGET_EVERY,
   SEPARATION,
   TOWER_ARROW,
+  KEEP,
   UNDER_ATTACK_TICKS,
   UNITS,
   WORK_REACH,
 } from "./rules.ts";
 import { type Frame, IDENTITY, fromCanon, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
-import { HitCause, UNIT_KINDS, type World } from "./world.ts";
+import { HitCause, STONE, UNIT_KINDS, type World } from "./world.ts";
 
 const TICKS = TICKS_PER_SECOND;
 
@@ -121,6 +123,8 @@ export class UnitSystem {
    * them; the arrows as `n` since D-096).
    */
   readonly shots: number[] = [];
+  /** This tick's siege stones thrown (D-099), as quads (engine id, landing x, y, landing tick), for the `siege_shot` event. */
+  readonly siegeShots: number[] = [];
   /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
   private startTarget = new Int32Array(256);
   /** Per squad, at the start of the tick: what its soldiers are fighting (unit positions, building ids). */
@@ -1250,6 +1254,163 @@ export class UnitSystem {
     u.flankY[i] = p.y;
   }
 
+  // --- siege engines (SIEGE, D-099) -------------------------------------------------------------
+
+  /** Distance squared (fixed point) from unit i to unit or building `tid` (a building: to its footprint); -1 if gone. */
+  private distTo(w: World, i: number, tid: number): number {
+    const u = w.units.col;
+    const ts = w.unit(tid);
+    if (ts >= 0) {
+      const dx = u.x[ts] - u.x[i];
+      const dy = u.y[ts] - u.y[i];
+      return dx * dx + dy * dy;
+    }
+    const bs = w.building(tid);
+    if (bs < 0) return -1;
+    const b = w.buildings.col;
+    return rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs));
+  }
+
+  /** Is `tid` nearer siege engine i than its minRange? */
+  private tooNear(w: World, i: number, tid: number): boolean {
+    const mr = UNITS[w.units.col.type[i]].minRange ?? 0;
+    const d2 = this.distTo(w, i, tid);
+    return d2 >= 0 && d2 < mr * mr;
+  }
+
+  /**
+   * A siege engine's own target (D-099): within its range and not within its minRange, seen by its
+   * owner: an enemy building that shoots (arrowOf: main city, the big city's tower, arrow towers,
+   * governed towns' gates), else any other enemy building but a gate, else the enemy unit with the
+   * most units not its owner's within its splash (2 at least). Equally good: the nearer, then as
+   * findTarget. An id or -1.
+   */
+  private siegeTarget(w: World, fog: Fog, i: number): number {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const info = UNITS[u.type[i]];
+    const r2 = info.range * info.range;
+    const mr = info.minRange ?? 0;
+    const m2 = mr * mr;
+    const high = preferHighId(w, u.id[i]);
+    let bestRank = 2;
+    let best = 0;
+    let bestId = -1;
+    for (let s = 0; s < w.buildings.count; s++) {
+      if (b.owner[s] === me || (b.type[s] === BuildingType.Gate && arrowOf(w, s) === null)) continue;
+      const d2 = rectDist2(u.x[i], u.y[i], b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
+      if (d2 > r2 || d2 < m2) continue;
+      const rank = arrowOf(w, s) !== null ? 0 : 1;
+      if (rank > bestRank || (rank === bestRank && (d2 > best || (d2 === best && (high ? b.id[s] < bestId : b.id[s] > bestId))))) continue;
+      if (!this.sees(fog, me, (b.cellX[s] << CELL_SHIFT) + 512, (b.cellY[s] << CELL_SHIFT) + 512, n)) continue;
+      bestRank = rank;
+      best = d2;
+      bestId = b.id[s];
+    }
+    if (bestId >= 0) return bestId;
+    const splash = info.splash ?? 0;
+    const sp2 = splash * splash;
+    const cells = (info.range >> CELL_SHIFT) + 1;
+    const around = (splash >> CELL_SHIFT) + 1;
+    const cx = u.x[i] >> CELL_SHIFT;
+    const cy = u.y[i] >> CELL_SHIFT;
+    let bestCount = 1;
+    for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
+      for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (u.owner[j] === me || u.action[j] === Action.Garrisoned) continue;
+          const dx = u.x[j] - u.x[i];
+          const dy = u.y[j] - u.y[i];
+          const d2 = dx * dx + dy * dy;
+          if (d2 > r2 || d2 < m2 || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+          let hits = 0;
+          for (let yy = Math.max(y - around, 0); yy <= Math.min(y + around, n - 1); yy++) {
+            for (let xx = Math.max(x - around, 0); xx <= Math.min(x + around, n - 1); xx++) {
+              for (let k = this.cellHead[yy * n + xx]; k >= 0; k = this.cellNext[k]) {
+                if (u.owner[k] === me || u.action[k] === Action.Garrisoned) continue;
+                const ex = u.x[k] - u.x[j];
+                const ey = u.y[k] - u.y[j];
+                if (ex * ex + ey * ey <= sp2) hits++;
+              }
+            }
+          }
+          if (hits < bestCount || (hits === bestCount && bestId >= 0 && (d2 > best || (d2 === best && (high ? u.id[j] < bestId : u.id[j] > bestId))))) continue;
+          if (hits < 2) continue;
+          bestCount = hits;
+          best = d2;
+          bestId = u.id[j];
+        }
+      }
+    }
+    return bestId;
+  }
+
+  /**
+   * Siege engine i throws a stone at unit or building `tid` (D-099): it lands SIEGE.flightTicks from
+   * now where the target is now (a building: the middle of its footprint).
+   */
+  private throwStone(w: World, i: number, tid: number): void {
+    const u = w.units.col;
+    const ts = w.unit(tid);
+    const bs = ts >= 0 ? -1 : w.building(tid);
+    if (ts < 0 && bs < 0) return;
+    let x: number;
+    let y: number;
+    if (ts >= 0) {
+      x = u.x[ts];
+      y = u.y[ts];
+    } else {
+      const b = w.buildings.col;
+      x = (b.cellX[bs] << CELL_SHIFT) + ((w.wide(bs) << CELL_SHIFT) >> 1);
+      y = (b.cellY[bs] << CELL_SHIFT) + ((w.tall(bs) << CELL_SHIFT) >> 1);
+    }
+    // Lands while tick `lands` runs; the event gives the snapshot tick that shows it (lands + 1), as
+    // this one's snapshot is tick + 1.
+    const lands = w.tick + SIEGE.flightTicks;
+    w.stones.push(u.id[i], u.owner[i], x, y, lands, bs >= 0 ? tid : -1, UNITS[u.type[i]].attack);
+    this.siegeShots.push(u.id[i], x, y, lands + 1);
+  }
+
+  /**
+   * The stones landing this tick (D-099): one thrown at a building hits it, if it still stands and is
+   * not the thrower's side's, SIEGE.vsBuildings times (a gate GATE.siege times); one thrown at units
+   * hits every unit within the engine's splash of where it lands but its owner's (on a wall for less).
+   */
+  private landStones(w: World): void {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const st = w.stones;
+    const splash = UNITS[UnitType.Siege].splash ?? 0;
+    const sp2 = splash * splash;
+    let keep = 0;
+    for (let k = 0; k < st.length; k += STONE) {
+      const [id, owner, x, y, lands, target, attack] = st.slice(k, k + STONE);
+      if (lands > w.tick) {
+        for (let q = 0; q < STONE; q++) st[keep + q] = st[k + q];
+        keep += STONE;
+        continue;
+      }
+      if (target >= 0) {
+        const bs = w.building(target);
+        if (bs >= 0 && b.owner[bs] !== owner) {
+          this.buildingDamage[bs] += b.type[bs] === BuildingType.Gate ? gateDamage(attack, UnitType.Siege) : attack * SIEGE.vsBuildings;
+          if (owner < PLAYER_COUNT) this.buildingHitBy[bs] |= 1 << owner;
+          if (OUTPOST.on && b.type[bs] === BuildingType.Outpost) b.provoker[bs] = id;
+        }
+        continue;
+      }
+      for (let j = 0; j < w.units.count; j++) {
+        if (u.owner[j] === owner || u.action[j] === Action.Garrisoned) continue;
+        const dx = u.x[j] - x;
+        const dy = u.y[j] - y;
+        if (dx * dx + dy * dy <= sp2) this.hit(w, j, attack, UnitType.Siege, owner, HitCause.Unit, id);
+      }
+    }
+    st.length = keep;
+  }
+
   /** The visible enemy unit nearest unit i within `reach` (ties as findTarget), as an id, or -1. */
   private nearestUnit(w: World, fog: Fog, i: number, reach: number): number {
     const u = w.units.col;
@@ -1487,6 +1648,9 @@ export class UnitSystem {
     } else if (order === Order.Retreat || farmer) {
       // Farmers fight only when told to attack something.
       tid = -1;
+    } else if (SIEGE.on && u.type[i] === UnitType.Siege && (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
+      // A siege engine chooses as one (D-099).
+      tid = this.siegeTarget(w, fog, i);
     } else if ((w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
       const hold = order === Order.None && u.stance[i] === Stance.Hold;
       tid = this.findTarget(w, fog, i, hold ? info.range : Math.max(AGGRO_RANGE, info.range));
@@ -1553,6 +1717,9 @@ export class UnitSystem {
       if (t0 >= 0 && onWall(w, t0) && !this.reaches(w, i, t0)) tid = -1;
     }
     if (CAV_FLANK.on && u.type[i] === UnitType.Cavalry) tid = this.flankDive(w, fog, i, order, tid);
+    // A siege engine (D-099) lets go of what came nearer than its minRange, but for an attack order
+    // (it backs off from that, below).
+    if (SIEGE.on && u.type[i] === UnitType.Siege && tid >= 0 && order !== Order.Attack && this.tooNear(w, i, tid)) tid = -1;
     u.target[i] = tid;
 
     if (tid >= 0) {
@@ -1576,6 +1743,12 @@ export class UnitSystem {
         d2 = rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], sx, sy);
       }
       u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
+      // A siege engine told to attack what is within its minRange backs straight off (D-099).
+      if (SIEGE.on && u.type[i] === UnitType.Siege && this.tooNear(w, i, tid)) {
+        steerDirect(w, i, u.x[i] - tx, u.y[i] - ty, info.speed);
+        u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
+        return;
+      }
       // Melee at one on a wall from outside its town (D-096) cannot hit it (an attack goes in by a gate, below).
       if (d2 <= info.range * info.range && !(ts >= 0 && info.range <= CELL && onWall(w, ts) && !this.reaches(w, i, ts))) {
         this.attacking[i] = 1;
@@ -2055,6 +2228,8 @@ export class UnitSystem {
     this.unitHitBy.fill(0, 0, count);
     this.buildingHitBy.fill(0, 0, w.buildings.count);
     this.shots.length = 0;
+    this.siegeShots.length = 0;
+    if (SIEGE.on) this.landStones(w);
     for (let i = 0; i < count; i++) {
       if (u.cooldown[i] > 0) u.cooldown[i]--;
       if (u.castCooldown[i] > 0) u.castCooldown[i]--;
@@ -2067,6 +2242,12 @@ export class UnitSystem {
       const tid = u.target[i];
       const info = UNITS[u.type[i]];
       const ts = w.unit(tid);
+      if (SIEGE.on && u.type[i] === UnitType.Siege) {
+        this.throwStone(w, i, tid);
+        u.lastDealt[i] = w.tick;
+        u.cooldown[i] = info.cooldown;
+        continue;
+      }
       if (ts >= 0) {
         this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
         if (u.action[i] === Action.Garrisoned) this.shots.push(u.orderTarget[i], tid, 1);
@@ -2194,7 +2375,7 @@ export class UnitSystem {
     u.hitCause[ts] = cause;
     u.hitById[ts] = attackerId;
     // On a wall (D-096): ranged units' and mages' shots (not the cannon) for less.
-    const cover = cause !== HitCause.Cannon && (attackerType === UnitType.Ranged || attackerType === UnitType.Mage) && onWall(w, ts);
+    const cover = cause !== HitCause.Cannon && (attackerType === UnitType.Ranged || attackerType === UnitType.Mage || attackerType === UnitType.Siege) && onWall(w, ts);
     this.unitDamage[ts] += cover ? coverDamage(damage(attack, attackerType, u.type[ts])) : damage(attack, attackerType, u.type[ts]);
     this.shieldDamage[ts] += cover ? coverDamage(damage(attack, attackerType, SHIELD)) : damage(attack, attackerType, SHIELD);
     this.unitHitBy[ts] |= 1 << attackerOwner;
@@ -2385,8 +2566,8 @@ export function coverDamage(d: number): number {
 }
 
 /**
- * The arrows building slot s shoots, null if none: a finished main city, the big city's tower or
- * an arrow tower (round 7), or a governed town's gate (D-096).
+ * The arrows building slot s shoots, null if none: a finished main city, a town's keep (D-100; with
+ * KEEP off the big city's tower) or an arrow tower (round 7), or a governed town's gate (D-096).
  */
 function arrowOf(w: World, s: number): { damage: number; range: number; cooldown: number } | null {
   const b = w.buildings.col;
@@ -2394,8 +2575,9 @@ function arrowOf(w: World, s: number): { damage: number; range: number; cooldown
   switch (b.type[s]) {
     case BuildingType.MainCity:
       return MAIN_ARROW;
-    case BuildingType.TownTower:
-      return TOWER_ARROW;
+    case BuildingType.Keep:
+      // D-100: a keep's by its town's size; before, the big city's tower's.
+      return KEEP.on && b.town[s] >= 0 ? KEEP.arrow[w.townSize[b.town[s]]] : TOWER_ARROW;
     case BuildingType.ArrowTower:
       return ARROW_TOWER;
     case BuildingType.Gate:
@@ -2442,6 +2624,8 @@ export function preferHighId(w: World, chooser: number): boolean {
  * rangedDen of it, at least 1. Kept apart from the unit-vs-unit multipliers (MULTIPLIERS).
  */
 export function gateDamage(attack: number, attacker: number): number {
+  // D-099: a siege engine's stone GATE.siege times.
+  if (attacker === UnitType.Siege) return attack * GATE.siege;
   if (attacker !== UnitType.Ranged && attacker !== UnitType.Mage) return attack;
   return Math.max(1, idiv(attack * GATE.rangedNum, GATE.rangedDen));
 }

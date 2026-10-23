@@ -59,6 +59,13 @@ export const UnitType = {
   Militia: 4,
   /** Heavy cavalry, trained at a stable (round 7, D-061; while `Rules.features.cavalry`). */
   Cavalry: 5,
+  /**
+   * A siege engine (D-099; East 霹靂車, West 投石機), trained at a siege works while
+   * `Rules.features.siege`: throws a stone that lands `Rules.siege.flightTicks` later where it
+   * aimed, hitting every enemy unit within `UnitInfo.splash` of it, or the building it aimed at
+   * (`Rules.siege.vsBuildings` times, gates `Rules.gate`'s siege times); not within `minRange`.
+   */
+  Siege: 6,
 } as const;
 export type UnitType = (typeof UnitType)[keyof typeof UnitType];
 
@@ -72,11 +79,20 @@ export const BuildingType = {
   Barracks: 6,
   Range: 7,
   MageHall: 8,
-  /** The big city's neutral arrow tower; never built by players. */
+  /**
+   * A town's keep (主堡, D-100): 3 x 3 in the middle of every town (its top-left at the centre cell
+   * - 1), never built by players, holding no one. It shoots (`Rules.towns[size].keep`) for whoever
+   * holds the town: for the militia while neutral, for the governor once governed; it must fall for
+   * the town to be taken. Gone from its fall until the town is governed (built again when repaired)
+   * or neutral again; a governed town builds a fallen keep again once no enemy has stood inside for
+   * `keep.rebuildTicks`. Its full hp is its town's (`keep.hp`; `buildings[Keep].hp` is the big city's).
+   */
+  Keep: 9,
+  /** The keep's old name (the big city's tower before D-100); the same building, kept one version. */
   TownTower: 9,
   /**
    * A player's arrow tower (round 7, D-061; while `Rules.features.towers`): shoots by itself,
-   * ranged units and mages can hide in it and shoot from inside. Not the big city's TownTower.
+   * ranged units and mages can hide in it and shoot from inside. Not a town's Keep.
    */
   ArrowTower: 10,
   /** Trains cavalry (round 7, D-061; while `Rules.features.cavalry`). */
@@ -93,6 +109,8 @@ export const BuildingType = {
    * town (NEUTRAL for a neutral town); open to its owner, closed to everyone else; gone when broken.
    */
   Gate: 13,
+  /** Trains siege engines (D-099, 砲坊; while `Rules.features.siege`). */
+  SiegeWorks: 14,
 } as const;
 export type BuildingType = (typeof BuildingType)[keyof typeof BuildingType];
 
@@ -570,6 +588,10 @@ export interface UnitInfo {
   /** Ticks to train. */
   trainTicks: number;
   population: number;
+  /** Siege engines (D-099): no shots at what is nearer than this (fixed point). */
+  minRange?: number;
+  /** Siege engines (D-099): a stone hits every enemy unit within this of where it lands (fixed point). */
+  splash?: number;
 }
 
 export interface BuildingInfo {
@@ -643,13 +665,15 @@ export interface TownInfo {
   castle?: TownCastle;
   /** Each gate's hit points (D-096, while `features.gates`; `buildings[Gate].hp` is the big city's). */
   gateHp?: number;
+  /** The town's keep (D-100, while `features.keep`; BuildingType.Keep): its full hp, side in cells, arrows, and how long a governed town waits to build a fallen one again (ticks). */
+  keep?: { hp: number; size: number; arrow: ArrowInfo; rebuildTicks: number };
 }
 
 /**
  * A town's castle (D-089): offsets in cells from the town's centre cell (TownSpec / TownField
- * cellX, cellY), in the map's own directions, the same for both players. The big city's differ from
- * map to map (its castle is centred on its tower): read them from this game's rules, never assume.
- * The town is what lies inside the walls; `radius` stays the walls' distance from the centre.
+ * cellX, cellY), in the map's own directions, the same for both players and on every map (D-100:
+ * centred on the keep); read them from this game's rules, never assume. The town is what lies
+ * inside the walls; `radius` stays the walls' distance from the centre.
  */
 export interface TownCastle {
   /** Cells inside the walls, inclusive: the town (capturing, holding, governing, plundering). */
@@ -709,6 +733,14 @@ export interface Features {
   walls?: boolean;
   /** Cavalry choosing its own target goes round the front for mages, then ranged units (D-097). Absent: off. */
   cavalryFlank?: boolean;
+  /** Siege works can be built and siege engines trained (D-099), `Rules.siege`. Absent: off. */
+  siege?: boolean;
+  /**
+   * Towns about 1.5 x bigger with a keep in each (D-100): the castles in `towns[size].castle`, the
+   * keep (BuildingType.Keep) in `towns[size].keep`. Absent: off (the big city's 2 x 2 tower, or
+   * 3 x 3 on random maps with adjacent starts, as before).
+   */
+  keep?: boolean;
 }
 
 export interface MapInfo {
@@ -773,6 +805,12 @@ export interface Rules {
   plunderRecovery?: { startPermille: number; ticks: number };
   /** The crystal cannon's range in fixed point (round 8: 7 cells; before, 8). */
   cannonRange?: number;
+  /**
+   * Siege engines (D-099; in play while `features.siege`): a stone lands `flightTicks` after it is
+   * thrown; on the building it aimed at it does `vsBuildings` times its attack (a gate: `gate`'s
+   * siege times, D-096). Always sent; `features.siege` says whether it is on.
+   */
+  siege?: { vsBuildings: number; flightTicks: number };
   /**
    * Castle gates (D-096; in play while `features.gates`): hits on a gate by ranged units and mages count
    * `rangedNum` / `rangedDen` (at least 1; melee in full); a governed town rebuilds a broken gate
@@ -915,6 +953,13 @@ export type SimEvent =
    */
   /** `n` (D-096): this many arrows at once, absent for one (PROTOCOL.md 5). */
   | { k: "shot"; building: number; target: number; n?: number }
+  /**
+   * A siege engine `u` threw a stone (D-099): it lands at (x, y), fixed point; `lands` is the tick of
+   * the first snapshot that shows it landed (this event's snapshot tick + Rules.siege.flightTicks). To
+   * every player who sees the engine or where it lands; one who does not see the engine also gets
+   * `from`, the way the stone comes from (0-15, as `facing`), and nothing of where the engine is.
+   */
+  | { k: "siege_shot"; u: number; x: number; y: number; lands: number; from?: number }
   | { k: "rejected"; seq: number; reason: Reject }
   | { k: "game_over"; winner: number; reason: GameOverReason };
 export type EventKind = SimEvent["k"];
@@ -932,6 +977,7 @@ export const EVENT_KINDS = [
   "town_restored",
   "mage_killed",
   "shot",
+  "siege_shot",
   "rejected",
   "game_over",
 ] as const satisfies readonly EventKind[];
@@ -1031,6 +1077,9 @@ export interface GameStats {
     /** Round 7 (D-061): unitsTrained and unitsLost stay farmers, spearmen, ranged, mages. */
     cavalryTrained?: number;
     cavalryLost?: number;
+    /** D-099: siege engines, only while `features.siege`. */
+    siegeTrained?: number;
+    siegeLost?: number;
     townsPlundered: number;
     townsGoverned: number;
   }[];
