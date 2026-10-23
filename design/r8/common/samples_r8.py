@@ -591,7 +591,100 @@ def board_ground_fix(gdir, W=2600):
     return boards.save(boards.stack(parts, W), label)
 
 
-if __name__ == "__main__" and sys.argv[1] == "terrain":
+def diagonal_river(n=18):
+    """A river running diagonally (two cells wide, as the sim lays it: a staircase on the grid), a three-cell ford across
+    it at the left, a north-south bridge at the right, rocks; the cells the sim would have."""
+    g = np.zeros((n, n), dtype=int)
+    for x in range(n):                                     # diagonal to x 10, then straight east (the bridge there)
+        y = int(2 + min(x, 10) * 0.8)
+        g[y:y + 2, x] = 3
+    for x in range(3, 6):
+        g[(g[:, x] == 3), x] = 4
+    for x in range(13, 16):
+        g[(g[:, x] == 3), x] = 5
+    g[12, 3] = g[12, 4] = g[13, 4] = g[2, 13] = 1
+    return g
+
+
+def river_scene(gdir, g, ppm=40, t=0.0, units=()):
+    """The ground with the water in it, drawn as the client's shader will (ground_r8.compose with ground.json's water),
+    the fords and the bridges' pieces on it, rocks, units: as the game draws them."""
+    import ground_r8
+    gj = json.loads((gdir / "ground" / "ground.json").read_text())
+    rules = dict(gj["rules"], dirt=dict(gj["rules"]["dirt"], noise_threshold=0.99))
+    layers = _ground_layers(gdir)
+    top = ground_r8.compose(g, [], layers, ppm=ppm, rules=rules, t=t)
+    cam = Image.fromarray((top * 255).round().astype(np.uint8), "RGB").resize((top.shape[1], top.shape[0] // 2), Image.LANCZOS)
+    cam = cam.convert("RGBA")
+    f = ppm / 60.0
+    flat, items, shadows = [], [], []
+    for frame, x, y, front, ground in terrain_pieces(g):
+        if ground == "water":                              # drawn by the shader now
+            continue
+        im, anc, sh = _sprite(CLIFF_DIR, frame, "x3", f)
+        X, Y = x * 2.0 * ppm, y * 2.0 * ppm * 0.5
+        xy = (int(round(X - anc[0])), int(round(Y - anc[1])))
+        if ground:
+            if ground == "deck" and sh:
+                flat.append((sh[0], (int(round(X - sh[1])), int(round(Y - sh[2])))))
+            flat.append((im, xy))
+        else:
+            items.append((front, im, xy))
+            if sh:
+                shadows.append((sh[0], (int(round(X - sh[1])), int(round(Y - sh[2])))))
+    if UNITS_DIR:
+        import boards_r8 as B
+        atl = {}
+        for (u, anim, facing, k, team, x, y) in units:
+            if u not in atl:
+                atl[u] = B.field.Atlas(Path(UNITS_DIR) / u / "r7v8" / "prod" / u / "atlas_x3" / f"{u}.json")
+            body, (ax, ay), _ = B.frame(atl[u], u, anim, facing, k, team)
+            body = body.resize((max(1, int(body.width * f)), max(1, int(body.height * f))), Image.LANCZOS)
+            items.append((y / 2.0, body, (int(round(x * ppm - ax * f)), int(round(y * ppm * 0.5 - ay * f)))))
+    for im, xy in flat + shadows + [(im, xy) for _, im, xy in sorted(items, key=lambda q: q[0])]:
+        layer = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+        layer.paste(im, xy, im)
+        cam = Image.alpha_composite(cam, layer)
+    return cam.convert("RGB")
+
+
+def board_river(gdir, research, W=2800):
+    label = "R8-29-河流-mobile"
+    text = ("河流（ceo 2026-10-23：現在的水是一格一格的水圖塊，平平的藍灰色、米色的邊、轉角跟著格子走，放在寫實地面旁邊不對）。"
+            "art-v6 起，水改成地面著色器直接畫（和 client 談好，ground.json 多一層 water 和 rules.water）：\n"
+            "・岸線：照離水的真正距離算，再糊開 1.5 公尺，斜著流的河是一條順的岸，不是樓梯（模擬裡的河還是一格一格的，只有畫法變）。\n"
+            "・岸邊：一條濕的深色泥帶，再外面是原本的河岸泥。\n"
+            "・水面：淺處看得到河床，越往中間越深越暗；水紋是我們自己做的（沒有用外部素材），兩層朝不同方向慢慢流，天空在水面反光。\n"
+            "・淺灘和橋照舊是圖，放在水上：淺灘是淺水底下的碎石和踏腳石，邊緣淡進水裡；橋是舊木板、兩根大梁、木樁和扶手。\n"
+            "上：遊戲的鏡頭（2 倍），一條斜的河，左邊三格寬的淺灘，右邊一座南北向的橋，站著寫實的兵。下：放大；水流動的樣子見 GIF。")
+    g = diagonal_river()
+    units = [("spear_e", "walk", 6, 2, "blue", 9.0, 10.4), ("spear_e", "idle", 6, 0, "blue", 8.2, 7.8),
+             ("bow_w", "idle", 2, 0, "red", 28.0, 21.4), ("pike_w", "walk", 2, 3, "red", 29.6, 23.0)]
+    full = river_scene(gdir, g, ppm=40, units=units)
+    zoom = full.crop((60, 40, 760, 400)).resize((1400, 720), Image.LANCZOS)
+    zoom2 = full.crop((960, 300, 1360, 540)).resize((1000, 600), Image.LANCZOS)
+    parts = [boards.header(W, label, RELOOK.replace("核准的那一版", "核准的建築、懸崖") + text)]
+    parts.append(boards.row([boards.captioned(full, "遊戲的鏡頭（2 倍）：斜的河、淺灘、橋、寫實兵", 22)], W))
+    parts.append(boards.row([boards.captioned(zoom, "淺灘一帶（4 倍）", 22), boards.captioned(zoom2, "橋一帶（5 倍）", 22)], W, gap=30))
+    wl = Image.open(gdir / "ground" / "water.png").convert("RGB").resize((360, 360), Image.LANCZOS)
+    parts.append(boards.row([boards.captioned(wl, "水紋層（一塊 4 公尺，可以無縫接）", 20)], W))
+    out = boards.save(boards.stack(parts, W), label)
+    # the flow: 12 frames over 6 s, the ford's stretch at 4x
+    frames = []
+    for k in range(12):
+        im = river_scene(gdir, g, ppm=40, t=k * 0.5).crop((60, 40, 760, 400)).resize((700, 360), Image.LANCZOS)
+        ImageDraw.Draw(im).text((8, 8), "R8-29-河流-水流動", fill=(255, 255, 255))
+        frames.append(im)
+    gif = boards.OUT / "R8-29-河流-水流動.gif"
+    frames[0].save(gif, save_all=True, append_images=frames[1:], duration=250, loop=0)
+    print("wrote", gif)
+    return out
+
+
+if __name__ == "__main__" and sys.argv[1] == "river":
+    UNITS_DIR = sys.argv[4] if len(sys.argv) > 4 else None
+    print(board_river(Path(sys.argv[2]), Path(sys.argv[3])))
+elif __name__ == "__main__" and sys.argv[1] == "terrain":
     UNITS_DIR = sys.argv[3] if len(sys.argv) > 3 else None
     terrain_scene(Path(sys.argv[2]), river_map(), units=[("spear_e", "walk", 6, 2, "blue", 7.0, 14.0),
                                                          ("spear_e", "idle", 6, 0, "blue", 28.5, 17.8),
