@@ -647,7 +647,7 @@ export const NODE_AMOUNT = { tree: 100, goldCell: 400, bush: 100, crystalCell: 1
  * change), and contested gold mines on the axis (as far from both starts; map.ts, random-map.ts).
  * Off: as before.
  */
-export const RICH = { on: false, goldCell: 600, tree: 150 };
+export const RICH = { on: true, goldCell: 600, tree: 150 };
 /**
  * D-101 (the user: a market that trades what is left over for what is missing, dearer the more one
  * trades, as in AoE; ceo 2026-10-24): BuildingType.Market and `trade`, food or wood for gold, `lot`
