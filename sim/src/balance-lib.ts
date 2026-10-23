@@ -16,6 +16,8 @@ export interface Army {
   ranged: number;
   mage: number;
   cav?: number;
+  /** D-099: siege engines (only with SIEGE on). */
+  siege?: number;
 }
 
 const TYPES: [keyof Army, UnitType][] = [
@@ -23,6 +25,7 @@ const TYPES: [keyof Army, UnitType][] = [
   ["ranged", UnitType.Ranged],
   ["mage", UnitType.Mage],
   ["cav", UnitType.Cavalry],
+  ["siege", UnitType.Siege],
 ];
 
 /** What an army costs: every resource counts the same (crystal too). */
@@ -41,6 +44,7 @@ export function armyText(a: Army): string {
   if (a.ranged > 0) parts.push(`${a.ranged} 遠程`);
   if (a.mage > 0) parts.push(`${a.mage} 法師`);
   if ((a.cav ?? 0) > 0) parts.push(`${a.cav} 騎兵`);
+  if ((a.siege ?? 0) > 0) parts.push(`${a.siege} 攻城砲`);
   return parts.join("＋");
 }
 
@@ -122,11 +126,12 @@ function count(g: Game, p: number): Army {
     else if (u.type[s] === UnitType.Ranged) a.ranged++;
     else if (u.type[s] === UnitType.Mage) a.mage++;
     else if (u.type[s] === UnitType.Cavalry) a.cav = (a.cav ?? 0) + 1;
+    else if (u.type[s] === UnitType.Siege) a.siege = (a.siege ?? 0) + 1;
   }
   return a;
 }
 
-const total = (a: Army) => a.spear + a.ranged + a.mage + (a.cav ?? 0);
+const total = (a: Army) => a.spear + a.ranged + a.mage + (a.cav ?? 0) + (a.siege ?? 0);
 
 /** Who is told to move onto the other's position: side 0, side 1, or both at once. */
 export const BOTH = 2;
@@ -680,4 +685,119 @@ export function guardPoint(towers: boolean, attackers: Army): Guarded {
     kills: army.length - alive(army),
     ticks: g.tick - start,
   };
+}
+
+export interface SiegeRaid {
+  /** Towers standing at the end, of `towers`. */
+  towersLeft: number;
+  /** Ticks until the last tower fell (or the end). */
+  ticks: number;
+  siegeLeft: number;
+  escortLeft: number;
+  defendersLeft: number;
+}
+
+/** The longest siege raid (4 minutes). */
+const RAID_TICKS = 4800;
+
+/**
+ * Siege engines with an escort against a block of arrow towers (D-099; SIEGE must be on). Player 1's
+ * `towers` arrow towers stand in one or two columns at the east of the field (`hidden` ranged units
+ * inside each), its `defenders` beside them; player 0's `siege` engines start 22 cells west and are
+ * told to move onto the towers (each throws at what it outranges first), the `escort` keeps a cell
+ * behind them (sent again every 2 s, so out of the towers' range too); once the first stone is
+ * thrown, the defenders go for the engines. Ends when every tower is down, the engines are gone, or after 4 minutes.
+ */
+export function siegeRaid(siege: number, escort: Army, towers: number, hidden: number, defenders: Army): SiegeRaid {
+  const g = new Game({ seed: 1, scenario: "standard", maxTicks: 0 });
+  const w = g.w;
+  const u = w.units.col;
+  for (let s = 0; s < w.units.count; s++) w.unitSlot[u.id[s]] = -1;
+  w.units.count = 0;
+  const f = field(g);
+  let seq = 0;
+  const push = (p: number, body: CommandBody) => g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+  const info = BUILDINGS[BuildingType.ArrowTower];
+  const towerIds: number[] = [];
+  for (let k = 0; k < towers; k++) {
+    const x = f.x + 24 + 4 * Math.trunc(k / 5);
+    const y = f.y + 1 + 3 * (k % 5);
+    towerIds.push(w.addBuilding(1, BuildingType.ArrowTower, x, y, info.hp, 1000));
+  }
+  const place = (p: number, army: Army, x0: number, y0: number): number[] => {
+    const ids: number[] = [];
+    let k = 0;
+    for (const [key, type] of TYPES) {
+      for (let i = 0; i < (army[key] ?? 0); i++, k++) {
+        ids.push(w.addUnit(p, type, ((x0 + Math.trunc(k / 6)) << CELL_SHIFT) + 512, ((y0 + (k % 6)) << CELL_SHIFT) + 512, UNITS[type].hp));
+      }
+    }
+    return ids;
+  };
+  const midY = f.y + (FIELD_H >> 1);
+  const engines = place(0, { spear: 0, ranged: 0, mage: 0, siege }, f.x + 2, midY - 2);
+  const guards = place(0, escort, f.x + 4, midY - 3);
+  const keep = place(1, defenders, f.x + 21, midY - 3);
+  const inside = place(1, { spear: 0, ranged: hidden * towers, mage: 0 }, f.x + 22, midY - 3);
+  g.fog.update(w);
+  for (let k = 0; k < towers; k++) {
+    const ids = inside.slice(k * hidden, (k + 1) * hidden);
+    if (ids.length > 0) push(1, { c: "garrison", u: ids, building: towerIds[k] });
+  }
+  for (let t = 0; t < 200; t++) g.step();
+  const alive = (ids: number[]) => ids.filter((id) => w.unit(id) >= 0);
+  const goal = { x: f.x + 26, y: midY };
+  push(0, { c: "move", u: engines, x: goal.x, y: goal.y });
+  const start = g.tick;
+  let charged = false;
+  let last = start;
+  while (g.tick - start < RAID_TICKS && alive(engines).length > 0 && towerIds.some((id) => w.building(id) >= 0)) {
+    if ((g.tick - start) % 40 === 0) {
+      const es = alive(engines).map((id) => w.unit(id));
+      const ex = Math.trunc(es.reduce((a, s) => a + u.x[s], 0) / es.length) >> CELL_SHIFT;
+      const ey = Math.trunc(es.reduce((a, s) => a + u.y[s], 0) / es.length) >> CELL_SHIFT;
+      const g0 = alive(guards);
+      if (g0.length > 0) push(0, { c: "move", u: g0, x: ex - 1, y: ey });
+      if (charged && alive(keep).length > 0) push(1, { c: "move", u: alive(keep), x: ex, y: ey });
+    }
+    g.step();
+    if (!charged && g.events.some((e) => e.ev.k === "siege_shot")) charged = true;
+    if (towerIds.some((id) => w.building(id) >= 0)) last = g.tick;
+  }
+  return {
+    towersLeft: towerIds.filter((id) => w.building(id) >= 0).length,
+    ticks: last - start,
+    siegeLeft: alive(engines).length,
+    escortLeft: alive(guards).length,
+    defendersLeft: alive(keep).length + alive(inside).length,
+  };
+}
+
+/**
+ * Ticks for `siege` engines of player 0, 8 cells out from the first gate of the first town of this
+ * size and told to attack it, to break it (D-099; SIEGE must be on). No militia; -1 if it stands
+ * after 2 minutes.
+ */
+export function siegeGate(size: TownSize, siege: number): number {
+  const g = new Game({ seed: 1, scenario: "standard", maxTicks: 0 });
+  const w = g.w;
+  const u = w.units.col;
+  for (let s = 0; s < w.units.count; s++) w.unitSlot[u.id[s]] = -1;
+  w.units.count = 0;
+  w.wallAt.fill(-1);
+  const t = w.map.towns.findIndex((x) => x.size === size);
+  const gs = w.gateIn(t, 0);
+  const b = w.buildings.col;
+  const gid = b.id[gs];
+  const gx = b.cellX[gs];
+  const gy = b.cellY[gs];
+  const out = [[0, -8], [-8, 0], [8, 0], [0, 8]].map(([dx, dy]) => ({ x: gx + dx, y: gy + dy })).find((p) => w.walkable(p.x, p.y) && w.insideAt[p.y * w.size + p.x] < 0);
+  if (out === undefined) throw new Error("no room before the gate");
+  const ids: number[] = [];
+  for (let k = 0; k < siege; k++) ids.push(w.addUnit(0, UnitType.Siege, ((out.x + k) << CELL_SHIFT) + 512, (out.y << CELL_SHIFT) + 512, UNITS[UnitType.Siege].hp));
+  g.fog.update(w);
+  g.push({ c: "attack", u: ids, target: gid, t: g.tick, p: 0, seq: 0 } as never);
+  const start = g.tick;
+  while (g.tick - start < FIGHT_TICKS && w.building(gid) >= 0) g.step();
+  return w.building(gid) >= 0 ? -1 : g.tick - start;
 }

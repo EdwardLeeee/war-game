@@ -60,8 +60,11 @@ export const UNIT_COLS = [
   "flank", "flankSide", "flankX", "flankY", "flankTick",
 ] as const;
 export type UnitCol = (typeof UNIT_COLS)[number];
-/** Unit types counted per player in `trained` and `lost` (UnitType 0..5; the hash leaves out cavalry while CAVALRY is off). */
-export const UNIT_KINDS = 6;
+/**
+ * Unit types counted per player in `trained` and `lost` (UnitType 0..6; the hash leaves out cavalry
+ * while CAVALRY is off, and siege engines while SIEGE is off, D-099).
+ */
+export const UNIT_KINDS = 7;
 /** Unit columns that are statistics only, left out of the hash so a game plays and hashes as without them. */
 export const UNIT_HASH_SKIP: ReadonlySet<string> = new Set(["hitCause"]);
 /** What last hurt a unit (unit column hitCause; farmers' deaths are counted by it). */
@@ -136,6 +139,8 @@ export const BLOCK_WALL = 8;
 export const BLOCK_GATE = 16;
 /** Openings in every castle's walls (D-096; castle.gates). */
 export const GATES = 4;
+/** Numbers per stone in World.stones (D-099). */
+export const STONE = 7;
 
 export class World {
   readonly map: GameMap;
@@ -191,6 +196,12 @@ export class World {
    * rebuilds that broken gate (counting while no enemy stands inside its walls), 0 when not.
    */
   gateRebuild: Int32Array;
+  /**
+   * D-099 (SIEGE): stones in the air, STONE numbers each in the order thrown: the engine's id, its
+   * owner, where it lands (fixed point x, y), the tick it lands, the building it was thrown at (-1: at
+   * units) and the damage. In the hash only while SIEGE is on.
+   */
+  stones: number[] = [];
   /** Gate cells each player may walk that others may not (passClass). */
   private readonly ownGates = new Int32Array(PLAYER_COUNT);
   private readonly passGrids: Uint8Array[] = [];
