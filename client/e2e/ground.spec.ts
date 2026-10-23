@@ -22,6 +22,9 @@ test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，�
   if (browserName === "chromium") {
     for (const [name, x, y, z] of [
       ["ground-real-river-bridge", 18.5, 59.5, 1.2],
+      // R8-28 (the weights soft, the dirt patches' edges soft): a diagonal river's bank, rocks' gravel and dirt.
+      ["ground-real-river-bank", 24, 62, 2.4],
+      ["ground-real-gravel-dirt", 16, 47, 2.2],
       ["ground-real-home", 14, 80, 1.0],
       ["ground-real-rock-cliff", 46, 24, 0.9],
       ["ground-real-whole-map", 48, 48, 0.35],

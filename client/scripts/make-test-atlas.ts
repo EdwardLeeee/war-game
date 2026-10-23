@@ -157,7 +157,8 @@ function ground(): void {
     writeFileSync(join(dir, `${id}.png`), png(64, 64, (x, y) => [c[0] + ((x * 7 + y * 13 + k) % 11) - 5, c[1] + ((x * 5 + y * 3) % 9) - 4, c[2], 96 + ((x * 31 + y * 17 + k * 5) % 64)]));
     return { id, file: `${id}.png`, tile_m: 8, mean: c.map((v) => (v / 255) ** 2.2) };
   });
-  const rules = { bank_cells: 1, gravel_cells: 1, edge_m: 0.6, height_k: 0.8, dirt: { node_cells: 1, noise_threshold: 0.72 } };
+  // As the development set (scripts/fetch-ground-dev.ts): ui's R8-28 numbers, the weights soft.
+  const rules = { bank_cells: 1, gravel_cells: 1, edge_m: 1.2, height_k: 0.9, dirt: { node_cells: 1, noise_threshold: 0.8, noise_soft: 0.3 }, weights: { texels_per_cell: 4, soft_m: 1.6, blur_m: 1.0 } };
   writeFileSync(join(dir, "ground.json"), JSON.stringify({ format: "war-game ground 1", layers, rules, grade: { brightness: 1, saturation: 1 } }));
 }
 

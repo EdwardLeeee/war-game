@@ -8,7 +8,8 @@
 
 | 素材 | 用在哪 | 授權 | 授權原文 | 讀授權的日期 |
 |---|---|---|---|---|
-| Poly Haven 貼圖 18 種（清單和每個檔的網址、sha256 在 `design/r7/common/textures.py`、`textures_sha.json`）：rough_linen、hessian_230、brown_leather、fabric_leather_02、metal_plate、rusty_metal_02、fine_grained_wood、medieval_wood、old_planks_02、castle_brick_01、clay_plaster、thatch_roof_angled、clay_roof_tiles_02、leafy_grass、aerial_grass_rock、stony_dirt_path、gravel_ground_01、brown_mud_rocks_01 | R7 寫實比較（D-092）：兵、建築、地面的材質，算進圖裡 | CC0 1.0（可商用，不用標示出處） | https://polyhaven.com/license | 2026-10-20 |
+| Poly Haven 貼圖 22 種（清單和每個檔的網址、sha256 在 `design/r7/common/textures.py`、`textures_sha.json`）：rough_linen、hessian_230、brown_leather、fabric_leather_02、metal_plate、rusty_metal_02、fine_grained_wood、medieval_wood、old_planks_02、castle_brick_01、clay_plaster、thatch_roof_angled、clay_roof_tiles_02、leafy_grass、aerial_grass_rock、stony_dirt_path、gravel_ground_01、brown_mud_rocks_01、rock_face_03、lichen_rock、rustic_stone_wall_02、rocks_ground_02 | R7 寫實比較（D-092）、R8（D-093）：兵、建築、懸崖、地面的材質，算進圖裡 | CC0 1.0（可商用，不用標示出處） | https://polyhaven.com/license | 2026-10-20 |
+| Poly Haven 掃描岩壁模型 2 種（glTF 1k，網址和 sha256 在 `design/r8/common/scans.py`、`scans_sha.json`）：rock_face_01（Dario Barresi）、rock_face_02（Dario Barresi；處理 Rico Cilliers） | R8 懸崖（`design/r8/blender/terrain_r8.py`）：從正面量出凹凸和顏色，貼在岩柱和岩壁上，算進圖裡 | CC0 1.0（可商用，不用標示出處） | https://polyhaven.com/license 、https://polyhaven.com/a/rock_face_01 、https://polyhaven.com/a/rock_face_02 | 2026-10-22 |
 | MPFB 2.0.18（MakeHuman 的 Blender 外掛）的底模、變形、權重 | R7 版本 2：寫實人體 | 素材 CC0 1.0；官方寫明產出物不受任何限制 | https://github.com/makehumancommunity/mpfb2/blob/master/LICENSE.md | 2026-10-20 |
 | 寫實馬：Lyndon Daniels〈Realtime Rancher's 3D Model Pack〉的馬（網格、2k 顏色／法線／AO 貼圖、鬃毛和尾巴）；ChadM 加上骨架和權重的版本〈rigged horse〉。檔案 `horse.zip`（sha256 469704f5…0043d27）、`riggedHorse.blend`（sha256 9cca670b…7037f4a） | R8 騎兵的馬（`design/r8/blender/horse_r8.py`） | CC0 1.0（兩個頁面都標 CC0；rigged 版寫明「授權和 Lyndon 的原版相同」） | https://opengameart.org/content/realtime-ranchers-3d-model-pack 、 https://opengameart.org/content/rigged-horse | 2026-10-21 |
 
@@ -40,6 +41,21 @@ R8 的核准稿（`design/r8/out/R8-*`）上方放了幾張裁切過的參考圖
 | 城牆 06：《武經總要》〈城制〉 | https://commons.wikimedia.org/wiki/File:武经总要_曾公亮和丁度_宋朝_二_36.jpg | 公有領域（PD-Art） | 曾公亮、丁度等（1044）；《四庫全書》本重繪 | 2026-10-22 |
 | 城牆 09：西安明城牆頂 | https://commons.wikimedia.org/wiki/File:Xi'an_City_Wall_(9911940185).jpg | CC0 1.0 | Gary Todd | 2026-10-22 |
 | 城牆 14：維奧萊勒杜克〈垛口〉卡卡松 | https://commons.wikimedia.org/wiki/File:Creneau.Carcassonne.png | 公有領域 | Viollet-le-Duc《法國建築辭典》，刻版 Pégard | 2026-10-22 |
+| 東陸建築 01：佛光寺東大殿模型（R8 第二批樣本 R8-21） | https://commons.wikimedia.org/wiki/File:Main_Hall_at_Foguang_Temple_(9833583045).jpg | CC0 1.0 | Gary Todd | 2026-10-22 |
+| 東陸建築 03：南禪寺大殿模型 | https://commons.wikimedia.org/wiki/File:Main_Hall_at_Nanchan_Temple_(9833585145).jpg | CC0 1.0 | Gary Todd | 2026-10-22 |
+| 東陸建築 08：懿德太子墓壁畫闕樓 | https://commons.wikimedia.org/wiki/File:Prince_Yide's_tomb,_towers.jpg | 公有領域（PD-Art） | 唐代佚名畫工（706） | 2026-10-22 |
+| 東陸建築 09：隋唐陶屋 | https://commons.wikimedia.org/wiki/File:Sui_or_Tang_Pottery_House_&_Roof_Tiles.jpg | CC0 1.0 | Gary Todd | 2026-10-22 |
+| 東陸建築 10：唐三彩院落模型 | https://commons.wikimedia.org/wiki/File:Tang_Glazed_Pottery_House_(9924297526).jpg | CC0 1.0 | Gary Todd | 2026-10-22 |
+| 東陸建築 12：《營造法式》殿堂側樣 | https://commons.wikimedia.org/wiki/File:營造法式一_40.jpg | 公有領域（PD-Art） | 李誡（1103）；《四庫全書》本重繪 | 2026-10-22 |
+| 西陸建築 07：伊珀爾布料大廳與鐘樓（R8-22） | https://commons.wikimedia.org/wiki/File:Louis-Auguste_Bisson_-_Ypres,_Belgium_-_1986.37_-_Cleveland_Museum_of_Art.jpg | 公有領域 | Bisson 兄弟（1855–62）；克里夫蘭美術館 | 2026-10-22 |
+| 西陸建築 10：奧克姆城堡大廳版畫 | https://commons.wikimedia.org/wiki/File:Image-taken-from-page-30-of-england-delineated_10999886754_o.jpg | CC0 1.0 | 大英圖書館掃描；版畫 Metcalf | 2026-10-22 |
+| 西陸建築 09：維奧萊勒杜克〈住宅〉維托民居 | https://commons.wikimedia.org/wiki/File:Maison.XIIIe.siecle.Vitteaux.png | 公有領域 | Viollet-le-Duc | 2026-10-22 |
+| 西陸建築 11：大科克斯韋爾穀倉 | https://commons.wikimedia.org/wiki/File:Greatbarn-greatcoxwell-01.jpg | 公有領域（作者放棄權利） | TheCreator | 2026-10-22 |
+| 西陸建築 03：維拉爾手稿的屋架 | https://commons.wikimedia.org/wiki/File:Villard_de_Honnecourt_Album_de_..._charpente._BNF.jpg | CC0 1.0 | Villard de Honnecourt；掃描 Gallica／BnF | 2026-10-22 |
+| 西陸建築 13：勒特雷爾詩篇的編籬羊圈 | https://commons.wikimedia.org/wiki/File:Sheep_pen_(Luttrell_Psalter).png | 公有領域（PD-Art） | 約 1325–35 佚名畫工 | 2026-10-22 |
+| 懸崖 11：太行山紅砂岩（R8-24） | https://commons.wikimedia.org/wiki/File:Dong_Taihang_10.jpg | CC0 1.0 | H2v5o68z | 2026-10-22 |
+| 懸崖 12：猊鼻溪石灰岩崖 | https://commons.wikimedia.org/wiki/File:Geibikei_-_Geibikei7679.jpg | CC0 1.0 | lumoplank | 2026-10-22 |
+| 懸崖 13：石灰岩崖腳的岩屑錐 | https://commons.wikimedia.org/wiki/File:Begunjscica,_Born_Path_traversing_a_scree_03.jpg | CC0 1.0 | Ajznponar | 2026-10-22 |
 
 ## 只做測試、不進任何公開發布的
 

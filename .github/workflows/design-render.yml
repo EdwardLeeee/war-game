@@ -102,7 +102,12 @@ jobs:
             round3) /usr/bin/python3 blender/render_r3.py --target "${{ matrix.target }}" ;;
             round4) /usr/bin/python3 blender/render_r4.py --target "${{ matrix.target }}" ;;
             # B1: buildings, towns and resources (design/b1/common/run.py), 3x with 2x supersampling
-            b1) /usr/bin/python3 common/run.py "${{ matrix.target }}" ;;
+            # the R8 looks (r8b_*, r8c_*): the CC0 textures and the cliff's rock scans, fetched and checked by sha256
+            b1)
+              case "${{ matrix.target }}" in
+                r8*) /usr/bin/python3 ../r7/common/textures.py fetch && /usr/bin/python3 ../r8/common/scans.py fetch ;;
+              esac
+              /usr/bin/python3 common/run.py "${{ matrix.target }}" ;;
             # R7 style test (D-092): v<k>-<unit>, the production unit render in realism version k's look, idle, walk,
             # attack (design/r7/README.md); the CC0 textures and MPFB (version 2) fetched and checked by sha256
             r7)
