@@ -5,11 +5,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createScriptedPlayer, type Plan, planFor, SCRIPTED_THINK_EVERY } from "../src/ai/scripted-player.ts";
-import { rules } from "../src/core/rules.ts";
+import { KEEP, rules } from "../src/core/rules.ts";
 import { BuildingType, TownSize, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
-import { cmd, emptyGame, put } from "./helpers.ts";
+import { cmd, emptyGame, put, switchedOn } from "./helpers.ts";
 
 /** The scripted player as player 0 against the normal AI for `ticks`, as src/scripted-games.ts plays it. */
 function play(seed: number, plan: Plan, ticks: number): Runner {
@@ -44,6 +44,16 @@ test("the push plan trains an army and takes the small town nearest its main cit
   assert.ok(w.plundered[0] >= 1 || w.townOwner[town.id] === 0, "the town taken");
   assert.ok(w.trained[UnitType.Spearman] + w.trained[UnitType.Ranged] >= 6, "soldiers trained");
 });
+
+test("KEEP on (D-100): the push plan still takes the small town nearest its main city by minute 12, keep and wall militia and all", switchedOn(KEEP, () => {
+  const r = play(1, planFor("push", "h1", "close"), 12 * 1200);
+  const w = r.game.w;
+  const home = w.map.spawns[0];
+  const town = w.map.towns
+    .filter((t) => t.size === TownSize.Small)
+    .sort((a, b) => (a.cellX - home.cellX) * (a.cellX - home.cellX) + (a.cellY - home.cellY) * (a.cellY - home.cellY) - (b.cellX - home.cellX) * (b.cellX - home.cellX) - (b.cellY - home.cellY) * (b.cellY - home.cellY))[0];
+  assert.ok(w.plundered[0] >= 1 || w.townOwner[town.id] === 0, "the town taken");
+}));
 
 test("without a range (an option outside the fixed groups) it trains spearmen, no ranged", () => {
   const r = play(1, { ...planFor("push", "h1", "close"), noRange: true }, 12000);
