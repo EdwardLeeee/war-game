@@ -11,6 +11,18 @@
   "sha256": "fc0fff40e3378f2f54d225db6e3e566a8563bb2c143eef0f09b543c9d4698776",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/aerial_grass_rock/aerial_grass_rock_rough_2k.jpg"
  },
+ "bark_platanus_diff_1k.jpg": {
+  "sha256": "4e302eeb6a66d50880484a08bd2c6e43974eb1636397d94d9c8bc54d508c2c1b",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_platanus/bark_platanus_diff_1k.jpg"
+ },
+ "bark_platanus_nor_gl_1k.jpg": {
+  "sha256": "af36a887dc9cac3ea70902bc6e26b1d3f2608f39f96880f6e7766d93fefe43f5",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_platanus/bark_platanus_nor_gl_1k.jpg"
+ },
+ "bark_platanus_rough_1k.jpg": {
+  "sha256": "778135a767d90cdcdc486d4351956652c41645b8fd205ee86d73bfd7134bd1de",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_platanus/bark_platanus_rough_1k.jpg"
+ },
  "brown_leather_diff_1k.jpg": {
   "sha256": "7e9e1d6566d1fd91d4ceb4966c4820361e85d53a7a828b6bab3b2a093a876cd1",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brown_leather/brown_leather_albedo_1k.jpg"
@@ -119,6 +131,30 @@
   "sha256": "469ea3c219147ba83d7a650d7769cc43f25b5e3d8ea8ae4e5e89e7226a32658a",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/hessian_230/hessian_230_rough_1k.jpg"
  },
+ "japanese_camphor_bark_diff_1k.jpg": {
+  "sha256": "100c1c052c9b0305c4d95bcb845a2bdc44cd261946aac16146319e2f5fcb4fbc",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/japanese_camphor_bark/japanese_camphor_bark_diff_1k.jpg"
+ },
+ "japanese_camphor_bark_nor_gl_1k.jpg": {
+  "sha256": "633567973b9d79ce54c33c50632771f80eb794904f367b584f7b21c1ad8a34d5",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/japanese_camphor_bark/japanese_camphor_bark_nor_gl_1k.jpg"
+ },
+ "japanese_camphor_bark_rough_1k.jpg": {
+  "sha256": "bd8f3d6fce26a70b857340e5f76da2211da80f5b3d0be2b9fef64e0072c09289",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/japanese_camphor_bark/japanese_camphor_bark_rough_1k.jpg"
+ },
+ "jolcham_oak_bark_01_diff_1k.jpg": {
+  "sha256": "08c26b3ea38718dfc3902d0889ac06e2ce0ae9cddb31d8988723eee1780a71c8",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/jolcham_oak_bark_01/jolcham_oak_bark_01_diff_1k.jpg"
+ },
+ "jolcham_oak_bark_01_nor_gl_1k.jpg": {
+  "sha256": "bdc5a310b183fdb3dee4c2c8871b15f57f2fbbaf68253a73303d8320976b1826",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/jolcham_oak_bark_01/jolcham_oak_bark_01_nor_gl_1k.jpg"
+ },
+ "jolcham_oak_bark_01_rough_1k.jpg": {
+  "sha256": "070f859c0c86dbb9d75d53cb885e07e9c3d8a0385fe82ab1c3083032aff7f31a",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/jolcham_oak_bark_01/jolcham_oak_bark_01_rough_1k.jpg"
+ },
  "leafy_grass_diff_2k.jpg": {
   "sha256": "8e1c6d21365d4b89bc5a35ab664da98a78dbc3ab9ba6100474881c8619a5b113",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/leafy_grass/leafy_grass_diff_2k.jpg"
@@ -178,6 +214,18 @@
  "old_planks_02_rough_1k.jpg": {
   "sha256": "2f1d087fe0b48d6723273ac1857dad45f6edecc04513c48852a7da4643246061",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/old_planks_02/old_planks_02_rough_1k.jpg"
+ },
+ "pine_bark_diff_1k.jpg": {
+  "sha256": "89ddfbff0388d30caff902ba600cdf75eb1e651ca71ece6594b5a9b27abb47ab",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/pine_bark/pine_bark_diff_1k.jpg"
+ },
+ "pine_bark_nor_gl_1k.jpg": {
+  "sha256": "666e5f175a010f12577687dd8029125bff99110e6a97958afb295b34266437db",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/pine_bark/pine_bark_nor_gl_1k.jpg"
+ },
+ "pine_bark_rough_1k.jpg": {
+  "sha256": "04f466447098d0b6d3d4abdc69ce5766d5da67eedfa076e4a3f22fe6996a60a8",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/pine_bark/pine_bark_rough_1k.jpg"
  },
  "rock_face_03_diff_1k.jpg": {
   "sha256": "ea48e0e47ad42c8bd312476178b1248ec66f0eb19156a26a1c222f2a40caaf2d",

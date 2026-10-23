@@ -339,6 +339,16 @@ def _prod_r8(c):
     return out
 
 
+# the resource points (nature_r8.py), named as art-v5's PROD_NODES
+R8_NODES = ([dict(kind="r8_tree", culture=c, opts=dict(variant=v), name=f"tree_{c}_v{v}") for c in CULTURES for v in (0, 1, 2)]
+            + [dict(kind="r8_tree", culture=c, opts=dict(state="stump"), name=f"tree_{c}_stump") for c in CULTURES]
+            + [dict(kind=f"r8_{k}", culture="E", opts=dict(variant=v, state=st), name=f"{k}_v{v}_{st}") for k, sts in
+               (("gold", ("full", "mined", "depleted")), ("berry", ("full", "depleted")), ("crystal", ("full", "depleted")))
+               for v in (0, 1) for st in sts])
+for _i in range(0, len(R8_NODES), PROD_CHUNK):
+    TARGETS[f"r8n_{_i // PROD_CHUNK}"] = R8_NODES[_i:_i + PROD_CHUNK]
+    CAMERA[f"r8n_{_i // PROD_CHUNK}"] = proj.OBLIQUE
+    LOOK[f"r8n_{_i // PROD_CHUNK}"] = "r8"
 for _c in CULTURES:
     _all = _prod_r8(_c)
     for _i in range(0, len(_all), PROD_CHUNK):

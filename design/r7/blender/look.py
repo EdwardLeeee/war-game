@@ -23,7 +23,8 @@ SIZE = {"rough_linen": 0.27, "hessian_230": 0.27, "brown_leather": 0.4, "fabric_
         "rusty_metal_02": 1.0, "fine_grained_wood": 0.6, "medieval_wood": 2.0, "old_planks_02": 2.0,
         "castle_brick_01": 1.5, "clay_plaster": 2.0, "thatch_roof_angled": 0.54, "clay_roof_tiles_02": 2.5,
         "leafy_grass": 2.0, "aerial_grass_rock": 15.0, "stony_dirt_path": 2.17, "gravel_ground_01": 3.0,
-        "brown_mud_rocks_01": 1.3, "rock_face_03": 2.7, "lichen_rock": 2.0, "rustic_stone_wall_02": 1.5}
+        "brown_mud_rocks_01": 1.3, "rock_face_03": 2.7, "lichen_rock": 2.0, "rustic_stone_wall_02": 1.5,
+        "pine_bark": 1.0, "japanese_camphor_bark": 1.0, "jolcham_oak_bark_01": 1.2, "bark_platanus": 1.0}
 # the texture's mean linear colour (common/textures.py, measured 2026-10-20): the brightness is divided by it
 MEAN = {"rough_linen": (0.284, 0.408, 0.613), "hessian_230": (0.264, 0.189, 0.101), "brown_leather": (0.082, 0.027, 0.005),
         "fabric_leather_02": (0.22, 0.076, 0.011), "metal_plate": (0.049, 0.033, 0.012), "rusty_metal_02": (0.412, 0.287, 0.133),
@@ -32,7 +33,9 @@ MEAN = {"rough_linen": (0.284, 0.408, 0.613), "hessian_230": (0.264, 0.189, 0.10
         "clay_roof_tiles_02": (0.305, 0.084, 0.026), "leafy_grass": (0.313, 0.23, 0.102), "aerial_grass_rock": (0.169, 0.121, 0.025),
         "stony_dirt_path": (0.068, 0.039, 0.02), "gravel_ground_01": (0.29, 0.228, 0.141), "brown_mud_rocks_01": (0.088, 0.066, 0.04),
         "rock_face_03": (0.231, 0.144, 0.083), "lichen_rock": (0.064, 0.049, 0.034),
-        "rustic_stone_wall_02": (0.251, 0.18, 0.111)}
+        "rustic_stone_wall_02": (0.251, 0.18, 0.111),
+        "pine_bark": (0.137, 0.088, 0.053), "japanese_camphor_bark": (0.368, 0.244, 0.162),
+        "jolcham_oak_bark_01": (0.109, 0.084, 0.048), "bark_platanus": (0.097, 0.066, 0.047)}
 # lib.mat name (without its round suffix) -> (texture, scale factor on its size, hue mix, bump strength)
 MATCH = {
     # cloth
@@ -69,6 +72,9 @@ MATCH = {
     "cliffrock": ("rock_face_03", 1.0, 0.25, 0.8), "cliffrockdark": ("lichen_rock", 1.0, 0.25, 0.7),
     "moss_r8": ("leafy_grass", 0.5, 0.2, 0.4), "grass_r8": ("leafy_grass", 0.6, 0.2, 0.4), "shrub_r8": ("leafy_grass", 0.4, 0.2, 0.6),
     "rubble": ("rustic_stone_wall_02", 1.0, 0.25, 0.7),
+    # R8 batch 2: the trees (design/r8/blender/nature_r8.py)
+    "bark_pine": ("pine_bark", 1.0, 0.2, 0.8), "bark_camphor": ("japanese_camphor_bark", 1.0, 0.2, 0.7),
+    "bark_oak": ("jolcham_oak_bark_01", 1.0, 0.2, 0.9), "bark_birch": ("bark_platanus", 1.0, 0.1, 0.5),
 }
 
 

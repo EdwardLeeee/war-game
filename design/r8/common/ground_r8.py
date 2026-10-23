@@ -180,9 +180,21 @@ def water_distance(grid, rules):
 def water_layer(size=512, tile_m=WATER_TILE_M, seed=7):
     """The water layer (lit, like the others; sRGB, height in A): small waves (periodic value noise, our own) seen from
     the game's camera (30 degrees up, looking north): a dark body, the sky in it by the rippled surface's fresnel."""
-    h = sum(value_noise(size, c, seed + c) * w for c, w in ((8, 0.55), (16, 0.3), (32, 0.15)))
+    # waves in every direction (war-game-client 2026-10-23: value noise lined up with the grid looked blocky): sines with
+    # whole wave numbers across the tile, so it still tiles, random directions, longer waves stronger
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:size, 0:size].astype(np.float64) / size
+    h = np.zeros((size, size))
+    for _ in range(48):
+        while True:
+            kx, ky = rng.integers(-28, 29, 2)
+            kk = math.hypot(kx, ky)
+            if 5 <= kk <= 28:
+                break
+        h += np.sin(2 * math.pi * (kx * xx + ky * yy) + rng.uniform(0, 2 * math.pi)) / kk ** 1.1
+    h = (h - h.min()) / (h.max() - h.min())
     px = tile_m / size
-    gy, gx = np.gradient(h * 0.12, px)                  # waves a few centimetres high
+    gy, gx = np.gradient(h * 0.06, px)                  # ripples a few centimetres high: a river, not the sea
     nrm = np.dstack([-gx, gy, np.ones_like(h)])         # image y runs south: north is -row
     nrm /= np.linalg.norm(nrm, axis=-1, keepdims=True)
     v = np.array([0.0, math.cos(math.radians(30)), -math.sin(math.radians(30))])   # camera to surface
@@ -192,7 +204,7 @@ def water_layer(size=512, tile_m=WATER_TILE_M, seed=7):
     up = np.clip(r[..., 2], 0, 1)[..., None]
     sky = np.array([0.55, 0.6, 0.64]) * (1 - up) + np.array([0.3, 0.42, 0.58]) * up
     body = np.array(WATER["deep"])
-    lin = body * (1 - fres[..., None]) + sky * fres[..., None] * 2.6
+    lin = body * (1 - fres[..., None]) + sky * fres[..., None] * 2.1
     rgb = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.clip(lin, 0, None) ** (1 / 2.4) - 0.055)
     return np.dstack([np.clip(rgb, 0, 1), h])
 
