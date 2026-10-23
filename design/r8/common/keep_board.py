@@ -127,14 +127,15 @@ def castle_scene(c, L, gdir, units_dir, ppm=30):
     import ground_r8
     R = L["wall"] + 3
     n = 2 * R + 1
-    g = np.zeros((n, n), dtype=int)
+    head = 6                                        # cells of headroom above: the north wall's sprites stand tall
+    g = np.zeros((n + head, n + head), dtype=int)  # square (ground_r8.compose): the extra columns split left and right
     gj = json.loads((gdir / "ground" / "ground.json").read_text())
     rules = dict(gj["rules"], dirt=dict(gj["rules"]["dirt"], noise_threshold=0.99))
     top = ground_r8.compose(g, [], S._ground_layers(gdir), ppm=ppm, rules=rules)
     cam = Image.fromarray((top * 255).round().astype(np.uint8), "RGB").resize((top.shape[1], top.shape[0] // 2), Image.LANCZOS)
     cam = cam.convert("RGBA")
     f = ppm / 60.0
-    ox, oy = R, R                                   # the layout's centre cell sits at cell (R, R) of the scene
+    ox, oy = R + head // 2, R + head                # the layout's centre cell in the scene
 
     def px(cx, cy):
         return (cx + ox) * 2.0 * ppm, (cy + oy) * 2.0 * ppm * 0.5
