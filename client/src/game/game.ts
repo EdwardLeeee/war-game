@@ -22,7 +22,7 @@ import {
 import { attachPointer } from "../input/pointer.ts";
 import { enemyTooClose, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
-import { type Culture, cultureOf } from "../art/spec.ts";
+import { type Culture, cultureOf, SIEGE_ATLASES } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
 import { type Projection, PROJECTIONS } from "../camera/projection.ts";
@@ -36,7 +36,6 @@ import { SAVE_EVERY_TICKS, SCREEN_VERSION, type SavedGame, type ScreenState } fr
 import { gpu, takeDraws } from "../stage.ts";
 import {
   Action,
-  AUTO_TRAIN,
   autoBuilders,
   type AiDifficulty,
   BUILDING_STRIDE,
@@ -47,6 +46,7 @@ import {
   type CommandBody,
   type ContinueFailure,
   type Cost,
+  type SimEvent,
   dir16,
   type FromWorker,
   type GameOverReason,
@@ -85,7 +85,8 @@ import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
-import { features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
+import { autoTrainBuildings, features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
+import { stoneOf } from "./siege.ts";
 import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
@@ -489,6 +490,11 @@ export class Game implements GestureHost {
   /** Stones thrown from slings on walls (D-096), for the test hook. */
   get stonesForTest(): number {
     return this.renderer?.stoneCount ?? 0;
+  }
+
+  /** 攻城砲's stones drawn (D-099), and siege engines with their range rings this frame, for the test hook. */
+  get siegeForTest(): { shots: number; rings: number } {
+    return { shots: this.renderer?.siegeShotCount ?? 0, rings: this.renderer?.siegeRangesDrawn ?? 0 };
   }
 
   /** Shots that left a gate's tower (D-096 shoot_at_m, its `tower_shot` flash), for the test hook. */
@@ -1058,7 +1064,7 @@ export class Game implements GestureHost {
       const free = finished && b[o + BuildingField.queueLength] === 0 && !inFlight(id);
       if (type === BuildingType.MainCity) {
         if (free) cities.push(id);
-      } else if (AUTO_TRAIN.buildings.includes(type) && trains !== undefined) {
+      } else if (autoTrainBuildings(view.rules).includes(type) && trains !== undefined) {
         sites.push({ id, trains, free: free && !this.autoArmy.paused.has(id) });
       }
     }
@@ -1701,6 +1707,8 @@ export class Game implements GestureHost {
       case "ready": {
         this.started.ready = performance.now();
         this.view = new GameView(msg.player ?? 0, msg.map, msg.rules);
+        // 攻城砲 (D-099): their atlases only in a game that has them (drawn as shapes until they are in).
+        if (features(msg.rules).siege === true) void this.options.art?.addAtlases(SIEGE_ATLASES);
         // The map as a diamond (D-085; docs/sprite-atlas.md section 1): the camera, taps and boxes, and the drawing.
         const projection = this.options.view === undefined ? PROJECTION_DEFAULT : PROJECTIONS[this.options.view];
         this.view.projection = projection;
@@ -1773,6 +1781,7 @@ export class Game implements GestureHost {
           } else {
             if (ev.k === "unit_trained") this.enlist(ev.id, ev.type);
             if (ev.k === "shot") this.drawShot(ev.building, ev.target, now, ev.n ?? 1);
+            if (ev.k === "siege_shot") this.drawSiegeShot(ev);
             this.hud.onEvent(ev);
           }
         }
@@ -2159,6 +2168,19 @@ export class Game implements GestureHost {
         break;
     }
     if (at !== null) r.mark(at.x, at.y, color, now);
+  }
+
+  /**
+   * 攻城砲 (D-099, `siege_shot`): its stone from the engine when we see it, else from `from`'s side
+   * (game/siege.ts), landing at `lands`; thrown at this snapshot's tick.
+   */
+  private drawSiegeShot(ev: Extract<SimEvent, { k: "siege_shot" }>): void {
+    const view = this.view;
+    if (view === null || this.renderer === null) return;
+    const o = view.unitRow(ev.u);
+    const engine = o < 0 ? null : (({ x, y }) => ({ x: x / TILE_PX, y: y / TILE_PX }))(view.unitPos(o));
+    const stone = stoneOf(ev, engine, view.header?.[H.tick] ?? 0, (fixed) => fixed / CELL);
+    if (stone !== null) this.renderer.siegeShot(stone);
   }
 
   /** 射箭 (round 7, `shot`): an arrow from the building's centre to the unit it shot at; a town gate's from its tower (D-096 shoot_at_m). */

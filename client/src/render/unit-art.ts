@@ -44,6 +44,11 @@ export interface UnitArt {
   terrainFrame(layer: "color" | "shadow", name: string): ArtFrame | null;
   /** Pages already on the GPU with their decoded pictures let go (loaded with `upload`), and their bytes there. */
   resident: { pages: number; bytes: number };
+  /**
+   * More units' atlases, after the start (the siege engines', D-099, once the game has them: they
+   * cost no memory otherwise). One that will not load is left out (its units drawn as shapes).
+   */
+  addAtlases(names: readonly string[]): Promise<void>;
   destroy(): void;
 }
 
@@ -139,17 +144,17 @@ export async function loadUnitArt(
     all.push(...got);
     return got;
   };
-  await Promise.all(
-    names.map(async (name) => {
-      const dir = `${base}units/${name}/`;
-      const a = parseAtlas(await json(`${dir}${name}.json`, times));
-      atlases.set(name, a);
-      for (const layer of LAYERS) {
-        const files = PAGES[layer](a);
-        pages.set(`${name}|${layer}`, await load(files.map((f) => `${dir}${f}`)));
-      }
-    }),
-  );
+  const loadAtlas = async (name: string): Promise<void> => {
+    const dir = `${base}units/${name}/`;
+    const a = parseAtlas(await json(`${dir}${name}.json`, times));
+    for (const layer of LAYERS) {
+      const files = PAGES[layer](a);
+      pages.set(`${name}|${layer}`, await load(files.map((f) => `${dir}${f}`)));
+    }
+    // Known once its pages are in: drawn from it from then on.
+    atlases.set(name, a);
+  };
+  await Promise.all(names.map(loadAtlas));
   let effects: EffectsJson | null = null;
   let effectPages: Texture[] = [];
   try {
@@ -218,7 +223,9 @@ export async function loadUnitArt(
     label,
     atlases,
     effects,
-    pages: all.length,
+    get pages() {
+      return all.length;
+    },
     pxPerM,
     frame(atlas, layer, name) {
       const key = `${atlas}|${layer}|${name}`;
@@ -291,6 +298,17 @@ export async function loadUnitArt(
       return f;
     },
     resident,
+    async addAtlases(more) {
+      await Promise.all(
+        more
+          .filter((name) => !atlases.has(name))
+          .map((name) =>
+            loadAtlas(name).catch((err: unknown) => {
+              console.warn(`art: ${name}: ${err instanceof Error ? err.message : String(err)}`);
+            }),
+          ),
+      );
+    },
     destroy() {
       for (const f of cache.values()) f?.texture.destroy(false);
       cache.clear();

@@ -88,7 +88,7 @@ export interface MarchOrder {
 const emptyGroup = (): Group => ({ ids: [], want: {}, saved: 0, refill: true, recruits: [], goal: null, checked: Number.NEGATIVE_INFINITY });
 
 /** The soldier types 軍團設定 sets, in the order of its rows (騎兵 only while `features.cavalry`, round 7). */
-export const GROUP_TYPES = [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry] as const;
+export const GROUP_TYPES = [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry, UnitType.Siege] as const;
 
 /**
  * 軍團設定 (D-083: 「一隻部隊單一兵種上限只能50隻」): one type of soldier a group may want up to
@@ -101,7 +101,7 @@ export function groupWantMax(rules: { maxPopulation: number }, ceiling: number |
 
 /** The units 全軍 and the garrison rules are about: farmers are not soldiers. */
 export function isSoldier(type: number): boolean {
-  return type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage || type === UnitType.Cavalry;
+  return type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage || type === UnitType.Cavalry || type === UnitType.Siege;
 }
 
 /** The orders that send units somewhere or set them to a task: 前進、攻擊、撤退、停止、晶砲, and a farmer's work. */

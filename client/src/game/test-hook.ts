@@ -101,6 +101,8 @@ export interface GameHook {
   damage(id: number, hp: number): void;
   /** Arrows drawn from `shot` events so far (round 7; D-096: each of a volley's `n`). */
   shots(): number;
+  /** 攻城砲 (D-099): stones drawn so far, and siege engines with their range rings this frame. */
+  siege(): { shots: number; rings: number };
   /** Of them, shots that left a gate's tower (D-096, shoot_at_m). */
   towerShots(): number;
   /** Stones thrown by the militia's slings on walls (D-096). */
@@ -302,6 +304,7 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
     },
     shots: () => game.shotsForTest,
+    siege: () => game.siegeForTest,
     towerShots: () => game.towerShotsForTest,
     stones: () => game.stonesForTest,
     brokenGates: () => game.brokenGatesForTest,
