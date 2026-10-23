@@ -471,8 +471,9 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-  # The turtle in one table (D-086 A5): games won, those after minute 60, the towers at minutes 30 and 45,
-  # towns governed at the end, the first march on the AI's main city and cavalry trained.
+  # The turtle in one table (D-086 A5): games won, those after minute 60, games past minute 30 (or won before),
+  # the towers at minutes 30 and 45, towns governed at the end, the first march on the AI's main city and
+  # cavalry trained; then its pace (farmers, soldiers, towers) at minutes 10-30 against the user's.
   scripted-turtle-summary:
     needs: [scripted-turtle]
     if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-'))
@@ -494,7 +495,9 @@ jobs:
           import { readdirSync, readFileSync } from "node:fs";
           const rows = [["push-turtle", "困難，固定地圖"], ["push-turtle-random", "困難，隨機地圖"]];
           const med = (l) => (l.length === 0 ? "—" : String([...l].sort((a, b) => a - b)[l.length >> 1]));
-          const out = ["## 守塔慢拿城（A5）", "", "| 對手、地圖 | 贏／局數 | 贏在 60 分以後 | 輸／到 90 分沒分出 | 箭樓 第 30 分 我／電腦 | 箭樓 第 45 分 我／電腦 | 局末治理 我／電腦 | 第一次出發打電腦主城（分） | 騎兵 我 |", "|---|---|---|---|---|---|---|---|---|"];
+          const out = ["## 守塔慢拿城（A5）", "", "| 對手、地圖 | 贏／局數 | 贏在 60 分以後 | 輸／到 90 分沒分出 | 撐過第 30 分 | 箭樓 第 30 分 我／電腦 | 箭樓 第 45 分 我／電腦 | 局末治理 我／電腦 | 第一次出發打電腦主城（分） | 騎兵 我 |", "|---|---|---|---|---|---|---|---|---|---|"];
+          const minutes = ["m10", "m15", "m20", "m25", "m30"];
+          const pace = ["", "節奏（中位數，村民／兵／箭樓；只算到那一分還沒結束的局）：", "", `| 對手、地圖 | ${minutes.map((m) => `第 ${m.slice(1)} 分`).join(" | ")} |`, `|---|${minutes.map(() => "---").join("|")}|`];
           for (const [group, name] of rows) {
             const games = readdirSync("turtle")
               .filter((f) => f.replace(/-\d+-\d+\.json$/, "") === `turtle-hard-${group}`)
@@ -506,10 +509,13 @@ jobs:
             const t45 = games.map((x) => x.towersAt.m45).filter((x) => x !== null);
             const march = games.filter((x) => x.firstMarch > 0).map((x) => Math.round(x.firstMarch / 120) / 10);
             out.push(
-              `| ${name} | ${won.length}/${games.length} | ${won.filter((x) => x.endTick > 60 * 1200).length} | ${games.length - won.length - open}／${open} | ${med(t30.map((x) => x[0]))}／${med(t30.map((x) => x[1]))}（${t30.length} 局） | ${med(t45.map((x) => x[0]))}／${med(t45.map((x) => x[1]))}（${t45.length} 局） | ${med(games.map((x) => x.governedEnd[0]))}／${med(games.map((x) => x.governedEnd[1]))} | ${med(march)}（${march.length} 局） | ${med(games.map((x) => x.trained.cavalry[0]))} |`,
+              `| ${name} | ${won.length}/${games.length} | ${won.filter((x) => x.endTick > 60 * 1200).length} | ${games.length - won.length - open}／${open} | ${games.filter((x) => x.result === "won" || x.endTick >= 30 * 1200).length}/${games.length} | ${med(t30.map((x) => x[0]))}／${med(t30.map((x) => x[1]))}（${t30.length} 局） | ${med(t45.map((x) => x[0]))}／${med(t45.map((x) => x[1]))}（${t45.length} 局） | ${med(games.map((x) => x.governedEnd[0]))}／${med(games.map((x) => x.governedEnd[1]))} | ${med(march)}（${march.length} 局） | ${med(games.map((x) => x.trained.cavalry[0]))} |`,
             );
+            const at = (m) => games.map((x) => x.pace?.[m]).filter((x) => x !== undefined);
+            pace.push(`| ${name} | ${minutes.map((m) => (at(m).length === 0 ? "—" : `${[0, 1, 2].map((k) => med(at(m).map((x) => x[k]))).join("／")}（${at(m).length} 局）`)).join(" | ")} |`);
           }
-          out.push("", "箭樓、治理、出發時間和騎兵都是中位數；箭樓只算到那一分還沒結束的局。");
+          out.push("", "箭樓、治理、出發時間和騎兵都是中位數；箭樓只算到那一分還沒結束的局。撐過第 30 分：打到第 30 分還沒輸，或在那之前就贏了。");
+          out.push(...pace);
           console.log(out.join("\n"));
           EOF
           node turtle.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
