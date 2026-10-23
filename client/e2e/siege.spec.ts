@@ -34,7 +34,7 @@ test("攻城砲關著（其他頁面都是）：建造選單沒有砲坊，兵�
 });
 
 test("攻城砲（D-099）：石頭從攻城砲飛到落點、看不到的攻城砲的石頭從 from 那邊飛進來；選取時有射程和最短射程兩個圈；剋／怕；建造選單的砲坊要先有射場；砲坊可以訓練攻城砲", async ({ page }, info) => {
-  test.setTimeout(120_000);
+  test.setTimeout(300_000);
   const check = watchErrors(page);
   await start(page, "&siege=1&art=x3");
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -42,7 +42,8 @@ test("攻城砲（D-099）：石頭從攻城砲飛到落點、看不到的攻城
   if (engine === undefined) throw new Error("no siege engine");
   // Its stones: one every 3 s at the enemy's barracks, and an unseen engine's by our soldiers.
   await centre(page, 30, 60, 1.3);
-  await expect.poll(async () => (await siege(page)).shots, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+  // (One every 30 ticks: CI's Chromium runs the fake world at a few ticks a second with the 3 倍 art, run 39949194910.)
+  await expect.poll(async () => (await siege(page)).shots, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
   // Selected alone: its rings, and its 剋／怕 line.
   await selectForCommands(page, [engine.id]);
   await expect.poll(async () => (await siege(page)).rings).toBe(1);
@@ -51,18 +52,18 @@ test("攻城砲（D-099）：石頭從攻城砲飛到落點、看不到的攻城
   await page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" }).tap();
   await centre(page, 31.5, 57, 1.4);
   // A stone in the air (half way: 10 ticks after a throw at a multiple of 60).
-  await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) % 60 === 6, null, { timeout: 15_000, polling: 16 });
+  await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) % 60 === 6, null, { timeout: 60_000, polling: 16 });
   await page.getByRole("button", { name: "暫停", exact: true }).tap();
   await shot(page, info, "siege-stone-in-flight");
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   // Landed: dust (twice the size).
-  await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) % 60 === 19, null, { timeout: 15_000, polling: 16 });
+  await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) % 60 === 19, null, { timeout: 60_000, polling: 16 });
   await page.getByRole("button", { name: "暫停", exact: true }).tap();
   await shot(page, info, "siege-landed");
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   // The unseen engine's stone, coming in from the east by our soldiers at (23, 68).
   await centre(page, 24, 67, 1.6);
-  await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) % 60 === 40, null, { timeout: 15_000, polling: 16 });
+  await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) % 60 === 40, null, { timeout: 60_000, polling: 16 });
   await page.getByRole("button", { name: "暫停", exact: true }).tap();
   await shot(page, info, "siege-stone-from-afar");
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
