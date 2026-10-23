@@ -217,7 +217,7 @@ function openSpells(w: Runner["game"]["w"], p: number, paidBack: boolean): numbe
 const per = Math.ceil(games / shards);
 let failed = 0;
 for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
-  const seed = 1 + (i >> 1);
+  const seed = 101 + (i >> 1);
   const swap = (i & 1) === 1;
   const start = performance.now();
   const difficulty = [0, 1].map((p) => slotDifficulty[swap ? 1 - p : p]);
