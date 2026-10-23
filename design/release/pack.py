@@ -149,6 +149,22 @@ def atlas_files(src, folder, scale):
     return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
 
 
+def ground_files(src, scale):
+    """{name: bytes} of ground/ at one scale (design/r8/common/ground_r8.py export): ground.json, its layers, memory.json."""
+    found = sorted(p.parent for p in src.rglob(f"atlas_{scale}/ground/ground.json"))
+    if len(found) != 1:
+        die(f"{src}: {len(found)} atlas_{scale}/ground/")
+    d = found[0]
+    gj = json.loads((d / "ground.json").read_text())
+    if gj.get("format") != "war-game ground 1" or gj.get("scale") != float(scale[1:]):
+        die(f"{d / 'ground.json'}: format {gj.get('format')!r}, scale {gj.get('scale')!r}")
+    names = ["ground.json", "memory.json"] + [L["file"] for L in gj["layers"]]
+    extra = sorted({p.name for p in d.iterdir()} - set(names))
+    if extra:
+        die(f"{d} has files ground.json does not list: {extra}")
+    return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
+
+
 def with_manifest(files, info):
     """Add art-release.json (the release info and every other file's sha256) to files."""
     info = dict(info, files={n: {"sha256": sha256(b), "bytes": len(b)} for n, b in sorted(files.items())})
@@ -206,7 +222,14 @@ def main():
                 m = json.loads(fs["memory.json"])
                 rgba += m["total_rgba8_bytes"]
                 astc_b += m["total_astc_4x4_bytes"]
-            extra = "＋建築＋資源點" + ("＋城牆" if spec.get("castle") else "") + ("＋地形" if spec.get("terrain") else "")
+            if spec.get("ground"):                       # art-v6: the realistic ground (D-093) and its water
+                fs = ground_files(bld_src, scale)
+                files.update({f"ground/{n}": b for n, b in fs.items()})
+                m = json.loads(fs["memory.json"])
+                rgba += m["total_rgba8_bytes"]
+                astc_b += m["total_astc_4x4_bytes"]
+            extra = ("＋建築＋資源點" + ("＋城牆" if spec.get("castle") else "") + ("＋地形" if spec.get("terrain") else "")
+                     + ("＋地面" if spec.get("ground") else ""))
         files = with_manifest(files, dict(base, scale=scale))
         name = f"{a.tag}-{scale}.tar.gz"
         write_targz(out / name, files)

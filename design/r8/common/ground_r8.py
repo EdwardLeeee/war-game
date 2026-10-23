@@ -323,7 +323,28 @@ def camera_view(top, ppm):
     return im.resize((w, h // 2), Image.LANCZOS)
 
 
-if __name__ == "__main__":
+def export(src, out, scale):
+    """The release's ground/ at `scale` (3 or 2): ground.json (with "scale") and the layers, resized from the 3x bake;
+    memory.json (each layer's RGBA8 bytes, mipmaps a third more; ASTC 4x4 a quarter of it), like the atlases'."""
+    out.mkdir(parents=True, exist_ok=True)
+    gj = json.loads((src / "ground.json").read_text())
+    gj["scale"] = float(scale)
+    px = 0
+    for L in gj["layers"]:
+        im = Image.open(src / L["file"])
+        if scale != 3:
+            im = im.resize((max(1, round(im.width * scale / 3)), max(1, round(im.height * scale / 3))), Image.LANCZOS)
+        im.save(out / L["file"], optimize=True)
+        px += im.width * im.height
+    (out / "ground.json").write_text(json.dumps(gj, indent=1))
+    mem = dict(total_rgba8_bytes=int(px * 4 * 4 / 3), total_astc_4x4_bytes=int(px * 4 / 3), layers=len(gj["layers"]))
+    (out / "memory.json").write_text(json.dumps(mem, indent=1))
+    print(f"ground x{scale}: {len(gj['layers'])} layers, {mem['total_rgba8_bytes'] / 2 ** 20:.2f} MB RGBA8")
+
+
+if __name__ == "__main__" and sys.argv[1] == "export":
+    export(Path(sys.argv[2]), Path(sys.argv[3]), int(sys.argv[4]))
+elif __name__ == "__main__":
     baked, out = Path(sys.argv[1]), Path(sys.argv[2])
     spec = json.loads((baked / "spec.json").read_text())       # [[id, tile_m], ...] in LAYERS order
     layers = assemble(baked, out / "ground", spec)

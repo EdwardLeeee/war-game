@@ -46,7 +46,8 @@ def main(out, ppm, samples):
     job = dict(tex_dir=str(textures.DIR), out=str(baked), ppm=ppm, samples=samples, layers=layers)
     jp = baked / "job.json"
     jp.write_text(json.dumps(job))
-    blender = Path.home() / ".local/opt/blender-5.2.2/blender"
+    import os
+    blender = Path(os.environ.get("BLENDER") or Path.home() / ".local/opt/blender-5.2.2/blender")
     r = subprocess.run([str(blender), "-b", "-t", "2", "--factory-startup", "--python", str(R8 / "blender" / "ground_bake.py"),
                         "--", str(jp)], capture_output=True, text=True)
     if r.returncode != 0 or "Traceback" in r.stdout + r.stderr:
