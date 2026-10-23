@@ -89,8 +89,11 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   // 繼續: the simulation takes them in order; what was shown gives way to what is.
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await pending(page, barracks.id)).sites, { timeout: 15_000 }).toBe(0);
-  // The simulation's own 自動訓練 is off for the player (D-098: the screen sends what to train).
+  // The simulation's own 自動訓練 is off for the player (D-098: the screen sends what to train), from the
+  // start (init.autoTrain): no `auto_train off` building by building.
+  expect(await page.evaluate(() => window.__proto?.game?.init()?.autoTrain)).toEqual([false, false]);
   await expect.poll(async () => ((await buildings(page)).find((b) => b.id === barracks.id)?.flags ?? AUTO_TRAIN) & AUTO_TRAIN, { timeout: 15_000 }).toBe(0);
+  expect((await page.evaluate(() => window.__proto?.game?.sent() ?? [])).filter((c) => (c as { c: string }).c === "auto_train")).toEqual([]);
   await expect.poll(async () => (await buildings(page)).some((b) => b.owner === me && b.type === HOUSE && b.progress < 1000), { timeout: 15_000 }).toBe(true);
   expect(await pending(page)).toMatchObject({ waiting: 0 });
   await expect(page.locator(".sel-queue .pending")).toHaveCount(0);
