@@ -8,7 +8,7 @@ import { Game } from "../src/core/game.ts";
 import { generateMap, type GameMap } from "../src/core/map.ts";
 import { generateRandomMap } from "../src/core/random-map.ts";
 import { BUILDINGS, KEEP, rules, TOWNS } from "../src/core/rules.ts";
-import { keepOf } from "../src/core/scenarios.ts";
+import { keepOf, spawnMilitia } from "../src/core/scenarios.ts";
 import { toCanon } from "../src/frame.ts";
 import { BuildingType, inTown, NEUTRAL, PlaceBit, Reject, Resource, Terrain, TownChoice, TownSize, TownState, UnitType, walkableTerrain } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
@@ -328,4 +328,28 @@ test("KEEP on: nobody builds on a keep's ground while it is down, and whoever st
   const cx = w.units.col.x[slotOf(g, farmer)] >> 10;
   const cy = w.units.col.y[slotOf(g, farmer)] >> 10;
   assert.ok(Math.max(Math.abs(cx - x), Math.abs(cy - y)) >= 2, `farmer at ${cx - x},${cy - y} off the keep`);
+}));
+
+test("KEEP on: the keep fallen, the militia left on the walls come down and fight it out, so soldiers in the middle take the town", keepOn(() => {
+  const { g, t, x, y } = smallTown();
+  const w = g.w;
+  spawnMilitia(w, t, TOWNS[TownSize.Small].militia);
+  const u = w.units.col;
+  // Only those on the walls stand; the keep falls.
+  let onWalls = 0;
+  for (let s = 0; s < w.units.count; s++) {
+    if (u.owner[s] !== NEUTRAL) continue;
+    if (u.wall[s] >= 0) onWalls++;
+    else u.hp[s] = 0;
+  }
+  assert.ok(onWalls >= 1, "militia on the walls");
+  w.buildings.col.hp[keepOf(w, t)] = 0;
+  for (let k = 0; k < 3; k++) put(g, 0, UnitType.Spearman, x + 2, y + k - 1);
+  let fell = -1;
+  for (let k = 0; k < 1200 && fell < 0; k++) {
+    g.step();
+    if (w.townState[t] === TownState.AwaitingChoice) fell = k;
+  }
+  assert.ok(fell >= 0, "taken within a minute");
+  assert.equal(w.townOwner[t], 0);
 }));
