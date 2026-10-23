@@ -56,10 +56,18 @@ def building_table(c):
     # art-v5.1: 哨所 (D-080; the user approved the drafts 2026-10-22), its own foundation and rubble (blds2.outpost)
     t["Outpost"] = dict(type=12, footprint=[2, 2],
                         states={s: f"outpost_{c}_{s}" for s in ("build1", "build2", "build3", "done", "damaged", "rubble")})
-    t["TownTower"] = dict(type=9, footprint=[2, 2], states={s: f"town_tower_{c}_{s}" for s in ("done", "damaged", "rubble")},
-                          # art-v4: the 3 x 3 tower of the random maps' neighbouring spawns (sim GameMap.towerSize, D-074)
-                          sizes={"3": dict(footprint=[3, 3],
-                                           states={s: f"town_tower3_{c}_{s}" for s in ("done", "damaged", "rubble")})})
+    # art-v6 (D-100; core 2026-10-23: BuildingType 9 is the Keep now, the KEEP switch on in the same release, ceo): every
+    # town's 3 x 3 keep, its states as the client shows them (damaged at half its hp or less; rubble once it falls, the
+    # cells walk; repair: the rubble under scaffolding while the governed town counts down); the old 2 x 2 and 3 x 3
+    # town towers (art-v4/v5) are gone
+    t["Keep"] = dict(type=9, footprint=[3, 3], states={s: f"keep_{c}_{s}" for s in ("done", "damaged", "rubble", "repair")})
+    # art-v6: where arrows leave (shoot_at_<k> marks of the finished look, metres from the anchor, the sim's axes as the
+    # gates' shoot_at_m: x east, y south, z up): the client flies an arrow from the one nearest the target
+    for name, e in t.items():
+        m = _marks(e["states"].get("done", ""))
+        shots = [m[n] for n in sorted(m) if n.startswith("shoot_at_")]
+        if shots:
+            e["shoot_at_m"] = [[round(x, 2), round(-y, 2), round(z, 2)] for x, y, z in shots]
     return dict(sorted(t.items(), key=lambda kv: kv[1]["type"]))
 
 

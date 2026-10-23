@@ -18,6 +18,13 @@ warn_sigil, warn_sigil_gold, warn_sigil_glow, warn_fill, warn_rim, warn_core   t
        game squashes them to the ground (scale.y 0.5) and scales them by the sim's radius / `radius_m`.
        Anchor: the centre.
 
+arrow, sling_stone   art-v6 (the user 2026-10-23 chose R8-35 B「真的箭」for every arrow): a real arrow flying from where it
+       leaves to the target's chest (1.2 m up) on a slight arc (arc_k x the distance), at speed_mps but at most max_s; from
+       a building's shoot_at_m (the gates', castle_<c>.json; the main city's, the arrow tower's and the keep's,
+       buildings_<c>.json), the one nearest the target, when the `shot` event comes; from a bow's from_m on its attack's
+       hit frame. No flash. sling_stone: the militia's stone, from the sling's stone_from_m on its hit frame, arc_k
+       0.18. The game turns the arrow along its flight; the stones tumble (4 frames).
+
 tower_shot   D-096: a gate tower looses an arrow (the sim's `shot` event from a gate): a short warm glint where the
        arrow leaves, so the eye finds the tower that shot; the game draws the arrow itself, as for the main city and the
        arrow tower. 5 frames at 20 a second, about 1.5 m across at its widest; drawn at the gate piece's
@@ -363,6 +370,17 @@ def keep_shot_frames(scale=3.0, seed=41):
 
 
 ARROW_LEN_M = 0.8
+# the ranged units' arrow leaves the bow hand on the attack's hit frame (spec.HIT 6): the unit's own space (x right, y
+# forward, z up, metres; mirrored facings flip x), as the sling's stone_from_m; read off the R8 renders 2026-10-23
+# (the bow's grip in the side and front views of attack frame 5)
+ARROW_FROM_M = {"bow_e": [-0.15, 0.7, 1.45], "bow_w": [-0.15, 0.7, 1.45]}
+
+
+def sling_stone_frames(scale=3.0):
+    """The militia's sling stone: the siege stone's rock, small (0.14 m), 4 frames tumbling. Anchor: its centre."""
+    ppm = spec.PX_PER_M * scale / 3.0
+    size = max(4, int(0.14 * ppm))
+    return [(_rock_image(size, 13, 90 * f), (size / 2, size / 2)) for f in range(STONE_FRAMES)]
 
 
 def arrow_image(scale=3.0):
@@ -453,7 +471,11 @@ def write_atlas(scale=3.0, page=2048):
     effects["keep_shot"] = dict(frames=KEEP_SHOT_FRAMES, fps=KEEP_SHOT_FPS, loop=False)
     im, (ax, ay) = arrow_image(scale)
     items.append(("arrow_00", im, ax, ay))
-    effects["arrow"] = dict(frames=1, fps=1, loop=True, len_m=ARROW_LEN_M, speed_mps=35.0, arc_k=0.06, turn=True)
+    effects["arrow"] = dict(frames=1, fps=1, loop=True, len_m=ARROW_LEN_M, speed_mps=35.0, arc_k=0.06, turn=True,
+                            max_s=0.35, from_m=ARROW_FROM_M)
+    for i, (im, (ax, ay)) in enumerate(sling_stone_frames(scale)):
+        items.append((f"sling_stone_{i:02d}", im, ax, ay))
+    effects["sling_stone"] = dict(frames=STONE_FRAMES, fps=STONE_FPS, loop=True, arc_k=0.18, max_s=0.45)
     for name, (im, rad) in warn_images(scale).items():
         bb = im.getchannel("A").point(lambda v: 255 if v > 4 else 0).getbbox()
         items.append((f"{name}_00", im.crop(bb), im.width / 2 - bb[0], im.height / 2 - bb[1]))

@@ -347,6 +347,12 @@ for _i in range(0, len(R8_CASTLE), 10):
     TARGETS[f"r8w_{_i // 10}"] = R8_CASTLE[_i:_i + 10]
     CAMERA[f"r8w_{_i // 10}"] = proj.OBLIQUE
     LOOK[f"r8w_{_i // 10}"] = "r8"
+# art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
+# replaces these pieces of the r8p run in the atlas
+TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in
+                        (f"main_city_{_c}_done", f"arrow_tower_{_c}_done")]
+CAMERA["r8p_marks"] = proj.OBLIQUE
+LOOK["r8p_marks"] = "r8"
 # D-100 the keep (keep_r8.py): the drafts for the user first, every state of both cultures
 TARGETS["r8k_draft"] = [dict(kind="r8_keep", culture=c, opts=dict(state=st), name=f"keep_{c}_{st}") for c in CULTURES
                         for st in ("done", "damaged", "rubble", "repair")]
