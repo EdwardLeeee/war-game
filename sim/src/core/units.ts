@@ -985,6 +985,24 @@ export class UnitSystem {
       w.offWall(i);
       return;
     }
+    // D-100 (KEEP): the town's keep fallen, its militia come down from the walls and go for its
+    // middle, fighting what they meet (the bigger towns' middle lies beyond their slings and sight).
+    if (KEEP.on && u.owner[i] === NEUTRAL) {
+      const t = w.wallTown[u.wall[i]];
+      const n = w.size;
+      const k = w.building(w.buildingAt[w.townY[t] * n + w.townX[t]]);
+      if (k < 0 || w.buildings.col.type[k] !== BuildingType.Keep) {
+        w.offWall(i);
+        const goal = nearestWalkable(w, w.townX[t], w.townY[t]);
+        if (goal >= 0) {
+          u.order[i] = Order.Move;
+          u.orderTarget[i] = goal;
+          u.orderX[i] = ((goal % n) << CELL_SHIFT) + (CELL >> 1);
+          u.orderY[i] = (Math.trunc(goal / n) << CELL_SHIFT) + (CELL >> 1);
+        }
+        return;
+      }
+    }
     u.action[i] = Action.OnWall;
     const info = UNITS[u.type[i]];
     const look = (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0;

@@ -991,6 +991,7 @@ D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與�
 - 城堡：新的在 `castle-layout-d100.ts`（ui 的 `design/b1/castle-layout.json`，D-100 版），小鎮牆內 13×13、大城 17×17，以中心格為中心，開著時用；`castle-layout.ts` 照舊是 D-089 的（關著時用，client 的測試也讀它），KEEP 正式開時再換過來。`castleOf` 照開關選。
 - 主堡：`BuildingType.Keep`（9，舊名 `TownTower` 留一版）3×3，小鎮 600／每箭 6、大城 1000／10，射程 9、2 秒一箭（`KEEP`）。`scenarios.ts` 的 `addKeep`／`keepOf`；`World.maxHp` 照城鎮大小；`arrowOf` 照城鎮大小。
 - 主堡的 3×3 格（`World.keepGround`）倒下時可以走、不能蓋；重建時用 `pushOut` 把站在上面的兵移開。
+- 主堡倒了，牆上的民兵會下來（`units.ts` 的 `fromWall`），用攻擊移動走向城中央打到底；不然城中央在他們投石和視野之外，城會一直拿不下來（war-game-ai 2026-10-24 找到，種子 101）。
 - 拿城（`towns.ts`）：主堡倒了才拿得下（中立和別人持有的都一樣）；修繕完成替治理的人重建；回中立替民兵重建（叛離時還站著就交給民兵、補滿）；治理中倒了、守方還在，60 秒沒有敵人進來就重建（`World.keepRebuild`，開著時才算進雜湊）。
 - 地圖（量法同 R6-51 和 `test/castle.test.ts` 的 walks；同一支量測程式關著時重現 R6-51 的數字）：
   - 固定地圖城鎮不用移動：主城到主城 1.124 倍（main 1.118）、到城鎮最大 1.250。
