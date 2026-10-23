@@ -317,7 +317,15 @@ def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=
             f = np.clip(e * (CELL_M / tr["edge_m"]) * 0.5 + 0.5, 0.0, 1.0)[..., None]
             return base * (1 - f) + layer * f
         def hash2(a, b):
-            return (np.sin(a * 127.1 + b * 311.7) * 43758.5453) % 1.0
+            """An integer hash of a bed's cell (the same on every GPU, war-game-client 2026-10-23): the two indices
+            offset by 32768 and mixed, then PCG's output step; uint32 arithmetic, 0..1."""
+            ua = (a.astype(np.int64) + 32768).astype(np.uint64)
+            ub = (b.astype(np.int64) + 32768).astype(np.uint64)
+            m = np.uint64(0xFFFFFFFF)
+            u = ((ua * np.uint64(0x8DA6B343)) & m) ^ ((ub * np.uint64(0xD8163841)) & m)
+            st = (u * np.uint64(747796405) + np.uint64(2891336453)) & m
+            word = (((st >> ((st >> np.uint64(28)) + np.uint64(4))) ^ st) * np.uint64(277803737)) & m
+            return ((word >> np.uint64(22)) ^ word).astype(np.float64) / 4294967296.0
         gd = tr["garden"]
         ang = math.radians(gd["angle_deg"])
         gu = mx * math.cos(ang) + my * math.sin(ang)
