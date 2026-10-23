@@ -8,7 +8,7 @@ const S = TICKS_PER_SECOND;
 
 /**
  * Towns about 1.5 x bigger with a keep in each (ceo 2026-10-23). While on:
- * - the castles are castle-layout.ts (the small town 13 x 13 inside, the big city 17 x 17), centred
+ * - the castles are castle-layout-d100.ts (the small town 13 x 13 inside, the big city 17 x 17), centred
  *   on every map on the town's centre cell; the walls `radius` cells from it;
  * - every town has a keep (BuildingType.Keep, 3 x 3, its top-left at the centre cell - 1) that
  *   shoots for whoever holds it: `hp` and `arrow` by TownSize (the small town's a little under a
@@ -17,7 +17,7 @@ const S = TICKS_PER_SECOND;
  *   governed (built again for the governor when repaired) or neutral again (for the militia); a
  *   governed town builds a fallen keep again once no enemy has stood inside for `rebuildTicks`, as
  *   its gates (D-096). It holds no one; its owner's farmers may repair it.
- * Off: the castles and the big city's tower of D-089 (castle-layout-d089.ts), as before.
+ * Off: the castles and the big city's tower of D-089 (castle-layout.ts), as before.
  */
 export const KEEP = {
   on: false,

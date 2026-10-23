@@ -294,7 +294,12 @@ export const UnitField = {
   flags: 15,
   /** Mage: ticks until the crystal cannon can fire again (from PR-4); 0 otherwise. */
   castCooldown: 16,
-  reserved17: 17,
+  /**
+   * While `action` is Attack: the unit or building id it is hitting, whether ordered or picked by
+   * itself (for arrows that fly to it; ceo 2026-10-23); -1 otherwise, or when this viewer does not
+   * see that target (a unit in its sight, a building with a cell in its sight; its own always).
+   */
+  attackTarget: 17,
   reserved18: 18,
   reserved19: 19,
 } as const;
