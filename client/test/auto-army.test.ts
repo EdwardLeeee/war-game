@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { AutoArmyBook, armyNeed, affordsAbove, type GroupNeed, missingText, pickTrains, VILLAGER_TARGET, villagersMissing } from "../src/game/auto-army.ts";
+import { headerAutoTrain } from "../src/game/game.ts";
 import { UnitType } from "../src/sim.ts";
 
 const S = UnitType.Spearman;
@@ -96,4 +97,11 @@ test("村民：活著的（躲著的也算）加上排著的，少於目標才�
   assert.deepEqual(back.save(), { paused: [9], villagerTarget: 200, villagersPaused: true });
   back.restore(undefined);
   assert.deepEqual(back.save(), { paused: [], villagerTarget: 40, villagersPaused: false });
+});
+
+test("D-098 改用 init.autoTrain：紀錄第一行的 autoTrain 讀得出來；舊的存檔（玩家的開著）才逐棟送 auto_train off", () => {
+  assert.deepEqual(headerAutoTrain('{"protocol":1,"seed":1,"scenario":"standard","ai":[false,true],"autoTrain":[false,false]}\n{"c":"move"}\n'), [false, false]);
+  assert.deepEqual(headerAutoTrain('{"protocol":1,"seed":1,"scenario":"standard","ai":[false,true],"autoTrain":[true,false]}\n'), [true, false]);
+  assert.equal(headerAutoTrain('{"protocol":1,"seed":1,"scenario":"standard","ai":[true,true]}\n'), null);
+  assert.equal(headerAutoTrain("not json"), null);
 });

@@ -13,6 +13,7 @@ import { Fog, Terrain } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import type { GameView } from "../view/view.ts";
 import { depthOf } from "./depth.ts";
+import { InsetFrames } from "./inset.ts";
 import type { ArtFrame, UnitArt } from "./unit-art.ts";
 
 /** What is not in view now, drawn darker (as buildings remembered). */
@@ -43,6 +44,8 @@ export class TerrainDraw {
   private fogVersion = -1;
   /** How far up a bridge's deck is on the plane (rules.bridge.deck_top_m): someone on it stands there. */
   private readonly deck: number;
+  /** The flat pieces' frames half a texel in (inset.ts). */
+  private readonly insets = new InsetFrames();
 
   constructor(art: UnitArt | null, view: GameView, projection: Projection, layers: { ground: Container; shadows: Container; upright: Container }) {
     this.art = art;
@@ -102,9 +105,14 @@ export class TerrainDraw {
     }
   }
 
+  /** The water's tiles shown or not (寫實地面 with art-v6's water draws it in its shader; the fords and bridge decks stay). */
+  showWater(on: boolean): void {
+    this.flat.water.visible = on;
+  }
+
   private make(p: TerrainPiece, i: number, n: number): Drawn {
     const at = this.projection.toPlane(p.x * TILE_PX, p.y * TILE_PX);
-    const color = this.sprite(this.art?.terrainFrame("color", p.frame) ?? null, at.x, at.y);
+    const color = this.sprite(this.art?.terrainFrame("color", p.frame) ?? null, at.x, at.y, p.ground !== undefined);
     const cells = pieceCells(p)
       .filter(([x, y]) => x >= 0 && y >= 0 && x < n && y < n)
       .map(([x, y]) => y * n + x);
@@ -120,16 +128,24 @@ export class TerrainDraw {
     return { color, shadow, cells };
   }
 
-  private sprite(f: ArtFrame | null, x: number, y: number): Sprite {
+  private sprite(f: ArtFrame | null, x: number, y: number, flat = false): Sprite {
     const s = new Sprite();
     s.visible = false;
     if (f === null) return s;
-    s.texture = f.texture;
+    const k = f.half ? this.scale * 2 : this.scale;
     s.anchor.set(f.ax, f.ay);
     s.position.set(x, y);
-    s.scale.set(f.half ? this.scale * 2 : this.scale);
+    if (flat) {
+      // Flat pieces butt edge to edge (water, bridge decks): no seams between them (inset.ts).
+      s.texture = this.insets.of(f.texture);
+      s.scale.set(...this.insets.scale(f.texture, k));
+    } else {
+      s.texture = f.texture;
+      s.scale.set(k);
+    }
     return s;
   }
+
 
   /**
    * How far up to draw someone standing at (px, py) world px: on a bridge's deck, its height (ui:
@@ -159,5 +175,6 @@ export class TerrainDraw {
     }
     this.drawn.clear();
     for (const c of Object.values(this.flat)) c.destroy();
+    this.insets.destroy();
   }
 }

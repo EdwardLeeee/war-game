@@ -15,7 +15,8 @@ export type GroundLayerId = (typeof GROUND_LAYERS)[number];
 
 /** A tileable texture: its colour lit from above (RGB, sRGB), its height in A (the higher shows through), `tile_m` metres a tile. */
 export interface GroundTexture {
-  id: GroundLayerId;
+  /** One of GROUND_LAYERS, or (art-v6) `water`: the water's ripples, lit, drawn by the shader (rules.water). */
+  id: GroundLayerId | "water";
   file: string;
   /** The same at 2 倍 as ASTC 4×4 (KTX), where the GPU has it. */
   astc?: string;
@@ -55,6 +56,29 @@ export interface GroundJson {
      * `blur_m` metres (edges clamped). Absent: one texel a cell, on or off (Chebyshev).
      */
     weights?: { texels_per_cell: number; soft_m: number; blur_m: number };
+    /**
+     * The water drawn by the ground's shader (art-v6, ceo 2026-10-23; ui's ground_r8.py): the weight
+     * map's A is the signed distance to the water's edge (in the water +, on land −, metres) clamped
+     * to `range_m` and blurred `blur_m` (absent: weights.blur_m); the shader darkens a wet band
+     * `wet_m` wide on land (to `wet_dark`), lays the water inside (`edge_m` soft, its edge moved by the
+     * noise `noise_m`), the bed showing through the shallows (`bed`, `bed_shallow`, `shallow` linear
+     * RGB, `depth_m`), the water layer's ripples drifting at `flow` (two, m/s). Only with the weights
+     * and a `water` layer; absent, the terrain's water tiles as before.
+     */
+    water?: {
+      range_m: number;
+      blur_m?: number;
+      edge_m: number;
+      wet_m: number;
+      wet_dark: number;
+      depth_m: number;
+      shallow: [number, number, number];
+      deep?: [number, number, number];
+      bed: number;
+      bed_shallow: number;
+      noise_m: number;
+      flow: [[number, number], [number, number]];
+    };
   };
   /** The whole ground multiplied last: ui sets them against the units' contrast (R8: 找得到兵). */
   grade: { brightness: number; saturation: number };
@@ -69,6 +93,9 @@ export function parseGround(v: unknown): GroundJson {
 }
 
 const wet = (t: number) => t >= 3 && t <= 6;
+
+/** The water drawn by the shader (rules.water, with the weights and a `water` layer); else the terrain's tiles. */
+export const groundWater = (g: Pick<GroundJson, "layers" | "rules">): boolean => g.rules.water !== undefined && g.rules.weights !== undefined && g.layers.some((l) => l.id === "water");
 const stony = (t: number) => t === 1 || t === 7;
 
 /** Metres a cell (the ground's tiles and noise are in metres). */
@@ -89,16 +116,20 @@ const smooth = (e0: number, e1: number, x: number): number => {
  */
 export class GroundWeights {
   readonly side: number;
-  /** RGBA, row by row, `side` texels a side: R bank, G gravel, B dirt. */
+  /** RGBA, row by row, `side` texels a side: R bank, G gravel, B dirt; A the water's signed distance (rules.water). */
   readonly data: Uint8Array;
   private readonly n: number;
   private readonly rules: GroundJson["rules"];
   /** The seeds as last set, a byte a cell: bit 0 wet, 1 stony, 2 a resource point. */
   private seeds: Uint8Array | null = null;
 
-  constructor(n: number, rules: GroundJson["rules"]) {
+  /** The water in A (rules.water, ground.json with a water layer). */
+  private readonly water: boolean;
+
+  constructor(n: number, rules: GroundJson["rules"], water = false) {
     this.n = n;
     this.rules = rules;
+    this.water = water && rules.water !== undefined && rules.weights !== undefined;
     this.side = weightsSide(n, rules);
     this.data = new Uint8Array(this.side * this.side * 4);
   }
@@ -137,9 +168,105 @@ export class GroundWeights {
     const reach = Math.max(this.rules.bank_cells, this.rules.gravel_cells, this.rules.dirt.node_cells);
     const sigma = (w.blur_m * k) / GROUND_CELL_M;
     const blurR = sigma > 0 ? Math.floor(3 * sigma) + 1 : 0;
-    const pad = Math.ceil((reach * GROUND_CELL_M + w.soft_m / 2) / GROUND_CELL_M) + Math.ceil(blurR / k) + 1;
-    this.region(Math.max(0, x0 - pad) * k, Math.max(0, y0 - pad) * k, Math.min(n, x1 + 1 + pad) * k, Math.min(n, y1 + 1 + pad) * k);
+    let pad = Math.ceil((reach * GROUND_CELL_M + w.soft_m / 2) / GROUND_CELL_M) + Math.ceil(blurR / k) + 1;
+    if (this.water) pad = Math.max(pad, this.waterPad());
+    const r = [Math.max(0, x0 - pad) * k, Math.max(0, y0 - pad) * k, Math.min(n, x1 + 1 + pad) * k, Math.min(n, y1 + 1 + pad) * k] as const;
+    this.region(...r);
+    if (this.water) this.waterRegion(...r);
     return true;
+  }
+
+  /** Cells round a changed one whose water distance may change: its reach, a cell beyond (the edge cells), the blur. */
+  private waterPad(): number {
+    const wa = this.rules.water as NonNullable<GroundJson["rules"]["water"]>;
+    const blurM = wa.blur_m ?? (this.rules.weights as NonNullable<GroundJson["rules"]["weights"]>).blur_m;
+    return Math.ceil((wa.range_m + 3 * blurM) / GROUND_CELL_M) + 2;
+  }
+
+  /**
+   * A, the water's signed distance, for the texels [tx0, tx1) × [ty0, ty1) (rules.water): in a wet
+   * cell the distance to the nearest dry one, in a dry cell minus the distance to the nearest wet one
+   * (0 on the edge either side), clamped to range_m, blurred blur_m; cells off the map are the nearest
+   * cell's, so a river running off the edge grows no bank there (ui's ground_r8.py water_distance).
+   */
+  private waterRegion(tx0: number, ty0: number, tx1: number, ty1: number): void {
+    const wa = this.rules.water as NonNullable<GroundJson["rules"]["water"]>;
+    const seeds = this.seeds as Uint8Array;
+    const n = this.n;
+    const side = this.side;
+    const k = side / n;
+    const texelM = GROUND_CELL_M / k;
+    const blurM = wa.blur_m ?? (this.rules.weights as NonNullable<GroundJson["rules"]["weights"]>).blur_m;
+    const sigma = (blurM * k) / GROUND_CELL_M;
+    const blurR = sigma > 0 ? Math.floor(3 * sigma) + 1 : 0;
+    const kernel: number[] = [];
+    let sum = 0;
+    for (let i = -blurR; i <= blurR; i++) {
+      const v = blurR === 0 ? 1 : Math.exp(-(i * i) / (2 * sigma * sigma));
+      kernel.push(v);
+      sum += v;
+    }
+    for (let i = 0; i < kernel.length; i++) kernel[i] /= sum;
+    const clampC = (v: number) => Math.min(n - 1, Math.max(0, v));
+    const wetAt = (x: number, y: number) => (seeds[clampC(y) * n + clampC(x)] & 1) !== 0;
+    // The distances over the region and the blur round it, past the map's edge too (the ground there the nearest cell's).
+    const ex0 = tx0 - blurR;
+    const ey0 = ty0 - blurR;
+    const ew = tx1 - tx0 + 2 * blurR;
+    const eh = ty1 - ty0 + 2 * blurR;
+    const far = wa.range_m + 2 * GROUND_CELL_M;
+    const dl = new Float64Array(ew * eh).fill(1e9);
+    const dw = new Float64Array(ew * eh).fill(1e9);
+    const reachT = Math.ceil(far / texelM) + 1;
+    const cx0 = Math.floor(ex0 / k) - Math.ceil(far / GROUND_CELL_M) - 1;
+    const cy0 = Math.floor(ey0 / k) - Math.ceil(far / GROUND_CELL_M) - 1;
+    const cx1 = Math.floor((ex0 + ew - 1) / k) + Math.ceil(far / GROUND_CELL_M) + 1;
+    const cy1 = Math.floor((ey0 + eh - 1) / k) + Math.ceil(far / GROUND_CELL_M) + 1;
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const isWet = wetAt(cx, cy);
+        // Only the cells along the edge: a wet one beside a dry one, a dry one beside a wet one.
+        const edge = wetAt(cx - 1, cy) !== isWet || wetAt(cx + 1, cy) !== isWet || wetAt(cx, cy - 1) !== isWet || wetAt(cx, cy + 1) !== isWet;
+        if (!edge) continue;
+        const d = isWet ? dw : dl;
+        const sx = (cx + 0.5) * GROUND_CELL_M;
+        const sy = (cy + 0.5) * GROUND_CELL_M;
+        for (let ty = Math.max(ey0, cy * k - reachT); ty < Math.min(ey0 + eh, (cy + 1) * k + reachT); ty++) {
+          const dy = Math.max(Math.abs((ty + 0.5) * texelM - sy) - GROUND_CELL_M / 2, 0);
+          for (let tx = Math.max(ex0, cx * k - reachT); tx < Math.min(ex0 + ew, (cx + 1) * k + reachT); tx++) {
+            const dx = Math.max(Math.abs((tx + 0.5) * texelM - sx) - GROUND_CELL_M / 2, 0);
+            const dist = Math.hypot(dx, dy);
+            const at = (ty - ey0) * ew + (tx - ex0);
+            if (dist < d[at]) d[at] = dist;
+          }
+        }
+      }
+    }
+    const sd = new Float64Array(ew * eh);
+    for (let ty = ey0; ty < ey0 + eh; ty++) {
+      for (let tx = ex0; tx < ex0 + ew; tx++) {
+        const at = (ty - ey0) * ew + (tx - ex0);
+        const inWet = wetAt(Math.floor(tx / k), Math.floor(ty / k));
+        const v = inWet ? Math.min(dl[at], far) : -Math.min(dw[at], far);
+        sd[at] = Math.min(wa.range_m, Math.max(-wa.range_m, v));
+      }
+    }
+    // The blur, rows (y) then columns (x) as ground_r8.py's, on the extended texels.
+    const rows = new Float64Array(ew * (ty1 - ty0));
+    for (let ty = ty0; ty < ty1; ty++) {
+      for (let tx = ex0; tx < ex0 + ew; tx++) {
+        let v = 0;
+        for (let i = -blurR; i <= blurR; i++) v += sd[(ty + i - ey0) * ew + (tx - ex0)] * kernel[i + blurR];
+        rows[(ty - ty0) * ew + (tx - ex0)] = v;
+      }
+    }
+    for (let ty = ty0; ty < ty1; ty++) {
+      for (let tx = tx0; tx < tx1; tx++) {
+        let v = 0;
+        for (let i = -blurR; i <= blurR; i++) v += rows[(ty - ty0) * ew + (tx + i - ex0)] * kernel[i + blurR];
+        this.data[(ty * side + tx) * 4 + 3] = Math.round(Math.min(1, Math.max(0, 0.5 + v / wa.range_m / 2)) * 255);
+      }
+    }
   }
 
   /** The texels [tx0, tx1) × [ty0, ty1) made again from the seeds (rules.weights on). */

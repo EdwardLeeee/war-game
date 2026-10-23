@@ -22,7 +22,7 @@ import {
 import { attachPointer } from "../input/pointer.ts";
 import { enemyTooClose, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
-import { type Culture, cultureOf } from "../art/spec.ts";
+import { type Culture, cultureOf, SIEGE_ATLASES } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
 import { type Projection, PROJECTIONS } from "../camera/projection.ts";
@@ -36,7 +36,6 @@ import { SAVE_EVERY_TICKS, SCREEN_VERSION, type SavedGame, type ScreenState } fr
 import { gpu, takeDraws } from "../stage.ts";
 import {
   Action,
-  AUTO_TRAIN,
   autoBuilders,
   type AiDifficulty,
   BUILDING_STRIDE,
@@ -47,6 +46,7 @@ import {
   type CommandBody,
   type ContinueFailure,
   type Cost,
+  type SimEvent,
   dir16,
   type FromWorker,
   type GameOverReason,
@@ -85,7 +85,8 @@ import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
-import { features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
+import { autoTrainBuildings, features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
+import { stoneOf } from "./siege.ts";
 import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
@@ -193,6 +194,17 @@ export function nextSeq(log: string): number {
   let last = 0;
   for (const m of log.matchAll(/"seq":(\d+)/g)) last = Math.max(last, Number(m[1]));
   return last + 1;
+}
+
+/** A log's header's autoTrain (each player's: the simulation's own 自動訓練 at the start), or null when it has none or cannot be read. */
+export function headerAutoTrain(log: string): boolean[] | null {
+  try {
+    const end = log.indexOf("\n");
+    const h = JSON.parse(end < 0 ? log : log.slice(0, end)) as { autoTrain?: unknown };
+    return Array.isArray(h.autoTrain) && h.autoTrain.every((v) => typeof v === "boolean") ? (h.autoTrain as boolean[]) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** How the ground is laid on the screen: 方形斜看 since art-v3 is drawn for it (D-088); the diamond (D-085) on test pages only (?view=diamond). */
@@ -454,6 +466,12 @@ export class Game implements GestureHost {
   autoArmyOn = true;
   private autoSent: { seq: number; tick: number; building: number; unit: number }[] = [];
   private readonly autoOff = new Map<number, number>();
+  /**
+   * The simulation's own 自動訓練 still on for the person in this game, so turned off building by
+   * building (`auto_train off`, again every 2 s while its flag shows): a game kept for 繼續上一局
+   * from before init.autoTrain. A new game starts with it off (start()).
+   */
+  private offEachBuilding = false;
   private armyNeedSeen: ArmyNeed = { reason: "none", missing: {}, want: {} };
   private armyBlocked = new Map<number, Block>();
   private villagersSeen = { living: 0, queued: 0, block: null as Block | null };
@@ -491,6 +509,11 @@ export class Game implements GestureHost {
     return this.renderer?.stoneCount ?? 0;
   }
 
+  /** 攻城砲's stones drawn (D-099), and siege engines with their range rings this frame, for the test hook. */
+  get siegeForTest(): { shots: number; rings: number } {
+    return { shots: this.renderer?.siegeShotCount ?? 0, rings: this.renderer?.siegeRangesDrawn ?? 0 };
+  }
+
   /** Shots that left a gate's tower (D-096 shoot_at_m, its `tower_shot` flash), for the test hook. */
   get towerShotsForTest(): number {
     return this.renderer?.towerShotCount ?? 0;
@@ -522,7 +545,7 @@ export class Game implements GestureHost {
   }
 
   /** 寫實地面 (D-093): drawn or not, and its quality; null before the first snapshot. */
-  get groundForTest(): { real: boolean; quality: string | null } | null {
+  get groundForTest(): { real: boolean; quality: string | null; water: boolean } | null {
     return this.renderer?.groundLook ?? null;
   }
 
@@ -626,6 +649,10 @@ export class Game implements GestureHost {
       // Only a random map says so (D-074): a fixed map's init and log stay as they were.
       ...(this.options.map === "random" ? { map: "random" as const } : {}),
       build: this.options.build,
+      // 自動訓練 by the screen (D-098): the simulation's own off for the person from the start (PROTOCOL.md
+      // 6, init.autoTrain); the other player's as the simulation would have it (a test page's ?ai=0: on).
+      // Watching (computer against computer): not sent, its log as before.
+      ...(this.options.watch ? {} : { autoTrain: [false, !this.options.enemyAi] }),
     };
     this.initSent = init;
     this.started.init = performance.now();
@@ -635,6 +662,9 @@ export class Game implements GestureHost {
       return;
     }
     // 繼續上一局 (D-083): the simulation runs the saved game again up to where it was, then waits.
+    // A game started before init.autoTrain (its log's header has the person's on): the simulation's own
+    // 自動訓練 is turned off building by building, as then (tickAutoArmy).
+    this.offEachBuilding = headerAutoTrain(resume.log)?.[0] !== false;
     this.restoring = resume;
     this.seq = nextSeq(resume.log);
     this.port.postMessage({ type: "continue", protocol: PROTOCOL_VERSION, build: this.options.build, log: resume.log, hashes: resume.hashes, toTick: resume.tick, tps: this.tps });
@@ -1018,9 +1048,9 @@ export class Game implements GestureHost {
   }
 
   /**
-   * Every snapshot while the game runs: the simulation's own 自動訓練 off for each of our
-   * buildings (ceo's (B): `auto_train off`, again every 2 s while its flag shows), then the
-   * main city's villagers up to the target and the groups' missing soldiers, as `train` orders.
+   * Every snapshot while the game runs: the main city's villagers up to the target and the
+   * groups' missing soldiers, as `train` orders. The simulation's own 自動訓練 is off for the
+   * person from the start (init.autoTrain); a game kept from before it, building by building.
    */
   private tickAutoArmy(): void {
     const view = this.view;
@@ -1047,7 +1077,7 @@ export class Game implements GestureHost {
       if (b[o + BuildingField.owner] !== view.me) continue;
       const id = b[o + BuildingField.id];
       const type = b[o + BuildingField.type];
-      if ((b[o + BuildingField.flags] & BuildingFlag.AutoTrain) !== 0 && tick - (this.autoOff.get(id) ?? Number.NEGATIVE_INFINITY) >= 40) {
+      if (this.offEachBuilding && (b[o + BuildingField.flags] & BuildingFlag.AutoTrain) !== 0 && tick - (this.autoOff.get(id) ?? Number.NEGATIVE_INFINITY) >= 40) {
         this.autoOff.set(id, tick);
         this.autoCommand({ c: "auto_train", building: id, on: false });
       }
@@ -1058,7 +1088,7 @@ export class Game implements GestureHost {
       const free = finished && b[o + BuildingField.queueLength] === 0 && !inFlight(id);
       if (type === BuildingType.MainCity) {
         if (free) cities.push(id);
-      } else if (AUTO_TRAIN.buildings.includes(type) && trains !== undefined) {
+      } else if (autoTrainBuildings(view.rules).includes(type) && trains !== undefined) {
         sites.push({ id, trains, free: free && !this.autoArmy.paused.has(id) });
       }
     }
@@ -1701,6 +1731,8 @@ export class Game implements GestureHost {
       case "ready": {
         this.started.ready = performance.now();
         this.view = new GameView(msg.player ?? 0, msg.map, msg.rules);
+        // 攻城砲 (D-099): their atlases only in a game that has them (drawn as shapes until they are in).
+        if (features(msg.rules).siege === true) void this.options.art?.addAtlases(SIEGE_ATLASES);
         // The map as a diamond (D-085; docs/sprite-atlas.md section 1): the camera, taps and boxes, and the drawing.
         const projection = this.options.view === undefined ? PROJECTION_DEFAULT : PROJECTIONS[this.options.view];
         this.view.projection = projection;
@@ -1773,6 +1805,7 @@ export class Game implements GestureHost {
           } else {
             if (ev.k === "unit_trained") this.enlist(ev.id, ev.type);
             if (ev.k === "shot") this.drawShot(ev.building, ev.target, now, ev.n ?? 1);
+            if (ev.k === "siege_shot") this.drawSiegeShot(ev);
             this.hud.onEvent(ev);
           }
         }
@@ -2159,6 +2192,19 @@ export class Game implements GestureHost {
         break;
     }
     if (at !== null) r.mark(at.x, at.y, color, now);
+  }
+
+  /**
+   * 攻城砲 (D-099, `siege_shot`): its stone from the engine when we see it, else from `from`'s side
+   * (game/siege.ts), landing at `lands`; thrown at this snapshot's tick.
+   */
+  private drawSiegeShot(ev: Extract<SimEvent, { k: "siege_shot" }>): void {
+    const view = this.view;
+    if (view === null || this.renderer === null) return;
+    const o = view.unitRow(ev.u);
+    const engine = o < 0 ? null : (({ x, y }) => ({ x: x / TILE_PX, y: y / TILE_PX }))(view.unitPos(o));
+    const stone = stoneOf(ev, engine, view.header?.[H.tick] ?? 0, (fixed) => fixed / CELL);
+    if (stone !== null) this.renderer.siegeShot(stone);
   }
 
   /** 射箭 (round 7, `shot`): an arrow from the building's centre to the unit it shot at; a town gate's from its tower (D-096 shoot_at_m). */

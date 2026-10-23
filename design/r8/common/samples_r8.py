@@ -75,8 +75,22 @@ POINTS["W"] = (
     "・真實的建築比遊戲占地大 2–5 倍：量體壓縮到格子裡，比例和材料照真的。玩家色在旗子和掛布上。")
 
 
+RELOOK = ("2026-10-23 重出：使用者 2026-10-22 核准的那一版是在 ui 本機出的圖，工具漏了寫實設定，沒有 CC0 材質、也不是寫實打光。"
+          "這一版是量產真正的樣子（形狀和配置沒變）。\n")
+
+
+def realistic(meta, name):
+    """Every piece on an R8 board was rendered in the R8 look (render_b1.py LOOK "r8": the CC0 textures, R7's lights,
+    no outlines), as production renders it: the boards say 寫實、CC0 材質, so a piece without it stops the board
+    (2026-10-23: a single-piece helper dropped the look; R8-21, -22, -26, -27 were approved without it)."""
+    if meta.get("look") != "r8":
+        raise SystemExit(f"{name}: rendered without the R8 look (look={meta.get('look')!r}); render it again with the look")
+
+
 def piece(name, suffix, pp, team="blue"):
-    return scene.piece(DIR, name, suffix, team=team, ppm=20 * pp)
+    sp = scene.piece(DIR, name, suffix, team=team, ppm=20 * pp)
+    realistic(sp.meta, name)
+    return sp
 
 
 def tile(name, suffix, pp, foot, team="blue"):
@@ -87,6 +101,7 @@ def tile(name, suffix, pp, foot, team="blue"):
 def run_tile(name, suffix, pp, n=3, team="blue"):
     """n cells of one wall piece side by side (a run of wall, as long as the cliff beside it)."""
     items = [scene.piece(DIR, name, suffix, team=team, ppm=20 * pp, x=(i - (n - 1) / 2) * 2.0) for i in range(n)]
+    realistic(items[0].meta, name)
     return b1art.tile(items, pp, footprint=(n, 1), min_size=(140 * pp, 140 * pp))
 
 
@@ -148,7 +163,7 @@ def frame_bytes(name, suffix):
 def board_buildings(c, suffix, research, W=2800):
     label = f"R8-2{1 if c == 'E' else 2}-建築樣本-{SIDE[c]}-mobile"
     folder = research / ("east-arch-reference" if c == "E" else "west-arch-reference")
-    parts = [boards.header(W, label, POINTS[c])]
+    parts = [boards.header(W, label, RELOOK + POINTS[c])]
     parts += refs_row(W, folder, REFS[c])
     big = [boards.captioned(tile(f"r8b_{k}_{c}_new", suffix, 3, FOOT[k]), f"{NAMES[k]}（3 倍，{FOOT[k][0]}×{FOOT[k][1]} 格）", 24)
            for k in NAMES]
@@ -229,8 +244,8 @@ def board_cliff(suffix, research, W=2800):
 
 def board_overview(suffix, gdir, mem, W=3000):
     label = "R8-25-第二批樣本-總覽"
-    text = ("R8 第二批的樣本（寫實畫風），給使用者先看方向：東陸、西陸的主城、民居、兵營，地面五層的混合，懸崖和城牆。"
-            "都是 2 倍。細節和參考圖在 R8-21 到 R8-24。看過方向對了，再量產第二批全部：建築（含哨所、砲坊）的所有狀態、"
+    text = (RELOOK + "R8 第二批的樣本（寫實畫風）：東陸、西陸的主城、民居、兵營，地面五層的混合，懸崖（R8-26 的掃描岩壁）和城牆。"
+            "都是 2 倍。細節和參考圖在 R8-21 到 R8-23、R8-26 到 R8-28（R8-24 的舊懸崖已由 R8-26 取代）。核准後量產第二批全部：建築（含哨所、砲坊）的所有狀態、"
             "照 D-096 格局的寫實城牆、資源點、地形、地面。\n"
             "記憶體（2 倍，每張圖、一個狀態；一棟建築有六個狀態；未壓縮 RGBA8／ASTC 4×4）：" +
             "、".join(f"{NAMES.get(k.rsplit('_', 1)[0], k)}{'' if k == 'ground' else SIDE[k[-1]]} {v['rgba8_mb']}／{v['astc_mb']} MB"
@@ -241,10 +256,9 @@ def board_overview(suffix, gdir, mem, W=3000):
         row = [boards.captioned(tile(f"r8b_{k}_{c}_new", suffix, 2, FOOT[k]), f"{SIDE[c]}{NAMES[k]}", 22) for k in NAMES]
         parts.append(boards.row(row, W, gap=24))
     cam = Image.open(gdir / "sample_cam.png")
-    cl = tile("r8b_cliff", suffix, 2, (3, 1))
-    sw = run_tile("r8b_sw_s_E", suffix, 2)
-    parts.append(boards.row([boards.captioned(cam, "地面（遊戲的鏡頭）", 22), boards.captioned(cl, "懸崖", 22),
-                             boards.captioned(sw, "石牆", 22)], W, gap=24))
+    cl = cliff_scene(gdir, ppm=40).crop((0, 0, 1240, 560))
+    parts.append(boards.row([boards.captioned(cam, "地面（遊戲的鏡頭）", 22),
+                             boards.captioned(cl, "懸崖、石牆、槍兵（2 倍，同一個比例）", 22)], W, gap=24))
     return boards.save(boards.stack(parts, W), label)
 
 
@@ -313,6 +327,7 @@ def cliff_pieces(g):
 def _sprite(d, name, suffix, f):
     """A rendered piece scaled by f: (colour with AO, anchor), (shadow, its anchor) or None."""
     meta = json.loads((d / f"{name}_{suffix}.json").read_text())
+    realistic(meta, name)
     b = np.asarray(Image.open(d / f"{name}_{suffix}_beauty.png").convert("RGBA"), np.float32)
     ao_p = d / f"{name}_{suffix}_ao.png"
     if ao_p.exists():
@@ -504,7 +519,7 @@ def board_cliff_redo(gdir, research, W=2800):
             "轉角和兩端由岩柱蓋住。三種臂、兩種柱輪流用，長條不會一格一格重複。")
     scene_im = cliff_scene(gdir, ppm=40)
     zoom = scene_im.crop((40, 60, 760, 460)).resize((1440, 800), Image.LANCZOS)
-    parts = [boards.header(W, label, text)]
+    parts = [boards.header(W, label, RELOOK + text)]
     parts.append(boards.row([boards.captioned(scene_im, "遊戲的鏡頭（2 倍）：懸崖一條（東西四格、轉南兩格、再斜一段）、東陸石牆三格、東陸槍兵（1.7 公尺）", 22)], W))
     parts.append(boards.row([boards.captioned(zoom, "放大：懸崖和兵（4 倍）", 22)], W))
     tiles = []
@@ -529,7 +544,7 @@ def board_drum(W=2000):
     full = tile("r8b_barracks_E_new", "x3", 6, (3, 3)).convert("RGB")
     w, h = full.size
     zoom = full.crop((int(w * 0.38), int(h * 0.55), int(w * 0.64), int(h * 0.85))).resize((720, 830), Image.LANCZOS)
-    parts = [boards.header(W, label, text),
+    parts = [boards.header(W, label, RELOOK + text),
              boards.row([boards.captioned(full, "東陸兵營（6 倍）", 22), boards.captioned(zoom, "戰鼓放大", 22)], W, gap=30)]
     return boards.save(boards.stack(parts, W), label)
 
@@ -576,7 +591,100 @@ def board_ground_fix(gdir, W=2600):
     return boards.save(boards.stack(parts, W), label)
 
 
-if __name__ == "__main__" and sys.argv[1] == "terrain":
+def diagonal_river(n=18):
+    """A river running diagonally (two cells wide, as the sim lays it: a staircase on the grid), a three-cell ford across
+    it at the left, a north-south bridge at the right, rocks; the cells the sim would have."""
+    g = np.zeros((n, n), dtype=int)
+    for x in range(n):                                     # diagonal to x 10, then straight east (the bridge there)
+        y = int(2 + min(x, 10) * 0.8)
+        g[y:y + 2, x] = 3
+    for x in range(3, 6):
+        g[(g[:, x] == 3), x] = 4
+    for x in range(13, 16):
+        g[(g[:, x] == 3), x] = 5
+    g[12, 3] = g[12, 4] = g[13, 4] = g[2, 13] = 1
+    return g
+
+
+def river_scene(gdir, g, ppm=40, t=0.0, units=()):
+    """The ground with the water in it, drawn as the client's shader will (ground_r8.compose with ground.json's water),
+    the fords and the bridges' pieces on it, rocks, units: as the game draws them."""
+    import ground_r8
+    gj = json.loads((gdir / "ground" / "ground.json").read_text())
+    rules = dict(gj["rules"], dirt=dict(gj["rules"]["dirt"], noise_threshold=0.99))
+    layers = _ground_layers(gdir)
+    top = ground_r8.compose(g, [], layers, ppm=ppm, rules=rules, t=t)
+    cam = Image.fromarray((top * 255).round().astype(np.uint8), "RGB").resize((top.shape[1], top.shape[0] // 2), Image.LANCZOS)
+    cam = cam.convert("RGBA")
+    f = ppm / 60.0
+    flat, items, shadows = [], [], []
+    for frame, x, y, front, ground in terrain_pieces(g):
+        if ground == "water":                              # drawn by the shader now
+            continue
+        im, anc, sh = _sprite(CLIFF_DIR, frame, "x3", f)
+        X, Y = x * 2.0 * ppm, y * 2.0 * ppm * 0.5
+        xy = (int(round(X - anc[0])), int(round(Y - anc[1])))
+        if ground:
+            if ground == "deck" and sh:
+                flat.append((sh[0], (int(round(X - sh[1])), int(round(Y - sh[2])))))
+            flat.append((im, xy))
+        else:
+            items.append((front, im, xy))
+            if sh:
+                shadows.append((sh[0], (int(round(X - sh[1])), int(round(Y - sh[2])))))
+    if UNITS_DIR:
+        import boards_r8 as B
+        atl = {}
+        for (u, anim, facing, k, team, x, y) in units:
+            if u not in atl:
+                atl[u] = B.field.Atlas(Path(UNITS_DIR) / u / "r7v8" / "prod" / u / "atlas_x3" / f"{u}.json")
+            body, (ax, ay), _ = B.frame(atl[u], u, anim, facing, k, team)
+            body = body.resize((max(1, int(body.width * f)), max(1, int(body.height * f))), Image.LANCZOS)
+            items.append((y / 2.0, body, (int(round(x * ppm - ax * f)), int(round(y * ppm * 0.5 - ay * f)))))
+    for im, xy in flat + shadows + [(im, xy) for _, im, xy in sorted(items, key=lambda q: q[0])]:
+        layer = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+        layer.paste(im, xy, im)
+        cam = Image.alpha_composite(cam, layer)
+    return cam.convert("RGB")
+
+
+def board_river(gdir, research, W=2800):
+    label = "R8-29-河流-mobile"
+    text = ("河流（ceo 2026-10-23：現在的水是一格一格的水圖塊，平平的藍灰色、米色的邊、轉角跟著格子走，放在寫實地面旁邊不對）。"
+            "art-v6 起，水改成地面著色器直接畫（和 client 談好，ground.json 多一層 water 和 rules.water）：\n"
+            "・岸線：照離水的真正距離算，再糊開 1.5 公尺，斜著流的河是一條順的岸，不是樓梯（模擬裡的河還是一格一格的，只有畫法變）。\n"
+            "・岸邊：一條濕的深色泥帶，再外面是原本的河岸泥。\n"
+            "・水面：淺處看得到河床，越往中間越深越暗；水紋是我們自己做的（沒有用外部素材），兩層朝不同方向慢慢流，天空在水面反光。\n"
+            "・淺灘和橋照舊是圖，放在水上：淺灘是淺水底下的碎石和踏腳石，邊緣淡進水裡；橋是舊木板、兩根大梁、木樁和扶手。\n"
+            "上：遊戲的鏡頭（2 倍），一條斜的河，左邊三格寬的淺灘，右邊一座南北向的橋，站著寫實的兵。下：放大；水流動的樣子見 GIF。")
+    g = diagonal_river()
+    units = [("spear_e", "walk", 6, 2, "blue", 9.0, 10.4), ("spear_e", "idle", 6, 0, "blue", 8.2, 7.8),
+             ("bow_w", "idle", 2, 0, "red", 28.0, 21.4), ("pike_w", "walk", 2, 3, "red", 29.6, 23.0)]
+    full = river_scene(gdir, g, ppm=40, units=units)
+    zoom = full.crop((60, 40, 760, 400)).resize((1400, 720), Image.LANCZOS)
+    zoom2 = full.crop((960, 300, 1360, 540)).resize((1000, 600), Image.LANCZOS)
+    parts = [boards.header(W, label, RELOOK.replace("核准的那一版", "核准的建築、懸崖") + text)]
+    parts.append(boards.row([boards.captioned(full, "遊戲的鏡頭（2 倍）：斜的河、淺灘、橋、寫實兵", 22)], W))
+    parts.append(boards.row([boards.captioned(zoom, "淺灘一帶（4 倍）", 22), boards.captioned(zoom2, "橋一帶（5 倍）", 22)], W, gap=30))
+    wl = Image.open(gdir / "ground" / "water.png").convert("RGB").resize((360, 360), Image.LANCZOS)
+    parts.append(boards.row([boards.captioned(wl, "水紋層（一塊 4 公尺，可以無縫接）", 20)], W))
+    out = boards.save(boards.stack(parts, W), label)
+    # the flow: 12 frames over 6 s, the ford's stretch at 4x
+    frames = []
+    for k in range(12):
+        im = river_scene(gdir, g, ppm=40, t=k * 0.5).crop((60, 40, 760, 400)).resize((700, 360), Image.LANCZOS)
+        ImageDraw.Draw(im).text((8, 8), "R8-29-河流-水流動", fill=(255, 255, 255))
+        frames.append(im)
+    gif = boards.OUT / "R8-29-河流-水流動.gif"
+    frames[0].save(gif, save_all=True, append_images=frames[1:], duration=250, loop=0)
+    print("wrote", gif)
+    return out
+
+
+if __name__ == "__main__" and sys.argv[1] == "river":
+    UNITS_DIR = sys.argv[4] if len(sys.argv) > 4 else None
+    print(board_river(Path(sys.argv[2]), Path(sys.argv[3])))
+elif __name__ == "__main__" and sys.argv[1] == "terrain":
     UNITS_DIR = sys.argv[3] if len(sys.argv) > 3 else None
     terrain_scene(Path(sys.argv[2]), river_map(), units=[("spear_e", "walk", 6, 2, "blue", 7.0, 14.0),
                                                          ("spear_e", "idle", 6, 0, "blue", 28.5, 17.8),
@@ -593,8 +701,7 @@ elif __name__ == "__main__":
     UNITS_DIR = sys.argv[4] if len(sys.argv) > 4 else None
     for c in ("E", "W"):
         print(board_buildings(c, sfx, rs))
-    print(board_ground(gd, rs))
-    print(board_cliff(sfx, rs))
+    print(board_ground(gd, rs))       # R8-24 (the first cliff) is a record now: R8-26 replaced it
     mem = memory(sfx, gd)
     print(json.dumps(mem, ensure_ascii=False))
     print(board_overview(sfx, gd, mem))

@@ -15,7 +15,7 @@ import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
 import { rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import type { RandomMap } from "./core/random-map.ts";
-import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, Order, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
+import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, NodeKind, Order, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 import { buildView, mapInfo } from "./view/view.ts";
 
@@ -113,7 +113,7 @@ if (flag("turtle")) {
   plan.production = 4;
   plan.choice = "govern";
   plan.corners = true;
-  plan.townAt = 10;
+  plan.townAt = 60;
   plan.guards = 3;
   plan.cavalryShare = 30;
   plan.pushAt = 100;
@@ -265,6 +265,8 @@ interface GameRecord {
   armyAt: { m15: [number, number] | null; m20: [number, number] | null };
   /** D-086 A5: arrow towers of [the player, the AI] at minutes 30 and 45 (null: over by then). */
   towersAt: { m30: [number, number] | null; m45: [number, number] | null };
+  /** D-086 A5: the player's [farmers, soldiers, arrow towers] at minutes 5, 10, 15, 20, 25 and 30 (the user's pace to match). */
+  pace: Record<string, [number, number, number]>;
   /** D-086 A5: towns [the player, the AI] governed at the end. */
   governedEnd: [number, number];
   /**
@@ -432,6 +434,7 @@ function play(seed: number): GameRecord {
   let logAt = 0;
   const armyAt: GameRecord["armyAt"] = { m15: null, m20: null };
   const towersAt: GameRecord["towersAt"] = { m30: null, m45: null };
+  const pace: GameRecord["pace"] = {};
   const towersOf = (p: number) => {
     let n = 0;
     for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === BuildingType.ArrowTower) n++;
@@ -501,6 +504,7 @@ function play(seed: number): GameRecord {
     if (w.tick === 20 * 1200) armyAt.m20 = [soldiersOf(0), soldiersOf(1)];
     if (w.tick === 30 * 1200) towersAt.m30 = [towersOf(0), towersOf(1)];
     if (w.tick === 45 * 1200) towersAt.m45 = [towersOf(0), towersOf(1)];
+    if (w.tick % (5 * 1200) === 0 && w.tick > 0 && w.tick <= 30 * 1200) pace[`m${w.tick / 1200}`] = [count(0, UnitType.Farmer), soldiersOf(0), towersOf(0)];
     for (const e of g.events) if (e.to === 0 && e.ev.k === "rejected") rejected++;
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
     for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;
@@ -694,8 +698,13 @@ function play(seed: number): GameRecord {
         const c = centre(p, 0);
         return c.n === 0 ? "" : ` @(${Math.round(c.x)},${Math.round(c.y)})`;
       };
+      // D-086 A5: farmers on gold and the gold left within 20 cells of the player's main city.
+      let onGold = 0;
+      for (let i = 0; i < w.units.count; i++) if (u.owner[i] === 0 && u.type[i] === UnitType.Farmer && u.order[i] === Order.Gather && u.orderTarget[i] >= 0 && u.orderTarget[i] < w.nodeKind.length && w.nodeKind[u.orderTarget[i]] === NodeKind.GoldMine) onGold++;
+      let goldNear = 0;
+      for (let k = 0; k < w.nodeKind.length; k++) if (w.nodeKind[k] === NodeKind.GoldMine && (w.nodeX[k] - home.cellX) * (w.nodeX[k] - home.cellX) + (w.nodeY[k] - home.cellY) * (w.nodeY[k] - home.cellY) <= 400) goldNear += w.nodeAmount[k];
       lines.push(
-        `${(w.tick / 1200).toFixed(0)} 分｜我 ${res(0)} 農 ${count(0, UnitType.Farmer)} 兵 ${army(0)}${at(0)} ${player.state().mode} 城 ${cityHp(0)} ${income(0)}｜電腦 ${res(1)} 農 ${count(1, UnitType.Farmer)} 兵 ${army(1)}${at(1)} 城 ${cityHp(1)} ${income(1)}｜${towns}`,
+        `${(w.tick / 1200).toFixed(0)} 分｜我 ${res(0)} 農 ${count(0, UnitType.Farmer)}（金 ${onGold}，家旁金 ${goldNear}） 兵 ${army(0)}${at(0)} ${player.state().mode} 城 ${cityHp(0)} ${income(0)}｜電腦 ${res(1)} 農 ${count(1, UnitType.Farmer)} 兵 ${army(1)}${at(1)} 城 ${cityHp(1)} ${income(1)}｜${towns}`,
       );
     }
   }
@@ -746,6 +755,7 @@ function play(seed: number): GameRecord {
     aiMarches: marchLog.map((x) => ({ ...x, fell: cityFell[0] >= 0 && cityFell[0] <= x.last + MARCH_GAP })),
     armyAt,
     towersAt,
+    pace,
     governedEnd: [0, 1].map((p) => w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length) as [number, number],
     aiFarmers,
     aiRescue,
@@ -787,7 +797,7 @@ const options = [
   plan.harass > 0 ? `殺村民：第 10 分起 ${plan.harass} 名兵（遠程先）去殺電腦離主城 20 格以上的村民，看不到就繞電腦主城找；附近敵兵比自己多或剩一半就回家，1 分鐘後補滿再去（D-086 A3）` : "",
   plan.pushAhead && !plan.turtle ? `後期翻盤：24 名村民、遠程為主、家旁 ${plan.homeTowers} 座箭樓、騎兵佔 ${plan.cavalryShare}%、城鎮打下來就治理，兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門（D-086）` : "",
   !plan.pushAhead && plan.cavalryShare > 0 ? `帶騎兵：騎兵佔自己兵的 ${plan.cavalryShare}%，有射場以後蓋馬廄（D-097）` : "",
-  plan.turtle ? `守塔慢拿城（A5）：40 名村民、家旁箭樓第 30 分約 10 座、第 45 分 18 座、治理的城鎮旁各 2 座、家旁 2 座哨所各 3 名槍兵，城鎮打下來就治理（大城在兵 40 名以後），兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門，騎兵 ${plan.cavalryShare}%` : "",
+  plan.turtle ? `守塔慢拿城（A5）：第 15 分前先養到 40 名村民（糧優先，兵最多 25 名）、家旁箭樓第 14 分起蓋（第 20 分 7 座、第 25 分 10 座、第 30 分 20 座，同時最多蓋 3 棟）、治理的城鎮和離家的礦場旁各 2 座、家旁 6 座哨所（前 2 座各 3 名槍兵）；家旁的金快挖完時派 1 名槍兵找下一片金礦、在那裡蓋礦場，金太多時村民改採糧和木；電腦來打家時遠程兵躲進家旁箭樓和主城；家旁箭樓 7 座、兵 ${plan.townAt} 名而且比最近看到的電腦兵多才去拿城、打下來就治理（大城在兵 40 名以後），兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門，騎兵 ${plan.cavalryShare}%` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];

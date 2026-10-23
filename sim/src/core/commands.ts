@@ -784,7 +784,7 @@ function placeCheck(ctx: CommandContext, p: number, type: BuildingType, x: numbe
     for (let cx = x; cx < x + info.size; cx++) {
       const c = cy * n + cx;
       cells[c] =
-        (w.grid[c] !== 0 || w.buildingAt[c] >= 0 ? PlaceBit.Blocked : 0) |
+        (w.grid[c] !== 0 || w.buildingAt[c] >= 0 || w.keepGround[c] === 1 ? PlaceBit.Blocked : 0) |
         (crossingTerrain(w.map.terrain[c]) ? PlaceBit.Crossing : 0) |
         (fog.explored[p][c] === 1 ? 0 : PlaceBit.Unexplored) |
         (w.gateLane[c] === 1 ? PlaceBit.GateLane : 0) |
@@ -798,7 +798,7 @@ function placeCheck(ctx: CommandContext, p: number, type: BuildingType, x: numbe
 }
 
 /** Units standing on a new building's footprint step to the nearest open cell (toward their own side). */
-function pushOut(w: World, x: number, y: number, size: number): void {
+export function pushOut(w: World, x: number, y: number, size: number): void {
   const u = w.units.col;
   const n = w.size;
   for (let s = 0; s < w.units.count; s++) {

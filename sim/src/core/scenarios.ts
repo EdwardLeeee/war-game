@@ -6,6 +6,7 @@
 import { type Frame, fromCanon, IDENTITY, toCanon } from "../frame.ts";
 import { Action, BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
 import { FIXED_POSTS } from "./castle.ts";
+import { pushOut } from "./commands.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
 import { BUILDINGS, GATE, KEEP, OUTPOST, START, TOWNS, UNITS, WALLS } from "./rules.ts";
 import type { World } from "./world.ts";
@@ -93,6 +94,8 @@ export function addKeep(w: World, t: number, owner: number): void {
   const half = KEEP.size >> 1;
   const id = w.addBuilding(owner, BuildingType.Keep, w.townX[t] - half, w.townY[t] - half, KEEP.hp[w.townSize[t]], 1000);
   w.buildings.col.town[w.building(id)] = t;
+  // Built again (D-100): whoever stands on its ground steps aside.
+  pushOut(w, w.townX[t] - half, w.townY[t] - half, KEEP.size);
 }
 
 /** Town t's keep's (or, KEEP off, the big city's tower's) slot, or -1 (fallen, or not built again yet). */
