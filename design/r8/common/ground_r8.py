@@ -167,7 +167,10 @@ def water_distance(grid, rules):
     # only the cells along the water's edge matter (the nearest water to a land point is a water cell beside land)
     edge_w = wet & ~(np.roll(wet, 1, 0) & np.roll(wet, -1, 0) & np.roll(wet, 1, 1) & np.roll(wet, -1, 1))
     edge_l = ~wet & (np.roll(wet, 1, 0) | np.roll(wet, -1, 0) | np.roll(wet, 1, 1) | np.roll(wet, -1, 1))
-    sd = np.minimum(dist(edge_l), 1e3) - np.minimum(dist(edge_w), 1e3)
+    # in a water cell: + the distance to the nearest land; on land: - the distance to the nearest water (both 0 at the
+    # shore; war-game-client 2026-10-23: the difference of the two plateaued a cell in from the bank of a wide river)
+    in_w = np.kron(wet, np.ones((k, k), dtype=bool))
+    sd = np.where(in_w, np.minimum(dist(edge_l), 1e3), -np.minimum(dist(edge_w), 1e3))
     sd = np.clip(sd, -wa["range_m"], wa["range_m"])
     sd = blur(sd, wa.get("blur_m", wr["blur_m"]) * k / CELL_M)
     a = 0.5 + sd / wa["range_m"] / 2

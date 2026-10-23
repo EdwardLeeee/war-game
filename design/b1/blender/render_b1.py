@@ -212,7 +212,7 @@ for pc in job["pieces"]:
     builder = REG[kind]
     builder(root, c, **pc.get("opts", {})) if pc.get("opts") else builder(root, c)
     st = pc.get("state", "done")
-    if kind in blds.BUILDERS and st != "done":
+    if (kind in blds.BUILDERS or kind in arch_r8.BUILDERS or kind in arch2_r8.BUILDERS) and st != "done":
         import states                # noqa: E402
         states.apply(root, kind, c, st, **pc.get("state_opts", {}))
     elif kind in HOUSES and st not in ("done", "intact"):
