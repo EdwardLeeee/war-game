@@ -328,6 +328,64 @@ def crater_image(scale=3.0):
     return img.resize((px, px), Image.LANCZOS), CRATER_R
 
 
+# ---------------------------------------------------------------- D-100 the keep's arrows: two options for the user
+
+KEEP_SHOT_FRAMES, KEEP_SHOT_FPS = 3, 20
+
+
+def keep_shot_frames(scale=3.0, seed=41):
+    """Option A: at the window an archer shoots from, 0.15 s: a puff of dust off the sill and the string's twang, small
+    (about 0.7 m), pale and soft, no star. Anchor: the window's point."""
+    ppm = spec.PX_PER_M * scale / 3.0
+    rnd = random.Random(seed)
+    W = H = max(8, int(1.2 * ppm))
+    out = []
+    puffs = [dict(a=rnd.uniform(-0.6, 0.6) - math.pi / 2, sp=rnd.uniform(0.3, 1.0), s=rnd.uniform(0.5, 0.9), seed=seed * 10 + k)
+             for k in range(7)]
+    for f in range(KEEP_SHOT_FRAMES):
+        t = (f + 1) / KEEP_SHOT_FRAMES
+        can = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        fade = (1 - f / KEEP_SHOT_FRAMES) * 0.95
+        for p in puffs:
+            r = 0.06 + 0.3 * t * p["sp"]
+            x = W / 2 + math.cos(p["a"]) * r * ppm
+            y = H / 2 + math.sin(p["a"]) * r * ppm * 0.6
+            size = max(3, int(p["s"] * (0.18 + 0.28 * t) * ppm))
+            pf = _puff(size, p["seed"], (206, 196, 176), (150, 140, 122))
+            pf.putalpha(pf.getchannel("A").point(lambda v, k=fade: int(v * k)))
+            can.alpha_composite(pf, (int(x - size / 2), int(y - size / 2)))
+        if f == 0:                                    # the twang: a faint light flick at the window, one frame
+            d = ImageDraw.Draw(can)
+            r = 0.09 * ppm
+            d.ellipse([W / 2 - r, H / 2 - r, W / 2 + r, H / 2 + r], fill=(255, 238, 200, 110))
+        out.append((can.filter(ImageFilter.GaussianBlur(0.4 * scale / 3.0)), (W / 2, H / 2)))
+    return out
+
+
+ARROW_LEN_M = 0.8
+
+
+def arrow_image(scale=3.0):
+    """Option B: one arrow, drawn flying right (+x), for the game to turn along its flight: a birch shaft, an iron head,
+    three grey fletchings; a little longer than real (0.8 m) so it reads at phone size. Anchor: its middle."""
+    ppm = spec.PX_PER_M * scale / 3.0
+    k = 4
+    L = ARROW_LEN_M * ppm * k
+    H = max(6, int(0.12 * ppm)) * k
+    im = Image.new("RGBA", (int(L) + 2 * k, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    cy = H / 2
+    sh = max(1.0, 0.012 * ppm * k)
+    d.rectangle([0.12 * L, cy - sh, 0.9 * L, cy + sh], fill=(196, 172, 128, 255))                 # the shaft
+    d.line([0.12 * L, cy + sh * 0.6, 0.9 * L, cy + sh * 0.6], fill=(120, 100, 70, 255), width=max(1, int(sh * 0.6)))
+    d.polygon([(0.88 * L, cy - sh * 2.6), (L, cy), (0.88 * L, cy + sh * 2.6)], fill=(70, 70, 74, 255))  # the head
+    for e in (-1, 1):                                                                             # the fletchings
+        d.polygon([(0.03 * L, cy), (0.2 * L, cy), (0.16 * L, cy + e * sh * 4.2), (0.0 * L, cy + e * sh * 4.6)],
+                  fill=(150, 146, 136, 235))
+    im = im.resize((max(1, im.width // k), max(1, im.height // k)), Image.LANCZOS)
+    return im, (im.width / 2, im.height / 2)
+
+
 CORE_RADIUS = 0.75                   # the core image is drawn at 75 % of the circle; the game grows it from 25 %
 
 
@@ -389,6 +447,13 @@ def write_atlas(scale=3.0, page=2048):
     im, rad = crater_image(scale)
     items.append(("siege_crater_00", im, im.width / 2, im.height / 2))
     effects["siege_crater"] = dict(frames=1, fps=1, loop=True, top_down=True, radius_m=rad, crater_s=8.0)
+    for i, (im, (ax, ay)) in enumerate(keep_shot_frames(scale)):
+        bb = im.getchannel("A").point(lambda v: 255 if v > 4 else 0).getbbox()
+        items.append((f"keep_shot_{i:02d}", im.crop(bb), ax - bb[0], ay - bb[1]))
+    effects["keep_shot"] = dict(frames=KEEP_SHOT_FRAMES, fps=KEEP_SHOT_FPS, loop=False)
+    im, (ax, ay) = arrow_image(scale)
+    items.append(("arrow_00", im, ax, ay))
+    effects["arrow"] = dict(frames=1, fps=1, loop=True, len_m=ARROW_LEN_M, speed_mps=35.0, arc_k=0.06, turn=True)
     for name, (im, rad) in warn_images(scale).items():
         bb = im.getchannel("A").point(lambda v: 255 if v > 4 else 0).getbbox()
         items.append((f"{name}_00", im.crop(bb), im.width / 2 - bb[0], im.height / 2 - bb[1]))

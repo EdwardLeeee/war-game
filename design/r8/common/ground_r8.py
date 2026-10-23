@@ -21,6 +21,7 @@ TERRAIN = {"plain": 0, "rock": 1, "water": 3, "cliff": 7}       # the sim's Terr
 # the layers' tile sizes (m) and the rules, as client reads them (GroundJson)
 RULES = dict(bank_cells=1, gravel_cells=1, edge_m=1.2, height_k=0.9, dirt=dict(node_cells=1, noise_threshold=0.8, noise_soft=0.3),
              weights=dict(texels_per_cell=4, soft_m=1.6, blur_m=1.0))
+# (RULES["town"] is set after its table below; ground.json adds rules.water)
 # weights: the weight map soft (proposed to war-game-client 2026-10-22, the ceo's note on R8-23: the river bank came out
 # in square steps along the cells; the user approved R8-28 the same day): texels_per_cell
 # texels a cell; a channel's value a smoothstep of the distance from the nearest seed cell's square, 0.5 at `reach` cells
@@ -36,6 +37,21 @@ WATER = dict(range_m=4.5, blur_m=1.5, edge_m=0.35, wet_m=0.9, wet_dark=0.62, dep
              shallow=[0.045, 0.058, 0.045], deep=[0.012, 0.03, 0.036], bed=0.55, bed_shallow=0.45,
              noise_m=0.08, flow=[[0.05, 0.02], [-0.03, 0.04]])
 WATER_TILE_M = 4.0
+# the floor inside the walls (D-100; the user 2026-10-23: 「地板應該要改掉 改成這成仿真的地板」): a second weight map
+# (R packed earth inside the walls, G garden beds, B streets and the roads out of the gates, A the square round the
+# keep), from the castle layout's cells (castle-layout.json, castle_<c>.json floor), each channel soft at its edge
+# (soft_m) and blurred (blur_m), texels_per_cell like the first; drawn over the ground in that order, each layer
+# breaking along its own texture's height (edge_m, the ground's height_k) so no cell grid shows. layers: which
+# ground layer each channel is, per culture (all towns of a game share one culture).
+# garden: the beds inside the garden cells, laid by the shader (no cell grid): plots plot_m apart, turned angle_deg off
+# the map's axes, path_m of packed earth between them, a share `keep` of them dug (the others left to the yard's earth);
+# in a dug bed, crop rows rows_m apart along its length, the `greens` layer in them.
+TOWN = dict(soft_m=0.6, blur_m=0.35, edge_m=0.45,
+            garden=dict(plot_m=[3.3, 2.1], path_m=0.45, angle_deg=7.0, keep=0.78, rows_m=0.42, greens="grass", greens_k=0.9),
+            layers=dict(E=dict(yard="yard", garden="garden", street="paved_e", court="paved_e"),
+                        W=dict(yard="yard", garden="garden", street="street_w", court="court_w")))
+TOWN_CHANNELS = ("yard", "garden", "street", "court")
+RULES["town"] = TOWN
 GRADE = dict(brightness=1.0, saturation=0.9)      # the ground a little greyer than the units (R8: 找得到兵)
 
 
@@ -177,6 +193,49 @@ def water_distance(grid, rules):
     return a[pad * k:(pad + n) * k, pad * k:(pad + n) * k]
 
 
+def _signed(mask, k, pad_cells=2):
+    """Signed distance (metres) to the region of `mask` cells, k texels a cell: inside + (to the nearest outside cell),
+    outside - (to the nearest inside cell); only the region's edge cells are seeds."""
+    n = mask.shape[0]
+    m = np.pad(mask, pad_cells, mode="constant")
+    N = n + 2 * pad_cells
+    t = (np.arange(N * k) + 0.5) / k * CELL_M
+    X, Y = np.meshgrid(t, t)
+
+    def dist(seeds):
+        d = np.full(X.shape, 1e9)
+        for y, x in zip(*np.nonzero(seeds)):
+            dx = np.maximum(np.abs(X - (x + 0.5) * CELL_M) - CELL_M / 2, 0)
+            dy = np.maximum(np.abs(Y - (y + 0.5) * CELL_M) - CELL_M / 2, 0)
+            d = np.minimum(d, np.hypot(dx, dy))
+        return d
+    nb = np.roll(m, 1, 0) | np.roll(m, -1, 0) | np.roll(m, 1, 1) | np.roll(m, -1, 1)
+    na = np.roll(m, 1, 0) & np.roll(m, -1, 0) & np.roll(m, 1, 1) & np.roll(m, -1, 1)
+    edge_in = m & ~na
+    edge_out = ~m & nb
+    inside = np.kron(m, np.ones((k, k), dtype=bool))
+    sd = np.where(inside, np.minimum(dist(edge_out), 1e3), -np.minimum(dist(edge_in), 1e3))
+    p = pad_cells * k
+    return sd[p:p + n * k, p:p + n * k]
+
+
+def town_weights(masks, rules=RULES):
+    """The town weight map: [n*k, n*k, 4] (TOWN_CHANNELS order), each channel smoothstep(-soft/2, soft/2, signed
+    distance), blurred. masks: {channel: bool [n, n]} (cells)."""
+    tr = rules["town"]
+    k = rules["weights"]["texels_per_cell"]
+    out = []
+    for ch in TOWN_CHANNELS:
+        m = masks.get(ch)
+        if m is None or not m.any():
+            n = next(iter(masks.values())).shape[0]
+            out.append(np.zeros((n * k, n * k)))
+            continue
+        sd = _signed(m.astype(bool), k)
+        out.append(blur(smoothstep(-tr["soft_m"] / 2, tr["soft_m"] / 2, sd), tr["blur_m"] * k / CELL_M))
+    return np.dstack(out)
+
+
 def water_layer(size=512, tile_m=WATER_TILE_M, seed=7):
     """The water layer (lit, like the others; sRGB, height in A): small waves (periodic value noise, our own) seen from
     the game's camera (30 degrees up, looking north): a dark body, the sky in it by the rippled surface's fresnel."""
@@ -209,7 +268,7 @@ def water_layer(size=512, tile_m=WATER_TILE_M, seed=7):
     return np.dstack([np.clip(rgb, 0, 1), h])
 
 
-def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=0.0):
+def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=0.0, town=None, culture="E"):
     """The ground top-down (sRGB 0..1), `ppm` pixels a metre, as ground-draw.ts's fragment shader colours it."""
     n = grid.shape[0]
     size = n * CELL_M
@@ -249,6 +308,49 @@ def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=
     c = over(c, sample(L["dirt"]["img"], mx / L["dirt"]["tile_m"], my / L["dirt"]["tile_m"]), dirt, nz)
     c = over(c, sample(L["gravel"]["img"], mx / L["gravel"]["tile_m"], my / L["gravel"]["tile_m"]), w[..., 1], nz)
     c = over(c, sample(L["bank"]["img"], mx / L["bank"]["tile_m"], my / L["bank"]["tile_m"]), w[..., 0], nz)
+    if town is not None and rules.get("town"):
+        tw = sample(town_weights(town, rules), mx / size, my / size)
+        tr = rules["town"]
+
+        def over_t(base, layer, mask, nn):
+            e = mask * 2.0 - 1.0 + (nn - 0.5) * 0.8 + (layer[..., 3] - base[..., 3]) * rules["height_k"]
+            f = np.clip(e * (CELL_M / tr["edge_m"]) * 0.5 + 0.5, 0.0, 1.0)[..., None]
+            return base * (1 - f) + layer * f
+        def hash2(a, b):
+            return (np.sin(a * 127.1 + b * 311.7) * 43758.5453) % 1.0
+        gd = tr["garden"]
+        ang = math.radians(gd["angle_deg"])
+        gu = mx * math.cos(ang) + my * math.sin(ang)
+        gv = -mx * math.sin(ang) + my * math.cos(ang)
+        pu, pv = gd["plot_m"]
+        iu, iv = np.floor(gu / pu), np.floor(gv / pv)
+        fu, fv = gu - iu * pu, gv - iv * pv
+        half = gd["path_m"] / 2
+        edge = np.minimum(np.minimum(fu, pu - fu), np.minimum(fv, pv - fv)) + (nz - 0.5) * 0.25
+        dug = (hash2(iu, iv) < gd["keep"]).astype(float)
+        bed = smoothstep(half - 0.08, half + 0.08, edge) * dug
+        rows = 0.5 + 0.5 * np.cos(2 * math.pi * fv / gd["rows_m"])
+        planted = (hash2(iu + 17.0, iv + 5.0) < 0.75).astype(float)
+        greens = smoothstep(0.45, 0.7, rows) * planted * smoothstep(half + 0.15, half + 0.3, edge)
+        for i, ch in enumerate(TOWN_CHANNELS):
+            lid = tr["layers"][culture][ch]
+            img = L[lid]["img"]
+            tm = L[lid]["tile_m"]
+            a = sample(img, mx / tm, my / tm)
+            if high:                                # a second sample turned and moved, mixed by noise: no repeat
+                rx = (0.8 * mx + 0.6 * my) * 0.91 + 7.3
+                ry = (-0.6 * mx + 0.8 * my) * 0.91 + 3.1
+                kk = smoothstep(0.35, 0.65, nz)[..., None]
+                a = a * (1 - kk) + sample(img, rx / tm, ry / tm) * kk
+            m = tw[..., i]
+            if ch == "garden":
+                m = m * bed
+            c = over_t(c, a, m, nz)
+            if ch == "garden":                      # the crop rows: greens in the dug, planted beds
+                gl = L[gd["greens"]]
+                g2 = sample(gl["img"], mx / gl["tile_m"], my / gl["tile_m"])
+                f = (tw[..., i] * bed * greens * gd["greens_k"])[..., None]
+                c = c * (1 - f) + g2 * f
     if w.shape[-1] > 3 and "water" in L:
         wa = rules["water"]
         sd = (w[..., 3] - 0.5) * 2 * wa["range_m"] + (nz - 0.5) * 2 * wa["noise_m"]
@@ -298,7 +400,7 @@ def assemble(baked, out, spec):
     lin = np.where(wl[..., :3] <= 0.04045, wl[..., :3] / 12.92, ((wl[..., :3] + 0.055) / 1.055) ** 2.4)
     entries.append(dict(id="water", file="water.png", tile_m=WATER_TILE_M, mean=[round(float(x), 4) for x in lin.reshape(-1, 3).mean(0)]))
     layers["water"] = dict(img=wl, tile_m=WATER_TILE_M)
-    gj = dict(format="war-game ground 1", layers=entries, rules=dict(RULES, water=WATER), grade=GRADE)
+    gj = dict(format="war-game ground 1", layers=entries, rules=dict(RULES, water=WATER, town=TOWN), grade=GRADE)
     (out / "ground.json").write_text(json.dumps(gj, indent=1))
     return layers
 

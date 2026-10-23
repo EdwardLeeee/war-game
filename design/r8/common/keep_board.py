@@ -131,11 +131,27 @@ def castle_scene(c, L, gdir, units_dir, ppm=30):
     g = np.zeros((n + head, n + head), dtype=int)  # square (ground_r8.compose): the extra columns split left and right
     gj = json.loads((gdir / "ground" / "ground.json").read_text())
     rules = dict(gj["rules"], dirt=dict(gj["rules"]["dirt"], noise_threshold=0.99))
-    top = ground_r8.compose(g, [], S._ground_layers(gdir), ppm=ppm, rules=rules)
+    ox, oy = R + head // 2, R + head                # the layout's centre cell in the scene
+    N = n + head
+    town = {ch: np.zeros((N, N), dtype=bool) for ch in ground_r8.TOWN_CHANNELS}
+    for (dx, dy), kind in L["cells"].items():       # the floor (D-100): the ground shader's town map, from the cells
+        x, y = dx + ox, dy + oy
+        town["yard"][y, x] = True
+        if kind == "garden":
+            town["garden"][y, x] = True
+        elif kind in ("street", "gate"):
+            town["street"][y, x] = True
+        elif kind in ("square", "keep"):
+            town["court"][y, x] = True
+    for t in CA.floor(L):                           # the roads out of the gates
+        if t["tile"] == "street":
+            x, y = t["cell"][0] + ox, t["cell"][1] + oy
+            town["street"][y, x] = True
+            town["yard"][y, x] = True
+    top = ground_r8.compose(g, [], S._ground_layers(gdir), ppm=ppm, rules=rules, town=town, culture=c)
     cam = Image.fromarray((top * 255).round().astype(np.uint8), "RGB").resize((top.shape[1], top.shape[0] // 2), Image.LANCZOS)
     cam = cam.convert("RGBA")
     f = ppm / 60.0
-    ox, oy = R + head // 2, R + head                # the layout's centre cell in the scene
 
     def px(cx, cy):
         return (cx + ox) * 2.0 * ppm, (cy + oy) * 2.0 * ppm * 0.5
@@ -143,12 +159,7 @@ def castle_scene(c, L, gdir, units_dir, ppm=30):
     def sprite(d, name):
         im, anc, sh = S._sprite(d, name, "x3", f)
         return im, anc, sh
-    flat, items, shadows = [], [], []
-    for t in CA.floor(L):
-        cx, cy = t["cell"]
-        im, anc, _ = sprite(WDIR, f"castle_tile_{t['tile']}_{c}")
-        X, Y = px(cx + 0.5, cy + 0.5)
-        flat.append((im, (int(X - anc[0]), int(Y - anc[1]))))
+    flat, items, shadows = [], [], []               # (the floor tiles are gone: the ground draws the floor)
     for p in CA.placements(L):
         im, anc, sh = sprite(WDIR, f"castle_{p['piece']}_{c}_intact")
         X, Y = px(*p["anchor"])
@@ -182,7 +193,12 @@ def board_castles(c, gdir, units_dir, W=3000):
     label = f"R8-{33 if c == 'E' else 34}-城鎮放大與主堡-{SIDE[c]}-mobile"
     text = ("城鎮放大約 1.5 倍、正中一座主堡（D-100，使用者 2026-10-23；格子是 war-game-core 2026-10-23 的提案，core 和 ui 對過）。"
             "小鎮：木柵在離中心第 7 格，牆內 13×13 格，四角各一根角柱；大城：石牆在第 9 格，牆內 17×17 格，四角 2×2 角樓，城門兩旁各一座門柱。"
-            "城門都是 3 格寬，在四邊正中，正對主堡。牆片、城門、地磚是 D-096 核准的那一套，照寫實設定重出；只多了主堡。\n"
+            "城門都是 3 格寬，在四邊正中，正對主堡。牆片、城門是 D-096 核准的那一套，照寫實設定重出；多了主堡。\n"
+            "牆內的地（使用者 2026-10-23：「地板應該要改掉 改成這成仿真的地板」）：不再用一格一格的地磚，改由地面著色器直接畫，"
+            "和牆外的草地接在一起。" + ("東陸：踩實的夯土地，灰磚鋪的街和主堡前的院子（唐代州府子城的磚鋪甬道）。" if c == "E" else
+                                     "西陸：踩實的土地，亂石鋪的街，鵝卵石的廣場。") +
+            "四塊菜園是一畦一畦的菜地，中間是踩實的土路，有的畦種著菜、有的空著；畦稍微斜一點，不跟格子對齊。"
+            "邊緣隨磚石和土的起伏斷開，看不出格子。\n"
             "下面是遊戲的鏡頭（方形斜看），站著民兵（小鎮 6 名、大城 12 名，在主堡周圍）。")
     parts = [B.header(W, label, text)]
     sm = castle_scene(c, CA.small(), gdir, units_dir, ppm=24)

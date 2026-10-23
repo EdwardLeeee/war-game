@@ -43,6 +43,12 @@ TEXTURES = [
     ("japanese_camphor_bark", "1k", "R8 trees: the East camphor (樟)"),
     ("jolcham_oak_bark_01", "1k", "R8 trees: the West oak"),
     ("bark_platanus", "1k", "R8 trees: the birch (recoloured pale)"),
+    # D-100 the floor inside the walls, drawn by the ground shader (ground_r8.py rules.town)
+    ("dirt", "1k", "R8 towns: packed earth inside the walls"),
+    ("farm_soil", "1k", "R8 towns: the garden beds"),
+    ("brick_pavement_02", "1k", "R8 towns East: the brick streets and courtyard"),
+    ("cobblestone_floor_13", "1k", "R8 towns West: the cobbled streets"),
+    ("cobblestone_floor_001", "1k", "R8 towns West: the cobbled square"),
 ]
 MAPS = {"diff": "Diffuse", "nor_gl": "nor_gl", "rough": "Rough"}
 PIN = {}                      # file name -> {url, sha256}, filled by `pin` from Poly Haven's file API
