@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
+import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
@@ -10,11 +10,12 @@ import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../s
 import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UnitType } from "../src/protocol.ts";
+import { Action, type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UnitType } from "../src/protocol.ts";
 import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
-import { emptyGame, put, slotOf, switchedOff } from "./helpers.ts";
+import { emptyGame, put, slotOf, switchedOff, switchedOn } from "./helpers.ts";
+import { KEEP } from "../src/core/keep.ts";
 import { createScriptedPlayer, planFor, SCRIPTED_THINK_EVERY } from "../src/ai/scripted-player.ts";
 
 // D-089: gathering outside the enemy main city first has its own tests (at the end); the tests before them
@@ -2781,3 +2782,52 @@ test("D-086 A5 (plan.townSave): at home with a town it could take but for the co
   assert.equal(on.ranged, false, "on: kept for governing");
   assert.equal(on.goes, true, "on: it can pay now, it goes");
 });
+
+
+// --- D-100: a keep in every town ---------------------------------------------------------------------------------
+
+test(
+  "D-100 (KEEP_AI.mop): inside a town with its keep down, the militia left on the walls are told to fight; none in sight, the army walks the walls; off, none",
+  switchedOn(KEEP, () => {
+    const g = new Game({ seed: 1, scenario: "standard" });
+    const w = g.w;
+    const t = w.map.towns.find((x) => x.size === TownSize.Small)!;
+    const r = rules(w.map);
+    // The keep down.
+    for (let s = 0; s < w.buildings.count; s++) if (w.buildings.col.type[s] === BuildingType.Keep && w.buildings.col.town[s] === t.id) w.buildings.col.hp[s] = 0;
+    g.step();
+    // Its militia: all gone but those on its walls.
+    const u = w.units.col;
+    for (let s = 0; s < w.units.count; s++) if (u.type[s] === UnitType.Militia && u.action[s] !== Action.OnWall) u.hp[s] = 0;
+    g.step();
+    const army = Array.from({ length: 6 }, (_, k) => put(g, 0, UnitType.Spearman, t.cellX - 1 + (k % 3), t.cellY + 2 + Math.trunc(k / 3)));
+    g.fog.update(w);
+    const town = { x: t.cellX, y: t.cellY, size: t.size, state: w.townState[t.id], owner: w.townOwner[t.id] };
+    const mine = army.map((id) => ({ id, type: UnitType.Spearman, x: u.x[slotOf(g, id)] >> 10, y: u.y[slotOf(g, id)] >> 10 }));
+    const view = buildView(g, 0);
+    const walls = new Set(onWalls(view, 0, r, town).map((x) => x.id));
+    const out = mopUpOrders(view, r, 0, town, mine);
+    assert.ok(out !== null && out.length > 0, "orders");
+    if (walls.size > 0) assert.ok(out.every((c) => c.c === "attack" && walls.has((c as { target: number }).target)), "at those on the walls in sight");
+    else assert.ok(out.every((c) => c.c === "move"), "none in sight: along the walls");
+    assert.deepEqual(out.flatMap((c) => (c as { u: number[] }).u).sort((a, b) => a - b), [...army].sort((a, b) => a - b), "every soldier");
+    const was = KEEP_AI.mop;
+    KEEP_AI.mop = false;
+    assert.equal(mopUpOrders(view, r, 0, town, mine), null, "off: none");
+    KEEP_AI.mop = was;
+  }),
+);
+
+test(
+  "D-100: hard against hard on a random map with keeps takes a town by minute 14 (seed 101: none taken all game before KEEP_AI.mop)",
+  switchedOn(KEEP, () => {
+    const r = new Runner({ seed: 101, scenario: "standard", ai: [true, true], maxTicks: 36000, difficulty: ["hard", "hard"], map: "random" });
+    const w = r.game.w;
+    let taken = false;
+    while (!r.over && r.game.tick < 14 * 1200 && !taken) {
+      r.tick();
+      for (let t = 0; t < w.townSize.length; t++) if (w.townOwner[t] === 0 || w.townOwner[t] === 1) taken = true;
+    }
+    assert.ok(taken, "a town taken");
+  }),
+);

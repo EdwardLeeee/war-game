@@ -938,6 +938,96 @@ export function gateOrders(
 }
 
 /**
+ * D-100 (war-game-core 2026-10-24, KEEP on: a third of random-map games without a town taken): soldiers inside a town's
+ * walls once its gate is broken stand by the middle, more than a sling's throw and a soldier's reach from the militia
+ * left on the walls, so nobody fights and the town never falls (all its militia must die, and its keep fall). mop: with
+ * MOP_IN of the army inside and no enemy soldier of a player there, those left are told to fight: ranged units and mages
+ * at those on the walls, the melee at the keep while it stands and then at those on the walls. None in sight and the
+ * keep down but the town not taken (militia out of sight on the walls, 7 cells from the middle): the army walks to the
+ * middle of each wall from inside, a quarter to each, to see them. Only while the rules have keeps
+ * (rules.features.keep); without them as before.
+ */
+export const KEEP_AI = { mop: true };
+const MOP_IN = 3;
+
+/**
+ * D-100 (KEEP_AI.mop): orders for `army` at town `t`, not `player`'s, with MOP_IN of them inside its walls and no enemy
+ * soldier of a player inside: those on its walls and its keep (null: none, or not the case).
+ */
+export function mopUpOrders(
+  view: PlayerView,
+  rules: Rules,
+  player: number,
+  t: { x: number; y: number; size: number; state: number; owner: number },
+  army: readonly { id: number; type: number; x: number; y: number }[],
+): CommandBody[] | null {
+  if (!KEEP_AI.mop || rules.features?.keep !== true || (t.owner === player && t.state !== TownState.Neutral)) return null;
+  const tr = rules.towns?.[t.size];
+  const box = tr?.castle?.inside;
+  if (tr === undefined || box === undefined) return null;
+  const inside = (x: number, y: number) => x >= t.x + box.x0 && x <= t.x + box.x1 && y >= t.y + box.y0 && y <= t.y + box.y1;
+  if (army.filter((u) => inside(u.x, u.y)).length < MOP_IN) return null;
+  let keep = -1;
+  const defenders: { id: number; x: number; y: number }[] = [];
+  const reach = (tr.radius ?? 7) + 1;
+  for (let r = 0; r < view.units.length; r += UNIT_STRIDE) {
+    const owner = view.units[r + UnitField.owner];
+    if (owner === player) continue;
+    const x = view.units[r + UnitField.x] >> CELL_SHIFT;
+    const y = view.units[r + UnitField.y] >> CELL_SHIFT;
+    if (Math.abs(x - t.x) > reach || Math.abs(y - t.y) > reach) continue;
+    const type = view.units[r + UnitField.type];
+    // An enemy player's soldiers there: a fight, as a move fights it.
+    if (owner !== NEUTRAL && type !== UnitType.Farmer) return null;
+    if (owner === NEUTRAL) defenders.push({ id: view.units[r + UnitField.id], x, y });
+  }
+  for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+    if (view.buildings[r + BuildingField.type] !== BuildingType.Keep || view.buildings[r + BuildingField.owner] === player) continue;
+    const x = view.buildings[r + BuildingField.cellX];
+    const y = view.buildings[r + BuildingField.cellY];
+    if (Math.abs(x + 1 - t.x) <= 1 && Math.abs(y + 1 - t.y) <= 1) keep = view.buildings[r + BuildingField.id];
+  }
+  if (defenders.length === 0 && keep < 0) {
+    // None in sight: along the walls from inside, a quarter of the army to the middle of each.
+    const sides = [
+      { x: t.x, y: t.y + box.y0 },
+      { x: t.x + box.x1, y: t.y },
+      { x: t.x, y: t.y + box.y1 },
+      { x: t.x + box.x0, y: t.y },
+    ];
+    const ids = [...army].sort((a, b) => a.id - b.id).map((u) => u.id);
+    const out: CommandBody[] = [];
+    for (let k = 0; k < sides.length; k++) {
+      const u = ids.filter((_, j) => j % sides.length === k);
+      if (u.length > 0) out.push({ c: "move", u, x: sides[k].x, y: sides[k].y });
+    }
+    return out;
+  }
+  const nearest = (u: { x: number; y: number }) => {
+    let best = defenders[0];
+    let bestD = -1;
+    for (const d of defenders) {
+      const dd = (d.x - u.x) * (d.x - u.x) + (d.y - u.y) * (d.y - u.y);
+      if (bestD < 0 || dd < bestD || (dd === bestD && d.id < best.id)) {
+        best = d;
+        bestD = dd;
+      }
+    }
+    return best;
+  };
+  const byTarget = new Map<number, number[]>();
+  for (const u of army) {
+    const melee = u.type === UnitType.Spearman || u.type === UnitType.Cavalry;
+    const target = melee && keep >= 0 ? keep : defenders.length > 0 ? nearest(u).id : keep;
+    if (target < 0) continue;
+    const ids = byTarget.get(target) ?? [];
+    ids.push(u.id);
+    byTarget.set(target, ids);
+  }
+  return [...byTarget].sort((a, b) => a[0] - b[0]).map(([target, u]) => ({ c: "attack", u, target }) as CommandBody);
+}
+
+/**
  * D-096 (GATE_AI.retreat "b"): what the slings on town `t`'s walls and its gate arrows would take of `army`'s hp
  * (percent) while its melee (and ranged units, at 1/5) break the weakest gate closed to `player`, its ranged units and
  * mages shooting the slingers meanwhile; 0 with no gate closed to it.
@@ -1417,6 +1507,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let wallMove = -100000;
   /** D-096: the town whose gate it broke (in by it: no more gates there), -1 none. */
   let gateDone = -1;
+  /** D-100 (KEEP_AI.mop): when it last told those in a town to clear it. */
+  let mopMove = -100000;
   /** D-096 (NORMAL_TUNE.townRest): towns it left alone until a tick. */
   const townRestN = new Map<number, number>();
   let razeAgain = -100000;
@@ -2240,7 +2332,17 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // parked whole armies in the middle of the map until the game ran out.
           const t = towns.get(targetTown);
           if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || t.state === TownState.Ruins) mode = "gather";
-          else if (!gateFocus(t)) send(t.x, t.y, "town");
+          else {
+            // D-100 (KEEP_AI.mop): inside, the defenders left are told to fight.
+            const mop = mopUpOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)));
+            if (mop !== null) {
+              if (tick - mopMove >= FORT_EVERY) {
+                out.push(...mop);
+                mopMove = tick;
+                lastMove = tick;
+              }
+            } else if (!gateFocus(t)) send(t.x, t.y, "town");
+          }
         } else {
           // March together (a group move keeps to the slowest and in formation) until those that
           // set out stand by the enemy main city; then fight the defenders there first (a move
@@ -2895,6 +2997,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let wallMove = -100000;
   /** D-096: the town whose gate it broke (in by it: no more gates there), -1 none. */
   let gateDone = -1;
+  /** D-100 (KEEP_AI.mop): when it last told those in a town to clear it. */
+  let mopMove = -100000;
   let razeAgain = -100000;
   /** While the army is away: the soldiers left at home pulling down a fort on its ground, and that fort. */
   let reservesRazing = -1;
@@ -4444,6 +4548,17 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               return;
             }
             razing = -1;
+            // D-100 (KEEP_AI.mop): inside, the defenders left are told to fight.
+            const mop = mopUpOrders(view, rules, player, t, army.filter((u) => armyIds.includes(u.id)));
+            if (mop !== null) {
+              if (tick - mopMove >= FORT_EVERY) {
+                out.push(...mop);
+                mopMove = tick;
+                lastMove = tick;
+                sent = true;
+              }
+              return;
+            }
             if (!gateFocus(t)) send(t.x, t.y, "town");
             return;
           }
