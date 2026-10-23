@@ -195,6 +195,17 @@ export function nextSeq(log: string): number {
   return last + 1;
 }
 
+/** A log's header's autoTrain (each player's: the simulation's own 自動訓練 at the start), or null when it has none or cannot be read. */
+export function headerAutoTrain(log: string): boolean[] | null {
+  try {
+    const end = log.indexOf("\n");
+    const h = JSON.parse(end < 0 ? log : log.slice(0, end)) as { autoTrain?: unknown };
+    return Array.isArray(h.autoTrain) && h.autoTrain.every((v) => typeof v === "boolean") ? (h.autoTrain as boolean[]) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** How the ground is laid on the screen: 方形斜看 since art-v3 is drawn for it (D-088); the diamond (D-085) on test pages only (?view=diamond). */
 const PROJECTION_DEFAULT = PROJECTIONS.oblique;
 
@@ -454,6 +465,12 @@ export class Game implements GestureHost {
   autoArmyOn = true;
   private autoSent: { seq: number; tick: number; building: number; unit: number }[] = [];
   private readonly autoOff = new Map<number, number>();
+  /**
+   * The simulation's own 自動訓練 still on for the person in this game, so turned off building by
+   * building (`auto_train off`, again every 2 s while its flag shows): a game kept for 繼續上一局
+   * from before init.autoTrain. A new game starts with it off (start()).
+   */
+  private offEachBuilding = false;
   private armyNeedSeen: ArmyNeed = { reason: "none", missing: {}, want: {} };
   private armyBlocked = new Map<number, Block>();
   private villagersSeen = { living: 0, queued: 0, block: null as Block | null };
@@ -626,6 +643,10 @@ export class Game implements GestureHost {
       // Only a random map says so (D-074): a fixed map's init and log stay as they were.
       ...(this.options.map === "random" ? { map: "random" as const } : {}),
       build: this.options.build,
+      // 自動訓練 by the screen (D-098): the simulation's own off for the person from the start (PROTOCOL.md
+      // 6, init.autoTrain); the other player's as the simulation would have it (a test page's ?ai=0: on).
+      // Watching (computer against computer): not sent, its log as before.
+      ...(this.options.watch ? {} : { autoTrain: [false, !this.options.enemyAi] }),
     };
     this.initSent = init;
     this.started.init = performance.now();
@@ -635,6 +656,9 @@ export class Game implements GestureHost {
       return;
     }
     // 繼續上一局 (D-083): the simulation runs the saved game again up to where it was, then waits.
+    // A game started before init.autoTrain (its log's header has the person's on): the simulation's own
+    // 自動訓練 is turned off building by building, as then (tickAutoArmy).
+    this.offEachBuilding = headerAutoTrain(resume.log)?.[0] !== false;
     this.restoring = resume;
     this.seq = nextSeq(resume.log);
     this.port.postMessage({ type: "continue", protocol: PROTOCOL_VERSION, build: this.options.build, log: resume.log, hashes: resume.hashes, toTick: resume.tick, tps: this.tps });
@@ -1018,9 +1042,9 @@ export class Game implements GestureHost {
   }
 
   /**
-   * Every snapshot while the game runs: the simulation's own 自動訓練 off for each of our
-   * buildings (ceo's (B): `auto_train off`, again every 2 s while its flag shows), then the
-   * main city's villagers up to the target and the groups' missing soldiers, as `train` orders.
+   * Every snapshot while the game runs: the main city's villagers up to the target and the
+   * groups' missing soldiers, as `train` orders. The simulation's own 自動訓練 is off for the
+   * person from the start (init.autoTrain); a game kept from before it, building by building.
    */
   private tickAutoArmy(): void {
     const view = this.view;
@@ -1047,7 +1071,7 @@ export class Game implements GestureHost {
       if (b[o + BuildingField.owner] !== view.me) continue;
       const id = b[o + BuildingField.id];
       const type = b[o + BuildingField.type];
-      if ((b[o + BuildingField.flags] & BuildingFlag.AutoTrain) !== 0 && tick - (this.autoOff.get(id) ?? Number.NEGATIVE_INFINITY) >= 40) {
+      if (this.offEachBuilding && (b[o + BuildingField.flags] & BuildingFlag.AutoTrain) !== 0 && tick - (this.autoOff.get(id) ?? Number.NEGATIVE_INFINITY) >= 40) {
         this.autoOff.set(id, tick);
         this.autoCommand({ c: "auto_train", building: id, on: false });
       }
