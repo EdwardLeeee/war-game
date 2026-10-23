@@ -359,6 +359,11 @@ TARGETS["r8x_decor"] = [dict(kind="r8_decor", culture="E", opts=dict(piece=k), n
                                   "posts", "flag")]
 CAMERA["r8x_decor"] = proj.OBLIQUE
 LOOK["r8x_decor"] = "r8"
+# art-v6 (R8-36 B, the user 2026-10-23): the decorative pieces of a lived-in town, both cultures (castle.DECOR_SIZE)
+TARGETS["r8x_prod"] = [dict(kind="r8_decor", culture=c, opts=dict(piece=k), name=f"decor_{k}_{c}") for c in CULTURES
+                       for k in ("hut_a", "hut_b", "shed", "stack", "well", "cart")]
+CAMERA["r8x_prod"] = proj.OBLIQUE
+LOOK["r8x_prod"] = "r8"
 # D-100 the keep (keep_r8.py): the drafts for the user first, every state of both cultures
 TARGETS["r8k_draft"] = [dict(kind="r8_keep", culture=c, opts=dict(state=st), name=f"keep_{c}_{st}") for c in CULTURES
                         for st in ("done", "damaged", "rubble", "repair")]

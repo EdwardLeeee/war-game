@@ -25,12 +25,8 @@ LAYERS = [
     dict(id="dirt", tex="stony_dirt_path", tile_m=2.17, tint=(0.16, 0.115, 0.07), contrast=0.85),
     dict(id="gravel", tex="rocks_ground_02", tile_m=2.0, tint=(0.11, 0.1, 0.085), contrast=0.95, hue=0.1),
     dict(id="bank", tex="brown_mud_rocks_01", tile_m=1.3, tint=(0.12, 0.1, 0.075), contrast=0.85),
-    # D-100: the floor inside the walls (ground_r8.py rules.town; the user 2026-10-23: no tile grid, a real floor)
+    # D-100: the packed earth inside the walls (ground_r8.py rules.town: the lanes, the trampled earth; R8-36 B)
     dict(id="yard", tex="dirt", tile_m=2.0, tint=(0.12, 0.09, 0.058), contrast=0.8),                  # packed earth
-    dict(id="garden", tex="farm_soil", tile_m=2.0, tint=(0.07, 0.047, 0.028), contrast=0.9),          # tilled beds
-    dict(id="paved_e", tex="brick_pavement_02", tile_m=2.0, tint=(0.085, 0.082, 0.078), contrast=1.0, hue=0.35),  # grey brick
-    dict(id="street_w", tex="cobblestone_floor_13", tile_m=2.0, tint=(0.13, 0.11, 0.08), contrast=1.0, hue=0.4),
-    dict(id="court_w", tex="cobblestone_floor_001", tile_m=2.4, tint=(0.11, 0.105, 0.095), contrast=1.0, hue=0.4),
 ]
 
 

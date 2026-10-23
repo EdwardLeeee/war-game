@@ -344,6 +344,81 @@ def board_option(option, c, gdir, units_dir, W=3000):
     return B.save(B.stack(parts, W), label)
 
 
+def town_scene(c, L, gdir, units_dir, ppm=24):
+    """A walled town of art-v6 as the client will draw it (R8-36 B): the ground from the layout's `ground` (castle.py:
+    lanes, trampled earth), the walls, the keep, the decorative pieces of `decor`, militia."""
+    import castle as CA
+    import ground_r8
+    R = L["wall"] + 5
+    n = 2 * R + 1
+    head = 6
+    N = n + head
+    g = np.zeros((N, N), dtype=int)
+    gj = json.loads((gdir / "ground" / "ground.json").read_text())
+    rules = dict(gj["rules"], dirt=dict(gj["rules"]["dirt"], noise_threshold=0.99))
+    ox, oy = R + head // 2, R + head
+    town = {ch: np.zeros((N, N)) for ch in ground_r8.TOWN_CHANNELS}
+    for e in CA.ground(L):
+        x, y = e["cell"][0] + ox, e["cell"][1] + oy
+        town[e["kind"]][y, x] = max(town[e["kind"]][y, x], e["w"])
+    top = ground_r8.compose(g, [], S._ground_layers(gdir), ppm=ppm, rules=rules, town=town, culture=c)
+    cam = Image.fromarray((top * 255).round().astype(np.uint8), "RGB").resize((top.shape[1], top.shape[0] // 2), Image.LANCZOS)
+    cam = cam.convert("RGBA")
+    f = ppm / 60.0
+
+    def px(cx, cy):
+        return (cx + ox) * 2.0 * ppm, (cy + oy) * 2.0 * ppm * 0.5
+    items, shadows = [], []
+
+    def add(d, name, x, y, front):
+        im, anc, sh = S._sprite(d, name, "x3", f)
+        X, Y = px(x, y)
+        items.append((front, im, (int(X - anc[0]), int(Y - anc[1]))))
+        if sh:
+            shadows.append((sh[0], (int(X - sh[1]), int(Y - sh[2]))))
+    for p in CA.placements(L):
+        add(WDIR, f"castle_{p['piece']}_{c}_intact", p["anchor"][0], p["anchor"][1], p["front"])
+    S.DIR = KDIR
+    add(KDIR, f"keep_{c}_done", 0.5, 0.5, 2.0)
+    for d in CA.decor(L):
+        add(XDIR, f"decor_{d['piece']}_{c}", d["at"][0], d["at"][1], d["front"])
+    if units_dir:
+        import boards_r8 as BR
+        u = "spear_e" if c == "E" else "pike_w"
+        a = BR.field.Atlas(Path(units_dir) / u / "r7v8" / "prod" / u / "atlas_x3" / f"{u}.json")
+        for (mx, my) in L["militia"]:
+            body, (ax, ay), _ = BR.frame(a, u, "idle", 6, 0, "red")
+            body = body.resize((max(1, int(body.width * f)), max(1, int(body.height * f))), Image.LANCZOS)
+            X, Y = px(mx + 0.5, my + 0.5)
+            items.append((my + 0.6, body, (int(X - ax * f), int(Y - ay * f))))
+    for im, xy in shadows + [(im, xy) for _, im, xy in sorted(items, key=lambda q: q[0])]:
+        layer = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+        layer.paste(im, xy, im)
+        cam = Image.alpha_composite(cam, layer)
+    return cam.convert("RGB")
+
+
+def board_r837(c, gdir, units_dir, W=3000):
+    import castle as CA
+    label = f"R8-37-牆內-B-定稿-{SIDE[c]}-mobile"
+    look = ("東陸：夯土牆、茅草頂的矮屋，柴棚、草垛和水缸、井、手推車。" if c == "E" else
+            "西陸：木架、石灰牆、茅草頂的小屋，柴棚、草垛和木桶、有小屋頂的井、手推車。")
+    text = ("牆內照使用者 2026-10-23 選的 R8-36 B「有人住的城鎮」做成量產的樣子。" + look + "\n"
+            "・裝飾只在畫面上，模擬裡沒有：兵可以走過去；放在牆邊和角落（只放在菜園格，不碰街、主堡周圍、城門、角樓），全部 3 公尺以下。\n"
+            "・在城鎮裡蓋建築（例如箭樓）時，占地碰到的裝飾就不畫，那裡變成踩平的土（和世紀帝國 2 建築腳下一塊土一樣）。\n"
+            "・從每個城門到主堡是踩實的土路，出了城門走 4 格慢慢淡進草地；主堡外一圈、每間房子周圍是踩平的土；其他照牆外的草地。\n"
+            "上：遊戲的鏡頭（2 倍）；下：實際大小。")
+    sm = town_scene(c, CA.small(), gdir, units_dir, ppm=24)
+    lg = town_scene(c, CA.large(), gdir, units_dir, ppm=24)
+    sm1 = town_scene(c, CA.small(), gdir, units_dir, ppm=10)
+    lg1 = town_scene(c, CA.large(), gdir, units_dir, ppm=10)
+    W = max(W, sm.width + lg.width + 2 * B.M + 60)
+    parts = [B.header(W, label, text),
+             B.row([B.captioned(sm, "小鎮（遊戲的鏡頭，2 倍）", 24), B.captioned(lg, "大城（遊戲的鏡頭，2 倍）", 24)], W, gap=30),
+             B.row([B.captioned(sm1, "小鎮（實際大小）", 22), B.captioned(lg1, "大城（實際大小）", 22)], W, gap=30)]
+    return B.save(B.stack(parts, W), label)
+
+
 def board_r836_overview(gdir, units_dir, W=3000):
     import castle as CA
     label = "R8-36-牆內-總覽-東陸-mobile"
@@ -391,6 +466,10 @@ if __name__ == "__main__":
     units = sys.argv[3] if len(sys.argv) > 3 else None
     S.UNITS_DIR = units
     which = sys.argv[4] if len(sys.argv) > 4 else "all"
+    if which == "r837":
+        for c in ("E", "W"):
+            print(board_r837(c, gdir, units))
+        sys.exit(0)
     if which == "r836ov":
         print(board_r836_overview(gdir, units))
         sys.exit(0)

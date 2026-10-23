@@ -121,18 +121,20 @@ def castle_table(c):
             e["stand_m"] = {k2: [round(x, 2), round(-y, 2), round(z, 2)] for k2, (x, y, z) in sorted(cells.items())}
             e["walk_m"] = round(max(z for _, _, z in cells.values()), 2)
         pieces[k] = e
-    tiles = {t: f"castle_tile_{t}_{c}" for t in TILES}
+    # art-v6 (R8-36 B, agreed with war-game-client 2026-10-23): no floor tiles; the ground inside the walls drawn by the
+    # ground shader from each layout's `ground` (lane, trampled), and the decorative pieces of `decor` (castle.py)
+    decor = {k: f"decor_{k}_{c}" for k in CASTLE.DECOR_SIZE}
     layouts = {}
     for L in (f() for f in CASTLE.LAYOUTS):
         layouts[L["name"]] = dict(
             walls=[dict(piece=p["piece"], anchor=p["anchor"], front=p["front"], cells=p["cells"]) for p in CASTLE.placements(L)],
-            floor=CASTLE.floor(L))
-    return pieces, tiles, layouts
+            ground=CASTLE.ground(L), decor=CASTLE.decor(L))
+    return pieces, decor, layouts
 
 
 def castle_frames(c):
-    pieces, tiles, _ = castle_table(c)
-    return sorted([n for p in pieces.values() for n in p["frames"].values()] + list(tiles.values()))
+    pieces, decor, _ = castle_table(c)
+    return sorted([n for p in pieces.values() for n in p["frames"].values()] + list(decor.values()))
 
 
 # ---------------------------------------------------------------- the terrain (art-v5, R6-51, war-game-core #245)
@@ -406,12 +408,12 @@ def run(scale=3.0, page=2048):
             raise SystemExit(f"missing renders: {missing}")
         view = view_of(frames)
         tables, pages, px, per = pack(frames, f"castle_{c}", cdir, page, f)
-        pieces, tiles, layouts = castle_table(c)
+        pieces, decor, layouts = castle_table(c)
         for pc in pieces.values():               # a front layer with nothing in it (pack skips it) is not listed
             pc["frames"] = {k: v for k, v in pc["frames"].items() if v in tables["color"]}
         man = {"format": "war-game castle 1", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
                **({"view": view} if view else {}), "team_gain": TEAM_GAIN, "pages": pages,
-               "pieces": pieces, "tiles": tiles, "layouts": layouts,
+               "pieces": pieces, "decor": decor, "layouts": layouts,
                "frames": tables["color"], "team": tables["team"], "shadows": tables["shadow"]}
         (cdir / f"castle_{c}.json").write_text(json.dumps(man, separators=(",", ":")))
         mem_c[c] = memory(px, tables)

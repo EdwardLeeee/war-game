@@ -23,18 +23,6 @@
   "sha256": "778135a767d90cdcdc486d4351956652c41645b8fd205ee86d73bfd7134bd1de",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_platanus/bark_platanus_rough_1k.jpg"
  },
- "brick_pavement_02_diff_1k.jpg": {
-  "sha256": "fa1ce4c6da38bc75e488557420a03cb94e696c651075d36a7363cdc61c1b3944",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_pavement_02/brick_pavement_02_diff_1k.jpg"
- },
- "brick_pavement_02_nor_gl_1k.jpg": {
-  "sha256": "b254abe7a04223339c59bfe3ba0a3eea865b61de8b2561ed56620db2190675e1",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_pavement_02/brick_pavement_02_nor_gl_1k.jpg"
- },
- "brick_pavement_02_rough_1k.jpg": {
-  "sha256": "c0e0446a2067317226b8296b425f2fb6a00390cb895918b8f5cbb14342d92dbf",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_pavement_02/brick_pavement_02_rough_1k.jpg"
- },
  "brown_leather_diff_1k.jpg": {
   "sha256": "7e9e1d6566d1fd91d4ceb4966c4820361e85d53a7a828b6bab3b2a093a876cd1",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brown_leather/brown_leather_albedo_1k.jpg"
@@ -95,30 +83,6 @@
   "sha256": "6d7596c4f3644ac50237381aeadf58f9b68a6dddeb66b6eef4f64462dcbbf82f",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/clay_roof_tiles_02/clay_roof_tiles_02_rough_1k.jpg"
  },
- "cobblestone_floor_001_diff_1k.jpg": {
-  "sha256": "893d3e7b4506c5935cbc6aca5b914d637bd4464484bcaa5d69e2ee205bb9ae9c",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cobblestone_floor_001/cobblestone_floor_001_diff_1k.jpg"
- },
- "cobblestone_floor_001_nor_gl_1k.jpg": {
-  "sha256": "f5c92ea5f9d09c35fee6f75884f4496a61a08ac0a1fe427d5a1ae7d1e15c4280",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cobblestone_floor_001/cobblestone_floor_001_nor_gl_1k.jpg"
- },
- "cobblestone_floor_001_rough_1k.jpg": {
-  "sha256": "ac7cfc342f9d13b5dff1972200daaf864fbdf5455a2ed2da96491b823f411f36",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cobblestone_floor_001/cobblestone_floor_001_rough_1k.jpg"
- },
- "cobblestone_floor_13_diff_1k.jpg": {
-  "sha256": "4da5d474e410b0859042c188a9093efc3c3d9170399e7f5f5e0464af1b61dbf2",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cobblestone_floor_13/cobblestone_floor_13_diff_1k.jpg"
- },
- "cobblestone_floor_13_nor_gl_1k.jpg": {
-  "sha256": "925d0f4a72d836f338a76661ae39cb23206169262e3cdc52cc519877a0383c52",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cobblestone_floor_13/cobblestone_floor_13_nor_gl_1k.jpg"
- },
- "cobblestone_floor_13_rough_1k.jpg": {
-  "sha256": "30901e6c3f90c8617aec6c6c6211499db0a512091aa08a4f66a4a06a359f60db",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cobblestone_floor_13/cobblestone_floor_13_rough_1k.jpg"
- },
  "dirt_diff_1k.jpg": {
   "sha256": "6ce6ca7e28ed046f7f93fa60dcb29f8cf42cd5a539adc5676675acccfa34efd3",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dirt/dirt_diff_1k.jpg"
@@ -142,18 +106,6 @@
  "fabric_leather_02_rough_1k.jpg": {
   "sha256": "bce3c63ead508ffa0c110c176fdd94e5dbf57b51efdbc6781026a21e217b0edd",
   "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/fabric_leather_02/fabric_leather_02_rough_1k.jpg"
- },
- "farm_soil_diff_1k.jpg": {
-  "sha256": "bfa2850109d1018ecb25342d9f17a5a81e826f7c67edfcaa7c878b60e62cc010",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/farm_soil/farm_soil_diff_1k.jpg"
- },
- "farm_soil_nor_gl_1k.jpg": {
-  "sha256": "d67b68bf19c1176af28b19cbc55e13365ef4653faa7a00650fe9ffed5e03b35a",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/farm_soil/farm_soil_nor_gl_1k.jpg"
- },
- "farm_soil_rough_1k.jpg": {
-  "sha256": "e20991112d705bfb0fce2fe2e8f770b5ec62dfd31c5636aa096b9e0dd2765c17",
-  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/farm_soil/farm_soil_rough_1k.jpg"
  },
  "fine_grained_wood_diff_1k.jpg": {
   "sha256": "d171f45ef01bc6e239b00dfaa4961bcd27f7d8e93e3962da3bd3d0ce703d802c",

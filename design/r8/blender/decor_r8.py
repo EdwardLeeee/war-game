@@ -32,8 +32,32 @@ def _thatch_roof(name, P, parent, cx, cy, z, w, d, rise, over=0.35, ridge="x"):
     return gable_roof_w(name, P, parent, cx, cy, z, w, d, pitch, over, "thatch", thick=0.28, round_eave=True, ridge=ridge)
 
 
+def cottage_w(root, c, turned=False):
+    """West: a one-room timber-framed cottage (west notes 十四 民居, smaller): sill, posts and braces with limewashed
+    wattle and daub between, a low plank door, a shuttered window, a thatch roof (no chimney: a smoke hole)."""
+    from arch_r8 import timber_wall_w, gable_roof_w, gable_fill_w
+    P = palette(c)
+    w, d, h = (2.6, 1.9, 1.6) if not turned else (1.9, 2.6, 1.6)
+    box("cw_foot", (w + 0.15, d + 0.15, 0.25), P["stone"], root, loc=(0, 0, 0.12))
+    if not turned:
+        timber_wall_w("cw_front", P, root, -w / 2, w / 2, -d / 2, 0.25, h, posts=3, face=-1)
+        box("cw_body", (w - 0.1, d - 0.1, h), P["plaster"], root, loc=(0, 0.05, 0.25 + h / 2))
+        box("cw_door", (0.62, 0.06, 1.3), P["wood"], root, loc=(-0.45, -d / 2 - 0.1, 0.25 + 0.65))
+        box("cw_shut", (0.42, 0.06, 0.36), P["wood"], root, loc=(0.6, -d / 2 - 0.1, 0.25 + 1.05))
+    else:
+        timber_wall_w("cw_front", P, root, -w / 2, w / 2, -d / 2, 0.25, h, posts=2, face=-1)
+        box("cw_body", (w - 0.1, d - 0.1, h), P["plaster"], root, loc=(0, 0.05, 0.25 + h / 2))
+        box("cw_door", (0.62, 0.06, 1.3), P["wood"], root, loc=(0.0, -d / 2 - 0.1, 0.25 + 0.65))
+    ridge = "x" if not turned else "y"
+    g, rise = gable_roof_w("cw_roof", P, root, 0, 0, 0.25 + h, w, d, 47, 0.3, "thatch", thick=0.3, round_eave=True, ridge=ridge)
+    gable_fill_w("cw_gf", P, root, 0, 0, 0.25 + h, w, d, rise, ridge=ridge, timber=True, under=0.86)
+    kit.pennant("cw_pen", P, root, (w / 2 - 0.1, -d / 2 + 0.1, 0.0), 2.6, w=0.45, fh=0.3)
+
+
 def hut(root, c, turned=False):
     """A one-room hut of rammed earth on a low stone footing, a plank door and a small barred window, a thatch roof."""
+    if c == "W":
+        return cottage_w(root, c, turned)
     P = palette(c)
     w, d, h = (2.6, 1.9, 1.75) if not turned else (1.9, 2.6, 1.75)
     box("hu_foot", (w + 0.15, d + 0.15, 0.25), P["stone"], root, loc=(0, 0, 0.12))
@@ -77,7 +101,11 @@ def well(root, c):
     rod("we_crank", (0.72, 0, 1.6), (0.72, -0.25, 1.4), 0.025, P["wood"], parent=root, segs=5)
     rod("we_rope", (0.0, 0, 1.6), (0.0, 0, 0.9), 0.012, P["rope"], parent=root, segs=4)
     cyl("we_bucket", 0.15, 0.25, P["wood"], root, loc=(0.4, -0.45, 0.65), r2=0.17, segs=10)
-    box("we_roof", (1.6, 0.9, 0.06), P["thatch"], root, loc=(0, 0, 1.85), rot=(0, 0, 0))
+    if c == "W":                                  # a little gabled roof of shingles over the West's well
+        from arch_r8 import gable_roof_w
+        gable_roof_w("we_roof", P, root, 0, 0, 1.78, 1.5, 0.8, 40, 0.15, "tile", thick=0.06)
+    else:
+        box("we_roof", (1.6, 0.9, 0.06), P["thatch"], root, loc=(0, 0, 1.85), rot=(0, 0, 0))
 
 
 def cart(root, c):
@@ -93,12 +121,15 @@ def cart(root, c):
 
 
 def stack(root, c):
-    """Hay, a row of tall storage jars, baskets."""
+    """Hay, a row of tall storage jars (East) or barrels (West), baskets."""
     P = palette(c)
     hay = lib.mat("hay", (0.36, 0.3, 0.15), 0.9)
     sphere("st_hay", 0.65, hay, root, loc=(-0.5, 0.15, 0.4), scale=(1, 0.9, 0.75))
     for k in range(3):
-        cyl(f"st_jar{k}", 0.2, 0.62, P["brick"], root, loc=(0.45 + k * 0.32, -0.25, 0.0), r2=0.14, segs=12)
+        if c == "W":
+            kit.barrel(f"st_barrel{k}", P, root, (0.45 + k * 0.4, -0.25, 0.0), r=0.24, h=0.65)
+        else:
+            cyl(f"st_jar{k}", 0.2, 0.62, P["brick"], root, loc=(0.45 + k * 0.32, -0.25, 0.0), r2=0.14, segs=12)
     for k in range(2):
         cyl(f"st_bk{k}", 0.2, 0.28, lib.mat("straw", (0.42, 0.35, 0.18), 0.9), root, loc=(0.3 + k * 0.45, 0.4, 0.0), r2=0.24, segs=12)
 

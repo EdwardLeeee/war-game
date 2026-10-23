@@ -37,20 +37,14 @@ WATER = dict(range_m=4.5, blur_m=1.5, edge_m=0.35, wet_m=0.9, wet_dark=0.62, dep
              shallow=[0.045, 0.058, 0.045], deep=[0.012, 0.03, 0.036], bed=0.55, bed_shallow=0.45,
              noise_m=0.08, flow=[[0.05, 0.02], [-0.03, 0.04]])
 WATER_TILE_M = 4.0
-# the floor inside the walls (D-100; the user 2026-10-23: 「地板應該要改掉 改成這成仿真的地板」): a second weight map
-# (R packed earth inside the walls, G garden beds, B streets and the roads out of the gates, A the square round the
-# keep), from the castle layout's cells (castle-layout.json, castle_<c>.json floor), each channel soft at its edge
-# (soft_m) and blurred (blur_m), texels_per_cell like the first; drawn over the ground in that order, each layer
-# breaking along its own texture's height (edge_m, the ground's height_k) so no cell grid shows. layers: which
-# ground layer each channel is, per culture (all towns of a game share one culture).
-# garden: the beds inside the garden cells, laid by the shader (no cell grid): plots plot_m apart, turned angle_deg off
-# the map's axes, path_m of packed earth between them, a share `keep` of them dug (the others left to the yard's earth);
-# in a dug bed, crop rows rows_m apart along its length, the `greens` layer in them.
-TOWN = dict(soft_m=0.6, blur_m=0.35, edge_m=0.45,
-            garden=dict(plot_m=[3.3, 2.1], path_m=0.45, angle_deg=7.0, keep=0.78, rows_m=0.42, greens="grass", greens_k=0.9),
-            layers=dict(E=dict(yard="yard", garden="garden", street="paved_e", court="paved_e"),
-                        W=dict(yard="yard", garden="garden", street="street_w", court="court_w")))
-TOWN_CHANNELS = ("yard", "garden", "street", "court")
+# the ground inside the walls (D-100; the user 2026-10-23 chose R8-36 B, agreed with war-game-client the same day): a
+# second weight map, R the packed-earth lanes from the gates to the keep (fading out past the gates), G the trampled
+# earth round the keep and round the decorative pieces and under any building in the town; from the layout's `ground`
+# (castle_<c>.json: cell, kind, w), each channel's edge soft (soft_m, blurred blur_m; signed distance, the cells' w
+# lightly blurred and multiplied in), drawn over the ground breaking along the layers' heights (edge_m).
+TOWN = dict(soft_m=0.6, blur_m=0.35, edge_m=0.45, layers=dict(E=dict(lane="yard", trampled="yard"),
+                                                              W=dict(lane="yard", trampled="yard")))
+TOWN_CHANNELS = ("lane", "trampled")
 RULES["town"] = TOWN
 GRADE = dict(brightness=1.0, saturation=0.9)      # the ground a little greyer than the units (R8: 找得到兵)
 
@@ -319,30 +313,6 @@ def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=
             e = mask * 2.0 - 1.0 + (nn - 0.5) * 0.8 + (layer[..., 3] - base[..., 3]) * rules["height_k"]
             f = np.clip(e * (CELL_M / tr["edge_m"]) * 0.5 + 0.5, 0.0, 1.0)[..., None]
             return base * (1 - f) + layer * f
-        def hash2(a, b):
-            """An integer hash of a bed's cell (the same on every GPU, war-game-client 2026-10-23): the two indices
-            offset by 32768 and mixed, then PCG's output step; uint32 arithmetic, 0..1."""
-            ua = (a.astype(np.int64) + 32768).astype(np.uint64)
-            ub = (b.astype(np.int64) + 32768).astype(np.uint64)
-            m = np.uint64(0xFFFFFFFF)
-            u = ((ua * np.uint64(0x8DA6B343)) & m) ^ ((ub * np.uint64(0xD8163841)) & m)
-            st = (u * np.uint64(747796405) + np.uint64(2891336453)) & m
-            word = (((st >> ((st >> np.uint64(28)) + np.uint64(4))) ^ st) * np.uint64(277803737)) & m
-            return ((word >> np.uint64(22)) ^ word).astype(np.float64) / 4294967296.0
-        gd = tr["garden"]
-        ang = math.radians(gd["angle_deg"])
-        gu = mx * math.cos(ang) + my * math.sin(ang)
-        gv = -mx * math.sin(ang) + my * math.cos(ang)
-        pu, pv = gd["plot_m"]
-        iu, iv = np.floor(gu / pu), np.floor(gv / pv)
-        fu, fv = gu - iu * pu, gv - iv * pv
-        half = gd["path_m"] / 2
-        edge = np.minimum(np.minimum(fu, pu - fu), np.minimum(fv, pv - fv)) + (nz - 0.5) * 0.25
-        dug = (hash2(iu, iv) < gd["keep"]).astype(float)
-        bed = smoothstep(half - 0.08, half + 0.08, edge) * dug
-        rows = 0.5 + 0.5 * np.cos(2 * math.pi * fv / gd["rows_m"])
-        planted = (hash2(iu + 17.0, iv + 5.0) < 0.75).astype(float)
-        greens = smoothstep(0.45, 0.7, rows) * planted * smoothstep(half + 0.15, half + 0.3, edge)
         for i, ch in enumerate(TOWN_CHANNELS):
             lid = tr["layers"][culture][ch]
             img = L[lid]["img"]
@@ -353,15 +323,7 @@ def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=
                 ry = (-0.6 * mx + 0.8 * my) * 0.91 + 3.1
                 kk = smoothstep(0.35, 0.65, nz)[..., None]
                 a = a * (1 - kk) + sample(img, rx / tm, ry / tm) * kk
-            m = tw[..., i]
-            if ch == "garden":
-                m = m * bed
-            c = over_t(c, a, m, nz)
-            if ch == "garden":                      # the crop rows: greens in the dug, planted beds
-                gl = L[gd["greens"]]
-                g2 = sample(gl["img"], mx / gl["tile_m"], my / gl["tile_m"])
-                f = (tw[..., i] * bed * greens * gd["greens_k"])[..., None]
-                c = c * (1 - f) + g2 * f
+            c = over_t(c, a, tw[..., i], nz)
     if w.shape[-1] > 3 and "water" in L:
         wa = rules["water"]
         sd = (w[..., 3] - 0.5) * 2 * wa["range_m"] + (nz - 0.5) * 2 * wa["noise_m"]
@@ -391,6 +353,8 @@ def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=
 def assemble(baked, out, spec):
     """The layers as client loads them: RGBA PNG, the height in A (the displacement map, else the brightness)."""
     out.mkdir(parents=True, exist_ok=True)
+    for old in out.glob("*.png"):                 # a layer dropped since (pack.py refuses files ground.json does not list)
+        old.unlink()
     layers, entries = {}, []
     for lid, tile_m in spec:
         rgb = np.asarray(Image.open(baked / f"{lid}_rgb.png").convert("RGB"), np.float32) / 255.0

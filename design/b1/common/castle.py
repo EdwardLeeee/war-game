@@ -17,6 +17,7 @@ circle of radius 5 holds 81 cell middles), the big city 12 x 12 = 144 (the circl
 python3 common/castle.py      -> ../r6/out/R6-06-城堡-格子-小鎮.png, …-大城.png, ../castle-layout.json
 """
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -216,6 +217,82 @@ def floor(L):
             for s in (1, 2):
                 out.append(dict(cell=[dx + nx * s, dy + ny * s], tile="street"))
     return out
+
+
+# ---------------------------------------------------------------- R8-36 B: the inside of the walls (art-v6)
+# The user 2026-10-23 chose R8-36 B, a lived-in town: low houses, sheds, a well and carts along the walls, packed-earth
+# lanes from the gates to the keep, the keep's surroundings clear. Everything here is the client's drawing only: none of
+# it goes into castle-layout.json (the sim). Agreed with war-game-client 2026-10-23.
+
+DECOR_SIZE = {"hut_a": (2.9, 2.2), "hut_b": (2.2, 2.9), "shed": (2.7, 1.7), "stack": (2.0, 1.4), "well": (1.4, 1.4),
+              "cart": (2.6, 1.2)}         # metres on the ground (x, y): which cells a piece covers
+
+
+def decor(L):
+    """[dict(piece, at, front, cells)] the decorative pieces of a layout: along the walls and in the quadrants' outer
+    parts (garden cells only: never a street, the square, the keep, a gate), at in cells from the town's centre cell
+    (its middle 0.5, 0.5; x east, y south), cells the ones it covers, front its front edge (the draw order)."""
+    W = L["wall"]
+    q = W - 1.6
+    spots = []
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            if W <= 8:                            # the small town: a corner hut, a hut and a shed along the walls, hay
+                spots += [("hut_a" if sy > 0 else "hut_b", sx * q, sy * q), ("hut_a", sx * (q - 2.0), sy * (q + 0.1)),
+                          ("shed", sx * (q + 0.1), sy * (q - 2.1)), ("stack", sx * (q - 1.1), sy * (q - 1.2))]
+            else:                                 # the big city: clear of the corner towers' inner cells
+                spots += [("hut_a" if sy > 0 else "hut_b", sx * (q - 1.3), sy * q), ("hut_a", sx * (q - 3.7), sy * (q + 0.1)),
+                          ("hut_b", sx * q, sy * (q - 1.8)), ("shed", sx * (q + 0.1), sy * (q - 4.1)),
+                          ("stack", sx * (q - 1.8), sy * (q - 2.0))]
+    spots += [("well", 4.0, 4.0), ("well", -4.0, -4.0)] if W > 8 else [("well", 3.4, 3.5)]
+    spots += [("cart", 2.4, 4.6), ("cart", -2.4, -4.4)] if W <= 8 else [("cart", 3.4, 5.6), ("cart", -3.4, -5.4)]
+    out = []
+    taken = {}
+    for piece, x, y in spots:
+        ax, ay = x + 0.5, y + 0.5
+        w, h = DECOR_SIZE[piece]
+        x0, x1 = ax - w / 4, ax + w / 4          # metres / 2 = cells; the half-size: / 4
+        y0, y1 = ay - h / 4, ay + h / 4
+        cells = sorted({(cx, cy) for cx in range(int(math.floor(x0)), int(math.ceil(x1)))
+                        for cy in range(int(math.floor(y0)), int(math.ceil(y1)))})
+        bad = [cc for cc in cells if L["cells"].get(cc) != "garden"]
+        assert not bad, (L["name"], piece, x, y, bad, [L["cells"].get(cc) for cc in bad])
+        rect = (x0, y0, x1, y1)                   # no two pieces' ground rectangles overlap (cells may be shared)
+        clash = [k for k, r in taken.items() if r[0] < x1 and x0 < r[2] and r[1] < y1 and y0 < r[3]]
+        assert not clash, (L["name"], piece, x, y, clash)
+        taken[(piece, x, y)] = rect
+        out.append(dict(piece=piece, at=[round(ax, 3), round(ay, 3)], front=round(y1, 3), cells=[list(cc) for cc in cells]))
+    return sorted(out, key=lambda d: (d["front"], d["at"][0]))
+
+
+def ground(L):
+    """[dict(cell, kind, w)] the drawn ground of a layout: "lane" the packed-earth track from each gate along the middle
+    of its street to the keep, out past the gate 4 cells fading; "trampled" the clear ring round the keep and the
+    earth round every decorative piece (its cells w 1, the cells round them 0.75)."""
+    W = L["wall"]
+    g = {}
+
+    def put(kind, c, w):
+        k = (kind, c)
+        g[k] = max(g.get(k, 0.0), w)
+    for d in range(2, W + 1):
+        for c in ((0, d), (0, -d), (d, 0), (-d, 0)):
+            put("lane", c, 1.0)
+    for i, w in enumerate((0.85, 0.6, 0.35, 0.15)):
+        for c in ((0, W + 1 + i), (0, -W - 1 - i), (W + 1 + i, 0), (-W - 1 - i, 0)):
+            put("lane", c, w)
+    for dx in range(-2, 3):
+        for dy in range(-2, 3):
+            if max(abs(dx), abs(dy)) == 2:
+                put("trampled", (dx, dy), 0.9)
+    for dd in decor(L):
+        for cx, cy in dd["cells"]:
+            for ex in (-1, 0, 1):
+                for ey in (-1, 0, 1):
+                    c = (cx + ex, cy + ey)
+                    if L["cells"].get(c) in ("garden", "street", "square"):
+                        put("trampled", c, 1.0 if (ex, ey) == (0, 0) else 0.75)
+    return [dict(cell=[c[0], c[1]], kind=k, w=round(w, 2)) for (k, c), w in sorted(g.items(), key=lambda t: (t[0][1][1], t[0][1][0], t[0][0]))]
 
 
 COL = {"wall": (96, 88, 80), "corner": (70, 62, 56), "ctower": (60, 52, 46), "keep": (120, 60, 50), "gate": (232, 196, 120),
