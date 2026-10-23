@@ -3,14 +3,18 @@
 // A wall is terrain, like rock (Terrain.Wall): not a building, so nothing attacks it (D-024 looks for
 // buildings) and ruins keep it. Gates are open ground, open to everyone, always.
 //
-// The layouts (castle-layout.ts) are offsets from a town's centre cell. A small town's centre is a
-// cell, and its castle is its own image under every turn and flip. The big city's castle is centred
-// on its tower: on random maps the map is turned or flipped as a whole (D-074), so the tower does not
-// stand at the same offset from the town's centre cell on every map; castleOf shifts the layout to
-// where this map's tower stands, and the castle stays its own mirror image.
+// The layouts (castle-layout.ts) are offsets from a town's centre cell. With KEEP on (D-100) every
+// town's is centred on its 3 x 3 keep, on its centre cell: its own image under every turn and flip.
+// Before (castle-layout-d089.ts, while KEEP is off) a small town's centre is a cell and its castle
+// its own image under every turn and flip, but the big city's castle is centred on its tower: on
+// random maps the map is turned or flipped as a whole (D-074), so the tower does not stand at the
+// same offset from the town's centre cell on every map; castleOf shifts the layout to where this
+// map's tower stands, and the castle stays its own mirror image.
 
 import { TownSize } from "../protocol.ts";
-import { CASTLE_LARGE, CASTLE_LARGE3, CASTLE_SMALL, type CastleLayout } from "./castle-layout.ts";
+import { CASTLE_LARGE, CASTLE_SMALL, type CastleLayout } from "./castle-layout.ts";
+import { D089_LARGE, D089_LARGE3, D089_SMALL } from "./castle-layout-d089.ts";
+import { KEEP } from "./keep.ts";
 
 type Cell = readonly [number, number];
 
@@ -52,9 +56,10 @@ export interface CastleMap {
 
 /** The castle of a town of this size on this map (offsets from that town's centre cell). */
 export function castleOf(size: TownSize, map?: CastleMap): Castle {
-  if (size === TownSize.Small) return place(CASTLE_SMALL, 0, 0);
+  if (KEEP.on) return place(size === TownSize.Small ? CASTLE_SMALL : CASTLE_LARGE, 0, 0);
+  if (size === TownSize.Small) return place(D089_SMALL, 0, 0);
   const ts = map?.towerSize ?? 2;
-  const layout = ts === 3 ? CASTLE_LARGE3 : CASTLE_LARGE;
+  const layout = ts === 3 ? D089_LARGE3 : D089_LARGE;
   // The layouts put the tower's top-left at (-1, -1) from the centre cell.
   const town = map?.towns.find((t) => t.size === TownSize.Large);
   if (map === undefined || town === undefined) return place(layout, 0, 0);

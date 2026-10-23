@@ -63,6 +63,7 @@ import {
   RETARGET_EVERY,
   SEPARATION,
   TOWER_ARROW,
+  KEEP,
   UNDER_ATTACK_TICKS,
   UNITS,
   WORK_REACH,
@@ -2565,8 +2566,8 @@ export function coverDamage(d: number): number {
 }
 
 /**
- * The arrows building slot s shoots, null if none: a finished main city, the big city's tower or
- * an arrow tower (round 7), or a governed town's gate (D-096).
+ * The arrows building slot s shoots, null if none: a finished main city, a town's keep (D-100; with
+ * KEEP off the big city's tower) or an arrow tower (round 7), or a governed town's gate (D-096).
  */
 function arrowOf(w: World, s: number): { damage: number; range: number; cooldown: number } | null {
   const b = w.buildings.col;
@@ -2574,8 +2575,9 @@ function arrowOf(w: World, s: number): { damage: number; range: number; cooldown
   switch (b.type[s]) {
     case BuildingType.MainCity:
       return MAIN_ARROW;
-    case BuildingType.TownTower:
-      return TOWER_ARROW;
+    case BuildingType.Keep:
+      // D-100: a keep's by its town's size; before, the big city's tower's.
+      return KEEP.on && b.town[s] >= 0 ? KEEP.arrow[w.townSize[b.town[s]]] : TOWER_ARROW;
     case BuildingType.ArrowTower:
       return ARROW_TOWER;
     case BuildingType.Gate:

@@ -19,6 +19,9 @@ import {
   UnitType,
 } from "../protocol.ts";
 import { type CastleMap, castleOf, FIXED_POSTS } from "./castle.ts";
+import { KEEP } from "./keep.ts";
+
+export { KEEP };
 
 const S = TICKS_PER_SECOND;
 const speed = (cellsPerSecond100: number) => Math.trunc((cellsPerSecond100 * CELL) / (100 * S));
@@ -102,7 +105,9 @@ BUILDINGS[BuildingType.Range] = building({
 BUILDINGS[BuildingType.MageHall] = building({
   type: BuildingType.MageHall, hp: 500, size: 3, cost: cost(0, 150, 100), buildTicks: 45 * S, trains: [UnitType.Mage],
 });
-BUILDINGS[BuildingType.TownTower] = building({ type: BuildingType.TownTower, hp: 400, size: 2, sight: 8 });
+// The big city's tower; with KEEP on (D-100) every town's keep, 3 x 3, its hp by its town's size
+// (KEEP.hp, World.maxHp; this row then the big city's).
+BUILDINGS[BuildingType.Keep] = building({ type: BuildingType.Keep, hp: 400, size: 2, sight: 8 });
 // Round 7 (D-061): a player's arrow tower (only while TOWERS is on) and the stable (only while
 // CAVALRY is on). Footprints from GDD section 8; the rest are the prototype's values.
 BUILDINGS[BuildingType.ArrowTower] = building({
@@ -183,7 +188,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     features: {
       plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on,
       ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
-      ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}),
+      ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}), ...(KEEP.on ? { keep: true } : {}),
     },
     arrows: {
       mainCity: MAIN_ARROW,
@@ -495,8 +500,12 @@ function switched<T extends object>(table: T, key: keyof T & string, sw: { on: b
 }
 switched(UNITS[UnitType.Ranged], "range", LONG_BOWS, () => LONG_BOWS.rangedRange);
 switched(UNITS[UnitType.Ranged], "sight", LONG_BOWS, () => LONG_BOWS.rangedSight);
-for (const arrow of [MAIN_ARROW, TOWER_ARROW, ARROW_TOWER]) switched(arrow, "range", LONG_BOWS, () => LONG_BOWS.arrowRange);
-for (const type of [BuildingType.MainCity, BuildingType.TownTower, BuildingType.ArrowTower]) switched(BUILDINGS[type], "sight", LONG_BOWS, () => LONG_BOWS.towerSight);
+for (const arrow of [MAIN_ARROW, TOWER_ARROW, ARROW_TOWER, ...KEEP.arrow]) switched(arrow, "range", LONG_BOWS, () => LONG_BOWS.arrowRange);
+// D-100: the keep (the big city's tower before) and its arrows, and the bigger towns.
+switched(BUILDINGS[BuildingType.Keep], "size", KEEP, () => KEEP.size);
+switched(BUILDINGS[BuildingType.Keep], "hp", KEEP, () => KEEP.hp[TownSize.Large]);
+switched(TOWER_ARROW, "damage", KEEP, () => KEEP.arrow[TownSize.Large].damage);
+for (const type of [BuildingType.MainCity, BuildingType.Keep, BuildingType.ArrowTower]) switched(BUILDINGS[type], "sight", LONG_BOWS, () => LONG_BOWS.towerSight);
 /**
  * Arrow towers worth building (rule 6, D-071; the user 2026-10-07: "箭塔太貴傷害又太低根本不可能選"):
  * a player's arrow tower costs `cost` (was wood 100, gold 50: two ranged units' worth for one's
@@ -534,7 +543,9 @@ export const MAGE_BOUNTY = 15;
 
 export interface TownRule {
   militia: number;
+  /** The big city's tower (while KEEP is off; with it on every town has a keep). */
   tower: boolean;
+  /** The walls' distance from the centre (D-100, KEEP on: KEEP.radius). */
   radius: number;
   plunderTicks: number;
   plunder: Cost;
@@ -558,6 +569,8 @@ TOWNS[TownSize.Large] = {
   governCost: cost(0, 150, 150), repairTicks: 60 * S, perMinute: cost(90, 0, 90, 30), populationCap: 10,
   garrisonNeeded: 3, revoltTicks: 60 * S,
 };
+
+for (const size of [TownSize.Small, TownSize.Large]) switched(TOWNS[size], "radius", KEEP, () => KEEP.radius[size]);
 
 // D-083: what a governed town and a house add to the population cap while POPULATION_200 is on (getters).
 for (const size of [TownSize.Small, TownSize.Large]) switched(TOWNS[size], "populationCap", POPULATION_200, () => POPULATION_200.town[size]);
@@ -606,6 +619,7 @@ function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap
       towerLand: TOWER_REACH.town + 1,
     },
     ...(GATE.on ? { gateHp: GATE.hp[size] } : {}),
+    ...(KEEP.on ? { keep: { hp: KEEP.hp[size], size: KEEP.size, arrow: { ...KEEP.arrow[size], extraMax: 0 }, rebuildTicks: KEEP.rebuildTicks } } : {}),
   };
 }
 
