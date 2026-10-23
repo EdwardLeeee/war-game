@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { counterLines, counterTypes, ratioText } from "../src/game/counters.ts";
+import { counterLines, counterShort, counterTypes, ratioText } from "../src/game/counters.ts";
 import { rules as simRules, type Rules, UnitType } from "../src/sim.ts";
 import { UNIT_NAME } from "../src/ui/hud/names.ts";
 
@@ -87,4 +87,21 @@ test("D-097 的短句：照倍數表和不是倍數的說明寫「剋：…／�
     [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry].map((t) => counterShort(sim, t)),
     ["剋：騎兵／怕：遠程", "剋：槍兵／怕：騎兵", "剋：擠在一起的部隊／怕：騎兵", "剋：遠程、法師（會自己繞過前排去打）／怕：槍兵"],
   );
+});
+
+test("兵種相剋（D-099）：攻城砲開著時多一行，剋建築（打建築 ×3），怕騎兵 ×2 和近身的兵；騎兵那一行多攻城砲 ×2；關著時都沒有", () => {
+  const on: Rules = {
+    ...withCavalry(true),
+    features: { plunderOnce: false, towers: false, garrison: false, cavalry: true, siege: true },
+    multipliers: [...(simRules().multipliers ?? []), { attacker: UnitType.Cavalry, target: UnitType.Siege, num: 2, den: 1 }],
+    siege: { vsBuildings: 3, flightTicks: 20 },
+  };
+  assert.deepEqual(counterTypes(on), [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry, UnitType.Siege]);
+  const lines = counterLines(on, UNIT_NAME);
+  assert.deepEqual(lines.find((l) => l.type === UnitType.Siege), { type: UnitType.Siege, beats: ["建築 ×3（城門更多）"], fears: ["騎兵 ×2", "近身的兵（3 格內打不到）"] });
+  assert.ok(lines.find((l) => l.type === UnitType.Cavalry)?.beats.includes("攻城砲 ×2"));
+  assert.equal(counterShort(on, UnitType.Siege), "剋：建築／怕：近身的兵、騎兵");
+  // Off: none of it.
+  assert.ok(!counterTypes(withCavalry(true)).includes(UnitType.Siege));
+  assert.equal(counterShort(withCavalry(true), UnitType.Siege), "");
 });

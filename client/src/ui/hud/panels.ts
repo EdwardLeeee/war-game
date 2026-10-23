@@ -5,7 +5,7 @@
 import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
 import { DEPOT_WORD } from "../../game/depot.ts";
 import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
-import { buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots } from "../../game/features.ts";
+import { autoTrainBuildings, buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots } from "../../game/features.ts";
 import { POST_TYPE } from "../../game/outpost.ts";
 import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
@@ -14,7 +14,6 @@ import { goesOnWalls } from "../../game/walls.ts";
 import { counterShort } from "../../game/counters.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
-  AUTO_TRAIN,
   BuildingField as B,
   BuildingFlag,
   BuildingType,
@@ -315,7 +314,7 @@ export class SelectionInfo {
     // 現有／目標 in the title line; no 「目前：」 line (the command area's buttons light up), so
     // that the panel stays clear of 全軍撤退 on a phone held sideways.
     const total = el("span", head, "sel-status");
-    const types = GROUP_TYPES.filter((type) => type !== UnitType.Cavalry || features(view.rules).cavalry);
+    const types = GROUP_TYPES.filter((type) => (type !== UnitType.Cavalry || features(view.rules).cavalry) && (type !== UnitType.Siege || features(view.rules).siege === true));
     // Four kinds with 騎兵 (round 7): two to a line, the name over its − N +, or the panel
     // would reach 全軍撤退 on a phone held sideways. Three kinds keep a line each.
     const grid = types.length > 3 ? el("div", this.el, "group-grid") : null;
@@ -461,7 +460,7 @@ export class SelectionInfo {
     const hpBar = bar(this.el, "hp");
     const hpText = el("span", this.el, "sel-num");
     // 自動訓練 by the screen (D-098): why it trains or not; the main city's villagers and their target.
-    const trainsOnItsOwn = own && (type === BuildingType.MainCity || AUTO_TRAIN.buildings.includes(type));
+    const trainsOnItsOwn = own && (type === BuildingType.MainCity || autoTrainBuildings(view.rules).includes(type));
     const autoLine = trainsOnItsOwn ? el("p", this.el, "sel-pend auto-train-line") : null;
     if (own && type === BuildingType.MainCity) {
       const row = el("div", this.el, "sel-keep villager-target");
@@ -908,7 +907,7 @@ export class CommandArea {
       // (it can be set before the building is finished, too).
       // D-098: the screen's own pause (kept in the save), no order to the simulation; for the main
       // city, its villagers (訓練村民 up to the target).
-      if (AUTO_TRAIN.buildings.includes(type) || type === BuildingType.MainCity) {
+      if (autoTrainBuildings(view.rules).includes(type) || type === BuildingType.MainCity) {
         const city = type === BuildingType.MainCity;
         const on = city ? !this.host.villagersPaused() : !this.host.autoPaused(id);
         const auto = button(this.el, city ? "自動村民" : "自動訓練", on ? "目前：開" : "目前：暫停", () => (city ? this.host.toggleVillagers() : this.host.toggleAutoPaused(id)), "secondary");

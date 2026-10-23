@@ -4,7 +4,9 @@
 // the cannon's spread, cavalry's speed) are written beside them, so 「怕：沒有」 does not read as
 // 「遠程兵不怕騎兵」 (ceo 2026-10-07). 騎兵 only while its feature is on. D-097 (the user
 // 2026-10-21: 槍剋騎、騎剋遠程和法師、遠程剋槍): a short line of the same for the train buttons
-// and the selection info, 「剋：騎兵／怕：遠程」 (counterShort).
+// and the selection info, 「剋：騎兵／怕：遠程」 (counterShort). D-099 (while `features.siege`):
+// siege engines beat buildings (rules.siege.vsBuildings times, gates more) and fear anyone at close
+// range (cavalry ×2 in the table).
 
 import { type Multiplier, type Rules, UnitType } from "../sim.ts";
 import { features } from "./features.ts";
@@ -30,17 +32,26 @@ const NOT_MULTIPLIERS: { type: number; side: "beats" | "fears"; text: string; na
   { type: UnitType.Ranged, side: "fears", text: "騎兵（跑得快，很快衝到面前；生命少）", names: UnitType.Cavalry, first: false, short: "騎兵" },
   { type: UnitType.Mage, side: "beats", text: "擠在一起的部隊（晶砲範圍傷害）", names: UnitType.Mage, first: false, short: "擠在一起的部隊" },
   { type: UnitType.Cavalry, side: "beats", text: "遠程兵（跑得快）", names: UnitType.Ranged, first: true, short: "遠程" },
+  // D-099: whoever reaches it (it shoots nothing within its minRange, 3 cells).
+  { type: UnitType.Siege, side: "fears", text: "近身的兵（3 格內打不到）", names: UnitType.Siege, first: false, short: "近身的兵" },
 ];
 
+/** Siege engines' damage to buildings (D-099, rules.siege.vsBuildings): 「建築 ×3」, first in its beats; none while off. */
+function siegeBeats(rules: Pick<Rules, "features" | "siege"> | null | undefined, short: boolean): string[] {
+  if (features(rules).siege !== true) return [];
+  const k = rules?.siege?.vsBuildings ?? 3;
+  return [short ? "建築" : `建築 ×${k}（城門更多）`];
+}
+
 /** The names in the short line (D-097): 「遠程」 for 遠程兵, the others as they are. */
-const SHORT_NAME: Record<number, string> = { [UnitType.Spearman]: "槍兵", [UnitType.Ranged]: "遠程", [UnitType.Mage]: "法師", [UnitType.Cavalry]: "騎兵" };
+const SHORT_NAME: Record<number, string> = { [UnitType.Spearman]: "槍兵", [UnitType.Ranged]: "遠程", [UnitType.Mage]: "法師", [UnitType.Cavalry]: "騎兵", [UnitType.Siege]: "攻城砲" };
 
 /** 騎兵繞後 (core, D-097's batch: `features.cavalryFlank`): on its own, cavalry goes around the front line for mages, then ranged. */
 const flank = (rules: Pick<Rules, "features"> | null | undefined): boolean => features(rules).cavalryFlank === true;
 
 /** The soldier types listed, in the order of the 軍團畫面. */
 export function counterTypes(rules: Pick<Rules, "features"> | null | undefined): number[] {
-  return [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, ...(features(rules).cavalry ? [UnitType.Cavalry] : [])];
+  return [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, ...(features(rules).cavalry ? [UnitType.Cavalry] : []), ...(features(rules).siege === true ? [UnitType.Siege] : [])];
 }
 
 /** num / den as the player reads it: 3, 2.5. */
@@ -48,7 +59,7 @@ export function ratioText(m: Pick<Multiplier, "num" | "den">): string {
   return `${Math.round((m.num * 10) / m.den) / 10}`;
 }
 
-export function counterLines(rules: Pick<Rules, "features" | "multipliers"> | null | undefined, names: Record<number, string>): CounterLine[] {
+export function counterLines(rules: Pick<Rules, "features" | "multipliers" | "siege"> | null | undefined, names: Record<number, string>): CounterLine[] {
   const types = counterTypes(rules);
   // Rows about a type not in play (騎兵 while it is off) are left out.
   const table = (rules?.multipliers ?? []).filter((m) => types.includes(m.attacker) && (m.target === "shield" || types.includes(m.target)));
@@ -57,6 +68,7 @@ export function counterLines(rules: Pick<Rules, "features" | "multipliers"> | nu
   return types.map((type) => ({
     type,
     beats: [
+      ...(type === UnitType.Siege ? siegeBeats(rules, false) : []),
       ...extra(type, "beats", true),
       ...table.filter((m) => m.attacker === type).map((m) => (m.target === "shield" ? `法師的護盾 ×${ratioText(m)}` : `${names[m.target] ?? "兵"} ×${ratioText(m)}`)),
       ...extra(type, "beats", false),
@@ -78,7 +90,7 @@ export function counterLines(rules: Pick<Rules, "features" | "multipliers"> | nu
  * once. A side with nobody is left out (「怕：沒有」 would read as afraid of nothing), "" for both.
  * `brief`: without the note on how (cavalry going around the front), for a train button.
  */
-export function counterShort(rules: Pick<Rules, "features" | "multipliers"> | null | undefined, type: number, brief = false): string {
+export function counterShort(rules: Pick<Rules, "features" | "multipliers" | "siege"> | null | undefined, type: number, brief = false): string {
   const types = counterTypes(rules);
   if (!types.includes(type)) return "";
   const table = (rules?.multipliers ?? []).filter((m) => types.includes(m.attacker) && (m.target === "shield" || types.includes(m.target)));
@@ -86,7 +98,7 @@ export function counterShort(rules: Pick<Rules, "features" | "multipliers"> | nu
   const extra = (side: "beats" | "fears") => NOT_MULTIPLIERS.filter((e) => e.type === type && e.side === side && e.short !== null && types.includes(e.names)).map((e) => e.short as string);
   const once = (names: string[]) => [...new Set(names)];
   // The no-multiplier ones that name a unit (騎兵剋遠程) first, as in the table.
-  const beats = once([...extra("beats"), ...table.filter((m) => m.attacker === type).map((m) => named(m.target))]);
+  const beats = once([...(type === UnitType.Siege ? siegeBeats(rules, true) : []), ...extra("beats"), ...table.filter((m) => m.attacker === type).map((m) => named(m.target))]);
   const fears = once([...extra("fears"), ...table.filter((m) => m.target === type || (m.target === "shield" && type === UnitType.Mage)).map((m) => named(m.attacker))]);
   const note = !brief && type === UnitType.Cavalry && flank(rules) && beats.length > 0 ? "（會自己繞過前排去打）" : "";
   return [beats.length > 0 ? `剋：${beats.join("、")}${note}` : "", fears.length > 0 ? `怕：${fears.join("、")}` : ""].filter((t) => t !== "").join("／");

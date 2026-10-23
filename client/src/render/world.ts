@@ -9,7 +9,6 @@ import type { Camera } from "../camera/camera.ts";
 import { PT_PER_CELL, type Projection, tilted, TOP } from "../camera/projection.ts";
 import {
   Action,
-  AUTO_TRAIN,
   BuildingField as B,
   BUILDING_STRIDE,
   BuildingFlag,
@@ -41,6 +40,8 @@ import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT, WARNING_TINT } from "./atlas.ts";
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 import { ArtStructures } from "./structure-art.ts";
+import { autoTrainBuildings } from "../game/features.ts";
+import { type Stone as SiegeStone, stoneAt } from "../game/siege.ts";
 import { CastleDraw } from "./castle-draw.ts";
 import { TerrainDraw } from "./terrain-draw.ts";
 import { GroundDraw, type GroundQuality, type GroundTextures } from "./ground-draw.ts";
@@ -143,6 +144,8 @@ interface Shot {
 }
 
 const SHOT_MS = 300;
+/** 攻城砲 (D-099): a stone's landing shown this long (dust, the splash's ring), in game seconds. */
+const STONE_LANDED_S = 0.6;
 
 /** A militia's stone from the wall (D-096 sling), flying for STONE_MS: from (world px, `lift` points up) to a unit. */
 interface Stone {
@@ -206,6 +209,13 @@ export class WorldRenderer {
   /** The flashes where a gate's tower shoots (effects `tower_shot`, D-096), over airFx. */
   private readonly airArt = new Container();
   private readonly shotFlashes: Sprite[] = [];
+  /** 攻城砲's stones (D-099, `siege_shot`), in the air or just landed; their landing dust. */
+  private siegeStones: SiegeStone[] = [];
+  private readonly siegeDust: Sprite[] = [];
+  /** Stones thrown so far (D-099), for the test page. */
+  siegeShotCount = 0;
+  /** The simulation's time as drawn (ticks, between the last two snapshots). */
+  private drawnTick = 0;
   /** Shots from a gate's tower (D-096 shoot_at_m) so far, for the test page. */
   towerShotCount = 0;
   private stones: Stone[] = [];
@@ -287,6 +297,11 @@ export class WorldRenderer {
    */
   private readonly ghostLayers: Record<"own" | "enemy" | "neutral", Container>;
   private readonly ghostRings = new Graphics();
+  /**
+   * On the plane over the ground's pictures (castle floors, terrain), under what stands: 攻城砲's
+   * rings and its stones' shadows and splash (D-099), which the castles' floor would hide in `fx`.
+   */
+  private readonly overGround = new Graphics();
   ghostStyle: "fill" | "outline" = "fill";
   /** Units drawn behind a wall this frame (test page). */
   ghostCount = 0;
@@ -360,7 +375,7 @@ export class WorldRenderer {
     }
     this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
-    this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.airArt, this.barLayer, this.townLayer);
+    this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.overGround, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.airArt, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
   }
 
@@ -381,6 +396,7 @@ export class WorldRenderer {
     this.groundDraw?.tick(now / 1000);
     this.fx.clear();
     this.airFx.clear();
+    this.overGround.clear();
     this.drawUnits(now);
     this.drawWarnings(now);
     this.drawSelectionExtras();
@@ -467,9 +483,87 @@ export class WorldRenderer {
     }
   }
 
+  /** A circle on the ground (world px) as the plane shows it (an ellipse square on), into `overGround`; `dash` leaves every other stroke out. */
+  private groundCircle(x: number, y: number, r: number, stroke: { width: number; color: number; alpha: number }, dash = false): void {
+    const g = this.overGround;
+    const n = 48;
+    for (let i = 0; i < n; i++) {
+      if (dash && i % 2 === 1) continue;
+      const a0 = (i / n) * Math.PI * 2;
+      const a1 = ((i + 1) / n) * Math.PI * 2;
+      const p0 = this.projection.toPlane(x + Math.cos(a0) * r, y + Math.sin(a0) * r);
+      const p1 = this.projection.toPlane(x + Math.cos(a1) * r, y + Math.sin(a1) * r);
+      g.moveTo(p0.x, p0.y).lineTo(p1.x, p1.y);
+      if (dash) g.stroke(stroke);
+    }
+    if (!dash) g.stroke(stroke);
+  }
+
+  /** 攻城砲 (D-099): a stone thrown (game/siege.ts), drawn until it lands and a moment after. */
+  siegeShot(stone: SiegeStone): void {
+    this.siegeStones.push(stone);
+    this.siegeShotCount++;
+    if (this.siegeStones.length > 40) this.siegeStones.shift();
+  }
+
+  /**
+   * The stones in the air (a dark stone, its shadow on the ground) and, once landed, dust and the
+   * splash's ring where they fell; only where we see now (the fog hides the rest: a stone from an
+   * unseen engine comes in from the edge of what we see).
+   */
+  private drawSiegeStones(): void {
+    const t = this.drawnTick;
+    this.siegeStones = this.siegeStones.filter((s) => t < s.lands + STONE_LANDED_S * TICKS_PER_SECOND);
+    const n = this.view.map.size;
+    const fog = this.view.fog;
+    const seen = (x: number, y: number) => {
+      const cx = Math.floor(x);
+      const cy = Math.floor(y);
+      return cx >= 0 && cy >= 0 && cx < n && cy < n && (fog === null || fog[cy * n + cx] === Fog.Visible);
+    };
+    const upPerM = this.projection.ptPerM * UP_PER_M;
+    const splash = ((this.view.rules.units[UnitType.Siege]?.splash ?? CELL) * FIXED_TO_PX) as number;
+    const fx = this.artUnits?.art.effects ?? null;
+    const dust = fx?.effects.dust;
+    let d = 0;
+    for (const s of this.siegeStones) {
+      const at = stoneAt(s, t, M_PER_CELL);
+      if (at !== null) {
+        if (!seen(at.x, at.y)) continue;
+        const ground = this.projection.toPlane(at.x * TILE_PX, at.y * TILE_PX);
+        // Its shadow on the ground, fainter as it rises; the stone itself up there.
+        this.overGround.ellipse(ground.x, ground.y, 4, 2.4).fill({ color: 0x000000, alpha: Math.max(0.1, 0.4 - at.upM * 0.04) });
+        this.airFx.circle(ground.x, ground.y - at.upM * upPerM, 3.6).fill(0x5a5249).stroke({ width: 1.2, color: 0x23201c });
+        continue;
+      }
+      // Landed: the splash's ring fading, dust rising (effects `dust`, twice the size).
+      if (t < s.lands || !seen(s.toX, s.toY)) continue;
+      const k = (t - s.lands) / (STONE_LANDED_S * TICKS_PER_SECOND);
+      this.groundCircle(s.toX * TILE_PX, s.toY * TILE_PX, splash, { width: 2, color: 0xd9c9a8, alpha: 0.7 * (1 - k) });
+      if (fx === null || dust === undefined || this.artUnits === null) continue;
+      const index = Math.floor(((t - s.lands) / TICKS_PER_SECOND) * (dust.fps ?? 12));
+      const f = index < dust.frames ? this.artUnits.art.effectFrame(`dust_${String(index).padStart(2, "0")}`) : null;
+      if (f === null) continue;
+      while (this.siegeDust.length <= d) {
+        const sprite = new Sprite();
+        this.airArt.addChild(sprite);
+        this.siegeDust.push(sprite);
+      }
+      const sprite = this.siegeDust[d++];
+      const at2 = this.projection.toPlane(s.toX * TILE_PX, s.toY * TILE_PX);
+      sprite.visible = true;
+      sprite.texture = f.texture;
+      sprite.anchor.set(f.ax, f.ay);
+      sprite.position.set(at2.x, at2.y);
+      sprite.scale.set((this.projection.ptPerM / fx.px_per_m) * 2 * (f.half ? 2 : 1));
+    }
+    for (; d < this.siegeDust.length; d++) this.siegeDust[d].visible = false;
+  }
+
   private drawShots(now: number): void {
     this.shots = this.shots.filter((s) => now - s.at < SHOT_MS);
     this.drawShotFlashes(now);
+    this.drawSiegeStones();
     this.drawStones(now);
     for (const s of this.shots) {
       const k = (now - s.at) / SHOT_MS;
@@ -674,7 +768,7 @@ export class WorldRenderer {
       }
       // 自動訓練 paused on our finished barracks, range, mage hall or stable (R6-31): a pause mark the
       // size of 裡面有人, in its place or left of it. The player's pause, kept by the screen (D-098).
-      if (b[o + B.owner] === this.view.me && !building && AUTO_TRAIN.buildings.includes(type) && this.autoPaused(b[o + B.id])) {
+      if (b[o + B.owner] === this.view.me && !building && autoTrainBuildings(this.view.rules).includes(type) && this.autoPaused(b[o + B.id])) {
         p.paused.visible = true;
         p.paused.position.set(right.x - 2 - (marked ? 18 * markScale : 0), right.y + 2);
         p.paused.zIndex = mid.y + 1;
@@ -977,7 +1071,8 @@ export class WorldRenderer {
     const ringY = this.projection.toPlane(0, 17).y - this.projection.toPlane(0, 0).y;
     // The atlases' clock: the simulation's time, between the last two snapshots (D-085).
     const tick = curr.snap.header[H.tick];
-    const seconds = (paused || prev === null ? tick : tick - 1 + alpha) / TICKS_PER_SECOND;
+    this.drawnTick = paused || prev === null ? tick : tick - 1 + alpha;
+    const seconds = this.drawnTick / TICKS_PER_SECOND;
     this.artUnits?.snapshot(seconds);
     this.artStructures?.snapshot(seconds);
     this.artStructures?.drawRubble(seconds);
@@ -1179,6 +1274,7 @@ export class WorldRenderer {
   }
 
   private drawSelectionExtras(): void {
+    this.drawSiegeRanges();
     const id = this.view.selection.building;
     if (id === null) return;
     const o = this.view.buildingRow(id);
@@ -1195,6 +1291,32 @@ export class WorldRenderer {
       this.fx.circle(rx, ry, 5).fill(0xfff3b0);
     }
   }
+
+  /**
+   * 攻城砲 selected (D-099): its reach (rules.units range, faint) and the ground it cannot shoot
+   * (minRange, a red dashed ring), round each one selected (the first few).
+   */
+  private drawSiegeRanges(): void {
+    const view = this.view;
+    const info = view.rules.units[UnitType.Siege];
+    if (info === undefined || view.rules.features?.siege !== true) return;
+    const reach = info.range * FIXED_TO_PX;
+    const near = (info.minRange ?? 0) * FIXED_TO_PX;
+    let drawn = 0;
+    for (const id of view.selection.units) {
+      if (drawn >= 6) break;
+      const o = view.unitRow(id);
+      if (o < 0 || view.unitType(id) !== UnitType.Siege) continue;
+      drawn++;
+      const { x, y } = view.unitPos(o);
+      this.groundCircle(x, y, reach, { width: 2, color: 0xfff3b0, alpha: 0.55 });
+      if (near > 0) this.groundCircle(x, y, near, { width: 2.5, color: 0xff5a4f, alpha: 0.9 }, true);
+    }
+    this.siegeRangesDrawn = drawn;
+  }
+
+  /** Siege engines whose rings were drawn this frame (D-099), for the test page. */
+  siegeRangesDrawn = 0;
 
   private drawGhost(placement: Placement | null, now: number): void {
     this.ghost.clear();
