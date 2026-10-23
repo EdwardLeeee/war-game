@@ -997,6 +997,8 @@ export class Hud {
       ["法師（訓練／陣亡）", (i) => `${p[i].magesTrained}／${p[i].magesLost}`],
       ["城鎮（搶／治理）", (i) => `${p[i].townsPlundered}／${p[i].townsGoverned}`],
     ];
+    // D-099: siege engines, only while their feature is on (the simulation sends them then).
+    if (p.some((x) => x.siegeTrained !== undefined)) rows.splice(4, 0, ["攻城砲（訓練／損失）", (i) => `${p[i].siegeTrained ?? 0}／${p[i].siegeLost ?? 0}`]);
     if (p.length >= 2) {
       for (const [name, f] of rows) {
         const tr = el("tr", table);

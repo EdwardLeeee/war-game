@@ -20,6 +20,7 @@ import { TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX, type GameView, type TownSpot } from "../view/view.ts";
 import { NEUTRAL_TINT, ownerTint } from "./atlas.ts";
 import { depthOf } from "./depth.ts";
+import { InsetFrames } from "./inset.ts";
 import type { ArtFrame, UnitArt } from "./unit-art.ts";
 
 /** What is not in view now, drawn darker (as buildings remembered). */
@@ -62,16 +63,23 @@ interface TownDraw {
   look: string;
 }
 
-function put(s: Sprite, f: ArtFrame | null, x: number, y: number, scale: number): void {
+function put(s: Sprite, f: ArtFrame | null, x: number, y: number, scale: number, insets: InsetFrames | null = null): void {
   if (f === null) {
     s.visible = false;
     return;
   }
   s.visible = true;
-  s.texture = f.texture;
   s.anchor.set(f.ax, f.ay);
   s.position.set(x, y);
-  s.scale.set(f.half ? scale * 2 : scale);
+  const k = f.half ? scale * 2 : scale;
+  if (insets !== null) {
+    // A floor tile, edge to edge with the next: no seams (inset.ts).
+    s.texture = insets.of(f.texture);
+    s.scale.set(...insets.scale(f.texture, k));
+  } else {
+    s.texture = f.texture;
+    s.scale.set(k);
+  }
 }
 
 export class CastleDraw {
@@ -92,6 +100,8 @@ export class CastleDraw {
   private lastSnap: unknown = null;
   /** Towns whose castle no layout fits (logged once each). */
   private readonly misfit = new Set<number>();
+  /** The floor tiles' frames 1.5 texels in: past their own soft outer texels (inset.ts). */
+  private readonly floorInsets = new InsetFrames(1.5);
   /**
    * Each wall cell drawn from the pictures (map cell) where someone may stand (D-096): its piece's
    * depth, its walk's height (metres) and where they stand from the cell's middle (world px).
@@ -175,7 +185,7 @@ export class CastleDraw {
       s.visible = false;
       this.floorLayer.addChild(s);
       const at = this.projection.toPlane((ox + tile.cell[0] + 0.5) * TILE_PX, (oy + tile.cell[1] + 0.5) * TILE_PX);
-      put(s, this.art?.castleFrame("color", c.tiles[tile.tile] ?? "") ?? null, at.x, at.y, this.scale);
+      put(s, this.art?.castleFrame("color", c.tiles[tile.tile] ?? "") ?? null, at.x, at.y, this.scale, this.floorInsets);
       const x = ox + tile.cell[0];
       const y = oy + tile.cell[1];
       d.floor.push({ sprite: s, cell: x >= 0 && y >= 0 && x < n && y < n ? y * n + x : -1 });
@@ -475,6 +485,7 @@ export class CastleDraw {
       for (const f of d.floor) f.sprite.destroy();
     }
     this.towns.clear();
+    this.floorInsets.destroy();
     this.wallStand.clear();
     this.gateCells.clear();
   }

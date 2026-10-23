@@ -101,6 +101,8 @@ export interface GameHook {
   damage(id: number, hp: number): void;
   /** Arrows drawn from `shot` events so far (round 7; D-096: each of a volley's `n`). */
   shots(): number;
+  /** 攻城砲 (D-099): stones drawn so far, and siege engines with their range rings this frame. */
+  siege(): { shots: number; rings: number };
   /** Of them, shots that left a gate's tower (D-096, shoot_at_m). */
   towerShots(): number;
   /** Stones thrown by the militia's slings on walls (D-096). */
@@ -116,7 +118,7 @@ export interface GameHook {
   /** `walkable`: the pictures say where those on a wall stand (art-v5.2); `gates`: the gates drawn from pictures, by look (D-096). */
   castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number> } | null;
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
-  groundLook(): { real: boolean; quality: string | null } | null;
+  groundLook(): { real: boolean; quality: string | null; water: boolean } | null;
   setGroundQuality(q: "high" | "low"): void;
   /** The ground's pictures (art-v5, R6-51): drawn from them or not, and how many pieces lie flat or stand. */
   terrain(): { pictures: boolean; pieces: number; flat: number; standing: number } | null;
@@ -302,6 +304,7 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
     },
     shots: () => game.shotsForTest,
+    siege: () => game.siegeForTest,
     towerShots: () => game.towerShotsForTest,
     stones: () => game.stonesForTest,
     brokenGates: () => game.brokenGatesForTest,

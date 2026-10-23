@@ -43,6 +43,7 @@ import terrain                       # noqa: E402
 
 sys.path.insert(3, os.path.join(HERE, "..", "..", "r8", "blender"))      # R8 batch 2: the realistic buildings
 import arch_r8                       # noqa: E402
+import arch2_r8                      # noqa: E402
 import terrain_r8                    # noqa: E402
 
 REG = dict(blds.BUILDERS)
@@ -59,6 +60,8 @@ FOOT.update(ground.FOOTPRINT)
 FOOT.update(terrain.FOOTPRINT)
 REG.update(arch_r8.BUILDERS)
 FOOT.update(arch_r8.FOOTPRINT)
+REG.update(arch2_r8.BUILDERS)
+FOOT.update(arch2_r8.FOOTPRINT)
 REG.update(terrain_r8.BUILDERS)
 FOOT.update(terrain_r8.FOOTPRINT)
 HOUSES = ("th22", "th21", "th12", "th11")
@@ -96,7 +99,9 @@ def realistic(root):
         if mod is not None:
             ob.modifiers.remove(mod)
     lib.HULLS.clear()
-    look.realistic(tex_path, dirt=0.3)
+    n_tex = look.realistic(tex_path, dirt=0.3)
+    print(f"R8LOOK textured {n_tex} of {len(lib.MATS)} materials: "
+          + ", ".join(sorted(k for k in lib.MATS if look.key_of(k) is None))[:600], flush=True)
     look.bevel_all([o for o in lib.ALL_PARTS if o.type == "MESH" and not o.get("no_bevel")], width=0.02)
     look.lights()
 
@@ -231,7 +236,7 @@ for pc in job["pieces"]:
     smoke = [dict(pos=list(o.matrix_world.translation), h=o["smoke"][0], r0=o["smoke"][1], r1=o["smoke"][2],
                   dark=o["smoke"][3], alpha=o["smoke"][4], drift=[o["smoke"][5], o["smoke"][6]])
              for o in bpy.data.objects if "smoke" in o.keys()]
-    meta = dict(kind=kind, culture=c, state=pc.get("state", "done"), footprint=[fx, fy], cell_m=kit.CELL,
+    meta = dict(kind=kind, culture=c, state=pc.get("state", "done"), footprint=[fx, fy], cell_m=kit.CELL, look=LOOK,
                 smoke_at=smoke_at, smoke=smoke, opts={k: v for k, v in pc.get("opts", {}).items() if k != "plan"},
                 anchor=list(anchor), size=[W, H], px_per_m=ppm, shadow_anchor=list(s_anchor), shadow_size=[sW, sH],
                 top_m=round(max((p.z for p in pts), default=0.0), 2),

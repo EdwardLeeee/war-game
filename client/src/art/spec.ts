@@ -96,7 +96,7 @@ export function cultureOf(mine: Culture, owner: number, me: number): Culture {
   return owner === me || owner === NEUTRAL || owner === NO_OWNER ? mine : mine === "e" ? "w" : "e";
 }
 
-/** The atlas each unit type wears, by culture. The militia: the spearman, in neutral grey (B1). Siege is not in the prototype. */
+/** The atlas each unit type wears, by culture. The militia: the spearman, in neutral grey (B1). Siege engines (D-099): East's 霹靂車, West's 投石機. */
 export const UNIT_ATLAS: Record<number, Record<Culture, string>> = {
   [UnitType.Farmer]: { e: "farmer_e", w: "farmer_w" },
   [UnitType.Spearman]: { e: "spear_e", w: "pike_w" },
@@ -104,10 +104,15 @@ export const UNIT_ATLAS: Record<number, Record<Culture, string>> = {
   [UnitType.Mage]: { e: "mage_e", w: "mage_w" },
   [UnitType.Militia]: { e: "spear_e", w: "pike_w" },
   [UnitType.Cavalry]: { e: "hcav_e", w: "knight_w" },
+  [UnitType.Siege]: { e: "siege_e", w: "siege_w" },
 };
 
-/** Every atlas the prototype's units wear, both cultures. */
-export const ATLAS_NAMES = [...new Set(Object.values(UNIT_ATLAS).flatMap((c) => [c.e, c.w]))].sort();
+/**
+ * Every atlas loaded when a game starts, both cultures; not the siege engines' (D-099), loaded once
+ * a game has them (features.siege: SIEGE_ATLASES), so that a game without them costs no more memory.
+ */
+export const ATLAS_NAMES = [...new Set(Object.entries(UNIT_ATLAS).flatMap(([t, c]) => (Number(t) === UnitType.Siege ? [] : [c.e, c.w])))].sort();
+export const SIEGE_ATLASES = [UNIT_ATLAS[UnitType.Siege].e, UNIT_ATLAS[UnitType.Siege].w];
 
 /** How the ground is drawn: seen from straight above (the prototype so far) or as a diamond (spec section 1). */
 export type Projection = "top" | "diamond" | "oblique";
