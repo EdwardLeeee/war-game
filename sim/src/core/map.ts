@@ -14,7 +14,7 @@ import { type MapMode, NodeKind, Terrain, TownSize, walkableTerrain } from "../p
 import { type CastleMap, castleOf } from "./castle.ts";
 import { Rng } from "./fixed.ts";
 import { FIXED_TERRAIN } from "./fixed-terrain.ts";
-import { KEEP, NODE_AMOUNT, TOWNS } from "./rules.ts";
+import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
 
 export const MAP_SIZE = 96;
 export const MAP_SEED = 20261001;
@@ -195,6 +195,34 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
         rock[i] = c === "R" ? 1 : 0;
         ground[i] = c === "K" ? Terrain.Cliff : c === "~" ? Terrain.Water : c === "f" ? Terrain.Ford : c === "|" ? Terrain.BridgeNS : c === "=" ? Terrain.BridgeEW : 0;
       }
+    }
+  }
+
+  // D-101 (RICH): contested gold on the axis, as far from both starts: past the big city toward the
+  // vein, and beyond each corner town toward its corner. Each 2 x 2 straddles the diagonal (its own
+  // mirror image), on open ground, outside every castle and 2 cells or more from any wall.
+  if (RICH.on) {
+    const boxes = towns.map((t) => {
+      const c = castleOf(t.size, { tower, towns });
+      return { x0: t.cellX + c.inside.x0 - 1, y0: t.cellY + c.inside.y0 - 1, x1: t.cellX + c.inside.x1 + 1, y1: t.cellY + c.inside.y1 + 1 };
+    });
+    const fits = (c: number) => {
+      for (let y = c - 2; y <= c + 3; y++) {
+        for (let x = c - 2; x <= c + 3; x++) {
+          if (x < 0 || y < 0 || x >= n || y >= n) return false;
+          if (wall[y * n + x] === 1) return false;
+          const block = x >= c && x <= c + 1 && y >= c && y <= c + 1;
+          if (block && (rock[y * n + x] === 1 || kind[y * n + x] !== -1 || ground[y * n + x] !== 0)) return false;
+          if (block && boxes.some((b) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1)) return false;
+        }
+      }
+      return true;
+    };
+    for (const [from, step] of [[LARGE.x + 11, 1], [CORNERS[0].x - 9, -1], [CORNERS[1].x + 9, 1]]) {
+      let c = from;
+      while (c >= 0 && c + 1 < n && !fits(c)) c += step;
+      if (c < 0 || c + 1 >= n) throw new Error(`map: no room for contested gold from ${from}`);
+      for (const [x, y] of [[c, c], [c + 1, c], [c, c + 1], [c + 1, c + 1]]) kind[y * n + x] = NodeKind.GoldMine;
     }
   }
 

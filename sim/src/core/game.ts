@@ -30,7 +30,7 @@ import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MARCH_ORDER, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -95,7 +95,7 @@ export class Game {
     this.units = new UnitSystem(this.w.size);
     this.econ = new Economy(this.w, this.fog, (to, ev) => this.events.push({ to, ev }));
     this.towns = new TownSystem(this.fog, (to, ev) => this.events.push({ to, ev }));
-    this.ctx = { w: this.w, fog: this.fog, econ: this.econ, nextGroup: { value: 0 } };
+    this.ctx = { w: this.w, fog: this.fog, econ: this.econ, nextGroup: { value: 0 }, emit: (to, ev) => this.events.push({ to, ev }) };
     const perRow = Math.ceil(this.w.size / (1 << ATTACK_BLOCK));
     const blocks = perRow * perRow;
     for (let k = 0; k < PLAYER_COUNT * ATTACKERS; k++) this.lastAttacked.push(new Int32Array(blocks).fill(-ATTACK_EVERY));
@@ -128,6 +128,10 @@ export class Game {
       if (reason !== 0) this.events.push({ to: cmd.p, ev: { k: "rejected", seq: cmd.seq, reason: reason as never } });
     }
     this.queue = later;
+    // D-101 (MARKET): every price a point back toward its start, every recoverTicks.
+    if (MARKET.on && w.tick > 0 && w.tick % MARKET.recoverTicks === 0) {
+      for (let k = 0; k < w.marketPrice.length; k++) w.marketPrice[k] += Math.sign(MARKET.start - w.marketPrice[k]);
+    }
 
     // 2. Idle farmers get work.
     this.econ.periodic(w);
@@ -258,6 +262,11 @@ export class Game {
     if (GATE.on) h = fnvInt32(h, w.gateRebuild);
     // Keeps (D-100): the rebuild counts, only while they are on (the buildings have the rest).
     if (KEEP.on) h = fnvInt32(h, w.keepRebuild);
+    // The market (D-101): prices and lots traded, only while it is on.
+    if (MARKET.on) {
+      h = fnvInt32(h, w.marketPrice);
+      h = fnvInt32(h, w.marketLots);
+    }
     // Siege engines' stones in the air (D-099), only while they are on.
     if (SIEGE.on) {
       h = fnvWord(h, w.stones.length);

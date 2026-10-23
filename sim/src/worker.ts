@@ -7,7 +7,7 @@
 // again from its log up to where it was, checking it, and goes on with it paused.
 
 import { continueGame } from "./continue.ts";
-import { rules, SIEGE } from "./core/rules.ts";
+import { MARKET, rules, SIEGE } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import { hex8 } from "./core/fixed.ts";
 import {
@@ -85,6 +85,7 @@ function stats(): GameStats {
       cavalryTrained: w.trained[p * UNIT_KINDS + UnitType.Cavalry],
       cavalryLost: w.lost[p * UNIT_KINDS + UnitType.Cavalry],
       ...(SIEGE.on ? { siegeTrained: w.trained[p * UNIT_KINDS + UnitType.Siege], siegeLost: w.lost[p * UNIT_KINDS + UnitType.Siege] } : {}),
+      ...(MARKET.on ? { marketLots: w.marketLots[p] } : {}),
       townsPlundered: w.plundered[p],
       townsGoverned: w.governed[p],
     })),
