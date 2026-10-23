@@ -10,7 +10,8 @@ import { generateRandomMap } from "../src/core/random-map.ts";
 import { BUILDINGS, KEEP, rules, TOWNS } from "../src/core/rules.ts";
 import { keepOf } from "../src/core/scenarios.ts";
 import { toCanon } from "../src/frame.ts";
-import { BuildingType, inTown, NEUTRAL, Reject, Resource, Terrain, TownChoice, TownSize, TownState, UnitType, walkableTerrain } from "../src/protocol.ts";
+import { BuildingType, inTown, NEUTRAL, PlaceBit, Reject, Resource, Terrain, TownChoice, TownSize, TownState, UnitType, walkableTerrain } from "../src/protocol.ts";
+import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf, switchedOn } from "./helpers.ts";
 
 const keepOn = (body: () => void) => switchedOn(KEEP, body);
@@ -297,4 +298,34 @@ test("KEEP on: the keep holds no one, nobody builds one, and its owner's farmers
   cmd(g, 0, { c: "repair", u: [farmer], building: id });
   run(g, 400);
   assert.ok(w.buildings.col.hp[keepOf(w, t)] > 100, "repaired");
+}));
+
+test("KEEP on: nobody builds on a keep's ground while it is down, and whoever stands there steps aside when it stands again", keepOn(() => {
+  const { g, t, x, y } = smallTown();
+  const w = g.w;
+  w.buildings.col.hp[keepOf(w, t)] = 0;
+  inside(g, 0, t);
+  run(g, 3);
+  w.res[Resource.Wood] = 2000;
+  w.res[Resource.Gold] = 2000;
+  cmd(g, 0, { c: "town_choice", town: t, choice: TownChoice.Govern });
+  // While it repairs, a farmer stands on the keep's ground and a tower is asked for there.
+  const farmer = put(g, 0, UnitType.Farmer, x, y);
+  cmd(g, 0, { c: "build", u: [farmer], type: BuildingType.ArrowTower, x: x - 1, y: y - 1 });
+  assert.deepEqual(rejects(g), [Reject.BadPlacement], "the keep's ground");
+  const v = buildView(g, 0);
+  assert.notEqual(v.placement[y * w.size + x] & PlaceBit.Blocked, 0, "the screen sees it blocked");
+  // Off the ground, a tower inside the town is fine (once its cells are explored).
+  run(g, 20);
+  cmd(g, 0, { c: "build", u: [farmer], type: BuildingType.ArrowTower, x: x + 3, y: y + 3 });
+  assert.deepEqual(rejects(g), []);
+  const f = slotOf(g, farmer);
+  w.units.col.x[f] = (x << 10) + 512;
+  w.units.col.y[f] = (y << 10) + 512;
+  w.units.col.order[f] = 0;
+  run(g, TOWNS[TownSize.Small].repairTicks + 5);
+  assert.ok(keepOf(w, t) >= 0);
+  const cx = w.units.col.x[slotOf(g, farmer)] >> 10;
+  const cy = w.units.col.y[slotOf(g, farmer)] >> 10;
+  assert.ok(Math.max(Math.abs(cx - x), Math.abs(cy - y)) >= 2, `farmer at ${cx - x},${cy - y} off the keep`);
 }));

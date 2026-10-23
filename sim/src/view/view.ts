@@ -341,6 +341,8 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     else if (seen && w.gateAt[i] === 1) bits = PlaceBit.Gate;
     // Each gate's lane (the gate, the cell in front, the cell behind) stays open: no building.
     if (seen && w.gateLane[i] === 1) bits |= PlaceBit.GateLane;
+    // A keep's ground (D-100): its keep stands again there, so no building even while it is down.
+    if (seen && w.keepGround[i] === 1) bits |= PlaceBit.Blocked;
     if (exp !== null && exp[i] === 0) bits |= PlaceBit.Unexplored;
     placement[i] = bits;
   }
