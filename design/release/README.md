@@ -7,7 +7,7 @@
 
 | 附件 | 內容 |
 |---|---|
-| `art-vN-x3.tar.gz`、`art-vN-x2.tar.gz` | 一個倍率一個檔。最上層是 `units/<unit>/`（`<unit>.json`、`<unit>_<layer>_<k>.png`、`memory.json`，不放 `raw/`）和 `effects/`（`effects.json`、`effects_0.png`）。art-v2 起加 `buildings/`、`nodes/`；art-v3 起建築和資源點是方形斜看（D-088，說明檔有 `"view": "oblique"`）；art-v4 起加 `castle/`（城牆，D-089；發布清單寫 `"castle": true`）；art-v5 起加 `terrain/`（地形，R6-51；發布清單寫 `"terrain": true`，說明檔 `design/b1/atlas-buildings.md` 第 12 節）。另有 `art-release.json`：tag、commit、來源 run、每個檔的 sha256。 |
+| `art-vN-x3.tar.gz`、`art-vN-x2.tar.gz` | 一個倍率一個檔。最上層是 `units/<unit>/`（`<unit>.json`、`<unit>_<layer>_<k>.png`、`memory.json`，不放 `raw/`）和 `effects/`（`effects.json`、`effects_0.png`）。art-v2 起加 `buildings/`、`nodes/`；art-v3 起建築和資源點是方形斜看（D-088，說明檔有 `"view": "oblique"`）；art-v4 起加 `castle/`（城牆，D-089；發布清單寫 `"castle": true`）；art-v5 起加 `terrain/`（地形，R6-51；發布清單寫 `"terrain": true`，說明檔 `design/b1/atlas-buildings.md` 第 12 節）。art-v6 起加 `ground/`（寫實地面、水、城裡的土路，D-093；發布清單寫 `"ground": true`），城牆說明檔改成 `war-game castle 2`（說明檔第 13 節）。另有 `art-release.json`：tag、commit、來源 run、每個檔的 sha256。 |
 | `astc-sample.tar.gz` | 一個兵種的 2 倍顏色層和玩家色層，ASTC 4×4，KTX 1（`<unit>_<layer>_<k>.astc.ktx`，`astcenc -cl`，未預乘 alpha）。 |
 | `SHA256SUMS` | sha256sum 格式，列出上面每個附件。 |
 
