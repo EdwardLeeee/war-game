@@ -10,7 +10,7 @@ import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../s
 import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { Action, type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UnitType } from "../src/protocol.ts";
+import { Action, type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
 import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
@@ -2805,10 +2805,12 @@ test(
     const town = { x: t.cellX, y: t.cellY, size: t.size, state: w.townState[t.id], owner: w.townOwner[t.id] };
     const mine = army.map((id) => ({ id, type: UnitType.Spearman, x: u.x[slotOf(g, id)] >> 10, y: u.y[slotOf(g, id)] >> 10 }));
     const view = buildView(g, 0);
-    const walls = new Set(onWalls(view, 0, r, town).map((x) => x.id));
+    // The militia left in sight (since war-game-core cf6a5c0 those on the walls come down once the keep falls).
+    const left = new Set<number>();
+    for (let k = 0; k < view.units.length; k += UNIT_STRIDE) if (view.units[k + UnitField.type] === UnitType.Militia) left.add(view.units[k + UnitField.id]);
     const out = mopUpOrders(view, r, 0, town, mine);
     assert.ok(out !== null && out.length > 0, "orders");
-    if (walls.size > 0) assert.ok(out.every((c) => c.c === "attack" && walls.has((c as { target: number }).target)), "at those on the walls in sight");
+    if (left.size > 0) assert.ok(out.every((c) => c.c === "attack" && left.has((c as { target: number }).target)), "at the militia in sight");
     else assert.ok(out.every((c) => c.c === "move"), "none in sight: along the walls");
     assert.deepEqual(out.flatMap((c) => (c as { u: number[] }).u).sort((a, b) => a - b), [...army].sort((a, b) => a - b), "every soldier");
     const was = KEEP_AI.mop;
