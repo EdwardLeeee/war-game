@@ -2860,6 +2860,16 @@ export const HARD_POP: Partial<HardPlan> = {
   // against hard without it 41 to 47 (fixed) and 38 to 37 (random); the four active groups 0 of 160 as before.
   cityAgain: 120,
 };
+// SCRATCH ONLY (ai/scratch-*, never merged): candidate plans from the environment.
+const SCRATCH_ENV = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HARD_BASE: HardPlan = { ...HARD };
+Object.assign(HARD, JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"));
+{ const nt2 = JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"); if (nt2.normalBaseLess !== undefined) NORMAL_TUNE.baseLess = nt2.normalBaseLess; if (nt2.normalWalledTowns !== undefined) NORMAL_TUNE.walledTowns = nt2.normalWalledTowns; if (nt2.normalTownRest !== undefined) NORMAL_TUNE.townRest = nt2.normalTownRest; }
+{ const km = JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}").keepMop; if (km !== undefined) KEEP_AI.mop = km; }
+{ const ga = JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"); for (const k of ["focus", "calm", "walls", "arrows", "retreat"] as const) { const v = ga["gate" + k[0].toUpperCase() + k.slice(1)]; if (v !== undefined) (GATE_AI as Record<string, unknown>)[k] = v; } }
+{ const nf = JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"); if (nf.normalFortStage !== undefined) NORMAL_FORT.stage = nf.normalFortStage; if (nf.normalFortAgain !== undefined) NORMAL_FORT.again = nf.normalFortAgain; }
+const HARD_B: HardPlan = { ...HARD_BASE, ...JSON.parse(SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN || "{}") };
+
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 const WORTH = [0, 10, 10, 25, 6, 16];
 /** Enemy soldiers not seen for this long are forgotten. */
@@ -2891,7 +2901,7 @@ interface HardTown extends Town {
 type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
-  const plan: HardPlan = { ...HARD, ...know.hard };
+  const plan: HardPlan = { ...(slot === 1 ? HARD_B : HARD), ...know.hard };
   // D-083 (c): with the population rules on, HARD_POP over HARD (what the caller gives still wins).
   if ((know.rules.population?.town[TownSize.Small] ?? 0) > 0) Object.assign(plan, HARD_POP, know.hard);
   // Round 7 (D-061) switches; each off, it plays as before.

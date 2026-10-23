@@ -695,3 +695,6 @@ export const AUTO_REPAIR_RANGE = 6;
 export const START_REVEAL = 16;
 /** Gathering accumulates per-minute rates each tick; one unit is gathered per this many. */
 export const GATHER_UNIT = 60 * S;
+
+// SCRATCH ONLY: gates off from the environment (HARD_PLAN.gatesOff).
+{ const e = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}; if (JSON.parse(e.HARD_PLAN || "{}").gatesOff) { GATE.on = false; WALLS.on = false; } }
