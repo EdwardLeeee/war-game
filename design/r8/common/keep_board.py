@@ -344,6 +344,29 @@ def board_option(option, c, gdir, units_dir, W=3000):
     return B.save(B.stack(parts, W), label)
 
 
+def board_r836_overview(gdir, units_dir, W=3000):
+    import castle as CA
+    label = "R8-36-牆內-總覽-東陸-mobile"
+    text = ("牆內的地，三個方向的對照（使用者 2026-10-23：「我覺得看起還是不太對 而且那個陸是幹嘛的？」）。三個方向都拿掉了灰磚街和城門外的灰色方塊；"
+            "出了城門只有一條踩出來的土路，走幾格就淡進草地。\n"
+            "先看了別的遊戲怎麼畫（只看文字資料，來源記在 ui 的研究筆記）：\n"
+            "・世紀帝國 2 決定版：有城牆的地圖，牆內就是自然的空地（草地、樹叢）；每棟建築腳下自動換一小塊土；路只是一種地面貼圖，玩家不能蓋。\n"
+            "・世紀帝國 4：路是自動長出來的外觀，建築周圍一圈踩舊的土和小東西；玩家抱怨建築專用的紅土在雪地上很怪。美術總監說建築要像大按鈕，一眼認得出。\n"
+            "・萬國覺醒：城內的路是純裝飾，「讓布局好懂」；攻略提醒「路突然斷掉」很難看、物件太多會讓建築難點。\n"
+            "・要塞十字軍：主堡正前方是一塊什麼都不能蓋的空場，閒著的人在那裡集合。\n"
+            "共通點：牆內地面和牆外一樣自然，只在路和建築腳下踩出土；路出城門慢慢淡掉；主堡前留一塊最乾淨的空地；裝飾少、矮、放牆邊，兵才看得清楚。\n"
+            "A 自然地面：只有土路（最接近世紀帝國 2）。B 有人住的城鎮：牆邊加矮屋、柴棚、井、推車，都是裝飾。C 駐軍的堡：整片夯土、帳篷、操練場。")
+    tiles = []
+    for o, nm in (("A", "A 自然地面"), ("B", "B 有人住的城鎮"), ("C", "C 駐軍的堡")):
+        im = option_scene("E", CA.small(), gdir, units_dir, o, ppm=18)
+        tiles.append(B.captioned(im, nm + "（小鎮，遊戲的鏡頭）", 24))
+    W = max(W, sum(t.width + 24 for t in tiles) + 2 * B.M + 20)
+    parts = [B.header(W, label, text), B.row(tiles, W, gap=24)]
+    big = [B.captioned(option_scene("E", CA.large(), gdir, units_dir, o, ppm=12), f"{o}（大城）", 22) for o in "ABC"]
+    parts.append(B.row(big, W, gap=24))
+    return B.save(B.stack(parts, W), label)
+
+
 def board_castles(c, gdir, units_dir, W=3000):
     import castle as CA
     label = f"R8-{33 if c == 'E' else 34}-城鎮放大與主堡-{SIDE[c]}-mobile"
@@ -368,6 +391,9 @@ if __name__ == "__main__":
     units = sys.argv[3] if len(sys.argv) > 3 else None
     S.UNITS_DIR = units
     which = sys.argv[4] if len(sys.argv) > 4 else "all"
+    if which == "r836ov":
+        print(board_r836_overview(gdir, units))
+        sys.exit(0)
     if which.startswith("r836"):
         for o in (which[4:] or "ABC"):
             print(board_option(o, "E", gdir, units))
