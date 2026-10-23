@@ -522,7 +522,7 @@ export class Game implements GestureHost {
   }
 
   /** 寫實地面 (D-093): drawn or not, and its quality; null before the first snapshot. */
-  get groundForTest(): { real: boolean; quality: string | null } | null {
+  get groundForTest(): { real: boolean; quality: string | null; water: boolean } | null {
     return this.renderer?.groundLook ?? null;
   }
 

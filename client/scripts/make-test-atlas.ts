@@ -145,6 +145,25 @@ function effects(): void {
   writeFileSync(join(dir, "effects.json"), JSON.stringify({ format: EFFECTS_FORMAT, scale: 3, px_per_m: 60, pages: ["effects_0.png"], effects: { dust: { frames: 2, fps: 12, loop: false } }, frames }));
 }
 
+/** ui's water numbers (R8-29, design/r8/common/ground_r8.py WATER, ceo approved 2026-10-23): the test page's and the development set's. */
+export const WATER_DEV = {
+  range_m: 4.5,
+  blur_m: 1.5,
+  edge_m: 0.35,
+  wet_m: 0.9,
+  wet_dark: 0.62,
+  depth_m: 2.5,
+  shallow: [0.045, 0.058, 0.045],
+  deep: [0.012, 0.03, 0.036],
+  bed: 0.55,
+  bed_shallow: 0.45,
+  noise_m: 0.08,
+  flow: [
+    [0.05, 0.02],
+    [-0.03, 0.04],
+  ],
+};
+
 /**
  * 寫實地面's stand-ins (D-093, ?test=1&ground=real on the test page): a flat colour a ground with a
  * little height noise in A, as ui ships theirs lit (no tint), 64 square, 8 m a tile.
@@ -157,8 +176,19 @@ function ground(): void {
     writeFileSync(join(dir, `${id}.png`), png(64, 64, (x, y) => [c[0] + ((x * 7 + y * 13 + k) % 11) - 5, c[1] + ((x * 5 + y * 3) % 9) - 4, c[2], 96 + ((x * 31 + y * 17 + k * 5) % 64)]));
     return { id, file: `${id}.png`, tile_m: 8, mean: c.map((v) => (v / 255) ** 2.2) };
   });
-  // As the development set (scripts/fetch-ground-dev.ts): ui's R8-28 numbers, the weights soft.
-  const rules = { bank_cells: 1, gravel_cells: 1, edge_m: 1.2, height_k: 0.9, dirt: { node_cells: 1, noise_threshold: 0.8, noise_soft: 0.3 }, weights: { texels_per_cell: 4, soft_m: 1.6, blur_m: 1.0 } };
+  // The water (art-v6, drawn by the shader): blue-grey ripples, 4 m a tile.
+  writeFileSync(join(dir, "water.png"), png(64, 64, (x, y) => [52 + ((x * 3 + y * 5) % 13), 78 + ((x * 5 + y * 2) % 11), 88 + ((x + y * 7) % 9), 128]));
+  layers.push({ id: "water", file: "water.png", tile_m: 4, mean: [0.04, 0.07, 0.09] });
+  // As the development set (scripts/fetch-ground-dev.ts): ui's R8-28 numbers, the weights soft; ui's water (R8-29).
+  const rules = {
+    bank_cells: 1,
+    gravel_cells: 1,
+    edge_m: 1.2,
+    height_k: 0.9,
+    dirt: { node_cells: 1, noise_threshold: 0.8, noise_soft: 0.3 },
+    weights: { texels_per_cell: 4, soft_m: 1.6, blur_m: 1.0 },
+    water: WATER_DEV,
+  };
   writeFileSync(join(dir, "ground.json"), JSON.stringify({ format: "war-game ground 1", layers, rules, grade: { brightness: 1, saturation: 1 } }));
 }
 

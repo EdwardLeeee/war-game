@@ -12,7 +12,7 @@
 // sampled only where they show.
 
 import { BufferImageSource, Geometry, GlProgram, Mesh, type Renderer, RenderTexture, Shader, Sprite, Texture, type TextureSource, UniformGroup } from "pixi.js";
-import { type GroundJson, GroundWeights, valueNoise } from "../art/ground.ts";
+import { type GroundJson, groundWater, GroundWeights, valueNoise } from "../art/ground.ts";
 import { TILE_PX } from "../tuning.ts";
 
 export type GroundQuality = "high" | "low";
@@ -23,6 +23,8 @@ export interface GroundTextures {
   layers: TextureSource[];
   noise: TextureSource;
   macro: TextureSource;
+  /** The water's ripples (art-v6, rules.water), or null: the terrain's water tiles. */
+  water: TextureSource | null;
 }
 
 /** Metres a cell (the simulation's cells are 2 m). */
@@ -53,11 +55,17 @@ uniform sampler2D uGrassDry;
 uniform sampler2D uDirt;
 uniform sampler2D uGravel;
 uniform sampler2D uBank;
+uniform sampler2D uWater;
 uniform vec4 uTileA;      // grass, grass_dry, dirt, gravel (m)
 uniform vec4 uTileB;      // bank, noise, macro, cells across the map
 uniform vec4 uRules;      // edge_m, height_k, dirt noise threshold, quality (1 high)
 uniform vec4 uDirtEdge;   // the dirt patches' edge in the noise: from, to (R8-28: noise_soft about the threshold)
 uniform vec4 uGrade;      // brightness, saturation, -, -
+uniform vec4 uWaterA;     // range_m (0: no water here), edge_m, wet_m, wet_dark
+uniform vec4 uWaterB;     // depth_m, bed, bed_shallow, noise_m
+uniform vec4 uWaterC;     // shallow (sRGB), the water layer's tile (m)
+uniform vec4 uWaterFlow;  // the two ripples' drift (m/s)
+uniform float uTime;      // seconds, the page's clock (the water flows while paused too)
 uniform vec4 uDevA;       // contrast per layer for an unlit photo (0: lit, as ui ships them)
 uniform float uDevB;
 uniform vec3 uTint0;
@@ -110,11 +118,43 @@ void main(void) {
   if (dirt > 0.01) c = over(c, look(texture(uDirt, vM / uTileA.z), uDevA.z, uTint2, uMeanA.z), dirt, n);
   if (w.g > 0.01) c = over(c, look(texture(uGravel, vM / uTileA.w), uDevA.w, uTint3, uMeanA.w), w.g, n);
   if (w.r > 0.01) c = over(c, look(texture(uBank, vM / uTileB.x), uDevB, uTint4, uMeanB), w.r, n);
+  // The water (art-v6, ui's ground_r8.py compose): A the signed distance to its edge (metres, in the
+  // water +); the bank wet a little way out; inside, the ripples drifting, the bed in the shallows.
+  if (uWaterA.x > 0.0) {
+    float sd = (w.a - 0.5) * 2.0 * uWaterA.x + (n - 0.5) * 2.0 * uWaterB.w;
+    c.rgb *= 1.0 - (1.0 - uWaterA.w) * smoothstep(-uWaterA.z, 0.0, sd);
+    float inside = smoothstep(-uWaterA.y, uWaterA.y, sd);
+    if (inside > 0.001) {
+      vec3 ripple = texture(uWater, (vM + uWaterFlow.xy * uTime) / uWaterC.w).rgb;
+      if (uRules.w > 0.5) {
+        vec2 r = vec2(0.8 * vM.x - 0.6 * vM.y, 0.6 * vM.x + 0.8 * vM.y) * 1.3 + uWaterFlow.zw * uTime;
+        ripple = 0.5 * (ripple + texture(uWater, r / uWaterC.w).rgb);
+      }
+      float depth = smoothstep(0.0, uWaterB.x, sd);
+      vec3 under = (c.rgb * uWaterB.y + uWaterC.rgb) * 0.5;
+      float op = uRules.w > 0.5 ? uWaterB.z + (1.0 - uWaterB.z) * depth : 1.0;
+      c.rgb = mix(c.rgb, mix(under, ripple, op), inside);
+    }
+  }
   vec3 col = c.rgb * (0.9 + 0.2 * big) * uGrade.x;
   col = mix(vec3(dot(col, LUM)), col, uGrade.y);
   finalColor = vec4(col, 1.0);
 }
 `;
+
+/** linear → sRGB, as ui's compose converts `shallow` (the shader blends in sRGB, as the textures come). */
+const toSrgb = (v: number): number => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
+
+/** The water's uniforms (rules.water; absent, range 0: the shader draws no water). */
+function waterUniforms(w: GroundJson["rules"]["water"], tileM: number): Record<string, { value: Float32Array | number; type: string }> {
+  return {
+    uWaterA: { value: new Float32Array(w === undefined ? [0, 0, 0, 1] : [w.range_m, w.edge_m, w.wet_m, w.wet_dark]), type: "vec4<f32>" },
+    uWaterB: { value: new Float32Array(w === undefined ? [1, 0, 0, 0] : [w.depth_m, w.bed, w.bed_shallow, w.noise_m]), type: "vec4<f32>" },
+    uWaterC: { value: new Float32Array(w === undefined ? [0, 0, 0, tileM] : [...w.shallow.map(toSrgb), tileM]), type: "vec4<f32>" },
+    uWaterFlow: { value: new Float32Array(w === undefined ? [0, 0, 0, 0] : [w.flow[0][0], w.flow[0][1], w.flow[1][0], w.flow[1][1]]), type: "vec4<f32>" },
+    uTime: { value: 0, type: "f32" },
+  };
+}
 
 /** Bytes a texture takes on the GPU: ASTC 4×4 a byte a pixel, else four; a third more with its mipmaps. */
 function gpuBytes(s: TextureSource): number {
@@ -130,6 +170,8 @@ export class GroundDraw {
   /** The weight map (art/ground.ts), made again only near the seeds that change. */
   private readonly weightMap: GroundWeights;
   private quality: GroundQuality;
+  /** The shader draws the water (art-v6): the terrain's water tiles are not drawn. */
+  readonly water: boolean;
 
   constructor(textures: GroundTextures, n: number, quality: GroundQuality) {
     this.textures = textures;
@@ -145,7 +187,9 @@ export class GroundDraw {
     });
     // Data, not a picture: A (unused, 0) must not be multiplied into the weights as they go up.
     // rules.weights (R8-28): several texels a cell; the shader's coordinates are the map's, whatever the size.
-    this.weightMap = new GroundWeights(n, textures.json.rules);
+    // The water's signed distance in A when the shader draws the water (art-v6).
+    this.water = textures.water !== null && groundWater(textures.json);
+    this.weightMap = new GroundWeights(n, textures.json.rules, this.water);
     const side = this.weightMap.side;
     this.weights = new BufferImageSource({ resource: this.weightMap.data, width: side, height: side, format: "rgba8unorm", scaleMode: "linear", addressMode: "clamp-to-edge", alphaMode: "no-premultiply-alpha" });
     const by = (id: string) => textures.json.layers.find((l) => l.id === id);
@@ -176,6 +220,7 @@ export class GroundDraw {
       uTint4: { value: tint("bank"), type: "vec3<f32>" },
       uMeanA: { value: new Float32Array([meanLum("grass"), meanLum("grass_dry"), meanLum("dirt"), meanLum("gravel")]), type: "vec4<f32>" },
       uMeanB: { value: meanLum("bank"), type: "f32" },
+      ...waterUniforms(this.water ? r.water : undefined, by("water")?.tile_m ?? 4),
     });
     const [grass, grassDry, dirt, gravel, bank] = textures.layers;
     const shader = new Shader({
@@ -190,6 +235,8 @@ export class GroundDraw {
         uDirt: dirt,
         uGravel: gravel,
         uBank: bank,
+        // Without water any texture will do: the shader does not read it then.
+        uWater: textures.water ?? textures.noise,
       },
     });
     this.mesh = new Mesh({ geometry, shader });
@@ -198,6 +245,13 @@ export class GroundDraw {
   /** The cells' grounds again (a random map's grows as it is explored; resource points come and go). */
   setGround(ground: Uint8Array, nodes: readonly number[]): void {
     if (this.weightMap.set(ground, nodes)) this.weights.update();
+  }
+
+  /** The water's flow, every frame: the page's clock in seconds (wrapped an hour round, for the GPU's precision). */
+  tick(seconds: number): void {
+    if (!this.water) return;
+    this.uniforms.uniforms.uTime = seconds % 3600;
+    this.uniforms.update();
   }
 
   setQuality(q: GroundQuality): void {

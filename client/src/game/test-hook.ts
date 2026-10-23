@@ -116,7 +116,7 @@ export interface GameHook {
   /** `walkable`: the pictures say where those on a wall stand (art-v5.2); `gates`: the gates drawn from pictures, by look (D-096). */
   castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number> } | null;
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
-  groundLook(): { real: boolean; quality: string | null } | null;
+  groundLook(): { real: boolean; quality: string | null; water: boolean } | null;
   setGroundQuality(q: "high" | "low"): void;
   /** The ground's pictures (art-v5, R6-51): drawn from them or not, and how many pieces lie flat or stand. */
   terrain(): { pictures: boolean; pieces: number; flat: number; standing: number } | null;

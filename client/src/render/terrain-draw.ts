@@ -105,6 +105,11 @@ export class TerrainDraw {
     }
   }
 
+  /** The water's tiles shown or not (寫實地面 with art-v6's water draws it in its shader; the fords and bridge decks stay). */
+  showWater(on: boolean): void {
+    this.flat.water.visible = on;
+  }
+
   private make(p: TerrainPiece, i: number, n: number): Drawn {
     const at = this.projection.toPlane(p.x * TILE_PX, p.y * TILE_PX);
     const color = this.sprite(this.art?.terrainFrame("color", p.frame) ?? null, at.x, at.y, p.ground !== undefined);
