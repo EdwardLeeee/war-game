@@ -77,6 +77,7 @@ MATCH = {
     "ashlar": ("castle_brick_01", 1.6, 0.2, 0.5), "garden": ("stony_dirt_path", 1.0, 0.25, 0.4),
     "street": ("stony_dirt_path", 1.0, 0.2, 0.35), "pave_r8": ("castle_brick_01", 1.2, 0.2, 0.5),
     "pave_r8w": ("rustic_stone_wall_02", 1.0, 0.2, 0.5),
+    "tentcloth": ("hessian_230", 1.5, 0.1, 0.35),
     # R8 batch 2: the trees (design/r8/blender/nature_r8.py)
     "bark_pine": ("pine_bark", 1.0, 0.2, 0.8), "bark_camphor": ("japanese_camphor_bark", 1.0, 0.2, 0.7),
     "bark_oak": ("jolcham_oak_bark_01", 1.0, 0.2, 0.9), "bark_birch": ("bark_platanus", 1.0, 0.1, 0.5),

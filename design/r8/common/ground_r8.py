@@ -231,8 +231,11 @@ def town_weights(masks, rules=RULES):
             n = next(iter(masks.values())).shape[0]
             out.append(np.zeros((n * k, n * k)))
             continue
-        sd = _signed(m.astype(bool), k)
-        out.append(blur(smoothstep(-tr["soft_m"] / 2, tr["soft_m"] / 2, sd), tr["blur_m"] * k / CELL_M))
+        sd = _signed(m > 0, k)
+        w = blur(smoothstep(-tr["soft_m"] / 2, tr["soft_m"] / 2, sd), tr["blur_m"] * k / CELL_M)
+        if m.dtype != bool:                     # a strength a cell (a track fading out past a gate), blurred alike
+            w = w * blur(np.kron(m.astype(float), np.ones((k, k))), 0.25 * k)
+        out.append(w)
     return np.dstack(out)
 
 

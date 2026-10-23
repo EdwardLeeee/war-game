@@ -188,6 +188,162 @@ def castle_scene(c, L, gdir, units_dir, ppm=30):
     return cam.convert("RGB")
 
 
+# ---------------------------------------------------------------- R8-36: the inside of the walls, three directions
+
+XDIR = S.config.BUILD / "b1" / "r8x"
+OPT_LAYERS = {"A": dict(yard="yard", garden="garden", street="dirt", court="dirt"),
+              "B": dict(yard="yard", garden="garden", street="yard", court="yard"),
+              "C": dict(yard="yard", garden="garden", street="dirt", court="dirt")}
+
+
+def _decor(option, L):
+    """[(piece, x, y)] the decorative pieces of directions B and C, in cells from the keep's middle (+y south), along
+    the walls and in the quadrants' outer parts, clear of the lanes and of the square round the keep."""
+    W = L["wall"]
+    q = W - 1.6                                   # well inside the wall ring
+    out = []
+    if option == "B":
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                out += [("hut_a" if sy > 0 else "hut_b", sx * q, sy * q), ("hut_a", sx * (q - 2.0), sy * (q + 0.1)),
+                        ("shed", sx * (q + 0.1), sy * (q - 2.1)), ("stack", sx * (q - 1.1), sy * (q - 1.2))]
+                if W > 8:                         # the big city: a third hut, a second shed
+                    out += [("hut_b", sx * (q - 4.0), sy * q), ("shed", sx * q, sy * (q - 4.2))]
+        out += [("well", 2.9, 2.9), ("well", -2.9, -2.9)] if W > 8 else [("well", 2.7, 2.8)]
+        out += [("cart", 1.9, 4.2), ("cart", -1.9, -4.6)]
+    elif option == "C":
+        for sx in (-1, 1):                        # tents in rows in the two north quadrants
+            for r in range(2 if W <= 8 else 3):
+                out += [("tent_b", sx * (q - 0.2), -(q - r * 1.8)), ("tent_b", sx * (q - 1.9), -(q - r * 1.8))]
+        for sx in (-1, 1):                        # racks and supplies in the south quadrants, by the walls
+            out += [("rack", sx * (q - 0.5), q - 0.2), ("supplies", sx * q, q - 2.2), ("supplies", sx * (q - 2.3), q)]
+            if W > 8:
+                out += [("rack", sx * (q - 3.0), q - 0.2), ("supplies", sx * (q - 4.5), q)]
+        out += [("posts", -2.6, 3.6), ("posts", 2.6, 3.6), ("flag", 1.9, 2.3)]
+    return out
+
+
+def _town_masks(option, L, ox, oy, N):
+    """The ground's town channels for a direction: bool or strength arrays [N, N] (cells of the scene)."""
+    import castle as CA
+    import ground_r8
+    m = {ch: np.zeros((N, N)) for ch in ground_r8.TOWN_CHANNELS}
+    W = L["wall"]
+
+    def put(ch, dx, dy, v=1.0):
+        x, y = dx + ox, dy + oy
+        if 0 <= x < N and 0 <= y < N:
+            m[ch][y, x] = max(m[ch][y, x], v)
+    # the tracks: from each gate along the middle of its lane to the keep, out past the gate fading into the grass
+    for d in range(2, W + 1):
+        for dx, dy in ((0, d), (0, -d), (d, 0), (-d, 0)):
+            put("street", dx, dy)
+    for k, v in enumerate((0.85, 0.6, 0.35, 0.15)):
+        for dx, dy in ((0, W + 1 + k), (0, -W - 1 - k), (W + 1 + k, 0), (-W - 1 - k, 0)):
+            put("street", dx, dy, v)
+    if option == "A":                             # a worn apron round the keep's door, where the tracks meet
+        for dx in range(-1, 2):
+            put("court", dx, 2, 0.8)
+    elif option == "B":                           # packed earth round the keep and round every house
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                if max(abs(dx), abs(dy)) == 2:
+                    put("court", dx, dy, 0.9)
+        for piece, x, y in _decor("B", L):
+            for ddx in (-1, 0, 1):
+                for ddy in (-1, 0, 1):
+                    put("yard", int(round(x)) + ddx, int(round(y)) + ddy, 0.75 if (ddx or ddy) else 1.0)
+    elif option == "C":                           # the whole yard beaten earth, the parade ground before the keep
+        for (dx, dy), kind in L["cells"].items():
+            put("yard", dx, dy)
+        for dx in range(-2, 3):
+            for dy in range(2, 5):
+                put("court", dx, dy)
+        for dx, dy in ((0, d) for d in range(2, W + 1)):
+            m["street"][dy + oy, dx + ox] = 0.0   # the south lane is the parade ground's: no track across it
+        m["street"] *= np.where(np.abs(np.arange(N)[:, None] - oy) <= W, 0.0, 1.0)     # tracks only outside the walls
+    return m
+
+
+def option_scene(c, L, gdir, units_dir, option, ppm=24):
+    """A walled town of D-100 in one of the R8-36 directions: the ground (with its tracks and yards), the walls, the
+    keep, the decor, militia."""
+    import castle as CA
+    import ground_r8
+    R = L["wall"] + 5
+    n = 2 * R + 1
+    head = 6
+    N = n + head
+    g = np.zeros((N, N), dtype=int)
+    gj = json.loads((gdir / "ground" / "ground.json").read_text())
+    rules = dict(gj["rules"], dirt=dict(gj["rules"]["dirt"], noise_threshold=0.99))
+    rules["town"] = dict(rules["town"], layers=dict(rules["town"]["layers"], **{c: OPT_LAYERS[option]}))
+    ox, oy = R + head // 2, R + head
+    town = _town_masks(option, L, ox, oy, N)
+    top = ground_r8.compose(g, [], S._ground_layers(gdir), ppm=ppm, rules=rules, town=town, culture=c)
+    cam = Image.fromarray((top * 255).round().astype(np.uint8), "RGB").resize((top.shape[1], top.shape[0] // 2), Image.LANCZOS)
+    cam = cam.convert("RGBA")
+    f = ppm / 60.0
+
+    def px(cx, cy):
+        return (cx + ox) * 2.0 * ppm, (cy + oy) * 2.0 * ppm * 0.5
+    items, shadows = [], []
+
+    def add(d, name, x, y, front):
+        im, anc, sh = S._sprite(d, name, "x3", f)
+        X, Y = px(x, y)
+        items.append((front, im, (int(X - anc[0]), int(Y - anc[1]))))
+        if sh:
+            shadows.append((sh[0], (int(X - sh[1]), int(Y - sh[2]))))
+    for p in CA.placements(L):
+        add(WDIR, f"castle_{p['piece']}_{c}_intact", p["anchor"][0], p["anchor"][1], p["front"])
+    S.DIR = KDIR
+    add(KDIR, f"keep_{c}_done", 0.5, 0.5, 2.0)
+    for piece, x, y in _decor(option, L):
+        add(XDIR, f"decor_{piece}_{c}", x + 0.5, y + 0.5, y + 1.0)
+    if units_dir:
+        import boards_r8 as BR
+        u = "spear_e" if c == "E" else "pike_w"
+        a = BR.field.Atlas(Path(units_dir) / u / "r7v8" / "prod" / u / "atlas_x3" / f"{u}.json")
+        for (mx, my) in L["militia"]:
+            body, (ax, ay), _ = BR.frame(a, u, "idle", 6, 0, "red")
+            body = body.resize((max(1, int(body.width * f)), max(1, int(body.height * f))), Image.LANCZOS)
+            X, Y = px(mx + 0.5, my + 0.5)
+            items.append((my + 0.6, body, (int(X - ax * f), int(Y - ay * f))))
+    for im, xy in shadows + [(im, xy) for _, im, xy in sorted(items, key=lambda q: q[0])]:
+        layer = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+        layer.paste(im, xy, im)
+        cam = Image.alpha_composite(cam, layer)
+    return cam.convert("RGB")
+
+
+OPT_TEXT = {
+    "A": ("A 自然地面：牆內和牆外一樣是草地、乾草地，只有從每個城門走到主堡的一條踩出來的土路，土路在主堡門前會合成一小片；"
+          "出了城門，土路慢慢淡進草地裡，沒有灰色的方塊。最乾淨，兵最好找。"),
+    "B": ("B 有人住的城鎮：沿著牆內邊緣有幾間矮的土牆茅草屋、柴棚、草垛和水缸，一口井、幾台手推車；都是裝飾，不擋路，都在 3 公尺以下，"
+          "放在牆邊和四個角落，讓中間的路和主堡周圍空著，兵走在路上看得清楚。路是踩實的土路，房子周圍一小片踩實的土。"),
+    "C": ("C 駐軍的堡：牆內整片踩實的土地，主堡前一片操練場（較平的土石地，兩根練兵的草人、一面大旗和戰鼓）；北邊兩塊搭著一排排帳篷，"
+          "南邊牆角放兵器架和堆起來的糧草箱子。出了城門一樣是淡進草地的土路。"),
+}
+
+
+def board_option(option, c, gdir, units_dir, W=3000):
+    import castle as CA
+    label = f"R8-36-牆內-{option}-{ {'A': '自然地面', 'B': '有人住的城鎮', 'C': '駐軍的堡'}[option] }-東陸-mobile".replace("{ ", "").replace(" }", "")
+    text = ("牆內的地，三個方向之一（使用者 2026-10-23 看 R8-33、R8-34：「我覺得看起還是不太對 而且那個陸是幹嘛的？」，灰色的磚街和伸出城門的灰色方塊看不懂，"
+            "所以三個方向都拿掉了：出了城門只是一條淡進草地的土路）。\n" + OPT_TEXT[option] + "\n"
+            "上：遊戲的鏡頭（2 倍）小鎮、大城；下：實際大小（1 倍）。牆、城門、主堡是核准的那一套。")
+    sm = option_scene(c, CA.small(), gdir, units_dir, option, ppm=24)
+    lg = option_scene(c, CA.large(), gdir, units_dir, option, ppm=24)
+    sm1 = option_scene(c, CA.small(), gdir, units_dir, option, ppm=10)
+    lg1 = option_scene(c, CA.large(), gdir, units_dir, option, ppm=10)
+    W = max(W, sm.width + lg.width + 2 * B.M + 60)
+    parts = [B.header(W, label, text)]
+    parts.append(B.row([B.captioned(sm, "小鎮（遊戲的鏡頭，2 倍）", 24), B.captioned(lg, "大城（遊戲的鏡頭，2 倍）", 24)], W, gap=30))
+    parts.append(B.row([B.captioned(sm1, "小鎮（實際大小）", 22), B.captioned(lg1, "大城（實際大小）", 22)], W, gap=30))
+    return B.save(B.stack(parts, W), label)
+
+
 def board_castles(c, gdir, units_dir, W=3000):
     import castle as CA
     label = f"R8-{33 if c == 'E' else 34}-城鎮放大與主堡-{SIDE[c]}-mobile"
@@ -212,6 +368,10 @@ if __name__ == "__main__":
     units = sys.argv[3] if len(sys.argv) > 3 else None
     S.UNITS_DIR = units
     which = sys.argv[4] if len(sys.argv) > 4 else "all"
+    if which.startswith("r836"):
+        for o in (which[4:] or "ABC"):
+            print(board_option(o, "E", gdir, units))
+        sys.exit(0)
     for c in ("E", "W"):
         if which in ("all", "keep"):
             print(board_keep(c, research, units))

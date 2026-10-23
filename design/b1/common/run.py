@@ -353,6 +353,12 @@ TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name
                         (f"main_city_{_c}_done", f"arrow_tower_{_c}_done")]
 CAMERA["r8p_marks"] = proj.OBLIQUE
 LOOK["r8p_marks"] = "r8"
+# R8-36 the inside of the walls, directions B and C (decor_r8.py): the decorative pieces, East
+TARGETS["r8x_decor"] = [dict(kind="r8_decor", culture="E", opts=dict(piece=k), name=f"decor_{k}_E")
+                        for k in ("hut_a", "hut_b", "shed", "well", "cart", "stack", "tent_a", "tent_b", "rack", "supplies",
+                                  "posts", "flag")]
+CAMERA["r8x_decor"] = proj.OBLIQUE
+LOOK["r8x_decor"] = "r8"
 # D-100 the keep (keep_r8.py): the drafts for the user first, every state of both cultures
 TARGETS["r8k_draft"] = [dict(kind="r8_keep", culture=c, opts=dict(state=st), name=f"keep_{c}_{st}") for c in CULTURES
                         for st in ("done", "damaged", "rubble", "repair")]
