@@ -347,6 +347,11 @@ for _i in range(0, len(R8_CASTLE), 10):
     TARGETS[f"r8w_{_i // 10}"] = R8_CASTLE[_i:_i + 10]
     CAMERA[f"r8w_{_i // 10}"] = proj.OBLIQUE
     LOOK[f"r8w_{_i // 10}"] = "r8"
+# D-100 the keep (keep_r8.py): the drafts for the user first, every state of both cultures
+TARGETS["r8k_draft"] = [dict(kind="r8_keep", culture=c, opts=dict(state=st), name=f"keep_{c}_{st}") for c in CULTURES
+                        for st in ("done", "damaged", "rubble", "repair")]
+CAMERA["r8k_draft"] = proj.OBLIQUE
+LOOK["r8k_draft"] = "r8"
 # the resource points (nature_r8.py), named as art-v5's PROD_NODES
 R8_NODES = ([dict(kind="r8_tree", culture=c, opts=dict(variant=v), name=f"tree_{c}_v{v}") for c in CULTURES for v in (0, 1, 2)]
             + [dict(kind="r8_tree", culture=c, opts=dict(state="stump"), name=f"tree_{c}_stump") for c in CULTURES]

@@ -193,7 +193,8 @@ def footprint(kind):
     if foot is None:                     # R8 batch 2's buildings (design/r8/blender/arch_r8.py, arch2_r8.py)
         import arch_r8
         import arch2_r8
-        foot = {**arch_r8.FOOTPRINT, **arch2_r8.FOOTPRINT}[kind]
+        import keep_r8
+        foot = {**arch_r8.FOOTPRINT, **arch2_r8.FOOTPRINT, **keep_r8.FOOTPRINT}[kind]
     fx, fy = foot
     return fx * kit.CELL, fy * kit.CELL
 
@@ -594,7 +595,7 @@ def r8_ruin(root, P, c, w, d, blocks, seed):
     AP = arch_r8.palette(c)
     bpy.context.view_layer.update()
     bases = []                                         # the column bases (hall_e's *_base<k>) where they stood
-    for ob in kit.parts_under(root):
+    for ob in ([] if root.get("no_bases") else kit.parts_under(root)):
         if "_base" in ob.name and ob.type == "MESH" and "hall" in ob.name or "_col" in ob.name and ob.type == "MESH":
             x0, y0, z0, x1, y1, z1 = _bbox(ob)
             if "_col" in ob.name:

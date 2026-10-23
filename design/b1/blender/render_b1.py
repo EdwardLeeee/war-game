@@ -45,6 +45,7 @@ sys.path.insert(3, os.path.join(HERE, "..", "..", "r8", "blender"))      # R8 ba
 import arch_r8                       # noqa: E402
 import arch2_r8                      # noqa: E402
 import nature_r8                     # noqa: E402
+import keep_r8                       # noqa: E402
 import terrain_r8                    # noqa: E402
 
 REG = dict(blds.BUILDERS)
@@ -65,6 +66,8 @@ REG.update(arch2_r8.BUILDERS)
 FOOT.update(arch2_r8.FOOTPRINT)
 REG.update(nature_r8.BUILDERS)
 FOOT.update(nature_r8.FOOTPRINT)
+REG.update(keep_r8.BUILDERS)
+FOOT.update(keep_r8.FOOTPRINT)
 REG.update(terrain_r8.BUILDERS)
 FOOT.update(terrain_r8.FOOTPRINT)
 HOUSES = ("th22", "th21", "th12", "th11")
