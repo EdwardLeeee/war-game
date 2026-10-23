@@ -93,8 +93,9 @@ def _marks(name):
 
 
 def castle_table(c):
-    """castle_<c>.json's "pieces", "tiles" and "layouts": every piece's frame in each look and the cells it stands
-    on in each layout (CASTLE.placements), the floor tiles (CASTLE.floor). D-096: the gates' closed, damaged and
+    """castle_<c>.json's "pieces", "decor" and "layouts": every piece's frame in each look and the cells it stands
+    on in each layout (CASTLE.placements); art-v6 ("war-game castle 2"): each layout's ground and decorative pieces
+    (CASTLE.ground, CASTLE.decor) instead of the floor tiles. D-096: the gates' closed, damaged and
     broken looks; `intact_front` on the pieces with something in front of a unit standing on them; on the plain walls
     `walk_m` (the walk's height) and `stand_in_m` (where a unit stands, from the cell's middle toward the town); on the
     corners and the gates `stand_m` ({"dx,dy": [x, y, z]}: the cell from the footprint's north-west one, the spot on
@@ -414,7 +415,7 @@ def run(scale=3.0, page=2048):
         pieces, decor, layouts = castle_table(c)
         for pc in pieces.values():               # a front layer with nothing in it (pack skips it) is not listed
             pc["frames"] = {k: v for k, v in pc["frames"].items() if v in tables["color"]}
-        man = {"format": "war-game castle 1", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
+        man = {"format": "war-game castle 2", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
                **({"view": view} if view else {}), "team_gain": TEAM_GAIN, "pages": pages,
                "pieces": pieces, "decor": decor, "layouts": layouts,
                "frames": tables["color"], "team": tables["team"], "shadows": tables["shadow"]}

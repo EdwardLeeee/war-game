@@ -44,10 +44,12 @@
 | `Barracks` 6 | `barracks` | 3×3 | 各一套 |
 | `Range` 7 | `range` | 3×3 | 各一套 |
 | `MageHall` 8 | `mage_hall` | 3×3 | 東陸術院、西陸晶塔 |
-| `TownTower` 9 | `town_tower` | 2×2 | 各一套（中立大城的箭樓，見第 8 節的問題） |
+| `TownTower` 9 | `town_tower` | 2×2 | 各一套（中立大城的箭樓，見第 8 節的問題；art-v6 起換成主堡 `Keep`，見第 13 節） |
+| `Keep` 9（art-v6 起，D-100） | `keep` | 3×3 | 各一套（城鎮正中的主堡，第 13 節） |
 | `ArrowTower` 10 | `arrow_tower` | 2×2 | 東陸精修版、西陸 |
 | `Stable` 11 | `stable` | 3×3 | 各一套 |
 | `Outpost` 12 | `outpost` | 2×2 | 各一套（art-v5.1 起，D-080；東陸夯土矮牆加紅柱望樓，西陸木柵加木架瞭望台） |
+| `SiegeWorks` 14 | `siege_works` | 3×3 | 各一套（art-v6 起，D-099 的砲坊） |
 
 - 占地照 `sim/src/core/rules.ts` 的 `size`（main e78d939 核對過）。
 - 不做：
@@ -570,3 +572,69 @@ client 2026-10-18 同意照這一節做。ceo 同意瓦礫、樹、大城箭樓�
 | 2 倍 | 2.2 MB | 0.55 MB |
 
 - 建築、城牆、資源點的圖和 art-v4 逐位元組相同（同一批算圖）。
+
+## 13. art-v6：寫實整套（D-093）、主堡與大一點的城鎮（D-100）
+
+art-v6 所有建築、城牆、資源點、地形換成 R8 寫實的圖（使用者核准 R8-21 到 R8-37）。檔名、圖層、錨點、前後順序照前面各節，下面只列改了的地方。
+
+### 兵
+- 東陸遠程從弩手 `xbow_e` 改成弓手 `bow_e`（R8 brief：「弓手（新，拿弓）」）。`UnitType.Ranged` 東陸要改認 `bow_e`；art-v6 沒有 `xbow_e`。
+- 槍兵 `spear_e`、長矛兵 `pike_w` 照舊有 `sling`（第 11 節）。
+
+### 主堡 `Keep`（`BuildingType` 9）
+- 取代大城箭樓 `TownTower`，KEEP 開關在 art-v6 同一版打開（core、ceo 2026-10-23）。art-v6 沒有 `town_tower` 和 `sizes`。
+- 占地 3×3，在城鎮中心那一格的 |dx|、|dy| ≤ 1。
+- `states`：`done`、`damaged`、`rubble`、`repair`。
+  - `damaged`：血量一半以下。
+  - `rubble`：被打掉以後在原地，可以走過去，畫在地面層。主堡在原地重建，不淡出。
+  - `repair`：瓦礫加鷹架，core 的重建倒數（Repairing）期間用。
+- `shoot_at_m`：箭出發的點（下面「射點」）。
+
+### 射點 `shoot_at_m`（`buildings_<c>.json`）
+- `MainCity`、`ArrowTower`、`Keep` 多 `shoot_at_m`：`[[x, y, z], ...]`，x 往東、y 往南、z 往上，從錨點量，公尺。和城門的 `shoot_at_m`（第 11 節）一樣。
+- 收到 `shot` 事件時，從離目標近的那一個點射出 `effects.json` 的 `arrow`（使用者 2026-10-23 選 R8-35 B「真的箭」，不閃）。弓手、長弓兵在攻擊的 hit 格放箭，民兵在 `sling` 的 hit 格丟 `sling_stone`。飛法寫在 `effects.json` 和 `design/production/common/effects.py` 開頭。
+
+### 城牆 `castle_<c>.json` 改成 `war-game castle 2`
+- **格局**：只有 `small`、`large`，跟著 D-100 的 `design/b1/castle-layout.json`（core 的同一份）。沒有 `large3`。
+
+| 配置 | 牆 | 牆以內 | 城門 |
+|---|---|---|---|
+| `small` | 距中心格第 7 格，木柵 | 13×13＝169 格 | 3 格寬 |
+| `large` | 距中心格第 9 格，石牆加角樓 | 17×17＝289 格 | 3 格寬（`sw_gate_x3`、`sw_gate_y3`） |
+
+- **拿掉**：`tiles`、每個 layout 的 `floor`。牆裡面不再鋪地磚，地面由地面著色器畫（`ground.json`，下面）。
+- `pieces` 只列這兩個格局用得到的牆片。
+- **多了** `decor` 和每個 layout 的 `ground`、`decor`（使用者 2026-10-23 選 R8-36 B「有人住的城鎮」，格式和 client 2026-10-23 談定）：
+
+```json
+{
+  "format": "war-game castle 2",
+  "decor": { "hut_a": "decor_hut_a_E", "hut_b": "decor_hut_b_E", "shed": "decor_shed_E",
+             "stack": "decor_stack_E", "well": "decor_well_E", "cart": "decor_cart_E" },
+  "layouts": {
+    "small": {
+      "walls": [ { "piece": "pal_gate_x", "anchor": [0.5, -6.5], "front": -6, "cells": [[-1, -7], [0, -7], [1, -7]] } ],
+      "ground": [ { "cell": [0, 2], "kind": "lane", "w": 1.0 }, { "cell": [2, 2], "kind": "trampled", "w": 0.9 } ],
+      "decor": [ { "piece": "well", "at": [3.9, 4.0], "front": 4.35, "cells": [[3, 3], [3, 4], [4, 3], [4, 4]] } ]
+    }
+  }
+}
+```
+
+- **`decor`（擺設）**：小屋 `hut_a`（東西向）、`hut_b`（南北向）、柴棚 `shed`、草堆和缸（西陸是木桶）`stack`、井 `well`、手推車 `cart`。東陸是夯土小屋，西陸是木架小屋、有頂的井。
+  - `at`：圖的錨點，格數，從城鎮中心那一格量（那一格的正中是 0.5, 0.5；x 往東、y 往南）。
+  - `front`：前緣，排前後順序用（第 6 節）。
+  - `cells`：蓋住的格子。
+  - 都只放在菜園格，不碰街、廣場、主堡、城門、角樓；彼此不重疊；都不到 3 公尺高。`small` 19 個、`large` 24 個。
+  - 只是畫面：不在模擬裡、不擋路（兵直接穿過去）、點不到。
+  - **蓋了建築就不畫**：玩家在 `cells` 任何一格上蓋了建築（含施工中），那個擺設就不畫，地上照樣是踩平的土（世紀帝國 DE 的做法）。
+  - 一張圖，沒有狀態；有影子，沒有玩家色。擺設沒有廢墟的圖，城鎮變廢墟時建議照舊畫。
+- **`ground`（城裡的地）**：`kind` 是 `lane`（城門到主堡的土路，門外 4 格淡出）或 `trampled`（主堡外一圈、擺設底下和周圍踩平的土），`w` 是強度 0–1。
+  - 交給地面著色器：`ground.json` 的 `rules.town`，`layers` 說兩種各用哪一層（現在都是 `yard`，夯實的土）。
+  - `soft_m`、`blur_m`、`edge_m` 是邊緣怎麼淡開，算法和 `design/r8/common/ground_r8.py` 的 `town_weights` 一樣。
+  - 格子沒列出來的地方照地圖的一般地面畫。
+
+### 地面 `ground/ground.json`（art-v6 起，`war-game ground 1`）
+- client 已經照 `client/src/art/ground.ts` 讀。art-v6 的層：`grass`、`grass_dry`、`dirt`、`gravel`、`bank`、`yard`。
+- `rules.water`：水的畫法（方向不同的幾組正弦波，不跟格子對齊）。
+- `rules.town`：上面的城鎮土路。
