@@ -101,7 +101,10 @@ def castle_table(c):
     it); on the gates `shoot_at_m` (where the gate tower's arrows leave). Spots: x east, y south, z up, metres from the
     piece's anchor."""
     pieces = {}
+    used = {p["piece"] for L in (f() for f in CASTLE.LAYOUTS) for p in CASTLE.placements(L)}   # art-v6: D-100's only
     for k, f in CASTLE.PIECE_FOOT.items():
+        if k not in used:
+            continue
         looks = ("intact", "ruin") + (CASTLE.GATE_STATES if k in CASTLE.GATE_PIECES else ())
         e = dict(footprint=list(f), frames={s: f"castle_{k}_{c}_{s}" for s in looks})
         if k in CASTLE.FRONTS:                   # intact_front for every look of a held town, ruin_front for the ruins
