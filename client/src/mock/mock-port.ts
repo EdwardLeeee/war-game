@@ -36,8 +36,11 @@ import {
   PlaceBit,
   PROTOCOL_VERSION,
   Reject,
+  type Features,
+  MULTIPLIERS,
   type Rules,
   rules,
+  UNITS,
   type SimEvent,
   Stance,
   TOWN_STRIDE,
@@ -126,6 +129,22 @@ export const MOCK_RULES_OUTPOST: Rules = {
   features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true, cavalryFlank: true },
   outpost: rules().outpost,
   towerReach: { ...(rules().towerReach ?? { mainCity: 8, town: 2 }), outpost: rules().towerReach?.outpost ?? 6 },
+};
+
+/**
+ * `?siege=1` (D-099, behind features.siege): round 7's rules with the siege engine, its works and
+ * cavalry's ×2 on it, as the simulation sends them once SIEGE is on.
+ */
+export const MOCK_RULES_SIEGE: Rules = {
+  ...MOCK_RULES_R7,
+  units: UNITS,
+  buildings: [
+    ...MOCK_RULES_R7.buildings,
+    buildingInfo(BuildingType.SiegeWorks, 500, 3, cost(0, 200, 0), { trains: [UnitType.Siege], requires: [BuildingType.Range] }),
+  ],
+  features: { ...(MOCK_RULES_R7.features as Features), siege: true },
+  multipliers: MULTIPLIERS,
+  siege: { vsBuildings: 3, flightTicks: 20 },
 };
 
 /** `?walls=1`: D-096's gates and walls on (with round 7's), the simulation's values. */
@@ -299,6 +318,9 @@ export class MockPort implements SimPort {
   private readonly mine: boolean;
   /** `?walls=1` (D-096): gates in the castles' openings, 上城牆. */
   private readonly walls: boolean;
+  /** D-099 (?siege=1): siege engines and works on; our engine (its id). */
+  private readonly siege: boolean;
+  private siegeEngine = -1;
   private readonly rules: Rules;
   /**
    * The same layout as a random map (D-074, sim/PROTOCOL.md): `ready` tells only our own home,
@@ -315,12 +337,13 @@ export class MockPort implements SimPort {
    * `outpost`: `?outpost=1`, outposts too (D-080). `gallery`: `?gallery=1`, the atlases' gallery too.
    * `mine`: `?mine=1`, two mines of ours, a crystal vein by one.
    */
-  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false) {
-    this.round7 = round7 || outpost || walls;
+  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false, siege = false) {
+    this.round7 = round7 || outpost || walls || siege;
     this.outpost = outpost;
     this.mine = mine;
     this.walls = walls;
-    this.rules = walls ? MOCK_RULES_WALLS : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
+    this.siege = siege;
+    this.rules = siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
     this.randomMap = map === "random";
     this.gallery = gallery;
   }
@@ -419,6 +442,23 @@ export class MockPort implements SimPort {
       m.pose = near === undefined ? undefined : { action: Action.Attack, target: -1 };
       if (near !== undefined) m.facing = facing(near.x - m.x, near.y - m.y);
     }
+  }
+
+  /**
+   * D-099 (?siege=1): every 60 ticks our engine throws at the enemy's barracks (seen: from the
+   * engine); 30 ticks later an unseen enemy engine's stone lands by our soldiers at (22, 68), `from`
+   * the east (only its direction). Nothing is hurt: the picture only.
+   */
+  private siegeStep(): void {
+    const flight = this.rules.siege?.flightTicks ?? 20;
+    const engine = this.units.find((u) => u.id === this.siegeEngine);
+    const target = this.buildings.find((b) => b.owner === FOE && b.type === BuildingType.Barracks);
+    if (this.tick % 60 === 0 && engine !== undefined && target !== undefined) {
+      const s = this.rules.buildings[target.type].size;
+      engine.facing = facing(target.cx * CELL - engine.x, target.cy * CELL - engine.y);
+      this.events.push({ k: "siege_shot", u: engine.id, x: target.cx * CELL + (s * CELL) / 2, y: target.cy * CELL + (s * CELL) / 2, lands: this.tick + flight });
+    }
+    if (this.tick % 60 === 30) this.events.push({ k: "siege_shot", u: 99_999, x: centre(23), y: centre(68), lands: this.tick + flight, from: 0 });
   }
 
   /** Tests: a building's hit points now (a gate damaged, D-096). */
@@ -556,7 +596,7 @@ export class MockPort implements SimPort {
     }
 
     const unit = (owner: number, type: UnitType, cx: number, cy: number) => {
-      const info = MOCK_RULES.units[type];
+      const info = this.rules.units[type] ?? MOCK_RULES.units[type];
       const u: MUnit = {
         id: this.nextId++, owner, type, x: centre(cx), y: centre(cy), hp: info.hp, shield: info.shield,
         // A mage's cannon on, as the simulation trains them (D-026; D-095: always).
@@ -581,6 +621,12 @@ export class MockPort implements SimPort {
     // throwing stones at any of ours within its sling's reach (rules.walls.sling); out of 2 cells
     // of its north gate (the tests' closed gate).
     if (this.walls) for (const [x, y] of [[26, 61], [33, 71]]) unit(NEUTRAL, UnitType.Militia, x, y).flags |= UnitFlag.OnWall;
+    // D-099 (?siege=1): a siege engine of ours north-west of the enemy's barracks (34, 58), in reach of it,
+    // a siege works by our home; and one of the enemy's out of sight east of our soldiers (siegeStep).
+    if (this.siege) {
+      this.siegeEngine = unit(ME, UnitType.Siege, 28, 55).id;
+      this.building(ME, BuildingType.SiegeWorks, 10, 74);
+    }
     unit(FOE, UnitType.Spearman, 80, 20);
     if (this.gallery === "units") this.setupGallery(unit);
 
@@ -629,7 +675,7 @@ export class MockPort implements SimPort {
         if (type === BuildingType.TownTower && st.progress < 1000) return;
         const b = this.building(type === BuildingType.TownTower ? NEUTRAL : ME, type, GALLERY_B.x + 5 * c, GALLERY_B.y + 7 * r);
         b.progress = st.progress;
-        b.hp = Math.round(MOCK_RULES.buildings[type].hp * st.hp);
+        b.hp = Math.round(this.rules.buildings[type].hp * st.hp);
         if (st.fall === true) this.galleryRoles.fallen.push(b);
       });
     });
@@ -666,7 +712,7 @@ export class MockPort implements SimPort {
   }
 
   private building(owner: number, type: BuildingType, cx: number, cy: number): MBuilding {
-    const b: MBuilding = { id: this.nextId++, owner, type, cx, cy, hp: MOCK_RULES.buildings[type].hp, progress: 1000, flags: 0, rallyX: -1, rallyY: -1, queue: [], queueProgress: 0, occupied: false };
+    const b: MBuilding = { id: this.nextId++, owner, type, cx, cy, hp: this.rules.buildings[type].hp, progress: 1000, flags: 0, rallyX: -1, rallyY: -1, queue: [], queueProgress: 0, occupied: false };
     this.buildings.push(b);
     return b;
   }
@@ -696,7 +742,7 @@ export class MockPort implements SimPort {
           u.order = Order.None;
           u.inside = -1;
         } else {
-          const s = MOCK_RULES.buildings[b.type].size;
+          const s = this.rules.buildings[b.type].size;
           const dx = u.x - (b.cx * CELL + (s * CELL) / 2);
           const dy = u.y - (b.cy * CELL + (s * CELL) / 2);
           if (dx * dx + dy * dy <= GARRISON_REACH * CELL * GARRISON_REACH * CELL) {
@@ -734,7 +780,7 @@ export class MockPort implements SimPort {
         if (b.queueProgress >= 1000) {
           const type = b.queue.shift() as UnitType;
           b.queueProgress = 0;
-          const info = MOCK_RULES.units[type];
+          const info = this.rules.units[type] ?? MOCK_RULES.units[type];
           const u: MUnit = {
             id: this.nextId++, owner: b.owner, type, x: centre(b.cx - 1), y: centre(b.cy), hp: info.hp, shield: info.shield,
             facing: 0, stance: Stance.Aggressive, flags: type === UnitType.Farmer ? UnitFlag.IdleFarmer : type === UnitType.Mage ? UnitFlag.Autocast : 0, target: null, order: Order.None, cast: 0, inside: -1, hidden: false,
@@ -752,6 +798,7 @@ export class MockPort implements SimPort {
     }
     if (this.round7 && this.tick % SHOT_TICKS === 0) this.shoot();
     if (this.walls) this.slings();
+    if (this.siege) this.siegeStep();
     if (this.gallery) this.galleryStep();
     this.warningTicks = this.warningTicks <= 0 ? 60 : this.warningTicks - 1;
     if (this.tick % FOG_EVERY === 0) this.updateFog();
@@ -764,7 +811,7 @@ export class MockPort implements SimPort {
    */
   private shoot(): void {
     for (const b of this.buildings) {
-      const s = MOCK_RULES.buildings[b.type].size;
+      const s = this.rules.buildings[b.type].size;
       const bx = b.cx * CELL + (s * CELL) / 2;
       const by = b.cy * CELL + (s * CELL) / 2;
       const mine = b.owner === ME && this.units.some((u) => u.hidden && u.inside === b.id);
@@ -782,7 +829,7 @@ export class MockPort implements SimPort {
     if (reach === undefined) return;
     for (const b of this.buildings) {
       if (b.owner !== ME || b.type !== BuildingType.MainCity || b.progress < 1000) continue;
-      const s = MOCK_RULES.buildings[b.type].size;
+      const s = this.rules.buildings[b.type].size;
       for (let y = b.cy - reach.mainCity; y < b.cy + s + reach.mainCity; y++) {
         for (let x = b.cx - reach.mainCity; x < b.cx + s + reach.mainCity; x++) if (x >= 0 && y >= 0 && x < SIZE && y < SIZE) cells[y * SIZE + x] |= PlaceBit.TowerLand;
       }
@@ -791,7 +838,7 @@ export class MockPort implements SimPort {
     if (this.outpost && reach.outpost !== undefined) {
       for (const b of this.buildings) {
         if (b.owner !== ME || b.type !== BuildingType.Outpost || b.progress < 1000) continue;
-        const s = MOCK_RULES.buildings[b.type].size;
+        const s = this.rules.buildings[b.type].size;
         for (let y = b.cy - reach.outpost; y < b.cy + s + reach.outpost; y++) {
           for (let x = b.cx - reach.outpost; x < b.cx + s + reach.outpost; x++) if (x >= 0 && y >= 0 && x < SIZE && y < SIZE) cells[y * SIZE + x] |= PlaceBit.TowerLand;
         }
@@ -813,14 +860,15 @@ export class MockPort implements SimPort {
       return;
     }
     for (let i = 0; i < this.fog.length; i++) if (this.fog[i] === 2) this.fog[i] = 1;
-    const see = (cx: number, cy: number) => {
-      for (let y = Math.max(0, cy - SIGHT); y <= Math.min(SIZE - 1, cy + SIGHT); y++) {
-        for (let x = Math.max(0, cx - SIGHT); x <= Math.min(SIZE - 1, cx + SIGHT); x++) {
-          if ((x - cx) ** 2 + (y - cy) ** 2 <= SIGHT * SIGHT) this.fog[y * SIZE + x] = 2;
+    const see = (cx: number, cy: number, r = SIGHT) => {
+      for (let y = Math.max(0, cy - r); y <= Math.min(SIZE - 1, cy + r); y++) {
+        for (let x = Math.max(0, cx - r); x <= Math.min(SIZE - 1, cx + r); x++) {
+          if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) this.fog[y * SIZE + x] = 2;
         }
       }
     };
-    for (const u of this.units) if (u.owner === ME) see(u.x >> 10, u.y >> 10);
+    // A siege engine sees as far as it throws (D-099: its sight 10, as the simulation's table).
+    for (const u of this.units) if (u.owner === ME) see(u.x >> 10, u.y >> 10, u.type === UnitType.Siege ? (this.rules.units[UnitType.Siege]?.sight ?? SIGHT) : SIGHT);
     for (const b of this.buildings) if (b.owner === ME) see(b.cx + 1, b.cy + 1);
   }
 
@@ -839,7 +887,7 @@ export class MockPort implements SimPort {
     for (const [, , cx, cy, amount] of this.nodes) if (amount > 0 && known(cy * SIZE + cx)) cells[cy * SIZE + cx] |= PlaceBit.Blocked;
     for (const b of this.buildings) {
       if (this.randomMap && b.owner !== ME && !this.everSeen(b)) continue;
-      const s = MOCK_RULES.buildings[b.type].size;
+      const s = this.rules.buildings[b.type].size;
       for (let y = b.cy; y < b.cy + s; y++) for (let x = b.cx; x < b.cx + s; x++) cells[y * SIZE + x] |= PlaceBit.Blocked;
       if (b.owner === ME && (b.type === BuildingType.MainCity || b.type === BuildingType.Granary)) {
         for (let y = b.cy - 5; y < b.cy + s + 5; y++) {
@@ -992,7 +1040,7 @@ export class MockPort implements SimPort {
   }
 
   private everSeen(b: MBuilding): boolean {
-    const s = MOCK_RULES.buildings[b.type].size;
+    const s = this.rules.buildings[b.type].size;
     for (let y = b.cy; y < b.cy + s; y++) for (let x = b.cx; x < b.cx + s; x++) if (this.fog[y * SIZE + x] > 0) return true;
     return false;
   }
@@ -1111,7 +1159,7 @@ export class MockPort implements SimPort {
         // Round 7 (sim/PROTOCOL.md 3.3), checked in the protocol's order.
         const list = own(cmd.u);
         const b = this.buildings.find((v) => v.id === cmd.building);
-        const holds = b === undefined ? 0 : (this.rules.features?.garrison === true ? (MOCK_RULES.buildings[b.type].holds ?? 0) : 0);
+        const holds = b === undefined ? 0 : (this.rules.features?.garrison === true ? (this.rules.buildings[b.type].holds ?? 0) : 0);
         const hides = list.filter((u) => (this.rules.garrisonTypes ?? []).includes(u.type));
         if (list.length === 0) reject(Reject.NotOwner);
         else if (b === undefined || b.owner !== ME || b.progress < 1000 || holds <= 0) reject(Reject.InvalidTarget);
@@ -1121,7 +1169,7 @@ export class MockPort implements SimPort {
           if (room <= 0) reject(Reject.NoRoom);
           else {
             const going = hides.sort((a, c) => a.id - c.id).slice(0, room);
-            const s = MOCK_RULES.buildings[b.type].size;
+            const s = this.rules.buildings[b.type].size;
             goTo(going, b.cx + Math.floor(s / 2), b.cy + s, Order.Garrison);
             for (const u of going) u.inside = b.id;
           }
@@ -1172,7 +1220,7 @@ export class MockPort implements SimPort {
         const out = this.units.filter((u) => b !== undefined && u.hidden && u.inside === b.id && (cmd.u === undefined || cmd.u.includes(u.id)));
         if (b === undefined || out.length === 0) reject(Reject.NotAvailable);
         else {
-          const s = MOCK_RULES.buildings[b.type].size;
+          const s = this.rules.buildings[b.type].size;
           out.forEach((u, i) => {
             u.hidden = false;
             u.inside = -1;
@@ -1211,7 +1259,7 @@ export class MockPort implements SimPort {
         break;
       }
       case "build": {
-        const info = MOCK_RULES.buildings[cmd.type];
+        const info = this.rules.buildings[cmd.type];
         const grid = this.placementGrid();
         if (checkPlacement({ size: SIZE, cells: grid }, info, cmd.x, cmd.y) !== 0) {
           reject(Reject.BadPlacement);
@@ -1248,7 +1296,7 @@ export class MockPort implements SimPort {
       case "train": {
         const b = this.buildings.find((v) => v.id === cmd.building && v.owner === ME);
         if (b === undefined) reject(Reject.NotOwner);
-        else if (!MOCK_RULES.buildings[b.type].trains.includes(cmd.type)) reject(Reject.NotAvailable);
+        else if (!this.rules.buildings[b.type].trains.includes(cmd.type)) reject(Reject.NotAvailable);
         else if (b.queue.length + cmd.n > MOCK_RULES.queueMax) reject(Reject.QueueFull);
         else for (let i = 0; i < cmd.n; i++) b.queue.push(cmd.type);
         break;

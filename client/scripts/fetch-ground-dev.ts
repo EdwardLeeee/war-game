@@ -14,6 +14,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GROUND_FORMAT, type GroundJson, type GroundTexture } from "../src/art/ground.ts";
+import { png, WATER_DEV } from "./make-test-atlas.ts";
+import { waterLayer } from "./water-layer.ts";
 
 const CLIENT = join(resolve(dirname(fileURLToPath(import.meta.url))), "..");
 const CACHE = join(CLIENT, ".art-cache", "ground-r7");
@@ -67,8 +69,18 @@ try {
   console.log(`::warning::ground dev: ${err instanceof Error ? err.message : String(err)}; this build has no development ground (?ground=real draws the two greens)`);
   process.exit(0);
 }
+// The water (art-v6: drawn by the shader, ceo 2026-10-23): ui's ripples made here (scripts/water-layer.ts).
+{
+  const size = 512;
+  const w = waterLayer(size);
+  writeFileSync(join(OUT, "water.png"), png(size, size, (x, y) => {
+    const o = (y * size + x) * 4;
+    return [w[o], w[o + 1], w[o + 2], w[o + 3]];
+  }));
+  layers.push({ id: "water", file: "water.png", tile_m: 4, mean: [0.06, 0.08, 0.09] });
+}
 // ui's numbers (R8-28, design/r8/common/ground_r8.py RULES, the user approved it 2026-10-22: the
-// weights soft, the dirt patches' edges soft); the noise and macro are made by the page.
+// weights soft, the dirt patches' edges soft; R8-29 the water); the noise and macro are made by the page.
 const ground: GroundJson = {
   format: GROUND_FORMAT,
   layers,
@@ -79,6 +91,7 @@ const ground: GroundJson = {
     height_k: 0.9,
     dirt: { node_cells: 1, noise_threshold: 0.8, noise_soft: 0.3 },
     weights: { texels_per_cell: 4, soft_m: 1.6, blur_m: 1.0 },
+    water: WATER_DEV as NonNullable<GroundJson["rules"]["water"]>,
   },
   grade: { brightness: 1, saturation: 1 },
 };

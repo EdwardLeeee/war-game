@@ -1,6 +1,6 @@
 {
  "main_city_E": {
-  "rgba8_mb": 0.72,
+  "rgba8_mb": 0.71,
   "astc_mb": 0.18
  },
  "house_E": {
@@ -8,11 +8,11 @@
   "astc_mb": 0.04
  },
  "barracks_E": {
-  "rgba8_mb": 0.39,
+  "rgba8_mb": 0.38,
   "astc_mb": 0.1
  },
  "main_city_W": {
-  "rgba8_mb": 1.05,
+  "rgba8_mb": 1.04,
   "astc_mb": 0.26
  },
  "house_W": {

@@ -367,8 +367,8 @@ def gable_roof_w(name, P, parent, cx, cy, z, w, d, pitch_deg, over, mat, thick=0
     thick, rounded eaves and ridge; tile: slates). ridge along x or y. Returns the ridge height above z."""
     g = lib.empty(name, parent=parent, loc=(cx, cy, z), rot=(0, 0, 90 if ridge == "y" else 0))
     ww, dd = (w, d) if ridge == "x" else (d, w)
-    g["roof"] = [cx, cy, z, w, d, 0, over, 0 if ridge == "x" else 1]
     rise = (dd / 2) * math.tan(math.radians(pitch_deg))
+    g["roof"] = [cx, cy, z, w, d, rise, over, 0 if ridge == "x" else 1]
     hd = dd / 2 + over * math.cos(math.radians(pitch_deg))
     drop = over * math.sin(math.radians(pitch_deg))
     W = ww + 2 * over * (0.6 if mat == "thatch" else 0.4)

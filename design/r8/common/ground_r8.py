@@ -8,6 +8,7 @@ python3 design/r8/common/ground_r8.py BAKED_DIR OUT_DIR
   OUT_DIR    ground/ (the layers, ground.json) and sample_top.png, sample_cam.png
 """
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -25,6 +26,16 @@ RULES = dict(bank_cells=1, gravel_cells=1, edge_m=1.2, height_k=0.9, dirt=dict(n
 # texels a cell; a channel's value a smoothstep of the distance from the nearest seed cell's square, 0.5 at `reach` cells
 # past it (where the old on/off map's edge was), soft_m wide; then a Gaussian blur of blur_m (a diagonal river's
 # staircase becomes a band). dirt.noise_soft: the width of the dirt patches' ramp (was a fixed 0.06: hard blob edges).
+# water (ceo 2026-10-23: the river in the ground shader, not the per-cell tiles; agreed with war-game-client the same
+# day): the weight map's A is the signed distance to the water (in the water +, on land -, metres), clamped to
+# range_m (at least 3 x blur_m, so a straight bank stays put) and blurred blur_m (a diagonal river's 2 m steps become a
+# line); the shader: a wet band outside the edge (wet_m, darkened to wet_dark), the water inside (edge_m soft), its
+# colour the water layer's lit ripples tinted from shallow to deep over depth_m (linear RGB), the bed showing through
+# the shallows; two copies of the water layer drifting at flow (m/s).
+WATER = dict(range_m=4.5, blur_m=1.5, edge_m=0.35, wet_m=0.9, wet_dark=0.62, depth_m=2.5,
+             shallow=[0.045, 0.058, 0.045], deep=[0.012, 0.03, 0.036], bed=0.55, bed_shallow=0.45,
+             noise_m=0.08, flow=[[0.05, 0.02], [-0.03, 0.04]])
+WATER_TILE_M = 4.0
 GRADE = dict(brightness=1.0, saturation=0.9)      # the ground a little greyer than the units (R8: 找得到兵)
 
 
@@ -124,6 +135,8 @@ def weights(grid, nodes, rules=RULES):
             for y, x in zip(ys, xs):
                 out[max(0, y - reach):y + reach + 1, max(0, x - reach):x + reach + 1, ch] = 1.0
     near(0, (grid >= 3) & (grid <= 6), rules["bank_cells"])
+    if wr and rules.get("water"):
+        out = np.concatenate([out, water_distance(grid, rules)[..., None]], -1)
     near(1, (grid == 1) | (grid == 7), rules["gravel_cells"])
     seeds = np.zeros_like(grid, dtype=bool)
     for x, y in nodes:
@@ -132,7 +145,56 @@ def weights(grid, nodes, rules=RULES):
     return out
 
 
-def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True):
+def water_distance(grid, rules):
+    """The weight map's A: 0.5 + clamp(signed distance to the water, -range, range) / range / 2, blurred; off the map the
+    nearest cell's ground (as the water tiles take it), so a river running off the edge grows no bank there."""
+    wr, wa = rules["weights"], rules["water"]
+    k = wr["texels_per_cell"]
+    n = grid.shape[0]
+    pad = int(math.ceil((wa["range_m"] + 3 * wa["blur_m"]) / CELL_M)) + 1
+    wet = np.pad((grid >= 3) & (grid <= 6), pad, mode="edge")
+    N = n + 2 * pad
+    t = (np.arange(N * k) + 0.5) / k * CELL_M
+    X, Y = np.meshgrid(t, t)
+
+    def dist(seeds):
+        d = np.full(X.shape, 1e9)
+        for y, x in zip(*np.nonzero(seeds)):
+            dx = np.maximum(np.abs(X - (x + 0.5) * CELL_M) - CELL_M / 2, 0)
+            dy = np.maximum(np.abs(Y - (y + 0.5) * CELL_M) - CELL_M / 2, 0)
+            d = np.minimum(d, np.hypot(dx, dy))
+        return d
+    # only the cells along the water's edge matter (the nearest water to a land point is a water cell beside land)
+    edge_w = wet & ~(np.roll(wet, 1, 0) & np.roll(wet, -1, 0) & np.roll(wet, 1, 1) & np.roll(wet, -1, 1))
+    edge_l = ~wet & (np.roll(wet, 1, 0) | np.roll(wet, -1, 0) | np.roll(wet, 1, 1) | np.roll(wet, -1, 1))
+    sd = np.minimum(dist(edge_l), 1e3) - np.minimum(dist(edge_w), 1e3)
+    sd = np.clip(sd, -wa["range_m"], wa["range_m"])
+    sd = blur(sd, wa.get("blur_m", wr["blur_m"]) * k / CELL_M)
+    a = 0.5 + sd / wa["range_m"] / 2
+    return a[pad * k:(pad + n) * k, pad * k:(pad + n) * k]
+
+
+def water_layer(size=512, tile_m=WATER_TILE_M, seed=7):
+    """The water layer (lit, like the others; sRGB, height in A): small waves (periodic value noise, our own) seen from
+    the game's camera (30 degrees up, looking north): a dark body, the sky in it by the rippled surface's fresnel."""
+    h = sum(value_noise(size, c, seed + c) * w for c, w in ((8, 0.55), (16, 0.3), (32, 0.15)))
+    px = tile_m / size
+    gy, gx = np.gradient(h * 0.12, px)                  # waves a few centimetres high
+    nrm = np.dstack([-gx, gy, np.ones_like(h)])         # image y runs south: north is -row
+    nrm /= np.linalg.norm(nrm, axis=-1, keepdims=True)
+    v = np.array([0.0, math.cos(math.radians(30)), -math.sin(math.radians(30))])   # camera to surface
+    cosv = np.clip(-(nrm @ v), 0.0, 1.0)
+    fres = 0.02 + 0.98 * (1 - cosv) ** 5
+    r = v[None, None, :] - 2 * (nrm @ v)[..., None] * nrm
+    up = np.clip(r[..., 2], 0, 1)[..., None]
+    sky = np.array([0.55, 0.6, 0.64]) * (1 - up) + np.array([0.3, 0.42, 0.58]) * up
+    body = np.array(WATER["deep"])
+    lin = body * (1 - fres[..., None]) + sky * fres[..., None] * 2.6
+    rgb = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.clip(lin, 0, None) ** (1 / 2.4) - 0.055)
+    return np.dstack([np.clip(rgb, 0, 1), h])
+
+
+def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=0.0):
     """The ground top-down (sRGB 0..1), `ppm` pixels a metre, as ground-draw.ts's fragment shader colours it."""
     n = grid.shape[0]
     size = n * CELL_M
@@ -172,6 +234,26 @@ def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True):
     c = over(c, sample(L["dirt"]["img"], mx / L["dirt"]["tile_m"], my / L["dirt"]["tile_m"]), dirt, nz)
     c = over(c, sample(L["gravel"]["img"], mx / L["gravel"]["tile_m"], my / L["gravel"]["tile_m"]), w[..., 1], nz)
     c = over(c, sample(L["bank"]["img"], mx / L["bank"]["tile_m"], my / L["bank"]["tile_m"]), w[..., 0], nz)
+    if w.shape[-1] > 3 and "water" in L:
+        wa = rules["water"]
+        sd = (w[..., 3] - 0.5) * 2 * wa["range_m"] + (nz - 0.5) * 2 * wa["noise_m"]
+        wetf = smoothstep(-wa["wet_m"], 0.0, sd)[..., None]
+        c = c * (1 - (1 - wa["wet_dark"]) * wetf)
+        inside = smoothstep(-wa["edge_m"], wa["edge_m"], sd)[..., None]
+        tm = L["water"]["tile_m"]
+        f0, f1 = wa["flow"]
+        a = sample(L["water"]["img"], (mx + f0[0] * t) / tm, (my + f0[1] * t) / tm)
+        if high:
+            rx = (0.8 * mx - 0.6 * my) * 1.3 + f1[0] * t
+            ry = (0.6 * mx + 0.8 * my) * 1.3 + f1[1] * t
+            a = 0.5 * (a + sample(L["water"]["img"], rx / tm, ry / tm))
+        depth = smoothstep(0.0, wa["depth_m"], sd)[..., None]
+        sh = np.array(wa["shallow"])
+        sh = np.where(sh <= 0.0031308, sh * 12.92, 1.055 * sh ** (1 / 2.4) - 0.055)
+        under = (c[..., :3] * wa["bed"] + sh) * 0.5          # the bed seen through the shallows, tinted
+        op = (wa["bed_shallow"] + (1 - wa["bed_shallow"]) * depth) if high else 1.0
+        wcol = under * (1 - op) + a[..., :3] * op           # the water layer is the deep water, lit
+        c = np.concatenate([c[..., :3] * (1 - inside) + wcol * inside, c[..., 3:]], -1)
     col = c[..., :3] * (0.9 + 0.2 * big[..., None]) * grade["brightness"]
     lum = (col * np.array([0.2126, 0.7152, 0.0722])).sum(-1, keepdims=True)
     col = lum + (col - lum) * grade["saturation"]
@@ -195,7 +277,13 @@ def assemble(baked, out, spec):
         lin = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
         entries.append(dict(id=lid, file=f"{lid}.png", tile_m=tile_m, mean=[round(float(x), 4) for x in lin.reshape(-1, 3).mean(0)]))
         layers[lid] = dict(img=rgba, tile_m=tile_m)
-    gj = dict(format="war-game ground 1", layers=entries, rules=RULES, grade=GRADE)
+    # the water layer (art-v6, ceo 2026-10-23): our own ripples, lit; the water drawn by the ground shader
+    wl = water_layer()
+    Image.fromarray((wl * 255).round().astype(np.uint8), "RGBA").save(out / "water.png", optimize=True)
+    lin = np.where(wl[..., :3] <= 0.04045, wl[..., :3] / 12.92, ((wl[..., :3] + 0.055) / 1.055) ** 2.4)
+    entries.append(dict(id="water", file="water.png", tile_m=WATER_TILE_M, mean=[round(float(x), 4) for x in lin.reshape(-1, 3).mean(0)]))
+    layers["water"] = dict(img=wl, tile_m=WATER_TILE_M)
+    gj = dict(format="war-game ground 1", layers=entries, rules=dict(RULES, water=WATER), grade=GRADE)
     (out / "ground.json").write_text(json.dumps(gj, indent=1))
     return layers
 

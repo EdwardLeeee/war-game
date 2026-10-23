@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { animFor, attackFrame, ATLAS_NAMES, type AtlasJson, cultureOf, frameAt, frameName, parseAtlas, pictureDirection, UNIT_ATLAS, walkFps, workOfNode } from "../src/art/spec.ts";
+import { animFor, attackFrame, ATLAS_NAMES, type AtlasJson, cultureOf, frameAt, frameName, parseAtlas, pictureDirection, SIEGE_ATLASES, UNIT_ATLAS, walkFps, workOfNode } from "../src/art/spec.ts";
 import { artBase, loadArtChoice, saveArtChoice } from "../src/art/pref.ts";
 import { CULTURE_KEY, loadCulture, saveCulture } from "../src/culture.ts";
 import { sha256, unpackDir } from "../scripts/fetch-art.ts";
@@ -100,8 +100,9 @@ test("說明檔：只收 war-game atlas 2（第 1 版的特效層含防護罩）
   assert.throws(() => parseAtlas({ format: "war-game atlas 2", unit: "x" }), /incomplete/);
 });
 
-test("原型的兵穿哪套圖：東陸、西陸各 5 種，民兵用槍兵；圍城器械不在原型", () => {
+test("原型的兵穿哪套圖：東陸、西陸各 5 種，民兵用槍兵；攻城砲（D-099）開局不載，開著時才另外載", () => {
   assert.deepEqual(ATLAS_NAMES, ["bow_w", "farmer_e", "farmer_w", "hcav_e", "knight_w", "mage_e", "mage_w", "pike_w", "spear_e", "xbow_e"]);
+  assert.deepEqual(SIEGE_ATLASES, ["siege_e", "siege_w"]);
   assert.deepEqual(UNIT_ATLAS[UnitType.Militia], UNIT_ATLAS[UnitType.Spearman]);
 });
 

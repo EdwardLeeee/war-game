@@ -845,8 +845,8 @@ def _ford_mat():
     hue = nt.nodes["hue"]
     film = nt.nodes.new("ShaderNodeMix")
     film.data_type = "RGBA"
-    film.inputs["Factor"].default_value = 0.62
-    film.inputs["B"].default_value = (0.02, 0.04, 0.042, 1.0)      # the water over it
+    film.inputs["Factor"].default_value = 0.5
+    film.inputs["B"].default_value = (0.012, 0.03, 0.036, 1.0)     # the water over it: ground.json's deep colour
     nt.links.new(hue.outputs["Result"], film.inputs["A"])
     nt.links.new(film.outputs["Result"], p.inputs["Base Color"])
     for lk in list(nt.links):
@@ -855,7 +855,7 @@ def _ford_mat():
     p.inputs["Roughness"].default_value = 0.4
     p.inputs["Specular IOR Level"].default_value = 0.1
     ms = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeMixShader")      # body + the sky's sheen, then the fade
-    sheen = _sky_sheen(nt, p.outputs[0], 0.3, 0.15)
+    sheen = _sky_sheen(nt, p.outputs[0], 0.12, 0.15)
     nt.links.new(sheen.outputs[0], ms.inputs[2])
     return m
 
@@ -871,12 +871,15 @@ def ford_tile(root, variant=0):
     pos = np.stack([X, Y, np.full_like(X, 0.02)], -1)
     ob = _grid_obj("tf_bed", pos, np.zeros(pos.shape[:2] + (2,)), _ford_mat(), root, outward=(0, 0, 1))
     ob.visible_shadow = False
-    edge = np.maximum(np.abs(X), np.abs(Y))
-    wob = 0.12 * np.sin(X * 3.1 + variant) * np.cos(Y * 2.7 + variant)
-    _fade_attr(ob, _smooth(1.5, 1.05, edge + wob))
-    for k in range(rnd.randint(7, 10)):                   # stepping stones, wet, just out of the water
-        _rock(f"tf_stone{k}", rnd.uniform(0.12, 0.24), P["dark"], root,
-              (rnd.uniform(-0.85, 0.85), rnd.uniform(-0.85, 0.85), 0.02), rnd)
+    # round, not square: the fords of a crossing overlap into one band whatever the river's line (the water is the
+    # ground shader's, art-v6), the gravel strongest in the middle
+    edge = np.hypot(X, Y)
+    wob = 0.15 * np.sin(X * 3.1 + variant) * np.cos(Y * 2.7 + variant)
+    _fade_attr(ob, 0.8 * _smooth(1.75, 0.55, edge + wob))
+    for k in range(rnd.randint(12, 16)):                  # stepping stones and cobbles, wet, just out of the water
+        r = rnd.uniform(0.08, 0.22)
+        _rock(f"tf_stone{k}", r, P["dark"] if rnd.random() < 0.7 else P["top"], root,
+              (rnd.uniform(-0.95, 0.95), rnd.uniform(-0.95, 0.95), 0.02), rnd)
 
 
 def bridge_deck(root, axis="ns"):

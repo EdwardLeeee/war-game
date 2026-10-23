@@ -1,7 +1,7 @@
 // Round 7 rules (D-061) that the simulation may switch off: `rules.features`. The screen leaves
 // out what is off. The fields are optional in the protocol (mocks written by hand); absent is off.
 
-import { BuildingType, type Features, type Rules } from "../sim.ts";
+import { AUTO_TRAIN, BuildingType, type Features, type Rules } from "../sim.ts";
 
 export const NO_FEATURES: Features = { plunderOnce: false, towers: false, garrison: false, cavalry: false, outpost: false };
 
@@ -27,7 +27,16 @@ export function buildable(rules: Pick<Rules, "features"> | null | undefined, typ
   if (type === BuildingType.ArrowTower) return on.towers;
   if (type === BuildingType.Stable) return on.cavalry;
   if (type === BuildingType.Outpost) return on.outpost === true;
+  if (type === BuildingType.SiegeWorks) return on.siege === true;
   return true;
+}
+
+/**
+ * The buildings 自動訓練 (D-098, the screen's) trains at: barracks, ranges, mage halls, stables, and
+ * siege works while `features.siege` (D-099).
+ */
+export function autoTrainBuildings(rules: Pick<Rules, "features"> | null | undefined): number[] {
+  return features(rules).siege === true ? [...AUTO_TRAIN.buildings, BuildingType.SiegeWorks] : AUTO_TRAIN.buildings;
 }
 
 /** 哨所 (D-080): spearmen an outpost takes (0 while the feature is off). */

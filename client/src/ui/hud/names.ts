@@ -11,6 +11,8 @@ export const UNIT_NAME: Record<number, string> = {
   [UnitType.Militia]: "民兵",
   // Round 7 (D-061): GDD §6's 重騎兵, called 騎兵 in the prototype as in the brief.
   [UnitType.Cavalry]: "騎兵",
+  // D-099 (while `features.siege`): East's 霹靂車, West's 投石機, one name for both.
+  [UnitType.Siege]: "攻城砲",
 };
 
 export const BUILDING_NAME: Record<number, string> = {
@@ -31,6 +33,8 @@ export const BUILDING_NAME: Record<number, string> = {
   [BuildingType.Outpost]: "哨所",
   // D-096: one in each opening of a castle's walls.
   [BuildingType.Gate]: "城門",
+  // D-099 (while `features.siege`): trains siege engines.
+  [BuildingType.SiegeWorks]: "砲坊",
 };
 
 /** What a player may build, in the order the build menu lists it (GDD §17 prototype buildings). */
@@ -48,6 +52,8 @@ export const BUILDABLE: BuildingType[] = [
   BuildingType.Stable,
   // D-080: listed only while `features.outpost` is on.
   BuildingType.Outpost,
+  // D-099: listed only while `features.siege` is on.
+  BuildingType.SiegeWorks,
 ];
 
 export const NODE_NAME: Record<number, string> = {
