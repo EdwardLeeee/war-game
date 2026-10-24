@@ -99,6 +99,10 @@ export interface GameHook {
   remove(ids: number[]): void;
   /** Fake world only: a building's hit points (a gate damaged, D-096). */
   damage(id: number, hp: number): void;
+  /** Fake world only (真的箭): own units stand and attack `target`; −1, they stop. */
+  strike(ids: number[], target: number): void;
+  /** 真的箭: whether arrows fly as art-v6 draws them; bowmen's and buildings' arrows so far. */
+  arrows(): { real: boolean; bow: number; building: number };
   /** Arrows drawn from `shot` events so far (round 7; D-096: each of a volley's `n`). */
   shots(): number;
   /** 攻城砲 (D-099): stones drawn so far, and siege engines with their range rings this frame. */
@@ -300,6 +304,10 @@ export function gameHook(game: Game): GameHook {
     remove: (ids) => {
       if (game.portForTest instanceof MockPort) game.portForTest.remove(ids);
     },
+    strike: (ids, target) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.strike(ids, target);
+    },
+    arrows: () => game.arrowsForTest,
     damage: (id, hp) => {
       if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
     },

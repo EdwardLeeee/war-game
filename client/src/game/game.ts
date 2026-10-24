@@ -519,6 +519,10 @@ export class Game implements GestureHost {
   }
 
   /** Shots that left a gate's tower (D-096 shoot_at_m, its `tower_shot` flash), for the test hook. */
+  get arrowsForTest(): { real: boolean; bow: number; building: number } {
+    return { real: this.renderer?.realArrows ?? false, bow: this.renderer?.bowArrowCount ?? 0, building: this.renderer?.buildingArrowCount ?? 0 };
+  }
+
   get towerShotsForTest(): number {
     return this.renderer?.towerShotCount ?? 0;
   }
@@ -2227,6 +2231,13 @@ export class Game implements GestureHost {
     const b = view.curr?.snap.buildings;
     const row = view.buildingRow(building);
     const tower = b !== undefined && row >= 0 && b[row + BuildingField.type] === BuildingType.Gate ? this.renderer.gateShootFrom(b[row + BuildingField.cellX], b[row + BuildingField.cellY], to.x, to.y) : null;
+    // 真的箭 (R8-35 B, art-v6): from where its picture's arrows leave (a gate's tower, a main city's,
+    // an arrow tower's or a keep's shoot_at_m) to the chest, at the arrow's speed, no flash.
+    if (this.renderer.realArrows) {
+      const at = tower ?? (row >= 0 ? this.renderer.buildingShootFrom(row, to.x, to.y) : null);
+      this.renderer.arrow(at?.x ?? from.x, at?.y ?? from.y, at?.lift ?? 0, to.x, to.y, now, n);
+      return;
+    }
     this.renderer.shot(tower?.x ?? from.x, tower?.y ?? from.y, to.x, to.y, now, n, tower?.lift ?? 0);
   }
 
