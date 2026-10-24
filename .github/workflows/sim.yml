@@ -523,7 +523,7 @@ jobs:
   # push-crush (ceo 2026-10-25, for war-game-ai's hard falling behind: the user's 4fd7b823, hard sat at home and
   # built no defences after losing 91 soldiers at the user's main city): the turtle, out after beating off a big
   # wave at home (--crush), town trips as the push's, every town governed (--early-towns 6), its gathering of food,
-  # wood and gold plus BONUS% in equal shares (--bonus; else it never gets ahead of hard), against hard
+  # wood and gold plus 30% in equal shares (--bonus; else it never gets ahead of hard), against hard
   # only, games up to 90 minutes, both maps, seeds 1-40 in four jobs each. What hard does in the 15 minutes after
   # the first battle it lost big (crush-watch.ts). Reports only, no threshold; its own jobs.
   scripted-crush:
@@ -535,14 +535,14 @@ jobs:
       fail-fast: false
       matrix:
         cell:
-          - { group: push-crush, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 }
-          - { group: push-crush, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 }
-          - { group: push-crush, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 }
-          - { group: push-crush, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 }
-          - { group: push-crush-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 --map random }
-          - { group: push-crush-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 --map random }
-          - { group: push-crush-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 --map random }
-          - { group: push-crush-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 --map random }
+          - { group: push-crush, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
+          - { group: push-crush, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
+          - { group: push-crush, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
+          - { group: push-crush, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
+          - { group: push-crush-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
+          - { group: push-crush-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
+          - { group: push-crush-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
+          - { group: push-crush-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
     env:
       NAME: crush-hard-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
     defaults:
@@ -591,7 +591,7 @@ jobs:
           const med = (l) => (l.length === 0 ? "—" : String([...l].sort((a, b) => a - b)[l.length >> 1]));
           const min = (t) => Math.round(t / 120) / 10;
           const out = [
-            "## 大勝後反攻（push-crush，玩家採集 +BONUS%）",
+            "## 大勝後反攻（push-crush，玩家採集 +30%）",
             "",
             "| 對手、地圖 | 贏／局數 | 打贏大仗 | 打完在第幾分 | 電腦死／我方死 | 打完的兵 我／電腦 | 電腦新放箭樓／哨所 | 電腦村民 打完→15 分後 | 電腦兵在家 | 治理的城被打／有派兵／守住／被拿下 | 撐了幾分才輸 |",
             "|---|---|---|---|---|---|---|---|---|---|---|",
