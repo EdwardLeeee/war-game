@@ -49,7 +49,7 @@ const mapMode = oneOf<MapMode>("map", MAP_MODES, "fixed");
 /** The AI's style for every game; empty: drawn from the seed, as in an ordinary game. */
 const style = arg("style", "");
 if (style !== "" && !(AI_STYLES as readonly string[]).includes(style)) throw new Error(`--style ${style}: one of ${AI_STYLES.join(", ")}`);
-const seeds = seedList(arg("seeds", "1-5"));
+const seeds = seedList(arg("seeds", "1-5")).map((s) => s + 40);
 const think = Number(arg("think", String(SCRIPTED_THINK_EVERY)));
 /** Games still going at this game minute are stopped and counted apart. */
 const CAP = Number(arg("cap", "50")) * 1200;
