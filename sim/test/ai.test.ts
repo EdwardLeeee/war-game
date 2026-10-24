@@ -2878,3 +2878,27 @@ test(
     assert.equal(goes(8), true, "8: they go");
   }),
 );
+
+test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
+  const march = (strongPush: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 48000;
+      put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+    }
+    w.tick = 15 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 6 - Math.trunc(k / 6));
+    // Five enemy spearmen in sight.
+    for (let k = 0; k < 5; k++) put(g, 1, UnitType.Spearman, s0.cellX + 8 + k, s0.cellY - 14);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, pushArmy: 49, townArmy: 99, bigArmy: 99, peekFirst: 0, strongPush }).think(buildView(g, 0));
+    return out.some((c) => c.c === "move" && c.u.length >= 25 && (c.x - s1.cellX) ** 2 + (c.y - s1.cellY) ** 2 <= 20 * 20);
+  };
+  assert.equal(march(0), false, "off: 30 is short of pushArmy 49");
+  assert.equal(march(25), true, "strongPush 25: 30 against 5, it marches");
+});

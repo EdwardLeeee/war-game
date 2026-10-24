@@ -2721,6 +2721,14 @@ export interface HardPlan {
    */
   townSave: boolean;
   /**
+   * D-100 (d100c, run 40086553597: random-map hard against hard drew 46 of 100 with keeps, the stronger side 3.6 times the
+   * other at the end; seed 3: 19-30 soldiers went from town to town for minutes 14-21, short of pushArmy 49, and marched
+   * only in the last 8): it also marches on the enemy's main city with strongPush soldiers or more when strongRatio
+   * percent of the enemy it believes in, having seen enemy soldiers in the last 2 minutes (0: as before).
+   */
+  strongPush: number;
+  strongRatio: number;
+  /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
    * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
@@ -2810,6 +2818,8 @@ export const HARD: HardPlan = {
   cityCap: 0,
   cityForget: 0,
   townSave: false,
+  strongPush: 0,
+  strongRatio: 200,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -4762,6 +4772,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               : fortsOk &&
                 ((counterReady && army.length >= plan.counterArmy && armyWorth >= believed) ||
                   (army.length >= pushArmy && strong) ||
+                  // D-100 (plan.strongPush): clearly stronger than the enemy it has lately seen.
+                  (plan.strongPush > 0 && army.length >= plan.strongPush && tick - lastFoeSeen <= 2 * TICKS_PER_MINUTE && armyWorth * 100 >= believed * plan.strongRatio) ||
                   (popFull && army.length >= townArmy + 6)));
         // D-086 A3 (plan.peekFirst): no enemy soldier seen for a while: one goes to look (ignoring enemies on the way), the march waits.
         if (hardGo && plan.peekFirst > 0 && !endgame && !assault && !popFull && tick - lastFoeSeen > plan.peekFirst * TICKS_PER_MINUTE) {
