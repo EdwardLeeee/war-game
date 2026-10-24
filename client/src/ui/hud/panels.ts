@@ -85,6 +85,9 @@ export interface PanelHost {
   stepVillagers(by: number): void;
   villagersPaused(): boolean;
   toggleVillagers(): void;
+  /** 自動蓋民居 (2026-10-25) on, and a tap turning it off or on. */
+  autoHouseOn(): boolean;
+  toggleAutoHouse(): void;
   selectOnly(units: number[]): void;
   /** Nothing selected (tapping the ground would order the selected units to go there). */
   clearSelection(): void;
@@ -855,7 +858,8 @@ export class CommandArea {
       // 自動訓練 (D-098): the screen's pause, and the main city's villagers'.
       const auto = this.host.autoPaused(sel.building) ? 1 : 0;
       const villagers = this.host.villagersPaused() ? 1 : 0;
-      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}:${villagers}:${this.host.reserveRaised() ? "r" : ""}`;
+      const house = this.host.autoHouseOn() ? 1 : 0;
+      return o < 0 || b === undefined ? "none" : `b:${sel.building}:${b[o + B.type]}:${b[o + B.progress] >= 1000 ? 1 : 0}:${auto}:${villagers}:${house}:${this.host.reserveRaised() ? "r" : ""}`;
     }
     return "none";
   }
@@ -980,6 +984,12 @@ export class CommandArea {
         const on = city ? !this.host.villagersPaused() : !this.host.autoPaused(id);
         const auto = button(this.el, city ? "自動村民" : "自動訓練", on ? "目前：開" : "目前：暫停", () => (city ? this.host.toggleVillagers() : this.host.toggleAutoPaused(id)), "secondary");
         if (on) auto.classList.add("active");
+        // 自動蓋民居 (2026-10-25): beside it, kept in the save; two columns wide for its name on one line.
+        if (city) {
+          const houseOn = this.host.autoHouseOn();
+          const house = button(this.el, "自動蓋民居", houseOn ? "目前：開" : "目前：關", () => this.host.toggleAutoHouse(), "secondary wide");
+          if (houseOn) house.classList.add("active");
+        }
       }
       return;
     }

@@ -141,16 +141,25 @@ for (const look of ["a", "b"] as const) {
     };
     await hitTwo();
     await expect.poll(async () => (await left(page)).places).toBe(2);
-    await expect(map.locator(".badge")).toHaveText("2");
+    // The left is redrawn at the runner's pace (a busy WebKit at 3 times: past 5 s).
+    await expect(map.locator(".badge")).toHaveText("2", { timeout: 20_000 });
     await expect(map).toHaveAttribute("aria-label", "地圖：2 處被攻擊");
-    // Flashing: lit and not, 0.4 s each.
-    await hitTwo();
-    const seen = new Set<boolean>();
-    for (let i = 0; i < 12 && seen.size < 2; i++) {
-      seen.add(await map.evaluate((e) => e.classList.contains("alarm")));
-      await page.waitForTimeout(110);
-    }
-    expect([...seen].sort()).toEqual([false, true]);
+    // Flashing: lit and not, 0.4 s each, the two places still counted. Polled: a slow CI runner
+    // redraws the left at its own pace, and a fixed run of samples missed the lit half (runs
+    // 40122189800, 40125185050); the places hit afresh every 2 s meanwhile.
+    let fresh = 0;
+    const flash = async () => {
+      if (Date.now() - fresh > 2000) {
+        await hitTwo();
+        fresh = Date.now();
+      }
+      return map.evaluate((e) => {
+        const badge = e.querySelector<HTMLElement>(".badge");
+        return `${e.classList.contains("alarm") ? "lit" : "dark"} ${badge === null || badge.hidden ? "" : badge.textContent}`;
+      });
+    };
+    await expect.poll(flash, { timeout: 20_000, intervals: [50] }).toBe("lit 2");
+    await expect.poll(flash, { timeout: 20_000, intervals: [50] }).toBe("dark 2");
     // The lit one for the picture: 減少動態效果 keeps it so.
     await hitTwo();
     await page.emulateMedia({ reducedMotion: "reduce" });

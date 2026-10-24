@@ -95,6 +95,7 @@ import { allIn, orderState } from "./orders.ts";
 import { goesOnWalls, heldTown, leaveWalls, WALL_PROMPT, WALL_PROMPT_MIXED, WALL_WRONG_TARGET, wallTap } from "./walls.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, type Site, villagersMissing } from "./auto-army.ts";
+import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
@@ -481,6 +482,15 @@ export class Game implements GestureHost {
   private villagersSeen = { living: 0, queued: 0, block: null as Block | null };
   /** 自動訓練 stopped by a full population (D-054's message strip), as last seen. */
   autoPopulationFull = false;
+  /**
+   * 自動蓋民居 (auto-house.ts): why no house was sent at the last decision (null: one was), the
+   * house sent and not in a snapshot yet, the spots the simulation refused, and whether its first
+   * message has been said this game.
+   */
+  autoHouseBlock: HouseBlock | null = "off";
+  private houseSent: { seq: number; tick: number; spot: number } | null = null;
+  private readonly houseSkip = new Set<number>();
+  private houseTold = false;
   /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
   private readonly autocastAsked = new Set<number>();
   /** Orders from the buttons the snapshot does not show yet (a site, the queue, 自動訓練, 搶 or 治理): shown at once (pending.ts). */
@@ -1124,6 +1134,8 @@ export class Game implements GestureHost {
       budget.room--;
     };
     const paused = h[H.paused] === 1;
+    // A house first (自動蓋民居): nothing trains while the population is full.
+    if (!paused) this.tickAutoHouse(view, tick, budget);
     // The main city's villagers first (one at a time in each city), then the groups' soldiers.
     const missingVillagers = villagersMissing(this.autoArmy.villagerTarget, farmers, queued[UnitType.Farmer] ?? 0);
     let villagerBlock: Block | null = null;
@@ -1156,6 +1168,86 @@ export class Game implements GestureHost {
     this.armyNeedSeen = need;
     this.armyBlocked = picked.blocked;
     this.autoPopulationFull = villagerBlock === "population" || [...picked.blocked.values()].includes("population");
+  }
+
+  /**
+   * 自動蓋民居 (the user 2026-10-25): a house when the room left is one house's or less, none of
+   * ours is being built, the cap is below its ceiling, no enemy soldier is at home and its wood is
+   * there (the reserve not kept back from it). The gathering villager nearest the main city not
+   * sent by hand builds it; once it stands the simulation leaves the villager idle for the economy, as after
+   * any house. An auto command, so in the game's log like 自動訓練's trains.
+   */
+  private tickAutoHouse(view: GameView, tick: number, budget: { have: Cost; room: number }): void {
+    const snap = view.curr?.snap;
+    const h = view.header;
+    const info = view.rules.buildings[BuildingType.House];
+    if (snap === undefined || h === null || info === undefined) return;
+    const b = snap.buildings;
+    const u = snap.units;
+    let city: Footprint | null = null;
+    let unfinished = false;
+    let sentShows = false;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + BuildingField.owner] !== view.me || b[o + BuildingField.hp] <= 0) continue;
+      const type = b[o + BuildingField.type];
+      if (type === BuildingType.House && b[o + BuildingField.progress] < 1000) unfinished = true;
+      if (type === BuildingType.House && this.houseSent?.spot === b[o + BuildingField.cellY] * view.map.size + b[o + BuildingField.cellX]) sentShows = true;
+      if (type === BuildingType.MainCity && city === null && b[o + BuildingField.progress] >= 1000) city = view.footprint(b, o);
+    }
+    // The house sent shows (or was refused, or never came): the snapshot decides again. Not by the
+    // next step: a page behind its snapshots sees the simulation take an order tens of steps late.
+    if (this.houseSent !== null && (sentShows || tick > this.houseSent.tick + HOUSE_SENT_TICKS)) this.houseSent = null;
+    let enemyNear = false;
+    for (let o = 0; city !== null && o < u.length; o += UNIT_STRIDE) {
+      const owner = u[o + UnitField.owner];
+      if (owner === view.me || owner === NEUTRAL || owner === NO_OWNER || u[o + UnitField.type] === UnitType.Farmer) continue;
+      if (nearFootprint(city, u[o + UnitField.x] / CELL, u[o + UnitField.y] / CELL, HOME_CELLS)) enemyNear = true;
+    }
+    let block = houseBlock({
+      on: this.autoArmy.autoHouse,
+      room: budget.room,
+      houseCap: info.populationCap,
+      cap: h[H.populationCap],
+      ceiling: h[H.populationCeiling],
+      unfinished: unfinished || this.houseSent !== null,
+      enemyNear,
+      have: budget.have,
+      cost: info.cost,
+    });
+    if (block === null && (city === null || view.placement === null)) block = "spot";
+    if (block !== null || city === null || view.placement === null) {
+      this.autoHouseBlock = block;
+      return;
+    }
+    // Gathering (crystal aside: not the economy's) and not sent there by hand.
+    const handPicked = new Set<number>();
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) if ((u[o + UnitField.flags] & UnitFlag.HandPicked) !== 0) handPicked.add(u[o + UnitField.id]);
+    const gatherers: Gatherer[] = this.villagers().filter((v) => v.gathers !== null && v.gathers !== Resource.Crystal && !v.idle && !handPicked.has(v.id));
+    const builder = pickBuilder(gatherers, city);
+    const towns: TownGround[] = [];
+    for (const town of view.knownTowns.values()) towns.push(view.castleBox(town) ?? { cx: town.cellX + 0.5, cy: town.cellY + 0.5, r: town.radius });
+    const buildings: Footprint[] = [];
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) buildings.push(view.footprint(b, o));
+    const spot = builder === null ? null : houseSpot({ grid: view.placement, buildings, towns, node: (c) => view.nodeAt[c] >= 0, skip: this.houseSkip }, city, info.size, { x: view.map.size / 2, y: view.map.size / 2 });
+    this.autoHouseBlock = builder === null ? "farmer" : spot === null ? "spot" : null;
+    if (builder === null || spot === null) return;
+    const seq = this.autoCommand({ c: "build", u: [builder], type: BuildingType.House, x: spot.x, y: spot.y });
+    this.houseSent = { seq, tick, spot: spot.y * view.map.size + spot.x };
+    const c = info.cost;
+    budget.have = { food: budget.have.food - c.food, wood: budget.have.wood - c.wood, gold: budget.have.gold - c.gold, crystal: budget.have.crystal - c.crystal };
+    if (!this.houseTold) {
+      this.houseTold = true;
+      this.toast(AUTO_HOUSE_TEXT, "ok");
+    }
+  }
+
+  autoHouseOn(): boolean {
+    return this.autoArmy.autoHouse;
+  }
+
+  toggleAutoHouse(): void {
+    this.autoArmy.autoHouse = !this.autoArmy.autoHouse;
+    this.toast(`已${this.autoArmy.autoHouse ? "開啟" : "關閉"}自動蓋民居`, "ok");
   }
 
   /** 自動訓練 paused for this building (D-098: the screen's own, kept in the save). */
@@ -1798,6 +1890,11 @@ export class Game implements GestureHost {
             const cmd = this.sent.find((c) => c.seq === ev.seq);
             // 自動訓練's own train (D-098): forget it; the next snapshot decides again.
             this.autoSent = this.autoSent.filter((t) => t.seq !== ev.seq);
+            // 自動蓋民居's house: the next snapshot decides again, somewhere else if the spot was refused.
+            if (this.houseSent?.seq === ev.seq) {
+              if (ev.reason === Reject.BadPlacement || ev.reason === Reject.GateLane || ev.reason === Reject.Crossing) this.houseSkip.add(this.houseSent.spot);
+              this.houseSent = null;
+            }
             const waiting = this.governWaits.townOf(ev.seq);
             if (waiting >= 0) {
               // 等錢治理's own 治理: spent the same step (自動訓練), try again; else (taken, lost) stop waiting.

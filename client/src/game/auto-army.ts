@@ -150,6 +150,8 @@ export interface AutoArmyState {
   paused: number[];
   villagerTarget: number;
   villagersPaused: boolean;
+  /** 自動蓋民居 (2026-10-25); a save from before has none: on. */
+  autoHouse?: boolean;
 }
 
 /** The screen's own part of 自動訓練: which buildings are paused, the villagers' target. */
@@ -157,6 +159,8 @@ export class AutoArmyBook {
   readonly paused = new Set<number>();
   villagerTarget = VILLAGER_TARGET;
   villagersPaused = false;
+  /** 自動蓋民居 (auto-house.ts): on by default. */
+  autoHouse = true;
 
   togglePaused(building: number): boolean {
     if (this.paused.has(building)) this.paused.delete(building);
@@ -171,16 +175,18 @@ export class AutoArmyBook {
   }
 
   save(): AutoArmyState {
-    return { paused: [...this.paused].sort((a, b) => a - b), villagerTarget: this.villagerTarget, villagersPaused: this.villagersPaused };
+    return { paused: [...this.paused].sort((a, b) => a - b), villagerTarget: this.villagerTarget, villagersPaused: this.villagersPaused, autoHouse: this.autoHouse };
   }
 
   restore(s: AutoArmyState | undefined): void {
     this.paused.clear();
     this.villagerTarget = VILLAGER_TARGET;
     this.villagersPaused = false;
+    this.autoHouse = true;
     if (s === undefined) return;
     for (const b of s.paused) this.paused.add(b);
     this.villagerTarget = s.villagerTarget;
     this.villagersPaused = s.villagersPaused;
+    this.autoHouse = s.autoHouse ?? true;
   }
 }
