@@ -19,7 +19,7 @@ test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，�
   const check = watchErrors(page);
   await start(page, "watch=1&ai=0&art=x3&ground=real");
   // The water too, drawn by the shader (art-v6; the test page's stand-ins and the development set have its layer).
-  await expect.poll(() => look(page)).toEqual({ real: true, quality: "high", water: true });
+  await expect.poll(() => look(page)).toEqual({ real: true, quality: "high", water: true, town: false });
   if (browserName === "chromium") {
     for (const [name, x, y, z] of [
       ["ground-real-river-bridge", 18.5, 59.5, 1.2],
@@ -43,7 +43,7 @@ test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，�
   await expect(line).toBeVisible({ timeout: 30_000 });
   console.log(`[ground ${info.project.name}] ${await line.textContent()}`);
   await lab.getByRole("radio", { name: "低", exact: true }).tap();
-  await expect.poll(() => look(page)).toEqual({ real: true, quality: "low", water: true });
+  await expect.poll(() => look(page)).toEqual({ real: true, quality: "low", water: true, town: false });
   await lab.getByRole("button", { name: "關閉" }).tap();
   if (browserName === "chromium") {
     await page.evaluate(() => window.__proto?.game?.centerOn(14, 80, 1.0));
@@ -56,8 +56,8 @@ test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，�
 test("寫實地面：沒有 ?ground=real 照舊畫兩種綠；美術關（沒有地形的圖）時也不換", async ({ page }) => {
   const check = watchErrors(page);
   await start(page, "watch=1&ai=0&art=x3");
-  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false });
+  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false });
   await start(page, "watch=1&ai=0&art=off&ground=real");
-  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false });
+  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false });
   check();
 });

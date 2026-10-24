@@ -43,6 +43,7 @@ import { ArtStructures } from "./structure-art.ts";
 import { autoTrainBuildings } from "../game/features.ts";
 import { type Stone as SiegeStone, stoneAt } from "../game/siege.ts";
 import { CastleDraw } from "./castle-draw.ts";
+import { type Footprint, townGround } from "../art/castle.ts";
 import { TerrainDraw } from "./terrain-draw.ts";
 import { GroundDraw, type GroundQuality, type GroundTextures } from "./ground-draw.ts";
 import type { PendingOrders } from "../game/pending.ts";
@@ -285,6 +286,10 @@ export class WorldRenderer {
   private groundDraw: GroundDraw | null = null;
   /** The ground and resource points its weights were made from. */
   private groundKey = "";
+  /** 城內 B (castle 2): the snapshot and the towns' and buildings' key the towns' ground was last made for. */
+  private townSnap: unknown = null;
+  private townKey = "";
+  private readonly cultureOf: (owner: number) => Culture;
   /** The castles' blocks, on the ground under the fog (castle-draw.ts). */
   private readonly castleBlocks = new Graphics();
   /** Gates broken (D-096): rubble on their openings, on the ground; redrawn when the snapshot changes. */
@@ -314,6 +319,7 @@ export class WorldRenderer {
     this.view = view;
     this.atlas = atlas;
     this.projection = projection;
+    this.cultureOf = cultureOf;
     this.unitLayer.sortableChildren = true;
     this.artStructures = art !== null && ArtStructures.has(art, projection) ? new ArtStructures(art, view, { ground: this.groundArt, shadows: this.shadowLayer, upright: this.unitLayer }, cultureOf, projection) : null;
     // A unit's depth among the buildings' footprints (structure-art.ts), else its place on the screen.
@@ -393,6 +399,7 @@ export class WorldRenderer {
     this.castle.update();
     this.terrain.update();
     this.updateGround();
+    this.updateTownGround();
     this.groundDraw?.tick(now / 1000);
     this.fx.clear();
     this.airFx.clear();
@@ -971,7 +978,8 @@ export class WorldRenderer {
    */
   useGround(textures: GroundTextures, quality: GroundQuality): boolean {
     if (!this.terrain.pictures) return false;
-    this.groundDraw = new GroundDraw(textures, this.view.map.size, quality);
+    // The towns' ground in the player's culture's layers (rules.town; both `yard` in art-v6).
+    this.groundDraw = new GroundDraw(textures, this.view.map.size, quality, this.cultureOf(this.view.me) === "w" ? "W" : "E");
     this.groundInner.addChildAt(this.groundDraw.mesh, 0);
     this.flatGround.visible = false;
     // The water in the ground's shader (art-v6): not its tiles too.
@@ -993,8 +1001,8 @@ export class WorldRenderer {
   }
 
   /** What draws the ground now (the test page and the 量測 panel). */
-  get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean } {
-    return { real: this.groundDraw !== null, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true };
+  get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean; town: boolean } {
+    return { real: this.groundDraw !== null, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true, town: this.groundDraw?.town === true };
   }
 
   /** The ground's weights again when the known ground or the resource points changed. */
@@ -1010,6 +1018,39 @@ export class WorldRenderer {
     g.setGround(this.view.ground, nodes);
   }
 
+  /**
+   * 城內 B (art-v6, castle 2, R8-36 B): the towns' lanes and trampled earth for the ground's shader,
+   * from the castles laid out and the buildings in them (art/castle.ts townGround); made again only
+   * when those change. Each town's area: its walls' box, its ground's and its decor's cells.
+   */
+  private updateTownGround(): void {
+    const g = this.groundDraw;
+    const snap = this.view.curr?.snap;
+    if (g === null || !g.town || snap === undefined || snap === this.townSnap) return;
+    this.townSnap = snap;
+    const b = snap.buildings;
+    const footprints: Footprint[] = [];
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) footprints.push(this.view.footprint(b, o));
+    const towns = this.castle
+      .fitted()
+      .filter((t) => t.fit.layout.ground !== undefined)
+      .flatMap(({ town, fit }) => {
+        const box = this.view.castleBox(town);
+        if (box === null) return [];
+        const ox = town.cellX + fit.dx;
+        const oy = town.cellY + fit.dy;
+        const cells = [...(fit.layout.ground ?? []).map((v) => v.cell), ...(fit.layout.decor ?? []).flatMap((v) => v.cells)];
+        const xs = [box.x0, box.x1, ...cells.map(([x]) => ox + x)];
+        const ys = [box.y0, box.y1, ...cells.map(([, y]) => oy + y)];
+        return [{ id: town.id, cx: town.cellX, cy: town.cellY, fit, box, area: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } }];
+      });
+    const key = `${towns.map((t) => `${t.id}:${t.fit.name}`).join(",")}|${footprints.map((f) => `${f.x},${f.y},${f.w},${f.h}`).join(";")}`;
+    if (key === this.townKey) return;
+    this.townKey = key;
+    const { lane, trampled } = townGround(this.view.map.size, towns, footprints);
+    g.setTown(lane, trampled, towns.map((t) => t.area));
+  }
+
   /** The ground's pictures drawn (art-v5), for the test page. */
   get terrainCounts(): { pictures: boolean; pieces: number; flat: number; standing: number } {
     return { pictures: this.terrain.pictures, ...this.terrain.counts };
@@ -1021,8 +1062,13 @@ export class WorldRenderer {
   }
 
   /** The castles as drawn (castle-draw.ts), for the test page: with their gates' looks and whether those on a wall stand on its walk (D-096). */
-  get castleCounts(): { pieces: number; tiles: number; blockTowns: number; misfit: number; walkable: boolean; gates: Record<string, number> } {
+  get castleCounts(): { pieces: number; tiles: number; blockTowns: number; misfit: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } {
     return { ...this.castle.counts, walkable: this.castle.walkable, gates: this.castle.gateLookCounts };
+  }
+
+  /** 城內 B (castle 2): the towns' decor pieces, for the test page. */
+  get decorForTest(): ReturnType<CastleDraw["decorForTest"]> {
+    return this.castle.decorForTest();
   }
 
   /** Where a gate's arrows leave (D-096, castle-draw.ts gateShootFrom): world px on the ground and points up; null: its building's middle. */
