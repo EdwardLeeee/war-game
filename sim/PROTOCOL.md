@@ -109,7 +109,7 @@
     - `features.keep`：開著時才出現（值是 true）。
     - `BuildingType.Keep`（9）就是原本的 `TownTower`。`TownTower` 這個名字留一個版本，值一樣，之後拿掉。
     - 開著時 `buildings[Keep]` 是 3×3、生命 1000（大城的），`arrows.townTower` 是大城主堡的箭（每箭 10）。關著時照舊：2×2、生命 400、每箭 6。
-    - `towns[size].keep`（開著時才送）：`hp`（小鎮 600、大城 1000，畫血條用這個）、`size`（3）、`arrow`（小鎮每箭 6、大城 10，射程 9 格，2 秒一箭）、`rebuildTicks`（治理中城鎮重建倒下的主堡要等幾個 tick：1200）。
+    - `towns[size].keep`（開著時才送）：`hp`（小鎮 600、大城 1000，畫血條用這個）、`size`（3）、`arrow`（小鎮每箭 4、大城 10，射程 9 格，2 秒一箭）、`rebuildTicks`（治理中城鎮重建倒下的主堡要等幾個 tick：1200）。
     - `towns[size].castle` 換成新的城堡：小鎮牆內 13×13（牆在離中心 7 格），大城 17×17（牆在 9 格），兩種地圖都以城鎮中心格為中心。`radius` 是 7 和 9。
     - 地圖的 `towerSize` 開著時一律是 3，留一個版本。
   - D-101（多金多木與市場，3.11；開關 RICH、MARKET 預設關）：

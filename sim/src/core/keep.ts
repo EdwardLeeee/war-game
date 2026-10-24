@@ -11,8 +11,8 @@ const S = TICKS_PER_SECOND;
  * - the castles are castle-layout-d100.ts (the small town 13 x 13 inside, the big city 17 x 17), centred
  *   on every map on the town's centre cell; the walls `radius` cells from it;
  * - every town has a keep (BuildingType.Keep, 3 x 3, its top-left at the centre cell - 1) that
- *   shoots for whoever holds it: `hp` and `arrow` by TownSize (the small town's a little under a
- *   player's arrow tower, the big city's arrows a player's tower's);
+ *   shoots for whoever holds it: `hp` and `arrow` by TownSize (the small town's 600 / 4, ceo
+ *   2026-10-24 from the scripted player's first captures; the big city's arrows a player's tower's);
  * - a town falls only once its keep has fallen too; the keep is down from then until the town is
  *   governed (built again for the governor when repaired) or neutral again (for the militia); a
  *   governed town builds a fallen keep again once no enemy has stood inside for `rebuildTicks`, as
@@ -23,7 +23,7 @@ export const KEEP = {
   on: false,
   hp: [600, 1000],
   arrow: [
-    { damage: 6, range: 7 * CELL, cooldown: 2 * S },
+    { damage: 4, range: 7 * CELL, cooldown: 2 * S },
     { damage: 10, range: 7 * CELL, cooldown: 2 * S },
   ],
   size: 3,

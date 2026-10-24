@@ -989,7 +989,7 @@ D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與�
 使用者 2026-10-23：攻打城市常常點不到，要把城鎮做大，裡面有一個主堡可以點，打下主堡、殺完殘兵才拿得下。開關 `KEEP`（`core/keep.ts`，`rules.ts` 轉出）預設關，跟 art-v6 一起開；關著時地圖、城堡、大城箭樓和拿城規則都和以前逐局相同（固定地圖、隨機地圖 1–20 的地圖與 rules 摘要相同，push／多城治理／守塔／守家兩種地圖的最終雜湊相同）。規則寫在 `PROTOCOL.md` 3.10。
 
 - 城堡：新的在 `castle-layout-d100.ts`（ui 的 `design/b1/castle-layout.json`，D-100 版），小鎮牆內 13×13、大城 17×17，以中心格為中心，開著時用；`castle-layout.ts` 照舊是 D-089 的（關著時用，client 的測試也讀它），KEEP 正式開時再換過來。`castleOf` 照開關選。
-- 主堡：`BuildingType.Keep`（9，舊名 `TownTower` 留一版）3×3，小鎮 600／每箭 6、大城 1000／10，射程 9、2 秒一箭（`KEEP`）。`scenarios.ts` 的 `addKeep`／`keepOf`；`World.maxHp` 照城鎮大小；`arrowOf` 照城鎮大小。
+- 主堡：`BuildingType.Keep`（9，舊名 `TownTower` 留一版）3×3，小鎮 600／每箭 4（ceo 2026-10-24 照腳本玩家第一次拿城的量測，原本 6）、大城 1000／10，射程 9、2 秒一箭（`KEEP`）。`scenarios.ts` 的 `addKeep`／`keepOf`；`World.maxHp` 照城鎮大小；`arrowOf` 照城鎮大小。
 - 主堡的 3×3 格（`World.keepGround`）倒下時可以走、不能蓋；重建時用 `pushOut` 把站在上面的兵移開。
 - 主堡倒了，牆上的民兵會下來（`units.ts` 的 `fromWall`），用攻擊移動走向城中央打到底；不然城中央在他們投石和視野之外，城會一直拿不下來（war-game-ai 2026-10-24 找到，種子 101）。
 - 拿城（`towns.ts`）：主堡倒了才拿得下（中立和別人持有的都一樣）；修繕完成替治理的人重建；回中立替民兵重建（叛離時還站著就交給民兵、補滿）；治理中倒了、守方還在，60 秒沒有敵人進來就重建（`World.keepRebuild`，開著時才算進雜湊）。

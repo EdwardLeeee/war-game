@@ -48,7 +48,7 @@ test("KEEP off: the rules, the castles and the big city's tower are D-089's", ()
   assert.equal(BuildingType.TownTower, BuildingType.Keep, "the old name, one version");
 });
 
-test("KEEP on: the castles 13 x 13 and 17 x 17, centred; a 3 x 3 keep in each town, 600 / 6 and 1000 / 10", keepOn(() => {
+test("KEEP on: the castles 13 x 13 and 17 x 17, centred; a 3 x 3 keep in each town, 600 / 4 and 1000 / 10", keepOn(() => {
   const r = rules();
   assert.equal(r.features.keep, true);
   const small = r.towns[TownSize.Small];
@@ -58,7 +58,7 @@ test("KEEP on: the castles 13 x 13 and 17 x 17, centred; a 3 x 3 keep in each to
   assert.deepEqual([small.castle!.wall.length, small.castle!.gate.length, small.castle!.gates!.length], [44, 12, 4]);
   assert.deepEqual([large.castle!.wall.length, large.castle!.gate.length, large.castle!.gates!.length], [64, 12, 4]);
   assert.deepEqual([small.radius, large.radius], [7, 9]);
-  assert.deepEqual([small.keep!.hp, small.keep!.size, small.keep!.arrow.damage], [600, 3, 6]);
+  assert.deepEqual([small.keep!.hp, small.keep!.size, small.keep!.arrow.damage], [600, 3, 4]);
   assert.deepEqual([large.keep!.hp, large.keep!.size, large.keep!.arrow.damage], [1000, 3, 10]);
   assert.equal(small.keep!.rebuildTicks, 60 * 20);
   assert.deepEqual([r.buildings[BuildingType.Keep].size, r.buildings[BuildingType.Keep].hp, r.buildings[BuildingType.Keep].holds], [3, 1000, 0]);
