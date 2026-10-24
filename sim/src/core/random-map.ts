@@ -27,9 +27,10 @@
 
 import { type Frame, MIRROR_XY, invert, mirrorX, rotation, then, toCanon } from "../frame.ts";
 import { NodeKind, Terrain, TownSize, walkableTerrain } from "../protocol.ts";
-import { Rng } from "./fixed.ts";
+import { dir16, Rng } from "./fixed.ts";
 import { type CastleMap, castleOf } from "./castle.ts";
-import { type GameMap, type NodeSpec, stampCastles, type TownSpec, turnedTerrain } from "./map.ts";
+import { farTrees, type GameMap, type NodeSpec, stampCastles, type TownSpec, turnedTerrain } from "./map.ts";
+import { forestCells, homeForests } from "./forests.ts";
 import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
 
 export type Layout = "diagonal" | "adjacent";
@@ -311,6 +312,11 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
   blob(P0.x + 8, P0.y + 13, 4, (x, y) => setNode(x, y, NodeKind.Tree));
   for (const [x, y] of block(P0.x + 10, P0.y + 6, 2, 2)) kind[y * n + x] = NodeKind.GoldMine;
   for (const [x, y] of block(P0.x - 8, P0.y + 8, 3, 2)) kind[y * n + x] = NodeKind.Berries;
+  // D-101 (RICH.forests): more forests by the main city, its back to the map's middle first.
+  if (RICH.on && RICH.forests > 0) {
+    const back = dir16(P0.x - (n >> 1), P0.y - (n >> 1));
+    for (const [cx, cy] of homeForests(P0.x, P0.y, RICH.forests, back, (x, y) => inside(x, y) && free(x, y))) for (const [x, y] of forestCells(cx, cy)) setNode(x, y, NodeKind.Tree);
+  }
   // A second gold mine beside the way to the home town, about half way.
   {
     const dx = home.x - P0.x;
@@ -844,6 +850,8 @@ function orient(seed: number, g: Generated, orientation: number, across: boolean
     const r = rectImage(R, p.x - 2, p.y - 2, 4);
     return { player, cellX: r.x + 2, cellY: r.y + 2 };
   });
+  // D-101 (RICH.farTree): the trees far from both main cities.
+  if (RICH.on && RICH.farTree > 0) farTrees(nodes, spawns.map((s) => ({ x: s.cellX, y: s.cellY })));
   const towns: TownSpec[] = g.towns.map((t, id) => {
     const r = toCanon(R, t.x, t.y);
     return { id, size: t.size, cellX: r.u, cellY: r.v, radius: TOWNS[t.size].radius };

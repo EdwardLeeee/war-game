@@ -142,3 +142,42 @@ test("MARKET on: prices stay within 25-300 and move a point back toward 100 ever
   run(g, MARKET.recoverTicks * 10);
   assert.deepEqual([w.marketPrice[0], w.marketPrice[1]], [36, 289]);
 }));
+
+const richWith = (opts: Partial<typeof RICH>, body: () => void) => () => {
+  const was = { ...RICH };
+  Object.assign(RICH, { on: true }, opts);
+  try {
+    body();
+  } finally {
+    Object.assign(RICH, was);
+  }
+};
+
+test("RICH (v): the trees more than 20 cells from both main cities hold farTree, the rest tree", richWith({ goldCell: 600, tree: 100, farTree: 150, forests: 0 }, () => {
+  for (const m of [generateMap(), generateRandomMap(3, 129)]) {
+    const homes = m.spawns;
+    let far = 0;
+    for (const nd of m.nodes) {
+      if (nd.kind !== NodeKind.Tree) continue;
+      const out = homes.every((h) => (nd.cellX - h.cellX) * (nd.cellX - h.cellX) + (nd.cellY - h.cellY) * (nd.cellY - h.cellY) > 400);
+      assert.equal(nd.amount, out ? 150 : 100, `${nd.cellX},${nd.cellY}`);
+      if (out) far++;
+    }
+    assert.ok(far > 100, "most trees are far");
+  }
+}));
+
+test("RICH (vi): 2 more forests by each main city, 14-20 cells out, mirror images, the wood by home up by them", richWith({ goldCell: 600, tree: 100, farTree: 0, forests: 2 }, () => {
+  const m = generateMap();
+  const trees = new Set(m.nodes.filter((nd) => nd.kind === NodeKind.Tree).map((nd) => nd.cellY * m.size + nd.cellX));
+  for (const nd of m.nodes) if (nd.kind === NodeKind.Tree) assert.ok(trees.has(nd.cellX * m.size + nd.cellY), `mirror of ${nd.cellX},${nd.cellY}`);
+  const near = (rich: boolean) => {
+    RICH.forests = rich ? 2 : 0;
+    const mm = generateMap();
+    RICH.forests = 2;
+    const s = mm.spawns[0];
+    return mm.nodes.filter((nd) => nd.kind === NodeKind.Tree && (nd.cellX - s.cellX) * (nd.cellX - s.cellX) + (nd.cellY - s.cellY) * (nd.cellY - s.cellY) <= 400).length;
+  };
+  assert.ok(near(true) - near(false) >= 40, `forests by home: ${near(false)} -> ${near(true)} trees within 20 cells`);
+  for (let seed = 1; seed <= 5; seed++) generateRandomMap(seed, 129);
+}));
