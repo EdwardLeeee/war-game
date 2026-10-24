@@ -92,11 +92,15 @@ test("村民：活著的（躲著的也算）加上排著的，少於目標才�
   assert.equal(book.togglePaused(7), false);
   book.togglePaused(9);
   book.villagersPaused = true;
+  book.autoHouse = false;
   const back = new AutoArmyBook();
   back.restore(JSON.parse(JSON.stringify(book.save())));
-  assert.deepEqual(back.save(), { paused: [9], villagerTarget: 200, villagersPaused: true });
+  assert.deepEqual(back.save(), { paused: [9], villagerTarget: 200, villagersPaused: true, autoHouse: false });
   back.restore(undefined);
-  assert.deepEqual(back.save(), { paused: [], villagerTarget: 40, villagersPaused: false });
+  assert.deepEqual(back.save(), { paused: [], villagerTarget: 40, villagersPaused: false, autoHouse: true });
+  // A save from before 自動蓋民居: on.
+  back.restore({ paused: [], villagerTarget: 40, villagersPaused: false });
+  assert.equal(back.autoHouse, true);
 });
 
 test("D-098 改用 init.autoTrain：紀錄第一行的 autoTrain 讀得出來；舊的存檔（玩家的開著）才逐棟送 auto_train off", () => {

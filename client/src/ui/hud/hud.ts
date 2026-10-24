@@ -3,6 +3,7 @@
 // 閒置村民 and 全體回城 on the left, attack alerts, 經濟分配, 搶／治理, the menu and the result
 // screen. Text updates at most 10 times a second and only when it changed.
 
+import { HOME_CELLS, HOUSE_WOOD_TEXT, nearFootprint } from "../../game/auto-house.ts";
 import { counterLines } from "../../game/counters.ts";
 import type { Game } from "../../game/game.ts";
 import { tradedText } from "../../game/market.ts";
@@ -49,11 +50,10 @@ const MAX_ARROWS = 3;
 /** 開局提示: the minimap keeps flashing the town this long after the hint is closed (ms). */
 const TOWN_FLASH_AFTER_MS = 10_000;
 /**
- * 全體回城 跳出來 (R6-13, D-087): an enemy player's soldiers hurting our buildings or farmers this
- * close to our main city (cells from its footprint, the larger of across and down), and for this
+ * 全體回城 跳出來 (R6-13, D-087): an enemy player's soldiers hurting our buildings or farmers
+ * HOME_CELLS close to our main city (auto-house.ts: 自動蓋民居 waits for the same), and for this
  * long after the last such hit (ms). Suggested values, to be tried in play.
  */
-const HOME_CELLS = 12;
 const HOME_HIT_MS = 15_000;
 const HOME_HIT_TEXT = "家裡被攻擊：主城附近有敵兵";
 /** 地圖 flashes red, this long each way (R6-25-05). */
@@ -229,6 +229,8 @@ export class Hud {
       stepVillagers: (by: number) => game.stepVillagerTarget(by),
       villagersPaused: () => game.autoArmy.villagersPaused,
       toggleVillagers: () => game.toggleVillagers(),
+      autoHouseOn: () => game.autoHouseOn(),
+      toggleAutoHouse: () => game.toggleAutoHouse(),
       garrison: (town: number) => game.army.garrisonOf(town).length,
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
@@ -445,7 +447,7 @@ export class Hud {
       const size = view.rules.buildings[BuildingType.MainCity]?.size ?? 4;
       const x0 = bs[o + BuildingField.cellX];
       const y0 = bs[o + BuildingField.cellY];
-      if (Math.max(x0 - x, 0, x - (x0 + size)) <= HOME_CELLS && Math.max(y0 - y, 0, y - (y0 + size)) <= HOME_CELLS) return true;
+      if (nearFootprint({ x: x0, y: y0, w: size, h: size }, x, y, HOME_CELLS)) return true;
     }
     return false;
   }
@@ -537,11 +539,12 @@ export class Hud {
 
   /**
    * 人口滿了 (D-054: the brief asks for a word in the message strip): 自動訓練 (the screen's, D-098)
-   * has stopped for want of room; said once each time it starts.
+   * has stopped for want of room; said once each time it starts. 自動蓋民居 (2026-10-25) waiting
+   * for wood: that instead.
    */
   private warnPopulationFull(): void {
     const full = this.game.autoPopulationFull;
-    if (full && !this.populationFull) this.game.toast("人口滿了，自動訓練停下來：蓋民居");
+    if (full && !this.populationFull) this.game.toast(this.game.autoHouseBlock === "wood" ? HOUSE_WOOD_TEXT : "人口滿了，自動訓練停下來：蓋民居");
     this.populationFull = full;
   }
 
