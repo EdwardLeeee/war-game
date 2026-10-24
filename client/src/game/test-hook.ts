@@ -89,6 +89,8 @@ export interface GameHook {
   population(p: { room: number; ceiling: number } | null): void;
   /** Fake world only: a building's progress now (1000: finished). */
   progress(id: number, progress: number): void;
+  /** Fake world only: commands taken this many steps late (a page behind its snapshots); 0: as always. */
+  lag(steps: number): void;
   /** Fake world only: these farmers of ours gathering at the node as the economy sends them (not by hand). */
   employ(ids: number[], node: number): void;
   /** Pause marks drawn on buildings (自動訓練 paused, D-098: the player's own pause). */
@@ -306,6 +308,9 @@ export function gameHook(game: Game): GameHook {
     },
     progress: (id, progress) => {
       if (game.portForTest instanceof MockPort) game.portForTest.setProgress(id, progress);
+    },
+    lag: (steps) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.setLag(steps);
     },
     employ: (ids, node) => {
       if (game.portForTest instanceof MockPort) game.portForTest.employ(ids, node);
