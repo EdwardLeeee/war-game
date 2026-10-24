@@ -522,7 +522,8 @@ jobs:
 
   # push-crush (ceo 2026-10-25, for war-game-ai's hard falling behind: the user's 4fd7b823, hard sat at home and
   # built no defences after losing 91 soldiers at the user's main city): the turtle, out after beating off a big
-  # wave at home (--crush), its gathering plus BONUS% (--bonus; else it never gets ahead of hard), against hard
+  # wave at home (--crush), town trips as the push's, every town governed (--early-towns 6), its gathering of food,
+  # wood and gold plus BONUS% in equal shares (--bonus; else it never gets ahead of hard), against hard
   # only, games up to 90 minutes, both maps, seeds 1-40 in four jobs each. What hard does in the 15 minutes after
   # the first battle it lost big (crush-watch.ts). Reports only, no threshold; its own jobs.
   scripted-crush:
@@ -534,14 +535,14 @@ jobs:
       fail-fast: false
       matrix:
         cell:
-          - { group: push-crush, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --bonus BONUS --cap 90 }
-          - { group: push-crush, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --bonus BONUS --cap 90 }
-          - { group: push-crush, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --bonus BONUS --cap 90 }
-          - { group: push-crush, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --bonus BONUS --cap 90 }
-          - { group: push-crush-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --bonus BONUS --cap 90 --map random }
-          - { group: push-crush-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --bonus BONUS --cap 90 --map random }
-          - { group: push-crush-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --bonus BONUS --cap 90 --map random }
-          - { group: push-crush-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --bonus BONUS --cap 90 --map random }
+          - { group: push-crush, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 }
+          - { group: push-crush, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 }
+          - { group: push-crush, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 }
+          - { group: push-crush, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 }
+          - { group: push-crush-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 --map random }
+          - { group: push-crush-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 --map random }
+          - { group: push-crush-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 --map random }
+          - { group: push-crush-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus BONUS --cap 90 --map random }
     env:
       NAME: crush-hard-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
     defaults:
@@ -607,7 +608,7 @@ jobs:
             const home = c.filter((x) => x.home.allSoldierMinutes > 0).map((x) => Math.round((x.home.soldierMinutes * 100) / x.home.allSoldierMinutes));
             const won = crushed.filter((x) => x.result === "won").map((x) => min(x.endTick - x.crush.end));
             out.push(
-              `| ${name} | ${games.filter((x) => x.result === "won").length}/${games.length} | ${crushed.length} | ${med(c.map((x) => min(x.end)))} | ${med(c.map((x) => x.aiLost))}／${med(c.map((x) => x.myLost))} | ${med(c.map((x) => x.soldiersAtEnd[0]))}／${med(c.map((x) => x.soldiersAtEnd[1]))} | ${c.reduce((a, x) => a + x.towers[1], 0)}／${c.reduce((a, x) => a + x.outposts[1], 0)}（有放箭樓 ${c.filter((x) => x.towers[1] > 0).length} 局） | ${med(c.map((x) => x.aiFarmers[0]))}→${med(last.map((x) => x.aiFarmers[15]))}（${last.length} 局） | ${med(home)}% | ${towns.length}／${towns.filter((x) => x.came >= 2).length}／${towns.filter((x) => x.held && !x.open).length}／${towns.filter((x) => !x.held).length} | ${med(won)}（${won.length} 局） |`,
+              `| ${name} | ${games.filter((x) => x.result === "won").length}/${games.length} | ${crushed.length} | ${med(c.map((x) => min(x.end)))} | ${med(c.map((x) => x.aiLost))}／${med(c.map((x) => x.myLost))} | ${med(c.map((x) => x.soldiersAtEnd[0]))}／${med(c.map((x) => x.soldiersAtEnd[1]))}（5 分後 ${med(c.filter((x) => x.mySoldiers.length > 5).map((x) => x.mySoldiers[5]))}／${med(c.filter((x) => x.aiSoldiers.length > 5).map((x) => x.aiSoldiers[5]))}） | ${c.reduce((a, x) => a + x.towers[1], 0)}／${c.reduce((a, x) => a + x.outposts[1], 0)}（有放箭樓 ${c.filter((x) => x.towers[1] > 0).length} 局） | ${med(c.map((x) => x.aiFarmers[0]))}→${med(last.map((x) => x.aiFarmers[15]))}（${last.length} 局） | ${med(home)}% | ${towns.length}／${towns.filter((x) => x.came >= 2).length}／${towns.filter((x) => x.held && !x.open).length}／${towns.filter((x) => !x.held).length} | ${med(won)}（${won.length} 局） |`,
             );
           }
           out.push(
