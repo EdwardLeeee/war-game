@@ -47,7 +47,7 @@ import { townInSight, writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
 import { onWall } from "../core/units.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, OUTPOST, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, MARKET, OUTPOST, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -305,6 +305,11 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     header[HeaderField.population] = w.population(player);
     header[HeaderField.populationCap] = w.populationCap(player);
     header[HeaderField.populationCeiling] = w.populationCeiling(player);
+    // The market's prices (D-101), one's own, while it is on.
+    if (MARKET.on) {
+      header[HeaderField.priceFood] = w.marketPrice[player * 2];
+      header[HeaderField.priceWood] = w.marketPrice[player * 2 + 1];
+    }
     header[HeaderField.mages] = mages;
     header[HeaderField.mageCap] = MAGE_CAP;
     header[HeaderField.ratioFood] = w.ecoRatio[player * 3];

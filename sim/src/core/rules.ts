@@ -121,6 +121,10 @@ BUILDINGS[BuildingType.Stable] = building({
 BUILDINGS[BuildingType.SiegeWorks] = building({
   type: BuildingType.SiegeWorks, hp: 500, size: 3, cost: cost(0, 200), buildTicks: 45 * S, trains: [UnitType.Siege], requires: [BuildingType.Range],
 });
+// D-101: the market (only while MARKET is on), after a granary.
+BUILDINGS[BuildingType.Market] = building({
+  type: BuildingType.Market, hp: 600, size: 3, cost: cost(0, 150), buildTicks: 40 * S, requires: [BuildingType.Granary],
+});
 // D-080: the outpost (only while OUTPOST is on). The brief's starting values.
 BUILDINGS[BuildingType.Outpost] = building({
   type: BuildingType.Outpost, hp: 400, size: 2, cost: cost(0, 50), buildTicks: 20 * S, sight: 10,
@@ -175,7 +179,8 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
   const same = towerSize === undefined || towerSize === BUILDINGS[BuildingType.TownTower].size;
   // D-099: the siege engine and the siege works only while SIEGE is on (they are the last of each).
   const units = SIEGE.on ? UNITS : UNITS.slice(0, UnitType.Siege);
-  const buildings = SIEGE.on ? BUILDINGS : BUILDINGS.slice(0, BuildingType.SiegeWorks);
+  // D-101: the market only while MARKET is on (then the siege works' row too, unbuildable while SIEGE is off).
+  const buildings = MARKET.on ? BUILDINGS : BUILDINGS.slice(0, SIEGE.on ? BuildingType.Market : BuildingType.SiegeWorks);
   return {
     units,
     buildings: same ? buildings : buildings.map((b) => (b.type === BuildingType.TownTower ? { ...b, size: towerSize } : b)),
@@ -188,7 +193,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     features: {
       plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on,
       ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
-      ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}), ...(KEEP.on ? { keep: true } : {}),
+      ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}), ...(KEEP.on ? { keep: true } : {}), ...(MARKET.on ? { market: true } : {}),
     },
     arrows: {
       mainCity: MAIN_ARROW,
@@ -207,6 +212,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     gate: { rangedNum: GATE.rangedNum, rangedDen: GATE.rangedDen, rebuildTicks: GATE.rebuildTicks },
     walls: { range: WALLS.range, takenNum: WALLS.takenNum, takenDen: WALLS.takenDen, sling: WALLS.sling },
     siege: { vsBuildings: SIEGE.vsBuildings, flightTicks: SIEGE.flightTicks },
+    market: { lot: MARKET.lot, start: MARKET.start, step: MARKET.step, min: MARKET.min, max: MARKET.max, sellPermille: MARKET.sellPermille, recoverTicks: MARKET.recoverTicks, maxLots: MARKET.maxLots },
   };
 }
 
@@ -635,6 +641,24 @@ GATHER_PER_MINUTE[Resource.Crystal] = 12;
 export const BERRIES_PER_MINUTE = 30;
 export const CARRY = 10;
 export const NODE_AMOUNT = { tree: 100, goldCell: 400, bush: 100, crystalCell: 150 };
+/**
+ * D-101 (the user 2026-10-22/23: 「其實現在打很容易拖到後期都沒有樹跟金礦可以採」; ceo 2026-10-24): more gold
+ * and wood. While on: each gold cell `goldCell`, each tree `tree` (the same cells, so the ways do not
+ * change), and contested gold mines on the axis (as far from both starts; map.ts, random-map.ts).
+ * Off: as before.
+ */
+export const RICH = { on: false, goldCell: 600, tree: 150 };
+/**
+ * D-101 (the user: a market that trades what is left over for what is missing, dearer the more one
+ * trades, as in AoE; ceo 2026-10-24): BuildingType.Market and `trade`, food or wood for gold, `lot`
+ * units a lot, at most `maxLots` a trade. Each player has its own prices (gold a lot), `start` at
+ * first: a lot bought costs the price and puts it up `step` (to `max`); a lot sold pays
+ * price * sellPermille / 1000 and puts it down `step` (to `min`); every `recoverTicks` each price
+ * moves 1 toward `start`. Crystal is not traded. Off: no market.
+ */
+export const MARKET = { on: false, lot: 100, start: 100, step: 5, min: 25, max: 300, sellPermille: 700, recoverTicks: 30 * S, maxLots: 5 };
+switched(NODE_AMOUNT, "goldCell", RICH, () => RICH.goldCell);
+switched(NODE_AMOUNT, "tree", RICH, () => RICH.tree);
 /** Builders on one building that add progress (more wait); the same cap applies to repairs. */
 export const BUILDERS_MAX = 4;
 /** Farmers a build without farmers sends (round 2): by footprint, 1 for 2 x 2 and 2 for 3 x 3. */

@@ -9,6 +9,7 @@
 //   node src/scripted-games.ts --seeds 1-40 --strategy push --map random   (D-074: the player and the AI both scout)
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
+import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { writeFileSync } from "node:fs";
 import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THINK_EVERY, SPEEDS, type Speed, STRATEGIES, type Strategy } from "./ai/scripted-player.ts";
 import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
@@ -267,6 +268,8 @@ interface GameRecord {
   towersAt: { m30: [number, number] | null; m45: [number, number] | null };
   /** D-086 A5: the player's [farmers, soldiers, arrow towers] at minutes 5, 10, 15, 20, 25 and 30 (the user's pace to match). */
   pace: Record<string, [number, number, number]>;
+  /** D-101: each side's own gold and when it ran out, the contested gold and how much each side mined it. */
+  gold: GoldRecord;
   /** D-086 A5: towns [the player, the AI] governed at the end. */
   governedEnd: [number, number];
   /**
@@ -435,6 +438,7 @@ function play(seed: number): GameRecord {
   const armyAt: GameRecord["armyAt"] = { m15: null, m20: null };
   const towersAt: GameRecord["towersAt"] = { m30: null, m45: null };
   const pace: GameRecord["pace"] = {};
+  const goldWatch = new GoldWatch(w);
   const towersOf = (p: number) => {
     let n = 0;
     for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === BuildingType.ArrowTower) n++;
@@ -500,6 +504,7 @@ function play(seed: number): GameRecord {
       }
       for (const x of farmerChecks) if (x.at === k && farmerLog[k].farmers >= x.before - 2) aiFarmers.back++;
     }
+    if (w.tick % 1200 === 0) goldWatch.minute(w);
     if (w.tick === 15 * 1200) armyAt.m15 = [soldiersOf(0), soldiersOf(1)];
     if (w.tick === 20 * 1200) armyAt.m20 = [soldiersOf(0), soldiersOf(1)];
     if (w.tick === 30 * 1200) towersAt.m30 = [towersOf(0), towersOf(1)];
@@ -756,6 +761,7 @@ function play(seed: number): GameRecord {
     armyAt,
     towersAt,
     pace,
+    gold: goldWatch.result(),
     governedEnd: [0, 1].map((p) => w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length) as [number, number],
     aiFarmers,
     aiRescue,

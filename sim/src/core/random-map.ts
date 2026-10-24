@@ -30,7 +30,7 @@ import { NodeKind, Terrain, TownSize, walkableTerrain } from "../protocol.ts";
 import { Rng } from "./fixed.ts";
 import { type CastleMap, castleOf } from "./castle.ts";
 import { type GameMap, type NodeSpec, stampCastles, type TownSpec, turnedTerrain } from "./map.ts";
-import { KEEP, NODE_AMOUNT, TOWNS } from "./rules.ts";
+import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
 
 export type Layout = "diagonal" | "adjacent";
 
@@ -347,7 +347,28 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     return true;
   };
   if (pairs.length > 1 && !goldNear(pairs[1])) return away("gold by a town");
-  if (pairs.length > 2 && rng.below(2) === 0 && !goldNear(pairs[2])) return away("gold by a town");
+  // D-101 (RICH): by the third town on every map, where it fits (the map is not drawn again for it).
+  if (RICH.on) {
+    if (pairs.length > 2) goldNear(pairs[2]);
+  } else if (pairs.length > 2 && rng.below(2) === 0 && !goldNear(pairs[2])) return away("gold by a town");
+  // D-101 (RICH): contested gold on the axis, the big city's other side from the vein, shaped as the vein
+  // (its own mirror image), as far from the towns as the vein is.
+  if (RICH.on) {
+    const away1 = vein.y > large.y || (vein.y === large.y && vein.x > large.x) ? -1 : 1;
+    const p = pick(
+      () => {
+        const d = k(14) + rng.below(k(10) + 1);
+        return layout === "diagonal" ? { x: large.x + away1 * d, y: large.y + away1 * d } : { x: a, y: large.y + away1 * d };
+      },
+      (q) => {
+        const c = veinCells(layout, q);
+        return c.every(([x, y]) => x >= 6 && y >= 6 && x <= s - 6 && y <= s - 6 && reserved[y * n + x] === 0 && rock[y * n + x] === 0 && kind[y * n + x] === -1) &&
+          placed.every((t) => d2(q, t) >= (TOWNS[t.size].radius + 4) * (TOWNS[t.size].radius + 4));
+      },
+    );
+    if (p === null) return away("contested gold");
+    for (const [x, y] of veinCells(layout, p)) kind[y * n + x] = NodeKind.GoldMine;
+  }
 
   // Natural obstacles (R6-51), then random rock and forest, on player 0's side.
   if (scatter) {
