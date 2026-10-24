@@ -71,6 +71,18 @@ export interface FakeThing {
   needsWork?: boolean;
 }
 
+/** A town (D-089, D-100): the cells of its castle, inclusive, and its keep's centre cell while it stands. */
+export interface FakeTown {
+  id: number;
+  owner: number;
+  size: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  keep: { x: number; y: number } | null;
+}
+
 export const ME = 0;
 export const ENEMY = 1;
 export const at = (c: number): number => c * TILE_PX + TILE_PX / 2;
@@ -83,6 +95,9 @@ export class FakeWorld implements IntentWorld {
   screenCells: number;
   /** The cell in front of the own main city, or null without one. */
   home: { x: number; y: number } | null = null;
+  /** Towns, picked last (D-089); `keeps`: `features.keep` (D-100). */
+  towns: FakeTown[] = [];
+  keeps = false;
 
   constructor(units: FakeUnit[], things: FakeThing[] = [], screenCells = 1000) {
     this.units = units;
@@ -106,7 +121,18 @@ export class FakeWorld implements IntentWorld {
         return { kind: t.kind, id: t.id, owner: t.kind === "node" ? NO_OWNER : t.owner, type: t.type };
       }
     }
-    return null;
+    const cx = Math.floor(wx / TILE_PX);
+    const cy = Math.floor(wy / TILE_PX);
+    const town = this.towns.find((t) => cx >= t.x0 && cx <= t.x1 && cy >= t.y0 && cy <= t.y1);
+    return town === undefined ? null : { kind: "town", id: town.id, owner: town.owner, type: town.size };
+  }
+
+  attacksTowns(): boolean {
+    return this.keeps;
+  }
+
+  keepCell(town: number): { x: number; y: number } | null {
+    return this.towns.find((t) => t.id === town)?.keep ?? null;
   }
 
   pickNode(wx: number, wy: number, r: number): Pick | null {

@@ -37,6 +37,7 @@ import {
   PROTOCOL_VERSION,
   Reject,
   type Features,
+  KEEP,
   MULTIPLIERS,
   type Rules,
   rules,
@@ -146,6 +147,29 @@ export const MOCK_RULES_SIEGE: Rules = {
   multipliers: MULTIPLIERS,
   siege: { vsBuildings: 3, flightTicks: 20 },
 };
+
+/**
+ * `?keep=1` (D-100, behind features.keep): round 7's rules with the towns about 1.5 x bigger, their
+ * castles and keeps, as the simulation sends them once KEEP is on (its switch on only while they
+ * are read here: the fake world runs beside the simulation's modules, not in its Worker).
+ */
+function mockRulesKeep(): Rules {
+  const was = KEEP.on;
+  KEEP.on = true;
+  try {
+    const on = JSON.parse(JSON.stringify(rules())) as Required<Rules>;
+    const keep = on.buildings[BuildingType.Keep];
+    return {
+      ...MOCK_RULES_R7,
+      buildings: MOCK_RULES_R7.buildings.map((b) => (b.type === BuildingType.Keep ? { ...b, size: keep.size, hp: keep.hp } : b)),
+      features: { ...(MOCK_RULES_R7.features as Features), keep: true },
+      arrows: on.arrows,
+      towns: on.towns,
+    };
+  } finally {
+    KEEP.on = was;
+  }
+}
 
 /** `?walls=1`: D-096's gates and walls on (with round 7's), the simulation's values. */
 export const MOCK_RULES_WALLS: Rules = {
@@ -321,6 +345,8 @@ export class MockPort implements SimPort {
   /** D-099 (?siege=1): siege engines and works on; our engine (its id). */
   private readonly siege: boolean;
   private siegeEngine = -1;
+  /** D-100 (?keep=1): the bigger towns, a keep in each (but the one being plundered). */
+  private readonly keep: boolean;
   private readonly rules: Rules;
   /**
    * The same layout as a random map (D-074, sim/PROTOCOL.md): `ready` tells only our own home,
@@ -337,13 +363,14 @@ export class MockPort implements SimPort {
    * `outpost`: `?outpost=1`, outposts too (D-080). `gallery`: `?gallery=1`, the atlases' gallery too.
    * `mine`: `?mine=1`, two mines of ours, a crystal vein by one.
    */
-  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false, siege = false) {
-    this.round7 = round7 || outpost || walls || siege;
+  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false, siege = false, keep = false) {
+    this.round7 = round7 || outpost || walls || siege || keep;
+    this.keep = keep;
     this.outpost = outpost;
     this.mine = mine;
     this.walls = walls;
     this.siege = siege;
-    this.rules = siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
+    this.rules = keep ? mockRulesKeep() : siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
     this.randomMap = map === "random";
     this.gallery = gallery;
   }
@@ -566,21 +593,38 @@ export class MockPort implements SimPort {
     }
 
     const town = (size: TownSize, cx: number, cy: number, state: TownState, owner: number, timer = 0, total = 0, militia = 0) => {
-      const t: MTown = { id: this.towns.length, size, cx, cy, radius: size === TownSize.Large ? 6 : 4, state, owner, timer, timerTotal: total, militia, plundered: false, income: 1000 };
+      // D-100 (?keep=1): the walls' distance as the simulation's (7 and 9).
+      const radius = this.keep ? (this.rules.towns?.[size]?.radius ?? 7) : size === TownSize.Large ? 6 : 4;
+      const t: MTown = { id: this.towns.length, size, cx, cy, radius, state, owner, timer, timerTotal: total, militia, plundered: false, income: 1000 };
       this.towns.push(t);
       return t;
     };
-    // Round 7: the small neutral town was plundered before (taken again, only 治理), and our
-    // governed town too, so it pays a quarter and climbs back.
-    town(TownSize.Small, 30, 66, TownState.Neutral, NEUTRAL, 0, 0, 3).plundered = this.round7;
-    const ours = town(TownSize.Small, 18, 62, TownState.Governed, ME);
-    if (this.round7) {
-      ours.plundered = true;
-      ours.income = (this.rules.plunderRecovery as { startPermille: number }).startPermille;
+    // D-100 (?keep=1): the towns about 1.5 x bigger, spread so that their castles do not overlap: a
+    // neutral small town east of our soldiers, ours, the big city we plunder (its keep down), the
+    // enemy's in the south-east; a keep in the middle of each but the one plundered.
+    if (this.keep) {
+      town(TownSize.Small, 36, 72, TownState.Neutral, NEUTRAL, 0, 0, 3);
+      town(TownSize.Small, 16, 62, TownState.Governed, ME);
+      town(TownSize.Large, 48, 48, TownState.Plundering, ME, 300, 500);
+      town(TownSize.Small, 70, 84, TownState.Governed, FOE);
+      for (const t of this.towns) {
+        const k = this.rules.towns?.[t.size]?.keep;
+        if (k === undefined || t.state === TownState.Plundering) continue;
+        this.building(t.owner, BuildingType.Keep, t.cx - 1, t.cy - 1).hp = k.hp;
+      }
+    } else {
+      // Round 7: the small neutral town was plundered before (taken again, only 治理), and our
+      // governed town too, so it pays a quarter and climbs back.
+      town(TownSize.Small, 30, 66, TownState.Neutral, NEUTRAL, 0, 0, 3).plundered = this.round7;
+      const ours = town(TownSize.Small, 18, 62, TownState.Governed, ME);
+      if (this.round7) {
+        ours.plundered = true;
+        ours.income = (this.rules.plunderRecovery as { startPermille: number }).startPermille;
+      }
+      town(TownSize.Small, 36, 80, TownState.Ruins, -1, 3000, 4800);
+      town(TownSize.Large, 48, 48, TownState.Plundering, ME, 300, 500);
+      town(TownSize.Small, 38, 56, TownState.Governed, FOE);
     }
-    town(TownSize.Small, 36, 80, TownState.Ruins, -1, 3000, 4800);
-    town(TownSize.Large, 48, 48, TownState.Plundering, ME, 300, 500);
-    town(TownSize.Small, 38, 56, TownState.Governed, FOE);
     // D-096 (?walls=1): a gate in each opening of every castle but the ruins', its town's holder's
     // (the neutral's for a neutral town), at its town's size's hit points.
     if (this.walls) {
