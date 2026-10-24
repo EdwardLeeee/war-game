@@ -45,6 +45,17 @@ export interface AnimInfo {
    * metres from the feet: right, forward, up as the picture faces (a mirrored picture's right is its left).
    */
   stone_from_m?: [number, number, number];
+  /**
+   * 真的箭 (R8-35 B, art-v6 effects `arrow` and `sling_stone`): metres a second it flies, the most
+   * seconds it may take, its arc's top above the straight line per metre between (arc_k), its
+   * length (the arrow, drawn pointing right), and where a bowman's leaves (by atlas: right,
+   * forward, up from the feet as the picture faces; a mirrored picture's right is its left).
+   */
+  speed_mps?: number;
+  max_s?: number;
+  arc_k?: number;
+  len_m?: number;
+  from_m?: Record<string, [number, number, number]>;
 }
 
 export interface AtlasJson {
