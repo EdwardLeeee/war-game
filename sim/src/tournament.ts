@@ -9,6 +9,7 @@
 // Writes DIR/game-<i>.json (result and statistics) and DIR/game-<i>.jsonl (the log).
 // Exits 1 if any replay differs.
 
+import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
@@ -61,6 +62,8 @@ export interface GameResult {
   tickMicros: { median: number; p95: number; max: number; mean: number };
   /** Every TIMELINE_EVERY ticks: what each side had and where its army was (for finding why games run long). */
   timeline: Sample[];
+  /** D-101: each side's own gold and when it ran out, the contested gold and how much each side mined it. */
+  gold: GoldRecord;
   /** Tick of the first town capture, or -1, and the spawn that made it (-1: none). */
   firstCapture: number;
   firstCaptureBy: number;
@@ -225,11 +228,13 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
   const g = r.game;
   const micros: number[] = [];
   const timeline: Sample[] = [];
+  const gold = new GoldWatch(g.w);
   const rejected = [new Array<number>(REJECT_CODES).fill(0), new Array<number>(REJECT_CODES).fill(0)];
   while (!r.over && g.tick < maxTicks) {
     micros.push(r.tick(() => performance.now()));
     for (const e of g.events) if (e.ev.k === "rejected" && e.to < 2) rejected[e.to][e.ev.reason]++;
     if (g.tick % TIMELINE_EVERY === 0) timeline.push(sample(r));
+    if (g.tick % 1200 === 0) gold.minute(g.w);
   }
   if (r.hashes.at(-1)!.tick !== g.tick) r.hashes.push({ tick: g.tick, hash: g.hash() });
   // Replay with the AIs off.
@@ -258,6 +263,7 @@ for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
     wallMs,
     tickMicros: { median: pick(0.5), p95: pick(0.95), max: sorted.at(-1) ?? 0, mean: sorted.length ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length) : 0 },
     timeline,
+    gold: gold.result(),
     firstCapture: w.firstCapture,
     firstCaptureBy: w.firstCaptureBy,
     perPlayer: [0, 1].map((p) => ({
