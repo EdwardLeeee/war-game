@@ -37,6 +37,8 @@ import buildings as B1
 
 KNEE = 0.45
 APPROVED = ("main_city", "house", "barracks")      # B1-02 was drawn on these: keep them as approved
+R8 = False          # set by apply() for the R8 buildings (design/r8/blender/arch_r8.py, arch2_r8.py): their own fire,
+                    # ruin and construction frame (the realistic look); the B1 buildings keep theirs
 
 
 # ---------------------------------------------------------------- helpers
@@ -134,6 +136,8 @@ def cut_above(root, z, keep_flags=False):
     for ob in kit.parts_under(root):
         if keep_flags and _is_flag(ob):
             continue
+        if ob.get("no_cut"):             # the ground the building stands on (the West mine's hillock, a scan grid:
+            continue                     # an EXACT Boolean on it ran for hours on CI)
         b = _bbox(ob)
         if b[2] >= z - 1e-4:
             _drop(ob)
@@ -191,7 +195,8 @@ def footprint(kind):
     if foot is None:                     # R8 batch 2's buildings (design/r8/blender/arch_r8.py, arch2_r8.py)
         import arch_r8
         import arch2_r8
-        foot = {**arch_r8.FOOTPRINT, **arch2_r8.FOOTPRINT}[kind]
+        import keep_r8
+        foot = {**arch_r8.FOOTPRINT, **arch2_r8.FOOTPRINT, **keep_r8.FOOTPRINT}[kind]
     fx, fy = foot
     return fx * kit.CELL, fy * kit.CELL
 
@@ -263,7 +268,7 @@ def scaffold(root, P, c, x0, x1, y0, y1, h, z0=0.0, canvas=False, name="sc"):
 
 def skeleton(root, P, c, blocks, z_top_frac=1.0):
     """The timber frame of every wall block: posts round it and the top beams."""
-    beam = P["beam"] if c == "W" else P["post"]
+    beam = P["beam"] if c == "W" or R8 else P["post"]       # R8: raw timber, not lacquered yet (east notes 九)
     for n, (g, (cx, cy, w, d, z0, wall_h)) in enumerate(blocks):
         M = g.matrix_world
         top = wall_h * z_top_frac
@@ -318,8 +323,80 @@ def smoke(root, name, base, height=3.5, r0=0.3, r1=0.85, n=8, dark=0.18, drift=(
     return []
 
 
+def _flame_mat():
+    """R8: fire that is not a solid cone: emission from a hot pale-yellow core through orange to a dull red at the
+    tips, the tongues' edges ragged and see-through (a noise rising up each tongue), bright enough to light the roof
+    round it (Cycles lights from emitting surfaces)."""
+    if "flame_r8" in bpy.data.materials:
+        return bpy.data.materials["flame_r8"]
+    m = bpy.data.materials.new("flame_r8")
+    m.use_nodes = True
+    nt = m.node_tree
+    for n_ in list(nt.nodes):
+        if n_.bl_idname != "ShaderNodeOutputMaterial":
+            nt.nodes.remove(n_)
+    out = next(n_ for n_ in nt.nodes if n_.bl_idname == "ShaderNodeOutputMaterial")
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["Generated"], sep.inputs["Vector"])           # z 0 at the tongue's foot, 1 at its tip
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    cr = ramp.color_ramp
+    cr.elements[0].position, cr.elements[0].color = 0.0, (1.0, 0.86, 0.45, 1)
+    cr.elements[1].position, cr.elements[1].color = 1.0, (0.55, 0.08, 0.01, 1)
+    e = cr.elements.new(0.4)
+    e.color = (1.0, 0.45, 0.07, 1)
+    nt.links.new(sep.outputs["Z"], ramp.inputs["Fac"])
+    em = nt.nodes.new("ShaderNodeEmission")
+    nt.links.new(ramp.outputs["Color"], em.inputs["Color"])
+    st = nt.nodes.new("ShaderNodeMapRange")
+    st.inputs["From Min"].default_value, st.inputs["From Max"].default_value = 0.0, 1.0
+    st.inputs["To Min"].default_value, st.inputs["To Max"].default_value = 9.0, 2.0
+    nt.links.new(sep.outputs["Z"], st.inputs["Value"])
+    nt.links.new(st.outputs["Result"], em.inputs["Strength"])
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.inputs["Scale"].default_value = (5.0, 5.0, 1.6)                    # licks stretched upward
+    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
+    nz = nt.nodes.new("ShaderNodeTexNoise")
+    nz.inputs["Scale"].default_value = 3.0
+    nz.inputs["Detail"].default_value = 4.0
+    nt.links.new(mp.outputs["Vector"], nz.inputs["Vector"])
+    edge = nt.nodes.new("ShaderNodeMath")                                # thinner toward the tip
+    edge.operation = "MULTIPLY_ADD"
+    edge.inputs[1].default_value = 0.45
+    edge.inputs[2].default_value = 0.32
+    nt.links.new(sep.outputs["Z"], edge.inputs[0])
+    cut = nt.nodes.new("ShaderNodeMath")
+    cut.operation = "GREATER_THAN"
+    nt.links.new(nz.outputs["Fac"], cut.inputs[0])
+    nt.links.new(edge.outputs[0], cut.inputs[1])
+    soft = nt.nodes.new("ShaderNodeMapRange")
+    soft.inputs["From Min"].default_value, soft.inputs["From Max"].default_value = 0.3, 0.6
+    nt.links.new(nz.outputs["Fac"], soft.inputs["Value"])
+    a = nt.nodes.new("ShaderNodeMath")
+    a.operation = "MULTIPLY"
+    nt.links.new(cut.outputs[0], a.inputs[0])
+    nt.links.new(soft.outputs["Result"], a.inputs[1])
+    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(a.outputs[0], mix.inputs["Fac"])
+    nt.links.new(tr.outputs[0], mix.inputs[1])
+    nt.links.new(em.outputs[0], mix.inputs[2])
+    nt.links.new(mix.outputs[0], out.inputs["Surface"])
+    return m
+
+
 def flames(root, P, name, base, size=1.0, n=5, seed=1):
     rnd = random.Random(seed)
+    if R8:                           # tongues of see-through fire, a cluster of tall and short, leaning a little
+        m = _flame_mat()
+        lib.MATS.setdefault("flame_r8", dict(mat=m, kind="emit", color=(1.0, 0.5, 0.1), emission=6.0))
+        for i in range(n + 4):
+            h = size * rnd.uniform(0.6, 1.5)
+            x, y = base[0] + rnd.uniform(-0.38, 0.38) * size, base[1] + rnd.uniform(-0.38, 0.38) * size
+            ob = cyl(f"{name}{i}", 0.2 * size * rnd.uniform(0.7, 1.1), h, m, root, loc=(x, y, base[2] - 0.05), r2=0.02,
+                     segs=10, rot=(rnd.uniform(-12, 12), rnd.uniform(-12, 12), rnd.uniform(0, 360)), outline=False)
+            beauty_only(ob)
+        return
     core = lib.mat("flame_core", (1.0, 0.72, 0.25), 0.5, emission=2.6)
     for i in range(n):
         h = size * rnd.uniform(0.5, 1.0)
@@ -466,7 +543,117 @@ def fire_at_top(root, P, seed):
     smoke(root, "dm_smokegen", (p[0], p[1], p[2] + 0.8), height=3.0, r0=0.35, r1=0.9, n=11, dark=0.16, alpha=0.9)
 
 
+def _soot_mat():
+    """R8: soot on stone: dark, its edge soft and ragged (a radial fade broken by noise), see-through outside."""
+    if "soot_r8" in bpy.data.materials:
+        return bpy.data.materials["soot_r8"]
+    m = bpy.data.materials.new("soot_r8")
+    m.use_nodes = True
+    nt = m.node_tree
+    out = next(n_ for n_ in nt.nodes if n_.bl_idname == "ShaderNodeOutputMaterial")
+    p = next(n_ for n_ in nt.nodes if n_.bl_idname == "ShaderNodeBsdfPrincipled")
+    p.inputs["Base Color"].default_value = (0.025, 0.022, 0.02, 1)
+    p.inputs["Roughness"].default_value = 1.0
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["Generated"], sep.inputs["Vector"])
+    r = nt.nodes.new("ShaderNodeVectorMath")
+    r.operation = "DISTANCE"
+    r.inputs[1].default_value = (0.5, 0.5, 0.0)
+    comb = nt.nodes.new("ShaderNodeCombineXYZ")
+    nt.links.new(sep.outputs["X"], comb.inputs["X"])
+    nt.links.new(sep.outputs["Y"], comb.inputs["Y"])
+    nt.links.new(comb.outputs[0], r.inputs[0])
+    nz = nt.nodes.new("ShaderNodeTexNoise")
+    nz.inputs["Scale"].default_value = 6.0
+    nz.inputs["Detail"].default_value = 5.0
+    nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
+    add = nt.nodes.new("ShaderNodeMath")
+    add.operation = "MULTIPLY_ADD"
+    add.inputs[1].default_value = 0.35
+    nt.links.new(nz.outputs["Fac"], add.inputs[0])
+    nt.links.new(r.outputs["Value"], add.inputs[2])
+    fade = nt.nodes.new("ShaderNodeMapRange")
+    fade.inputs["From Min"].default_value, fade.inputs["From Max"].default_value = 0.62, 0.3
+    fade.inputs["To Min"].default_value, fade.inputs["To Max"].default_value = 0.0, 0.85
+    nt.links.new(add.outputs[0], fade.inputs["Value"])
+    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(fade.outputs["Result"], mix.inputs["Fac"])
+    nt.links.new(tr.outputs[0], mix.inputs[1])
+    nt.links.new(p.outputs[0], mix.inputs[2])
+    nt.links.new(mix.outputs[0], out.inputs["Surface"])
+    return m
+
+
+def r8_ruin(root, P, c, w, d, blocks, seed):
+    """R8's ruin (east notes 九: 台基＋柱礎格子＋斷柱＋瓦礫, the plan still readable; west notes 十五: a low heap, the
+    footings): everything cut at knee height (the platform, the wall footings), the cloth gone; the columns' stone
+    bases back on the cut platform where they stood, a few charred stubs and fallen column pieces; broken stone and
+    brick (angular), tile shards and charred beams over it, soot and ash. Stone and rammed earth do not burn (only
+    soot): the textures stay. Nothing above 0.6 m (the cells walk again)."""
+    import terrain_r8
+    import arch_r8
+    AP = arch_r8.palette(c)
+    bpy.context.view_layer.update()
+    bases = []                                         # the column bases (hall_e's *_base<k>) where they stood
+    for ob in ([] if root.get("no_bases") else kit.parts_under(root)):
+        if "_base" in ob.name and ob.type == "MESH" and "hall" in ob.name or "_col" in ob.name and ob.type == "MESH":
+            x0, y0, z0, x1, y1, z1 = _bbox(ob)
+            if "_col" in ob.name:
+                bases.append(((x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2))
+    _drop_cloth(root)
+    _hollow(root, blocks, 0.12)
+    cut_above(root, KNEE)
+    rnd = random.Random(seed + 9)
+    zt = KNEE
+    for k, (x, y, r) in enumerate(bases):              # bases on the cut platform, some with a burnt stub
+        cyl(f"rb_base{k}", r * 1.5, 0.1, AP["stone"], root, loc=(x, y, zt - 0.02), r2=r * 1.25, segs=14)
+        if rnd.random() < 0.4:
+            cyl(f"rb_stub{k}", r * 0.95, rnd.uniform(0.06, 0.14), P["char"], root, loc=(x, y, zt + 0.08), r2=r * 0.7, segs=10)
+    burnt = lib.mat("wooddark", (0.03, 0.026, 0.022), 0.95)   # charred timber: the wood's grain, black
+    for k in range(min(3, len(bases))):                # fallen pieces of the columns, burnt through, broken short
+        x, y, r = bases[rnd.randrange(len(bases))]
+        a = rnd.uniform(0, math.pi)
+        L = rnd.uniform(0.6, 1.1)
+        rod(f"rb_colfall{k}", (x, y, zt + r * 0.6), (x + math.cos(a) * L, y + math.sin(a) * L, zt + r * 0.5), r * 0.6, burnt,
+            parent=root, segs=7)
+    stone = AP["stone"] if c == "W" else AP["brick"]
+    n = int(w * d * 1.6)
+    for i in range(n):
+        x, y = rnd.uniform(-w / 2, w / 2) * 0.85, rnd.uniform(-d / 2, d / 2) * 0.85
+        fall = 1 - (abs(x) / (w / 2) + abs(y) / (d / 2)) / 2
+        r = rnd.uniform(0.08, 0.24)
+        terrain_r8._rock(f"rb_stone{i}", r, stone if i % 4 else P["char"], root, (x, y, 0.06 + KNEE * 0.4 * fall + r * 0.2), rnd)
+    for i in range(int(n * 0.9)):
+        x, y = rnd.uniform(-w / 2, w / 2) * 0.9, rnd.uniform(-d / 2, d / 2) * 0.9
+        box(f"rb_tile{i}", (0.26, 0.18, 0.035), AP["tile"], root, loc=(x, y, rnd.uniform(0.04, KNEE + 0.05)),
+            rot=(rnd.uniform(-35, 35), rnd.uniform(-35, 35), rnd.uniform(0, 180)))
+    for i in range(max(3, int(w * 1.2))):
+        x, y = rnd.uniform(-w / 2, w / 2) * 0.7, rnd.uniform(-d / 2, d / 2) * 0.7
+        a = rnd.uniform(0, math.pi)
+        L = rnd.uniform(1.0, 2.0)
+        rod(f"rb_beam{i}", (x - math.cos(a) * L / 2, y - math.sin(a) * L / 2, 0.1),
+            (x + math.cos(a) * L / 2, y + math.sin(a) * L / 2, rnd.uniform(0.2, 0.55)), 0.07, burnt, parent=root, segs=6)
+    soot = _soot_mat()
+    bpy.context.view_layer.update()
+    tops = {}
+    for ob in kit.parts_under(root):                   # the soot lies on whatever is left: the cut platform, the floor
+        x0, y0, z0, x1, y1, z1 = _bbox(ob)
+        if x1 - x0 > 1.5 and y1 - y0 > 1.5:
+            tops[ob.name] = (x0, y0, x1, y1, z1)
+    for i in range(7):
+        x, y = rnd.uniform(-w / 2.6, w / 2.6), rnd.uniform(-d / 2.6, d / 2.6)
+        z = max([t[4] for t in tops.values() if t[0] < x < t[2] and t[1] < y < t[3]] or [0.08])
+        ob = cyl(f"rb_soot{i}", rnd.uniform(0.7, 1.3), 0.01, soot, root, loc=(x, y, min(z, KNEE) + 0.012),
+                 scale=(1, rnd.uniform(0.55, 1), 1), outline=False)
+        ob["no_bevel"] = True
+    smoke(root, "ds_wisp", (0.3, -0.2, 0.5), height=2.2, r0=0.15, r1=0.35, n=7, dark=0.5, alpha=0.55)
+
+
 def apply(root, kind, c, state, **opts):
+    global R8
+    R8 = kind.startswith("r8_")
     P = kit.palette(c)
     w, d = footprint(kind)
     blocks = _tagged(root, "block")
@@ -474,7 +661,7 @@ def apply(root, kind, c, state, **opts):
     H = _body_top(root)
     seed = sum(map(ord, kind)) + (0 if c == "E" else 50)
 
-    if state == "build_a1" and kind.startswith("farm"):
+    if state == "build_a1" and "farm" in kind:          # farm, farm_fine, r8_farm
         for ob in list(kit.parts_under(root)):
             if ob.name.startswith(("ff_rice", "ff_panicle", "ff_wheat", "ff_ears", "ff_water", "ff_sc")):
                 _drop(ob)
@@ -570,6 +757,8 @@ def apply(root, kind, c, state, **opts):
         cc = centres[0] if centres else Vector((0, 0, H))
         smoke(root, "dm_wisp", (cc.x, cc.y, cc.z + 0.2), height=3.0, r0=0.18, r1=0.45, n=10, dark=0.55, alpha=0.6,
               drift=(0.25, 0.18))
+    elif state == "destroyed_a" and R8:
+        r8_ruin(root, P, c, w, d, blocks, seed)
     elif state == "destroyed_a":
         for ob in list(kit.parts_under(root)):
             if _bbox(ob)[5] > 0.3:

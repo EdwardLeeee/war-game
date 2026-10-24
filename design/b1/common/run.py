@@ -339,6 +339,46 @@ def _prod_r8(c):
     return out
 
 
+# the castles (D-096 pieces, approved; D-100's bigger layouts use the same pieces) in the R8 look, named as art-v5's;
+# not the 4-cell stone gate (D-100 has 3-cell gates with piers only) nor the 3 x 3 town tower (the keep replaces it)
+R8_CASTLE = [dict(pc, opts=dict(pc["opts"], r8=True)) if pc["kind"] == "tground" else pc
+             for pc in _V4 if pc["kind"] not in ("sw_gate_x", "sw_gate_y", "ttower3")]
+for _i in range(0, len(R8_CASTLE), 10):
+    TARGETS[f"r8w_{_i // 10}"] = R8_CASTLE[_i:_i + 10]
+    CAMERA[f"r8w_{_i // 10}"] = proj.OBLIQUE
+    LOOK[f"r8w_{_i // 10}"] = "r8"
+# art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
+# replaces these pieces of the r8p run in the atlas
+TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in
+                        (f"main_city_{_c}_done", f"arrow_tower_{_c}_done")]
+CAMERA["r8p_marks"] = proj.OBLIQUE
+LOOK["r8p_marks"] = "r8"
+# R8-36 the inside of the walls, directions B and C (decor_r8.py): the decorative pieces, East
+TARGETS["r8x_decor"] = [dict(kind="r8_decor", culture="E", opts=dict(piece=k), name=f"decor_{k}_E")
+                        for k in ("hut_a", "hut_b", "shed", "well", "cart", "stack", "tent_a", "tent_b", "rack", "supplies",
+                                  "posts", "flag")]
+CAMERA["r8x_decor"] = proj.OBLIQUE
+LOOK["r8x_decor"] = "r8"
+# art-v6 (R8-36 B, the user 2026-10-23): the decorative pieces of a lived-in town, both cultures (castle.DECOR_SIZE)
+TARGETS["r8x_prod"] = [dict(kind="r8_decor", culture=c, opts=dict(piece=k), name=f"decor_{k}_{c}") for c in CULTURES
+                       for k in ("hut_a", "hut_b", "shed", "stack", "well", "cart")]
+CAMERA["r8x_prod"] = proj.OBLIQUE
+LOOK["r8x_prod"] = "r8"
+# D-100 the keep (keep_r8.py): the drafts for the user first, every state of both cultures
+TARGETS["r8k_draft"] = [dict(kind="r8_keep", culture=c, opts=dict(state=st), name=f"keep_{c}_{st}") for c in CULTURES
+                        for st in ("done", "damaged", "rubble", "repair")]
+CAMERA["r8k_draft"] = proj.OBLIQUE
+LOOK["r8k_draft"] = "r8"
+# the resource points (nature_r8.py), named as art-v5's PROD_NODES
+R8_NODES = ([dict(kind="r8_tree", culture=c, opts=dict(variant=v), name=f"tree_{c}_v{v}") for c in CULTURES for v in (0, 1, 2)]
+            + [dict(kind="r8_tree", culture=c, opts=dict(state="stump"), name=f"tree_{c}_stump") for c in CULTURES]
+            + [dict(kind=f"r8_{k}", culture="E", opts=dict(variant=v, state=st), name=f"{k}_v{v}_{st}") for k, sts in
+               (("gold", ("full", "mined", "depleted")), ("berry", ("full", "depleted")), ("crystal", ("full", "depleted")))
+               for v in (0, 1) for st in sts])
+for _i in range(0, len(R8_NODES), PROD_CHUNK):
+    TARGETS[f"r8n_{_i // PROD_CHUNK}"] = R8_NODES[_i:_i + PROD_CHUNK]
+    CAMERA[f"r8n_{_i // PROD_CHUNK}"] = proj.OBLIQUE
+    LOOK[f"r8n_{_i // PROD_CHUNK}"] = "r8"
 for _c in CULTURES:
     _all = _prod_r8(_c)
     for _i in range(0, len(_all), PROD_CHUNK):

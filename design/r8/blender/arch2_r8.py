@@ -183,6 +183,9 @@ def mine(root, c):
         import terrain_r8                             # the hillock in the approved rock (R8-26)
         terrain_r8._mass("mn_hill", root, terrain_r8.mats(), random.Random(31), cx=0.0, cy=1.35, radius=(1.2, 1.55), H=1.6,
                          nk=7, round_top=0.35, taper=0.3, cap=0.25, tilt=0.15)
+        for ob in kit.parts_under(root):              # ground, there before the building: never cut while it is built
+            if ob.name.startswith("mn_hill"):
+                ob["no_cut"] = True
         box("mn_adit", (0.9, 0.3, 1.3), P["dark"], root, loc=(-0.9, 0.5, 0.65))
         for sx in (-1, 1):
             box(f"mn_adp{sx}", (0.16, 0.2, 1.45), P["timber"], root, loc=(-0.9 + sx * 0.5, 0.42, 0.72))
@@ -388,6 +391,8 @@ def arrow_tower(root, c):
             box(f"at_board{k}", size, P["wood"], root, loc=loc)
         for k, x in enumerate((-0.5, 0.0, 0.5)):
             box(f"at_slit{k}", (0.08, 0.06, 0.6), P["dark"], root, loc=(x, 0.1 - 1.0, bh + 1.15))
+        for k, (x, y) in enumerate(((0.0, 0.1 - 1.3), (-1.2, 0.1), (1.2, 0.1), (0.0, 1.4))):   # the room's slits all round
+            lib.empty(f"shoot_at_{k}", parent=root, loc=(x, y, bh + 1.2))
         tang_roof("at_roof", P, root, 0, 0.1, bh + 0.18 + top, w + 0.3, d + 0.3, 0.95, 0.6, kind="xieshan", lift=0.06,
                   chiwei=False)
         kit.drape("at_hang", P, root, "y", 0.0, bh + 0.95, 1.6, 1.1, y0=-1.45)
@@ -420,6 +425,9 @@ def arrow_tower(root, c):
             box(f"at_hslit{k}", (0.07, 0.08, 0.55), P["dark"], root, loc=((R + 0.38) * math.sin(a), 0.1 - (R + 0.42) * math.cos(a), zh + 0.75),
                 rot=(0, 0, math.degrees(a)))
         cyl("at_cone", R + 0.6, 2.6, P["tile"], root, loc=(0, 0.1, zh + 1.3), r2=0.03, segs=28)
+        for k in range(4):                         # the hoarding's slits, a quarter round apart
+            a = math.pi / 2 * k
+            lib.empty(f"shoot_at_{k}", parent=root, loc=((R + 0.6) * math.sin(a), 0.1 - (R + 0.6) * math.cos(a), zh + 0.75))
         kit.drape("at_hang", P, root, "y", 0.0, zh + 1.25, 1.2, 1.0, y0=0.1 - R - 0.44)
         kit.flag("at_flag", P, root, (0.0, 0.1, zh + 3.75), 1.8, c, w=0.9, fh=1.0)
 

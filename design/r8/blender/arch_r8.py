@@ -479,6 +479,8 @@ def main_city(root, c):
         tang_roof("mc_roof", P, root, 0, 1.0, 1.1 + top, w + 0.6, d + 0.6, 1.65, 1.25, kind="xieshan", lift=0.07, chiwei=True,
                   chiwei_s=1.15, tile_pitch=0.3)
         _team_hangings_e(P, root, (-2.15, 2.15), 1.0 - d / 2 - 0.2, 1.1 + 2.9, w=0.7, h=1.7)
+        for k, x in enumerate((-2.0, 0.0, 2.0)):      # arrows from the hall's front, over the platform's edge (D-096)
+            lib.empty(f"shoot_at_{k}", parent=root, loc=(x, 1.0 - 1.9 - 0.3, 1.1 + 2.0))
         for sx in (-1, 1):
             kit.flag(f"mc_flag{sx}", P, root, (sx * 3.5, -3.4, 0.12), 5.2, c, w=1.2, fh=1.8)
             cyl(f"mc_lamp{sx}", 0.22, 1.1, P["stone"], root, loc=(sx * 1.6, -3.0, 0.12), r2=0.16, segs=8)
@@ -518,6 +520,9 @@ def main_city(root, c):
             kit.flag(f"mc_flag{sx}", P, root, (3.4 if sx > 0 else -1.2, -3.5, 0.12), 4.8, c, w=1.2, fh=1.8)
         kit.flag("mc_tflag", P, root, (tx, ty, 10.0), 2.4, c, w=1.0, fh=1.3)
         kit.drape("mc_hang", P, root, "y", 1.55, 4.9, 0.9, 1.9, y0=yf - 0.02)
+        for k, (x, y, z) in enumerate(((tx - 0.45, ty - tw / 2 - 0.3, 7.3), (tx + 0.45, ty - tw / 2 - 0.3, 7.3),
+                                        (0.6, yf - 0.3, 3.9))):        # the belfry's openings, a hall lancet
+            lib.empty(f"shoot_at_{k}", parent=root, loc=(x, y, z))
 
 
 def house(root, c):

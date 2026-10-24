@@ -681,7 +681,56 @@ def board_river(gdir, research, W=2800):
     return out
 
 
-if __name__ == "__main__" and sys.argv[1] == "river":
+def board_siege(gdir, W=2400):
+    """R8-30: the siege stone and its landing (design/production/common/effects.py, effects.json), frame by frame on the
+    R8 ground; the GIFs of a whole shot are made by the review script next to it."""
+    label = "R8-30-攻城石彈-mobile"
+    text = ("攻城砲的石彈和落地（D-099，art-v6）。石彈是一塊有稜角的砂岩，和懸崖同一種石頭，邊飛邊翻滾（4 格循環），約 0.6 公尺；"
+            "地上跟著一個影子，越高越淡越小。弧線最高點約 2 公尺＋距離的四分之一（16 公尺遠約 6 公尺高），飛 1 秒。"
+            "從攻城砲手臂的頂端出手（霹靂車、投石機各量了一個點）；看不到攻城砲時（只看得到落點），石頭從 from 指的方向、畫面外 14 公尺飛進來。\n"
+            "落地兩種：空地上，先噴起一圈深色的土和土塊，再揚起一團土色的灰，往外滾、往上升約 2 公尺，大約蓋住一格的爆炸範圍；"
+            "打中建築、城牆、城門時，飛出碎石和木片，灰比較淡，中間升起一柱深色的煙塵。落點留一個淺坑，8 秒內慢慢淡掉。\n"
+            "上兩排：落地的 10 格（每秒 15 格）；下：石彈翻滾的 4 格、影子、淺坑。動態見 GIF：R8-30-攻城石彈-落地.gif、R8-30-攻城石彈-打中建築.gif。")
+    E = HERE.parents[1] / "production" / "build" / "effects_x3"
+    ej = json.loads((E / "effects.json").read_text())
+    pg = Image.open(E / ej["pages"][0]).convert("RGBA")
+
+    def fr(n):
+        f = ej["frames"][n]
+        return pg.crop((f["x"], f["y"], f["x"] + f["w"], f["y"] + f["h"])), f["ax"], f["ay"]
+    g = river_scene(gdir, np.zeros((10, 10), dtype=int), ppm=60).convert("RGBA")
+    bg = g.crop((200, 100, 560, 400))
+    parts = [boards.header(W, label, text)]
+    for kind, cap in (("ground", "空地"), ("building", "打中建築")):
+        tiles = []
+        for i in range(10):
+            cell = bg.copy()
+            im, ax, ay = fr(f"siege_hit_{kind}_{i:02d}")
+            cell.alpha_composite(im, (int(180 - ax), int(250 - ay)))
+            tiles.append(boards.captioned(cell.convert("RGB").resize((216, 180), Image.LANCZOS), f"{cap} {i + 1}", 18))
+        parts.append(boards.row(tiles, W, gap=8))
+    st = []
+    for i in range(4):
+        im, ax, ay = fr(f"siege_stone_{i:02d}")
+        c = bg.crop((0, 0, 140, 140)).copy()
+        c.alpha_composite(im.resize((im.width * 2, im.height * 2), Image.LANCZOS), (70 - im.width, 70 - im.height))
+        st.append(boards.captioned(c.convert("RGB"), f"石彈 {i + 1}（2 倍放大）", 18))
+    im, ax, ay = fr("siege_stone_shadow_00")
+    c = bg.crop((0, 0, 140, 140)).copy()
+    c.alpha_composite(im.resize((im.width * 2, im.height * 2), Image.LANCZOS), (70 - im.width, 70 - im.height))
+    st.append(boards.captioned(c.convert("RGB"), "影子", 18))
+    im, ax, ay = fr("siege_crater_00")
+    c = bg.crop((0, 0, 260, 180)).copy()
+    cr = im.resize((im.width, im.height // 2), Image.LANCZOS)
+    c.alpha_composite(cr, (130 - cr.width // 2, 90 - cr.height // 2))
+    st.append(boards.captioned(c.convert("RGB"), "淺坑（8 秒淡掉）", 18))
+    parts.append(boards.row(st, W, gap=16))
+    return boards.save(boards.stack(parts, W), label)
+
+
+if __name__ == "__main__" and sys.argv[1] == "siege":
+    print(board_siege(Path(sys.argv[2])))
+elif __name__ == "__main__" and sys.argv[1] == "river":
     UNITS_DIR = sys.argv[4] if len(sys.argv) > 4 else None
     print(board_river(Path(sys.argv[2]), Path(sys.argv[3])))
 elif __name__ == "__main__" and sys.argv[1] == "terrain":

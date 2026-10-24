@@ -5,9 +5,10 @@ The format was agreed with war-game-client (client/docs/sprite-atlas.md section 
   <unit>_<layer>_<k>.png, memory.json; no raw/), effects/ (effects.json, effects_<k>.png), from art-v2
   buildings/ (buildings_<E|W>.json and their pages, memory.json) and nodes/ (nodes.json, its pages,
   memory.json) (design/b1/atlas-buildings.md), from art-v4 castle/ (castle_<E|W>.json, the wall pieces and floor
-  tiles of the walled towns, D-089), from art-v5 terrain/ (terrain.json: rock, cliff, water, ford and bridge tiles
-  and the rules for placing them, R6-51), and art-release.json (tag, commit, the source runs,
-  every file's sha256);
+  tiles of the walled towns, D-089; from art-v6 decorative pieces instead of the tiles, D-100), from art-v5
+  terrain/ (terrain.json: rock, cliff, water, ford and bridge tiles and the rules for placing them, R6-51), from
+  art-v6 ground/ (ground.json and its layers: the realistic ground, its water and the towns' tracks, D-093), and
+  art-release.json (tag, commit, the source runs, every file's sha256);
 - astc-sample.tar.gz: one unit's 2x colour and player-colour pages as ASTC 4 x 4 in KTX 1
   (<unit>_<layer>_<k>.astc.ktx, astcenc -cl), for the client's ASTC test page on the iPhone;
 - SHA256SUMS: sha256sum format, every file above.
@@ -125,8 +126,9 @@ def write_targz(path, files):
         gz.write(raw.getvalue())
 
 
-ATLAS_FORMATS = {"buildings": "war-game buildings 1", "nodes": "war-game nodes 1", "castle": "war-game castle 1",
-                 "terrain": "war-game terrain 1"}
+ATLAS_FORMATS = {"buildings": ("war-game buildings 1",), "nodes": ("war-game nodes 1",),
+                 "castle": ("war-game castle 1", "war-game castle 2"),    # 2 from art-v6: decor, no floor tiles
+                 "terrain": ("war-game terrain 1",)}
 
 
 def atlas_files(src, folder, scale):
@@ -140,12 +142,28 @@ def atlas_files(src, folder, scale):
         if mp.name == "memory.json":
             continue
         man = json.loads(mp.read_text())
-        if man.get("format") != ATLAS_FORMATS[folder] or man.get("scale") != float(scale[1:]):
+        if man.get("format") not in ATLAS_FORMATS[folder] or man.get("scale") != float(scale[1:]):
             die(f"{mp}: format {man.get('format')!r}, scale {man.get('scale')!r}")
         names += [mp.name] + [pg for layer in sorted(man["pages"]) for pg in man["pages"][layer]]
     extra = sorted({p.name for p in d.iterdir()} - set(names))
     if extra:
         die(f"{d} has files no manifest lists: {extra}")
+    return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
+
+
+def ground_files(src, scale):
+    """{name: bytes} of ground/ at one scale (design/r8/common/ground_r8.py export): ground.json, its layers, memory.json."""
+    found = sorted(p.parent for p in src.rglob(f"atlas_{scale}/ground/ground.json"))
+    if len(found) != 1:
+        die(f"{src}: {len(found)} atlas_{scale}/ground/")
+    d = found[0]
+    gj = json.loads((d / "ground.json").read_text())
+    if gj.get("format") != "war-game ground 1" or gj.get("scale") != float(scale[1:]):
+        die(f"{d / 'ground.json'}: format {gj.get('format')!r}, scale {gj.get('scale')!r}")
+    names = ["ground.json", "memory.json"] + [L["file"] for L in gj["layers"]]
+    extra = sorted({p.name for p in d.iterdir()} - set(names))
+    if extra:
+        die(f"{d} has files ground.json does not list: {extra}")
     return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
 
 
@@ -206,7 +224,14 @@ def main():
                 m = json.loads(fs["memory.json"])
                 rgba += m["total_rgba8_bytes"]
                 astc_b += m["total_astc_4x4_bytes"]
-            extra = "＋建築＋資源點" + ("＋城牆" if spec.get("castle") else "") + ("＋地形" if spec.get("terrain") else "")
+            if spec.get("ground"):                       # art-v6: the realistic ground (D-093) and its water
+                fs = ground_files(bld_src, scale)
+                files.update({f"ground/{n}": b for n, b in fs.items()})
+                m = json.loads(fs["memory.json"])
+                rgba += m["total_rgba8_bytes"]
+                astc_b += m["total_astc_4x4_bytes"]
+            extra = ("＋建築＋資源點" + ("＋城牆" if spec.get("castle") else "") + ("＋地形" if spec.get("terrain") else "")
+                     + ("＋地面" if spec.get("ground") else ""))
         files = with_manifest(files, dict(base, scale=scale))
         name = f"{a.tag}-{scale}.tar.gz"
         write_targz(out / name, files)

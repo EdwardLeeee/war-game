@@ -38,6 +38,13 @@ TEXTURES = [
     ("lichen_rock", "1k", "R8 cliff: the damp foot, the scree"),
     ("rustic_stone_wall_02", "1k", "R8 West: rubble stone walls"),
     ("rocks_ground_02", "1k", "R8 ground: gravel by rocks and cliffs"),
+    # R8 batch 2: the trees' bark (design/r8/blender/nature_r8.py)
+    ("pine_bark", "1k", "R8 trees: the pines and the fir"),
+    ("japanese_camphor_bark", "1k", "R8 trees: the East camphor (樟)"),
+    ("jolcham_oak_bark_01", "1k", "R8 trees: the West oak"),
+    ("bark_platanus", "1k", "R8 trees: the birch (recoloured pale)"),
+    # D-100 the packed earth inside the walls, drawn by the ground shader (ground_r8.py rules.town)
+    ("dirt", "1k", "R8 towns: packed earth inside the walls"),
 ]
 MAPS = {"diff": "Diffuse", "nor_gl": "nor_gl", "rough": "Rough"}
 PIN = {}                      # file name -> {url, sha256}, filled by `pin` from Poly Haven's file API

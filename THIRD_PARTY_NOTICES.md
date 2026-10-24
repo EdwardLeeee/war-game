@@ -8,7 +8,7 @@
 
 | 素材 | 用在哪 | 授權 | 授權原文 | 讀授權的日期 |
 |---|---|---|---|---|
-| Poly Haven 貼圖 22 種（清單和每個檔的網址、sha256 在 `design/r7/common/textures.py`、`textures_sha.json`）：rough_linen、hessian_230、brown_leather、fabric_leather_02、metal_plate、rusty_metal_02、fine_grained_wood、medieval_wood、old_planks_02、castle_brick_01、clay_plaster、thatch_roof_angled、clay_roof_tiles_02、leafy_grass、aerial_grass_rock、stony_dirt_path、gravel_ground_01、brown_mud_rocks_01、rock_face_03、lichen_rock、rustic_stone_wall_02、rocks_ground_02 | R7 寫實比較（D-092）、R8（D-093）：兵、建築、懸崖、地面的材質，算進圖裡 | CC0 1.0（可商用，不用標示出處） | https://polyhaven.com/license | 2026-10-20 |
+| Poly Haven 貼圖 27 種（清單和每個檔的網址、sha256 在 `design/r7/common/textures.py`、`textures_sha.json`）：rough_linen、hessian_230、brown_leather、fabric_leather_02、metal_plate、rusty_metal_02、fine_grained_wood、medieval_wood、old_planks_02、castle_brick_01、clay_plaster、thatch_roof_angled、clay_roof_tiles_02、leafy_grass、aerial_grass_rock、stony_dirt_path、gravel_ground_01、brown_mud_rocks_01、rock_face_03、lichen_rock、rustic_stone_wall_02、rocks_ground_02、pine_bark、japanese_camphor_bark、jolcham_oak_bark_01、bark_platanus、dirt | R7 寫實比較（D-092）、R8（D-093）：兵、建築、懸崖、地面、樹、城鎮地面的材質，算進圖裡 | CC0 1.0（可商用，不用標示出處） | https://polyhaven.com/license | 2026-10-20（樹皮 4 種、城鎮的夯土 dirt 2026-10-23） |
 | Poly Haven 掃描岩壁模型 2 種（glTF 1k，網址和 sha256 在 `design/r8/common/scans.py`、`scans_sha.json`）：rock_face_01（Dario Barresi）、rock_face_02（Dario Barresi；處理 Rico Cilliers） | R8 懸崖（`design/r8/blender/terrain_r8.py`）：從正面量出凹凸和顏色，貼在岩柱和岩壁上，算進圖裡 | CC0 1.0（可商用，不用標示出處） | https://polyhaven.com/license 、https://polyhaven.com/a/rock_face_01 、https://polyhaven.com/a/rock_face_02 | 2026-10-22 |
 | MPFB 2.0.18（MakeHuman 的 Blender 外掛）的底模、變形、權重 | R7 版本 2：寫實人體 | 素材 CC0 1.0；官方寫明產出物不受任何限制 | https://github.com/makehumancommunity/mpfb2/blob/master/LICENSE.md | 2026-10-20 |
 | 寫實馬：Lyndon Daniels〈Realtime Rancher's 3D Model Pack〉的馬（網格、2k 顏色／法線／AO 貼圖、鬃毛和尾巴）；ChadM 加上骨架和權重的版本〈rigged horse〉。檔案 `horse.zip`（sha256 469704f5…0043d27）、`riggedHorse.blend`（sha256 9cca670b…7037f4a） | R8 騎兵的馬（`design/r8/blender/horse_r8.py`） | CC0 1.0（兩個頁面都標 CC0；rigged 版寫明「授權和 Lyndon 的原版相同」） | https://opengameart.org/content/realtime-ranchers-3d-model-pack 、 https://opengameart.org/content/rigged-horse | 2026-10-21 |
@@ -56,6 +56,16 @@ R8 的核准稿（`design/r8/out/R8-*`）上方放了幾張裁切過的參考圖
 | 懸崖 11：太行山紅砂岩（R8-24） | https://commons.wikimedia.org/wiki/File:Dong_Taihang_10.jpg | CC0 1.0 | H2v5o68z | 2026-10-22 |
 | 懸崖 12：猊鼻溪石灰岩崖 | https://commons.wikimedia.org/wiki/File:Geibikei_-_Geibikei7679.jpg | CC0 1.0 | lumoplank | 2026-10-22 |
 | 懸崖 13：石灰岩崖腳的岩屑錐 | https://commons.wikimedia.org/wiki/File:Begunjscica,_Born_Path_traversing_a_scree_03.jpg | CC0 1.0 | Ajznponar | 2026-10-22 |
+| 主堡東陸 03：莫高窟 61 窟〈五臺山圖〉局部（R8-31） | https://commons.wikimedia.org/wiki/File:Mogao_Cave_61,_painting_of_Mount_Wutai_monasteries.jpg | 公有領域（PD Old） | 10 世紀敦煌畫工 | 2026-10-23 |
+| 主堡東陸 02：宋畫〈黃鶴樓〉（R8-31） | https://commons.wikimedia.org/wiki/File:Yellow_Crane_Tower_in_Song_dynasty.jpg | 公有領域（作者過世 70 年以上） | 作者不明 | 2026-10-23 |
+| 主堡東陸 05：《武經總要》皮竹笆、垂鐘板（R8-31） | https://commons.wikimedia.org/wiki/File:武经总要_曾公亮和丁度_宋朝_二_40.jpg | 公有領域（PD-Art、PD-old-70） | 曾公亮、丁度等（四庫本重繪） | 2026-10-23 |
+| 主堡東陸 08：麻札塔格堡壘 1913（R8-31） | https://commons.wikimedia.org/wiki/File:Mazar_Tagh_BLP190_PHOTO392_28_277.jpg | CC0 1.0 | Aurel Stein（IDP） | 2026-10-23 |
+| 主堡東陸 06：漢代陶城堡（R8-31） | https://commons.wikimedia.org/wiki/File:Late_Eastern_Han_Pottery_Castle_(10075652173).jpg | CC0 1.0 | Gary Todd | 2026-10-23 |
+| 主堡西陸 10：羅徹斯特城堡（R8-32） | https://commons.wikimedia.org/wiki/File:The_castle,_Rochester,_England-LCCN2002708076.jpg | 公有領域（PD US expired） | Detroit Publishing Co.（美國國會圖書館） | 2026-10-23 |
+| 主堡西陸 14：維奧萊勒杜克〈尚布瓦主堡〉（R8-32） | https://commons.wikimedia.org/wiki/File:Donjon.Chambois.png | 公有領域（PD-old-100） | Viollet-le-Duc；刻版 E. Guillaumot | 2026-10-23 |
+| 主堡西陸 16：維奧萊勒杜克〈木外廊剖面〉（R8-32） | https://commons.wikimedia.org/wiki/File:Coupe.hourds.courtine.png | 公有領域（PD-old-100） | Viollet-le-Duc；刻版 Guillaumot jeune | 2026-10-23 |
+| 主堡西陸 11：卡斯泰爾諾城堡的木外廊（R8-32） | https://commons.wikimedia.org/wiki/File:Hourds_Castelnaud.jpg | CC0 1.0 | Jebulon | 2026-10-23 |
+| 主堡西陸 21：科夫城堡（R8-32） | https://commons.wikimedia.org/wiki/File:Castle,_Corfe_Castle,_England-LCCN2002696569.jpg | 公有領域（PD US expired） | Detroit Publishing Co.（美國國會圖書館） | 2026-10-23 |
 
 ## 只做測試、不進任何公開發布的
 
