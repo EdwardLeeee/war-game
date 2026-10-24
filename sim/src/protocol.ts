@@ -111,6 +111,8 @@ export const BuildingType = {
   Gate: 13,
   /** Trains siege engines (D-099, 砲坊; while `Rules.features.siege`). */
   SiegeWorks: 14,
+  /** Trades food and wood for gold (D-101, 市場; while `Rules.features.market`): `trade`. */
+  Market: 15,
 } as const;
 export type BuildingType = (typeof BuildingType)[keyof typeof BuildingType];
 
@@ -264,6 +266,8 @@ export const Reject = {
   GateLane: 18,
   /** `build` on a ford or a bridge (PlaceBit.Crossing; R6-51, ceo 2026-10-20: crossings stay open). */
   Crossing: 19,
+  /** `trade` without a finished market of one's own (D-101). */
+  NoMarket: 20,
 } as const;
 export type Reject = (typeof Reject)[keyof typeof Reject];
 
@@ -504,8 +508,14 @@ export const HeaderField = {
    * (Rules.population: the base plus the governed towns). 120 while the rule is off.
    */
   populationCeiling: 25,
+  /**
+   * D-101 (while `Rules.features.market`): one's own market prices, gold a lot (`Rules.market.lot`)
+   * of food and of wood: a lot bought costs this; a lot sold pays this * sellPermille / 1000. 0 while off.
+   */
+  priceFood: 26,
+  priceWood: 27,
 } as const;
-export const HEADER_LENGTH = 26;
+export const HEADER_LENGTH = 28;
 
 /**
  * Fixed starting situations, generated entirely by the simulation from the seed.
@@ -746,6 +756,8 @@ export interface Features {
    * 3 x 3 on random maps with adjacent starts, as before).
    */
   keep?: boolean;
+  /** A market can be built and food and wood traded for gold (D-101), `Rules.market`. Absent: off. */
+  market?: boolean;
 }
 
 export interface MapInfo {
@@ -816,6 +828,13 @@ export interface Rules {
    * siege times, D-096). Always sent; `features.siege` says whether it is on.
    */
   siege?: { vsBuildings: number; flightTicks: number };
+  /**
+   * D-101 (sent while `features.market`): a lot's units; one's own prices (gold a lot) start at
+   * `start`, a lot bought puts one up `step` (to `max`), a lot sold puts one down `step` (to `min`)
+   * and pays price * sellPermille / 1000; every `recoverTicks` each price moves 1 toward `start`;
+   * at most `maxLots` lots a trade.
+   */
+  market?: { lot: number; start: number; step: number; min: number; max: number; sellPermille: number; recoverTicks: number; maxLots: number };
   /**
    * Castle gates (D-096; in play while `features.gates`): hits on a gate by ranged units and mages count
    * `rangedNum` / `rangedDen` (at least 1; melee in full); a governed town rebuilds a broken gate
@@ -893,6 +912,12 @@ export type CommandBody =
   | { c: "unpost"; building: number }
   /** An own outpost attacks (hold false, the default) or holds (true) (D-080). */
   | { c: "outpost_mode"; building: number; hold: boolean }
+  /**
+   * D-101 (while `Rules.features.market`): buy (`buy` true) or sell `lots` lots (1 to Rules.market.maxLots)
+   * of food or wood (`resource`, Resource.Food or Wood) for gold at one's own prices, lot by lot; with a
+   * finished market of one's own (else NoMarket); all or nothing (CannotAfford).
+   */
+  | { c: "trade"; resource: number; buy: boolean; lots: number }
   | { c: "surrender" };
 
 export type Command = CommandBase & CommandBody;
@@ -927,6 +952,7 @@ export const COMMAND_KINDS = [
   "post",
   "unpost",
   "outpost_mode",
+  "trade",
   "surrender",
 ] as const satisfies readonly CommandKind[];
 type MissingCommand = Exclude<CommandKind, (typeof COMMAND_KINDS)[number]>;
@@ -965,6 +991,8 @@ export type SimEvent =
    * `from`, the way the stone comes from (0-15, as `facing`), and nothing of where the engine is.
    */
   | { k: "siege_shot"; u: number; x: number; y: number; lands: number; from?: number }
+  /** D-101: one's own `trade` went through: `lots` lots (`amount` units) of `resource` bought or sold for `gold`. To that player. */
+  | { k: "traded"; resource: number; buy: boolean; lots: number; amount: number; gold: number }
   | { k: "rejected"; seq: number; reason: Reject }
   | { k: "game_over"; winner: number; reason: GameOverReason };
 export type EventKind = SimEvent["k"];
@@ -983,6 +1011,7 @@ export const EVENT_KINDS = [
   "mage_killed",
   "shot",
   "siege_shot",
+  "traded",
   "rejected",
   "game_over",
 ] as const satisfies readonly EventKind[];
@@ -1085,6 +1114,8 @@ export interface GameStats {
     /** D-099: siege engines, only while `features.siege`. */
     siegeTrained?: number;
     siegeLost?: number;
+    /** D-101: lots traded at the market (bought and sold), only while `features.market`. */
+    marketLots?: number;
     townsPlundered: number;
     townsGoverned: number;
   }[];
