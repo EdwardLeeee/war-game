@@ -9,6 +9,7 @@
 //   node src/scripted-games.ts --seeds 1-40 --strategy push --map random   (D-074: the player and the AI both scout)
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
+import { CrushWatch, type CrushRecord } from "./crush-watch.ts";
 import { DeathWatch, type DeathRecord } from "./death-watch.ts";
 import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { writeFileSync } from "node:fs";
@@ -123,6 +124,28 @@ if (flag("turtle")) {
   plan.pushAhead = true;
   plan.turtle = true;
 }
+// push-crush (ceo 2026-10-25, for war-game-ai): the turtle, out after a big wave beaten off at home, the
+// AI's governed towns first (--crush).
+if (flag("crush")) {
+  plan.farmers = 40;
+  plan.production = 4;
+  plan.choice = "govern";
+  plan.corners = true;
+  plan.townAt = 60;
+  plan.guards = 3;
+  plan.cavalryShare = 30;
+  plan.pushAt = 100;
+  plan.counterAt = 100;
+  plan.pushAhead = true;
+  plan.turtle = true;
+  plan.crush = true;
+}
+/**
+ * push-crush (ceo 2026-10-25): the player's gathering plus this many percent (--bonus 30), credited to its
+ * stock every 20 ticks from what its farmers gathered; for the measurement only (the game's log does not
+ * replay it). 0: none.
+ */
+const BONUS = Number(arg("bonus", "0"));
 // D-097: cavalry this share of its soldiers (percent), a stable once it has a range (--cavalry-share 18).
 plan.cavalryShare = Number(arg("cavalry-share", String(plan.cavalryShare)));
 /** D-086 A: an AI order this soon after its last order at the player's main city is the same march. */
@@ -275,6 +298,8 @@ interface GameRecord {
   deaths: DeathRecord;
   /** D-086 A5: towns [the player, the AI] governed at the end. */
   governedEnd: [number, number];
+  /** push-crush, every game (read only): the first battle the AI lost big and the 15 minutes after it (null: none). */
+  crush: CrushRecord | null;
   /**
    * D-086 A3, every game (read only): the AI's farmers lost each minute (from minute 1); its hits (5 or more
    * lost in two minutes, none counted in the three minutes before) and of those, the ones back 3 minutes
@@ -443,6 +468,9 @@ function play(seed: number): GameRecord {
   const towersAt: GameRecord["towersAt"] = { m30: null, m45: null };
   const pace: GameRecord["pace"] = {};
   const goldWatch = new GoldWatch(w);
+  const crushWatch = new CrushWatch();
+  const bonusLast = [0, 0, 0, 0];
+  const bonusLeft = [0, 0, 0, 0];
   const towersOf = (p: number) => {
     let n = 0;
     for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === BuildingType.ArrowTower) n++;
@@ -465,7 +493,18 @@ function play(seed: number): GameRecord {
       for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
     }
     r.tick();
+    if (BONUS > 0 && w.tick % 20 === 0) {
+      for (let k = 0; k < 4; k++) {
+        const got = w.gathered[k] - bonusLast[k];
+        bonusLast[k] = w.gathered[k];
+        bonusLeft[k] += got * BONUS;
+        const add = Math.trunc(bonusLeft[k] / 100);
+        bonusLeft[k] -= add * 100;
+        w.res[k] += add;
+      }
+    }
     deaths.tick(w);
+    crushWatch.tick(w);
     if (w.tick === 12000) aiFarmersLost10 = w.lost[UNIT_KINDS + UnitType.Farmer];
     // D-086 A: the AI's orders this tick at the player's main city with 10 or more soldiers.
     for (; logAt < g.log.length; logAt++) {
@@ -770,6 +809,7 @@ function play(seed: number): GameRecord {
     pace,
     gold: goldWatch.result(),
     governedEnd: [0, 1].map((p) => w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length) as [number, number],
+    crush: crushWatch.result(),
     aiFarmers,
     aiRescue,
     marches: st.marches,
@@ -785,6 +825,36 @@ function play(seed: number): GameRecord {
     finalHash: (g.hash() >>> 0).toString(16).padStart(8, "0"),
     ...(trace ? { trace: lines } : {}),
   };
+}
+
+/** push-crush: the first battle the AI lost big in each game and what it did in the 15 minutes after (CrushRecord). */
+function crushLines(games: GameRecord[]): string[] {
+  const med = (l: number[]) => (l.length === 0 ? "—" : String([...l].sort((a, c) => a - c)[l.length >> 1]));
+  const PLACES: Record<string, string> = { home: "我的主城旁", aiCity: "電腦主城旁", town: "城鎮", field: "野外" };
+  const crushed = games.filter((x) => x.crush !== null);
+  const out = [`打贏大仗（一場仗電腦的兵死 15 名以上、而且是我方的 2 倍以上）：${crushed.length}/${games.length} 局。`];
+  if (crushed.length === 0) return out;
+  const c = crushed.map((x) => x.crush!);
+  const places = Object.entries(PLACES).map(([k, v]) => `${v} ${c.filter((x) => x.place === k).length}`).join("、");
+  const atEnd = c.map((x) => (x.soldiersAtEnd[1] === 0 ? 99 : Math.round((x.soldiersAtEnd[0] * 100) / x.soldiersAtEnd[1]) / 100));
+  out.push(
+    `那場仗（中位數）：打完在第 ${med(c.map((x) => Math.round(x.end / 120) / 10))} 分；電腦死 ${med(c.map((x) => x.aiLost))} 名、我方 ${med(c.map((x) => x.myLost))} 名；地點 ${places}；打完當下的兵 我 ${med(c.map((x) => x.soldiersAtEnd[0]))}／電腦 ${med(c.map((x) => x.soldiersAtEnd[1]))}，我是電腦的 ${med(atEnd)} 倍。`,
+  );
+  const at = (l: number[], k: number) => l[k];
+  const minute = (k: number) => c.filter((x) => x.aiFarmers.length > k);
+  const farmers = [0, 5, 10, 15].map((k) => `${k === 0 ? "打完" : `${k} 分後`} ${med(minute(k).map((x) => at(x.aiFarmers, k)))}（${minute(k).length} 局）`).join("、");
+  const soldiers = [0, 5, 10, 15].map((k) => `${med(minute(k).map((x) => at(x.mySoldiers, k)))}／${med(minute(k).map((x) => at(x.aiSoldiers, k)))}`).join("、");
+  const towns = c.flatMap((x) => x.towns);
+  const won = crushed.filter((x) => x.result === "won");
+  out.push(
+    `之後 15 分鐘電腦做的事（中位數；局先結束的只算到結束）：`,
+    `- 箭樓：打完時有 ${med(c.map((x) => x.towers[0]))} 座，新放下 ${med(c.map((x) => x.towers[1]))} 座、蓋好 ${med(c.map((x) => x.towers[2]))} 座（新放下合計 ${c.reduce((a, x) => a + x.towers[1], 0)} 座，有放的 ${c.filter((x) => x.towers[1] > 0).length} 局）；哨所：打完時 ${med(c.map((x) => x.outposts[0]))} 座，新放下 ${med(c.map((x) => x.outposts[1]))} 座、蓋好 ${med(c.map((x) => x.outposts[2]))} 座（新放下合計 ${c.reduce((a, x) => a + x.outposts[1], 0)} 座）。`,
+    `- 村民：${farmers}；15 分鐘內訓練 ${med(c.map((x) => x.farmersTrained))} 名、死 ${med(c.map((x) => x.farmersLost))} 名。兵 我／電腦（打完、5、10、15 分後）：${soldiers}。`,
+    `- 兵停在家（電腦主城 20 格內）：佔它兵·分鐘的 ${med(c.filter((x) => x.home.allSoldierMinutes > 0).map((x) => Math.round((x.home.soldierMinutes * 100) / x.home.allSoldierMinutes)))}%；九成以上的兵在家 ${med(c.map((x) => x.home.minutes))} 分鐘（看了 ${med(c.map((x) => Math.round((x.until - x.end) / 120) / 10))} 分鐘）。`,
+    `- 它治理的城被我打：${towns.length} 次（${c.filter((x) => x.towns.length > 0).length} 局）；電腦有派兵來（2 名以上趕到）${towns.filter((x) => x.came >= 2).length} 次；守住 ${towns.filter((x) => x.held && !x.open).length} 次、被拿下 ${towns.filter((x) => !x.held).length} 次、15 分鐘到了還在打 ${towns.filter((x) => x.open).length} 次。治理的城 打完時 ${med(c.map((x) => x.governed[0]))} 座 → 15 分後 ${med(c.map((x) => x.governed[1]))} 座。`,
+    `- 撐了幾分鐘才輸（打完到我贏）：${won.length} 局，中位數 ${med(won.map((x) => Math.round((x.endTick - x.crush!.end) / 120) / 10))} 分；我輸 ${crushed.filter((x) => x.result === "lost").length} 局、到上限還沒分出 ${crushed.filter((x) => x.result === "open").length} 局。`,
+  );
+  return out;
 }
 
 const games = seeds.map(play);
@@ -810,7 +880,11 @@ const options = [
   plan.harass > 0 ? `殺村民：第 10 分起 ${plan.harass} 名兵（遠程先）去殺電腦離主城 20 格以上的村民，看不到就繞電腦主城找；附近敵兵比自己多或剩一半就回家，1 分鐘後補滿再去（D-086 A3）` : "",
   plan.pushAhead && !plan.turtle ? `後期翻盤：24 名村民、遠程為主、家旁 ${plan.homeTowers} 座箭樓、騎兵佔 ${plan.cavalryShare}%、城鎮打下來就治理，兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門（D-086）` : "",
   !plan.pushAhead && plan.cavalryShare > 0 ? `帶騎兵：騎兵佔自己兵的 ${plan.cavalryShare}%，有射場以後蓋馬廄（D-097）` : "",
-  plan.turtle ? `守塔慢拿城（A5）：第 15 分前先養到 40 名村民（糧優先，兵最多 25 名）、家旁箭樓第 14 分起蓋（第 20 分 7 座、第 25 分 10 座、第 30 分 20 座，同時最多蓋 3 棟）、治理的城鎮和離家的礦場旁各 2 座、家旁 6 座哨所（前 2 座各 3 名槍兵）；家旁的金快挖完時派 1 名槍兵找下一片金礦、在那裡蓋礦場，金太多時村民改採糧和木；電腦來打家時遠程兵躲進家旁箭樓和主城；家旁箭樓 7 座、兵 ${plan.townAt} 名而且比最近看到的電腦兵多才去拿城、打下來就治理（大城在兵 40 名以後），兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門，騎兵 ${plan.cavalryShare}%` : "",
+  plan.crush
+    ? "大勝後反攻（push-crush）：用守塔的經濟和家旁箭樓；在家打退 15 名以上的一波後，兵 30 名以上、而且是最近 30 秒看到最多的電腦兵的 1.3 倍以上就出門，先打電腦治理的城（離家近的先），再打電腦主城；在外面看到附近的電腦兵比自己兵的 1/1.3 多就退回家，等下一次打退大波再出門"
+    : "",
+  BONUS > 0 ? `玩家採集 +${BONUS}%（只有這組；這組的局不能用紀錄重播）` : "",
+  plan.turtle && !plan.crush ? `守塔慢拿城（A5）：第 15 分前先養到 40 名村民（糧優先，兵最多 25 名）、家旁箭樓第 14 分起蓋（第 20 分 7 座、第 25 分 10 座、第 30 分 20 座，同時最多蓋 3 棟）、治理的城鎮和離家的礦場旁各 2 座、家旁 6 座哨所（前 2 座各 3 名槍兵）；家旁的金快挖完時派 1 名槍兵找下一片金礦、在那裡蓋礦場，金太多時村民改採糧和木；電腦來打家時遠程兵躲進家旁箭樓和主城；家旁箭樓 7 座、兵 ${plan.townAt} 名而且比最近看到的電腦兵多才去拿城、打下來就治理（大城在兵 40 名以後），兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門，騎兵 ${plan.cavalryShare}%` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
@@ -825,6 +899,8 @@ if (plan.turtle) {
     "",
   );
 }
+// push-crush: the first battle the AI lost big, and the 15 minutes after.
+if (plan.crush) out.push(...crushLines(games), "");
 // D-097: how many cavalry each side trained, on average.
 if (plan.cavalryShare > 0 || games.some((x) => x.trained.cavalry[1] > 0)) {
   const mean = (k: number) => (games.reduce((a, x) => a + x.trained.cavalry[k], 0) / Math.max(games.length, 1)).toFixed(1);
