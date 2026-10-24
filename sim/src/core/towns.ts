@@ -5,9 +5,11 @@
 //   contested, the state is frozen (ruins still count down).
 // - A neutral town falls when all its militia are dead (wherever they are: they chase out of
 //   the radius), its tower (big city) is destroyed, and exactly one player has military
-//   inside. The tower never comes back.
+//   inside. The tower never comes back. With KEEP on (D-100) every town has a keep instead,
+//   which must fall too; it is built again when the town is repaired (the governor's) or turns
+//   neutral (the militia's), and a governed town builds a fallen one again (KEEP.rebuildTicks).
 // - A held town (awaiting the choice, plundering, repairing, governed) falls to the other
-//   player when the other has military inside and the holder has none.
+//   player when the other has military inside and the holder has none (and its keep is down).
 // - Plundering counts down only while the holder has military inside; repairing only with the
 //   minimum garrison. Below the minimum, a repairing or governed town counts toward revolt
 //   (60 s) and a governed town produces nothing.
@@ -17,7 +19,6 @@
 
 import {
   Action,
-  BuildingType,
   CELL_SHIFT,
   NEUTRAL,
   NO_OWNER,
@@ -29,8 +30,8 @@ import {
 } from "../protocol.ts";
 import type { Emit } from "./economy.ts";
 import { type Fog, townInSight } from "./fog.ts";
-import { GATE, governPerMinute, PLUNDER_RECOVERY, TOWNS, townIncomePermille } from "./rules.ts";
-import { spawnMilitia } from "./scenarios.ts";
+import { GATE, governPerMinute, KEEP, PLUNDER_RECOVERY, TOWNS, townIncomePermille } from "./rules.ts";
+import { addKeep, keepOf, spawnMilitia } from "./scenarios.ts";
 import { onWall } from "./units.ts";
 import { GATES, type World } from "./world.ts";
 
@@ -56,7 +57,6 @@ export class TownSystem {
 
   step(w: World): void {
     const u = w.units.col;
-    const b = w.buildings.col;
     for (let t = 0; t < w.townSize.length; t++) {
       const rule = TOWNS[w.townSize[t]];
       const present = [0, 0];
@@ -71,14 +71,15 @@ export class TownSystem {
         // Inside the walls (D-089), or on them (D-096).
         if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT) || (u.wall[s] >= 0 && w.wallTown[u.wall[s]] === t && onWall(w, s))) present[o]++;
       }
-      let tower = false;
-      for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.TownTower && b.town[s] === t) tower = true;
+      const tower = keepOf(w, t) >= 0;
       const contested = present[0] > 0 && present[1] > 0;
       w.townContested[t] = contested ? 1 : 0;
       const state = w.townState[t];
 
       // A governed town rebuilds a broken gate once no enemy has stood inside for a while (D-096).
       if (GATE.on && state === TownState.Governed) this.rebuildGates(w, t, present[1 - w.townOwner[t]] > 0);
+      // And its fallen keep (D-100).
+      if (KEEP.on && state === TownState.Governed) this.rebuildKeep(w, t, present[1 - w.townOwner[t]] > 0, tower);
       if (state === TownState.Ruins) {
         if (--w.townTimer[t] <= 0) {
           this.neutral(w, t);
@@ -95,7 +96,7 @@ export class TownSystem {
 
       const p = w.townOwner[t];
       if (p < 0 || p >= PLAYER_COUNT) continue;
-      if (present[1 - p] > 0 && present[p] === 0) {
+      if (present[1 - p] > 0 && present[p] === 0 && !tower) {
         this.capture(w, t, 1 - p);
         continue;
       }
@@ -110,8 +111,9 @@ export class TownSystem {
             w.townTimer[t] = 0;
             w.townTimerTotal[t] = 0;
             w.governed[p]++;
-            // Repaired: its broken gates too (D-096).
+            // Repaired: its broken gates too (D-096), and its keep for the governor (D-100).
             this.allGates(w, t);
+            if (KEEP.on && !tower) addKeep(w, t, p);
             this.tell(w, t, { k: "town_repaired", town: t, by: p }, [p]);
           }
           this.revoltCheck(w, t, p, manned);
@@ -164,6 +166,22 @@ export class TownSystem {
       }
       if (--w.gateRebuild[o] === 0) w.addGate(t, k);
     }
+  }
+
+  /**
+   * D-100: a governed town's fallen keep counts down KEEP.rebuildTicks while no enemy stands inside
+   * its walls (`enemy`: one does; the count starts over), then stands again for the governor.
+   */
+  private rebuildKeep(w: World, t: number, enemy: boolean, standing: boolean): void {
+    if (standing) {
+      w.keepRebuild[t] = 0;
+      return;
+    }
+    if (enemy || w.keepRebuild[t] === 0) {
+      w.keepRebuild[t] = KEEP.rebuildTicks;
+      return;
+    }
+    if (--w.keepRebuild[t] === 0) addKeep(w, t, w.townOwner[t]);
   }
 
   /** Every broken gate of town t stands again, at full hp (D-096); the standing ones keep their hp. */
@@ -251,5 +269,16 @@ export class TownSystem {
     spawnMilitia(w, t, TOWNS[w.townSize[t]].militia >> 1);
     // Neutral again: its gates stand and close (D-096); a broken one is rebuilt at full hp.
     this.allGates(w, t);
+    // And its keep is the militia's, whole (D-100): the governor's after a revolt, or a new one.
+    if (KEEP.on) {
+      w.keepRebuild[t] = 0;
+      const s = keepOf(w, t);
+      if (s < 0) addKeep(w, t, NEUTRAL);
+      else {
+        w.buildings.col.owner[s] = NEUTRAL;
+        w.buildings.col.hp[s] = w.maxHp(s);
+        w.buildings.col.target[s] = -1;
+      }
+    }
   }
 }

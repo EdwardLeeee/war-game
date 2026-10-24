@@ -125,6 +125,20 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     unitRows.push(s);
     if (own && u.type[s] === UnitType.Farmer && u.order[s] === Order.None && u.action[s] !== Action.Garrisoned) idle.push(u.id[s]);
   }
+  // Whom a fighting unit hits (UnitField.attackTarget): only a target this viewer sees.
+  const bc = w.buildings.col;
+  const attackTarget = (s: number): number => {
+    const tid = u.target[s];
+    if (u.action[s] !== Action.Attack || tid < 0) return -1;
+    if (player === null) return tid;
+    const ts = w.unit(tid);
+    if (ts >= 0) return u.owner[ts] === player || (u.action[ts] !== Action.Garrisoned && seesCell(u.x[ts] >> CELL_SHIFT, u.y[ts] >> CELL_SHIFT)) ? tid : -1;
+    const bs = w.building(tid);
+    if (bs < 0) return -1;
+    if (bc.owner[bs] === player) return tid;
+    for (let y = bc.cellY[bs]; y < bc.cellY[bs] + w.tall(bs); y++) for (let x = bc.cellX[bs]; x < bc.cellX[bs] + w.wide(bs); x++) if (seesCell(x, y)) return tid;
+    return -1;
+  };
   const units = new Int32Array(unitRows.length * UNIT_STRIDE);
   unitRows.forEach((s, r) => {
     const o = r * UNIT_STRIDE;
@@ -146,6 +160,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     const idleFarmer = u.owner[s] === player && u.type[s] === UnitType.Farmer && u.order[s] === Order.None && u.action[s] !== Action.Garrisoned;
     units[o + UnitField.flags] = u.flags[s] | (idleFarmer ? UnitFlag.IdleFarmer : 0) | (onWall(w, s) ? UnitFlag.OnWall : 0);
     units[o + UnitField.castCooldown] = u.castCooldown[s];
+    units[o + UnitField.attackTarget] = attackTarget(s);
   });
 
   // Buildings: own and currently seen ones live; others from memory.
@@ -341,6 +356,8 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     else if (seen && w.gateAt[i] === 1) bits = PlaceBit.Gate;
     // Each gate's lane (the gate, the cell in front, the cell behind) stays open: no building.
     if (seen && w.gateLane[i] === 1) bits |= PlaceBit.GateLane;
+    // A keep's ground (D-100): its keep stands again there, so no building even while it is down.
+    if (seen && w.keepGround[i] === 1) bits |= PlaceBit.Blocked;
     if (exp !== null && exp[i] === 0) bits |= PlaceBit.Unexplored;
     placement[i] = bits;
   }

@@ -63,6 +63,7 @@ import {
   RETARGET_EVERY,
   SEPARATION,
   TOWER_ARROW,
+  KEEP,
   UNDER_ATTACK_TICKS,
   UNITS,
   WORK_REACH,
@@ -983,6 +984,24 @@ export class UnitSystem {
     if (u.owner[i] < PLAYER_COUNT && !w.heldBy(w.wallTown[u.wall[i]], u.owner[i])) {
       w.offWall(i);
       return;
+    }
+    // D-100 (KEEP): the town's keep fallen, its militia come down from the walls and go for its
+    // middle, fighting what they meet (the bigger towns' middle lies beyond their slings and sight).
+    if (KEEP.on && u.owner[i] === NEUTRAL) {
+      const t = w.wallTown[u.wall[i]];
+      const n = w.size;
+      const k = w.building(w.buildingAt[w.townY[t] * n + w.townX[t]]);
+      if (k < 0 || w.buildings.col.type[k] !== BuildingType.Keep) {
+        w.offWall(i);
+        const goal = nearestWalkable(w, w.townX[t], w.townY[t]);
+        if (goal >= 0) {
+          u.order[i] = Order.Move;
+          u.orderTarget[i] = goal;
+          u.orderX[i] = ((goal % n) << CELL_SHIFT) + (CELL >> 1);
+          u.orderY[i] = (Math.trunc(goal / n) << CELL_SHIFT) + (CELL >> 1);
+        }
+        return;
+      }
     }
     u.action[i] = Action.OnWall;
     const info = UNITS[u.type[i]];
@@ -2565,8 +2584,8 @@ export function coverDamage(d: number): number {
 }
 
 /**
- * The arrows building slot s shoots, null if none: a finished main city, the big city's tower or
- * an arrow tower (round 7), or a governed town's gate (D-096).
+ * The arrows building slot s shoots, null if none: a finished main city, a town's keep (D-100; with
+ * KEEP off the big city's tower) or an arrow tower (round 7), or a governed town's gate (D-096).
  */
 function arrowOf(w: World, s: number): { damage: number; range: number; cooldown: number } | null {
   const b = w.buildings.col;
@@ -2574,8 +2593,9 @@ function arrowOf(w: World, s: number): { damage: number; range: number; cooldown
   switch (b.type[s]) {
     case BuildingType.MainCity:
       return MAIN_ARROW;
-    case BuildingType.TownTower:
-      return TOWER_ARROW;
+    case BuildingType.Keep:
+      // D-100: a keep's by its town's size; before, the big city's tower's.
+      return KEEP.on && b.town[s] >= 0 ? KEEP.arrow[w.townSize[b.town[s]]] : TOWER_ARROW;
     case BuildingType.ArrowTower:
       return ARROW_TOWER;
     case BuildingType.Gate:

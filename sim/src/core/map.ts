@@ -14,7 +14,7 @@ import { type MapMode, NodeKind, Terrain, TownSize, walkableTerrain } from "../p
 import { type CastleMap, castleOf } from "./castle.ts";
 import { Rng } from "./fixed.ts";
 import { FIXED_TERRAIN } from "./fixed-terrain.ts";
-import { NODE_AMOUNT, TOWNS } from "./rules.ts";
+import { KEEP, NODE_AMOUNT, TOWNS } from "./rules.ts";
 
 export const MAP_SIZE = 96;
 export const MAP_SEED = 20261001;
@@ -262,6 +262,8 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
     ],
     towns,
     tower,
+    // D-100 (KEEP): every town's keep 3 x 3; the big city's tower was 2 x 2.
+    ...(KEEP.on ? { towerSize: KEEP.size } : {}),
     frames: [IDENTITY, MIRROR_XY],
   };
 }

@@ -7,7 +7,7 @@ import { Action, BuildingFlag, BuildingType, CELL, CELL_SHIFT, NEUTRAL, Order, P
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
-import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
+import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, KEEP, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -197,6 +197,11 @@ export class World {
    */
   gateRebuild: Int32Array;
   /**
+   * D-100 (KEEP): per town, the ticks left until a governed town builds its fallen keep again
+   * (counting while no enemy stands inside its walls), 0 when not.
+   */
+  keepRebuild: Int32Array;
+  /**
    * D-099 (SIEGE): stones in the air, STONE numbers each in the order thrown: the engine's id, its
    * owner, where it lands (fixed point x, y), the tick it lands, the building it was thrown at (-1: at
    * units) and the damage. In the hash only while SIEGE is on.
@@ -218,6 +223,8 @@ export class World {
    * cells, the cell in front of each and the first cell behind it.
    */
   gateLane: Uint8Array;
+  /** D-100 (KEEP): 1 on each town's keep's 3 x 3 cells: walked while it is down, never built on (it stands again there). */
+  keepGround: Uint8Array;
   /**
    * Statistics, not in the hash (D-089's measurement): soldiers lost per player within 3 cells of a
    * gate, and inside a castle's walls or within 3 cells outside them; and the cells where they count.
@@ -393,6 +400,7 @@ export class World {
     this.gateSides = new Int32Array(n * n);
     this.gateOwner = new Int32Array(n * n).fill(-1);
     this.gateLane = new Uint8Array(n * n);
+    this.keepGround = new Uint8Array(n * n);
     this.nearGate = new Uint8Array(n * n);
     this.nearCastle = new Uint8Array(n * n);
     const mark = (a: Uint8Array, x0: number, y0: number, x1: number, y1: number) => {
@@ -405,6 +413,8 @@ export class World {
         mark(this.nearGate, s.cellX + dx - 3, s.cellY + dy - 3, s.cellX + dx + 3, s.cellY + dy + 3);
       }
       for (const [dx, dy] of [...c.gate, ...c.outside, ...c.behind]) this.gateLane[(s.cellY + dy) * n + s.cellX + dx] = 1;
+      // D-100: the keep's ground, kept for it while it is down.
+      if (KEEP.on) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) this.keepGround[(s.cellY + dy) * n + s.cellX + dx] = 1;
       for (const g of c.gates) {
         const x0 = Math.min(...g.map((k) => k[0]));
         const y0 = Math.min(...g.map((k) => k[1]));
@@ -456,6 +466,7 @@ export class World {
       this.wallCells.push(Int32Array.from(cells));
     });
     this.gateRebuild = new Int32Array(t * GATES);
+    this.keepRebuild = new Int32Array(t);
   }
 
   private newId(): number {
@@ -551,10 +562,13 @@ export class World {
   sideY(type: number, cellX: number, cellY: number): number {
     return type === BuildingType.Gate ? this.gateSides[cellY * this.size + cellX] >> 8 : this.buildingSize(type);
   }
-  /** A building's full hp: its type's, but a gate's (D-096) by its town's size (GATE.hp). */
+  /** A building's full hp: its type's, but a gate's (D-096) and a keep's (D-100, KEEP on) by its town's size (GATE.hp, KEEP.hp). */
   maxHp(s: number): number {
     const b = this.buildings.col;
-    return b.type[s] === BuildingType.Gate ? GATE.hp[this.townSize[b.town[s]]] : BUILDINGS[b.type[s]].hp;
+    const type = b.type[s];
+    if (type === BuildingType.Gate) return GATE.hp[this.townSize[b.town[s]]];
+    if (type === BuildingType.Keep && KEEP.on && b.town[s] >= 0) return KEEP.hp[this.townSize[b.town[s]]];
+    return BUILDINGS[type].hp;
   }
 
   /** Town t's opening k's top-left cell (D-096). */

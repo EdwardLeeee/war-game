@@ -6,8 +6,9 @@
 import { type Frame, fromCanon, IDENTITY, toCanon } from "../frame.ts";
 import { Action, BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
 import { FIXED_POSTS } from "./castle.ts";
+import { pushOut } from "./commands.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
-import { BUILDINGS, GATE, OUTPOST, START, TOWNS, UNITS, WALLS } from "./rules.ts";
+import { BUILDINGS, GATE, KEEP, OUTPOST, START, TOWNS, UNITS, WALLS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
@@ -78,12 +79,30 @@ export function placeTownGuards(w: World): void {
     spawnMilitia(w, t, rule.militia);
     // Closed gates in its walls (D-096).
     if (GATE.on) for (let k = 0; k < w.castles[t].gates.length; k++) w.addGate(t, k);
-    if (rule.tower && w.townSize[t] === TownSize.Large) {
-      const tower = BUILDINGS[BuildingType.TownTower];
-      const id = w.addBuilding(NEUTRAL, BuildingType.TownTower, w.map.tower.cellX, w.map.tower.cellY, tower.hp, 1000);
+    // Every town's keep (D-100); before, the big city's tower only.
+    if (KEEP.on) addKeep(w, t, NEUTRAL);
+    else if (rule.tower && w.townSize[t] === TownSize.Large) {
+      const tower = BUILDINGS[BuildingType.Keep];
+      const id = w.addBuilding(NEUTRAL, BuildingType.Keep, w.map.tower.cellX, w.map.tower.cellY, tower.hp, 1000);
       w.buildings.col.town[w.building(id)] = t;
     }
   }
+}
+
+/** Town t's keep (D-100, KEEP on), built whole for `owner` (NEUTRAL: for its militia) on its centre cell. */
+export function addKeep(w: World, t: number, owner: number): void {
+  const half = KEEP.size >> 1;
+  const id = w.addBuilding(owner, BuildingType.Keep, w.townX[t] - half, w.townY[t] - half, KEEP.hp[w.townSize[t]], 1000);
+  w.buildings.col.town[w.building(id)] = t;
+  // Built again (D-100): whoever stands on its ground steps aside.
+  pushOut(w, w.townX[t] - half, w.townY[t] - half, KEEP.size);
+}
+
+/** Town t's keep's (or, KEEP off, the big city's tower's) slot, or -1 (fallen, or not built again yet). */
+export function keepOf(w: World, t: number): number {
+  const b = w.buildings.col;
+  for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.Keep && b.town[s] === t) return s;
+  return -1;
 }
 
 /**

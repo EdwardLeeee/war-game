@@ -5,7 +5,7 @@
 // results are deterministic. src/balance.ts prints them; nothing here runs on import.
 
 import { Game } from "./core/game.ts";
-import { BUILDINGS, CANNON, UNITS } from "./core/rules.ts";
+import { BUILDINGS, CANNON, KEEP, UNITS } from "./core/rules.ts";
 import { damage } from "./core/units.ts";
 import { BLOCK_GATE, BLOCK_WALL } from "./core/world.ts";
 import { Action, BuildingType, CELL_SHIFT, type CommandBody, NEUTRAL, Order, Resource, Stance, type TownSize, TownState, UnitFlag, UnitType } from "./protocol.ts";
@@ -82,8 +82,8 @@ function field(g: Game): { x: number; y: number } {
     for (let x = 2; x + FIELD_W <= n - 2; x++) {
       let ok = true;
       for (let s = 0; s < w.buildings.count && ok; s++) {
-        // Gates (D-096) go with the walls (below).
-        if (b.type[s] === BuildingType.Gate) continue;
+        // Gates (D-096) go with the walls (below); so do the towns' keeps (D-100, KEEP).
+        if (b.type[s] === BuildingType.Gate || (KEEP.on && b.type[s] === BuildingType.Keep)) continue;
         const size = BUILDINGS[b.type[s]].size;
         if (b.cellX[s] + size + 10 > x && b.cellX[s] - 10 < x + FIELD_W && b.cellY[s] + size + 10 > y && b.cellY[s] - 10 < y + FIELD_H) ok = false;
       }
@@ -97,7 +97,12 @@ function field(g: Game): { x: number; y: number } {
       // Castle walls (D-089) and gates (D-096) do not count: the fight is about soldiers, so the
       // walls in and near the field are taken down (grid only) and the gates broken (gone at the
       // next step), and it lies where it always did.
-      const open = (xx: number, yy: number) => (w.grid[yy * n + xx] & ~(BLOCK_WALL | BLOCK_GATE)) === 0;
+      // So are the towns' keeps (D-100, KEEP): their ground counts as open, and they are torn down below.
+      const keepAt = (xx: number, yy: number) => {
+        const k = w.building(w.buildingAt[yy * n + xx]);
+        return KEEP.on && k >= 0 && b.type[k] === BuildingType.Keep;
+      };
+      const open = (xx: number, yy: number) => (w.grid[yy * n + xx] & ~(BLOCK_WALL | BLOCK_GATE)) === 0 || keepAt(xx, yy);
       for (let yy = y; yy < y + FIELD_H && ok; yy++) for (let xx = x; xx < x + FIELD_W && ok; xx++) if (!open(xx, yy)) ok = false;
       if (!ok) continue;
       let opened = false;
@@ -110,7 +115,17 @@ function field(g: Game): { x: number; y: number } {
           opened = true;
         }
       }
+      // A keep within 10 cells of the field (D-100, KEEP): torn down too, gone after one step with nobody on the map.
+      let razed = false;
+      for (let s = 0; KEEP.on && s < w.buildings.count; s++) {
+        if (b.type[s] !== BuildingType.Keep) continue;
+        if (b.cellX[s] + KEEP.size + 10 > x && b.cellX[s] - 10 < x + FIELD_W && b.cellY[s] + KEEP.size + 10 > y && b.cellY[s] - 10 < y + FIELD_H) {
+          b.hp[s] = 0;
+          razed = true;
+        }
+      }
       if (opened) w.openVersion++;
+      if (razed) g.step();
       return { x, y };
     }
   }

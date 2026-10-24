@@ -46,10 +46,13 @@ test("enumeration values are distinct", () => {
     Reject: P.Reject,
     Scenario: P.Scenario,
   };
+  // Old names kept one version beside the new (D-100: TownTower is Keep).
+  const aliases: Record<string, string[]> = { BuildingType: ["TownTower"] };
   for (const [name, e] of Object.entries(enums)) {
-    const values = Object.values(e);
+    const values = Object.entries(e).filter(([k]) => !(aliases[name] ?? []).includes(k)).map(([, v]) => v);
     assert.equal(new Set(values).size, values.length, name);
   }
+  assert.equal(P.BuildingType.TownTower, P.BuildingType.Keep);
   assert.ok(!Object.values(P.Reject).includes(0 as never), "0 means accepted, so no reason code is 0");
 });
 

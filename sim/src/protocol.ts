@@ -79,11 +79,20 @@ export const BuildingType = {
   Barracks: 6,
   Range: 7,
   MageHall: 8,
-  /** The big city's neutral arrow tower; never built by players. */
+  /**
+   * A town's keep (主堡, D-100): 3 x 3 in the middle of every town (its top-left at the centre cell
+   * - 1), never built by players, holding no one. It shoots (`Rules.towns[size].keep`) for whoever
+   * holds the town: for the militia while neutral, for the governor once governed; it must fall for
+   * the town to be taken. Gone from its fall until the town is governed (built again when repaired)
+   * or neutral again; a governed town builds a fallen keep again once no enemy has stood inside for
+   * `keep.rebuildTicks`. Its full hp is its town's (`keep.hp`; `buildings[Keep].hp` is the big city's).
+   */
+  Keep: 9,
+  /** The keep's old name (the big city's tower before D-100); the same building, kept one version. */
   TownTower: 9,
   /**
    * A player's arrow tower (round 7, D-061; while `Rules.features.towers`): shoots by itself,
-   * ranged units and mages can hide in it and shoot from inside. Not the big city's TownTower.
+   * ranged units and mages can hide in it and shoot from inside. Not a town's Keep.
    */
   ArrowTower: 10,
   /** Trains cavalry (round 7, D-061; while `Rules.features.cavalry`). */
@@ -285,7 +294,12 @@ export const UnitField = {
   flags: 15,
   /** Mage: ticks until the crystal cannon can fire again (from PR-4); 0 otherwise. */
   castCooldown: 16,
-  reserved17: 17,
+  /**
+   * While `action` is Attack: the unit or building id it is hitting, whether ordered or picked by
+   * itself (for arrows that fly to it; ceo 2026-10-23); -1 otherwise, or when this viewer does not
+   * see that target (a unit in its sight, a building with a cell in its sight; its own always).
+   */
+  attackTarget: 17,
   reserved18: 18,
   reserved19: 19,
 } as const;
@@ -656,13 +670,15 @@ export interface TownInfo {
   castle?: TownCastle;
   /** Each gate's hit points (D-096, while `features.gates`; `buildings[Gate].hp` is the big city's). */
   gateHp?: number;
+  /** The town's keep (D-100, while `features.keep`; BuildingType.Keep): its full hp, side in cells, arrows, and how long a governed town waits to build a fallen one again (ticks). */
+  keep?: { hp: number; size: number; arrow: ArrowInfo; rebuildTicks: number };
 }
 
 /**
  * A town's castle (D-089): offsets in cells from the town's centre cell (TownSpec / TownField
- * cellX, cellY), in the map's own directions, the same for both players. The big city's differ from
- * map to map (its castle is centred on its tower): read them from this game's rules, never assume.
- * The town is what lies inside the walls; `radius` stays the walls' distance from the centre.
+ * cellX, cellY), in the map's own directions, the same for both players and on every map (D-100:
+ * centred on the keep); read them from this game's rules, never assume. The town is what lies
+ * inside the walls; `radius` stays the walls' distance from the centre.
  */
 export interface TownCastle {
   /** Cells inside the walls, inclusive: the town (capturing, holding, governing, plundering). */
@@ -724,6 +740,12 @@ export interface Features {
   cavalryFlank?: boolean;
   /** Siege works can be built and siege engines trained (D-099), `Rules.siege`. Absent: off. */
   siege?: boolean;
+  /**
+   * Towns about 1.5 x bigger with a keep in each (D-100): the castles in `towns[size].castle`, the
+   * keep (BuildingType.Keep) in `towns[size].keep`. Absent: off (the big city's 2 x 2 tower, or
+   * 3 x 3 on random maps with adjacent starts, as before).
+   */
+  keep?: boolean;
 }
 
 export interface MapInfo {

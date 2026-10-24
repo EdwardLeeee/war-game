@@ -30,7 +30,7 @@ import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, MARCH_ORDER, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MARCH_ORDER, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -256,6 +256,8 @@ export class Game {
     if (PLUNDER_RECOVERY.on) h = fnvInt32(h, w.townRecover);
     // Gates (D-096): the rebuild counts, only while they are on (the grid has the rest).
     if (GATE.on) h = fnvInt32(h, w.gateRebuild);
+    // Keeps (D-100): the rebuild counts, only while they are on (the buildings have the rest).
+    if (KEEP.on) h = fnvInt32(h, w.keepRebuild);
     // Siege engines' stones in the air (D-099), only while they are on.
     if (SIEGE.on) {
       h = fnvWord(h, w.stones.length);

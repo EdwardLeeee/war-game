@@ -30,7 +30,7 @@ import { NodeKind, Terrain, TownSize, walkableTerrain } from "../protocol.ts";
 import { Rng } from "./fixed.ts";
 import { type CastleMap, castleOf } from "./castle.ts";
 import { type GameMap, type NodeSpec, stampCastles, type TownSpec, turnedTerrain } from "./map.ts";
-import { NODE_AMOUNT, TOWNS } from "./rules.ts";
+import { KEEP, NODE_AMOUNT, TOWNS } from "./rules.ts";
 
 export type Layout = "diagonal" | "adjacent";
 
@@ -58,6 +58,8 @@ const SECOND_TOWN = { min: 45, max: 60 };
 const OTHER_TOWN_MIN = 40;
 /** Town centres at least this far apart (mirror images included). */
 const TOWN_GAP = 20;
+/** The same with KEEP on (D-100): the castles are 15 and 19 cells across instead of 11 and 14. */
+const TOWN_GAP_KEEP = 26;
 export const ATTEMPTS = 40;
 const TRIES = 400;
 /** The longest walks a map may have, against the open walk (D-089 / R6-51, ceo 2026-10-20). */
@@ -164,7 +166,7 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
   const far = (dd: number, lo: number) => dd >= 4 * k(lo) * k(lo);
 
   const placed: { size: TownSize; x: number; y: number }[] = [];
-  const clearOfTowns = (p: Pt) => placed.every((t) => far(d2(townHalf(p), townHalf(t)), TOWN_GAP));
+  const clearOfTowns = (p: Pt) => placed.every((t) => far(d2(townHalf(p), townHalf(t)), KEEP.on ? TOWN_GAP_KEEP : TOWN_GAP));
   const inMargin = (p: Pt, size: TownSize) => {
     const m = TOWNS[size].radius + 3;
     return p.x >= m && p.y >= m && p.x <= s - m && p.y <= s - m;
@@ -255,7 +257,8 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     }
   };
   // The castles (D-089) in generation coordinates: the tower's top-left is at the big city's centre - 1.
-  const towerSize = layout === "adjacent" ? 3 : 2;
+  // D-100 (KEEP): every town's keep 3 x 3 on its centre cell.
+  const towerSize = KEEP.on || layout === "adjacent" ? 3 : 2;
   const tower = { x: large.x - 1, y: large.y - 1 };
   const castles: CastleMap = { tower: { cellX: tower.x, cellY: tower.y }, towerSize, towns: placed.map((t) => ({ size: t.size, cellX: t.x, cellY: t.y })) };
   reserveDisc(P0.x, P0.y, 9);
@@ -331,11 +334,13 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     }
     if (!done) return away("second gold mine");
   }
-  // A gold mine 8-10 cells from the second town (the third town's: every other map).
+  // A gold mine 8-10 cells from the second town (the third town's: every other map); with KEEP on
+  // (D-100) 10-12, as far out from the walls (2 cells further out).
   const goldNear = (t: Pt): boolean => {
+    const [lo, hi] = KEEP.on ? [10, 12] : [8, 10];
     const p = pick(anyCell, (q) => {
       const dd = d2(q, t);
-      return dd >= 64 && dd <= 100 && block(q.x, q.y, 2, 2).every(([x, y]) => free(x, y));
+      return dd >= lo * lo && dd <= hi * hi && block(q.x, q.y, 2, 2).every(([x, y]) => free(x, y));
     });
     if (p === null) return false;
     for (const [x, y] of block(p.x, p.y, 2, 2)) kind[y * n + x] = NodeKind.GoldMine;
@@ -721,7 +726,8 @@ function obstacles(o: ObstacleScope): void {
   // --- 5-7 rock ridges across the way, 1-2 wide and 14-24 long, with a 3-cell gap somewhere along --------
   // (5-7, not the plan's 2-4: the walk between the main cities is 1.10 times the open walk or more
   // on half the maps only from 5 on; ceo 2026-10-20 had the numbers tuned to that.)
-  for (let r = 0, count = per(5) + rng.below(per(3)); r < count; r++) {
+  // D-100 (KEEP): two more, as the bigger castles keep more of the ground clear (R6-51's walk median 1.10).
+  for (let r = 0, count = per(KEEP.on ? 7 : 5) + rng.below(per(3)); r < count; r++) {
     const { to } = across(250 + rng.below(601));
     const half = 7 + rng.below(6);
     const p = to(-half);
