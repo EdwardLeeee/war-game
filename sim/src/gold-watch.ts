@@ -19,6 +19,8 @@ export interface GoldRecord {
   contestedFarmerMinutes: number[];
   /** Contested gold left at the end. */
   contestedLeft: number;
+  /** The minute each side first sent a farmer to gold farther than 15 cells from its main city (-1: never). */
+  secondGold: number[];
   /** Lots each side traded at the market (D-101, MARKET), and its prices' highest and lowest. */
   marketLots: number[];
   priceHigh: number;
@@ -27,6 +29,8 @@ export interface GoldRecord {
 
 export class GoldWatch {
   private readonly side: Int8Array;
+  /** Per gold cell, a bit per side whose main city is within 15 cells of it (its home gold). */
+  private readonly home: Uint8Array;
   private readonly record: GoldRecord;
 
   constructor(w: World) {
@@ -34,11 +38,13 @@ export class GoldWatch {
     const mirror = map.mirror ?? MIRROR_XY;
     const k = w.nodeKind.length;
     this.side = new Int8Array(k).fill(-2);
+    this.home = new Uint8Array(k);
     const spawn = [0, 1].map((p) => w.map.spawns.find((s) => s.player === p)!);
     const own = new Array<number>(PLAYER_COUNT).fill(0);
     let contested = 0;
     for (let i = 0; i < k; i++) {
       if (w.nodeKind[i] !== NodeKind.GoldMine) continue;
+      for (const s of w.map.spawns) if ((w.nodeX[i] - s.cellX) * (w.nodeX[i] - s.cellX) + (w.nodeY[i] - s.cellY) * (w.nodeY[i] - s.cellY) <= 225) this.home[i] |= 1 << s.player;
       const m = toCanon(mirror, w.nodeX[i], w.nodeY[i]);
       if (Math.max(Math.abs(m.u - w.nodeX[i]), Math.abs(m.v - w.nodeY[i])) <= 3) {
         this.side[i] = -1;
@@ -55,6 +61,7 @@ export class GoldWatch {
       out: new Array<number>(PLAYER_COUNT).fill(-1),
       contestedFarmerMinutes: new Array<number>(PLAYER_COUNT).fill(0),
       contestedLeft: contested,
+      secondGold: new Array<number>(PLAYER_COUNT).fill(-1),
       marketLots: new Array<number>(PLAYER_COUNT).fill(0),
       priceHigh: w.marketPrice[0],
       priceLow: w.marketPrice[0],
@@ -83,12 +90,14 @@ export class GoldWatch {
       const p = u.owner[s];
       if (p >= PLAYER_COUNT || u.type[s] !== UnitType.Farmer || u.order[s] !== Order.Gather) continue;
       const node = u.orderTarget[s];
-      if (node >= 0 && node < this.side.length && this.side[node] === -1) r.contestedFarmerMinutes[p]++;
+      if (node < 0 || node >= this.side.length || this.side[node] === -2) continue;
+      if (this.side[node] === -1) r.contestedFarmerMinutes[p]++;
+      if (r.secondGold[p] < 0 && (this.home[node] & (1 << p)) === 0) r.secondGold[p] = Math.trunc(w.tick / 1200);
     }
   }
 
   result(): GoldRecord {
     const r = this.record;
-    return { ...r, own: [...r.own], out: [...r.out], contestedFarmerMinutes: [...r.contestedFarmerMinutes], marketLots: [...r.marketLots] };
+    return { ...r, own: [...r.own], out: [...r.out], contestedFarmerMinutes: [...r.contestedFarmerMinutes], secondGold: [...r.secondGold], marketLots: [...r.marketLots] };
   }
 }

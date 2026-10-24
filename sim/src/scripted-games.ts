@@ -9,6 +9,7 @@
 //   node src/scripted-games.ts --seeds 1-40 --strategy push --map random   (D-074: the player and the AI both scout)
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
+import { DeathWatch, type DeathRecord } from "./death-watch.ts";
 import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { writeFileSync } from "node:fs";
 import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THINK_EVERY, SPEEDS, type Speed, STRATEGIES, type Strategy } from "./ai/scripted-player.ts";
@@ -262,14 +263,16 @@ interface GameRecord {
    * order, and whether the player's main city fell by MARCH_GAP after the last.
    */
   aiMarches: { start: number; last: number; most: number; fell: boolean }[];
-  /** D-086 A: soldiers (not farmers, not militia) of [the player, the AI] at minutes 15 and 20 (null: over by then). */
-  armyAt: { m15: [number, number] | null; m20: [number, number] | null };
+  /** D-086 A: soldiers (not farmers, not militia) of [the player, the AI] at minutes 10 (D-101), 15 and 20 (null: over by then). */
+  armyAt: { m10: [number, number] | null; m15: [number, number] | null; m20: [number, number] | null };
   /** D-086 A5: arrow towers of [the player, the AI] at minutes 30 and 45 (null: over by then). */
   towersAt: { m30: [number, number] | null; m45: [number, number] | null };
   /** D-086 A5: the player's [farmers, soldiers, arrow towers] at minutes 5, 10, 15, 20, 25 and 30 (the user's pace to match). */
   pace: Record<string, [number, number, number]>;
   /** D-101: each side's own gold and when it ran out, the contested gold and how much each side mined it. */
   gold: GoldRecord;
+  /** D-100 (ceo 2026-10-24): where the player's soldiers died (by a town and who held it, the AI's main city, home, the field), and to arrows. */
+  deaths: DeathRecord;
   /** D-086 A5: towns [the player, the AI] governed at the end. */
   governedEnd: [number, number];
   /**
@@ -435,7 +438,8 @@ function play(seed: number): GameRecord {
   let aiAt15: GameRecord["aiAt15"] = null;
   const marchLog: { start: number; last: number; most: number }[] = [];
   let logAt = 0;
-  const armyAt: GameRecord["armyAt"] = { m15: null, m20: null };
+  const armyAt: GameRecord["armyAt"] = { m10: null, m15: null, m20: null };
+  const deaths = new DeathWatch(0);
   const towersAt: GameRecord["towersAt"] = { m30: null, m45: null };
   const pace: GameRecord["pace"] = {};
   const goldWatch = new GoldWatch(w);
@@ -461,6 +465,7 @@ function play(seed: number): GameRecord {
       for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
     }
     r.tick();
+    deaths.tick(w);
     if (w.tick === 12000) aiFarmersLost10 = w.lost[UNIT_KINDS + UnitType.Farmer];
     // D-086 A: the AI's orders this tick at the player's main city with 10 or more soldiers.
     for (; logAt < g.log.length; logAt++) {
@@ -505,6 +510,7 @@ function play(seed: number): GameRecord {
       for (const x of farmerChecks) if (x.at === k && farmerLog[k].farmers >= x.before - 2) aiFarmers.back++;
     }
     if (w.tick % 1200 === 0) goldWatch.minute(w);
+    if (w.tick === 10 * 1200) armyAt.m10 = [soldiersOf(0), soldiersOf(1)];
     if (w.tick === 15 * 1200) armyAt.m15 = [soldiersOf(0), soldiersOf(1)];
     if (w.tick === 20 * 1200) armyAt.m20 = [soldiersOf(0), soldiersOf(1)];
     if (w.tick === 30 * 1200) towersAt.m30 = [towersOf(0), towersOf(1)];
@@ -759,6 +765,7 @@ function play(seed: number): GameRecord {
     aiAt15,
     aiMarches: marchLog.map((x) => ({ ...x, fell: cityFell[0] >= 0 && cityFell[0] <= x.last + MARCH_GAP })),
     armyAt,
+    deaths: deaths.result(),
     towersAt,
     pace,
     gold: goldWatch.result(),
