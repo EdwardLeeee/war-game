@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
+import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
@@ -2787,7 +2787,7 @@ test("D-086 A5 (plan.townSave): at home with a town it could take but for the co
 // --- D-100: a keep in every town ---------------------------------------------------------------------------------
 
 test(
-  "D-100 (KEEP_AI.mop): inside a town with its keep down, the militia left on the walls are told to fight; none in sight, the army walks the walls; off, none",
+  "D-100 (KEEP_AI.mop, off by default): inside a town with its keep down, the militia left on the walls are told to fight; none in sight, the army walks the walls; off, none",
   switchedOn(KEEP, () => {
     const g = new Game({ seed: 1, scenario: "standard" });
     const w = g.w;
@@ -2805,6 +2805,8 @@ test(
     const town = { x: t.cellX, y: t.cellY, size: t.size, state: w.townState[t.id], owner: w.townOwner[t.id] };
     const mine = army.map((id) => ({ id, type: UnitType.Spearman, x: u.x[slotOf(g, id)] >> 10, y: u.y[slotOf(g, id)] >> 10 }));
     const view = buildView(g, 0);
+    const was = KEEP_AI.mop;
+    KEEP_AI.mop = true;
     // The militia left in sight (since war-game-core cf6a5c0 those on the walls come down once the keep falls).
     const left = new Set<number>();
     for (let k = 0; k < view.units.length; k += UNIT_STRIDE) if (view.units[k + UnitField.type] === UnitType.Militia) left.add(view.units[k + UnitField.id]);
@@ -2813,7 +2815,6 @@ test(
     if (left.size > 0) assert.ok(out.every((c) => c.c === "attack" && left.has((c as { target: number }).target)), "at the militia in sight");
     else assert.ok(out.every((c) => c.c === "move"), "none in sight: along the walls");
     assert.deepEqual(out.flatMap((c) => (c as { u: number[] }).u).sort((a, b) => a - b), [...army].sort((a, b) => a - b), "every soldier");
-    const was = KEEP_AI.mop;
     KEEP_AI.mop = false;
     assert.equal(mopUpOrders(view, r, 0, town, mine), null, "off: none");
     KEEP_AI.mop = was;
@@ -2821,7 +2822,7 @@ test(
 );
 
 test(
-  "D-100: hard against hard on a random map with keeps takes a town by minute 14 (seed 101: none taken all game before KEEP_AI.mop)",
+  "D-100: hard against hard on a random map with keeps takes a town by minute 14 (seed 101: none taken all game before war-game-core cf6a5c0)",
   switchedOn(KEEP, () => {
     const r = new Runner({ seed: 101, scenario: "standard", ai: [true, true], maxTicks: 36000, difficulty: ["hard", "hard"], map: "random" });
     const w = r.game.w;
@@ -2831,5 +2832,49 @@ test(
       for (let t = 0; t < w.townSize.length; t++) if (w.townOwner[t] === 0 || w.townOwner[t] === 1) taken = true;
     }
     assert.ok(taken, "a town taken");
+  }),
+);
+
+
+test(
+  "D-100 (KEEP_AI.strength): a town's defence is its keep with its militia (all, as its rules give), or an enemy town's keep and garrison; 0 without keeps",
+  switchedOn(KEEP, () => {
+    const r = rules();
+    const fv = fortValues(r);
+    const small = townDefence(r, fv, 0, { size: TownSize.Small, state: TownState.Neutral, owner: NO_OWNER, needed: 0 }, []);
+    const large = townDefence(r, fv, 0, { size: TownSize.Large, state: TownState.Neutral, owner: NO_OWNER, needed: 0 }, []);
+    assert.ok(small > 0 && large > small, `${small} < ${large}`);
+    const governed = townDefence(r, fv, 0, { size: TownSize.Small, state: TownState.Governed, owner: 1, needed: 3 }, []);
+    const seen = townDefence(r, fv, 0, { size: TownSize.Small, state: TownState.Governed, owner: 1, needed: 3 }, Array.from({ length: 8 }, () => ({ type: UnitType.Spearman })));
+    assert.ok(seen > governed, "the garrison it knows of, more than the minimum");
+    assert.equal(townDefence(r, fv, 0, { size: TownSize.Small, state: TownState.Plundering, owner: 1, needed: 0 }, []), 0, "no keep while plundered");
+  }),
+);
+
+test("D-100 (KEEP_AI.strength): without keeps a town's defence counts nothing (as before)", () => {
+  const r = rules();
+  if (r.features?.keep === true) return;
+  assert.equal(townDefence(r, fortValues(r), 0, { size: TownSize.Small, state: TownState.Neutral, owner: NO_OWNER, needed: 0 }, []), 0);
+});
+
+test(
+  "D-100 (KEEP_AI.strength): hard goes for a small town with a keep only with 1.3 x its keep and militia",
+  switchedOn(KEEP, () => {
+    const goes = (spears: number) => {
+      const g = new Game({ seed: 1, scenario: "standard" });
+      const w = g.w;
+      for (let s = 0; s < w.units.count; s++) if (w.units.col.type[s] !== UnitType.Militia) w.units.col.hp[s] = 0;
+      g.step();
+      w.tick = 10 * 1200;
+      const s0 = w.map.spawns[0];
+      const near = [...w.map.towns].filter((t) => t.size === TownSize.Small).sort((a, b) => (a.cellX - s0.cellX) ** 2 + (a.cellY - s0.cellY) ** 2 - ((b.cellX - s0.cellX) ** 2 + (b.cellY - s0.cellY) ** 2))[0];
+      for (const t of w.map.towns) put(g, 0, UnitType.Farmer, t.cellX + 10, t.cellY + 10);
+      for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
+      g.fog.update(w);
+      const out = hardAi(g, { dodge: false, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 }).think(buildView(g, 0));
+      return out.some((c) => c.c === "move" && c.u.length === spears && (c.x - near.cellX) ** 2 + (c.y - near.cellY) ** 2 <= 9);
+    };
+    assert.equal(goes(5), false, "5 spearmen: not into its keep and militia");
+    assert.equal(goes(8), true, "8: they go");
   }),
 );

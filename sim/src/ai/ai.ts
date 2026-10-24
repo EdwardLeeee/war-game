@@ -945,10 +945,45 @@ export function gateOrders(
  * at those on the walls, the melee at the keep while it stands and then at those on the walls. None in sight and the
  * keep down but the town not taken (militia out of sight on the walls, 7 cells from the middle): the army walks to the
  * middle of each wall from inside, a quarter to each, to see them. Only while the rules have keeps
- * (rules.features.keep); without them as before.
+ * (rules.features.keep); without them as before. Off (d100b, run 39989585815: once war-game-core cf6a5c0 had the militia
+ * come down off the walls it drew more on random maps and lost more to normal).
+ * strength (with keeps): a town's defence (townDefence) counts in what it takes to go for it: the army 1.3 x it.
  */
-export const KEEP_AI = { mop: true };
+export const KEEP_AI = { mop: false, strength: true };
 const MOP_IN = 3;
+
+/**
+ * D-100 (KEEP_AI.strength, while the rules have keeps; 0 without): what town `t` is worth as a fort to `player` (fortValues'
+ * measure): its keep (rules.towns[size].keep, its arrows and hp) while the keep stands, that is while the town is neutral
+ * or governed; a neutral town's militia, all of them as its rules give (those out of sight on its walls count too); an
+ * enemy-governed town's garrison, the more of its garrisonNeeded and `seen` (the enemy soldiers it knows of by it,
+ * remembered ones too).
+ */
+export function townDefence(
+  rules: Rules,
+  fv: FortValues,
+  player: number,
+  t: { size: number; state: number; owner: number; needed: number },
+  seen: readonly { type: number }[],
+): number {
+  const tr = rules.towns?.[t.size];
+  const keep = tr?.keep;
+  if (!KEEP_AI.strength || rules.features?.keep !== true || tr === undefined || keep === undefined) return 0;
+  const spear = rules.units[UnitType.Spearman];
+  const base = (spear.attack / spear.cooldown) * spear.hp;
+  const worth = (dps: number, hp: number) => Math.round(10 * Math.sqrt((dps * hp) / base));
+  const neutral = t.state === TownState.Neutral || t.owner === NEUTRAL;
+  const governed = t.state === TownState.Governed && t.owner !== player;
+  let w = neutral || governed ? worth(keep.arrow.damage / keep.arrow.cooldown, keep.hp) : 0;
+  if (neutral) {
+    const m = rules.units[UnitType.Militia];
+    if (m !== undefined) w += tr.militia * worth(m.attack / m.cooldown, m.hp);
+  } else if (t.owner !== player) {
+    const known = seen.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+    w += Math.max(known, t.needed * (fv.vs[UnitType.Spearman] ?? 10));
+  }
+  return w;
+}
 
 /**
  * D-100 (KEEP_AI.mop): orders for `army` at town `t`, not `player`'s, with MOP_IN of them inside its walls and no enemy
@@ -2413,6 +2448,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           .filter(([id]) => !fortsBar(id))
           // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
           .filter(([, t]) => !GATE_AI.arrows || vsForts(army) * 10 >= gateArrowWorth(view, rules, player, t, foes.filter((e) => dist2(e.x, e.y, t.x, t.y) <= 100).length) * 13)
+          // D-100 (KEEP_AI.strength): its keep, militia or garrison.
+          .filter(([, t]) => vsForts(army) * 10 >= townDefence(rules, fv, player, t, foes.filter((e) => dist2(e.x, e.y, t.x, t.y) <= 14 * 14)) * 13)
           .filter(([, t]) => !GATE_AI.retreat.includes("b") || gateLoss(view, rules, player, t, army) <= GATE_LOSS)
           // D-096 (NORMAL_TUNE.walledTowns): an enemy-held town with its gates up, only with the army for the base; (townRest) not one it fell back from lately.
           .filter(([, t]) => !NORMAL_TUNE.walledTowns || t.owner !== 1 - player || army.length >= baseNeed || !townGates(view, rules, t).some((g) => g.owner !== player))
@@ -4782,6 +4819,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const unpaid = once && plunderedTown(id) && !affordAll(governCost(t.size));
             if (unpaid && !plan.townSave) continue;
             if (army.length < (t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
+            // D-100 (KEEP_AI.strength): its keep, militia or garrison; the enemy soldiers it remembers by it count too.
+            const remembered = [...intel.values()].filter((e) => tick - e.tick <= FORT_FORGET && dist2(e.x, e.y, t.x, t.y) <= 14 * 14);
+            if (vsForts(army) * 10 < townDefence(rules, fv, player, t, remembered) * 13) continue;
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
             for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= 14 * 14) there += WORTH[e.type];
