@@ -550,7 +550,7 @@ export class Game implements GestureHost {
   }
 
   /** 寫實地面 (D-093): drawn or not, and its quality; null before the first snapshot. */
-  get groundForTest(): { real: boolean; quality: string | null; water: boolean } | null {
+  get groundForTest(): { real: boolean; quality: string | null; water: boolean; town: boolean } | null {
     return this.renderer?.groundLook ?? null;
   }
 
@@ -560,9 +560,14 @@ export class Game implements GestureHost {
   }
 
   /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
-  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number> } | null {
+  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null {
     const r = this.renderer;
     return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount };
+  }
+
+  /** 城內 B (castle 2): the towns' decor pieces, for the test hook. */
+  get decorForTest(): { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean }[] | null {
+    return this.renderer?.decorForTest ?? null;
   }
 
   /** Terrain repaints on exploring rock (random map, D-074), for the test hook. */

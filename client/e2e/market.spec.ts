@@ -49,6 +49,9 @@ async function ours(page: Page, type: number): Promise<{ id: number; cx: number;
 async function openMarket(page: Page): Promise<void> {
   const m = await ours(page, MARKET);
   await selectForCommands(page, []);
+  // Its panel gone first: else, the interface not updated in between (WebKit on CI, run 40097502995), the
+  // tap selects the market again under the old panel, which is not built anew.
+  await expect(page.locator(".market")).toHaveCount(0);
   await centre(page, m.cx + 1.5, m.cy + 1.5, 1.2);
   await tap(page, await at(page, { x: m.cx + 1, y: m.cy + 1 }));
   await expect(page.locator(".market")).toBeVisible();
