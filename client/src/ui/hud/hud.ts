@@ -35,7 +35,7 @@ import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
 import { costText } from "../../game/govern-wait.ts";
 import { Minimap } from "./minimap.ts";
-import { armyText, BUILDING_NAME, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
+import { armyText, buildingName, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
 import { CommandArea, PLUNDERED_TEXT, ResourceBar, SelectionInfo } from "./panels.ts";
 
 const UPDATE_MS = 100;
@@ -391,7 +391,7 @@ export class Hud {
         this.game.toast(ev.from === me ? "駐軍不足，城鎮叛離了" : "敵方的城鎮叛離了");
         break;
       case "building_done":
-        this.game.toast(`${BUILDING_NAME[ev.type] ?? "建築"}蓋好了`);
+        this.game.toast(`${buildingName(ev.type, this.game.view?.rules) ?? "建築"}蓋好了`);
         break;
       case "mage_killed":
         this.game.toast(ev.owner === me ? "我方法師陣亡" : `擊殺敵方法師，得到魔晶 ${ev.crystal}`);

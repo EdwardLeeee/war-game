@@ -61,6 +61,8 @@ export interface PageParams {
   walls: boolean;
   /** `?test=1&mock=1&siege=1`: the fake world with D-099's siege engines and works on (features.siege). */
   siege: boolean;
+  /** `?test=1&mock=1&keep=1`: the fake world with D-100's bigger towns and their keeps (features.keep). */
+  keep: boolean;
   /** `?test=1&mock=1&mine=1`: the fake world with two mines of ours, a crystal vein by one (the mine's 晶 row). */
   mine: boolean;
   /**
@@ -125,5 +127,5 @@ export function parseParams(search: string): PageParams {
   const ghost = test && q.get("ghost") === "outline" ? "outline" : null;
   const u = q.get("ui");
   const ui = test && (u === "r6" || u === "proto") ? u : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", walls: test && q.get("mock") === "1" && q.get("walls") === "1", siege: test && q.get("mock") === "1" && q.get("siege") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, ghost, loadTimes: test && q.get("loadtimes") === "1", ground: test && q.get("ground") === "real" ? "real" : null, groundQuality: q.get("groundq") === "low" ? "low" : "high" };
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", walls: test && q.get("mock") === "1" && q.get("walls") === "1", siege: test && q.get("mock") === "1" && q.get("siege") === "1", keep: test && q.get("mock") === "1" && q.get("keep") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, ghost, loadTimes: test && q.get("loadtimes") === "1", ground: test && q.get("ground") === "real" ? "real" : null, groundQuality: q.get("groundq") === "low" ? "low" : "high" };
 }
