@@ -140,9 +140,18 @@ function effects(): void {
   const dir = join(OUT, "effects");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "effects_0.png"), png(32, 16, () => [200, 180, 150, 120]));
+  // 真的箭 (art-v6's `arrow`, `sling_stone`): an arrow 0.8 m long pointing right, a stone of 4 frames.
+  writeFileSync(join(dir, "effects_1.png"), png(48, 16, (x, y) => (y < 6 ? [230, 220, 190, 255] : x < 32 && y >= 8 ? [110, 100, 90, 255] : [0, 0, 0, 0])));
   const frames: Record<string, object> = {};
   for (let i = 0; i < 2; i++) frames[`dust_0${i}`] = { page: 0, x: 0, y: 0, w: 32, h: 16, ax: 16, ay: 8 };
-  writeFileSync(join(dir, "effects.json"), JSON.stringify({ format: EFFECTS_FORMAT, scale: 3, px_per_m: 60, pages: ["effects_0.png"], effects: { dust: { frames: 2, fps: 12, loop: false } }, frames }));
+  frames.arrow_00 = { page: 1, x: 0, y: 0, w: 48, h: 6, ax: 24, ay: 3 };
+  for (let i = 0; i < 4; i++) frames[`sling_stone_0${i}`] = { page: 1, x: i * 8, y: 8, w: 8, h: 8, ax: 4, ay: 4 };
+  const effects = {
+    dust: { frames: 2, fps: 12, loop: false },
+    arrow: { frames: 1, fps: 1, loop: false, speed_mps: 35, max_s: 0.35, arc_k: 0.06, len_m: 0.8, from_m: { bow_e: [-0.15, 0.7, 1.45], bow_w: [-0.15, 0.7, 1.45] } },
+    sling_stone: { frames: 4, fps: 12, loop: true, max_s: 0.45, arc_k: 0.18 },
+  };
+  writeFileSync(join(dir, "effects.json"), JSON.stringify({ format: EFFECTS_FORMAT, scale: 3, px_per_m: 60, pages: ["effects_0.png", "effects_1.png"], effects, frames }));
 }
 
 /** ui's water numbers (R8-29, design/r8/common/ground_r8.py WATER, ceo approved 2026-10-23): the test page's and the development set's. */
