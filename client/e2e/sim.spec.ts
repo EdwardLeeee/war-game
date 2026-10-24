@@ -581,8 +581,11 @@ test("點伐木場、糧倉派村民（D-066）：寫附近有幾名在採，送
     await expect.poll(() => lastSent(page)).toMatchObject({ c: "release", u: [far.id] });
     await expect(page.getByRole("status").filter({ hasText: "1 名採木的村民放下工作，交給經濟分配" })).toBeVisible();
   }
-  // Off they go: the one sent is the player's own (HandPicked, D-050), the one let go no longer.
+  // Off they go: the one sent is the player's own (HandPicked, D-050), at what he was sent to last:
+  // the camp's tree, or the granary's berries when its ＋ took him too (on wood by then, he was the
+  // nearest gathering something else: run 40084329233); the one let go no longer.
+  const last = ((await page.evaluate(() => window.__proto?.game?.sent() ?? [])) as { c: string; u?: number[]; node?: number }[]).filter((c) => c.c === "gather" && c.u?.includes(who as number)).at(-1);
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
-  await expect.poll(async () => (await farmers(page)).find((f) => f.id === who), { timeout: 15_000 }).toMatchObject({ target: tree?.id, handPicked: true });
+  await expect.poll(async () => (await farmers(page)).find((f) => f.id === who), { timeout: 15_000 }).toMatchObject({ target: last?.node, handPicked: true });
   if (far !== undefined) await expect.poll(async () => (await farmers(page)).find((f) => f.id === far.id)?.handPicked, { timeout: 15_000 }).toBe(false);
 });
