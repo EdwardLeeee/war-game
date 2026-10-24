@@ -7,7 +7,7 @@ import { Action, BuildingFlag, BuildingType, CELL, CELL_SHIFT, NEUTRAL, Order, P
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
-import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, KEEP, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
+import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, KEEP, MARKET, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -296,6 +296,10 @@ export class World {
   governChosen = new Int32Array(PLAYER_COUNT);
   governCost = new Int32Array(PLAYER_COUNT);
   townIncome = new Int32Array(PLAYER_COUNT);
+  /** D-101 (MARKET): each player's prices, gold a lot: food at p * 2, wood at p * 2 + 1. */
+  marketPrice = new Int32Array(PLAYER_COUNT * 2).fill(MARKET.start);
+  /** D-101 (MARKET): lots each player traded (bought and sold). */
+  marketLots = new Int32Array(PLAYER_COUNT);
   governedTicks = new Int32Array(PLAYER_COUNT);
   governEnded = new Int32Array(PLAYER_COUNT);
   governPaidBack = new Int32Array(PLAYER_COUNT);
