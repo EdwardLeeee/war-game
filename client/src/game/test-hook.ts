@@ -70,7 +70,7 @@ export interface GameHook {
   send(cmd: CommandBody): void;
   /** Fake world only: deliver an event with the next snapshot. */
   inject(ev: SimEvent): void;
-  /** Fake world only: put own units on these cells (one cell each, cycling). */
+  /** Fake world only: put units (ours or the enemy's) on these cells (one cell each, cycling). */
   place(ids: number[], cells: { x: number; y: number }[]): void;
   /** Fake world only (等錢治理): what we have, and a little economy (income a second, 自動訓練 spending above the reserve) or none. */
   stock(c: { food: number; wood: number; gold: number; crystal: number }): void;
@@ -83,6 +83,16 @@ export interface GameHook {
   autoArmy(on: boolean): void;
   /** The main city's villagers (D-098) paused or not, as its 自動村民 button, without its message. */
   villagersPaused(on: boolean): void;
+  /** 自動蓋民居 (2026-10-25): its switch, and why the last decision sent no house (null: it sent one). */
+  autoHouse(): { on: boolean; block: string | null };
+  /** Fake world only (自動蓋民居): the population room left now and its ceiling; null: as always (cap 20). */
+  population(p: { room: number; ceiling: number } | null): void;
+  /** Fake world only: a building's progress now (1000: finished). */
+  progress(id: number, progress: number): void;
+  /** Fake world only: commands taken this many steps late (a page behind its snapshots); 0: as always. */
+  lag(steps: number): void;
+  /** Fake world only: these farmers of ours gathering at the node as the economy sends them (not by hand). */
+  employ(ids: number[], node: number): void;
   /** Pause marks drawn on buildings (自動訓練 paused, D-098: the player's own pause). */
   pauseMarks(): number;
   /** Control groups 1–4 as stored by the interface. */
@@ -291,6 +301,19 @@ export function gameHook(game: Game): GameHook {
     },
     villagersPaused: (on) => {
       game.autoArmy.villagersPaused = on;
+    },
+    autoHouse: () => ({ on: game.autoArmy.autoHouse, block: game.autoHouseBlock }),
+    population: (p) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.setPopulation(p);
+    },
+    progress: (id, progress) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.setProgress(id, progress);
+    },
+    lag: (steps) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.setLag(steps);
+    },
+    employ: (ids, node) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.employ(ids, node);
     },
     pauseMarks: () => game.pauseMarksForTest,
     pause: () => game.pause(),

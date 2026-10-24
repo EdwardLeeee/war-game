@@ -137,6 +137,37 @@ export function missingText(missing: Readonly<Record<number, number>>): string {
     .join("、");
 }
 
+/**
+ * 自動訓練 stopped by a full population with its cap at the ceiling (ceo 2026-10-25): a house
+ * would add nothing, so not 「蓋民居」.
+ */
+export const POPULATION_CEILING_TEXT = "人口已到上限";
+
+/** A train sent: its order's seq, the snapshot's tick it was sent at, where to and what. */
+export interface SentTrain {
+  seq: number;
+  tick: number;
+  building: number;
+  unit: number;
+}
+
+/**
+ * A train sent and neither in its building's queue, nor trained, nor refused after this long
+ * (ticks, 30 s) is taken for lost: the screen decides again.
+ */
+export const TRAIN_SENT_TICKS = 600;
+
+/**
+ * The trains still on their way (counted as queued; their buildings get no other): until the
+ * snapshot shows one in its building's queue (a train goes only to an empty queue), its building
+ * says it trained someone, or it is refused (game.ts). Not by the next step: a page behind its
+ * snapshots (WebKit at the start of a game, 40 steps and more) sees the simulation take an order
+ * late, and sending again then queued the same villager over and over (2026-10-25).
+ */
+export function stillSent(sent: readonly SentTrain[], tick: number, queuedAt: ReadonlySet<number>, trainedAt: ReadonlySet<number>): SentTrain[] {
+  return sent.filter((t) => tick <= t.tick + TRAIN_SENT_TICKS && !queuedAt.has(t.building) && !trainedAt.has(t.building));
+}
+
 /** The main city's villagers (D-098): the default target, and its bounds (−／+ by 5). */
 export const VILLAGER_TARGET = 40;
 export const VILLAGER_STEP = 5;
@@ -150,6 +181,8 @@ export interface AutoArmyState {
   paused: number[];
   villagerTarget: number;
   villagersPaused: boolean;
+  /** 自動蓋民居 (2026-10-25); a save from before has none: on. */
+  autoHouse?: boolean;
 }
 
 /** The screen's own part of 自動訓練: which buildings are paused, the villagers' target. */
@@ -157,6 +190,8 @@ export class AutoArmyBook {
   readonly paused = new Set<number>();
   villagerTarget = VILLAGER_TARGET;
   villagersPaused = false;
+  /** 自動蓋民居 (auto-house.ts): on by default. */
+  autoHouse = true;
 
   togglePaused(building: number): boolean {
     if (this.paused.has(building)) this.paused.delete(building);
@@ -171,16 +206,18 @@ export class AutoArmyBook {
   }
 
   save(): AutoArmyState {
-    return { paused: [...this.paused].sort((a, b) => a - b), villagerTarget: this.villagerTarget, villagersPaused: this.villagersPaused };
+    return { paused: [...this.paused].sort((a, b) => a - b), villagerTarget: this.villagerTarget, villagersPaused: this.villagersPaused, autoHouse: this.autoHouse };
   }
 
   restore(s: AutoArmyState | undefined): void {
     this.paused.clear();
     this.villagerTarget = VILLAGER_TARGET;
     this.villagersPaused = false;
+    this.autoHouse = true;
     if (s === undefined) return;
     for (const b of s.paused) this.paused.add(b);
     this.villagerTarget = s.villagerTarget;
     this.villagersPaused = s.villagersPaused;
+    this.autoHouse = s.autoHouse ?? true;
   }
 }

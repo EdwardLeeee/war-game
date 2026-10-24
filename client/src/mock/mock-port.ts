@@ -343,6 +343,14 @@ export class MockPort implements SimPort {
    * D-054) only, as the simulation's does; no unit comes of it.
    */
   private economy: { income: Cost; train: Cost } | null = null;
+  /**
+   * Tests (自動蓋民居): the population cap as a base plus our finished houses' share, and its
+   * ceiling; null: 20 and the rules' maximum, as always.
+   */
+  private population: { base: number; ceiling: number } | null = null;
+  /** Tests (setLag): steps a command waits before it is taken, and those waiting. */
+  private lag = 0;
+  private late: { due: number; cmd: CommandBody & { seq: number } }[] = [];
   private readonly towns: MTown[] = [];
   /** [id, kind, cx, cy, amount] */
   private readonly nodes: number[][] = [];
@@ -414,6 +422,44 @@ export class MockPort implements SimPort {
     if (keys.every((k) => this.stock[k] - this.reserve[k] >= e.train[k])) for (const k of keys) this.stock[k] -= e.train[k];
   }
 
+  /** Tests (自動蓋民居): the room left now (a house finished later adds its share) and the ceiling; null: as always. */
+  setPopulation(p: { room: number; ceiling: number } | null): void {
+    this.population = p === null ? null : { base: this.units.filter((u) => u.owner === ME).length + p.room - this.housesCap(), ceiling: p.ceiling };
+  }
+
+  private housesCap(): number {
+    const house = this.rules.buildings[BuildingType.House]?.populationCap ?? 0;
+    return this.buildings.filter((b) => b.owner === ME && b.type === BuildingType.House && b.progress >= 1000).length * house;
+  }
+
+  /**
+   * Tests (自動訓練 behind its snapshots): commands taken this many steps after they come, as a
+   * page behind its snapshots sees the simulation's Worker take them (WebKit at the start of a
+   * game: 40 and more); 0: on the next step, as always.
+   */
+  setLag(steps: number): void {
+    this.lag = Math.max(0, steps);
+  }
+
+  /** Tests: a building's progress now (a site finished at once). */
+  setProgress(id: number, progress: number): void {
+    const b = this.buildings.find((v) => v.id === id);
+    if (b !== undefined) b.progress = progress;
+  }
+
+  /** Tests: farmers of ours gathering at this node as the economy ratio sends them (not by hand). */
+  employ(ids: number[], node: number): void {
+    const n = this.nodes.find((v) => v[0] === node);
+    if (n === undefined) return;
+    for (const u of this.units) {
+      if (u.owner !== ME || u.type !== UnitType.Farmer || !ids.includes(u.id)) continue;
+      u.order = Order.Gather;
+      u.node = node;
+      u.target = { x: centre(n[2]), y: centre(n[3]) };
+      u.flags &= ~(UnitFlag.IdleFarmer | UnitFlag.HandPicked);
+    }
+  }
+
   /** Tests: deliver an event with the next snapshot (an attack, a captured town...). */
   inject(ev: SimEvent): void {
     // A capture also leaves the town waiting for 搶 or 治理, as in the simulation.
@@ -446,10 +492,10 @@ export class MockPort implements SimPort {
     this.events.push(ev);
   }
 
-  /** Tests: put units of ours on cells (the fake world has no pathfinding worth waiting for). */
+  /** Tests: put units on cells, ours or the enemy's (the fake world has no pathfinding worth waiting for). */
   place(ids: number[], cells: { x: number; y: number }[]): void {
     ids.forEach((id, i) => {
-      const u = this.units.find((v) => v.id === id && v.owner === ME);
+      const u = this.units.find((v) => v.id === id);
       const c = cells[i % cells.length];
       if (u === undefined || c === undefined) return;
       u.x = centre(c.x);
@@ -572,7 +618,8 @@ export class MockPort implements SimPort {
         this.schedule();
         break;
       case "command":
-        this.apply(msg.cmd);
+        if (this.lag > 0) this.late.push({ due: this.tick + this.lag, cmd: msg.cmd });
+        else this.apply(msg.cmd);
         break;
       case "pause":
         this.paused = true;
@@ -849,6 +896,7 @@ export class MockPort implements SimPort {
     // The gallery stands still at its moment, the same for every picture (no more snapshots: the screen holds the last).
     if (this.gallery && this.tick >= GALLERY_STOP_TICK) return;
     this.tick++;
+    while (this.late.length > 0 && this.late[0].due <= this.tick) this.apply((this.late.shift() as { cmd: CommandBody & { seq: number } }).cmd);
     if (this.economy !== null && this.tick % 20 === 0) this.runEconomy(this.economy);
     for (const u of this.units) {
       // Round 7: on its way to hide, it slips in once near the building (also when a test put it there).
@@ -1026,8 +1074,8 @@ export class MockPort implements SimPort {
     header[H.gold] = this.stock.gold;
     header[H.crystal] = this.stock.crystal;
     header[H.population] = this.units.filter((u) => u.owner === ME).length;
-    header[H.populationCap] = 20;
-    header[H.populationCeiling] = MOCK_RULES.maxPopulation;
+    header[H.populationCap] = this.population === null ? 20 : this.population.base + this.housesCap();
+    header[H.populationCeiling] = this.population?.ceiling ?? MOCK_RULES.maxPopulation;
     // D-101: 0 while markets are off, as the simulation's.
     header[H.priceFood] = this.market ? this.prices.food : 0;
     header[H.priceWood] = this.market ? this.prices.wood : 0;
@@ -1174,7 +1222,8 @@ export class MockPort implements SimPort {
         u.order = order;
         u.node = undefined;
         u.cast = 0;
-        u.flags &= ~UnitFlag.IdleFarmer;
+        // Any order takes a farmer off the job it was sent to by hand (`gather` sets it again), as the simulation's.
+        u.flags &= ~(UnitFlag.IdleFarmer | UnitFlag.HandPicked);
         // Round 7: moving, retreating or attacking brings a hiding soldier out first.
         if (order !== Order.Garrison) {
           u.inside = -1;
@@ -1206,7 +1255,10 @@ export class MockPort implements SimPort {
         else {
           const list = own(cmd.u);
           goTo(list, n[2], n[3], Order.Gather);
-          for (const u of list) u.node = cmd.node;
+          for (const u of list) {
+            u.node = cmd.node;
+            if (u.type === UnitType.Farmer) u.flags |= UnitFlag.HandPicked;
+          }
         }
         break;
       }
@@ -1216,6 +1268,7 @@ export class MockPort implements SimPort {
           u.order = Order.None;
           u.target = null;
           u.node = undefined;
+          u.flags &= ~UnitFlag.HandPicked;
           if (u.type === UnitType.Farmer) u.flags |= UnitFlag.IdleFarmer;
         }
         break;
