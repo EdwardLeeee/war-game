@@ -353,13 +353,13 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     return true;
   };
   if (pairs.length > 1 && !goldNear(pairs[1])) return away("gold by a town");
-  // D-101 (RICH): by the third town on every map, where it fits (the map is not drawn again for it).
-  if (RICH.on) {
+  // D-101 (RICH.contested): by the third town on every map, where it fits (the map is not drawn again for it).
+  if (RICH.on && RICH.contested) {
     if (pairs.length > 2) goldNear(pairs[2]);
   } else if (pairs.length > 2 && rng.below(2) === 0 && !goldNear(pairs[2])) return away("gold by a town");
-  // D-101 (RICH): contested gold on the axis, the big city's other side from the vein, shaped as the vein
-  // (its own mirror image), as far from the towns as the vein is.
-  if (RICH.on) {
+  // D-101 (RICH.contested): contested gold on the axis, the big city's other side from the vein, shaped as
+  // the vein (its own mirror image), as far from the towns as the vein is.
+  if (RICH.on && RICH.contested) {
     const away1 = vein.y > large.y || (vein.y === large.y && vein.x > large.x) ? -1 : 1;
     const p = pick(
       () => {

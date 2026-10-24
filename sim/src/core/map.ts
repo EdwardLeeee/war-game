@@ -206,10 +206,10 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
     }
   }
 
-  // D-101 (RICH): contested gold on the axis, as far from both starts: past the big city toward the
-  // vein, and beyond each corner town toward its corner. Each 2 x 2 straddles the diagonal (its own
+  // D-101 (RICH.contested): contested gold on the axis, as far from both starts: past the big city toward
+  // the vein, and beyond each corner town toward its corner. Each 2 x 2 straddles the diagonal (its own
   // mirror image), on open ground, outside every castle and 2 cells or more from any wall.
-  if (RICH.on) {
+  if (RICH.on && RICH.contested) {
     const boxes = towns.map((t) => {
       const c = castleOf(t.size, { tower, towns });
       return { x0: t.cellX + c.inside.x0 - 1, y0: t.cellY + c.inside.y0 - 1, x1: t.cellX + c.inside.x1 + 1, y1: t.cellY + c.inside.y1 + 1 };
