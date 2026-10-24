@@ -2330,8 +2330,11 @@ export class Game implements GestureHost {
     const view = this.view;
     if (view === null || this.renderer === null) return;
     const o = view.unitRow(ev.u);
-    const engine = o < 0 ? null : (({ x, y }) => ({ x: x / TILE_PX, y: y / TILE_PX }))(view.unitPos(o));
-    const stone = stoneOf(ev, engine, view.header?.[H.tick] ?? 0, (fixed) => fixed / CELL);
+    const u = view.curr?.snap.units;
+    const engine = o < 0 || u === undefined ? null : { ...(({ x, y }) => ({ x: x / TILE_PX, y: y / TILE_PX }))(view.unitPos(o)), facing: u[o + UnitField.facing] };
+    // art-v6's stone (effects siege_stone): from the engine's arm, its arc, from afar as ui drew it.
+    const look = this.renderer.stoneLook(o < 0 || u === undefined ? null : u[o + UnitField.owner]);
+    const stone = stoneOf(ev, engine, view.header?.[H.tick] ?? 0, (fixed) => fixed / CELL, look);
     if (stone !== null) this.renderer.siegeShot(stone);
   }
 

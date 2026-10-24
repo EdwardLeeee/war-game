@@ -19,6 +19,7 @@ import {
   HeaderField as H,
   NodeField as N,
   NodeKind,
+  PlaceBit,
   TOWN_STRIDE,
   TICKS_PER_SECOND,
   TownField as T,
@@ -41,7 +42,7 @@ import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT,
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 import { ArtStructures } from "./structure-art.ts";
 import { autoTrainBuildings } from "../game/features.ts";
-import { type Stone as SiegeStone, stoneAt } from "../game/siege.ts";
+import { RELEASE_M, type Stone as SiegeStone, stoneAt, type StoneLook } from "../game/siege.ts";
 import { CastleDraw } from "./castle-draw.ts";
 import { type Footprint, townGround } from "../art/castle.ts";
 import { TerrainDraw } from "./terrain-draw.ts";
@@ -301,6 +302,9 @@ export class WorldRenderer {
   private readonly groundArt = new Container();
   /** The cannon's warnings drawn from the effects atlas (晶砲預警圈 B, art-v2 on): a container each, lying on the ground. */
   private readonly warnLayer = new Container();
+  /** art-v6: siege stones' craters on the ground (world px, under the fog), and the sprites of the stones in the air, their shadows and their hits. */
+  private readonly craterLayer = new Container();
+  private readonly siegeArt: { stones: Sprite[]; shadows: Sprite[]; hits: Sprite[]; craters: Sprite[] } = { stones: [], shadows: [], hits: [], craters: [] };
   /** The towns' castles (D-089): pictures (art-v4, square on), or blocks on the ground. */
   private readonly castle: CastleDraw;
   /** The ground's pictures (art-v5, R6-51): the water, fords and decks lying in `terrainGround`, under the farms and castles' floors. */
@@ -405,7 +409,7 @@ export class WorldRenderer {
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
-    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.ringLayer, this.fx, this.warnLayer, this.ghost, fog, this.wallGround);
+    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.ringLayer, this.fx, this.craterLayer, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
     this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.overGround, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.airArt, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
@@ -650,6 +654,19 @@ export class WorldRenderer {
     if (!dash) g.stroke(stroke);
   }
 
+  /**
+   * art-v6's stone (effects `siege_stone`): where it leaves an engine of this owner (its atlas's
+   * from_m; null owner: one unseen), its arc and how far out an unseen one's starts; null without
+   * the effect (the stand-in numbers of game/siege.ts).
+   */
+  stoneLook(owner: number | null): StoneLook | null {
+    const info = this.artUnits?.art.effects?.effects.siege_stone;
+    if (info === undefined) return null;
+    const atlas = owner === null ? null : (this.artUnits?.atlasFor(UnitType.Siege, owner) ?? null);
+    const from = (atlas === null ? undefined : info.from_m?.[atlas.unit]) ?? [0, 0, RELEASE_M];
+    return { fromM: from, arcM: info.arc_m ?? 2, arcK: info.arc_k ?? 0.25, farM: info.from_far_m ?? 14 };
+  }
+
   /** 攻城砲 (D-099): a stone thrown (game/siege.ts), drawn until it lands and a moment after. */
   siegeShot(stone: SiegeStone): void {
     this.siegeStones.push(stone);
@@ -663,6 +680,7 @@ export class WorldRenderer {
    * unseen engine comes in from the edge of what we see).
    */
   private drawSiegeStones(): void {
+    if (this.drawSiegeStonesArt()) return;
     const t = this.drawnTick;
     this.siegeStones = this.siegeStones.filter((s) => t < s.lands + STONE_LANDED_S * TICKS_PER_SECOND);
     const n = this.view.map.size;
@@ -709,6 +727,85 @@ export class WorldRenderer {
       sprite.scale.set((this.projection.ptPerM / fx.px_per_m) * 2 * (f.half ? 2 : 1));
     }
     for (; d < this.siegeDust.length; d++) this.siegeDust[d].visible = false;
+  }
+
+  /**
+   * art-v6's stones (effects siege_*; false without them): the stone tumbling on its arc (game/siege.ts
+   * with ui's arc), its shadow under it smaller and fainter the higher it is (ui: max(0.35, 1 − h/14));
+   * landed, `siege_hit_building` where a building, a wall or a gate stands on the cell, else
+   * `siege_hit_ground`, and a crater on the ground fading over `crater_s`. Only where we see now.
+   */
+  private drawSiegeStonesArt(): boolean {
+    const art = this.artUnits?.art ?? null;
+    const fx = art?.effects ?? null;
+    const stone = fx?.effects.siege_stone;
+    if (art === null || fx === null || stone === undefined) return false;
+    const t = this.drawnTick;
+    const craterS = fx.effects.siege_crater?.crater_s ?? 8;
+    this.siegeStones = this.siegeStones.filter((s) => t < s.lands + craterS * TICKS_PER_SECOND);
+    const n = this.view.map.size;
+    const fog = this.view.fog;
+    const seen = (x: number, y: number) => {
+      const cx = Math.floor(x);
+      const cy = Math.floor(y);
+      return cx >= 0 && cy >= 0 && cx < n && cy < n && (fog === null || fog[cy * n + cx] === Fog.Visible);
+    };
+    const upPerM = this.projection.ptPerM * UP_PER_M;
+    const k = this.projection.ptPerM / fx.px_per_m;
+    const used = { stones: 0, shadows: 0, hits: 0, craters: 0 };
+    const put = (kind: keyof typeof used, layer: Container, name: string, x: number, y: number, scale: number, alpha = 1) => {
+      const f = art.effectFrame(name);
+      if (f === null) return;
+      const list = this.siegeArt[kind];
+      while (list.length <= used[kind]) {
+        const sprite = new Sprite();
+        layer.addChild(sprite);
+        list.push(sprite);
+      }
+      const sprite = list[used[kind]++];
+      sprite.visible = true;
+      sprite.texture = f.texture;
+      sprite.anchor.set(f.ax, f.ay);
+      sprite.position.set(x, y);
+      sprite.scale.set(scale * (f.half ? 2 : 1));
+      sprite.alpha = alpha;
+    };
+    const frame = (name: string, since: number, info: { frames: number; fps?: number; loop: boolean } | undefined) => {
+      if (info === undefined) return null;
+      const i = Math.floor((since / TICKS_PER_SECOND) * (info.fps ?? 12));
+      return info.loop ? `${name}_${String(i % info.frames).padStart(2, "0")}` : i < info.frames ? `${name}_${String(i).padStart(2, "0")}` : null;
+    };
+    const placement = this.view.placement;
+    for (const s of this.siegeStones) {
+      const at = stoneAt(s, t, M_PER_CELL);
+      if (at !== null) {
+        if (!seen(at.x, at.y)) continue;
+        const ground = this.projection.toPlane(at.x * TILE_PX, at.y * TILE_PX);
+        const shade = Math.max(0.35, 1 - at.upM / 14);
+        put("shadows", this.airArt, "siege_stone_shadow_00", ground.x, ground.y, k * shade, shade);
+        const name = frame("siege_stone", t - s.thrown, stone);
+        if (name !== null) put("stones", this.airArt, name, ground.x, ground.y - at.upM * upPerM, k);
+        continue;
+      }
+      if (t < s.lands || !seen(s.toX, s.toY)) continue;
+      // Landed: on a building, a wall or a gate, or on the ground.
+      const cx = Math.floor(s.toX);
+      const cy = Math.floor(s.toY);
+      const onBuilding = this.view.buildingAt(s.toX * TILE_PX, s.toY * TILE_PX) !== null || (placement !== null && ((placement.cells[cy * n + cx] ?? 0) & PlaceBit.Wall) !== 0);
+      const hitName = onBuilding ? "siege_hit_building" : "siege_hit_ground";
+      const hit = frame(hitName, t - s.lands, fx.effects[hitName]);
+      const p = this.projection.toPlane(s.toX * TILE_PX, s.toY * TILE_PX);
+      if (hit !== null) put("hits", this.airArt, hit, p.x, p.y, k);
+      // The crater: seen from above, laid on the ground (world px), its radius_m to the picture's; fading.
+      const crater = fx.effects.siege_crater;
+      if (crater !== undefined) {
+        const fade = 1 - (t - s.lands) / (craterS * TICKS_PER_SECOND);
+        put("craters", this.craterLayer, "siege_crater_00", s.toX * TILE_PX, s.toY * TILE_PX, TILE_PX / M_PER_CELL / fx.px_per_m, Math.max(0, fade));
+      }
+    }
+    for (const kind of Object.keys(used) as (keyof typeof used)[]) for (let i = used[kind]; i < this.siegeArt[kind].length; i++) this.siegeArt[kind][i].visible = false;
+    for (const sp of this.siegeDust) sp.visible = false;
+    return true;
   }
 
   private drawShots(now: number): void {
