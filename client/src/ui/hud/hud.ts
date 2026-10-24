@@ -5,6 +5,7 @@
 
 import { counterLines } from "../../game/counters.ts";
 import type { Game } from "../../game/game.ts";
+import { tradedText } from "../../game/market.ts";
 import { pressable } from "../../input/pressable.ts";
 import type { PerfScenario } from "../../lab/lab.ts";
 import {
@@ -395,6 +396,10 @@ export class Hud {
         break;
       case "mage_killed":
         this.game.toast(ev.owner === me ? "我方法師陣亡" : `擊殺敵方法師，得到魔晶 ${ev.crystal}`);
+        break;
+      // 市場 (D-101): only ours come.
+      case "traded":
+        this.game.toast(tradedText(ev));
         break;
       default:
         break;

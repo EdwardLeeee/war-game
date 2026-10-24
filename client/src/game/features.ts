@@ -21,13 +21,14 @@ export function garrisonTypes(rules: Pick<Rules, "features" | "garrisonTypes"> |
   return [...(rules?.garrisonTypes ?? [])];
 }
 
-/** Whether this building is offered in 建造 (箭樓 needs `towers`, 馬廄 `cavalry`). */
+/** Whether this building is offered in 建造 (箭樓 needs `towers`, 馬廄 `cavalry`, 市場 `market`). */
 export function buildable(rules: Pick<Rules, "features"> | null | undefined, type: number): boolean {
   const on = features(rules);
   if (type === BuildingType.ArrowTower) return on.towers;
   if (type === BuildingType.Stable) return on.cavalry;
   if (type === BuildingType.Outpost) return on.outpost === true;
   if (type === BuildingType.SiegeWorks) return on.siege === true;
+  if (type === BuildingType.Market) return on.market === true;
   return true;
 }
 

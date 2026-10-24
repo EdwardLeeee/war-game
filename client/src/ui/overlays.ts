@@ -2,6 +2,7 @@
 // the skill wheel, the prompt bar for map-tap modes, the ✓ / ✗ of building placement and a
 // short message line. Temporary prototype interface (GDD §10 draft), not an approved design.
 
+import { tradeRejectText } from "../game/market.ts";
 import { type CommandBody, type CommandKind, Reject } from "../sim.ts";
 
 /**
@@ -48,6 +49,8 @@ export const REJECT_TEXT: Record<number, string> = {
   [Reject.GateLane]: "城門要留給人走，不能蓋",
   // R6-51 (ceo 2026-10-20): fords and bridges.
   [Reject.Crossing]: "橋和淺灘要留給人走，不能蓋",
+  // D-101: a trade with no finished market of one's own.
+  [Reject.NoMarket]: "沒有蓋好的市場，不能買賣",
 };
 
 /**
@@ -84,6 +87,8 @@ export const REPAIR_LOCKED_TEXT = "主城剛被攻擊，暫時不能修理：村
 
 /** What to tell the player when a command comes back rejected. */
 export function rejectText(reason: number, cmd: CommandBody | undefined): string {
+  // 市場 (D-101): what was bought or sold, and why not.
+  if (cmd?.c === "trade") return tradeRejectText(reason, cmd) ?? REJECT_TEXT[reason] ?? "指令沒有執行";
   const specific = cmd === undefined ? undefined : BY_COMMAND[reason]?.[cmd.c];
   return specific ?? REJECT_TEXT[reason] ?? "指令沒有執行";
 }
