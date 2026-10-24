@@ -32,8 +32,8 @@ test("RICH and MARKET off: the amounts, the maps' gold and the rules as before; 
   assert.deepEqual(rejects(g), [Reject.NotAvailable]);
 });
 
-test("RICH on: 600 gold a cell and 150 wood a tree; the fixed map's three contested mines on the axis", switchedOn(RICH, () => {
-  assert.deepEqual([NODE_AMOUNT.goldCell, NODE_AMOUNT.tree], [600, 150]);
+test("RICH on: 600 gold a cell, trees as before; the fixed map's three contested mines on the axis and 3 more forests a side", switchedOn(RICH, () => {
+  assert.deepEqual([NODE_AMOUNT.goldCell, NODE_AMOUNT.tree, RICH.forests], [600, 100, 3]);
   const m = generateMap();
   const gold = m.nodes.filter((x) => x.kind === NodeKind.GoldMine);
   assert.deepEqual([gold.length, gold.reduce((a, x) => a + x.amount, 0)], [28, 16800]);
@@ -41,11 +41,12 @@ test("RICH on: 600 gold a cell and 150 wood a tree; the fixed map's three contes
   assert.equal(axis.length, 12, "three 2 x 2 mines straddling the diagonal");
   // Every gold cell has its mirror image (x <-> y).
   for (const x of gold) assert.ok(gold.some((y) => y.cellX === x.cellY && y.cellY === x.cellX), `${x.cellX},${x.cellY}`);
-  const trees = m.nodes.filter((x) => x.kind === NodeKind.Tree).reduce((a, x) => a + x.amount, 0);
+  const trees = m.nodes.filter((x) => x.kind === NodeKind.Tree);
   RICH.on = false;
-  const before = generateMap().nodes.filter((x) => x.kind === NodeKind.Tree).reduce((a, x) => a + x.amount, 0);
+  const before = generateMap().nodes.filter((x) => x.kind === NodeKind.Tree);
   RICH.on = true;
-  assert.equal(trees * 2, before * 3, "the same trees, 1.5 times the wood");
+  assert.ok(trees.every((x) => x.amount === 100), "100 wood a tree");
+  assert.equal(trees.length - before.length, 2 * 3 * 21, "3 forests of 21 trees a side");
 }));
 
 test("RICH on, random maps 1-20: a contested mine on the axis, its own mirror image; every gold cell 600", switchedOn(RICH, () => {

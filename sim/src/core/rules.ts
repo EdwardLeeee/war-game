@@ -642,14 +642,16 @@ export const BERRIES_PER_MINUTE = 30;
 export const CARRY = 10;
 export const NODE_AMOUNT = { tree: 100, goldCell: 400, bush: 100, crystalCell: 150 };
 /**
- * D-101 (the user 2026-10-22/23: 「其實現在打很容易拖到後期都沒有樹跟金礦可以採」; ceo 2026-10-24): more gold
- * and wood. While on: each gold cell `goldCell`, each tree `tree` (the same cells, so the ways do not
- * change), and contested gold mines on the axis (as far from both starts; map.ts, random-map.ts);
- * the trees more than FAR_TREE cells from both main cities `farTree` each instead (0: as `tree`);
- * `forests` more forests by each main city, HOME_FOREST cells out (both maps, mirrored).
- * Off: as before.
+ * D-101 (the user 2026-10-22/23: 「其實現在打很容易拖到後期都沒有樹跟金礦可以採」; ceo 2026-10-24/25): more gold
+ * and wood. While on: each gold cell `goldCell` (the same cells), contested gold mines on the axis (as
+ * far from both starts; map.ts, random-map.ts), and `forests` more forests by each main city,
+ * HOME_FOREST cells out (both maps, mirrored); each tree `tree`; the trees more than FAR_TREE cells
+ * from both main cities `farTree` each instead (0: as `tree`). The values chosen (ceo 2026-10-25,
+ * the scripted player's measurements in PR D-101 wood): trees as before (100: at 150 the aggressive
+ * groups won less on random maps), 3 forests a side (the nearest tree 12 cells out at minutes 45 and
+ * 60 of long games, against 14-20). Off: as before.
  */
-export const RICH = { on: false, goldCell: 600, tree: 150, farTree: 0, forests: 0 };
+export const RICH = { on: false, goldCell: 600, tree: 100, farTree: 0, forests: 3 };
 /**
  * D-101 (the user: a market that trades what is left over for what is missing, dearer the more one
  * trades, as in AoE; ceo 2026-10-24): BuildingType.Market and `trade`, food or wood for gold, `lot`
