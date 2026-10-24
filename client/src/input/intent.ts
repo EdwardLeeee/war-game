@@ -35,6 +35,10 @@ export interface IntentWorld {
   unitAutocast(id: number): boolean;
   /** The cell in front of the own main city, where 退回主城 goes; null without a main city. */
   homeCell(): { x: number; y: number } | null;
+  /** 點城鎮就是進攻 (D-100): towns have keeps (`features.keep`). */
+  attacksTowns(): boolean;
+  /** A town's keep's centre cell while it stands (D-100), else null. */
+  keepCell(town: number): { x: number; y: number } | null;
 }
 
 export interface Selection {
@@ -57,6 +61,8 @@ export type Intent =
   | { kind: "inspect"; pick: Pick }
   | { kind: "clear" }
   | { kind: "command"; cmd: CommandBody }
+  /** The soldiers were sent at a town by a tap on its ground (D-100): the first time, a hint says so. */
+  | { kind: "townAttack"; town: number }
   | { kind: "endMode" };
 
 export type WheelItem = "advance" | "retreat" | "hold";
@@ -106,13 +112,14 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
       return [];
     case "advance": {
       // 攻擊 (D-094; D-050's 進攻): an enemy there is attacked; anywhere else, the troops advance
-      // to it fighting on the way (攻擊移動).
+      // to it fighting on the way (攻擊移動); on a town not ours, to its keep while it stands (D-100).
       if (sel.units.length === 0) return [{ kind: "endMode" }];
       const target = world.pick(wx, wy, r);
+      const keep = target !== null && target.kind === "town" && target.owner !== world.me && world.attacksTowns() ? world.keepCell(target.id) : null;
       const cmd: CommandBody =
         target !== null && target.owner !== world.me && (target.kind === "unit" || target.kind === "building")
           ? { c: "attack", u: sel.units, target: target.id }
-          : { c: "move", u: sel.units, x, y };
+          : { c: "move", u: sel.units, x: keep?.x ?? x, y: keep?.y ?? y };
       return [{ kind: "command", cmd }, { kind: "endMode" }];
     }
     case "normal":
@@ -162,6 +169,18 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
 
   if (pick !== null && (pick.kind === "unit" || pick.kind === "building")) {
     return [{ kind: "command", cmd: { c: "attack", u, target: pick.id } }];
+  }
+  // 點城鎮就是進攻 (D-100, the user 2026-10-23: 「攻擊城市的操作手感不太好，常常點不到」): with
+  // soldiers selected, the ground of a town not ours is an attack on it: 攻擊移動 to its keep while
+  // it stands (a big city's corner is about 10 cells from it, and soldiers sent there would stand
+  // and wait), else to the cell tapped. Farmers walk there as before; our own town is 移動 as before.
+  if (pick !== null && pick.kind === "town" && pick.owner !== world.me && world.attacksTowns()) {
+    const soldiers = u.filter((id) => world.unitType(id) !== UnitType.Farmer);
+    if (soldiers.length > 0) {
+      const to = world.keepCell(pick.id) ?? { x, y };
+      const farmers = u.filter((id) => world.unitType(id) === UnitType.Farmer);
+      return [{ kind: "command", cmd: { c: "move", u: soldiers, x: to.x, y: to.y } }, ...moveIntents(world, farmers, x, y), { kind: "townAttack", town: pick.id }];
+    }
   }
   if (pick !== null && pick.kind === "node") {
     const farmers = u.filter((id) => world.unitType(id) === UnitType.Farmer);

@@ -107,7 +107,11 @@ jobs:
               case "${{ matrix.target }}" in
                 r8*) /usr/bin/python3 ../r7/common/textures.py fetch && /usr/bin/python3 ../r8/common/scans.py fetch ;;
               esac
-              /usr/bin/python3 common/run.py "${{ matrix.target }}" ;;
+              case "${{ matrix.target }}" in
+                # the R8 ground (D-093): the five layers baked, the water layer, ground.json (design/r8/common)
+                r8g_ground) /usr/bin/python3 ../r8/common/ground_run.py build/b1/r8g ;;
+                *) /usr/bin/python3 common/run.py "${{ matrix.target }}" ;;
+              esac ;;
             # R7 style test (D-092): v<k>-<unit>, the production unit render in realism version k's look, idle, walk,
             # attack (design/r7/README.md); the CC0 textures and MPFB (version 2) fetched and checked by sha256
             r7)
@@ -245,8 +249,14 @@ jobs:
             if ! [[ "$run" =~ ^[0-9]+$ ]]; then
               echo "::error::targets must be run ids, got '$run'"; exit 1
             fi
-            gh run download "$run" --pattern 'b1-prod_*' --dir "$RUNNER_TEMP/renders-$run"
-            for d in "$RUNNER_TEMP/renders-$run"/b1-prod_*; do cp -r "$d"/b1/prod/. design/b1/build/b1/prod/; done
+            gh run download "$run" --pattern 'b1-prod_*' --pattern 'b1-r8*' --dir "$RUNNER_TEMP/renders-$run"
+            # art-v6 (R8): the pieces of the r8* targets too (their folders r8p, r8c, r8w, r8n); the ground apart
+            for d in "$RUNNER_TEMP/renders-$run"/b1-*; do
+              for sub in "$d"/b1/*/; do
+                if [ "$(basename "$sub")" = r8g ]; then mkdir -p "$RUNNER_TEMP/ground"; cp -r "$sub"ground/. "$RUNNER_TEMP/ground/"
+                else cp -r "$sub". design/b1/build/b1/prod/; fi
+              done
+            done
           done
           echo "$(ls design/b1/build/b1/prod/*_x3.json | wc -l) pieces"
 
@@ -256,6 +266,11 @@ jobs:
           /usr/bin/python3 design/b1/common/atlas_b1.py --scale 2
           /usr/bin/python3 design/production/common/effects.py --scale 3
           /usr/bin/python3 design/production/common/effects.py --scale 2
+          if [ -f "$RUNNER_TEMP/ground/ground.json" ]; then
+            for k in 3 2; do
+              /usr/bin/python3 design/r8/common/ground_r8.py export "$RUNNER_TEMP/ground" "design/b1/build/atlas_x$k/ground" "$k"
+            done
+          fi
 
       - name: Upload the building atlases
         uses: actions/upload-artifact@v4

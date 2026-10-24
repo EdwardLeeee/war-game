@@ -40,6 +40,7 @@ def scan_field(sid):
         d = np.load(cache)
         return {k: d[k] for k in d.files}
     before = set(bpy.data.objects)
+    before_data = {k: set(getattr(bpy.data, k)) for k in ("meshes", "materials", "images", "textures")}
     bpy.ops.import_scene.gltf(filepath=os.path.join(SCANS, sid, f"{sid}_1k.gltf"))
     obs = [o for o in bpy.data.objects if o not in before]
     ob = next(o for o in obs if o.type == "MESH")
@@ -91,7 +92,12 @@ def scan_field(sid):
             hit[j, i] = True
     for o in obs:
         bpy.data.objects.remove(o, do_unlink=True)
-    bpy.data.orphans_purge(do_recursive=True)
+    # remove only what the import brought (orphans_purge would also take the piece's own materials made but not yet
+    # given to a part: the CI run of 2026-10-23 lost P["dark"] that way)
+    for k, had in before_data.items():
+        coll = getattr(bpy.data, k)
+        for d in [d for d in coll if d not in had]:
+            coll.remove(d)
     out = dict(depth=depth, rgb=rgb, hit=hit, x0=np.float32(x0), z0=np.float32(z0))
     os.makedirs(os.path.dirname(cache), exist_ok=True)
     np.savez_compressed(cache, **out)

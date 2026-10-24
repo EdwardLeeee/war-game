@@ -43,11 +43,13 @@ import { ArtStructures } from "./structure-art.ts";
 import { autoTrainBuildings } from "../game/features.ts";
 import { type Stone as SiegeStone, stoneAt } from "../game/siege.ts";
 import { CastleDraw } from "./castle-draw.ts";
+import { type Footprint, townGround } from "../art/castle.ts";
 import { TerrainDraw } from "./terrain-draw.ts";
 import { GroundDraw, type GroundQuality, type GroundTextures } from "./ground-draw.ts";
 import type { PendingOrders } from "../game/pending.ts";
 import { type Culture, M_PER_CELL, stoneFrom } from "../art/spec.ts";
-import { ArtUnits, type SlingRelease } from "./unit-art-draw.ts";
+import { ArtUnits, type Release } from "./unit-art-draw.ts";
+import { ARROW_FLIGHT, CHEST_M, flightOf, flightSeconds, heightAt, SLING_FLIGHT } from "./missile.ts";
 import type { UnitArt } from "./unit-art.ts";
 
 const UNIT_SCALE = 1;
@@ -157,6 +159,25 @@ interface Stone {
   at: number;
 }
 const STONE_MS = 450;
+
+/**
+ * 真的箭 (R8-35 B, art-v6 effects `arrow`, `sling_stone`): an arrow (or `n` side by side) or a
+ * sling's stone in the air, from (world px, `lift0` points up) to the target's chest (world px,
+ * `lift1` points up), leaving at `at` (ms) for `ms`; its arc's top `arc` points over the straight line.
+ */
+interface Missile {
+  kind: "arrow" | "stone";
+  fx: number;
+  fy: number;
+  lift0: number;
+  tx: number;
+  ty: number;
+  lift1: number;
+  at: number;
+  ms: number;
+  arc: number;
+  n: number;
+}
 /** Up on the plane per metre up (as castle-draw.ts). */
 const UP_PER_M = Math.sqrt(3) / 2;
 
@@ -221,6 +242,12 @@ export class WorldRenderer {
   private stones: Stone[] = [];
   /** Stones thrown from slings so far (D-096), for the test page. */
   stoneCount = 0;
+  /** 真的箭 (R8-35 B): arrows and slings' stones in the air, their sprites; bowmen's arrows so far (tests). */
+  private missiles: Missile[] = [];
+  private readonly missileSprites: Sprite[] = [];
+  bowArrowCount = 0;
+  /** Buildings' arrows flown so (真的箭) so far (tests). */
+  buildingArrowCount = 0;
   private readonly barLayer = new Container();
   private readonly townLayer = new Container();
   private readonly ghost = new Graphics();
@@ -285,6 +312,10 @@ export class WorldRenderer {
   private groundDraw: GroundDraw | null = null;
   /** The ground and resource points its weights were made from. */
   private groundKey = "";
+  /** 城內 B (castle 2): the snapshot and the towns' and buildings' key the towns' ground was last made for. */
+  private townSnap: unknown = null;
+  private townKey = "";
+  private readonly cultureOf: (owner: number) => Culture;
   /** The castles' blocks, on the ground under the fog (castle-draw.ts). */
   private readonly castleBlocks = new Graphics();
   /** Gates broken (D-096): rubble on their openings, on the ground; redrawn when the snapshot changes. */
@@ -314,6 +345,7 @@ export class WorldRenderer {
     this.view = view;
     this.atlas = atlas;
     this.projection = projection;
+    this.cultureOf = cultureOf;
     this.unitLayer.sortableChildren = true;
     this.artStructures = art !== null && ArtStructures.has(art, projection) ? new ArtStructures(art, view, { ground: this.groundArt, shadows: this.shadowLayer, upright: this.unitLayer }, cultureOf, projection) : null;
     // A unit's depth among the buildings' footprints (structure-art.ts), else its place on the screen.
@@ -393,6 +425,7 @@ export class WorldRenderer {
     this.castle.update();
     this.terrain.update();
     this.updateGround();
+    this.updateTownGround();
     this.groundDraw?.tick(now / 1000);
     this.fx.clear();
     this.airFx.clear();
@@ -429,6 +462,124 @@ export class WorldRenderer {
   }
 
   /**
+   * 真的箭 (R8-35 B): the effects have the arrow (art-v6), and arrows fly as war-game-ui drew them.
+   * Before, a building's arrow is a straight line (`shot`) and bowmen shoot none, as before.
+   */
+  get realArrows(): boolean {
+    return this.artUnits?.art.effects?.effects.arrow !== undefined;
+  }
+
+  /**
+   * 真的箭: an arrow (or `n` side by side: a town gate's volley, a main city's with villagers
+   * inside, D-096) from a building (world px, `lift` points up: where its picture's arrows leave)
+   * at a unit's chest.
+   */
+  arrow(fromX: number, fromY: number, lift: number, toX: number, toY: number, now: number, n = 1): void {
+    this.launch("arrow", fromX, fromY, lift, toX, toY, now, n);
+    this.shotCount += Math.max(1, n);
+    this.buildingArrowCount += Math.max(1, n);
+  }
+
+  /** Where a building's arrows leave its picture (art-v6 shoot_at_m) nearest a target, or null. */
+  buildingShootFrom(o: number, toX: number, toY: number): { x: number; y: number; lift: number } | null {
+    return this.artStructures?.shootFrom(o, toX, toY) ?? null;
+  }
+
+  /** An arrow or a stone into the air: its flight from the effects (speed, at most max_s, its arc), to the chest. */
+  private launch(kind: Missile["kind"], fx: number, fy: number, lift0: number, tx: number, ty: number, now: number, n: number): void {
+    const info = this.artUnits?.art.effects?.effects[kind === "arrow" ? "arrow" : "sling_stone"];
+    const f = flightOf(info, kind === "arrow" ? ARROW_FLIGHT : SLING_FLIGHT);
+    const metres = Math.hypot(tx - fx, ty - fy) / (TILE_PX / M_PER_CELL);
+    const upPt = this.projection.ptPerM * UP_PER_M;
+    const lift1 = CHEST_M * upPt + this.terrain.liftAt(tx, ty);
+    this.missiles.push({ kind, fx, fy, lift0, tx, ty, lift1, at: now, ms: flightSeconds(metres, f) * 1000, arc: f.arcK * metres * upPt, n: Math.max(1, Math.min(n, 12)) });
+    if (this.missiles.length > 80) this.missiles.shift();
+  }
+
+  /**
+   * What left a sling or a bow this frame (unit-art-draw.ts) from the unit at row `o` standing at
+   * (x, y) world px, `lift` points up: a stone or an arrow from the hand at whom it is hitting
+   * (UnitField.attackTarget); hitting nothing we see, none. Slings without the effects' stone (before
+   * art-v6) throw as before.
+   */
+  private release(r: Release, o: number, x: number, y: number, lift: number, owner: number, now: number): void {
+    if (r.kind === "stone" && this.artUnits?.art.effects?.effects.sling_stone === undefined) return this.throwStone(r, x, y, lift, owner, now);
+    const to = this.attackPoint(o);
+    if (to === null) return;
+    const off = stoneFrom(r.direction, r.mirror, r.from, this.projection.kind);
+    const perM = TILE_PX / M_PER_CELL;
+    this.launch(r.kind, x + off.x * perM, y + off.y * perM, lift + off.up * this.projection.ptPerM * UP_PER_M, to.x, to.y, now, 1);
+    if (r.kind === "stone") this.stoneCount++;
+    else this.bowArrowCount++;
+  }
+
+  /** Whom the unit at row `o` is hitting (UnitField.attackTarget): a unit's feet or a building's middle (world px), or null. */
+  private attackPoint(o: number): { x: number; y: number } | null {
+    const snap = this.view.curr?.snap;
+    if (snap === undefined) return null;
+    const id = snap.units[o + U.attackTarget];
+    if (id < 0) return null;
+    const t = this.view.unitRow(id);
+    if (t >= 0) return { x: snap.units[t + U.x] * FIXED_TO_PX, y: snap.units[t + U.y] * FIXED_TO_PX };
+    const b = this.view.buildingRow(id);
+    if (b < 0) return null;
+    const c = this.view.footprintCentre(snap.buildings, b);
+    return { x: c.x * TILE_PX, y: c.y * TILE_PX };
+  }
+
+  /** A missile's point on the plane at `k` (0 leaving, 1 landing): along the ground, up its arc. */
+  private missileAt(m: Missile, k: number): { x: number; y: number } {
+    const g = this.projection.toPlane(m.fx + (m.tx - m.fx) * k, m.fy + (m.ty - m.fy) * k);
+    return { x: g.x, y: g.y - heightAt(k, 1, m.lift0, m.lift1, m.arc) };
+  }
+
+  /**
+   * The arrows and stones in the air: the effects' arrow (drawn pointing right) turned the way it
+   * flies, `n` side by side across it, the middle one on the line, the others a little behind; the
+   * stone tumbling (its frames). Missing a frame, a line as before.
+   */
+  private drawMissiles(now: number): void {
+    this.missiles = this.missiles.filter((m) => now - m.at < m.ms);
+    const fx = this.artUnits?.art.effects ?? null;
+    const art = this.artUnits?.art ?? null;
+    let i = 0;
+    const put = (texture: Texture, ax: number, ay: number, x: number, y: number, rotation: number, scale: number) => {
+      while (this.missileSprites.length <= i) {
+        const sprite = new Sprite();
+        this.airArt.addChild(sprite);
+        this.missileSprites.push(sprite);
+      }
+      const sprite = this.missileSprites[i++];
+      sprite.visible = true;
+      sprite.texture = texture;
+      sprite.anchor.set(ax, ay);
+      sprite.position.set(x, y);
+      sprite.rotation = rotation;
+      sprite.scale.set(scale);
+    };
+    for (const m of this.missiles) {
+      const k = (now - m.at) / m.ms;
+      const p = this.missileAt(m, k);
+      const q = this.missileAt(m, Math.min(1, k + 0.02));
+      const angle = Math.atan2(q.y - p.y, q.x - p.x);
+      const ux = Math.cos(angle);
+      const uy = Math.sin(angle);
+      const info = fx?.effects[m.kind === "arrow" ? "arrow" : "sling_stone"];
+      const name = m.kind === "arrow" ? "arrow_00" : `sling_stone_${String(Math.floor(((now - m.at) / 1000) * (info?.fps ?? 12)) % Math.max(1, info?.frames ?? 1)).padStart(2, "0")}`;
+      const f = art?.effectFrame(name) ?? null;
+      for (let a = 0; a < m.n; a++) {
+        const side = (a - (m.n - 1) / 2) * 6;
+        const back = Math.abs(side) * 0.8;
+        const x = p.x - uy * side - ux * back;
+        const y = p.y + ux * side - uy * back;
+        if (f !== null && fx !== null) put(f.texture, f.ax, f.ay, x, y, m.kind === "arrow" ? angle : 0, (this.projection.ptPerM / fx.px_per_m) * (f.half ? 2 : 1));
+        else this.airFx.moveTo(x - ux * 12, y - uy * 12).lineTo(x, y).stroke({ width: 2, color: 0x2a1c10 });
+      }
+    }
+    for (; i < this.missileSprites.length; i++) this.missileSprites[i].visible = false;
+  }
+
+  /**
    * An arrow (or `n` together: a town gate's volley, a main city's with villagers inside, D-096) from
    * a building at a unit (world px), `lift` points up where it leaves (a gate's tower: its flash there).
    */
@@ -444,7 +595,7 @@ export class WorldRenderer {
    * (x, y) world px, `lift` points up, to the nearest unit not its owner's within the sling's reach
    * (rules.walls.sling, as the simulation picks; it sends no event a throw): none, no stone.
    */
-  private throwStone(r: SlingRelease, x: number, y: number, lift: number, owner: number, now: number): void {
+  private throwStone(r: Release, x: number, y: number, lift: number, owner: number, now: number): void {
     const snap = this.view.curr?.snap;
     if (snap === undefined) return;
     const reach = ((this.view.rules.walls?.sling ?? 4 * CELL) + CELL) * FIXED_TO_PX;
@@ -565,6 +716,7 @@ export class WorldRenderer {
     this.drawShotFlashes(now);
     this.drawSiegeStones();
     this.drawStones(now);
+    this.drawMissiles(now);
     for (const s of this.shots) {
       const k = (now - s.at) / SHOT_MS;
       // In the air: from and to on the plane, the arrow drawn there (not flattened).
@@ -783,7 +935,9 @@ export class WorldRenderer {
       const hp = b[o + B.hp];
       // A gate's full hit points are its town's size's (rules.towns[size].gateHp), not buildings[Gate].hp.
       const max = this.view.buildingMaxHp(b, o);
-      const selected = this.view.selection.building === b[o + B.id];
+      // A town's keep (D-100) tapped to look at it shows its bar too: it is what the soldiers must bring down.
+      const inspected = this.view.inspected;
+      const selected = this.view.selection.building === b[o + B.id] || (type === BuildingType.Keep && inspected?.kind === "building" && inspected.id === b[o + B.id]);
       if (building || hp < max || selected) {
         const frac = building ? b[o + B.progress] / 1000 : max > 0 ? hp / max : 1;
         this.bar(p.hpBack, p.hpFront, mid.x, Math.min(top.y, picture?.top ?? top.y, gateTop ?? top.y) - 4, Math.max(width, depth) * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
@@ -969,7 +1123,8 @@ export class WorldRenderer {
    */
   useGround(textures: GroundTextures, quality: GroundQuality): boolean {
     if (!this.terrain.pictures) return false;
-    this.groundDraw = new GroundDraw(textures, this.view.map.size, quality);
+    // The towns' ground in the player's culture's layers (rules.town; both `yard` in art-v6).
+    this.groundDraw = new GroundDraw(textures, this.view.map.size, quality, this.cultureOf(this.view.me) === "w" ? "W" : "E");
     this.groundInner.addChildAt(this.groundDraw.mesh, 0);
     this.flatGround.visible = false;
     // The water in the ground's shader (art-v6): not its tiles too.
@@ -991,8 +1146,8 @@ export class WorldRenderer {
   }
 
   /** What draws the ground now (the test page and the 量測 panel). */
-  get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean } {
-    return { real: this.groundDraw !== null, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true };
+  get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean; town: boolean } {
+    return { real: this.groundDraw !== null, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true, town: this.groundDraw?.town === true };
   }
 
   /** The ground's weights again when the known ground or the resource points changed. */
@@ -1008,6 +1163,39 @@ export class WorldRenderer {
     g.setGround(this.view.ground, nodes);
   }
 
+  /**
+   * 城內 B (art-v6, castle 2, R8-36 B): the towns' lanes and trampled earth for the ground's shader,
+   * from the castles laid out and the buildings in them (art/castle.ts townGround); made again only
+   * when those change. Each town's area: its walls' box, its ground's and its decor's cells.
+   */
+  private updateTownGround(): void {
+    const g = this.groundDraw;
+    const snap = this.view.curr?.snap;
+    if (g === null || !g.town || snap === undefined || snap === this.townSnap) return;
+    this.townSnap = snap;
+    const b = snap.buildings;
+    const footprints: Footprint[] = [];
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) footprints.push(this.view.footprint(b, o));
+    const towns = this.castle
+      .fitted()
+      .filter((t) => t.fit.layout.ground !== undefined)
+      .flatMap(({ town, fit }) => {
+        const box = this.view.castleBox(town);
+        if (box === null) return [];
+        const ox = town.cellX + fit.dx;
+        const oy = town.cellY + fit.dy;
+        const cells = [...(fit.layout.ground ?? []).map((v) => v.cell), ...(fit.layout.decor ?? []).flatMap((v) => v.cells)];
+        const xs = [box.x0, box.x1, ...cells.map(([x]) => ox + x)];
+        const ys = [box.y0, box.y1, ...cells.map(([, y]) => oy + y)];
+        return [{ id: town.id, cx: town.cellX, cy: town.cellY, fit, box, area: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } }];
+      });
+    const key = `${towns.map((t) => `${t.id}:${t.fit.name}`).join(",")}|${footprints.map((f) => `${f.x},${f.y},${f.w},${f.h}`).join(";")}`;
+    if (key === this.townKey) return;
+    this.townKey = key;
+    const { lane, trampled } = townGround(this.view.map.size, towns, footprints);
+    g.setTown(lane, trampled, towns.map((t) => t.area));
+  }
+
   /** The ground's pictures drawn (art-v5), for the test page. */
   get terrainCounts(): { pictures: boolean; pieces: number; flat: number; standing: number } {
     return { pictures: this.terrain.pictures, ...this.terrain.counts };
@@ -1019,8 +1207,13 @@ export class WorldRenderer {
   }
 
   /** The castles as drawn (castle-draw.ts), for the test page: with their gates' looks and whether those on a wall stand on its walk (D-096). */
-  get castleCounts(): { pieces: number; tiles: number; blockTowns: number; misfit: number; walkable: boolean; gates: Record<string, number> } {
+  get castleCounts(): { pieces: number; tiles: number; blockTowns: number; misfit: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } {
     return { ...this.castle.counts, walkable: this.castle.walkable, gates: this.castle.gateLookCounts };
+  }
+
+  /** 城內 B (castle 2): the towns' decor pieces, for the test page. */
+  get decorForTest(): ReturnType<CastleDraw["decorForTest"]> {
+    return this.castle.decorForTest();
   }
 
   /** Where a gate's arrows leave (D-096, castle-draw.ts gateShootFrom): world px on the ground and points up; null: its building's middle. */
@@ -1132,7 +1325,7 @@ export class WorldRenderer {
       const lift = onWall?.lift ?? this.terrain.liftAt(px, py);
       // From its atlas when there is one (its picture's top for the bars), else the shape.
       const top = this.artUnits?.unit(i, o, at.x, at.y, seconds, lift, onWall?.z ?? null, onWall === null) ?? null;
-      for (const r of this.artUnits?.takeReleases() ?? []) this.throwStone(r, px + (onWall?.dx ?? 0), py + (onWall?.dy ?? 0), lift, owner, now);
+      for (const r of this.artUnits?.takeReleases() ?? []) this.release(r, o, px + (onWall?.dx ?? 0), py + (onWall?.dy ?? 0), lift, owner, now);
       p.body.visible = top === null;
       p.body.texture = this.atlas.units[type] ?? this.atlas.units[UnitType.Farmer];
       p.body.tint = ownerTint(owner, view.me);

@@ -30,3 +30,33 @@ export function saveTownHintOff(off: boolean, store: Store | null = browserStore
     // Not saved: the next game shows the hint again.
   }
 }
+
+/**
+ * 點城鎮＝攻擊這座城 (D-100): a hint shown once on this device, the first time soldiers are sent at
+ * a town by a tap on its ground.
+ */
+export const KEEP_HINT_KEY = "war-game.proto.keepHint";
+export const KEEP_HINT_TEXT = "點城鎮＝攻擊這座城";
+
+/** Whether this device has shown the hint under `key` (missing storage: not yet, it shows again). */
+export function loadHintSeen(key: string, store: Store | null = browserStore()): boolean {
+  try {
+    return store?.getItem(key) === "seen";
+  } catch {
+    return false;
+  }
+}
+
+export function saveHintSeen(key: string, store: Store | null = browserStore()): void {
+  try {
+    store?.setItem(key, "seen");
+  } catch {
+    // Not saved: it shows again next time.
+  }
+}
+
+/**
+ * 市場 (D-101; the user 2026-10-24, on the draft: the line under the buttons only the first time):
+ * how its prices move, said once on this device, the first time a market's panel opens.
+ */
+export const MARKET_HINT_KEY = "war-game.proto.marketHint";

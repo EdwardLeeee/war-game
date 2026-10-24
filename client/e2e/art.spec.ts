@@ -18,11 +18,11 @@ async function start(page: Page, query: string): Promise<void> {
 test("美術（測試圖）：兵從圖集畫，不再是幾何圖形；載入 10 種兵的頁；關掉時照舊畫圖形", async ({ page }) => {
   const check = watchErrors(page);
   await start(page, "art=test&scenario=e2e");
-  // Every unit on screen from its atlas: 10 units × colour, team, shadow (+ the mages' shields) and the effects.
+  // Every unit on screen from its atlas: 10 units × colour, team, shadow (+ the mages' shields) and the effects' 2 (真的箭's arrow and stone on the second).
   await expect.poll(async () => (await art(page))?.units ?? 0).toBeGreaterThan(0);
   const a = await art(page);
   expect(a?.label).toBe("測試圖");
-  expect(a?.pages).toBe(10 * 3 + 2 + 1);
+  expect(a?.pages).toBe(10 * 3 + 2 + 2);
   const units = await page.evaluate(() => (window.__proto?.game?.units() ?? []).filter((u) => u.action !== 7).length);
   expect(a?.units).toBe(units);
   check();
@@ -56,7 +56,7 @@ test("量測（測試圖）：結果框寫美術是哪一套、幾頁圖，和�
   // A game of the perf scenario of its own, the atlases kept.
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 2, null, { timeout: 60_000 });
   const result = page.locator(".lab-result");
-  await expect(result).toContainText("美術：測試圖，33 頁圖", { timeout: 90_000 });
+  await expect(result).toContainText("美術：測試圖，34 頁圖", { timeout: 90_000 });
   await expect(result).toContainText(/每張畫面的繪製次數：中位數 [1-9][\d.]*、最多 [1-9]/);
   check();
 });
@@ -91,7 +91,7 @@ test("ASTC 樣本（art-v1）：量測面板和按鈕讓開，左右各一名完
 test.describe("新的裝置（沒選過美術）", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
   test("預設 3 倍：兵從圖集畫，量測面板的美術是「3 倍」（D-087）", async ({ page, browserName }) => {
-    test.skip(browserName !== "chromium", "33 pages at 3 倍: one browser is enough (WebKit on CI draws in software)");
+    test.skip(browserName !== "chromium", "34 pages at 3 倍: one browser is enough (WebKit on CI draws in software)");
     const check = watchErrors(page);
     await start(page, "scenario=e2e");
     await expect.poll(async () => (await art(page))?.label ?? null, { timeout: 30_000 }).toBe("3 倍");
@@ -183,7 +183,7 @@ test("建築展示（art-v5.1，3 倍，方形斜看）：每種建築（art-v5.
 });
 
 test("真的模擬開局（3 倍）：家裡的主城、樹林和資源點從圖集畫；點主城的屋頂也選得到（D-085）", async ({ page, browserName }, info) => {
-  test.skip(browserName !== "chromium", "33 + 20 pages at 3 倍: one browser is enough (WebKit on CI draws in software)");
+  test.skip(browserName !== "chromium", "34 + 20 pages at 3 倍: one browser is enough (WebKit on CI draws in software)");
   test.setTimeout(120_000);
   const check = watchErrors(page);
   await start(page, "art=x3&scenario=standard");

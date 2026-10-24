@@ -109,9 +109,14 @@
     - `features.keep`：開著時才出現（值是 true）。
     - `BuildingType.Keep`（9）就是原本的 `TownTower`。`TownTower` 這個名字留一個版本，值一樣，之後拿掉。
     - 開著時 `buildings[Keep]` 是 3×3、生命 1000（大城的），`arrows.townTower` 是大城主堡的箭（每箭 10）。關著時照舊：2×2、生命 400、每箭 6。
-    - `towns[size].keep`（開著時才送）：`hp`（小鎮 600、大城 1000，畫血條用這個）、`size`（3）、`arrow`（小鎮每箭 6、大城 10，射程 9 格，2 秒一箭）、`rebuildTicks`（治理中城鎮重建倒下的主堡要等幾個 tick：1200）。
+    - `towns[size].keep`（開著時才送）：`hp`（小鎮 600、大城 1000，畫血條用這個）、`size`（3）、`arrow`（小鎮每箭 4、大城 10，射程 9 格，2 秒一箭）、`rebuildTicks`（治理中城鎮重建倒下的主堡要等幾個 tick：1200）。
     - `towns[size].castle` 換成新的城堡：小鎮牆內 13×13（牆在離中心 7 格），大城 17×17（牆在 9 格），兩種地圖都以城鎮中心格為中心。`radius` 是 7 和 9。
     - 地圖的 `towerSize` 開著時一律是 3，留一個版本。
+  - D-101（多金多木與市場，3.11；開關 RICH、MARKET 預設關）：
+    - RICH 開著時，`resources` 的每格金是 600、每棵樹 150（原本 400、100），地圖上多幾片搶的金礦。rules 沒有另外的欄位，看資源點的 `amount` 就知道。
+    - `features.market`：可以蓋市場、用 `trade` 買賣。開著時才出現（值是 true）。
+    - `buildings[Market]`（15）只在開著時送。
+    - `market`：`lot`（每份 100）、`start`（起價 100）、`step`（每份漲跌 5）、`min`／`max`（25／300）、`sellPermille`（賣的時候拿到現價的 700‰）、`recoverTicks`（每 600 tick 往起價回 1）、`maxLots`（一次最多 5 份）。一定會送。
 
 ## 3. 指令
 
@@ -206,6 +211,7 @@
 | `post` | `u`、`building` | `u` 裡自己的槍兵去自己蓋好的哨所駐守，見 3.4 | D-080 |
 | `unpost` | `building` | 這座哨所的駐守兵全部離開，見 3.4 | D-080 |
 | `outpost_mode` | `building`、`hold` | 哨所切換攻擊（`hold` false，預設）或堅守（true），見 3.4 | D-080 |
+| `trade` | `resource`、`buy`、`lots` | 在自己的市場買賣糧或木（D-101，3.11）。拒絕：`NotAvailable`（市場關著）、`NoMarket`、`CannotAfford`、`InvalidTarget` | D-101 |
 | `surrender` | — | 投降 | PR-4 |
 
 ### 3.1 經濟指令的細節（PR-3）
@@ -429,6 +435,7 @@
 | 17 | `NoRoom` | 建築裡沒有空位了，走在路上的也算（第七輪，`garrison`） |
 | 18 | `GateLane` | 占地碰到城門的通道（D-089，3.5）。畫面可以提示「城門要留給人走，不能蓋」 |
 | 19 | `Crossing` | 占地碰到淺灘或橋（R6-51，3.6）。畫面可以提示「橋和淺灘要留給人走，不能蓋」 |
+| 20 | `NoMarket` | `trade` 時沒有自己蓋好的市場（D-101，3.11）。畫面可以提示「要先蓋好市場」 |
 
 
 ### 3.5 城堡（D-089）
@@ -584,6 +591,24 @@ D-096 起城門會關、可以打破，持有的人可以上城牆，見 3.7（`
     - 治理中主堡倒了、守方還有兵在裡面：沒有敵人在牆以內滿 `towns[size].keep.rebuildTicks`（60 秒）後重建；這段時間有敵人進來就重新算（和 3.7 的城門一樣）。
 - **點城鎮的地面就是進攻**（畫面）：選著兵時點敵方或中立城鎮的地面，送 `move`（攻擊移動）到主堡的格子。兵進到牆內、6 格內沒有敵兵時，會自己打不是自己的建築，主堡在內；城門關著時先打擋路的城門。
 
+### 3.11 多金多木與市場（D-101）
+
+使用者 2026-10-22／23：「其實現在打很容易拖到後期都沒有樹跟金礦可以採」。選了「地圖上多放金和木」和「市場，換越多越貴」，沒有選商隊和樹農。兩個開關分開：RICH 管地圖，MARKET 管市場。
+
+- **RICH**（地圖）：
+  - 每格金 400 → 600，每棵樹 100 → 150。格子和數量不動，路線也不變。
+  - 搶的金礦：在兩方一樣遠的軸線上。固定地圖 3 片：大城往晶礦那一側一片、兩座角落小鎮往角落那一側各一片。隨機地圖 1 片：大城的另一側，和晶礦反方向。
+  - 隨機地圖第三座城旁的金礦每張都有（原本一半），放不下就不放，不重抽地圖。
+- **市場**（`BuildingType.Market`，15）：3×3，木 150，蓋 40 秒，生命 600，要先有自己蓋好的穀倉，可以蓋多座。開關關著時 `build` 回 `NotAvailable`。
+- **`trade`**：{ `resource`（`Resource.Food` 或 `Wood`）, `buy`, `lots`（1–`maxLots`）}。要有自己蓋好的市場，沒有就回 `NoMarket`（20）。
+  - 一份一份算：
+    - 買：付現價的金，價格 +`step`，最多到 `max`。
+    - 賣：拿到 floor(現價 × `sellPermille` ÷ 1000) 金，價格 −`step`，最少到 `min`。
+  - 全部成交或全部不成交：錢或貨不夠回 `CannotAfford`；`resource` 不是糧或木、`lots` 超過範圍，回 `InvalidTarget`。晶石不能買賣。
+  - 成交時，事件 `traded`（第 5 節）只給自己。
+- **價格**：每位玩家各自一套，糧、木各一個，起價 `start`。每 `recoverTicks`（30 秒）往起價走 1。表頭的 `priceFood`、`priceWood` 是自己的價格，關著時是 0。
+- **統計**：`game_over` 多 `marketLots`，是買賣的份數（開著時才有）。
+
 ## 4. 快照（`snapshot` 訊息，每個 tick 一份）
 
 內容是人類玩家的視角，也就是 PlayerView，跟 AI 讀的是同一套規則：
@@ -593,7 +618,7 @@ D-096 起城門會關、可以打破，持有的人可以上城牆，見 3.7（`
 
 所有 typed array 都用 transferable 傳，client 收到後直接擁有。各表都是 `Int32Array`，每列固定長度（stride），依 id 由小到大排列。
 
-### 4.1 表頭 `header`（長度 `HEADER_LENGTH` = 26；D-083 以前 25）
+### 4.1 表頭 `header`（長度 `HEADER_LENGTH` = 28；D-101 以前 26，D-083 以前 25）
 
 | 欄 | 名稱 | 說明 | 從 |
 |---|---|---|---|
@@ -612,6 +637,7 @@ D-096 起城門會關、可以打破，持有的人可以上城牆，見 3.7（`
 | 20 | `scenario` | `Scenario` | PR-2 |
 | 21–24 | `reserveFood`、`reserveWood`、`reserveGold`、`reserveCrystal` | 自動訓練的預留額（3.1） | 第六輪 |
 | 25 | `populationCeiling` | 人口天花板：再蓋民居，`populationCap` 最多到這裡（`rules.population`）。規則關著時 120 | D-083 |
+| 26–27 | `priceFood`、`priceWood` | 自己的市場價格：每份（`rules.market.lot`）糧、木要幾金；買一份付這個價，賣一份拿到這個價 × `sellPermille` ÷ 1000（D-101，3.11）。市場關著時是 0 | D-101 |
 
 ### 4.2 單位 `units`（stride `UNIT_STRIDE` = 20）
 
@@ -735,6 +761,7 @@ D-096 起城門會關、可以打破，持有的人可以上城牆，見 3.7（`
 | `town_restored` | `town` | 廢墟恢復成中立 | PR-4 |
 | `mage_killed` | `id`、`owner`、`killer`、`crystal` | 法師陣亡，擊殺方得到的魔晶 | PR-4 |
 | `siege_shot` | `u`、`x`、`y`、`lands`，可選 `from` | 攻城砲丟出一發（D-099，3.9）：落點 (x, y)（定點），`lands` 是第一份看得到落地結果的快照的 tick（這份快照的 tick ＋ `rules.siege.flightTicks`）。給看得到攻城砲或落點的玩家。看不到攻城砲的玩家多一個 `from`：石頭從哪個方向來（0–15，和 `facing` 一樣），只有方向，沒有位置和距離 | D-099 |
+| `traded` | `resource`、`buy`、`lots`、`amount`、`gold` | 自己的 `trade` 成交了（D-101，3.11）：`lots` 份（`amount` 單位）的糧或木，買進或賣出，`gold` 是付出或拿到的總金數。只給自己 | D-101 |
 | `shot` | `building`、`target`，可選 `n` | 主城、箭樓、治理中城鎮的城門自己的箭，或躲在裡面的兵，對 `target`（單位 id）射了一次。給看得到建築或目標的玩家，畫面用來畫箭。`n`（D-096）：這一發有幾支箭（主城裡躲著村民、城門的守軍多時多射的），1 支時不帶；傷害是這幾支加起來 | 第七輪 |
 | `rejected` | `seq`、`reason` | 指令被拒 | PR-2 |
 | `game_over` | `winner`、`reason` | 主城被摧毀、投降，或時間到（平手時 `winner` = -1） | PR-2 |

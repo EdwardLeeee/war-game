@@ -14,6 +14,7 @@ import {
   type CommandBody,
   type Cost,
   HeaderField,
+  Resource,
   type MapInfo,
   NEUTRAL,
   NODE_STRIDE,
@@ -325,6 +326,18 @@ const GOLD_LOOK: [number, number][] = [
   [24, -12],
   [17, 17],
 ];
+/**
+ * D-101 (while `features.market`): a market from this many farmers (and a granary); a lot of food
+ * sold with this much food or more while its price (gold a lot) is MARKET_FAIR or more; a lot of
+ * wood bought with less than MARKET_SHORT_WOOD wood and MARKET_SPARE_GOLD gold to spare, at
+ * MARKET_DEAR or less.
+ */
+const MARKET_FARMERS = 20;
+const MARKET_SELL_FOOD = 1200;
+const MARKET_FAIR = 60;
+const MARKET_SHORT_WOOD = 150;
+const MARKET_SPARE_GOLD = 500;
+const MARKET_DEAR = 150;
 /** Random maps (D-074): the scout's next stop once within this many cells of one, or after SCOUT_STUCK ticks without getting nearer. */
 const SCOUT_NEAR = 6;
 const SCOUT_STUCK = 600;
@@ -842,6 +855,15 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         reserve.wood += (rushStage === "go" ? o.wood : 0) + left * t.wood;
         reserve.gold += (rushStage === "go" ? o.gold : 0) + left * t.gold;
       }
+      // D-101 (while the market is on): food piling up sold for gold while its price is fair; wood
+      // short bought with spare gold while it is not dear (one lot a think).
+      if (rules.features?.market === true && done(BuildingType.Market).length > 0) {
+        const m = rules.market;
+        const foodPrice = h[HeaderField.priceFood];
+        const woodPrice = h[HeaderField.priceWood];
+        if (res.food >= MARKET_SELL_FOOD && foodPrice >= MARKET_FAIR) out.push({ c: "trade", resource: Resource.Food, buy: false, lots: 1 });
+        else if (res.wood < MARKET_SHORT_WOOD && res.gold >= MARKET_SPARE_GOLD + woodPrice && woodPrice <= MARKET_DEAR && m !== undefined) out.push({ c: "trade", resource: Resource.Wood, buy: true, lots: 1 });
+      }
       const ratioKey = ratio.join("/");
       if (ratioKey !== ratioSet) {
         out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
@@ -925,6 +947,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           if (rules.features?.outpost === true && count(BuildingType.Outpost) < outposts) add(BuildingType.Outpost, outpostAt[count(BuildingType.Outpost) % outpostAt.length]);
         }
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
+        // D-101 (while the market is on): a market once it has a granary and MARKET_FARMERS farmers.
+        if (rules.features?.market === true && !has(BuildingType.Market) && granary && farmers.length >= MARKET_FARMERS) add(BuildingType.Market, base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
           add(plan.noRange || count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);

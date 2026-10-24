@@ -1,7 +1,8 @@
 // Words the interface shows for the simulation's numbers. Prototype role names (GDD §6
 // 定位); the country-specific names come with the final interface.
 
-import { Action, BuildingType, GameOverReason, HeaderField as H, NodeKind, TICKS_PER_SECOND, TownState, UnitType } from "../../sim.ts";
+import { features } from "../../game/features.ts";
+import { Action, BuildingType, GameOverReason, HeaderField as H, NodeKind, type Rules, TICKS_PER_SECOND, TownState, UnitType } from "../../sim.ts";
 
 export const UNIT_NAME: Record<number, string> = {
   [UnitType.Farmer]: "村民",
@@ -35,7 +36,14 @@ export const BUILDING_NAME: Record<number, string> = {
   [BuildingType.Gate]: "城門",
   // D-099 (while `features.siege`): trains siege engines.
   [BuildingType.SiegeWorks]: "砲坊",
+  // D-101 (while `features.market`): food and wood for gold.
+  [BuildingType.Market]: "市場",
 };
+
+/** A building's name; with `features.keep` (D-100) the big city's tower is every town's 主堡. */
+export function buildingName(type: number, rules: Pick<Rules, "features"> | null | undefined): string | undefined {
+  return type === BuildingType.Keep && features(rules).keep === true ? "主堡" : BUILDING_NAME[type];
+}
 
 /** What a player may build, in the order the build menu lists it (GDD §17 prototype buildings). */
 export const BUILDABLE: BuildingType[] = [
@@ -54,6 +62,8 @@ export const BUILDABLE: BuildingType[] = [
   BuildingType.Outpost,
   // D-099: listed only while `features.siege` is on.
   BuildingType.SiegeWorks,
+  // D-101: listed only while `features.market` is on.
+  BuildingType.Market,
 ];
 
 export const NODE_NAME: Record<number, string> = {

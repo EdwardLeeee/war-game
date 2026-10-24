@@ -36,7 +36,10 @@ import {
   PlaceBit,
   PROTOCOL_VERSION,
   Reject,
+  Resource,
   type Features,
+  KEEP,
+  MARKET,
   MULTIPLIERS,
   type Rules,
   rules,
@@ -147,6 +150,45 @@ export const MOCK_RULES_SIEGE: Rules = {
   siege: { vsBuildings: 3, flightTicks: 20 },
 };
 
+/**
+ * `?keep=1` (D-100, behind features.keep): round 7's rules with the towns about 1.5 x bigger, their
+ * castles and keeps, as the simulation sends them once KEEP is on (its switch on only while they
+ * are read here: the fake world runs beside the simulation's modules, not in its Worker).
+ */
+function mockRulesKeep(): Rules {
+  const was = KEEP.on;
+  KEEP.on = true;
+  try {
+    const on = JSON.parse(JSON.stringify(rules())) as Required<Rules>;
+    const keep = on.buildings[BuildingType.Keep];
+    return {
+      ...MOCK_RULES_R7,
+      buildings: MOCK_RULES_R7.buildings.map((b) => (b.type === BuildingType.Keep ? { ...b, size: keep.size, hp: keep.hp } : b)),
+      features: { ...(MOCK_RULES_R7.features as Features), keep: true },
+      arrows: on.arrows,
+      towns: on.towns,
+    };
+  } finally {
+    KEEP.on = was;
+  }
+}
+
+/**
+ * `?market=1` (D-101, behind features.market): round 7's rules with the market, as the simulation
+ * sends them once MARKET is on (its row after the siege works', so the table stays by type; read
+ * with the switch on, as ?keep=1's).
+ */
+function mockRulesMarket(): Rules {
+  const was = MARKET.on;
+  MARKET.on = true;
+  try {
+    const on = JSON.parse(JSON.stringify(rules())) as Required<Rules>;
+    return { ...MOCK_RULES_R7, buildings: on.buildings, features: { ...(MOCK_RULES_R7.features as Features), market: true }, market: on.market };
+  } finally {
+    MARKET.on = was;
+  }
+}
+
 /** `?walls=1`: D-096's gates and walls on (with round 7's), the simulation's values. */
 export const MOCK_RULES_WALLS: Rules = {
   ...MOCK_RULES_R7,
@@ -184,7 +226,8 @@ interface MUnit {
   /** D-096: the town whose wall it stands on (order Wall), and the cell inside it went up from. */
   wall?: { town: number; from: { x: number; y: number } };
   /** `?gallery=1` (D-085): the action it shows (and what it works at), standing where it is. */
-  pose?: { action: number; target: number };
+  /** `hits` (D-100 UnitField.attackTarget): whom it is hitting while attacking. */
+  pose?: { action: number; target: number; hits?: number };
   /** The node a `gather` sent it to (its order's target, as the simulation has it); it stays on it. */
   node?: number;
 }
@@ -321,6 +364,11 @@ export class MockPort implements SimPort {
   /** D-099 (?siege=1): siege engines and works on; our engine (its id). */
   private readonly siege: boolean;
   private siegeEngine = -1;
+  /** D-100 (?keep=1): the bigger towns, a keep in each (but the one being plundered). */
+  private readonly keep: boolean;
+  /** D-101 (?market=1): markets on; our prices for 100 food, 100 wood (as the simulation keeps them). */
+  private readonly market: boolean;
+  private prices = { food: 100, wood: 100 };
   private readonly rules: Rules;
   /**
    * The same layout as a random map (D-074, sim/PROTOCOL.md): `ready` tells only our own home,
@@ -337,13 +385,15 @@ export class MockPort implements SimPort {
    * `outpost`: `?outpost=1`, outposts too (D-080). `gallery`: `?gallery=1`, the atlases' gallery too.
    * `mine`: `?mine=1`, two mines of ours, a crystal vein by one.
    */
-  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false, siege = false) {
-    this.round7 = round7 || outpost || walls || siege;
+  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false, siege = false, keep = false, market = false) {
+    this.round7 = round7 || outpost || walls || siege || keep || market;
+    this.keep = keep;
+    this.market = market;
     this.outpost = outpost;
     this.mine = mine;
     this.walls = walls;
     this.siege = siege;
-    this.rules = siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
+    this.rules = keep ? mockRulesKeep() : market ? mockRulesMarket() : siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
     this.randomMap = map === "random";
     this.gallery = gallery;
   }
@@ -439,7 +489,7 @@ export class MockPort implements SimPort {
     for (const m of this.units) {
       if (m.owner !== NEUTRAL || (m.flags & UnitFlag.OnWall) === 0) continue;
       const near = this.units.filter((u) => u.owner === ME && !u.hidden && (u.x - m.x) ** 2 + (u.y - m.y) ** 2 <= reach * reach).sort((a, b) => (a.x - m.x) ** 2 + (a.y - m.y) ** 2 - ((b.x - m.x) ** 2 + (b.y - m.y) ** 2))[0];
-      m.pose = near === undefined ? undefined : { action: Action.Attack, target: -1 };
+      m.pose = near === undefined ? undefined : { action: Action.Attack, target: -1, hits: near.id };
       if (near !== undefined) m.facing = facing(near.x - m.x, near.y - m.y);
     }
   }
@@ -459,6 +509,50 @@ export class MockPort implements SimPort {
       this.events.push({ k: "siege_shot", u: engine.id, x: target.cx * CELL + (s * CELL) / 2, y: target.cy * CELL + (s * CELL) / 2, lands: this.tick + flight });
     }
     if (this.tick % 60 === 30) this.events.push({ k: "siege_shot", u: 99_999, x: centre(23), y: centre(68), lands: this.tick + flight, from: 0 });
+  }
+
+  /** D-101: every `recoverTicks` each price goes 1 back towards its start, as the simulation's. */
+  private marketStep(): void {
+    const m = this.rules.market;
+    if (m === undefined || this.tick % m.recoverTicks !== 0) return;
+    for (const k of ["food", "wood"] as const) this.prices[k] += Math.sign(m.start - this.prices[k]);
+  }
+
+  /**
+   * D-101: `trade` as the simulation does it: all or nothing, lot by lot, the price moving after
+   * each (buy: pay it, +step up to max; sell: get its share, −step down to min).
+   */
+  private trade(cmd: Extract<CommandBody, { c: "trade" }>, reject: (reason: Reject) => void): void {
+    const m = this.rules.market;
+    if (m === undefined || this.rules.features?.market !== true) return reject(Reject.NotAvailable);
+    if (!this.buildings.some((b) => b.owner === ME && b.type === BuildingType.Market && b.progress >= 1000)) return reject(Reject.NoMarket);
+    if ((cmd.resource !== Resource.Food && cmd.resource !== Resource.Wood) || cmd.lots < 1 || cmd.lots > m.maxLots) return reject(Reject.InvalidTarget);
+    const k = cmd.resource === Resource.Food ? "food" : "wood";
+    let price = this.prices[k];
+    let gold = 0;
+    for (let i = 0; i < cmd.lots; i++) {
+      gold += cmd.buy ? price : Math.floor((price * m.sellPermille) / 1000);
+      price = cmd.buy ? Math.min(m.max, price + m.step) : Math.max(m.min, price - m.step);
+    }
+    const amount = cmd.lots * m.lot;
+    if (cmd.buy ? this.stock.gold < gold : this.stock[k] < amount) return reject(Reject.CannotAfford);
+    this.stock.gold += cmd.buy ? -gold : gold;
+    this.stock[k] += cmd.buy ? amount : -amount;
+    this.prices[k] = price;
+    this.events.push({ k: "traded", resource: cmd.resource, buy: cmd.buy, lots: cmd.lots, amount, gold });
+  }
+
+  /** Tests (真的箭): these units of ours stand and attack `target` (UnitField.attackTarget), facing it; −1: they stop. */
+  strike(ids: number[], target: number): void {
+    const t = this.units.find((v) => v.id === target);
+    const b = this.buildings.find((v) => v.id === target);
+    for (const u of this.units) {
+      if (u.owner !== ME || !ids.includes(u.id)) continue;
+      u.pose = target < 0 ? undefined : { action: Action.Attack, target, hits: target };
+      const tx = t?.x ?? (b === undefined ? u.x : b.cx * CELL);
+      const ty = t?.y ?? (b === undefined ? u.y : b.cy * CELL);
+      if (target >= 0) u.facing = facing(tx - u.x, ty - u.y);
+    }
   }
 
   /** Tests: a building's hit points now (a gate damaged, D-096). */
@@ -566,21 +660,38 @@ export class MockPort implements SimPort {
     }
 
     const town = (size: TownSize, cx: number, cy: number, state: TownState, owner: number, timer = 0, total = 0, militia = 0) => {
-      const t: MTown = { id: this.towns.length, size, cx, cy, radius: size === TownSize.Large ? 6 : 4, state, owner, timer, timerTotal: total, militia, plundered: false, income: 1000 };
+      // D-100 (?keep=1): the walls' distance as the simulation's (7 and 9).
+      const radius = this.keep ? (this.rules.towns?.[size]?.radius ?? 7) : size === TownSize.Large ? 6 : 4;
+      const t: MTown = { id: this.towns.length, size, cx, cy, radius, state, owner, timer, timerTotal: total, militia, plundered: false, income: 1000 };
       this.towns.push(t);
       return t;
     };
-    // Round 7: the small neutral town was plundered before (taken again, only 治理), and our
-    // governed town too, so it pays a quarter and climbs back.
-    town(TownSize.Small, 30, 66, TownState.Neutral, NEUTRAL, 0, 0, 3).plundered = this.round7;
-    const ours = town(TownSize.Small, 18, 62, TownState.Governed, ME);
-    if (this.round7) {
-      ours.plundered = true;
-      ours.income = (this.rules.plunderRecovery as { startPermille: number }).startPermille;
+    // D-100 (?keep=1): the towns about 1.5 x bigger, spread so that their castles do not overlap: a
+    // neutral small town east of our soldiers, ours, the big city we plunder (its keep down), the
+    // enemy's in the south-east; a keep in the middle of each but the one plundered.
+    if (this.keep) {
+      town(TownSize.Small, 36, 72, TownState.Neutral, NEUTRAL, 0, 0, 3);
+      town(TownSize.Small, 16, 62, TownState.Governed, ME);
+      town(TownSize.Large, 48, 48, TownState.Plundering, ME, 300, 500);
+      town(TownSize.Small, 70, 84, TownState.Governed, FOE);
+      for (const t of this.towns) {
+        const k = this.rules.towns?.[t.size]?.keep;
+        if (k === undefined || t.state === TownState.Plundering) continue;
+        this.building(t.owner, BuildingType.Keep, t.cx - 1, t.cy - 1).hp = k.hp;
+      }
+    } else {
+      // Round 7: the small neutral town was plundered before (taken again, only 治理), and our
+      // governed town too, so it pays a quarter and climbs back.
+      town(TownSize.Small, 30, 66, TownState.Neutral, NEUTRAL, 0, 0, 3).plundered = this.round7;
+      const ours = town(TownSize.Small, 18, 62, TownState.Governed, ME);
+      if (this.round7) {
+        ours.plundered = true;
+        ours.income = (this.rules.plunderRecovery as { startPermille: number }).startPermille;
+      }
+      town(TownSize.Small, 36, 80, TownState.Ruins, -1, 3000, 4800);
+      town(TownSize.Large, 48, 48, TownState.Plundering, ME, 300, 500);
+      town(TownSize.Small, 38, 56, TownState.Governed, FOE);
     }
-    town(TownSize.Small, 36, 80, TownState.Ruins, -1, 3000, 4800);
-    town(TownSize.Large, 48, 48, TownState.Plundering, ME, 300, 500);
-    town(TownSize.Small, 38, 56, TownState.Governed, FOE);
     // D-096 (?walls=1): a gate in each opening of every castle but the ruins', its town's holder's
     // (the neutral's for a neutral town), at its town's size's hit points.
     if (this.walls) {
@@ -626,6 +737,11 @@ export class MockPort implements SimPort {
     if (this.siege) {
       this.siegeEngine = unit(ME, UnitType.Siege, 28, 55).id;
       this.building(ME, BuildingType.SiegeWorks, 10, 74);
+    }
+    // D-101 (?market=1): a granary of ours south of home, and a finished market beside it.
+    if (this.market) {
+      this.building(ME, BuildingType.Granary, 7, 86);
+      this.building(ME, BuildingType.Market, 10, 86);
     }
     unit(FOE, UnitType.Spearman, 80, 20);
     if (this.gallery === "units") this.setupGallery(unit);
@@ -799,6 +915,7 @@ export class MockPort implements SimPort {
     if (this.round7 && this.tick % SHOT_TICKS === 0) this.shoot();
     if (this.walls) this.slings();
     if (this.siege) this.siegeStep();
+    if (this.market) this.marketStep();
     if (this.gallery) this.galleryStep();
     this.warningTicks = this.warningTicks <= 0 ? 60 : this.warningTicks - 1;
     if (this.tick % FOG_EVERY === 0) this.updateFog();
@@ -911,6 +1028,9 @@ export class MockPort implements SimPort {
     header[H.population] = this.units.filter((u) => u.owner === ME).length;
     header[H.populationCap] = 20;
     header[H.populationCeiling] = MOCK_RULES.maxPopulation;
+    // D-101: 0 while markets are off, as the simulation's.
+    header[H.priceFood] = this.market ? this.prices.food : 0;
+    header[H.priceWood] = this.market ? this.prices.wood : 0;
     header[H.reserveFood] = this.reserve.food;
     header[H.reserveWood] = this.reserve.wood;
     header[H.reserveGold] = this.reserve.gold;
@@ -945,6 +1065,7 @@ export class MockPort implements SimPort {
       units[o + U.stance] = u.stance;
       units[o + U.castProgress] = u.cast;
       units[o + U.flags] = u.flags;
+      units[o + U.attackTarget] = u.pose?.action === Action.Attack ? (u.pose.hits ?? -1) : -1;
     });
 
     const shown = this.buildings.filter((b) => b.owner === ME || this.everSeen(b));
@@ -1334,6 +1455,9 @@ export class MockPort implements SimPort {
         break;
       }
       case "repair":
+        break;
+      case "trade":
+        this.trade(cmd, reject);
         break;
       case "surrender": {
         this.over = true;

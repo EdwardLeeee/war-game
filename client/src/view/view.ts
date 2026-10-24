@@ -217,7 +217,10 @@ export class GameView implements IntentWorld {
     return null;
   }
 
-  /** A building's full hit points: a gate's are its town's size's (`rules.towns[size].gateHp`, D-096), any other its type's. */
+  /**
+   * A building's full hit points: a gate's are its town's size's (`rules.towns[size].gateHp`,
+   * D-096), a keep's too (`rules.towns[size].keep.hp`, D-100), any other its type's.
+   */
   buildingMaxHp(b: Int32Array, o: number): number {
     const type = b[o + B.type];
     if (type === BuildingType.Gate) {
@@ -225,7 +228,45 @@ export class GameView implements IntentWorld {
       const hp = town === null ? undefined : this.rules.towns?.[town.size]?.gateHp;
       if (hp !== undefined) return hp;
     }
+    if (type === BuildingType.Keep) {
+      const town = this.keepTown(b, o);
+      const hp = town === null ? undefined : this.rules.towns?.[town.size]?.keep?.hp;
+      if (hp !== undefined) return hp;
+    }
     return this.rules.buildings[type]?.hp ?? b[o + B.hp];
+  }
+
+  /** The town a keep stands in (D-100: on its centre cell), or null. */
+  keepTown(b: Int32Array, o: number): TownSpot | null {
+    const f = this.footprint(b, o);
+    for (const town of this.knownTowns.values()) {
+      if (town.cellX >= f.x && town.cellX < f.x + f.w && town.cellY >= f.y && town.cellY < f.y + f.h) return town;
+    }
+    return null;
+  }
+
+  /** A town's keep in the snapshot (D-100; standing, or remembered so), its row offset, or -1. */
+  keepRow(town: number): number {
+    const spot = this.knownTowns.get(town);
+    const b = this.curr?.snap.buildings;
+    if (spot === undefined || b === undefined) return -1;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + B.type] !== BuildingType.Keep) continue;
+      const f = this.footprint(b, o);
+      if (spot.cellX >= f.x && spot.cellX < f.x + f.w && spot.cellY >= f.y && spot.cellY < f.y + f.h) return o;
+    }
+    return -1;
+  }
+
+  /** 點城鎮就是進攻 (D-100): towns have keeps (`features.keep`). */
+  attacksTowns(): boolean {
+    return features(this.rules).keep === true;
+  }
+
+  /** A town's keep's centre cell while it stands (D-100), else null. */
+  keepCell(town: number): { x: number; y: number } | null {
+    const spot = this.knownTowns.get(town);
+    return spot === undefined || this.keepRow(town) < 0 ? null : { x: spot.cellX, y: spot.cellY };
   }
 
   /** The cells a town's castle covers, walls and gates included (map cells, inclusive), or null with no castle. */
@@ -462,7 +503,8 @@ export class GameView implements IntentWorld {
     const b = this.curr?.snap.buildings;
     if (o < 0 || b === undefined) return false;
     const type = b[o + B.type];
-    const max = this.rules.buildings[type]?.hp ?? 0;
+    // A gate's and a keep's full hit points are their town's (D-096, D-100).
+    const max = this.buildingMaxHp(b, o);
     return b[o + B.progress] < 1000 || b[o + B.hp] < max || type === BuildingType.Farm;
   }
 

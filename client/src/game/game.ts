@@ -20,7 +20,7 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
-import { enemyTooClose, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Sighting, SIGHTING_TICKS, type Spot } from "./reform.ts";
+import { enemyTooClose, type GroupOrder, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf, SIEGE_ATLASES } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
@@ -73,7 +73,8 @@ import {
   UnitType,
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
-import { BUILDING_NAME, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
+import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
+import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
 import { PendingOrders } from "./pending.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
@@ -171,10 +172,10 @@ export const TOWER_LAND_TEXT_OUTPOST = "箭樓要蓋在主城、治理的城鎮�
 
 /** 整理隊形 (D-095): what it faced, on the message bar. */
 const REFORM_TEXT: Record<string, string> = {
-  enemy: "整理隊形：槍兵在前，面向最近的敵人",
-  seen: "整理隊形：槍兵在前，面向剛才看到敵人的地方",
-  last: "整理隊形：槍兵在前，面向剛才走的方向",
+  order: "整理隊形：槍兵在前，面向前進的方向",
+  went: "整理隊形：槍兵在前，面向剛才走的方向",
   city: "整理隊形：槍兵在前，面向敵方主城",
+  centre: "整理隊形：槍兵在前，面向地圖中央",
   keep: "整理隊形：槍兵在前，方向不變",
   near: `敵人在 ${REFORM_CLEAR_CELLS} 格內，不整理隊形：整理時不還手，先打完或先移動開`,
 };
@@ -451,10 +452,13 @@ export class Game implements GestureHost {
   readonly charges = new Charges();
   /** Stances sent that the snapshot does not show yet (D-081), for what 前進 and 撤退 go by. */
   private readonly stances = new SentStances();
-  /** 整理隊形 (D-095): where enemies were last seen (cells, by unit id), and the way each soldier was last sent. */
-  private readonly sightings = new Map<number, Sighting>();
-  private prunedAt = 0;
-  private readonly lastSent = new Map<number, Spot>();
+  /**
+   * 整理隊形 (D-095; the user 2026-10-24: 面向前進的方向): each soldier's last order sent (移動,
+   * 攻擊): where to (cells; an attack's target, by id), the way from where they stood, and when (the
+   * latest of a group's is its order).
+   */
+  private readonly lastSent = new Map<number, { to: Spot | null; target: number | null; went: Spot; seq: number }>();
+  private sentSeq = 0;
   /** 等錢治理 (ceo 2026-10-21): towns whose 治理 waits for its cost, and the reserve raised meanwhile. */
   readonly governWaits = new GovernWaits();
   /**
@@ -515,6 +519,10 @@ export class Game implements GestureHost {
   }
 
   /** Shots that left a gate's tower (D-096 shoot_at_m, its `tower_shot` flash), for the test hook. */
+  get arrowsForTest(): { real: boolean; bow: number; building: number } {
+    return { real: this.renderer?.realArrows ?? false, bow: this.renderer?.bowArrowCount ?? 0, building: this.renderer?.buildingArrowCount ?? 0 };
+  }
+
   get towerShotsForTest(): number {
     return this.renderer?.towerShotCount ?? 0;
   }
@@ -545,7 +553,7 @@ export class Game implements GestureHost {
   }
 
   /** 寫實地面 (D-093): drawn or not, and its quality; null before the first snapshot. */
-  get groundForTest(): { real: boolean; quality: string | null; water: boolean } | null {
+  get groundForTest(): { real: boolean; quality: string | null; water: boolean; town: boolean } | null {
     return this.renderer?.groundLook ?? null;
   }
 
@@ -555,9 +563,14 @@ export class Game implements GestureHost {
   }
 
   /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
-  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number> } | null {
+  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null {
     const r = this.renderer;
     return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount };
+  }
+
+  /** 城內 B (castle 2): the towns' decor pieces, for the test hook. */
+  get decorForTest(): { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean }[] | null {
+    return this.renderer?.decorForTest ?? null;
   }
 
   /** Terrain repaints on exploring rock (random map, D-074), for the test hook. */
@@ -1810,7 +1823,6 @@ export class Game implements GestureHost {
           }
         }
         this.stances.settle(view.header?.[H.tick] ?? 0, (id) => (view.unitRow(id) >= 0 ? view.unitStance(id) : null));
-        this.watchEnemies(view, tick);
         this.cannonsOn(view);
         this.pending.settle(view.header?.[H.tick] ?? 0);
         this.controls.setWaiting(this.pending.waiting);
@@ -2114,6 +2126,13 @@ export class Game implements GestureHost {
           this.markCommand(it.cmd);
           if (it.cmd.c === "repair" && view.buildingRepairLocked(it.cmd.building)) this.overlays.toast(REPAIR_LOCKED_TEXT);
           break;
+        case "townAttack":
+          // 點城鎮＝攻擊這座城 (D-100): once on this device.
+          if (!loadHintSeen(KEEP_HINT_KEY)) {
+            saveHintSeen(KEEP_HINT_KEY);
+            this.overlays.toast(KEEP_HINT_TEXT);
+          }
+          break;
         case "endMode":
           this.setMode("normal");
           break;
@@ -2140,7 +2159,7 @@ export class Game implements GestureHost {
       case "unit":
         return `${whose}${UNIT_NAME[p.type] ?? "單位"}`;
       case "building":
-        return `${whose}${BUILDING_NAME[p.type] ?? "建築"}`;
+        return `${whose}${buildingName(p.type, view.rules) ?? "建築"}`;
       case "town":
         return `${p.type === 1 ? "大城" : "小鎮"}${whose === "" ? "" : `（${whose}）`}`;
     }
@@ -2217,6 +2236,13 @@ export class Game implements GestureHost {
     const b = view.curr?.snap.buildings;
     const row = view.buildingRow(building);
     const tower = b !== undefined && row >= 0 && b[row + BuildingField.type] === BuildingType.Gate ? this.renderer.gateShootFrom(b[row + BuildingField.cellX], b[row + BuildingField.cellY], to.x, to.y) : null;
+    // 真的箭 (R8-35 B, art-v6): from where its picture's arrows leave (a gate's tower, a main city's,
+    // an arrow tower's or a keep's shoot_at_m) to the chest, at the arrow's speed, no flash.
+    if (this.renderer.realArrows) {
+      const at = tower ?? (row >= 0 ? this.renderer.buildingShootFrom(row, to.x, to.y) : null);
+      this.renderer.arrow(at?.x ?? from.x, at?.y ?? from.y, at?.lift ?? 0, to.x, to.y, now, n);
+      return;
+    }
     this.renderer.shot(tower?.x ?? from.x, tower?.y ?? from.y, to.x, to.y, now, n, tower?.lift ?? 0);
   }
 
@@ -2253,9 +2279,8 @@ export class Game implements GestureHost {
       return;
     }
     const centre = { x: at.reduce((n, p) => n + p.x, 0) / at.length, y: at.reduce((n, p) => n + p.y, 0) / at.length };
-    const tick = view.header?.[H.tick] ?? 0;
-    const last = soldiers.map((id) => this.lastSent.get(id)).find((d) => d !== undefined) ?? null;
-    const { dir, from } = reformFacing(centre, inSight, [...this.sightings.values()], tick, last, this.enemyCity(view));
+    const n = view.map.size;
+    const { dir, from } = reformFacing(centre, this.groupOrder(soldiers), this.enemyCity(view), { x: n / 2, y: n / 2 });
     // The formation command re-forms them in place at the spacing most of them have (PROTOCOL.md 第三輪): the way they face now, or `face`.
     const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
     if (dir === null) this.command({ c: "formation", u: soldiers, loose });
@@ -2266,6 +2291,35 @@ export class Game implements GestureHost {
       this.command({ c: "retreat", u: soldiers, x: c.x, y: c.y });
     }
     this.toast(REFORM_TEXT[from]);
+  }
+
+  /**
+   * 整理隊形's order for these soldiers (the user 2026-10-24: 面向前進的方向): the first one's move,
+   * attack or retreat now (the snapshot's), else the latest sent to any of them; null when none was
+   * ever sent anywhere (fresh from training). An attack goes where its target is now, if we see it.
+   */
+  private groupOrder(soldiers: readonly number[]): GroupOrder | null {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return null;
+    const n = view.map.size;
+    for (const id of soldiers) {
+      const o = view.unitRow(id);
+      const order = o < 0 ? Order.None : u[o + UnitField.order];
+      const target = o < 0 ? -1 : u[o + UnitField.orderTarget];
+      const went = this.lastSent.get(id)?.went ?? null;
+      if ((order === Order.Move || order === Order.Retreat) && target >= 0) return { to: { x: (target % n) + 0.5, y: Math.floor(target / n) + 0.5 }, went };
+      const at = order === Order.Attack ? this.targetCell(target) : null;
+      if (at !== null) return { to: at, went };
+    }
+    let latest: { to: Spot | null; target: number | null; went: Spot; seq: number } | null = null;
+    for (const id of soldiers) {
+      const s = this.lastSent.get(id);
+      if (s !== undefined && (latest === null || s.seq > latest.seq)) latest = s;
+    }
+    if (latest === null) return null;
+    const to = latest.target === null ? latest.to : (this.targetCell(latest.target) ?? latest.to);
+    return to === null ? null : { to, went: latest.went };
   }
 
   /** Enemies in sight now (cells): units of the other players and the towns' militia. */
@@ -2292,19 +2346,6 @@ export class Game implements GestureHost {
     return null;
   }
 
-  /** Every snapshot: where each enemy in sight stands now; those not seen for a minute dropped. */
-  private watchEnemies(view: GameView, tick: number): void {
-    const u = view.curr?.snap.units;
-    if (u === undefined) return;
-    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
-      if (u[o + UnitField.owner] === view.me) continue;
-      this.sightings.set(u[o + UnitField.id], { x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL, tick });
-    }
-    if (tick - this.prunedAt < 100) return;
-    this.prunedAt = tick;
-    for (const [id, s] of this.sightings) if (tick - s.tick > SIGHTING_TICKS) this.sightings.delete(id);
-  }
-
   /**
    * D-095 (「拿掉，永遠自動」): a mage of ours with its cannon off (a game saved before, when it could
    * be turned off) gets it on again, once; the log keeps the order, so the replay is the same.
@@ -2322,7 +2363,7 @@ export class Game implements GestureHost {
     if (off.length > 0) this.autoCommand({ c: "autocast", u: off, on: true });
   }
 
-  /** The way each was sent (移動, 攻擊), from the middle of those sent. */
+  /** Where each was sent (移動, 攻擊) and the way from the middle of those sent, for 整理隊形. */
   private noteSent(cmd: CommandBody): void {
     const view = this.view;
     const u = view?.curr?.snap.units;
@@ -2333,12 +2374,11 @@ export class Game implements GestureHost {
     const cy = rows.reduce((n, o) => n + u[o + UnitField.y], 0) / rows.length / CELL;
     let to: Spot | null = null;
     if (cmd.c === "move" || cmd.c === "retreat") to = { x: cmd.x + 0.5, y: cmd.y + 0.5 };
-    else if (cmd.c === "attack") {
-      const t = this.targetCell(cmd.target);
-      to = t === null ? null : { x: t.x + 0.5, y: t.y + 0.5 };
-    }
+    else if (cmd.c === "attack") to = this.targetCell(cmd.target);
     if (to === null || (to.x === cx && to.y === cy)) return;
-    for (const id of cmd.u) this.lastSent.set(id, { x: to.x - cx, y: to.y - cy });
+    const seq = ++this.sentSeq;
+    const target = cmd.c === "attack" ? cmd.target : null;
+    for (const id of cmd.u) this.lastSent.set(id, { to, target, went: { x: to.x - cx, y: to.y - cy }, seq });
   }
 
   /** 移動 in the command area (D-094; D-059's 撤退), with units selected: pick where to, as for 攻擊. */

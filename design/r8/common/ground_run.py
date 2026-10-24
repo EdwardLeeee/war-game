@@ -25,6 +25,8 @@ LAYERS = [
     dict(id="dirt", tex="stony_dirt_path", tile_m=2.17, tint=(0.16, 0.115, 0.07), contrast=0.85),
     dict(id="gravel", tex="rocks_ground_02", tile_m=2.0, tint=(0.11, 0.1, 0.085), contrast=0.95, hue=0.1),
     dict(id="bank", tex="brown_mud_rocks_01", tile_m=1.3, tint=(0.12, 0.1, 0.075), contrast=0.85),
+    # D-100: the packed earth inside the walls (ground_r8.py rules.town: the lanes, the trampled earth; R8-36 B)
+    dict(id="yard", tex="dirt", tile_m=2.0, tint=(0.12, 0.09, 0.058), contrast=0.8),                  # packed earth
 ]
 
 
@@ -46,7 +48,8 @@ def main(out, ppm, samples):
     job = dict(tex_dir=str(textures.DIR), out=str(baked), ppm=ppm, samples=samples, layers=layers)
     jp = baked / "job.json"
     jp.write_text(json.dumps(job))
-    blender = Path.home() / ".local/opt/blender-5.2.2/blender"
+    import os
+    blender = Path(os.environ.get("BLENDER") or Path.home() / ".local/opt/blender-5.2.2/blender")
     r = subprocess.run([str(blender), "-b", "-t", "2", "--factory-startup", "--python", str(R8 / "blender" / "ground_bake.py"),
                         "--", str(jp)], capture_output=True, text=True)
     if r.returncode != 0 or "Traceback" in r.stdout + r.stderr:

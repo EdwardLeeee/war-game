@@ -11,6 +11,12 @@ import type { FrameRect } from "./spec.ts";
 import type { AtlasView, Side } from "./structures.ts";
 
 export const CASTLE_FORMAT = "war-game castle 1";
+/**
+ * art-v6 (D-100; atlas-buildings.md section 13): the castles of D-100 only (`small`, `large`), no
+ * floor tiles (the ground's shader draws the ground inside), and what lives in a town: `decor`
+ * (R8-36 B, the user 2026-10-23) and each layout's `ground` and `decor`.
+ */
+export const CASTLE_FORMAT_2 = "war-game castle 2";
 
 export type CastleLayoutName = "small" | "large" | "large3";
 
@@ -22,10 +28,32 @@ export interface CastlePiece {
   cells: [number, number][];
 }
 
+/** A town's ground (castle 2): the lane from each gate to the keep (fading out past the gate), or trampled earth; `w` its strength 0–1. */
+export interface CastleGround {
+  cell: [number, number];
+  kind: "lane" | "trampled";
+  w: number;
+}
+
+/**
+ * A piece of what lives in a town (castle 2: a hut, a shed, a stack, a well, a cart): `at` its
+ * anchor (cells from the centre cell's north-west corner, as a wall's `anchor`), `front` its front
+ * edge (depth), `cells` it covers. A picture only: not in the simulation, never in the way, never tapped.
+ */
+export interface CastleDecor {
+  piece: string;
+  at: [number, number];
+  front: number;
+  cells: [number, number][];
+}
+
 export interface CastleLayout {
   walls: CastlePiece[];
-  /** A tile a cell inside the walls, and two street cells before each gate. */
-  floor: { cell: [number, number]; tile: string }[];
+  /** Castle 1: a tile a cell inside the walls, and two street cells before each gate. */
+  floor?: { cell: [number, number]; tile: string }[];
+  /** Castle 2. */
+  ground?: CastleGround[];
+  decor?: CastleDecor[];
 }
 
 /**
@@ -54,7 +82,10 @@ export interface CastleJson {
   /** Metres a cell (2). */
   cell_m?: number;
   pieces: Record<string, CastlePieceInfo>;
-  tiles: Record<string, string>;
+  /** Castle 1: the floor's tiles. */
+  tiles?: Record<string, string>;
+  /** Castle 2: each decor piece's frame (its colour, team for a hut's flag, shadow). */
+  decor?: Record<string, string>;
   layouts: Partial<Record<CastleLayoutName, CastleLayout>>;
   frames: Record<string, FrameRect>;
   team: Record<string, FrameRect>;
@@ -63,7 +94,7 @@ export interface CastleJson {
 
 export function parseCastle(v: unknown): CastleJson {
   const c = v as CastleJson;
-  if (typeof c !== "object" || c === null || c.format !== CASTLE_FORMAT) throw new Error(`not a ${CASTLE_FORMAT} description`);
+  if (typeof c !== "object" || c === null || (c.format !== CASTLE_FORMAT && c.format !== CASTLE_FORMAT_2)) throw new Error(`not a ${CASTLE_FORMAT} or ${CASTLE_FORMAT_2} description`);
   if (!(c.px_per_m > 0) || typeof c.pieces !== "object" || typeof c.layouts !== "object" || typeof c.frames !== "object") throw new Error("incomplete castle description");
   return c;
 }
@@ -134,4 +165,50 @@ export const GATE_OPEN_CELLS = 2;
 export function inward(piece: string): [number, number] | null {
   const side = /_([nswe])$/.exec(piece)?.[1];
   return side === "n" ? [0, 1] : side === "s" ? [0, -1] : side === "w" ? [1, 0] : side === "e" ? [-1, 0] : null;
+}
+
+/** A building's cells on the map (its footprint). */
+export interface Footprint {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const touches = (cells: readonly (readonly [number, number])[], ox: number, oy: number, f: readonly Footprint[]): boolean =>
+  cells.some(([x, y]) => f.some((b) => ox + x >= b.x && ox + x < b.x + b.w && oy + y >= b.y && oy + y < b.y + b.h));
+
+/**
+ * Whether a town's decor piece is left out (R8-36 B): the town in ruins (the plan ceo approved), or
+ * a building (finished or not) on any of its cells, offset `ox`, `oy` (the town's centre cell and
+ * the layout's shift); the ground there is trampled earth then (`townGround`).
+ */
+export function decorHidden(d: Pick<CastleDecor, "cells">, ox: number, oy: number, buildings: readonly Footprint[], ruins: boolean): boolean {
+  return ruins || touches(d.cells, ox, oy, buildings);
+}
+
+/**
+ * The towns' ground for the shader (castle 2, R8-36 B), `n` × `n` cells, a strength 0–1 a cell: the
+ * lanes, and the trampled earth: each layout's `ground`, and every cell of a building inside a
+ * castle (the box of its walls) and of a decor piece left out for one, at 1 (ui: 「建築占地要加進
+ * trampled w1」). `towns`: each town's centre cell, its layout's shift and its box (map cells).
+ */
+export function townGround(n: number, towns: readonly { cx: number; cy: number; fit: CastleFit; box: { x0: number; y0: number; x1: number; y1: number } }[], buildings: readonly Footprint[]): { lane: Float32Array; trampled: Float32Array } {
+  const lane = new Float32Array(n * n);
+  const trampled = new Float32Array(n * n);
+  const put = (a: Float32Array, x: number, y: number, w: number) => {
+    if (x >= 0 && y >= 0 && x < n && y < n) a[y * n + x] = Math.max(a[y * n + x], w);
+  };
+  for (const t of towns) {
+    const ox = t.cx + t.fit.dx;
+    const oy = t.cy + t.fit.dy;
+    for (const g of t.fit.layout.ground ?? []) put(g.kind === "lane" ? lane : trampled, ox + g.cell[0], oy + g.cell[1], g.w);
+    for (const d of t.fit.layout.decor ?? []) if (touches(d.cells, ox, oy, buildings)) for (const [x, y] of d.cells) put(trampled, ox + x, oy + y, 1);
+    for (const b of buildings) {
+      for (let y = Math.max(b.y, t.box.y0); y < Math.min(b.y + b.h, t.box.y1 + 1); y++) {
+        for (let x = Math.max(b.x, t.box.x0); x < Math.min(b.x + b.w, t.box.x1 + 1); x++) put(trampled, x, y, 1);
+      }
+    }
+  }
+  return { lane, trampled };
 }

@@ -319,10 +319,37 @@ def tlumber(root, c, variant=0):
         box(f"tl_tile{k}", (0.6, 0.4, 0.07), P["tile"], root, loc=(0.1, -0.55, 0.05 + k * 0.075))
 
 
-def tground(root, c, variant=0, plan=()):
+def tground(root, c, variant=0, plan=(), r8=False):
     """Flat paving: the square and the streets (stone or packed earth), garden plots; no height.
-    plan: [(x, y, kind)] cell centres in metres from the layout centre (common/layouts.py)."""
+    plan: [(x, y, kind)] cell centres in metres from the layout centre (common/layouts.py).
+    r8: the R8 look's colours (the realistic ground's: packed earth, dark tilled soil with rows of greens, grey
+    paving), the textures by look.MATCH."""
     P = kit.palette(c)
+    if r8:
+        street = lib.mat("street_" + c, (0.15, 0.11, 0.07) if c == "E" else (0.14, 0.12, 0.09), 0.95)
+        garden = lib.mat("garden", (0.07, 0.055, 0.035), 0.95)
+        pave = lib.mat("pave_r8" if c == "E" else "pave_r8w", (0.14, 0.135, 0.12), 0.9)
+        import nature_r8
+        import random as _r
+        from mathutils import Vector as _V
+        rnd = _r.Random(91)
+        greens = nature_r8._mats(c)["bush"]
+        beds = []
+        for k, (x, y, kind) in enumerate(plan):
+            if kind in ("square", "street"):
+                box(f"tg_{k}", (kit.CELL - 0.02, kit.CELL - 0.02, 0.04), street if kind == "street" else pave, root,
+                    loc=(x, y, 0.02), outline=False)
+            elif kind == "garden":
+                box(f"tg_{k}", (kit.CELL - 0.3, kit.CELL - 0.3, 0.05), garden, root, loc=(x, y, 0.025), outline=False)
+                beds.append((x, y))
+        if beds:                                          # rows of greens in the beds: small leafy plants
+            T = nature_r8.Tree(rnd)
+            for x, y in beds:
+                for r_ in range(4):
+                    for q in range(7):
+                        T.anchors.append((_V((x - 0.72 + q * 0.24, y - 0.6 + r_ * 0.4, 0.1)), 0.13))
+            T.build("tg_greens", garden, greens, root, leaves_per=90, card=(0.05, 0.035), flat=0.6)
+        return
     street = lib.mat("street_" + c, (0.55, 0.5, 0.42) if c == "E" else (0.5, 0.49, 0.46), 0.95, pattern="block",
                      pattern_scale=1.4)
     garden = lib.mat("garden", (0.33, 0.42, 0.18), 0.9, noise=0.4, noise_scale=12)

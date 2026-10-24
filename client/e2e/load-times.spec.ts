@@ -96,5 +96,6 @@ test("載入計時：沒有 loadtimes=1 的測試頁不在畫面上列出，量�
   await expect(page.locator(".load-times")).toHaveCount(0);
   expect((await report(page))?.art).toBe("關");
   await openLab(page);
-  await expect(page.locator(".lab-load")).toContainText("美術 0.00 秒（美術關）");
+  // Next to nothing (CI's WebKit has taken 0.01 s, run 40097505380).
+  await expect(page.locator(".lab-load")).toContainText(/美術 0\.0\d 秒（美術關）/);
 });

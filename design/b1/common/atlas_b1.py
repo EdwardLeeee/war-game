@@ -56,10 +56,18 @@ def building_table(c):
     # art-v5.1: 哨所 (D-080; the user approved the drafts 2026-10-22), its own foundation and rubble (blds2.outpost)
     t["Outpost"] = dict(type=12, footprint=[2, 2],
                         states={s: f"outpost_{c}_{s}" for s in ("build1", "build2", "build3", "done", "damaged", "rubble")})
-    t["TownTower"] = dict(type=9, footprint=[2, 2], states={s: f"town_tower_{c}_{s}" for s in ("done", "damaged", "rubble")},
-                          # art-v4: the 3 x 3 tower of the random maps' neighbouring spawns (sim GameMap.towerSize, D-074)
-                          sizes={"3": dict(footprint=[3, 3],
-                                           states={s: f"town_tower3_{c}_{s}" for s in ("done", "damaged", "rubble")})})
+    # art-v6 (D-100; core 2026-10-23: BuildingType 9 is the Keep now, the KEEP switch on in the same release, ceo): every
+    # town's 3 x 3 keep, its states as the client shows them (damaged at half its hp or less; rubble once it falls, the
+    # cells walk; repair: the rubble under scaffolding while the governed town counts down); the old 2 x 2 and 3 x 3
+    # town towers (art-v4/v5) are gone
+    t["Keep"] = dict(type=9, footprint=[3, 3], states={s: f"keep_{c}_{s}" for s in ("done", "damaged", "rubble", "repair")})
+    # art-v6: where arrows leave (shoot_at_<k> marks of the finished look, metres from the anchor, the sim's axes as the
+    # gates' shoot_at_m: x east, y south, z up): the client flies an arrow from the one nearest the target
+    for name, e in t.items():
+        m = _marks(e["states"].get("done", ""))
+        shots = [m[n] for n in sorted(m) if n.startswith("shoot_at_")]
+        if shots:
+            e["shoot_at_m"] = [[round(x, 2), round(-y, 2), round(z, 2)] for x, y, z in shots]
     return dict(sorted(t.items(), key=lambda kv: kv[1]["type"]))
 
 
@@ -85,15 +93,19 @@ def _marks(name):
 
 
 def castle_table(c):
-    """castle_<c>.json's "pieces", "tiles" and "layouts": every piece's frame in each look and the cells it stands
-    on in each layout (CASTLE.placements), the floor tiles (CASTLE.floor). D-096: the gates' closed, damaged and
+    """castle_<c>.json's "pieces", "decor" and "layouts": every piece's frame in each look and the cells it stands
+    on in each layout (CASTLE.placements); art-v6 ("war-game castle 2"): each layout's ground and decorative pieces
+    (CASTLE.ground, CASTLE.decor) instead of the floor tiles. D-096: the gates' closed, damaged and
     broken looks; `intact_front` on the pieces with something in front of a unit standing on them; on the plain walls
     `walk_m` (the walk's height) and `stand_in_m` (where a unit stands, from the cell's middle toward the town); on the
     corners and the gates `stand_m` ({"dx,dy": [x, y, z]}: the cell from the footprint's north-west one, the spot on
     it); on the gates `shoot_at_m` (where the gate tower's arrows leave). Spots: x east, y south, z up, metres from the
     piece's anchor."""
     pieces = {}
+    used = {p["piece"] for L in (f() for f in CASTLE.LAYOUTS) for p in CASTLE.placements(L)}   # art-v6: D-100's only
     for k, f in CASTLE.PIECE_FOOT.items():
+        if k not in used:
+            continue
         looks = ("intact", "ruin") + (CASTLE.GATE_STATES if k in CASTLE.GATE_PIECES else ())
         e = dict(footprint=list(f), frames={s: f"castle_{k}_{c}_{s}" for s in looks})
         if k in CASTLE.FRONTS:                   # intact_front for every look of a held town, ruin_front for the ruins
@@ -113,18 +125,20 @@ def castle_table(c):
             e["stand_m"] = {k2: [round(x, 2), round(-y, 2), round(z, 2)] for k2, (x, y, z) in sorted(cells.items())}
             e["walk_m"] = round(max(z for _, _, z in cells.values()), 2)
         pieces[k] = e
-    tiles = {t: f"castle_tile_{t}_{c}" for t in TILES}
+    # art-v6 (R8-36 B, agreed with war-game-client 2026-10-23): no floor tiles; the ground inside the walls drawn by the
+    # ground shader from each layout's `ground` (lane, trampled), and the decorative pieces of `decor` (castle.py)
+    decor = {k: f"decor_{k}_{c}" for k in CASTLE.DECOR_SIZE}
     layouts = {}
-    for L in (CASTLE.small(), CASTLE.large(), CASTLE.large3()):
+    for L in (f() for f in CASTLE.LAYOUTS):
         layouts[L["name"]] = dict(
             walls=[dict(piece=p["piece"], anchor=p["anchor"], front=p["front"], cells=p["cells"]) for p in CASTLE.placements(L)],
-            floor=CASTLE.floor(L))
-    return pieces, tiles, layouts
+            ground=CASTLE.ground(L), decor=CASTLE.decor(L))
+    return pieces, decor, layouts
 
 
 def castle_frames(c):
-    pieces, tiles, _ = castle_table(c)
-    return sorted([n for p in pieces.values() for n in p["frames"].values()] + list(tiles.values()))
+    pieces, decor, _ = castle_table(c)
+    return sorted([n for p in pieces.values() for n in p["frames"].values()] + list(decor.values()))
 
 
 # ---------------------------------------------------------------- the terrain (art-v5, R6-51, war-game-core #245)
@@ -398,12 +412,12 @@ def run(scale=3.0, page=2048):
             raise SystemExit(f"missing renders: {missing}")
         view = view_of(frames)
         tables, pages, px, per = pack(frames, f"castle_{c}", cdir, page, f)
-        pieces, tiles, layouts = castle_table(c)
+        pieces, decor, layouts = castle_table(c)
         for pc in pieces.values():               # a front layer with nothing in it (pack skips it) is not listed
             pc["frames"] = {k: v for k, v in pc["frames"].items() if v in tables["color"]}
-        man = {"format": "war-game castle 1", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
+        man = {"format": "war-game castle 2", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
                **({"view": view} if view else {}), "team_gain": TEAM_GAIN, "pages": pages,
-               "pieces": pieces, "tiles": tiles, "layouts": layouts,
+               "pieces": pieces, "decor": decor, "layouts": layouts,
                "frames": tables["color"], "team": tables["team"], "shadows": tables["shadow"]}
         (cdir / f"castle_{c}.json").write_text(json.dumps(man, separators=(",", ":")))
         mem_c[c] = memory(px, tables)
