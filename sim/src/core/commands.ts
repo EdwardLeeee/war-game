@@ -17,6 +17,7 @@ import {
   PlaceBit,
   Reject,
   Resource,
+  type SimEvent,
   Stance,
   TownChoice,
   TownState,
@@ -43,6 +44,7 @@ import {
   rank,
   RETREAT_OWN_SPEED,
   CAVALRY,
+  MARKET,
   SIEGE,
   GARRISON,
   GARRISON_TYPES,
@@ -65,6 +67,8 @@ export interface CommandContext {
   econ: Economy;
   /** Next formation group id. */
   nextGroup: { value: number };
+  /** An event for player `to` (D-101: `traded`). */
+  emit?: (to: number, ev: SimEvent) => void;
 }
 
 /** Own, living units named in the command, in id order (duplicates dropped). */
@@ -264,6 +268,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (type === BuildingType.Outpost && !OUTPOST.on) return Reject.NotAvailable;
       // D-099: the siege works only while SIEGE is on.
       if (type === BuildingType.SiegeWorks && !SIEGE.on) return Reject.NotAvailable;
+      // D-101: the market only while MARKET is on.
+      if (type === BuildingType.Market && !MARKET.on) return Reject.NotAvailable;
       const info = BUILDINGS[type];
       if (!info.requires.every((r) => hasFinished(w, p, r))) return Reject.NotAvailable;
       const placement = placeCheck(ctx, p, type, cmd.x, cmd.y);
@@ -392,6 +398,34 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       if (!cellOk(w, cmd.x, cmd.y)) return Reject.InvalidTarget;
       w.buildings.col.rallyX[bs] = (cmd.x << CELL_SHIFT) + 512;
       w.buildings.col.rallyY[bs] = (cmd.y << CELL_SHIFT) + 512;
+      return 0;
+    }
+    case "trade": {
+      // D-101: food or wood for gold at the market, lot by lot at one's own prices, all or nothing.
+      if (!MARKET.on) return Reject.NotAvailable;
+      const r = cmd.resource;
+      if (r !== Resource.Food && r !== Resource.Wood) return Reject.InvalidTarget;
+      if (typeof cmd.buy !== "boolean" || !Number.isInteger(cmd.lots) || cmd.lots < 1 || cmd.lots > MARKET.maxLots) return Reject.InvalidTarget;
+      if (!hasFinished(w, p, BuildingType.Market)) return Reject.NoMarket;
+      const k = p * 2 + (r === Resource.Food ? 0 : 1);
+      let price = w.marketPrice[k];
+      let gold = 0;
+      for (let i = 0; i < cmd.lots; i++) {
+        if (cmd.buy) {
+          gold += price;
+          price = Math.min(MARKET.max, price + MARKET.step);
+        } else {
+          gold += idiv(price * MARKET.sellPermille, 1000);
+          price = Math.max(MARKET.min, price - MARKET.step);
+        }
+      }
+      const amount = cmd.lots * MARKET.lot;
+      if (cmd.buy ? w.res[p * 4 + Resource.Gold] < gold : w.res[p * 4 + r] < amount) return Reject.CannotAfford;
+      w.res[p * 4 + Resource.Gold] += cmd.buy ? -gold : gold;
+      w.res[p * 4 + r] += cmd.buy ? amount : -amount;
+      w.marketPrice[k] = price;
+      w.marketLots[p] += cmd.lots;
+      ctx.emit?.(p, { k: "traded", resource: r, buy: cmd.buy, lots: cmd.lots, amount, gold });
       return 0;
     }
     case "eco_ratio": {
