@@ -20,10 +20,10 @@ const S = TICKS_PER_SECOND;
  * Off: the castles and the big city's tower of D-089 (castle-layout.ts), as before.
  */
 export const KEEP = {
-  on: false,
+  on: true,
   hp: [600, 1000],
   arrow: [
-    { damage: 6, range: 7 * CELL, cooldown: 2 * S },
+    { damage: 4, range: 7 * CELL, cooldown: 2 * S },
     { damage: 10, range: 7 * CELL, cooldown: 2 * S },
   ],
   size: 3,
