@@ -48,7 +48,17 @@ async function orderFarmers(page: Page): Promise<void> {
     const me = g.me();
     const farmers = g.units().filter((u) => u.owner === me && u.type === 0);
     g.select(farmers.map((u) => u.id));
-    return g.openCellNear(farmers[0].cx + 3, farmers[0].cy - 3);
+    // Open ground with no unit within 3 cells: at 200 ticks a second a villager walking onto the cell
+    // tapped is selected instead of ordered (WebKit on CI, run 40097502995).
+    const units = g.units();
+    const clear = (c: { x: number; y: number }) => units.every((u) => (u.fx - c.x - 0.5) ** 2 + (u.fy - c.y - 0.5) ** 2 >= 9);
+    for (let r = 0; r <= 8; r++) {
+      for (const [dx, dy] of [[r, -r], [r, r], [-r, -r], [-r, r], [r, 0], [0, -r], [-r, 0], [0, r]]) {
+        const c = g.openCellNear(farmers[0].cx + 3 + dx, farmers[0].cy - 3 + dy);
+        if (c !== null && clear(c)) return c;
+      }
+    }
+    return null;
   });
   if (target === null) throw new Error("no open cell near the farmers");
   await tap(page, await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [target.x, target.y] as const));
