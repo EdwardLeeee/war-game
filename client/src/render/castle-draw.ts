@@ -10,9 +10,13 @@
 // stand_in_m towards the town), drawn over the wall's pieces in their row and under the pieces'
 // front parts (intact_front); a gate closed, open, damaged or broken (gate pieces' frames), the
 // tower's arrows leaving from its shoot_at_m.
+// Castle 2 (art-v6, R8-36 B, the user 2026-10-23): no floor tiles (the ground's shader draws the
+// lanes and trampled earth, world.ts); what lives in the town (huts, sheds, stacks, a well, a cart)
+// standing with the units, a hut's little flag its holder's colour; left out where a building stands
+// on its cells and in ruins. Pictures only: never tapped (not in the pictures `pick` looks at).
 
 import { Container, Graphics, Sprite } from "pixi.js";
-import { type CastleFit, type CastlePieceInfo, type CastleState, GATE_OPEN_CELLS, type GateLook, fitLayout, gateLook, inward } from "../art/castle.ts";
+import { type CastleDecor, type CastleFit, type CastlePieceInfo, type CastleState, decorHidden, type Footprint, GATE_OPEN_CELLS, type GateLook, fitLayout, gateLook, inward } from "../art/castle.ts";
 import { viewFits } from "../art/structures.ts";
 import type { Projection } from "../camera/projection.ts";
 import { BUILDING_STRIDE, BuildingField as B, BuildingType, Fog, NEUTRAL, NO_OWNER, TownField as T, TownSize, TownState, UNIT_STRIDE, UnitField as U } from "../sim.ts";
@@ -55,11 +59,22 @@ interface PieceSprites {
   cells: number[];
 }
 
+/** A decor piece's pictures (castle 2), its map cells (the fog), whether it was left out last drawn. */
+interface DecorSprites {
+  d: CastleDecor;
+  color: Sprite;
+  team: Sprite;
+  shadow: Sprite;
+  cells: number[];
+  hidden: boolean;
+}
+
 interface TownDraw {
   fit: CastleFit | null;
   pieces: PieceSprites[];
   floor: { sprite: Sprite; cell: number }[];
-  /** Its look as last drawn (state, owner). */
+  decor: DecorSprites[];
+  /** Its look as last drawn (state, owner, gates, decor left out). */
   look: string;
 }
 
@@ -132,6 +147,7 @@ export class CastleDraw {
     this.fogVersion = this.view.fogVersion;
     const blockTowns: { town: TownSpot; tint: number | null }[] = [];
     const around = this.gateSurroundings();
+    const footprints = this.footprints();
     for (const town of this.view.knownTowns.values()) {
       const castle = this.view.castleOf(town);
       if (castle === null) continue;
@@ -149,7 +165,8 @@ export class CastleDraw {
         continue;
       }
       const gates = this.gateLooks(d, state === TownState.Ruins, owner, around);
-      const look = `${state}|${owner}|${gates}`;
+      const decor = this.decorLeftOut(town, d, state === TownState.Ruins, footprints);
+      const look = `${state}|${owner}|${gates}|${decor}`;
       if (look !== d.look || fogChanged) {
         d.look = look;
         this.dress(town, d, state === TownState.Ruins ? "ruin" : "intact", owner);
@@ -164,7 +181,7 @@ export class CastleDraw {
 
   /** The town's pieces and tiles, laid on its castle; null fit (blocks) when the pictures are off or none fits. */
   private build(town: TownSpot): TownDraw {
-    const d: TownDraw = { fit: null, pieces: [], floor: [], look: "" };
+    const d: TownDraw = { fit: null, pieces: [], floor: [], decor: [], look: "" };
     const c = this.art?.castle ?? null;
     const castle = this.view.castleOf(town);
     if (!this.pictures || c === null || castle === null) return d;
@@ -180,12 +197,12 @@ export class CastleDraw {
     const n = this.view.map.size;
     const ox = town.cellX + fit.dx;
     const oy = town.cellY + fit.dy;
-    for (const tile of fit.layout.floor) {
+    for (const tile of fit.layout.floor ?? []) {
       const s = new Sprite();
       s.visible = false;
       this.floorLayer.addChild(s);
       const at = this.projection.toPlane((ox + tile.cell[0] + 0.5) * TILE_PX, (oy + tile.cell[1] + 0.5) * TILE_PX);
-      put(s, this.art?.castleFrame("color", c.tiles[tile.tile] ?? "") ?? null, at.x, at.y, this.scale, this.floorInsets);
+      put(s, this.art?.castleFrame("color", c.tiles?.[tile.tile] ?? "") ?? null, at.x, at.y, this.scale, this.floorInsets);
       const x = ox + tile.cell[0];
       const y = oy + tile.cell[1];
       d.floor.push({ sprite: s, cell: x >= 0 && y >= 0 && x < n && y < n ? y * n + x : -1 });
@@ -233,12 +250,48 @@ export class CastleDraw {
       if (opening.length > 0) for (const cell of cells) this.gateCells.set(cell, { town: town.id, piece: i });
       d.pieces.push({ color, team, shadow, front: frontPart, gate: opening.length > 0 ? { cells: opening, look: "closed" } : null, box: { x0: 0, y0: 0, x1: 0, y1: 0 }, z, cells });
     });
+    // What lives in the town (castle 2): standing with the units, by its front edge.
+    (fit.layout.decor ?? []).forEach((p, i) => {
+      const color = new Sprite();
+      const team = new Sprite();
+      const shadow = new Sprite();
+      color.visible = team.visible = shadow.visible = false;
+      this.upright.addChild(color, team);
+      this.shadowLayer.addChild(shadow);
+      const front = this.projection.toPlane(0, (oy + p.front) * TILE_PX).y;
+      const z = depthOf(front, ox + Math.min(...p.cells.map(([x]) => x)), 2_000_000 + town.id * 100 + i);
+      color.zIndex = z;
+      team.zIndex = z + 0.000001;
+      const cells = p.cells.map(([x, y]) => [ox + x, oy + y]).filter(([x, y]) => x >= 0 && y >= 0 && x < n && y < n).map(([x, y]) => y * n + x);
+      d.decor.push({ d: p, color, team, shadow, cells, hidden: false });
+    });
     // Corners, towers and a gate's piers without their own points (art-v5 to v5.1): a neighbour's height, in the cell's middle.
     for (const { cell, z } of borrow) {
       const near = [cell - 1, cell + 1, cell - n, cell + n].map((c2) => this.wallStand.get(c2)).find((v) => v !== undefined);
       if (near !== undefined) this.wallStand.set(cell, { z, walkM: near.walkM, dx: 0, dy: 0 });
     }
     return d;
+  }
+
+  /** This snapshot's buildings' footprints, finished or not (a decor piece is left out under one). */
+  private footprints(): Footprint[] {
+    const b = this.view.curr?.snap.buildings;
+    const out: Footprint[] = [];
+    if (b === undefined || !this.pictures) return out;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) out.push(this.view.footprint(b, o));
+    return out;
+  }
+
+  /** Its decor pieces left out now (R8-36 B: in ruins, or a building on them), kept on them; a key of them. */
+  private decorLeftOut(town: TownSpot, d: TownDraw, ruins: boolean, footprints: readonly Footprint[]): string {
+    const fit = d.fit;
+    if (fit === null || d.decor.length === 0) return "";
+    let key = "";
+    for (const s of d.decor) {
+      s.hidden = decorHidden(s.d, town.cellX + fit.dx, town.cellY + fit.dy, footprints, ruins);
+      key += s.hidden ? "1" : "0";
+    }
+    return key;
   }
 
   /** This snapshot's gate buildings (row by top-left cell) and everyone's cells by owner, for the gates' looks. */
@@ -337,6 +390,18 @@ export class CastleDraw {
         s.box = { x0: at.x - color.ax * w, y0: at.y - color.ay * h, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h };
       }
     });
+    // What lives in the town: its picture, shadow and (a hut) its flag in the holder's colour; left out in ruins or under a building.
+    for (const s of d.decor) {
+      const name = c.decor?.[s.d.piece] ?? "";
+      const at = this.projection.toPlane((ox + s.d.at[0]) * TILE_PX, (oy + s.d.at[1]) * TILE_PX);
+      const shown = !s.hidden && s.cells.some(seen);
+      put(s.color, shown ? (this.art?.castleFrame("color", name) ?? null) : null, at.x, at.y, this.scale);
+      put(s.team, shown && team !== null ? (this.art?.castleFrame("team", name) ?? null) : null, at.x, at.y, this.scale);
+      put(s.shadow, shown ? (this.art?.castleFrame("shadow", name) ?? null) : null, at.x, at.y, this.scale);
+      const tint = s.cells.some(inView) ? 0xffffff : OUT_OF_VIEW;
+      s.color.tint = tint;
+      if (team !== null) s.team.tint = tint === OUT_OF_VIEW ? OUT_OF_VIEW : team;
+    }
   }
 
   /** The castles with no pictures: their wall cells as stone blocks, the gates marked; inside tinted only when there are no pictures at all. */
@@ -466,23 +531,53 @@ export class CastleDraw {
     return false;
   }
 
-  /** For the test page: pieces and tiles shown, towns drawn as blocks, and those no layout fits. */
-  get counts(): { pieces: number; tiles: number; blockTowns: number; misfit: number } {
+  /** For the test page: pieces and tiles shown, towns drawn as blocks, those no layout fits; decor pieces shown and left out (castle 2). */
+  get counts(): { pieces: number; tiles: number; blockTowns: number; misfit: number; decor: number; decorLeftOut: number } {
     let pieces = 0;
     let tiles = 0;
     let blockTowns = 0;
+    let decor = 0;
+    let decorLeftOut = 0;
     for (const d of this.towns.values()) {
       if (d.fit === null) blockTowns++;
       pieces += d.pieces.filter((p) => p.color.visible).length;
       tiles += d.floor.filter((f) => f.sprite.visible).length;
+      decor += d.decor.filter((s) => s.color.visible).length;
+      decorLeftOut += d.decor.filter((s) => s.hidden).length;
     }
-    return { pieces, tiles, blockTowns, misfit: this.misfit.size };
+    return { pieces, tiles, blockTowns, misfit: this.misfit.size, decor, decorLeftOut };
+  }
+
+  /** For the test page (castle 2): every decor piece, its town, its map cells, its anchor (world px), shown or left out. */
+  decorForTest(): { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean }[] {
+    const out: { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean }[] = [];
+    for (const [id, d] of this.towns) {
+      const town = this.view.knownTowns.get(id);
+      if (town === undefined || d.fit === null) continue;
+      const ox = town.cellX + d.fit.dx;
+      const oy = town.cellY + d.fit.dy;
+      for (const s of d.decor) {
+        out.push({ town: id, piece: s.d.piece, cells: s.d.cells.map(([x, y]) => [ox + x, oy + y]), x: (ox + s.d.at[0]) * TILE_PX, y: (oy + s.d.at[1]) * TILE_PX, shown: s.color.visible, leftOut: s.hidden });
+      }
+    }
+    return out;
+  }
+
+  /** The towns as laid out now (castle 2's ground for the shader, world.ts): each fitted town, its centre cell and fit. */
+  fitted(): { town: TownSpot; fit: CastleFit }[] {
+    const out: { town: TownSpot; fit: CastleFit }[] = [];
+    for (const [id, d] of this.towns) {
+      const town = this.view.knownTowns.get(id);
+      if (town !== undefined && d.fit !== null) out.push({ town, fit: d.fit });
+    }
+    return out;
   }
 
   destroy(): void {
     for (const d of this.towns.values()) {
       for (const p of d.pieces) for (const s of [p.color, p.team, p.shadow, p.front]) s.destroy();
       for (const f of d.floor) f.sprite.destroy();
+      for (const s of d.decor) for (const sp of [s.color, s.team, s.shadow]) sp.destroy();
     }
     this.towns.clear();
     this.floorInsets.destroy();

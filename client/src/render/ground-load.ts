@@ -3,7 +3,7 @@
 // the test page's stand-ins (scripts/make-test-atlas.ts). Each texture downloaded and decoded as
 // the atlases' pages are (unit-art.ts), then made tileable.
 
-import { GROUND_LAYERS, parseGround } from "../art/ground.ts";
+import { GROUND_LAYERS, parseGround, townGroundOn } from "../art/ground.ts";
 import type { LoadRecorder } from "../lab/load-times.ts";
 import { type GroundTextures, noiseTexture, tileTexture } from "./ground-draw.ts";
 import { json, page } from "./unit-art.ts";
@@ -40,7 +40,18 @@ export async function loadGround(bases: readonly string[], times: LoadRecorder |
         console.warn(`ground: water: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    return { json: g, layers, noise, macro, water };
+    // The towns' lanes and trampled earth (art-v6, rules.town): the layers it names (`yard`); they will not load, no towns' ground.
+    let town: GroundTextures["town"] = null;
+    if (townGroundOn(g)) {
+      const ids = [...new Set(Object.values(g.rules.town?.layers ?? {}).flatMap((l) => [l.lane, l.trampled]))];
+      try {
+        const loaded = await Promise.all(ids.map(async (id) => [id, tileTexture(await page(`${base}${g.layers.find((l) => l.id === id)?.file ?? ""}`, times, undefined, true))] as const));
+        town = Object.fromEntries(loaded);
+      } catch (err) {
+        console.warn(`ground: town: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return { json: g, layers, noise, macro, water, town };
   }
   return null;
 }

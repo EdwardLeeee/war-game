@@ -116,9 +116,11 @@ export interface GameHook {
   culture(): string;
   /** The castles as drawn (D-089): wall pieces and floor tiles shown, towns drawn as blocks, towns no layout fits, units drawn behind a wall. */
   /** `walkable`: the pictures say where those on a wall stand (art-v5.2); `gates`: the gates drawn from pictures, by look (D-096). */
-  castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number> } | null;
+  castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null;
+  /** 城內 B (castle 2): the towns' decor pieces: town, map cells, where its anchor is on screen (CSS px), shown or left out. */
+  decor(): { town: number; piece: string; cells: [number, number][]; sx: number; sy: number; shown: boolean; leftOut: boolean }[];
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
-  groundLook(): { real: boolean; quality: string | null; water: boolean } | null;
+  groundLook(): { real: boolean; quality: string | null; water: boolean; town: boolean } | null;
   setGroundQuality(q: "high" | "low"): void;
   /** The ground's pictures (art-v5, R6-51): drawn from them or not, and how many pieces lie flat or stand. */
   terrain(): { pictures: boolean; pieces: number; flat: number; standing: number } | null;
@@ -313,6 +315,11 @@ export function gameHook(game: Game): GameHook {
     art: () => game.artForTest,
     culture: () => game.culture,
     castle: () => game.castleForTest,
+    decor: () =>
+      (game.decorForTest ?? []).map(({ x, y, ...d }) => {
+        const at = game.camera?.worldToScreen(x, y) ?? { x: 0, y: 0 };
+        return { ...d, sx: at.x, sy: at.y };
+      }),
     groundLook: () => game.groundForTest,
     setGroundQuality: (q) => game.setGroundQuality(q),
     terrain: () => game.terrainForTest,
