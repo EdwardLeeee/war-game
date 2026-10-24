@@ -141,11 +141,13 @@ if (flag("crush")) {
   plan.crush = true;
 }
 /**
- * push-crush (ceo 2026-10-25): the player's gathering plus this many percent (--bonus 30), credited to its
- * stock every 20 ticks from what its farmers gathered; for the measurement only (the game's log does not
- * replay it). 0: none.
+ * push-crush (ceo 2026-10-25): the player's gathering of food, wood and gold plus this many percent (--bonus
+ * 50), credited every 20 ticks in equal shares of the three (its own gold runs out, and a share of nothing is
+ * nothing); for the measurement only (the game's log does not replay it). 0: none.
  */
 const BONUS = Number(arg("bonus", "0"));
+// Barracks plus ranges at most (--production 8; else the plan's).
+plan.production = Number(arg("production", String(plan.production)));
 // D-097: cavalry this share of its soldiers (percent), a stable once it has a range (--cavalry-share 18).
 plan.cavalryShare = Number(arg("cavalry-share", String(plan.cavalryShare)));
 /** D-086 A: an AI order this soon after its last order at the player's main city is the same march. */
@@ -469,8 +471,8 @@ function play(seed: number): GameRecord {
   const pace: GameRecord["pace"] = {};
   const goldWatch = new GoldWatch(w);
   const crushWatch = new CrushWatch();
-  const bonusLast = [0, 0, 0, 0];
-  const bonusLeft = [0, 0, 0, 0];
+  const bonusLast = [0, 0, 0];
+  let bonusLeft = 0;
   const towersOf = (p: number) => {
     let n = 0;
     for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === BuildingType.ArrowTower) n++;
@@ -494,14 +496,14 @@ function play(seed: number): GameRecord {
     }
     r.tick();
     if (BONUS > 0 && w.tick % 20 === 0) {
-      for (let k = 0; k < 4; k++) {
-        const got = w.gathered[k] - bonusLast[k];
+      const kinds = [Resource.Food, Resource.Wood, Resource.Gold];
+      for (const k of kinds) {
+        bonusLeft += (w.gathered[k] - bonusLast[k]) * BONUS;
         bonusLast[k] = w.gathered[k];
-        bonusLeft[k] += got * BONUS;
-        const add = Math.trunc(bonusLeft[k] / 100);
-        bonusLeft[k] -= add * 100;
-        w.res[k] += add;
       }
+      const share = Math.trunc(bonusLeft / (100 * kinds.length));
+      bonusLeft -= share * 100 * kinds.length;
+      for (const k of kinds) w.res[k] += share;
     }
     deaths.tick(w);
     crushWatch.tick(w);
@@ -883,7 +885,8 @@ const options = [
   plan.crush
     ? "大勝後反攻（push-crush）：用守塔的經濟和家旁箭樓；在家打退 15 名以上的一波後，兵 30 名以上、而且是最近 30 秒看到最多的電腦兵的 1.3 倍以上就出門，先打電腦治理的城（離家近的先），再打電腦主城；在外面看到附近的電腦兵比自己兵的 1/1.3 多就退回家，等下一次打退大波再出門"
     : "",
-  BONUS > 0 ? `玩家採集 +${BONUS}%（只有這組；這組的局不能用紀錄重播）` : "",
+  BONUS > 0 ? `玩家採集 +${BONUS}%（糧木金採到的總量多 ${BONUS}%，平均分成糧、木、金；只有這組，這組的局不能用紀錄重播）` : "",
+  plan.crush && plan.production !== 4 ? `兵營加射場最多 ${plan.production} 座` : "",
   plan.turtle && !plan.crush ? `守塔慢拿城（A5）：第 15 分前先養到 40 名村民（糧優先，兵最多 25 名）、家旁箭樓第 14 分起蓋（第 20 分 7 座、第 25 分 10 座、第 30 分 20 座，同時最多蓋 3 棟）、治理的城鎮和離家的礦場旁各 2 座、家旁 6 座哨所（前 2 座各 3 名槍兵）；家旁的金快挖完時派 1 名槍兵找下一片金礦、在那裡蓋礦場，金太多時村民改採糧和木；電腦來打家時遠程兵躲進家旁箭樓和主城；家旁箭樓 7 座、兵 ${plan.townAt} 名而且比最近看到的電腦兵多才去拿城、打下來就治理（大城在兵 40 名以後），兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門，騎兵 ${plan.cavalryShare}%` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
