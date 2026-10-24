@@ -15,6 +15,8 @@ import { type CastleMap, castleOf } from "./castle.ts";
 import { Rng } from "./fixed.ts";
 import { FIXED_TERRAIN } from "./fixed-terrain.ts";
 import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
+import { forestCells, homeForests } from "./forests.ts";
+import { dir16 } from "./fixed.ts";
 
 export const MAP_SIZE = 96;
 export const MAP_SEED = 20261001;
@@ -133,6 +135,12 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
   blob(24, 91, 4, (x, y) => setNode(x, y, NodeKind.Tree));
   for (const [x, y] of [[26, 84], [27, 84], [26, 85], [27, 85]]) kind[y * n + x] = NodeKind.GoldMine;
   for (const [x, y] of [[8, 86], [9, 86], [10, 86], [8, 87], [9, 87], [10, 87]]) kind[y * n + x] = NodeKind.Berries;
+  // D-101 (RICH.forests): more forests by the main city, its back to the map's middle first.
+  if (RICH.on && RICH.forests > 0) {
+    const free = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && inLower(x, y) && reserved[y * n + x] === 0 && rock[y * n + x] === 0 && kind[y * n + x] === -1;
+    const back = dir16(P0.x - (n >> 1), P0.y - (n >> 1));
+    for (const [cx, cy] of homeForests(P0.x, P0.y, RICH.forests, back, free)) for (const [x, y] of forestCells(cx, cy)) setNode(x, y, NodeKind.Tree);
+  }
   // A second gold mine on the way to the small town.
   for (const [x, y] of [[14, 52], [15, 52], [14, 53], [15, 53]]) kind[y * n + x] = NodeKind.GoldMine;
 
@@ -276,6 +284,8 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
             : NODE_AMOUNT.crystalCell;
     nodes.push({ kind: k as NodeKind, cellX: i % n, cellY: Math.trunc(i / n), amount });
   }
+  // D-101 (RICH.farTree): the trees far from both main cities.
+  if (RICH.on && RICH.farTree > 0) farTrees(nodes, [P0, { x: P0.y, y: P0.x }]);
   const terrain = new Uint8Array(n * n);
   for (let i = 0; i < n * n; i++) terrain[i] = wall[i] === 1 ? Terrain.Wall : ground[i] !== 0 ? ground[i] : rock[i] === 1 ? Terrain.Blocked : Terrain.Open;
 
@@ -333,4 +343,15 @@ function isInteriorOfGroup(kind: Int8Array, n: number, x: number, y: number): bo
     const ny = y + dy;
     return nx >= 0 && ny >= 0 && nx < n && ny < n && kind[ny * n + nx] === k;
   });
+}
+
+/** Cells from both main cities beyond which a tree holds RICH.farTree (D-101). */
+export const FAR_TREE = 20;
+
+/** D-101 (RICH.farTree): every tree more than FAR_TREE cells from all the main cities holds RICH.farTree. */
+export function farTrees(nodes: NodeSpec[], homes: { x: number; y: number }[]): void {
+  for (const nd of nodes) {
+    if (nd.kind !== NodeKind.Tree) continue;
+    if (homes.every((h) => (nd.cellX - h.x) * (nd.cellX - h.x) + (nd.cellY - h.y) * (nd.cellY - h.y) > FAR_TREE * FAR_TREE)) nd.amount = RICH.farTree;
+  }
 }

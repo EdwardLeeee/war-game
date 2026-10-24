@@ -22,6 +22,7 @@ const S = TICKS_PER_SECOND;
 export const KEEP = {
   on: false,
   hp: [600, 1000],
+  // Ranges before LONG_BOWS: while it is on (as in play), every building's arrows reach LONG_BOWS.arrowRange (9 cells; rules.ts).
   arrow: [
     { damage: 4, range: 7 * CELL, cooldown: 2 * S },
     { damage: 10, range: 7 * CELL, cooldown: 2 * S },
