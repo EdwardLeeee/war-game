@@ -460,6 +460,8 @@ export class Game implements GestureHost {
    */
   private readonly lastSent = new Map<number, { to: Spot | null; target: number | null; went: Spot; seq: number }>();
   private sentSeq = 0;
+  /** 攻城砲's atlases asked for in this game (D-099: once one is seen). */
+  private siegeArtAsked = false;
   /** 等錢治理 (ceo 2026-10-21): towns whose 治理 waits for its cost, and the reserve raised meanwhile. */
   readonly governWaits = new GovernWaits();
   /**
@@ -1845,8 +1847,7 @@ export class Game implements GestureHost {
       case "ready": {
         this.started.ready = performance.now();
         this.view = new GameView(msg.player ?? 0, msg.map, msg.rules);
-        // 攻城砲 (D-099): their atlases only in a game that has them (drawn as shapes until they are in).
-        if (features(msg.rules).siege === true) void this.options.art?.addAtlases(SIEGE_ATLASES);
+        this.siegeArtAsked = false;
         // The map as a diamond (D-085; docs/sprite-atlas.md section 1): the camera, taps and boxes, and the drawing.
         const projection = this.options.view === undefined ? PROJECTION_DEFAULT : PROJECTIONS[this.options.view];
         this.view.projection = projection;
@@ -1931,6 +1932,7 @@ export class Game implements GestureHost {
             this.hud.onEvent(ev);
           }
         }
+        this.askSiegeArt(view);
         this.stances.settle(view.header?.[H.tick] ?? 0, (id) => (view.unitRow(id) >= 0 ? view.unitStance(id) : null));
         this.cannonsOn(view);
         this.pending.settle(view.header?.[H.tick] ?? 0);
@@ -2432,6 +2434,22 @@ export class Game implements GestureHost {
     if (latest === null) return null;
     const to = latest.target === null ? latest.to : (this.targetCell(latest.target) ?? latest.to);
     return to === null ? null : { to, went: latest.went };
+  }
+
+  /**
+   * 攻城砲 (D-099): their atlases once one is first seen in this game, ours or anyone's (drawn as shapes
+   * until they are in), not as soon as the rules have them (SIEGE on with art-v6): most games have
+   * none for a long while, and a page left in the middle of loading them throws on WebKit.
+   */
+  private askSiegeArt(view: GameView): void {
+    const u = view.curr?.snap.units;
+    if (this.siegeArtAsked || u === undefined || features(view.rules).siege !== true) return;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.type] !== UnitType.Siege) continue;
+      this.siegeArtAsked = true;
+      void this.options.art?.addAtlases(SIEGE_ATLASES);
+      return;
+    }
   }
 
   /** Enemies in sight now (cells): units of the other players and the towns' militia. */
