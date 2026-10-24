@@ -11,10 +11,11 @@
 import { Container, Sprite } from "pixi.js";
 import { animFor, attackFrame, type AtlasJson, CORPSE_FADE_S, CORPSE_HOLD_S, type Culture, fpsOf, frameAt, frameName, pictureDirection, UNIT_ATLAS, walkFps, workOfNode, type WorkKind } from "../art/spec.ts";
 import { type Projection, TOP } from "../camera/projection.ts";
-import { Action, BuildingType, BuildingField as B, Fog, HeaderField as H, NodeField as N, Order, TICKS_PER_SECOND, UnitField as U, UnitFlag, UNIT_STRIDE } from "../sim.ts";
+import { Action, BuildingType, BuildingField as B, Fog, HeaderField as H, NodeField as N, Order, TICKS_PER_SECOND, UnitField as U, UnitFlag, UnitType, UNIT_STRIDE } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { ownerTint } from "./atlas.ts";
+import { ARROW_FROM_M } from "./missile.ts";
 import type { ArtFrame, UnitArt } from "./unit-art.ts";
 
 interface Slot {
@@ -42,13 +43,18 @@ interface AnimState {
   shieldSince: number;
   /** The body's `hit` or `shatter`, played once over idling or attacking (spec section 7). */
   struck: { anim: "hit" | "shatter"; since: number } | null;
-  /** The sling's throws so far in this attack (D-096): a stone leaves once a throw. */
+  /** The sling's throws (D-096) or the bow's shots (真的箭) so far in this attack: one leaves a throw. */
   thrown: number;
 }
 
-/** A stone leaving a militia's sling this frame (D-096): the picture's direction, mirrored or not, where from (anims.sling.stone_from_m). */
-export interface SlingRelease {
+/**
+ * A stone leaving a militia's sling (D-096) or an arrow a bowman's bow (真的箭, R8-35 B) this frame:
+ * the picture's direction, mirrored or not, where from (anims.sling.stone_from_m; effects
+ * arrow.from_m), metres from the feet.
+ */
+export interface Release {
   id: number;
+  kind: "stone" | "arrow";
   direction: number;
   mirror: boolean;
   from: [number, number, number];
@@ -104,8 +110,8 @@ export class ArtUnits {
   /** The landing dust (spec section 11), one a falling unit, from the world effects atlas. */
   private readonly dustSprites: Sprite[] = [];
   private readonly anims = new Map<number, AnimState>();
-  /** Stones that left a sling since the last takeReleases (D-096). */
-  private releases: SlingRelease[] = [];
+  /** Stones that left a sling (D-096) and arrows a bow (真的箭) since the last takeReleases. */
+  private releases: Release[] = [];
   private seen = new Map<number, Seen>();
   private corpses: Corpse[] = [];
   private lastTick = -1;
@@ -152,8 +158,8 @@ export class ArtUnits {
     return o >= 0 && b !== undefined && b[o + B.type] === BuildingType.Farm ? "farm" : null;
   }
 
-  /** The stones that left a sling since the last call (D-096), for the world to throw. */
-  takeReleases(): SlingRelease[] {
+  /** The stones that left a sling (D-096) and the arrows a bow since the last call, for the world to throw. */
+  takeReleases(): Release[] {
     const r = this.releases;
     this.releases = [];
     return r;
@@ -211,14 +217,18 @@ export class ArtUnits {
     }
     this.place(s, a, anim, dir, index, owner, px, py, 1, lift, z);
     if (!shadow) s.shadow.visible = false;
-    // The sling's stone leaves at its hit frame, once a throw (one a cooldown).
+    // The sling's stone leaves at its hit frame, once a throw (one a cooldown); a bowman's arrow
+    // too, once the effects have the arrow (真的箭, art-v6: before, bowmen shoot none, as before).
     const sling = a.anims.sling;
-    if (anim === "sling" && sling?.hit !== undefined && sling.stone_from_m !== undefined && index >= sling.hit) {
+    const bow = type === UnitType.Ranged && anim === "attack" ? this.art.effects?.effects.arrow : undefined;
+    const from = anim === "sling" ? sling?.stone_from_m : bow === undefined ? undefined : (bow.from_m?.[a.unit] ?? ARROW_FROM_M);
+    const hit = a.anims[anim]?.hit;
+    if (from !== undefined && hit !== undefined && index >= hit) {
       const cooldown = (unitInfo?.cooldown ?? 20) / TICKS_PER_SECOND;
       const throwNo = Math.floor((seconds - st.since) / cooldown) + 1;
       if (throwNo > st.thrown) {
         st.thrown = throwNo;
-        this.releases.push({ id, direction: dir, mirror: frameName(a, anim, dir, index).mirror, from: sling.stone_from_m });
+        this.releases.push({ id, kind: anim === "sling" ? "stone" : "arrow", direction: dir, mirror: frameName(a, anim, dir, index).mirror, from });
       }
     }
     this.drawShield(s, a, st, seconds);

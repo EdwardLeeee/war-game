@@ -8,7 +8,7 @@
 // otherwise flicker in front of it and behind it. Only the picture: the game is the same.
 
 import { Container, Sprite } from "pixi.js";
-import { type Culture } from "../art/spec.ts";
+import { type Culture, M_PER_CELL } from "../art/spec.ts";
 import { buildingEntry, buildingFrame, buildingState, type BuildingEntry, cropStage, nodeFrame, type NodeEntry, RUBBLE_FADE_S, RUBBLE_HOLD_S, type Side, viewFits } from "../art/structures.ts";
 import { buildingFront, depthOf, nodeFront } from "./depth.ts";
 import type { Projection } from "../camera/projection.ts";
@@ -17,6 +17,9 @@ import { TILE_PX } from "../tuning.ts";
 import type { GameView } from "../view/view.ts";
 import { ownerTint } from "./atlas.ts";
 import type { ArtFrame, UnitArt } from "./unit-art.ts";
+
+/** Up on the plane per metre up (as castle-draw.ts). */
+const UP_PER_M = Math.sqrt(3) / 2;
 
 /** What is not in view now (remembered, or under the fog), drawn darker. */
 const OUT_OF_VIEW = 0x8a8a8a;
@@ -147,6 +150,35 @@ export class ArtStructures {
     // The rules' size for this map (the big city's tower is 3 × 3 with neighbouring spawns, D-074).
     const entry = json === undefined ? undefined : buildingEntry(json, type, this.view.rules.buildings[type]?.size);
     return entry === undefined ? null : { side, entry };
+  }
+
+  /**
+   * 真的箭 (art-v6): where the arrows of the building at row `o` leave its picture (shoot_at_m:
+   * metres from its anchor, the footprint's middle; x east, y south, z up), the one nearest
+   * (toX, toY) world px, `lift` points up; null without them.
+   */
+  shootFrom(o: number, toX: number, toY: number): { x: number; y: number; lift: number } | null {
+    const b = this.view.curr?.snap.buildings;
+    if (b === undefined) return null;
+    const found = this.entry(b[o + B.type], b[o + B.owner]);
+    const points = found?.entry.shoot_at_m ?? [];
+    if (found === null || points.length === 0) return null;
+    const size = found.entry.footprint[0];
+    const cx = (b[o + B.cellX] + size / 2) * TILE_PX;
+    const cy = (b[o + B.cellY] + size / 2) * TILE_PX;
+    const perM = TILE_PX / M_PER_CELL;
+    let best: { x: number; y: number; lift: number } | null = null;
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const [mx, my, mz] of points) {
+      const x = cx + mx * perM;
+      const y = cy + my * perM;
+      const d = (x - toX) ** 2 + (y - toY) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = { x, y, lift: mz * this.projection.ptPerM * UP_PER_M };
+      }
+    }
+    return best;
   }
 
   private visible(cellX: number, cellY: number, size: number): boolean {
