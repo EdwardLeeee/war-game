@@ -15,6 +15,9 @@ const KEEP = 9;
 const NEUTRAL_TOWN = { x: 36, y: 72 };
 const NEUTRAL_GROUND = { x: 40, y: 68 };
 const OUR_GROUND = { x: 12, y: 58 };
+/** Our small town's centre (its keep's middle cell). */
+const OUR_TOWN = { x: 16, y: 62 };
+const FARMER = 0;
 
 let checkErrors: () => void;
 
@@ -119,4 +122,17 @@ test("主堡（D-100）：沒選兵時點它，選取資訊寫主堡、城鎮的
   await expect(panel.locator(".sel-head b")).toHaveText("小鎮");
   await expect(panel.locator(".sel-num")).toContainText("主堡 600/600");
   await shot(page, info, "keep-town-panel");
+});
+
+test("我方的主堡滿血 600（小鎮）：選著村民點它是選取，不是修理（滿血照城鎮的，不是建築表的 1000）", async ({ page }) => {
+  await start(page, "&keep=1");
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const farmers = (await units(page)).filter((u) => u.owner === me && u.type === FARMER).map((u) => u.id).sort((a, b) => a - b);
+  const keep = (await buildings(page)).find((b) => b.type === KEEP && b.owner === me);
+  if (keep === undefined) throw new Error("no keep of ours");
+  await selectForCommands(page, farmers);
+  await tapCell(page, OUR_TOWN);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().building)).toBe(keep.id);
+  expect(await orders(page, "repair")).toEqual([]);
+  await expect(page.locator(".sel-info .sel-num")).toHaveText("生命 600/600");
 });

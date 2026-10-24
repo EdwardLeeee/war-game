@@ -503,7 +503,8 @@ export class GameView implements IntentWorld {
     const b = this.curr?.snap.buildings;
     if (o < 0 || b === undefined) return false;
     const type = b[o + B.type];
-    const max = this.rules.buildings[type]?.hp ?? 0;
+    // A gate's and a keep's full hit points are their town's (D-096, D-100).
+    const max = this.buildingMaxHp(b, o);
     return b[o + B.progress] < 1000 || b[o + B.hp] < max || type === BuildingType.Farm;
   }
 
