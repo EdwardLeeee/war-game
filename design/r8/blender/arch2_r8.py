@@ -183,6 +183,9 @@ def mine(root, c):
         import terrain_r8                             # the hillock in the approved rock (R8-26)
         terrain_r8._mass("mn_hill", root, terrain_r8.mats(), random.Random(31), cx=0.0, cy=1.35, radius=(1.2, 1.55), H=1.6,
                          nk=7, round_top=0.35, taper=0.3, cap=0.25, tilt=0.15)
+        for ob in kit.parts_under(root):              # ground, there before the building: never cut while it is built
+            if ob.name.startswith("mn_hill"):
+                ob["no_cut"] = True
         box("mn_adit", (0.9, 0.3, 1.3), P["dark"], root, loc=(-0.9, 0.5, 0.65))
         for sx in (-1, 1):
             box(f"mn_adp{sx}", (0.16, 0.2, 1.45), P["timber"], root, loc=(-0.9 + sx * 0.5, 0.42, 0.72))

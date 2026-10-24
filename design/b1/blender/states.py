@@ -136,6 +136,8 @@ def cut_above(root, z, keep_flags=False):
     for ob in kit.parts_under(root):
         if keep_flags and _is_flag(ob):
             continue
+        if ob.get("no_cut"):             # the ground the building stands on (the West mine's hillock, a scan grid:
+            continue                     # an EXACT Boolean on it ran for hours on CI)
         b = _bbox(ob)
         if b[2] >= z - 1e-4:
             _drop(ob)
