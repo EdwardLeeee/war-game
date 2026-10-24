@@ -993,6 +993,45 @@ button.order-retreat {
   font-size: 18px;
 }
 
+/* 市場 (D-101): a line per resource, its word then 買 and 賣, each with the gold now under it; using the width under the ✕. */
+.market {
+  margin: 4px -46px 0 0;
+}
+
+.market-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.market-word {
+  width: 1.4em;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.market-row button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.market-row button .sub {
+  font-size: 11px;
+}
+
+.market-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
 /* 收起 (D-054): the title line only; its button sits at the end of that line, left of the ✕. */
 .sel-fold {
   margin-left: auto;

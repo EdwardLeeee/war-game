@@ -2,10 +2,12 @@
 // right. Both rebuild their buttons only when what is selected changes (a button must not
 // be replaced under a finger); numbers that tick (health, progress) update in place.
 
+import { loadHintSeen, MARKET_HINT_KEY, saveHintSeen } from "../../hint-pref.ts";
 import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
 import { DEPOT_WORD } from "../../game/depot.ts";
 import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
 import { autoTrainBuildings, buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots } from "../../game/features.ts";
+import { MARKET_RESOURCES, marketOn, marketRules, buyPrice, sellGain, tradeBlock, tradeOne } from "../../game/market.ts";
 import { POST_TYPE } from "../../game/outpost.ts";
 import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
@@ -513,6 +515,8 @@ export class SelectionInfo {
     }
     // 哨所 (D-080): how many spearmen stand guard, ＋槍兵, 全部離開; then 攻擊／堅守 and what the one on means.
     const outpost = own && type === BuildingType.Outpost && outpostSlots(view.rules) > 0 ? this.outpostRows(id) : null;
+    // 市場 (D-101): our finished market's 買／賣 (the key above rebuilds the panel when it is finished).
+    const market = own && type === BuildingType.Market && b0[o0 + B.progress] >= 1000 && marketOn(view.rules) ? this.marketRows(view) : null;
     let headBar: ((f: number) => void) | null = null;
     if (queue !== null) {
       for (let i = 0; i < Math.min(queueLength, 7); i++) {
@@ -539,6 +543,7 @@ export class SelectionInfo {
       if (o < 0 || b === undefined) return;
       depot?.();
       outpost?.();
+      market?.();
       const max = view.buildingMaxHp(b, o);
       const building = b[o + B.progress] < 1000;
       hpBar(building ? b[o + B.progress] / 1000 : max > 0 ? b[o + B.hp] / max : 0);
@@ -590,6 +595,51 @@ export class SelectionInfo {
       attack.setAttribute("aria-pressed", String(!s.hold));
       hold.setAttribute("aria-pressed", String(s.hold));
       if (note.textContent !== s.text) note.textContent = s.text;
+    };
+  }
+
+  /**
+   * 市場 (D-101): a line each for food and wood, 買 100 and 賣 100 with the gold now (each tap one
+   * lot, at once: ceo 2026-10-24), greyed with why when it cannot; how prices move under them the
+   * first time only. Returns the update: the prices move with every trade, so the buttons stay and their lines change.
+   */
+  private marketRows(view: GameView): () => void {
+    const m = marketRules(view.rules);
+    const box = el("div", this.el, "market");
+    box.setAttribute("role", "group");
+    box.setAttribute("aria-label", "市場");
+    const rows = MARKET_RESOURCES.map((r) => {
+      const word = RESOURCE_WORD[r] ?? "";
+      const row = el("div", box, "market-row");
+      el("span", row, "market-word", word);
+      const buy = button(row, `買 ${m.lot} ${word}`, " ", () => this.host.command(tradeOne(r, true)), "secondary market-buy");
+      const sell = button(row, `賣 ${m.lot} ${word}`, " ", () => this.host.command(tradeOne(r, false)), "secondary market-sell");
+      return { r, word, buy, sell };
+    });
+    // How prices move: the first time a market's panel opens on this device only (the user, on the draft), so the panel stays short.
+    if (!loadHintSeen(MARKET_HINT_KEY)) {
+      saveHintSeen(MARKET_HINT_KEY);
+      el("p", box, "market-note", `每按一下買或賣 ${m.lot}。買了會變貴、賣了會變便宜，之後慢慢回到 ${m.start} 金。`);
+    }
+    const sub = (b: HTMLButtonElement, text: string) => {
+      const span = b.querySelector(".sub") as HTMLElement;
+      if (span.textContent !== text) span.textContent = text;
+    };
+    return () => {
+      const h = view.header;
+      if (h === null) return;
+      for (const { r, word, buy, sell } of rows) {
+        const price = buyPrice(h, r);
+        const gain = sellGain(price, m);
+        const noBuy = tradeBlock(h, r, true, m);
+        const noSell = tradeBlock(h, r, false, m);
+        sub(buy, noBuy ?? `付 ${price} 金`);
+        sub(sell, noSell ?? `得 ${gain} 金`);
+        buy.disabled = noBuy !== null;
+        sell.disabled = noSell !== null;
+        buy.setAttribute("aria-label", `買 ${m.lot} ${word}，付 ${price} 金${noBuy === null ? "" : `（${noBuy}）`}`);
+        sell.setAttribute("aria-label", `賣 ${m.lot} ${word}，得 ${gain} 金${noSell === null ? "" : `（${noSell}）`}`);
+      }
     };
   }
 
