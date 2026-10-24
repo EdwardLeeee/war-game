@@ -21,6 +21,11 @@ export interface GoldRecord {
   contestedLeft: number;
   /** The minute each side first sent a farmer to gold farther than 15 cells from its main city (-1: never). */
   secondGold: number[];
+  /** Wood within 20 cells of each side's main city at the start, and the minute it was all cut (-1: not by the end). */
+  woodNear: number[];
+  woodNearOut: number[];
+  /** Cells from each side's main city to its nearest standing tree at minutes 30, 45 and 60 (absent: over by then). */
+  nearestTree: Record<string, number[]>;
   /** Lots each side traded at the market (D-101, MARKET), and its prices' highest and lowest. */
   marketLots: number[];
   priceHigh: number;
@@ -39,6 +44,11 @@ export class GoldWatch {
     const k = w.nodeKind.length;
     this.side = new Int8Array(k).fill(-2);
     this.home = new Uint8Array(k);
+    const woodNear = new Array<number>(PLAYER_COUNT).fill(0);
+    for (let i = 0; i < k; i++) {
+      if (w.nodeKind[i] !== NodeKind.Tree) continue;
+      for (const s of w.map.spawns) if (this.near(w, i, s, 400)) woodNear[s.player] += w.nodeAmount[i];
+    }
     const spawn = [0, 1].map((p) => w.map.spawns.find((s) => s.player === p)!);
     const own = new Array<number>(PLAYER_COUNT).fill(0);
     let contested = 0;
@@ -62,15 +72,36 @@ export class GoldWatch {
       contestedFarmerMinutes: new Array<number>(PLAYER_COUNT).fill(0),
       contestedLeft: contested,
       secondGold: new Array<number>(PLAYER_COUNT).fill(-1),
+      woodNear,
+      woodNearOut: new Array<number>(PLAYER_COUNT).fill(-1),
+      nearestTree: {},
       marketLots: new Array<number>(PLAYER_COUNT).fill(0),
       priceHigh: w.marketPrice[0],
       priceLow: w.marketPrice[0],
     };
   }
 
+  private near(w: World, i: number, s: { cellX: number; cellY: number }, d2: number): boolean {
+    return (w.nodeX[i] - s.cellX) * (w.nodeX[i] - s.cellX) + (w.nodeY[i] - s.cellY) * (w.nodeY[i] - s.cellY) <= d2;
+  }
+
   /** Once a minute (tick a multiple of 1200). */
   minute(w: World): void {
     const r = this.record;
+    // Wood: what is left within 20 cells of each main city, and (minutes 30, 45, 60) the nearest tree.
+    const minute = Math.trunc(w.tick / 1200);
+    const wood = new Array<number>(PLAYER_COUNT).fill(0);
+    const nearest = new Array<number>(PLAYER_COUNT).fill(Number.MAX_SAFE_INTEGER);
+    for (let i = 0; i < w.nodeKind.length; i++) {
+      if (w.nodeKind[i] !== NodeKind.Tree || w.nodeAmount[i] <= 0) continue;
+      for (const s of w.map.spawns) {
+        const d2 = (w.nodeX[i] - s.cellX) * (w.nodeX[i] - s.cellX) + (w.nodeY[i] - s.cellY) * (w.nodeY[i] - s.cellY);
+        if (d2 <= 400) wood[s.player] += w.nodeAmount[i];
+        nearest[s.player] = Math.min(nearest[s.player], d2);
+      }
+    }
+    for (let p = 0; p < PLAYER_COUNT; p++) if (r.woodNearOut[p] < 0 && wood[p] === 0 && r.woodNear[p] > 0) r.woodNearOut[p] = minute;
+    if (minute === 30 || minute === 45 || minute === 60) r.nearestTree[`m${minute}`] = nearest.map((d) => Math.round(Math.sqrt(d)));
     const left = new Array<number>(PLAYER_COUNT).fill(0);
     let contested = 0;
     for (let i = 0; i < this.side.length; i++) {
@@ -98,6 +129,16 @@ export class GoldWatch {
 
   result(): GoldRecord {
     const r = this.record;
-    return { ...r, own: [...r.own], out: [...r.out], contestedFarmerMinutes: [...r.contestedFarmerMinutes], secondGold: [...r.secondGold], marketLots: [...r.marketLots] };
+    return {
+      ...r,
+      own: [...r.own],
+      out: [...r.out],
+      contestedFarmerMinutes: [...r.contestedFarmerMinutes],
+      secondGold: [...r.secondGold],
+      woodNear: [...r.woodNear],
+      woodNearOut: [...r.woodNearOut],
+      nearestTree: Object.fromEntries(Object.entries(r.nearestTree).map(([k, v]) => [k, [...v]])),
+      marketLots: [...r.marketLots],
+    };
   }
 }
