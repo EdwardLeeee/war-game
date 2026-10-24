@@ -42,14 +42,18 @@ async function start(page: Page, query: string): Promise<void> {
 
 /** Every farmer selected and sent a few cells off with a tap: an order of the player's own in the log. */
 async function orderFarmers(page: Page): Promise<void> {
+  // Paused while the tap goes in (ceo: villagers keep walking, and one passing the cell tapped as it
+  // lands is selected instead of ordered; main-flow had the same): the order is posted at once all the
+  // same, and the simulation takes it on 繼續.
+  await page.evaluate(() => window.__proto?.game?.pause());
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
   const target = await page.evaluate(() => {
     const g = window.__proto?.game;
     if (g == null) return null;
     const me = g.me();
     const farmers = g.units().filter((u) => u.owner === me && u.type === 0);
     g.select(farmers.map((u) => u.id));
-    // Open ground with no unit within 3 cells: at 200 ticks a second a villager walking onto the cell
-    // tapped is selected instead of ordered (WebKit on CI, run 40097502995).
+    // Open ground with no unit within 3 cells (one standing there would be selected: WebKit on CI, run 40097502995).
     const units = g.units();
     const clear = (c: { x: number; y: number }) => units.every((u) => (u.fx - c.x - 0.5) ** 2 + (u.fy - c.y - 0.5) ** 2 >= 9);
     for (let r = 0; r <= 8; r++) {
@@ -64,6 +68,8 @@ async function orderFarmers(page: Page): Promise<void> {
   await tap(page, await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [target.x, target.y] as const));
   // The player's own last order (自動訓練's own train, D-098, may follow it: run 39774971035's WebKit).
   await expect.poll(() => page.evaluate(() => (window.__proto?.game?.sent().filter((c) => (c as { auto?: boolean }).auto !== true).at(-1) as { c?: string } | undefined)?.c)).toBe("move");
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
 }
 
 async function surrender(page: Page): Promise<void> {
