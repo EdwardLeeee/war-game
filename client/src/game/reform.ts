@@ -1,11 +1,12 @@
-// 整理隊形 (D-095; the user 2026-10-21: 「常常跑一跑法師就跑到前排，我們可以有一個整理隊形按鈕嗎？」,
-// 「有時候我沒看到敵人也會整理隊形，這個也要考慮」): which way the soldiers face as they re-form,
-// in the order ceo and the user chose:
-//   1. the nearest enemy in sight;
-//   2. else where an enemy was last seen, in the last 60 s of game time;
-//   3. else the way these soldiers were last sent (移動 or 攻擊);
-//   4. else the enemy's main city, if this side has seen it (ceo: no peeking into the fog);
-//   5. else the way they face now (null: the simulation's own re-forming in place keeps it).
+// 整理隊形 (D-095; the user 2026-10-21: 「常常跑一跑法師就跑到前排，我們可以有一個整理隊形按鈕嗎？」):
+// which way the soldiers face as they re-form. The user 2026-10-24 (in place of D-095's order:
+// nearest enemy, enemy last seen, …): 「軍隊整理應該改成是面向前進的方向整隊」:
+//   1. the group's order (its move, attack or retreat now, else the last one sent): towards where it
+//      goes, from the group's middle; already there, the way they last walked;
+//   2. never sent anywhere (fresh from training): the enemy's main city, if this side has seen it
+//      (no peeking into the fog);
+//   3. else the middle of the map;
+//   4. else (nothing to go by) the way they face now (null: the simulation's re-forming in place keeps it).
 // The game then has them re-form facing it (game.ts reform()), spearmen in front, ranged next,
 // mages last: standing together (oneCluster), the simulation's re-forming in place with that
 // `face` (D-095 B); farther apart, a walk of one cell that way, so they gather into one formation
@@ -17,28 +18,16 @@ export interface Spot {
   y: number;
 }
 
-/** Where an enemy was seen, and when (ticks). */
-export interface Sighting extends Spot {
-  tick: number;
+/** A group's order: where it goes (cells), and the way it was sent from where it stood (null: not known). */
+export interface GroupOrder {
+  to: Spot;
+  went: Spot | null;
 }
 
-/** How long a sighting counts (game time: 60 s at 20 ticks a second). */
-export const SIGHTING_TICKS = 60 * 20;
+/** Within this many cells of where it was sent, a group has got there: it faces the way it walked. */
+export const ARRIVED_CELLS = 2;
 
-export type FacingFrom = "enemy" | "seen" | "last" | "city" | "keep";
-
-const nearest = (from: Spot, spots: readonly Spot[]): Spot | null => {
-  let best: Spot | null = null;
-  let bestD = Infinity;
-  for (const s of spots) {
-    const d = (s.x - from.x) ** 2 + (s.y - from.y) ** 2;
-    if (d < bestD) {
-      best = s;
-      bestD = d;
-    }
-  }
-  return best;
-};
+export type FacingFrom = "order" | "went" | "city" | "centre" | "keep";
 
 const unit = (dx: number, dy: number): Spot | null => {
   const l = Math.hypot(dx, dy);
@@ -46,31 +35,23 @@ const unit = (dx: number, dy: number): Spot | null => {
 };
 
 /**
- * The way to face from `centre`, and what it came from. `inSight`: enemies seen now;
- * `sightings`: those seen before; `last`: the way these soldiers were last sent; `city`: the
- * enemy's main city as this side knows it, or null.
+ * The way to face from `centre`, and what it came from. `order`: the group's (game.ts: its order
+ * now, else the last sent), null when it was never sent; `city`: the enemy's main city as this side
+ * knows it, or null; `mapCentre`: the middle of the map.
  */
-export function reformFacing(
-  centre: Spot,
-  inSight: readonly Spot[],
-  sightings: readonly Sighting[],
-  tick: number,
-  last: Spot | null,
-  city: Spot | null,
-): { dir: Spot | null; from: FacingFrom } {
-  const near = nearest(centre, inSight);
-  const toNear = near === null ? null : unit(near.x - centre.x, near.y - centre.y);
-  if (toNear !== null) return { dir: toNear, from: "enemy" };
-  const seen = nearest(
-    centre,
-    sightings.filter((s) => tick - s.tick <= SIGHTING_TICKS),
-  );
-  const toSeen = seen === null ? null : unit(seen.x - centre.x, seen.y - centre.y);
-  if (toSeen !== null) return { dir: toSeen, from: "seen" };
-  const lastDir = last === null ? null : unit(last.x, last.y);
-  if (lastDir !== null) return { dir: lastDir, from: "last" };
+export function reformFacing(centre: Spot, order: GroupOrder | null, city: Spot | null, mapCentre: Spot): { dir: Spot | null; from: FacingFrom } {
+  if (order !== null) {
+    const dx = order.to.x - centre.x;
+    const dy = order.to.y - centre.y;
+    const ahead = Math.hypot(dx, dy) > ARRIVED_CELLS ? unit(dx, dy) : null;
+    if (ahead !== null) return { dir: ahead, from: "order" };
+    const went = order.went === null ? null : unit(order.went.x, order.went.y);
+    return went === null ? { dir: null, from: "keep" } : { dir: went, from: "went" };
+  }
   const toCity = city === null ? null : unit(city.x - centre.x, city.y - centre.y);
   if (toCity !== null) return { dir: toCity, from: "city" };
+  const toMiddle = unit(mapCentre.x - centre.x, mapCentre.y - centre.y);
+  if (toMiddle !== null) return { dir: toMiddle, from: "centre" };
   return { dir: null, from: "keep" };
 }
 

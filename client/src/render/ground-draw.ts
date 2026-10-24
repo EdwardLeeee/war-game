@@ -10,9 +10,13 @@
 // Quality (ceo: the iPhone first, 2796 × 1290 pixels at 3 倍): 高 samples each grass twice, at two
 // scales turned apart, so a tile does not repeat at actual size; 低 once. The other grounds are
 // sampled only where they show.
+// The towns' ground (art-v6, R8-36 B; rules.town): a second weight map, R the lanes from the gates to
+// the keep, G trampled earth (art/ground.ts TownWeights, from the castles' layouts and the buildings
+// in them, world.ts), each laid over the ground after the bank and before the water, as ui's
+// ground_r8.py compose does.
 
 import { BufferImageSource, Geometry, GlProgram, Mesh, type Renderer, RenderTexture, Shader, Sprite, Texture, type TextureSource, UniformGroup } from "pixi.js";
-import { type GroundJson, groundWater, GroundWeights, valueNoise } from "../art/ground.ts";
+import { type CellBox, type GroundJson, groundWater, GroundWeights, TownWeights, townGroundOn, valueNoise } from "../art/ground.ts";
 import { TILE_PX } from "../tuning.ts";
 
 export type GroundQuality = "high" | "low";
@@ -25,6 +29,8 @@ export interface GroundTextures {
   macro: TextureSource;
   /** The water's ripples (art-v6, rules.water), or null: the terrain's water tiles. */
   water: TextureSource | null;
+  /** The towns' ground's layers by id (art-v6, rules.town: `yard`), or null: no towns' ground. */
+  town: Record<string, TextureSource> | null;
 }
 
 /** Metres a cell (the simulation's cells are 2 m). */
@@ -56,6 +62,10 @@ uniform sampler2D uDirt;
 uniform sampler2D uGravel;
 uniform sampler2D uBank;
 uniform sampler2D uWater;
+uniform sampler2D uTown;
+uniform sampler2D uLane;
+uniform sampler2D uTrampled;
+uniform vec4 uTownA;      // on (1), edge_m, the lane's layer's tile, the trampled earth's (m)
 uniform vec4 uTileA;      // grass, grass_dry, dirt, gravel (m)
 uniform vec4 uTileB;      // bank, noise, macro, cells across the map
 uniform vec4 uRules;      // edge_m, height_k, dirt noise threshold, quality (1 high)
@@ -104,6 +114,21 @@ vec4 over(vec4 base, vec4 layer, float mask, float n) {
   return mix(base, layer, f);
 }
 
+// The towns' ground over the base (ui's over_t): its edge a little less frayed than the others', edge_m soft.
+vec4 overT(vec4 base, vec4 layer, float mask, float n) {
+  float e = mask * 2.0 - 1.0 + (n - 0.5) * 0.8 + (layer.a - base.a) * uRules.y;
+  float f = clamp(e * (${CELL_M.toFixed(1)} / uTownA.y) * 0.5 + 0.5, 0.0, 1.0);
+  return mix(base, layer, f);
+}
+
+// A town's layer: one tile, or (high) a second turned and moved, mixed by the noise (ui's numbers, not tile()'s).
+vec4 townTile(sampler2D s, vec2 m, float size, float n) {
+  vec4 a = texture(s, m / size);
+  if (uRules.w < 0.5) return a;
+  vec2 r = mat2(0.8, -0.6, 0.6, 0.8) * m * 0.91 + vec2(7.3, 3.1);
+  return mix(a, texture(s, r / size), smoothstep(0.35, 0.65, n));
+}
+
 void main(void) {
   vec4 w = texture(uWeights, vM / (${CELL_M.toFixed(1)} * uTileB.w));
   float n = texture(uNoise, vM / uTileB.y).r;
@@ -118,6 +143,12 @@ void main(void) {
   if (dirt > 0.01) c = over(c, look(texture(uDirt, vM / uTileA.z), uDevA.z, uTint2, uMeanA.z), dirt, n);
   if (w.g > 0.01) c = over(c, look(texture(uGravel, vM / uTileA.w), uDevA.w, uTint3, uMeanA.w), w.g, n);
   if (w.r > 0.01) c = over(c, look(texture(uBank, vM / uTileB.x), uDevB, uTint4, uMeanB), w.r, n);
+  // The towns' lanes and trampled earth (art-v6, rules.town).
+  if (uTownA.x > 0.5) {
+    vec4 t = texture(uTown, vM / (${CELL_M.toFixed(1)} * uTileB.w));
+    if (t.r > 0.01) c = overT(c, townTile(uLane, vM, uTownA.z, n), t.r, n);
+    if (t.g > 0.01) c = overT(c, townTile(uTrampled, vM, uTownA.w, n), t.g, n);
+  }
   // The water (art-v6, ui's ground_r8.py compose): A the signed distance to its edge (metres, in the
   // water +); the bank wet a little way out; inside, the ripples drifting, the bed in the shallows.
   if (uWaterA.x > 0.0) {
@@ -172,8 +203,12 @@ export class GroundDraw {
   private quality: GroundQuality;
   /** The shader draws the water (art-v6): the terrain's water tiles are not drawn. */
   readonly water: boolean;
+  /** The towns' ground (art-v6, rules.town): its weight map, or null. */
+  private readonly townMap: TownWeights | null;
+  private readonly townWeights: BufferImageSource | null;
 
-  constructor(textures: GroundTextures, n: number, quality: GroundQuality) {
+  /** `culture`: whose layers the towns' ground takes (rules.town.layers; both `yard` in art-v6), the player's. */
+  constructor(textures: GroundTextures, n: number, quality: GroundQuality, culture: "E" | "W" = "E") {
     this.textures = textures;
     this.quality = quality;
     const size = n * TILE_PX;
@@ -201,7 +236,15 @@ export class GroundDraw {
       return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2];
     };
     const r = textures.json.rules;
+    // The towns' ground: its weight map and its two layers (by the player's culture), when the set has them.
+    const townLayers = r.town?.layers[culture];
+    const lane = townLayers === undefined ? undefined : textures.town?.[townLayers.lane];
+    const trampled = townLayers === undefined ? undefined : textures.town?.[townLayers.trampled];
+    const town = townGroundOn(textures.json) && lane !== undefined && trampled !== undefined;
+    this.townMap = town ? new TownWeights(n, r) : null;
+    this.townWeights = this.townMap === null ? null : new BufferImageSource({ resource: this.townMap.data, width: this.townMap.side, height: this.townMap.side, format: "rgba8unorm", scaleMode: "linear", addressMode: "clamp-to-edge", alphaMode: "no-premultiply-alpha" });
     this.uniforms = new UniformGroup({
+      uTownA: { value: new Float32Array([town ? 1 : 0, r.town?.edge_m ?? 0.45, tileOf(townLayers?.lane ?? ""), tileOf(townLayers?.trampled ?? "")]), type: "vec4<f32>" },
       uTileA: { value: new Float32Array([tileOf("grass"), tileOf("grass_dry"), tileOf("dirt"), tileOf("gravel")]), type: "vec4<f32>" },
       uTileB: { value: new Float32Array([tileOf("bank"), textures.json.noise?.tile_m ?? 6, textures.json.macro?.tile_m ?? 64, n]), type: "vec4<f32>" },
       uRules: { value: new Float32Array([r.edge_m, r.height_k, r.dirt.noise_threshold, quality === "high" ? 1 : 0]), type: "vec4<f32>" },
@@ -238,8 +281,11 @@ export class GroundDraw {
         uDirt: dirt,
         uGravel: gravel,
         uBank: bank,
-        // Without water any texture will do: the shader does not read it then.
+        // Without water any texture will do: the shader does not read it then; the towns' ground the same.
         uWater: textures.water ?? textures.noise,
+        uTown: this.townWeights ?? this.weights,
+        uLane: (town ? lane : undefined) ?? textures.noise,
+        uTrampled: (town ? trampled : undefined) ?? textures.noise,
       },
     });
     this.mesh = new Mesh({ geometry, shader });
@@ -248,6 +294,16 @@ export class GroundDraw {
   /** The cells' grounds again (a random map's grows as it is explored; resource points come and go). */
   setGround(ground: Uint8Array, nodes: readonly number[]): void {
     if (this.weightMap.set(ground, nodes)) this.weights.update();
+  }
+
+  /** The towns' ground drawn (art-v6, rules.town). */
+  get town(): boolean {
+    return this.townMap !== null;
+  }
+
+  /** The towns' lanes and trampled earth now, a strength a cell, in these towns' boxes (world.ts): uploaded when they changed. */
+  setTown(lane: Float32Array, trampled: Float32Array, boxes: readonly CellBox[]): void {
+    if (this.townMap?.set(lane, trampled, boxes) === true) this.townWeights?.update();
   }
 
   /** The water's flow, every frame: the page's clock in seconds (wrapped an hour round, for the GPU's precision). */
@@ -270,7 +326,7 @@ export class GroundDraw {
   /** The ground's textures on the GPU (MB): the five grounds, the noises and the cells' weights. */
   get memoryMB(): number {
     const t = this.textures;
-    const bytes = [...t.layers, t.noise, t.macro, this.weights].reduce((n, s) => n + gpuBytes(s), 0);
+    const bytes = [...t.layers, t.noise, t.macro, this.weights, ...(this.townWeights === null ? [] : [this.townWeights, ...Object.values(t.town ?? {})])].reduce((n, s) => n + gpuBytes(s), 0);
     return bytes / 1048576;
   }
 
@@ -318,6 +374,7 @@ export class GroundDraw {
   destroy(): void {
     this.mesh.destroy();
     this.weights.destroy();
+    this.townWeights?.destroy();
   }
 }
 

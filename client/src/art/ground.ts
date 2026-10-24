@@ -15,8 +15,11 @@ export type GroundLayerId = (typeof GROUND_LAYERS)[number];
 
 /** A tileable texture: its colour lit from above (RGB, sRGB), its height in A (the higher shows through), `tile_m` metres a tile. */
 export interface GroundTexture {
-  /** One of GROUND_LAYERS, or (art-v6) `water`: the water's ripples, lit, drawn by the shader (rules.water). */
-  id: GroundLayerId | "water";
+  /**
+   * One of GROUND_LAYERS, or (art-v6) `water`: the water's ripples, lit, drawn by the shader
+   * (rules.water); `yard`: packed earth, the towns' lanes and trampled ground (rules.town).
+   */
+  id: GroundLayerId | "water" | "yard";
   file: string;
   /** The same at 2 倍 as ASTC 4×4 (KTX), where the GPU has it. */
   astc?: string;
@@ -79,6 +82,14 @@ export interface GroundJson {
       noise_m: number;
       flow: [[number, number], [number, number]];
     };
+    /**
+     * The towns' ground (art-v6, R8-36 B; ui's ground_r8.py town_weights): the castles' lanes and
+     * trampled earth (castle 2 layouts' `ground`), each a channel of a second weight map: the signed
+     * distance to its cells (inside +, outside −, metres), smoothstep(−soft_m/2, soft_m/2), blurred
+     * blur_m, times the cells' strengths blurred a quarter cell; laid over the ground like the others,
+     * its edge `edge_m` soft, from the layer `layers[culture]` names (both `yard` in art-v6).
+     */
+    town?: { soft_m: number; blur_m: number; edge_m: number; layers: Record<"E" | "W", { lane: string; trampled: string }> };
   };
   /** The whole ground multiplied last: ui sets them against the units' contrast (R8: 找得到兵). */
   grade: { brightness: number; saturation: number };
@@ -97,6 +108,10 @@ const wet = (t: number) => t >= 3 && t <= 6;
 /** The water drawn by the shader (rules.water, with the weights and a `water` layer); else the terrain's tiles. */
 export const groundWater = (g: Pick<GroundJson, "layers" | "rules">): boolean => g.rules.water !== undefined && g.rules.weights !== undefined && g.layers.some((l) => l.id === "water");
 const stony = (t: number) => t === 1 || t === 7;
+
+/** The towns' ground drawn by the shader (rules.town, with the weights and its layers). */
+export const townGroundOn = (g: Pick<GroundJson, "layers" | "rules">): boolean =>
+  g.rules.town !== undefined && g.rules.weights !== undefined && Object.values(g.rules.town.layers).every((l) => g.layers.some((x) => x.id === l.lane) && g.layers.some((x) => x.id === l.trampled));
 
 /** Metres a cell (the ground's tiles and noise are in metres). */
 export const GROUND_CELL_M = 2;
@@ -353,6 +368,131 @@ export class GroundWeights {
         }
       }
     });
+  }
+}
+
+/** A box of cells, inclusive. */
+export interface CellBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** Cells round a town's box made again with it: the edge's softness and blurs reach no farther. */
+const TOWN_PAD = 2;
+
+/**
+ * The towns' weight map (rules.town; render/ground-draw.ts uploads `data`): R the lanes, G the
+ * trampled earth, `texels_per_cell` texels a cell as the ground's. `set` the cells' strengths and the
+ * towns' boxes; only the boxes are made (the ground elsewhere is no town's), and only when a cell changed.
+ */
+export class TownWeights {
+  readonly side: number;
+  readonly data: Uint8Array;
+  private readonly n: number;
+  private readonly rules: GroundJson["rules"];
+  private last: Float32Array[] | null = null;
+
+  constructor(n: number, rules: GroundJson["rules"]) {
+    this.n = n;
+    this.rules = rules;
+    this.side = weightsSide(n, rules);
+    this.data = new Uint8Array(this.side * this.side * 4);
+  }
+
+  /** The lanes' and the trampled earth's strengths now, a cell each (0–1), in these towns' boxes; false when nothing changed. */
+  set(lane: Float32Array, trampled: Float32Array, boxes: readonly CellBox[]): boolean {
+    const before = this.last;
+    if (before !== null && before[0].every((v, i) => v === lane[i]) && before[1].every((v, i) => v === trampled[i])) return false;
+    this.last = [lane.slice(), trampled.slice()];
+    this.data.fill(0);
+    for (const b of boxes) [lane, trampled].forEach((s, ch) => this.box(s, ch, b));
+    return true;
+  }
+
+  /** Channel `ch` over a town's box (and TOWN_PAD round it): ui's town_weights there. */
+  private box(s: Float32Array, ch: number, b: CellBox): void {
+    const tr = this.rules.town as NonNullable<GroundJson["rules"]["town"]>;
+    const n = this.n;
+    const side = this.side;
+    const k = side / n;
+    const texelM = GROUND_CELL_M / k;
+    const cx0 = Math.max(0, b.x0 - TOWN_PAD);
+    const cy0 = Math.max(0, b.y0 - TOWN_PAD);
+    const cx1 = Math.min(n - 1, b.x1 + TOWN_PAD);
+    const cy1 = Math.min(n - 1, b.y1 + TOWN_PAD);
+    const tx0 = cx0 * k;
+    const ty0 = cy0 * k;
+    const w = (cx1 + 1) * k - tx0;
+    const h = (cy1 + 1) * k - ty0;
+    // Off the map is outside (ui pads the cells with none).
+    const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && s[y * n + x] > 0;
+    const inBox = (x: number, y: number) => x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1;
+    // The signed distance: from the region's edge cells (inside ones beside an outside one, outside ones beside an inside one).
+    const f = new Float64Array(w * h);
+    for (let ty = 0; ty < h; ty++) {
+      for (let tx = 0; tx < w; tx++) {
+        const X = (tx0 + tx + 0.5) * texelM;
+        const Y = (ty0 + ty + 0.5) * texelM;
+        const cx = Math.floor((tx0 + tx) / k);
+        const cy = Math.floor((ty0 + ty) / k);
+        const isIn = inside(cx, cy);
+        let d = 1e3;
+        for (let y = cy - TOWN_PAD; y <= cy + TOWN_PAD; y++) {
+          for (let x = cx - TOWN_PAD; x <= cx + TOWN_PAD; x++) {
+            const seedIn = inside(x, y);
+            if (seedIn === isIn) continue;
+            // An edge cell of the other side: one of its four neighbours is on this side.
+            if (inside(x - 1, y) === seedIn && inside(x + 1, y) === seedIn && inside(x, y - 1) === seedIn && inside(x, y + 1) === seedIn) continue;
+            const dx = Math.max(Math.abs(X - (x + 0.5) * GROUND_CELL_M) - GROUND_CELL_M / 2, 0);
+            const dy = Math.max(Math.abs(Y - (y + 0.5) * GROUND_CELL_M) - GROUND_CELL_M / 2, 0);
+            d = Math.min(d, Math.hypot(dx, dy));
+          }
+        }
+        f[ty * w + tx] = smooth(-tr.soft_m / 2, tr.soft_m / 2, isIn ? d : -d);
+      }
+    }
+    const strength = new Float64Array(w * h);
+    for (let ty = 0; ty < h; ty++) for (let tx = 0; tx < w; tx++) strength[ty * w + tx] = s[Math.floor((ty0 + ty) / k) * n + Math.floor((tx0 + tx) / k)];
+    // Blurred as ui's (rows then columns, the map's edges clamped; past the box the town's channel is 0), and multiplied.
+    const blurred = (a: Float64Array, sigma: number): Float64Array => {
+      if (sigma <= 0) return a;
+      const r = Math.floor(3 * sigma) + 1;
+      const kern: number[] = [];
+      for (let i = -r; i <= r; i++) kern.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
+      const sum = kern.reduce((x, y) => x + y, 0);
+      const at = (tx: number, ty: number) => {
+        const gx = Math.min(side - 1, Math.max(0, tx0 + tx));
+        const gy = Math.min(side - 1, Math.max(0, ty0 + ty));
+        return inBox(Math.floor(gx / k), Math.floor(gy / k)) ? a[(gy - ty0) * w + (gx - tx0)] : 0;
+      };
+      const rows = new Float64Array(w * h);
+      for (let ty = 0; ty < h; ty++) for (let tx = 0; tx < w; tx++) {
+        let v = 0;
+        for (let i = -r; i <= r; i++) v += at(tx, ty + i) * kern[i + r];
+        rows[ty * w + tx] = v / sum;
+      }
+      const out = new Float64Array(w * h);
+      const atRow = (tx: number, ty: number) => {
+        const gx = Math.min(side - 1, Math.max(0, tx0 + tx));
+        return inBox(Math.floor(gx / k), cy0) ? rows[ty * w + (gx - tx0)] : 0;
+      };
+      for (let ty = 0; ty < h; ty++) for (let tx = 0; tx < w; tx++) {
+        let v = 0;
+        for (let i = -r; i <= r; i++) v += atRow(tx + i, ty) * kern[i + r];
+        out[ty * w + tx] = v / sum;
+      }
+      return out;
+    };
+    const wf = blurred(f, (tr.blur_m * k) / GROUND_CELL_M);
+    const ws = blurred(strength, 0.25 * k);
+    for (let ty = 0; ty < h; ty++) {
+      for (let tx = 0; tx < w; tx++) {
+        const o = ((ty0 + ty) * side + tx0 + tx) * 4 + ch;
+        this.data[o] = Math.max(this.data[o], Math.round(Math.min(1, Math.max(0, wf[ty * w + tx] * ws[ty * w + tx])) * 255));
+      }
+    }
   }
 }
 

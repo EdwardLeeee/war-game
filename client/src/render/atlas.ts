@@ -39,6 +39,8 @@ export const BUILDING_GLYPH: Record<number, string> = {
   [BuildingType.ArrowTower]: "箭",
   [BuildingType.Stable]: "馬",
   [BuildingType.Outpost]: "哨",
+  // D-101: until its picture (ui's R8-38, art-v6.1).
+  [BuildingType.Market]: "市",
 };
 
 export interface Atlas {
