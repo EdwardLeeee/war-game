@@ -36,6 +36,8 @@ export const BUILDING_NAME: Record<number, string> = {
   [BuildingType.Gate]: "城門",
   // D-099 (while `features.siege`): trains siege engines.
   [BuildingType.SiegeWorks]: "砲坊",
+  // D-101 (while `features.market`): food and wood for gold.
+  [BuildingType.Market]: "市場",
 };
 
 /** A building's name; with `features.keep` (D-100) the big city's tower is every town's 主堡. */
@@ -60,6 +62,8 @@ export const BUILDABLE: BuildingType[] = [
   BuildingType.Outpost,
   // D-099: listed only while `features.siege` is on.
   BuildingType.SiegeWorks,
+  // D-101: listed only while `features.market` is on.
+  BuildingType.Market,
 ];
 
 export const NODE_NAME: Record<number, string> = {
