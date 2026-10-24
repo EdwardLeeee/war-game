@@ -54,3 +54,9 @@ export function saveHintSeen(key: string, store: Store | null = browserStore()):
     // Not saved: it shows again next time.
   }
 }
+
+/**
+ * 市場 (D-101; the user 2026-10-24, on the draft: the line under the buttons only the first time):
+ * how its prices move, said once on this device, the first time a market's panel opens.
+ */
+export const MARKET_HINT_KEY = "war-game.proto.marketHint";
