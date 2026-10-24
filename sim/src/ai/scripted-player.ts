@@ -208,6 +208,11 @@ export interface Plan {
    * after the next such wave.
    */
   crush: boolean;
+  /**
+   * With the turtle (ceo 2026-10-25: the user turned 4fd7b823 round governing 4-5 towns): town trips as the
+   * push's, with `townAt` soldiers and no towers by home needed (else TURTLE.tripTowers and ahead).
+   */
+  earlyTowns: boolean;
 }
 
 /**
@@ -460,6 +465,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     harass: 0,
     turtle: false,
     crush: false,
+    earlyTowns: false,
   };
 }
 
@@ -1794,7 +1800,11 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         marches++;
         if (firstMarch < 0) firstMarch = tick;
         send(enemyHome.cellX, enemyHome.cellY, "base");
-      } else if (townOpen && army.length >= (trips === 0 || plan.turtle ? plan.townAt : Math.min(plan.townAt, 4)) && (!plan.turtle || (ahead && towersByHome >= TURTLE.tripTowers))) {
+      } else if (
+        townOpen &&
+        army.length >= (trips === 0 || plan.turtle ? plan.townAt : Math.min(plan.townAt, 4)) &&
+        (!plan.turtle || plan.earlyTowns || (ahead && towersByHome >= TURTLE.tripTowers))
+      ) {
         trips++;
         send(t!.x, t!.y, "town");
       } else {

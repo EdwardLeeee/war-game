@@ -148,6 +148,12 @@ if (flag("crush")) {
 const BONUS = Number(arg("bonus", "0"));
 // Barracks plus ranges at most (--production 8; else the plan's).
 plan.production = Number(arg("production", String(plan.production)));
+// With the turtle (ceo 2026-10-25): town trips as the push's, with this many soldiers and no towers by home
+// needed, every town taken governed (--early-towns 6).
+if (arg("early-towns", "") !== "") {
+  plan.earlyTowns = true;
+  plan.townAt = Number(arg("early-towns", "6"));
+}
 // D-097: cavalry this share of its soldiers (percent), a stable once it has a range (--cavalry-share 18).
 plan.cavalryShare = Number(arg("cavalry-share", String(plan.cavalryShare)));
 /** D-086 A: an AI order this soon after its last order at the player's main city is the same march. */
@@ -887,6 +893,7 @@ const options = [
     : "",
   BONUS > 0 ? `玩家採集 +${BONUS}%（糧木金採到的總量多 ${BONUS}%，平均分成糧、木、金；只有這組，這組的局不能用紀錄重播）` : "",
   plan.crush && plan.production !== 4 ? `兵營加射場最多 ${plan.production} 座` : "",
+  plan.earlyTowns ? `拿城照主動的條件：兵 ${plan.townAt} 名就去中立的城，不用等家旁箭樓，拿下就治理` : "",
   plan.turtle && !plan.crush ? `守塔慢拿城（A5）：第 15 分前先養到 40 名村民（糧優先，兵最多 25 名）、家旁箭樓第 14 分起蓋（第 20 分 7 座、第 25 分 10 座、第 30 分 20 座，同時最多蓋 3 棟）、治理的城鎮和離家的礦場旁各 2 座、家旁 6 座哨所（前 2 座各 3 名槍兵）；家旁的金快挖完時派 1 名槍兵找下一片金礦、在那裡蓋礦場，金太多時村民改採糧和木；電腦來打家時遠程兵躲進家旁箭樓和主城；家旁箭樓 7 座、兵 ${plan.townAt} 名而且比最近看到的電腦兵多才去拿城、打下來就治理（大城在兵 40 名以後），兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門，騎兵 ${plan.cavalryShare}%` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
