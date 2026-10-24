@@ -348,6 +348,9 @@ export class MockPort implements SimPort {
    * ceiling; null: 20 and the rules' maximum, as always.
    */
   private population: { base: number; ceiling: number } | null = null;
+  /** Tests (setLag): steps a command waits before it is taken, and those waiting. */
+  private lag = 0;
+  private late: { due: number; cmd: CommandBody & { seq: number } }[] = [];
   private readonly towns: MTown[] = [];
   /** [id, kind, cx, cy, amount] */
   private readonly nodes: number[][] = [];
@@ -427,6 +430,15 @@ export class MockPort implements SimPort {
   private housesCap(): number {
     const house = this.rules.buildings[BuildingType.House]?.populationCap ?? 0;
     return this.buildings.filter((b) => b.owner === ME && b.type === BuildingType.House && b.progress >= 1000).length * house;
+  }
+
+  /**
+   * Tests (自動訓練 behind its snapshots): commands taken this many steps after they come, as a
+   * page behind its snapshots sees the simulation's Worker take them (WebKit at the start of a
+   * game: 40 and more); 0: on the next step, as always.
+   */
+  setLag(steps: number): void {
+    this.lag = Math.max(0, steps);
   }
 
   /** Tests: a building's progress now (a site finished at once). */
@@ -606,7 +618,8 @@ export class MockPort implements SimPort {
         this.schedule();
         break;
       case "command":
-        this.apply(msg.cmd);
+        if (this.lag > 0) this.late.push({ due: this.tick + this.lag, cmd: msg.cmd });
+        else this.apply(msg.cmd);
         break;
       case "pause":
         this.paused = true;
@@ -883,6 +896,7 @@ export class MockPort implements SimPort {
     // The gallery stands still at its moment, the same for every picture (no more snapshots: the screen holds the last).
     if (this.gallery && this.tick >= GALLERY_STOP_TICK) return;
     this.tick++;
+    while (this.late.length > 0 && this.late[0].due <= this.tick) this.apply((this.late.shift() as { cmd: CommandBody & { seq: number } }).cmd);
     if (this.economy !== null && this.tick % 20 === 0) this.runEconomy(this.economy);
     for (const u of this.units) {
       // Round 7: on its way to hide, it slips in once near the building (also when a test put it there).

@@ -94,7 +94,7 @@ import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PR
 import { allIn, orderState } from "./orders.ts";
 import { goesOnWalls, heldTown, leaveWalls, WALL_PROMPT, WALL_PROMPT_MIXED, WALL_WRONG_TARGET, wallTap } from "./walls.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
-import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, type Site, villagersMissing } from "./auto-army.ts";
+import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
@@ -469,7 +469,9 @@ export class Game implements GestureHost {
    */
   readonly autoArmy = new AutoArmyBook();
   autoArmyOn = true;
-  private autoSent: { seq: number; tick: number; building: number; unit: number }[] = [];
+  private autoSent: SentTrain[] = [];
+  /** Buildings of ours that trained someone since the last decision (`unit_trained`): a train sent there is taken. */
+  private readonly trainedAt = new Set<number>();
   private readonly autoOff = new Map<number, number>();
   /**
    * The simulation's own 自動訓練 still on for the person in this game, so turned off building by
@@ -482,6 +484,8 @@ export class Game implements GestureHost {
   private villagersSeen = { living: 0, queued: 0, block: null as Block | null };
   /** 自動訓練 stopped by a full population (D-054's message strip), as last seen. */
   autoPopulationFull = false;
+  /** The population cap at its ceiling (towns' share included), as last seen: no house adds to it. */
+  populationAtCeiling = false;
   /**
    * 自動蓋民居 (auto-house.ts): why no house was sent at the last decision (null: one was), the
    * house sent and not in a snapshot yet, the spots the simulation refused, and whether its first
@@ -1083,12 +1087,14 @@ export class Game implements GestureHost {
     const tick = h[H.tick];
     const b = snap.buildings;
     const u = snap.units;
-    // Taken by now (or refused): the queue in the snapshot has it. A train is sent only to an empty
-    // queue, so one that shows in its building's queue is taken: counted there, not twice (that made
-    // a full population for a snapshot and a false 人口滿了: CI run 39659340330).
+    // Taken by now: the queue in the snapshot has it, or its building trained someone (refused ones
+    // go with their `rejected`). A train is sent only to an empty queue, so one that shows in its
+    // building's queue is taken: counted there, not twice (that made a full population for a
+    // snapshot and a false 人口滿了: CI run 39659340330). Until then it is on its way (stillSent).
     const queuedAt = new Set<number>();
     for (let o = 0; o < b.length; o += BUILDING_STRIDE) if (b[o + BuildingField.owner] === view.me && b[o + BuildingField.queueLength] > 0) queuedAt.add(b[o + BuildingField.id]);
-    this.autoSent = this.autoSent.filter((t) => tick <= t.tick + 1 && !queuedAt.has(t.building));
+    this.autoSent = stillSent(this.autoSent, tick, queuedAt, this.trainedAt);
+    this.trainedAt.clear();
     const queued: Record<number, number> = {};
     const add = (t: number) => {
       queued[t] = (queued[t] ?? 0) + 1;
@@ -1168,6 +1174,7 @@ export class Game implements GestureHost {
     this.armyNeedSeen = need;
     this.armyBlocked = picked.blocked;
     this.autoPopulationFull = villagerBlock === "population" || [...picked.blocked.values()].includes("population");
+    this.populationAtCeiling = h[H.populationCap] >= h[H.populationCeiling];
   }
 
   /**
@@ -1277,7 +1284,8 @@ export class Game implements GestureHost {
     const type = o < 0 ? undefined : view?.curr?.snap.buildings[o + BuildingField.type];
     const trains = type === undefined ? undefined : view?.rules.buildings[type]?.trains[0];
     const block = trains === undefined ? undefined : this.armyBlocked.get(trains);
-    const why = block === "population" ? "（人口滿了：蓋民居）" : block === "money" ? "（錢不夠：只用預留以上的）" : block === "mages" ? "（法師已到上限）" : "";
+    const full = this.populationAtCeiling ? `（${POPULATION_CEILING_TEXT}）` : "（人口滿了：蓋民居）";
+    const why = block === "population" ? full : block === "money" ? "（錢不夠：只用預留以上的）" : block === "mages" ? "（法師已到上限）" : "";
     return `補軍團缺的：${missingText(need.missing)}${why}`;
   }
 
@@ -1287,7 +1295,8 @@ export class Game implements GestureHost {
     const v = this.villagersSeen;
     if (a.villagersPaused) return `村民 ${v.living}／${a.villagerTarget}，自動訓練暫停`;
     if (villagersMissing(a.villagerTarget, v.living, v.queued) === 0) return `村民 ${v.living}／${a.villagerTarget}${v.queued > 0 ? "，訓練中" : "，夠了"}`;
-    const why = v.block === "population" ? "，人口滿了：蓋民居" : v.block === "money" ? "，錢不夠：只用預留以上的" : "，訓練中";
+    const full = this.populationAtCeiling ? `，${POPULATION_CEILING_TEXT}` : "，人口滿了：蓋民居";
+    const why = v.block === "population" ? full : v.block === "money" ? "，錢不夠：只用預留以上的" : "，訓練中";
     return `村民 ${v.living}／${a.villagerTarget}${why}`;
   }
 
@@ -1913,7 +1922,10 @@ export class Game implements GestureHost {
             this.setStance(this.army.refused(ev.seq), Stance.Aggressive);
             if (cmd?.auto !== true) this.overlays.toast(rejectText(ev.reason, cmd));
           } else {
-            if (ev.k === "unit_trained") this.enlist(ev.id, ev.type);
+            if (ev.k === "unit_trained") {
+              this.enlist(ev.id, ev.type);
+              this.trainedAt.add(ev.building);
+            }
             if (ev.k === "shot") this.drawShot(ev.building, ev.target, now, ev.n ?? 1);
             if (ev.k === "siege_shot") this.drawSiegeShot(ev);
             this.hud.onEvent(ev);

@@ -3,6 +3,7 @@
 // 閒置村民 and 全體回城 on the left, attack alerts, 經濟分配, 搶／治理, the menu and the result
 // screen. Text updates at most 10 times a second and only when it changed.
 
+import { POPULATION_CEILING_TEXT } from "../../game/auto-army.ts";
 import { HOME_CELLS, HOUSE_WOOD_TEXT, nearFootprint } from "../../game/auto-house.ts";
 import { counterLines } from "../../game/counters.ts";
 import type { Game } from "../../game/game.ts";
@@ -539,12 +540,14 @@ export class Hud {
 
   /**
    * 人口滿了 (D-054: the brief asks for a word in the message strip): 自動訓練 (the screen's, D-098)
-   * has stopped for want of room; said once each time it starts. 自動蓋民居 (2026-10-25) waiting
-   * for wood: that instead.
+   * has stopped for want of room; said once each time it starts. The cap at its ceiling (ceo
+   * 2026-10-25): no house helps, so 人口已到上限; 自動蓋民居 (2026-10-25) waiting for wood: that.
    */
   private warnPopulationFull(): void {
     const full = this.game.autoPopulationFull;
-    if (full && !this.populationFull) this.game.toast(this.game.autoHouseBlock === "wood" ? HOUSE_WOOD_TEXT : "人口滿了，自動訓練停下來：蓋民居");
+    if (full && !this.populationFull) {
+      this.game.toast(this.game.populationAtCeiling ? POPULATION_CEILING_TEXT : this.game.autoHouseBlock === "wood" ? HOUSE_WOOD_TEXT : "人口滿了，自動訓練停下來：蓋民居");
+    }
     this.populationFull = full;
   }
 
