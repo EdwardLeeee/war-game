@@ -232,7 +232,8 @@ export class ArtStructures {
       s.ground.tint = tint;
       return s.ground.visible ? { top: at.y } : null;
     }
-    const max = this.view.rules.buildings[type]?.hp ?? 0;
+    // A keep's full hit points are its town's (D-100: a small town's 600, buildings[Keep] the big city's 1000).
+    const max = this.view.buildingMaxHp(b, o);
     name = buildingFrame(entry, buildingState(progress, b[o + B.hp], max));
     s.ground.visible = false;
     const color = this.art.buildingFrame(side, "color", name ?? "");

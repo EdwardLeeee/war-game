@@ -7,5 +7,7 @@ export { checkPlacement, type PlacementGrid } from "../../sim/src/placement.ts";
 export { AUTO_TRAIN, autoBuilders, CANNON, rules } from "../../sim/src/core/rules.ts";
 /** The full tables (the fake world's ?siege=1, D-099: rules() leaves the siege engine out while SIEGE is off). */
 export { MULTIPLIERS, UNITS } from "../../sim/src/core/rules.ts";
+/** D-100's switch (the fake world's ?keep=1 reads the simulation's rules with it on, then puts it back). */
+export { KEEP } from "../../sim/src/core/rules.ts";
 /** Directions as the simulation counts them (0-15, 0 east, 4 south): `formation`'s `face` (D-095). */
 export { dir16 } from "../../sim/src/core/fixed.ts";

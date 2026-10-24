@@ -40,7 +40,7 @@ import type { GameView } from "../../view/view.ts";
 import { formalUi } from "../formal.ts";
 import { icon, type IconName } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
-import { ACTION_NAME, BUILDABLE, BUILDING_NAME, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
+import { ACTION_NAME, BUILDABLE, BUILDING_NAME, buildingName, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
 
 /** ＋遠程／＋法師 (D-080): the short word on a panel's call-in button. */
 const CALL_WORD: Record<number, string> = { [UnitType.Ranged]: "遠程", [UnitType.Mage]: "法師" };
@@ -129,6 +129,19 @@ export interface PanelHost {
   toggleCollapsed(): void;
   /** 預留 (D-054): the reserve 自動訓練 leaves untouched, set in a dialog. */
   openReserve(): void;
+}
+
+/**
+ * 主堡 (D-100, `features.keep`): a town's keep's life (`主堡 420/600`) while we see it (or remember
+ * it); 主堡倒了 for our own town without it, or one taken and not governed yet; else nothing.
+ */
+export function keepLine(view: GameView, town: number, state: number, owner: number): string | null {
+  if (features(view.rules).keep !== true) return null;
+  const o = view.keepRow(town);
+  const b = view.curr?.snap.buildings;
+  if (o >= 0 && b !== undefined) return `主堡 ${b[o + B.hp]}/${view.buildingMaxHp(b, o)}`;
+  const down = owner === view.me || state === TownState.AwaitingChoice || state === TownState.Plundering || state === TownState.Repairing;
+  return down && state !== TownState.Ruins ? "主堡倒了" : null;
 }
 
 /**
@@ -455,8 +468,10 @@ export class SelectionInfo {
     const type = b0[o0 + B.type];
     const own = b0[o0 + B.owner] === view.me;
     const head = el("div", this.el, "sel-head");
-    el("b", head, "", BUILDING_NAME[type] ?? "建築");
+    el("b", head, "", buildingName(type, view.rules) ?? "建築");
     const status = el("span", head, "sel-status");
+    // 主堡 (D-100): it shoots for whoever holds its town.
+    const shoots = type === BuildingType.Keep && features(view.rules).keep === true ? "　會射箭" : "";
     const hpBar = bar(this.el, "hp");
     const hpText = el("span", this.el, "sel-num");
     // 自動訓練 by the screen (D-098): why it trains or not; the main city's villagers and their target.
@@ -541,7 +556,7 @@ export class SelectionInfo {
       }
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
-      status.textContent = `${own ? locked : remembered}${inside}`;
+      status.textContent = `${own ? locked : remembered}${inside}${shoots}`;
       // 自動訓練 by the screen (D-098): why it trains or not, on a line of its own.
       if (autoLine !== null) {
         const line = type === BuildingType.MainCity ? this.host.villagerLine() : this.host.trainingLine(id);
@@ -718,6 +733,9 @@ export class SelectionInfo {
       // ones told to stay (留守, below), who do not leave with 全軍.
       const inside = owner === view.me ? `城裡有 ${t[o + T.garrison]} 名兵（至少要 ${t[o + T.garrisonNeeded]} 名）` : `駐軍 ${t[o + T.garrison]}/${t[o + T.garrisonNeeded]}`;
       const parts = [`民兵 ${t[o + T.militia]}`, inside, ...(wall === null ? [] : [`牆上 ${wall.on}／${wall.capacity}`])];
+      // 主堡 (D-100): its life while it stands; down once taken until governed or neutral again.
+      const keep = keepLine(view, id, t[o + T.state], owner);
+      if (keep !== null) parts.unshift(keep);
       if (t[o + T.timer] > 0) parts.push(`剩 ${clock(t[o + T.timer])}`);
       if (t[o + T.revoltTimer] > 0) parts.push(`駐軍不足，${clock(t[o + T.revoltTimer])} 後叛離`);
       // 治理 income (round 7, D-061), while the rule is on.

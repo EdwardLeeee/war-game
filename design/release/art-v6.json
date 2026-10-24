@@ -1,0 +1,24 @@
+{
+ "tag": "art-v6",
+ "note": "D-093 寫實整套（使用者核准 R8 第一批兵和 R8-21 到 R8-37）與 D-100 主堡：12 種兵換成寫實的（東陸遠程改成弓手 bow_e，沒有 xbow_e；spear_e、pike_w 照舊有 sling）；建築、資源點、地形換成寫實的，主堡 Keep（type 9，done、damaged、rubble、repair）取代 TownTower，加砲坊 SiegeWorks（14），MainCity、ArrowTower、Keep 多射點 shoot_at_m；城牆說明檔改成 war-game castle 2（D-100 的 small、large，拿掉地磚，多城裡的擺設 decor 和土路 ground）；加 ground/（寫實地面、水、城裡的土路，rules.town）；效果多 arrow、sling_stone、siege_*（真的箭，R8-35 B）。說明檔 design/b1/atlas-buildings.md 第 13 節。",
+ "units": {
+  "farmer_e": {"run": 39726651993, "artifact": "r7-v8-farmer_e"},
+  "spear_e": {"run": 39729248473, "artifact": "r7-v8-spear_e"},
+  "bow_e": {"run": 39726651993, "artifact": "r7-v8-bow_e"},
+  "hcav_e": {"run": 39726651993, "artifact": "r7-v8-hcav_e"},
+  "siege_e": {"run": 39726651993, "artifact": "r7-v8-siege_e"},
+  "mage_e": {"run": 39726651993, "artifact": "r7-v8-mage_e"},
+  "farmer_w": {"run": 39726651993, "artifact": "r7-v8-farmer_w"},
+  "pike_w": {"run": 39729248473, "artifact": "r7-v8-pike_w"},
+  "bow_w": {"run": 39726651993, "artifact": "r7-v8-bow_w"},
+  "knight_w": {"run": 39726651993, "artifact": "r7-v8-knight_w"},
+  "siege_w": {"run": 39726651993, "artifact": "r7-v8-siege_w"},
+  "mage_w": {"run": 39726651993, "artifact": "r7-v8-mage_w"}
+ },
+ "effects": {"run": 40085840026, "artifact": "production-effects-atlas"},
+ "buildings": {"run": 40085840026, "artifact": "production-buildings"},
+ "castle": true,
+ "terrain": true,
+ "ground": true,
+ "astc_sample": {"unit": "spear_e", "scale": 2, "layers": ["color", "team"]}
+}

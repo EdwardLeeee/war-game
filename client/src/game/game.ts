@@ -73,7 +73,8 @@ import {
   UnitType,
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
-import { BUILDING_NAME, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
+import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
+import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
 import { PendingOrders } from "./pending.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
@@ -2118,6 +2119,13 @@ export class Game implements GestureHost {
           this.markCommand(it.cmd);
           if (it.cmd.c === "repair" && view.buildingRepairLocked(it.cmd.building)) this.overlays.toast(REPAIR_LOCKED_TEXT);
           break;
+        case "townAttack":
+          // 點城鎮＝攻擊這座城 (D-100): once on this device.
+          if (!loadHintSeen(KEEP_HINT_KEY)) {
+            saveHintSeen(KEEP_HINT_KEY);
+            this.overlays.toast(KEEP_HINT_TEXT);
+          }
+          break;
         case "endMode":
           this.setMode("normal");
           break;
@@ -2144,7 +2152,7 @@ export class Game implements GestureHost {
       case "unit":
         return `${whose}${UNIT_NAME[p.type] ?? "單位"}`;
       case "building":
-        return `${whose}${BUILDING_NAME[p.type] ?? "建築"}`;
+        return `${whose}${buildingName(p.type, view.rules) ?? "建築"}`;
       case "town":
         return `${p.type === 1 ? "大城" : "小鎮"}${whose === "" ? "" : `（${whose}）`}`;
     }

@@ -7,7 +7,7 @@
 
 | 附件 | 內容 |
 |---|---|
-| `art-vN-x3.tar.gz`、`art-vN-x2.tar.gz` | 一個倍率一個檔。最上層是 `units/<unit>/`（`<unit>.json`、`<unit>_<layer>_<k>.png`、`memory.json`，不放 `raw/`）和 `effects/`（`effects.json`、`effects_0.png`）。art-v2 起加 `buildings/`、`nodes/`；art-v3 起建築和資源點是方形斜看（D-088，說明檔有 `"view": "oblique"`）；art-v4 起加 `castle/`（城牆，D-089；發布清單寫 `"castle": true`）；art-v5 起加 `terrain/`（地形，R6-51；發布清單寫 `"terrain": true`，說明檔 `design/b1/atlas-buildings.md` 第 12 節）。另有 `art-release.json`：tag、commit、來源 run、每個檔的 sha256。 |
+| `art-vN-x3.tar.gz`、`art-vN-x2.tar.gz` | 一個倍率一個檔。最上層是 `units/<unit>/`（`<unit>.json`、`<unit>_<layer>_<k>.png`、`memory.json`，不放 `raw/`）和 `effects/`（`effects.json`、`effects_0.png`）。art-v2 起加 `buildings/`、`nodes/`；art-v3 起建築和資源點是方形斜看（D-088，說明檔有 `"view": "oblique"`）；art-v4 起加 `castle/`（城牆，D-089；發布清單寫 `"castle": true`）；art-v5 起加 `terrain/`（地形，R6-51；發布清單寫 `"terrain": true`，說明檔 `design/b1/atlas-buildings.md` 第 12 節）。art-v6 起加 `ground/`（寫實地面、水、城裡的土路，D-093；發布清單寫 `"ground": true`），城牆說明檔改成 `war-game castle 2`（說明檔第 13 節）。另有 `art-release.json`：tag、commit、來源 run、每個檔的 sha256。 |
 | `astc-sample.tar.gz` | 一個兵種的 2 倍顏色層和玩家色層，ASTC 4×4，KTX 1（`<unit>_<layer>_<k>.astc.ktx`，`astcenc -cl`，未預乘 alpha）。 |
 | `SHA256SUMS` | sha256sum 格式，列出上面每個附件。 |
 
@@ -54,6 +54,20 @@
 ### 記憶體（2 倍，給 iPhone 記憶體檢查用）
 
 數字取自發布檔裡各 `memory.json`：每點未壓縮 4 位元組，ASTC 4×4 每點 1 位元組。東西陸兩套都算在內，遊戲只載入用得到的那一套。
+
+| art-v6，2 倍 | 未壓縮 RGBA8 | ASTC 4×4 |
+|---|---|---|
+| 兵種 12 種 | 158.8 MB | 39.7 MB |
+| 建築（東陸 24.1、西陸 25.7 MB） | 49.8 MB | 12.5 MB |
+| 城牆（東陸 17.6、西陸 17.9 MB） | 35.5 MB | 8.9 MB |
+| 資源點 | 2.4 MB | 0.6 MB |
+| 地形 | 3.9 MB | 1.0 MB |
+| 地面（6 層和水，`ground/`） | 1.3 MB | 0.3 MB |
+| 合計 | 251.7 MB | 62.9 MB |
+| 效果（`effects_0.png`，2048×488，不在合計裡） | 4.0 MB | 1.0 MB |
+
+- 和 art-v5.2 比：兵種 147.0 → 158.8 MB（12 種都換成寫實的兵，東陸遠程是弓手 `bow_e`）；建築 45.2 → 49.8 MB（多主堡四種樣子和砲坊，少大城箭樓）；城牆 49.0 → 35.5 MB（只剩 D-100 用到的牆片，沒有地磚，多 6 種擺設）。
+- 3 倍：合計 542.2 MB 未壓縮、135.6 MB ASTC（兵種 343.9／86.0、建築 109.0／27.2、城牆 75.4／18.9、資源點 3.8／0.9、地形 7.2／1.8、地面 2.8／0.7）。
 
 | art-v5.2，2 倍 | 未壓縮 RGBA8 | ASTC 4×4 |
 |---|---|---|

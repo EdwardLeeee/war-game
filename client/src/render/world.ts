@@ -928,7 +928,9 @@ export class WorldRenderer {
       const hp = b[o + B.hp];
       // A gate's full hit points are its town's size's (rules.towns[size].gateHp), not buildings[Gate].hp.
       const max = this.view.buildingMaxHp(b, o);
-      const selected = this.view.selection.building === b[o + B.id];
+      // A town's keep (D-100) tapped to look at it shows its bar too: it is what the soldiers must bring down.
+      const inspected = this.view.inspected;
+      const selected = this.view.selection.building === b[o + B.id] || (type === BuildingType.Keep && inspected?.kind === "building" && inspected.id === b[o + B.id]);
       if (building || hp < max || selected) {
         const frac = building ? b[o + B.progress] / 1000 : max > 0 ? hp / max : 1;
         this.bar(p.hpBack, p.hpFront, mid.x, Math.min(top.y, picture?.top ?? top.y, gateTop ?? top.y) - 4, Math.max(width, depth) * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
