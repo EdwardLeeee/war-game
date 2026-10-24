@@ -23,6 +23,8 @@ export interface BuildingEntry {
   crops?: string[];
   /** Other sizes of the same building (art-v4: the big city's tower 3 × 3 on random maps with neighbouring spawns, D-074). */
   sizes?: Record<string, { footprint: [number, number]; states: Partial<Record<BuildingState, string>> }>;
+  /** Where its arrows leave (art-v6: MainCity, ArrowTower, Keep): metres from its anchor, x east, y south, z up; the nearest the target. */
+  shoot_at_m?: [number, number, number][];
 }
 
 /** Which camera the pictures were drawn for (D-088): none, the diamond's (art-v2). */

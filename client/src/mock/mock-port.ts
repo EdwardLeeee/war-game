@@ -184,7 +184,8 @@ interface MUnit {
   /** D-096: the town whose wall it stands on (order Wall), and the cell inside it went up from. */
   wall?: { town: number; from: { x: number; y: number } };
   /** `?gallery=1` (D-085): the action it shows (and what it works at), standing where it is. */
-  pose?: { action: number; target: number };
+  /** `hits` (D-100 UnitField.attackTarget): whom it is hitting while attacking. */
+  pose?: { action: number; target: number; hits?: number };
   /** The node a `gather` sent it to (its order's target, as the simulation has it); it stays on it. */
   node?: number;
 }
@@ -439,7 +440,7 @@ export class MockPort implements SimPort {
     for (const m of this.units) {
       if (m.owner !== NEUTRAL || (m.flags & UnitFlag.OnWall) === 0) continue;
       const near = this.units.filter((u) => u.owner === ME && !u.hidden && (u.x - m.x) ** 2 + (u.y - m.y) ** 2 <= reach * reach).sort((a, b) => (a.x - m.x) ** 2 + (a.y - m.y) ** 2 - ((b.x - m.x) ** 2 + (b.y - m.y) ** 2))[0];
-      m.pose = near === undefined ? undefined : { action: Action.Attack, target: -1 };
+      m.pose = near === undefined ? undefined : { action: Action.Attack, target: -1, hits: near.id };
       if (near !== undefined) m.facing = facing(near.x - m.x, near.y - m.y);
     }
   }
@@ -459,6 +460,19 @@ export class MockPort implements SimPort {
       this.events.push({ k: "siege_shot", u: engine.id, x: target.cx * CELL + (s * CELL) / 2, y: target.cy * CELL + (s * CELL) / 2, lands: this.tick + flight });
     }
     if (this.tick % 60 === 30) this.events.push({ k: "siege_shot", u: 99_999, x: centre(23), y: centre(68), lands: this.tick + flight, from: 0 });
+  }
+
+  /** Tests (真的箭): these units of ours stand and attack `target` (UnitField.attackTarget), facing it; −1: they stop. */
+  strike(ids: number[], target: number): void {
+    const t = this.units.find((v) => v.id === target);
+    const b = this.buildings.find((v) => v.id === target);
+    for (const u of this.units) {
+      if (u.owner !== ME || !ids.includes(u.id)) continue;
+      u.pose = target < 0 ? undefined : { action: Action.Attack, target, hits: target };
+      const tx = t?.x ?? (b === undefined ? u.x : b.cx * CELL);
+      const ty = t?.y ?? (b === undefined ? u.y : b.cy * CELL);
+      if (target >= 0) u.facing = facing(tx - u.x, ty - u.y);
+    }
   }
 
   /** Tests: a building's hit points now (a gate damaged, D-096). */
@@ -945,6 +959,7 @@ export class MockPort implements SimPort {
       units[o + U.stance] = u.stance;
       units[o + U.castProgress] = u.cast;
       units[o + U.flags] = u.flags;
+      units[o + U.attackTarget] = u.pose?.action === Action.Attack ? (u.pose.hits ?? -1) : -1;
     });
 
     const shown = this.buildings.filter((b) => b.owner === ME || this.everSeen(b));
