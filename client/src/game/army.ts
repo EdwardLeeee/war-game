@@ -1,5 +1,7 @@
 // Who stays behind and who marches (D-026, GDD §5 and §10): the soldiers left in a town as
-// its garrison (留守), 全軍 and the control groups without them, and the control groups that
+// its garrison (留守), 全軍 and the control groups without them (the user 2026-10-26: those
+// stationed are still their group's, 「我把兵團駐守在這座城池裡面，那我當然可以再把它抽回來」;
+// they come out again with 出城歸隊 and walk back to it), and the control groups that
 // fill themselves up with newly trained soldiers (編隊自動補兵) and with the soldiers in no group
 // (軍團, D-050: the player sets how many of each type a group wants). Bookkeeping on unit ids
 // only, with no screen and no clock (the caller passes the simulation's tick), so the rules
@@ -17,6 +19,8 @@ export interface ArmyUnit {
   /** Fixed point (CELL per cell), as in the snapshot. */
   x: number;
   y: number;
+  /** On its town's wall or going up (Order.Wall, D-096): the first to stay in a town. */
+  wall?: boolean;
 }
 
 export interface TownArea {
@@ -139,11 +143,18 @@ export function inTown(u: ArmyUnit, town: TownArea): boolean {
   return toCentre2(u, town) <= r * r;
 }
 
-/** The order soldiers are chosen to stay: mages last, then nearest the town centre, then the lower id. */
+/** Who stays in a town first, by type (ceo 2026-10-26: 遠程 on the wall first): ranged, spearmen, cavalry, siege, mages last (the army wants them). */
+const STAY_RANK: Record<number, number> = { [UnitType.Ranged]: 0, [UnitType.Spearman]: 1, [UnitType.Cavalry]: 2, [UnitType.Siege]: 3, [UnitType.Mage]: 4 };
+
+/**
+ * The order soldiers are chosen to stay: those on its wall first, then by type (STAY_RANK), then
+ * nearest the town centre, then the lower id. They come out the other way round.
+ */
 function byGarrisonOrder(town: TownArea): (a: ArmyUnit, b: ArmyUnit) => number {
   return (a, b) => {
-    const mage = Number(a.type === UnitType.Mage) - Number(b.type === UnitType.Mage);
-    return mage || toCentre2(a, town) - toCentre2(b, town) || a.id - b.id;
+    const wall = Number(b.wall === true) - Number(a.wall === true);
+    const rank = (STAY_RANK[a.type] ?? 5) - (STAY_RANK[b.type] ?? 5);
+    return wall || rank || toCentre2(a, town) - toCentre2(b, town) || a.id - b.id;
   };
 }
 
@@ -177,32 +188,84 @@ export class ArmyBook {
       .map((u) => u.id);
   }
 
+  /** The town each of these soldiers is stationed in, those stationed only, in town order. */
+  townsOf(ids: readonly number[]): number[] {
+    return [...this.garrisons].filter(([, list]) => list.some((id) => ids.includes(id))).map(([town]) => town).sort((a, b) => a - b);
+  }
+
+  /** The group a unit is in, or null. */
+  groupOf(id: number): number | null {
+    const i = this.groups.findIndex((g) => g.ids.includes(id));
+    return i < 0 ? null : i;
+  }
+
+  /** How many of these units are in each group. */
+  perGroup(ids: readonly number[]): number[] {
+    return this.groups.map((g) => g.ids.filter((id) => ids.includes(id)).length);
+  }
+
+  /** Group i's members not stationed in a town: those its button selects, 「退」 sends, its alarm counts and its recruits walk to. */
+  marching(i: number): number[] {
+    return this.groups[i].ids.filter((id) => !this.isGarrisoned(id));
+  }
+
+  /** Group i's members stationed in towns (駐守中), town by town in town order. */
+  stationedOf(i: number): { town: number; ids: number[] }[] {
+    const g = this.groups[i];
+    return [...this.garrisons]
+      .map(([town, list]) => ({ town, ids: list.filter((id) => g.ids.includes(id)) }))
+      .filter((e) => e.ids.length > 0)
+      .sort((a, b) => a.town - b.town);
+  }
+
+  /** The town's 留守 by group, in group order, those in no group last (group null). */
+  garrisonByGroup(town: number): { group: number | null; ids: number[] }[] {
+    const list = this.garrisons.get(town) ?? [];
+    const out: { group: number | null; ids: number[] }[] = [];
+    this.groups.forEach((g, i) => {
+      const ids = list.filter((id) => g.ids.includes(id));
+      if (ids.length > 0) out.push({ group: i, ids });
+    });
+    const none = list.filter((id) => this.groupOf(id) === null);
+    if (none.length > 0) out.push({ group: null, ids: none });
+    return out;
+  }
+
   /**
-   * Station up to n more soldiers in the town. They leave their control groups, and 全軍 no
-   * longer takes them. Returns the ids stationed (the caller sets them to 堅守).
+   * Station up to n more soldiers in the town. They stay in their control groups (counted in
+   * what each wants, so 自動補兵 does not replace them), but the groups' buttons, 全軍 and 「退」
+   * no longer take them. Returns the ids stationed (the caller sets them to 堅守).
    */
   station(units: ArmyUnit[], town: TownArea, n: number): number[] {
     const chosen = this.candidates(units, town).slice(0, Math.max(0, n));
     if (chosen.length === 0) return [];
     this.garrisons.set(town.id, [...(this.garrisons.get(town.id) ?? []), ...chosen]);
-    for (const g of this.groups) g.ids = g.ids.filter((id) => !chosen.includes(id));
+    this.stay(chosen);
     return chosen;
   }
 
   /**
-   * 駐軍 (station.ts): these soldiers stay in the town from now, on their way in too: out of any
-   * other garrison and of their control groups. Returns how many left each group.
+   * 駐軍 (station.ts), 上城牆: these soldiers stay in the town from now, on their way in too (out of
+   * any other garrison). Returns how many of each group were not stationed before.
    */
   stationAll(town: number, ids: readonly number[]): number[] {
+    const fresh = ids.filter((id) => !this.isGarrisoned(id));
     this.drop([...ids]);
     this.garrisons.set(town, [...(this.garrisons.get(town) ?? []), ...ids]);
-    return this.leaveGroups(ids);
+    this.stay(ids);
+    return this.perGroup(fresh);
+  }
+
+  /** Stationed: no longer a recruit walking to its group. */
+  private stay(ids: readonly number[]): void {
+    for (const g of this.groups) if (g.recruits.some((r) => ids.includes(r.id))) g.recruits = g.recruits.filter((r) => !ids.includes(r.id));
   }
 
   /**
    * Take one soldier off the town's garrison: the last choice goes first (a mage before the
-   * others, then the one farthest from the centre, then the higher id). Returns its id (the
-   * caller sets it back to 積極), or null when nobody is stationed there.
+   * others, then the one farthest from the centre, then the higher id). It walks back to its
+   * group, if it has one. Returns its id (the caller sets it back to 積極), or null when nobody
+   * is stationed there.
    */
   releaseOne(units: ArmyUnit[], town: TownArea): number | null {
     const ids = this.garrisons.get(town.id) ?? [];
@@ -210,13 +273,61 @@ export class ArmyBook {
     const last = here.at(-1);
     if (last === undefined) return null;
     this.drop([last.id]);
+    this.rejoin([last.id]);
     return last.id;
   }
 
   /**
+   * 出城歸隊、歸隊、解除留守、全部帶走 (the user 2026-10-26, choosing 自動留最少人數): those of the
+   * town's 留守 that `whose` picks come out, but the town keeps `keep` in all; the others stationed
+   * there count first, then those picked stay in the order soldiers are chosen to stay. Those in a
+   * group walk back to it (as recruits); those in none are 全軍's again. Returns who came out (the
+   * caller sets them to 積極) and who stayed.
+   */
+  unstation(units: ArmyUnit[], town: TownArea, whose: (id: number) => boolean, keep: number): { out: number[]; kept: number[] } {
+    const list = this.garrisons.get(town.id) ?? [];
+    const mine = list.filter(whose);
+    const stay = Math.max(0, Math.min(mine.length, keep - (list.length - mine.length)));
+    const at = new Map(units.map((u) => [u.id, u]));
+    // Those not among the units (hiding in a building) are no help to the town: they go first.
+    const ranked = [
+      ...mine
+        .map((id) => at.get(id))
+        .filter((u): u is ArmyUnit => u !== undefined)
+        .sort(byGarrisonOrder(town))
+        .map((u) => u.id),
+      ...mine.filter((id) => !at.has(id)),
+    ];
+    const kept = ranked.slice(0, stay);
+    const out = ranked.slice(stay);
+    this.drop(out);
+    this.rejoin(out);
+    return { out, kept };
+  }
+
+  /** 下城牆: these soldiers, those in a group, are out of any garrison and walk back to their groups. Returns those. */
+  backToGroups(ids: readonly number[]): number[] {
+    const grouped = ids.filter((id) => this.groupOf(id) !== null);
+    this.drop(grouped);
+    this.rejoin(grouped);
+    return grouped;
+  }
+
+  /** These soldiers, out of a town, walk back to their groups (as 自動補兵's recruits, from the next muster). */
+  private rejoin(ids: readonly number[]): void {
+    for (const g of this.groups) {
+      const back = ids.filter((id) => g.ids.includes(id) && !g.recruits.some((r) => r.id === id));
+      if (back.length === 0) continue;
+      for (const id of back) g.recruits.push({ id, byHand: false });
+      g.goal = null;
+      g.checked = Number.NEGATIVE_INFINITY;
+    }
+  }
+
+  /**
    * 哨所 (D-080), 躲進建築 (D-083): these soldiers stand guard at an outpost or hide in a
-   * building. Like those stationed in a town they leave their control groups, which keep what
-   * they want and fill up again (自動補兵). Returns how many left each group.
+   * building. They leave their control groups, which keep what they want and fill up again
+   * (自動補兵). Returns how many left each group.
    */
   leaveGroups(ids: readonly number[]): number[] {
     return this.groups.map((g) => {
@@ -275,7 +386,10 @@ export class ArmyBook {
     for (const id of s.keptOut) this.keptOut.add(id);
   }
 
-  /** These units stop being garrison (the player ordered them away). Returns the ones that were stationed. */
+  /**
+   * These units stop being garrison (the player ordered them away, GDD §5): they stay in their
+   * groups and go where he sent them. Returns the ones that were stationed.
+   */
   release(ids: number[]): number[] {
     const stationed = ids.filter((id) => this.isGarrisoned(id));
     this.drop(stationed);
@@ -284,7 +398,8 @@ export class ArmyBook {
 
   /**
    * Forget the dead, and end the garrison of every town that is no longer held (plundered
-   * to ruins, revolted, taken). Returns the survivors released that way.
+   * to ruins, revolted, taken). Returns the survivors released that way; those in a group walk
+   * back to it.
    */
   prune(alive: (id: number) => boolean, held: (town: number) => boolean): number[] {
     const released: number[] = [];
@@ -299,6 +414,7 @@ export class ArmyBook {
     }
     for (const g of this.groups) if (g.ids.some((id) => !alive(id))) g.ids = g.ids.filter(alive);
     for (const id of [...this.keptOut]) if (!alive(id)) this.keptOut.delete(id);
+    this.rejoin(released);
     return released;
   }
 
@@ -309,13 +425,15 @@ export class ArmyBook {
 
   /**
    * The simulation refused command `seq`. If it was a 搶 or 治理 with soldiers stationed, they
-   * stop being garrison (the town still waits for a choice). Returns them.
+   * stop being garrison (the town still waits for a choice) and rejoin their groups. Returns them.
    */
   refused(seq: number): number[] {
     for (const [town, p] of [...this.pending]) {
       if (p.seq !== seq) continue;
       this.pending.delete(town);
-      return this.release(p.ids);
+      const out = this.release(p.ids);
+      this.rejoin(out);
+      return out;
     }
     return [];
   }
@@ -335,9 +453,11 @@ export class ArmyBook {
   /**
    * 長按編隊按鈕: these units become group i, which remembers how many soldiers of each type
    * it has. A unit belongs to one group only: it leaves the others, and their 原本 shrinks
-   * with it (the player is regrouping, which must not read as losses to fill).
+   * with it (the player is regrouping, which must not read as losses to fill). Its members
+   * stationed in towns stay in it (the group's button does not select them): `typeOf` gives
+   * their types, null for the dead.
    */
-  saveGroup(i: number, units: { id: number; type: number }[]): void {
+  saveGroup(i: number, units: { id: number; type: number }[], typeOf: (id: number) => number | null = () => null): void {
     // Put in a group by hand: 自動補兵's rules again (D-083).
     for (const u of units) this.keptOut.delete(u.id);
     this.groups.forEach((g, k) => {
@@ -350,6 +470,11 @@ export class ArmyBook {
       }
     });
     const g = this.groups[i];
+    const away = g.ids
+      .filter((id) => this.isGarrisoned(id) && !units.some((u) => u.id === id))
+      .map((id) => ({ id, type: typeOf(id) }))
+      .filter((u): u is { id: number; type: number } => u.type !== null);
+    units = [...units, ...away];
     const ids = units.map((u) => u.id);
     const want: Record<number, number> = {};
     for (const u of units) if (isSoldier(u.type)) want[u.type] = (want[u.type] ?? 0) + 1;
@@ -384,7 +509,8 @@ export class ArmyBook {
     let most = 0;
     this.groups.forEach((g, i) => {
       if (!g.refill || g.ids.includes(id)) return;
-      const n = g.ids.filter((m) => typeOf(m) !== null).length;
+      // The main army: those stationed in towns are not marching with it.
+      const n = g.ids.filter((m) => typeOf(m) !== null && !this.isGarrisoned(m)).length;
       if (n > most) {
         most = n;
         best = i;
@@ -450,14 +576,16 @@ export class ArmyBook {
 
   /**
    * 軍團設定: group i wants n soldiers of this type. With more of them than that, the last to
-   * join leave the group (they are free again, for the groups still short). Returns those.
+   * join leave the group (they are free again, for the groups still short), those stationed in
+   * towns last. Returns those.
    * `typeOf`: the type of a living unit, null for a dead one.
    */
   setWant(i: number, type: number, n: number, typeOf: (id: number) => number | null): number[] {
     const g = this.groups[i];
     const want = Math.max(0, Math.floor(n));
     g.want = { ...g.want, [type]: want };
-    const leave = g.ids.filter((id) => typeOf(id) === type).slice(want);
+    const ofType = g.ids.filter((id) => typeOf(id) === type);
+    const leave = [...ofType.filter((id) => this.isGarrisoned(id)), ...ofType.filter((id) => !this.isGarrisoned(id))].slice(want);
     if (leave.length > 0) {
       g.ids = g.ids.filter((id) => !leave.includes(id));
       g.recruits = g.recruits.filter((r) => !leave.includes(r.id));
@@ -486,8 +614,8 @@ export class ArmyBook {
    * Called with every snapshot. Recruits walk to their group as soon as they join it (D-054:
    * no waiting for company any more); they are sent again when the group moves on, and left
    * alone once they are within 6 cells of it. A group with nobody to join (軍團 just set up,
-   * or everyone fell): its recruits are the group where they stand (D-080: 「部隊剛編兵的時候
-   * 預測就是站在原地，不要往主城集合」). Returns the 前進 orders to give.
+   * everyone fell, or everyone else stays in towns): its recruits are the group where they stand
+   * (D-080: 「部隊剛編兵的時候預測就是站在原地，不要往主城集合」). Returns the 前進 orders to give.
    * `where`: a living unit's position (fixed point), null for a dead one.
    */
   muster(tick: number, where: (id: number) => { x: number; y: number } | null): MarchOrder[] {
@@ -500,7 +628,7 @@ export class ArmyBook {
       let cx = 0;
       let cy = 0;
       for (const id of g.ids) {
-        const p = recruit.has(id) ? null : where(id);
+        const p = recruit.has(id) || this.isGarrisoned(id) ? null : where(id);
         if (p === null) continue;
         n++;
         cx += p.x;

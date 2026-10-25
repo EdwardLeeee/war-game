@@ -746,6 +746,29 @@ button.order-retreat {
   font-size: 12px;
 }
 
+/* 駐N (the user 2026-10-26): how many of the group stay in towns, on its corner. */
+.groups button {
+  position: relative;
+}
+
+.groups .group-away {
+  position: absolute;
+  top: -5px;
+  right: 1px;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  background: #2f5d8a;
+  color: #fff;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+
 /* 閃紅提醒 (D-081): a group down to fewer than half of what it attacked with. */
 .groups button.alarm {
   background: #d93a30;
@@ -938,6 +961,25 @@ button.order-retreat {
 
 .group-actions {
   margin-right: -46px;
+}
+
+/* 駐守中 (the user 2026-10-26): the group's soldiers in towns, 出城歸隊 and 全部帶走 beside them. */
+.group-station {
+  align-items: center;
+  margin-right: -46px;
+  font-size: 13px;
+}
+
+/* A town's 留守 by group: 「編隊 1：5 名［歸隊］」. */
+.keep-groups {
+  align-items: center;
+}
+
+.keep-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
 }
 
 /* 騎兵 makes four kinds (round 7): two to a line, the name over its − N +. */

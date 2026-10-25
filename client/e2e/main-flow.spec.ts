@@ -250,14 +250,13 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await shot(page, info, "8-town-choice");
   await choice.getByRole("button", { name: /^治理/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: town.id, choice: 1 });
-  // One soldier stays: told to hold, out of control group 1.
+  // One soldier stays: told to hold, out of 全軍 (still his group's, the user 2026-10-26).
   await expect.poll(() => garrison(page, town.id)).toHaveLength(1);
   const [kept] = await garrison(page, town.id);
   // One of ours who took the town: the squad, or a spearman 自動訓練 sent after it (D-054).
   expect((await units(page)).find((u) => u.id === kept)?.owner, "one of ours").toBe(me);
-  // (Group 1 is short of him now, and may take a soldier in no group (D-050): look for the stance among what was sent.)
+  // (Other orders of the screen's may follow: look for the stance among what was sent.)
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance" && c.auto === true).at(-1)).toMatchObject({ c: "stance", u: [kept], stance: 1 });
-  expect((await groups(page))[0]).not.toContain(kept);
   // Repairing (TownState 3) by us, and the soldier holds.
   await expect.poll(async () => (await towns(page)).find((t) => t.id === town.id)?.state, { timeout: 30_000 }).toBe(3);
   await expect.poll(async () => (await units(page)).find((u) => u.id === kept)?.stance).toBe(1);
@@ -292,7 +291,8 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await shot(page, info, "8b-army-left-garrison-stays");
 
   // 8c. 編隊缺人後，自動訓練出來的新兵補進來（D-026、D-054）：自動訓練一直開著，沒有人按「訓練槍兵」。
-  //     編隊 1 的一名槍兵去留守 → 編隊 1 缺一名槍兵 → 不選村民蓋民居（D-024；人口可能早就滿了，蓋好才有空位）→
+  //     編隊 1 的一名槍兵去留守（還算編隊 1 的，使用者 2026-10-26）→ 軍團畫面多要一名槍兵 → 編隊 1 缺一名槍兵 →
+  //     不選村民蓋民居（D-024；人口可能早就滿了，蓋好才有空位）→
   //     兵營自己練出來的槍兵編進編隊 1，馬上自己走到部隊那裡（全軍在 8b 走到了 `away`）。
   //     Who fills the gap first is not fixed: an idle spearman in no group (D-050) or a new one.
   //     The new ones join group 1 either way (the group short of them, or the largest one).
@@ -340,7 +340,10 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   const known = (await own(page, [SPEARMAN])).map((u) => u.id);
   await page.locator(".sel-info").getByRole("button", { name: "多留守 1 名" }).tap();
   await expect.poll(() => garrison(page, town.id)).toEqual([kept, sp]);
-  await expect.poll(async () => (await groupInfo(page))[0].ids).not.toContain(sp);
+  expect((await groupInfo(page))[0].ids, "still group 1's").toContain(sp);
+  // Not short for that: one more spearman wanted (軍團畫面 +) makes it so.
+  await tapOn(page, ".groups > button:nth-child(1)");
+  await page.locator(".sel-info").getByRole("button", { name: "多要 1 名槍兵" }).tap();
   // 不選村民蓋民居：重設 → 建造 → 民居 → ✓，由模擬派最近的村民去蓋. Placed while paused, so
   // nobody walks onto the spot between the preview and ✓.
   await pause(page);
@@ -420,7 +423,9 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".sel-head")).toContainText("編隊 1");
   const g1Now = (await groupInfo(page))[0];
-  const g1Alive = (await units(page)).filter((u) => g1Now.ids.includes(u.id)).map((u) => u.id);
+  // Those stationed in the town (8, 8c) stay there (the user 2026-10-26).
+  const inTown = await garrison(page, town.id);
+  const g1Alive = (await units(page)).filter((u) => g1Now.ids.includes(u.id) && !inTown.includes(u.id)).map((u) => u.id);
   await expect.poll(async () => (await selection(page))?.units.slice().sort((a, b) => a - b)).toEqual(g1Alive.slice().sort((a, b) => a - b));
   await expect(panel.getByRole("status", { name: "槍兵要幾名" })).toHaveText(`${g1Now.want[SPEARMAN] ?? 0}`);
   await shot(page, info, "9-group-panel");

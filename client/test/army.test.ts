@@ -64,14 +64,16 @@ test("全軍的數字（ceo 2026-10-03）：全軍會選到幾名，不含留守
   assert.equal(armyText(book.army([unit(4, FARMER, 31, 31)]).length), "全軍 0");
 });
 
-test("留守：被挑中的兵從原本的編隊移出", () => {
+test("留守：被挑中的兵還在原本的編隊（使用者 2026-10-26），但編隊按鈕不選他們", () => {
   const book = new ArmyBook();
   const units = [unit(1, SPEAR, 30, 30), unit(2, SPEAR, 31, 30), unit(3, SPEAR, 32, 30)];
   book.groups[0].ids = [1, 2, 3];
   book.groups[2].ids = [1, 3];
   book.station(units, TOWN, 1);
-  assert.deepEqual(book.groups[0].ids, [2, 3]);
-  assert.deepEqual(book.groups[2].ids, [3]);
+  assert.deepEqual(book.groups[0].ids, [1, 2, 3]);
+  assert.deepEqual(book.groups[2].ids, [1, 3]);
+  assert.deepEqual(book.marching(0), [2, 3]);
+  assert.deepEqual(book.marching(2), [3]);
 });
 
 test("留守：已經在別座城鎮留守的兵不會再被挑", () => {
@@ -129,10 +131,13 @@ test("留守：陣亡的兵從名單移除；城鎮不再是我方的，名單�
   // Unit 1 dies; both towns still held.
   assert.deepEqual(book.prune((id) => id !== 1 && id !== 9, () => true), []);
   assert.deepEqual(book.garrisonOf(TOWN.id), [2]);
-  assert.deepEqual(book.groups[1].ids, [], "2 left the group when stationed, 9 died");
+  assert.deepEqual(book.groups[1].ids, [2], "2 is still the group's while stationed, 9 died");
   // OTHER revolts: its garrison ends and the two survivors are handed back.
   assert.deepEqual(book.prune(() => true, (town) => town === TOWN.id), [3, 4]);
   assert.deepEqual(book.garrisonOf(OTHER.id), []);
   assert.deepEqual(book.garrisonOf(TOWN.id), [2]);
   assert.deepEqual(book.army(units), [1, 3, 4]);
+  // TOWN is lost too: 2 walks back to group 2.
+  assert.deepEqual(book.prune(() => true, () => false), [2]);
+  assert.deepEqual(book.groups[1].recruits, [{ id: 2, byHand: false }]);
 });
