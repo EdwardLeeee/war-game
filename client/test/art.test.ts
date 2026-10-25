@@ -101,7 +101,7 @@ test("說明檔：只收 war-game atlas 2（第 1 版的特效層含防護罩）
 });
 
 test("原型的兵穿哪套圖：東陸、西陸各 5 種，民兵用槍兵；攻城砲（D-099）開局不載，開著時才另外載", () => {
-  assert.deepEqual(ATLAS_NAMES, ["bow_w", "farmer_e", "farmer_w", "hcav_e", "knight_w", "mage_e", "mage_w", "pike_w", "spear_e", "xbow_e"]);
+  assert.deepEqual(ATLAS_NAMES, ["bow_e", "bow_w", "farmer_e", "farmer_w", "hcav_e", "knight_w", "mage_e", "mage_w", "pike_w", "spear_e"]);
   assert.deepEqual(SIEGE_ATLASES, ["siege_e", "siege_w"]);
   assert.deepEqual(UNIT_ATLAS[UnitType.Militia], UNIT_ATLAS[UnitType.Spearman]);
 });

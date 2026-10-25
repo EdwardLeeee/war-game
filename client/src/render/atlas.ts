@@ -47,6 +47,11 @@ export interface Atlas {
   /** Indexed by UnitType; 32 x 32 world px, centred. */
   units: Texture[];
   ring: Texture;
+  /**
+   * Under a unit's feet on 寫實地面 (ceo 2026-10-25): a see-through disc with a firmer rim, tinted
+   * its owner's colour, so the units stand out from the earth and grass. 32 x 32, centred.
+   */
+  foot: Texture;
   white: Texture;
   /** 64 x 64, scaled to the footprint. */
   building: Texture;
@@ -116,6 +121,7 @@ function buildAtlas(renderer: Renderer): Atlas {
   units[UnitType.Militia] = shape(renderer, 32, (g) => g.rect(9, 9, 14, 14).fill(0xffffff).stroke(outline));
 
   const ring = shape(renderer, 32, (g) => g.circle(16, 16, 14).stroke({ width: 2, color: 0xffffff }));
+  const foot = shape(renderer, 32, (g) => g.circle(16, 16, 13).fill({ color: 0xffffff, alpha: 0.4 }).stroke({ width: 2.5, color: 0xffffff, alpha: 0.95 }));
   const white = shape(renderer, 4, (g) => g.rect(0, 0, 4, 4).fill(0xffffff));
   const building = shape(renderer, 64, (g) => g.roundRect(3, 3, 58, 58, 8).fill(0xffffff).stroke({ width: 3, color: INK }));
   const farm = shape(renderer, 64, (g) => {
@@ -188,5 +194,5 @@ function buildAtlas(renderer: Renderer): Atlas {
     t.destroy();
   }
 
-  return { units, ring, white, building, farm, tower, occupied, hold, paused, glyphs, nodes, wall, townGlyphs };
+  return { units, ring, foot, white, building, farm, tower, occupied, hold, paused, glyphs, nodes, wall, townGlyphs };
 }

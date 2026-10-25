@@ -76,6 +76,7 @@ import {
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
+import { loadGroundOn, saveGroundOn } from "../ground-pref.ts";
 import { PendingOrders } from "./pending.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
@@ -464,6 +465,8 @@ export class Game implements GestureHost {
    */
   private readonly lastSent = new Map<number, { to: Spot | null; target: number | null; went: Spot; seq: number }>();
   private sentSeq = 0;
+  /** 攻城砲's atlases asked for in this game (D-099: once one is seen). */
+  private siegeArtAsked = false;
   /** 等錢治理 (ceo 2026-10-21): towns whose 治理 waits for its cost, and the reserve raised meanwhile. */
   readonly governWaits = new GovernWaits();
   /**
@@ -575,6 +578,24 @@ export class Game implements GestureHost {
   /** 寫實地面 (D-093): drawn or not, and its quality; null before the first snapshot. */
   get groundForTest(): { real: boolean; quality: string | null; water: boolean; town: boolean } | null {
     return this.renderer?.groundLook ?? null;
+  }
+
+  /** Units with their owner's colour under their feet last frame (寫實地面), for the test page. */
+  get feetForTest(): number {
+    return this.renderer?.footCount ?? 0;
+  }
+
+  /** 選單's 寫實地面 開／關 (ceo 2026-10-25): only with the ground loaded for this game. */
+  groundSwitch(): boolean | null {
+    return this.renderer?.groundLoaded === true ? loadGroundOn() : null;
+  }
+
+  /** 寫實地面 off or on again, at once, and remembered on this device (ground-pref.ts). */
+  toggleGround(): void {
+    const on = !loadGroundOn();
+    saveGroundOn(on);
+    this.renderer?.showGround(on);
+    this.toast(on ? "寫實地面：開" : "寫實地面：關（這台裝置記住了）", "ok");
   }
 
   /** 寫實地面's quality (the 量測 panel, the test page). */
@@ -1972,8 +1993,7 @@ export class Game implements GestureHost {
       case "ready": {
         this.started.ready = performance.now();
         this.view = new GameView(msg.player ?? 0, msg.map, msg.rules);
-        // 攻城砲 (D-099): their atlases only in a game that has them (drawn as shapes until they are in).
-        if (features(msg.rules).siege === true) void this.options.art?.addAtlases(SIEGE_ATLASES);
+        this.siegeArtAsked = false;
         // The map as a diamond (D-085; docs/sprite-atlas.md section 1): the camera, taps and boxes, and the drawing.
         const projection = this.options.view === undefined ? PROJECTION_DEFAULT : PROJECTIONS[this.options.view];
         this.view.projection = projection;
@@ -1996,6 +2016,8 @@ export class Game implements GestureHost {
         if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
         const ground = this.options.ground ?? null;
         if (ground !== null && !this.renderer.useGround(ground, this.options.groundQuality ?? "high")) console.warn("ground: 寫實地面 needs ui's terrain pictures (art-v5, square on); the flat ground stays");
+        // 選單's 寫實地面 開／關 (ceo 2026-10-25), as this device was left.
+        else if (ground !== null) this.renderer.showGround(loadGroundOn());
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
@@ -2060,6 +2082,7 @@ export class Game implements GestureHost {
             this.hud.onEvent(ev);
           }
         }
+        this.askSiegeArt(view);
         this.stances.settle(view.header?.[H.tick] ?? 0, (id) => (view.unitRow(id) >= 0 ? view.unitStance(id) : null));
         this.cannonsOn(view);
         this.pending.settle(view.header?.[H.tick] ?? 0);
@@ -2460,8 +2483,11 @@ export class Game implements GestureHost {
     const view = this.view;
     if (view === null || this.renderer === null) return;
     const o = view.unitRow(ev.u);
-    const engine = o < 0 ? null : (({ x, y }) => ({ x: x / TILE_PX, y: y / TILE_PX }))(view.unitPos(o));
-    const stone = stoneOf(ev, engine, view.header?.[H.tick] ?? 0, (fixed) => fixed / CELL);
+    const u = view.curr?.snap.units;
+    const engine = o < 0 || u === undefined ? null : { ...(({ x, y }) => ({ x: x / TILE_PX, y: y / TILE_PX }))(view.unitPos(o)), facing: u[o + UnitField.facing] };
+    // art-v6's stone (effects siege_stone): from the engine's arm, its arc, from afar as ui drew it.
+    const look = this.renderer.stoneLook(o < 0 || u === undefined ? null : u[o + UnitField.owner]);
+    const stone = stoneOf(ev, engine, view.header?.[H.tick] ?? 0, (fixed) => fixed / CELL, look);
     if (stone !== null) this.renderer.siegeShot(stone);
   }
 
@@ -2559,6 +2585,22 @@ export class Game implements GestureHost {
     if (latest === null) return null;
     const to = latest.target === null ? latest.to : (this.targetCell(latest.target) ?? latest.to);
     return to === null ? null : { to, went: latest.went };
+  }
+
+  /**
+   * 攻城砲 (D-099): their atlases once one is first seen in this game, ours or anyone's (drawn as shapes
+   * until they are in), not as soon as the rules have them (SIEGE on with art-v6): most games have
+   * none for a long while, and a page left in the middle of loading them throws on WebKit.
+   */
+  private askSiegeArt(view: GameView): void {
+    const u = view.curr?.snap.units;
+    if (this.siegeArtAsked || u === undefined || features(view.rules).siege !== true) return;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.type] !== UnitType.Siege) continue;
+      this.siegeArtAsked = true;
+      void this.options.art?.addAtlases(SIEGE_ATLASES);
+      return;
+    }
   }
 
   /** Enemies in sight now (cells): units of the other players and the towns' militia. */

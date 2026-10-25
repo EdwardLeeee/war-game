@@ -562,16 +562,18 @@ async function artForGame(): Promise<UnitArt | null> {
   }
 }
 /**
- * 寫實地面 (D-093, ?test=1&ground=real): war-game-ui's ground set beside the atlases (art-v6 on),
- * else the development set from R7's CC0 textures (scripts/fetch-ground-dev.ts, local), else the
- * test page's stand-ins. Loaded once a page.
+ * 寫實地面 (D-093): war-game-ui's ground set beside the atlases (art-v6 on); the players' only that
+ * (美術關 or no set: the two greens). A test page's (?test=1&ground=real) else the development set
+ * from R7's CC0 textures (scripts/fetch-ground-dev.ts, local), else its stand-ins. Loaded once a page.
  */
 let loadedGround: Promise<GroundTextures | null> | null = null;
 function groundForGame(): Promise<GroundTextures | null> {
   if (params.ground !== "real") return Promise.resolve(null);
   if (loadedGround === null) {
     const art = loadedArt === null ? [] : [`${loadedArt.base}ground/`];
-    loadedGround = loadGround([...art, "./art/ground-dev/", "./art/test/ground/"], loadTimes).catch((err: unknown) => {
+    const bases = params.test ? [...art, "./art/ground-dev/", "./art/test/ground/"] : art;
+    if (bases.length === 0) return Promise.resolve(null);
+    loadedGround = loadGround(bases, loadTimes).catch((err: unknown) => {
       console.warn(`ground: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     });
