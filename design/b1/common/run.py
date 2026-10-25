@@ -357,6 +357,11 @@ for _i in range(0, len(R8_V61), 8):
     TARGETS[f"r8v61_{_i // 8}"] = R8_V61[_i:_i + 8]
     CAMERA[f"r8v61_{_i // 8}"] = proj.OBLIQUE
     LOOK[f"r8v61_{_i // 8}"] = "r8"
+# R8-38 (D-101 市場, ceo 2026-10-25): the drafts, two options a culture (design/r8/blender/market_r8.py)
+TARGETS["r8m_draft"] = [dict(kind="r8_market", culture=c, opts=dict(option=o), name=f"market_{c}_{o}") for c in CULTURES
+                        for o in ("A", "B")]
+CAMERA["r8m_draft"] = proj.OBLIQUE
+LOOK["r8m_draft"] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
 # replaces these pieces of the r8p run in the atlas
 TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in

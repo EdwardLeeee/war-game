@@ -47,6 +47,7 @@ import arch2_r8                      # noqa: E402
 import nature_r8                     # noqa: E402
 import keep_r8                       # noqa: E402
 import decor_r8                      # noqa: E402
+import market_r8                     # noqa: E402
 import terrain_r8                    # noqa: E402
 
 REG = dict(blds.BUILDERS)
@@ -71,6 +72,8 @@ REG.update(keep_r8.BUILDERS)
 FOOT.update(keep_r8.FOOTPRINT)
 REG.update(decor_r8.BUILDERS)
 FOOT.update(decor_r8.FOOTPRINT)
+REG.update(market_r8.BUILDERS)
+FOOT.update(market_r8.FOOTPRINT)
 REG.update(terrain_r8.BUILDERS)
 FOOT.update(terrain_r8.FOOTPRINT)
 HOUSES = ("th22", "th21", "th12", "th11")
