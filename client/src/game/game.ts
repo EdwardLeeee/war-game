@@ -573,6 +573,11 @@ export class Game implements GestureHost {
     return this.renderer?.groundLook ?? null;
   }
 
+  /** Units with their owner's colour under their feet last frame (寫實地面), for the test page. */
+  get feetForTest(): number {
+    return this.renderer?.footCount ?? 0;
+  }
+
   /** 寫實地面's quality (the 量測 panel, the test page). */
   setGroundQuality(q: GroundQuality): void {
     this.renderer?.setGroundQuality(q);

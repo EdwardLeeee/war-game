@@ -54,6 +54,9 @@ import { ARROW_FLIGHT, CHEST_M, flightOf, flightSeconds, heightAt, SLING_FLIGHT 
 import type { UnitArt } from "./unit-art.ts";
 
 const UNIT_SCALE = 1;
+/** The owner's colour under a unit's feet on 寫實地面: its size (the selection ring is 1.05) and how strong. */
+const FOOT_SCALE = 0.85;
+const FOOT_ALPHA = 0.75;
 const BAR_W = TILE_PX * 0.8;
 const BAR_H = 3;
 /** How dark the fog is: never explored, explored but out of sight (0-255). */
@@ -115,6 +118,8 @@ const MARKER_MS = 600;
 interface UnitSprites {
   body: Sprite;
   ring: Sprite;
+  /** Its owner's colour under its feet on 寫實地面 (atlas.ts `foot`). */
+  foot: Sprite;
   shield: Sprite;
   hpBack: Sprite;
   hpFront: Sprite;
@@ -340,6 +345,8 @@ export class WorldRenderer {
   ghostStyle: "fill" | "outline" = "fill";
   /** Units drawn behind a wall this frame (test page). */
   ghostCount = 0;
+  /** Units with their owner's colour under their feet this frame (寫實地面), for the test page. */
+  footCount = 0;
   /** Our units drawn up on a castle's wall this frame (D-096, test page; the militia on theirs not counted). */
   wallLifted = 0;
   private readonly warnPool: Container[] = [];
@@ -1352,6 +1359,7 @@ export class WorldRenderer {
     const sel = view.selection.units;
     this.ghostRings.clear();
     this.ghostCount = 0;
+    this.footCount = 0;
     this.wallLifted = 0;
     // A layer with no one behind a wall this frame is hidden: its filter's pass is skipped.
     const ghosts = { own: 0, enemy: 0, neutral: 0 };
@@ -1369,6 +1377,8 @@ export class WorldRenderer {
     while (this.unitPool.length < n) {
       const ring = new Sprite(this.atlas.ring);
       ring.anchor.set(0.5);
+      const foot = new Sprite(this.atlas.foot);
+      foot.anchor.set(0.5);
       const shield = new Sprite(this.atlas.ring);
       shield.anchor.set(0.5);
       shield.tint = SHIELD_TINT;
@@ -1379,9 +1389,9 @@ export class WorldRenderer {
         s.tint = tint;
         return s;
       };
-      const p: UnitSprites = { body, ring, shield, hpBack: mk(0x201a18), hpFront: mk(0xffffff), shBack: mk(0x201a18), shFront: mk(SHIELD_TINT) };
+      const p: UnitSprites = { body, ring, foot, shield, hpBack: mk(0x201a18), hpFront: mk(0xffffff), shBack: mk(0x201a18), shFront: mk(SHIELD_TINT) };
       // The selection ring and the shape's shield lie on the ground; the shape stands.
-      this.ringLayer.addChild(ring, shield);
+      this.ringLayer.addChild(foot, ring, shield);
       this.unitLayer.addChild(body);
       this.barLayer.addChild(p.hpBack, p.hpFront, p.shBack, p.shFront);
       this.unitPool.push(p);
@@ -1392,7 +1402,7 @@ export class WorldRenderer {
       const o = i * UNIT_STRIDE;
       const shown = i < n && u[o + U.action] !== Action.Garrisoned;
       p.body.visible = shown;
-      p.ring.visible = p.shield.visible = false;
+      p.ring.visible = p.shield.visible = p.foot.visible = false;
       p.hpBack.visible = p.hpFront.visible = p.shBack.visible = p.shFront.visible = false;
       if (!shown) {
         this.artUnits?.hideSlot(i);
@@ -1435,6 +1445,16 @@ export class WorldRenderer {
       p.body.rotation = Math.atan2(m.b * Math.cos(f) + m.d * Math.sin(f), m.a * Math.cos(f) + m.c * Math.sin(f));
       const barY = top === null ? at.y - TILE_PX * 0.62 : top - 2;
       const selected = owner === view.me && binaryHas(sel, id);
+      // 寫實地面 (ceo 2026-10-25): the owner's colour under the feet of those drawn from the atlases,
+      // so they stand out from the earth and grass; not up on a wall (its walk is not the ground).
+      if (this.groundDraw !== null && top !== null && onWall === null) {
+        p.foot.visible = true;
+        p.foot.position.set(px, py);
+        p.foot.scale.set(FOOT_SCALE);
+        p.foot.tint = ownerTint(owner, view.me);
+        p.foot.alpha = FOOT_ALPHA;
+        this.footCount++;
+      }
       p.ring.visible = selected;
       if (selected) {
         p.ring.position.set(px, py);

@@ -7,6 +7,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { openLab, shot, watchErrors } from "./helpers.ts";
 
 const look = (page: Page) => page.evaluate(() => window.__proto?.game?.groundLook() ?? null);
+/** Units with their owner's colour under their feet (寫實地面 only, ceo 2026-10-25). */
+const feet = (page: Page) => page.evaluate(() => window.__proto?.game?.feet() ?? -1);
 
 async function start(page: Page, query: string): Promise<void> {
   await page.goto(`./?test=1&${query}`);
@@ -21,6 +23,8 @@ test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，�
   // The water too, drawn by the shader (art-v6; the test page's stand-ins and the development set have its layer).
   // (The towns' ground with art-v6's: tested in town-interior.spec.ts.)
   await expect.poll(() => look(page)).toMatchObject({ real: true, quality: "high", water: true });
+  // The militia standing in the towns, drawn from the atlases: their colour under their feet.
+  await expect.poll(() => feet(page), { timeout: 30_000 }).toBeGreaterThan(0);
   if (browserName === "chromium") {
     for (const [name, x, y, z] of [
       ["ground-real-river-bridge", 18.5, 59.5, 1.2],
@@ -58,6 +62,7 @@ test("寫實地面：沒有 ?ground=real 照舊畫兩種綠；美術關（沒有
   const check = watchErrors(page);
   await start(page, "watch=1&ai=0&art=x3");
   await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false });
+  expect(await feet(page), "no colour under the feet on the two greens").toBe(0);
   await start(page, "watch=1&ai=0&art=off&ground=real");
   await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false });
   check();
