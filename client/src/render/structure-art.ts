@@ -154,7 +154,9 @@ export class ArtStructures {
     const side = this.side(type, owner);
     const json = this.art.buildings[side];
     // The rules' size for this map (the big city's tower is 3 × 3 with neighbouring spawns, D-074).
-    const entry = json === undefined ? undefined : buildingEntry(json, type, this.view.rules.buildings[type]?.size);
+    // Type 9 is the big city's tower (TownTower) until D-100's keeps are on, then the keep (by name, ui).
+    const named = type === BuildingType.Keep && this.view.rules.features?.keep === true ? "Keep" : undefined;
+    const entry = json === undefined ? undefined : buildingEntry(json, type, this.view.rules.buildings[type]?.size, named);
     return entry === undefined ? null : { side, entry };
   }
 

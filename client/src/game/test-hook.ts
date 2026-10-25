@@ -132,7 +132,7 @@ export interface GameHook {
   /** `walkable`: the pictures say where those on a wall stand (art-v5.2); `gates`: the gates drawn from pictures, by look (D-096). */
   castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null;
   /** 城內 B (castle 2): the towns' decor pieces: town, map cells, where its anchor is on screen (CSS px), shown or left out. */
-  decor(): { town: number; piece: string; cells: [number, number][]; sx: number; sy: number; shown: boolean; leftOut: boolean }[];
+  decor(): { town: number; piece: string; cells: [number, number][]; sx: number; sy: number; shown: boolean; leftOut: boolean; burnt: boolean }[];
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
   groundLook(): { real: boolean; quality: string | null; water: boolean; town: boolean } | null;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
