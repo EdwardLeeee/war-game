@@ -387,6 +387,11 @@ TARGETS["r8x_prod"] = [dict(kind="r8_decor", culture=c, opts=dict(piece=k), name
                        for k in ("hut_a", "hut_b", "shed", "stack", "well", "cart")]
 CAMERA["r8x_prod"] = proj.OBLIQUE
 LOOK["r8x_prod"] = "r8"
+# R8-39 (ceo 2026-10-24: a sacked town shows no intact houses): the B pieces burnt, named decor_<k>_<c>_ruin
+TARGETS["r8x_ruin"] = [dict(kind="r8_decor", culture=c, opts=dict(piece=k, ruined=True), name=f"decor_{k}_{c}_ruin")
+                       for c in CULTURES for k in ("hut_a", "hut_b", "shed", "stack", "well", "cart")]
+CAMERA["r8x_ruin"] = proj.OBLIQUE
+LOOK["r8x_ruin"] = "r8"
 # D-100 the keep (keep_r8.py): the drafts for the user first, every state of both cultures
 TARGETS["r8k_draft"] = [dict(kind="r8_keep", culture=c, opts=dict(state=st), name=f"keep_{c}_{st}") for c in CULTURES
                         for st in ("done", "damaged", "rubble", "repair")]

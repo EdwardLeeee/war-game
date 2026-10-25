@@ -134,10 +134,47 @@ def board_states(c, W=3000):
     return B.save(B.stack(parts, W), label)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and sys.argv[1] != "ruins":
     if sys.argv[1] == "states":
         out = [board_states(c) for c in "EW"]
     else:
         research = sys.argv[1]
         out = [board_option(c, o, research) for c in "EW" for o in "AB"] + [board_overview()]
     print("\n".join(str(p) for p in out))
+
+
+# ---------------------------------------------------------------- R8-39: the town's decor burnt (art-v6.3)
+
+XDIR = S.config.BUILD / "b1" / "r8x"
+DECOR = (("hut_a", "小屋（橫）"), ("hut_b", "小屋（直）"), ("shed", "柴棚"), ("stack", "草堆和缸／木桶"), ("well", "井"), ("cart", "手推車"))
+RUIN_TEXT = ("城內擺設的廢墟樣子（ceo 2026-10-24：城鎮被打下變成廢墟時，完好的房子留在裡面看起來不對）。art-v6 起城鎮變廢墟時先不畫擺設；"
+             "這一版每個擺設多一張燒毀的圖，城鎮變廢墟時改畫這一張。\n"
+             "・小屋：屋頂和牆身都沒了，只剩 0.2–0.8 公尺高、參差不齊的燻黑牆根（東陸夯土、西陸白灰牆加燒斷的木柱），門口是缺口，裡面一層灰燼和燒黑的樑。\n"
+             "・柴棚、手推車、草堆：燒成黑的，倒在地上；缸和木桶剩半截。井：石井欄還在，木架燒掉。\n"
+             "・都在 0.8 公尺以下，旁邊散著碎石和一圈煙燻的黑地。沒有玩家色（旗子燒掉了）。")
+
+
+def decor_tile(name, pp):
+    S.DIR = XDIR
+    return S.tile(name, "x3", pp, (2, 2), team="neutral")
+
+
+def board_ruins(c, W=3000):
+    label = f"R8-39-城內擺設-廢墟-{SIDE[c]}-mobile"
+    parts = [B.header(W, label, RUIN_TEXT)]
+    def pair(k):
+        a, b = decor_tile(f"decor_{k}_{c}", 2), decor_tile(f"decor_{k}_{c}_ruin", 2)
+        im = Image.new("RGB", (a.width + b.width + 8, max(a.height, b.height)), B.BG)
+        im.paste(a, (0, 0))
+        im.paste(b, (a.width + 8, 0))
+        return im
+    pairs = [B.captioned(pair(k), f"{n}：完好 → 燒毀", 22) for k, n in DECOR]
+    parts.append(B.row(pairs[:3], W, gap=28))
+    parts.append(B.row(pairs[3:], W, gap=28))
+    small = [B.captioned(decor_tile(f"decor_{k}_{c}_ruin", 1), n, 20) for k, n in DECOR]
+    parts.append(B.row([B.captioned(B.row(small, W - 2 * B.M, gap=16), "燒毀，實際大小（1 倍）", 22)], W))
+    return B.save(B.stack(parts, W), label)
+
+
+if __name__ == "__main__" and sys.argv[1] == "ruins":
+    print("\n".join(str(board_ruins(c)) for c in "EW"))
