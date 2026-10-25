@@ -229,7 +229,8 @@ test("城門的樣子（D-096，art-v5.2）：關著；城主的兵在門口開�
   const arrows = await page.evaluate(() => window.__proto?.game?.arrows() ?? { real: false, bow: 0, building: 0 });
   await page.evaluate(([b, t]) => window.__proto?.game?.inject({ k: "shot", building: b, target: t, n: 3 }), [gate.id, target.id] as const);
   // With the effects' `arrow` (art-v6 on), the three fly as arrows from the gate's tower; before, one straight line.
-  if (arrows.real) await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.arrows()))?.building).toBe(arrows.building + 3);
+  // At least three: the fake world's own towers may shoot meanwhile on a slow runner (CI run 40203416464).
+  if (arrows.real) await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.arrows()))?.building ?? 0).toBeGreaterThanOrEqual(arrows.building + 3);
   else await expect.poll(() => page.evaluate(() => window.__proto?.game?.towerShots() ?? 0)).toBe(towers + 1);
   check();
 });
