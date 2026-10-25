@@ -63,7 +63,7 @@ test("真的箭（art-v5.2，還沒有 arrow 效果）：遠程兵不放箭，�
   await start(page, "x3");
   const loaded = await page.waitForFunction(() => (window.__proto?.game?.art()?.pages ?? 0) > 0, null, { timeout: 30_000 }).then(() => true, () => false);
   test.skip(!loaded, "這台沒有 art.lock 的美術");
-  expect((await arrows(page)).real).toBe(false);
+  test.skip((await arrows(page)).real, "art.lock 的美術已經有 arrow 效果（art-v6 起）");
   const s = await sides(page);
   await page.evaluate(([ids, t]) => window.__proto?.game?.strike(ids, t), [s.bowmen, s.foe] as const);
   const shots = await page.evaluate(() => window.__proto?.game?.shots() ?? 0);

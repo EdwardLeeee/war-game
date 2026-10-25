@@ -7,11 +7,11 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high" });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high" });
 });
 
 test("tps, mock, r7, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high" });
+  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high" });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
@@ -42,7 +42,8 @@ test("test=1 turns on the hook and allows a faster tick rate and the fake world"
   assert.equal(parseParams("?test=1&loadtimes=1").loadTimes, true);
   assert.equal(parseParams("?loadtimes=1").loadTimes, false, "test pages only");
   assert.equal(parseParams("?test=1&ground=real").ground, "real");
-  assert.equal(parseParams("?ground=real").ground, null, "test pages only");
+  assert.equal(parseParams("?test=1").ground, null, "a test page: the greens unless asked");
+  assert.equal(parseParams("").ground, "real", "the players': always (ceo 2026-10-25)");
   assert.equal(parseParams("?test=1&ground=real&groundq=low").groundQuality, "low");
   assert.equal(parseParams("?test=1&scenario=e2e").scenario, "e2e");
   assert.equal(parseParams("?test=1&scenario=perf360").scenario, "perf360", "量測 360 人 (D-083)");

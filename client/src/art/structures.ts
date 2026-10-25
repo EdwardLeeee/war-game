@@ -11,7 +11,8 @@ export const NODES_FORMAT = "war-game nodes 1";
 /** 東陸 or 西陸, as the buildings' and nodes' frames name them. */
 export type Side = "E" | "W";
 
-export type BuildingState = "build1" | "build2" | "build3" | "done" | "damaged" | "rubble";
+/** `repair` (art-v6, a keep only): its rubble with scaffolding, while its town is repaired. */
+export type BuildingState = "build1" | "build2" | "build3" | "done" | "damaged" | "rubble" | "repair";
 
 export interface BuildingEntry {
   type: number;
