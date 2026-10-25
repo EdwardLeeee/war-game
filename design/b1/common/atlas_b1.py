@@ -40,7 +40,8 @@ PX_PER_M = 60
 PLAYER = {"MainCity": (0, "main_city", 4), "House": (1, "house", 2), "LumberCamp": (2, "lumber_camp", 2),
           "Mine": (3, "mine", 2), "Granary": (4, "granary", 2), "Barracks": (6, "barracks", 3),
           "Range": (7, "range", 3), "MageHall": (8, "mage_hall", 3), "ArrowTower": (10, "arrow_tower", 2),
-          "Stable": (11, "stable", 3), "SiegeWorks": (14, "siege_works", 3)}     # art-v6: 砲坊 (D-099)
+          "Stable": (11, "stable", 3), "SiegeWorks": (14, "siege_works", 3),     # art-v6: 砲坊 (D-099)
+          "Market": (15, "market", 3)}      # art-v6.3: 市場 (D-101; the user approved R8-38 East A, West B 2026-10-25)
 NODE_KINDS = {"Tree": 0, "GoldMine": 1, "Berries": 2, "CrystalVein": 3}
 
 

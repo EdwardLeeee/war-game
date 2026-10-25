@@ -50,6 +50,7 @@
 | `Stable` 11 | `stable` | 3×3 | 各一套 |
 | `Outpost` 12 | `outpost` | 2×2 | 各一套（art-v5.1 起，D-080；東陸夯土矮牆加紅柱望樓，西陸木柵加木架瞭望台） |
 | `SiegeWorks` 14 | `siege_works` | 3×3 | 各一套（art-v6 起，D-099 的砲坊） |
+| `Market` 15 | `market` | 3×3 | 各一套（art-v6.3 起，D-101 的市場：東陸「市的一角」、西陸「市場十字」，使用者 2026-10-25 核准 R8-38；地基和瓦礫用 3×3 共用的） |
 
 - 占地照 `sim/src/core/rules.ts` 的 `size`（main e78d939 核對過）。
 - 不做：
