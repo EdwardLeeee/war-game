@@ -1,0 +1,131 @@
+{
+ "traces": [
+  {
+   "name": "all-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "holdTowns": true,
+    "behindOutpost": true,
+    "cityCap": 80,
+    "cityForget": 5
+   }
+  },
+  {
+   "name": "all-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "holdTowns": true,
+    "behindOutpost": true,
+    "cityCap": 80,
+    "cityForget": 5
+   }
+  },
+  {
+   "name": "all-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "holdTowns": true,
+    "behindOutpost": true,
+    "cityCap": 80,
+    "cityForget": 5
+   }
+  },
+  {
+   "name": "all-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "holdTowns": true,
+    "behindOutpost": true,
+    "cityCap": 80,
+    "cityForget": 5
+   }
+  },
+  {
+   "name": "all-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "holdTowns": true,
+    "behindOutpost": true,
+    "cityCap": 80,
+    "cityForget": 5
+   }
+  },
+  {
+   "name": "all-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "holdTowns": true,
+    "behindOutpost": true,
+    "cityCap": 80,
+    "cityForget": 5
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "bh",
+   "a": {
+    "behind": true,
+    "holdTowns": true,
+    "behindOutpost": true
+   },
+   "groups": [
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "all",
+   "a": {
+    "behind": true,
+    "holdTowns": true,
+    "behindOutpost": true,
+    "cityCap": 80,
+    "cityForget": 5
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "all",
+   "a": {
+    "behind": true,
+    "holdTowns": true,
+    "behindOutpost": true,
+    "cityCap": 80,
+    "cityForget": 5
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
