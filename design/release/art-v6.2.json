@@ -1,6 +1,6 @@
 {
- "tag": "art-v6.1.1",
- "note": "ceo 2026-10-25：大城箭樓（TownTower，KEEP 關時用）東西陸、2×2 和 3×3 的四張受損圖重算，火焰改用 R8 寫實建築同一種（art-v6.1 是淡膚色的錐形）。其他和 art-v6.1 相同。",
+ "tag": "art-v6.2",
+ "note": "ceo 2026-10-25：（原本要發成 art-v6.1.1；發布流程和 client 只認 art-vN、art-vN.M，改成 art-v6.2）大城箭樓（TownTower，KEEP 關時用）東西陸、2×2 和 3×3 的四張受損圖重算，火焰改用 R8 寫實建築同一種（art-v6.1 是淡膚色的錐形）。其他和 art-v6.1 相同。",
  "units": {
   "farmer_e": {"run": 39726651993, "artifact": "r7-v8-farmer_e"},
   "spear_e": {"run": 39729248473, "artifact": "r7-v8-spear_e"},
