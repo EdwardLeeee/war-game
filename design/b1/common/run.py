@@ -347,6 +347,16 @@ for _i in range(0, len(R8_CASTLE), 10):
     TARGETS[f"r8w_{_i // 10}"] = R8_CASTLE[_i:_i + 10]
     CAMERA[f"r8w_{_i // 10}"] = proj.OBLIQUE
     LOOK[f"r8w_{_i // 10}"] = "r8"
+# art-v6.1 (ceo 2026-10-25: the realistic art live while KEEP is off): what D-089's castles need that art-v6 left out, in
+# the R8 look and named as art-v5.2's: the 4-cell stone gates (every look, their front layer) and the big city's 2 x 2 and
+# 3 x 3 town towers
+R8_V61 = ([pc for pc in _V4 if pc["kind"] in ("sw_gate_x", "sw_gate_y", "ttower3")]
+          + [dict(kind="ttower", culture=c, state=st, name=f"town_tower_{c}_{s}")
+             for c in CULTURES for s, st in (("done", "intact"), ("damaged", "damaged"), ("rubble", "rubble"))])
+for _i in range(0, len(R8_V61), 8):
+    TARGETS[f"r8v61_{_i // 8}"] = R8_V61[_i:_i + 8]
+    CAMERA[f"r8v61_{_i // 8}"] = proj.OBLIQUE
+    LOOK[f"r8v61_{_i // 8}"] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
 # replaces these pieces of the r8p run in the atlas
 TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in

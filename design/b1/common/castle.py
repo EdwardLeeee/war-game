@@ -96,6 +96,127 @@ def large():
 LAYOUTS = (small, large)
 
 
+# art-v6.1 (ceo 2026-10-25): the realistic art goes live while KEEP is off, so castle_<c>.json carries D-089's castles
+# again (art-v5.2's cells, gates and pieces, the sim's castle-layout.ts) under their old names, and D-100's under
+# "<name>_d100". The three below are art-v5.2's common/castle.py as it was (design/castle 227d1a3, D-096 8a6c90b).
+
+
+def d089_small():
+    W = 5                                     # the wall ring: max(|dx|, |dy|) == 5
+    cells = {}
+    for dx in range(-W, W + 1):
+        for dy in range(-W, W + 1):
+            m = max(abs(dx), abs(dy))
+            if m == W:
+                if abs(dx) == W and abs(dy) == W:
+                    k = "corner"
+                elif (abs(dy) == W and abs(dx) <= 1) or (abs(dx) == W and abs(dy) <= 1):
+                    k = "gate"                # where the 3-cell streets meet the wall
+                else:
+                    k = "wall"
+            elif m <= 1:
+                k = "square"
+            elif abs(dx) <= 1 or abs(dy) <= 1:
+                k = "street"
+            else:
+                k = "garden"
+            cells[(dx, dy)] = k
+    militia = [(-1, -1), (1, -1), (-1, 1), (1, 1), (1, 0), (0, 1)]    # B1-03 (cell offsets, the cell's middle)
+    return dict(name="small", wall=W, cells=cells, militia=militia, garrison=[(0, 0)], flag=(0, 0), mid=lambda dx, dy: (dx + 0.5, dy + 0.5))
+
+
+def d089_large():
+    cells = {}
+    for dx in range(-7, 7):
+        for dy in range(-7, 7):
+            a, b = dx + 0.5, dy + 0.5             # from the tower's middle
+            m = max(abs(a), abs(b))
+            if m == 6.5:                          # the wall ring
+                if abs(a) >= 5.5 and abs(b) >= 5.5:
+                    k = "ctower"                  # the corner towers, 2 x 2 (the corner and its two neighbours)
+                elif (abs(b) == 6.5 and abs(a) == 0.5) or (abs(a) == 6.5 and abs(b) == 0.5):
+                    k = "gate"                    # 2 cells open; the avenue's other two cells are the gate towers' piers
+                else:
+                    k = "wall"
+            elif abs(a) == 5.5 and abs(b) == 5.5:
+                k = "ctower"                      # the corner towers' fourth cell, inside the wall
+            elif dx in (-1, 0) and dy in (-1, 0):
+                k = "tower"
+            elif m <= 2.5:
+                k = "square"
+            elif abs(a) <= 1.5 or abs(b) <= 1.5:
+                k = "street"
+            else:
+                k = "garden"
+            cells[(dx, dy)] = k
+    militia = [(1, 0), (1, -1), (-2, 0), (-2, -1), (0, 1), (-1, 1), (0, -2), (-1, -2), (2, 2), (-3, 2), (2, -3), (-3, -3)]
+    return dict(name="large", wall=6.5, cells=cells, militia=militia, garrison=[(-2, -3), (-3, -2), (-2, -2)], flag=None,
+                mid=lambda dx, dy: (dx + 0.5, dy + 0.5))
+
+
+def d089_large3():
+    """The big city of the random maps' neighbouring spawns (war-game-core 2026-10-19): the tower is 3 x 3 on the
+    centre cell, on the map's middle column, so the walls must be symmetric about a column: odd widths. Offsets from
+    the centre cell. The wall ring on max(|dx|, |dy|) == 7 (15 x 15 outside, 13 x 13 = 169 inside), the square 7 x 7,
+    the avenues 5 wide, the gates 3 wide with a pier on each side, the corner towers 2 x 2."""
+    W = 7
+    cells = {}
+    for dx in range(-W, W + 1):
+        for dy in range(-W, W + 1):
+            m = max(abs(dx), abs(dy))
+            if m == W:
+                if abs(dx) >= W - 1 and abs(dy) >= W - 1:
+                    k = "ctower"
+                elif (abs(dy) == W and abs(dx) <= 1) or (abs(dx) == W and abs(dy) <= 1):
+                    k = "gate"
+                else:
+                    k = "wall"                    # |d| == 2 on the gate's sides: the gate towers' piers
+            elif abs(dx) == W - 1 and abs(dy) == W - 1:
+                k = "ctower"
+            elif m <= 1:
+                k = "tower"
+            elif m <= 3:
+                k = "square"
+            elif abs(dx) <= 2 or abs(dy) <= 2:
+                k = "street"
+            else:
+                k = "garden"
+            cells[(dx, dy)] = k
+    # 12 militia, the same under every turn and mirror of the square (the map is mirrored about the middle column)
+    militia = [(2, 0), (-2, 0), (0, 2), (0, -2), (2, 2), (-2, 2), (2, -2), (-2, -2), (3, 3), (-3, 3), (3, -3), (-3, -3)]
+    return dict(name="large3", wall=W, cells=cells, militia=militia, garrison=[(-3, -4), (-4, -3), (-4, -4)], flag=None,
+                mid=lambda dx, dy: (dx, dy))
+
+
+D089 = (d089_small, d089_large, d089_large3)
+
+
+def d089_ground(L):
+    """[dict(cell, kind, w)] the ground of a D-089 castle in art-v6.1's terms (no floor tiles): "lane" along the middle
+    of each avenue (its centre line; 2 cells for the 2 x 2 tower's even city) from the square to the gate, on out 4 cells
+    past it fading, as D-100's ground(); "trampled" the square, 0.9."""
+    cells = L["cells"]
+    xs = sorted({dx for dx, _ in cells})
+    mid = [v for v in (xs[len(xs) // 2 - 1], xs[len(xs) // 2]) if len(xs) % 2 == 0] or [xs[len(xs) // 2]]
+    g = {}
+
+    def put(kind, c, w):
+        g[(kind, c)] = max(g.get((kind, c), 0.0), w)
+    lo, hi = min(xs), max(xs)
+    for m in mid:
+        for d in range(lo, hi + 1):
+            for c in ((m, d), (d, m)):
+                if cells.get(c) in ("street", "gate"):
+                    put("lane", c, 1.0)
+        for i, w in enumerate((0.85, 0.6, 0.35, 0.15)):
+            for c in ((m, lo - 1 - i), (m, hi + 1 + i), (lo - 1 - i, m), (hi + 1 + i, m)):
+                put("lane", c, w)
+    for c, k in cells.items():
+        if k == "square":
+            put("trampled", c, 0.9)
+    return [dict(cell=[c[0], c[1]], kind=k, w=round(w, 2)) for (k, c), w in sorted(g.items(), key=lambda t: (t[0][1][1], t[0][1][0], t[0][0]))]
+
+
 def counts(L):
     """(cells of each kind, cells inside the wall ring: the town's area from now on)."""
     from collections import Counter
