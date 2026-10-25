@@ -2902,3 +2902,63 @@ test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, ha
   assert.equal(march(0), false, "off: 30 is short of pushArmy 49");
   assert.equal(march(25), true, "strongPush 25: 30 against 5, it marches");
 });
+
+// --- D-086 A5: behind (the user 2026-10-25: 「你的ai逆風局只會龜縮但又不蓋防禦工事」) ------------------------------------
+
+test("D-086 A5 (plan.behind): with an enemy army 1.3 x its own in sight, hard saves for arrow towers by its main city; not behind or off, none", () => {
+  const towers = (behind: boolean, foes: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    w.tick = 15 * 1200;
+    // Everything else it builds already standing (as the mineMove test), so a tower is what is left.
+    const at = (type: BuildingType, x: number, y: number) => w.addBuilding(0, type, s0.cellX + x, s0.cellY + y, rules().buildings[type].hp, 1000);
+    for (const [t, x, y] of [[BuildingType.Barracks, 4, -8], [BuildingType.Barracks, 8, -8], [BuildingType.Range, 12, -8], [BuildingType.Range, 16, -8], [BuildingType.MageHall, 4, -13], [BuildingType.Granary, -6, -6], [BuildingType.LumberCamp, -10, 2], [BuildingType.Mine, 12, 2]] as [BuildingType, number, number][]) at(t, x, y);
+    for (let k = 0; k < 10; k++) at(BuildingType.Farm, -14 + 3 * (k % 3), -14 + 3 * Math.trunc(k / 3));
+    for (let k = 0; k < 12; k++) at(BuildingType.House, -8 + 3 * (k % 6), 6 + 3 * Math.trunc(k / 6));
+    for (let k = 0; k < 30; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 10), s0.cellY - 2 - Math.trunc(k / 10));
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + k, s0.cellY + 2);
+    // The enemy army away from the enemy's side (the towers go that way, TOWER_SAFE from enemies), in sight of a farmer of its own.
+    const fx = s0.cellX - Math.sign(s1.cellX - s0.cellX) * 4;
+    const fy = s0.cellY - Math.sign(s1.cellY - s0.cellY) * 14;
+    put(g, 0, UnitType.Farmer, fx, fy + Math.sign(s1.cellY - s0.cellY) * 3);
+    for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, fx + (k % 4), fy - Math.trunc(k / 4) * Math.sign(s1.cellY - s0.cellY));
+    w.res.set([700, 600, 600, 0], 0);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, behind }).think(buildView(g, 0));
+    return out.some((c) => c.c === "build" && c.type === BuildingType.ArrowTower);
+  };
+  assert.equal(towers(true, 16), true, "behind: a tower");
+  assert.equal(towers(true, 2), false, "not behind: none");
+  assert.equal(towers(false, 16), false, "off: none, as before");
+});
+
+test("D-086 A5 (plan.holdTowns): enemy soldiers by a town it governs and the army at home 1.3 x them, hard goes to hold it; off, it stays", () => {
+  const goes = (holdTowns: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 15 * 1200;
+    const t = [...w.map.towns].filter((x) => x.size === TownSize.Small).sort((a, b) => (a.cellX - s0.cellX) ** 2 + (a.cellY - s0.cellY) ** 2 - ((b.cellX - s0.cellX) ** 2 + (b.cellY - s0.cellY) ** 2))[0];
+    w.townState[t.id] = TownState.Governed;
+    w.townOwner[t.id] = 0;
+    for (const o of w.map.towns) if (o.id !== t.id) {
+      w.townState[o.id] = TownState.Ruins;
+      w.townOwner[o.id] = NO_OWNER;
+      w.townTimer[o.id] = 48000;
+    }
+    put(g, 0, UnitType.Spearman, t.cellX, t.cellY);
+    for (let k = 0; k < 20; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
+    // In sight of its soldier in the town.
+    for (let k = 0; k < 5; k++) put(g, 1, UnitType.Spearman, t.cellX + 6, t.cellY - 2 + k);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, holdTowns, townArmy: 99, bigArmy: 99, pushArmy: 99, peekFirst: 0 }).think(buildView(g, 0));
+    return out.some((c) => c.c === "move" && c.u.length >= 15 && c.x === t.cellX && c.y === t.cellY);
+  };
+  assert.equal(goes(true), true, "on: to the town");
+  assert.equal(goes(false), false, "off: as before");
+});
