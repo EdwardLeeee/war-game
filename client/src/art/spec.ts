@@ -56,6 +56,11 @@ export interface AnimInfo {
   arc_k?: number;
   len_m?: number;
   from_m?: Record<string, [number, number, number]>;
+  /** art-v6 `siege_stone`: its arc's top over the line, arc_m + arc_k × metres; how far out one from an unseen engine starts. */
+  arc_m?: number;
+  from_far_m?: number;
+  /** art-v6 `siege_crater`: seconds it lies on the ground, fading. */
+  crater_s?: number;
 }
 
 export interface AtlasJson {
@@ -107,11 +112,15 @@ export function cultureOf(mine: Culture, owner: number, me: number): Culture {
   return owner === me || owner === NEUTRAL || owner === NO_OWNER ? mine : mine === "e" ? "w" : "e";
 }
 
-/** The atlas each unit type wears, by culture. The militia: the spearman, in neutral grey (B1). Siege engines (D-099): East's 霹靂車, West's 投石機. */
+/**
+ * The atlas each unit type wears, by culture. The militia: the spearman, in neutral grey (B1). Siege
+ * engines (D-099): East's 霹靂車, West's 投石機. East's ranged: the bowman (art-v6, R8: 「弓手（新，拿弓）」;
+ * the crossbowman `xbow_e` before).
+ */
 export const UNIT_ATLAS: Record<number, Record<Culture, string>> = {
   [UnitType.Farmer]: { e: "farmer_e", w: "farmer_w" },
   [UnitType.Spearman]: { e: "spear_e", w: "pike_w" },
-  [UnitType.Ranged]: { e: "xbow_e", w: "bow_w" },
+  [UnitType.Ranged]: { e: "bow_e", w: "bow_w" },
   [UnitType.Mage]: { e: "mage_e", w: "mage_w" },
   [UnitType.Militia]: { e: "spear_e", w: "pike_w" },
   [UnitType.Cavalry]: { e: "hcav_e", w: "knight_w" },

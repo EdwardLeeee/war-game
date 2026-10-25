@@ -53,7 +53,7 @@ export interface Selection {
  * buttons' old names stay in the code), 集結點; `garrison`, picking the building to hide in (round
  * 7), and `post`, the outpost (D-080): the game handles those taps itself.
  */
-export type Mode = "normal" | "advance" | "retreat" | "rally" | "garrison" | "post" | "wall";
+export type Mode = "normal" | "advance" | "retreat" | "rally" | "garrison" | "post" | "wall" | "station";
 
 export type Intent =
   | { kind: "select"; units: number[] }

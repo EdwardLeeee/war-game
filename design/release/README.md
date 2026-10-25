@@ -25,8 +25,12 @@
 3. 合併後從 main 發布：
 
    ```bash
-   gh workflow run design-render.yml --ref main -f round=release -f tag=art-v1 -f publish=true
+   gh workflow run design-render.yml -R EdwardLeeee/war-game --ref main -f round=release -f tag=art-v1 -f publish=true
    ```
+
+   - 使用者 2026-10-25 同意之後發布 art-vN 不用再問他（ceo 轉達）。本機的權限設定只放行這個形式：`gh workflow run design-render.yml -R EdwardLeeee/war-game ...`。
+   - 指令要單獨一行，前後不加 `cd`、`&&`、`sleep`。查 run 另外下一個指令，例如 `gh run list --workflow design-render.yml --branch main --limit 1`。
+   - 發布後照舊從公開網址重新下載，`sha256sum -c SHA256SUMS` 全部 OK 才通知 client。
 
    workflow 會：
    - 確認是 main，而且這個 tag 還不存在。
@@ -48,12 +52,19 @@
 | art-v5 | 2026-10-20 15:17 | 98f755b | 39446538988 | 加地形（`terrain/`，R6-51，core #245）；其他和 art-v4 相同 |
 | art-v5.1 | 2026-10-22 06:50 | d668193 | 39736249554 | 建築加哨所（`Outpost`，D-080 暫用版）；其他和 art-v5 相同 |
 | art-v5.2 | 2026-10-22 12:02 | 8a6c90b | 39774657771 | D-096：城牆四面分開、牆上的兵的站點和前片、城門四種樣子、城樓射箭 `tower_shot`、民兵投石（`spear_e`、`pike_w` 的 `sling`）；其他和 art-v5.1 相同 |
+| art-v6 | 2026-10-25 07:40 | 7f5c1ba | 40173553884 | D-093 寫實整套（R8）與 D-100 主堡：12 種兵寫實（東陸弓手 `bow_e`），建築、資源點、地形寫實，主堡 `Keep` 取代 `TownTower`、加砲坊 `SiegeWorks`、射點 `shoot_at_m`；城牆 `war-game castle 2`（D-100 格局、擺設、城裡的土路）；加 `ground/`；效果加 `arrow`、`sling_stone`、`siege_*`（說明檔第 13 節） |
+| art-v6.1 | 2026-10-25 08:28 | 78f62b0 | 40176697300 | KEEP 關著時也能用寫實圖（ceo 2026-10-25）：城牆補回 D-089 的 `small`、`large`、`large3`（和 art-v5.2 逐片相同），D-100 的改名 `small_d100`、`large_d100`；建築補回 `TownTower`（排在 `Keep` 前面）；加寫實的 4 格石城門和大城箭樓；其他和 art-v6 相同 |
+| art-v6.2 | 2026-10-25 14:28 | ba7d4a7 | 40202269402 | 大城箭樓（`TownTower`）東西陸、2×2 和 3×3 的四張受損圖改用寫實的火（原本要叫 art-v6.1.1，發布流程和 client 只認 art-vN、art-vN.M）；其他和 art-v6.1 相同 |
+| art-v6.3 | 2026-10-25 15:02 | e17bd6b | 40204923770 | D-101 市場 `Market`（使用者核准 R8-38：東陸「市的一角」、西陸「市場十字」）；城內擺設的燒毀版 `decor_ruin`（R8-39，格式和 client 談定）；其他和 art-v6.2 相同 |
 
 每一號發布後都從公開網址重新下載，`sha256sum -c SHA256SUMS` 全部 OK。
 
 ### 記憶體（2 倍，給 iPhone 記憶體檢查用）
 
 數字取自發布檔裡各 `memory.json`：每點未壓縮 4 位元組，ASTC 4×4 每點 1 位元組。東西陸兩套都算在內，遊戲只載入用得到的那一套。
+
+- art-v6.3（2 倍）：合計 272.2 MB 未壓縮、68.1 MB ASTC（art-v6.2 是 268.3／67.1）。多的是建築 52.9 → 56.5 MB（市場東西陸各四張）、城牆 49.0 → 49.3 MB（燒毀的擺設東西陸各六張，都很矮）；其他相同。
+- art-v6.1（2 倍）：合計 268.3 MB 未壓縮、67.1 MB ASTC。比 art-v6 多的是建築 49.8 → 52.9 MB（補回大城箭樓 2×2、3×3）、城牆 35.5 → 49.0 MB（補回 4 格石城門，D-089 和 D-100 兩組城都在）；其他相同。
 
 | art-v6，2 倍 | 未壓縮 RGBA8 | ASTC 4×4 |
 |---|---|---|

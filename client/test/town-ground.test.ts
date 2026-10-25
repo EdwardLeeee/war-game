@@ -5,7 +5,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type CastleFit, type CastleLayout, decorHidden, fitLayout, parseCastle, townGround } from "../src/art/castle.ts";
+import { type CastleFit, type CastleLayout, decorFrame, decorHidden, fitLayout, parseCastle, townGround } from "../src/art/castle.ts";
+import { buildingEntry, type BuildingsJson } from "../src/art/structures.ts";
 import { GROUND_CELL_M, type GroundJson, TownWeights, townGroundOn } from "../src/art/ground.ts";
 import { D100_LARGE, D100_SMALL } from "../../sim/src/core/castle-layout-d100.ts";
 
@@ -152,4 +153,40 @@ test("城牆說明檔：war-game castle 2 讀得進來（沒有 tiles、floor）
     assert.equal(fit?.name, name);
     assert.deepEqual([fit?.dx, fit?.dy], [0, 0]);
   }
+});
+
+test("廢墟的擺設（art-v6.3，R8-39）：有燒毀版就畫燒毀版，沒有就不畫；平常照舊；舊的說明檔沒有 decor_ruin 就照舊不畫", () => {
+  const c = { decor: { hut_a: "decor_hut_a_E", well: "decor_well_E" }, decor_ruin: { hut_a: "decor_hut_a_E_ruin" } };
+  assert.equal(decorFrame(c, "hut_a", false), "decor_hut_a_E");
+  assert.equal(decorFrame(c, "hut_a", true), "decor_hut_a_E_ruin");
+  assert.equal(decorFrame(c, "well", true), null, "no burnt well: left out");
+  assert.equal(decorFrame({ decor: c.decor }, "hut_a", true), null, "art-v6.2 and before");
+  // Left out in ruins only without a burnt picture (castle-draw passes ruins && none); a building on it always.
+  const hut = LAYOUT.decor?.[0] as NonNullable<CastleLayout["decor"]>[number];
+  assert.equal(decorHidden(hut, 20, 20, [], decorFrame(c, "hut_a", true) === null), false);
+  assert.equal(decorHidden(hut, 20, 20, [{ x: 17, y: 15, w: 2, h: 2 }], false), true);
+});
+
+test("D-100 的城（KEEP 開，art-v6.1 起改名 small_d100、large_d100）也對得上；舊城的 small、large 照舊先試", () => {
+  for (const [name, castle, large] of [["small_d100", D100_SMALL, false], ["large_d100", D100_LARGE, true]] as const) {
+    const cells = [...castle.wall, ...castle.gate].filter((c, i, all) => all.findIndex((d) => d[0] === c[0] && d[1] === c[1]) === i);
+    const layout: CastleLayout = { walls: cells.map(([x, y]) => ({ piece: "p", anchor: [x + 0.5, y + 0.5], front: y + 1, cells: [[x, y]] })) };
+    // A D-089 small (one cell off) beside it does not fit: the D-100 one is taken.
+    const off: CastleLayout = { walls: [{ piece: "p", anchor: [0.5, 0.5], front: 1, cells: [[0, 0]] }] };
+    const fit = fitLayout({ layouts: { [large ? "large" : "small"]: off, [name]: layout } }, castle, large);
+    assert.equal(fit?.name, name);
+  }
+});
+
+test("同一個 type 有兩種圖（art-v6.1：type 9 是 TownTower 也是 Keep）：給名字就拿那一個，沒給照舊拿第一個", () => {
+  const b = {
+    buildings: {
+      TownTower: { type: 9, footprint: [2, 2], states: { done: "town_tower_E_done" }, sizes: { "3": { footprint: [3, 3], states: { done: "town_tower3_E_done" } } } },
+      Keep: { type: 9, footprint: [3, 3], states: { done: "keep_E_done" } },
+    },
+  } as unknown as BuildingsJson;
+  assert.equal(buildingEntry(b, 9, 2)?.states.done, "town_tower_E_done");
+  assert.equal(buildingEntry(b, 9, 3)?.states.done, "town_tower3_E_done", "KEEP off on a random map: the 3 x 3 tower");
+  assert.equal(buildingEntry(b, 9, 3, "Keep")?.states.done, "keep_E_done");
+  assert.equal(buildingEntry(b, 9, 3, "Barracks")?.states.done, "town_tower3_E_done", "a name of another type: as before");
 });

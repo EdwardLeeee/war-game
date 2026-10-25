@@ -231,6 +231,7 @@ export class Hud {
       villagersPaused: () => game.autoArmy.villagersPaused,
       toggleVillagers: () => game.toggleVillagers(),
       autoHouseOn: () => game.autoHouseOn(),
+      holdsTown: () => game.holdsTown(),
       toggleAutoHouse: () => game.toggleAutoHouse(),
       garrison: (town: number) => game.army.garrisonOf(town).length,
       garrisonMore: (town: number) => game.garrisonMore(town),
@@ -782,6 +783,15 @@ export class Hud {
         this.closeDialog();
         this.tapRecall();
       }, "secondary");
+    }
+    // 寫實地面 開／關 (ceo 2026-10-25): the player's, at once, remembered on this device; with the ground loaded only.
+    const ground = this.game.groundSwitch();
+    if (ground !== null) {
+      const b = btn(list, `寫實地面：${ground ? "開" : "關"}`, () => {
+        this.game.toggleGround();
+        this.openMenu();
+      }, "secondary");
+      b.setAttribute("aria-pressed", ground ? "true" : "false");
     }
     // 介面風格 comes with 正式介面 (ceo 2026-10-19).
     if (this.formal) btn(list, "設定", () => this.openSettings(), "secondary");
