@@ -1,8 +1,11 @@
 // 出城歸隊 on the real simulation (scenario e2e, the enemy's computer off; the user 2026-10-26,
-// choosing 自動留最少人數): our squad, group 1, takes the small town and governs it (修繕, it
-// needs 1), then stays in it whole (駐軍). 出城歸隊 brings all but 1 back to the group; with them
-// marched away, the town still has its 1 and does not count down to revolt. 全部帶走 takes the
-// last one too, says the town will revolt, and the simulation counts down.
+// choosing 自動留最少人數): our squad takes the small town and governs it (修繕, it needs 1); its
+// spearmen, group 1, then stay in it whole (駐軍). 出城歸隊 brings all but 1 back to the group;
+// with them marched away, the town still has its 1 and does not count down to revolt. 全部帶走
+// takes the last one too, says the town will revolt, and the simulation counts down.
+// Spearmen only, standing inside: the town is as near the enemy's idle squad as ours, and a
+// ranged unit left alone on its east wall (the first to stay) shoots at it and is shot down
+// (CI run 40222760397, WebKit).
 
 import { expect, type Page, test } from "@playwright/test";
 import { saveGroup, selectForCommands, watchErrors } from "./helpers.ts";
@@ -11,7 +14,9 @@ import { tap } from "./touch.ts";
 const SMALL = 0;
 const GATE = 13;
 const FARMER = 0;
+const SPEARMAN = 1;
 const REPAIRING = 3;
+const GOVERNED = 4;
 const GROUP_1 = ".groups > button:nth-child(1)";
 
 let checkErrors: () => void;
@@ -52,14 +57,22 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   const from = { x: Math.round(soldiers.reduce((s, u) => s + u.cx, 0) / soldiers.length), y: Math.round(soldiers.reduce((s, u) => s + u.cy, 0) / soldiers.length) };
   const town = (await towns(page)).filter((t) => t.size === SMALL).sort((a, b) => Math.hypot(a.cx - from.x, a.cy - from.y) - Math.hypot(b.cx - from.x, b.cy - from.y))[0];
   const gate = (await buildings(page)).filter((b) => b.type === GATE && Math.abs(b.cx - town.cx) <= 8 && Math.abs(b.cy - town.cy) <= 8).sort((a, b) => Math.hypot(a.cx - from.x, a.cy - from.y) - Math.hypot(b.cx - from.x, b.cy - from.y))[0];
-  // Group 1, the whole squad.
-  await selectForCommands(page, ids);
+  // Group 1, the spearmen.
+  const spears = soldiers.filter((u) => u.type === SPEARMAN).map((u) => u.id).sort((a, b) => a - b);
+  const others = ids.filter((id) => !spears.includes(id));
+  await selectForCommands(page, spears);
   await saveGroup(page, GROUP_1);
   // Take the town (攻城打到底 carries the attack through), and govern it.
   await page.evaluate(([u, x, y]) => window.__proto?.game?.send({ c: "move", u, x, y }), [ids, gate.cx, gate.cy] as const);
   await expect(page.getByText(/^攻下小鎮！/)).toBeVisible({ timeout: 240_000 });
-  await page.locator(".town-choice").getByRole("button", { name: /^治理/ }).tap();
+  // Nobody kept with the choice: 駐軍 below keeps group 1.
+  const choice = page.locator(".town-choice");
+  await choice.getByRole("button", { name: "少留守 1 名（治理）" }).tap();
+  await expect(choice.getByRole("status", { name: "留守幾名（治理）" })).toHaveText("0");
+  await choice.getByRole("button", { name: /^治理/ }).tap();
   await expect.poll(async () => (await towns(page)).find((t) => t.id === town.id)?.state, { timeout: 30_000 }).toBe(REPAIRING);
+  // The others walk home.
+  await page.evaluate(([u, x, y]) => window.__proto?.game?.send({ c: "retreat", u, x, y }), [others, from.x, from.y] as const);
   // 駐軍: the rest of group 1 too (with those 自動訓練 sent to fill it, if one fell).
   const garrison = () => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], town.id);
   const living = async () => {
@@ -78,6 +91,8 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
     return (await living()).every((id) => all.includes(id));
   }).toBe(true);
   const alive = await garrison();
+  // In (the walk in is a 移動 to the centre).
+  await expect.poll(async () => (await units(page)).filter((u) => alive.includes(u.id)).every((u) => Math.hypot(u.cx - town.cx, u.cy - town.cy) < town.radius - 1), { timeout: 120_000 }).toBe(true);
   // 出城歸隊: one stays.
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
@@ -93,14 +108,24 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await page.evaluate(([u, x, y]) => window.__proto?.game?.send({ c: "move", u, x, y }), [out, from.x, from.y] as const);
   await expect.poll(async () => (await units(page)).filter((u) => out.includes(u.id)).every((u) => Math.hypot(u.cx - town.cx, u.cy - town.cy) > 8), { timeout: 120_000 }).toBe(true);
   await page.waitForTimeout(3000);
-  // (The snapshot's 城裡有 N 名 counts inside the walls only, not the one kept on them; the simulation's
-  // manning counts both, sim/src/core/towns.ts.)
+  // Still being repaired, or governed by now: either needs its 1 (sim/src/core/towns.ts).
   const held = (await towns(page)).find((t) => t.id === town.id);
-  expect(held?.state).toBe(REPAIRING);
+  expect([REPAIRING, GOVERNED]).toContain(held?.state);
+  expect(held?.garrison).toBe(1);
   expect(held?.revoltTimer, "manned: no revolt").toBe(0);
-  // 全部帶走 on the town's panel: the last one out, and the town counts down.
+  // 全部帶走 on the town's panel: the last one out, and the town counts down. A tap on its ground,
+  // not on the one who stayed (on the centre, as like as not).
   await page.evaluate(() => window.__proto?.game?.select([]));
-  await tap(page, await at(page, { x: town.cx + 0.5, y: town.cy + 0.5 }));
+  let spot: { x: number; y: number } | null = null;
+  for (const [dx, dy] of [[2, 2], [-2, 2], [2, -2], [-2, -2], [3, 0], [0, 3], [-3, 0], [0, -3], [1, 2], [2, 1]]) {
+    const p = await at(page, { x: town.cx + 0.5 + dx, y: town.cy + 0.5 + dy });
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === "town") {
+      spot = p;
+      break;
+    }
+  }
+  if (spot === null) throw new Error("no spot that picks the town");
+  await tap(page, spot);
   await expect(panel).toContainText("編隊 1：1 名");
   await panel.getByRole("button", { name: "全部帶走" }).tap();
   await expect.poll(said).toContain("1 名離開這座城。駐軍不足，這座城會叛離");
