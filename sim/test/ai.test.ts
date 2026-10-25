@@ -15,6 +15,9 @@ import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
 import { emptyGame, put, slotOf, switchedOff } from "./helpers.ts";
+import { KEEP } from "../src/core/keep.ts";
+import { playGame } from "../src/ai/learn/play.ts";
+import { runAll } from "../src/ai/learn/pool.ts";
 import { createScriptedPlayer, planFor, SCRIPTED_THINK_EVERY } from "../src/ai/scripted-player.ts";
 
 // D-089: gathering outside the enemy main city first has its own tests (at the end); the tests before them
@@ -1807,6 +1810,19 @@ test("D-086 B: the simulation worker never imports the training code (sim/src/ai
   assert.ok(seen.size > 10, `walked ${seen.size} files`);
   assert.ok([...seen].some((f) => f.endsWith("/ai/net.ts")), "net.ts is in the worker");
   assert.deepEqual([...seen].filter((f) => f.includes("/ai/learn/")), []);
+});
+
+test("D-086 B: a training game is played with the switches it is given, in the worker thread, and they are back after it", async () => {
+  const spec = { seed: 3, map: "fixed" as const, swap: false, maxTicks: 60, opp: { kind: "normal" as const } };
+  const was = { keep: KEEP.on, siege: RULES.SIEGE.on, rich: RULES.RICH.on };
+  const res = await runAll([
+    { kind: "play", spec: { ...spec, rules: { keep: true, siege: true, rich: true } }, net: null },
+    { kind: "play", spec, net: null },
+  ], 2);
+  assert.deepEqual(res.map((r) => r.outcome.switches), [{ keep: true, siege: true, rich: true }, was]);
+  const here = playGame({ ...spec, me: {}, rules: { keep: !was.keep } });
+  assert.equal(here.switches.keep, !was.keep);
+  assert.deepEqual({ keep: KEEP.on, siege: RULES.SIEGE.on, rich: RULES.RICH.on }, was);
 });
 
 test("D-086 B: with the network on, its choice at home wins: it marches with 16, or waits with 60; never with fewer than netMarch (14)", () => {

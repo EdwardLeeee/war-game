@@ -9,7 +9,7 @@
 
 import { NET_HEADS, NET_SHAPE, type NetWeights } from "../net.ts";
 import { runAll } from "./pool.ts";
-import type { GameOutcome, Opponent } from "./play.ts";
+import type { GameOutcome, Opponent, Switches } from "./play.ts";
 import type { Job } from "./worker.ts";
 
 export interface EsConfig {
@@ -31,6 +31,8 @@ export interface EsConfig {
   randomShare: number;
   /** The opponents' stage to start at: 0 normal, 1 hard, 2 the mix. */
   startStage: number;
+  /** The rule switches every game is played with (empty: as they are on main). */
+  rules: Switches;
 }
 
 export const ES_DEFAULTS: EsConfig = {
@@ -46,6 +48,7 @@ export const ES_DEFAULTS: EsConfig = {
   maxTicks: 36000,
   randomShare: 0.5,
   startStage: 2,
+  rules: {},
 };
 
 export interface EsState {
@@ -166,7 +169,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
     candidates.push(fromVector(state.theta.map((v, i) => v - e[i]), like));
   }
   const jobs: Job[] = [];
-  for (const net of candidates) for (const g of games) jobs.push({ kind: "play", spec: { seed: g.seed, map: g.map, swap: g.swap, maxTicks: c.maxTicks, opp: g.opp }, net });
+  for (const net of candidates) for (const g of games) jobs.push({ kind: "play", spec: { seed: g.seed, map: g.map, swap: g.swap, maxTicks: c.maxTicks, opp: g.opp, rules: c.rules }, net });
   const results = await runAll(jobs, threads);
   const shaping = state.generation >= c.shapingUntil ? 0 : (c.shaping * (c.shapingUntil - state.generation)) / c.shapingUntil;
   const fitness: number[] = [];

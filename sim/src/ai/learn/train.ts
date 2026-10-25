@@ -1,16 +1,18 @@
 // D-086 B training: what .github/workflows/ai-train.yml runs (docs/research/2026-10-ai-nn.md).
 //   node src/ai/learn/train.ts dryrun --out DIR                      cores, and games an hour (hard against hard)
 //   node src/ai/learn/train.ts record --games 400 --out DIR           hard's inputs and what it did (samples.bin, games.json), for looking into
-//   node src/ai/learn/train.ts es --out DIR [--start FILE] [--resume DIR] [--seed N] [--hours H] [--generations N]
-//                                                                    from the network that always plays as hard (asHardNet) unless --start
-//   node src/ai/learn/train.ts eval --net FILE --games N --out DIR    against hard (both spawns), normal, the late group
+//   node src/ai/learn/train.ts es --out DIR [--start FILE] [--resume DIR] [--seed N] [--hours H] [--generations N] [--config JSON]
+//                                                                    from the network that always plays as hard (asHardNet) unless --start;
+//                                                                    --config over ES_DEFAULTS, or over the resumed run's settings
+//   node src/ai/learn/train.ts eval --net FILE --games N --out DIR [--rules keep,siege,rich]
+//                                                                    against hard (both spawns), normal, the late group
 // Every mode writes summary.md (Markdown) and its files under --out; checkpoints and records are CI artifacts, never commits.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { cpus } from "node:os";
 import { asHardNet, NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
-import { type EsState, fromVector, generation, newState, sameShape } from "./es.ts";
-import type { Opponent } from "./play.ts";
+import { ES_DEFAULTS, type EsState, fromVector, generation, newState, sameShape } from "./es.ts";
+import type { Opponent, Switches } from "./play.ts";
 import { runAll, threads } from "./pool.ts";
 import type { Job } from "./worker.ts";
 
@@ -28,6 +30,12 @@ const summary = (line: string) => {
 const started = performance.now();
 const hours = () => (performance.now() - started) / 3_600_000;
 
+/** The switches turned on, for the summaries ("照 main": none). */
+function switchesText(s: Switches | undefined): string {
+  const on = Object.entries(s ?? {}).filter(([, v]) => v).map(([k]) => k.toUpperCase());
+  return on.length === 0 ? "照 main" : on.join("、");
+}
+
 /** A sample: NET_INPUTS inputs, then what hard did for each head (ai.ts netLog; -1: nothing at that think). */
 type Sample = number[];
 /** Samples as bytes: NET_INPUTS inputs (0..255), then each label + 1 (0: none). */
@@ -38,7 +46,7 @@ function saveSamples(file: string, samples: Sample[]): void {
   writeFileSync(file, b);
 }
 /** Against hard, both spawns, `n` games on each map; against normal and the late group, `n / 2` on each. */
-async function evaluate(net: NetWeights | null, n: number, seed0: number) {
+async function evaluate(net: NetWeights | null, n: number, seed0: number, switches: Switches) {
   const sets: [string, Opponent, number][] = [
     ["hard", { kind: "hard" }, n],
     ["normal", { kind: "normal" }, n >> 1],
@@ -47,7 +55,7 @@ async function evaluate(net: NetWeights | null, n: number, seed0: number) {
   const rows: string[] = [];
   for (const [name, opp, games] of sets) {
     for (const map of ["fixed", "random"] as const) {
-      const jobs: Job[] = Array.from({ length: games }, (_, k) => ({ kind: "play", spec: { seed: seed0 + (k >> 1), map, swap: (k & 1) === 1, maxTicks: 36000, opp }, net }));
+      const jobs: Job[] = Array.from({ length: games }, (_, k) => ({ kind: "play", spec: { seed: seed0 + (k >> 1), map, swap: (k & 1) === 1, maxTicks: 36000, opp, rules: switches }, net }));
       const res = await runAll(jobs);
       const won = res.filter((r) => r.outcome.won === 1).length;
       const draws = res.filter((r) => r.outcome.won < 0).length;
@@ -86,10 +94,13 @@ if (mode === "dryrun") {
   const startFile = arg("start", "");
   const start: NetWeights = startFile === "" ? asHardNet() : JSON.parse(readFileSync(startFile, "utf8"));
   if (!sameShape(start)) throw new Error("the start network has another shape");
-  let state: EsState = resume !== "" && existsSync(`${resume}/state.json`) ? JSON.parse(readFileSync(`${resume}/state.json`, "utf8")) : newState(start, Number(arg("seed", "1")), JSON.parse(arg("config", "{}")));
+  const config = JSON.parse(arg("config", "{}"));
+  let state: EsState = resume !== "" && existsSync(`${resume}/state.json`) ? JSON.parse(readFileSync(`${resume}/state.json`, "utf8")) : newState(start, Number(arg("seed", "1")), config);
+  // Going on with other settings (the rules once they ship, ceo 2026-10-25): from the weights it has.
+  state.config = { ...ES_DEFAULTS, ...state.config, ...config };
   const limitH = Number(arg("hours", "5.5"));
   const maxGen = state.generation + Number(arg("generations", "1000000"));
-  summary(`## 演化策略（種子 ${state.seed}，從第 ${state.generation} 代起）\n\n「不照困難」：每組決定，不照困難的選擇在所有思考裡的次數和比例（ceo 2026-10-19）。\n\n| 代 | 對手 | 局 | 贏 | 平手 | 輸 | 打到對方主城 | 軍隊：守家／出兵 | 練兵：槍兵多／遠程多 | 蓋：村民先／兵營射場先 | 城鎮：搶／治理 | 加分權重 | 秒 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|`);
+  summary(`## 演化策略（種子 ${state.seed}，從第 ${state.generation} 代起，規則開關 ${switchesText(state.config.rules)}）\n\n「不照困難」：每組決定，不照困難的選擇在所有思考裡的次數和比例（ceo 2026-10-19）。\n\n| 代 | 對手 | 局 | 贏 | 平手 | 輸 | 打到對方主城 | 軍隊：守家／出兵 | 練兵：槍兵多／遠程多 | 蓋：村民先／兵營射場先 | 城鎮：搶／治理 | 加分權重 | 秒 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|`);
   const stageName = ["普通", "困難", "混合"];
   while (state.generation < maxGen) {
     const r = await generation(state, start);
@@ -109,8 +120,12 @@ if (mode === "dryrun") {
 } else if (mode === "eval") {
   const file = arg("net", "");
   const net: NetWeights | null = file === "" ? null : JSON.parse(readFileSync(file, "utf8"));
-  const rows = await evaluate(net, Number(arg("games", "100")), Number(arg("seed", "1")));
-  summary(`## 比強弱（${file === "" ? "困難本身" : file}）\n\n${rows.join("\n")}`);
+  const names = arg("rules", "").split(",").filter((x) => x !== "");
+  const bad = names.filter((x) => x !== "keep" && x !== "siege" && x !== "rich");
+  if (bad.length > 0) throw new Error(`--rules ${bad.join(",")}: keep, siege or rich`);
+  const switches: Switches = Object.fromEntries(names.map((x) => [x, true]));
+  const rows = await evaluate(net, Number(arg("games", "100")), Number(arg("seed", "1")), switches);
+  summary(`## 比強弱（${file === "" ? "困難本身" : file}，規則開關 ${switchesText(switches)}）\n\n${rows.join("\n")}`);
 } else {
   throw new Error(`mode ${mode}: dryrun, record, es or eval`);
 }

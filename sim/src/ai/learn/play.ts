@@ -5,7 +5,8 @@
 import { createAi, type HardPlan } from "../ai.ts";
 import { createScriptedPlayer, planFor, SCRIPTED_THINK_EVERY } from "../scripted-player.ts";
 import { Game } from "../../core/game.ts";
-import { rules } from "../../core/rules.ts";
+import { KEEP } from "../../core/keep.ts";
+import { RICH, rules, SIEGE } from "../../core/rules.ts";
 import { type Command, type CommandBody, type MapMode, MAX_TICKS, TownState, UnitType } from "../../protocol.ts";
 import { UNIT_KINDS } from "../../core/world.ts";
 import { AI_THINK_EVERY, aiKnowledge } from "../../runner.ts";
@@ -13,6 +14,17 @@ import { buildView, mapInfo } from "../../view/view.ts";
 
 /** Who the trained side plays against: hard (its own plan, by default HARD's), normal, or the late scripted group (D-086 A). */
 export type Opponent = { kind: "hard"; plan?: Partial<HardPlan> } | { kind: "normal" } | { kind: "late" };
+
+/**
+ * Rule switches a game is played with (absent: as they are): the rules that are to ship (ceo 2026-10-25:
+ * KEEP, SIEGE, RICH; RICH's contested gold stays as RICH.contested says). Set in the thread that plays the
+ * game (each worker has its own), and back as they were after it.
+ */
+export interface Switches {
+  keep?: boolean;
+  siege?: boolean;
+  rich?: boolean;
+}
 
 export interface GameSpec {
   seed: number;
@@ -24,6 +36,7 @@ export interface GameSpec {
   /** The trained side's plan (its net, and anything else). */
   me: Partial<HardPlan>;
   opp: Opponent;
+  rules?: Switches;
 }
 
 export interface GameOutcome {
@@ -47,6 +60,8 @@ export interface GameOutcome {
   reached: boolean;
   /** The trained side's network: per head, how many thinks it made each choice (empty: no network). */
   choices: number[][];
+  /** The switches the game was played with. */
+  switches: Required<Switches>;
 }
 
 /** As scripted-games --strategy push --speed h1 --formation close --late (D-086 A). */
@@ -57,6 +72,21 @@ function latePlan() {
 }
 
 export function playGame(spec: GameSpec): GameOutcome {
+  const was = { keep: KEEP.on, siege: SIEGE.on, rich: RICH.on };
+  const s = { ...was, ...spec.rules };
+  KEEP.on = s.keep;
+  SIEGE.on = s.siege;
+  RICH.on = s.rich;
+  try {
+    return play(spec);
+  } finally {
+    KEEP.on = was.keep;
+    SIEGE.on = was.siege;
+    RICH.on = was.rich;
+  }
+}
+
+function play(spec: GameSpec): GameOutcome {
   const maxTicks = spec.maxTicks > 0 ? spec.maxTicks : MAX_TICKS;
   const g = new Game({ seed: spec.seed, scenario: "standard", maxTicks, map: spec.map });
   const w = g.w;
@@ -147,5 +177,6 @@ export function playGame(spec: GameSpec): GameOutcome {
   const full = rules(w.map).buildings[0].hp || 1;
   const margin = (soldiers[me] - soldiers[them]) / (soldiers[me] + soldiers[them] + 1) + (hp[me] - hp[them]) / full;
   const won = !w.over || (w.winner !== 0 && w.winner !== 1) ? -1 : w.winner === me ? 1 : 0;
-  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)) };
+  const switches = { keep: KEEP.on, siege: SIEGE.on, rich: RICH.on };
+  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)), switches };
 }
