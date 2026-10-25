@@ -60,6 +60,11 @@ def building_table(c):
     # town's 3 x 3 keep, its states as the client shows them (damaged at half its hp or less; rubble once it falls, the
     # cells walk; repair: the rubble under scaffolding while the governed town counts down); the old 2 x 2 and 3 x 3
     # town towers (art-v4/v5) are gone
+    # art-v6.1 (ceo 2026-10-25): the realistic art goes live while KEEP is off, when type 9 is still the big city's 2 x 2
+    # town tower (3 x 3 on random maps with neighbouring spawns): art-v5.2's entry again, in the R8 look, listed before
+    # the Keep, so a client that takes the first entry of type 9 gets it; with KEEP on the client takes "Keep" by name
+    t["TownTower"] = dict(type=9, footprint=[2, 2], states={s: f"town_tower_{c}_{s}" for s in ("done", "damaged", "rubble")},
+                          sizes={"3": dict(footprint=[3, 3], states={s: f"town_tower3_{c}_{s}" for s in ("done", "damaged", "rubble")})})
     t["Keep"] = dict(type=9, footprint=[3, 3], states={s: f"keep_{c}_{s}" for s in ("done", "damaged", "rubble", "repair")})
     # art-v6: where arrows leave (shoot_at_<k> marks of the finished look, metres from the anchor, the sim's axes as the
     # gates' shoot_at_m: x east, y south, z up): the client flies an arrow from the one nearest the target
@@ -102,7 +107,7 @@ def castle_table(c):
     it); on the gates `shoot_at_m` (where the gate tower's arrows leave). Spots: x east, y south, z up, metres from the
     piece's anchor."""
     pieces = {}
-    used = {p["piece"] for L in (f() for f in CASTLE.LAYOUTS) for p in CASTLE.placements(L)}   # art-v6: D-100's only
+    used = {p["piece"] for L in (f() for f in CASTLE.LAYOUTS + CASTLE.D089) for p in CASTLE.placements(L)}
     for k, f in CASTLE.PIECE_FOOT.items():
         if k not in used:
             continue
@@ -128,11 +133,14 @@ def castle_table(c):
     # art-v6 (R8-36 B, agreed with war-game-client 2026-10-23): no floor tiles; the ground inside the walls drawn by the
     # ground shader from each layout's `ground` (lane, trampled), and the decorative pieces of `decor` (castle.py)
     decor = {k: f"decor_{k}_{c}" for k in CASTLE.DECOR_SIZE}
+    # art-v6.1 (ceo 2026-10-25): D-089's castles again under their old names (art-v5.2's pieces and cells, for KEEP off;
+    # their ground from CASTLE.d089_ground, no decor), D-100's as "<name>_d100" (KEEP on)
     layouts = {}
+    walls = lambda L: [dict(piece=p["piece"], anchor=p["anchor"], front=p["front"], cells=p["cells"]) for p in CASTLE.placements(L)]
+    for L in (f() for f in CASTLE.D089):
+        layouts[L["name"]] = dict(walls=walls(L), ground=CASTLE.d089_ground(L), decor=[])
     for L in (f() for f in CASTLE.LAYOUTS):
-        layouts[L["name"]] = dict(
-            walls=[dict(piece=p["piece"], anchor=p["anchor"], front=p["front"], cells=p["cells"]) for p in CASTLE.placements(L)],
-            ground=CASTLE.ground(L), decor=CASTLE.decor(L))
+        layouts[f"{L['name']}_d100"] = dict(walls=walls(L), ground=CASTLE.ground(L), decor=CASTLE.decor(L))
     return pieces, decor, layouts
 
 
