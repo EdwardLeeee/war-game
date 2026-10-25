@@ -1,0 +1,694 @@
+{
+ "traces": [
+  {
+   "name": "h-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "h-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "he-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "he-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   }
+  },
+  {
+   "name": "hew-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "hew-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  },
+  {
+   "name": "w-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "h",
+   "a": {
+    "holdTowns": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "h",
+   "a": {
+    "holdTowns": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "he",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "he",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "hew",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "hew",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "w",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "w",
+   "a": {
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
