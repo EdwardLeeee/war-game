@@ -614,7 +614,7 @@ export class Game implements GestureHost {
   }
 
   /** 城內 B (castle 2): the towns' decor pieces, for the test hook. */
-  get decorForTest(): { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean }[] | null {
+  get decorForTest(): { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean; burnt: boolean }[] | null {
     return this.renderer?.decorForTest ?? null;
   }
 
