@@ -1,7 +1,7 @@
 """R8-38 (D-101 市場): the market drafts for the user, two options a culture, in the R8 look (market_r8.py).
 
-python3 design/r8/common/market_board.py RESEARCH_DIR
-  RESEARCH_DIR  the research worktree (market-reference)
+python3 design/r8/common/market_board.py RESEARCH_DIR     the option boards (RESEARCH_DIR: the research worktree)
+python3 design/r8/common/market_board.py states           the chosen options' states (r8m_states, found_3x3, rubble_3x3)
 Needs build/b1/r8m/market_<c>_<A|B>_x3.* (run.py r8m_draft) and build/b1/r8p/{house,granary}_<c>_done_x3.* (r8p_<c>_*).
 """
 import sys
@@ -101,7 +101,43 @@ def board_overview(W=3000):
     return B.save(B.stack(parts, W), label)
 
 
+CHOSEN = {"E": "A", "W": "B"}        # the user 2026-10-25, in the choice popup
+STATES_TEXT = {
+    "E": "東陸 A「市的一角」（使用者 2026-10-25 選）的每一種樣子，照其他寫實建築的做法：\n"
+         "・施工 1：地基（木樁、繩子），所有 3×3 建築共用同一張。施工 2：牆、門、攤棚只蓋到一半，四周搭鷹架。施工 3：攤棚的屋頂只有骨架。\n"
+         "・受損（生命一半以下）：攤棚的蓆頂燒破、冒火和黑煙；烏頭門和牆還在。\n"
+         "・瓦礫（被打掉以後，可以走、壓得很低）：所有 3×3 建築共用同一張。",
+    "W": "西陸 B「市場十字」（使用者 2026-10-25 選）的每一種樣子，照其他寫實建築的做法：\n"
+         "・施工 1：地基（木樁、繩子），所有 3×3 建築共用同一張。施工 2：攤台和十字的台階蓋到一半，四周搭鷹架。施工 3：十字的石柱還沒立好，布篷只有木架。\n"
+         "・受損（生命一半以下）：布篷燒起來、冒火和黑煙；十字和攤台還在。\n"
+         "・瓦礫（被打掉以後，可以走、壓得很低）：所有 3×3 建築共用同一張。",
+}
+
+
+def state_tile(c, s, pp):
+    if s in ("build1", "rubble"):
+        S.DIR = PDIR
+        return S.tile(f"{'found' if s == 'build1' else 'rubble'}_3x3_{c}", "x3", pp, (3, 3))
+    S.DIR = MDIR
+    return S.tile(f"market_{c}_{s}", "x3", pp, (3, 3))
+
+
+def board_states(c, W=3000):
+    o = CHOSEN[c]
+    label = f"R8-38-市場-{o}-{NAME[(c, o)]}-狀態-{SIDE[c]}-mobile"
+    names = (("build1", "施工 1（地基，3×3 共用）"), ("build2", "施工 2"), ("build3", "施工 3"), ("done", "完好"),
+             ("damaged", "受損（生命一半以下）"), ("rubble", "瓦礫（可以走，3×3 共用）"))
+    parts = [B.header(W, label, STATES_TEXT[c])]
+    parts.append(B.row([B.captioned(state_tile(c, s, 2), n, 22) for s, n in names], W, gap=18))
+    parts.append(B.row([B.captioned(B.row([B.captioned(state_tile(c, s, 1), n.split("（")[0], 20) for s, n in names],
+                                          W - 2 * B.M, gap=16), "實際大小（1 倍）", 22)], W))
+    return B.save(B.stack(parts, W), label)
+
+
 if __name__ == "__main__":
-    research = sys.argv[1]
-    out = [board_option(c, o, research) for c in "EW" for o in "AB"] + [board_overview()]
+    if sys.argv[1] == "states":
+        out = [board_states(c) for c in "EW"]
+    else:
+        research = sys.argv[1]
+        out = [board_option(c, o, research) for c in "EW" for o in "AB"] + [board_overview()]
     print("\n".join(str(p) for p in out))

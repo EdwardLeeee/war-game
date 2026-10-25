@@ -270,7 +270,10 @@ for pc in job["pieces"]:
         lib.set_pass(p, job.get("samples", {}).get(p))
         for ob in lib.ALL_PARTS:                 # smoke and flames: colour image only
             if ob.get("beauty_only") and p != "beauty":
-                ob.hide_render = True
+                if p == "mask" and LOOK == "r8":  # R8-38: flames in front of the owner's cloth cut the player colour
+                    ob.is_holdout = True          # behind them (else the team layer, drawn over, hides the fire)
+                else:
+                    ob.hide_render = True
             if ob.get("back_holdout"):           # a wall's front layer (castle.front_only): the rest see-through
                 ob.is_holdout = True
             if ob.get("caster_only"):            # stands in for a neighbour (terrain_r8): its shadow, never seen
