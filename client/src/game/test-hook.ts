@@ -135,6 +135,8 @@ export interface GameHook {
   decor(): { town: number; piece: string; cells: [number, number][]; sx: number; sy: number; shown: boolean; leftOut: boolean }[];
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
   groundLook(): { real: boolean; quality: string | null; water: boolean; town: boolean } | null;
+  /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
+  feet(): number;
   setGroundQuality(q: "high" | "low"): void;
   /** The ground's pictures (art-v5, R6-51): drawn from them or not, and how many pieces lie flat or stand. */
   terrain(): { pictures: boolean; pieces: number; flat: number; standing: number } | null;
@@ -352,6 +354,7 @@ export function gameHook(game: Game): GameHook {
         return { ...d, sx: at.x, sy: at.y };
       }),
     groundLook: () => game.groundForTest,
+    feet: () => game.feetForTest,
     setGroundQuality: (q) => game.setGroundQuality(q),
     terrain: () => game.terrainForTest,
     lift: (cx, cy) => game.liftForTest(cx, cy),

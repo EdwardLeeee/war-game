@@ -230,10 +230,14 @@ for pc in job["pieces"]:
         states.apply(root, kind, c, st, **pc.get("state_opts", {}))
     elif kind in HOUSES and st not in ("done", "intact"):
         towns.house_state(root, kind, c, st)
-    elif kind == "ttower" and st not in ("done", "intact"):
-        towns.tower_state(root, c, st)
-    elif kind == "ttower3":
-        castle.tower3_state(root, c, st)
+    elif kind in ("ttower", "ttower3") and st not in ("done", "intact"):
+        import states                # noqa: E402
+        prev = states.R8             # art-v6.1.1 (ceo 2026-10-25): in the R8 look the town towers burn with R8's flames,
+        states.R8 = LOOK == "r8" and st == "damaged"     # not the cartoon cones (pale under R7's lights); only the fire
+        try:
+            (towns.tower_state if kind == "ttower" else castle.tower3_state)(root, c, st)
+        finally:
+            states.R8 = prev
     if LOOK == "r8":
         realistic(root)
     pts = corners()

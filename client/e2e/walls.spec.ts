@@ -226,8 +226,11 @@ test("城門的樣子（D-096，art-v5.2）：關著；城主的兵在門口開�
   const gate = (await gatesOf(page, OUR_TOWN))[0];
   const [target] = (await units(page)).filter((u) => u.owner !== (0 as number) && u.type === SPEARMAN);
   const towers = await page.evaluate(() => window.__proto?.game?.towerShots() ?? 0);
+  const arrows = await page.evaluate(() => window.__proto?.game?.arrows() ?? { real: false, bow: 0, building: 0 });
   await page.evaluate(([b, t]) => window.__proto?.game?.inject({ k: "shot", building: b, target: t, n: 3 }), [gate.id, target.id] as const);
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.towerShots() ?? 0)).toBe(towers + 1);
+  // With the effects' `arrow` (art-v6 on), the three fly as arrows from the gate's tower; before, one straight line.
+  if (arrows.real) await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.arrows()))?.building).toBe(arrows.building + 3);
+  else await expect.poll(() => page.evaluate(() => window.__proto?.game?.towerShots() ?? 0)).toBe(towers + 1);
   check();
 });
 

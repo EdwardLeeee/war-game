@@ -190,6 +190,16 @@ export class ArmyBook {
   }
 
   /**
+   * 駐軍 (station.ts): these soldiers stay in the town from now, on their way in too: out of any
+   * other garrison and of their control groups. Returns how many left each group.
+   */
+  stationAll(town: number, ids: readonly number[]): number[] {
+    this.drop([...ids]);
+    this.garrisons.set(town, [...(this.garrisons.get(town) ?? []), ...ids]);
+    return this.leaveGroups(ids);
+  }
+
+  /**
    * Take one soldier off the town's garrison: the last choice goes first (a mage before the
    * others, then the one farthest from the centre, then the higher id). Returns its id (the
    * caller sets it back to 積極), or null when nobody is stationed there.

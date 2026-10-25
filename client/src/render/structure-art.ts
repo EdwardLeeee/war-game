@@ -12,7 +12,7 @@ import { type Culture, M_PER_CELL } from "../art/spec.ts";
 import { buildingEntry, buildingFrame, buildingState, type BuildingEntry, cropStage, nodeFrame, type NodeEntry, RUBBLE_FADE_S, RUBBLE_HOLD_S, type Side, viewFits } from "../art/structures.ts";
 import { buildingFront, depthOf, nodeFront } from "./depth.ts";
 import type { Projection } from "../camera/projection.ts";
-import { Action, BUILDING_STRIDE, BuildingField as B, BuildingFlag, BuildingType, Fog, HeaderField as H, NodeField as N, TICKS_PER_SECOND, UNIT_STRIDE, UnitField as U } from "../sim.ts";
+import { Action, BUILDING_STRIDE, BuildingField as B, BuildingFlag, BuildingType, Fog, HeaderField as H, NodeField as N, TICKS_PER_SECOND, TownField as T, TownState, UNIT_STRIDE, UnitField as U } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import type { GameView } from "../view/view.ts";
 import { ownerTint } from "./atlas.ts";
@@ -61,6 +61,12 @@ interface Rubble {
   cellY: number;
   size: number;
   since: number;
+  /**
+   * A town's keep's (art-v6, D-100): it lies until the keep stands again on its ground (no fading),
+   * and while its town is repaired (TownState.Repairing) it shows `repair`, its scaffolding.
+   */
+  keep: boolean;
+  repair?: string;
 }
 
 interface NodeSprites {
@@ -381,10 +387,12 @@ export class ArtStructures {
       if (now.has(id) || was.remembered) continue;
       this.worked.delete(id);
       const name = was.entry.states.rubble;
-      if (name !== undefined && this.visible(was.cellX, was.cellY, was.size)) this.rubble.push({ side: was.side, name, cellX: was.cellX, cellY: was.cellY, size: was.size, since: seconds });
+      // A keep only with D-100's on (Rules.features.keep): before, type 9 is the big city's tower, its rubble fading as any.
+      const keep = was.entry.type === BuildingType.Keep && this.view.rules.features?.keep === true;
+      if (name !== undefined && this.visible(was.cellX, was.cellY, was.size)) this.rubble.push({ side: was.side, name, cellX: was.cellX, cellY: was.cellY, size: was.size, since: seconds, keep, repair: keep ? was.entry.states.repair : undefined });
     }
     this.seen = now;
-    this.rubble = this.rubble.filter((r) => seconds - r.since < RUBBLE_HOLD_S + RUBBLE_FADE_S);
+    this.rubble = this.rubble.filter((r) => r.keep || seconds - r.since < RUBBLE_HOLD_S + RUBBLE_FADE_S);
     // The fields with a farmer at work in them this tick.
     if (dt > 0) {
       const u = snap.units;
@@ -400,12 +408,24 @@ export class ArtStructures {
       while (this.rubbleSprites.length <= i) this.rubbleSprites.push(sprite(this.ground));
       const s = this.rubbleSprites[i];
       const at = this.projection.toPlane((r.cellX + r.size / 2) * TILE_PX, (r.cellY + r.size / 2) * TILE_PX);
-      put(s, this.art.buildingFrame(r.side, "color", r.name), at.x, at.y, this.scale);
-      const fade = seconds - r.since - RUBBLE_HOLD_S;
+      const name = r.keep && r.repair !== undefined && this.repairing(r) ? r.repair : r.name;
+      put(s, this.art.buildingFrame(r.side, "color", name), at.x, at.y, this.scale);
+      const fade = r.keep ? 0 : seconds - r.since - RUBBLE_HOLD_S;
       s.alpha = fade > 0 ? Math.max(0, 1 - fade / RUBBLE_FADE_S) : 1;
       s.tint = this.visible(r.cellX, r.cellY, r.size) ? 0xffffff : OUT_OF_VIEW;
     });
     for (let i = this.rubble.length; i < this.rubbleSprites.length; i++) this.rubbleSprites[i].visible = false;
+  }
+
+  /** A keep's rubble whose town is being repaired now (its keep to stand again when the repair is done). */
+  private repairing(r: Rubble): boolean {
+    const t = this.view.curr?.snap.towns;
+    for (const town of this.view.knownTowns.values()) {
+      if (town.cellX < r.cellX || town.cellX >= r.cellX + r.size || town.cellY < r.cellY || town.cellY >= r.cellY + r.size) continue;
+      const o = this.view.townRow(town.id);
+      return o >= 0 && t !== undefined && t[o + T.state] === TownState.Repairing;
+    }
+    return false;
   }
 
   /** The nodes the player knows: standing, or spent on the ground; darker out of view. */

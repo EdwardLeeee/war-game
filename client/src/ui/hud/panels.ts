@@ -85,6 +85,8 @@ export interface PanelHost {
   stepVillagers(by: number): void;
   villagersPaused(): boolean;
   toggleVillagers(): void;
+  /** 駐軍 (2026-10-25): we hold some town (the button shows then). */
+  holdsTown(): boolean;
   /** 自動蓋民居 (2026-10-25) on, and a tap turning it off or on. */
   autoHouseOn(): boolean;
   toggleAutoHouse(): void;
@@ -850,7 +852,8 @@ export class CommandArea {
         const flags = o < 0 ? 0 : u[o + U.flags];
         return o < 0 ? "" : `${u[o + U.type]}${orderState(view, id)}${(flags & UnitFlag.Autocast) !== 0 ? "a" : ""}${(flags & UnitFlag.Loose) !== 0 ? "l" : ""}${u[o + U.order] === Order.Wall ? "w" : ""}`;
       });
-      return `u:${[...new Set(stances)].sort().join(",")}`;
+      // 駐軍 shows once we hold a town.
+      return `u:${[...new Set(stances)].sort().join(",")}:${this.host.holdsTown() ? "t" : ""}`;
     }
     if (sel.building !== null) {
       const o = view.buildingRow(sel.building);
@@ -944,6 +947,15 @@ export class CommandArea {
             : button(this.el, "上城牆", "點自己的城", () => this.host.setMode("wall"), "secondary");
         wall.prepend(icon(up ? "wallDown" : "wallUp", "cmd-ic"));
         if (picking) wall.classList.add("active");
+      }
+      // 駐軍 (2026-10-25, game/station.ts): the soldiers selected (a whole group from 軍團畫面 too)
+      // walk into a town we hold and stay as its 留守; only once we hold one.
+      if (soldiers.length > 0 && this.host.holdsTown()) {
+        const picking = mode === "station";
+        const station = picking
+          ? button(this.el, "取消", "駐軍", () => this.host.setMode("normal"), "secondary")
+          : button(this.el, "駐軍", "點自己的城", () => this.host.setMode("station"), "secondary");
+        if (picking) station.classList.add("active");
       }
       return;
     }

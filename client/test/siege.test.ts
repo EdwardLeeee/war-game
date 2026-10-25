@@ -32,3 +32,18 @@ test("攻城砲的石頭：丟出時在放開的高度，飛到中途比直線�
   assert.equal(stoneAt(s, 20, 2), null, "landed");
   assert.equal(stoneAt(s, -1, 2), null, "not thrown yet");
 });
+
+test("art-v6 的石頭（effects siege_stone）：從攻城砲的手臂出手（from_m，照它面向的前方）、弧高 arc_m + arc_k × 距離、看不到的從 from_far_m 外飛來", () => {
+  const look = { fromM: [0, 0.8, 5.2] as [number, number, number], arcM: 2, arcK: 0.25, farM: 14 };
+  // Facing east (0): the arm 0.8 m (0.4 cell) ahead of the engine, 5.2 m up.
+  const s = stoneOf({ x: 20 * 1024, y: 10 * 1024, lands: 120 }, { x: 10, y: 10, facing: 0 }, 100, (f) => f / 1024, look);
+  assert.ok(s !== null);
+  assert.ok(Math.abs((s?.fromX ?? 0) - 10.4) < 1e-9 && Math.abs((s?.fromY ?? 0) - 10) < 1e-9);
+  assert.equal(s?.fromUpM, 5.2);
+  // Half way: the line's height (5.2 m to the ground: 2.6) plus the arc's top (2 + 0.25 × 19.2 m).
+  const mid = stoneAt(s as NonNullable<typeof s>, 110, 2);
+  assert.ok(Math.abs((mid?.upM ?? 0) - (2.6 + 2 + 0.25 * 19.2)) < 1e-9);
+  // Unseen, from the east (from 0): 14 m (7 cells) out.
+  const far = stoneOf({ x: 20 * 1024, y: 10 * 1024, lands: 120, from: 0 }, null, 100, (f) => f / 1024, look);
+  assert.equal(far?.fromX, 27);
+});

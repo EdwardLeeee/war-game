@@ -357,6 +357,10 @@ for _i in range(0, len(R8_V61), 8):
     TARGETS[f"r8v61_{_i // 8}"] = R8_V61[_i:_i + 8]
     CAMERA[f"r8v61_{_i // 8}"] = proj.OBLIQUE
     LOOK[f"r8v61_{_i // 8}"] = "r8"
+# art-v6.2 (ceo 2026-10-25; first named art-v6.1.1): the town towers' damaged looks again, burning with R8's flames (render_b1.py)
+TARGETS["r8v611"] = [pc for pc in R8_V61 if pc["name"].startswith("town_tower") and pc["name"].endswith("_damaged")]
+CAMERA["r8v611"] = proj.OBLIQUE
+LOOK["r8v611"] = "r8"
 # R8-38 (D-101 市場, ceo 2026-10-25): the drafts, two options a culture (design/r8/blender/market_r8.py)
 TARGETS["r8m_draft"] = [dict(kind="r8_market", culture=c, opts=dict(option=o), name=f"market_{c}_{o}") for c in CULTURES
                         for o in ("A", "B")]
