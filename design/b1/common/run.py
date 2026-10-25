@@ -362,6 +362,14 @@ TARGETS["r8m_draft"] = [dict(kind="r8_market", culture=c, opts=dict(option=o), n
                         for o in ("A", "B")]
 CAMERA["r8m_draft"] = proj.OBLIQUE
 LOOK["r8m_draft"] = "r8"
+# R8-38's states (the user 2026-10-25 chose East A 市的一角, West B 市場十字): the market's own build2, build3, damaged;
+# the foundation (build1) and the rubble are every 3 x 3 building's (found_3x3_<c>, rubble_3x3_<c>)
+MARKET = {"E": "A", "W": "B"}
+TARGETS["r8m_states"] = [dict(kind="r8_market", culture=c, state=st, opts=dict(option=MARKET[c]), name=f"market_{c}_{s}")
+                         for c in CULTURES for s, st in (("done", "done"), ("build2", "build_a2"), ("build3", "build_a3"),
+                                                          ("damaged", "damaged_a"))]
+CAMERA["r8m_states"] = proj.OBLIQUE
+LOOK["r8m_states"] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
 # replaces these pieces of the r8p run in the atlas
 TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in

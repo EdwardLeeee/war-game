@@ -280,6 +280,8 @@ def awning_stall(name, P, parent, cx, cy, w=2.0, d=1.2, h=2.0):
     a = math.degrees(math.atan2(0.45, d))
     box(f"{name}_cloth", (w + 0.2, math.hypot(d, 0.45) + 0.2, 0.04), P["team"], parent, loc=(cx, cy, h + 0.24), rot=(a, 0, 0))
     box(f"{name}_valance", (w + 0.2, 0.03, 0.25), P["team"], parent, loc=(cx, cy - d / 2 - 0.1, h - 0.05))
+    g = lib.empty(name + "_tag", parent=parent, loc=(cx, cy, h))  # a roof for the states: build3 frames it, damaged burns it
+    g["roof"] = [cx, cy, h, w, d, 0.45, 0.1, 0]
 
 
 def market_cross(name, P, parent, x, y):
