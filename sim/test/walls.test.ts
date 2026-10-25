@@ -6,9 +6,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
-import { GATE, UNITS, WALLS } from "../src/core/rules.ts";
+import { GATE, TOWNS, UNITS, WALLS } from "../src/core/rules.ts";
 import { onWall } from "../src/core/units.ts";
-import { Action, CELL, CELL_SHIFT, NEUTRAL, Order, Reject, Resource, TownSize, TownState, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
+import { Action, CELL, CELL_SHIFT, NEUTRAL, Order, Reject, Resource, TOWN_STRIDE, TownField, TownFlag, TownSize, TownState, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
@@ -217,6 +217,30 @@ test("a soldier on the wall keeps the town: enemies inside do not take it while 
   w.units.col.hp[slotOf(g, archer)] = 0;
   run(g, 3 * 20);
   assert.equal(w.townOwner[T], 1, "taken once it fell");
+});
+
+test("soldiers on the wall are the town's garrison, on the screen too: no BelowGarrison, no revolt", () => {
+  const g = governed();
+  const w = g.w;
+  const t = w.map.towns[T];
+  const rule = TOWNS[w.townSize[T]];
+  const ids = Array.from({ length: rule.garrisonNeeded }, (_, k) => put(g, 0, UnitType.Ranged, t.cellX + k, t.cellY));
+  g.fog.update(w);
+  cmd(g, 0, { c: "wall", u: ids, town: T });
+  run(g, 20 * 20);
+  for (const id of ids) assert.ok(onWall(w, slotOf(g, id)), `unit ${id} on the wall`);
+  const row = () => {
+    const v = buildView(g, 0);
+    for (let r = 0; r < v.towns.length; r += TOWN_STRIDE) if (v.towns[r + TownField.id] === T) return v.towns.subarray(r, r + TOWN_STRIDE);
+    throw new Error("town not in view");
+  };
+  assert.deepEqual([row()[TownField.garrison], row()[TownField.flags] & TownFlag.BelowGarrison], [rule.garrisonNeeded, 0]);
+  run(g, rule.revoltTicks + 100);
+  assert.equal(w.townState[T], TownState.Governed, "no revolt");
+  // Down and out of the town: below the garrison, on the screen as in the rules.
+  for (const id of ids) w.units.col.hp[slotOf(g, id)] = 0;
+  run(g, 2);
+  assert.deepEqual([row()[TownField.garrison], row()[TownField.flags] & TownFlag.BelowGarrison], [0, TownFlag.BelowGarrison]);
 });
 
 test("down again with leave_wall, or with a move: to the cell inside it climbed from", () => {
