@@ -15,7 +15,7 @@
   "siege_w": {"run": 39726651993, "artifact": "r7-v8-siege_w"},
   "mage_w": {"run": 39726651993, "artifact": "r7-v8-mage_w"}
  },
- "effects": {"run": 40183915689, "artifact": "production-effects-atlas"},
+ "effects": {"run": 40176054805, "artifact": "production-effects-atlas"},
  "buildings": {"run": 40183915689, "artifact": "production-buildings"},
  "castle": true,
  "terrain": true,
