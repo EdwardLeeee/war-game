@@ -1,0 +1,498 @@
+{
+ "traces": [
+  {
+   "name": "base-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "base-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {}
+  },
+  {
+   "name": "b-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "b-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true
+   }
+  },
+  {
+   "name": "bo-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bo-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   }
+  },
+  {
+   "name": "bho-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hhx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hhx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hhrx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hhrx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,hard --map random --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hnx-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hnx-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map fixed --seed-from 51 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  },
+  {
+   "name": "bho-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 2 --difficulty hard,normal --map random --seed-from 1 --sides all",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "b",
+   "a": {
+    "behind": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "b",
+   "a": {
+    "behind": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "bo",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "bo",
+   "a": {
+    "behind": true,
+    "behindOutpost": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "bho",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "bho",
+   "a": {
+    "behind": true,
+    "behindOutpost": true,
+    "holdTowns": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
