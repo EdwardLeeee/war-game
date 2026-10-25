@@ -1,0 +1,94 @@
+{
+ "traces": [],
+ "scripted": [
+  {
+   "name": "base",
+   "a": {},
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "h",
+   "a": {
+    "holdTowns": true
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "he",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "hew",
+   "a": {
+    "holdTowns": true,
+    "econBehind": true,
+    "goldCavalry": 25,
+    "crystalStop": true,
+    "woodShift": true
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "bs",
+   "a": {
+    "behind": true,
+    "behindFail": false
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  }
+ ]
+}
