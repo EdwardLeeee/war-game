@@ -341,9 +341,15 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await page.locator(".sel-info").getByRole("button", { name: "多留守 1 名" }).tap();
   await expect.poll(() => garrison(page, town.id)).toEqual([kept, sp]);
   expect((await groupInfo(page))[0].ids, "still group 1's").toContain(sp);
-  // Not short for that: one more spearman wanted (軍團畫面 +) makes it so.
+  // Not short for that: more spearmen wanted (軍團畫面 +) make it so. One more than the
+  // spearmen in no group, who may be drafted first (D-050), so that the barracks trains one
+  // (CI run 40226183904).
+  const grouped = (await groups(page)).flat();
+  const stationed = await garrison(page, town.id);
+  const loose = (await own(page, [SPEARMAN])).filter((u) => !grouped.includes(u.id) && !stationed.includes(u.id)).length;
   await tapOn(page, ".groups > button:nth-child(1)");
-  await page.locator(".sel-info").getByRole("button", { name: "多要 1 名槍兵" }).tap();
+  const wantMore = page.locator(".sel-info").getByRole("button", { name: "多要 1 名槍兵" });
+  for (let k = 0; k <= loose; k++) await wantMore.tap();
   // 不選村民蓋民居：重設 → 建造 → 民居 → ✓，由模擬派最近的村民去蓋. Placed while paused, so
   // nobody walks onto the spot between the preview and ✓.
   await pause(page);
