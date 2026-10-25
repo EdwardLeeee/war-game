@@ -357,6 +357,10 @@ for _i in range(0, len(R8_V61), 8):
     TARGETS[f"r8v61_{_i // 8}"] = R8_V61[_i:_i + 8]
     CAMERA[f"r8v61_{_i // 8}"] = proj.OBLIQUE
     LOOK[f"r8v61_{_i // 8}"] = "r8"
+# art-v6.1.1 (ceo 2026-10-25): the town towers' damaged looks again, burning with R8's flames (render_b1.py)
+TARGETS["r8v611"] = [pc for pc in R8_V61 if pc["name"].startswith("town_tower") and pc["name"].endswith("_damaged")]
+CAMERA["r8v611"] = proj.OBLIQUE
+LOOK["r8v611"] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
 # replaces these pieces of the r8p run in the atlas
 TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in
