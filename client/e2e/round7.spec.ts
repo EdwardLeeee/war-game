@@ -483,9 +483,10 @@ for (const viewport of [null, FULL_SCREEN]) {
     await expect(page.locator(".cmds").getByRole("button", { name: /^躲進去/ })).toBeVisible();
     await expect(page.locator(".sel-note")).toBeVisible();
     await checkLayout(page);
-    // 攻擊、移動、堅守、停止, then 整理隊形, 隊形 (two columns wide) and 躲進去 (D-095: no mage buttons).
+    // 攻擊、移動、堅守、停止, then 整理隊形, 隊形 (two columns wide) and 躲進去 (D-095: no mage buttons),
+    // then 駐軍 (2026-10-25: we hold the big city here); checkLayout: nothing overlaps.
     const rows = new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y)));
-    expect(rows.size, "two rows of commands").toBe(2);
+    expect(rows.size, "three rows of commands").toBe(3);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     await shot(page, info, `r7-layout-army-${width}x${height}`);
     await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);

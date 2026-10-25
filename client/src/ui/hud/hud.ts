@@ -231,6 +231,7 @@ export class Hud {
       villagersPaused: () => game.autoArmy.villagersPaused,
       toggleVillagers: () => game.toggleVillagers(),
       autoHouseOn: () => game.autoHouseOn(),
+      holdsTown: () => game.holdsTown(),
       toggleAutoHouse: () => game.toggleAutoHouse(),
       garrison: (town: number) => game.army.garrisonOf(town).length,
       garrisonMore: (town: number) => game.garrisonMore(town),

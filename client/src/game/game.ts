@@ -94,6 +94,7 @@ import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn, orderState } from "./orders.ts";
 import { goesOnWalls, heldTown, leaveWalls, WALL_PROMPT, WALL_PROMPT_MIXED, WALL_WRONG_TARGET, wallTap } from "./walls.ts";
+import { STATION_PROMPT, STATION_PROMPT_MIXED, STATION_WRONG_TARGET, stationTap, upOnArrival } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
@@ -190,6 +191,7 @@ const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   garrison: GARRISON_PROMPT,
   post: POST_PROMPT,
   wall: WALL_PROMPT,
+  station: STATION_PROMPT,
 };
 
 /** The sequence number after the log's last (繼續上一局, D-083): the game's commands go on numbered after it. */
@@ -497,6 +499,8 @@ export class Game implements GestureHost {
   autoHouseBlock: HouseBlock | null = "off";
   private houseSent: { seq: number; tick: number; spot: number } | null = null;
   private readonly houseSkip = new Set<number>();
+  /** 駐軍 (station.ts): the ranged and mages walking into a town to stay, to go up its walls once in (unit id → town). */
+  private readonly stationWalks = new Map<number, number>();
   private houseTold = false;
   /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
   private readonly autocastAsked = new Set<number>();
@@ -624,8 +628,8 @@ export class Game implements GestureHost {
     if (view === null) return;
     const wx = (cx + 0.5) * TILE_PX;
     const wy = (cy + 0.5) * TILE_PX;
-    if (this.mode === "garrison" || this.mode === "post" || this.mode === "wall") {
-      this.toast(this.mode === "post" ? POST_WRONG_TARGET : this.mode === "wall" ? WALL_WRONG_TARGET : GARRISON_WRONG_TARGET);
+    if (this.mode === "garrison" || this.mode === "post" || this.mode === "wall" || this.mode === "station") {
+      this.toast(this.mode === "post" ? POST_WRONG_TARGET : this.mode === "wall" ? WALL_WRONG_TARGET : this.mode === "station" ? STATION_WRONG_TARGET : GARRISON_WRONG_TARGET);
       return;
     }
     if (this.mode !== "normal") {
@@ -1961,6 +1965,7 @@ export class Game implements GestureHost {
         this.pruneArmy();
         this.tickGovernWaits();
         this.tickAutoArmy();
+        this.tickStationWalks();
         this.draftArmy();
         this.musterRecruits();
         this.followCharges();
@@ -2053,6 +2058,7 @@ export class Game implements GestureHost {
     if (this.mode === "garrison") return this.garrisonAt(w.x, w.y);
     if (this.mode === "post") return this.postAt(w.x, w.y);
     if (this.mode === "wall") return this.wallAt(w.x, w.y);
+    if (this.mode === "station") return this.stationAt(w.x, w.y);
     this.apply(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
   }
 
@@ -2121,6 +2127,75 @@ export class Game implements GestureHost {
     }
     this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
     if (r.cmd.c === "wall") this.toast(`${r.cmd.u.length} 名上城牆`);
+  }
+
+  /** 駐軍 (station.ts): we hold some town now (the button shows then). */
+  holdsTown(): boolean {
+    const view = this.view;
+    const t = view?.curr?.snap.towns;
+    if (view === null || t === undefined) return false;
+    for (let o = 0; o < t.length; o += TOWN_STRIDE) if (heldTown(t[o + TownField.owner], t[o + TownField.state], view.me)) return true;
+    return false;
+  }
+
+  /**
+   * 駐軍 (station.ts): the town tapped keeps the soldiers selected as its 留守: they walk in (移動),
+   * leave their groups, hold (堅守); with walls on, the ranged and the mages go up once in. Or the
+   * player is told why not.
+   */
+  private stationAt(wx: number, wy: number): void {
+    const view = this.view;
+    if (view === null) return;
+    const spot = this.townAtCell(wx, wy);
+    const o = spot === null ? -1 : view.townRow(spot.id);
+    const t = view.curr?.snap.towns;
+    const town = spot === null ? null : { id: spot.id, held: o >= 0 && t !== undefined && heldTown(t[o + TownField.owner], t[o + TownField.state], view.me) };
+    const r = stationTap(view.selection.units, town, (id) => isSoldier(view.unitType(id)));
+    if ("error" in r || spot === null) {
+      if ("error" in r) this.toast(r.error);
+      return;
+    }
+    // 移動 in first: the player's own order ends a garrison (GDD §5); then theirs, holding.
+    this.command({ c: "retreat", u: r.ids, x: spot.cellX, y: spot.cellY });
+    this.army.stationAll(spot.id, r.ids).forEach((n, i) => {
+      if (n > 0) this.alarms.left(i, n);
+    });
+    this.setStance(r.ids, Stance.Hold);
+    if (view.rules.features?.walls === true) for (const id of r.ids) if (goesOnWalls(view.unitType(id))) this.stationWalks.set(id, spot.id);
+    view.selection = { ...view.selection, units: view.selection.units.filter((id) => !r.ids.includes(id)) };
+    this.apply([{ kind: "endMode" }]);
+    this.toast(`${r.ids.length} 名駐軍在${spot.size === TownSize.Large ? "大城" : "小鎮"}：留守、堅守，不跟全軍走`, "ok");
+  }
+
+  /**
+   * Every snapshot (駐軍): those of a walk in who stand in their town now (inside the walls, no
+   * order left) and climb (ranged, mages) go up on its walls, as many as there are places; a walk
+   * ends once there, once they are no longer its 留守 (another order), or once they are gone.
+   */
+  private tickStationWalks(): void {
+    const view = this.view;
+    if (view === null || this.stationWalks.size === 0) return;
+    const by = new Map<number, { id: number; climbs: boolean }[]>();
+    for (const [id, town] of [...this.stationWalks]) {
+      if (view.unitRow(id) < 0 || !this.army.garrisonOf(town).includes(id)) {
+        this.stationWalks.delete(id);
+        continue;
+      }
+      const area = this.townArea(town);
+      const row = view.unitRow(id);
+      const u = view.curr?.snap.units;
+      const at = u === undefined ? null : { x: Math.floor(u[row + UnitField.x] / CELL), y: Math.floor(u[row + UnitField.y] / CELL) };
+      const inner = area?.inside;
+      const inside = inner !== null && inner !== undefined && at !== null && at.x >= inner.x0 && at.x <= inner.x1 && at.y >= inner.y0 && at.y <= inner.y1;
+      if (!inside || view.unitOrder(id) !== Order.None) continue;
+      this.stationWalks.delete(id);
+      by.set(town, [...(by.get(town) ?? []), { id, climbs: goesOnWalls(view.unitType(id)) }]);
+    }
+    for (const [town, arrived] of by) {
+      const count = this.wallCount(town);
+      const up = upOnArrival(arrived, count === null ? 0 : count.capacity - count.on);
+      if (up.length > 0) this.autoCommand({ c: "wall", u: up, town });
+    }
   }
 
   /** 下城牆 (D-096): those selected on a wall (or going up) come down, into the town. */
@@ -2580,7 +2655,8 @@ export class Game implements GestureHost {
     const mixedPost = mode === "post" && view !== null && view.selection.units.some((id) => view.unitType(id) !== POST_TYPE);
     // 上城牆 with others than ranged units and mages (D-096): only those go up.
     const mixedWall = mode === "wall" && view !== null && view.selection.units.some((id) => !goesOnWalls(view.unitType(id)));
-    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : mixedPost ? POST_PROMPT_MIXED : mixedWall ? WALL_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
+    const mixedStation = mode === "station" && view !== null && view.selection.units.some((id) => !isSoldier(view.unitType(id)));
+    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : mixedPost ? POST_PROMPT_MIXED : mixedWall ? WALL_PROMPT_MIXED : mixedStation ? STATION_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
   }
 
   /**
