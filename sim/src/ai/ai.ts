@@ -2736,6 +2736,8 @@ export interface HardPlan {
    * crystal past CRYSTAL_HOARD, and trains farmers back to its target first (false: as before).
    */
   behind: boolean;
+  /** D-086 A5 (with behind): whether a march that broke off makes it behind (false: only the enemy it saw). */
+  behindFail: boolean;
   behindTowers: number;
   behindTownTowers: number;
   /** D-086 A5: a town it governs or repairs with enemy soldiers by it, it goes to hold it with the army at home when 1.3 x those (false: as before). */
@@ -2840,6 +2842,7 @@ export const HARD: HardPlan = {
   strongPush: 0,
   strongRatio: 200,
   behind: false,
+  behindFail: true,
   behindTowers: 4,
   behindTownTowers: 2,
   holdTowns: false,
@@ -3458,7 +3461,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const peak = enemySeenWorth.reduce((m, e) => Math.max(m, e.worth), 0);
         const ownWorth = mine.filter((u) => u.type !== UnitType.Farmer).reduce((a, u) => a + (WORTH[u.type] ?? 0), 0);
         // Only an enemy army worth BEHIND_MIN or more (at the start nobody has one: not behind then).
-        behindNow = tick - cityFailedAt <= BEHIND_FOR || (peak >= BEHIND_MIN && peak * 10 >= ownWorth * 13);
+        behindNow = (plan.behindFail && tick - cityFailedAt <= BEHIND_FOR) || (peak >= BEHIND_MIN && peak * 10 >= ownWorth * 13);
         if (behindNow) {
           counted.behindThinks++;
           behindLast = tick;

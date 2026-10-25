@@ -2945,6 +2945,35 @@ test("D-086 A5 (plan.behind): with an enemy army 1.3 x its own in sight, hard sa
   assert.equal(towers(false, 16), false, "off: none, as before");
 });
 
+test("D-086 A5 (plan.behindFail): a march that broke off makes hard behind; with behindFail off, only an enemy army it saw does", () => {
+  const behindAfter = (behindFail: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 48000;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    const ids: number[] = [];
+    for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6)));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0, behind: true, behindFail });
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 30 && c.x === s1.cellX && c.y === s1.cellY), "marches");
+    kill(g, ids.slice(0, 20));
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "ground down, it breaks off");
+    const before = ai.stats?.().behindThinks ?? 0;
+    w.tick += 10;
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    return (ai.stats?.().behindThinks ?? 0) > before;
+  };
+  assert.equal(behindAfter(true), true, "behindFail: behind");
+  assert.equal(behindAfter(false), false, "off: no enemy in sight, not behind");
+});
+
 test("D-086 A5 (plan.behindOutpost): behind, hard builds an outpost by its main city and posts spearmen there; not behind for a while, they come off it; off, none", () => {
   const think = (behindOutpost: boolean, foes: number, outpost: "none" | "done" | "manned") => {
     const g = behindGame(foes);
