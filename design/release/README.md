@@ -25,8 +25,12 @@
 3. 合併後從 main 發布：
 
    ```bash
-   gh workflow run design-render.yml --ref main -f round=release -f tag=art-v1 -f publish=true
+   gh workflow run design-render.yml -R EdwardLeeee/war-game --ref main -f round=release -f tag=art-v1 -f publish=true
    ```
+
+   - 使用者 2026-10-25 同意之後發布 art-vN 不用再問他（ceo 轉達）。本機的權限設定只放行這個形式：`gh workflow run design-render.yml -R EdwardLeeee/war-game ...`。
+   - 指令要單獨一行，前後不加 `cd`、`&&`、`sleep`。查 run 另外下一個指令，例如 `gh run list --workflow design-render.yml --branch main --limit 1`。
+   - 發布後照舊從公開網址重新下載，`sha256sum -c SHA256SUMS` 全部 OK 才通知 client。
 
    workflow 會：
    - 確認是 main，而且這個 tag 還不存在。
@@ -48,6 +52,7 @@
 | art-v5 | 2026-10-20 15:17 | 98f755b | 39446538988 | 加地形（`terrain/`，R6-51，core #245）；其他和 art-v4 相同 |
 | art-v5.1 | 2026-10-22 06:50 | d668193 | 39736249554 | 建築加哨所（`Outpost`，D-080 暫用版）；其他和 art-v5 相同 |
 | art-v5.2 | 2026-10-22 12:02 | 8a6c90b | 39774657771 | D-096：城牆四面分開、牆上的兵的站點和前片、城門四種樣子、城樓射箭 `tower_shot`、民兵投石（`spear_e`、`pike_w` 的 `sling`）；其他和 art-v5.1 相同 |
+| art-v6 | 2026-10-25 07:40 | 7f5c1ba | 40173553884 | D-093 寫實整套（R8）與 D-100 主堡：12 種兵寫實（東陸弓手 `bow_e`），建築、資源點、地形寫實，主堡 `Keep` 取代 `TownTower`、加砲坊 `SiegeWorks`、射點 `shoot_at_m`；城牆 `war-game castle 2`（D-100 格局、擺設、城裡的土路）；加 `ground/`；效果加 `arrow`、`sling_stone`、`siege_*`（說明檔第 13 節） |
 
 每一號發布後都從公開網址重新下載，`sha256sum -c SHA256SUMS` 全部 OK。
 
