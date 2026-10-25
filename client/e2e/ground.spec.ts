@@ -67,3 +67,31 @@ test("寫實地面：沒有 ?ground=real 照舊畫兩種綠；美術關（沒有
   await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false });
   check();
 });
+
+test("寫實地面開關（ceo 2026-10-25）：選單的「寫實地面：開」按了馬上換回兩種綠、腳下不畫圈；記在這台裝置上，下一局照樣關著；再按就回來", async ({ page }) => {
+  test.setTimeout(180_000);
+  const check = watchErrors(page);
+  await start(page, "watch=1&ai=0&art=x3&ground=real");
+  await expect.poll(() => look(page)).toMatchObject({ real: true });
+  await expect.poll(() => feet(page), { timeout: 30_000 }).toBeGreaterThan(0);
+  const menu = page.getByRole("button", { name: "選單", exact: true });
+  const dialog = page.locator(".dialog");
+  const sw = dialog.getByRole("button", { name: /^寫實地面：/ });
+  await menu.tap();
+  await expect(sw).toHaveText("寫實地面：開");
+  await sw.tap();
+  await expect(sw).toHaveText("寫實地面：關");
+  await expect(sw).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => look(page)).toMatchObject({ real: false });
+  await expect.poll(() => feet(page)).toBe(0);
+  await dialog.getByRole("button", { name: "關閉" }).tap();
+  // Kept on this device: the next game starts with the two greens.
+  await start(page, "watch=1&ai=0&art=x3&ground=real");
+  await menu.tap();
+  await expect(sw).toHaveText("寫實地面：關");
+  expect(await look(page)).toMatchObject({ real: false });
+  await sw.tap();
+  await expect.poll(() => look(page)).toMatchObject({ real: true });
+  await expect.poll(() => feet(page), { timeout: 30_000 }).toBeGreaterThan(0);
+  check();
+});

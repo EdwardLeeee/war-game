@@ -75,6 +75,7 @@ import {
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
+import { loadGroundOn, saveGroundOn } from "../ground-pref.ts";
 import { PendingOrders } from "./pending.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
@@ -576,6 +577,19 @@ export class Game implements GestureHost {
   /** Units with their owner's colour under their feet last frame (寫實地面), for the test page. */
   get feetForTest(): number {
     return this.renderer?.footCount ?? 0;
+  }
+
+  /** 選單's 寫實地面 開／關 (ceo 2026-10-25): only with the ground loaded for this game. */
+  groundSwitch(): boolean | null {
+    return this.renderer?.groundLoaded === true ? loadGroundOn() : null;
+  }
+
+  /** 寫實地面 off or on again, at once, and remembered on this device (ground-pref.ts). */
+  toggleGround(): void {
+    const on = !loadGroundOn();
+    saveGroundOn(on);
+    this.renderer?.showGround(on);
+    this.toast(on ? "寫實地面：開" : "寫實地面：關（這台裝置記住了）", "ok");
   }
 
   /** 寫實地面's quality (the 量測 panel, the test page). */
@@ -1875,6 +1889,8 @@ export class Game implements GestureHost {
         if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
         const ground = this.options.ground ?? null;
         if (ground !== null && !this.renderer.useGround(ground, this.options.groundQuality ?? "high")) console.warn("ground: 寫實地面 needs ui's terrain pictures (art-v5, square on); the flat ground stays");
+        // 選單's 寫實地面 開／關 (ceo 2026-10-25), as this device was left.
+        else if (ground !== null) this.renderer.showGround(loadGroundOn());
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));

@@ -1238,6 +1238,28 @@ export class WorldRenderer {
     return true;
   }
 
+  /**
+   * 寫實地面 shown or not (選單's 寫實地面 開／關, ground-pref.ts): off, the two greens and the
+   * terrain's water tiles again, at once; its textures stay loaded for turning it back on.
+   */
+  showGround(on: boolean): void {
+    const g = this.groundDraw;
+    if (g === null) return;
+    g.mesh.visible = on;
+    this.flatGround.visible = !on;
+    this.terrain.showWater(!on || !g.water);
+  }
+
+  /** 寫實地面 in use this game (its switch in 選單 then means something). */
+  get groundLoaded(): boolean {
+    return this.groundDraw !== null;
+  }
+
+  /** 寫實地面 drawn now (loaded and not turned off). */
+  private get groundShown(): boolean {
+    return this.groundDraw !== null && this.groundDraw.mesh.visible;
+  }
+
   /** 寫實地面's quality (高: two samples a texture, 低: one), for the 量測 panel. */
   setGroundQuality(q: GroundQuality): void {
     this.groundDraw?.setQuality(q);
@@ -1251,7 +1273,7 @@ export class WorldRenderer {
 
   /** What draws the ground now (the test page and the 量測 panel). */
   get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean; town: boolean } {
-    return { real: this.groundDraw !== null, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true, town: this.groundDraw?.town === true };
+    return { real: this.groundShown, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true, town: this.groundDraw?.town === true };
   }
 
   /** The ground's weights again when the known ground or the resource points changed. */
@@ -1447,7 +1469,7 @@ export class WorldRenderer {
       const selected = owner === view.me && binaryHas(sel, id);
       // 寫實地面 (ceo 2026-10-25): the owner's colour under the feet of those drawn from the atlases,
       // so they stand out from the earth and grass; not up on a wall (its walk is not the ground).
-      if (this.groundDraw !== null && top !== null && onWall === null) {
+      if (this.groundShown && top !== null && onWall === null) {
         p.foot.visible = true;
         p.foot.position.set(px, py);
         p.foot.scale.set(FOOT_SCALE);
