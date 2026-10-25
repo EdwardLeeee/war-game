@@ -387,7 +387,8 @@ export class ArtStructures {
       if (now.has(id) || was.remembered) continue;
       this.worked.delete(id);
       const name = was.entry.states.rubble;
-      const keep = was.entry.type === BuildingType.Keep;
+      // A keep only with D-100's on (Rules.features.keep): before, type 9 is the big city's tower, its rubble fading as any.
+      const keep = was.entry.type === BuildingType.Keep && this.view.rules.features?.keep === true;
       if (name !== undefined && this.visible(was.cellX, was.cellY, was.size)) this.rubble.push({ side: was.side, name, cellX: was.cellX, cellY: was.cellY, size: was.size, since: seconds, keep, repair: keep ? was.entry.states.repair : undefined });
     }
     this.seen = now;
