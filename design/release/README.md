@@ -54,6 +54,7 @@
 | art-v5.2 | 2026-10-22 12:02 | 8a6c90b | 39774657771 | D-096：城牆四面分開、牆上的兵的站點和前片、城門四種樣子、城樓射箭 `tower_shot`、民兵投石（`spear_e`、`pike_w` 的 `sling`）；其他和 art-v5.1 相同 |
 | art-v6 | 2026-10-25 07:40 | 7f5c1ba | 40173553884 | D-093 寫實整套（R8）與 D-100 主堡：12 種兵寫實（東陸弓手 `bow_e`），建築、資源點、地形寫實，主堡 `Keep` 取代 `TownTower`、加砲坊 `SiegeWorks`、射點 `shoot_at_m`；城牆 `war-game castle 2`（D-100 格局、擺設、城裡的土路）；加 `ground/`；效果加 `arrow`、`sling_stone`、`siege_*`（說明檔第 13 節） |
 | art-v6.1 | 2026-10-25 08:28 | 78f62b0 | 40176697300 | KEEP 關著時也能用寫實圖（ceo 2026-10-25）：城牆補回 D-089 的 `small`、`large`、`large3`（和 art-v5.2 逐片相同），D-100 的改名 `small_d100`、`large_d100`；建築補回 `TownTower`（排在 `Keep` 前面）；加寫實的 4 格石城門和大城箭樓；其他和 art-v6 相同 |
+| art-v6.2 | 2026-10-25 14:28 | ba7d4a7 | 40202269402 | 大城箭樓（`TownTower`）東西陸、2×2 和 3×3 的四張受損圖改用寫實的火（原本要叫 art-v6.1.1，發布流程和 client 只認 art-vN、art-vN.M）；其他和 art-v6.1 相同 |
 
 每一號發布後都從公開網址重新下載，`sha256sum -c SHA256SUMS` 全部 OK。
 
