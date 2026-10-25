@@ -25,8 +25,12 @@
 3. 合併後從 main 發布：
 
    ```bash
-   gh workflow run design-render.yml --ref main -f round=release -f tag=art-v1 -f publish=true
+   gh workflow run design-render.yml -R EdwardLeeee/war-game --ref main -f round=release -f tag=art-v1 -f publish=true
    ```
+
+   - 使用者 2026-10-25 同意之後發布 art-vN 不用再問他（ceo 轉達）。本機的權限設定只放行這個形式：`gh workflow run design-render.yml -R EdwardLeeee/war-game ...`。
+   - 指令要單獨一行，前後不加 `cd`、`&&`、`sleep`。查 run 另外下一個指令，例如 `gh run list --workflow design-render.yml --branch main --limit 1`。
+   - 發布後照舊從公開網址重新下載，`sha256sum -c SHA256SUMS` 全部 OK 才通知 client。
 
    workflow 會：
    - 確認是 main，而且這個 tag 還不存在。
