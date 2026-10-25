@@ -29,6 +29,8 @@ async function ownIds(page: Page, type: number, n: number): Promise<number[]> {
 }
 
 test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，兵走進去留守（離開軍團、全軍不含、堅守），遠程兵上城牆；點別人的城說原因", async ({ page }, info) => {
+  // CI's Chromium runs the fake world at a few steps a second: the walk in takes a while.
+  test.setTimeout(240_000);
   const check = watchErrors(page);
   // The strip's messages as they come: the group's 自動補兵 says its own right after 駐軍's.
   await page.addInitScript(() => {
@@ -47,6 +49,8 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
   const ids = [...(await ownIds(page, SPEARMAN, 3)), ...(await ownIds(page, RANGED, 2))].sort((a, b) => a - b);
   const ranged = (await ownIds(page, RANGED, 2)).sort((a, b) => a - b);
+  // Just south of our town, a short walk in.
+  await page.evaluate((i) => window.__proto?.game?.place(i, [16, 17, 18, 19, 20].map((x) => ({ x, y: 71 }))), ids);
   // Group 1 of these five; 全軍 counts them.
   await centre(page, 24, 66);
   await selectForCommands(page, ids);
@@ -78,9 +82,9 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   // Out of group 1, which fills up again by itself (自動補兵: here the soldiers in no group).
   expect((await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0].some((id) => ids.includes(id))).toBe(false);
   await expect(armyButton(page)).not.toHaveText(army ?? "");
-  await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id)).every((u) => u.stance === HOLD), { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id)).every((u) => u.stance === HOLD), { timeout: 60_000 }).toBe(true);
   // Once in: the ranged up on its walls (an order of the screen's), the spearmen inside.
-  await expect.poll(async () => (await units(page)).filter((u) => ranged.includes(u.id) && u.order === WALL_ORDER).length, { timeout: 60_000 }).toBe(2);
+  await expect.poll(async () => (await units(page)).filter((u) => ranged.includes(u.id) && u.order === WALL_ORDER).length, { timeout: 120_000 }).toBe(2);
   // Each sent up as it arrives (one order or more), to this town.
   const up = (await sent(page)).filter((c) => c.auto === true && c.c === "wall");
   expect(up.every((c) => c.town === OUR_TOWN.id)).toBe(true);
