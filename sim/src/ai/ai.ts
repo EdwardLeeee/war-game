@@ -2884,6 +2884,9 @@ const TOWER_CLEAR = 2;
 const BEHIND_FOR = 4 * 1200;
 const BEHIND_SEEN = 3 * 1200;
 const CRYSTAL_HOARD = 1000;
+/** D-086 A5 (plan.behind, plan.holdTowns): the least enemy worth that makes it behind (8 spearmen), or that it goes to hold a town against (4). */
+const BEHIND_MIN = 80;
+const HOLD_MIN = 40;
 /** D-086 A5 (plan.behindOutpost): how long after it stops being behind the guards come off the outpost. */
 const BEHIND_RELEASE = 1200;
 /** D-086 A4 (plan.towerFirst): how long after a wave by its main city (3 minutes). */
@@ -3454,7 +3457,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         while (enemySeenWorth.length > 0 && tick - enemySeenWorth[0].tick > BEHIND_SEEN) enemySeenWorth.shift();
         const peak = enemySeenWorth.reduce((m, e) => Math.max(m, e.worth), 0);
         const ownWorth = mine.filter((u) => u.type !== UnitType.Farmer).reduce((a, u) => a + (WORTH[u.type] ?? 0), 0);
-        behindNow = tick - cityFailedAt <= BEHIND_FOR || peak * 10 >= ownWorth * 13;
+        // Only an enemy army worth BEHIND_MIN or more (at the start nobody has one: not behind then).
+        behindNow = tick - cityFailedAt <= BEHIND_FOR || (peak >= BEHIND_MIN && peak * 10 >= ownWorth * 13);
         if (behindNow) {
           counted.behindThinks++;
           behindLast = tick;
@@ -3661,7 +3665,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         return null;
       };
       /** D-086 A5 (plan.behindOutpost): its outpost by the main city (finished or not), and where one would go (null: none wanted, or no spot). */
-      const homeOutpost = own.find((b) => b.type === BuildingType.Outpost && dist2(b.x, b.y, home.cellX, home.cellY) <= (TOWER_AT + 6) * (TOWER_AT + 6));
+      // As far as a spot for one can be (TOWER_AT toward the threat, then within TOWER_AT + 2 of that).
+      const homeOutpost = own.find((b) => b.type === BuildingType.Outpost && dist2(b.x, b.y, home.cellX, home.cellY) <= (2 * TOWER_AT + 4) * (2 * TOWER_AT + 4));
       const outpostSpot = (): { x: number; y: number } | null => {
         if (!plan.behindOutpost || !behindNow || rules.features?.outpost !== true || homeOutpost !== undefined) return null;
         const at = toward(home.cellX, home.cellY, TOWER_AT);
@@ -4851,7 +4856,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             if (t.owner !== player || (t.state !== TownState.Governed && t.state !== TownState.Repairing)) continue;
             const r = (rules.towns?.[t.size]?.radius ?? 5) + GATE_NEAR;
             const by = foesNear(t.x, t.y, r).filter((e) => e.order !== Order.Post);
-            if (by.length === 0 || armyWorth * 10 < worth(by) * 13) continue;
+            if (worth(by) < HOLD_MIN || armyWorth * 10 < worth(by) * 13) continue;
             const d = dist2(t.x, t.y, home.cellX, home.cellY);
             if (hold === undefined || d < holdD) {
               hold = t;

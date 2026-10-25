@@ -2905,8 +2905,8 @@ test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, ha
 
 // --- D-086 A5: behind (the user 2026-10-25: 「你的ai逆風局只會龜縮但又不蓋防禦工事」) ------------------------------------
 
-/** D-086 A5: its base all built (as the mineMove test), 6 spearmen at home, and `foes` enemy spearmen in sight away from the enemy's side. */
-function behindGame(foes: number): Game {
+/** D-086 A5: its base all built (as the mineMove test), `spears` spearmen at home, and `foes` enemy spearmen in sight away from the enemy's side. */
+function behindGame(foes: number, spears = 6): Game {
   const g = emptyGame();
     const w = g.w;
     const s0 = w.map.spawns[0];
@@ -2921,7 +2921,7 @@ function behindGame(foes: number): Game {
       const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 10), s0.cellY - 2 - Math.trunc(k / 10));
       w.units.col.order[slotOf(g, id)] = Order.Gather;
     }
-    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + k, s0.cellY + 2);
+    for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + k, s0.cellY + 2);
     // The enemy army away from the enemy's side (the towers go that way, TOWER_SAFE from enemies), in sight of a farmer of its own.
     const fx = s0.cellX - Math.sign(s1.cellX - s0.cellX) * 4;
     const fy = s0.cellY - Math.sign(s1.cellY - s0.cellY) * 14;
@@ -2933,13 +2933,15 @@ function behindGame(foes: number): Game {
 }
 
 test("D-086 A5 (plan.behind): with an enemy army 1.3 x its own in sight, hard saves for arrow towers by its main city; not behind or off, none", () => {
-  const towers = (behind: boolean, foes: number) => {
-    const g = behindGame(foes);
+  const towers = (behind: boolean, foes: number, spears = 6) => {
+    const g = behindGame(foes, spears);
     const out = hardAi(g, { dodge: false, behind }).think(buildView(g, 0));
     return out.some((c) => c.c === "build" && c.type === BuildingType.ArrowTower);
   };
   assert.equal(towers(true, 16), true, "behind: a tower");
   assert.equal(towers(true, 2), false, "not behind: none");
+  assert.equal(towers(true, 0, 0), false, "no army on either side (the start): not behind");
+  assert.equal(towers(true, 7, 0), false, "fewer than BEHIND_MIN's worth: not behind");
   assert.equal(towers(false, 16), false, "off: none, as before");
 });
 
