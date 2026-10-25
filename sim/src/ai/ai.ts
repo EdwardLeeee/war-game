@@ -2741,6 +2741,13 @@ export interface HardPlan {
   /** D-086 A5: a town it governs or repairs with enemy soldiers by it, it goes to hold it with the army at home when 1.3 x those (false: as before). */
   holdTowns: boolean;
   /**
+   * D-086 A5 (with behind; ceo 2026-10-25: arrow towers and outposts): behind, an outpost by its main city toward the
+   * threat, saved up for, and behindGuards spearmen from the army at home posted there; BEHIND_RELEASE after it stops
+   * being behind they come off it and go with the army again (false: as before).
+   */
+  behindOutpost: boolean;
+  behindGuards: number;
+  /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
    * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
@@ -2836,6 +2843,8 @@ export const HARD: HardPlan = {
   behindTowers: 4,
   behindTownTowers: 2,
   holdTowns: false,
+  behindOutpost: false,
+  behindGuards: 4,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -2875,6 +2884,8 @@ const TOWER_CLEAR = 2;
 const BEHIND_FOR = 4 * 1200;
 const BEHIND_SEEN = 3 * 1200;
 const CRYSTAL_HOARD = 1000;
+/** D-086 A5 (plan.behindOutpost): how long after it stops being behind the guards come off the outpost. */
+const BEHIND_RELEASE = 1200;
 /** D-086 A4 (plan.towerFirst): how long after a wave by its main city (3 minutes). */
 const TOWER_FIRST = 3 * 1200;
 /** D-086 A3 (plan.rescue, plan.hideFar): farmers this far (cells) from the main city are far; a spot is this near them. */
@@ -3019,6 +3030,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** D-086 A5 (plan.behind): the enemy's worth it saw, by tick (BEHIND_SEEN); whether it is behind this think. */
   const enemySeenWorth: { tick: number; worth: number }[] = [];
   let behindNow = false;
+  let behindLast = -100000;
   /** D-086 A5 (plan.holdTowns): when it last told the army to a town it holds. */
   let holdMove = -100000;
   let saveFor = -1;
@@ -3443,7 +3455,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const peak = enemySeenWorth.reduce((m, e) => Math.max(m, e.worth), 0);
         const ownWorth = mine.filter((u) => u.type !== UnitType.Farmer).reduce((a, u) => a + (WORTH[u.type] ?? 0), 0);
         behindNow = tick - cityFailedAt <= BEHIND_FOR || peak * 10 >= ownWorth * 13;
-        if (behindNow) counted.behindThinks++;
+        if (behindNow) {
+          counted.behindThinks++;
+          behindLast = tick;
+        }
       }
 
       // --- D-086 B: the network's choices, from its own view and memory --------------------------------
@@ -3604,24 +3619,28 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       /** D-086 A4 (plan.towers): an enemy soldier in sight this near (cells) a spot. */
       const foeBy = (x: number, y: number) => foes.some((f) => dist2(f.x, f.y, x, y) <= TOWER_SAFE * TOWER_SAFE);
       /** D-086 A4 (plan.towers, plan.townTowers): where the next tower goes (null: none wanted, or no spot), toward the threat, clear of doors and of enemies. */
-      const towerSpotFor = (): { x: number; y: number } | null => {
-        if ((towersWant <= 0 && townTowersWant <= 0) || rules.features?.towers !== true || !has(BuildingType.Range)) return null;
-        const towersBy = (x: number, y: number, r: number) => own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, x, y) <= r * r).length;
-        // Not by the doors of its main city or production buildings: TOWER_CLEAR cells round their footprints stay open.
+      // Not by the doors of its main city or production buildings: TOWER_CLEAR cells round their footprints stay open.
+      const clearOf = (type: BuildingType) => {
         const doors = own.filter((b) => b.type === BuildingType.MainCity || b.type === BuildingType.Barracks || b.type === BuildingType.Range || b.type === BuildingType.Stable || b.type === BuildingType.MageHall);
-        const tsize = rules.buildings[BuildingType.ArrowTower].size;
-        const clear = (x: number, y: number) =>
+        const tsize = rules.buildings[type].size;
+        return (x: number, y: number) =>
           doors.every((b) => {
             const bs = rules.buildings[b.type].size;
             return x + tsize + TOWER_CLEAR <= b.x || b.x + bs + TOWER_CLEAR <= x || y + tsize + TOWER_CLEAR <= b.y || b.y + bs + TOWER_CLEAR <= y;
           });
+      };
+      /** k cells from (x, y) toward the threat: the last wave's side, else the enemy's main city, else the middle. */
+      const toward = (x: number, y: number, k: number) => {
         const from = waveFrom ?? (mem.known !== Known.None ? { x: enemyHome.cellX, y: enemyHome.cellY } : real(mid, mid));
-        const toward = (x: number, y: number, k: number) => {
-          const dx = from.x - x;
-          const dy = from.y - y;
-          const d = Math.sqrt(dx * dx + dy * dy) || 1;
-          return { x: x + Math.trunc((dx * k) / d), y: y + Math.trunc((dy * k) / d) };
-        };
+        const dx = from.x - x;
+        const dy = from.y - y;
+        const d = Math.sqrt(dx * dx + dy * dy) || 1;
+        return { x: x + Math.trunc((dx * k) / d), y: y + Math.trunc((dy * k) / d) };
+      };
+      const towerSpotFor = (): { x: number; y: number } | null => {
+        if ((towersWant <= 0 && townTowersWant <= 0) || rules.features?.towers !== true || !has(BuildingType.Range)) return null;
+        const towersBy = (x: number, y: number, r: number) => own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, x, y) <= r * r).length;
+        const clear = clearOf(BuildingType.ArrowTower);
         const sites: { x: number; y: number }[] = [];
         if (towersWant > 0 && towersBy(home.cellX, home.cellY, TOWER_AT + 6) < towersWant) sites.push(toward(home.cellX, home.cellY, TOWER_AT));
         if (townTowersWant > 0) {
@@ -3641,6 +3660,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         return null;
       };
+      /** D-086 A5 (plan.behindOutpost): its outpost by the main city (finished or not), and where one would go (null: none wanted, or no spot). */
+      const homeOutpost = own.find((b) => b.type === BuildingType.Outpost && dist2(b.x, b.y, home.cellX, home.cellY) <= (TOWER_AT + 6) * (TOWER_AT + 6));
+      const outpostSpot = (): { x: number; y: number } | null => {
+        if (!plan.behindOutpost || !behindNow || rules.features?.outpost !== true || homeOutpost !== undefined) return null;
+        const at = toward(home.cellX, home.cellY, TOWER_AT);
+        if (foeBy(at.x, at.y)) return null;
+        return spotNear(view, BuildingType.Outpost, at.x, at.y, TOWER_AT + 2, clearOf(BuildingType.Outpost));
+      };
       // D-086 A4 (plan.buildSafe): a site seen last think and gone now, not done: lost (the enemy razed it).
       if (plan.buildSafe) {
         for (let i = lostSites.length - 1; i >= 0; i--) if (lostSites[i].until <= tick) lostSites.splice(i, 1);
@@ -3656,7 +3683,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // D-086 A4 (plan.buildSafe): no farmers to a site with enemies by it.
         if (plan.buildSafe && foes.some((f) => dist2(f.x, f.y, site.x, site.y) <= BUILD_SAFE * BUILD_SAFE)) continue;
         // D-086 A4: no farmers to a tower with enemies by it; later, once they are gone.
-        if (site.type === BuildingType.ArrowTower && (plan.towers > 0 || plan.townTowers > 0) && foeBy(site.x, site.y)) continue;
+        if (site.type === BuildingType.ArrowTower && (towersWant > 0 || townTowersWant > 0) && foeBy(site.x, site.y)) continue;
         const crew = gatherers.slice(0, 2);
         if (crew.length > 0) out.push({ c: "repair", u: crew, building: site.id });
         gatherers.splice(0, crew.length);
@@ -3685,7 +3712,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // Houses before the population is full: every producer can add one at a time.
         if (cap < ceiling && cap - pop - queued <= houseRoom + producers) add(BuildingType.House, base);
         // D-086 A4 (plan.towerFirst): a wave by its main city lately: a tower next, saved up for.
-        // D-086 A5 (plan.behind): behind, a tower next, saved up for (up to towersWant, townTowersWant).
+        // D-086 A5 (plan.behind): behind, a tower next, saved up for (up to towersWant, townTowersWant); an outpost first (plan.behindOutpost).
+        const outpostAt = outpostSpot();
+        if (outpostAt !== null) add(BuildingType.Outpost, outpostAt);
         if (behindNow) {
           const spot = towerSpotFor();
           if (spot !== null) {
@@ -4038,8 +4067,22 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           peekAgain = tick + PEEK_AGAIN;
         }
       }
+      // D-086 A5 (plan.behindOutpost): the guards posted at its outpost; they come off it once it has not been behind for BEHIND_RELEASE.
+      const posted = soldiers.filter((u) => u.order === Order.Post);
+      if (homeOutpost !== undefined && homeOutpost.progress >= 1000 && plan.behindOutpost) {
+        const here = posted.filter((u) => u.orderTarget === homeOutpost.id);
+        if (tick - behindLast >= BEHIND_RELEASE) {
+          if (here.length > 0) out.push({ c: "unpost", building: homeOutpost.id });
+        } else if (behindNow && here.length < plan.behindGuards) {
+          const free = soldiers
+            .filter((u) => u.type === UnitType.Spearman && u.order !== Order.Post && !guarding.has(u.id) && !rescueSquad.has(u.id) && dist2(u.x, u.y, home.cellX, home.cellY) <= FORT_HOME * FORT_HOME)
+            .slice(0, Math.min(plan.behindGuards, rules.outpost?.slots ?? 6) - here.length)
+            .map((u) => u.id);
+          if (free.length > 0) out.push({ c: "post", u: free, building: homeOutpost.id });
+        }
+      }
       const army =
-        guarding.size === 0 && rescueSquad.size === 0 && peekId < 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id) && !rescueSquad.has(u.id) && u.id !== peekId);
+        guarding.size === 0 && rescueSquad.size === 0 && peekId < 0 && posted.length === 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id) && !rescueSquad.has(u.id) && u.id !== peekId && u.order !== Order.Post);
       const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
       let sent = false;
       const send = (x: number, y: number, why: HardMode) => {

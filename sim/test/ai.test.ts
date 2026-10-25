@@ -2905,9 +2905,9 @@ test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, ha
 
 // --- D-086 A5: behind (the user 2026-10-25: 「你的ai逆風局只會龜縮但又不蓋防禦工事」) ------------------------------------
 
-test("D-086 A5 (plan.behind): with an enemy army 1.3 x its own in sight, hard saves for arrow towers by its main city; not behind or off, none", () => {
-  const towers = (behind: boolean, foes: number) => {
-    const g = emptyGame();
+/** D-086 A5: its base all built (as the mineMove test), 6 spearmen at home, and `foes` enemy spearmen in sight away from the enemy's side. */
+function behindGame(foes: number): Game {
+  const g = emptyGame();
     const w = g.w;
     const s0 = w.map.spawns[0];
     const s1 = w.map.spawns[1];
@@ -2929,12 +2929,44 @@ test("D-086 A5 (plan.behind): with an enemy army 1.3 x its own in sight, hard sa
     for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, fx + (k % 4), fy - Math.trunc(k / 4) * Math.sign(s1.cellY - s0.cellY));
     w.res.set([700, 600, 600, 0], 0);
     g.fog.update(w);
+    return g;
+}
+
+test("D-086 A5 (plan.behind): with an enemy army 1.3 x its own in sight, hard saves for arrow towers by its main city; not behind or off, none", () => {
+  const towers = (behind: boolean, foes: number) => {
+    const g = behindGame(foes);
     const out = hardAi(g, { dodge: false, behind }).think(buildView(g, 0));
     return out.some((c) => c.c === "build" && c.type === BuildingType.ArrowTower);
   };
   assert.equal(towers(true, 16), true, "behind: a tower");
   assert.equal(towers(true, 2), false, "not behind: none");
   assert.equal(towers(false, 16), false, "off: none, as before");
+});
+
+test("D-086 A5 (plan.behindOutpost): behind, hard builds an outpost by its main city and posts spearmen there; not behind for a while, they come off it; off, none", () => {
+  const think = (behindOutpost: boolean, foes: number, outpost: "none" | "done" | "manned") => {
+    const g = behindGame(foes);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    if (outpost !== "none") {
+      const id = w.addBuilding(0, BuildingType.Outpost, s0.cellX + 10, s0.cellY + 4, rules().buildings[BuildingType.Outpost].hp, 1000);
+      if (outpost === "manned") {
+        const s = slotOf(g, put(g, 0, UnitType.Spearman, s0.cellX + 10, s0.cellY + 6));
+        w.units.col.order[s] = Order.Post;
+        w.units.col.orderTarget[s] = id;
+      }
+      g.fog.update(w);
+    }
+    return hardAi(g, { dodge: false, behind: true, behindOutpost }).think(buildView(g, 0));
+  };
+  const builds = (out: CommandBody[]) => out.some((c) => c.c === "build" && c.type === BuildingType.Outpost);
+  assert.equal(builds(think(true, 16, "none")), true, "behind: an outpost");
+  assert.equal(builds(think(true, 2, "none")), false, "not behind: none");
+  assert.equal(builds(think(false, 16, "none")), false, "off: none, as before");
+  const post = think(true, 16, "done").find((c) => c.c === "post");
+  assert.ok(post !== undefined && post.c === "post" && post.u.length === HARD.behindGuards, "behind: its guards posted");
+  assert.equal(think(true, 2, "manned").some((c) => c.c === "unpost"), true, "not behind: off the outpost");
+  assert.equal(think(true, 16, "manned").some((c) => c.c === "unpost"), false, "behind: they stay");
 });
 
 test("D-086 A5 (plan.holdTowns): enemy soldiers by a town it governs and the army at home 1.3 x them, hard goes to hold it; off, it stays", () => {
