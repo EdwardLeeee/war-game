@@ -40,7 +40,8 @@ PX_PER_M = 60
 PLAYER = {"MainCity": (0, "main_city", 4), "House": (1, "house", 2), "LumberCamp": (2, "lumber_camp", 2),
           "Mine": (3, "mine", 2), "Granary": (4, "granary", 2), "Barracks": (6, "barracks", 3),
           "Range": (7, "range", 3), "MageHall": (8, "mage_hall", 3), "ArrowTower": (10, "arrow_tower", 2),
-          "Stable": (11, "stable", 3), "SiegeWorks": (14, "siege_works", 3)}     # art-v6: 砲坊 (D-099)
+          "Stable": (11, "stable", 3), "SiegeWorks": (14, "siege_works", 3),     # art-v6: 砲坊 (D-099)
+          "Market": (15, "market", 3)}      # art-v6.3: 市場 (D-101; the user approved R8-38 East A, West B 2026-10-25)
 NODE_KINDS = {"Tree": 0, "GoldMine": 1, "Berries": 2, "CrystalVein": 3}
 
 
@@ -144,9 +145,15 @@ def castle_table(c):
     return pieces, decor, layouts
 
 
+def decor_ruin(c):
+    """art-v6.3 (the user approved R8-39 2026-10-25): each decorative piece burnt, drawn instead of it in a sacked town."""
+    return {k: f"decor_{k}_{c}_ruin" for k in CASTLE.DECOR_SIZE}
+
+
 def castle_frames(c):
     pieces, decor, _ = castle_table(c)
-    return sorted([n for p in pieces.values() for n in p["frames"].values()] + list(decor.values()))
+    return sorted([n for p in pieces.values() for n in p["frames"].values()] + list(decor.values())
+                  + list(decor_ruin(c).values()))
 
 
 # ---------------------------------------------------------------- the terrain (art-v5, R6-51, war-game-core #245)
@@ -425,7 +432,7 @@ def run(scale=3.0, page=2048):
             pc["frames"] = {k: v for k, v in pc["frames"].items() if v in tables["color"]}
         man = {"format": "war-game castle 2", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
                **({"view": view} if view else {}), "team_gain": TEAM_GAIN, "pages": pages,
-               "pieces": pieces, "decor": decor, "layouts": layouts,
+               "pieces": pieces, "decor": decor, "decor_ruin": decor_ruin(c), "layouts": layouts,
                "frames": tables["color"], "team": tables["team"], "shadows": tables["shadow"]}
         (cdir / f"castle_{c}.json").write_text(json.dumps(man, separators=(",", ":")))
         mem_c[c] = memory(px, tables)

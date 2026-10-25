@@ -357,10 +357,23 @@ for _i in range(0, len(R8_V61), 8):
     TARGETS[f"r8v61_{_i // 8}"] = R8_V61[_i:_i + 8]
     CAMERA[f"r8v61_{_i // 8}"] = proj.OBLIQUE
     LOOK[f"r8v61_{_i // 8}"] = "r8"
-# art-v6.1.1 (ceo 2026-10-25): the town towers' damaged looks again, burning with R8's flames (render_b1.py)
+# art-v6.2 (ceo 2026-10-25; first named art-v6.1.1): the town towers' damaged looks again, burning with R8's flames (render_b1.py)
 TARGETS["r8v611"] = [pc for pc in R8_V61 if pc["name"].startswith("town_tower") and pc["name"].endswith("_damaged")]
 CAMERA["r8v611"] = proj.OBLIQUE
 LOOK["r8v611"] = "r8"
+# R8-38 (D-101 市場, ceo 2026-10-25): the drafts, two options a culture (design/r8/blender/market_r8.py)
+TARGETS["r8m_draft"] = [dict(kind="r8_market", culture=c, opts=dict(option=o), name=f"market_{c}_{o}") for c in CULTURES
+                        for o in ("A", "B")]
+CAMERA["r8m_draft"] = proj.OBLIQUE
+LOOK["r8m_draft"] = "r8"
+# R8-38's states (the user 2026-10-25 chose East A 市的一角, West B 市場十字): the market's own build2, build3, damaged;
+# the foundation (build1) and the rubble are every 3 x 3 building's (found_3x3_<c>, rubble_3x3_<c>)
+MARKET = {"E": "A", "W": "B"}
+TARGETS["r8m_states"] = [dict(kind="r8_market", culture=c, state=st, opts=dict(option=MARKET[c]), name=f"market_{c}_{s}")
+                         for c in CULTURES for s, st in (("done", "done"), ("build2", "build_a2"), ("build3", "build_a3"),
+                                                          ("damaged", "damaged_a"))]
+CAMERA["r8m_states"] = proj.OBLIQUE
+LOOK["r8m_states"] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
 # replaces these pieces of the r8p run in the atlas
 TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in
@@ -378,6 +391,11 @@ TARGETS["r8x_prod"] = [dict(kind="r8_decor", culture=c, opts=dict(piece=k), name
                        for k in ("hut_a", "hut_b", "shed", "stack", "well", "cart")]
 CAMERA["r8x_prod"] = proj.OBLIQUE
 LOOK["r8x_prod"] = "r8"
+# R8-39 (ceo 2026-10-24: a sacked town shows no intact houses): the B pieces burnt, named decor_<k>_<c>_ruin
+TARGETS["r8x_ruin"] = [dict(kind="r8_decor", culture=c, opts=dict(piece=k, ruined=True), name=f"decor_{k}_{c}_ruin")
+                       for c in CULTURES for k in ("hut_a", "hut_b", "shed", "stack", "well", "cart")]
+CAMERA["r8x_ruin"] = proj.OBLIQUE
+LOOK["r8x_ruin"] = "r8"
 # D-100 the keep (keep_r8.py): the drafts for the user first, every state of both cultures
 TARGETS["r8k_draft"] = [dict(kind="r8_keep", culture=c, opts=dict(state=st), name=f"keep_{c}_{st}") for c in CULTURES
                         for st in ("done", "damaged", "rubble", "repair")]

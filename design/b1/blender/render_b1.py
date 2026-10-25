@@ -47,6 +47,7 @@ import arch2_r8                      # noqa: E402
 import nature_r8                     # noqa: E402
 import keep_r8                       # noqa: E402
 import decor_r8                      # noqa: E402
+import market_r8                     # noqa: E402
 import terrain_r8                    # noqa: E402
 
 REG = dict(blds.BUILDERS)
@@ -71,6 +72,8 @@ REG.update(keep_r8.BUILDERS)
 FOOT.update(keep_r8.FOOTPRINT)
 REG.update(decor_r8.BUILDERS)
 FOOT.update(decor_r8.FOOTPRINT)
+REG.update(market_r8.BUILDERS)
+FOOT.update(market_r8.FOOTPRINT)
 REG.update(terrain_r8.BUILDERS)
 FOOT.update(terrain_r8.FOOTPRINT)
 HOUSES = ("th22", "th21", "th12", "th11")
@@ -221,7 +224,8 @@ for pc in job["pieces"]:
     builder = REG[kind]
     builder(root, c, **pc.get("opts", {})) if pc.get("opts") else builder(root, c)
     st = pc.get("state", "done")
-    if (kind in blds.BUILDERS or kind in arch_r8.BUILDERS or kind in arch2_r8.BUILDERS) and st != "done":
+    if (kind in blds.BUILDERS or kind in arch_r8.BUILDERS or kind in arch2_r8.BUILDERS or kind in market_r8.BUILDERS) \
+            and st != "done":
         import states                # noqa: E402
         states.apply(root, kind, c, st, **pc.get("state_opts", {}))
     elif kind in HOUSES and st not in ("done", "intact"):
@@ -270,7 +274,10 @@ for pc in job["pieces"]:
         lib.set_pass(p, job.get("samples", {}).get(p))
         for ob in lib.ALL_PARTS:                 # smoke and flames: colour image only
             if ob.get("beauty_only") and p != "beauty":
-                ob.hide_render = True
+                if p == "mask" and LOOK == "r8":  # R8-38: flames in front of the owner's cloth cut the player colour
+                    ob.is_holdout = True          # behind them (else the team layer, drawn over, hides the fire)
+                else:
+                    ob.hide_render = True
             if ob.get("back_holdout"):           # a wall's front layer (castle.front_only): the rest see-through
                 ob.is_holdout = True
             if ob.get("caster_only"):            # stands in for a neighbour (terrain_r8): its shadow, never seen

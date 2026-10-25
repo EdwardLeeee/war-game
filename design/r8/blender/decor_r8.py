@@ -198,8 +198,91 @@ BUILD = {"hut_a": lambda r, c: hut(r, c, False), "hut_b": lambda r, c: hut(r, c,
          "rack": rack, "supplies": supplies, "posts": posts, "flag": flag}
 
 
-def r8_decor(root, c, piece="hut_a"):
+# the ruins (R8-39, ceo 2026-10-24: a sacked town shows no intact houses): how far each piece stands after the fire,
+# and how many charred beams fall over it
+RUIN = {"hut_a": (0.75, 4), "hut_b": (0.75, 4), "shed": (0.4, 3), "well": (0.68, 1), "cart": (0.45, 2), "stack": (0.3, 1)}
+BURNS = ("wood", "timber", "thatch", "straw", "hay", "sack", "canvas", "tentcloth", "rope", "beam", "lattice", "red_post",
+         "team", "bark", "logend")
+
+
+def _hut_shell(root, c, P, w, d, rnd):
+    """A burnt hut: the body and roof gone, its walls broken down to a ragged rim 0.2-0.8 m high round an open
+    floor of ash (East rammed earth; West limewashed infill between charred posts), the doorway a gap in the front."""
+    burnt = lib.mat("wooddark", (0.03, 0.026, 0.022), 0.95)
+    t = 0.32 if c == "E" else 0.18
+    base = (P["earth"] if c == "E" else P["plaster"]).name.split(".")[0]
+    col = lib.MATS.get(base, {}).get("color", (0.5, 0.5, 0.5))
+    mat = lib.mat("sooty_" + base, tuple(v * 0.5 for v in col), 0.95, noise=0.4, noise_scale=5)   # smoke-stained
+    z0 = 0.25                                         # on the stone footing
+    for side, (ax, fixed, span) in enumerate((("x", -d / 2, w), ("x", d / 2, w), ("y", -w / 2, d), ("y", w / 2, d))):
+        n = max(3, int(span / 0.32))
+        for i in range(n):
+            u = -span / 2 + (i + 0.5) * span / n
+            if side == 0 and abs(u + 0.3) < 0.4:      # the doorway
+                continue
+            h = rnd.uniform(0.15, 0.75) * (0.55 if side == 0 else 1.0)
+            size = (span / n + 0.02, t, h) if ax == "x" else (t, span / n + 0.02, h)
+            loc = (u, fixed, z0 + h / 2) if ax == "x" else (fixed, u, z0 + h / 2)
+            box(f"dr_wall{side}_{i}", size, mat, root, loc=loc, rot=(0, 0, rnd.uniform(-4, 4)))
+    if c == "W":                                      # the frame's posts, burnt short
+        for k, (x, y) in enumerate(((-w / 2, -d / 2), (w / 2, -d / 2), (-w / 2, d / 2), (w / 2, d / 2), (0, -d / 2))):
+            rod(f"dr_post{k}", (x, y, z0), (x, y, z0 + rnd.uniform(0.4, 0.95)), 0.08, burnt, parent=root, segs=6)
+    sphere("dr_ash", 0.9, burnt, root, loc=(0, 0.05, z0), scale=(w / 2.2, d / 2.2, 0.18), segs=14, rings=8)
+
+
+
+def ruin(root, c, piece, seed=5):
+    """A decorative piece after its town is sacked: everything above knee height to waist height gone (states.cut_above),
+    the cloth gone, wood, thatch and sacks charred black, stone and rammed earth sooted; a few charred beams and broken
+    stones over it, soot on the ground. Low (under 0.8 m): the cells read as burnt, never as standing houses."""
+    import bpy
+    import states
+    import terrain_r8
+    z, beams = RUIN[piece]
+    x0, y0, x1, y1, _ = states._extent(root)        # its size before the fire
+    rnd0 = random.Random(seed + 2 * len(piece))
+    if piece in ("hut_a", "hut_b"):                   # nothing of the body stands: drop it, raise a broken rim instead
+        bpy.context.view_layer.update()
+        body = [ob for ob in kit.parts_under(root) if ob.name.startswith(("hu_walls", "cw_body", "cw_front"))]
+        bw = max(states._bbox(ob)[3] - states._bbox(ob)[0] for ob in body)
+        bd = max(states._bbox(ob)[4] - states._bbox(ob)[1] for ob in body)
+        for ob in kit.parts_under(root):
+            if not ob.name.startswith(("hu_foot", "cw_foot")):
+                states._drop(ob)
+        _hut_shell(root, c, palette(c), bw, bd, rnd0)
+    states._drop_cloth(root)
+    states.cut_above(root, z)
+    burnt = lib.mat("wooddark", (0.03, 0.026, 0.022), 0.95)
+    bpy.context.view_layer.update()
+    for ob in kit.parts_under(root):                  # what burns is black now
+        for slot in ob.material_slots:
+            if slot.material and any(k in slot.material.name for k in BURNS):
+                slot.material = burnt
+    rnd = random.Random(seed + len(piece))
+    w, d = max(0.8, x1 - x0), max(0.8, y1 - y0)
+    for i in range(beams):
+        x, y = rnd.uniform(-w / 2, w / 2) * 0.6, rnd.uniform(-d / 2, d / 2) * 0.6
+        a = rnd.uniform(0, math.pi)
+        L = rnd.uniform(0.9, 1.7)
+        rod(f"dr_beam{i}", (x - math.cos(a) * L / 2, y - math.sin(a) * L / 2, 0.08),
+            (x + math.cos(a) * L / 2, y + math.sin(a) * L / 2, rnd.uniform(0.15, 0.45)), 0.06, burnt, parent=root, segs=6)
+    P = palette(c)
+    for i in range(int(w * d * 3)):
+        x, y = rnd.uniform(-w / 2, w / 2) * 0.9, rnd.uniform(-d / 2, d / 2) * 0.9
+        terrain_r8._rock(f"dr_stone{i}", rnd.uniform(0.1, 0.22), P["stone"] if i % 3 else P["char"], root,
+                         (x, y, 0.05), rnd)
+    soot = states._soot_mat()
+    for i in range(3):
+        ob = cyl(f"dr_soot{i}", rnd.uniform(0.6, 1.0), 0.01, soot, root,
+                 loc=(rnd.uniform(-w / 3, w / 3), rnd.uniform(-d / 3, d / 3), 0.015), scale=(1, rnd.uniform(0.6, 1), 1),
+                 outline=False)
+        ob["no_bevel"] = True
+
+
+def r8_decor(root, c, piece="hut_a", ruined=False):
     BUILD[piece](root, c)
+    if ruined:
+        ruin(root, c, piece)
 
 
 FOOTPRINT = {"r8_decor": (1, 1)}
