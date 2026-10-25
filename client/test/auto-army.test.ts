@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AutoArmyBook, armyNeed, affordsAbove, type GroupNeed, missingText, pickTrains, VILLAGER_TARGET, villagersMissing } from "../src/game/auto-army.ts";
+import { affordsAbove, armyNeed, AutoArmyBook, type GroupNeed, missingText, pickTrains, stillSent, TRAIN_SENT_TICKS, VILLAGER_TARGET, villagersMissing } from "../src/game/auto-army.ts";
 import { headerAutoTrain } from "../src/game/game.ts";
 import { UnitType } from "../src/sim.ts";
 
@@ -92,11 +92,15 @@ test("村民：活著的（躲著的也算）加上排著的，少於目標才�
   assert.equal(book.togglePaused(7), false);
   book.togglePaused(9);
   book.villagersPaused = true;
+  book.autoHouse = false;
   const back = new AutoArmyBook();
   back.restore(JSON.parse(JSON.stringify(book.save())));
-  assert.deepEqual(back.save(), { paused: [9], villagerTarget: 200, villagersPaused: true });
+  assert.deepEqual(back.save(), { paused: [9], villagerTarget: 200, villagersPaused: true, autoHouse: false });
   back.restore(undefined);
-  assert.deepEqual(back.save(), { paused: [], villagerTarget: 40, villagersPaused: false });
+  assert.deepEqual(back.save(), { paused: [], villagerTarget: 40, villagersPaused: false, autoHouse: true });
+  // A save from before 自動蓋民居: on.
+  back.restore({ paused: [], villagerTarget: 40, villagersPaused: false });
+  assert.equal(back.autoHouse, true);
 });
 
 test("D-098 改用 init.autoTrain：紀錄第一行的 autoTrain 讀得出來；舊的存檔（玩家的開著）才逐棟送 auto_train off", () => {
@@ -104,4 +108,18 @@ test("D-098 改用 init.autoTrain：紀錄第一行的 autoTrain 讀得出來；
   assert.deepEqual(headerAutoTrain('{"protocol":1,"seed":1,"scenario":"standard","ai":[false,true],"autoTrain":[true,false]}\n'), [true, false]);
   assert.equal(headerAutoTrain('{"protocol":1,"seed":1,"scenario":"standard","ai":[true,true]}\n'), null);
   assert.equal(headerAutoTrain("not json"), null);
+});
+
+test("送出的訓練（2026-10-25）：等到快照的佇列有它、那棟訓練出人、或被拒才算送到；畫面落後快照 40 步也不再送一次；30 秒都沒消息才當作丟了", () => {
+  const sent = [{ seq: 3, tick: 10, building: 5, unit: 0 }];
+  const none = new Set<number>();
+  // The old rule forgot it after one step: sent again at tick 12, and again, while the page lagged.
+  assert.deepEqual(stillSent(sent, 12, none, none), sent);
+  assert.deepEqual(stillSent(sent, 60, none, none), sent);
+  assert.deepEqual(stillSent(sent, 60, new Set([5]), none), [], "in its building's queue");
+  assert.deepEqual(stillSent(sent, 60, none, new Set([5])), [], "its building trained someone");
+  assert.deepEqual(stillSent(sent, 60, new Set([6]), new Set([7])), sent, "other buildings");
+  assert.equal(TRAIN_SENT_TICKS, 600);
+  assert.deepEqual(stillSent(sent, 10 + TRAIN_SENT_TICKS, none, none), sent);
+  assert.deepEqual(stillSent(sent, 11 + TRAIN_SENT_TICKS, none, none), [], "lost");
 });
