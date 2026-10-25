@@ -45,6 +45,7 @@ import {
   CELL,
   type CommandBody,
   type ContinueFailure,
+  Fog,
   type Cost,
   type SimEvent,
   dir16,
@@ -97,6 +98,7 @@ import { goesOnWalls, heldTown, leaveWalls, WALL_PROMPT, WALL_PROMPT_MIXED, WALL
 import { STATION_PROMPT, STATION_PROMPT_MIXED, STATION_WRONG_TARGET, stationTap, upOnArrival } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
+import { type Attacker, type AssaultScene, Assaults, assaultOrders, type Target } from "./assault.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
@@ -214,6 +216,8 @@ export function headerAutoTrain(log: string): boolean[] | null {
 
 /** How the ground is laid on the screen: 方形斜看 since art-v3 is drawn for it (D-088); the diamond (D-085) on test pages only (?view=diamond). */
 const PROJECTION_DEFAULT = PROJECTIONS.oblique;
+/** Orders that end a soldier's attack on a town (攻城打到底, assault.ts); 攻擊 starts one again. */
+const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "wall", "post", "gather", "build", "repair", "release"]);
 
 export class Game implements GestureHost {
   view: GameView | null = null;
@@ -501,6 +505,8 @@ export class Game implements GestureHost {
   private readonly houseSkip = new Set<number>();
   /** 駐軍 (station.ts): the ranged and mages walking into a town to stay, to go up its walls once in (unit id → town). */
   private readonly stationWalks = new Map<number, number>();
+  /** 攻城打到底 (assault.ts): soldiers the player sent at a town not ours, until it is taken or they are given another order. */
+  private readonly assaults = new Assaults();
   private houseTold = false;
   /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
   private readonly autocastAsked = new Set<number>();
@@ -821,6 +827,13 @@ export class Game implements GestureHost {
     }
     const seq = this.post(cmd, false);
     this.acknowledge(cmd, seq);
+    // 攻城打到底 (assault.ts): another order ends a soldier's attack on a town; 攻擊 at a town not ours starts one.
+    if (ASSAULT_ENDS.has(cmd.c) && "u" in cmd && Array.isArray(cmd.u)) {
+      this.assaults.drop(cmd.u);
+      const view = this.view;
+      const town = (cmd.c === "move" || cmd.c === "attack") && view !== null ? this.assaultTown(cmd) : null;
+      if (town !== null && view !== null) this.assaults.begin(town, cmd.u.filter((id) => isSoldier(view.unitType(id))));
+    }
     this.controls.setWaiting(this.pending.waiting);
     // 堅守 or 取消 (stop and hold): what the next order goes by until the snapshot shows it (D-081).
     if (cmd.c === "stance") this.stances.note(cmd.u, cmd.stance, this.view?.header?.[H.tick] ?? 0);
@@ -1280,6 +1293,120 @@ export class Game implements GestureHost {
   toggleAutoHouse(): void {
     this.autoArmy.autoHouse = !this.autoArmy.autoHouse;
     this.toast(`已${this.autoArmy.autoHouse ? "開啟" : "關閉"}自動蓋民居`, "ok");
+  }
+
+  /**
+   * The town not ours an 攻擊 goes at, or null: an attack-move into its walls (or by them), or an
+   * attack on what is in it or on its walls (its gate, militia, tower, soldiers).
+   */
+  private assaultTown(cmd: Extract<CommandBody, { c: "move" } | { c: "attack" }>): number | null {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    if (view === null || snap === undefined) return null;
+    let at: { x: number; y: number } | null = null;
+    let margin = 0;
+    if (cmd.c === "move") {
+      at = { x: cmd.x, y: cmd.y };
+      margin = 2;
+    } else {
+      const uo = view.unitRow(cmd.target);
+      const bo = view.buildingRow(cmd.target);
+      if (uo >= 0 && snap.units[uo + UnitField.owner] !== view.me) at = { x: Math.floor(snap.units[uo + UnitField.x] / CELL), y: Math.floor(snap.units[uo + UnitField.y] / CELL) };
+      else if (uo < 0 && bo >= 0 && snap.buildings[bo + BuildingField.owner] !== view.me) at = { x: snap.buildings[bo + BuildingField.cellX], y: snap.buildings[bo + BuildingField.cellY] };
+    }
+    if (at === null) return null;
+    const t = snap.towns;
+    for (const town of view.knownTowns.values()) {
+      const box = view.castleBox(town);
+      const hit =
+        box !== null
+          ? at.x >= box.x0 - margin && at.x <= box.x1 + margin && at.y >= box.y0 - margin && at.y <= box.y1 + margin
+          : (at.x - town.cellX) ** 2 + (at.y - town.cellY) ** 2 <= (town.radius + margin) ** 2;
+      if (!hit) continue;
+      const row = view.townRow(town.id);
+      return row >= 0 && t[row + TownField.owner] === view.me ? null : town.id;
+    }
+    return null;
+  }
+
+  /**
+   * Every snapshot (攻城打到底): a town's attackers standing with no order are sent at its nearest
+   * defender (assault.ts); a town taken, in ruins, or ours ends its attack.
+   */
+  private tickAssaults(): void {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    const h = view?.header;
+    if (view === null || snap === undefined || h === null || h === undefined || this.options.watch || h[H.paused] === 1) return;
+    const tick = h[H.tick];
+    this.assaults.prune((id) => view.unitRow(id) >= 0);
+    for (const { town, ids } of this.assaults.list()) {
+      const row = view.townRow(town);
+      if (row >= 0 && (snap.towns[row + TownField.owner] === view.me || snap.towns[row + TownField.state] === TownState.Ruins)) {
+        this.assaults.end(town);
+        continue;
+      }
+      if (!this.assaults.due(town, tick, (id) => view.unitRow(id) >= 0 && view.unitOrder(id) !== Order.None)) continue;
+      const scene = this.assaultScene(town, ids);
+      if (scene === null) continue;
+      for (const o of assaultOrders(scene)) this.assaults.sentNow(town, this.autoCommand(o), tick, o.u);
+    }
+  }
+
+  /** What town `town` under attack by `ids` shows now (assault.ts). */
+  private assaultScene(town: number, ids: readonly number[]): AssaultScene | null {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    const spot = view?.knownTowns.get(town);
+    const area = this.townArea(town);
+    if (view === null || snap === undefined || spot === undefined || area === null) return null;
+    const box = view.castleBox(spot);
+    const inBox = (x: number, y: number) => (box !== null ? x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1 : (x - spot.cellX) ** 2 + (y - spot.cellY) ** 2 <= spot.radius ** 2);
+    const inner = area.inside;
+    const inside = (x: number, y: number) => (inner !== null && inner !== undefined ? x >= inner.x0 && x <= inner.x1 && y >= inner.y0 && y <= inner.y1 : inBox(x, y));
+    const u = snap.units;
+    const attackers: Attacker[] = [];
+    for (const id of ids) {
+      const o = view.unitRow(id);
+      if (o < 0 || u[o + UnitField.action] === Action.Garrisoned) continue;
+      const x = Math.floor(u[o + UnitField.x] / CELL);
+      const y = Math.floor(u[o + UnitField.y] / CELL);
+      attackers.push({ id, x, y, idle: u[o + UnitField.order] === Order.None, inside: inside(x, y) });
+    }
+    const defenders: Target[] = [];
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      const owner = u[o + UnitField.owner];
+      if (owner === view.me || owner === NO_OWNER || u[o + UnitField.type] === UnitType.Farmer || u[o + UnitField.action] === Action.Garrisoned) continue;
+      const x = Math.floor(u[o + UnitField.x] / CELL);
+      const y = Math.floor(u[o + UnitField.y] / CELL);
+      if (inBox(x, y)) defenders.push({ id: u[o + UnitField.id], x, y });
+    }
+    const b = snap.buildings;
+    const gates: Target[] = [];
+    const standing = new Set<number>();
+    const size = view.map.size;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      const type = b[o + BuildingField.type];
+      if ((type !== BuildingType.Gate && type !== BuildingType.Keep) || b[o + BuildingField.owner] === view.me || b[o + BuildingField.hp] <= 0) continue;
+      if ((b[o + BuildingField.flags] & BuildingFlag.Remembered) !== 0) continue;
+      const f = view.footprint(b, o);
+      if (!inBox(f.x, f.y)) continue;
+      const t = { id: b[o + BuildingField.id], x: f.x + f.w / 2, y: f.y + f.h / 2 };
+      if (type === BuildingType.Keep) defenders.push(t);
+      else {
+        gates.push(t);
+        for (let y = f.y; y < f.y + f.h; y++) for (let x = f.x; x < f.x + f.w; x++) standing.add(y * size + x);
+      }
+    }
+    // A gate broken: an opening we see with no gate in it (one out of sight counts as standing).
+    const fog = view.fog;
+    const open = (view.castleOf(spot)?.gates ?? []).some((cells) => {
+      const c = cells[0];
+      if (c === undefined) return false;
+      const i = (spot.cellY + c[1]) * size + spot.cellX + c[0];
+      return fog !== null && fog[i] === Fog.Visible && !standing.has(i);
+    });
+    return { attackers, defenders, gates, open, centre: { x: spot.cellX + 0.5, y: spot.cellY + 0.5 } };
   }
 
   /** 自動訓練 paused for this building (D-098: the screen's own, kept in the save). */
@@ -1923,6 +2050,8 @@ export class Game implements GestureHost {
           if (ev.k === "rejected") {
             this.pending.refused(ev.seq);
             const cmd = this.sent.find((c) => c.seq === ev.seq);
+            // 攻城打到底's own: its town decides again.
+            this.assaults.refused(ev.seq);
             // 自動訓練's own train (D-098): forget it; the next snapshot decides again.
             this.autoSent = this.autoSent.filter((t) => t.seq !== ev.seq);
             // 自動蓋民居's house: the next snapshot decides again, somewhere else if the spot was refused.
@@ -1965,6 +2094,7 @@ export class Game implements GestureHost {
         this.pruneArmy();
         this.tickGovernWaits();
         this.tickAutoArmy();
+        this.tickAssaults();
         this.tickStationWalks();
         this.draftArmy();
         this.musterRecruits();
