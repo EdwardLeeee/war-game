@@ -3000,6 +3000,76 @@ test("D-086 A5 (plan.behindOutpost): behind, hard builds an outpost by its main 
   assert.equal(think(true, 16, "manned").some((c) => c.c === "unpost"), false, "behind: they stay");
 });
 
+// --- D-086 A6: towns on even terms, and stock it cannot spend (the user's 9170fab0 and 4fd7b823) ----------------------
+
+test("D-086 A6 (plan.econBehind): its army IDLE_HOME at home, hard goes for a town with an enemy army by it nearly its own; not before, nor off", () => {
+  const goes = (econBehind: boolean, wait: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 15 * 1200;
+    const t = [...w.map.towns].filter((x) => x.size === TownSize.Small).sort((a, b) => (a.cellX - s0.cellX) ** 2 + (a.cellY - s0.cellY) ** 2 - ((b.cellX - s0.cellX) ** 2 + (b.cellY - s0.cellY) ** 2))[0];
+    // The others ruins it sees (unseen towns count as neutral ones).
+    for (const o of w.map.towns) if (o.id !== t.id) {
+      w.townState[o.id] = TownState.Ruins;
+      w.townOwner[o.id] = NO_OWNER;
+      w.townTimer[o.id] = 48000;
+      put(g, 0, UnitType.Farmer, o.cellX, o.cellY);
+    }
+    for (let k = 0; k < 20; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
+    // 17 enemy spearmen by the town (0.85 x its 20), in sight of a farmer of its own.
+    put(g, 0, UnitType.Farmer, t.cellX + t.radius + 4, t.cellY);
+    for (let k = 0; k < 17; k++) put(g, 1, UnitType.Spearman, t.cellX + t.radius + 1 + (k % 3), t.cellY - 3 + Math.trunc(k / 3));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, econBehind, townArmy: 8, bigArmy: 99, pushArmy: 99, peekFirst: 0 });
+    const first = ai.think(buildView(g, 0));
+    w.tick += wait;
+    g.fog.update(w);
+    const out = [...first, ...ai.think(buildView(g, 0))];
+    return out.some((c) => c.c === "move" && c.u.length >= 15 && c.x === t.cellX && c.y === t.cellY);
+  };
+  assert.equal(goes(true, 3 * 1200 + 10), true, "idle at home 3 minutes: on even terms");
+  assert.equal(goes(true, 10), false, "not yet idle: as before (0.8 x)");
+  assert.equal(goes(false, 3 * 1200 + 10), false, "off: as before");
+});
+
+test("D-086 A6 (plan.goldCavalry): wood short and gold piled up, hard trains cavalry (no wood) first; off, as before", () => {
+  const cavalry = (goldCavalry: number) => {
+    const g = behindGame(0);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.addBuilding(0, BuildingType.Stable, s0.cellX + 20, s0.cellY - 8, rules().buildings[BuildingType.Stable].hp, 1000);
+    w.res.set([600, 10, 600, 0], 0);
+    g.fog.update(w);
+    return hardAi(g, { dodge: false, goldCavalry }).think(buildView(g, 0)).some((c) => c.c === "train" && c.type === UnitType.Cavalry);
+  };
+  assert.equal(cavalry(25), true, "on: cavalry");
+  assert.equal(cavalry(0), false, "off: none");
+});
+
+test("D-086 A6 (plan.crystalStop): its mages at the cap with crystal for 4 more, hard takes its farmers off the crystal vein; off, they stay", () => {
+  const released = (crystalStop: boolean) => {
+    const g = behindGame(0);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    // A soldier of its own by a crystal vein, so it knows of one.
+    const vein = w.nodeKind.findIndex((k) => k === NodeKind.CrystalVein);
+    put(g, 0, UnitType.Spearman, w.nodeX[vein] - 2, w.nodeY[vein] - 2);
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, crystalStop });
+    const crew = ai.think(buildView(g, 0)).find((c) => c.c === "gather" && c.u.length === HARD.vein);
+    assert.ok(crew !== undefined && crew.c === "gather", "a crew to the vein");
+    for (let k = 0; k < rules().mageCap; k++) put(g, 0, UnitType.Mage, s0.cellX + 4 + k, s0.cellY + 3);
+    w.res.set([200, 200, 200, 4 * rules().units[UnitType.Mage].cost.crystal], 0);
+    w.tick += 10;
+    g.fog.update(w);
+    const out = ai.think(buildView(g, 0));
+    return out.some((c) => c.c === "release" && crew.u.every((id) => c.u.includes(id)));
+  };
+  assert.equal(released(true), true, "on: off the vein");
+  assert.equal(released(false), false, "off: they stay");
+});
+
 test("D-086 A5 (plan.holdTowns): enemy soldiers by a town it governs and the army at home 1.3 x them, hard goes to hold it; off, it stays", () => {
   const goes = (holdTowns: boolean) => {
     const g = emptyGame();
