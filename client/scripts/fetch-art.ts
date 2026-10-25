@@ -85,13 +85,20 @@ async function fetchLocked(lock: ArtLock): Promise<void> {
 }
 
 /**
- * Before a Release: the artifacts war-game-ui named (2026-10-18): the units of run 36849835568,
- * the crossbowman again in 36850248764 (its fall redone), the effects of 36869894736.
+ * Before a Release: the artifacts war-game-ui's next one is made of, as its release list names them
+ * (design/release/art-v6.json): each unit's run, and the atlas run's effects and buildings (with the
+ * castles, the ground, the nodes and the terrain).
  */
-const DEV_UNITS = ["farmer_e", "spear_e", "xbow_e", "hcav_e", "mage_e", "farmer_w", "pike_w", "bow_w", "knight_w", "mage_w"];
-const DEV_RUN = 36849835568;
-const DEV_RUN_FOR: Record<string, number> = { xbow_e: 36850248764 };
-const DEV_EFFECTS = { run: 36869894736, artifact: "production-effects-atlas" };
+const DEV_RELEASE = join(CLIENT, "..", "design", "release", "art-v6.json");
+
+interface ReleaseList {
+  units: Record<string, { run: number; artifact: string }>;
+  effects: { run: number; artifact: string };
+  buildings: { run: number; artifact: string };
+}
+
+/** What the buildings' artifact holds beside the buildings, each unpacked as its own folder. */
+const DEV_STRUCTURES = ["buildings", "castle", "ground", "nodes", "terrain"];
 
 function ghArtifact(runId: number, name: string, zip: string): void {
   if (existsSync(zip)) return;
@@ -104,29 +111,37 @@ function ghArtifact(runId: number, name: string, zip: string): void {
 }
 
 function fetchDev(): void {
+  const list = JSON.parse(readFileSync(DEV_RELEASE, "utf8")) as ReleaseList;
   const dir = join(CACHE, "dev");
   mkdirSync(dir, { recursive: true });
   const target = join(OUT, "dev");
   rmSync(target, { recursive: true, force: true });
-  for (const unit of DEV_UNITS) {
-    const zip = join(dir, `${unit}.zip`);
-    ghArtifact(DEV_RUN_FOR[unit] ?? DEV_RUN, `production-${unit}`, zip);
+  for (const [unit, from] of Object.entries(list.units)) {
+    const zip = join(dir, `${unit}-${from.run}.zip`);
+    ghArtifact(from.run, from.artifact, zip);
     for (const x of ["x3", "x2"]) {
       const into = join(target, x, "units", unit);
       mkdirSync(into, { recursive: true });
-      // prod/<unit>/atlas_x3/ in the production run; atlas_x3/ at the top in the crossbowman's.
+      // …/prod/<unit>/atlas_x3/ in the unit's artifact.
       run("unzip", ["-q", "-o", "-j", zip, `*atlas_${x}/*`, "-d", into]);
     }
     console.log(`art dev: ${unit}`);
   }
-  const zip = join(dir, "effects.zip");
-  ghArtifact(DEV_EFFECTS.run, DEV_EFFECTS.artifact, zip);
+  const effects = join(dir, `effects-${list.effects.run}.zip`);
+  ghArtifact(list.effects.run, list.effects.artifact, effects);
+  const buildings = join(dir, `buildings-${list.buildings.run}.zip`);
+  ghArtifact(list.buildings.run, list.buildings.artifact, buildings);
   for (const x of ["x3", "x2"]) {
     const into = join(target, x, "effects");
     mkdirSync(into, { recursive: true });
-    run("unzip", ["-q", "-o", "-j", zip, `effects_${x}/*`, "-d", into]);
+    run("unzip", ["-q", "-o", "-j", effects, `effects_${x}/*`, "-d", into]);
+    for (const part of DEV_STRUCTURES) {
+      const to = join(target, x, part);
+      mkdirSync(to, { recursive: true });
+      run("unzip", ["-q", "-o", "-j", buildings, `atlas_${x}/${part}/*`, "-d", to]);
+    }
   }
-  console.log(`art dev: effects → public/art/dev/ (${readdirSync(join(target, "x3", "units")).length} units)`);
+  console.log(`art dev: effects, ${DEV_STRUCTURES.join(", ")} → public/art/dev/ (${readdirSync(join(target, "x3", "units")).length} units)`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
