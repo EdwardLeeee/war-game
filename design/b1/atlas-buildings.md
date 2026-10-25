@@ -577,12 +577,17 @@ client 2026-10-18 同意照這一節做。ceo 同意瓦礫、樹、大城箭樓�
 
 art-v6 所有建築、城牆、資源點、地形換成 R8 寫實的圖（使用者核准 R8-21 到 R8-37）。檔名、圖層、錨點、前後順序照前面各節，下面只列改了的地方。
 
+**art-v6.1（ceo 2026-10-25）**：寫實的圖要在 KEEP 關著時先上線，所以兩種城都放：
+- `castle_<c>.json` 的 `small`、`large`、`large3` 是 D-089 的舊城，和 art-v5.2 逐片相同（牆片、錨點、前緣、格子）。牆片是寫實樣子，多回 4 格石城門 `sw_gate_x`、`sw_gate_y`。城裡沒有地磚，`ground` 是土路（每條大街的中線，出城門 4 格淡出）和踩平的廣場，`decor` 是空的。
+- D-100 的兩種改名 `small_d100`、`large_d100`，內容和 art-v6 的 `small`、`large` 一樣。KEEP 開時用這兩個。
+- `buildings_<c>.json` 補回 `TownTower`（type 9，2×2，`sizes["3"]` 是 3×3），寫實樣子，排在 `Keep` 前面：KEEP 關時取第一個 type 9 就是它。KEEP 開時用名字取 `Keep`。
+
 ### 兵
 - 東陸遠程從弩手 `xbow_e` 改成弓手 `bow_e`（R8 brief：「弓手（新，拿弓）」）。`UnitType.Ranged` 東陸要改認 `bow_e`；art-v6 沒有 `xbow_e`。
 - 槍兵 `spear_e`、長矛兵 `pike_w` 照舊有 `sling`（第 11 節）。
 
 ### 主堡 `Keep`（`BuildingType` 9）
-- 取代大城箭樓 `TownTower`，KEEP 開關在 art-v6 同一版打開（core、ceo 2026-10-23）。art-v6 沒有 `town_tower` 和 `sizes`。
+- KEEP 開時取代大城箭樓 `TownTower`（core、ceo 2026-10-23）。art-v6 沒有 `town_tower` 和 `sizes`，art-v6.1 補回（上面）。
 - 占地 3×3，在城鎮中心那一格的 |dx|、|dy| ≤ 1。
 - `states`：`done`、`damaged`、`rubble`、`repair`。
   - `damaged`：血量一半以下。
@@ -595,7 +600,7 @@ art-v6 所有建築、城牆、資源點、地形換成 R8 寫實的圖（使用
 - 收到 `shot` 事件時，從離目標近的那一個點射出 `effects.json` 的 `arrow`（使用者 2026-10-23 選 R8-35 B「真的箭」，不閃）。弓手、長弓兵在攻擊的 hit 格放箭，民兵在 `sling` 的 hit 格丟 `sling_stone`。飛法寫在 `effects.json` 和 `design/production/common/effects.py` 開頭。
 
 ### 城牆 `castle_<c>.json` 改成 `war-game castle 2`
-- **格局**：只有 `small`、`large`，跟著 D-100 的 `design/b1/castle-layout.json`（core 的同一份）。沒有 `large3`。
+- **格局**：art-v6 只有 `small`、`large`，跟著 D-100 的 `design/b1/castle-layout.json`（core 的同一份），沒有 `large3`。art-v6.1 起這兩個叫 `small_d100`、`large_d100`，舊名放回 D-089 的城（上面）。
 
 | 配置 | 牆 | 牆以內 | 城門 |
 |---|---|---|---|
