@@ -1,0 +1,24 @@
+{
+ "tag": "art-v6.1",
+ "note": "ceo 2026-10-25：寫實的圖在 KEEP 關著時先上線。castle_<c>.json 補回 D-089 的 small、large、large3（和 art-v5.2 逐片相同，寫實的牆片，城裡是土路，沒有擺設），D-100 的改名 small_d100、large_d100；buildings_<c>.json 補回 TownTower（type 9，2×2，sizes 3，排在 Keep 前面）；加寫實的 4 格石城門和兩種大城箭樓。其他和 art-v6 相同。說明檔 design/b1/atlas-buildings.md 第 13 節。",
+ "units": {
+  "farmer_e": {"run": 39726651993, "artifact": "r7-v8-farmer_e"},
+  "spear_e": {"run": 39729248473, "artifact": "r7-v8-spear_e"},
+  "bow_e": {"run": 39726651993, "artifact": "r7-v8-bow_e"},
+  "hcav_e": {"run": 39726651993, "artifact": "r7-v8-hcav_e"},
+  "siege_e": {"run": 39726651993, "artifact": "r7-v8-siege_e"},
+  "mage_e": {"run": 39726651993, "artifact": "r7-v8-mage_e"},
+  "farmer_w": {"run": 39726651993, "artifact": "r7-v8-farmer_w"},
+  "pike_w": {"run": 39729248473, "artifact": "r7-v8-pike_w"},
+  "bow_w": {"run": 39726651993, "artifact": "r7-v8-bow_w"},
+  "knight_w": {"run": 39726651993, "artifact": "r7-v8-knight_w"},
+  "siege_w": {"run": 39726651993, "artifact": "r7-v8-siege_w"},
+  "mage_w": {"run": 39726651993, "artifact": "r7-v8-mage_w"}
+ },
+ "effects": {"run": 40176054805, "artifact": "production-effects-atlas"},
+ "buildings": {"run": 40176054805, "artifact": "production-buildings"},
+ "castle": true,
+ "terrain": true,
+ "ground": true,
+ "astc_sample": {"unit": "spear_e", "scale": 2, "layers": ["color", "team"]}
+}
