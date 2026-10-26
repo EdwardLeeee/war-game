@@ -198,6 +198,21 @@ export interface Plan {
    * big city too once the army is TURTLE.bigAt strong.
    */
   turtle: boolean;
+  /**
+   * push-crush (ceo 2026-10-25, for war-game-ai: hard behind after the user's win at home in 4fd7b823 sat
+   * at home and built no defences): with the turtle, once it has beaten off a wave of CRUSH.wave or more
+   * enemy soldiers at home it goes out with CRUSH.min or more while it has CRUSH.ratio tenths times the
+   * most enemy soldiers in sight at once in the last CRUSH.seen ticks: to the enemy's governed towns first
+   * (nearest home first), then its main city. Out, it falls back home once the enemy soldiers in sight
+   * within CRUSH.near cells of it are more than its army / CRUSH.ratio tenths, and goes out again only
+   * after the next such wave.
+   */
+  crush: boolean;
+  /**
+   * With the turtle (ceo 2026-10-25: the user turned 4fd7b823 round governing 4-5 towns): town trips as the
+   * push's, with `townAt` soldiers and no towers by home needed (else TURTLE.tripTowers and ahead).
+   */
+  earlyTowns: boolean;
 }
 
 /**
@@ -307,6 +322,8 @@ const TURTLE = {
   tripTowers: 7,
   bigAt: 40,
 };
+/** plan.crush: the wave beaten off, the least army and its ratio to the enemy in sight (tenths), how long it remembers that, how near counts. */
+const CRUSH = { wave: 15, min: 30, ratio: 13, seen: 600, near: 14 };
 /** plan.turtle: the towers by home it wants at this tick. */
 function turtleTowers(tick: number): number {
   const m = TURTLE.towers;
@@ -371,7 +388,7 @@ interface Town {
   y: number;
   size: number;
 }
-type Mode = "home" | "town" | "base" | "defend" | "race";
+type Mode = "home" | "town" | "base" | "defend" | "race" | "crush";
 
 /** Builds nothing whose centre is this close to a town's centre (cells), as the AI of round 4 PR A. */
 const TOWN_CLEARANCE = 12;
@@ -447,6 +464,8 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     pushAhead: false,
     harass: 0,
     turtle: false,
+    crush: false,
+    earlyTowns: false,
   };
 }
 
@@ -609,6 +628,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   /** When enemy soldiers were last within WAVE_CELLS of the main city. */
   let lastWave = -100000;
   let counterReady = false;
+  /** plan.crush: a wave of CRUSH.wave or more beaten off, until it falls back. */
+  let crushing = false;
   /** plan.pushAhead: enemy soldiers in sight at each think of the last AHEAD_SEEN ticks. */
   const seenFoes: { tick: number; n: number }[] = [];
   /** plan.harass: the squad, when it may go out again, the target it was sent at, its next round point, when last told where to go. */
@@ -1595,6 +1616,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
             counterReady = true;
             waves++;
           }
+          if (plan.crush && waveMax >= CRUSH.wave) crushing = true;
           waveMax = 0;
         }
         if (mode === "defend") mode = "home";
@@ -1634,6 +1656,45 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           send(enemyHome.cellX, enemyHome.cellY, "race");
         }
         return out;
+      }
+
+      // --- push-crush (plan.crush): out after a big wave beaten off at home --------------------------------
+      if (plan.crush) {
+        const close = foes.filter((f) => dist2(f.x, f.y, cx, cy) <= CRUSH.near * CRUSH.near).length;
+        if ((mode === "crush" || mode === "base") && army.length * 10 < close * CRUSH.ratio) {
+          out.push({ c: "retreat", u: armyIds, x: post.x, y: post.y });
+          lastMove = tick;
+          mode = "home";
+          target = { x: post.x, y: post.y };
+          crushing = false;
+          return out;
+        }
+        let seen = 0;
+        for (const x of seenFoes) if (tick - x.tick <= CRUSH.seen) seen = Math.max(seen, x.n);
+        const ahead = army.length >= CRUSH.min && army.length * 10 >= seen * CRUSH.ratio;
+        if (crushing && (mode === "crush" || (mode === "home" && ahead))) {
+          const theirs = known
+            .filter((x) => {
+              const s = towns.get(x.id)!;
+              return s.owner === 1 - player && (s.state === TownState.Governed || s.state === TownState.Repairing);
+            })
+            .sort((a, b) => dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id);
+          if (theirs.length > 0) {
+            send(theirs[0].cellX, theirs[0].cellY, "crush");
+            return out;
+          }
+          if (found >= 0) {
+            armyAtStart = army.length;
+            marched.clear();
+            for (const id of armyIds) marched.add(id);
+            marches++;
+            if (firstMarch < 0) firstMarch = tick;
+            send(enemyHome.cellX, enemyHome.cellY, "base");
+            return out;
+          }
+          mode = "home";
+        }
+        if (mode === "crush") mode = "home";
       }
 
       // --- the town of the plan --------------------------------------------------------------------------
@@ -1686,6 +1747,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           mode = "home";
           target = { x: post.x, y: post.y };
           counterReady = false;
+          crushing = false;
           brokenOff++;
           return out;
         }
@@ -1738,7 +1800,11 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         marches++;
         if (firstMarch < 0) firstMarch = tick;
         send(enemyHome.cellX, enemyHome.cellY, "base");
-      } else if (townOpen && army.length >= (trips === 0 || plan.turtle ? plan.townAt : Math.min(plan.townAt, 4)) && (!plan.turtle || (ahead && towersByHome >= TURTLE.tripTowers))) {
+      } else if (
+        townOpen &&
+        army.length >= (trips === 0 || plan.turtle ? plan.townAt : Math.min(plan.townAt, 4)) &&
+        (!plan.turtle || plan.earlyTowns || (ahead && towersByHome >= TURTLE.tripTowers))
+      ) {
         trips++;
         send(t!.x, t!.y, "town");
       } else {

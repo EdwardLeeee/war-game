@@ -520,6 +520,106 @@ jobs:
           EOF
           node turtle.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
+  # push-crush (ceo 2026-10-25, for war-game-ai's hard falling behind: the user's 4fd7b823, hard sat at home and
+  # built no defences after losing 91 soldiers at the user's main city): the turtle, out after beating off a big
+  # wave at home (--crush), town trips as the push's, every town governed (--early-towns 6), its gathering of food,
+  # wood and gold plus 30% in equal shares (--bonus; else it never gets ahead of hard), against hard
+  # only, games up to 90 minutes, both maps, seeds 1-40 in four jobs each. What hard does in the 15 minutes after
+  # the first battle it lost big (crush-watch.ts). Reports only, no threshold; its own jobs.
+  scripted-crush:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
+    name: scripted crush (${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cell:
+          - { group: push-crush, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
+          - { group: push-crush, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
+          - { group: push-crush, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
+          - { group: push-crush, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
+          - { group: push-crush-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
+          - { group: push-crush-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
+          - { group: push-crush-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
+          - { group: push-crush-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
+    env:
+      NAME: crush-hard-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Scripted player (crush) against the hard AI
+        run: |
+          set -o pipefail
+          node src/scripted-games.ts --seeds ${{ matrix.cell.seeds }} ${{ matrix.cell.args }} --difficulty hard --json "${NAME}.json" | tee -a "${GITHUB_STEP_SUMMARY}"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: sim/${{ env.NAME }}.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # push-crush in one table: games won, the first battle hard lost big (when, its losses and ours, the soldiers
+  # then), and in the 15 minutes after it hard's towers and outposts put down, its farmers, its soldiers at home,
+  # its governed towns we attacked (held off or lost), and how long it lasted.
+  scripted-crush-summary:
+    needs: [scripted-crush]
+    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: crush-*
+          path: crush
+          merge-multiple: true
+      - name: The crush group
+        run: |
+          set -o pipefail
+          cat > crush.mjs <<'EOF'
+          import { readdirSync, readFileSync } from "node:fs";
+          const rows = [["push-crush", "困難，固定地圖"], ["push-crush-random", "困難，隨機地圖"]];
+          const med = (l) => (l.length === 0 ? "—" : String([...l].sort((a, b) => a - b)[l.length >> 1]));
+          const min = (t) => Math.round(t / 120) / 10;
+          const out = [
+            "## 大勝後反攻（push-crush，玩家採集 +30%）",
+            "",
+            "| 對手、地圖 | 贏／局數 | 打贏大仗 | 打完在第幾分 | 電腦死／我方死 | 打完的兵 我／電腦 | 電腦新放箭樓／哨所 | 電腦村民 打完→15 分後 | 電腦兵在家 | 治理的城被打／有派兵／守住／被拿下 | 撐了幾分才輸 |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
+          ];
+          for (const [group, name] of rows) {
+            const games = readdirSync("crush")
+              .filter((f) => f.replace(/-\d+-\d+\.json$/, "") === `crush-hard-${group}`)
+              .flatMap((f) => JSON.parse(readFileSync(`crush/${f}`, "utf8")).games);
+            if (games.length === 0) continue;
+            const crushed = games.filter((x) => x.crush !== null);
+            const c = crushed.map((x) => x.crush);
+            const towns = c.flatMap((x) => x.towns);
+            const last = c.filter((x) => x.aiFarmers.length > 15);
+            const home = c.filter((x) => x.home.allSoldierMinutes > 0).map((x) => Math.round((x.home.soldierMinutes * 100) / x.home.allSoldierMinutes));
+            const won = crushed.filter((x) => x.result === "won").map((x) => min(x.endTick - x.crush.end));
+            out.push(
+              `| ${name} | ${games.filter((x) => x.result === "won").length}/${games.length} | ${crushed.length} | ${med(c.map((x) => min(x.end)))} | ${med(c.map((x) => x.aiLost))}／${med(c.map((x) => x.myLost))} | ${med(c.map((x) => x.soldiersAtEnd[0]))}／${med(c.map((x) => x.soldiersAtEnd[1]))}（5 分後 ${med(c.filter((x) => x.mySoldiers.length > 5).map((x) => x.mySoldiers[5]))}／${med(c.filter((x) => x.aiSoldiers.length > 5).map((x) => x.aiSoldiers[5]))}） | ${c.reduce((a, x) => a + x.towers[1], 0)}／${c.reduce((a, x) => a + x.outposts[1], 0)}（有放箭樓 ${c.filter((x) => x.towers[1] > 0).length} 局） | ${med(c.map((x) => x.aiFarmers[0]))}→${med(last.map((x) => x.aiFarmers[15]))}（${last.length} 局） | ${med(home)}% | ${towns.length}／${towns.filter((x) => x.came >= 2).length}／${towns.filter((x) => x.held && !x.open).length}／${towns.filter((x) => !x.held).length} | ${med(won)}（${won.length} 局） |`,
+            );
+          }
+          out.push(
+            "",
+            "打贏大仗：一場仗（雙方的兵接連陣亡，間隔不到 30 秒）電腦的兵死 15 名以上、而且是我方的 2 倍以上，每局只算第一場。之後的 15 分鐘從那場仗打完算起，局先結束的只算到結束。",
+            "箭樓、哨所是 15 分鐘內新放下的合計；兵在家：電腦主城 20 格內的兵·分鐘佔它全部兵·分鐘的比例（中位數）；治理的城被打：我方 3 名以上的兵進到牆外 2 格內，電腦 2 名以上的兵趕到牆外 6 格內算有派兵；撐了幾分：從那場仗打完到我贏（中位數）。其他是中位數。",
+          );
+          console.log(out.join("\n"));
+          EOF
+          node crush.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
+
   # D-086 A3 (war-game-ai, docs/research/2026-10-ai-late.md): the late group with a squad of 10 that goes
   # for the AI's farmers far from its main city from minute 10 (--late --harass 10; the user's 75830947),
   # on both maps, against normal and hard, seeds 1-40 in two jobs each. Reports only, no threshold; its

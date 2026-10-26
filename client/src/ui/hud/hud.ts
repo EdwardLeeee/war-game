@@ -234,6 +234,10 @@ export class Hud {
       holdsTown: () => game.holdsTown(),
       toggleAutoHouse: () => game.toggleAutoHouse(),
       garrison: (town: number) => game.army.garrisonOf(town).length,
+      garrisonGroups: (town: number) => game.garrisonGroups(town),
+      townOut: (town: number, group: number | null | "all") => game.townOut(town, group),
+      groupStationed: (i: number) => game.groupStationed(i),
+      groupOut: (i: number, all: boolean) => game.groupOut(i, all),
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
       notify: (text: string) => game.toast(text),
@@ -337,10 +341,12 @@ export class Hud {
       if (a.advancing) r.style.top = `${this.groupBtns[i].offsetTop}px`;
       const b = this.groupBtns[i];
       b.classList.toggle("alarm", a.alarm);
-      // R6-12: lit while what is selected is this group.
-      if (this.formal) b.classList.toggle("is-active", g.saved > 0 && this.isSelected(g.ids));
+      // R6-12: lit while what is selected is this group (what its button selects: not those stationed in towns).
+      if (this.formal) b.classList.toggle("is-active", g.saved > 0 && this.isSelected(this.game.groupMarching(i)));
+      // 現有 counts those stationed in towns, still the group's (ceo 2026-10-26: 5/5); 駐N on its corner says how many.
       const count = a.alarm && a.base !== null ? `剩 ${a.present}/${a.base}` : `${this.alive(g.ids).length}/${g.saved}`;
-      const text = g.saved > 0 || a.alarm ? `${i + 1}·${count}` : `${i + 1}`;
+      const away = this.game.groupStationedCount(i);
+      const text = `${g.saved > 0 || a.alarm ? `${i + 1}·${count}` : `${i + 1}`}${away > 0 ? `駐${away}` : ""}`;
       if (b.textContent === text) continue;
       const empty = g.saved === 0 && !a.alarm;
       if (this.formal) b.classList.toggle("empty", empty);
@@ -354,6 +360,7 @@ export class Hud {
       if (empty) continue;
       el("span", b, "group-dot", "·");
       el("span", b, this.formal ? "sub group-count" : "group-count", count);
+      if (away > 0) el("span", b, "group-away", `駐${away}`);
     }
     this.info.update();
     this.cmds.update();
@@ -954,7 +961,8 @@ export class Hud {
     const keeps = el("div", card, "keep-row");
     if (!once) this.keepStepper(keeps, "搶", town, keep.plunder, (n) => (keep.plunder = n));
     this.keepStepper(keeps, "治理", town, keep.govern, (n) => (keep.govern = n));
-    el("p", card, "small", "留守的兵改成堅守，不跟「全軍」走，也會離開原本的編隊。");
+    // Still their groups' (the user 2026-10-26): 出城歸隊 brings them back.
+    el("p", card, "small", "留守的兵改成堅守，不跟「全軍」走；還算原本的編隊，軍團畫面按「出城歸隊」就回來。");
     btn(card, "稍後再決定（點城鎮也能選）", () => this.closeDialog(), "secondary later");
   }
 

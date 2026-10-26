@@ -1,7 +1,7 @@
 // 駐軍 (the user 2026-10-25: 「我是指說軍團選項，可以駐軍在都市裡面」; ceo's spec) on the fake world with
 // walls (?walls=1): a group's soldiers, from 軍團畫面, are sent to stay in a town we hold: 駐軍, then a
-// tap on the town. A town not ours says why. They walk in (移動), become its 留守 (out of the group,
-// 全軍 without them, 堅守), and the ranged go up on its walls once in. The pictures for the user.
+// tap on the town. A town not ours says why. They walk in (移動), become its 留守 (still the group's,
+// the user 2026-10-26; 全軍 without them, 堅守), and the ranged go up on its walls once in. The pictures for the user.
 
 import { expect, type Page, test } from "@playwright/test";
 import { armyButton, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
@@ -28,7 +28,7 @@ async function ownIds(page: Page, type: number, n: number): Promise<number[]> {
   return (await units(page)).filter((u) => u.owner === me && u.type === type).map((u) => u.id).sort((a, b) => a - b).slice(0, n);
 }
 
-test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，兵走進去留守（離開軍團、全軍不含、堅守），遠程兵上城牆；點別人的城說原因", async ({ page }, info) => {
+test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，兵走進去留守（還算原本的編隊、全軍不含、堅守），遠程兵上城牆；點別人的城說原因", async ({ page }, info) => {
   // CI's Chromium runs the fake world at a few steps a second: the walk in takes a while.
   test.setTimeout(240_000);
   const check = watchErrors(page);
@@ -79,8 +79,9 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   const walk = (await sent(page)).filter((c) => c.auto !== true && c.c === "retreat").at(-1);
   expect(walk).toMatchObject({ u: ids, x: OUR_TOWN.x, y: OUR_TOWN.y });
   expect(await page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], OUR_TOWN.id)).toEqual(ids);
-  // Out of group 1, which fills up again by itself (自動補兵: here the soldiers in no group).
-  expect((await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0].some((id) => ids.includes(id))).toBe(false);
+  // Still group 1's (the user 2026-10-26), 駐5 on its button: nobody pulled in to replace them.
+  expect([...(await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0]].sort((a, b) => a - b)).toEqual(ids);
+  await expect(page.locator(GROUP_1)).toContainText("駐5");
   await expect(armyButton(page)).not.toHaveText(army ?? "");
   await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id)).every((u) => u.stance === HOLD), { timeout: 60_000 }).toBe(true);
   // Once in: the ranged up on its walls (an order of the screen's), the spearmen inside.

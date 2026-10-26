@@ -111,16 +111,16 @@ test("編隊：一名兵只屬於一個編隊，存進另一個編隊時從舊�
   assert.equal(count(book, 0), "4/4");
 });
 
-test("編隊：移去留守的兵不改「原本」，所以會補回來", () => {
+test("編隊：留守的兵還算編隊的（5/5），自動補兵不補位（使用者 2026-10-26）", () => {
   const w = new World();
   const book = new ArmyBook();
   const town: TownArea = { id: 0, cellX: 30, cellY: 30, radius: 4 };
   book.saveGroup(0, w.many(1, 5, SPEAR, 29, 30));
   assert.deepEqual(book.station(w.army(), town, 1), [2], "the one on the centre");
-  assert.equal(count(book, 0), "4/5");
-  w.add(9, SPEAR, 10, 10);
-  assert.equal(book.enlist(9, SPEAR, w.typeOf), 0);
   assert.equal(count(book, 0), "5/5");
+  assert.deepEqual(book.marching(0), [1, 3, 4, 5], "the button selects the others");
+  w.add(9, SPEAR, 10, 10);
+  assert.equal(book.enlist(9, SPEAR, w.typeOf), null, "not short");
 });
 
 test("編隊自動補兵：新兵訓練出來就出發，不等湊滿，走到編隊現在的中心（不算還沒會合的新兵）（D-054）", () => {

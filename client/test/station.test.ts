@@ -29,19 +29,23 @@ test("到了城裡：遠程兵和法師上城牆，最多城牆的空位數；�
   assert.deepEqual(upOnArrival(arrived, 0), []);
 });
 
-test("駐軍的記帳：記成那座城的留守，離開編隊和別的城的留守；和攻下時設的留守是同一份", () => {
+test("駐軍的記帳：記成那座城的留守，離開別的城的留守，還算原本的編隊（使用者 2026-10-26）；和攻下時設的留守是同一份", () => {
   const army = new ArmyBook();
   army.groups[0].ids = [10, 11, 12];
   army.groups[1].ids = [13];
   army.stationAll(5, [13]);
   // Moved from town 5 to town 7, with two of group 1.
   const left = army.stationAll(7, [10, 11, 13]);
-  assert.deepEqual(left, [2, 0, 0, 0]);
+  assert.deepEqual(left, [2, 0, 0, 0], "newly stationed, each group (its alarm's base)");
   assert.deepEqual(army.garrisonOf(5), []);
   assert.deepEqual(army.garrisonOf(7), [10, 11, 13]);
-  assert.deepEqual(army.groups[0].ids, [12]);
+  assert.deepEqual(army.groups[0].ids, [10, 11, 12]);
+  assert.deepEqual(army.marching(0), [12]);
   assert.equal(army.isGarrisoned(11), true);
   // The player's own 移動 ends it, as for any 留守 (GDD §5).
   assert.deepEqual(army.release([11, 12]), [11]);
   assert.deepEqual(army.garrisonOf(7), [10, 13]);
+  // It stays in its group and goes where he sent it (not led back).
+  assert.deepEqual(army.groups[0].ids, [10, 11, 12]);
+  assert.deepEqual(army.groups[0].recruits, []);
 });
