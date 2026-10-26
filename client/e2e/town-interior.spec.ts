@@ -33,7 +33,7 @@ async function spearmen(page: Page): Promise<number[]> {
   return (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === SPEARMAN).map((u) => u.id).sort((a, b) => a - b);
 }
 
-test("城內擺設（R8-36 B）：畫出來，小屋的旗子是城鎮擁有者的顏色；蓋了建築的格子上不畫；城鎮變廢墟就不畫", async ({ page }, info) => {
+test("城內擺設（R8-36 B）：畫出來，小屋的旗子是城鎮擁有者的顏色；蓋了建築的格子上不畫；城鎮變廢墟就改畫燒毀版（R8-39）", async ({ page }, info) => {
   const check = watchErrors(page);
   test.skip(!(await start(page)), "art.lock 的城牆還不是 war-game castle 2（art-v6 之前）");
   const all = await decor(page);
@@ -49,10 +49,14 @@ test("城內擺設（R8-36 B）：畫出來，小屋的旗子是城鎮擁有者�
   await page.evaluate(([x, y, t]) => window.__proto?.game?.send({ c: "build", u: [], type: t, x, y }), [hx, hy, HOUSE] as const);
   await expect.poll(async () => (await decor(page)).find((d) => same(d, hut))?.leftOut, { timeout: 30_000 }).toBe(true);
   expect((await decor(page)).find((d) => same(d, hut))?.shown).toBe(false);
-  // The neutral town in ruins: none of its pieces.
+  // The neutral town in ruins: its pieces burnt (art-v6.3's decor_ruin, R8-39), none of a flag.
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   await page.evaluate(([t, by]) => window.__proto?.game?.inject({ k: "town_plundered", town: t, by, food: 0, gold: 0, crystal: 0 }), [NEUTRAL_TOWN.id, me] as const);
-  await expect.poll(async () => (await decor(page)).filter((d) => d.town === NEUTRAL_TOWN.id).every((d) => d.leftOut && !d.shown), { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => (await decor(page)).filter((d) => d.town === NEUTRAL_TOWN.id).every((d) => d.burnt && !d.leftOut), { timeout: 30_000 }).toBe(true);
+  expect((await decor(page)).filter((d) => d.town === NEUTRAL_TOWN.id && d.shown).length).toBeGreaterThan(0);
+  await centre(page, NEUTRAL_TOWN.x, NEUTRAL_TOWN.y, 1.2);
+  await page.waitForTimeout(500);
+  await shot(page, info, "town-interior-ruins-burnt");
   check();
 });
 

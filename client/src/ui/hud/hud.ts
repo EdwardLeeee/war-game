@@ -231,8 +231,16 @@ export class Hud {
       villagersPaused: () => game.autoArmy.villagersPaused,
       toggleVillagers: () => game.toggleVillagers(),
       autoHouseOn: () => game.autoHouseOn(),
+      holdsTown: () => game.holdsTown(),
       toggleAutoHouse: () => game.toggleAutoHouse(),
       garrison: (town: number) => game.army.garrisonOf(town).length,
+      garrisonGroups: (town: number) => game.garrisonGroups(town),
+      townOut: (town: number, group: number | null | "all") => game.townOut(town, group),
+      outpostGroups: (building: number) => game.outpostGroups(building),
+      outpostOut: (building: number, group: number) => game.outpostOut(building, group),
+      groupStationed: (i: number) => game.groupStationed(i),
+      groupHidingLine: (i: number) => game.groupHidingLine(i),
+      groupOut: (i: number, all: boolean) => game.groupOut(i, all),
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
       notify: (text: string) => game.toast(text),
@@ -336,10 +344,14 @@ export class Hud {
       if (a.advancing) r.style.top = `${this.groupBtns[i].offsetTop}px`;
       const b = this.groupBtns[i];
       b.classList.toggle("alarm", a.alarm);
-      // R6-12: lit while what is selected is this group.
-      if (this.formal) b.classList.toggle("is-active", g.saved > 0 && this.isSelected(g.ids));
+      // R6-12: lit while what is selected is this group (what its button selects: not those stationed in towns).
+      if (this.formal) b.classList.toggle("is-active", g.saved > 0 && this.isSelected(this.game.groupMarching(i)));
+      // 現有 counts those stationed in towns or at outposts and those hiding, still the group's (ceo
+      // 2026-10-26: 5/5); 駐N and 躲N on its top edge say how many (the user: 「分開顯示」).
       const count = a.alarm && a.base !== null ? `剩 ${a.present}/${a.base}` : `${this.alive(g.ids).length}/${g.saved}`;
-      const text = g.saved > 0 || a.alarm ? `${i + 1}·${count}` : `${i + 1}`;
+      const away = this.game.groupStationedCount(i);
+      const hid = this.game.groupHiding(i).length;
+      const text = `${g.saved > 0 || a.alarm ? `${i + 1}·${count}` : `${i + 1}`}${away > 0 ? `駐${away}` : ""}${hid > 0 ? `躲${hid}` : ""}`;
       if (b.textContent === text) continue;
       const empty = g.saved === 0 && !a.alarm;
       if (this.formal) b.classList.toggle("empty", empty);
@@ -353,6 +365,8 @@ export class Hud {
       if (empty) continue;
       el("span", b, "group-dot", "·");
       el("span", b, this.formal ? "sub group-count" : "group-count", count);
+      if (away > 0) el("span", b, "group-away", `駐${away}`);
+      if (hid > 0) el("span", b, "group-away group-hide", `躲${hid}`);
     }
     this.info.update();
     this.cmds.update();
@@ -783,6 +797,15 @@ export class Hud {
         this.tapRecall();
       }, "secondary");
     }
+    // 寫實地面 開／關 (ceo 2026-10-25): the player's, at once, remembered on this device; with the ground loaded only.
+    const ground = this.game.groundSwitch();
+    if (ground !== null) {
+      const b = btn(list, `寫實地面：${ground ? "開" : "關"}`, () => {
+        this.game.toggleGround();
+        this.openMenu();
+      }, "secondary");
+      b.setAttribute("aria-pressed", ground ? "true" : "false");
+    }
     // 介面風格 comes with 正式介面 (ceo 2026-10-19).
     if (this.formal) btn(list, "設定", () => this.openSettings(), "secondary");
     btn(list, "量測與確定性檢查", () => {
@@ -944,7 +967,8 @@ export class Hud {
     const keeps = el("div", card, "keep-row");
     if (!once) this.keepStepper(keeps, "搶", town, keep.plunder, (n) => (keep.plunder = n));
     this.keepStepper(keeps, "治理", town, keep.govern, (n) => (keep.govern = n));
-    el("p", card, "small", "留守的兵改成堅守，不跟「全軍」走，也會離開原本的編隊。");
+    // Still their groups' (the user 2026-10-26): 出城歸隊 brings them back.
+    el("p", card, "small", "留守的兵改成堅守，不跟「全軍」走；還算原本的編隊，軍團畫面按「出城歸隊」就回來。");
     btn(card, "稍後再決定（點城鎮也能選）", () => this.closeDialog(), "secondary later");
   }
 

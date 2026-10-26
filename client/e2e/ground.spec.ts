@@ -7,6 +7,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { openLab, shot, watchErrors } from "./helpers.ts";
 
 const look = (page: Page) => page.evaluate(() => window.__proto?.game?.groundLook() ?? null);
+/** Units with their owner's colour under their feet (寫實地面 only, ceo 2026-10-25). */
+const feet = (page: Page) => page.evaluate(() => window.__proto?.game?.feet() ?? -1);
 
 async function start(page: Page, query: string): Promise<void> {
   await page.goto(`./?test=1&${query}`);
@@ -19,7 +21,10 @@ test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，�
   const check = watchErrors(page);
   await start(page, "watch=1&ai=0&art=x3&ground=real");
   // The water too, drawn by the shader (art-v6; the test page's stand-ins and the development set have its layer).
-  await expect.poll(() => look(page)).toEqual({ real: true, quality: "high", water: true, town: false });
+  // (The towns' ground with art-v6's: tested in town-interior.spec.ts.)
+  await expect.poll(() => look(page)).toMatchObject({ real: true, quality: "high", water: true });
+  // The militia standing in the towns, drawn from the atlases: their colour under their feet.
+  await expect.poll(() => feet(page), { timeout: 30_000 }).toBeGreaterThan(0);
   if (browserName === "chromium") {
     for (const [name, x, y, z] of [
       ["ground-real-river-bridge", 18.5, 59.5, 1.2],
@@ -43,7 +48,7 @@ test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，�
   await expect(line).toBeVisible({ timeout: 30_000 });
   console.log(`[ground ${info.project.name}] ${await line.textContent()}`);
   await lab.getByRole("radio", { name: "低", exact: true }).tap();
-  await expect.poll(() => look(page)).toEqual({ real: true, quality: "low", water: true, town: false });
+  await expect.poll(() => look(page)).toMatchObject({ real: true, quality: "low", water: true });
   await lab.getByRole("button", { name: "關閉" }).tap();
   if (browserName === "chromium") {
     await page.evaluate(() => window.__proto?.game?.centerOn(14, 80, 1.0));
@@ -57,7 +62,36 @@ test("寫實地面：沒有 ?ground=real 照舊畫兩種綠；美術關（沒有
   const check = watchErrors(page);
   await start(page, "watch=1&ai=0&art=x3");
   await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false });
+  expect(await feet(page), "no colour under the feet on the two greens").toBe(0);
   await start(page, "watch=1&ai=0&art=off&ground=real");
   await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false });
+  check();
+});
+
+test("寫實地面開關（ceo 2026-10-25）：選單的「寫實地面：開」按了馬上換回兩種綠、腳下不畫圈；記在這台裝置上，下一局照樣關著；再按就回來", async ({ page }) => {
+  test.setTimeout(180_000);
+  const check = watchErrors(page);
+  await start(page, "watch=1&ai=0&art=x3&ground=real");
+  await expect.poll(() => look(page)).toMatchObject({ real: true });
+  await expect.poll(() => feet(page), { timeout: 30_000 }).toBeGreaterThan(0);
+  const menu = page.getByRole("button", { name: "選單", exact: true });
+  const dialog = page.locator(".dialog");
+  const sw = dialog.getByRole("button", { name: /^寫實地面：/ });
+  await menu.tap();
+  await expect(sw).toHaveText("寫實地面：開");
+  await sw.tap();
+  await expect(sw).toHaveText("寫實地面：關");
+  await expect(sw).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => look(page)).toMatchObject({ real: false });
+  await expect.poll(() => feet(page)).toBe(0);
+  await dialog.getByRole("button", { name: "關閉" }).tap();
+  // Kept on this device: the next game starts with the two greens.
+  await start(page, "watch=1&ai=0&art=x3&ground=real");
+  await menu.tap();
+  await expect(sw).toHaveText("寫實地面：關");
+  expect(await look(page)).toMatchObject({ real: false });
+  await sw.tap();
+  await expect.poll(() => look(page)).toMatchObject({ real: true });
+  await expect.poll(() => feet(page), { timeout: 30_000 }).toBeGreaterThan(0);
   check();
 });

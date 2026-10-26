@@ -1978,7 +1978,7 @@ export class UnitSystem {
     let k = 0;
     for (let j = 0; j < w.units.count; j++) {
       if (u.owner[j] !== p || u.type[j] === UnitType.Farmer || u.action[j] === Action.Garrisoned) continue;
-      if (w.inTown(t, u.x[j] >> CELL_SHIFT, u.y[j] >> CELL_SHIFT) || (onWall(w, j) && w.wallTown[u.wall[j]] === t)) k++;
+      if (w.standsIn(t, j)) k++;
     }
     return k;
   }

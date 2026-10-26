@@ -50,6 +50,7 @@
 | `Stable` 11 | `stable` | 3×3 | 各一套 |
 | `Outpost` 12 | `outpost` | 2×2 | 各一套（art-v5.1 起，D-080；東陸夯土矮牆加紅柱望樓，西陸木柵加木架瞭望台） |
 | `SiegeWorks` 14 | `siege_works` | 3×3 | 各一套（art-v6 起，D-099 的砲坊） |
+| `Market` 15 | `market` | 3×3 | 各一套（art-v6.3 起，D-101 的市場：東陸「市的一角」、西陸「市場十字」，使用者 2026-10-25 核准 R8-38；地基和瓦礫用 3×3 共用的） |
 
 - 占地照 `sim/src/core/rules.ts` 的 `size`（main e78d939 核對過）。
 - 不做：
@@ -577,12 +578,17 @@ client 2026-10-18 同意照這一節做。ceo 同意瓦礫、樹、大城箭樓�
 
 art-v6 所有建築、城牆、資源點、地形換成 R8 寫實的圖（使用者核准 R8-21 到 R8-37）。檔名、圖層、錨點、前後順序照前面各節，下面只列改了的地方。
 
+**art-v6.1（ceo 2026-10-25）**：寫實的圖要在 KEEP 關著時先上線，所以兩種城都放：
+- `castle_<c>.json` 的 `small`、`large`、`large3` 是 D-089 的舊城，和 art-v5.2 逐片相同（牆片、錨點、前緣、格子）。牆片是寫實樣子，多回 4 格石城門 `sw_gate_x`、`sw_gate_y`。城裡沒有地磚，`ground` 是土路（每條大街的中線，出城門 4 格淡出）和踩平的廣場，`decor` 是空的。
+- D-100 的兩種改名 `small_d100`、`large_d100`，內容和 art-v6 的 `small`、`large` 一樣。KEEP 開時用這兩個。
+- `buildings_<c>.json` 補回 `TownTower`（type 9，2×2，`sizes["3"]` 是 3×3），寫實樣子，排在 `Keep` 前面：KEEP 關時取第一個 type 9 就是它。KEEP 開時用名字取 `Keep`。
+
 ### 兵
 - 東陸遠程從弩手 `xbow_e` 改成弓手 `bow_e`（R8 brief：「弓手（新，拿弓）」）。`UnitType.Ranged` 東陸要改認 `bow_e`；art-v6 沒有 `xbow_e`。
 - 槍兵 `spear_e`、長矛兵 `pike_w` 照舊有 `sling`（第 11 節）。
 
 ### 主堡 `Keep`（`BuildingType` 9）
-- 取代大城箭樓 `TownTower`，KEEP 開關在 art-v6 同一版打開（core、ceo 2026-10-23）。art-v6 沒有 `town_tower` 和 `sizes`。
+- KEEP 開時取代大城箭樓 `TownTower`（core、ceo 2026-10-23）。art-v6 沒有 `town_tower` 和 `sizes`，art-v6.1 補回（上面）。
 - 占地 3×3，在城鎮中心那一格的 |dx|、|dy| ≤ 1。
 - `states`：`done`、`damaged`、`rubble`、`repair`。
   - `damaged`：血量一半以下。
@@ -595,7 +601,7 @@ art-v6 所有建築、城牆、資源點、地形換成 R8 寫實的圖（使用
 - 收到 `shot` 事件時，從離目標近的那一個點射出 `effects.json` 的 `arrow`（使用者 2026-10-23 選 R8-35 B「真的箭」，不閃）。弓手、長弓兵在攻擊的 hit 格放箭，民兵在 `sling` 的 hit 格丟 `sling_stone`。飛法寫在 `effects.json` 和 `design/production/common/effects.py` 開頭。
 
 ### 城牆 `castle_<c>.json` 改成 `war-game castle 2`
-- **格局**：只有 `small`、`large`，跟著 D-100 的 `design/b1/castle-layout.json`（core 的同一份）。沒有 `large3`。
+- **格局**：art-v6 只有 `small`、`large`，跟著 D-100 的 `design/b1/castle-layout.json`（core 的同一份），沒有 `large3`。art-v6.1 起這兩個叫 `small_d100`、`large_d100`，舊名放回 D-089 的城（上面）。
 
 | 配置 | 牆 | 牆以內 | 城門 |
 |---|---|---|---|
@@ -629,7 +635,8 @@ art-v6 所有建築、城牆、資源點、地形換成 R8 寫實的圖（使用
   - 只是畫面：不在模擬裡、不擋路（兵直接穿過去）、點不到。
   - **蓋了建築就不畫**：玩家在 `cells` 任何一格上蓋了建築（含施工中），那個擺設就不畫，地上照樣是踩平的土（世紀帝國 DE 的做法）。
   - 一張圖，沒有狀態，有影子。小屋 `hut_a`、`hut_b` 屋角有一面小三角旗，在 `team` 表裡，玩家色層照第 11 節乘上擁有者的顏色；其他擺設沒有玩家色。
-  - 擺設沒有廢墟的圖：城鎮變廢墟時建議照舊畫，小旗用中立的米色。
+  - 城鎮變廢墟時不畫擺設（ceo 2026-10-24：完好的房子放在被洗劫的城鎮裡看起來不對）。
+  - art-v6.3 起（使用者 2026-10-25 核准 R8-39，格式和 client 2026-10-25 談定）：`decor_ruin` 和 `decor` 同樣的 key，值是燒毀的影格（`decor_<piece>_<c>_ruin`，在 `frames`、`shadows`，沒有玩家色，都在 0.8 公尺以下）。城鎮變廢墟時照原本的 `at`、`front`、`cells` 改畫這一張，沒有對應的就不畫；蓋了建築照舊不畫；城鎮恢復後畫回 `decor`。format 不升，還是 `war-game castle 2`。
 - **`ground`（城裡的地）**：`kind` 是 `lane`（城門到主堡的土路，門外 4 格淡出）或 `trampled`（主堡外一圈、擺設底下和周圍踩平的土），`w` 是強度 0–1。
   - 交給地面著色器：`ground.json` 的 `rules.town`，`layers` 說兩種各用哪一層（現在都是 `yard`，夯實的土）。
   - `soft_m`、`blur_m`、`edge_m` 是邊緣怎麼淡開，算法和 `design/r8/common/ground_r8.py` 的 `town_weights` 一樣。

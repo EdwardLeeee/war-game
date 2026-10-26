@@ -789,6 +789,19 @@ export class World {
     return dx >= c.x0 && dx <= c.x1 && dy >= c.y0 && dy <= c.y1;
   }
 
+  /**
+   * Does the unit in slot s stand in town t: inside its walls (D-089), or on one of them (D-096)? What
+   * holds a town (towns.ts), its garrison as the screen gets it (fog.ts) and its gates' extra arrows.
+   */
+  standsIn(t: number, s: number): boolean {
+    const u = this.units.col;
+    const x = u.x[s] >> CELL_SHIFT;
+    const y = u.y[s] >> CELL_SHIFT;
+    if (this.inTown(t, x, y)) return true;
+    const wall = u.wall[s];
+    return wall >= 0 && this.wallTown[wall] === t && y * this.size + x === wall;
+  }
+
   /** Is cell (cellX, cellY) within `reach` cells (Chebyshev) of what lies inside town t's walls? */
   nearTown(t: number, cellX: number, cellY: number, reach: number): boolean {
     const c = this.castles[t].inside;

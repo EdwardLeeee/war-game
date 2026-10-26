@@ -139,22 +139,23 @@ export async function loadUnitArt(
     resident.bytes += t.source.pixelWidth * t.source.pixelHeight * 4;
     return t;
   };
-  const load = async (list: string[]): Promise<Texture[]> => {
-    const got = await Promise.all(list.map(async (u) => settle(await page(u, times))));
+  const load = async (list: string[], recorder: LoadRecorder | null = times): Promise<Texture[]> => {
+    const got = await Promise.all(list.map(async (u) => settle(await page(u, recorder))));
     all.push(...got);
     return got;
   };
-  const loadAtlas = async (name: string): Promise<void> => {
+  /** `recorder`: the start's load times; later loads (addAtlases) are not the start's. */
+  const loadAtlas = async (name: string, recorder: LoadRecorder | null = times): Promise<void> => {
     const dir = `${base}units/${name}/`;
-    const a = parseAtlas(await json(`${dir}${name}.json`, times));
+    const a = parseAtlas(await json(`${dir}${name}.json`, recorder));
     for (const layer of LAYERS) {
       const files = PAGES[layer](a);
-      pages.set(`${name}|${layer}`, await load(files.map((f) => `${dir}${f}`)));
+      pages.set(`${name}|${layer}`, await load(files.map((f) => `${dir}${f}`), recorder));
     }
     // Known once its pages are in: drawn from it from then on.
     atlases.set(name, a);
   };
-  await Promise.all(names.map(loadAtlas));
+  await Promise.all(names.map((name) => loadAtlas(name)));
   let effects: EffectsJson | null = null;
   let effectPages: Texture[] = [];
   try {
@@ -303,7 +304,7 @@ export async function loadUnitArt(
         more
           .filter((name) => !atlases.has(name))
           .map((name) =>
-            loadAtlas(name).catch((err: unknown) => {
+            loadAtlas(name, null).catch((err: unknown) => {
               console.warn(`art: ${name}: ${err instanceof Error ? err.message : String(err)}`);
             }),
           ),

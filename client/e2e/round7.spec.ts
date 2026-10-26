@@ -277,7 +277,7 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
   await shot(page, info, "d080-call-city-full");
 });
 
-test("躲著的兵（D-083）：躲進去就離開編隊、目標不變，按鈕少了他們；只選躲著的兵時說明怎麼叫出來；全軍、全軍撤退不含他們；出來以後不在編隊，自動補兵挑別的兵、不把他們拉回去，全軍又算到他們", async ({ page }, info) => {
+test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去還算編隊的、目標不變、不補人，按鈕寫躲N、不選他們，軍團畫面寫躲著；只選躲著的兵時說明怎麼叫出來；全軍、全軍撤退不含他們；全部出來以後走回編隊，全軍又算到他們", async ({ page }, info) => {
   await start(page);
   const spear = await ownIds(page, [1]);
   const ranged = await ownIds(page, [2]);
@@ -285,25 +285,29 @@ test("躲著的兵（D-083）：躲進去就離開編隊、目標不變，按鈕
   expect(ranged.length).toBeGreaterThanOrEqual(4);
   const hiding = ranged.slice(0, 2);
   const group = [...spear, ...hiding].sort((a, b) => a - b);
+  // The spearmen away from the main city, so that those coming out have a walk back.
+  await place(page, spear, spear.map((_, k) => ({ x: 20 + (k % 4), y: 70 + Math.floor(k / 4) })));
   await selectForCommands(page, group);
   await saveGroup(page, GROUP_1);
   const groupInfo = () => page.evaluate(() => (window.__proto?.game?.groupInfo() ?? [])[0]);
   const groupIds = async () => [...((await groupInfo())?.ids ?? [])].sort((a, b) => a - b);
   const want = (await groupInfo())?.want;
-  // 自動補兵 off first, so that the button shows them gone.
-  const sw = page.locator(".sel-info").getByRole("button", { name: /^自動補兵：/ });
-  await sw.tap();
-  await expect(sw).toHaveText("自動補兵：關");
   await hideInCity(page, hiding);
-  // Out of the group, which still wants them: the button reads short.
-  await expect.poll(groupIds).toEqual(spear);
+  // Still the group's, which wants them all the same: 躲2 on its button, nobody pulled in (自動補兵 on).
+  await expect(page.locator(GROUP_1)).toContainText("躲2", TICKS);
+  await expect(page.locator(GROUP_1)).toContainText(`1·${group.length}/${group.length}`);
   expect((await groupInfo())?.want).toEqual(want);
-  await expect(page.locator(GROUP_1)).toHaveText(`1·${spear.length}/${group.length}`);
+  await page.waitForTimeout(1000);
+  expect(await groupIds()).toEqual(group);
+  // Its button selects those outside; 軍團畫面 says where the others are.
+  await tapOn(page, GROUP_1);
+  await expect.poll(async () => [...((await selection(page))?.units ?? [])].sort((a, b) => a - b)).toEqual(spear);
+  await expect(page.locator(".sel-info")).toContainText("躲著：主城 2 名");
+  await shot(page, info, "d083-group-while-hiding");
   // The main city selected, with how many hide in it, for the picture.
   await centre(page, MAIN_CITY.x + 8, MAIN_CITY.y - 2);
   await tap(page, await at(page, { x: MAIN_CITY.x + 1, y: MAIN_CITY.y + 1 }));
   await expect(page.locator(".sel-info")).toContainText(`躲了 ${hiding.length} 名士兵`);
-  await expect(toast(page, "自動補兵：關")).toHaveCount(0, { timeout: 10_000 });
   await shot(page, info, "d083-group-after-hiding");
   await centre(page, 22, 71);
   // Only those hiding selected: nothing sent, and how to get them out.
@@ -319,23 +323,17 @@ test("躲著的兵（D-083）：躲進去就離開編隊、目標不變，按鈕
   await expect(armyButton(page)).toHaveText(`全軍 ${outside.length}`);
   await armyButton(page).tap();
   await expect.poll(() => selection(page)).toEqual({ units: outside, building: null });
-  // 全部出來, then 自動補兵 on: the group, short, takes other ranged units, not those who hid
-  // (the first by id, whom it would take otherwise).
+  // 全部出來: they walk back to group 1, where the spearmen stand (an order of the screen's).
+  await page.evaluate(() => window.__proto?.game?.select([]));
   const city = await mainCityId(page);
   await page.evaluate((b) => window.__proto?.game?.send({ c: "leave", building: b }), city);
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(0);
-  await tapOn(page, GROUP_1);
-  await sw.tap();
-  await expect(sw).toHaveText("自動補兵：開");
-  await expect.poll(async () => (await groupIds()).length, TICKS).toBe(group.length);
-  const now = await groupIds();
-  for (const id of hiding) expect(now).not.toContain(id);
-  expect(now).toEqual([...spear, ...ranged.slice(2, 4)].sort((a, b) => a - b));
-  // Nothing more after a while: 自動補兵 checks every snapshot.
-  await page.waitForTimeout(1000);
-  expect(await groupIds()).toEqual(now);
+  const back = async () => (await sent(page)).filter((c) => c.auto === true && c.c === "move" && hiding.every((id) => (c.u as number[]).includes(id))).at(-1);
+  await expect.poll(back, TICKS).toBeDefined();
+  expect(Math.hypot(((await back())?.x as number) - 21.5, ((await back())?.y as number) - 70.5)).toBeLessThan(3);
+  await expect(page.locator(GROUP_1)).not.toContainText("躲");
+  expect(await groupIds()).toEqual(group);
   // 全軍 and 全軍撤退 count them again.
-  await page.evaluate(() => window.__proto?.game?.select([]));
   const all = [...spear, ...ranged, ...mages].sort((a, b) => a - b);
   await expect(armyButton(page)).toHaveText(`全軍 ${all.length}`);
   await page.getByRole("button", { name: "全軍撤退" }).tap();
@@ -483,9 +481,10 @@ for (const viewport of [null, FULL_SCREEN]) {
     await expect(page.locator(".cmds").getByRole("button", { name: /^躲進去/ })).toBeVisible();
     await expect(page.locator(".sel-note")).toBeVisible();
     await checkLayout(page);
-    // 攻擊、移動、堅守、停止, then 整理隊形, 隊形 (two columns wide) and 躲進去 (D-095: no mage buttons).
+    // 攻擊、移動、堅守、停止, then 整理隊形, 隊形 (two columns wide) and 躲進去 (D-095: no mage buttons),
+    // then 駐軍 (2026-10-25: we hold the big city here); checkLayout: nothing overlaps.
     const rows = new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y)));
-    expect(rows.size, "two rows of commands").toBe(2);
+    expect(rows.size, "three rows of commands").toBe(3);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     await shot(page, info, `r7-layout-army-${width}x${height}`);
     await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);

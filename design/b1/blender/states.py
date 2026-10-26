@@ -196,7 +196,8 @@ def footprint(kind):
         import arch_r8
         import arch2_r8
         import keep_r8
-        foot = {**arch_r8.FOOTPRINT, **arch2_r8.FOOTPRINT, **keep_r8.FOOTPRINT}[kind]
+        import market_r8
+        foot = {**arch_r8.FOOTPRINT, **arch2_r8.FOOTPRINT, **keep_r8.FOOTPRINT, **market_r8.FOOTPRINT}[kind]
     fx, fy = foot
     return fx * kit.CELL, fy * kit.CELL
 

@@ -176,8 +176,8 @@ export function writeTownRow(w: World, t: number, out: Int32Array, o: number): v
   for (let s = 0; s < w.units.count; s++) {
     if (u.home[s] === t && u.owner[s] === NEUTRAL) militia++;
     if (u.owner[s] === w.townOwner[t] && u.owner[s] !== NEUTRAL && u.type[s] !== UnitType.Farmer && u.action[s] !== Action.Garrisoned) {
-      // Inside the walls (D-089).
-      if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT)) garrison++;
+      // Inside the walls or on them, as what holds the town (towns.ts).
+      if (w.standsIn(t, s)) garrison++;
     }
   }
   out[o + TownField.garrison] = garrison;

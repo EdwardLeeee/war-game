@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
+import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
@@ -10,11 +10,11 @@ import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../s
 import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UnitType } from "../src/protocol.ts";
+import { Action, type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
 import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
-import { emptyGame, put, slotOf, switchedOff } from "./helpers.ts";
+import { emptyGame, put, slotOf, switchedOff, switchedOn } from "./helpers.ts";
 import { KEEP } from "../src/core/keep.ts";
 import { playGame } from "../src/ai/learn/play.ts";
 import { runAll } from "../src/ai/learn/pool.ts";
@@ -1708,7 +1708,8 @@ test("D-083 (c): with the population rules on and food and gold piling up, hard 
       }
       w.res.set([700, 300, 400, 0], 0);
       g.fog.update(w);
-      const b = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "build") as { type: BuildingType } | undefined;
+      // D-086 A6's stable for piled gold aside (goldCavalry): this is about barracks and ranges.
+      const b = hardAi(g, { dodge: false, goldCavalry: 0 }).think(buildView(g, 0)).find((c) => c.c === "build") as { type: BuildingType } | undefined;
       return b?.type;
     });
   const on = built(true);
@@ -1997,11 +1998,12 @@ function richHard(res: number[], plan: Partial<HardPlan>, opt: { stable?: boolea
 const trains = (out: CommandBody[], type: UnitType) => out.some((c) => c.c === "train" && c.type === type);
 
 test("D-086 A (plan.cavalry): with wood short and food and gold piling up, hard puts up a stable and trains cavalry; 0, as before", () => {
-  const built = (cavalry: number) => (richHard([500, 200, 300, 0], { cavalry }).find((c) => c.c === "build") as { type: BuildingType } | undefined)?.type;
+  // D-086 A6's cavalry for piled gold aside (goldCavalry).
+  const built = (cavalry: number) => (richHard([500, 200, 300, 0], { cavalry, goldCavalry: 0 }).find((c) => c.c === "build") as { type: BuildingType } | undefined)?.type;
   assert.equal(built(25), BuildingType.Stable, "rich: a stable");
   assert.notEqual(built(0), BuildingType.Stable, "off: no stable");
   assert.ok(trains(richHard([700, 20, 300, 0], { cavalry: 25 }, { stable: true }), UnitType.Cavalry), "wood short: cavalry");
-  assert.ok(!trains(richHard([700, 20, 300, 0], { cavalry: 0 }, { stable: true }), UnitType.Cavalry), "off: no cavalry");
+  assert.ok(!trains(richHard([700, 20, 300, 0], { cavalry: 0, goldCavalry: 0 }, { stable: true }), UnitType.Cavalry), "off: no cavalry");
   assert.ok(!trains(richHard([700, 300, 300, 0], { cavalry: 25 }, { stable: true }), UnitType.Cavalry), "wood enough: spearmen and ranged as before");
 });
 
@@ -2100,24 +2102,37 @@ test(
     // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
 
     // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
-    const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
-    const g = r.game;
-    const m = g.w.map;
-    const plan = planFor("push", "h1", "close");
-    Object.assign(plan, { farmers: 24, production: 4, spearShare: 35, choice: "govern", corners: true, townAt: 10, homeTowers: 2, cavalryShare: 15, pushAt: 50, counterAt: 50, pushAhead: true, harass: 10 });
-    const player = createScriptedPlayer(0, { map: mapInfo(m, 0), rules: rules(m), frame: m.frames[0] }, plan);
-    const sent: { at: number; json: string }[] = [];
-    let seen = 0;
-    let seq = 0;
-    while (!r.over && g.tick < 20 * 1200) {
-      if (g.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ } as never);
-      r.tick();
-      for (; seen < g.log.length; seen++) if (g.log[seen].p === 1) sent.push({ at: seen, json: JSON.stringify(g.log[seen]) });
-    }
-    const stats = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]!.stats!();
-    assert.ok(stats.farmersHid > 0, "its farmers were sent home");
-    const changed = sent.filter((x) => JSON.stringify(g.log[x.at]) !== x.json);
-    assert.deepEqual(changed.map((x) => x.json).slice(0, 2), [], "orders as sent");
+    // That game is hard's without D-086 A6 (with it, its farmers are not hunted far from home there); with it on, the orders
+    // are checked too.
+    const play = (a6: boolean) => {
+      const was = { holdTowns: HARD.holdTowns, econBehind: HARD.econBehind, goldCavalry: HARD.goldCavalry, crystalStop: HARD.crystalStop, woodShift: HARD.woodShift };
+      if (!a6) Object.assign(HARD, { holdTowns: false, econBehind: false, goldCavalry: 0, crystalStop: false, woodShift: false });
+      try {
+        const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
+        const g = r.game;
+        const m = g.w.map;
+        const plan = planFor("push", "h1", "close");
+        Object.assign(plan, { farmers: 24, production: 4, spearShare: 35, choice: "govern", corners: true, townAt: 10, homeTowers: 2, cavalryShare: 15, pushAt: 50, counterAt: 50, pushAhead: true, harass: 10 });
+        const player = createScriptedPlayer(0, { map: mapInfo(m, 0), rules: rules(m), frame: m.frames[0] }, plan);
+        const sent: { at: number; json: string }[] = [];
+        let seen = 0;
+        let seq = 0;
+        while (!r.over && g.tick < 20 * 1200) {
+          if (g.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ } as never);
+          r.tick();
+          for (; seen < g.log.length; seen++) if (g.log[seen].p === 1) sent.push({ at: seen, json: JSON.stringify(g.log[seen]) });
+        }
+        const stats = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]!.stats!();
+        const changed = sent.filter((x) => JSON.stringify(g.log[x.at]) !== x.json);
+        return { hid: stats.farmersHid, changed: changed.map((x) => x.json).slice(0, 2) };
+      } finally {
+        Object.assign(HARD, was);
+      }
+    };
+    const before = play(false);
+    assert.ok(before.hid > 0, "its farmers were sent home");
+    assert.deepEqual(before.changed, [], "orders as sent");
+    assert.deepEqual(play(true).changed, [], "orders as sent, with D-086 A6");
   }),
 );
 
@@ -2412,7 +2427,7 @@ test("D-086 A4 (plan.mineMove): the gold by its mine gone, hard puts up another 
     }
     put(g, 0, UnitType.Spearman, w.nodeX[next] + 2, w.nodeY[next] + 2);
     g.fog.update(w);
-    const out = hardAi(g, { dodge: false, mineMove }).think(buildView(g, 0));
+    const out = hardAi(g, { dodge: false, mineMove, goldCavalry: 0 }).think(buildView(g, 0));
     return out.some((c) => c.c === "build" && c.type === BuildingType.Mine);
   };
   assert.equal(built(true), true, "on: a new mine");
@@ -2658,9 +2673,455 @@ test("D-096 (plan.lumberMove): the trees by its lumber camp gone, hard puts up a
     for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.Tree && w.nodeAmount[i] > 0 && (next < 0 || d2(i) < d2(next))) next = i;
     put(g, 0, UnitType.Spearman, w.nodeX[next] + 2, w.nodeY[next] + 2);
     g.fog.update(w);
-    const out = hardAi(g, { dodge: false, lumberMove }).think(buildView(g, 0));
+    const out = hardAi(g, { dodge: false, lumberMove, goldCavalry: 0 }).think(buildView(g, 0));
     return out.some((c) => c.c === "build" && c.type === BuildingType.LumberCamp);
   };
   assert.equal(built(true), true, "on: another lumber camp");
   assert.equal(built(false), false, "off: none, as before");
+});
+
+// --- D-086 A5: hard that stopped attacking after failed waves (the user's f331df3c) --------------------------------
+
+test("D-086 A5 (plan.cityForts): with arrow towers by the enemy's main city and few enemy soldiers in sight, hard does not march; off, as before", () => {
+  const march = (cityForts: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 4800;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 40; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 8), s0.cellY - 6 - Math.trunc(k / 8));
+    // Eight towers round the enemy's main city, three soldiers in each, seen by a farmer of its own.
+    for (let k = 0; k < 8; k++) {
+      const id = w.addBuilding(1, BuildingType.ArrowTower, s1.cellX - 6 + 3 * (k % 4), s1.cellY + 8 + 3 * Math.trunc(k / 4), 600, 1000);
+      w.buildings.col.soldiers[w.building(id)] = 3;
+    }
+    put(g, 0, UnitType.Farmer, s1.cellX - 4, s1.cellY + 13);
+    put(g, 0, UnitType.Farmer, s1.cellX + 1, s1.cellY + 13);
+    g.fog.update(w);
+    assert.equal(enemyForts(buildView(g, 0), 0, rules()).length, 8, "it sees the towers");
+    const out = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0, cityAgain: 0, cityForts }).think(buildView(g, 0));
+    return out.some((c) => c.c === "move" && c.u.length === 40 && c.x === s1.cellX && c.y === s1.cellY);
+  };
+  assert.equal(march(false), true, "off: on to the enemy base");
+  assert.equal(march(true), false, "on: not into the towers");
+});
+
+test("D-086 A5 (plan.foeMemory): what hard believes of the enemy comes only from soldiers it saw; enemy soldiers in the fog change nothing", () => {
+  const believed = (hidden: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 10; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 5), s0.cellY - 6 - Math.trunc(k / 5));
+    // Six enemy spearmen in sight by its army; `hidden` more by their own main city, in the fog.
+    for (let k = 0; k < 6; k++) put(g, 1, UnitType.Spearman, s0.cellX + 6 + k, s0.cellY - 10);
+    for (let k = 0; k < hidden; k++) put(g, 1, UnitType.Spearman, s1.cellX - 4 + (k % 8), s1.cellY + 4 + Math.trunc(k / 8));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, foeMemory: true, foeDecay: 10 }) as unknown as { think: (v: unknown) => unknown; peek: () => Record<string, number> };
+    ai.think(buildView(g, 0));
+    // Those in sight leave; a minute and more on it still remembers them, less 10% a minute.
+    for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 1 && (w.units.col.y[s] >> 10) === s0.cellY - 10) w.units.col.hp[s] = 0;
+    g.step();
+    for (let t = 0; t < 3; t++) {
+      w.tick += 1200;
+      g.fog.update(w);
+      ai.think(buildView(g, 0));
+    }
+    return ai.peek();
+  };
+  const none = believed(0);
+  const many = believed(40);
+  assert.ok(none.believedWorth > 0, "it remembers those it saw");
+  assert.deepEqual(many, none, "the 40 in the fog change nothing");
+});
+
+test("D-086 A5 (plan.cityCap, cityForget): after a march is ground down, cityAgain asks no more than the share it can field, and not after cityForget minutes; off, as before", () => {
+  const again = (plan: Partial<HardPlan>, later: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 48000;
+      put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    const ids: number[] = [];
+    for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6)));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0, cityAgain: 200, ...plan });
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 30 && c.x === s1.cellX && c.y === s1.cellY), "marches");
+    kill(g, ids.slice(0, 20));
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "ground down, it breaks off");
+    // 40 at home now: 133% of the 30 that set out, under cityAgain's 200%.
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 6), s0.cellY - 4 - Math.trunc(k / 6));
+    w.tick += later;
+    g.fog.update(w);
+    return ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length >= 30 && c.x === s1.cellX && c.y === s1.cellY);
+  };
+  assert.equal(again({}, 10), false, "off: 40 of 30 is short of 200%");
+  // The ceiling less its farmers is what it can field: 20% of it is under 40.
+  assert.equal(again({ cityCap: 20 }, 10), true, "cityCap 20: no more than 20% of what it can field");
+  assert.equal(again({ cityForget: 1 }, 10), false, "cityForget 1, 10 ticks on: still held");
+  assert.equal(again({ cityForget: 1 }, 1200), true, "cityForget 1, a minute on: forgotten");
+});
+
+test("D-086 A5 (plan.townSave): at home with a town it could take but for the cost of governing it, hard keeps that cost aside, then goes; off, it spends it", () => {
+  const run = (townSave: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 12 * 1200;
+    // Every town neutral and plundered before (so only to be governed), seen by a farmer of its own.
+    for (const t of w.map.towns) {
+      w.townPlundered[t.id] = 1;
+      put(g, 0, UnitType.Farmer, t.cellX + 3, t.cellY + 3);
+    }
+    w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 8, rules().buildings[BuildingType.Range].hp, 1000);
+    for (let k = 0; k < 6; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 8 + 3 * k, s0.cellY + 6, rules().buildings[BuildingType.House].hp, 1000);
+    for (let k = 0; k < 20; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY + 2 + Math.trunc(k / 5));
+    w.res.set([300, 40, 200, 0], 0);
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, townArmy: 10, bigArmy: 99, pushArmy: 99, peekFirst: 0, townSave });
+    ai.think(buildView(g, 0));
+    w.res.set([300, 40, 200, 0], 0);
+    w.tick += 10;
+    g.fog.update(w);
+    const second = ai.think(buildView(g, 0));
+    // Wood enough to govern a small town now.
+    w.res.set([300, 120, 200, 0], 0);
+    w.tick += 10;
+    g.fog.update(w);
+    const third = ai.think(buildView(g, 0));
+    return {
+      ranged: trains(second, UnitType.Ranged),
+      goes: third.some((c) => c.c === "move" && c.u.length >= 10 && w.map.towns.some((t) => (c.x - t.cellX) ** 2 + (c.y - t.cellY) ** 2 <= 9)),
+    };
+  };
+  const off = run(false);
+  const on = run(true);
+  assert.equal(off.ranged, true, "off: its 40 wood on a ranged unit, as before");
+  assert.equal(on.ranged, false, "on: kept for governing");
+  assert.equal(on.goes, true, "on: it can pay now, it goes");
+});
+
+
+// --- D-100: a keep in every town ---------------------------------------------------------------------------------
+
+test(
+  "D-100 (KEEP_AI.mop, off by default): inside a town with its keep down, the militia left on the walls are told to fight; none in sight, the army walks the walls; off, none",
+  switchedOn(KEEP, () => {
+    const g = new Game({ seed: 1, scenario: "standard" });
+    const w = g.w;
+    const t = w.map.towns.find((x) => x.size === TownSize.Small)!;
+    const r = rules(w.map);
+    // The keep down.
+    for (let s = 0; s < w.buildings.count; s++) if (w.buildings.col.type[s] === BuildingType.Keep && w.buildings.col.town[s] === t.id) w.buildings.col.hp[s] = 0;
+    g.step();
+    // Its militia: all gone but those on its walls.
+    const u = w.units.col;
+    for (let s = 0; s < w.units.count; s++) if (u.type[s] === UnitType.Militia && u.action[s] !== Action.OnWall) u.hp[s] = 0;
+    g.step();
+    const army = Array.from({ length: 6 }, (_, k) => put(g, 0, UnitType.Spearman, t.cellX - 1 + (k % 3), t.cellY + 2 + Math.trunc(k / 3)));
+    g.fog.update(w);
+    const town = { x: t.cellX, y: t.cellY, size: t.size, state: w.townState[t.id], owner: w.townOwner[t.id] };
+    const mine = army.map((id) => ({ id, type: UnitType.Spearman, x: u.x[slotOf(g, id)] >> 10, y: u.y[slotOf(g, id)] >> 10 }));
+    const view = buildView(g, 0);
+    const was = KEEP_AI.mop;
+    KEEP_AI.mop = true;
+    // The militia left in sight (since war-game-core cf6a5c0 those on the walls come down once the keep falls).
+    const left = new Set<number>();
+    for (let k = 0; k < view.units.length; k += UNIT_STRIDE) if (view.units[k + UnitField.type] === UnitType.Militia) left.add(view.units[k + UnitField.id]);
+    const out = mopUpOrders(view, r, 0, town, mine);
+    assert.ok(out !== null && out.length > 0, "orders");
+    if (left.size > 0) assert.ok(out.every((c) => c.c === "attack" && left.has((c as { target: number }).target)), "at the militia in sight");
+    else assert.ok(out.every((c) => c.c === "move"), "none in sight: along the walls");
+    assert.deepEqual(out.flatMap((c) => (c as { u: number[] }).u).sort((a, b) => a - b), [...army].sort((a, b) => a - b), "every soldier");
+    KEEP_AI.mop = false;
+    assert.equal(mopUpOrders(view, r, 0, town, mine), null, "off: none");
+    KEEP_AI.mop = was;
+  }),
+);
+
+test(
+  "D-100: hard against hard on a random map with keeps takes a town by minute 14 (seed 101: none taken all game before war-game-core cf6a5c0)",
+  switchedOn(KEEP, () => {
+    const r = new Runner({ seed: 101, scenario: "standard", ai: [true, true], maxTicks: 36000, difficulty: ["hard", "hard"], map: "random" });
+    const w = r.game.w;
+    let taken = false;
+    while (!r.over && r.game.tick < 14 * 1200 && !taken) {
+      r.tick();
+      for (let t = 0; t < w.townSize.length; t++) if (w.townOwner[t] === 0 || w.townOwner[t] === 1) taken = true;
+    }
+    assert.ok(taken, "a town taken");
+  }),
+);
+
+
+test(
+  "D-100 (KEEP_AI.strength): a town's defence is its keep with its militia (all, as its rules give), or an enemy town's keep and garrison; 0 without keeps",
+  switchedOn(KEEP, () => {
+    const r = rules();
+    const fv = fortValues(r);
+    const small = townDefence(r, fv, 0, { size: TownSize.Small, state: TownState.Neutral, owner: NO_OWNER, needed: 0 }, []);
+    const large = townDefence(r, fv, 0, { size: TownSize.Large, state: TownState.Neutral, owner: NO_OWNER, needed: 0 }, []);
+    assert.ok(small > 0 && large > small, `${small} < ${large}`);
+    const governed = townDefence(r, fv, 0, { size: TownSize.Small, state: TownState.Governed, owner: 1, needed: 3 }, []);
+    const seen = townDefence(r, fv, 0, { size: TownSize.Small, state: TownState.Governed, owner: 1, needed: 3 }, Array.from({ length: 8 }, () => ({ type: UnitType.Spearman })));
+    assert.ok(seen > governed, "the garrison it knows of, more than the minimum");
+    assert.equal(townDefence(r, fv, 0, { size: TownSize.Small, state: TownState.Plundering, owner: 1, needed: 0 }, []), 0, "no keep while plundered");
+  }),
+);
+
+test("D-100 (KEEP_AI.strength): without keeps a town's defence counts nothing (as before)", () => {
+  const r = rules();
+  if (r.features?.keep === true) return;
+  assert.equal(townDefence(r, fortValues(r), 0, { size: TownSize.Small, state: TownState.Neutral, owner: NO_OWNER, needed: 0 }, []), 0);
+});
+
+test(
+  "D-100 (KEEP_AI.strength): hard goes for a small town with a keep only with 1.3 x its keep and militia",
+  switchedOn(KEEP, () => {
+    const goes = (spears: number) => {
+      const g = new Game({ seed: 1, scenario: "standard" });
+      const w = g.w;
+      for (let s = 0; s < w.units.count; s++) if (w.units.col.type[s] !== UnitType.Militia) w.units.col.hp[s] = 0;
+      g.step();
+      w.tick = 10 * 1200;
+      const s0 = w.map.spawns[0];
+      const near = [...w.map.towns].filter((t) => t.size === TownSize.Small).sort((a, b) => (a.cellX - s0.cellX) ** 2 + (a.cellY - s0.cellY) ** 2 - ((b.cellX - s0.cellX) ** 2 + (b.cellY - s0.cellY) ** 2))[0];
+      for (const t of w.map.towns) put(g, 0, UnitType.Farmer, t.cellX + 10, t.cellY + 10);
+      for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
+      g.fog.update(w);
+      const out = hardAi(g, { dodge: false, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 }).think(buildView(g, 0));
+      return out.some((c) => c.c === "move" && c.u.length === spears && (c.x - near.cellX) ** 2 + (c.y - near.cellY) ** 2 <= 9);
+    };
+    assert.equal(goes(5), false, "5 spearmen: not into its keep and militia");
+    assert.equal(goes(8), true, "8: they go");
+  }),
+);
+
+test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
+  const march = (strongPush: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 48000;
+      put(g, 0, UnitType.Farmer, t.cellX + 2, t.cellY + 2);
+    }
+    w.tick = 15 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 6 - Math.trunc(k / 6));
+    // Five enemy spearmen in sight.
+    for (let k = 0; k < 5; k++) put(g, 1, UnitType.Spearman, s0.cellX + 8 + k, s0.cellY - 14);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, pushArmy: 49, townArmy: 99, bigArmy: 99, peekFirst: 0, strongPush }).think(buildView(g, 0));
+    return out.some((c) => c.c === "move" && c.u.length >= 25 && (c.x - s1.cellX) ** 2 + (c.y - s1.cellY) ** 2 <= 20 * 20);
+  };
+  assert.equal(march(0), false, "off: 30 is short of pushArmy 49");
+  assert.equal(march(25), true, "strongPush 25: 30 against 5, it marches");
+});
+
+// --- D-086 A5: behind (the user 2026-10-25: 「你的ai逆風局只會龜縮但又不蓋防禦工事」) ------------------------------------
+
+/** D-086 A5: its base all built (as the mineMove test), `spears` spearmen at home, and `foes` enemy spearmen in sight away from the enemy's side. */
+function behindGame(foes: number, spears = 6): Game {
+  const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    w.tick = 15 * 1200;
+    // Everything else it builds already standing (as the mineMove test), so a tower is what is left.
+    const at = (type: BuildingType, x: number, y: number) => w.addBuilding(0, type, s0.cellX + x, s0.cellY + y, rules().buildings[type].hp, 1000);
+    for (const [t, x, y] of [[BuildingType.Barracks, 4, -8], [BuildingType.Barracks, 8, -8], [BuildingType.Range, 12, -8], [BuildingType.Range, 16, -8], [BuildingType.MageHall, 4, -13], [BuildingType.Granary, -6, -6], [BuildingType.LumberCamp, -10, 2], [BuildingType.Mine, 12, 2]] as [BuildingType, number, number][]) at(t, x, y);
+    for (let k = 0; k < 10; k++) at(BuildingType.Farm, -14 + 3 * (k % 3), -14 + 3 * Math.trunc(k / 3));
+    for (let k = 0; k < 12; k++) at(BuildingType.House, -8 + 3 * (k % 6), 6 + 3 * Math.trunc(k / 6));
+    for (let k = 0; k < 30; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 10), s0.cellY - 2 - Math.trunc(k / 10));
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + k, s0.cellY + 2);
+    // The enemy army away from the enemy's side (the towers go that way, TOWER_SAFE from enemies), in sight of a farmer of its own.
+    const fx = s0.cellX - Math.sign(s1.cellX - s0.cellX) * 4;
+    const fy = s0.cellY - Math.sign(s1.cellY - s0.cellY) * 14;
+    put(g, 0, UnitType.Farmer, fx, fy + Math.sign(s1.cellY - s0.cellY) * 3);
+    for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, fx + (k % 4), fy - Math.trunc(k / 4) * Math.sign(s1.cellY - s0.cellY));
+    w.res.set([700, 600, 600, 0], 0);
+    g.fog.update(w);
+    return g;
+}
+
+test("D-086 A5 (plan.behind): with an enemy army 1.3 x its own in sight, hard saves for arrow towers by its main city; not behind or off, none", () => {
+  const towers = (behind: boolean, foes: number, spears = 6) => {
+    const g = behindGame(foes, spears);
+    const out = hardAi(g, { dodge: false, behind }).think(buildView(g, 0));
+    return out.some((c) => c.c === "build" && c.type === BuildingType.ArrowTower);
+  };
+  assert.equal(towers(true, 16), true, "behind: a tower");
+  assert.equal(towers(true, 2), false, "not behind: none");
+  assert.equal(towers(true, 0, 0), false, "no army on either side (the start): not behind");
+  assert.equal(towers(true, 7, 0), false, "fewer than BEHIND_MIN's worth: not behind");
+  assert.equal(towers(false, 16), false, "off: none, as before");
+});
+
+test("D-086 A5 (plan.behindFail): a march that broke off makes hard behind; with behindFail off, only an enemy army it saw does", () => {
+  const behindAfter = (behindFail: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    for (const t of w.map.towns) {
+      w.townState[t.id] = TownState.Ruins;
+      w.townOwner[t.id] = NO_OWNER;
+      w.townTimer[t.id] = 48000;
+    }
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    const ids: number[] = [];
+    for (let k = 0; k < 30; k++) ids.push(put(g, 0, UnitType.Spearman, s0.cellX + 14 + (k % 6), s0.cellY - 14 - Math.trunc(k / 6)));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0, behind: true, behindFail });
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 30 && c.x === s1.cellX && c.y === s1.cellY), "marches");
+    kill(g, ids.slice(0, 20));
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "ground down, it breaks off");
+    const before = ai.stats?.().behindThinks ?? 0;
+    w.tick += 10;
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    return (ai.stats?.().behindThinks ?? 0) > before;
+  };
+  assert.equal(behindAfter(true), true, "behindFail: behind");
+  assert.equal(behindAfter(false), false, "off: no enemy in sight, not behind");
+});
+
+test("D-086 A5 (plan.behindOutpost): behind, hard builds an outpost by its main city and posts spearmen there; not behind for a while, they come off it; off, none", () => {
+  const think = (behindOutpost: boolean, foes: number, outpost: "none" | "done" | "manned") => {
+    const g = behindGame(foes);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    if (outpost !== "none") {
+      const id = w.addBuilding(0, BuildingType.Outpost, s0.cellX + 10, s0.cellY + 4, rules().buildings[BuildingType.Outpost].hp, 1000);
+      if (outpost === "manned") {
+        const s = slotOf(g, put(g, 0, UnitType.Spearman, s0.cellX + 10, s0.cellY + 6));
+        w.units.col.order[s] = Order.Post;
+        w.units.col.orderTarget[s] = id;
+      }
+      g.fog.update(w);
+    }
+    return hardAi(g, { dodge: false, behind: true, behindOutpost }).think(buildView(g, 0));
+  };
+  const builds = (out: CommandBody[]) => out.some((c) => c.c === "build" && c.type === BuildingType.Outpost);
+  assert.equal(builds(think(true, 16, "none")), true, "behind: an outpost");
+  assert.equal(builds(think(true, 2, "none")), false, "not behind: none");
+  assert.equal(builds(think(false, 16, "none")), false, "off: none, as before");
+  const post = think(true, 16, "done").find((c) => c.c === "post");
+  assert.ok(post !== undefined && post.c === "post" && post.u.length === HARD.behindGuards, "behind: its guards posted");
+  assert.equal(think(true, 2, "manned").some((c) => c.c === "unpost"), true, "not behind: off the outpost");
+  assert.equal(think(true, 16, "manned").some((c) => c.c === "unpost"), false, "behind: they stay");
+});
+
+// --- D-086 A6: towns on even terms, and stock it cannot spend (the user's 9170fab0 and 4fd7b823) ----------------------
+
+test("D-086 A6 (plan.econBehind): its army IDLE_HOME at home, hard goes for a town with an enemy army by it nearly its own; not before, nor off", () => {
+  const goes = (econBehind: boolean, wait: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 15 * 1200;
+    const t = [...w.map.towns].filter((x) => x.size === TownSize.Small).sort((a, b) => (a.cellX - s0.cellX) ** 2 + (a.cellY - s0.cellY) ** 2 - ((b.cellX - s0.cellX) ** 2 + (b.cellY - s0.cellY) ** 2))[0];
+    // The others ruins it sees (unseen towns count as neutral ones).
+    for (const o of w.map.towns) if (o.id !== t.id) {
+      w.townState[o.id] = TownState.Ruins;
+      w.townOwner[o.id] = NO_OWNER;
+      w.townTimer[o.id] = 48000;
+      put(g, 0, UnitType.Farmer, o.cellX, o.cellY);
+    }
+    for (let k = 0; k < 20; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
+    // 17 enemy spearmen by the town (0.85 x its 20), in sight of a farmer of its own.
+    put(g, 0, UnitType.Farmer, t.cellX + t.radius + 4, t.cellY);
+    for (let k = 0; k < 17; k++) put(g, 1, UnitType.Spearman, t.cellX + t.radius + 1 + (k % 3), t.cellY - 3 + Math.trunc(k / 3));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, econBehind, townArmy: 8, bigArmy: 99, pushArmy: 99, peekFirst: 0 });
+    const first = ai.think(buildView(g, 0));
+    w.tick += wait;
+    g.fog.update(w);
+    const out = [...first, ...ai.think(buildView(g, 0))];
+    return out.some((c) => c.c === "move" && c.u.length >= 15 && c.x === t.cellX && c.y === t.cellY);
+  };
+  assert.equal(goes(true, 3 * 1200 + 10), true, "idle at home 3 minutes: on even terms");
+  assert.equal(goes(true, 10), false, "not yet idle: as before (0.8 x)");
+  assert.equal(goes(false, 3 * 1200 + 10), false, "off: as before");
+});
+
+test("D-086 A6 (plan.goldCavalry): wood short and gold piled up, hard trains cavalry (no wood) first; off, as before", () => {
+  const cavalry = (goldCavalry: number) => {
+    const g = behindGame(0);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.addBuilding(0, BuildingType.Stable, s0.cellX + 20, s0.cellY - 8, rules().buildings[BuildingType.Stable].hp, 1000);
+    w.res.set([600, 10, 600, 0], 0);
+    g.fog.update(w);
+    return hardAi(g, { dodge: false, goldCavalry }).think(buildView(g, 0)).some((c) => c.c === "train" && c.type === UnitType.Cavalry);
+  };
+  assert.equal(cavalry(25), true, "on: cavalry");
+  assert.equal(cavalry(0), false, "off: none");
+});
+
+test("D-086 A6 (plan.crystalStop): its mages at the cap with crystal for 4 more, hard takes its farmers off the crystal vein; off, they stay", () => {
+  const released = (crystalStop: boolean) => {
+    const g = behindGame(0);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    // A soldier of its own by a crystal vein, so it knows of one.
+    const vein = w.nodeKind.findIndex((k) => k === NodeKind.CrystalVein);
+    put(g, 0, UnitType.Spearman, w.nodeX[vein] - 2, w.nodeY[vein] - 2);
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, crystalStop });
+    const crew = ai.think(buildView(g, 0)).find((c) => c.c === "gather" && c.u.length === HARD.vein);
+    assert.ok(crew !== undefined && crew.c === "gather", "a crew to the vein");
+    for (let k = 0; k < rules().mageCap; k++) put(g, 0, UnitType.Mage, s0.cellX + 4 + k, s0.cellY + 3);
+    w.res.set([200, 200, 200, 4 * rules().units[UnitType.Mage].cost.crystal], 0);
+    w.tick += 10;
+    g.fog.update(w);
+    const out = ai.think(buildView(g, 0));
+    return out.some((c) => c.c === "release" && crew.u.every((id) => c.u.includes(id)));
+  };
+  assert.equal(released(true), true, "on: off the vein");
+  assert.equal(released(false), false, "off: they stay");
+});
+
+test("D-086 A5 (plan.holdTowns): enemy soldiers by a town it governs and the army at home 1.3 x them, hard goes to hold it; off, it stays", () => {
+  const goes = (holdTowns: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    w.tick = 15 * 1200;
+    const t = [...w.map.towns].filter((x) => x.size === TownSize.Small).sort((a, b) => (a.cellX - s0.cellX) ** 2 + (a.cellY - s0.cellY) ** 2 - ((b.cellX - s0.cellX) ** 2 + (b.cellY - s0.cellY) ** 2))[0];
+    w.townState[t.id] = TownState.Governed;
+    w.townOwner[t.id] = 0;
+    for (const o of w.map.towns) if (o.id !== t.id) {
+      w.townState[o.id] = TownState.Ruins;
+      w.townOwner[o.id] = NO_OWNER;
+      w.townTimer[o.id] = 48000;
+    }
+    put(g, 0, UnitType.Spearman, t.cellX, t.cellY);
+    for (let k = 0; k < 20; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
+    // In sight of its soldier in the town.
+    for (let k = 0; k < 5; k++) put(g, 1, UnitType.Spearman, t.cellX + 6, t.cellY - 2 + k);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, holdTowns, townArmy: 99, bigArmy: 99, pushArmy: 99, peekFirst: 0 }).think(buildView(g, 0));
+    return out.some((c) => c.c === "move" && c.u.length >= 15 && c.x === t.cellX && c.y === t.cellY);
+  };
+  assert.equal(goes(true), true, "on: to the town");
+  assert.equal(goes(false), false, "off: as before");
 });
