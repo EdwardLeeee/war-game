@@ -2796,7 +2796,7 @@
     | push-crush 玩家贏（固定／隨機，各 40 局） | 24／23 | 12／16 |
     | push-crush：治理的城被打／有派兵／守住（固定） | 9／0／1 | 30／11／13 |
 
-- **上線**：隨 #316 上線（寫這條時 #316 還沒合併）。
+- **上線**：隨 #316 合併（main 30bf3c2，2026-10-26 上線；#317 關掉）。
   - #316（core）：城鎮的駐軍數也算站在這座城牆上的兵（新的 `World.standsIn`），畫面的駐軍數和「駐軍不足」改成和拿城、叛離同一個算法。是 client 在 D-110 的改版時發現的：牆上留 1 名兵時，畫面寫「城裡有 0 名兵」，城卻不會叛離。
   - 這會改雜湊、改 sim build，上線時玩到一半的局「繼續上一局」接不下去，存檔斷一次。
   - 為了只斷一次，ceo 請 core 把 #317 併進 #316（head 34a0aab，sim build e77bb301d2b2），只合 #316、關掉 #317。core 查過 hew 不讀駐軍數和「駐軍不足」，困難 15 局在修正前後勝負和雜湊都相同。
@@ -2806,7 +2806,7 @@
 - **背景**：art-v6 合併以後（#290），ui 要發 GitHub Release，被本機的權限檢查擋下。發布是公開的動作，要使用者本人同意，其他 session 和 ceo 都不能代發。ceo 請使用者到 war-game-ui 的視窗同意。
 - **使用者**（2026-10-25），原話：「為啥他不自己發布」。ceo 說明兩種做法：只同意這一次，或在專案設定只開放「發布美術包」這一個動作、其他對外的動作照舊要問。使用者：「改成以後發布美術不用問我」
 - **做法**：
-  - 專案設定只加一條：`Bash(gh workflow run design-render.yml -R EdwardLeeee/war-game *)`。
+  - 本機 Claude Code 的使用者設定（`~/.claude/settings.json`，不在 repo 裡）只加一條：`Bash(gh workflow run design-render.yml -R EdwardLeeee/war-game *)`。
   - 發布指令單獨一行，帶 `-R EdwardLeeee/war-game`，不加 cd、&&、sleep；查 run 另外下指令。寫進 `design/release/README.md`（#301，main 0bc8f55）。
   - 發布後照舊從公開網址下載、核對 sha256，才把 tag 和 sha256 交給 client。
   - tag 只能是 `art-vN` 或 `art-vN.M`：`design-render.yml` 和 client 的 e2e 只認這兩種。art-v6.1.1（大城箭樓受損圖的火，#305）在發布的第一步被擋（run 40184607197），ceo 同意改名 art-v6.2（#307，main ba7d4a7），市場和廢墟的擺設順延到 art-v6.3。
