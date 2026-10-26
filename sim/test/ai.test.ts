@@ -1706,7 +1706,8 @@ test("D-083 (c): with the population rules on and food and gold piling up, hard 
       }
       w.res.set([700, 300, 400, 0], 0);
       g.fog.update(w);
-      const b = hardAi(g, { dodge: false }).think(buildView(g, 0)).find((c) => c.c === "build") as { type: BuildingType } | undefined;
+      // D-086 A6's stable for piled gold aside (goldCavalry): this is about barracks and ranges.
+      const b = hardAi(g, { dodge: false, goldCavalry: 0 }).think(buildView(g, 0)).find((c) => c.c === "build") as { type: BuildingType } | undefined;
       return b?.type;
     });
   const on = built(true);
@@ -1982,11 +1983,12 @@ function richHard(res: number[], plan: Partial<HardPlan>, opt: { stable?: boolea
 const trains = (out: CommandBody[], type: UnitType) => out.some((c) => c.c === "train" && c.type === type);
 
 test("D-086 A (plan.cavalry): with wood short and food and gold piling up, hard puts up a stable and trains cavalry; 0, as before", () => {
-  const built = (cavalry: number) => (richHard([500, 200, 300, 0], { cavalry }).find((c) => c.c === "build") as { type: BuildingType } | undefined)?.type;
+  // D-086 A6's cavalry for piled gold aside (goldCavalry).
+  const built = (cavalry: number) => (richHard([500, 200, 300, 0], { cavalry, goldCavalry: 0 }).find((c) => c.c === "build") as { type: BuildingType } | undefined)?.type;
   assert.equal(built(25), BuildingType.Stable, "rich: a stable");
   assert.notEqual(built(0), BuildingType.Stable, "off: no stable");
   assert.ok(trains(richHard([700, 20, 300, 0], { cavalry: 25 }, { stable: true }), UnitType.Cavalry), "wood short: cavalry");
-  assert.ok(!trains(richHard([700, 20, 300, 0], { cavalry: 0 }, { stable: true }), UnitType.Cavalry), "off: no cavalry");
+  assert.ok(!trains(richHard([700, 20, 300, 0], { cavalry: 0, goldCavalry: 0 }, { stable: true }), UnitType.Cavalry), "off: no cavalry");
   assert.ok(!trains(richHard([700, 300, 300, 0], { cavalry: 25 }, { stable: true }), UnitType.Cavalry), "wood enough: spearmen and ranged as before");
 });
 
@@ -2085,24 +2087,37 @@ test(
     // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
 
     // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
-    const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
-    const g = r.game;
-    const m = g.w.map;
-    const plan = planFor("push", "h1", "close");
-    Object.assign(plan, { farmers: 24, production: 4, spearShare: 35, choice: "govern", corners: true, townAt: 10, homeTowers: 2, cavalryShare: 15, pushAt: 50, counterAt: 50, pushAhead: true, harass: 10 });
-    const player = createScriptedPlayer(0, { map: mapInfo(m, 0), rules: rules(m), frame: m.frames[0] }, plan);
-    const sent: { at: number; json: string }[] = [];
-    let seen = 0;
-    let seq = 0;
-    while (!r.over && g.tick < 20 * 1200) {
-      if (g.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ } as never);
-      r.tick();
-      for (; seen < g.log.length; seen++) if (g.log[seen].p === 1) sent.push({ at: seen, json: JSON.stringify(g.log[seen]) });
-    }
-    const stats = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]!.stats!();
-    assert.ok(stats.farmersHid > 0, "its farmers were sent home");
-    const changed = sent.filter((x) => JSON.stringify(g.log[x.at]) !== x.json);
-    assert.deepEqual(changed.map((x) => x.json).slice(0, 2), [], "orders as sent");
+    // That game is hard's without D-086 A6 (with it, its farmers are not hunted far from home there); with it on, the orders
+    // are checked too.
+    const play = (a6: boolean) => {
+      const was = { holdTowns: HARD.holdTowns, econBehind: HARD.econBehind, goldCavalry: HARD.goldCavalry, crystalStop: HARD.crystalStop, woodShift: HARD.woodShift };
+      if (!a6) Object.assign(HARD, { holdTowns: false, econBehind: false, goldCavalry: 0, crystalStop: false, woodShift: false });
+      try {
+        const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
+        const g = r.game;
+        const m = g.w.map;
+        const plan = planFor("push", "h1", "close");
+        Object.assign(plan, { farmers: 24, production: 4, spearShare: 35, choice: "govern", corners: true, townAt: 10, homeTowers: 2, cavalryShare: 15, pushAt: 50, counterAt: 50, pushAhead: true, harass: 10 });
+        const player = createScriptedPlayer(0, { map: mapInfo(m, 0), rules: rules(m), frame: m.frames[0] }, plan);
+        const sent: { at: number; json: string }[] = [];
+        let seen = 0;
+        let seq = 0;
+        while (!r.over && g.tick < 20 * 1200) {
+          if (g.tick % SCRIPTED_THINK_EVERY === 0) for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ } as never);
+          r.tick();
+          for (; seen < g.log.length; seen++) if (g.log[seen].p === 1) sent.push({ at: seen, json: JSON.stringify(g.log[seen]) });
+        }
+        const stats = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]!.stats!();
+        const changed = sent.filter((x) => JSON.stringify(g.log[x.at]) !== x.json);
+        return { hid: stats.farmersHid, changed: changed.map((x) => x.json).slice(0, 2) };
+      } finally {
+        Object.assign(HARD, was);
+      }
+    };
+    const before = play(false);
+    assert.ok(before.hid > 0, "its farmers were sent home");
+    assert.deepEqual(before.changed, [], "orders as sent");
+    assert.deepEqual(play(true).changed, [], "orders as sent, with D-086 A6");
   }),
 );
 
@@ -2397,7 +2412,7 @@ test("D-086 A4 (plan.mineMove): the gold by its mine gone, hard puts up another 
     }
     put(g, 0, UnitType.Spearman, w.nodeX[next] + 2, w.nodeY[next] + 2);
     g.fog.update(w);
-    const out = hardAi(g, { dodge: false, mineMove }).think(buildView(g, 0));
+    const out = hardAi(g, { dodge: false, mineMove, goldCavalry: 0 }).think(buildView(g, 0));
     return out.some((c) => c.c === "build" && c.type === BuildingType.Mine);
   };
   assert.equal(built(true), true, "on: a new mine");
@@ -2643,7 +2658,7 @@ test("D-096 (plan.lumberMove): the trees by its lumber camp gone, hard puts up a
     for (let i = 0; i < w.nodeKind.length; i++) if (w.nodeKind[i] === NodeKind.Tree && w.nodeAmount[i] > 0 && (next < 0 || d2(i) < d2(next))) next = i;
     put(g, 0, UnitType.Spearman, w.nodeX[next] + 2, w.nodeY[next] + 2);
     g.fog.update(w);
-    const out = hardAi(g, { dodge: false, lumberMove }).think(buildView(g, 0));
+    const out = hardAi(g, { dodge: false, lumberMove, goldCavalry: 0 }).think(buildView(g, 0));
     return out.some((c) => c.c === "build" && c.type === BuildingType.LumberCamp);
   };
   assert.equal(built(true), true, "on: another lumber camp");

@@ -2816,7 +2816,8 @@ export const HARD: HardPlan = {
   townRest: 0,
   productionFirst: false,
   cavalry: 0,
-  woodShift: false,
+  // D-086 A6: on with goldCavalry (below).
+  woodShift: true,
   woodFarmers: 0,
   governFrom: 0,
   governSpare: 0,
@@ -2858,12 +2859,16 @@ export const HARD: HardPlan = {
   behindFail: true,
   behindTowers: 4,
   behindTownTowers: 2,
-  holdTowns: false,
+  // D-086 A6 (docs/research/2026-10-ai-a5.md; ceo 2026-10-26: holdTowns the lead): on with econBehind, goldCavalry 25,
+  // crystalStop and woodShift. Hard against hard draws 85 -> 73 of 400, against normal 93/98/83% -> 94/99/88%, the six
+  // active groups 14 of 240 as before; core's push-crush (#315) 24 and 23 of 40 -> 12 and 16; and in the user's 9170fab0
+  // and 4fd7b823 it holds and takes back its towns (replays from minutes 25 and 36).
+  holdTowns: true,
   behindOutpost: false,
   behindGuards: 4,
-  econBehind: false,
-  crystalStop: false,
-  goldCavalry: 0,
+  econBehind: true,
+  crystalStop: true,
+  goldCavalry: 25,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -3940,7 +3945,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         res.gold - reserve.gold >= towerCost.gold + plan.towerSpare
       ) {
         const towerSpot = towerSpotFor();
-        if (towerSpot !== null) {
+        // Not on a building ordered this think (D-086 A6: a stable for goldCavalry went there the same think, seed 3).
+        const ts = rules.buildings[BuildingType.ArrowTower].size;
+        const free =
+          towerSpot !== null &&
+          out.every((c) => {
+            if (c.c !== "build") return true;
+            const bs = rules.buildings[c.type].size;
+            return towerSpot.x + ts <= c.x || c.x + bs <= towerSpot.x || towerSpot.y + ts <= c.y || c.y + bs <= towerSpot.y;
+          });
+        if (towerSpot !== null && free) {
           out.push({ c: "build", u: gatherers.slice(0, 2), type: BuildingType.ArrowTower, x: towerSpot.x, y: towerSpot.y });
           gatherers.splice(0, 2);
           spend(towerCost);
