@@ -443,44 +443,68 @@ test("新兵補不進任何編隊時，加入現有兵最多的編隊，那種�
   assert.equal(book.joinLargest(104, FARMER, w.typeOf), null, "farmers never");
 });
 
-// --- 躲進建築 (D-083): those who hide leave their group; 自動補兵 never takes them back ----------
+// --- 哨所 (D-080) and 躲進建築 (D-083): still the group's while away; back with no order, they walk back
+// (the user 2026-10-26, overturning D083-1-A: 「都照駐軍的新做法」) ---------------------------------
 
-test("躲進建築：躲進去就離開編隊，目標不變；編隊照自動補兵補空閒的兵，不挑躲著的兵（D-083）", () => {
+test("躲進建築、駐守哨所：還算編隊的、目標不變、自動補兵不補位；編隊按鈕不選他們；第一張快照不算剛離開（繼續上一局）", () => {
   const w = new World();
   const book = new ArmyBook();
   book.saveGroup(0, w.many(1, 5, RANGED, 10, 10));
   w.many(11, 2, RANGED, 30, 30); // two idle ranged in no group
-  // Ranged 1–3 hide (order Garrison: not idle).
-  const hiding = [1, 2, 3];
-  book.keepOut(hiding);
-  assert.deepEqual(book.leaveGroups(hiding), [3, 0, 0, 0], "three left group 1");
-  assert.equal(count(book, 0), "2/5", "the target stays");
-  assert.deepEqual(book.groups[0].want, { [RANGED]: 5 });
-  const idle = (id: number) => !hiding.includes(id);
-  assert.deepEqual(book.draft(w.army(), idle), [{ group: 0, ids: [11, 12] }], "the idle two fill it, not those hiding");
-  assert.equal(count(book, 0), "4/5");
+  const away = new Set([1, 2]);
+  // The first snapshot: those away already (after 繼續上一局) are not counted as just gone.
+  assert.deepEqual(book.updateAway((id) => away.has(id), () => false).left, [0, 0, 0, 0]);
+  away.add(3);
+  assert.deepEqual(book.updateAway((id) => away.has(id), () => false), { left: [1, 0, 0, 0], back: [] });
+  assert.equal(count(book, 0), "5/5", "still the group's");
+  assert.deepEqual(book.marching(0), [4, 5]);
+  assert.deepEqual(book.awayOf(0), [1, 2, 3]);
+  assert.equal(book.isAway(3), true);
+  // Not short: the idle two in no group are not drafted.
+  assert.deepEqual(book.draft(w.army(), (id) => !away.has(id)), []);
 });
 
-test("出來以後：不在任何編隊；編隊還缺人、自動補兵開著，也不會被補回去；玩家自己編進編隊後才照一般規則（D-083）", () => {
+test("出來以後：沒有指令的走回編隊（新兵），玩家下了指令的照指令走；離開編隊或陣亡的就忘了", () => {
   const w = new World();
   const book = new ArmyBook();
   book.saveGroup(0, w.many(1, 5, RANGED, 10, 10));
-  book.keepOut([1, 2, 3, 4, 5]);
-  book.leaveGroups([1, 2, 3, 4, 5]);
-  assert.equal(count(book, 0), "0/5");
-  assert.equal(book.groups[0].refill, true);
-  // All five came out (全部出來): idle, in no group, the group short of five.
-  assert.deepEqual(book.draft(w.army(), () => true), [], "「出來的 5 名不會自己回到編隊1，要再拉進去」");
-  assert.equal(count(book, 0), "0/5");
-  for (const id of [1, 2, 3, 4, 5]) assert.equal(book.isKeptOut(id), true);
-  // The player puts two of them in group 2 himself; they are under the usual rules again.
-  book.saveGroup(1, [w.add(1, RANGED, 10, 10), w.add(2, RANGED, 11, 10)]);
-  assert.equal(book.isKeptOut(1), false);
-  assert.equal(book.isKeptOut(3), true);
-  // The fallen are forgotten.
-  w.kill(3);
-  book.prune(w.alive, () => true);
-  assert.equal(book.isKeptOut(3), false);
+  const away = new Set([1, 2, 3]);
+  const ordered = new Set<number>();
+  const idle = (id: number) => !away.has(id) && !ordered.has(id);
+  book.updateAway((id) => away.has(id), idle);
+  // 1 and 2 come out (全部出來: no order); 3 is sent somewhere by the player.
+  away.clear();
+  ordered.add(3);
+  assert.deepEqual(book.updateAway(() => false, idle), { left: [0, 0, 0, 0], back: [1, 2] });
+  assert.deepEqual(
+    book.groups[0].recruits.map((r) => r.id),
+    [1, 2],
+  );
+  assert.equal(book.isAway(3), false);
+  assert.deepEqual(book.marching(0), [1, 2, 3, 4, 5]);
+  // A recruit that goes away again is no longer led to the group (its 移動 would take it off its post).
+  away.add(1);
+  book.updateAway((id) => away.has(id), idle);
+  assert.deepEqual(
+    book.groups[0].recruits.map((r) => r.id),
+    [2],
+  );
+  // Out of the group: forgotten.
+  book.clearGroup(0);
+  book.updateAway((id) => away.has(id), idle);
+  assert.equal(book.isAway(1), false);
+});
+
+test("走去會合的中心不算駐守哨所、躲著的兵；重存編隊時他們留在編隊", () => {
+  const w = new World();
+  const book = new ArmyBook();
+  book.saveGroup(0, [...w.many(1, 2, SPEAR, 10, 10), ...w.many(3, 2, SPEAR, 40, 40)]);
+  book.updateAway((id) => id === 1 || id === 2, () => false);
+  assert.deepEqual(book.centreOf(0, w.where), { x: 40.5 * CELL + CELL / 2, y: 40 * CELL + CELL / 2 });
+  book.saveGroup(0, [3, 4].map((id) => ({ id, type: SPEAR })), w.typeOf);
+  assert.deepEqual(book.groups[0].ids, [3, 4, 1, 2]);
+  book.updateAway(() => true, () => false);
+  assert.equal(book.centreOf(0, w.where), null, "nobody with it");
 });
 
 test("每兵種上限跟著人口天花板：現在是 rules 的 120；模擬給了這一局的天花板就用它（D-083）", () => {

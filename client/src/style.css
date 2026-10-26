@@ -746,7 +746,7 @@ button.order-retreat {
   font-size: 12px;
 }
 
-/* 駐N (the user 2026-10-26): how many of the group stay in towns, on its corner. */
+/* 駐N and 躲N (the user 2026-10-26): how many of the group stay in towns or at outposts, and hide in buildings, on its top edge. */
 .groups button {
   position: relative;
 }
@@ -767,6 +767,12 @@ button.order-retreat {
   color: #fff;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
   pointer-events: none;
+}
+
+.groups .group-hide {
+  right: auto;
+  left: 1px;
+  background: #5b4a7a;
 }
 
 /* 閃紅提醒 (D-081): a group down to fewer than half of what it attacked with. */

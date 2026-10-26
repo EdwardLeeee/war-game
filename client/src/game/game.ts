@@ -976,8 +976,9 @@ export class Game implements GestureHost {
   /**
    * Our soldiers with the simulation's own positions, for the garrison rules. Those hiding in a
    * building (round 7) are left out unless `hiding`: they are out of 全軍, 留守 and the drafts.
+   * Those posted at an outpost (D-080) unless `posted`: 自動補兵's drafts count them in their groups.
    */
-  private soldiers(hiding = false): ArmyUnit[] {
+  private soldiers(hiding = false, posted = false): ArmyUnit[] {
     const view = this.view;
     const u = view?.curr?.snap.units;
     if (view === null || u === undefined) return [];
@@ -985,9 +986,9 @@ export class Game implements GestureHost {
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       const type = u[o + UnitField.type];
       // Those hiding in a building (round 7) are out of 全軍, 留守 and 自動補兵's drafts (ceo 2026-10-07);
-      // those posted at an outpost (D-080) out of all of it too, hiding asked for or not.
+      // those posted at an outpost (D-080) out of all of it too, hiding asked for or not, unless `posted`.
       const order = u[o + UnitField.order];
-      if (u[o + UnitField.owner] === view.me && isSoldier(type) && (hiding || !isHiding(order)) && !isPosted(order)) out.push({ id: u[o + UnitField.id], type, x: u[o + UnitField.x], y: u[o + UnitField.y], wall: order === Order.Wall });
+      if (u[o + UnitField.owner] === view.me && isSoldier(type) && (hiding || !isHiding(order)) && (posted || !isPosted(order))) out.push({ id: u[o + UnitField.id], type, x: u[o + UnitField.x], y: u[o + UnitField.y], wall: order === Order.Wall });
     }
     return out;
   }
@@ -1829,7 +1830,7 @@ export class Game implements GestureHost {
    * unless `all`. Those in a group walk back to it, those in none are 全軍's again; all of them
    * 積極. The strip says how many came out and stayed, and what a town short of 留守 does.
    */
-  private comeOut(towns: readonly number[], whose: (id: number) => boolean, all: boolean, what: string): { out: number[]; kept: number } {
+  private comeOut(towns: readonly number[], whose: (id: number) => boolean, all: boolean, what: string, extra = 0): { out: number[]; kept: number } {
     const units = this.soldiers(true);
     const out: number[] = [];
     let kept = 0;
@@ -1843,24 +1844,105 @@ export class Game implements GestureHost {
     this.setStance(out, Stance.Aggressive);
     this.offWalls(out);
     this.regroup();
-    if (out.length === 0) {
+    if (out.length + extra === 0) {
       this.toast(kept > 0 ? `城裡的 ${kept} 名都要留下守城：要帶走按「全部帶走」` : "沒有留守的兵");
       return { out, kept };
     }
-    // One line: the strip shows the last message only.
-    const done = `${out.length} 名${what}${kept > 0 ? `，留 ${kept} 名守城` : ""}`;
+    // One line: the strip shows the last message only. `extra`: those off an outpost too.
+    const done = `${out.length + extra} 名${what}${kept > 0 ? `，留 ${kept} 名守城` : ""}`;
     const short = all ? this.shortText(towns) : null;
     if (short === null) this.toast(done, "ok");
     else this.toast(`${done}。${short}`);
     return { out, kept };
   }
 
-  /** 軍團畫面's 出城歸隊 (`all`: 全部帶走): group i's 留守 come out of every town and walk back to it; the group shown is selected again with them. */
+  /**
+   * 軍團畫面's 出城歸隊 (`all`: 全部帶走): group i's 留守 come out of every town, and those at
+   * outposts leave them, and walk back to it; the group shown is selected again with them.
+   */
   groupOut(i: number, all: boolean): void {
     const g = this.army.groups[i];
+    const posted = this.groupPosted(i);
+    this.offPosts(i, posted);
     const towns = this.army.stationedOf(i).map((e) => e.town);
-    const { out } = this.comeOut(towns, (id) => g.ids.includes(id), all, `出城歸隊編隊 ${i + 1}`);
+    const { out } = this.comeOut(towns, (id) => g.ids.includes(id), all, `出城歸隊編隊 ${i + 1}`, posted.length);
     if (out.length > 0 && this.groupView === i) this.showGroup(i, false);
+  }
+
+  /** Group i's living members at outposts (哨所, D-080). */
+  private groupPosted(i: number): number[] {
+    const view = this.view;
+    return view === null ? [] : this.army.awayOf(i).filter((id) => view.unitRow(id) >= 0 && isPosted(view.unitOrder(id)));
+  }
+
+  /** Group i's living members hiding in buildings (躲進建築, D-083), on their way too: its button's 躲N. */
+  groupHiding(i: number): number[] {
+    const view = this.view;
+    return view === null ? [] : this.army.awayOf(i).filter((id) => view.unitRow(id) >= 0 && isHiding(view.unitOrder(id)));
+  }
+
+  /** 軍團畫面's 躲著 line: group i's soldiers hiding, building by kind (「主城 2 名、箭樓 1 名」), or "" with none. */
+  groupHidingLine(i: number): string {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const b = view?.curr?.snap.buildings;
+    if (view === null || u === undefined || b === undefined) return "";
+    const by = new Map<string, number>();
+    for (const id of this.groupHiding(i)) {
+      const o = view.buildingRow(u[view.unitRow(id) + UnitField.orderTarget]);
+      const name = o < 0 ? "建築" : (BUILDING_NAME[b[o + BuildingField.type]] ?? "建築");
+      by.set(name, (by.get(name) ?? 0) + 1);
+    }
+    return [...by].map(([name, n]) => `${name} ${n} 名`).join("、");
+  }
+
+  /**
+   * These spearmen of group i leave their outposts for it: a 移動 to where it stands (one order
+   * takes a spearman off his post; 停止 does not), or, with nobody of it elsewhere, to where they are.
+   */
+  private offPosts(i: number, ids: readonly number[]): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined || ids.length === 0) return;
+    const where = (id: number): { x: number; y: number } | null => {
+      const o = view.unitRow(id);
+      return o < 0 ? null : { x: u[o + UnitField.x], y: u[o + UnitField.y] };
+    };
+    let to = this.army.centreOf(i, where);
+    if (to === null) {
+      const at = ids.map(where).filter((p): p is { x: number; y: number } => p !== null);
+      if (at.length === 0) return;
+      to = { x: at.reduce((n, p) => n + p.x, 0) / at.length, y: at.reduce((n, p) => n + p.y, 0) / at.length };
+    }
+    this.autoCommand({ c: "retreat", u: [...ids], x: Math.floor(to.x / CELL), y: Math.floor(to.y / CELL) });
+  }
+
+  /** 哨所's panel: its spearmen by group (null: in no group). */
+  outpostGroups(building: number): { group: number | null; n: number }[] {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return [];
+    const by = new Map<number | null, number>();
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] !== view.me || !isPosted(u[o + UnitField.order]) || u[o + UnitField.orderTarget] !== building) continue;
+      const g = this.army.groupOf(u[o + UnitField.id]);
+      by.set(g, (by.get(g) ?? 0) + 1);
+    }
+    return [...by].map(([group, n]) => ({ group, n })).sort((a, b) => (a.group ?? 9) - (b.group ?? 9));
+  }
+
+  /** 哨所's panel, 歸隊 (ceo 2026-10-26): group i's spearmen there leave it and walk back to the group. */
+  outpostOut(building: number, i: number): void {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return;
+    const ids = this.army.groups[i].ids.filter((id) => {
+      const o = view.unitRow(id);
+      return o >= 0 && isPosted(u[o + UnitField.order]) && u[o + UnitField.orderTarget] === building;
+    });
+    if (ids.length === 0) return;
+    this.offPosts(i, ids);
+    this.toast(`${ids.length} 名離開哨所，走回編隊 ${i + 1}`, "ok");
   }
 
   /** A town's panel: one group's 留守 歸隊 (or, group null, those in no group 解除留守), or everyone's (`"all"`, 全部帶走). */
@@ -1879,22 +1961,24 @@ export class Game implements GestureHost {
     return this.army.garrisonByGroup(town).map((e) => ({ group: e.group, n: view === null ? e.ids.length : e.ids.filter((id) => view.unitRow(id) >= 0).length }));
   }
 
-  /** 軍團畫面's 駐守中 line: group i's 留守, town by town (「小鎮 3 名、大城 2 名」), or "" with none. */
+  /** 軍團畫面's 駐守中 line: group i's 留守, town by town, and at outposts (「小鎮 3 名、大城 2 名、哨所 2 名」), or "" with none. */
   groupStationed(i: number): string {
     const view = this.view;
     if (view === null) return "";
-    return this.army
+    const towns = this.army
       .stationedOf(i)
       .map((e) => ({ size: view.knownTowns.get(e.town)?.size, n: e.ids.filter((id) => view.unitRow(id) >= 0).length }))
       .filter((e) => e.n > 0)
-      .map((e) => `${e.size === TownSize.Large ? "大城" : "小鎮"} ${e.n} 名`)
-      .join("、");
+      .map((e) => `${e.size === TownSize.Large ? "大城" : "小鎮"} ${e.n} 名`);
+    // 哨所 (D-080): all outposts together.
+    const posted = this.groupPosted(i).length;
+    return [...towns, ...(posted > 0 ? [`哨所 ${posted} 名`] : [])].join("、");
   }
 
-  /** Group i's living members stationed in towns (its button's 駐N). */
+  /** Group i's living members stationed in towns or at outposts (its button's 駐N). */
   groupStationedCount(i: number): number {
     const view = this.view;
-    return view === null ? 0 : this.army.stationedOf(i).reduce((n, e) => n + e.ids.filter((id) => view.unitRow(id) >= 0).length, 0);
+    return view === null ? 0 : this.army.stationedOf(i).reduce((n, e) => n + e.ids.filter((id) => view.unitRow(id) >= 0).length, 0) + this.groupPosted(i).length;
   }
 
   /** Group i's living members not stationed in a town: what its button selects. */
@@ -1918,23 +2002,22 @@ export class Game implements GestureHost {
     };
     this.setStance(this.army.prune((id) => view.unitRow(id) >= 0, held), Stance.Aggressive);
     this.army.settle((town) => view.townAwaitsMyChoice(town));
-    // 哨所 (D-080) and 躲進建築 (D-083): those posted at an outpost, and those hiding in a building
-    // or on their way to, leave their groups, as those stationed in a town do. Those who hid are
-    // not taken by 自動補兵 again, inside or once out, until the player puts them in a group.
     const u = view.curr?.snap.units;
     if (u === undefined) return;
-    const posted: number[] = [];
-    const hiding: number[] = [];
-    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
-      if (u[o + UnitField.owner] !== view.me) continue;
-      const order = u[o + UnitField.order];
-      if (isPosted(order)) posted.push(u[o + UnitField.id]);
-      else if (isHiding(order) && isSoldier(u[o + UnitField.type])) hiding.push(u[o + UnitField.id]);
-    }
-    this.army.keepOut(hiding);
-    if (posted.length + hiding.length === 0) return;
-    // Out of the alarm's base too (D-083): only the fallen bring it.
-    this.army.leaveGroups([...posted, ...hiding]).forEach((n, i) => {
+    const orderOf = (id: number): number => {
+      const o = view.unitRow(id);
+      return o < 0 ? -1 : u[o + UnitField.order];
+    };
+    // 哨所 (D-080) and 躲進建築 (D-083; the user 2026-10-26, overturning D083-1-A: 「都照駐軍的新做法」):
+    // those posted at an outpost and the soldiers hiding in a building, on their way too, stay their
+    // groups' but are out of their buttons, as those stationed in a town; back with no order
+    // (全部離開, 全部出來, the building gone), they walk back to their group. Out of the alarm's base
+    // too: only the fallen bring it.
+    const away = (id: number): boolean => {
+      const order = orderOf(id);
+      return isPosted(order) || (isHiding(order) && isSoldier(view.unitType(id)));
+    };
+    this.army.updateAway(away, (id) => orderOf(id) === Order.None).left.forEach((n, i) => {
       if (n > 0) this.alarms.left(i, n);
     });
   }
@@ -1989,9 +2072,10 @@ export class Game implements GestureHost {
     const view = this.view;
     if (view === null) return;
     const idle = (id: number): boolean => view.unitOrder(id) === Order.None && this.stances.of(id, view.unitStance(id)) !== Stance.Hold;
-    // Those hiding have left their groups (D-083), which fill up again; they are never drafted
-    // themselves, inside (order Garrison, not idle) or once out (ArmyBook.keepOut).
-    for (const d of this.army.draft(this.soldiers(true), idle)) {
+    // Those hiding in a building in no group are not drafted while inside (order Garrison, not
+    // idle); once out, like any other (the user 2026-10-26).
+    // Those posted at outposts too: still their groups', a group of them is not short (they are not idle: never drafted).
+    for (const d of this.army.draft(this.soldiers(true, true), idle)) {
       const others = this.army.marching(d.group).filter((m) => !d.ids.includes(m) && view.unitRow(m) >= 0);
       // With nobody in the group to join, they are the group where they stand (D-080).
       this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}${others.length > 0 ? "，正走過去" : "，在原地待命"}`);
@@ -2528,7 +2612,12 @@ export class Game implements GestureHost {
       return;
     }
     this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
-    if (r.cmd.c === "post") this.toast(`${r.cmd.u.length} 名槍兵去駐守哨所`);
+    if (r.cmd.c !== "post") return;
+    // Out of what is selected, as for 上城牆: a 移動 of the rest before the snapshot shows them
+    // posted would take them off (they are still their groups', ceo 2026-10-26).
+    const went = r.cmd.u;
+    view.selection = { ...view.selection, units: view.selection.units.filter((id) => !went.includes(id)) };
+    this.toast(`${went.length} 名槍兵去駐守哨所`);
   }
 
   longPress(x: number, y: number): LongPressResult {

@@ -236,7 +236,10 @@ export class Hud {
       garrison: (town: number) => game.army.garrisonOf(town).length,
       garrisonGroups: (town: number) => game.garrisonGroups(town),
       townOut: (town: number, group: number | null | "all") => game.townOut(town, group),
+      outpostGroups: (building: number) => game.outpostGroups(building),
+      outpostOut: (building: number, group: number) => game.outpostOut(building, group),
       groupStationed: (i: number) => game.groupStationed(i),
+      groupHidingLine: (i: number) => game.groupHidingLine(i),
       groupOut: (i: number, all: boolean) => game.groupOut(i, all),
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
@@ -343,10 +346,12 @@ export class Hud {
       b.classList.toggle("alarm", a.alarm);
       // R6-12: lit while what is selected is this group (what its button selects: not those stationed in towns).
       if (this.formal) b.classList.toggle("is-active", g.saved > 0 && this.isSelected(this.game.groupMarching(i)));
-      // 現有 counts those stationed in towns, still the group's (ceo 2026-10-26: 5/5); 駐N on its corner says how many.
+      // 現有 counts those stationed in towns or at outposts and those hiding, still the group's (ceo
+      // 2026-10-26: 5/5); 駐N and 躲N on its top edge say how many (the user: 「分開顯示」).
       const count = a.alarm && a.base !== null ? `剩 ${a.present}/${a.base}` : `${this.alive(g.ids).length}/${g.saved}`;
       const away = this.game.groupStationedCount(i);
-      const text = `${g.saved > 0 || a.alarm ? `${i + 1}·${count}` : `${i + 1}`}${away > 0 ? `駐${away}` : ""}`;
+      const hid = this.game.groupHiding(i).length;
+      const text = `${g.saved > 0 || a.alarm ? `${i + 1}·${count}` : `${i + 1}`}${away > 0 ? `駐${away}` : ""}${hid > 0 ? `躲${hid}` : ""}`;
       if (b.textContent === text) continue;
       const empty = g.saved === 0 && !a.alarm;
       if (this.formal) b.classList.toggle("empty", empty);
@@ -361,6 +366,7 @@ export class Hud {
       el("span", b, "group-dot", "·");
       el("span", b, this.formal ? "sub group-count" : "group-count", count);
       if (away > 0) el("span", b, "group-away", `駐${away}`);
+      if (hid > 0) el("span", b, "group-away group-hide", `躲${hid}`);
     }
     this.info.update();
     this.cmds.update();
