@@ -16,7 +16,7 @@
 // on its cells and in ruins. Pictures only: never tapped (not in the pictures `pick` looks at).
 
 import { Container, Graphics, Sprite } from "pixi.js";
-import { type CastleDecor, type CastleFit, type CastlePieceInfo, type CastleState, decorHidden, type Footprint, GATE_OPEN_CELLS, type GateLook, fitLayout, gateLook, inward } from "../art/castle.ts";
+import { type CastleDecor, type CastleFit, type CastlePieceInfo, type CastleState, decorFrame, decorHidden, type Footprint, GATE_OPEN_CELLS, type GateLook, fitLayout, gateLook, inward } from "../art/castle.ts";
 import { viewFits } from "../art/structures.ts";
 import type { Projection } from "../camera/projection.ts";
 import { BUILDING_STRIDE, BuildingField as B, BuildingType, Fog, NEUTRAL, NO_OWNER, TownField as T, TownSize, TownState, UNIT_STRIDE, UnitField as U } from "../sim.ts";
@@ -67,6 +67,8 @@ interface DecorSprites {
   shadow: Sprite;
   cells: number[];
   hidden: boolean;
+  /** Drawn burnt (its town in ruins, art-v6.3's decor_ruin). */
+  burnt: boolean;
 }
 
 interface TownDraw {
@@ -263,7 +265,7 @@ export class CastleDraw {
       color.zIndex = z;
       team.zIndex = z + 0.000001;
       const cells = p.cells.map(([x, y]) => [ox + x, oy + y]).filter(([x, y]) => x >= 0 && y >= 0 && x < n && y < n).map(([x, y]) => y * n + x);
-      d.decor.push({ d: p, color, team, shadow, cells, hidden: false });
+      d.decor.push({ d: p, color, team, shadow, cells, hidden: false, burnt: false });
     });
     // Corners, towers and a gate's piers without their own points (art-v5 to v5.1): a neighbour's height, in the cell's middle.
     for (const { cell, z } of borrow) {
@@ -287,8 +289,10 @@ export class CastleDraw {
     const fit = d.fit;
     if (fit === null || d.decor.length === 0) return "";
     let key = "";
+    const c = this.art?.castle ?? null;
     for (const s of d.decor) {
-      s.hidden = decorHidden(s.d, town.cellX + fit.dx, town.cellY + fit.dy, footprints, ruins);
+      // In ruins: burnt when art-v6.3 has the piece burnt, else left out.
+      s.hidden = decorHidden(s.d, town.cellX + fit.dx, town.cellY + fit.dy, footprints, ruins && (c === null || decorFrame(c, s.d.piece, true) === null));
       key += s.hidden ? "1" : "0";
     }
     return key;
@@ -390,9 +394,11 @@ export class CastleDraw {
         s.box = { x0: at.x - color.ax * w, y0: at.y - color.ay * h, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h };
       }
     });
-    // What lives in the town: its picture, shadow and (a hut) its flag in the holder's colour; left out in ruins or under a building.
+    // What lives in the town: its picture, shadow and (a hut) its flag in the holder's colour; under a
+    // building left out; in ruins burnt (art-v6.3), no flag, or left out with no burnt picture.
     for (const s of d.decor) {
-      const name = c.decor?.[s.d.piece] ?? "";
+      const name = decorFrame(c, s.d.piece, state === "ruin") ?? "";
+      s.burnt = state === "ruin" && name !== "";
       const at = this.projection.toPlane((ox + s.d.at[0]) * TILE_PX, (oy + s.d.at[1]) * TILE_PX);
       const shown = !s.hidden && s.cells.some(seen);
       put(s.color, shown ? (this.art?.castleFrame("color", name) ?? null) : null, at.x, at.y, this.scale);
@@ -549,15 +555,15 @@ export class CastleDraw {
   }
 
   /** For the test page (castle 2): every decor piece, its town, its map cells, its anchor (world px), shown or left out. */
-  decorForTest(): { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean }[] {
-    const out: { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean }[] = [];
+  decorForTest(): { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean; burnt: boolean }[] {
+    const out: { town: number; piece: string; cells: [number, number][]; x: number; y: number; shown: boolean; leftOut: boolean; burnt: boolean }[] = [];
     for (const [id, d] of this.towns) {
       const town = this.view.knownTowns.get(id);
       if (town === undefined || d.fit === null) continue;
       const ox = town.cellX + d.fit.dx;
       const oy = town.cellY + d.fit.dy;
       for (const s of d.decor) {
-        out.push({ town: id, piece: s.d.piece, cells: s.d.cells.map(([x, y]) => [ox + x, oy + y]), x: (ox + s.d.at[0]) * TILE_PX, y: (oy + s.d.at[1]) * TILE_PX, shown: s.color.visible, leftOut: s.hidden });
+        out.push({ town: id, piece: s.d.piece, cells: s.d.cells.map(([x, y]) => [ox + x, oy + y]), x: (ox + s.d.at[0]) * TILE_PX, y: (oy + s.d.at[1]) * TILE_PX, shown: s.color.visible, leftOut: s.hidden, burnt: s.burnt });
       }
     }
     return out;

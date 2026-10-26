@@ -11,7 +11,8 @@ export const NODES_FORMAT = "war-game nodes 1";
 /** 東陸 or 西陸, as the buildings' and nodes' frames name them. */
 export type Side = "E" | "W";
 
-export type BuildingState = "build1" | "build2" | "build3" | "done" | "damaged" | "rubble";
+/** `repair` (art-v6, a keep only): its rubble with scaffolding, while its town is repaired. */
+export type BuildingState = "build1" | "build2" | "build3" | "done" | "damaged" | "rubble" | "repair";
 
 export interface BuildingEntry {
   type: number;
@@ -84,8 +85,10 @@ export const viewFits = (view: AtlasView | undefined, projection: "top" | "diamo
  * The entry for a sim building type, or undefined (the outpost has none yet: its shape); with
  * `size` (the rules' for this map), the entry of that size when it is another one.
  */
-export function buildingEntry(b: BuildingsJson, type: number, size?: number): BuildingEntry | undefined {
-  const e = Object.values(b.buildings).find((v) => v.type === type);
+export function buildingEntry(b: BuildingsJson, type: number, size?: number, name?: string): BuildingEntry | undefined {
+  // By name first when two share a type (art-v6.1: TownTower before Keep, both type 9).
+  const named = name === undefined ? undefined : b.buildings[name];
+  const e = named?.type === type ? named : Object.values(b.buildings).find((v) => v.type === type);
   const other = size === undefined || e === undefined || e.footprint[0] === size ? undefined : e.sizes?.[String(size)];
   return other === undefined || e === undefined ? e : { ...e, footprint: other.footprint, states: other.states };
 }

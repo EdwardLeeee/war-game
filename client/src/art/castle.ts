@@ -18,7 +18,8 @@ export const CASTLE_FORMAT = "war-game castle 1";
  */
 export const CASTLE_FORMAT_2 = "war-game castle 2";
 
-export type CastleLayoutName = "small" | "large" | "large3";
+/** D-089's castles; D-100's (KEEP on) under their own names from art-v6.1 (ui: the old ones kept for KEEP off). */
+export type CastleLayoutName = "small" | "large" | "large3" | "small_d100" | "large_d100";
 
 /** One picture of the walls: its piece, its cells, its anchor (cells, the footprint's middle) and front edge, from the town's centre cell. */
 export interface CastlePiece {
@@ -86,6 +87,11 @@ export interface CastleJson {
   tiles?: Record<string, string>;
   /** Castle 2: each decor piece's frame (its colour, team for a hut's flag, shadow). */
   decor?: Record<string, string>;
+  /**
+   * art-v6.3 (R8-39): each decor piece burnt, drawn in place of it while its town lies in ruins
+   * (frames and shadows, no team: nobody's colour); a piece without one is left out there.
+   */
+  decor_ruin?: Record<string, string>;
   layouts: Partial<Record<CastleLayoutName, CastleLayout>>;
   frames: Record<string, FrameRect>;
   team: Record<string, FrameRect>;
@@ -125,7 +131,7 @@ export function fitLayout(c: Pick<CastleJson, "layouts">, castle: CastleCells, l
   if (want.size === 0) return null;
   const minX = Math.min(...[...castle.wall, ...castle.gate].map(([x]) => x));
   const minY = Math.min(...[...castle.wall, ...castle.gate].map(([, y]) => y));
-  for (const name of large ? (["large", "large3"] as const) : (["small"] as const)) {
+  for (const name of large ? (["large", "large3", "large_d100"] as const) : (["small", "small_d100"] as const)) {
     const layout = c.layouts[name];
     if (layout === undefined) continue;
     const cells = layout.walls.flatMap((p) => p.cells);
@@ -179,10 +185,16 @@ const touches = (cells: readonly (readonly [number, number])[], ox: number, oy: 
   cells.some(([x, y]) => f.some((b) => ox + x >= b.x && ox + x < b.x + b.w && oy + y >= b.y && oy + y < b.y + b.h));
 
 /**
- * Whether a town's decor piece is left out (R8-36 B): the town in ruins (the plan ceo approved), or
- * a building (finished or not) on any of its cells, offset `ox`, `oy` (the town's centre cell and
- * the layout's shift); the ground there is trampled earth then (`townGround`).
+ * Whether a town's decor piece is left out (R8-36 B): the town in ruins with no burnt picture of it
+ * (`ruins`; art-v6.3's decor_ruin draws one there, decorFrame), or a building (finished or not) on
+ * any of its cells, offset `ox`, `oy` (the town's centre cell and the layout's shift); the ground
+ * there is trampled earth then (`townGround`).
  */
+/** The frame a decor piece shows: in ruins its burnt one (art-v6.3, R8-39), null when there is none. */
+export function decorFrame(c: Pick<CastleJson, "decor" | "decor_ruin">, piece: string, ruins: boolean): string | null {
+  return (ruins ? c.decor_ruin?.[piece] : c.decor?.[piece]) ?? null;
+}
+
 export function decorHidden(d: Pick<CastleDecor, "cells">, ox: number, oy: number, buildings: readonly Footprint[], ruins: boolean): boolean {
   return ruins || touches(d.cells, ox, oy, buildings);
 }
