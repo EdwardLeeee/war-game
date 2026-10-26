@@ -19,7 +19,6 @@
 
 import {
   Action,
-  CELL_SHIFT,
   NEUTRAL,
   NO_OWNER,
   PLAYER_COUNT,
@@ -32,7 +31,6 @@ import type { Emit } from "./economy.ts";
 import { type Fog, townInSight } from "./fog.ts";
 import { GATE, governPerMinute, KEEP, PLUNDER_RECOVERY, TOWNS, townIncomePermille } from "./rules.ts";
 import { addKeep, keepOf, spawnMilitia } from "./scenarios.ts";
-import { onWall } from "./units.ts";
 import { GATES, type World } from "./world.ts";
 
 /** Production is paid out every this many ticks. */
@@ -68,8 +66,7 @@ export class TownSystem {
           continue;
         }
         if (o >= PLAYER_COUNT || u.type[s] === UnitType.Farmer || u.action[s] === Action.Garrisoned) continue;
-        // Inside the walls (D-089), or on them (D-096).
-        if (w.inTown(t, u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT) || (u.wall[s] >= 0 && w.wallTown[u.wall[s]] === t && onWall(w, s))) present[o]++;
+        if (w.standsIn(t, s)) present[o]++;
       }
       const tower = keepOf(w, t) >= 0;
       const contested = present[0] > 0 && present[1] > 0;
