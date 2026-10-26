@@ -17,7 +17,7 @@ const SPEAR = UnitType.Spearman;
 const RANGED = UnitType.Ranged;
 const at = (id: number, type: number, cx: number, cy: number) => ({ id, type, x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 });
 
-/** A book with a bit of everything: groups (one never checked), a recruit, a garrison, soldiers kept out. */
+/** A book with a bit of everything: groups (one never checked), a recruit, a garrison. */
 function book(): ArmyBook {
   const b = new ArmyBook();
   b.saveGroup(0, [
@@ -31,11 +31,10 @@ function book(): ArmyBook {
   b.saveGroup(1, [{ id: 4, type: RANGED }]);
   b.enlist(9, RANGED, (id) => (id === 9 || id === 4 ? RANGED : null));
   b.station([at(5, SPEAR, 10, 10), at(6, SPEAR, 11, 10)], { id: 2, cellX: 10, cellY: 10, radius: 4 }, 2);
-  b.keepOut([8, 7]);
   return b;
 }
 
-test("編隊、留守、出來的兵：存起來（經過 structured clone）再還原，一模一樣；沒檢查過的 −∞ 也還原", () => {
+test("編隊、留守：存起來（經過 structured clone）再還原，一模一樣；沒檢查過的 −∞ 也還原；舊存檔的 keptOut 不管（D083-1-A 推翻了）", () => {
   const before = book();
   const state = structuredClone(before.save());
   assert.equal(state.groups[2].checked, null, "−∞ is kept as null");
@@ -45,8 +44,11 @@ test("編隊、留守、出來的兵：存起來（經過 structured clone）再
   assert.deepEqual(after.groups, before.groups);
   assert.equal(after.groups[2].checked, Number.NEGATIVE_INFINITY);
   assert.deepEqual(after.garrisonOf(2), [5, 6]);
-  assert.equal(after.isKeptOut(7), true);
-  assert.equal(after.isKeptOut(1), false);
+  assert.deepEqual(state.keptOut, [], "the format stays: always empty now");
+  // An old save's soldiers kept out are ordinary soldiers now.
+  const old = new ArmyBook();
+  old.restore({ ...structuredClone(before.save()), keptOut: [7, 8] });
+  assert.deepEqual(old.save().keptOut, []);
   // And through JSON too (null stays null; nothing else is lost).
   const viaJson = new ArmyBook();
   viaJson.restore(JSON.parse(JSON.stringify(before.save())));

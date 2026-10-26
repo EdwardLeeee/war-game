@@ -1,8 +1,9 @@
 // 哨所 (D-080) on the fake world with its switch on (?test=1&mock=1&r7=1&outpost=1, src/mock/
 // mock-port.ts): the build menu offers it; our outpost's panel (駐守 N 名, ＋槍兵, 全部離開, 攻擊／
-// 堅守 with what each means); 駐守 from the command area; spearmen posted leave their group and
-// 全軍; arrow towers may go by our outpost; the enemy's outpost reads 堅守中. Without the switch
-// none of it shows. The simulation's side is core's (#185).
+// 堅守 with what each means); 駐守 from the command area; spearmen posted stay their group's (ceo
+// 2026-10-26) but leave its button and 全軍, and 歸隊 on the outpost brings them back; arrow towers
+// may go by our outpost; the enemy's outpost reads 堅守中. Without the switch none of it shows.
+// The simulation's side is core's (#185).
 
 import { expect, type Page, test } from "@playwright/test";
 import { armyButton, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
@@ -120,7 +121,7 @@ test("自己的哨所：寫駐守幾名、最多幾名；＋槍兵叫站著沒�
   await expect(off).toBeDisabled();
 });
 
-test("駐守：選了槍兵和遠程兵，按駐守只有槍兵去；點錯地方說明要點什麼；駐守的兵離開編隊、不算全軍（D-080）", async ({ page }, info) => {
+test("駐守：選了槍兵和遠程兵，按駐守只有槍兵去；點錯地方說明要點什麼；駐守的兵還算編隊的（駐2、駐守中：哨所）、不補人、不算全軍；點哨所按歸隊就走回編隊（D-080、ceo 2026-10-26）", async ({ page }, info) => {
   await start(page);
   const id = await ourOutpost(page);
   const spear = await ownIds(page, 1);
@@ -142,12 +143,33 @@ test("駐守：選了槍兵和遠程兵，按駐守只有槍兵去；點錯地�
   await tapOutpost(page, OUTPOST);
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "post", u: spear.slice(0, 2), building: id });
   expect(await mode(page)).toBe("normal");
-  // Posted (order Post): out of group 1, which fills up again with two free spearmen as for 留守
-  // (its message takes the place of 「2 名槍兵去駐守哨所」), and out of 全軍.
-  await expect.poll(async () => (await units(page)).filter((u) => spear.slice(0, 2).includes(u.id)).every((u) => u.order === 10)).toBe(true);
-  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0].filter((m) => spear.slice(0, 2).includes(m))).toEqual([]);
-  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0].length).toBe(3);
+  // Posted (order Post): still group 1's, 駐2 on its button, nobody pulled in; out of 全軍 and of what is selected.
+  const two = spear.slice(0, 2);
+  await expect.poll(async () => (await units(page)).filter((u) => two.includes(u.id)).every((u) => u.order === 10)).toBe(true);
+  await expect(page.locator(GROUP_1)).toContainText("駐2", TICKS);
+  const groupIds = async () => [...(await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0]].sort((a, b) => a - b);
+  expect(await groupIds()).toEqual([...two, ranged[0]].sort((a, b) => a - b));
   await expect(armyButton(page)).toHaveText(`全軍 ${before - 2}`);
+  expect((await page.evaluate(() => window.__proto?.game?.selection().units ?? [])).some((u) => two.includes(u))).toBe(false);
+  // 軍團畫面: 駐守中：哨所 2 名; its button selects the ranged one.
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  await page.locator(GROUP_1).tap();
+  await expect(page.locator(".sel-info")).toContainText("駐守中：哨所 2 名");
+  expect(await page.evaluate(() => window.__proto?.game?.selection().units ?? [])).toEqual([ranged[0]]);
+  // The outpost's panel: 編隊 1：2 名［歸隊］; they leave it for where the ranged one stands.
+  const archer = (await units(page)).find((u) => u.id === ranged[0]);
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  await tapOutpost(page, OUTPOST);
+  const panel = page.locator(".sel-info");
+  await expect(panel).toContainText("編隊 1：2 名");
+  await shot(page, info, "outpost-panel-groups");
+  await panel.getByRole("button", { name: "編隊 1 的駐守歸隊" }).tap();
+  await expect(toast(page, "2 名離開哨所，走回編隊 1")).toBeVisible();
+  const back = (await sent(page)).filter((c) => c.auto === true && c.c === "retreat").at(-1);
+  expect(back).toMatchObject({ u: two, x: Math.floor(archer?.cx ?? -1), y: Math.floor(archer?.cy ?? -1) });
+  await expect.poll(async () => (await units(page)).filter((u) => two.includes(u.id)).every((u) => u.order !== 10), TICKS).toBe(true);
+  await expect(page.locator(GROUP_1)).not.toContainText("駐", TICKS);
+  expect(await groupIds()).toEqual([...two, ranged[0]].sort((a, b) => a - b));
 });
 
 test("敵人的哨所：看得到時寫堅守中；沒開哨所的開關時，建造選單沒有哨所、選了槍兵也沒有駐守（D-080）", async ({ page }, info) => {
