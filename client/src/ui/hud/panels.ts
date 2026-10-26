@@ -97,6 +97,9 @@ export interface PanelHost {
   garrison(town: number): number;
   garrisonMore(town: number): void;
   garrisonLess(town: number): void;
+  /** The town's 留守 by group (null: in no group), and 歸隊／解除留守 for one of them or 全部帶走 ("all") (the user 2026-10-26). */
+  garrisonGroups(town: number): { group: number | null; n: number }[];
+  townOut(town: number, group: number | null | "all"): void;
   /** A line in the message strip. */
   notify(text: string): void;
   /** 撤退 with units selected: pick where to (D-059). */
@@ -123,6 +126,9 @@ export interface PanelHost {
   toggleRefill(i: number): void;
   /** 軍團畫面 (D-054): the group shown in place of the selection info, or null. */
   groupView(): number | null;
+  /** Group i's 留守 in towns, 「小鎮 3 名、大城 2 名」 ("" with none), and 出城歸隊 (`all`: 全部帶走). */
+  groupStationed(i: number): string;
+  groupOut(i: number, all: boolean): void;
   /** Soldiers of this type group i wants (目標) and has alive (現有). */
   groupWant(i: number, type: number): number;
   groupHas(i: number, type: number): number;
@@ -353,6 +359,12 @@ export class SelectionInfo {
       plus.setAttribute("aria-label", `多要 1 名${name}`);
       return { type, has, want };
     });
+    // 駐守中 (the user 2026-10-26): its soldiers stationed in towns, still its own; 出城歸隊 leaves
+    // each town the least it needs (自動留最少人數), 全部帶走 leaves nobody.
+    const station = el("div", this.el, "sel-chips group-station");
+    const where = el("span", station, "group-station-line");
+    button(station, "出城歸隊", "", () => this.host.groupOut(i, false), "chip secondary");
+    button(station, "全部帶走", "", () => this.host.groupOut(i, true), "chip secondary");
     const actions = el("div", this.el, "sel-chips group-actions");
     const fromBefore = button(actions, "", "", () => this.host.saveBeforeIntoGroup(i), "chip secondary");
     button(actions, "清空", "", () => this.host.clearGroup(i), "chip secondary");
@@ -372,6 +384,9 @@ export class SelectionInfo {
         set(r.want, `${w}`);
       }
       set(total, has > 0 || want > 0 ? `${has}/${want}` : "還沒有兵");
+      const away = this.host.groupStationed(i);
+      station.hidden = away === "";
+      set(where, `駐守中：${away}`);
       const n = this.host.beforeGroupCount();
       fromBefore.hidden = n === 0;
       set(fromBefore.querySelector(".label") as HTMLElement, `改成剛才選的 ${n} 名`);
@@ -764,9 +779,27 @@ export class SelectionInfo {
       plus.setAttribute("aria-label", "多留守 1 名");
       el("span", row, "", "名");
       el("p", this.el, "sel-note", "留守的兵改成堅守，不跟全軍走");
+      // Whose they are (the user 2026-10-26): 「編隊 1：5 名［歸隊］」, 「沒編隊：2 名［解除留守］」 (back to
+      // 全軍), each leaving the town the least it needs; 全部帶走 takes everyone.
+      const whose = el("div", this.el, "sel-chips keep-groups");
+      whose.setAttribute("role", "group");
+      whose.setAttribute("aria-label", "留守的編隊");
       this.updaters.push(() => {
         const n = `${this.host.garrison(id)}`;
         if (count.textContent !== n) count.textContent = n;
+        const groups = this.host.garrisonGroups(id).filter((g) => g.n > 0);
+        const key = groups.map((g) => `${g.group}:${g.n}`).join(",");
+        if (whose.dataset.key === key) return;
+        whose.dataset.key = key;
+        whose.replaceChildren();
+        whose.hidden = groups.length === 0;
+        for (const g of groups) {
+          const entry = el("span", whose, "keep-group");
+          el("span", entry, "keep-group-name", g.group === null ? `沒編隊：${g.n} 名` : `編隊 ${g.group + 1}：${g.n} 名`);
+          const back = button(entry, g.group === null ? "解除留守" : "歸隊", "", () => this.host.townOut(id, g.group), "chip secondary");
+          back.setAttribute("aria-label", g.group === null ? "沒編隊的留守解除留守" : `編隊 ${g.group + 1} 的留守歸隊`);
+        }
+        if (groups.length > 0) button(whose, "全部帶走", "", () => this.host.townOut(id, "all"), "chip secondary");
       });
     }
     this.updaters.push(() => {

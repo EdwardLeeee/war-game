@@ -1032,7 +1032,7 @@ test("隊形：編隊裡超過一半是散開時，補進來的新兵也送散�
   await expect.poll(async () => (await units(page)).find((u) => u.id === recruit)?.loose).toBe(true);
 });
 
-test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；留守的兵改成堅守、離開編隊、不跟全軍走（D-026）", async ({ page }, info) => {
+test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；留守的兵改成堅守、還算原本的編隊（按鈕寫駐N）、不跟全軍走（D-026、使用者 2026-10-26）", async ({ page }, info) => {
   const spear = await ownIds(page, [1]);
   const mage = (await ownIds(page, [3]))[0];
   // Three spearmen and a mage walk into the small town at (30, 66), radius 4. In the order
@@ -1071,9 +1071,9 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await expect.poll(async () => (await sent(page)).at(-2)).toMatchObject({ c: "town_choice", town: 0, choice: 1 });
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: inside, stance: 1, auto: true });
   expect(await garrison(page, 0)).toEqual(inside);
-  // They left control group 1, and 全軍 does not take them.
-  const rest = spear.filter((id) => !inside.includes(id));
-  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(rest);
+  // Still control group 1's (the user 2026-10-26), 駐3 on its button; 全軍 does not take them.
+  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(spear);
+  await expect(page.locator(GROUP_1)).toContainText("駐3");
   const army = (await ownIds(page, [1, 2, 3])).filter((id) => !inside.includes(id));
   await expect(armyButton(page), "the garrison left out").toHaveText(`全軍 ${army.length}`);
   await armyButton(page).tap();
@@ -1107,10 +1107,10 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [inside[2]], stance: 0, auto: true });
   expect(await garrison(page, 0)).toEqual([inside[0], inside[1]]);
 
-  // The enemy takes the town: its garrison ends and the survivors go back to 積極.
+  // The enemy takes the town: its garrison ends and the survivors go back to 積極, and walk back to group 1.
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 1 }));
   await expect.poll(() => garrison(page, 0)).toEqual([]);
-  // (Free again, they are then taken back into group 1, which is short of them (D-050), so look for the stance among what was sent.)
+  // (The walk back follows, so look for the stance among what was sent.)
   await expect
     .poll(async () => (await sent(page)).filter((c) => c.c === "stance" && c.auto === true).at(-1))
     .toMatchObject({ c: "stance", u: [inside[0], inside[1]], stance: 0, auto: true });
@@ -1200,13 +1200,13 @@ test("留守：搶也預設留最少駐軍數（小鎮 1 名，D-084）；所有
   expect((await sent(page)).length, "no order").toBe(before);
 });
 
-test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少駐軍數，改成堅守、離開編隊、不跟全軍；搶完變廢墟，改回積極、回到全軍，不會因此回原本的編隊", async ({ page }) => {
+test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少駐軍數，改成堅守、還算原本的編隊、不跟全軍；搶完變廢墟，改回積極、回到全軍，走回原本的編隊（使用者 2026-10-26）", async ({ page }) => {
   const spear = await ownIds(page, [1]);
   const inside = spear.slice(0, 2);
   await place(page, inside, [{ x: 30, y: 67 }, { x: 31, y: 66 }]);
   await select(page, spear);
   await saveGroup(page, GROUP_1);
-  // 自動補兵 off: with it on, group 1 (short of him) would take him back once he is free (D-050).
+  // 自動補兵 off: he walks back as the group's own all the same (not as a replacement).
   const refill = page.locator(".sel-info").getByRole("button", { name: /^自動補兵：/ });
   await refill.tap();
   await expect(refill).toHaveText("自動補兵：關");
@@ -1224,18 +1224,18 @@ test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少
   await dialog.getByRole("button", { name: /^稍後再決定/ }).tap();
   await page.locator(".sel-info").getByRole("button", { name: "搶", exact: true }).tap();
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "town_choice").at(-1)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
-  // The nearest stays (1 cell from the centre), holds, and leaves group 1 and 全軍.
+  // The nearest stays (1 cell from the centre), holds, and leaves 全軍; still group 1's.
   await expect.poll(() => garrison(page, 0)).toEqual([inside[0]]);
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance").at(-1)).toMatchObject({ c: "stance", u: [inside[0]], stance: 1, auto: true });
-  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).not.toContain(inside[0]);
+  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toContain(inside[0]);
   const army = await ownIds(page, [1, 2, 3]);
   await expect(armyButton(page)).toHaveText(`全軍 ${army.length - 1}`);
-  // Plundered: ruins. He goes back to 積極 and 全軍, not to group 1.
+  // Plundered: ruins. He goes back to 積極 and 全軍, and walks back to group 1.
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_plundered", town: 0, by: 0, food: 300, gold: 300, crystal: 75 }));
   await expect.poll(() => garrison(page, 0)).toEqual([]);
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance").at(-1)).toMatchObject({ c: "stance", u: [inside[0]], stance: 0, auto: true });
   await expect(armyButton(page)).toHaveText(`全軍 ${army.length}`);
-  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).not.toContain(inside[0]);
+  expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toContain(inside[0]);
 });
 
 test("搶的留守（D-084）：大城要 3 名，城裡只有 2 名時留 2 名", async ({ page }) => {
