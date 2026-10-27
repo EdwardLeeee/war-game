@@ -1,0 +1,689 @@
+{
+ "traces": [
+  {
+   "name": "base-p-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-p-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-pr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-pr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "base-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "gov-p-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-p-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-pr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-pr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "gov-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false
+   }
+  },
+  {
+   "name": "govbs-p-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-p-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-pr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-pr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govbs-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "behind": true,
+    "behindFail": false
+   }
+  },
+  {
+   "name": "govf-p-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-p-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-pr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-pr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "govf-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "governNearest": false,
+    "towers": 2,
+    "townTowers": 2
+   }
+  },
+  {
+   "name": "kb-p-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-p-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-pr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-pr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kb0-p-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-p-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-pr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 1-20 --map random --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-pr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode push --seeds 21-40 --map random --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  },
+  {
+   "name": "kb0-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepStrength": false
+   }
+  }
+ ],
+ "scripted": []
+}
