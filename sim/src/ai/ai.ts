@@ -2763,6 +2763,17 @@ export interface HardPlan {
   /** D-086 A6: wood under WOOD_SHORT and gold GOLD_PILE or more, cavalry (food and gold, no wood) first up to this percent of its soldiers (0: as before). */
   goldCavalry: number;
   /**
+   * D-100 (KEEP on; ceo 2026-10-28, a7a: hard against normal 98/94% -> 86/85% with the batch on): every town on the
+   * fixed map is as far from both main cities, so both go for the same one at minutes 8-9; its keep holds hard a
+   * minute or more, the militia and arrows wear its 12 down and the enemy's fresh army ends them (seeds 46, 18). For a
+   * town whose keep stands (neutral or the enemy's governed), at least keepTownArmy (small) and keepBigArmy (large)
+   * soldiers (0: townArmy, bigArmy); keepContest: the enemy army it saw in the last KEEP_CONTEST counts as by a town no
+   * farther from the enemy's main city than from its own (false: only those seen by it in the last minute).
+   */
+  keepTownArmy: number;
+  keepBigArmy: number;
+  keepContest: boolean;
+  /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
    * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
@@ -2869,6 +2880,9 @@ export const HARD: HardPlan = {
   econBehind: true,
   crystalStop: true,
   goldCavalry: 25,
+  keepTownArmy: 0,
+  keepBigArmy: 0,
+  keepContest: false,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -2914,6 +2928,8 @@ const HOLD_MIN = 40;
 /** D-086 A6: towns governed more by the enemy that make it behind on towns (plan.econBehind); mages' crystal kept before it stops gathering it (plan.crystalStop); gold that piles up (plan.goldCavalry). */
 const TOWNS_BEHIND = 2;
 const IDLE_HOME = 3 * 1200;
+/** D-100 (plan.keepContest): how long the enemy army it saw counts by a contested town with its keep up. */
+const KEEP_CONTEST = 3 * 1200;
 const CRYSTAL_ENOUGH = 4;
 const GOLD_PILE = 300;
 /** D-086 A5 (plan.behindOutpost): how long after it stops being behind the guards come off the outpost. */
@@ -5036,13 +5052,23 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             // Plundered before (round 7): only worth it when it can pay to govern it (plan.townSave: the rest weighed, it saves up for it).
             const unpaid = once && plunderedTown(id) && !affordAll(governCost(t.size));
             if (unpaid && !plan.townSave && !townsBehind) continue;
-            if (army.length < (t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
+            // D-100 (plan.keepTownArmy, keepBigArmy): more for a town whose keep stands.
+            const keepUp = rules.features?.keep === true && (t.state === TownState.Neutral || (t.owner === 1 - player && t.state === TownState.Governed));
+            const small = keepUp && plan.keepTownArmy > 0 ? Math.max(townArmy, plan.keepTownArmy) : townArmy;
+            const big = keepUp && plan.keepBigArmy > 0 ? Math.max(plan.bigArmy, plan.keepBigArmy) : plan.bigArmy;
+            if (army.length < (t.size === TownSize.Small ? small : big)) continue;
             // D-100 (KEEP_AI.strength): its keep, militia or garrison; the enemy soldiers it remembers by it count too.
             const remembered = [...intel.values()].filter((e) => tick - e.tick <= FORT_FORGET && dist2(e.x, e.y, t.x, t.y) <= 14 * 14);
             if (vsForts(army) * 10 < townDefence(rules, fv, player, t, remembered) * 13) continue;
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
             for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= 14 * 14) there += WORTH[e.type];
+            // D-100 (plan.keepContest): by a town its keep holds it at, the enemy army it saw lately may come too.
+            if (plan.keepContest && keepUp && dist2(t.x, t.y, enemyHome.cellX, enemyHome.cellY) <= dist2(t.x, t.y, home.cellX, home.cellY)) {
+              let lately = 0;
+              for (const e of intel.values()) if (tick - e.tick <= KEEP_CONTEST && !e.post && e.inside === undefined) lately += WORTH[e.type];
+              there = Math.max(there, lately);
+            }
             if (there * 10 > armyWorth * (townsBehind ? 10 : 8)) continue;
             // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
             if (GATE_AI.arrows && (there + gateArrowWorth(view, rules, player, t, Math.trunc(there / 10))) * 10 > armyWorth * (townsBehind ? 10 : 8)) continue;

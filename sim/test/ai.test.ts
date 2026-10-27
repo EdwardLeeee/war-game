@@ -2894,6 +2894,47 @@ test(
   }),
 );
 
+/** D-100: KEEP on, a game with only the militia and `spears` spearmen of hard's by its main city; whether they go for the nearest small town. */
+function keepTownGoes(spears: number, plan: Partial<HardPlan>, enemy = 0): boolean {
+  const g = new Game({ seed: 1, scenario: "standard" });
+  const w = g.w;
+  for (let s = 0; s < w.units.count; s++) if (w.units.col.type[s] !== UnitType.Militia) w.units.col.hp[s] = 0;
+  g.step();
+  w.tick = 10 * 1200;
+  const s0 = w.map.spawns[0];
+  const near = [...w.map.towns].filter((t) => t.size === TownSize.Small).sort((a, b) => (a.cellX - s0.cellX) ** 2 + (a.cellY - s0.cellY) ** 2 - ((b.cellX - s0.cellX) ** 2 + (b.cellY - s0.cellY) ** 2))[0];
+  for (const t of w.map.towns) put(g, 0, UnitType.Farmer, t.cellX + 10, t.cellY + 10);
+  for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
+  // `enemy` enemy spearmen in sight of a farmer of its own, far from the town.
+  const fx = s0.cellX + 20;
+  const fy = s0.cellY - 2;
+  if (enemy > 0) put(g, 0, UnitType.Farmer, fx, fy);
+  for (let k = 0; k < enemy; k++) put(g, 1, UnitType.Spearman, fx + 2 + (k % 4), fy - 2 + Math.trunc(k / 4));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0, holdTowns: false, econBehind: false, ...plan });
+  const out = ai.think(buildView(g, 0));
+  return out.some((c) => c.c === "move" && c.u.length === spears && (c.x - near.cellX) ** 2 + (c.y - near.cellY) ** 2 <= 9);
+}
+
+test(
+  "D-100 (plan.keepTownArmy): KEEP on, hard goes for a small town whose keep stands only with keepTownArmy soldiers; 0, as before",
+  switchedOn(KEEP, () => {
+    assert.equal(keepTownGoes(8, {}), true, "off: 8 go (1.3 x its keep and militia)");
+    assert.equal(keepTownGoes(8, { keepTownArmy: 10 }), false, "keepTownArmy 10: 8 wait");
+    assert.equal(keepTownGoes(10, { keepTownArmy: 10 }), true, "10 go");
+  }),
+);
+
+test(
+  "D-100 (plan.keepContest): KEEP on, the enemy army hard saw lately counts by a town as near the enemy; off, only those by the town",
+  switchedOn(KEEP, () => {
+    // The fixed map's towns are as far from both main cities (the nearest small one too).
+    assert.equal(keepTownGoes(10, {}, 12), true, "off: 12 enemies seen away from the town count for nothing there");
+    assert.equal(keepTownGoes(10, { keepContest: true }, 12), false, "on: 12 enemies seen lately, 10 do not go");
+    assert.equal(keepTownGoes(16, { keepContest: true }, 12), true, "16 go");
+  }),
+);
+
 test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
   const march = (strongPush: number) => {
     const g = emptyGame();
