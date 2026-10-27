@@ -2935,6 +2935,71 @@ test(
   }),
 );
 
+// --- D-086 A7: governs what it can hold (the user 2026-10-28: 「它逆風局都不去治理城鎮也不蓋防禦塔」) ---------------------
+
+/** D-086 A7: hard has just taken the small town at (29, 29) with `spears` spearmen by it; `foes` enemy spearmen by it too. */
+function takenGame(spears: number, foes: number): { g: Game; town: number } {
+  const g = emptyGame();
+  const w = g.w;
+  w.tick = 15 * 1200;
+  const t = w.map.towns.find((x) => x.size === TownSize.Small && x.cellX === 29 && x.cellY === 29)!;
+  w.townState[t.id] = TownState.AwaitingChoice;
+  w.townOwner[t.id] = 0;
+  for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, t.cellX - 2 + (k % 5), t.cellY + Math.trunc(k / 5));
+  for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, t.cellX + 8 + (k % 3), t.cellY - 2 + Math.trunc(k / 3));
+  w.res.set([500, 500, 500, 0], 0);
+  g.fog.update(w);
+  return { g, town: t.id };
+}
+
+test("D-086 A7 (plan.governHold): a town it takes is governed when none is by it and it is 1.3 x the enemy, else plundered; off, plundered", () => {
+  const choice = (governHold: boolean, foes: number) => {
+    const { g, town } = takenGame(12, foes);
+    const out = hardAi(g, { dodge: false, governFrom: 0, governHold }).think(buildView(g, 0));
+    const c = out.find((x) => x.c === "town_choice" && x.town === town);
+    return c !== undefined && c.c === "town_choice" ? c.choice : -1;
+  };
+  assert.equal(choice(true, 0), TownChoice.Govern, "on, none by it: governed");
+  assert.equal(choice(true, 6), TownChoice.Plunder, "on, enemies by it: plundered");
+  assert.equal(choice(false, 0), TownChoice.Plunder, "off: plundered, as before");
+});
+
+test("D-086 A7 (plan.governHold): the army stays by a town it governs until it is repaired; off, it goes home", () => {
+  const stayed = (governHold: boolean) => {
+    const { g, town } = takenGame(12, 0);
+    const w = g.w;
+    // It goes for the town (neutral, its militia gone), then the town falls to it and it governs it.
+    w.townState[town] = TownState.Neutral;
+    w.townOwner[town] = NO_OWNER;
+    const ai = hardAi(g, { dodge: false, governFrom: 0, governHold, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 });
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 12), "it goes for the town");
+    w.townState[town] = TownState.Repairing;
+    w.townOwner[town] = 0;
+    w.tick = 15 * 1200 + 200;
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    return ai.stats?.().governStayed ?? 0;
+  };
+  assert.equal(stayed(true), 1, "on: it stays by the town being repaired");
+  assert.equal(stayed(false), 0, "off: it does not");
+});
+
+test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it governs; 0, none", () => {
+  const towers = (governTowers: number) => {
+    const g = behindGame(0);
+    const w = g.w;
+    const t = w.map.towns.find((x) => x.size === TownSize.Small && x.cellX === 29 && x.cellY === 29)!;
+    w.townState[t.id] = TownState.Governed;
+    w.townOwner[t.id] = 0;
+    put(g, 0, UnitType.Farmer, t.cellX, t.cellY);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, governTowers }).think(buildView(g, 0));
+    return out.some((c) => c.c === "build" && c.type === BuildingType.ArrowTower && (c.x - t.cellX) ** 2 + (c.y - t.cellY) ** 2 <= (t.radius + 10) ** 2);
+  };
+  assert.equal(towers(2), true, "governTowers 2: a tower by it");
+  assert.equal(towers(0), false, "0: none, as before");
+});
+
 test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
   const march = (strongPush: number) => {
     const g = emptyGame();
