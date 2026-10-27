@@ -1,0 +1,885 @@
+{
+ "traces": [
+  {
+   "name": "kba-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kba-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   }
+  },
+  {
+   "name": "kbab-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbab-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   }
+  },
+  {
+   "name": "kbag-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  },
+  {
+   "name": "kbag-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "kba",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kba",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-20",
+    "21-40"
+   ]
+  },
+  {
+   "name": "kbab",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kbab",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "keepContest": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-20",
+    "21-40"
+   ]
+  },
+  {
+   "name": "kbag",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kbag",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-20",
+    "21-40"
+   ]
+  },
+  {
+   "name": "base",
+   "a": {},
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "kb",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "kba",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "kbag",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "keepTownArmy": 10,
+    "keepBigArmy": 20,
+    "governHold": true,
+    "governTowers": 2
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  }
+ ]
+}
