@@ -28,18 +28,6 @@ function arg(name: string, fallback: string): string {
   return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : fallback;
 }
 
-const games = Number(arg("games", "100"));
-const shard = Number(arg("shard", "0"));
-const shards = Number(arg("shards", "1"));
-const maxTicks = Number(arg("ticks", String(MAX_TICKS)));
-/** The difficulty of slot 0 and slot 1 (they swap spawns with the styles), e.g. normal,easy. */
-const slotDifficulty = arg("difficulty", "normal,normal").split(",") as AiDifficulty[];
-if (slotDifficulty.length !== 2 || !slotDifficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad --difficulty ${slotDifficulty}`);
-const map = arg("map", "fixed") as MapMode;
-if (!(MAP_MODES as readonly string[]).includes(map)) throw new Error(`bad --map ${map}`);
-const out = arg("out", "tournament");
-mkdirSync(out, { recursive: true });
-
 export interface GameResult {
   game: number;
   seed: number;
@@ -217,94 +205,115 @@ function openSpells(w: Runner["game"]["w"], p: number, paidBack: boolean): numbe
   return n;
 }
 
-const per = Math.ceil(games / shards);
-let failed = 0;
-for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
-  const seed = 1 + (i >> 1);
-  const swap = (i & 1) === 1;
-  const start = performance.now();
-  const difficulty = [0, 1].map((p) => slotDifficulty[swap ? 1 - p : p]);
-  const r = new Runner({ seed, scenario: "standard", ai: [true, true], swap, styles: STYLE_PAIRS[(seed - 1) % STYLE_PAIRS.length], maxTicks, difficulty, map });
-  const g = r.game;
-  const micros: number[] = [];
-  const timeline: Sample[] = [];
-  const gold = new GoldWatch(g.w);
-  const rejected = [new Array<number>(REJECT_CODES).fill(0), new Array<number>(REJECT_CODES).fill(0)];
-  while (!r.over && g.tick < maxTicks) {
-    micros.push(r.tick(() => performance.now()));
-    for (const e of g.events) if (e.ev.k === "rejected" && e.to < 2) rejected[e.to][e.ev.reason]++;
-    if (g.tick % TIMELINE_EVERY === 0) timeline.push(sample(r));
-    if (g.tick % 1200 === 0) gold.minute(g.w);
+/**
+ * The shard named on the command line: its games, their replays, DIR/game-<i>.json and .jsonl; exits 1 if any
+ * replay differs. Only when this file is run (node src/tournament.ts), so a script may import STYLE_PAIRS,
+ * GameResult and Sample without playing a shard.
+ */
+function run(): void {
+  const games = Number(arg("games", "100"));
+  const shard = Number(arg("shard", "0"));
+  const shards = Number(arg("shards", "1"));
+  const maxTicks = Number(arg("ticks", String(MAX_TICKS)));
+  /** The difficulty of slot 0 and slot 1 (they swap spawns with the styles), e.g. normal,easy. */
+  const slotDifficulty = arg("difficulty", "normal,normal").split(",") as AiDifficulty[];
+  if (slotDifficulty.length !== 2 || !slotDifficulty.every((d) => (AI_DIFFICULTIES as readonly string[]).includes(d))) throw new Error(`bad --difficulty ${slotDifficulty}`);
+  const map = arg("map", "fixed") as MapMode;
+  if (!(MAP_MODES as readonly string[]).includes(map)) throw new Error(`bad --map ${map}`);
+  const out = arg("out", "tournament");
+  mkdirSync(out, { recursive: true });
+
+  const per = Math.ceil(games / shards);
+  let failed = 0;
+  for (let i = shard * per; i < Math.min(games, (shard + 1) * per); i++) {
+    const seed = 1 + (i >> 1);
+    const swap = (i & 1) === 1;
+    const start = performance.now();
+    const difficulty = [0, 1].map((p) => slotDifficulty[swap ? 1 - p : p]);
+    const r = new Runner({ seed, scenario: "standard", ai: [true, true], swap, styles: STYLE_PAIRS[(seed - 1) % STYLE_PAIRS.length], maxTicks, difficulty, map });
+    const g = r.game;
+    const micros: number[] = [];
+    const timeline: Sample[] = [];
+    const gold = new GoldWatch(g.w);
+    const rejected = [new Array<number>(REJECT_CODES).fill(0), new Array<number>(REJECT_CODES).fill(0)];
+    while (!r.over && g.tick < maxTicks) {
+      micros.push(r.tick(() => performance.now()));
+      for (const e of g.events) if (e.ev.k === "rejected" && e.to < 2) rejected[e.to][e.ev.reason]++;
+      if (g.tick % TIMELINE_EVERY === 0) timeline.push(sample(r));
+      if (g.tick % 1200 === 0) gold.minute(g.w);
+    }
+    if (r.hashes.at(-1)!.tick !== g.tick) r.hashes.push({ tick: g.tick, hash: g.hash() });
+    // Replay with the AIs off.
+    const rp = new Runner({ seed, scenario: "standard", ai: [false, false], replay: g.log, maxTicks, map });
+    while (!rp.over && rp.game.tick < g.tick) rp.tick();
+    if (rp.hashes.at(-1)!.tick !== rp.game.tick) rp.hashes.push({ tick: rp.game.tick, hash: rp.game.hash() });
+    const same = rp.hashes.length === r.hashes.length && r.hashes.every((h, k) => h.tick === rp.hashes[k].tick && h.hash === rp.hashes[k].hash);
+    if (!same) failed++;
+    const wallMs = Math.round(performance.now() - start);
+    const sorted = [...micros].sort((a, b) => a - b);
+    const pick = (q: number) => (sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)]);
+    const w = g.w;
+    const result: GameResult = {
+      game: i,
+      seed,
+      swap,
+      ...(map === "random" ? { map, layout: (g.w.map as RandomMap).layout } : {}),
+      styles: r.styles.map((s) => s ?? "none"),
+      difficulty,
+      ticks: g.tick,
+      winner: w.over ? w.winner : -1,
+      reason: w.endReason,
+      replayMatches: same,
+      checkpoints: r.hashes.length,
+      finalHash: hex8(g.hash()),
+      wallMs,
+      tickMicros: { median: pick(0.5), p95: pick(0.95), max: sorted.at(-1) ?? 0, mean: sorted.length ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length) : 0 },
+      timeline,
+      gold: gold.result(),
+      firstCapture: w.firstCapture,
+      firstCaptureBy: w.firstCaptureBy,
+      perPlayer: [0, 1].map((p) => ({
+        plundered: w.plundered[p],
+        governed: w.governed[p],
+        magesTrained: w.trained[p * UNIT_KINDS + UnitType.Mage],
+        magesLost: w.lost[p * UNIT_KINDS + UnitType.Mage],
+        cannonShots: w.cannonShots[p],
+        cannonHits: w.cannonHits[p],
+        cannonKills: w.cannonKills[p],
+        plunderIncome: w.plunderIncome[p],
+        governChosen: w.governChosen[p],
+        governCost: w.governCost[p],
+        townIncome: w.townIncome[p],
+        governedTicks: w.governedTicks[p],
+        governEnded: w.governEnded[p],
+        governPaidBack: w.governPaidBack[p],
+        governOpen: openSpells(w, p, false),
+        governOpenPaidBack: openSpells(w, p, true),
+        trained: Array.from(w.trained.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
+        lost: Array.from(w.lost.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
+        gathered: Array.from(w.gathered.subarray(p * 4, p * 4 + 4)),
+        farmersLostBy: Array.from(w.farmerDeaths.subarray(p * 5, p * 5 + 5)),
+        farmerDeaths: deathsOf(w, p),
+        revolts: w.revolts[p],
+        townDeaths: w.townDeaths[p],
+        gateDeaths: w.gateDeaths[p],
+        rejected: rejected[p],
+  })),
+    };
+    writeFileSync(join(out, `game-${i}.json`), JSON.stringify(result, null, 1) + "\n");
+    const head: LogHeader = r.header([true, true]);
+    writeFileSync(join(out, `game-${i}.jsonl`), [JSON.stringify(head), ...g.log.map((c) => JSON.stringify(c))].join("\n") + "\n");
+    console.log(
+      `game ${i} seed ${seed}${swap ? " swap" : ""}${result.layout === undefined ? "" : ` ${result.layout}`} ${result.styles.join("/")}${difficulty[0] === difficulty[1] ? "" : ` ${difficulty.join("/")}`}: ${result.winner === -1 ? "draw" : `player ${result.winner} wins`} at tick ${g.tick}` +
+        ` (${(g.tick / 1200).toFixed(1)} min); replay ${same ? "matches" : "DIFFERS"} (${r.hashes.length} checkpoints); ${wallMs} ms;` +
+        ` plunder ${result.perPlayer.map((p) => p.plundered).join("/")}, govern ${result.perPlayer.map((p) => p.governed).join("/")},` +
+        ` mages ${result.perPlayer.map((p) => p.magesTrained).join("/")}`,
+    );
   }
-  if (r.hashes.at(-1)!.tick !== g.tick) r.hashes.push({ tick: g.tick, hash: g.hash() });
-  // Replay with the AIs off.
-  const rp = new Runner({ seed, scenario: "standard", ai: [false, false], replay: g.log, maxTicks, map });
-  while (!rp.over && rp.game.tick < g.tick) rp.tick();
-  if (rp.hashes.at(-1)!.tick !== rp.game.tick) rp.hashes.push({ tick: rp.game.tick, hash: rp.game.hash() });
-  const same = rp.hashes.length === r.hashes.length && r.hashes.every((h, k) => h.tick === rp.hashes[k].tick && h.hash === rp.hashes[k].hash);
-  if (!same) failed++;
-  const wallMs = Math.round(performance.now() - start);
-  const sorted = [...micros].sort((a, b) => a - b);
-  const pick = (q: number) => (sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)]);
-  const w = g.w;
-  const result: GameResult = {
-    game: i,
-    seed,
-    swap,
-    ...(map === "random" ? { map, layout: (g.w.map as RandomMap).layout } : {}),
-    styles: r.styles.map((s) => s ?? "none"),
-    difficulty,
-    ticks: g.tick,
-    winner: w.over ? w.winner : -1,
-    reason: w.endReason,
-    replayMatches: same,
-    checkpoints: r.hashes.length,
-    finalHash: hex8(g.hash()),
-    wallMs,
-    tickMicros: { median: pick(0.5), p95: pick(0.95), max: sorted.at(-1) ?? 0, mean: sorted.length ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length) : 0 },
-    timeline,
-    gold: gold.result(),
-    firstCapture: w.firstCapture,
-    firstCaptureBy: w.firstCaptureBy,
-    perPlayer: [0, 1].map((p) => ({
-      plundered: w.plundered[p],
-      governed: w.governed[p],
-      magesTrained: w.trained[p * UNIT_KINDS + UnitType.Mage],
-      magesLost: w.lost[p * UNIT_KINDS + UnitType.Mage],
-      cannonShots: w.cannonShots[p],
-      cannonHits: w.cannonHits[p],
-      cannonKills: w.cannonKills[p],
-      plunderIncome: w.plunderIncome[p],
-      governChosen: w.governChosen[p],
-      governCost: w.governCost[p],
-      townIncome: w.townIncome[p],
-      governedTicks: w.governedTicks[p],
-      governEnded: w.governEnded[p],
-      governPaidBack: w.governPaidBack[p],
-      governOpen: openSpells(w, p, false),
-      governOpenPaidBack: openSpells(w, p, true),
-      trained: Array.from(w.trained.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
-      lost: Array.from(w.lost.subarray(p * UNIT_KINDS, p * UNIT_KINDS + 4)),
-      gathered: Array.from(w.gathered.subarray(p * 4, p * 4 + 4)),
-      farmersLostBy: Array.from(w.farmerDeaths.subarray(p * 5, p * 5 + 5)),
-      farmerDeaths: deathsOf(w, p),
-      revolts: w.revolts[p],
-      townDeaths: w.townDeaths[p],
-      gateDeaths: w.gateDeaths[p],
-      rejected: rejected[p],
-})),
-  };
-  writeFileSync(join(out, `game-${i}.json`), JSON.stringify(result, null, 1) + "\n");
-  const head: LogHeader = r.header([true, true]);
-  writeFileSync(join(out, `game-${i}.jsonl`), [JSON.stringify(head), ...g.log.map((c) => JSON.stringify(c))].join("\n") + "\n");
-  console.log(
-    `game ${i} seed ${seed}${swap ? " swap" : ""}${result.layout === undefined ? "" : ` ${result.layout}`} ${result.styles.join("/")}${difficulty[0] === difficulty[1] ? "" : ` ${difficulty.join("/")}`}: ${result.winner === -1 ? "draw" : `player ${result.winner} wins`} at tick ${g.tick}` +
-      ` (${(g.tick / 1200).toFixed(1)} min); replay ${same ? "matches" : "DIFFERS"} (${r.hashes.length} checkpoints); ${wallMs} ms;` +
-      ` plunder ${result.perPlayer.map((p) => p.plundered).join("/")}, govern ${result.perPlayer.map((p) => p.governed).join("/")},` +
-      ` mages ${result.perPlayer.map((p) => p.magesTrained).join("/")}`,
-  );
+  if (failed > 0) {
+    console.error(`${failed} replay(s) differ`);
+    process.exit(1);
+  }
 }
-if (failed > 0) {
-  console.error(`${failed} replay(s) differ`);
-  process.exit(1);
-}
+
+if (import.meta.main) run();
