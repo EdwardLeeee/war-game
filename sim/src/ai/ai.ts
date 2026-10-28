@@ -2889,11 +2889,16 @@ export const HARD: HardPlan = {
   econBehind: true,
   crystalStop: true,
   goldCavalry: 25,
-  keepTownArmy: 0,
-  keepBigArmy: 0,
+  // D-100 and D-086 A7 (ceo 2026-10-29, the user: 「整批照現在的進度直接上」; docs/research/2026-10-ai-a7.md): a7c's kbag,
+  // measured with the D-100 batch on (KEEP, SIEGE, RICH, MARKET): hard against normal 86/85% -> 87/90%, the six
+  // active groups 14 -> 8 of 240, push-crush 27/25 -> 9/27 of 40, towers and towns after a big defeat. keepTownArmy
+  // and keepBigArmy act only with keeps; governHold and governTowers too unless the caller sets them (createHardAi).
+  // keepContest measured and left off.
+  keepTownArmy: 10,
+  keepBigArmy: 20,
   keepContest: false,
-  governHold: false,
-  governTowers: 0,
+  governHold: true,
+  governTowers: 2,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -3031,6 +3036,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const plan: HardPlan = { ...HARD, ...know.hard };
   // D-083 (c): with the population rules on, HARD_POP over HARD (what the caller gives still wins).
   if ((know.rules.population?.town[TownSize.Small] ?? 0) > 0) Object.assign(plan, HARD_POP, know.hard);
+  // D-086 A7: measured with keeps on only; without them it plays as before, unless the caller asks for them.
+  if (know.rules.features?.keep !== true) {
+    if (know.hard?.governHold === undefined) plan.governHold = false;
+    if (know.hard?.governTowers === undefined) plan.governTowers = 0;
+  }
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;

@@ -2886,7 +2886,8 @@ test(
       for (const t of w.map.towns) put(g, 0, UnitType.Farmer, t.cellX + 10, t.cellY + 10);
       for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
       g.fog.update(w);
-      const out = hardAi(g, { dodge: false, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 }).think(buildView(g, 0));
+      // keepTownArmy (D-100, 10 by default) aside: this is about its keep and militia.
+      const out = hardAi(g, { dodge: false, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0, keepTownArmy: 0 }).think(buildView(g, 0));
       return out.some((c) => c.c === "move" && c.u.length === spears && (c.x - near.cellX) ** 2 + (c.y - near.cellY) ** 2 <= 9);
     };
     assert.equal(goes(5), false, "5 spearmen: not into its keep and militia");
@@ -2919,7 +2920,7 @@ function keepTownGoes(spears: number, plan: Partial<HardPlan>, enemy = 0): boole
 test(
   "D-100 (plan.keepTownArmy): KEEP on, hard goes for a small town whose keep stands only with keepTownArmy soldiers; 0, as before",
   switchedOn(KEEP, () => {
-    assert.equal(keepTownGoes(8, {}), true, "off: 8 go (1.3 x its keep and militia)");
+    assert.equal(keepTownGoes(8, { keepTownArmy: 0 }), true, "0: 8 go (1.3 x its keep and militia)");
     assert.equal(keepTownGoes(8, { keepTownArmy: 10 }), false, "keepTownArmy 10: 8 wait");
     assert.equal(keepTownGoes(10, { keepTownArmy: 10 }), true, "10 go");
   }),
@@ -2929,7 +2930,7 @@ test(
   "D-100 (plan.keepContest): KEEP on, the enemy army hard saw lately counts by a town as near the enemy; off, only those by the town",
   switchedOn(KEEP, () => {
     // The fixed map's towns are as far from both main cities (the nearest small one too).
-    assert.equal(keepTownGoes(10, {}, 12), true, "off: 12 enemies seen away from the town count for nothing there");
+    assert.equal(keepTownGoes(10, { keepContest: false }, 12), true, "off: 12 enemies seen away from the town count for nothing there");
     assert.equal(keepTownGoes(10, { keepContest: true }, 12), false, "on: 12 enemies seen lately, 10 do not go");
     assert.equal(keepTownGoes(16, { keepContest: true }, 12), true, "16 go");
   }),
@@ -2962,6 +2963,23 @@ test("D-086 A7 (plan.governHold): a town it takes is governed when none is by it
   assert.equal(choice(true, 0), TownChoice.Govern, "on, none by it: governed");
   assert.equal(choice(true, 6), TownChoice.Plunder, "on, enemies by it: plundered");
   assert.equal(choice(false, 0), TownChoice.Plunder, "off: plundered, as before");
+});
+
+test("D-086 A7: by default hard governs what it can hold only with keeps on; without them it plunders, as before", () => {
+  const choice = (keep: boolean) => {
+    const was = KEEP.on;
+    KEEP.on = keep;
+    try {
+      const { g, town } = takenGame(12, 0);
+      const out = hardAi(g, { dodge: false, governFrom: 0 }).think(buildView(g, 0));
+      const c = out.find((x) => x.c === "town_choice" && x.town === town);
+      return c !== undefined && c.c === "town_choice" ? c.choice : -1;
+    } finally {
+      KEEP.on = was;
+    }
+  };
+  assert.equal(choice(false), TownChoice.Plunder, "keeps off: plundered, as before");
+  assert.equal(choice(true), TownChoice.Govern, "keeps on: governed");
 });
 
 test("D-086 A7 (plan.governHold): the army stays by a town it governs until it is repaired; off, it goes home", () => {
