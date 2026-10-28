@@ -4768,8 +4768,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // this think), for at most GOVERN_STAY x its repair; but it breaks off as from any town when it should (ceo 2026-10-29:
           // a repair stops with the garrison under its least, and it would stand there till the last, as #188 at forts).
           const holding = plan.governHold && t !== undefined && t.owner === player && (t.state === TownState.Repairing || t.state === TownState.AwaitingChoice);
-          if (!holding) holdTown = -1;
-          else if (holdTown !== targetTown) {
+          if (holding && holdTown !== targetTown) {
             holdTown = targetTown;
             holdFrom = tick;
           }
@@ -4779,6 +4778,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             return;
           }
           if (holding && breakOff) counted.governBrokeOff++;
+          // Not staying (home, breaking off): the next stay, by this town or another, times from its own start (ceo 2026-10-29).
+          holdTown = -1;
           if (t === undefined || (t.owner === player && t.state !== TownState.Neutral && !(holding && breakOff)) || (t.state === TownState.Ruins && !staleRuin(targetTown, t))) mode = "home";
           else if (breakOff) {
             razing = -1;
@@ -5156,6 +5157,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             labels[HEAD_ARMY] = 1;
             targetTown = pick;
             townEven = townsBehind;
+            // D-086 A7: a new trip, a new stay.
+            holdTown = -1;
             gateDone = -1;
             armyAtStart = army.length;
             marchWorth = vsForts(army);

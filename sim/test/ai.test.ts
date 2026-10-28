@@ -3053,6 +3053,54 @@ test("D-086 A7 (plan.governHold): a repair that does not end, hard stays at most
   assert.equal(holdingThink((Math.trunc((2 * repair) / 200) + 1) * 200, 0).stayed, 1, "past it: no longer");
 });
 
+test("D-086 A7 (plan.governHold): gone home from a stay that ran out, hard takes the same town again and stays by it again", () => {
+  const { g, town } = takenGame(12, 0);
+  const w = g.w;
+  const tt = w.map.towns.find((x) => x.id === town)!;
+  // The other towns ruins it sees, so that from this one it can only go home, and back to it.
+  for (const o of w.map.towns) if (o.id !== town) {
+    w.townState[o.id] = TownState.Ruins;
+    w.townOwner[o.id] = NO_OWNER;
+    w.townTimer[o.id] = 48000;
+    put(g, 0, UnitType.Farmer, o.cellX, o.cellY);
+  }
+  const repair = rules().towns?.[TownSize.Small]?.repairTicks ?? 900;
+  const ai = hardAi(g, { dodge: false, governFrom: 0, governHold: true, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 });
+  const take = (at: number) => {
+    w.townState[town] = TownState.Neutral;
+    w.townOwner[town] = NO_OWNER;
+    w.tick = at;
+    g.fog.update(w);
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length >= 10 && c.x === tt.cellX && c.y === tt.cellY), "it goes for the town");
+    w.townState[town] = TownState.Repairing;
+    w.townOwner[town] = 0;
+  };
+  const think = (at: number) => {
+    w.tick = at;
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    return ai.stats?.().governStayed ?? 0;
+  };
+  const t0 = 15 * 1200;
+  take(t0);
+  assert.equal(think(t0 + 200), 1, "it stays");
+  const out = (Math.trunc((2 * repair) / 200) + 2) * 200;
+  assert.equal(think(t0 + out), 1, "past the limit: home");
+  // Home: its 12 walked back (the game is not run here), by its main city; a farmer of its own keeps the town in sight.
+  const s0 = w.map.spawns[0];
+  put(g, 0, UnitType.Farmer, tt.cellX + tt.radius + 2, tt.cellY);
+  const u = w.units.col;
+  let k = 0;
+  for (let s = 0; s < w.units.count; s++) {
+    if (u.owner[s] !== 0 || u.type[s] !== UnitType.Spearman) continue;
+    u.x[s] = ((s0.cellX + 4 + (k % 5)) << 10) + 512;
+    u.y[s] = ((s0.cellY - 4 - Math.trunc(k / 5)) << 10) + 512;
+    k++;
+  }
+  take(t0 + out + 200);
+  assert.equal(think(t0 + out + 400), 2, "the same town again: it stays again");
+});
+
 test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it governs; 0, none", () => {
   const towers = (governTowers: number) => {
     const g = behindGame(0);
