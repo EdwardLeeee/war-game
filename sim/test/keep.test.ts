@@ -12,7 +12,7 @@ import { keepOf, spawnMilitia } from "../src/core/scenarios.ts";
 import { toCanon } from "../src/frame.ts";
 import { BuildingType, inTown, NEUTRAL, PlaceBit, Reject, Resource, Terrain, TownChoice, TownSize, TownState, UnitType, walkableTerrain } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, put, run, slotOf, switchedOn } from "./helpers.ts";
+import { cmd, emptyGame, put, run, slotOf, switchedOff, switchedOn } from "./helpers.ts";
 
 const keepOn = (body: () => void) => switchedOn(KEEP, body);
 
@@ -38,7 +38,7 @@ function rejects(g: Game, p = 0): number[] {
   return g.events.filter((e) => e.to === p && e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
 }
 
-test("KEEP off: the rules, the castles and the big city's tower are D-089's", () => {
+test("KEEP off: the rules, the castles and the big city's tower are D-089's", switchedOff(KEEP, () => {
   const r = rules();
   assert.equal(r.features.keep, undefined);
   assert.equal(r.towns[TownSize.Small].keep, undefined);
@@ -46,7 +46,7 @@ test("KEEP off: the rules, the castles and the big city's tower are D-089's", ()
   assert.deepEqual([BUILDINGS[BuildingType.Keep].size, BUILDINGS[BuildingType.Keep].hp, r.arrows.townTower.damage], [2, 400, 6]);
   assert.deepEqual([TOWNS[TownSize.Small].radius, TOWNS[TownSize.Large].radius], [5, 7]);
   assert.equal(BuildingType.TownTower, BuildingType.Keep, "the old name, one version");
-});
+}));
 
 test("KEEP on: the castles 13 x 13 and 17 x 17, centred; a 3 x 3 keep in each town, 600 / 4 and 1000 / 10", keepOn(() => {
   const r = rules();

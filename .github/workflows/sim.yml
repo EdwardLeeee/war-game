@@ -21,6 +21,11 @@ concurrency:
   group: sim-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # AI-against-AI games' time limit (D-112; the user 2026-10-27: 「我跟ai打每次都超過30分鐘阿」): 60 minutes once
+  # KEEP, SIEGE, RICH and MARKET are on, its draws gated; the summaries list the old 30 minutes for reference.
+  AI_TICKS: "72000"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -92,7 +97,7 @@ jobs:
   # its command log with the AIs off and every hash must match.
   ai-vs-ai:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -109,7 +114,7 @@ jobs:
           cache-dependency-path: sim/package-lock.json
       - run: npm ci
       - name: 25 games, each replayed
-        run: node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --out "${GITHUB_WORKSPACE}/tournament/shard-${{ matrix.shard }}"
+        run: node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --ticks ${AI_TICKS} --out "${GITHUB_WORKSPACE}/tournament/shard-${{ matrix.shard }}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -123,7 +128,7 @@ jobs:
   # pair; the stronger AI's share, draws and game lengths are listed only.
   ai-vs-ai-random:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -143,7 +148,7 @@ jobs:
       - name: 25 games on random maps, ${{ matrix.pair }}, each replayed
         run: |
           pair="${{ matrix.pair }}"
-          node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --map random --difficulty "${pair/-/,}" --out "${GITHUB_WORKSPACE}/tournament-random/${pair}/shard-${{ matrix.shard }}"
+          node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --ticks ${AI_TICKS} --map random --difficulty "${pair/-/,}" --out "${GITHUB_WORKSPACE}/tournament-random/${pair}/shard-${{ matrix.shard }}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -727,7 +732,7 @@ jobs:
   # each spawn plays easy half the time. Replayed like the others.
   ai-vs-easy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -744,7 +749,7 @@ jobs:
           cache-dependency-path: sim/package-lock.json
       - run: npm ci
       - name: 25 games against the easy AI, each replayed
-        run: node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --difficulty normal,easy --out "${GITHUB_WORKSPACE}/tournament-easy/shard-${{ matrix.shard }}"
+        run: node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --ticks ${AI_TICKS} --difficulty normal,easy --out "${GITHUB_WORKSPACE}/tournament-easy/shard-${{ matrix.shard }}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -757,7 +762,7 @@ jobs:
   # the others. Until then every step after the check is skipped.
   ai-vs-hard:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -788,7 +793,7 @@ jobs:
         if: steps.hard.outputs.on == 'true'
         run: |
           pair="${{ matrix.pair }}"
-          node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --difficulty "${pair/-/,}" --out "${GITHUB_WORKSPACE}/tournament-${pair}/shard-${{ matrix.shard }}"
+          node src/tournament.ts --games 100 --shard ${{ matrix.shard }} --shards 4 --ticks ${AI_TICKS} --difficulty "${pair/-/,}" --out "${GITHUB_WORKSPACE}/tournament-${pair}/shard-${{ matrix.shard }}"
       - uses: actions/upload-artifact@v7
         if: always() && steps.hard.outputs.on == 'true'
         with:

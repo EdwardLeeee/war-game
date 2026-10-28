@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import { AVENGE, CANNON, DODGE, HOME_GUARD } from "../src/core/rules.ts";
 import { atHome } from "../src/core/units.ts";
 import { CELL_SHIFT, Resource, TownState, UnitType } from "../src/protocol.ts";
@@ -52,7 +53,7 @@ test("away from home, or a farmer at home: all of it", switchedOff([DODGE, AVENG
   });
 }));
 
-test("in a town its owner governs: a fifth less; while the town is being repaired, all of it", switchedOff([DODGE, AVENGE], () => {
+test("in a town its owner governs: a fifth less; while the town is being repaired, all of it", switchedOff([DODGE, AVENGE], switchedOff(KEEP, () => {
   withHome(true, () => {
     const town = (state: number) => (g: G) => {
       const t = g.w.map.towns.findIndex((x) => x.cellX === 29 && x.cellY === 29);
@@ -66,7 +67,7 @@ test("in a town its owner governs: a fifth less; while the town is being repaire
     assert.equal(shot(UnitType.Spearman, 31, 31, town(TownState.Repairing)), CANNON.damage);
     assert.equal(shot(UnitType.Spearman, 36, 29, town(TownState.Governed)), CANNON.damage, "outside the town's radius");
   });
-}));
+})));
 
 test("atHome follows the main city: 8 cells from its footprint, not 9", () => {
   const g = emptyGame();

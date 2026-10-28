@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import { damage } from "../src/core/units.ts";
 import { Action, BuildingType, CELL_SHIFT, GameOverReason, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitFlag, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
@@ -37,7 +38,7 @@ test("a group moves at its slowest speed and forms up: melee in front, then rang
   assert.ok(meanY(UnitType.Ranged) > meanY(UnitType.Mage), "ranged ahead of mages");
 });
 
-test("retreat ignores enemies; attack-move fights them", () => {
+test("retreat ignores enemies; attack-move fights them", switchedOff(KEEP, () => {
   for (const kind of ["retreat", "move"] as const) {
     const g = emptyGame();
     const a = openArea(g, 24);
@@ -51,7 +52,7 @@ test("retreat ignores enemies; attack-move fights them", () => {
     const enemyHurt = slotOf(g, enemy) < 0 || g.w.units.col.hp[slotOf(g, enemy)] < 25;
     assert.equal(enemyHurt, kind === "move", kind);
   }
-});
+}));
 
 test("hold stance stays put; aggressive idle units chase but give up past the leash", () => {
   const g = emptyGame();
@@ -107,7 +108,7 @@ test("joining a fight: an idle soldier takes on the enemy a friend within 6 cell
   assert.equal(u.target[slotOf(g, mover)], -1, "a unit with an order keeps to it");
 });
 
-test("joining a fight does not chain: in a line of soldiers 4 cells apart, only those within 8 cells of the enemy leave their place", () => {
+test("joining a fight does not chain: in a line of soldiers 4 cells apart, only those within 8 cells of the enemy leave their place", switchedOff(KEEP, () => {
   const g = emptyGame();
   const a = openArea(g, 24);
   const u = g.w.units.col;
@@ -124,7 +125,7 @@ test("joining a fight does not chain: in a line of soldiers 4 cells apart, only 
     for (const k of [2, 3]) assert.deepEqual([u.x[slotOf(g, line[k])], u.y[slotOf(g, line[k])]], start[k], `tick ${g.tick}: soldier ${k} (12 or more cells away) stays`);
   }
   assert.ok(moved1, "the one 8 cells away joins");
-});
+}));
 
 // Set for round 3's ranged x5/2 on spearmen; with the triangle's x7/2 (D-097) the ranged win either way.
 test("joining a fight: ranged walking up to standing spearmen meet all of them (equal cost, 8 cells): the spearmen win; without it the ranged win", beforeTriangle(() => {

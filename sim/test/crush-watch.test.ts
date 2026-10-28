@@ -3,10 +3,11 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import { BUILDINGS } from "../src/core/rules.ts";
 import { CrushWatch } from "../src/crush-watch.ts";
 import { BuildingType, TownState, UnitType } from "../src/protocol.ts";
-import { emptyGame, openArea, put } from "./helpers.ts";
+import { emptyGame, openArea, put, switchedOff } from "./helpers.ts";
 
 function watched(g: ReturnType<typeof emptyGame>, watch: CrushWatch, ticks: number): void {
   for (let i = 0; i < ticks && !g.w.over; i++) {
@@ -15,7 +16,7 @@ function watched(g: ReturnType<typeof emptyGame>, watch: CrushWatch, ticks: numb
   }
 }
 
-test("crush watch: a battle the AI lost 15 or more in, twice ours, then its towers put down and its farmers", () => {
+test("crush watch: a battle the AI lost 15 or more in, twice ours, then its towers put down and its farmers", switchedOff(KEEP, () => {
   const g = emptyGame();
   const w = g.w;
   const { x, y } = openArea(g, 14);
@@ -59,7 +60,7 @@ test("crush watch: a battle the AI lost 15 or more in, twice ours, then its towe
     watch.result()!.towns.map((e) => [e.town, e.came, e.held, e.open]),
     [[t, 3, false, false]],
   );
-});
+}));
 
 test("crush watch: a battle the AI did not lose big is not one", () => {
   const g = emptyGame();

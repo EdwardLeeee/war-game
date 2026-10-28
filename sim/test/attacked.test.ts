@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import type { Game } from "../src/core/game.ts";
 import { DODGE, SHORT_CANNON } from "../src/core/rules.ts";
 import { BuildingType, CELL, CELL_SHIFT, NEUTRAL, Resource, type SimEvent, UnitType } from "../src/protocol.ts";
@@ -84,7 +85,7 @@ test("the enemy main city's arrows: by is the enemy player", () => {
 
 test(
   "a cannon fired from out of sight: by is the enemy player",
-  switchedOff([DODGE, SHORT_CANNON], () => {
+  switchedOff([DODGE, SHORT_CANNON, KEEP], () => {
     const { g, a } = arena();
     g.w.res[4 + Resource.Crystal] = 50;
     const mage = dummy(g, 1, UnitType.Mage, a.x + 2, a.y + 10);

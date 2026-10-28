@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import { Game } from "../src/core/game.ts";
 import { GATE, GATE_ARROW, UNITS } from "../src/core/rules.ts";
 import { BuildingType, CELL_SHIFT, Order, TownState, UnitType } from "../src/protocol.ts";
@@ -52,7 +53,7 @@ test("a neutral town's gates are closed to every player: a retreat to its middle
   for (let k = 0; k < 4; k++) assert.equal(g.w.buildings.col.hp[g.w.gateIn(T, k)], GATE.hp[g.w.townSize[T]], "untouched");
 });
 
-test("a held town's gates let its holder through and nobody else (awaiting the choice, plundering, repairing, governed); ruins let everyone", () => {
+test("a held town's gates let its holder through and nobody else (awaiting the choice, plundering, repairing, governed); ruins let everyone", switchedOff(KEEP, () => {
   for (const state of [TownState.AwaitingChoice, TownState.Plundering, TownState.Repairing, TownState.Governed, TownState.Ruins]) {
     const g = held(0, state);
     const t = g.w.map.towns[T];
@@ -66,7 +67,7 @@ test("a held town's gates let its holder through and nobody else (awaiting the c
     assert.equal(inside(g, mine), true, `state ${state}: the holder goes in`);
     assert.equal(inside(g, theirs), state === TownState.Ruins, `state ${state}: the other ${state === TownState.Ruins ? "goes in too" : "stays out"}`);
   }
-});
+}));
 
 test("a move into a neutral town breaks the gate nearest the army, then goes in by it", () => {
   const g = emptyGame();
@@ -114,7 +115,7 @@ test("ranged units hit a gate for 1/5 (at least 1); melee in full", () => {
   }
 });
 
-test("an attack-move past a neutral town never hits its gates; a gate is no target in passing", () => {
+test("an attack-move past a neutral town never hits its gates; a gate is no target in passing", switchedOff(KEEP, () => {
   const g = emptyGame();
   const t = g.w.map.towns[T];
   const c = g.w.castles[T];
@@ -127,7 +128,7 @@ test("an attack-move past a neutral town never hits its gates; a gate is no targ
   for (let k = 0; k < 4; k++) assert.equal(g.w.buildings.col.hp[g.w.gateIn(T, k)], GATE.hp[g.w.townSize[T]]);
   const u = g.w.units.col;
   assert.ok(ids.every((id) => u.order[slotOf(g, id)] === Order.None), "they walked on and got there");
-});
+}));
 
 test("a governed town rebuilds a broken gate once no enemy has stood inside for GATE.rebuildTicks", () => {
   const g = held(0);

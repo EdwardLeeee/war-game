@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import { AVENGE, CANNON, DODGE } from "../src/core/rules.ts";
 import { CELL_SHIFT, Order, Resource, Stance, UnitType } from "../src/protocol.ts";
 import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
@@ -75,7 +76,7 @@ test("a squad's soldier goes for the mage; a unit on the move keeps to its move"
   });
 }));
 
-test("it gives up once the mage is more than AVENGE.reach from its place, and goes back", switchedOff(DODGE, () => {
+test("it gives up once the mage is more than AVENGE.reach from its place, and goes back", switchedOff(DODGE, switchedOff(KEEP, () => {
   withAvenge(true, () => {
     const { g, unit, mage } = shelled((g, unit) => cmd(g, 0, { c: "stance", u: [unit], stance: Stance.Hold }));
     // The mage walks off north as soon as it has fired, fighting no one (a retreat: since D-096 its
@@ -87,7 +88,7 @@ test("it gives up once the mage is more than AVENGE.reach from its place, and go
     assert.ok(Math.abs(u.x[slotOf(g, unit)] - centre(31)) + Math.abs(u.y[slotOf(g, unit)] - centre(44)) < 600, "back at its place");
     assert.ok(Math.hypot(u.x[slotOf(g, mage)] - centre(31), u.y[slotOf(g, mage)] - centre(44)) > AVENGE.reach, "the mage got away");
   });
-}));
+})));
 
 test("mirror images: two hold-stance blocks shelled by mirror-image mages play as mirror images, tick by tick", switchedOff(DODGE, () => {
   withAvenge(true, () => {

@@ -8,12 +8,12 @@ import { test } from "node:test";
 import { FIXED_TERRAIN } from "../src/core/fixed-terrain.ts";
 import { Game } from "../src/core/game.ts";
 import { generateMap, type GameMap } from "../src/core/map.ts";
-import { ATTEMPTS, generateRandomMap } from "../src/core/random-map.ts";
-import { BUILDINGS } from "../src/core/rules.ts";
+import { ATTEMPTS, generateRandomMap, WATER_TRIM } from "../src/core/random-map.ts";
+import { BUILDINGS, KEEP } from "../src/core/rules.ts";
 import { checkPlacement } from "../src/placement.ts";
 import { BuildingType, CELL_SHIFT, crossingTerrain, NodeKind, PlaceBit, Reject, Stance, Terrain, UnitType } from "../src/protocol.ts";
 import { buildView, SnapshotEncoder } from "../src/view/view.ts";
-import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, put, run, slotOf, switchedOff, switchedOn } from "./helpers.ts";
 
 const TERRAIN_OF: Record<string, number> = { R: Terrain.Blocked, K: Terrain.Cliff, "~": Terrain.Water, f: Terrain.Ford, "|": Terrain.BridgeNS, "=": Terrain.BridgeEW };
 
@@ -119,6 +119,35 @@ test("random maps (seeds 1-300): crossings 3 wide from bank to bank, water at le
   assert.ok(rivers >= 150, `a river on most maps (${rivers} of 300)`);
   assert.ok(fallbacks <= 6, `under 2% fall back to no obstacles (${fallbacks})`);
 });
+
+/** Random maps 1-300 with and without WATER_TRIM: the cells that differ ("seed:x,y" and the terrains). */
+function trimmed(): string[] {
+  const out: string[] = [];
+  for (let seed = 1; seed <= 300; seed++) {
+    const a = generateRandomMap(seed, 129);
+    WATER_TRIM.on = false;
+    let b: ReturnType<typeof generateRandomMap>;
+    try {
+      b = generateRandomMap(seed, 129);
+    } finally {
+      WATER_TRIM.on = true;
+    }
+    assert.equal(a.size, b.size);
+    for (let i = 0; i < a.terrain.length; i++) if (a.terrain[i] !== b.terrain[i]) out.push(`${seed}:${i % a.size},${Math.trunc(i / a.size)}:${b.terrain[i]}->${a.terrain[i]}`);
+    assert.deepEqual(a.nodes, b.nodes, `seed ${seed}: the same resources`);
+    assert.deepEqual([a.towns, a.spawns, a.tower, a.layout, a.redraws], [b.towns, b.spawns, b.tower, b.layout, b.redraws], `seed ${seed}: the same towns, starts and draws`);
+  }
+  return out;
+}
+
+test("D-100's walls on a river's edge (KEEP on): the water they leave 1 cell wide is ground; nothing else on random maps 1-300 changes", switchedOn(KEEP, () => {
+  // Seed 30: the small town at (83, 29) and its mirror image at (29, 83) (ceo 2026-10-29).
+  assert.deepEqual(trimmed(), [`30:89,37:${Terrain.Water}->${Terrain.Open}`, `30:37,89:${Terrain.Water}->${Terrain.Open}`]);
+}));
+
+test("KEEP off: the water trim changes no random map 1-300 (D-089's castles leave no water 1 cell wide)", switchedOff(KEEP, () => {
+  assert.deepEqual(trimmed(), []);
+}));
 
 test("a soldier sent across the river walks over the bridge, never in the water", () => {
   const g = emptyGame();

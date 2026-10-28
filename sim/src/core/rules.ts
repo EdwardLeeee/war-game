@@ -179,8 +179,13 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
   const same = towerSize === undefined || towerSize === BUILDINGS[BuildingType.TownTower].size;
   // D-099: the siege engine and the siege works only while SIEGE is on (they are the last of each).
   const units = SIEGE.on ? UNITS : UNITS.slice(0, UnitType.Siege);
-  // D-101: the market only while MARKET is on (then the siege works' row too, unbuildable while SIEGE is off).
-  const buildings = MARKET.on ? BUILDINGS : BUILDINGS.slice(0, SIEGE.on ? BuildingType.Market : BuildingType.SiegeWorks);
+  // D-101: the market only while MARKET is on. Each by its own switch (ceo 2026-10-29: so one of the batch can be
+  // turned off alone): SIEGE off with MARKET on leaves the siege works' row empty (null in JSON).
+  const off = (t: number) => (t === BuildingType.SiegeWorks && !SIEGE.on) || (t === BuildingType.Market && !MARKET.on);
+  const buildings: typeof BUILDINGS = [];
+  BUILDINGS.forEach((b, t) => {
+    if (!off(t)) buildings[t] = b;
+  });
   return {
     units,
     buildings: same ? buildings : buildings.map((b) => (b.type === BuildingType.TownTower ? { ...b, size: towerSize } : b)),
@@ -381,7 +386,7 @@ export const CAVALRY = { on: true };
  * only, `vsBuildings` times (a gate GATE.siege times). Off: no siege works, rules() leaves the
  * engine, the works and their multiplier out, and games play as before.
  */
-export const SIEGE = { on: false, vsBuildings: 3, flightTicks: S };
+export const SIEGE = { on: true, vsBuildings: 3, flightTicks: S };
 /** Unit types that may hide in buildings. */
 export const GARRISON_TYPES: UnitType[] = [UnitType.Ranged, UnitType.Mage];
 /**
@@ -653,7 +658,7 @@ export const NODE_AMOUNT = { tree: 100, goldCell: 400, bush: 100, crystalCell: 1
  * 60 of long games, against 14-20), no contested gold (with it the push group won 3 of 160 random
  * maps against hard, 7 without, 9 with RICH off). Off: as before.
  */
-export const RICH = { on: false, goldCell: 600, tree: 100, farTree: 0, forests: 3, contested: false };
+export const RICH = { on: true, goldCell: 600, tree: 100, farTree: 0, forests: 3, contested: false };
 /**
  * D-101 (the user: a market that trades what is left over for what is missing, dearer the more one
  * trades, as in AoE; ceo 2026-10-24): BuildingType.Market and `trade`, food or wood for gold, `lot`
@@ -662,7 +667,7 @@ export const RICH = { on: false, goldCell: 600, tree: 100, farTree: 0, forests: 
  * price * sellPermille / 1000 and puts it down `step` (to `min`); every `recoverTicks` each price
  * moves 1 toward `start`. Crystal is not traded. Off: no market.
  */
-export const MARKET = { on: false, lot: 100, start: 100, step: 5, min: 25, max: 300, sellPermille: 700, recoverTicks: 30 * S, maxLots: 5 };
+export const MARKET = { on: true, lot: 100, start: 100, step: 5, min: 25, max: 300, sellPermille: 700, recoverTicks: 30 * S, maxLots: 5 };
 switched(NODE_AMOUNT, "goldCell", RICH, () => RICH.goldCell);
 switched(NODE_AMOUNT, "tree", RICH, () => RICH.tree);
 /** Builders on one building that add progress (more wait); the same cap applies to repairs. */

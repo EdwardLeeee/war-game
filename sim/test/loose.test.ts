@@ -4,10 +4,11 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import { Game } from "../src/core/game.ts";
 import { LOOSE_KEEP, UNITS } from "../src/core/rules.ts";
 import { Action, UnitType } from "../src/protocol.ts";
-import { cmd, emptyGame, openArea, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 /** Each unit's distance to its nearest mate, in cells: the least and the mean. */
 function spacing(g: Game, ids: number[]): { min: number; mean: number } {
@@ -184,7 +185,7 @@ test("mirror-image loose squads march, fight and keep apart as mirror images, ti
   assert.ok(spacing(g, alive).mean >= 1.8, `mean nearest mate ${spacing(g, alive).mean.toFixed(2)} cells`);
 });
 
-test("loose soldiers by a rock spread out and then stand still (#116)", () => {
+test("loose soldiers by a rock spread out and then stand still (#116)", switchedOff(KEEP, () => {
   // The client's case: in the e2e game, 16 loose soldiers of player 0 stand bunched below the
   // rock at (21-23, 39) and are told to move to (26, 44). One of them ends below the rock, and
   // the push of the mate nearest it ran into the rock; it was pushed off the place it stood on,
@@ -221,4 +222,4 @@ test("loose soldiers by a rock spread out and then stand still (#116)", () => {
   // none, and 2.00 cells.
   assert.deepEqual(moving, [0, 0, 0, 0, 0, 0, 0, 0], `moving per 50 ticks after a minute: ${moving.join(" ")}`);
   assert.ok(spacing(g, ids).min >= 1.95, `nearest pair ${spacing(g, ids).min.toFixed(2)} cells`);
-});
+}));
