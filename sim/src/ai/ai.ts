@@ -2944,6 +2944,8 @@ const HOLD_MIN = 40;
 /** D-086 A6: towns governed more by the enemy that make it behind on towns (plan.econBehind); mages' crystal kept before it stops gathering it (plan.crystalStop); gold that piles up (plan.goldCavalry). */
 const TOWNS_BEHIND = 2;
 const IDLE_HOME = 3 * 1200;
+/** D-086 A7 (plan.governHold): it stays by a town it governs at most this many times the town's repair time. */
+const GOVERN_STAY = 2;
 /** D-100 (plan.keepContest): how long the enemy army it saw counts by a contested town with its keep up. */
 const KEEP_CONTEST = 3 * 1200;
 const CRYSTAL_ENOUGH = 4;
@@ -3105,6 +3107,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let homeSince = -1;
   /** D-086 A6: the town it is going for was picked on even terms (the forts' checks on the way stay even too). */
   let townEven = false;
+  /** D-086 A7 (plan.governHold): the town it stays by while it is repaired, and since when. */
+  let holdTown = -1;
+  let holdFrom = -100000;
   /** D-086 A5 (plan.holdTowns): when it last told the army to a town it holds. */
   let holdMove = -100000;
   let saveFor = -1;
@@ -3202,7 +3207,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { governHeld: 0, governTowers: 0, governStayed: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -4757,15 +4762,25 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const ta = townEven ? 100 : fortFailed;
           // Forts by the army too strong for it (D-081): it breaks off as from a stronger enemy.
           const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, ac.x, ac.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army, tb, ta));
-          // D-086 A7 (plan.governHold): by a town it governs until it is repaired (from the think it takes it: the choice is made this think).
-          if (plan.governHold && t !== undefined && t.owner === player && (t.state === TownState.Repairing || t.state === TownState.AwaitingChoice)) {
+          // D-096 (GATE_AI.retreat "a"): not for its losses while the gate it is breaking falls.
+          const breakOff = (standing * 5 < armyAtStart * 2 && !(GATE_AI.retreat.includes("a") && gateAim >= 0 && gateFell)) || local > armyWorth || byArmy.length > 0;
+          // D-086 A7 (plan.governHold): by a town it governs until it is repaired (from the think it takes it: the choice is made
+          // this think), for at most GOVERN_STAY x its repair; but it breaks off as from any town when it should (ceo 2026-10-29:
+          // a repair stops with the garrison under its least, and it would stand there till the last, as #188 at forts).
+          const holding = plan.governHold && t !== undefined && t.owner === player && (t.state === TownState.Repairing || t.state === TownState.AwaitingChoice);
+          if (!holding) holdTown = -1;
+          else if (holdTown !== targetTown) {
+            holdTown = targetTown;
+            holdFrom = tick;
+          }
+          if (holding && !breakOff && tick - holdFrom <= GOVERN_STAY * (rules.towns?.[t.size]?.repairTicks ?? 45 * 20)) {
             if (tick % 200 === 0) counted.governStayed++;
             send(t.x, t.y, "town");
             return;
           }
-          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || (t.state === TownState.Ruins && !staleRuin(targetTown, t))) mode = "home";
-          // D-096 (GATE_AI.retreat "a"): not for its losses while the gate it is breaking falls.
-          else if ((standing * 5 < armyAtStart * 2 && !(GATE_AI.retreat.includes("a") && gateAim >= 0 && gateFell)) || local > armyWorth || byArmy.length > 0) {
+          if (holding && breakOff) counted.governBrokeOff++;
+          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral && !(holding && breakOff)) || (t.state === TownState.Ruins && !staleRuin(targetTown, t))) mode = "home";
+          else if (breakOff) {
             razing = -1;
             if (gateAim >= 0) counted.gateBrokeOff++;
             gateAim = -1;

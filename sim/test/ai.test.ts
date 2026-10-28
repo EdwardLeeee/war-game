@@ -3002,6 +3002,42 @@ test("D-086 A7 (plan.governHold): the army stays by a town it governs until it i
   assert.equal(stayed(false), 0, "off: it does not");
 });
 
+/** D-086 A7: hard's 12 go for the town at (29, 29) and take it (repairing); then `later` ticks on, with `foes` enemy spearmen by the army. */
+function holdingThink(later: number, foes: number): { out: CommandBody[]; stayed: number; brokeOff: number } {
+  const { g, town } = takenGame(12, 0);
+  const w = g.w;
+  const t = w.map.towns.find((x) => x.id === town)!;
+  w.townState[town] = TownState.Neutral;
+  w.townOwner[town] = NO_OWNER;
+  const ai = hardAi(g, { dodge: false, governFrom: 0, governHold: true, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 });
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 12), "it goes for the town");
+  w.townState[town] = TownState.Repairing;
+  w.townOwner[town] = 0;
+  w.tick = 15 * 1200 + 200;
+  g.fog.update(w);
+  ai.think(buildView(g, 0));
+  for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, t.cellX + 3 + (k % 4), t.cellY - 3 + Math.trunc(k / 4));
+  w.tick = 15 * 1200 + 200 + later;
+  g.fog.update(w);
+  const out = ai.think(buildView(g, 0));
+  return { out, stayed: ai.stats?.().governStayed ?? 0, brokeOff: ai.stats?.().governBrokeOff ?? 0 };
+}
+
+test("D-086 A7 (plan.governHold): staying by a town it governs, hard still breaks off from an enemy stronger than its army", () => {
+  const quiet = holdingThink(200, 0);
+  assert.equal(quiet.stayed, 2, "no enemy: it stays");
+  const struck = holdingThink(200, 20);
+  assert.equal(struck.brokeOff, 1, "20 enemy spearmen by its 12: it breaks off");
+  assert.ok(struck.out.some((c) => c.c === "retreat" && c.u.length >= 10), "and falls back");
+});
+
+test("D-086 A7 (plan.governHold): a repair that does not end, hard stays at most GOVERN_STAY x its time, then goes home", () => {
+  const repair = rules().towns?.[TownSize.Small]?.repairTicks ?? 900;
+  // Ticks a multiple of 200 (governStayed counts those): within the limit it stays, past it not.
+  assert.equal(holdingThink(Math.trunc((2 * repair) / 200) * 200, 0).stayed, 2, "within 2 x the repair: it stays");
+  assert.equal(holdingThink((Math.trunc((2 * repair) / 200) + 1) * 200, 0).stayed, 1, "past it: no longer");
+});
+
 test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it governs; 0, none", () => {
   const towers = (governTowers: number) => {
     const g = behindGame(0);
