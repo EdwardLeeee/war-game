@@ -3101,6 +3101,77 @@ test("D-086 A7 (plan.governHold): gone home from a stay that ran out, hard takes
   assert.equal(think(t0 + out + 400), 2, "the same town again: it stays again");
 });
 
+// --- D-081 under the D-100 batch (ceo 2026-10-29: the user's 「一直打哨所、死傷慘重」 must not come back with keeps) ----------
+
+const BATCH = [KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET];
+/** Six towers with three hiding in each (worth more than 22 spearmen), at (x, y) on, a farmer of player 0 by each. */
+function sixTowers(g: Game, x: number, y: number): number[] {
+  const w = g.w;
+  const ids: number[] = [];
+  for (const [dx, dy] of [[0, 0], [3, 0], [6, 0], [0, 3], [3, 3], [6, 3]]) {
+    const id = w.addBuilding(1, BuildingType.ArrowTower, x + dx, y + dy, 600, 1000);
+    w.buildings.col.soldiers[w.building(id)] = 3;
+    ids.push(id);
+    put(g, 0, UnitType.Farmer, x - 1 + dx, y - 1 + dy);
+  }
+  return ids;
+}
+
+test("D-081 with the D-100 batch: 22 go for a town, break off from forts too strong for them, and go again once they are weaker", switchedOn(BATCH, () => {
+  const g = emptyGame();
+  const w = g.w;
+  for (let k = 0; k < 22; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
+  g.fog.update(w);
+  // Small towns take more soldiers than it has (keepTownArmy too): the big one (keepBigArmy 20) is the one to go for.
+  const ai = hardAi(g, { dodge: false, townArmy: 99 });
+  const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 22) as { x: number; y: number } | undefined;
+  assert.ok(go !== undefined && w.map.towns.some((t) => t.cellX === go.x && t.cellY === go.y), "off to a town");
+  const towers = sixTowers(g, 50, 66);
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat" && c.u.length === 22), "too strong for it: back");
+  const toTown = () => ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 22 && c.x === go.x && c.y === go.y);
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(!toTown(), "not straight back to that town");
+  w.tick += 10 * 1200;
+  g.fog.update(w);
+  assert.ok(!toTown(), "nor 10 minutes on, the forts as strong");
+  for (const id of towers) w.buildings.col.soldiers[w.building(id)] = 0;
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(toTown(), "once the forts are weaker (none hiding), again");
+}));
+
+test("D-081 with the D-100 batch: falling back from forts too strong for it, hard goes round them, then home", switchedOn(BATCH, () => {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const army: number[] = [];
+  for (let k = 0; k < 22; k++) army.push(put(g, 0, UnitType.Spearman, 58 + (k % 7), 40 + Math.trunc(k / 7)));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, townArmy: 99 });
+  ai.think(buildView(g, 0));
+  sixTowers(g, 44, 52);
+  w.tick += 10;
+  g.fog.update(w);
+  const back = ai.think(buildView(g, 0)).find((c) => c.c === "retreat" && c.u.length === 22) as { x: number; y: number } | undefined;
+  const home = spawnCentre(w.map.frames[0], s0);
+  assert.ok(back !== undefined, "too strong for it: back");
+  const groups = fortGroups(enemyForts(buildView(g, 0), 0, rules()), () => 0, fortValues(rules()));
+  assert.ok(groupsOnWay(groups, { x: 61, y: 41 }, home).length > 0, "the straight way home passes them");
+  assert.equal(groupsOnWay(groups, { x: 61, y: 41 }, back).length, 0, `round them first, to ${back.x},${back.y}: the way there keeps out of their reach`);
+  for (const id of army) {
+    const s = slotOf(g, id);
+    w.units.col.x[s] = back.x * CELL + CELL / 2;
+    w.units.col.y[s] = back.y * CELL + CELL / 2;
+  }
+  w.tick += 10;
+  g.fog.update(w);
+  const on = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 22) as { x: number; y: number } | undefined;
+  assert.ok(on !== undefined && (on.x !== back.x || on.y !== back.y), "on from there");
+}));
+
 test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it governs; 0, none", () => {
   const towers = (governTowers: number) => {
     const g = behindGame(0);
