@@ -3069,6 +3069,42 @@ test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it 
   assert.equal(towers(0), false, "0: none, as before");
 });
 
+// --- D-101: the market (MARKET on) -----------------------------------------------------------------------------
+
+/** D-101: MARKET on, hard's base all built (as behindGame), with a finished market when `market`; its stock `res`; what it trades or builds. */
+function marketThink(res: number[], opts: { market?: boolean; built?: boolean; woodPrice?: number } = {}): CommandBody[] {
+  const was = RULES.MARKET.on;
+  RULES.MARKET.on = true;
+  try {
+    const g = behindGame(0);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    if (opts.built !== false) w.addBuilding(0, BuildingType.Market, s0.cellX - 14, s0.cellY + 6, rules().buildings[BuildingType.Market].hp, 1000);
+    if (opts.woodPrice !== undefined) w.marketPrice[1] = opts.woodPrice;
+    w.res.set(res, 0);
+    g.fog.update(w);
+    return hardAi(g, { dodge: false, market: opts.market ?? true }).think(buildView(g, 0));
+  } finally {
+    RULES.MARKET.on = was;
+  }
+}
+
+test("D-101 (plan.market): wood short, hard buys wood with its gold; gold short, it sells the food piled up; off, no trade", () => {
+  const trades = (out: CommandBody[]) => out.filter((c) => c.c === "trade") as { resource: number; buy: boolean; lots: number }[];
+  const buyWood = trades(marketThink([300, 20, 600, 0]));
+  assert.ok(buyWood.length === 1 && buyWood[0].resource === 1 && buyWood[0].buy && buyWood[0].lots >= 1, "wood short: wood bought");
+  const sellFood = trades(marketThink([1000, 300, 20, 0]));
+  assert.ok(sellFood.length === 1 && sellFood[0].resource === 0 && !sellFood[0].buy, "gold short: food sold");
+  assert.equal(trades(marketThink([300, 20, 600, 0], { woodPrice: 200 })).length, 0, "wood too dear and no food to sell: it waits");
+  assert.equal(trades(marketThink([300, 20, 600, 0], { market: false })).length, 0, "off: no trade");
+});
+
+test("D-101 (plan.market): with a granary and food piled up while gold is short, hard puts up a market; off, none", () => {
+  const builds = (market: boolean) => marketThink([900, 400, 30, 0], { market, built: false }).some((c) => c.c === "build" && c.type === BuildingType.Market);
+  assert.equal(builds(true), true, "on: a market");
+  assert.equal(builds(false), false, "off: none");
+});
+
 test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
   const march = (strongPush: number) => {
     const g = emptyGame();
