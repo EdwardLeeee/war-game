@@ -42,7 +42,8 @@ import {
   MARKET,
   MULTIPLIERS,
   type Rules,
-  rules,
+  rules as simRules,
+  SIEGE,
   UNITS,
   type SimEvent,
   Stance,
@@ -83,6 +84,24 @@ function buildingInfo(type: BuildingType, hp: number, size: number, c: Cost, ext
  * The unit table is the simulation's own, so what the interface shows (life, shield, cost)
  * matches the game. The buildings are placeholders sized for this fixed layout.
  */
+/**
+ * The simulation's rules with D-099's, D-100's and D-101's switches as given (each off unless set),
+ * read with them so and then put back: the fake world plays without them unless asked (?siege=1,
+ * ?keep=1, ?market=1), whatever core's defaults are (the user 2026-10-29 turned them on). The fake
+ * world runs beside the simulation's modules, not in its Worker.
+ */
+function rules(on: { keep?: boolean; siege?: boolean; market?: boolean } = {}): Required<Rules> {
+  const was = [KEEP.on, SIEGE.on, MARKET.on] as const;
+  KEEP.on = on.keep === true;
+  SIEGE.on = on.siege === true;
+  MARKET.on = on.market === true;
+  try {
+    return JSON.parse(JSON.stringify(simRules())) as Required<Rules>;
+  } finally {
+    [KEEP.on, SIEGE.on, MARKET.on] = was;
+  }
+}
+
 export const MOCK_RULES: Rules = {
   units: rules().units,
   buildings: [
@@ -156,21 +175,15 @@ export const MOCK_RULES_SIEGE: Rules = {
  * are read here: the fake world runs beside the simulation's modules, not in its Worker).
  */
 function mockRulesKeep(): Rules {
-  const was = KEEP.on;
-  KEEP.on = true;
-  try {
-    const on = JSON.parse(JSON.stringify(rules())) as Required<Rules>;
-    const keep = on.buildings[BuildingType.Keep];
-    return {
-      ...MOCK_RULES_R7,
-      buildings: MOCK_RULES_R7.buildings.map((b) => (b.type === BuildingType.Keep ? { ...b, size: keep.size, hp: keep.hp } : b)),
-      features: { ...(MOCK_RULES_R7.features as Features), keep: true },
-      arrows: on.arrows,
-      towns: on.towns,
-    };
-  } finally {
-    KEEP.on = was;
-  }
+  const on = rules({ keep: true });
+  const keep = on.buildings[BuildingType.Keep];
+  return {
+    ...MOCK_RULES_R7,
+    buildings: MOCK_RULES_R7.buildings.map((b) => (b.type === BuildingType.Keep ? { ...b, size: keep.size, hp: keep.hp } : b)),
+    features: { ...(MOCK_RULES_R7.features as Features), keep: true },
+    arrows: on.arrows,
+    towns: on.towns,
+  };
 }
 
 /**
@@ -179,14 +192,8 @@ function mockRulesKeep(): Rules {
  * with the switch on, as ?keep=1's).
  */
 function mockRulesMarket(): Rules {
-  const was = MARKET.on;
-  MARKET.on = true;
-  try {
-    const on = JSON.parse(JSON.stringify(rules())) as Required<Rules>;
-    return { ...MOCK_RULES_R7, buildings: on.buildings, features: { ...(MOCK_RULES_R7.features as Features), market: true }, market: on.market };
-  } finally {
-    MARKET.on = was;
-  }
+  const on = rules({ market: true });
+  return { ...MOCK_RULES_R7, buildings: on.buildings, features: { ...(MOCK_RULES_R7.features as Features), market: true }, market: on.market };
 }
 
 /** `?walls=1`: D-096's gates and walls on (with round 7's), the simulation's values. */

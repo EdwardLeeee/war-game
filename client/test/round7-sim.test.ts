@@ -71,9 +71,11 @@ test("城鎮只能搶一次：搶過的城鎮再攻下，畫面只給治理；�
   const g = emptyGame();
   g.w.ecoOn[0] = 0;
   const u = g.w.units.col;
-  // Take the small town 0 (its militia gone) with one tough spearman.
+  // Take the small town 0 (its militia gone, and its keep while D-100's is on) with one tough spearman.
   const take = (): number => {
     for (let s = 0; s < g.w.units.count; s++) if (u.owner[s] === NEUTRAL && u.home[s] === T) u.hp[s] = 0;
+    const b = g.w.buildings.col;
+    for (let s = 0; s < g.w.buildings.count; s++) if (b.type[s] === BuildingType.Keep && b.town[s] === T) b.hp[s] = 0;
     const spear = put(g, 0, UnitType.Spearman, g.w.townX[T] + 1, g.w.townY[T]);
     u.hp[slotOf(g, spear)] = 100000;
     run(g, 3);

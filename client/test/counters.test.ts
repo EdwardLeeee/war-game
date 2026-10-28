@@ -4,8 +4,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { counterLines, counterShort, counterTypes, ratioText } from "../src/game/counters.ts";
-import { rules as simRules, type Rules, UnitType } from "../src/sim.ts";
+import { MULTIPLIERS, rules as simRules, type Rules, UnitType } from "../src/sim.ts";
 import { UNIT_NAME } from "../src/ui/hud/names.ts";
+import { withSwitches } from "./switches.ts";
 
 const withCavalry = (on: boolean): Rules => ({ ...simRules(), features: { plunderOnce: false, towers: false, garrison: false, cavalry: on } });
 
@@ -81,19 +82,22 @@ test("D-097 的短句：照倍數表和不是倍數的說明寫「剋：…／�
   assert.equal(counterShort(off, UnitType.Mage), "剋：擠在一起的部隊");
   assert.equal(counterShort(off, UnitType.Cavalry), "");
   assert.equal(counterShort(on, UnitType.Farmer), "");
-  // The simulation's own rules give the same.
-  const sim = simRules();
-  assert.deepEqual(
-    [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry].map((t) => counterShort(sim, t)),
-    ["剋：騎兵／怕：遠程", "剋：槍兵／怕：騎兵", "剋：擠在一起的部隊／怕：騎兵", "剋：遠程、法師（會自己繞過前排去打）／怕：槍兵"],
-  );
+  // The simulation's own rules give the same; with its siege engines (D-099) cavalry beats them too.
+  for (const siege of [false, true]) {
+    const sim = withSwitches({ siege }, () => simRules());
+    assert.deepEqual(
+      [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry].map((t) => counterShort(sim, t)),
+      ["剋：騎兵／怕：遠程", "剋：槍兵／怕：騎兵", "剋：擠在一起的部隊／怕：騎兵", `剋：遠程、法師${siege ? "、攻城砲" : ""}（會自己繞過前排去打）／怕：槍兵`],
+    );
+  }
 });
 
 test("兵種相剋（D-099）：攻城砲開著時多一行，剋建築（打建築 ×3），怕騎兵 ×2 和近身的兵；騎兵那一行多攻城砲 ×2；關著時都沒有", () => {
   const on: Rules = {
     ...withCavalry(true),
     features: { plunderOnce: false, towers: false, garrison: false, cavalry: true, siege: true },
-    multipliers: [...(simRules().multipliers ?? []), { attacker: UnitType.Cavalry, target: UnitType.Siege, num: 2, den: 1 }],
+    // The whole table, the siege engine's rows in it (rules() leaves them out while SIEGE is off).
+    multipliers: MULTIPLIERS,
     siege: { vsBuildings: 3, flightTicks: 20 },
   };
   assert.deepEqual(counterTypes(on), [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry, UnitType.Siege]);

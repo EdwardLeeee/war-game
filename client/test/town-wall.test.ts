@@ -8,6 +8,7 @@ import { Game } from "../../sim/src/core/game.ts";
 import { ruleTower, wallSpot } from "../src/render/town-wall.ts";
 import { TownSize } from "../src/sim.ts";
 import { TILE_PX } from "../src/tuning.ts";
+import { withSwitches } from "./switches.ts";
 
 test("小鎮：3×3 格，在城鎮正中間", () => {
   const s = wallSpot({ cellX: 30, cellY: 66, size: TownSize.Small }, null);
@@ -30,23 +31,36 @@ test("大城：4×4 格，上緣貼著塔的下緣、左右和塔對齊，不重
   assert.deepEqual(wallSpot(town, { cellX: 47, cellY: 45, size: 2 }), { x: 46 * TILE_PX, y: 47 * TILE_PX, side: 4 * TILE_PX });
 });
 
-test("塔一定蓋住城鎮中心那一格（看到城鎮時就看到塔，城牆不會移動）；固定地圖上規則推算的位置就是塔的位置：隨機地圖對角、相鄰兩種都量", () => {
-  const sizes = new Set<number>();
-  for (const [map, seeds] of [["fixed", [1]], ["random", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]]] as const) {
-    for (const seed of seeds) {
-      const g = new Game({ seed, scenario: "standard", map });
-      const m = g.w.map;
-      const big = m.towns.find((t) => t.size === TownSize.Large);
-      if (big === undefined) throw new Error(`no big city (${map} ${seed})`);
-      const size = m.towerSize ?? 2;
-      sizes.add(size);
-      const { cellX: x, cellY: y } = m.tower;
-      assert.ok(big.cellX >= x && big.cellX < x + size && big.cellY >= y && big.cellY < y + size, `${map} seed ${seed}: the tower covers the centre`);
-      if (map === "fixed") assert.deepEqual(ruleTower(big, size), { cellX: x, cellY: y, size });
-      // The wall under the real tower never overlaps it.
-      const s = wallSpot({ ...big, size: TownSize.Large }, { cellX: x, cellY: y, size });
-      assert.ok(s.y >= (y + size) * TILE_PX, `${map} seed ${seed}`);
+test("塔一定蓋住城鎮中心那一格（看到城鎮時就看到塔，城牆不會移動）；固定地圖上規則推算的位置就是塔的位置：隨機地圖對角、相鄰兩種都量；D-100 的主堡開著時一律 3×3", () => {
+  /** The tower's sizes seen over the maps, each checked against the centre and the wall. */
+  const measure = (): number[] => {
+    const sizes = new Set<number>();
+    for (const [map, seeds] of [["fixed", [1]], ["random", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]]] as const) {
+      for (const seed of seeds) {
+        const g = new Game({ seed, scenario: "standard", map });
+        const m = g.w.map;
+        const big = m.towns.find((t) => t.size === TownSize.Large);
+        if (big === undefined) throw new Error(`no big city (${map} ${seed})`);
+        const size = m.towerSize ?? 2;
+        sizes.add(size);
+        const { cellX: x, cellY: y } = m.tower;
+        assert.ok(big.cellX >= x && big.cellX < x + size && big.cellY >= y && big.cellY < y + size, `${map} seed ${seed}: the tower covers the centre`);
+        if (map === "fixed") assert.deepEqual(ruleTower(big, size), { cellX: x, cellY: y, size });
+        // The wall under the real tower never overlaps it.
+        const s = wallSpot({ ...big, size: TownSize.Large }, { cellX: x, cellY: y, size });
+        assert.ok(s.y >= (y + size) * TILE_PX, `${map} seed ${seed}`);
+      }
     }
-  }
-  assert.deepEqual([...sizes].sort(), [2, 3], "both towers' sizes seen");
+    return [...sizes].sort();
+  };
+  assert.deepEqual(
+    withSwitches({ keep: false }, measure),
+    [2, 3],
+    "both towers' sizes seen",
+  );
+  assert.deepEqual(
+    withSwitches({ keep: true }, measure),
+    [3],
+    "the keep (D-100)",
+  );
 });

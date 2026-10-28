@@ -85,7 +85,7 @@ test("大城的塔被拆掉（D-089）：城牆照模擬的格子，位置不變
   check();
 });
 
-test("真的模擬（D-089）：中立大城的塔在城牆裡面的正中間，牆照模擬的格子", async ({ page }, info) => {
+test("真的模擬（D-089）：中立大城的塔（D-100 開著時是主堡）在城牆裡面的正中間，牆照模擬的格子", async ({ page }, info) => {
   const check = watchErrors(page);
   // Watching the computer play itself: everything in sight, nothing taken yet.
   await page.goto("./?test=1&watch=1&tps=20");
@@ -93,7 +93,8 @@ test("真的模擬（D-089）：中立大城的塔在城牆裡面的正中間，
   await page.waitForFunction(() => window.__proto?.ready === true);
   const big = (await towns(page)).find((t) => t.size === 1);
   if (big === undefined) throw new Error("no big city");
-  const tower = (await buildings(page)).find((b) => b.type === TOWER);
+  // The big city's: with D-100's keeps on (core's default since 2026-10-29) every town has one (the same type).
+  const tower = (await buildings(page)).filter((b) => b.type === TOWER).sort((a, b) => Math.hypot(a.cx - big.cx, a.cy - big.cy) - Math.hypot(b.cx - big.cx, b.cy - big.cy))[0];
   if (tower === undefined) throw new Error("no tower");
   expect(big.cx >= tower.cx && big.cx < tower.cx + tower.size && big.cy >= tower.cy && big.cy < tower.cy + tower.size, "the tower stands in the middle").toBe(true);
   const c = await castleCells(page, big.id);
