@@ -10,6 +10,10 @@ import type { Game } from "../../sim/src/core/game.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "../../sim/test/helpers.ts";
 import { Charges } from "../src/game/follow.ts";
 import { BuildingType, CELL, Order, rules, UnitType } from "../src/sim.ts";
+import { pinSwitches } from "./switches.ts";
+
+// The towns' keeps (D-100) shoot whoever walks by: the march is the screen's, on open ground.
+pinSwitches({ keep: false });
 
 const cellOf = (g: Game, id: number) => {
   const s = slotOf(g, id);

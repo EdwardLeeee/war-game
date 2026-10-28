@@ -23,6 +23,10 @@ import {
 } from "../src/sim.ts";
 import { TILE_PX } from "../src/tuning.ts";
 import { GameView } from "../src/view/view.ts";
+import { pinSwitches } from "./switches.ts";
+
+// D-089's castles and the big city's tower (KEEP off); D-100's are town-ground.test.ts's.
+pinSwitches({ keep: false });
 
 /** A layout as ui's: a piece a cell of the walls and gates (a gate's picture holds its piers too). */
 function layoutOf(l: { wall: readonly (readonly [number, number])[]; gate: readonly (readonly [number, number])[] }): CastleLayout {

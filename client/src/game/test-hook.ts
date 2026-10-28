@@ -154,6 +154,11 @@ export interface GameHook {
   townWalls(): { id: number; x: number; y: number; side: number; visible: boolean }[];
   /** The map's mode (D-074) and what the screen knows: town ids, and how many cells of rock. */
   mapMode(): string;
+  /**
+   * The game's switches as its rules say (Rules.features): the simulation's (D-099 siege, D-100 keep,
+   * D-101 market on by default since 2026-10-29) or the fake world's; for tests that pass either way.
+   */
+  features(): Record<string, boolean>;
   knownTowns(): number[];
   knownRocks(): number;
   /** The ground the player knows at a cell (R6-51: a Terrain value), and how many cells of each value. */
@@ -370,6 +375,7 @@ export function gameHook(game: Game): GameHook {
     pending: (building) => ({ sites: game.pending.sites().length, trains: building === undefined ? 0 : game.pending.trains(building).length, waiting: game.pending.waiting }),
     astc: () => game.lastAstc,
     mapMode: () => game.view?.map.mode ?? "fixed",
+    features: () => ({ ...(game.view?.rules.features ?? {}) }) as Record<string, boolean>,
     knownTowns: () => game.view?.townList().map((t) => t.id) ?? [],
     knownRocks: () => game.view?.ground.reduce((n, t) => n + (t === Terrain.Blocked ? 1 : 0), 0) ?? 0,
     ground: (x, y) => {

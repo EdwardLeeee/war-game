@@ -1,5 +1,6 @@
 // 城牆 (D-089, the user 2026-10-19: 「希望像一個城堡」; R6-06 approved 2026-10-20) on core's real
-// simulation, the fixed map: every town's castle drawn from art-v4's pictures (square on, 3 倍)
+// simulation, the fixed map: every town's castle drawn from art-v4's pictures (square on, 3 倍; D-100's
+// bigger castles while the simulation's keeps are on)
 // on exactly the cells the simulation walls; a tap on a wall picks the town; units behind a wall
 // drawn again over it (whole, or as their rims on ?ghost=outline, for ceo to compare).
 
@@ -29,8 +30,9 @@ test("城牆（D-089）：每座城鎮的牆照模擬的格子、用 art-v4 的�
   const c = await castle(page);
   expect(c?.misfit, "every castle fits one of ui's layouts").toBe(0);
   expect(c?.blockTowns, "none drawn as blocks").toBe(0);
-  // 32 pieces a castle (atlas-buildings.md section 11).
-  expect(c?.pieces).toBe(32 * all.length);
+  // 32 pieces a castle (atlas-buildings.md section 11); D-100's (core's default since 2026-10-29), 48 (art-v6.1, small_d100 and large_d100).
+  const d100 = (await page.evaluate(() => window.__proto?.game?.features() ?? {})).keep === true;
+  expect(c?.pieces).toBe((d100 ? 48 : 32) * all.length);
 
   // A tap on a wall picks its town (nothing else there).
   const small = all.find((t) => t.size === SMALL);
@@ -77,7 +79,7 @@ for (const style of ["fill", "outline"] as const) {
   });
 }
 
-test("隨機地圖相鄰出生（種子 2）：大城是 3×3 箭樓、large3 的城牆，照模擬的格子畫出來", async ({ page, browserName }, info) => {
+test("隨機地圖相鄰出生（種子 2）：大城的城牆照模擬的格子畫出來（D-100 以前是 3×3 箭樓、large3 的 13×13；D-100 起和其他大城一樣 17×17）", async ({ page, browserName }, info) => {
   test.setTimeout(120_000);
   const check = watchErrors(page);
   await start(page, "map=random&seed=2&watch=1&art=x3");
@@ -88,9 +90,11 @@ test("隨機地圖相鄰出生（種子 2）：大城是 3×3 箭樓、large3 �
   const large = all.find((t) => t.size === LARGE);
   if (large === undefined) throw new Error("no big city");
   const cells = await page.evaluate((id) => window.__proto?.game?.castleCells(id) ?? null, large.id);
-  // 13 × 13 inside (large3).
-  expect(cells && cells.inside.x1 - cells.inside.x0 + 1).toBe(13);
-  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 0.9), [(cells?.inside.x0 ?? 0) + 6.5, (cells?.inside.y0 ?? 0) + 8] as const);
+  // 13 × 13 inside (large3); with D-100's towns (core's default since 2026-10-29), 17 × 17 as every big city.
+  const d100 = (await page.evaluate(() => window.__proto?.game?.features() ?? {})).keep === true;
+  const side = d100 ? 17 : 13;
+  expect(cells && cells.inside.x1 - cells.inside.x0 + 1).toBe(side);
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 0.9), [(cells?.inside.x0 ?? 0) + side / 2, (cells?.inside.y0 ?? 0) + side / 2 + 1.5] as const);
   await page.waitForTimeout(500);
   if (browserName === "chromium") await shot(page, info, "castle-large3");
   check();
