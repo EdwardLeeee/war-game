@@ -2886,13 +2886,173 @@ test(
       for (const t of w.map.towns) put(g, 0, UnitType.Farmer, t.cellX + 10, t.cellY + 10);
       for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
       g.fog.update(w);
-      const out = hardAi(g, { dodge: false, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 }).think(buildView(g, 0));
+      // keepTownArmy (D-100, 10 by default) aside: this is about its keep and militia.
+      const out = hardAi(g, { dodge: false, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0, keepTownArmy: 0 }).think(buildView(g, 0));
       return out.some((c) => c.c === "move" && c.u.length === spears && (c.x - near.cellX) ** 2 + (c.y - near.cellY) ** 2 <= 9);
     };
     assert.equal(goes(5), false, "5 spearmen: not into its keep and militia");
     assert.equal(goes(8), true, "8: they go");
   }),
 );
+
+/** D-100: KEEP on, a game with only the militia and `spears` spearmen of hard's by its main city; whether they go for the nearest small town. */
+function keepTownGoes(spears: number, plan: Partial<HardPlan>, enemy = 0): boolean {
+  const g = new Game({ seed: 1, scenario: "standard" });
+  const w = g.w;
+  for (let s = 0; s < w.units.count; s++) if (w.units.col.type[s] !== UnitType.Militia) w.units.col.hp[s] = 0;
+  g.step();
+  w.tick = 10 * 1200;
+  const s0 = w.map.spawns[0];
+  const near = [...w.map.towns].filter((t) => t.size === TownSize.Small).sort((a, b) => (a.cellX - s0.cellX) ** 2 + (a.cellY - s0.cellY) ** 2 - ((b.cellX - s0.cellX) ** 2 + (b.cellY - s0.cellY) ** 2))[0];
+  for (const t of w.map.towns) put(g, 0, UnitType.Farmer, t.cellX + 10, t.cellY + 10);
+  for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 5), s0.cellY - 4 - Math.trunc(k / 5));
+  // `enemy` enemy spearmen in sight of a farmer of its own, far from the town.
+  const fx = s0.cellX + 20;
+  const fy = s0.cellY - 2;
+  if (enemy > 0) put(g, 0, UnitType.Farmer, fx, fy);
+  for (let k = 0; k < enemy; k++) put(g, 1, UnitType.Spearman, fx + 2 + (k % 4), fy - 2 + Math.trunc(k / 4));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0, holdTowns: false, econBehind: false, ...plan });
+  const out = ai.think(buildView(g, 0));
+  return out.some((c) => c.c === "move" && c.u.length === spears && (c.x - near.cellX) ** 2 + (c.y - near.cellY) ** 2 <= 9);
+}
+
+test(
+  "D-100 (plan.keepTownArmy): KEEP on, hard goes for a small town whose keep stands only with keepTownArmy soldiers; 0, as before",
+  switchedOn(KEEP, () => {
+    assert.equal(keepTownGoes(8, { keepTownArmy: 0 }), true, "0: 8 go (1.3 x its keep and militia)");
+    assert.equal(keepTownGoes(8, { keepTownArmy: 10 }), false, "keepTownArmy 10: 8 wait");
+    assert.equal(keepTownGoes(10, { keepTownArmy: 10 }), true, "10 go");
+  }),
+);
+
+test(
+  "D-100 (plan.keepContest): KEEP on, the enemy army hard saw lately counts by a town as near the enemy; off, only those by the town",
+  switchedOn(KEEP, () => {
+    // The fixed map's towns are as far from both main cities (the nearest small one too).
+    assert.equal(keepTownGoes(10, { keepContest: false }, 12), true, "off: 12 enemies seen away from the town count for nothing there");
+    assert.equal(keepTownGoes(10, { keepContest: true }, 12), false, "on: 12 enemies seen lately, 10 do not go");
+    assert.equal(keepTownGoes(16, { keepContest: true }, 12), true, "16 go");
+  }),
+);
+
+// --- D-086 A7: governs what it can hold (the user 2026-10-28: 「它逆風局都不去治理城鎮也不蓋防禦塔」) ---------------------
+
+/** D-086 A7: hard has just taken the small town at (29, 29) with `spears` spearmen by it; `foes` enemy spearmen by it too. */
+function takenGame(spears: number, foes: number): { g: Game; town: number } {
+  const g = emptyGame();
+  const w = g.w;
+  w.tick = 15 * 1200;
+  const t = w.map.towns.find((x) => x.size === TownSize.Small && x.cellX === 29 && x.cellY === 29)!;
+  w.townState[t.id] = TownState.AwaitingChoice;
+  w.townOwner[t.id] = 0;
+  for (let k = 0; k < spears; k++) put(g, 0, UnitType.Spearman, t.cellX - 2 + (k % 5), t.cellY + Math.trunc(k / 5));
+  for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, t.cellX + 8 + (k % 3), t.cellY - 2 + Math.trunc(k / 3));
+  w.res.set([500, 500, 500, 0], 0);
+  g.fog.update(w);
+  return { g, town: t.id };
+}
+
+test("D-086 A7 (plan.governHold): a town it takes is governed when none is by it and it is 1.3 x the enemy, else plundered; off, plundered", () => {
+  const choice = (governHold: boolean, foes: number) => {
+    const { g, town } = takenGame(12, foes);
+    const out = hardAi(g, { dodge: false, governFrom: 0, governHold }).think(buildView(g, 0));
+    const c = out.find((x) => x.c === "town_choice" && x.town === town);
+    return c !== undefined && c.c === "town_choice" ? c.choice : -1;
+  };
+  assert.equal(choice(true, 0), TownChoice.Govern, "on, none by it: governed");
+  assert.equal(choice(true, 6), TownChoice.Plunder, "on, enemies by it: plundered");
+  assert.equal(choice(false, 0), TownChoice.Plunder, "off: plundered, as before");
+});
+
+test("D-086 A7: by default hard governs what it can hold only with keeps on; without them it plunders, as before", () => {
+  const choice = (keep: boolean) => {
+    const was = KEEP.on;
+    KEEP.on = keep;
+    try {
+      const { g, town } = takenGame(12, 0);
+      const out = hardAi(g, { dodge: false, governFrom: 0 }).think(buildView(g, 0));
+      const c = out.find((x) => x.c === "town_choice" && x.town === town);
+      return c !== undefined && c.c === "town_choice" ? c.choice : -1;
+    } finally {
+      KEEP.on = was;
+    }
+  };
+  assert.equal(choice(false), TownChoice.Plunder, "keeps off: plundered, as before");
+  assert.equal(choice(true), TownChoice.Govern, "keeps on: governed");
+});
+
+test("D-086 A7 (plan.governHold): the army stays by a town it governs until it is repaired; off, it goes home", () => {
+  const stayed = (governHold: boolean) => {
+    const { g, town } = takenGame(12, 0);
+    const w = g.w;
+    // It goes for the town (neutral, its militia gone), then the town falls to it and it governs it.
+    w.townState[town] = TownState.Neutral;
+    w.townOwner[town] = NO_OWNER;
+    const ai = hardAi(g, { dodge: false, governFrom: 0, governHold, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 });
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 12), "it goes for the town");
+    w.townState[town] = TownState.Repairing;
+    w.townOwner[town] = 0;
+    w.tick = 15 * 1200 + 200;
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    return ai.stats?.().governStayed ?? 0;
+  };
+  assert.equal(stayed(true), 1, "on: it stays by the town being repaired");
+  assert.equal(stayed(false), 0, "off: it does not");
+});
+
+/** D-086 A7: hard's 12 go for the town at (29, 29) and take it (repairing); then `later` ticks on, with `foes` enemy spearmen by the army. */
+function holdingThink(later: number, foes: number): { out: CommandBody[]; stayed: number; brokeOff: number } {
+  const { g, town } = takenGame(12, 0);
+  const w = g.w;
+  const t = w.map.towns.find((x) => x.id === town)!;
+  w.townState[town] = TownState.Neutral;
+  w.townOwner[town] = NO_OWNER;
+  const ai = hardAi(g, { dodge: false, governFrom: 0, governHold: true, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 });
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 12), "it goes for the town");
+  w.townState[town] = TownState.Repairing;
+  w.townOwner[town] = 0;
+  w.tick = 15 * 1200 + 200;
+  g.fog.update(w);
+  ai.think(buildView(g, 0));
+  for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, t.cellX + 3 + (k % 4), t.cellY - 3 + Math.trunc(k / 4));
+  w.tick = 15 * 1200 + 200 + later;
+  g.fog.update(w);
+  const out = ai.think(buildView(g, 0));
+  return { out, stayed: ai.stats?.().governStayed ?? 0, brokeOff: ai.stats?.().governBrokeOff ?? 0 };
+}
+
+test("D-086 A7 (plan.governHold): staying by a town it governs, hard still breaks off from an enemy stronger than its army", () => {
+  const quiet = holdingThink(200, 0);
+  assert.equal(quiet.stayed, 2, "no enemy: it stays");
+  const struck = holdingThink(200, 20);
+  assert.equal(struck.brokeOff, 1, "20 enemy spearmen by its 12: it breaks off");
+  assert.ok(struck.out.some((c) => c.c === "retreat" && c.u.length >= 10), "and falls back");
+});
+
+test("D-086 A7 (plan.governHold): a repair that does not end, hard stays at most GOVERN_STAY x its time, then goes home", () => {
+  const repair = rules().towns?.[TownSize.Small]?.repairTicks ?? 900;
+  // Ticks a multiple of 200 (governStayed counts those): within the limit it stays, past it not.
+  assert.equal(holdingThink(Math.trunc((2 * repair) / 200) * 200, 0).stayed, 2, "within 2 x the repair: it stays");
+  assert.equal(holdingThink((Math.trunc((2 * repair) / 200) + 1) * 200, 0).stayed, 1, "past it: no longer");
+});
+
+test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it governs; 0, none", () => {
+  const towers = (governTowers: number) => {
+    const g = behindGame(0);
+    const w = g.w;
+    const t = w.map.towns.find((x) => x.size === TownSize.Small && x.cellX === 29 && x.cellY === 29)!;
+    w.townState[t.id] = TownState.Governed;
+    w.townOwner[t.id] = 0;
+    put(g, 0, UnitType.Farmer, t.cellX, t.cellY);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, governTowers }).think(buildView(g, 0));
+    return out.some((c) => c.c === "build" && c.type === BuildingType.ArrowTower && (c.x - t.cellX) ** 2 + (c.y - t.cellY) ** 2 <= (t.radius + 10) ** 2);
+  };
+  assert.equal(towers(2), true, "governTowers 2: a tower by it");
+  assert.equal(towers(0), false, "0: none, as before");
+});
 
 test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
   const march = (strongPush: number) => {

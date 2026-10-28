@@ -2763,6 +2763,26 @@ export interface HardPlan {
   /** D-086 A6: wood under WOOD_SHORT and gold GOLD_PILE or more, cavalry (food and gold, no wood) first up to this percent of its soldiers (0: as before). */
   goldCavalry: number;
   /**
+   * D-100 (KEEP on; ceo 2026-10-28, a7a: hard against normal 98/94% -> 86/85% with the batch on): every town on the
+   * fixed map is as far from both main cities, so both go for the same one at minutes 8-9; its keep holds hard a
+   * minute or more, the militia and arrows wear its 12 down and the enemy's fresh army ends them (seeds 46, 18). For a
+   * town whose keep stands (neutral or the enemy's governed), at least keepTownArmy (small) and keepBigArmy (large)
+   * soldiers (0: townArmy, bigArmy); keepContest: the enemy army it saw in the last KEEP_CONTEST counts as by a town no
+   * farther from the enemy's main city than from its own (false: only those seen by it in the last minute).
+   */
+  keepTownArmy: number;
+  keepBigArmy: number;
+  keepContest: boolean;
+  /**
+   * D-086 A7 (the user 2026-10-27/28: 「它逆風局都不去治理城鎮也不蓋防禦塔，後期都輸我」; ceo: govern only what it can
+   * hold): a town it takes is governed, when it can pay, if it is nearer its own main city than the enemy's, or no enemy
+   * soldier is in sight by it and its soldiers are 1.3 x the enemy it believes in; else plundered as before. The army
+   * stays by a town it governs until it is repaired (false: as before).
+   */
+  governHold: boolean;
+  /** D-086 A7: arrow towers by each town it governs, saved up for (0: none, as before). */
+  governTowers: number;
+  /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
    * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
@@ -2869,6 +2889,16 @@ export const HARD: HardPlan = {
   econBehind: true,
   crystalStop: true,
   goldCavalry: 25,
+  // D-100 and D-086 A7 (ceo 2026-10-29, the user: 「整批照現在的進度直接上」; docs/research/2026-10-ai-a7.md): a7c's kbag,
+  // measured with the D-100 batch on (KEEP, SIEGE, RICH, MARKET): hard against normal 86/85% -> 87/90%, the six
+  // active groups 14 -> 8 of 240, push-crush 27/25 -> 9/27 of 40, towers and towns after a big defeat. keepTownArmy
+  // and keepBigArmy act only with keeps; governHold and governTowers too unless the caller sets them (createHardAi).
+  // keepContest measured and left off.
+  keepTownArmy: 10,
+  keepBigArmy: 20,
+  keepContest: false,
+  governHold: true,
+  governTowers: 2,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -2914,6 +2944,10 @@ const HOLD_MIN = 40;
 /** D-086 A6: towns governed more by the enemy that make it behind on towns (plan.econBehind); mages' crystal kept before it stops gathering it (plan.crystalStop); gold that piles up (plan.goldCavalry). */
 const TOWNS_BEHIND = 2;
 const IDLE_HOME = 3 * 1200;
+/** D-086 A7 (plan.governHold): it stays by a town it governs at most this many times the town's repair time. */
+const GOVERN_STAY = 2;
+/** D-100 (plan.keepContest): how long the enemy army it saw counts by a contested town with its keep up. */
+const KEEP_CONTEST = 3 * 1200;
 const CRYSTAL_ENOUGH = 4;
 const GOLD_PILE = 300;
 /** D-086 A5 (plan.behindOutpost): how long after it stops being behind the guards come off the outpost. */
@@ -3004,6 +3038,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const plan: HardPlan = { ...HARD, ...know.hard };
   // D-083 (c): with the population rules on, HARD_POP over HARD (what the caller gives still wins).
   if ((know.rules.population?.town[TownSize.Small] ?? 0) > 0) Object.assign(plan, HARD_POP, know.hard);
+  // D-086 A7: measured with keeps on only; without them it plays as before, unless the caller asks for them.
+  if (know.rules.features?.keep !== true) {
+    if (know.hard?.governHold === undefined) plan.governHold = false;
+    if (know.hard?.governTowers === undefined) plan.governTowers = 0;
+  }
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
   const once = know.rules.features?.plunderOnce === true;
@@ -3068,6 +3107,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let homeSince = -1;
   /** D-086 A6: the town it is going for was picked on even terms (the forts' checks on the way stay even too). */
   let townEven = false;
+  /** D-086 A7 (plan.governHold): the town it stays by while it is repaired, and since when. */
+  let holdTown = -1;
+  let holdFrom = -100000;
   /** D-086 A5 (plan.holdTowns): when it last told the army to a town it holds. */
   let holdMove = -100000;
   let saveFor = -1;
@@ -3165,7 +3207,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3653,7 +3695,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       };
       /** D-086 A5 (plan.behind): towers wanted by its main city and by each town it governs, more while behind. */
       const towersWant = behindNow ? Math.max(plan.towers, plan.behindTowers) : plan.towers;
-      const townTowersWant = behindNow ? Math.max(plan.townTowers, plan.behindTownTowers) : plan.townTowers;
+      const townTowersWant = Math.max(behindNow ? Math.max(plan.townTowers, plan.behindTownTowers) : plan.townTowers, plan.governTowers);
       /** D-086 A4 (plan.towers): an enemy soldier in sight this near (cells) a spot. */
       const foeBy = (x: number, y: number) => foes.some((f) => dist2(f.x, f.y, x, y) <= TOWER_SAFE * TOWER_SAFE);
       /** D-086 A4 (plan.towers, plan.townTowers): where the next tower goes (null: none wanted, or no spot), toward the threat, clear of doors and of enemies. */
@@ -3759,6 +3801,14 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (spot !== null) {
             add(BuildingType.ArrowTower, spot);
             counted.behindTowers++;
+          }
+        }
+        // D-086 A7 (plan.governTowers): towers by the towns it governs, saved up for.
+        if (plan.governTowers > 0) {
+          const spot = towerSpotFor();
+          if (spot !== null) {
+            add(BuildingType.ArrowTower, spot);
+            counted.governTowers++;
           }
         }
         if (plan.towerFirst && tick - lastWave <= TOWER_FIRST) {
@@ -4001,11 +4051,17 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       for (const t of mem.unexplored) {
         if (!towns.has(t.id)) towns.set(t.id, { state: TownState.Neutral, owner: NEUTRAL, needed: 0, timer: 0, visible: false, x: t.cellX, y: t.cellY, size: t.size });
       }
+      /** D-086 A7 (plan.governHold): a town it can hold: nearer its own main city, or none by it and 1.3 x the enemy it believes in. */
+      const holdable = (t: HardTown) =>
+        dist2(t.x, t.y, home.cellX, home.cellY) < dist2(t.x, t.y, enemyHome.cellX, enemyHome.cellY) ||
+        (!foes.some((f) => f.order !== Order.Post && dist2(f.x, f.y, t.x, t.y) <= 14 * 14) && worth(soldiers) * 10 >= believed * 13);
       for (const [id, t] of towns) {
         if (t.state === TownState.Ruins && t.visible) restoreAt.set(id, tick + t.timer);
         if (t.owner !== player || t.state !== TownState.AwaitingChoice) continue;
-        if (!(once && plunderedTown(id))) labels[HEAD_TOWN] = toGovern(id) ? 1 : 0;
-        if (!toGovern(id)) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
+        const govern = toGovern(id) || (plan.governHold && holdable(t) && affordAll(governCost(t.size)));
+        if (govern && !toGovern(id)) counted.governHeld++;
+        if (!(once && plunderedTown(id))) labels[HEAD_TOWN] = govern ? 1 : 0;
+        if (!govern) out.push({ c: "town_choice", town: id, choice: TownChoice.Plunder });
         else if (affordAll(governCost(t.size))) {
           out.push({ c: "town_choice", town: id, choice: TownChoice.Govern });
           spend(governCost(t.size));
@@ -4706,9 +4762,25 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const ta = townEven ? 100 : fortFailed;
           // Forts by the army too strong for it (D-081): it breaks off as from a stronger enemy.
           const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, ac.x, ac.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army, tb, ta));
-          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral) || (t.state === TownState.Ruins && !staleRuin(targetTown, t))) mode = "home";
           // D-096 (GATE_AI.retreat "a"): not for its losses while the gate it is breaking falls.
-          else if ((standing * 5 < armyAtStart * 2 && !(GATE_AI.retreat.includes("a") && gateAim >= 0 && gateFell)) || local > armyWorth || byArmy.length > 0) {
+          const breakOff = (standing * 5 < armyAtStart * 2 && !(GATE_AI.retreat.includes("a") && gateAim >= 0 && gateFell)) || local > armyWorth || byArmy.length > 0;
+          // D-086 A7 (plan.governHold): by a town it governs until it is repaired (from the think it takes it: the choice is made
+          // this think), for at most GOVERN_STAY x its repair; but it breaks off as from any town when it should (ceo 2026-10-29:
+          // a repair stops with the garrison under its least, and it would stand there till the last, as #188 at forts).
+          const holding = plan.governHold && t !== undefined && t.owner === player && (t.state === TownState.Repairing || t.state === TownState.AwaitingChoice);
+          if (!holding) holdTown = -1;
+          else if (holdTown !== targetTown) {
+            holdTown = targetTown;
+            holdFrom = tick;
+          }
+          if (holding && !breakOff && tick - holdFrom <= GOVERN_STAY * (rules.towns?.[t.size]?.repairTicks ?? 45 * 20)) {
+            if (tick % 200 === 0) counted.governStayed++;
+            send(t.x, t.y, "town");
+            return;
+          }
+          if (holding && breakOff) counted.governBrokeOff++;
+          if (t === undefined || (t.owner === player && t.state !== TownState.Neutral && !(holding && breakOff)) || (t.state === TownState.Ruins && !staleRuin(targetTown, t))) mode = "home";
+          else if (breakOff) {
             razing = -1;
             if (gateAim >= 0) counted.gateBrokeOff++;
             gateAim = -1;
@@ -5036,13 +5108,23 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             // Plundered before (round 7): only worth it when it can pay to govern it (plan.townSave: the rest weighed, it saves up for it).
             const unpaid = once && plunderedTown(id) && !affordAll(governCost(t.size));
             if (unpaid && !plan.townSave && !townsBehind) continue;
-            if (army.length < (t.size === TownSize.Small ? townArmy : plan.bigArmy)) continue;
+            // D-100 (plan.keepTownArmy, keepBigArmy): more for a town whose keep stands.
+            const keepUp = rules.features?.keep === true && (t.state === TownState.Neutral || (t.owner === 1 - player && t.state === TownState.Governed));
+            const small = keepUp && plan.keepTownArmy > 0 ? Math.max(townArmy, plan.keepTownArmy) : townArmy;
+            const big = keepUp && plan.keepBigArmy > 0 ? Math.max(plan.bigArmy, plan.keepBigArmy) : plan.bigArmy;
+            if (army.length < (t.size === TownSize.Small ? small : big)) continue;
             // D-100 (KEEP_AI.strength): its keep, militia or garrison; the enemy soldiers it remembers by it count too.
             const remembered = [...intel.values()].filter((e) => tick - e.tick <= FORT_FORGET && dist2(e.x, e.y, t.x, t.y) <= 14 * 14);
             if (vsForts(army) * 10 < townDefence(rules, fv, player, t, remembered) * 13) continue;
             // Not into a stronger enemy seen there in the last minute.
             let there = 0;
             for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= 14 * 14) there += WORTH[e.type];
+            // D-100 (plan.keepContest): by a town its keep holds it at, the enemy army it saw lately may come too.
+            if (plan.keepContest && keepUp && dist2(t.x, t.y, enemyHome.cellX, enemyHome.cellY) <= dist2(t.x, t.y, home.cellX, home.cellY)) {
+              let lately = 0;
+              for (const e of intel.values()) if (tick - e.tick <= KEEP_CONTEST && !e.post && e.inside === undefined) lately += WORTH[e.type];
+              there = Math.max(there, lately);
+            }
             if (there * 10 > armyWorth * (townsBehind ? 10 : 8)) continue;
             // D-096: a governed enemy town's gates shoot (GATE_AI.arrows); nor one it cannot break into (GATE_AI.retreat "b").
             if (GATE_AI.arrows && (there + gateArrowWorth(view, rules, player, t, Math.trunc(there / 10))) * 10 > armyWorth * (townsBehind ? 10 : 8)) continue;
