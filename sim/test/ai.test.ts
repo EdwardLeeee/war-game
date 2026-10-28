@@ -741,14 +741,15 @@ function plunderedChoice(difficulty: AiDifficulty, rich: boolean, once: boolean)
   });
 }
 
-test("round 7: a town plundered before is governed when the AI can pay, and nothing is sent when it cannot (every difficulty)", () => {
+test("round 7: a town plundered before is governed when the AI can pay, and nothing is sent when it cannot (every difficulty)", switchedOff([KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET], () => {
+  // The old rules (the D-100 batch off): with keeps, hard governs what it can hold (D-086 A7).
   for (const difficulty of ["easy", "normal", "hard"] as const) {
     assert.deepEqual(plunderedChoice(difficulty, true, true), { c: "town_choice", town: 0, choice: TownChoice.Govern }, `${difficulty}, rich`);
     assert.equal(plunderedChoice(difficulty, false, true), undefined, `${difficulty}, poor: no plunder (it would be refused)`);
     // The rule off: these plunderers plunder as before.
     assert.deepEqual(plunderedChoice(difficulty, true, false), { c: "town_choice", town: 0, choice: TownChoice.Plunder }, `${difficulty}, rule off`);
   }
-});
+}));
 
 /** A normal (or easy) AI with a barracks, a range and a stable at home, soldiers in the field and an enemy ranged unit in view. */
 function cavalryGame(difficulty: AiDifficulty) {
@@ -1475,7 +1476,8 @@ test("D-081 / A4 (fortAgain): after breaking off from a fort, the next go takes 
   }
 });
 
-test("D-081: hard does not go back to a town it fell back from because of forts while it remembers them, though the straight way from home misses them", () => {
+test("D-081: hard does not go back to a town it fell back from because of forts while it remembers them, though the straight way from home misses them", switchedOff([KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET], () => {
+  // The old rules (the D-100 batch off): this is about forts; with keeps, a town asks keepTownArmy (D-100).
   const g = emptyGame();
   const w = g.w;
   for (let k = 0; k < 14; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
@@ -1510,7 +1512,7 @@ test("D-081: hard does not go back to a town it fell back from because of forts 
   w.tick += 10;
   g.fog.update(w);
   assert.ok(toTown(), "once the forts are weaker, again");
-});
+}));
 
 test("D-081: farmers do not lead the soldiers at home back to a fort the army broke off from, within 5 minutes (ceo 2026-10-10)", withFortsOff(() => {
   for (const difficulty of ["normal", "hard"] as const) {
@@ -1556,7 +1558,8 @@ test("D-081: falling back past forts, the way round them: a point beside the fir
   assert.equal(aroundForts([g], { x: 30, y: 10 }, { x: 90, y: 10 }, 96), undefined, "a way clear of them: straight on");
 });
 
-test("D-081: hard falling back from forts too strong for it goes round them, then home", () => {
+test("D-081: hard falling back from forts too strong for it goes round them, then home", switchedOff([KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET], () => {
+  // The old rules (the D-100 batch off): this is about forts; with keeps, a town asks keepTownArmy (D-100).
   const g = emptyGame();
   const w = g.w;
   const s0 = w.map.spawns[0];
@@ -1590,7 +1593,7 @@ test("D-081: hard falling back from forts too strong for it goes round them, the
   g.fog.update(w);
   const on = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 14) as { x: number; y: number } | undefined;
   assert.ok(on !== undefined && (on.x !== back.x || on.y !== back.y), "on from there");
-});
+}));
 
 test("D-081: no garrison in a town under the arrows of an enemy fort (normal and hard)", () => {
   for (const difficulty of ["normal", "hard"] as const) {
@@ -1839,7 +1842,8 @@ test("D-086 B: with the network on, its choice at home wins: it marches with 16,
   assert.equal(marches(16, forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD])), false, "on, as hard: not with 16, as hard does not");
 });
 
-test("D-086 B: with the network on, a first capture is governed when it chooses so and can pay", () => {
+test("D-086 B: with the network on, a first capture is governed when it chooses so and can pay", switchedOff([KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET], () => {
+  // The old rules (the D-100 batch off): with keeps, hard governs what it can hold (D-086 A7).
   const chosen = (net: NetWeights | null) => {
     const g = emptyGame();
     const w = g.w;
@@ -1854,7 +1858,7 @@ test("D-086 B: with the network on, a first capture is governed when it chooses 
   assert.equal(chosen(forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD])), TownChoice.Plunder, "as hard: plundered, as hard does");
   assert.equal(chosen(forcedNet([AS_HARD, AS_HARD, AS_HARD, TOWN_GOVERN])), TownChoice.Govern);
   assert.equal(chosen(forcedNet([AS_HARD, AS_HARD, AS_HARD, TOWN_PLUNDER])), TownChoice.Plunder);
-});
+}));
 
 test("D-086 B: the network's inputs follow the AI's state (features)", () => {
   const x = features({
@@ -2005,7 +2009,8 @@ test("D-086 A (plan.woodShift, plan.woodFarmers): with wood short and food and g
   assert.ok(!withPopulation(false, () => trains(richHard([700, 20, 300, 0], {}, { farmers: 36 }), UnitType.Farmer)), "population rules off: as before");
 });
 
-test("D-086 A (plan.governFrom, governSpare, governNearest): from that minute a first capture is governed when hard can pay; else plundered, as before", () => {
+test("D-086 A (plan.governFrom, governSpare, governNearest): from that minute a first capture is governed when hard can pay; else plundered, as before", switchedOff([KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET], () => {
+  // The old rules (the D-100 batch off): with keeps, hard governs what it can hold (D-086 A7).
   /** Hard at minute 13 has just taken small town `which` (first capture), 10 spearmen in it, `res` in stock. */
   const chosen = (which: "nearest" | "other", res: number[], plan: Partial<HardPlan>) => {
     const g = emptyGame();
@@ -2036,7 +2041,7 @@ test("D-086 A (plan.governFrom, governSpare, governNearest): from that minute a 
   // What hard plays (HARD_POP, D-086 A): with the population rules on, governed from minute 12; off, plundered as before.
   assert.equal(chosen("nearest", rich, {}), TownChoice.Govern, "hard as it plays: governed");
   assert.equal(withPopulation(false, () => chosen("nearest", rich, {})), TownChoice.Plunder, "population rules off: plundered");
-});
+}));
 
 // --- D-086 A3: looking before a march -----------------------------------------------------------------------
 
@@ -2083,7 +2088,8 @@ test(
   "D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home",
   // The bug was the AI's, not the map's: with gates hard plays seed 7 otherwise and never sends its farmers home
   // (war-game-core 2026-10-22), so they are off here.
-  switchedOff(GATES === undefined ? [] : [GATES], () => {
+  // The game found was on the rules before the D-100 batch (KEEP, SIEGE, RICH, MARKET), off here too.
+  switchedOff([...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET]], () => {
     // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
 
     // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
@@ -2118,6 +2124,14 @@ test(
     assert.ok(before.hid > 0, "its farmers were sent home");
     assert.deepEqual(before.changed, [], "orders as sent");
     assert.deepEqual(play(true).changed, [], "orders as sent, with D-086 A6");
+    // And with the D-100 batch and gates on, as they ship.
+    const batch = [...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET]];
+    for (const sw of batch) sw.on = true;
+    try {
+      assert.deepEqual(play(true).changed, [], "orders as sent, with the D-100 batch");
+    } finally {
+      for (const sw of batch) sw.on = false;
+    }
   }),
 );
 
@@ -2521,7 +2535,8 @@ function atGate(spears: number, ranged: number) {
   return { g, w, t, town, army, view: buildView(g, 0), r: rules(w.map) };
 }
 
-test("D-096: an AI reads a town's gates from the view by their openings, and those on its walls", () => {
+test("D-096: an AI reads a town's gates from the view by their openings, and those on its walls", switchedOff([KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET], () => {
+  // The old castles (the D-100 batch off): the keeps of D-100 have other walls and militia.
   if (!rules().features?.gates) return;
   const { g, t, town, r } = atGate(0, 0);
   const all = townGates(buildView(g, null), r, town);
@@ -2529,7 +2544,7 @@ test("D-096: an AI reads a town's gates from the view by their openings, and tho
   assert.ok(all.every((x) => x.owner === NO_OWNER || x.owner === 255 || x.owner < 0 || x.owner > 1), "none of the players'");
   assert.ok(all.every((x) => x.hp === r.towns[t.size].gateHp), "full");
   assert.equal(onWalls(buildView(g, null), 0, r, town).length, r.towns[t.size].militia >> 1, "half the militia on the walls");
-});
+}));
 
 test("D-096 (GATE_AI.focus, off by default): by a town with its gates closed, the melee go for the gate nearest the army, ranged units for those on the walls", () => {
   if (!rules().features?.gates) return;
