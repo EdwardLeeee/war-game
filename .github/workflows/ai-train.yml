@@ -52,8 +52,9 @@ permissions:
   contents: read
   actions: read
 
+# THIS BRANCH ONLY (ai/train-eval3, never merged): its own group, so the training chain's next run is not held or replaced.
 concurrency:
-  group: ai-train
+  group: ai-train-eval3
   cancel-in-progress: false
 
 jobs:
@@ -99,6 +100,8 @@ jobs:
           nets=$(echo "$S" | jq -c '.nets // []')
           k=$(echo "$nets" | jq 'length')
           if [ "$mode" = "eval" ] && [ "$k" -gt 0 ]; then n=$(( k > 8 ? 8 : k )); fi
+          # THIS BRANCH ONLY: eval of every island of from_run (train-es-<n>), plus hard itself as the ninth job.
+          if [ "$mode" = "eval" ] && [ "$(echo "$S" | jq -r '.islandsOf // false')" = "true" ]; then n=9; fi
           {
             echo "mode=$mode"
             echo "from_run=$(get from_run '')"
@@ -122,7 +125,8 @@ jobs:
     timeout-minutes: 355
     strategy:
       fail-fast: false
-      max-parallel: 8
+      # THIS BRANCH ONLY: at most 4 at once (ceo 2026-10-29: the training holds 8 of the account's 20).
+      max-parallel: 4
       matrix:
         island: ${{ fromJSON(needs.plan.outputs.islands) }}
     defaults:
@@ -176,6 +180,9 @@ jobs:
               fi ;;
             eval)
               L=$(echo "$NETS" | jq -r ".[$ISLAND] // empty")
+              # THIS BRANCH ONLY: island n's net from from_run; the ninth job is hard itself.
+              if [ "$ISLAND" = "8" ] && [ ! -d "$F/train-es-8" ]; then node $T eval --games "$GAMES" --out "$O" "$@"; cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+              if [ -z "$L" ] && [ -f "$F/train-es-$ISLAND/net.json" ]; then L="$F/train-es-$ISLAND/net.json"; fi
               if [ "$L" = "none" ]; then node $T eval --games "$GAMES" --out "$O" "$@"; cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
               if [ -n "$L" ]; then node $T eval --net "$L" --games "$GAMES" --out "$O" "$@"; cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
               N="$F/$NET/net.json"
@@ -188,7 +195,8 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
+          # THIS BRANCH ONLY: every eval job its own name too (islandsOf).
+          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.mode == 'eval' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
           path: out/
           retention-days: 14
           if-no-files-found: ignore
