@@ -1,0 +1,512 @@
+{
+ "traces": [
+  {
+   "name": "kbag-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbag-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {}
+  },
+  {
+   "name": "kbl-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kbl-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6
+   }
+  },
+  {
+   "name": "kblr-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  },
+  {
+   "name": "kblr-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "kbag",
+   "a": {},
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kbag",
+   "a": {},
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-20",
+    "21-40"
+   ]
+  },
+  {
+   "name": "kbag",
+   "a": {},
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "kbl",
+   "a": {
+    "lumberFar": 6
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kbl",
+   "a": {
+    "lumberFar": 6
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-20",
+    "21-40"
+   ]
+  },
+  {
+   "name": "kbl",
+   "a": {
+    "lumberFar": 6
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "kblr",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kblr",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-20",
+    "21-40"
+   ]
+  },
+  {
+   "name": "kblr",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  }
+ ]
+}
