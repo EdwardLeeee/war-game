@@ -10,14 +10,14 @@ import { BUILDINGS, MARKET, NODE_AMOUNT, RICH, rules } from "../src/core/rules.t
 import { toCanon } from "../src/frame.ts";
 import { BuildingType, HeaderField, NodeKind, Reject, Resource, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, openArea, put, run, switchedOn } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, run, switchedOff, switchedOn } from "./helpers.ts";
 
 function rejects(g: Game, p = 0): number[] {
   g.step();
   return g.events.filter((e) => e.to === p && e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
 }
 
-test("RICH and MARKET off: the amounts, the maps' gold and the rules as before; no market", () => {
+test("RICH and MARKET off: the amounts, the maps' gold and the rules as before; no market", switchedOff([RICH, MARKET], () => {
   assert.deepEqual([NODE_AMOUNT.goldCell, NODE_AMOUNT.tree], [400, 100]);
   const gold = generateMap().nodes.filter((x) => x.kind === NodeKind.GoldMine);
   assert.deepEqual([gold.length, gold.reduce((a, x) => a + x.amount, 0)], [16, 6400]);
@@ -30,7 +30,7 @@ test("RICH and MARKET off: the amounts, the maps' gold and the rules as before; 
   assert.deepEqual(rejects(g), [Reject.NotAvailable]);
   cmd(g, 0, { c: "trade", resource: Resource.Food, buy: true, lots: 1 });
   assert.deepEqual(rejects(g), [Reject.NotAvailable]);
-});
+}));
 
 test("RICH on: 600 gold a cell on the same cells, trees as before; 3 more forests a side", switchedOn(RICH, () => {
   assert.deepEqual([NODE_AMOUNT.goldCell, NODE_AMOUNT.tree, RICH.forests, RICH.contested], [600, 100, 3, false]);

@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import { Game } from "../src/core/game.ts";
 import { GATE, TOWNS, UNITS, WALLS } from "../src/core/rules.ts";
 import { onWall } from "../src/core/units.ts";
@@ -28,7 +29,7 @@ function governed(): G {
 
 const rejected = (g: G) => g.events.filter((e) => e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
 
-test("ranged units and mages go up onto the walls, one a wall cell, and stand there; spearmen stay below", () => {
+test("ranged units and mages go up onto the walls, one a wall cell, and stand there; spearmen stay below", switchedOff(KEEP, () => {
   const g = governed();
   const w = g.w;
   const t = w.map.towns[T];
@@ -51,7 +52,7 @@ test("ranged units and mages go up onto the walls, one a wall cell, and stand th
   const before = ids.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]);
   run(g, 100);
   assert.deepEqual(ids.map((id) => [u.x[slotOf(g, id)], u.y[slotOf(g, id)]]), before, "they do not move");
-});
+}));
 
 test("`wall` rejects: none of the player's (NotOwner), no ranged or mage (NotAvailable), a town not held (TownNotYours), a full wall (NoRoom)", () => {
   const g = governed();
@@ -96,7 +97,7 @@ function duel(gap: number, ownOnWall: boolean) {
   return { g, mine, theirs };
 }
 
-test("on a wall a ranged unit shoots WALLS.range further: it hits one 7 cells off that cannot hit it back", () => {
+test("on a wall a ranged unit shoots WALLS.range further: it hits one 7 cells off that cannot hit it back", switchedOff(KEEP, () => {
   const range = UNITS[UnitType.Ranged].range >> CELL_SHIFT;
   const { g, mine, theirs } = duel(range + 1, true);
   const u = g.w.units.col;
@@ -105,7 +106,7 @@ test("on a wall a ranged unit shoots WALLS.range further: it hits one 7 cells of
   assert.equal(u.hp[slotOf(g, mine)], hp0[0], "not hit");
   assert.ok(slotOf(g, theirs) < 0 || u.hp[slotOf(g, theirs)] < hp0[1], "it hit the other");
   assert.equal(WALLS.range, CELL);
-});
+}));
 
 test("shooting from a wall it shows Attack, standing OnWall; the snapshot flags it OnWall either way", () => {
   const range = UNITS[UnitType.Ranged].range >> CELL_SHIFT;
@@ -127,7 +128,7 @@ test("shooting from a wall it shows Attack, standing OnWall; the snapshot flags 
   assert.ok((flags() & UnitFlag.OnWall) !== 0, "shooting: flagged");
 });
 
-test("a mage calibrating the cannon on a wall comes down on a move, to the cell it climbed from", () => {
+test("a mage calibrating the cannon on a wall comes down on a move, to the cell it climbed from", switchedOff(KEEP, () => {
   const g = governed();
   const w = g.w;
   const t = w.map.towns[T];
@@ -148,7 +149,7 @@ test("a mage calibrating the cannon on a wall comes down on a move, to the cell 
   const s2 = slotOf(g, m);
   assert.equal(u.wall[s2], -1, "down");
   assert.equal((u.y[s2] >> CELL_SHIFT) * w.size + (u.x[s2] >> CELL_SHIFT), foot, "where it climbed from");
-});
+}));
 
 test("on a wall it takes arrows and shots for 3/4: ranged against ranged, two cells off", () => {
   const hits = (wall: boolean) => {
@@ -170,7 +171,7 @@ test("on a wall it takes arrows and shots for 3/4: ranged against ranged, two ce
   assert.equal(wall, Math.max(1, Math.trunc((ground * WALLS.takenNum) / WALLS.takenDen)), `${wall} on the wall, ${ground} below`);
 });
 
-test("melee reaches one on a wall only from inside: a spearman outside the wall stands, one inside kills it", () => {
+test("melee reaches one on a wall only from inside: a spearman outside the wall stands, one inside kills it", switchedOff(KEEP, () => {
   const g = governed();
   const w = g.w;
   const t = w.map.towns[T];
@@ -194,9 +195,9 @@ test("melee reaches one on a wall only from inside: a spearman outside the wall 
   g.fog.update(w);
   run(g, 30 * 20);
   assert.ok(slotOf(g, archer) < 0, "the one inside killed it");
-});
+}));
 
-test("a soldier on the wall keeps the town: enemies inside do not take it while it stands", () => {
+test("a soldier on the wall keeps the town: enemies inside do not take it while it stands", switchedOff(KEEP, () => {
   const g = governed();
   const w = g.w;
   const t = w.map.towns[T];
@@ -217,9 +218,9 @@ test("a soldier on the wall keeps the town: enemies inside do not take it while 
   w.units.col.hp[slotOf(g, archer)] = 0;
   run(g, 3 * 20);
   assert.equal(w.townOwner[T], 1, "taken once it fell");
-});
+}));
 
-test("soldiers on the wall are the town's garrison, on the screen too: no BelowGarrison, no revolt", () => {
+test("soldiers on the wall are the town's garrison, on the screen too: no BelowGarrison, no revolt", switchedOff(KEEP, () => {
   const g = governed();
   const w = g.w;
   const t = w.map.towns[T];
@@ -241,9 +242,9 @@ test("soldiers on the wall are the town's garrison, on the screen too: no BelowG
   for (const id of ids) w.units.col.hp[slotOf(g, id)] = 0;
   run(g, 2);
   assert.deepEqual([row()[TownField.garrison], row()[TownField.flags] & TownFlag.BelowGarrison], [0, TownFlag.BelowGarrison]);
-});
+}));
 
-test("down again with leave_wall, or with a move: to the cell inside it climbed from", () => {
+test("down again with leave_wall, or with a move: to the cell inside it climbed from", switchedOff(KEEP, () => {
   const g = governed();
   const w = g.w;
   const t = w.map.towns[T];
@@ -265,7 +266,7 @@ test("down again with leave_wall, or with a move: to the cell inside it climbed 
   assert.equal(u.order[slotOf(g, a)], Order.None);
   assert.equal(u.order[slotOf(g, b)], Order.Move);
   assert.ok(w.wallCells[T].every((c) => w.wallAt[c] < 0), "the wall cells are free again");
-});
+}));
 
 test("a neutral town's militia stand on its walls from the start: 3 of 6 in a small town, 6 of 12 in the big city; they throw stones to WALLS.sling", () => {
   const g = new Game({ seed: 1, scenario: "standard" });

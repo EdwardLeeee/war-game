@@ -26,7 +26,7 @@
 // obstacles' directions, which IEEE 754 defines exactly).
 
 import { type Frame, MIRROR_XY, invert, mirrorX, rotation, then, toCanon } from "../frame.ts";
-import { NodeKind, Terrain, TownSize, walkableTerrain } from "../protocol.ts";
+import { crossingTerrain, NodeKind, Terrain, TownSize, walkableTerrain } from "../protocol.ts";
 import { dir16, Rng } from "./fixed.ts";
 import { type CastleMap, castleOf } from "./castle.ts";
 import { farTrees, type GameMap, type NodeSpec, stampCastles, type TownSpec, turnedTerrain } from "./map.ts";
@@ -34,6 +34,36 @@ import { forestCells, homeForests } from "./forests.ts";
 import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
 
 export type Layout = "diagonal" | "adjacent";
+
+/**
+ * Water a castle's walls left 1 cell wide becomes open ground (ceo 2026-10-29: D-100's bigger castles cut a
+ * river's corner on seed 30): a water cell beside a wall (8 round it) in no 2 x 2 of water and crossings, round after
+ * round until none is left. The same rule turned or mirrored, so the map stays its own mirror image. On; off only for
+ * the tests that compare the maps without it.
+ */
+export const WATER_TRIM = { on: true };
+
+function trimWater(n: number, ground: Uint8Array, wall: Uint8Array): void {
+  const wet = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && wall[y * n + x] === 0 && (ground[y * n + x] === Terrain.Water || crossingTerrain(ground[y * n + x]));
+  const byWall = (x: number, y: number) => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (x + dx >= 0 && y + dy >= 0 && x + dx < n && y + dy < n && wall[(y + dy) * n + x + dx] === 1) return true;
+    return false;
+  };
+  const in2x2 = (x: number, y: number) =>
+    [[0, 0], [-1, 0], [0, -1], [-1, -1]].some(([dx, dy]) => wet(x + dx, y + dy) && wet(x + dx + 1, y + dy) && wet(x + dx, y + dy + 1) && wet(x + dx + 1, y + dy + 1));
+  // Each round from the map as it was at its start (not cell by cell), so the order of the cells does not count.
+  for (;;) {
+    const dry: number[] = [];
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        const i = y * n + x;
+        if (wall[i] === 0 && ground[i] === Terrain.Water && !in2x2(x, y) && byWall(x, y)) dry.push(i);
+      }
+    }
+    if (dry.length === 0) return;
+    for (const i of dry) ground[i] = Terrain.Open;
+  }
+}
 
 export interface RandomMap extends GameMap {
   layout: Layout;
@@ -414,6 +444,7 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
   }
   for (const [x, y] of veinCells(layout, vein)) kind[y * n + x] = NodeKind.CrystalVein;
   const wall = stampCastles(n, rock, kind, castles);
+  if (WATER_TRIM.on) trimWater(n, ground, wall);
 
   // Fill what the starts cannot reach (4-connected over open, node-free cells; fords and bridges
   // are walked).

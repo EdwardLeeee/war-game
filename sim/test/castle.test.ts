@@ -2,11 +2,13 @@
 // nobody walks through, gates are open to everyone, the town is what lies inside the walls, arrow
 // towers may go inside and up to 2 cells outside them, nothing is built on a gate's lane (ceo
 // 2026-10-20), a way blocked all the same is broken through by its blocker (D-024) and never by a
-// wall, and every map stays walkable, fair and not too round-about.
+// wall, and every map stays walkable, fair and not too round-about. The D-089 castles with KEEP off; the
+// bigger ones of D-100 (KEEP, on) in keep.test.ts; the maps' walks with the switches as they are.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { castleOf } from "../src/core/castle.ts";
+import { KEEP } from "../src/core/keep.ts";
 import { towerLand } from "../src/core/commands.ts";
 import { Game } from "../src/core/game.ts";
 import { generateMap, type GameMap } from "../src/core/map.ts";
@@ -20,8 +22,10 @@ import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 /** Town 0 on the fixed map: the small town at (29, 29). */
 const T = 0;
+/** Seeds a test looks through for a random map of the kind it needs before it fails. */
+const MAP_TRIES = 500;
 
-test("rules give each castle: the small town 9 x 9 inside, the big city 12 x 12, 13 x 13 with a 3 x 3 tower", () => {
+test("rules give each castle: the small town 9 x 9 inside, the big city 12 x 12, 13 x 13 with a 3 x 3 tower", switchedOff(KEEP, () => {
   const r = rules();
   const small = r.towns[TownSize.Small].castle!;
   const large = r.towns[TownSize.Large].castle!;
@@ -37,7 +41,7 @@ test("rules give each castle: the small town 9 x 9 inside, the big city 12 x 12,
   assert.deepEqual([large3.wall.length, large3.gate.length], [48, 12]);
   // Every militia post is inside the walls and not on the tower.
   for (const c of [small, large]) for (const [x, y] of c.militia) assert.ok(inTown(c, 0, 0, x, y), `post ${x},${y}`);
-});
+}));
 
 test("on the fixed map walls are terrain nobody walks; the gates stand closed (D-096), the cell before each is open", () => {
   const g = new Game({ seed: 1, scenario: "standard" });
@@ -72,7 +76,7 @@ test("on the fixed map walls are terrain nobody walks; the gates stand closed (D
   for (const [dx, dy] of c.outside) assert.ok(!inTown(c, 0, 0, dx, dy), `${dx},${dy} in front of a gate is outside`);
 });
 
-test("seeing a town is seeing any of its castle: a farmer just outside the wall finds it, one 7 cells out does not, and it stays known", () => {
+test("seeing a town is seeing any of its castle: a farmer just outside the wall finds it, one 7 cells out does not, and it stays known", switchedOff(KEEP, () => {
   const g = emptyGame();
   const w = g.w;
   const t = w.map.towns[T];
@@ -93,9 +97,9 @@ test("seeing a town is seeing any of its castle: a farmer just outside the wall 
   u.y[slotOf(g, near)] = (t.cellY - 12) << CELL_SHIFT;
   g.fog.update(w);
   assert.equal(known(), "remembered", "and remembered once out of sight");
-});
+}));
 
-test("walls stop walking: a soldier sent to a town's centre from beside its corner goes in by a gate (open: GATE off, as D-089)", switchedOff(GATE, () => {
+test("walls stop walking: a soldier sent to a town's centre from beside its corner goes in by a gate (open: GATE off, as D-089)", switchedOff([GATE, KEEP], () => {
   const g = emptyGame();
   const w = g.w;
   const n = w.size;
@@ -119,7 +123,7 @@ test("walls stop walking: a soldier sent to a town's centre from beside its corn
   assert.ok(throughGate, "by a gate");
 }));
 
-test("a town is what lies inside its walls: a soldier in front of a gate does not take it, one inside does", () => {
+test("a town is what lies inside its walls: a soldier in front of a gate does not take it, one inside does", switchedOff(KEEP, () => {
   const g = emptyGame();
   const w = g.w;
   const t = w.map.towns[T];
@@ -138,7 +142,7 @@ test("a town is what lies inside its walls: a soldier in front of a gate does no
   run(g, 5);
   assert.equal(w.townState[T], TownState.AwaitingChoice, "inside: taken");
   assert.equal(w.townOwner[T], 0);
-});
+}));
 
 test("arrow towers may go inside a held town's walls and up to 2 cells outside them, not 3", () => {
   const g = emptyGame();
@@ -159,7 +163,7 @@ test("arrow towers may go inside a held town's walls and up to 2 cells outside t
   assert.equal(v.placement[y * w.size + t.cellX + c.inside.x1 + 2 + TOWER_REACH.town] & PlaceBit.TowerLand, 0);
 });
 
-test("nothing is built on a gate's lane: on the gate, in front of it or right behind it; one cell to the side is fine", () => {
+test("nothing is built on a gate's lane: on the gate, in front of it or right behind it; one cell to the side is fine", switchedOff(KEEP, () => {
   const g = emptyGame();
   const w = g.w;
   const n = w.size;
@@ -200,9 +204,9 @@ test("nothing is built on a gate's lane: on the gate, in front of it or right be
   run(g, 1);
   assert.deepEqual(rejections(g, 0), [], "and takes the four beside them");
   assert.equal(w.buildings.count, before + 4);
-});
+}));
 
-test("a way into a town blocked by the enemy's buildings all the same: a soldier sent at what is inside breaks through a blocker, never a wall (D-024)", () => {
+test("a way into a town blocked by the enemy's buildings all the same: a soldier sent at what is inside breaks through a blocker, never a wall (D-024)", switchedOff(KEEP, () => {
   const g = emptyGame();
   const w = g.w;
   const n = w.size;
@@ -255,7 +259,7 @@ test("a way into a town blocked by the enemy's buildings all the same: a soldier
   const hp0 = b.hp[w.building(hit)];
   run(g, 100);
   assert.ok(w.building(hit) < 0 || b.hp[w.building(hit)] < hp0, "and hits it");
-});
+}));
 
 function rejections(g: Game, p: number): number[] {
   return g.events.filter((e) => e.to === p && e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
@@ -372,14 +376,17 @@ test("random maps (seeds 1-300): castles, nothing walled off, walks within the c
   assert.ok(median >= 1.1, `median main city to main city ${median.toFixed(3)}`);
 });
 
-test("the big city's castle follows its tower on a turned random map: rules, the world and the terrain agree", () => {
-  let seed = 1;
-  let map = generateRandomMap(seed, 129);
+test("the big city's castle follows its tower on a turned random map: rules, the world and the terrain agree", switchedOff(KEEP, () => {
   const offset = (m: GameMap) => {
     const l = m.towns.find((t) => t.size === TownSize.Large)!;
     return [m.tower.cellX - l.cellX, m.tower.cellY - l.cellY];
   };
-  while (!(map.layout === "diagonal" && offset(map)[0] === 0 && offset(map)[1] === 0)) map = generateRandomMap(++seed, 129);
+  // At most MAP_TRIES seeds (ceo 2026-10-29: a switch that makes no such map fails here at once, not after hours).
+  const turned = (m: ReturnType<typeof generateRandomMap>) => m.layout === "diagonal" && offset(m)[0] === 0 && offset(m)[1] === 0;
+  let seed = 1;
+  let map = generateRandomMap(seed, 129);
+  while (!turned(map) && seed < MAP_TRIES) map = generateRandomMap(++seed, 129);
+  assert.ok(turned(map), `no diagonal random map with the tower on the big city's centre in seeds 1-${MAP_TRIES}`);
   const g = new Game({ seed, scenario: "standard", map: "random" });
   const w = g.w;
   const n = w.size;
@@ -399,4 +406,4 @@ test("the big city's castle follows its tower on a turned random map: rules, the
     if ((v.placement[k] & PlaceBit.Unexplored) === 0) continue;
     assert.equal(v.placement[k] & (PlaceBit.Wall | PlaceBit.Gate | PlaceBit.Blocked), 0, `unexplored ${dx},${dy}`);
   }
-});
+}));

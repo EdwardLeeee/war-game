@@ -122,6 +122,19 @@ for (const g of mixed) {
 }
 const strongerRate = stronger.decided === 0 ? 0 : stronger.wins / stronger.decided;
 const strongerMin = STRONGER_WIN_MIN[stronger.name] ?? GATES.strongerWinMin;
+// The time limit (D-112, ceo 2026-10-29: 60 minutes once the batch is on; a draw ends at it), and for reference
+// with a longer one the old 30 minutes: games not decided by then, and the stronger AI's share of those that were.
+const limitTicks = games.reduce((a, g) => Math.max(a, g.ticks), 0);
+const REF_TICKS = 30 * 1200;
+const decidedBy = (g: GameResult, t: number) => (g.winner === 0 || g.winner === 1) && g.ticks <= t;
+const ref30 =
+  limitTicks > REF_TICKS
+    ? {
+        undecided: games.filter((g) => !decidedBy(g, REF_TICKS)).length,
+        strongerDecided: mixed.filter((g) => decidedBy(g, REF_TICKS)).length,
+        strongerWins: mixed.filter((g) => decidedBy(g, REF_TICKS) && LEVEL[g.difficulty[g.winner]] > LEVEL[g.difficulty[1 - g.winner]]).length,
+      }
+    : null;
 const medians = games.map((g) => g.tickMicros.median).sort((a, b) => a - b);
 const p95s = games.map((g) => g.tickMicros.p95).sort((a, b) => a - b);
 const maxes = games.map((g) => g.tickMicros.max).sort((a, b) => a - b);
@@ -165,6 +178,8 @@ const summary = {
   mages,
   styles,
   stronger: { ...stronger, winRate: strongerRate },
+  limitMinutes: limitTicks / 1200,
+  ...(ref30 === null ? {} : { reference30: ref30 }),
   ...(random ? { map: "random", layouts, reference } : {}),
   towns,
   tickMicros: { medianOfMedians: q(medians, 0.5), p95OfP95: q(p95s, 0.95), max: q(maxes, 1) },
@@ -199,9 +214,13 @@ const lines = [
   `|---|---|`,
   `| 玩家 0 出生點勝 | ${wins[0]}（勝率 ${pct(rate)}，平手不算進分母） |`,
   `| 玩家 1 出生點勝 | ${wins[1]}（勝率 ${pct(1 - rate)}） |`,
-  `| 平手（30 分鐘到） | ${draws}（${pct(drawShare)}） |`,
+  `| 平手（${Math.round(limitTicks / 1200)} 分鐘到） | ${draws}（${pct(drawShare)}） |`,
+  ...(ref30 === null ? [] : [`| 第 30 分還沒分出勝負（參考，D-112 以前的上限） | ${ref30.undecided}（${pct(games.length === 0 ? 0 : ref30.undecided / games.length)}） |`]),
   `| 重播雜湊不同 | ${replayFail} 場 |`,
   ...(mixed.length === 0 ? [] : [`| 難度不同的 ${mixed.length} 場 | ${stronger.name} 勝 ${stronger.wins}／分出勝負 ${stronger.decided}（${pct(strongerRate)}，門檻 ${pct(strongerMin)}） |`]),
+  ...(mixed.length === 0 || ref30 === null
+    ? []
+    : [`| 只算第 30 分前分出勝負的（參考） | ${stronger.name} 勝 ${ref30.strongerWins}／${ref30.strongerDecided}（${pct(ref30.strongerDecided === 0 ? 0 : ref30.strongerWins / ref30.strongerDecided)}） |`]),
   `| 每局長度（分鐘） | 最短 ${summary.minutes.min.toFixed(1)}、中位數 ${summary.minutes.median.toFixed(1)}、90% ${summary.minutes.p90.toFixed(1)}、最長 ${summary.minutes.max.toFixed(1)} |`,
   `| 搶／治理 | ${plunder}／${govern}（搶 ${pct(summary.plunderShare)}） |`,
   `| 法師產量／陣亡 | 玩家 0：${mages[0].trained}／${mages[0].lost}；玩家 1：${mages[1].trained}／${mages[1].lost} |`,

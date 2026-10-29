@@ -4,13 +4,14 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import type { Game } from "../src/core/game.ts";
-import { ARROW_TOWER, BUILDINGS, GATE, SIEGE, rules, UNITS } from "../src/core/rules.ts";
+import { ARROW_TOWER, BUILDINGS, GATE, MARKET, SIEGE, rules, UNITS } from "../src/core/rules.ts";
 import { damage } from "../src/core/units.ts";
 import { BuildingType, CELL, Order, Reject, Stance, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
 import { dir16 } from "../src/core/fixed.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, openArea, put, run, slotOf, switchedOn } from "./helpers.ts";
+import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff, switchedOn } from "./helpers.ts";
 
 const SIEGE_INFO = UNITS[UnitType.Siege];
 
@@ -32,8 +33,8 @@ const hpOf = (g: Game, id: number) => {
   return s < 0 ? 0 : g.w.buildings.col.hp[s];
 };
 
-test("switched off: rules leave the engine, the works and the cavalry multiplier out; the works cannot be built", () => {
-  assert.equal(SIEGE.on, false, "off until art-v6");
+// With MARKET off too: the works is the last row then (MARKET on: the next test).
+test("switched off: rules leave the engine, the works and the cavalry multiplier out; the works cannot be built", switchedOff([SIEGE, MARKET], () => {
   const r = rules();
   assert.equal(r.units.length, UnitType.Siege);
   assert.equal(r.buildings.length, BuildingType.SiegeWorks);
@@ -47,7 +48,26 @@ test("switched off: rules leave the engine, the works and the cavalry multiplier
   cmd(g, 0, { c: "build", u: [farmer], type: BuildingType.SiegeWorks, x: a.x + 8, y: a.y + 8 });
   run(g, 1);
   assert.deepEqual(g.events.filter((e) => e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason), [Reject.NotAvailable]);
-});
+}));
+
+test("SIEGE off, MARKET on (ceo 2026-10-29: one switch of the batch off alone): no siege works in rules, its row empty; the market sent; the works cannot be built", switchedOff(SIEGE, switchedOn(MARKET, () => {
+  const r = rules();
+  assert.equal(r.units.length, UnitType.Siege);
+  assert.equal(r.buildings.length, BuildingType.Market + 1);
+  assert.equal(r.buildings[BuildingType.SiegeWorks], undefined);
+  assert.ok(!(BuildingType.SiegeWorks in r.buildings), "a hole, not a row");
+  assert.equal(r.buildings[BuildingType.Market].type, BuildingType.Market);
+  assert.equal(JSON.parse(JSON.stringify(r.buildings))[BuildingType.SiegeWorks], null, "null in JSON");
+  assert.equal(r.features.siege, undefined);
+  const g = emptyGame();
+  const a = openArea(g, 20);
+  g.w.addBuilding(0, BuildingType.Range, a.x + 2, a.y + 2, BUILDINGS[BuildingType.Range].hp, 1000);
+  const farmer = put(g, 0, UnitType.Farmer, a.x + 10, a.y + 10);
+  g.w.res[1] = 1000;
+  cmd(g, 0, { c: "build", u: [farmer], type: BuildingType.SiegeWorks, x: a.x + 8, y: a.y + 8 });
+  run(g, 1);
+  assert.deepEqual(g.events.filter((e) => e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason), [Reject.NotAvailable]);
+})));
 
 test("switched on: the GDD's values; rules send them; the works needs a range and trains engines", switchedOn(SIEGE, () => {
   assert.deepEqual(
@@ -93,14 +113,14 @@ test("a stone lands a second after it is thrown: the siege_shot event says where
   assert.equal(hp0 - hpOf(g, tower), SIEGE_INFO.attack * SIEGE.vsBuildings);
 }));
 
-test("it outranges an arrow tower: 9.5 cells off, the tower falls and the engine is not hit", switchedOn(SIEGE, () => {
+test("it outranges an arrow tower: 9.5 cells off, the tower falls and the engine is not hit", switchedOn(SIEGE, switchedOff(KEEP, () => {
   assert.equal(ARROW_TOWER.range, 9 * CELL, "towers shoot 9 cells");
   const { g, tower, engine } = towerScene(10);
   const u = g.w.units.col;
   run(g, 60 * 20);
   assert.equal(hpOf(g, tower), 0, "the tower is down");
   assert.equal(u.hp[slotOf(g, engine)], SIEGE_INFO.hp, "untouched");
-}));
+})));
 
 test("nothing within 3 cells: an enemy 2 cells off is no target of its own; told to attack it, it backs off, then throws", switchedOn(SIEGE, () => {
   const g = emptyGame();
@@ -133,7 +153,7 @@ test("nothing within 3 cells: an enemy 2 cells off is no target of its own; told
   assert.equal(u.order[s], Order.Attack);
 }));
 
-test("splash: every enemy within a cell of where it lands, never its own side; one that walks off in the second dodges", switchedOn(SIEGE, () => {
+test("splash: every enemy within a cell of where it lands, never its own side; one that walks off in the second dodges", switchedOn(SIEGE, switchedOff(KEEP, () => {
   const g = emptyGame();
   const a = openArea(g, 30);
   const u = g.w.units.col;
@@ -175,7 +195,7 @@ test("splash: every enemy within a cell of where it lands, never its own side; o
   u.x[runner] += 3 * CELL;
   while (g.tick < next) g.step();
   assert.equal(u.hp[slotOf(g, aim)], before, "it was not there");
-}));
+})));
 
 test("a stone on a gate does GATE.siege times its attack", switchedOn(SIEGE, () => {
   const g = emptyGame();

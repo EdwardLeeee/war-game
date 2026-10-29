@@ -7,6 +7,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import { Game } from "../src/core/game.ts";
 import { SLOT_GIVE_UP, UNITS } from "../src/core/rules.ts";
 import { Order, UnitFlag, type UnitType } from "../src/protocol.ts";
@@ -52,25 +53,25 @@ function settle(start: [UnitType, number, number][], how: "move" | "retreat", ca
   return { g, ids, ticks };
 }
 
-test("the client's three starts settle, on a move and on a retreat, about as soon as before R6-51's ridges (400-430 ticks)", () => {
+test("the client's three starts settle, on a move and on a retreat, about as soon as before R6-51's ridges (400-430 ticks)", switchedOff(KEEP, () => {
   for (const how of ["move", "retreat"] as const) {
     STARTS.forEach((start, k) => {
       const { ticks } = settle(start, how);
       assert.ok(ticks > 0 && ticks <= 450, `${how}, start ${k}: ${ticks} ticks`);
     });
   }
-});
+}));
 
-test("then told to re-form facing north (formation with face) where they stand, they settle too", () => {
+test("then told to re-form facing north (formation with face) where they stand, they settle too", switchedOff(KEEP, () => {
   STARTS.forEach((start, k) => {
     const { ticks } = settle(start, "move", 1500, 12);
     assert.ok(ticks > 0 && ticks <= 450, `start ${k}: ${ticks} ticks`);
   });
-});
+}));
 
 test(
   "switched off, the first start's ranged unit never gets to its place",
-  switchedOff(SLOT_GIVE_UP, () => {
+  switchedOff([SLOT_GIVE_UP, KEEP], () => {
     for (const how of ["move", "retreat"] as const) {
       const { g, ids, ticks } = settle(STARTS[0], how, 3000);
       assert.equal(ticks, -1, `${how}: settled after ${ticks} ticks`);

@@ -1,7 +1,7 @@
 // Test helpers: a standard game with every unit removed, so a test can place its own.
 
 import { Game } from "../src/core/game.ts";
-import { BLOCK_GATE, BLOCK_WALL } from "../src/core/world.ts";
+import { BLOCK_BUILDING, BLOCK_GATE, BLOCK_WALL } from "../src/core/world.ts";
 import { BuildingType, CELL_SHIFT, UnitType } from "../src/protocol.ts";
 import { MULT_DEN, MULT_NUM, SHIELD, UNITS } from "../src/core/rules.ts";
 
@@ -36,25 +36,38 @@ export function cmd(g: Game, p: number, body: Record<string, unknown>): void {
 
 /**
  * Top-left of a size x size square of walkable cells at least 15 cells from every building, the
- * first from the top-left as before D-089. Castle walls (D-089) and gates (D-096) do not count
- * against it: any in the square or within 4 cells of it are taken down (walls in the grid only,
- * gates broken: gone at the next step), and so are the gates' lanes, so a test's fight is where it
- * was, is not walled in, and may build there.
+ * first from the top-left as before D-089. Castle walls (D-089), gates (D-096) and towns' keeps (D-100,
+ * KEEP) do not count against it: walls and gates in the square or within 4 cells of it are taken down
+ * (walls in the grid only, gates broken: gone at the next step), and so are the gates' lanes; keeps as
+ * near as a building may stand are broken too (they would shoot into it). So a test's fight is where it
+ * was, is not walled in or shot at, and may build there.
  */
 export function openArea(g: Game, size: number): { x: number; y: number } {
   const w = g.w;
   const b = w.buildings.col;
   const n = w.size;
-  const open = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && (w.grid[y * n + x] & ~(BLOCK_WALL | BLOCK_GATE)) === 0;
+  const keepAt = (x: number, y: number) => {
+    const s = w.building(w.buildingAt[y * n + x]);
+    return s >= 0 && b.type[s] === BuildingType.Keep;
+  };
+  const open = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < n && y < n && ((w.grid[y * n + x] & ~(BLOCK_WALL | BLOCK_GATE)) === 0 || ((w.grid[y * n + x] & ~(BLOCK_WALL | BLOCK_GATE | BLOCK_BUILDING)) === 0 && keepAt(x, y)));
   for (let y = 0; y + size <= w.size; y++) {
     for (let x = 0; x + size <= w.size; x++) {
       let ok = true;
+      const near = (s: number) => Math.abs(b.cellX[s] - (x + size / 2)) < 15 + size / 2 && Math.abs(b.cellY[s] - (y + size / 2)) < 15 + size / 2;
       for (let s = 0; s < w.buildings.count && ok; s++) {
-        if (b.type[s] === BuildingType.Gate) continue;
-        if (Math.abs(b.cellX[s] - (x + size / 2)) < 15 + size / 2 && Math.abs(b.cellY[s] - (y + size / 2)) < 15 + size / 2) ok = false;
+        if (b.type[s] === BuildingType.Gate || b.type[s] === BuildingType.Keep) continue;
+        if (near(s)) ok = false;
       }
       for (let yy = y; yy < y + size && ok; yy++) for (let xx = x; xx < x + size && ok; xx++) if (!open(xx, yy)) ok = false;
       if (!ok) continue;
+      // Off the grid at once (a unit may be put on one of its cells), gone at the next step.
+      for (let s = 0; s < w.buildings.count; s++) {
+        if (b.type[s] !== BuildingType.Keep || !near(s)) continue;
+        w.setFootprint(b.id[s], BuildingType.Keep, b.cellX[s], b.cellY[s], false);
+        b.hp[s] = 0;
+      }
       let opened = false;
       for (let yy = Math.max(0, y - 4); yy < Math.min(n, y + size + 4); yy++) {
         for (let xx = Math.max(0, x - 4); xx < Math.min(n, x + size + 4); xx++) {

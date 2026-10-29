@@ -4,11 +4,12 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { KEEP } from "../src/core/keep.ts";
 import type { Game } from "../src/core/game.ts";
 import { governPerMinute, MAIN_CRYSTAL, PLUNDER_RECOVERY, TOWN_ONCE, TOWNS } from "../src/core/rules.ts";
 import { NEUTRAL, Reject, Resource, TOWN_STRIDE, TownChoice, TownField, TownFlag, TownSize, TownState, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 const T = 0;
 const SMALL = TOWNS[TownSize.Small];
@@ -75,7 +76,7 @@ function again(p: number, choice: number): { g: Game; spear: number; rejected: n
   return { g, spear, rejected: rejections(g, p) };
 }
 
-test("a town can be plundered once a game: again it is refused (both players alike), governing it is not", withRules({ once: true, recovery: true }, () => {
+test("a town can be plundered once a game: again it is refused (both players alike), governing it is not", withRules({ once: true, recovery: true }, switchedOff(KEEP, () => {
   for (const p of [0, 1]) {
     const { g, rejected } = again(p, TownChoice.Plunder);
     assert.deepEqual(rejected, [Reject.AlreadyPlundered], `player ${p}`);
@@ -86,13 +87,13 @@ test("a town can be plundered once a game: again it is refused (both players ali
     assert.deepEqual(rejections(g, p), []);
     assert.equal(g.w.townState[T], TownState.Repairing);
   }
-}));
+})));
 
-test("TOWN_ONCE off: the same town is plundered twice", withRules({ once: false, recovery: true }, () => {
+test("TOWN_ONCE off: the same town is plundered twice", withRules({ once: false, recovery: true }, switchedOff(KEEP, () => {
   const { g, rejected } = again(0, TownChoice.Plunder);
   assert.deepEqual(rejected, []);
   assert.equal(g.w.townState[T], TownState.Plundering);
-}));
+})));
 
 /** Resources the holder p gets from the town over `ticks` (food). */
 function foodOver(g: Game, p: number, ticks: number): number {
@@ -101,7 +102,7 @@ function foodOver(g: Game, p: number, ticks: number): number {
   return g.w.res[p * 4 + Resource.Food] - f0;
 }
 
-test("a plundered town governed again pays 25% at first and all of it after 10 minutes; it keeps its climb when it changes hands", withRules({ once: true, recovery: true }, () => {
+test("a plundered town governed again pays 25% at first and all of it after 10 minutes; it keeps its climb when it changes hands", withRules({ once: true, recovery: true }, switchedOff(KEEP, () => {
   const { g, spear } = again(0, TownChoice.Govern);
   run(g, SMALL.repairTicks);
   assert.equal(g.w.townState[T], TownState.Governed);
@@ -130,13 +131,13 @@ test("a plundered town governed again pays 25% at first and all of it after 10 m
   assert.equal(row(g, 1)[TownField.incomePermille], 1000, "ten minutes of governing in all");
   const full = foodOver(g, 1, 1200);
   assert.ok(Math.abs(full - per) <= 1, `full minute ${full}`);
-}));
+})));
 
-test("PLUNDER_RECOVERY off: a plundered town governed again pays in full, and town rows say 1000", withRules({ once: true, recovery: false }, () => {
+test("PLUNDER_RECOVERY off: a plundered town governed again pays in full, and town rows say 1000", withRules({ once: true, recovery: false }, switchedOff(KEEP, () => {
   const { g } = again(0, TownChoice.Govern);
   run(g, SMALL.repairTicks);
   assert.equal(row(g, 0)[TownField.incomePermille], 1000);
   const per = governPerMinute(TownSize.Small).food;
   const food = foodOver(g, 0, 1200);
   assert.ok(Math.abs(food - per) <= 1, `a minute ${food}`);
-}));
+})));

@@ -100,19 +100,19 @@
     - `multipliers` 只剩三角：槍兵打騎兵 ×5/2、騎兵打法師和法師的護盾 ×3、遠程打槍兵 ×7/2。遠程打騎兵 ×9/5、遠程打護盾 ×3 拿掉了。騎兵打遠程沒有倍數，靠速度和血量。
     - 騎兵 60 糧 60 金、生命 150（`units`）。
     - `features.cavalryFlank`：騎兵自己挑目標時繞過前排去打後排（3.8）。開著時才出現（值是 true）。
-  - D-099（攻城砲，3.9；開關 SIEGE 預設關，跟 art-v6 一起開）：
+  - D-099（攻城砲，3.9；開關 SIEGE，D-112 起預設開）：
     - `features.siege`：可以蓋砲坊、訓練攻城砲。開著時才出現（值是 true）。
-    - 關著時，`units` 不含攻城砲（`UnitType.Siege`，6），`buildings` 不含砲坊（`BuildingType.SiegeWorks`，14），`multipliers` 不含「騎兵打攻城砲 ×2」；陣列照舊從 0 排起，只是少了最後一項。
+    - 關著時，`units` 不含攻城砲（`UnitType.Siege`，6），`buildings` 不含砲坊（`BuildingType.SiegeWorks`，14），`multipliers` 不含「騎兵打攻城砲 ×2」；陣列照舊從 0 排起，只是少了最後一項。MARKET 開著時市場（15）排在砲坊後面，砲坊那一格是空的（JSON 是 `null`）。
     - `units[Siege]` 多兩個選填欄位：`minRange`（最短射程，定點）、`splash`（落點範圍，定點）。
     - `siege`：`vsBuildings`（打建築的倍數 3；城門照 D-096 的 ×8）、`flightTicks`（砲彈飛幾個 tick：20）。一定會送。
-  - D-100（城鎮放大、每座城都有主堡，3.10；開關 KEEP 預設關，跟 art-v6 一起開）：
+  - D-100（城鎮放大、每座城都有主堡，3.10；開關 KEEP，D-112 起預設開）：
     - `features.keep`：開著時才出現（值是 true）。
     - `BuildingType.Keep`（9）就是原本的 `TownTower`。`TownTower` 這個名字留一個版本，值一樣，之後拿掉。
     - 開著時 `buildings[Keep]` 是 3×3、生命 1000（大城的），`arrows.townTower` 是大城主堡的箭（每箭 10）。關著時照舊：2×2、生命 400、每箭 6。
     - `towns[size].keep`（開著時才送）：`hp`（小鎮 600、大城 1000，畫血條用這個）、`size`（3）、`arrow`（小鎮每箭 4、大城 10，射程 9 格〔LONG_BOWS；關掉時 7 格，和其他建築的箭一樣〕，2 秒一箭）、`rebuildTicks`（治理中城鎮重建倒下的主堡要等幾個 tick：1200）。
     - `towns[size].castle` 換成新的城堡：小鎮牆內 13×13（牆在離中心 7 格），大城 17×17（牆在 9 格），兩種地圖都以城鎮中心格為中心。`radius` 是 7 和 9。
     - 地圖的 `towerSize` 開著時一律是 3，留一個版本。
-  - D-101（多金多木與市場，3.11；開關 RICH、MARKET 預設關）：
+  - D-101（多金多木與市場，3.11；開關 RICH、MARKET，D-112 起預設開）：
     - RICH 開著時，`resources` 的每格金是 600（原本 400），兩邊主城外各多 3 片樹林。每棵樹照舊 100。rules 沒有另外的欄位，看資源點的 `amount` 和位置就知道。
     - `features.market`：可以蓋市場、用 `trade` 買賣。開著時才出現（值是 true）。
     - `buildings[Market]`（15）只在開著時送。
