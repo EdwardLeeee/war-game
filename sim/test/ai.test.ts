@@ -3188,6 +3188,77 @@ test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it 
   assert.equal(towers(0), false, "0: none, as before");
 });
 
+// --- D-086 A8: wood (ceo 2026-10-29: hard's wood under 100 at 58-74% of minutes 20 and 30) -------------------------
+
+/** D-086 A8: hard's base all built (behindGame: one lumber camp), and 6 farmers cutting trees more than 8 cells from it, within 22 of its main city. */
+function farTrees(plan: Partial<HardPlan>, opts: { foe?: boolean } = {}): { out: CommandBody[]; trees: { x: number; y: number }[] } {
+  const g = behindGame(0);
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const camp = { x: s0.cellX - 10 + 1, y: s0.cellY + 2 + 1 };
+  const picked: number[] = [];
+  const order: number[] = [];
+  for (let i = 0; i < w.nodeKind.length; i++) {
+    if (w.nodeKind[i] !== NodeKind.Tree) continue;
+    const dh = (w.nodeX[i] - s0.cellX - 2) ** 2 + (w.nodeY[i] - s0.cellY - 2) ** 2;
+    const dc = (w.nodeX[i] - camp.x) ** 2 + (w.nodeY[i] - camp.y) ** 2;
+    if (dh <= 22 * 22 && dc > 10 * 10) order.push(i);
+  }
+  // The six nearest to the first such tree: one forest.
+  const first = order[0];
+  order.sort((a, b) => (w.nodeX[a] - w.nodeX[first]) ** 2 + (w.nodeY[a] - w.nodeY[first]) ** 2 - ((w.nodeX[b] - w.nodeX[first]) ** 2 + (w.nodeY[b] - w.nodeY[first]) ** 2));
+  picked.push(...order.slice(0, 6));
+  const u = w.units.col;
+  let k = 0;
+  for (let s = 0; s < w.units.count && k < picked.length; s++) {
+    if (u.owner[s] !== 0 || u.type[s] !== UnitType.Farmer) continue;
+    u.order[s] = Order.Gather;
+    u.orderTarget[s] = picked[k];
+    u.x[s] = (w.nodeX[picked[k]] << 10) + 512;
+    u.y[s] = (w.nodeY[picked[k]] << 10) + 512;
+    k++;
+  }
+  const trees = picked.map((i) => ({ x: w.nodeX[i], y: w.nodeY[i] }));
+  if (opts.foe) put(g, 1, UnitType.Spearman, trees[0].x + 2, trees[0].y + 2);
+  g.fog.update(w);
+  // goldCavalry off: its stable would be put up first (one building per think).
+  return { out: hardAi(g, { dodge: false, goldCavalry: 0, ...plan }).think(buildView(g, 0)), trees };
+}
+
+test("D-086 A8 (plan.lumberFar): its woodcutters cutting far from its camp, hard puts up another camp by their trees; not with an enemy by them; off, none", () => {
+  const camp = (r: { out: CommandBody[]; trees: { x: number; y: number }[] }) =>
+    r.out.find((c) => c.c === "build" && c.type === BuildingType.LumberCamp) as { x: number; y: number } | undefined;
+  const on = farTrees({ lumberFar: 6 });
+  const c = camp(on);
+  assert.ok(c !== undefined, "on: another camp");
+  assert.ok(on.trees.some((t) => (t.x - c.x) ** 2 + (t.y - c.y) ** 2 <= 8 * 8), `by the trees (${c.x},${c.y})`);
+  assert.equal(camp(farTrees({ lumberFar: 6 }, { foe: true })), undefined, "an enemy soldier by them: none");
+  assert.equal(camp(farTrees({ lumberFar: 30 })), undefined, "not that far: none");
+  assert.equal(camp(farTrees({ lumberFar: 0 })), undefined, "off: none, as before");
+});
+
+test("D-086 A8 (plan.ratioCalm): a ratio a few points off the last one is not sent till RATIO_CALM after it; off, every change", () => {
+  const sent = (ratioCalm: boolean, later: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.res.set([50, 50, 50, 0], 0);
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, ratioCalm });
+    const first = ai.think(buildView(g, 0)).find((c) => c.c === "eco_ratio") as { food: number; wood: number; gold: number } | undefined;
+    assert.ok(first !== undefined, "a first ratio");
+    // A little more gold: its share a few points less (50/40/10 to 53/41/6).
+    w.res.set([50, 50, 150, 0], 0);
+    w.tick += later;
+    g.fog.update(w);
+    const next = ai.think(buildView(g, 0)).find((c) => c.c === "eco_ratio") as { food: number; wood: number; gold: number } | undefined;
+    if (next !== undefined) assert.ok(Math.max(Math.abs(next.food - first.food), Math.abs(next.wood - first.wood), Math.abs(next.gold - first.gold)) < 10, "a change of a few points");
+    return next !== undefined;
+  };
+  assert.equal(sent(false, 10), true, "off: sent at once");
+  assert.equal(sent(true, 10), false, "on: not yet");
+  assert.equal(sent(true, 610), true, "on, RATIO_CALM on: sent");
+});
+
 test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
   const march = (strongPush: number) => {
     const g = emptyGame();
