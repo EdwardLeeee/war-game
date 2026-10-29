@@ -1,0 +1,759 @@
+{
+ "traces": [
+  {
+   "name": "kbag-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbag-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   }
+  },
+  {
+   "name": "kbm-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbm-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   }
+  },
+  {
+   "name": "kbmm-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  },
+  {
+   "name": "kbmm-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 72000",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "kbag",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kbag",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-20",
+    "21-40"
+   ]
+  },
+  {
+   "name": "kbag",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "kbm",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kbm",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-20",
+    "21-40"
+   ]
+  },
+  {
+   "name": "kbm",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "kbmm",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kbmm",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   },
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-20",
+    "21-40"
+   ]
+  },
+  {
+   "name": "kbmm",
+   "a": {
+    "keepOn": true,
+    "siegeOn": true,
+    "richOn": true,
+    "marketOn": true,
+    "market": true,
+    "mineMove": true
+   },
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  }
+ ]
+}
