@@ -1,0 +1,45 @@
+{
+ "traces": [],
+ "scripted": [
+  {
+   "name": "kbag",
+   "a": {
+    "lumberFar": 0,
+    "ratioCalm": false
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "41-60",
+    "61-80"
+   ]
+  },
+  {
+   "name": "kblr",
+   "a": {
+    "lumberFar": 6,
+    "ratioCalm": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "41-60",
+    "61-80"
+   ]
+  }
+ ]
+}
