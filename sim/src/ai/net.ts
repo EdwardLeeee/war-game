@@ -10,15 +10,18 @@
 //   - army: as hard / wait at home / march on the enemy's main city (HEAD_ARMY);
 //   - mix: as hard / spearmen first / ranged first (HEAD_MIX);
 //   - build: as hard / farmers first / barracks and ranges first (HEAD_BUILD);
-//   - town: as hard / plunder / govern a town it takes for the first time (HEAD_TOWN).
+//   - town: as hard / plunder / govern a town it takes for the first time (HEAD_TOWN);
+//   - defense (NN v2, ceo 2026-10-29): as hard / an arrow tower next, saved up for, by its main city or a town
+//     it governs / no arrow tower now (HEAD_DEFENSE).
 // How soldiers walk and fight stays the hard AI's.
 
 /** Each head's choices, in the order of the network's outputs; choice AS_HARD (0) is hard's own rule. */
-export const NET_HEADS: readonly number[] = [3, 3, 3, 3];
+export const NET_HEADS: readonly number[] = [3, 3, 3, 3, 3];
 export const HEAD_ARMY = 0;
 export const HEAD_MIX = 1;
 export const HEAD_BUILD = 2;
 export const HEAD_TOWN = 3;
+export const HEAD_DEFENSE = 4;
 export const AS_HARD = 0;
 export const ARMY_HOME = 1;
 export const ARMY_BASE = 2;
@@ -28,6 +31,8 @@ export const BUILD_FARMERS = 1;
 export const BUILD_PRODUCTION = 2;
 export const TOWN_PLUNDER = 1;
 export const TOWN_GOVERN = 2;
+export const DEFENSE_TOWER = 1;
+export const DEFENSE_NONE = 2;
 
 /** One layer: outputs x inputs weights (-128..127, row by row), a 32-bit bias per output, the right shift after ReLU. */
 export interface NetLayer {

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
-import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
+import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, DEFENSE_NONE, DEFENSE_TOWER, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
@@ -1750,7 +1750,7 @@ function forcedNet(picks: number[]): NetWeights {
     if (l + 2 === NET_SHAPE.length) {
       let at = 0;
       NET_HEADS.forEach((k, h) => {
-        b[at + picks[h]] = 1;
+        b[at + (picks[h] ?? AS_HARD)] = 1;
         at += k;
       });
     }
@@ -1761,9 +1761,9 @@ function forcedNet(picks: number[]): NetWeights {
 
 test("D-086 B: the network's sums are integers: these weights and inputs give exactly these scores and choices", () => {
   const x = Array.from({ length: NET_INPUTS }, (_, i) => (i * 37 + 11) % 256);
-  assert.deepEqual(forward(testNet(), x), [8716, 18894, 22123, -5343, -24979, -12751, -52341, -56921, -40853, -17770, 61455, 69509]);
-  assert.deepEqual(choose(testNet(), x), [2, 0, 2, 2]);
-  assert.deepEqual(choose(forcedNet([0, 0, 0, 0]), x), [0, 0, 0, 0], "a tie: the lowest index");
+  assert.deepEqual(forward(testNet(), x), [6861, 18430, 20870, -4918, -26195, -14271, -51806, -58041, -39576, -17232, 60786, 68852, -2874, 18813, 20214]);
+  assert.deepEqual(choose(testNet(), x), [2, 0, 2, 2, 2]);
+  assert.deepEqual(choose(forcedNet([0, 0, 0, 0, 0]), x), [0, 0, 0, 0, 0], "a tie: the lowest index");
 });
 
 test("D-086 B: net.ts uses no floating point and no Math functions", () => {
@@ -1936,6 +1936,31 @@ test("D-086 B: the network that always chooses AS_HARD (every weight 0) plays ex
     assert.equal(play(map, [asHardNet(), asHardNet()]), off, `${map}: both sides`);
   }
   assert.notEqual(play("fixed", [forcedNet([ARMY_HOME, AS_HARD, AS_HARD, AS_HARD]), null]), play("fixed", [null, null]), "a network that waits plays another game");
+});
+
+test("NN v2: the network that always chooses AS_HARD plays exactly as hard past its first arrow tower (minute 16 on the fixed map, seed 5)", () => {
+  /** 18 minutes of hard against hard, side 0 with `net`: the final hash, and whether an arrow tower was ordered. */
+  const play = (net: NetWeights | null) => {
+    const g = new Game({ seed: 5, scenario: "standard", map: "fixed" });
+    const ais = [0, 1].map((p) => createAi(p, 5, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: { net: p === 0 ? net : null } }, p));
+    let seq = 0;
+    let tower = false;
+    for (let t = 0; t < 18 * 1200 && !g.w.over; t++) {
+      if (g.tick % 10 === 0) {
+        for (let p = 0; p < 2; p++) {
+          for (const body of ais[p].think(buildView(g, p))) {
+            if (body.c === "build" && body.type === BuildingType.ArrowTower) tower = true;
+            g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+          }
+        }
+      }
+      g.step();
+    }
+    return { hash: g.hash(), tower };
+  };
+  const off = play(null);
+  assert.equal(off.tower, true, "hard orders a tower in these 18 minutes");
+  assert.deepEqual(play(asHardNet()), off);
 });
 
 test("D-086 B: choices can be ruled out (masking): the best allowed one is made", () => {
@@ -3067,6 +3092,32 @@ test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it 
   };
   assert.equal(towers(2), true, "governTowers 2: a tower by it");
   assert.equal(towers(0), false, "0: none, as before");
+});
+
+test("NN v2 (HEAD_DEFENSE): a tower next by its main city, saved up for, where hard puts none; no tower now by a town it governs; as hard, as hard", () => {
+  /** behindGame's hard (governTowers 2), governing the small town at (29, 29) when `governed`: does it put up a tower by its main city, by that town. */
+  const towers = (net: NetWeights | null, governed: boolean) => {
+    const g = behindGame(0);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    const t = w.map.towns.find((x) => x.size === TownSize.Small && x.cellX === 29 && x.cellY === 29)!;
+    if (governed) {
+      w.townState[t.id] = TownState.Governed;
+      w.townOwner[t.id] = 0;
+      put(g, 0, UnitType.Farmer, t.cellX, t.cellY);
+    }
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, governTowers: 2, net }).think(buildView(g, 0));
+    const by = (x: number, y: number, r: number) => out.some((c) => c.c === "build" && c.type === BuildingType.ArrowTower && (c.x - x) ** 2 + (c.y - y) ** 2 <= r * r);
+    return { home: by(s0.cellX + 2, s0.cellY + 2, 14), town: by(t.cellX, t.cellY, t.radius + 10) };
+  };
+  const off = towers(null, false);
+  assert.deepEqual(off, { home: false, town: false }, "off, no town: none");
+  assert.deepEqual(towers(forcedNet([0, 0, 0, 0, AS_HARD]), false), off, "as hard: none, as hard");
+  assert.equal(towers(forcedNet([0, 0, 0, 0, DEFENSE_TOWER]), false).home, true, "a tower next: by its main city");
+  assert.equal(towers(null, true).town, true, "off, a town it governs: a tower by it (governTowers)");
+  assert.equal(towers(forcedNet([0, 0, 0, 0, AS_HARD]), true).town, true, "as hard: by it too");
+  assert.deepEqual(towers(forcedNet([0, 0, 0, 0, DEFENSE_NONE]), true), { home: false, town: false }, "no tower now: none at all");
 });
 
 test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {

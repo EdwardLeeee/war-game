@@ -1,15 +1,20 @@
 # D-086 B (war-game-ai, docs/research/2026-10-ai-nn.md): training the hard AI's small network on GitHub's
 # machines, CPU only. Started by hand only: from the Actions tab (workflow_dispatch, once this file is on
 # main), or by war-game-ai pushing a branch ai/train-* whose sim/src/ai/learn/run.json holds the same
-# settings as the inputs below (ceo 2026-10-19), so training can start before this is merged. One training at a time (its own concurrency group); at most 8
-# jobs at once, so Pages, Client, Sim and other work keep running. A job stops itself before GitHub's 6-hour
-# limit and leaves a checkpoint as an artifact (kept 14 days, never committed); the next run goes on from it
-# (from_run). The last job adds up the runner hours of the run.
+# settings as the inputs below (ceo 2026-10-19), so training can start before this is merged.
+# NN v2 (ai/train-v2, never merged; ceo 2026-10-29): a push starts a run only when it changes run.json; training
+# and the evals each in their own concurrency group; at most 6 training jobs and 2 eval jobs at once (8 in all).
+# A job stops itself before its hours and leaves a checkpoint as an artifact (kept 14 days, never committed);
+# the next run goes on from it (from_run). The last job adds up the runner hours of the run.
 #   dryrun  cores and games an hour
 #   record  hard's inputs and what it did, in AI-against-AI games (train-record), for looking into
 #   es      evolution strategies, one island per job (train-es-<n>), from the network that plays exactly as hard
-#           (from_run: an es run to go on from)
-#   eval    networks against hard, normal and the late group (nets: files in the branch; or from_run, net_artifact)
+#           (from_run: an es run to go on from; chain: runs to start one after another, each from the one
+#           before; cancel a run to stop it). Each chained run also starts an eval of its islands, unless pull
+#           requests' checks are running then (they go first).
+#   eval    islands_of: every island of from_run (or those in pick), each against hard and push-crush (train-eval-<n>);
+#           with no control_run, hard itself on the same seeds too (train-eval-control); then a report of the
+#           islands against that control (train-report)
 name: AI train
 
 on:
@@ -24,32 +29,45 @@ on:
         description: The run whose artifacts this one starts from (es, eval)
         default: ""
       islands:
-        description: "es: jobs, each its own search (at most 8)"
-        default: "8"
+        description: "es: jobs, each its own search (at most 8); eval: the islands of from_run"
+        default: "6"
       generations:
         description: "es: generations per job at most"
-        default: "20"
+        default: "1000"
       hours:
         description: Hours a job plays before it saves and stops
-        default: "5.5"
+        default: "4.5"
       games:
         description: "record: games; eval: games against hard on each map"
-        default: "400"
+        default: "100"
       config:
         description: "es: settings over ES_DEFAULTS (JSON)"
         default: "{}"
-      net_artifact:
-        description: "eval: the artifact of from_run with net.json (or bc.json)"
-        default: train-es-0
+      chain:
+        description: "es: runs to start after this one, each from the one before (0: none)"
+        default: "0"
+      islands_of:
+        description: "eval: the islands of from_run (false: hard itself only)"
+        default: "false"
+      pick:
+        description: "eval: only these islands, comma-separated (empty: all)"
+        default: ""
+      control_run:
+        description: "eval: the run with hard itself measured on the same seeds (train-eval-control; empty: measure it here)"
+        default: ""
+      args:
+        description: "eval: more options for train.ts, e.g. --seed 2000001 --crush 20"
+        default: "--seed 2000001 --crush 20"
   push:
     branches: ["ai/train-*"]
+    paths: ["sim/src/ai/learn/run.json"]
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: ai-train
+  group: ai-train-v2-${{ inputs.mode || 'push' }}
   cancel-in-progress: false
 
 jobs:
@@ -65,9 +83,10 @@ jobs:
       hours: ${{ steps.p.outputs.hours }}
       games: ${{ steps.p.outputs.games }}
       config: ${{ steps.p.outputs.config }}
-      net_artifact: ${{ steps.p.outputs.net_artifact }}
       args: ${{ steps.p.outputs.args }}
-      nets: ${{ steps.p.outputs.nets }}
+      count: ${{ steps.p.outputs.count }}
+      chain: ${{ steps.p.outputs.chain }}
+      control_run: ${{ steps.p.outputs.control_run }}
     steps:
       - if: github.event_name == 'push'
         uses: actions/checkout@v7
@@ -86,24 +105,33 @@ jobs:
           get() { echo "$S" | jq -r --arg k "$1" --arg d "$2" '.[$k] // $d | if type == "string" then . else tojson end'; }
           mode=$(get mode dryrun)
           case "$mode" in dryrun|record|es|eval) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
-          islands=$(get islands 8)
-          n=1
-          if [ "$mode" = "es" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
-          # eval: "nets" lists networks in the branch (paths under sim/, "none": hard itself), one job each, at most 8.
-          nets=$(echo "$S" | jq -c '.nets // []')
-          k=$(echo "$nets" | jq 'length')
-          if [ "$mode" = "eval" ] && [ "$k" -gt 0 ]; then n=$(( k > 8 ? 8 : k )); fi
+          islands=$(get islands 6)
+          n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands ))
+          control_run=$(get control_run '')
+          if [ "$mode" = "es" ]; then
+            list=$(seq -s, 0 $((n - 1)) | sed 's/^/[/; s/$/]/')
+          elif [ "$mode" = "eval" ]; then
+            # The islands (all, or those picked), then hard itself unless control_run has it.
+            pick=$(get pick '')
+            if [ "$(get islands_of false)" = "true" ]; then
+              if [ -n "$pick" ]; then list=$(echo "$pick" | jq -Rc 'split(",") | map(select(. != ""))'); else list=$(seq 0 $((n - 1)) | jq -Rsc 'split("\n") | map(select(. != ""))'); fi
+            else list='[]'; fi
+            if [ -z "$control_run" ]; then list=$(echo "$list" | jq -c '. + ["control"]'); fi
+          else
+            list='[0]'
+          fi
           {
             echo "mode=$mode"
             echo "from_run=$(get from_run '')"
-            echo "islands=$(seq -s, 0 $((n - 1)) | sed 's/^/[/; s/$/]/')"
-            echo "generations=$(get generations 20)"
-            echo "hours=$(get hours 5.5)"
-            echo "games=$(get games 400)"
+            echo "islands=$list"
+            echo "generations=$(get generations 1000)"
+            echo "hours=$(get hours 4.5)"
+            echo "games=$(get games 100)"
             echo "config=$(get config '{}')"
-            echo "net_artifact=$(get net_artifact train-es-0)"
             echo "args=$(get args '')"
-            echo "nets=$nets"
+            echo "count=$n"
+            echo "chain=$(get chain 0)"
+            echo "control_run=$control_run"
           } >> "$GITHUB_OUTPUT"
           echo "設定：$(echo "$S" | jq -c .)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -114,7 +142,8 @@ jobs:
     timeout-minutes: 355
     strategy:
       fail-fast: false
-      max-parallel: 8
+      # ceo 2026-10-29: training and evals 8 jobs at most, 6 and 2.
+      max-parallel: ${{ needs.plan.outputs.mode == 'eval' && 2 || 6 }}
       matrix:
         island: ${{ fromJSON(needs.plan.outputs.islands) }}
     defaults:
@@ -126,11 +155,12 @@ jobs:
         with:
           node-version: "24"
       - name: The start (from_run)
-        if: needs.plan.outputs.from_run != ''
+        if: needs.plan.outputs.from_run != '' && matrix.island != 'control'
         uses: actions/download-artifact@v7
         with:
           run-id: ${{ needs.plan.outputs.from_run }}
           github-token: ${{ github.token }}
+          pattern: train-es-*
           path: from
       - name: Train
         env:
@@ -140,45 +170,83 @@ jobs:
           GENERATIONS: ${{ needs.plan.outputs.generations }}
           GAMES: ${{ needs.plan.outputs.games }}
           CONFIG: ${{ needs.plan.outputs.config }}
-          NET: ${{ needs.plan.outputs.net_artifact }}
           ARGS: ${{ needs.plan.outputs.args }}
-          NETS: ${{ needs.plan.outputs.nets }}
+          FROM_RUN: ${{ needs.plan.outputs.from_run }}
         run: |
           set -o pipefail
           F="${GITHUB_WORKSPACE}/from"
           O="${GITHUB_WORKSPACE}/out"
-          # run.json "args": more options for train.ts (eval: --seed), split on spaces.
           T="src/ai/learn/train.ts"
+          # "args": more options for train.ts (eval: --seed, --crush), split on spaces.
           set -- $ARGS
-          # A run with one artifact is unpacked straight into from/, with several each into from/<name>/.
-          first() { find "$F" -name "$1" 2>/dev/null | sort | head -1; }
           case "$MODE" in
-            dryrun) node $T dryrun --out "$O" "$@" ;;
-            record) node $T record --games "$GAMES" --out "$O" "$@" ;;
+            dryrun) node $T dryrun --out "$O" ;;
+            record) node $T record --games "$GAMES" --out "$O" ;;
             es)
               R="$F/train-es-$ISLAND"
+              # One artifact may be unpacked straight into from/.
               if [ ! -f "$R/state.json" ] && [ "$ISLAND" = "0" ] && [ -f "$F/state.json" ]; then R="$F"; fi
               if [ -f "$R/state.json" ]; then
-                node $T es --start "$R/net.json" --resume "$R" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
+                node $T es --start "$R/net.json" --resume "$R" --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
+              elif [ -n "$FROM_RUN" ]; then
+                echo "run $FROM_RUN has no state.json for island $ISLAND: not starting it again from hard" >&2; exit 1
               else
                 node $T es --seed $((ISLAND + 1)) --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
               fi ;;
             eval)
-              L=$(echo "$NETS" | jq -r ".[$ISLAND] // empty")
-              if [ "$L" = "none" ]; then node $T eval --games "$GAMES" --out "$O" "$@"; cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
-              if [ -n "$L" ]; then node $T eval --net "$L" --games "$GAMES" --out "$O" "$@"; cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
-              N="$F/$NET/net.json"
-              [ -f "$N" ] || N="$F/$NET/bc.json"
-              [ -f "$N" ] || N=$(first net.json)
-              [ -n "$N" ] && [ -f "$N" ] || N=$(first bc.json)
-              node $T eval --net "$N" --games "$GAMES" --out "$O" "$@" ;;
+              if [ "$ISLAND" = "control" ]; then
+                node $T eval --name control --games "$GAMES" --out "$O" "$@"
+              else
+                N="$F/train-es-$ISLAND/net.json"
+                if [ ! -f "$N" ] && [ "$ISLAND" = "0" ] && [ -f "$F/net.json" ]; then N="$F/net.json"; fi
+                [ -f "$N" ] || { echo "run $FROM_RUN has no net.json for island $ISLAND" >&2; exit 1; }
+                node $T eval --net "$N" --name "島 $ISLAND" --games "$GAMES" --out "$O" "$@"
+              fi ;;
           esac
           cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
+          name: train-${{ needs.plan.outputs.mode }}-${{ matrix.island }}
           path: out/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # eval: the islands against hard itself on the same seeds (this run's control, or control_run's).
+  report:
+    needs: [plan, train]
+    if: always() && needs.plan.outputs.mode == 'eval'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: train-eval-*
+          path: evals
+      - if: needs.plan.outputs.control_run != ''
+        uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ needs.plan.outputs.control_run }}
+          github-token: ${{ github.token }}
+          name: train-eval-control
+          path: control
+      - name: Report
+        run: |
+          C="${GITHUB_WORKSPACE}/control/eval.json"
+          node src/ai/learn/train.ts report --dir "${GITHUB_WORKSPACE}/evals" --control "$C" --out "${GITHUB_WORKSPACE}/report"
+          cat "${GITHUB_WORKSPACE}/report/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: train-report
+          path: report/
           retention-days: 14
           if-no-files-found: ignore
 
@@ -195,3 +263,45 @@ jobs:
           gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" \
             -q '[.jobs[] | select(.completed_at != null) | ((.completed_at | fromdate) - (.started_at | fromdate))] | add / 3600' \
             | awk '{ printf "## Runner 小時\n\n這次 run 已完成的 job 合計 %.2f 小時（不含這個 job）。\n", $1 }' | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # A started es run (not a push's trial): with chain, the next run, from this one's checkpoints, once every job
+  # here has saved one (it waits in its group until this run is over); and an eval of this run's islands, the
+  # last run's too. workflow_dispatch is the one event GITHUB_TOKEN may start.
+  next:
+    needs: [plan, train]
+    if: needs.plan.outputs.mode == 'es' && github.event_name == 'workflow_dispatch' && needs.train.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Start the next run and the eval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COUNT: ${{ needs.plan.outputs.count }}
+          GENERATIONS: ${{ needs.plan.outputs.generations }}
+          HOURS: ${{ needs.plan.outputs.hours }}
+          CHAIN: ${{ needs.plan.outputs.chain }}
+          CONTROL_RUN: ${{ needs.plan.outputs.control_run }}
+        run: |
+          if [ "$CHAIN" != "0" ]; then
+            left=$((CHAIN - 1))
+            gh workflow run ai-train.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
+              -f mode=es -f from_run="$GITHUB_RUN_ID" -f islands="$COUNT" -f generations="$GENERATIONS" -f hours="$HOURS" -f chain="$left" -f control_run="$CONTROL_RUN"
+            echo "下一個 run 從這次（${GITHUB_RUN_ID}）接著練，之後還會再接 ${left} 次。" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "接續次數用完，不再接下一個 run。" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # Pull requests' checks first (ceo 2026-10-29): with any running or waiting, no eval this time.
+          busy=0
+          for s in in_progress queued; do
+            busy=$((busy + $(gh run list --repo "$GITHUB_REPOSITORY" --event pull_request --status "$s" --limit 50 --json databaseId -q length)))
+          done
+          if [ "$busy" -gt 0 ]; then
+            echo "有 ${busy} 個 PR 的檢查在跑或在等，這次不比強弱。" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh workflow run ai-train.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
+              -f mode=eval -f from_run="$GITHUB_RUN_ID" -f islands="$COUNT" -f islands_of=true -f control_run="$CONTROL_RUN" -f games=100 -f args="--seed 2000001 --crush 20"
+            echo "比強弱：這次的 ${COUNT} 個島對困難各 200 局、push-crush 40 局（對照 run ${CONTROL_RUN:-在比強弱的 run 裡量}）。" >> "$GITHUB_STEP_SUMMARY"
+          fi

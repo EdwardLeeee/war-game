@@ -70,7 +70,7 @@ import {
   WarningField,
 } from "../protocol.ts";
 import { Rng } from "../core/fixed.ts";
-import { ARMY_BASE, AS_HARD, BUILD_FARMERS, BUILD_PRODUCTION, choose, features, HEAD_ARMY, HEAD_BUILD, HEAD_MIX, HEAD_TOWN, type NetWeights, TOWN_GOVERN } from "./net.ts";
+import { ARMY_BASE, AS_HARD, BUILD_FARMERS, BUILD_PRODUCTION, choose, DEFENSE_NONE, DEFENSE_TOWER, features, HEAD_ARMY, HEAD_BUILD, HEAD_DEFENSE, HEAD_MIX, HEAD_TOWN, type NetWeights, TOWN_GOVERN } from "./net.ts";
 import type { PlayerView } from "../view/view.ts";
 
 export interface Ai {
@@ -3207,7 +3207,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { netTowers: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3543,7 +3543,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
 
       // --- D-086 B: the network's choices, from its own view and memory --------------------------------
       let netX: number[] = [];
-      const labels = [-1, -1, -1, -1];
+      const labels = [-1, -1, -1, -1, -1];
       if (netOn) {
         if (enemyCityHp >= 0) netCityHp = enemyCityHp;
         const ids = new Set(soldiers.map((u) => u.id));
@@ -3628,8 +3628,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const guards = new Set([...townGuards.values()].flat());
           const free = soldiers.filter((u) => !guards.has(u.id)).length;
           const fewFarmers = farmers.length < plan.netFarmers;
+          // NN v2: defense: a tower or none only where it can put one up at all.
+          const towersOk = rules.features?.towers === true && has(BuildingType.Range);
           // AS_HARD always; army: wait, or march once it may; mix: all; build: no barracks and ranges first with few farmers; town: all.
-          const allowed = [true, true, mem.known !== Known.None && free >= plan.netMarch, true, true, true, true, true, !fewFarmers, true, true, true];
+          const allowed = [true, true, mem.known !== Known.None && free >= plan.netMarch, true, true, true, true, true, !fewFarmers, true, true, true, true, towersOk, towersOk];
           netChoice = choose(plan.net, netX, allowed);
           plan.netSeen?.(netChoice);
         }
@@ -3694,8 +3696,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         return best;
       };
       /** D-086 A5 (plan.behind): towers wanted by its main city and by each town it governs, more while behind. */
-      const towersWant = behindNow ? Math.max(plan.towers, plan.behindTowers) : plan.towers;
-      const townTowersWant = Math.max(behindNow ? Math.max(plan.townTowers, plan.behindTownTowers) : plan.townTowers, plan.governTowers);
+      // NN v2 (HEAD_DEFENSE): a tower next: as many as while behind.
+      const netTower = netChoice !== null && netChoice[HEAD_DEFENSE] === DEFENSE_TOWER;
+      const towersWant = behindNow || netTower ? Math.max(plan.towers, plan.behindTowers) : plan.towers;
+      const townTowersWant = Math.max(behindNow || netTower ? Math.max(plan.townTowers, plan.behindTownTowers) : plan.townTowers, plan.governTowers);
       /** D-086 A4 (plan.towers): an enemy soldier in sight this near (cells) a spot. */
       const foeBy = (x: number, y: number) => foes.some((f) => dist2(f.x, f.y, x, y) <= TOWER_SAFE * TOWER_SAFE);
       /** D-086 A4 (plan.towers, plan.townTowers): where the next tower goes (null: none wanted, or no spot), toward the threat, clear of doors and of enemies. */
@@ -3718,6 +3722,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         return { x: x + Math.trunc((dx * k) / d), y: y + Math.trunc((dy * k) / d) };
       };
       const towerSpotFor = (): { x: number; y: number } | null => {
+        // NN v2 (HEAD_DEFENSE): no tower now.
+        if (netChoice !== null && netChoice[HEAD_DEFENSE] === DEFENSE_NONE) return null;
         if ((towersWant <= 0 && townTowersWant <= 0) || rules.features?.towers !== true || !has(BuildingType.Range)) return null;
         const towersBy = (x: number, y: number, r: number) => own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, x, y) <= r * r).length;
         const clear = clearOf(BuildingType.ArrowTower);
@@ -3796,11 +3802,21 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // D-086 A5 (plan.behind): behind, a tower next, saved up for (up to towersWant, townTowersWant); an outpost first (plan.behindOutpost).
         const outpostAt = outpostSpot();
         if (outpostAt !== null) add(BuildingType.Outpost, outpostAt);
+        labels[HEAD_DEFENSE] = 0;
         if (behindNow) {
           const spot = towerSpotFor();
           if (spot !== null) {
             add(BuildingType.ArrowTower, spot);
             counted.behindTowers++;
+            labels[HEAD_DEFENSE] = 1;
+          }
+        }
+        // NN v2 (HEAD_DEFENSE): a tower next, saved up for, as while behind.
+        if (netTower) {
+          const spot = towerSpotFor();
+          if (spot !== null) {
+            add(BuildingType.ArrowTower, spot);
+            counted.netTowers++;
           }
         }
         // D-086 A7 (plan.governTowers): towers by the towns it governs, saved up for.
@@ -3809,11 +3825,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (spot !== null) {
             add(BuildingType.ArrowTower, spot);
             counted.governTowers++;
+            labels[HEAD_DEFENSE] = 1;
           }
         }
         if (plan.towerFirst && tick - lastWave <= TOWER_FIRST) {
           const spot = towerSpotFor();
-          if (spot !== null) add(BuildingType.ArrowTower, spot);
+          if (spot !== null) {
+            add(BuildingType.ArrowTower, spot);
+            labels[HEAD_DEFENSE] = 1;
+          }
         }
         // D-086 A: a stable, for cavalry while wood is short (plan.cavalry).
         const stableReady = (rules.buildings[BuildingType.Stable]?.requires ?? []).every((t) => done(t).length > 0);

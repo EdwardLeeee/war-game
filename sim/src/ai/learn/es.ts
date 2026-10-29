@@ -4,18 +4,30 @@
 // the better side of each pair. A game counts 1 for a win and 0 for a loss or a draw (draws are losses: no
 // learning to sit at home); on top, small rewards from what D-086 A measured, shrinking to nothing over the
 // generations (ceo 2026-10-19). It starts from the network that always chooses AS_HARD, so from hard's own
-// strength; opponents from easy to hard (normal, hard, then a mix of hard, normal and the late scripted group)
-// with the stage to start at in the settings (ES_DEFAULTS: the mix, as the start is as strong as hard already).
+// strength.
+// NN v2 (ceo 2026-10-29): the same opponents every generation, in fixed numbers (EsConfig.mix: hard, normal,
+// and CI's scripted groups push, push-crush, push-turtle), no curriculum; the heads in EsConfig.fixed keep the
+// start's output rows (from asHardNet: AS_HARD, always), so the search is over the others alone.
 
-import { NET_HEADS, NET_SHAPE, type NetWeights } from "../net.ts";
+import { HEAD_BUILD, HEAD_MIX, NET_HEADS, NET_SHAPE, type NetWeights } from "../net.ts";
 import { runAll } from "./pool.ts";
-import type { GameOutcome, Opponent } from "./play.ts";
+import type { GameOutcome, Opponent, Switches } from "./play.ts";
 import type { Job } from "./worker.ts";
 
+/** Games of a generation against each opponent (the same for every candidate). */
+export interface Mix {
+  hard: number;
+  normal: number;
+  /** --strategy push, every third with cavalry (push-cavalry). */
+  push: number;
+  crush: number;
+  turtle: number;
+}
+
 export interface EsConfig {
-  /** Candidate pairs per generation, and games each candidate plays (the same games for all). */
+  /** Candidate pairs per generation; each candidate plays every game of `mix`. */
   pairs: number;
-  games: number;
+  mix: Mix;
   /** Step size in weight units (weights are -127..127) and in bias units; how far the weights move. */
   sigma: number;
   sigmaBias: number;
@@ -23,29 +35,29 @@ export interface EsConfig {
   /** The rewards on the way: their weight at generation 0, and the generation they are gone by. */
   shaping: number;
   shapingUntil: number;
-  /** Curriculum: win share (of the pairs' games) that moves it from normal to hard, and from hard to the mix. */
-  toHard: number;
-  toMix: number;
-  /** Time limit of a training game (ticks), and the share of games on the random map. */
+  /** Time limit of a training game (ticks; no winner by then is a loss), and the share of games on the random map. */
   maxTicks: number;
   randomShare: number;
-  /** The opponents' stage to start at: 0 normal, 1 hard, 2 the mix. */
-  startStage: number;
+  /** The rule switches every game is played with (empty: as they are on main). */
+  rules: Switches;
+  /** Heads whose output rows stay as they start (from asHardNet: AS_HARD). */
+  fixed: number[];
 }
 
 export const ES_DEFAULTS: EsConfig = {
-  pairs: 8,
-  games: 8,
+  pairs: 4,
+  // 32 games: hard 40%, normal 10%, push 20%, push-crush 20%, push-turtle 10% (rounded).
+  mix: { hard: 13, normal: 3, push: 6, crush: 7, turtle: 3 },
   sigma: 4,
   sigmaBias: 64,
   lr: 2,
   shaping: 0.2,
-  shapingUntil: 60,
-  toHard: 0.6,
-  toMix: 0.45,
-  maxTicks: 36000,
+  shapingUntil: 20,
+  // 60 minutes: CI's AI-against-AI limit (D-112), and the scripted games' (ceo 2026-10-29).
+  maxTicks: 72000,
   randomShare: 0.5,
-  startStage: 2,
+  rules: {},
+  fixed: [HEAD_MIX, HEAD_BUILD],
 };
 
 export interface EsState {
@@ -53,18 +65,17 @@ export interface EsState {
   /** The weights as one vector (weights then biases, layer by layer), in floating point: rounded to play. */
   theta: number[];
   generation: number;
-  /** 0: against normal, 1: hard, 2: the mix. */
-  stage: number;
   seed: number;
   history: GenerationReport[];
 }
 
 export interface GenerationReport {
   generation: number;
-  stage: number;
   games: number;
   won: number;
   draws: number;
+  /** Per opponent (Opponent's kind): games and wins, over all candidates. */
+  byOpp: Record<string, { games: number; won: number }>;
   /** Games where 10 or more of the trained side's soldiers stood by the enemy's main city (ceo: not hoarding at home). */
   reached: number;
   /** Per head, over all candidates' games: thinks with each choice (choice 0: AS_HARD). */
@@ -105,32 +116,37 @@ export function fromVector(v: readonly number[], like: NetWeights): NetWeights {
   };
 }
 
-/** Which entries of the vector are biases (they take sigmaBias). */
-function biasMask(like: NetWeights): boolean[] {
-  const m: boolean[] = [];
-  for (const L of like.layers) {
-    for (let i = 0; i < L.inputs * L.outputs; i++) m.push(false);
-    for (let i = 0; i < L.outputs; i++) m.push(true);
-  }
+/** Each entry's step size: sigmaBias for biases, sigma for weights, 0 for the output rows of the fixed heads. */
+export function stepSizes(like: NetWeights, c: EsConfig): number[] {
+  const last = like.layers.length - 1;
+  const fixedRow: boolean[] = [];
+  NET_HEADS.forEach((k, h) => {
+    for (let i = 0; i < k; i++) fixedRow.push(c.fixed.includes(h));
+  });
+  const m: number[] = [];
+  like.layers.forEach((L, l) => {
+    for (let o = 0; o < L.outputs; o++) for (let i = 0; i < L.inputs; i++) m.push(l === last && fixedRow[o] ? 0 : c.sigma);
+    for (let o = 0; o < L.outputs; o++) m.push(l === last && fixedRow[o] ? 0 : c.sigmaBias);
+  });
   return m;
 }
 
 /** The games of one generation: the same for every candidate. */
-function gamesFor(state: EsState, r: () => number): { seed: number; map: "fixed" | "random"; swap: boolean; opp: Opponent }[] {
-  const out = [];
-  for (let k = 0; k < state.config.games; k++) {
-    const seed = 1 + Math.floor(r() * 1_000_000);
-    const map = r() < state.config.randomShare ? ("random" as const) : ("fixed" as const);
-    let opp: Opponent;
-    if (state.stage === 0) opp = { kind: "normal" };
-    else if (state.stage === 1) opp = { kind: "hard" };
-    else {
-      const u = r();
-      opp = u < 0.5 ? { kind: "hard" } : u < 0.75 ? { kind: "normal" } : { kind: "late" };
-    }
-    out.push({ seed, map, swap: (k & 1) === 1, opp });
-  }
-  return out;
+export function gamesFor(state: EsState, r: () => number): { seed: number; map: "fixed" | "random"; swap: boolean; opp: Opponent }[] {
+  const m = state.config.mix;
+  const opps: Opponent[] = [];
+  for (let k = 0; k < m.hard; k++) opps.push({ kind: "hard" });
+  for (let k = 0; k < m.normal; k++) opps.push({ kind: "normal" });
+  for (let k = 0; k < m.push; k++) opps.push({ kind: "push", cavalry: k % 3 === 2 });
+  for (let k = 0; k < m.crush; k++) opps.push({ kind: "crush" });
+  for (let k = 0; k < m.turtle; k++) opps.push({ kind: "turtle" });
+  return opps.map((opp, k) => ({
+    seed: 1 + Math.floor(r() * 1_000_000),
+    map: r() < state.config.randomShare ? ("random" as const) : ("fixed" as const),
+    // Against hard and normal both spawns in turn; a scripted player is always player 0.
+    swap: (k & 1) === 1,
+    opp,
+  }));
 }
 
 /** A game's score: 1 for a win (draws and losses 0), plus the rewards on the way at weight `shaping`. */
@@ -157,29 +173,35 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   const c = state.config;
   const r = rng(state.seed * 1009 + state.generation * 7919 + 1);
   const games = gamesFor(state, r);
-  const bias = biasMask(like);
+  const step = stepSizes(like, c);
   const eps: number[][] = [];
-  for (let p = 0; p < c.pairs; p++) eps.push(state.theta.map((_, i) => gauss(r) * (bias[i] ? c.sigmaBias : c.sigma)));
+  for (let p = 0; p < c.pairs; p++) eps.push(state.theta.map((_, i) => gauss(r) * step[i]));
   const candidates: NetWeights[] = [];
   for (const e of eps) {
     candidates.push(fromVector(state.theta.map((v, i) => v + e[i]), like));
     candidates.push(fromVector(state.theta.map((v, i) => v - e[i]), like));
   }
   const jobs: Job[] = [];
-  for (const net of candidates) for (const g of games) jobs.push({ kind: "play", spec: { seed: g.seed, map: g.map, swap: g.swap, maxTicks: c.maxTicks, opp: g.opp }, net });
+  for (const net of candidates) for (const g of games) jobs.push({ kind: "play", spec: { seed: g.seed, map: g.map, swap: g.swap, maxTicks: c.maxTicks, opp: g.opp, rules: c.rules }, net });
   const results = await runAll(jobs, threads);
   const shaping = state.generation >= c.shapingUntil ? 0 : (c.shaping * (c.shapingUntil - state.generation)) / c.shapingUntil;
   const fitness: number[] = [];
   let won = 0;
   let draws = 0;
   let reached = 0;
+  const byOpp: Record<string, { games: number; won: number }> = {};
   const choices = NET_HEADS.map((k) => new Array(k).fill(0));
   for (let k = 0; k < candidates.length; k++) {
     let f = 0;
     for (let g = 0; g < games.length; g++) {
       const o = results[k * games.length + g].outcome;
       f += score(o, shaping);
-      if (o.won === 1) won++;
+      const by = (byOpp[games[g].opp.kind] ??= { games: 0, won: 0 });
+      by.games++;
+      if (o.won === 1) {
+        won++;
+        by.won++;
+      }
       if (o.won < 0) draws++;
       if (o.reached) reached++;
       o.choices.forEach((h, i) => h.forEach((v, k) => (choices[i][k] += v)));
@@ -194,13 +216,10 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   for (let p = 0; p < c.pairs; p++) {
     const d = rank[2 * p] - rank[2 * p + 1];
     if (d === 0) continue;
-    for (let i = 0; i < n; i++) state.theta[i] += (c.lr * d * eps[p][i]) / ((bias[i] ? c.sigmaBias : c.sigma) * c.pairs);
+    for (let i = 0; i < n; i++) if (step[i] > 0) state.theta[i] += (c.lr * d * eps[p][i]) / (step[i] * c.pairs);
   }
   const total = candidates.length * games.length;
-  const report: GenerationReport = { generation: state.generation, stage: state.stage, games: total, won, draws, reached, shaping, choices, seconds: Math.round((performance.now() - t0) / 1000) };
-  // Curriculum: on to the next opponents once the candidates win often enough against these.
-  if (state.stage === 0 && won >= total * c.toHard) state.stage = 1;
-  else if (state.stage === 1 && won >= total * c.toMix) state.stage = 2;
+  const report: GenerationReport = { generation: state.generation, games: total, won, draws, byOpp, reached, shaping, choices, seconds: Math.round((performance.now() - t0) / 1000) };
   state.generation++;
   state.history.push(report);
   return report;
@@ -208,7 +227,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
 
 export function newState(start: NetWeights, seed: number, config: Partial<EsConfig> = {}): EsState {
   const c = { ...ES_DEFAULTS, ...config };
-  return { config: c, theta: toVector(start), generation: 0, stage: c.startStage, seed, history: [] };
+  return { config: c, theta: toVector(start), generation: 0, seed, history: [] };
 }
 
 /** The shape every network here has (net.ts NET_SHAPE). */
