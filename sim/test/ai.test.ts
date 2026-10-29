@@ -3053,6 +3053,125 @@ test("D-086 A7 (plan.governHold): a repair that does not end, hard stays at most
   assert.equal(holdingThink((Math.trunc((2 * repair) / 200) + 1) * 200, 0).stayed, 1, "past it: no longer");
 });
 
+test("D-086 A7 (plan.governHold): gone home from a stay that ran out, hard takes the same town again and stays by it again", () => {
+  const { g, town } = takenGame(12, 0);
+  const w = g.w;
+  const tt = w.map.towns.find((x) => x.id === town)!;
+  // The other towns ruins it sees, so that from this one it can only go home, and back to it.
+  for (const o of w.map.towns) if (o.id !== town) {
+    w.townState[o.id] = TownState.Ruins;
+    w.townOwner[o.id] = NO_OWNER;
+    w.townTimer[o.id] = 48000;
+    put(g, 0, UnitType.Farmer, o.cellX, o.cellY);
+  }
+  const repair = rules().towns?.[TownSize.Small]?.repairTicks ?? 900;
+  const ai = hardAi(g, { dodge: false, governFrom: 0, governHold: true, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 });
+  const take = (at: number) => {
+    w.townState[town] = TownState.Neutral;
+    w.townOwner[town] = NO_OWNER;
+    w.tick = at;
+    g.fog.update(w);
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length >= 10 && c.x === tt.cellX && c.y === tt.cellY), "it goes for the town");
+    w.townState[town] = TownState.Repairing;
+    w.townOwner[town] = 0;
+  };
+  const think = (at: number) => {
+    w.tick = at;
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    return ai.stats?.().governStayed ?? 0;
+  };
+  const t0 = 15 * 1200;
+  take(t0);
+  assert.equal(think(t0 + 200), 1, "it stays");
+  const out = (Math.trunc((2 * repair) / 200) + 2) * 200;
+  assert.equal(think(t0 + out), 1, "past the limit: home");
+  // Home: its 12 walked back (the game is not run here), by its main city; a farmer of its own keeps the town in sight.
+  const s0 = w.map.spawns[0];
+  put(g, 0, UnitType.Farmer, tt.cellX + tt.radius + 2, tt.cellY);
+  const u = w.units.col;
+  let k = 0;
+  for (let s = 0; s < w.units.count; s++) {
+    if (u.owner[s] !== 0 || u.type[s] !== UnitType.Spearman) continue;
+    u.x[s] = ((s0.cellX + 4 + (k % 5)) << 10) + 512;
+    u.y[s] = ((s0.cellY - 4 - Math.trunc(k / 5)) << 10) + 512;
+    k++;
+  }
+  take(t0 + out + 200);
+  assert.equal(think(t0 + out + 400), 2, "the same town again: it stays again");
+});
+
+// --- D-081 under the D-100 batch (ceo 2026-10-29: the user's 「一直打哨所、死傷慘重」 must not come back with keeps) ----------
+
+const BATCH = [KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET];
+/** Six towers with three hiding in each (worth more than 22 spearmen), at (x, y) on, a farmer of player 0 by each. */
+function sixTowers(g: Game, x: number, y: number): number[] {
+  const w = g.w;
+  const ids: number[] = [];
+  for (const [dx, dy] of [[0, 0], [3, 0], [6, 0], [0, 3], [3, 3], [6, 3]]) {
+    const id = w.addBuilding(1, BuildingType.ArrowTower, x + dx, y + dy, 600, 1000);
+    w.buildings.col.soldiers[w.building(id)] = 3;
+    ids.push(id);
+    put(g, 0, UnitType.Farmer, x - 1 + dx, y - 1 + dy);
+  }
+  return ids;
+}
+
+test("D-081 with the D-100 batch: 22 go for a town, break off from forts too strong for them, and go again once they are weaker", switchedOn(BATCH, () => {
+  const g = emptyGame();
+  const w = g.w;
+  for (let k = 0; k < 22; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
+  g.fog.update(w);
+  // Small towns take more soldiers than it has (keepTownArmy too): the big one (keepBigArmy 20) is the one to go for.
+  const ai = hardAi(g, { dodge: false, townArmy: 99 });
+  const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 22) as { x: number; y: number } | undefined;
+  assert.ok(go !== undefined && w.map.towns.some((t) => t.cellX === go.x && t.cellY === go.y), "off to a town");
+  const towers = sixTowers(g, 50, 66);
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat" && c.u.length === 22), "too strong for it: back");
+  const toTown = () => ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 22 && c.x === go.x && c.y === go.y);
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(!toTown(), "not straight back to that town");
+  w.tick += 10 * 1200;
+  g.fog.update(w);
+  assert.ok(!toTown(), "nor 10 minutes on, the forts as strong");
+  for (const id of towers) w.buildings.col.soldiers[w.building(id)] = 0;
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(toTown(), "once the forts are weaker (none hiding), again");
+}));
+
+test("D-081 with the D-100 batch: falling back from forts too strong for it, hard goes round them, then home", switchedOn(BATCH, () => {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const army: number[] = [];
+  for (let k = 0; k < 22; k++) army.push(put(g, 0, UnitType.Spearman, 58 + (k % 7), 40 + Math.trunc(k / 7)));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, townArmy: 99 });
+  ai.think(buildView(g, 0));
+  sixTowers(g, 44, 52);
+  w.tick += 10;
+  g.fog.update(w);
+  const back = ai.think(buildView(g, 0)).find((c) => c.c === "retreat" && c.u.length === 22) as { x: number; y: number } | undefined;
+  const home = spawnCentre(w.map.frames[0], s0);
+  assert.ok(back !== undefined, "too strong for it: back");
+  const groups = fortGroups(enemyForts(buildView(g, 0), 0, rules()), () => 0, fortValues(rules()));
+  assert.ok(groupsOnWay(groups, { x: 61, y: 41 }, home).length > 0, "the straight way home passes them");
+  assert.equal(groupsOnWay(groups, { x: 61, y: 41 }, back).length, 0, `round them first, to ${back.x},${back.y}: the way there keeps out of their reach`);
+  for (const id of army) {
+    const s = slotOf(g, id);
+    w.units.col.x[s] = back.x * CELL + CELL / 2;
+    w.units.col.y[s] = back.y * CELL + CELL / 2;
+  }
+  w.tick += 10;
+  g.fog.update(w);
+  const on = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 22) as { x: number; y: number } | undefined;
+  assert.ok(on !== undefined && (on.x !== back.x || on.y !== back.y), "on from there");
+}));
+
 test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it governs; 0, none", () => {
   const towers = (governTowers: number) => {
     const g = behindGame(0);
@@ -3067,6 +3186,47 @@ test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it 
   };
   assert.equal(towers(2), true, "governTowers 2: a tower by it");
   assert.equal(towers(0), false, "0: none, as before");
+});
+
+// --- D-101: the market (MARKET on) -----------------------------------------------------------------------------
+
+/** D-101: MARKET on, hard's base all built (as behindGame), with a finished market when `market`; its stock `res`; what it trades or builds. */
+function marketThink(res: number[], opts: { market?: boolean; built?: boolean; woodPrice?: number } = {}): CommandBody[] {
+  const was = RULES.MARKET.on;
+  RULES.MARKET.on = true;
+  try {
+    const g = behindGame(0);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    if (opts.built !== false) w.addBuilding(0, BuildingType.Market, s0.cellX - 14, s0.cellY + 6, rules().buildings[BuildingType.Market].hp, 1000);
+    if (opts.woodPrice !== undefined) w.marketPrice[1] = opts.woodPrice;
+    w.res.set(res, 0);
+    g.fog.update(w);
+    return hardAi(g, { dodge: false, market: opts.market ?? true }).think(buildView(g, 0));
+  } finally {
+    RULES.MARKET.on = was;
+  }
+}
+
+test("D-101 (plan.market): wood under marketWoodLow, hard buys wood with gold over marketGoldSpare; food piled up and gold short, it sells food; else none", () => {
+  const trades = (out: CommandBody[]) => out.filter((c) => c.c === "trade") as { resource: number; buy: boolean; lots: number }[];
+  const buyWood = trades(marketThink([300, 20, 600, 0]));
+  assert.ok(buyWood.length === 1 && buyWood[0].resource === 1 && buyWood[0].buy && buyWood[0].lots >= 1, "wood 20, gold 600: wood bought");
+  assert.equal(trades(marketThink([300, 20, 300, 0])).length, 0, "gold 300, under marketGoldSpare (400): kept");
+  // What is left after it trains this think counts (wood 150 can go on soldiers first): plenty of wood, none bought.
+  assert.equal(trades(marketThink([300, 1000, 600, 0])).length, 0, "wood 1000: not bought");
+  const sellFood = trades(marketThink([3000, 300, 50, 0]));
+  assert.ok(sellFood.length === 1 && sellFood[0].resource === 0 && !sellFood[0].buy, "food 3000, gold 50: food sold");
+  assert.equal(trades(marketThink([1000, 300, 50, 0])).length, 0, "food 1000, under marketFoodPile (1500): kept");
+  assert.equal(trades(marketThink([300, 20, 600, 0], { woodPrice: 200 })).length, 0, "wood too dear: it waits");
+  assert.equal(trades(marketThink([300, 20, 600, 0], { market: false })).length, 0, "off: no trade");
+});
+
+test("D-101 (plan.market): hard puts up a market with wood to spare and gold to use, never saving up for it; off, none", () => {
+  const builds = (res: number[], market = true) => marketThink(res, { market, built: false }).some((c) => c.c === "build" && c.type === BuildingType.Market);
+  assert.equal(builds([600, 900, 900, 0]), true, "wood and gold to spare: a market");
+  assert.equal(builds([600, 120, 900, 0]), false, "wood short: none (it does not save up for it)");
+  assert.equal(builds([600, 900, 900, 0], false), false, "off: none");
 });
 
 test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
