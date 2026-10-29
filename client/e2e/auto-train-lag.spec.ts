@@ -25,7 +25,6 @@ test.afterEach(() => {
 });
 
 const me = (page: Page) => page.evaluate(() => window.__proto?.game?.me() ?? 0);
-const tick = (page: Page) => page.evaluate(() => window.__proto?.game?.header().tick ?? -1);
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
 const toast = (page: Page, text: string) => page.getByRole("status").filter({ hasText: text });
@@ -49,12 +48,30 @@ test("畫面落後快照（模擬晚 40 步才接指令）：主城一次只排�
     g?.autoArmy(true);
   });
   await expect.poll(async () => (await trains()).length, { timeout: 60_000 }).toBe(1);
-  // Well past the 40 steps: the simulation has it in the queue by now; nothing sent again meanwhile.
-  const at = await tick(page);
-  await expect.poll(() => tick(page), { timeout: 60_000 }).toBeGreaterThan(at + 60);
-  expect((await trains()).length).toBe(1);
-  // Trained (60 steps in the fake world): then the next one.
-  await expect.poll(farmers, { timeout: 90_000 }).toBe(before + 1);
+  // From then until it is trained (40 steps late into the queue, 60 to train in the fake world):
+  // nothing sent again. Both counts read at the same moment in the page: on CI's slow WebKit a
+  // check at a tick read from here could fall after the villager was trained, when the next
+  // order is right (CI run 40804899732).
+  const sample = () =>
+    page.evaluate(
+      ([owner, building]) => {
+        const g = window.__proto?.game;
+        return {
+          farmers: (g?.units() ?? []).filter((u) => u.owner === owner && u.type === 0).length,
+          trains: ((g?.sent() ?? []) as Record<string, unknown>[]).filter((c) => c.c === "train" && c.auto === true && c.building === building).length,
+          tick: g?.header().tick ?? -1,
+        };
+      },
+      [m, city.id] as const,
+    );
+  const start = await sample();
+  for (let s = start; s.farmers === before; s = await sample()) {
+    expect(s.trains, `one at a time until the first is trained (tick ${s.tick})`).toBe(1);
+    if (s.tick > start.tick + 2000) throw new Error("the first villager was never trained");
+    await page.waitForTimeout(100);
+  }
+  expect((await sample()).tick - start.tick, "well past the 40 steps it waited").toBeGreaterThan(40);
+  // Trained: then the next one.
   await expect.poll(async () => (await trains()).length, { timeout: 60_000 }).toBe(2);
   expect(await farmers()).toBe(before + 1);
 });

@@ -73,22 +73,23 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await expect.poll(async () => (await towns(page)).find((t) => t.id === town.id)?.state, { timeout: 30_000 }).toBe(REPAIRING);
   // The others walk home.
   await page.evaluate(([u, x, y]) => window.__proto?.game?.send({ c: "retreat", u, x, y }), [others, from.x, from.y] as const);
-  // 駐軍: the rest of group 1 too (with those 自動訓練 sent to fill it, if one fell).
+  // 駐軍: the rest of group 1 too (with those 自動訓練 sent to fill it, if one fell), as its button selects them.
   const garrison = () => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], town.id);
-  const living = async () => {
-    const g = (await page.evaluate(() => window.__proto?.game?.groupInfo() ?? []))[0].ids;
-    return (await units(page)).filter((u) => g.includes(u.id)).map((u) => u.id);
-  };
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
   const panel = page.locator(".sel-info");
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection().units ?? [])).length).toBeGreaterThan(0);
+  const sentIn = await page.evaluate(() => window.__proto?.game?.selection().units ?? []);
   await page.locator(".cmds").getByRole("button", { name: /^駐軍/ }).tap();
   await page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" }).tap();
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [town.cx, town.cy] as const);
   await tap(page, await at(page, { x: town.cx + 0.5, y: town.cy + 0.5 }));
+  // Those selected, still living (a soldier 自動訓練 trains for the group from now on is not one of
+  // them: it joins group 1 and is no 留守, CI run 40804899732).
   await expect.poll(async () => {
     const all = await garrison();
-    return (await living()).every((id) => all.includes(id));
+    const living = (await units(page)).map((u) => u.id);
+    return sentIn.filter((id) => living.includes(id)).every((id) => all.includes(id));
   }).toBe(true);
   const alive = await garrison();
   // In (the walk in is a 移動 to the centre).
