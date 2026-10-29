@@ -3208,20 +3208,25 @@ function marketThink(res: number[], opts: { market?: boolean; built?: boolean; w
   }
 }
 
-test("D-101 (plan.market): wood short, hard buys wood with its gold; gold short, it sells the food piled up; off, no trade", () => {
+test("D-101 (plan.market): wood under marketWoodLow, hard buys wood with gold over marketGoldSpare; food piled up and gold short, it sells food; else none", () => {
   const trades = (out: CommandBody[]) => out.filter((c) => c.c === "trade") as { resource: number; buy: boolean; lots: number }[];
   const buyWood = trades(marketThink([300, 20, 600, 0]));
-  assert.ok(buyWood.length === 1 && buyWood[0].resource === 1 && buyWood[0].buy && buyWood[0].lots >= 1, "wood short: wood bought");
-  const sellFood = trades(marketThink([1000, 300, 20, 0]));
-  assert.ok(sellFood.length === 1 && sellFood[0].resource === 0 && !sellFood[0].buy, "gold short: food sold");
-  assert.equal(trades(marketThink([300, 20, 600, 0], { woodPrice: 200 })).length, 0, "wood too dear and no food to sell: it waits");
+  assert.ok(buyWood.length === 1 && buyWood[0].resource === 1 && buyWood[0].buy && buyWood[0].lots >= 1, "wood 20, gold 600: wood bought");
+  assert.equal(trades(marketThink([300, 20, 300, 0])).length, 0, "gold 300, under marketGoldSpare (400): kept");
+  // What is left after it trains this think counts (wood 150 can go on soldiers first): plenty of wood, none bought.
+  assert.equal(trades(marketThink([300, 1000, 600, 0])).length, 0, "wood 1000: not bought");
+  const sellFood = trades(marketThink([3000, 300, 50, 0]));
+  assert.ok(sellFood.length === 1 && sellFood[0].resource === 0 && !sellFood[0].buy, "food 3000, gold 50: food sold");
+  assert.equal(trades(marketThink([1000, 300, 50, 0])).length, 0, "food 1000, under marketFoodPile (1500): kept");
+  assert.equal(trades(marketThink([300, 20, 600, 0], { woodPrice: 200 })).length, 0, "wood too dear: it waits");
   assert.equal(trades(marketThink([300, 20, 600, 0], { market: false })).length, 0, "off: no trade");
 });
 
-test("D-101 (plan.market): with a granary and food piled up while gold is short, hard puts up a market; off, none", () => {
-  const builds = (market: boolean) => marketThink([900, 400, 30, 0], { market, built: false }).some((c) => c.c === "build" && c.type === BuildingType.Market);
-  assert.equal(builds(true), true, "on: a market");
-  assert.equal(builds(false), false, "off: none");
+test("D-101 (plan.market): hard puts up a market with wood to spare and gold to use, never saving up for it; off, none", () => {
+  const builds = (res: number[], market = true) => marketThink(res, { market, built: false }).some((c) => c.c === "build" && c.type === BuildingType.Market);
+  assert.equal(builds([600, 900, 900, 0]), true, "wood and gold to spare: a market");
+  assert.equal(builds([600, 120, 900, 0]), false, "wood short: none (it does not save up for it)");
+  assert.equal(builds([600, 900, 900, 0], false), false, "off: none");
 });
 
 test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
