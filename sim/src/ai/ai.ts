@@ -2910,8 +2910,11 @@ export const HARD: HardPlan = {
   keepContest: false,
   governHold: true,
   governTowers: 2,
-  lumberFar: 0,
-  ratioCalm: false,
+  // D-086 A8 (ceo 2026-10-29; a9a, run 40882758257, with the D-100 batch on): kblr. Hard against normal 87/87% ->
+  // 94/90%; by minute 20 its woodcutters a median of 9 -> 6 cells from a drop-off on the fixed map, 2.9 lumber camps
+  // (1.0), wood under 100 at minute 15 on 67% -> 14% of sides. Only with keeps too unless the caller sets them.
+  lumberFar: 6,
+  ratioCalm: true,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -3061,6 +3064,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   if (know.rules.features?.keep !== true) {
     if (know.hard?.governHold === undefined) plan.governHold = false;
     if (know.hard?.governTowers === undefined) plan.governTowers = 0;
+    // D-086 A8: likewise.
+    if (know.hard?.lumberFar === undefined) plan.lumberFar = 0;
+    if (know.hard?.ratioCalm === undefined) plan.ratioCalm = false;
   }
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
