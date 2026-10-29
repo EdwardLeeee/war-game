@@ -40,6 +40,8 @@ export interface GameResult {
   /** The difficulty each spawn's AI played. */
   difficulty: string[];
   ticks: number;
+  /** The time limit it was played with (ticks, --ticks): a draw ends there. Absent in results before it. */
+  maxTicks?: number;
   /** 0 or 1 (the spawn that won), -1 for a draw. */
   winner: number;
   reason: number;
@@ -261,6 +263,7 @@ function run(): void {
       styles: r.styles.map((s) => s ?? "none"),
       difficulty,
       ticks: g.tick,
+      maxTicks,
       winner: w.over ? w.winner : -1,
       reason: w.endReason,
       replayMatches: same,

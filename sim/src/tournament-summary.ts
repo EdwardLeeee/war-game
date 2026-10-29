@@ -124,7 +124,8 @@ const strongerRate = stronger.decided === 0 ? 0 : stronger.wins / stronger.decid
 const strongerMin = STRONGER_WIN_MIN[stronger.name] ?? GATES.strongerWinMin;
 // The time limit (D-112, ceo 2026-10-29: 60 minutes once the batch is on; a draw ends at it), and for reference
 // with a longer one the old 30 minutes: games not decided by then, and the stronger AI's share of those that were.
-const limitTicks = games.reduce((a, g) => Math.max(a, g.ticks), 0);
+// Each game's own limit (older results: the longest game, which a draw reaches).
+const limitTicks = games.reduce((a, g) => Math.max(a, g.maxTicks ?? g.ticks), 0);
 const REF_TICKS = 30 * 1200;
 const decidedBy = (g: GameResult, t: number) => (g.winner === 0 || g.winner === 1) && g.ticks <= t;
 const ref30 =
