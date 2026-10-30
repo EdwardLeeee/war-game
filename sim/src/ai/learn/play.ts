@@ -75,6 +75,8 @@ export interface GameOutcome {
   governed45: number;
   /** The trained side's network: per head, how many thinks it made each choice (empty: no network). */
   choices: number[][];
+  /** NN v2 (ceo 2026-10-30): the sets of choices it made (one string per think's choices, each once). */
+  combos: string[];
   /** The switches the game was played with. */
   switches: Required<Switches>;
 }
@@ -129,9 +131,11 @@ function play(spec: GameSpec): GameOutcome {
     thinkers.push({ p, every: AI_THINK_EVERY, think: () => ai.think(buildView(g, p)) });
   };
   const choices: number[][] = [];
+  const combos = new Set<string>();
   hard(me, {
     ...spec.me,
     netSeen: (c) => {
+      combos.add(c.join(""));
       c.forEach((k, h) => {
         choices[h] ??= [];
         choices[h][k] = (choices[h][k] ?? 0) + 1;
@@ -236,5 +240,5 @@ function play(spec: GameSpec): GameOutcome {
   const margin = (soldiers[me] - soldiers[them]) / (soldiers[me] + soldiers[them] + 1) + (hp[me] - hp[them]) / full;
   const won = !w.over || (w.winner !== 0 && w.winner !== 1) ? -1 : w.winner === me ? 1 : 0;
   const switches = { keep: KEEP.on, siege: SIEGE.on, rich: RICH.on, market: MARKET.on };
-  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)), switches };
+  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)), combos: [...combos].sort(), switches };
 }

@@ -80,6 +80,8 @@ export interface GenerationReport {
   reached: number;
   /** Per head, over all candidates' games: thinks with each choice (choice 0: AS_HARD). */
   choices: number[][];
+  /** NN v2 (ceo 2026-10-30): candidates whose choices changed within a game (by the game, not one set for all of it). */
+  varied: number;
   shaping: number;
   seconds: number;
 }
@@ -191,10 +193,13 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   let reached = 0;
   const byOpp: Record<string, { games: number; won: number }> = {};
   const choices = NET_HEADS.map((k) => new Array(k).fill(0));
+  let varied = 0;
   for (let k = 0; k < candidates.length; k++) {
     let f = 0;
+    let changed = false;
     for (let g = 0; g < games.length; g++) {
       const o = results[k * games.length + g].outcome;
+      if (o.combos.length > 1) changed = true;
       f += score(o, shaping);
       const by = (byOpp[games[g].opp.kind] ??= { games: 0, won: 0 });
       by.games++;
@@ -207,6 +212,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
       o.choices.forEach((h, i) => h.forEach((v, k) => (choices[i][k] += v)));
     }
     fitness.push(f);
+    if (changed) varied++;
   }
   // Ranks, centred (-0.5..0.5): the weights move by each pair's rank difference along its step.
   const order = fitness.map((f, i) => [f, i]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -219,7 +225,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
     for (let i = 0; i < n; i++) if (step[i] > 0) state.theta[i] += (c.lr * d * eps[p][i]) / (step[i] * c.pairs);
   }
   const total = candidates.length * games.length;
-  const report: GenerationReport = { generation: state.generation, games: total, won, draws, byOpp, reached, shaping, choices, seconds: Math.round((performance.now() - t0) / 1000) };
+  const report: GenerationReport = { generation: state.generation, games: total, won, draws, byOpp, reached, shaping, choices, varied, seconds: Math.round((performance.now() - t0) / 1000) };
   state.generation++;
   state.history.push(report);
   return report;

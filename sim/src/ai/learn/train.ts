@@ -66,6 +66,8 @@ interface EvalResult {
   defense: number[];
   /** Every head's, over all its games. */
   choices: number[][];
+  /** NN v2 (ceo 2026-10-30): the sets of choices it made over all its games (1: one set for everything, it does not choose by the game). */
+  combos: number;
 }
 const tally = (res: GameOutcome[]): Tally => {
   const won = res.filter((o) => o.won === 1).length;
@@ -88,6 +90,7 @@ async function evaluate(name: string, net: NetWeights | null, n: number, m: numb
   const mean = (xs: number[]) => (xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length);
   const choices = NET_HEADS.map((k) => new Array(k).fill(0));
   for (const o of [...hard, ...crush]) o.choices.forEach((h, i) => h.forEach((v, k) => (choices[i][k] += v)));
+  const combos = new Set([...hard, ...crush].flatMap((o) => o.combos));
   return {
     name,
     seed: seed0,
@@ -95,6 +98,7 @@ async function evaluate(name: string, net: NetWeights | null, n: number, m: numb
     crush: { ...tally(crush), at45: at45.length, towers45: mean(at45.map((o) => o.towers45)), governed45: mean(at45.map((o) => o.governed45)) },
     defense: choices[HEAD_DEFENSE],
     choices,
+    combos: combos.size,
   };
 }
 /** A head's choices as "a／b（not as hard %）". */
@@ -150,12 +154,12 @@ if (mode === "dryrun") {
       `每代 ${state.config.pairs} 對候選，每個候選 ${m.hard + m.normal + m.push + m.crush + m.turtle} 局：困難 ${m.hard}、普通 ${m.normal}、push ${m.push}、push-crush ${m.crush}、push-turtle ${m.turtle}；` +
       `上限 ${state.config.maxTicks / 1200} 分，沒分出勝負算輸。固定照困難的組：${state.config.fixed.join("、")}（練兵、蓋什麼）。\n\n` +
       `「不照困難」：每組決定，不照困難的選擇在所有思考裡的次數和比例（ceo 2026-10-19）。\n\n` +
-      `| 代 | 局 | 贏 | 平手 | 輸 | 贏：困難／普通／push／crush／turtle | 打到對方主城 | 軍隊：守家／出兵 | 城鎮：搶／治理 | 防守：蓋塔／不蓋 | 加分權重 | 秒 |\n|---|---|---|---|---|---|---|---|---|---|---|---|`,
+      `| 代 | 局 | 贏 | 平手 | 輸 | 贏：困難／普通／push／crush／turtle | 打到對方主城 | 軍隊：守家／出兵 | 城鎮：搶／治理 | 防守：蓋塔／不蓋 | 隨局面改選擇的候選 | 加分權重 | 秒 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|`,
   );
   while (state.generation < maxGen) {
     const r = await generation(state, start);
     const by = ["hard", "normal", "push", "crush", "turtle"].map((k) => `${r.byOpp[k]?.won ?? 0}/${r.byOpp[k]?.games ?? 0}`).join("　");
-    summary(`| ${r.generation} | ${r.games} | ${r.won} | ${r.draws} | ${r.games - r.won - r.draws} | ${by} | ${r.reached} | ${dev(r.choices[HEAD_ARMY])} | ${dev(r.choices[HEAD_TOWN])} | ${dev(r.choices[HEAD_DEFENSE])} | ${r.shaping.toFixed(3)} | ${r.seconds} |`);
+    summary(`| ${r.generation} | ${r.games} | ${r.won} | ${r.draws} | ${r.games - r.won - r.draws} | ${by} | ${r.reached} | ${dev(r.choices[HEAD_ARMY])} | ${dev(r.choices[HEAD_TOWN])} | ${dev(r.choices[HEAD_DEFENSE])} | ${r.varied}／${2 * state.config.pairs} | ${r.shaping.toFixed(3)} | ${r.seconds} |`);
     writeFileSync(`${out}/state.json`, JSON.stringify(state));
     writeFileSync(`${out}/net.json`, JSON.stringify(fromVector(state.theta, start)));
     // Stop before the job's limit with time for one more generation and the upload.
@@ -179,7 +183,7 @@ if (mode === "dryrun") {
       `| 對手 | 局 | 贏 | 平手 | 輸 | 贏－輸（標準差） | 第 45 分還在打的局 | 第 45 分箭樓（每局） | 第 45 分治理的城（每局） |\n|---|---|---|---|---|---|---|---|---|\n` +
       `| 困難（60 分） | ${r.hard.games} | ${r.hard.won} | ${r.hard.draws} | ${r.hard.lost} | ${h.d}（${h.sd.toFixed(1)}） | | | |\n` +
       `| push-crush（90 分） | ${r.crush.games} | ${r.crush.won} | ${r.crush.draws} | ${r.crush.lost} | ${wl(r.crush).d} | ${r.crush.at45} | ${r.crush.towers45.toFixed(1)} | ${r.crush.governed45.toFixed(1)} |\n\n` +
-      `- 防守組：蓋塔／不蓋 ${dev(r.defense)}`,
+      `- 防守組：蓋塔／不蓋 ${dev(r.defense)}\n- 選擇組合：${r.combos} 種${net !== null && r.combos <= 1 ? "（只有一種：網路沒有看局面）" : ""}`,
   );
 } else if (mode === "report") {
   // Every eval.json under --dir; the control: --control, or the one named "control" there.
@@ -200,12 +204,12 @@ if (mode === "dryrun") {
   const rows = all.filter((r) => r !== control && r.name !== "control").map((r) => {
     const x = wl(r.hard);
     const same = r.seed === control.seed && r.hard.games === control.hard.games ? "" : "（種子或局數和對照不同）";
-    return `| ${r.name} | ${r.hard.won}-${r.hard.draws}-${r.hard.lost} | ${x.d} | ${x.d - c.d}${same} | ${c.sd > 0 ? ((x.d - c.d) / c.sd).toFixed(2) : "-"} | ${r.crush.won}-${r.crush.draws}-${r.crush.lost} | ${r.crush.towers45.toFixed(1)} | ${r.crush.governed45.toFixed(1)} | ${dev(r.defense)} |`;
+    return `| ${r.name} | ${r.hard.won}-${r.hard.draws}-${r.hard.lost} | ${x.d} | ${x.d - c.d}${same} | ${c.sd > 0 ? ((x.d - c.d) / c.sd).toFixed(2) : "-"} | ${r.crush.won}-${r.crush.draws}-${r.crush.lost} | ${r.crush.towers45.toFixed(1)} | ${r.crush.governed45.toFixed(1)} | ${dev(r.defense)} | ${r.combos ?? "-"} |`;
   });
   summary(
     `## 各島對照困難本身（種子從 ${control.seed} 起，對困難 ${control.hard.games} 局、push-crush ${control.crush.games} 局）\n\n` +
       `對照：對困難 ${control.hard.won}-${control.hard.draws}-${control.hard.lost}（贏－輸 ${c.d}，標準差 ${c.sd.toFixed(1)}）；push-crush ${control.crush.won}-${control.crush.draws}-${control.crush.lost}，第 45 分箭樓 ${control.crush.towers45.toFixed(1)}、治理的城 ${control.crush.governed45.toFixed(1)}（每局，${control.crush.at45} 局打到第 45 分）。\n\n` +
-      `| 島 | 對困難 贏-平-輸 | 贏－輸 | 比對照多 | ÷ 標準差 | push-crush 贏-平-輸 | 第 45 分箭樓 | 第 45 分治理的城 | 防守：蓋塔／不蓋（不照困難） |\n|---|---|---|---|---|---|---|---|---|\n` +
+      `| 島 | 對困難 贏-平-輸 | 贏－輸 | 比對照多 | ÷ 標準差 | push-crush 贏-平-輸 | 第 45 分箭樓 | 第 45 分治理的城 | 防守：蓋塔／不蓋（不照困難） | 選擇組合（1：沒看局面） |\n|---|---|---|---|---|---|---|---|---|---|\n` +
       rows.join("\n"),
   );
 } else {

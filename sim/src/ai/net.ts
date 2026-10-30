@@ -162,6 +162,13 @@ export function choose(net: NetWeights, x: readonly number[], allowed?: readonly
 
 /** Layer sizes of the network trained in learn/ (NET_INPUTS in, the heads out). */
 export const NET_SHAPE: readonly number[] = [NET_INPUTS, 32, 16, NET_HEADS.reduce((a, b) => a + b, 0)];
+/**
+ * NN v2 (ceo 2026-10-30): the hidden layers' right shift. With 8 and the small weights the training reaches
+ * (+-4 steps, means of +-1), the second layer was always 0 and every choice came from the output biases alone
+ * (40 random candidates on 400 thinks of real games: 5 of 40 chose by the game, means 0 of 40); with 4, 40 and
+ * 40, the first layer at 255 on 1% of thinks. Each network keeps its own shifts in its weights.
+ */
+export const NET_SHIFT = 4;
 
 /** The network that plays exactly as hard: every weight 0, each head's AS_HARD output biased to 1 (training starts here). */
 export function asHardNet(): NetWeights {
@@ -177,7 +184,7 @@ export function asHardNet(): NetWeights {
         at += k;
       }
     }
-    layers.push({ inputs, outputs, w: new Array(inputs * outputs).fill(0), b, shift: 8 });
+    layers.push({ inputs, outputs, w: new Array(inputs * outputs).fill(0), b, shift: NET_SHIFT });
   }
   return { layers };
 }

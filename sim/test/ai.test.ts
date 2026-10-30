@@ -1963,6 +1963,36 @@ test("NN v2: the network that always chooses AS_HARD plays exactly as hard past 
   assert.deepEqual(play(asHardNet()), off);
 });
 
+test("NN v2: a candidate at the training's step size (asHardNet plus ES noise, sigma 4 and 64) chooses by the game, not one set for all of it", () => {
+  // The inputs of 15 minutes of hard against hard, every 20th think.
+  const xs: number[][] = [];
+  const g = new Game({ seed: 11, scenario: "standard", map: "fixed" });
+  let k = 0;
+  const ais = [0, 1].map((p) => createAi(p, 11, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: p === 0 ? { netLog: (x) => k++ % 20 === 0 && xs.push(x) } : {} }, p));
+  let seq = 0;
+  for (let t = 0; t < 15 * 1200 && !g.w.over; t++) {
+    if (g.tick % 10 === 0) for (let p = 0; p < 2; p++) for (const body of ais[p].think(buildView(g, p))) g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+    g.step();
+  }
+  assert.ok(xs.length >= 30, `${xs.length} thinks`);
+  let r = 99;
+  const next = () => {
+    r = (Math.imul(r, 1103515245) + 12345) >>> 0;
+    return ((r >>> 8) + 0.5) / 16777216;
+  };
+  // A rough normal (the sum of four uniforms, scaled to a standard deviation of 1).
+  const gauss = () => (next() + next() + next() + next() - 2) * Math.sqrt(3);
+  let varied = 0;
+  for (let n = 0; n < 10; n++) {
+    const start = asHardNet();
+    const net: NetWeights = {
+      layers: start.layers.map((L) => ({ ...L, w: L.w.map((v) => Math.max(-127, Math.min(127, Math.round(v + 4 * gauss())))), b: L.b.map((v) => Math.round(v + 64 * gauss())) })),
+    };
+    if (new Set(xs.map((x) => choose(net, x).join(""))).size > 1) varied++;
+  }
+  assert.ok(varied >= 9, `${varied} of 10 choose by the game`);
+});
+
 test("D-086 B: choices can be ruled out (masking): the best allowed one is made", () => {
   const x = Array.from({ length: NET_INPUTS }, (_, i) => (i * 37 + 11) % 256);
   const all = new Array(NET_HEADS.reduce((s, k) => s + k, 0)).fill(true);
