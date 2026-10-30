@@ -2783,6 +2783,17 @@ export interface HardPlan {
   /** D-086 A7: arrow towers by each town it governs, saved up for (0: none, as before). */
   governTowers: number;
   /**
+   * D-086 A8 (ceo 2026-10-29: hard's wood under 100 at 58-74% of minutes 20 and 30): its woodcutters walk 8-9 cells to
+   * its one lumber camp by minute 20 (a load of 10 is 20 s of cutting; 18 s of walking at 9 cells, 6 s at 3), and
+   * lumberMove waits till every tree within LUMBER_NEAR of its camps is cut. lumberFar: once the woodcutters' trees are
+   * a median of more than this many cells from its nearest camp or main city, another camp by those trees, up to
+   * LUMBER_FAR_MOST, only within LUMBER_HOME of its main city or a town it governs, on its own side, with no enemy
+   * soldier seen within BUILD_SAFE in the last minute (0: as before).
+   */
+  lumberFar: number;
+  /** D-086 A8: a new economy ratio only RATIO_STEP points or more from the last it sent, or RATIO_CALM after it (false: every change, as before). */
+  ratioCalm: boolean;
+  /**
    * D-086 A4 (the user's a09c2367 and 691b4349, random maps: hard knew 2 and 3 of the 7 towns, its scout done once it
    * found the enemy's main city): on a random map, once that city is known, one soldier (cavalry first) goes on to the
    * points of a 4 x 4 grid over the map not yet explored, the nearest first, until all are (false: as before).
@@ -2899,6 +2910,11 @@ export const HARD: HardPlan = {
   keepContest: false,
   governHold: true,
   governTowers: 2,
+  // D-086 A8 (ceo 2026-10-29; a9a, run 40882758257, with the D-100 batch on): kblr. Hard against normal 87/87% ->
+  // 94/90%; by minute 20 its woodcutters a median of 9 -> 6 cells from a drop-off on the fixed map, 2.9 lumber camps
+  // (1.0), wood under 100 at minute 15 on 67% -> 14% of sides. Only with keeps too unless the caller sets them.
+  lumberFar: 6,
+  ratioCalm: true,
   // D-086 A4 (ceo 2026-10-22, docs/research/2026-10-ai-a4.md): on; ruinsAgain and mineMove measured and left off.
   townScout: true,
   ruinsAgain: false,
@@ -2917,6 +2933,12 @@ const MINE_FAR = 40;
 /** D-096 (plan.lumberMove): trees this near (cells) a lumber camp are its own; at most this many camps. */
 const LUMBER_NEAR = 8;
 const LUMBER_MOST = 3;
+/** D-086 A8 (plan.lumberFar): at most this many camps; a new one only this near (cells) its main city or a town it governs. */
+const LUMBER_FAR_MOST = 4;
+const LUMBER_HOME = 25;
+/** D-086 A8 (plan.ratioCalm): points of a share that make a new ratio, and the ticks after the last that do. */
+const RATIO_STEP = 10;
+const RATIO_CALM = 600;
 const MINE_TOWN = 12;
 /** D-086 A4 (plan.buildSafe): a site lost before it was done, nothing this near (cells) for this long. */
 const SITE_NEAR = 8;
@@ -3042,6 +3064,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   if (know.rules.features?.keep !== true) {
     if (know.hard?.governHold === undefined) plan.governHold = false;
     if (know.hard?.governTowers === undefined) plan.governTowers = 0;
+    // D-086 A8: likewise.
+    if (know.hard?.lumberFar === undefined) plan.lumberFar = 0;
+    if (know.hard?.ratioCalm === undefined) plan.ratioCalm = false;
   }
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
@@ -3126,6 +3151,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let armyAtStart = 0;
   const marched = new Set<number>();
   let ratioSet = "";
+  /** D-086 A8 (plan.ratioCalm): when it last sent a ratio, and that ratio; (plan.lumberFar) its lumber camps last think. */
+  let ratioAt = -100000;
+  let ratioLast = [0, 0, 0];
+  let campsSeen = new Set<number>();
   let recalled = false;
   let lastThreat = -100000;
   let veinCrew: number[] = [];
@@ -3207,7 +3236,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3655,9 +3684,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         : res.wood < WOOD_SHORT && res.food + res.gold >= RICH;
       if (plan.woodShift && woodShort) for (let k = 0; k < 3; k++) ratio[k] = WOOD_SHIFT[k];
       const ratioKey = ratio.join("/");
-      if (ratioKey !== ratioSet) {
+      // D-086 A8 (plan.ratioCalm): not to and fro (65-167 changes a game, every 10-30 s at the start; its farmers walk).
+      const calm = !plan.ratioCalm || ratioSet === "" || tick - ratioAt >= RATIO_CALM || ratio.some((v, k) => Math.abs(v - ratioLast[k]) >= RATIO_STEP);
+      if (ratioKey !== ratioSet && calm) {
         out.push({ c: "eco_ratio", food: ratio[0], wood: ratio[1], gold: ratio[2], on: true });
         ratioSet = ratioKey;
+        ratioAt = tick;
+        ratioLast = [...ratio];
       }
       let room = cap - pop - queued;
       const main = done(BuildingType.MainCity)[0];
@@ -3769,6 +3802,51 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (crew.length > 0) out.push({ c: "repair", u: crew, building: site.id });
         gatherers.splice(0, crew.length);
       }
+      // D-086 A8 (plan.lumberFar): where another lumber camp goes (null: none wanted, or not safe): by the trees its
+      // woodcutters cut past lumberFar from its nearest camp or main city, when they are a median of more than that.
+      let lumberSpot: { x: number; y: number } | null | undefined;
+      const lumberFarAt = (): { x: number; y: number } | null => {
+        if (lumberSpot !== undefined) return lumberSpot;
+        lumberSpot = null;
+        const trees = new Map<number, { x: number; y: number }>();
+        for (let r = 0; r < view.nodes.length; r += NODE_STRIDE) {
+          if (view.nodes[r + NodeField.kind] === NodeKind.Tree) trees.set(view.nodes[r + NodeField.id], { x: view.nodes[r + NodeField.cellX], y: view.nodes[r + NodeField.cellY] });
+        }
+        const drops = own.filter((b) => b.type === BuildingType.LumberCamp || b.type === BuildingType.MainCity).map((b) => ({ x: b.x + 1, y: b.y + 1 }));
+        const cut: { x: number; y: number; d: number }[] = [];
+        for (const f of farmers) {
+          const t = f.order === Order.Gather ? trees.get(f.orderTarget) : undefined;
+          if (t !== undefined) cut.push({ ...t, d: Math.min(...drops.map((c) => dist2(c.x, c.y, t.x, t.y))) });
+        }
+        if (cut.length < 4) return null;
+        const ds = cut.map((c) => c.d).sort((a, b) => a - b);
+        if (ds[ds.length >> 1] <= plan.lumberFar * plan.lumberFar) return null;
+        const far = cut.filter((c) => c.d > plan.lumberFar * plan.lumberFar);
+        const cx = Math.trunc(far.reduce((a, c) => a + c.x, 0) / far.length);
+        const cy = Math.trunc(far.reduce((a, c) => a + c.y, 0) / far.length);
+        // The tree of those nearest their middle.
+        let at = far[0];
+        for (const c of far) if (dist2(c.x, c.y, cx, cy) < dist2(at.x, at.y, cx, cy) || (dist2(c.x, c.y, cx, cy) === dist2(at.x, at.y, cx, cy) && rank(c.x, c.y) < rank(at.x, at.y))) at = c;
+        // Safe: by its main city or a town it governs, on its own side, no enemy soldier by it in sight or seen in the last minute.
+        const holds = [{ x: home.cellX, y: home.cellY }];
+        for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+          if (view.towns[r + TownField.owner] !== player || view.towns[r + TownField.state] !== TownState.Governed) continue;
+          const t = mem.site(view.towns[r + TownField.id]);
+          if (t !== undefined) holds.push({ x: t.cellX, y: t.cellY });
+        }
+        if (!holds.some((h) => dist2(h.x, h.y, at.x, at.y) <= LUMBER_HOME * LUMBER_HOME)) return null;
+        if (mem.known === Known.City && dist2(at.x, at.y, home.cellX, home.cellY) >= dist2(at.x, at.y, enemyHome.cellX, enemyHome.cellY)) return null;
+        if (foes.some((f) => dist2(f.x, f.y, at.x, at.y) <= BUILD_SAFE * BUILD_SAFE)) return null;
+        for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, at.x, at.y) <= BUILD_SAFE * BUILD_SAFE) return null;
+        lumberSpot = { x: at.x, y: at.y };
+        return lumberSpot;
+      };
+      // D-086 A8: its lumber camps razed (gone from one think to the next; a camp is not taken down otherwise).
+      if (plan.lumberFar > 0) {
+        const now = new Set(own.filter((b) => b.type === BuildingType.LumberCamp).map((b) => b.id));
+        for (const id of campsSeen) if (!now.has(id)) counted.lumberLost++;
+        campsSeen = now;
+      }
       // Buildings in priority order; it saves up for the first that cannot be paid for yet.
       const mageCost = rules.units[UnitType.Mage].cost;
       const producers = count(BuildingType.Barracks) + count(BuildingType.Range) + count(BuildingType.MageHall);
@@ -3823,6 +3901,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // D-086 A4 (plan.cavalryCounter): a stable once it wants cavalry against the enemy's mix.
         if (cavalryWant && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
+        // D-086 A8 (plan.lumberFar): its woodcutters' trees far from its camps: another camp by them, where it is safe.
+        else if (plan.lumberFar > 0 && farmers.length >= 12 && count(BuildingType.LumberCamp) < LUMBER_FAR_MOST && lumberFarAt() !== null) add(BuildingType.LumberCamp, lumberFarAt());
         // D-096 (plan.lumberMove): the trees by its camps gone: another camp by the nearest it knows of on its own side.
         else if (plan.lumberMove && farmers.length >= 12 && count(BuildingType.LumberCamp) < LUMBER_MOST) {
           const camps = own.filter((b) => b.type === BuildingType.LumberCamp);
@@ -4768,8 +4848,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // this think), for at most GOVERN_STAY x its repair; but it breaks off as from any town when it should (ceo 2026-10-29:
           // a repair stops with the garrison under its least, and it would stand there till the last, as #188 at forts).
           const holding = plan.governHold && t !== undefined && t.owner === player && (t.state === TownState.Repairing || t.state === TownState.AwaitingChoice);
-          if (!holding) holdTown = -1;
-          else if (holdTown !== targetTown) {
+          if (holding && holdTown !== targetTown) {
             holdTown = targetTown;
             holdFrom = tick;
           }
@@ -4779,6 +4858,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             return;
           }
           if (holding && breakOff) counted.governBrokeOff++;
+          // Not staying (home, breaking off): the next stay, by this town or another, times from its own start (ceo 2026-10-29).
+          holdTown = -1;
           if (t === undefined || (t.owner === player && t.state !== TownState.Neutral && !(holding && breakOff)) || (t.state === TownState.Ruins && !staleRuin(targetTown, t))) mode = "home";
           else if (breakOff) {
             razing = -1;
@@ -5156,6 +5237,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             labels[HEAD_ARMY] = 1;
             targetTown = pick;
             townEven = townsBehind;
+            // D-086 A7: a new trip, a new stay.
+            holdTown = -1;
             gateDone = -1;
             armyAtStart = army.length;
             marchWorth = vsForts(army);
