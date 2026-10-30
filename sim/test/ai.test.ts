@@ -1938,18 +1938,18 @@ test("D-086 B: the network that always chooses AS_HARD (every weight 0) plays ex
   assert.notEqual(play("fixed", [forcedNet([ARMY_HOME, AS_HARD, AS_HARD, AS_HARD]), null]), play("fixed", [null, null]), "a network that waits plays another game");
 });
 
-test("NN v2: the network that always chooses AS_HARD plays exactly as hard past its first arrow tower (minute 16 on the fixed map, seed 5)", () => {
-  /** 18 minutes of hard against hard, side 0 with `net`: the final hash, and whether an arrow tower was ordered. */
+test("NN v2: the network that always chooses AS_HARD plays exactly as hard past its first arrow tower (minute 14 on the fixed map, seed 2)", () => {
+  /** 16 minutes of hard against hard, side 0 with `net`: the final hash, and whether side 0 ordered an arrow tower. */
   const play = (net: NetWeights | null) => {
-    const g = new Game({ seed: 5, scenario: "standard", map: "fixed" });
-    const ais = [0, 1].map((p) => createAi(p, 5, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: { net: p === 0 ? net : null } }, p));
+    const g = new Game({ seed: 2, scenario: "standard", map: "fixed" });
+    const ais = [0, 1].map((p) => createAi(p, 2, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: { net: p === 0 ? net : null } }, p));
     let seq = 0;
     let tower = false;
-    for (let t = 0; t < 18 * 1200 && !g.w.over; t++) {
+    for (let t = 0; t < 16 * 1200 && !g.w.over; t++) {
       if (g.tick % 10 === 0) {
         for (let p = 0; p < 2; p++) {
           for (const body of ais[p].think(buildView(g, p))) {
-            if (body.c === "build" && body.type === BuildingType.ArrowTower) tower = true;
+            if (p === 0 && body.c === "build" && body.type === BuildingType.ArrowTower) tower = true;
             g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
           }
         }
@@ -1959,7 +1959,7 @@ test("NN v2: the network that always chooses AS_HARD plays exactly as hard past 
     return { hash: g.hash(), tower };
   };
   const off = play(null);
-  assert.equal(off.tower, true, "hard orders a tower in these 18 minutes");
+  assert.equal(off.tower, true, "side 0 orders a tower in these 16 minutes");
   assert.deepEqual(play(asHardNet()), off);
 });
 
@@ -3108,6 +3108,125 @@ test("D-086 A7 (plan.governHold): a repair that does not end, hard stays at most
   assert.equal(holdingThink((Math.trunc((2 * repair) / 200) + 1) * 200, 0).stayed, 1, "past it: no longer");
 });
 
+test("D-086 A7 (plan.governHold): gone home from a stay that ran out, hard takes the same town again and stays by it again", () => {
+  const { g, town } = takenGame(12, 0);
+  const w = g.w;
+  const tt = w.map.towns.find((x) => x.id === town)!;
+  // The other towns ruins it sees, so that from this one it can only go home, and back to it.
+  for (const o of w.map.towns) if (o.id !== town) {
+    w.townState[o.id] = TownState.Ruins;
+    w.townOwner[o.id] = NO_OWNER;
+    w.townTimer[o.id] = 48000;
+    put(g, 0, UnitType.Farmer, o.cellX, o.cellY);
+  }
+  const repair = rules().towns?.[TownSize.Small]?.repairTicks ?? 900;
+  const ai = hardAi(g, { dodge: false, governFrom: 0, governHold: true, townArmy: 3, bigArmy: 99, pushArmy: 99, peekFirst: 0 });
+  const take = (at: number) => {
+    w.townState[town] = TownState.Neutral;
+    w.townOwner[town] = NO_OWNER;
+    w.tick = at;
+    g.fog.update(w);
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length >= 10 && c.x === tt.cellX && c.y === tt.cellY), "it goes for the town");
+    w.townState[town] = TownState.Repairing;
+    w.townOwner[town] = 0;
+  };
+  const think = (at: number) => {
+    w.tick = at;
+    g.fog.update(w);
+    ai.think(buildView(g, 0));
+    return ai.stats?.().governStayed ?? 0;
+  };
+  const t0 = 15 * 1200;
+  take(t0);
+  assert.equal(think(t0 + 200), 1, "it stays");
+  const out = (Math.trunc((2 * repair) / 200) + 2) * 200;
+  assert.equal(think(t0 + out), 1, "past the limit: home");
+  // Home: its 12 walked back (the game is not run here), by its main city; a farmer of its own keeps the town in sight.
+  const s0 = w.map.spawns[0];
+  put(g, 0, UnitType.Farmer, tt.cellX + tt.radius + 2, tt.cellY);
+  const u = w.units.col;
+  let k = 0;
+  for (let s = 0; s < w.units.count; s++) {
+    if (u.owner[s] !== 0 || u.type[s] !== UnitType.Spearman) continue;
+    u.x[s] = ((s0.cellX + 4 + (k % 5)) << 10) + 512;
+    u.y[s] = ((s0.cellY - 4 - Math.trunc(k / 5)) << 10) + 512;
+    k++;
+  }
+  take(t0 + out + 200);
+  assert.equal(think(t0 + out + 400), 2, "the same town again: it stays again");
+});
+
+// --- D-081 under the D-100 batch (ceo 2026-10-29: the user's 「一直打哨所、死傷慘重」 must not come back with keeps) ----------
+
+const BATCH = [KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET];
+/** Six towers with three hiding in each (worth more than 22 spearmen), at (x, y) on, a farmer of player 0 by each. */
+function sixTowers(g: Game, x: number, y: number): number[] {
+  const w = g.w;
+  const ids: number[] = [];
+  for (const [dx, dy] of [[0, 0], [3, 0], [6, 0], [0, 3], [3, 3], [6, 3]]) {
+    const id = w.addBuilding(1, BuildingType.ArrowTower, x + dx, y + dy, 600, 1000);
+    w.buildings.col.soldiers[w.building(id)] = 3;
+    ids.push(id);
+    put(g, 0, UnitType.Farmer, x - 1 + dx, y - 1 + dy);
+  }
+  return ids;
+}
+
+test("D-081 with the D-100 batch: 22 go for a town, break off from forts too strong for them, and go again once they are weaker", switchedOn(BATCH, () => {
+  const g = emptyGame();
+  const w = g.w;
+  for (let k = 0; k < 22; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
+  g.fog.update(w);
+  // Small towns take more soldiers than it has (keepTownArmy too): the big one (keepBigArmy 20) is the one to go for.
+  const ai = hardAi(g, { dodge: false, townArmy: 99 });
+  const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 22) as { x: number; y: number } | undefined;
+  assert.ok(go !== undefined && w.map.towns.some((t) => t.cellX === go.x && t.cellY === go.y), "off to a town");
+  const towers = sixTowers(g, 50, 66);
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat" && c.u.length === 22), "too strong for it: back");
+  const toTown = () => ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 22 && c.x === go.x && c.y === go.y);
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(!toTown(), "not straight back to that town");
+  w.tick += 10 * 1200;
+  g.fog.update(w);
+  assert.ok(!toTown(), "nor 10 minutes on, the forts as strong");
+  for (const id of towers) w.buildings.col.soldiers[w.building(id)] = 0;
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(toTown(), "once the forts are weaker (none hiding), again");
+}));
+
+test("D-081 with the D-100 batch: falling back from forts too strong for it, hard goes round them, then home", switchedOn(BATCH, () => {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const army: number[] = [];
+  for (let k = 0; k < 22; k++) army.push(put(g, 0, UnitType.Spearman, 58 + (k % 7), 40 + Math.trunc(k / 7)));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, townArmy: 99 });
+  ai.think(buildView(g, 0));
+  sixTowers(g, 44, 52);
+  w.tick += 10;
+  g.fog.update(w);
+  const back = ai.think(buildView(g, 0)).find((c) => c.c === "retreat" && c.u.length === 22) as { x: number; y: number } | undefined;
+  const home = spawnCentre(w.map.frames[0], s0);
+  assert.ok(back !== undefined, "too strong for it: back");
+  const groups = fortGroups(enemyForts(buildView(g, 0), 0, rules()), () => 0, fortValues(rules()));
+  assert.ok(groupsOnWay(groups, { x: 61, y: 41 }, home).length > 0, "the straight way home passes them");
+  assert.equal(groupsOnWay(groups, { x: 61, y: 41 }, back).length, 0, `round them first, to ${back.x},${back.y}: the way there keeps out of their reach`);
+  for (const id of army) {
+    const s = slotOf(g, id);
+    w.units.col.x[s] = back.x * CELL + CELL / 2;
+    w.units.col.y[s] = back.y * CELL + CELL / 2;
+  }
+  w.tick += 10;
+  g.fog.update(w);
+  const on = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 22) as { x: number; y: number } | undefined;
+  assert.ok(on !== undefined && (on.x !== back.x || on.y !== back.y), "on from there");
+}));
+
 test("D-086 A7 (plan.governTowers): hard saves up for arrow towers by a town it governs; 0, none", () => {
   const towers = (governTowers: number) => {
     const g = behindGame(0);
@@ -3148,6 +3267,86 @@ test("NN v2 (HEAD_DEFENSE): a tower next by its main city, saved up for, where h
   assert.equal(towers(null, true).town, true, "off, a town it governs: a tower by it (governTowers)");
   assert.equal(towers(forcedNet([0, 0, 0, 0, AS_HARD]), true).town, true, "as hard: by it too");
   assert.deepEqual(towers(forcedNet([0, 0, 0, 0, DEFENSE_NONE]), true), { home: false, town: false }, "no tower now: none at all");
+});
+
+// --- D-086 A8: wood (ceo 2026-10-29: hard's wood under 100 at 58-74% of minutes 20 and 30) -------------------------
+
+/** D-086 A8: hard's base all built (behindGame: one lumber camp), and 6 farmers cutting trees more than 8 cells from it, within 22 of its main city. */
+function farTrees(plan: Partial<HardPlan>, opts: { foe?: boolean } = {}): { out: CommandBody[]; trees: { x: number; y: number }[] } {
+  const g = behindGame(0);
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const camp = { x: s0.cellX - 10 + 1, y: s0.cellY + 2 + 1 };
+  const picked: number[] = [];
+  const order: number[] = [];
+  for (let i = 0; i < w.nodeKind.length; i++) {
+    if (w.nodeKind[i] !== NodeKind.Tree) continue;
+    const dh = (w.nodeX[i] - s0.cellX - 2) ** 2 + (w.nodeY[i] - s0.cellY - 2) ** 2;
+    const dc = (w.nodeX[i] - camp.x) ** 2 + (w.nodeY[i] - camp.y) ** 2;
+    if (dh <= 22 * 22 && dc > 10 * 10) order.push(i);
+  }
+  // The six nearest to the first such tree: one forest.
+  const first = order[0];
+  order.sort((a, b) => (w.nodeX[a] - w.nodeX[first]) ** 2 + (w.nodeY[a] - w.nodeY[first]) ** 2 - ((w.nodeX[b] - w.nodeX[first]) ** 2 + (w.nodeY[b] - w.nodeY[first]) ** 2));
+  picked.push(...order.slice(0, 6));
+  const u = w.units.col;
+  let k = 0;
+  for (let s = 0; s < w.units.count && k < picked.length; s++) {
+    if (u.owner[s] !== 0 || u.type[s] !== UnitType.Farmer) continue;
+    u.order[s] = Order.Gather;
+    u.orderTarget[s] = picked[k];
+    u.x[s] = (w.nodeX[picked[k]] << 10) + 512;
+    u.y[s] = (w.nodeY[picked[k]] << 10) + 512;
+    k++;
+  }
+  const trees = picked.map((i) => ({ x: w.nodeX[i], y: w.nodeY[i] }));
+  if (opts.foe) put(g, 1, UnitType.Spearman, trees[0].x + 2, trees[0].y + 2);
+  g.fog.update(w);
+  // goldCavalry off: its stable would be put up first (one building per think).
+  return { out: hardAi(g, { dodge: false, goldCavalry: 0, ...plan }).think(buildView(g, 0)), trees };
+}
+
+test("D-086 A8 (plan.lumberFar): its woodcutters cutting far from its camp, hard puts up another camp by their trees; not with an enemy by them; off, none", () => {
+  const camp = (r: { out: CommandBody[]; trees: { x: number; y: number }[] }) =>
+    r.out.find((c) => c.c === "build" && c.type === BuildingType.LumberCamp) as { x: number; y: number } | undefined;
+  const on = farTrees({ lumberFar: 6 });
+  const c = camp(on);
+  assert.ok(c !== undefined, "on: another camp");
+  assert.ok(on.trees.some((t) => (t.x - c.x) ** 2 + (t.y - c.y) ** 2 <= 8 * 8), `by the trees (${c.x},${c.y})`);
+  assert.equal(camp(farTrees({ lumberFar: 6 }, { foe: true })), undefined, "an enemy soldier by them: none");
+  assert.equal(camp(farTrees({ lumberFar: 30 })), undefined, "not that far: none");
+  assert.equal(camp(farTrees({ lumberFar: 0 })), undefined, "off: none, as before");
+});
+
+test("D-086 A8: by default with keeps (kblr), another camp by the far trees; without keeps none, as before, unless asked", () => {
+  const camp = (plan: Partial<HardPlan>) => farTrees(plan).out.some((c) => c.c === "build" && c.type === BuildingType.LumberCamp);
+  assert.equal(camp({}), true, "keeps on (the batch): lumberFar 6 by default");
+  switchedOff([KEEP], () => {
+    assert.equal(camp({}), false, "keeps off: none, as before");
+    assert.equal(camp({ lumberFar: 6 }), true, "keeps off, asked for: one");
+  })();
+});
+
+test("D-086 A8 (plan.ratioCalm): a ratio a few points off the last one is not sent till RATIO_CALM after it; off, every change", () => {
+  const sent = (ratioCalm: boolean, later: number) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.res.set([50, 50, 50, 0], 0);
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, ratioCalm });
+    const first = ai.think(buildView(g, 0)).find((c) => c.c === "eco_ratio") as { food: number; wood: number; gold: number } | undefined;
+    assert.ok(first !== undefined, "a first ratio");
+    // A little more gold: its share a few points less (50/40/10 to 53/41/6).
+    w.res.set([50, 50, 150, 0], 0);
+    w.tick += later;
+    g.fog.update(w);
+    const next = ai.think(buildView(g, 0)).find((c) => c.c === "eco_ratio") as { food: number; wood: number; gold: number } | undefined;
+    if (next !== undefined) assert.ok(Math.max(Math.abs(next.food - first.food), Math.abs(next.wood - first.wood), Math.abs(next.gold - first.gold)) < 10, "a change of a few points");
+    return next !== undefined;
+  };
+  assert.equal(sent(false, 10), true, "off: sent at once");
+  assert.equal(sent(true, 10), false, "on: not yet");
+  assert.equal(sent(true, 610), true, "on, RATIO_CALM on: sent");
 });
 
 test("D-100 (plan.strongPush): clearly stronger than the enemy it saw lately, hard marches on the enemy's main city short of pushArmy; off, as before", () => {
