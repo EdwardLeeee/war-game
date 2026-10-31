@@ -3345,7 +3345,7 @@ test("D-086 A8 (plan.lumberFar): its woodcutters cutting far from its camp, hard
 
 test("D-086 A8: by default with keeps (kblr), another camp by the far trees; without keeps none, as before, unless asked", () => {
   const camp = (plan: Partial<HardPlan>) => farTrees(plan).out.some((c) => c.c === "build" && c.type === BuildingType.LumberCamp);
-  assert.equal(camp({}), true, "keeps on (the batch): lumberFar 6 by default");
+  switchedOn([KEEP], () => assert.equal(camp({}), true, "keeps on (the batch): lumberFar 6 by default"))();
   switchedOff([KEEP], () => {
     assert.equal(camp({}), false, "keeps off: none, as before");
     assert.equal(camp({ lumberFar: 6 }), true, "keeps off, asked for: one");
