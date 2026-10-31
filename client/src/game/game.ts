@@ -891,7 +891,7 @@ export class Game implements GestureHost {
     }
     const u = cmd.u.filter((id) => !stay.includes(id));
     if (u.length > 0) return { cmd: { ...cmd, u } as CommandBody, kept: cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat" ? stay.length : 0 };
-    if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") this.toast(`城裡的 ${stay.length} 名都要留下守城：要帶走按「全部帶走」`);
+    this.toast(cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat" ? `城裡的 ${stay.length} 名都要留下守城：要帶走按「全部帶走」` : "駐守的兵留在城裡");
     return null;
   }
 
@@ -2559,7 +2559,8 @@ export class Game implements GestureHost {
       this.toast(kept.length > 0 ? `城裡的 ${kept.length} 名都要留下守城` : STATION_HERE);
       return;
     }
-    // 移動 in first: the player's own order ends a garrison (GDD §5); then theirs, holding.
+    // 移動 in first: the player's own order ends a garrison (GDD §5); then theirs, holding. From
+    // 軍團畫面 this goes through groupOrderOut too, which keeps nobody more: `kept` still stand there.
     this.command({ c: "retreat", u: go, x: spot.cellX, y: spot.cellY });
     this.keepIn(spot.id, go);
     const done = `${go.length} 名駐軍在${spot.size === TownSize.Large ? "大城" : "小鎮"}：留守、堅守，不跟全軍走`;

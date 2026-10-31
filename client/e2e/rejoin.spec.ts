@@ -155,6 +155,7 @@ test("編隊按鈕選得到駐守的兵（收起）：點地板整隊出城，�
   await panel(page).getByRole("button", { name: "展開選取資訊" }).tap();
   const before = (await sent(page)).length;
   await page.locator(".cmds").getByRole("button", { name: "停止" }).tap();
+  await expect.poll(said).toContain("駐守的兵留在城裡");
   expect((await sent(page)).slice(before).filter((c) => c.auto !== true)).toEqual([]);
   await panel(page).getByRole("button", { name: "收起選取資訊" }).tap();
   await tap(page, await emptyGround(page));
