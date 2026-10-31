@@ -99,13 +99,16 @@ export async function saveGroup(page: Page, button: string): Promise<void> {
 }
 
 /**
- * 軍團畫面 opened: a tap on a group with soldiers folds it (the user 2026-10-31), empty it stays
- * open. After that tap: the panel follows on the next interface update (10 a second).
+ * 軍團畫面 opened, after a tap on a group button: with soldiers to order (they are selected) the tap
+ * folds it, so 展開 comes; with none it stays open (the user 2026-10-31). Read from the selection,
+ * not from the panel, which follows at its next update (late on CI's WebKit).
  */
 export async function openPanel(page: Page): Promise<void> {
-  await page.waitForTimeout(150);
-  const open = page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" });
-  if (await open.isVisible()) await open.tap();
+  const panel = page.locator(".sel-info");
+  await expect(panel.locator(".sel-head")).toContainText(/^編隊 \d/);
+  const selected = await page.evaluate(() => window.__proto?.game?.selection().units.length ?? 0);
+  if (selected > 0) await panel.getByRole("button", { name: "展開選取資訊" }).tap();
+  await expect(panel.getByRole("button", { name: "收起選取資訊" })).toBeVisible();
 }
 
 /**
