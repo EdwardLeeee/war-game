@@ -2110,7 +2110,7 @@ export class Game implements GestureHost {
       const taken = d.ids.filter(put);
       if (taken.length > 0) {
         moved.push(movedText(taken.map((id) => view.unitType(id)), d.group, UNIT_NAME));
-        this.assaults.drop(taken);
+        this.assaults.drop(taken, false);
         this.charges.drop(taken);
         const recruits = this.army.groups[d.group].recruits;
         const hold = mostlyLoose(others.filter((m) => !recruits.some((r) => r.id === m)), isHeld);

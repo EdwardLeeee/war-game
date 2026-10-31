@@ -113,13 +113,16 @@ export class Assaults {
     this.towns.set(town, new Set([...(this.towns.get(town) ?? []), ...ids]));
   }
 
-  /** The player gave these another order: no longer attacking any town. */
-  drop(ids: readonly number[]): void {
+  /**
+   * The player gave these another order: no longer attacking any town, and not to join one until he
+   * says so. `excuse` false: out of it by no order of his (put into another group), they may join.
+   */
+  drop(ids: readonly number[], excuse = true): void {
     for (const [town, set] of this.towns) {
       for (const id of ids) set.delete(id);
       if (set.size === 0) this.end(town);
     }
-    if (this.towns.size > 0) for (const id of ids) this.excused.add(id);
+    if (excuse && this.towns.size > 0) for (const id of ids) this.excused.add(id);
   }
 
   /** Those of `ids`, of a group attacking this town and standing by it, who join the attack (not the player's otherwise). Returns them. */

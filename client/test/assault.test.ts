@@ -92,6 +92,9 @@ test("後到的兵加入攻城：同編隊站在城旁的才由 Game 交進來�
   // His own attack on the town takes it in again.
   a.begin(5, [7]);
   assert.deepEqual(a.list()[0], { town: 5, ids: [1, 2, 4, 7] });
+  // Put into another group, no order of his: it leaves the attack and may join the new group's.
+  a.drop([4], false);
+  assert.deepEqual(a.join(5, [4]), [4]);
   // All of it ordered away: nothing left, and the next attack starts clean.
   a.drop([1, 2, 3, 4, 7]);
   assert.deepEqual(a.list(), []);
