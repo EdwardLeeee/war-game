@@ -218,7 +218,8 @@ test("on an adjacent random map, a unit and its mirror image walk mirror-image p
   // part there. A walk that comes onto a cell line is left, and the next adjacent map walked; any
   // other parting fails the test.
   let walked = 0;
-  for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].filter((s) => generateRandomMap(s).layout === "adjacent")) {
+  for (let seed = 1; seed <= 40 && walked < 3; seed++) {
+    if (generateRandomMap(seed).layout !== "adjacent") continue;
     const g = new Game({ seed, scenario: "standard", map: "random" });
     const w = g.w;
     for (let s = 0; s < w.units.count; s++) w.unitSlot[w.units.col.id[s]] = -1;
