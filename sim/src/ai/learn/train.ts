@@ -83,9 +83,10 @@ function setJobs(net: NetWeights | null, opp: Opponent, n: number, seed0: number
   return jobs;
 }
 async function evaluate(name: string, net: NetWeights | null, n: number, m: number, seed0: number, switches: Switches): Promise<EvalResult> {
-  const hard = (await runAll(setJobs(net, { kind: "hard" }, n, seed0, 72000, switches))).map((r) => r.outcome);
+  // NN v3: 120 minutes, as the training (D-115).
+  const hard = (await runAll(setJobs(net, { kind: "hard" }, n, seed0, 144000, switches))).map((r) => r.outcome);
   // push-crush as CI plays it: 90 minutes.
-  const crush = (await runAll(setJobs(net, { kind: "crush" }, m, seed0, 108000, switches))).map((r) => r.outcome);
+  const crush = (await runAll(setJobs(net, { kind: "crush" }, m, seed0, 144000, switches))).map((r) => r.outcome);
   const at45 = crush.filter((o) => o.towers45 >= 0);
   const mean = (xs: number[]) => (xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length);
   const choices = NET_HEADS.map((k) => new Array(k).fill(0));
@@ -181,8 +182,8 @@ if (mode === "dryrun") {
   summary(
     `## 比強弱（${file === "" ? "困難本身" : `${name}：${file}`}，規則開關 ${switchesText(switches)}，種子從 ${r.seed} 起）\n\n` +
       `| 對手 | 局 | 贏 | 平手 | 輸 | 贏－輸（標準差） | 第 45 分還在打的局 | 第 45 分箭樓（每局） | 第 45 分治理的城（每局） |\n|---|---|---|---|---|---|---|---|---|\n` +
-      `| 困難（60 分） | ${r.hard.games} | ${r.hard.won} | ${r.hard.draws} | ${r.hard.lost} | ${h.d}（${h.sd.toFixed(1)}） | | | |\n` +
-      `| push-crush（90 分） | ${r.crush.games} | ${r.crush.won} | ${r.crush.draws} | ${r.crush.lost} | ${wl(r.crush).d} | ${r.crush.at45} | ${r.crush.towers45.toFixed(1)} | ${r.crush.governed45.toFixed(1)} |\n\n` +
+      `| 困難（120 分） | ${r.hard.games} | ${r.hard.won} | ${r.hard.draws} | ${r.hard.lost} | ${h.d}（${h.sd.toFixed(1)}） | | | |\n` +
+      `| push-crush（120 分） | ${r.crush.games} | ${r.crush.won} | ${r.crush.draws} | ${r.crush.lost} | ${wl(r.crush).d} | ${r.crush.at45} | ${r.crush.towers45.toFixed(1)} | ${r.crush.governed45.toFixed(1)} |\n\n` +
       `- 防守組：蓋塔／不蓋 ${dev(r.defense)}\n- 選擇組合：${r.combos} 種${net !== null && r.combos <= 1 ? "（只有一種：網路沒有看局面）" : ""}`,
   );
 } else if (mode === "report") {

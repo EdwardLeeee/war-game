@@ -9,7 +9,7 @@
 // and CI's scripted groups push, push-crush, push-turtle), no curriculum; the heads in EsConfig.fixed keep the
 // start's output rows (from asHardNet: AS_HARD, always), so the search is over the others alone.
 
-import { HEAD_BUILD, HEAD_MIX, NET_HEADS, NET_SHAPE, type NetWeights } from "../net.ts";
+import { AS_HARD, HEAD_BUILD, HEAD_MIX, NET_HEADS, NET_SHAPE, type NetWeights } from "../net.ts";
 import { runAll } from "./pool.ts";
 import type { GameOutcome, Opponent, Switches } from "./play.ts";
 import type { Job } from "./worker.ts";
@@ -42,22 +42,31 @@ export interface EsConfig {
   rules: Switches;
   /** Heads whose output rows stay as they start (from asHardNet: AS_HARD). */
   fixed: number[];
+  /**
+   * NN v3 (ceo 2026-10-31): the trained heads' AS_HARD bias at the start, set by newState. With asHardNet's 1 a step
+   * of sigma 4 / 64 left hard's choice on 53-71% of thinks: the candidates played at random more than not and every
+   * island ended weaker than hard (v2, runs 41044811137, 41078453635). On 650 thinks of real games, 40 candidates: 2500
+   * leaves it on 12-13% of thinks, and 34 of 40 still choose by the game (1500: 20-27%, 3000: 5-11% and 27 of 40).
+   */
+  asHardMargin: number;
 }
 
 export const ES_DEFAULTS: EsConfig = {
   pairs: 4,
-  // 32 games: hard 40%, normal 10%, push 20%, push-crush 20%, push-turtle 10% (rounded).
-  mix: { hard: 13, normal: 3, push: 6, crush: 7, turtle: 3 },
+  // NN v3 (ceo 2026-10-31): 32 games. The real games' starts (6) and push-late-siege (4) wait: 8d02b76f no longer
+  // replays on #334's maps, and core's group is not on main yet; their games to hard, push-crush and push-turtle.
+  mix: { hard: 12, normal: 2, push: 4, crush: 8, turtle: 6 },
   sigma: 4,
   sigmaBias: 64,
   lr: 2,
   shaping: 0.2,
   shapingUntil: 20,
-  // 60 minutes: CI's AI-against-AI limit (D-112), and the scripted games' (ceo 2026-10-29).
-  maxTicks: 72000,
+  // 120 minutes (D-115, ceo 2026-10-31: a generation 28% slower than at 60, draws 27 -> 11 of 256).
+  maxTicks: 144000,
   randomShare: 0.5,
   rules: {},
   fixed: [HEAD_MIX, HEAD_BUILD],
+  asHardMargin: 2500,
 };
 
 export interface EsState {
@@ -233,7 +242,16 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
 
 export function newState(start: NetWeights, seed: number, config: Partial<EsConfig> = {}): EsState {
   const c = { ...ES_DEFAULTS, ...config };
-  return { config: c, theta: toVector(start), generation: 0, seed, history: [] };
+  const theta = toVector(start);
+  // The trained heads' AS_HARD biases to the margin (the fixed heads keep theirs: their rows never move).
+  const last = start.layers[start.layers.length - 1];
+  const biasAt = theta.length - last.outputs;
+  let at = 0;
+  NET_HEADS.forEach((k, h) => {
+    if (!c.fixed.includes(h)) theta[biasAt + at + AS_HARD] = Math.max(theta[biasAt + at + AS_HARD], c.asHardMargin);
+    at += k;
+  });
+  return { config: c, theta, generation: 0, seed, history: [] };
 }
 
 /** The shape every network here has (net.ts NET_SHAPE). */
