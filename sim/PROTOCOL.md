@@ -205,7 +205,7 @@
 | `rally` | `building`、`x`、`y` | 集結點（格子） | PR-3 |
 | `eco_ratio` | `food`、`wood`、`gold`、`on` | 經濟分配的比例（百分比，加起來 100）與開關 | PR-3 |
 | `recall` | `on` | 全體回城（`true`）或回去工作（`false`），是同一個指令 | PR-3 |
-| `release` | `u` | 村民放下工作、變成閒置，交給經濟分配：不算待命（和 `stop` 不同，`stop` 會讓他站著等），清掉手派的標記；躲著的會出來。`u` 裡沒有自己的村民：`NotOwner`；只有別的兵種：`NotAvailable` | D-066 |
+| `release` | `u` | 村民放下工作、變成閒置，交給經濟分配：不算待命（和 `stop` 不同，`stop` 會讓他站著等；站滿 30 秒也會交給經濟分配，D-115），清掉手派的標記；躲著的會出來。`u` 裡沒有自己的村民：`NotOwner`；只有別的兵種：`NotAvailable` | D-066 |
 | `cast` | `u`、`fx`、`fy` | 一名法師對定點位置發晶砲：原地校準 1.5 秒，期間出現預警區 | PR-4 |
 | `autocast` | `u`、`on` | 法師的自動施放開關 | PR-4 |
 | `town_choice` | `town`、`choice` | 攻下的城鎮選搶（0）或治理（1） | PR-4 |

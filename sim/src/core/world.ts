@@ -21,7 +21,8 @@ export const UNIT_COLS = [
   // 1 = the player sent this farmer somewhere (move, retreat, stop, attack): once idle it
   // waits there and automatic work (auto-repair, the economy ratio) leaves it alone, until
   // the player gives it work (gather, build, repair). Recall still takes it (GDD section 4).
-  "stay",
+  // `stayWait`: ticks it has waited so, up to STAY_LIMIT.
+  "stay", "stayWait",
   // A build without farmers (round 2): the building the simulation sent this farmer to build,
   // and the gathering it was doing then (node, or farm building with resumeFarm = 1), which it
   // goes back to when that building is done.
