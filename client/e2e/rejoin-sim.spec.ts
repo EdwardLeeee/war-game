@@ -81,7 +81,6 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection().units ?? [])).length).toBeGreaterThan(0);
   const sentIn = await page.evaluate(() => window.__proto?.game?.selection().units ?? []);
   await page.locator(".cmds").getByRole("button", { name: /^駐軍/ }).tap();
-  await page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" }).tap();
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [town.cx, town.cy] as const);
   await tap(page, await at(page, { x: town.cx + 0.5, y: town.cy + 0.5 }));
   // Those selected, still living (a soldier 自動訓練 trains for the group from now on is not one of
@@ -98,8 +97,7 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
   await expect(panel.locator(".sel-head")).toContainText(/^編隊 1/);
-  // Put away (收起) for 駐軍 above: open it again.
-  await panel.getByRole("button", { name: "展開選取資訊" }).tap();
+  // All of it stationed: nothing to order, the panel stays open (the user 2026-10-31).
   await panel.getByRole("button", { name: "出城歸隊" }).tap();
   await expect.poll(said).toContain(`${alive.length - 1} 名出城歸隊編隊 1，留 1 名守城`);
   const kept = await garrison();
