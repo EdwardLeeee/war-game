@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { Task } from "../src/core/economy.ts";
-import { BUILDINGS, CARRY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, CARRY, ECO_EVERY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, STAY_LIMIT, UNITS } from "../src/core/rules.ts";
 import { checkPlacement } from "../src/placement.ts";
 import {
   Action,
@@ -20,13 +20,14 @@ import {
   PlaceBit,
   Reject,
   Resource,
+  TICKS_PER_SECOND,
   UNIT_STRIDE,
   UnitField,
   UnitFlag,
   UnitType,
 } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
+import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 function rejects(g: Game, p: number): number[] {
   return g.events.filter((e) => e.to === p && e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
@@ -504,7 +505,7 @@ test("a farmer the player sends somewhere waits there: automatic work leaves it 
   cmd(g, 0, { c: "move", u: [f], x: to.x, y: to.y });
   // Damage the main city too: auto-repair must not take them either.
   g.w.buildings.col.hp[g.w.mainCity(0)] -= 100;
-  run(g, 600);
+  run(g, 500);
   const u = g.w.units.col;
   const s = slotOf(g, f);
   assert.equal(u.order[s], Order.None, "still waiting after many economy passes");
@@ -779,3 +780,75 @@ test("with the ratio unchanged, no farmer is moved back and forth", () => {
   }
   assert.equal(moved, 0);
 });
+
+test("D-115: a farmer placed by hand waits 30 s, then the economy takes it; the idle farmers count it till then", () => {
+  const g = emptyGame();
+  const m = mainCityCell(g, 0);
+  const f = [farmerAtBase(g, 0), farmerAtBase(g, 0, 1), farmerAtBase(g, 0, 2)];
+  cmd(g, 0, { c: "move", u: f, x: m.x + 12, y: m.y - 6 });
+  run(g, 2);
+  const u = g.w.units.col;
+  while (f.some((id) => u.order[slotOf(g, id)] !== Order.None)) run(g, 1);
+  run(g, STAY_LIMIT.ticks - 2 * ECO_EVERY);
+  for (const id of f) assert.equal(u.order[slotOf(g, id)], Order.None, "still waiting");
+  assert.equal(buildView(g, 0).idleFarmers.length, 3);
+  run(g, 3 * ECO_EVERY);
+  for (const id of f) {
+    assert.equal(u.order[slotOf(g, id)], Order.Gather, "at work");
+    assert.equal(u.stay[slotOf(g, id)], 0);
+  }
+});
+
+test("D-115: a new command within the 30 s counts them again; work ends the waiting as before", () => {
+  const g = emptyGame();
+  g.w.res[Resource.Wood] = 1000;
+  const m = mainCityCell(g, 0);
+  const f = farmerAtBase(g, 0);
+  const u = g.w.units.col;
+  const worker = farmerAtBase(g, 0, 1);
+  cmd(g, 0, { c: "move", u: [f, worker], x: m.x + 12, y: m.y - 6 });
+  run(g, 2);
+  while (u.order[slotOf(g, f)] !== Order.None || u.order[slotOf(g, worker)] !== Order.None) run(g, 1);
+  run(g, 20 * TICKS_PER_SECOND);
+  cmd(g, 0, { c: "move", u: [f], x: m.x + 13, y: m.y - 6 });
+  const house = spot(g, 0, BuildingType.House);
+  cmd(g, 0, { c: "build", u: [worker], type: BuildingType.House, x: house.x, y: house.y });
+  run(g, 2);
+  while (u.order[slotOf(g, f)] !== Order.None) run(g, 1);
+  run(g, STAY_LIMIT.ticks - 2 * ECO_EVERY);
+  assert.equal(u.order[slotOf(g, f)], Order.None, "30 s again from the new place");
+  assert.equal(u.stay[slotOf(g, f)], 1);
+  assert.equal(u.stay[slotOf(g, worker)], 0, "given work: no longer placed");
+  while (u.order[slotOf(g, worker)] === Order.Build) run(g, 1);
+  run(g, 2 * ECO_EVERY);
+  assert.equal(u.order[slotOf(g, worker)], Order.Gather, "the house done, the economy takes it");
+});
+
+test("D-115: with the economy ratio off, in recall, or hiding, a placed farmer waits as before", () => {
+  const g = emptyGame();
+  g.w.ecoOn[0] = 0;
+  const m = mainCityCell(g, 0);
+  const off = farmerAtBase(g, 0);
+  const u = g.w.units.col;
+  cmd(g, 0, { c: "move", u: [off], x: m.x + 6, y: m.y });
+  run(g, 3 * STAY_LIMIT.ticks);
+  assert.equal(u.order[slotOf(g, off)], Order.None);
+  assert.equal(u.stay[slotOf(g, off)], 1);
+  g.w.ecoOn[0] = 1;
+  cmd(g, 0, { c: "recall", on: true });
+  run(g, 2 * STAY_LIMIT.ticks);
+  assert.equal(u.action[slotOf(g, off)], Action.Garrisoned, "recall takes it, and it stays hidden");
+  cmd(g, 0, { c: "recall", on: false });
+  run(g, 200);
+  assert.equal(u.order[slotOf(g, off)], Order.None, "out again, it waits its 30 s from then");
+  assert.equal(u.stay[slotOf(g, off)], 1);
+});
+
+test("D-115: STAY_LIMIT off: a placed farmer waits as before", switchedOff(STAY_LIMIT, () => {
+  const g = emptyGame();
+  const m = mainCityCell(g, 0);
+  const f = farmerAtBase(g, 0);
+  cmd(g, 0, { c: "move", u: [f], x: m.x + 6, y: m.y });
+  run(g, 3 * STAY_LIMIT.ticks);
+  assert.equal(g.w.units.col.order[slotOf(g, f)], Order.None);
+}));

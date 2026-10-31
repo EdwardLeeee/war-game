@@ -114,6 +114,22 @@ test("人類玩家玩隨機地圖（偵察 #176 之後）：開局只知道自�
   await shot(page, info, "random-human-scouted");
 });
 
+test("雙河關（D-115）：按開局畫面的按鈕開局，模擬收到 twin-rivers；和隨機地圖一樣開局只知道自己家", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto("./?test=1&tps=20&ai=0&seed=2");
+  await page.getByRole("radiogroup", { name: "地圖" }).getByRole("radio", { name: "雙河關" }).tap();
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
+  expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ human: 0, map: "twin-rivers" });
+  expect(await page.evaluate(() => window.__proto?.game?.mapMode()), "known as a random map is").toBe("random");
+  expect(await page.evaluate(() => window.__proto?.game?.mapSize())).toBe(129);
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? -1);
+  const all = await page.evaluate(() => window.__proto?.game?.buildings() ?? []);
+  expect(all.some((b) => b.owner === me && b.type === MAIN_CITY), "our main city").toBe(true);
+  expect(all.some((b) => b.owner !== me && b.type === MAIN_CITY), "no enemy main city at the start").toBe(false);
+  await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(20);
+});
+
 test("畫面量測：人類玩家在固定地圖和隨機地圖下同樣的偵察指令，各 20 秒；隨機地圖每探到岩石就重畫地面（這台 CI 的數字，不是 iPhone）", async ({ page }, info) => {
   test.setTimeout(150_000);
   const rows: Record<string, unknown>[] = [];

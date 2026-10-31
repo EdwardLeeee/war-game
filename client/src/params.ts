@@ -3,7 +3,7 @@
 
 import type { Culture } from "./art/spec.ts";
 import { CULTURES } from "./culture.ts";
-import type { MapMode } from "./sim.ts";
+import { MAP_MODES, type MapMode } from "./sim.ts";
 
 /**
  * Ticks per second for 慢, 正常, 快 (D-024: the old 1x, 1.5x and 2x; the user found the old
@@ -116,7 +116,7 @@ export function parseParams(search: string): PageParams {
   const logs = q.get("logs");
   const logsUrl = test && logs !== null && /^https?:\/\/[^\s]+$/.test(logs) ? logs : null;
   const m = q.get("map");
-  const map = test && (m === "fixed" || m === "random") ? m : null;
+  const map = test ? (MAP_MODES.find((v) => v === m) ?? null) : null;
   const s = q.get("seed");
   const seed = test && s !== null && /^[1-9][0-9]{0,9}$/.test(s) && Number(s) <= 0x7fffffff ? Number(s) : null;
   const a = q.get("art");

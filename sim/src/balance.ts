@@ -5,8 +5,8 @@
 //   node src/balance.ts [--check 1,2,3,4]
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
-import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, guardPoint, type Held, type Hold, hold, siege, siegeGate, siegeRaid, twoShots } from "./balance-lib.ts";
-import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, SIEGE, TOWER_VALUE, UNITS } from "./core/rules.ts";
+import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, guardPoint, type Held, type Hold, hold, siege, siegeCrowd, siegeGate, siegeRaid, twoShots } from "./balance-lib.ts";
+import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, GATE, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, SIEGE, TOWER_VALUE, UNITS } from "./core/rules.ts";
 import { BuildingType, TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -496,6 +496,32 @@ function main(): void {
       out.push("", "| 對戰（10 格） | A 進攻 | B 進攻 | 雙方對進 |", "|---|---|---|---|");
       for (const [a, b] of [[S(0, 0, 5), S(2, 0, 0, 2)], [S(0, 0, 0, 4), S(8, 7)]] as [Army, Army][]) {
         out.push(`| A ${armyText(a)}（${armyCost(a)}）對 B ${armyText(b)}（${armyCost(b)}） | ${[0, 1, BOTH].map((att) => show(fight([a, b], att, 10))).join(" | ")} |`);
+      }
+      // D-115 (the user 2026-10-31: 「怎麼感覺他是攻擊距離更遠更痛的法師？」): before, and as it is, side by side.
+      const set = (attack: number, unitRange: number, vs: number, gate: number) => {
+        engine.attack = attack;
+        engine.unitRange = unitRange;
+        SIEGE.vsBuildings = vs;
+        GATE.siege = gate;
+      };
+      const now: [number, number, number, number] = [engine.attack, engine.unitRange ?? engine.range, SIEGE.vsBuildings, GATE.siege];
+      const VARIANTS: [string, number, number, number, number][] = [["D-115 以前（每發 35、打兵 10 格）", 35, engine.range, 3, 8], [`現在（每發 ${now[0]}、打兵 ${now[1] / 1024} 格）`, ...now]];
+      out.push("", "| 攻城砲（3 門，60 秒） | 站著的 20 名，5 格外 | 站著的 40 名，5 格外 | 衝過來的 20 名，12 格外 | 拆 5 座箭樓（3 門＋6 槍） | 拆 10 座箭樓（4 門＋6 槍） |", "|---|---|---|---|---|---|");
+      try {
+        for (const [name, ...v] of VARIANTS) {
+          set(...(v as [number, number, number, number]));
+          const crowd = (n: number, cells: number, stand: boolean) => {
+            const r = siegeCrowd(3, n, cells, stand);
+            return `死 ${r.dead} 名，${r.stones} 發${stand ? "" : `，砲剩 ${r.left}`}`;
+          };
+          const raid = (n: number, towers: number) => {
+            const r = siegeRaid(n, S(6), towers, 0, S(0));
+            return `${r.towersLeft === 0 ? "全拆" : `剩 ${r.towersLeft} 座`}，${(r.ticks / 20).toFixed(0)} 秒`;
+          };
+          out.push(`| ${name} | ${crowd(20, 5, true)} | ${crowd(40, 5, true)} | ${crowd(20, 12, false)} | ${raid(3, 5)} | ${raid(4, 10)} |`);
+        }
+      } finally {
+        set(...now);
       }
       out.push("");
     } finally {

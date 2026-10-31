@@ -259,7 +259,7 @@ function run(): void {
       game: i,
       seed,
       swap,
-      ...(map === "random" ? { map, layout: (g.w.map as RandomMap).layout } : {}),
+      ...(map !== "fixed" ? { map, layout: (g.w.map as RandomMap).layout } : {}),
       styles: r.styles.map((s) => s ?? "none"),
       difficulty,
       ticks: g.tick,

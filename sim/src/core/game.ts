@@ -29,6 +29,7 @@ import { dir16, FNV_OFFSET, fnvBytes, fnvInt32, fnvWord } from "./fixed.ts";
 import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
+import { twinRiversMap } from "./twin-rivers.ts";
 import { FieldCache } from "./paths.ts";
 import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
@@ -44,7 +45,7 @@ export interface GameConfig {
   maxTicks?: number;
   /** Per player: its barracks, ranges and mage halls start with automatic training on (round 6, D-054). Absent: all off. */
   autoTrain?: boolean[];
-  /** Absent: "fixed". "random": a new map from `seed` (D-074). */
+  /** Absent: "fixed". "random": a new map from `seed` (D-074). "twin-rivers": 雙河關. */
   map?: MapMode;
 }
 
@@ -85,7 +86,7 @@ export class Game {
 
   constructor(config: GameConfig) {
     this.config = config;
-    const map = config.map === "random" ? generateRandomMap(config.seed) : generateMap();
+    const map = config.map === "random" ? generateRandomMap(config.seed) : config.map === "twin-rivers" ? twinRiversMap(config.seed) : generateMap();
     this.w = new World(map);
     for (let p = 0; p < PLAYER_COUNT; p++) this.w.autoTrain[p] = config.autoTrain?.[p] === true ? 1 : 0;
     setupScenario(this.w, config.scenario);

@@ -63,9 +63,9 @@ test("the summary's time limit is each game's own, though none reached it; with 
     const json = join(dir, "summary.json");
     const text = execFileSync(process.execPath, [SUMMARY, games, "--json", json], { timeout: 60_000, encoding: "utf8" });
     assert.match(text, /\| 平手（60 分鐘到） \| 0（0\.0%） \|/);
-    assert.match(text, /\| 第 30 分還沒分出勝負（參考，D-112 以前的上限） \| 2（50\.0%） \|/);
-    const summary = JSON.parse(readFileSync(json, "utf8")) as { limitMinutes: number; reference30: { undecided: number } };
-    assert.deepEqual([summary.limitMinutes, summary.reference30.undecided], [60, 2]);
+    assert.match(text, /\| 第 30 分還沒分出勝負（參考，之前的上限） \| 2（50\.0%） \|/);
+    const summary = JSON.parse(readFileSync(json, "utf8")) as { limitMinutes: number; references: { minutes: number; undecided: number }[] };
+    assert.deepEqual([summary.limitMinutes, summary.references.map((r) => [r.minutes, r.undecided])], [60, [[30, 2]]]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -14,6 +14,7 @@ import { allIn, orderCounts, orderState, type OrderState } from "../../game/orde
 import { costText as costLine } from "../../game/govern-wait.ts";
 import { goesOnWalls } from "../../game/walls.ts";
 import { counterShort } from "../../game/counters.ts";
+import { siegeReachText } from "../../game/siege.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
   BuildingField as B,
@@ -468,6 +469,10 @@ export class SelectionInfo {
     el("span", note, "order-meaning", ORDER_TEXT.hold);
     // D-095 (the user: 「把消耗放進說明裡面」): the mages' cannon, always on its own.
     if (ids.some((id) => view.unitType(id) === UnitType.Mage)) el("span", note, "order-meaning cannon-meaning", CANNON_TEXT);
+    // D-115: 攻城砲's two reaches, the two rings round it.
+    const siege = view.rules.units[UnitType.Siege];
+    const reach = siege !== undefined && ids.some((id) => view.unitType(id) === UnitType.Siege) ? siegeReachText(siege) : null;
+    if (reach !== null) el("span", note, "order-meaning siege-reach", reach);
     const formation = el("span", note, "formation-meaning");
     const formationMore = el("span", note, "formation-more");
     this.updaters.push(() => {

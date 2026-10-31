@@ -49,7 +49,10 @@ test("地圖選項：第一次是固定地圖；選了就記在這台裝置；�
   };
   assert.equal(loadMapMode(throwing), "fixed");
   assert.doesNotThrow(() => saveMapMode("random", throwing));
-  assert.deepEqual(MAP_NOTE, { fixed: "每局同一張，適合比較電腦強弱", random: "每局不同，只看得到自己家附近" });
+  assert.deepEqual(MAP_NOTE, { fixed: "每局同一張，適合比較電腦強弱", random: "每局不同，只看得到自己家附近", "twin-rivers": "隨機地圖裡挑出來的一張，有好幾個關口" });
+  // 雙河關 (D-115) is remembered as the others.
+  saveMapMode("twin-rivers", store);
+  assert.equal(loadMapMode(store), "twin-rivers");
 });
 
 const SIZE = 16;

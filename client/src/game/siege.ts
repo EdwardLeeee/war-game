@@ -6,6 +6,18 @@
 // the engine's arm (from_m), its arc arc_m + arc_k × the metres between, from_far_m out when unseen
 // (StoneLook); without, the numbers below. Pure, for the unit tests.
 
+import { CELL } from "../sim.ts";
+
+/**
+ * Its reach in words (D-115: buildings farther than units), under its selection's stance lines, the
+ * simulation's numbers (fixed point); null with no `unitRange` (one reach, the ring says it).
+ */
+export function siegeReachText(info: { range: number; unitRange?: number; minRange?: number }): string | null {
+  if (info.unitRange === undefined) return null;
+  const near = info.minRange ?? 0;
+  return `射程：打建築 ${info.range / CELL} 格、打兵 ${info.unitRange / CELL} 格${near > 0 ? `，${near / CELL} 格內打不到` : ""}`;
+}
+
 /** How far out (cells) a stone whose engine is unseen starts, along `from`. */
 export const FROM_AFAR_CELLS = 6;
 /** Metres up the stone leaves the engine's arm; and starts when it comes from afar. */

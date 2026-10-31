@@ -53,6 +53,13 @@ test("開局畫面：地圖選項，第一次是固定地圖；選隨機地圖�
   await expect(maps.getByRole("radio", { name: "隨機地圖" })).toBeChecked();
   await expect(maps.getByRole("radio", { name: "固定地圖" })).not.toBeChecked();
   await expect(page.locator("#map-note")).toHaveText("每局不同，只看得到自己家附近");
+  // 雙河關 (D-115, R10): the third button, its line.
+  await maps.getByRole("radio", { name: "雙河關" }).tap();
+  await expect(maps.getByRole("radio", { name: "雙河關" })).toBeChecked();
+  await expect(page.locator("#map-note")).toHaveText("隨機地圖裡挑出來的一張，有好幾個關口");
+  await cardFits(page, "雙河關");
+  await shot(page, info, "twin-rivers-start-screen");
+  await maps.getByRole("radio", { name: "隨機地圖" }).tap();
   // The whole start screen still fits on the phone held sideways.
   await cardFits(page, "start");
   await shot(page, info, "random-start-screen");

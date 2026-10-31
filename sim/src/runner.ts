@@ -109,8 +109,8 @@ export class Runner {
     const head: LogHeader = { protocol: PROTOCOL_VERSION, seed: c.seed, scenario: c.scenario as ScenarioName, ai, maxTicks: this.maxTicks, difficulty: this.difficulty };
     // Only when some player has it, so the logs of AI-vs-AI games stay as they were.
     if (c.autoTrain?.some((on) => on) === true) head.autoTrain = Array.from({ length: PLAYER_COUNT }, (_, p) => c.autoTrain?.[p] === true);
-    // Only on a random map, so fixed-map logs stay as they were (D-074).
-    if (c.map === "random") head.map = "random";
+    // Only off the fixed map, so fixed-map logs stay as they were (D-074).
+    if (c.map !== undefined && c.map !== "fixed") head.map = c.map;
     // Only when the screen gave one (D-083), so headless and CI logs stay as they were.
     if (this.build !== undefined) head.build = this.build;
     return head;
