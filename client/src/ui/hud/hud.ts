@@ -105,6 +105,8 @@ export class Hud {
   private dialogTick: (() => void) | null = null;
   /** 收起 (D-054): the selection info shows its title line only, for this game. */
   private collapsed = false;
+  /** 軍團畫面's own 收起 (the user 2026-10-31): set by each tap on a group button, and the other's left alone. */
+  private groupCollapsed = false;
   /** 自動訓練 stopped by a full population somewhere (D-054), as last seen: told once when it starts. */
   private populationFull = false;
   private readonly info: SelectionInfo;
@@ -187,8 +189,17 @@ export class Hud {
       b.type = "button";
       b.setAttribute("aria-label", `編隊 ${i + 1}：點一下選取並打開軍團畫面，點兩下跳過去`);
       // 軍團畫面 (D-054): the tap opens it; the long press that saved the selection is gone
-      // (改成剛才選的 N 名 in the panel does that).
-      this.cleanups.push(pressable(b, { tap: (count) => game.showGroup(i, count === 2) }));
+      // (改成剛才選的 N 名 in the panel does that). Folded each time, with soldiers to order (the user
+      // 2026-10-31: 「我希望選編隊彈出的那個選單默認是是收起的，因為大部分時候我只是要點地板而已」);
+      // with none (nobody in it, or all stationed) the panel is what the tap is for.
+      this.cleanups.push(
+        pressable(b, {
+          tap: (count) => {
+            game.showGroup(i, count === 2);
+            this.groupCollapsed = game.groupMarching(i).length > 0;
+          },
+        }),
+      );
       this.groupBtns.push(b);
     }
     // 「退」 (D-081, 3b-A): left of the buttons, 退1 and 退3 right beside them, 退2 and 退4 one further
@@ -271,9 +282,10 @@ export class Hud {
         const n = game.saveBeforeIntoGroup(i);
         if (n > 0) game.toast(`已存成編隊 ${i + 1}（${n} 個）`);
       },
-      collapsed: () => this.collapsed,
+      collapsed: () => (game.groupView !== null ? this.groupCollapsed : this.collapsed),
       toggleCollapsed: () => {
-        this.collapsed = !this.collapsed;
+        if (game.groupView !== null) this.groupCollapsed = !this.groupCollapsed;
+        else this.collapsed = !this.collapsed;
       },
       openReserve: () => this.openReserve(),
     };

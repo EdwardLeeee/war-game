@@ -92,9 +92,23 @@ export async function saveGroup(page: Page, button: string): Promise<void> {
   await tapOn(page, button);
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".sel-head")).toContainText(/^編隊 \d/);
+  await openPanel(page);
   await panel.getByRole("button", { name: /^改成剛才選的 \d+ 名$/ }).tap();
   // Saved: nothing selected before any more, and the group selected (a message such as 人口滿了 may take the strip).
   await expect(panel.getByRole("button", { name: /^改成剛才選的/ })).toBeHidden();
+}
+
+/**
+ * 軍團畫面 opened, after a tap on a group button: with soldiers to order (they are selected) the tap
+ * folds it, so 展開 comes; with none it stays open (the user 2026-10-31). Read from the selection,
+ * not from the panel, which follows at its next update (late on CI's WebKit).
+ */
+export async function openPanel(page: Page): Promise<void> {
+  const panel = page.locator(".sel-info");
+  await expect(panel.locator(".sel-head")).toContainText(/^編隊 \d/);
+  const selected = await page.evaluate(() => window.__proto?.game?.selection().units.length ?? 0);
+  if (selected > 0) await panel.getByRole("button", { name: "展開選取資訊" }).tap();
+  await expect(panel.getByRole("button", { name: "收起選取資訊" })).toBeVisible();
 }
 
 /**

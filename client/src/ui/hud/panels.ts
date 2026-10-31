@@ -249,6 +249,8 @@ export class SelectionInfo {
   private readonly host: PanelHost;
   private key = "";
   private updaters: Updater[] = [];
+  /** 收起 of the panel built (a second tap on a group button folds it with no rebuild). */
+  private foldButton: HTMLButtonElement | null = null;
 
   constructor(parent: HTMLElement, host: PanelHost) {
     this.host = host;
@@ -270,6 +272,7 @@ export class SelectionInfo {
       if (key !== "none") this.build(view);
     }
     for (const u of this.updaters) u();
+    if (this.foldButton !== null) this.fold(this.foldButton);
   }
 
   private keyFor(view: GameView): string {
@@ -299,6 +302,7 @@ export class SelectionInfo {
   private build(view: GameView): void {
     const close = button(this.el, "✕", "", () => this.host.clearSelection(), "sel-close secondary");
     close.setAttribute("aria-label", "取消選取");
+    this.foldButton = null;
     this.content(view);
     // 收起 (D-054: 「要有一個把資訊欄位收起來的鍵，不然進攻的時候擋掉太多視野」): at the end of the title line.
     const head = this.el.querySelector<HTMLElement>(".sel-head");
@@ -307,6 +311,7 @@ export class SelectionInfo {
       this.host.toggleCollapsed();
       this.fold(fold);
     }, "sel-fold secondary");
+    this.foldButton = fold;
     this.fold(fold);
   }
 
@@ -315,7 +320,9 @@ export class SelectionInfo {
     const collapsed = this.host.collapsed();
     this.el.classList.toggle("collapsed", collapsed);
     const label = b.querySelector(".label") as HTMLElement;
-    label.textContent = collapsed ? "展開" : "收起";
+    const text = collapsed ? "展開" : "收起";
+    if (label.textContent === text) return;
+    label.textContent = text;
     b.setAttribute("aria-label", collapsed ? "展開選取資訊" : "收起選取資訊");
   }
 

@@ -11,7 +11,7 @@
 // and villagers up to 40) until step 8d pauses the barracks, so the counts before that say "at least".
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, openBox, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { armyButton, openBox, openPanel, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
 import { doubleTap, longPress, tap, tapOn } from "./touch.ts";
 
 const FARMER = 0;
@@ -362,6 +362,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   const stationed = await garrison(page, town.id);
   const loose = (await own(page, [SPEARMAN])).filter((u) => !grouped.includes(u.id) && !stationed.includes(u.id)).length;
   await tapOn(page, ".groups > button:nth-child(1)");
+  await openPanel(page);
   const wantMore = page.locator(".sel-info").getByRole("button", { name: "多要 1 名槍兵" });
   for (let k = 0; k <= loose; k++) await wantMore.tap();
   // 不選村民蓋民居：重設 → 建造 → 民居 → ✓，由模擬派最近的村民去蓋. Placed while paused, so
@@ -442,6 +443,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await tapOn(page, ".groups > button:nth-child(1)");
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".sel-head")).toContainText("編隊 1");
+  await openPanel(page);
   const g1Now = (await groupInfo(page))[0];
   // Those stationed in the town (8, 8c) stay there (the user 2026-10-26).
   const inTown = await garrison(page, town.id);
