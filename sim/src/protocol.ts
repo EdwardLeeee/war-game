@@ -223,6 +223,11 @@ export const Order = {
    * down to the cell inside the walls it climbed from.
    */
   Wall: 11,
+  /**
+   * Guarding a town (`guard`, TOWN_GUARD; the user 2026-10-31): orderTarget is the town, anchorX/Y its place inside. It
+   * walks in and stays within the walls: see `guard`. Any move, attack, retreat or stop ends it, as does losing the town.
+   */
+  TownGuard: 12,
 } as const;
 export type Order = (typeof Order)[keyof typeof Order];
 
@@ -909,6 +914,13 @@ export type CommandBody =
   | { c: "wall"; u: number[]; town: number }
   /** Units of `u` standing on (or going up onto) town `town`'s walls come down (D-096). */
   | { c: "leave_wall"; u: number[]; town: number }
+  /**
+   * Soldiers of `u` guard town `town`, held by the player (the user 2026-10-31): ranged units and mages go up onto its
+   * walls as `wall` does; the others, and those with no wall cell left, walk in and hold (Order.TownGuard). They hit what
+   * they can reach from where they stand; go for an enemy inside the walls; go onto a gate being broken and hit who is
+   * at it, never further out; hide inside from shooters they cannot reach; and go back to their place when it is over.
+   */
+  | { c: "guard"; u: number[]; town: number }
   /** Spearmen in `u` go and stand guard at an own finished outpost (D-080; others in `u` are left as they are). */
   | { c: "post"; u: number[]; building: number }
   /** Every spearman posted at the outpost stops guarding it (D-080). */
@@ -952,6 +964,7 @@ export const COMMAND_KINDS = [
   "leave",
   "wall",
   "leave_wall",
+  "guard",
   "post",
   "unpost",
   "outpost_mode",
