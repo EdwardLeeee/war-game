@@ -20,6 +20,7 @@ test("test=1 turns on the hook and allows a faster tick rate and the fake world"
   assert.equal(parseParams("?test=1&mock=1").round7, false);
   assert.equal(parseParams("?test=1&mock=1&r7=1").round7, true);
   assert.equal(parseParams("?test=1&map=random").map, "random");
+  assert.equal(parseParams("?test=1&map=twin-rivers").map, "twin-rivers");
   assert.equal(parseParams("?test=1&map=fixed").map, "fixed");
   assert.equal(parseParams("?test=1&map=huge").map, null);
   assert.equal(parseParams("?test=1&watch=1").watch, true);

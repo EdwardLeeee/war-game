@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AFAR_M, dirStep, FROM_AFAR_CELLS, RELEASE_M, stoneAt, stoneOf } from "../src/game/siege.ts";
+import { AFAR_M, dirStep, FROM_AFAR_CELLS, RELEASE_M, siegeReachText, stoneAt, stoneOf } from "../src/game/siege.ts";
 
 const cellOf = (fixed: number) => fixed / 1024;
 
@@ -46,4 +46,10 @@ test("art-v6 的石頭（effects siege_stone）：從攻城砲的手臂出手（
   // Unseen, from the east (from 0): 14 m (7 cells) out.
   const far = stoneOf({ x: 20 * 1024, y: 10 * 1024, lands: 120, from: 0 }, null, 100, (f) => f / 1024, look);
   assert.equal(far?.fromX, 27);
+});
+
+test("攻城砲的射程說明（D-115）：打建築和打兵分開寫，數字是模擬的；沒有 unitRange 就不寫", () => {
+  assert.equal(siegeReachText({ range: 10 * 1024, unitRange: 6 * 1024, minRange: 3 * 1024 }), "射程：打建築 10 格、打兵 6 格，3 格內打不到");
+  assert.equal(siegeReachText({ range: 10 * 1024, unitRange: 6 * 1024 }), "射程：打建築 10 格、打兵 6 格");
+  assert.equal(siegeReachText({ range: 10 * 1024 }), null);
 });

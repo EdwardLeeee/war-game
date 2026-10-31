@@ -409,7 +409,8 @@ export class MockPort implements SimPort {
     this.walls = walls;
     this.siege = siege;
     this.rules = keep ? mockRulesKeep() : market ? mockRulesMarket() : siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
-    this.randomMap = map === "random";
+    // 雙河關 (D-115) reaches the screen as a random map does (PROTOCOL.md: mapInfo.mode "random").
+    this.randomMap = map !== "fixed";
     this.gallery = gallery;
   }
 

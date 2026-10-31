@@ -704,8 +704,8 @@ export class Game implements GestureHost {
       maxTicks: this.options.maxTicks,
       tps: this.options.tps,
       scenario: this.options.scenario,
-      // Only a random map says so (D-074): a fixed map's init and log stay as they were.
-      ...(this.options.map === "random" ? { map: "random" as const } : {}),
+      // Only a map other than the fixed one says so (D-074, 雙河關 D-115): a fixed map's init and log stay as they were.
+      ...(this.options.map !== "fixed" ? { map: this.options.map } : {}),
       build: this.options.build,
       // 自動訓練 by the screen (D-098): the simulation's own off for the person from the start (PROTOCOL.md
       // 6, init.autoTrain); the other player's as the simulation would have it (a test page's ?ai=0: on).
