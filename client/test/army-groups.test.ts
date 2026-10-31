@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ArmyBook, type ArmyUnit, groupWantMax, mostlyLoose, RECRUIT_RECHECK_TICKS, redirects, type TownArea } from "../src/game/army.ts";
+import { ArmyBook, type ArmyUnit, groupWantMax, mostlyLoose, movedText, RECRUIT_RECHECK_TICKS, redirects, type TownArea } from "../src/game/army.ts";
 import { CELL, UnitType } from "../src/sim.ts";
 
 const FARMER = UnitType.Farmer;
@@ -515,4 +515,33 @@ test("每兵種上限跟著人口天花板：現在是 rules 的 120；模擬給
   const book = new ArmyBook();
   book.setWant(0, RANGED, groupWantMax({ maxPopulation: 120 }), w.typeOf);
   assert.deepEqual(book.groups[0].want, { [RANGED]: 120 });
+});
+
+// --- 被踢出的兵 (the user 2026-10-31: 「兵如果從一個編隊被踢出，假如有別的編隊缺兵應該要加入」) ------------
+
+test("被踢出的兵：減人、清空、重存編隊都回報離開的兵；交給補兵時不用等他們站著沒事，照最缺的編隊加入；留守的兵不動", () => {
+  const w = new World();
+  const book = new ArmyBook();
+  book.saveGroup(0, w.many(1, 6, SPEAR, 10, 10));
+  book.setWant(1, SPEAR, 2, w.typeOf);
+  book.setWant(2, SPEAR, 4, w.typeOf);
+  const out = book.setWant(0, SPEAR, 3, w.typeOf);
+  assert.deepEqual(out, [4, 5, 6]);
+  // All marching (no one idle): only those put out are taken, by the group most short.
+  assert.deepEqual(book.draft(w.army(), (id) => out.includes(id)), [
+    { group: 2, ids: [4, 5] },
+    { group: 1, ids: [6] },
+  ]);
+  assert.deepEqual(book.clearGroup(2), [4, 5]);
+  // 重存: those of the group left out are put out; those stationed stay in it, as those newly saved.
+  book.stationAll(0, [1]);
+  assert.deepEqual(book.saveGroup(0, [{ id: 4, type: SPEAR }], w.typeOf), [2, 3]);
+  assert.deepEqual(book.groups[0].ids, [4, 1]);
+  assert.deepEqual(book.clearGroup(1), [6]);
+});
+
+test("改編入的提示：同一種兵寫兵種，不同種寫「兵」", () => {
+  const names = { [SPEAR]: "槍兵", [RANGED]: "遠程兵" };
+  assert.equal(movedText([SPEAR, SPEAR, SPEAR], 1, names), "3 名槍兵改編入編隊 2");
+  assert.equal(movedText([SPEAR, RANGED], 0, names), "2 名兵改編入編隊 1");
 });

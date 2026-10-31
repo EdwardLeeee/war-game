@@ -92,9 +92,20 @@ export async function saveGroup(page: Page, button: string): Promise<void> {
   await tapOn(page, button);
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".sel-head")).toContainText(/^編隊 \d/);
+  await openPanel(page);
   await panel.getByRole("button", { name: /^改成剛才選的 \d+ 名$/ }).tap();
   // Saved: nothing selected before any more, and the group selected (a message such as 人口滿了 may take the strip).
   await expect(panel.getByRole("button", { name: /^改成剛才選的/ })).toBeHidden();
+}
+
+/**
+ * 軍團畫面 opened: a tap on a group with soldiers folds it (the user 2026-10-31), empty it stays
+ * open. After that tap: the panel follows on the next interface update (10 a second).
+ */
+export async function openPanel(page: Page): Promise<void> {
+  await page.waitForTimeout(150);
+  const open = page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" });
+  if (await open.isVisible()) await open.tap();
 }
 
 /**

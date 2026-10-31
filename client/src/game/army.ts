@@ -128,6 +128,16 @@ export function mostlyLoose(ids: number[], isLoose: (id: number) => boolean): bo
   return ids.filter(isLoose).length * 2 > ids.length;
 }
 
+/**
+ * Soldiers put out of a group and taken by another at once (the user 2026-10-31: 「兵如果從一個編隊
+ * 被踢出，假如有別的編隊缺兵應該要加入」), for the message strip: 「3 名槍兵改編入編隊 2」, 「3 名兵…」
+ * with more than one type. `types`: theirs; `group`: its index.
+ */
+export function movedText(types: readonly number[], group: number, names: Record<number, string>): string {
+  const one = types.every((t) => t === types[0]);
+  return `${types.length} 名${one ? (names[types[0]] ?? "兵") : "兵"}改編入編隊 ${group + 1}`;
+}
+
 /** Squared distance from the unit to the town centre, fixed point (within 2^53 on any map). */
 function toCentre2(u: ArmyUnit, town: TownArea): number {
   const dx = u.x - (town.cellX * CELL + CELL / 2);
@@ -498,9 +508,9 @@ export class ArmyBook {
    * it has. A unit belongs to one group only: it leaves the others, and their 原本 shrinks
    * with it (the player is regrouping, which must not read as losses to fill). Its members
    * stationed in towns or at outposts stay in it (the group's button does not select them):
-   * `typeOf` gives their types, null for the dead.
+   * `typeOf` gives their types, null for the dead. Returns those it put out of group i.
    */
-  saveGroup(i: number, units: { id: number; type: number }[], typeOf: (id: number) => number | null = () => null): void {
+  saveGroup(i: number, units: { id: number; type: number }[], typeOf: (id: number) => number | null = () => null): number[] {
     this.groups.forEach((g, k) => {
       if (k === i) return;
       for (const u of units) {
@@ -519,10 +529,12 @@ export class ArmyBook {
     const ids = units.map((u) => u.id);
     const want: Record<number, number> = {};
     for (const u of units) if (isSoldier(u.type)) want[u.type] = (want[u.type] ?? 0) + 1;
+    const out = g.ids.filter((id) => !ids.includes(id));
     g.ids = ids;
     g.want = want;
     g.saved = ids.length;
     g.recruits = g.recruits.filter((r) => ids.includes(r.id));
+    return out;
   }
 
   /**

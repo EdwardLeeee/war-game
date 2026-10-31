@@ -67,8 +67,8 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   await expect(page.getByText("點自己持有的城鎮：選的兵走進去留守")).toBeVisible();
   await expect(page.locator(".cmds").getByRole("button", { name: /^取消/ })).toBeVisible();
   await shot(page, info, "station-2-pick-a-town");
-  // 軍團畫面 put away (收起), as a player does to see the map under it.
-  await page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" }).tap();
+  // 軍團畫面 folded by the tap on the group (the user 2026-10-31): the map under it is free.
+  await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
   await expect(page.getByText("點自己持有的城鎮：選的兵走進去留守")).toBeVisible();
   // Not ours: why.
   await tap(page, await at(page, { x: NEUTRAL_TOWN.x + 0.5, y: NEUTRAL_TOWN.y + 2.5 }));
