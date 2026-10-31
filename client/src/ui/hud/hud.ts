@@ -196,7 +196,7 @@ export class Hud {
         pressable(b, {
           tap: (count) => {
             game.showGroup(i, count === 2);
-            this.groupCollapsed = game.groupMarching(i).length > 0;
+            this.groupCollapsed = game.groupOnCall(i).length > 0;
           },
         }),
       );
@@ -226,7 +226,6 @@ export class Hud {
       startPlacement: (t: Parameters<Game["startPlacement"]>[0]) => game.startPlacement(t),
       openEconomy: () => this.openEconomy(),
       chooseTown: (town: number, choice: TownChoice) => this.chooseTown(town, choice, this.defaultKeep(town)),
-      leaveWall: () => game.leaveWall(),
       wallCount: (town: number) => game.wallCount(town),
       governCost: (town: number) => game.governCost(town),
       governShortfall: (town: number) => game.governShortfall(town),
@@ -357,7 +356,7 @@ export class Hud {
       const b = this.groupBtns[i];
       b.classList.toggle("alarm", a.alarm);
       // R6-12: lit while what is selected is this group (what its button selects: not those stationed in towns).
-      if (this.formal) b.classList.toggle("is-active", g.saved > 0 && this.isSelected(this.game.groupMarching(i)));
+      if (this.formal) b.classList.toggle("is-active", g.saved > 0 && this.isSelected(this.game.groupOnCall(i)));
       // 現有 counts those stationed in towns or at outposts and those hiding, still the group's (ceo
       // 2026-10-26: 5/5); 駐N and 躲N on its top edge say how many (the user: 「分開顯示」).
       const count = a.alarm && a.base !== null ? `剩 ${a.present}/${a.base}` : `${this.alive(g.ids).length}/${g.saved}`;

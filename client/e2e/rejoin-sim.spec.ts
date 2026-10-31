@@ -83,8 +83,8 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await page.locator(".cmds").getByRole("button", { name: /^駐軍/ }).tap();
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [town.cx, town.cy] as const);
   await tap(page, await at(page, { x: town.cx + 0.5, y: town.cy + 0.5 }));
-  // Those selected, still living (a soldier 自動訓練 trains for the group from now on is not one of
-  // them: it joins group 1 and is no 留守, CI run 40804899732).
+  // Those selected, still living (a soldier 自動訓練 trains for the group from now on may walk in
+  // behind them as one more 留守, CI run 40804899732).
   await expect.poll(async () => {
     const all = await garrison();
     const living = (await units(page)).map((u) => u.id);
@@ -97,9 +97,11 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
   await expect(panel.locator(".sel-head")).toContainText(/^編隊 1/);
-  // All of it stationed: nothing to order, the panel stays open (the user 2026-10-31).
+  // Its button selects those in the town too (the user 2026-10-31), the panel folded.
+  await panel.getByRole("button", { name: "展開選取資訊" }).tap();
   await panel.getByRole("button", { name: "出城歸隊" }).tap();
-  await expect.poll(said).toContain(`${alive.length - 1} 名出城歸隊編隊 1，留 1 名守城`);
+  // How many: 自動訓練 may have sent one more in by now.
+  await expect.poll(said).toMatch(/\d+ 名出城歸隊編隊 1，留 1 名守城/);
   const kept = await garrison();
   expect(kept).toHaveLength(1);
   // The others march off, far from the town: it keeps its 1 and does not count down.
@@ -110,7 +112,7 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   // Still being repaired, or governed by now: either needs its 1 (sim/src/core/towns.ts).
   const held = (await towns(page)).find((t) => t.id === town.id);
   expect([REPAIRING, GOVERNED]).toContain(held?.state);
-  // Its 1 at least: a soldier 自動訓練 sent after group 1 may be passing through (CI run 41192087489).
+  // Its 1 at least: a soldier 自動訓練 trained for group 1 stands in the town too (CI run 41192087489).
   expect(held?.garrison).toBeGreaterThanOrEqual(1);
   expect(held?.revoltTimer, "manned: no revolt").toBe(0);
   // 全部帶走 on the town's panel: the last one out, and the town counts down. A tap on its ground,
