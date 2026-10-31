@@ -1476,6 +1476,112 @@ test("D-081 / A4 (fortAgain): after breaking off from a fort, the next go takes 
   }
 });
 
+// --- D-086 A9: the user's 8d02b76f, minutes 60-80: 248 soldiers turned back 70 times -----------------------------
+
+/** Hard's 20 spearmen at (70, 78), its main city far off: towers on their way to the enemy's main city, not on the way from its own. */
+function fortsOffHomeLine(more: Partial<HardPlan>) {
+  const f = fortsOnTheWay(5, true, more, "hard", [74, 50]);
+  const u = f.w.units.col;
+  let k = 0;
+  for (let s = 0; s < f.w.units.count; s++) {
+    if (u.owner[s] !== 0 || u.type[s] !== UnitType.Spearman) continue;
+    u.x[s] = (70 + (k % 6)) << 10;
+    u.y[s] = (78 + Math.trunc(k / 6)) << 10;
+    k++;
+  }
+  f.g.fog.update(f.w);
+  return f;
+}
+/** Its commands to all 20 over `n` thinks, 10 ticks apart: "m" a move out, "h" a move home, "r" a retreat, "-" neither. */
+function armyOrders(f: ReturnType<typeof fortsOffHomeLine>, n: number): string {
+  let out = "";
+  for (let t = 0; t < n; t++) {
+    const big = f.ai.think(buildView(f.g, 0)).filter((c) => (c.c === "move" || c.c === "retreat") && c.u.length === 20) as { c: string; x: number; y: number }[];
+    const s0 = f.w.map.spawns[0];
+    const home = big.length > 0 && (big[0].x - s0.cellX) ** 2 + (big[0].y - s0.cellY) ** 2 <= 16 * 16;
+    out += big.length === 0 ? "-" : big[0].c === "retreat" ? "r" : home ? "h" : "m";
+    f.w.tick += 10;
+    f.g.fog.update(f.w);
+  }
+  return out;
+}
+
+test("D-086 A9 (plan.routeFromArmy): clear of forts from its main city but not from where the army stands, it does not set out; off, it sets out and turns back at every think", () => {
+  assert.equal(armyOrders(fortsOffHomeLine({}), 4), "mrmr", "off: the back and forth of 8d02b76f");
+  assert.ok(!armyOrders(fortsOffHomeLine({ routeFromArmy: true }), 4).includes("m"), "on: it does not set out");
+});
+
+/** As fortAgain's test: 8 spearmen go for a tower, 6 fall, it breaks off; then `more` soldiers more than set out, `later` ticks on: does it go again? */
+function goesAgain(fortExit: number, more: number, later: number, opts: { full?: boolean; lostAgain?: boolean } = {}): boolean {
+  const saved = HARD.fortExit;
+  HARD.fortExit = fortExit;
+  const { g, w, ai, fort, spears, centre } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty: "hard" });
+  HARD.fortExit = saved;
+  const farmers: number[] = [];
+  for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) farmers.push(w.units.col.id[s]);
+  kill(g, [...spears.slice(2), ...farmers]);
+  w.tick += 10;
+  g.fog.update(w);
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "ground down, it breaks off");
+  const home = spawnCentre(w.map.frames[0], w.map.spawns[0]);
+  const add = (n: number) => Array.from({ length: n }, (_, k) => put(g, 0, UnitType.Spearman, home.x - 4 - (k % 6), home.y - 4 - Math.trunc(k / 6)));
+  const goes = (out: CommandBody[]) => out.some((c) => (c.c === "attack" && c.target === fort) || (c.c === "move" && c.x === centre.x && c.y === centre.y));
+  let army = add(8);
+  w.tick += 700;
+  g.fog.update(w);
+  if (opts.lostAgain) {
+    // 2 + 8 = 10 go again (1.25 x) and fall in turn.
+    assert.ok(goes(ai.think(buildView(g, 0))), "with 1.25 x it goes again");
+    kill(g, [...spears.slice(0, 2), ...army.slice(2)]);
+    w.tick += 10;
+    g.fog.update(w);
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "ground down again, it breaks off");
+    army = add(10);
+    w.tick += 700;
+    g.fog.update(w);
+  } else {
+    kill(g, army.slice(Math.max(0, 6 + more)));
+    add(Math.max(0, 6 + more - army.length));
+  }
+  w.tick += later;
+  g.fog.update(w);
+  const v = buildView(g, 0);
+  if (opts.full) {
+    v.header[HeaderField.population] = 100;
+    v.header[HeaderField.populationCap] = 100;
+    v.header[HeaderField.populationCeiling] = 100;
+  }
+  return goes(ai.think(v));
+}
+
+test("D-086 A9 (plan.fortExit): the memory of a break-off holds no army 1.2 x the one that broke off, none clearly stronger, none with its population full; two lost in a row, it holds again", () => {
+  assert.equal(goesAgain(0, 2, 0), false, "off: 1.25 x is not the 2 x it asks");
+  assert.equal(goesAgain(99, 2, 0), true, "on: 1.25 x goes");
+  assert.equal(goesAgain(99, 0, 0), false, "on: as many as broke off do not");
+  assert.equal(goesAgain(1, 0, 0), true, "on: as many, but past what the fort asks by fortExit");
+  assert.equal(goesAgain(99, 0, 0, { full: true }), true, "on: as many with the population full");
+  assert.equal(goesAgain(0, 0, 0, { full: true }), false, "off: not with the population full either");
+  assert.equal(goesAgain(99, 0, 0, { lostAgain: true }), false, "two lost in a row: the memory holds, 12 of 10 or not");
+  assert.equal(goesAgain(99, 0, 10 * 1200 + 10, { lostAgain: true }), true, "and is forgotten: 10 minutes on it goes");
+});
+
+test("D-086 A9 (plan.fortExit): turning back from forts ahead without a fight writes no memory", () => {
+  /** Off the home line, routeFromArmy off: it sets out and turns back; 15 join it, what the forts ask met, short of 2 x; does it turn back again? */
+  const turnsAgain = (fortExit: number) => {
+    const f = fortsOffHomeLine({ fortExit });
+    assert.equal(armyOrders(f, 2), "mr");
+    for (let k = 0; k < 15; k++) put(f.g, 0, UnitType.Spearman, 64 + (k % 5), 78 + Math.trunc(k / 5));
+    f.w.tick += 400;
+    f.g.fog.update(f.w);
+    f.ai.think(buildView(f.g, 0));
+    f.w.tick += 10;
+    f.g.fog.update(f.w);
+    return f.ai.think(buildView(f.g, 0)).some((c) => c.c === "retreat" && c.u.length === 35);
+  };
+  assert.equal(turnsAgain(0), true, "off: 35 is short of 2 x the 20 it wrote down turning back");
+  assert.equal(turnsAgain(99), false, "on: nothing written, 35 go on");
+});
+
 test("D-081: hard does not go back to a town it fell back from because of forts while it remembers them, though the straight way from home misses them", switchedOff([KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET], () => {
   // The old rules (the D-100 batch off): this is about forts; with keeps, a town asks keepTownArmy (D-100).
   const g = emptyGame();
