@@ -22,9 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # AI-against-AI games' time limit (D-112; the user 2026-10-27: 「我跟ai打每次都超過30分鐘阿」): 60 minutes once
-  # KEEP, SIEGE, RICH and MARKET are on, its draws gated; the summaries list the old 30 minutes for reference.
-  AI_TICKS: "72000"
+  # AI-against-AI games' time limit (D-112, D-115; the user 2026-10-31: 「我覺得你對打不應該只限制60分鐘」): 120 minutes,
+  # its draws gated; the summaries list the old 30 and 60 minutes for reference. The scripted groups' too (--cap).
+  AI_TICKS: "144000"
 
 jobs:
   test:
@@ -209,7 +209,7 @@ jobs:
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
     name: scripted (${{ matrix.difficulty == 'hard' && 'hard ' || '' }}${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -345,7 +345,7 @@ jobs:
             }
             out.push("");
           }
-          out.push("贏/局數；括號是到第 50 分還沒分出勝負的局。前 15／20 局是 D-049 以前 CI 跑的局，逐局相同。");
+          out.push("贏/局數；括號是到上限（120 分）還沒分出勝負的局。前 15／20 局是 D-049 以前 CI 跑的局，逐局相同。");
           console.log(out.join("\n"));
           EOF
           node summary.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
@@ -357,7 +357,7 @@ jobs:
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
     name: scripted late (${{ matrix.difficulty }} ${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -441,19 +441,19 @@ jobs:
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
     name: scripted turtle (${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         cell:
-          - { group: push-turtle, seeds: 1-10, args: --strategy push --speed h1 --formation close --turtle --cap 90 }
-          - { group: push-turtle, seeds: 11-20, args: --strategy push --speed h1 --formation close --turtle --cap 90 }
-          - { group: push-turtle, seeds: 21-30, args: --strategy push --speed h1 --formation close --turtle --cap 90 }
-          - { group: push-turtle, seeds: 31-40, args: --strategy push --speed h1 --formation close --turtle --cap 90 }
-          - { group: push-turtle-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --turtle --cap 90 --map random }
-          - { group: push-turtle-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --turtle --cap 90 --map random }
-          - { group: push-turtle-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --turtle --cap 90 --map random }
-          - { group: push-turtle-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --turtle --cap 90 --map random }
+          - { group: push-turtle, seeds: 1-10, args: --strategy push --speed h1 --formation close --turtle --cap 120 }
+          - { group: push-turtle, seeds: 11-20, args: --strategy push --speed h1 --formation close --turtle --cap 120 }
+          - { group: push-turtle, seeds: 21-30, args: --strategy push --speed h1 --formation close --turtle --cap 120 }
+          - { group: push-turtle, seeds: 31-40, args: --strategy push --speed h1 --formation close --turtle --cap 120 }
+          - { group: push-turtle-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --turtle --cap 120 --map random }
+          - { group: push-turtle-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --turtle --cap 120 --map random }
+          - { group: push-turtle-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --turtle --cap 120 --map random }
+          - { group: push-turtle-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --turtle --cap 120 --map random }
     env:
       NAME: turtle-hard-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
     defaults:
@@ -535,19 +535,19 @@ jobs:
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
     name: scripted crush (${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         cell:
-          - { group: push-crush, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
-          - { group: push-crush, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
-          - { group: push-crush, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
-          - { group: push-crush, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 }
-          - { group: push-crush-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
-          - { group: push-crush-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
-          - { group: push-crush-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
-          - { group: push-crush-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 90 --map random }
+          - { group: push-crush, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 120 }
+          - { group: push-crush, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 120 }
+          - { group: push-crush, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 120 }
+          - { group: push-crush, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 120 }
+          - { group: push-crush-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 120 --map random }
+          - { group: push-crush-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 120 --map random }
+          - { group: push-crush-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 120 --map random }
+          - { group: push-crush-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --crush --early-towns 6 --bonus 30 --cap 120 --map random }
     env:
       NAME: crush-hard-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
     defaults:
@@ -633,7 +633,7 @@ jobs:
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
     name: scripted harass (${{ matrix.difficulty }} ${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

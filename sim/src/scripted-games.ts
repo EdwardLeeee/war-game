@@ -54,7 +54,7 @@ if (style !== "" && !(AI_STYLES as readonly string[]).includes(style)) throw new
 const seeds = seedList(arg("seeds", "1-5"));
 const think = Number(arg("think", String(SCRIPTED_THINK_EVERY)));
 /** Games still going at this game minute are stopped and counted apart. */
-const CAP = Number(arg("cap", "50")) * 1200;
+const CAP = Number(arg("cap", "120")) * 1200;
 /** D-081: an AI soldier dying this near (cells) one of the player's finished forts counts as lost to it. */
 const FORT_NEAR = 12;
 /** D-081: a bash that cost the AI this many soldiers and pulled down none of the player's forts failed. */
