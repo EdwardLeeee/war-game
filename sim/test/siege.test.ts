@@ -71,15 +71,20 @@ test("SIEGE off, MARKET on (ceo 2026-10-29: one switch of the batch off alone): 
 
 test("switched on: the GDD's values; rules send them; the works needs a range and trains engines", switchedOn(SIEGE, () => {
   assert.deepEqual(
-    [SIEGE_INFO.hp, SIEGE_INFO.attack, SIEGE_INFO.range, SIEGE_INFO.minRange, SIEGE_INFO.splash, SIEGE_INFO.cooldown, SIEGE_INFO.sight, SIEGE_INFO.cost.wood, SIEGE_INFO.cost.gold, SIEGE_INFO.trainTicks],
-    [140, 35, 10 * CELL, 3 * CELL, CELL, 100, 10, 150, 100, 800],
+    [SIEGE_INFO.hp, SIEGE_INFO.attack, SIEGE_INFO.range, SIEGE_INFO.unitRange, SIEGE_INFO.minRange, SIEGE_INFO.splash, SIEGE_INFO.cooldown, SIEGE_INFO.sight, SIEGE_INFO.cost.wood, SIEGE_INFO.cost.gold, SIEGE_INFO.trainTicks],
+    [140, 15, 10 * CELL, 6 * CELL, 3 * CELL, CELL, 100, 10, 150, 100, 800],
   );
   const works = BUILDINGS[BuildingType.SiegeWorks];
   assert.deepEqual([works.size, works.hp, works.cost.wood, works.buildTicks, works.trains, works.requires], [3, 500, 200, 900, [UnitType.Siege], [BuildingType.Range]]);
   const r = rules();
   assert.equal(r.features.siege, true);
-  assert.equal(r.units[UnitType.Siege].attack, 35);
-  assert.deepEqual(r.siege, { vsBuildings: 3, flightTicks: 20 });
+  assert.equal(r.units[UnitType.Siege].attack, 15);
+  assert.equal(r.units[UnitType.Siege].unitRange, 6 * CELL);
+  assert.deepEqual(r.siege, { vsBuildings: 7, flightTicks: 20 });
+  // D-115: buildings take what they took before (105); a gate 270 for its 280: as many stones as before (a small
+  // town's 850 hp 4, a big city's 2100 hp 8; 19 x 15 = 285 would take the small town's in 3).
+  assert.deepEqual([SIEGE_INFO.attack * SIEGE.vsBuildings, SIEGE_INFO.attack * GATE.siege], [105, 270]);
+  assert.deepEqual(GATE.hp.map((hp) => Math.ceil(hp / (SIEGE_INFO.attack * GATE.siege))), [4, 8]);
   assert.equal(damage(UNITS[UnitType.Cavalry].attack, UnitType.Cavalry, UnitType.Siege), 22, "cavalry x2");
   const g = emptyGame();
   const a = openArea(g, 24);
@@ -97,7 +102,7 @@ test("switched on: the GDD's values; rules send them; the works needs a range an
   assert.equal(g.w.trained[UnitType.Siege], 1, "an engine trained");
 }));
 
-test("a stone lands a second after it is thrown: the siege_shot event says where and when, the tower takes 3 x 35 then", switchedOn(SIEGE, () => {
+test("a stone lands a second after it is thrown: the siege_shot event says where and when, the tower takes 105 then", switchedOn(SIEGE, () => {
   const { g, tower } = towerScene(10);
   const hp0 = hpOf(g, tower);
   let shot: { x: number; y: number; lands: number; at: number } | null = null;
@@ -157,8 +162,8 @@ test("splash: every enemy within a cell of where it lands, never its own side; o
   const g = emptyGame();
   const a = openArea(g, 30);
   const u = g.w.units.col;
-  const engine = put(g, 0, UnitType.Siege, a.x + 4, a.y + 10);
-  // Two enemies side by side 8 cells east, one of ours beside them, an enemy 2 cells further.
+  const engine = put(g, 0, UnitType.Siege, a.x + 7, a.y + 10);
+  // Two enemies side by side 5 cells east, one of ours beside them, an enemy 2 cells further.
   const e1 = put(g, 1, UnitType.Spearman, a.x + 12, a.y + 10);
   const e2 = put(g, 1, UnitType.Spearman, a.x + 12, a.y + 11);
   const own = put(g, 0, UnitType.Spearman, a.x + 13, a.y + 10);
@@ -195,6 +200,33 @@ test("splash: every enemy within a cell of where it lands, never its own side; o
   u.x[runner] += 3 * CELL;
   while (g.tick < next) g.step();
   assert.equal(u.hp[slotOf(g, aim)], before, "it was not there");
+})));
+
+test("D-115: units from 6 cells, not from 10: two enemies 8 cells off draw no stone, it throws once they stand within 6, and told to attack it walks up to 6", switchedOn(SIEGE, switchedOff(KEEP, () => {
+  const g = emptyGame();
+  const a = openArea(g, 30);
+  const u = g.w.units.col;
+  const engine = put(g, 0, UnitType.Siege, a.x + 4, a.y + 10);
+  const e1 = put(g, 1, UnitType.Spearman, a.x + 12, a.y + 10);
+  const e2 = put(g, 1, UnitType.Spearman, a.x + 12, a.y + 11);
+  for (const id of [e1, e2]) {
+    u.stance[slotOf(g, id)] = Stance.Hold;
+    u.cooldown[slotOf(g, id)] = 1 << 20;
+  }
+  g.fog.update(g.w);
+  const thrown = (ticks: number) => {
+    for (let t = 0; t < ticks; t++) {
+      g.step();
+      if (g.events.some((e) => e.to === 0 && e.ev.k === "siege_shot")) return true;
+    }
+    return false;
+  };
+  assert.equal(thrown(200), false, "8 cells off: seen, not thrown at");
+  assert.equal(u.x[slotOf(g, engine)] >> 10, a.x + 4, "and it stays");
+  cmd(g, 0, { c: "attack", u: [engine], target: e1 });
+  assert.equal(thrown(200), true, "it walks up");
+  const dx = (u.x[slotOf(g, e1)] - u.x[slotOf(g, engine)]) / CELL;
+  assert.ok(dx <= 6 && dx >= 5, `thrown from ${dx} cells`);
 })));
 
 test("a stone on a gate does GATE.siege times its attack", switchedOn(SIEGE, () => {

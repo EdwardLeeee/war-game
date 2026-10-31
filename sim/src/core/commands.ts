@@ -92,6 +92,7 @@ function placed(w: World, slots: number[], stay: boolean): void {
   for (const s of slots) {
     if (u.type[s] !== UnitType.Farmer) continue;
     u.stay[s] = stay ? 1 : 0;
+    u.stayWait[s] = 0;
     // Any command takes a farmer off the job it was sent to by hand (`gather` sets it again).
     u.flags[s] &= ~UnitFlag.HandPicked;
   }

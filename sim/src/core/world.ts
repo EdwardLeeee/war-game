@@ -7,7 +7,7 @@ import { Action, BuildingFlag, BuildingType, CELL, CELL_SHIFT, NEUTRAL, Order, P
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
-import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, KEEP, MARKET, MAX_POPULATION, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
+import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, KEEP, MARKET, MAX_POPULATION, OUTPOST, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -21,7 +21,8 @@ export const UNIT_COLS = [
   // 1 = the player sent this farmer somewhere (move, retreat, stop, attack): once idle it
   // waits there and automatic work (auto-repair, the economy ratio) leaves it alone, until
   // the player gives it work (gather, build, repair). Recall still takes it (GDD section 4).
-  "stay",
+  // `stayWait`: ticks it has waited so, up to STAY_LIMIT.
+  "stay", "stayWait",
   // A build without farmers (round 2): the building the simulation sent this farmer to build,
   // and the gathering it was doing then (node, or farm building with resumeFarm = 1), which it
   // goes back to when that building is done.
@@ -133,8 +134,9 @@ export const BLOCK_BUILDING = 4;
 /** A castle wall or corner tower (D-089): terrain, never removed. */
 export const BLOCK_WALL = 8;
 /**
- * A standing gate closed to someone (D-096): walkable only by the player in World.gateOwner (the
- * town's holder) on that player's own grid (World.passGrid); closed to everyone else.
+ * A standing gate closed to someone (D-096), or an outpost (D-115, OUTPOST.ownersWalk): walkable only by the player
+ * in World.gateOwner (the town's holder, the outpost's owner) on that player's own grid (World.passGrid); closed to
+ * everyone else.
  */
 export const BLOCK_GATE = 16;
 /** Openings in every castle's walls (D-096; castle.gates). */
@@ -209,6 +211,8 @@ export class World {
   stones: number[] = [];
   /** Gate cells each player may walk that others may not (passClass). */
   private readonly ownGates = new Int32Array(PLAYER_COUNT);
+  /** The cells under outposts (D-115, OUTPOST.ownersWalk); gateOwner says whose. */
+  private readonly outpostCells: number[] = [];
   private readonly passGrids: Uint8Array[] = [];
   private readonly passBlock: number[] = [];
   private readonly passOpen: number[] = [];
@@ -631,6 +635,7 @@ export class World {
     if (!changed) return;
     this.ownGates.fill(0);
     for (const c of this.gateCells) if ((this.grid[c] & BLOCK_GATE) !== 0 && this.gateOwner[c] >= 0) this.ownGates[this.gateOwner[c]]++;
+    for (const c of this.outpostCells) this.ownGates[this.gateOwner[c]]++;
     this.blockVersion++;
     this.openVersion++;
   }
@@ -656,6 +661,7 @@ export class World {
       g.set(this.grid);
       const p = cls - 1;
       for (const c of this.gateCells) if (this.gateOwner[c] === p) g[c] &= ~BLOCK_GATE;
+      for (const c of this.outpostCells) if (this.gateOwner[c] === p) g[c] &= ~BLOCK_GATE;
       this.passBlock[cls] = this.blockVersion;
       this.passOpen[cls] = this.openVersion;
     }
@@ -716,12 +722,28 @@ export class World {
     const n = this.size;
     // A gate's cells are walked as refreshGates says (D-096).
     const gate = type === BuildingType.Gate;
+    // An outpost's by its owner (D-115).
+    const outpost = OUTPOST.ownersWalk && type === BuildingType.Outpost;
+    const owner = outpost ? this.buildings.col.owner[this.building(id)] : -1;
     for (let y = cellY; y < cellY + sy; y++) {
       for (let x = cellX; x < cellX + sx; x++) {
-        this.buildingAt[y * n + x] = on ? id : -1;
+        const c = y * n + x;
+        this.buildingAt[c] = on ? id : -1;
         if (info.walkable || gate) continue;
-        if (on) this.grid[y * n + x] |= BLOCK_BUILDING;
-        else this.grid[y * n + x] &= ~BLOCK_BUILDING;
+        if (outpost) {
+          if (on) {
+            this.grid[c] |= BLOCK_GATE;
+            this.gateOwner[c] = owner;
+            this.outpostCells.push(c);
+            this.ownGates[owner]++;
+          } else {
+            this.grid[c] &= ~BLOCK_GATE;
+            this.gateOwner[c] = -1;
+            this.outpostCells.splice(this.outpostCells.indexOf(c), 1);
+            this.ownGates[owner]--;
+          }
+        } else if (on) this.grid[c] |= BLOCK_BUILDING;
+        else this.grid[c] &= ~BLOCK_BUILDING;
       }
     }
     if (info.walkable || gate) return;

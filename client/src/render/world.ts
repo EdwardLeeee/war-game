@@ -1625,14 +1625,16 @@ export class WorldRenderer {
   }
 
   /**
-   * 攻城砲 selected (D-099): its reach (rules.units range, faint) and the ground it cannot shoot
-   * (minRange, a red dashed ring), round each one selected (the first few).
+   * 攻城砲 selected (D-099): its reach at buildings (rules.units range, faint), at units (unitRange,
+   * D-115, white) and the ground it cannot shoot (minRange, a red dashed ring), round each one
+   * selected (the first few).
    */
   private drawSiegeRanges(): void {
     const view = this.view;
     const info = view.rules.units[UnitType.Siege];
     if (info === undefined || view.rules.features?.siege !== true) return;
     const reach = info.range * FIXED_TO_PX;
+    const atUnits = (info.unitRange ?? 0) * FIXED_TO_PX;
     const near = (info.minRange ?? 0) * FIXED_TO_PX;
     let drawn = 0;
     for (const id of view.selection.units) {
@@ -1642,6 +1644,7 @@ export class WorldRenderer {
       drawn++;
       const { x, y } = view.unitPos(o);
       this.groundCircle(x, y, reach, { width: 2, color: 0xfff3b0, alpha: 0.55 });
+      if (atUnits > 0 && atUnits < reach) this.groundCircle(x, y, atUnits, { width: 2, color: 0xffffff, alpha: 0.7 });
       if (near > 0) this.groundCircle(x, y, near, { width: 2.5, color: 0xff5a4f, alpha: 0.9 }, true);
     }
     this.siegeRangesDrawn = drawn;

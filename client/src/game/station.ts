@@ -1,14 +1,18 @@
 // 駐軍 (the user 2026-10-25: 「我覺得駐軍也可以駐軍再佔領的程式裡面」，「我是指說軍團選項，可以駐軍在都市
-// 裡面」; ceo's spec): the soldiers selected, a whole group too, go into a town we hold and stay as
-// its 留守, the same list as the one 攻下's − N + sets (D-026, D-084): 堅守, not in 全軍, 全軍撤退 or
-// their groups' buttons, but still their groups' (the user 2026-10-26: 「我把兵團駐守在這座城池裡面，
-// 那我當然可以再把它抽回來」): 出城歸隊 brings them back. They walk in (移動); with walls on, the ranged
-// and the mages go up on its walls once there. What the tap means. Pure, for the unit tests.
+// 裡面」; 2026-10-31: 「把兵團整個收縮到選擇的那個城鎮裡面」; ceo's spec): the soldiers selected and the
+// rest of their groups (those in no group: only the ones selected) go into a town we hold and stay
+// as its 留守, the same list as the one 攻下's − N + sets (D-026, D-084): 堅守, not in 全軍 or 全軍撤退,
+// but still their groups' (the user 2026-10-26: 「我把兵團駐守在這座城池裡面，那我當然可以再把它抽回來」):
+// 出城歸隊 brings them back, and an order from the group's button takes them out, the town keeping
+// the least it needs. They walk in (移動); with walls on, the ranged and the mages go up on its
+// walls once there. What the tap means. Pure, for the unit tests.
 
 import { WALL_WRONG_TARGET } from "./walls.ts";
 
-export const STATION_PROMPT = "點自己持有的城鎮：選的兵走進去留守";
-export const STATION_PROMPT_MIXED = "點自己持有的城鎮：選的兵走進去留守（村民不去）";
+export const STATION_PROMPT = "點自己持有的城鎮：選的兵連同整個編隊走進去留守";
+export const STATION_PROMPT_MIXED = "點自己持有的城鎮：選的兵連同整個編隊走進去留守（村民不去）";
+/** 駐軍 on the town they all stay in already. */
+export const STATION_HERE = "他們已經駐守在這座城";
 export const STATION_WRONG_TARGET = WALL_WRONG_TARGET;
 export const STATION_NOBODY = "選的裡面沒有兵：村民不能駐軍";
 /** Fewer 留守 than a town repaired or governed needs (small 1, large 3): it counts down to revolt (sim/src/core/towns.ts). */

@@ -151,14 +151,14 @@ if (expected !== "") {
     seed,
     scenario: scenario as ScenarioName,
     maxTicks,
-    ...(map === "random" ? { map } : {}),
+    ...(map !== "fixed" ? { map } : {}),
     hashes: Object.fromEntries(runner.hashes.map((h) => [String(h.tick), hex8(h.hash)])),
     final: { tick: g.tick, hash: hex8(g.hash()), winner: g.w.winner },
   };
   writeFileSync(expected, JSON.stringify(exp) + "\n");
 }
 console.log(
-  `SIM ${scenario}${map === "random" ? " random map" : ""} seed ${seed}${replay ? " (replay)" : ""}: ${g.tick} ticks in ${(totalMs / 1000).toFixed(2)} s; ` +
+  `SIM ${scenario}${map === "fixed" ? "" : ` ${map} map`} seed ${seed}${replay ? " (replay)" : ""}: ${g.tick} ticks in ${(totalMs / 1000).toFixed(2)} s; ` +
     `tick median ${timing.tickMicros.median} us, p95 ${timing.tickMicros.p95} us, max ${timing.tickMicros.max} us ` +
     `(${timing.tickMicros.maxAfter100} us from tick 100); ` +
     `fields built ${timing.fieldBuilds}, hit rate ${timing.fieldHitRate}; ` +

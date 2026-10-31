@@ -44,8 +44,9 @@ test("攻城砲（D-099）：石頭從攻城砲飛到落點、看不到的攻城
   await centre(page, 30, 60, 1.3);
   // (One every 30 ticks: CI's Chromium runs the fake world at a few ticks a second with the 3 倍 art, run 39949194910.)
   await expect.poll(async () => (await siege(page)).shots, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
-  // Selected alone: its rings, and its 剋／怕 line.
+  // Selected alone: its rings, its two reaches in words (D-115), and its 剋／怕 line.
   await selectForCommands(page, [engine.id]);
+  await expect(page.locator(".sel-info .siege-reach")).toHaveText("射程：打建築 10 格、打兵 6 格，3 格內打不到");
   await expect.poll(async () => (await siege(page)).rings).toBe(1);
   await expect(page.locator(".sel-counters")).toHaveText("攻城砲　剋：建築／怕：近身的兵、騎兵");
   // The panel folded, the way from the engine (28, 55) to the barracks (34–36, 58–60) in view.

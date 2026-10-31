@@ -35,6 +35,14 @@ import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
 
 export type Layout = "diagonal" | "adjacent";
 
+/** Places a map tries for its river and its cliff (ceo 2026-10-31: most maps with passes as 雙河關's). */
+const RIVER_TRIES = 24;
+const CLIFF_TRIES = 12;
+/** How far a river bends round what it must keep off: cells a step, cells off its line in all. */
+const RIVER_BEND = 6;
+const RIVER_WANDER = 24;
+const RIVER_GAP = 8;
+
 /**
  * Water a castle's walls left 1 cell wide becomes open ground (ceo 2026-10-29: D-100's bigger castles cut a
  * river's corner on seed 30): a water cell beside a wall (8 round it) in no 2 x 2 of water and crossings, round after
@@ -71,7 +79,7 @@ export interface RandomMap extends GameMap {
   orientation: number;
   /** The map's own symmetry in real coordinates: it carries player 0's side onto player 1's. */
   mirror: Frame;
-  /** How many draws were thrown away before this one (R6-51's measurement); ATTEMPTS - 1 or more: a plain draw. */
+  /** How many draws were thrown away before this one, not counting WAY's (R6-51's measurement); ATTEMPTS - 1 or more: a plain draw. */
   redraws: number;
 }
 
@@ -95,6 +103,12 @@ export const ATTEMPTS = 40;
 const TRIES = 400;
 /** The longest walks a map may have, against the open walk (D-089 / R6-51, ceo 2026-10-20). */
 export const WALK_CAPS = { mainCity: 1.4, town: 1.6 };
+/**
+ * The way for an army between the main cities (D-115; ceo 2026-10-31: like the user's map, 1.76 times the walk): a column
+ * 5 cells wide gets through, min to max hundredths of the walk. After `tries` maps without it, the nearest of them.
+ * Every map has a way 3 cells wide.
+ */
+export const WAY = { min: 140, max: 220, tries: 8 };
 /** Why draws were thrown away, counted over every map made (R6-51's measurement; not game state). */
 export const THROWN_AWAY: Record<string, number> = {};
 const away = (why: string): null => {
@@ -131,10 +145,23 @@ export function generateRandomMap(
   const coin = rng.below(2);
   const lay: Layout = layout ?? (coin === 0 ? "diagonal" : "adjacent");
   if (lay === "adjacent" && towns % 2 === 0) throw new Error("map: adjacent maps take an odd number of towns");
-  for (let attempt = 0; attempt < 2 * ATTEMPTS; attempt++) {
-    // From the last attempt on, no obstacles, random rock or forest: only the town layout can fail.
-    const g = attemptMap(n, rng, lay, towns, attempt < ATTEMPTS - 1);
-    if (g !== null) return orient(seed, g, rng.below(8), rng.below(2) === 1, attempt);
+  let attempt = 0;
+  let nearest: Generated | null = null;
+  for (let columns = 0; attempt < ATTEMPTS - 1 && columns < WAY.tries; ) {
+    const g = attemptMap(n, rng, lay, towns, true, nearest?.off ?? 1 << 30);
+    if (g === null) attempt++;
+    else {
+      if (g !== "column" && g.off === 0) return orient(seed, g, rng.below(8), rng.below(2) === 1, attempt);
+      away("column's way");
+      columns++;
+      if (g !== "column") nearest = g;
+    }
+  }
+  if (nearest !== null) return orient(seed, nearest, rng.below(8), rng.below(2) === 1, Math.min(attempt, ATTEMPTS - 2));
+  // From the last attempt on, no obstacles, random rock or forest: only the town layout can fail.
+  for (; attempt < 2 * ATTEMPTS; attempt++) {
+    const g = attemptMap(n, rng, lay, towns, false, 0);
+    if (g !== null && g !== "column") return orient(seed, g, rng.below(8), rng.below(2) === 1, attempt);
   }
   throw new Error(`map: no layout for seed ${seed}, size ${n}`);
 }
@@ -161,9 +188,11 @@ interface Generated {
   tower: Pt;
   towerSize: number;
   M: Frame;
+  /** How far its column's way is off WAY (hundredths of the walk; 0: within it). */
+  off: number;
 }
 
-function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scatter: boolean): Generated | null {
+function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scatter: boolean, nearer: number): Generated | "column" | null {
   const s = n - 1;
   const a = s >> 1;
   const k = (d: number) => Math.trunc((d * n + 64) / 129);
@@ -322,7 +351,7 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
 
   const free = (x: number, y: number) => mine(x, y) && reserved[y * n + x] === 0 && rock[y * n + x] === 0 && kind[y * n + x] === -1;
   const setNode = (x: number, y: number, kd: NodeKind) => {
-    if (free(x, y)) kind[y * n + x] = kd;
+    if (free(x, y) && ground[y * n + x] === 0) kind[y * n + x] = kd;
   };
   const blob = (cx: number, cy: number, r: number, paint: (x: number, y: number) => void) => {
     for (let y = cy - r; y <= cy + r; y++) {
@@ -374,11 +403,16 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
   // (D-100) 10-12, as far out from the walls (2 cells further out).
   const goldNear = (t: Pt): boolean => {
     const [lo, hi] = KEEP.on ? [10, 12] : [8, 10];
-    const p = pick(anyCell, (q) => {
-      const dd = d2(q, t);
-      return dd >= lo * lo && dd <= hi * hi && block(q.x, q.y, 2, 2).every(([x, y]) => free(x, y));
-    });
-    if (p === null) return false;
+    // Every spot round it: a castle leaves few, a cell drawn at random seldom hits one.
+    const spots: Pt[] = [];
+    for (let y = t.y - hi; y <= t.y + hi; y++) {
+      for (let x = t.x - hi; x <= t.x + hi; x++) {
+        const dd = d2({ x, y }, t);
+        if (dd >= lo * lo && dd <= hi * hi && block(x, y, 2, 2).every(([cx, cy]) => free(cx, cy))) spots.push({ x, y });
+      }
+    }
+    if (spots.length === 0) return false;
+    const p = spots[rng.below(spots.length)];
     for (const [x, y] of block(p.x, p.y, 2, 2)) kind[y * n + x] = NodeKind.GoldMine;
     return true;
   };
@@ -411,35 +445,38 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     const mid = { x: (spawns[0].x + spawns[1].x) >> 1, y: (spawns[0].y + spawns[1].y) >> 1 };
     obstacles({ n, rng, layout, mine, side, reserved, corridor, rock, kind, ground, free, setNode, blob, k, p0: P0, mid, crossingEnds });
   }
-  // Random rock and forest on player 0's side, about as dense as the fixed map.
+  // Random rock and forest on player 0's side, about as dense as the fixed map; off the resources' sides.
   if (scatter) {
     const area = n * n;
+    const sides = resourceSides(n, kind);
     const centre = (): Pt | null => pick(anyCell, (p) => mine(p.x, p.y));
     for (let i = 0, count = Math.trunc((11 * area) / 16641); i < count; i++) {
       const c = centre();
       if (c === null) continue;
       const r = 1 + rng.below(3);
       blob(c.x, c.y, r, (x, y) => {
-        if (free(x, y)) rock[y * n + x] = 1;
+        if (free(x, y) && sides[y * n + x] === 0) rock[y * n + x] = 1;
       });
     }
     for (let i = 0, count = Math.trunc((16 * area) / 16641); i < count; i++) {
       const c = centre();
       if (c === null) continue;
       const r = 2 + rng.below(3);
-      blob(c.x, c.y, r, (x, y) => setNode(x, y, NodeKind.Tree));
+      blob(c.x, c.y, r, (x, y) => {
+        if (mine(x, y) && sides[y * n + x] === 0) setNode(x, y, NodeKind.Tree);
+      });
     }
   }
 
   // Player 0's side onto player 1's.
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
-      if (side(x, y) >= 0) continue;
-      const m = mir({ x, y });
-      rock[y * n + x] = rock[m.y * n + m.x];
-      kind[y * n + x] = kind[m.y * n + m.x];
+      if ((layout === "diagonal" ? y - x : a - x) >= 0) continue;
+      const m = layout === "diagonal" ? x * n + y : y * n + s - x;
+      rock[y * n + x] = rock[m];
+      kind[y * n + x] = kind[m];
       // Across the diagonal a bridge's way turns (north-south becomes east-west).
-      ground[y * n + x] = layout === "diagonal" ? turnedTerrain(ground[m.y * n + m.x]) : ground[m.y * n + m.x];
+      ground[y * n + x] = layout === "diagonal" ? turnedTerrain(ground[m]) : ground[m];
     }
   }
   for (const [x, y] of veinCells(layout, vein)) kind[y * n + x] = NodeKind.CrystalVein;
@@ -448,7 +485,8 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
 
   // Fill what the starts cannot reach (4-connected over open, node-free cells; fords and bridges
   // are walked).
-  const passable = (i: number) => rock[i] === 0 && kind[i] === -1 && wall[i] === 0 && walkableTerrain(ground[i]);
+  const passable = new Uint8Array(n * n);
+  for (let i = 0; i < n * n; i++) passable[i] = rock[i] === 0 && kind[i] === -1 && wall[i] === 0 && walkableTerrain(ground[i]) ? 1 : 0;
   const seen = new Uint8Array(n * n);
   const queue = new Int32Array(n * n);
   let head = 0;
@@ -458,14 +496,15 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
   while (head < tail) {
     const c = queue[head++];
     const x = c % n;
-    const y = (c - x) / n;
-    for (const nb of [x + 1 < n ? c + 1 : -1, x > 0 ? c - 1 : -1, y + 1 < n ? c + n : -1, y > 0 ? c - n : -1]) {
-      if (nb < 0 || seen[nb] === 1 || !passable(nb)) continue;
+    for (let k = 0; k < 4; k++) {
+      if ((k === 0 && x === n - 1) || (k === 1 && x === 0) || (k === 2 && c >= n * (n - 1)) || (k === 3 && c < n)) continue;
+      const nb = k === 0 ? c + 1 : k === 1 ? c - 1 : k === 2 ? c + n : c - n;
+      if (seen[nb] === 1 || passable[nb] === 0) continue;
       seen[nb] = 1;
       queue[tail++] = nb;
     }
   }
-  for (let i = 0; i < n * n; i++) if (passable(i) && seen[i] === 0) rock[i] = 1;
+  for (let i = 0; i < n * n; i++) if (passable[i] === 1 && seen[i] === 0) rock[i] = 1;
   if (seen[spawns[1].y * n + spawns[1].x] !== 1) return away("main city cut off");
   for (const t of placed) if (seen[t.y * n + t.x] !== 1) return away("town cut off");
   for (let i = 0; i < n * n; i++) {
@@ -476,8 +515,8 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     if (!nbs.some((nb) => nb >= 0 && seen[nb] === 1) && !interior(kind, n, x, y)) return away("resource cut off");
   }
   // Every forest has a tree farmers can walk up to (R6-51: dense forest and water must not shut
-  // one in); every gate is reached from outside.
-  if (!forestsReached(n, kind, seen)) return away("forest cut off");
+  // one in): one out of reach goes, rock as the ground round it. Every gate is reached from outside.
+  dropFarForests(n, kind, rock, seen);
   // Both ends of every ford and bridge are reached (a crossing to nowhere would be filled in).
   for (const i of crossingEnds) if (seen[i] !== 1) return away("crossing cut off");
   for (const t of placed) {
@@ -485,16 +524,28 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     for (const [dx, dy] of c.outside) if (seen[(t.y + dy) * n + t.x + dx] !== 1) return away("gate cut off");
   }
   // Walks no longer than the caps, trees standing (R6-51); the other side is the mirror image.
+  let off = 0;
   if (scatter) {
     const blocked = new Uint8Array(n * n);
-    for (let i = 0; i < n * n; i++) if (!passable(i)) blocked[i] = 1;
+    // Trees do not count: they get cut. Before the walks below: most maps fall to this, and it is the cheaper.
+    for (let i = 0; i < n * n; i++) blocked[i] = rock[i] === 1 || wall[i] === 1 || !walkableTerrain(ground[i]) ? 1 : 0;
+    const axis: number[] = [];
+    for (let t = 0; t < n; t++) axis.push(layout === "diagonal" ? t * n + t : t * n + a);
+    const way = columnWalks(n, blocked, spawns, axis);
+    if (way.three < 0) return away("no way 3 wide");
+    const times = way.five < 0 ? 1 << 20 : Math.trunc((way.five * 100) / way.foot);
+    off = times < WAY.min ? WAY.min - times : times > WAY.max ? times - WAY.max : 0;
+    if (off >= nearer) return "column";
+    // Rock now fills what cannot be reached, as it does the cells it leaves.
+    for (let i = 0; i < n * n; i++) blocked[i] = passable[i] === 1 && seen[i] === 1 ? 0 : 1;
     for (const sp of spawns) for (let y = sp.y - 2; y < sp.y + 2; y++) for (let x = sp.x - 2; x < sp.x + 2; x++) blocked[y * n + x] = 0;
     for (let y = tower.y; y < tower.y + towerSize; y++) for (let x = tower.x; x < tower.x + towerSize; x++) blocked[y * n + x] = 0;
     // From each of the 4 cells round the main city's centre (a cell corner): once the map is turned,
     // any of them can be the one a walk is measured from.
     for (const [ox, oy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
       const from = { x: P0.x + ox, y: P0.y + oy };
-      const dist = octileWalk(n, blocked, from.y * n + from.x);
+      const cities = [[-1, -1], [0, -1], [-1, 0], [0, 0]].map(([qx, qy]) => (spawns[1].y + qy) * n + spawns[1].x + qx);
+      const dist = octileWalk(n, blocked, from.y * n + from.x, [...cities, ...placed.map((t) => t.y * n + t.x)]);
       const ratio = (q: Pt) => dist[q.y * n + q.x] / openWalk(from, q);
       for (const [qx, qy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) if (ratio({ x: spawns[1].x + qx, y: spawns[1].y + qy }) > WALK_CAPS.mainCity) return away("main city walk");
       for (const t of placed) if (ratio(t) > WALK_CAPS.town) return away("town walk");
@@ -503,7 +554,7 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
 
   // The tower: 2 x 2 with its centre on the town centre's top-left corner, on the diagonal; 3 x 3
   // centred on the town centre on a vertical axis. Either way its own mirror image.
-  return { n, layout, rock, wall, ground, kind, spawns, towns: placed, tower, towerSize, M };
+  return { n, layout, rock, wall, ground, kind, spawns, towns: placed, tower, towerSize, M, off };
 }
 
 /** The walk with nothing in the way, in octile steps (10 straight, 14 diagonal). */
@@ -513,43 +564,152 @@ function openWalk(p: Pt, q: Pt): number {
   return Math.max(ax, ay) * 10 + Math.min(ax, ay) * 4;
 }
 
-/** Walks from `from` in octile steps (10 / 14) over cells not blocked, never cutting a blocked corner. */
-function octileWalk(n: number, blocked: Uint8Array, from: number): Int32Array {
+/** octileWalk's two queues, kept: a map walks many times. Cells and their distances, one after the other. */
+let walkQueues = [new Int32Array(0), new Int32Array(0)];
+
+/**
+ * Walks from `from` in octile steps (10 / 14) over cells not blocked, never cutting a blocked corner, until `enough` of
+ * the cells `want` are reached. Two queues, one a step length: each is in order of distance, so the nearest cell is at the head
+ * of one of them.
+ */
+function octileWalk(n: number, blocked: Uint8Array, from: number, want: readonly number[], enough = want.length): Int32Array {
   const dist = new Int32Array(n * n).fill(1 << 30);
-  const buckets: number[][] = [[from]];
+  if (walkQueues[0].length < 8 * n * n) walkQueues = [new Int32Array(8 * n * n), new Int32Array(8 * n * n)];
+  const [straight, slant] = walkQueues;
+  let s0 = 0;
+  let s1 = 2;
+  let d0 = 0;
+  let d1 = 0;
+  straight[0] = from;
+  straight[1] = 0;
   dist[from] = 0;
-  for (let d = 0; d < buckets.length; d++) {
-    const b = buckets[d];
-    if (b === undefined) continue;
-    for (const c of b) {
-      if (dist[c] !== d) continue;
-      const x = c % n;
-      const y = (c - x) / n;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if ((dx === 0 && dy === 0) || nx < 0 || ny < 0 || nx >= n || ny >= n || blocked[ny * n + nx] === 1) continue;
-          if (dx !== 0 && dy !== 0 && (blocked[y * n + nx] === 1 || blocked[ny * n + x] === 1)) continue;
-          const nd = d + (dx !== 0 && dy !== 0 ? 14 : 10);
-          if (nd < dist[ny * n + nx]) {
-            dist[ny * n + nx] = nd;
-            (buckets[nd] ??= []).push(ny * n + nx);
-          }
-        }
-      }
+  const wanted = new Uint8Array(n * n);
+  let left = enough;
+  for (const i of want) wanted[i] = 1;
+  while ((s0 < s1 || d0 < d1) && left > 0) {
+    const useStraight = d0 >= d1 || (s0 < s1 && straight[s0 + 1] <= slant[d0 + 1]);
+    const q = useStraight ? straight : slant;
+    const at = useStraight ? s0 : d0;
+    const c = q[at];
+    const d = q[at + 1];
+    if (useStraight) s0 += 2;
+    else d0 += 2;
+    if (dist[c] !== d) continue;
+    if (wanted[c] === 1) {
+      wanted[c] = 0;
+      left--;
+    }
+    const x = c % n;
+    const west = x > 0 && blocked[c - 1] === 0;
+    const east = x < n - 1 && blocked[c + 1] === 0;
+    const north = c >= n && blocked[c - n] === 0;
+    const south = c < n * (n - 1) && blocked[c + n] === 0;
+    const ten = d + 10;
+    if (west && ten < dist[c - 1]) {
+      dist[c - 1] = ten;
+      straight[s1++] = c - 1;
+      straight[s1++] = ten;
+    }
+    if (east && ten < dist[c + 1]) {
+      dist[c + 1] = ten;
+      straight[s1++] = c + 1;
+      straight[s1++] = ten;
+    }
+    if (north && ten < dist[c - n]) {
+      dist[c - n] = ten;
+      straight[s1++] = c - n;
+      straight[s1++] = ten;
+    }
+    if (south && ten < dist[c + n]) {
+      dist[c + n] = ten;
+      straight[s1++] = c + n;
+      straight[s1++] = ten;
+    }
+    const fourteen = d + 14;
+    for (let k = 0; k < 4; k++) {
+      if (!(k < 2 ? north : south) || !(k % 2 === 0 ? west : east)) continue;
+      const j = c + (k < 2 ? -n : n) + (k % 2 === 0 ? -1 : 1);
+      if (blocked[j] === 1 || fourteen >= dist[j]) continue;
+      dist[j] = fourteen;
+      slant[d1++] = j;
+      slant[d1++] = fourteen;
     }
   }
   return dist;
 }
 
-/** Every 4-connected group of trees has a tree with a reached (seen) neighbour. */
-function forestsReached(n: number, kind: Int8Array, seen: Uint8Array): boolean {
+/**
+ * The walk between two main cities (octile steps) on foot and for a column 5 and 3 cells wide, which keeps its centre 3
+ * and 2 rings off anything blocked; -1: no such way. Round a main city everything counts as open: what is measured is
+ * the way between. A ford, a bridge and a ridge's gap are 3 wide. On a map that mirrors itself, `axis` (its cells): the
+ * way there, twice: half the walking.
+ */
+export function columnWalks(n: number, blocked: Uint8Array, homes: readonly Pt[], axis?: readonly number[]): { foot: number; five: number; three: number } {
+  // Rings from each cell to the nearest blocked one (8 round each).
+  const clear = new Int32Array(n * n).fill(1 << 30);
+  const queue = new Int32Array(n * n);
+  let tail = 0;
+  for (let i = 0; i < n * n; i++) {
+    if (blocked[i] === 0) continue;
+    clear[i] = 0;
+    queue[tail++] = i;
+  }
+  for (let h = 0; h < tail; h++) {
+    const c = queue[h];
+    if (clear[c] === 3) break;
+    const x = c % n;
+    const y = (c - x) / n;
+    for (let yy = Math.max(0, y - 1); yy <= Math.min(n - 1, y + 1); yy++) {
+      for (let xx = Math.max(0, x - 1); xx <= Math.min(n - 1, x + 1); xx++) {
+        if (clear[yy * n + xx] <= clear[c] + 1) continue;
+        clear[yy * n + xx] = clear[c] + 1;
+        queue[tail++] = yy * n + xx;
+      }
+    }
+  }
+  const [a, b] = homes;
+  const walk = (rings: number) => {
+    let closed = blocked;
+    if (rings > 1) closed = new Uint8Array(n * n);
+    for (let i = 0; rings > 1 && i < n * n; i++) if (clear[i] < rings) closed[i] = 1;
+    for (const h of homes) {
+      if (rings === 1) break;
+      for (let y = Math.max(0, h.y - 6); y < Math.min(n, h.y + 6); y++) for (let x = Math.max(0, h.x - 6); x < Math.min(n, h.x + 6); x++) closed[y * n + x] = blocked[y * n + x];
+    }
+    if (axis === undefined) {
+      const d = octileWalk(n, closed, a.y * n + a.x, [b.y * n + b.x])[b.y * n + b.x];
+      return d >= 1 << 30 ? -1 : d;
+    }
+    const dist = octileWalk(n, closed, a.y * n + a.x, axis, 1);
+    let least = 1 << 30;
+    for (const i of axis) if (dist[i] < least) least = dist[i];
+    return least >= 1 << 30 ? -1 : 2 * least;
+  };
+  // Who has a way 5 wide has one 3 wide.
+  const five = walk(3);
+  return five >= 0 ? { foot: walk(1), five, three: five } : { foot: 0, five, three: walk(2) };
+}
+
+/** A cell next to (or on) a resource other than trees: obstacles keep off it, so every mine, bush and vein keeps an open side. */
+function resourceSides(n: number, kind: Int8Array): Uint8Array {
+  const sides = new Uint8Array(n * n);
+  for (let i = 0; i < n * n; i++) {
+    if (kind[i] === -1 || kind[i] === NodeKind.Tree) continue;
+    const x = i % n;
+    const y = (i - x) / n;
+    for (let yy = Math.max(0, y - 1); yy <= Math.min(n - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(n - 1, x + 1); xx++) sides[yy * n + xx] = 1;
+  }
+  return sides;
+}
+
+/** A 4-connected group of trees with no tree beside a reached (seen) cell turns to rock. */
+function dropFarForests(n: number, kind: Int8Array, rock: Uint8Array, seen: Uint8Array): void {
   const done = new Uint8Array(n * n);
   for (let i = 0; i < n * n; i++) {
     if (kind[i] !== NodeKind.Tree || done[i] === 1) continue;
     let reached = false;
     const stack = [i];
+    const group = [i];
     done[i] = 1;
     while (stack.length > 0) {
       const c = stack.pop()!;
@@ -560,12 +720,16 @@ function forestsReached(n: number, kind: Int8Array, seen: Uint8Array): boolean {
         if (kind[nb] === NodeKind.Tree && done[nb] === 0) {
           done[nb] = 1;
           stack.push(nb);
+          group.push(nb);
         }
       }
     }
-    if (!reached) return false;
+    if (reached) continue;
+    for (const c of group) {
+      kind[c] = -1;
+      rock[c] = 1;
+    }
   }
-  return true;
 }
 
 interface ObstacleScope {
@@ -593,7 +757,7 @@ interface ObstacleScope {
 /**
  * R6-51's obstacles on player 0's side (the caller mirrors them). Across the way from the main city
  * to the middle of the map (so the walk between the main cities gets longer): a river 2-3 cells
- * wide across player 0's side, crossed by two or three bridges or fords 3 cells wide (a bridge
+ * wide across player 0's side, crossed by three or four bridges or fords 3 cells wide (a bridge
  * first); rock ridges 1-2 wide with a 3-cell gap; a cliff 1 cell wide. Anywhere: a lake, rock heaps and dense forest (trees, 甲). Off the castles, the
  * main city, the resources and (but for the river's crossings) the ways.
  */
@@ -603,15 +767,7 @@ function obstacles(o: ObstacleScope): void {
   const area = n * n;
   const per = (count: number) => Math.max(1, Math.trunc((count * area) / 16641));
   const at = (x: number, y: number) => y * n + x;
-  // A cell next to (or on) a resource other than trees: obstacles keep off it, so every mine,
-  // bush and vein keeps an open side.
-  const byResource = new Uint8Array(area);
-  for (let i = 0; i < area; i++) {
-    if (kind[i] === -1 || kind[i] === NodeKind.Tree) continue;
-    const x = i % n;
-    const y = Math.trunc(i / n);
-    for (let yy = Math.max(0, y - 1); yy <= Math.min(s, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(s, x + 1); xx++) byResource[at(xx, yy)] = 1;
-  }
+  const byResource = resourceSides(n, kind);
   const line = (p: Pt, q: Pt, each: (x: number, y: number, i: number, steps: number) => void) => {
     const steps = Math.max(Math.abs(q.x - p.x), Math.abs(q.y - p.y), 1);
     for (let i = 0; i <= steps; i++) each(p.x + Math.trunc(((q.x - p.x) * i) / steps), p.y + Math.trunc(((q.y - p.y) * i) / steps), i, steps);
@@ -636,81 +792,136 @@ function obstacles(o: ObstacleScope): void {
     const py = dx + Math.trunc((dy * tilt) / 6);
     const norm = Math.sqrt(px * px + py * py);
     const to = (len: number): Pt => ({ x: c.x + Math.trunc((px * len) / norm), y: c.y + Math.trunc((py * len) / norm) });
-    return { c, to };
+    // `off` cells aside from that point, along the way from the main city to the middle.
+    const way = Math.sqrt(dx * dx + dy * dy);
+    const aside = (q: Pt, off: number): Pt => ({ x: q.x + Math.trunc((dx * off) / way), y: q.y + Math.trunc((dy * off) / way) });
+    return { c, to, aside };
   };
 
   // --- the river, across player 0's side -------------------------------------------------------------
-  for (let tries = 0; tries < 8; tries++) if (river()) break;
-  function river(): boolean {
-    const { c, to } = across(300 + rng.below(301));
+  // The longest of RIVER_TRIES that takes its crossings (it stands in the way only where it runs: a short one is walked round).
+  // Rivers 2 and 3 wide: whether each cell can be wet (1 yes, 2 no); the same cells come up try after try.
+  const wetKnown = [new Uint8Array(area), new Uint8Array(area)];
+  const rivers: { len: number; bridged: () => (() => void) | null }[] = [];
+  for (let tries = 0; tries < RIVER_TRIES; tries++) {
+    const r = river();
+    if (r !== null) rivers.push(r);
+  }
+  rivers.sort((p, q) => q.len - p.len);
+  for (const r of rivers) {
+    const lay = r.bridged();
+    if (lay === null) continue;
+    lay();
+    break;
+  }
+  function river(): { len: number; bridged: () => (() => void) | null } | null {
+    const { c, to, aside } = across(300 + rng.below(301));
     const width = 2 + rng.below(2);
     // Off the castles, the main city, the vein and every resource; across the ways only.
     const wettable = (x: number, y: number) => {
-      for (let yy = y; yy < y + width; yy++) {
+      const known = wetKnown[width - 2];
+      const cell = x >= 0 && y >= 0 && x < n && y < n ? at(x, y) : -1;
+      if (cell >= 0 && known[cell] !== 0) return known[cell] === 1;
+      let ok = true;
+      for (let yy = y; yy < y + width && ok; yy++) {
         for (let xx = x; xx < x + width; xx++) {
           if (!mine(xx, yy)) continue;
           const i = at(xx, yy);
-          if ((reserved[i] === 1 && corridor[i] === 0) || kind[i] !== -1 || byResource[i] === 1) return false;
+          // Trees it washes away (the forests by home stand across its way).
+          if ((reserved[i] === 1 && corridor[i] === 0) || (kind[i] !== -1 && kind[i] !== NodeKind.Tree) || byResource[i] === 1) ok = false;
         }
       }
-      return true;
+      if (cell >= 0) known[cell] = ok ? 1 : 2;
+      return ok;
     };
-    if (!mine(c.x, c.y) || !wettable(c.x, c.y)) return false;
-    // Out both ways to the edge of player 0's side (the map's edge or the axis), or to the first
-    // thing it must keep off (it ends there, by a castle or a resource).
-    const end = (sgn: number): Pt => {
-      let len = 0;
-      while (len < 2 * n) {
-        const q = to(sgn * (len + 1));
-        if (!mine(q.x, q.y) || !wettable(q.x, q.y)) break;
-        len++;
-      }
-      return to(sgn * len);
-    };
-    const e1 = end(1);
-    const e2 = end(-1);
-    if (Math.max(Math.abs(e1.x - e2.x), Math.abs(e1.y - e2.y)) < 12) return false;
-    const water = new Uint8Array(area);
-    for (const [p, q] of [[c, e1], [c, e2]] as const) {
-      line(p, q, (cx, cy) => {
-        for (let y = cy; y < cy + width; y++) for (let x = cx; x < cx + width; x++) if (mine(x, y)) water[at(x, y)] = 1;
+    if (!mine(c.x, c.y) || !wettable(c.x, c.y)) return null;
+    // Out both ways to the edge of player 0's side (the map's edge or the axis). What it must keep off (a castle,
+    // a resource) it bends round, up to RIVER_BEND cells a step and RIVER_WANDER in all; it ends where it cannot.
+    const clearTo = (p: Pt, q: Pt) => {
+      let ok = true;
+      line(p, q, (x, y) => {
+        if (!mine(x, y) || !wettable(x, y)) ok = false;
       });
+      return ok;
+    };
+    // One end, drawn at random, stops RIVER_GAP cells short of where it would: an army can walk round, a long way.
+    const shortEnd = rng.below(2) === 0 ? 1 : -1;
+    const run = (sgn: number): Pt[] => {
+      const path: Pt[] = [c];
+      let off = 0;
+      for (let len = 1; len < 2 * n; len++) {
+        const last = path[path.length - 1];
+        let next: Pt | null = null;
+        // Back toward the line first, then the nearest way round.
+        for (let d = 0; d <= RIVER_BEND && next === null; d++) {
+          for (const s of off > 0 ? [-1, 1] : [1, -1]) {
+            const o = off + s * d;
+            if (Math.abs(o) > RIVER_WANDER) continue;
+            const q = aside(to(sgn * len), o);
+            if (clearTo(last, q)) {
+              next = q;
+              off = o;
+              break;
+            }
+          }
+        }
+        if (next === null) {
+          if (sgn === shortEnd) path.length = Math.max(1, path.length - RIVER_GAP);
+          break;
+        }
+        path.push(next);
+      }
+      return path;
+    };
+    const paths = [run(1), run(-1)];
+    const len = paths[0].length + paths[1].length;
+    if (len < 12) return null;
+    return { len, bridged: () => bridged(paths, width) };
+  }
+  function bridged(paths: Pt[][], width: number): (() => void) | null {
+    const water = new Uint8Array(area);
+    for (const path of paths) {
+      for (let k = 1; k < path.length; k++) {
+        line(path[k - 1], path[k], (cx, cy) => {
+          for (let y = cy; y < cy + width; y++) for (let x = cx; x < cx + width; x++) if (mine(x, y)) water[at(x, y)] = 1;
+        });
+      }
     }
-    // Two or three crossings anywhere along it, 12 cells apart or more (not just where it meets a
-    // way: those ways would be the walk's shortcut over it).
+    // Three or four crossings anywhere along it, 12 cells apart or more (not just where it meets a
+    // way: those ways would be the walk's shortcut over it); a place no crossing fits is passed over.
     const crossings: Pt[] = [];
-    const want = 2 + rng.below(2);
+    const want = 3 + rng.below(2);
+    const kinds: number[] = [];
+    const bands: number[][] = [];
+    const ends: number[] = [];
     for (let tries = 0; crossings.length < want && tries < TRIES; tries++) {
       const i = rng.below(area);
       if (water[i] !== 1) continue;
       const p = { x: i % n, y: Math.trunc(i / n) };
-      if (crossings.every((c) => Math.abs(c.x - p.x) + Math.abs(c.y - p.y) > 12)) crossings.push(p);
-    }
-    if (crossings.length < 2) return false;
-    const kinds: number[] = [];
-    const bands: number[][] = [];
-    const ends: number[] = [];
-    for (const [j, c] of crossings.entries()) {
-      const band = crossingBand(water, c);
-      if (band === null) return false;
+      if (!crossings.every((c) => Math.abs(c.x - p.x) + Math.abs(c.y - p.y) > 12)) continue;
+      const band = crossingBand(water, p);
+      if (band === null) continue;
+      kinds.push(crossings.length % 2 === 1 ? Terrain.Ford : band.ns ? Terrain.BridgeNS : Terrain.BridgeEW);
+      crossings.push(p);
       bands.push(band.cells);
       ends.push(...band.ends);
-      kinds.push(j % 2 === 1 ? Terrain.Ford : band.ns ? Terrain.BridgeNS : Terrain.BridgeEW);
     }
-    for (let i = 0; i < area; i++) if (water[i] === 1) ground[i] = Terrain.Water;
-    bands.forEach((b, j) => {
-      for (const i of b) ground[i] = kinds[j];
-    });
-    // Two rows of open ground beyond each end, kept clear of rock and forest (ui's bridges have them
-    // on the fixed map too).
-    for (const i of ends) if (ground[i] === 0) reserved[i] = 1;
-    crossingEnds.push(...ends.filter((i) => ground[i] === 0 && rock[i] === 0 && kind[i] === -1));
-    for (let i = 0; i < area; i++) {
-      if (ground[i] === 0) continue;
-      rock[i] = 0;
-      kind[i] = -1;
-    }
-    return true;
+    if (crossings.length < 2) return null;
+    return () => {
+      for (let i = 0; i < area; i++) if (water[i] === 1) ground[i] = Terrain.Water;
+      bands.forEach((b, j) => {
+        for (const i of b) ground[i] = kinds[j];
+      });
+      // Two rows of open ground beyond each end, kept clear of rock and forest (ui's bridges have them
+      // on the fixed map too).
+      for (const i of ends) if (ground[i] === 0) reserved[i] = 1;
+      for (let i = 0; i < area; i++) {
+        if (ground[i] === 0) continue;
+        rock[i] = 0;
+        kind[i] = -1;
+      }
+      crossingEnds.push(...ends.filter((i) => ground[i] === 0 && rock[i] === 0 && kind[i] === -1));
+    };
   }
   /**
    * A crossing 3 cells wide through the river at c, north-south or east-west, whichever is shorter
@@ -798,8 +1009,8 @@ function obstacles(o: ObstacleScope): void {
       for (let y = cy; y < cy + width; y++) for (let x = cx; x < cx + width; x++) if (dryAcross(x, y)) rock[at(x, y)] = 1;
     });
   }
-  // --- a cliff across the way, 1 wide, 10-16 long ------------------------------------------------------
-  {
+  // --- a cliff across the way, 1 wide, 10-16 long (the first of CLIFF_TRIES places it runs its length) -----
+  for (let tries = 0; tries < CLIFF_TRIES; tries++) {
     const { to } = across(250 + rng.below(601));
     const half = 5 + rng.below(4);
     const cells: number[] = [];
@@ -809,7 +1020,9 @@ function obstacles(o: ObstacleScope): void {
       if (!dryAcross(x, y)) open = false;
       else cells.push(at(x, y));
     });
-    if (cells.length >= 3) for (const i of cells) ground[i] = Terrain.Cliff;
+    if (!open) continue;
+    for (const i of cells) ground[i] = Terrain.Cliff;
+    break;
   }
   // --- rock heaps and dense forest ---------------------------------------------------------------------
   for (let h = 0, count = per(3) + rng.below(per(4)); h < count; h++) {

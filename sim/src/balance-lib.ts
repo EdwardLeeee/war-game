@@ -816,3 +816,41 @@ export function siegeGate(size: TownSize, siege: number): number {
   while (g.tick - start < FIGHT_TICKS && w.building(gid) >= 0) g.step();
   return w.building(gid) >= 0 ? -1 : g.tick - start;
 }
+
+/**
+ * Soldiers lost in 60 s to `siege` engines of player 0 (D-115; SIEGE must be on), `soldiers` spearmen packed 5 to a
+ * row. `stand`: they stand `cells` cells off and do not fight; else they come on from `cells` cells off and go for
+ * the engines. The engines stand and choose for themselves.
+ */
+export function siegeCrowd(siege: number, soldiers: number, cells: number, stand: boolean): { dead: number; left: number; stones: number } {
+  const g = new Game({ seed: 1, scenario: "standard", maxTicks: 0 });
+  const w = g.w;
+  const u = w.units.col;
+  for (let s = 0; s < w.units.count; s++) w.unitSlot[u.id[s]] = -1;
+  w.units.count = 0;
+  const f = field(g);
+  const midY = f.y + (FIELD_H >> 1);
+  const add = (p: number, type: UnitType, x: number, y: number) => w.addUnit(p, type, (x << CELL_SHIFT) + 512, (y << CELL_SHIFT) + 512, UNITS[type].hp);
+  const engines: number[] = [];
+  for (let k = 0; k < siege; k++) engines.push(add(0, UnitType.Siege, f.x + 2, midY - 1 + k));
+  const crowd: number[] = [];
+  for (let k = 0; k < soldiers; k++) crowd.push(add(1, UnitType.Spearman, f.x + 2 + cells + Math.trunc(k / 5), midY - 2 + k % 5));
+  if (stand) {
+    for (const id of crowd) {
+      const s = w.unit(id);
+      u.stance[s] = Stance.Hold;
+      u.cooldown[s] = 1 << 20;
+    }
+  }
+  g.fog.update(w);
+  let seq = 0;
+  if (!stand) g.push({ c: "move", u: crowd, x: f.x + 2, y: midY, t: g.tick, p: 1, seq: seq++ } as never);
+  const start = g.tick;
+  let stones = 0;
+  while (g.tick - start < 60 * 20) {
+    g.step();
+    for (const e of g.events) if (e.to === 0 && e.ev.k === "siege_shot") stones++;
+  }
+  const dead = crowd.filter((id) => w.unit(id) < 0).length;
+  return { dead, left: engines.filter((id) => w.unit(id) >= 0).length, stones };
+}

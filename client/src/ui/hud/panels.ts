@@ -12,8 +12,8 @@ import { POST_TYPE } from "../../game/outpost.ts";
 import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import { costText as costLine } from "../../game/govern-wait.ts";
-import { goesOnWalls } from "../../game/walls.ts";
 import { counterShort } from "../../game/counters.ts";
+import { siegeReachText } from "../../game/siege.ts";
 import type { Mode } from "../../input/intent.ts";
 import {
   BuildingField as B,
@@ -60,8 +60,7 @@ export interface PanelHost {
   startPlacement(type: BuildingType): void;
   openEconomy(): void;
   chooseTown(town: number, choice: TownChoice): void;
-  /** 上城牆 (D-096): those on a wall come down; our units on a town's wall and its cells (null: not ours). */
-  leaveWall(): void;
+  /** 牆上 (D-096): our units on a town's wall and its cells (null: not ours). */
   wallCount(town: number): { on: number; capacity: number } | null;
   /**
    * 等錢治理 (ceo 2026-10-21): 治理's cost for the town (null when not known), what is missing
@@ -249,6 +248,8 @@ export class SelectionInfo {
   private readonly host: PanelHost;
   private key = "";
   private updaters: Updater[] = [];
+  /** 收起 of the panel built (a second tap on a group button folds it with no rebuild). */
+  private foldButton: HTMLButtonElement | null = null;
 
   constructor(parent: HTMLElement, host: PanelHost) {
     this.host = host;
@@ -270,6 +271,7 @@ export class SelectionInfo {
       if (key !== "none") this.build(view);
     }
     for (const u of this.updaters) u();
+    if (this.foldButton !== null) this.fold(this.foldButton);
   }
 
   private keyFor(view: GameView): string {
@@ -299,6 +301,7 @@ export class SelectionInfo {
   private build(view: GameView): void {
     const close = button(this.el, "✕", "", () => this.host.clearSelection(), "sel-close secondary");
     close.setAttribute("aria-label", "取消選取");
+    this.foldButton = null;
     this.content(view);
     // 收起 (D-054: 「要有一個把資訊欄位收起來的鍵，不然進攻的時候擋掉太多視野」): at the end of the title line.
     const head = this.el.querySelector<HTMLElement>(".sel-head");
@@ -307,6 +310,7 @@ export class SelectionInfo {
       this.host.toggleCollapsed();
       this.fold(fold);
     }, "sel-fold secondary");
+    this.foldButton = fold;
     this.fold(fold);
   }
 
@@ -315,7 +319,9 @@ export class SelectionInfo {
     const collapsed = this.host.collapsed();
     this.el.classList.toggle("collapsed", collapsed);
     const label = b.querySelector(".label") as HTMLElement;
-    label.textContent = collapsed ? "展開" : "收起";
+    const text = collapsed ? "展開" : "收起";
+    if (label.textContent === text) return;
+    label.textContent = text;
     b.setAttribute("aria-label", collapsed ? "展開選取資訊" : "收起選取資訊");
   }
 
@@ -461,6 +467,10 @@ export class SelectionInfo {
     el("span", note, "order-meaning", ORDER_TEXT.hold);
     // D-095 (the user: 「把消耗放進說明裡面」): the mages' cannon, always on its own.
     if (ids.some((id) => view.unitType(id) === UnitType.Mage)) el("span", note, "order-meaning cannon-meaning", CANNON_TEXT);
+    // D-115: 攻城砲's two reaches, the two rings round it.
+    const siege = view.rules.units[UnitType.Siege];
+    const reach = siege !== undefined && ids.some((id) => view.unitType(id) === UnitType.Siege) ? siegeReachText(siege) : null;
+    if (reach !== null) el("span", note, "order-meaning siege-reach", reach);
     const formation = el("span", note, "formation-meaning");
     const formationMore = el("span", note, "formation-more");
     this.updaters.push(() => {
@@ -995,20 +1005,9 @@ export class CommandArea {
           : button(this.el, "躲進去", "主城或箭樓", () => this.host.setMode("garrison"), "secondary");
         if (picking) hide.classList.add("active");
       }
-      // 上城牆／下城牆 (D-096): ranged units and mages stand on the walls of a town we hold, with war-game-ui's icon.
-      if (view.rules.features?.walls === true && sel.units.some((id) => goesOnWalls(view.unitType(id)))) {
-        const up = sel.units.some((id) => view.unitOrder(id) === Order.Wall);
-        const picking = mode === "wall";
-        const wall = up
-          ? button(this.el, "下城牆", "回城裡", () => this.host.leaveWall(), "secondary")
-          : picking
-            ? button(this.el, "取消", "上城牆", () => this.host.setMode("normal"), "secondary")
-            : button(this.el, "上城牆", "點自己的城", () => this.host.setMode("wall"), "secondary");
-        wall.prepend(icon(up ? "wallDown" : "wallUp", "cmd-ic"));
-        if (picking) wall.classList.add("active");
-      }
-      // 駐軍 (2026-10-25, game/station.ts): the soldiers selected (a whole group from 軍團畫面 too)
-      // walk into a town we hold and stay as its 留守; only once we hold one.
+      // 駐軍 (2026-10-25, game/station.ts): the soldiers selected and the rest of their groups walk
+      // into a town we hold and stay as its 留守; the ranged and the mages go up on its walls by
+      // themselves (the user 2026-10-31: 「上城牆那個可以拿掉了」); only once we hold a town.
       if (soldiers.length > 0 && this.host.holdsTown()) {
         const picking = mode === "station";
         const station = picking

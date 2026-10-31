@@ -122,20 +122,22 @@ for (const g of mixed) {
 }
 const strongerRate = stronger.decided === 0 ? 0 : stronger.wins / stronger.decided;
 const strongerMin = STRONGER_WIN_MIN[stronger.name] ?? GATES.strongerWinMin;
-// The time limit (D-112, ceo 2026-10-29: 60 minutes once the batch is on; a draw ends at it), and for reference
-// with a longer one the old 30 minutes: games not decided by then, and the stronger AI's share of those that were.
+// The time limit (D-112, D-115: 120 minutes in CI; a draw ends at it), and for reference with a longer one the old
+// limits: games not decided by then, and the stronger AI's share of those that were.
 // Each game's own limit (older results: the longest game, which a draw reaches).
 const limitTicks = games.reduce((a, g) => Math.max(a, g.maxTicks ?? g.ticks), 0);
-const REF_TICKS = 30 * 1200;
 const decidedBy = (g: GameResult, t: number) => (g.winner === 0 || g.winner === 1) && g.ticks <= t;
-const ref30 =
-  limitTicks > REF_TICKS
-    ? {
-        undecided: games.filter((g) => !decidedBy(g, REF_TICKS)).length,
-        strongerDecided: mixed.filter((g) => decidedBy(g, REF_TICKS)).length,
-        strongerWins: mixed.filter((g) => decidedBy(g, REF_TICKS) && LEVEL[g.difficulty[g.winner]] > LEVEL[g.difficulty[1 - g.winner]]).length,
-      }
-    : null;
+const references = [30, 60]
+  .filter((m) => limitTicks > m * 1200)
+  .map((minutes) => {
+    const t = minutes * 1200;
+    return {
+      minutes,
+      undecided: games.filter((g) => !decidedBy(g, t)).length,
+      strongerDecided: mixed.filter((g) => decidedBy(g, t)).length,
+      strongerWins: mixed.filter((g) => decidedBy(g, t) && LEVEL[g.difficulty[g.winner]] > LEVEL[g.difficulty[1 - g.winner]]).length,
+    };
+  });
 const medians = games.map((g) => g.tickMicros.median).sort((a, b) => a - b);
 const p95s = games.map((g) => g.tickMicros.p95).sort((a, b) => a - b);
 const maxes = games.map((g) => g.tickMicros.max).sort((a, b) => a - b);
@@ -151,7 +153,7 @@ if (drawShare > GATES.drawsMax) failures.push(`平手 ${pct(drawShare)} 超過 $
 if (replayFail > 0) failures.push(`${replayFail} 場重播的雜湊不同`);
 if (mixed.length > 0 && strongerRate < strongerMin) failures.push(`${stronger.name} 的勝率 ${pct(strongerRate)} 低於 ${pct(strongerMin)}`);
 // Random maps: only the replays gate; the other numbers are for reference (D-074).
-const random = games.some((g) => g.map === "random");
+const random = games.some((g) => g.map === "random" || g.map === "twin-rivers");
 const gated = (f: string) => f.includes("重播") || f.includes("出生點勝率");
 const reference = random ? failures.filter((f) => !gated(f)) : [];
 if (random) failures.splice(0, failures.length, ...failures.filter(gated));
@@ -180,7 +182,7 @@ const summary = {
   styles,
   stronger: { ...stronger, winRate: strongerRate },
   limitMinutes: limitTicks / 1200,
-  ...(ref30 === null ? {} : { reference30: ref30 }),
+  references,
   ...(random ? { map: "random", layouts, reference } : {}),
   towns,
   tickMicros: { medianOfMedians: q(medians, 0.5), p95OfP95: q(p95s, 0.95), max: q(maxes, 1) },
@@ -216,12 +218,10 @@ const lines = [
   `| 玩家 0 出生點勝 | ${wins[0]}（勝率 ${pct(rate)}，平手不算進分母） |`,
   `| 玩家 1 出生點勝 | ${wins[1]}（勝率 ${pct(1 - rate)}） |`,
   `| 平手（${Math.round(limitTicks / 1200)} 分鐘到） | ${draws}（${pct(drawShare)}） |`,
-  ...(ref30 === null ? [] : [`| 第 30 分還沒分出勝負（參考，D-112 以前的上限） | ${ref30.undecided}（${pct(games.length === 0 ? 0 : ref30.undecided / games.length)}） |`]),
+  ...references.map((r) => `| 第 ${r.minutes} 分還沒分出勝負（參考，之前的上限） | ${r.undecided}（${pct(games.length === 0 ? 0 : r.undecided / games.length)}） |`),
   `| 重播雜湊不同 | ${replayFail} 場 |`,
   ...(mixed.length === 0 ? [] : [`| 難度不同的 ${mixed.length} 場 | ${stronger.name} 勝 ${stronger.wins}／分出勝負 ${stronger.decided}（${pct(strongerRate)}，門檻 ${pct(strongerMin)}） |`]),
-  ...(mixed.length === 0 || ref30 === null
-    ? []
-    : [`| 只算第 30 分前分出勝負的（參考） | ${stronger.name} 勝 ${ref30.strongerWins}／${ref30.strongerDecided}（${pct(ref30.strongerDecided === 0 ? 0 : ref30.strongerWins / ref30.strongerDecided)}） |`]),
+  ...(mixed.length === 0 ? [] : references.map((r) => `| 只算第 ${r.minutes} 分前分出勝負的（參考） | ${stronger.name} 勝 ${r.strongerWins}／${r.strongerDecided}（${pct(r.strongerDecided === 0 ? 0 : r.strongerWins / r.strongerDecided)}） |`)),
   `| 每局長度（分鐘） | 最短 ${summary.minutes.min.toFixed(1)}、中位數 ${summary.minutes.median.toFixed(1)}、90% ${summary.minutes.p90.toFixed(1)}、最長 ${summary.minutes.max.toFixed(1)} |`,
   `| 搶／治理 | ${plunder}／${govern}（搶 ${pct(summary.plunderShare)}） |`,
   `| 法師產量／陣亡 | 玩家 0：${mages[0].trained}／${mages[0].lost}；玩家 1：${mages[1].trained}／${mages[1].lost} |`,
