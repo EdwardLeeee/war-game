@@ -829,7 +829,7 @@ function play(seed: number): GameRecord {
     cannonShots: [w.cannonShots[0], w.cannonShots[1]],
     cannonKills: [w.cannonKills[0], w.cannonKills[1]],
     rejected,
-    ...(mapMode === "random" ? { layout: (map as RandomMap).layout, found: st.found } : {}),
+    ...(mapMode !== "fixed" ? { layout: (map as RandomMap).layout, found: st.found } : {}),
     finalHash: (g.hash() >>> 0).toString(16).padStart(8, "0"),
     ...(trace ? { trace: lines } : {}),
   };
@@ -881,6 +881,7 @@ const options = [
   plan.race === "sentry" ? `偷家：哨兵看到電腦 ${plan.raceSeen} 名往家裡來就直衝電腦主城（${plan.raceAt} 名或第 ${plan.raceBy / 1200} 分也去）` : "",
   think !== SCRIPTED_THINK_EVERY ? `每 ${think} tick 下一輪指令` : "",
   mapMode === "random" ? "隨機地圖（我只知道探到的，派一名槍兵偵察；電腦也要偵察）" : "",
+  mapMode === "twin-rivers" ? "雙河關（我只知道探到的，派一名槍兵偵察；電腦也要偵察）" : "",
   plan.towerRush > 0 ? `塔攻：${plan.towerRush} 名槍兵到電腦主城旁蓋哨所駐守，再蓋 2 座箭樓（D-080）` : "",
   plan.rushBuildersOnly ? "塔攻（只派村民）：4 名村民到電腦主城旁蓋哨所和 2 座箭樓，沒有護送、沒有駐守（D-080）" : "",
   plan.fortress ? "半路要塞：第 12 分起，在往電腦主城的路上、離家 37 格，蓋哨所（6 名槍兵駐守）和 5 座箭樓（D-081）" : "",
@@ -997,7 +998,7 @@ if (plan.harass > 0) {
   }
   out.push("");
 }
-if (mapMode === "random") {
+if (mapMode !== "fixed") {
   const by = (l: string) => games.filter((x) => x.layout === l);
   const foundAt = games.filter((x) => (x.found ?? -1) >= 0).map((x) => x.found!).sort((a, b) => a - b);
   out.push(

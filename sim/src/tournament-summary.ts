@@ -151,7 +151,7 @@ if (drawShare > GATES.drawsMax) failures.push(`平手 ${pct(drawShare)} 超過 $
 if (replayFail > 0) failures.push(`${replayFail} 場重播的雜湊不同`);
 if (mixed.length > 0 && strongerRate < strongerMin) failures.push(`${stronger.name} 的勝率 ${pct(strongerRate)} 低於 ${pct(strongerMin)}`);
 // Random maps: only the replays gate; the other numbers are for reference (D-074).
-const random = games.some((g) => g.map === "random");
+const random = games.some((g) => g.map === "random" || g.map === "twin-rivers");
 const gated = (f: string) => f.includes("重播") || f.includes("出生點勝率");
 const reference = random ? failures.filter((f) => !gated(f)) : [];
 if (random) failures.splice(0, failures.length, ...failures.filter(gated));

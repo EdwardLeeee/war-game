@@ -536,10 +536,11 @@ export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360";
 /**
  * Which map a game is played on (D-074). "fixed": the prototype's 96 x 96 map, the same every
  * game, everything on it known from the start. "random": a new 129 x 129 map from the game's
- * seed, only explored ground known (MapInfo). Random maps take the "standard" scenario only.
+ * seed, only explored ground known (MapInfo). "twin-rivers" (雙河關, the user 2026-10-31): one 129 x 129 map kept as
+ * data, known as a random map is, the two starts swapped on an odd seed. Both take the "standard" scenario only.
  */
-export type MapMode = "fixed" | "random";
-export const MAP_MODES = ["fixed", "random"] as const satisfies readonly MapMode[];
+export type MapMode = "fixed" | "random" | "twin-rivers";
+export const MAP_MODES = ["fixed", "random", "twin-rivers"] as const satisfies readonly MapMode[];
 
 // --- building placement ---------------------------------------------------------------
 
@@ -1038,7 +1039,7 @@ export type ToWorker =
       difficulty?: AiDifficulty[];
       /**
        * Absent: "fixed". "random" (D-074): a new map from the seed; a player, person or AI, starts
-       * knowing only its own main city (MapInfo).
+       * knowing only its own main city (MapInfo). "twin-rivers": 雙河關, one map, known the same way.
        */
       map?: MapMode;
       /**
