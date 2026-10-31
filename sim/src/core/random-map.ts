@@ -79,7 +79,7 @@ export interface RandomMap extends GameMap {
   orientation: number;
   /** The map's own symmetry in real coordinates: it carries player 0's side onto player 1's. */
   mirror: Frame;
-  /** How many draws were thrown away before this one (R6-51's measurement); ATTEMPTS - 1 or more: a plain draw. */
+  /** How many draws were thrown away before this one, not counting WAY's (R6-51's measurement); ATTEMPTS - 1 or more: a plain draw. */
   redraws: number;
 }
 
@@ -99,10 +99,16 @@ const OTHER_TOWN_MIN = 40;
 const TOWN_GAP = 20;
 /** The same with KEEP on (D-100): the castles are 15 and 19 cells across instead of 11 and 14. */
 const TOWN_GAP_KEEP = 26;
-export const ATTEMPTS = 40;
+export const ATTEMPTS = 80;
 const TRIES = 400;
 /** The longest walks a map may have, against the open walk (D-089 / R6-51, ceo 2026-10-20). */
 export const WALK_CAPS = { mainCity: 1.4, town: 1.6 };
+/**
+ * The way for an army between the main cities (D-115; ceo 2026-10-31: like the user's map, 1.76 times the walk): a column
+ * 5 cells wide gets through, min to max hundredths of the walk. After `tries` maps without it, the nearest of them.
+ * Every map has a way 3 cells wide.
+ */
+export const WAY = { min: 140, max: 220, tries: 24 };
 /** Why draws were thrown away, counted over every map made (R6-51's measurement; not game state). */
 export const THROWN_AWAY: Record<string, number> = {};
 const away = (why: string): null => {
@@ -139,9 +145,23 @@ export function generateRandomMap(
   const coin = rng.below(2);
   const lay: Layout = layout ?? (coin === 0 ? "diagonal" : "adjacent");
   if (lay === "adjacent" && towns % 2 === 0) throw new Error("map: adjacent maps take an odd number of towns");
-  for (let attempt = 0; attempt < 2 * ATTEMPTS; attempt++) {
-    // From the last attempt on, no obstacles, random rock or forest: only the town layout can fail.
-    const g = attemptMap(n, rng, lay, towns, attempt < ATTEMPTS - 1);
+  let attempt = 0;
+  let nearest: Generated | null = null;
+  for (let columns = 0; attempt < ATTEMPTS - 1 && columns < WAY.tries; ) {
+    const g = attemptMap(n, rng, lay, towns, true);
+    if (g === null) {
+      attempt++;
+      continue;
+    }
+    if (g.off === 0) return orient(seed, g, rng.below(8), rng.below(2) === 1, attempt);
+    away("column's way");
+    columns++;
+    if (nearest === null || g.off < nearest.off) nearest = g;
+  }
+  if (nearest !== null) return orient(seed, nearest, rng.below(8), rng.below(2) === 1, Math.min(attempt, ATTEMPTS - 2));
+  // From the last attempt on, no obstacles, random rock or forest: only the town layout can fail.
+  for (; attempt < 2 * ATTEMPTS; attempt++) {
+    const g = attemptMap(n, rng, lay, towns, false);
     if (g !== null) return orient(seed, g, rng.below(8), rng.below(2) === 1, attempt);
   }
   throw new Error(`map: no layout for seed ${seed}, size ${n}`);
@@ -169,6 +189,8 @@ interface Generated {
   tower: Pt;
   towerSize: number;
   M: Frame;
+  /** How far its column's way is off WAY (hundredths of the walk; 0: within it). */
+  off: number;
 }
 
 function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scatter: boolean): Generated | null {
@@ -493,6 +515,7 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     for (const [dx, dy] of c.outside) if (seen[(t.y + dy) * n + t.x + dx] !== 1) return away("gate cut off");
   }
   // Walks no longer than the caps, trees standing (R6-51); the other side is the mirror image.
+  let off = 0;
   if (scatter) {
     const blocked = new Uint8Array(n * n);
     for (let i = 0; i < n * n; i++) if (!passable(i)) blocked[i] = 1;
@@ -507,11 +530,17 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
       for (const [qx, qy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) if (ratio({ x: spawns[1].x + qx, y: spawns[1].y + qy }) > WALK_CAPS.mainCity) return away("main city walk");
       for (const t of placed) if (ratio(t) > WALK_CAPS.town) return away("town walk");
     }
+    // Trees do not count: they get cut.
+    for (let i = 0; i < n * n; i++) blocked[i] = rock[i] === 1 || wall[i] === 1 || !walkableTerrain(ground[i]) ? 1 : 0;
+    const way = columnWalks(n, blocked, spawns);
+    if (way.three < 0) return away("no way 3 wide");
+    const times = way.five < 0 ? 1 << 20 : Math.trunc((way.five * 100) / way.foot);
+    off = times < WAY.min ? WAY.min - times : times > WAY.max ? times - WAY.max : 0;
   }
 
   // The tower: 2 x 2 with its centre on the town centre's top-left corner, on the diagonal; 3 x 3
   // centred on the town centre on a vertical axis. Either way its own mirror image.
-  return { n, layout, rock, wall, ground, kind, spawns, towns: placed, tower, towerSize, M };
+  return { n, layout, rock, wall, ground, kind, spawns, towns: placed, tower, towerSize, M, off };
 }
 
 /** The walk with nothing in the way, in octile steps (10 straight, 14 diagonal). */
@@ -549,6 +578,45 @@ function octileWalk(n: number, blocked: Uint8Array, from: number): Int32Array {
     }
   }
   return dist;
+}
+
+/**
+ * The walk between two main cities (octile steps) on foot and for a column 5 and 3 cells wide, which keeps its centre 3
+ * and 2 rings off anything blocked; -1: no such way. Round a main city everything counts as open: what is measured is
+ * the way between. A ford, a bridge and a ridge's gap are 3 wide.
+ */
+export function columnWalks(n: number, blocked: Uint8Array, homes: readonly Pt[]): { foot: number; five: number; three: number } {
+  // Rings from each cell to the nearest blocked one (8 round each).
+  const clear = new Int32Array(n * n).fill(1 << 30);
+  const queue: number[] = [];
+  for (let i = 0; i < n * n; i++) {
+    if (blocked[i] === 0) continue;
+    clear[i] = 0;
+    queue.push(i);
+  }
+  for (let h = 0; h < queue.length; h++) {
+    const c = queue[h];
+    const x = c % n;
+    const y = (c - x) / n;
+    for (let yy = Math.max(0, y - 1); yy <= Math.min(n - 1, y + 1); yy++) {
+      for (let xx = Math.max(0, x - 1); xx <= Math.min(n - 1, x + 1); xx++) {
+        if (clear[yy * n + xx] <= clear[c] + 1) continue;
+        clear[yy * n + xx] = clear[c] + 1;
+        queue.push(yy * n + xx);
+      }
+    }
+  }
+  const [a, b] = homes;
+  const walk = (rings: number) => {
+    const closed = new Uint8Array(n * n);
+    for (let i = 0; i < n * n; i++) if (clear[i] < rings) closed[i] = 1;
+    for (const h of homes) {
+      for (let y = Math.max(0, h.y - 6); y < Math.min(n, h.y + 6); y++) for (let x = Math.max(0, h.x - 6); x < Math.min(n, h.x + 6); x++) closed[y * n + x] = blocked[y * n + x];
+    }
+    const d = octileWalk(n, closed, a.y * n + a.x)[b.y * n + b.x];
+    return d >= 1 << 30 ? -1 : d;
+  };
+  return { foot: walk(1), five: walk(3), three: walk(2) };
 }
 
 /** Every 4-connected group of trees has a tree with a reached (seen) neighbour. */

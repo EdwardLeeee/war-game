@@ -8,7 +8,8 @@ import { test } from "node:test";
 import { FIXED_TERRAIN } from "../src/core/fixed-terrain.ts";
 import { Game } from "../src/core/game.ts";
 import { generateMap, type GameMap } from "../src/core/map.ts";
-import { ATTEMPTS, generateRandomMap, WATER_TRIM } from "../src/core/random-map.ts";
+import { ATTEMPTS, generateRandomMap, WATER_TRIM, WAY } from "../src/core/random-map.ts";
+import { funnel } from "../src/map-gaps.ts";
 import { BUILDINGS, KEEP } from "../src/core/rules.ts";
 import { checkPlacement } from "../src/placement.ts";
 import { BuildingType, CELL_SHIFT, crossingTerrain, NodeKind, PlaceBit, Reject, Stance, Terrain, UnitType } from "../src/protocol.ts";
@@ -242,4 +243,20 @@ test("the snapshot's ground: the fixed map whole; on a random map only what was 
   const enc = new SnapshotEncoder(w.nodeAmount.length);
   assert.ok(enc.encode(v, []).terrain != null, "with the first fog");
   assert.equal(enc.encode(v, []).terrain, null, "not again until the fog moves on");
+});
+
+test("D-115: the way between the main cities (seeds 1-100): of each layout 60% with a column 5 wide 1.40-2.20 times the walk, 20% at most with none, every map with a way 3 wide", () => {
+  const maps = new Map<string, { w5: number; three: boolean }[]>();
+  for (let seed = 1; seed <= 100; seed++) {
+    const m = generateRandomMap(seed);
+    if (!maps.has(m.layout)) maps.set(m.layout, []);
+    maps.get(m.layout)?.push(funnel(m));
+  }
+  assert.equal(maps.size, 2);
+  for (const [layout, l] of maps) {
+    assert.ok(l.every((x) => x.three), `${layout}: a way 3 wide on every map`);
+    const within = l.filter((x) => x.w5 * 100 >= WAY.min && x.w5 * 100 <= WAY.max).length;
+    assert.ok(within * 10 >= l.length * 6, `${layout}: ${within}/${l.length} within the band`);
+    assert.ok(l.filter((x) => x.w5 === 9).length * 5 <= l.length, `${layout}: no way 5 wide`);
+  }
 });

@@ -11,7 +11,7 @@ import { toCanon } from "../src/frame.ts";
 import { NEUTRAL, NodeKind, Terrain, TownSize } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { mapInfo } from "../src/view/view.ts";
-import { switchedOff } from "./helpers.ts";
+import { switchedOff, switchedOn } from "./helpers.ts";
 
 /** What the map is made of: terrain, resources, towns, starts, the big city's keep. */
 function digest(m: ReturnType<typeof twinRiversMap>): string {
@@ -21,7 +21,7 @@ function digest(m: ReturnType<typeof twinRiversMap>): string {
   return h.digest("hex").slice(0, 16);
 }
 
-test("twin-rivers is locked: cells and resources by hash; two rivers' worth of water, 4 crossings, an adjacent layout", () => {
+test("twin-rivers is locked: cells and resources by hash; two rivers' worth of water, 4 crossings, an adjacent layout", switchedOn(KEEP, () => {
   const m = twinRiversMap(2);
   assert.equal(digest(m), "ccd9a10bfe59388e");
   const count = (t: number) => m.terrain.reduce((a, v) => a + (v === t ? 1 : 0), 0);
@@ -30,9 +30,9 @@ test("twin-rivers is locked: cells and resources by hash; two rivers' worth of w
   assert.equal(count(Terrain.Ford) + count(Terrain.BridgeNS) + count(Terrain.BridgeEW), 36, "4 crossings of 9 cells");
   assert.deepEqual(m.towns.filter((t) => t.size === TownSize.Large).map((t) => [t.cellX, t.cellY]), [[68, 64]]);
   assert.ok(m.nodes.filter((x) => x.kind === NodeKind.GoldMine).every((x) => x.amount === 600));
-});
+}));
 
-test("an odd seed swaps the two starts and their frames, nothing else; each start is the other's mirror image", () => {
+test("an odd seed swaps the two starts and their frames, nothing else; each start is the other's mirror image", switchedOn(KEEP, () => {
   const even = twinRiversMap(10);
   const odd = twinRiversMap(11);
   assert.deepEqual(odd.spawns.map((s) => [s.player, s.cellX, s.cellY]), [[0, even.spawns[1].cellX, even.spawns[1].cellY], [1, even.spawns[0].cellX, even.spawns[0].cellY]]);
@@ -47,9 +47,9 @@ test("an odd seed swaps the two starts and their frames, nothing else; each star
     const p = mir(s.cellX, s.cellY);
     assert.ok(at.has(`${s.kind}:${p.u},${p.v}`), `node ${s.cellX},${s.cellY}`);
   }
-});
+}));
 
-test("a game on it: both seeds' starts, buildings and units mirror images; each player starts knowing its own main city only", () => {
+test("a game on it: both seeds' starts, buildings and units mirror images; each player starts knowing its own main city only", switchedOn(KEEP, () => {
   for (const seed of [4, 5]) {
     const g = new Game({ seed, scenario: "standard", map: "twin-rivers" });
     const w = g.w;
@@ -64,16 +64,16 @@ test("a game on it: both seeds' starts, buildings and units mirror images; each 
     const info = mapInfo(m, 0);
     assert.deepEqual([info.mode, info.towns.length, info.spawns.length], ["random", 0, 1]);
   }
-});
+}));
 
-test("a log says twin-rivers, and replays to the same hashes", () => {
+test("a log says twin-rivers, and replays to the same hashes", switchedOn(KEEP, () => {
   const r = new Runner({ seed: 7, scenario: "standard", ai: [true, true], maxTicks: 1200, difficulty: ["hard", "hard"], map: "twin-rivers" });
   while (!r.over && r.game.tick < 1200) r.tick();
   assert.equal(r.header([true, true]).map, "twin-rivers");
   const rp = new Runner({ seed: 7, scenario: "standard", ai: [false, false], replay: r.game.log, maxTicks: 1200, map: "twin-rivers" });
   while (!rp.over && rp.game.tick < r.game.tick) rp.tick();
   assert.deepEqual(rp.hashes, r.hashes);
-});
+}));
 
 test("KEEP off: no twin-rivers (its walls are D-100's)", switchedOff(KEEP, () => {
   assert.throws(() => twinRiversMap(1), /KEEP/);
