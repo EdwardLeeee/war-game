@@ -265,13 +265,14 @@ def water_layer(size=512, tile_m=WATER_TILE_M, seed=7):
     return np.dstack([np.clip(rgb, 0, 1), h])
 
 
-def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=0.0, town=None, culture="E"):
-    """The ground top-down (sRGB 0..1), `ppm` pixels a metre, as ground-draw.ts's fragment shader colours it."""
+def compose(grid, nodes, layers, ppm=24, rules=RULES, grade=GRADE, high=True, t=0.0, town=None, culture="E", rows=None):
+    """The ground top-down (sRGB 0..1), `ppm` pixels a metre, as ground-draw.ts's fragment shader colours it.
+    rows=(r0, r1): only those pixel rows (every step is per pixel: a big picture in strips)."""
     n = grid.shape[0]
     size = n * CELL_M
     px = int(size * ppm)
     m = (np.arange(px) + 0.5) / ppm
-    mx, my = np.meshgrid(m, m)                         # metres; y down the picture (north at the top)
+    mx, my = np.meshgrid(m, m if rows is None else m[rows[0]:rows[1]])   # metres; y down the picture (north at the top)
     w = sample(weights(grid, nodes, rules), mx / size, my / size)
     noise = value_noise(256, 16, 1)[..., None]
     macro = value_noise(128, 4, 2)[..., None]

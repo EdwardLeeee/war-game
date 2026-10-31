@@ -374,6 +374,15 @@ TARGETS["r8m_states"] = [dict(kind="r8_market", culture=c, state=st, opts=dict(o
                                                           ("damaged", "damaged_a"))]
 CAMERA["r8m_states"] = proj.OBLIQUE
 LOOK["r8m_states"] = "r8"
+# R9 (napali realism trial, ceo 2026-11-01): the East main city whose outline is not its square (r9/blender/main_city_r9.py),
+# on the square camera and on the diamond one (R9-06 乙)
+TARGETS["r9_city"] = [dict(kind="r9_main_city", culture="E", name="main_city_E_r9"),
+                      dict(kind="r8_main_city", culture="E", name="main_city_E_r8")]
+CAMERA["r9_city"] = proj.OBLIQUE
+LOOK["r9_city"] = "r8"
+TARGETS["r9_city_d"] = [dict(kind="r9_main_city", culture="E", name="main_city_E_r9_d")]
+CAMERA["r9_city_d"] = proj.DIAMOND
+LOOK["r9_city_d"] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
 # replaces these pieces of the r8p run in the atlas
 TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in
