@@ -94,8 +94,8 @@ import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn, orderState } from "./orders.ts";
-import { goesOnWalls, heldTown, leaveWalls, WALL_PROMPT, WALL_PROMPT_MIXED, WALL_WRONG_TARGET, wallTap } from "./walls.ts";
-import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT, STATION_PROMPT, STATION_PROMPT_MIXED, STATION_WRONG_TARGET, stationTap, upOnArrival } from "./station.ts";
+import { goesOnWalls, heldTown, leaveWalls } from "./walls.ts";
+import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT, STATION_HERE, STATION_PROMPT, STATION_PROMPT_MIXED, STATION_WRONG_TARGET, stationTap, upOnArrival } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
 import { type Attacker, type AssaultScene, Assaults, assaultOrders, type Target } from "./assault.ts";
@@ -192,7 +192,6 @@ const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   rally: "點地面設集結點",
   garrison: GARRISON_PROMPT,
   post: POST_PROMPT,
-  wall: WALL_PROMPT,
   station: STATION_PROMPT,
 };
 
@@ -634,8 +633,8 @@ export class Game implements GestureHost {
     if (view === null) return;
     const wx = (cx + 0.5) * TILE_PX;
     const wy = (cy + 0.5) * TILE_PX;
-    if (this.mode === "garrison" || this.mode === "post" || this.mode === "wall" || this.mode === "station") {
-      this.toast(this.mode === "post" ? POST_WRONG_TARGET : this.mode === "wall" ? WALL_WRONG_TARGET : this.mode === "station" ? STATION_WRONG_TARGET : GARRISON_WRONG_TARGET);
+    if (this.mode === "garrison" || this.mode === "post" || this.mode === "station") {
+      this.toast(this.mode === "post" ? POST_WRONG_TARGET : this.mode === "station" ? STATION_WRONG_TARGET : GARRISON_WRONG_TARGET);
       return;
     }
     if (this.mode !== "normal") {
@@ -825,8 +824,12 @@ export class Game implements GestureHost {
       }
       cmd = { ...cmd, u: out };
     }
+    const group = this.groupOrderOut(cmd);
+    if (group === null) return -1;
+    cmd = group.cmd;
     const seq = this.post(cmd, false);
     this.acknowledge(cmd, seq);
+    if (group.kept > 0 && "u" in cmd && Array.isArray(cmd.u)) this.toast(`${cmd.u.length} 名出發，留 ${group.kept} 名守城`, "ok");
     // 攻城打到底 (assault.ts): another order ends a soldier's attack on a town; 攻擊 at a town not ours starts one.
     if (ASSAULT_ENDS.has(cmd.c) && "u" in cmd && Array.isArray(cmd.u)) {
       this.assaults.drop(cmd.u);
@@ -868,6 +871,28 @@ export class Game implements GestureHost {
     if (named !== undefined && (cmd.c === "stance" || cmd.c === "garrison" || cmd.c === "post" || redirects(cmd))) this.charges.drop(Array.isArray(named) ? named : [named]);
     if (cmd.c === "attack") this.charges.start(cmd.u, cmd.target, this.targetCell(cmd.target), this.view?.header?.[H.tick] ?? 0);
     return seq;
+  }
+
+  /**
+   * An order from 軍團畫面, whose group's button selects those in towns too (the user 2026-10-31):
+   * 攻擊 and 移動 take them out, each town keeping the least it needs; any other order is not for
+   * them. Those selected by hand go by the player's word (command, below). Null: nobody to send.
+   */
+  private groupOrderOut(cmd: CommandBody): { cmd: CommandBody; kept: number } | null {
+    const inTown = "u" in cmd && Array.isArray(cmd.u) && this.groupView !== null ? cmd.u.filter((id) => this.army.isGarrisoned(id)) : [];
+    if (inTown.length === 0 || !("u" in cmd) || !Array.isArray(cmd.u)) return { cmd, kept: 0 };
+    let stay = inTown;
+    if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") {
+      const units = this.soldiers();
+      stay = this.army.townsOf(inTown).flatMap((town) => {
+        const area = this.townArea(town);
+        return area === null ? [] : this.army.split(units, area, (id) => inTown.includes(id), this.garrisonMin(town)).kept;
+      });
+    }
+    const u = cmd.u.filter((id) => !stay.includes(id));
+    if (u.length > 0) return { cmd: { ...cmd, u } as CommandBody, kept: cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat" ? stay.length : 0 };
+    this.toast(cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat" ? `城裡的 ${stay.length} 名都要留下守城：要帶走按「全部帶走」` : "駐守的兵留在城裡");
+    return null;
   }
 
   /**
@@ -1981,10 +2006,22 @@ export class Game implements GestureHost {
     return view === null ? 0 : this.army.stationedOf(i).reduce((n, e) => n + e.ids.filter((id) => view.unitRow(id) >= 0).length, 0) + this.groupPosted(i).length;
   }
 
-  /** Group i's living members not stationed in a town: what its button selects. */
+  /** Group i's living members not stationed in a town nor away. */
   groupMarching(i: number): number[] {
     const view = this.view;
     return view === null ? [] : this.army.marching(i).filter((id) => view.unitRow(id) >= 0);
+  }
+
+  /** Group i's living members its button selects: those stationed in towns too, not those at outposts or in buildings. */
+  groupOnCall(i: number): number[] {
+    const view = this.view;
+    return view === null ? [] : this.army.onCall(i).filter((id) => view.unitRow(id) >= 0);
+  }
+
+  /** What is selected, those in towns out of it while 軍團畫面 shows them: orders other than 攻擊 and 移動 are not for them. */
+  private freeSelected(): number[] {
+    const units = this.view?.selection.units ?? [];
+    return this.groupView === null ? units : units.filter((id) => !this.army.isGarrisoned(id));
   }
 
   /** Every snapshot: forget dead soldiers; a town that is no longer ours has no garrison. */
@@ -2041,7 +2078,7 @@ export class Game implements GestureHost {
     const tick = view.header?.[H.tick] ?? 0;
     if (tick - this.recruitMessageTick >= RECRUIT_MESSAGE_TICKS) {
       this.recruitMessageTick = tick;
-      const going = others.length > 0 ? "，正走過去" : "，在原地待命";
+      const going = others.length > 0 ? "，正走過去" : this.army.stationedOf(i).length > 0 ? "，走進城裡留守" : "，在原地待命";
       this.toast(short !== null ? `新的${UNIT_NAME[type] ?? "兵"}補進編隊 ${i + 1}${going}` : `新的${UNIT_NAME[type] ?? "兵"}加入兵最多的編隊 ${i + 1}${going}`);
     }
     // It takes the group's formation (D-027): 散開 when more than half of the others are. New
@@ -2060,6 +2097,13 @@ export class Game implements GestureHost {
       const o = view.unitRow(id);
       return o < 0 || isHiding(u[o + UnitField.order]) ? null : { x: u[o + UnitField.x], y: u[o + UnitField.y] };
     };
+    // New to a group all in a town: into it, as its 留守 (the user 2026-10-31).
+    for (const w of this.army.walkIns((id) => view.unitRow(id) >= 0 && isSoldier(view.unitType(id)))) {
+      const spot = view.knownTowns.get(w.town);
+      if (spot === undefined) continue;
+      this.autoCommand({ c: "retreat", u: w.ids, x: spot.cellX, y: spot.cellY });
+      this.keepIn(w.town, w.ids);
+    }
     for (const o of this.army.muster(tick, where)) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
   }
 
@@ -2094,7 +2138,8 @@ export class Game implements GestureHost {
         this.setStance(taken.filter((id) => isHeld(id) !== hold), hold ? Stance.Hold : Stance.Aggressive);
       } else {
         // With nobody in the group to join, they are the group where they stand (D-080).
-        this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}${others.length > 0 ? "，正走過去" : "，在原地待命"}`);
+        const inTown = others.length === 0 && this.army.stationedOf(d.group).length > 0;
+        this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}${others.length > 0 ? "，正走過去" : inTown ? "，走進城裡留守" : "，在原地待命"}`);
       }
       // They take the group's formation, as recruits do (D-027).
       if (mostlyLoose(others, (m) => view.unitLoose(m))) this.autoCommand({ c: "formation", u: d.ids, loose: true });
@@ -2113,8 +2158,7 @@ export class Game implements GestureHost {
   showGroup(i: number, jump: boolean): void {
     const view = this.view;
     if (view === null) return;
-    // Those stationed in towns stay there (the user 2026-10-26): 出城歸隊 brings them.
-    const alive = this.groupMarching(i);
+    const alive = this.groupOnCall(i);
     const now = view.selection.units;
     const same = now.length === alive.length && now.every((id) => alive.includes(id));
     const before = this.groupView === i ? this.beforeGroup : same ? [] : [...now];
@@ -2422,7 +2466,6 @@ export class Game implements GestureHost {
     }
     if (this.mode === "garrison") return this.garrisonAt(w.x, w.y);
     if (this.mode === "post") return this.postAt(w.x, w.y);
-    if (this.mode === "wall") return this.wallAt(w.x, w.y);
     if (this.mode === "station") return this.stationAt(w.x, w.y);
     this.apply(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
   }
@@ -2436,7 +2479,7 @@ export class Game implements GestureHost {
     const o = pick === null ? -1 : view.buildingRow(pick.id);
     const target = pick === null || o < 0 || b === undefined ? null : { id: pick.id, owner: pick.owner, type: pick.type, done: b[o + BuildingField.progress] >= 1000 };
     const hides = garrisonTypes(view.rules);
-    const r = garrisonTap(view.selection.units, target, view.me, (id) => hides.includes(view.unitType(id)), (type) => holdsOf(view.rules, type));
+    const r = garrisonTap(this.freeSelected(), target, view.me, (id) => hides.includes(view.unitType(id)), (type) => holdsOf(view.rules, type));
     if ("error" in r) {
       this.toast(r.error);
       return;
@@ -2476,34 +2519,6 @@ export class Game implements GestureHost {
     return { on, capacity: view.castleOf(spot)?.wall.length ?? 0 };
   }
 
-  /** 上城牆 (D-096): the town tapped takes the ranged units and mages selected on its wall, or the player is told why not. */
-  private wallAt(wx: number, wy: number): void {
-    const view = this.view;
-    if (view === null) return;
-    const spot = this.townAtCell(wx, wy);
-    const o = spot === null ? -1 : view.townRow(spot.id);
-    const t = view.curr?.snap.towns;
-    const count = spot === null ? null : this.wallCount(spot.id);
-    const town = spot === null ? null : { id: spot.id, held: o >= 0 && t !== undefined && heldTown(t[o + TownField.owner], t[o + TownField.state], view.me), onWall: count?.on ?? 0, capacity: count?.capacity ?? 0 };
-    const r = wallTap(view.selection.units, town, (id) => goesOnWalls(view.unitType(id)));
-    if ("error" in r) {
-      this.toast(r.error);
-      return;
-    }
-    this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
-    if (r.cmd.c !== "wall" || spot === null) return;
-    // On its wall they are its 留守 (ceo 2026-10-26): still their groups', 堅守, out of what is
-    // selected and of 全軍 (a 移動 of the rest would take them down); 下城牆 or 出城歸隊 brings them back.
-    // As many as there are free places (the simulation leaves the others where they are).
-    const up = r.cmd.u.slice(0, Math.max(0, (count?.capacity ?? 0) - (count?.on ?? 0)));
-    this.army.stationAll(spot.id, up).forEach((n, i) => {
-      if (n > 0) this.alarms.left(i, n);
-    });
-    this.setStance(up, Stance.Hold);
-    view.selection = { ...view.selection, units: view.selection.units.filter((id) => !up.includes(id)) };
-    this.toast(`${up.length} 名上城牆：留守這座城`);
-  }
-
   /** 駐軍 (station.ts): we hold some town now (the button shows then). */
   holdsTown(): boolean {
     const view = this.view;
@@ -2514,9 +2529,10 @@ export class Game implements GestureHost {
   }
 
   /**
-   * 駐軍 (station.ts): the town tapped keeps the soldiers selected as its 留守: they walk in (移動),
-   * still their groups' but out of their buttons, hold (堅守); with walls on, the ranged and the
-   * mages go up once in. Or the player is told why not.
+   * 駐軍 (station.ts): the town tapped keeps the soldiers selected and the rest of their groups as
+   * its 留守: they walk in (移動), still their groups', and hold (堅守); with walls on, the ranged and
+   * the mages go up once in. Those stationed in another town come too, that town keeping the least
+   * it needs (the user 2026-10-31); those in this one stay where they are. Or the player is told why not.
    */
   private stationAt(wx: number, wy: number): void {
     const view = this.view;
@@ -2525,25 +2541,40 @@ export class Game implements GestureHost {
     const o = spot === null ? -1 : view.townRow(spot.id);
     const t = view.curr?.snap.towns;
     const town = spot === null ? null : { id: spot.id, held: o >= 0 && t !== undefined && heldTown(t[o + TownField.owner], t[o + TownField.state], view.me) };
-    const r = stationTap(view.selection.units, town, (id) => isSoldier(view.unitType(id)));
+    const r = stationTap(this.army.withGroups(view.selection.units), town, (id) => view.unitRow(id) >= 0 && isSoldier(view.unitType(id)));
     if ("error" in r || spot === null) {
       if ("error" in r) this.toast(r.error);
       return;
     }
-    // 移動 in first: the player's own order ends a garrison (GDD §5); then theirs, holding.
-    const from = this.army.townsOf(r.ids).filter((t) => t !== spot.id);
-    this.command({ c: "retreat", u: r.ids, x: spot.cellX, y: spot.cellY });
-    const short = this.shortText(from);
-    this.army.stationAll(spot.id, r.ids).forEach((n, i) => {
-      if (n > 0) this.alarms.left(i, n);
+    const units = this.soldiers();
+    const kept = this.army.townsOf(r.ids).flatMap((from) => {
+      const area = from === spot.id ? null : this.townArea(from);
+      return area === null ? [] : this.army.split(units, area, (id) => r.ids.includes(id), this.garrisonMin(from)).kept;
     });
-    this.setStance(r.ids, Stance.Hold);
-    if (view.rules.features?.walls === true) for (const id of r.ids) if (goesOnWalls(view.unitType(id))) this.stationWalks.set(id, spot.id);
+    const here = this.army.garrisonOf(spot.id);
+    const go = r.ids.filter((id) => !kept.includes(id) && !here.includes(id));
     view.selection = { ...view.selection, units: view.selection.units.filter((id) => !r.ids.includes(id)) };
     this.apply([{ kind: "endMode" }]);
-    const done = `${r.ids.length} 名駐軍在${spot.size === TownSize.Large ? "大城" : "小鎮"}：留守、堅守，不跟全軍走`;
-    if (short === null) this.toast(done, "ok");
-    else this.toast(`${done}。原本的城：${short}`);
+    if (go.length === 0) {
+      this.toast(kept.length > 0 ? `城裡的 ${kept.length} 名都要留下守城` : STATION_HERE);
+      return;
+    }
+    // 移動 in first: the player's own order ends a garrison (GDD §5); then theirs, holding. From
+    // 軍團畫面 this goes through groupOrderOut too, which keeps nobody more: `kept` still stand there.
+    this.command({ c: "retreat", u: go, x: spot.cellX, y: spot.cellY });
+    this.keepIn(spot.id, go);
+    const done = `${go.length} 名駐軍在${spot.size === TownSize.Large ? "大城" : "小鎮"}：留守、堅守，不跟全軍走`;
+    this.toast(kept.length > 0 ? `${done}，原本的城留 ${kept.length} 名守城` : done, "ok");
+  }
+
+  /** These soldiers stay in the town from now, on their way in too: they hold, and the ranged and the mages go up once in. */
+  private keepIn(town: number, ids: number[]): void {
+    const view = this.view;
+    this.army.stationAll(town, ids).forEach((n, i) => {
+      if (n > 0) this.alarms.left(i, n);
+    });
+    this.setStance(ids, Stance.Hold);
+    if (view?.rules.features?.walls === true) for (const id of ids) if (goesOnWalls(view.unitType(id))) this.stationWalks.set(id, town);
   }
 
   /**
@@ -2577,43 +2608,6 @@ export class Game implements GestureHost {
     }
   }
 
-  /**
-   * 下城牆 (D-096): those selected on a wall (or going up) come down, into the town. Those in a
-   * group walk back to it (the user 2026-10-26: 「下城牆沒辦法回到原本的軍隊」); those in none stay
-   * as the town's 留守. Below the least the town needs, the player is told.
-   */
-  leaveWall(): void {
-    const view = this.view;
-    const u = view?.curr?.snap.units;
-    if (view === null || u === undefined) return;
-    const rows = view.selection.units
-      .map((id) => ({ id, o: view.unitRow(id) }))
-      .filter((r) => r.o >= 0)
-      .map((r) => ({ id: r.id, order: u[r.o + UnitField.order], town: u[r.o + UnitField.orderTarget] }));
-    const cmds = leaveWalls(rows);
-    let back = 0;
-    let stay = 0;
-    const left: number[] = [];
-    for (const cmd of cmds) {
-      if (cmd.c !== "leave_wall") continue;
-      this.command(cmd);
-      const grouped = cmd.u.filter((id) => this.army.groupOf(id) !== null);
-      const alone = cmd.u.filter((id) => !grouped.includes(id));
-      this.army.backToGroups(grouped);
-      this.setStance(grouped, Stance.Aggressive);
-      this.army.stationAll(cmd.town, alone.filter((id) => !this.army.isGarrisoned(id)));
-      this.setStance(alone, Stance.Hold);
-      back += grouped.length;
-      stay += alone.length;
-      if (grouped.length > 0) left.push(cmd.town);
-    }
-    if (back > 0) this.regroup();
-    if (cmds.length === 0) return;
-    const parts = [...(back > 0 ? [`${back} 名回去編隊`] : []), ...(stay > 0 ? [`${stay} 名留守城裡`] : [])];
-    const short = this.shortText(left);
-    this.toast(`${back + stay} 名下城牆${parts.length > 0 ? `：${parts.join("，")}` : ""}${short === null ? "" : `。${short}`}`);
-  }
-
   /** 駐守 (D-080): the outpost tapped takes the spearmen selected, or the player is told why not. */
   private postAt(wx: number, wy: number): void {
     const view = this.view;
@@ -2622,7 +2616,7 @@ export class Game implements GestureHost {
     const b = view.curr?.snap.buildings;
     const o = pick === null ? -1 : view.buildingRow(pick.id);
     const target = pick === null || o < 0 || b === undefined ? null : { id: pick.id, owner: pick.owner, type: pick.type, done: b[o + BuildingField.progress] >= 1000 };
-    const r = postTap(view.selection.units, target, view.me, (id) => view.unitType(id) === POST_TYPE);
+    const r = postTap(this.freeSelected(), target, view.me, (id) => view.unitType(id) === POST_TYPE);
     if ("error" in r) {
       this.toast(r.error);
       return;
@@ -2884,7 +2878,7 @@ export class Game implements GestureHost {
     const view = this.view;
     const u = view?.curr?.snap.units;
     if (view === null || u === undefined) return;
-    const soldiers = view.selection.units.filter((id) => isSoldier(view.unitType(id)) && !isHiding(view.unitOrder(id)));
+    const soldiers = this.freeSelected().filter((id) => isSoldier(view.unitType(id)) && !isHiding(view.unitOrder(id)));
     if (soldiers.length === 0) return;
     const at = soldiers.map((id) => {
       const o = view.unitRow(id);
@@ -3060,10 +3054,8 @@ export class Game implements GestureHost {
     const mixed = mode === "garrison" && view !== null && view.selection.units.some((id) => !garrisonTypes(view.rules).includes(view.unitType(id)));
     // 駐守 with others than spearmen selected: only the spearmen go (D-080).
     const mixedPost = mode === "post" && view !== null && view.selection.units.some((id) => view.unitType(id) !== POST_TYPE);
-    // 上城牆 with others than ranged units and mages (D-096): only those go up.
-    const mixedWall = mode === "wall" && view !== null && view.selection.units.some((id) => !goesOnWalls(view.unitType(id)));
     const mixedStation = mode === "station" && view !== null && view.selection.units.some((id) => !isSoldier(view.unitType(id)));
-    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : mixedPost ? POST_PROMPT_MIXED : mixedWall ? WALL_PROMPT_MIXED : mixedStation ? STATION_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
+    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : mixedPost ? POST_PROMPT_MIXED : mixedStation ? STATION_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
   }
 
   /**
