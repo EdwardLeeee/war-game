@@ -75,6 +75,30 @@ test("誰在攻哪座城：玩家下攻擊就記下，換下別的指令就不�
   assert.deepEqual(a.list(), []);
 });
 
+test("後到的兵加入攻城：同編隊站在城旁的才由 Game 交進來；已在攻城的、攻城開始後玩家另外下過指令的不算；全隊新指令就全停", () => {
+  const a = new Assaults();
+  // No attack on this town: nobody joins.
+  assert.deepEqual(a.join(5, [1]), []);
+  a.begin(5, [1, 2]);
+  a.begin(6, [3]);
+  assert.deepEqual(a.join(5, [2, 3, 4]), [4], "2 and 3 are in an attack already");
+  assert.deepEqual(a.list(), [
+    { town: 5, ids: [1, 2, 4] },
+    { town: 6, ids: [3] },
+  ]);
+  // The player sends 7, a recruit, somewhere else: it stays out of it from then on.
+  a.drop([7]);
+  assert.deepEqual(a.join(5, [7]), []);
+  // His own attack on the town takes it in again.
+  a.begin(5, [7]);
+  assert.deepEqual(a.list()[0], { town: 5, ids: [1, 2, 4, 7] });
+  // All of it ordered away: nothing left, and the next attack starts clean.
+  a.drop([1, 2, 3, 4, 7]);
+  assert.deepEqual(a.list(), []);
+  a.begin(5, [1]);
+  assert.deepEqual(a.join(5, [2]), [2]);
+});
+
 test("送出去的自動攻擊：快照看到他們有指令、被拒、或 30 秒都沒消息才再送；兩次之間至少隔 1 秒", () => {
   const a = new Assaults();
   a.begin(5, [1, 2]);

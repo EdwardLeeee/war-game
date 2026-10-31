@@ -98,7 +98,7 @@ import { goesOnWalls, heldTown, leaveWalls, WALL_PROMPT, WALL_PROMPT_MIXED, WALL
 import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT, STATION_PROMPT, STATION_PROMPT_MIXED, STATION_WRONG_TARGET, stationTap, upOnArrival } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
-import { type Attacker, type AssaultScene, Assaults, assaultOrders, type Target } from "./assault.ts";
+import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assaultOrders, type Target } from "./assault.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
@@ -1356,11 +1356,34 @@ export class Game implements GestureHost {
         this.assaults.end(town);
         continue;
       }
+      const late = this.joinAssault(town, ids);
       if (!this.assaults.due(town, tick, (id) => view.unitRow(id) >= 0 && view.unitOrder(id) !== Order.None)) continue;
-      const scene = this.assaultScene(town, ids);
+      const scene = this.assaultScene(town, [...ids, ...late]);
       if (scene === null) continue;
       for (const o of assaultOrders(scene)) this.assaults.sentNow(town, this.autoCommand(o), tick, o.u);
     }
+  }
+
+  /**
+   * The rest of the groups attacking `town` (assault.ts): those standing by it with no order and
+   * not holding join the attack, no longer led to the group (it would call them back). Returns them.
+   */
+  private joinAssault(town: number, ids: readonly number[]): number[] {
+    const view = this.view;
+    const spot = view?.knownTowns.get(town);
+    const u = view?.curr?.snap.units;
+    if (view === null || spot === undefined || u === undefined) return [];
+    const reach = spot.radius + ASSAULT_JOIN_CELLS;
+    const near = (o: number): boolean => Math.max(Math.abs(Math.floor(u[o + UnitField.x] / CELL) - spot.cellX), Math.abs(Math.floor(u[o + UnitField.y] / CELL) - spot.cellY)) <= reach;
+    const late = this.army.groups
+      .flatMap((g, i) => (g.ids.some((id) => ids.includes(id)) ? this.army.marching(i) : []))
+      .filter((id) => {
+        const o = view.unitRow(id);
+        return o >= 0 && isSoldier(view.unitType(id)) && u[o + UnitField.order] === Order.None && this.stances.of(id, view.unitStance(id)) !== Stance.Hold && near(o);
+      });
+    const joined = this.assaults.join(town, late);
+    this.army.playerOrdered(joined);
+    return joined;
   }
 
   /** What town `town` under attack by `ids` shows now (assault.ts). */
