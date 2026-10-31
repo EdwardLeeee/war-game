@@ -727,6 +727,12 @@ export const NEXT_NODE_RADIUS = 8;
  * every farmer the economy sends (new ones, and those the ratio moves); farmers sent by hand stay.
  */
 export const DEPOT_SPREAD = { on: true, reach: 12 };
+/**
+ * A farmer placed by hand (`stay`) who has waited this long with no new command goes to the economy ratio (D-115; the
+ * user 2026-10-31: 「我覺得不要有閒置的居民 還是讓系統自動分配吧」「我是指說偶爾會有我手拉閒置的居民」). With the ratio off,
+ * or during recall, it waits as before.
+ */
+export const STAY_LIMIT = { on: true, ticks: 30 * S };
 /** Idle farmers repair own damaged buildings this close (cells, to the footprint). */
 export const AUTO_REPAIR_RANGE = 6;
 /** At the start each player has explored the disc of this radius (cells) around its spawn and knows its resource nodes. */

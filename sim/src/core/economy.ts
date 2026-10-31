@@ -33,6 +33,7 @@ import {
   CARRY,
   CROWD_PENALTY,
   DEPOT_SPREAD,
+  STAY_LIMIT,
   ECO_EVERY,
   GATHER_PER_MINUTE,
   GATHER_UNIT,
@@ -462,8 +463,8 @@ export class Economy {
    * hide; otherwise they repair a damaged building nearby, and then, with the economy ratio
    * on, go to the resource furthest below its share (ties: food, wood, gold). Crystal is
    * never assigned: the vein is by hand only. Farmers the player placed (`stay`) are left
-   * where they are, except by recall. Then the farmers already at work follow the ratio too
-   * (`rebalance`, operations round, D-050).
+   * where they are, except by recall, until STAY_LIMIT runs out. Then the farmers already at
+   * work follow the ratio too (`rebalance`, operations round, D-050).
    */
   periodic(w: World): void {
     if (w.tick % ECO_EVERY !== 0) return;
@@ -473,7 +474,9 @@ export class Economy {
     for (let p = 0; p < PLAYER_COUNT; p++) {
       const idle: number[] = [];
       for (let i = 0; i < w.units.count; i++) {
-        if (u.owner[i] !== p || u.type[i] !== UnitType.Farmer || u.action[i] === Action.Garrisoned) continue;
+        if (u.owner[i] !== p || u.type[i] !== UnitType.Farmer) continue;
+        if (u.order[i] !== Order.None || u.action[i] === Action.Garrisoned) u.stayWait[i] = 0;
+        if (u.action[i] === Action.Garrisoned) continue;
         if (u.order[i] === Order.None) {
           // Idle, it is no longer on the job it was sent to by hand.
           u.flags[i] &= ~UnitFlag.HandPicked;
@@ -489,7 +492,13 @@ export class Economy {
       // Farmers the player placed wait where they are (GDD section 4).
       const rest: number[] = [];
       for (const i of idle) {
-        if (u.stay[i] === 1) continue;
+        if (u.stay[i] === 1) {
+          if (!STAY_LIMIT.on || w.ecoOn[p] === 0) continue;
+          u.stayWait[i] += ECO_EVERY;
+          if (u.stayWait[i] < STAY_LIMIT.ticks) continue;
+          u.stay[i] = 0;
+          u.stayWait[i] = 0;
+        }
         const t = this.repairTarget(w, i);
         if (t >= 0) this.work(w, i, Order.Repair, t);
         else rest.push(i);
