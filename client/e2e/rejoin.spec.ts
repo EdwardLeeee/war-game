@@ -78,8 +78,7 @@ test("出城歸隊：整個編隊 1 駐軍後還是編隊 1 的（5/5、駐5、�
   await page.locator(GROUP_1).tap();
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".sel-head")).toContainText(/^編隊 1/);
-  // Put away (收起) for 駐軍 above: open it again.
-  await panel.getByRole("button", { name: "展開選取資訊" }).tap();
+  // All of it stationed: nothing to order, the panel stays open (the user 2026-10-31).
   await expect(panel).toContainText("駐守中：小鎮 5 名");
   expect(await selected(page)).toEqual([]);
   await centre(page, OUR_TOWN.x, OUR_TOWN.y + 3, 1.2);

@@ -84,7 +84,7 @@ import { formalUi } from "../ui/formal.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText, type ToastKind } from "../ui/overlays.ts";
 import { Placement, placeReason, towerLandOk } from "../ui/placement.ts";
 import { GameView, type TownSpot } from "../view/view.ts";
-import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
+import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, movedText, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
@@ -2066,22 +2066,41 @@ export class Game implements GestureHost {
   /**
    * 軍團 (D-050): every snapshot, the soldiers in no group and not stationed join the groups
    * short of their type, and set off to them (musterRecruits). Only those standing with no
-   * order and not holding: an order of the player's, 堅守 included, is not undone.
+   * order and not holding: an order of the player's, 堅守 included, is not undone. But `leaving`,
+   * those the player just put out of a group (the user 2026-10-31: 「兵如果從一個編隊被踢出，假如有別的
+   * 編隊缺兵應該要加入」), are taken at once, whatever they are doing, those stationed, posted or
+   * hiding apart: their 進攻到底 and 攻城打到底 end, and they take the stance of most of those with the
+   * new group (積極 with none there). With no group short of them they stay free, as before.
    */
-  private draftArmy(): void {
+  private draftArmy(leaving: readonly number[] = []): void {
     const view = this.view;
     if (view === null) return;
-    const idle = (id: number): boolean => view.unitOrder(id) === Order.None && this.stances.of(id, view.unitStance(id)) !== Stance.Hold;
+    const isHeld = (id: number): boolean => this.stances.of(id, view.unitStance(id)) === Stance.Hold;
+    const idle = (id: number): boolean => view.unitOrder(id) === Order.None && !isHeld(id);
+    const put = (id: number): boolean => leaving.includes(id) && !isHiding(view.unitOrder(id)) && !isPosted(view.unitOrder(id));
+    const moved: string[] = [];
     // Those hiding in a building in no group are not drafted while inside (order Garrison, not
     // idle); once out, like any other (the user 2026-10-26).
     // Those posted at outposts too: still their groups', a group of them is not short (they are not idle: never drafted).
-    for (const d of this.army.draft(this.soldiers(true, true), idle)) {
+    for (const d of this.army.draft(this.soldiers(true, true), (id) => idle(id) || put(id))) {
       const others = this.army.marching(d.group).filter((m) => !d.ids.includes(m) && view.unitRow(m) >= 0);
-      // With nobody in the group to join, they are the group where they stand (D-080).
-      this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}${others.length > 0 ? "，正走過去" : "，在原地待命"}`);
+      const taken = d.ids.filter(put);
+      if (taken.length > 0) {
+        moved.push(movedText(taken.map((id) => view.unitType(id)), d.group, UNIT_NAME));
+        this.assaults.drop(taken);
+        this.charges.drop(taken);
+        const recruits = this.army.groups[d.group].recruits;
+        const hold = mostlyLoose(others.filter((m) => !recruits.some((r) => r.id === m)), isHeld);
+        this.setStance(taken.filter((id) => isHeld(id) !== hold), hold ? Stance.Hold : Stance.Aggressive);
+      } else {
+        // With nobody in the group to join, they are the group where they stand (D-080).
+        this.toast(`${d.ids.length} 名沒編隊的兵補進編隊 ${d.group + 1}${others.length > 0 ? "，正走過去" : "，在原地待命"}`);
+      }
       // They take the group's formation, as recruits do (D-027).
       if (mostlyLoose(others, (m) => view.unitLoose(m))) this.autoCommand({ c: "formation", u: d.ids, loose: true });
     }
+    // One line: the strip shows the last message only.
+    if (moved.length > 0) this.toast(moved.join("，"));
   }
 
   // --- 軍團設定 (D-050) ------------------------------------------------------------------
@@ -2125,8 +2144,7 @@ export class Game implements GestureHost {
     if (view === null) return 0;
     const units = this.beforeGroup.filter((id) => view.unitRow(id) >= 0).map((id) => ({ id, type: view.unitType(id) }));
     if (units.length === 0) return 0;
-    this.army.saveGroup(i, units, (id) => (view.unitRow(id) >= 0 ? view.unitType(id) : null));
-    this.regroup();
+    this.regroup(this.army.saveGroup(i, units, (id) => (view.unitRow(id) >= 0 ? view.unitType(id) : null)));
     this.beforeGroup = [];
     this.showGroup(i, false);
     return units.length;
@@ -2195,19 +2213,17 @@ export class Game implements GestureHost {
   setGroupWant(i: number, type: number, n: number): void {
     const view = this.view;
     if (view === null) return;
-    this.army.setWant(i, type, n, (id) => (view.unitRow(id) >= 0 ? view.unitType(id) : null));
-    this.regroup();
+    this.regroup(this.army.setWant(i, type, n, (id) => (view.unitRow(id) >= 0 ? view.unitType(id) : null)));
   }
 
   /** 軍團設定 清空: the group has nobody and wants nobody (its soldiers may join the groups still short). */
   clearGroup(i: number): void {
-    this.army.clearGroup(i);
-    this.regroup();
+    this.regroup(this.army.clearGroup(i));
   }
 
-  /** After the player changed a group: draft and send at once, without waiting for the next snapshot (the game may be paused). */
-  private regroup(): void {
-    this.draftArmy();
+  /** After the player changed a group: draft and send at once, without waiting for the next snapshot (the game may be paused). `leaving`: those he put out of it. */
+  private regroup(leaving: readonly number[] = []): void {
+    this.draftArmy(leaving);
     this.musterRecruits();
   }
 
