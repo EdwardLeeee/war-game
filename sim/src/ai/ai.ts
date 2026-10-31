@@ -35,40 +35,7 @@
 
 import { type Frame, footprintCentre, fromCanon, rectFromCanon, spawnCentre, toCanon } from "../frame.ts";
 import { checkPlacement } from "../placement.ts";
-import {
-  Action,
-  type AiDifficulty,
-  BUILDING_STRIDE,
-  BuildingField,
-  BuildingFlag,
-  BuildingType,
-  CELL,
-  CELL_SHIFT,
-  type CommandBody,
-  type Cost,
-  Fog,
-  HeaderField,
-  type MapInfo,
-  NEUTRAL,
-  NODE_STRIDE,
-  NodeField,
-  NodeKind,
-  Order,
-  PlaceBit,
-  type Rules,
-  TOWN_STRIDE,
-  TownChoice,
-  TownField,
-  TownFlag,
-  TownSize,
-  TownState,
-  UNIT_STRIDE,
-  UnitField,
-  UnitFlag,
-  UnitType,
-  WARNING_STRIDE,
-  WarningField,
-} from "../protocol.ts";
+import { Action, type AiDifficulty, BUILDING_STRIDE, BuildingField, BuildingFlag, BuildingType, CELL, CELL_SHIFT, type CommandBody, type Cost, Fog, HeaderField, type MapInfo, NEUTRAL, NODE_STRIDE, NodeField, NodeKind, Order, PlaceBit, Resource, type Rules, TOWN_STRIDE, TownChoice, TownField, TownFlag, TownSize, TownState, UNIT_STRIDE, UnitField, UnitFlag, UnitType, WARNING_STRIDE, WarningField } from "../protocol.ts";
 import { Rng } from "../core/fixed.ts";
 import { ARMY_BASE, AS_HARD, BUILD_FARMERS, BUILD_PRODUCTION, choose, features, HEAD_ARMY, HEAD_BUILD, HEAD_MIX, HEAD_TOWN, type NetWeights, TOWN_GOVERN } from "./net.ts";
 import type { PlayerView } from "../view/view.ts";
@@ -358,6 +325,15 @@ const FORT_FORGET_AGAIN = 10 * 1200;
 /** D-086 A9 (plan.fortExit): this share of the army that broke off (percent) goes again; lost to the same forts this many times in a row, the memory holds again. */
 const FORT_EXIT_MORE = 120;
 const FORT_LOST_MOST = 2;
+/** D-101 (plan.market): prices past DEAR (gold a lot) it does not buy at, under CHEAP it does not sell at; how often it trades (ticks); wood over the market's cost it keeps; gold from which price is no bar. */
+const MARKET_DEAR = 150;
+const MARKET_CHEAP = 80;
+const MARKET_EVERY = 100;
+const MARKET_WOOD_SPARE = 50;
+const MARKET_RICH = 3000;
+/** D-086 A9 (plan.pileFarmers): food and gold together at this or more, wood under PILE_WOOD. */
+const PILE_RICH = 4000;
+const PILE_WOOD = 500;
 /** fortStage: the gathering point at most this many cells beyond the reach of the group's forts (and 2 at least, as stagePoint). */
 const FORT_STAGE_OUT = 6;
 /** fortStage: the group it gathers for, the point, when it set off for it and the first got there, and whether it went on. */
@@ -2826,6 +2802,21 @@ export interface HardPlan {
   /** D-081 / A4: after breaking off from forts, the next go takes FORT_FAILED_AGAIN of that army, remembered FORT_FORGET_AGAIN (false: FORT_FAILED, FORT_FORGET). */
   fortAgain: boolean;
   /**
+   * D-101 (MARKET on; ceo 2026-10-29: only to make hard stronger; sell only what lies unused, buy only what holds it up).
+   * With a granary and wood to spare for it (not saved up for), a market; then, at most every MARKET_EVERY, wood bought
+   * with gold when wood is under marketWoodLow and gold at marketGoldSpare or more (keeping half of that), food sold when
+   * food is at marketFoodPile or more and gold under marketGoldLow, a lot or two at a time, at no more than MARKET_DEAR
+   * nor less than MARKET_CHEAP; with gold at MARKET_RICH or more up to five lots at any price (the user's 8d02b76f,
+   * minute 90: food 22205, gold 19223, wood 18; D-114 measured it to minute 60 only) (false: no market, as before).
+   */
+  market: boolean;
+  marketWoodLow: number;
+  marketGoldSpare: number;
+  marketFoodPile: number;
+  marketGoldLow: number;
+  /** D-086 A9 (ceo 2026-10-31): this many farmers more while food and gold are at PILE_RICH or more and wood under PILE_WOOD (8d02b76f: 42 farmers all game, the user 85) (0: as before). */
+  pileFarmers: number;
+  /**
    * D-086 A9 (ceo 2026-10-31; the user's 8d02b76f, minutes 60-80: 248 soldiers turned back 70 times, every 0.5 s at
    * worst). routeFromArmy: whether a march or a town trip is clear of forts too strong for it is asked from where the
    * army stands, as it is on the way (false: from its main city, as before: clear from there and not from the army,
@@ -2945,6 +2936,12 @@ export const HARD: HardPlan = {
   // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
   routeFromArmy: true,
   fortExit: 3,
+  market: false,
+  marketWoodLow: 60,
+  marketGoldSpare: 400,
+  marketFoodPile: 1500,
+  marketGoldLow: 150,
+  pileFarmers: 0,
 };
 /** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
 const TOWN_SCOUT_AGAIN = 2 * 1200;
@@ -3225,6 +3222,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const failedAt = new Map<number, Failed>();
   /** D-086 A9 (plan.fortExit): forts it really fought and broke off from: how many times in a row, the last when. */
   const fortLost = new Map<number, { n: number; tick: number }>();
+  /** D-101 (plan.market): when it last traded. */
+  let lastTrade = -100000;
   /** Falling back round forts (aroundForts): the point first, and until when. */
   let via: { x: number; y: number; until: number } | null = null;
   /** Towns it fell back from because of forts (D-081, ceo 2026-10-10): the forts, and when. */
@@ -3261,7 +3260,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { lumberLost: 0, marketBuilt: 0, marketBought: 0, marketSold: 0, pileFarmerThinks: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3721,7 +3720,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
       // D-086 A: more while wood is short and food and gold pile up; D-086 B: the network's "farmers first", a few more.
-      const farmersWanted = farmerTarget + (woodShort ? plan.woodFarmers : 0) + (netChoice !== null && netChoice[HEAD_BUILD] === BUILD_FARMERS ? NET_FARMERS : 0);
+      // D-086 A9 (plan.pileFarmers): food and gold piling up and wood short: more hands on it.
+      const piling = plan.pileFarmers > 0 && res.food + res.gold >= PILE_RICH && res.wood < PILE_WOOD;
+      if (piling) counted.pileFarmerThinks++;
+      const farmersWanted = farmerTarget + (woodShort ? plan.woodFarmers : 0) + (piling ? plan.pileFarmers : 0) + (netChoice !== null && netChoice[HEAD_BUILD] === BUILD_FARMERS ? NET_FARMERS : 0);
       let farmerQueued = false;
       if (main && main.queue < 2 && farmers.length + main.queue < farmersWanted && room > 0 && afford(farmerCost)) {
         out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
@@ -4117,6 +4119,44 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
       }
       veinCrew = veinCrew.filter((id) => farmers.some((f) => f.id === id && f.order === Order.Gather));
+      // D-101 (plan.market): a market with what is left once farmers and soldiers are trained (and what it saves up for
+      // kept aside), never saved up for itself: wood is what it lacks. With a granary, and gold to use.
+      const marketCost = rules.buildings[BuildingType.Market]?.cost;
+      if (
+        plan.market && rules.features?.market === true && marketCost !== undefined && !has(BuildingType.Market) && has(BuildingType.Granary) &&
+        gatherers.length >= 2 && own.filter((b) => b.progress < 1000).length < plan.sites &&
+        res.wood - reserve.wood >= marketCost.wood + MARKET_WOOD_SPARE && res.gold - reserve.gold >= marketCost.gold + plan.marketGoldSpare
+      ) {
+        const spot = spotNear(view, BuildingType.Market, home.cellX, home.cellY, 20);
+        if (spot !== null) {
+          out.push({ c: "build", u: gatherers.slice(0, 2), type: BuildingType.Market, x: spot.x, y: spot.y });
+          gatherers.splice(0, 2);
+          spend(marketCost);
+          counted.marketBuilt++;
+        }
+      }
+      // D-101 (plan.market): what lies unused for what holds it up, at its own prices (the view's header).
+      if (plan.market && rules.features?.market === true && rules.market !== undefined && done(BuildingType.Market).length > 0 && tick - lastTrade >= MARKET_EVERY) {
+        const m = rules.market;
+        const foodP = h[HeaderField.priceFood];
+        const woodP = h[HeaderField.priceWood];
+        const lotsFor = (n: number) => Math.max(0, Math.min(res.gold >= MARKET_RICH ? m.maxLots : 2, m.maxLots, n));
+        const trade = (resource: number, buy: boolean, lots: number) => {
+          if (lots <= 0) return false;
+          out.push({ c: "trade", resource, buy, lots });
+          lastTrade = tick;
+          counted[buy ? "marketBought" : "marketSold"] += lots;
+          return true;
+        };
+        const gold = res.gold - reserve.gold;
+        if (res.wood < plan.marketWoodLow && gold >= plan.marketGoldSpare && (woodP <= MARKET_DEAR || gold >= MARKET_RICH)) {
+          // Wood holds it up: bought with the gold over half of marketGoldSpare (and what it saves up for).
+          trade(Resource.Wood, true, lotsFor(Math.trunc((gold - plan.marketGoldSpare / 2) / Math.max(1, woodP + m.step))));
+        } else if (res.food >= plan.marketFoodPile && res.gold < plan.marketGoldLow && foodP >= MARKET_CHEAP) {
+          // Food lies unused and gold is short: sold (70% of its price), down to half of marketFoodPile.
+          trade(Resource.Food, false, lotsFor(Math.trunc((res.food - plan.marketFoodPile / 2) / m.lot)));
+        }
+      }
       // D-086 A5 (plan.behind): crystal piled up: those on it back to the ratio (wood, food and gold).
       // D-086 A6 (plan.crystalStop): its mages at the cap and the crystal for CRYSTAL_ENOUGH more: none on it either.
       const enough = plan.crystalStop && mageRoom <= 0 && res.crystal >= CRYSTAL_ENOUGH * mageCost.crystal;
