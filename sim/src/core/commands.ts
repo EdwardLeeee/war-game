@@ -592,15 +592,10 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
         u.group[s] = -1;
         u.squad[s] = 0;
         u.speedCap[s] = 0;
-        // Its place: where it stands inside the walls, else the next one round the middle.
-        if (w.insideAt[(u.y[s] >> CELL_SHIFT) * n + (u.x[s] >> CELL_SHIFT)] === t) {
-          u.anchorX[s] = u.x[s];
-          u.anchorY[s] = u.y[s];
-        } else {
-          const c = places[k++ % places.length];
-          u.anchorX[s] = ((c % n) << CELL_SHIFT) + (CELL >> 1);
-          u.anchorY[s] = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
-        }
+        // Its place: round the middle, off the walls and out of bows' reach from outside.
+        const c = places[k++ % places.length];
+        u.anchorX[s] = ((c % n) << CELL_SHIFT) + (CELL >> 1);
+        u.anchorY[s] = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
       }
       return 0;
     }
