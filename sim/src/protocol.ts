@@ -606,6 +606,8 @@ export interface UnitInfo {
   population: number;
   /** Siege engines (D-099): no shots at what is nearer than this (fixed point). */
   minRange?: number;
+  /** D-115: a siege engine's range against units (`range`: against buildings). */
+  unitRange?: number;
   /** Siege engines (D-099): a stone hits every enemy unit within this of where it lands (fixed point). */
   splash?: number;
 }

@@ -1313,6 +1313,9 @@ export class UnitSystem {
     const mr = info.minRange ?? 0;
     const m2 = mr * mr;
     const high = preferHighId(w, u.id[i]);
+    // D-115: units nearer than buildings (unitRange).
+    const reachUnits = info.unitRange ?? info.range;
+    const ur2 = reachUnits * reachUnits;
     let bestRank = 2;
     let best = 0;
     let bestId = -1;
@@ -1330,7 +1333,7 @@ export class UnitSystem {
     if (bestId >= 0) return bestId;
     const splash = info.splash ?? 0;
     const sp2 = splash * splash;
-    const cells = (info.range >> CELL_SHIFT) + 1;
+    const cells = (reachUnits >> CELL_SHIFT) + 1;
     const around = (splash >> CELL_SHIFT) + 1;
     const cx = u.x[i] >> CELL_SHIFT;
     const cy = u.y[i] >> CELL_SHIFT;
@@ -1342,7 +1345,7 @@ export class UnitSystem {
           const dx = u.x[j] - u.x[i];
           const dy = u.y[j] - u.y[i];
           const d2 = dx * dx + dy * dy;
-          if (d2 > r2 || d2 < m2 || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+          if (d2 > ur2 || d2 < m2 || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
           let hits = 0;
           for (let yy = Math.max(y - around, 0); yy <= Math.min(y + around, n - 1); yy++) {
             for (let xx = Math.max(x - around, 0); xx <= Math.min(x + around, n - 1); xx++) {
@@ -1768,7 +1771,9 @@ export class UnitSystem {
         return;
       }
       // Melee at one on a wall from outside its town (D-096) cannot hit it (an attack goes in by a gate, below).
-      if (d2 <= info.range * info.range && !(ts >= 0 && info.range <= CELL && onWall(w, ts) && !this.reaches(w, i, ts))) {
+      // D-115: a siege engine walks up to unitRange for a unit.
+      const reach = ts >= 0 ? (info.unitRange ?? info.range) : info.range;
+      if (d2 <= reach * reach && !(ts >= 0 && info.range <= CELL && onWall(w, ts) && !this.reaches(w, i, ts))) {
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
         return;

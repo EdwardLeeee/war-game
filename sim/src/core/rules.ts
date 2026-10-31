@@ -60,10 +60,12 @@ UNITS[UnitType.Cavalry] = {
 };
 // D-099 (ceo 2026-10-22, the user: 「蓋一大堆防禦塔根本打不去」): GDD appendix A's siege engine; a
 // stone every 5 s, sight 10 (it sees what it outranges: arrow towers shoot 9), splash 1 cell, nothing
-// within 3. Trained only while SIEGE is on.
+// within 3. Trained only while SIEGE is on. D-115 (the user 2026-10-31: 「怎麼感覺他是攻擊距離更遠更痛的法師？」):
+// 15 on units (35 before), SIEGE.vsBuildings and GATE.siege keeping what it does to buildings; `range` is for
+// buildings, one more than arrow towers' 9, and units it throws at from `unitRange` (6, as ranged units).
 UNITS[UnitType.Siege] = {
-  type: UnitType.Siege, hp: 140, shield: 0, attack: 35, range: 10 * CELL, speed: speed(60), sight: 10,
-  cooldown: 5 * S, cost: cost(0, 150, 100), trainTicks: 40 * S, population: 1, minRange: 3 * CELL, splash: CELL,
+  type: UnitType.Siege, hp: 140, shield: 0, attack: 15, range: 10 * CELL, speed: speed(60), sight: 10,
+  cooldown: 5 * S, cost: cost(0, 150, 100), trainTicks: 40 * S, population: 1, minRange: 3 * CELL, unitRange: 6 * CELL, splash: CELL,
 };
 
 const ALL: Resource[] = [Resource.Food, Resource.Wood, Resource.Gold, Resource.Crystal];
@@ -347,7 +349,7 @@ export const PLUNDER_RECOVERY = { on: true, startPermille: 250, ticks: 10 * 60 *
  * has stood inside its walls for `rebuildTicks`; the end of repairing and ruins turning neutral
  * rebuild them all. Off: no gates, the openings stay open to everyone (D-089).
  */
-export const GATE = { on: true, hp: [850, 2100], rangedNum: 1, rangedDen: 5, siege: 8, rebuildTicks: 60 * S };
+export const GATE = { on: true, hp: [850, 2100], rangedNum: 1, rangedDen: 5, siege: 18, rebuildTicks: 60 * S };
 /**
  * On the walls (D-096; the user: 「中立城鎮也要攻城，不然電腦打太快了」; AoE4: on walls -25% ranged
  * damage, +1-2 range): ranged units and mages of the town's holder go up (`wall`), one a wall cell,
@@ -386,7 +388,7 @@ export const CAVALRY = { on: true };
  * only, `vsBuildings` times (a gate GATE.siege times). Off: no siege works, rules() leaves the
  * engine, the works and their multiplier out, and games play as before.
  */
-export const SIEGE = { on: true, vsBuildings: 3, flightTicks: S };
+export const SIEGE = { on: true, vsBuildings: 7, flightTicks: S };
 /** Unit types that may hide in buildings. */
 export const GARRISON_TYPES: UnitType[] = [UnitType.Ranged, UnitType.Mage];
 /**
