@@ -100,9 +100,14 @@ test("編隊攻城：同編隊站在城旁沒指令的兵也加入；攻城開�
   const sorted = [...s.ids].sort((a, b) => a - b);
   const [late, away] = sorted.slice(-2);
   const rest = sorted.slice(0, -2);
-  await page.evaluate(([ids, x, y]) => window.__proto?.game?.send({ c: "move", u: ids, x, y }), [rest, s.gate.cx, s.gate.cy] as const);
-  // One of the two is told to go somewhere by the town: that is the player's word.
-  await page.evaluate(([id, x, y]) => window.__proto?.game?.send({ c: "retreat", u: [id], x, y }), [away, by.x, by.y] as const);
+  // One of the two is told to go somewhere by the town, in the same breath: that is the player's word.
+  await page.evaluate(
+    ([ids, id, gx, gy, x, y]) => {
+      window.__proto?.game?.send({ c: "move", u: ids as number[], x: gx as number, y: gy as number });
+      window.__proto?.game?.send({ c: "retreat", u: [id as number], x: x as number, y: y as number });
+    },
+    [rest, away, s.gate.cx, s.gate.cy, by.x, by.y] as const,
+  );
   // The other, standing there, joins: the screen sends it at the gate.
   await expect.poll(async () => (await autoAttacks(page)).some((c) => (c.u as number[]).includes(late)), { timeout: 60_000 }).toBe(true);
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.2), [s.gate.cx, s.gate.cy] as const);
