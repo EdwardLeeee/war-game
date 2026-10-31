@@ -75,6 +75,8 @@ if (flag("govern")) plan.choice = "govern";
 // The soldiers left in a town, and whether they guard it (`guard`): how much stronger a guarded town is.
 if (arg("guards", "") !== "") plan.guards = Number(arg("guards", ""));
 if (flag("town-guard")) plan.townGuard = true;
+if (flag("guards-all")) plan.guardsAll = true;
+if (flag("town-station")) plan.townStation = true;
 // Round 7 (D-061): cavalry raiders, this many (--raid 4).
 plan.raid = Number(arg("raid", "0"));
 // D-072: racing the AI to its main city (--race edge|sentry), with these numbers.

@@ -36,14 +36,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { difficulty: hard, cell: { group: guard-off, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --guards 6 --cap 120 } }
-          - { difficulty: hard, cell: { group: guard-off, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --guards 6 --cap 120 } }
-          - { difficulty: hard, cell: { group: guard-on, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --guards 6 --cap 120 --town-guard } }
-          - { difficulty: hard, cell: { group: guard-on, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --guards 6 --cap 120 --town-guard } }
-          - { difficulty: hard, cell: { group: guard-off-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --guards 6 --cap 120 --map random } }
-          - { difficulty: hard, cell: { group: guard-off-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --guards 6 --cap 120 --map random } }
-          - { difficulty: hard, cell: { group: guard-on-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --guards 6 --cap 120 --town-guard --map random } }
-          - { difficulty: hard, cell: { group: guard-on-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --guards 6 --cap 120 --town-guard --map random } }
+          - { difficulty: hard, cell: { group: guard6-on, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 6 --town-guard } }
+          - { difficulty: hard, cell: { group: guard6-on, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 6 --town-guard } }
+          - { difficulty: hard, cell: { group: guard6-on-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 6 --town-guard --map random } }
+          - { difficulty: hard, cell: { group: guard6-on-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 6 --town-guard --map random } }
+          - { difficulty: hard, cell: { group: all-old, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-station } }
+          - { difficulty: hard, cell: { group: all-old, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-station } }
+          - { difficulty: hard, cell: { group: all-new, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-guard } }
+          - { difficulty: hard, cell: { group: all-new, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-guard } }
+          - { difficulty: hard, cell: { group: all-old-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-station --map random } }
+          - { difficulty: hard, cell: { group: all-old-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-station --map random } }
+          - { difficulty: hard, cell: { group: all-new-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-guard --map random } }
+          - { difficulty: hard, cell: { group: all-new-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-guard --map random } }
     env:
       # scripted-<group>-<seeds> against normal (as before), scripted-hard-<group>-<seeds> against hard.
       NAME: scripted-${{ matrix.difficulty == 'hard' && 'hard-' || '' }}${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
