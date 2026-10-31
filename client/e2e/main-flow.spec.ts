@@ -124,7 +124,17 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   if (barracks === undefined) throw new Error("no barracks");
   const bc = { x: barracks.cx + Math.floor(barracks.size / 2), y: barracks.cy + Math.floor(barracks.size / 2) };
   await centre(page, bc);
-  await tap(page, await toScreen(page, bc));
+  // A cell of it that picks the building: a villager on the way to the house may stand over the
+  // middle one (CI run 41192087489), and a tap there selects him. Paused: what is checked stays so.
+  let barracksSpot: { x: number; y: number } | null = null;
+  for (let dy = barracks.size - 1; dy >= 0 && barracksSpot === null; dy--) {
+    for (let dx = 0; dx < barracks.size && barracksSpot === null; dx++) {
+      const p = await toScreen(page, { x: barracks.cx + dx, y: barracks.cy + dy });
+      if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === "building") barracksSpot = p;
+    }
+  }
+  if (barracksSpot === null) throw new Error("no spot that picks the barracks");
+  await tap(page, barracksSpot);
   await expect(page.locator(".sel-info")).toContainText("兵營");
   const spearmenBefore = (await own(page, [SPEARMAN])).length;
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
@@ -326,6 +336,9 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   };
   await expect.poll(fromDest, { timeout: 60_000 }).toBeLessThan(0.6);
   await page.evaluate(() => window.__proto?.game?.select([]));
+  // Paused for the tap: its keep may stand again on the spot just checked as the repairs end (D-100),
+  // and a tap there selects the keep, not the town.
+  await pause(page);
   let townSpot: { x: number; y: number } | null = null;
   for (const [dx, dy] of [[0, 0], [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2], [2, 2], [-2, -2], [3, 0], [0, 3]]) {
     const p = await toScreen(page, { x: town.cx + 0.5 + dx, y: town.cy + 0.5 + dy });
@@ -340,6 +353,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   const known = (await own(page, [SPEARMAN])).map((u) => u.id);
   await page.locator(".sel-info").getByRole("button", { name: "多留守 1 名" }).tap();
   await expect.poll(() => garrison(page, town.id)).toEqual([kept, sp]);
+  await resume(page);
   expect((await groupInfo(page))[0].ids, "still group 1's").toContain(sp);
   // Not short for that: more spearmen wanted (軍團畫面 +) make it so. One more than the
   // spearmen in no group, who may be drafted first (D-050), so that the barracks trains one

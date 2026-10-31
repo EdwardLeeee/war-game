@@ -110,7 +110,8 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   // Still being repaired, or governed by now: either needs its 1 (sim/src/core/towns.ts).
   const held = (await towns(page)).find((t) => t.id === town.id);
   expect([REPAIRING, GOVERNED]).toContain(held?.state);
-  expect(held?.garrison).toBe(1);
+  // Its 1 at least: a soldier 自動訓練 sent after group 1 may be passing through (CI run 41192087489).
+  expect(held?.garrison).toBeGreaterThanOrEqual(1);
   expect(held?.revoltTimer, "manned: no revolt").toBe(0);
   // 全部帶走 on the town's panel: the last one out, and the town counts down. A tap on its ground,
   // not on the one who stayed (on the centre, as like as not).
