@@ -4,6 +4,8 @@
 # settings as the inputs below (ceo 2026-10-19), so training can start before this is merged.
 # NN v2 (ai/train-v2, never merged; ceo 2026-10-29): a push starts a run only when it changes run.json; training
 # and the evals each in their own concurrency group; at most 6 training jobs and 2 eval jobs at once (8 in all).
+# NN v3 (ai/train-v3, never merged; ceo 2026-10-31): 3 islands, 120-minute games; a checkpoint's download is tried
+# again (v2's chain broke on one failed download, run 41078447033); its own groups (ai-train-v3-*).
 # A job stops itself before its hours and leaves a checkpoint as an artifact (kept 14 days, never committed);
 # the next run goes on from it (from_run). The last job adds up the runner hours of the run.
 #   dryrun  cores and games an hour
@@ -30,7 +32,7 @@ on:
         default: ""
       islands:
         description: "es: jobs, each its own search (at most 8); eval: the islands of from_run"
-        default: "6"
+        default: "3"
       generations:
         description: "es: generations per job at most"
         default: "1000"
@@ -67,7 +69,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ai-train-v2-${{ inputs.mode || 'push' }}
+  group: ai-train-v3-${{ inputs.mode || 'push' }}
   cancel-in-progress: false
 
 jobs:
@@ -154,14 +156,23 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
-      - name: The start (from_run)
+      # NN v3 (ceo 2026-10-31): this island's checkpoint only, tried up to 6 times over about 10 minutes (GitHub's
+      # "Unable to download artifact(s)" broke v2's chain at run 41078447033).
+      - name: The start (from_run), tried again on failure
         if: needs.plan.outputs.from_run != '' && matrix.island != 'control'
-        uses: actions/download-artifact@v7
-        with:
-          run-id: ${{ needs.plan.outputs.from_run }}
-          github-token: ${{ github.token }}
-          pattern: train-es-*
-          path: from
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM_RUN: ${{ needs.plan.outputs.from_run }}
+          ISLAND: ${{ matrix.island }}
+        run: |
+          for k in 1 2 3 4 5 6; do
+            rm -rf "from/train-es-$ISLAND"
+            if gh run download "$FROM_RUN" --repo "$GITHUB_REPOSITORY" --name "train-es-$ISLAND" --dir "from/train-es-$ISLAND"; then exit 0; fi
+            echo "download $k of run $FROM_RUN island $ISLAND failed; again in $((k * 30)) s"
+            sleep $((k * 30))
+          done
+          exit 1
       - name: Train
         env:
           MODE: ${{ needs.plan.outputs.mode }}
@@ -230,13 +241,20 @@ jobs:
         with:
           pattern: train-eval-*
           path: evals
-      - if: needs.plan.outputs.control_run != ''
-        uses: actions/download-artifact@v7
-        with:
-          run-id: ${{ needs.plan.outputs.control_run }}
-          github-token: ${{ github.token }}
-          name: train-eval-control
-          path: control
+      - name: The control (control_run), tried again on failure
+        if: needs.plan.outputs.control_run != ''
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTROL_RUN: ${{ needs.plan.outputs.control_run }}
+        run: |
+          for k in 1 2 3 4 5 6; do
+            rm -rf control
+            if gh run download "$CONTROL_RUN" --repo "$GITHUB_REPOSITORY" --name train-eval-control --dir control; then exit 0; fi
+            echo "download $k of the control failed; again in $((k * 30)) s"
+            sleep $((k * 30))
+          done
+          exit 1
       - name: Report
         run: |
           C="${GITHUB_WORKSPACE}/control/eval.json"
