@@ -9,7 +9,8 @@ import { postedAt, towerLand } from "../src/core/commands.ts";
 import { BUILDINGS, OUTPOST, TOWER_REACH } from "../src/core/rules.ts";
 import { PERF } from "../src/core/scenarios.ts";
 import { rectDist2 } from "../src/core/units.ts";
-import { BuildingFlag, BuildingType, CELL, Order, PlaceBit, Reject, Stance, UnitType } from "../src/protocol.ts";
+import { BLOCK_BUILDING, BLOCK_GATE, BLOCK_ROCK } from "../src/core/world.ts";
+import { BuildingFlag, BuildingType, CELL, CELL_SHIFT, Order, PlaceBit, Reject, Stance, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
 
@@ -266,5 +267,75 @@ test("perf: two manned outposts a side, mirror images; a game with no outpost ha
     assert.deepEqual(on, off);
   } finally {
     PERF.outposts = keep;
+  }
+});
+
+/** An outpost of player 0 standing across a corridor 2 cells wide, rock either side (D-115). */
+function corridor(built = true) {
+  const g = emptyGame();
+  const w = g.w;
+  const { x, y } = openArea(g, 24);
+  const n = w.size;
+  // A wall of rock across the open area, a gap 2 wide at (x + 12, y + 11..12).
+  for (let yy = y; yy < y + 24; yy++) {
+    if (yy === y + 11 || yy === y + 12) continue;
+    w.grid[yy * n + x + 12] |= BLOCK_ROCK;
+    w.grid[yy * n + x + 13] |= BLOCK_ROCK;
+  }
+  w.blockVersion++;
+  const id = w.addBuilding(0, BuildingType.Outpost, x + 12, y + 11, BUILDINGS[BuildingType.Outpost].hp, built ? 1000 : 0);
+  g.fog.update(w);
+  return { g, w, x, y, id };
+}
+
+test("D-115: its owner's soldier walks through its outpost, finished or going up; an enemy's stops at it and breaks it", () => {
+  for (const built of [true, false]) {
+    const { g, w, x, y } = corridor(built);
+    const mine = put(g, 0, UnitType.Spearman, x + 8, y + 12);
+    g.fog.update(w);
+    cmd(g, 0, { c: "retreat", u: [mine], x: x + 18, y: y + 12 });
+    run(g, 200);
+    const s = slotOf(g, mine);
+    assert.equal(w.units.col.x[s] >> CELL_SHIFT, x + 18, `through (${built ? "finished" : "going up"})`);
+  }
+  const { g, w, x, y, id } = corridor();
+  const foe = put(g, 1, UnitType.Spearman, x + 8, y + 12);
+  g.fog.update(w);
+  cmd(g, 1, { c: "move", u: [foe], x: x + 18, y: y + 12 });
+  const hp = w.buildings.col.hp[w.building(id)];
+  run(g, 400);
+  const s = slotOf(g, foe);
+  assert.ok(w.units.col.x[s] >> CELL_SHIFT <= x + 12, "not past it");
+  assert.ok(w.buildings.col.hp[w.building(id)] < hp, "it breaks through it (D-024)");
+});
+
+test("D-115: when it falls its cells are open to everyone; an arrow tower still stops its owner too", () => {
+  const { g, w, x, y, id } = corridor();
+  const n = w.size;
+  const c = (y + 11) * n + x + 12;
+  assert.equal(w.grid[c] & BLOCK_BUILDING, 0, "not a building's block");
+  assert.notEqual(w.grid[c] & BLOCK_GATE, 0);
+  assert.equal(w.gateOwner[c], 0);
+  assert.equal(w.passClass(0), 1);
+  assert.equal(w.passClass(1), 0);
+  w.buildings.col.hp[w.building(id)] = 0;
+  run(g, 2);
+  assert.equal(w.grid[c], 0);
+  assert.equal(w.gateOwner[c], -1);
+  assert.equal(w.passClass(0), 0);
+  const b = w.addBuilding(0, BuildingType.ArrowTower, x + 12, y + 11, BUILDINGS[BuildingType.ArrowTower].hp, 1000);
+  assert.ok(b >= 0);
+  assert.notEqual(w.grid[c] & BLOCK_BUILDING, 0, "a tower blocks");
+  assert.equal(w.passGrid(w.passClass(0))[c] & BLOCK_BUILDING, BLOCK_BUILDING);
+});
+
+test("switched off (OUTPOST.ownersWalk): an outpost stops its owner as any building", () => {
+  OUTPOST.ownersWalk = false;
+  try {
+    const { w, x, y } = corridor();
+    assert.notEqual(w.grid[(y + 11) * w.size + x + 12] & BLOCK_BUILDING, 0);
+    assert.equal(w.passClass(0), 0);
+  } finally {
+    OUTPOST.ownersWalk = true;
   }
 });

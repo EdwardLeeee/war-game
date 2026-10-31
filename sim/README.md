@@ -644,6 +644,8 @@ D1–D3 已經核准的數值都在 `src/core/rules.ts`，例如建築血量與�
 
 ### 哨所（D-080）
 
+自己的單位可以走過自己的哨所（D-115，`OUTPOST.ownersWalk`；使用者 2026-10-31：「我方兵種應該可以通過自己架設的哨所才對」），施工中也可以。做法和城門一樣：哨所的格子用 `BLOCK_GATE`、`World.gateOwner` 記擁有者，`passGrid` 替擁有者打開；別人照舊被擋，要過就照 D-024 拆掉。箭樓照舊擋所有人。電腦走同一條規則。
+
 使用者 2026-10-09：「我覺得可以建立哨所，就是放在地圖上然後可以駐步兵，有敵人靠近可以選擇攻擊或是堅守，哨所附近可以蓋箭塔。」選擇欄位：槍兵站在哨所旁邊守，選堅守時被打也會反擊；任何空地都能蓋。
 
 - 協定（PR A）：`BuildingType.Outpost`、`Order.Post`、`BuildingFlag.Hold`、建築列的 `posted`、指令 `post`、`unpost`、`outpost_mode`、`rules().outpost`、`towerReach.outpost`、`features.outpost`。見 `PROTOCOL.md` 3.4。

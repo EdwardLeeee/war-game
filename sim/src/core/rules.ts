@@ -403,9 +403,10 @@ export const TOWER_REACH = { mainCity: 8, town: 2, outpost: 6 };
  * `reach` cells of it and give up `chase` cells out; holding (`outpost_mode`) they stand and
  * fight what comes next to them, and all go for whoever hits the outpost or one of them (and
  * attacking, they do that too). Off: building one and the three commands are rejected, and
- * the game plays as before D-080.
+ * the game plays as before D-080. `ownersWalk` (D-115, the user 2026-10-31: 「我方兵種應該可以通過自己架設的哨所才對」):
+ * its owner's units walk through it, finished or not, as through a gate of its town; nobody else does.
  */
-export const OUTPOST = { on: true, slots: 6, reach: 8, chase: 12 };
+export const OUTPOST = { on: true, slots: 6, reach: 8, chase: 12, ownersWalk: true };
 
 // --- round 8 (D-069): a defender is not beaten by the first cannon shots -------------------
 
