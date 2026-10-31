@@ -187,7 +187,7 @@ export function incomeText(permille: number, state: number): string | null {
 }
 
 /** The 「目前：」 line's words, in its order (D-054 adds 待命: standing, not 進攻中). */
-export const ORDER_NAME: Record<OrderState, string> = { advance: "攻擊中", retreat: "移動中", hold: "堅守", idle: "待命", garrison: "躲在建築裡" };
+export const ORDER_NAME: Record<OrderState, string> = { advance: "攻擊中", retreat: "移動中", hold: "堅守", idle: "待命", guard: "守城", garrison: "躲在建築裡" };
 
 /**
  * 隊形 in the player's words (GDD §9, D-027, D-028), a line each. 散開 has a second line for
@@ -814,7 +814,7 @@ export class SelectionInfo {
       const plus = button(row, "+", "", () => this.host.garrisonMore(id), "secondary step");
       plus.setAttribute("aria-label", "多留守 1 名");
       el("span", row, "", "名");
-      el("p", this.el, "sel-note", "留守的兵改成堅守，不跟全軍走");
+      el("p", this.el, "sel-note", "留守的兵守在城裡，敵人來了會反擊、不追出城，不跟全軍走");
       // Whose they are (the user 2026-10-26): 「編隊 1：5 名［歸隊］」, 「沒編隊：2 名［解除留守］」 (back to
       // 全軍), each leaving the town the least it needs; 全部帶走 takes everyone.
       const whose = el("div", this.el, "sel-chips keep-groups");

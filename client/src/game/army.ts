@@ -114,8 +114,8 @@ export function isSoldier(type: number): boolean {
   return type === UnitType.Spearman || type === UnitType.Ranged || type === UnitType.Mage || type === UnitType.Cavalry || type === UnitType.Siege;
 }
 
-/** The orders that send units somewhere or set them to a task: 前進、攻擊、撤退、停止、晶砲, and a farmer's work. */
-const REDIRECTS: ReadonlySet<CommandBody["c"]> = new Set(["move", "attack", "retreat", "stop", "cast", "gather", "build", "repair"]);
+/** The orders that send units somewhere or set them to a task: 前進、攻擊、撤退、停止、晶砲、守城, and a farmer's work. */
+const REDIRECTS: ReadonlySet<CommandBody["c"]> = new Set(["move", "attack", "retreat", "stop", "cast", "gather", "build", "repair", "guard"]);
 
 /** Whether this order changes where its units go or what they do (not 姿態、自動施放、隊形). */
 export function redirects(cmd: CommandBody): cmd is Extract<CommandBody, { u: number | number[] }> {
