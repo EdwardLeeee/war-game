@@ -400,9 +400,9 @@ export const TOWER_REACH = { mainCity: 8, town: 2, outpost: 6 };
 /**
  * Guarding a town (the command `guard`; the user 2026-10-31: 「駐軍的功能應該是說敵軍打過來我們要反擊但不會追出城鎮」，城門格:
  * 可以站，城外搆不到的射手:「躲開阿」). `gateTicks`: a gate hit that long ago still calls them. `gateReach`: cells from a
- * gate an enemy counts as being at it. `hideTicks`: a guard hit that long ago hides from what can shoot it.
+ * gate an enemy counts as being at it.
  */
-export const TOWN_GUARD = { on: true, gateTicks: 3 * S, gateReach: 2, hideTicks: 3 * S };
+export const TOWN_GUARD = { on: true, gateTicks: 3 * S, gateReach: 2 };
 
 /**
  * Outposts (D-080, the user 2026-10-09): built anywhere walkable and explored; up to `slots`

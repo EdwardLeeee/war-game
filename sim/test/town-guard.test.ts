@@ -54,6 +54,19 @@ const south = (g: G, p: number, type: UnitType, off: number) => {
   return put(g, p, type, t.cellX, t.cellY + g.w.castles[T].inside.y1 + 1 + off);
 };
 const guarding = (g: G, id: number) => g.w.units.col.order[slotOf(g, id)] === Order.TownGuard;
+/** Its place, the cell. */
+const placeOf = (g: G, id: number) => {
+  const u = g.w.units.col;
+  const s = slotOf(g, id);
+  return { x: u.anchorX[s] >> CELL_SHIFT, y: u.anchorY[s] >> CELL_SHIFT };
+};
+/** Its place is set, a cell (for a test that needs it by the wall). */
+const placeAt = (g: G, id: number, x: number, y: number) => {
+  const u = g.w.units.col;
+  const s = slotOf(g, id);
+  u.anchorX[s] = (x << CELL_SHIFT) + 512;
+  u.anchorY[s] = (y << CELL_SHIFT) + 512;
+};
 
 test("`guard`: the holder's soldiers only, in a town it holds; farmers are left alone", () => {
   const g = emptyGame();
@@ -75,7 +88,7 @@ test("`guard`: the holder's soldiers only, in a town it holds; farmers are left 
   assert.equal(g.w.units.col.order[slotOf(g, f)] === Order.TownGuard, false);
 });
 
-test("from outside they walk in and stand at their place; ranged units and mages go up the walls, those with no room stay inside", () => {
+test("they walk in and stand at their place, round the middle; several, on different cells; ranged units and mages go up the walls, those with no room stay inside", () => {
   const g = held();
   const spear = south(g, 0, UnitType.Spearman, 8);
   const horse = south(g, 0, UnitType.Cavalry, 9);
@@ -101,7 +114,7 @@ test("an enemy inside: they go and hit it; once it is gone they go back to their
   const a = inTown(g, 0, UnitType.Spearman, -4, -4);
   cmd(g, 0, { c: "guard", u: [a], town: T });
   run(g, 2);
-  const place = cellOf(g, a);
+  const place = placeOf(g, a);
   const foe = inTown(g, 1, UnitType.Spearman, 4, 4);
   const u = g.w.units.col;
   g.fog.update(g.w);
@@ -137,7 +150,7 @@ test("a gate being broken: they go onto the gate cell and hit who is at it, and 
   const a = inTown(g, 0, UnitType.Spearman, 0, 4);
   cmd(g, 0, { c: "guard", u: [a], town: T });
   run(g, 2);
-  const place = cellOf(g, a);
+  const place = placeOf(g, a);
   const foe = south(g, 1, UnitType.Spearman, 3);
   const k = g.w.castles[T].gates.findIndex((cells) => cells.every(([, dy]) => dy > 0));
   const gate = g.w.gateIn(T, k);
@@ -162,14 +175,15 @@ test("a gate being broken: they go onto the gate cell and hit who is at it, and 
   assert.ok(Math.abs(c.x - place.x) <= 1 && Math.abs(c.y - place.y) <= 1, "back at its place");
 });
 
-test("shooters it cannot reach: once hit it hides inside out of their reach, and goes back when they leave", () => {
+test("shooters it cannot reach: it goes inside out of their reach, and back when they leave", () => {
   const g = held(TownState.Repairing);
   const t = g.w.map.towns[T];
   const y1 = g.w.castles[T].inside.y1;
   const a = put(g, 0, UnitType.Spearman, t.cellX, t.cellY + y1 - 1);
   cmd(g, 0, { c: "guard", u: [a], town: T });
   run(g, 2);
-  const place = cellOf(g, a);
+  const place = { x: t.cellX, y: t.cellY + y1 - 1 };
+  placeAt(g, a, place.x, place.y);
   const bow = south(g, 1, UnitType.Ranged, 2);
   const reach = UNITS[UnitType.Ranged].range >> CELL_SHIFT;
   g.fog.update(g.w);
@@ -200,6 +214,7 @@ test("the whole town within reach: it goes as far from the shooters as the walls
   const a = put(g, 0, UnitType.Spearman, t.cellX, t.cellY + inside.y1 - 1);
   cmd(g, 0, { c: "guard", u: [a], town: T });
   run(g, 2);
+  placeAt(g, a, t.cellX, t.cellY + inside.y1 - 1);
   // All round, enough of them that nothing inside is out of reach.
   const bows = [south(g, 1, UnitType.Ranged, 1), put(g, 1, UnitType.Ranged, t.cellX, t.cellY + inside.y0 - 2), put(g, 1, UnitType.Ranged, t.cellX + inside.x1 + 2, t.cellY), put(g, 1, UnitType.Ranged, t.cellX + inside.x0 - 2, t.cellY)];
   g.fog.update(g.w);

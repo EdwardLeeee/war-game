@@ -947,8 +947,8 @@ export class UnitSystem {
 
   /**
    * A soldier guarding a town (Order.TownGuard). First what it can hit from where it stands; then, within the walls only,
-   * an enemy inside them, a gate being broken (onto the gate cell, no further), away from shooters it cannot reach once
-   * they hit it; else its place. False when the town is lost.
+   * an enemy inside them, a gate being broken (onto the gate cell, no further), away from shooters it cannot reach; else
+   * its place. False when the town is lost.
    */
   private townGuard(w: World, fog: Fog, fields: FieldCache, i: number): boolean {
     const u = w.units.col;
@@ -1019,9 +1019,7 @@ export class UnitSystem {
         return this.walkTo(w, fields, i, cell);
       }
       const inReach = (x: number, y: number) => town.shooters.some((s) => (x - s.x) * (x - s.x) + (y - s.y) * (y - s.y) <= s.reach * s.reach);
-      const away = Math.abs(u.x[i] - u.anchorX[i]) + Math.abs(u.y[i] - u.anchorY[i]) > CELL;
-      const hit = w.tick - u.lastHurt[i] <= TOWN_GUARD.hideTicks && inReach(u.x[i], u.y[i]);
-      if (town.spots.length > 0 && (hit || (away && inReach(u.anchorX[i], u.anchorY[i])))) {
+      if (town.spots.length > 0 && (inReach(u.x[i], u.y[i]) || inReach(u.anchorX[i], u.anchorY[i]))) {
         let spot = town.spots[0];
         let spotD = -1;
         for (const s of town.spots) {
