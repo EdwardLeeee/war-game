@@ -12,7 +12,6 @@ import { POST_TYPE } from "../../game/outpost.ts";
 import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
 import { costText as costLine } from "../../game/govern-wait.ts";
-import { goesOnWalls } from "../../game/walls.ts";
 import { counterShort } from "../../game/counters.ts";
 import { siegeReachText } from "../../game/siege.ts";
 import type { Mode } from "../../input/intent.ts";
@@ -61,8 +60,7 @@ export interface PanelHost {
   startPlacement(type: BuildingType): void;
   openEconomy(): void;
   chooseTown(town: number, choice: TownChoice): void;
-  /** 上城牆 (D-096): those on a wall come down; our units on a town's wall and its cells (null: not ours). */
-  leaveWall(): void;
+  /** 牆上 (D-096): our units on a town's wall and its cells (null: not ours). */
   wallCount(town: number): { on: number; capacity: number } | null;
   /**
    * 等錢治理 (ceo 2026-10-21): 治理's cost for the town (null when not known), what is missing
@@ -1007,20 +1005,9 @@ export class CommandArea {
           : button(this.el, "躲進去", "主城或箭樓", () => this.host.setMode("garrison"), "secondary");
         if (picking) hide.classList.add("active");
       }
-      // 上城牆／下城牆 (D-096): ranged units and mages stand on the walls of a town we hold, with war-game-ui's icon.
-      if (view.rules.features?.walls === true && sel.units.some((id) => goesOnWalls(view.unitType(id)))) {
-        const up = sel.units.some((id) => view.unitOrder(id) === Order.Wall);
-        const picking = mode === "wall";
-        const wall = up
-          ? button(this.el, "下城牆", "回城裡", () => this.host.leaveWall(), "secondary")
-          : picking
-            ? button(this.el, "取消", "上城牆", () => this.host.setMode("normal"), "secondary")
-            : button(this.el, "上城牆", "點自己的城", () => this.host.setMode("wall"), "secondary");
-        wall.prepend(icon(up ? "wallDown" : "wallUp", "cmd-ic"));
-        if (picking) wall.classList.add("active");
-      }
-      // 駐軍 (2026-10-25, game/station.ts): the soldiers selected (a whole group from 軍團畫面 too)
-      // walk into a town we hold and stay as its 留守; only once we hold one.
+      // 駐軍 (2026-10-25, game/station.ts): the soldiers selected and the rest of their groups walk
+      // into a town we hold and stay as its 留守; the ranged and the mages go up on its walls by
+      // themselves (the user 2026-10-31: 「上城牆那個可以拿掉了」); only once we hold a town.
       if (soldiers.length > 0 && this.host.holdsTown()) {
         const picking = mode === "station";
         const station = picking

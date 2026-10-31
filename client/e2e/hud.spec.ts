@@ -1147,9 +1147,9 @@ test("留守的兵離開選取（使用者 2026-10-22 回報）：選著編隊 1
   await tap(page, await groundOutsideTown(page));
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: rest });
   expect(await garrison(page, 0)).toEqual([stays]);
-  // Group 1's button, 全軍 and 全軍撤退 leave him too.
+  // Group 1's button selects him too (the user 2026-10-31); 全軍 and 全軍撤退 leave him.
   await tapOn(page, GROUP_1);
-  await expect.poll(async () => (await selection(page))?.units).toEqual(rest);
+  await expect.poll(async () => (await selection(page))?.units.slice().sort((a, b) => a - b)).toEqual(spear);
   await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units.includes(stays)).toBe(false);
   await page.getByRole("button", { name: "全軍撤退" }).tap();

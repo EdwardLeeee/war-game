@@ -110,7 +110,7 @@ test("駐守中：編隊的留守一城一城列出；城的留守分編隊；�
   assert.deepEqual(book.perGroup([1, 3, 4, 7]), [2, 1, 0, 0]);
 });
 
-test("留守 −、搶治理被拒、下城牆：有編隊的走回編隊", () => {
+test("留守 −、搶治理被拒：有編隊的走回編隊", () => {
   const units = [unit(1, SPEAR, 30, 30), unit(2, MAGE, 31, 30), unit(3, RANGED, 30, 31, true)];
   const book = new ArmyBook();
   book.groups[0].ids = [1, 2, 3];
@@ -126,13 +126,58 @@ test("留守 −、搶治理被拒、下城牆：有編隊的走回編隊", () =
     book.groups[0].recruits.map((r) => r.id),
     [2, 1],
   );
-  // 下城牆: 3 comes down and back; one in no group is not touched.
-  assert.deepEqual(book.backToGroups([3, 8]), [3]);
-  assert.equal(book.isGarrisoned(3), false);
-  assert.deepEqual(
-    book.groups[0].recruits.map((r) => r.id),
-    [2, 1, 3],
-  );
+});
+
+test("編隊按鈕選得到駐守的兵，選不到哨所和躲著的；駐軍連同整個編隊，沒編隊的只有選到的", () => {
+  const book = new ArmyBook();
+  book.groups[0].ids = [1, 2, 3, 4];
+  book.groups[1].ids = [5, 6];
+  book.stationAll(TOWN.id, [2]);
+  book.updateAway((id) => id === 3, () => false);
+  assert.deepEqual(book.onCall(0), [1, 2, 4]);
+  assert.deepEqual(book.marching(0), [1, 4]);
+  // One of group 1 and one in no group: group 1 but for the one at the outpost; 9 alone.
+  assert.deepEqual(book.withGroups([1, 9]), [1, 9, 2, 4]);
+  assert.deepEqual(book.withGroups([9]), [9]);
+});
+
+test("編隊下令出城：城留最少人數，只算不動名單（split 不改留守）", () => {
+  const units = [unit(1, SPEAR, 30, 30), unit(2, RANGED, 31, 30, true), unit(3, MAGE, 32, 30)];
+  const book = new ArmyBook();
+  book.groups[0].ids = [1, 2, 3];
+  book.stationAll(TOWN.id, [1, 2, 3]);
+  assert.deepEqual(book.split(units, TOWN, () => true, 1), { out: [1, 3], kept: [2] });
+  assert.deepEqual(book.garrisonOf(TOWN.id), [1, 2, 3]);
+  assert.deepEqual(book.groups[0].recruits, []);
+});
+
+test("新兵補進全部駐守的編隊：走進兵最多的城；編隊還有人在外面、從城裡出來的兵、玩家另外下過令的，都不進城", () => {
+  const book = new ArmyBook();
+  const soldier = () => true;
+  const units = [unit(1, SPEAR, 30, 30), unit(2, SPEAR, 31, 30), unit(3, SPEAR, 60, 60), unit(4, SPEAR, 10, 10), unit(5, SPEAR, 12, 10)];
+  const typeOf = (id: number) => (units.some((u) => u.id === id) ? SPEAR : null);
+  book.groups[0].ids = [1, 2, 3];
+  book.groups[0].want = { [SPEAR]: 5 };
+  book.groups[0].refill = true;
+  book.stationAll(OTHER.id, [3]);
+  book.stationAll(TOWN.id, [1, 2]);
+  assert.equal(book.enlist(4, SPEAR, typeOf), 0);
+  assert.deepEqual(book.walkIns(soldier), [{ town: TOWN.id, ids: [4] }]);
+  // His own order for the recruit: it goes where he sent it.
+  book.playerOrdered([4]);
+  assert.deepEqual(book.walkIns(soldier), []);
+  // One came out of the town: the group is out there, the new one walks to it.
+  const out = new ArmyBook();
+  out.groups[0].ids = [1, 2];
+  out.groups[0].want = { [SPEAR]: 3 };
+  out.groups[0].refill = true;
+  out.stationAll(TOWN.id, [1, 2]);
+  out.unstation(units, TOWN, () => true, 1);
+  assert.deepEqual(out.groups[0].recruits.map((r) => r.id), [2]);
+  assert.equal(out.enlist(4, SPEAR, typeOf), 0);
+  assert.deepEqual(out.walkIns(soldier), [], "the one out is the group");
+  // Those back from a town are no new soldiers.
+  assert.deepEqual(new ArmyBook().walkIns(soldier), []);
 });
 
 test("留守的兵：玩家重存編隊時還留在編隊；軍團設定減人先放沒駐守的；兵最多的編隊不算駐守的", () => {
