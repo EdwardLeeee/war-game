@@ -1,7 +1,7 @@
 // 城門與城牆 (D-096, PROTOCOL.md 3.7; the user 2026-10-21: 城牆「雞肋」) on the fake world with gates
 // and walls on (?walls=1): a gate in each opening, as wide as it (tap any of its cells), its town's
-// hit points, attacked with 攻擊; broken (gone), rubble on its opening; 上城牆 (war-game-ui's icon) takes
-// the ranged units and mages selected up on a town we hold, 「牆上 N／M」 on its panel, 下城牆 back;
+// hit points, attacked with 攻擊; broken (gone), rubble on its opening; those on a wall, 「牆上 N／M」
+// on the town's panel;
 // a tower's volley drawn as its arrows. With art-v5.2's castle (war-game-ui 2026-10-22): those on a
 // wall on its walk, behind its front parts; a gate closed, open, damaged, broken; a tower's arrows
 // from its shoot_at_m. Pictures for the user: soldiers on a wall (東陸、西陸: a palisade's south and
@@ -33,7 +33,6 @@ const selection = (page: Page) => page.evaluate(() => window.__proto?.game?.sele
 /** A cell's middle on the screen (the hook adds the half cell). */
 const at = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
 const centre = (page: Page, x: number, y: number, scale = 1) => page.evaluate(([cx, cy, s]) => window.__proto?.game?.centerOn(cx, cy, s), [x, y, scale] as const);
-const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
 async function start(page: Page, query = ""): Promise<void> {
   await page.goto(`./?test=1&mock=1&walls=1&tps=20${query}`);
@@ -92,32 +91,20 @@ test("城門（D-096）：每個開口一座，點開口任何一格都選到它
   check();
 });
 
-test("上城牆（D-096）：選了遠程兵有上城牆鈕（ui 的圖示）；點別人的城鎮說原因；點自己的城鎮送 wall，城鎮寫牆上幾名；下城牆送 leave_wall", async ({ page }, info) => {
+test("牆上（D-096）：沒有上城牆、下城牆鈕（駐軍進城的遠程兵自己上牆）；牆上的遠程兵，城鎮寫牆上幾名", async ({ page }, info) => {
   const check = watchErrors(page);
   await start(page);
   const ranged = await ownIds(page, [RANGED]);
-  // Ranged and spearmen: only the ranged go up.
-  await selectForCommands(page, [...ranged, ...(await ownIds(page, [SPEARMAN]))]);
-  const up = page.locator(".cmds").getByRole("button", { name: /^上城牆/ });
-  await expect(up).toBeVisible();
-  await expect(up.locator("svg.ic")).toHaveCount(1);
-  await shot(page, info, "walls-button");
-  await up.tap();
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("wall");
-  await expect(page.locator(".prompt")).toContainText("點自己持有的城鎮：只有遠程兵和法師會站上城牆");
-  // The neutral town: not ours.
-  await centre(page, NEUTRAL_TOWN.x + 0.5, NEUTRAL_TOWN.y + 0.5, 1);
-  await tap(page, await at(page, NEUTRAL_OPEN));
-  await expect(toast(page, "不是你攻下的城鎮")).toBeVisible();
-  // Ours: the ranged go up.
-  await centre(page, OUR_TOWN.x + 0.5, OUR_TOWN.y + 0.5, 1);
-  await tap(page, await at(page, { x: OUR_TOWN.x, y: OUR_TOWN.y }));
-  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "wall", u: ranged, town: OUR_TOWN.id });
-  await expect(toast(page, `${ranged.length} 名上城牆`)).toBeVisible();
+  await selectForCommands(page, ranged);
+  await expect(page.locator(".cmds").getByRole("button", { name: /^上城牆/ })).toHaveCount(0);
+  await expect(page.locator(".cmds").getByRole("button", { name: /^下城牆/ })).toHaveCount(0);
+  await page.evaluate(([u, town]) => window.__proto?.game?.send({ c: "wall", u, town }), [ranged, OUR_TOWN.id] as const);
   // Order.Wall (11).
   await expect.poll(async () => (await units(page)).filter((u) => ranged.includes(u.id) && u.order === 11).length).toBe(ranged.length);
+  await expect(page.locator(".cmds").getByRole("button", { name: /^下城牆/ })).toHaveCount(0);
   // The town's panel: 牆上 N／28.
   await page.evaluate(() => window.__proto?.game?.select([]));
+  await centre(page, OUR_TOWN.x + 0.5, OUR_TOWN.y + 0.5, 1);
   await tap(page, await at(page, { x: OUR_TOWN.x, y: OUR_TOWN.y }));
   await expect(page.locator(".sel-info")).toContainText(`牆上 ${ranged.length}／28`);
   // Not about other towns' walls (ceo: nothing about others').
@@ -125,12 +112,7 @@ test("上城牆（D-096）：選了遠程兵有上城牆鈕（ui 的圖示）；
   await tap(page, await at(page, NEUTRAL_OPEN));
   await expect(page.locator(".sel-info")).toContainText("小鎮");
   await expect(page.locator(".sel-info")).not.toContainText("牆上");
-  // 下城牆.
-  await selectForCommands(page, ranged);
-  const down = page.locator(".cmds").getByRole("button", { name: /^下城牆/ });
-  await down.tap();
-  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "leave_wall", u: ranged, town: OUR_TOWN.id });
-  await expect.poll(async () => (await units(page)).filter((u) => ranged.includes(u.id) && u.order === 11).length).toBe(0);
+  await shot(page, info, "walls-no-wall-button");
   check();
 });
 
@@ -151,12 +133,8 @@ for (const culture of ["e", "w"] as const) {
     // The ranged only (a mage's cannon on autocast fires from the wall, and the fake world calls that 施法).
     const ranged = await ownIds(page, [RANGED]);
     const wallUp = async (ids: number[], town: { id: number; x: number; y: number }) => {
-      await selectForCommands(page, ids);
-      await page.locator(".cmds").getByRole("button", { name: /^上城牆/ }).tap();
-      await centre(page, town.x + 0.5, town.y + 0.5, 1);
-      await tap(page, await at(page, { x: town.x, y: town.y }));
+      await page.evaluate(([u, t]) => window.__proto?.game?.send({ c: "wall", u, town: t }), [ids, town.id] as const);
       await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id) && u.order === 11).length).toBe(ids.length);
-      await page.evaluate(() => window.__proto?.game?.select([]));
     };
     // Our small town's south stretch (they come from the south-east), its stakes in front of them.
     const south = ranged.slice(0, 2);

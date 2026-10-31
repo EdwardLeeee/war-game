@@ -445,9 +445,8 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await expect(panel.locator(".sel-head")).toContainText("編隊 1");
   await openPanel(page);
   const g1Now = (await groupInfo(page))[0];
-  // Those stationed in the town (8, 8c) stay there (the user 2026-10-26).
-  const inTown = await garrison(page, town.id);
-  const g1Alive = (await units(page)).filter((u) => g1Now.ids.includes(u.id) && !inTown.includes(u.id)).map((u) => u.id);
+  // Those stationed in the town (8, 8c) too (the user 2026-10-31).
+  const g1Alive = (await units(page)).filter((u) => g1Now.ids.includes(u.id)).map((u) => u.id);
   await expect.poll(async () => (await selection(page))?.units.slice().sort((a, b) => a - b)).toEqual(g1Alive.slice().sort((a, b) => a - b));
   await expect(panel.getByRole("status", { name: "槍兵要幾名" })).toHaveText(`${g1Now.want[SPEARMAN] ?? 0}`);
   await shot(page, info, "9-group-panel");

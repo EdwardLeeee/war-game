@@ -64,12 +64,12 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   await expect(button).toHaveText("駐軍點自己的城");
   await shot(page, info, "station-1-button-in-group-screen");
   await button.tap();
-  await expect(page.getByText("點自己持有的城鎮：選的兵走進去留守")).toBeVisible();
+  await expect(page.getByText("點自己持有的城鎮：選的兵連同整個編隊走進去留守")).toBeVisible();
   await expect(page.locator(".cmds").getByRole("button", { name: /^取消/ })).toBeVisible();
   await shot(page, info, "station-2-pick-a-town");
   // 軍團畫面 folded by the tap on the group (the user 2026-10-31): the map under it is free.
   await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
-  await expect(page.getByText("點自己持有的城鎮：選的兵走進去留守")).toBeVisible();
+  await expect(page.getByText("點自己持有的城鎮：選的兵連同整個編隊走進去留守")).toBeVisible();
   // Not ours: why.
   await tap(page, await at(page, { x: NEUTRAL_TOWN.x + 0.5, y: NEUTRAL_TOWN.y + 2.5 }));
   await expect(toast(page, "不是你攻下的城鎮")).toBeVisible();

@@ -6,13 +6,18 @@
 // of them stand with no order, the screen sends them at the nearest defender: from outside, the
 // nearest gate while none is broken (ceo 2026-10-25), else as from inside, the nearest of its
 // militia (on the walls too), enemy soldiers or tower; none seen, into its centre. It ends once the
-// town is taken, or the player gives them another order, or they are all dead. Auto commands (in
-// the game's log, as 自動訓練's). Pure: Game gathers what the snapshot shows.
+// town is taken, or the player gives them another order, or they are all dead. Those of a group
+// that come later (the user 2026-10-31: 「選兵團打城市的時候 後面過去的兵只會看不會打」; 自動補兵's
+// recruits walk to the group and stand there) join it once they stand by the town with no order,
+// unless the player has ordered them otherwise since the attack began. Auto commands (in the
+// game's log, as 自動訓練's). Pure: Game gathers what the snapshot shows.
 
 /** How often (ticks, 1 s) a town's idle attackers are sent again at most. */
 export const ASSAULT_EVERY = 20;
 /** An order sent and neither shown nor refused after this long (ticks, 30 s) is taken for lost. */
 export const ASSAULT_SENT_TICKS = 600;
+/** How far past a town's radius (cells) a soldier of a group attacking it counts as by it, and joins. */
+export const ASSAULT_JOIN_CELLS = 6;
 
 export interface Spot {
   x: number;
@@ -97,26 +102,44 @@ export class Assaults {
   private readonly towns = new Map<number, Set<number>>();
   private readonly sent = new Map<number, { seqs: number[]; tick: number; ids: number[] }>();
   private readonly last = new Map<number, number>();
+  /** Those the player ordered otherwise while some town was under attack: they do not join one (join). */
+  private readonly excused = new Set<number>();
 
   /** The player sent these soldiers at this town: theirs from now on (and no other town's). */
   begin(town: number, ids: readonly number[]): void {
     this.drop(ids);
     if (ids.length === 0) return;
+    for (const id of ids) this.excused.delete(id);
     this.towns.set(town, new Set([...(this.towns.get(town) ?? []), ...ids]));
   }
 
-  /** The player gave these another order: no longer attacking any town. */
-  drop(ids: readonly number[]): void {
+  /**
+   * The player gave these another order: no longer attacking any town, and not to join one until he
+   * says so. `excuse` false: out of it by no order of his (put into another group), they may join.
+   */
+  drop(ids: readonly number[], excuse = true): void {
     for (const [town, set] of this.towns) {
       for (const id of ids) set.delete(id);
       if (set.size === 0) this.end(town);
     }
+    if (excuse && this.towns.size > 0) for (const id of ids) this.excused.add(id);
+  }
+
+  /** Those of `ids`, of a group attacking this town and standing by it, who join the attack (not the player's otherwise). Returns them. */
+  join(town: number, ids: readonly number[]): number[] {
+    const set = this.towns.get(town);
+    if (set === undefined) return [];
+    const taken = [...this.towns.values()];
+    const fresh = ids.filter((id) => !this.excused.has(id) && !taken.some((s) => s.has(id)));
+    for (const id of fresh) set.add(id);
+    return fresh;
   }
 
   end(town: number): void {
     this.towns.delete(town);
     this.sent.delete(town);
     this.last.delete(town);
+    if (this.towns.size === 0) this.excused.clear();
   }
 
   list(): { town: number; ids: number[] }[] {
