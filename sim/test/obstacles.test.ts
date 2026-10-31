@@ -13,7 +13,7 @@ import { BUILDINGS, KEEP } from "../src/core/rules.ts";
 import { checkPlacement } from "../src/placement.ts";
 import { BuildingType, CELL_SHIFT, crossingTerrain, NodeKind, PlaceBit, Reject, Stance, Terrain, UnitType } from "../src/protocol.ts";
 import { buildView, SnapshotEncoder } from "../src/view/view.ts";
-import { cmd, emptyGame, put, run, slotOf, switchedOff, switchedOn } from "./helpers.ts";
+import { cmd, emptyGame, put, run, slotOf, switchedOn } from "./helpers.ts";
 
 const TERRAIN_OF: Record<string, number> = { R: Terrain.Blocked, K: Terrain.Cliff, "~": Terrain.Water, f: Terrain.Ford, "|": Terrain.BridgeNS, "=": Terrain.BridgeEW };
 
@@ -120,33 +120,40 @@ test("random maps (seeds 1-300): crossings 3 wide from bank to bank, water at le
   assert.ok(fallbacks <= 6, `under 2% fall back to no obstacles (${fallbacks})`);
 });
 
-/** Random maps 1-300 with and without WATER_TRIM: the cells that differ ("seed:x,y" and the terrains). */
-function trimmed(): string[] {
-  const out: string[] = [];
+/** Random maps 1-300's water cells in no 2 x 2 of water and crossings, and how many of them touch a castle wall. */
+function narrowWater(): { cells: number; byWall: number } {
+  let cells = 0;
+  let byWall = 0;
   for (let seed = 1; seed <= 300; seed++) {
-    const a = generateRandomMap(seed, 129);
-    WATER_TRIM.on = false;
-    let b: ReturnType<typeof generateRandomMap>;
-    try {
-      b = generateRandomMap(seed, 129);
-    } finally {
-      WATER_TRIM.on = true;
+    const m = generateRandomMap(seed, 129);
+    const n = m.size;
+    const of = (x: number, y: number) => (x >= 0 && y >= 0 && x < n && y < n ? m.terrain[y * n + x] : Terrain.Open);
+    const wet = (x: number, y: number) => of(x, y) === Terrain.Water || crossingTerrain(of(x, y));
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        if (of(x, y) !== Terrain.Water) continue;
+        if ([[0, 0], [-1, 0], [0, -1], [-1, -1]].some(([dx, dy]) => wet(x + dx, y + dy) && wet(x + dx + 1, y + dy) && wet(x + dx, y + dy + 1) && wet(x + dx + 1, y + dy + 1))) continue;
+        cells++;
+        if ([-1, 0, 1].some((dy) => [-1, 0, 1].some((dx) => of(x + dx, y + dy) === Terrain.Wall))) byWall++;
+      }
     }
-    assert.equal(a.size, b.size);
-    for (let i = 0; i < a.terrain.length; i++) if (a.terrain[i] !== b.terrain[i]) out.push(`${seed}:${i % a.size},${Math.trunc(i / a.size)}:${b.terrain[i]}->${a.terrain[i]}`);
-    assert.deepEqual(a.nodes, b.nodes, `seed ${seed}: the same resources`);
-    assert.deepEqual([a.towns, a.spawns, a.tower, a.layout, a.redraws], [b.towns, b.spawns, b.tower, b.layout, b.redraws], `seed ${seed}: the same towns, starts and draws`);
   }
-  return out;
+  return { cells, byWall };
 }
 
-test("D-100's walls on a river's edge (KEEP on): the water they leave 1 cell wide is ground; nothing else on random maps 1-300 changes", switchedOn(KEEP, () => {
-  // Seed 30: the small town at (83, 29) and its mirror image at (29, 83) (ceo 2026-10-29).
-  assert.deepEqual(trimmed(), [`30:89,37:${Terrain.Water}->${Terrain.Open}`, `30:37,89:${Terrain.Water}->${Terrain.Open}`]);
-}));
-
-test("KEEP off: the water trim changes no random map 1-300 (D-089's castles leave no water 1 cell wide)", switchedOff(KEEP, () => {
-  assert.deepEqual(trimmed(), []);
+test("water a castle's walls leave 1 cell wide is ground (ceo 2026-10-29), on random maps 1-300, KEEP on or off", switchedOn(KEEP, () => {
+  assert.equal(narrowWater().cells, 0, "D-100's castles");
+  KEEP.on = false;
+  assert.equal(narrowWater().cells, 0, "D-089's castles");
+  KEEP.on = true;
+  WATER_TRIM.on = false;
+  try {
+    const off = narrowWater();
+    assert.ok(off.cells > 0, "without the trim some is left");
+    assert.equal(off.byWall, off.cells, "all of it by a wall");
+  } finally {
+    WATER_TRIM.on = true;
+  }
 }));
 
 test("a soldier sent across the river walks over the bridge, never in the water", () => {

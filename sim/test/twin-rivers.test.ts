@@ -6,7 +6,6 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
 import { KEEP } from "../src/core/keep.ts";
-import { generateRandomMap } from "../src/core/random-map.ts";
 import { twinRiversMap } from "../src/core/twin-rivers.ts";
 import { toCanon } from "../src/frame.ts";
 import { NEUTRAL, NodeKind, Terrain, TownSize } from "../src/protocol.ts";
@@ -21,12 +20,6 @@ function digest(m: ReturnType<typeof twinRiversMap>): string {
   h.update(JSON.stringify([m.nodes, m.towns, m.spawns, m.tower, m.towerSize, m.posts]));
   return h.digest("hex").slice(0, 16);
 }
-
-test("twin-rivers is the map of seed 2106939660 as the generator made it for the user's game", () => {
-  const g = generateRandomMap(2106939660);
-  const m = twinRiversMap(2106939660);
-  assert.deepEqual(m, g);
-});
 
 test("twin-rivers is locked: cells and resources by hash; two rivers' worth of water, 4 crossings, an adjacent layout", () => {
   const m = twinRiversMap(2);
