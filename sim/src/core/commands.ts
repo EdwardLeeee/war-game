@@ -54,6 +54,7 @@ import {
   TOWNS,
   UNITS,
   GATE,
+  TOWN_GUARD,
   WALLS,
 } from "./rules.ts";
 import { openLine } from "./steer.ts";
@@ -561,39 +562,45 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       const u = w.units.col;
       const fit = slots.filter((s) => (u.type[s] === UnitType.Ranged || u.type[s] === UnitType.Mage) && !hiding(w, s) && !(u.order[s] === Order.Wall && u.orderTarget[s] === t));
       if (fit.length === 0) return Reject.NotAvailable;
-      const free = Array.from(w.wallCells[t]).filter((c) => w.wallAt[c] < 0);
-      if (free.length === 0) return Reject.NoRoom;
+      if (!Array.from(w.wallCells[t]).some((c) => w.wallAt[c] < 0)) return Reject.NoRoom;
+      upWall(w, ctx, p, fit, t);
+      return 0;
+    }
+    case "guard": {
+      if (!TOWN_GUARD.on || !WALLS.on || !GATE.on) return Reject.NotAvailable;
+      const slots = ownUnits(w, p, cmd.u);
+      if (slots.length === 0) return Reject.NotOwner;
+      const t = cmd.town;
+      if (!Number.isInteger(t) || t < 0 || t >= w.townSize.length) return Reject.InvalidTarget;
+      if (!w.heldBy(t, p)) return Reject.TownNotYours;
+      const u = w.units.col;
+      const fit = slots.filter((s) => u.type[s] !== UnitType.Farmer && !hiding(w, s) && !(u.order[s] === Order.Wall && u.orderTarget[s] === t));
+      if (fit.length === 0) return Reject.NotAvailable;
+      const up = upWall(w, ctx, p, fit.filter((s) => u.type[s] === UnitType.Ranged || u.type[s] === UnitType.Mage), t);
       const n = w.size;
-      const f = w.map.frames[p] ?? IDENTITY;
+      const places = townPlaces(w, t, p);
+      let k = 0;
+      for (let s = 0; s < w.units.count; s++) if (u.order[s] === Order.TownGuard && u.orderTarget[s] === t) k++;
       for (const s of fit) {
-        // The free wall cell nearest it; equally near, the first in its owner's canonical frame.
-        let best = -1;
-        let bestD = 0;
-        for (const c of free) {
-          if (w.wallAt[c] >= 0) continue;
-          const dx = ((c % n) << CELL_SHIFT) + 512 - u.x[s];
-          const dy = (Math.trunc(c / n) << CELL_SHIFT) + 512 - u.y[s];
-          const d = dx * dx + dy * dy;
-          if (best >= 0 && d > bestD) continue;
-          if (best >= 0 && d === bestD) {
-            const a = toCanon(f, c % n, Math.trunc(c / n));
-            const b = toCanon(f, best % n, Math.trunc(best / n));
-            if (a.v > b.v || (a.v === b.v && a.u > b.u)) continue;
-          }
-          best = c;
-          bestD = d;
-        }
-        if (best < 0) break;
+        if (up.includes(s)) continue;
+        if (u.wall[s] >= 0) w.offWall(s);
         ctx.econ.release(w, s);
         if (u.order[s] === Order.Cast) u.castProgress[s] = 0;
-        u.order[s] = Order.Wall;
+        u.order[s] = Order.TownGuard;
         u.orderTarget[s] = t;
-        u.wall[s] = best;
-        w.wallAt[best] = u.id[s];
         u.target[s] = -1;
         u.group[s] = -1;
         u.squad[s] = 0;
         u.speedCap[s] = 0;
+        // Its place: where it stands inside the walls, else the next one round the middle.
+        if (w.insideAt[(u.y[s] >> CELL_SHIFT) * n + (u.x[s] >> CELL_SHIFT)] === t) {
+          u.anchorX[s] = u.x[s];
+          u.anchorY[s] = u.y[s];
+        } else {
+          const c = places[k++ % places.length];
+          u.anchorX[s] = ((c % n) << CELL_SHIFT) + (CELL >> 1);
+          u.anchorY[s] = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
+        }
       }
       return 0;
     }
@@ -692,6 +699,70 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
 function hiding(w: World, s: number): boolean {
   const u = w.units.col;
   return u.action[s] === Action.Garrisoned && u.type[s] !== UnitType.Farmer;
+}
+
+/**
+ * Soldiers `fit` go up onto town t's walls, each to the free wall cell nearest it (D-096; equally near, the first in its
+ * owner's canonical frame), as long as there are any. Those going up.
+ */
+function upWall(w: World, ctx: CommandContext, p: number, fit: number[], t: number): number[] {
+  const u = w.units.col;
+  const free = Array.from(w.wallCells[t]).filter((c) => w.wallAt[c] < 0);
+  const n = w.size;
+  const f = w.map.frames[p] ?? IDENTITY;
+  const up: number[] = [];
+  for (const s of fit) {
+    let best = -1;
+    let bestD = 0;
+    for (const c of free) {
+      if (w.wallAt[c] >= 0) continue;
+      const dx = ((c % n) << CELL_SHIFT) + 512 - u.x[s];
+      const dy = (Math.trunc(c / n) << CELL_SHIFT) + 512 - u.y[s];
+      const d = dx * dx + dy * dy;
+      if (best >= 0 && d > bestD) continue;
+      if (best >= 0 && d === bestD) {
+        const a = toCanon(f, c % n, Math.trunc(c / n));
+        const b = toCanon(f, best % n, Math.trunc(best / n));
+        if (a.v > b.v || (a.v === b.v && a.u > b.u)) continue;
+      }
+      best = c;
+      bestD = d;
+    }
+    if (best < 0) break;
+    ctx.econ.release(w, s);
+    if (u.order[s] === Order.Cast) u.castProgress[s] = 0;
+    u.order[s] = Order.Wall;
+    u.orderTarget[s] = t;
+    u.wall[s] = best;
+    w.wallAt[best] = u.id[s];
+    u.target[s] = -1;
+    u.group[s] = -1;
+    u.squad[s] = 0;
+    u.speedCap[s] = 0;
+    up.push(s);
+  }
+  return up;
+}
+
+/**
+ * Cells for town t's guards to stand on: every other walkable cell inside the walls, nearest the middle first (ties: the
+ * first in the owner's canonical frame, so mirror-image towns have mirror-image places).
+ */
+function townPlaces(w: World, t: number, p: number): number[] {
+  const c = w.castles[t].inside;
+  const n = w.size;
+  const f = w.map.frames[p] ?? IDENTITY;
+  const cells: { i: number; d: number; key: number }[] = [];
+  for (let dy = c.y0; dy <= c.y1; dy++) {
+    for (let dx = c.x0; dx <= c.x1; dx++) {
+      const x = w.townX[t] + dx;
+      const y = w.townY[t] + dy;
+      if (((dx + dy) & 1) !== 0 || !w.walkable(x, y)) continue;
+      const a = toCanon(f, x, y);
+      cells.push({ i: y * n + x, d: dx * dx + dy * dy, key: a.v * n + a.u });
+    }
+  }
+  return cells.sort((a, b) => a.d - b.d || a.key - b.key).map((e) => e.i);
 }
 
 /** The building a hiding soldier is in (a calibrating mage keeps it in prevTarget). */
