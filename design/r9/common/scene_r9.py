@@ -102,14 +102,25 @@ def screen(top, items, shadows, water=None, reflect=()):
         # broken by the ripples (R9 r7: a smooth silhouette laid over the water): each row pushed sideways a few px,
         # every few rows a little fainter (the bands of a rippled mirror)
         for y in range(arr.shape[0]):
-            arr[y] = np.roll(arr[y], int(round(2.5 * math.sin(y * 0.7 + 1.3 * math.sin(y * 0.13)))), axis=0)
+            arr[y] = np.roll(arr[y], int(round(5.0 * math.sin(y * 0.7 + 1.3 * math.sin(y * 0.13)))), axis=0)
         yy = np.arange(arr.shape[0], dtype=np.float32)[:, None]
-        arr[..., 3] *= 0.8 + 0.2 * np.sin(yy * 1.1 + np.sin(yy * 0.31))
+        arr[..., 3] *= 0.6 + 0.4 * np.clip(np.sin(yy * 1.1 + np.sin(yy * 0.31)) * 1.5, -1, 1)   # R9 r8: still a blob
         arr[..., 3] *= np.asarray(wm, np.float32) / 255.0
         layer = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(0.8))
         cam.alpha_composite(layer)
-    for im, xy in shadows:
-        _paste(cam, im, xy)
+    if water is not None:          # on the water a shadow is faint and wavers (R9 r8: a crisp black ladder on the water)
+        sl = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+        for im, xy in shadows:
+            _paste(sl, im, xy)
+        wm2 = np.asarray(Image.fromarray((np.clip(water, 0, 1) * 255).astype(np.uint8), "L").resize(cam.size, Image.BILINEAR), np.float32) / 255.0
+        a = np.asarray(sl, np.float32).copy()
+        soft = np.asarray(sl.filter(ImageFilter.GaussianBlur(2.5)), np.float32)
+        a = a * (1 - wm2[..., None]) + soft * wm2[..., None]
+        a[..., 3] *= 1 - 0.55 * wm2
+        cam.alpha_composite(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGBA"))
+    else:
+        for im, xy in shadows:
+            _paste(cam, im, xy)
     for _, im, xy in sorted(items, key=lambda q: q[0]):
         _paste(cam, im, xy)
     return cam.convert("RGB")
