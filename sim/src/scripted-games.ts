@@ -10,6 +10,7 @@
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
 import { CrushWatch, type CrushRecord } from "./crush-watch.ts";
+import { TownWatch, type TownRecord } from "./town-watch.ts";
 import { DeathWatch, type DeathRecord } from "./death-watch.ts";
 import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { writeFileSync } from "node:fs";
@@ -74,6 +75,8 @@ if (flag("govern")) plan.choice = "govern";
 // The soldiers left in a town, and whether they guard it (`guard`): how much stronger a guarded town is.
 if (arg("guards", "") !== "") plan.guards = Number(arg("guards", ""));
 if (flag("town-guard")) plan.townGuard = true;
+if (flag("guards-all")) plan.guardsAll = true;
+if (flag("town-station")) plan.townStation = true;
 // Round 7 (D-061): cavalry raiders, this many (--raid 4).
 plan.raid = Number(arg("raid", "0"));
 // D-072: racing the AI to its main city (--race edge|sentry), with these numbers.
@@ -311,6 +314,7 @@ interface GameRecord {
   governedEnd: [number, number];
   /** push-crush, every game (read only): the first battle the AI lost big and the 15 minutes after it (null: none). */
   crush: CrushRecord | null;
+  townWatch: TownRecord;
   /**
    * D-086 A3, every game (read only): the AI's farmers lost each minute (from minute 1); its hits (5 or more
    * lost in two minutes, none counted in the three minutes before) and of those, the ones back 3 minutes
@@ -480,6 +484,7 @@ function play(seed: number): GameRecord {
   const pace: GameRecord["pace"] = {};
   const goldWatch = new GoldWatch(w);
   const crushWatch = new CrushWatch();
+  const townWatch = new TownWatch(0);
   const bonusLast = [0, 0, 0];
   let bonusLeft = 0;
   const towersOf = (p: number) => {
@@ -516,6 +521,7 @@ function play(seed: number): GameRecord {
     }
     deaths.tick(w);
     crushWatch.tick(w);
+    townWatch.tick(w);
     if (w.tick === 12000) aiFarmersLost10 = w.lost[UNIT_KINDS + UnitType.Farmer];
     // D-086 A: the AI's orders this tick at the player's main city with 10 or more soldiers.
     for (; logAt < g.log.length; logAt++) {
@@ -821,6 +827,7 @@ function play(seed: number): GameRecord {
     gold: goldWatch.result(),
     governedEnd: [0, 1].map((p) => w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length) as [number, number],
     crush: crushWatch.result(),
+    townWatch: townWatch.result(),
     aiFarmers,
     aiRescue,
     marches: st.marches,
