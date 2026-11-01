@@ -1,4 +1,4 @@
-"""R9's scenes: one phone screen of the map the user saved (雙河關, random map seed 2106939660: sim/src/map-grid.ts), the
+"""R9's scenes: one phone screen of the map the user saved (雙河關: fixed data since D-115, common/twin_grid.mts), the
 ground and the water, the trees, the bridge, units and a main city on it, drawn as the game draws them: before (art-v6.3
 as released) and after (R9's ground and water, R9's renders).
 
@@ -293,6 +293,13 @@ def scene06(art, gridp, out, city_dir, units_dir, relief, relief_d):
     im.save(out / "scene06_現在.png")
     for cam in ("甲", "乙"):
         sun, view, rel = (R.SUN, R.VIEW, relief) if cam == "甲" else (R.SUN_D, R.VIEW_D, relief_d)
+        if cam == "乙":       # a window 5 cells wider each way: the turned map must reach the screen's corners
+            pad, off = 5, 10.0
+            grid, trees = load_map(gridp, 51 - pad, 33 - pad, 21 + 2 * pad, 21 + 2 * pad)
+            city = (city[0] + off, city[1] + off)
+            trees = [t for t in trees if not (abs((t[0] + 0.5) * 2 - city[0]) < 5 and abs((t[1] + 0.5) * 2 - city[1]) < 5)]
+            men = [(a_, f_, k_, tm, x + off, y + off) for a_, f_, k_, tm, x, y in men]
+            n = grid.shape[0] * 2 * PPM
         top = R.compose(grid, [], layers, rel, ppm=PPM, rules=rules, sun=sun, view=view, town=city_town(grid.shape[0], *city))
         top = contact_ao(top, *city)
         items, shadows = sprites(art, grid, trees)

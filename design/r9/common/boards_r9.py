@@ -1,13 +1,11 @@
 """R9's boards (napali realism trial, ceo 2026-11-01): before and after at the phone's actual size (1x, 814 x 380 pt) and
 at its pixels (3x), the label top left, the latest judge's scores under it.
 
-python3 design/r9/common/boards_r9.py SCENES_DIR UNITS_BEFORE UNITS_AFTER CITY_DIR OUT_DIR
-  SCENES_DIR   scene_r9.py's output (scene_before/after.png, scene06_甲/乙.png, scene06_edge.png)
+python3 design/r9/common/boards_r9.py SCENES_DIR UNITS_BEFORE UNITS_AFTER OUT_DIR
+  SCENES_DIR   scene_r9.py's output: scene_, grass_, city_ before/after.png (modes ground, grass, city), scene06_現在/甲/乙.png
+               and scene06_edge.png (modes 06, edge)
   UNITS_*      spear_e atlases (art-v6.3's, R9's postprocess output)
-  CITY_DIR     render_b1 output with main_city_E_r9 (and art-v6.3's buildings atlas for the old one: ART_X3 env)
 """
-import json
-import os
 import sys
 from pathlib import Path
 
@@ -116,69 +114,69 @@ def spear_gif(atlas_dir, ground, out, team="blue"):
     frames[0][0].save(out, save_all=True, append_images=[f for f, _ in frames[1:]], duration=[d for _, d in frames], loop=0)
 
 
-def city_on(ground, sprite):
-    canvas = ground.copy().convert("RGBA")
-    (im, ax, ay), sh = sprite
-    X, Y = canvas.width // 2, int(canvas.height * 0.6)
-    if sh:
-        si, sx, sy = sh
-        SC._paste(canvas, si, (int(X - sx), int(Y - sy)))
-    SC._paste(canvas, im, (int(X - ax), int(Y - ay)))
-    return canvas.convert("RGB")
-
-
 def scores_line():
-    rows = [ln for ln in (HERE.parent / "scores.md").read_text().splitlines() if ln.startswith("| ") and ln[2].isdigit()]
-    return rows[-1] if rows else ""
+    """The latest score of each item (scores.md: the last round that scored it), e.g. 「地面 4 → 5（第 5 輪）、…」."""
+    rows = [[c.strip() for c in ln.strip().strip("|").split("|")]
+            for ln in (HERE.parent / "scores.md").read_text().splitlines() if ln.startswith("| ") and ln[2].isdigit()]
+    out = []
+    for k, name in ((1, "地面"), (2, "水邊"), (3, "槍兵"), (4, "主城")):
+        got = [r for r in rows if len(r) > k and r[k] not in ("—", "")]
+        if got:
+            out.append(f"{name} {got[-1][k]}（第 {got[-1][0]} 輪）")
+    return "、".join(out)
 
 
-def main(scenes, ub, ua, city_dir, out):
+def main(scenes, ub, ua, out):
     out.mkdir(parents=True, exist_ok=True)
-    art = Path(os.environ["ART_X3"])
     b = Image.open(scenes / "scene_before.png").convert("RGB")
     a = Image.open(scenes / "scene_after.png").convert("RGB")
     last = scores_line()
     note = ("R9（使用者 2026-11-01：「你的畫風不能跟它一樣真實嗎」）：學 napali 的做法。只是試驗圖，沒有上線。"
-            "場景是使用者存下來的「雙河關」那張圖（隨機地圖種子 2106939660）。左邊／上面是現在（art-v6.3），右邊／下面是 R9。")
+            "場景是使用者存下來的「雙河關」（D-115 起是固定的一張地圖）。左邊／上面是現在（art-v6.3），右邊／下面是 R9。"
+            f"\n評審最後一輪分數（0–10，現在 → R9）：{last}")
     # 01 ground
     board("R9-01-地面-A-侵蝕起伏-phone",
           note + "\n地面：同一套地面圖層，加上可接縫的 16 公尺起伏圖（雜訊加侵蝕，照遊戲的太陽算軟陰影、天光、遮蔽）、"
-          "成叢的草和被風吹倒的長條草色、小沖溝的濕土。隨機地圖在手機上生成也一樣接得起來（起伏圖取兩次、轉一個角度混合，不會重複）。",
+          "成叢的草和被風吹倒的長條草色、小沖溝的濕土。隨機地圖在手機上生成也一樣接得起來（起伏圖取兩次、轉一個角度混合，不會重複）。"
+          "\n記憶體（2 倍，GPU 用 ASTC 4×4）：art-v6.3 地面 0.33 MB → R9 約 0.8 MB（多一張起伏圖 0.41 MB、漣漪圖 0.07 MB）；"
+          "3 倍 0.7 → 約 1.7 MB。PNG 檔：起伏圖 3 倍 1.4 MB、2 倍 0.63 MB。",
           [("實際大小（1 倍，814×380 pt）：現在 → R9", pair(one_x(b), one_x(a))),
            ("手機像素（3 倍）一角：現在", b.crop((1300, 700, 2442, 1140))),
            ("手機像素（3 倍）一角：R9", a.crop((1300, 700, 2442, 1140)))], out)
     # 02 water edge
     board("R9-02-水邊-A-深淺與倒影-phone",
-          note + "\n水邊：水照深淺變色（看得到淺處的河床），天空照菲涅耳反射成沿水流拉長的亮紋，對岸和岸上的樹倒映在水裡，"
-          "對岸的土坎朝鏡頭露出來、近岸是一圈草唇，水邊濕土，岸線不再沿著格子走；淺灘有石頭和白色的碎浪。",
+          note + "\n水邊：水照深淺變色（淺處看得到河底），細的漣漪反射天空，對岸的土坎朝鏡頭露出來、它的倒影和影子落在水上，"
+          "岸線一道濕泥細線、不沿著格子走，河寬有寬有窄；淺灘有石頭和白色的碎浪；橋板在水上有影子。",
           [("實際大小（1 倍）：現在 → R9", pair(one_x(b), one_x(a))),
            ("手機像素（3 倍）河段：現在", b.crop((0, 380, 1300, 840))),
            ("手機像素（3 倍）河段：R9", a.crop((0, 380, 1300, 840)))], out)
-    # 03 spearman
-    grass = a.crop((1500, 760, 2442, 1140))
-    sb, sa = spear_strip(ub, grass), spear_strip(ua, grass)
-    board("R9-03-槍兵-A-布料與打光-phone",
-          note + "\n槍兵（東陸，唐末五代，雙手持槍）：玩家色的袍子以前過曝成一整片青色，現在保留布紋、皺褶和光澤；"
-          "皮膚透一點光、臉不再是黑洞；甲片凹凸加深、每片粗糙度不同；加上草地往上反的光。動作見同名 GIF。",
+    # 03 spearman: each on its own ground
+    gb = Image.open(scenes / "grass_before.png").convert("RGB").crop((600, 720, 1600, 1000))
+    ga = Image.open(scenes / "grass_after.png").convert("RGB").crop((600, 720, 1600, 1000))
+    sb, sa = spear_strip(ub, gb), spear_strip(ua, ga)
+    board("R9-03-槍兵-A-甲片與打光-phone",
+          note + "\n槍兵（東陸，唐末五代，雙手持槍）：甲片一片一片亮暗、角度、粗糙度各不同（反光碎成點），甲片間的縫更深；"
+          "頓項（護頸）改成甲片列，不再是一整片玩家色；玩家色布料稍暗、有布紋；草地往上反的光改暖。動作見同名 GIF。"
+          "\n註：前幾輪的評審圖把玩家色多乘了一次 1.6（遊戲沒有），兩邊都被畫成過曝的青色；這張照遊戲的算法合成。",
           [("實際大小（1 倍）：現在（上）、R9（下）", pair(one_x(sb), one_x(sa), gap=10)),
            ("手機像素（3 倍）：現在", sb), ("手機像素（3 倍）：R9", sa)], out)
-    spear_gif(ub, grass, out / "R9-03-槍兵-0-現況-動作.gif")
-    spear_gif(ua, grass, out / "R9-03-槍兵-A-布料與打光-動作.gif")
+    spear_gif(ub, gb, out / "R9-03-槍兵-0-現況-動作.gif")
+    spear_gif(ua, ga, out / "R9-03-槍兵-A-甲片與打光-動作.gif")
     # 04 main city
-    old = SC.Atlas(art / "buildings" / "buildings_E.json").sprite("main_city_E_done", "blue")
-    new = SC.b1_sprite(city_dir, "main_city_E_r9")
-    g2 = a.crop((0, 0, 1000, 760))
-    cb, ca = city_on(g2, old), city_on(g2, new)
+    cb = Image.open(scenes / "city_before.png").convert("RGB")
+    ca = Image.open(scenes / "city_after.png").convert("RGB")
     board("R9-04-主城-A-不規則輪廓-phone",
-          note + "\n主城：州府院落。正堂在比 4×4 小的台基上，左前角一座夯土墩台上的鼓樓高出屋簷，右邊一座橫著的偏殿，"
-          "後面一棵松樹，屋簷伸出台基；不再鋪滿方形的地坪，輪廓不是方塊。屋瓦改成細的筒瓦一路到簷口，簷口一排瓦當，正脊疊瓦。",
+          note + "\n主城：州府院落。正堂在比 4×4 小的台基上，左前角夯土墩台上的鼓樓高出屋簷，右前方一座較矮的偏殿門朝鏡頭，"
+          "後面一棵松樹，屋簷伸出台基，輪廓不是方塊。屋瓦是細的筒瓦一路到簷口，簷口一排瓦當，正脊疊瓦。夯土台一層一層、有雨水沖痕。"
+          "門前和正面一排踩實的土、一條小路走出去（遊戲裡城內地面已經有這個圖層），牆腳有接地的陰影，影子比現在深。",
           [("實際大小（1 倍）：現在 → R9", pair(one_x(cb), one_x(ca))),
-           ("手機像素（3 倍）：現在 → R9", pair(cb, ca, scale=0.75))], out)
+           ("手機像素（3 倍）：現在", cb), ("手機像素（3 倍）：R9", ca)], out)
     # 06 cameras
     for cam, name, text in (("甲", "方形斜看", "照現在的鏡頭（D-088）。另一張是地圖邊緣的收邊：河流出地圖變成湖，兩旁是森林，地圖外面暗一點、灰一點（玩家去不了）。"),
-                            ("乙", "菱形斜看", "鏡頭轉 45 度（art-v2 以前），建築的角朝向玩家；主城用這個角度重算，地面、水、太陽跟著轉。模擬照舊是正方形的格子。")):
+                            ("乙", "菱形斜看", "鏡頭轉 45 度（art-v2 以前），建築的角朝向玩家；主城和槍兵用這個角度重算，地面、水、太陽跟著轉"
+                                            "（樹和石頭還是方形鏡頭的圖）。模擬照舊是正方形的格子。")):
         im = Image.open(scenes / f"scene06_{cam}.png").convert("RGB")
-        rows = [("實際大小（1 倍）", one_x(im)), ("手機像素（3 倍）", im.resize((im.width * 2 // 3, im.height * 2 // 3), Image.LANCZOS))]
+        rows = [("實際大小（1 倍）", one_x(im)), ("手機像素（3 倍的 2/3）", im.resize((im.width * 2 // 3, im.height * 2 // 3), Image.LANCZOS))]
         if cam == "甲":
             e = Image.open(scenes / "scene06_edge.png").convert("RGB")
             rows += [("地圖邊緣的收邊（1 倍）", one_x(e)), ("地圖邊緣的收邊（3 倍的 2/3）", e.resize((e.width * 2 // 3, e.height * 2 // 3), Image.LANCZOS))]
@@ -194,4 +192,4 @@ def main(scenes, ub, ua, city_dir, out):
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), Path(sys.argv[5]))
+    main(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))

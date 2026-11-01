@@ -118,12 +118,18 @@ def apply(u=None, kind=None):
             p.inputs["Sheen Roughness"].default_value = 0.4
             p.inputs["Roughness"].default_value = max(0.82, p.inputs["Roughness"].default_value)
             _bump(m, 900.0, 0.18)
+            _bump(m, 22.0, 0.55, 0.02)                # folds and creases a few cm across (R9 r5: flat painted plastic)
         elif "skin" in n:
             # a little light through the skin, no more (R9 r3: more, with the green bounce, gave grey-green flecks)
             p.inputs["Subsurface Weight"].default_value = 0.1
             p.inputs["Subsurface Radius"].default_value = (0.012, 0.005, 0.003)
         elif "lamellar" in n:
             _plates(m)
+        elif n.startswith("iron"):
+            # the helmet: dull, a little dark, not polished steel (R9 r5)
+            _scale_base(m, 0.8)
+            if not p.inputs["Roughness"].is_linked:
+                p.inputs["Roughness"].default_value = max(0.62, p.inputs["Roughness"].default_value)
     # R9 r3: the 頓項 one flat slab of the player's colour read as a hood; Tang/Former Shu figures (王建墓 抬棺力士,
     # ref 06) hang rows of lamellae over the nape: give it the body's lamellar
     lam = next((info["mat"] for name, info in lib.MATS.items() if name == "lamellar_r8"), None)

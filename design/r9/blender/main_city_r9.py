@@ -37,7 +37,7 @@ def rammed_earth():
     wzs = nt.nodes.new("ShaderNodeVectorMath")
     wzs.operation = "MULTIPLY"
     nt.links.new(wz.outputs["Color"], wzs.inputs[0])
-    wzs.inputs[1].default_value = (0.0, 0.0, 0.16)
+    wzs.inputs[1].default_value = (0.0, 0.0, 0.08)
     wv = nt.nodes.new("ShaderNodeVectorMath")
     wv.operation = "ADD"
     nt.links.new(tc.outputs["Object"], wv.inputs[0])
@@ -45,7 +45,7 @@ def rammed_earth():
     wave = nt.nodes.new("ShaderNodeTexWave")
     wave.wave_type = "BANDS"
     wave.bands_direction = "Z"
-    wave.inputs["Scale"].default_value = 3.2           # a course about 10 cm
+    wave.inputs["Scale"].default_value = 4.0           # a course about 8 cm
     wave.inputs["Distortion"].default_value = 0.6
     wave.inputs["Detail"].default_value = 3.0
     nt.links.new(wv.outputs["Vector"], wave.inputs["Vector"])
@@ -75,8 +75,8 @@ def rammed_earth():
     nt.links.new(jd.outputs["Fac"], jdm.inputs["Value"])
     jdm.inputs["From Min"].default_value = 0.35
     jdm.inputs["From Max"].default_value = 0.65
-    jdm.inputs["To Min"].default_value = 0.5
-    jdm.inputs["To Max"].default_value = 0.95
+    jdm.inputs["To Min"].default_value = 0.8           # faint (R9 r5: strong joints read as a basket)
+    jdm.inputs["To Max"].default_value = 0.97
     nt.links.new(jdm.outputs["Result"], joint.inputs["To Min"])
     # rain runnels: dark streaks running down the face (noise stretched along z)
     st = nt.nodes.new("ShaderNodeMapping")
@@ -90,7 +90,7 @@ def rammed_earth():
     nt.links.new(rn.outputs["Fac"], run.inputs["Value"])
     run.inputs["From Min"].default_value = 0.42
     run.inputs["From Max"].default_value = 0.58
-    run.inputs["To Min"].default_value = 0.55
+    run.inputs["To Min"].default_value = 0.68
     run.inputs["To Max"].default_value = 1.0
     foot = nt.nodes.new("ShaderNodeMapRange")            # damp at the foot: the lowest 0.6 m darker
     nt.links.new(sep.outputs["Z"], foot.inputs["Value"])
@@ -116,7 +116,7 @@ def rammed_earth():
     nt.links.new(joint.outputs["Result"], bh.inputs[0])
     nt.links.new(run.outputs["Result"], bh.inputs[1])
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.8
+    bump.inputs["Strength"].default_value = 0.45
     bump.inputs["Distance"].default_value = 0.02
     nt.links.new(bh.outputs[0], bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], p.inputs["Normal"])

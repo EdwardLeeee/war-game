@@ -38,12 +38,17 @@ PNG 檔：起伏圖 3 倍 1.4 MB、2 倍 0.63 MB。地面全部加起來還是�
 
 ```bash
 python3 design/r9/common/ground_r9.py tile design/r9/build          # 起伏圖（3 倍、2 倍、菱形鏡頭用的 3 倍）
-(cd sim && node src/map-grid.ts --map random --seed 2106939660) > GRID.json
+node design/r9/common/twin_grid.mts > GRID.json                     # 雙河關（固定資料；種子 2106939660 已經畫不出它）
+# ART_X3：art-v6.3-x3.tar.gz 解開的資料夾；OUT 放在 design/r9/build/ 底下（不進 git，/tmp 會被清）
+(cd design/b1 && SS=1 python3 ../r9/common/one_piece.py r9_city main_city_E_r9 && SS=1 python3 ../r9/common/one_piece.py r9_city_d main_city_E_r9_d)
+(cd design/production && R9_UNIT=1 R7_VERSION=8 R7_TEX=… python3 blender/render_prod.py --target spear_e --facings 7,1,0,2 --anims idle,walk,attack \
+  && R9_UNIT=1 R7_VERSION=8 python3 common/postprocess.py --target spear_e --scale 3 --facings 0,1,2,7)
+U=design/production/build/r9u/prod/spear_e/atlas_x3
 python3 design/r9/common/scene_r9.py ART_X3 GRID.json OUT            # 河段場景（現在、R9）
-python3 design/r9/common/scene_r9.py ART_X3 GRID.json OUT edge UNITS # 地圖邊緣
-(cd design/b1 && python3 ../r9/common/one_piece.py r9_city main_city_E_r9 && python3 ../r9/common/one_piece.py r9_city_d main_city_E_r9_d)
-(cd design/production && R9_UNIT=1 R7_VERSION=8 R7_TEX=… python3 blender/render_prod.py --target spear_e --facings 7,1 --anims idle,walk,attack \
-  && R9_UNIT=1 R7_VERSION=8 python3 common/postprocess.py --target spear_e --scale 3 --facings 7,1)
-python3 design/r9/common/scene_r9.py ART_X3 GRID.json OUT 06 design/b1/build/b1/r9 design/production/build/r9u/prod/spear_e/atlas_x3
-ART_X3=… python3 design/r9/common/boards_r9.py OUT ART_X3/units/spear_e design/production/build/r9u/prod/spear_e/atlas_x3 design/b1/build/b1/r9 design/r9/out
+python3 design/r9/common/scene_r9.py ART_X3 GRID.json OUT grass      # 空草地（槍兵的看板）
+python3 design/r9/common/scene_r9.py ART_X3 GRID.json OUT city design/b1/build/b1/r9   # 主城在空地上
+python3 design/r9/common/scene_r9.py ART_X3 GRID.json OUT 06 design/b1/build/b1/r9 $U  # 06 現在／甲／乙
+python3 design/r9/common/scene_r9.py ART_X3 GRID.json OUT edge $U    # 地圖邊緣
+python3 design/r9/common/boards_r9.py OUT ART_X3/units/spear_e $U design/r9/build/out
 ```
+主城本機用 SS=1（SS=2 超過 1.5 GB 的記憶體上限）。
