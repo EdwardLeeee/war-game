@@ -28,6 +28,7 @@ import {
   TownField,
   TownFlag,
   TownSize,
+  Stance,
   TownState,
   UNIT_STRIDE,
   UnitField,
@@ -63,6 +64,10 @@ export interface Plan {
   guards: number;
   /** The soldiers it leaves in a town guard it (`guard`), rather than stand there. */
   townGuard: boolean;
+  /** Measuring `guard`: every kind of soldier is left in a town, not spearmen only. */
+  guardsAll: boolean;
+  /** Measuring `guard`: those left hold (stance) and ranged go up the walls, as 駐軍 was before it. */
+  townStation: boolean;
   /** Builds the mage hall as soon as it has the crystal for a mage, before anything else. */
   hallFirst: boolean;
   /** Crystal kept per living mage (for shots) before it trains another. */
@@ -437,6 +442,8 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     again: true,
     guards: 2,
     townGuard: false,
+    guardsAll: false,
+    townStation: false,
     hallFirst: true,
     mageReserve: 10,
     counterAt: 14,
@@ -600,6 +607,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   const garrison = new Map<number, number[]>();
   const lastState = new Map<number, number>();
   let veinCrew: number[] = [];
+  const stationed = new Set<number>();
   let trips = 0;
   let marches = 0;
   let waves = 0;
@@ -1101,7 +1109,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (!held) continue;
         const alive = (garrison.get(id) ?? []).filter((gid) => soldiers.some((s) => s.id === gid));
         const free = soldiers
-          .filter((s) => !isGuard(s.id) && s.type === UnitType.Spearman && s.id !== scout && !escort.includes(s.id) && !fortWalk.includes(s.id) && s.order !== Order.Post)
+          .filter((s) => !isGuard(s.id) && (plan.guardsAll ? s.type !== UnitType.Siege : s.type === UnitType.Spearman) && s.id !== scout && !escort.includes(s.id) && !fortWalk.includes(s.id) && s.order !== Order.Post)
           .sort((a, b) => dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < Math.max(t.needed, plan.guards) && free.length > 0) alive.push(free.shift()!.id);
         garrison.set(id, alive);
@@ -1113,6 +1121,17 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const loose = alive.filter((gid) => soldiers.find((u) => u.id === gid)!.order !== Order.TownGuard);
         if (plan.townGuard) {
           if (loose.length > 0 && tick % 100 === 0) out.push({ c: "guard", u: loose, town: id });
+        } else if (plan.townStation) {
+          const fresh = alive.filter((gid) => !stationed.has(gid));
+          if (fresh.length > 0 && tick % 100 === 0) out.push({ c: "stance", u: fresh, stance: Stance.Hold });
+          for (const gid of fresh) if (tick % 100 === 0) stationed.add(gid);
+          const bows = alive.filter((gid) => {
+            const s = soldiers.find((u) => u.id === gid)!;
+            return (s.type === UnitType.Ranged || s.type === UnitType.Mage) && s.order !== Order.Wall;
+          });
+          if (bows.length > 0 && tick % 100 === 0) out.push({ c: "wall", u: bows, town: id });
+          const rest = away.filter((gid) => !bows.includes(gid));
+          if (rest.length > 0 && tick % 100 === 0) out.push({ c: "move", u: rest, x: t.x, y: t.y });
         } else if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
       }
       // D-086 A5 (plan.turtle): spearmen from home stand guard at the first TURTLE.manned finished outposts.
