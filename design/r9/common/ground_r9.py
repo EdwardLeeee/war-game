@@ -266,7 +266,7 @@ R9 = dict(
     scatter=(0.012, 0.022, 0.024),   # the colour deep water scatters back (linear)
     bed=(0.07, 0.058, 0.035),         # the shallows' bed: olive-brown silt and gravel, seen through the water
     sky_lo=(0.55, 0.66, 0.82), sky_hi=(0.30, 0.46, 0.80), sky_k=2.2,     # Fresnel x sky_k: the sky's tint on the water
-    foam=0.5, glint=1.0, exposure=0.95, swath=0.07,
+    foam=0.5, glint=1.8, exposure=0.95, swath=0.07,
 )
 LAST_WATER = None
 _NZ = G.value_noise(256, 16, 1)[..., None]
@@ -315,6 +315,9 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
     flowmap = np.stack([-cgy, cgx], -1).astype(np.float32)
     fordm = (grid == 4).astype(np.float32)[..., None]
     fordb = G.blur(np.kron(fordm[..., 0], np.ones((4, 4))), 1.2)[..., None]       # the ford's cells, soft (4 texels a cell)
+    # the bridges' cells: the shoreline keeps still by them, so a bridge lands on its banks (R9 r7)
+    brm = np.isin(grid, (5, 6)).astype(np.float32)
+    brb = G.blur(np.kron(brm, np.ones((4, 4))), 2.5)[..., None]
     wa = rules["water"]
     out = np.zeros((px, px, 3), np.float32)
     global LAST_WATER
@@ -330,8 +333,9 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         big = G.sample(_SHORE, mx / 40.0, my / 40.0)[..., 0]                 # 5 m lattice: long bays
         mid = G.sample(_SHORE, mx / 17.0 + 0.41, my / 17.0 + 0.13)[..., 0]   # 2 m: the bays broken up (not a sine)
         small = G.sample(_SHORE, mx / 8.0 + 0.3, my / 8.0 + 0.7)[..., 0]     # 1 m: bites
-        return (sd + (big - 0.5) * 2 * p["shore_m"][0] + (mid - 0.5) * p["shore_m"][0]
-                + (small - 0.5) * 2 * p["shore_m"][1])
+        keep = 1 - np.clip(G.sample(brb, mx / size, my / size)[..., 0] * 2.0, 0, 0.9)
+        return sd + keep * ((big - 0.5) * 2 * p["shore_m"][0] + (mid - 0.5) * p["shore_m"][0]
+                            + (small - 0.5) * 2 * p["shore_m"][1])
 
     for r0 in range(0, px, strip):
         r1 = min(px, r0 + strip)
@@ -369,17 +373,27 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         nb /= np.linalg.norm(nb, axis=-1, keepdims=True)
         light = light * (3.0 * np.clip(nb @ sun, 0, None) + 0.9 * (0.5 + 0.5 * nb[..., 2])) / (3.0 * sun[2] + 0.9)
         earth = to_lin(G.sample(layers["bank"]["img"], mx / layers["bank"]["tile_m"], my / layers["bank"]["tile_m"])[..., :3])
-        fw = 0.5 + 0.9 * G.sample(_SHORE, mx / 12.0 + 0.7, my / 12.0 + 0.4)[..., 0]     # the bank face's width varies
-        face = G.smoothstep(-fw, -0.15, sd) * G.smoothstep(0.1, -0.05, sd) * far
+        # the far bank's earth face: its height varies along the bank, a crisp sunlit grass edge on top, the face itself in
+        # shade (the sun is behind it), streaked down (R9 r7: a soft brown smudge, no height)
+        fw = 0.3 + 0.75 * G.sample(_SHORE, mx / 12.0 + 0.7, my / 12.0 + 0.4)[..., 0]
+        face = G.smoothstep(-fw - 0.03, -fw + 0.03, sd) * G.smoothstep(0.1, -0.05, sd) * far
         tuft = G.sample(_FOAM, mx / 3.0 + 0.5, my / 3.0)[..., 0]
-        face = face * (1 - G.smoothstep(0.55, 0.7, tuft))              # grass hangs down over the earth here and there
-        col = col * (1 - face[..., None] * 0.85) + earth * 0.8 * face[..., None] * 0.85
+        face = face * (1 - G.smoothstep(0.58, 0.68, tuft) * G.smoothstep(-fw + 0.4, -fw, sd))   # tufts hang over its top
+        streak = 0.75 + 0.5 * G.sample(_FOAM, mx / 0.6 + 0.2, my / 6.0 + 0.1)[..., 0]
+        col = col * (1 - face[..., None] * 0.9) + earth * (0.5 * streak)[..., None] * face[..., None] * 0.9
+        edge = G.smoothstep(-fw - 0.1, -fw - 0.02, sd) * (1 - G.smoothstep(-fw - 0.02, -fw + 0.02, sd)) * far
+        col = col * (1 + 0.18 * edge[..., None])
         col = col * light[..., None]
         wet = G.smoothstep(-p["wet_m"], -0.05, sd)[..., None]
         col = col * (1 - 0.35 * wet)
         # the waterline itself: a thin dark line of wet mud, a few pixels, broken where grass hangs over it
-        mud = G.smoothstep(-0.16, -0.06, sd)       # continuous (R9 r6: broken by the tufts it read as a stitched seam)
+        # the wet line: continuous (R9 r6), its width 0-25 px (R9 r7: an even drawn outline), lighter sandy mud in places
+        mw = 0.04 + 0.4 * G.sample(_SHORE, mx / 6.0 + 0.35, my / 6.0 + 0.65)[..., 0] ** 2
+        mud = G.smoothstep(-mw - 0.04, -mw, sd)
         col = col * (1 - 0.5 * mud[..., None])
+        sand = G.smoothstep(0.6, 0.7, G.sample(_SHORE, mx / 9.0 + 0.8, my / 9.0 + 0.25)[..., 0]) * \
+            G.smoothstep(-0.7, -0.35, sd) * G.smoothstep(0.0, -0.1, sd) * (1 - far)
+        col = col * (1 - 0.6 * sand[..., None]) + np.array([0.20, 0.17, 0.11]) * (0.6 * sand)[..., None] * light[..., None]
         # gravel bars: a few pale patches on the shore, on one side more than the other
         bar = G.smoothstep(0.62, 0.72, G.sample(_SHORE, mx / 14.0 + 0.2, my / 14.0 + 0.6)[..., 0]) * \
             G.smoothstep(-0.7, -0.2, sd) * G.smoothstep(0.35, 0.0, sd) * (0.15 + 0.85 * far)   # few on the near bank (R9 r6)
@@ -414,7 +428,7 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         # with it (turning the coordinates where the river bends drew wood-grain swirls)
         rt = G.sample(_RIPT, (mx - 0.6 * t * fx) / RIP_M, (my - 0.6 * t * fy) / RIP_M)
         hx, hy = rt[..., 1], rt[..., 2]
-        rough = (0.0033 + 0.0066 * ford)                 # the finer field has ~1.6x the slope: more sparkle (R9 r4)
+        rough = (0.0042 + 0.0066 * ford)                 # the finer field has ~1.6x the slope: more sparkle (R9 r4)
         Nw = np.stack([-hx * rough, -hy * rough, np.ones_like(hx)], -1)
         Nw /= np.linalg.norm(Nw, axis=-1, keepdims=True)
         dn = (Nw * view).sum(-1, keepdims=True)
@@ -433,8 +447,8 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         seen = sum(w * G.smoothstep(0.1, -0.3, sd_at(mx + vx * d + jx, my + vy * d + jy))
                    for d, w in ((0.3, 0.3), (0.6, 0.25), (0.9, 0.2), (1.2, 0.15), (1.5, 0.1)))
         sky = sky * (1 - 0.85 * seen[..., None]) + np.array([0.035, 0.045, 0.025]) * seen[..., None]
-        gl = np.clip((refl * sun).sum(-1), 0, 1) ** 120
-        spark = G.smoothstep(0.82, 0.9, G.sample(_FOAM, mx / 2.5 + 0.1, my / 1.5 + 0.3)[..., 0])
+        gl = np.clip((refl * sun).sum(-1), 0, 1) ** 60                     # sparse small glints (R9 r7: satin)
+        spark = G.smoothstep(0.78, 0.86, G.sample(_FOAM, mx / 2.5 + 0.1, my / 1.5 + 0.3)[..., 0])
         surf = under * (1 - fres[..., None]) + sky * fres[..., None] + SUN_RGB * (gl * spark * (1 - ford) * p["glint"])[..., None]
         # a ford: broken white riffle lines across the current, where the water runs over the stones
         fn = G.sample(_FOAM, (u - 0.4 * t) / 1.1, v / 5.0)[..., 0] * 0.7 + G.sample(_FOAM, u / 0.5 + 0.3, v / 2.0)[..., 0] * 0.3

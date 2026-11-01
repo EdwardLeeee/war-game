@@ -98,9 +98,15 @@ def screen(top, items, shadows, water=None, reflect=()):
             a[..., 3] *= 0.75
             fl = Image.fromarray(a.astype(np.uint8), "RGBA").resize((fl.width, int(fl.height * 0.9)))
             layer.alpha_composite(fl, (int(fx), int(fy))) if fx >= 0 and fy >= 0 else _paste(layer, fl, (int(fx), int(fy)))
-        arr = np.asarray(layer, np.float32)
+        arr = np.asarray(layer, np.float32).copy()
+        # broken by the ripples (R9 r7: a smooth silhouette laid over the water): each row pushed sideways a few px,
+        # every few rows a little fainter (the bands of a rippled mirror)
+        for y in range(arr.shape[0]):
+            arr[y] = np.roll(arr[y], int(round(2.5 * math.sin(y * 0.7 + 1.3 * math.sin(y * 0.13)))), axis=0)
+        yy = np.arange(arr.shape[0], dtype=np.float32)[:, None]
+        arr[..., 3] *= 0.8 + 0.2 * np.sin(yy * 1.1 + np.sin(yy * 0.31))
         arr[..., 3] *= np.asarray(wm, np.float32) / 255.0
-        layer = Image.fromarray(arr.astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(1.6))
+        layer = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(0.8))
         cam.alpha_composite(layer)
     for im, xy in shadows:
         _paste(cam, im, xy)
