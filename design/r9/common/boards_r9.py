@@ -93,6 +93,12 @@ def spear_strip(atlas_dir, ground, team="blue"):
     return canvas.convert("RGB")
 
 
+def zoom2(strip):
+    """The first three poses of a spear strip at 2x (to see the materials; the phone shows the 3x rows)."""
+    c = strip.crop((0, 20, 480, 280))
+    return c.resize((c.width * 2, c.height * 2), Image.LANCZOS)
+
+
 def spear_gif(atlas_dir, ground, out, team="blue"):
     """idle, walk, attack on facing 7, at 2x the phone's pixels (so the motion reads on a monitor)."""
     a = SC.Atlas(Path(atlas_dir) / "spear_e.json")
@@ -111,7 +117,9 @@ def spear_gif(atlas_dir, ground, out, team="blue"):
             c = canvas.convert("RGB").resize((720, 600), Image.LANCZOS)
             ImageDraw.Draw(c).text((12, 8), anim, font=font(28), fill=(250, 250, 250))
             frames.append((c, int(1000 / fps)))
-    frames[0][0].save(out, save_all=True, append_images=[f for f, _ in frames[1:]], duration=[d for _, d in frames], loop=0)
+    pal = frames[0][0].quantize(colors=255, method=Image.Quantize.MEDIANCUT)
+    q = [f.quantize(palette=pal, dither=Image.Dither.NONE) for f, _ in frames]
+    q[0].save(out, save_all=True, append_images=q[1:], duration=[d for _, d in frames], loop=0, optimize=True)
 
 
 def scores_line():
@@ -158,8 +166,9 @@ def main(scenes, ub, ua, out):
           note + "\n槍兵（東陸，唐末五代，雙手持槍）：甲片一片一片亮暗、角度、粗糙度各不同（反光碎成點），甲片間的縫更深；"
           "頓項（護頸）改成甲片列，不再是一整片玩家色；玩家色布料稍暗、有布紋；草地往上反的光改暖。動作見同名 GIF。"
           "\n註：前幾輪的評審圖把玩家色多乘了一次 1.6（遊戲沒有），兩邊都被畫成過曝的青色；這張照遊戲的算法合成。",
-          [("實際大小（1 倍）：現在（上）、R9（下）", pair(one_x(sb), one_x(sa), gap=10)),
-           ("手機像素（3 倍）：現在", sb), ("手機像素（3 倍）：R9", sa)], out)
+          [("實際大小（1 倍）：現在 → R9", pair(one_x(sb), one_x(sa), gap=10)),
+           ("手機像素（3 倍）：現在", sb), ("手機像素（3 倍）：R9", sa),
+           ("放大 2 倍看細節（前三個動作）：現在 → R9", pair(zoom2(sb), zoom2(sa), gap=10))], out)
     spear_gif(ub, gb, out / "R9-03-槍兵-0-現況-動作.gif")
     spear_gif(ua, ga, out / "R9-03-槍兵-A-甲片與打光-動作.gif")
     # 04 main city

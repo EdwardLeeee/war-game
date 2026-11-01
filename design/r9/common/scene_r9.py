@@ -178,14 +178,23 @@ def deck_shadows(art, grid, height_m=0.45):
     return out
 
 
-def reflections(art, trees):
-    """The trees mirrored into the water at their feet (screen pixels: the flipped picture's top-left at the foot)."""
+def reflections(art, trees, grid=None):
+    """The trees, and the rocks on a cell beside the water (R9 r6), mirrored into the water at their feet (screen pixels:
+    the flipped picture's top-left at the foot); screen() keeps only what falls on the water."""
     na = Atlas(art / "nodes" / "nodes.json")
     out = []
     for x, y, k in trees:
         (im, ax, ay), _ = na.sprite(f"tree_E_v{k}", "neutral")
         X, Y = (x + 0.5) * 2 * PPM, (y + 0.5) * 2 * PPM * 0.5
         out.append((im, (X - ax, Y + (im.height - ay) * 0.0)))
+    if grid is not None:
+        ta = Atlas(art / "terrain" / "terrain.json")
+        h, w = grid.shape
+        for y in range(h):
+            for x in range(w):
+                if grid[y, x] == 1 and y + 1 < h and grid[y + 1, x] in (3, 4):
+                    (im, ax, ay), _ = ta.sprite(f"terrain_rock_v{(x * 7 + y * 3) % 6}", "neutral")
+                    out.append((im, ((x + 0.5) * 2 * PPM - ax, (y + 0.5) * 2 * PPM * 0.5 + 0.6 * PPM * 0.5)))
     return out
 
 
@@ -439,7 +448,7 @@ if __name__ == "__main__":
     water = R.LAST_WATER.copy()
     for name, top in (("before", b), ("after", a)):
         R.camera(top).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3)).save(out / f"ground_{name}.png")
-        refl = reflections(art, trees) if name == "after" else ()
+        refl = reflections(art, trees, grid) if name == "after" else ()
         sh = shadows + (deck_shadows(art, grid) if name == "after" else [])
         im = screen(top, items, sh, water if name == "after" else None, refl).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3))
         im.save(out / f"scene_{name}.png")
