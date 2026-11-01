@@ -91,20 +91,25 @@ def screen(top, items, shadows, water=None, reflect=()):
     if water is not None and reflect:
         wm = Image.fromarray((np.clip(water, 0, 1) * 255).astype(np.uint8), "L").resize(cam.size, Image.BILINEAR)
         layer = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+        rng = np.random.default_rng(5)
         for im, (fx, fy) in reflect:
             fl = im.transpose(Image.FLIP_TOP_BOTTOM)
-            a = np.asarray(fl, np.float32)
+            a = np.asarray(fl, np.float32).copy()
             a[..., :3] *= 0.45                                 # a reflection is darker than the thing
             a[..., 3] *= 0.75
-            fl = Image.fromarray(a.astype(np.uint8), "RGBA").resize((fl.width, int(fl.height * 0.9)))
+            # crisp at the waterline, torn into ragged slivers further out (R9 r7-r9: a blob, then a venetian blind):
+            # rows pushed sideways by a random walk that grows with the distance, runs of rows dropping out
+            h = a.shape[0]
+            walk = np.cumsum(rng.normal(0, 1.2, h))
+            drop = np.convolve(rng.random(h), np.ones(3) / 3, "same")
+            for r in range(h):
+                d = r / max(1, h - 1)
+                a[r] = np.roll(a[r], int(round(walk[r] * d * 1.5)), axis=0)
+                if drop[r] < 0.55 * d:
+                    a[r, :, 3] *= 0.2
+            fl = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGBA").resize((fl.width, int(fl.height * 0.9)))
             layer.alpha_composite(fl, (int(fx), int(fy))) if fx >= 0 and fy >= 0 else _paste(layer, fl, (int(fx), int(fy)))
         arr = np.asarray(layer, np.float32).copy()
-        # broken by the ripples (R9 r7: a smooth silhouette laid over the water): each row pushed sideways a few px,
-        # every few rows a little fainter (the bands of a rippled mirror)
-        for y in range(arr.shape[0]):
-            arr[y] = np.roll(arr[y], int(round(5.0 * math.sin(y * 0.7 + 1.3 * math.sin(y * 0.13)))), axis=0)
-        yy = np.arange(arr.shape[0], dtype=np.float32)[:, None]
-        arr[..., 3] *= 0.6 + 0.4 * np.clip(np.sin(yy * 1.1 + np.sin(yy * 0.31)) * 1.5, -1, 1)   # R9 r8: still a blob
         arr[..., 3] *= np.asarray(wm, np.float32) / 255.0
         layer = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(0.8))
         cam.alpha_composite(layer)
@@ -223,11 +228,33 @@ def ground_layers(art):
     return layers, rules
 
 
+def bridge_lanes(grid, also=None):
+    """Trodden earth leading off each end of a bridge, fading over three cells (the ground's town lane layer; R9 r9: the
+    deck met the bank with no path). also: town masks to merge (city_town's)."""
+    n = grid.shape[0]
+    lane = np.zeros((n, n), np.float32)
+    for y, x in zip(*np.nonzero(np.isin(grid, (5, 6)))):
+        dy, dx = (1, 0) if grid[y, x] == 5 else (0, 1)
+        for sgn in (-1, 1):
+            yy, xx = y + sgn * dy, x + sgn * dx
+            if 0 <= yy < n and 0 <= xx < n and grid[yy, xx] in (5, 6):
+                continue                                   # not an end
+            for k, w in enumerate((0.9, 0.55, 0.25)):
+                yy, xx = y + sgn * dy * (k + 1), x + sgn * dx * (k + 1)
+                if 0 <= yy < n and 0 <= xx < n and grid[yy, xx] == 0:
+                    lane[yy, xx] = max(lane[yy, xx], w)
+    tr = np.zeros((n, n), bool)
+    if also:
+        lane = np.maximum(lane, also["lane"])
+        tr = tr | also["trampled"]
+    return dict(lane=lane, trampled=tr)
+
+
 def ground_pair(art, grid, relief):
     layers, rules = ground_layers(art)
     before = np.concatenate([G.compose(grid, [], layers, ppm=PPM, rules=rules, rows=(r, min(r + 240, grid.shape[0] * 2 * PPM)))
                              for r in range(0, grid.shape[0] * 2 * PPM, 240)], 0)
-    after = R.compose(grid, [], layers, relief, ppm=PPM, rules=rules)
+    after = R.compose(grid, [], layers, relief, ppm=PPM, rules=rules, town=bridge_lanes(grid))
     return before, after
 
 
@@ -326,7 +353,7 @@ def scene06(art, gridp, out, city_dir, units_dir, relief, relief_d):
             trees = [t for t in trees if not (abs((t[0] + 0.5) * 2 - city[0]) < 5 and abs((t[1] + 0.5) * 2 - city[1]) < 5)]
             men = [(a_, f_, k_, tm, x + off, y + off) for a_, f_, k_, tm, x, y in men]
             n = grid.shape[0] * 2 * PPM
-        top = R.compose(grid, [], layers, rel, ppm=PPM, rules=rules, sun=sun, view=view, town=city_town(grid.shape[0], *city))
+        top = R.compose(grid, [], layers, rel, ppm=PPM, rules=rules, sun=sun, view=view, town=bridge_lanes(grid, city_town(grid.shape[0], *city)))
         top = contact_ao(top, *city)
         items, shadows = sprites(art, grid, trees)
         cs = b1_sprite(city_dir, "main_city_E_r9" if cam == "甲" else "main_city_E_r9_d")
