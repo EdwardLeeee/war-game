@@ -1,0 +1,707 @@
+{
+ "traces": [
+  {
+   "name": "kblr-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "kblr-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "fm-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "fm-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16
+   }
+  },
+  {
+   "name": "mk-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "mk-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  },
+  {
+   "name": "fmmk-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "kblr",
+   "a": {},
+   "cap": 120,
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "kblr",
+   "a": {},
+   "cap": 120,
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "kblr",
+   "a": {},
+   "cap": 120,
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "fm",
+   "a": {
+    "pileFarmers": 16
+   },
+   "cap": 120,
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "fm",
+   "a": {
+    "pileFarmers": 16
+   },
+   "cap": 120,
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "fm",
+   "a": {
+    "pileFarmers": 16
+   },
+   "cap": 120,
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "mk",
+   "a": {
+    "market": true
+   },
+   "cap": 120,
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "mk",
+   "a": {
+    "market": true
+   },
+   "cap": 120,
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "mk",
+   "a": {
+    "market": true
+   },
+   "cap": 120,
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "fmmk",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   },
+   "cap": 120,
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "fmmk",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   },
+   "cap": 120,
+   "groups": [
+    "push-turtle",
+    "push-turtle-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  },
+  {
+   "name": "fmmk",
+   "a": {
+    "pileFarmers": 16,
+    "market": true
+   },
+   "cap": 120,
+   "groups": [
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard",
+   "chunks": [
+    "1-10",
+    "11-20",
+    "21-30",
+    "31-40"
+   ]
+  }
+ ]
+}
