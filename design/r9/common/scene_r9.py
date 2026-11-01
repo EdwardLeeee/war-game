@@ -163,6 +163,21 @@ def sprites(art, grid, trees, units=(), extra=()):
     return items, shadows
 
 
+def deck_shadows(art, grid, height_m=0.45):
+    """R9 r4: the bridge deck's shadow on the water below it (the sun's: east and south of the deck by its height)."""
+    ta = Atlas(art / "terrain" / "terrain.json")
+    (im, ax, ay), _ = ta.sprite("terrain_bridge_deck_ns", "neutral")
+    a = np.asarray(im, np.float32)[..., 3] * 0.55
+    sh = Image.fromarray(np.dstack([np.zeros(a.shape + (3,)), a]).astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(2))
+    k = height_m / R.SUN[2]
+    dx, dy = -R.SUN[0] * k * PPM, -R.SUN[1] * k * PPM * 0.5
+    out = []
+    for y, x in zip(*np.nonzero(grid == 5)):
+        cx, cy = (x + 0.5) * 2, (y + 0.5) * 2
+        out.append((sh, (int(round(cx * PPM - ax + dx)), int(round(cy * PPM * 0.5 - ay + dy)))))
+    return out
+
+
 def reflections(art, trees):
     """The trees mirrored into the water at their feet (screen pixels: the flipped picture's top-left at the foot)."""
     na = Atlas(art / "nodes" / "nodes.json")
@@ -196,9 +211,10 @@ def b1_sprite(dirpath, name, team="blue"):
     import scene as B1S
     sp = B1S.piece(dirpath, name, "x3", team=team, ppm=PPM)
     sh = None
-    if sp.shadow:                     # as dark as the released atlas's shadows (scene.piece keeps 0.78 of the pass, the
-        a = np.asarray(sp.shadow[0], np.float32).copy()             # atlas ~0.93: R9 r3, the city looked pasted on)
-        a[..., 3] = np.clip(a[..., 3] * (0.93 / 0.78), 0, 255)
+    if sp.shadow:                     # darker than scene.piece's 0.78 of the pass: R9 r3/r4, the city looked pasted on;
+        a = np.asarray(sp.shadow[0], np.float32).copy()             # a solid building's shadow ~0.45 of the lit grass
+        a[..., 3] = np.clip(a[..., 3] * 1.3, 0, 255)
+        a[..., :3] = (22, 25, 32)                                     # a dark grey, not scene.piece's navy
         sh = (Image.fromarray(a.astype(np.uint8), "RGBA"), sp.shadow[1], sp.shadow[2])
     return (sp.img, sp.ax, sp.ay), sh
 
@@ -210,16 +226,18 @@ CITY_FEET = [(-3.0, -1.2, 3.0, 3.2), (-0.7, -2.2, 1.3, -1.2), (-3.8, -3.2, -2.0,
 
 def city_town(n, cx, cy):
     """The town weight masks (ground_r8.TOWN_CHANNELS) for a main city whose footprint's middle is at (cx, cy) metres of
-    an n x n window: trampled earth before its steps (the middle two cells, from the platform to a cell past the
-    footprint; not the whole square, which would draw the square again), a lane from there fading out south."""
+    an n x n window: trampled earth along its whole front (round the feet of the drum tower and the side hall) and
+    between the platform and the front row, then one lane about the steps' width fading out south (R9 r4: a 4 m
+    straight band read as a rug)."""
     tr = np.zeros((n, n), bool)
     x0, y0 = int(round(cx / 2)) - 2, int(round(cy / 2)) - 2
-    tr[max(0, y0 + 2):min(n, y0 + 5), max(0, x0 + 1):min(n, x0 + 3)] = True
+    tr[max(0, y0 + 3):min(n, y0 + 4), max(0, x0):min(n, x0 + 4)] = True
+    tr[max(0, y0 + 2):min(n, y0 + 3), max(0, x0 + 1):min(n, x0 + 3)] = True
     lane = np.zeros((n, n), np.float32)
-    for k, w in enumerate((1.0, 1.0, 0.7, 0.4, 0.15)):
+    for k, w in enumerate((1.0, 0.85, 0.6, 0.35, 0.15)):
         y = y0 + 4 + k
         if y < n:
-            lane[y, max(0, x0 + 1):min(n, x0 + 3)] = w
+            lane[y, min(n - 1, x0 + 2)] = w
     return dict(lane=lane, trampled=tr)
 
 
@@ -415,6 +433,7 @@ if __name__ == "__main__":
     for name, top in (("before", b), ("after", a)):
         R.camera(top).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3)).save(out / f"ground_{name}.png")
         refl = reflections(art, trees) if name == "after" else ()
-        im = screen(top, items, shadows, water if name == "after" else None, refl).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3))
+        sh = shadows + (deck_shadows(art, grid) if name == "after" else [])
+        im = screen(top, items, sh, water if name == "after" else None, refl).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3))
         im.save(out / f"scene_{name}.png")
     print("ok", b.shape)

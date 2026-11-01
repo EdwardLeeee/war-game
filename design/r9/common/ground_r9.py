@@ -259,7 +259,7 @@ R9 = dict(
     lush_m=6.0,              # greener grass this close to the water
     bank_m=1.0, bank_h=0.35,  # the bank: from this far out the land falls this much into the water
     wet_m=0.9,               # wet ground above the waterline
-    shore_m=(0.8, 0.1),      # how far the shoreline wanders off the cells' edge: long bays, small bites (metres)
+    shore_m=(1.3, 0.12),      # how far the shoreline wanders off the cells' edge: long bays, small bites (metres)
     edge_depth=0.12,         # a cut bank: the water is already this deep at the line (no grey feather of bed)
     depth_k=0.45, depth_max=1.4, ford_depth=0.2,
     absorb=(1.1, 0.8, 1.0),          # per metre (linear): a lowland river, blue-green, red goes first
@@ -283,8 +283,8 @@ def _ripple_tex(n=512, seed=9):
     F = np.fft.fft2(rng.standard_normal((n, n)))
     ku = np.fft.fftfreq(n)[None, :] * n / RIP_M          # cycles a metre
     kv = np.fft.fftfreq(n)[:, None] * n / RIP_M
-    k = np.hypot(ku * 1.5, kv)                           # a little long along the current (the camera squeezes the
-    amp = np.exp(-(k / 7.0) ** 2) * np.clip(k, 0.25, None) ** -1.0   # rest): fine, ~2:1 on screen, sharp at 3x (R9 r3)
+    k = np.hypot(ku, kv)                                 # round: the camera squeezes it ~2:1 on screen (R9 r4: still
+    amp = np.exp(-(k / 11.0) ** 2) * np.clip(k, 0.25, None) ** -1.0  # 5:1 and soft at 1.5 / 7); fine and sharp at 3x
     amp[0, 0] = 0.0
     h = np.real(np.fft.ifft2(F * amp))
     h = (h - h.mean()) / h.std()
@@ -419,7 +419,7 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         rt = G.sample(_RIPT, (u - 0.6 * t) / RIP_M, v / RIP_M)
         du, dv = rt[..., 1], rt[..., 2]
         hx, hy = du * fx - dv * fy, du * fy + dv * fx         # the slope back in x, y
-        rough = (0.0035 + 0.007 * ford)                  # the finer field has ~1.8x the slope
+        rough = (0.0033 + 0.0066 * ford)                 # the finer field has ~1.6x the slope: more sparkle (R9 r4)
         Nw = np.stack([-hx * rough, -hy * rough, np.ones_like(hx)], -1)
         Nw /= np.linalg.norm(Nw, axis=-1, keepdims=True)
         dn = (Nw * view).sum(-1, keepdims=True)
@@ -446,6 +446,9 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         # under the near bank's lip (the camera looks over it): the nearest water darker, no drawn line
         lip = (1 - far) * G.smoothstep(0.35, 0.0, sd)
         surf = surf * (1 - 0.3 * lip[..., None])
+        # the last few decimetres before the near bank: the shallow bottom shows, olive-brown, not grey (R9 r4)
+        sh_k = (1 - far) * G.smoothstep(0.3, 0.02, sd) * (1 - ford)
+        surf = surf * (1 - 0.45 * sh_k[..., None]) + np.array([0.10, 0.09, 0.05]) * (0.45 * sh_k)[..., None]
         col = col * (1 - inside[..., None]) + surf * inside[..., None]
         LAST_WATER[r0:r1] = inside
         outc = aces(col * p["exposure"])

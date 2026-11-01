@@ -28,13 +28,27 @@ def rammed_earth():
     tc = nt.nodes.new("ShaderNodeTexCoord")
     sep = nt.nodes.new("ShaderNodeSeparateXYZ")
     nt.links.new(tc.outputs["Object"], sep.inputs[0])
-    wave = nt.nodes.new("ShaderNodeTexWave")             # the courses: bands along z, a little wavy
+    # the courses: bands along z about 10 cm apart, their spacing and level wandering (R9 r4: even stripes read as
+    # boards): z pushed up and down by a slow noise before the bands
+    wz = nt.nodes.new("ShaderNodeTexNoise")
+    wz.inputs["Scale"].default_value = 1.6
+    wz.inputs["Detail"].default_value = 2.0
+    nt.links.new(tc.outputs["Object"], wz.inputs["Vector"])
+    wzs = nt.nodes.new("ShaderNodeVectorMath")
+    wzs.operation = "MULTIPLY"
+    nt.links.new(wz.outputs["Color"], wzs.inputs[0])
+    wzs.inputs[1].default_value = (0.0, 0.0, 0.16)
+    wv = nt.nodes.new("ShaderNodeVectorMath")
+    wv.operation = "ADD"
+    nt.links.new(tc.outputs["Object"], wv.inputs[0])
+    nt.links.new(wzs.outputs["Vector"], wv.inputs[1])
+    wave = nt.nodes.new("ShaderNodeTexWave")
     wave.wave_type = "BANDS"
     wave.bands_direction = "Z"
     wave.inputs["Scale"].default_value = 3.2           # a course about 10 cm
-    wave.inputs["Distortion"].default_value = 0.6           # courses nearly level (1.5 wove them like wicker)
+    wave.inputs["Distortion"].default_value = 0.6
     wave.inputs["Detail"].default_value = 3.0
-    nt.links.new(tc.outputs["Object"], wave.inputs["Vector"])
+    nt.links.new(wv.outputs["Vector"], wave.inputs["Vector"])
     nz = nt.nodes.new("ShaderNodeTexNoise")
     nz.inputs["Scale"].default_value = 14.0
     nz.inputs["Detail"].default_value = 8.0
@@ -53,8 +67,17 @@ def rammed_earth():
     nt.links.new(wave.outputs["Fac"], joint.inputs["Value"])
     joint.inputs["From Min"].default_value = 0.0
     joint.inputs["From Max"].default_value = 0.22
-    joint.inputs["To Min"].default_value = 0.62
     joint.inputs["To Max"].default_value = 1.0
+    jd = nt.nodes.new("ShaderNodeTexNoise")             # each joint's depth its own: deep here, worn away there
+    jd.inputs["Scale"].default_value = 2.5
+    nt.links.new(tc.outputs["Object"], jd.inputs["Vector"])
+    jdm = nt.nodes.new("ShaderNodeMapRange")
+    nt.links.new(jd.outputs["Fac"], jdm.inputs["Value"])
+    jdm.inputs["From Min"].default_value = 0.35
+    jdm.inputs["From Max"].default_value = 0.65
+    jdm.inputs["To Min"].default_value = 0.5
+    jdm.inputs["To Max"].default_value = 0.95
+    nt.links.new(jdm.outputs["Result"], joint.inputs["To Min"])
     # rain runnels: dark streaks running down the face (noise stretched along z)
     st = nt.nodes.new("ShaderNodeMapping")
     st.inputs["Scale"].default_value = (2.5, 2.5, 0.35)     # a few wide runnels, not a plaid
@@ -65,15 +88,15 @@ def rammed_earth():
     nt.links.new(st.outputs["Vector"], rn.inputs["Vector"])
     run = nt.nodes.new("ShaderNodeMapRange")
     nt.links.new(rn.outputs["Fac"], run.inputs["Value"])
-    run.inputs["From Min"].default_value = 0.40
-    run.inputs["From Max"].default_value = 0.55
-    run.inputs["To Min"].default_value = 0.72
+    run.inputs["From Min"].default_value = 0.42
+    run.inputs["From Max"].default_value = 0.58
+    run.inputs["To Min"].default_value = 0.55
     run.inputs["To Max"].default_value = 1.0
     foot = nt.nodes.new("ShaderNodeMapRange")            # damp at the foot: the lowest 0.6 m darker
     nt.links.new(sep.outputs["Z"], foot.inputs["Value"])
     foot.inputs["From Min"].default_value = -1.6
-    foot.inputs["From Max"].default_value = -1.0
-    foot.inputs["To Min"].default_value = 0.45
+    foot.inputs["From Max"].default_value = -0.9
+    foot.inputs["To Min"].default_value = 0.38
     foot.inputs["To Max"].default_value = 1.0
     k1 = nt.nodes.new("ShaderNodeMath")
     k1.operation = "MULTIPLY"
@@ -103,7 +126,7 @@ def rammed_earth():
 def drum_tower(P, root, x, y, base_h=3.2, base_w=1.8):
     """鼓樓: a battered rammed-earth base (墩台) in tamped courses, a brick cap, a small open pavilion on it, the drum."""
     g = lib.empty("mt", parent=root, loc=(x, y, 0.0))
-    box("mt_base", (base_w, base_w, base_h), rammed_earth(), g, loc=(0, 0, base_h / 2), bevel=0.04, taper=(0.8, 0.8))
+    box("mt_base", (base_w, base_w, base_h), rammed_earth(), g, loc=(0, 0, base_h / 2), bevel=0.1, taper=(0.8, 0.8))
     top = lib.empty("mt_top", parent=g, loc=(0, 0, base_h))
     # a brick cap along the base's top edge, under the pavilion's floor (the climb is inside, from the back)
     box("mt_cap", (base_w * 0.84, base_w * 0.84, 0.16), P["stone"], top, loc=(0, 0, -0.06), bevel=0.02)
