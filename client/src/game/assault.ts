@@ -9,8 +9,12 @@
 // town is taken, or the player gives them another order, or they are all dead. Those of a group
 // that come later (the user 2026-10-31: 「選兵團打城市的時候 後面過去的兵只會看不會打」; 自動補兵's
 // recruits walk to the group and stand there) join it once they stand by the town with no order,
-// unless the player has ordered them otherwise since the attack began. Auto commands (in the
-// game's log, as 自動訓練's). Pure: Game gathers what the snapshot shows.
+// unless the player has ordered them otherwise since the attack began. 攻擊 on one of its gates
+// (the user 2026-11-01: 「點一座城門的話，應該就要集中火力打那做城門」, choosing 近戰打門、遠程打牆上):
+// that gate is the attack's while it stands; spearmen, cavalry and siege engines go at it, ranged
+// units and mages at those on the walls by it (those shooting ours first), at the gate with none;
+// once a gate is broken, as before. Auto commands (in the game's log, as 自動訓練's). Pure: Game
+// gathers what the snapshot shows.
 
 /** How often (ticks, 1 s) a town's idle attackers are sent again at most. */
 export const ASSAULT_EVERY = 20;
@@ -18,6 +22,10 @@ export const ASSAULT_EVERY = 20;
 export const ASSAULT_SENT_TICKS = 600;
 /** How far past a town's radius (cells) a soldier of a group attacking it counts as by it, and joins. */
 export const ASSAULT_JOIN_CELLS = 6;
+/** Those on the walls this near the gate tapped (cells, either way; the small town's side is 15) are what the ranged and the mages shoot at first. */
+export const FOCUS_WALL_CELLS = 8;
+/** The message for 攻擊 on a gate. */
+export const GATE_FOCUS_TEXT = "近戰打這座城門；弓手和法師到門前，先射牆上的守軍";
 
 export interface Spot {
   x: number;
@@ -27,10 +35,17 @@ export interface Spot {
 /** One of the attackers as the snapshot shows it (cells). */
 export interface Attacker extends Spot {
   id: number;
-  /** No order (it stands: its target dead, or there). */
+  /** No order and not fighting (it stands: its target dead, or there); one fighting by itself is left to it. */
   idle: boolean;
   /** Within the town's walls. */
   inside: boolean;
+  /** A ranged unit or a mage: at those on the walls by the gate tapped, not at the gate itself. */
+  shoots: boolean;
+}
+
+/** One of its defenders up on the walls; `shooting`: hitting one of ours now. */
+export interface WallTarget extends Target {
+  shooting: boolean;
 }
 
 export interface Target extends Spot {
@@ -47,10 +62,15 @@ export interface AssaultScene {
   /** Some gate of it is broken (a way in). */
   open: boolean;
   centre: Spot;
+  /** The gate the player tapped, while it stands; null for none. */
+  focus: Target | null;
+  /** Its defenders on the walls (among `defenders` too). */
+  wall: readonly WallTarget[];
 }
 
 export type AssaultOrder = { c: "attack"; u: number[]; target: number } | { c: "move"; u: number[]; x: number; y: number };
 
+const near = (a: Spot, b: Spot, cells: number): boolean => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= cells;
 const middle = (list: readonly Spot[]): Spot => ({ x: list.reduce((s, p) => s + p.x, 0) / list.length, y: list.reduce((s, p) => s + p.y, 0) / list.length });
 const nearest = <T extends Spot>(list: readonly T[], from: Spot): T | null => {
   let best: T | null = null;
@@ -66,8 +86,10 @@ const nearest = <T extends Spot>(list: readonly T[], from: Spot): T | null => {
 };
 
 /**
- * The orders for the idle attackers: those outside while every gate stands go at the nearest gate;
- * the others at the nearest defender, or into the centre when none is seen (not when there already).
+ * The orders for the idle attackers: those outside while every gate stands go at the gate tapped
+ * (the ranged and the mages at those on the walls by it, those shooting ours first), or with none
+ * tapped at the nearest gate; the others at the nearest defender, or into the centre when none is
+ * seen (not when there already).
  */
 export function assaultOrders(s: AssaultScene): AssaultOrder[] {
   const idle = s.attackers.filter((a) => a.idle);
@@ -76,7 +98,18 @@ export function assaultOrders(s: AssaultScene): AssaultOrder[] {
   const shut = !s.open && s.gates.length > 0;
   const atGate = shut ? idle.filter((a) => !a.inside) : [];
   const rest = idle.filter((a) => !atGate.includes(a));
-  if (atGate.length > 0) {
+  const focus = s.focus;
+  if (atGate.length > 0 && focus !== null) {
+    const hit = atGate.filter((a) => !a.shoots);
+    const shoot = atGate.filter((a) => a.shoots);
+    if (hit.length > 0) out.push({ c: "attack", u: hit.map((a) => a.id), target: focus.id });
+    if (shoot.length > 0) {
+      const by = s.wall.filter((w) => near(w, focus, FOCUS_WALL_CELLS));
+      const from = middle(shoot);
+      const at = nearest(by.filter((w) => w.shooting), from) ?? nearest(by, from) ?? focus;
+      out.push({ c: "attack", u: shoot.map((a) => a.id), target: at.id });
+    }
+  } else if (atGate.length > 0) {
     const gate = nearest(s.gates, middle(atGate));
     if (gate !== null) out.push({ c: "attack", u: atGate.map((a) => a.id), target: gate.id });
   }
@@ -104,13 +137,25 @@ export class Assaults {
   private readonly last = new Map<number, number>();
   /** Those the player ordered otherwise while some town was under attack: they do not join one (join). */
   private readonly excused = new Set<number>();
+  /** Town → the gate the player tapped (攻擊 on it), for all its attackers. */
+  private readonly focus = new Map<number, number>();
 
-  /** The player sent these soldiers at this town: theirs from now on (and no other town's). */
-  begin(town: number, ids: readonly number[]): void {
+  /**
+   * The player sent these soldiers at this town: theirs from now on (and no other town's). `gate`:
+   * at this gate of it (攻擊 on it); null, anywhere else in it: the town's gate tapped is forgotten.
+   */
+  begin(town: number, ids: readonly number[], gate: number | null = null): void {
     this.drop(ids);
     if (ids.length === 0) return;
     for (const id of ids) this.excused.delete(id);
     this.towns.set(town, new Set([...(this.towns.get(town) ?? []), ...ids]));
+    if (gate === null) this.focus.delete(town);
+    else this.focus.set(town, gate);
+  }
+
+  /** The gate of this town the player tapped, or null. */
+  focusOf(town: number): number | null {
+    return this.focus.get(town) ?? null;
   }
 
   /**
@@ -137,6 +182,7 @@ export class Assaults {
 
   end(town: number): void {
     this.towns.delete(town);
+    this.focus.delete(town);
     this.sent.delete(town);
     this.last.delete(town);
     if (this.towns.size === 0) this.excused.clear();

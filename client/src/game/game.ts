@@ -98,7 +98,7 @@ import { heldTown, leaveWalls } from "./walls.ts";
 import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT, STATION_HERE, STATION_PROMPT, STATION_PROMPT_MIXED, STATION_WRONG_TARGET, stationTap } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
-import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assaultOrders, type Target } from "./assault.ts";
+import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assaultOrders, GATE_FOCUS_TEXT, type Target, type WallTarget } from "./assault.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
@@ -504,6 +504,8 @@ export class Game implements GestureHost {
   private readonly houseSkip = new Set<number>();
   /** 攻城打到底 (assault.ts): soldiers the player sent at a town not ours, until it is taken or they are given another order. */
   private readonly assaults = new Assaults();
+  /** While 攻擊 on a gate sends its two parts (command): that gate, its town and the cell before it. */
+  private focusing: { gate: number; town: number; front: { x: number; y: number } } | null = null;
   private houseTold = false;
   /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
   private readonly autocastAsked = new Set<number>();
@@ -822,9 +824,32 @@ export class Game implements GestureHost {
       }
       cmd = { ...cmd, u: out };
     }
-    const group = this.groupOrderOut(cmd);
+    // Its two parts below are this order already out of the towns.
+    const group = this.focusing !== null ? { cmd, kept: 0 } : this.groupOrderOut(cmd);
     if (group === null) return -1;
     cmd = group.cmd;
+    // 攻擊 on a gate of a town not ours (the user 2026-11-01): those that hit it go at it; the ranged
+    // and the mages walk before it, fighting on the way (攻擊移動), then 攻城打到底 has them shoot
+    // those on the walls by it.
+    const gate = this.focusing === null && cmd.c === "attack" ? this.gateFront(cmd.target) : null;
+    if (gate !== null && cmd.c === "attack" && this.view !== null) {
+      const view = this.view;
+      const shooters = cmd.u.filter((id) => view.unitType(id) === UnitType.Ranged || view.unitType(id) === UnitType.Mage);
+      if (shooters.length > 0) {
+        const hitters = cmd.u.filter((id) => !shooters.includes(id));
+        this.focusing = gate;
+        let seq = -1;
+        try {
+          if (hitters.length > 0) seq = this.command({ ...cmd, u: hitters });
+          const walk = this.command({ c: "move", u: shooters, x: gate.front.x, y: gate.front.y });
+          if (seq < 0) seq = walk;
+        } finally {
+          this.focusing = null;
+        }
+        this.toast(group.kept > 0 ? `${GATE_FOCUS_TEXT}；留 ${group.kept} 名守城` : GATE_FOCUS_TEXT, "ok");
+        return seq;
+      }
+    }
     const seq = this.post(cmd, false);
     this.acknowledge(cmd, seq);
     if (group.kept > 0 && "u" in cmd && Array.isArray(cmd.u)) this.toast(`${cmd.u.length} 名出發，留 ${group.kept} 名守城`, "ok");
@@ -832,8 +857,9 @@ export class Game implements GestureHost {
     if (ASSAULT_ENDS.has(cmd.c) && "u" in cmd && Array.isArray(cmd.u)) {
       this.assaults.drop(cmd.u);
       const view = this.view;
-      const town = (cmd.c === "move" || cmd.c === "attack") && view !== null ? this.assaultTown(cmd) : null;
-      if (town !== null && view !== null) this.assaults.begin(town, cmd.u.filter((id) => isSoldier(view.unitType(id))));
+      const town = this.focusing?.town ?? ((cmd.c === "move" || cmd.c === "attack") && view !== null ? this.assaultTown(cmd) : null);
+      const focus = this.focusing?.gate ?? (cmd.c === "attack" ? (this.gateFront(cmd.target)?.gate ?? null) : null);
+      if (town !== null && view !== null) this.assaults.begin(town, cmd.u.filter((id) => isSoldier(view.unitType(id))), focus);
     }
     this.controls.setWaiting(this.pending.waiting);
     // 堅守 or 取消 (stop and hold): what the next order goes by until the snapshot shows it (D-081).
@@ -1411,6 +1437,32 @@ export class Game implements GestureHost {
     return joined;
   }
 
+  /**
+   * A gate standing in a town not ours (攻擊 on it, assault.ts): its town and the cell before it
+   * outside, two cells out from its middle; null for anything else.
+   */
+  private gateFront(id: number): { gate: number; town: number; front: { x: number; y: number } } | null {
+    const view = this.view;
+    const b = view?.curr?.snap.buildings;
+    const o = view === null || view === undefined ? -1 : view.buildingRow(id);
+    if (view === null || view === undefined || b === undefined || o < 0 || b[o + BuildingField.type] !== BuildingType.Gate || b[o + BuildingField.owner] === view.me) return null;
+    const town = view.gateTown(b, o);
+    const castle = town === null ? null : view.castleOf(town);
+    const t = view.curr?.snap.towns;
+    const row = town === null ? -1 : view.townRow(town.id);
+    if (town === null || castle === null || (row >= 0 && t !== undefined && t[row + TownField.owner] === view.me)) return null;
+    const x0 = b[o + BuildingField.cellX] - town.cellX;
+    const y0 = b[o + BuildingField.cellY] - town.cellY;
+    const opening = (castle.gates ?? []).find((cells) => cells.length > 0 && Math.min(...cells.map(([x]) => x)) === x0 && Math.min(...cells.map(([, y]) => y)) === y0);
+    const mid = opening?.[Math.floor(opening.length / 2)];
+    const k = mid === undefined ? -1 : castle.gate.findIndex(([x, y]) => x === mid[0] && y === mid[1]);
+    const out = k < 0 ? undefined : castle.outside[k];
+    if (mid === undefined || out === undefined) return null;
+    const n = view.map.size;
+    const clamp = (v: number) => Math.max(0, Math.min(n - 1, v));
+    return { gate: id, town: town.id, front: { x: clamp(town.cellX + out[0] + 2 * (out[0] - mid[0])), y: clamp(town.cellY + out[1] + 2 * (out[1] - mid[1])) } };
+  }
+
   /** What town `town` under attack by `ids` shows now (assault.ts). */
   private assaultScene(town: number, ids: readonly number[]): AssaultScene | null {
     const view = this.view;
@@ -1429,15 +1481,26 @@ export class Game implements GestureHost {
       if (o < 0 || u[o + UnitField.action] === Action.Garrisoned) continue;
       const x = Math.floor(u[o + UnitField.x] / CELL);
       const y = Math.floor(u[o + UnitField.y] / CELL);
-      attackers.push({ id, x, y, idle: u[o + UnitField.order] === Order.None, inside: inside(x, y) });
+      const type = u[o + UnitField.type];
+      // Fighting by itself (no order, hitting someone in reach: a ranged one before the gate at those on the walls) is left to it.
+      const idle = u[o + UnitField.order] === Order.None && u[o + UnitField.action] !== Action.Attack;
+      attackers.push({ id, x, y, idle, inside: inside(x, y), shoots: type === UnitType.Ranged || type === UnitType.Mage });
     }
     const defenders: Target[] = [];
+    const wall: WallTarget[] = [];
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       const owner = u[o + UnitField.owner];
       if (owner === view.me || owner === NO_OWNER || u[o + UnitField.type] === UnitType.Farmer || u[o + UnitField.action] === Action.Garrisoned) continue;
       const x = Math.floor(u[o + UnitField.x] / CELL);
       const y = Math.floor(u[o + UnitField.y] / CELL);
-      if (inBox(x, y)) defenders.push({ id: u[o + UnitField.id], x, y });
+      if (!inBox(x, y)) continue;
+      defenders.push({ id: u[o + UnitField.id], x, y });
+      // Up on the walls; shooting one of ours (its target in our rows).
+      if ((u[o + UnitField.flags] & UnitFlag.OnWall) !== 0) {
+        const hit = u[o + UnitField.attackTarget];
+        const r = hit >= 0 ? view.unitRow(hit) : -1;
+        wall.push({ id: u[o + UnitField.id], x, y, shooting: r >= 0 && u[r + UnitField.owner] === view.me });
+      }
     }
     const b = snap.buildings;
     const gates: Target[] = [];
@@ -1464,7 +1527,10 @@ export class Game implements GestureHost {
       const i = (spot.cellY + c[1]) * size + spot.cellX + c[0];
       return fog !== null && fog[i] === Fog.Visible && !standing.has(i);
     });
-    return { attackers, defenders, gates, open, centre: { x: spot.cellX + 0.5, y: spot.cellY + 0.5 } };
+    // The gate tapped, while it stands and we see it.
+    const tapped = this.assaults.focusOf(town);
+    const focus = tapped === null ? null : (gates.find((g) => g.id === tapped) ?? null);
+    return { attackers, defenders, gates, open, centre: { x: spot.cellX + 0.5, y: spot.cellY + 0.5 }, focus, wall };
   }
 
   /** 自動訓練 paused for this building (D-098: the screen's own, kept in the save). */
