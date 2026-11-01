@@ -36,10 +36,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { difficulty: hard, cell: { group: all-new, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-guard } }
-          - { difficulty: hard, cell: { group: all-new, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-guard } }
-          - { difficulty: hard, cell: { group: all-new-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-guard --map random } }
-          - { difficulty: hard, cell: { group: all-new-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-guard --map random } }
+          - { difficulty: hard, cell: { group: all-old, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-station } }
+          - { difficulty: hard, cell: { group: all-old, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-station } }
+          - { difficulty: hard, cell: { group: all-old-random, seeds: 1-20, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-station --map random } }
+          - { difficulty: hard, cell: { group: all-old-random, seeds: 21-40, args: --strategy push --speed h1 --formation close --govern --cap 120 --guards 20 --guards-all --town-station --map random } }
     env:
       # scripted-<group>-<seeds> against normal (as before), scripted-hard-<group>-<seeds> against hard.
       NAME: scripted-${{ matrix.difficulty == 'hard' && 'hard-' || '' }}${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
