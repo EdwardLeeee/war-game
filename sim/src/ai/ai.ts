@@ -2940,8 +2940,11 @@ export const HARD: HardPlan = {
   buildSafe: true,
   fortStage: true,
   fortAgain: true,
-  routeFromArmy: false,
-  fortExit: 0,
+  // D-086 A9 (ceo 2026-11-01; a10b, run 41202058166, the rules of #334, 120 minutes): both. Hard against hard on random
+  // maps, an army's turns back 11.1 -> 2.3 a side (most 715 -> 65), draws 1 -> 0; against normal 94/89% as before; the
+  // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
+  routeFromArmy: true,
+  fortExit: 3,
 };
 /** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
 const TOWN_SCOUT_AGAIN = 2 * 1200;

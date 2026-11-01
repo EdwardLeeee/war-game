@@ -1452,11 +1452,15 @@ test("D-081: after breaking off from a fort on its ground, it goes again within 
 test("D-081 / A4 (fortAgain): after breaking off from a fort, the next go takes 2 x the army and it remembers for 10 minutes (normal and hard)", () => {
   for (const difficulty of ["normal", "hard"] as const) {
     const again = (more: number, later: number) => {
-      const saved = [NORMAL_FORT.again, HARD.fortAgain];
+      const saved = [NORMAL_FORT.again, HARD.fortAgain] as const;
+      const exit = HARD.fortExit;
       NORMAL_FORT.again = true;
       HARD.fortAgain = true;
+      // fortAgain alone (D-086 A9's exits, fortExit, have their own tests).
+      HARD.fortExit = 0;
       const { g, w, ai, fort, spears, centre } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty });
       [NORMAL_FORT.again, HARD.fortAgain] = saved;
+      HARD.fortExit = exit;
       const farmers: number[] = [];
       for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) farmers.push(w.units.col.id[s]);
       kill(g, [...spears.slice(2), ...farmers]);
@@ -1507,7 +1511,7 @@ function armyOrders(f: ReturnType<typeof fortsOffHomeLine>, n: number): string {
 }
 
 test("D-086 A9 (plan.routeFromArmy): clear of forts from its main city but not from where the army stands, it does not set out; off, it sets out and turns back at every think", () => {
-  assert.equal(armyOrders(fortsOffHomeLine({}), 4), "mrmr", "off: the back and forth of 8d02b76f");
+  assert.equal(armyOrders(fortsOffHomeLine({ routeFromArmy: false }), 4), "mrmr", "off: the back and forth of 8d02b76f");
   assert.ok(!armyOrders(fortsOffHomeLine({ routeFromArmy: true }), 4).includes("m"), "on: it does not set out");
 });
 
@@ -1568,7 +1572,7 @@ test("D-086 A9 (plan.fortExit): the memory of a break-off holds no army 1.2 x th
 test("D-086 A9 (plan.fortExit): turning back from forts ahead without a fight writes no memory", () => {
   /** Off the home line, routeFromArmy off: it sets out and turns back; 15 join it, what the forts ask met, short of 2 x; does it turn back again? */
   const turnsAgain = (fortExit: number) => {
-    const f = fortsOffHomeLine({ fortExit });
+    const f = fortsOffHomeLine({ fortExit, routeFromArmy: false });
     assert.equal(armyOrders(f, 2), "mr");
     for (let k = 0; k < 15; k++) put(f.g, 0, UnitType.Spearman, 64 + (k % 5), 78 + Math.trunc(k / 5));
     f.w.tick += 400;
