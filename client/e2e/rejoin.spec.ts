@@ -209,7 +209,7 @@ test("新兵補進全部駐守的編隊就走進那座城當留守；編隊再�
   const all = await garrison(page);
   const recruit = all.filter((id) => !spears.includes(id));
   expect(recruit).toHaveLength(1);
-  expect((await sent(page)).filter((c) => c.auto === true && c.c === "retreat").at(-1)).toMatchObject({ u: recruit, x: OUR_TOWN.x, y: OUR_TOWN.y });
+  expect((await sent(page)).filter((c) => c.auto === true && c.c === "guard").at(-1)).toMatchObject({ u: recruit, town: OUR_TOWN.id });
   expect((await group1(page)).recruits).toEqual([]);
   // A second town of ours; 駐軍 there from the group's button: all but the 1 the first town keeps.
   await centre(page, NEUTRAL_TOWN.x + 0.5, NEUTRAL_TOWN.y + 0.5);
@@ -219,7 +219,7 @@ test("新兵補進全部駐守的編隊就走進那座城當留守；編隊再�
   await page.locator(GROUP_1).tap();
   await page.locator(".cmds").getByRole("button", { name: /^駐軍/ }).tap();
   await tap(page, await at(page, { x: NEUTRAL_TOWN.x + 0.5, y: NEUTRAL_TOWN.y + 2.5 }));
-  await expect.poll(said).toContain("3 名駐軍在小鎮：留守、堅守，不跟全軍走，原本的城留 1 名守城");
+  await expect.poll(said).toContain("3 名駐軍在小鎮：敵人來了會反擊，不追出城，原本的城留 1 名守城");
   expect(await garrison(page)).toHaveLength(1);
   await expect(page.locator(GROUP_1)).toContainText("駐4");
   await shot(page, info, "rejoin-7-other-town-keeps-one");

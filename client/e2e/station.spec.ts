@@ -1,7 +1,7 @@
 // 駐軍 (the user 2026-10-25: 「我是指說軍團選項，可以駐軍在都市裡面」; ceo's spec) on the fake world with
 // walls (?walls=1): a group's soldiers, from 軍團畫面, are sent to stay in a town we hold: 駐軍, then a
-// tap on the town. A town not ours says why. They walk in (移動), become its 留守 (still the group's,
-// the user 2026-10-26; 全軍 without them, 堅守), and the ranged go up on its walls once in. The pictures for the user.
+// tap on the town. A town not ours says why. One `guard` for them all: they become its 留守 (still the
+// group's, the user 2026-10-26; 全軍 without them), the ranged up on its walls, the others in it. The pictures for the user.
 
 import { expect, type Page, test } from "@playwright/test";
 import { armyButton, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
@@ -10,8 +10,7 @@ import { tap } from "./touch.ts";
 const RANGED = 2;
 const SPEARMAN = 1;
 const WALL_ORDER = 11;
-const RETREAT = 2;
-const HOLD = 1;
+const GUARD_ORDER = 12;
 // Fake-world layout (src/mock/mock-port.ts) with walls: our small town and a neutral one.
 const OUR_TOWN = { id: 1, x: 18, y: 62 };
 const NEUTRAL_TOWN = { id: 0, x: 30, y: 66 };
@@ -28,7 +27,7 @@ async function ownIds(page: Page, type: number, n: number): Promise<number[]> {
   return (await units(page)).filter((u) => u.owner === me && u.type === type).map((u) => u.id).sort((a, b) => a - b).slice(0, n);
 }
 
-test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，兵走進去留守（還算原本的編隊、全軍不含、堅守），遠程兵上城牆；點別人的城說原因", async ({ page }, info) => {
+test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，兵走進去留守（還算原本的編隊、全軍不含、守城），遠程兵上城牆；點別人的城說原因", async ({ page }, info) => {
   // CI's Chromium runs the fake world at a few steps a second: the walk in takes a while.
   test.setTimeout(240_000);
   const check = watchErrors(page);
@@ -75,22 +74,18 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   await expect(toast(page, "不是你攻下的城鎮")).toBeVisible();
   // Ours: in they go, its 留守.
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
-  await expect.poll(said).toContain("5 名駐軍在小鎮：留守、堅守，不跟全軍走");
-  const walk = (await sent(page)).filter((c) => c.auto !== true && c.c === "retreat").at(-1);
-  expect(walk).toMatchObject({ u: ids, x: OUR_TOWN.x, y: OUR_TOWN.y });
+  await expect.poll(said).toContain("5 名駐軍在小鎮：敵人來了會反擊，不追出城");
+  const order = (await sent(page)).filter((c) => c.auto !== true && c.c === "guard").at(-1);
+  expect(order).toMatchObject({ u: ids, town: OUR_TOWN.id });
   expect(await page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], OUR_TOWN.id)).toEqual(ids);
   // Still group 1's (the user 2026-10-26), 駐5 on its button: nobody pulled in to replace them.
   expect([...(await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0]].sort((a, b) => a - b)).toEqual(ids);
   await expect(page.locator(GROUP_1)).toContainText("駐5");
   await expect(armyButton(page)).not.toHaveText(army ?? "");
-  await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id)).every((u) => u.stance === HOLD), { timeout: 60_000 }).toBe(true);
-  // Once in: the ranged up on its walls (an order of the screen's), the spearmen inside.
+  // The ranged up on its walls, the spearmen guarding it inside: the one order is enough.
   await expect.poll(async () => (await units(page)).filter((u) => ranged.includes(u.id) && u.order === WALL_ORDER).length, { timeout: 120_000 }).toBe(2);
-  // Each sent up as it arrives (one order or more), to this town.
-  const up = (await sent(page)).filter((c) => c.auto === true && c.c === "wall");
-  expect(up.every((c) => c.town === OUR_TOWN.id)).toBe(true);
-  expect(up.flatMap((c) => c.u as number[]).sort((a, b) => a - b)).toEqual(ranged);
-  expect((await units(page)).filter((u) => ids.includes(u.id) && !ranged.includes(u.id)).every((u) => u.order !== WALL_ORDER && u.order !== RETREAT)).toBe(true);
+  expect((await units(page)).filter((u) => ids.includes(u.id) && !ranged.includes(u.id)).every((u) => u.order === GUARD_ORDER)).toBe(true);
+  expect((await sent(page)).filter((c) => c.c === "wall")).toEqual([]);
   await centre(page, OUR_TOWN.x, OUR_TOWN.y, 1.3);
   await page.locator(".sel-info").getByRole("button", { name: "取消選取" }).tap().catch(() => undefined);
   await shot(page, info, "station-3-in-the-town");

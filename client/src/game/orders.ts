@@ -5,8 +5,8 @@
 import { Order, Stance } from "../sim.ts";
 import { isSoldier } from "./army.ts";
 
-/** `garrison`: going to hide in a building or hiding there (round 7, D-061). */
-export type OrderState = "advance" | "retreat" | "hold" | "idle" | "garrison";
+/** `garrison`: going to hide in a building or hiding there (round 7, D-061). `guard`: guarding a town, on its walls too (`guard`). */
+export type OrderState = "advance" | "retreat" | "hold" | "idle" | "garrison" | "guard";
 
 export interface OrderWorld {
   unitType(id: number): number;
@@ -23,6 +23,7 @@ export interface OrderWorld {
 export function orderState(w: OrderWorld, id: number): OrderState {
   const order = w.unitOrder(id);
   if (order === Order.Garrison) return "garrison";
+  if (order === Order.TownGuard || order === Order.Wall) return "guard";
   if (order === Order.Retreat) return "retreat";
   if (w.unitStance(id) === Stance.Hold) return "hold";
   return order === Order.Move || order === Order.Attack || order === Order.Cast ? "advance" : "idle";
@@ -32,7 +33,7 @@ export function orderState(w: OrderWorld, id: number): OrderState {
 export function orderCounts(w: OrderWorld, ids: number[]): Record<OrderState, number> | null {
   const soldiers = ids.filter((id) => isSoldier(w.unitType(id)));
   if (soldiers.length === 0) return null;
-  const counts: Record<OrderState, number> = { advance: 0, retreat: 0, hold: 0, idle: 0, garrison: 0 };
+  const counts: Record<OrderState, number> = { advance: 0, retreat: 0, hold: 0, idle: 0, garrison: 0, guard: 0 };
   for (const id of soldiers) counts[orderState(w, id)]++;
   return counts;
 }
