@@ -61,6 +61,8 @@ export interface Plan {
   again: boolean;
   /** Soldiers kept in a governed town. */
   guards: number;
+  /** The soldiers it leaves in a town guard it (`guard`), rather than stand there. */
+  townGuard: boolean;
   /** Builds the mage hall as soon as it has the crystal for a mage, before anything else. */
   hallFirst: boolean;
   /** Crystal kept per living mage (for shots) before it trains another. */
@@ -434,6 +436,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     choice: "plunder",
     again: true,
     guards: 2,
+    townGuard: false,
     hallFirst: true,
     mageReserve: 10,
     counterAt: 14,
@@ -1106,7 +1109,11 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           const s = soldiers.find((u) => u.id === gid)!;
           return dist2(s.x, s.y, t.x, t.y) > 9;
         });
-        if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
+        // plan.townGuard: they guard it (`guard`) rather than stand there.
+        const loose = alive.filter((gid) => soldiers.find((u) => u.id === gid)!.order !== Order.TownGuard);
+        if (plan.townGuard) {
+          if (loose.length > 0 && tick % 100 === 0) out.push({ c: "guard", u: loose, town: id });
+        } else if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
       }
       // D-086 A5 (plan.turtle): spearmen from home stand guard at the first TURTLE.manned finished outposts.
       if (plan.turtle) {
