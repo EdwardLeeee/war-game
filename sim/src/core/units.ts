@@ -35,6 +35,7 @@ import {
   AVENGE,
   CANNON,
   CAV_FLANK,
+  CHASE_ROUND,
   SIEGE,
   DODGE,
   FIRE_BACK,
@@ -507,7 +508,7 @@ export class UnitSystem {
   }
 
   /** Nearest enemy unit within reach (ties to the lower id), else the nearest enemy building; returns an id or -1. */
-  private findTarget(w: World, fog: Fog, i: number, reach: number): number {
+  private findTarget(w: World, fog: Fog, i: number, reach: number, skip = -1): number {
     const u = w.units.col;
     const n = w.size;
     const me = u.owner[i];
@@ -524,7 +525,7 @@ export class UnitSystem {
     for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
       for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
         for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
-          if (u.owner[j] === me || u.action[j] === Action.Garrisoned) continue;
+          if (u.owner[j] === me || u.action[j] === Action.Garrisoned || u.id[j] === skip) continue;
           const dx = u.x[j] - mx;
           const dy = u.y[j] - my;
           const d2 = dx * dx + dy * dy;
@@ -543,7 +544,7 @@ export class UnitSystem {
     const b = w.buildings.col;
     for (let s = 0; s < w.buildings.count; s++) {
       // A gate is never just in the way to hit (D-096): only an attack on it, or a goal behind it.
-      if (b.owner[s] === me || b.type[s] === BuildingType.Gate) continue;
+      if (b.owner[s] === me || b.type[s] === BuildingType.Gate || b.id[s] === skip) continue;
       const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
       if (d2 > r2) continue;
       const bx = (b.cellX[s] << CELL_SHIFT) + 512;
@@ -1806,19 +1807,27 @@ export class UnitSystem {
           return;
         }
       }
-      // Far off: along the field; a building (D-096: the gate a move breaks through) on a move too.
-      if ((order === Order.Attack || (ts < 0 && GATE.on)) && d2 > DIRECT_STEER * DIRECT_STEER) {
-        if (ts >= 0) {
-          steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), info.speed);
-        } else {
-          const bs = w.building(tid);
-          const b = w.buildings.col;
-          steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs)));
-        }
+      if (CHASE_ROUND.on && order !== Order.Attack) {
+        // The straight way blocked: round, or let go (another in reach, or back to what it was doing).
+        if (this.chase(w, fields, i, ts, tid, tx, ty, order)) return;
+        const other = this.findTarget(w, fog, i, Math.max(AGGRO_RANGE, info.range), tid);
+        u.target[i] = other >= 0 && this.chase(w, fields, i, w.unit(other), other, targetX(w, other), targetY(w, other), order) ? other : -1;
+        if (u.target[i] >= 0) return;
       } else {
-        steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
+        // Far off: along the field; a building (D-096: the gate a move breaks through) on a move too.
+        if ((order === Order.Attack || (ts < 0 && GATE.on)) && d2 > DIRECT_STEER * DIRECT_STEER) {
+          if (ts >= 0) {
+            steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), info.speed);
+          } else {
+            const bs = w.building(tid);
+            const b = w.buildings.col;
+            steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs)));
+          }
+        } else {
+          steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
+        }
+        return;
       }
-      return;
     }
 
     if (order === Order.Move || order === Order.Retreat) {
@@ -1859,6 +1868,41 @@ export class UnitSystem {
       return;
     }
     u.action[i] = Action.Idle;
+  }
+
+  /**
+   * Unit i goes for the target (unit slot ts, or the building tid) at (tx, ty) with no order to attack it: straight when
+   * the way is open, else round by the field (CHASE_ROUND). False, doing nothing, when it cannot get there, or only by a
+   * walk longer than CHASE_ROUND.walk (a building on a move goes on: it may be what the move breaks through).
+   */
+  private chase(w: World, fields: FieldCache, i: number, ts: number, tid: number, tx: number, ty: number, order: number): boolean {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const info = UNITS[u.type[i]];
+    // One on a wall stands on a cell nobody walks on: straight for it, as ever.
+    if (ts >= 0 && (onWall(w, ts) || openLine(w, u.x[i], u.y[i], tx, ty))) {
+      steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
+      return true;
+    }
+    if (this.walledOff(w, i, ts, tid) >= 0) return false;
+    const bs = ts >= 0 ? -1 : w.building(tid);
+    const key = ts >= 0 ? (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT) : buildingKey(tid);
+    const goals = ts >= 0 ? null : () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs));
+    const f = fields.get(
+      w,
+      key,
+      goals ??
+        (() => {
+          const c = nearestWalkable(w, key % n, Math.trunc(key / n));
+          return c < 0 ? [] : [c];
+        }),
+      false,
+      u.owner[i],
+    );
+    if (f !== null && (ts >= 0 || order === Order.None) && f.dist[(u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT)] > CHASE_ROUND.walk * 10) return false;
+    steerTo(w, fields, i, tx, ty, key, info.speed, goals);
+    return true;
   }
 
   /**
@@ -2592,6 +2636,20 @@ export function coverDamage(d: number): number {
  * The arrows building slot s shoots, null if none: a finished main city, a town's keep (D-100; with
  * KEEP off the big city's tower) or an arrow tower (round 7), or a governed town's gate (D-096).
  */
+/** Where the unit or building id stands (fixed point; a building's middle). */
+function targetX(w: World, id: number): number {
+  const ts = w.unit(id);
+  if (ts >= 0) return w.units.col.x[ts];
+  const bs = w.building(id);
+  return (w.buildings.col.cellX[bs] << CELL_SHIFT) + ((w.wide(bs) << CELL_SHIFT) >> 1);
+}
+function targetY(w: World, id: number): number {
+  const ts = w.unit(id);
+  if (ts >= 0) return w.units.col.y[ts];
+  const bs = w.building(id);
+  return (w.buildings.col.cellY[bs] << CELL_SHIFT) + ((w.tall(bs) << CELL_SHIFT) >> 1);
+}
+
 function arrowOf(w: World, s: number): { damage: number; range: number; cooldown: number } | null {
   const b = w.buildings.col;
   if (b.progress[s] < 1000) return null;
