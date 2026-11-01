@@ -57,6 +57,11 @@ def apply(u, kind, version):
     if version == 8:
         import r8
         r8.rim()
+    if os.environ.get("R9_UNIT"):                  # R9 realism trial (design/r9/blender/unit_r9.py)
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "r9", "blender"))
+        import unit_r9
+        unit_r9.apply(u, kind)
     world = bpy.context.scene.world
     orig = lib.set_pass
 

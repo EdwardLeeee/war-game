@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -84,10 +84,25 @@ def unit_frame(atlas, unit, anim, facing, k):
 
 # ---------------------------------------------------------------- the scene
 
-def screen(top, items, shadows):
+def screen(top, items, shadows, water=None, reflect=()):
     """The ground (top-down) through the camera, then the shadows, then the sprites by their front edge.
-    items: (front_y_m, image, (x_px, y_px)); shadows: (image, (x_px, y_px)) in screen pixels."""
+    items: (front_y_m, image, (x_px, y_px)); shadows: (image, (x_px, y_px)) in screen pixels.
+    water: the compose's water mask (top-down); reflect: (image, (x_px, y_px) of its foot) mirrored into the water."""
     cam = R.camera(top).convert("RGBA")
+    if water is not None and reflect:
+        wm = Image.fromarray((np.clip(water, 0, 1) * 255).astype(np.uint8), "L").resize(cam.size, Image.BILINEAR)
+        layer = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+        for im, (fx, fy) in reflect:
+            fl = im.transpose(Image.FLIP_TOP_BOTTOM)
+            a = np.asarray(fl, np.float32)
+            a[..., :3] *= 0.45                                 # a reflection is darker than the thing
+            a[..., 3] *= 0.75
+            fl = Image.fromarray(a.astype(np.uint8), "RGBA").resize((fl.width, int(fl.height * 0.9)))
+            layer.alpha_composite(fl, (int(fx), int(fy))) if fx >= 0 and fy >= 0 else _paste(layer, fl, (int(fx), int(fy)))
+        arr = np.asarray(layer, np.float32)
+        arr[..., 3] *= np.asarray(wm, np.float32) / 255.0
+        layer = Image.fromarray(arr.astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(1.6))
+        cam.alpha_composite(layer)
     for im, xy in shadows:
         _paste(cam, im, xy)
     for _, im, xy in sorted(items, key=lambda q: q[0]):
@@ -149,6 +164,17 @@ def sprites(art, grid, trees, units=(), extra=()):
     return items, shadows
 
 
+def reflections(art, trees):
+    """The trees mirrored into the water at their feet (screen pixels: the flipped picture's top-left at the foot)."""
+    na = Atlas(art / "nodes" / "nodes.json")
+    out = []
+    for x, y, k in trees:
+        (im, ax, ay), _ = na.sprite(f"tree_E_v{k}", "neutral")
+        X, Y = (x + 0.5) * 2 * PPM, (y + 0.5) * 2 * PPM * 0.5
+        out.append((im, (X - ax, Y + (im.height - ay) * 0.0)))
+    return out
+
+
 def ground_layers(art):
     gj = json.loads((art / "ground" / "ground.json").read_text())
     layers = {L["id"]: dict(img=np.asarray(Image.open(art / "ground" / L["file"]).convert("RGBA"), np.float32) / 255.0,
@@ -165,17 +191,164 @@ def ground_pair(art, grid, relief):
     return before, after
 
 
+def b1_sprite(dirpath, name, team="blue"):
+    """A raw render of render_b1.py (R9's main city) as an atlas sprite: colour with AO and player colour, its shadow."""
+    sys.path.insert(0, str(HERE.parents[1] / "b1" / "common"))
+    import scene as B1S
+    sp = B1S.piece(dirpath, name, "x3", team=team, ppm=PPM)
+    sh = (sp.shadow[0], sp.shadow[1], sp.shadow[2]) if sp.shadow else None
+    return (sp.img, sp.ax, sp.ay), sh
+
+
+def unit_sprite(atlas_dir, anim, facing, k, team):
+    """spear_e from an atlas folder (art-v6.3's, or R9's postprocess output)."""
+    a = Atlas(Path(atlas_dir) / "spear_e.json")
+    name, flip = unit_frame(a, "spear_e", anim, facing, k)
+    return a.sprite(name, team), flip
+
+
+def rotate_xy(x, y, w, h, deg=45.0):
+    """Where ground point (x, y) (pixels of a w x h top-down picture) lands after PIL's rotate(deg, expand=True)."""
+    t = math.radians(deg)
+    W = abs(w * math.cos(t)) + abs(h * math.sin(t))
+    H = abs(w * math.sin(t)) + abs(h * math.cos(t))
+    dx, dy = x - w / 2, y - h / 2
+    return W / 2 + dx * math.cos(t) + dy * math.sin(t), H / 2 - dx * math.sin(t) + dy * math.cos(t)
+
+
+def scene06(art, gridp, out, city_dir, units_dir, relief, relief_d):
+    """R9-06: the same screen on the square camera (甲) and on the diamond one (乙): the new ground and water, the new
+    spearmen, the new main city (on 乙 rendered on the diamond camera), trees and rocks."""
+    grid, trees = load_map(gridp, 51, 33, 21, 21)
+    layers, rules = ground_layers(art)
+    n = grid.shape[0] * 2 * PPM
+    city = (8.0, 16.0)                                   # the 4 x 4 footprint's middle, metres in the window
+    trees = [t for t in trees if not (abs((t[0] + 0.5) * 2 - city[0]) < 5 and abs((t[1] + 0.5) * 2 - city[1]) < 5)]
+    men = [("idle", 7, 0, "blue", 13.5, 27.0), ("walk", 7, 4, "blue", 15.0, 28.6), ("attack", 7, 5, "blue", 17.0, 27.4),
+           ("idle", 1, 0, "blue", 19.5, 22.5)]
+    res = {}
+    for cam in ("甲", "乙"):
+        sun, view, rel = (R.SUN, R.VIEW, relief) if cam == "甲" else (R.SUN_D, R.VIEW_D, relief_d)
+        top = R.compose(grid, [], layers, rel, ppm=PPM, rules=rules, sun=sun, view=view)
+        items, shadows = sprites(art, grid, trees)
+        cs = b1_sprite(city_dir, "main_city_E_r9" if cam == "甲" else "main_city_E_r9_d")
+        place(cs, city[0], city[1], items, shadows)
+        for anim, f, k, team, x, y in men:
+            spr, flip = unit_sprite(units_dir, anim, f, k, team)
+            place(spr, x, y, items, shadows, flip=flip)
+        if cam == "甲":
+            im = screen(top, items, shadows).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3))
+        else:
+            # turn the ground 45 degrees, squash it, and move every sprite with it (anchors are ground points)
+            img = Image.fromarray((np.clip(top, 0, 1) * 255).round().astype(np.uint8), "RGB").rotate(45, expand=True, resample=Image.BICUBIC)
+            cam_img = img.resize((img.width, img.height // 2), Image.LANCZOS).convert("RGBA")
+            def moved(xy, anchor_ground):
+                return xy
+            canvas = cam_img
+            def put(im, gx, gy, ax, ay):
+                X, Y = rotate_xy(gx, gy, n, n)
+                _paste(canvas, im, (int(round(X - ax)), int(round(Y / 2 - ay))))
+            # rebuild the sprite list in ground metres: (front, sprite, ground x, y)
+            objs = []
+            for x, y, k in trees:
+                objs.append((Atlas(art / "nodes" / "nodes.json").sprite(f"tree_E_v{k}", "neutral"), (x + 0.5) * 2, (y + 0.5) * 2, False))
+            for yy in range(grid.shape[0]):
+                for xx in range(grid.shape[1]):
+                    if grid[yy, xx] == 1:
+                        objs.append((Atlas(art / "terrain" / "terrain.json").sprite(f"terrain_rock_v{(xx * 7 + yy * 3) % 6}", "neutral"),
+                                     (xx + 0.5) * 2, (yy + 0.5) * 2, False))
+            objs.append((cs, city[0], city[1], False))
+            for anim, f, k, team, x, y in men:
+                spr, flip = unit_sprite(units_dir, anim, (f + 1) % 8, k, team)   # the same men, a facing on
+                objs.append((spr, x, y, flip))
+            for (spr, gx, gy, flip) in objs:
+                sh = spr[1]
+                if sh:
+                    si, sx, sy = sh
+                    if flip:
+                        si = si.transpose(Image.FLIP_LEFT_RIGHT); sx = si.width - sx
+                    put(si, gx * PPM, gy * PPM, sx, sy)
+            def depth(o):
+                X, Y = rotate_xy(o[1] * PPM, o[2] * PPM, n, n)
+                return Y
+            for (spr, gx, gy, flip) in sorted(objs, key=depth):
+                im, ax, ay = spr[0]
+                if flip:
+                    im = im.transpose(Image.FLIP_LEFT_RIGHT); ax = im.width - ax
+                put(im, gx * PPM, gy * PPM, ax, ay)
+            cx, cy = canvas.width // 2, canvas.height // 2
+            w, h = SCREEN[0] * 3, SCREEN[1] * 3
+            im = canvas.crop((cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2)).convert("RGB")
+        im.save(out / f"scene06_{cam}.png")
+        res[cam] = im
+    return res
+
+
+def edge_grid(gridp, x0=-8, y0=38, size=21, seed=4):
+    """The map's west edge (雙河關: the river and its ford leave the map there) with what the client would draw beyond
+    the edge: the river opening into a lake, forest on either side, its edge ragged. Returns (grid, trees, beyond_m):
+    beyond_m the metres (from the window's west side) where the map ends."""
+    d = json.loads(Path(gridp).read_text())
+    n = d["size"]
+    t = np.array(d["terrain"], np.int32).reshape(n, n)
+    rng = np.random.default_rng(seed)
+    grid = np.zeros((size, size), np.int32)
+    trees = []
+    for yy in range(size):
+        for xx in range(size):
+            X, Y = x0 + xx, y0 + yy
+            if X >= 0:
+                grid[yy, xx] = t[Y, X]
+                if d["rows"][Y][X] == "T" and t[Y, X] == 0:
+                    trees.append((xx, yy, (xx * 7 + yy * 13) % 3))
+                continue
+            out = -X                                                  # cells beyond the edge
+            half = 1.5 + out * 0.55 + rng.uniform(-0.4, 0.4)         # the river opening into a lake
+            if abs(Y - 50) <= half:
+                grid[yy, xx] = 3
+            elif abs(Y - 50) > half + 1 and rng.random() < min(0.95, 0.35 + 0.18 * out):
+                trees.append((xx, yy, int(rng.integers(0, 3))))
+    return grid, trees, -x0 * 2.0
+
+
+def scene_edge(art, gridp, out, relief, units_dir):
+    grid, trees, beyond = edge_grid(gridp)
+    layers, rules = ground_layers(art)
+    top = R.compose(grid, [], layers, relief, ppm=PPM, rules=rules)
+    # beyond the map's edge: the same world, a little darker and hazier (the player cannot go there)
+    m = (np.arange(top.shape[1]) + 0.5) / PPM
+    k = np.clip((beyond - m) / 4.0, 0, 1)[None, :, None] * 0.5
+    top = top * (1 - k) + np.array([0.42, 0.47, 0.5]) * k * 0.6
+    items, shadows = sprites(art, grid, trees)
+    for anim, f, kk, team, x, y in [("idle", 7, 0, "blue", 21.0, 27.0), ("walk", 7, 4, "blue", 23.5, 28.5)]:
+        spr, flip = unit_sprite(units_dir, anim, f, kk, team)
+        place(spr, x, y, items, shadows, flip=flip)
+    im = screen(top, items, shadows).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3))
+    im.save(out / "scene06_edge.png")
+    return im
+
+
 if __name__ == "__main__":
     art, gridp, out = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
     out.mkdir(parents=True, exist_ok=True)
+    what = sys.argv[4] if len(sys.argv) > 4 else "ground"
+    if what == "edge":
+        scene_edge(art, gridp, out, R.load_tile(HERE.parent / "build" / "relief_x3.png"), sys.argv[5])
+        sys.exit(0)
+    if what == "06":
+        B = HERE.parent / "build"
+        scene06(art, gridp, out, sys.argv[5], sys.argv[6], R.load_tile(B / "relief_x3.png"), R.load_tile(B / "relief_x3_d.png"))
+        sys.exit(0)
     grid, trees = load_map(gridp, 24, 40, 21, 21)                     # square (the composer's maps are square)
     relief = R.load_tile(HERE.parent / "build" / "relief_x3.png") if (HERE.parent / "build" / "relief_x3.png").exists() else R.relief_tile(PPM)[0]
     b, a = ground_pair(art, grid, relief)
     units = [("idle", 7, 0, "blue", 15.2, 17.5), ("walk", 6, 3, "blue", 17.4, 16.8), ("idle", 1, 2, "blue", 13.6, 26.0),
              ("attack", 2, 5, "red", 24.0, 30.5)]
     items, shadows = sprites(art, grid, trees, units)
+    water = R.LAST_WATER.copy()
     for name, top in (("before", b), ("after", a)):
         R.camera(top).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3)).save(out / f"ground_{name}.png")
-        im = screen(top, items, shadows).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3))
+        refl = reflections(art, trees) if name == "after" else ()
+        im = screen(top, items, shadows, water if name == "after" else None, refl).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3))
         im.save(out / f"scene_{name}.png")
     print("ok", b.shape)

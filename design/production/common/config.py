@@ -15,6 +15,8 @@ BUILD = ROUND / "build"                              # intermediate, git-ignored
 R7_VERSION = os.environ.get("R7_VERSION")             # R7 (D-092) style test: the units in a realism version's look
 if R7_VERSION:
     BUILD = BUILD / f"r7v{R7_VERSION}"                # ... rendered beside the production ones, never over them
+if os.environ.get("R9_UNIT"):
+    BUILD = ROUND / "build" / "r9u"                   # R9 realism trial (design/r9/blender/unit_r9.py)
 OUT = ROUND / "out"                                  # final labelled images
 
 BLENDER = Path(os.environ.get("BLENDER", Path.home() / ".local/opt/blender-5.2.2/blender"))

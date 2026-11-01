@@ -38,6 +38,13 @@ TILE_M = 16.0
 SUN = np.array([-0.375, -0.375, 0.848])
 SUN /= np.linalg.norm(SUN)
 SKY = np.array([0.55, 0.66, 0.85])          # linear, the fill from the sky dome
+# the camera to the ground (x east, y south, z up): north and 30 degrees down on the square camera (D-088)
+VIEW = np.array([0.0, -math.cos(math.radians(30)), -math.sin(math.radians(30))])
+# R9-06 乙 (the diamond camera, art-v2 and before): the camera turned 45 degrees and the sun with it (lib.make_lights
+# turns the sun with CAM_AZ), so in the ground's own axes the sun stands due north and the camera looks north-east
+SUN_D = np.array([0.0, -0.53, 0.848]) / np.linalg.norm([0.0, -0.53, 0.848])
+VIEW_D = np.array([math.sin(math.radians(45)) * math.cos(math.radians(30)), -math.cos(math.radians(45)) * math.cos(math.radians(30)),
+                   -math.sin(math.radians(30))])
 SUN_RGB = np.array([1.0, 0.95, 0.88])       # R7's sun (look.lights)
 
 
@@ -163,7 +170,7 @@ def tussocks(size, ppm, seed, count=900, r=(0.16, 0.38), hgt=(0.04, 0.11)):
     return out
 
 
-def relief_tile(ppm=60, seed=11, sim_per_m=8, relief_m=0.16, rill_m=0.05):
+def relief_tile(ppm=60, seed=11, sim_per_m=8, relief_m=0.16, rill_m=0.05, sun=SUN):
     """The tileable relief map (TILE_M square) at ppm: RGB float (light, rill, crown) and the height (m)."""
     n = int(TILE_M * sim_per_m)
     # mounds and hummocks; eroded with a steep relief (so the water carves branching rills), then flattened back to
@@ -183,19 +190,22 @@ def relief_tile(ppm=60, seed=11, sim_per_m=8, relief_m=0.16, rill_m=0.05):
     hy = (np.roll(H, -1, 0) - np.roll(H, 1, 0)) / (2 * dx)
     N = np.stack([-hx, -hy, np.ones_like(H)], -1)
     N /= np.linalg.norm(N, axis=-1, keepdims=True)
-    lam = np.clip(N @ SUN, 0, None)
+    lam = np.clip(N @ sun, 0, None)
     # soft shadows: march toward the sun across the height field (napali: min over the ray of k * clearance / distance)
-    tan_e = SUN[2] / math.hypot(SUN[0], SUN[1])
+    hz = math.hypot(sun[0], sun[1])
+    tan_e = sun[2] / hz
+    ux, uy = sun[0] / hz, sun[1] / hz
     vis = np.ones_like(H)
-    for k in range(1, int(0.9 * ppm)):                               # up to 1.27 m along the diagonal
-        dist = k * math.sqrt(2) / ppm
-        ahead = np.roll(np.roll(H, k, 0), k, 1)                      # toward -x, -y (west, north)
+    for k in range(1, int(1.2 * ppm)):                               # up to 1.2 m toward the sun
+        sx, sy = int(round(-ux * k)), int(round(-uy * k))
+        dist = math.hypot(sx, sy) / ppm
+        ahead = np.roll(np.roll(H, sy, 0), sx, 1)                    # H a step nearer the sun
         clear = H + dist * tan_e - ahead
         vis = np.minimum(vis, np.clip(6.0 * clear / dist + 0.5, 0, 1))
     ao = 1.0 - np.clip((blur(H, 0.15 * ppm) - H) * 6.0 + (blur(H, 0.6 * ppm) - H) * 2.0, 0, 0.6)
     sky = 0.5 + 0.5 * N[..., 2]
     sun_w, sky_w = 3.0, 0.9                                          # the R7 rig's balance (sun 4.2, world 0.38, fill 0.7)
-    flat = sun_w * SUN[2] + sky_w
+    flat = sun_w * sun[2] + sky_w
     light = (sun_w * lam * vis + sky_w * sky * ao) / flat
     valley = blur(H, 0.25 * ppm) - H                                 # the eroded channels: narrow concave lines
     rill = np.clip((valley - 0.004) / 0.012, 0, 1) * np.clip(F * 1.5, 0.3, 1)
@@ -257,13 +267,37 @@ R9 = dict(
     sky_lo=(0.55, 0.66, 0.82), sky_hi=(0.30, 0.46, 0.80), sky_k=2.2,     # Fresnel x sky_k: the sky's tint on the water
     foam=0.5, glint=1.0, exposure=0.95, swath=0.07,
 )
+LAST_WATER = None
 _NZ = G.value_noise(256, 16, 1)[..., None]
 _SHORE = G.value_noise(128, 8, 21)[..., None]
 _RIP = G.value_noise(256, 32, 9)[..., None]
+RIP_M = 4.0
+
+
+def _ripple_tex(n=512, seed=9):
+    """A tileable ripple field (RIP_M square) and its slopes per metre: (h, dh/du, dh/dv), u along the current. FFT noise
+    whose spectrum is squeezed along u (wavelets drawn out with the current), slopes taken once here (value noise's
+    lattice showed through its finite differences as speckle and rings)."""
+    rng = np.random.default_rng(seed)
+    F = np.fft.fft2(rng.standard_normal((n, n)))
+    ku = np.fft.fftfreq(n)[None, :] * n / RIP_M          # cycles a metre
+    kv = np.fft.fftfreq(n)[:, None] * n / RIP_M
+    k = np.hypot(ku * 7.0, kv)                           # long along the current: streaks, not blobs
+    amp = np.exp(-(k / 3.5) ** 2) * np.clip(k, 0.25, None) ** -1.0
+    amp[0, 0] = 0.0
+    h = np.real(np.fft.ifft2(F * amp))
+    h = (h - h.mean()) / h.std()
+    dpm = n / RIP_M
+    du = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) / 2 * dpm
+    dv = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) / 2 * dpm
+    return np.stack([h, du, dv], -1).astype(np.float32)
+
+
+_RIPT = _ripple_tex()
 _FOAM = G.value_noise(256, 24, 13)[..., None]
 
 
-def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=None, strip=240):
+def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=None, strip=240, sun=SUN, view=VIEW):
     """The ground top-down (sRGB 0..1) at ppm, as the R9 shader would draw it (in strips of rows: every step reads only
     its own pixel, its neighbours by sampling the same functions a little to the side)."""
     rules = rules or G.RULES
@@ -272,9 +306,19 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
     size = n * G.CELL_M
     px = int(size * ppm)
     wmap = G.weights(grid, nodes, rules)
+    # the current's direction: across the slope of the water distance, smoothed over metres (a direction that varies from
+    # pixel to pixel warps the wavelets into marbling)
+    k = wmap.shape[0] / n                                       # texels a cell
+    wsm = G.blur(wmap[..., 3], 1.5 * k)
+    cgx = (np.roll(wsm, -1, 1) - np.roll(wsm, 1, 1)) / 2
+    cgy = (np.roll(wsm, -1, 0) - np.roll(wsm, 1, 0)) / 2
+    flowmap = np.stack([-cgy, cgx], -1).astype(np.float32)
     fordm = (grid == 4).astype(np.float32)[..., None]
+    fordb = G.blur(np.kron(fordm[..., 0], np.ones((4, 4))), 1.2)[..., None]       # the ford's cells, soft (4 texels a cell)
     wa = rules["water"]
     out = np.zeros((px, px, 3), np.float32)
+    global LAST_WATER
+    LAST_WATER = np.zeros((px, px), np.float32)             # where the water is (for the scene: reflections)
     m = (np.arange(px) + 0.5) / ppm
 
     def sd_at(mx, my):
@@ -282,9 +326,12 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         w = G.sample(wmap, mx / size, my / size)[..., 3]
         nz = G.sample(_NZ, mx / 6.0, my / 6.0)[..., 0]
         sd = (w - 0.5) * 2 * wa["range_m"] + (nz - 0.5) * 2 * wa["noise_m"]
+        sd = np.maximum(sd, (G.sample(fordb, mx / size, my / size)[..., 0] - 0.5) * 4.0)   # a ford is water too, shallow
         big = G.sample(_SHORE, mx / 40.0, my / 40.0)[..., 0]                 # 5 m lattice: long bays
+        mid = G.sample(_SHORE, mx / 17.0 + 0.41, my / 17.0 + 0.13)[..., 0]   # 2 m: the bays broken up (not a sine)
         small = G.sample(_SHORE, mx / 8.0 + 0.3, my / 8.0 + 0.7)[..., 0]     # 1 m: bites
-        return sd + (big - 0.5) * 2 * p["shore_m"][0] + (small - 0.5) * 2 * p["shore_m"][1]
+        return (sd + (big - 0.5) * 2 * p["shore_m"][0] + (mid - 0.5) * p["shore_m"][0]
+                + (small - 0.5) * 2 * p["shore_m"][1])
 
     def ripple(mx, my, fx, fy):
         u = mx * fx + my * fy
@@ -302,7 +349,8 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         sd = sd_at(mx, my)
         gx = (sd_at(mx + e, my) - sd_at(mx - e, my)) / (2 * e)
         gy = (sd_at(mx, my + e) - sd_at(mx, my - e)) / (2 * e)
-        ford = G.smoothstep(0.2, 0.8, G.sample(fordm, mx / size, my / size)[..., 0])
+        fz = G.sample(_SHORE, mx / 8.0 + 0.6, my / 8.0 + 0.2)[..., 0]
+        ford = G.smoothstep(0.35, 0.65, G.sample(fordb, mx / size, my / size)[..., 0] + (fz - 0.5) * 0.5)   # ragged, not the cells
 
         col = to_lin(base)
         Rr = tsample(relief, mx, my)
@@ -321,14 +369,15 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         # the banks: the land falls into the channel. The far bank (water to the south of it) turns its earth face to
         # the camera; the near bank shows only a grass lip over the water.
         g = np.hypot(gx, gy) + 1e-6
-        far = np.clip(gy / g, 0, 1)                                   # 1 where the water lies south (down the screen)
+        far = np.clip(-(gx * view[0] + gy * view[1]) / (g * math.hypot(view[0], view[1])), 0, 1)   # the water lies toward the camera
         tb = np.clip((sd + p["bank_m"]) / p["bank_m"], 0, 1)
         kb = p["bank_h"] * 6 * tb * (1 - tb) / p["bank_m"] * (sd < 0.3)
         nb = np.stack([kb * gx, kb * gy, np.ones_like(sd)], -1)
         nb /= np.linalg.norm(nb, axis=-1, keepdims=True)
-        light = light * (3.0 * np.clip(nb @ SUN, 0, None) + 0.9 * (0.5 + 0.5 * nb[..., 2])) / (3.0 * SUN[2] + 0.9)
+        light = light * (3.0 * np.clip(nb @ sun, 0, None) + 0.9 * (0.5 + 0.5 * nb[..., 2])) / (3.0 * sun[2] + 0.9)
         earth = to_lin(G.sample(layers["bank"]["img"], mx / layers["bank"]["tile_m"], my / layers["bank"]["tile_m"])[..., :3])
-        face = G.smoothstep(-0.9, -0.15, sd) * G.smoothstep(0.1, -0.05, sd) * far
+        fw = 0.5 + 0.9 * G.sample(_SHORE, mx / 12.0 + 0.7, my / 12.0 + 0.4)[..., 0]     # the bank face's width varies
+        face = G.smoothstep(-fw, -0.15, sd) * G.smoothstep(0.1, -0.05, sd) * far
         tuft = G.sample(_FOAM, mx / 3.0 + 0.5, my / 3.0)[..., 0]
         face = face * (1 - G.smoothstep(0.55, 0.7, tuft))              # grass hangs down over the earth here and there
         col = col * (1 - face[..., None] * 0.85) + earth * 0.8 * face[..., None] * 0.85
@@ -342,25 +391,33 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         col = col * (1 - bar[..., None]) + grav * 0.85 * light[..., None] * bar[..., None]
 
         # the water: grass tufts hang over the line in places; the bars stand out of it
-        over = G.smoothstep(0.6, 0.72, tuft) * G.smoothstep(0.35, 0.05, sd) * (1 - far)
+        tuft2 = G.sample(_SHORE, mx / 6.0 + 0.2, my / 6.0 + 0.9)[..., 0] * 0.6 + tuft * 0.4     # irregular, not every 30 px
+        over = G.smoothstep(0.62, 0.7, tuft2) * G.smoothstep(0.3, 0.02, sd) * (1 - far)
         inside = G.smoothstep(-0.04, 0.1, sd) * (1 - over) * (1 - bar * G.smoothstep(0.3, 0.0, sd))
         depth = np.clip(sd * p["depth_k"], 0, p["depth_max"]) * (1 - ford) + np.clip(sd * p["depth_k"], 0, p["ford_depth"]) * ford
         # the far bank's shadow on the water below it (the sun is behind it), ~0.8 m wide
-        ux, uy = SUN[0] / np.hypot(SUN[0], SUN[1]), SUN[1] / np.hypot(SUN[0], SUN[1])
+        ux, uy = sun[0] / np.hypot(sun[0], sun[1]), sun[1] / np.hypot(sun[0], sun[1])
         shade = 1.0 - 0.5 * np.maximum(G.smoothstep(0.1, -0.2, sd_at(mx + ux * 0.5, my + uy * 0.5)),
                                        0.6 * G.smoothstep(0.1, -0.2, sd_at(mx + ux * 0.9, my + uy * 0.9))) * inside
         lo = G.sample(_SHORE, mx / 5.0 + 0.4, my / 5.0 + 0.1)[..., 0]
         bed = np.array(p["bed"]) * (0.8 + 0.4 * lo)[..., None] * shade[..., None]
+        bed = bed * (1 - ford[..., None]) + grav * 0.55 * ford[..., None]                 # a ford's stones show through
         T = np.exp(-np.array(p["absorb"]) * depth[..., None] * 2.0)
         under = bed * T + np.array(p["scatter"]) * shade[..., None] * (1 - T)
-        fx, fy = -gy / g, gx / g
-        hgt, u, v = ripple(mx, my, fx, fy)
-        hx = (ripple(mx + e, my, fx, fy)[0] - ripple(mx - e, my, fx, fy)[0]) / (2 * e)
-        hy = (ripple(mx, my + e, fx, fy)[0] - ripple(mx, my - e, fx, fy)[0]) / (2 * e)
-        rough = (0.010 + 0.03 * ford)
+        # the current runs along the channel: across the distance field's slope, steadied mid-stream (where the slope
+        # vanishes) toward the channel's general run, so the wavelets keep one direction
+        fv = G.sample(flowmap, mx / size, my / size)
+        fx, fy = fv[..., 0], fv[..., 1]
+        fl = np.hypot(fx, fy)
+        fx, fy = np.where(fl > 1e-4, fx / (fl + 1e-9), 1.0), np.where(fl > 1e-4, fy / (fl + 1e-9), 0.0)
+        u = mx * fx + my * fy
+        v = -mx * fy + my * fx
+        rt = G.sample(_RIPT, (u - 0.6 * t) / RIP_M, v / RIP_M)
+        du, dv = rt[..., 1], rt[..., 2]
+        hx, hy = du * fx - dv * fy, du * fy + dv * fx         # the slope back in x, y
+        rough = (0.006 + 0.012 * ford)
         Nw = np.stack([-hx * rough, -hy * rough, np.ones_like(hx)], -1)
         Nw /= np.linalg.norm(Nw, axis=-1, keepdims=True)
-        view = np.array([0.0, -math.cos(math.radians(30)), -math.sin(math.radians(30))])   # camera to ground: north, down
         dn = (Nw * view).sum(-1, keepdims=True)
         refl = view - 2 * dn * Nw
         cosv = np.clip(-dn[..., 0], 0, 1)
@@ -371,18 +428,22 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         band = G.sample(_SHORE, u / 18.0 + 0.3, v / 2.2 + 0.8)[..., 0]
         sky = sky * (0.7 + 0.6 * band[..., None])
         # the far bank and its grass reflected in the water just below it (the reflected ray runs north, into the bank)
-        seen = np.maximum(G.smoothstep(0.1, -0.3, sd_at(mx, my - 0.6)), 0.7 * G.smoothstep(0.1, -0.3, sd_at(mx, my - 1.3)))
+        vx, vy = view[0] / math.hypot(view[0], view[1]), view[1] / math.hypot(view[0], view[1])
+        seen = np.maximum(G.smoothstep(0.1, -0.3, sd_at(mx + vx * 0.6, my + vy * 0.6)),
+                          0.7 * G.smoothstep(0.1, -0.3, sd_at(mx + vx * 1.3, my + vy * 1.3)))
         sky = sky * (1 - 0.85 * seen[..., None]) + np.array([0.035, 0.045, 0.025]) * seen[..., None]
-        gl = np.clip((refl * SUN).sum(-1), 0, 1) ** 120
+        gl = np.clip((refl * sun).sum(-1), 0, 1) ** 120
         spark = G.smoothstep(0.82, 0.9, G.sample(_FOAM, u / 2.5 + 0.1, v / 0.8 + 0.3)[..., 0])
-        surf = under * (1 - fres[..., None]) + sky * fres[..., None] + SUN_RGB * (gl * spark * p["glint"])[..., None]
-        fn = G.sample(_FOAM, (u - 0.4 * t) / 6.0, v / 1.5)[..., 0]
-        froth = np.clip(ford * G.smoothstep(0.58, 0.82, fn) * inside, 0, 1) * p["foam"]
+        surf = under * (1 - fres[..., None]) + sky * fres[..., None] + SUN_RGB * (gl * spark * (1 - ford) * p["glint"])[..., None]
+        # a ford: broken white riffle lines across the current, where the water runs over the stones
+        fn = G.sample(_FOAM, (u - 0.4 * t) / 1.1, v / 5.0)[..., 0] * 0.7 + G.sample(_FOAM, u / 0.5 + 0.3, v / 2.0)[..., 0] * 0.3
+        froth = np.clip(ford * G.smoothstep(0.56, 0.74, fn) * inside, 0, 1) * p["foam"] * 1.3
         surf = surf * (1 - froth[..., None]) + np.array([0.7, 0.72, 0.7]) * froth[..., None]
-        # the wet line where water meets land: dark, 2-3 px
-        line = G.smoothstep(0.09, 0.0, np.abs(sd)) * (1 - bar) * 0.55
+        # under the near bank's lip (the camera looks over it): the nearest water darker, no drawn line
+        lip = (1 - far) * G.smoothstep(0.6, 0.0, sd)
+        surf = surf * (1 - 0.35 * lip[..., None])
         col = col * (1 - inside[..., None]) + surf * inside[..., None]
-        col = col * (1 - line[..., None])
+        LAST_WATER[r0:r1] = inside
         outc = aces(col * p["exposure"])
         out[r0:r1] = np.clip(to_srgb(outc), 0, 1)
     return out
@@ -399,8 +460,8 @@ if __name__ == "__main__":
         out = Path(sys.argv[2])
         out.mkdir(parents=True, exist_ok=True)
         info = {}
-        for name, ppm in (("x3", 60), ("x2", 40)):
-            tile, H = relief_tile(ppm=ppm)
+        for name, ppm, sun in (("x3", 60, SUN), ("x2", 40, SUN), ("x3_d", 60, SUN_D)):
+            tile, H = relief_tile(ppm=ppm, sun=sun)
             save_tile(tile, out / f"relief_{name}.png")
             s = tile.shape[0]
             info[name] = dict(px=s, rgba8_bytes=s * s * 4, astc_4x4_bytes=s * s, png_bytes=(out / f"relief_{name}.png").stat().st_size)
