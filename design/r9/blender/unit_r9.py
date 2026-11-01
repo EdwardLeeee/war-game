@@ -57,6 +57,47 @@ def _bump(m, scale, strength, distance=0.002):
     nt.links.new(b.outputs["Normal"], p.inputs["Normal"])
 
 
+def _plates(m):
+    """east_r8.lamellar's plates, read at phone size (R9 r3: rows of corrugation, no plates; a plate is 1.6 px at 3x):
+    each plate's tone further from the next, its seam darker, each plate tilted a little its own way (the highlight
+    breaks into flecks) and its own roughness (some polished, some dull)."""
+    nt = m.node_tree
+    p = _p(m)
+    nodes = list(nt.nodes)
+    wn = next((n for n in nodes if n.bl_idname == "ShaderNodeTexWhiteNoise"), None)
+    bump = next((n for n in nodes if n.bl_idname == "ShaderNodeBump"), None)
+    if wn is None or bump is None:
+        return
+    g = None
+    for n in nodes:
+        if n.bl_idname != "ShaderNodeMath":
+            continue
+        if n.operation == "MULTIPLY_ADD" and n.inputs[0].is_linked and n.inputs[0].links[0].from_node is wn:
+            n.inputs[1].default_value = 0.55                  # tone plate to plate: 0.72..1.27 (was 0.85..1.15)
+            n.inputs[2].default_value = 0.72
+        if n.operation == "MULTIPLY" and n.inputs[0].is_linked and n.inputs[0].links[0].from_node.bl_idname == "ShaderNodeMath" \
+                and n.inputs[0].links[0].from_node.operation == "LESS_THAN":
+            n.inputs[1].default_value = 0.55                  # the seams darker
+            g = n.inputs[0].links[0].from_node.inputs[0].links[0].from_socket
+    bump.inputs["Strength"].default_value = 0.95
+    if g is not None:                                         # the tilt: (random - 0.5) x (across the plate - 0.5)
+        a = nt.nodes.new("ShaderNodeMath"); a.operation = "SUBTRACT"
+        nt.links.new(wn.outputs["Value"], a.inputs[0]); a.inputs[1].default_value = 0.5
+        b = nt.nodes.new("ShaderNodeMath"); b.operation = "SUBTRACT"
+        nt.links.new(g, b.inputs[0]); b.inputs[1].default_value = 0.5
+        t = nt.nodes.new("ShaderNodeMath"); t.operation = "MULTIPLY"
+        nt.links.new(a.outputs[0], t.inputs[0]); nt.links.new(b.outputs[0], t.inputs[1])
+        h = nt.nodes.new("ShaderNodeMath"); h.operation = "MULTIPLY_ADD"
+        nt.links.new(t.outputs[0], h.inputs[0]); h.inputs[1].default_value = 1.6
+        nt.links.new(bump.inputs["Height"].links[0].from_socket, h.inputs[2])
+        nt.links.new(h.outputs[0], bump.inputs["Height"])
+    r = nt.nodes.new("ShaderNodeMapRange")                     # roughness plate by plate
+    nt.links.new(wn.outputs["Value"], r.inputs["Value"])
+    r.inputs["To Min"].default_value = 0.25
+    r.inputs["To Max"].default_value = 0.68
+    nt.links.new(r.outputs["Result"], p.inputs["Roughness"])
+
+
 def apply(u=None, kind=None):
     print("R9UNIT apply", flush=True)
     cloth = ("team", "linen", "sack", "russet", "ochre", "darkcloth", "tunic", "robe", "cloth", "hessian")
@@ -78,25 +119,23 @@ def apply(u=None, kind=None):
             p.inputs["Roughness"].default_value = max(0.82, p.inputs["Roughness"].default_value)
             _bump(m, 900.0, 0.18)
         elif "skin" in n:
-            p.inputs["Subsurface Weight"].default_value = 0.25
+            # a little light through the skin, no more (R9 r3: more, with the green bounce, gave grey-green flecks)
+            p.inputs["Subsurface Weight"].default_value = 0.1
             p.inputs["Subsurface Radius"].default_value = (0.012, 0.005, 0.003)
         elif "lamellar" in n:
-            for nd in m.node_tree.nodes:
-                if nd.bl_idname == "ShaderNodeBump":
-                    nd.inputs["Strength"].default_value = 0.95
-            if not p.inputs["Roughness"].is_linked:
-                nt = m.node_tree
-                wn = nt.nodes.new("ShaderNodeTexNoise")
-                wn.inputs["Scale"].default_value = 60.0
-                mr = nt.nodes.new("ShaderNodeMapRange")
-                mr.inputs["To Min"].default_value = 0.3
-                mr.inputs["To Max"].default_value = 0.62
-                nt.links.new(wn.outputs["Fac"], mr.inputs["Value"])
-                nt.links.new(mr.outputs["Result"], p.inputs["Roughness"])
+            _plates(m)
+    # R9 r3: the 頓項 one flat slab of the player's colour read as a hood; Tang/Former Shu figures (王建墓 抬棺力士,
+    # ref 06) hang rows of lamellae over the nape: give it the body's lamellar
+    lam = next((info["mat"] for name, info in lib.MATS.items() if name == "lamellar_r8"), None)
+    if lam is not None:
+        for ob in bpy.data.objects:
+            if ob.name.endswith("_r8dunxiang") and ob.type == "MESH":
+                ob.data.materials.clear()
+                ob.data.materials.append(lam)
     # the grass's light thrown back up: a sun shining up from the ground, green-brown, no shadow
     d = bpy.data.lights.new("r9_bounce", "SUN")
-    d.energy = 1.0
-    d.color = (0.62, 0.66, 0.42)
+    d.energy = 0.8
+    d.color = (0.66, 0.62, 0.44)                      # warmer: earth and dry grass as much as green
     d.use_shadow = False
     ob = bpy.data.objects.new("r9_bounce", d)
     ob.rotation_euler = (math.radians(180 - 25), 0, math.radians(30))     # pointing up, a little from the front

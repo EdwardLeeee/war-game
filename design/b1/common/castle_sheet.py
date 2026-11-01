@@ -25,9 +25,10 @@ def _crop(pages, f, scale=1):
     return im
 
 
-def _tint(im, colour, gain):
+def _tint(im, colour):
+    """The client's tint: the team layer already holds colour x team_gain (client/docs/sprite-atlas.md)."""
     r, g, b, a = im.split()
-    ch = [c.point(lambda v, k=k: min(255, int(v * k / 255 * gain))) for c, k in zip((r, g, b), colour)]
+    ch = [c.point(lambda v, k=k: min(255, int(v * k / 255))) for c, k in zip((r, g, b), colour)]
     return Image.merge("RGBA", (*ch, a))
 
 
@@ -86,7 +87,7 @@ def town(adir, c, name):
         img.alpha_composite(_crop(pages["color"], f), (int(sx(ax) - f["ax"]), int(sy(ay) - f["ay"])))
         t = j["team"].get(fr)
         if t:
-            img.alpha_composite(_tint(_crop(pages["team"], t), NEUTRAL, j.get("team_gain", 1.0)),
+            img.alpha_composite(_tint(_crop(pages["team"], t), NEUTRAL),
                                 (int(sx(ax) - t["ax"]), int(sy(ay) - t["ay"])))
     return img
 

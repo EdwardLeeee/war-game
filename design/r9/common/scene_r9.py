@@ -68,9 +68,8 @@ class Atlas:
         if t:
             ti, tx, ty = t
             r, g, b, a = ti.split()
-            gain = self.j.get("team_gain", 1.0)
-            col = TEAM[team]
-            tint = Image.merge("RGBA", tuple(ch.point(lambda v, k=k: min(255, int(v * k / 255 * gain))) for ch, k in zip((r, g, b), col)) + (a,))
+            col = TEAM[team]          # the team layer already holds colour x team_gain; the client only tints it
+            tint = Image.merge("RGBA", tuple(ch.point(lambda v, k=k: min(255, int(v * k / 255))) for ch, k in zip((r, g, b), col)) + (a,))
             im.alpha_composite(tint, (int(round(ax - tx)), int(round(ay - ty))))
         return (im, ax, ay), self._crop("shadow", name)
 
@@ -196,8 +195,46 @@ def b1_sprite(dirpath, name, team="blue"):
     sys.path.insert(0, str(HERE.parents[1] / "b1" / "common"))
     import scene as B1S
     sp = B1S.piece(dirpath, name, "x3", team=team, ppm=PPM)
-    sh = (sp.shadow[0], sp.shadow[1], sp.shadow[2]) if sp.shadow else None
+    sh = None
+    if sp.shadow:                     # as dark as the released atlas's shadows (scene.piece keeps 0.78 of the pass, the
+        a = np.asarray(sp.shadow[0], np.float32).copy()             # atlas ~0.93: R9 r3, the city looked pasted on)
+        a[..., 3] = np.clip(a[..., 3] * (0.93 / 0.78), 0, 255)
+        sh = (Image.fromarray(a.astype(np.uint8), "RGBA"), sp.shadow[1], sp.shadow[2])
     return (sp.img, sp.ax, sp.ay), sh
+
+
+# R9's main city's parts on the ground (main_city_r9.py, metres from the footprint's middle, x east, y north):
+# the hall's platform and steps, the drum tower's base, the side hall's platform
+CITY_FEET = [(-3.0, -1.2, 3.0, 3.2), (-0.7, -2.2, 1.3, -1.2), (-3.8, -3.2, -2.0, -1.4), (2.0, -2.55, 4.0, -0.95)]
+
+
+def city_town(n, cx, cy):
+    """The town weight masks (ground_r8.TOWN_CHANNELS) for a main city whose footprint's middle is at (cx, cy) metres of
+    an n x n window: trampled earth before its steps (the middle two cells, from the platform to a cell past the
+    footprint; not the whole square, which would draw the square again), a lane from there fading out south."""
+    tr = np.zeros((n, n), bool)
+    x0, y0 = int(round(cx / 2)) - 2, int(round(cy / 2)) - 2
+    tr[max(0, y0 + 2):min(n, y0 + 5), max(0, x0 + 1):min(n, x0 + 3)] = True
+    lane = np.zeros((n, n), np.float32)
+    for k, w in enumerate((1.0, 1.0, 0.7, 0.4, 0.15)):
+        y = y0 + 4 + k
+        if y < n:
+            lane[y, max(0, x0 + 1):min(n, x0 + 3)] = w
+    return dict(lane=lane, trampled=tr)
+
+
+def contact_ao(top, cx, cy, feet=CITY_FEET, k=0.42, r=0.35):
+    """Darken the ground at the foot of the walls (ambient light blocked): top-down picture, footprint middle (cx, cy)."""
+    h, w = top.shape[:2]
+    X = (np.arange(w) + 0.5) / PPM - cx
+    Y = cy - (np.arange(h) + 0.5) / PPM
+    X, Y = np.meshgrid(X, Y)
+    d = np.full(X.shape, 1e9)
+    for (x0, y0, x1, y1) in feet:
+        dx = np.maximum(np.maximum(x0 - X, X - x1), 0)
+        dy = np.maximum(np.maximum(y0 - Y, Y - y1), 0)
+        d = np.minimum(d, np.hypot(dx, dy))
+    return top * (1 - k * np.exp(-d / r))[..., None]
 
 
 def unit_sprite(atlas_dir, anim, facing, k, team):
@@ -227,9 +264,19 @@ def scene06(art, gridp, out, city_dir, units_dir, relief, relief_d):
     men = [("idle", 7, 0, "blue", 13.5, 27.0), ("walk", 7, 4, "blue", 15.0, 28.6), ("attack", 7, 5, "blue", 17.0, 27.4),
            ("idle", 1, 0, "blue", 19.5, 22.5)]
     res = {}
+    # 現在: the same screen as the game draws it today (art-v6.3: its ground, its main city, its spearman)
+    before = np.concatenate([G.compose(grid, [], layers, ppm=PPM, rules=rules, rows=(r, min(r + 240, n))) for r in range(0, n, 240)], 0)
+    items, shadows = sprites(art, grid, trees)
+    place(Atlas(art / "buildings" / "buildings_E.json").sprite("main_city_E_done", "blue"), city[0], city[1], items, shadows)
+    for anim, f, k, team, x, y in men:
+        spr, flip = unit_sprite(art / "units" / "spear_e", anim, f, k, team)
+        place(spr, x, y, items, shadows, flip=flip)
+    im = screen(before, items, shadows).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3))
+    im.save(out / "scene06_現在.png")
     for cam in ("甲", "乙"):
         sun, view, rel = (R.SUN, R.VIEW, relief) if cam == "甲" else (R.SUN_D, R.VIEW_D, relief_d)
-        top = R.compose(grid, [], layers, rel, ppm=PPM, rules=rules, sun=sun, view=view)
+        top = R.compose(grid, [], layers, rel, ppm=PPM, rules=rules, sun=sun, view=view, town=city_town(grid.shape[0], *city))
+        top = contact_ao(top, *city)
         items, shadows = sprites(art, grid, trees)
         cs = b1_sprite(city_dir, "main_city_E_r9" if cam == "甲" else "main_city_E_r9_d")
         place(cs, city[0], city[1], items, shadows)
@@ -334,6 +381,25 @@ if __name__ == "__main__":
     what = sys.argv[4] if len(sys.argv) > 4 else "ground"
     if what == "edge":
         scene_edge(art, gridp, out, R.load_tile(HERE.parent / "build" / "relief_x3.png"), sys.argv[5])
+        sys.exit(0)
+    if what == "grass":                                               # open grass, for the unit and the city boards
+        grid = np.zeros((21, 21), np.int32)
+        b, a = ground_pair(art, grid, R.load_tile(HERE.parent / "build" / "relief_x3.png"))
+        for name, top in (("before", b), ("after", a)):
+            R.camera(top).crop((0, 0, SCREEN[0] * 3, SCREEN[1] * 3)).save(out / f"grass_{name}.png")
+        sys.exit(0)
+    if what == "city":                                                # 04: the main city on open ground, before/after
+        grid, city = np.zeros((13, 13), np.int32), (14.0, 16.0)
+        layers, rules = ground_layers(art)
+        relief = R.load_tile(HERE.parent / "build" / "relief_x3.png")
+        n = grid.shape[0] * 2 * PPM
+        b = np.concatenate([G.compose(grid, [], layers, ppm=PPM, rules=rules, rows=(r, min(r + 240, n))) for r in range(0, n, 240)], 0)
+        a = contact_ao(R.compose(grid, [], layers, relief, ppm=PPM, rules=rules, town=city_town(13, *city)), *city)
+        for name, top, spr in (("before", b, Atlas(art / "buildings" / "buildings_E.json").sprite("main_city_E_done", "blue")),
+                               ("after", a, b1_sprite(sys.argv[5], "main_city_E_r9"))):
+            items, shadows = [], []
+            place(spr, city[0], city[1], items, shadows)
+            screen(top, items, shadows).crop((240, 0, 1440, 780)).save(out / f"city_{name}.png")
         sys.exit(0)
     if what == "06":
         B = HERE.parent / "build"
