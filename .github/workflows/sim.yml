@@ -628,6 +628,90 @@ jobs:
           EOF
           node crush.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
+  # push-late-siege (D-115, ceo 2026-10-31: the user's late game in 8d02b76f; war-game-ai's NN v3 and D-099): the
+  # turtle by that game's clock, 1-4 towns governed, 3 siege engines, out with 100 soldiers (--late-siege), against
+  # hard only, games up to 120 minutes, both maps, seeds 1-40 in four jobs each. What the engines did and what
+  # became of each (siege-watch.ts). Reports only, no threshold; its own jobs.
+  scripted-late-siege:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
+    name: scripted late siege (${{ matrix.cell.group }} ${{ matrix.cell.seeds }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        cell:
+          - { group: push-late-siege, seeds: 1-10, args: --strategy push --speed h1 --formation close --late-siege --cap 120 }
+          - { group: push-late-siege, seeds: 11-20, args: --strategy push --speed h1 --formation close --late-siege --cap 120 }
+          - { group: push-late-siege, seeds: 21-30, args: --strategy push --speed h1 --formation close --late-siege --cap 120 }
+          - { group: push-late-siege, seeds: 31-40, args: --strategy push --speed h1 --formation close --late-siege --cap 120 }
+          - { group: push-late-siege-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --map random }
+          - { group: push-late-siege-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --map random }
+          - { group: push-late-siege-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --map random }
+          - { group: push-late-siege-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --map random }
+    env:
+      NAME: siege-hard-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Scripted player (late siege) against the hard AI
+        run: |
+          set -o pipefail
+          node src/scripted-games.ts --seeds ${{ matrix.cell.seeds }} ${{ matrix.cell.args }} --difficulty hard --json "${NAME}.json" | tee -a "${GITHUB_STEP_SUMMARY}"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: sim/${{ env.NAME }}.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # push-late-siege in one table: games won, how many got an engine to hit something (ai's bar: 12 of 40, under 6
+  # useless), when the engines went out, what became of them.
+  scripted-late-siege-summary:
+    needs: [scripted-late-siege]
+    if: always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: siege-*
+          path: siege
+          merge-multiple: true
+      - name: The late siege group
+        run: |
+          set -o pipefail
+          cat > siege.mjs <<'EOF'
+          import { readdirSync, readFileSync } from "node:fs";
+          const rows = [["push-late-siege", "困難，固定地圖"], ["push-late-siege-random", "困難，隨機地圖"]];
+          const med = (l) => (l.length === 0 ? "—" : String([...l].sort((a, b) => a - b)[l.length >> 1]));
+          const min = (t) => Math.round(t / 120) / 10;
+          const out = ["## 後期攻城（push-late-siege）", "", "| 對手、地圖 | 贏／局數 | 砲打到東西 | 帶砲出門（中位數第幾分） | 砲坊蓋好 | 攻城砲：騎兵／遠程／箭樓／其他打掉／還在 | 拆箭樓 | 打死兵 | 局長中位數 |", "|---|---|---|---|---|---|---|---|---|"];
+          for (const [group, name] of rows) {
+            const files = readdirSync("siege").filter((f) => f.replace(/-\d+-\d+\.json$/, "") === `siege-hard-${group}`).map((f) => JSON.parse(readFileSync(`siege/${f}`, "utf8")));
+            const games = files.flatMap((f) => f.games);
+            if (games.length === 0) continue;
+            const s = games.map((x) => x.siege);
+            const went = s.filter((x) => x.out.tick >= 0);
+            const hit = s.filter((x) => x.towers > 0 || x.kills.soldiers > 0 || x.kills.farmers > 0);
+            const engines = s.flatMap((x) => x.engines);
+            const by = (k) => engines.filter((e) => e.by === k).length;
+            out.push(`| ${name} | ${games.filter((x) => x.result === "won").length}/${games.length} | ${hit.length} | ${went.length}（${med(went.map((x) => min(x.out.tick)))}） | ${s.filter((x) => x.worksDone >= 0).length} | ${by("cavalry")}／${by("ranged")}／${by("tower")}／${by("other")}／${engines.filter((e) => e.died < 0).length} | ${s.reduce((a, x) => a + x.towers, 0)} | ${s.reduce((a, x) => a + x.kills.soldiers, 0)} | ${med(games.map((x) => min(x.endTick)))} |`);
+          }
+          out.push("", "砲打到東西：拆掉 1 座以上箭樓或打死 1 名以上。ai 的門檻：每種地圖 12 局，不到 6 局不能用（D-099、NN v3）。");
+          console.log(out.join("\n"));
+          EOF
+          node siege.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
+
   # D-086 A3 (war-game-ai, docs/research/2026-10-ai-late.md): the late group with a squad of 10 that goes
   # for the AI's farmers far from its main city from minute 10 (--late --harass 10; the user's 75830947),
   # on both maps, against normal and hard, seeds 1-40 in two jobs each. Reports only, no threshold; its

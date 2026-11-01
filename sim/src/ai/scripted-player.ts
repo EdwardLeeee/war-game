@@ -215,6 +215,13 @@ export interface Plan {
    * push's, with `townAt` soldiers and no towers by home needed (else TURTLE.tripTowers and ahead).
    */
   earlyTowns: boolean;
+  /**
+   * With the turtle (D-115, ceo 2026-10-31; the user's late game in 8d02b76f, 99 minutes): farmers and arrow towers by
+   * the clock (LATE_SIEGE), at most LATE_SIEGE.governed towns governed, a siege works from LATE_SIEGE.worksAt or with
+   * LATE_SIEGE.worksTowers towers, LATE_SIEGE.engines engines kept up; out only with the towers it should have by then,
+   * LATE_SIEGE.army soldiers and the engines, whatever it has seen of the enemy.
+   */
+  lateSiege: boolean;
 }
 
 /**
@@ -326,6 +333,26 @@ const TURTLE = {
 };
 /** plan.crush: the wave beaten off, the least army and its ratio to the enemy in sight (tenths), how long it remembers that, how near counts. */
 const CRUSH = { wave: 15, min: 30, ratio: 13, seen: 600, near: 14 };
+/** plan.lateSiege (the user's 8d02b76f, ai's replay): (minute, farmers), (minute, arrow towers), straight between. */
+const LATE_SIEGE = {
+  farmers: [[30, 60], [60, 80], [90, 85]] as [number, number][],
+  towers: [[14, 0], [20, 7], [25, 10], [30, 20], [45, 24], [60, 31], [90, 40]] as [number, number][],
+  governed: 4,
+  worksAt: 60 * 1200,
+  worksTowers: 31,
+  engines: 3,
+  army: 100,
+};
+/** A value by the clock from (minute, value) pairs: straight between them, the first before them, the last after. */
+function byClock(table: [number, number][], tick: number): number {
+  if (tick < table[0][0] * 1200) return table[0][1];
+  for (let k = 1; k < table.length; k++) {
+    const [t1, v1] = table[k];
+    const [t0, v0] = table[k - 1];
+    if (tick < t1 * 1200) return v0 + Math.trunc(((tick - t0 * 1200) * (v1 - v0)) / ((t1 - t0) * 1200));
+  }
+  return table[table.length - 1][1];
+}
 /** plan.turtle: the towers by home it wants at this tick. */
 function turtleTowers(tick: number): number {
   const m = TURTLE.towers;
@@ -469,6 +496,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     turtle: false,
     crush: false,
     earlyTowns: false,
+    lateSiege: false,
   };
 }
 
@@ -799,6 +827,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         }
       }
 
+      /** Farmers it wants now; arrow towers it wants now, and those standing (plan.lateSiege: anywhere). */
+      const wantFarmers = plan.lateSiege ? byClock(LATE_SIEGE.farmers, tick) : plan.farmers;
+      const wantTowers = plan.lateSiege ? byClock(LATE_SIEGE.towers, tick) : turtleTowers(tick);
+
       // --- economy (the AI's) -----------------------------------------------------------------
       // A cavalry rush (plan.raid) mines gold from the start: cavalry cost 70 gold each.
       const ratio =
@@ -849,9 +881,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         ratio[2] = 20;
       }
       // plan.turtle (D-086 A5): food first while it is short of its farmers before TURTLE.boomBy (the user's boom).
-      if (plan.turtle && tick < TURTLE.boomBy && farmers.length < plan.farmers) for (let k = 0; k < 3; k++) ratio[k] = TURTLE.boomFood[k];
+      if (plan.turtle && tick < TURTLE.boomBy && farmers.length < wantFarmers) for (let k = 0; k < 3; k++) ratio[k] = TURTLE.boomFood[k];
       // plan.turtle (D-086 A5): wood first while the towers by home are behind the clock (60 wood, 20 gold each).
-      if (plan.turtle && own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, home.cellX, home.cellY) <= TURTLE.homeR * TURTLE.homeR).length < turtleTowers(tick) && res.wood < 200) {
+      if (plan.turtle && own.filter((b) => b.type === BuildingType.ArrowTower && (plan.lateSiege || dist2(b.x, b.y, home.cellX, home.cellY) <= TURTLE.homeR * TURTLE.homeR)).length < wantTowers && res.wood < 200) {
         ratio[0] = 30;
         ratio[1] = 55;
         ratio[2] = 15;
@@ -897,7 +929,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
       // A cavalry rush (plan.raid) stops at 14 farmers until its first raid has set off.
-      const farmerGoal = plan.raid > 0 && raids === 0 ? Math.min(plan.farmers, 14) : plan.farmers;
+      const farmerGoal = plan.raid > 0 && raids === 0 ? Math.min(wantFarmers, 14) : wantFarmers;
       if (main && main.queue < 2 && farmers.length + main.queue < farmerGoal && room > 0 && afford(farmerCost)) {
         out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
         spend(farmerCost);
@@ -960,8 +992,11 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           for (const b of done(BuildingType.Mine)) {
             if (dist2(b.x, b.y, home.cellX, home.cellY) > TURTLE.homeR * TURTLE.homeR && goldBy(b.x, b.y) > 0 && near(b.x, b.y, 12) < TURTLE.townTowers) add(BuildingType.ArrowTower, { x: b.x, y: b.y }, true);
           }
-          const byHome = near(home.cellX, home.cellY, TURTLE.homeR);
-          if (byHome < turtleTowers(tick)) add(BuildingType.ArrowTower, turtleAt[byHome % turtleAt.length]);
+          // plan.lateSiege: the siege works first, and towers by its outposts too (their land, TOWER_REACH.outpost).
+          if (plan.lateSiege && rules.features?.siege === true && !has(BuildingType.SiegeWorks) && (tick >= LATE_SIEGE.worksAt || count(BuildingType.ArrowTower) >= LATE_SIEGE.worksTowers)) add(BuildingType.SiegeWorks, rally);
+          const byHome = plan.lateSiege ? count(BuildingType.ArrowTower) : near(home.cellX, home.cellY, TURTLE.homeR);
+          const towerSpots = plan.lateSiege ? [...turtleAt, ...done(BuildingType.Outpost).map((b) => ({ x: b.x, y: b.y }))] : turtleAt;
+          if (byHome < wantTowers) add(BuildingType.ArrowTower, towerSpots[byHome % towerSpots.length]);
           for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
             if (view.towns[r + TownField.owner] !== player || view.towns[r + TownField.state] !== TownState.Governed) continue;
             const t = townOf(view.towns[r + TownField.id]);
@@ -1020,6 +1055,17 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       if (raidFirst) trainAt(BuildingType.Stable, UnitType.Cavalry);
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
       if (mages + hallQueue < rules.mageCap && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage);
+      // plan.lateSiege: its engines before the rest, what they cost kept from it.
+      if (plan.lateSiege && done(BuildingType.SiegeWorks).length > 0) {
+        const c = rules.units[UnitType.Siege].cost;
+        if (soldiers.filter((u) => u.type === UnitType.Siege).length + done(BuildingType.SiegeWorks).reduce((a, b) => a + b.queue, 0) < LATE_SIEGE.engines) {
+          if (afford(c)) trainAt(BuildingType.SiegeWorks, UnitType.Siege);
+          else {
+            reserve.wood += c.wood;
+            reserve.gold += c.gold;
+          }
+        }
+      }
       if (plan.cavalryShare > 0 && (cavalry.length + stableQueue) * 100 < plan.cavalryShare * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
       if (raidFirst) {
         // Spearmen and ranged wait for the raiders.
@@ -1715,8 +1761,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         // plan.turtle (D-086 A5): the big city too, once the army is TURTLE.bigAt strong (small towns first);
         // neutral towns only, never one the enemy holds (its army is about).
         const big = plan.turtle && army.length >= TURTLE.bigAt;
+        // plan.lateSiege: no more once it governs LATE_SIEGE.governed.
+        const enough = plan.lateSiege && [...towns.values()].filter((x) => x.owner === player && (x.state === TownState.Governed || x.state === TownState.Repairing)).length >= LATE_SIEGE.governed;
         const open = known
-          .filter((x) => (x.size === TownSize.Small || big) && !ours(towns.get(x.id)!) && !blocked(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
+          .filter((x) => !enough && (x.size === TownSize.Small || big) && !ours(towns.get(x.id)!) && !blocked(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
           .filter((x) => !plan.turtle || towns.get(x.id)!.state === TownState.Neutral)
           .sort((a, b) => a.size - b.size || dist2(a.cellX, a.cellY, home.cellX, home.cellY) - dist2(b.cellX, b.cellY, home.cellX, home.cellY) || a.id - b.id);
         aim = open[0] ?? myTown;
@@ -1790,7 +1838,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const ahead = !plan.pushAhead || army.length > seenFoes.reduce((a, x) => Math.max(a, x.n), 0);
       // plan.turtle (D-086 A5): a town trip only with TURTLE.tripTowers towers standing by home.
       const towersByHome = done(BuildingType.ArrowTower).filter((b) => dist2(b.x, b.y, home.cellX, home.cellY) <= TURTLE.homeR * TURTLE.homeR).length;
-      const go = !holding && found >= 0 && (rushPush || (counterReady && army.length >= plan.counterAt && ahead) || (plan.pushAt > 0 && army.length >= plan.pushAt && ahead));
+      // plan.lateSiege: the towers (at most LATE_SIEGE.worksTowers), the soldiers and the engines, whatever it saw of the enemy.
+      const lateReady =
+        done(BuildingType.ArrowTower).length >= Math.min(wantTowers, LATE_SIEGE.worksTowers) && army.length >= LATE_SIEGE.army && soldiers.filter((u) => u.type === UnitType.Siege).length >= LATE_SIEGE.engines;
+      const go = !holding && found >= 0 && (plan.lateSiege ? lateReady : rushPush || (counterReady && army.length >= plan.counterAt && ahead) || (plan.pushAt > 0 && army.length >= plan.pushAt && ahead));
       if (go) rushPush = false;
       const townOpen =
         t !== undefined &&
