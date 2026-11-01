@@ -35,40 +35,7 @@
 
 import { type Frame, footprintCentre, fromCanon, rectFromCanon, spawnCentre, toCanon } from "../frame.ts";
 import { checkPlacement } from "../placement.ts";
-import {
-  Action,
-  type AiDifficulty,
-  BUILDING_STRIDE,
-  BuildingField,
-  BuildingFlag,
-  BuildingType,
-  CELL,
-  CELL_SHIFT,
-  type CommandBody,
-  type Cost,
-  Fog,
-  HeaderField,
-  type MapInfo,
-  NEUTRAL,
-  NODE_STRIDE,
-  NodeField,
-  NodeKind,
-  Order,
-  PlaceBit,
-  type Rules,
-  TOWN_STRIDE,
-  TownChoice,
-  TownField,
-  TownFlag,
-  TownSize,
-  TownState,
-  UNIT_STRIDE,
-  UnitField,
-  UnitFlag,
-  UnitType,
-  WARNING_STRIDE,
-  WarningField,
-} from "../protocol.ts";
+import { Action, type AiDifficulty, BUILDING_STRIDE, BuildingField, BuildingFlag, BuildingType, CELL, CELL_SHIFT, type CommandBody, type Cost, Fog, HeaderField, type MapInfo, NEUTRAL, NODE_STRIDE, NodeField, NodeKind, Order, PlaceBit, Resource, type Rules, TOWN_STRIDE, TownChoice, TownField, TownFlag, TownSize, TownState, UNIT_STRIDE, UnitField, UnitFlag, UnitType, WARNING_STRIDE, WarningField } from "../protocol.ts";
 import { Rng } from "../core/fixed.ts";
 import { ARMY_BASE, AS_HARD, BUILD_FARMERS, BUILD_PRODUCTION, choose, features, HEAD_ARMY, HEAD_BUILD, HEAD_MIX, HEAD_TOWN, type NetWeights, TOWN_GOVERN } from "./net.ts";
 import type { PlayerView } from "../view/view.ts";
@@ -355,6 +322,18 @@ const FORT_FORGET = 5 * 1200;
 export const NORMAL_FORT = { stage: true, again: true };
 const FORT_FAILED_AGAIN = 200;
 const FORT_FORGET_AGAIN = 10 * 1200;
+/** D-086 A9 (plan.fortExit): this share of the army that broke off (percent) goes again; lost to the same forts this many times in a row, the memory holds again. */
+const FORT_EXIT_MORE = 120;
+const FORT_LOST_MOST = 2;
+/** D-101 (plan.market): prices past DEAR (gold a lot) it does not buy at, under CHEAP it does not sell at; how often it trades (ticks); wood over the market's cost it keeps; gold from which price is no bar. */
+const MARKET_DEAR = 150;
+const MARKET_CHEAP = 80;
+const MARKET_EVERY = 100;
+const MARKET_WOOD_SPARE = 50;
+const MARKET_RICH = 3000;
+/** D-086 A9 (plan.pileFarmers): food and gold together at this or more, wood under PILE_WOOD. */
+const PILE_RICH = 4000;
+const PILE_WOOD = 500;
 /** fortStage: the gathering point at most this many cells beyond the reach of the group's forts (and 2 at least, as stagePoint). */
 const FORT_STAGE_OUT = 6;
 /** fortStage: the group it gathers for, the point, when it set off for it and the first got there, and whether it went on. */
@@ -2822,6 +2801,36 @@ export interface HardPlan {
   fortStage: boolean;
   /** D-081 / A4: after breaking off from forts, the next go takes FORT_FAILED_AGAIN of that army, remembered FORT_FORGET_AGAIN (false: FORT_FAILED, FORT_FORGET). */
   fortAgain: boolean;
+  /**
+   * D-101 (MARKET on; ceo 2026-10-29: only to make hard stronger; sell only what lies unused, buy only what holds it up).
+   * With a granary and wood to spare for it (not saved up for), a market; then, at most every MARKET_EVERY, wood bought
+   * with gold when wood is under marketWoodLow and gold at marketGoldSpare or more (keeping half of that), food sold when
+   * food is at marketFoodPile or more and gold under marketGoldLow, a lot or two at a time, at no more than MARKET_DEAR
+   * nor less than MARKET_CHEAP; with gold at MARKET_RICH or more up to five lots at any price (the user's 8d02b76f,
+   * minute 90: food 22205, gold 19223, wood 18; D-114 measured it to minute 60 only) (false: no market, as before).
+   */
+  market: boolean;
+  marketWoodLow: number;
+  marketGoldSpare: number;
+  marketFoodPile: number;
+  marketGoldLow: number;
+  /** D-086 A9 (ceo 2026-10-31): this many farmers more while food and gold are at PILE_RICH or more and wood under PILE_WOOD (8d02b76f: 42 farmers all game, the user 85) (0: as before). */
+  pileFarmers: number;
+  /**
+   * D-086 A9 (ceo 2026-10-31; the user's 8d02b76f, minutes 60-80: 248 soldiers turned back 70 times, every 0.5 s at
+   * worst). routeFromArmy: whether a march or a town trip is clear of forts too strong for it is asked from where the
+   * army stands, as it is on the way (false: from its main city, as before: clear from there and not from the army,
+   * it set out and turned back at every think).
+   */
+  routeFromArmy: boolean;
+  /**
+   * D-086 A9 (same game: forts worth 180-360 barred an army worth 1912 at its population ceiling, which could never
+   * field the 2 x of the army that broke off, and every turn back wrote the memory again). fortExit: the memory of a
+   * break-off holds no army back that is this many times what the forts and the enemy by them ask, nor one 1.2 x
+   * the army that broke off, nor one with its population full; only forts it really fought (a tenth of those that
+   * set out gone) are remembered; after FORT_LOST_MOST lost in a row the memory holds again (0: as before).
+   */
+  fortExit: number;
 }
 
 export const HARD: HardPlan = {
@@ -2922,6 +2931,17 @@ export const HARD: HardPlan = {
   buildSafe: true,
   fortStage: true,
   fortAgain: true,
+  // D-086 A9 (ceo 2026-11-01; a10b, run 41202058166, the rules of #334, 120 minutes): both. Hard against hard on random
+  // maps, an army's turns back 11.1 -> 2.3 a side (most 715 -> 65), draws 1 -> 0; against normal 94/89% as before; the
+  // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
+  routeFromArmy: true,
+  fortExit: 3,
+  market: false,
+  marketWoodLow: 60,
+  marketGoldSpare: 400,
+  marketFoodPile: 1500,
+  marketGoldLow: 150,
+  pileFarmers: 0,
 };
 /** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
 const TOWN_SCOUT_AGAIN = 2 * 1200;
@@ -3200,6 +3220,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** What the army that set out was worth against forts (D-081: a break-off remembers that, not what is left). */
   let marchWorth = 0;
   const failedAt = new Map<number, Failed>();
+  /** D-086 A9 (plan.fortExit): forts it really fought and broke off from: how many times in a row, the last when. */
+  const fortLost = new Map<number, { n: number; tick: number }>();
+  /** D-101 (plan.market): when it last traded. */
+  let lastTrade = -100000;
   /** Falling back round forts (aroundForts): the point first, and until when. */
   let via: { x: number; y: number; until: number } | null = null;
   /** Towns it fell back from because of forts (D-081, ceo 2026-10-10): the forts, and when. */
@@ -3236,7 +3260,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { lumberLost: 0, marketBuilt: 0, marketBought: 0, marketSold: 0, pileFarmerThinks: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3696,7 +3720,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
       // D-086 A: more while wood is short and food and gold pile up; D-086 B: the network's "farmers first", a few more.
-      const farmersWanted = farmerTarget + (woodShort ? plan.woodFarmers : 0) + (netChoice !== null && netChoice[HEAD_BUILD] === BUILD_FARMERS ? NET_FARMERS : 0);
+      // D-086 A9 (plan.pileFarmers): food and gold piling up and wood short: more hands on it.
+      const piling = plan.pileFarmers > 0 && res.food + res.gold >= PILE_RICH && res.wood < PILE_WOOD;
+      if (piling) counted.pileFarmerThinks++;
+      const farmersWanted = farmerTarget + (woodShort ? plan.woodFarmers : 0) + (piling ? plan.pileFarmers : 0) + (netChoice !== null && netChoice[HEAD_BUILD] === BUILD_FARMERS ? NET_FARMERS : 0);
       let farmerQueued = false;
       if (main && main.queue < 2 && farmers.length + main.queue < farmersWanted && room > 0 && afford(farmerCost)) {
         out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
@@ -4092,6 +4119,44 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
       }
       veinCrew = veinCrew.filter((id) => farmers.some((f) => f.id === id && f.order === Order.Gather));
+      // D-101 (plan.market): a market with what is left once farmers and soldiers are trained (and what it saves up for
+      // kept aside), never saved up for itself: wood is what it lacks. With a granary, and gold to use.
+      const marketCost = rules.buildings[BuildingType.Market]?.cost;
+      if (
+        plan.market && rules.features?.market === true && marketCost !== undefined && !has(BuildingType.Market) && has(BuildingType.Granary) &&
+        gatherers.length >= 2 && own.filter((b) => b.progress < 1000).length < plan.sites &&
+        res.wood - reserve.wood >= marketCost.wood + MARKET_WOOD_SPARE && res.gold - reserve.gold >= marketCost.gold + plan.marketGoldSpare
+      ) {
+        const spot = spotNear(view, BuildingType.Market, home.cellX, home.cellY, 20);
+        if (spot !== null) {
+          out.push({ c: "build", u: gatherers.slice(0, 2), type: BuildingType.Market, x: spot.x, y: spot.y });
+          gatherers.splice(0, 2);
+          spend(marketCost);
+          counted.marketBuilt++;
+        }
+      }
+      // D-101 (plan.market): what lies unused for what holds it up, at its own prices (the view's header).
+      if (plan.market && rules.features?.market === true && rules.market !== undefined && done(BuildingType.Market).length > 0 && tick - lastTrade >= MARKET_EVERY) {
+        const m = rules.market;
+        const foodP = h[HeaderField.priceFood];
+        const woodP = h[HeaderField.priceWood];
+        const lotsFor = (n: number) => Math.max(0, Math.min(res.gold >= MARKET_RICH ? m.maxLots : 2, m.maxLots, n));
+        const trade = (resource: number, buy: boolean, lots: number) => {
+          if (lots <= 0) return false;
+          out.push({ c: "trade", resource, buy, lots });
+          lastTrade = tick;
+          counted[buy ? "marketBought" : "marketSold"] += lots;
+          return true;
+        };
+        const gold = res.gold - reserve.gold;
+        if (res.wood < plan.marketWoodLow && gold >= plan.marketGoldSpare && (woodP <= MARKET_DEAR || gold >= MARKET_RICH)) {
+          // Wood holds it up: bought with the gold over half of marketGoldSpare (and what it saves up for).
+          trade(Resource.Wood, true, lotsFor(Math.trunc((gold - plan.marketGoldSpare / 2) / Math.max(1, woodP + m.step))));
+        } else if (res.food >= plan.marketFoodPile && res.gold < plan.marketGoldLow && foodP >= MARKET_CHEAP) {
+          // Food lies unused and gold is short: sold (70% of its price), down to half of marketFoodPile.
+          trade(Resource.Food, false, lotsFor(Math.trunc((res.food - plan.marketFoodPile / 2) / m.lot)));
+        }
+      }
       // D-086 A5 (plan.behind): crystal piled up: those on it back to the ratio (wood, food and gold).
       // D-086 A6 (plan.crystalStop): its mages at the cap and the crystal for CRYSTAL_ENOUGH more: none on it either.
       const enough = plan.crystalStop && mageRoom <= 0 && res.crystal >= CRYSTAL_ENOUGH * mageCost.crystal;
@@ -4702,6 +4767,17 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           return w;
         };
         const vsForts = (list: { type: number }[]) => list.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+        /** D-086 A9 (plan.fortExit): a break-off's memory lifted for an army of worth `w`: `need` is what the forts and the enemy by them ask (tenths). */
+        const memoryLifted = (w: number, need: number, failed: number, ids: readonly number[]) => {
+          if (plan.fortExit <= 0) return false;
+          for (const id of ids) {
+            const l = fortLost.get(id);
+            if (l !== undefined && l.n >= FORT_LOST_MOST && tick - l.tick < fortForget) return false;
+          }
+          return (cap >= ceiling && pop >= cap - FULL_MARGIN) || w * 100 >= failed * FORT_EXIT_MORE || w * 10 >= need * plan.fortExit;
+        };
+        /** D-086 A9 (plan.fortExit): a tenth of those that set out are gone: it really fought. */
+        const fought = (list: { type: number }[]) => plan.fortExit <= 0 || list.length * 10 < armyAtStart * 9;
         /** Stronger than a group and the enemy soldiers by it, and than the army that broke off from it before (FORT_FAILED). */
         // `by`: tenths of the enemy army by them it must match, `again`: percent of an army that broke off by them
         // (13 and FORT_FAILED; D-086 A6, behind on towns, 10 and 100: in 9170fab0 a group worth 90 barred 900 for 7
@@ -4715,7 +4791,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           }
           // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
           // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
-          return w * 10 >= g.worth * 10 + armyBy(g) * by && w * 100 >= failed * again;
+          const need = g.worth * 10 + armyBy(g) * by;
+          return w * 10 >= need && (w * 100 >= failed * again || memoryLifted(w, need, failed, g.ids));
         };
         /** The groups too strong for `list` (not the siege's). */
         const tooStrong = (list: { type: number }[], by = 13, again = fortFailed) => groups.filter((g) => !bySiege(g) && !beats(g, list, by, again));
@@ -4725,7 +4802,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const remember = (list: { type: number }[], near: FortGroup[]) => {
           // The army that set out, not what is left of it.
           const w = Math.max(vsForts(list), marchWorth);
-          for (const g of near) for (const id of g.ids) failedAt.set(id, { worth: Math.max(failedAt.get(id)?.worth ?? 0, w), tick });
+          for (const g of near) {
+            for (const id of g.ids) {
+              failedAt.set(id, { worth: Math.max(failedAt.get(id)?.worth ?? 0, w), tick });
+              const l = fortLost.get(id);
+              fortLost.set(id, { n: l !== undefined && tick - l.tick < fortForget ? l.n + 1 : 1, tick });
+            }
+          }
         };
         /** The groups whose arrows or guards reach (x, y), and the one `f` is in. */
         const covering = (x: number, y: number, f?: Fort) =>
@@ -4754,7 +4837,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const g = groupOf(f);
           const army = worth(foesNear(c.x, c.y, FORT_GUARDS).filter((e) => e.order !== Order.Post));
           const w = vsForts(list);
-          return w * 10 >= (g === undefined ? 0 : g.worth) * 10 + army * 13 && w * 100 >= failedBy(f) * fortFailed;
+          const need = (g === undefined ? 0 : g.worth) * 10 + army * 13;
+          const failed = failedBy(f);
+          return w * 10 >= need && (w * 100 >= failed * fortFailed || memoryLifted(w, need, failed, [f.id]));
         };
         /** Fell back from town `id` because of forts, and they are still too strong for the army (with FORT_FAILED within FORT_FORGET). */
         const fortsBar = (id: number, by = 13, again = fortFailed) => {
@@ -4867,7 +4952,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             gateAim = -1;
             // D-081 / A4 (plan.fortStage): broke off from the forts it gathered for: remembered too.
             const stopped = fortStop;
-            remember(army, stopped !== null && stopped.go ? [...byArmy, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byArmy);
+            if (fought(army)) remember(army, stopped !== null && stopped.go ? [...byArmy, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byArmy);
             fortStop = null;
             if (byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
             // D-081: not straight back to the same town (in 03a70878, 13 orders between it and home in 12 s).
@@ -4879,7 +4964,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const ahead = groupsOnWay(tooStrong(army, tb, ta), ac, t);
             if (ahead.length > 0) {
               razing = -1;
-              remember(army, ahead);
+              if (plan.fortExit <= 0) remember(army, ahead);
               townForts.set(targetTown, { ids: ahead.flatMap((g) => g.ids), tick });
               if (plan.townRest > 0) townRest.set(targetTown, tick + plan.townRest * TICKS_PER_MINUTE);
               fallBackPast(ahead, ac);
@@ -4953,7 +5038,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             cityFailedAt = tick;
             // D-081 / A4 (plan.fortStage): broke off from the forts it gathered for: remembered too.
             const stopped = fortStop;
-            remember(front, stopped !== null && stopped.go ? [...byFront, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byFront);
+            if (fought(front)) remember(front, stopped !== null && stopped.go ? [...byFront, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byFront);
             fortStop = null;
             counterReady = false;
             razing = -1;
@@ -4966,7 +5051,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (frontIds.length > 0 && !endgame) {
             const ahead = groupsOnWay(tooStrong(front), fc, enemy);
             if (ahead.length > 0) {
-              remember(front, ahead);
+              if (plan.fortExit <= 0) remember(front, ahead);
               counterReady = false;
               razing = -1;
               reservesRazing = -1;
@@ -5144,7 +5229,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const netArmy = netChoice === null || endgame || assault || netChoice[HEAD_ARMY] === AS_HARD ? -1 : netChoice[HEAD_ARMY];
         const go = netArmy < 0 ? hardGo : netArmy === ARMY_BASE && mem.known !== Known.None && army.length >= plan.netMarch;
         // Forts on the way too strong for the army (D-081): round them, or not to the base this time.
-        const toBase = go ? routeFor({ x: home.cellX, y: home.cellY }, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
+        // D-086 A9 (plan.routeFromArmy): from where the army stands.
+        const routeFrom = plan.routeFromArmy ? ac : { x: home.cellX, y: home.cellY };
+        const toBase = go ? routeFor(routeFrom, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
         if (go && toBase!.go) {
           labels[HEAD_ARMY] = 2;
           armyAtStart = army.length;
@@ -5214,7 +5301,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               continue;
             }
             // D-081: not where forts too strong for it stand on the way or by the town, unless it can go round.
-            if (groups.length > 0 && !routeFor({ x: home.cellX, y: home.cellY }, t, army, even, evenAgain).go) continue;
+            if (groups.length > 0 && !routeFor(routeFrom, t, army, even, evenAgain).go) continue;
             // Nor back to one it fell back from because of forts, while it remembers them (ceo 2026-10-10: the straight way
             // from home can miss forts the walk passes by; in 931495929 it went to and fro for 12 minutes).
             if (fortsBar(id, even, evenAgain)) continue;
