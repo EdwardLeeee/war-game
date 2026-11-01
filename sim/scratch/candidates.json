@@ -1,0 +1,29 @@
+{
+ "traces": [
+  {
+   "name": "w-0",
+   "script": "wavetrace.ts",
+   "args": "../src 2:1,13:0,32:1,49:0 hard,normal fixed 9 35 1",
+   "a": {}
+  },
+  {
+   "name": "w-1",
+   "script": "wavetrace.ts",
+   "args": "../src 7:1,15:0,42:0 hard,normal fixed 9 35 1",
+   "a": {}
+  },
+  {
+   "name": "w-2",
+   "script": "wavetrace.ts",
+   "args": "../src 9:0,19:0,44:0 hard,normal fixed 9 35 1",
+   "a": {}
+  },
+  {
+   "name": "w-3",
+   "script": "wavetrace.ts",
+   "args": "../src 9:1,20:1,44:1 hard,normal fixed 9 35 1",
+   "a": {}
+  }
+ ],
+ "scripted": []
+}
