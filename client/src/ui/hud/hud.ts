@@ -817,6 +817,13 @@ export class Hud {
       }, "secondary");
       b.setAttribute("aria-pressed", ground ? "true" : "false");
     }
+    // 電影色調 開／關 (the user 2026-11-02, R9-05 B): the player's, at once, remembered on this device; off by default.
+    const grade = this.game.gradeSwitch();
+    const gb = btn(list, `電影色調：${grade ? "開" : "關"}`, () => {
+      this.game.toggleGrade();
+      this.openMenu();
+    }, "secondary");
+    gb.setAttribute("aria-pressed", grade ? "true" : "false");
     // 介面風格 comes with 正式介面 (ceo 2026-10-19).
     if (this.formal) btn(list, "設定", () => this.openSettings(), "secondary");
     btn(list, "量測與確定性檢查", () => {

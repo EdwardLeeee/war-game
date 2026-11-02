@@ -25,7 +25,7 @@ import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts"
 import { type Culture, cultureOf, SIEGE_ATLASES } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
-import { type Projection, PROJECTIONS } from "../camera/projection.ts";
+import { type Projection, PROJECTIONS, VIEW_DEFAULT } from "../camera/projection.ts";
 import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
@@ -76,7 +76,9 @@ import {
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
+import { loadGradeOn, saveGradeOn } from "../grade-pref.ts";
 import { loadGroundOn, saveGroundOn } from "../ground-pref.ts";
+import { filmGradeOn, setFilmGrade } from "../render/film-grade.ts";
 import { PendingOrders } from "./pending.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
@@ -213,8 +215,8 @@ export function headerAutoTrain(log: string): boolean[] | null {
   }
 }
 
-/** How the ground is laid on the screen: 方形斜看 since art-v3 is drawn for it (D-088); the diamond (D-085) on test pages only (?view=diamond). */
-const PROJECTION_DEFAULT = PROJECTIONS.oblique;
+/** How the ground is laid on the screen (projection.ts VIEW_DEFAULT); another on test pages (?view=). */
+const PROJECTION_DEFAULT = PROJECTIONS[VIEW_DEFAULT];
 /** Orders that end a soldier's attack on a town (攻城打到底, assault.ts); 攻擊 starts one again. */
 const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "guard", "post", "gather", "build", "repair", "release"]);
 
@@ -276,6 +278,8 @@ export class Game implements GestureHost {
     this.app = app;
     this.port = port;
     this.options = options;
+    // 電影色調 as this device has it (the canvas outlives a game).
+    setFilmGrade(app, loadGradeOn());
     // The fake world trains nothing by itself (mock/): the screen's 自動訓練 only when a test turns it on.
     this.autoArmyOn = !options.fake;
     this.tps = options.tps;
@@ -599,6 +603,24 @@ export class Game implements GestureHost {
     saveGroundOn(on);
     this.renderer?.showGround(on);
     this.toast(on ? "寫實地面：開" : "寫實地面：關（這台裝置記住了）", "ok");
+  }
+
+  /** 選單's 電影色調 開／關 (the user 2026-11-02, R9-05 B): on or off, as this device has it. */
+  gradeSwitch(): boolean {
+    return loadGradeOn();
+  }
+
+  /** 電影色調 on or off, at once, and remembered on this device (grade-pref.ts). */
+  toggleGrade(): void {
+    const on = !loadGradeOn();
+    saveGradeOn(on);
+    setFilmGrade(this.app, on);
+    this.toast(on ? "電影色調：開（這台裝置記住了）" : "電影色調：關（這台裝置記住了）", "ok");
+  }
+
+  /** Whether the film grade is over the battlefield now (the test page). */
+  get filmGradeForTest(): boolean {
+    return filmGradeOn(this.app);
   }
 
   /** 寫實地面's quality (the 量測 panel, the test page). */
