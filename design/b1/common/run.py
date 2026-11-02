@@ -383,6 +383,21 @@ LOOK["r9_city"] = "r8"
 TARGETS["r9_city_d"] = [dict(kind="r9_main_city", culture="E", name="main_city_E_r9_d")]
 CAMERA["r9_city_d"] = proj.DIAMOND
 LOOK["r9_city_d"] = "r8"
+# R11 (ceo 2026-11-02: the user chose 乙 菱形斜看): the trees, the rocks and the bridge on the diamond camera, for the trial
+TARGETS["r11_nodes_d"] = [dict(kind="r8_tree", culture="E", opts=dict(variant=v), name=f"tree_E_v{v}_d") for v in (0, 1, 2)]
+TARGETS["r11_terrain_d"] = ([dict(kind="r8_rock", culture="E", opts=dict(variant=v), name=f"terrain_rock_v{v}_d") for v in range(6)]
+                            + [dict(kind="r8_bridge_deck", culture="E", opts=dict(axis=a), name=f"terrain_bridge_deck_{a}_d")
+                               for a in ("ns", "ew")]
+                            + [dict(kind="r8_bridge_rail", culture="E", opts=dict(axis=a), name=f"terrain_bridge_rail_{a}_d")
+                               for a in ("x", "y")])
+# R11-06 the floating continent's edge (r11/blender/edge_r11.py): the wall in two styles, three far islands
+TARGETS["r11_edge_d"] = ([dict(kind="r11_edge", culture="E", opts=dict(style=st, part=pt), name=f"edge_{st}{pt}_d")
+                          for st in ("A", "B") for pt in (-1, 0, 1, 2, 3)]
+                         + [dict(kind="r11_isle", culture="E", opts=dict(size=sz, seed=sd), name=f"isle_{k}_d")
+                            for k, (sz, sd) in enumerate(((5.0, 7), (3.5, 11), (2.4, 19)))])
+for _t in ("r11_nodes_d", "r11_terrain_d", "r11_edge_d"):
+    CAMERA[_t] = proj.DIAMOND
+    LOOK[_t] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
 # replaces these pieces of the r8p run in the atlas
 TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in

@@ -42,7 +42,7 @@ TEAM = {
     "red": (200, 48, 44),      # 敵方 布倫莫爾
 }
 
-MEM_MAX = "1500M"
+MEM_MAX = os.environ.get("MEM_MAX", "1500M")       # a local render may ask for more (the user 2026-11-03: memory is plentiful)
 MIN_AVAILABLE_MB = 2000
 
 

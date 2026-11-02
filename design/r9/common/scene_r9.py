@@ -88,8 +88,18 @@ def screen(top, items, shadows, water=None, reflect=()):
     items: (front_y_m, image, (x_px, y_px)); shadows: (image, (x_px, y_px)) in screen pixels.
     water: the compose's water mask (top-down); reflect: (image, (x_px, y_px) of its foot) mirrored into the water."""
     cam = R.camera(top).convert("RGBA")
-    if water is not None and reflect:
-        wm = Image.fromarray((np.clip(water, 0, 1) * 255).astype(np.uint8), "L").resize(cam.size, Image.BILINEAR)
+    wm = None
+    if water is not None:
+        wm = np.asarray(Image.fromarray((np.clip(water, 0, 1) * 255).astype(np.uint8), "L").resize(cam.size, Image.BILINEAR),
+                        np.float32) / 255.0
+    return screen_layers(cam, items, shadows, wm, reflect).convert("RGB")
+
+
+def screen_layers(cam, items, shadows, wm=None, reflect=()):
+    """screen()'s layers over a ground already on the screen (RGBA; R11's diamond turns it itself): reflections in the
+    water (wm: the water mask on the screen, 0..1, or None), shadows, sprites by their front edge. Returns RGBA."""
+    cam = cam.copy()
+    if wm is not None and reflect:
         layer = Image.new("RGBA", cam.size, (0, 0, 0, 0))
         rng = np.random.default_rng(5)
         for im, (fx, fy) in reflect:
@@ -108,33 +118,38 @@ def screen(top, items, shadows, water=None, reflect=()):
                 if drop[r] < 0.55 * d:
                     a[r, :, 3] *= 0.2
             fl = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGBA").resize((fl.width, int(fl.height * 0.9)))
-            layer.alpha_composite(fl, (int(fx), int(fy))) if fx >= 0 and fy >= 0 else _paste(layer, fl, (int(fx), int(fy)))
+            _paste(layer, fl, (int(fx), int(fy)))
         arr = np.asarray(layer, np.float32).copy()
-        arr[..., 3] *= np.asarray(wm, np.float32) / 255.0
+        arr[..., 3] *= wm
         layer = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(0.8))
         cam.alpha_composite(layer)
-    if water is not None:          # on the water a shadow is faint and wavers (R9 r8: a crisp black ladder on the water)
+    if wm is not None:             # on the water a shadow is faint and wavers (R9 r8: a crisp black ladder on the water)
         sl = Image.new("RGBA", cam.size, (0, 0, 0, 0))
         for im, xy in shadows:
             _paste(sl, im, xy)
-        wm2 = np.asarray(Image.fromarray((np.clip(water, 0, 1) * 255).astype(np.uint8), "L").resize(cam.size, Image.BILINEAR), np.float32) / 255.0
         a = np.asarray(sl, np.float32).copy()
         soft = np.asarray(sl.filter(ImageFilter.GaussianBlur(2.5)), np.float32)
-        a = a * (1 - wm2[..., None]) + soft * wm2[..., None]
-        a[..., 3] *= 1 - 0.55 * wm2
+        a = a * (1 - wm[..., None]) + soft * wm[..., None]
+        a[..., 3] *= 1 - 0.3 * wm                      # R11: 0.55 lost the deck's shadow (a raft on the water)
         cam.alpha_composite(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGBA"))
     else:
         for im, xy in shadows:
             _paste(cam, im, xy)
     for _, im, xy in sorted(items, key=lambda q: q[0]):
         _paste(cam, im, xy)
-    return cam.convert("RGB")
+    return cam
 
 
 def _paste(dst, im, xy):
-    layer = Image.new("RGBA", dst.size, (0, 0, 0, 0))
-    layer.paste(im, xy, im)
-    dst.alpha_composite(layer)
+    """im (RGBA) over dst at xy, cut to dst's edges (alpha_composite takes no negative offsets)."""
+    x, y = int(xy[0]), int(xy[1])
+    l, t = max(0, -x), max(0, -y)
+    r, b = min(im.width, dst.width - x), min(im.height, dst.height - y)
+    if r <= l or b <= t:
+        return
+    if im.mode != "RGBA":
+        im = im.convert("RGBA")
+    dst.alpha_composite(im, dest=(x + l, y + t), source=(l, t, r, b))
 
 
 def place(sprite, x_m, y_m, items, shadows, flip=False):
@@ -266,8 +281,8 @@ def b1_sprite(dirpath, name, team="blue"):
     sh = None
     if sp.shadow:                     # darker than scene.piece's 0.78 of the pass: R9 r3/r4, the city looked pasted on;
         a = np.asarray(sp.shadow[0], np.float32).copy()             # a solid building's shadow ~0.45 of the lit grass
-        a[..., 3] = np.clip(a[..., 3] * 1.3, 0, 255)
-        a[..., :3] = (22, 25, 32)                                     # a dark grey, not scene.piece's navy
+        a[..., 3] = np.clip(a[..., 3] * 1.45, 0, 255)                # R11: deeper and bluer (the sky lights the shade)
+        a[..., :3] = (22, 28, 46)
         sh = (Image.fromarray(a.astype(np.uint8), "RGBA"), sp.shadow[1], sp.shadow[2])
     return (sp.img, sp.ax, sp.ay), sh
 

@@ -75,7 +75,7 @@ def rammed_earth():
     nt.links.new(jd.outputs["Fac"], jdm.inputs["Value"])
     jdm.inputs["From Min"].default_value = 0.35
     jdm.inputs["From Max"].default_value = 0.65
-    jdm.inputs["To Min"].default_value = 0.8           # faint (R9 r5: strong joints read as a basket)
+    jdm.inputs["To Min"].default_value = 0.88          # fainter still (R9 r5 a basket, R11 corduroy)
     jdm.inputs["To Max"].default_value = 0.97
     nt.links.new(jdm.outputs["Result"], joint.inputs["To Min"])
     # rain runnels: dark streaks running down the face (noise stretched along z)
@@ -116,7 +116,7 @@ def rammed_earth():
     nt.links.new(joint.outputs["Result"], bh.inputs[0])
     nt.links.new(run.outputs["Result"], bh.inputs[1])
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.45
+    bump.inputs["Strength"].default_value = 0.22
     bump.inputs["Distance"].default_value = 0.02
     nt.links.new(bh.outputs[0], bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], p.inputs["Normal"])
@@ -126,7 +126,15 @@ def rammed_earth():
 def drum_tower(P, root, x, y, base_h=3.2, base_w=1.8):
     """鼓樓: a battered rammed-earth base (墩台) in tamped courses, a brick cap, a small open pavilion on it, the drum."""
     g = lib.empty("mt", parent=root, loc=(x, y, 0.0))
-    box("mt_base", (base_w, base_w, base_h), rammed_earth(), g, loc=(0, 0, base_h / 2), bevel=0.1, taper=(0.8, 0.8))
+    box("mt_base", (base_w, base_w, base_h), rammed_earth(), g, loc=(0, 0, base_h / 2), bevel=0.03, taper=(0.8, 0.8))   # sharp arrises (R11: a sandbag)
+    # putlog holes: two rows of small dark holes left by the shuttering beams, on the south and west faces (the
+    # diamond camera sees those two; R11)
+    dark = lib.mat("putlog_r11", (0.03, 0.025, 0.02), 0.95)
+    for zh in (1.1, 2.2):
+        half = base_w / 2 * (1 - 0.2 * zh / base_h)
+        for k, t in enumerate((-0.3, 0.05, 0.38)):
+            box(f"mt_ph_y{zh:.0f}{k}", (0.09, 0.012, 0.07), dark, g, loc=(t * half * 2, -half - 0.004, zh))
+            box(f"mt_ph_x{zh:.0f}{k}", (0.012, 0.09, 0.07), dark, g, loc=(-half - 0.004, t * half * 2, zh))
     top = lib.empty("mt_top", parent=g, loc=(0, 0, base_h))
     # a brick cap along the base's top edge, under the pavilion's floor (the climb is inside, from the back)
     box("mt_cap", (base_w * 0.84, base_w * 0.84, 0.16), P["stone"], top, loc=(0, 0, -0.06), bevel=0.02)

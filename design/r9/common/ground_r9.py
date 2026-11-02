@@ -377,13 +377,13 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         # the far bank's earth face: its height varies along the bank, a crisp sunlit grass edge on top, the face itself in
         # shade (the sun is behind it), streaked down (R9 r7: a soft brown smudge, no height)
         # its height from nothing (grass and slumps reach the water) to ~30 px, in long stretches (R9 r9: 16-24 px all along)
-        fw = 1.25 * G.smoothstep(0.3, 0.75, G.sample(_SHORE, mx / 22.0 + 0.7, my / 22.0 + 0.4)[..., 0]) * \
-            (0.6 + 0.4 * G.sample(_SHORE, mx / 7.0 + 0.2, my / 7.0 + 0.9)[..., 0])
+        # (R11: no small bumps on it: a domed top read as a dirt pile on the grass)
+        fw = 1.1 * G.smoothstep(0.3, 0.75, G.sample(_SHORE, mx / 22.0 + 0.7, my / 22.0 + 0.4)[..., 0])
         face = G.smoothstep(-fw - 0.03, -fw + 0.03, sd) * G.smoothstep(0.1, -0.05, sd) * far
         tuft = G.sample(_FOAM, mx / 3.0 + 0.5, my / 3.0)[..., 0]
         face = face * (1 - G.smoothstep(0.58, 0.68, tuft) * G.smoothstep(-fw + 0.4, -fw, sd))   # tufts hang over its top
         streak = 0.75 + 0.5 * G.sample(_FOAM, mx / 0.6 + 0.2, my / 6.0 + 0.1)[..., 0]
-        col = col * (1 - face[..., None] * 0.9) + earth * (0.5 * streak)[..., None] * face[..., None] * 0.9
+        col = col * (1 - face[..., None] * 0.9) + earth * (0.72 * streak)[..., None] * face[..., None] * 0.9   # warm mid-brown (R11)
         edge = G.smoothstep(-fw - 0.1, -fw - 0.02, sd) * (1 - G.smoothstep(-fw - 0.02, -fw + 0.02, sd)) * far
         col = col * (1 + 0.18 * edge[..., None])
         col = col * light[..., None]
@@ -394,7 +394,7 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         # a thin contact line (the near bank faces the sun: R9 r9, a dark rim read as ink), a little wider on the far bank
         mw = 0.03 + 0.06 * G.sample(_SHORE, mx / 6.0 + 0.35, my / 6.0 + 0.65)[..., 0] + 0.12 * far
         mud = G.smoothstep(-mw - 0.03, -mw, sd)
-        col = col * (1 - ((0.3 + 0.2 * far) * mud)[..., None])
+        col = col * (1 - ((0.3 - 0.1 * far) * mud)[..., None])          # R11: the far line was near-black (ink)
         grav = to_lin(G.sample(layers["gravel"]["img"], mx / layers["gravel"]["tile_m"], my / layers["gravel"]["tile_m"])[..., :3])
         sand = G.smoothstep(0.6, 0.7, G.sample(_SHORE, mx / 9.0 + 0.8, my / 9.0 + 0.25)[..., 0]) * \
             G.smoothstep(-0.7, -0.35, sd) * G.smoothstep(0.0, -0.1, sd) * (1 - far)
@@ -436,8 +436,10 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         hx, hy = rt[..., 1], rt[..., 2]
         rough = (0.0042 + 0.0066 * ford)                 # the finer field has ~1.6x the slope: more sparkle (R9 r4)
         # current lanes: the ripples strong in long lanes along the flow, glassy between (R9 r9: the same everywhere)
-        lx = G.sample(_SHORE, mx / 14.0 + 0.11, my / 1.8 + 0.37)[..., 0]
-        ly = G.sample(_SHORE, mx / 1.8 + 0.53, my / 14.0 + 0.71)[..., 0]
+        # (R11: they bend with the banks: shifted across the flow by the shoreline's own wander)
+        wob = (G.sample(_SHORE, mx / 40.0, my / 40.0)[..., 0] - 0.5) * 2 * p["shore_m"][0]
+        lx = G.sample(_SHORE, mx / 14.0 + 0.11, (my + wob) / 1.8 + 0.37)[..., 0]
+        ly = G.sample(_SHORE, (mx + wob) / 1.8 + 0.53, my / 14.0 + 0.71)[..., 0]
         lane = G.smoothstep(0.3, 0.7, lx * fx ** 2 + ly * fy ** 2)
         rough = rough * (0.35 + 1.0 * lane * (1 - ford) + ford)
         Nw = np.stack([-hx * rough, -hy * rough, np.ones_like(hx)], -1)
@@ -454,7 +456,7 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         bx = G.sample(_SHORE, mx / 16.0 + 0.3, my / 2.5 + 0.8)[..., 0]
         by = G.sample(_SHORE, mx / 2.5 + 0.6, my / 16.0 + 0.2)[..., 0]
         band = bx * fx ** 2 + by * fy ** 2
-        sky = sky * (0.7 + 0.6 * band[..., None])
+        sky = sky * (0.7 + 0.6 * band[..., None]) * (1 + 0.25 * (1 - lane))[..., None]   # glassy: more sky (R11)
         # the far bank and its grass reflected in the water just below it (the reflected ray runs north, into the bank)
         vx, vy = view[0] / math.hypot(view[0], view[1]), view[1] / math.hypot(view[0], view[1])
         # broken by the ripples (the mirror wobbles), fading over ~1.5 m: no ruler-straight band (R9 r5)
@@ -471,7 +473,8 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         crest = G.smoothstep(0.9, 0.98, fine) * G.smoothstep(0.8, 2.0, rt[..., 0]) * lane * G.smoothstep(0.3, 0.9, sd) * \
             (0.3 + 0.7 * G.sample(_FOAM, mx / 0.9 + 0.2, my / 0.7 + 0.6)[..., 0]) * (0.5 + 0.5 * far)
         surf = under * (1 - fres[..., None]) + sky * fres[..., None] + SUN_RGB * ((gl * spark + 1.0 * crest) * (1 - ford) * p["glint"])[..., None]
-        surf = surf * (1 - 0.2 * G.smoothstep(0.5, 1.6, sd))[..., None]                # the middle darker (R9 r9)
+        mid = G.smoothstep(0.5, 1.6, sd)
+        surf = surf * (1 - 0.22 * mid[..., None] * np.array([1.0, 0.94, 1.02]))         # the middle darker, greener (R11)
         # a ford: broken white riffle lines across the current, where the water runs over the stones
         fn = G.sample(_FOAM, (u - 0.4 * t) / 1.1, v / 5.0)[..., 0] * 0.7 + G.sample(_FOAM, u / 0.5 + 0.3, v / 2.0)[..., 0] * 0.3
         froth = np.clip(ford * G.smoothstep(0.56, 0.74, fn) * inside, 0, 1) * p["foam"] * 1.3
@@ -482,8 +485,10 @@ def compose(grid, nodes, layers, relief, ppm=60, rules=None, p=R9, t=0.0, town=N
         # the last few decimetres before the near bank: the shallow bottom shows, olive-brown, not grey (R9 r4)
         # (R9 r6: a pale halo along the near bank; the shallows darker and browner, over ~0.9 m)
         # warm see-through shallows along both banks, widest on the near one (R9 r9: slate blue up to the edge)
-        sh_k = G.smoothstep(0.35 + 0.3 * (1 - far), 0.02, sd) * (1 - ford) * (0.55 + 0.45 * (1 - far))
-        surf = surf * (1 - 0.7 * sh_k[..., None]) + np.array([0.075, 0.062, 0.032]) * (0.7 * sh_k)[..., None]
+        # R11: patchy, narrow, under the water (a 26-35 px brown feather all along read as an airbrushed halo)
+        patch = G.smoothstep(0.35, 0.65, G.sample(_SHORE, mx / 5.0 + 0.27, my / 5.0 + 0.61)[..., 0])
+        sh_k = G.smoothstep(0.3, 0.03, sd) * (1 - ford) * (0.25 + 0.75 * patch) * (0.5 + 0.5 * (1 - far))
+        surf = surf * (1 - 0.6 * sh_k[..., None]) + np.array([0.075, 0.062, 0.032]) * (0.6 * sh_k)[..., None]
         col = col * (1 - inside[..., None]) + surf * inside[..., None]
         LAST_WATER[r0:r1] = inside
         outc = aces(col * p["exposure"])

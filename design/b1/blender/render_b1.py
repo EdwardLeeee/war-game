@@ -50,6 +50,8 @@ import decor_r8                      # noqa: E402
 import market_r8                     # noqa: E402
 sys.path.insert(4, os.path.join(HERE, "..", "..", "r9", "blender"))      # R9 realism trial (napali)
 import main_city_r9                  # noqa: E402
+sys.path.insert(5, os.path.join(HERE, "..", "..", "r11", "blender"))     # R11 the floating continent's edge
+import edge_r11                      # noqa: E402
 import terrain_r8                    # noqa: E402
 
 REG = dict(blds.BUILDERS)
@@ -78,6 +80,8 @@ REG.update(market_r8.BUILDERS)
 FOOT.update(market_r8.FOOTPRINT)
 REG.update(main_city_r9.BUILDERS)
 FOOT.update(main_city_r9.FOOTPRINT)
+REG.update(edge_r11.BUILDERS)
+FOOT.update(edge_r11.FOOTPRINT)
 REG.update(terrain_r8.BUILDERS)
 FOOT.update(terrain_r8.FOOTPRINT)
 HOUSES = ("th22", "th21", "th12", "th11")

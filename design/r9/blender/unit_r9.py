@@ -37,17 +37,27 @@ def _scale_base(m, k):
     nt.links.new(sc.outputs["Vector"], inp)
 
 
-def _bump(m, scale, strength, distance=0.002):
+def _bump(m, scale, strength, distance=0.002, stretch=None):
+    """A noise bump on top of the existing normal, on the part's rest coordinates in metres (r7_prod's "rest"
+    attribute; R11: on Object coordinates the folds were invisible, the units' meshes are not in metres).
+    stretch: (sx, sy, sz) to draw the noise out, e.g. folds hanging down."""
     nt = m.node_tree
     p = _p(m)
     if p is None:
         return
     prev = p.inputs["Normal"].links[0].from_socket if p.inputs["Normal"].is_linked else None
-    tc = nt.nodes.new("ShaderNodeTexCoord")
+    at = nt.nodes.new("ShaderNodeAttribute")
+    at.attribute_name = "rest"
+    vec = at.outputs["Vector"]
+    if stretch:
+        mp = nt.nodes.new("ShaderNodeMapping")
+        mp.inputs["Scale"].default_value = stretch
+        nt.links.new(vec, mp.inputs["Vector"])
+        vec = mp.outputs["Vector"]
     nz = nt.nodes.new("ShaderNodeTexNoise")
     nz.inputs["Scale"].default_value = scale
     nz.inputs["Detail"].default_value = 6
-    nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
+    nt.links.new(vec, nz.inputs["Vector"])
     b = nt.nodes.new("ShaderNodeBump")
     b.inputs["Strength"].default_value = strength
     b.inputs["Distance"].default_value = distance
@@ -118,7 +128,7 @@ def apply(u=None, kind=None):
             p.inputs["Sheen Roughness"].default_value = 0.4
             p.inputs["Roughness"].default_value = max(0.82, p.inputs["Roughness"].default_value)
             _bump(m, 900.0, 0.18)
-            _bump(m, 22.0, 0.55, 0.02)                # folds and creases a few cm across (R9 r5: flat painted plastic)
+            _bump(m, 9.0, 0.8, 0.03, stretch=(1.0, 1.0, 0.25))   # folds hanging down, a few cm across (R9 r5, R11)
         elif "skin" in n:
             # a little light through the skin, no more (R9 r3: more, with the green bounce, gave grey-green flecks)
             p.inputs["Subsurface Weight"].default_value = 0.1
@@ -130,6 +140,13 @@ def apply(u=None, kind=None):
             _scale_base(m, 0.8)
             if not p.inputs["Roughness"].is_linked:
                 p.inputs["Roughness"].default_value = max(0.62, p.inputs["Roughness"].default_value)
+            else:                                     # the texture's roughness, never below 0.6 (R11: a clean steel dome)
+                src = p.inputs["Roughness"].links[0].from_socket
+                mx_ = m.node_tree.nodes.new("ShaderNodeMath")
+                mx_.operation = "MAXIMUM"
+                mx_.inputs[1].default_value = 0.6
+                m.node_tree.links.new(src, mx_.inputs[0])
+                m.node_tree.links.new(mx_.outputs[0], p.inputs["Roughness"])
     # R9 r3: the 頓項 one flat slab of the player's colour read as a hood; Tang/Former Shu figures (王建墓 抬棺力士,
     # ref 06) hang rows of lamellae over the nape: give it the body's lamellar
     lam = next((info["mat"] for name, info in lib.MATS.items() if name == "lamellar_r8"), None)
