@@ -137,6 +137,8 @@ export interface GameHook {
   groundLook(): { real: boolean; quality: string | null; water: boolean; town: boolean } | null;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
   feet(): number;
+  /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
+  filmGrade(): boolean;
   setGroundQuality(q: "high" | "low"): void;
   /** The ground's pictures (art-v5, R6-51): drawn from them or not, and how many pieces lie flat or stand. */
   terrain(): { pictures: boolean; pieces: number; flat: number; standing: number } | null;
@@ -360,6 +362,7 @@ export function gameHook(game: Game): GameHook {
       }),
     groundLook: () => game.groundForTest,
     feet: () => game.feetForTest,
+    filmGrade: () => game.filmGradeForTest,
     setGroundQuality: (q) => game.setGroundQuality(q),
     terrain: () => game.terrainForTest,
     lift: (cx, cy) => game.liftForTest(cx, cy),

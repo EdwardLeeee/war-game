@@ -1,9 +1,10 @@
 // The battlefield in PixiJS, bottom to top: terrain, town zones, buildings, resource nodes,
 // selection rings, units, effects (cannon warnings, calibration arcs, rally lines), bars,
 // fog, town markers (the player's knowledge, drawn above the fog) and the placement preview.
-// Terrain and fog are one small texture each (one texel per cell, scaled up), so they cost
-// one sprite. Units, bars and buildings come from pools that only grow.
+// Terrain and fog are one small texture each (terrain one texel per cell, the fog
+// FOG_ROUND_SCALE for its round edge, scaled up), so they cost one sprite. Units, bars and buildings come from pools that only grow.
 
+import { FOG_ROUND_SCALE, roundFog } from "./round-fog.ts";
 import { type Application, ColorMatrixFilter, Container, Graphics, type Renderer, Sprite, Text, Texture } from "pixi.js";
 import type { Camera } from "../camera/camera.ts";
 import { PT_PER_CELL, type Projection, tilted, TOP } from "../camera/projection.ts";
@@ -259,6 +260,9 @@ export class WorldRenderer {
   private readonly ghost = new Graphics();
   private readonly terrainTexture: Texture;
   private readonly fogCanvas: HTMLCanvasElement;
+  /** The fog by cell, and a scratch buffer for its round edge (round-fog.ts). */
+  private readonly fogCells: Uint8Array;
+  private readonly fogTmp: Float32Array;
   private readonly fogTexture: Texture;
   private readonly fogPixels: ImageData;
   private fogVersion = -1;
@@ -396,17 +400,21 @@ export class WorldRenderer {
     ground.scale.set(TILE_PX);
     this.flatGround = ground;
 
+    // 圓邊霧 (round-fog.ts): FOG_ROUND_SCALE texels a cell, the edge blurred round.
+    const fk = FOG_ROUND_SCALE;
     this.fogCanvas = document.createElement("canvas");
-    this.fogCanvas.width = size;
-    this.fogCanvas.height = size;
+    this.fogCanvas.width = size * fk;
+    this.fogCanvas.height = size * fk;
     const fctx = this.fogCanvas.getContext("2d") as CanvasRenderingContext2D;
-    this.fogPixels = fctx.createImageData(size, size);
-    for (let i = 0; i < size * size; i++) this.fogPixels.data[i * 4 + 3] = FOG_ALPHA.unexplored;
+    this.fogPixels = fctx.createImageData(size * fk, size * fk);
+    for (let i = 0; i < size * size * fk * fk; i++) this.fogPixels.data[i * 4 + 3] = FOG_ALPHA.unexplored;
     fctx.putImageData(this.fogPixels, 0, 0);
     this.fogTexture = Texture.from(this.fogCanvas);
     this.fogTexture.source.scaleMode = "linear";
     const fog = new Sprite(this.fogTexture);
-    fog.scale.set(TILE_PX);
+    fog.scale.set(TILE_PX / fk);
+    this.fogCells = new Uint8Array(size * size);
+    this.fogTmp = new Float32Array(size * size * fk * fk);
 
     // The projection's matrix as two containers (a container scales, then turns): as a diamond
     // turned 45° at 1.25 (40 points a cell's side), square on (D-088) not turned; then flattened
@@ -911,10 +919,8 @@ export class WorldRenderer {
     const fog = this.view.fog;
     if (fog === null || this.view.fogVersion === this.fogVersion) return;
     this.fogVersion = this.view.fogVersion;
-    const d = this.fogPixels.data;
-    for (let i = 0; i < fog.length; i++) {
-      d[i * 4 + 3] = fog[i] === Fog.Visible ? 0 : fog[i] === Fog.Explored ? FOG_ALPHA.explored : FOG_ALPHA.unexplored;
-    }
+    for (let i = 0; i < fog.length; i++) this.fogCells[i] = fog[i] === Fog.Visible ? 0 : fog[i] === Fog.Explored ? FOG_ALPHA.explored : FOG_ALPHA.unexplored;
+    roundFog(this.fogCells, this.view.map.size, this.fogPixels.data, this.fogTmp);
     (this.fogCanvas.getContext("2d") as CanvasRenderingContext2D).putImageData(this.fogPixels, 0, 0);
     this.fogTexture.source.update();
     // The fog lies on the ground; what stands in it (nodes' marks) is dimmed by hand.
