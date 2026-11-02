@@ -2048,14 +2048,14 @@ test("D-086 B: the network that always chooses AS_HARD (every weight 0) plays ex
   assert.notEqual(play("fixed", [forcedNet([ARMY_HOME, AS_HARD, AS_HARD, AS_HARD]), null]), play("fixed", [null, null]), "a network that waits plays another game");
 });
 
-test("NN v2: the network that always chooses AS_HARD plays exactly as hard past its first arrow tower (minute 14 on the fixed map, seed 2)", () => {
-  /** 16 minutes of hard against hard, side 0 with `net`: the final hash, and whether side 0 ordered an arrow tower. */
+test("NN v2: the network that always chooses AS_HARD plays exactly as hard past its first arrow tower (minute 15 on the fixed map, seed 3)", () => {
+  /** 17 minutes of hard against hard, side 0 with `net`: the final hash, and whether side 0 ordered an arrow tower. */
   const play = (net: NetWeights | null) => {
-    const g = new Game({ seed: 2, scenario: "standard", map: "fixed" });
-    const ais = [0, 1].map((p) => createAi(p, 2, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: { net: p === 0 ? net : null } }, p));
+    const g = new Game({ seed: 3, scenario: "standard", map: "fixed" });
+    const ais = [0, 1].map((p) => createAi(p, 3, { ...aiKnowledge(g.w.map, p, MAX_TICKS, "hard"), hard: { net: p === 0 ? net : null } }, p));
     let seq = 0;
     let tower = false;
-    for (let t = 0; t < 16 * 1200 && !g.w.over; t++) {
+    for (let t = 0; t < 17 * 1200 && !g.w.over; t++) {
       if (g.tick % 10 === 0) {
         for (let p = 0; p < 2; p++) {
           for (const body of ais[p].think(buildView(g, p))) {
@@ -2069,7 +2069,7 @@ test("NN v2: the network that always chooses AS_HARD plays exactly as hard past 
     return { hash: g.hash(), tower };
   };
   const off = play(null);
-  assert.equal(off.tower, true, "side 0 orders a tower in these 16 minutes");
+  assert.equal(off.tower, true, "side 0 orders a tower in these 17 minutes");
   assert.deepEqual(play(asHardNet()), off);
 });
 
