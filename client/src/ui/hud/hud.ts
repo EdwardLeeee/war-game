@@ -979,7 +979,7 @@ export class Hud {
     if (!once) this.keepStepper(keeps, "搶", town, keep.plunder, (n) => (keep.plunder = n));
     this.keepStepper(keeps, "治理", town, keep.govern, (n) => (keep.govern = n));
     // Still their groups' (the user 2026-10-26): 出城歸隊 brings them back.
-    el("p", card, "small", "留守的兵改成堅守，不跟「全軍」走；還算原本的編隊，軍團畫面按「出城歸隊」就回來。");
+    el("p", card, "small", "留守的兵守在城裡，敵人來了會反擊、不追出城，不跟「全軍」走；還算原本的編隊，軍團畫面按「出城歸隊」就回來。");
     btn(card, "稍後再決定（點城鎮也能選）", () => this.closeDialog(), "secondary later");
   }
 

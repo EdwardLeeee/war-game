@@ -94,11 +94,11 @@ import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
 import { allIn, orderState } from "./orders.ts";
-import { goesOnWalls, heldTown, leaveWalls } from "./walls.ts";
-import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT, STATION_HERE, STATION_PROMPT, STATION_PROMPT_MIXED, STATION_WRONG_TARGET, stationTap, upOnArrival } from "./station.ts";
+import { heldTown, leaveWalls } from "./walls.ts";
+import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT, STATION_HERE, STATION_PROMPT, STATION_PROMPT_MIXED, STATION_WRONG_TARGET, stationTap } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
-import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assaultOrders, type Target } from "./assault.ts";
+import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assaultOrders, GATE_FOCUS_TEXT, type Target, type WallTarget } from "./assault.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
@@ -216,7 +216,7 @@ export function headerAutoTrain(log: string): boolean[] | null {
 /** How the ground is laid on the screen: 方形斜看 since art-v3 is drawn for it (D-088); the diamond (D-085) on test pages only (?view=diamond). */
 const PROJECTION_DEFAULT = PROJECTIONS.oblique;
 /** Orders that end a soldier's attack on a town (攻城打到底, assault.ts); 攻擊 starts one again. */
-const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "wall", "post", "gather", "build", "repair", "release"]);
+const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "guard", "post", "gather", "build", "repair", "release"]);
 
 export class Game implements GestureHost {
   view: GameView | null = null;
@@ -502,10 +502,10 @@ export class Game implements GestureHost {
   autoHouseBlock: HouseBlock | null = "off";
   private houseSent: { seq: number; tick: number; spot: number } | null = null;
   private readonly houseSkip = new Set<number>();
-  /** 駐軍 (station.ts): the ranged and mages walking into a town to stay, to go up its walls once in (unit id → town). */
-  private readonly stationWalks = new Map<number, number>();
   /** 攻城打到底 (assault.ts): soldiers the player sent at a town not ours, until it is taken or they are given another order. */
   private readonly assaults = new Assaults();
+  /** While 攻擊 on a gate sends its two parts (command): that gate, its town and the cell before it. */
+  private focusing: { gate: number; town: number; front: { x: number; y: number } } | null = null;
   private houseTold = false;
   /** Mages a turn-on of their cannon went to (D-095: a save from before, with it turned off). */
   private readonly autocastAsked = new Set<number>();
@@ -824,9 +824,32 @@ export class Game implements GestureHost {
       }
       cmd = { ...cmd, u: out };
     }
-    const group = this.groupOrderOut(cmd);
+    // Its two parts below are this order already out of the towns.
+    const group = this.focusing !== null ? { cmd, kept: 0 } : this.groupOrderOut(cmd);
     if (group === null) return -1;
     cmd = group.cmd;
+    // 攻擊 on a gate of a town not ours (the user 2026-11-01): those that hit it go at it; the ranged
+    // and the mages walk before it, fighting on the way (攻擊移動), then 攻城打到底 has them shoot
+    // those on the walls by it.
+    const gate = this.focusing === null && cmd.c === "attack" ? this.gateFront(cmd.target) : null;
+    if (gate !== null && cmd.c === "attack" && this.view !== null) {
+      const view = this.view;
+      const shooters = cmd.u.filter((id) => view.unitType(id) === UnitType.Ranged || view.unitType(id) === UnitType.Mage);
+      if (shooters.length > 0) {
+        const hitters = cmd.u.filter((id) => !shooters.includes(id));
+        this.focusing = gate;
+        let seq = -1;
+        try {
+          if (hitters.length > 0) seq = this.command({ ...cmd, u: hitters });
+          const walk = this.command({ c: "move", u: shooters, x: gate.front.x, y: gate.front.y });
+          if (seq < 0) seq = walk;
+        } finally {
+          this.focusing = null;
+        }
+        this.toast(group.kept > 0 ? `${GATE_FOCUS_TEXT}；留 ${group.kept} 名守城` : GATE_FOCUS_TEXT, "ok");
+        return seq;
+      }
+    }
     const seq = this.post(cmd, false);
     this.acknowledge(cmd, seq);
     if (group.kept > 0 && "u" in cmd && Array.isArray(cmd.u)) this.toast(`${cmd.u.length} 名出發，留 ${group.kept} 名守城`, "ok");
@@ -834,8 +857,9 @@ export class Game implements GestureHost {
     if (ASSAULT_ENDS.has(cmd.c) && "u" in cmd && Array.isArray(cmd.u)) {
       this.assaults.drop(cmd.u);
       const view = this.view;
-      const town = (cmd.c === "move" || cmd.c === "attack") && view !== null ? this.assaultTown(cmd) : null;
-      if (town !== null && view !== null) this.assaults.begin(town, cmd.u.filter((id) => isSoldier(view.unitType(id))));
+      const town = this.focusing?.town ?? ((cmd.c === "move" || cmd.c === "attack") && view !== null ? this.assaultTown(cmd) : null);
+      const focus = this.focusing?.gate ?? (cmd.c === "attack" ? (this.gateFront(cmd.target)?.gate ?? null) : null);
+      if (town !== null && view !== null) this.assaults.begin(town, cmd.u.filter((id) => isSoldier(view.unitType(id))), focus);
     }
     this.controls.setWaiting(this.pending.waiting);
     // 堅守 or 取消 (stop and hold): what the next order goes by until the snapshot shows it (D-081).
@@ -879,6 +903,8 @@ export class Game implements GestureHost {
    * them. Those selected by hand go by the player's word (command, below). Null: nobody to send.
    */
   private groupOrderOut(cmd: CommandBody): { cmd: CommandBody; kept: number } | null {
+    // 駐軍 itself (stationAt has left each town what it keeps).
+    if (cmd.c === "guard") return { cmd, kept: 0 };
     const inTown = "u" in cmd && Array.isArray(cmd.u) && this.groupView !== null ? cmd.u.filter((id) => this.army.isGarrisoned(id)) : [];
     if (inTown.length === 0 || !("u" in cmd) || !Array.isArray(cmd.u)) return { cmd, kept: 0 };
     let stay = inTown;
@@ -1044,8 +1070,8 @@ export class Game implements GestureHost {
   }
 
   /**
-   * Station up to n more soldiers in the town: they turn to 堅守, and 全軍 and their groups'
-   * buttons no longer take them (they are still the groups', 出城歸隊). They leave what is
+   * Station up to n more soldiers in the town: they guard it (`guard`), and 全軍 no longer takes
+   * them (they are still the groups', 出城歸隊). They leave what is
    * selected too (the user 2026-10-22:
    * 「我選駐守以後馬上把那個兵團的兵拉走 有時候還是會把原本要駐守的兵拉走」: the group selected
    * before the town fell still held them, and the next 移動 took them along); the 軍團畫面 stays
@@ -1059,7 +1085,7 @@ export class Game implements GestureHost {
     this.army.perGroup(ids).forEach((k, i) => {
       if (k > 0) this.alarms.left(i, k);
     });
-    this.setStance(ids, Stance.Hold);
+    if (ids.length > 0) this.autoCommand({ c: "guard", u: ids, town });
     const view = this.view;
     if (view !== null && ids.length > 0 && view.selection.units.some((id) => ids.includes(id))) {
       view.selection = { ...view.selection, units: view.selection.units.filter((id) => !ids.includes(id)) };
@@ -1411,6 +1437,32 @@ export class Game implements GestureHost {
     return joined;
   }
 
+  /**
+   * A gate standing in a town not ours (攻擊 on it, assault.ts): its town and the cell before it
+   * outside, two cells out from its middle; null for anything else.
+   */
+  private gateFront(id: number): { gate: number; town: number; front: { x: number; y: number } } | null {
+    const view = this.view;
+    const b = view?.curr?.snap.buildings;
+    const o = view === null || view === undefined ? -1 : view.buildingRow(id);
+    if (view === null || view === undefined || b === undefined || o < 0 || b[o + BuildingField.type] !== BuildingType.Gate || b[o + BuildingField.owner] === view.me) return null;
+    const town = view.gateTown(b, o);
+    const castle = town === null ? null : view.castleOf(town);
+    const t = view.curr?.snap.towns;
+    const row = town === null ? -1 : view.townRow(town.id);
+    if (town === null || castle === null || (row >= 0 && t !== undefined && t[row + TownField.owner] === view.me)) return null;
+    const x0 = b[o + BuildingField.cellX] - town.cellX;
+    const y0 = b[o + BuildingField.cellY] - town.cellY;
+    const opening = (castle.gates ?? []).find((cells) => cells.length > 0 && Math.min(...cells.map(([x]) => x)) === x0 && Math.min(...cells.map(([, y]) => y)) === y0);
+    const mid = opening?.[Math.floor(opening.length / 2)];
+    const k = mid === undefined ? -1 : castle.gate.findIndex(([x, y]) => x === mid[0] && y === mid[1]);
+    const out = k < 0 ? undefined : castle.outside[k];
+    if (mid === undefined || out === undefined) return null;
+    const n = view.map.size;
+    const clamp = (v: number) => Math.max(0, Math.min(n - 1, v));
+    return { gate: id, town: town.id, front: { x: clamp(town.cellX + out[0] + 2 * (out[0] - mid[0])), y: clamp(town.cellY + out[1] + 2 * (out[1] - mid[1])) } };
+  }
+
   /** What town `town` under attack by `ids` shows now (assault.ts). */
   private assaultScene(town: number, ids: readonly number[]): AssaultScene | null {
     const view = this.view;
@@ -1429,15 +1481,26 @@ export class Game implements GestureHost {
       if (o < 0 || u[o + UnitField.action] === Action.Garrisoned) continue;
       const x = Math.floor(u[o + UnitField.x] / CELL);
       const y = Math.floor(u[o + UnitField.y] / CELL);
-      attackers.push({ id, x, y, idle: u[o + UnitField.order] === Order.None, inside: inside(x, y) });
+      const type = u[o + UnitField.type];
+      // Fighting by itself (no order, hitting someone in reach: a ranged one before the gate at those on the walls) is left to it.
+      const idle = u[o + UnitField.order] === Order.None && u[o + UnitField.action] !== Action.Attack;
+      attackers.push({ id, x, y, idle, inside: inside(x, y), shoots: type === UnitType.Ranged || type === UnitType.Mage });
     }
     const defenders: Target[] = [];
+    const wall: WallTarget[] = [];
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       const owner = u[o + UnitField.owner];
       if (owner === view.me || owner === NO_OWNER || u[o + UnitField.type] === UnitType.Farmer || u[o + UnitField.action] === Action.Garrisoned) continue;
       const x = Math.floor(u[o + UnitField.x] / CELL);
       const y = Math.floor(u[o + UnitField.y] / CELL);
-      if (inBox(x, y)) defenders.push({ id: u[o + UnitField.id], x, y });
+      if (!inBox(x, y)) continue;
+      defenders.push({ id: u[o + UnitField.id], x, y });
+      // Up on the walls; shooting one of ours (its target in our rows).
+      if ((u[o + UnitField.flags] & UnitFlag.OnWall) !== 0) {
+        const hit = u[o + UnitField.attackTarget];
+        const r = hit >= 0 ? view.unitRow(hit) : -1;
+        wall.push({ id: u[o + UnitField.id], x, y, shooting: r >= 0 && u[r + UnitField.owner] === view.me });
+      }
     }
     const b = snap.buildings;
     const gates: Target[] = [];
@@ -1464,7 +1527,10 @@ export class Game implements GestureHost {
       const i = (spot.cellY + c[1]) * size + spot.cellX + c[0];
       return fog !== null && fog[i] === Fog.Visible && !standing.has(i);
     });
-    return { attackers, defenders, gates, open, centre: { x: spot.cellX + 0.5, y: spot.cellY + 0.5 } };
+    // The gate tapped, while it stands and we see it.
+    const tapped = this.assaults.focusOf(town);
+    const focus = tapped === null ? null : (gates.find((g) => g.id === tapped) ?? null);
+    return { attackers, defenders, gates, open, centre: { x: spot.cellX + 0.5, y: spot.cellY + 0.5 }, focus, wall };
   }
 
   /** 自動訓練 paused for this building (D-098: the screen's own, kept in the save). */
@@ -1832,7 +1898,7 @@ export class Game implements GestureHost {
     this.regroup();
   }
 
-  /** Those of these no longer 留守 who stand on a wall come down into the town (a group to walk to sends them on from there). */
+  /** Those of these no longer 留守 stop guarding: those on a wall come down into the town, the others stand (a group to walk to sends them on from there). */
   private offWalls(ids: readonly number[]): void {
     const view = this.view;
     const u = view?.curr?.snap.units;
@@ -1842,6 +1908,8 @@ export class Game implements GestureHost {
       .filter((r) => r.o >= 0)
       .map((r) => ({ id: r.id, order: u[r.o + UnitField.order], town: u[r.o + UnitField.orderTarget] }));
     for (const cmd of leaveWalls(rows)) this.autoCommand(cmd);
+    const guards = rows.filter((r) => r.order === Order.TownGuard).map((r) => r.id);
+    if (guards.length > 0) this.autoCommand({ c: "stop", u: guards });
   }
 
   /**
@@ -2124,7 +2192,7 @@ export class Game implements GestureHost {
     for (const w of this.army.walkIns((id) => view.unitRow(id) >= 0 && isSoldier(view.unitType(id)))) {
       const spot = view.knownTowns.get(w.town);
       if (spot === undefined) continue;
-      this.autoCommand({ c: "retreat", u: w.ids, x: spot.cellX, y: spot.cellY });
+      this.autoCommand({ c: "guard", u: w.ids, town: w.town });
       this.keepIn(w.town, w.ids);
     }
     for (const o of this.army.muster(tick, where)) this.autoCommand({ c: "move", u: o.ids, x: o.cellX, y: o.cellY });
@@ -2376,7 +2444,9 @@ export class Game implements GestureHost {
               continue;
             }
             // A refused 搶 or 治理: the soldiers stationed with it go back to 積極 and to 全軍.
-            this.setStance(this.army.refused(ev.seq), Stance.Aggressive);
+            const released = this.army.refused(ev.seq);
+            this.setStance(released, Stance.Aggressive);
+            this.offWalls(released);
             if (cmd?.auto !== true) this.overlays.toast(rejectText(ev.reason, cmd));
           } else {
             if (ev.k === "unit_trained") {
@@ -2397,7 +2467,6 @@ export class Game implements GestureHost {
         this.tickGovernWaits();
         this.tickAutoArmy();
         this.tickAssaults();
-        this.tickStationWalks();
         this.draftArmy();
         this.musterRecruits();
         this.followCharges();
@@ -2553,9 +2622,9 @@ export class Game implements GestureHost {
 
   /**
    * 駐軍 (station.ts): the town tapped keeps the soldiers selected and the rest of their groups as
-   * its 留守: they walk in (移動), still their groups', and hold (堅守); with walls on, the ranged and
-   * the mages go up once in. Those stationed in another town come too, that town keeping the least
-   * it needs (the user 2026-10-31); those in this one stay where they are. Or the player is told why not.
+   * its 留守, still their groups': they guard it (`guard`; the simulation walks them in, and the
+   * ranged and the mages up on its walls). Those stationed in another town come too, that town keeping
+   * the least it needs (the user 2026-10-31); those in this one stay where they are. Or the player is told why not.
    */
   private stationAt(wx: number, wy: number): void {
     const view = this.view;
@@ -2582,53 +2651,17 @@ export class Game implements GestureHost {
       this.toast(kept.length > 0 ? `城裡的 ${kept.length} 名都要留下守城` : STATION_HERE);
       return;
     }
-    // 移動 in first: the player's own order ends a garrison (GDD §5); then theirs, holding. From
-    // 軍團畫面 this goes through groupOrderOut too, which keeps nobody more: `kept` still stand there.
-    this.command({ c: "retreat", u: go, x: spot.cellX, y: spot.cellY });
+    this.command({ c: "guard", u: go, town: spot.id });
     this.keepIn(spot.id, go);
-    const done = `${go.length} 名駐軍在${spot.size === TownSize.Large ? "大城" : "小鎮"}：留守、堅守，不跟全軍走`;
+    const done = `${go.length} 名駐軍在${spot.size === TownSize.Large ? "大城" : "小鎮"}：敵人來了會反擊，不追出城`;
     this.toast(kept.length > 0 ? `${done}，原本的城留 ${kept.length} 名守城` : done, "ok");
   }
 
-  /** These soldiers stay in the town from now, on their way in too: they hold, and the ranged and the mages go up once in. */
+  /** These soldiers, told to guard it, are the town's 留守 from now, on their way in too. */
   private keepIn(town: number, ids: number[]): void {
-    const view = this.view;
     this.army.stationAll(town, ids).forEach((n, i) => {
       if (n > 0) this.alarms.left(i, n);
     });
-    this.setStance(ids, Stance.Hold);
-    if (view?.rules.features?.walls === true) for (const id of ids) if (goesOnWalls(view.unitType(id))) this.stationWalks.set(id, town);
-  }
-
-  /**
-   * Every snapshot (駐軍): those of a walk in who stand in their town now (inside the walls, no
-   * order left) and climb (ranged, mages) go up on its walls, as many as there are places; a walk
-   * ends once there, once they are no longer its 留守 (another order), or once they are gone.
-   */
-  private tickStationWalks(): void {
-    const view = this.view;
-    if (view === null || this.stationWalks.size === 0) return;
-    const by = new Map<number, { id: number; climbs: boolean }[]>();
-    for (const [id, town] of [...this.stationWalks]) {
-      if (view.unitRow(id) < 0 || !this.army.garrisonOf(town).includes(id)) {
-        this.stationWalks.delete(id);
-        continue;
-      }
-      const area = this.townArea(town);
-      const row = view.unitRow(id);
-      const u = view.curr?.snap.units;
-      const at = u === undefined ? null : { x: Math.floor(u[row + UnitField.x] / CELL), y: Math.floor(u[row + UnitField.y] / CELL) };
-      const inner = area?.inside;
-      const inside = inner !== null && inner !== undefined && at !== null && at.x >= inner.x0 && at.x <= inner.x1 && at.y >= inner.y0 && at.y <= inner.y1;
-      if (!inside || view.unitOrder(id) !== Order.None) continue;
-      this.stationWalks.delete(id);
-      by.set(town, [...(by.get(town) ?? []), { id, climbs: goesOnWalls(view.unitType(id)) }]);
-    }
-    for (const [town, arrived] of by) {
-      const count = this.wallCount(town);
-      const up = upOnArrival(arrived, count === null ? 0 : count.capacity - count.on);
-      if (up.length > 0) this.autoCommand({ c: "wall", u: up, town });
-    }
   }
 
   /** 駐守 (D-080): the outpost tapped takes the spearmen selected, or the player is told why not. */

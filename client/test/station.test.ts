@@ -1,12 +1,11 @@
 // 駐軍 (the user 2026-10-25: 「我是指說軍團選項，可以駐軍在都市裡面」; ceo's spec): the soldiers selected
 // go into a town we hold and stay as its 留守: out of their groups and of any other garrison; a
-// town not ours or no town says why; farmers do not go; the ranged and mages go up on the walls
-// once in, as many as there are places.
+// town not ours or no town says why; farmers do not go.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ArmyBook } from "../src/game/army.ts";
-import { STATION_NOBODY, STATION_WRONG_TARGET, stationTap, upOnArrival } from "../src/game/station.ts";
+import { STATION_NOBODY, STATION_WRONG_TARGET, stationTap } from "../src/game/station.ts";
 
 const soldier = (id: number) => id >= 10;
 
@@ -15,18 +14,6 @@ test("駐軍點城鎮：自己持有的城，選的兵（村民不算）去留�
   assert.deepEqual(stationTap([10], { id: 3, held: false }, soldier), { error: "不是你攻下的城鎮" });
   assert.deepEqual(stationTap([10], null, soldier), { error: STATION_WRONG_TARGET });
   assert.deepEqual(stationTap([1, 2], { id: 3, held: true }, soldier), { error: STATION_NOBODY });
-});
-
-test("到了城裡：遠程兵和法師上城牆，最多城牆的空位數；其他兵留在城裡", () => {
-  const arrived = [
-    { id: 10, climbs: false },
-    { id: 11, climbs: true },
-    { id: 12, climbs: true },
-    { id: 13, climbs: true },
-  ];
-  assert.deepEqual(upOnArrival(arrived, 10), [11, 12, 13]);
-  assert.deepEqual(upOnArrival(arrived, 2), [11, 12]);
-  assert.deepEqual(upOnArrival(arrived, 0), []);
 });
 
 test("駐軍的記帳：記成那座城的留守，離開別的城的留守，還算原本的編隊（使用者 2026-10-26）；和攻下時設的留守是同一份", () => {

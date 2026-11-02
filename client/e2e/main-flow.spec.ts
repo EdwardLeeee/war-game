@@ -265,11 +265,11 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   const [kept] = await garrison(page, town.id);
   // One of ours who took the town: the squad, or a spearman 自動訓練 sent after it (D-054).
   expect((await units(page)).find((u) => u.id === kept)?.owner, "one of ours").toBe(me);
-  // (Other orders of the screen's may follow: look for the stance among what was sent.)
-  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance" && c.auto === true).at(-1)).toMatchObject({ c: "stance", u: [kept], stance: 1 });
-  // Repairing (TownState 3) by us, and the soldier holds.
+  // (Other orders of the screen's may follow: look for it among what was sent.)
+  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "guard" && c.auto === true).at(-1)).toMatchObject({ c: "guard", u: [kept], town: town.id });
+  // Repairing (TownState 3) by us, and the soldier guards it (on a wall, or Order.TownGuard).
   await expect.poll(async () => (await towns(page)).find((t) => t.id === town.id)?.state, { timeout: 30_000 }).toBe(3);
-  await expect.poll(async () => (await units(page)).find((u) => u.id === kept)?.stance).toBe(1);
+  await expect.poll(async () => [11, 12].includes((await units(page)).find((u) => u.id === kept)?.order ?? -1)).toBe(true);
   await shot(page, info, "8-governing");
 
   // 8b. 全軍不帶走留守的兵：全軍 → 移動到遠處 → 部隊都離開城鎮後，駐軍還夠，沒有開始叛離

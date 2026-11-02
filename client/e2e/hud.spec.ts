@@ -1032,7 +1032,7 @@ test("隊形：編隊裡超過一半是散開時，補進來的新兵也送散�
   await expect.poll(async () => (await units(page)).find((u) => u.id === recruit)?.loose).toBe(true);
 });
 
-test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；留守的兵改成堅守、還算原本的編隊（按鈕寫駐N）、不跟全軍走（D-026、使用者 2026-10-26）", async ({ page }, info) => {
+test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；留守的兵守城、還算原本的編隊（按鈕寫駐N）、不跟全軍走（D-026、使用者 2026-10-26）", async ({ page }, info) => {
   const spear = await ownIds(page, [1]);
   const mage = (await ownIds(page, [3]))[0];
   // Three spearmen and a mage walk into the small town at (30, 66), radius 4. In the order
@@ -1067,9 +1067,9 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await dialog.getByRole("button", { name: /^治理/ }).tap();
   await expect(dialog).toBeHidden();
 
-  // 治理, then the three nearest soldiers are told to hold (the mage is the last choice).
+  // 治理, then the three nearest soldiers are told to guard the town (the mage is the last choice).
   await expect.poll(async () => (await sent(page)).at(-2)).toMatchObject({ c: "town_choice", town: 0, choice: 1 });
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: inside, stance: 1, auto: true });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "guard", u: inside, town: 0, auto: true });
   expect(await garrison(page, 0)).toEqual(inside);
   // Still control group 1's (the user 2026-10-26), 駐3 on its button; 全軍 does not take them.
   expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toEqual(spear);
@@ -1091,14 +1091,15 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await shot(page, info, "town-keep");
   await panel.getByRole("button", { name: "多留守 1 名" }).tap();
   await expect(kept).toHaveText("4");
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [mage], stance: 1, auto: true });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "guard", u: [mage], town: 0, auto: true });
   await panel.getByRole("button", { name: "多留守 1 名" }).tap();
   await expect(toast(page, "城鎮裡沒有其他的兵可以留守")).toBeVisible();
   await expect(kept).toHaveText("4");
   // One fewer: the last choice (the mage) goes back to 積極.
   await panel.getByRole("button", { name: "少留守 1 名" }).tap();
   await expect(kept).toHaveText("3");
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [mage], stance: 0, auto: true });
+  // Back to 積極, and it stops guarding.
+  await expect.poll(async () => (await sent(page)).slice(-2)).toMatchObject([{ c: "stance", u: [mage], stance: 0, auto: true }, { c: "stop", u: [mage], auto: true }]);
 
   // The player's own 前進 ends a soldier's stay, and its stance goes back to 積極.
   await select(page, [inside[2]]);
@@ -1138,7 +1139,7 @@ test("留守的兵離開選取（使用者 2026-10-22 回報）：選著編隊 1
   await expect(dialog.getByRole("status", { name: "留守幾名（治理）" })).toHaveText("1");
   await dialog.getByRole("button", { name: /^治理/ }).tap();
   await expect(dialog).toBeHidden();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "stance", u: [stays], stance: 1, auto: true });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "guard", u: [stays], town: 0, auto: true });
   // He left the selection; the 軍團畫面 is still open.
   await expect.poll(async () => (await selection(page))?.units).toEqual(rest);
   await expect(panel.locator(".sel-head")).toContainText("編隊 1");
@@ -1200,7 +1201,7 @@ test("留守：搶也預設留最少駐軍數（小鎮 1 名，D-084）；所有
   expect((await sent(page)).length, "no order").toBe(before);
 });
 
-test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少駐軍數，改成堅守、還算原本的編隊、不跟全軍；搶完變廢墟，改回積極、回到全軍，走回原本的編隊（使用者 2026-10-26）", async ({ page }) => {
+test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少駐軍數，守城、還算原本的編隊、不跟全軍；搶完變廢墟，改回積極、回到全軍，走回原本的編隊（使用者 2026-10-26）", async ({ page }) => {
   const spear = await ownIds(page, [1]);
   const inside = spear.slice(0, 2);
   await place(page, inside, [{ x: 30, y: 67 }, { x: 31, y: 66 }]);
@@ -1224,9 +1225,9 @@ test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少
   await dialog.getByRole("button", { name: /^稍後再決定/ }).tap();
   await page.locator(".sel-info").getByRole("button", { name: "搶", exact: true }).tap();
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "town_choice").at(-1)).toMatchObject({ c: "town_choice", town: 0, choice: 0 });
-  // The nearest stays (1 cell from the centre), holds, and leaves 全軍; still group 1's.
+  // The nearest stays (1 cell from the centre), guards it, and leaves 全軍; still group 1's.
   await expect.poll(() => garrison(page, 0)).toEqual([inside[0]]);
-  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance").at(-1)).toMatchObject({ c: "stance", u: [inside[0]], stance: 1, auto: true });
+  await expect.poll(async () => (await sent(page)).filter((c) => c.c === "guard").at(-1)).toMatchObject({ c: "guard", u: [inside[0]], town: 0, auto: true });
   expect((await page.evaluate(() => window.__proto?.game?.groups()))?.[0]).toContain(inside[0]);
   const army = await ownIds(page, [1, 2, 3]);
   await expect(armyButton(page)).toHaveText(`全軍 ${army.length - 1}`);

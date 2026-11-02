@@ -35,6 +35,7 @@ import {
   AVENGE,
   CANNON,
   CAV_FLANK,
+  CHASE_ROUND,
   SIEGE,
   DODGE,
   FIRE_BACK,
@@ -62,6 +63,7 @@ import {
   rank,
   RETARGET_EVERY,
   SEPARATION,
+  TOWN_GUARD,
   TOWER_ARROW,
   KEEP,
   UNDER_ATTACK_TICKS,
@@ -86,6 +88,18 @@ export function isWorkOrder(order: number): boolean {
 
 /** Numbers per calibrating cannon in UnitSystem.warns. */
 const WARN_STRIDE = 7;
+/** Places tried to hide in a town, each way (`guard`). */
+const HIDE_GRID = 5;
+
+/** What the guards of a town see (`guard`). Positions and reach are fixed point; `inside` holds unit ids. */
+interface GuardedTown {
+  inside: number[];
+  /** Enemies at a gate being hit, and that gate's cells. */
+  atGate: number[];
+  gates: { x: number; y: number }[];
+  shooters: { x: number; y: number; reach: number }[];
+  spots: { x: number; y: number }[];
+}
 
 export interface Hurt {
   /** Owner of what was hurt, fixed-point position, id. */
@@ -112,6 +126,8 @@ export class UnitSystem {
   private dodging = new Uint8Array(256);
   /** Per unit slot: its place among the guards of its outpost (id order), or -1 (D-080). */
   private postIndex = new Int32Array(256);
+  /** What each guarded town's guards see (collectTownGuards). */
+  private readonly guarded = new Map<number, GuardedTown>();
   /**
    * Cannons calibrating at the start of the tick (DODGE, round 8): owner, target point, the
    * mage's position, moves left before the shot lands and the mage's id, WARN_STRIDE each.
@@ -202,6 +218,7 @@ export class UnitSystem {
     this.collectWarnings(w);
     this.dodging.fill(0, 0, w.units.count);
     if (OUTPOST.on) this.collectPosts(w, fog);
+    if (TOWN_GUARD.on) this.collectTownGuards(w, fog);
     if (CAV_FLANK.on) this.collectShooters(w);
     for (let i = 0; i < w.units.count; i++) this.decide(w, fog, fields, farmers, i);
     if (this.warns.length > 0) this.keepOut(w, fog);
@@ -507,7 +524,7 @@ export class UnitSystem {
   }
 
   /** Nearest enemy unit within reach (ties to the lower id), else the nearest enemy building; returns an id or -1. */
-  private findTarget(w: World, fog: Fog, i: number, reach: number): number {
+  private findTarget(w: World, fog: Fog, i: number, reach: number, skip = -1): number {
     const u = w.units.col;
     const n = w.size;
     const me = u.owner[i];
@@ -524,7 +541,7 @@ export class UnitSystem {
     for (let y = Math.max(cy - cells, 0); y <= Math.min(cy + cells, n - 1); y++) {
       for (let x = Math.max(cx - cells, 0); x <= Math.min(cx + cells, n - 1); x++) {
         for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
-          if (u.owner[j] === me || u.action[j] === Action.Garrisoned) continue;
+          if (u.owner[j] === me || u.action[j] === Action.Garrisoned || u.id[j] === skip) continue;
           const dx = u.x[j] - mx;
           const dy = u.y[j] - my;
           const d2 = dx * dx + dy * dy;
@@ -543,7 +560,7 @@ export class UnitSystem {
     const b = w.buildings.col;
     for (let s = 0; s < w.buildings.count; s++) {
       // A gate is never just in the way to hit (D-096): only an attack on it, or a goal behind it.
-      if (b.owner[s] === me || b.type[s] === BuildingType.Gate) continue;
+      if (b.owner[s] === me || b.type[s] === BuildingType.Gate || b.id[s] === skip) continue;
       const d2 = rectDist2(mx, my, b.cellX[s], b.cellY[s], w.wide(s), w.tall(s));
       if (d2 > r2) continue;
       const bx = (b.cellX[s] << CELL_SHIFT) + 512;
@@ -835,6 +852,198 @@ export class UnitSystem {
       }
     }
     return { x: (x << CELL_SHIFT) + (CELL >> 1), y: (y << CELL_SHIFT) + (CELL >> 1) };
+  }
+
+  // --- guarding a town (`guard`) -----------------------------------------------------------
+
+  /**
+   * Every RETARGET_EVERY ticks, for each town with guards: the enemies inside its walls, the gate cells of a gate being
+   * hit with an enemy at it, the enemy shooters in reach of it from outside and the places inside out of their reach
+   * (none out of reach: the furthest from them). Held between looks; nothing here touches the game.
+   */
+  private collectTownGuards(w: World, fog: Fog): void {
+    const u = w.units.col;
+    if (w.tick % RETARGET_EVERY !== 0) return;
+    this.guarded.clear();
+    for (let i = 0; i < w.units.count; i++) {
+      if (u.order[i] !== Order.TownGuard || this.guarded.has(u.orderTarget[i])) continue;
+      this.guarded.set(u.orderTarget[i], this.lookOut(w, fog, u.orderTarget[i], u.owner[i]));
+    }
+  }
+
+  private lookOut(w: World, fog: Fog, t: number, me: number): GuardedTown {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const c = w.castles[t];
+    const tx = w.townX[t];
+    const ty = w.townY[t];
+    const longest = Math.max(UNITS[UnitType.Ranged].range, UNITS[UnitType.Mage].range) >> CELL_SHIFT;
+    const out = Math.max(c.inside.x1 - c.inside.x0, c.inside.y1 - c.inside.y0) + longest + 3;
+    const town: GuardedTown = { inside: [], atGate: [], gates: [], shooters: [], spots: [] };
+    const foes: number[] = [];
+    for (let y = Math.max(ty - out, 0); y <= Math.min(ty + out, n - 1); y++) {
+      for (let x = Math.max(tx - out, 0); x <= Math.min(tx + out, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (u.owner[j] === me || u.owner[j] >= PLAYER_COUNT || u.hp[j] <= 0 || u.action[j] === Action.Garrisoned) continue;
+          if (this.sees(fog, me, u.x[j], u.y[j], n)) foes.push(j);
+        }
+      }
+    }
+    for (const j of foes) {
+      if (w.insideAt[(u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT)] === t) town.inside.push(u.id[j]);
+      else if (UNITS[u.type[j]].range > CELL && u.type[j] !== UnitType.Siege) town.shooters.push({ x: u.x[j], y: u.y[j], reach: UNITS[u.type[j]].range + CELL });
+    }
+    town.inside.sort((p, q) => p - q);
+    c.gates.forEach((cells, k) => {
+      const s = w.gateIn(t, k);
+      if (s < 0 || w.tick - b.lastHurt[s] > TOWN_GUARD.gateTicks) return;
+      const places = cells.map(([dx, dy]) => ({ x: ((tx + dx) << CELL_SHIFT) + (CELL >> 1), y: ((ty + dy) << CELL_SHIFT) + (CELL >> 1) }));
+      const near = (TOWN_GUARD.gateReach << CELL_SHIFT) * (TOWN_GUARD.gateReach << CELL_SHIFT);
+      const at = foes.filter((j) => places.some((p) => (u.x[j] - p.x) * (u.x[j] - p.x) + (u.y[j] - p.y) * (u.y[j] - p.y) <= near));
+      if (at.length === 0) return;
+      town.atGate.push(...at.map((j) => u.id[j]));
+      town.gates.push(...places);
+    });
+    town.atGate.sort((p, q) => p - q);
+    if (town.shooters.length > 0) town.spots = this.hideSpots(w, t, me, town.shooters);
+    return town;
+  }
+
+  /** Places inside town t (a grid over it, cell centres) out of every shooter's reach, or the one furthest from them. */
+  private hideSpots(w: World, t: number, me: number, shooters: GuardedTown["shooters"]): { x: number; y: number }[] {
+    const c = w.castles[t].inside;
+    const f = w.map.frames[me] ?? IDENTITY;
+    const n = w.size;
+    const safe: { x: number; y: number }[] = [];
+    let far: { x: number; y: number } | null = null;
+    let farD = -1;
+    let farKey = 0;
+    for (let gy = 0; gy < HIDE_GRID; gy++) {
+      for (let gx = 0; gx < HIDE_GRID; gx++) {
+        const cx = w.townX[t] + c.x0 + Math.trunc(((c.x1 - c.x0) * gx) / (HIDE_GRID - 1));
+        const cy = w.townY[t] + c.y0 + Math.trunc(((c.y1 - c.y0) * gy) / (HIDE_GRID - 1));
+        if (!w.walkable(cx, cy)) continue;
+        const x = (cx << CELL_SHIFT) + (CELL >> 1);
+        const y = (cy << CELL_SHIFT) + (CELL >> 1);
+        let least = Number.MAX_SAFE_INTEGER;
+        let clear = true;
+        for (const s of shooters) {
+          const d = (x - s.x) * (x - s.x) + (y - s.y) * (y - s.y);
+          least = Math.min(least, d);
+          if (d <= s.reach * s.reach) clear = false;
+        }
+        if (clear) safe.push({ x, y });
+        const a = toCanon(f, cx, cy);
+        const key = a.v * n + a.u;
+        if (least > farD || (least === farD && key < farKey)) {
+          far = { x, y };
+          farD = least;
+          farKey = key;
+        }
+      }
+    }
+    return safe.length > 0 || far === null ? safe : [far];
+  }
+
+  /**
+   * A soldier guarding a town (Order.TownGuard). First what it can hit from where it stands; then, within the walls only,
+   * an enemy inside them, a gate being broken (onto the gate cell, no further), away from shooters it cannot reach; else
+   * its place. False when the town is lost.
+   */
+  private townGuard(w: World, fog: Fog, fields: FieldCache, i: number): boolean {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const me = u.owner[i];
+    const t = u.orderTarget[i];
+    if (!w.heldBy(t, me)) return false;
+    const info = UNITS[u.type[i]];
+    const town = this.guarded.get(t);
+    let tid = u.target[i];
+    const ts0 = tid >= 0 ? w.unit(tid) : -1;
+    if (tid >= 0 && ts0 < 0 && w.building(tid) < 0) tid = -1;
+    if ((w.tick + this.phase(w, i)) % RETARGET_EVERY === 0 || tid < 0) tid = this.findTarget(w, fog, i, info.range);
+    if (tid >= 0) {
+      const ts = w.unit(tid);
+      const ks = ts >= 0 ? -1 : w.building(tid);
+      const tx = ts >= 0 ? u.x[ts] : (b.cellX[ks] << CELL_SHIFT) + ((w.wide(ks) << CELL_SHIFT) >> 1);
+      const ty = ts >= 0 ? u.y[ts] : (b.cellY[ks] << CELL_SHIFT) + ((w.tall(ks) << CELL_SHIFT) >> 1);
+      const d2 = ts >= 0 ? (tx - u.x[i]) * (tx - u.x[i]) + (ty - u.y[i]) * (ty - u.y[i]) : rectDist2(u.x[i], u.y[i], b.cellX[ks], b.cellY[ks], w.wide(ks), w.tall(ks));
+      if (d2 <= info.range * info.range) {
+        u.target[i] = tid;
+        u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
+        this.attacking[i] = 1;
+        u.action[i] = Action.Attack;
+        return true;
+      }
+    }
+    u.target[i] = -1;
+    if (town !== undefined) {
+      let best = -1;
+      let bestD = 0;
+      for (const id of town.inside) {
+        const j = w.unit(id);
+        if (j < 0 || w.insideAt[(u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT)] !== t) continue;
+        const d = (u.x[j] - u.x[i]) * (u.x[j] - u.x[i]) + (u.y[j] - u.y[i]) * (u.y[j] - u.y[i]);
+        if (best < 0 || d < bestD || (d === bestD && canonFirst(w, me, j, best))) {
+          best = j;
+          bestD = d;
+        }
+      }
+      if (best >= 0) {
+        steerTo(w, fields, i, u.x[best], u.y[best], (u.y[best] >> CELL_SHIFT) * n + (u.x[best] >> CELL_SHIFT), info.speed);
+        return true;
+      }
+      // Onto the gate cell next to whoever is at the gate, the nearest of them.
+      let foe = -1;
+      let foeD = 0;
+      for (const id of town.atGate) {
+        const j = w.unit(id);
+        if (j < 0) continue;
+        const d = (u.x[j] - u.x[i]) * (u.x[j] - u.x[i]) + (u.y[j] - u.y[i]) * (u.y[j] - u.y[i]);
+        if (foe < 0 || d < foeD || (d === foeD && canonFirst(w, me, j, foe))) {
+          foe = j;
+          foeD = d;
+        }
+      }
+      if (foe >= 0) {
+        let cell = town.gates[0];
+        let cellD = -1;
+        for (const c of town.gates) {
+          const d = (u.x[foe] - c.x) * (u.x[foe] - c.x) + (u.y[foe] - c.y) * (u.y[foe] - c.y);
+          if (cellD < 0 || d < cellD) {
+            cell = c;
+            cellD = d;
+          }
+        }
+        return this.walkTo(w, fields, i, cell);
+      }
+      const inReach = (x: number, y: number) => town.shooters.some((s) => (x - s.x) * (x - s.x) + (y - s.y) * (y - s.y) <= s.reach * s.reach);
+      if (town.spots.length > 0 && (inReach(u.x[i], u.y[i]) || inReach(u.anchorX[i], u.anchorY[i]))) {
+        let spot = town.spots[0];
+        let spotD = -1;
+        for (const s of town.spots) {
+          const d = (s.x - u.x[i]) * (s.x - u.x[i]) + (s.y - u.y[i]) * (s.y - u.y[i]);
+          if (spotD < 0 || d < spotD) {
+            spot = s;
+            spotD = d;
+          }
+        }
+        return this.walkTo(w, fields, i, spot);
+      }
+    }
+    return this.walkTo(w, fields, i, { x: u.anchorX[i], y: u.anchorY[i] });
+  }
+
+  /** On to a place (fixed point), or standing there. True. */
+  private walkTo(w: World, fields: FieldCache, i: number, at: { x: number; y: number }): true {
+    const u = w.units.col;
+    const dx = at.x - u.x[i];
+    const dy = at.y - u.y[i];
+    if (dx * dx + dy * dy > ARRIVE_DISTANCE * ARRIVE_DISTANCE) steerTo(w, fields, i, at.x, at.y, -1, UNITS[u.type[i]].speed);
+    else u.action[i] = Action.Idle;
+    return true;
   }
 
   /** Someone hit unit slot ts: if it guards an outpost, that outpost's guards go for the attacker (D-080). */
@@ -1613,6 +1822,15 @@ export class UnitSystem {
       this.toShelter(w, fields, i);
       return;
     }
+    if (order === Order.TownGuard) {
+      if (TOWN_GUARD.on && this.townGuard(w, fog, fields, i)) return;
+      // The town is lost: an ordinary soldier again, where it stands.
+      u.order[i] = Order.None;
+      u.orderTarget[i] = -1;
+      u.target[i] = -1;
+      u.anchorX[i] = u.x[i];
+      u.anchorY[i] = u.y[i];
+    }
     if (order === Order.Post) {
       if (OUTPOST.on && this.guard(w, fog, fields, i)) return;
       // The outpost is gone: an ordinary soldier again, where it stands (D-080).
@@ -1806,19 +2024,27 @@ export class UnitSystem {
           return;
         }
       }
-      // Far off: along the field; a building (D-096: the gate a move breaks through) on a move too.
-      if ((order === Order.Attack || (ts < 0 && GATE.on)) && d2 > DIRECT_STEER * DIRECT_STEER) {
-        if (ts >= 0) {
-          steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), info.speed);
-        } else {
-          const bs = w.building(tid);
-          const b = w.buildings.col;
-          steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs)));
-        }
+      if (CHASE_ROUND.on && order !== Order.Attack) {
+        // The straight way blocked: round, or let go (another in reach, or back to what it was doing).
+        if (this.chase(w, fields, i, ts, tid, tx, ty, order)) return;
+        const other = this.findTarget(w, fog, i, Math.max(AGGRO_RANGE, info.range), tid);
+        u.target[i] = other >= 0 && this.chase(w, fields, i, w.unit(other), other, targetX(w, other), targetY(w, other), order) ? other : -1;
+        if (u.target[i] >= 0) return;
       } else {
-        steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
+        // Far off: along the field; a building (D-096: the gate a move breaks through) on a move too.
+        if ((order === Order.Attack || (ts < 0 && GATE.on)) && d2 > DIRECT_STEER * DIRECT_STEER) {
+          if (ts >= 0) {
+            steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), info.speed);
+          } else {
+            const bs = w.building(tid);
+            const b = w.buildings.col;
+            steerTo(w, fields, i, tx, ty, buildingKey(tid), info.speed, () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs)));
+          }
+        } else {
+          steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
+        }
+        return;
       }
-      return;
     }
 
     if (order === Order.Move || order === Order.Retreat) {
@@ -1859,6 +2085,41 @@ export class UnitSystem {
       return;
     }
     u.action[i] = Action.Idle;
+  }
+
+  /**
+   * Unit i goes for the target (unit slot ts, or the building tid) at (tx, ty) with no order to attack it: straight when
+   * the way is open, else round by the field (CHASE_ROUND). False, doing nothing, when it cannot get there, or only by a
+   * walk longer than CHASE_ROUND.walk (a building on a move goes on: it may be what the move breaks through).
+   */
+  private chase(w: World, fields: FieldCache, i: number, ts: number, tid: number, tx: number, ty: number, order: number): boolean {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const info = UNITS[u.type[i]];
+    // One on a wall stands on a cell nobody walks on: straight for it, as ever.
+    if (ts >= 0 && (onWall(w, ts) || openLine(w, u.x[i], u.y[i], tx, ty))) {
+      steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
+      return true;
+    }
+    if (this.walledOff(w, i, ts, tid) >= 0) return false;
+    const bs = ts >= 0 ? -1 : w.building(tid);
+    const key = ts >= 0 ? (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT) : buildingKey(tid);
+    const goals = ts >= 0 ? null : () => cellsAround(w, b.cellX[bs], b.cellY[bs], w.wide(bs), w.tall(bs));
+    const f = fields.get(
+      w,
+      key,
+      goals ??
+        (() => {
+          const c = nearestWalkable(w, key % n, Math.trunc(key / n));
+          return c < 0 ? [] : [c];
+        }),
+      false,
+      u.owner[i],
+    );
+    if (f !== null && (ts >= 0 || order === Order.None) && f.dist[(u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT)] > CHASE_ROUND.walk * 10) return false;
+    steerTo(w, fields, i, tx, ty, key, info.speed, goals);
+    return true;
   }
 
   /**
@@ -2592,6 +2853,20 @@ export function coverDamage(d: number): number {
  * The arrows building slot s shoots, null if none: a finished main city, a town's keep (D-100; with
  * KEEP off the big city's tower) or an arrow tower (round 7), or a governed town's gate (D-096).
  */
+/** Where the unit or building id stands (fixed point; a building's middle). */
+function targetX(w: World, id: number): number {
+  const ts = w.unit(id);
+  if (ts >= 0) return w.units.col.x[ts];
+  const bs = w.building(id);
+  return (w.buildings.col.cellX[bs] << CELL_SHIFT) + ((w.wide(bs) << CELL_SHIFT) >> 1);
+}
+function targetY(w: World, id: number): number {
+  const ts = w.unit(id);
+  if (ts >= 0) return w.units.col.y[ts];
+  const bs = w.building(id);
+  return (w.buildings.col.cellY[bs] << CELL_SHIFT) + ((w.tall(bs) << CELL_SHIFT) >> 1);
+}
+
 function arrowOf(w: World, s: number): { damage: number; range: number; cooldown: number } | null {
   const b = w.buildings.col;
   if (b.progress[s] < 1000) return null;

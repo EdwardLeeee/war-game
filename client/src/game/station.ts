@@ -1,11 +1,12 @@
 // 駐軍 (the user 2026-10-25: 「我覺得駐軍也可以駐軍再佔領的程式裡面」，「我是指說軍團選項，可以駐軍在都市
 // 裡面」; 2026-10-31: 「把兵團整個收縮到選擇的那個城鎮裡面」; ceo's spec): the soldiers selected and the
 // rest of their groups (those in no group: only the ones selected) go into a town we hold and stay
-// as its 留守, the same list as the one 攻下's − N + sets (D-026, D-084): 堅守, not in 全軍 or 全軍撤退,
-// but still their groups' (the user 2026-10-26: 「我把兵團駐守在這座城池裡面，那我當然可以再把它抽回來」):
+// as its 留守, the same list as the one 攻下's − N + sets (D-026, D-084): not in 全軍 or 全軍撤退, but
+// still their groups' (the user 2026-10-26: 「我把兵團駐守在這座城池裡面，那我當然可以再把它抽回來」):
 // 出城歸隊 brings them back, and an order from the group's button takes them out, the town keeping
-// the least it needs. They walk in (移動); with walls on, the ranged and the mages go up on its
-// walls once there. What the tap means. Pure, for the unit tests.
+// the least it needs. They guard it (`guard`, PROTOCOL.md 3.7; the user 2026-10-31: 「敵軍打過來我們要
+// 反擊但不會追出城鎮」): the simulation walks them in and sends the ranged and the mages up on its
+// walls. What the tap means. Pure, for the unit tests.
 
 import { WALL_WRONG_TARGET } from "./walls.ts";
 
@@ -27,15 +28,4 @@ export function stationTap(units: readonly number[], town: { id: number; held: b
   const ids = units.filter(soldier);
   if (ids.length === 0) return { error: STATION_NOBODY };
   return { town: town.id, ids };
-}
-
-/**
- * Those of the walk who stand in the town now (inside its walls, no order left): the ones to send
- * up its walls (ranged and mages, walls on), at most as many places as are free.
- */
-export function upOnArrival(arrived: readonly { id: number; climbs: boolean }[], free: number): number[] {
-  return arrived
-    .filter((a) => a.climbs)
-    .map((a) => a.id)
-    .slice(0, Math.max(0, free));
 }

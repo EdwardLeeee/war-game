@@ -5,13 +5,13 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ASSAULT_EVERY, ASSAULT_SENT_TICKS, type AssaultScene, Assaults, assaultOrders } from "../src/game/assault.ts";
+import { ASSAULT_EVERY, ASSAULT_SENT_TICKS, type AssaultScene, Assaults, assaultOrders, FOCUS_WALL_CELLS } from "../src/game/assault.ts";
 
 const SCENE: AssaultScene = {
   attackers: [
-    { id: 1, x: 20, y: 30, idle: true, inside: true },
-    { id: 2, x: 21, y: 30, idle: true, inside: true },
-    { id: 3, x: 22, y: 31, idle: false, inside: true },
+    { id: 1, x: 20, y: 30, idle: true, inside: true, shoots: false },
+    { id: 2, x: 21, y: 30, idle: true, inside: true, shoots: false },
+    { id: 3, x: 22, y: 31, idle: false, inside: true, shoots: false },
   ],
   // Militia on the far wall, one nearer; the tower.
   defenders: [
@@ -22,6 +22,8 @@ const SCENE: AssaultScene = {
   gates: [{ id: 70, x: 24, y: 23 }],
   open: true,
   centre: { x: 24.5, y: 30.5 },
+  focus: null,
+  wall: [],
 };
 
 test("城裡站著沒有指令的兵：派去打最近的守軍（民兵、牆上的民兵、箭樓），有指令的不管", () => {
@@ -34,9 +36,9 @@ test("門還沒破、兵停在牆外：先打最近的城門（ceo）；有門�
     ...SCENE,
     open: false,
     attackers: [
-      { id: 1, x: 24, y: 21, idle: true, inside: false },
-      { id: 2, x: 25, y: 21, idle: true, inside: false },
-      { id: 4, x: 22, y: 33, idle: true, inside: true },
+      { id: 1, x: 24, y: 21, idle: true, inside: false, shoots: false },
+      { id: 2, x: 25, y: 21, idle: true, inside: false, shoots: false },
+      { id: 4, x: 22, y: 33, idle: true, inside: true, shoots: false },
     ],
     gates: [
       { id: 70, x: 24, y: 23 },
@@ -55,7 +57,7 @@ test("門還沒破、兵停在牆外：先打最近的城門（ceo）；有門�
 
 test("守軍都看不到：攻擊移動到城中心；已經在中心的不再送", () => {
   assert.deepEqual(assaultOrders({ ...SCENE, defenders: [] }), [{ c: "move", u: [1, 2], x: 24, y: 30 }]);
-  const there: AssaultScene = { ...SCENE, defenders: [], attackers: [{ id: 1, x: 24, y: 31, idle: true, inside: true }] };
+  const there: AssaultScene = { ...SCENE, defenders: [], attackers: [{ id: 1, x: 24, y: 31, idle: true, inside: true, shoots: false }] };
   assert.deepEqual(assaultOrders(there), []);
 });
 
@@ -73,6 +75,51 @@ test("誰在攻哪座城：玩家下攻擊就記下，換下別的指令就不�
   assert.deepEqual(a.list(), [{ town: 6, ids: [3] }]);
   a.end(6);
   assert.deepEqual(a.list(), []);
+});
+
+test("點城門（使用者 2026-11-01，近戰打門、遠程打牆上）：門還在時，槍兵、騎兵、攻城砲打點的那座門；弓手和法師先射門邊牆上正在射我們的，沒有就射門邊牆上的，牆上沒人就打門；門破了照舊", () => {
+  const gate = { id: 71, x: 30, y: 26 };
+  const scene: AssaultScene = {
+    ...SCENE,
+    open: false,
+    gates: [{ id: 70, x: 24, y: 23 }, gate],
+    focus: gate,
+    attackers: [
+      // By the north gate (70), nearer it than the one tapped: they go to the one tapped all the same.
+      { id: 1, x: 24, y: 21, idle: true, inside: false, shoots: false },
+      { id: 2, x: 25, y: 21, idle: true, inside: false, shoots: true },
+      { id: 3, x: 33, y: 26, idle: true, inside: false, shoots: true },
+    ],
+    // On the walls: 52 by the gate tapped, shooting at ours; 53 by it too, not; 54 far from it, shooting.
+    wall: [
+      { id: 52, x: 30, y: 28, shooting: true },
+      { id: 53, x: 31, y: 25, shooting: false },
+      { id: 54, x: 30, y: 26 + FOCUS_WALL_CELLS + 1, shooting: true },
+    ],
+  };
+  assert.deepEqual(assaultOrders(scene), [
+    { c: "attack", u: [1], target: 71 },
+    { c: "attack", u: [2, 3], target: 52 },
+  ]);
+  assert.deepEqual(assaultOrders({ ...scene, wall: scene.wall.map((w) => ({ ...w, shooting: false })) }).at(-1), { c: "attack", u: [2, 3], target: 53 }, "nobody shooting: the nearest by it");
+  assert.deepEqual(assaultOrders({ ...scene, wall: [scene.wall[2]] }).at(-1), { c: "attack", u: [2, 3], target: 71 }, "nobody on the walls by it: the gate");
+  // Broken (some gate open): at the nearest defender, as before.
+  assert.deepEqual(assaultOrders({ ...scene, open: true }), [{ c: "attack", u: [1, 2, 3], target: 51 }]);
+});
+
+test("點的那座門記在攻城裡：同一座城的攻擊換點別處就忘掉；攻城結束也忘掉", () => {
+  const a = new Assaults();
+  a.begin(5, [1, 2], 71);
+  assert.equal(a.focusOf(5), 71);
+  // His ranged sent before the gate with it (the same town, the same gate).
+  a.begin(5, [3], 71);
+  assert.equal(a.focusOf(5), 71);
+  assert.deepEqual(a.list(), [{ town: 5, ids: [1, 2, 3] }]);
+  a.begin(5, [4]);
+  assert.equal(a.focusOf(5), null, "the town's ground or keep: as before");
+  a.begin(5, [1], 70);
+  a.end(5);
+  assert.equal(a.focusOf(5), null);
 });
 
 test("後到的兵加入攻城：同編隊站在城旁的才由 Game 交進來；已在攻城的、攻城開始後玩家另外下過指令的不算；全隊新指令就全停", () => {

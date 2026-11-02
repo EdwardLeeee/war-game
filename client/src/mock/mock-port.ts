@@ -530,6 +530,29 @@ export class MockPort implements SimPort {
     if (u.order === Order.Wall) u.order = Order.None;
   }
 
+  /** These of ours up on the town's wall, each on the free wall cell nearest it, while there are any. Returns those who went. */
+  private upOnWall(t: MTown, castle: { wall: readonly (readonly number[])[] }, list: MUnit[]): MUnit[] {
+    const taken = new Set(this.units.filter((u) => u.wall?.town === t.id).map((u) => `${u.x >> 10},${u.y >> 10}`));
+    const free = castle.wall.map(([x, y]) => ({ x: t.cx + x, y: t.cy + y })).filter((c) => !taken.has(`${c.x},${c.y}`));
+    const up: MUnit[] = [];
+    for (const u of list) {
+      if (free.length === 0) break;
+      const ux = u.x >> 10;
+      const uy = u.y >> 10;
+      free.sort((a, b) => (a.x - ux) ** 2 + (a.y - uy) ** 2 - ((b.x - ux) ** 2 + (b.y - uy) ** 2));
+      const cell = free.shift() as { x: number; y: number };
+      this.offWall(u);
+      u.wall = { town: t.id, from: { x: t.cx, y: t.cy } };
+      u.x = centre(cell.x);
+      u.y = centre(cell.y);
+      u.target = null;
+      u.order = Order.Wall;
+      u.flags |= UnitFlag.OnWall;
+      up.push(u);
+    }
+    return up;
+  }
+
   /** Tests: these units of ours fall. */
   remove(ids: number[]): void {
     for (let i = this.units.length - 1; i >= 0; i--) if (this.units[i].owner === ME && ids.includes(this.units[i].id)) this.units.splice(i, 1);
@@ -933,8 +956,8 @@ export class MockPort implements SimPort {
           u.x = u.target.x;
           u.y = u.target.y;
           u.target = null;
-          // On guard at an outpost (D-080), hiding or gathering at a node, the order stays.
-          const stays = u.order === Order.Garrison || u.order === Order.Post || (u.order === Order.Gather && u.node !== undefined);
+          // On guard at an outpost (D-080) or in a town, hiding or gathering at a node, the order stays.
+          const stays = u.order === Order.Garrison || u.order === Order.Post || u.order === Order.TownGuard || (u.order === Order.Gather && u.node !== undefined);
           if (!stays) u.order = Order.None;
           if (u.type === UnitType.Farmer && !stays) u.flags |= UnitFlag.IdleFarmer;
         } else {
@@ -1288,6 +1311,23 @@ export class MockPort implements SimPort {
       case "reserve":
         this.reserve = { food: cmd.food, wood: cmd.wood, gold: cmd.gold, crystal: cmd.crystal };
         break;
+      // 守城 (PROTOCOL.md 3.7): the ranged units and mages up on its walls, the others (and those with
+      // no place) walk in and stay; farmers and those on its wall already are left out.
+      case "guard": {
+        const t = this.towns.find((v) => v.id === cmd.town);
+        const castle = t === undefined ? undefined : this.rules.towns?.[t.size]?.castle;
+        const held = t !== undefined && t.owner === ME && ([TownState.AwaitingChoice, TownState.Plundering, TownState.Repairing, TownState.Governed] as number[]).includes(t.state);
+        const list = own(cmd.u).filter((u) => u.type !== UnitType.Farmer && !u.hidden && u.wall?.town !== cmd.town);
+        if (t === undefined) reject(Reject.InvalidTarget);
+        else if (!held) reject(Reject.TownNotYours);
+        else if (list.length === 0) reject(Reject.NotAvailable);
+        else {
+          const climbers = this.walls && castle !== undefined ? list.filter((u) => u.type === UnitType.Ranged || u.type === UnitType.Mage) : [];
+          const up = castle === undefined ? [] : this.upOnWall(t, castle, climbers);
+          goTo(list.filter((u) => !up.includes(u)), t.cx, t.cy, Order.TownGuard);
+        }
+        break;
+      }
       // 上城牆 (D-096, PROTOCOL.md 3.7): our ranged units and mages up on a town we hold, each on the
       // free wall cell nearest it; 下城牆 back to the cell inside they went up from.
       case "wall": {
@@ -1300,23 +1340,7 @@ export class MockPort implements SimPort {
         else if (!held) reject(Reject.TownNotYours);
         else if (list.length === 0) reject(Reject.NotAvailable);
         else {
-          const taken = new Set(this.units.filter((u) => u.wall?.town === t.id).map((u) => `${u.x >> 10},${u.y >> 10}`));
-          const free = castle.wall.map(([x, y]) => ({ x: t.cx + x, y: t.cy + y })).filter((c) => !taken.has(`${c.x},${c.y}`));
-          if (free.length === 0) reject(Reject.NoRoom);
-          for (const u of list) {
-            if (free.length === 0) break;
-            const ux = u.x >> 10;
-            const uy = u.y >> 10;
-            free.sort((a, b) => (a.x - ux) ** 2 + (a.y - uy) ** 2 - ((b.x - ux) ** 2 + (b.y - uy) ** 2));
-            const cell = free.shift() as { x: number; y: number };
-            this.offWall(u);
-            u.wall = { town: t.id, from: { x: t.cx, y: t.cy } };
-            u.x = centre(cell.x);
-            u.y = centre(cell.y);
-            u.target = null;
-            u.order = Order.Wall;
-            u.flags |= UnitFlag.OnWall;
-          }
+          if (this.upOnWall(t, castle, list).length === 0) reject(Reject.NoRoom);
         }
         break;
       }

@@ -310,6 +310,12 @@ export const FORMATION_LOOSE_SPACING = 2 * CELL;
 export const ARRIVE_DISTANCE = 256;
 /** Within this distance of its slot a unit steers straight at it instead of following the field. */
 export const DIRECT_STEER = 3 * CELL;
+/**
+ * A unit going for a target with no order to attack it, the straight way blocked (the user 2026-10-31: 「後面過去的兵只會看不會
+ * 打」: a keep, a castle wall in between): it walks round, at most `walk` cells; further, or no way there, it lets go. The
+ * chase's own limits stand (LEASH).
+ */
+export const CHASE_ROUND = { on: true, walk: 16 };
 
 /** Main city arrows (D3): one every 2 s, 5 damage, range 7; +1 arrow per sheltered farmer, max +10. */
 export const MAIN_ARROW: ArrowInfo = { damage: 5, range: 7 * CELL, cooldown: 2 * S, extraMax: 10 };
@@ -396,6 +402,13 @@ export const GARRISON_TYPES: UnitType[] = [UnitType.Ranged, UnitType.Mage];
  * + `town`, or (D-080, while OUTPOST is on) `outpost` cells of an own finished outpost's footprint.
  */
 export const TOWER_REACH = { mainCity: 8, town: 2, outpost: 6 };
+
+/**
+ * Guarding a town (the command `guard`; the user 2026-10-31: 「駐軍的功能應該是說敵軍打過來我們要反擊但不會追出城鎮」，城門格:
+ * 可以站，城外搆不到的射手:「躲開阿」). `gateTicks`: a gate hit that long ago still calls them. `gateReach`: cells from a
+ * gate an enemy counts as being at it.
+ */
+export const TOWN_GUARD = { on: true, gateTicks: 3 * S, gateReach: 2 };
 
 /**
  * Outposts (D-080, the user 2026-10-09): built anywhere walkable and explored; up to `slots`

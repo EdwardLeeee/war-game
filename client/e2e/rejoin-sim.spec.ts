@@ -104,16 +104,18 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await expect.poll(said).toMatch(/\d+ 名出城歸隊編隊 1，留 1 名守城/);
   const kept = await garrison();
   expect(kept).toHaveLength(1);
-  // The others march off, far from the town: it keeps its 1 and does not count down.
-  const out = alive.filter((id) => !kept.includes(id));
+  // The others march off, far from the town: it keeps its 1 and does not count down. All of group 1
+  // that came out: a soldier 自動訓練 trained for it walked in after `alive` was read and came out too,
+  // and with all the group out it stands where it is, in the town (CI run 41225708649).
+  const living = (await units(page)).map((u) => u.id);
+  const out = ((await page.evaluate(() => window.__proto?.game?.groupInfo() ?? []))[0]?.ids ?? []).filter((id) => living.includes(id) && !kept.includes(id));
   await page.evaluate(([u, x, y]) => window.__proto?.game?.send({ c: "move", u, x, y }), [out, from.x, from.y] as const);
   await expect.poll(async () => (await units(page)).filter((u) => out.includes(u.id)).every((u) => Math.hypot(u.cx - town.cx, u.cy - town.cy) > 8), { timeout: 120_000 }).toBe(true);
   await page.waitForTimeout(3000);
   // Still being repaired, or governed by now: either needs its 1 (sim/src/core/towns.ts).
   const held = (await towns(page)).find((t) => t.id === town.id);
   expect([REPAIRING, GOVERNED]).toContain(held?.state);
-  // Its 1 at least: a soldier 自動訓練 trained for group 1 stands in the town too (CI run 41192087489).
-  expect(held?.garrison).toBeGreaterThanOrEqual(1);
+  expect(held?.garrison).toBe(1);
   expect(held?.revoltTimer, "manned: no revolt").toBe(0);
   // 全部帶走 on the town's panel: the last one out, and the town counts down. A tap on its ground,
   // not on the one who stayed (on the centre, as like as not).

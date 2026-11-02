@@ -3,7 +3,8 @@
 // town's gate once and is given nothing more: it breaks the gate, goes in after the militia on the
 // walls and takes the town (攻下小鎮！ asks 搶 or 治理). The pictures, a few in a row, for the user.
 // Another order of the player's (移動 away) ends it. Those of the group that stand by the town with
-// no order join it (the user 2026-10-31: 「選兵團打城市的時候 後面過去的兵只會看不會打」).
+// no order join it (the user 2026-10-31: 「選兵團打城市的時候 後面過去的兵只會看不會打」). 攻擊 on a
+// gate (the user 2026-11-01): the spearmen at it, the ranged at those on the walls by it.
 
 import { expect, type Page, test } from "@playwright/test";
 import { saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
@@ -11,6 +12,8 @@ import { saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
 const SMALL = 0;
 const GATE = 13;
 const FARMER = 0;
+const SPEARMAN = 1;
+const RANGED = 2;
 
 let checkErrors: () => void;
 
@@ -115,4 +118,57 @@ test("編隊攻城：同編隊站在城旁沒指令的兵也加入；攻城開�
   await expect.poll(() => standing([away]), { timeout: 60_000, intervals: [500] }).toBe(true);
   await page.waitForTimeout(3000);
   expect((await autoAttacks(page)).some((c) => (c.u as number[]).includes(away)), "told otherwise: stays out of it").toBe(false);
+});
+
+test("點城門（使用者 2026-11-01，近戰打門、遠程打牆上）：槍兵打點的那座門，弓手走到門前先射牆上的民兵；門破了全部衝進去，不再下指令就攻下，城外沒有站著的槍兵", async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await start(page);
+  const s = await scene(page);
+  const all = await units(page);
+  const spears = s.ids.filter((id) => all.find((u) => u.id === id)?.type === SPEARMAN);
+  const ranged = s.ids.filter((id) => all.find((u) => u.id === id)?.type === RANGED);
+  // The gate in sight (the others are in the fog at the start; another gate than the nearest: test/assault.test.ts).
+  const gate = s.gate;
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.0), [gate.cx, gate.cy] as const);
+  await page.evaluate(([ids, target]) => window.__proto?.game?.send({ c: "attack", u: ids, target }), [s.ids, gate.id] as const);
+  // Two orders of his: the spearmen at the gate, the ranged before it (攻擊移動).
+  const mine = (await playerOrders(page)).slice(-2);
+  expect(mine[0]).toMatchObject({ c: "attack", u: spears, target: gate.id });
+  expect(mine[1]).toMatchObject({ c: "move", u: ranged });
+  const front = mine[1] as { x: number; y: number };
+  expect(Math.max(Math.abs(front.x - gate.cx), Math.abs(front.y - gate.cy))).toBeLessThanOrEqual(4);
+  const given = (await playerOrders(page)).length;
+  await expect(page.getByText("近戰打這座城門；弓手和法師到門前，先射牆上的守軍")).toBeVisible();
+  await shot(page, info, "assault-6-gate-tapped");
+  // While it stands, what the screen sends the spearmen at is the gate tapped (the gate and the orders read at once).
+  const check = () =>
+    page.evaluate(([ids, target]) => {
+      const g = window.__proto?.game;
+      const standing = (g?.buildings() ?? []).some((b) => b.id === target);
+      const wrong = ((g?.sent() ?? []) as Record<string, unknown>[]).filter((c) => c.auto === true && c.c === "attack" && (c.u as number[]).some((id) => ids.includes(id)) && c.target !== target);
+      return { standing, wrong: wrong.length };
+    }, [spears, gate.id] as const);
+  const end0 = Date.now() + 150_000;
+  for (;;) {
+    const r = await check();
+    if (!r.standing) break;
+    expect(r.wrong, "the spearmen: the gate tapped").toBe(0);
+    expect(Date.now() < end0, "the gate falls").toBe(true);
+    await page.waitForTimeout(500);
+  }
+  await shot(page, info, "assault-7-gate-broken");
+  // All go in; spearmen standing with no order outside the walls (the small town's inside is 6 cells round its centre), at most at once.
+  let outside = 0;
+  const end = Date.now() + 120_000;
+  while (Date.now() < end) {
+    if ((await towns(page)).find((t) => t.id === s.town.id)?.owner === s.m) break;
+    const still = (await units(page)).filter((u) => spears.includes(u.id) && u.order === 0 && Math.max(Math.abs(u.cx - s.town.cx), Math.abs(u.cy - s.town.cy)) > 6);
+    outside = Math.max(outside, still.length);
+    await page.waitForTimeout(1000);
+  }
+  await expect(page.getByText(/^攻下小鎮！/)).toBeVisible({ timeout: 60_000 });
+  await shot(page, info, "assault-8-taken");
+  expect((await playerOrders(page)).length, "no other order of his").toBe(given);
+  // A spearman may stand outside for a second between orders; never most of them.
+  expect(outside, "spearmen standing outside after the gate fell").toBeLessThan(Math.ceil(spears.length / 2));
 });
