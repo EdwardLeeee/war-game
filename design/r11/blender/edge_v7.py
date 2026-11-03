@@ -275,11 +275,7 @@ def _wall_mat(name, img, z0, z1, slot=None):
         keep.operation = "MAXIMUM"
         nt.links.new(inside.outputs["Result"], keep.inputs[0])
         nt.links.new(sf_.outputs[0], keep.inputs[1])
-        a = nt.nodes.new("ShaderNodeMath")
-        a.operation = "MULTIPLY"
-        nt.links.new(fade, a.inputs[0])
-        nt.links.new(keep.outputs[0], a.inputs[1])
-        fade = a.outputs[0]
+        w_sock = keep.outputs[0]
     # the sheet's back never shows (where the foot curls in, it drew a dark line through the faded front)
     bf = nt.nodes.new("ShaderNodeMath")
     bf.operation = "SUBTRACT"
@@ -314,7 +310,28 @@ def _wall_mat(name, img, z0, z1, slot=None):
     fb.operation = "MULTIPLY"
     nt.links.new(fa.outputs[0], fb.inputs[0])
     nt.links.new(keep_g.outputs[0], fb.inputs[1])
-    nt.links.new(fb.outputs[0], p.inputs["Alpha"])
+    out = fb.outputs[0]
+    if slot is not None:
+        # the two pieces' shares of the seam split the transmittance, not the alpha: 1 - (1 - a)^w with w and 1 - w
+        # (alpha x w: the sum fell short of a, a light streak every 16 m, r4-r5; full alpha both: a dark one, r3)
+        cl = nt.nodes.new("ShaderNodeMath")
+        cl.operation = "MINIMUM"
+        cl.inputs[1].default_value = 0.999
+        nt.links.new(out, cl.inputs[0])
+        om = nt.nodes.new("ShaderNodeMath")
+        om.operation = "SUBTRACT"
+        om.inputs[0].default_value = 1.0
+        nt.links.new(cl.outputs[0], om.inputs[1])
+        pw = nt.nodes.new("ShaderNodeMath")
+        pw.operation = "POWER"
+        nt.links.new(om.outputs[0], pw.inputs[0])
+        nt.links.new(w_sock, pw.inputs[1])
+        al = nt.nodes.new("ShaderNodeMath")
+        al.operation = "SUBTRACT"
+        al.inputs[0].default_value = 1.0
+        nt.links.new(pw.outputs[0], al.inputs[1])
+        out = al.outputs[0]
+    nt.links.new(out, p.inputs["Alpha"])
     return m
 
 
