@@ -56,9 +56,9 @@ x3、x2 各一套，加一份 `edge/edge.json`。PNG 照其他圖的規則：帶
     "corner": {"left": {"file": "corner_left.png", "anchor": [x, y]}, "bottom": {...}, "right": {...}}
   },
   "fall": {
-    "loop":  {"file": "fall_loop.png", "width_m": 6, "period_px": 512, "scroll_m_s": 4.0, "widen_per_m": 0.07},
+    "loop":  {"file": "fall_loop.png", "width_m": 6, "body_px": [x0, x1], "out_m": 1.0, "drop_m": 2.0, "period_px": 512, "scroll_m_s": 4.0, "widen_per_m": 0.07},
     "spray": {"file": "fall_spray.png", "anchor": [x, y]},
-    "mouth": {"file": "fall_mouth.png", "anchor": [x, y], "foam_m": 3.5}
+    "mouth": {"file": "fall_mouth.png", "anchor": [x, y], "foam_m": 3.5, "se": {"file": "fall_mouth_se.png", "anchor": [x, y]}}
   },
   "puffs": [{"file": "puff_0.png", "drift_px_s": [8, -2], "alpha_max": 0.6}],
   "rim": {"fade_m": 3}
@@ -73,6 +73,8 @@ x3、x2 各一套，加一份 `edge/edge.json`。PNG 照其他圖的規則：帶
   - 試驗用的算法在 `design/r11/common/edge_scene_r11.py` 的 `clouds()`。
 - **崖面**
   - 每段沿地圖邊 16 公尺，兩頭各多畫 1 公尺讓相鄰的段疊住（試驗時疊 0.25 公尺會露出細縫）。client 照 16 公尺的間距擺，不用裁。
+  - 從哪裡開始擺（量產時補，`cliff.from`、`corner_leg_m`、`edge_m`）：從下角（西南）沿兩條邊量，第 k 段的中點在 16k 公尺（k＝1 到 (邊長−18)/16，129 格的地圖是 1–15）。下角往兩邊各畫 8 公尺，左角、右角各畫最後 10 公尺。左、右角的岩紋是照 258 公尺（129 格）的邊對齊的，別的長度在那個角會有一條接縫。
+  - 每段（和轉角）疊在鄰居上的那 1 公尺，只畫崖面不透明的上半段；往下淡進雲裡的部分不疊，免得兩層半透明疊出一條較濃的縫。
   - `anchor`：這段中點的崖頂、地圖邊線上的那一點在圖上的像素位置，地面高度 0。`lip`：這段崖頂那條線兩端在圖上的像素位置，給 client 對地面的邊。
   - 3 段可以任意順序接，接縫的岩紋和崖頂高度都對得上。
   - 崖頂的岬角（往外凸出地圖邊 0–4 公尺，只往外、不改模擬的地圖）已經畫在圖裡，連崖頂的草和土層一起，client 照圖畫，地面在地圖邊切直就好。
@@ -80,8 +82,12 @@ x3、x2 各一套，加一份 `edge/edge.json`。PNG 照其他圖的規則：帶
   - 崖頂的草用寫實地面草地的平均色，或略暗一點。地面邊上的格子是沙、石時，也是那 0.75 公尺淡出後交給崖頂；是水的地方由 `fall.mouth` 蓋住。
 - **瀑布**
   - `fall_loop.png`：上下無縫的一條。client 往下捲 `scroll_m_s`；越往下越寬（`widen_per_m`），兩側碎成水絲的形狀已經畫在圖裡。
+    - `body_px`（量產時補）：圖裡哪幾欄是河本身（`width_m` 寬的河在畫面上的寬度，cos 45 度），左右多出來的是碎掉的水絲。client 把 `body_px` 對到崖口那段河在畫面上的左右兩端，每一欄從那一欄的崖口往下掛。
+    - `out_m`、`drop_m`（量產時補）：水先從崖口往外拋成一段短弧線（畫在 `fall_mouth.png` 裡，下半段淡出），`fall_loop.png` 從「崖口往外 `out_m` 公尺、往下 `drop_m` 公尺」那條線開始往下掛（崖口那條線照邊的朝外方向平移 `out_m`），頭的地方被弧線蓋住、兩者疊成一道水。
+    - 畫的順序：`fall_loop` → `fall_mouth`（弧線蓋住 loop 的頭）→ `fall_spray`，然後才是地面。
   - `fall_spray.png`：瀑布底的水霧，帶透明。client 可以讓它跟著雲海的近層慢慢飄。
   - `fall_mouth.png`：河到崖邊的出口，畫在崖頂，包括濕的崖口和最後幾公尺河面的白沫。白沫也想動的話，用 `fall_loop.png` 往河的流向捲。
+    - 量產時補：`fall_mouth.png` 是從左下（西）邊流出去的河；從右下（南）邊流出去的用 `mouth.se` 那一張（方向不同，不能只左右翻，光從左上來）。`anchor` 是河的中線在地圖邊線上的那一點。
   - 河寬照地圖：雙河關的河是 3 格（6 公尺）。其他寬度的河用同一套圖、橫向縮放。
 - **遠方浮島**：每座一張帶透明的圖。`anchor` 是島底（浮在雲上的那一點）；`size_m` 是它在雲海裡看起來的大小，給 client 縮放；霧已經畫在圖裡；`bob_px`、`bob_s` 是建議的上下浮動。放在遠層雲海裡，左下、右下兩側各兩座，位置由 client 決定，跟著遠層的視差走。
 - **飄雲**：3 到 4 朵帶透明，最上層，建議的飄動速度和最大不透明度寫在 `drift_px_s`、`alpha_max`。
