@@ -577,6 +577,26 @@ def _art_v7_targets():
 _art_v7_targets()
 
 
+# art-v7 PR2 review 1 (2026-11-04): the pieces the fixes change, again (the buildings-atlas round takes this run after
+# the r8d7 one): the east/west gates turned from the north/south one on the diamond camera (castle.sw_gate_y), the
+# step flights a hair narrower each step (arch_r8.platform_e: the East's halls, house, barracks, range, mage hall, and
+# their foundations)
+def _art_v7_fix():
+    import re
+    pick = re.compile(r"(castle_sw_gate_y|main_city_E|house_E|barracks_E|range_E|mage_hall_E|found_)")
+    pcs = [pc for t in sorted((t for t in TARGETS if t.startswith("r8d7_")), key=lambda t: int(t.split("_")[1]))
+           for pc in TARGETS[t] if pick.match(piece_name(pc))]
+    for i in range(0, len(pcs), PROD_CHUNK):
+        t = f"r8d7f_{i // PROD_CHUNK}"
+        TARGETS[t] = [dict(pc) for pc in pcs[i:i + PROD_CHUNK]]
+        CAMERA[t] = proj.DIAMOND
+        LOOK[t] = "r8"
+        FOLDER[t] = "r8d7f"
+
+
+_art_v7_fix()
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("target", choices=list(TARGETS))
