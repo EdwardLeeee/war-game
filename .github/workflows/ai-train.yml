@@ -116,7 +116,7 @@ jobs:
             # The islands (all, or those picked), then hard itself unless control_run has it.
             pick=$(get pick '')
             if [ "$(get islands_of false)" = "true" ]; then
-              if [ -n "$pick" ]; then list=$(echo "$pick" | jq -Rc 'split(",") | map(select(. != ""))'); else list=$(seq 0 $((n - 1)) | jq -Rsc 'split("\n") | map(select(. != ""))'); fi
+              if [ -n "$pick" ]; then list=$(echo "$pick" | jq -Rc 'split(",") | map(select(. != ""))'); else list=$(seq 0 $((n - 1)) | jq -Rsc 'split("\n") | map(select(. != "")) | map(., . + "b")'); fi
             else list='[]'; fi
             if [ -z "$control_run" ]; then list=$(echo "$list" | jq -c '. + ["control"]'); fi
           else
@@ -167,8 +167,10 @@ jobs:
           ISLAND: ${{ matrix.island }}
         run: |
           for k in 1 2 3 4 5 6; do
-            rm -rf "from/train-es-$ISLAND"
-            if gh run download "$FROM_RUN" --repo "$GITHUB_REPOSITORY" --name "train-es-$ISLAND" --dir "from/train-es-$ISLAND"; then exit 0; fi
+            rm -rf "from/train-es-${ISLAND%b}"
+            # NN v3 B: island "<n>b" is island n's best candidate.
+            I="${ISLAND%b}"
+            if gh run download "$FROM_RUN" --repo "$GITHUB_REPOSITORY" --name "train-es-$I" --dir "from/train-es-$I"; then exit 0; fi
             echo "download $k of run $FROM_RUN island $ISLAND failed; again in $((k * 30)) s"
             sleep $((k * 30))
           done
@@ -198,20 +200,23 @@ jobs:
               # One artifact may be unpacked straight into from/.
               if [ ! -f "$R/state.json" ] && [ "$ISLAND" = "0" ] && [ -f "$F/state.json" ]; then R="$F"; fi
               if [ -f "$R/state.json" ]; then
-                node $T es --start "$R/net.json" --resume "$R" --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
+                node $T es --start "$R/net.json" --resume "$R" --config "$CONFIG" --island "$ISLAND" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
               elif [ -n "$FROM_RUN" ]; then
                 echo "run $FROM_RUN has no state.json for island $ISLAND: not starting it again from hard" >&2; exit 1
               else
-                node $T es --seed $((ISLAND + 1)) --config "$CONFIG" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
+                node $T es --seed $((ISLAND + 1)) --config "$CONFIG" --island "$ISLAND" --out "$O" --hours "$HOURS" --generations "$GENERATIONS"
               fi ;;
             eval)
               if [ "$ISLAND" = "control" ]; then
                 node $T eval --name control --games "$GAMES" --out "$O" "$@"
               else
+                # NN v3 B: "<n>b": island n's best candidate of its last generation, on the same new seeds.
                 N="$F/train-es-$ISLAND/net.json"
+                NAME="島 $ISLAND"
+                case "$ISLAND" in *b) N="$F/train-es-${ISLAND%b}/best.json"; NAME="島 ${ISLAND%b} 最好的候選" ;; esac
                 if [ ! -f "$N" ] && [ "$ISLAND" = "0" ] && [ -f "$F/net.json" ]; then N="$F/net.json"; fi
                 [ -f "$N" ] || { echo "run $FROM_RUN has no net.json for island $ISLAND" >&2; exit 1; }
-                node $T eval --net "$N" --name "島 $ISLAND" --games "$GAMES" --out "$O" "$@"
+                node $T eval --net "$N" --name "$NAME" --games "$GAMES" --out "$O" "$@"
               fi ;;
           esac
           cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"

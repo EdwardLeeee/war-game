@@ -49,6 +49,16 @@ export interface EsConfig {
    * leaves it on 12-13% of thinks, and 34 of 40 still choose by the game (1500: 20-27%, 3000: 5-11% and 27 of 40).
    */
   asHardMargin: number;
+  /**
+   * NN v3 B (ceo 2026-11-03): that bias learned. Its step (bias units), and the most it moves in a generation. With
+   * 2500 fixed the mean network chose as hard everywhere (416 real thinks; the evals of runs 41500407468-41588047365
+   * equal to hard's to the game), and every other entry moves about lr / pairs a generation, so it moves by a share of
+   * the better candidate's step instead (lr x rank difference x step / pairs), at most asHardMost.
+   */
+  asHardSigma: number;
+  asHardMost: number;
+  /** NN v3 B: the learning rate by island (--island), over lr (ceo 2026-11-03: one island at 2 x). */
+  lrByIsland: number[];
 }
 
 export const ES_DEFAULTS: EsConfig = {
@@ -67,6 +77,9 @@ export const ES_DEFAULTS: EsConfig = {
   rules: {},
   fixed: [HEAD_MIX, HEAD_BUILD],
   asHardMargin: 2500,
+  asHardSigma: 500,
+  asHardMost: 100,
+  lrByIsland: [4, 2, 2],
 };
 
 export interface EsState {
@@ -76,6 +89,8 @@ export interface EsState {
   generation: number;
   seed: number;
   history: GenerationReport[];
+  /** NN v3 B: the best candidate of the last generation (its vector), evaluated on new seeds. */
+  best?: number[];
 }
 
 export interface GenerationReport {
@@ -139,7 +154,27 @@ export function stepSizes(like: NetWeights, c: EsConfig): number[] {
     for (let o = 0; o < L.outputs; o++) for (let i = 0; i < L.inputs; i++) m.push(l === last && fixedRow[o] ? 0 : c.sigma);
     for (let o = 0; o < L.outputs; o++) m.push(l === last && fixedRow[o] ? 0 : c.sigmaBias);
   });
+  // The trained heads' AS_HARD biases (asHardSigma).
+  const biasAt = m.length - like.layers[last].outputs;
+  let at = 0;
+  NET_HEADS.forEach((k, h) => {
+    if (!c.fixed.includes(h)) m[biasAt + at + AS_HARD] = c.asHardSigma;
+    at += k;
+  });
   return m;
+}
+
+/** The trained heads' AS_HARD bias entries in the vector. */
+function marginEntries(like: NetWeights, c: EsConfig): Set<number> {
+  const out = new Set<number>();
+  const n = like.layers.reduce((a, L) => a + L.inputs * L.outputs + L.outputs, 0);
+  const biasAt = n - like.layers[like.layers.length - 1].outputs;
+  let at = 0;
+  NET_HEADS.forEach((k, h) => {
+    if (!c.fixed.includes(h)) out.add(biasAt + at + AS_HARD);
+    at += k;
+  });
+  return out;
 }
 
 /** The games of one generation: the same for every candidate. */
@@ -188,9 +223,11 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   const eps: number[][] = [];
   for (let p = 0; p < c.pairs; p++) eps.push(state.theta.map((_, i) => gauss(r) * step[i]));
   const candidates: NetWeights[] = [];
+  const candidatesVec: number[][] = [];
   for (const e of eps) {
-    candidates.push(fromVector(state.theta.map((v, i) => v + e[i]), like));
-    candidates.push(fromVector(state.theta.map((v, i) => v - e[i]), like));
+    candidatesVec.push(state.theta.map((v, i) => v + e[i]), state.theta.map((v, i) => v - e[i]));
+    candidates.push(fromVector(candidatesVec[candidatesVec.length - 2], like));
+    candidates.push(fromVector(candidatesVec[candidatesVec.length - 1], like));
   }
   const jobs: Job[] = [];
   for (const net of candidates) for (const g of games) jobs.push({ kind: "play", spec: { seed: g.seed, map: g.map, swap: g.swap, maxTicks: c.maxTicks, opp: g.opp, rules: c.rules }, net });
@@ -228,11 +265,22 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   const rank = new Array(fitness.length);
   order.forEach(([, i], k) => (rank[i] = k / (fitness.length - 1) - 0.5));
   const n = state.theta.length;
+  const margins = marginEntries(like, c);
+  const marginMove = new Map<number, number>();
   for (let p = 0; p < c.pairs; p++) {
     const d = rank[2 * p] - rank[2 * p + 1];
     if (d === 0) continue;
-    for (let i = 0; i < n; i++) if (step[i] > 0) state.theta[i] += (c.lr * d * eps[p][i]) / (step[i] * c.pairs);
+    for (let i = 0; i < n; i++) {
+      if (step[i] <= 0) continue;
+      if (margins.has(i)) marginMove.set(i, (marginMove.get(i) ?? 0) + (c.lr * d * eps[p][i]) / c.pairs);
+      else state.theta[i] += (c.lr * d * eps[p][i]) / (step[i] * c.pairs);
+    }
   }
+  for (const [i, v] of marginMove) state.theta[i] += Math.max(-c.asHardMost, Math.min(c.asHardMost, v));
+  // The best candidate of this generation (the highest score; the lowest index on a tie).
+  let bestK = 0;
+  for (let k = 1; k < fitness.length; k++) if (fitness[k] > fitness[bestK]) bestK = k;
+  state.best = candidatesVec[bestK];
   const total = candidates.length * games.length;
   const report: GenerationReport = { generation: state.generation, games: total, won, draws, byOpp, reached, shaping, choices, varied, seconds: Math.round((performance.now() - t0) / 1000) };
   state.generation++;

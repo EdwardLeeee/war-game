@@ -147,6 +147,9 @@ if (mode === "dryrun") {
   let state: EsState = resume !== "" && existsSync(`${resume}/state.json`) ? JSON.parse(readFileSync(`${resume}/state.json`, "utf8")) : newState(start, Number(arg("seed", "1")), config);
   // Going on with other settings (the rules once they ship, ceo 2026-10-25): from the weights it has.
   state.config = { ...ES_DEFAULTS, ...state.config, ...config };
+  // NN v3 B: this island's learning rate (lrByIsland, ceo 2026-11-03: one island at 2 x).
+  const island = Number(arg("island", "-1"));
+  if (island >= 0 && state.config.lrByIsland[island] !== undefined) state.config.lr = state.config.lrByIsland[island];
   const limitH = Number(arg("hours", "5.5"));
   const maxGen = state.generation + Number(arg("generations", "1000000"));
   const m = state.config.mix;
@@ -163,6 +166,8 @@ if (mode === "dryrun") {
     summary(`| ${r.generation} | ${r.games} | ${r.won} | ${r.draws} | ${r.games - r.won - r.draws} | ${by} | ${r.reached} | ${dev(r.choices[HEAD_ARMY])} | ${dev(r.choices[HEAD_TOWN])} | ${dev(r.choices[HEAD_DEFENSE])} | ${r.varied}／${2 * state.config.pairs} | ${r.shaping.toFixed(3)} | ${r.seconds} |`);
     writeFileSync(`${out}/state.json`, JSON.stringify(state));
     writeFileSync(`${out}/net.json`, JSON.stringify(fromVector(state.theta, start)));
+    // NN v3 B: the generation's best candidate, evaluated on new seeds (best.json).
+    if (state.best !== undefined) writeFileSync(`${out}/best.json`, JSON.stringify(fromVector(state.best, start)));
     // Stop before the job's limit with time for one more generation and the upload.
     if (hours() + (r.seconds / 3600) * 1.5 > limitH) break;
   }
