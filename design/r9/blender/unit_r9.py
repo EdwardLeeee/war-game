@@ -128,7 +128,7 @@ def apply(u=None, kind=None):
             p.inputs["Sheen Roughness"].default_value = 0.4
             p.inputs["Roughness"].default_value = max(0.82, p.inputs["Roughness"].default_value)
             _bump(m, 900.0, 0.18)
-            _bump(m, 9.0, 0.8, 0.03, stretch=(1.0, 1.0, 0.25))   # folds hanging down, a few cm across (R9 r5, R11)
+            _bump(m, 6.0, 1.0, 0.05, stretch=(1.0, 1.0, 0.22))   # deep folds hanging down (R9 r5, R11; art-v7: still flat)
         elif "skin" in n:
             # a little light through the skin, no more (R9 r3: more, with the green bounce, gave grey-green flecks)
             p.inputs["Subsurface Weight"].default_value = 0.1
