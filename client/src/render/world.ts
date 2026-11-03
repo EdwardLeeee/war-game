@@ -213,6 +213,8 @@ interface TownMark {
 
 export class WorldRenderer {
   readonly root = new Container();
+  /** 浮空大陸 (edge.ts): metres the realistic ground fades out over at the two lower edges (0: none). */
+  private edgeFadeM = 0;
   private readonly view: GameView;
   private readonly atlas: Atlas;
   private readonly projection: Projection;
@@ -1235,6 +1237,7 @@ export class WorldRenderer {
     if (!this.terrain.pictures) return false;
     // The towns' ground in the player's culture's layers (rules.town; both `yard` in art-v6).
     this.groundDraw = new GroundDraw(textures, this.view.map.size, quality, this.cultureOf(this.view.me) === "w" ? "W" : "E");
+    this.groundDraw.setEdgeFade(this.edgeFadeM);
     this.groundInner.addChildAt(this.groundDraw.mesh, 0);
     this.flatGround.visible = false;
     // The water in the ground's shader (art-v6): not its tiles too.
@@ -1254,6 +1257,14 @@ export class WorldRenderer {
     g.mesh.visible = on;
     this.flatGround.visible = !on;
     this.terrain.showWater(!on || !g.water);
+  }
+
+  /** 浮空大陸 (edge.ts): its sea of clouds is the stage's, its cliff under the ground, its clouds over the ground and under what stands on it. */
+  addEdge(under: Container, over: Container, fadeM: number): void {
+    this.root.addChildAt(under, 0);
+    this.root.addChildAt(over, this.root.getChildIndex(this.groundArt) + 1);
+    this.edgeFadeM = fadeM;
+    this.groundDraw?.setEdgeFade(fadeM);
   }
 
   /** 寫實地面 in use this game (its switch in 選單 then means something). */
