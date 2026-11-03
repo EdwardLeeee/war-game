@@ -218,8 +218,8 @@ export interface Plan {
   /**
    * With the turtle (D-115, ceo 2026-10-31; the user's late game in 8d02b76f, 99 minutes): farmers and arrow towers by
    * the clock (LATE_SIEGE), at most LATE_SIEGE.governed towns governed, a siege works from LATE_SIEGE.worksAt or with
-   * LATE_SIEGE.worksTowers towers, LATE_SIEGE.engines engines kept up; out only with the towers it should have by then,
-   * LATE_SIEGE.army soldiers and the engines, whatever it has seen of the enemy.
+   * LATE_SIEGE.worksTowers towers, LATE_SIEGE.engines engines kept up; out with LATE_SIEGE.army soldiers and the
+   * engines, whatever it has seen of the enemy.
    */
   lateSiege: boolean;
 }
@@ -341,7 +341,9 @@ const LATE_SIEGE = {
   worksAt: 60 * 1200,
   worksTowers: 31,
   engines: 3,
-  army: 100,
+  // Out with this many soldiers and the engines, the towers left out (ceo 2026-11-03, war-game-ai: 100 and the towers
+  // were seldom all there at once, 6 games of 40 marched; the user brought his engines with about 120 at minute 67).
+  army: 60,
 };
 /** A value by the clock from (minute, value) pairs: straight between them, the first before them, the last after. */
 function byClock(table: [number, number][], tick: number): number {
@@ -1838,9 +1840,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const ahead = !plan.pushAhead || army.length > seenFoes.reduce((a, x) => Math.max(a, x.n), 0);
       // plan.turtle (D-086 A5): a town trip only with TURTLE.tripTowers towers standing by home.
       const towersByHome = done(BuildingType.ArrowTower).filter((b) => dist2(b.x, b.y, home.cellX, home.cellY) <= TURTLE.homeR * TURTLE.homeR).length;
-      // plan.lateSiege: the towers (at most LATE_SIEGE.worksTowers), the soldiers and the engines, whatever it saw of the enemy.
-      const lateReady =
-        done(BuildingType.ArrowTower).length >= Math.min(wantTowers, LATE_SIEGE.worksTowers) && army.length >= LATE_SIEGE.army && soldiers.filter((u) => u.type === UnitType.Siege).length >= LATE_SIEGE.engines;
+      // plan.lateSiege: the soldiers and the engines, whatever it saw of the enemy (the towers it should have no longer count).
+      const lateReady = army.length >= LATE_SIEGE.army && soldiers.filter((u) => u.type === UnitType.Siege).length >= LATE_SIEGE.engines;
       const go = !holding && found >= 0 && (plan.lateSiege ? lateReady : rushPush || (counterReady && army.length >= plan.counterAt && ahead) || (plan.pushAt > 0 && army.length >= plan.pushAt && ahead));
       if (go) rushPush = false;
       const townOpen =
