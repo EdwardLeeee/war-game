@@ -10,13 +10,14 @@
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
 import { CrushWatch, type CrushRecord } from "./crush-watch.ts";
+import { TownWatch, type TownRecord } from "./town-watch.ts";
 import { DeathWatch, type DeathRecord } from "./death-watch.ts";
 import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { SiegeWatch, type SiegeRecord } from "./siege-watch.ts";
 import { writeFileSync } from "node:fs";
 import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THINK_EVERY, SPEEDS, type Speed, STRATEGIES, type Strategy } from "./ai/scripted-player.ts";
 import { type AiStyle, AI_STYLES, createAi } from "./ai/ai.ts";
-import { rules } from "./core/rules.ts";
+import { rules, WALL_SHIFT } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import type { RandomMap } from "./core/random-map.ts";
 import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, NodeKind, Order, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
@@ -76,6 +77,9 @@ if (flag("govern")) plan.choice = "govern";
 // The soldiers left in a town, and whether they guard it (`guard`): how much stronger a guarded town is.
 if (arg("guards", "") !== "") plan.guards = Number(arg("guards", ""));
 if (flag("town-guard")) plan.townGuard = true;
+if (flag("guards-all")) plan.guardsAll = true;
+if (flag("town-station")) plan.townStation = true;
+if (flag("no-wall-shift")) WALL_SHIFT.on = false;
 // Round 7 (D-061): cavalry raiders, this many (--raid 4).
 plan.raid = Number(arg("raid", "0"));
 // D-072: racing the AI to its main city (--race edge|sentry), with these numbers.
@@ -336,6 +340,7 @@ interface GameRecord {
   /** push-late-siege: the player's engines (siege-watch.ts), and what each side had at minutes 30, 45, 60, 90. */
   siege?: SiegeRecord;
   lateAt?: Record<string, [LateSide, LateSide]>;
+  townWatch: TownRecord;
   /**
    * D-086 A3, every game (read only): the AI's farmers lost each minute (from minute 1); its hits (5 or more
    * lost in two minutes, none counted in the three minutes before) and of those, the ones back 3 minutes
@@ -521,6 +526,7 @@ function play(seed: number): GameRecord {
     siege: count(p, UnitType.Siege),
     governed: w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length,
   });
+  const townWatch = new TownWatch(0);
   const towersOf = (p: number) => {
     let n = 0;
     for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === BuildingType.ArrowTower) n++;
@@ -554,6 +560,7 @@ function play(seed: number): GameRecord {
       siegeWatch.tick(w, g.events, player.state().mode === "base");
       if (w.tick % (15 * 1200) === 0 && w.tick >= 30 * 1200 && w.tick <= 90 * 1200) lateAt[`m${w.tick / 1200}`] = [lateSide(0), lateSide(1)];
     }
+    townWatch.tick(w);
     if (w.tick === 12000) aiFarmersLost10 = w.lost[UNIT_KINDS + UnitType.Farmer];
     // D-086 A: the AI's orders this tick at the player's main city with 10 or more soldiers.
     for (; logAt < g.log.length; logAt++) {
@@ -860,6 +867,7 @@ function play(seed: number): GameRecord {
     governedEnd: [0, 1].map((p) => w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length) as [number, number],
     crush: crushWatch.result(),
     ...(plan.lateSiege ? { siege: siegeWatch.result(), lateAt } : {}),
+    townWatch: townWatch.result(),
     aiFarmers,
     aiRescue,
     marches: st.marches,
