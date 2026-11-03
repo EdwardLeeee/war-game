@@ -186,18 +186,24 @@ export class Game {
     const n = w.size;
     const b = w.buildings.col;
     const u = w.units.col;
-    const shots = this.units.shots;
-    for (let k = 0; k < shots.length; k += 3) {
-      const bs = w.building(shots[k]);
-      const ts = w.unit(shots[k + 1]);
-      for (let p = 0; p < PLAYER_COUNT; p++) {
-        const vis = this.fog.visible[p];
-        let sees = ts >= 0 && vis[(u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT)] === 1;
-        if (!sees && bs >= 0) {
-          for (let y = b.cellY[bs]; y < b.cellY[bs] + w.tall(bs) && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + w.wide(bs) && !sees; x++) sees = vis[y * n + x] === 1;
+    // Strikes from outposts (OUTPOST_HIDE, D-119) go as shots do: to whoever sees the target or the outpost.
+    for (const [list, kind] of [
+      [this.units.shots, "shot"],
+      [this.units.pokes, "poke"],
+    ] as const) {
+      const shots = list;
+      for (let k = 0; k < shots.length; k += 3) {
+        const bs = w.building(shots[k]);
+        const ts = w.unit(shots[k + 1]);
+        for (let p = 0; p < PLAYER_COUNT; p++) {
+          const vis = this.fog.visible[p];
+          let sees = ts >= 0 && vis[(u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT)] === 1;
+          if (!sees && bs >= 0) {
+            for (let y = b.cellY[bs]; y < b.cellY[bs] + w.tall(bs) && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + w.wide(bs) && !sees; x++) sees = vis[y * n + x] === 1;
+          }
+          // n (D-096): more than one arrow at once (a main city with farmers inside, a governed town's gate).
+          if (sees) this.events.push({ to: p, ev: { k: kind, building: shots[k], target: shots[k + 1], ...(shots[k + 2] > 1 ? { n: shots[k + 2] } : {}) } });
         }
-        // n (D-096): more than one arrow at once (a main city with farmers inside, a governed town's gate).
-        if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1], ...(shots[k + 2] > 1 ? { n: shots[k + 2] } : {}) } });
       }
     }
     // Siege stones thrown (D-099): to every player who sees the engine or where the stone lands; one

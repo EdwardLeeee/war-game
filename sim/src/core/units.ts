@@ -59,6 +59,7 @@ import {
   MULT_DEN,
   MULT_NUM,
   OUTPOST,
+  OUTPOST_HIDE,
   PUSH,
   rank,
   RETARGET_EVERY,
@@ -139,6 +140,8 @@ export class UnitSystem {
    * them; the arrows as `n` since D-096).
    */
   readonly shots: number[] = [];
+  /** This tick's strikes from outposts (OUTPOST_HIDE, D-119): outpost id, target id, strikes, as `shots`. */
+  readonly pokes: number[] = [];
   /** This tick's siege stones thrown (D-099), as quads (engine id, landing x, y, landing tick), for the `siege_shot` event. */
   readonly siegeShots: number[] = [];
   /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
@@ -665,6 +668,67 @@ export class UnitSystem {
     }
   }
 
+  /**
+   * OUTPOST_HIDE (D-119): a posted spearman goes into its outpost (bs) once within WORK_REACH of it, as into
+   * a shelter (it walks through it: its owner's), if there is room. True.
+   */
+  private goIn(w: World, fields: FieldCache, i: number, bs: number): boolean {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    u.target[i] = -1;
+    const size = w.buildingSize(b.type[bs]);
+    if (rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], size) <= WORK_REACH * WORK_REACH) {
+      if (b.soldiers[bs] < OUTPOST.slots) {
+        b.soldiers[bs]++;
+        u.action[i] = Action.Garrisoned;
+      } else {
+        u.action[i] = Action.Idle;
+      }
+      return true;
+    }
+    const half = (size << CELL_SHIFT) >> 1;
+    steerTo(w, fields, i, (b.cellX[bs] << CELL_SHIFT) + half, (b.cellY[bs] << CELL_SHIFT) + half, buildingKey(b.id[bs]), UNITS[u.type[i]].speed, () =>
+      cellsAround(w, b.cellX[bs], b.cellY[bs], size),
+    );
+    return true;
+  }
+
+  /**
+   * OUTPOST_HIDE (D-119): a spearman in its outpost. Attacking (the outpost not holding), at a look, it comes
+   * out for whoever hit the outpost or a guard, else the nearest enemy within OUTPOST.reach (guard() then
+   * takes over); otherwise it strikes the enemy next to the outpost (fromInside, a spearman's reach).
+   */
+  private postInside(w: World, fog: Fog, i: number): void {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const bs = w.building(u.orderTarget[i]);
+    if (bs < 0) return;
+    if ((b.flags[bs] & BuildingFlag.Hold) === 0 && (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
+      const tid = b.provoker[bs] >= 0 ? b.provoker[bs] : this.outpostTarget(w, fog, i, bs);
+      if (tid >= 0) {
+        if (b.soldiers[bs] > 0) b.soldiers[bs]--;
+        u.action[i] = Action.Idle;
+        u.target[i] = tid;
+        u.anchorX[i] = u.x[i];
+        u.anchorY[i] = u.y[i];
+        return;
+      }
+    }
+    this.fromInside(w, fog, i);
+  }
+
+  /** One strike from outpost `building` at unit `target` this tick (pokes). */
+  private addPoke(building: number, target: number): void {
+    const p = this.pokes;
+    for (let k = 0; k < p.length; k += 3) {
+      if (p[k] === building && p[k + 1] === target) {
+        p[k + 2]++;
+        return;
+      }
+    }
+    p.push(building, target, 1);
+  }
+
   /** Can the outpost at slot bs (its owner p) still go for unit or building id: alive, seen, within OUTPOST.chase? */
   private withinChase(w: World, fog: Fog, p: number, bs: number, id: number): boolean {
     const u = w.units.col;
@@ -702,6 +766,8 @@ export class UnitSystem {
     if (bs < 0 || b.owner[bs] !== me || b.type[bs] !== BuildingType.Outpost || b.hp[bs] <= 0) return false;
     const info = UNITS[u.type[i]];
     const hold = (b.flags[bs] & BuildingFlag.Hold) !== 0;
+    // D-119 (OUTPOST_HIDE): holding, straight in.
+    if (OUTPOST_HIDE.on && hold) return this.goIn(w, fields, i, bs);
     let tid = u.target[i];
     if (tid >= 0 && !this.withinChase(w, fog, me, bs, tid)) tid = -1;
     const provoker = b.provoker[bs];
@@ -755,6 +821,8 @@ export class UnitSystem {
       // Holding: what stepped away is let go.
       u.target[i] = -1;
     }
+    // D-119 (OUTPOST_HIDE): nothing to go for, back in.
+    if (OUTPOST_HIDE.on) return this.goIn(w, fields, i, bs);
     const at = this.postPlace(w, i, bs);
     u.anchorX[i] = at.x;
     u.anchorY[i] = at.y;
@@ -1800,6 +1868,11 @@ export class UnitSystem {
     u.working[i] = 0;
     this.attacking[i] = 0;
     if (u.action[i] === Action.Garrisoned) {
+      // A spearman in an outpost (OUTPOST_HIDE, D-119) strikes from it or comes out.
+      if (OUTPOST_HIDE.on && u.order[i] === Order.Post) {
+        this.postInside(w, fog, i);
+        return;
+      }
       // A soldier hiding in a building shoots from it (round 7, D-061); a farmer just hides.
       if (u.type[i] !== UnitType.Farmer) this.fromInside(w, fog, i);
       return;
@@ -2512,6 +2585,7 @@ export class UnitSystem {
     this.unitHitBy.fill(0, 0, count);
     this.buildingHitBy.fill(0, 0, w.buildings.count);
     this.shots.length = 0;
+    this.pokes.length = 0;
     this.siegeShots.length = 0;
     if (SIEGE.on) this.landStones(w);
     for (let i = 0; i < count; i++) {
@@ -2533,12 +2607,15 @@ export class UnitSystem {
         continue;
       }
       if (ts >= 0) {
-        this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
-        if (u.action[i] === Action.Garrisoned) this.shots.push(u.orderTarget[i], tid, 1);
+        // A spearman in an outpost strikes harder (OUTPOST_HIDE, D-119): a `poke` event, not a shot.
+        const poke = OUTPOST_HIDE.on && u.action[i] === Action.Garrisoned && u.order[i] === Order.Post;
+        this.hit(w, ts, poke ? info.attack * OUTPOST_HIDE.poke : info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
+        if (poke) this.addPoke(u.orderTarget[i], tid);
+        else if (u.action[i] === Action.Garrisoned) this.shots.push(u.orderTarget[i], tid, 1);
       } else {
         const bs = w.building(tid);
         if (bs >= 0) {
-          this.buildingDamage[bs] += b.type[bs] === BuildingType.Gate ? gateDamage(info.attack, u.type[i]) : info.attack;
+          this.buildingDamage[bs] += b.type[bs] === BuildingType.Gate ? gateDamage(info.attack, u.type[i]) : b.type[bs] === BuildingType.Outpost && OUTPOST_HIDE.on ? outpostDamage(info.attack, u.type[i]) : info.attack;
           this.buildingHitBy[bs] |= 1 << u.owner[i];
         }
         // An outpost under attack sends its guards after the attacker (D-080).
@@ -2921,6 +2998,12 @@ export function preferHighId(w: World, chooser: number): boolean {
  * A hit on a castle gate (D-096, GATE): melee in full, ranged units and mages GATE.rangedNum /
  * rangedDen of it, at least 1. Kept apart from the unit-vs-unit multipliers (MULTIPLIERS).
  */
+/** A hit on an outpost by a unit's own attack (OUTPOST_HIDE, D-119): ranged units and mages at rangedNum / rangedDen, the rest at meleeNum / meleeDen; at least 1. */
+export function outpostDamage(attack: number, attacker: number): number {
+  const ranged = attacker === UnitType.Ranged || attacker === UnitType.Mage;
+  return Math.max(1, idiv(attack * (ranged ? OUTPOST_HIDE.rangedNum : OUTPOST_HIDE.meleeNum), ranged ? OUTPOST_HIDE.rangedDen : OUTPOST_HIDE.meleeDen));
+}
+
 export function gateDamage(attack: number, attacker: number): number {
   // D-099: a siege engine's stone GATE.siege times.
   if (attacker === UnitType.Siege) return attack * GATE.siege;

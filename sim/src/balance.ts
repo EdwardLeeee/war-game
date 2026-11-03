@@ -5,8 +5,8 @@
 //   node src/balance.ts [--check 1,2,3,4]
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
-import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, guardPoint, type Held, type Hold, hold, siege, siegeCrowd, siegeGate, siegeRaid, twoShots } from "./balance-lib.ts";
-import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, GATE, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, SIEGE, TOWER_VALUE, UNITS } from "./core/rules.ts";
+import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, guardPoint, type Held, type Hold, hold, outpostStand, siege, siegeCrowd, siegeGate, siegeRaid, twoShots } from "./balance-lib.ts";
+import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, GATE, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, OUTPOST_HIDE, SHORT_CANNON, SIEGE, TOWER_VALUE, UNITS } from "./core/rules.ts";
 import { BuildingType, TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -461,6 +461,50 @@ function main(): void {
     }).join("／");
     for (const a of [A(14, 8, 2), A(17, 10, 3)]) out.push(`| 攻打主城：${armyText(a)} | ${withValue(false, () => siegeCell(a))} | ${withValue(true, () => siegeCell(a))} |`);
     out.push("");
+  }
+  {
+    // D-119 (OUTPOST_HIDE): an outpost holding a way, before (D-080: 2 x 2, guards standing round it) and now.
+    const was = OUTPOST_HIDE.on;
+    try {
+      const late: Army = { spear: 24, ranged: 12, mage: 6, cav: 15, siege: 3 };
+      const lateBare: Army = { spear: 24, ranged: 12, mage: 6, cav: 18 };
+      const mid: Army = { spear: 14, ranged: 6, mage: 0 };
+      const text = (x: ReturnType<typeof outpostStand>) => `${x.fell ? "倒" : "沒倒"}，${x.seconds} 秒，攻方死 ${x.attackersDead}，守方死 ${x.guardsDead}`;
+      const both = (army: Army, towers: number, ranged: number, how: "attack" | "move") =>
+        [false, true].map((on) => {
+          OUTPOST_HIDE.on = on;
+          return text(outpostStand(army, on ? OUTPOST_HIDE.slots : 6, towers, ranged, how));
+        });
+      out.push(
+        "### 哨所擋路（D-119，OUTPOST_HIDE）",
+        "",
+        `- 現在：${OUTPOST_HIDE.size}×${OUTPOST_HIDE.size}、生命 ${OUTPOST_HIDE.hp}、木 ${OUTPOST_HIDE.cost.wood}，${OUTPOST_HIDE.slots} 名槍兵躲在裡面戳貼著的敵人（×${OUTPOST_HIDE.poke}），新蓋的預設堅守；遠程和法師打它 ${OUTPOST_HIDE.rangedNum}/${OUTPOST_HIDE.rangedDen}、其他 ${OUTPOST_HIDE.meleeNum}/${OUTPOST_HIDE.meleeDen}，砲照算。以前（D-080）：2×2、400、木 50，6 名站在旁邊、攻擊模式。`,
+        "- 攻方從 13 格外先走到看得到，再「攻擊哨所」（電腦的拆據點）或「攻擊移動」經過；最多 3 分鐘。後期 60 名：24 槍 12 遠 6 法 15 騎 3 砲（無砲：18 騎）；箭樓在哨所南北各 1 座。",
+        "",
+        "| 情境 | 以前 | 現在 |",
+        "|---|---|---|",
+      );
+      for (const [name, army, towers, ranged, how] of [
+        ["後期 60 名含砲，攻擊哨所", late, 0, 0, "attack"],
+        ["後期 60 名無砲，攻擊哨所", lateBare, 0, 0, "attack"],
+        ["後期 60 名無砲，攻擊移動", lateBare, 0, 0, "move"],
+        ["後期 60 名無砲＋2 座空箭樓", lateBare, 2, 0, "attack"],
+        ["後期 60 名無砲＋2 座箭樓各 3 遠程", lateBare, 2, 3, "attack"],
+        ["後期 60 名含砲＋2 座箭樓各 3 遠程", late, 2, 3, "attack"],
+        ["中期 20 名（14 槍 6 遠），攻擊哨所", mid, 0, 0, "attack"],
+      ] as const) {
+        const [before, now] = both(army, towers, ranged, how);
+        out.push(`| ${name} | ${before} | ${now} |`);
+      }
+      const rounds = [false, true].map((on) => {
+        OUTPOST_HIDE.on = on;
+        const x = outpostStand({ spear: 0, ranged: 0, mage: 0, siege: 3 }, 0, 0, 0, "attack");
+        return `${x.fell ? "" : "沒倒，"}${(x.stones / 3).toFixed(1)} 輪（${x.seconds} 秒）`;
+      });
+      out.push(`| 3 門砲拆沒人守的哨所 | ${rounds[0]} | ${rounds[1]} |`, "");
+    } finally {
+      OUTPOST_HIDE.on = was;
+    }
   }
   {
     // D-099 (ceo 2026-10-22): siege engines against towers, gates, cavalry and an army, measured with
