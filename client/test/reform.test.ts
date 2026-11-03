@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { dir16 } from "../src/sim.ts";
-import { ARRIVED_CELLS, enemyTooClose, oneCluster, REFORM_CLEAR_CELLS, REFORM_LINK_CELLS, reformCell, reformFacing } from "../src/game/reform.ts";
+import { ARRIVED_CELLS, enemyTooClose, oneCluster, REFORM_CLEAR_CELLS, REFORM_LINK_CELLS, reformCell, reformFacing, reformMode } from "../src/game/reform.ts";
 
 const centre = { x: 10, y: 10 };
 const middle = { x: 48, y: 48 };
@@ -64,4 +64,13 @@ test("整理隊形的 face：方向換成模擬的 16 方位（0 東、4 南、8
   // 45 degrees south-east, and a little east of south (22.5 degrees is a step).
   assert.equal(face(Math.SQRT1_2, Math.SQRT1_2), 2);
   assert.equal(face(Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)), 3);
+});
+
+test("整理隊形怎麼送（使用者 2026-11-04，D-119 邊走邊排）：有人在行軍就邊走邊排、不再走一格；有人在打指定目標就原地排；站著散開才走一格；站在一起或沒方向就原地排", () => {
+  assert.equal(reformMode(["march", "stand"], false, true), "ranks");
+  assert.equal(reformMode(["march"], true, false), "ranks");
+  assert.equal(reformMode(["attack", "stand"], false, true), "place", "a walk would end the attack");
+  assert.equal(reformMode(["stand", "stand"], false, true), "walk");
+  assert.equal(reformMode(["stand"], true, true), "place");
+  assert.equal(reformMode(["stand"], false, false), "place");
 });
