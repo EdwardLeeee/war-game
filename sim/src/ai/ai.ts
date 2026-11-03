@@ -796,6 +796,9 @@ export function fortValues(rules: Rules): FortValues {
     const m = rules.multipliers?.find((x) => x.attacker === UnitType.Spearman && x.target === t);
     pokeOn[t] = m === undefined ? 1000 : Math.round((1000 * m.num) / m.den);
   }
+  // D-099: a siege engine against buildings (vsBuildings times its attack), with the siege rules on.
+  const engine = rules.units[UnitType.Siege];
+  if (engine !== undefined && rules.siege !== undefined) vs[UnitType.Siege] = worth((engine.attack * rules.siege.vsBuildings) / engine.cooldown, engine.hp);
   return {
     hide: FORT_HIDE_AI.on && rules.features?.outpostHide === true,
     dps,
@@ -2828,6 +2831,15 @@ export interface HardPlan {
    * leaves that spot alone chargeRest minutes (false: as before).
    */
   charge: boolean;
+  /**
+   * D-099 (the user 2026-10-22: 「蓋一大堆防禦塔根本打不去」; ceo 2026-11-03: engines with an escort to pull down groups
+   * of towers). siegeUse: with SIEGE_FORTS or more enemy towers and outposts known, a siege works (once a range is up);
+   * engines up to SIEGE_MOST; they stay at home till there are SIEGE_MOST and SIEGE_ARMY other soldiers, then go with
+   * the army, and they count against forts (fortValues) so it goes for groups it would not without them (false: none).
+   */
+  siegeUse: boolean;
+  /** D-099: cavalry charges (plan.charge) go for the enemy's siege engines first, out of its forts' reach (false: ranged units and mages only). */
+  cavalryHunt: boolean;
   chargeRest: number;
   /**
    * D-086 A4: arrow towers by its main city (this many), and by each town it governs (townTowers), toward where
@@ -3050,6 +3062,8 @@ export const HARD: HardPlan = {
   cavalryCounter: 20,
   cavalryWhen: 0,
   charge: true,
+  siegeUse: false,
+  cavalryHunt: false,
   chargeRest: 2,
   towers: 0,
   townTowers: 0,
@@ -3133,6 +3147,10 @@ const BUILD_SAFE = 10;
 const CAVALRY_SEEN = 6;
 /** D-086 A4 (plan.charge): the least cavalry that charge, how far from them the targets may be, spearmen this near count as by them, and how often (ticks) it picks again. */
 const CHARGE_MIN = 3;
+/** D-099 (plan.siegeUse): enemy towers and outposts known before a siege works; engines at most; other soldiers with them before they go out. */
+const SIEGE_FORTS = 6;
+const SIEGE_MOST = 3;
+const SIEGE_ARMY = 60;
 const CHARGE_NEAR = 8;
 const CHARGE_SPEAR = 4;
 const CHARGE_MOVE = 40;
@@ -4101,6 +4119,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (plan.goldCavalry > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && res.gold >= GOLD_PILE && stableReady) add(BuildingType.Stable, rally);
         // D-086 A4 (plan.cavalryCounter): a stable once it wants cavalry against the enemy's mix.
         if (cavalryWant && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
+        // D-099 (plan.siegeUse): many enemy forts known: a siege works.
+        if (plan.siegeUse && rules.features?.siege === true && !has(BuildingType.SiegeWorks) && has(BuildingType.Range) && enemyForts(view, player, rules).length >= SIEGE_FORTS) add(BuildingType.SiegeWorks, rally);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         // D-086 A8 (plan.lumberFar): its woodcutters' trees far from its camps: another camp by them, where it is safe.
         else if (plan.lumberFar > 0 && farmers.length >= 12 && count(BuildingType.LumberCamp) < LUMBER_FAR_MOST && lumberFarAt() !== null) add(BuildingType.LumberCamp, lumberFarAt());
@@ -4251,6 +4271,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const before = room;
         if (cavalry * 100 < plan.goldCavalry * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
         counted.goldCavalry += before - room;
+      }
+      // D-099 (plan.siegeUse): engines up to SIEGE_MOST.
+      if (plan.siegeUse && done(BuildingType.SiegeWorks).length > 0) {
+        const engines = soldiers.filter((u) => u.type === UnitType.Siege).length + done(BuildingType.SiegeWorks).reduce((a, b) => a + b.queue, 0);
+        if (engines < SIEGE_MOST) trainAt(BuildingType.SiegeWorks, UnitType.Siege);
       }
       // D-086 A (plan.cavalry): while wood is short and food and gold pile up, cavalry first, up to its share.
       if (plan.cavalry > 0 && woodShort) {
@@ -4429,7 +4454,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
       // Hiding in a building (round 7) too: a move would bring it out.
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || chargers.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
+      // D-099 (plan.siegeUse): engines at home till there are SIEGE_MOST with SIEGE_ARMY other soldiers.
+      const engines = soldiers.filter((u) => u.type === UnitType.Siege);
+      const enginesHome = engines.length > 0 && (engines.length < SIEGE_MOST || soldiers.length - engines.length < SIEGE_ARMY) ? new Set(engines.map((u) => u.id)) : null;
+      const detached = (id: number) => enginesHome?.has(id) === true || dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || chargers.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -4552,10 +4580,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           return (f.v >> 3) * n + (f.u >> 3);
         };
         /** Ranged units and mages in sight this near (x, y), out of enemy forts' reach, nearest first (ties in player 0's frame). */
+        // D-099 (plan.cavalryHunt): siege engines too, before anything else.
+        const engineFirst = (t: number) => (plan.cavalryHunt && t === UnitType.Siege ? 0 : 1);
         const prey = (x: number, y: number) =>
           foes
-            .filter((f) => (f.type === UnitType.Ranged || f.type === UnitType.Mage) && f.order !== Order.Garrison && dist2(f.x, f.y, x, y) <= CHARGE_NEAR * CHARGE_NEAR && !underArrows(f))
-            .sort((a, b) => dist2(a.x, a.y, x, y) - dist2(b.x, b.y, x, y) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
+            .filter((f) => (f.type === UnitType.Ranged || f.type === UnitType.Mage || (plan.cavalryHunt && f.type === UnitType.Siege)) && f.order !== Order.Garrison && dist2(f.x, f.y, x, y) <= CHARGE_NEAR * CHARGE_NEAR && !underArrows(f))
+            .sort((a, b) => engineFirst(a.type) - engineFirst(b.type) || dist2(a.x, a.y, x, y) - dist2(b.x, b.y, x, y) || rank(a.fx, a.fy) - rank(b.fx, b.fy));
         const spearsBy = (x: number, y: number) => foes.filter((f) => f.type === UnitType.Spearman && dist2(f.x, f.y, x, y) <= CHARGE_SPEAR * CHARGE_SPEAR).length;
         if (chargeAt !== null) {
           const at = chargeAt;
@@ -4958,7 +4988,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           for (const e of intel.values()) if (!e.post && dist2(e.x, e.y, g.x, g.y) <= r * r) w += WORTH[e.type];
           return w;
         };
-        const vsForts = (list: { type: number }[]) => list.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+        // D-099 (plan.siegeUse): engines kept at home do not count.
+        const vsForts = (list: { type: number; id?: number }[]) => list.reduce((a, u) => a + (u.id !== undefined && enginesHome?.has(u.id) === true ? 0 : (fv.vs[u.type] ?? 0)), 0);
         /** D-086 A9 (plan.fortExit): a break-off's memory lifted for an army of worth `w`: `need` is what the forts and the enemy by them ask (tenths). */
         const memoryLifted = (w: number, need: number, failed: number, ids: readonly number[]) => {
           if (plan.fortExit <= 0) return false;
