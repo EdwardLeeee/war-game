@@ -1454,7 +1454,7 @@ export class WorldRenderer {
       const owner = u[o + U.owner];
       // On a castle's wall (D-096): on its walk (stand_in_m towards the town, walk_m up), over the
       // wall and under its front parts, no shadow (the walk is not the ground); on a bridge's deck (art-v5): up there.
-      const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(Math.floor(px / TILE_PX), Math.floor(py / TILE_PX)) : null;
+      const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(px, py) : null;
       if (onWall !== null && owner === view.me) this.wallLifted++;
       const at = this.projection.toPlane(px + (onWall?.dx ?? 0), py + (onWall?.dy ?? 0));
       const lift = onWall?.lift ?? this.terrain.liftAt(px, py);
