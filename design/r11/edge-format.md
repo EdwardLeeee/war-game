@@ -56,7 +56,7 @@ x3、x2 各一套，加一份 `edge/edge.json`。PNG 照其他圖的規則：帶
     "corner": {"left": {"file": "corner_left.png", "anchor": [x, y]}, "bottom": {...}, "right": {...}}
   },
   "fall": {
-    "loop":  {"file": "fall_loop.png", "width_m": 6, "body_px": [x0, x1], "period_px": 512, "scroll_m_s": 4.0, "widen_per_m": 0.07},
+    "loop":  {"file": "fall_loop.png", "width_m": 6, "body_px": [x0, x1], "out_m": 1.0, "drop_m": 2.0, "period_px": 512, "scroll_m_s": 4.0, "widen_per_m": 0.07},
     "spray": {"file": "fall_spray.png", "anchor": [x, y]},
     "mouth": {"file": "fall_mouth.png", "anchor": [x, y], "foam_m": 3.5, "se": {"file": "fall_mouth_se.png", "anchor": [x, y]}}
   },
@@ -83,6 +83,8 @@ x3、x2 各一套，加一份 `edge/edge.json`。PNG 照其他圖的規則：帶
 - **瀑布**
   - `fall_loop.png`：上下無縫的一條。client 往下捲 `scroll_m_s`；越往下越寬（`widen_per_m`），兩側碎成水絲的形狀已經畫在圖裡。
     - `body_px`（量產時補）：圖裡哪幾欄是河本身（`width_m` 寬的河在畫面上的寬度，cos 45 度），左右多出來的是碎掉的水絲。client 把 `body_px` 對到崖口那段河在畫面上的左右兩端，每一欄從那一欄的崖口往下掛。
+    - `out_m`、`drop_m`（量產時補）：水先從崖口往外拋成一段短弧線（畫在 `fall_mouth.png` 裡，下半段淡出），`fall_loop.png` 從「崖口往外 `out_m` 公尺、往下 `drop_m` 公尺」那條線開始往下掛（崖口那條線照邊的朝外方向平移 `out_m`），頭的地方被弧線蓋住、兩者疊成一道水。
+    - 畫的順序：`fall_loop` → `fall_mouth`（弧線蓋住 loop 的頭）→ `fall_spray`，然後才是地面。
   - `fall_spray.png`：瀑布底的水霧，帶透明。client 可以讓它跟著雲海的近層慢慢飄。
   - `fall_mouth.png`：河到崖邊的出口，畫在崖頂，包括濕的崖口和最後幾公尺河面的白沫。白沫也想動的話，用 `fall_loop.png` 往河的流向捲。
     - 量產時補：`fall_mouth.png` 是從左下（西）邊流出去的河；從右下（南）邊流出去的用 `mouth.se` 那一張（方向不同，不能只左右翻，光從左上來）。`anchor` 是河的中線在地圖邊線上的那一點。

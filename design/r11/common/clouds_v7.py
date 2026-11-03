@@ -6,7 +6,7 @@ height field of domes heaped on domes (a union of spheres: the creases between t
 the near billows hiding the far ones (a height-field ray cast, column by column), lit with their own shadows, the
 hollows blue-grey.
 
-python3 design/r11/common/clouds_v7.py OUT_DIR [--size 1024]     writes clouds_far.png, clouds_near.png (3x)
+python3 design/r11/common/clouds_v7.py OUT_DIR     writes clouds_far.png (2048 px), clouds_near.png (1024 px), 3x
 """
 import argparse
 import math
@@ -88,12 +88,13 @@ def _embed(h, rng, count, r_lo, r_hi, k=0.8, e=0.4):
     return h
 
 
-def cumulus(nx, ny, seed):
-    """The cloud tops (px), periodic: a rolling deck, big domes on it, smaller ones sunk into them, smaller again."""
+def cumulus(nx, ny, seed, size=1.0):
+    """The cloud tops (px), periodic: a rolling deck, big domes on it, smaller ones sunk into them, smaller again.
+    size: the billows' size (and fewer of them) against the 1024 px tile's."""
     rng = np.random.default_rng(seed)
-    s = nx / 1024.0
-    h = 30.0 * s * _band(ny, nx, 2.0, seed + 1)
-    area = nx * ny / (1024.0 * 2048.0)
+    s = nx / 1024.0 * size
+    h = 30.0 * s * _band(ny, nx, 2.0 / size, seed + 1) + 60.0 * s * _band(ny, nx, 1.0, seed + 3)   # + heaps and troughs a tile across
+    area = nx * ny / (1024.0 * 2048.0) / size ** 2
     for count, r_lo, r_hi, k, e in ((90, 110, 230, 0.5, 0.3), (600, 40, 95, 0.6, 0.5), (1600, 14, 34, 0.6, 0.55)):
         h = _embed(h, rng, int(count * area), r_lo * s, r_hi * s, k, e)
     return _blur_wrap(h, max(1, int(2.5 * s)))          # (a rim left standing on a slope drew a step)
@@ -142,9 +143,10 @@ def field(nx, ny, seed, cover=1.0):
     return _blur_wrap(h, max(1, int(1.0 * s)))
 
 
-def shade(h, alpha=None):
+def shade(h, alpha=None, size=1.0):
     """Linear colour of the tops: lit by the sun with their own shadows, the sky's blue in the hollows."""
     ny, nx = h.shape
+    sc = nx / 1024 * size                 # the billows' scale in px
     gy, gx = np.gradient(h)
     # +x right; rows run toward the camera, so the field's "away" is -row
     n = np.stack([-gx, gy, np.ones_like(h)], -1)
@@ -153,28 +155,29 @@ def shade(h, alpha=None):
     # shadow: march toward the sun; soft (how far under the ray the field rises)
     yy, xx = np.mgrid[0:ny, 0:nx].astype(np.float32)
     occ = np.zeros_like(h)
-    step = 3.0 * nx / 1024
+    step = 3.0 * sc
     for k in range(1, 48):
         t = k * step
         sx = (xx + LIGHT[0] / math.hypot(LIGHT[0], LIGHT[1]) * t) % nx
         sy = (yy - LIGHT[1] / math.hypot(LIGHT[0], LIGHT[1]) * t) % ny
         rise = h[sy.astype(int), sx.astype(int)] - (h + t * LIGHT[2] / math.hypot(LIGHT[0], LIGHT[1]))
-        occ = np.maximum(occ, np.clip(rise / (6.0 * nx / 1024), 0, 1))
+        occ = np.maximum(occ, np.clip(rise / (6.0 * sc), 0, 1))
     sun = lam * (1 - 0.85 * occ)
     # the hollows: how far below the neighbourhood's mean (wide and close)
-    ao = np.clip(1 - (_blur_wrap(h, int(40 * nx / 1024)) - h) / (70.0 * nx / 1024), 0.0, 1.0)
-    ao2 = np.clip(1 - (_blur_wrap(h, int(8 * nx / 1024)) - h) / (14.0 * nx / 1024), 0.0, 1.0)
+    ao = np.clip(1 - (_blur_wrap(h, int(40 * sc)) - h) / (70.0 * sc), 0.0, 1.0)
+    ao2 = np.clip(1 - (_blur_wrap(h, int(8 * sc)) - h) / (14.0 * sc), 0.0, 1.0)
     amb = 0.45 * ao + 0.55 * ao2
     sunc = np.array([1.0, 0.96, 0.9])
     skyc = np.array([0.36, 0.45, 0.6])
-    skyc = np.array([0.55, 0.65, 0.8])
-    col = 0.72 * sunc * sun[..., None] + skyc * (0.13 + 0.3 * amb[..., None])
+    skyc = np.array([0.5, 0.62, 0.82])
+    col = 0.64 * sunc * sun[..., None] + skyc * (0.12 + 0.27 * amb[..., None])     # (R11-v7 r1: 217 on average read white foam)
     # the lit rims glow (light through their thin edges)
     rim = np.clip(1 - n[..., 2], 0, 1) * (1 - occ) * lam
     col = col + 0.08 * rim[..., None]
     lo = h.min()
-    deep = np.clip((h - lo) / (max(h.max() - lo, 1e-6) * 0.35), 0, 1)
-    col = col * (0.55 + 0.45 * deep[..., None]) + np.array([0.2, 0.26, 0.36]) * 0.25 * (1 - deep[..., None])
+    deep = np.clip((h - lo) / (max(h.max() - lo, 1e-6) * 0.5), 0, 1) ** 0.8
+    # the troughs between the heaps blue-grey (#8f9db3, R11-v7 r1), in the shade of the heaps round them
+    col = col * (0.5 + 0.5 * deep[..., None]) + np.array([0.27, 0.34, 0.45]) * 0.45 * (1 - deep[..., None])
     return col
 
 
@@ -238,10 +241,11 @@ def _down(a, f):
     return a.reshape(h // f, f, w // f, f, *a.shape[2:]).mean(axis=(1, 3))
 
 
-def far(n=1024, seed=61, ss=2):
+def far(n=2048, seed=61, ss=1, size=1.5):
+    """The far layer: 2048 px at 3x, the billows three times the first draft's (r1: 1-2 m a billow beside 1.8 m men)."""
     N = n * ss
-    h = cumulus(N, 2 * N, seed)
-    col = shade(h)
+    h = cumulus(N, 2 * N, seed, size)
+    col = shade(h, size=size)
     img, _ = view(h, col, N)
     img = _down(img, ss)
     # a breath of haze: the far sea is below and away
@@ -249,12 +253,12 @@ def far(n=1024, seed=61, ss=2):
     return (np.clip(_srgb(img), 0, 1) * 255 + 0.5).astype(np.uint8)
 
 
-def near(n=1024, seed=67, ss=2, cover=0.42):
+def near(n=1024, seed=67, ss=2, cover=0.42, size=2.0):
     """A nearer deck of the same clouds broken into patches: the deck drawn whole, then holes cut by a soft mask on the
     screen (as floating lumps over a floor it drew boxes and curtains)."""
     N = n * ss
-    h = cumulus(N, 2 * N, seed)
-    col = shade(h)
+    h = cumulus(N, 2 * N, seed, size)
+    col = shade(h, size=size)
     img, _ = view(h, col, N)
     img = _down(img, ss)
     rng = np.random.default_rng(seed + 5)
@@ -278,11 +282,10 @@ def scaled_tile(img, n2):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out", type=Path)
-    ap.add_argument("--size", type=int, default=1024)
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(far(a.size)).save(a.out / "clouds_far.png")
-    Image.fromarray(near(a.size), "RGBA").save(a.out / "clouds_near.png")
+    Image.fromarray(far()).save(a.out / "clouds_far.png")
+    Image.fromarray(near(), "RGBA").save(a.out / "clouds_near.png")
 
 
 if __name__ == "__main__":

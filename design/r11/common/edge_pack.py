@@ -92,6 +92,8 @@ def _fft(shape, beta, seed, stretch=(1.0, 1.0)):
 
 
 FALL_W_M, FALL_PERIOD = 6.0, 512
+FALL_OUT, FALL_DROP = 0.6, 1.2          # the arc over the lip (fall_mouth); fall_loop hangs from there
+LOOP_DROP = 0.4                         # the loop starts this far down the arc's line, under its lower half (one water)
 
 
 def fall_loop(ppm=PPM3):
@@ -122,31 +124,34 @@ def fall_loop(ppm=PPM3):
 def fall_spray(ppm=PPM3):
     """The mist at the fall's foot: a soft plume wider than the fall, billowing up and thinning; anchor its top middle
     (where the falling water meets it)."""
-    W, Hh = int(16 * ppm), int(9 * ppm)
+    # (r1: too faint to see) twice the fall's width, rising a third of the cliff over the foot, dense in its core
+    W, Hh = int(14 * ppm), int(10 * ppm)
     yy, xx = np.mgrid[0:Hh, 0:W].astype(np.float32)
     u = (xx - W / 2) / (W / 2)
     v = yy / Hh
-    n = 0.75 * _fft((Hh, W), 4.2, 61) + 0.25 * _fft((Hh, W), 3.4, 63)      # soft billows, no speckle
-    shape = np.exp(-(u / (0.22 + 0.5 * v)) ** 2 * 1.4) * np.exp(-((v - 0.4) / 0.32) ** 2)
-    dens = np.clip(shape * (0.15 + 1.0 * n), 0, 1) ** 1.3
-    lit = 0.9 + 0.12 * np.clip(1 - v * 1.4, 0, 1)                  # its top a little brighter
+    n = 0.7 * _fft((Hh, W), 4.2, 61) + 0.3 * _fft((Hh, W), 3.4, 63)       # soft billows, no speckle
+    shape = np.exp(-(u / (0.34 + 0.35 * v)) ** 2 * 1.3) * np.exp(-((v - 0.5) / 0.3) ** 2)
+    dens = np.clip(shape * (0.45 + 1.1 * (n - 0.5) + 0.35), 0, 1) ** 1.1
+    lit = 0.88 + 0.16 * np.clip(1 - v * 1.6, 0, 1)                 # its top a little brighter
     col = np.array([0.9, 0.93, 0.96])[None, None] * lit[..., None]
-    return _rgba(col, dens * 0.8), (W // 2, int(0.08 * Hh))
+    return _rgba(col, dens * 0.92), (W // 2, int(0.45 * Hh))
 
 
 def fall_mouth(edge="sw", ppm=PPM3, foam_m=3.5):
     """The river's last metres on the cliff top and its brink: the water from 1.5 m inside the map (under the client's
     ground, which fades over the last 0.75 m) to the lip, white water growing toward it, the wet dark rock each side,
-    the glassy tongue curving over. Each screen pixel taken back to the surface (the tongue never hides itself).
+    and the water thrown out over the lip in an arc (FALL_OUT m out, FALL_DROP m down, where fall_loop takes over: r2 "a
+    white straight line, the water dropping plumb"). Each screen pixel taken back to the surface (it never hides itself).
     Anchor: the river's middle on the map's edge line. edge: which edge the river leaves by (sw: west, se: south)."""
     ss = 2
     p = ppm * ss
     half = FALL_W_M / 2
-    bt = np.linspace(-3.6, 1.4, 4000)                             # b: along the flow, metres past the map's edge
-    zt = -(np.clip(bt / 1.3, 0, 1) ** 1.7) * 1.3                  # the tongue curving down
+    Rb = FALL_OUT
+    bt = np.linspace(-3.6, Rb, 4000)                              # b: along the flow, metres past the map's edge
+    zt = -FALL_DROP * (np.clip(bt, 0, None) / Rb) ** 2            # thrown out: a parabola, steep where the loop begins
     ft = S2 * bt - COS30 * zt
     corners = [to_px(*((-b, a) if edge == "sw" else (a, -b)), z, p)
-               for a in (-5.0, 5.0) for b, z in ((-3.6, 0.0), (1.4, -1.3))]
+               for a in (-5.0, 5.0) for b, z in ((-3.6, 0.0), (Rb, -FALL_DROP))]
     x0 = math.floor(min(c[0] for c in corners)) - 2
     y0 = math.floor(min(c[1] for c in corners)) - 2
     x1 = math.ceil(max(c[0] for c in corners)) + 2
@@ -158,7 +163,7 @@ def fall_mouth(edge="sw", ppm=PPM3, foam_m=3.5):
     B = np.interp(-rhs, -ft[::-1], bt[::-1]) if ft[0] > ft[-1] else np.interp(rhs, ft, bt)
     A = c - B
     inside = (B >= bt[0]) & (B <= bt[-1]) & (np.abs(A) <= 5.0) & (rhs >= ft.min()) & (rhs <= ft.max())
-    over = np.clip(B / 1.3, 0, 1)
+    over = np.clip(B / Rb, 0, 1)
     n = _fft((512, 512), 2.6, 71)
     def tex(t, a, b, sa, sb):                                     # bilinear, wrapping (nearest drew a mosaic)
         x, y = a * sa, b * sb
@@ -168,21 +173,27 @@ def fall_mouth(edge="sw", ppm=PPM3, foam_m=3.5):
         return (g(y0, x0) * (1 - fx) + g(y0, x0 + 1) * fx) * (1 - fy) + (g(y0 + 1, x0) * (1 - fx) + g(y0 + 1, x0 + 1) * fx) * fy
     side = (np.abs(A) - half) / 0.6
     river = np.clip(0.5 - side - 0.6 * (tex(n, A, B, 40, 40) - 0.5), 0, 1)
-    streak = tex(_fft((512, 512), 2.0, 73, stretch=(1.0, 6.0)), A, B, 60, 25)
+    streak = tex(_fft((512, 512), 2.0, 73, stretch=(6.0, 1.0)), A, B, 60, 25)    # long down the flow (B), not across
     # white water only where the river speeds up for the drop: threads from foam_m out, thick over the last metre
     ramp = np.clip((B + foam_m) / foam_m, 0, 1) ** 3
     foam = np.clip((streak - 0.62 + 0.55 * ramp) * 2.5, 0, 1) * ramp
-    white_over = np.clip((B - 0.35) / 0.6, 0, 1)                 # the tongue: glassy where it bends, white below
-    foam = np.clip(foam * (1 - 0.6 * np.clip(B / 0.35, 0, 1) * (1 - white_over)) + 0.75 * white_over * (0.55 + 0.7 * (streak - 0.5)), 0, 1)
+    # round the bend the river's own dark water, then white in streaks down the throw (r3: one white sheet, a scroll)
+    white_over = np.clip((over - 0.25) / 0.5, 0, 1)
+    threads = np.clip((streak - 0.5) * 3.0 + 0.9 * white_over - 0.2, 0, 1) * white_over
+    foam = np.clip(foam * (1 - 0.6 * np.clip(B / 0.35, 0, 1) * (1 - white_over)) + 0.85 * threads, 0, 1)
     water = np.array([0.045, 0.07, 0.08]) + np.array([0.18, 0.24, 0.3]) * 0.25
-    glass = np.exp(-((B - 0.15) / 0.18) ** 2)[..., None]          # a band of sky on the smooth brink
+    glass = (np.exp(-((over - 0.12) / 0.1) ** 2) * (B > 0))[..., None]   # a band of sky on the smooth bend
     wc = water * (1 - glass) + np.array([0.3, 0.38, 0.45]) * glass
     col = wc * (1 - foam[..., None]) + np.array([0.9, 0.92, 0.94]) * foam[..., None]
     wet = np.clip(1 - np.abs(side - 0.7) / 1.2, 0, 1) * np.clip((B + 1.5) / 1.0, 0, 1) * (B <= 0.05)
     rockc = np.array([0.05, 0.045, 0.04])
     al_r = river * np.clip((B + 3.6) / 0.8, 0, 1)
     al_w = 0.75 * wet * (1 - al_r)
-    al = (al_r + al_w) * inside
+    al_w = al_w * (B <= 0.0)                                      # past the lip only the water (cut to the fall's width)
+    edge_n = tex(n, A * 0.3, B, 40, 12)                           # the sides of the throw fray, not cut straight
+    al_r = al_r * np.where(B > 0, np.clip((half - np.abs(A) - 0.5 * over * (edge_n - 0.3)) / 0.7, 0, 1), 1.0)
+    al_r = al_r * np.where(B > 0, 0.82 + 0.18 * np.clip((streak - 0.35) * 3, 0, 1), 1.0)   # thin between the threads
+    al = (al_r + al_w) * inside * np.clip((1.0 - over) / 0.5, 0, 1) ** 0.8   # its lower half fades into the loop
     col = (col * al_r[..., None] + rockc * al_w[..., None]) / np.maximum(al_r + al_w, 1e-6)[..., None]
     h, w = al.shape
     al = al.reshape(h // ss, ss, w // ss, ss).mean((1, 3))
@@ -209,10 +220,10 @@ def puff(seed, w, h):
     return _rgba(col, dens)
 
 
-ISLE_K = 0.28                     # far off: the island drawn at this of the map's scale (R11: 0.22, trees a soldier high)
+ISLE_K = 0.4                      # far off: the island drawn at this of the map's scale (R11: 0.22, trees a soldier high)
 
 
-def haze(img, k=0.45, blue=(0.56, 0.64, 0.78)):
+def haze(img, k=0.28, blue=(0.56, 0.64, 0.78)):
     """An island far off in the haze: its colour toward the sky's, its foot lost in the mist below it."""
     a = np.asarray(img, np.float32) / 255.0
     lin = _lin(a[..., :3]) * (1 - k) + np.array(blue) * k
@@ -266,7 +277,7 @@ def build(src, out_root, scales=(3, 2), clouds_cache=None):
         far = np.asarray(Image.open(cache / "clouds_far.png").convert("RGB"))
         near = np.asarray(Image.open(cache / "clouds_near.png").convert("RGBA"))
     else:
-        far, near = CL.far(1024), CL.near(1024)
+        far, near = CL.far(), CL.near()            # 2048 and 1024 px at 3x
         if cache:
             cache.mkdir(parents=True, exist_ok=True)
             Image.fromarray(far).save(cache / "clouds_far.png")
@@ -318,8 +329,7 @@ def build(src, out_root, scales=(3, 2), clouds_cache=None):
         if sc == 3:
             fa, na = far, near
         else:
-            n2 = round(1024 * f)
-            fa, na = CL.scaled_tile(far, n2), CL.scaled_tile(near, n2)
+            fa, na = CL.scaled_tile(far, round(far.shape[0] * f)), CL.scaled_tile(near, round(near.shape[0] * f))
         Image.fromarray(fa).save(d / "clouds_far.png", optimize=True)
         Image.fromarray(na, "RGBA").save(d / "clouds_near.png", optimize=True)
         files["clouds_far.png"], files["clouds_near.png"] = fa.shape[1::-1], na.shape[1::-1]
@@ -346,6 +356,7 @@ def build(src, out_root, scales=(3, 2), clouds_cache=None):
             "cliff": cliff,
             "fall": {
                 "loop": {"file": "fall_loop.png", "width_m": FALL_W_M, "body_px": [round(bx0 * f, 1), round(bx1 * f, 1)],
+                         "out_m": FALL_OUT, "drop_m": LOOP_DROP,
                          "period_px": lh, "scroll_m_s": 4.0, "widen_per_m": 0.07},
                 "spray": {"file": "fall_spray.png", "anchor": px(spray_a)},
                 "mouth": {"file": mouth["sw"][0], "anchor": mouth["sw"][1], "foam_m": 3.5,

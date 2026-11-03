@@ -24,7 +24,8 @@ import scene_r11 as SR    # noqa: E402
 R, S9, PPM = SR.R, SR.S9, SR.PPM
 G = S9.G
 FPS, FRAMES = 12, 36
-FALL = (49, 52)                           # 雙河關: the north river leaves the west edge over rows 49-51
+FALL = (49, 52)
+S2 = math.sqrt(0.5)                           # 雙河關: the north river leaves the west edge over rows 49-51
 
 
 def window(gridp, X0, Y0, SIZE):
@@ -78,7 +79,14 @@ def build(edge_dir, art, gridp, X0, Y0, SIZE, units_dir=None, fall=None, men=())
     N = json.loads(Path(gridp).read_text())["size"]        # 129 cells: 258 m a side
     layers, rules = S9.ground_layers(art)
     relief = R.load_tile(SR.RELIEF_D)
-    top = R.compose(grid, [], layers, relief, ppm=PPM, rules=rules, sun=R.SUN_D, view=R.VIEW_D)
+    cache = HERE.parent / "build" / "v7board_cache" / f"ground_{X0}_{Y0}_{SIZE}.npz"
+    if cache.exists():                                  # the ground's compose takes ~10 min a window
+        z = np.load(cache)
+        top, R.LAST_WATER = z["top"], z["water"]
+    else:
+        top = R.compose(grid, [], layers, relief, ppm=PPM, rules=rules, sun=R.SUN_D, view=R.VIEW_D)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(cache, top=top.astype(np.float32), water=np.asarray(R.LAST_WATER, np.float32))
     n = top.shape[0]
     m = (np.arange(n) + 0.5) / PPM
     wx = -X0 * 2.0                                     # the map's west edge, window metres
@@ -158,9 +166,11 @@ def clouds(L, w, h, ox, oy, phase, pan):
 
 def waterfall(L, col, ox, oy, phase):
     """The loop hung from the lip and scrolled down one period a loop (the board's), widening, fading into the spray."""
-    (ax, ay), (bx, by) = L["lip"]
-    c, a = L["loop"]
     spec = L["E"]["fall"]["loop"]
+    # the loop hangs from the lip moved out_m out (the west edge: out is -x, the screen's lower left) and starts drop_m
+    # below it, where the mouth's arc ends
+    (ax, ay), (bx, by) = [(x - spec["out_m"] * S2 * PPM, y + spec["out_m"] * 0.5 * S2 * PPM) for x, y in L["lip"]]
+    c, a = L["loop"]
     b0, b1 = spec["body_px"]
     per = spec["period_px"]
     H, W = col.shape[:2]
@@ -174,9 +184,10 @@ def waterfall(L, col, ox, oy, phase):
     mid = (b0 + b1) / 2
     cx = mid + (X - (ax + bx) / 2) / (1 + spec["widen_per_m"] * np.clip(dm, 0, None))
     cy = (dpx - phase * per) % per
-    ok = (dpx >= 0) & (cx >= 0) & (cx < c.shape[1] - 1)
+    top = spec["drop_m"] * 0.866 * PPM
+    ok = (dpx >= top - 12) & (cx >= 0) & (cx < c.shape[1] - 1)
     s = _tile(np.dstack([c, a]), np.clip(cx, 0, c.shape[1] - 1.01), cy)
-    fa = s[..., 3] * ok * G.smoothstep(13.0, 9.0, dm)
+    fa = s[..., 3] * ok * G.smoothstep(13.0, 9.0, dm) * np.clip((dpx - top + 12) / 24.0, 0, 1)
     for j, x in enumerate(xs):
         xi = x - ox
         if 0 <= xi < W:
@@ -201,10 +212,10 @@ def frame(L, phase, pan=0.0, box=None):
         _blit(col, ic, ia, int(X - iax) - ox, int(Y - iay + bob) - oy)
     for (cc, ca), (pax, pay), (X, Y) in L["cliff"]:
         _blit(col, cc, ca, int(round(X - pax)) - ox, int(round(Y - pay)) - oy)
-    if "lip" in L:
+    if "lip" in L:                                       # the loop, the mouth's arc over its top, the spray
+        waterfall(L, col, ox, oy, phase)
         (mc, ma), (max_, may), (MX, MY) = L["mouth"]
         _blit(col, mc, ma, int(round(MX - max_)) - ox, int(round(MY - may)) - oy)
-        waterfall(L, col, ox, oy, phase)
     g = np.asarray(L["ground"].crop(box), np.float32) / 255.0
     ga = g[..., 3]
     col = col * (1 - ga[..., None]) + R.to_lin(g[..., :3]) * ga[..., None]

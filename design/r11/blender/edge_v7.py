@@ -41,7 +41,8 @@ OWN, JOIN = 3.0, 6.5                # a variant is its own within OWN of its slo
 # linear albedo: ground_run's grass (tint (0.075, 0.12, 0.035) with a quarter of leafy_grass's own colour, mean
 # (0.313, 0.23, 0.102)) is (0.134, 0.148, 0.052); the client asked for the ground's mean grass or a little darker
 TURF = (0.125, 0.135, 0.04)
-SOIL = np.array([0.055, 0.04, 0.025])
+SOIL = np.array([0.046, 0.028, 0.016])       # linear #3d2e22 at the soil's foot (0.055 grey: a black stroke at phone size)
+SOIL_TOP = np.array([0.102, 0.059, 0.031])   # linear #5a4532 under the turf
 BLADE = ((0.045, 0.07, 0.018), (0.11, 0.09, 0.04))      # hanging grass: green, dry (lit from above they read pale)
 
 
@@ -90,7 +91,7 @@ def _rock(sf, d, which):
             o, rgb = T._sample(F, T.FX_LO + 0.05 + ua * (span - 0.1), 0.15 + vb * hgt)
             outs.append(o)
             cols.append(_lin(rgb))
-            ws.append((wa * wb) ** 2 * np.exp(np.clip(o, -0.5, 0.5) / 0.06) + 1e-9)
+            ws.append((wa * wb) ** 2 * np.exp(np.clip(o, -0.5, 0.5) / 0.09) + 1e-9)   # (0.06 switched hard: shards; 0.15 averaged the beds away)
     wsum = sum(ws)
     out = sum(w * o for w, o in zip(ws, outs)) / wsum
     lin = sum(w[..., None] * c for w, c in zip(ws, cols)) / wsum[..., None]
@@ -103,13 +104,16 @@ def _fields(sf, u, d, w, v, which="geo"):
     ph = 2 * math.pi * sf / SLOT
     dd = d + 0.35 * np.sin(ph + 1.3) + 0.15 * np.sin(3 * ph + 0.2)             # strata, dipping gently
     hard = T._smooth(0.5, 0.68, _n1(dd, 21, 0.9))
-    lin = lin * (0.82 + 0.26 * hard)[..., None] * np.array([1.0, 0.97, 0.92])
-    out = out + 0.18 * hard
-    # the soil band: 0.25-0.65 m, the join's own wander and the variant's
-    cap = 0.25 + 0.4 * (_pn(sf, 31, 5) * (1 - w) + _n1(u + 50 * v, 61 + v, 1.6) * w) + 0.07 * (_pn(sf, 35, 70) - 0.5)
+    lin = lin * (0.74 + 0.38 * hard)[..., None] * np.array([1.0, 0.97, 0.92])     # (r2: the beds read too faint)
+    out = out + 0.3 * hard
+    # the soil band: 0.45-1.1 m (the grass hangs over the top of it), the join's own wander and the variant's
+    cap = 0.45 + 0.65 * (_pn(sf, 31, 5) * (1 - w) + _n1(u + 50 * v, 61 + v, 1.6) * w) + 0.1 * (_pn(sf, 35, 70) - 0.5)
     soil_k = T._smooth(cap + 0.1, cap - 0.08, d)[..., None]
     crumb = _pn(sf + 2.3 * d, 33, 200)[..., None]
-    lin = lin * (1 - soil_k) + SOIL * (0.7 + 0.6 * crumb) * soil_k
+    # brown, lighter at the top (#5a4532) than at its foot (#3d2e22), a fifth of the rock through it (r2: near black)
+    grad = np.clip(d / np.maximum(cap, 0.1), 0, 1)[..., None]
+    soil = SOIL_TOP * (1 - grad) + SOIL * grad
+    lin = lin * (1 - 0.8 * soil_k) + soil * (0.7 + 0.6 * crumb) * 0.8 * soil_k
     out = out + 0.06 * soil_k[..., 0]                                         # the soil a little proud of the rock
     haze = T._smooth(H * 0.45, H, d)[..., None]
     lin = lin * (1 - 0.35 * haze) + np.array([0.32, 0.36, 0.42]) * 0.35 * haze
@@ -198,6 +202,9 @@ def _wall_mat(name, img, z0, z1, slot=None):
     m = T._skin_mat(name, img)
     nt = m.node_tree
     p = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
+    for n in nt.nodes:
+        if n.bl_idname == "ShaderNodeBump":
+            n.inputs["Strength"].default_value = 0.25     # (0.45: the fine cracks over the beds' light)
     col_link = next(l for l in nt.links if l.to_socket == p.inputs["Base Color"])
     geo = nt.nodes.new("ShaderNodeNewGeometry")
     sep = nt.nodes.new("ShaderNodeSeparateXYZ")
@@ -227,8 +234,8 @@ def _wall_mat(name, img, z0, z1, slot=None):
     mix.inputs["B"].default_value = (0.1, 0.13, 0.2, 1.0)
     inv = nt.nodes.new("ShaderNodeMath")
     inv.operation = "MULTIPLY_ADD"
-    inv.inputs[1].default_value = -0.65
-    inv.inputs[2].default_value = 0.65
+    inv.inputs[1].default_value = -0.45
+    inv.inputs[2].default_value = 0.45
     nt.links.new(fade, inv.inputs[0])
     nt.links.new(inv.outputs[0], mix.inputs["Factor"])
     nt.links.new(col_link.from_socket, mix.inputs["A"])
@@ -247,16 +254,25 @@ def _wall_mat(name, img, z0, z1, slot=None):
         nt.links.new(ay_.outputs[0], mx.inputs[1])
         inside = nt.nodes.new("ShaderNodeMath")
         inside.operation = "LESS_THAN"
-        inside.inputs[1].default_value = slot
+        inside.inputs[1].default_value = slot + 0.15     # the fading parts meet a hair over (cut exactly: a light crack)
         nt.links.new(mx.outputs[0], inside.inputs[0])
         solid = nt.nodes.new("ShaderNodeMath")
         solid.operation = "GREATER_THAN"
         solid.inputs[1].default_value = 0.995
         nt.links.new(fade, solid.inputs[0])
+        # and there it feathers out toward its end: the neighbour under it shows through, no edge line
+        fe = nt.nodes.new("ShaderNodeMapRange")
+        fe.inputs["From Min"].default_value = slot + 1.0
+        fe.inputs["From Max"].default_value = slot + 0.25
+        nt.links.new(mx.outputs[0], fe.inputs["Value"])
+        sf_ = nt.nodes.new("ShaderNodeMath")
+        sf_.operation = "MULTIPLY"
+        nt.links.new(solid.outputs[0], sf_.inputs[0])
+        nt.links.new(fe.outputs["Result"], sf_.inputs[1])
         keep = nt.nodes.new("ShaderNodeMath")
         keep.operation = "MAXIMUM"
         nt.links.new(inside.outputs[0], keep.inputs[0])
-        nt.links.new(solid.outputs[0], keep.inputs[1])
+        nt.links.new(sf_.outputs[0], keep.inputs[1])
         a = nt.nodes.new("ShaderNodeMath")
         a.operation = "MULTIPLY"
         nt.links.new(fade, a.inputs[0])
@@ -272,6 +288,31 @@ def _turf_mat():
     look.TEX.setdefault("leafy_grass", {k: os.path.join(TEXDIR, f"leafy_grass_{k}_2k.jpg") for k in ("diff", "rough", "nor_gl")})
     m = lib.mat("turf_v7", TURF, 0.9)
     look.texture(m, "leafy_grass", TURF, 0.9, scale=1.0, hue=0.25, bump=0.5, contrast=1.05)     # (0.85 read flat)
+    # patches lighter and darker, as the ground's relief light gives it (a flat band read as a strip of felt)
+    nt = m.node_tree
+    p = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
+    src = next(l for l in nt.links if l.to_socket == p.inputs["Base Color"]).from_socket
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    nz = nt.nodes.new("ShaderNodeTexNoise")
+    nz.inputs["Scale"].default_value = 0.9
+    nz.inputs["Detail"].default_value = 3.0
+    nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
+    mr = nt.nodes.new("ShaderNodeMapRange")
+    mr.inputs["From Min"].default_value = 0.3
+    mr.inputs["From Max"].default_value = 0.7
+    mr.inputs["To Min"].default_value = 0.78
+    mr.inputs["To Max"].default_value = 1.1
+    nt.links.new(nz.outputs["Fac"], mr.inputs["Value"])
+    mul = nt.nodes.new("ShaderNodeMix")
+    mul.data_type = "RGBA"
+    mul.blend_type = "MULTIPLY"
+    mul.inputs["Factor"].default_value = 1.0
+    nt.links.new(src, mul.inputs["A"])
+    cr = nt.nodes.new("ShaderNodeCombineXYZ")
+    for k in ("X", "Y", "Z"):
+        nt.links.new(mr.outputs["Result"], cr.inputs[k])
+    nt.links.new(cr.outputs["Vector"], mul.inputs["B"])
+    nt.links.new(mul.outputs["Result"], p.inputs["Base Color"])
     return m
 
 
@@ -280,9 +321,10 @@ def _drape(name, root, pts, rnd, mats):
     down under their own weight."""
     bms = [bmesh.new(), bmesh.new()]
     for (px, py), (nx, ny), (tx, ty) in pts:
-        for b in range(rnd.randint(9, 16)):
+        big = rnd.uniform(0.55, 1.5)                   # a tuft's own size: not a comb of one length
+        for b in range(rnd.randint(5, 18)):
             bm = bms[1 if rnd.random() < 0.28 else 0]
-            L = rnd.uniform(0.22, 0.7) * (1.5 if rnd.random() < 0.12 else 1.0)
+            L = rnd.uniform(0.15, 0.55) * big * (2.3 if rnd.random() < 0.14 else 1.0)
             psi = rnd.uniform(-0.6, 0.6)
             f0, f1 = rnd.uniform(0.15, 0.6), rnd.uniform(-1.55, -0.9)
             w0 = rnd.uniform(0.012, 0.024)
@@ -335,27 +377,32 @@ def surface(root, name, path, u0, u1, v=0, sig=(1, 1), corner_head=0.0, seed=3, 
         extra = arc - u
         ramp = T._smooth(-JOIN, JOIN, u)
         slide = lambda x: np.interp(x, u, extra - extra[-1] * ramp)      # noqa: E731
-    out, _ = _blend(path, U, D, w, v, sig, "geo", slide)
+    # the rock relief on a grid 7 columns wider each side, smoothed, cut back: no fold, and the ends as the neighbour's
+    ue = np.concatenate([u[0] - du * np.arange(7, 0, -1), u, u[-1] + du * np.arange(1, 8)])
+    UE, DE = np.meshgrid(ue, d)
+    we = _own(UE) if path.legs is not None else _variant(v, UE)[2]
+    oe, _ = _blend(path, UE, DE, we, v, sig, "geo", slide)
+    out = T._blur(oe, (0, 2))[:, 7:-7]                # along only: down it the beds' edges cast the shade that shows them
     e = base + 0.9 * out
     pos = np.concatenate([P + 0.9 * out[..., None] * nl, -D[..., None]], -1)
     uv = np.stack([(U - u0) / (u1 - u0), 1.0 - D / H], -1)
-    fu = np.arange(u0, u1, 0.04)
-    fd = np.arange(H, 0.0, -0.04)
+    fu = np.arange(u0, u1, 0.03)                     # 3 cm (4 cm read blurry at 3x; 2 cm scratchy, the beds lost)
+    fd = np.arange(H, 0.0, -0.03)
     FU, FD = np.meshgrid(fu, fd)
     wf = _own(FU) if path.legs is not None else _variant(v, FU)[2]
     _, lin = _blend(path, FU, FD, wf, v, sig, "skin", slide)
     img = T._image(f"{name}_skin", _srgb(lin))       # rows from the bottom (fd runs up from d = H; R11 had it flipped)
     mid_n = path.at(np.array([0.5 * (u0 + u1)]), np.array([0.0]))[1][0]
-    ob = T._grid_obj(f"{name}_wall", pos, uv, _wall_mat(f"{name}_mat", img, -H + 0.3, -H + 5.5, slot=slot), root,
+    ob = T._grid_obj(f"{name}_wall", pos, uv, _wall_mat(f"{name}_mat", img, -H + 2.2, -H + 7.0, slot=slot), root,
                      outward=(mid_n[0], mid_n[1], 0))
     ob["no_bevel"] = True
     # the top: from just past the lip (ragged) to 1 m into the map
     e0 = e[0]
     rag = 0.1 + 0.16 * _n1(u * 3.0 + 17 * v + seed, 43, 0.5)        # (turf over turf where pieces overlap)
     lip0 = pos[0, :, :2]
-    tp = [lip0 + rag[:, None] * nl[0], lip0 + 0.5 * rag[:, None] * nl[0]]
-    for o in (0.5 * base[0], np.zeros_like(u), np.full_like(u, -1.0)):
-        tp.append(path.at(u, o)[0])
+    # rows from outside in, each inside the last (rows at fixed offsets folded where the lip wobbled in: black flags)
+    pin = path.at(u, np.full_like(u, -1.0))[0]
+    tp = [lip0 + rag[:, None] * nl[0], lip0 + 0.5 * rag[:, None] * nl[0], lip0, 0.55 * lip0 + 0.45 * pin, pin]
     tp = np.stack([np.concatenate([p, np.zeros((len(u), 1))], -1) for p in tp], 0)
     tp = np.stack(tp, 0)
     tp[0, :, 2] = -0.03                                           # the outer edge rolls over the lip
@@ -371,7 +418,7 @@ def surface(root, name, path, u0, u1, v=0, sig=(1, 1), corner_head=0.0, seed=3, 
         i = int(np.clip(np.searchsorted(u, x), 0, len(u) - 1))
         nx, ny = nrm[i]
         pts.append(((lip[i][0], lip[i][1]), (nx, ny), (-ny, nx)))
-        x += rnd.uniform(0.12, 0.2)
+        x += rnd.uniform(0.08, 0.3) + (rnd.uniform(0.3, 0.8) if rnd.random() < 0.12 else 0.0)   # clumps and gaps
     mats = [lib.mat("drape_v7", BLADE[0], 0.85), lib.mat("drapedry_v7", BLADE[1], 0.85)]
     _drape(name, root, pts, rnd, mats)
     # (no upright tufts along it: terrain_r8's dark tufts read as black marks on the turf at phone size)
@@ -461,7 +508,7 @@ def v7_isle(root, c="E", size=5.0, seed=7, trees=4):
         rr = rnd.uniform(0, size * 0.55)
         e = lib.empty(f"isle_tree{seed}_{k}", parent=root, loc=(rr * math.cos(a), rr * math.sin(a), 0.0))
         nature_r8.tree(e, "E", k % 3, "full")
-        sc = rnd.uniform(0.12, 0.18)
+        sc = rnd.uniform(0.2, 0.28)                    # (0.12-0.18 vanished at the islands' scale)
         e.scale = (sc, sc, sc)
     P8 = T.mats()
     for k in range(int(size * 6)):
