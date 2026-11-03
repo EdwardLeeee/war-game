@@ -162,12 +162,13 @@ def shade(h, alpha=None, size=1.0):
         sy = (yy - LIGHT[1] / math.hypot(LIGHT[0], LIGHT[1]) * t) % ny
         rise = h[sy.astype(int), sx.astype(int)] - (h + t * LIGHT[2] / math.hypot(LIGHT[0], LIGHT[1]))
         occ = np.maximum(occ, np.clip(rise / (6.0 * sc), 0, 1))
+    occ = _blur_wrap(occ, max(1, int(2 * sc)))          # (r4: small hollows shaded to grey specks)
     sun = lam * (1 - 0.85 * occ)
     # the hollows: how far below the neighbourhood's mean (wide and close)
     ao = np.clip(1 - (_blur_wrap(h, int(40 * sc)) - h) / (70.0 * sc), 0.0, 1.0)
     ao2 = np.clip(1 - (_blur_wrap(h, int(8 * sc)) - h) / (14.0 * sc), 0.0, 1.0)
     amb = 0.45 * ao + 0.55 * ao2
-    sunc = np.array([1.0, 0.96, 0.9])
+    sunc = np.array([1.0, 0.95, 0.86])                  # warm white in the sun (#f4f1ea), blue-grey in the shade (r3)
     skyc = np.array([0.36, 0.45, 0.6])
     skyc = np.array([0.5, 0.62, 0.82])
     col = 0.64 * sunc * sun[..., None] + skyc * (0.12 + 0.27 * amb[..., None])     # (R11-v7 r1: 217 on average read white foam)
@@ -266,7 +267,14 @@ def near(n=1024, seed=67, ss=2, cover=0.42, size=2.0):
     m2 = _blur_wrap(rng.random((n, n)).astype(np.float32), int(14 * n / 1024))
     m = (m - m.mean()) / m.std() + 0.35 * (m2 - m2.mean()) / m2.std()
     thr = np.quantile(m, 1 - cover)
-    al = np.clip((m - thr) / 0.9, 0, 1) ** 0.8
+    # its edges frayed into wisps along the wind (3:1), a smooth threshold (r4: fine noise cut hard read as spatter)
+    F = np.fft.fft2(rng.standard_normal((n, n)))
+    kx = np.fft.fftfreq(n)[None, :] * n
+    ky = np.fft.fftfreq(n)[:, None] * n
+    m3 = np.real(np.fft.ifft2(F * np.exp(-((kx * 3.0) ** 2 + ky ** 2) / (2 * 40.0 ** 2))))
+    m3 = (m3 - m3.mean()) / m3.std()
+    al = np.clip((m - thr + 0.3 * m3) / 1.25, 0, 1) ** 0.9
+    img = img * 0.92                                                  # the near layer a little darker than the far
     rgb = (np.clip(_srgb(img), 0, 1) * 255 + 0.5).astype(np.uint8)
     return np.dstack([rgb, (np.clip(al * 0.92, 0, 1) * 255 + 0.5).astype(np.uint8)])
 

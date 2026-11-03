@@ -69,8 +69,10 @@ def piece(src, name):
         raise SystemExit(f"{name}: px_per_m {meta['px_per_m']}, camera {meta['camera']} (want 60, diamond)")
     c = np.asarray(Image.open(d / f"{name}_x3_beauty.png").convert("RGBA"), np.float32).copy()
     ao = d / f"{name}_x3_ao.png"
-    if ao.exists():
-        c[..., :3] *= (0.7 + 0.3 * np.asarray(Image.open(ao).convert("L"), np.float32) / 255.0)[..., None]
+    if ao.exists():                      # only where it is solid (in the faded foot it drew dark lines over the clouds)
+        k = (0.7 + 0.3 * np.asarray(Image.open(ao).convert("L"), np.float32) / 255.0)
+        a2 = (c[..., 3] / 255.0) ** 2
+        c[..., :3] *= (1 - (1 - k) * a2)[..., None]
     img = Image.fromarray(np.clip(c, 0, 255).astype(np.uint8), "RGBA")
     box = img.getchannel("A").point(lambda v: 255 if v > 2 else 0).getbbox()
     ax, ay = meta["anchor"]
@@ -223,7 +225,7 @@ def puff(seed, w, h):
 ISLE_K = 0.4                      # far off: the island drawn at this of the map's scale (R11: 0.22, trees a soldier high)
 
 
-def haze(img, k=0.28, blue=(0.56, 0.64, 0.78)):
+def haze(img, k=0.2, blue=(0.56, 0.64, 0.78)):
     """An island far off in the haze: its colour toward the sky's, its foot lost in the mist below it."""
     a = np.asarray(img, np.float32) / 255.0
     lin = _lin(a[..., :3]) * (1 - k) + np.array(blue) * k

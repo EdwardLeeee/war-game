@@ -252,10 +252,12 @@ def _wall_mat(name, img, z0, z1, slot=None):
         mx.operation = "MAXIMUM"
         nt.links.new(ax_.outputs[0], mx.inputs[0])
         nt.links.new(ay_.outputs[0], mx.inputs[1])
-        inside = nt.nodes.new("ShaderNodeMath")
-        inside.operation = "LESS_THAN"
-        inside.inputs[1].default_value = slot + 0.15     # the fading parts meet a hair over (cut exactly: a light crack)
-        nt.links.new(mx.outputs[0], inside.inputs[0])
+        # the fading parts cross-fade over 0.4 m at the slot's end (cut edge to edge: a light crack where the pieces
+        # land half a pixel apart; 0.15 m over at full alpha: a dark seam, r3)
+        inside = nt.nodes.new("ShaderNodeMapRange")
+        inside.inputs["From Min"].default_value = slot + 0.2
+        inside.inputs["From Max"].default_value = slot - 0.2
+        nt.links.new(mx.outputs[0], inside.inputs["Value"])
         solid = nt.nodes.new("ShaderNodeMath")
         solid.operation = "GREATER_THAN"
         solid.inputs[1].default_value = 0.995
@@ -271,14 +273,48 @@ def _wall_mat(name, img, z0, z1, slot=None):
         nt.links.new(fe.outputs["Result"], sf_.inputs[1])
         keep = nt.nodes.new("ShaderNodeMath")
         keep.operation = "MAXIMUM"
-        nt.links.new(inside.outputs[0], keep.inputs[0])
+        nt.links.new(inside.outputs["Result"], keep.inputs[0])
         nt.links.new(sf_.outputs[0], keep.inputs[1])
         a = nt.nodes.new("ShaderNodeMath")
         a.operation = "MULTIPLY"
         nt.links.new(fade, a.inputs[0])
         nt.links.new(keep.outputs[0], a.inputs[1])
         fade = a.outputs[0]
-    nt.links.new(fade, p.inputs["Alpha"])
+    # the sheet's back never shows (where the foot curls in, it drew a dark line through the faded front)
+    bf = nt.nodes.new("ShaderNodeMath")
+    bf.operation = "SUBTRACT"
+    bf.inputs[0].default_value = 1.0
+    nt.links.new(geo.outputs["Backfacing"], bf.inputs[1])
+    fa = nt.nodes.new("ShaderNodeMath")
+    fa.operation = "MULTIPLY"
+    nt.links.new(fade, fa.inputs[0])
+    nt.links.new(bf.outputs[0], fa.inputs[1])
+    # where it fades, a face seen edge on goes first (the curled foot's rim drew a thin dark line over the clouds, r3)
+    lw = nt.nodes.new("ShaderNodeLayerWeight")
+    lw.inputs["Blend"].default_value = 0.5
+    gr = nt.nodes.new("ShaderNodeMapRange")
+    gr.interpolation_type = "SMOOTHSTEP"
+    gr.inputs["From Min"].default_value = 0.72
+    gr.inputs["From Max"].default_value = 0.95
+    nt.links.new(lw.outputs["Facing"], gr.inputs["Value"])
+    unsolid = nt.nodes.new("ShaderNodeMath")
+    unsolid.operation = "SUBTRACT"
+    unsolid.inputs[0].default_value = 1.0
+    nt.links.new(fade, unsolid.inputs[1])
+    gm = nt.nodes.new("ShaderNodeMath")
+    gm.operation = "MULTIPLY"
+    nt.links.new(gr.outputs["Result"], gm.inputs[0])
+    nt.links.new(unsolid.outputs[0], gm.inputs[1])
+    keep_g = nt.nodes.new("ShaderNodeMath")
+    keep_g.operation = "SUBTRACT"
+    keep_g.inputs[0].default_value = 1.0
+    keep_g.use_clamp = True
+    nt.links.new(gm.outputs[0], keep_g.inputs[1])
+    fb = nt.nodes.new("ShaderNodeMath")
+    fb.operation = "MULTIPLY"
+    nt.links.new(fa.outputs[0], fb.inputs[0])
+    nt.links.new(keep_g.outputs[0], fb.inputs[1])
+    nt.links.new(fb.outputs[0], p.inputs["Alpha"])
     return m
 
 
@@ -489,11 +525,15 @@ def v7_isle(root, c="E", size=5.0, seed=7, trees=4):
     T._grid_obj(f"isle_root{seed}", pos, uv, _wall_mat(f"isle_mat{seed}", img, -depth * 0.97, -depth * 0.5), root,
                 outward=(1, 0, 0))
     # the top: a fan of the rim at turf height
+    # a low dome, so the sun lights its near side and leaves the far one darker (r3: a flat plate)
     bm = bmesh.new()
-    cv = bm.verts.new((0, 0, 0.04))
+    cv = bm.verts.new((0, 0, 0.35 * size / 5.0))
+    mid = [bm.verts.new((0.55 * pos[0, i, 0], 0.55 * pos[0, i, 1], 0.22 * size / 5.0)) for i in range(nseg)]
     rim = [bm.verts.new(tuple(pos[0, i, :2]) + (0.0,)) for i in range(nseg)]
     for i in range(nseg):
-        bm.faces.new((cv, rim[i], rim[(i + 1) % nseg]))
+        j = (i + 1) % nseg
+        bm.faces.new((cv, mid[i], mid[j]))
+        bm.faces.new((mid[i], rim[i], rim[j], mid[j]))
     top = lib._mesh_obj(f"isle_top{seed}", bm, _turf_mat(), root, (0, 0, 0), smooth=True, outline=False)
     top["no_bevel"] = True
     # grass over the rim
@@ -510,6 +550,25 @@ def v7_isle(root, c="E", size=5.0, seed=7, trees=4):
         nature_r8.tree(e, "E", k % 3, "full")
         sc = rnd.uniform(0.2, 0.28)                    # (0.12-0.18 vanished at the islands' scale)
         e.scale = (sc, sc, sc)
+    # roots hanging from under the turf
+    mroot = lib.mat("isle_root_v7", (0.05, 0.036, 0.024), 0.85)
+    bmr = bmesh.new()
+    for k in range(int(size * 4)):
+        a = rnd.uniform(0, 2 * math.pi)
+        r0 = r_at(a) * 0.97
+        L = rnd.uniform(0.6, 2.2) * size / 5.0
+        prev = None
+        for i in range(9):
+            t = i / 8
+            c = (r0 * (1 - 0.18 * t) * math.cos(a) + 0.1 * math.sin(t * 5 + k), r0 * (1 - 0.18 * t) * math.sin(a), -0.3 - L * t)
+            rr = 0.035 * (1 - 0.8 * t) * size / 5.0
+            vs = [bmr.verts.new((c[0] + rr * math.cos(q), c[1] + rr * math.sin(q), c[2])) for q in (0, 2.1, 4.2)]
+            if prev:
+                for q in range(3):
+                    bmr.faces.new((prev[q], prev[(q + 1) % 3], vs[(q + 1) % 3], vs[q]))
+            prev = vs
+    ob = lib._mesh_obj(f"isle_roots{seed}", bmr, mroot, root, (0, 0, 0), smooth=True, outline=False)
+    ob["no_bevel"] = True
     P8 = T.mats()
     for k in range(int(size * 6)):
         a = rnd.uniform(0, 2 * math.pi)
