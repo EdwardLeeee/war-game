@@ -154,6 +154,18 @@ export const MOCK_RULES_OUTPOST: Rules = {
 };
 
 /**
+ * `?outpost=1&hide=1` (D-119, D-121; features.outpostHide): the 3 × 3 outpost its spearmen hide in
+ * (nine) and poke out of (event `poke`), their count sent for every outpost in view, as the
+ * simulation does once its switch is on.
+ */
+export const MOCK_RULES_OUTPOST_HIDE: Rules = {
+  ...MOCK_RULES_OUTPOST,
+  buildings: MOCK_RULES_OUTPOST.buildings.map((b) => (b.type === BuildingType.Outpost ? { ...b, size: 3, hp: 1500 } : b)),
+  features: { ...(MOCK_RULES_OUTPOST.features as Features), outpostHide: true } as Features,
+  outpost: { ...(MOCK_RULES_OUTPOST.outpost ?? { reach: 8, chase: 12 }), slots: 9 },
+};
+
+/**
  * `?siege=1` (D-099, behind features.siege): round 7's rules with the siege engine, its works and
  * cavalry's ×2 on it, as the simulation sends them once SIEGE is on.
  */
@@ -209,6 +221,8 @@ const GARRISON_REACH = 3;
 /** The enemy arrow tower and soldiers hiding with us shoot this often, at this many cells. */
 const SHOT_TICKS = 30;
 const SHOT_CELLS = 7;
+/** Spearmen hiding in an outpost (?hide=1) poke this often (the spearman's swing, D-119). */
+const POKE_TICKS = 30;
 
 interface MUnit {
   id: number;
@@ -257,6 +271,8 @@ interface MBuilding {
   occupied: boolean;
   /** An outpost holding (D-080, `outpost_mode`): its Hold flag. */
   hold?: boolean;
+  /** The enemy's outpost (`?hide=1`, D-121): spearmen hiding in it, its count while in view. */
+  crew?: number;
 }
 
 /**
@@ -372,6 +388,8 @@ export class MockPort implements SimPort {
   private readonly round7: boolean;
   /** `?outpost=1` (with round 7): outposts on (D-080). */
   private readonly outpost: boolean;
+  /** `?outpost=1&hide=1` (D-119): its spearmen hide in it and poke out. */
+  private readonly hide: boolean;
   /** `?mine=1`: two mines of ours, one with a crystal vein beside it (the mine's 晶 row, 2026-10-20). */
   private readonly mine: boolean;
   /** `?walls=1` (D-096): gates in the castles' openings, 上城牆. */
@@ -400,15 +418,16 @@ export class MockPort implements SimPort {
    * `outpost`: `?outpost=1`, outposts too (D-080). `gallery`: `?gallery=1`, the atlases' gallery too.
    * `mine`: `?mine=1`, two mines of ours, a crystal vein by one.
    */
-  constructor(round7 = false, map: MapMode = "fixed", outpost = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false, siege = false, keep = false, market = false) {
-    this.round7 = round7 || outpost || walls || siege || keep || market;
+  constructor(round7 = false, map: MapMode = "fixed", outpost: boolean | "hide" = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false, siege = false, keep = false, market = false) {
+    this.round7 = round7 || outpost !== false || walls || siege || keep || market;
     this.keep = keep;
     this.market = market;
-    this.outpost = outpost;
+    this.outpost = outpost !== false;
+    this.hide = outpost === "hide";
     this.mine = mine;
     this.walls = walls;
     this.siege = siege;
-    this.rules = keep ? mockRulesKeep() : market ? mockRulesMarket() : siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
+    this.rules = keep ? mockRulesKeep() : market ? mockRulesMarket() : siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost === "hide" ? MOCK_RULES_OUTPOST_HIDE : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
     // 雙河關 (D-115) reaches the screen as a random map does (PROTOCOL.md: mapInfo.mode "random").
     this.randomMap = map !== "fixed";
     this.gallery = gallery;
@@ -734,7 +753,9 @@ export class MockPort implements SimPort {
     // D-080: our outpost north of the barracks, and the enemy's, holding, by its barracks.
     if (this.outpost) {
       this.building(ME, BuildingType.Outpost, 12, 66);
-      this.building(FOE, BuildingType.Outpost, 31, 61).hold = true;
+      const foe = this.building(FOE, BuildingType.Outpost, 31, 61);
+      foe.hold = true;
+      if (this.hide) foe.crew = 5;
     }
 
     const town = (size: TownSize, cx: number, cy: number, state: TownState, owner: number, timer = 0, total = 0, militia = 0) => {
@@ -930,6 +951,15 @@ export class MockPort implements SimPort {
     while (this.late.length > 0 && this.late[0].due <= this.tick) this.apply((this.late.shift() as { cmd: CommandBody & { seq: number } }).cmd);
     if (this.economy !== null && this.tick % 20 === 0) this.runEconomy(this.economy);
     for (const u of this.units) {
+      // 3 × 3 (D-119): posted at an outpost, it slips in once near it (also when a test put it there).
+      if (this.hide && u.order === Order.Post && !u.hidden && (u.post ?? -1) >= 0) {
+        const b = this.buildings.find((v) => v.id === u.post);
+        const s = b === undefined ? 0 : this.rules.buildings[b.type].size;
+        if (b !== undefined && Math.hypot(u.x - (b.cx * CELL + (s * CELL) / 2), u.y - (b.cy * CELL + (s * CELL) / 2)) <= GARRISON_REACH * CELL) {
+          u.hidden = true;
+          u.target = null;
+        }
+      }
       // Round 7: on its way to hide, it slips in once near the building (also when a test put it there).
       if (u.order === Order.Garrison && !u.hidden) {
         const b = this.buildings.find((v) => v.id === u.inside);
@@ -992,6 +1022,7 @@ export class MockPort implements SimPort {
       for (const t of this.towns) if (t.state === TownState.Governed && t.income < 1000 && this.tick % Math.ceil(climb.ticks / (1000 - climb.startPermille)) === 0) t.income++;
     }
     if (this.round7 && this.tick % SHOT_TICKS === 0) this.shoot();
+    if (this.hide && this.tick % POKE_TICKS === POKE_TICKS / 2) this.poke();
     if (this.walls) this.slings();
     if (this.siege) this.siegeStep();
     if (this.market) this.marketStep();
@@ -1005,6 +1036,35 @@ export class MockPort implements SimPort {
    * Round 7's `shot`: the enemy arrow tower at the nearest of our units in reach, and each of our
    * buildings with soldiers inside at the nearest enemy in view. Nobody is hurt in the fake world.
    */
+  /** Spearmen hiding in an outpost (?hide=1, D-119) a crew. */
+  private crewOf(b: MBuilding): number {
+    if (b.type !== BuildingType.Outpost || b.progress < 1000) return 0;
+    return b.owner === ME ? this.units.filter((u) => u.hidden && u.post === b.id && u.hp > 0).length : (b.crew ?? 0);
+  }
+
+  /**
+   * `poke` (?hide=1, D-119): each outpost with a crew at the nearest enemy unit within a cell of
+   * its footprint, up to 3 of them at once (`n`, absent for one). Nobody is hurt in the fake world.
+   */
+  private poke(): void {
+    for (const b of this.buildings) {
+      const crew = this.crewOf(b);
+      if (crew === 0 || (b.owner !== ME && !this.visible(b.cx, b.cy))) continue;
+      const s = this.rules.buildings[b.type].size;
+      const near = this.units
+        .filter((u) => !u.hidden && u.hp > 0 && u.owner !== b.owner && u.owner !== NEUTRAL)
+        .filter((u) => {
+          const x = u.x >> 10;
+          const y = u.y >> 10;
+          return x >= b.cx - 1 && x <= b.cx + s && y >= b.cy - 1 && y <= b.cy + s;
+        })
+        .sort((a, c) => a.id - c.id)[0];
+      if (near === undefined) continue;
+      const n = Math.min(crew, 3);
+      this.events.push({ k: "poke", building: b.id, target: near.id, ...(n > 1 ? { n } : {}) } as unknown as SimEvent);
+    }
+  }
+
   private shoot(): void {
     for (const b of this.buildings) {
       const s = this.rules.buildings[b.type].size;
@@ -1166,7 +1226,9 @@ export class MockPort implements SimPort {
       // 自動訓練 stopped by a full population (D-054): flagged as the simulation does, though the fake world trains nothing by itself.
       const full = this.units.filter((u) => u.owner === ME).length >= 20 && (b.flags & BuildingFlag.AutoTrain) !== 0 ? BuildingFlag.AutoPopulationFull : 0;
       // Round 7: soldiers hiding inside (ours only); Occupied on every building in view with someone inside.
-      const soldiers = b.owner === ME ? this.units.filter((u) => u.hidden && u.inside === b.id).length : 0;
+      // ?hide=1 (D-121): an outpost's for everyone who sees it (they stand on its walk).
+      const crew = this.hide && b.type === BuildingType.Outpost && (b.owner === ME || this.visible(b.cx, b.cy)) ? this.crewOf(b) : 0;
+      const soldiers = b.owner === ME ? this.units.filter((u) => u.hidden && u.inside === b.id).length + crew : crew;
       buildings[o + B.soldiers] = soldiers;
       const occupied = soldiers > 0 || b.occupied ? BuildingFlag.Occupied : 0;
       // D-080: spearmen posted at our outpost, those on their way included; Hold on every outpost in view.
@@ -1411,6 +1473,7 @@ export class MockPort implements SimPort {
             u.post = -1;
             u.order = Order.None;
             u.target = null;
+            u.hidden = false;
           }
         }
         break;

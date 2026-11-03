@@ -23,9 +23,19 @@ export interface BuildingEntry {
   /** A field's crops, sown to ripe. */
   crops?: string[];
   /** Other sizes of the same building (art-v4: the big city's tower 3 × 3 on random maps with neighbouring spawns, D-074). */
-  sizes?: Record<string, { footprint: [number, number]; states: Partial<Record<BuildingState, string>> }>;
+  sizes?: Record<string, { footprint: [number, number]; states: Partial<Record<BuildingState, string>>; stand_m?: [number, number, number][]; fronts?: Partial<Record<BuildingState, string>> }>;
   /** Where its arrows leave (art-v6: MainCity, ArrowTower, Keep): metres from its anchor, x east, y south, z up; the nearest the target. */
   shoot_at_m?: [number, number, number][];
+  /**
+   * Where those hiding in it are drawn standing (art-v6.4: the 3 × 3 outpost's walk on its walls,
+   * D-121): metres from its anchor as shoot_at_m, z the walk's height; the first n for n inside.
+   */
+  stand_m?: [number, number, number][];
+  /**
+   * Its picture's front part by state (art-v6.4: the outpost's parapet before its walk, D-121):
+   * drawn over those standing on it; the building, then them, then this.
+   */
+  fronts?: Partial<Record<BuildingState, string>>;
 }
 
 /** Which camera the pictures were drawn for (D-088): none, the diamond's (art-v2). */
@@ -90,7 +100,7 @@ export function buildingEntry(b: BuildingsJson, type: number, size?: number, nam
   const named = name === undefined ? undefined : b.buildings[name];
   const e = named?.type === type ? named : Object.values(b.buildings).find((v) => v.type === type);
   const other = size === undefined || e === undefined || e.footprint[0] === size ? undefined : e.sizes?.[String(size)];
-  return other === undefined || e === undefined ? e : { ...e, footprint: other.footprint, states: other.states };
+  return other === undefined || e === undefined ? e : { ...e, footprint: other.footprint, states: other.states, stand_m: other.stand_m, fronts: other.fronts };
 }
 
 /**

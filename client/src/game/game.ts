@@ -91,7 +91,7 @@ import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, movedTex
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
-import { autoTrainBuildings, features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
+import { autoTrainBuildings, features, garrisonTypes, holdsOf, outpostHide, outpostSlots } from "./features.ts";
 import { stoneOf } from "./siege.ts";
 import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
@@ -531,6 +531,10 @@ export class Game implements GestureHost {
   /** D-096: openings drawn as broken gates, and units drawn up on a wall in the last frame, for the test hook. */
   get brokenGatesForTest(): number {
     return this.renderer?.brokenGateCount ?? 0;
+  }
+
+  get crewDrawnForTest(): { drawn: number; pokes: number; stands: number } {
+    return { drawn: this.renderer?.crewDrawn ?? 0, pokes: this.renderer?.pokes ?? 0, stands: this.renderer?.outpostStands ?? 0 };
   }
 
   get wallLiftedForTest(): number {
@@ -1819,13 +1823,15 @@ export class Game implements GestureHost {
   }
 
   /** 哨所 (D-080): how many it takes, how many are posted there (on their way or on guard), and whether it holds. */
-  outpostState(building: number): { slots: number; posted: number; hold: boolean; text: string } | null {
+  outpostState(building: number): { slots: number; posted: number; inside: number | null; hold: boolean; text: string } | null {
     const view = this.view;
     const b = view?.curr?.snap.buildings;
     const o = view?.buildingRow(building) ?? -1;
     if (view === null || b === undefined || o < 0 || b[o + BuildingField.type] !== BuildingType.Outpost) return null;
     const hold = (b[o + BuildingField.flags] & BuildingFlag.Hold) !== 0;
-    return { slots: outpostSlots(view.rules), posted: b[o + BuildingField.posted], hold, text: outpostModeText(view.rules, hold) };
+    // 3 × 3 (D-119): those hiding in it, the rest of the posted on their way.
+    const hide = outpostHide(view.rules);
+    return { slots: outpostSlots(view.rules), posted: b[o + BuildingField.posted], inside: hide ? b[o + BuildingField.soldiers] : null, hold, text: outpostModeText(view.rules, hold, hide) };
   }
 
   /** ＋ on a depot (D-066): one villager more gathering `resource` for it, as the player's own order. */
@@ -2533,6 +2539,9 @@ export class Game implements GestureHost {
               this.trainedAt.add(ev.building);
             }
             if (ev.k === "shot") this.drawShot(ev.building, ev.target, now, ev.n ?? 1);
+            // TODO(core outpost-hide): SimEvent's poke once the protocol has it.
+            const poke = ev as unknown as { k: string; building: number; target: number; n?: number };
+            if (poke.k === "poke") this.drawPoke(poke.building, poke.target, poke.n ?? 1);
             if (ev.k === "siege_shot") this.drawSiegeShot(ev);
             this.hud.onEvent(ev);
           }
@@ -2991,6 +3000,14 @@ export class Game implements GestureHost {
       return;
     }
     this.renderer.shot(tower?.x ?? from.x, tower?.y ?? from.y, to.x, to.y, now, n, tower?.lift ?? 0);
+  }
+
+  /** Spearmen hiding in an outpost poked `target` (D-121): that many of those on its walk thrust at it. */
+  private drawPoke(building: number, target: number, n: number): void {
+    const o = this.view?.unitRow(target) ?? -1;
+    if (this.view === null || this.renderer === null || o < 0) return;
+    const to = this.view.unitPos(o);
+    this.renderer.poke(building, to.x, to.y, n);
   }
 
   private buildingCentre(id: number): { x: number; y: number } | null {
