@@ -534,9 +534,9 @@ export const HEADER_LENGTH = 28;
  * - perf200, perf360 (D-083): perf with both sides at 200 / 360 population (the cap and ceiling
  *   held there), for measuring D-083's higher population on the iPhone.
  */
-export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4 } as const;
+export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4, WallShift: 5 } as const;
 export type Scenario = (typeof Scenario)[keyof typeof Scenario];
-export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360";
+export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360" | "wallshift";
 
 /**
  * Which map a game is played on (D-074). "fixed": the prototype's 96 x 96 map, the same every

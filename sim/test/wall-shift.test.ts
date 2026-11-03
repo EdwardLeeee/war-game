@@ -236,3 +236,26 @@ test("same game twice, same hash; switched off they never move and the columns s
     assert.equal(g.hash(), h);
   })();
 });
+
+test("the wallshift scenario (the screen's recordings): they walk over, shoot the 9 spearmen dead and walk back", () => {
+  const g = new Game({ seed: 1, scenario: "wallshift" });
+  const w = g.w;
+  const u = w.units.col;
+  const mine: number[] = [];
+  const homes: number[] = [];
+  for (let s = 0; s < w.units.count; s++) {
+    if (u.owner[s] === NEUTRAL && u.home[s] === 0) assert.fail("town 0's militia gone");
+    if (u.owner[s] === 0 && u.type[s] === UnitType.Ranged) {
+      mine.push(u.id[s]);
+      homes.push(u.wall[s]);
+    }
+  }
+  assert.equal(mine.length, 11);
+  const foes = () => Array.from({ length: w.units.count }, (_, s) => s).filter((s) => u.owner[s] === 1 && u.type[s] === UnitType.Spearman).length;
+  assert.equal(foes(), 9);
+  run(g, 40 * S);
+  assert.equal(foes(), 0, "shot dead");
+  upThere(g, 0, mine);
+  run(g, 30 * S);
+  mine.forEach((id, k) => assert.equal(u.wall[slotOf(g, id)], homes[k], "home again"));
+});
