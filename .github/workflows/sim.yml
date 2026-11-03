@@ -629,8 +629,9 @@ jobs:
           node crush.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # push-late-siege (D-115, ceo 2026-10-31: the user's late game in 8d02b76f; war-game-ai's NN v3 and D-099): the
-  # turtle by that game's clock, 1-4 towns governed, 3 siege engines, out with 100 soldiers (--late-siege), against
-  # hard only, games up to 120 minutes, both maps, seeds 1-40 in four jobs each. What the engines did and what
+  # turtle by that game's clock, 1-4 towns governed, 3 siege engines, out with 100 soldiers (--late-siege); against
+  # normal up to minute 60, then hard takes over (--takeover 60, ceo 2026-11-03: the random map's group is D-099's and
+  # the NN's), games up to 120 minutes, both maps, seeds 1-40 in four jobs each. What the engines did and what
   # became of each (siege-watch.ts). Reports only, no threshold; its own jobs.
   scripted-late-siege:
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/core/scratch-') || startsWith(github.ref, 'refs/heads/ai/scratch-')
@@ -641,14 +642,14 @@ jobs:
       fail-fast: false
       matrix:
         cell:
-          - { group: push-late-siege, seeds: 1-10, args: --strategy push --speed h1 --formation close --late-siege --cap 120 }
-          - { group: push-late-siege, seeds: 11-20, args: --strategy push --speed h1 --formation close --late-siege --cap 120 }
-          - { group: push-late-siege, seeds: 21-30, args: --strategy push --speed h1 --formation close --late-siege --cap 120 }
-          - { group: push-late-siege, seeds: 31-40, args: --strategy push --speed h1 --formation close --late-siege --cap 120 }
-          - { group: push-late-siege-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --map random }
-          - { group: push-late-siege-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --map random }
-          - { group: push-late-siege-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --map random }
-          - { group: push-late-siege-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --map random }
+          - { group: push-late-siege, seeds: 1-10, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --takeover 60 }
+          - { group: push-late-siege, seeds: 11-20, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --takeover 60 }
+          - { group: push-late-siege, seeds: 21-30, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --takeover 60 }
+          - { group: push-late-siege, seeds: 31-40, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --takeover 60 }
+          - { group: push-late-siege-random, seeds: 1-10, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --takeover 60 --map random }
+          - { group: push-late-siege-random, seeds: 11-20, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --takeover 60 --map random }
+          - { group: push-late-siege-random, seeds: 21-30, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --takeover 60 --map random }
+          - { group: push-late-siege-random, seeds: 31-40, args: --strategy push --speed h1 --formation close --late-siege --cap 120 --takeover 60 --map random }
     env:
       NAME: siege-hard-${{ matrix.cell.group }}-${{ matrix.cell.seeds }}
     defaults:
@@ -692,7 +693,7 @@ jobs:
           set -o pipefail
           cat > siege.mjs <<'EOF'
           import { readdirSync, readFileSync } from "node:fs";
-          const rows = [["push-late-siege", "困難，固定地圖"], ["push-late-siege-random", "困難，隨機地圖"]];
+          const rows = [["push-late-siege", "普通到第 60 分、困難接手，固定地圖"], ["push-late-siege-random", "普通到第 60 分、困難接手，隨機地圖（D-099、NN 的量測組）"]];
           const med = (l) => (l.length === 0 ? "—" : String([...l].sort((a, b) => a - b)[l.length >> 1]));
           const min = (t) => Math.round(t / 120) / 10;
           const out = ["## 後期攻城（push-late-siege）", "", "| 對手、地圖 | 贏／局數 | 砲打到東西 | 帶砲出門（中位數第幾分） | 砲坊蓋好 | 攻城砲：騎兵／遠程／箭樓／其他打掉／還在 | 拆箭樓 | 打死兵 | 局長中位數 |", "|---|---|---|---|---|---|---|---|---|"];
