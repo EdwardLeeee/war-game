@@ -358,6 +358,12 @@ const FORT_FORGET_AGAIN = 10 * 1200;
 /** D-086 A9 (plan.fortExit): this share of the army that broke off (percent) goes again; lost to the same forts this many times in a row, the memory holds again. */
 const FORT_EXIT_MORE = 120;
 const FORT_LOST_MOST = 2;
+/** D-086 A10 (plan.rangedStage): enemy soldiers this near the army (cells), none this near yet; how far behind its spearmen's centre; how long without enemies by it before it may again. */
+const RANGED_NEAR = 16;
+// Ranged units see 7 cells and shoot 5: enemies seen but not yet in reach.
+const RANGED_FIGHT = 5;
+const RANGED_BACK = 3;
+const RANGED_QUIET = 600;
 /** fortStage: the gathering point at most this many cells beyond the reach of the group's forts (and 2 at least, as stagePoint). */
 const FORT_STAGE_OUT = 6;
 /** fortStage: the group it gathers for, the point, when it set off for it and the first got there, and whether it went on. */
@@ -2833,6 +2839,17 @@ export interface HardPlan {
    */
   routeFromArmy: boolean;
   /**
+   * D-086 A10 (ceo 2026-11-02, 11-03; #338's chasers go round: hard against normal on the fixed map 94 -> 83%, all 13
+   * games it newly lost lost the first battle at minutes 9.5-11.3): its ranged units walked in front of its spearmen
+   * (6-8 cells from the nearest enemy, the spearmen 10-16) and were shot first (35 hp to 100). rangedStage: the first
+   * time enemy soldiers come within RANGED_NEAR of the army and none within RANGED_FIGHT yet, its ranged units and
+   * mages nearer to them than its spearmen's centre move (fighting on the way) to RANGED_BACK behind it, once; not
+   * again until no enemy has been within RANGED_NEAR for RANGED_QUIET (false: as before). Measured and left out:
+   * sending them back with a retreat whenever ahead (rangedBehind; a11a, run 41464809193: against normal 83/85% ->
+   * 24/66%, they stopped shooting) and breaking off a town trip only for 1.2 x (holdEven: no change).
+   */
+  rangedStage: boolean;
+  /**
    * D-086 A9 (same game: forts worth 180-360 barred an army worth 1912 at its population ceiling, which could never
    * field the 2 x of the army that broke off, and every turn back wrote the memory again). fortExit: the memory of a
    * break-off holds no army back that is this many times what the forts and the enemy by them ask, nor one 1.2 x
@@ -2944,6 +2961,7 @@ export const HARD: HardPlan = {
   // maps, an army's turns back 11.1 -> 2.3 a side (most 715 -> 65), draws 1 -> 0; against normal 94/89% as before; the
   // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
   routeFromArmy: true,
+  rangedStage: false,
   fortExit: 3,
 };
 /** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
@@ -3193,6 +3211,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const loosed = new Set<number>();
   /** Units stepping out of a cannon warning, until the tick it lands (and a little). */
   const dodging = new Map<number, number>();
+  /** D-086 A10 (plan.rangedStage): staged for this contact; when an enemy soldier was last within RANGED_NEAR of the army. */
+  let staged10 = false;
+  let contactAt = -100000;
   /** Soldiers kept as the garrison of each governed (or repairing) town. */
   const townGuards = new Map<number, number[]>();
   /** Soldiers sent home against a small raid while the army is out. */
@@ -5300,6 +5321,35 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         send(post.x, post.y, "home");
       };
       armyOrders();
+
+      // D-086 A10 (plan.rangedStage): out of the city, enemy soldiers coming near the army and none fighting yet: its ranged
+      // units and mages in front of its spearmen go behind them, once a contact (a move: they shoot what they meet).
+      if (plan.rangedStage) {
+        const close = mode === "home" ? [] : foesNear(ac.x, ac.y, RANGED_NEAR);
+        if (close.length === 0) {
+          if (tick - contactAt >= RANGED_QUIET) staged10 = false;
+        } else {
+          contactAt = tick;
+          if (!staged10) {
+            staged10 = true;
+            const spears = army.filter((u) => u.type === UnitType.Spearman && !detached(u.id));
+            const sc = centre(spears, ac.x, ac.y);
+            let f = close[0];
+            for (const e of close) if (dist2(e.x, e.y, sc.x, sc.y) < dist2(f.x, f.y, sc.x, sc.y)) f = e;
+            const fighting = army.some((u) => close.some((e) => dist2(e.x, e.y, u.x, u.y) <= RANGED_FIGHT * RANGED_FIGHT));
+            if (spears.length >= 3 && !fighting) {
+              const ds = dist2(f.x, f.y, sc.x, sc.y);
+              const ids = army.filter((u) => (u.type === UnitType.Ranged || u.type === UnitType.Mage) && !detached(u.id) && dist2(u.x, u.y, f.x, f.y) < ds).map((u) => u.id);
+              if (ids.length > 0) {
+                const dx = sc.x - f.x;
+                const dy = sc.y - f.y;
+                const d = Math.sqrt(dx * dx + dy * dy) || 1;
+                out.push({ c: "move", u: ids, x: sc.x + Math.trunc((dx * RANGED_BACK) / d), y: sc.y + Math.trunc((dy * RANGED_BACK) / d) });
+              }
+            }
+          }
+        }
+      }
 
       // Back from a dodge or a raid at home: with the army again (on an attack, those that did not
       // set out with it wait at home like the other reserves).
