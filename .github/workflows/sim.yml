@@ -4,7 +4,7 @@ name: Sim
 # the path filter would leave unrelated pull requests waiting.
 on:
   push:
-    branches: ["core/**", "ai/scratch-*"]
+    branches: ["core/**"]
     paths:
       - "sim/**"
       - ".github/workflows/sim.yml"
