@@ -1995,16 +1995,51 @@ export class Game implements GestureHost {
   }
 
   /**
-   * 軍團畫面's 出城歸隊 (`all`: 全部帶走): group i's 留守 come out of every town, and those at
-   * outposts leave them, and walk back to it; the group shown is selected again with them.
+   * 軍團畫面's 出城歸隊 (`all`: 全部帶走): group i's 留守 come out of every town, those at outposts
+   * leave them and those hiding in buildings come out (D-119), and walk back to it; the group shown
+   * is selected again with them.
    */
   groupOut(i: number, all: boolean): void {
     const g = this.army.groups[i];
     const posted = this.groupPosted(i);
     this.offPosts(i, posted);
+    const hid = this.recallHiding(i);
     const towns = this.army.stationedOf(i).map((e) => e.town);
-    const { out } = this.comeOut(towns, (id) => g.ids.includes(id), all, `出城歸隊編隊 ${i + 1}`, posted.length);
+    const { out } = this.comeOut(towns, (id) => g.ids.includes(id), all, `出城歸隊編隊 ${i + 1}`, posted.length + hid);
     if (out.length > 0 && this.groupView === i) this.showGroup(i, false);
+  }
+
+  /**
+   * 軍團畫面's 召回 (the user 2026-11-04, D-119: 「駐守箭塔跟主堡應該是在哪都可以把兵叫回去」): group i's
+   * soldiers hiding in our buildings come out and walk back to it, from wherever the player is.
+   */
+  groupRecall(i: number): void {
+    const n = this.recallHiding(i);
+    if (n === 0) this.toast("這個編隊沒有躲著的兵");
+    else this.toast(`${n} 名躲著的兵出來，走回編隊 ${i + 1}`, "ok");
+  }
+
+  /**
+   * Group i's soldiers hiding in buildings come out: those inside by the building's `leave` naming
+   * them only (the others of that building stay), those on their way in by 停止. Standing with no
+   * order once out, they walk back to the group (updateAway, D-111). Returns how many.
+   */
+  private recallHiding(i: number): number {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return 0;
+    const inside = new Map<number, number[]>();
+    const going: number[] = [];
+    for (const id of this.groupHiding(i)) {
+      const o = view.unitRow(id);
+      if (u[o + UnitField.action] === Action.Garrisoned) {
+        const b = u[o + UnitField.orderTarget];
+        inside.set(b, [...(inside.get(b) ?? []), id]);
+      } else going.push(id);
+    }
+    for (const [building, ids] of [...inside].sort((a, b) => a[0] - b[0])) this.command({ c: "leave", building, u: ids });
+    if (going.length > 0) this.command({ c: "stop", u: going });
+    return going.length + [...inside.values()].reduce((n, ids) => n + ids.length, 0);
   }
 
   /** Group i's living members at outposts (哨所, D-080). */
