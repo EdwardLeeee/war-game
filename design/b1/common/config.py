@@ -37,7 +37,7 @@ TEAM = {
     "red": (200, 48, 44),      # 敵方 布倫莫爾
 }
 
-MEM_MAX = "1500M"
+MEM_MAX = os.environ.get("MEM_MAX", "1500M")      # a local render may ask for more (the user 2026-11-03: memory is plentiful)
 MIN_AVAILABLE_MB = 2000
 
 
@@ -50,7 +50,7 @@ def available_mb():
 
 
 ON_CI = os.environ.get("GITHUB_ACTIONS") == "true"
-THREADS = str(os.cpu_count() or 2) if ON_CI else "2"
+THREADS = os.environ.get("THREADS") or (str(os.cpu_count() or 2) if ON_CI else "2")
 
 
 def capped(cmd, log=None, wait_s=600):

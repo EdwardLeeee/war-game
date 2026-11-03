@@ -167,6 +167,37 @@ def ground_files(src, scale):
     return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
 
 
+def edge_files(src, scale):
+    """{name: bytes} of edge/ at one scale (design/r11/common/edge_pack.py, the format design/r11/edge-format.md):
+    edge.json, every picture it names, memory.json."""
+    found = sorted(p.parent for p in src.rglob(f"atlas_{scale}/edge/edge.json"))
+    if len(found) != 1:
+        die(f"{src}: {len(found)} atlas_{scale}/edge/")
+    d = found[0]
+    ej = json.loads((d / "edge.json").read_text())
+    if ej.get("format") != "war-game edge 1" or ej.get("scale") != float(scale[1:]) or ej.get("view") != "diamond":
+        die(f"{d / 'edge.json'}: format {ej.get('format')!r}, scale {ej.get('scale')!r}, view {ej.get('view')!r}")
+    named = set()
+
+    def walk(v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if k == "file":
+                    named.add(x)
+                else:
+                    walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+    walk(ej)
+    names = ["edge.json", "memory.json"] + sorted(named)
+    missing = [n for n in names if not (d / n).exists()]
+    extra = sorted({p.name for p in d.iterdir()} - set(names))
+    if missing or extra:
+        die(f"{d}: edge.json names missing files {missing}, or there are files it does not name {extra}")
+    return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
+
+
 def stamp_view(files, view):
     """D-118 (art-v7 on): every manifest says which camera its pictures are for (the client switches to the diamond
     camera on art-release.json's "view" and picks the units' facing table by it, client/docs/sprite-atlas.md 3).
@@ -250,8 +281,14 @@ def main():
                 m = json.loads(fs["memory.json"])
                 rgba += m["total_rgba8_bytes"]
                 astc_b += m["total_astc_4x4_bytes"]
+            if spec.get("edge"):                         # art-v7: the floating continent's edge (D-118)
+                fs = edge_files(bld_src, scale)
+                files.update({f"edge/{n}": b for n, b in fs.items()})
+                m = json.loads(fs["memory.json"])
+                rgba += m["total_rgba8_bytes"]
+                astc_b += m["total_astc_4x4_bytes"]
             extra = ("＋建築＋資源點" + ("＋城牆" if spec.get("castle") else "") + ("＋地形" if spec.get("terrain") else "")
-                     + ("＋地面" if spec.get("ground") else ""))
+                     + ("＋地面" if spec.get("ground") else "") + ("＋邊緣" if spec.get("edge") else ""))
         if spec.get("view"):
             files = stamp_view(files, spec["view"])
         files = with_manifest(files, dict(base, scale=scale))

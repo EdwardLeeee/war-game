@@ -398,6 +398,16 @@ TARGETS["r11_edge_d"] = ([dict(kind="r11_edge", culture="E", opts=dict(style=st,
 for _t in ("r11_nodes_d", "r11_terrain_d", "r11_edge_d"):
     CAMERA[_t] = proj.DIAMOND
     LOOK[_t] = "r8"
+# art-v7 the floating continent's edge (D-118, design/r11/edge-format.md; design/r11/blender/edge_v7.py): the cliff's
+# stretches, three a side, and its three corners (r8 prefix: CI fetches the textures and the rock scans for it)
+TARGETS["r8v7e"] = ([dict(kind="v7_cliff", culture="E", opts=dict(edge=e, variant=v), name=f"cliff_{e}_{v}")
+                     for e in ("sw", "se") for v in range(3)]
+                    + [dict(kind="v7_corner", culture="E", opts=dict(which=w), name=f"corner_{w}")
+                       for w in ("left", "bottom", "right")])
+TARGETS["r8v7e"] += [dict(kind="v7_isle", culture="E", opts=dict(size=sz, seed=sd), name=f"island_{k}")
+                     for k, (sz, sd) in enumerate(((5.0, 7), (3.6, 11), (2.6, 19), (4.2, 23)))]
+CAMERA["r8v7e"] = proj.DIAMOND
+LOOK["r8v7e"] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
 # replaces these pieces of the r8p run in the atlas
 TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in
