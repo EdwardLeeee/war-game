@@ -276,6 +276,13 @@ export class EdgeRenderer {
     const w = camera.width;
     const h = camera.height;
     const s = camera.scale;
+    // The screen all on the map (in the middle of a game, mostly): nothing of the edge shows, so
+    // none of it is drawn (the clouds are four passes over the whole screen).
+    const shows = !this.inside(camera);
+    this.back.visible = shows;
+    this.under.visible = shows;
+    this.over.visible = shows;
+    if (!shows) return;
     // The plane point at the screen's centre.
     const cx = camera.x + w / 2 / s;
     const cy = camera.y + h / 2 / s;
@@ -299,6 +306,9 @@ export class EdgeRenderer {
       const b = 0.5 - 0.5 * Math.cos(phase);
       layer.b.alpha = b;
       layer.a.alpha = spec.alpha ? 1 - b : 1;
+      // Not drawn while it does not show (a pass over the whole screen saved).
+      layer.b.visible = b > 0.01;
+      layer.a.visible = layer.a.alpha > 0.01;
     }
     for (const isl of this.islands) {
       const p = this.far.spec.parallax;
@@ -312,6 +322,27 @@ export class EdgeRenderer {
       const sway = Math.sin(t * 0.2 + p.phase);
       p.sprite.position.set(p.x + p.dx * 3 * sway, p.y + p.dy * 3 * sway);
     }
+  }
+
+  /** The whole screen on the map, a margin more for the clouds over the upper edges and the cliff's lip. */
+  private inside(camera: Camera): boolean {
+    const n = this.size * TILE_PX;
+    const m = 3 * TILE_PX;
+    for (const [sx, sy] of [
+      [0, 0],
+      [camera.width, 0],
+      [0, camera.height],
+      [camera.width, camera.height],
+    ]) {
+      const p = this.projection.toWorld(camera.x + sx / camera.scale, camera.y + sy / camera.scale);
+      if (p.x < m || p.y < m || p.x > n - m || p.y > n - m) return false;
+    }
+    return true;
+  }
+
+  /** Whether any of the edge is drawn now (the test page, 量測). */
+  get shown(): boolean {
+    return this.back.visible;
   }
 
   /** Cliff pieces and corners (the test page). */

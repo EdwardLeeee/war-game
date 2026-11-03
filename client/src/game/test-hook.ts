@@ -140,7 +140,9 @@ export interface GameHook {
   /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
   filmGrade(): boolean;
   /** 浮空大陸's edge (R11): drawn or not, its cliff pieces and waterfalls. */
-  edge(): { on: boolean; pieces: number; falls: number };
+  edge(): { on: boolean; shown: boolean; pieces: number; falls: number };
+  /** How the ground is laid this game (projection.ts: diamond, oblique, top). */
+  projection(): string | null;
   setGroundQuality(q: "high" | "low"): void;
   /** The ground's pictures (art-v5, R6-51): drawn from them or not, and how many pieces lie flat or stand. */
   terrain(): { pictures: boolean; pieces: number; flat: number; standing: number } | null;
@@ -366,6 +368,7 @@ export function gameHook(game: Game): GameHook {
     feet: () => game.feetForTest,
     filmGrade: () => game.filmGradeForTest,
     edge: () => game.edgeForTest,
+    projection: () => game.view?.projection.kind ?? null,
     setGroundQuality: (q) => game.setGroundQuality(q),
     terrain: () => game.terrainForTest,
     lift: (cx, cy) => game.liftForTest(cx, cy),

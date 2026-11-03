@@ -628,8 +628,8 @@ export class Game implements GestureHost {
   }
 
   /** 浮空大陸's edge (the test page): drawn or not, its cliff pieces and waterfalls. */
-  get edgeForTest(): { on: boolean; pieces: number; falls: number } {
-    return { on: this.edge !== null, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0 };
+  get edgeForTest(): { on: boolean; shown: boolean; pieces: number; falls: number } {
+    return { on: this.edge !== null, shown: this.edge?.shown ?? false, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0 };
   }
 
   /** Whether the film grade is over the battlefield now (the test page). */
