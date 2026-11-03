@@ -15,12 +15,13 @@ import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { SiegeWatch, type SiegeRecord } from "./siege-watch.ts";
 import { writeFileSync } from "node:fs";
 import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THINK_EVERY, SPEEDS, type Speed, STRATEGIES, type Strategy } from "./ai/scripted-player.ts";
-import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
+import { type AiStyle, AI_STYLES, createAi } from "./ai/ai.ts";
 import { rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import type { RandomMap } from "./core/random-map.ts";
 import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, NodeKind, Order, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
-import { Runner } from "./runner.ts";
+import { aiKnowledge, Runner } from "./runner.ts";
+import { AiSeat, Bonus, lateSiege, WATCH_TICKS } from "./late-start.ts";
 import { buildView, mapInfo } from "./view/view.ts";
 
 function arg(name: string, fallback: string): string {
@@ -146,25 +147,19 @@ if (flag("crush")) {
 }
 // push-late-siege (D-115, ceo 2026-10-31: the user's late game in 8d02b76f): the turtle with farmers and towers by
 // that game's clock, 1-4 towns governed, a siege works and 3 engines, out with 100 soldiers (--late-siege).
-if (flag("late-siege")) {
-  plan.production = 4;
-  plan.choice = "govern";
-  plan.corners = true;
-  plan.townAt = 60;
-  plan.guards = 3;
-  plan.cavalryShare = 30;
-  plan.pushAt = 100;
-  plan.counterAt = 100;
-  plan.pushAhead = true;
-  plan.turtle = true;
-  plan.lateSiege = true;
-}
+if (flag("late-siege")) lateSiege(plan);
+/**
+ * push-late-siege's --takeover N (ceo 2026-11-03): the scripted player plays normal up to minute N; from N - 3 the AI of
+ * --difficulty watches (thinks, its orders dropped) and from N it plays normal's side (late-start.ts). 0: none.
+ */
+const TAKEOVER = Number(arg("takeover", "0")) * 1200;
 /**
  * push-crush (ceo 2026-10-25): the player's gathering of food, wood and gold plus this many percent (--bonus
  * 50), credited every 20 ticks in equal shares of the three (its own gold runs out, and a share of nothing is
  * nothing); for the measurement only (the game's log does not replay it). 0: none.
  */
 const BONUS = Number(arg("bonus", "0"));
+if (TAKEOVER > 0 && TAKEOVER < WATCH_TICKS) throw new Error(`--takeover: from minute ${WATCH_TICKS / 1200} on`);
 // Barracks plus ranges at most (--production 8; else the plan's).
 plan.production = Number(arg("production", String(plan.production)));
 // With the turtle (ceo 2026-10-25): town trips as the push's, with this many soldiers and no towers by home
@@ -378,9 +373,10 @@ function play(seed: number): GameRecord {
   const r = new Runner({
     seed,
     scenario: "standard",
-    ai: [false, true],
+    // --takeover: player 1's AI is played here (AiSeat), normal first.
+    ai: [false, TAKEOVER === 0],
     maxTicks: 0,
-    difficulty: ["normal", difficulty],
+    difficulty: ["normal", TAKEOVER === 0 ? difficulty : "normal"],
     styles: style === "" ? undefined : [style as AiStyle, style as AiStyle],
     // The scripted player's buildings train on their own only in the --auto-train group, so the
     // fixed groups play as before round 6.
@@ -392,6 +388,9 @@ function play(seed: number): GameRecord {
   const map = w.map;
   // What the screen gets (view.ts mapInfo): on a random map its own main city only.
   const player = createScriptedPlayer(0, { map: mapInfo(map, 0), rules: rules(map), frame: map.frames[0] }, plan);
+  const aiOf = (d: AiDifficulty) => createAi(1, seed, aiKnowledge(map, 1, 0, d), 1, style === "" ? undefined : (style as AiStyle));
+  const seat = TAKEOVER > 0 ? new AiSeat(r, 1, aiOf("normal")) : null;
+  const bonus = new Bonus(BONUS);
   const home = map.spawns[0];
   const u = w.units.col;
   const b = w.buildings.col;
@@ -522,8 +521,6 @@ function play(seed: number): GameRecord {
     siege: count(p, UnitType.Siege),
     governed: w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length,
   });
-  const bonusLast = [0, 0, 0];
-  let bonusLeft = 0;
   const towersOf = (p: number) => {
     let n = 0;
     for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === BuildingType.ArrowTower) n++;
@@ -545,17 +542,12 @@ function play(seed: number): GameRecord {
     if (w.tick % think === 0) {
       for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
     }
-    r.tick();
-    if (BONUS > 0 && w.tick % 20 === 0) {
-      const kinds = [Resource.Food, Resource.Wood, Resource.Gold];
-      for (const k of kinds) {
-        bonusLeft += (w.gathered[k] - bonusLast[k]) * BONUS;
-        bonusLast[k] = w.gathered[k];
-      }
-      const share = Math.trunc(bonusLeft / (100 * kinds.length));
-      bonusLeft -= share * 100 * kinds.length;
-      for (const k of kinds) w.res[k] += share;
+    if (seat !== null) {
+      if (w.tick === TAKEOVER - WATCH_TICKS) seat.takeOver(aiOf(difficulty), TAKEOVER);
+      seat.think();
     }
+    r.tick();
+    bonus.tick(w);
     deaths.tick(w);
     crushWatch.tick(w);
     if (plan.lateSiege) {
@@ -1112,4 +1104,4 @@ for (const x of games) {
 out.push("", "</details>", "");
 if (trace) for (const x of games) out.push(`<details><summary>種子 ${x.seed} 每分鐘</summary>`, "", ...(x.trace ?? []).map((l) => `- ${l}`), "", "</details>", "");
 console.log(out.join("\n"));
-if (jsonOut !== "") writeFileSync(jsonOut, JSON.stringify({ strategy, speed, formation, difficulty, style, think, cap: CAP, bonus: BONUS, plan, games }, null, 1));
+if (jsonOut !== "") writeFileSync(jsonOut, JSON.stringify({ strategy, speed, formation, difficulty, style, think, cap: CAP, bonus: BONUS, takeover: TAKEOVER, plan, games }, null, 1));
