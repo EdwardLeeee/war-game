@@ -629,7 +629,7 @@ jobs:
           node crush.mjs | tee -a "${GITHUB_STEP_SUMMARY}"
 
   # push-late-siege (D-115, ceo 2026-10-31: the user's late game in 8d02b76f; war-game-ai's NN v3 and D-099): the
-  # turtle by that game's clock, 1-4 towns governed, 3 siege engines, out with 100 soldiers (--late-siege); against
+  # turtle by that game's clock, 1-4 towns governed, 3 siege engines, out with 60 soldiers (--late-siege); against
   # normal up to minute 60, then hard takes over (--takeover 60, ceo 2026-11-03: the random map's group is D-099's and
   # the NN's), games up to 120 minutes, both maps, seeds 1-40 in four jobs each. What the engines did and what
   # became of each (siege-watch.ts). Reports only, no threshold; its own jobs.
