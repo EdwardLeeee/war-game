@@ -395,7 +395,12 @@ TARGETS["r11_edge_d"] = ([dict(kind="r11_edge", culture="E", opts=dict(style=st,
                           for st in ("A", "B", "C") for pt in (-1, 0, 1, 2, 3)]
                          + [dict(kind="r11_isle", culture="E", opts=dict(size=sz, seed=sd), name=f"isle_{k}_d")
                             for k, (sz, sd) in enumerate(((5.0, 7), (3.5, 11), (2.4, 19)))])
-for _t in ("r11_nodes_d", "r11_terrain_d", "r11_edge_d"):
+# R12 (D-119): the 3 x 3 outpost's drafts, three options, both cultures, four states, on the diamond camera; the
+# arrow towers beside them for the size
+TARGETS["r12_outpost_d"] = ([dict(kind="r12_outpost", culture=c, opts=dict(opt=o, state=s), name=f"outpost3_{o}_{c}_{s}_d")
+                             for o in ("A", "B", "C") for c in CULTURES for s in ("build", "done", "damaged", "garrison")]
+                            + [dict(kind="r8_arrow_tower", culture=c, name=f"arrow_tower_{c}_d") for c in CULTURES])
+for _t in ("r11_nodes_d", "r11_terrain_d", "r11_edge_d", "r12_outpost_d"):
     CAMERA[_t] = proj.DIAMOND
     LOOK[_t] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
