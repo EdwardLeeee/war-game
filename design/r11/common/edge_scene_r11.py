@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -31,6 +31,16 @@ WALL_H = 13.0
 FPS, FRAMES = 12, 36                 # the GIF: 3 s loop
 
 
+def headland(s):
+    """How far (metres) the land runs out past the map's edge at s along it: headlands and bays every 15-30 m, never
+    into the map (R11 r1: a coastline that is one straight 45-degree line read as a cake slice); none by the waterfall.
+    The same formula in r11/blender/edge_r11.py and r11/common/edge_scene_r11.py."""
+    # (R11 r2: two right-angle steps; the references push the coast in and out 80-250 px every 200-400 px at 3x)
+    w = 1.0 + 2.0 * np.sin(0.4 * s + 0.7) + 0.9 * np.sin(0.93 * s + 2.1) + 0.25 * np.sin(2.1 * s + 0.4)   # r3: 2.6/0.62 too jagged
+    a = np.clip((np.abs(s) - 3.0) / 3.0, 0, 1)
+    return np.clip(w, 0, None) * a * a * (3 - 2 * a)
+
+
 def window(gridp):
     """(grid, trees) of the window; beyond the edge the column x 0 carried on (so the river runs to the edge and the
     ground composer sees no bank there), trees only on the map."""
@@ -43,6 +53,8 @@ def window(gridp):
         for xx in range(SIZE):
             X, Y = X0 + xx, Y0 + yy
             grid[yy, xx] = t[Y, max(X, 0)]
+            if grid[yy, xx] == 4 and X <= 3:
+                grid[yy, xx] = 3                      # the river runs to the lip as water (R11 r1: the ford read as tiles)
             if X >= 0 and d["rows"][Y][X] == "T" and t[Y, X] == 0:
                 trees.append((xx, yy, (xx * 7 + yy * 13) % 3))
     return grid, trees
@@ -64,6 +76,26 @@ def _fft_tile(n, beta, seed, stretch=(1.0, 1.0)):
 
 CLOUD_TILE = _fft_tile(512, 3.2, 41)                               # 512 px: one A8 tile, 256 KB
 FALL_TILE = _fft_tile(256, 2.2, 43, stretch=(1.0, 7.0))            # streaks, long down the fall: 256 x 256 A8, 64 KB
+
+
+def _cumulus_tile(n=1024, seed=45, count=170):
+    """A tile of heaped cloud tops (R11 r1-r2: the noise alone read as crinkled snow): soft domes 30-150 px across,
+    piled and wrapped round the tile's edges, a little fine noise on them; a height 0..1 (one A8 tile, 1 MB)."""
+    rng = np.random.default_rng(seed)
+    h = np.zeros((n, n), np.float32)
+    yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
+    for _ in range(count):
+        cx, cy, r = rng.uniform(0, n), rng.uniform(0, n), rng.uniform(30, 110) * (1.5 if rng.random() < 0.2 else 1.0)
+        dx = (xx - cx + n / 2) % n - n / 2
+        dy = ((yy - cy + n / 2) % n - n / 2) * 1.6          # flattened: seen 30 degrees down
+        d2 = (dx * dx + dy * dy) / (r * r)
+        dome = np.sqrt(np.clip(1 - d2, 0, None)) * r / 75.0
+        h += dome * 0.6                                    # heaped, not a sheet of separate bubbles (r3)
+    h = h / h.max() * 0.6 + 0.4 * _fft_tile(n, 2.8, seed + 1)
+    return ((h - h.min()) / (h.max() - h.min())).astype(np.float32)
+
+
+CUMULUS = _cumulus_tile()
 
 
 def _tile(tile, x, y):
@@ -89,17 +121,24 @@ def clouds(w, h, phase, pan=0.0, ox=0, oy=0):
             # the crop moves with the camera; the layer lags behind it: only par of the move shows on the screen
             out = out + wgt * _tile(CLOUD_TILE, (xx - pan * (1 - par)) / scale + drift[0] * t, yy / (scale * 0.5) + drift[1] * t)
         return out
-    a = layer(2.6, (70.0, 20.0), phase, 0.2)
-    b = layer(1.0, (120.0, 35.0), (phase + 0.3) % 1.0, 0.35)
-    dens = np.clip((0.55 * a + 0.45 * b - 0.32) * 2.2, 0, 1)
-    # light from the upper left: the slope of the density
-    gx = np.roll(dens, -3, 1) - np.roll(dens, 3, 1)
-    gy = np.roll(dens, -3, 0) - np.roll(dens, 3, 0)
-    lit = np.clip(0.75 - 2.2 * (gx * 0.6 + gy * 0.8), 0.35, 1.15)
-    deep = np.array([0.30, 0.40, 0.55])
-    white = np.array([0.92, 0.92, 0.94])
-    col = deep * (1 - dens[..., None]) + white * (dens * lit)[..., None]
-    return col
+    def heaps(scale, drift, ph, par):
+        out = 0
+        for k in (0.0, 0.5):
+            t = (ph + k) % 1.0
+            wgt = 1 - abs(2 * t - 1)
+            out = out + wgt * _tile(CUMULUS, (xx - pan * (1 - par)) / scale + drift[0] * t, yy / scale + drift[1] * t)
+        return out
+    a = heaps(1.3, (90.0, 25.0), phase, 0.2)               # far: the big heaps
+    b = heaps(0.75, (140.0, 40.0), (phase + 0.3) % 1.0, 0.35)   # near: smaller ones over them
+    hgt = np.clip(np.maximum(a, b * 0.85) * 1.15 - 0.08, 0, 1)
+    # lit on their tops from the upper left, blue-grey in the hollows: the slope over 6 px (no crinkle)
+    gx = (np.roll(hgt, -6, 1) - np.roll(hgt, 6, 1))
+    gy = (np.roll(hgt, -6, 0) - np.roll(hgt, 6, 0))
+    lit = np.clip(0.7 - 3.2 * (gx * 0.55 + gy * 0.85), 0.25, 1.15)
+    valley = np.array([0.30, 0.38, 0.52])
+    top = np.array([0.96, 0.96, 0.975])
+    col = valley * (1 - hgt[..., None]) + top * hgt[..., None]
+    return col * (0.55 + 0.45 * lit[..., None])
 
 
 def waterfall(lip_a, lip_b, w, h, phase, H=WALL_H, ox=0, oy=0):
@@ -111,24 +150,32 @@ def waterfall(lip_a, lip_b, w, h, phase, H=WALL_H, ox=0, oy=0):
     u = (xx - ax) / (bx - ax)
     ly = ay + u * (by - ay)
     dep = (yy - ly) / (0.866 * PPM)                    # metres down the fall
-    inside = (u > -0.02) & (u < 1.02) & (dep > -0.15) & (dep < H)
-    edge = G.smoothstep(0.0, 0.08, u) * G.smoothstep(1.0, 0.92, u)
-    # one tile scrolling down: one full tile per loop (2 s), so the loop has no seam
+    # (R11 r1: a translucent rectangle) the fall widens as it drops, its sides fray, its body is opaque white
+    half = 0.5 * (1 + 0.07 * np.clip(dep, 0, None))
+    cu = (u - 0.5) / half
+    rag = (_tile(FALL_TILE, np.sign(cu) * 37.0 + 11.0, dep * 22.0 - phase * 256.0) - 0.5) * 1.1 * np.clip(dep / 6.0, 0, 1)
+    edge = G.smoothstep(1.02 + rag, 0.86 + rag, np.abs(cu))
+    inside = (dep > -0.12) & (dep < H + 2)
+    # one tile scrolling down: one full tile per loop, so the loop has no seam
     st = _tile(FALL_TILE, u * 96.0, dep * PPM * 0.866 * 0.35 - phase * FALL_TILE.shape[0])
     st2 = _tile(FALL_TILE, u * 41.0 + 77, dep * PPM * 0.866 * 0.18 - phase * FALL_TILE.shape[0] + 31)
     s = 0.6 * st + 0.4 * st2
-    glass = G.smoothstep(0.6, 0.0, dep)                 # the water going over: smooth, dark, holding the sky
-    white = np.clip((s - 0.35) * 2.2, 0, 1) * (1 - glass)
-    spray = G.smoothstep(4.0, 11.0, dep)
-    alpha = (0.92 * glass + (0.35 + 0.6 * white) * (1 - glass)) * (1 - 0.75 * spray) * edge * inside
-    col = (np.array([0.10, 0.14, 0.16]) * glass[..., None]
-           + (np.array([0.55, 0.62, 0.66]) * (1 - white[..., None]) + np.array([0.92, 0.94, 0.95]) * white[..., None])
-           * (1 - glass[..., None]))
-    # the mist where the fall goes into the clouds: a soft plume, wider than the fall, drifting
-    pu = (u - 0.5) / 1.4
-    plume = np.exp(-pu ** 2 * 3.0) * G.smoothstep(6.0, 12.0, dep) * G.smoothstep(18.0, 13.0, dep)
-    mist = plume * (0.55 + 0.45 * _tile(CLOUD_TILE, xx * 0.7 + phase * 60, yy * 1.2))
-    return col, np.clip(alpha, 0, 1), np.clip(mist, 0, 1)
+    lipn = _tile(FALL_TILE, u * 23.0 + 5.0, 3.0)                  # the tongue's lower edge breaks up across the fall
+    glass = G.smoothstep(0.35 + 0.5 * lipn, 0.0, dep)  # the tongue going over: smooth, dark, a band of sky on it
+    spray = G.smoothstep(6.0, 12.0, dep)
+    body = 1 - glass
+    white = 0.78 + 0.22 * np.clip((s - 0.3) * 2.0, 0, 1)
+    side = 1 - 0.18 * np.clip((cu + 1) / 2, 0, 1)      # lit from the left
+    streamer = np.where(np.abs(cu) > 0.65, np.clip((s - 0.25) * 2.5, 0, 1), 1.0)   # the sides break into streamers
+    alpha = (0.95 * glass + body * (0.96 - 0.55 * spray) * (0.75 + 0.25 * s) * streamer) * edge * inside
+    sky = np.exp(-((dep - 0.3) / 0.15) ** 2)
+    col = ((np.array([0.10, 0.14, 0.16]) + np.array([0.35, 0.40, 0.45]) * sky[..., None]) * glass[..., None]
+           + np.array([0.93, 0.95, 0.96]) * (white * side)[..., None] * body[..., None])
+    # the mist plume at its foot, in front, wider than the fall, drifting and rising
+    pu = (u - 0.5) / 1.6
+    plume = np.exp(-pu ** 2 * 2.0) * G.smoothstep(6.0, 10.0, dep) * G.smoothstep(20.0, 14.0, dep) * 1.25
+    mist = plume * (0.6 + 0.4 * _tile(CLOUD_TILE, xx * 0.7 + phase * 60, yy * 1.2 + phase * 90))
+    return col, np.clip(alpha, 0, 1), np.clip(mist * 1.1, 0, 1)
 
 
 def _puff(w, h, seed):
@@ -168,7 +215,10 @@ def build(art, gridp, style, units_dir):
     top = R.compose(grid, [], layers, relief, ppm=PPM, rules=rules, sun=R.SUN_D, view=R.VIEW_D)
     n = top.shape[0]
     m = (np.arange(n) + 0.5) / PPM
-    alpha = np.broadcast_to(G.smoothstep(EDGE_M - 0.04, EDGE_M + 0.04, m)[None, :], (n, n))
+    gy_mid = (FALL[0] + FALL[1]) / 2 * 2.0 - Y0 * 2.0
+    # the wall's s runs along Blender's +y, which is north: the map's rows run south, so s = -(row - middle)
+    edge_row = EDGE_M - headland(-(m - gy_mid)) - 0.35                      # the grass over the lip (R11 r2: a grey kerb)
+    alpha = G.smoothstep(edge_row[:, None] - 0.04, edge_row[:, None] + 0.04, m[None, :])
     ground = SR.turn(top, alpha)
     water = R.LAST_WATER.copy() * alpha
     st = SR.Stage(n)
@@ -183,8 +233,7 @@ def build(art, gridp, style, units_dir):
     for anim, f, k, x, y in (("idle", 7, 0, 36.0, 40.0 + dy), ("walk", 6, 3, 38.0, 41.5 + dy), ("idle", 1, 2, 34.5, 42.5 + dy)):
         spr, flip = SR.unit(units_dir, anim, f, k)
         st.put(spr, x, y, flip=flip)
-    gy_mid = (FALL[0] + FALL[1]) / 2 * 2.0 - Y0 * 2.0
-    walls = [(SR.piece(f"edge_{'A' if style == 'C' else style}{k}_d", "neutral"), SR.at(EDGE_M, gy_mid + 16.0 * (k - 1), n))
+    walls = [(SR.piece(f"edge_{style}{k}_d", "neutral"), SR.at(EDGE_M, gy_mid - 16.0 * (k - 1), n))
              for k in (-1, 0, 1, 2, 3)]                       # three 16 m stretches, each at its own middle
     lip_a = SR.at(EDGE_M - 0.25, (FALL[0] - Y0) * 2.0 + 0.4, n)
     lip_b = SR.at(EDGE_M - 0.25, (FALL[1] - Y0) * 2.0 - 0.4, n)
@@ -204,11 +253,11 @@ def _static(L):
     isles = []
     for (spr, sh), (X, Y), sink in L["isles"]:
         im, ax, ay = spr
-        k_ = 0.42                                        # far off: smaller (R11 r0: as big as the map's own trees)
-        im = im.resize((max(1, int(im.width * k_)), max(1, int(im.height * k_))), Image.LANCZOS)
+        k_ = 0.22                                        # far off: smaller (R11 r0/r1: trees nearly a soldier's height)
+        im = im.resize((max(1, int(im.width * k_)), max(1, int(im.height * k_))), Image.LANCZOS).filter(ImageFilter.GaussianBlur(0.9))
         ax, ay = ax * k_, ay * k_
         a = np.asarray(im, np.float32) / 255.0
-        c = R.to_lin(a[..., :3]) * 0.7 + np.array([0.55, 0.62, 0.72]) * 0.3            # a little haze
+        c = R.to_lin(a[..., :3]) * 0.5 + np.array([0.56, 0.64, 0.78]) * 0.5            # haze, a little blue
         yy_ = np.arange(a.shape[0], dtype=np.float32)[:, None] / a.shape[0]
         a[..., 3] *= 1 - 0.85 * np.clip((yy_ - 0.55) / 0.45, 0, 1)                      # the rock foot lost in mist
         isles.append((c, a[..., 3] * 0.95, int(X - ax), int(Y + sink * 0.866 * PPM - ay), X))
@@ -224,6 +273,31 @@ def _static(L):
         walls.append((wc, wa * G.smoothstep(WALL_H * 0.95, WALL_H * 0.4, dep), x0, y0))
     wimg = Image.fromarray((np.clip(L["water"], 0, 1) * 255).astype(np.uint8), "L").rotate(45, expand=True)
     wm = wimg.resize((wimg.width, wimg.height // 2), Image.BILINEAR)
+    # all the stretches on one layer, the hairline cracks where the coast turns closed (R11 r3)
+    W_, H_ = L["size"]
+    wc_all = np.zeros((H_, W_, 3), np.float32)
+    wa_all = np.zeros((H_, W_), np.float32)
+    for wc, wa, x0, y0 in walls:
+        _blit(wc_all, wc, wa, x0, y0)
+        sub = wa_all[max(0, y0):y0 + wa.shape[0], max(0, x0):x0 + wa.shape[1]]
+        src = wa[max(0, -y0):max(0, -y0) + sub.shape[0], max(0, -x0):max(0, -x0) + sub.shape[1]]
+        np.maximum(sub, src, out=sub)
+    a8 = Image.fromarray((wa_all * 255).astype(np.uint8), "L")
+    closed = np.asarray(a8.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.MinFilter(7)), np.float32) / 255.0
+    hole = np.clip(closed - wa_all, 0, 1)
+    if hole.max() > 0:
+        prem = wc_all * wa_all[..., None]
+        def blur(a, r=6):                               # a box blur, twice (PIL blurs no float images)
+            for _ in range(2):
+                for ax in (0, 1):
+                    c = np.cumsum(np.pad(a, [(r + 1, r) if k == ax else (0, 0) for k in (0, 1)], mode="edge"), axis=ax)
+                    a = (np.take(c, range(2 * r + 1, c.shape[ax]), axis=ax) - np.take(c, range(0, c.shape[ax] - 2 * r - 1), axis=ax)) / (2 * r + 1)
+            return a
+        num = np.stack([blur(prem[..., k]) for k in range(3)], -1)
+        den = blur(wa_all)[..., None] + 1e-4
+        wc_all = wc_all * (1 - hole[..., None]) + (num / den) * hole[..., None]
+        wa_all = np.maximum(wa_all, closed)
+    walls = [(wc_all, wa_all, 0, 0)]
     L["static"] = dict(isles=isles, walls=walls, wm=wm)
     return L["static"]
 
@@ -238,6 +312,12 @@ def frame(L, phase, pan=0.0, box=None):
     w, h = box[2] - box[0], box[3] - box[1]
     S = _static(L)
     col = clouds(w, h, phase, pan, ox, oy)
+    # the depth under the continent: the clouds near the cliff's foot darker and bluer (R11 r1: white right to the rock)
+    (lax, lay), (lbx, lby) = L["lip"]
+    yy_, xx_ = np.mgrid[oy:oy + h, ox:ox + w].astype(np.float32)
+    below = yy_ - (lay + (xx_ - lax) * (lby - lay) / (lbx - lax))
+    deep = np.exp(-np.clip(below - WALL_H * 0.866 * PPM * 0.5, 0, None) / 320.0) * (below > 0)
+    col = col * (1 - deep[..., None] * np.array([0.55, 0.48, 0.32]))
     for c, al, x0, y0, X in S["isles"]:                     # far islands in the haze, bobbing a little
         bob = int(round(3.0 * math.sin(2 * math.pi * phase + X * 0.01)))
         _blit(col, c, al, x0 - ox, y0 - oy + bob)
@@ -248,6 +328,7 @@ def frame(L, phase, pan=0.0, box=None):
     col = _over(col, np.array([0.85, 0.88, 0.92]), mist * 0.85)
     gc, ga = _from8(L["ground"].crop(box))                  # the ground and what stands on it
     col = _over(col, gc, ga)
+    col = _over(col, np.array([0.86, 0.89, 0.9]), _foam(L, box, phase))
     img = Image.fromarray((np.clip(R.to_srgb(col), 0, 1) * 255).round().astype(np.uint8), "RGB").convert("RGBA")
     wm = np.asarray(S["wm"].crop(box), np.float32) / 255.0
     st = L["stage"]
@@ -262,8 +343,25 @@ def frame(L, phase, pan=0.0, box=None):
     for k, (pc, pa) in enumerate(PUFFS):
         t = (phase + k / len(PUFFS)) % 1.0
         fade = math.sin(math.pi * t) ** 2
-        _blit(col, pc, pa * fade * 0.85, int(ax_ - 900 + k * 520 + 260 * t) - ox, int(ay_ + 160 + k * 170 - 60 * t) - oy)
+        _blit(col, pc, pa * fade * 0.85, int(ax_ - 1250 + k * 380 + 260 * t) - ox, int(ay_ + 420 + k * 150 - 60 * t) - oy)
     return Image.fromarray((np.clip(R.to_srgb(col), 0, 1) * 255).round().astype(np.uint8), "RGB").convert("RGBA")
+
+
+def _foam(L, box, phase):
+    """White water on the river's last few metres before the lip (R11 r2: the river arrived flat and was cut off):
+    streaks along the flow (west), thickening toward the drop, scrolling with the current. Alpha on the box."""
+    n = L["n"]
+    W, Hh = L["size"][0], L["size"][1] * 2
+    yy, xx = np.mgrid[box[1]:box[3], box[0]:box[2]].astype(np.float32)
+    c45 = math.cos(math.radians(45))
+    a_, b_ = xx - W / 2, yy * 2 - Hh / 2
+    gx = (a_ * c45 - b_ * c45 + n / 2) / PPM                 # back to the ground's metres (rotate_xy undone)
+    gy = (a_ * c45 + b_ * c45 + n / 2) / PPM
+    y0, y1 = (FALL[0] - Y0) * 2.0 + 0.2, (FALL[1] - Y0) * 2.0 - 0.2
+    across = G.smoothstep(y0, y0 + 0.6, gy) * G.smoothstep(y1, y1 - 0.6, gy)
+    near = G.smoothstep(EDGE_M + 3.5, EDGE_M + 0.1, gx) * (gx > EDGE_M - 0.4)
+    st = _tile(FALL_TILE, gy * 40.0, gx * 30.0 + phase * FALL_TILE.shape[0])
+    return np.clip((st - 0.42 + 0.35 * near) * 2.4, 0, 1) * near * across * 0.85
 
 
 def _blit(col, c, a, x0, y0):

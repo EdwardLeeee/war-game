@@ -123,18 +123,18 @@ def screen_layers(cam, items, shadows, wm=None, reflect=()):
         arr[..., 3] *= wm
         layer = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(0.8))
         cam.alpha_composite(layer)
-    if wm is not None:             # on the water a shadow is faint and wavers (R9 r8: a crisp black ladder on the water)
-        sl = Image.new("RGBA", cam.size, (0, 0, 0, 0))
-        for im, xy in shadows:
-            _paste(sl, im, xy)
-        a = np.asarray(sl, np.float32).copy()
-        soft = np.asarray(sl.filter(ImageFilter.GaussianBlur(2.5)), np.float32)
-        a = a * (1 - wm[..., None]) + soft * wm[..., None]
-        a[..., 3] *= 1 - 0.3 * wm                      # R11: 0.55 lost the deck's shadow (a raft on the water)
-        cam.alpha_composite(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGBA"))
-    else:
-        for im, xy in shadows:
-            _paste(cam, im, xy)
+    # shadows: the ground under them darkened, its own hue and texture kept (R11 r1: alpha-blended dark navy read as
+    # blue paint on the grass): lit x (0.45, 0.46, 0.50) at full shadow; on the water faint and wavering (R9 r8)
+    sl = Image.new("RGBA", cam.size, (0, 0, 0, 0))
+    for im, xy in shadows:
+        _paste(sl, im, xy)
+    sa = np.asarray(sl, np.float32)[..., 3] / 255.0
+    if wm is not None:
+        soft = np.asarray(sl.filter(ImageFilter.GaussianBlur(2.5)), np.float32)[..., 3] / 255.0
+        sa = (sa * (1 - wm) + soft * wm) * (1 - 0.3 * wm)
+    c = np.asarray(cam, np.float32).copy()
+    c[..., :3] *= 1 - sa[..., None] * (1 - np.array([0.45, 0.46, 0.50]))
+    cam = Image.fromarray(np.clip(c, 0, 255).astype(np.uint8), "RGBA")
     for _, im, xy in sorted(items, key=lambda q: q[0]):
         _paste(cam, im, xy)
     return cam
@@ -289,7 +289,7 @@ def b1_sprite(dirpath, name, team="blue"):
 
 # R9's main city's parts on the ground (main_city_r9.py, metres from the footprint's middle, x east, y north):
 # the hall's platform and steps, the drum tower's base, the side hall's platform
-CITY_FEET = [(-3.0, -1.2, 3.0, 3.2), (-0.7, -2.2, 1.3, -1.2), (-3.8, -3.2, -2.0, -1.4), (2.0, -2.55, 4.0, -0.95)]
+CITY_FEET = [(-3.0, -1.2, 3.0, 3.2), (-0.7, -2.2, 1.3, -1.2), (2.0, -3.2, 3.8, -1.4), (-4.0, -2.55, -2.0, -0.95)]
 
 
 def city_town(n, cx, cy):

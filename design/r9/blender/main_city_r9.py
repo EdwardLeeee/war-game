@@ -75,7 +75,7 @@ def rammed_earth():
     nt.links.new(jd.outputs["Fac"], jdm.inputs["Value"])
     jdm.inputs["From Min"].default_value = 0.35
     jdm.inputs["From Max"].default_value = 0.65
-    jdm.inputs["To Min"].default_value = 0.88          # fainter still (R9 r5 a basket, R11 corduroy)
+    jdm.inputs["To Min"].default_value = 0.8           # the courses a little clearer again (R11 r1: no tamped layers)
     jdm.inputs["To Max"].default_value = 0.97
     nt.links.new(jdm.outputs["Result"], joint.inputs["To Min"])
     # rain runnels: dark streaks running down the face (noise stretched along z)
@@ -90,7 +90,7 @@ def rammed_earth():
     nt.links.new(rn.outputs["Fac"], run.inputs["Value"])
     run.inputs["From Min"].default_value = 0.42
     run.inputs["From Max"].default_value = 0.58
-    run.inputs["To Min"].default_value = 0.68
+    run.inputs["To Min"].default_value = 0.85          # fainter runnels (R11 r1: timber grain)
     run.inputs["To Max"].default_value = 1.0
     foot = nt.nodes.new("ShaderNodeMapRange")            # damp at the foot: the lowest 0.6 m darker
     nt.links.new(sep.outputs["Z"], foot.inputs["Value"])
@@ -130,9 +130,11 @@ def drum_tower(P, root, x, y, base_h=3.2, base_w=1.8):
     # putlog holes: two rows of small dark holes left by the shuttering beams, on the south and west faces (the
     # diamond camera sees those two; R11)
     dark = lib.mat("putlog_r11", (0.03, 0.025, 0.02), 0.95)
+    rp = __import__("random").Random(5)
     for zh in (1.1, 2.2):
         half = base_w / 2 * (1 - 0.2 * zh / base_h)
-        for k, t in enumerate((-0.3, 0.05, 0.38)):
+        for k, t in enumerate(sorted(rp.uniform(-0.38, 0.4) for _ in range(rp.choice((2, 3))))):   # not on a grid (R11 r1: rivets)
+            zh = zh + rp.uniform(-0.08, 0.08)
             box(f"mt_ph_y{zh:.0f}{k}", (0.09, 0.012, 0.07), dark, g, loc=(t * half * 2, -half - 0.004, zh))
             box(f"mt_ph_x{zh:.0f}{k}", (0.012, 0.09, 0.07), dark, g, loc=(-half - 0.004, t * half * 2, zh))
     top = lib.empty("mt_top", parent=g, loc=(0, 0, base_h))
@@ -166,12 +168,14 @@ def r9_main_city(root, c="E"):
               chiwei_s=1.1, tile_pitch=0.2, tile_amp=0.04, fine=True)
     _team_hangings_e(P, hall, (-2.0, 2.0), 1.05 - d / 2 - 0.2, 1.0 + 2.75, w=0.6, h=1.5)
     # a lower side hall at the front-right, its door to the camera: the outline steps down
-    side = lib.empty("mc_side_at", parent=root, loc=(3.0, -1.75, 0.0))
+    # (R11 r1: the diamond camera looks from the south-west, so the front-left corner is nearest: the drum tower there
+    # hid the main stair; the low side hall takes that corner, the tower the front-right)
+    side = lib.empty("mc_side_at", parent=root, loc=(-3.0, -1.75, 0.0))
     platform_e("ms_plat", P, side, 2.0, 1.6, 0.4, steps=0.8)
     ws, ds, ts = hall_e("ms_hall", P, side, 0, 0, 0.4, (0.55, 0.7, 0.55), (1.1,), 2.0, 0.15, 0.75, front_door=True)
     tang_roof("ms_roof", P, side, 0, 0, 0.4 + ts, ws + 0.25, ds + 0.25, 0.85, 0.6, kind="xieshan", lift=0.06, chiwei=False,
               tile_pitch=0.18, tile_amp=0.03, fine=True)
-    drum_tower(P, root, -2.9, -2.3)
+    drum_tower(P, root, 2.9, -2.3)
     # a pine leaning in behind the right of the hall, over the side hall's roof
     pine = lib.empty("mc_pine_at", parent=root, loc=(3.3, 2.9, 0.0))
     nature_r8.tree(pine, c, 1, "full")
@@ -180,8 +184,8 @@ def r9_main_city(root, c="E"):
         x = 0.3 + sx * 1.55
         cyl(f"mc_lamp{sx}", 0.17, 0.95, P["stone"], root, loc=(x, -2.95, 0.0), r2=0.12, segs=8)
         box(f"mc_lampbox{sx}", (0.34, 0.34, 0.34), P["stone"], root, loc=(x, -2.95, 1.12), bevel=0.03)
-    kit.flag("mc_flag", P, root, (1.9, -3.4, 0.0), 5.8, c, w=1.2, fh=1.8)
-    for k, (x, y, z) in enumerate(((-1.6, -0.9, 3.0), (2.2, -0.9, 3.0), (-2.9, -2.95, 4.3))):
+    kit.flag("mc_flag", P, root, (-1.4, -3.3, 0.0), 5.8, c, w=1.2, fh=1.8)
+    for k, (x, y, z) in enumerate(((-1.6, -0.9, 3.0), (2.2, -0.9, 3.0), (2.9, -2.95, 4.3))):
         lib.empty(f"shoot_at_{k}", parent=root, loc=(x, y, z))
 
 

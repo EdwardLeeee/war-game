@@ -392,7 +392,7 @@ TARGETS["r11_terrain_d"] = ([dict(kind="r8_rock", culture="E", opts=dict(variant
                                for a in ("x", "y")])
 # R11-06 the floating continent's edge (r11/blender/edge_r11.py): the wall in two styles, three far islands
 TARGETS["r11_edge_d"] = ([dict(kind="r11_edge", culture="E", opts=dict(style=st, part=pt), name=f"edge_{st}{pt}_d")
-                          for st in ("A", "B") for pt in (-1, 0, 1, 2, 3)]
+                          for st in ("A", "B", "C") for pt in (-1, 0, 1, 2, 3)]
                          + [dict(kind="r11_isle", culture="E", opts=dict(size=sz, seed=sd), name=f"isle_{k}_d")
                             for k, (sz, sd) in enumerate(((5.0, 7), (3.5, 11), (2.4, 19)))])
 for _t in ("r11_nodes_d", "r11_terrain_d", "r11_edge_d"):

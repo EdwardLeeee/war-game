@@ -50,6 +50,16 @@ SOIL = np.array([0.055, 0.04, 0.025])      # linear: the dark topsoil at the lip
 SOIL_B = np.array([0.075, 0.052, 0.03])    # B's thick soil, a little lighter, with root threads
 
 
+def headland(s):
+    """How far (metres) the land runs out past the map's edge at s along it: headlands and bays every 15-30 m, never
+    into the map (R11 r1: a coastline that is one straight 45-degree line read as a cake slice); none by the waterfall.
+    The same formula in r11/blender/edge_r11.py and r11/common/edge_scene_r11.py."""
+    # (R11 r2: two right-angle steps; the references push the coast in and out 80-250 px every 200-400 px at 3x)
+    w = 1.0 + 2.0 * np.sin(0.4 * s + 0.7) + 0.9 * np.sin(0.93 * s + 2.1) + 0.25 * np.sin(2.1 * s + 0.4)   # r3: 2.6/0.62 too jagged
+    a = np.clip((np.abs(s) - 3.0) / 3.0, 0, 1)
+    return np.clip(w, 0, None) * a * a * (3 - 2 * a)
+
+
 def _wall_fields(style, s, d, H, gap):
     """Relief (metres out of the face, toward -x) and colour (linear) of the wall at (s along it, d down)."""
     F = T.field(T.SID)
@@ -62,12 +72,12 @@ def _wall_fields(style, s, d, H, gap):
     dd = d + 0.35 * np.sin(s * 0.11 + 1.3) + 0.15 * np.sin(s * 0.37)
     hard = T._smooth(0.5, 0.68, _n1(dd, 21, 0.9))
     lin = lin * (0.82 + 0.26 * hard)[..., None] * np.array([1.0, 0.97, 0.92])
-    out = out + 0.22 * hard * (style == "A")
+    out = out + 0.22 * hard * (style in ("A", "C"))
     # the soil cap and, for B, the thick soil lip
-    cap = 0.35 if style == "A" else 1.4
+    cap = 1.4 if style == "B" else 0.35
     soil_k = T._smooth(cap + 0.15, cap - 0.1, d)[..., None]
     thread = _n1(s * 3.1 + d * 7.0, 33, 0.3)[..., None]
-    soil = (SOIL if style == "A" else SOIL_B * (0.8 + 0.4 * thread))
+    soil = (SOIL_B * (0.8 + 0.4 * thread) if style == "B" else SOIL)
     lin = lin * (1 - soil_k) + soil * soil_k
     # where the river goes over: wet, dark, a little smoother
     if gap is not None:
@@ -91,7 +101,7 @@ def wall(root, style="A", s0=-24.0, s1=24.0, H=13.0, gap=(-3.0, 3.0), seed=3):
     d = np.arange(0.0, H + dz * 0.5, dz)
     S, D = np.meshgrid(s, d)
     out, _ = _wall_fields(style, S, D, H, gap)
-    if style == "A":
+    if style in ("A", "C"):
         # near-vertical, a few metres of slope at the top, then drawn in under the island
         inward = 0.05 * D + 0.8 * T._smooth(H * 0.55, H, D) * (D - H * 0.55)
         lip = np.zeros_like(D)
@@ -100,7 +110,7 @@ def wall(root, style="A", s0=-24.0, s1=24.0, H=13.0, gap=(-3.0, 3.0), seed=3):
         lip = 0.6 * np.sin(np.pi * np.clip(D / 1.4, 0, 1)) ** 0.7 * (D < 1.4)
         inward = 0.9 * np.clip((D - 1.2) / (H - 1.2), 0, 1) ** 1.5 * H * 0.45
     wob = 0.6 * (_n1(S, seed, 9.0) - 0.5) + 0.25 * (_n1(S, seed + 1, 3.0) - 0.5)
-    X = -(out * 1.4 + lip) + inward + wob * (D > 0.05)
+    X = -(out * 1.1 + lip) + inward + wob * (D > 0.05) - headland(S)      # 1.4 folded the mesh into shards (R11 r2)
     pos = np.stack([X, S - mid, -D], -1)
     uv = np.stack([(S - s0) / L, 1.0 - D / H], -1)
     # the colour on a finer grid (3 cm), as an image, rows from the bottom
@@ -115,16 +125,16 @@ def wall(root, style="A", s0=-24.0, s1=24.0, H=13.0, gap=(-3.0, 3.0), seed=3):
     P = T.mats()
     rnd = random.Random(seed + int(s0 * 10))
     # grass at the lip: A a sparse fringe, B a heavy one hanging down over the curl
-    n_tufts = int((140 if style == "A" else 320) * L / 48)
+    n_tufts = int((140 if style == "A" else 320) * L / 48)     # C: A's rock with B's grass over the lip (R11 r1)
     for k in range(n_tufts):
         y = rnd.uniform(s0, s1)
         if gap is not None and gap[0] - 0.5 < y < gap[1] + 0.5:
             continue
         x0 = float(np.interp(y, s, X[min(2, len(d) - 1)])) - 0.02
         t = T._tuft(f"edge_tuft{k}", P, root, (x0, y - mid, -0.02), rnd, dry=rnd.random() < 0.35)
-        if style == "B":
+        if style in ("B", "C"):
             t.rotation_euler = (rnd.uniform(-0.3, 0.3), -rnd.uniform(1.9, 2.6), rnd.uniform(0, 6.28))
-            t.location = (x0 - 0.45, y - mid, -0.25)
+            t.location = (x0 - (0.45 if style == "B" else 0.06), y - mid, -0.25 if style == "B" else -0.05)
             t.scale = (1.6, 1.6, 1.8)
         else:
             t.rotation_euler = (0.0, -rnd.uniform(0.3, 0.9), rnd.uniform(0, 6.28))
@@ -219,7 +229,7 @@ def isle(root, size=5.0, seed=7, trees=3):
 def r11_edge(root, c="E", style="A", part=0):
     """One of the three 16 m stretches of the 48 m wall (part 0: s -24..-8, 1: -8..8, 2: 8..24), its origin its own
     middle: s -16, 0, 16 (the composer puts each there)."""
-    wall(root, style, -24.25 + 16.0 * part, -7.75 + 16.0 * part)       # 0.25 m over each neighbour: no crack
+    wall(root, style, -25.0 + 16.0 * part, -7.0 + 16.0 * part)         # 1 m over each neighbour (0.25 cracked where the coast turns)
 
 
 def r11_isle(root, c="E", size=5.0, seed=7):

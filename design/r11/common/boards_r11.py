@@ -91,7 +91,7 @@ def main(work, out, ub, ua, art):
     ca = Image.open(work / "city_d.png").convert("RGB")
     board("R11-04-主城-A-菱形斜看-phone",
           note + "\n主城：用菱形鏡頭重算，角朝向玩家。夯土台改成尖角、夯層更淡，加兩排「腳手架孔」（夯土時插橫木留下的洞）；"
-          "影子更深、偏藍（陰影裡是天空的藍光）。門前踩實的土和小路照 R9。",
+          "鼓樓和偏殿對調（菱形鏡頭從西南看，左前角離鏡頭最近，鼓樓放那裡會擋住正門樓梯）。影子是把地面壓暗、保留原本的顏色。門前踩實的土和小路照 R9。",
           [("實際大小（1 倍）：現在 → R11", pair(one_x(cb), one_x(ca))),
            ("手機像素（3 倍）：現在", cb), ("手機像素（3 倍）：R11", ca)], out)
     r0, r1 = pieces_sheet(art, Image.open(work / "grass_d.png").convert("RGB").crop((0, 600, 2200, 1000)))
@@ -106,9 +106,9 @@ def main(work, out, ub, ua, art):
              f"(b) 逐格圖：每秒 {cost['fps']} 張、循環 {cost['frames']} 張；瀑布 {cost['fall_flip_rgba']} RGBA8／{cost['fall_flip_astc']} ASTC，"
              f"雲海兩層 {cost['sea_flip_rgba']}／{cost['sea_flip_astc']}；合計約 {cost['b_total']}。")
     for st, name, text in (("A", "岩壁瀑布雲海", "崖壁是 R8 懸崖用的同一種掃描岩石（Poly Haven CC0），有層理，硬的岩層凸出成一道道岩棚；崖頂一層薄土和草叢；"
-                                               "往下 13 公尺淡進雲海。河從淺灘流出邊緣，變成瀑布，底下是水霧。"),
+                                               "往下 13 公尺淡進雲海；岸線有凸出的岬角（只往外長，不改模擬的地圖）。河流到邊緣變成不透明的白色瀑布，越往下越寬，底下是水霧。雲海是一團一團的雲，崖底下比較暗、比較藍。"),
                            ("B", "捲邊懸根", "崖頂是一層厚土往外捲，草垂下來蓋住邊緣，下面垂著樹根、掉落的土塊；再往下是往內收的岩石底部（浮島的底）。瀑布、雲海同 A。"),
-                           ("C", "遠方浮島", "A 的岩壁，雲海裡再加三座遠處的小浮島（有草、有樹、岩石底部），在霧裡，慢慢上下浮動。")):
+                           ("C", "遠方浮島", "A 的岩壁加上 B 垂下崖頂的草（第 1 輪評審的建議），雲海裡再加三座遠處的小浮島（有草、有樹、岩石底部），在霧裡，慢慢上下浮動。")):
         e = Image.open(work / f"edge_{st}.png").convert("RGB")
         shutil.copy(work / f"edge_{st}.gif", out / f"R11-06-地圖邊緣-{st}-{name}-動畫.gif")
         board(f"R11-06-地圖邊緣-{st}-{name}-phone",
