@@ -555,3 +555,37 @@ if __name__ == "__main__":
         probes(a.target, a.only.split(",") if a.only else None)
     else:
         run(a.target, a.preview, a.only.split(",") if a.only else None, a.ppm)
+
+
+# art-v7 (D-118, the user 2026-11-04: 菱形 45 度, mass production): every piece the atlases need (atlas_b1: the buildings,
+# the castles, the nodes, the terrain), each as its last target defines it (the buildings-atlas round lets a later run
+# replace an earlier one's piece, and the targets are defined oldest first), on the diamond camera, eight to a CI job.
+# Named r8d7_<k> so the buildings-atlas round's 'b1-r8*' download takes them; folder r8d7 (copied into prod/ there).
+def _art_v7_targets():
+    import atlas_b1 as A
+    need = set()
+    for c in A.CULTURES:
+        for b in A.building_table(c).values():
+            need |= set(A.building_frames(b))
+        need |= set(A.castle_frames(c))
+    need |= set(A.node_frames()) | set(A.TR.frames())
+    last = {}
+    for t, pcs in TARGETS.items():
+        if t.startswith("r8d7_"):
+            continue
+        for pc in pcs:
+            if piece_name(pc) in need:
+                last[piece_name(pc)] = (t, pc)
+    missing = sorted(need - set(last))
+    if missing:
+        raise SystemExit(f"art-v7: no target makes {missing}")
+    order = sorted(last, key=lambda n: (last[n][0], n))
+    for i in range(0, len(order), PROD_CHUNK):
+        t = f"r8d7_{i // PROD_CHUNK}"
+        TARGETS[t] = [dict(last[n][1]) for n in order[i:i + PROD_CHUNK]]
+        CAMERA[t] = proj.DIAMOND
+        LOOK[t] = LOOK.get(last[order[i]][0], "r8")
+        FOLDER[t] = "r8d7"
+
+
+_art_v7_targets()
