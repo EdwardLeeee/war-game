@@ -15,6 +15,8 @@ BUILD = ROUND / "build"                              # intermediate, git-ignored
 R7_VERSION = os.environ.get("R7_VERSION")             # R7 (D-092) style test: the units in a realism version's look
 if R7_VERSION:
     BUILD = BUILD / f"r7v{R7_VERSION}"                # ... rendered beside the production ones, never over them
+if os.environ.get("R9_UNIT"):                         # R9's unit materials (design/r9/blender/unit_r9.py) on R8's look:
+    BUILD = ROUND / "build" / f"r7v{R7_VERSION or 8}u"  # art-v7's units (D-118); r7v* so CI's r7 upload takes it
 OUT = ROUND / "out"                                  # final labelled images
 
 BLENDER = Path(os.environ.get("BLENDER", Path.home() / ".local/opt/blender-5.2.2/blender"))
@@ -40,7 +42,7 @@ TEAM = {
     "red": (200, 48, 44),      # 敵方 布倫莫爾
 }
 
-MEM_MAX = "1500M"
+MEM_MAX = os.environ.get("MEM_MAX", "1500M")       # a local render may ask for more (the user 2026-11-03: memory is plentiful)
 MIN_AVAILABLE_MB = 2000
 
 

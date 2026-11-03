@@ -116,6 +116,8 @@ jobs:
             # attack (design/r7/README.md); the CC0 textures and MPFB (version 2) fetched and checked by sha256
             r7)
               t="${{ matrix.target }}"; v="${t%%-*}"; v="${v#v}"; unit="${t#*-}"
+              # v8u-<unit> (art-v7, D-118): R8's look with R9's unit materials (design/r9/blender/unit_r9.py)
+              if [ "${v%u}" != "$v" ]; then export R9_UNIT=1; v="${v%u}"; fi
               /usr/bin/python3 common/textures.py fetch
               (cd ../round1 && /usr/bin/python3 common/emblems.py ../production/build/emblems)
               if [ "$v" -ge 2 ]; then                     # versions 2 and 8 (R8) use MPFB
