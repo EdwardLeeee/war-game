@@ -167,6 +167,25 @@ def ground_files(src, scale):
     return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
 
 
+def stamp_view(files, view):
+    """D-118 (art-v7 on): every manifest says which camera its pictures are for (the client switches to the diamond
+    camera on art-release.json's "view" and picks the units' facing table by it, client/docs/sprite-atlas.md 3).
+    The units are camera-free pictures (the sun stays at the screen's upper left), so their manifests get it here;
+    the buildings', castle's, nodes' and terrain's come from atlas_b1 and must already agree."""
+    for n, b in list(files.items()):
+        if not n.endswith(".json") or n.endswith("memory.json"):
+            continue
+        m = json.loads(b)
+        if not str(m.get("format", "")).startswith("war-game "):
+            continue
+        if m.get("view", view) != view:
+            die(f"{n}: view {m.get('view')!r}, the release is {view!r}")
+        if m.get("view") != view:
+            m["view"] = view
+            files[n] = json.dumps(m, separators=(",", ":")).encode()
+    return files
+
+
 def with_manifest(files, info):
     """Add art-release.json (the release info and every other file's sha256) to files."""
     info = dict(info, files={n: {"sha256": sha256(b), "bytes": len(b)} for n, b in sorted(files.items())})
@@ -203,7 +222,8 @@ def main():
     sources = {"units": {u: s for u, s in sorted(spec["units"].items())}, "effects": spec["effects"]}
     if "buildings" in spec:
         sources["buildings"] = spec["buildings"]
-    base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources}
+    base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources,
+            **({"view": spec["view"]} if spec.get("view") else {})}     # D-118: "diamond" from art-v7 on
     notes = [f"{a.tag}：{spec.get('note', '')}", "", f"commit {a.commit or '(local)'}", ""]
     eff_src = fetch(spec["effects"]["run"], spec["effects"]["artifact"], dl)
     unit_src = {u: fetch(s["run"], s["artifact"], dl) for u, s in sources["units"].items()}
@@ -232,6 +252,8 @@ def main():
                 astc_b += m["total_astc_4x4_bytes"]
             extra = ("＋建築＋資源點" + ("＋城牆" if spec.get("castle") else "") + ("＋地形" if spec.get("terrain") else "")
                      + ("＋地面" if spec.get("ground") else ""))
+        if spec.get("view"):
+            files = stamp_view(files, spec["view"])
         files = with_manifest(files, dict(base, scale=scale))
         name = f"{a.tag}-{scale}.tar.gz"
         write_targz(out / name, files)

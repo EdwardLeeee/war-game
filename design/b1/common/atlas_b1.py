@@ -367,15 +367,16 @@ def memory(px, tables):
 
 
 def view_of(frames):
-    """The camera every frame was rendered with, for the manifests' "view" (D-088): "oblique" (方形斜看) or None
-    (the diamond camera; the art-v2 manifests have no "view"). Frames from two cameras are an error."""
+    """The camera every frame was rendered with, for the manifests' "view": "oblique" (方形斜看, D-088) or "diamond"
+    (菱形斜看; D-118, art-v7 on: written out, the client switches on it; the art-v2 manifests had no "view").
+    Frames from two cameras are an error."""
     views = set()
     for n in frames:
         cam = json.loads((SRC / f"{n}_x3.json").read_text()).get("camera") or proj.DIAMOND
         if cam == proj.OBLIQUE:
             views.add("oblique")
         elif cam == proj.DIAMOND:
-            views.add(None)
+            views.add("diamond")
         else:
             raise SystemExit(f"{n}: camera {cam} is neither the diamond nor the oblique one")
     if len(views) != 1:
