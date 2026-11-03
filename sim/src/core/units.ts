@@ -1225,7 +1225,9 @@ export class UnitSystem {
     u.action[i] = Action.OnWall;
     const info = UNITS[u.type[i]];
     const look = (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0;
-    const shifts = WALL_SHIFT.on && (u.type[i] === UnitType.Ranged || u.type[i] === UnitType.Mage || u.type[i] === UnitType.Militia);
+    // A player's soldiers only: neutral towns' militia stand where they are (ceo 2026-11-04: their moving made
+    // the towns much harder to take, and the scripted player's town-taking groups lost; not what the user asked).
+    const shifts = WALL_SHIFT.on && u.owner[i] < PLAYER_COUNT && (u.type[i] === UnitType.Ranged || u.type[i] === UnitType.Mage);
     if (shifts && u.wallTo[i] >= 0) {
       u.target[i] = -1;
       if (look) this.rethinkShift(w, fog, i);
@@ -1276,8 +1278,9 @@ export class UnitSystem {
   // --- along the walls (WALL_SHIFT, D-119) ---------------------------------------------------
 
   /**
-   * The enemy units player `me` sees near town t's walls this tick (WALL_SHIFT), as x, y pairs: the
-   * ones a wall soldier would shoot (nearestUnit's), within WALL_NEAR cells of the box round its way.
+   * The enemy units player `me` sees near town t's walls this tick (WALL_SHIFT), as x, y, moving (1: it
+   * walked last tick) triples: the ones a wall soldier would shoot (nearestUnit's), within WALL_NEAR
+   * cells of the box round its way.
    */
   private wallFoes(w: World, fog: Fog, t: number, me: number): number[] {
     if (this.foesTick !== w.tick) {
@@ -1295,7 +1298,7 @@ export class UnitSystem {
       for (let x = Math.max(box[0] - WALL_NEAR, 0); x <= Math.min(box[2] + WALL_NEAR, n - 1); x++) {
         for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
           if (u.owner[j] === me || u.action[j] === Action.Garrisoned || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
-          out.push(u.x[j], u.y[j]);
+          out.push(u.x[j], u.y[j], u.vx[j] !== 0 || u.vy[j] !== 0 ? 1 : 0);
         }
       }
     }
@@ -1319,13 +1322,14 @@ export class UnitSystem {
     return box;
   }
 
-  /** Is one of `foes` within `reach` of wall cell c's middle? */
-  private foeFrom(w: World, foes: number[], c: number, reach: number): boolean {
+  /** Is one of `foes` (only those walking, with `moving`) within `reach` of wall cell c's middle? */
+  private foeFrom(w: World, foes: number[], c: number, reach: number, moving = false): boolean {
     const n = w.size;
     const x = ((c % n) << CELL_SHIFT) + (CELL >> 1);
     const y = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
     const r2 = reach * reach;
-    for (let k = 0; k < foes.length; k += 2) {
+    for (let k = 0; k < foes.length; k += 3) {
+      if (moving && foes[k + 2] === 0) continue;
       const dx = foes[k] - x;
       const dy = foes[k + 1] - y;
       if (dx * dx + dy * dy <= r2) return true;
@@ -1337,7 +1341,7 @@ export class UnitSystem {
   private foeNear(w: World, foes: number[], t: number, reach: number): boolean {
     const box = this.wallBox(w, t);
     const r = (reach + CELL - 1) >> CELL_SHIFT;
-    for (let k = 0; k < foes.length; k += 2) {
+    for (let k = 0; k < foes.length; k += 3) {
       const x = foes[k] >> CELL_SHIFT;
       const y = foes[k + 1] >> CELL_SHIFT;
       if (x >= box[0] - r && x <= box[2] + r && y >= box[1] - r && y <= box[3] + r) return true;
@@ -1368,6 +1372,11 @@ export class UnitSystem {
       return;
     }
     u.wallCalm[i] = 0;
+    // One walking up near it: it waits for it where it stands.
+    if (this.foeFrom(w, foes, c, reach + WALL_SHIFT.stay, true)) {
+      u.wallWait[i] = 0;
+      return;
+    }
     u.wallWait[i] += RETARGET_EVERY;
     if (u.wallWait[i] < WALL_SHIFT.wait) return;
     const to = wayPick(w, t, c, wayFrame(w, u.owner[i], t), (d) => w.wallAt[d] < 0 && this.foeFrom(w, foes, d, reach));
@@ -1375,15 +1384,21 @@ export class UnitSystem {
   }
 
   /**
-   * Walking along the walls, at a look: an enemy near the walls but none in reach of the cell it
+   * Walking along the walls, at a look: on a wall cell free (or its own) with an enemy in its reach,
+   * it stops there, at its middle, to shoot. An enemy near the walls but none in reach of the cell it
    * walks to (it walks home, or the enemy went on), it takes the free cell that has one instead, if any.
    */
   private rethinkShift(w: World, fog: Fog, i: number): void {
     const u = w.units.col;
     const to = u.wallTo[i];
     const t = w.wallTown[to];
+    const c = u.wall[i];
     const reach = wallReach(u.type[i], UNITS[u.type[i]].range);
     const foes = this.wallFoes(w, fog, t, u.owner[i]);
+    if (c !== to && w.walkGate[c] === 0 && (w.wallAt[c] < 0 || w.wallAt[c] === u.id[i]) && this.foeFrom(w, foes, c, reach)) {
+      this.startShift(w, i, c);
+      return;
+    }
     if (!this.foeNear(w, foes, t, reach) || this.foeFrom(w, foes, to, reach)) return;
     const id = u.id[i];
     const next = wayPick(w, t, u.wall[i], wayFrame(w, u.owner[i], t), (d) => (w.wallAt[d] < 0 || w.wallAt[d] === id) && this.foeFrom(w, foes, d, reach));

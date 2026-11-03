@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
-import { UNITS, WALL_SHIFT } from "../src/core/rules.ts";
+import { RETARGET_EVERY, UNITS, WALL_SHIFT } from "../src/core/rules.ts";
 import { onWall, wallReach } from "../src/core/units.ts";
 import { Action, CELL_SHIFT, NEUTRAL, Order, Stance, TownState, UnitType } from "../src/protocol.ts";
 import { keepOf } from "../src/core/scenarios.ts";
@@ -178,7 +178,7 @@ test("a broken gate is not crossed: with the north and south gates broken, the w
   void foes;
 });
 
-test("a neutral town's militia do the same, to WALLS.sling", () => {
+test("a neutral town's militia stand where they are (ceo 2026-11-04): attacked at one gate, none walks", () => {
   const g = new Game({ seed: 1, scenario: "standard" });
   const w = g.w;
   const u = w.units.col;
@@ -186,14 +186,43 @@ test("a neutral town's militia do the same, to WALLS.sling", () => {
   const militia: number[] = [];
   for (let s = 0; s < w.units.count; s++) if (u.owner[s] === NEUTRAL && u.home[s] === T && onWall(w, s)) militia.push(u.id[s]);
   assert.equal(militia.length, 3);
-  const foes = atEastGate(g, T, 9, 0);
-  const far = militia.filter((id) => !reaches(g, slotOf(g, id), foes)).length;
-  assert.ok(far >= 2, `out of reach to start with: ${far}`);
+  const cells = militia.map((id) => u.wall[slotOf(g, id)]);
+  atEastGate(g, T, 9, 0);
   for (let k = 0; k < 30 * S; k++) {
     run(g, 1);
-    upThere(g, T, militia);
+    assert.deepEqual(
+      militia.map((id) => u.wall[slotOf(g, id)]),
+      cells,
+    );
   }
-  assert.ok(militia.every((id) => reaches(g, slotOf(g, id), foes)), "all three throw stones at them");
+});
+
+test("an army coming its way: it waits for it where it stands, and walking it stops at the first cell in reach", () => {
+  const T = 0;
+  const { g, mine } = garrisoned(T, 4);
+  const w = g.w;
+  const u = w.units.col;
+  const town = w.map.towns[T];
+  const ex = town.cellX + w.castles[T].inside.x1 + 1;
+  // Spearmen walking in from 14 cells east of the east gate.
+  const foes: number[] = [];
+  for (let k = 0; k < 9; k++) foes.push(put(g, 1, UnitType.Spearman, ex + 14 + (k % 3), town.cellY - 1 + Math.trunc(k / 3)));
+  for (const f of foes) u.hp[slotOf(g, f)] = 1_000_000;
+  g.fog.update(w);
+  cmd(g, 1, { c: "move", u: foes, x: ex + 2, y: town.cellY });
+  let walkingInReach = 0;
+  for (let t = 0; t < 40 * S; t++) {
+    run(g, 1);
+    upThere(g, T, mine);
+    for (const id of mine) {
+      const s = slotOf(g, id);
+      // A look comes every RETARGET_EVERY ticks: one walking a whole second with an enemy in reach on a free cell would be a fault.
+      const c = u.wall[s];
+      if (u.action[s] === Action.Move && w.walkGate[c] === 0 && (w.wallAt[c] < 0 || w.wallAt[c] === id) && reaches(g, s, foes)) walkingInReach++;
+    }
+  }
+  assert.ok(walkingInReach < mine.length * 2 * RETARGET_EVERY, `walked in reach ${walkingInReach} unit-ticks`);
+  assert.ok(mine.every((id) => reaches(g, slotOf(g, id), foes)), "all in reach at the end");
 });
 
 test("down from the walls on the way (a move): from the cell it is on, its cells free again", () => {

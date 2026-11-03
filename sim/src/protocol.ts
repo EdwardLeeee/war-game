@@ -861,7 +861,7 @@ export interface Rules {
    * D-119 (in play while `features.wallShift`): soldiers on the walls with nothing to shoot walk along them to cells in
    * reach of an enemy after `wait` ticks, and back to where they stood after `back` ticks calm (PROTOCOL.md 3.7).
    */
-  wallShift?: { wait: number; back: number };
+  wallShift?: { wait: number; back: number; stay: number };
   /**
    * The population ceiling (D-083): `base` plus `town[size]` (by TownSize) for each town the
    * player governs; HeaderField.populationCeiling has it now. Off: base 120, town [0, 0].
