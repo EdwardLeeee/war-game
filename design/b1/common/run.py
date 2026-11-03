@@ -543,20 +543,6 @@ def run(target, preview=False, only=None, prev_ppm=24):
     return out
 
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("target", choices=list(TARGETS))
-    ap.add_argument("--preview", action="store_true")
-    ap.add_argument("--only", help="comma list of kinds")
-    ap.add_argument("--ppm", type=int, default=24, help="preview pixels per metre (60 = the 3x art scale)")
-    ap.add_argument("--probe", action="store_true", help="only the occlusion measurement, no rendering")
-    a = ap.parse_args()
-    if a.probe:
-        probes(a.target, a.only.split(",") if a.only else None)
-    else:
-        run(a.target, a.preview, a.only.split(",") if a.only else None, a.ppm)
-
-
 # art-v7 (D-118, the user 2026-11-04: 菱形 45 度, mass production): every piece the atlases need (atlas_b1: the buildings,
 # the castles, the nodes, the terrain), each as its last target defines it (the buildings-atlas round lets a later run
 # replace an earlier one's piece, and the targets are defined oldest first), on the diamond camera, eight to a CI job.
@@ -589,3 +575,17 @@ def _art_v7_targets():
 
 
 _art_v7_targets()
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("target", choices=list(TARGETS))
+    ap.add_argument("--preview", action="store_true")
+    ap.add_argument("--only", help="comma list of kinds")
+    ap.add_argument("--ppm", type=int, default=24, help="preview pixels per metre (60 = the 3x art scale)")
+    ap.add_argument("--probe", action="store_true", help="only the occlusion measurement, no rendering")
+    a = ap.parse_args()
+    if a.probe:
+        probes(a.target, a.only.split(",") if a.only else None)
+    else:
+        run(a.target, a.preview, a.only.split(",") if a.only else None, a.ppm)
