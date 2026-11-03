@@ -31,7 +31,7 @@ import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { twinRiversMap } from "./twin-rivers.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, WALL_SHIFT, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -57,6 +57,8 @@ export interface Outgoing {
 
 /** CAV_FLANK's unit columns (D-097), left out of the hash while it is off. */
 const FLANK_COLS: ReadonlySet<string> = new Set(["flank", "flankSide", "flankX", "flankY", "flankTick"]);
+/** The unit columns of WALL_SHIFT (D-119), in the hash only while it is on. */
+const WALL_SHIFT_COLS: ReadonlySet<string> = new Set(["wallTo", "wallHome", "wallWait", "wallCalm"]);
 
 /**
  * "attacked" events: at most one per 8 x 8-cell block per 60 ticks per player and attacker's
@@ -275,7 +277,7 @@ export class Game {
     }
     h = fnvWord(h, w.units.count);
     for (const name of w.units.names) {
-      if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on && !FIRE_BACK.on) || (name === "avenge" && !AVENGE.on) || (name === "fireBack" && !FIRE_BACK.on) || (name === "wall" && !WALLS.on) || (FLANK_COLS.has(name) && !CAV_FLANK.on) || (name === "waited" && !MARCH_ORDER.on) || ((name === "slotBest" || name === "slotIdle") && !SLOT_GIVE_UP.on)) continue;
+      if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on && !FIRE_BACK.on) || (name === "avenge" && !AVENGE.on) || (name === "fireBack" && !FIRE_BACK.on) || (name === "wall" && !WALLS.on) || (WALL_SHIFT_COLS.has(name) && !WALL_SHIFT.on) || (FLANK_COLS.has(name) && !CAV_FLANK.on) || (name === "waited" && !MARCH_ORDER.on) || ((name === "slotBest" || name === "slotIdle") && !SLOT_GIVE_UP.on)) continue;
       h = fnvInt32(h, w.units.col[name], w.units.count);
     }
     h = fnvWord(h, w.buildings.count);

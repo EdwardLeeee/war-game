@@ -766,6 +766,8 @@ export interface Features {
   keep?: boolean;
   /** A market can be built and food and wood traded for gold (D-101), `Rules.market`. Absent: off. */
   market?: boolean;
+  /** Soldiers on the walls shift along them to where the enemy is (D-119), `Rules.wallShift`. Absent: off. */
+  wallShift?: boolean;
 }
 
 export interface MapInfo {
@@ -855,6 +857,11 @@ export interface Rules {
    * the walls throw stones to `sling` (fixed point).
    */
   walls?: { range: number; takenNum: number; takenDen: number; sling: number };
+  /**
+   * D-119 (in play while `features.wallShift`): soldiers on the walls with nothing to shoot walk along them to cells in
+   * reach of an enemy after `wait` ticks, and back to where they stood after `back` ticks calm (PROTOCOL.md 3.7).
+   */
+  wallShift?: { wait: number; back: number };
   /**
    * The population ceiling (D-083): `base` plus `town[size]` (by TownSize) for each town the
    * player governs; HeaderField.populationCeiling has it now. Off: base 120, town [0, 0].

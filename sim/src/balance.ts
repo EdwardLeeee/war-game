@@ -6,7 +6,7 @@
 // Prints Markdown; with --check, exits 1 if one of the listed goals fails for the code's values.
 
 import { type Army, armyCost, armyText, type Assault, assault, BOTH, type Fight, fewestToTake, fight, type Formation, guardPoint, type Held, type Hold, hold, siege, siegeCrowd, siegeGate, siegeRaid, twoShots } from "./balance-lib.ts";
-import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, GATE, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, SIEGE, TOWER_VALUE, UNITS } from "./core/rules.ts";
+import { ARROW_TOWER, AVENGE, BUILDINGS, CANNON, DODGE, GARRISON, GATE, HOME_GUARD, JOIN_FIGHT, LONG_BOWS, MULT_DEN, MULT_NUM, SHORT_CANNON, SIEGE, TOWER_VALUE, UNITS, WALL_SHIFT } from "./core/rules.ts";
 import { BuildingType, TownSize, UnitType } from "./protocol.ts";
 
 /** A number this round's balance work changes: how it reads and sets the rules tables. */
@@ -357,6 +357,29 @@ function main(): void {
     ] as const) {
       const s = siege(size, n);
       out.push(`| ${n} 槍兵打${name(size)} | ${s.taken ? "攻下" : "沒攻下"}，剩 ${s.left} 名，生命剩 ${s.hpPercent}%，${(s.ticks / 20).toFixed(1)} 秒 |`);
+    }
+    // D-119 (WALL_SHIFT): the militia on the walls walk to the side attacked; how much harder that makes it.
+    const shifted = <T>(on: boolean, run: () => T): T => {
+      const was = WALL_SHIFT.on;
+      WALL_SHIFT.on = on;
+      try {
+        return run();
+      } finally {
+        WALL_SHIFT.on = was;
+      }
+    };
+    const text = (x: ReturnType<typeof siege>, n: number) => `${x.taken ? "攻下" : "沒攻下"}，${(x.ticks / 20).toFixed(1)} 秒，死 ${n - x.left}，生命剩 ${x.hpPercent}%`;
+    out.push("", "牆上的民兵換邊（WALL_SHIFT，D-119）：", "", "| 攻方 | 換邊關 | 換邊開 |", "|---|---|---|");
+    out.push(`| 最少幾名槍兵：小鎮／大城 | ${shifted(false, () => `${fewestToTake(TownSize.Small).fewest}／${fewestToTake(TownSize.Large).fewest}`)} | ${shifted(true, () => `${fewestToTake(TownSize.Small).fewest}／${fewestToTake(TownSize.Large).fewest}`)} |`);
+    for (const [size, n] of [
+      [TownSize.Small, 8],
+      [TownSize.Small, 10],
+      [TownSize.Small, 12],
+      [TownSize.Large, 15],
+      [TownSize.Large, 18],
+      [TownSize.Large, 22],
+    ] as const) {
+      out.push(`| ${n} 槍兵打${name(size)} | ${shifted(false, () => text(siege(size, n), n))} | ${shifted(true, () => text(siege(size, n), n))} |`);
     }
     out.push("");
   }
