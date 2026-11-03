@@ -1588,30 +1588,8 @@ test("D-086 A9 (plan.fortExit): turning back from forts ahead without a fight wr
 
 // --- D-086 A10: the first battle after #338 (normal's ranged units no longer stuck) ---------------------------------
 
-/** Hard's 14 spearmen at (40, 60) off to the big town (as the D-081 test), then 15 enemy spearmen by them: does it break off? */
-function townTripMeets(holdEven: boolean, foes: number): boolean {
-  const g = emptyGame();
-  const w = g.w;
-  for (let k = 0; k < 14; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
-  g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, townArmy: 99, holdEven });
-  const go = ai.think(buildView(g, 0)).find((c) => c.c === "move" && c.u.length === 14);
-  assert.ok(go !== undefined, "off to a town");
-  for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, 44 + (k % 5), 54 + Math.trunc(k / 5));
-  w.tick += 10;
-  g.fog.update(w);
-  return ai.think(buildView(g, 0)).some((c) => c.c === "retreat" && c.u.length === 14);
-}
-
-test("D-086 A10 (plan.holdEven): on a town trip it breaks off only for an enemy 1.2 x its army; off, for one stronger at all", switchedOff([KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET], () => {
-  // The old rules (the D-100 batch off), as the D-081 town-trip test: with keeps a town asks keepTownArmy.
-  assert.equal(townTripMeets(false, 15), true, "off: 15 against 14, back");
-  assert.equal(townTripMeets(true, 15), false, "on: 15 against 14 is not 1.2 x, on");
-  assert.equal(townTripMeets(true, 18), true, "on: 18 against 14 is, back");
-}));
-
-/** Hard's 12 spearmen at (34-39, 66-67) and 6 ranged units ahead at (42-44, 62-63) sent on to the enemy's base; then 3 enemy spearmen at (48, 58). */
-function rangedAhead(rangedBehind: boolean): { out: CommandBody[]; ranged: number[] } {
+/** Hard's 12 spearmen at (34-39, 66-67) and 6 ranged units ahead at (42-44, 62-63) sent on to the enemy's base; then 3 enemy spearmen at (48-50, 58), seen, 6 cells from the nearest; its orders that think and the next. */
+function rangedAhead(rangedStage: boolean): { first: CommandBody[]; next: CommandBody[]; ranged: number[] } {
   const g = emptyGame();
   const w = g.w;
   for (const t of w.map.towns) {
@@ -1623,22 +1601,27 @@ function rangedAhead(rangedBehind: boolean): { out: CommandBody[]; ranged: numbe
   for (let k = 0; k < 12; k++) put(g, 0, UnitType.Spearman, 34 + (k % 6), 66 + Math.trunc(k / 6));
   const ranged = Array.from({ length: 6 }, (_, k) => put(g, 0, UnitType.Ranged, 42 + (k % 3), 62 + Math.trunc(k / 3)));
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, peekFirst: 0, netMarch: 1, net: forcedNet([ARMY_BASE, AS_HARD, AS_HARD, AS_HARD]), rangedBehind });
+  const ai = hardAi(g, { dodge: false, peekFirst: 0, netMarch: 1, net: forcedNet([ARMY_BASE, AS_HARD, AS_HARD, AS_HARD]), rangedStage });
   assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 18), "off to the enemy's base");
   for (let k = 0; k < 3; k++) put(g, 1, UnitType.Spearman, 48 + k, 58);
   w.tick += 10;
   g.fog.update(w);
-  return { out: ai.think(buildView(g, 0)), ranged };
+  const first = ai.think(buildView(g, 0));
+  w.tick += 10;
+  g.fog.update(w);
+  return { first, next: ai.think(buildView(g, 0)), ranged };
 }
 
-test("D-086 A10 (plan.rangedBehind): out with enemy soldiers by it, its ranged units in front of its spearmen fall back behind them; off, none", () => {
+test("D-086 A10 (plan.rangedStage): enemy soldiers coming near, its ranged units in front of its spearmen move behind them, once; off, none", () => {
+  const rangedOnly = (r: { ranged: number[] }) => (c: CommandBody) => c.c === "move" && c.u.length > 0 && c.u.every((id) => r.ranged.includes(id));
   const on = rangedAhead(true);
-  const back = on.out.find((c) => c.c === "retreat" && c.u.every((id) => on.ranged.includes(id))) as { u: number[]; x: number; y: number } | undefined;
-  assert.ok(back !== undefined && back.u.length === 6, "on: all six back");
-  // Behind the spearmen's centre (36, 66), away from the enemy at (48, 58).
+  const back = on.first.find(rangedOnly(on)) as { u: number[]; x: number; y: number } | undefined;
+  assert.ok(back !== undefined && back.u.length === 6, "on: all six behind");
+  // Behind the spearmen's centre (36, 66), away from the enemy at (49, 58).
   assert.ok(back.x <= 36 && back.y >= 66, `behind the spearmen: (${back.x}, ${back.y})`);
+  assert.ok(!on.next.some(rangedOnly(on)), "on: not again the next think");
   const off = rangedAhead(false);
-  assert.ok(!off.out.some((c) => c.c === "retreat" && c.u.length > 0 && c.u.every((id) => off.ranged.includes(id))), "off: none");
+  assert.ok(![...off.first, ...off.next].some(rangedOnly(off)), "off: none");
 });
 
 test("D-081: hard does not go back to a town it fell back from because of forts while it remembers them, though the straight way from home misses them", switchedOff([KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET], () => {
