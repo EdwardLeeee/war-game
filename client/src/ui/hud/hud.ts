@@ -251,6 +251,7 @@ export class Hud {
       groupStationed: (i: number) => game.groupStationed(i),
       groupHidingLine: (i: number) => game.groupHidingLine(i),
       groupOut: (i: number, all: boolean) => game.groupOut(i, all),
+      groupRecall: (i: number) => game.groupRecall(i),
       garrisonMore: (town: number) => game.garrisonMore(town),
       garrisonLess: (town: number) => game.garrisonLess(town),
       notify: (text: string) => game.toast(text),

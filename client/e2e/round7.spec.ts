@@ -340,6 +340,50 @@ test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: all });
 });
 
+test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主城，編隊 1 的軍團畫面按召回，只有它的兵出來、走回編隊，編隊 2 的照舊躲著；編隊 2 全部躲著也按得到召回", async ({ page }, info) => {
+  await start(page);
+  const spear = await ownIds(page, [1]);
+  const ranged = await ownIds(page, [2]);
+  expect(ranged.length).toBeGreaterThanOrEqual(4);
+  const [a, b] = [ranged.slice(0, 2), ranged.slice(2, 4)];
+  // Group 1: spearmen out in the field and two ranged; group 2: two ranged only.
+  await place(page, spear, spear.map((_, k) => ({ x: 20 + (k % 4), y: 70 + Math.floor(k / 4) })));
+  await selectForCommands(page, [...spear, ...a]);
+  await saveGroup(page, GROUP_1);
+  await selectForCommands(page, b);
+  await saveGroup(page, ".groups > button:nth-child(2)");
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  const city = await mainCityId(page);
+  await page.evaluate(([u, c]) => window.__proto?.game?.send({ c: "garrison", u, building: c }), [[...a, ...b], city] as [number[], number]);
+  await place(page, [...a, ...b], [{ x: MAIN_CITY.x + 4, y: MAIN_CITY.y + 2 }]);
+  await expect.poll(() => soldiersIn(page, city), TICKS).toBe(4);
+  // Group 1's 軍團畫面: 躲著 with 召回, from out in the field (the main city nowhere near the screen).
+  await tapOn(page, GROUP_1);
+  await page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" }).tap({ timeout: 1500 }).catch(() => undefined);
+  await expect(page.locator(".sel-info")).toContainText("躲著：主城 2 名（按召回叫出來，走回編隊）");
+  await shot(page, info, "d119-recall-button");
+  const mark = (await sent(page)).length;
+  await page.locator(".sel-info").getByRole("button", { name: "召回" }).tap();
+  // One leave naming group 1's two only; group 2's stay inside.
+  await expect.poll(async () => (await sent(page)).slice(mark).filter((c) => c.c === "leave")).toEqual([expect.objectContaining({ building: city, u: a })]);
+  await expect(toast(page, "2 名躲著的兵出來，走回編隊 1")).toBeVisible();
+  await expect.poll(() => soldiersIn(page, city), TICKS).toBe(2);
+  // Out with no order, they walk back to group 1 where its spearmen stand (an order of the screen's).
+  const back = async () => (await sent(page)).filter((c) => c.auto === true && c.c === "move" && a.every((id) => (c.u as number[]).includes(id))).at(-1);
+  await expect.poll(back, TICKS).toBeDefined();
+  expect(Math.hypot(((await back())?.x as number) - 21.5, ((await back())?.y as number) - 70.5)).toBeLessThan(3);
+  await expect(page.locator(GROUP_1)).not.toContainText("躲");
+  await expect(page.locator(".groups > button:nth-child(2)")).toContainText("躲2");
+  // Group 2 (all of it hiding: its button selects nobody, 軍團畫面 stays open): 召回 too.
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  await tapOn(page, ".groups > button:nth-child(2)");
+  await page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" }).tap({ timeout: 1500 }).catch(() => undefined);
+  const mark2 = (await sent(page)).length;
+  await page.locator(".sel-info").getByRole("button", { name: "召回" }).tap();
+  await expect.poll(async () => (await sent(page)).slice(mark2).filter((c) => c.c === "leave")).toEqual([expect.objectContaining({ building: city, u: b })]);
+  await expect.poll(() => soldiersIn(page, city), TICKS).toBe(0);
+});
+
 test("別人的建築裡有人：敵方箭樓右上角有記號，點它寫「裡面有人」；它射箭時畫出箭（D-061）", async ({ page }, info) => {
   await start(page);
   const tower = (await buildings(page)).find((b) => b.type === 10 && b.owner === 1);
