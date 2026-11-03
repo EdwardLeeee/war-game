@@ -201,10 +201,66 @@ function ground(): void {
   writeFileSync(join(dir, "ground.json"), JSON.stringify({ format: "war-game ground 1", layers, rules, grade: { brightness: 1, saturation: 1 } }));
 }
 
+/**
+ * 浮空大陸's edge's stand-ins (R11 C, ?test=1&view=diamond&edge=1): ui's edge.json format
+ * (design/r11/edge-format.md) at 6 px a metre, each picture a flat colour, so the e2e draws the
+ * edge's layers without any art in the repository.
+ */
+function edge(): void {
+  const dir = join(OUT, "edge");
+  mkdirSync(dir, { recursive: true });
+  const pxPerM = 6;
+  const flat = (name: string, w: number, h: number, c: [number, number, number, number]) => writeFileSync(join(dir, name), png(w, h, () => c));
+  flat("clouds_far.png", 64, 64, [176, 190, 206, 255]);
+  flat("clouds_near.png", 64, 64, [232, 236, 242, 120]);
+  flat("island_0.png", 40, 30, [120, 128, 110, 255]);
+  // A piece: 16 m along the edge and 1 m more each end, 13 m down from its lip (and its slant: drawn straight here).
+  const w = (16 + 2) * pxPerM;
+  const h = 13 * pxPerM;
+  const cliff = (side: string, k: number) => {
+    const file = `cliff_${side}_${k}.png`;
+    flat(file, w, h, [104 + k * 10, 92, 80, 255]);
+    return { file, anchor: [w / 2, 0], lip: [[0, 0], [w, 0]] };
+  };
+  for (const c of ["left", "bottom", "right"]) flat(`corner_${c}.png`, 4 * pxPerM, h, [96, 84, 72, 255]);
+  flat("fall_loop.png", 6 * pxPerM, 32, [200, 224, 236, 230]);
+  flat("fall_spray.png", 10 * pxPerM, 4 * pxPerM, [240, 244, 248, 160]);
+  flat("fall_mouth.png", 6 * pxPerM, 3 * pxPerM, [228, 238, 244, 200]);
+  flat("puff_0.png", 32, 20, [250, 250, 252, 180]);
+  const json = {
+    format: "war-game edge 1",
+    view: "diamond",
+    scale: 3,
+    pxPerM,
+    clouds: {
+      far: { file: "clouds_far.png", alpha: false, tile_px: 64, parallax: 0.2, drift_px_s: [6, 2], fade_s: 12 },
+      near: { file: "clouds_near.png", alpha: true, tile_px: 64, parallax: 0.35, drift_px_s: [10, 3], fade_s: 9 },
+    },
+    islands: [{ file: "island_0.png", anchor: [20, 30], size_m: 10, bob_px: 3, bob_s: 5 }],
+    cliff: {
+      height_m: 13,
+      stretch_m: 16,
+      overlap_m: 1,
+      sw: [0, 1, 2].map((k) => cliff("sw", k)),
+      se: [0, 1, 2].map((k) => cliff("se", k)),
+      corner: Object.fromEntries(["left", "bottom", "right"].map((c) => [c, { file: `corner_${c}.png`, anchor: [2 * pxPerM, 0] }])),
+    },
+    fall: {
+      loop: { file: "fall_loop.png", width_m: 6, period_px: 32, scroll_m_s: 4, widen_per_m: 0.07 },
+      spray: { file: "fall_spray.png", anchor: [5 * pxPerM, 2 * pxPerM] },
+      mouth: { file: "fall_mouth.png", anchor: [3 * pxPerM, 3 * pxPerM], foam_m: 3.5 },
+    },
+    puffs: [{ file: "puff_0.png", drift_px_s: [8, -2], alpha_max: 0.6 }],
+    rim: { fade_m: 3 },
+  };
+  writeFileSync(join(dir, "edge.json"), JSON.stringify(json));
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   ATLAS_NAMES.forEach((name, k) => unit(name, k));
   effects();
   astcSample();
   ground();
+  edge();
   console.log(`test atlases: ${ATLAS_NAMES.length} units and effects → public/art/test/x3/`);
 }

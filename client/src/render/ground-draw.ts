@@ -68,6 +68,7 @@ uniform sampler2D uTrampled;
 uniform vec4 uTownA;      // on (1), edge_m, the lane's layer's tile, the trampled earth's (m)
 uniform vec4 uTileA;      // grass, grass_dry, dirt, gravel (m)
 uniform vec4 uTileB;      // bank, noise, macro, cells across the map
+uniform vec4 uEdge;       // 浮空大陸 (edge.ts): metres over which the two lower edges fade out (0: none), the map's side (m)
 uniform vec4 uRules;      // edge_m, height_k, dirt noise threshold, quality (1 high)
 uniform vec4 uDirtEdge;   // the dirt patches' edge in the noise: from, to (R8-28: noise_soft about the threshold)
 uniform vec4 uGrade;      // brightness, saturation, -, -
@@ -169,7 +170,9 @@ void main(void) {
   }
   vec3 col = c.rgb * (0.9 + 0.2 * big) * uGrade.x;
   col = mix(vec3(dot(col, LUM)), col, uGrade.y);
-  finalColor = vec4(col, 1.0);
+  // The two lower edges fade onto the cliff's lip under them (edge.ts): ui paints its grass a metre in.
+  float a = uEdge.x > 0.0 ? smoothstep(0.0, uEdge.x, uEdge.y - vM.y) * smoothstep(0.0, uEdge.x, uEdge.y - vM.x) : 1.0;
+  finalColor = vec4(col * a, a);
 }
 `;
 
@@ -248,6 +251,7 @@ export class GroundDraw {
       uTileA: { value: new Float32Array([tileOf("grass"), tileOf("grass_dry"), tileOf("dirt"), tileOf("gravel")]), type: "vec4<f32>" },
       uTileB: { value: new Float32Array([tileOf("bank"), textures.json.noise?.tile_m ?? 6, textures.json.macro?.tile_m ?? 64, n]), type: "vec4<f32>" },
       uRules: { value: new Float32Array([r.edge_m, r.height_k, r.dirt.noise_threshold, quality === "high" ? 1 : 0]), type: "vec4<f32>" },
+      uEdge: { value: new Float32Array([0, n * CELL_M, 0, 0]), type: "vec4<f32>" },
       // The dirt patches' edge: noise_soft wide about the threshold (R8-28), else 0.06 from it up.
       uDirtEdge: {
         value: new Float32Array(r.dirt.noise_soft === undefined ? [r.dirt.noise_threshold, r.dirt.noise_threshold + 0.06, 0, 0] : [r.dirt.noise_threshold - r.dirt.noise_soft / 2, r.dirt.noise_threshold + r.dirt.noise_soft / 2, 0, 0]),
@@ -310,6 +314,12 @@ export class GroundDraw {
   tick(seconds: number): void {
     if (!this.water) return;
     this.uniforms.uniforms.uTime = seconds % 3600;
+    this.uniforms.update();
+  }
+
+  /** 浮空大陸 (edge.ts): the two lower edges fade out over this many metres (0: cut straight, as before). */
+  setEdgeFade(m: number): void {
+    (this.uniforms.uniforms.uEdge as Float32Array)[0] = m;
     this.uniforms.update();
   }
 

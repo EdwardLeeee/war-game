@@ -22,7 +22,8 @@ import { fetchPoster } from "./logs/upload.ts";
 import { ART_LABEL, artBase, loadArtChoice } from "./art/pref.ts";
 import type { Culture } from "./art/spec.ts";
 import { CULTURES, DEFAULT_CULTURE, loadCulture, saveCulture } from "./culture.ts";
-import { loadUnitArt, type UnitArt } from "./render/unit-art.ts";
+import { json, loadUnitArt, type UnitArt } from "./render/unit-art.ts";
+import { type EdgeArt, loadEdge } from "./render/edge.ts";
 import { loadGround } from "./render/ground-load.ts";
 import type { GroundTextures } from "./render/ground-draw.ts";
 import { measureCutShort } from "./lab/panel.ts";
@@ -483,9 +484,10 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     checkPort: params.mock ? null : () => createSimPort(showError),
     art,
     culture: params.culture ?? culture,
-    view: params.view ?? undefined,
+    view: params.view ?? (params.edge ? "diamond" : (loadedArt?.view ?? undefined)),
     ghost: params.ghost ?? undefined,
     ground,
+    edge: await edgeForGame(),
     groundQuality: params.groundQuality,
     artAvailable,
     artChanged,
@@ -524,7 +526,12 @@ const astcSample: AstcSample | undefined =
     : __ART_TAG__ === null
       ? undefined
       : { unit: "spear_e", png: `./art/${__ART_TAG__}/x2/units/spear_e/`, astc: `./art/${__ART_TAG__}/astc-sample/units/spear_e/` };
-let loadedArt: { base: string; art: UnitArt } | null = null;
+/**
+ * `view`: how the art's Release is drawn (art-release.json, ui's design/r11/edge-format.md): "diamond"
+ * for art-v7 on (the user 2026-11-02 chose 菱形斜看 again, D-117), switching the battlefield to the
+ * diamond and 浮空大陸's edge with it; absent (art-v6.3 and before), 方形斜看 as before.
+ */
+let loadedArt: { base: string; art: UnitArt; view: "diamond" | null } | null = null;
 /** The choice the game on screen was started with. */
 let artChoiceUsed: string | null = null;
 const artChanged = (): boolean => (params.art ?? loadArtChoice()) !== artChoiceUsed;
@@ -551,7 +558,10 @@ async function artForGame(): Promise<UnitArt | null> {
     // Each page to the GPU as it is decoded, its decoded picture let go (unit-art.ts: the iPhone dropped long games).
     const renderer = app?.renderer ?? null;
     const upload = renderer === null ? null : (t: Texture) => renderer.texture.initSource(t.source);
-    loadedArt = { base, art: await loadUnitArt(base, choice === "test" ? "測試圖" : ART_LABEL[choice], undefined, loadTimes, upload) };
+    const art = await loadUnitArt(base, choice === "test" ? "測試圖" : ART_LABEL[choice], undefined, loadTimes, upload);
+    // The Release's own description: missing (the test page's stand-ins) or older, no view.
+    const release = (await json(`${base}art-release.json`, loadTimes).catch(() => null)) as { view?: unknown } | null;
+    loadedArt = { base, art, view: release?.view === "diamond" ? "diamond" : null };
     loadTimes.artDone("載入");
     return loadedArt.art;
   } catch (err) {
@@ -560,6 +570,30 @@ async function artForGame(): Promise<UnitArt | null> {
     loadTimes.artDone("失敗");
     return null;
   }
+}
+/**
+ * 浮空大陸's edge (R11 C, D-118): ui's edge/ beside the atlases, with the diamond the art asks for
+ * (or a test page's ?edge=1); a test page's else the development set (public/art/edge-dev/, local),
+ * else the stand-ins. Null: none (it is not drawn). Loaded once a page.
+ */
+let loadedEdge: Promise<EdgeArt | null> | null = null;
+function edgeForGame(): Promise<EdgeArt | null> {
+  if (!params.edge && loadedArt?.view !== "diamond") return Promise.resolve(null);
+  if (loadedEdge === null) {
+    const art = loadedArt === null ? [] : [`${loadedArt.base}edge/`];
+    const bases = params.test ? [...art, "./art/edge-dev/x3/edge/", "./art/test/x3/edge/"] : art;
+    loadedEdge = (async () => {
+      for (const b of bases) {
+        const e = await loadEdge(b, loadTimes);
+        if (e !== null) return e;
+      }
+      return null;
+    })().catch((err: unknown) => {
+      console.warn(`edge: ${String(err)}`);
+      return null;
+    });
+  }
+  return loadedEdge;
 }
 /**
  * 寫實地面 (D-093): war-game-ui's ground set beside the atlases (art-v6 on); the players' only that
@@ -689,7 +723,10 @@ async function resumeGame(saved: SavedGame): Promise<void> {
     env: env(init.scenario, gameText(init.difficulty, init.maxTicks, init.enemyAi, init.map, false)),
     checkPort: () => createSimPort(showError),
     art,
+    // The art's view (a game kept from before art-v7 is drawn as the art now is: only the picture).
+    view: params.view ?? (params.edge ? "diamond" : (loadedArt?.view ?? undefined)),
     ground: await groundForGame(),
+    edge: await edgeForGame(),
     groundQuality: params.groundQuality,
     // As it was played, not the start screen's choice now (a save from before the choice: 東陸).
     culture: CULTURES.find((c) => c === init.culture) ?? DEFAULT_CULTURE,

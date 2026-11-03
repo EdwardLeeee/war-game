@@ -2,6 +2,7 @@
 // PixiJS world, and the gestures that turn into selections and commands. The only way
 // anything reaches the simulation is `command()`, which posts a protocol command.
 
+import { type EdgeArt, EdgeRenderer } from "../render/edge.ts";
 import type { Application } from "pixi.js";
 import { Camera } from "../camera/camera.ts";
 import { type GestureHost, GestureRecognizer, type LongPressResult } from "../input/gestures.ts";
@@ -155,6 +156,8 @@ export interface GameOptions {
   ghost?: "outline";
   /** 寫實地面 (D-093, ?test=1&ground=real): its textures, and the quality to start with. */
   ground?: GroundTextures | null;
+  /** 浮空大陸's edge (R11 C, D-118; render/edge.ts): drawn with the diamond only. */
+  edge?: EdgeArt | null;
   groundQuality?: GroundQuality;
   /** This build has atlases to choose in the 量測 panel. */
   artAvailable?: boolean;
@@ -217,6 +220,8 @@ export function headerAutoTrain(log: string): boolean[] | null {
 
 /** How the ground is laid on the screen (projection.ts VIEW_DEFAULT); another on test pages (?view=). */
 const PROJECTION_DEFAULT = PROJECTIONS[VIEW_DEFAULT];
+/** 浮空大陸: metres the realistic ground fades out over at the two lower edges, onto the cliff's lip (ui paints its grass a metre in). */
+const EDGE_FADE_M = 0.75;
 /** Orders that end a soldier's attack on a town (攻城打到底, assault.ts); 攻擊 starts one again. */
 const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "guard", "post", "gather", "build", "repair", "release"]);
 
@@ -270,6 +275,8 @@ export class Game implements GestureHost {
   private readonly options: GameOptions;
   private readonly recognizer: GestureRecognizer;
   private renderer: WorldRenderer | null = null;
+  /** 浮空大陸's edge round the map (render/edge.ts), with the diamond and ui's edge pictures. */
+  private edge: EdgeRenderer | null = null;
   private seq = 1;
   private lastFrame = performance.now();
   private readyWaiters: (() => void)[] = [];
@@ -380,6 +387,8 @@ export class Game implements GestureHost {
     this.port.terminate();
     for (const c of this.cleanups) c();
     this.app.ticker.remove(this.tick);
+    this.edge?.destroy();
+    this.edge = null;
     this.renderer?.destroy();
     this.renderer = null;
     this.hud.destroy();
@@ -616,6 +625,11 @@ export class Game implements GestureHost {
     saveGradeOn(on);
     setFilmGrade(this.app, on);
     this.toast(on ? "電影色調：開（這台裝置記住了）" : "電影色調：關（這台裝置記住了）", "ok");
+  }
+
+  /** 浮空大陸's edge (the test page): drawn or not, its cliff pieces and waterfalls. */
+  get edgeForTest(): { on: boolean; shown: boolean; pieces: number; falls: number } {
+    return { on: this.edge !== null, shown: this.edge?.shown ?? false, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0 };
   }
 
   /** Whether the film grade is over the battlefield now (the test page). */
@@ -2449,6 +2463,14 @@ export class Game implements GestureHost {
         if (ground !== null && !this.renderer.useGround(ground, this.options.groundQuality ?? "high")) console.warn("ground: 寫實地面 needs ui's terrain pictures (art-v5, square on); the flat ground stays");
         // 選單's 寫實地面 開／關 (ceo 2026-10-25), as this device was left.
         else if (ground !== null) this.renderer.showGround(loadGroundOn());
+        // 浮空大陸 (R11 C): the sea of clouds under the battlefield, the cliff under the ground; drawn for the diamond only.
+        const edgeArt = this.options.edge ?? null;
+        if (edgeArt !== null && projection.kind === "diamond") {
+          this.edge?.destroy();
+          this.edge = new EdgeRenderer(edgeArt, projection, msg.map.size);
+          this.app.stage.addChildAt(this.edge.back, 0);
+          this.renderer.addEdge(this.edge.under, this.edge.over, EDGE_FADE_M);
+        }
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
@@ -2574,6 +2596,7 @@ export class Game implements GestureHost {
     if (cam === null || view === null || this.renderer === null) return;
     cam.update(dt);
     this.renderer.paused = this.paused;
+    this.edge?.update(now, cam, view.ground, view.groundVersion, view.fog, view.fogVersion);
     this.renderer.draw(now, cam, this.placement);
     this.hud.frame(now);
     this.frameTimes.add(dt, performance.now() - now);

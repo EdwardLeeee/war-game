@@ -55,7 +55,7 @@ def available_mb():
 
 
 ON_CI = os.environ.get("GITHUB_ACTIONS") == "true"
-THREADS = str(os.cpu_count() or 2) if ON_CI else "2"
+THREADS = os.environ.get("THREADS") or (str(os.cpu_count() or 2) if ON_CI else "2")      # a local render may ask for more
 
 
 def capped(cmd, log=None, wait_s=600):

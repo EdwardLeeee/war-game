@@ -9,6 +9,7 @@ stripes. So:
   (a weak green-brown fill from below, no shadow) so faces and undersides are not black.
 """
 import math
+import os
 
 import bpy
 
@@ -108,6 +109,39 @@ def _plates(m):
     nt.links.new(r.outputs["Result"], p.inputs["Roughness"])
 
 
+def _pleats(spacing=0.06, depth=0.022):
+    """Real folds in the robes and the front drapes (art-v7: a bump only shows in direct light, and a unit's side to
+    the camera is mostly in shade, so the bumped folds read flat): the mesh subdivided and pushed in and out along its
+    normals by vertical bands about `spacing` apart, before the armature bends it; the AO pass darkens the hollows."""
+    n = 512
+    cycles = int(round(2.0 / spacing))                     # the texture spans local x -1..1 m
+    img = bpy.data.images.new("r9_pleats", n, 4, float_buffer=True)
+    px = []
+    for _ in range(4):
+        for i in range(n):
+            t = i / n
+            v = 0.5 + 0.5 * math.sin(2 * math.pi * cycles * t + 1.3 * math.sin(2 * math.pi * 3 * t))
+            px += [v, v, v, 1.0]
+    img.pixels.foreach_set(px)
+    tex = bpy.data.textures.new("r9_pleats", "IMAGE")
+    tex.image = img
+    tex.extension = "REPEAT"
+    for ob in bpy.data.objects:
+        if ob.type != "MESH" or not ob.name.endswith(("_r8robe", "_drape")):
+            continue
+        sub = ob.modifiers.new("r9_sub", "SUBSURF")
+        sub.subdivision_type = "SIMPLE"
+        sub.levels = sub.render_levels = 2
+        dis = ob.modifiers.new("r9_pleat", "DISPLACE")
+        dis.texture = tex
+        dis.texture_coords = "LOCAL"
+        dis.strength = depth
+        dis.mid_level = 0.5
+        ob.modifiers.move(len(ob.modifiers) - 1, 0)            # before the armature: the folds bend with the cloth
+        ob.modifiers.move(len(ob.modifiers) - 1, 0)
+        print("R9UNIT pleats", ob.name, [m.type for m in ob.modifiers], flush=True)
+
+
 def apply(u=None, kind=None):
     print("R9UNIT apply", flush=True)
     cloth = ("team", "linen", "sack", "russet", "ochre", "darkcloth", "tunic", "robe", "cloth", "hessian")
@@ -128,7 +162,9 @@ def apply(u=None, kind=None):
             p.inputs["Sheen Roughness"].default_value = 0.4
             p.inputs["Roughness"].default_value = max(0.82, p.inputs["Roughness"].default_value)
             _bump(m, 900.0, 0.18)
-            _bump(m, 6.0, 1.0, 0.05, stretch=(1.0, 1.0, 0.22))   # deep folds hanging down (R9 r5, R11; art-v7: still flat)
+            # folds about 4 cm apart hanging down (the robe is 0.5 m across: at scale 6-9 the "folds" were one or two
+            # broad bulges and read flat, R9 r5, R11)
+            _bump(m, 24.0, 1.0, 0.02, stretch=(1.0, 1.0, 0.15))
         elif "skin" in n:
             # a little light through the skin, no more (R9 r3: more, with the green bounce, gave grey-green flecks)
             p.inputs["Subsurface Weight"].default_value = 0.1
@@ -155,6 +191,31 @@ def apply(u=None, kind=None):
             if ob.name.endswith("_r8dunxiang") and ob.type == "MESH":
                 ob.data.materials.clear()
                 ob.data.materials.append(lam)
+    _pleats()
+    if os.environ.get("R9_DEBUG"):                   # which node feeds each cloth material's normal and colour
+        for name, info in lib.MATS.items():
+            m = info.get("mat")
+            if m is None or not m.use_nodes or not (info.get("kind") == "team" or any(k in name.lower() for k in cloth)):
+                continue
+            p = _p(m)
+            chain = []
+            sock = p.inputs["Normal"]
+            while sock is not None and sock.is_linked and len(chain) < 8:
+                n = sock.links[0].from_node
+                chain.append(n.bl_idname)
+                sock = n.inputs.get("Normal") if hasattr(n.inputs, "get") else None
+            users = [o.name for o in bpy.data.objects if o.type == "MESH" and any(sl.material == m for sl in o.material_slots)]
+            print("R9DEBUG", name, info.get("kind"), "normal<-", chain, "users", users[:4], flush=True)
+            for on in users[:4]:
+                ob = bpy.data.objects[on]
+                at = ob.data.attributes.get("rest")
+                if at is not None and len(at.data):
+                    import numpy as _np
+                    v = _np.zeros(len(at.data) * 3)
+                    at.data.foreach_get("vector", v)
+                    v = v.reshape(-1, 3)
+                    print("R9DEBUG   rest", on, "min", v.min(0).round(3).tolist(), "max", v.max(0).round(3).tolist(),
+                          "scale", [round(x, 3) for x in ob.matrix_world.to_scale()], flush=True)
     # the grass's light thrown back up: a sun shining up from the ground, green-brown, no shadow
     d = bpy.data.lights.new("r9_bounce", "SUN")
     d.energy = 0.8

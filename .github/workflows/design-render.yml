@@ -273,6 +273,10 @@ jobs:
               /usr/bin/python3 design/r8/common/ground_r8.py export "$RUNNER_TEMP/ground" "design/b1/build/atlas_x$k/ground" "$k"
             done
           fi
+          # art-v7 the floating continent's edge (design/r11/edge-format.md): the r8v7e pieces, the clouds, the waterfall
+          if [ -f design/b1/build/b1/prod/cliff_sw_0_x3.json ]; then
+            /usr/bin/python3 design/r11/common/edge_pack.py design/b1/build/b1/prod design/b1/build
+          fi
 
       - name: Upload the building atlases
         uses: actions/upload-artifact@v4
