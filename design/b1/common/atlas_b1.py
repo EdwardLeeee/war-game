@@ -55,8 +55,12 @@ def building_table(c):
                      states={"build1": f"farm_{c}_build1", "build2": f"farm_{c}_sown", "build3": f"farm_{c}_sown"},
                      crops=[f"farm_{c}_{s}" for s in ("sown", "growing", "ripe")])
     # art-v5.1: 哨所 (D-080; the user approved the drafts 2026-10-22), its own foundation and rubble (blds2.outpost)
-    t["Outpost"] = dict(type=12, footprint=[2, 2],
-                        states={s: f"outpost_{c}_{s}" for s in ("build1", "build2", "build3", "done", "damaged", "rubble")})
+    # art-v7 (D-119, the user 2026-11-04: R12's A): 3 x 3; the men hidden in it stand on its walk, drawn by the client
+    # over the piece and under its front layer (fronts: what stands in front of a man on the walk), at stand_m (as the
+    # castles' walls, D-096: metres from the anchor, x east, y south, z the walk; nearest the camera first)
+    t["Outpost"] = dict(type=12, footprint=[3, 3],
+                        states={s: f"outpost_{c}_{s}" for s in ("build1", "build2", "build3", "done", "damaged", "rubble")},
+                        fronts={s: f"outpost_{c}_{s}_front" for s in ("done", "damaged")})
     # art-v6 (D-100; core 2026-10-23: BuildingType 9 is the Keep now, the KEEP switch on in the same release, ceo): every
     # town's 3 x 3 keep, its states as the client shows them (damaged at half its hp or less; rubble once it falls, the
     # cells walk; repair: the rubble under scaffolding while the governed town counts down); the old 2 x 2 and 3 x 3
@@ -74,12 +78,16 @@ def building_table(c):
         shots = [m[n] for n in sorted(m) if n.startswith("shoot_at_")]
         if shots:
             e["shoot_at_m"] = [[round(x, 2), round(-y, 2), round(z, 2)] for x, y, z in shots]
+        stands = [m[n] for n in sorted(m, key=lambda n: int(n.split("_")[-1]) if n.split("_")[-1].isdigit() else 0)
+                  if n.startswith("stand_at_") and n.split("_")[-1].isdigit()]
+        if stands and "fronts" in e:              # (the client's name, as the castles': stand_m)
+            e["stand_m"] = [[round(x, 2), round(-y, 2), round(z, 2)] for x, y, z in stands]
     return dict(sorted(t.items(), key=lambda kv: kv[1]["type"]))
 
 
 def building_frames(b):
     """Every frame one building's entry names (its states, crops, and the states of its other sizes)."""
-    out = list(b["states"].values()) + b.get("crops", [])
+    out = list(b["states"].values()) + b.get("crops", []) + list(b.get("fronts", {}).values())
     for v in b.get("sizes", {}).values():
         out += list(v["states"].values())
     return out
