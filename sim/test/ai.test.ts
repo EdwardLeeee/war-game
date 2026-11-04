@@ -1310,7 +1310,7 @@ test("D-119: an outpost's hidden spearmen as its row shows them, as many as it h
   assert.ok(groupWorth(withIt, engines, v) < groupWorth(withIt, ranged.slice(0, 20), v), "siege engines pull it down sooner");
 });
 
-test("D-119 (FORT_HIDE_AI.memory): a remembered outpost as last seen finished, its spearmen and hold; off, 9 and its reach", () => {
+test("D-119 (FORT_HIDE_AI.memory, hard only): a remembered outpost as last seen finished, its spearmen and hold; without the memory or off, 9 and its reach", () => {
   const g = emptyGame();
   const w = g.w;
   const id = w.addBuilding(1, BuildingType.Outpost, 40, 40, 1500, 1000);
@@ -1330,12 +1330,15 @@ test("D-119 (FORT_HIDE_AI.memory): a remembered outpost as last seen finished, i
     assert.equal(m.seen, true, "known");
     assert.equal(m.soldiers, 0);
     assert.equal(m.hits, 1, "it held");
+    const [n] = enemyForts(view, 0, rules());
+    assert.equal(n.seen, false, "no memory given (normal): 9 and its reach");
+    assert.equal(n.hits, rules().outpost!.reach);
     FORT_HIDE_AI.memory = false;
     const [o] = enemyForts(view, 0, rules(), memo);
     assert.equal(o.seen, false);
     assert.equal(o.hits, rules().outpost!.reach, "off: its reach");
   } finally {
-    FORT_HIDE_AI.memory = false;
+    FORT_HIDE_AI.memory = true;
   }
 });
 

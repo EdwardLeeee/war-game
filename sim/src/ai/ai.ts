@@ -412,13 +412,16 @@ export interface Fort {
  * falls, so their pokes do not thin out as a group of towers' arrows do while the towers fall one by one (D-081's
  * calibration was on 5 towers); the measurements choose it.
  */
-export const FORT_HIDE_AI = { on: true, scale: 1000, memory: false };
+export const FORT_HIDE_AI = { on: true, scale: 1000, memory: true };
 
 /**
  * D-119 (FORT_HIDE_AI.memory; op1, run 41770978767: the turtle mans 2 of its 6 outposts, and each empty one out of
  * sight counted 9 with an 8-cell reach, so hard held off and 1 -> 10 random-map turtle games ran out the clock): what
  * the AI last saw of each enemy outpost, finished, in sight: its spearmen and whether it held. A remembered row has
- * neither (fog keeps a building's place and hp only).
+ * neither (fog keeps a building's place and hp only). Hard only (op2, run 41808010405: random-map turtle 10 -> 2 out
+ * of time): normal keeps no count of the unseen, and with it a remembered outpost's reach of 1 cleared its way from
+ * home while the group it broke off from still turned it back on the march, again and again (fixed-map fortress games
+ * out of time 8 -> 31).
  */
 export type OutpostMemory = Map<number, { soldiers: number; hold: boolean }>;
 
@@ -1703,8 +1706,6 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   /** What the army that set out was worth against forts (D-081: a break-off remembers that, not what is left). */
   let marchWorth = 0;
   const failedAt = new Map<number, Failed>();
-  /** D-119 (FORT_HIDE_AI.memory): the enemy outposts as last seen finished. */
-  const outpostMemo: OutpostMemory = new Map();
   /** Falling back round forts (aroundForts): the point first, and until when. */
   let via: { x: number; y: number; until: number } | null = null;
   /** Towns it fell back from because of forts (D-081, ceo 2026-10-10): the forts, and when. */
@@ -2057,7 +2058,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       // The clock: the end-of-game rules count back from the time limit, if there is one.
       const endgame = toGo >= 0 && toGo <= ENDGAME_TO_GO;
       // Enemy forts (D-080, D-081).
-      const forts = enemyForts(view, player, rules, outpostMemo);
+      const forts = enemyForts(view, player, rules);
       /** A town under the arrows or guards of an enemy fort (D-081). */
       const underArrows = (t: { x: number; y: number }) => forts.some((o) => o.done && fortDist2(o, t.x, t.y) <= (o.hits + 1) * (o.hits + 1));
       // Garrisons: the soldiers nearest each held town (not mages), topped up as they fall;
