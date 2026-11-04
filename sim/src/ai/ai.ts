@@ -70,7 +70,7 @@ import {
   WarningField,
 } from "../protocol.ts";
 import { Rng } from "../core/fixed.ts";
-import { ARMY_BASE, AS_HARD, BUILD_FARMERS, BUILD_PRODUCTION, choose, DEFENSE_NONE, DEFENSE_TOWER, features, HEAD_ARMY, HEAD_BUILD, HEAD_DEFENSE, HEAD_MIX, HEAD_TOWN, type NetWeights, TOWN_GOVERN } from "./net.ts";
+import { ARMY_BASE, AS_HARD, BUILD_FARMERS, BUILD_PRODUCTION, CHARGE_HOLD, CHARGE_NOW, choose, DEFENSE_NONE, DEFENSE_TOWER, features, HEAD_ARMY, HEAD_BUILD, HEAD_CHARGE, HEAD_DEFENSE, HEAD_MIX, HEAD_SQUAD, HEAD_TOWN, NET_HEADS, type NetWeights, SQUAD_HOME, SQUAD_RAID, SQUAD_TAKE, SQUAD_TOWN, TOWN_GOVERN } from "./net.ts";
 import type { PlayerView } from "../view/view.ts";
 
 export interface Ai {
@@ -2656,6 +2656,9 @@ export interface HardPlan {
    */
   netMarch: number;
   netFarmers: number;
+  /** NN v4 (HEAD_SQUAD, ceo 2026-11-04): squads out at once at most, and each one's share of the army (percent). */
+  squadMost: number;
+  squadShare: number;
   /**
    * D-086 A4 (the user 2026-10-20: 「ai困難都不會用騎兵跟防禦建築」): cavalry beats mages x2 (D-061). Once ranged
    * units and mages are cavalryWhen percent or more of the enemy soldiers it knows of (CAVALRY_SEEN or more), it
@@ -2883,6 +2886,8 @@ export const HARD: HardPlan = {
   cityAgain: 0,
   net: null,
   netMarch: 14,
+  squadMost: 2,
+  squadShare: 25,
   netFarmers: 12,
   // D-097 (ceo 2026-10-22, docs/research/2026-10-ai-d096.md section 5): 20% cavalry on random maps, charging; spearmen
   // against 15% enemy cavalry; another lumber camp by the trees.
@@ -3021,6 +3026,19 @@ const WOOD_SHIFT = [15, 75, 10];
 /** D-086 B: what the network's choices mean: the spearmen's share (by MIX_*), and farmers more for "farmers first". */
 const NET_SHARE = [0, 70, 30];
 const NET_FARMERS = 4;
+/**
+ * NN v4 (HEAD_SQUAD): the fewest soldiers in a squad; how near (cells) its target counts as there and enemies count as
+ * by it; the most it walks to a target; how long it holds home or a town; how long it raids at most; with no enemy
+ * farmers in sight there this long, a raid is done.
+ */
+const SQUAD_MIN = 5;
+const SQUAD_NEAR = 10;
+const SQUAD_WALK = 3 * TICKS_PER_MINUTE;
+const SQUAD_HOLD = 4 * TICKS_PER_MINUTE;
+const SQUAD_RAID_TIME = 90 * 20;
+const SQUAD_RAID_QUIET = 30 * 20;
+/** NN v4 (CHARGE_NOW): the charge goes with up to this many times its cavalry of enemy spearmen by the target (as hard: 1). */
+const CHARGE_NOW_SPEARS = 2;
 const NET_MODES: readonly string[] = ["home", "town", "base", "defend", "raze"];
 /** D-083 (c): food plus gold it holds for productionFirst. */
 const PRODUCTION_FIRST = 800;
@@ -3257,11 +3275,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let known = { worth: 0, n: 0 };
   /** plan.charge: the cavalry charging, where the charge began and how many set out, its target, when last told; spots left alone until a tick. plan.towers: where the last wave came from. */
   const chargers = new Set<number>();
+  /** NN v4 (HEAD_SQUAD): squads out: their soldiers, task (SQUAD_*), target (a town id for SQUAD_TOWN and SQUAD_TAKE, else -1), when they set out, how many, when last told, when there (-1: not yet), when they last saw enemy farmers. */
+  const squads: { ids: Set<number>; task: number; x: number; y: number; town: number; start: number; size: number; moveAt: number; at: number; quiet: number }[] = [];
+  /** NN v4: enemy farmers seen by a raid squad (id: last tick seen, within SQUAD_NEAR of it). */
+  const raidSeen = new Map<number, number>();
   let chargeAt: { x: number; y: number; size: number; target: number } | null = null;
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { netTowers: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { squadRaid: 0, squadHome: 0, squadTown: 0, squadTake: 0, squadNoTarget: 0, squadDone: 0, squadLost: 0, squadWeak: 0, squadTimeout: 0, raidFarmers: 0, chargeNow: 0, netTowers: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3472,6 +3494,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const soldiers = allSoldiers.filter((u) => u.id !== scout.id && u.id !== townScoutId);
       const byId = new Map<number, HardUnit>();
       for (const u of soldiers) byId.set(u.id, u);
+      // NN v4 (HEAD_SQUAD): those in squads (none with the network off or as hard).
+      for (const q of squads) for (const id of q.ids) if (!byId.has(id)) q.ids.delete(id);
+      const inSquad = (id: number) => squads.some((q) => q.ids.has(id));
       const has = (t: number) => own.some((b) => b.type === t);
       const done = (t: number) => own.filter((b) => b.type === t && b.progress >= 1000);
       const count = (t: number) => own.filter((b) => b.type === t).length;
@@ -3597,7 +3622,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
 
       // --- D-086 B: the network's choices, from its own view and memory --------------------------------
       let netX: number[] = [];
-      const labels = [-1, -1, -1, -1, -1];
+      const labels = NET_HEADS.map(() => -1);
       if (netOn) {
         if (enemyCityHp >= 0) netCityHp = enemyCityHp;
         const ids = new Set(soldiers.map((u) => u.id));
@@ -3684,8 +3709,43 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const fewFarmers = farmers.length < plan.netFarmers;
           // NN v2: defense: a tower or none only where it can put one up at all.
           const towersOk = rules.features?.towers === true && has(BuildingType.Range);
+          // NN v4: a squad with room for one and enough soldiers for it, and only where the task has somewhere to go (as the
+          // squad looks for it, without the strength checks): a town it governs with no squad on it; a small town not its own,
+          // in ruins or being plundered, with none on it; an enemy camp, mine or farm it knows of, or a farmer in sight. A
+          // charge (now, or not now) with cavalry for one and an enemy ranged unit or mage in sight; else the choice changes nothing.
+          const squadOk = squads.length < plan.squadMost && Math.trunc((free * plan.squadShare) / 100) >= SQUAD_MIN;
+          let townFree = false;
+          let takeFree = false;
+          for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
+            const id = view.towns[r + TownField.id];
+            const owner = view.towns[r + TownField.owner];
+            const state = view.towns[r + TownField.state];
+            if (squads.some((q) => q.town === id)) continue;
+            if (owner === player && state === TownState.Governed) townFree = true;
+            if (mem.site(id)?.size === TownSize.Small && owner !== player && state !== TownState.Ruins && state !== TownState.Plundering) takeFree = true;
+          }
+          let raidFree = enemyFarmers.length > 0;
+          for (let r = 0; r < view.buildings.length && !raidFree; r += BUILDING_STRIDE) {
+            const ty = view.buildings[r + BuildingField.type];
+            if (view.buildings[r + BuildingField.owner] === 1 - player && (ty === BuildingType.LumberCamp || ty === BuildingType.Mine || ty === BuildingType.Farm)) raidFree = true;
+          }
+          const chargeOk =
+            plan.charge &&
+            chargeAt === null &&
+            soldiers.filter((u) => u.type === UnitType.Cavalry).length >= CHARGE_MIN &&
+            foes.some((f) => (f.type === UnitType.Ranged || f.type === UnitType.Mage) && f.order !== Order.Garrison);
           // AS_HARD always; army: wait, or march once it may; mix: all; build: no barracks and ranges first with few farmers; town: all.
-          const allowed = [true, true, mem.known !== Known.None && free >= plan.netMarch, true, true, true, true, true, !fewFarmers, true, true, true, true, towersOk, towersOk];
+          const allowed = [
+            ...[true, true, mem.known !== Known.None && free >= plan.netMarch],
+            ...[true, true, true],
+            ...[true, true, !fewFarmers],
+            ...[true, true, true],
+            ...[true, towersOk, towersOk],
+            ...[true, squadOk && raidFree, squadOk, squadOk && townFree, squadOk && takeFree],
+            ...[true, chargeOk, chargeOk],
+          ];
+          // One flag per output: a mask short of the heads would leave the new ones as hard for ever (never learned).
+          if (allowed.length !== NET_HEADS.reduce((a, k) => a + k, 0)) throw new Error(`net mask: ${allowed.length} flags for ${NET_HEADS.join("+")} outputs`);
           netChoice = choose(plan.net, netX, allowed);
           plan.netSeen?.(netChoice);
         }
@@ -4210,7 +4270,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const guarded = new Set([...townGuards.values()].flat());
         const alive = (townGuards.get(id) ?? []).filter((g) => byId.has(g));
         const free = soldiers
-          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison && !rescueSquad.has(s.id) && s.id !== peekId)
+          .filter((s) => !guarded.has(s.id) && s.type !== UnitType.Mage && s.order !== Order.Garrison && !rescueSquad.has(s.id) && s.id !== peekId && !inSquad(s.id))
           .sort((a, b) => (b.type === UnitType.Spearman ? 1 : 0) - (a.type === UnitType.Spearman ? 1 : 0) || dist2(a.x, a.y, t.x, t.y) - dist2(b.x, b.y, t.x, t.y) || a.id - b.id);
         while (alive.length < t.needed + 1 && free.length > 0) alive.push(free.shift()!.id);
         townGuards.set(id, alive);
@@ -4273,7 +4333,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
       // Hiding in a building (round 7) too: a move would bring it out.
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || chargers.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
+      const detached = (id: number) => inSquad(id) || dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || chargers.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -4316,14 +4376,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (here.length > 0) out.push({ c: "unpost", building: homeOutpost.id });
         } else if (behindNow && here.length < plan.behindGuards) {
           const free = soldiers
-            .filter((u) => u.type === UnitType.Spearman && u.order !== Order.Post && !guarding.has(u.id) && !rescueSquad.has(u.id) && dist2(u.x, u.y, home.cellX, home.cellY) <= FORT_HOME * FORT_HOME)
+            .filter((u) => u.type === UnitType.Spearman && u.order !== Order.Post && !guarding.has(u.id) && !rescueSquad.has(u.id) && !inSquad(u.id) && dist2(u.x, u.y, home.cellX, home.cellY) <= FORT_HOME * FORT_HOME)
             .slice(0, Math.min(plan.behindGuards, rules.outpost?.slots ?? 6) - here.length)
             .map((u) => u.id);
           if (free.length > 0) out.push({ c: "post", u: free, building: homeOutpost.id });
         }
       }
       const army =
-        guarding.size === 0 && rescueSquad.size === 0 && peekId < 0 && posted.length === 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id) && !rescueSquad.has(u.id) && u.id !== peekId && u.order !== Order.Post);
+        guarding.size === 0 && rescueSquad.size === 0 && peekId < 0 && posted.length === 0 && squads.length === 0
+          ? soldiers
+          : soldiers.filter((u) => !guarding.has(u.id) && !rescueSquad.has(u.id) && u.id !== peekId && u.order !== Order.Post && !inSquad(u.id));
       const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
       if (mode !== "home") homeSince = -1;
       else if (homeSince < 0) homeSince = tick;
@@ -4426,12 +4488,16 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             chargeMove = tick;
           }
         } else {
-          const cavalry = army.filter((u) => u.type === UnitType.Cavalry && !detached(u.id));
+          // NN v4 (HEAD_CHARGE): now, with up to CHARGE_NOW_SPEARS x its cavalry of spearmen by the target; or not now.
+          const netCharge = netChoice === null ? AS_HARD : netChoice[HEAD_CHARGE];
+          const spearCap = netCharge === CHARGE_NOW ? CHARGE_NOW_SPEARS : 1;
+          const cavalry = netCharge === CHARGE_HOLD ? [] : army.filter((u) => u.type === UnitType.Cavalry && !detached(u.id));
           if (cavalry.length >= CHARGE_MIN) {
             const cc = centre(cavalry, ac.x, ac.y);
             const target = prey(cc.x, cc.y)[0];
             // Weighed first: no more spearmen than cavalry by the target, not a spot it gave up lately.
-            if (target !== undefined && spearsBy(target.x, target.y) <= cavalry.length && tick >= (chargeRestAt.get(spotKey(target.x, target.y)) ?? 0)) {
+            if (target !== undefined && spearsBy(target.x, target.y) <= cavalry.length * spearCap && tick >= (chargeRestAt.get(spotKey(target.x, target.y)) ?? 0)) {
+              if (netCharge === CHARGE_NOW) counted.chargeNow++;
               const ids = cavalry.map((u) => u.id);
               for (const id of ids) chargers.add(id);
               chargeAt = { x: target.x, y: target.y, size: ids.length, target: target.id };
@@ -4442,6 +4508,141 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               armyIds.length = 0;
               armyIds.push(...keep);
             }
+          }
+        }
+      }
+
+      // --- NN v4 (HEAD_SQUAD, D-122): squads off on their own -----------------------------------------------
+      {
+        /** The forts reaching (x, y) and 1.3 x the enemy seen there in the last minute: does `list` beat them (D-083 (a), as the rescue weighs). */
+        const squadBeats = (list: { type: number }[], x: number, y: number) => {
+          let enemy = 0;
+          for (const e of intel.values()) if (!e.post && tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, x, y) <= SQUAD_NEAR * SQUAD_NEAR) enemy += WORTH[e.type];
+          const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
+          const w = list.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+          return w * 10 >= fortsAtTown(gs, x, y, SQUAD_NEAR) * 10 + enemy * 13;
+        };
+        // Those out: weighed again each think, as the rescue: half gone, or outmatched or under arrows where they stand, back
+        // home; done, or past their time, back with the army.
+        for (let k = squads.length - 1; k >= 0; k--) {
+          const q = squads[k];
+          const squad = soldiers.filter((u) => q.ids.has(u.id));
+          const sc = centre(squad, q.x, q.y);
+          const ids = squad.map((u) => u.id);
+          if (q.at < 0 && dist2(sc.x, sc.y, q.x, q.y) <= SQUAD_NEAR * SQUAD_NEAR) q.at = tick;
+          let why: "" | "squadLost" | "squadWeak" | "squadDone" | "squadTimeout" = "";
+          if (squad.length * 2 < q.size) why = "squadLost";
+          else if (!squadBeats(squad, sc.x, sc.y) || underArrows(sc)) why = "squadWeak";
+          else if (q.at < 0 && tick - q.start >= SQUAD_WALK) why = "squadTimeout";
+          else if (q.task === SQUAD_RAID) {
+            // At the spot: the enemy farmers by it, nearest first; those gone from sight while it stands by them were killed (or hid).
+            const near = enemyFarmers.filter((f) => dist2(f.x, f.y, sc.x, sc.y) <= SQUAD_NEAR * SQUAD_NEAR);
+            for (const [id, t] of raidSeen) if (tick - t <= 40 && !enemyFarmers.some((f) => f.id === id)) {
+              counted.raidFarmers++;
+              raidSeen.delete(id);
+            }
+            for (const f of near) raidSeen.set(f.id, tick);
+            if (near.length > 0) q.quiet = tick;
+            if (q.at >= 0 && (tick - q.at >= SQUAD_RAID_TIME || tick - q.quiet >= SQUAD_RAID_QUIET)) why = "squadDone";
+            else if (q.at >= 0 && near.length > 0 && tick - q.moveAt >= 100) {
+              near.sort((a, b) => dist2(a.x, a.y, sc.x, sc.y) - dist2(b.x, b.y, sc.x, sc.y) || a.id - b.id);
+              out.push({ c: "attack", u: ids, target: near[0].id });
+              q.moveAt = tick;
+            }
+          } else if (q.task === SQUAD_TAKE) {
+            const t = towns.get(q.town);
+            if (t === undefined || t.owner === player || t.state === TownState.Ruins) why = "squadDone";
+            else if (q.at >= 0 && tick - q.at >= SQUAD_HOLD) why = "squadTimeout";
+          } else if (q.at >= 0 && tick - q.at >= SQUAD_HOLD) why = "squadDone";
+          else if (q.task === SQUAD_TOWN) {
+            const t = towns.get(q.town);
+            if (t === undefined || t.owner !== player) why = "squadDone";
+          }
+          if (why !== "") {
+            if (ids.length > 0) out.push({ c: why === "squadDone" || why === "squadTimeout" ? "move" : "retreat", u: ids, x: post.x, y: post.y });
+            if (why === "squadDone" || why === "squadTimeout") rejoin.push(...ids);
+            counted[why]++;
+            squads.splice(k, 1);
+          } else if (ids.length > 0 && tick - q.moveAt >= 400 && (q.at < 0 || q.task !== SQUAD_RAID)) {
+            out.push({ c: "move", u: ids, x: q.x, y: q.y });
+            q.moveAt = tick;
+          }
+        }
+        // A new one where the network chooses (at most squadMost out; squadShare of the army not detached).
+        const task = netChoice === null ? AS_HARD : netChoice[HEAD_SQUAD];
+        if (task !== AS_HARD && squads.length < plan.squadMost) {
+          const pool = army.filter((u) => !detached(u.id) && u.type !== UnitType.Siege);
+          const size = Math.trunc((pool.length * plan.squadShare) / 100);
+          let target: { x: number; y: number; town: number } | null = null;
+          if (size >= SQUAD_MIN) {
+            if (task === SQUAD_HOME) target = { x: post.x, y: post.y, town: -1 };
+            else if (task === SQUAD_TOWN) {
+              let best = -1;
+              let bestD = 0;
+              for (const [id, t] of towns) {
+                if (t.owner !== player || t.state !== TownState.Governed || squads.some((q) => q.town === id)) continue;
+                const d = dist2(t.x, t.y, home.cellX, home.cellY);
+                if (best < 0 || d < bestD) {
+                  best = id;
+                  bestD = d;
+                }
+              }
+              if (best >= 0) target = { x: towns.get(best)!.x, y: towns.get(best)!.y, town: best };
+            } else if (task === SQUAD_TAKE) {
+              let best = -1;
+              let bestD = 0;
+              for (const [id, t] of towns) {
+                if (t.size !== TownSize.Small || t.owner === player || t.state === TownState.Ruins || t.state === TownState.Plundering || underArrows(t) || squads.some((q) => q.town === id)) continue;
+                const remembered = [...intel.values()].filter((e) => tick - e.tick <= FORT_FORGET && dist2(e.x, e.y, t.x, t.y) <= 14 * 14);
+                const d = dist2(t.x, t.y, home.cellX, home.cellY);
+                if (best >= 0 && d >= bestD) continue;
+                const n = pool.slice(0, size);
+                if (n.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0) * 10 < townDefence(rules, fv, player, t, remembered) * 13) continue;
+                best = id;
+                bestD = d;
+              }
+              if (best >= 0) target = { x: towns.get(best)!.x, y: towns.get(best)!.y, town: best };
+            } else if (task === SQUAD_RAID) {
+              // Where its farmers work (the enemy's camps, mines and farms it knows of; else its farmers in sight), out of its
+              // forts' reach and with no enemy soldier seen by it in the last minute, nearest its own main city first.
+              const spots: { x: number; y: number }[] = [];
+              for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+                if (view.buildings[r + BuildingField.owner] !== 1 - player) continue;
+                const ty = view.buildings[r + BuildingField.type];
+                if (ty !== BuildingType.LumberCamp && ty !== BuildingType.Mine && ty !== BuildingType.Farm) continue;
+                spots.push({ x: view.buildings[r + BuildingField.cellX] + 1, y: view.buildings[r + BuildingField.cellY] + 1 });
+              }
+              for (const f of enemyFarmers) spots.push({ x: f.x, y: f.y });
+              let bestD = 0;
+              for (const sp of spots) {
+                if (underArrows(sp)) continue;
+                let seen = false;
+                for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, sp.x, sp.y) <= 14 * 14) seen = true;
+                if (seen) continue;
+                const d = dist2(sp.x, sp.y, home.cellX, home.cellY);
+                if (target === null || d < bestD) {
+                  target = { x: sp.x, y: sp.y, town: -1 };
+                  bestD = d;
+                }
+              }
+            }
+          }
+          if (size >= SQUAD_MIN && target === null) counted.squadNoTarget++;
+          if (size >= SQUAD_MIN && target !== null) {
+            const at = target;
+            // A raid: cavalry first, then spearmen (fast, and nothing to cover); the others, those nearest the target.
+            const kind = (u: HardUnit) => (task !== SQUAD_RAID ? 0 : u.type === UnitType.Cavalry ? 0 : u.type === UnitType.Spearman ? 1 : 2);
+            const pick = pool
+              .slice()
+              .sort((a, b) => kind(a) - kind(b) || dist2(a.x, a.y, at.x, at.y) - dist2(b.x, b.y, at.x, at.y) || rank(a.fx, a.fy) - rank(b.fx, b.fy))
+              .slice(0, size);
+            const ids = pick.map((u) => u.id);
+            squads.push({ ids: new Set(ids), task, x: at.x, y: at.y, town: at.town, start: tick, size: ids.length, moveAt: tick, at: -1, quiet: tick });
+            out.push({ c: "move", u: ids, x: at.x, y: at.y });
+            counted[task === SQUAD_RAID ? "squadRaid" : task === SQUAD_HOME ? "squadHome" : task === SQUAD_TOWN ? "squadTown" : "squadTake"]++;
+            const keep = armyIds.filter((id) => !ids.includes(id));
+            armyIds.length = 0;
+            armyIds.push(...keep);
           }
         }
       }

@@ -9,7 +9,7 @@
 // and CI's scripted groups push, push-crush, push-turtle), no curriculum; the heads in EsConfig.fixed keep the
 // start's output rows (from asHardNet: AS_HARD, always), so the search is over the others alone.
 
-import { AS_HARD, HEAD_BUILD, HEAD_MIX, NET_HEADS, NET_SHAPE, type NetWeights } from "../net.ts";
+import { AS_HARD, asHardNet, HEAD_BUILD, HEAD_MIX, NET_HEADS, NET_SHAPE, type NetWeights } from "../net.ts";
 import { runAll } from "./pool.ts";
 import type { GameOutcome, Opponent, Switches } from "./play.ts";
 import type { Job } from "./worker.ts";
@@ -106,8 +106,31 @@ export interface GenerationReport {
   choices: number[][];
   /** NN v2 (ceo 2026-10-30): candidates whose choices changed within a game (by the game, not one set for all of it). */
   varied: number;
+  /** NN v4 (D-122): the trained side's AI counters and kills (GameOutcome's aiStats, killed), summed over all games. */
+  aiStats?: Record<string, number>;
+  killed?: { farmers: number; backByCavalry: number };
   shaping: number;
   seconds: number;
+}
+
+/** NN v4: a game's AI counters and kills added to the sums. */
+export function addStats(sum: Record<string, number>, killed: { farmers: number; backByCavalry: number }, o: GameOutcome): void {
+  for (const [k, v] of Object.entries(o.aiStats ?? {})) sum[k] = (sum[k] ?? 0) + v;
+  killed.farmers += o.killed?.farmers ?? 0;
+  killed.backByCavalry += o.killed?.backByCavalry ?? 0;
+}
+
+/**
+ * NN v4 (D-122, ceo 2026-11-04: the first eval lists what the squads did): squads sent by task, how they ended, the
+ * farmers raids killed, charges on "now", and all the enemy farmers its units killed and ranged and mages its cavalry killed.
+ */
+export function squadText(st: Record<string, number>, killed: { farmers: number; backByCavalry: number }): string {
+  const n = (k: string) => st[k] ?? 0;
+  return (
+    `分隊 偷襲 ${n("squadRaid")}／守家 ${n("squadHome")}／守城 ${n("squadTown")}／打小城 ${n("squadTake")}（找不到目標 ${n("squadNoTarget")}）；` +
+    `回來 ${n("squadDone")}、打不過退 ${n("squadWeak")}、少一半退 ${n("squadLost")}、走不到 ${n("squadTimeout")}；偷襲殺村民 ${n("raidFarmers")}；` +
+    `騎兵衝 ${n("chargeSent")}（現在衝 ${n("chargeNow")}）；殺對方村民 ${killed.farmers}、騎兵殺遠程法師 ${killed.backByCavalry}`
+  );
 }
 
 /** A small seeded generator for training (not the game's: learn/ never runs in a game). */
@@ -240,6 +263,8 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   const byOpp: Record<string, { games: number; won: number }> = {};
   const choices = NET_HEADS.map((k) => new Array(k).fill(0));
   let varied = 0;
+  const aiStats: Record<string, number> = {};
+  const killed = { farmers: 0, backByCavalry: 0 };
   for (let k = 0; k < candidates.length; k++) {
     let f = 0;
     let changed = false;
@@ -256,6 +281,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
       if (o.won < 0) draws++;
       if (o.reached) reached++;
       o.choices.forEach((h, i) => h.forEach((v, k) => (choices[i][k] += v)));
+      addStats(aiStats, killed, o);
     }
     fitness.push(f);
     if (changed) varied++;
@@ -282,7 +308,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   for (let k = 1; k < fitness.length; k++) if (fitness[k] > fitness[bestK]) bestK = k;
   state.best = candidatesVec[bestK];
   const total = candidates.length * games.length;
-  const report: GenerationReport = { generation: state.generation, games: total, won, draws, byOpp, reached, shaping, choices, varied, seconds: Math.round((performance.now() - t0) / 1000) };
+  const report: GenerationReport = { generation: state.generation, games: total, won, draws, byOpp, reached, shaping, choices, varied, aiStats, killed, seconds: Math.round((performance.now() - t0) / 1000) };
   state.generation++;
   state.history.push(report);
   return report;
@@ -300,6 +326,42 @@ export function newState(start: NetWeights, seed: number, config: Partial<EsConf
     at += k;
   });
   return { config: c, theta, generation: 0, seed, history: [] };
+}
+
+/**
+ * NN v4 (D-122, ceo 2026-11-04: go on from v3's weights, the new heads padded): a vector whose output layer holds the
+ * first heads of NET_HEADS only (v3: 5 of 7) with the others' rows added: weights 0, the AS_HARD bias at the trained
+ * old heads' mean (their learned margin), the other choices' 0. It chooses as it did, and as hard on the new heads, on
+ * every think. A vector of the full shape comes back as it is (added 0).
+ */
+export function widen(v: readonly number[], c: EsConfig): { theta: number[]; added: number; margin: number } {
+  const L = NET_SHAPE.length - 1;
+  let pre = 0;
+  for (let l = 0; l + 1 < L; l++) pre += NET_SHAPE[l] * NET_SHAPE[l + 1] + NET_SHAPE[l + 1];
+  const inputs = NET_SHAPE[L - 1];
+  const outputs = NET_SHAPE[L];
+  const old = (v.length - pre) / (inputs + 1);
+  let heads = 0;
+  for (let at = 0; at < old; heads++) at += NET_HEADS[heads] ?? Number.NaN;
+  if (!Number.isInteger(old) || NET_HEADS.slice(0, heads).reduce((a, k) => a + k, 0) !== old) throw new Error(`widen: ${v.length} entries are no network of the first heads of NET_HEADS`);
+  if (old === outputs) return { theta: [...v], added: 0, margin: 0 };
+  const w = v.slice(pre, pre + old * inputs);
+  const b = v.slice(pre + old * inputs);
+  const margins: number[] = [];
+  let at = 0;
+  for (let h = 0; h < heads; h++) {
+    if (!c.fixed.includes(h)) margins.push(b[at + AS_HARD]);
+    at += NET_HEADS[h];
+  }
+  const margin = Math.round(margins.length === 0 ? c.asHardMargin : margins.reduce((a, x) => a + x, 0) / margins.length);
+  const nb = [...b];
+  for (let h = heads; h < NET_HEADS.length; h++) for (let k = 0; k < NET_HEADS[h]; k++) nb.push(k === AS_HARD && !c.fixed.includes(h) ? margin : k === AS_HARD ? 1 : 0);
+  return { theta: [...v.slice(0, pre), ...w, ...new Array((outputs - old) * inputs).fill(0), ...nb], added: NET_HEADS.length - heads, margin };
+}
+
+/** A network of fewer heads (widen), at the full shape. */
+export function widenNet(net: NetWeights, c: EsConfig): NetWeights {
+  return fromVector(widen(toVector(net), c).theta, asHardNet());
 }
 
 /** The shape every network here has (net.ts NET_SHAPE). */

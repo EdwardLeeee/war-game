@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
-import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, DEFENSE_NONE, DEFENSE_TOWER, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
+import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, CHARGE_HOLD, CHARGE_NOW, choose, DEFENSE_NONE, DEFENSE_TOWER, features, forward, HEAD_ARMY, HEAD_DEFENSE, HEAD_SQUAD, HEAD_TOWN, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, SQUAD_HOME, SQUAD_RAID, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
+import { ES_DEFAULTS, rng, toVector, widen, widenNet } from "../src/ai/learn/es.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
@@ -1871,9 +1872,9 @@ function forcedNet(picks: number[]): NetWeights {
 
 test("D-086 B: the network's sums are integers: these weights and inputs give exactly these scores and choices", () => {
   const x = Array.from({ length: NET_INPUTS }, (_, i) => (i * 37 + 11) % 256);
-  assert.deepEqual(forward(testNet(), x), [6861, 18430, 20870, -4918, -26195, -14271, -51806, -58041, -39576, -17232, 60786, 68852, -2874, 18813, 20214]);
-  assert.deepEqual(choose(testNet(), x), [2, 0, 2, 2, 2]);
-  assert.deepEqual(choose(forcedNet([0, 0, 0, 0, 0]), x), [0, 0, 0, 0, 0], "a tie: the lowest index");
+  assert.deepEqual(forward(testNet(), x), [6903, 20067, 22418, -6404, -26019, -14545, -51831, -56520, -41466, -16907, 61448, 70060, -3500, 18130, 20794, -20400, -630, 17226, 5792, 26548, -22469, 4643, -102255]);
+  assert.deepEqual(choose(testNet(), x), [2, 0, 2, 2, 2, 4, 1]);
+  assert.deepEqual(choose(forcedNet([0, 0, 0, 0, 0, 0, 0]), x), [0, 0, 0, 0, 0, 0, 0], "a tie: the lowest index");
 });
 
 test("D-086 B: net.ts uses no floating point and no Math functions", () => {
@@ -1883,6 +1884,33 @@ test("D-086 B: net.ts uses no floating point and no Math functions", () => {
   assert.ok(!/Math\./.test(code), "no Math.*");
   assert.ok(!/\d\.\d/.test(code), "no decimal literals");
   assert.ok(!/Float(32|64)Array/.test(code), "no float arrays");
+});
+
+test("NN v4 (widen): v3's weights (5 heads) go on at the full shape: the old scores as they were, the new heads as hard by the learned margin", () => {
+  const r = rng(7);
+  const shape = [NET_SHAPE[0], NET_SHAPE[1], NET_SHAPE[2], 15];
+  const v3: NetWeights = {
+    layers: shape.slice(0, -1).map((inputs, l) => {
+      const outputs = shape[l + 1];
+      const b = Array.from({ length: outputs }, () => Math.round((r() - 0.5) * 200));
+      // Learned margins on the trained old heads (army, town, defense): mean 2400.
+      if (l === 2) [2300, 2500, 2400].forEach((m, k) => (b[[HEAD_ARMY, HEAD_TOWN, HEAD_DEFENSE][k] * 3 + AS_HARD] = m));
+      return { inputs, outputs, w: Array.from({ length: inputs * outputs }, () => Math.round((r() - 0.5) * 60)), b, shift: 4 };
+    }),
+  };
+  const wide = widen(toVector(v3), ES_DEFAULTS);
+  assert.equal(wide.added, 2);
+  assert.equal(wide.margin, 2400);
+  const net = widenNet(v3, ES_DEFAULTS);
+  for (let k = 0; k < 50; k++) {
+    const x = Array.from({ length: NET_SHAPE[0] }, () => Math.floor(r() * 256));
+    const out = forward(net, x);
+    assert.deepEqual(out.slice(0, 15), forward(v3, x), "the old heads' scores");
+    assert.deepEqual(out.slice(15), [2400, 0, 0, 0, 0, 2400, 0, 0], "squad and charge: as hard");
+    assert.deepEqual(choose(net, x).slice(HEAD_SQUAD), [AS_HARD, AS_HARD]);
+  }
+  assert.deepEqual(widen(wide.theta, ES_DEFAULTS).theta, wide.theta, "the full shape: as it is");
+  assert.throws(() => widen(toVector(v3).slice(1), ES_DEFAULTS), /widen/);
 });
 
 test("D-086 B: the network's inputs, 0..255 each, come from the AI's own view: enemy soldiers in the fog change nothing", () => {
@@ -2093,14 +2121,88 @@ test("NN v2: a candidate at the training's step size (asHardNet plus ES noise, s
   // A rough normal (the sum of four uniforms, scaled to a standard deviation of 1).
   const gauss = () => (next() + next() + next() + next() - 2) * Math.sqrt(3);
   let varied = 0;
-  for (let n = 0; n < 10; n++) {
+  for (let n = 0; n < 20; n++) {
     const start = asHardNet();
     const net: NetWeights = {
       layers: start.layers.map((L) => ({ ...L, w: L.w.map((v) => Math.max(-127, Math.min(127, Math.round(v + 4 * gauss())))), b: L.b.map((v) => Math.round(v + 64 * gauss())) })),
     };
     if (new Set(xs.map((x) => choose(net, x).join(""))).size > 1) varied++;
   }
-  assert.ok(varied >= 9, `${varied} of 10 choose by the game`);
+  // NN v4: 20 of them (seven heads draw the noise in another order than five did: 8 of the first 10).
+  assert.ok(varied >= 16, `${varied} of 20 choose by the game`);
+});
+
+// --- NN v4 (D-122): squads and the charge -----------------------------------------------------------------------
+
+/** Hard at minute 12 with 40 spearmen at home and the network forced to `pick` on the squad head; an enemy lumber camp in sight of a farmer when `camp`. */
+function squadGame(pick: number, camp = false) {
+  const g = emptyGame();
+  const w = g.w;
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  const ids = Array.from({ length: 40 }, (_, k) => put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 8), s0.cellY - 6 - Math.trunc(k / 8)));
+  let at: { x: number; y: number } | null = null;
+  if (camp) {
+    // Halfway, off the enemy's main city, in sight of a farmer of its own.
+    at = { x: Math.trunc((s0.cellX + s1.cellX) / 2) + 8, y: Math.trunc((s0.cellY + s1.cellY) / 2) };
+    w.addBuilding(1, BuildingType.LumberCamp, at.x, at.y, rules().buildings[BuildingType.LumberCamp].hp, 1000);
+    put(g, 0, UnitType.Farmer, at.x - 3, at.y);
+  }
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, peekFirst: 0, net: forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD, AS_HARD, pick, AS_HARD]) });
+  return { g, w, ai, ids, at };
+}
+
+test("NN v4 (HEAD_SQUAD): the network's squad goes, squadShare of the army; at most squadMost out; as hard, none", () => {
+  const home = squadGame(SQUAD_HOME);
+  const first = home.ai.think(buildView(home.g, 0)).filter((c) => c.c === "move" && c.u.length === 10);
+  assert.ok(first.length >= 1, "a quarter of 40 off to hold home");
+  for (let k = 0; k < 3; k++) {
+    home.w.tick += 10;
+    home.g.fog.update(home.w);
+    home.ai.think(buildView(home.g, 0));
+  }
+  const stats = home.ai.stats!();
+  assert.equal(stats.squadHome, 2, "two squads at most");
+  const raid = squadGame(SQUAD_RAID, true);
+  const sent = raid.ai.think(buildView(raid.g, 0)).find((c) => c.c === "move" && c.u.length === 10) as { x: number; y: number } | undefined;
+  assert.ok(sent !== undefined && raid.at !== null && (sent.x - raid.at.x) ** 2 + (sent.y - raid.at.y) ** 2 <= 4, "a raid on the enemy's lumber camp");
+  const none = squadGame(AS_HARD);
+  none.ai.think(buildView(none.g, 0));
+  assert.equal(none.ai.stats!().squadHome + none.ai.stats!().squadRaid, 0, "as hard: no squad");
+});
+
+test("NN v4 (HEAD_SQUAD): a squad holding home comes back to the army after SQUAD_HOLD; one half gone breaks off home", () => {
+  const q = squadGame(SQUAD_HOME);
+  q.ai.think(buildView(q.g, 0));
+  // At its post at once (it stands at home); 4 minutes on, it is done.
+  for (let k = 0; k < 2; k++) {
+    q.w.tick += 10;
+    q.g.fog.update(q.w);
+    q.ai.think(buildView(q.g, 0));
+  }
+  q.w.tick += 4 * 1200 + 10;
+  q.g.fog.update(q.w);
+  q.ai.think(buildView(q.g, 0));
+  assert.ok(q.ai.stats!().squadDone >= 1, "done, back with the army");
+  const raid = squadGame(SQUAD_RAID, true);
+  const out = raid.ai.think(buildView(raid.g, 0));
+  const sent = out.find((c) => c.c === "move" && c.u.length === 10) as { u: number[] };
+  kill(raid.g, sent.u.slice(0, 6));
+  raid.w.tick += 10;
+  raid.g.fog.update(raid.w);
+  raid.ai.think(buildView(raid.g, 0));
+  assert.ok(raid.ai.stats!().squadLost >= 1, "6 of 10 gone: back home");
+});
+
+test("NN v4 (HEAD_CHARGE): charge now goes with up to 2 x its cavalry of spearmen by the target, hard only with as many; hold, no charge", () => {
+  const net = (c: number) => ({ charge: true, net: forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD, AS_HARD, AS_HARD, c]) });
+  // 3 cavalry: hard goes with up to 3 spearmen by the target, now with up to 6 (chargeAt's row: 7 of 9 are within CHARGE_SPEAR).
+  assert.ok(!charged(chargeAt(3, 6, net(AS_HARD))), "as hard: 6 spearmen by it, no charge");
+  assert.ok(charged(chargeAt(3, 6, net(CHARGE_NOW))), "now: 6 spearmen by it (up to 6), a charge");
+  assert.ok(!charged(chargeAt(3, 9, net(CHARGE_NOW))), "now: 7 by it is past 6, none");
+  assert.ok(!charged(chargeAt(4, 0, net(CHARGE_HOLD))), "hold: none even with no spearmen");
 });
 
 test("D-086 B: choices can be ruled out (masking): the best allowed one is made", () => {

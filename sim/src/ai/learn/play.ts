@@ -79,6 +79,13 @@ export interface GameOutcome {
   combos: string[];
   /** The switches the game was played with. */
   switches: Required<Switches>;
+  /**
+   * NN v4 (D-122): the trained side's AI counters (its stats(): squads by task and how they ended, the farmers a raid
+   * killed, charges on the network's "now"), and from each dead unit's last hit, the enemy farmers its units killed
+   * and the enemy ranged and mages its cavalry killed (the back line).
+   */
+  aiStats: Record<string, number>;
+  killed: { farmers: number; backByCavalry: number };
 }
 
 /** As scripted-games --strategy push --speed h1 --formation close --late (D-086 A). */
@@ -129,10 +136,11 @@ function play(spec: GameSpec): GameOutcome {
   const hard = (p: number, plan: Partial<HardPlan>) => {
     const ai = createAi(p, spec.seed, { ...aiKnowledge(w.map, p, maxTicks, "hard"), hard: plan }, p);
     thinkers.push({ p, every: AI_THINK_EVERY, think: () => ai.think(buildView(g, p)) });
+    return ai;
   };
   const choices: number[][] = [];
   const combos = new Set<string>();
-  hard(me, {
+  const mine = hard(me, {
     ...spec.me,
     netSeen: (c) => {
       combos.add(c.join(""));
@@ -181,12 +189,33 @@ function play(spec: GameSpec): GameOutcome {
   const checks: { at: number; before: number }[] = [];
   const enemyCity = w.map.spawns[them];
   let seq = 0;
+  // NN v4: every unit's owner and type by id (kept after it dies), and the enemy's living units' last hit.
+  const unitBy = new Map<number, { owner: number; type: number }>();
+  let lastHitBy = new Map<number, number>();
+  const killed = { farmers: 0, backByCavalry: 0 };
   while (!w.over && g.tick < maxTicks) {
     for (const t of thinkers) {
       if (g.tick % t.every !== 0) continue;
       for (const body of t.think(t.p)) g.push({ ...body, t: g.tick, p: t.p, seq: seq++ } as Command);
     }
     g.step();
+    {
+      const hitNow = new Map<number, number>();
+      for (let s = 0; s < w.units.count; s++) {
+        const id = u.id[s];
+        if (!unitBy.has(id)) unitBy.set(id, { owner: u.owner[s], type: u.type[s] });
+        if (u.owner[s] === them) hitNow.set(id, u.hitById[s]);
+      }
+      for (const [id, by] of lastHitBy) {
+        if (hitNow.has(id)) continue;
+        const dead = unitBy.get(id);
+        const killer = unitBy.get(by);
+        if (dead === undefined || killer === undefined || killer.owner !== me) continue;
+        if (dead.type === UnitType.Farmer) killed.farmers++;
+        if ((dead.type === UnitType.Ranged || dead.type === UnitType.Mage) && killer.type === UnitType.Cavalry) killed.backByCavalry++;
+      }
+      lastHitBy = hitNow;
+    }
     // As scripted-games: every 20 ticks, the scripted player's (player 0's) gathering since, times the bonus, in equal shares.
     if (bonus > 0 && g.tick % 20 === 0) {
       const kinds = [Resource.Food, Resource.Wood, Resource.Gold];
@@ -240,5 +269,5 @@ function play(spec: GameSpec): GameOutcome {
   const margin = (soldiers[me] - soldiers[them]) / (soldiers[me] + soldiers[them] + 1) + (hp[me] - hp[them]) / full;
   const won = !w.over || (w.winner !== 0 && w.winner !== 1) ? -1 : w.winner === me ? 1 : 0;
   const switches = { keep: KEEP.on, siege: SIEGE.on, rich: RICH.on, market: MARKET.on };
-  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)), combos: [...combos].sort(), switches };
+  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)), combos: [...combos].sort(), switches, aiStats: mine.stats?.() ?? {}, killed };
 }

@@ -12,16 +12,23 @@
 //   - build: as hard / farmers first / barracks and ranges first (HEAD_BUILD);
 //   - town: as hard / plunder / govern a town it takes for the first time (HEAD_TOWN);
 //   - defense (NN v2, ceo 2026-10-29): as hard / an arrow tower next, saved up for, by its main city or a town
-//     it governs / no arrow tower now (HEAD_DEFENSE).
+//     it governs / no arrow tower now (HEAD_DEFENSE);
+//   - squad (NN v4, D-122; the user 2026-11-04: 「可以讓它有多個分隊」「像我一樣有時候偷襲」): as hard (no squad) /
+//     a squad off to raid the enemy's farmers / to hold its main city / to hold a town it governs / to take a town
+//     (HEAD_SQUAD; at most HardPlan.squadMost out at once, each squadShare of the army);
+//   - charge (NN v4, the user: 「或是突然用騎兵打後排」): as hard / its cavalry at the enemy's back line now /
+//     the cavalry kept with the army (HEAD_CHARGE).
 // How soldiers walk and fight stays the hard AI's.
 
 /** Each head's choices, in the order of the network's outputs; choice AS_HARD (0) is hard's own rule. */
-export const NET_HEADS: readonly number[] = [3, 3, 3, 3, 3];
+export const NET_HEADS: readonly number[] = [3, 3, 3, 3, 3, 5, 3];
 export const HEAD_ARMY = 0;
 export const HEAD_MIX = 1;
 export const HEAD_BUILD = 2;
 export const HEAD_TOWN = 3;
 export const HEAD_DEFENSE = 4;
+export const HEAD_SQUAD = 5;
+export const HEAD_CHARGE = 6;
 export const AS_HARD = 0;
 export const ARMY_HOME = 1;
 export const ARMY_BASE = 2;
@@ -33,6 +40,12 @@ export const TOWN_PLUNDER = 1;
 export const TOWN_GOVERN = 2;
 export const DEFENSE_TOWER = 1;
 export const DEFENSE_NONE = 2;
+export const SQUAD_RAID = 1;
+export const SQUAD_HOME = 2;
+export const SQUAD_TOWN = 3;
+export const SQUAD_TAKE = 4;
+export const CHARGE_NOW = 1;
+export const CHARGE_HOLD = 2;
 
 /** One layer: outputs x inputs weights (-128..127, row by row), a 32-bit bias per output, the right shift after ReLU. */
 export interface NetLayer {

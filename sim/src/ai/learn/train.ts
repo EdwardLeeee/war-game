@@ -13,8 +13,8 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { cpus } from "node:os";
-import { asHardNet, HEAD_ARMY, HEAD_DEFENSE, HEAD_TOWN, NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
-import { ES_DEFAULTS, type EsState, fromVector, generation, newState, sameShape } from "./es.ts";
+import { asHardNet, HEAD_ARMY, HEAD_CHARGE, HEAD_DEFENSE, HEAD_SQUAD, HEAD_TOWN, NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
+import { addStats, ES_DEFAULTS, type EsState, fromVector, generation, newState, sameShape, squadText, widen, widenNet } from "./es.ts";
 import type { GameOutcome, Opponent, Switches } from "./play.ts";
 import { runAll, threads } from "./pool.ts";
 import type { Job } from "./worker.ts";
@@ -68,6 +68,9 @@ interface EvalResult {
   choices: number[][];
   /** NN v2 (ceo 2026-10-30): the sets of choices it made over all its games (1: one set for everything, it does not choose by the game). */
   combos: number;
+  /** NN v4 (D-122): the AI counters and kills over all its games (GameOutcome's aiStats, killed). */
+  aiStats?: Record<string, number>;
+  killed?: { farmers: number; backByCavalry: number };
 }
 const tally = (res: GameOutcome[]): Tally => {
   const won = res.filter((o) => o.won === 1).length;
@@ -92,7 +95,12 @@ async function evaluate(name: string, net: NetWeights | null, n: number, m: numb
   const choices = NET_HEADS.map((k) => new Array(k).fill(0));
   for (const o of [...hard, ...crush]) o.choices.forEach((h, i) => h.forEach((v, k) => (choices[i][k] += v)));
   const combos = new Set([...hard, ...crush].flatMap((o) => o.combos));
+  const aiStats: Record<string, number> = {};
+  const killed = { farmers: 0, backByCavalry: 0 };
+  for (const o of [...hard, ...crush]) addStats(aiStats, killed, o);
   return {
+    aiStats,
+    killed,
     name,
     seed: seed0,
     hard: tally(hard),
@@ -141,15 +149,24 @@ if (mode === "dryrun") {
 } else if (mode === "es") {
   const resume = arg("resume", "");
   const startFile = arg("start", "");
-  const start: NetWeights = startFile === "" ? asHardNet() : JSON.parse(readFileSync(startFile, "utf8"));
-  if (!sameShape(start)) throw new Error("the start network has another shape");
   const config = JSON.parse(arg("config", "{}"));
+  const start0: NetWeights = startFile === "" ? asHardNet() : JSON.parse(readFileSync(startFile, "utf8"));
+  // NN v4 (D-122): a v3 network (5 heads) at the full shape, the new heads as hard (widen).
+  const start = sameShape(start0) ? start0 : widenNet(start0, { ...ES_DEFAULTS, ...config });
+  if (!sameShape(start)) throw new Error("the start network has another shape");
   let state: EsState = resume !== "" && existsSync(`${resume}/state.json`) ? JSON.parse(readFileSync(`${resume}/state.json`, "utf8")) : newState(start, Number(arg("seed", "1")), config);
   // Going on with other settings (the rules once they ship, ceo 2026-10-25): from the weights it has.
   state.config = { ...ES_DEFAULTS, ...state.config, ...config };
   // NN v3 B: this island's learning rate (lrByIsland, ceo 2026-11-03: one island at 2 x).
   const island = Number(arg("island", "-1"));
   if (island >= 0 && state.config.lrByIsland[island] !== undefined) state.config.lr = state.config.lrByIsland[island];
+  // NN v4 (D-122): going on from v3's weights, the new heads' rows added (weights 0, as hard by the learned margin).
+  const wide = widen(state.theta, state.config);
+  if (wide.added > 0) {
+    state.theta = wide.theta;
+    if (state.best !== undefined) state.best = widen(state.best, state.config).theta;
+    summary(`NN v4：從第 ${state.generation} 代的權重接著練，補上 ${wide.added} 組（分隊、騎兵衝），權重 0，照困難的偏差 ${wide.margin}（舊組學到的平均）。\n`);
+  }
   const limitH = Number(arg("hours", "5.5"));
   const maxGen = state.generation + Number(arg("generations", "1000000"));
   const m = state.config.mix;
@@ -158,12 +175,12 @@ if (mode === "dryrun") {
       `每代 ${state.config.pairs} 對候選，每個候選 ${m.hard + m.normal + m.push + m.crush + m.turtle} 局：困難 ${m.hard}、普通 ${m.normal}、push ${m.push}、push-crush ${m.crush}、push-turtle ${m.turtle}；` +
       `上限 ${state.config.maxTicks / 1200} 分，沒分出勝負算輸。固定照困難的組：${state.config.fixed.join("、")}（練兵、蓋什麼）。\n\n` +
       `「不照困難」：每組決定，不照困難的選擇在所有思考裡的次數和比例（ceo 2026-10-19）。\n\n` +
-      `| 代 | 局 | 贏 | 平手 | 輸 | 贏：困難／普通／push／crush／turtle | 打到對方主城 | 軍隊：守家／出兵 | 城鎮：搶／治理 | 防守：蓋塔／不蓋 | 隨局面改選擇的候選 | 加分權重 | 秒 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|`,
+      `| 代 | 局 | 贏 | 平手 | 輸 | 贏：困難／普通／push／crush／turtle | 打到對方主城 | 軍隊：守家／出兵 | 城鎮：搶／治理 | 防守：蓋塔／不蓋 | 分隊：偷襲／守家／守城／打小城 | 騎兵衝：現在／先跟著 | 隨局面改選擇的候選 | 加分權重 | 秒 | 分隊做了什麼 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`,
   );
   while (state.generation < maxGen) {
     const r = await generation(state, start);
     const by = ["hard", "normal", "push", "crush", "turtle"].map((k) => `${r.byOpp[k]?.won ?? 0}/${r.byOpp[k]?.games ?? 0}`).join("　");
-    summary(`| ${r.generation} | ${r.games} | ${r.won} | ${r.draws} | ${r.games - r.won - r.draws} | ${by} | ${r.reached} | ${dev(r.choices[HEAD_ARMY])} | ${dev(r.choices[HEAD_TOWN])} | ${dev(r.choices[HEAD_DEFENSE])} | ${r.varied}／${2 * state.config.pairs} | ${r.shaping.toFixed(3)} | ${r.seconds} |`);
+    summary(`| ${r.generation} | ${r.games} | ${r.won} | ${r.draws} | ${r.games - r.won - r.draws} | ${by} | ${r.reached} | ${dev(r.choices[HEAD_ARMY])} | ${dev(r.choices[HEAD_TOWN])} | ${dev(r.choices[HEAD_DEFENSE])} | ${dev(r.choices[HEAD_SQUAD] ?? [0])} | ${dev(r.choices[HEAD_CHARGE] ?? [0])} | ${r.varied}／${2 * state.config.pairs} | ${r.shaping.toFixed(3)} | ${r.seconds} | ${squadText(r.aiStats ?? {}, r.killed ?? { farmers: 0, backByCavalry: 0 })} |`);
     writeFileSync(`${out}/state.json`, JSON.stringify(state));
     writeFileSync(`${out}/net.json`, JSON.stringify(fromVector(state.theta, start)));
     // NN v3 B: the generation's best candidate, evaluated on new seeds (best.json).
@@ -175,7 +192,9 @@ if (mode === "dryrun") {
   summary(`\n到第 ${state.generation} 代，${hours().toFixed(2)} 小時。`);
 } else if (mode === "eval") {
   const file = arg("net", "");
-  const net: NetWeights | null = file === "" ? null : JSON.parse(readFileSync(file, "utf8"));
+  const net0: NetWeights | null = file === "" ? null : JSON.parse(readFileSync(file, "utf8"));
+  // NN v4 (D-122): a v3 network plays as it did, as hard on the new heads.
+  const net = net0 === null || sameShape(net0) ? net0 : widenNet(net0, ES_DEFAULTS);
   const names = arg("rules", "").split(",").filter((x) => x !== "");
   const bad = names.filter((x) => x !== "keep" && x !== "siege" && x !== "rich" && x !== "market");
   if (bad.length > 0) throw new Error(`--rules ${bad.join(",")}: keep, siege, rich or market`);
@@ -189,7 +208,7 @@ if (mode === "dryrun") {
       `| 對手 | 局 | 贏 | 平手 | 輸 | 贏－輸（標準差） | 第 45 分還在打的局 | 第 45 分箭樓（每局） | 第 45 分治理的城（每局） |\n|---|---|---|---|---|---|---|---|---|\n` +
       `| 困難（120 分） | ${r.hard.games} | ${r.hard.won} | ${r.hard.draws} | ${r.hard.lost} | ${h.d}（${h.sd.toFixed(1)}） | | | |\n` +
       `| push-crush（120 分） | ${r.crush.games} | ${r.crush.won} | ${r.crush.draws} | ${r.crush.lost} | ${wl(r.crush).d} | ${r.crush.at45} | ${r.crush.towers45.toFixed(1)} | ${r.crush.governed45.toFixed(1)} |\n\n` +
-      `- 防守組：蓋塔／不蓋 ${dev(r.defense)}\n- 選擇組合：${r.combos} 種${net !== null && r.combos <= 1 ? "（只有一種：網路沒有看局面）" : ""}`,
+      `- 防守組：蓋塔／不蓋 ${dev(r.defense)}\n- 分隊組：偷襲／守家／守城／打小城 ${dev(r.choices[HEAD_SQUAD] ?? [0])}；騎兵衝組：現在／先跟著 ${dev(r.choices[HEAD_CHARGE] ?? [0])}\n- ${squadText(r.aiStats ?? {}, r.killed ?? { farmers: 0, backByCavalry: 0 })}\n- 選擇組合：${r.combos} 種${net !== null && r.combos <= 1 ? "（只有一種：網路沒有看局面）" : ""}`,
   );
 } else if (mode === "report") {
   // Every eval.json under --dir; the control: --control, or the one named "control" there.
@@ -210,12 +229,12 @@ if (mode === "dryrun") {
   const rows = all.filter((r) => r !== control && r.name !== "control").map((r) => {
     const x = wl(r.hard);
     const same = r.seed === control.seed && r.hard.games === control.hard.games ? "" : "（種子或局數和對照不同）";
-    return `| ${r.name} | ${r.hard.won}-${r.hard.draws}-${r.hard.lost} | ${x.d} | ${x.d - c.d}${same} | ${c.sd > 0 ? ((x.d - c.d) / c.sd).toFixed(2) : "-"} | ${r.crush.won}-${r.crush.draws}-${r.crush.lost} | ${r.crush.towers45.toFixed(1)} | ${r.crush.governed45.toFixed(1)} | ${dev(r.defense)} | ${r.combos ?? "-"} |`;
+    return `| ${r.name} | ${r.hard.won}-${r.hard.draws}-${r.hard.lost} | ${x.d} | ${x.d - c.d}${same} | ${c.sd > 0 ? ((x.d - c.d) / c.sd).toFixed(2) : "-"} | ${r.crush.won}-${r.crush.draws}-${r.crush.lost} | ${r.crush.towers45.toFixed(1)} | ${r.crush.governed45.toFixed(1)} | ${dev(r.defense)} | ${r.combos ?? "-"} | ${dev(r.choices?.[HEAD_SQUAD] ?? [0])} | ${dev(r.choices?.[HEAD_CHARGE] ?? [0])} | ${squadText(r.aiStats ?? {}, r.killed ?? { farmers: 0, backByCavalry: 0 })} |`;
   });
   summary(
     `## 各島對照困難本身（種子從 ${control.seed} 起，對困難 ${control.hard.games} 局、push-crush ${control.crush.games} 局）\n\n` +
-      `對照：對困難 ${control.hard.won}-${control.hard.draws}-${control.hard.lost}（贏－輸 ${c.d}，標準差 ${c.sd.toFixed(1)}）；push-crush ${control.crush.won}-${control.crush.draws}-${control.crush.lost}，第 45 分箭樓 ${control.crush.towers45.toFixed(1)}、治理的城 ${control.crush.governed45.toFixed(1)}（每局，${control.crush.at45} 局打到第 45 分）。\n\n` +
-      `| 島 | 對困難 贏-平-輸 | 贏－輸 | 比對照多 | ÷ 標準差 | push-crush 贏-平-輸 | 第 45 分箭樓 | 第 45 分治理的城 | 防守：蓋塔／不蓋（不照困難） | 選擇組合（1：沒看局面） |\n|---|---|---|---|---|---|---|---|---|---|\n` +
+      `對照：對困難 ${control.hard.won}-${control.hard.draws}-${control.hard.lost}（贏－輸 ${c.d}，標準差 ${c.sd.toFixed(1)}）；push-crush ${control.crush.won}-${control.crush.draws}-${control.crush.lost}，第 45 分箭樓 ${control.crush.towers45.toFixed(1)}、治理的城 ${control.crush.governed45.toFixed(1)}（每局，${control.crush.at45} 局打到第 45 分）；${squadText(control.aiStats ?? {}, control.killed ?? { farmers: 0, backByCavalry: 0 })}。\n\n` +
+      `| 島 | 對困難 贏-平-輸 | 贏－輸 | 比對照多 | ÷ 標準差 | push-crush 贏-平-輸 | 第 45 分箭樓 | 第 45 分治理的城 | 防守：蓋塔／不蓋（不照困難） | 選擇組合（1：沒看局面） | 分隊：偷襲／守家／守城／打小城 | 騎兵衝：現在／先跟著 | 分隊做了什麼 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n` +
       rows.join("\n"),
   );
 } else {

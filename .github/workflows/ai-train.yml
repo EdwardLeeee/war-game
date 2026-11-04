@@ -6,6 +6,8 @@
 # and the evals each in their own concurrency group; at most 6 training jobs and 2 eval jobs at once (8 in all).
 # NN v3 (ai/train-v3, never merged; ceo 2026-10-31): 3 islands, 120-minute games; a checkpoint's download is tried
 # again (v2's chain broke on one failed download, run 41078447033); its own groups (ai-train-v3-*).
+# NN v4 (ai/train-v4, never merged; D-122, ceo 2026-11-04): squads and the charge, from v3's weights (train.ts widens
+# them); its own groups (ai-train-v4-*), so a trial runs beside v3's chain and the switch waits for a run's end.
 # A job stops itself before its hours and leaves a checkpoint as an artifact (kept 14 days, never committed);
 # the next run goes on from it (from_run). The last job adds up the runner hours of the run.
 #   dryrun  cores and games an hour
@@ -69,7 +71,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ai-train-v3-${{ inputs.mode || 'push' }}
+  group: ai-train-v4-${{ inputs.mode || 'push' }}
   cancel-in-progress: false
 
 jobs:
