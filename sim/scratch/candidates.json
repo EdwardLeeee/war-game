@@ -1,0 +1,35 @@
+{
+ "traces": [],
+ "scripted": [
+  {
+   "name": "mem",
+   "a": {
+    "fortHideMemory": true
+   },
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push-fortress-hold-random",
+    "push-turtle",
+    "push-turtle-random",
+    "push-crush",
+    "push-crush-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "nmem",
+   "a": {
+    "fortHideMemory": true
+   },
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push-fortress-hold-random"
+   ],
+   "difficulty": "normal"
+  }
+ ]
+}
