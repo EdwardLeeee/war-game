@@ -32,10 +32,20 @@ def tile(a, name, grass, pad=24):
             bg.paste(grass, (x, y))
     X, Y = pad - x0, pad - y0
     if sh:
+        # the shadow darkens the ground it falls on, keeping its colour (lit x (0.45, 0.46, 0.50), as R11's composer and
+        # the client): a navy overlay read as blue dots (PR2 review 2)
+        import numpy as np
         si, sx, sy = sh
-        dark = Image.new("RGBA", si.size, (22, 28, 46, 0))
-        dark.putalpha(si.getchannel("A").point(lambda v: int(v * 0.55)))
-        bg.alpha_composite(dark, (int(X - sx), int(Y - sy)))
+        a = np.zeros((h, w), np.float32)
+        sa = np.asarray(si.getchannel("A"), np.float32) / 255.0
+        x0, y0 = int(X - sx), int(Y - sy)
+        xa, ya, xb, yb = max(0, x0), max(0, y0), min(w, x0 + si.width), min(h, y0 + si.height)
+        if xa < xb and ya < yb:
+            a[ya:yb, xa:xb] = sa[ya - y0:yb - y0, xa - x0:xb - x0]
+        g = np.asarray(bg, np.float32)
+        k = 1 - a[..., None] * (1 - np.array([0.45, 0.46, 0.50]))
+        g[..., :3] *= k
+        bg = Image.fromarray(np.clip(g, 0, 255).astype(np.uint8), "RGBA")
     bg.alpha_composite(im, (int(round(X - ax)), int(round(Y - ay))))
     return bg.convert("RGB")
 
