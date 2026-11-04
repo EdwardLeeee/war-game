@@ -1310,6 +1310,35 @@ test("D-119: an outpost's hidden spearmen as its row shows them, as many as it h
   assert.ok(groupWorth(withIt, engines, v) < groupWorth(withIt, ranged.slice(0, 20), v), "siege engines pull it down sooner");
 });
 
+test("D-119 (FORT_HIDE_AI.memory): a remembered outpost as last seen finished, its spearmen and hold; off, 9 and its reach", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const id = w.addBuilding(1, BuildingType.Outpost, 40, 40, 1500, 1000);
+  w.buildings.col.flags[w.building(id)] |= BuildingFlag.Hold;
+  const seen = buildView(g, null);
+  const memo = new Map();
+  FORT_HIDE_AI.memory = true;
+  try {
+    enemyForts(seen, 0, rules(), memo);
+    assert.deepEqual(memo.get(id), { soldiers: 0, hold: true }, "seen finished, empty, holding");
+    // The same row, remembered (as fog keeps it: place and hp).
+    let at = 0;
+    while (seen.buildings[at] !== id) at += 16;
+    const row = Array.from(seen.buildings.slice(at, at + 16));
+    const view = { ...seen, buildings: Int32Array.from(row.map((v, k) => (k === 13 ? BuildingFlag.Remembered : k === 14 ? 0 : v))) };
+    const [m] = enemyForts(view, 0, rules(), memo);
+    assert.equal(m.seen, true, "known");
+    assert.equal(m.soldiers, 0);
+    assert.equal(m.hits, 1, "it held");
+    FORT_HIDE_AI.memory = false;
+    const [o] = enemyForts(view, 0, rules(), memo);
+    assert.equal(o.seen, false);
+    assert.equal(o.hits, rules().outpost!.reach, "off: its reach");
+  } finally {
+    FORT_HIDE_AI.memory = false;
+  }
+});
+
 test("D-119: a holding outpost strikes only what stands by it (hits 1); attacking, its spearmen come out (reach)", () => {
   const g = emptyGame();
   const w = g.w;

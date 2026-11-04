@@ -412,10 +412,18 @@ export interface Fort {
  * falls, so their pokes do not thin out as a group of towers' arrows do while the towers fall one by one (D-081's
  * calibration was on 5 towers); the measurements choose it.
  */
-export const FORT_HIDE_AI = { on: true, scale: 1000 };
+export const FORT_HIDE_AI = { on: true, scale: 1000, memory: false };
+
+/**
+ * D-119 (FORT_HIDE_AI.memory; op1, run 41770978767: the turtle mans 2 of its 6 outposts, and each empty one out of
+ * sight counted 9 with an 8-cell reach, so hard held off and 1 -> 10 random-map turtle games ran out the clock): what
+ * the AI last saw of each enemy outpost, finished, in sight: its spearmen and whether it held. A remembered row has
+ * neither (fog keeps a building's place and hp only).
+ */
+export type OutpostMemory = Map<number, { soldiers: number; hold: boolean }>;
 
 /** The enemy outposts and arrow towers in the view (in sight or remembered). */
-export function enemyForts(view: PlayerView, player: number, rules: Rules): Fort[] {
+export function enemyForts(view: PlayerView, player: number, rules: Rules, memo?: OutpostMemory): Fort[] {
   const arrows = rules.arrows === undefined ? 7 : (rules.arrows.arrowTower.range + CELL - 1) >> CELL_SHIFT;
   const guards = rules.outpost?.reach ?? 8;
   const towers = (rules.towerReach?.outpost ?? 6) + arrows;
@@ -427,8 +435,14 @@ export function enemyForts(view: PlayerView, player: number, rules: Rules): Fort
     if (owner === player || owner === NEUTRAL || (type !== BuildingType.Outpost && type !== BuildingType.ArrowTower)) continue;
     const outpost = type === BuildingType.Outpost;
     const flags = view.buildings[r + BuildingField.flags];
+    const id = view.buildings[r + BuildingField.id];
+    const seenNow = (flags & BuildingFlag.Remembered) === 0;
+    const done = view.buildings[r + BuildingField.progress] >= 1000;
+    // FORT_HIDE_AI.memory: a remembered outpost as last seen finished (none: 9, and its guards' reach, as without it).
+    const was = hide && outpost && !seenNow && FORT_HIDE_AI.memory ? memo?.get(id) : undefined;
+    if (hide && outpost && seenNow && done && memo !== undefined) memo.set(id, { soldiers: view.buildings[r + BuildingField.soldiers], hold: (flags & BuildingFlag.Hold) !== 0 });
     // D-119: a holding outpost's spearmen strike only what stands by it.
-    const hold = hide && outpost && (flags & BuildingFlag.Hold) !== 0;
+    const hold = hide && outpost && (seenNow ? (flags & BuildingFlag.Hold) !== 0 : was?.hold === true);
     out.push({
       id: view.buildings[r + BuildingField.id],
       type,
@@ -438,9 +452,10 @@ export function enemyForts(view: PlayerView, player: number, rules: Rules): Fort
       hits: outpost ? (hold ? 1 : guards) : arrows,
       reach: outpost ? Math.max(guards, towers) : arrows,
       done: view.buildings[r + BuildingField.progress] >= 1000,
-      seen: (view.buildings[r + BuildingField.flags] & BuildingFlag.Remembered) === 0,
+      // A remembered outpost the AI saw finished counts as it saw it (FORT_HIDE_AI.memory).
+      seen: seenNow || was !== undefined,
       occupied: (flags & BuildingFlag.Occupied) !== 0,
-      soldiers: hide && outpost ? view.buildings[r + BuildingField.soldiers] : 0,
+      soldiers: hide && outpost ? (seenNow ? view.buildings[r + BuildingField.soldiers] : (was?.soldiers ?? 0)) : 0,
       hold,
       hp: view.buildings[r + BuildingField.hp],
     });
@@ -1688,6 +1703,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   /** What the army that set out was worth against forts (D-081: a break-off remembers that, not what is left). */
   let marchWorth = 0;
   const failedAt = new Map<number, Failed>();
+  /** D-119 (FORT_HIDE_AI.memory): the enemy outposts as last seen finished. */
+  const outpostMemo: OutpostMemory = new Map();
   /** Falling back round forts (aroundForts): the point first, and until when. */
   let via: { x: number; y: number; until: number } | null = null;
   /** Towns it fell back from because of forts (D-081, ceo 2026-10-10): the forts, and when. */
@@ -2040,7 +2057,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       // The clock: the end-of-game rules count back from the time limit, if there is one.
       const endgame = toGo >= 0 && toGo <= ENDGAME_TO_GO;
       // Enemy forts (D-080, D-081).
-      const forts = enemyForts(view, player, rules);
+      const forts = enemyForts(view, player, rules, outpostMemo);
       /** A town under the arrows or guards of an enemy fort (D-081). */
       const underArrows = (t: { x: number; y: number }) => forts.some((o) => o.done && fortDist2(o, t.x, t.y) <= (o.hits + 1) * (o.hits + 1));
       // Garrisons: the soldiers nearest each held town (not mages), topped up as they fall;
@@ -3352,6 +3369,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** What the army that set out was worth against forts (D-081: a break-off remembers that, not what is left). */
   let marchWorth = 0;
   const failedAt = new Map<number, Failed>();
+  /** D-119 (FORT_HIDE_AI.memory): the enemy outposts as last seen finished. */
+  const outpostMemo: OutpostMemory = new Map();
   /** D-086 A9 (plan.fortExit): forts it really fought and broke off from: how many times in a row, the last when. */
   const fortLost = new Map<number, { n: number; tick: number }>();
   /** Falling back round forts (aroundForts): the point first, and until when. */
@@ -4305,7 +4324,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       /** D-086 A4 (plan.ruinsAgain): last seen in ruins, out of sight now, and past the time read off them: maybe neutral again. */
       const staleRuin = (id: number, t: HardTown) => plan.ruinsAgain && t.state === TownState.Ruins && !t.visible && restoreAt.has(id) && tick >= restoreAt.get(id)!;
       // Enemy forts (D-080, D-081).
-      const forts = enemyForts(view, player, rules);
+      const forts = enemyForts(view, player, rules, outpostMemo);
       /** A town under the arrows or guards of an enemy fort (D-081). */
       const underArrows = (t: { x: number; y: number }) => forts.some((o) => o.done && fortDist2(o, t.x, t.y) <= (o.hits + 1) * (o.hits + 1));
       // Garrisons: the spearmen (else any soldier but a mage) nearest each held town, one more
