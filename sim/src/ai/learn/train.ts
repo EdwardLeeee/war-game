@@ -4,6 +4,12 @@
 //   node src/ai/learn/train.ts es --out DIR [--start FILE] [--resume DIR] [--seed N] [--hours H] [--generations N] [--config JSON]
 //                                                                    from the network that always plays as hard (asHardNet) unless --start;
 //                                                                    --config over ES_DEFAULTS, or over the resumed run's settings
+//   node src/ai/learn/train.ts pairs --resume DIR --island I --out DIR [--config JSON] [--slot S --slots N --start-at EPOCH]
+//                                                                    NN v4s: one generation's pairs of island I from DIR's state: the main
+//                                                                    chain's (no --slot), or fill-in slot S of N's, one pair after another
+//                                                                    until the main chain's time is up or DIR/stop appears (pairs.json)
+//   node src/ai/learn/train.ts step --resume DIR --pairs DIR --island I --out DIR [--config JSON] [--wait S]
+//                                                                    NN v4s: the step from every pairs.json of island I under --pairs
 //   node src/ai/learn/train.ts eval [--net FILE] --games N --crush M --seed S --out DIR [--rules keep,siege,rich,market] [--name X]
 //                                                                    against hard (N on each map, both spawns) and push-crush (M on each
 //                                                                    map), seeds from S; no --net: hard itself (the control); eval.json too
@@ -14,7 +20,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { cpus } from "node:os";
 import { asHardNet, HEAD_ARMY, HEAD_CHARGE, HEAD_DEFENSE, HEAD_SQUAD, HEAD_TOWN, NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
-import { addStats, ES_DEFAULTS, type EsState, fromVector, generation, newState, sameShape, squadText, widen, widenNet } from "./es.ts";
+import { addStats, ES_DEFAULTS, type EsConfig, type EsState, fromVector, generation, type GenerationReport, newState, type PairResult, playPairs, sameShape, squadText, update, widen, widenNet } from "./es.ts";
 import type { GameOutcome, Opponent, Switches } from "./play.ts";
 import { runAll, threads } from "./pool.ts";
 import type { Job } from "./worker.ts";
@@ -123,6 +129,28 @@ const wl = (t: Tally) => {
   return { d, sd: Math.sqrt(t.games * v) };
 };
 
+/** A generation's row of the es table (es, step). */
+const ES_HEAD =
+  `| 代 | 局 | 贏 | 平手 | 輸 | 贏：困難／普通／push／crush／turtle | 打到對方主城 | 軍隊：守家／出兵 | 城鎮：搶／治理 | 防守：蓋塔／不蓋 | 分隊：偷襲／守家／守城／打小城 | 騎兵衝：現在／先跟著 | 隨局面改選擇的候選 | 對數（主鏈＋補位） | 主鏈等 runner（秒） | 加分權重 | 秒 | 分隊做了什麼 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`;
+function esRow(r: GenerationReport, pairs: number): string {
+  const by = ["hard", "normal", "push", "crush", "turtle"].map((k) => `${r.byOpp[k]?.won ?? 0}/${r.byOpp[k]?.games ?? 0}`).join("　");
+  const p = r.pairs ?? pairs;
+  return `| ${r.generation} | ${r.games} | ${r.won} | ${r.draws} | ${r.games - r.won - r.draws} | ${by} | ${r.reached} | ${dev(r.choices[HEAD_ARMY])} | ${dev(r.choices[HEAD_TOWN])} | ${dev(r.choices[HEAD_DEFENSE])} | ${dev(r.choices[HEAD_SQUAD] ?? [0])} | ${dev(r.choices[HEAD_CHARGE] ?? [0])} | ${r.varied}／${2 * p} | ${p - (r.fillPairs ?? 0)}＋${r.fillPairs ?? 0} | ${r.wait === undefined || r.wait < 0 ? "-" : r.wait} | ${r.shaping.toFixed(3)} | ${r.seconds} | ${squadText(r.aiStats ?? {}, r.killed ?? { farmers: 0, backByCavalry: 0 })} |`;
+}
+
+/** NN v4s: a checkpoint (DIR/state.json) with this run's settings over its own, the island's learning rate, and v3's shape widened. */
+function loadState(dir: string, island: number, config: Partial<EsConfig>): EsState {
+  const state: EsState = JSON.parse(readFileSync(`${dir}/state.json`, "utf8"));
+  state.config = { ...ES_DEFAULTS, ...state.config, ...config };
+  if (island >= 0 && state.config.lrByIsland[island] !== undefined) state.config.lr = state.config.lrByIsland[island];
+  const wide = widen(state.theta, state.config);
+  if (wide.added > 0) {
+    state.theta = wide.theta;
+    if (state.best !== undefined) state.best = widen(state.best, state.config).theta;
+  }
+  return state;
+}
+
 if (mode === "dryrun") {
   // How fast this machine plays: hard against hard on the fixed map, every core busy.
   const n = threads() * 2;
@@ -175,12 +203,11 @@ if (mode === "dryrun") {
       `每代 ${state.config.pairs} 對候選，每個候選 ${m.hard + m.normal + m.push + m.crush + m.turtle} 局：困難 ${m.hard}、普通 ${m.normal}、push ${m.push}、push-crush ${m.crush}、push-turtle ${m.turtle}；` +
       `上限 ${state.config.maxTicks / 1200} 分，沒分出勝負算輸。固定照困難的組：${state.config.fixed.join("、")}（練兵、蓋什麼）。\n\n` +
       `「不照困難」：每組決定，不照困難的選擇在所有思考裡的次數和比例（ceo 2026-10-19）。\n\n` +
-      `| 代 | 局 | 贏 | 平手 | 輸 | 贏：困難／普通／push／crush／turtle | 打到對方主城 | 軍隊：守家／出兵 | 城鎮：搶／治理 | 防守：蓋塔／不蓋 | 分隊：偷襲／守家／守城／打小城 | 騎兵衝：現在／先跟著 | 隨局面改選擇的候選 | 加分權重 | 秒 | 分隊做了什麼 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`,
+      ES_HEAD,
   );
   while (state.generation < maxGen) {
     const r = await generation(state, start);
-    const by = ["hard", "normal", "push", "crush", "turtle"].map((k) => `${r.byOpp[k]?.won ?? 0}/${r.byOpp[k]?.games ?? 0}`).join("　");
-    summary(`| ${r.generation} | ${r.games} | ${r.won} | ${r.draws} | ${r.games - r.won - r.draws} | ${by} | ${r.reached} | ${dev(r.choices[HEAD_ARMY])} | ${dev(r.choices[HEAD_TOWN])} | ${dev(r.choices[HEAD_DEFENSE])} | ${dev(r.choices[HEAD_SQUAD] ?? [0])} | ${dev(r.choices[HEAD_CHARGE] ?? [0])} | ${r.varied}／${2 * state.config.pairs} | ${r.shaping.toFixed(3)} | ${r.seconds} | ${squadText(r.aiStats ?? {}, r.killed ?? { farmers: 0, backByCavalry: 0 })} |`);
+    summary(esRow(r, state.config.pairs));
     writeFileSync(`${out}/state.json`, JSON.stringify(state));
     writeFileSync(`${out}/net.json`, JSON.stringify(fromVector(state.theta, start)));
     // NN v3 B: the generation's best candidate, evaluated on new seeds (best.json).
@@ -190,6 +217,81 @@ if (mode === "dryrun") {
   }
   state = JSON.parse(readFileSync(`${out}/state.json`, "utf8"));
   summary(`\n到第 ${state.generation} 代，${hours().toFixed(2)} 小時。`);
+} else if (mode === "pairs") {
+  // NN v4s (ceo 2026-11-04): a generation over several jobs. The main chain's job plays pairs 0..pairs-1 at once; a
+  // fill-in job plays its own pairs (pairs + slot, + slots, ...) one after another while the main chain's time lasts
+  // (pairs x one pair's time, from the plan's start plus 5 minutes) and stops at once when DIR/stop
+  // appears (the workflow's watch: another workflow's jobs waiting): pairs.json holds the complete pairs only.
+  const island = Number(arg("island", "0"));
+  const state = loadState(arg("resume", ""), island, JSON.parse(arg("config", "{}")));
+  const like = asHardNet();
+  const c = state.config;
+  const slot = Number(arg("slot", "-1"));
+  const done: PairResult[] = [];
+  const t0 = performance.now();
+  const save = () => writeFileSync(`${out}/pairs.json`, JSON.stringify({ island, generation: state.generation, seed: state.seed, kind: slot < 0 ? "base" : "fill", seconds: Math.round((performance.now() - t0) / 1000), results: done }));
+  if (slot < 0) {
+    done.push(...(await playPairs(state, like, Array.from({ length: c.pairs }, (_, p) => p))));
+    save();
+    summary(`## 島 ${island} 第 ${state.generation} 代：主鏈 ${c.pairs} 對，${Math.round((performance.now() - t0) / 1000)} 秒`);
+  } else {
+    const slots = Number(arg("slots", "1"));
+    // The main chain plays its pairs at once in about pairs x one pair's time here: the last generation's until this
+    // job has timed one of its own.
+    const last = state.history[state.history.length - 1];
+    const startAt = Number(arg("start-at", String(Math.round(Date.now() / 1000))));
+    const deadline = (pair: number) => startAt + 300 + c.pairs * pair;
+    const stopFile = `${out}/stop`;
+    const timer = setInterval(() => {
+      if (!existsSync(stopFile)) return;
+      save();
+      summary(`## 島 ${island} 第 ${state.generation} 代：補位 ${slot}／${slots}，交 ${done.length} 對，讓位（${readFileSync(stopFile, "utf8").trim()}），做一半的那對丟掉`);
+      process.exit(0);
+    }, 5000);
+    let pairTime = (last?.baseSeconds ?? last?.seconds ?? 4500) / c.pairs;
+    for (let m = 0; ; m++) {
+      if (Date.now() / 1000 + pairTime > deadline(pairTime)) break;
+      const t = performance.now();
+      done.push(...(await playPairs(state, like, [c.pairs + slot + slots * m])));
+      pairTime = (performance.now() - t) / 1000;
+      save();
+    }
+    clearInterval(timer);
+    save();
+    summary(`## 島 ${island} 第 ${state.generation} 代：補位 ${slot}／${slots}，交 ${done.length} 對（主鏈的時間到了），${Math.round((performance.now() - t0) / 1000)} 秒`);
+  }
+} else if (mode === "step") {
+  // NN v4s: the step of island I from every pairs.json under --pairs (the main chain's pairs must all be there).
+  const island = Number(arg("island", "0"));
+  const state = loadState(arg("resume", ""), island, JSON.parse(arg("config", "{}")));
+  const like = asHardNet();
+  const c = state.config;
+  const files: string[] = [];
+  const walk = (d: string) => {
+    if (!existsSync(d)) return;
+    for (const f of readdirSync(d).sort()) {
+      const p = `${d}/${f}`;
+      if (statSync(p).isDirectory()) walk(p);
+      else if (f === "pairs.json") files.push(p);
+    }
+  };
+  walk(arg("pairs", "pairs"));
+  const got = new Map<number, PairResult>();
+  let baseSeconds = 0;
+  for (const f of files) {
+    const j = JSON.parse(readFileSync(f, "utf8"));
+    if (j.island !== island || j.generation !== state.generation || j.seed !== state.seed) continue;
+    for (const r of j.results as PairResult[]) got.set(r.pair, r);
+    if (j.kind === "base") baseSeconds = j.seconds;
+  }
+  const missing = Array.from({ length: c.pairs }, (_, p) => p).filter((p) => !got.has(p));
+  if (missing.length > 0) throw new Error(`step: island ${island} generation ${state.generation}: the main chain's pairs ${missing.join(",")} are missing`);
+  const fillPairs = [...got.keys()].filter((p) => p >= c.pairs).length;
+  const r = update(state, like, [...got.values()], { seconds: baseSeconds, baseSeconds, fillPairs, wait: Number(arg("wait", "-1")) });
+  writeFileSync(`${out}/state.json`, JSON.stringify(state));
+  writeFileSync(`${out}/net.json`, JSON.stringify(fromVector(state.theta, like)));
+  if (state.best !== undefined) writeFileSync(`${out}/best.json`, JSON.stringify(fromVector(state.best, like)));
+  summary(`## 島 ${island}（種子 ${state.seed}，規則開關 ${switchesText(c.rules)}）\n\n${ES_HEAD}\n${esRow(r, c.pairs)}`);
 } else if (mode === "eval") {
   const file = arg("net", "");
   const net0: NetWeights | null = file === "" ? null : JSON.parse(readFileSync(file, "utf8"));
@@ -238,5 +340,5 @@ if (mode === "dryrun") {
       rows.join("\n"),
   );
 } else {
-  throw new Error(`mode ${mode}: dryrun, record, es, eval or report`);
+  throw new Error(`mode ${mode}: dryrun, record, es, pairs, step, eval or report`);
 }

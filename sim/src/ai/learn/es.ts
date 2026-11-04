@@ -106,6 +106,16 @@ export interface GenerationReport {
   choices: number[][];
   /** NN v2 (ceo 2026-10-30): candidates whose choices changed within a game (by the game, not one set for all of it). */
   varied: number;
+  /**
+   * NN v4s (ceo 2026-11-04): the pairs the step used (the main chain's and the fill-in jobs'), those from the fill-in
+   * jobs, the main chain's playing seconds, how long its jobs waited for a runner (the plan's start to the island's
+   * main job's start; -1: not measured), and when the step was made.
+   */
+  pairs?: number;
+  fillPairs?: number;
+  baseSeconds?: number;
+  wait?: number;
+  at?: string;
   /** NN v4 (D-122): the trained side's AI counters and kills (GameOutcome's aiStats, killed), summed over all games. */
   aiStats?: Record<string, number>;
   killed?: { farmers: number; backByCavalry: number };
@@ -236,26 +246,63 @@ function gauss(r: () => number): number {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r());
 }
 
-/** One generation; returns its report and moves state.theta. */
-export async function generation(state: EsState, like: NetWeights, threads?: number): Promise<GenerationReport> {
-  const t0 = performance.now();
+/** NN v4s (ceo 2026-11-04): one pair's two candidates (theta plus and minus its step) on the generation's games, in the games' order. */
+export interface PairResult {
+  pair: number;
+  plus: GameOutcome[];
+  minus: GameOutcome[];
+}
+
+/**
+ * NN v4s: the generation's games (the same for every candidate) and pair p's step, each pair from its own seeded noise:
+ * any job holding the same state draws the same games and the same pair p (the main chain's pairs 0..pairs-1, the
+ * fill-in jobs' pairs from `pairs` on).
+ */
+export function pairSetup(state: EsState, like: NetWeights): { games: ReturnType<typeof gamesFor>; step: number[]; eps: (p: number) => number[] } {
+  const base = state.seed * 1009 + state.generation * 7919 + 1;
+  const games = gamesFor(state, rng(base));
+  const step = stepSizes(like, state.config);
+  const eps = (p: number) => {
+    const r = rng(base + (p + 1) * 104729);
+    return state.theta.map((_, i) => gauss(r) * step[i]);
+  };
+  return { games, step, eps };
+}
+
+/** The candidates of `pairs` on the generation's games, all at once on `threads` cores. */
+export async function playPairs(state: EsState, like: NetWeights, pairs: readonly number[], threads?: number): Promise<PairResult[]> {
   const c = state.config;
-  const r = rng(state.seed * 1009 + state.generation * 7919 + 1);
-  const games = gamesFor(state, r);
-  const step = stepSizes(like, c);
-  const eps: number[][] = [];
-  for (let p = 0; p < c.pairs; p++) eps.push(state.theta.map((_, i) => gauss(r) * step[i]));
-  const candidates: NetWeights[] = [];
-  const candidatesVec: number[][] = [];
-  for (const e of eps) {
-    candidatesVec.push(state.theta.map((v, i) => v + e[i]), state.theta.map((v, i) => v - e[i]));
-    candidates.push(fromVector(candidatesVec[candidatesVec.length - 2], like));
-    candidates.push(fromVector(candidatesVec[candidatesVec.length - 1], like));
-  }
+  const { games, eps } = pairSetup(state, like);
   const jobs: Job[] = [];
-  for (const net of candidates) for (const g of games) jobs.push({ kind: "play", spec: { seed: g.seed, map: g.map, swap: g.swap, maxTicks: c.maxTicks, opp: g.opp, rules: c.rules }, net });
+  for (const p of pairs) {
+    const e = eps(p);
+    for (const sign of [1, -1]) {
+      const net = fromVector(state.theta.map((v, i) => v + sign * e[i]), like);
+      for (const g of games) jobs.push({ kind: "play", spec: { seed: g.seed, map: g.map, swap: g.swap, maxTicks: c.maxTicks, opp: g.opp, rules: c.rules }, net });
+    }
+  }
   const results = await runAll(jobs, threads);
+  const n = games.length;
+  return pairs.map((pair, k) => ({
+    pair,
+    plus: results.slice(2 * k * n, (2 * k + 1) * n).map((r) => r.outcome),
+    minus: results.slice((2 * k + 1) * n, (2 * k + 2) * n).map((r) => r.outcome),
+  }));
+}
+
+/**
+ * The step from the pairs played (any number of them, each complete: both candidates on every game): ranks over all
+ * their candidates, and the weights move by the mean over the pairs (ceo 2026-11-04: with 4 to about 20 pairs a
+ * generation, the mean keeps the step's size from following their number). Returns the report; `extra` goes into it.
+ */
+export function update(state: EsState, like: NetWeights, played: readonly PairResult[], extra: Partial<GenerationReport> = {}): GenerationReport {
+  const c = state.config;
+  const { games, step, eps } = pairSetup(state, like);
+  const res = [...played].sort((a, b) => a.pair - b.pair);
+  if (res.length === 0) throw new Error("update: no pairs");
+  for (const r of res) if (r.plus.length !== games.length || r.minus.length !== games.length) throw new Error(`update: pair ${r.pair} has ${r.plus.length}/${r.minus.length} of ${games.length} games`);
   const shaping = state.generation >= c.shapingUntil ? 0 : (c.shaping * (c.shapingUntil - state.generation)) / c.shapingUntil;
+  const outcomes = res.flatMap((r) => [r.plus, r.minus]);
   const fitness: number[] = [];
   let won = 0;
   let draws = 0;
@@ -265,11 +312,10 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   let varied = 0;
   const aiStats: Record<string, number> = {};
   const killed = { farmers: 0, backByCavalry: 0 };
-  for (let k = 0; k < candidates.length; k++) {
+  for (const os of outcomes) {
     let f = 0;
     let changed = false;
-    for (let g = 0; g < games.length; g++) {
-      const o = results[k * games.length + g].outcome;
+    os.forEach((o, g) => {
       if (o.combos.length > 1) changed = true;
       f += score(o, shaping);
       const by = (byOpp[games[g].opp.kind] ??= { games: 0, won: 0 });
@@ -282,7 +328,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
       if (o.reached) reached++;
       o.choices.forEach((h, i) => h.forEach((v, k) => (choices[i][k] += v)));
       addStats(aiStats, killed, o);
-    }
+    });
     fitness.push(f);
     if (changed) varied++;
   }
@@ -291,27 +337,37 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   const rank = new Array(fitness.length);
   order.forEach(([, i], k) => (rank[i] = k / (fitness.length - 1) - 0.5));
   const n = state.theta.length;
+  const P = res.length;
   const margins = marginEntries(like, c);
   const marginMove = new Map<number, number>();
-  for (let p = 0; p < c.pairs; p++) {
+  const epsOf = res.map((r) => eps(r.pair));
+  // The best candidate (the highest score; the lowest index on a tie), from theta before the step.
+  let bestK = 0;
+  for (let k = 1; k < fitness.length; k++) if (fitness[k] > fitness[bestK]) bestK = k;
+  const bestSign = bestK % 2 === 0 ? 1 : -1;
+  state.best = state.theta.map((v, i) => v + bestSign * epsOf[bestK >> 1][i]);
+  for (let p = 0; p < P; p++) {
     const d = rank[2 * p] - rank[2 * p + 1];
     if (d === 0) continue;
     for (let i = 0; i < n; i++) {
       if (step[i] <= 0) continue;
-      if (margins.has(i)) marginMove.set(i, (marginMove.get(i) ?? 0) + (c.lr * d * eps[p][i]) / c.pairs);
-      else state.theta[i] += (c.lr * d * eps[p][i]) / (step[i] * c.pairs);
+      if (margins.has(i)) marginMove.set(i, (marginMove.get(i) ?? 0) + (c.lr * d * epsOf[p][i]) / P);
+      else state.theta[i] += (c.lr * d * epsOf[p][i]) / (step[i] * P);
     }
   }
   for (const [i, v] of marginMove) state.theta[i] += Math.max(-c.asHardMost, Math.min(c.asHardMost, v));
-  // The best candidate of this generation (the highest score; the lowest index on a tie).
-  let bestK = 0;
-  for (let k = 1; k < fitness.length; k++) if (fitness[k] > fitness[bestK]) bestK = k;
-  state.best = candidatesVec[bestK];
-  const total = candidates.length * games.length;
-  const report: GenerationReport = { generation: state.generation, games: total, won, draws, byOpp, reached, shaping, choices, varied, aiStats, killed, seconds: Math.round((performance.now() - t0) / 1000) };
+  const report: GenerationReport = { generation: state.generation, games: outcomes.length * games.length, won, draws, byOpp, reached, shaping, choices, varied, aiStats, killed, seconds: 0, pairs: P, at: new Date().toISOString(), ...extra };
   state.generation++;
   state.history.push(report);
   return report;
+}
+
+/** One generation on this machine (the es mode): the main chain's pairs, then the step. */
+export async function generation(state: EsState, like: NetWeights, threads?: number): Promise<GenerationReport> {
+  const t0 = performance.now();
+  const played = await playPairs(state, like, Array.from({ length: state.config.pairs }, (_, p) => p), threads);
+  const seconds = Math.round((performance.now() - t0) / 1000);
+  return update(state, like, played, { seconds, baseSeconds: seconds });
 }
 
 export function newState(start: NetWeights, seed: number, config: Partial<EsConfig> = {}): EsState {

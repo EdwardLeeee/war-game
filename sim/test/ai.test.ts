@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, CHARGE_HOLD, CHARGE_NOW, choose, DEFENSE_NONE, DEFENSE_TOWER, features, forward, HEAD_ARMY, HEAD_DEFENSE, HEAD_SQUAD, HEAD_TOWN, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, SQUAD_HOME, SQUAD_RAID, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
-import { ES_DEFAULTS, rng, toVector, widen, widenNet } from "../src/ai/learn/es.ts";
+import { ES_DEFAULTS, newState, pairSetup, rng, stepSizes, toVector, update, widen, widenNet } from "../src/ai/learn/es.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
@@ -1911,6 +1911,33 @@ test("NN v4 (widen): v3's weights (5 heads) go on at the full shape: the old sco
   }
   assert.deepEqual(widen(wide.theta, ES_DEFAULTS).theta, wide.theta, "the full shape: as it is");
   assert.throws(() => widen(toVector(v3).slice(1), ES_DEFAULTS), /widen/);
+});
+
+test("NN v4s (update): any job draws the same games and pair p; the step is the mean over however many pairs came back", () => {
+  const state = newState(asHardNet(), 3, { pairs: 1, mix: { hard: 2, normal: 0, push: 0, crush: 0, turtle: 0 } });
+  const like = asHardNet();
+  const a = pairSetup(state, like);
+  const b = pairSetup(JSON.parse(JSON.stringify(state)), like);
+  assert.deepEqual(a.games, b.games);
+  assert.deepEqual(a.eps(5), b.eps(5), "pair 5 from any job");
+  assert.notDeepEqual(a.eps(0), a.eps(1));
+  const game = (won: number) => ({ won, ticks: 0, margin: 0, governed20: 0, stuck: 0, ratio15: -1, ratio20: -1, farmerHits: 0, farmerBack: 0, reached: false, towers45: -1, governed45: -1, choices: [], combos: [], switches: { keep: true, siege: true, rich: true, market: true }, aiStats: {}, killed: { farmers: 0, backByCavalry: 0 } });
+  // Plus wins both games, minus loses both, in every pair.
+  const pair = (p: number) => ({ pair: p, plus: [game(1), game(1)], minus: [game(0), game(0)] });
+  const moved = (pairs: number[]) => {
+    const s = JSON.parse(JSON.stringify(state));
+    const before = [...s.theta];
+    const r = update(s, like, pairs.map(pair));
+    assert.equal(r.pairs, pairs.length);
+    return s.theta.map((v: number, i: number) => v - before[i]);
+  };
+  const step = stepSizes(like, state.config);
+  const margins = new Set(a.eps(0).map((_, i) => i).filter((i) => step[i] === state.config.asHardSigma));
+  const i = step.findIndex((v, k) => v > 0 && !margins.has(k));
+  // One pair: rank difference 1. Two: 2/3 each (ranks -1/2, -1/6, 1/6, 1/2), the mean over the two.
+  assert.ok(Math.abs(moved([0])[i] - (state.config.lr * a.eps(0)[i]) / step[i]) < 1e-9);
+  assert.ok(Math.abs(moved([0, 7])[i] - (state.config.lr * (2 / 3) * (a.eps(0)[i] + a.eps(7)[i])) / (2 * step[i])) < 1e-9);
+  assert.throws(() => update(JSON.parse(JSON.stringify(state)), like, [{ pair: 0, plus: [game(1)], minus: [game(0), game(0)] }]), /games/);
 });
 
 test("D-086 B: the network's inputs, 0..255 each, come from the AI's own view: enemy soldiers in the fog change nothing", () => {
