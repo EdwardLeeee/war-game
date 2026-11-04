@@ -16,7 +16,7 @@ import type { Camera } from "../camera/camera.ts";
 import { type Projection, PT_PER_M } from "../camera/projection.ts";
 import type { LoadRecorder } from "../lab/load-times.ts";
 import { TILE_PX } from "../tuning.ts";
-import { CELL_M, cliffPieces, type EdgeJson, type EdgeSide, edgeFalls, edgeFiles, edgeLight, edgePoint, parseEdge } from "./edge-layout.ts";
+import { CELL_M, CORNER_LEGS_M, cliffFromBottom, cliffPieces, type EdgeJson, type EdgeSide, edgeFalls, edgeFiles, edgeLight, edgePoint, parseEdge } from "./edge-layout.ts";
 import { json, page } from "./unit-art.ts";
 
 /** The edge's pictures, as loaded. */
@@ -42,6 +42,9 @@ export async function loadEdge(base: string, times: LoadRecorder | null): Promis
   );
   return { json: e, textures };
 }
+
+/** Plane points up a metre up (the camera's 30 degrees). */
+const UP_PER_M = Math.sqrt(3) / 2;
 
 /** How dark the cliff is at light 0 (never explored): near the fog's black. */
 const DARK = 0.12;
@@ -146,9 +149,12 @@ export class EdgeRenderer {
   private cliffUp(): void {
     const e = this.art.json;
     const n = this.size;
+    // art-v7: from the bottom corner, each piece its own 16 m; before, edge to edge, stretched to fit.
+    const legs = e.cliff.corner_leg_m ?? CORNER_LEGS_M;
+    const fromBottom = e.cliff.from === "bottom";
     for (const side of ["sw", "se"] as const) {
       const kinds = e.cliff[side];
-      for (const p of cliffPieces(n, side, e.cliff.stretch_m, kinds.length)) {
+      for (const p of fromBottom ? cliffFromBottom(n, side, e.cliff.stretch_m, kinds.length, legs) : cliffPieces(n, side, e.cliff.stretch_m, kinds.length)) {
         const spec = kinds[p.kind];
         const t = this.tex(spec.file);
         const sprite = new Sprite(t);
@@ -157,15 +163,17 @@ export class EdgeRenderer {
         const at = edgePoint(n, side, p.mid);
         const q = this.plane(at.x, at.y);
         sprite.position.set(q.x, q.y);
-        sprite.scale.set(this.k * ((p.to - p.from) * CELL_M) / e.cliff.stretch_m, this.k);
+        sprite.scale.set(fromBottom ? this.k : (this.k * ((p.to - p.from) * CELL_M)) / e.cliff.stretch_m, this.k);
         this.under.addChild(sprite);
         this.lit.push({ sprite, side, from: p.from, to: p.to });
       }
     }
+    // Each corner lit as the stretch of edge it draws (its leg).
+    const leg = (m: number) => (fromBottom ? Math.ceil(m / CELL_M) : 2);
     const corners: [keyof EdgeJson["cliff"]["corner"], number, number, EdgeSide, number, number][] = [
-      ["left", 0, n, "sw", 0, 2],
-      ["bottom", n, n, "sw", n - 2, n],
-      ["right", n, 0, "se", n - 2, n],
+      ["left", 0, n, "sw", 0, leg(legs.left)],
+      ["bottom", n, n, "sw", n - leg(legs.bottom), n],
+      ["right", n, 0, "se", n - leg(legs.right), n],
     ];
     for (const [name, cx, cy, side, from, to] of corners) {
       const spec = e.cliff.corner[name];
@@ -189,34 +197,48 @@ export class EdgeRenderer {
     const loopTex = this.tex(e.fall.loop.file);
     const n = this.size;
     const drop = (e.cliff.height_m + 3) * PT_PER_M;
+    const spec = e.fall.loop;
     for (const f of edgeFalls(terrain, n)) {
-      // From the run's left end to its right on the screen, the edge slanting down (sw) or up (se).
-      const l = this.plane(edgePoint(n, f.side, f.from).x, edgePoint(n, f.side, f.from).y);
-      const r = this.plane(edgePoint(n, f.side, f.to).x, edgePoint(n, f.side, f.to).y);
+      // From the run's left end to its right on the screen, the edge slanting down (sw) or up (se);
+      // art-v7: hung from out_m out from the lip (sw: south, se: east) and drop_m down.
+      const outCells = (spec.out_m ?? 0) / CELL_M;
+      const out = f.side === "sw" ? { x: 0, y: outCells } : { x: outCells, y: 0 };
+      const down = (spec.drop_m ?? 0) * PT_PER_M * UP_PER_M;
+      const at = (along: number) => {
+        const p = edgePoint(n, f.side, along);
+        const q = this.plane(p.x + out.x, p.y + out.y);
+        return { x: q.x, y: q.y + down };
+      };
+      const l = at(f.from);
+      const r = at(f.to);
       const dx = r.x - l.x;
       const slope = Math.atan2(r.y - l.y, dx);
-      const loop = new TilingSprite({ texture: loopTex, width: dx / Math.cos(slope), height: drop });
-      loop.position.set(l.x, l.y);
+      // The picture's river columns (body_px, art-v7) on the run's two ends, its threads beyond; else one width across the run.
+      const [b0, b1] = spec.body_px ?? [0, loopTex.width];
+      const sx = dx / (Math.max(1, b1 - b0) * Math.cos(slope));
+      const loop = new TilingSprite({ texture: loopTex, width: loopTex.width * sx, height: drop });
+      loop.position.set(l.x - b0 * sx * Math.cos(slope), l.y - b0 * sx * Math.sin(slope));
       loop.skew.set(0, slope);
-      // One width of the picture across the run, its height at the pictures' scale.
-      loop.tileScale.set(loop.width / loopTex.width, this.k);
+      loop.tileScale.set(sx, this.k);
       this.falls.addChild(loop);
       this.fallLoops.push(loop);
       this.lit.push({ sprite: loop, side: f.side, from: f.from, to: f.to });
       const runM = (f.to - f.from) * CELL_M;
       const mid = this.plane(edgePoint(n, f.side, (f.from + f.to) / 2).x, edgePoint(n, f.side, (f.from + f.to) / 2).y);
       const wide = runM / e.fall.loop.width_m;
-      // ui draws the mouth and the spray for the sw edge; the se edge's mirrored.
-      const flip = f.side === "se" ? -1 : 1;
-      for (const [spec, y] of [
-        [e.fall.mouth, 0],
-        [e.fall.spray, drop],
+      // The mouth over the loop's head, then the spray. ui draws them for the sw edge; the se
+      // edge's mouth is its own picture (art-v7: lit from the top left), else both mirrored. Other
+      // widths of river: the same pictures, widened.
+      const own = f.side === "se" ? e.fall.mouth.se : undefined;
+      for (const [piece, y, flip] of [
+        [own ?? e.fall.mouth, 0, f.side === "se" && own === undefined ? -1 : 1],
+        [e.fall.spray, drop, f.side === "se" ? -1 : 1],
       ] as const) {
-        const t = this.tex(spec.file);
+        const t = this.tex(piece.file);
         const s = new Sprite(t);
-        s.anchor.set(spec.anchor[0] / t.width, spec.anchor[1] / t.height);
+        s.anchor.set(piece.anchor[0] / t.width, piece.anchor[1] / t.height);
         s.position.set(mid.x, mid.y + y);
-        s.scale.set(this.k * wide * flip, this.k * Math.max(1, wide * 0.6));
+        s.scale.set(this.k * wide * flip, this.k * (spec.body_px === undefined ? Math.max(1, wide * 0.6) : 1));
         this.falls.addChild(s);
         this.lit.push({ sprite: s, side: f.side, from: f.from, to: f.to });
       }

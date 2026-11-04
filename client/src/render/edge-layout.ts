@@ -24,14 +24,27 @@ export interface EdgeJson {
     height_m: number;
     stretch_m: number;
     overlap_m: number;
+    /**
+     * art-v7 (ui's 量產, edge-format.md section 2): laid from the bottom corner along both edges,
+     * piece k's middle 16k m from it; the corners draw `corner_leg_m` of each edge (the bottom's
+     * both ways); their rock is lined up for an edge of `edge_m`. Without it: pieces edge to edge.
+     */
+    from?: "bottom";
+    corner_leg_m?: Record<"bottom" | "left" | "right", number>;
+    edge_m?: number;
     sw: (EdgePiece & { lip: [[number, number], [number, number]] })[];
     se: (EdgePiece & { lip: [[number, number], [number, number]] })[];
     corner: Record<"left" | "bottom" | "right", EdgePiece>;
   };
   fall: {
-    loop: { file: string; width_m: number; period_px: number; scroll_m_s: number; widen_per_m: number };
+    /**
+     * `body_px` (art-v7): the picture's columns that are the river (`width_m` of it as on the screen),
+     * put on the run's two ends at the lip; it hangs from `out_m` out from the lip and `drop_m` down.
+     */
+    loop: { file: string; width_m: number; period_px: number; scroll_m_s: number; widen_per_m: number; body_px?: [number, number]; out_m?: number; drop_m?: number };
     spray: EdgePiece;
-    mouth: EdgePiece & { foam_m: number };
+    /** For the sw edge; `se` (art-v7) its own picture for the se edge (the light comes from the top left: not mirrored). */
+    mouth: EdgePiece & { foam_m: number; se?: EdgePiece };
   };
   puffs: { file: string; drift_px_s: [number, number]; alpha_max: number }[];
   rim: { fade_m: number };
@@ -71,6 +84,7 @@ export function edgeFiles(e: EdgeJson): string[] {
     e.fall.loop.file,
     e.fall.spray.file,
     e.fall.mouth.file,
+    ...(e.fall.mouth.se === undefined ? [] : [e.fall.mouth.se.file]),
     ...e.puffs.map((p) => p.file),
   ];
   return [...new Set(files)];
@@ -97,6 +111,32 @@ export function cliffPieces(size: number, side: EdgeSide, stretchM: number, kind
     out.push({ mid: (k + 0.5) * len, kind: ((k * 7 + (side === "se" ? 3 : 0)) % kinds + kinds) % kinds, from, to });
   }
   return out;
+}
+
+/** The bottom corner's legs and the left and right corners' (metres), art-v7's when not given. */
+export const CORNER_LEGS_M = { bottom: 8, left: 10, right: 10 };
+
+/**
+ * art-v7's cliff (`from: "bottom"`): from the bottom corner along `side`, piece k's middle at
+ * `bottom` + stretch × (k − ½) metres (16k for ui's), as many as fit before the far corner's leg;
+ * one more against that leg when they do not end on it (another length than ui's 258 m). In cells
+ * along the side from its left end, as cliffPieces, each piece's span `stretch` (scale 1).
+ */
+export function cliffFromBottom(size: number, side: EdgeSide, stretchM: number, kinds: number, legs: Record<"bottom" | "left" | "right", number> = CORNER_LEGS_M): { mid: number; kind: number; from: number; to: number }[] {
+  const edgeM = size * CELL_M;
+  const end = side === "sw" ? legs.left : legs.right;
+  const room = edgeM - legs.bottom - end;
+  const fit = Math.max(0, Math.floor(room / stretchM + 1e-9));
+  const mids: number[] = [];
+  for (let k = 1; k <= fit; k++) mids.push(legs.bottom + stretchM * (k - 0.5));
+  if (room - fit * stretchM > 1e-9 && room > 0) mids.push(edgeM - end - stretchM / 2);
+  // Metres from the bottom corner to cells along the side from its left end (sw: the left corner; se: the bottom).
+  const along = (m: number) => (side === "sw" ? size - m / CELL_M : m / CELL_M);
+  return mids.map((m, k) => {
+    const a = along(m - stretchM / 2);
+    const b = along(m + stretchM / 2);
+    return { mid: along(m), kind: (((k + 1) * 7 + (side === "se" ? 3 : 0)) % kinds + kinds) % kinds, from: Math.max(0, Math.floor(Math.min(a, b))), to: Math.min(size, Math.ceil(Math.max(a, b))) };
+  });
 }
 
 /** The edge's cell `i` along `side` (from its left end on the screen). */

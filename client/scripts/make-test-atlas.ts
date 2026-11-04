@@ -226,6 +226,7 @@ function edge(): void {
   flat("fall_loop.png", 6 * pxPerM, 32, [200, 224, 236, 230]);
   flat("fall_spray.png", 10 * pxPerM, 4 * pxPerM, [240, 244, 248, 160]);
   flat("fall_mouth.png", 6 * pxPerM, 3 * pxPerM, [228, 238, 244, 200]);
+  flat("fall_mouth_se.png", 6 * pxPerM, 3 * pxPerM, [220, 234, 242, 200]);
   flat("puff_0.png", 32, 20, [250, 250, 252, 180]);
   const json = {
     format: "war-game edge 1",
@@ -241,14 +242,18 @@ function edge(): void {
       height_m: 13,
       stretch_m: 16,
       overlap_m: 1,
+      // art-v7's (ui's 量產): laid from the bottom corner, the corners' legs.
+      from: "bottom",
+      corner_leg_m: { bottom: 8, left: 10, right: 10 },
+      edge_m: 258,
       sw: [0, 1, 2].map((k) => cliff("sw", k)),
       se: [0, 1, 2].map((k) => cliff("se", k)),
       corner: Object.fromEntries(["left", "bottom", "right"].map((c) => [c, { file: `corner_${c}.png`, anchor: [2 * pxPerM, 0] }])),
     },
     fall: {
-      loop: { file: "fall_loop.png", width_m: 6, period_px: 32, scroll_m_s: 4, widen_per_m: 0.07 },
+      loop: { file: "fall_loop.png", width_m: 6, body_px: [6, 30], out_m: 0.6, drop_m: 0.4, period_px: 32, scroll_m_s: 4, widen_per_m: 0.07 },
       spray: { file: "fall_spray.png", anchor: [5 * pxPerM, 2 * pxPerM] },
-      mouth: { file: "fall_mouth.png", anchor: [3 * pxPerM, 3 * pxPerM], foam_m: 3.5 },
+      mouth: { file: "fall_mouth.png", anchor: [3 * pxPerM, 3 * pxPerM], foam_m: 3.5, se: { file: "fall_mouth_se.png", anchor: [3 * pxPerM, 3 * pxPerM] } },
     },
     puffs: [{ file: "puff_0.png", drift_px_s: [8, -2], alpha_max: 0.6 }],
     rim: { fade_m: 3 },
