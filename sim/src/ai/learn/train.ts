@@ -18,7 +18,9 @@
 // Every mode writes summary.md (Markdown) and its files under --out; checkpoints and records are CI artifacts, never commits.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { cpus } from "node:os";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { asHardNet, HEAD_ARMY, HEAD_CHARGE, HEAD_DEFENSE, HEAD_SQUAD, HEAD_TOWN, NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
 import { addStats, ES_DEFAULTS, type EsConfig, type EsState, fromVector, generation, type GenerationReport, newState, type PairResult, playPairs, sameShape, squadText, update, widen, widenNet } from "./es.ts";
 import type { GameOutcome, Opponent, Switches } from "./play.ts";
@@ -151,6 +153,92 @@ function loadState(dir: string, island: number, config: Partial<EsConfig>): EsSt
   return state;
 }
 
+/** NN v4s: the weights' fingerprint (FNV-1a over their JSON): a fill-in's pairs count only for the same weights. */
+function thetaHash(theta: readonly number[]): string {
+  let h = 0x811c9dc5;
+  const t = JSON.stringify(theta);
+  for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16);
+}
+
+/** NN v4s: what a fill-in run needs of the state (the weights exact: JSON keeps a double as it is), gzip, base64. */
+export function packState(state: EsState): string {
+  const last = state.history[state.history.length - 1];
+  return gzipSync(JSON.stringify({ theta: state.theta, generation: state.generation, seed: state.seed, config: state.config, history: last === undefined ? [] : [last] })).toString("base64");
+}
+function unpackState(b64: string): EsState {
+  return JSON.parse(gunzipSync(Buffer.from(b64, "base64")).toString("utf8"));
+}
+
+const gh = (args: string[]) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * NN v4s (ceo 2026-11-04): one generation of the main chain's job with fill-in jobs. Before its own pairs it starts a
+ * fill-in run (mode fill) with this generation's state in its input, its pairs due by when the main chain's are; after
+ * them it waits for that run (at most FILL_GRACE), cancels it if it is still going, and takes the complete pairs of
+ * the same weights. On any trouble with the fill-in run: its own pairs alone, as es always did.
+ */
+const FILL_GRACE = 180;
+async function generationWithFills(state: EsState, like: NetWeights, island: number): Promise<GenerationReport> {
+  const repo = process.env.GITHUB_REPOSITORY ?? "";
+  const ref = process.env.GITHUB_REF_NAME ?? "";
+  const tag = `${process.env.GITHUB_RUN_ID}-${island}-${state.generation}`;
+  const last = state.history[state.history.length - 1];
+  const est = last?.baseSeconds ?? last?.seconds ?? 4500;
+  const hash = thetaHash(state.theta);
+  let dispatched = false;
+  try {
+    gh(["workflow", "run", "ai-train.yml", "--repo", repo, "--ref", ref, "-f", "mode=fill", "-f", `only=${island}`, "-f", `tag=${tag}`, "-f", `deadline=${Math.round(Date.now() / 1000 + est)}`, "-f", `fill=${process.env.FILL_MAX ?? "auto"}`, "-f", `state=${packState(state)}`]);
+    dispatched = true;
+  } catch (e) {
+    console.error(`fill-in run for ${tag} not started: ${String(e).slice(0, 200)}`);
+  }
+  const t0 = performance.now();
+  const played = await playPairs(state, like, Array.from({ length: state.config.pairs }, (_, p) => p));
+  const seconds = Math.round((performance.now() - t0) / 1000);
+  let fill: PairResult[] = [];
+  if (dispatched) {
+    try {
+      const find = () => (JSON.parse(gh(["run", "list", "--repo", repo, "--workflow", "ai-train.yml", "--event", "workflow_dispatch", "--limit", "60", "--json", "databaseId,displayTitle,status"])) as { databaseId: number; displayTitle: string; status: string }[]).find((r) => r.displayTitle === `AI train fill ${tag}`);
+      const until = Date.now() + FILL_GRACE * 1000;
+      let run = find();
+      while (run !== undefined && run.status !== "completed" && Date.now() < until) {
+        await sleep(30_000);
+        run = find();
+      }
+      if (run !== undefined && run.status !== "completed") {
+        gh(["run", "cancel", String(run.databaseId), "--repo", repo]);
+        // Its jobs upload what they have as they stop (if: always()).
+        for (let k = 0; k < 6 && run !== undefined && run.status !== "completed"; k++) {
+          await sleep(20_000);
+          run = find();
+        }
+      }
+      if (run !== undefined) {
+        const dir = `${out}/fill-${state.generation}`;
+        try {
+          gh(["run", "download", String(run.databaseId), "--repo", repo, "--pattern", "pairs-*", "--dir", dir]);
+        } catch {
+          // None came back.
+        }
+        const files: string[] = [];
+        if (existsSync(dir)) for (const d of readdirSync(dir)) if (existsSync(`${dir}/${d}/pairs.json`)) files.push(`${dir}/${d}/pairs.json`);
+        for (const f of files) {
+          const j = JSON.parse(readFileSync(f, "utf8"));
+          if (j.island === island && j.generation === state.generation && j.seed === state.seed && j.hash === hash) fill.push(...(j.results as PairResult[]));
+        }
+        const seen = new Set<number>();
+        fill = fill.filter((r) => r.pair >= state.config.pairs && !seen.has(r.pair) && (seen.add(r.pair), true));
+      }
+    } catch (e) {
+      console.error(`fill-in pairs for ${tag}: ${String(e).slice(0, 200)}`);
+      fill = [];
+    }
+  }
+  return update(state, like, [...played, ...fill], { seconds: Math.round((performance.now() - t0) / 1000), baseSeconds: seconds, fillPairs: fill.length });
+}
+
 if (mode === "dryrun") {
   // How fast this machine plays: hard against hard on the fixed map, every core busy.
   const n = threads() * 2;
@@ -206,7 +294,8 @@ if (mode === "dryrun") {
       ES_HEAD,
   );
   while (state.generation < maxGen) {
-    const r = await generation(state, start);
+    // NN v4s: on CI with FILL_RUNS, each generation with a fill-in run.
+    const r = process.env.FILL_RUNS === "1" && process.env.GITHUB_RUN_ID !== undefined ? await generationWithFills(state, start, island) : await generation(state, start);
     summary(esRow(r, state.config.pairs));
     writeFileSync(`${out}/state.json`, JSON.stringify(state));
     writeFileSync(`${out}/net.json`, JSON.stringify(fromVector(state.theta, start)));
@@ -223,13 +312,20 @@ if (mode === "dryrun") {
   // (pairs x one pair's time, from the plan's start plus 5 minutes) and stops at once when DIR/stop
   // appears (the workflow's watch: another workflow's jobs waiting): pairs.json holds the complete pairs only.
   const island = Number(arg("island", "0"));
+  // NN v4s: a fill-in run's state comes in its input (--packed FILE: packState's text).
+  const packed = arg("packed", "");
+  if (packed !== "") {
+    mkdirSync(arg("resume", ""), { recursive: true });
+    writeFileSync(`${arg("resume", "")}/state.json`, JSON.stringify(unpackState(readFileSync(packed, "utf8").trim())));
+  }
   const state = loadState(arg("resume", ""), island, JSON.parse(arg("config", "{}")));
   const like = asHardNet();
   const c = state.config;
   const slot = Number(arg("slot", "-1"));
+  const hash = thetaHash(state.theta);
   const done: PairResult[] = [];
   const t0 = performance.now();
-  const save = () => writeFileSync(`${out}/pairs.json`, JSON.stringify({ island, generation: state.generation, seed: state.seed, kind: slot < 0 ? "base" : "fill", seconds: Math.round((performance.now() - t0) / 1000), results: done }));
+  const save = () => writeFileSync(`${out}/pairs.json`, JSON.stringify({ island, generation: state.generation, seed: state.seed, hash, kind: slot < 0 ? "base" : "fill", seconds: Math.round((performance.now() - t0) / 1000), results: done }));
   if (slot < 0) {
     done.push(...(await playPairs(state, like, Array.from({ length: c.pairs }, (_, p) => p))));
     save();
@@ -240,7 +336,9 @@ if (mode === "dryrun") {
     // job has timed one of its own.
     const last = state.history[state.history.length - 1];
     const startAt = Number(arg("start-at", String(Math.round(Date.now() / 1000))));
-    const deadline = (pair: number) => startAt + 300 + c.pairs * pair;
+    // A fill-in run: the main chain's job says when (--deadline, epoch seconds).
+    const due = Number(arg("deadline", "0"));
+    const deadline = (pair: number) => (due > 0 ? due : startAt + 300 + c.pairs * pair);
     const stopFile = `${out}/stop`;
     const timer = setInterval(() => {
       if (!existsSync(stopFile)) return;
