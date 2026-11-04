@@ -1,0 +1,73 @@
+{
+ "tag": "art-v6.4",
+ "note": "D-119／D-121 哨所 3×3（使用者 2026-11-04 選 R12 的 A 敵臺門洞：東陸拿掉牆頂小戰棚、西陸拿掉前面木廊）：buildings_<c>.json 的 Outpost footprint 改 3×3，加 stand_m（9 個站位，躲著的槍兵由 client 畫在牆頂步道上，離鏡頭近的先）和 fronts（done、damaged 的前層，畫在槍兵上面；格式和 client 2026-11-04 談定）。方形斜看、R8 外觀。其他和 art-v6.3 相同。",
+ "units": {
+  "farmer_e": {
+   "run": 39726651993,
+   "artifact": "r7-v8-farmer_e"
+  },
+  "spear_e": {
+   "run": 39729248473,
+   "artifact": "r7-v8-spear_e"
+  },
+  "bow_e": {
+   "run": 39726651993,
+   "artifact": "r7-v8-bow_e"
+  },
+  "hcav_e": {
+   "run": 39726651993,
+   "artifact": "r7-v8-hcav_e"
+  },
+  "siege_e": {
+   "run": 39726651993,
+   "artifact": "r7-v8-siege_e"
+  },
+  "mage_e": {
+   "run": 39726651993,
+   "artifact": "r7-v8-mage_e"
+  },
+  "farmer_w": {
+   "run": 39726651993,
+   "artifact": "r7-v8-farmer_w"
+  },
+  "pike_w": {
+   "run": 39729248473,
+   "artifact": "r7-v8-pike_w"
+  },
+  "bow_w": {
+   "run": 39726651993,
+   "artifact": "r7-v8-bow_w"
+  },
+  "knight_w": {
+   "run": 39726651993,
+   "artifact": "r7-v8-knight_w"
+  },
+  "siege_w": {
+   "run": 39726651993,
+   "artifact": "r7-v8-siege_w"
+  },
+  "mage_w": {
+   "run": 39726651993,
+   "artifact": "r7-v8-mage_w"
+  }
+ },
+ "effects": {
+  "run": 40176054805,
+  "artifact": "production-effects-atlas"
+ },
+ "buildings": {
+  "run": 41752576639,
+  "artifact": "production-buildings"
+ },
+ "castle": true,
+ "terrain": true,
+ "ground": true,
+ "astc_sample": {
+  "unit": "spear_e",
+  "scale": 2,
+  "layers": [
+   "color",
+   "team"
+  ]
+ }
+}
