@@ -52,6 +52,7 @@ sys.path.insert(4, os.path.join(HERE, "..", "..", "r9", "blender"))      # R9 re
 import main_city_r9                  # noqa: E402
 sys.path.insert(5, os.path.join(HERE, "..", "..", "r11", "blender"))     # R11 the floating continent's edge
 import edge_r11                      # noqa: E402
+import edge_v7                       # noqa: E402  (art-v7 the edge: design/r11/edge-format.md)
 sys.path.insert(6, os.path.join(HERE, "..", "..", "r12", "blender"))     # R12 the 3 x 3 outpost (D-119)
 import outpost_v7                    # noqa: E402
 import terrain_r8                    # noqa: E402
@@ -84,6 +85,8 @@ REG.update(main_city_r9.BUILDERS)
 FOOT.update(main_city_r9.FOOTPRINT)
 REG.update(edge_r11.BUILDERS)
 FOOT.update(edge_r11.FOOTPRINT)
+REG.update(edge_v7.BUILDERS)
+FOOT.update(edge_v7.FOOTPRINT)
 REG.update(outpost_v7.BUILDERS)
 FOOT.update(outpost_v7.FOOTPRINT)
 REG.update(terrain_r8.BUILDERS)

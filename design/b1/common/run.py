@@ -398,6 +398,16 @@ TARGETS["r11_edge_d"] = ([dict(kind="r11_edge", culture="E", opts=dict(style=st,
 for _t in ("r11_nodes_d", "r11_terrain_d", "r11_edge_d"):
     CAMERA[_t] = proj.DIAMOND
     LOOK[_t] = "r8"
+# art-v7 the floating continent's edge (D-118, design/r11/edge-format.md; design/r11/blender/edge_v7.py): the cliff's
+# stretches, three a side, and its three corners (r8 prefix: CI fetches the textures and the rock scans for it)
+TARGETS["r8v7e"] = ([dict(kind="v7_cliff", culture="E", opts=dict(edge=e, variant=v), name=f"cliff_{e}_{v}", premul=True)
+                     for e in ("sw", "se") for v in range(3)]
+                    + [dict(kind="v7_corner", culture="E", opts=dict(which=w), name=f"corner_{w}", premul=True)
+                       for w in ("left", "bottom", "right")])
+TARGETS["r8v7e"] += [dict(kind="v7_isle", culture="E", opts=dict(size=sz, seed=sd), name=f"island_{k}", premul=True)
+                     for k, (sz, sd) in enumerate(((5.0, 7), (3.6, 11), (2.6, 19), (4.2, 23)))]
+CAMERA["r8v7e"] = proj.DIAMOND
+LOOK["r8v7e"] = "r8"
 # art-v6.4 (D-119, the user 2026-11-04 chose R12's A, ceo: before art-v7, with the 3 x 3 outpost's rules): the
 # outpost in every state and its front layers, the square camera, the R8 look (design/r12/blender/outpost_v7.py)
 TARGETS["r8o64"] = ([dict(kind="v7_outpost", culture=c, state=st, opts=dict(look=lk), name=f"outpost_{c}_{s}")
@@ -475,6 +485,23 @@ def pieces(target):
     return TARGETS[target]
 
 
+def _resize_premul(im, f, sharpen=False):
+    import numpy as np
+    a = np.asarray(im, np.float32) / 255.0
+    pm = a.copy()
+    pm[..., :3] *= a[..., 3:]
+    size = (max(1, round(im.width * f)), max(1, round(im.height * f)))
+    ch = [np.asarray(Image.fromarray(pm[..., k], "F").resize(size, Image.LANCZOS)) for k in range(4)]
+    al = np.clip(ch[3], 0, 1)
+    rgb = np.clip(np.stack(ch[:3], -1) / np.maximum(al[..., None], 1e-4), 0, 1)
+    rgb_im = Image.fromarray((rgb * 255 + 0.5).astype(np.uint8), "RGB")
+    if sharpen:
+        rgb_im = rgb_im.filter(ImageFilter.UnsharpMask(radius=1.0, percent=40, threshold=2))
+    out = rgb_im.convert("RGBA")
+    out.putalpha(Image.fromarray((al * 255 + 0.5).astype(np.uint8), "L"))
+    return out
+
+
 def piece_name(pc):
     if "name" in pc:
         return pc["name"]
@@ -542,7 +569,11 @@ def run(target, preview=False, only=None, prev_ppm=24):
         f = 1.0 / ss
         for p in pc["passes"]:
             im = Image.open(f"{base}_{p}.png")
-            if f != 1:
+            if f != 1 and pc.get("premul") and im.mode == "RGBA":
+                # (art-v7's edge: wide translucent parts) resized premultiplied, only the colour sharpened: straight
+                # RGBA through LANCZOS left a dark line and a light sawtooth where the cliff fades into the clouds
+                im = _resize_premul(im, f, sharpen=p == "beauty")
+            elif f != 1:
                 im = im.resize((max(1, round(im.width * f)), max(1, round(im.height * f))), Image.LANCZOS)
                 if p == "beauty":
                     im = im.filter(ImageFilter.UnsharpMask(radius=1.0, percent=40, threshold=2))
