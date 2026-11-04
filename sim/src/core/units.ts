@@ -1298,12 +1298,34 @@ export class UnitSystem {
       for (let x = Math.max(box[0] - WALL_NEAR, 0); x <= Math.min(box[2] + WALL_NEAR, n - 1); x++) {
         for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
           if (u.owner[j] === me || u.action[j] === Action.Garrisoned || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+          if (WALL_SHIFT.siegeOnly && !this.besieges(w, j, t)) continue;
           out.push(u.x[j], u.y[j], u.vx[j] !== 0 || u.vy[j] !== 0 ? 1 : 0);
         }
       }
     }
     this.foes.set(key, out);
     return out;
+  }
+
+  /** Scratch (c): is unit j outside town t going for one of its gates or a soldier on its walls? */
+  private besieges(w: World, j: number, t: number): boolean {
+    const u = w.units.col;
+    const n = w.size;
+    if (w.insideAt[(u.y[j] >> CELL_SHIFT) * n + (u.x[j] >> CELL_SHIFT)] === t) return false;
+    const tid = u.target[j];
+    if (tid < 0) return false;
+    const ts = w.unit(tid);
+    if (ts >= 0) return onWall(w, ts) && w.wallTown[u.wall[ts]] === t;
+    const bs = w.building(tid);
+    return bs >= 0 && w.buildings.col.type[bs] === BuildingType.Gate && w.buildings.col.town[bs] === t;
+  }
+
+  /** Scratch (b): town t's soldiers of player `me` on its walls. */
+  private wallSoldiers(w: World, t: number, me: number): number {
+    const u = w.units.col;
+    let k = 0;
+    for (let s = 0; s < w.units.count; s++) if (u.owner[s] === me && u.wall[s] >= 0 && w.wallTown[u.wall[s]] === t && onWall(w, s)) k++;
+    return k;
   }
 
   /** The cells round town t's way (x0, y0, x1, y1). */
@@ -1379,6 +1401,8 @@ export class UnitSystem {
     }
     u.wallWait[i] += RETARGET_EVERY;
     if (u.wallWait[i] < WALL_SHIFT.wait) return;
+    // Scratch (b): too many of them for us.
+    if (WALL_SHIFT.odds > 0 && foes.length / 3 > WALL_SHIFT.odds * this.wallSoldiers(w, t, u.owner[i])) return;
     const to = wayPick(w, t, c, wayFrame(w, u.owner[i], t), (d) => w.wallAt[d] < 0 && this.foeFrom(w, foes, d, reach));
     if (to >= 0) this.startShift(w, i, to);
   }

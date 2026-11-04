@@ -379,7 +379,10 @@ export const WALLS = { on: true, range: CELL, takenNum: 3, takenDen: 4, sling: 4
  * which one is in its reach (an army moves on). With no such enemy for `back` ticks it walks back to
  * where it stood (if free). Off: they never move (WALLS).
  */
-export const WALL_SHIFT = { on: true, wait: 1 * S, back: 10 * S, stay: 2 * CELL };
+// Scratch (ceo 2026-11-04, options for the user): (b) `odds` > 0: no shifting while the enemies near the walls
+// outnumber the town's soldiers on them more than `odds` times; (c) `siegeOnly`: only enemies outside the town
+// going for one of its gates or a soldier on its walls count.
+export const WALL_SHIFT = { on: true, wait: 1 * S, back: 10 * S, stay: 2 * CELL, odds: 0, siegeOnly: false };
 /**
  * A governed town's gate towers shoot (D-096; the user: 城樓會射箭, more the more soldiers hold the
  * town, as AoE2's garrison arrows): each standing gate of a town its holder governs, at the

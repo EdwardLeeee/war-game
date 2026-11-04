@@ -80,6 +80,9 @@ if (flag("town-guard")) plan.townGuard = true;
 if (flag("guards-all")) plan.guardsAll = true;
 if (flag("town-station")) plan.townStation = true;
 if (flag("no-wall-shift")) WALL_SHIFT.on = false;
+// Scratch (ceo 2026-11-04): option (b) --wall-shift-odds 2, option (c) --wall-shift-siege.
+if (arg("wall-shift-odds", "") !== "") WALL_SHIFT.odds = Number(arg("wall-shift-odds", ""));
+if (flag("wall-shift-siege")) WALL_SHIFT.siegeOnly = true;
 // Round 7 (D-061): cavalry raiders, this many (--raid 4).
 plan.raid = Number(arg("raid", "0"));
 // D-072: racing the AI to its main city (--race edge|sentry), with these numbers.
