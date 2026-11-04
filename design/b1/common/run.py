@@ -662,6 +662,11 @@ def _art_v7_g():
 
 
 _art_v7_g()
+# (the outposts' damaged looks again: the realistic fire and scorch in place of R12's cones and soot box)
+TARGETS["r8d7h"] = [dict(pc) for pc in TARGETS["r8v7c"] if pc["name"].startswith("outpost_") and "damaged" in pc["name"]]
+CAMERA["r8d7h"] = proj.DIAMOND
+LOOK["r8d7h"] = "r8"
+FOLDER["r8d7h"] = "r8d7h"
 
 
 

@@ -37,7 +37,7 @@ TEAM = {
     "red": (200, 48, 44),      # 敵方 布倫莫爾
 }
 
-MEM_MAX = os.environ.get("MEM_MAX", "infinity")   # no cap (the user 2026-11-04: 「不用限制記憶體」); MEM_MAX=1500M sets one
+MEM_MAX = os.environ.get("MEM_MAX")   # no cap unless set (the user 2026-11-04: 「我這台電腦有16Gb 你不用限制記憶體」)
 MIN_AVAILABLE_MB = 2000
 
 
@@ -50,7 +50,7 @@ def available_mb():
 
 
 ON_CI = os.environ.get("GITHUB_ACTIONS") == "true"
-THREADS = os.environ.get("THREADS") or (str(os.cpu_count() or 2) if ON_CI else "2")
+THREADS = os.environ.get("THREADS") or str(os.cpu_count() or 2)      # every core (the user 2026-11-04)
 
 
 def capped(cmd, log=None, wait_s=600):
@@ -70,8 +70,8 @@ def capped(cmd, log=None, wait_s=600):
         print(f"[capped] available {available_mb()} MB < {MIN_AVAILABLE_MB}, waiting...", flush=True)
         time.sleep(30)
         waited += 30
-    full = ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={MEM_MAX}",
-            "-p", "MemorySwapMax=0", "/usr/bin/time", "-f", "MAXRSS_KB %M WALL %e"] + [str(c) for c in cmd]
+    cap = ["-p", f"MemoryMax={MEM_MAX}", "-p", "MemorySwapMax=0"] if MEM_MAX else []
+    full = ["systemd-run", "--user", "--scope", "-q", *cap, "/usr/bin/time", "-f", "MAXRSS_KB %M WALL %e"] + [str(c) for c in cmd]
     t = time.time()
     if log:
         with open(log, "w") as fh:
@@ -79,7 +79,7 @@ def capped(cmd, log=None, wait_s=600):
     else:
         r = subprocess.run(full)
     if r.returncode == 137:
-        sys.exit(f"killed by the {MEM_MAX} memory cap (exit 137): lower resolution/samples; see {log}")
+        sys.exit(f"killed (exit 137{', the ' + MEM_MAX + ' memory cap' if MEM_MAX else ', out of memory'}): see {log}")
     if r.returncode != 0:
         sys.exit(f"command failed ({r.returncode}): {' '.join(map(str, cmd[:3]))} ... see {log}")
     return time.time() - t
