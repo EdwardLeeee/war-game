@@ -149,7 +149,9 @@ export const MOCK_RULES_R7: Rules = {
 export const MOCK_RULES_OUTPOST: Rules = {
   ...MOCK_RULES_R7,
   features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true, cavalryFlank: true },
-  outpost: rules().outpost,
+  // D-080's: six standing guard beside it (the simulation's own are nine hiding in it once
+  // features.outpostHide is on, D-119: ?hide=1), so this world stays as its tests know it.
+  outpost: { ...(rules().outpost ?? { reach: 8, chase: 12 }), slots: 6 },
   towerReach: { ...(rules().towerReach ?? { mainCity: 8, town: 2 }), outpost: rules().towerReach?.outpost ?? 6 },
 };
 
