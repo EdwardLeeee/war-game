@@ -196,7 +196,7 @@ jobs:
             # The main chain's jobs, then the fill-in jobs: slot k plays for island k % n, its slot k / n of that island's.
             base=$([ "$mode" = "fill" ] && echo false || echo true)
             play=$(echo "$list" | jq -c --argjson f "$fill" --argjson base "$base" '. as $is | ($is | length) as $n | (if $base then [$is[] | {kind: "base", island: ., slot: -1, slots: 0}] else [] end) + [range(0; $f) | {kind: "fill", island: $is[. % $n], slot: ((. / $n) | floor), slots: ((($f - 1 - (. % $n)) / $n | floor) + 1)}]')
-            echo "其他 run 正在跑的 job：${busy}，其他 workflow 在等的 job：${waiting}$([ "$ok" = 0 ] && echo "（API 出錯，不開補位）")；主鏈 ${mine}、保留 4，補位 ${fill}（上限 ${fill_max}）。" >> "$GITHUB_STEP_SUMMARY"
+            echo "其他 run 正在跑的 job：${busy}，其他 workflow 在等的 job：${waiting}$([ "$ok" = 0 ] && echo "（API 出錯，不開補位）")；主鏈 ${mine}、保留 4，補位 ${fill}（上限 ${fill_max}）。" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           if [ "$mode" = "es" ] || [ "$mode" = "gen" ] || [ "$mode" = "fill" ]; then
             :
