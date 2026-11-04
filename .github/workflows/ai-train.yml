@@ -74,6 +74,9 @@ on:
       retry:
         description: "gen: times this generation was started again after a failed step"
         default: "0"
+      only:
+        description: "gen: this island's chain alone (each island its own: none waits for the slowest); eval: the group"
+        default: ""
   push:
     branches: ["ai/train-*"]
     paths: ["sim/src/ai/learn/run.json"]
@@ -83,7 +86,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ai-train-v4s-${{ inputs.mode || 'push' }}
+  group: ai-train-v4s-${{ inputs.mode || 'push' }}-${{ inputs.only || 'all' }}
   cancel-in-progress: false
 
 jobs:
@@ -108,6 +111,8 @@ jobs:
       fill_max: ${{ steps.p.outputs.fill_max }}
       start: ${{ steps.p.outputs.start }}
       retry: ${{ steps.p.outputs.retry }}
+      only: ${{ steps.p.outputs.only }}
+      since: ${{ steps.p.outputs.since }}
     steps:
       - if: github.event_name == 'push'
         uses: actions/checkout@v7
@@ -133,9 +138,17 @@ jobs:
           play='[]'
           fill=0
           fill_max=$(get fill auto)
+          only=$(get only '')
           start=$(date +%s)
+          since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           if [ "$mode" = "es" ] || [ "$mode" = "gen" ]; then
             list=$(seq -s, 0 $((n - 1)) | sed 's/^/[/; s/$/]/')
+          fi
+          # gen with only: this island's chain (its main job and its fill-in jobs).
+          mine=$n
+          if [ "$mode" = "gen" ] && [ -n "$only" ]; then
+            list="[$only]"
+            mine=1
           fi
           if [ "$mode" = "gen" ]; then
             # NN v4s: the runners nobody else uses. Every job running in this repository's other runs counts; another
@@ -160,12 +173,13 @@ jobs:
                 *) waiting=$((waiting + q)) ;;
               esac
             done < runs.tsv
-            fill=$((20 - busy - n - 4))
+            # Each island's plan takes what is free when it runs (the others' jobs then running are in busy).
+            fill=$((20 - busy - mine - 4))
             if [ "$waiting" -gt 0 ] || [ "$ok" = 0 ] || [ "$fill" -lt 0 ]; then fill=0; fi
             if [ "$fill_max" != "auto" ] && [ "$fill" -gt "$fill_max" ]; then fill=$fill_max; fi
             # The main chain's jobs, then the fill-in jobs: slot k plays for island k % n, its slot k / n of that island's.
-            play=$(jq -nc --argjson n "$n" --argjson f "$fill" '[range(0; $n) | {kind: "base", island: ., slot: -1, slots: 0}] + [range(0; $f) | {kind: "fill", island: (. % $n), slot: ((. / $n) | floor), slots: ((($f - 1 - (. % $n)) / $n | floor) + 1)}]')
-            echo "其他 run 正在跑的 job：${busy}，其他 workflow 在等的 job：${waiting}$([ "$ok" = 0 ] && echo "（API 出錯，不開補位）")；主鏈 ${n}、保留 4，補位 ${fill}（上限 ${fill_max}）。" >> "$GITHUB_STEP_SUMMARY"
+            play=$(echo "$list" | jq -c --argjson f "$fill" '. as $is | ($is | length) as $n | [$is[] | {kind: "base", island: ., slot: -1, slots: 0}] + [range(0; $f) | {kind: "fill", island: $is[. % $n], slot: ((. / $n) | floor), slots: ((($f - 1 - (. % $n)) / $n | floor) + 1)}]')
+            echo "其他 run 正在跑的 job：${busy}，其他 workflow 在等的 job：${waiting}$([ "$ok" = 0 ] && echo "（API 出錯，不開補位）")；主鏈 ${mine}、保留 4，補位 ${fill}（上限 ${fill_max}）。" >> "$GITHUB_STEP_SUMMARY"
           fi
           if [ "$mode" = "es" ] || [ "$mode" = "gen" ]; then
             :
@@ -196,6 +210,8 @@ jobs:
             echo "fill_max=$fill_max"
             echo "start=$start"
             echo "retry=$(get retry 0)"
+            echo "only=$only"
+            echo "since=$since"
           } >> "$GITHUB_OUTPUT"
           echo "設定：$(echo "$S" | jq -c .)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -435,6 +451,7 @@ jobs:
           SLOTS: ${{ matrix.p.slots }}
           CONFIG: ${{ needs.plan.outputs.config }}
           START: ${{ needs.plan.outputs.start }}
+          SINCE: ${{ needs.plan.outputs.since }}
         run: |
           O="${GITHUB_WORKSPACE}/out"
           R="${GITHUB_WORKSPACE}/from/train-es-$I"
@@ -443,13 +460,15 @@ jobs:
           if [ "$KIND" = "base" ]; then
             node $T pairs --resume "$R" --island "$I" --config "$CONFIG" --out "$O"
           else
-            # Every 4 minutes, 2 calls: another workflow's run waiting, or one started since this job did: give way.
-            # (A run started before shows its jobs at once, Sim's ~140 too: the plan saw them waiting and started no
-            # fill-in; a summary job queued later fits the 4 kept free.) Two failed looks in a row: give way too.
-            SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            # At once and then every 4 minutes, 2 calls: another workflow's run waiting, or one started since the plan
+            # counted the runners: give way. (A run started before shows its jobs at once, Sim's ~140 too: the plan saw
+            # them waiting and started no fill-in; a summary job queued later fits the 4 kept free.) Two failed looks
+            # in a row: give way too.
             (
               err=0
-              while sleep 240; do
+              first=1
+              while [ "$first" = 1 ] || sleep 240; do
+                first=0
                 if q=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=queued&per_page=100" --jq '[.workflow_runs[] | select(.name != "AI train" and .name != "AI scratch")] | length') \
                   && s=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=in_progress&per_page=100" | jq --arg t "$SINCE" '[.workflow_runs[] | select(.name != "AI train" and .name != "AI scratch" and .created_at > $t)] | length'); then
                   err=0
@@ -555,6 +574,7 @@ jobs:
           CONFIG: ${{ needs.plan.outputs.config }}
           RETRY: ${{ needs.plan.outputs.retry }}
           CONTROL_RUN: ${{ needs.plan.outputs.control_run }}
+          ONLY: ${{ needs.plan.outputs.only }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" --paginate \
             | jq -rs '[.[].jobs[] | select(.completed_at != null and .started_at != null) | {k: (if (.name | startswith("play (fill")) then "補位" elif (.name | startswith("play (base")) then "主鏈" else "其他" end), h: (((.completed_at | fromdate) - (.started_at | fromdate)) / 3600)}] | group_by(.k) | map("\(.[0].k) \(map(.h) | add | . * 100 | round / 100) 小時（\(length) 個 job）") | join("，")' \
@@ -570,7 +590,7 @@ jobs:
           fi
           if [ "$CHAIN" != "0" ]; then
             gh workflow run ai-train.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
-              -f mode=gen -f from_run="$FROM" -f islands="$COUNT" -f chain="$LEFT" -f fill="$FILL" -f config="$CONFIG" -f retry="$AGAIN" -f control_run="$CONTROL_RUN"
+              -f mode=gen -f from_run="$FROM" -f islands="$COUNT" -f chain="$LEFT" -f fill="$FILL" -f config="$CONFIG" -f retry="$AGAIN" -f control_run="$CONTROL_RUN" -f only="$ONLY"
             echo "下一代從 run ${FROM} 接著練，之後還會再接 ${LEFT} 代。" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "接續次數用完，不再接下一代。" >> "$GITHUB_STEP_SUMMARY"
@@ -584,8 +604,11 @@ jobs:
             if [ "$busy" -gt 0 ]; then
               echo "有 ${busy} 個 PR 的檢查在跑或在等，這次不比強弱。" >> "$GITHUB_STEP_SUMMARY"
             else
+              # One island's chain: that island and its best candidate, in a group of its own.
+              PICK=""
+              [ -n "$ONLY" ] && PICK="$ONLY,${ONLY}b"
               gh workflow run ai-train.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
-                -f mode=eval -f from_run="$GITHUB_RUN_ID" -f islands="$COUNT" -f islands_of=true -f control_run="$CONTROL_RUN" -f games=100 -f args="--seed 2000001 --crush 20"
+                -f mode=eval -f from_run="$GITHUB_RUN_ID" -f islands="$COUNT" -f islands_of=true -f pick="$PICK" -f only="$ONLY" -f control_run="$CONTROL_RUN" -f games=100 -f args="--seed 2000001 --crush 20"
               echo "比強弱：這代的 ${COUNT} 個島對困難各 200 局、push-crush 40 局（對照 run ${CONTROL_RUN:-在比強弱的 run 裡量}）。" >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
