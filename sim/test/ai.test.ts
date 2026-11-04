@@ -2196,6 +2196,29 @@ test("NN v4 (HEAD_SQUAD): a squad holding home comes back to the army after SQUA
   assert.ok(raid.ai.stats!().squadLost >= 1, "6 of 10 gone: back home");
 });
 
+test("NN v4 (run 41745422431): no squad by an army in a fight; where a raid broke off, none goes for SQUAD_REST", () => {
+  const fight = squadGame(SQUAD_HOME);
+  const s0 = fight.w.map.spawns[0];
+  put(fight.g, 1, UnitType.Spearman, s0.cellX + 9, s0.cellY - 8);
+  fight.g.fog.update(fight.w);
+  fight.ai.think(buildView(fight.g, 0));
+  assert.equal(fight.ai.stats!().squadHome, 0, "an enemy soldier by the army: no squad");
+  const raid = squadGame(SQUAD_RAID, true);
+  const sent = raid.ai.think(buildView(raid.g, 0)).find((c) => c.c === "move" && c.u.length === 10) as { u: number[] };
+  kill(raid.g, sent.u.slice(0, 6));
+  for (let k = 0; k < 3; k++) {
+    raid.w.tick += 10;
+    raid.g.fog.update(raid.w);
+    raid.ai.think(buildView(raid.g, 0));
+  }
+  assert.equal(raid.ai.stats!().squadLost, 1);
+  assert.equal(raid.ai.stats!().squadRaid, 1, "the same camp rests: no second raid at once");
+  raid.w.tick += 3 * 1200;
+  raid.g.fog.update(raid.w);
+  raid.ai.think(buildView(raid.g, 0));
+  assert.equal(raid.ai.stats!().squadRaid, 2, "after SQUAD_REST, again");
+});
+
 test("NN v4 (HEAD_CHARGE): charge now goes with up to 2 x its cavalry of spearmen by the target, hard only with as many; hold, no charge", () => {
   const net = (c: number) => ({ charge: true, net: forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD, AS_HARD, AS_HARD, c]) });
   // 3 cavalry: hard goes with up to 3 spearmen by the target, now with up to 6 (chargeAt's row: 7 of 9 are within CHARGE_SPEAR).
