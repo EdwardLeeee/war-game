@@ -408,6 +408,10 @@ TARGETS["r8o64"] = ([dict(kind="v7_outpost", culture=c, state=st, opts=dict(look
                        for c in CULTURES for lk in ("done", "damaged")])
 CAMERA["r8o64"] = proj.OBLIQUE
 LOOK["r8o64"] = "r8"
+# (the damaged looks again: the realistic fire and scorch in place of R12's cones and soot box)
+TARGETS["r8o64d"] = [dict(pc) for pc in TARGETS["r8o64"] if pc["name"] in ("outpost_E_damaged", "outpost_W_damaged")]
+CAMERA["r8o64d"] = proj.OBLIQUE
+LOOK["r8o64d"] = "r8"
 # art-v6: the finished looks that carry shoot points (shoot_at_<k>, added 2026-10-23 after the r8p run): a later run
 # replaces these pieces of the r8p run in the atlas
 TARGETS["r8p_marks"] = [pc for _c in CULTURES for pc in _prod_r8(_c) if pc["name"] in

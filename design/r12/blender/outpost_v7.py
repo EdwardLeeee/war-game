@@ -26,6 +26,23 @@ def v7_outpost(root, c="E", look="done", front=False):
     if look == "build":
         return
     H = 2.6 if c == "E" else 2.8
+    if look == "damaged":
+        # the realistic look's fire and scorch (R12's cartoon cones and soot box read as black squares, art-v6.4 board)
+        for ob in list(O.kit.parts_under(root)):
+            if ob.name.startswith(("fire0_", "fire1_", "soot0", "soot1")):
+                states._drop(ob)
+        P = palette(c)
+        x0, x1, y0, y1 = -O.W / 2, O.W / 2, -O.D / 2, O.D / 2
+        prev = states.R8
+        states.R8 = True
+        try:
+            states.flames(root, P, "dm_fire0", (x1 - 1.5, y0 - 0.05, H * 0.62), size=1.1, n=6, seed=3)
+            states.flames(root, P, "dm_fire1", (x0 - 0.05, (y0 + y1) / 2 + 0.6, H * 0.66), size=0.9, n=5, seed=4)
+            states.smoke(root, "dm_smoke0", (x1 - 1.5, y0 - 0.2, H + 0.4), height=3.0, r0=0.3, r1=0.85, n=10, dark=0.16, alpha=0.85)
+        finally:
+            states.R8 = prev
+        states.scorch(root, "dm_scorch0", (x1 - 1.5, y0 - 0.03, H * 0.6), "y", 1.4, 1.1, seed=5)
+        states.scorch(root, "dm_scorch1", (x0 - 0.03, (y0 + y1) / 2 + 0.6, H * 0.62), "x", 1.2, 1.0, seed=6)
     tw, td = O.W - 2 * H / (5.0 if c == "E" else 12.0), O.D - 2 * H / (5.0 if c == "E" else 12.0)
     # where the men stand: a grid on the walk, nearest the camera first (the client fills the first n: the seen side
     # first), stand_at_0 .. stand_at_8
