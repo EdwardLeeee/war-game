@@ -72,9 +72,22 @@ def front_only(root, stand, walk, reach=0.4, gap=0.15):
         lo = min(v(y, z) for y in (y0, y1) for z in (z0, z1))
         hi = max(v(y, z) for y in (y0, y1) for z in (z0, z1))
         return lo < v(sy, sz) + 1.9 * ce and hi > v(sy, sz)
+    # D-118: on the diamond camera "in front" is along the camera's own way (az -45: toward the south-west), not -y:
+    # every box and spot is taken into the camera's frame first (x across the picture, y away from the camera)
+    az = math.radians(lib.CAM_AZ)
+    fx, fy = -math.sin(az), math.cos(az)
+    rx, ry = math.cos(az), math.sin(az)
+
+    def cam_box(b):
+        x0, y0, z0, x1, y1, z1 = b
+        xs = [x * rx + y * ry for x in (x0, x1) for y in (y0, y1)]
+        ys = [x * fx + y * fy for x in (x0, x1) for y in (y0, y1)]
+        return (min(xs), min(ys), z0, max(xs), max(ys), z1)
+
+    cam_spots = [(sx * rx + sy * ry, sx * fx + sy * fy, sz) for sx, sy, sz in spots]
     for ob in kit.parts_under(root):
-        box = states._bbox(ob)
-        if not any(hides(box, sp) for sp in spots):
+        box = cam_box(states._bbox(ob))
+        if not any(hides(box, sp) for sp in cam_spots):
             ob["back_holdout"] = True
 
 

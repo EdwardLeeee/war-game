@@ -197,7 +197,10 @@ def footprint(kind):
         import arch2_r8
         import keep_r8
         import market_r8
-        foot = {**arch_r8.FOOTPRINT, **arch2_r8.FOOTPRINT, **keep_r8.FOOTPRINT, **market_r8.FOOTPRINT}[kind]
+        import main_city_r9
+        import outpost_v7
+        foot = {**arch_r8.FOOTPRINT, **arch2_r8.FOOTPRINT, **keep_r8.FOOTPRINT, **market_r8.FOOTPRINT,
+                **main_city_r9.FOOTPRINT, **outpost_v7.FOOTPRINT}[kind]
     fx, fy = foot
     return fx * kit.CELL, fy * kit.CELL
 
@@ -654,7 +657,7 @@ def r8_ruin(root, P, c, w, d, blocks, seed):
 
 def apply(root, kind, c, state, **opts):
     global R8
-    R8 = kind.startswith("r8_")
+    R8 = kind.startswith(("r8_", "r9_", "v7_"))       # (R9's city and R12's outpost are the realistic look too)
     P = kit.palette(c)
     w, d = footprint(kind)
     blocks = _tagged(root, "block")
