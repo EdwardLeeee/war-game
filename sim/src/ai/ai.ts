@@ -3036,6 +3036,13 @@ const SQUAD_NEAR = 10;
 const SQUAD_WALK = 3 * TICKS_PER_MINUTE;
 const SQUAD_HOLD = 4 * TICKS_PER_MINUTE;
 const SQUAD_RAID_TIME = 90 * 20;
+/**
+ * NN v4 (run 41745422431, 256 games): 13223 of 14815 squads broke off outmatched, most as they formed by an army in a
+ * fight (the enemy by it counted against the squad alone), and the network sent the next at once. A squad forms only
+ * with no enemy soldier this near the army; it is weighed alone once this far from the army; where one broke off
+ * (outmatched or half gone), no squad goes for SQUAD_REST.
+ */
+const SQUAD_REST = 3 * TICKS_PER_MINUTE;
 const SQUAD_RAID_QUIET = 30 * 20;
 /** NN v4 (CHARGE_NOW): the charge goes with up to this many times its cavalry of enemy spearmen by the target (as hard: 1). */
 const CHARGE_NOW_SPEARS = 2;
@@ -3279,6 +3286,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const squads: { ids: Set<number>; task: number; x: number; y: number; town: number; start: number; size: number; moveAt: number; at: number; quiet: number }[] = [];
   /** NN v4: enemy farmers seen by a raid squad (id: last tick seen, within SQUAD_NEAR of it). */
   const raidSeen = new Map<number, number>();
+  /** NN v4: spots (8x8 cells) where a squad broke off, and the tick it may go there again. */
+  const squadRestAt = new Map<number, number>();
   let chargeAt: { x: number; y: number; size: number; target: number } | null = null;
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
@@ -3713,7 +3722,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           // squad looks for it, without the strength checks): a town it governs with no squad on it; a small town not its own,
           // in ruins or being plundered, with none on it; an enemy camp, mine or farm it knows of, or a farmer in sight. A
           // charge (now, or not now) with cavalry for one and an enemy ranged unit or mage in sight; else the choice changes nothing.
-          const squadOk = squads.length < plan.squadMost && Math.trunc((free * plan.squadShare) / 100) >= SQUAD_MIN;
+          // Not by an army in a fight: no enemy soldier within SQUAD_NEAR of the free soldiers' centre.
+          const freeList = soldiers.filter((u) => !guards.has(u.id));
+          const fc = centre(freeList, home.cellX, home.cellY);
+          const inFight = foes.some((f) => dist2(f.x, f.y, fc.x, fc.y) <= SQUAD_NEAR * SQUAD_NEAR);
+          const squadOk = !inFight && squads.length < plan.squadMost && Math.trunc((free * plan.squadShare) / 100) >= SQUAD_MIN;
           let townFree = false;
           let takeFree = false;
           for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
@@ -4514,6 +4527,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
 
       // --- NN v4 (HEAD_SQUAD, D-122): squads off on their own -----------------------------------------------
       {
+        const squadSpot = (x: number, y: number) => {
+          const f = frame(x, y);
+          return (f.v >> 3) * n + (f.u >> 3);
+        };
+        const resting = (x: number, y: number) => tick < (squadRestAt.get(squadSpot(x, y)) ?? 0);
         /** The forts reaching (x, y) and 1.3 x the enemy seen there in the last minute: does `list` beat them (D-083 (a), as the rescue weighs). */
         const squadBeats = (list: { type: number }[], x: number, y: number) => {
           let enemy = 0;
@@ -4531,8 +4549,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const ids = squad.map((u) => u.id);
           if (q.at < 0 && dist2(sc.x, sc.y, q.x, q.y) <= SQUAD_NEAR * SQUAD_NEAR) q.at = tick;
           let why: "" | "squadLost" | "squadWeak" | "squadDone" | "squadTimeout" = "";
+          // Weighed alone once away from the army (by it, the army's fight is the army's).
+          const alone = dist2(sc.x, sc.y, ac.x, ac.y) > SQUAD_NEAR * SQUAD_NEAR;
           if (squad.length * 2 < q.size) why = "squadLost";
-          else if (!squadBeats(squad, sc.x, sc.y) || underArrows(sc)) why = "squadWeak";
+          else if (underArrows(sc) || (alone && !squadBeats(squad, sc.x, sc.y))) why = "squadWeak";
           else if (q.at < 0 && tick - q.start >= SQUAD_WALK) why = "squadTimeout";
           else if (q.task === SQUAD_RAID) {
             // At the spot: the enemy farmers by it, nearest first; those gone from sight while it stands by them were killed (or hid).
@@ -4562,6 +4582,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             if (ids.length > 0) out.push({ c: why === "squadDone" || why === "squadTimeout" ? "move" : "retreat", u: ids, x: post.x, y: post.y });
             if (why === "squadDone" || why === "squadTimeout") rejoin.push(...ids);
             counted[why]++;
+            if ((why === "squadLost" || why === "squadWeak") && q.task !== SQUAD_HOME) squadRestAt.set(squadSpot(q.x, q.y), tick + SQUAD_REST);
             squads.splice(k, 1);
           } else if (ids.length > 0 && tick - q.moveAt >= 400 && (q.at < 0 || q.task !== SQUAD_RAID)) {
             out.push({ c: "move", u: ids, x: q.x, y: q.y });
@@ -4580,7 +4601,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               let best = -1;
               let bestD = 0;
               for (const [id, t] of towns) {
-                if (t.owner !== player || t.state !== TownState.Governed || squads.some((q) => q.town === id)) continue;
+                if (t.owner !== player || t.state !== TownState.Governed || squads.some((q) => q.town === id) || resting(t.x, t.y)) continue;
                 const d = dist2(t.x, t.y, home.cellX, home.cellY);
                 if (best < 0 || d < bestD) {
                   best = id;
@@ -4592,7 +4613,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               let best = -1;
               let bestD = 0;
               for (const [id, t] of towns) {
-                if (t.size !== TownSize.Small || t.owner === player || t.state === TownState.Ruins || t.state === TownState.Plundering || underArrows(t) || squads.some((q) => q.town === id)) continue;
+                if (t.size !== TownSize.Small || t.owner === player || t.state === TownState.Ruins || t.state === TownState.Plundering || underArrows(t) || squads.some((q) => q.town === id) || resting(t.x, t.y)) continue;
                 const remembered = [...intel.values()].filter((e) => tick - e.tick <= FORT_FORGET && dist2(e.x, e.y, t.x, t.y) <= 14 * 14);
                 const d = dist2(t.x, t.y, home.cellX, home.cellY);
                 if (best >= 0 && d >= bestD) continue;
@@ -4615,7 +4636,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               for (const f of enemyFarmers) spots.push({ x: f.x, y: f.y });
               let bestD = 0;
               for (const sp of spots) {
-                if (underArrows(sp)) continue;
+                if (underArrows(sp) || resting(sp.x, sp.y)) continue;
                 let seen = false;
                 for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, sp.x, sp.y) <= 14 * 14) seen = true;
                 if (seen) continue;
