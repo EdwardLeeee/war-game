@@ -288,3 +288,21 @@ test("the wallshift scenario (the screen's recordings): they walk over, shoot th
   run(g, 30 * S);
   mine.forEach((id, k) => assert.equal(u.wall[slotOf(g, id)], homes[k], "home again"));
 });
+
+test("too many of them (more than WALL_SHIFT.odds times those on the walls): none walks; fewer, they do", () => {
+  const T = 0;
+  const run2 = (every: number) => {
+    const { g, mine, homes } = garrisoned(T, every);
+    atEastGate(g, T, 18);
+    run(g, 20 * S);
+    const u = g.w.units.col;
+    return { moved: mine.filter((id, k) => u.wall[slotOf(g, id)] !== homes[k]).length, n: mine.length };
+  };
+  // Every 12th wall cell: 4 on the walls against 18 (those they see: more than twice as many).
+  const few = run2(12);
+  assert.ok(18 > WALL_SHIFT.odds * few.n, `${few.n} on the walls`);
+  assert.equal(few.moved, 0, "nobody walked");
+  // Every 4th: 11 against 18.
+  const many = run2(4);
+  assert.ok(many.moved >= 8, `${many.moved} of ${many.n} walked`);
+});

@@ -1306,6 +1306,14 @@ export class UnitSystem {
     return out;
   }
 
+  /** Town t's soldiers of player `me` up on its walls (WALL_SHIFT.odds). */
+  private wallSoldiers(w: World, t: number, me: number): number {
+    const u = w.units.col;
+    let k = 0;
+    for (let s = 0; s < w.units.count; s++) if (u.owner[s] === me && u.wall[s] >= 0 && w.wallTown[u.wall[s]] === t && onWall(w, s)) k++;
+    return k;
+  }
+
   /** The cells round town t's way (x0, y0, x1, y1). */
   private wallBox(w: World, t: number): Int32Array {
     let box = this.wallBoxes[t];
@@ -1379,6 +1387,8 @@ export class UnitSystem {
     }
     u.wallWait[i] += RETARGET_EVERY;
     if (u.wallWait[i] < WALL_SHIFT.wait) return;
+    // Too many of them for those on the walls: they would only walk into it.
+    if (foes.length / 3 > WALL_SHIFT.odds * this.wallSoldiers(w, t, u.owner[i])) return;
     const to = wayPick(w, t, c, wayFrame(w, u.owner[i], t), (d) => w.wallAt[d] < 0 && this.foeFrom(w, foes, d, reach));
     if (to >= 0) this.startShift(w, i, to);
   }
