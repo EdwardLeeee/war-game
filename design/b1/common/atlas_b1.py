@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -315,8 +315,11 @@ def layers(name):
     team[..., 3] = np.asarray(weight, np.float32)
     team = Image.fromarray(team.astype(np.uint8), "RGBA")
     s_p = SRC / f"{name}_x3_shadow.png"
-    if s_p.exists():
+    if s_p.exists() and not name.endswith("_front"):    # (a building's front layer: the piece under it has the shadow)
         a = Image.open(s_p).convert("RGBA").getchannel("A")
+        # softened a little before the floor: the half-size, few-sample pass cut at the floor read as scattered dots
+        # (art-v7 PR2 review 2); the light is a big soft sky anyway
+        a = a.filter(ImageFilter.GaussianBlur(1.4))
         a = a.point(lambda v: v if v >= SHADOW_FLOOR else 0)
     else:                                         # a wall's front layer (D-096): the wall's own render has the shadow
         a = Image.new("L", (1, 1), 0)

@@ -667,6 +667,14 @@ TARGETS["r8d7h"] = [dict(pc) for pc in TARGETS["r8v7c"] if pc["name"].startswith
 CAMERA["r8d7h"] = proj.DIAMOND
 LOOK["r8d7h"] = "r8"
 FOLDER["r8d7h"] = "r8d7h"
+# PR2 review 2: the outposts' front layers (no flag), R9's city building and burning (no pine, the realistic flames),
+# the East's range with a plank floor under its hall
+TARGETS["r8d7i"] = ([dict(pc) for pc in TARGETS["r8v7c"]
+                     if pc["name"].endswith("_front") or pc["name"] in ("main_city_E_build2", "main_city_E_build3", "main_city_E_damaged")]
+                    + [dict(pc) for t in TARGETS if t.startswith("r8d7_") for pc in TARGETS[t] if piece_name(pc).startswith("range_E_")])
+CAMERA["r8d7i"] = proj.DIAMOND
+LOOK["r8d7i"] = "r8"
+FOLDER["r8d7i"] = "r8d7i"
 
 
 

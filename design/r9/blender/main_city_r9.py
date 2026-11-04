@@ -205,13 +205,22 @@ def r9_main_city_v7(root, c="E", look="done"):
 
     def zmin(ob):
         return states._bbox(ob)[2]
+
+    def _under(ob, name):
+        p = ob.parent
+        while p is not None:
+            if p.name.startswith(name):
+                return True
+            p = p.parent
+        return False
     if look in ("build2", "build3"):
         cut = 2.4 if look == "build2" else 4.0
         for ob in parts:
             n = ob.name
             if n.startswith(("mc_flag", "flag")):
                 continue
-            if n.startswith(("mc_roof", "ms_roof", "mc_hang", "mc_lamp")) or zmin(ob) > cut:
+            # (and the pine behind the hall: the done hall hides it, so building it read as a tree that grew, r2)
+            if n.startswith(("mc_roof", "ms_roof", "mc_hang", "mc_lamp")) or zmin(ob) > cut or _under(ob, "mc_pine_at"):
                 states._drop(ob)
         h = 3.0 if look == "build2" else 4.6
         states.scaffold(root, P, c, -2.9, 3.1, -1.25, 3.35, h, name="sc_hall")
@@ -221,6 +230,7 @@ def r9_main_city_v7(root, c="E", look="done"):
     # damaged: fire on the main roof's front slope and on the side hall's, smoke, scorch on the hall's front wall
     roofs = [ob for ob in parts if ob.name.startswith("mc_roof")]
     side = [ob for ob in parts if ob.name.startswith("ms_roof")]
+    prev, states.R8 = states.R8, True                 # the realistic look's flames (not the cartoon cones)
     for k, grp in enumerate((roofs, side)):
         if not grp:
             continue
@@ -231,6 +241,7 @@ def r9_main_city_v7(root, c="E", look="done"):
         p = (x0 + (x1 - x0) * 0.3, y0 + 0.6, z0 + (z1 - z0) * 0.55)
         states.flames(root, P, f"dm_fire{k}", p, size=1.8 if k == 0 else 1.1, n=8, seed=5 + k)
         states.smoke(root, f"dm_smoke{k}", (p[0], p[1], p[2] + 0.8), height=3.2, r0=0.35, r1=0.9, n=11, dark=0.16, alpha=0.9)
+    states.R8 = prev
     states.scorch(root, "dm_scorch", (-0.6, -0.85, 2.2), "y", 1.6, 1.4, seed=3)
 
 
