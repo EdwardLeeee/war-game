@@ -21,9 +21,12 @@ test("菱形＋邊緣：崖面排滿兩條下緣（每 8 格一段＋3 轉角）
   await start(page, "view=diamond&edge=1");
   const e = await edge(page);
   expect(e).toMatchObject({ on: true });
-  // One piece every 8 cells along each lower edge, and the three corners (the e2e map: 96 cells a side).
+  // art-v7's layout (the stand-ins have it): from the bottom corner one piece every 16 m (8 cells), as
+  // many as fit between the bottom's 8 m and the far corner's 10 m, one more against it when they do
+  // not end on it; and the three corners (the e2e map: 96 cells a side, 11 a side).
   const n = await page.evaluate(() => window.__proto?.game?.mapSize() ?? 0);
-  expect(e?.pieces).toBe(2 * Math.round(n / 8) + 3);
+  const room = n * 2 - 18;
+  expect(e?.pieces).toBe(2 * (Math.floor(room / 16) + (room % 16 > 0 ? 1 : 0)) + 3);
   expect(e?.falls).toBeGreaterThan(0);
   await page.getByRole("button", { name: "暫停" }).tap();
   // In the middle of the map: nothing of the edge drawn.

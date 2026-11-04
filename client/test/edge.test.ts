@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cliffPieces, edgeCell, edgeFalls, edgeFiles, edgeLight, edgePoint, parseEdge } from "../src/render/edge-layout.ts";
+import { cliffFromBottom, cliffPieces, edgeCell, edgeFalls, edgeFiles, edgeLight, edgePoint, parseEdge } from "../src/render/edge-layout.ts";
 import { Fog, Terrain } from "../src/sim.ts";
 
 const piece = (file: string) => ({ file, anchor: [1, 1] as [number, number] });
@@ -40,6 +40,9 @@ test("edge.json：照 ui 的格式讀進來；格式不對、缺崖面或雲海�
   const files = edgeFiles(e);
   assert.equal(files.length, new Set(files).size);
   assert.ok(files.includes("cliff_se_2.png") && files.includes("corner_bottom.png") && files.includes("fall_mouth.png"));
+  // art-v7: the se edge's own mouth.
+  const v7 = parseEdge({ ...EDGE, fall: { ...EDGE.fall, mouth: { ...EDGE.fall.mouth, se: piece("fall_mouth_se.png") } } });
+  assert.ok(v7 !== null && edgeFiles(v7).includes("fall_mouth_se.png"));
 });
 
 test("崖面：每 16 公尺（8 格）一段，排滿整條邊、不重疊也不留空；用哪一段照位置決定，兩次一樣", () => {
@@ -54,6 +57,26 @@ test("崖面：每 16 公尺（8 格）一段，排滿整條邊、不重疊也�
   // A map not a multiple of 8: the pieces stretch a little, still edge to edge.
   const b = cliffPieces(125, "se", 16, 3);
   assert.equal(b.at(-1)?.to, 125);
+});
+
+test("art-v7 的崖面（from: bottom）：從下角沿兩條邊，第 k 段中點在 16k 公尺；129 格是 1–15 段；兩頭留給下角 8 公尺、左右角 10 公尺", () => {
+  const sw = cliffFromBottom(129, "sw", 16, 3);
+  const se = cliffFromBottom(129, "se", 16, 3);
+  assert.equal(sw.length, 15);
+  assert.equal(se.length, 15);
+  // sw: along from the left corner, the bottom at 129; piece 1 nearest the bottom.
+  assert.deepEqual(sw.map((p) => p.mid), Array.from({ length: 15 }, (_, k) => 129 - 8 * (k + 1)));
+  assert.deepEqual([sw[0].from, sw[0].to], [117, 125], "下角的 8 公尺（4 格）之後");
+  assert.deepEqual([sw.at(-1)?.from, sw.at(-1)?.to], [5, 13], "左角的 10 公尺（5 格）之前");
+  assert.deepEqual(se.map((p) => p.mid), Array.from({ length: 15 }, (_, k) => 8 * (k + 1)));
+  assert.deepEqual([se.at(-1)?.from, se.at(-1)?.to], [116, 124], "右角的 10 公尺之前");
+  for (const list of [sw, se]) for (let k = 1; k < list.length; k++) assert.equal(Math.abs(list[k].mid - list[k - 1].mid), 8, "一段 16 公尺，不拉長");
+  assert.ok(sw.every((p) => p.kind >= 0 && p.kind < 3) && new Set(sw.map((p) => p.kind)).size === 3);
+  assert.deepEqual(sw, cliffFromBottom(129, "sw", 16, 3), "兩次一樣");
+  // Another length (128 cells, 256 m): one more piece against the far corner's leg, no gap.
+  const short = cliffFromBottom(128, "se", 16, 3);
+  assert.equal(short.length, 15);
+  assert.equal(short.at(-1)?.to, 123, "右角的 10 公尺（5 格）之前");
 });
 
 test("邊上的格子：左下邊是最下一列由左到右，右下邊是最右一行由下到上；點在地圖邊線上", () => {
