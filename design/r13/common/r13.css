@@ -1,0 +1,152 @@
+/* R13 on top of R6's themes.css and ui.css (theme A 銅木). The approved look, R13's new pieces only. */
+
+/* the prompt strip up in the row of 全軍撤退, between it and the top-right buttons, so that the buildings under it show */
+.screen > .prompt.at-high { top: 52px; left: 472px; transform: translateX(-50%); max-width: 462px; }
+
+/* 進駐 in the command area: the icon of a gate with an arrow going in */
+.cmds .b.enter .ic { width: 18px; height: 18px; }
+
+/* 駐N／躲N on a group's top edge (client/src/style.css .group-away, .group-hide) */
+.groups .grp .gtag { position: absolute; top: -7px; right: -4px; min-width: 18px; height: 16px; padding: 0 3px; border-radius: 8px; font-size: 10px; font-weight: 700;
+  line-height: 16px; text-align: center; background: #2f5d8a; color: #fff; box-shadow: 0 0 0 1px rgba(255, 255, 255, .6); pointer-events: none; z-index: 2; }
+.groups .grp .gtag.hide { background: #5b4a7a; }
+
+/* the battlefield marks (the game's world interface, the same in A and B) */
+.r13w { z-index: 0; }
+.screen > .r13glyph { width: 24px; height: 24px; font-size: 14px; }
+.screen > .r13name { transform: translateX(-50%); padding: 1px 7px; border-radius: 9px; font-size: 12px; font-weight: 700; line-height: 16px; white-space: nowrap;
+  background: rgba(32, 24, 14, .88); color: #ffe08a; box-shadow: 0 0 0 1.5px #ffd666, 0 2px 4px rgba(0, 0, 0, .5); }
+.screen > .r13name.off { color: #d8d2c0; box-shadow: 0 0 0 1px rgba(230, 225, 215, .55), 0 2px 4px rgba(0, 0, 0, .5); }
+.screen > .r13tag { transform: translate(-50%, -50%); padding: 3px 8px 4px; border-radius: 8px; font-size: 12px; line-height: 16px; text-align: center; white-space: nowrap;
+  background: rgba(26, 19, 11, .93); color: #f4e7c9; box-shadow: 0 0 0 1.5px #ffd666, 0 0 8px rgba(255, 214, 102, .55), 0 2px 5px rgba(0, 0, 0, .55); }
+.screen > .r13tag b { color: #ffe08a; margin-right: 2px; }
+.screen > .r13tag small { display: block; font-size: 12px; color: #d8c49c; }
+.screen > .r13tag.off { color: #d8d2c0; background: rgba(26, 19, 11, .85); box-shadow: 0 0 0 1px rgba(230, 225, 215, .6), 0 2px 5px rgba(0, 0, 0, .55); }
+
+/* A: who goes in and who stays, a table in the selection info */
+.sel .r13tab { display: grid; grid-template-columns: auto 1fr auto; column-gap: 10px; margin-top: 2px; font-size: 13px; line-height: 18px; }
+.sel .r13tab > span { padding: 3px 0; border-top: 1px solid rgba(216, 196, 156, .22); white-space: nowrap; }
+.sel .r13tab > .h { border-top: 0; padding: 0; font-size: 12px; color: #d8c49c; }
+.sel .r13tab .k { font-weight: 700; color: #ffe08a; }
+.sel .r13tab .in .ok { display: inline-block; width: 9px; height: 5px; margin: 0 5px 3px 1px; border-left: 2px solid #9fe08a; border-bottom: 2px solid #9fe08a; transform: rotate(-45deg); }
+.sel .r13tab .off { color: #b8ab92; }
+.sel .r13tab .k.off { color: #b8ab92; }
+
+/* B: a box a place (empty: dashed), the kind written in it */
+.sel .pipline { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.sel .pipline .b { min-height: 44px; padding: 0 10px; font-size: 12px; }
+.sel .pipline > b { font-size: 14px; }
+.pips { display: inline-flex; gap: 3px; }
+.pips .pip { width: 22px; height: 22px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-style: normal;
+  font-size: 12px; font-weight: 700; box-shadow: inset 0 0 0 1.5px rgba(216, 196, 156, .55); color: #d8c49c; }
+.pips .pip:not(.on) { background: repeating-linear-gradient(135deg, rgba(216, 196, 156, .12) 0 3px, transparent 3px 6px); }
+.pips .pip.on { background: linear-gradient(180deg, #3f6fc0, #284a86); color: #fff; box-shadow: inset 0 0 0 1.5px #9cc2ff; }
+.pips.nine { gap: 2px; } .pips.nine .pip { width: 19px; }
+
+/* the group's 進駐中 box, on top of its kinds; the panel scrolls under it */
+.sel .inbox { margin-top: 2px; padding: 2px 8px 6px; border-radius: 7px; background: rgba(240, 207, 138, .07); box-shadow: inset 0 0 0 1px rgba(240, 207, 138, .45); }
+.sel .inbox .line { font-size: 13px; }
+.sel .inbox .line.k { font-weight: 700; color: #ffe08a; min-width: 30px; }
+.sel .inbox .rowb .b { flex-direction: column; gap: 0; padding: 2px 10px 3px; }
+.sel .inbox .rowb .b .lb { font-size: 13px; }
+.sel:has(.r13gp) { max-height: 236px; overflow: hidden; }
+.sel:has(.r13gp)::after { content: ""; position: absolute; right: 3px; top: 52px; width: 4px; height: 64px; border-radius: 2px; background: rgba(240, 207, 138, .7); }
+.sel .scrollhint { margin-top: 4px; font-size: 12px; color: #d8c49c; text-align: center; }
+.sel .r13gp { margin-top: 4px; }
+
+.sel .line.note { font-size: 12px; color: #d8c49c; white-space: normal; }
+.sel .rowb.whose .line { margin-right: 2px; }
+.sel .rowb.whose .line + .b + .line { margin-left: 8px; }
+
+/* ---------- R13-02 局後統計: a full-screen card in A 銅木 over the dimmed battlefield ---------- */
+.screen > .r13stats { left: 4px; top: 4px; right: 4px; bottom: 4px; border-radius: 10px; color: #f4e7c9;
+  background: repeating-linear-gradient(176deg, rgba(255, 220, 170, .03) 0 2px, rgba(0, 0, 0, .04) 2px 5px), linear-gradient(180deg, rgba(60, 42, 26, .985), rgba(36, 25, 16, .985));
+  box-shadow: inset 0 0 0 1.5px #b98d4c, inset 0 0 0 3px rgba(30, 18, 10, .9), 0 3px 10px rgba(0, 0, 0, .6); }
+.r13stats .sthead { position: absolute; left: 12px; right: 10px; top: 5px; height: 46px; display: flex; align-items: center; gap: 14px; }
+.r13stats .res-word { font-size: 26px; font-weight: 700; letter-spacing: .08em; }
+.r13stats .res-word.won { color: #f0cf6a; } .r13stats .res-word.lost { color: #e9b6a6; }
+.r13stats .why { flex: 1; font-size: 14px; line-height: 18px; white-space: nowrap; }
+.r13stats .why small { display: block; font-size: 12px; color: #d8c49c; }
+.r13stats .go { display: flex; gap: 8px; }
+.r13stats .go .b, .r13stats .endgo .b { min-width: 96px; min-height: 44px; font-size: 14px; }
+.r13stats h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.r13stats h4 { margin: 0; font-size: 15px; font-weight: 700; }
+.r13stats .ctl { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+.r13stats .seg { display: flex; gap: 4px; }
+.r13stats .seg .b { min-width: 56px; min-height: 44px; padding: 0 8px; font-size: 14px; }
+[data-theme="a"] .r13stats .seg .b.on { background: linear-gradient(180deg, var(--gold1), var(--gold2)); color: #fff6dc; }
+.r13stats .card { background: #221810; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(216, 196, 156, .28); padding: 6px 8px 4px; }
+.r13stats .chart { display: block; font-variant-numeric: tabular-nums; }
+.r13stats .lg { display: inline-flex; align-items: center; gap: 5px; margin-right: 14px; font-size: 13px; line-height: 18px; }
+.r13stats .lg .key { flex: none; }
+.r13stats .lg.muted { color: #b8ab92; font-size: 12px; }
+.r13stats .mkey { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 5px; font-size: 12px; line-height: 16px; color: #d8c49c; }
+.r13stats .mkey i, .r13stats .moments .mt i { display: inline-flex; width: 17px; height: 17px; margin-right: 4px; border-radius: 50%; align-items: center; justify-content: center;
+  font-style: normal; font-weight: 700; font-size: 12px; color: #f4e7c9; background: #3a2a1a; box-shadow: inset 0 0 0 1.2px #d8c49c; vertical-align: -3px; }
+.r13stats .mkey.wide { margin: -4px 0 10px; }
+
+/* A: tabs down the left, a page beside them */
+.r13stats .tabs { position: absolute; left: 10px; top: 58px; width: 88px; display: flex; flex-direction: column; gap: 6px; }
+.r13stats .tabs .tab { width: 88px; min-height: 44px; font-size: 15px; }
+[data-theme="a"] .r13stats .tabs .tab.is-active { background: linear-gradient(180deg, var(--gold1), var(--gold2)); color: #fff6dc; }
+.r13stats .page { position: absolute; left: 108px; right: 10px; top: 54px; bottom: 6px; }
+.r13stats .two { display: grid; grid-template-columns: 322px 1fr; gap: 12px; }
+.r13stats .two h3 { margin: 6px 0 6px; }
+.r13stats .moments { list-style: none; margin: 0; padding: 0; }
+.r13stats .moments li { display: grid; grid-template-columns: 66px 1fr; gap: 6px; padding: 5px 0; border-top: 1px solid rgba(216, 196, 156, .2); font-size: 12px; line-height: 16px; }
+.r13stats .moments li:first-child { border-top: 0; }
+.r13stats .moments .mt { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.r13stats .moments .mt.end { padding-left: 21px; color: #f0cf6a; }
+.r13stats .moments .ev { color: #d8c49c; }
+.r13stats .moments .ev b { display: block; font-size: 13px; color: #f4e7c9; }
+.r13stats table.nums { width: 100%; border-collapse: collapse; font-size: 13px; }
+.r13stats .nums th, .r13stats .nums td { padding: 6px 6px; text-align: left; border-top: 1px solid rgba(216, 196, 156, .22); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.r13stats .nums tr:first-child th { border-top: 0; font-size: 13px; }
+.r13stats .nums th { font-weight: 700; color: #d8c49c; }
+.r13stats .nums .key { vertical-align: -1px; margin-right: 4px; }
+.r13stats .bfhead { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 2px 2px 0; }
+.r13stats .bfhead .c { color: #b8ab92; font-size: 12px; }
+.r13stats .bfhead .key { margin: 0 5px; vertical-align: -1px; }
+.r13stats .mages { display: grid; }
+.r13stats .mages .mr { display: grid; grid-template-columns: 110px 1fr 1fr; align-items: center; min-height: 38px; border-top: 1px solid rgba(216, 196, 156, .2); }
+.r13stats .mages .mh { min-height: 26px; border-top: 0; font-size: 13px; font-weight: 700; }
+.r13stats .mages .mh .key { margin-right: 5px; vertical-align: -1px; }
+.r13stats .mages .mk { font-size: 13px; color: #d8c49c; }
+.r13stats .mages .mv { font-size: 20px; font-weight: 700; }
+.r13stats .mages .mv small { font-size: 13px; font-weight: 400; color: #d8c49c; }
+.r13stats .foot { margin: 6px 0 0; font-size: 13px; color: #d8c49c; }
+.r13stats .tlg { display: flex; flex-wrap: wrap; gap: 2px 0; padding: 2px 0 2px 2px; }
+.r13stats .tlg .lg { font-size: 12px; margin-right: 12px; }
+.r13stats .tlg .sw { display: inline-block; width: 16px; height: 11px; border-radius: 2px; }
+.r13stats .tlg .sw.ruin { background: repeating-linear-gradient(45deg, #6d6258 0 3px, #4a4038 3px 6px); }
+.r13stats .tlg .ev { display: inline-flex; width: 18px; height: 18px; border-radius: 50%; align-items: center; justify-content: center; font-style: normal; font-size: 12px; font-weight: 700;
+  background: #1a120b; box-shadow: inset 0 0 0 2px #d8c49c; }
+
+/* B: one page that scrolls under the header */
+.r13stats .scroll { position: absolute; left: 6px; right: 6px; top: 54px; bottom: 6px; overflow-y: auto; scrollbar-width: none; }
+.r13stats .scroll::-webkit-scrollbar { display: none; }
+.r13stats .inner { padding: 0 8px 10px; }
+.r13stats section { margin-bottom: 10px; }
+.r13stats section > h3 { margin: 2px 0 2px; }
+.r13stats section.pair { display: flex; gap: 12px; }
+.r13stats section.pair .card { width: 380px; }
+.r13stats .strip { margin: 2px 0 4px; }
+.r13stats .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.r13stats .tile { display: flex; flex-direction: column; padding: 4px 12px 6px; border-radius: 8px; background: #221810; box-shadow: inset 0 0 0 1px rgba(216, 196, 156, .28); }
+.r13stats .tile .tl { font-size: 13px; color: #d8c49c; }
+.r13stats .tile .tv { font-size: 26px; font-weight: 700; line-height: 30px; }
+.r13stats .tile .tv.sm { font-size: 20px; }
+.r13stats .endgo { display: flex; justify-content: flex-end; gap: 8px; }
+.r13stats .thumb { position: absolute; right: 3px; width: 4px; border-radius: 2px; background: rgba(240, 207, 138, .75); }
+
+/* ---------- R13-01-B2: the small tag and the arrows to buildings off the screen ---------- */
+.screen > .r13chip { transform: translate(-50%, -50%); padding: 2px 8px; min-width: 40px; border-radius: 12px; font-size: 13px; line-height: 18px; text-align: center; white-space: nowrap;
+  background: rgba(26, 19, 11, .93); color: #f4e7c9; box-shadow: 0 0 0 1.5px #ffd666, 0 2px 4px rgba(0, 0, 0, .55); }
+.screen > .r13chip b { color: #ffe08a; margin-right: 2px; }
+.screen > .r13arrow { position: absolute; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 6px; border: 0; border-radius: 10px; font: inherit; color: #f4e7c9;
+  background: rgba(26, 19, 11, .93); box-shadow: 0 0 0 1.5px #ffd666, 0 0 8px rgba(255, 214, 102, .55), 0 2px 5px rgba(0, 0, 0, .55); }
+.screen > .r13arrow.right { flex-direction: row-reverse; }
+.screen > .r13arrow .dir { flex: none; }
+.screen > .r13arrow .tx { display: flex; flex-direction: column; line-height: 17px; text-align: center; white-space: nowrap; }
+.screen > .r13arrow .tx b { font-size: 13px; color: #ffe08a; }
+.screen > .r13arrow .tx small { font-size: 12px; color: #d8c49c; }

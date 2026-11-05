@@ -61,5 +61,12 @@ export const OBLIQUE: Projection = {
 /** Seen from 30° above (diamond or square on): pictures stand up, the ground lies flattened. */
 export const tilted = (p: Projection): boolean => p.kind !== "top";
 
+/**
+ * How the ground is laid for players. 方形斜看 since art-v3 is drawn for it (D-088). The user
+ * (2026-11-02) chose 菱形斜看 again over D-088: it becomes "diamond" together with ui's art drawn at
+ * 45° (art-v7), not before; the diamond is here as it was (D-085) and on test pages with ?view=diamond.
+ */
+export const VIEW_DEFAULT: Projection["kind"] = "oblique";
+
 /** The projection by name, for the test page's ?view= (D-088). */
 export const PROJECTIONS: Record<Projection["kind"], Projection> = { top: TOP, diamond: DIAMOND, oblique: OBLIQUE };

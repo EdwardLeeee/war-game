@@ -46,6 +46,15 @@ export function outpostSlots(rules: Pick<Rules, "features" | "outpost"> | null |
 }
 
 /**
+ * 哨所 3 × 3 (D-119, D-121; `features.outpostHide`): its spearmen hide in it and poke out, drawn on
+ * its walk (BuildingField.soldiers, sent to all who see it). Off: they stand guard beside it (D-080).
+ */
+export function outpostHide(rules: Pick<Rules, "features"> | null | undefined): boolean {
+  // TODO(core outpost-hide): Features.outpostHide once the simulation's protocol has it.
+  return (features(rules) as Features & { outpostHide?: boolean }).outpostHide === true;
+}
+
+/**
  * The building types `type` still needs before it can be built (`requires`, round 7: own and
  * finished), in the table's order; empty when it can be built.
  */

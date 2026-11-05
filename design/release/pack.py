@@ -167,6 +167,56 @@ def ground_files(src, scale):
     return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
 
 
+def edge_files(src, scale):
+    """{name: bytes} of edge/ at one scale (design/r11/common/edge_pack.py, the format design/r11/edge-format.md):
+    edge.json, every picture it names, memory.json."""
+    found = sorted(p.parent for p in src.rglob(f"atlas_{scale}/edge/edge.json"))
+    if len(found) != 1:
+        die(f"{src}: {len(found)} atlas_{scale}/edge/")
+    d = found[0]
+    ej = json.loads((d / "edge.json").read_text())
+    if ej.get("format") != "war-game edge 1" or ej.get("scale") != float(scale[1:]) or ej.get("view") != "diamond":
+        die(f"{d / 'edge.json'}: format {ej.get('format')!r}, scale {ej.get('scale')!r}, view {ej.get('view')!r}")
+    named = set()
+
+    def walk(v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if k == "file":
+                    named.add(x)
+                else:
+                    walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+    walk(ej)
+    names = ["edge.json", "memory.json"] + sorted(named)
+    missing = [n for n in names if not (d / n).exists()]
+    extra = sorted({p.name for p in d.iterdir()} - set(names))
+    if missing or extra:
+        die(f"{d}: edge.json names missing files {missing}, or there are files it does not name {extra}")
+    return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
+
+
+def stamp_view(files, view):
+    """D-118 (art-v7 on): every manifest says which camera its pictures are for (the client switches to the diamond
+    camera on art-release.json's "view" and picks the units' facing table by it, client/docs/sprite-atlas.md 3).
+    The units are camera-free pictures (the sun stays at the screen's upper left), so their manifests get it here;
+    the buildings', castle's, nodes' and terrain's come from atlas_b1 and must already agree."""
+    for n, b in list(files.items()):
+        if not n.endswith(".json") or n.endswith("memory.json"):
+            continue
+        m = json.loads(b)
+        if not str(m.get("format", "")).startswith("war-game "):
+            continue
+        if m.get("view", view) != view:
+            die(f"{n}: view {m.get('view')!r}, the release is {view!r}")
+        if m.get("view") != view:
+            m["view"] = view
+            files[n] = json.dumps(m, separators=(",", ":")).encode()
+    return files
+
+
 def with_manifest(files, info):
     """Add art-release.json (the release info and every other file's sha256) to files."""
     info = dict(info, files={n: {"sha256": sha256(b), "bytes": len(b)} for n, b in sorted(files.items())})
@@ -203,7 +253,8 @@ def main():
     sources = {"units": {u: s for u, s in sorted(spec["units"].items())}, "effects": spec["effects"]}
     if "buildings" in spec:
         sources["buildings"] = spec["buildings"]
-    base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources}
+    base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources,
+            **({"view": spec["view"]} if spec.get("view") else {})}     # D-118: "diamond" from art-v7 on
     notes = [f"{a.tag}：{spec.get('note', '')}", "", f"commit {a.commit or '(local)'}", ""]
     eff_src = fetch(spec["effects"]["run"], spec["effects"]["artifact"], dl)
     unit_src = {u: fetch(s["run"], s["artifact"], dl) for u, s in sources["units"].items()}
@@ -230,8 +281,16 @@ def main():
                 m = json.loads(fs["memory.json"])
                 rgba += m["total_rgba8_bytes"]
                 astc_b += m["total_astc_4x4_bytes"]
+            if spec.get("edge"):                         # art-v7: the floating continent's edge (D-118)
+                fs = edge_files(bld_src, scale)
+                files.update({f"edge/{n}": b for n, b in fs.items()})
+                m = json.loads(fs["memory.json"])
+                rgba += m["total_rgba8_bytes"]
+                astc_b += m["total_astc_4x4_bytes"]
             extra = ("＋建築＋資源點" + ("＋城牆" if spec.get("castle") else "") + ("＋地形" if spec.get("terrain") else "")
-                     + ("＋地面" if spec.get("ground") else ""))
+                     + ("＋地面" if spec.get("ground") else "") + ("＋邊緣" if spec.get("edge") else ""))
+        if spec.get("view"):
+            files = stamp_view(files, spec["view"])
         files = with_manifest(files, dict(base, scale=scale))
         name = f"{a.tag}-{scale}.tar.gz"
         write_targz(out / name, files)

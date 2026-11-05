@@ -201,6 +201,8 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
       plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on,
       ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
       ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}), ...(KEEP.on ? { keep: true } : {}), ...(MARKET.on ? { market: true } : {}),
+      ...(WALL_SHIFT.on && WALLS.on ? { wallShift: true } : {}),
+      ...(OUTPOST.on && OUTPOST_HIDE.on ? { outpostHide: true } : {}),
     },
     arrows: {
       mainCity: MAIN_ARROW,
@@ -211,13 +213,17 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     garrisonTypes: GARRISON_TYPES,
     garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },
     towerReach: TOWER_REACH,
-    outpost: { slots: OUTPOST.slots, reach: OUTPOST.reach, chase: OUTPOST.chase },
+    outpost: {
+      slots: OUTPOST.slots, reach: OUTPOST.reach, chase: OUTPOST.chase, poke: OUTPOST_HIDE.on ? OUTPOST_HIDE.poke : 1,
+      ranged: OUTPOST_HIDE.on ? [OUTPOST_HIDE.rangedNum, OUTPOST_HIDE.rangedDen] : [1, 1], melee: OUTPOST_HIDE.on ? [OUTPOST_HIDE.meleeNum, OUTPOST_HIDE.meleeDen] : [1, 1],
+    },
     towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size, map)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
     cannonRange: CANNON.range,
     // Sent as `outpost` is; `features` says whether they are on.
     gate: { rangedNum: GATE.rangedNum, rangedDen: GATE.rangedDen, rebuildTicks: GATE.rebuildTicks },
     walls: { range: WALLS.range, takenNum: WALLS.takenNum, takenDen: WALLS.takenDen, sling: WALLS.sling },
+    wallShift: { wait: WALL_SHIFT.wait, back: WALL_SHIFT.back, stay: WALL_SHIFT.stay, odds: WALL_SHIFT.odds },
     siege: { vsBuildings: SIEGE.vsBuildings, flightTicks: SIEGE.flightTicks },
     market: { lot: MARKET.lot, start: MARKET.start, step: MARKET.step, min: MARKET.min, max: MARKET.max, sellPermille: MARKET.sellPermille, recoverTicks: MARKET.recoverTicks, maxLots: MARKET.maxLots },
   };
@@ -367,6 +373,20 @@ export const GATE = { on: true, hp: [850, 2100], rangedNum: 1, rangedDen: 5, sie
  */
 export const WALLS = { on: true, range: CELL, takenNum: 3, takenDen: 4, sling: 4 * CELL, militia: 2 };
 /**
+ * Wall defenders shift along the walls (D-119; the user 2026-11-04: 「如果敵軍打一邊，另外一側牆上的兵都不會自動走過去打，
+ * 應該要走過去一起打的」): a player's ranged unit or mage on a wall (neutral militia do not) that has had no target for `wait` ticks
+ * while its owner sees an enemy its reach from some wall cell of the town walks along the walls to the
+ * free wall cell nearest it (by the walls) from which one is in its reach, one a cell, so they spread
+ * along the side attacked. The walls' way runs over the gates while they stand (it never stops on a
+ * gate), so it never comes down or goes out. It stays put while an enemy walking is within its reach
+ * plus `stay` of its cell (it is coming to it), and walking it stops on the first free wall cell from
+ * which one is in its reach (an army moves on). It does not set off while the enemies seen near the
+ * walls are more than `odds` times the town's soldiers on them (the user 2026-11-04 chose 「敵人不太多才過去」:
+ * against a big army they would only walk into it and die). With no such enemy for `back` ticks it walks
+ * back to where it stood (if free). Off: they never move (WALLS).
+ */
+export const WALL_SHIFT = { on: true, wait: 1 * S, back: 10 * S, stay: 2 * CELL, odds: 2 };
+/**
  * A governed town's gate towers shoot (D-096; the user: 城樓會射箭, more the more soldiers hold the
  * town, as AoE2's garrison arrows): each standing gate of a town its holder governs, at the
  * nearest enemy unit its holder sees within `range` of the gate, `damage` every `cooldown`; one
@@ -420,6 +440,19 @@ export const TOWN_GUARD = { on: true, gateTicks: 3 * S, gateReach: 2 };
  * its owner's units walk through it, finished or not, as through a gate of its town; nobody else does.
  */
 export const OUTPOST = { on: true, slots: 6, reach: 8, chase: 12, ownersWalk: true };
+/**
+ * Spearmen hide in outposts (D-119; the user 2026-11-04: 「我覺得哨所的面積應該要放大，我是把它當作城牆來設計的」「哨所目前
+ * 的血量好像有點太低」「駐軍是不是也可以放進去？只能放槍兵然後槍兵可以躲在裡面戳人」): an outpost is `size` x `size`, has
+ * `hp` and costs `cost`; up to `slots` spearmen posted at it go in (`post`), where nobody outside can hit
+ * them, and each strikes an enemy unit next to it (within a spearman's reach of the footprint) at
+ * `poke` times its attack. Holding (new outposts' default) they stay in; attacking, they come out for
+ * enemies within OUTPOST.reach and whoever hits the outpost, and go back in once done (OUTPOST.chase).
+ * The outpost falls: they come out with no order. Like a wall (ceo 2026-11-04, option 1): ranged units' and
+ * mages' own attacks hit it at `rangedNum` / `rangedDen`, other units' at `meleeNum` / `meleeDen` (at least
+ * 1), siege stones as on any building (SIEGE.vsBuildings): an army without engines hardly breaks it, the
+ * engines are the way. Off: D-080's outposts, guards standing round them.
+ */
+export const OUTPOST_HIDE = { on: true, size: 3, hp: 1500, cost: cost(0, 90), slots: 9, poke: 2, rangedNum: 1, rangedDen: 5, meleeNum: 1, meleeDen: 3 };
 
 // --- round 8 (D-069): a defender is not beaten by the first cannon shots -------------------
 
@@ -493,17 +526,20 @@ export const SLOT_GIVE_UP = { on: true, ticks: 60, progress: 384 };
 /** A formation's ranks (GDD section 9): melee in front (0), then ranged (1), then mages (2). */
 export const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : t === UnitType.Siege ? 3 : 0);
 /**
- * Ranks on the march (D-095; the user: 「常常跑一跑法師就跑到前排」): on a move, a ranged unit or
- * mage more than DIRECT_STEER from its place stands and lets the lower ranks of its group pass
- * (spearmen and cavalry; for a mage, ranged too) while it is not `margin` behind the middle of
- * those of them that walk, along its way to its place; at most `maxWait` ticks a command. Lower
- * ranks that stand do not count, so a front that stopped holds no one up, and once one of the
- * group fights nobody waits. A retreat is left as it is. The unit column it keeps (waited) is in
- * the hash only while it is on. Off for now (ceo 2026-10-21): with orders sent again on the way,
- * soldiers far behind in them, and all at the slowest one's speed, its marches came strung out
- * and lost (README); it is to be redesigned.
+ * Ranks on the march (D-095, D-119; the user 2026-11-04: 「整隊功能你沒做好，我按整隊的時候部隊還是要往我點的地方前進，
+ * 具體作法應該是說法師跟射手如果在前面就要停下來等槍兵走過來」): a group on its way (a move or a retreat) re-formed
+ * with `formation` `ranks` keeps its goal and order and gets its ranks right on the way. Its ranged
+ * units, mages and siege engines more than DIRECT_STEER from their places stand and let the lower
+ * ranks of the group pass (a ranged unit spearmen and cavalry; a mage ranged too; an engine mages
+ * too) while they are not `margin` behind the middle of those of them that walk within `near` of
+ * them, along their way to their places; at most `maxWait` ticks a command. Lower ranks that stand,
+ * or walk farther off, do not count; nobody waits while one of the group fights (a move) or was
+ * hit in the last RETARGET_EVERY ticks (a retreat). Any new command ends it (a new group). Moves
+ * without `ranks` walk as ever: D-095 had every move do it, and with orders sent again on the
+ * way and soldiers far behind in them its marches came strung out and lost (ceo 2026-10-21,
+ * README). The unit columns it keeps (waited, ranked) are in the hash only while it is on.
  */
-export const MARCH_ORDER = { on: false, margin: CELL >> 1, maxWait: 10 * S };
+export const MARCH_ORDER = { on: true, margin: CELL >> 1, maxWait: 10 * S, near: 8 * CELL };
 /** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
 export const SHORT_CANNON = { on: true, range: 7 * CELL };
 /**
@@ -547,6 +583,11 @@ switched(BUILDINGS[BuildingType.ArrowTower], "hp", TOWER_VALUE, () => TOWER_VALU
 switched(BUILDINGS[BuildingType.ArrowTower], "buildTicks", TOWER_VALUE, () => TOWER_VALUE.buildTicks);
 switched(ARROW_TOWER, "damage", TOWER_VALUE, () => TOWER_VALUE.damage);
 switched(ARROW_TOWER, "cooldown", TOWER_VALUE, () => TOWER_VALUE.cooldown);
+// D-119: the bigger outpost spearmen hide in.
+switched(BUILDINGS[BuildingType.Outpost], "size", OUTPOST_HIDE, () => OUTPOST_HIDE.size);
+switched(BUILDINGS[BuildingType.Outpost], "hp", OUTPOST_HIDE, () => OUTPOST_HIDE.hp);
+switched(BUILDINGS[BuildingType.Outpost], "cost", OUTPOST_HIDE, () => OUTPOST_HIDE.cost);
+switched(OUTPOST, "slots", OUTPOST_HIDE, () => OUTPOST_HIDE.slots);
 
 // --- mages (from PR-4) ---------------------------------------------------------------
 

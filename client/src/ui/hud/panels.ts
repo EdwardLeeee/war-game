@@ -119,8 +119,8 @@ export interface PanelHost {
   /** ＋遠程／＋法師 (D-080): our soldiers on their way to hide in this building, and calling one more of a type in. */
   hidingComing(building: number): number;
   callToHide(building: number, type: number): void;
-  /** 哨所 (D-080): its spearmen and mode, for its panel; null for another building. */
-  outpostState(building: number): { slots: number; posted: number; hold: boolean; text: string } | null;
+  /** 哨所 (D-080): its spearmen and mode, for its panel; null for another building. `inside`: those hiding in it (3 × 3, D-119), null while they stand guard beside it. */
+  outpostState(building: number): { slots: number; posted: number; inside: number | null; hold: boolean; text: string } | null;
   /** 取消即堅守 (D-054): out of 進攻／撤退, the soldiers selected stop and hold. */
   cancelToHold(): void;
   /** 編隊自動補兵 (D-026): its switch, and flipping it. */
@@ -133,6 +133,8 @@ export interface PanelHost {
   /** Group i's soldiers hiding in buildings, 「主城 2 名」 ("" with none). */
   groupHidingLine(i: number): string;
   groupOut(i: number, all: boolean): void;
+  /** 召回 (D-119): group i's soldiers hiding in buildings come out and walk back to it. */
+  groupRecall(i: number): void;
   /** Soldiers of this type group i wants (目標) and has alive (現有). */
   groupWant(i: number, type: number): number;
   groupHas(i: number, type: number): number;
@@ -376,8 +378,11 @@ export class SelectionInfo {
     const where = el("span", station, "group-station-line");
     button(station, "出城歸隊", "", () => this.host.groupOut(i, false), "chip secondary");
     button(station, "全部帶走", "", () => this.host.groupOut(i, true), "chip secondary");
-    // 躲著 (the user 2026-10-26): still its own; the building's 全部出來 lets them out, and they walk back.
-    const hiding = el("p", this.el, "sel-note group-hiding");
+    // 躲著 (the user 2026-10-26): still its own. 召回 (the user 2026-11-04, D-119) lets them out from
+    // here, wherever the player is (the building's 全部出來 too), and they walk back.
+    const hiding = el("div", this.el, "sel-chips group-hiding");
+    const hidingLine = el("span", hiding, "group-station-line");
+    button(hiding, "召回", "", () => this.host.groupRecall(i), "chip secondary");
     const actions = el("div", this.el, "sel-chips group-actions");
     const fromBefore = button(actions, "", "", () => this.host.saveBeforeIntoGroup(i), "chip secondary");
     button(actions, "清空", "", () => this.host.clearGroup(i), "chip secondary");
@@ -402,7 +407,7 @@ export class SelectionInfo {
       set(where, `駐守中：${away}`);
       const hid = this.host.groupHidingLine(i);
       hiding.hidden = hid === "";
-      set(hiding, `躲著：${hid}（建築上按「全部出來」，出來後自己走回編隊）`);
+      set(hidingLine, `躲著：${hid}（按召回叫出來，走回編隊）`);
       const n = this.host.beforeGroupCount();
       fromBefore.hidden = n === 0;
       set(fromBefore.querySelector(".label") as HTMLElement, `改成剛才選的 ${n} 名`);
@@ -642,7 +647,8 @@ export class SelectionInfo {
       }
       const s = this.host.outpostState(id);
       if (s === null) return;
-      const line = `駐守 ${s.posted} 名槍兵（最多 ${s.slots} 名）`;
+      // 3 × 3 (D-119): 躲了 n/9, and those on their way.
+      const line = s.inside === null ? `駐守 ${s.posted} 名槍兵（最多 ${s.slots} 名）` : `躲了 ${s.inside}/${s.slots} 名槍兵${s.posted > s.inside ? `，${s.posted - s.inside} 名正過來` : ""}`;
       if (count.textContent !== line) count.textContent = line;
       call.disabled = s.posted >= s.slots;
       off.disabled = s.posted === 0;

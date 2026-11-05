@@ -4,7 +4,7 @@
 // headless benchmarks), not part of the protocol. Random maps take "standard" only.
 
 import { type Frame, fromCanon, IDENTITY, toCanon } from "../frame.ts";
-import { Action, BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, TownSize, UnitFlag, UnitType } from "../protocol.ts";
+import { Action, BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, Stance, TownSize, TownState, UnitFlag, UnitType } from "../protocol.ts";
 import { FIXED_POSTS } from "./castle.ts";
 import { pushOut } from "./commands.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
@@ -13,7 +13,7 @@ import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
 
-const SCENARIOS: readonly string[] = ["standard", "e2e", "perf", "perf200", "perf360", "skirmish"];
+const SCENARIOS: readonly string[] = ["standard", "e2e", "perf", "perf200", "perf360", "skirmish", "wallshift"];
 
 /** e2e: resources per side, and the squad placed beside the small town. */
 export const E2E = {
@@ -35,6 +35,50 @@ export function setupScenario(w: World, scenario: ScenarioKey): void {
   if (scenario === "perf") perf(w, PERF);
   if (scenario === "perf200") perf(w, PERF_200);
   if (scenario === "perf360") perf(w, PERF_360);
+  if (scenario === "wallshift") wallShift(w);
+}
+
+/**
+ * D-119's scene (WALL_SHIFT; for the screen's recordings): player 0 governs town 0 (the small one in
+ * the middle), its keep too, its militia gone; a ranged unit of player 0 on every 4th of its wall
+ * cells (11); 9 of player 1's spearmen, holding, 2 to 4 cells out of its east gate.
+ */
+function wallShift(w: World): void {
+  const T = 0;
+  const n = w.size;
+  const u = w.units.col;
+  // Its militia gone (as never there: no deaths counted).
+  const gone = new Uint8Array(w.units.count);
+  for (let s = 0; s < w.units.count; s++) {
+    if (u.owner[s] !== NEUTRAL || u.home[s] !== T) continue;
+    gone[s] = 1;
+    w.unitSlot[u.id[s]] = -1;
+  }
+  w.units.compact(gone, (_from, to) => {
+    w.unitSlot[u.id[to]] = to;
+  });
+  for (const c of w.wallCells[T]) w.wallAt[c] = -1;
+  w.townState[T] = TownState.Governed;
+  w.townOwner[T] = 0;
+  const keep = keepOf(w, T);
+  if (keep >= 0) w.buildings.col.owner[keep] = 0;
+  w.refreshGates(T);
+  Array.from(w.wallCells[T]).forEach((c, k) => {
+    if (k % 4 !== 0) return;
+    const s = w.unit(w.addUnit(0, UnitType.Ranged, center(c % n), center(Math.trunc(c / n)), UNITS[UnitType.Ranged].hp));
+    u.wall[s] = c;
+    w.wallAt[c] = u.id[s];
+    u.order[s] = Order.Wall;
+    u.orderTarget[s] = T;
+    u.action[s] = Action.OnWall;
+  });
+  const t = w.map.towns[T];
+  const ex = t.cellX + w.castles[T].inside.x1 + 1;
+  for (let k = 0; k < 9; k++) {
+    const c = nearestWalkable(w, ex + 2 + (k % 3), t.cellY - 2 + Math.trunc(k / 3));
+    const s = w.unit(w.addUnit(1, UnitType.Spearman, center(c % n), center(Math.trunc(c / n)), UNITS[UnitType.Spearman].hp));
+    u.stance[s] = Stance.Hold;
+  }
 }
 
 function standard(w: World): void {

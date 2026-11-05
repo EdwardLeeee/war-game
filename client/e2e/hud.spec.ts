@@ -291,7 +291,7 @@ for (const viewport of [null, FULL_SCREEN]) {
     expect(await card.evaluate((c) => c.scrollHeight - c.clientHeight), "the menu does not scroll").toBeLessThanOrEqual(1);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     const boxes = await visibleBoxes(page, ".menu button");
-    expect(boxes.map((b) => b.label)).toEqual(["魔晶怎麼拿", "兵種相剋", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
+    expect(boxes.map((b) => b.label)).toEqual(["魔晶怎麼拿", "兵種相剋", "電影色調：關", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
     for (const b of boxes) {
       expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
       expect(b.x, `${b.label} left`).toBeGreaterThanOrEqual(IPHONE_SAFE.left);
@@ -968,7 +968,7 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await expect(panel).not.toContainText("隊形");
 });
 
-test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；從沒下過指令、沒看過敵方主城就面向地圖中央：8 格內連得起來就原地排（face），更分散時往那邊走一格集合（移動）；下了指令就面向前進的方向（使用者 2026-10-24）", async ({ page }, info) => {
+test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；從沒下過指令、沒看過敵方主城就面向地圖中央：8 格內連得起來就原地排（face），更分散時往那邊走一格集合（移動）；下了指令就面向前進的方向（使用者 2026-10-24），行軍中邊走邊排、不再走一格（D-119）", async ({ page }, info) => {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const ids = await ownIds(page, [1, 2, 3]);
   await selectForCommands(page, ids);
@@ -1009,8 +1009,17 @@ test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；從
   await page.evaluate((u) => window.__proto?.game?.send({ c: "retreat", u, x: 2, y: 64 }), ids);
   await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id) && u.order === 2).length).toBe(ids.length);
   await reform.tap();
-  await expect(toast(page, "整理隊形：槍兵在前，面向前進的方向")).toBeVisible();
-  expect(await lastOrder(page)).toMatchObject({ c: "formation", u: ids, face: 8 });
+  // On the march (the user 2026-11-04, D-119 邊走邊排): the formation with ranks, the march going on.
+  await expect(toast(page, "邊走邊排：前面的弓手和法師等槍兵走過去，照樣走到點的地方")).toBeVisible();
+  expect(await lastOrder(page)).toMatchObject({ c: "formation", u: ids, face: 8, ranks: true });
+  // Spread out on the march too: no walk of one cell (it would put the march's end where they stand).
+  await place(page, ids, spread);
+  await page.evaluate((u) => window.__proto?.game?.send({ c: "retreat", u, x: 2, y: 64 }), ids);
+  await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id) && u.order === 2).length).toBe(ids.length);
+  const mark2 = (await sent(page)).length;
+  await reform.tap();
+  await expect.poll(async () => (await sent(page)).slice(mark2).filter((c) => c.auto !== true).at(-1)).toMatchObject({ c: "formation", u: ids, ranks: true });
+  expect((await sent(page)).slice(mark2).filter((c) => c.auto !== true && c.c === "retreat")).toEqual([]);
 });
 
 test("隊形：編隊裡超過一半是散開時，補進來的新兵也送散開（D-027）", async ({ page }) => {

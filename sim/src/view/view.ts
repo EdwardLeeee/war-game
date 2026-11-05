@@ -47,7 +47,7 @@ import { townInSight, writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
 import { onWall } from "../core/units.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, MARKET, OUTPOST, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, MARKET, OUTPOST, OUTPOST_HIDE, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -105,6 +105,7 @@ const SCENARIO_ID: Record<string, number> = {
   perf: Scenario.Perf,
   perf200: Scenario.Perf200,
   perf360: Scenario.Perf360,
+  wallshift: Scenario.WallShift,
 };
 
 export function buildView(game: Game, player: number | null, info?: RunnerInfo): PlayerView {
@@ -226,6 +227,9 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     if (b.garrisoned[s] > 0 || b.soldiers[s] > 0) row[BuildingField.flags] |= BuildingFlag.Occupied;
     // An outpost holding (D-080): everyone who sees it.
     if (b.type[s] === BuildingType.Outpost) row[BuildingField.flags] |= b.flags[s] & BuildingFlag.Hold;
+    // D-119 (OUTPOST_HIDE): the spearmen in an outpost stand on top of it on the screen, so everyone who
+    // sees it learns how many (ceo 2026-11-04); a tower's and a main city's stay its owner's.
+    if (OUTPOST_HIDE.on && b.type[s] === BuildingType.Outpost) row[BuildingField.soldiers] = b.soldiers[s];
     rows.push(row);
   }
   if (player !== null) {

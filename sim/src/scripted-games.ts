@@ -12,14 +12,16 @@
 import { CrushWatch, type CrushRecord } from "./crush-watch.ts";
 import { DeathWatch, type DeathRecord } from "./death-watch.ts";
 import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
+import { SiegeWatch, type SiegeRecord } from "./siege-watch.ts";
 import { writeFileSync } from "node:fs";
 import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THINK_EVERY, SPEEDS, type Speed, STRATEGIES, type Strategy } from "./ai/scripted-player.ts";
-import { type AiStyle, AI_STYLES } from "./ai/ai.ts";
+import { type AiStyle, AI_STYLES, createAi } from "./ai/ai.ts";
 import { rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import type { RandomMap } from "./core/random-map.ts";
 import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, NodeKind, Order, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
-import { Runner } from "./runner.ts";
+import { aiKnowledge, Runner } from "./runner.ts";
+import { AiSeat, Bonus, lateSiege, WATCH_TICKS } from "./late-start.ts";
 import { buildView, mapInfo } from "./view/view.ts";
 
 function arg(name: string, fallback: string): string {
@@ -143,12 +145,21 @@ if (flag("crush")) {
   plan.turtle = true;
   plan.crush = true;
 }
+// push-late-siege (D-115, ceo 2026-10-31: the user's late game in 8d02b76f): the turtle with farmers and towers by
+// that game's clock, 1-4 towns governed, a siege works and 3 engines, out with 100 soldiers (--late-siege).
+if (flag("late-siege")) lateSiege(plan);
+/**
+ * push-late-siege's --takeover N (ceo 2026-11-03): the scripted player plays normal up to minute N; from N - 3 the AI of
+ * --difficulty watches (thinks, its orders dropped) and from N it plays normal's side (late-start.ts). 0: none.
+ */
+const TAKEOVER = Number(arg("takeover", "0")) * 1200;
 /**
  * push-crush (ceo 2026-10-25): the player's gathering of food, wood and gold plus this many percent (--bonus
  * 50), credited every 20 ticks in equal shares of the three (its own gold runs out, and a share of nothing is
  * nothing); for the measurement only (the game's log does not replay it). 0: none.
  */
 const BONUS = Number(arg("bonus", "0"));
+if (TAKEOVER > 0 && TAKEOVER < WATCH_TICKS) throw new Error(`--takeover: from minute ${WATCH_TICKS / 1200} on`);
 // Barracks plus ranges at most (--production 8; else the plan's).
 plan.production = Number(arg("production", String(plan.production)));
 // With the turtle (ceo 2026-10-25): town trips as the push's, with this many soldiers and no towers by home
@@ -187,6 +198,17 @@ const LEVEL_NAMES: Record<string, string> = { easy: "簡單", normal: "普通", 
 const STYLE_NAMES: Record<string, string> = { plunder: "掠奪型", govern: "治理型", balanced: "均衡型" };
 const m = (t: number) => (t < 0 ? "沒有" : (t / 1200).toFixed(1));
 
+/** What a side has at a minute (push-late-siege). */
+interface LateSide {
+  farmers: number;
+  towers: number;
+  spear: number;
+  ranged: number;
+  mage: number;
+  cavalry: number;
+  siege: number;
+  governed: number;
+}
 interface Wave {
   start: number;
   last: number;
@@ -311,6 +333,9 @@ interface GameRecord {
   governedEnd: [number, number];
   /** push-crush, every game (read only): the first battle the AI lost big and the 15 minutes after it (null: none). */
   crush: CrushRecord | null;
+  /** push-late-siege: the player's engines (siege-watch.ts), and what each side had at minutes 30, 45, 60, 90. */
+  siege?: SiegeRecord;
+  lateAt?: Record<string, [LateSide, LateSide]>;
   /**
    * D-086 A3, every game (read only): the AI's farmers lost each minute (from minute 1); its hits (5 or more
    * lost in two minutes, none counted in the three minutes before) and of those, the ones back 3 minutes
@@ -348,9 +373,10 @@ function play(seed: number): GameRecord {
   const r = new Runner({
     seed,
     scenario: "standard",
-    ai: [false, true],
+    // --takeover: player 1's AI is played here (AiSeat), normal first.
+    ai: [false, TAKEOVER === 0],
     maxTicks: 0,
-    difficulty: ["normal", difficulty],
+    difficulty: ["normal", TAKEOVER === 0 ? difficulty : "normal"],
     styles: style === "" ? undefined : [style as AiStyle, style as AiStyle],
     // The scripted player's buildings train on their own only in the --auto-train group, so the
     // fixed groups play as before round 6.
@@ -362,6 +388,9 @@ function play(seed: number): GameRecord {
   const map = w.map;
   // What the screen gets (view.ts mapInfo): on a random map its own main city only.
   const player = createScriptedPlayer(0, { map: mapInfo(map, 0), rules: rules(map), frame: map.frames[0] }, plan);
+  const aiOf = (d: AiDifficulty) => createAi(1, seed, aiKnowledge(map, 1, 0, d), 1, style === "" ? undefined : (style as AiStyle));
+  const seat = TAKEOVER > 0 ? new AiSeat(r, 1, aiOf("normal")) : null;
+  const bonus = new Bonus(BONUS);
   const home = map.spawns[0];
   const u = w.units.col;
   const b = w.buildings.col;
@@ -480,8 +509,18 @@ function play(seed: number): GameRecord {
   const pace: GameRecord["pace"] = {};
   const goldWatch = new GoldWatch(w);
   const crushWatch = new CrushWatch();
-  const bonusLast = [0, 0, 0];
-  let bonusLeft = 0;
+  const siegeWatch = new SiegeWatch(0);
+  const lateAt: Record<string, [LateSide, LateSide]> = {};
+  const lateSide = (p: number): LateSide => ({
+    farmers: count(p, UnitType.Farmer),
+    towers: towersOf(p),
+    spear: count(p, UnitType.Spearman),
+    ranged: count(p, UnitType.Ranged),
+    mage: count(p, UnitType.Mage),
+    cavalry: count(p, UnitType.Cavalry),
+    siege: count(p, UnitType.Siege),
+    governed: w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length,
+  });
   const towersOf = (p: number) => {
     let n = 0;
     for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === p && b.type[s] === BuildingType.ArrowTower) n++;
@@ -503,19 +542,18 @@ function play(seed: number): GameRecord {
     if (w.tick % think === 0) {
       for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
     }
-    r.tick();
-    if (BONUS > 0 && w.tick % 20 === 0) {
-      const kinds = [Resource.Food, Resource.Wood, Resource.Gold];
-      for (const k of kinds) {
-        bonusLeft += (w.gathered[k] - bonusLast[k]) * BONUS;
-        bonusLast[k] = w.gathered[k];
-      }
-      const share = Math.trunc(bonusLeft / (100 * kinds.length));
-      bonusLeft -= share * 100 * kinds.length;
-      for (const k of kinds) w.res[k] += share;
+    if (seat !== null) {
+      if (w.tick === TAKEOVER - WATCH_TICKS) seat.takeOver(aiOf(difficulty), TAKEOVER);
+      seat.think();
     }
+    r.tick();
+    bonus.tick(w);
     deaths.tick(w);
     crushWatch.tick(w);
+    if (plan.lateSiege) {
+      siegeWatch.tick(w, g.events, player.state().mode === "base");
+      if (w.tick % (15 * 1200) === 0 && w.tick >= 30 * 1200 && w.tick <= 90 * 1200) lateAt[`m${w.tick / 1200}`] = [lateSide(0), lateSide(1)];
+    }
     if (w.tick === 12000) aiFarmersLost10 = w.lost[UNIT_KINDS + UnitType.Farmer];
     // D-086 A: the AI's orders this tick at the player's main city with 10 or more soldiers.
     for (; logAt < g.log.length; logAt++) {
@@ -821,6 +859,7 @@ function play(seed: number): GameRecord {
     gold: goldWatch.result(),
     governedEnd: [0, 1].map((p) => w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length) as [number, number],
     crush: crushWatch.result(),
+    ...(plan.lateSiege ? { siege: siegeWatch.result(), lateAt } : {}),
     aiFarmers,
     aiRescue,
     marches: st.marches,
@@ -868,6 +907,26 @@ function crushLines(games: GameRecord[]): string[] {
   return out;
 }
 
+/** push-late-siege: how far the games got and what the engines did (SiegeRecord). */
+function lateLines(games: GameRecord[]): string[] {
+  const med = (l: number[]) => (l.length === 0 ? "—" : String([...l].sort((a, c) => a - c)[l.length >> 1]));
+  const min = (t: number) => Math.round(t / 120) / 10;
+  const s = games.map((x) => x.siege!);
+  const out = s.filter((x) => x.out.tick >= 0);
+  const hit = s.filter((x) => x.towers > 0 || x.kills.soldiers > 0 || x.kills.farmers > 0);
+  const engines = s.flatMap((x) => x.engines);
+  const by = (k: string) => engines.filter((e) => e.by === k).length;
+  return [
+    `攻城砲打到東西（拆掉 1 座以上箭樓或打死 1 名以上）：${hit.length}/${games.length} 局（ai 的門檻：12 局，不到 6 局不能用）。`,
+    `砲坊蓋好 ${s.filter((x) => x.worksDone >= 0).length} 局（中位數第 ${med(s.filter((x) => x.worksDone >= 0).map((x) => min(x.worksDone)))} 分），第一門砲 ${s.filter((x) => x.firstEngine >= 0).length} 局，帶砲出門 ${out.length} 局（中位數第 ${med(out.map((x) => min(x.out.tick)))} 分，兵 ${med(out.map((x) => x.out.soldiers))} 名、砲 ${med(out.map((x) => x.out.engines))} 門）。`,
+    `攻城砲共 ${engines.length} 門：騎兵打掉 ${by("cavalry")}、遠程 ${by("ranged")}、箭樓 ${by("tower")}、其他 ${by("other")}，局末還在 ${engines.filter((e) => e.died < 0).length}。拆掉箭樓合計 ${s.reduce((a, x) => a + x.towers, 0)} 座，打死兵 ${s.reduce((a, x) => a + x.kills.soldiers, 0)} 名、村民 ${s.reduce((a, x) => a + x.kills.farmers, 0)} 名。`,
+    ...["m30", "m45", "m60", "m90"].map((m) => {
+      const at = games.map((x) => x.lateAt?.[m]).filter((x) => x !== undefined);
+      return `第 ${m.slice(1)} 分（${at.length} 局，中位數）：我 村民 ${med(at.map((x) => x![0].farmers))}、箭樓 ${med(at.map((x) => x![0].towers))}、治理 ${med(at.map((x) => x![0].governed))}；電腦 村民 ${med(at.map((x) => x![1].farmers))}、兵 ${med(at.map((x) => x![1].spear + x![1].ranged + x![1].mage + x![1].cavalry))}。`;
+    }),
+  ];
+}
+
 const games = seeds.map(play);
 const won = games.filter((x) => x.result === "won").length;
 const open = games.filter((x) => x.result === "open");
@@ -892,13 +951,14 @@ const options = [
   plan.harass > 0 ? `殺村民：第 10 分起 ${plan.harass} 名兵（遠程先）去殺電腦離主城 20 格以上的村民，看不到就繞電腦主城找；附近敵兵比自己多或剩一半就回家，1 分鐘後補滿再去（D-086 A3）` : "",
   plan.pushAhead && !plan.turtle ? `後期翻盤：24 名村民、遠程為主、家旁 ${plan.homeTowers} 座箭樓、騎兵佔 ${plan.cavalryShare}%、城鎮打下來就治理，兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門（D-086）` : "",
   !plan.pushAhead && plan.cavalryShare > 0 ? `帶騎兵：騎兵佔自己兵的 ${plan.cavalryShare}%，有射場以後蓋馬廄（D-097）` : "",
+  plan.lateSiege ? "後期攻城（push-late-siege）：照使用者 8d02b76f：村民第 30／60／90 分 60／80／85 名，箭樓第 30／45／60／90 分 20／24／31／40 座，哨所 6 座，治理最多 4 座城；砲坊在第 60 分以後或箭樓 31 座時蓋，3 門攻城砲；兵 60 名、3 門砲就出門" : "",
   plan.crush
     ? "大勝後反攻（push-crush）：用守塔的經濟和家旁箭樓；在家打退 15 名以上的一波後，兵 30 名以上、而且是最近 30 秒看到最多的電腦兵的 1.3 倍以上就出門，先打電腦治理的城（離家近的先），再打電腦主城；在外面看到附近的電腦兵比自己兵的 1/1.3 多就退回家，等下一次打退大波再出門"
     : "",
   BONUS > 0 ? `玩家採集 +${BONUS}%（糧木金採到的總量多 ${BONUS}%，平均分成糧、木、金；只有這組，這組的局不能用紀錄重播）` : "",
   plan.crush && plan.production !== 4 ? `兵營加射場最多 ${plan.production} 座` : "",
   plan.earlyTowns ? `拿城照主動的條件：兵 ${plan.townAt} 名就去中立的城，不用等家旁箭樓，拿下就治理` : "",
-  plan.turtle && !plan.crush ? `守塔慢拿城（A5）：第 15 分前先養到 40 名村民（糧優先，兵最多 25 名）、家旁箭樓第 14 分起蓋（第 20 分 7 座、第 25 分 10 座、第 30 分 20 座，同時最多蓋 3 棟）、治理的城鎮和離家的礦場旁各 2 座、家旁 6 座哨所（前 2 座各 3 名槍兵）；家旁的金快挖完時派 1 名槍兵找下一片金礦、在那裡蓋礦場，金太多時村民改採糧和木；電腦來打家時遠程兵躲進家旁箭樓和主城；家旁箭樓 7 座、兵 ${plan.townAt} 名而且比最近看到的電腦兵多才去拿城、打下來就治理（大城在兵 40 名以後），兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門，騎兵 ${plan.cavalryShare}%` : "",
+  plan.turtle && !plan.crush && !plan.lateSiege ? `守塔慢拿城（A5）：第 15 分前先養到 40 名村民（糧優先，兵最多 25 名）、家旁箭樓第 14 分起蓋（第 20 分 7 座、第 25 分 10 座、第 30 分 20 座，同時最多蓋 3 棟）、治理的城鎮和離家的礦場旁各 2 座、家旁 6 座哨所（前 2 座各 3 名槍兵）；家旁的金快挖完時派 1 名槍兵找下一片金礦、在那裡蓋礦場，金太多時村民改採糧和木；電腦來打家時遠程兵躲進家旁箭樓和主城；家旁箭樓 7 座、兵 ${plan.townAt} 名而且比最近看到的電腦兵多才去拿城、打下來就治理（大城在兵 40 名以後），兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門，騎兵 ${plan.cavalryShare}%` : "",
 ].filter((x) => x !== "");
 const title = `${NAMES[strategy]}，${FORMATION_NAMES[formation]}，${SPEED_NAMES[speed]}${options.map((x) => `，${x}`).join("")}（種子 ${seeds.length === 1 ? seeds[0] : `${seeds[0]}–${seeds[seeds.length - 1]}`}，對手 ${LEVEL_NAMES[difficulty] ?? difficulty}）`;
 const out: string[] = [`### ${title}`, ""];
@@ -915,6 +975,8 @@ if (plan.turtle) {
 }
 // push-crush: the first battle the AI lost big, and the 15 minutes after.
 if (plan.crush) out.push(...crushLines(games), "");
+// push-late-siege: did the engines get out, and what became of them.
+if (plan.lateSiege) out.push(...lateLines(games), "");
 // D-097: how many cavalry each side trained, on average.
 if (plan.cavalryShare > 0 || games.some((x) => x.trained.cavalry[1] > 0)) {
   const mean = (k: number) => (games.reduce((a, x) => a + x.trained.cavalry[k], 0) / Math.max(games.length, 1)).toFixed(1);
@@ -1042,4 +1104,4 @@ for (const x of games) {
 out.push("", "</details>", "");
 if (trace) for (const x of games) out.push(`<details><summary>種子 ${x.seed} 每分鐘</summary>`, "", ...(x.trace ?? []).map((l) => `- ${l}`), "", "</details>", "");
 console.log(out.join("\n"));
-if (jsonOut !== "") writeFileSync(jsonOut, JSON.stringify({ strategy, speed, formation, difficulty, style, think, cap: CAP, plan, games }, null, 1));
+if (jsonOut !== "") writeFileSync(jsonOut, JSON.stringify({ strategy, speed, formation, difficulty, style, think, cap: CAP, bonus: BONUS, takeover: TAKEOVER, plan, games }, null, 1));

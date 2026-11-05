@@ -1,9 +1,10 @@
 // The battlefield in PixiJS, bottom to top: terrain, town zones, buildings, resource nodes,
 // selection rings, units, effects (cannon warnings, calibration arcs, rally lines), bars,
 // fog, town markers (the player's knowledge, drawn above the fog) and the placement preview.
-// Terrain and fog are one small texture each (one texel per cell, scaled up), so they cost
-// one sprite. Units, bars and buildings come from pools that only grow.
+// Terrain and fog are one small texture each (terrain one texel per cell, the fog
+// FOG_ROUND_SCALE for its round edge, scaled up), so they cost one sprite. Units, bars and buildings come from pools that only grow.
 
+import { FOG_ROUND_SCALE, roundFog } from "./round-fog.ts";
 import { type Application, ColorMatrixFilter, Container, Graphics, type Renderer, Sprite, Text, Texture } from "pixi.js";
 import type { Camera } from "../camera/camera.ts";
 import { PT_PER_CELL, type Projection, tilted, TOP } from "../camera/projection.ts";
@@ -212,6 +213,8 @@ interface TownMark {
 
 export class WorldRenderer {
   readonly root = new Container();
+  /** 浮空大陸 (edge.ts): metres the realistic ground fades out over at the two lower edges (0: none). */
+  private edgeFadeM = 0;
   private readonly view: GameView;
   private readonly atlas: Atlas;
   private readonly projection: Projection;
@@ -259,6 +262,9 @@ export class WorldRenderer {
   private readonly ghost = new Graphics();
   private readonly terrainTexture: Texture;
   private readonly fogCanvas: HTMLCanvasElement;
+  /** The fog by cell, and a scratch buffer for its round edge (round-fog.ts). */
+  private readonly fogCells: Uint8Array;
+  private readonly fogTmp: Float32Array;
   private readonly fogTexture: Texture;
   private readonly fogPixels: ImageData;
   private fogVersion = -1;
@@ -349,6 +355,8 @@ export class WorldRenderer {
   footCount = 0;
   /** Our units drawn up on a castle's wall this frame (D-096, test page; the militia on theirs not counted). */
   wallLifted = 0;
+  /** Pokes from the outposts drawn so far (D-121), for the test page. */
+  pokes = 0;
   private readonly warnPool: Container[] = [];
 
   /** `art`: the units' atlases (D-085), `cultureOf` which culture each player wears; `projection` how the ground lies. */
@@ -396,17 +404,21 @@ export class WorldRenderer {
     ground.scale.set(TILE_PX);
     this.flatGround = ground;
 
+    // 圓邊霧 (round-fog.ts): FOG_ROUND_SCALE texels a cell, the edge blurred round.
+    const fk = FOG_ROUND_SCALE;
     this.fogCanvas = document.createElement("canvas");
-    this.fogCanvas.width = size;
-    this.fogCanvas.height = size;
+    this.fogCanvas.width = size * fk;
+    this.fogCanvas.height = size * fk;
     const fctx = this.fogCanvas.getContext("2d") as CanvasRenderingContext2D;
-    this.fogPixels = fctx.createImageData(size, size);
-    for (let i = 0; i < size * size; i++) this.fogPixels.data[i * 4 + 3] = FOG_ALPHA.unexplored;
+    this.fogPixels = fctx.createImageData(size * fk, size * fk);
+    for (let i = 0; i < size * size * fk * fk; i++) this.fogPixels.data[i * 4 + 3] = FOG_ALPHA.unexplored;
     fctx.putImageData(this.fogPixels, 0, 0);
     this.fogTexture = Texture.from(this.fogCanvas);
     this.fogTexture.source.scaleMode = "linear";
     const fog = new Sprite(this.fogTexture);
-    fog.scale.set(TILE_PX);
+    fog.scale.set(TILE_PX / fk);
+    this.fogCells = new Uint8Array(size * size);
+    this.fogTmp = new Float32Array(size * size * fk * fk);
 
     // The projection's matrix as two containers (a container scales, then turns): as a diamond
     // turned 45° at 1.25 (40 points a cell's side), square on (D-088) not turned; then flattened
@@ -485,6 +497,22 @@ export class WorldRenderer {
    * inside, D-096) from a building (world px, `lift` points up: where its picture's arrows leave)
    * at a unit's chest.
    */
+  /** An outpost's spearmen poked at a target at world px (x, y) (event `poke`, D-121): `n` of those on its walk thrust. */
+  poke(building: number, x: number, y: number, n = 1): void {
+    this.pokes++;
+    this.artUnits?.poke(building, x, y, n);
+  }
+
+  /** The stand points our outpost's picture has (D-121), for the test page. */
+  get outpostStands(): number {
+    return this.artStructures?.outpostStands ?? 0;
+  }
+
+  /** Spearmen drawn on the outposts' walks this frame (D-121), for the test page. */
+  get crewDrawn(): number {
+    return this.artUnits?.crewDrawn ?? 0;
+  }
+
   arrow(fromX: number, fromY: number, lift: number, toX: number, toY: number, now: number, n = 1): void {
     this.launch("arrow", fromX, fromY, lift, toX, toY, now, n);
     this.shotCount += Math.max(1, n);
@@ -911,10 +939,8 @@ export class WorldRenderer {
     const fog = this.view.fog;
     if (fog === null || this.view.fogVersion === this.fogVersion) return;
     this.fogVersion = this.view.fogVersion;
-    const d = this.fogPixels.data;
-    for (let i = 0; i < fog.length; i++) {
-      d[i * 4 + 3] = fog[i] === Fog.Visible ? 0 : fog[i] === Fog.Explored ? FOG_ALPHA.explored : FOG_ALPHA.unexplored;
-    }
+    for (let i = 0; i < fog.length; i++) this.fogCells[i] = fog[i] === Fog.Visible ? 0 : fog[i] === Fog.Explored ? FOG_ALPHA.explored : FOG_ALPHA.unexplored;
+    roundFog(this.fogCells, this.view.map.size, this.fogPixels.data, this.fogTmp);
     (this.fogCanvas.getContext("2d") as CanvasRenderingContext2D).putImageData(this.fogPixels, 0, 0);
     this.fogTexture.source.update();
     // The fog lies on the ground; what stands in it (nodes' marks) is dimmed by hand.
@@ -1229,6 +1255,7 @@ export class WorldRenderer {
     if (!this.terrain.pictures) return false;
     // The towns' ground in the player's culture's layers (rules.town; both `yard` in art-v6).
     this.groundDraw = new GroundDraw(textures, this.view.map.size, quality, this.cultureOf(this.view.me) === "w" ? "W" : "E");
+    this.groundDraw.setEdgeFade(this.edgeFadeM);
     this.groundInner.addChildAt(this.groundDraw.mesh, 0);
     this.flatGround.visible = false;
     // The water in the ground's shader (art-v6): not its tiles too.
@@ -1248,6 +1275,14 @@ export class WorldRenderer {
     g.mesh.visible = on;
     this.flatGround.visible = !on;
     this.terrain.showWater(!on || !g.water);
+  }
+
+  /** 浮空大陸 (edge.ts): its sea of clouds is the stage's, its cliff under the ground, its clouds over the ground and under what stands on it. */
+  addEdge(under: Container, over: Container, fadeM: number): void {
+    this.root.addChildAt(under, 0);
+    this.root.addChildAt(over, this.root.getChildIndex(this.groundArt) + 1);
+    this.edgeFadeM = fadeM;
+    this.groundDraw?.setEdgeFade(fadeM);
   }
 
   /** 寫實地面 in use this game (its switch in 選單 then means something). */
@@ -1448,7 +1483,7 @@ export class WorldRenderer {
       const owner = u[o + U.owner];
       // On a castle's wall (D-096): on its walk (stand_in_m towards the town, walk_m up), over the
       // wall and under its front parts, no shadow (the walk is not the ground); on a bridge's deck (art-v5): up there.
-      const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(Math.floor(px / TILE_PX), Math.floor(py / TILE_PX)) : null;
+      const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(px, py) : null;
       if (onWall !== null && owner === view.me) this.wallLifted++;
       const at = this.projection.toPlane(px + (onWall?.dx ?? 0), py + (onWall?.dy ?? 0));
       const lift = onWall?.lift ?? this.terrain.liftAt(px, py);
@@ -1522,6 +1557,7 @@ export class WorldRenderer {
       }
     }
     this.artUnits?.drawCorpses(seconds);
+    this.artUnits?.drawCrews(this.artStructures?.crews ?? [], seconds);
     this.ghostLayers.own.visible = ghosts.own > 0;
     this.ghostLayers.enemy.visible = ghosts.enemy > 0;
     this.ghostLayers.neutral.visible = ghosts.neutral > 0;

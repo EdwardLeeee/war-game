@@ -11,6 +11,8 @@ import { Container, Sprite } from "pixi.js";
 import { type Culture, M_PER_CELL } from "../art/spec.ts";
 import { buildingEntry, buildingFrame, buildingState, type BuildingEntry, cropStage, nodeFrame, type NodeEntry, RUBBLE_FADE_S, RUBBLE_HOLD_S, type Side, viewFits } from "../art/structures.ts";
 import { buildingFront, depthOf, nodeFront } from "./depth.ts";
+import { type CrewSpot, crewSpots } from "./outpost-crew.ts";
+import { outpostHide } from "../game/features.ts";
 import type { Projection } from "../camera/projection.ts";
 import { Action, BUILDING_STRIDE, BuildingField as B, BuildingFlag, BuildingType, Fog, HeaderField as H, NodeField as N, TICKS_PER_SECOND, TownField as T, TownState, UNIT_STRIDE, UnitField as U } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
@@ -23,6 +25,9 @@ const UP_PER_M = Math.sqrt(3) / 2;
 
 /** What is not in view now (remembered, or under the fog), drawn darker. */
 const OUT_OF_VIEW = 0x8a8a8a;
+/** Those on an outpost's walk (D-121): over its picture, under its front part (FRONT_Z) and what stands in front of it. */
+const CREW_Z = 5e-5;
+const FRONT_Z = 6e-5;
 
 interface Slot {
   color: Sprite;
@@ -30,6 +35,9 @@ interface Slot {
   shadow: Sprite;
   /** A field's picture, on the ground. */
   ground: Sprite;
+  /** Its front part (art-v6.4 fronts: the outpost's parapet), over those on its walk. */
+  front: Sprite;
+  frontTeam: Sprite;
 }
 
 /** A building drawn this frame standing up: its footprint (cells), depth, and picture (plane). */
@@ -108,6 +116,12 @@ export class ArtStructures {
   /** Buildings ordered and not on the map yet (planned). */
   private readonly planSlots: Slot[] = [];
   private readonly drawn: Drawn[] = [];
+  /**
+   * This frame's outposts with spearmen hiding in them (D-121, features.outpostHide), drawn on
+   * their walls' walk: the outpost, its owner, where each stands (world px, metres up), the depth
+   * over its picture.
+   */
+  readonly crews: { building: number; owner: number; spots: CrewSpot[]; z: number }[] = [];
   /** Cell → index + 1 in `drawn` (0: none), for the units' depth. */
   private readonly cellOwner: Int32Array;
   private seen = new Map<number, Seen>();
@@ -132,6 +146,11 @@ export class ArtStructures {
     this.scale = projection.ptPerM / (b?.px_per_m ?? 60);
     this.nodeScale = projection.ptPerM / (art.nodes?.px_per_m ?? 60);
     this.cellOwner = new Int32Array(view.map.size * view.map.size);
+  }
+
+  /** How many the outpost's picture has room for on its walk (D-121: its stand_m), ours; 0 without them. */
+  get outpostStands(): number {
+    return this.entry(BuildingType.Outpost, this.view.me)?.entry.stand_m?.length ?? 0;
   }
 
   /**
@@ -198,13 +217,14 @@ export class ArtStructures {
   }
 
   private slot(i: number): Slot {
-    while (this.slots.length <= i) this.slots.push({ color: sprite(this.upright), team: sprite(this.upright), shadow: sprite(this.shadows), ground: sprite(this.ground) });
+    while (this.slots.length <= i) this.slots.push(this.newSlot());
     return this.slots[i];
   }
 
   /** Before the buildings of a frame. */
   begin(): void {
     this.drawn.length = 0;
+    this.crews.length = 0;
     this.cellOwner.fill(0);
   }
 
@@ -235,7 +255,7 @@ export class ArtStructures {
       // A field: its construction, then its crops (they ripen while farmers work it).
       const crops = entry.crops ?? [];
       name = progress < 1000 ? buildingFrame(entry, buildingState(progress, 1, 1)) : (crops[cropStage(this.worked.get(b[o + B.id]) ?? 0, crops.length)] ?? null);
-      s.color.visible = s.team.visible = s.shadow.visible = false;
+      s.color.visible = s.team.visible = s.shadow.visible = s.front.visible = s.frontTeam.visible = false;
       put(s.ground, this.art.buildingFrame(side, "color", name ?? ""), at.x, at.y, this.scale);
       s.ground.tint = tint;
       return s.ground.visible ? { top: at.y } : null;
@@ -259,10 +279,17 @@ export class ArtStructures {
     const z = this.projection.kind === "oblique" ? depthOf(this.projection.toPlane(0, buildingFront(cellY, size) * TILE_PX).y, cellX, b[o + B.id]) : at.y;
     s.color.zIndex = s.team.zIndex = z;
     s.team.zIndex += 0.000001;
+    this.front(s, side, entry.fronts?.[buildingState(progress, b[o + B.hp], max)], at.x, at.y, z, tint, s.team.tint);
     const w = color.texture.width * this.scale;
     const h = color.texture.height * this.scale;
     const top = at.y - color.ay * h;
     this.drawn.push({ id: b[o + B.id], cellX, cellY, size, z, x0: at.x - color.ax * w, y0: top, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h });
+    // Those hiding in a finished outpost in view, on its walk (D-121): as many as its soldiers.
+    const inside = type === BuildingType.Outpost && outpostHide(this.view.rules) ? b[o + B.soldiers] : 0;
+    if (inside > 0 && entry.stand_m !== undefined && progress >= 1000 && tint !== OUT_OF_VIEW) {
+      const spots = crewSpots(entry.stand_m, inside, (cellX + size / 2) * TILE_PX, (cellY + size / 2) * TILE_PX, TILE_PX / M_PER_CELL);
+      this.crews.push({ building: b[o + B.id], owner, spots, z: z + CREW_Z });
+    }
     const n = this.view.map.size;
     for (let y = cellY; y < cellY + size; y++) for (let x = cellX; x < cellX + size; x++) if (x >= 0 && y >= 0 && x < n && y < n) this.cellOwner[y * n + x] = this.drawn.length;
     return { top };
@@ -279,7 +306,7 @@ export class ArtStructures {
         this.hide(this.planSlots[i]);
         continue;
       }
-      while (this.planSlots.length <= i) this.planSlots.push({ color: sprite(this.upright), team: sprite(this.upright), shadow: sprite(this.shadows), ground: sprite(this.ground) });
+      while (this.planSlots.length <= i) this.planSlots.push(this.newSlot());
       const s = this.planSlots[i];
       const found = this.entry(site.type, this.view.me);
       if (found === null) {
@@ -290,7 +317,7 @@ export class ArtStructures {
       const size = entry.footprint[0];
       const at = this.projection.toPlane((site.x + size / 2) * TILE_PX, (site.y + size / 2) * TILE_PX);
       if (entry.ground === true) {
-        s.color.visible = s.team.visible = s.shadow.visible = false;
+        s.color.visible = s.team.visible = s.shadow.visible = s.front.visible = s.frontTeam.visible = false;
         put(s.ground, this.art.buildingFrame(side, "color", (entry.crops ?? [])[0] ?? buildingFrame(entry, "done") ?? ""), at.x, at.y, this.scale);
         s.ground.alpha = alpha;
         continue;
@@ -308,6 +335,8 @@ export class ArtStructures {
       const z = this.projection.kind === "oblique" ? depthOf(this.projection.toPlane(0, buildingFront(site.y, size) * TILE_PX).y, site.x, 0) : at.y;
       s.color.zIndex = s.team.zIndex = z;
       s.team.zIndex += 0.000001;
+      this.front(s, side, entry.fronts?.done, at.x, at.y, z, 0xffffff, s.team.tint);
+      s.front.alpha = s.frontTeam.alpha = alpha;
     }
   }
 
@@ -316,8 +345,22 @@ export class ArtStructures {
     if (s !== undefined) this.hide(s);
   }
 
+  private newSlot(): Slot {
+    return { color: sprite(this.upright), team: sprite(this.upright), shadow: sprite(this.shadows), ground: sprite(this.ground), front: sprite(this.upright), frontTeam: sprite(this.upright) };
+  }
+
   private hide(s: Slot): void {
-    s.color.visible = s.team.visible = s.shadow.visible = s.ground.visible = false;
+    s.color.visible = s.team.visible = s.shadow.visible = s.ground.visible = s.front.visible = s.frontTeam.visible = false;
+  }
+
+  /** Slot s's front part for `name` (or none), at (x, y) on the plane, over depth z. */
+  private front(s: Slot, side: Side, name: string | undefined, x: number, y: number, z: number, tint: number, team: number): void {
+    put(s.front, name === undefined ? null : this.art.buildingFrame(side, "color", name), x, y, this.scale);
+    put(s.frontTeam, name === undefined ? null : this.art.buildingFrame(side, "team", name), x, y, this.scale);
+    s.front.zIndex = z + FRONT_Z;
+    s.frontTeam.zIndex = z + FRONT_Z + 0.000001;
+    s.front.tint = tint;
+    s.frontTeam.tint = team;
   }
 
   /**
@@ -477,13 +520,14 @@ export class ArtStructures {
   }
 
   destroy(): void {
-    for (const s of this.slots) for (const sp of [s.color, s.team, s.shadow, s.ground]) sp.destroy();
+    for (const s of [...this.slots, ...this.planSlots]) for (const sp of [s.color, s.team, s.shadow, s.ground, s.front, s.frontTeam]) sp.destroy();
     for (const s of this.rubbleSprites) s.destroy();
     for (const n of this.nodeSprites.values()) {
       n.color.destroy();
       n.shadow.destroy();
     }
     this.slots.length = 0;
+    this.planSlots.length = 0;
     this.rubbleSprites.length = 0;
     this.nodeSprites.clear();
   }

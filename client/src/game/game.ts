@@ -2,6 +2,7 @@
 // PixiJS world, and the gestures that turn into selections and commands. The only way
 // anything reaches the simulation is `command()`, which posts a protocol command.
 
+import { type EdgeArt, EdgeRenderer } from "../render/edge.ts";
 import type { Application } from "pixi.js";
 import { Camera } from "../camera/camera.ts";
 import { type GestureHost, GestureRecognizer, type LongPressResult } from "../input/gestures.ts";
@@ -20,12 +21,12 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
-import { enemyTooClose, type GroupOrder, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Spot } from "./reform.ts";
+import { enemyTooClose, type GroupOrder, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, reformMode, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf, SIEGE_ATLASES } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
-import { type Projection, PROJECTIONS } from "../camera/projection.ts";
+import { type Projection, PROJECTIONS, VIEW_DEFAULT } from "../camera/projection.ts";
 import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
 import { atlasFor } from "../render/atlas.ts";
@@ -76,7 +77,9 @@ import {
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
+import { loadGradeOn, saveGradeOn } from "../grade-pref.ts";
 import { loadGroundOn, saveGroundOn } from "../ground-pref.ts";
+import { filmGradeOn, setFilmGrade } from "../render/film-grade.ts";
 import { PendingOrders } from "./pending.ts";
 import { Controls, nextSpeed, type SpeedName } from "../ui/controls.ts";
 import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
@@ -88,7 +91,7 @@ import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, movedTex
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
-import { autoTrainBuildings, features, garrisonTypes, holdsOf, outpostSlots } from "./features.ts";
+import { autoTrainBuildings, features, garrisonTypes, holdsOf, outpostHide, outpostSlots } from "./features.ts";
 import { stoneOf } from "./siege.ts";
 import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
@@ -153,6 +156,8 @@ export interface GameOptions {
   ghost?: "outline";
   /** 寫實地面 (D-093, ?test=1&ground=real): its textures, and the quality to start with. */
   ground?: GroundTextures | null;
+  /** 浮空大陸's edge (R11 C, D-118; render/edge.ts): drawn with the diamond only. */
+  edge?: EdgeArt | null;
   groundQuality?: GroundQuality;
   /** This build has atlases to choose in the 量測 panel. */
   artAvailable?: boolean;
@@ -182,6 +187,7 @@ const REFORM_TEXT: Record<string, string> = {
   city: "整理隊形：槍兵在前，面向敵方主城",
   centre: "整理隊形：槍兵在前，面向地圖中央",
   keep: "整理隊形：槍兵在前，方向不變",
+  march: "邊走邊排：前面的弓手和法師等槍兵走過去，照樣走到點的地方",
   near: `敵人在 ${REFORM_CLEAR_CELLS} 格內，不整理隊形：整理時不還手，先打完或先移動開`,
 };
 
@@ -213,8 +219,10 @@ export function headerAutoTrain(log: string): boolean[] | null {
   }
 }
 
-/** How the ground is laid on the screen: 方形斜看 since art-v3 is drawn for it (D-088); the diamond (D-085) on test pages only (?view=diamond). */
-const PROJECTION_DEFAULT = PROJECTIONS.oblique;
+/** How the ground is laid on the screen (projection.ts VIEW_DEFAULT); another on test pages (?view=). */
+const PROJECTION_DEFAULT = PROJECTIONS[VIEW_DEFAULT];
+/** 浮空大陸: metres the realistic ground fades out over at the two lower edges, onto the cliff's lip (ui paints its grass a metre in). */
+const EDGE_FADE_M = 0.75;
 /** Orders that end a soldier's attack on a town (攻城打到底, assault.ts); 攻擊 starts one again. */
 const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "guard", "post", "gather", "build", "repair", "release"]);
 
@@ -268,6 +276,8 @@ export class Game implements GestureHost {
   private readonly options: GameOptions;
   private readonly recognizer: GestureRecognizer;
   private renderer: WorldRenderer | null = null;
+  /** 浮空大陸's edge round the map (render/edge.ts), with the diamond and ui's edge pictures. */
+  private edge: EdgeRenderer | null = null;
   private seq = 1;
   private lastFrame = performance.now();
   private readyWaiters: (() => void)[] = [];
@@ -276,6 +286,8 @@ export class Game implements GestureHost {
     this.app = app;
     this.port = port;
     this.options = options;
+    // 電影色調 as this device has it (the canvas outlives a game).
+    setFilmGrade(app, loadGradeOn());
     // The fake world trains nothing by itself (mock/): the screen's 自動訓練 only when a test turns it on.
     this.autoArmyOn = !options.fake;
     this.tps = options.tps;
@@ -376,6 +388,8 @@ export class Game implements GestureHost {
     this.port.terminate();
     for (const c of this.cleanups) c();
     this.app.ticker.remove(this.tick);
+    this.edge?.destroy();
+    this.edge = null;
     this.renderer?.destroy();
     this.renderer = null;
     this.hud.destroy();
@@ -520,6 +534,10 @@ export class Game implements GestureHost {
     return this.renderer?.brokenGateCount ?? 0;
   }
 
+  get crewDrawnForTest(): { drawn: number; pokes: number; stands: number } {
+    return { drawn: this.renderer?.crewDrawn ?? 0, pokes: this.renderer?.pokes ?? 0, stands: this.renderer?.outpostStands ?? 0 };
+  }
+
   get wallLiftedForTest(): number {
     return this.renderer?.wallLifted ?? 0;
   }
@@ -599,6 +617,29 @@ export class Game implements GestureHost {
     saveGroundOn(on);
     this.renderer?.showGround(on);
     this.toast(on ? "寫實地面：開" : "寫實地面：關（這台裝置記住了）", "ok");
+  }
+
+  /** 選單's 電影色調 開／關 (the user 2026-11-02, R9-05 B): on or off, as this device has it. */
+  gradeSwitch(): boolean {
+    return loadGradeOn();
+  }
+
+  /** 電影色調 on or off, at once, and remembered on this device (grade-pref.ts). */
+  toggleGrade(): void {
+    const on = !loadGradeOn();
+    saveGradeOn(on);
+    setFilmGrade(this.app, on);
+    this.toast(on ? "電影色調：開（這台裝置記住了）" : "電影色調：關（這台裝置記住了）", "ok");
+  }
+
+  /** 浮空大陸's edge (the test page): drawn or not, its cliff pieces and waterfalls. */
+  get edgeForTest(): { on: boolean; shown: boolean; pieces: number; falls: number } {
+    return { on: this.edge !== null, shown: this.edge?.shown ?? false, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0 };
+  }
+
+  /** Whether the film grade is over the battlefield now (the test page). */
+  get filmGradeForTest(): boolean {
+    return filmGradeOn(this.app);
   }
 
   /** 寫實地面's quality (the 量測 panel, the test page). */
@@ -1783,13 +1824,15 @@ export class Game implements GestureHost {
   }
 
   /** 哨所 (D-080): how many it takes, how many are posted there (on their way or on guard), and whether it holds. */
-  outpostState(building: number): { slots: number; posted: number; hold: boolean; text: string } | null {
+  outpostState(building: number): { slots: number; posted: number; inside: number | null; hold: boolean; text: string } | null {
     const view = this.view;
     const b = view?.curr?.snap.buildings;
     const o = view?.buildingRow(building) ?? -1;
     if (view === null || b === undefined || o < 0 || b[o + BuildingField.type] !== BuildingType.Outpost) return null;
     const hold = (b[o + BuildingField.flags] & BuildingFlag.Hold) !== 0;
-    return { slots: outpostSlots(view.rules), posted: b[o + BuildingField.posted], hold, text: outpostModeText(view.rules, hold) };
+    // 3 × 3 (D-119): those hiding in it, the rest of the posted on their way.
+    const hide = outpostHide(view.rules);
+    return { slots: outpostSlots(view.rules), posted: b[o + BuildingField.posted], inside: hide ? b[o + BuildingField.soldiers] : null, hold, text: outpostModeText(view.rules, hold, hide) };
   }
 
   /** ＋ on a depot (D-066): one villager more gathering `resource` for it, as the player's own order. */
@@ -1973,16 +2016,51 @@ export class Game implements GestureHost {
   }
 
   /**
-   * 軍團畫面's 出城歸隊 (`all`: 全部帶走): group i's 留守 come out of every town, and those at
-   * outposts leave them, and walk back to it; the group shown is selected again with them.
+   * 軍團畫面's 出城歸隊 (`all`: 全部帶走): group i's 留守 come out of every town, those at outposts
+   * leave them and those hiding in buildings come out (D-119), and walk back to it; the group shown
+   * is selected again with them.
    */
   groupOut(i: number, all: boolean): void {
     const g = this.army.groups[i];
     const posted = this.groupPosted(i);
     this.offPosts(i, posted);
+    const hid = this.recallHiding(i);
     const towns = this.army.stationedOf(i).map((e) => e.town);
-    const { out } = this.comeOut(towns, (id) => g.ids.includes(id), all, `出城歸隊編隊 ${i + 1}`, posted.length);
+    const { out } = this.comeOut(towns, (id) => g.ids.includes(id), all, `出城歸隊編隊 ${i + 1}`, posted.length + hid);
     if (out.length > 0 && this.groupView === i) this.showGroup(i, false);
+  }
+
+  /**
+   * 軍團畫面's 召回 (the user 2026-11-04, D-119: 「駐守箭塔跟主堡應該是在哪都可以把兵叫回去」): group i's
+   * soldiers hiding in our buildings come out and walk back to it, from wherever the player is.
+   */
+  groupRecall(i: number): void {
+    const n = this.recallHiding(i);
+    if (n === 0) this.toast("這個編隊沒有躲著的兵");
+    else this.toast(`${n} 名躲著的兵出來，走回編隊 ${i + 1}`, "ok");
+  }
+
+  /**
+   * Group i's soldiers hiding in buildings come out: those inside by the building's `leave` naming
+   * them only (the others of that building stay), those on their way in by 停止. Standing with no
+   * order once out, they walk back to the group (updateAway, D-111). Returns how many.
+   */
+  private recallHiding(i: number): number {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return 0;
+    const inside = new Map<number, number[]>();
+    const going: number[] = [];
+    for (const id of this.groupHiding(i)) {
+      const o = view.unitRow(id);
+      if (u[o + UnitField.action] === Action.Garrisoned) {
+        const b = u[o + UnitField.orderTarget];
+        inside.set(b, [...(inside.get(b) ?? []), id]);
+      } else going.push(id);
+    }
+    for (const [building, ids] of [...inside].sort((a, b) => a[0] - b[0])) this.command({ c: "leave", building, u: ids });
+    if (going.length > 0) this.command({ c: "stop", u: going });
+    return going.length + [...inside.values()].reduce((n, ids) => n + ids.length, 0);
   }
 
   /** Group i's living members at outposts (哨所, D-080). */
@@ -2392,6 +2470,14 @@ export class Game implements GestureHost {
         if (ground !== null && !this.renderer.useGround(ground, this.options.groundQuality ?? "high")) console.warn("ground: 寫實地面 needs ui's terrain pictures (art-v5, square on); the flat ground stays");
         // 選單's 寫實地面 開／關 (ceo 2026-10-25), as this device was left.
         else if (ground !== null) this.renderer.showGround(loadGroundOn());
+        // 浮空大陸 (R11 C): the sea of clouds under the battlefield, the cliff under the ground; drawn for the diamond only.
+        const edgeArt = this.options.edge ?? null;
+        if (edgeArt !== null && projection.kind === "diamond") {
+          this.edge?.destroy();
+          this.edge = new EdgeRenderer(edgeArt, projection, msg.map.size);
+          this.app.stage.addChildAt(this.edge.back, 0);
+          this.renderer.addEdge(this.edge.under, this.edge.over, EDGE_FADE_M);
+        }
         const resize = (w: number, h: number) => cam.resize(w, h);
         this.app.renderer.on("resize", resize);
         this.cleanups.push(() => this.app.renderer.off("resize", resize));
@@ -2454,6 +2540,9 @@ export class Game implements GestureHost {
               this.trainedAt.add(ev.building);
             }
             if (ev.k === "shot") this.drawShot(ev.building, ev.target, now, ev.n ?? 1);
+            // TODO(core outpost-hide): SimEvent's poke once the protocol has it.
+            const poke = ev as unknown as { k: string; building: number; target: number; n?: number };
+            if (poke.k === "poke") this.drawPoke(poke.building, poke.target, poke.n ?? 1);
             if (ev.k === "siege_shot") this.drawSiegeShot(ev);
             this.hud.onEvent(ev);
           }
@@ -2517,6 +2606,7 @@ export class Game implements GestureHost {
     if (cam === null || view === null || this.renderer === null) return;
     cam.update(dt);
     this.renderer.paused = this.paused;
+    this.edge?.update(now, cam, view.ground, view.groundVersion, view.fog, view.fogVersion);
     this.renderer.draw(now, cam, this.placement);
     this.hud.frame(now);
     this.frameTimes.add(dt, performance.now() - now);
@@ -2913,6 +3003,14 @@ export class Game implements GestureHost {
     this.renderer.shot(tower?.x ?? from.x, tower?.y ?? from.y, to.x, to.y, now, n, tower?.lift ?? 0);
   }
 
+  /** Spearmen hiding in an outpost poked `target` (D-121): that many of those on its walk thrust at it. */
+  private drawPoke(building: number, target: number, n: number): void {
+    const o = this.view?.unitRow(target) ?? -1;
+    if (this.view === null || this.renderer === null || o < 0) return;
+    const to = this.view.unitPos(o);
+    this.renderer.poke(building, to.x, to.y, n);
+  }
+
   private buildingCentre(id: number): { x: number; y: number } | null {
     const view = this.view;
     const o = view?.buildingRow(id) ?? -1;
@@ -2948,16 +3046,22 @@ export class Game implements GestureHost {
     const centre = { x: at.reduce((n, p) => n + p.x, 0) / at.length, y: at.reduce((n, p) => n + p.y, 0) / at.length };
     const n = view.map.size;
     const { dir, from } = reformFacing(centre, this.groupOrder(soldiers), this.enemyCity(view), { x: n / 2, y: n / 2 });
-    // The formation command re-forms them in place at the spacing most of them have (PROTOCOL.md 第三輪): the way they face now, or `face`.
+    // The formation command re-forms them at the spacing most of them have (PROTOCOL.md 第三輪): the way they face now, or `face`.
     const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
-    if (dir === null) this.command({ c: "formation", u: soldiers, loose });
-    else if (oneCluster(at)) this.command({ c: "formation", u: soldiers, loose, face: dir16(Math.round(dir.x * 1024), Math.round(dir.y * 1024)) });
-    else {
+    const states = soldiers.map((id) => {
+      const order = u[view.unitRow(id) + UnitField.order];
+      return order === Order.Move || order === Order.Retreat ? "march" : order === Order.Attack ? "attack" : "stand";
+    });
+    const mode = reformMode(states, oneCluster(at), dir !== null);
+    if (mode === "walk" && dir !== null) {
       // Spread out (spearmen gone after the enemy): a walk of one cell gathers them into one.
       const c = reformCell(centre, dir);
       this.command({ c: "retreat", u: soldiers, x: c.x, y: c.y });
+    } else {
+      const face = dir === null ? {} : { face: dir16(Math.round(dir.x * 1024), Math.round(dir.y * 1024)) };
+      this.command({ c: "formation", u: soldiers, loose, ...face, ...(mode === "ranks" ? { ranks: true } : {}) });
     }
-    this.toast(REFORM_TEXT[from]);
+    this.toast(mode === "ranks" ? REFORM_TEXT.march : REFORM_TEXT[from]);
   }
 
   /**

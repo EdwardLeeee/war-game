@@ -534,9 +534,9 @@ export const HEADER_LENGTH = 28;
  * - perf200, perf360 (D-083): perf with both sides at 200 / 360 population (the cap and ceiling
  *   held there), for measuring D-083's higher population on the iPhone.
  */
-export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4 } as const;
+export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4, WallShift: 5 } as const;
 export type Scenario = (typeof Scenario)[keyof typeof Scenario];
-export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360";
+export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360" | "wallshift";
 
 /**
  * Which map a game is played on (D-074). "fixed": the prototype's 96 x 96 map, the same every
@@ -766,6 +766,10 @@ export interface Features {
   keep?: boolean;
   /** A market can be built and food and wood traded for gold (D-101), `Rules.market`. Absent: off. */
   market?: boolean;
+  /** Soldiers on the walls shift along them to where the enemy is (D-119), `Rules.wallShift`. Absent: off. */
+  wallShift?: boolean;
+  /** Spearmen hide in outposts and strike from them (D-119), `Rules.outpost.poke`. Absent: off. */
+  outpostHide?: boolean;
 }
 
 export interface MapInfo {
@@ -820,7 +824,7 @@ export interface Rules {
    * they go for enemies within `reach` of the outpost (footprint to unit) and give up beyond
    * `chase`; holding, they chase whoever hits them up to `chase`.
    */
-  outpost?: { slots: number; reach: number; chase: number };
+  outpost?: { slots: number; reach: number; chase: number; poke?: number; ranged?: [number, number]; melee?: [number, number] };
   /** By TownSize (round 7). */
   towns?: TownInfo[];
   /**
@@ -856,6 +860,11 @@ export interface Rules {
    */
   walls?: { range: number; takenNum: number; takenDen: number; sling: number };
   /**
+   * D-119 (in play while `features.wallShift`): soldiers on the walls with nothing to shoot walk along them to cells in
+   * reach of an enemy after `wait` ticks, and back to where they stood after `back` ticks calm (PROTOCOL.md 3.7).
+   */
+  wallShift?: { wait: number; back: number; stay: number; odds: number };
+  /**
    * The population ceiling (D-083): `base` plus `town[size]` (by TownSize) for each town the
    * player governs; HeaderField.populationCeiling has it now. Off: base 120, town [0, 0].
    */
@@ -881,9 +890,10 @@ export type CommandBody =
   | { c: "stance"; u: number[]; stance: Stance }
   /**
    * Loose (true) or close (false) formation for these units: sets or clears UnitFlag.Loose and
-   * re-forms them (PROTOCOL.md 3); `face` (0-15, as `facing`, D-095): the way they face then.
+   * re-forms them (PROTOCOL.md 3); `face` (0-15, as `facing`, D-095): the way they face then;
+   * `ranks` (D-119): a group on its way also gets its ranks right on the way (spearmen in front).
    */
-  | { c: "formation"; u: number[]; loose: boolean; face?: number }
+  | { c: "formation"; u: number[]; loose: boolean; face?: number; ranks?: boolean }
   | { c: "gather"; u: number[]; node: number }
   /** `u` may be empty: the simulation then sends the nearest free farmers (PROTOCOL.md 3.1). */
   | { c: "build"; u: number[]; type: BuildingType; x: number; y: number }
@@ -1000,6 +1010,8 @@ export type SimEvent =
    */
   /** `n` (D-096): this many arrows at once, absent for one (PROTOCOL.md 5). */
   | { k: "shot"; building: number; target: number; n?: number }
+  /** D-119 (OUTPOST_HIDE): the spearmen in outpost `building` struck unit `target`, `n` of them (absent: 1). */
+  | { k: "poke"; building: number; target: number; n?: number }
   /**
    * A siege engine `u` threw a stone (D-099): it lands at (x, y), fixed point; `lands` is the tick of
    * the first snapshot that shows it landed (this event's snapshot tick + Rules.siege.flightTicks). To
@@ -1027,6 +1039,7 @@ export const EVENT_KINDS = [
   "mage_killed",
   "shot",
   "siege_shot",
+  "poke",
   "traded",
   "rejected",
   "game_over",

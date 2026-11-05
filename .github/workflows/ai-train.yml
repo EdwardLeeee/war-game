@@ -8,6 +8,8 @@
 # again (v2's chain broke on one failed download, run 41078447033); its own groups (ai-train-v3-*).
 # NN v4 (ai/train-v4, never merged; D-122, ceo 2026-11-04): squads and the charge, from v3's weights (train.ts widens
 # them); its own groups (ai-train-v4-*), so a trial runs beside v3's chain and the switch waits for a run's end.
+# NN v4m (ai/train-v4m, never merged; D-120, ceo 2026-11-05): main 6ca70e3's rules (D-119's batch) with v4s and v4f; its own groups
+# (ai-train-v4m-*): a chain on the old rules' branch must not cancel a run waiting here, nor start fill-in runs on these rules.
 # NN v4f (ai/train-v4f, never merged; 2026-11-05): eval of pick f<head>.<choice>: what a choice is worth when always taken.
 # NN v4s (ai/train-v4s, never merged; ceo 2026-11-04, the user: idle runners all to the training): mode gen, one
 # generation a run. The main chain (one job an island, its pairs as es plays them) never gives way; fill-in jobs play
@@ -98,7 +100,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ai-train-v4s-${{ inputs.mode || 'push' }}-${{ inputs.mode == 'fill' && inputs.tag || inputs.only || 'all' }}
+  group: ai-train-v4m-${{ inputs.mode || 'push' }}-${{ inputs.mode == 'fill' && inputs.tag || inputs.only || 'all' }}
   cancel-in-progress: false
 
 jobs:
@@ -246,7 +248,8 @@ jobs:
     strategy:
       fail-fast: false
       # ceo 2026-10-29: training and evals 8 jobs at most, 6 and 2.
-      max-parallel: ${{ needs.plan.outputs.mode == 'eval' && 2 || 6 }}
+      # 2026-11-05: evals 4 (with the main chain's 3, under the 8 they were held to before the idle runners, D-126).
+      max-parallel: ${{ needs.plan.outputs.mode == 'eval' && 4 || 6 }}
       matrix:
         island: ${{ fromJSON(needs.plan.outputs.islands) }}
     defaults:

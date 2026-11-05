@@ -107,7 +107,9 @@ def platform_e(name, P, parent, w, d, h, cy=0.0, steps=1.8):
         n = max(2, int(round(h / 0.17)))
         for k in range(n):
             t = (k + 1) / n
-            box(f"{name}_step{k}", (steps, 0.3 * (n - k), h * t), P["stone"], parent,
+            # each a hair narrower than the one under it: equal widths left their side faces in one plane, fighting
+            # (black triangles on the diamond camera, which sees the flight's side, PR2 r1)
+            box(f"{name}_step{k}", (steps - 0.012 * k, 0.3 * (n - k), h * t), P["stone"], parent,
                 loc=(0, cy - d / 2 - 0.15 * (n - k) + 0.02, h * t / 2), bevel=0.01)
 
 
@@ -220,7 +222,7 @@ def _prof(v, kind="tang"):
 
 
 def tang_roof(name, P, parent, cx, cy, z, w, d, rise, over, kind="xieshan", lift=0.18, chiwei=True, gable_v=0.55,
-              tile_pitch=0.26, tile_amp=0.035, thick=0.16, chiwei_s=None):
+              tile_pitch=0.26, tile_amp=0.035, thick=0.16, chiwei_s=None, fine=False):
     """A tiled roof over the rectangle w x d (the eave purlins) at height z, `over` metres of eave beyond it, `rise` to
     the ridge. kind: wudian (hip), xieshan (hip below, gable above from gable_v), xuanshan (two slopes, the gables
     open and overhanging). The tile rows are the surface's ridges (筒瓦), the corners lift a little at the eave."""
@@ -249,9 +251,20 @@ def tang_roof(name, P, parent, cx, cy, z, w, d, rise, over, kind="xieshan", lift
             return (x, y, zz)
         return fn
 
-    nu = max(24, int(W / tile_pitch * 4))
-    surface(name + "_f", P["tile"], g, nu, 16, front(-1), thick)
-    surface(name + "_b", P["tile"], g, nu, 16, front(1), thick)
+    # fine (R9): a denser mesh (the rows run unbroken down to the eave and round the hips), round tile ends (瓦當) along
+    # every eave, a built-up ridge; the R8 roofs keep their old mesh
+    kn, vf, vs_ = (7, 48, 30) if fine else (4, 16, 10)
+    nu = max(24, int(W / tile_pitch * kn))
+    surface(name + "_f", P["tile"], g, nu, vf, front(-1), thick)
+    surface(name + "_b", P["tile"], g, nu, vf, front(1), thick)
+    if fine:
+        for sy in (-1, 1):
+            half = W / 2 if kind == "xuanshan" else ridge_half + hd
+            for k in range(int(2 * half / tile_pitch)):
+                x = -half + (k + 0.5) * tile_pitch
+                corner = (abs(x) / (W / 2)) ** 6 if kind != "xuanshan" else 0.0
+                cyl(f"{name}_wd{sy}{k}", tile_pitch * 0.3, 0.07, P["ridge"], g, loc=(x, sy * (hd + 0.02), zat(0.0, corner) + 0.02),
+                    rot=(90, 0, 0), at=(0, 0, -0.035), segs=8)
     if kind in ("wudian", "xieshan"):
         vmax = gable_v if kind == "xieshan" else 1.0
 
@@ -265,8 +278,15 @@ def tang_roof(name, P, parent, cx, cy, z, w, d, rise, over, kind="xieshan", lift
                 zz = zat(vv, corner) + tile_amp * math.sin(2 * math.pi * y / tile_pitch) * min(1.0, 4 * vv + 0.3)
                 return (x, y, zz)
             return fn
-        surface(name + "_l", P["tile"], g, max(16, int(D / tile_pitch * 4)), 10, side(-1), thick)
-        surface(name + "_r", P["tile"], g, max(16, int(D / tile_pitch * 4)), 10, side(1), thick)
+        surface(name + "_l", P["tile"], g, max(16, int(D / tile_pitch * kn)), vs_, side(-1), thick)
+        surface(name + "_r", P["tile"], g, max(16, int(D / tile_pitch * kn)), vs_, side(1), thick)
+        if fine:
+            for sx in (-1, 1):
+                for k in range(int(2 * hd / tile_pitch)):
+                    y = -hd + (k + 0.5) * tile_pitch
+                    cyl(f"{name}_wds{sx}{k}", tile_pitch * 0.3, 0.07, P["ridge"], g,
+                        loc=(sx * (ridge_half + hd + 0.02), y, zat(0.0, (abs(y) / hd) ** 6) + 0.02), rot=(0, 90, 0),
+                        at=(0, 0, -0.035), segs=8)
         # the hip ridges (垂脊／戧脊), from each corner up the slopes' meeting line
         for sx in (-1, 1):
             for sy in (-1, 1):
@@ -277,15 +297,15 @@ def tang_roof(name, P, parent, cx, cy, z, w, d, rise, over, kind="xieshan", lift
                     y = sy * hd * (1 - v)
                     pts.append((x, y, zat(v, 1.0) + 0.05))
                 for k in range(8):
-                    rod(f"{name}_hip{sx}{sy}{k}", pts[k], pts[k + 1], 0.09, P["ridge"], parent=g, segs=8)
+                    rod(f"{name}_hip{sx}{sy}{k}", pts[k], pts[k + 1], 0.13 if fine else 0.09, P["ridge"], parent=g, segs=8)
     if kind == "xieshan":
         # the gable triangles (山花) and their bargeboards at x = ±gx, from the slope at gable_v up to the ridge
         vs = [gable_v + (1 - gable_v) * k / 8 for k in range(9)]
         up = [(-hd * (1 - v), zat(v, 0.0)) for v in vs]                  # up the front slope to the ridge
         down = [(hd * (1 - v), zat(v, 0.0)) for v in reversed(vs[:-1])]  # and down the back one
         for sx in (-1, 1):
-            slab(f"{name}_gable{sx}", up + down, 0.12, P["plaster"], parent=g, loc=(sx * gx, 0, 0), rot=(0, 0, 90),
-                 plane="XZ", outline=False)
+            slab(f"{name}_gable{sx}", up + down, 0.12, P["timber"] if fine else P["plaster"], parent=g, loc=(sx * gx, 0, 0),
+                 rot=(0, 0, 90), plane="XZ", outline=False)
     if kind == "xuanshan":
         # the gable walls' tops under the overhang are filled by the building's own walls; the bargeboards here
         for sx in (-1, 1):
@@ -297,6 +317,10 @@ def tang_roof(name, P, parent, cx, cy, z, w, d, rise, over, kind="xieshan", lift
     # the main ridge (正脊) and the 鴟尾 at its ends
     rl = (gx if kind == "xieshan" else (ridge_half if kind == "wudian" else W / 2)) * 2
     box(name + "_ridge", (rl, 0.3, 0.32), P["ridge"], g, loc=(0, 0, rise + 0.12), bevel=0.03)
+    if fine:                                           # the ridge built of stacked flat tiles, a round cap on top
+        for k, (wk, hk) in enumerate(((0.36, 0.1), (0.3, 0.1), (0.24, 0.1))):
+            box(f"{name}_ridge{k}", (rl - 0.05 * k, wk, hk), P["ridge"], g, loc=(0, 0, rise + 0.3 + 0.1 * k), bevel=0.015)
+        cyl(name + "_ridgecap", 0.1, rl - 0.2, P["ridge"], g, loc=(-(rl - 0.2) / 2, 0, rise + 0.62), rot=(0, 90, 0), segs=10)
     if chiwei:
         for sx in (-1, 1):
             chiwei_e(f"{name}_cw{sx}", P, g, (sx * rl / 2, 0, rise + 0.2), sx, s=chiwei_s or min(1.0, 0.25 + rise * 0.28))

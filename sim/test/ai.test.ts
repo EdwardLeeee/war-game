@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, type Fort, fortGroups, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
+import { type AiStyle, aroundForts, createAi, enemyForts, FORT_HIDE_AI, type Fort, fortGroups, groupWorth, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, CHARGE_HOLD, CHARGE_NOW, choose, DEFENSE_NONE, DEFENSE_TOWER, features, forward, HEAD_ARMY, HEAD_DEFENSE, HEAD_SQUAD, HEAD_TOWN, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, SQUAD_HOME, SQUAD_RAID, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { ES_DEFAULTS, newState, pairSetup, rng, stepSizes, toVector, update, widen, widenNet } from "../src/ai/learn/es.ts";
 import { readFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../s
 import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
-import { Action, type AiDifficulty, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
+import { Action, type AiDifficulty, BuildingFlag, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
 import { aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
@@ -1255,11 +1255,12 @@ test("D-081: what forts and attackers are worth comes from the live rules (a spe
 /** A finished enemy fort for the pure functions. */
 function fort(id: number, type: BuildingType, x: number, y: number, more: Partial<Fort> = {}): Fort {
   const tower = type === BuildingType.ArrowTower;
-  return { id, type, x, y, size: 2, hits: tower ? 9 : 8, reach: tower ? 9 : 15, done: true, seen: true, occupied: false, ...more };
+  return { id, type, x, y, size: 2, hits: tower ? 9 : 8, reach: tower ? 9 : 15, done: true, seen: true, occupied: false, soldiers: 0, hold: false, hp: tower ? 600 : 1500, ...more };
 }
 
 test("D-081: forts that reach each other are one group; a tower seen with someone in, or only remembered, counts full", () => {
-  const v = fortValues(rules());
+  // D-080's outposts, guards standing round them (D-119's hidden spearmen: below).
+  const v = { ...fortValues(rules()), hide: false };
   const near = [fort(1, BuildingType.ArrowTower, 20, 20), fort(2, BuildingType.ArrowTower, 24, 20), fort(3, BuildingType.Outpost, 22, 23)];
   const far = fort(4, BuildingType.ArrowTower, 60, 60);
   const groups = fortGroups([...near, far, fort(5, BuildingType.ArrowTower, 61, 60, { done: false })], () => 2, v);
@@ -1270,6 +1271,94 @@ test("D-081: forts that reach each other are one group; a tower seen with someon
   assert.equal(b.worth, v.tower);
   const full = fortGroups([fort(1, BuildingType.ArrowTower, 20, 20, { occupied: true }), fort(2, BuildingType.ArrowTower, 24, 20, { seen: false })], () => 0, v);
   assert.equal(full[0].worth, 2 * (v.tower + v.holds * v.hidden), "seen with someone in, and remembered: full");
+});
+
+// --- D-119 (core's #370): outposts spearmen hide in -----------------------------------------------------------------
+
+test("D-119: groups of towers alone weigh as before; D-119 off, an outpost as D-080's", () => {
+  const v = fortValues(rules());
+  assert.ok(v.hide, "on with the rules");
+  const towers = [0, 1, 2, 3, 4].map((k) => fort(1 + k, BuildingType.ArrowTower, 20 + 3 * k, 20, { occupied: true }));
+  const [g] = fortGroups(towers, () => 0, v, [{ type: UnitType.Spearman }]);
+  assert.equal(g.worth, 5 * (v.tower + v.holds * v.hidden), "5 towers, 3 in each: as D-081 calibrated them");
+  assert.equal(groupWorth(g, [{ type: UnitType.Ranged }], v), g.worth, "the same against any army");
+  const off = { ...v, hide: false };
+  const [o] = fortGroups([fort(9, BuildingType.Outpost, 20, 20, { seen: false })], () => 0, off);
+  assert.equal(o.worth, off.guard * off.slots, "off: remembered, as many guards as it holds");
+});
+
+test("D-119: an outpost's hidden spearmen as its row shows them, as many as it holds when only remembered; ranged units take no pokes, melee many", () => {
+  const v = fortValues(rules());
+  const spears = Array.from({ length: 30 }, () => ({ type: UnitType.Spearman }));
+  const ranged = Array.from({ length: 30 }, () => ({ type: UnitType.Ranged }));
+  const one = (more: Partial<Fort>) => fortGroups([fort(1, BuildingType.Outpost, 20, 20, { size: 3, ...more })], () => 0, v)[0];
+  const four = one({ soldiers: 4 });
+  const remembered = one({ seen: false, soldiers: 0 });
+  assert.equal(four.outposts[0].pokers, 4);
+  assert.equal(remembered.outposts[0].pokers, v.slots, "remembered: 9");
+  assert.equal(groupWorth(remembered, ranged, v), v.guard * v.slots, "ranged units shoot from off: only the 9 that come out when it falls");
+  assert.ok(groupWorth(remembered, spears, v) > 2 * v.guard * v.slots, `spearmen by it, poked as they hack at 1/3: ${groupWorth(remembered, spears, v)}`);
+  assert.ok(groupWorth(four, spears, v) < groupWorth(remembered, spears, v), "4 in it, less than 9");
+  const cavalry = Array.from({ length: 30 }, () => ({ type: UnitType.Cavalry }));
+  assert.ok(groupWorth(four, cavalry, v) > groupWorth(four, spears, v) * 1.2, "cavalry take 5/2 from spearmen");
+  // An empty outpost by towers: the arrows go on while it is pulled down.
+  const towers = [fort(1, BuildingType.ArrowTower, 20, 20), fort(2, BuildingType.ArrowTower, 24, 20)];
+  const alone = fortGroups(towers, () => 0, v)[0];
+  const withIt = fortGroups([...towers, fort(3, BuildingType.Outpost, 22, 23, { size: 3 })], () => 0, v)[0];
+  assert.equal(withIt.ids.length, 3);
+  assert.ok(groupWorth(withIt, ranged, v) > alone.worth, `towers ${alone.worth}, with an empty outpost to pull down ${groupWorth(withIt, ranged, v)}`);
+  const engines = [...ranged.slice(0, 20), ...Array.from({ length: 3 }, () => ({ type: UnitType.Siege }))];
+  assert.ok(groupWorth(withIt, engines, v) < groupWorth(withIt, ranged.slice(0, 20), v), "siege engines pull it down sooner");
+});
+
+test("D-119 (FORT_HIDE_AI.memory, hard only): a remembered outpost as last seen finished, its spearmen and hold; without the memory or off, 9 and its reach", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const id = w.addBuilding(1, BuildingType.Outpost, 40, 40, 1500, 1000);
+  w.buildings.col.flags[w.building(id)] |= BuildingFlag.Hold;
+  const seen = buildView(g, null);
+  const memo = new Map();
+  FORT_HIDE_AI.memory = true;
+  try {
+    enemyForts(seen, 0, rules(), memo);
+    assert.deepEqual(memo.get(id), { soldiers: 0, hold: true }, "seen finished, empty, holding");
+    // The same row, remembered (as fog keeps it: place and hp).
+    let at = 0;
+    while (seen.buildings[at] !== id) at += 16;
+    const row = Array.from(seen.buildings.slice(at, at + 16));
+    const view = { ...seen, buildings: Int32Array.from(row.map((v, k) => (k === 13 ? BuildingFlag.Remembered : k === 14 ? 0 : v))) };
+    const [m] = enemyForts(view, 0, rules(), memo);
+    assert.equal(m.seen, true, "known");
+    assert.equal(m.soldiers, 0);
+    assert.equal(m.hits, 1, "it held");
+    const [n] = enemyForts(view, 0, rules());
+    assert.equal(n.seen, false, "no memory given (normal): 9 and its reach");
+    assert.equal(n.hits, rules().outpost!.reach);
+    FORT_HIDE_AI.memory = false;
+    const [o] = enemyForts(view, 0, rules(), memo);
+    assert.equal(o.seen, false);
+    assert.equal(o.hits, rules().outpost!.reach, "off: its reach");
+  } finally {
+    FORT_HIDE_AI.memory = true;
+  }
+});
+
+test("D-119: a holding outpost strikes only what stands by it (hits 1); attacking, its spearmen come out (reach)", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const held = w.addBuilding(1, BuildingType.Outpost, 40, 40, 1500, 1000);
+  w.buildings.col.flags[w.building(held)] |= BuildingFlag.Hold;
+  w.addBuilding(1, BuildingType.Outpost, 50, 40, 1500, 1000);
+  const [a, b] = enemyForts(buildView(g, null), 0, rules()).sort((p, q) => p.x - q.x);
+  assert.equal(a.hold, true);
+  assert.equal(a.hits, 1, "holding");
+  assert.equal(b.hits, rules().outpost!.reach, "attacking");
+  FORT_HIDE_AI.on = false;
+  try {
+    assert.equal(enemyForts(buildView(g, null), 0, rules()).sort((p, q) => p.x - q.x)[0].hits, rules().outpost!.reach, "off: as before");
+  } finally {
+    FORT_HIDE_AI.on = true;
+  }
 });
 
 test("D-081: a group on the straight way is on the way; one beside another way is not", () => {

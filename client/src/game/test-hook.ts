@@ -124,6 +124,8 @@ export interface GameHook {
   /** D-096: openings drawn as broken gates, and our units drawn up on a castle's wall in the last frame. */
   brokenGates(): number;
   wallLifted(): number;
+  /** 哨所 3 × 3 (D-121): spearmen drawn on the outposts' walks this frame, pokes drawn so far, stand points in our outpost's picture. */
+  crew(): { drawn: number; pokes: number; stands: number };
   /** The units' atlases (D-085): which, how many pages, units drawn from them; null: the shapes. */
   art(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null;
   /** 你的陸 this game was started with (the computer wears the other). */
@@ -137,6 +139,12 @@ export interface GameHook {
   groundLook(): { real: boolean; quality: string | null; water: boolean; town: boolean } | null;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
   feet(): number;
+  /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
+  filmGrade(): boolean;
+  /** 浮空大陸's edge (R11): drawn or not, its cliff pieces and waterfalls. */
+  edge(): { on: boolean; shown: boolean; pieces: number; falls: number };
+  /** How the ground is laid this game (projection.ts: diamond, oblique, top). */
+  projection(): string | null;
   setGroundQuality(q: "high" | "low"): void;
   /** The ground's pictures (art-v5, R6-51): drawn from them or not, and how many pieces lie flat or stand. */
   terrain(): { pictures: boolean; pieces: number; flat: number; standing: number } | null;
@@ -349,6 +357,7 @@ export function gameHook(game: Game): GameHook {
     stones: () => game.stonesForTest,
     brokenGates: () => game.brokenGatesForTest,
     wallLifted: () => game.wallLiftedForTest,
+    crew: () => game.crewDrawnForTest,
     townWalls: () => game.townWallsForTest,
     art: () => game.artForTest,
     culture: () => game.culture,
@@ -360,6 +369,9 @@ export function gameHook(game: Game): GameHook {
       }),
     groundLook: () => game.groundForTest,
     feet: () => game.feetForTest,
+    filmGrade: () => game.filmGradeForTest,
+    edge: () => game.edgeForTest,
+    projection: () => game.view?.projection.kind ?? null,
     setGroundQuality: (q) => game.setGroundQuality(q),
     terrain: () => game.terrainForTest,
     lift: (cx, cy) => game.liftForTest(cx, cy),
