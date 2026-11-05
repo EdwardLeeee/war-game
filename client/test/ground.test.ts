@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GROUND_CELL_M, type GroundJson, GroundWeights, groundWeights } from "../src/art/ground.ts";
+import { GROUND_CELL_M, type GroundJson, groundR9, GroundWeights, groundWeights } from "../src/art/ground.ts";
 
 const RULES: GroundJson["rules"] = {
   bank_cells: 1,
@@ -232,4 +232,13 @@ test("水的有號距離：只重算水變了的附近，和整張重算一樣�
   const off = new GroundWeights(n, rules, false);
   off.set(g2, []);
   assert.ok(off.data.every((v, i) => i % 4 !== 3 || v === 0));
+});
+
+test("R9 的地面（art-v7 起）：ground.json 有起伏圖（relief）而且 water.version 是 r9 才畫；art-v6 的照舊", () => {
+  const relief = { file: "relief.png", tile_m: 16, second: { turn: [[0.8, 0.6], [-0.6, 0.8]] as [[number, number], [number, number]], move_m: [23.7, 9.1] as [number, number], mix_noise_m: 40, mix: [0.25, 0.75] as [number, number] } };
+  const water = { version: "r9" } as GroundJson["water"];
+  assert.equal(groundR9({ relief, water }), true);
+  assert.equal(groundR9({ relief, water: undefined }), false, "art-v6 以前：沒有 R9 的參數");
+  assert.equal(groundR9({ relief: undefined, water }), false, "沒有起伏圖");
+  assert.equal(groundR9({ relief, water: { ...water, version: "r10" } as GroundJson["water"] }), false, "不認得的版本：照舊");
 });

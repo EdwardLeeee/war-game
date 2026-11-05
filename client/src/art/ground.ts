@@ -91,9 +91,56 @@ export interface GroundJson {
      */
     town?: { soft_m: number; blur_m: number; edge_m: number; layers: Record<"E" | "W", { lane: string; trampled: string }> };
   };
-  /** The whole ground multiplied last: ui sets them against the units' contrast (R8: 找得到兵). */
+  /** The whole ground multiplied last: ui sets them against the units' contrast (R8: 找得到兵). R9 (`water.version` "r9"): not used. */
   grade: { brightness: number; saturation: number };
+  /**
+   * R9's relief (art-v7 on; ui's design/r9/common/ground_r9.py relief_tile): one tileable map `tile_m`
+   * square, RGB = light ÷ 2 (the sun on the worn ground, its shadows, the sky, the hollows), the rills,
+   * the crowns; sampled twice, the second turned and moved (`second.turn` × metres + `move_m`), mixed by
+   * a noise `mix_noise_m` across (smoothstep `mix`), so that it never repeats on screen (tsample).
+   */
+  relief?: { file: string; px?: number; tile_m: number; second: { turn: [[number, number], [number, number]]; move_m: [number, number]; mix_noise_m: number; mix: [number, number] } };
+  /** R9's ripples (ground_r9.py _ripple_tex): `tile_m` square, R the height, G and B its slopes a metre, each 0.5 + v ÷ (2 × scale). */
+  ripple?: { file: string; px?: number; tile_m: number; height_scale: number; slope_scale: number };
+  /** R9's ground and water (ground_r9.py R9 and compose()): `version` "r9"; the rest its numbers (linear colours). */
+  water?: R9Water;
 }
+
+/** ground_r9.py's R9 numbers, as ground.json carries them (art-v7 on). */
+export interface R9Water {
+  version: string;
+  /** How far a rill bares the soil (towards the dirt layer, darker); how far the crowns dry the grass; greener this close to the water (m). */
+  rill_soil: number;
+  crown_dry: number;
+  lush_m: number;
+  bank_m: number;
+  bank_h: number;
+  wet_m: number;
+  shore_m: [number, number];
+  edge_depth: number;
+  depth_k: number;
+  depth_max: number;
+  ford_depth: number;
+  absorb: [number, number, number];
+  scatter: [number, number, number];
+  bed: [number, number, number];
+  sky_lo: [number, number, number];
+  sky_hi: [number, number, number];
+  sky_k: number;
+  foam: number;
+  glint: number;
+  /** The whole picture times this, then the film curve (ACES, Narkowicz's fit). */
+  exposure: number;
+  /** Wind swaths: long soft patches of lighter and darker grass, this strong. */
+  swath: number;
+  /** Towards the sun and from the camera, in the ground's axes (x east, y south, z up): the diamond's (art-v7). */
+  sun: [number, number, number];
+  view: [number, number, number];
+  sun_rgb: [number, number, number];
+}
+
+/** R9's ground (art-v7 on): the relief and ground_r9.py's numbers; else art-v6's (R8). */
+export const groundR9 = (g: Pick<GroundJson, "relief" | "water">): boolean => g.relief !== undefined && g.water?.version === "r9";
 
 export function parseGround(v: unknown): GroundJson {
   const g = v as GroundJson;

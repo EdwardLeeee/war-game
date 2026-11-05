@@ -61,10 +61,10 @@ test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，�
 test("寫實地面：沒有 ?ground=real 照舊畫兩種綠；美術關（沒有地形的圖）時也不換", async ({ page }) => {
   const check = watchErrors(page);
   await start(page, "watch=1&ai=0&art=x3");
-  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false });
+  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false, r9: false });
   expect(await feet(page), "no colour under the feet on the two greens").toBe(0);
   await start(page, "watch=1&ai=0&art=off&ground=real");
-  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false });
+  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false, r9: false });
   check();
 });
 
@@ -93,5 +93,33 @@ test("寫實地面開關（ceo 2026-10-25）：選單的「寫實地面：開」
   await sw.tap();
   await expect.poll(() => look(page)).toMatchObject({ real: true });
   await expect.poll(() => feet(page), { timeout: 30_000 }).toBeGreaterThan(0);
+  check();
+});
+
+test("R9 的地面（art-v7，?artlab=1：art-lab.lock.json 的美術）：起伏圖、沖溝、丘頂、風、底片曲線；高、低畫質都畫得出來（兩種瀏覽器都要編得過著色器）", async ({ page, browserName }, info) => {
+  test.setTimeout(180_000);
+  const check = watchErrors(page);
+  // 2 倍: lighter for CI's WebKit, the same ground.
+  await start(page, "watch=1&ai=0&art=x2&artlab=1&ground=real");
+  await expect.poll(() => look(page), { timeout: 60_000 }).toMatchObject({ real: true, quality: "high", r9: true });
+  if (browserName === "chromium") {
+    for (const [name, x, y, z] of [
+      ["ground-r9-home", 14, 80, 1.0],
+      ["ground-r9-river", 24, 62, 1.6],
+      ["ground-r9-whole-map", 48, 48, 0.35],
+    ] as const) {
+      await page.evaluate(([cx, cy, s]) => window.__proto?.game?.centerOn(cx, cy, s), [x, y, z] as const);
+      await page.waitForTimeout(300);
+      await shot(page, info, name);
+    }
+  }
+  await openLab(page);
+  const lab = page.getByRole("region", { name: "量測與確定性檢查" });
+  await lab.getByRole("button", { name: "量地面" }).tap();
+  const line = lab.locator(".lab-log").getByText(/^地面（\d+×\d+ 像素，每格）：高 [\d.]+ ms、低 [\d.]+ ms、只貼一張圖 [\d.]+ ms；材質 [\d.]+ MB$/);
+  await expect(line).toBeVisible({ timeout: 30_000 });
+  console.log(`[ground r9 ${info.project.name}] ${await line.textContent()}`);
+  await lab.getByRole("radio", { name: "低", exact: true }).tap();
+  await expect.poll(() => look(page)).toMatchObject({ real: true, quality: "low", r9: true });
   check();
 });

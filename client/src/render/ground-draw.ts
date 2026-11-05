@@ -14,9 +14,13 @@
 // the keep, G trampled earth (art/ground.ts TownWeights, from the castles' layouts and the buildings
 // in them, world.ts), each laid over the ground after the bank and before the water, as ui's
 // ground_r8.py compose does.
+// R9 (art-v7 on, ground.json `relief` and `water.version` "r9"; ui's design/r9/common/ground_r9.py
+// compose()): art-v6's layers as before, without its grade, then in linear colour the relief (the sun
+// on worn ground, sampled twice turned apart), the rills baring the soil, the crowns drying the grass,
+// greener near the water, wind swaths, and the film curve (ACES) over it all. Its banks and water: next.
 
 import { BufferImageSource, Geometry, GlProgram, Mesh, type Renderer, RenderTexture, Shader, Sprite, Texture, type TextureSource, UniformGroup } from "pixi.js";
-import { type CellBox, type GroundJson, groundWater, GroundWeights, TownWeights, townGroundOn, valueNoise } from "../art/ground.ts";
+import { type CellBox, type GroundJson, groundR9, groundWater, GroundWeights, TownWeights, townGroundOn, valueNoise } from "../art/ground.ts";
 import { TILE_PX } from "../tuning.ts";
 
 export type GroundQuality = "high" | "low";
@@ -31,6 +35,8 @@ export interface GroundTextures {
   water: TextureSource | null;
   /** The towns' ground's layers by id (art-v6, rules.town: `yard`), or null: no towns' ground. */
   town: Record<string, TextureSource> | null;
+  /** R9's relief (art-v7 on, ground.json `relief`), or null: art-v6's ground. */
+  relief?: TextureSource | null;
 }
 
 /** Metres a cell (the simulation's cells are 2 m). */
@@ -86,6 +92,12 @@ uniform vec3 uTint3;
 uniform vec3 uTint4;
 uniform vec4 uMeanA;      // mean luminance (linear) per layer, for the unlit photos
 uniform float uMeanB;
+uniform sampler2D uRelief; // R9: light / 2, rills, crowns
+uniform sampler2D uNoise4; // R9: ui's noises (ground_r9.py): R _NZ, G _SHORE, B _FOAM, A tsample's mix
+uniform vec4 uR9A;        // on (1), rill_soil, crown_dry, lush_m
+uniform vec4 uR9B;        // swath, exposure, the relief's tile (m), its mixing noise's (m)
+uniform vec4 uR9Turn;     // the relief's second sample: turned (row-major 2 × 2)
+uniform vec4 uR9Move;     // and moved (m); the mix's smoothstep from, to
 
 const vec3 LUM = vec3(0.2126, 0.7152, 0.0722);
 // The unlit photos: their albedo times this, as R7's sun leaves it on flat ground.
@@ -98,6 +110,36 @@ vec4 look(vec4 t, float contrast, vec3 tint, float meanLum) {
   float k = dot(lin, LUM) / meanLum;
   float c = 1.0 + contrast * (k - 1.0);
   return vec4(pow(max(tint * c * EXPOSURE, 0.0), vec3(1.0 / 2.2)), clamp(k * 0.5, 0.0, 1.0));
+}
+
+// smoothstep for edges either way round (R9's often fall: GLSL's own is undefined when edge0 >= edge1).
+float ss(float e0, float e1, float x) {
+  float t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+
+// sRGB to linear and back (ui's to_lin, to_srgb), and Narkowicz's fit of the ACES film curve.
+vec3 toLin(vec3 c) {
+  return mix(c / 12.92, pow((max(c, 0.0) + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+vec3 toSrgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+vec3 aces(vec3 x) {
+  return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+// R9's relief at m metres (ui's tsample): light, rills, crowns; (high) twice, the second turned and
+// moved, mixed by a slow noise, so that it never repeats on screen.
+vec3 relief(vec2 m) {
+  vec3 a = texture(uRelief, m / uR9B.z).rgb;
+  if (uRules.w > 0.5) {
+    vec2 r = vec2(uR9Turn.x * m.x + uR9Turn.y * m.y, uR9Turn.z * m.x + uR9Turn.w * m.y) + uR9Move.xy;
+    float k = smoothstep(uR9Move.z, uR9Move.w, texture(uNoise4, m / uR9B.w).a);
+    a = mix(a, texture(uRelief, r / uR9B.z).rgb, k);
+  }
+  return vec3(a.r * 2.0, a.g, a.b);
 }
 
 // One tile, or (high) two: the second turned and scaled, mixed by the noise, so no tile repeats.
@@ -168,8 +210,29 @@ void main(void) {
       c.rgb = mix(c.rgb, mix(under, ripple, op), inside);
     }
   }
-  vec3 col = c.rgb * (0.9 + 0.2 * big) * uGrade.x;
-  col = mix(vec3(dot(col, LUM)), col, uGrade.y);
+  vec3 col = c.rgb * (0.9 + 0.2 * big);
+  if (uR9A.x > 0.5) {
+    // R9 (ui's ground_r9.py compose, in linear colour): the relief over the land (the water's signed
+    // distance as art-v6's, until R9's water), then the film curve; ground.json's grade is art-v6's.
+    vec3 lin = toLin(col);
+    vec3 rl = relief(vM);
+    float sd = uWaterA.x > 0.0 ? (w.a - 0.5) * 2.0 * uWaterA.x + (n - 0.5) * 2.0 * uWaterB.w : -1000.0;
+    float land = ss(0.3, -0.6, sd);
+    vec3 soil = toLin(look(texture(uDirt, vM / uTileA.z), uDevA.z, uTint2, uMeanA.z).rgb) * 0.7;
+    lin = mix(lin, soil, uR9A.y * rl.y * land);
+    float lum = (lin.r + lin.g + lin.b) / 3.0;
+    lin += (lum * vec3(1.25, 1.1, 0.7) - lin) * (uR9A.z * rl.z * land);
+    lin *= 1.0 + vec3(-0.08, 0.05, -0.1) * (ss(-uR9A.w, -1.5, sd) * land);
+    // Wind swaths: long soft patches drawn out one way.
+    float sw = texture(uNoise4, vec2((0.94 * vM.x + 0.34 * vM.y) / 30.0, (-0.34 * vM.x + 0.94 * vM.y) / 9.0)).g;
+    lin *= 1.0 + uR9B.x * (sw - 0.5) * 2.0 * land;
+    // The relief's light: on the land (art-v6's water is drawn already).
+    lin *= mix(1.0, rl.x, land);
+    col = toSrgb(aces(lin * uR9B.y));
+  } else {
+    col *= uGrade.x;
+    col = mix(vec3(dot(col, LUM)), col, uGrade.y);
+  }
   // The two lower edges fade onto the cliff's lip under them (edge.ts): ui paints its grass a metre in.
   float a = uEdge.x > 0.0 ? smoothstep(0.0, uEdge.x, uEdge.y - vM.y) * smoothstep(0.0, uEdge.x, uEdge.y - vM.x) : 1.0;
   finalColor = vec4(col * a, a);
@@ -190,6 +253,33 @@ function waterUniforms(w: GroundJson["rules"]["water"], tileM: number): Record<s
   };
 }
 
+/** R9's uniforms (ground.json `relief`, `water`); null: off. */
+function r9Uniforms(g: GroundJson | null): Record<string, { value: Float32Array; type: string }> {
+  const w = g?.water;
+  const rl = g?.relief;
+  const on = w !== undefined && rl !== undefined;
+  const t = rl?.second.turn ?? [[1, 0], [0, 1]];
+  return {
+    uR9A: { value: new Float32Array(on ? [1, w.rill_soil, w.crown_dry, w.lush_m] : [0, 0, 0, 1]), type: "vec4<f32>" },
+    uR9B: { value: new Float32Array(on ? [w.swath, w.exposure, rl.tile_m, rl.second.mix_noise_m] : [0, 1, 16, 40]), type: "vec4<f32>" },
+    uR9Turn: { value: new Float32Array([t[0][0], t[0][1], t[1][0], t[1][1]]), type: "vec4<f32>" },
+    uR9Move: { value: new Float32Array([...(rl?.second.move_m ?? [0, 0]), ...(rl?.second.mix ?? [0.25, 0.75])]), type: "vec4<f32>" },
+  };
+}
+
+/**
+ * ui's noises for R9 (ground_r9.py; the same value noise as here, ui mirrors valueNoise) in one
+ * texture, 256 square, repeated: R _NZ (16 cells, seed 1: the edges' noise), G _SHORE (8, 21), B
+ * _FOAM (24, 13), A tsample's mix (8, 5). ui's _SHORE and the mix are 128 square: the same lattice.
+ */
+export function noise4Texture(): TextureSource {
+  const size = 256;
+  const ch = [valueNoise(size, 16, 1), valueNoise(size, 8, 21), valueNoise(size, 24, 13), valueNoise(size, 8, 5)];
+  const rgba = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size * size; i++) for (let c = 0; c < 4; c++) rgba[i * 4 + c] = ch[c][i];
+  return new BufferImageSource({ resource: rgba, width: size, height: size, format: "rgba8unorm", scaleMode: "linear", addressMode: "repeat", autoGenerateMipmaps: true, mipmapFilter: "linear", alphaMode: "no-premultiply-alpha" });
+}
+
 /** Bytes a texture takes on the GPU: ASTC 4×4 a byte a pixel, else four; a third more with its mipmaps. */
 function gpuBytes(s: TextureSource): number {
   const px = s.pixelWidth * s.pixelHeight * (String(s.format).startsWith("astc") ? 1 : 4);
@@ -206,6 +296,10 @@ export class GroundDraw {
   private quality: GroundQuality;
   /** The shader draws the water (art-v6): the terrain's water tiles are not drawn. */
   readonly water: boolean;
+  /** R9's ground (art-v7 on, groundR9): the relief, the film curve. */
+  readonly r9: boolean;
+  /** ui's four noises in one texture (R9), or null. */
+  private readonly noise4: TextureSource | null;
   /** The towns' ground (art-v6, rules.town): its weight map, or null. */
   private readonly townMap: TownWeights | null;
   private readonly townWeights: BufferImageSource | null;
@@ -227,6 +321,9 @@ export class GroundDraw {
     // rules.weights (R8-28): several texels a cell; the shader's coordinates are the map's, whatever the size.
     // The water's signed distance in A when the shader draws the water (art-v6).
     this.water = textures.water !== null && groundWater(textures.json);
+    // R9 (art-v7 on): with its relief loaded; ui's noises, made here.
+    this.r9 = groundR9(textures.json) && textures.relief != null;
+    this.noise4 = this.r9 ? noise4Texture() : null;
     this.weightMap = new GroundWeights(n, textures.json.rules, this.water);
     const side = this.weightMap.side;
     this.weights = new BufferImageSource({ resource: this.weightMap.data, width: side, height: side, format: "rgba8unorm", scaleMode: "linear", addressMode: "clamp-to-edge", alphaMode: "no-premultiply-alpha" });
@@ -268,6 +365,7 @@ export class GroundDraw {
       uMeanA: { value: new Float32Array([meanLum("grass"), meanLum("grass_dry"), meanLum("dirt"), meanLum("gravel")]), type: "vec4<f32>" },
       uMeanB: { value: meanLum("bank"), type: "f32" },
       ...waterUniforms(this.water ? r.water : undefined, by("water")?.tile_m ?? 4),
+      ...r9Uniforms(this.r9 ? textures.json : null),
     });
     const [grass, grassDry, dirt, gravel, bank] = textures.layers;
     const shader = new Shader({
@@ -290,6 +388,8 @@ export class GroundDraw {
         uTown: this.townWeights ?? this.weights,
         uLane: (town ? lane : undefined) ?? textures.noise,
         uTrampled: (town ? trampled : undefined) ?? textures.noise,
+        uRelief: textures.relief ?? textures.noise,
+        uNoise4: this.noise4 ?? textures.noise,
       },
     });
     this.mesh = new Mesh({ geometry, shader });
@@ -336,7 +436,8 @@ export class GroundDraw {
   /** The ground's textures on the GPU (MB): the five grounds, the noises and the cells' weights. */
   get memoryMB(): number {
     const t = this.textures;
-    const bytes = [...t.layers, t.noise, t.macro, this.weights, ...(this.townWeights === null ? [] : [this.townWeights, ...Object.values(t.town ?? {})])].reduce((n, s) => n + gpuBytes(s), 0);
+    const r9 = this.r9 && t.relief != null && this.noise4 !== null ? [t.relief, this.noise4] : [];
+    const bytes = [...t.layers, t.noise, t.macro, this.weights, ...r9, ...(this.townWeights === null ? [] : [this.townWeights, ...Object.values(t.town ?? {})])].reduce((n, s) => n + gpuBytes(s), 0);
     return bytes / 1048576;
   }
 
@@ -384,6 +485,7 @@ export class GroundDraw {
   destroy(): void {
     this.mesh.destroy();
     this.weights.destroy();
+    this.noise4?.destroy();
     this.townWeights?.destroy();
   }
 }
