@@ -51,7 +51,17 @@ export async function loadGround(bases: readonly string[], times: LoadRecorder |
         console.warn(`ground: town: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    return { json: g, layers, noise, macro, water, town };
+    // R9's relief (art-v7 on): data, not a picture (straight, never multiplied), at its own size; it
+    // will not load: art-v6's ground (ground-draw.ts draws R9 only with it).
+    let relief: GroundTextures["relief"] = null;
+    if (g.relief !== undefined) {
+      try {
+        relief = tileTexture(await page(`${base}${g.relief.file}`, times, undefined, true));
+      } catch (err) {
+        console.warn(`ground: relief: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return { json: g, layers, noise, macro, water, town, relief };
   }
   return null;
 }
