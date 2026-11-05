@@ -2010,7 +2010,7 @@ test("NN v4s (update): any job draws the same games and pair p; the step is the 
   assert.deepEqual(a.games, b.games);
   assert.deepEqual(a.eps(5), b.eps(5), "pair 5 from any job");
   assert.notDeepEqual(a.eps(0), a.eps(1));
-  const game = (won: number) => ({ won, ticks: 0, margin: 0, governed20: 0, stuck: 0, ratio15: -1, ratio20: -1, farmerHits: 0, farmerBack: 0, reached: false, towers45: -1, governed45: -1, choices: [], combos: [], switches: { keep: true, siege: true, rich: true, market: true }, aiStats: {}, killed: { farmers: 0, backByCavalry: 0 }, soldiersLost: 0 });
+  const game = (won: number) => ({ won, ticks: 0, margin: 0, governed20: 0, stuck: 0, ratio15: -1, ratio20: -1, farmerHits: 0, farmerBack: 0, reached: false, towers45: -1, governed45: -1, choices: [], combos: [], switches: { keep: true, siege: true, rich: true, market: true }, aiStats: {}, killed: { farmers: 0, backByCavalry: 0 }, soldiersLost: 0, gathered: 0, farmersLost: 0 });
   // Plus wins both games, minus loses both, in every pair.
   const pair = (p: number) => ({ pair: p, plus: [game(1), game(1)], minus: [game(0), game(0)] });
   const moved = (pairs: number[]) => {

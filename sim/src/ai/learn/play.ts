@@ -88,6 +88,9 @@ export interface GameOutcome {
   killed: { farmers: number; backByCavalry: number };
   /** NN v4 (ceo 2026-11-05): the trained side's soldiers lost over the game (spearmen, ranged units, mages, cavalry, engines). */
   soldiersLost: number;
+  /** D-130 (ceo 2026-11-05): the trained side's food, wood, gold and crystal gathered over the game, and its farmers lost. */
+  gathered: number;
+  farmersLost: number;
 }
 
 /** As scripted-games --strategy push --speed h1 --formation close --late (D-086 A). */
@@ -271,5 +274,5 @@ function play(spec: GameSpec): GameOutcome {
   const margin = (soldiers[me] - soldiers[them]) / (soldiers[me] + soldiers[them] + 1) + (hp[me] - hp[them]) / full;
   const won = !w.over || (w.winner !== 0 && w.winner !== 1) ? -1 : w.winner === me ? 1 : 0;
   const switches = { keep: KEEP.on, siege: SIEGE.on, rich: RICH.on, market: MARKET.on };
-  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)), combos: [...combos].sort(), switches, aiStats: mine.stats?.() ?? {}, killed, soldiersLost: [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry, UnitType.Siege].reduce((a, t) => a + w.lost[me * UNIT_KINDS + t], 0) };
+  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)), combos: [...combos].sort(), switches, aiStats: mine.stats?.() ?? {}, killed, soldiersLost: [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry, UnitType.Siege].reduce((a, t) => a + w.lost[me * UNIT_KINDS + t], 0), gathered: [0, 1, 2, 3].reduce((a, k) => a + w.gathered[me * 4 + k], 0), farmersLost: w.lost[me * UNIT_KINDS + UnitType.Farmer] };
 }

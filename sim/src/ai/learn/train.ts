@@ -84,7 +84,7 @@ interface EvalResult {
   lostHard?: number;
   lostCrush?: number;
   /** NN v4 (ceo 2026-11-05): each game's raids: set (hard, crush), map, seed, swap, result, raids, seconds by their spots, farmers killed, raids caught, squads' dead, soldiers lost. */
-  games?: { set: string; map: string; seed: number; swap: boolean; won: number; raids: number; held: number; kills: number; caught: number; died: number; lost: number }[];
+  games?: { set: string; map: string; seed: number; swap: boolean; won: number; raids: number; held: number; kills: number; caught: number; died: number; lost: number; gathered?: number; farmersLost?: number; idle?: number }[];
 }
 const tally = (res: GameOutcome[]): Tally => {
   const won = res.filter((o) => o.won === 1).length;
@@ -104,7 +104,26 @@ function setJobs(net: NetWeights | null, opp: Opponent, n: number, seed0: number
  * hard's, against the control's seeds. raidcav: always raid (where the mask allows it), with the cavalry alone;
  * raid6: always raid, with 6 (cavalry first), out once the army has 12.
  */
-const VARIANTS: Record<string, { force: string; plan: Partial<HardPlan> }> = {
+/** A network with choice `force` ("<head>.<choice>") wherever the mask allows it, else as hard. */
+function forcedNet(force: string): NetWeights {
+  const [h, k] = force.split(".").map(Number);
+  const plain = asHardNet();
+  const at = NET_HEADS.slice(0, h).reduce((a, x) => a + x, 0) + k;
+  return { layers: plain.layers.map((L, l) => (l === plain.layers.length - 1 ? { ...L, b: L.b.map((v, i) => (i === at ? 10 : v)) } : L)) };
+}
+/** The raidcamp raider (NN v4: always raid, 10 at a time from minute 10, far spots, waiting there), as an opponent's plan. */
+const CAMP = { squadSize: 10, raidFrom: 10 * 1200, raidFar: 20, raidQuiet: 3 * 1200, raidTime: 6 * 1200 };
+/**
+ * NN v4 (the user 2026-11-05) and D-130 (ceo 2026-11-05). force: the trained side with that choice forced; plan: over
+ * hard's for the trained side; opp: the hard opponent's plan (with a forced choice, oppForce). c*: hard itself with
+ * D-130's switches against the raidcamp raider, the AI that killed 67 of hard's farmers in one game (run 42043303091).
+ */
+const VARIANTS: Record<string, { force?: string; plan: Partial<HardPlan>; opp?: Partial<HardPlan>; oppForce?: string }> = {
+  cbase: { plan: {}, opp: CAMP, oppForce: "5.1" },
+  cavoid: { plan: { farAvoid: true }, opp: CAMP, oppForce: "5.1" },
+  crescue: { plan: { rescue: true }, opp: CAMP, oppForce: "5.1" },
+  cboth: { plan: { farAvoid: true, rescue: true }, opp: CAMP, oppForce: "5.1" },
+  cnohide: { plan: { hideFar: false }, opp: CAMP, oppForce: "5.1" },
   raidcav: { force: "5.1", plan: { raidCavalry: true } },
   raid6: { force: "5.1", plan: { squadSize: 6 } },
   // ceo 2026-11-05, the user's 75830947: from minute 10, 10 at a time (cavalry first), farmers 20 cells or more from the enemy's main city.
@@ -113,9 +132,9 @@ const VARIANTS: Record<string, { force: string; plan: Partial<HardPlan> }> = {
   // waiting 3 minutes with no farmer by it (30 s before), at most 6 at the spot (90 s).
   raidcamp: { force: "5.1", plan: { squadSize: 10, raidFrom: 10 * 1200, raidFar: 20, raidQuiet: 3 * 1200, raidTime: 6 * 1200 } },
 };
-async function evaluate(name: string, net: NetWeights | null, n: number, m: number, seed0: number, switches: Switches, plan?: Partial<HardPlan>): Promise<EvalResult> {
+async function evaluate(name: string, net: NetWeights | null, n: number, m: number, seed0: number, switches: Switches, plan?: Partial<HardPlan>, oppPlan?: Partial<HardPlan>): Promise<EvalResult> {
   // NN v3: 120 minutes, as the training (D-115).
-  const hardJobs = setJobs(net, { kind: "hard" }, n, seed0, 144000, switches, plan);
+  const hardJobs = setJobs(net, { kind: "hard", plan: oppPlan }, n, seed0, 144000, switches, plan);
   const hard = (await runAll(hardJobs)).map((r) => r.outcome);
   // push-crush as CI plays it: 90 minutes.
   const crushJobs = setJobs(net, { kind: "crush" }, m, seed0, 144000, switches, plan);
@@ -132,7 +151,7 @@ async function evaluate(name: string, net: NetWeights | null, n: number, m: numb
     os.map((o, k) => {
       const sp = (jobs[k] as Extract<Job, { kind: "play" }>).spec;
       const st = o.aiStats ?? {};
-      return { set, map: sp.map, seed: sp.seed, swap: sp.swap, won: o.won, raids: st.squadRaid ?? 0, held: Math.round((st.raidHeld ?? 0) / 20), kills: st.raidFarmers ?? 0, caught: st.raidCaught ?? 0, died: st.squadDied ?? 0, lost: o.soldiersLost ?? 0 };
+      return { set, map: sp.map, seed: sp.seed, swap: sp.swap, won: o.won, raids: st.squadRaid ?? 0, held: Math.round((st.raidHeld ?? 0) / 20), kills: st.raidFarmers ?? 0, caught: st.raidCaught ?? 0, died: st.squadDied ?? 0, lost: o.soldiersLost ?? 0, gathered: o.gathered ?? 0, farmersLost: o.farmersLost ?? 0, idle: Math.round((st.farmerIdle ?? 0) / 120) / 10 };
     });
   const perGame = (os: GameOutcome[]) => (os.length === 0 ? 0 : os.reduce((a, o) => a + (o.soldiersLost ?? 0), 0) / os.length);
   return {
@@ -430,20 +449,17 @@ if (mode === "dryrun") {
   // NN v4f (2026-11-05): --force <head>.<choice>: hard with that choice on that head wherever the mask allows it: what the choice itself is worth.
   const variant = arg("variant", "");
   if (variant !== "" && VARIANTS[variant] === undefined) throw new Error(`--variant ${variant}: ${Object.keys(VARIANTS).join(", ")}`);
-  const force = variant !== "" ? VARIANTS[variant].force : arg("force", "");
+  const force = variant !== "" ? (VARIANTS[variant].force ?? "") : arg("force", "");
   const plan = variant !== "" ? VARIANTS[variant].plan : undefined;
-  if (force !== "") {
-    const [h, k] = force.split(".").map(Number);
-    const plain = asHardNet();
-    const at = NET_HEADS.slice(0, h).reduce((a, x) => a + x, 0) + k;
-    net = { layers: plain.layers.map((L, l) => (l === plain.layers.length - 1 ? { ...L, b: L.b.map((v, i) => (i === at ? 10 : v)) } : L)) };
-  }
+  const v = variant !== "" ? VARIANTS[variant] : undefined;
+  const oppPlan = v?.opp === undefined ? undefined : { ...v.opp, ...(v.oppForce === undefined ? {} : { net: forcedNet(v.oppForce) }) };
+  if (force !== "") net = forcedNet(force);
   const names = arg("rules", "").split(",").filter((x) => x !== "");
   const bad = names.filter((x) => x !== "keep" && x !== "siege" && x !== "rich" && x !== "market");
   if (bad.length > 0) throw new Error(`--rules ${bad.join(",")}: keep, siege, rich or market`);
   const switches: Switches = Object.fromEntries(names.map((x) => [x, true]));
-  const name = arg("name", variant !== "" ? `強制 ${force}（${variant}）` : force !== "" ? `強制 ${force}` : file === "" ? "control" : file);
-  const r = await evaluate(name, net, Number(arg("games", "100")), Number(arg("crush", "20")), Number(arg("seed", "2000001")), switches, plan);
+  const name = arg("name", v?.opp !== undefined ? `對守著等：${variant}` : variant !== "" ? `強制 ${force}（${variant}）` : force !== "" ? `強制 ${force}` : file === "" ? "control" : file);
+  const r = await evaluate(name, net, Number(arg("games", "100")), Number(arg("crush", "20")), Number(arg("seed", "2000001")), switches, plan, oppPlan);
   writeFileSync(`${out}/eval.json`, JSON.stringify(r));
   const h = wl(r.hard);
   summary(
