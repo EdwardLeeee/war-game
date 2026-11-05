@@ -5,6 +5,8 @@
 // that does not match fails the build. Downloads are kept in .art-cache/ between runs.
 //
 //   node scripts/fetch-art.ts              the Release art.lock.json pins (CI, Pages); none pinned: nothing
+//   node scripts/fetch-art.ts --lab        and the one art-lab.lock.json pins (Pages): art-v7 量測's
+//                                          (D-128, src/lab/art-measure.ts), beside the game's own
 //   node scripts/fetch-art.ts --dev        this machine only, before a Release: the design-render
 //                                          artifacts (gh, signed in), unpacked as public/art/dev/
 //
@@ -29,6 +31,9 @@ export interface ArtLock {
   /** Each file of the Release used, and its SHA-256 (from the Release's SHA256SUMS when pinned). */
   assets: Record<string, string>;
 }
+
+/** art-v7 量測's Release (D-128), until the game itself switches to it: the Pages site only. */
+export const LAB_LOCK = join(CLIENT, "art-lab.lock.json");
 
 export function readLock(file = join(CLIENT, "art.lock.json")): ArtLock {
   return JSON.parse(readFileSync(file, "utf8")) as ArtLock;
@@ -146,6 +151,9 @@ function fetchDev(): void {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (process.argv.includes("--dev")) fetchDev();
-  else await fetchLocked(readLock());
+  else {
+    await fetchLocked(readLock());
+    if (process.argv.includes("--lab") && existsSync(LAB_LOCK)) await fetchLocked(readLock(LAB_LOCK));
+  }
 }
 

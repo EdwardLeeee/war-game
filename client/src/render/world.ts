@@ -1296,9 +1296,9 @@ export class WorldRenderer {
 
   /** The units' atlases (D-085): which, how many pages, and how many units drawn from them; null: the shapes. */
   /** `sling`: some unit's atlas has the militia's sling (D-096, art-v5.2). */
-  get artDrawn(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
+  get artDrawn(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
     const a = this.artUnits;
-    return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }), sling: [...a.art.atlases.values()].some((j) => j.anims.sling !== undefined) };
+    return a === null ? null : { label: a.art.label, pages: a.art.pages, astc: a.art.resident.astc, bytes: a.art.resident.bytes, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }), sling: [...a.art.atlases.values()].some((j) => j.anims.sling !== undefined) };
   }
 
   /**
@@ -1358,6 +1358,11 @@ export class WorldRenderer {
   measureGround(renderer: Renderer, w: number, h: number): { high: number; low: number; plain: number; mb: number } | null {
     const g = this.groundDraw;
     return g === null ? null : { ...g.measure(renderer, w, h), mb: g.memoryMB };
+  }
+
+  /** 寫實地面's textures on the GPU (MB), or 0 when it is not drawn (art-v7 量測, D-128). */
+  get groundMB(): number {
+    return this.groundDraw?.memoryMB ?? 0;
   }
 
   /** What draws the ground now (the test page and the 量測 panel). */

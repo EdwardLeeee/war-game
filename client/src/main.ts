@@ -19,19 +19,21 @@ import { LogCollector, logsUrlFor, MIN_ABANDONED_TICKS, makeRecord, reasonName, 
 import { BEAT_EVERY_MS, Heartbeat } from "./logs/heartbeat.ts";
 import { openIndexedDb, type StoredLog } from "./logs/store.ts";
 import { fetchPoster } from "./logs/upload.ts";
-import { ART_LABEL, artBase, loadArtChoice } from "./art/pref.ts";
-import type { Culture } from "./art/spec.ts";
+import { ART_LABEL, type ArtChoice, artBase, artScale, loadArtChoice, loadTexChoice, type TexChoice } from "./art/pref.ts";
+import { ATLAS_NAMES, type Culture, SIEGE_ATLASES } from "./art/spec.ts";
 import { CULTURES, DEFAULT_CULTURE, loadCulture, saveCulture } from "./culture.ts";
 import { json, loadUnitArt, type UnitArt } from "./render/unit-art.ts";
+import { type Compressed, gpuBytes } from "./art/compressed.ts";
 import { type EdgeArt, loadEdge } from "./render/edge.ts";
 import { loadGround } from "./render/ground-load.ts";
 import type { GroundTextures } from "./render/ground-draw.ts";
-import { measureCutShort } from "./lab/panel.ts";
+import { markMeasuring, measureCutShort } from "./lab/panel.ts";
+import { ART_MEASURE_MS, ART_MEASURE_SCENARIO, type ArtCost, type ArtVariant, artVariant } from "./lab/art-measure.ts";
 import { type LoadReport, loadLines, LoadTimes, LoadTimesBox } from "./lab/load-times.ts";
 import type { AstcSample } from "./lab/astc.ts";
 import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_LOST_TEXT, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, BUILDING_STRIDE, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND, UNIT_STRIDE } from "./sim.ts";
-import { createStage, gpu, gpuLimits } from "./stage.ts";
+import { createStage, gpu, gpuLimits, hasAstc } from "./stage.ts";
 import { applyTheme, loadTheme } from "./theme.ts";
 import { tickRateText } from "./ui/controls.ts";
 import { applyFormalUi, FORMAL_UI_DEFAULT } from "./ui/formal.ts";
@@ -43,6 +45,8 @@ declare const __COMMIT__: string;
 declare const __SIM_BUILD__: string;
 /** The units' atlases' Release tag (art.lock.json; D-085), or null: none in this build. */
 declare const __ART_TAG__: string | null;
+/** art-v7 量測's Release (art-lab.lock.json; D-128), beside the game's; null: none in this build. */
+declare const __ART_LAB_TAG__: string | null;
 
 /** Read-only view for the Playwright tests, present only with `?test=1`. */
 export interface ProtoHook {
@@ -260,12 +264,21 @@ const env = (scenario: ScenarioName, about: string) => () => ({
 
 $("commit").textContent = `commit ${__COMMIT__}`;
 // 量測 cut short by a reload (D-085: Safari out of memory with the atlases): say so on the start screen.
-{
-  const cut = measureCutShort();
-  if (cut !== null) {
-    $("measure-note").hidden = false;
-    $("measure-note").textContent = `上次量測到一半，頁面重新載入了（${cut}）`;
-  }
+const cutShort = measureCutShort();
+if (cutShort !== null) {
+  $("measure-note").hidden = false;
+  $("measure-note").textContent = `上次量測到一半，頁面重新載入了（${cutShort}）`;
+}
+/**
+ * art-v7 量測 (D-128): a page opened by its button goes straight into it, the address left without
+ * it, so that Safari reloading the page for want of memory comes back to the start screen saying
+ * which one it was, not into it again.
+ */
+const measureNow = artVariant(params.measure);
+if (measureNow !== null) {
+  const url = new URL(location.href);
+  url.searchParams.delete("measure");
+  history.replaceState(history.state, "", url.href);
 }
 $("record-code").textContent = `紀錄代號 ${code}`;
 
@@ -376,7 +389,7 @@ window.addEventListener("pagehide", () => {
 
 /** 美術 the game on screen is drawn with: x3, x2, test, or off (none chosen, or they would not load). */
 function artInUse(): string {
-  return loadedArt === null ? "off" : (artChoiceUsed ?? "off");
+  return loadedArt?.inUse ?? "off";
 }
 
 /** The last error the page met (for the heartbeat), without its stack. */
@@ -445,10 +458,13 @@ $("restart-game").addEventListener("click", () => {
 
 /**
  * Start a game, ending the one on screen if there is one (開始, 重來). `measure`: the perf
- * scenario for 量測, which opens the lab and starts measuring once the game runs.
+ * scenario for 量測, which opens the lab and starts measuring once the game runs; `variant`:
+ * art-v7 量測's (D-128), with its art, measured for 10 minutes.
  */
-async function newGame(scenario: ScenarioName = "standard", measure = false): Promise<void> {
+async function newGame(scenario: ScenarioName = "standard", measure = false, variant: ArtVariant | null = null): Promise<void> {
   loadTimes.begin(measure ? "量測" : game === null ? "開始" : "重來");
+  // Kept from here, before its 100-odd MB come down: a reload while they load is the memory too.
+  if (variant !== null) markMeasuring(`art-v7 ${variant.label}（載入圖）`);
   $("start").hidden = true;
   hook.screen = "battle";
   hook.ready = false;
@@ -467,7 +483,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   const enemyAi = measure || params.enemyAi;
   // 地圖 (D-074): the start screen's choice (a test page may ask for one); 量測 always the fixed map, so the numbers compare between runs.
   const map: MapMode = measure ? "fixed" : (params.map ?? mapMode);
-  const art = await artForGame();
+  const art = await artForGame(variant);
   const ground = await groundForGame();
   const g = new Game(app, port, $("hud"), {
     seed: params.seed ?? newSeed(),
@@ -492,6 +508,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
     artAvailable,
     artChanged,
     astcSample,
+    artMeasure: artMeasureHook,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,
@@ -509,9 +526,30 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
   if (measure) {
     g.focusBattle();
     g.lab.show();
-    g.lab.startMeasure(performance.now());
+    const seconds = params.measureSeconds;
+    const windowMs = variant === null ? undefined : seconds !== null ? seconds * 1000 : ART_MEASURE_MS;
+    g.lab.startMeasure(performance.now(), windowMs, variant ?? undefined);
   }
 }
+
+/**
+ * art-v7 量測 (D-128) for the 量測 panel: its buttons, with this build's art-lab.lock.json (or the
+ * test page's stand-ins); each opens a page of its own straight into it (?measure=), so that one's
+ * textures are gone before the next. What it cost, for its result.
+ */
+const artMeasureHook =
+  __ART_LAB_TAG__ === null && params.art !== "test"
+    ? undefined
+    : {
+        open: (v: ArtVariant) => {
+          const url = new URL(location.href);
+          url.searchParams.set("measure", v.id);
+          location.assign(url.href);
+        },
+        cost: artCost,
+        drawn: () => (loadedArt === null ? "關" : `${loadedArt.art.label}${astcMissing === null ? "" : `（${astcMissing}）`}`),
+        gpuAstc: () => app !== null && hasAstc(app),
+      };
 
 /**
  * 美術 (D-085): the units drawn from war-game-ui's atlases, as chosen in the 量測 panel (a test
@@ -519,30 +557,78 @@ async function newGame(scenario: ScenarioName = "standard", measure = false): Pr
  * when they will not load: the shapes. Only the picture: the game itself is the same.
  */
 const artAvailable = __ART_TAG__ !== null || params.art === "test";
-/** ASTC 樣本 (D-085): the Release's spearman at 2× (or the test page's stand-ins). */
+/**
+ * ASTC 樣本 (D-085): the spearman from the PNG page and from the ASTC one. art-v7 量測's Release
+ * (art-lab.lock.json, D-128) at 3×, premultiplied as the game draws them; before it, the Release's
+ * own 2× sample (straight); the test page's stand-ins.
+ */
 const astcSample: AstcSample | undefined =
   params.art === "test"
-    ? { unit: "spear_e", png: "./art/test/x3/units/spear_e/", astc: "./art/test/astc-sample/units/spear_e/" }
-    : __ART_TAG__ === null
-      ? undefined
-      : { unit: "spear_e", png: `./art/${__ART_TAG__}/x2/units/spear_e/`, astc: `./art/${__ART_TAG__}/astc-sample/units/spear_e/` };
+    ? { unit: "spear_e", png: "./art/test/x3/units/spear_e/", astc: "./art/test/x3/units/spear_e/", straight: false }
+    : __ART_LAB_TAG__ !== null
+      ? { unit: "spear_e", png: `./art/${__ART_LAB_TAG__}/x3/units/spear_e/`, astc: `./art/${__ART_LAB_TAG__}/x3/units/spear_e/`, straight: false }
+      : __ART_TAG__ === null
+        ? undefined
+        : { unit: "spear_e", png: `./art/${__ART_TAG__}/x2/units/spear_e/`, astc: `./art/${__ART_TAG__}/astc-sample/units/spear_e/`, straight: true };
 /**
  * `view`: how the art's Release is drawn (art-release.json, ui's design/r11/edge-format.md): "diamond"
  * for art-v7 on (the user 2026-11-02 chose 菱形斜看 again, D-117), switching the battlefield to the
- * diamond and 浮空大陸's edge with it; absent (art-v6.3 and before), 方形斜看 as before.
+ * diamond and 浮空大陸's edge with it; absent (art-v6.3 and before), 方形斜看 as before. `key`: its
+ * folder and whether it is compressed; `compressed`: its ASTC pages' list (D-128), the edge's too;
+ * `inUse`: for the heartbeat (x3, x3_astc…).
  */
-let loadedArt: { base: string; art: UnitArt; view: "diamond" | null } | null = null;
-/** The choice the game on screen was started with. */
+let loadedArt: { key: string; base: string; art: UnitArt; view: "diamond" | null; compressed: Compressed | null; inUse: string } | null = null;
+/** The choice the game on screen was started with (美術, 貼圖, the Release). */
 let artChoiceUsed: string | null = null;
-const artChanged = (): boolean => (params.art ?? loadArtChoice()) !== artChoiceUsed;
+/** 美術 and 貼圖 as asked for (the 量測 panel's or the page's), and the Release they come from. */
+function artWanted(variant: ArtVariant | null = null): { choice: ArtChoice | "test"; tex: TexChoice; tag: string | null; key: string } {
+  const choice = params.art === "test" ? "test" : (variant?.scale ?? params.art ?? loadArtChoice());
+  const tex = variant?.tex ?? params.tex ?? loadTexChoice();
+  // art-v7 量測 (D-128): art-lab.lock.json's Release (the test page's stand-ins with ?art=test).
+  const tag = variant !== null && choice !== "test" ? __ART_LAB_TAG__ : __ART_TAG__;
+  return { choice, tex, tag, key: `${choice}|${tex}|${tag}` };
+}
+const artChanged = (): boolean => artWanted().key !== artChoiceUsed;
 let artFailed: string | null = null;
-async function artForGame(): Promise<UnitArt | null> {
+/** Why 貼圖 ASTC was asked for and the PNGs drawn (D-128), or null. */
+let astcMissing: string | null = null;
+/** The ASTC pages under `base` (art-release-astc.json, art-v7.1 on), or null: none there. */
+async function astcList(base: string): Promise<Compressed | null> {
+  try {
+    const list = (await json(`${base}art-release-astc.json`, loadTimes)) as { files?: Record<string, unknown> };
+    const files = Object.keys(list.files ?? {});
+    return files.length === 0 ? null : { base, files: new Set(files) };
+  } catch {
+    return null;
+  }
+}
+/**
+ * `variant`: art-v7 量測's (D-128): art-lab.lock.json's Release at its scale and 貼圖, every atlas
+ * loaded (the siege engines' too), so that what it costs is all of it.
+ */
+async function artForGame(variant: ArtVariant | null = null): Promise<UnitArt | null> {
   loadTimes.mark("art");
-  const choice = params.art ?? loadArtChoice();
-  artChoiceUsed = choice;
+  const wanted = artWanted(variant);
+  const { choice, tex, tag } = wanted;
+  artChoiceUsed = wanted.key;
   // The fake world draws the shapes, unless the page asks (?art=: its gallery, D-085).
-  const base = params.mock && params.art === null ? null : artBase(choice, __ART_TAG__);
-  if (loadedArt !== null && loadedArt.base === base) {
+  let base = params.mock && params.art === null ? null : artBase(choice, tag);
+  // 貼圖 ASTC (D-128): the pages art-release-astc.json lists, on a GPU that takes ASTC; else the
+  // PNGs, 3 倍's at 2 倍 (art-v7's 3 倍 as PNG is more than the iPhone kept).
+  let compressed: Compressed | null = null;
+  let scale = choice;
+  astcMissing = null;
+  if (base !== null && tex === "astc") {
+    const gpuAstc = app !== null && hasAstc(app);
+    compressed = gpuAstc ? await astcList(base) : null;
+    if (compressed === null) {
+      astcMissing = gpuAstc ? "這版美術沒有壓縮圖" : "這台的顯示卡沒有 ASTC";
+      scale = artScale(choice, tex, false);
+      base = artBase(scale, tag);
+    }
+  }
+  const key = `${base}|${compressed === null ? "png" : "astc"}`;
+  if (loadedArt !== null && loadedArt.key === key) {
     loadTimes.artDone("沿用");
     return loadedArt.art;
   }
@@ -558,10 +644,13 @@ async function artForGame(): Promise<UnitArt | null> {
     // Each page to the GPU as it is decoded, its decoded picture let go (unit-art.ts: the iPhone dropped long games).
     const renderer = app?.renderer ?? null;
     const upload = renderer === null ? null : (t: Texture) => renderer.texture.initSource(t.source);
-    const art = await loadUnitArt(base, choice === "test" ? "測試圖" : ART_LABEL[choice], undefined, loadTimes, upload);
+    const label = `${scale === "test" ? "測試圖" : ART_LABEL[scale]}${compressed === null ? "" : " ASTC"}`;
+    const names = variant !== null && scale !== "test" ? [...ATLAS_NAMES, ...SIEGE_ATLASES] : ATLAS_NAMES;
+    const art = await loadUnitArt(base, label, names, loadTimes, upload, compressed);
     // The Release's own description: missing (the test page's stand-ins) or older, no view.
     const release = (await json(`${base}art-release.json`, loadTimes).catch(() => null)) as { view?: unknown } | null;
-    loadedArt = { base, art, view: release?.view === "diamond" ? "diamond" : null };
+    const inUse = `${scale}${compressed === null ? "" : "_astc"}`;
+    loadedArt = { key, base, art, view: release?.view === "diamond" ? "diamond" : null, compressed, inUse };
     loadTimes.artDone("載入");
     return loadedArt.art;
   } catch (err) {
@@ -576,15 +665,23 @@ async function artForGame(): Promise<UnitArt | null> {
  * (or a test page's ?edge=1); a test page's else the development set (public/art/edge-dev/, local),
  * else the stand-ins. Null: none (it is not drawn). Loaded once a page.
  */
-let loadedEdge: Promise<EdgeArt | null> | null = null;
+let loadedEdge: { key: string; edge: Promise<EdgeArt | null> } | null = null;
+/** The edge loaded, once it is (art-v7 量測's cost). */
+let edgeLoaded: EdgeArt | null = null;
 function edgeForGame(): Promise<EdgeArt | null> {
   if (!params.edge && loadedArt?.view !== "diamond") return Promise.resolve(null);
-  if (loadedEdge === null) {
+  // Beside the atlases, as they are: another scale or 貼圖 (art-v7 量測), the edge with it.
+  const key = loadedArt?.key ?? "";
+  if (loadedEdge === null || loadedEdge.key !== key) {
     const art = loadedArt === null ? [] : [`${loadedArt.base}edge/`];
     const bases = params.test ? [...art, "./art/edge-dev/x3/edge/", "./art/test/x3/edge/"] : art;
-    loadedEdge = (async () => {
+    const compressed = loadedArt?.compressed ?? null;
+    // On the GPU at once, what it was made from let go, as the atlases' pages.
+    const renderer = app?.renderer ?? null;
+    const upload = renderer === null ? null : (t: Texture) => renderer.texture.initSource(t.source);
+    const edge = (async () => {
       for (const b of bases) {
-        const e = await loadEdge(b, loadTimes);
+        const e = await loadEdge(b, loadTimes, compressed, upload);
         if (e !== null) return e;
       }
       return null;
@@ -592,8 +689,12 @@ function edgeForGame(): Promise<EdgeArt | null> {
       console.warn(`edge: ${String(err)}`);
       return null;
     });
+    loadedEdge = { key, edge };
+    void edge.then((e) => {
+      if (loadedEdge?.edge === edge) edgeLoaded = e;
+    });
   }
-  return loadedEdge;
+  return loadedEdge.edge;
 }
 /**
  * 寫實地面 (D-093): war-game-ui's ground set beside the atlases (art-v6 on); the players' only that
@@ -618,7 +719,23 @@ function groundForGame(): Promise<GroundTextures | null> {
 /** For the lab's result: which atlases and how many pages, or why none. */
 function artText(): string {
   if (artFailed !== null) return `載入失敗（${artFailed}）`;
-  return loadedArt === null ? "關" : `${loadedArt.art.label}，${loadedArt.art.pages} 頁圖`;
+  if (loadedArt === null) return "關";
+  const r = loadedArt.art.resident;
+  const astc = r.astc > 0 ? `，ASTC ${r.astc} 頁` : "";
+  const missing = astcMissing === null ? "" : `（要 ASTC，但${astcMissing}，用 PNG）`;
+  return `${loadedArt.art.label}，${loadedArt.art.pages} 頁圖${astc}，顯示卡 ${(r.bytes / 2 ** 20).toFixed(1)} MB${missing}`;
+}
+
+/** What the atlases and the edge take on the GPU now (art-v7 量測, D-128); the ground is the game's to add. */
+function artCost(): Omit<ArtCost, "ground"> {
+  const r = loadedArt?.art.resident ?? { pages: 0, bytes: 0, astc: 0 };
+  const edge = [...(edgeLoaded?.textures.values() ?? [])];
+  return {
+    atlas: r.bytes,
+    edge: edge.reduce((n, t) => n + gpuBytes(t.source), 0),
+    pages: r.pages + edge.length,
+    astcPages: r.astc + edge.filter((t) => t.source.format.startsWith("astc")).length,
+  };
 }
 
 /** 重來, 回開局畫面 and 量測, from the game's menu. */
@@ -733,6 +850,7 @@ async function resumeGame(saved: SavedGame): Promise<void> {
     artAvailable,
     artChanged,
     astcSample,
+    artMeasure: artMeasureHook,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,
@@ -802,3 +920,6 @@ function showError(err: unknown): void {
   box.textContent = `出錯了：${err instanceof Error ? err.message : String(err)}`;
   console.error(err);
 }
+
+// art-v7 量測 (D-128): a page its button opened goes straight into it (not one reloaded in the middle of one).
+if (measureNow !== null && cutShort === null) void newGame(ART_MEASURE_SCENARIO, true, measureNow).catch(showError);

@@ -26,6 +26,7 @@ import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts"
 import { type Culture, cultureOf, SIEGE_ATLASES } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
 import { type AstcSample, showAstcSample } from "../lab/astc.ts";
+import type { ArtCost, ArtVariant } from "../lab/art-measure.ts";
 import { type Projection, PROJECTIONS, VIEW_DEFAULT } from "../camera/projection.ts";
 import { LabPanel } from "../lab/panel.ts";
 import { SPEED_TPS } from "../params.ts";
@@ -167,6 +168,8 @@ export interface GameOptions {
   artChanged?: () => boolean;
   /** ASTC 樣本 (D-085): where its pages are, when the build has them. */
   astcSample?: AstcSample;
+  /** art-v7 量測 (D-128, main.ts): its buttons and what the art costs, the ground apart (added here). */
+  artMeasure?: { open(v: ArtVariant): void; cost(): Omit<ArtCost, "ground">; drawn(): string; gpuAstc(): boolean };
 }
 
 /** export_log's answer: the command log, the hash every HASH_EVERY ticks and the tick it got to (D-083). */
@@ -344,6 +347,13 @@ export class Game implements GestureHost {
                   const ms = (v: number) => v.toFixed(2);
                   return `地面（${w}×${h} 像素，每格）：高 ${ms(m.high)} ms、低 ${ms(m.low)} ms、只貼一張圖 ${ms(m.plain)} ms；材質 ${m.mb.toFixed(1)} MB`;
                 },
+              },
+        artMeasure:
+          options.artMeasure === undefined
+            ? undefined
+            : {
+                ...options.artMeasure,
+                cost: () => ({ ...(options.artMeasure as NonNullable<GameOptions["artMeasure"]>).cost(), ground: Math.round((this.renderer?.groundMB ?? 0) * 2 ** 20) }),
               },
         population: () => {
           const h = this.view?.curr?.snap.header;
@@ -596,7 +606,7 @@ export class Game implements GestureHost {
     return this.options.culture ?? DEFAULT_CULTURE;
   }
 
-  get artForTest(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
+  get artForTest(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
     return this.renderer?.artDrawn ?? null;
   }
 
