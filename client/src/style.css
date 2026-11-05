@@ -853,10 +853,43 @@ button.order-retreat {
 
 .sel-info {
   padding-right: 56px;
+  /* Never taller than the screen under the top bar: its ✕ always in reach; what it shows scrolls
+     inside it, its title line (and 收起) at the top (the user 2026-11-06). */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 64px);
+  /* Safari's toolbars come and go: the height there is (its parent's is auto, so not a %). */
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 64px);
+}
+
+.sel-body {
+  min-height: 0;
+  /* The width under the ✕ is the body's too (its padding): the rows that use it (margin-right: -46px)
+     are inside what scrolls, neither cut nor scrolled sideways (ceo 2026-11-06: the ＋ cut flat). */
+  margin-right: -46px;
+  padding-right: 46px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Scrolled by a finger (the HUD lets touches through to the map elsewhere). */
+  pointer-events: auto;
+  touch-action: pan-y;
+}
+
+.sel-body > .sel-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* Its background to the body's edge, under the ✕: nothing scrolled shows beside it. */
+  margin-right: -46px;
+  padding-right: 46px;
+  background: var(--panel);
 }
 
 .sel-close {
   position: absolute;
+  /* Over the body, which reaches under it (and its title line, kept at the top). */
+  z-index: 2;
   top: 4px;
   right: 4px;
   width: 44px;
@@ -1087,7 +1120,7 @@ button.order-retreat {
   font-size: 12px;
 }
 
-.sel-info.collapsed > :not(.sel-head):not(.sel-close) {
+.sel-info.collapsed .sel-body > :not(.sel-head) {
   display: none;
 }
 

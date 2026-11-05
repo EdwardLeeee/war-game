@@ -401,7 +401,7 @@ export class Hud {
     this.warnPopulationFull();
     // The message strip sits above the selection info, which grows with what is selected
     // (the stance lines, the group panel; D-026, D-054), so that neither covers the other.
-    const panel = this.info.el.hidden ? null : this.info.el.getBoundingClientRect();
+    const panel = this.info.frame.hidden ? null : this.info.frame.getBoundingClientRect();
     const above = panel === null ? 0 : Math.ceil(this.root.getBoundingClientRect().bottom - panel.top + 8);
     if (above !== this.toastAbove) {
       this.toastAbove = above;
