@@ -40,14 +40,14 @@ test("哨所 3×3（D-119、D-121）：躲了幾名／9；＋槍兵走過去躲�
   await tap(page, await at(page, { x: OUTPOST.x + 1.5, y: OUTPOST.y + 1.5 }));
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".sel-head")).toContainText("哨所");
-  await expect(panel.locator(".outpost-count")).toHaveText("躲了 0/9 名槍兵");
+  await expect(panel.locator(".outpost-count")).toHaveText("0/9");
   await expect(panel.locator(".outpost-note")).toHaveText("攻擊：敵兵進到 8 格內或哨所被打，就出去打；打完或追到 12 格就回來躲");
 
   // ＋槍兵: the nearest walks over and hides in it (not drawn on the ground, Garrisoned).
   await panel.getByRole("button", { name: "叫 1 名槍兵來駐守" }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "post", u: [spear[5]], building: ours.id });
   await expect.poll(async () => (await buildings(page)).find((b) => b.id === ours.id)?.soldiers, TICKS).toBe(1);
-  await expect(panel.locator(".outpost-count")).toHaveText("躲了 1/9 名槍兵");
+  await expect(panel.locator(".outpost-count")).toHaveText("1/9");
   expect((await units(page)).find((u) => u.id === spear[5])?.action).toBe(GARRISONED);
   const stands = (await crew(page)).stands;
   if (stands > 0) {
@@ -63,7 +63,7 @@ test("哨所 3×3（D-119、D-121）：躲了幾名／9；＋槍兵走過去躲�
   await panel.getByRole("button", { name: "全部離開" }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "unpost", building: ours.id });
   await expect.poll(async () => (await buildings(page)).find((b) => b.id === ours.id)?.soldiers, TICKS).toBe(0);
-  await expect(panel.locator(".outpost-count")).toHaveText("躲了 0/9 名槍兵");
+  await expect(panel.locator(".outpost-count")).toHaveText("0/9");
   expect((await units(page)).find((u) => u.id === spear[5])?.action).not.toBe(GARRISONED);
 
   // The enemy's, 5 inside (the fake world's): one of ours right by its east wall is poked, and its

@@ -94,7 +94,7 @@ test("出城歸隊：整個編隊 1 駐軍後還是編隊 1 的（5/5、駐5、�
   await expect(panel.locator(".sel-head")).toContainText(/^編隊 1/);
   await expect.poll(async () => [...(await selected(page))].sort((a, b) => a - b)).toEqual(ids);
   await panel.getByRole("button", { name: "展開選取資訊" }).tap();
-  await expect(panel).toContainText("駐守中：小鎮 5 名");
+  await expect(panel.locator(".group-place", { hasText: "小鎮" })).toHaveAttribute("aria-label", "小鎮 5 名（留守）");
   await centre(page, OUR_TOWN.x, OUR_TOWN.y + 3, 1.2);
   await shot(page, info, "rejoin-1-group-screen-stationed");
   // 出城歸隊: the town keeps 1 (a governed small town), one of the ranged on its wall.
@@ -106,7 +106,7 @@ test("出城歸隊：整個編隊 1 駐軍後還是編隊 1 的（5/5、駐5、�
   const out = ids.filter((id) => !kept.includes(id));
   // All five still selected by its button (the 4 積極), the line reads 1.
   await expect.poll(async () => [...(await selected(page))].sort((a, b) => a - b)).toEqual(ids);
-  await expect(panel).toContainText("駐守中：小鎮 1 名");
+  await expect(panel.locator(".group-place", { hasText: "小鎮" })).toHaveAttribute("aria-label", "小鎮 1 名（留守）");
   await expect(page.locator(GROUP_1)).toContainText("駐1");
   await expect.poll(async () => (await units(page)).filter((u) => out.includes(u.id)).every((u) => u.stance === AGGRESSIVE), { timeout: 60_000 }).toBe(true);
   await shot(page, info, "rejoin-2-out-keeps-one");

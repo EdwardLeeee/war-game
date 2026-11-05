@@ -219,14 +219,14 @@ test("進駐主城（D-061、D-125）：主城的標籤寫進遠程和法師、�
   // The city: how many hide inside, how many fit, and 全部離開.
   await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
   const panel = page.locator(".sel-info");
-  await expect(panel.locator(".garrison-count")).toHaveText(`躲了 ${hiders.length} 名士兵（最多 6 名）`);
+  await expect(panel.locator(".garrison-count")).toHaveText(`${hiders.length}/6`);
   const out = panel.getByRole("button", { name: "全部離開" });
   await expect(out).toBeEnabled();
   await shot(page, info, "r7-garrison-city");
   await out.tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "leave", building: city });
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(0);
-  await expect(panel.locator(".garrison-count")).toHaveText("躲了 0 名士兵（最多 6 名）");
+  await expect(panel.locator(".garrison-count")).toHaveText("0/6");
   await expect(out).toBeDisabled();
   await expect.poll(async () => (await units(page)).filter((u) => hiders.includes(u.id)).every((u) => u.action !== 7)).toBe(true);
 });
@@ -257,7 +257,7 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
   await callRanged.tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "garrison", u: [ranged[1]], building: city });
   await expect(toast(page, "叫 1 名遠程兵躲進主城")).toBeVisible();
-  await expect(panel.locator(".garrison-count")).toHaveText("躲了 0 名士兵（最多 6 名），1 名正過來");
+  await expect(panel.locator(".garrison-count")).toHaveText("0/6，1 名正過來");
   await shot(page, info, "d080-call-city");
   // No mage within 30 cells: told so, no order.
   const mark = (await sent(page)).length;
@@ -267,13 +267,13 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
   // Then the walking one: not the one hiding already, not those far off.
   await callRanged.tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "garrison", u: [ranged[0]], building: city });
-  await expect(panel.locator(".garrison-count")).toHaveText("躲了 0 名士兵（最多 6 名），2 名正過來");
+  await expect(panel.locator(".garrison-count")).toHaveText("0/6，2 名正過來");
 
   // Six inside: full, both greyed; 全部離開 still there.
   await page.evaluate(([u, b]) => window.__proto?.game?.send({ c: "garrison", u, building: b }), [[ranged[2], ranged[3], ...mages], city] as [number[], number]);
   await place(page, [...ranged, ...mages], [{ x: MAIN_CITY.x + 4, y: MAIN_CITY.y + 2 }]);
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(6);
-  await expect(panel.locator(".garrison-count")).toHaveText("躲了 6 名士兵（最多 6 名）");
+  await expect(panel.locator(".garrison-count")).toHaveText("6/6");
   await expect(callRanged).toBeDisabled();
   await expect(callMage).toBeDisabled();
   await expect(panel.getByRole("button", { name: "全部離開" })).toBeEnabled();
@@ -305,12 +305,16 @@ test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去
   // Its button selects those outside; 軍團畫面 says where the others are.
   await tapOn(page, GROUP_1);
   await expect.poll(async () => [...((await selection(page))?.units ?? [])].sort((a, b) => a - b)).toEqual(spear);
-  await expect(page.locator(".sel-info")).toContainText("躲著：主城 2 名");
+  await expect(page.locator(".sel-info .group-place", { hasText: "主城" })).toHaveAttribute("aria-label", "主城 2 名");
   await shot(page, info, "d083-group-while-hiding");
   // The main city selected, with how many hide in it, for the picture.
   await centre(page, MAIN_CITY.x + 8, MAIN_CITY.y - 2);
   await tap(page, await at(page, { x: MAIN_CITY.x + 1, y: MAIN_CITY.y + 1 }));
-  await expect(page.locator(".sel-info")).toContainText(`躲了 ${hiding.length} 名士兵`);
+  await expect(page.locator(".sel-info .garrison-count")).toHaveText(`${hiding.length}/6`);
+  // R13-01 B 7a: a square a place, those inside by kind, and whose with 召回.
+  await expect(page.locator(".sel-info .seat:not(.empty)")).toHaveCount(hiding.length);
+  await expect(page.locator(".sel-info .seat.empty")).toHaveCount(6 - hiding.length);
+  await expect(page.locator(".sel-info").getByRole("button", { name: `編隊 1 的 ${hiding.length} 名召回` })).toBeVisible();
   await shot(page, info, "d083-group-after-hiding");
   await centre(page, 22, 71);
   // Only those hiding selected: nothing sent, and how to get them out.
@@ -363,7 +367,8 @@ test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主�
   // Group 1's 軍團畫面: 躲著 with 召回, from out in the field (the main city nowhere near the screen).
   await tapOn(page, GROUP_1);
   await page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" }).tap({ timeout: 1500 }).catch(() => undefined);
-  await expect(page.locator(".sel-info")).toContainText("躲著：主城 2 名（按召回叫出來，走回編隊）");
+  await expect(page.locator(".sel-info .group-place", { hasText: "主城" })).toHaveAttribute("aria-label", "主城 2 名");
+  await expect(page.locator(".sel-info .group-places").getByRole("button", { name: "召回" })).toBeVisible();
   await shot(page, info, "d119-recall-button");
   const mark = (await sent(page)).length;
   await page.locator(".sel-info").getByRole("button", { name: "召回" }).tap();

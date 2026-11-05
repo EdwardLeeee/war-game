@@ -91,5 +91,11 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   await centre(page, OUR_TOWN.x, OUR_TOWN.y, 1.3);
   await page.locator(".sel-info").getByRole("button", { name: "取消選取" }).tap().catch(() => undefined);
   await shot(page, info, "station-3-in-the-town");
+  // The town's panel (R13-01 B 7c): its 留守 as squares, the ranged up on the walls, the spearmen inside.
+  await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
+  const seats = page.locator(".sel-info .town-seats .seats");
+  await expect(seats.nth(0).locator(".seat")).toHaveText(["遠", "遠"], { timeout: 30_000 });
+  await expect(seats.nth(1).locator(".seat")).toHaveText(["槍", "槍", "槍"]);
+  await shot(page, info, "station-4-town-seats");
   check();
 });

@@ -156,7 +156,7 @@ test("駐守：選了槍兵和遠程兵，按進駐、哨所的標籤寫進槍�
   // 軍團畫面: 駐守中：哨所 2 名; its button selects the ranged one.
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
-  await expect(page.locator(".sel-info")).toContainText("駐守中：哨所 2 名");
+  await expect(page.locator(".sel-info .group-place", { hasText: "哨所" })).toHaveAttribute("aria-label", "哨所 2 名");
   expect(await page.evaluate(() => window.__proto?.game?.selection().units ?? [])).toEqual([ranged[0]]);
   // The outpost's panel: 編隊 1：2 名［歸隊］; they leave it for where the ranged one stands.
   const archer = (await units(page)).find((u) => u.id === ranged[0]);
