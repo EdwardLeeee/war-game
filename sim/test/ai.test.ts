@@ -2332,30 +2332,65 @@ function farSpot(plan: Partial<HardPlan>, falls: number[], until: number, soldie
   return { hid, released, rescued };
 }
 
-test("D-130 (plan.farAvoid): a far spot where farmers fell is remembered: its farmers home and back only once it is forgotten; hideFar alone, after 30 s", () => {
+test("D-130 (plan.farAvoid): a far spot where farmers fall again is remembered: its farmers home, back only once it is forgotten; once, as hideFar (30 s)", () => {
   const hide = farSpot({ hideFar: true, farAvoid: false }, [0], 4);
   assert.ok(hide.hid >= 3, `hideFar: the others go home (${hide.hid})`);
   assert.ok(hide.released.length > 0 && hide.released[0] < 1, `hideFar: back within a minute (${hide.released})`);
-  const avoid = farSpot({ hideFar: true, farAvoid: true }, [0], 4);
-  assert.ok(avoid.hid >= 3, `farAvoid: home too (${avoid.hid})`);
-  assert.ok(avoid.released.length > 0 && avoid.released[0] >= 3 && avoid.released[0] < 3.2, `farAvoid: back once forgotten, 3 minutes on (${avoid.released})`);
-  const alone = farSpot({ hideFar: false, farAvoid: true }, [0], 4);
-  assert.ok(alone.released.length > 0 && alone.released[0] >= 3 && alone.released[0] < 3.2, `farAvoid without hideFar: the same (${alone.released})`);
+  const once = farSpot({ hideFar: true, farAvoid: true }, [0], 4);
+  assert.ok(once.released.length > 0 && once.released[0] < 1, `farAvoid, falls once (a raid passing): as hideFar (${once.released})`);
+  const again = farSpot({ hideFar: true, farAvoid: true }, [0, 1], 6);
+  assert.ok(again.hid >= 3, `farAvoid: home (${again.hid})`);
+  const last = again.released[again.released.length - 1];
+  assert.ok(last >= 4 && last < 4.2, `farAvoid, falls again a minute on: remembered, back 3 minutes after that (${again.released})`);
+  const alone = farSpot({ hideFar: false, farAvoid: true }, [0, 1], 6);
+  assert.ok(alone.released.length > 0 && alone.released[alone.released.length - 1] >= 4 && alone.released[alone.released.length - 1] < 4.2, `farAvoid without hideFar: the same (${alone.released})`);
 });
 
 test("D-130 (plan.farAvoid with rescue): soldiers go for the remembered spot; there and clear for 30 s, it is forgotten and the farmers go back", () => {
   // townArmy out of reach: its army stays at home (a rescue goes from home only).
-  const r = farSpot({ hideFar: true, farAvoid: true, rescue: true, townArmy: 999 }, [0], 4, 12);
+  const r = farSpot({ hideFar: true, farAvoid: true, rescue: true, townArmy: 999 }, [0, 1], 6, 12);
   assert.ok(r.rescued >= 5, `a rescue went (${r.rescued})`);
-  assert.ok(r.released.length > 0 && r.released[0] < 2, `back before the 3 minutes: the spot was cleared (${r.released})`);
+  const last = r.released[r.released.length - 1];
+  assert.ok(last < 3, `back well before the 3 minutes after the second fall: the spot was cleared (${r.released})`);
 });
 
-test("D-130 (plan.farAvoid): each new fall makes it longer, 9 minutes at most from the first", () => {
-  // Falls at 0, 2.5, 5, 7.5: 3 minutes past the last would be 10.5; held to 9.
-  const r = farSpot({ hideFar: true, farAvoid: true }, [0, 2.5, 5, 7.5], 11);
+test("D-130 (plan.farAvoid): each new fall makes it longer, 9 minutes at most from when it was remembered", () => {
+  // Falls each minute 0-8: remembered at 1, 3 minutes past the last would be 11; held to 1 + 9.
+  const r = farSpot({ hideFar: true, farAvoid: true }, [0, 1, 2, 3, 4, 5, 6, 7, 8], 12);
   assert.ok(r.released.length > 0, "back at last");
   const last = r.released[r.released.length - 1];
-  assert.ok(last >= 9 && last < 9.2, `forgotten 9 minutes after the first fall (${r.released})`);
+  assert.ok(last >= 10 && last < 10.2, `forgotten 9 minutes after it was remembered (${r.released})`);
+});
+
+test("D-130 (plan.farAvoid): two spots remembered at most; a third puts out the oldest, whose farmers go back", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  // Three far spots, 12 cells apart: A, B, C; two falls each, a minute apart, A first.
+  const at = [0, 1, 2].map((k) => ({ x: s0.cellX + 20 + 12 * k, y: s0.cellY - 20 }));
+  const ids = at.map((p) => Array.from({ length: 6 }, (_, k) => put(g, 0, UnitType.Farmer, p.x + (k % 3), p.y + Math.trunc(k / 3))));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, peekFirst: 0, hideFar: true, farAvoid: true });
+  ai.think(buildView(g, 0));
+  const start = w.tick + 10;
+  const falls = [[0, 0], [1, 0.1], [2, 0.2], [0, 1], [1, 1.1], [2, 1.2]];
+  const dead = [0, 0, 0];
+  const back = new Map<number, number>();
+  let next = 0;
+  for (let t = start; t <= start + 6 * 1200; t += 10) {
+    while (next < falls.length && t >= start + falls[next][1] * 1200) {
+      const k = falls[next][0];
+      kill(g, ids[k].slice(dead[k], dead[k] + 2));
+      dead[k] += 2;
+      next++;
+    }
+    w.tick = t;
+    g.fog.update(w);
+    for (const c of ai.think(buildView(g, 0))) if (c.c === "release") for (const id of c.u) back.set(id, (t - start) / 1200);
+  }
+  const lastBack = (k: number) => Math.max(...ids[k].filter((id) => back.has(id)).map((id) => back.get(id)!));
+  assert.ok(lastBack(0) < 2.5, `A, the oldest, put out when C was remembered: back soon (${lastBack(0)})`);
+  assert.ok(lastBack(1) >= 4.1 && lastBack(2) >= 4.2, `B and C held 3 minutes (${lastBack(1)}, ${lastBack(2)})`);
 });
 
 test(
