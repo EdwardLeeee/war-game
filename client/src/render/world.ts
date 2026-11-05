@@ -40,6 +40,7 @@ import { TILE_PX } from "../tuning.ts";
 import type { Placement } from "../ui/placement.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT, WARNING_TINT } from "./atlas.ts";
+import { effectTint } from "../art/effect-tint.ts";
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 import { ArtStructures } from "./structure-art.ts";
 import { autoTrainBuildings } from "../game/features.ts";
@@ -1648,12 +1649,16 @@ export class WorldRenderer {
     }
     const full = fx.effects.warn_sigil.radius_m ?? 3;
     const seconds = (this.view.curr?.snap.header[H.tick] ?? 0) / TICKS_PER_SECOND;
+    // art-v7.2 on (D-129): the white pictures, tinted with the caster's colour; the gold lines stay
+    // gold, half as strong at the end (else the whole ring is gold at the last moment, nobody's).
+    const tinted = fx.effects.warn_sigil_t !== undefined;
     let i = 0;
     for (let o = 0; o < w.length; o += WARNING_STRIDE, i++) {
       while (this.warnPool.length <= i) {
         const c = new Container();
         for (const name of WARN_LAYERS) {
-          const s = new Sprite(art.effectFrame(`${name}_00`)?.texture ?? Texture.EMPTY);
+          const own = tinted && fx.effects[`${name}_t`] !== undefined ? `${name}_t` : name;
+          const s = new Sprite(art.effectFrame(`${own}_00`)?.texture ?? Texture.EMPTY);
           s.anchor.set(0.5);
           s.label = name;
           c.addChild(s);
@@ -1663,6 +1668,11 @@ export class WorldRenderer {
       }
       const c = this.warnPool[i];
       c.visible = true;
+      const colour = castTint(w[o + W.owner], this.view.me);
+      for (const s of c.children as Sprite[]) {
+        const info = tinted ? fx.effects[`${s.label}_t`] : undefined;
+        s.tint = info?.tint === "owner" ? effectTint(colour, info.tint_value ?? 1, info.tint_white ?? 0) : 0xffffff;
+      }
       c.position.set(w[o + W.x] * FIXED_TO_PX, w[o + W.y] * FIXED_TO_PX);
       // The pictures' circle (radius_m) to the warning's radius, in world px.
       c.scale.set((w[o + W.radius] * FIXED_TO_PX) / (full * fx.px_per_m));
@@ -1676,7 +1686,7 @@ export class WorldRenderer {
         warn_sigil_glow: 0.6 * sigil,
         warn_rim: 1,
         warn_sigil: sigil,
-        warn_sigil_gold: sigil * 0.7 * k,
+        warn_sigil_gold: sigil * (tinted ? 0.35 : 0.7) * k,
       };
       const turn = ((20 * Math.PI) / 180) * seconds;
       for (const s of c.children as Sprite[]) {
