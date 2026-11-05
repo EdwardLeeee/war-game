@@ -657,7 +657,7 @@ def r8_ruin(root, P, c, w, d, blocks, seed):
 
 def apply(root, kind, c, state, **opts):
     global R8
-    R8 = kind.startswith(("r8_", "r9_", "v7_"))       # (R9's city and R12's outpost are the realistic look too)
+    R8 = kind.startswith(("r8_", "r9_", "v7_"))       # (art-v7: R9's city and R12's outpost are the realistic look too)
     P = kit.palette(c)
     w, d = footprint(kind)
     blocks = _tagged(root, "block")

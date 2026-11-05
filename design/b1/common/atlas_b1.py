@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -55,7 +55,7 @@ def building_table(c):
                      states={"build1": f"farm_{c}_build1", "build2": f"farm_{c}_sown", "build3": f"farm_{c}_sown"},
                      crops=[f"farm_{c}_{s}" for s in ("sown", "growing", "ripe")])
     # art-v5.1: 哨所 (D-080; the user approved the drafts 2026-10-22), its own foundation and rubble (blds2.outpost)
-    # art-v6.4 (D-119, the user 2026-11-04: R12's A): 3 x 3; the men hidden in it stand on its walk, drawn by the client
+    # art-v7 (D-119, the user 2026-11-04: R12's A): 3 x 3; the men hidden in it stand on its walk, drawn by the client
     # over the piece and under its front layer (fronts: what stands in front of a man on the walk), at stand_m (as the
     # castles' walls, D-096: metres from the anchor, x east, y south, z the walk; nearest the camera first)
     t["Outpost"] = dict(type=12, footprint=[3, 3],
@@ -168,6 +168,8 @@ def castle_frames(c):
 
 import terrain_rules as TR  # noqa: E402  (common/terrain_rules.py: which frame on which cell)
 TILE_PX = (120, 60)         # a water tile at 3x: one cell across (2 m x 60 px/m) and one deep (2 m x 30 px/m)
+TILE_PX_D = (170, 85)       # on the diamond camera (D-118) a cell is a rhombus: 2 m x 2 cos 45 x 60 px across, half as deep
+TILE_VIEW = {"view": "oblique"}     # the terrain atlas's camera, set before it is packed
 DECK_TOP_M = 0.44           # the bridge's planks stand this high over the ground (terrain.tbridge_deck)
 
 
@@ -179,7 +181,8 @@ def terrain_table():
         rock=dict(value=1, frames=[f"terrain_rock_v{v}" for v in range(TR.ROCK_VARIANTS)], anchor="centre", front="y + 1"),
         water=dict(values=list(TR.WET), frames={str(m): f"terrain_water_m{m}" for m in range(1, 16)}, anchor="corner",
                    mask="bit 0 cell (X-1, Y-1), bit 1 (X, Y-1), bit 2 (X-1, Y), bit 3 (X, Y): wet; off the map: the nearest cell",
-                   tile_px_3x=list(TILE_PX), layer="water"),
+                   tile_px_3x=list(TILE_PX_D if TILE_VIEW["view"] == "diamond" else TILE_PX),
+                   **({"tile_shape": "rhombus"} if TILE_VIEW["view"] == "diamond" else {}), layer="water"),
         ford=dict(value=4, frames=[f"terrain_ford_v{v}" for v in range(TR.FORDS)], anchor="centre", layer="ford"),
         bridge={"5": dict(deck="terrain_bridge_deck_ns", rail="terrain_bridge_rail_y",
                           rails="west edge (x, y + 0.5) where cell (x-1, y) is not 5; east edge (x + 1, y + 0.5) where (x+1, y) is not 5",
@@ -209,10 +212,20 @@ def terrain_prep(name, col, sh, anchor, s_anchor):
     ax, ay = anchor
     if name.startswith("terrain_water_"):
         fx, fy = ax - math.floor(ax), ay - math.floor(ay)
-        w, h = TILE_PX
+        diamond = TILE_VIEW["view"] == "diamond"
+        w, h = TILE_PX_D if diamond else TILE_PX
         x0, y0 = math.floor(ax) - w // 2, math.floor(ay) - h // 2
         pm = col.convert("RGBa").transform(col.size, Image.AFFINE, (1, 0, fx, 0, 1, fy), resample=Image.BICUBIC)
-        return pm.convert("RGBA").crop((x0, y0, x0 + w, y0 + h)), (w / 2, h / 2), False, False
+        tile = pm.convert("RGBA").crop((x0, y0, x0 + w, y0 + h))
+        if diamond:
+            # cut to the cell's rhombus round the corner (the 2:1 box of the square camera tiled wrong: R11-v7 PR2 r1)
+            import numpy as np
+            yy, xx = np.mgrid[0:h, 0:w].astype(np.float32) + 0.5
+            d = np.abs(xx - w / 2) / (w / 2) + np.abs(yy - h / 2) / (h / 2)
+            m = np.clip((1.0 - d) * (w / 2) + 0.5, 0, 1)
+            a = np.asarray(tile.getchannel("A"), np.float32) * m
+            tile.putalpha(Image.fromarray(a.astype(np.uint8), "L"))
+        return tile, (w / 2, h / 2), False, False
     if name.startswith("terrain_bridge_deck_"):
         sax, say = s_anchor
         a = sh.getchannel("A").resize((sh.width * 2, sh.height * 2), Image.BILINEAR)
@@ -302,8 +315,11 @@ def layers(name):
     team[..., 3] = np.asarray(weight, np.float32)
     team = Image.fromarray(team.astype(np.uint8), "RGBA")
     s_p = SRC / f"{name}_x3_shadow.png"
-    if s_p.exists():
+    if s_p.exists() and not name.endswith("_front"):    # (a building's front layer: the piece under it has the shadow)
         a = Image.open(s_p).convert("RGBA").getchannel("A")
+        # softened a little before the floor: the half-size, few-sample pass cut at the floor read as scattered dots
+        # (art-v7 PR2 review 2); the light is a big soft sky anyway
+        a = a.filter(ImageFilter.GaussianBlur(1.4))
         a = a.point(lambda v: v if v >= SHADOW_FLOOR else 0)
     else:                                         # a wall's front layer (D-096): the wall's own render has the shadow
         a = Image.new("L", (1, 1), 0)
@@ -458,6 +474,7 @@ def run(scale=3.0, page=2048):
     if missing:
         raise SystemExit(f"missing renders: {missing}")
     view = view_of(tf)
+    TILE_VIEW["view"] = view
     tables, pages, px, per = pack(tf, "terrain", tdir, page, f, with_team=False, prep=terrain_prep)
     man = {"format": "war-game terrain 1", "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
            **({"view": view} if view else {}), "pages": pages, "rules": terrain_table(),

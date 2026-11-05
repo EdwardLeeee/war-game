@@ -269,6 +269,8 @@ def range_(root, c):
         # 射堂: a three-bay hall open on three sides on a low platform at the back-left, its 歇山 roof; the shooting lane
         # across the front to an earth butt (土垛) with a target at the right; a bow rack, arrows in a pot
         platform_e("rg_plat", P, root, 3.8, 2.4, 0.35, cy=1.55, steps=1.0)
+        # a floor of pale planks under the hall (its dark brick in the roof's shade read as a hole, art-v7 PR2 review 1-2)
+        box("rg_floor", (3.6, 2.2, 0.03), lib.mat("floor_r8", (0.42, 0.34, 0.24), 0.8), root, loc=(0, 1.55, 0.365))
         w, d, top = hall_e("rg_hall", P, root, -0.6, 1.55, 0.35, (1.0, 1.2, 1.0), (1.8,), 2.4, 0.12, 0.35, walls=False)
         box("rg_backwall", (w, 0.2, 2.0), P["plaster"], root, loc=(-0.6, 1.55 + 0.9, 0.35 + 1.0))
         tang_roof("rg_roof", P, root, -0.6, 1.55, 0.35 + top, w + 0.3, d + 0.3, 0.95, 0.65, kind="xieshan", lift=0.05,

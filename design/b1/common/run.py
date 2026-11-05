@@ -588,6 +588,111 @@ def run(target, preview=False, only=None, prev_ppm=24):
     return out
 
 
+# art-v7 PR2 review 1, the user's choices (ceo 2026-11-04): the 3 x 3 outpost, R12's A without the East's 戰棚 and
+# the West's hoarding, its men on the walk (outpost_v7: the front layer the garrison look is drawn between); the East's
+# main city is R9's (main_city_r9) in every state. Defined before _art_v7_targets, so the r8d7 chunks take these.
+def v7_choices(camera_name="diamond"):
+    out = []
+    for c in CULTURES:
+        out += [dict(kind="v7_outpost", culture=c, state=st, opts=dict(look=lk), name=f"outpost_{c}_{s}")
+                for s, st, lk in (("build1", "build_a1", "done"), ("build2", "done", "build"), ("build3", "build_a3", "done"),
+                                  ("done", "done", "done"), ("damaged", "done", "damaged"), ("rubble", "destroyed_a", "done"))]
+        out += [dict(kind="v7_outpost", culture=c, opts=dict(look=lk, front=True), name=f"outpost_{c}_{lk}_front")
+                for lk in ("done", "damaged")]
+    return out
+
+
+TARGETS["r8v7c"] = v7_choices() + [dict(kind="r9_main_city_v7", culture="E", opts=dict(look=s), name=f"main_city_E_{s}")
+                                   for s in ("done", "build2", "build3", "damaged")]
+CAMERA["r8v7c"] = proj.DIAMOND
+LOOK["r8v7c"] = "r8"
+FOLDER["r8v7c"] = "r8v7c"
+
+
+# art-v7 (D-118, the user 2026-11-04: 菱形 45 度, mass production): every piece the atlases need (atlas_b1: the buildings,
+# the castles, the nodes, the terrain), each as its last target defines it (the buildings-atlas round lets a later run
+# replace an earlier one's piece, and the targets are defined oldest first), on the diamond camera, eight to a CI job.
+# Named r8d7_<k> so the buildings-atlas round's 'b1-r8*' download takes them; folder r8d7 (copied into prod/ there).
+def _art_v7_targets():
+    import atlas_b1 as A
+    need = set()
+    for c in A.CULTURES:
+        for b in A.building_table(c).values():
+            need |= set(A.building_frames(b))
+        need |= set(A.castle_frames(c))
+    need |= set(A.node_frames()) | set(A.TR.frames())
+    last = {}
+    for t, pcs in TARGETS.items():
+        if t.startswith("r8d7_"):
+            continue
+        for pc in pcs:
+            if piece_name(pc) in need:
+                last[piece_name(pc)] = (t, pc)
+    missing = sorted(need - set(last))
+    if missing:
+        raise SystemExit(f"art-v7: no target makes {missing}")
+    order = sorted(last, key=lambda n: (last[n][0], n))
+    for i in range(0, len(order), PROD_CHUNK):
+        t = f"r8d7_{i // PROD_CHUNK}"
+        TARGETS[t] = [dict(last[n][1]) for n in order[i:i + PROD_CHUNK]]
+        CAMERA[t] = proj.DIAMOND
+        LOOK[t] = LOOK.get(last[order[i]][0], "r8")
+        FOLDER[t] = "r8d7"
+
+
+_art_v7_targets()
+
+
+# art-v7 PR2 review 1 (2026-11-04): the pieces the fixes change, again (the buildings-atlas round takes this run after
+# the r8d7 one): the east/west gates turned from the north/south one on the diamond camera (castle.sw_gate_y), the
+# step flights a hair narrower each step (arch_r8.platform_e: the East's halls, house, barracks, range, mage hall, and
+# their foundations)
+def _art_v7_fix():
+    import re
+    pick = re.compile(r"(castle_sw_gate_y|main_city_E|house_E|barracks_E|range_E|mage_hall_E|found_)")
+    pcs = [pc for t in sorted((t for t in TARGETS if t.startswith("r8d7_")), key=lambda t: int(t.split("_")[1]))
+           for pc in TARGETS[t] if pick.match(piece_name(pc))]
+    for i in range(0, len(pcs), PROD_CHUNK):
+        t = f"r8d7f_{i // PROD_CHUNK}"
+        TARGETS[t] = [dict(pc) for pc in pcs[i:i + PROD_CHUNK]]
+        CAMERA[t] = proj.DIAMOND
+        LOOK[t] = "r8"
+        FOLDER[t] = "r8d7f"
+
+
+_art_v7_fix()
+
+
+def _art_v7_g():
+    out = [dict(pc) for pc in TARGETS["r8v7c"]]
+    out += [dict(pc) for t in sorted((t for t in TARGETS if t.startswith("r8d7_")), key=lambda t: int(t.split("_")[1]))
+            for pc in TARGETS[t] if piece_name(pc).endswith("_front") and piece_name(pc).startswith("castle_")]
+    for i in range(0, len(out), PROD_CHUNK):
+        t = f"r8d7g_{i // PROD_CHUNK}"
+        TARGETS[t] = out[i:i + PROD_CHUNK]
+        CAMERA[t] = proj.DIAMOND
+        LOOK[t] = "r8"
+        FOLDER[t] = "r8d7g"
+
+
+_art_v7_g()
+# (the outposts' damaged looks again: the realistic fire and scorch in place of R12's cones and soot box)
+TARGETS["r8d7h"] = [dict(pc) for pc in TARGETS["r8v7c"] if pc["name"].startswith("outpost_") and "damaged" in pc["name"]]
+CAMERA["r8d7h"] = proj.DIAMOND
+LOOK["r8d7h"] = "r8"
+FOLDER["r8d7h"] = "r8d7h"
+# PR2 review 2: the outposts' front layers (no flag), R9's city building and burning (no pine, the realistic flames),
+# the East's range with a plank floor under its hall
+TARGETS["r8d7i"] = ([dict(pc) for pc in TARGETS["r8v7c"]
+                     if pc["name"].endswith("_front") or pc["name"] in ("main_city_E_build2", "main_city_E_build3", "main_city_E_damaged")]
+                    + [dict(pc) for t in TARGETS if t.startswith("r8d7_") for pc in TARGETS[t] if piece_name(pc).startswith("range_E_")])
+CAMERA["r8d7i"] = proj.DIAMOND
+LOOK["r8d7i"] = "r8"
+FOLDER["r8d7i"] = "r8d7i"
+
+
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("target", choices=list(TARGETS))
