@@ -8,7 +8,8 @@
 | 附件 | 內容 |
 |---|---|
 | `art-vN-x3.tar.gz`、`art-vN-x2.tar.gz` | 一個倍率一個檔。最上層是 `units/<unit>/`（`<unit>.json`、`<unit>_<layer>_<k>.png`、`memory.json`，不放 `raw/`）和 `effects/`（`effects.json`、`effects_0.png`）。art-v2 起加 `buildings/`、`nodes/`；art-v3 起建築和資源點是方形斜看（D-088，說明檔有 `"view": "oblique"`）；art-v4 起加 `castle/`（城牆，D-089；發布清單寫 `"castle": true`）；art-v5 起加 `terrain/`（地形，R6-51；發布清單寫 `"terrain": true`，說明檔 `design/b1/atlas-buildings.md` 第 12 節）。art-v6 起加 `ground/`（寫實地面、水、城裡的土路，D-093；發布清單寫 `"ground": true`），城牆說明檔改成 `war-game castle 2`（說明檔第 13 節）。另有 `art-release.json`：tag、commit、來源 run、每個檔的 sha256。 |
-| `astc-sample.tar.gz` | 一個兵種的 2 倍顏色層和玩家色層，ASTC 4×4，KTX 1（`<unit>_<layer>_<k>.astc.ktx`，`astcenc -cl`，未預乘 alpha）。 |
+| `astc-sample.tar.gz` | 一個兵種的 2 倍顏色層和玩家色層，ASTC 4×4，KTX 1（`<unit>_<layer>_<k>.astc.ktx`，`astcenc -cl`，未預乘 alpha）。到 art-v7 為止。 |
+| `art-vN-astc-x3.tar.gz`、`art-vN-astc-x2.tar.gz` | art-v7.1 起（設定檔寫 `"astc": true`，格式和 client 2026-11-05 對過）。同一倍率 PNG 包裡除了 `ground/` 以外的每一頁，都有一個 ASTC 4×4 版：<br>• 路徑和 PNG 一樣，`.png` 換成 `.astc.ktx`，解在同一個 `x3/`、`x2/` 資料夾上；<br>• KTX 1、`glInternalFormat` 0x93B0（非 sRGB）、沒有 mipmap，`astcenc -cl 4x4 -thorough -pp-premultiply`，**預乘 alpha**（client 照預乘畫，和瀏覽器幫 PNG 乘的一樣）；<br>• 地面照舊只有 PNG：圖層的 A 是高度，relief、ripple 是資料；<br>• 清單叫 `art-release-astc.json`，不叫 `art-release.json`，以免解開時蓋掉 PNG 包的那份；<br>• PNG 包裡每份 `memory.json`（地面除外）多一個 `astc_bytes`：那個資料夾 `.astc.ktx` 的實際大小加總。 |
 | `SHA256SUMS` | sha256sum 格式，列出上面每個附件。 |
 
 壓縮檔是固定的：檔案依名稱排序，時間戳、擁有者固定，gzip 不記檔名和時間。同樣的來源和 commit 打出來的檔案一模一樣。

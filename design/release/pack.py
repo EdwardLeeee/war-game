@@ -10,7 +10,12 @@ The format was agreed with war-game-client (client/docs/sprite-atlas.md section 
   art-v6 ground/ (ground.json and its layers: the realistic ground, its water and the towns' tracks, D-093), and
   art-release.json (tag, commit, the source runs, every file's sha256);
 - astc-sample.tar.gz: one unit's 2x colour and player-colour pages as ASTC 4 x 4 in KTX 1
-  (<unit>_<layer>_<k>.astc.ktx, astcenc -cl), for the client's ASTC test page on the iPhone;
+  (<unit>_<layer>_<k>.astc.ktx, astcenc -cl), for the client's ASTC test page on the iPhone (up to art-v7);
+- from art-v7.1 (spec "astc": true, the format agreed with the client 2026-11-05): art-vN-astc-x3.tar.gz,
+  art-vN-astc-x2.tar.gz, every page drawn as a sprite (all but ground/) as ASTC 4 x 4 in KTX 1, premultiplied, at the
+  PNG's own path with .png turned into .astc.ktx, so it unpacks over the same x3/ or x2/ folder; its own list is
+  art-release-astc.json (not art-release.json, which it would overwrite); each memory.json of the PNG archive gets
+  astc_bytes, the .astc.ktx files' real size;
 - SHA256SUMS: sha256sum format, every file above.
 The archives are deterministic: sorted entries, a fixed time and owner, gzip without a name or time,
 so the same sources and commit pack to the same bytes.
@@ -35,6 +40,8 @@ MTIME = 1767225600                     # 2026-01-01T00:00:00Z, the time of every
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
 KTX1_SIG = b"\xabKTX 11\xbb\r\n\x1a\n"
 ASTC_4X4_RGBA = 0x93B0                 # GL_COMPRESSED_RGBA_ASTC_4x4_KHR (linear, from -cl)
+# art-v7.1 (client 2026-11-05): ground/ stays PNG: its layers' A is height, not coverage, and relief and ripple are data
+ASTC_SKIP = ("ground/",)
 SCALES = ("x3", "x2")
 
 
@@ -217,23 +224,53 @@ def stamp_view(files, view):
     return files
 
 
-def with_manifest(files, info):
+def with_manifest(files, info, name="art-release.json"):
     """Add art-release.json (the release info and every other file's sha256) to files."""
     info = dict(info, files={n: {"sha256": sha256(b), "bytes": len(b)} for n, b in sorted(files.items())})
-    return dict(files, **{"art-release.json": (json.dumps(info, ensure_ascii=False, indent=1) + "\n").encode()})
+    return dict(files, **{name: (json.dumps(info, ensure_ascii=False, indent=1) + "\n").encode()})
 
 
-def astc(astcenc, png, out):
-    """astcenc -cl (linear LDR, straight alpha) at 4 x 4, -thorough; check the KTX 1 header it wrote."""
-    subprocess.run([astcenc, "-cl", str(png), str(out), "4x4", "-thorough", "-silent"], check=True)
+def astc(astcenc, png, out, premultiply=False):
+    """astcenc -cl (linear LDR) at 4 x 4, -thorough; straight alpha, or premultiplied (-pp-premultiply: the client draws
+    the pages premultiplied, as the browser makes the PNGs); check the KTX 1 header it wrote: the format, the PNG's
+    size, one level."""
+    subprocess.run([astcenc, "-cl", str(png), str(out), "4x4", "-thorough", "-silent"]
+                   + (["-pp-premultiply"] if premultiply else []), check=True)
     data = out.read_bytes()
     if not data.startswith(KTX1_SIG):
         die(f"{out} is not KTX 1")
     endian = "little" if data[12:16] == b"\x01\x02\x03\x04" else "big"
-    fmt = int.from_bytes(data[28:32], endian)              # glInternalFormat
+    word = lambda i: int.from_bytes(data[i:i + 4], endian)     # noqa: E731
+    fmt = word(28)                                         # glInternalFormat
     if fmt != ASTC_4X4_RGBA:
         die(f"{out}: glInternalFormat {fmt:#x}, expected {ASTC_4X4_RGBA:#x}")
+    head = png.read_bytes()[16:24]                         # the PNG's IHDR width and height
+    size = (int.from_bytes(head[:4], "big"), int.from_bytes(head[4:], "big"))
+    if (word(36), word(40)) != size or word(56) != 1:
+        die(f"{out}: {word(36)} x {word(40)}, {word(56)} levels; the PNG is {size[0]} x {size[1]}")
     return data
+
+
+def astc_set(astcenc, files, tmp):
+    """{name.astc.ktx: bytes} for every PNG of files but ground/'s (art-v7.1), premultiplied; and files with each
+    memory.json given astc_bytes, the real size of the .astc.ktx files in its folder."""
+    tmp.mkdir(parents=True, exist_ok=True)
+    ktx = {}
+    for n in sorted(files):
+        if not n.endswith(".png") or n.startswith(ASTC_SKIP):
+            continue
+        src = tmp / "page.png"
+        src.write_bytes(files[n])
+        ktx[n[:-len(".png")] + ".astc.ktx"] = astc(astcenc, src, tmp / "page.astc.ktx", premultiply=True)
+    files = dict(files)
+    for n in sorted(files):
+        if not n.endswith("/memory.json") or n.startswith(ASTC_SKIP):
+            continue
+        folder = n[:-len("memory.json")]
+        m = json.loads(files[n])
+        m["astc_bytes"] = sum(len(b) for k, b in ktx.items() if k.startswith(folder) and "/" not in k[len(folder):])
+        files[n] = (json.dumps(m, indent=1) + "\n").encode()
+    return ktx, files
 
 
 def main():
@@ -256,6 +293,8 @@ def main():
     base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources,
             **({"view": spec["view"]} if spec.get("view") else {})}     # D-118: "diamond" from art-v7 on
     notes = [f"{a.tag}：{spec.get('note', '')}", "", f"commit {a.commit or '(local)'}", ""]
+    if spec.get("astc") and not a.astcenc:
+        die(f"{a.tag}.json asks for the ASTC archives: give --astcenc")
     eff_src = fetch(spec["effects"]["run"], spec["effects"]["artifact"], dl)
     unit_src = {u: fetch(s["run"], s["artifact"], dl) for u, s in sources["units"].items()}
     bld_src = fetch(spec["buildings"]["run"], spec["buildings"]["artifact"], dl) if "buildings" in spec else None
@@ -291,13 +330,27 @@ def main():
                      + ("＋地面" if spec.get("ground") else "") + ("＋邊緣" if spec.get("edge") else ""))
         if spec.get("view"):
             files = stamp_view(files, spec["view"])
+        ktx = None
+        if spec.get("astc"):                             # art-v7.1: ASTC 4x4 of every sprite page (client 2026-11-05)
+            ktx, files = astc_set(a.astcenc, files, a.work / "astc" / scale)
         files = with_manifest(files, dict(base, scale=scale))
         name = f"{a.tag}-{scale}.tar.gz"
         write_targz(out / name, files)
         notes.append(f"- {name}：{len(unit_src)} 種兵種＋效果{extra}，{(out / name).stat().st_size / 2 ** 20:.1f} MB；"
                      f"全部載入 {rgba / 2 ** 20:.1f} MB（未壓縮）／{astc_b / 2 ** 20:.1f} MB（ASTC 4×4）"
                      "，照各 memory.json 加總，效果另計")
-    if a.astcenc:
+        if ktx is not None:
+            ver = subprocess.run([a.astcenc, "-version"], capture_output=True, text=True).stdout.strip().splitlines()
+            aname = f"{a.tag}-astc-{scale}.tar.gz"
+            write_targz(out / aname, with_manifest(ktx, dict(base, scale=scale, astc={
+                "encoder": ver[0] if ver else "", "args": "-cl 4x4 -thorough -pp-premultiply", "container": "KTX 1",
+                "glInternalFormat": f"{ASTC_4X4_RGBA:#x}", "alpha": "premultiplied", "mipmaps": False,
+                "png": f"{name}: each .astc.ktx is the page at the same path with .png turned into .astc.ktx",
+                "not_compressed": list(ASTC_SKIP)}), "art-release-astc.json"))
+            notes.append(f"- {aname}：{name} 裡除了地面以外的每一頁，ASTC 4×4（KTX 1，預乘 alpha），"
+                         f"{(out / aname).stat().st_size / 2 ** 20:.1f} MB；全部載入 {sum(map(len, ktx.values())) / 2 ** 20:.1f} MB"
+                         "（實際檔案加總，含效果；地面另計，照舊用 PNG）。解在同一個資料夾上")
+    if a.astcenc and spec.get("astc_sample"):
         s = spec["astc_sample"]
         u, scale = s["unit"], f"x{s['scale']}"
         d = atlas_dir(unit_src[u], u, scale)
