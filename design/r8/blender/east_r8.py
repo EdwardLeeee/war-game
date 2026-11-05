@@ -59,12 +59,16 @@ def _sock(n, ident):
     return next(s for s in n.inputs if s.identifier == ident)
 
 
-def lamellar(name, plate, lace):
+def lamellar(name, plate, lace, along="round", row=None, width=None):
     """Rows of small plates laced together, from the part's rest coordinates ("rest", r7_prod.apply): each row's lower
     edge a dark band of lacing and shadow (the cue that survives at actual size: a row is 4-5 px at 3x), faint seams
-    between the plates, each plate a little lighter or darker than the next."""
+    between the plates, each plate a little lighter or darker than the next. along: "round" counts the plates round
+    the body's upright axis (a man's torso); "body" along the horse's length and across its chest and rump (x + y:
+    art-v7.4, on the horse's flanks the angle round the upright axis hardly changes, so the plates never divided and
+    the rows read as a striped blanket)."""
     if name in lib.MATS:
         return lib.MATS[name]["mat"]
+    row, width = row or ROW, width or PLATE
     m = lib.mat(name, plate, 0.42, 0.7)
     nt = m.node_tree
     p = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
@@ -89,8 +93,11 @@ def lamellar(name, plate, lace):
     at.attribute_name = "rest"
     xyz = N("ShaderNodeSeparateXYZ")
     L(at.outputs["Vector"], xyz.inputs[0])
-    u = op("MULTIPLY", op("ARCTAN2", xyz.outputs["Y"], xyz.outputs["X"]), 0.17 / PLATE)
-    zr = op("DIVIDE", xyz.outputs["Z"], ROW)
+    if along == "body":
+        u = op("DIVIDE", op("ADD", xyz.outputs["Y"], xyz.outputs["X"]), width)
+    else:
+        u = op("MULTIPLY", op("ARCTAN2", xyz.outputs["Y"], xyz.outputs["X"]), 0.17 / width)
+    zr = op("DIVIDE", xyz.outputs["Z"], row)
     f = op("FRACT", zr)
     idx = op("FLOOR", zr)
     col_u = op("ADD", u, op("MULTIPLY", idx, 0.5))           # each row's plates half a plate along
@@ -157,7 +164,11 @@ def _materials():
         horn=lib.mat("cream_e", (0.74, 0.67, 0.52), 0.6),
         rope=lib.mat("rope5", (0.55, 0.46, 0.3), 0.9, noise=0.2, noise_scale=60),
         steel=P["steel"],
-        horse_armour=lamellar("lamellar_black_r8", (0.07, 0.062, 0.058), (0.26, 0.1, 0.05)),
+        # art-v7.4 (the review 2026-11-04: the 具裝 not realistic enough, read as a striped blanket): plates counted along
+        # the horse, a little larger (4 x 8.5 cm, real barding's lamellae read at phone size), the lacing a dark leather
+        # brown, not orange
+        horse_armour=lamellar("lamellar_horse_r8", (0.07, 0.062, 0.058), (0.11, 0.05, 0.03), along="body", row=2 / 24,
+                              width=0.04),    # (2 / 24 m: unit_r9._barding_rows steps the rows in the mesh, 24 to 2 m)
         lacquer=lib.mat("lacquer_e", (0.16, 0.05, 0.035), 0.32),             # red-black lacquer: lance, crown
         headcloth=lib.mat("sack_e", (0.3, 0.26, 0.2), 0.85),                # the farmer's head cloth
         robe=lib.mat("russet_e", (0.32, 0.16, 0.09), 0.8),                  # 木蘭: the Daoist's robe
