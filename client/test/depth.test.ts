@@ -3,8 +3,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { OBLIQUE } from "../src/camera/projection.ts";
-import { buildingFront, drawOrder, nodeFront, type Standing, tapped } from "../src/render/depth.ts";
+import { DIAMOND, OBLIQUE } from "../src/camera/projection.ts";
+import { buildingFront, depthOf, drawOrder, nodeFront, pieceDepth, POST_LIFT, type Standing, tapped } from "../src/render/depth.ts";
 import { TILE_PX } from "../src/tuning.ts";
 
 const plane = (cx: number, cy: number) => OBLIQUE.toPlane(cx * TILE_PX, cy * TILE_PX);
@@ -47,4 +47,27 @@ test("點選：站在建築正後方的兵，被擋住的部分點到的是建�
   const front = soldier(4, 11.5, 13.5);
   const f = plane(11.5, 13.5);
   assert.equal(tapped([front, b], f.x, f.y - 15)?.id, 4);
+});
+
+/** A unit's depth where it stands (cells), as world.ts gives it: its point's y on the plane. */
+const unitAt = (p: typeof DIAMOND, x: number, y: number) => p.toPlane(x * TILE_PX, y * TILE_PX).y;
+
+test("菱形（art-v7）：城牆片、懸崖照錨點的 x + y 排，和兵一樣；越東邊的牆不會畫得比牆後的兵早（ui 2026-11-06）", () => {
+  // A wall piece far east (anchor 30.5, 10.5, front edge 11) and a soldier just behind it (north) and just in front.
+  const wall = pieceDepth(DIAMOND, 30.5, 10.5, 11, 30, 1);
+  assert.ok(unitAt(DIAMOND, 30.5, 9.8) < wall, "牆後的兵先畫，被牆擋住");
+  assert.ok(unitAt(DIAMOND, 30.5, 11.2) > wall, "牆前的兵後畫");
+  assert.ok(unitAt(DIAMOND, 29.8, 10.5) < wall, "牆西邊（後面）的兵也先畫");
+  // Square-on's front edge alone put that soldier behind the wall in front of it as a diamond.
+  assert.ok(unitAt(DIAMOND, 30.5, 9.8) > depthOf(DIAMOND.toPlane(0, 11 * TILE_PX).y, 30, 1), "以前的算法：牆後的兵畫在牆前");
+  // A single SW arm (anchor x, y + 1, front y + 1.99) under the posts at its two ends (each POST_LIFT nearer).
+  const arm = pieceDepth(DIAMOND, 10, 6, 6.99, 10, 2);
+  const eastPost = pieceDepth(DIAMOND, 10.5, 5.5, 6, 10, 3, POST_LIFT);
+  const westPost = pieceDepth(DIAMOND, 9.5, 6.5, 7, 9, 4, POST_LIFT);
+  assert.ok(eastPost > arm && westPost > arm, "岩柱蓋住臂的兩端");
+});
+
+test("方形斜看照舊：前緣的 y，再來 x、id（depthOf）", () => {
+  assert.equal(pieceDepth(OBLIQUE, 30.5, 10.5, 11, 30, 1), depthOf(OBLIQUE.toPlane(0, 11 * TILE_PX).y, 30, 1));
+  assert.equal(pieceDepth(OBLIQUE, 10.5, 5.5, 6, 10, 3, POST_LIFT), depthOf(OBLIQUE.toPlane(0, 6 * TILE_PX).y, 10, 3));
 });

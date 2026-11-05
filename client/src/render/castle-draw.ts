@@ -23,7 +23,7 @@ import { BUILDING_STRIDE, BuildingField as B, BuildingType, Fog, NEUTRAL, NO_OWN
 import { TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX, type GameView, type TownSpot } from "../view/view.ts";
 import { NEUTRAL_TINT, ownerTint } from "./atlas.ts";
-import { depthOf } from "./depth.ts";
+import { pieceDepth } from "./depth.ts";
 import { InsetFrames } from "./inset.ts";
 import type { ArtFrame, UnitArt } from "./unit-art.ts";
 import { fillOpening, type WallStand, wallStandAt } from "./wall-stand.ts";
@@ -222,9 +222,9 @@ export class CastleDraw {
       color.visible = team.visible = shadow.visible = frontPart.visible = false;
       this.upright.addChild(color, team, frontPart);
       this.shadowLayer.addChild(shadow);
-      const front = this.projection.toPlane(0, (oy + p.front) * TILE_PX).y;
       const minX = Math.min(...p.cells.map(([x]) => x));
-      const z = depthOf(front, ox + minX, 1_000_000 + town.id * 100 + i);
+      // Square on by its front edge; as a diamond by its anchor, as the units (depth.ts).
+      const z = pieceDepth(this.projection, ox + p.anchor[0], oy + p.anchor[1], oy + p.front, ox + minX, 1_000_000 + town.id * 100 + i);
       color.zIndex = z;
       team.zIndex = z + 0.000001;
       frontPart.zIndex = z + FRONT_Z;
@@ -263,8 +263,7 @@ export class CastleDraw {
       color.visible = team.visible = shadow.visible = false;
       this.upright.addChild(color, team);
       this.shadowLayer.addChild(shadow);
-      const front = this.projection.toPlane(0, (oy + p.front) * TILE_PX).y;
-      const z = depthOf(front, ox + Math.min(...p.cells.map(([x]) => x)), 2_000_000 + town.id * 100 + i);
+      const z = pieceDepth(this.projection, ox + p.at[0], oy + p.at[1], oy + p.front, ox + Math.min(...p.cells.map(([x]) => x)), 2_000_000 + town.id * 100 + i);
       color.zIndex = z;
       team.zIndex = z + 0.000001;
       const cells = p.cells.map(([x, y]) => [ox + x, oy + y]).filter(([x, y]) => x >= 0 && y >= 0 && x < n && y < n).map(([x, y]) => y * n + x);
@@ -477,6 +476,19 @@ export class CastleDraw {
     const info = p === undefined ? undefined : c?.pieces[p.piece];
     if (d === undefined || g === undefined || info?.frames.closed === undefined) return null;
     return { town: g.town, d, i: g.piece, info };
+  }
+
+  /**
+   * A unit's depth in a gate's opening as a diamond (art-v7): behind the gate's picture, seen through
+   * it, under its front parts, as square on (by its anchor the gate is drawn by its middle, and
+   * those in the opening's eastern cells would be drawn over it). Null: not in an opening, or square on.
+   */
+  gateDepth(px: number, py: number, z: number): number | null {
+    if (this.projection.kind !== "diamond") return null;
+    const w = this.projection.toWorld(px, py);
+    const g = this.gatePiece(Math.floor(w.x / TILE_PX), Math.floor(w.y / TILE_PX));
+    const piece = g?.d.pieces[g.i];
+    return piece === undefined ? null : Math.min(z, piece.z - 1e-6);
   }
 
   /** Whether the gate on this cell is drawn as the castle's picture (closed, open, damaged, broken: D-096): no block for its building, no rubble. */
