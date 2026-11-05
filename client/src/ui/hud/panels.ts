@@ -267,6 +267,12 @@ type Updater = () => void;
 // --- selection info ---------------------------------------------------------------------
 
 export class SelectionInfo {
+  /**
+   * The panel: its ✕ on the frame, what it shows in `el` inside it, which scrolls when it is taller
+   * than the screen allows, its title line (and 收起) kept at the top (the user 2026-11-06: a group
+   * stationed in several places pushed the panel and its ✕ off the screen).
+   */
+  readonly frame: HTMLElement;
   readonly el: HTMLElement;
   private readonly host: PanelHost;
   private key = "";
@@ -276,9 +282,10 @@ export class SelectionInfo {
 
   constructor(parent: HTMLElement, host: PanelHost) {
     this.host = host;
-    this.el = el("section", parent, "sel-info");
-    this.el.setAttribute("aria-label", "選取資訊");
-    this.el.hidden = true;
+    this.frame = el("section", parent, "sel-info");
+    this.frame.setAttribute("aria-label", "選取資訊");
+    this.frame.hidden = true;
+    this.el = el("div", this.frame, "sel-body");
   }
 
   update(): void {
@@ -289,8 +296,10 @@ export class SelectionInfo {
     if (key !== this.key) {
       this.key = key;
       this.updaters = [];
+      this.frame.replaceChildren(this.el);
       this.el.replaceChildren();
-      this.el.hidden = key === "none";
+      this.el.scrollTop = 0;
+      this.frame.hidden = key === "none";
       if (key !== "none") this.build(view);
     }
     for (const u of this.updaters) u();
@@ -322,7 +331,9 @@ export class SelectionInfo {
   }
 
   private build(view: GameView): void {
-    const close = button(this.el, "✕", "", () => this.host.clearSelection(), "sel-close secondary");
+    const close = button(this.frame, "✕", "", () => this.host.clearSelection(), "sel-close secondary");
+    // First, as before the frame (the order buttons are read and tabbed in).
+    this.frame.insertBefore(close, this.el);
     close.setAttribute("aria-label", "取消選取");
     this.foldButton = null;
     this.content(view);
@@ -340,7 +351,7 @@ export class SelectionInfo {
   /** Show the panel folded or not, as the game keeps it; the button says what a tap does. */
   private fold(b: HTMLButtonElement): void {
     const collapsed = this.host.collapsed();
-    this.el.classList.toggle("collapsed", collapsed);
+    this.frame.classList.toggle("collapsed", collapsed);
     const label = b.querySelector(".label") as HTMLElement;
     const text = collapsed ? "展開" : "收起";
     if (label.textContent === text) return;
