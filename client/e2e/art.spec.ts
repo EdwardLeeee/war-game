@@ -23,8 +23,14 @@ test("美術（測試圖）：兵從圖集畫，不再是幾何圖形；載入 1
   const a = await art(page);
   expect(a?.label).toBe("測試圖");
   expect(a?.pages).toBe(10 * 3 + 2 + 2);
-  const units = await page.evaluate(() => (window.__proto?.game?.units() ?? []).filter((u) => u.action !== 7).length);
-  expect(a?.units).toBe(units);
+  // Drawn (the last frame) and in the snapshot (the latest), read together until a frame has caught
+  // up with it: a unit trained in between is drawn on the next one (#358's webkit run 41684354391: 16 and 17).
+  await expect
+    .poll(() => page.evaluate(() => {
+      const g = window.__proto?.game;
+      return (g?.art()?.units ?? -1) - (g?.units() ?? []).filter((u) => u.action !== 7).length;
+    }))
+    .toBe(0);
   check();
 });
 

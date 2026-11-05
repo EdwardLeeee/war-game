@@ -45,11 +45,18 @@ export const UNIT_COLS = [
   // in the hash only while FIRE_BACK is on.
   "fireBack",
   // The wall cell it stands on or is going up onto (D-096, WALLS), -1 none; in the hash only while
-  // WALLS is on.
+  // WALLS is on. Walking along the walls (WALL_SHIFT) the walls' cell it is on, a gate's too.
   "wall",
+  // Shifting along the walls (WALL_SHIFT, D-119): the wall cell it walks to (-1 none), the one it
+  // stood on before it first shifted (-1 none), the ticks it has had no target with an enemy near
+  // the walls, and the ticks with none near. In the hash only while WALL_SHIFT is on.
+  "wallTo", "wallHome", "wallWait", "wallCalm",
   // Ticks this unit stood to let lower ranks pass on its move (MARCH_ORDER, D-095); in the hash
   // only while MARCH_ORDER is on.
   "waited",
+  // The group (+ 1; 0 none) a `formation` with `ranks` re-formed this unit in (MARCH_ORDER, D-119): while it is
+  // still in that group, it lets the lower ranks pass; in the hash only while MARCH_ORDER is on.
+  "ranked",
   // Giving up a place it does not get to (SLOT_GIVE_UP, D-095): the nearest it came to its place
   // on this move or retreat (fixed point, 0 none yet) and the ticks since it last came nearer; in
   // the hash only while SLOT_GIVE_UP is on.
@@ -188,6 +195,16 @@ export class World {
   wallAt: Int32Array;
   /** Each town's wall cells soldiers can stand on, in the castle's wall order (D-096). */
   wallCells: Int32Array[] = [];
+  /**
+   * The walls' way (WALL_SHIFT, D-119): per town its cells, the wall cells and then its gates' cells
+   * (wallTown and wallFoot hold for these too; walkGate marks them: crossed while the gate stands,
+   * never stood on), and per cell its index there (walkIndex, -1 none) and, four a cell (E, S, W, N),
+   * the indexes of the way's cells next to it (walkNext, -1 none).
+   */
+  walkCells: Int32Array[] = [];
+  walkNext: Int32Array[] = [];
+  walkIndex: Int32Array;
+  walkGate: Uint8Array;
   /**
    * On a cell under a standing gate that is closed to someone (BLOCK_GATE, D-096): the player it
    * lets through (the town's holder), or -1 (closed to everyone: a neutral town's).
@@ -473,6 +490,47 @@ export class World {
       }
       this.wallCells.push(Int32Array.from(cells));
     });
+    // The walls' way (WALL_SHIFT): the wall cells and the gates' cells, each with its cell inside.
+    this.walkIndex = new Int32Array(n * n).fill(-1);
+    this.walkGate = new Uint8Array(n * n);
+    map.towns.forEach((s, i) => {
+      const way = Array.from(this.wallCells[i]);
+      for (const g of this.castles[i].gates) {
+        for (const [dx, dy] of g) {
+          const x = s.cellX + dx;
+          const y = s.cellY + dy;
+          if (x < 0 || y < 0 || x >= n || y >= n || this.wallTown[y * n + x] >= 0) continue;
+          let foot = -1;
+          for (const [ox, oy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+            const fx = x + ox;
+            const fy = y + oy;
+            if (foot >= 0 || fx < 0 || fy < 0 || fx >= n || fy >= n) continue;
+            if (this.insideAt[fy * n + fx] === i && (this.grid[fy * n + fx] & BLOCK_WALL) === 0) foot = fy * n + fx;
+          }
+          if (foot < 0) continue;
+          this.wallTown[y * n + x] = i;
+          this.wallFoot[y * n + x] = foot;
+          this.walkGate[y * n + x] = 1;
+          way.push(y * n + x);
+        }
+      }
+      way.forEach((c, k) => {
+        this.walkIndex[c] = k;
+      });
+      const next = new Int32Array(way.length * 4).fill(-1);
+      way.forEach((c, k) => {
+        const x = c % n;
+        const y = Math.trunc(c / n);
+        [[1, 0], [0, 1], [-1, 0], [0, -1]].forEach(([ox, oy], d) => {
+          const nx = x + ox;
+          const ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= n || ny >= n || this.wallTown[ny * n + nx] !== i) return;
+          next[k * 4 + d] = this.walkIndex[ny * n + nx];
+        });
+      });
+      this.walkCells.push(Int32Array.from(way));
+      this.walkNext.push(next);
+    });
     this.gateRebuild = new Int32Array(t * GATES);
     this.keepRebuild = new Int32Array(t);
   }
@@ -516,6 +574,8 @@ export class World {
     c.avenge[s] = -1;
     c.fireBack[s] = -1;
     c.wall[s] = -1;
+    c.wallTo[s] = -1;
+    c.wallHome[s] = -1;
     c.flank[s] = -1;
     c.flankSide[s] = 0;
     c.flankX[s] = -1;
@@ -684,7 +744,13 @@ export class World {
     if (c < 0) return;
     const n = this.size;
     if (this.wallAt[c] === u.id[i]) this.wallAt[c] = -1;
-    // Up on it (standing, shooting or calibrating the cannon): down to the cell inside.
+    const to = u.wallTo[i];
+    if (to >= 0 && this.wallAt[to] === u.id[i]) this.wallAt[to] = -1;
+    u.wallTo[i] = -1;
+    u.wallHome[i] = -1;
+    u.wallWait[i] = 0;
+    u.wallCalm[i] = 0;
+    // Up on it (standing, shooting or calibrating the cannon, or walking along it): down to the cell inside.
     if ((u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT) === c) {
       const f = this.wallFoot[c];
       u.x[i] = ((f % n) << CELL_SHIFT) + (CELL >> 1);

@@ -39,7 +39,9 @@ import {
   FORMATION_LOOSE_SPACING,
   FORMATION_SPACING,
   MAGE_CAP,
+  MARCH_ORDER,
   OUTPOST,
+  OUTPOST_HIDE,
   QUEUE_MAX,
   rank,
   RETREAT_OWN_SPEED,
@@ -283,6 +285,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       }
       pay(w, p, info.cost, 1);
       const id = w.addBuilding(p, type, cmd.x, cmd.y, 1, 0);
+      // D-119 (OUTPOST_HIDE): a new outpost holds (its spearmen stay in).
+      if (type === BuildingType.Outpost && OUTPOST_HIDE.on) w.buildings.col.flags[w.building(id)] |= BuildingFlag.Hold;
       if (!info.walkable) pushOut(w, cmd.x, cmd.y, info.size);
       placed(w, farmers, false);
       const u = w.units.col;
@@ -476,12 +480,13 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       const slots = ownUnits(w, p, cmd.u).filter((s) => w.units.col.order[s] !== Order.Post);
       if (typeof cmd.loose !== "boolean") return Reject.InvalidTarget;
       if (cmd.face !== undefined && (!Number.isInteger(cmd.face) || cmd.face < 0 || cmd.face > 15)) return Reject.InvalidTarget;
+      if (cmd.ranks !== undefined && typeof cmd.ranks !== "boolean") return Reject.InvalidTarget;
       const u = w.units.col;
       for (const s of slots) {
         if (cmd.loose) u.flags[s] |= UnitFlag.Loose;
         else u.flags[s] &= ~UnitFlag.Loose;
       }
-      reform(ctx, slots, cmd.face);
+      reform(ctx, slots, cmd.face, cmd.ranks === true);
       return 0;
     }
     case "autocast": {
@@ -660,6 +665,12 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       let out = 0;
       for (let s = 0; s < w.units.count; s++) {
         if (u.owner[s] !== p || u.order[s] !== Order.Post || u.orderTarget[s] !== cmd.building) continue;
+        // In it (OUTPOST_HIDE, D-119): out where it went in.
+        if (u.action[s] === Action.Garrisoned) {
+          ctx.econ.release(w, s);
+          out++;
+          continue;
+        }
         u.order[s] = Order.None;
         u.orderTarget[s] = -1;
         u.target[s] = -1;
@@ -976,7 +987,7 @@ const FACE_LINK = 8 * CELL;
  * only keep the new flag. With `face` (dir16, D-095) both kinds face that way instead, and
  * standing units within FACE_LINK of one another are one formation.
  */
-function reform(ctx: CommandContext, slots: number[], face?: number): void {
+function reform(ctx: CommandContext, slots: number[], face?: number, ranks = false): void {
   const { w } = ctx;
   const u = w.units.col;
   const n = w.size;
@@ -989,7 +1000,10 @@ function reform(ctx: CommandContext, slots: number[], face?: number): void {
     const members = slots.filter((m) => soldier(m) && u.group[m] === g && (moving(m) || u.order[m] === Order.None));
     for (const m of members) done.add(m);
     const goal = u.orderTarget[s];
-    if (goal >= 0) formation(ctx, members, goal % n, Math.trunc(goal / n), u.order[s], face);
+    if (goal < 0) continue;
+    formation(ctx, members, goal % n, Math.trunc(goal / n), u.order[s], face);
+    // MARCH_ORDER (D-119): this group gets its ranks right on the way.
+    if (ranks && MARCH_ORDER.on) for (const m of members) u.ranked[m] = u.group[m] + 1;
   }
   const idle = slots.filter((s) => soldier(s) && !done.has(s) && u.order[s] === Order.None);
   // Clusters: union-find over pairs within REFORM_LINK (FACE_LINK with `face`), roots kept at the lowest slot.

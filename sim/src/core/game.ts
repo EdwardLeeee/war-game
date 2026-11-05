@@ -31,7 +31,7 @@ import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { twinRiversMap } from "./twin-rivers.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, WALL_SHIFT, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -57,6 +57,8 @@ export interface Outgoing {
 
 /** CAV_FLANK's unit columns (D-097), left out of the hash while it is off. */
 const FLANK_COLS: ReadonlySet<string> = new Set(["flank", "flankSide", "flankX", "flankY", "flankTick"]);
+/** The unit columns of WALL_SHIFT (D-119), in the hash only while it is on. */
+const WALL_SHIFT_COLS: ReadonlySet<string> = new Set(["wallTo", "wallHome", "wallWait", "wallCalm"]);
 
 /**
  * "attacked" events: at most one per 8 x 8-cell block per 60 ticks per player and attacker's
@@ -186,18 +188,24 @@ export class Game {
     const n = w.size;
     const b = w.buildings.col;
     const u = w.units.col;
-    const shots = this.units.shots;
-    for (let k = 0; k < shots.length; k += 3) {
-      const bs = w.building(shots[k]);
-      const ts = w.unit(shots[k + 1]);
-      for (let p = 0; p < PLAYER_COUNT; p++) {
-        const vis = this.fog.visible[p];
-        let sees = ts >= 0 && vis[(u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT)] === 1;
-        if (!sees && bs >= 0) {
-          for (let y = b.cellY[bs]; y < b.cellY[bs] + w.tall(bs) && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + w.wide(bs) && !sees; x++) sees = vis[y * n + x] === 1;
+    // Strikes from outposts (OUTPOST_HIDE, D-119) go as shots do: to whoever sees the target or the outpost.
+    for (const [list, kind] of [
+      [this.units.shots, "shot"],
+      [this.units.pokes, "poke"],
+    ] as const) {
+      const shots = list;
+      for (let k = 0; k < shots.length; k += 3) {
+        const bs = w.building(shots[k]);
+        const ts = w.unit(shots[k + 1]);
+        for (let p = 0; p < PLAYER_COUNT; p++) {
+          const vis = this.fog.visible[p];
+          let sees = ts >= 0 && vis[(u.y[ts] >> CELL_SHIFT) * n + (u.x[ts] >> CELL_SHIFT)] === 1;
+          if (!sees && bs >= 0) {
+            for (let y = b.cellY[bs]; y < b.cellY[bs] + w.tall(bs) && !sees; y++) for (let x = b.cellX[bs]; x < b.cellX[bs] + w.wide(bs) && !sees; x++) sees = vis[y * n + x] === 1;
+          }
+          // n (D-096): more than one arrow at once (a main city with farmers inside, a governed town's gate).
+          if (sees) this.events.push({ to: p, ev: { k: kind, building: shots[k], target: shots[k + 1], ...(shots[k + 2] > 1 ? { n: shots[k + 2] } : {}) } });
         }
-        // n (D-096): more than one arrow at once (a main city with farmers inside, a governed town's gate).
-        if (sees) this.events.push({ to: p, ev: { k: "shot", building: shots[k], target: shots[k + 1], ...(shots[k + 2] > 1 ? { n: shots[k + 2] } : {}) } });
       }
     }
     // Siege stones thrown (D-099): to every player who sees the engine or where the stone lands; one
@@ -275,7 +283,7 @@ export class Game {
     }
     h = fnvWord(h, w.units.count);
     for (const name of w.units.names) {
-      if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on && !FIRE_BACK.on) || (name === "avenge" && !AVENGE.on) || (name === "fireBack" && !FIRE_BACK.on) || (name === "wall" && !WALLS.on) || (FLANK_COLS.has(name) && !CAV_FLANK.on) || (name === "waited" && !MARCH_ORDER.on) || ((name === "slotBest" || name === "slotIdle") && !SLOT_GIVE_UP.on)) continue;
+      if (UNIT_HASH_SKIP.has(name) || (name === "hitById" && !COUNTER_ATTACK.on && !FIRE_BACK.on) || (name === "avenge" && !AVENGE.on) || (name === "fireBack" && !FIRE_BACK.on) || (name === "wall" && !WALLS.on) || (WALL_SHIFT_COLS.has(name) && !WALL_SHIFT.on) || (FLANK_COLS.has(name) && !CAV_FLANK.on) || ((name === "waited" || name === "ranked") && !MARCH_ORDER.on) || ((name === "slotBest" || name === "slotIdle") && !SLOT_GIVE_UP.on)) continue;
       h = fnvInt32(h, w.units.col[name], w.units.count);
     }
     h = fnvWord(h, w.buildings.count);

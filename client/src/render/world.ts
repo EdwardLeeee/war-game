@@ -355,6 +355,8 @@ export class WorldRenderer {
   footCount = 0;
   /** Our units drawn up on a castle's wall this frame (D-096, test page; the militia on theirs not counted). */
   wallLifted = 0;
+  /** Pokes from the outposts drawn so far (D-121), for the test page. */
+  pokes = 0;
   private readonly warnPool: Container[] = [];
 
   /** `art`: the units' atlases (D-085), `cultureOf` which culture each player wears; `projection` how the ground lies. */
@@ -495,6 +497,22 @@ export class WorldRenderer {
    * inside, D-096) from a building (world px, `lift` points up: where its picture's arrows leave)
    * at a unit's chest.
    */
+  /** An outpost's spearmen poked at a target at world px (x, y) (event `poke`, D-121): `n` of those on its walk thrust. */
+  poke(building: number, x: number, y: number, n = 1): void {
+    this.pokes++;
+    this.artUnits?.poke(building, x, y, n);
+  }
+
+  /** The stand points our outpost's picture has (D-121), for the test page. */
+  get outpostStands(): number {
+    return this.artStructures?.outpostStands ?? 0;
+  }
+
+  /** Spearmen drawn on the outposts' walks this frame (D-121), for the test page. */
+  get crewDrawn(): number {
+    return this.artUnits?.crewDrawn ?? 0;
+  }
+
   arrow(fromX: number, fromY: number, lift: number, toX: number, toY: number, now: number, n = 1): void {
     this.launch("arrow", fromX, fromY, lift, toX, toY, now, n);
     this.shotCount += Math.max(1, n);
@@ -1465,7 +1483,7 @@ export class WorldRenderer {
       const owner = u[o + U.owner];
       // On a castle's wall (D-096): on its walk (stand_in_m towards the town, walk_m up), over the
       // wall and under its front parts, no shadow (the walk is not the ground); on a bridge's deck (art-v5): up there.
-      const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(Math.floor(px / TILE_PX), Math.floor(py / TILE_PX)) : null;
+      const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(px, py) : null;
       if (onWall !== null && owner === view.me) this.wallLifted++;
       const at = this.projection.toPlane(px + (onWall?.dx ?? 0), py + (onWall?.dy ?? 0));
       const lift = onWall?.lift ?? this.terrain.liftAt(px, py);
@@ -1539,6 +1557,7 @@ export class WorldRenderer {
       }
     }
     this.artUnits?.drawCorpses(seconds);
+    this.artUnits?.drawCrews(this.artStructures?.crews ?? [], seconds);
     this.ghostLayers.own.visible = ghosts.own > 0;
     this.ghostLayers.enemy.visible = ghosts.enemy > 0;
     this.ghostLayers.neutral.visible = ghosts.neutral > 0;

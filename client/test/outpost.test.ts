@@ -22,6 +22,9 @@ test("攻擊／堅守的說明照這一局的 rules.outpost 寫數字", () => {
   const rules = { outpost: { slots: 6, reach: 8, chase: 12 } } as Pick<Rules, "outpost">;
   assert.equal(outpostModeText(rules, false), "攻擊：敵兵進到哨所 8 格內就去打，追到 12 格就回來");
   assert.equal(outpostModeText(rules, true), "堅守：站在哨所旁不動，只打走到身邊的；哨所或駐守的兵被打，就一起去打，追到 12 格就回來");
+  // 3 × 3 (D-119, features.outpostHide): they hide in it and poke out.
+  assert.equal(outpostModeText(rules, true, true), "堅守：躲在哨所裡，戳貼過來的敵人，被打也不出來");
+  assert.equal(outpostModeText(rules, false, true), "攻擊：敵兵進到 8 格內或哨所被打，就出去打；打完或追到 12 格就回來躲");
 });
 
 test("開關：沒開 outpost 時建造選單沒有哨所、駐守名額是 0；開了照 rules", () => {

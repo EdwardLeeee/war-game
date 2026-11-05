@@ -42,6 +42,7 @@ import {
   GATE,
   GATE_ARROW,
   WALLS,
+  WALL_SHIFT,
   HOME_GUARD,
   COUNTER_ATTACK,
   MAGE_BOUNTY,
@@ -59,6 +60,7 @@ import {
   MULT_DEN,
   MULT_NUM,
   OUTPOST,
+  OUTPOST_HIDE,
   PUSH,
   rank,
   RETARGET_EVERY,
@@ -72,6 +74,7 @@ import {
 } from "./rules.ts";
 import { type Frame, IDENTITY, fromCanon, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
+import { wayFrame, wayNext, wayPick, waySteps } from "./wall-walk.ts";
 import { HitCause, STONE, UNIT_KINDS, type World } from "./world.ts";
 
 const TICKS = TICKS_PER_SECOND;
@@ -90,6 +93,8 @@ export function isWorkOrder(order: number): boolean {
 const WARN_STRIDE = 7;
 /** Places tried to hide in a town, each way (`guard`). */
 const HIDE_GRID = 5;
+/** WALL_SHIFT: enemies within this many cells of a town's walls' box are looked at (wallFoes); beyond the farthest reach from a wall. */
+const WALL_NEAR = 8;
 
 /** What the guards of a town see (`guard`). Positions and reach are fixed point; `inside` holds unit ids. */
 interface GuardedTown {
@@ -139,6 +144,8 @@ export class UnitSystem {
    * them; the arrows as `n` since D-096).
    */
   readonly shots: number[] = [];
+  /** This tick's strikes from outposts (OUTPOST_HIDE, D-119): outpost id, target id, strikes, as `shots`. */
+  readonly pokes: number[] = [];
   /** This tick's siege stones thrown (D-099), as quads (engine id, landing x, y, landing tick), for the `siege_shot` event. */
   readonly siegeShots: number[] = [];
   /** Each unit's target at the start of the tick (joining a fight reads these, not this tick's). */
@@ -148,11 +155,19 @@ export class UnitSystem {
   /** Per enemy unit id, how many units had it as their target at the start of the tick. */
   private readonly attackers = new Map<number, number>();
   /**
-   * Per group, at the start of the tick (MARCH_ORDER): of its spearmen and cavalry, then of its
-   * ranged, that walk on the move, the sums of x and y and the number; then how many of the group
-   * fight.
+   * Per group with soldiers re-formed with `ranks` (MARCH_ORDER), at the start of the tick: the slots of
+   * those of it that walk (on its move or retreat, below siege engines' rank), and how many of it fight
+   * or were just hit.
    */
-  private readonly marching = new Map<number, number[]>();
+  private readonly marching = new Map<number, { walkers: number[]; fights: number }>();
+  private readonly rankedGroups = new Set<number>();
+  /** letPass: per rank below the unit's, the sums of x and y and the number of those walking near it. */
+  private readonly rankSums = new Array<number>(9).fill(0);
+  /** The enemies seen near each town's walls this tick (WALL_SHIFT, wallFoes), by town and side. */
+  private readonly foes = new Map<number, number[]>();
+  private foesTick = -1;
+  /** Per town, the box round its walls' way (wallBox). */
+  private readonly wallBoxes: Int32Array[] = [];
   private unitDamage = new Int32Array(256);
   /** The same hits counted against a mage's shield (its own multipliers). */
   private shieldDamage = new Int32Array(256);
@@ -356,52 +371,69 @@ export class UnitSystem {
   }
 
   /**
-   * Where each group's lower ranks walk at the start of the tick (MARCH_ORDER): last tick's walkers
-   * on the move with no target; and whether any of the group (on the move or there) fights.
+   * Who of each group re-formed with `ranks` walks at the start of the tick (MARCH_ORDER): last tick's
+   * walkers on its move or retreat with no target, below siege engines' rank; and whether any of the
+   * group fights (on a move) or was just hit (on a retreat).
    */
   private collectMarching(w: World): void {
     this.marching.clear();
+    this.rankedGroups.clear();
     if (!MARCH_ORDER.on) return;
     const u = w.units.col;
-    for (let j = 0; j < w.units.count; j++) {
-      if (u.group[j] < 0 || u.type[j] === UnitType.Farmer) continue;
-      const fights = this.startTarget[j] >= 0;
-      const r = rank(u.type[j]);
-      const walks = u.order[j] === Order.Move && !fights && r <= 1 && (u.vx[j] !== 0 || u.vy[j] !== 0);
+    const count = w.units.count;
+    for (let j = 0; j < count; j++) if (u.ranked[j] !== 0 && u.ranked[j] === u.group[j] + 1) this.rankedGroups.add(u.group[j]);
+    if (this.rankedGroups.size === 0) return;
+    for (let j = 0; j < count; j++) {
+      if (u.group[j] < 0 || !this.rankedGroups.has(u.group[j]) || u.type[j] === UnitType.Farmer) continue;
+      const order = u.order[j];
+      const fights = this.startTarget[j] >= 0 || (order === Order.Retreat && w.tick - u.lastHurt[j] <= RETARGET_EVERY);
+      const walks = (order === Order.Move || order === Order.Retreat) && !fights && rank(u.type[j]) <= 2 && (u.vx[j] !== 0 || u.vy[j] !== 0);
       if (!fights && !walks) continue;
       let m = this.marching.get(u.group[j]);
       if (m === undefined) {
-        m = [0, 0, 0, 0, 0, 0, 0];
+        m = { walkers: [], fights: 0 };
         this.marching.set(u.group[j], m);
       }
-      if (fights) {
-        m[6]++;
-        continue;
-      }
-      m[3 * r] += u.x[j];
-      m[3 * r + 1] += u.y[j];
-      m[3 * r + 2]++;
+      if (fights) m.fights++;
+      else m.walkers.push(j);
     }
   }
 
   /**
-   * MARCH_ORDER: unit i (on a move, (dx, dy) from its place, not fighting) stands this tick to let
-   * the lower ranks of its group pass; counts the tick.
+   * MARCH_ORDER: unit i (on its group's move or retreat, re-formed with `ranks`, (dx, dy) from its
+   * place, not fighting) stands this tick to let the lower ranks of its group within `near` pass;
+   * counts the tick.
    */
   private letPass(w: World, i: number, dx: number, dy: number): boolean {
     const u = w.units.col;
     const r = rank(u.type[i]);
-    if (r === 0 || u.waited[i] >= MARCH_ORDER.maxWait || dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) return false;
-    // A group in a fight fights as it stands.
+    if (r === 0 || u.ranked[i] !== u.group[i] + 1 || u.waited[i] >= MARCH_ORDER.maxWait || dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) return false;
+    // A group in a fight fights as it stands (a retreat hit runs on).
     const m = this.marching.get(u.group[i]);
-    if (m === undefined || m[6] > 0) return false;
-    const c = r === 1 ? m[2] : m[2] + m[5];
-    if (c === 0) return false;
-    const mx = idiv(r === 1 ? m[0] : m[0] + m[3], c);
-    const my = idiv(r === 1 ? m[1] : m[1] + m[4], c);
-    // How far ahead of their middle it is, along its way: behind by `margin` or more, it walks.
-    const ahead = (u.x[i] - mx) * dx + (u.y[i] - my) * dy;
-    if (ahead <= -MARCH_ORDER.margin * isqrt(dx * dx + dy * dy)) return false;
+    if (m === undefined || m.fights > 0) return false;
+    const near2 = MARCH_ORDER.near * MARCH_ORDER.near;
+    const sums = this.rankSums;
+    sums.fill(0);
+    for (const j of m.walkers) {
+      const k = rank(u.type[j]);
+      if (k >= r) continue;
+      const ox = u.x[j] - u.x[i];
+      const oy = u.y[j] - u.y[i];
+      if (ox * ox + oy * oy > near2) continue;
+      sums[3 * k] += u.x[j];
+      sums[3 * k + 1] += u.y[j];
+      sums[3 * k + 2]++;
+    }
+    // How far ahead of each lower rank's middle it is, along its way: behind every one by `margin` or more, it walks.
+    const behind = -MARCH_ORDER.margin * isqrt(dx * dx + dy * dy);
+    let waits = false;
+    for (let k = 0; k < r && !waits; k++) {
+      const c = sums[3 * k + 2];
+      if (c === 0) continue;
+      const ahead = (u.x[i] - idiv(sums[3 * k], c)) * dx + (u.y[i] - idiv(sums[3 * k + 1], c)) * dy;
+      if (ahead > behind) waits = true;
+    }
+    if (!waits) return false;
     u.waited[i]++;
     return true;
   }
@@ -665,6 +697,67 @@ export class UnitSystem {
     }
   }
 
+  /**
+   * OUTPOST_HIDE (D-119): a posted spearman goes into its outpost (bs) once within WORK_REACH of it, as into
+   * a shelter (it walks through it: its owner's), if there is room. True.
+   */
+  private goIn(w: World, fields: FieldCache, i: number, bs: number): boolean {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    u.target[i] = -1;
+    const size = w.buildingSize(b.type[bs]);
+    if (rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], size) <= WORK_REACH * WORK_REACH) {
+      if (b.soldiers[bs] < OUTPOST.slots) {
+        b.soldiers[bs]++;
+        u.action[i] = Action.Garrisoned;
+      } else {
+        u.action[i] = Action.Idle;
+      }
+      return true;
+    }
+    const half = (size << CELL_SHIFT) >> 1;
+    steerTo(w, fields, i, (b.cellX[bs] << CELL_SHIFT) + half, (b.cellY[bs] << CELL_SHIFT) + half, buildingKey(b.id[bs]), UNITS[u.type[i]].speed, () =>
+      cellsAround(w, b.cellX[bs], b.cellY[bs], size),
+    );
+    return true;
+  }
+
+  /**
+   * OUTPOST_HIDE (D-119): a spearman in its outpost. Attacking (the outpost not holding), at a look, it comes
+   * out for whoever hit the outpost or a guard, else the nearest enemy within OUTPOST.reach (guard() then
+   * takes over); otherwise it strikes the enemy next to the outpost (fromInside, a spearman's reach).
+   */
+  private postInside(w: World, fog: Fog, i: number): void {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const bs = w.building(u.orderTarget[i]);
+    if (bs < 0) return;
+    if ((b.flags[bs] & BuildingFlag.Hold) === 0 && (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0) {
+      const tid = b.provoker[bs] >= 0 ? b.provoker[bs] : this.outpostTarget(w, fog, i, bs);
+      if (tid >= 0) {
+        if (b.soldiers[bs] > 0) b.soldiers[bs]--;
+        u.action[i] = Action.Idle;
+        u.target[i] = tid;
+        u.anchorX[i] = u.x[i];
+        u.anchorY[i] = u.y[i];
+        return;
+      }
+    }
+    this.fromInside(w, fog, i);
+  }
+
+  /** One strike from outpost `building` at unit `target` this tick (pokes). */
+  private addPoke(building: number, target: number): void {
+    const p = this.pokes;
+    for (let k = 0; k < p.length; k += 3) {
+      if (p[k] === building && p[k + 1] === target) {
+        p[k + 2]++;
+        return;
+      }
+    }
+    p.push(building, target, 1);
+  }
+
   /** Can the outpost at slot bs (its owner p) still go for unit or building id: alive, seen, within OUTPOST.chase? */
   private withinChase(w: World, fog: Fog, p: number, bs: number, id: number): boolean {
     const u = w.units.col;
@@ -702,6 +795,8 @@ export class UnitSystem {
     if (bs < 0 || b.owner[bs] !== me || b.type[bs] !== BuildingType.Outpost || b.hp[bs] <= 0) return false;
     const info = UNITS[u.type[i]];
     const hold = (b.flags[bs] & BuildingFlag.Hold) !== 0;
+    // D-119 (OUTPOST_HIDE): holding, straight in.
+    if (OUTPOST_HIDE.on && hold) return this.goIn(w, fields, i, bs);
     let tid = u.target[i];
     if (tid >= 0 && !this.withinChase(w, fog, me, bs, tid)) tid = -1;
     const provoker = b.provoker[bs];
@@ -755,6 +850,8 @@ export class UnitSystem {
       // Holding: what stepped away is let go.
       u.target[i] = -1;
     }
+    // D-119 (OUTPOST_HIDE): nothing to go for, back in.
+    if (OUTPOST_HIDE.on) return this.goIn(w, fields, i, bs);
     const at = this.postPlace(w, i, bs);
     u.anchorX[i] = at.x;
     u.anchorY[i] = at.y;
@@ -1180,7 +1277,8 @@ export class UnitSystem {
   /**
    * A soldier on a wall (WALLS): it shoots the visible enemy unit nearest it within its range plus
    * WALLS.range (militia throw stones to WALLS.sling); a mage on autocast fires the cannon as ever.
-   * It never moves. A player's town lost (or in ruins), it comes down.
+   * With nothing to shoot it may walk along the walls (WALL_SHIFT; walking, it does nothing else). A
+   * player's town lost (or in ruins), it comes down.
    */
   private fromWall(w: World, fog: Fog, i: number): void {
     const u = w.units.col;
@@ -1215,6 +1313,17 @@ export class UnitSystem {
     u.action[i] = Action.OnWall;
     const info = UNITS[u.type[i]];
     const look = (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0;
+    // A player's soldiers only: neutral towns' militia stand where they are (ceo 2026-11-04: their moving made
+    // the towns much harder to take, and the scripted player's town-taking groups lost; not what the user asked).
+    const shifts = WALL_SHIFT.on && u.owner[i] < PLAYER_COUNT && (u.type[i] === UnitType.Ranged || u.type[i] === UnitType.Mage);
+    if (shifts && u.wallTo[i] >= 0) {
+      u.target[i] = -1;
+      if (look) this.rethinkShift(w, fog, i);
+      if (u.wallTo[i] >= 0) {
+        this.wallStep(w, i);
+        return;
+      }
+    }
     if (
       u.type[i] === UnitType.Mage &&
       (u.flags[i] & UnitFlag.Autocast) !== 0 &&
@@ -1239,12 +1348,230 @@ export class UnitSystem {
     }
     if (tid < 0 && look) tid = this.nearestUnit(w, fog, i, reach);
     u.target[i] = tid;
-    if (tid < 0) return;
+    if (tid < 0) {
+      if (shifts && look) this.thinkShift(w, fog, i);
+      return;
+    }
+    if (shifts) {
+      u.wallWait[i] = 0;
+      u.wallCalm[i] = 0;
+    }
     const ts = w.unit(tid);
     u.facing[i] = dir16(u.x[ts] - u.x[i], u.y[ts] - u.y[i]);
     this.attacking[i] = 1;
     // Shooting from it, as any soldier fighting (the screen raises it by UnitFlag.OnWall).
     u.action[i] = Action.Attack;
+  }
+
+  // --- along the walls (WALL_SHIFT, D-119) ---------------------------------------------------
+
+  /**
+   * The enemy units player `me` sees near town t's walls this tick (WALL_SHIFT), as x, y, moving (1: it
+   * walked last tick) triples: the ones a wall soldier would shoot (nearestUnit's), within WALL_NEAR
+   * cells of the box round its way.
+   */
+  private wallFoes(w: World, fog: Fog, t: number, me: number): number[] {
+    if (this.foesTick !== w.tick) {
+      this.foesTick = w.tick;
+      this.foes.clear();
+    }
+    const key = t * 4 + (me === NEUTRAL ? 2 : me);
+    const had = this.foes.get(key);
+    if (had !== undefined) return had;
+    const u = w.units.col;
+    const n = w.size;
+    const box = this.wallBox(w, t);
+    const out: number[] = [];
+    for (let y = Math.max(box[1] - WALL_NEAR, 0); y <= Math.min(box[3] + WALL_NEAR, n - 1); y++) {
+      for (let x = Math.max(box[0] - WALL_NEAR, 0); x <= Math.min(box[2] + WALL_NEAR, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (u.owner[j] === me || u.action[j] === Action.Garrisoned || !this.sees(fog, me, u.x[j], u.y[j], n)) continue;
+          out.push(u.x[j], u.y[j], u.vx[j] !== 0 || u.vy[j] !== 0 ? 1 : 0);
+        }
+      }
+    }
+    this.foes.set(key, out);
+    return out;
+  }
+
+  /** Town t's soldiers of player `me` up on its walls (WALL_SHIFT.odds). */
+  private wallSoldiers(w: World, t: number, me: number): number {
+    const u = w.units.col;
+    let k = 0;
+    for (let s = 0; s < w.units.count; s++) if (u.owner[s] === me && u.wall[s] >= 0 && w.wallTown[u.wall[s]] === t && onWall(w, s)) k++;
+    return k;
+  }
+
+  /** The cells round town t's way (x0, y0, x1, y1). */
+  private wallBox(w: World, t: number): Int32Array {
+    let box = this.wallBoxes[t];
+    if (box !== undefined) return box;
+    const n = w.size;
+    box = Int32Array.of(n, n, -1, -1);
+    for (const c of w.walkCells[t]) {
+      box[0] = Math.min(box[0], c % n);
+      box[1] = Math.min(box[1], Math.trunc(c / n));
+      box[2] = Math.max(box[2], c % n);
+      box[3] = Math.max(box[3], Math.trunc(c / n));
+    }
+    this.wallBoxes[t] = box;
+    return box;
+  }
+
+  /** Is one of `foes` (only those walking, with `moving`) within `reach` of wall cell c's middle? */
+  private foeFrom(w: World, foes: number[], c: number, reach: number, moving = false): boolean {
+    const n = w.size;
+    const x = ((c % n) << CELL_SHIFT) + (CELL >> 1);
+    const y = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
+    const r2 = reach * reach;
+    for (let k = 0; k < foes.length; k += 3) {
+      if (moving && foes[k + 2] === 0) continue;
+      const dx = foes[k] - x;
+      const dy = foes[k + 1] - y;
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+    return false;
+  }
+
+  /** Is one of `foes` within `reach` (Chebyshev, cells) of town t's way's box: the walls not calm for one with that reach? */
+  private foeNear(w: World, foes: number[], t: number, reach: number): boolean {
+    const box = this.wallBox(w, t);
+    const r = (reach + CELL - 1) >> CELL_SHIFT;
+    for (let k = 0; k < foes.length; k += 3) {
+      const x = foes[k] >> CELL_SHIFT;
+      const y = foes[k + 1] >> CELL_SHIFT;
+      if (x >= box[0] - r && x <= box[2] + r && y >= box[1] - r && y <= box[3] + r) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A wall soldier with nothing to shoot, at a look (WALL_SHIFT): with an enemy near the walls for
+   * `wait` ticks, it sets off for the free wall cell nearest it along the way from which one is in its
+   * reach; with none near for `back` ticks, back to where it first stood, if free.
+   */
+  private thinkShift(w: World, fog: Fog, i: number): void {
+    const u = w.units.col;
+    const c = u.wall[i];
+    const t = w.wallTown[c];
+    const reach = wallReach(u.type[i], UNITS[u.type[i]].range);
+    const foes = this.wallFoes(w, fog, t, u.owner[i]);
+    if (!this.foeNear(w, foes, t, reach)) {
+      u.wallWait[i] = 0;
+      const home = u.wallHome[i];
+      if (home < 0 || home === c) {
+        u.wallCalm[i] = 0;
+        return;
+      }
+      u.wallCalm[i] += RETARGET_EVERY;
+      if (u.wallCalm[i] >= WALL_SHIFT.back && w.wallAt[home] < 0 && waySteps(w, t, c, home) > 0) this.startShift(w, i, home);
+      return;
+    }
+    u.wallCalm[i] = 0;
+    // One walking up near it: it waits for it where it stands.
+    if (this.foeFrom(w, foes, c, reach + WALL_SHIFT.stay, true)) {
+      u.wallWait[i] = 0;
+      return;
+    }
+    u.wallWait[i] += RETARGET_EVERY;
+    if (u.wallWait[i] < WALL_SHIFT.wait) return;
+    // Too many of them for those on the walls: they would only walk into it.
+    if (foes.length / 3 > WALL_SHIFT.odds * this.wallSoldiers(w, t, u.owner[i])) return;
+    const to = wayPick(w, t, c, wayFrame(w, u.owner[i], t), (d) => w.wallAt[d] < 0 && this.foeFrom(w, foes, d, reach));
+    if (to >= 0) this.startShift(w, i, to);
+  }
+
+  /**
+   * Walking along the walls, at a look: on a wall cell free (or its own) with an enemy in its reach,
+   * it stops there, at its middle, to shoot. An enemy near the walls but none in reach of the cell it
+   * walks to (it walks home, or the enemy went on), it takes the free cell that has one instead, if any.
+   */
+  private rethinkShift(w: World, fog: Fog, i: number): void {
+    const u = w.units.col;
+    const to = u.wallTo[i];
+    const t = w.wallTown[to];
+    const c = u.wall[i];
+    const reach = wallReach(u.type[i], UNITS[u.type[i]].range);
+    const foes = this.wallFoes(w, fog, t, u.owner[i]);
+    if (c !== to && w.walkGate[c] === 0 && (w.wallAt[c] < 0 || w.wallAt[c] === u.id[i]) && this.foeFrom(w, foes, c, reach)) {
+      this.startShift(w, i, c);
+      return;
+    }
+    if (!this.foeNear(w, foes, t, reach) || this.foeFrom(w, foes, to, reach)) return;
+    const id = u.id[i];
+    const next = wayPick(w, t, u.wall[i], wayFrame(w, u.owner[i], t), (d) => (w.wallAt[d] < 0 || w.wallAt[d] === id) && this.foeFrom(w, foes, d, reach));
+    if (next >= 0 && next !== to) this.startShift(w, i, next);
+  }
+
+  /** Unit i (on a wall) sets off along it for free wall cell `to`, which it takes (wallAt). */
+  private startShift(w: World, i: number, to: number): void {
+    const u = w.units.col;
+    const id = u.id[i];
+    const c = u.wall[i];
+    if (u.wallHome[i] < 0) u.wallHome[i] = c;
+    if (w.wallAt[c] === id) w.wallAt[c] = -1;
+    const was = u.wallTo[i];
+    if (was >= 0 && w.wallAt[was] === id) w.wallAt[was] = -1;
+    w.wallAt[to] = id;
+    u.wallTo[i] = to;
+    u.wallWait[i] = 0;
+    u.wallCalm[i] = 0;
+    u.target[i] = -1;
+  }
+
+  /**
+   * One tick of walking along the walls to wallTo, at the unit's speed, never more than to the next
+   * cell's middle (move() takes it there; that cell is then its wall). There, it stands. The way
+   * closed (a gate on it broken), it stops: on the wall cell it is on if free, else it makes for the
+   * nearest free one; with none, it comes down.
+   */
+  private wallStep(w: World, i: number): void {
+    const u = w.units.col;
+    const n = w.size;
+    const to = u.wallTo[i];
+    const c = u.wall[i];
+    const t = w.wallTown[to];
+    let next = to;
+    if (c !== to) {
+      next = wayNext(w, t, c, to, wayFrame(w, u.owner[i], t));
+      if (next < 0) {
+        this.stopShift(w, i);
+        return;
+      }
+    }
+    const dx = ((next % n) << CELL_SHIFT) + (CELL >> 1) - u.x[i];
+    const dy = (Math.trunc(next / n) << CELL_SHIFT) + (CELL >> 1) - u.y[i];
+    if (dx === 0 && dy === 0) {
+      u.wallTo[i] = -1;
+      u.action[i] = Action.OnWall;
+      return;
+    }
+    const sp = UNITS[u.type[i]].speed;
+    const sx = clamp(dx, -sp, sp);
+    const left = sp - Math.abs(sx);
+    u.vx[i] = sx;
+    u.vy[i] = clamp(dy, -left, left);
+    u.facing[i] = dir16(dx, dy);
+    u.action[i] = Action.Move;
+  }
+
+  /** The way to wallTo closed under a walker (wallStep). */
+  private stopShift(w: World, i: number): void {
+    const u = w.units.col;
+    const id = u.id[i];
+    const c = u.wall[i];
+    const t = w.wallTown[c];
+    const to = u.wallTo[i];
+    if (w.wallAt[to] === id) w.wallAt[to] = -1;
+    u.wallTo[i] = -1;
+    if (w.walkGate[c] === 0 && w.wallAt[c] < 0) {
+      w.wallAt[c] = id;
+      u.action[i] = Action.OnWall;
+      return;
+    }
+    const near = wayPick(w, t, c, wayFrame(w, u.owner[i], t), (d) => w.wallAt[d] < 0);
+    if (near >= 0) this.startShift(w, i, near);
+    else w.offWall(i);
   }
 
   // --- cavalry for the back row (CAV_FLANK, D-097) ------------------------------------------
@@ -1800,6 +2127,11 @@ export class UnitSystem {
     u.working[i] = 0;
     this.attacking[i] = 0;
     if (u.action[i] === Action.Garrisoned) {
+      // A spearman in an outpost (OUTPOST_HIDE, D-119) strikes from it or comes out.
+      if (OUTPOST_HIDE.on && u.order[i] === Order.Post) {
+        this.postInside(w, fog, i);
+        return;
+      }
       // A soldier hiding in a building shoots from it (round 7, D-061); a farmer just hides.
       if (u.type[i] !== UnitType.Farmer) this.fromInside(w, fog, i);
       return;
@@ -2065,7 +2397,7 @@ export class UnitSystem {
         this.breakThrough(w, fields, i, here, u.orderX[i], u.orderY[i], order === Order.Move && !farmer);
         return;
       }
-      if (order === Order.Move && MARCH_ORDER.on && this.letPass(w, i, dx, dy)) {
+      if (MARCH_ORDER.on && u.ranked[i] !== 0 && this.letPass(w, i, dx, dy)) {
         u.action[i] = Action.Idle;
         return;
       }
@@ -2402,10 +2734,12 @@ export class UnitSystem {
     for (let i = 0; i < count; i++) {
       const xi = u.x[i];
       const yi = u.y[i];
-      // Hiding in a building, or standing on a wall (D-096): it does not move.
+      // Hiding in a building, or standing on a wall (D-096): it does not move. Walking along the
+      // walls (WALL_SHIFT): it goes its way, through everyone (walls.ts wallStep keeps it on the way).
       if (u.action[i] === Action.Garrisoned || onWall(w, i)) {
-        this.newX[i] = xi;
-        this.newY[i] = yi;
+        const walks = u.wall[i] >= 0 && u.wallTo[i] >= 0;
+        this.newX[i] = walks ? xi + u.vx[i] : xi;
+        this.newY[i] = walks ? yi + u.vy[i] : yi;
         continue;
       }
       const cx = xi >> CELL_SHIFT;
@@ -2474,6 +2808,15 @@ export class UnitSystem {
     }
     for (let i = 0; i < count; i++) {
       const moved = Math.abs(this.newX[i] - u.x[i]) + Math.abs(this.newY[i] - u.y[i]);
+      // Walking along the walls into the next cell of their way: that is the cell it is on now.
+      if (moved !== 0 && u.wall[i] >= 0 && u.wallTo[i] >= 0 && onWall(w, i)) {
+        const c = (this.newY[i] >> CELL_SHIFT) * n + (this.newX[i] >> CELL_SHIFT);
+        if (w.wallTown[c] === w.wallTown[u.wall[i]]) u.wall[i] = c;
+        else {
+          this.newX[i] = u.x[i];
+          this.newY[i] = u.y[i];
+        }
+      }
       u.x[i] = this.newX[i];
       u.y[i] = this.newY[i];
       // A loose soldier standing at its place (#116): pushed apart by mates who stand too, its
@@ -2512,6 +2855,7 @@ export class UnitSystem {
     this.unitHitBy.fill(0, 0, count);
     this.buildingHitBy.fill(0, 0, w.buildings.count);
     this.shots.length = 0;
+    this.pokes.length = 0;
     this.siegeShots.length = 0;
     if (SIEGE.on) this.landStones(w);
     for (let i = 0; i < count; i++) {
@@ -2533,12 +2877,15 @@ export class UnitSystem {
         continue;
       }
       if (ts >= 0) {
-        this.hit(w, ts, info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
-        if (u.action[i] === Action.Garrisoned) this.shots.push(u.orderTarget[i], tid, 1);
+        // A spearman in an outpost strikes harder (OUTPOST_HIDE, D-119): a `poke` event, not a shot.
+        const poke = OUTPOST_HIDE.on && u.action[i] === Action.Garrisoned && u.order[i] === Order.Post;
+        this.hit(w, ts, poke ? info.attack * OUTPOST_HIDE.poke : info.attack, u.type[i], u.owner[i], u.owner[i] === NEUTRAL ? HitCause.Militia : HitCause.Unit, u.id[i]);
+        if (poke) this.addPoke(u.orderTarget[i], tid);
+        else if (u.action[i] === Action.Garrisoned) this.shots.push(u.orderTarget[i], tid, 1);
       } else {
         const bs = w.building(tid);
         if (bs >= 0) {
-          this.buildingDamage[bs] += b.type[bs] === BuildingType.Gate ? gateDamage(info.attack, u.type[i]) : info.attack;
+          this.buildingDamage[bs] += b.type[bs] === BuildingType.Gate ? gateDamage(info.attack, u.type[i]) : b.type[bs] === BuildingType.Outpost && OUTPOST_HIDE.on ? outpostDamage(info.attack, u.type[i]) : info.attack;
           this.buildingHitBy[bs] |= 1 << u.owner[i];
         }
         // An outpost under attack sends its guards after the attacker (D-080).
@@ -2732,6 +3079,8 @@ export class UnitSystem {
         w.unitSlot[u.id[i]] = -1;
         // Its wall cell is free again (D-096).
         if (u.wall[i] >= 0 && w.wallAt[u.wall[i]] === u.id[i]) w.wallAt[u.wall[i]] = -1;
+        // And the one it walked to (WALL_SHIFT).
+        if (u.wallTo[i] >= 0 && w.wallAt[u.wallTo[i]] === u.id[i]) w.wallAt[u.wallTo[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
         // D-089's measurement: soldiers lost at the castles and at their gates.
         if (u.owner[i] < PLAYER_COUNT && u.type[i] !== UnitType.Farmer) {
@@ -2921,6 +3270,12 @@ export function preferHighId(w: World, chooser: number): boolean {
  * A hit on a castle gate (D-096, GATE): melee in full, ranged units and mages GATE.rangedNum /
  * rangedDen of it, at least 1. Kept apart from the unit-vs-unit multipliers (MULTIPLIERS).
  */
+/** A hit on an outpost by a unit's own attack (OUTPOST_HIDE, D-119): ranged units and mages at rangedNum / rangedDen, the rest at meleeNum / meleeDen; at least 1. */
+export function outpostDamage(attack: number, attacker: number): number {
+  const ranged = attacker === UnitType.Ranged || attacker === UnitType.Mage;
+  return Math.max(1, idiv(attack * (ranged ? OUTPOST_HIDE.rangedNum : OUTPOST_HIDE.meleeNum), ranged ? OUTPOST_HIDE.rangedDen : OUTPOST_HIDE.meleeDen));
+}
+
 export function gateDamage(attack: number, attacker: number): number {
   // D-099: a siege engine's stone GATE.siege times.
   if (attacker === UnitType.Siege) return attack * GATE.siege;

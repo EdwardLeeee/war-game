@@ -43,10 +43,22 @@ async function pause(page: Page): Promise<void> {
   await expect.poll(async () => (await header(page)).paused).toBe(true);
 }
 
-/** Double-tap a farmer: selects every farmer on screen. Call while paused. */
+/**
+ * The camera on cell c, so what the test taps is in the middle of the screen, clear of the buttons
+ * round it (#358's run 41743741821: the first farmer had walked under 全軍 when paused).
+ */
+async function lookAt(page: Page, c: { x: number; y: number }): Promise<void> {
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x + 0.5, y + 0.5), [c.x, c.y] as const);
+}
+
+/** Double-tap a farmer: selects every farmer on screen. Call while paused. The camera on them all, the one nearest the middle tapped. */
 async function selectFarmers(page: Page): Promise<number[]> {
+  const all = await farmers(page);
+  await lookAt(page, { x: all.reduce((a, u) => a + u.fx, 0) / all.length - 0.5, y: all.reduce((a, u) => a + u.fy, 0) / all.length - 0.5 });
   const list = await farmers(page);
-  await doubleTap(page, { x: list[0].sx, y: list[0].sy });
+  const size = page.viewportSize() ?? { width: 0, height: 0 };
+  const mid = [...list].sort((a, b) => Math.hypot(a.sx - size.width / 2, a.sy - size.height / 2) - Math.hypot(b.sx - size.width / 2, b.sy - size.height / 2))[0];
+  await doubleTap(page, { x: mid.sx, y: mid.sy });
   const ids = list.map((u) => u.id).sort((a, b) => a - b);
   await expect.poll(() => selection(page)).toEqual({ units: ids, building: null });
   return ids;
@@ -79,6 +91,7 @@ test("選村民 → 點地面前進：村民往那裡走", async ({ page }) => {
   const ids = await selectFarmers(page);
   const target = await groundNearFarmers(page, 6, -3);
   const before = await distanceTo(page, target);
+  await lookAt(page, target);
   await tap(page, await toScreen(page, target));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: ids, x: target.x, y: target.y });
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
@@ -94,6 +107,7 @@ test("暫停時下指令：模擬停住、指令照收，按繼續後才執行",
   const ids = await selectFarmers(page);
   const target = await groundNearFarmers(page, 6, -3);
   const before = await distanceTo(page, target);
+  await lookAt(page, target);
   await tap(page, await toScreen(page, target));
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "move", u: ids });
   await shot(page, info, "paused-order");

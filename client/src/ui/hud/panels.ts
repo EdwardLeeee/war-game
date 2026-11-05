@@ -119,8 +119,8 @@ export interface PanelHost {
   /** ＋遠程／＋法師 (D-080): our soldiers on their way to hide in this building, and calling one more of a type in. */
   hidingComing(building: number): number;
   callToHide(building: number, type: number): void;
-  /** 哨所 (D-080): its spearmen and mode, for its panel; null for another building. */
-  outpostState(building: number): { slots: number; posted: number; hold: boolean; text: string } | null;
+  /** 哨所 (D-080): its spearmen and mode, for its panel; null for another building. `inside`: those hiding in it (3 × 3, D-119), null while they stand guard beside it. */
+  outpostState(building: number): { slots: number; posted: number; inside: number | null; hold: boolean; text: string } | null;
   /** 取消即堅守 (D-054): out of 進攻／撤退, the soldiers selected stop and hold. */
   cancelToHold(): void;
   /** 編隊自動補兵 (D-026): its switch, and flipping it. */
@@ -647,7 +647,8 @@ export class SelectionInfo {
       }
       const s = this.host.outpostState(id);
       if (s === null) return;
-      const line = `駐守 ${s.posted} 名槍兵（最多 ${s.slots} 名）`;
+      // 3 × 3 (D-119): 躲了 n/9, and those on their way.
+      const line = s.inside === null ? `駐守 ${s.posted} 名槍兵（最多 ${s.slots} 名）` : `躲了 ${s.inside}/${s.slots} 名槍兵${s.posted > s.inside ? `，${s.posted - s.inside} 名正過來` : ""}`;
       if (count.textContent !== line) count.textContent = line;
       call.disabled = s.posted >= s.slots;
       off.disabled = s.posted === 0;

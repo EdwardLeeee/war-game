@@ -8,7 +8,7 @@ import { test } from "node:test";
 import type { Game } from "../../sim/src/core/game.ts";
 import { buildView, SnapshotEncoder } from "../../sim/src/view/view.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf } from "../../sim/test/helpers.ts";
-import { buildable, features, outpostSlots } from "../src/game/features.ts";
+import { buildable, features, outpostHide, outpostSlots } from "../src/game/features.ts";
 import { type Callable, pickToHide } from "../src/game/garrison.ts";
 import { isPosted, POST_TYPE, postTap } from "../src/game/outpost.ts";
 import { BUILDING_STRIDE, BuildingField as B, BuildingFlag, BuildingType, CELL, checkPlacement, Order, Reject, rules, UnitField as U, UNIT_STRIDE, UnitType } from "../src/sim.ts";
@@ -61,11 +61,11 @@ function setup(): { g: Game; post: number; spot: { x: number; y: number }; spear
   return { g, post, spot, spears };
 }
 
-test("開關：哨所的規則開著，畫面的建造選單有哨所、每座 6 名", { skip: OFF }, () => {
+test("開關：哨所的規則開著，畫面的建造選單有哨所、每座 6 名（3×3 躲進去的起 9 名，D-119）", { skip: OFF }, () => {
   const r = rules();
   assert.equal(features(r).outpost, true);
   assert.equal(buildable(r, BuildingType.Outpost), true);
-  assert.equal(outpostSlots(r), 6);
+  assert.equal(outpostSlots(r), outpostHide(r) ? 9 : 6);
 });
 
 test("＋槍兵、駐守：畫面挑的人和送的 post，模擬照做；畫面讀到 posted、兵的 order 是 Post；別人看不到 posted", { skip: OFF }, () => {
