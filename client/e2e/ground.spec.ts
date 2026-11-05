@@ -61,10 +61,10 @@ test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，�
 test("寫實地面：沒有 ?ground=real 照舊畫兩種綠；美術關（沒有地形的圖）時也不換", async ({ page }) => {
   const check = watchErrors(page);
   await start(page, "watch=1&ai=0&art=x3");
-  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false, r9: false });
+  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false, r9: false, r9water: false });
   expect(await feet(page), "no colour under the feet on the two greens").toBe(0);
   await start(page, "watch=1&ai=0&art=off&ground=real");
-  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false, r9: false });
+  await expect.poll(() => look(page)).toEqual({ real: false, quality: null, water: false, town: false, r9: false, r9water: false });
   check();
 });
 
@@ -96,16 +96,17 @@ test("寫實地面開關（ceo 2026-10-25）：選單的「寫實地面：開」
   check();
 });
 
-test("R9 的地面（art-v7，?artlab=1：art-lab.lock.json 的美術）：起伏圖、沖溝、丘頂、風、底片曲線；高、低畫質都畫得出來（兩種瀏覽器都要編得過著色器）", async ({ page, browserName }, info) => {
+test("R9 的地面和水（art-v7，?artlab=1：art-lab.lock.json 的美術）：起伏圖、沖溝、丘頂、風、河岸、深淺、漣漪、倒影、底片曲線；高、低畫質都畫得出來（兩種瀏覽器都要編得過著色器）", async ({ page, browserName }, info) => {
   test.setTimeout(180_000);
   const check = watchErrors(page);
   // 2 倍: lighter for CI's WebKit, the same ground.
   await start(page, "watch=1&ai=0&art=x2&artlab=1&ground=real");
-  await expect.poll(() => look(page), { timeout: 60_000 }).toMatchObject({ real: true, quality: "high", r9: true });
+  await expect.poll(() => look(page), { timeout: 60_000 }).toMatchObject({ real: true, quality: "high", r9: true, r9water: true });
   if (browserName === "chromium") {
     for (const [name, x, y, z] of [
       ["ground-r9-home", 14, 80, 1.0],
       ["ground-r9-river", 24, 62, 1.6],
+      ["ground-r9-river-bridge", 18.5, 59.5, 1.6],
       ["ground-r9-whole-map", 48, 48, 0.35],
     ] as const) {
       await page.evaluate(([cx, cy, s]) => window.__proto?.game?.centerOn(cx, cy, s), [x, y, z] as const);

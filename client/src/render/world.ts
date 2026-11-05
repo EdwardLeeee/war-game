@@ -1366,8 +1366,8 @@ export class WorldRenderer {
   }
 
   /** What draws the ground now (the test page and the 量測 panel). */
-  get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean; town: boolean; r9: boolean } {
-    return { real: this.groundShown, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true, town: this.groundDraw?.town === true, r9: this.groundDraw?.r9 === true };
+  get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean; town: boolean; r9: boolean; r9water: boolean } {
+    return { real: this.groundShown, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true, town: this.groundDraw?.town === true, r9: this.groundDraw?.r9 === true, r9water: this.groundDraw?.r9Water === true };
   }
 
   /** The ground's weights again when the known ground or the resource points changed. */

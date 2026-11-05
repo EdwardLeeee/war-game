@@ -569,6 +569,112 @@ export function groundWeights(ground: Uint8Array, n: number, nodes: readonly num
   return out;
 }
 
+/** A Gaussian blur, `sigma` texels, edges clamped, separable (ui's ground_r8.py blur): `a` side × side. */
+export function blurClamped(a: Float32Array, side: number, sigma: number): Float32Array {
+  if (sigma <= 0) return a;
+  const r = Math.floor(3 * sigma) + 1;
+  const k: number[] = [];
+  let sum = 0;
+  for (let i = -r; i <= r; i++) {
+    const v = Math.exp(-(i * i) / (2 * sigma * sigma));
+    k.push(v);
+    sum += v;
+  }
+  for (let i = 0; i < k.length; i++) k[i] /= sum;
+  const clamp = (v: number) => (v < 0 ? 0 : v >= side ? side - 1 : v);
+  const tmp = new Float32Array(side * side);
+  for (let y = 0; y < side; y++) {
+    for (let x = 0; x < side; x++) {
+      let v = 0;
+      for (let i = -r; i <= r; i++) v += k[i + r] * a[y * side + clamp(x + i)];
+      tmp[y * side + x] = v;
+    }
+  }
+  const out = new Float32Array(side * side);
+  for (let y = 0; y < side; y++) {
+    for (let x = 0; x < side; x++) {
+      let v = 0;
+      for (let i = -r; i <= r; i++) v += k[i + r] * tmp[clamp(y + i) * side + x];
+      out[y * side + x] = v;
+    }
+  }
+  return out;
+}
+
+const FORD = 4;
+const isBridge = (t: number) => t === 5 || t === 6;
+
+/**
+ * R9's water's helpers (ui's ground_r9.py compose: fordb, brb, flowmap), a texel each as the weight
+ * map's: R the fords' cells blurred 1.2 texels (a ford is shallow water), G the bridges' blurred 3
+ * (the shoreline keeps still by them, so a bridge lands on its banks), B and A the current's direction
+ * (0.5 + v ÷ 2; (1, 0) where there is none): along the channel, across the slope of the water's
+ * distance (the weights' A) blurred 1.5 cells. Made again whole when the wet, ford or bridge cells change.
+ */
+export class WaterAux {
+  readonly side: number;
+  readonly data: Uint8Array;
+  private readonly n: number;
+  private key = "";
+
+  constructor(n: number, rules: GroundJson["rules"]) {
+    this.n = n;
+    this.side = weightsSide(n, rules);
+    this.data = new Uint8Array(this.side * this.side * 4);
+  }
+
+  /** The cells' grounds and the weight map now (its A the water's distance); false when nothing changed. */
+  set(ground: Uint8Array, weights: Uint8Array): boolean {
+    const n = this.n;
+    let key = "";
+    for (let i = 0; i < n * n; i++) key += wet(ground[i]) ? String.fromCharCode(48 + ground[i]) : "0";
+    if (key === this.key) return false;
+    this.key = key;
+    const side = this.side;
+    const k = side / n;
+    const ford = new Float32Array(side * side);
+    const bridge = new Float32Array(side * side);
+    const dist = new Float32Array(side * side);
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) {
+        const t = ground[Math.floor(y / k) * n + Math.floor(x / k)];
+        const i = y * side + x;
+        ford[i] = t === FORD ? 1 : 0;
+        bridge[i] = isBridge(t) ? 1 : 0;
+        dist[i] = weights[i * 4 + 3] / 255;
+      }
+    }
+    const fordB = blurClamped(ford, side, 1.2);
+    const bridgeB = blurClamped(bridge, side, 3.0);
+    const smooth = blurClamped(dist, side, 1.5 * k);
+    const at = (x: number, y: number) => smooth[((y + side) % side) * side + ((x + side) % side)];
+    const byte = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255);
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) {
+        const i = y * side + x;
+        const gx = (at(x + 1, y) - at(x - 1, y)) / 2;
+        const gy = (at(x, y + 1) - at(x, y - 1)) / 2;
+        // Along the channel: across the slope; (1, 0) where it is flat (ui: below 1e-4).
+        let fx = -gy;
+        let fy = gx;
+        const len = Math.hypot(fx, fy);
+        if (len > 1e-4) {
+          fx /= len;
+          fy /= len;
+        } else {
+          fx = 1;
+          fy = 0;
+        }
+        this.data[i * 4] = byte(fordB[i]);
+        this.data[i * 4 + 1] = byte(bridgeB[i]);
+        this.data[i * 4 + 2] = byte(0.5 + fx / 2);
+        this.data[i * 4 + 3] = byte(0.5 + fy / 2);
+      }
+    }
+    return true;
+  }
+}
+
 /**
  * Tileable value noise (`size` square, a lattice of `cells` a side, smoothstep between), one byte
  * a pixel; the same on every device (a fixed integer hash, no Math.random).

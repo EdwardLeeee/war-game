@@ -138,8 +138,8 @@ export interface GameHook {
   /** 城內 B (castle 2): the towns' decor pieces: town, map cells, where its anchor is on screen (CSS px), shown or left out. */
   decor(): { town: number; piece: string; cells: [number, number][]; sx: number; sy: number; shown: boolean; leftOut: boolean; burnt: boolean }[];
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
-  /** `r9`: R9's ground (art-v7 on: the relief, the film curve). */
-  groundLook(): { real: boolean; quality: string | null; water: boolean; town: boolean; r9: boolean } | null;
+  /** `r9`: R9's ground (art-v7 on: the relief, the film curve); `r9water`: its banks and water too. */
+  groundLook(): { real: boolean; quality: string | null; water: boolean; town: boolean; r9: boolean; r9water: boolean } | null;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
   feet(): number;
   /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
