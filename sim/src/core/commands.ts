@@ -41,6 +41,7 @@ import {
   MAGE_CAP,
   MARCH_ORDER,
   OUTPOST,
+  OUTPOST_HIDE,
   QUEUE_MAX,
   rank,
   RETREAT_OWN_SPEED,
@@ -284,6 +285,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       }
       pay(w, p, info.cost, 1);
       const id = w.addBuilding(p, type, cmd.x, cmd.y, 1, 0);
+      // D-119 (OUTPOST_HIDE): a new outpost holds (its spearmen stay in).
+      if (type === BuildingType.Outpost && OUTPOST_HIDE.on) w.buildings.col.flags[w.building(id)] |= BuildingFlag.Hold;
       if (!info.walkable) pushOut(w, cmd.x, cmd.y, info.size);
       placed(w, farmers, false);
       const u = w.units.col;
@@ -662,6 +665,12 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       let out = 0;
       for (let s = 0; s < w.units.count; s++) {
         if (u.owner[s] !== p || u.order[s] !== Order.Post || u.orderTarget[s] !== cmd.building) continue;
+        // In it (OUTPOST_HIDE, D-119): out where it went in.
+        if (u.action[s] === Action.Garrisoned) {
+          ctx.econ.release(w, s);
+          out++;
+          continue;
+        }
         u.order[s] = Order.None;
         u.orderTarget[s] = -1;
         u.target[s] = -1;

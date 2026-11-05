@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
-import { OUTPOST, rules } from "../src/core/rules.ts";
+import { OUTPOST, OUTPOST_HIDE, rules } from "../src/core/rules.ts";
 import * as P from "../src/protocol.ts";
 import { switchedOff } from "./helpers.ts";
 
@@ -90,10 +90,10 @@ test("constants match the engine spike's rules", () => {
   assert.equal(P.EVENT_KINDS_COMPLETE, true);
 });
 
-test("D-080 outposts: in the protocol and the rules table; with OUTPOST off, rejected and nothing changes", switchedOff(OUTPOST, () => {
+test("D-080 outposts: in the protocol and the rules table; with OUTPOST off, rejected and nothing changes", switchedOff([OUTPOST, OUTPOST_HIDE], () => {
   const info = rules().buildings[P.BuildingType.Outpost];
   assert.deepEqual([info.size, info.hp, info.cost.wood, info.buildTicks, info.sight], [2, 400, 50, 20 * 20, 10]);
-  assert.deepEqual(rules().outpost, { slots: 6, reach: 8, chase: 12 });
+  assert.deepEqual(rules().outpost, { slots: 6, reach: 8, chase: 12, poke: 1, ranged: [1, 1], melee: [1, 1] });
   assert.equal(rules().towerReach.outpost, 6);
   assert.equal(rules().features.outpost, undefined);
   const g = new Game({ seed: 1, scenario: "standard" });

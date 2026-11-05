@@ -1,12 +1,14 @@
 // Outposts (D-080): spearmen posted around an outpost attack what comes within reach or hold and
 // hit back together, chase no farther than OUTPOST.chase, walk back to their places, pull down
 // enemy buildings nearby, let arrow towers go up near it, and leave it when the player says so.
+// D-119's spearmen hiding in outposts (OUTPOST_HIDE) are in outpost-hide.test.ts; the tests of
+// guards standing round it here switch it off.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
 import { postedAt, towerLand } from "../src/core/commands.ts";
-import { BUILDINGS, OUTPOST, TOWER_REACH } from "../src/core/rules.ts";
+import { BUILDINGS, OUTPOST, OUTPOST_HIDE, TOWER_REACH } from "../src/core/rules.ts";
 import { PERF } from "../src/core/scenarios.ts";
 import { rectDist2 } from "../src/core/units.ts";
 import { BLOCK_BUILDING, BLOCK_GATE, BLOCK_ROCK } from "../src/core/world.ts";
@@ -38,7 +40,7 @@ function cellsOut(g: Game, id: number, ox: number, oy: number): number {
 
 const rejected = (g: Game) => g.events.filter((e) => e.ev.k === "rejected").map((e) => (e.ev as { reason: number }).reason);
 
-test("posted spearmen stand around the outpost, and the outpost row says how many", () => {
+test("posted spearmen stand around the outpost, and the outpost row says how many", switchedOff(OUTPOST_HIDE, () => {
   const { g, post, ox, oy, ids } = manned();
   for (const id of ids) {
     assert.equal(g.w.units.col.order[slotOf(g, id)], Order.Post);
@@ -51,9 +53,9 @@ test("posted spearmen stand around the outpost, and the outpost row says how man
   assert.equal(v.buildings[row + 15], 3, "posted");
   const theirs = buildView(g, 1);
   for (let r = 0; r < theirs.buildings.length; r += 16) if (theirs.buildings[r] === post) assert.equal(theirs.buildings[r + 15], 0, "not for the enemy");
-});
+}));
 
-test("attacking: the guards go for an enemy within reach, beat it, and walk back", () => {
+test("attacking: the guards go for an enemy within reach, beat it, and walk back", switchedOff(OUTPOST_HIDE, () => {
   const { g, ox, oy, ids } = manned();
   const foe = put(g, 1, UnitType.Spearman, ox + OUT.size + 6, oy);
   g.w.units.col.stance[slotOf(g, foe)] = Stance.Hold;
@@ -67,9 +69,9 @@ test("attacking: the guards go for an enemy within reach, beat it, and walk back
   assert.ok(farthest >= 4, `they went out (${farthest} cells)`);
   run(g, 400);
   for (const id of ids) if (g.w.unit(id) >= 0) assert.ok(cellsOut(g, id, ox, oy) <= 1, "and came back");
-});
+}));
 
-test("holding: they stay put for an enemy nearby, and all go for a ranged unit that shoots them", () => {
+test("holding: they stay put for an enemy nearby, and all go for a ranged unit that shoots them", switchedOff(OUTPOST_HIDE, () => {
   const { g, post, ox, oy, ids } = manned();
   cmd(g, 0, { c: "outpost_mode", building: post, hold: true });
   run(g, 1);
@@ -94,9 +96,9 @@ test("holding: they stay put for an enemy nearby, and all go for a ranged unit t
   assert.equal(g.w.unit(archer), -1, "the archer is dead");
   assert.ok(out >= 3, `they went for it (${out} cells)`);
   assert.ok(g.w.unit(idle) >= 0, "the one that only stood there was left alone");
-});
+}));
 
-test("they chase no farther than OUTPOST.chase cells, then walk back", () => {
+test("they chase no farther than OUTPOST.chase cells, then walk back", switchedOff(OUTPOST_HIDE, () => {
   const { g, ox, oy, ids } = manned();
   // A rider close by that runs: faster than them, so they follow it out.
   const foe = put(g, 1, UnitType.Cavalry, ox + OUT.size + 3, oy);
@@ -113,15 +115,15 @@ test("they chase no farther than OUTPOST.chase cells, then walk back", () => {
   assert.ok(farthest >= 4, `they gave chase (${farthest} cells)`);
   assert.ok(farthest <= OUTPOST.chase + 1, `but not past ${OUTPOST.chase} cells (${farthest})`);
   for (const id of ids) assert.ok(cellsOut(g, id, ox, oy) <= 1, "back at their places");
-});
+}));
 
-test("attacking: an enemy building within reach is pulled down", () => {
+test("attacking: an enemy building within reach is pulled down", switchedOff(OUTPOST_HIDE, () => {
   const { g, ox, oy } = manned();
   const house = g.w.addBuilding(1, BuildingType.House, ox + OUT.size + 4, oy, BUILDINGS[BuildingType.House].hp, 1000);
   g.fog.update(g.w);
   run(g, 1200);
   assert.equal(g.w.building(house), -1, "the house is gone");
-});
+}));
 
 test("arrow towers may go up within TOWER_REACH.outpost cells of an own finished outpost, not farther", () => {
   const { g, post, ox, oy } = manned(0);
@@ -173,7 +175,7 @@ test("post: at most OUTPOST.slots, finished own outposts only, spearmen only; wh
   for (let s = 0; s < g.w.units.count; s++) assert.notEqual(u.order[s], Order.Post, "no one guards a fallen outpost");
 });
 
-test("mirror-image outposts fight mirror-image fights, tick by tick", () => {
+test("mirror-image outposts fight mirror-image fights, tick by tick", switchedOff(OUTPOST_HIDE, () => {
   const g = emptyGame();
   const w = g.w;
   // A 16 x 16 open block well off the diagonal (x <-> y is the fixed map's mirror); its image is open
@@ -232,7 +234,7 @@ test("mirror-image outposts fight mirror-image fights, tick by tick", () => {
     if (slotOf(g, walker) < 0) fought++;
   }
   assert.ok(fought > 0, "the fight happened");
-});
+}));
 
 test("perf: two manned outposts a side, mirror images; a game with no outpost hashes as with the switch off", () => {
   const g = new Game({ seed: 1, scenario: "perf" });

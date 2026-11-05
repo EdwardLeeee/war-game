@@ -5,7 +5,7 @@
 // results are deterministic. src/balance.ts prints them; nothing here runs on import.
 
 import { Game } from "./core/game.ts";
-import { BUILDINGS, CANNON, KEEP, UNITS } from "./core/rules.ts";
+import { BUILDINGS, CANNON, KEEP, OUTPOST_HIDE, UNITS } from "./core/rules.ts";
 import { damage } from "./core/units.ts";
 import { BLOCK_GATE, BLOCK_WALL } from "./core/world.ts";
 import { Action, BuildingType, CELL_SHIFT, type CommandBody, NEUTRAL, Order, Resource, Stance, type TownSize, TownState, UnitFlag, UnitType } from "./protocol.ts";
@@ -853,4 +853,94 @@ export function siegeCrowd(siege: number, soldiers: number, cells: number, stand
   }
   const dead = crowd.filter((id) => w.unit(id) < 0).length;
   return { dead, left: engines.filter((id) => w.unit(id) >= 0).length, stones };
+}
+
+export interface OutpostStand {
+  /** Seconds the outpost stood (to the end if it did not fall), and whether it fell. */
+  seconds: number;
+  fell: boolean;
+  /** Attackers, and of them the dead; guards (spearmen posted, ranged in the towers) dead. */
+  attackers: number;
+  attackersDead: number;
+  guardsDead: number;
+  /** Stones thrown at it (siege_shot), by engines that threw at all. */
+  stones: number;
+}
+
+/** The longest outpost stand (3 minutes). */
+const STAND_TICKS = 3600;
+
+/**
+ * An outpost holding a way (D-119; OUTPOST_HIDE on or off): player 1's finished outpost at the east of
+ * the field, `guards` spearmen posted (holding with OUTPOST_HIDE on, as new outposts are; attacking, the
+ * old default, with it off), `towers` arrow towers 4 cells north and south of it with `towerRanged`
+ * ranged units hiding in each; player 0's `attackers` start 13 cells west of it and are told to attack
+ * the outpost (`how` "attack", as the computer's raids) or to move on past it (`how` "move", fighting
+ * what they meet). Ends when the outpost falls, the attackers are gone, or after 3 minutes.
+ */
+export function outpostStand(attackers: Army, guards: number, towers: number, towerRanged: number, how: "attack" | "move"): OutpostStand {
+  const g = new Game({ seed: 1, scenario: "standard", maxTicks: 0 });
+  const w = g.w;
+  const u = w.units.col;
+  const b = w.buildings.col;
+  for (let s = 0; s < w.units.count; s++) w.unitSlot[u.id[s]] = -1;
+  w.units.count = 0;
+  const f = field(g);
+  let seq = 0;
+  const push = (p: number, body: CommandBody) => g.push({ ...body, t: g.tick, p, seq: seq++ } as never);
+  const midY = f.y + (FIELD_H >> 1);
+  const info = BUILDINGS[BuildingType.Outpost];
+  const ox = f.x + 24;
+  const oy = midY - (info.size >> 1);
+  const post = w.addBuilding(1, BuildingType.Outpost, ox, oy, info.hp, 1000);
+  const tower = BUILDINGS[BuildingType.ArrowTower];
+  const towerIds: number[] = [];
+  for (let k = 0; k < towers; k++) towerIds.push(w.addBuilding(1, BuildingType.ArrowTower, ox + 1, k === 0 ? oy - 2 - tower.size : oy + info.size + 2, tower.hp, 1000));
+  const place = (p: number, army: Army, x0: number, y0: number, rows: number): number[] => {
+    const ids: number[] = [];
+    let k = 0;
+    for (const [key, type] of TYPES) {
+      for (let i = 0; i < (army[key] ?? 0); i++, k++) {
+        const id = w.addUnit(p, type, ((x0 + Math.trunc(k / rows)) << CELL_SHIFT) + 512, ((y0 + (k % rows)) << CELL_SHIFT) + 512, UNITS[type].hp);
+        if (type === UnitType.Mage) u.flags[w.unit(id)] |= UnitFlag.Autocast;
+        ids.push(id);
+      }
+    }
+    return ids;
+  };
+  const army = place(0, attackers, f.x + 2, f.y + 1, FIELD_H - 2);
+  const spears = place(1, { spear: guards, ranged: 0, mage: 0 }, ox + info.size + 2, midY - 2, 5);
+  const hidden = place(1, { spear: 0, ranged: towerRanged * towers, mage: 0 }, ox + info.size + 4, midY - 2, 5);
+  w.res[Resource.Crystal] = CRYSTAL;
+  g.fog.update(w);
+  if (spears.length > 0) push(1, { c: "post", u: spears, building: post });
+  push(1, { c: "outpost_mode", building: post, hold: OUTPOST_HIDE.on });
+  for (let k = 0; k < towers; k++) {
+    const ids = hidden.slice(k * towerRanged, (k + 1) * towerRanged);
+    if (ids.length > 0) push(1, { c: "garrison", u: ids, building: towerIds[k] });
+  }
+  for (let t = 0; t < 600; t++) g.step();
+  // Attacking: they walk up until they see it (the computer's raids know where it is), then attack it.
+  push(0, { c: "move", u: army, x: how === "attack" ? ox - 4 : ox + info.size + 6, y: midY });
+  const alive = (ids: number[]) => ids.filter((id) => w.unit(id) >= 0).length;
+  const start = g.tick;
+  let stones = 0;
+  let told = how !== "attack";
+  while (g.tick - start < STAND_TICKS && w.building(post) >= 0 && alive(army) > 0) {
+    if (!told && g.fog.visible[0][oy * w.size + ox] === 1) {
+      push(0, { c: "attack", u: army.filter((id) => w.unit(id) >= 0), target: post });
+      told = true;
+    }
+    g.step();
+    for (const e of g.events) if (e.to === 0 && e.ev.k === "siege_shot") stones++;
+  }
+  void b;
+  return {
+    seconds: Math.round((g.tick - start) / 20),
+    fell: w.building(post) < 0,
+    attackers: army.length,
+    attackersDead: army.length - alive(army),
+    guardsDead: spears.length + hidden.length - alive(spears) - alive(hidden),
+    stones,
+  };
 }

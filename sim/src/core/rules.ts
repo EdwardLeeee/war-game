@@ -202,6 +202,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
       ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
       ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}), ...(KEEP.on ? { keep: true } : {}), ...(MARKET.on ? { market: true } : {}),
       ...(WALL_SHIFT.on && WALLS.on ? { wallShift: true } : {}),
+      ...(OUTPOST.on && OUTPOST_HIDE.on ? { outpostHide: true } : {}),
     },
     arrows: {
       mainCity: MAIN_ARROW,
@@ -212,7 +213,10 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     garrisonTypes: GARRISON_TYPES,
     garrisonCannon: { permille: GARRISON.cannon ? GARRISON.cannonPermille : 0, cooldownTimes: GARRISON.cannonCooldown },
     towerReach: TOWER_REACH,
-    outpost: { slots: OUTPOST.slots, reach: OUTPOST.reach, chase: OUTPOST.chase },
+    outpost: {
+      slots: OUTPOST.slots, reach: OUTPOST.reach, chase: OUTPOST.chase, poke: OUTPOST_HIDE.on ? OUTPOST_HIDE.poke : 1,
+      ranged: OUTPOST_HIDE.on ? [OUTPOST_HIDE.rangedNum, OUTPOST_HIDE.rangedDen] : [1, 1], melee: OUTPOST_HIDE.on ? [OUTPOST_HIDE.meleeNum, OUTPOST_HIDE.meleeDen] : [1, 1],
+    },
     towns: [TownSize.Small, TownSize.Large].map((size) => townInfo(size, map)),
     plunderRecovery: { startPermille: PLUNDER_RECOVERY.on ? PLUNDER_RECOVERY.startPermille : 1000, ticks: PLUNDER_RECOVERY.ticks },
     cannonRange: CANNON.range,
@@ -436,6 +440,19 @@ export const TOWN_GUARD = { on: true, gateTicks: 3 * S, gateReach: 2 };
  * its owner's units walk through it, finished or not, as through a gate of its town; nobody else does.
  */
 export const OUTPOST = { on: true, slots: 6, reach: 8, chase: 12, ownersWalk: true };
+/**
+ * Spearmen hide in outposts (D-119; the user 2026-11-04: 「我覺得哨所的面積應該要放大，我是把它當作城牆來設計的」「哨所目前
+ * 的血量好像有點太低」「駐軍是不是也可以放進去？只能放槍兵然後槍兵可以躲在裡面戳人」): an outpost is `size` x `size`, has
+ * `hp` and costs `cost`; up to `slots` spearmen posted at it go in (`post`), where nobody outside can hit
+ * them, and each strikes an enemy unit next to it (within a spearman's reach of the footprint) at
+ * `poke` times its attack. Holding (new outposts' default) they stay in; attacking, they come out for
+ * enemies within OUTPOST.reach and whoever hits the outpost, and go back in once done (OUTPOST.chase).
+ * The outpost falls: they come out with no order. Like a wall (ceo 2026-11-04, option 1): ranged units' and
+ * mages' own attacks hit it at `rangedNum` / `rangedDen`, other units' at `meleeNum` / `meleeDen` (at least
+ * 1), siege stones as on any building (SIEGE.vsBuildings): an army without engines hardly breaks it, the
+ * engines are the way. Off: D-080's outposts, guards standing round them.
+ */
+export const OUTPOST_HIDE = { on: true, size: 3, hp: 1500, cost: cost(0, 90), slots: 9, poke: 2, rangedNum: 1, rangedDen: 5, meleeNum: 1, meleeDen: 3 };
 
 // --- round 8 (D-069): a defender is not beaten by the first cannon shots -------------------
 
@@ -566,6 +583,11 @@ switched(BUILDINGS[BuildingType.ArrowTower], "hp", TOWER_VALUE, () => TOWER_VALU
 switched(BUILDINGS[BuildingType.ArrowTower], "buildTicks", TOWER_VALUE, () => TOWER_VALUE.buildTicks);
 switched(ARROW_TOWER, "damage", TOWER_VALUE, () => TOWER_VALUE.damage);
 switched(ARROW_TOWER, "cooldown", TOWER_VALUE, () => TOWER_VALUE.cooldown);
+// D-119: the bigger outpost spearmen hide in.
+switched(BUILDINGS[BuildingType.Outpost], "size", OUTPOST_HIDE, () => OUTPOST_HIDE.size);
+switched(BUILDINGS[BuildingType.Outpost], "hp", OUTPOST_HIDE, () => OUTPOST_HIDE.hp);
+switched(BUILDINGS[BuildingType.Outpost], "cost", OUTPOST_HIDE, () => OUTPOST_HIDE.cost);
+switched(OUTPOST, "slots", OUTPOST_HIDE, () => OUTPOST_HIDE.slots);
 
 // --- mages (from PR-4) ---------------------------------------------------------------
 

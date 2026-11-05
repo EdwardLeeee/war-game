@@ -768,6 +768,8 @@ export interface Features {
   market?: boolean;
   /** Soldiers on the walls shift along them to where the enemy is (D-119), `Rules.wallShift`. Absent: off. */
   wallShift?: boolean;
+  /** Spearmen hide in outposts and strike from them (D-119), `Rules.outpost.poke`. Absent: off. */
+  outpostHide?: boolean;
 }
 
 export interface MapInfo {
@@ -822,7 +824,7 @@ export interface Rules {
    * they go for enemies within `reach` of the outpost (footprint to unit) and give up beyond
    * `chase`; holding, they chase whoever hits them up to `chase`.
    */
-  outpost?: { slots: number; reach: number; chase: number };
+  outpost?: { slots: number; reach: number; chase: number; poke?: number; ranged?: [number, number]; melee?: [number, number] };
   /** By TownSize (round 7). */
   towns?: TownInfo[];
   /**
@@ -1008,6 +1010,8 @@ export type SimEvent =
    */
   /** `n` (D-096): this many arrows at once, absent for one (PROTOCOL.md 5). */
   | { k: "shot"; building: number; target: number; n?: number }
+  /** D-119 (OUTPOST_HIDE): the spearmen in outpost `building` struck unit `target`, `n` of them (absent: 1). */
+  | { k: "poke"; building: number; target: number; n?: number }
   /**
    * A siege engine `u` threw a stone (D-099): it lands at (x, y), fixed point; `lands` is the tick of
    * the first snapshot that shows it landed (this event's snapshot tick + Rules.siege.flightTicks). To
@@ -1035,6 +1039,7 @@ export const EVENT_KINDS = [
   "mage_killed",
   "shot",
   "siege_shot",
+  "poke",
   "traded",
   "rejected",
   "game_over",
