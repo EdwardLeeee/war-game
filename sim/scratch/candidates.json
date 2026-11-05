@@ -1,0 +1,172 @@
+{
+ "traces": [
+  {
+   "name": "base-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "base-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "base-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "base-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "base-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {}
+  },
+  {
+   "name": "avoid-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "farAvoid": true
+   }
+  },
+  {
+   "name": "avoid-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "farAvoid": true
+   }
+  },
+  {
+   "name": "avoid-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "farAvoid": true
+   }
+  },
+  {
+   "name": "avoid-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "farAvoid": true
+   }
+  },
+  {
+   "name": "avoid-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "farAvoid": true
+   }
+  },
+  {
+   "name": "avoid-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "farAvoid": true
+   }
+  },
+  {
+   "name": "avoid-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "farAvoid": true
+   }
+  },
+  {
+   "name": "avoid-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "farAvoid": true
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "base",
+   "a": {},
+   "groups": [
+    "push-raid",
+    "push-raid-random",
+    "push-late-harass",
+    "push-late-harass-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "base",
+   "a": {},
+   "cap": 120,
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "avoid",
+   "a": {
+    "farAvoid": true
+   },
+   "groups": [
+    "push-raid",
+    "push-raid-random",
+    "push-late-harass",
+    "push-late-harass-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "avoid",
+   "a": {
+    "farAvoid": true
+   },
+   "cap": 120,
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
