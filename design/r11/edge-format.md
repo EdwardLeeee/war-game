@@ -101,16 +101,19 @@ x3、x2 各一套，加一份 `edge/edge.json`。PNG 照其他圖的規則：帶
 
 每一格畫面多畫一層雲海，約佔畫面一半，每點取 4 次貼圖，手機上估計不到 1 毫秒。
 
-## 3. `ground/ground.json` 的新欄位（PR 3，數值到時候給）
+## 3. `ground/ground.json` 的新欄位（`design/r9/common/ground_v7.py` 產生）
+
+art-v6 的七個圖層和 `rules` 都還在、不動。
 
 - `relief`：可以接縫的起伏圖。
   - x3 用 `relief.png` 960²，x2 用 640²，`tile_m` 16。
   - RGB 的意思：R＝亮度 ÷ 2、G＝小沖溝、B＝丘頂。
   - 照菱形鏡頭的太陽（畫面左上）算好光。
-  - 取兩次，第二次轉 37 度再混合，避免看出重複。
+  - 取兩次再混合，避免看出重複。第二次的座標照 `relief.second`：`turn` 轉 37 度（[[0.8, 0.6], [−0.6, 0.8]]）、`move_m` 平移，用週期 `mix_noise_m` 的雜訊在 `mix` 兩個值之間平滑混合（`ground_r9.tsample`）。
   - 算法在 `design/r9/common/ground_r9.py` 的 `relief_tile()`、`compose()`。
-- `ripple`：水面的漣漪圖。`ripple.png` 256²，`tile_m` 4；R＝高度，G、B＝兩個方向的斜率。
-- `water`：R9 的水邊參數，包括深淺吸收、河底顏色、天空、近岸濕線、對岸土坎、亮點等，名稱照 `ground_r9.R9`，另加 `"version": "r9"`。以後再改水面時只換 version，不換鍵名。
+- `ripple`：水面的漣漪圖。`ripple.png` 256²，`tile_m` 4；R＝高度（單位是標準差），G、B＝沿 x、y 的斜率（每公尺）。每個通道都存成 0.5 + 值 ÷ (2 × scale)，高度用 `height_scale`、斜率用 `slope_scale`。
+- `water`：R9 的水邊參數，包括深淺吸收、河底顏色、天空、近岸濕線、對岸土坎、亮點等，名稱照 `ground_r9.R9`，另加 `"version": "r9"`，以及菱形鏡頭的 `sun`、`view`（地面座標 x 東、y 南、z 上）、`sun_rgb`。以後再改水面時只換 version，不換鍵名。
+- 這些只是素材和參數，畫法要 client 的著色器照 `ground_r9.compose()` 實作。沒實作之前，舊的 `rules` 和七個圖層照樣能用，畫面不會壞。
 
 ## 4. client 的回覆（2026-11-04）
 

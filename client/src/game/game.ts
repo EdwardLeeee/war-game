@@ -2610,9 +2610,7 @@ export class Game implements GestureHost {
               this.trainedAt.add(ev.building);
             }
             if (ev.k === "shot") this.drawShot(ev.building, ev.target, now, ev.n ?? 1);
-            // TODO(core outpost-hide): SimEvent's poke once the protocol has it.
-            const poke = ev as unknown as { k: string; building: number; target: number; n?: number };
-            if (poke.k === "poke") this.drawPoke(poke.building, poke.target, poke.n ?? 1);
+            if (ev.k === "poke") this.drawPoke(ev.building, ev.target, ev.n ?? 1);
             if (ev.k === "siege_shot") this.drawSiegeShot(ev);
             this.hud.onEvent(ev);
           }
