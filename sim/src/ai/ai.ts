@@ -2762,9 +2762,11 @@ export interface HardPlan {
   /**
    * D-130 (ceo 2026-11-05: a squad waiting by a far work spot killed 67 of hard's farmers in one game, 22 in the user's
    * 75830947; hideFar sent them back 30 s after it no longer saw the enemy, and with its farmers gone it saw nothing):
-   * such a spot is remembered FAR_AVOID ticks, longer with each new fall or sight there, FAR_AVOID_MOST at most from the
-   * first; its farmers and any that come near it go home and back to work only once it is forgotten. With rescue, the
-   * squad goes for a remembered spot too, and one it got to and found clear (RESCUE_DONE) is forgotten (false: as before).
+   * a spot where farmers fall again (a second time, FAR_AGAIN or more after the first and within FAR_AVOID of it) is
+   * remembered FAR_AVOID ticks, longer with each new fall there, FAR_AVOID_MOST at most, FAR_AVOID_SPOTS at once (a
+   * cavalry raid that kept moving made 43 spots and stalled hard's economy, run 42093417179 seed 15); its farmers and
+   * any that come near it go home and back to work only once it is forgotten. With rescue, the squad goes for a
+   * remembered spot too, and one it got to and found clear (RESCUE_DONE) is forgotten (false: as before).
    */
   farAvoid: boolean;
   /**
@@ -3209,6 +3211,9 @@ const FAR_CLEAR = 600;
 /** D-130 (plan.farAvoid): a far spot where farmers fell is remembered this long, longer with each new fall, this long at most from the first. */
 const FAR_AVOID = 3 * TICKS_PER_MINUTE;
 const FAR_AVOID_MOST = 9 * TICKS_PER_MINUTE;
+/** D-130 (plan.farAvoid): falls this close after the last are the same time at a spot; spots remembered at once at most. */
+const FAR_AGAIN = 30 * 20;
+const FAR_AVOID_SPOTS = 2;
 /** D-086 A3 (plan.peekFirst): how long the one sent to look may walk, and how long before another goes. */
 const PEEK_WALK = 3 * TICKS_PER_MINUTE;
 const PEEK_AGAIN = 2 * TICKS_PER_MINUTE;
@@ -3471,6 +3476,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const farHide: { x: number; y: number; clear: number; ids: number[] }[] = [];
   /** plan.farAvoid: far spots remembered (from when, until when); the farmers it holds at home, counted in farmer-ticks (counted.farmerIdle), since. */
   let farAvoids: { x: number; y: number; from: number; until: number; last: number }[] = [];
+  /** plan.farAvoid: far spots where farmers fell a first time (the first fall, the last of that time). */
+  let farFirst: { x: number; y: number; t: number; last: number }[] = [];
   let idleSince = -1;
   /** plan.foeMemory: the enemy's worth it believes in, and when it last shrank. */
   let foeMemo = 0;
@@ -4914,22 +4921,39 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         for (const d of farmerFell) if (farmerFell.filter((e) => dist2(e.x, e.y, d.x, d.y) <= FARMER_SPOT * FARMER_SPOT).length >= 2) spots.push(d);
         for (const f of farmers) if (far(f.x, f.y) && foes.some((e) => dist2(e.x, e.y, f.x, f.y) <= FARMER_SPOT * FARMER_SPOT)) spots.push({ x: f.x, y: f.y });
         if (plan.farAvoid) {
-          // Remembered: each new fall or sight there makes it longer, FAR_AVOID_MOST at most from the first; forgotten after.
-          // Only a new fall or sight makes it longer (a fall stays in farmerFell a minute), from when it happened.
+          // A spot is remembered only when farmers fall there again (ceo 2026-11-05: a squad waiting by a spot kills those
+          // sent back to it; a raid passing by kills them once): a first time (2 within a minute) is noted, falls within
+          // FAR_AGAIN of the last are the same time, and a fall there later, within FAR_AVOID of the first, makes it
+          // remembered. Each new fall there makes it longer, FAR_AVOID_MOST at most from then; FAR_AVOID_SPOTS at once
+          // (a new one puts out the oldest). Forgotten after.
           farAvoids = farAvoids.filter((a) => a.until > tick);
-          const events: { x: number; y: number; t: number }[] = [];
-          for (const d of farmerFell) if (farmerFell.filter((e) => dist2(e.x, e.y, d.x, d.y) <= FARMER_SPOT * FARMER_SPOT).length >= 2) events.push({ x: d.x, y: d.y, t: d.tick });
-          for (const f of farmers) if (far(f.x, f.y) && foes.some((e) => dist2(e.x, e.y, f.x, f.y) <= FARMER_SPOT * FARMER_SPOT)) events.push({ x: f.x, y: f.y, t: tick });
-          for (const p of events) {
-            if (underArrows(p)) continue;
-            const a = farAvoids.find((e) => dist2(e.x, e.y, p.x, p.y) <= FARMER_SPOT * FARMER_SPOT);
-            if (a === undefined) {
-              farAvoids.push({ x: p.x, y: p.y, from: p.t, until: p.t + FAR_AVOID, last: p.t });
-              counted.avoidSpots++;
-            } else if (p.t > a.last) {
-              a.until = Math.min(a.from + FAR_AVOID_MOST, Math.max(a.until, p.t + FAR_AVOID));
-              a.last = p.t;
+          farFirst = farFirst.filter((e) => tick - e.t <= FAR_AVOID);
+          const near = (a: { x: number; y: number }, b: { x: number; y: number }) => dist2(a.x, a.y, b.x, b.y) <= FARMER_SPOT * FARMER_SPOT;
+          for (const d of farmerFell) {
+            if (underArrows(d)) continue;
+            const a = farAvoids.find((e) => near(e, d));
+            if (a !== undefined) {
+              if (d.tick > a.last) {
+                a.until = Math.min(a.from + FAR_AVOID_MOST, Math.max(a.until, d.tick + FAR_AVOID));
+                a.last = d.tick;
+              }
+              continue;
             }
+            const first = farFirst.find((e) => near(e, d));
+            if (first === undefined) {
+              if (farmerFell.filter((e) => near(e, d)).length >= 2) farFirst.push({ x: d.x, y: d.y, t: d.tick, last: d.tick });
+              continue;
+            }
+            if (d.tick <= first.last) continue;
+            if (d.tick - first.last <= FAR_AGAIN) {
+              first.last = d.tick;
+              continue;
+            }
+            // Again: remembered (the oldest out past FAR_AVOID_SPOTS).
+            farFirst.splice(farFirst.indexOf(first), 1);
+            if (farAvoids.length >= FAR_AVOID_SPOTS) farAvoids.splice(farAvoids.reduce((m, e, k) => (e.from < farAvoids[m].from ? k : m), 0), 1);
+            farAvoids.push({ x: d.x, y: d.y, from: d.tick, until: d.tick + FAR_AVOID, last: d.tick });
+            counted.avoidSpots++;
           }
           // The rescue goes for a remembered spot too (its farmers gone, it may see nothing there).
           for (const a of farAvoids) if (!underArrows(a)) spots.push({ x: a.x, y: a.y });
@@ -4984,6 +5008,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               // The falls there are seen to: they do not make it remembered again.
               for (let k = farmerFell.length - 1; k >= 0; k--) if (dist2(farmerFell[k].x, farmerFell[k].y, at.x, at.y) <= FARMER_SPOT * FARMER_SPOT) farmerFell.splice(k, 1);
               if (farmerSpot !== null && dist2(farmerSpot.x, farmerSpot.y, at.x, at.y) <= FARMER_SPOT * FARMER_SPOT) farmerSpot = null;
+              farFirst = farFirst.filter((e) => dist2(e.x, e.y, at.x, at.y) > FARMER_SPOT * FARMER_SPOT);
             }
             counted[why]++;
             rescueSquad.clear();
