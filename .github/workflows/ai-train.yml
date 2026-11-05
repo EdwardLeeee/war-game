@@ -8,6 +8,7 @@
 # again (v2's chain broke on one failed download, run 41078447033); its own groups (ai-train-v3-*).
 # NN v4 (ai/train-v4, never merged; D-122, ceo 2026-11-04): squads and the charge, from v3's weights (train.ts widens
 # them); its own groups (ai-train-v4-*), so a trial runs beside v3's chain and the switch waits for a run's end.
+# NN v4f (ai/train-v4f, never merged; 2026-11-05): eval of pick f<head>.<choice>: what a choice is worth when always taken.
 # NN v4s (ai/train-v4s, never merged; ceo 2026-11-04, the user: idle runners all to the training): mode gen, one
 # generation a run. The main chain (one job an island, its pairs as es plays them) never gives way; fill-in jobs play
 # more pairs of the same generation on the runners nobody else uses: 20 (the account's limit) minus every other job
@@ -313,6 +314,9 @@ jobs:
             eval)
               if [ "$ISLAND" = "control" ]; then
                 node $T eval --name control --games "$GAMES" --out "$O" "$@"
+              elif [ "${ISLAND#f}" != "$ISLAND" ]; then
+                # NN v4f: "f<head>.<choice>": hard forced to that choice wherever the mask allows it, against the control's seeds.
+                node $T eval --force "${ISLAND#f}" --games "$GAMES" --out "$O" "$@"
               else
                 # NN v3 B: "<n>b": island n's best candidate of its last generation, on the same new seeds.
                 N="$F/train-es-$ISLAND/net.json"

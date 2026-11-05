@@ -394,17 +394,25 @@ if (mode === "dryrun") {
   const file = arg("net", "");
   const net0: NetWeights | null = file === "" ? null : JSON.parse(readFileSync(file, "utf8"));
   // NN v4 (D-122): a v3 network plays as it did, as hard on the new heads.
-  const net = net0 === null || sameShape(net0) ? net0 : widenNet(net0, ES_DEFAULTS);
+  let net = net0 === null || sameShape(net0) ? net0 : widenNet(net0, ES_DEFAULTS);
+  // NN v4f (2026-11-05): --force <head>.<choice>: hard with that choice on that head wherever the mask allows it: what the choice itself is worth.
+  const force = arg("force", "");
+  if (force !== "") {
+    const [h, k] = force.split(".").map(Number);
+    const plain = asHardNet();
+    const at = NET_HEADS.slice(0, h).reduce((a, x) => a + x, 0) + k;
+    net = { layers: plain.layers.map((L, l) => (l === plain.layers.length - 1 ? { ...L, b: L.b.map((v, i) => (i === at ? 10 : v)) } : L)) };
+  }
   const names = arg("rules", "").split(",").filter((x) => x !== "");
   const bad = names.filter((x) => x !== "keep" && x !== "siege" && x !== "rich" && x !== "market");
   if (bad.length > 0) throw new Error(`--rules ${bad.join(",")}: keep, siege, rich or market`);
   const switches: Switches = Object.fromEntries(names.map((x) => [x, true]));
-  const name = arg("name", file === "" ? "control" : file);
+  const name = arg("name", force !== "" ? `強制 ${force}` : file === "" ? "control" : file);
   const r = await evaluate(name, net, Number(arg("games", "100")), Number(arg("crush", "20")), Number(arg("seed", "2000001")), switches);
   writeFileSync(`${out}/eval.json`, JSON.stringify(r));
   const h = wl(r.hard);
   summary(
-    `## 比強弱（${file === "" ? "困難本身" : `${name}：${file}`}，規則開關 ${switchesText(switches)}，種子從 ${r.seed} 起）\n\n` +
+    `## 比強弱（${force !== "" ? `強制 ${force}` : file === "" ? "困難本身" : `${name}：${file}`}，規則開關 ${switchesText(switches)}，種子從 ${r.seed} 起）\n\n` +
       `| 對手 | 局 | 贏 | 平手 | 輸 | 贏－輸（標準差） | 第 45 分還在打的局 | 第 45 分箭樓（每局） | 第 45 分治理的城（每局） |\n|---|---|---|---|---|---|---|---|---|\n` +
       `| 困難（120 分） | ${r.hard.games} | ${r.hard.won} | ${r.hard.draws} | ${r.hard.lost} | ${h.d}（${h.sd.toFixed(1)}） | | | |\n` +
       `| push-crush（120 分） | ${r.crush.games} | ${r.crush.won} | ${r.crush.draws} | ${r.crush.lost} | ${wl(r.crush).d} | ${r.crush.at45} | ${r.crush.towers45.toFixed(1)} | ${r.crush.governed45.toFixed(1)} |\n\n` +
