@@ -16,6 +16,7 @@ import { TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { ownerTint } from "./atlas.ts";
 import { ARROW_FROM_M } from "./missile.ts";
+import { type CrewSpot, facingTo, pokers } from "./outpost-crew.ts";
 import type { ArtFrame, UnitArt } from "./unit-art.ts";
 
 interface Slot {
@@ -59,6 +60,9 @@ export interface Release {
   mirror: boolean;
   from: [number, number, number];
 }
+
+/** Points up on the plane a metre up (the camera's 30 degrees, as castle-draw.ts). */
+const UP_PER_M = Math.sqrt(3) / 2;
 
 /** A shield back after it broke fades in over this much game time (spec section 4, tentative). */
 const SHIELD_BACK_S = 0.3;
@@ -107,6 +111,14 @@ export class ArtUnits {
   private readonly scale: number;
   private readonly slots: Slot[] = [];
   private readonly corpseSlots: Slot[] = [];
+  /** Those on the outposts' walks (D-121). */
+  private readonly crewSlots: Slot[] = [];
+  /**
+   * Pokes from the outposts (event `poke`, D-121) still playing: the outpost, the target's place
+   * (world px), how many, when (sim seconds, set on the first frame drawn after it) and which of
+   * its crew thrust (picked then: the nearest not thrusting already).
+   */
+  private pokes: { building: number; x: number; y: number; n: number; since: number | null; who: number[] }[] = [];
   /** The landing dust (spec section 11), one a falling unit, from the world effects atlas. */
   private readonly dustSprites: Sprite[] = [];
   private readonly anims = new Map<number, AnimState>();
@@ -449,6 +461,59 @@ export class ArtUnits {
     for (let i = dust; i < this.dustSprites.length; i++) this.dustSprites[i].visible = false;
   }
 
+  /** An outpost's crew poked at a target at world px (x, y) (event `poke`, D-121): `n` of them thrust once. */
+  poke(building: number, x: number, y: number, n: number): void {
+    this.pokes.push({ building, x, y, n, since: null, who: [] });
+  }
+
+  /**
+   * The spearmen hiding in outposts, on their walks (D-121): idle, looking out; those that poke turn
+   * to the target and play their attack once. No shadow (the walk is not the ground).
+   */
+  drawCrews(crews: readonly { building: number; owner: number; spots: readonly CrewSpot[]; z: number }[], seconds: number): void {
+    const thrust = (a: AtlasJson) => {
+      const info = a.anims.attack;
+      return info === undefined ? 0 : info.frames / fpsOf(a, "attack");
+    };
+    let k = 0;
+    for (const crew of crews) {
+      const a = this.atlasFor(UnitType.Spearman, crew.owner);
+      if (a === null) continue;
+      const long = thrust(a);
+      const mine = this.pokes.filter((p) => p.building === crew.building);
+      for (const p of mine) {
+        if (p.since !== null) continue;
+        p.since = seconds;
+        const busy = new Set(mine.filter((q) => q !== p && q.since !== null && seconds - q.since < long).flatMap((q) => q.who));
+        const free = crew.spots.map((s, i) => ({ s, i })).filter(({ i }) => !busy.has(i));
+        p.who = pokers(free.map(({ s }) => s), p.x, p.y, p.n).map((j) => free[j].i);
+      }
+      crew.spots.forEach((spot, i) => {
+        const p = mine.find((q) => q.since !== null && q.who.includes(i) && seconds - q.since < long);
+        const anim = p === undefined || a.anims.attack === undefined ? "idle" : "attack";
+        const facing = p === undefined ? spot.facing : facingTo(spot.x, spot.y, p.x, p.y);
+        const dir = pictureDirection(facing, null, this.projection.kind);
+        const info = a.anims[anim];
+        const index = p === undefined ? frameAt(info, fpsOf(a, anim), seconds, (crew.building + i) % Math.max(1, info.frames)) : Math.min(info.frames - 1, Math.floor((seconds - (p.since ?? seconds)) * fpsOf(a, anim)));
+        const at = this.projection.toPlane(spot.x, spot.y);
+        const s = this.slot(this.crewSlots, k++);
+        this.place(s, a, anim, dir, index, crew.owner, at.x, at.y, 1, spot.upM * this.projection.ptPerM * UP_PER_M, crew.z);
+        s.shadow.visible = false;
+        s.shield.visible = false;
+        s.fx.visible = false;
+      });
+    }
+    for (let i = k; i < this.crewSlots.length; i++) this.hide(this.crewSlots[i]);
+    // Played out, or their outpost gone from view: let go.
+    const longest = 3;
+    this.pokes = this.pokes.filter((p) => p.since === null ? crews.some((c) => c.building === p.building) : seconds - p.since < longest);
+  }
+
+  /** Those on the outposts' walks drawn this frame (for the test page). */
+  get crewDrawn(): number {
+    return this.crewSlots.filter((s) => s.box.visible && s.color.visible).length;
+  }
+
   /** Dust sprite `i`, `elapsed` seconds into its puff at (x, y) on the plane; false when it is not playing. */
   private dustAt(i: number, elapsed: number, scale: number, x: number, y: number): boolean {
     const fx = this.art.effects;
@@ -469,13 +534,14 @@ export class ArtUnits {
   }
 
   destroy(): void {
-    for (const s of [...this.slots, ...this.corpseSlots]) {
+    for (const s of [...this.slots, ...this.corpseSlots, ...this.crewSlots]) {
       s.box.destroy({ children: true });
       s.shadow.destroy();
     }
     for (const d of this.dustSprites) d.destroy();
     this.slots.length = 0;
     this.corpseSlots.length = 0;
+    this.crewSlots.length = 0;
     this.dustSprites.length = 0;
   }
 }

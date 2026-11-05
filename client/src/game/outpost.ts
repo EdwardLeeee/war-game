@@ -38,9 +38,14 @@ export function postTap(units: number[], target: PostTarget | null, me: number, 
 /** The unit type ＋槍兵 calls (the protocol's: spearmen only). */
 export const POST_TYPE = UnitType.Spearman;
 
-/** The line under 攻擊／堅守: what the outpost does now, with this game's numbers (rules.outpost). */
-export function outpostModeText(rules: Pick<Rules, "outpost">, hold: boolean): string {
+/**
+ * The line under 攻擊／堅守: what the outpost does now, with this game's numbers (rules.outpost);
+ * `hide` (D-119, features.outpostHide): they hide in it and poke out.
+ */
+export function outpostModeText(rules: Pick<Rules, "outpost">, hold: boolean, hide = false): string {
   const o = rules.outpost;
+  if (hide && hold) return "堅守：躲在哨所裡，戳貼過來的敵人，被打也不出來";
+  if (hide) return `攻擊：敵兵進到 ${o?.reach ?? 0} 格內或哨所被打，就出去打；打完或追到 ${o?.chase ?? 0} 格就回來躲`;
   if (hold) return `堅守：站在哨所旁不動，只打走到身邊的；哨所或駐守的兵被打，就一起去打，追到 ${o?.chase ?? 0} 格就回來`;
   return `攻擊：敵兵進到哨所 ${o?.reach ?? 0} 格內就去打，追到 ${o?.chase ?? 0} 格就回來`;
 }
