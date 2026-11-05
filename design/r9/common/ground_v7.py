@@ -48,6 +48,9 @@ def main(d, scale):
                     # the shader samples it twice and mixes them (ground_r9.tsample): no repeat on the screen
                     "second": {"turn": [[0.8, 0.6], [-0.6, 0.8]], "move_m": [23.7, 9.1], "mix_noise_m": 40.0, "mix": [0.25, 0.75]}}
     gj["ripple"] = ripple(d)
+    # art-v7.4 (client 2026-11-06: pale dirt blotches with dark specks on the grass at 0.8): the approved R9/R11 boards
+    # drew the ground with no dirt blotches (scene_r9.ground_layers: noise_threshold 0.99), so the game draws it so too
+    gj["rules"]["dirt"]["noise_threshold"] = 0.99
     gj["water"] = {"version": "r9", **{k: lists(v) for k, v in R.R9.items()},
                    "sun": lists(R.SUN_D), "view": lists(R.VIEW_D), "sun_rgb": lists(R.SUN_RGB)}
     (d / "ground.json").write_text(json.dumps(gj, indent=1, ensure_ascii=False))
