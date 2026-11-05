@@ -108,6 +108,8 @@ export class LabPanel {
   private readonly loadBox: HTMLElement;
   /** art-v7 量測's variant, while one is measured (D-128). */
   private variant: ArtVariant | null = null;
+  /** The screen kept on while measuring (10 minutes untouched: the iPhone would lock and spoil it). */
+  private wake: { release(): Promise<void> } | null = null;
   /** The population when the measurement started (the rules decide the cap: D-083). */
   private startPopulation: { population: number; cap: number } | null = null;
   private readonly frameMs: number[] = [];
@@ -321,6 +323,7 @@ export class LabPanel {
       // Not kept: a reload would go unnoticed.
     }
     this.resultBox.hidden = true;
+    this.keepAwake();
     this.log.add(`暖機 5 秒，接著量 ${this.windowText()}`);
     this.refreshButtons();
     return true;
@@ -415,6 +418,25 @@ export class LabPanel {
     } catch {
       // Nothing kept.
     }
+    void this.wake?.release().catch(() => {});
+    this.wake = null;
+  }
+
+  /**
+   * The screen kept on while measuring (Screen Wake Lock, Safari 16.4 on): left alone for 10 minutes
+   * (art-v7 量測) the iPhone dims and locks, the page goes to the background and the measurement is
+   * spoilt. Not there or refused: as before (ART_MEASURE_NOTE says to turn 自動鎖定 off then).
+   */
+  private keepAwake(): void {
+    const lock = (navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> } }).wakeLock;
+    if (lock === undefined || this.wake !== null) return;
+    lock.request("screen").then(
+      (w) => {
+        if (this.lab.phase === "idle") void w.release().catch(() => {});
+        else this.wake = w;
+      },
+      () => this.log.add("螢幕沒辦法保持亮著：量測時請把「自動鎖定」改成「永不」"),
+    );
   }
 
   private showResult(r: MeasureResult): void {

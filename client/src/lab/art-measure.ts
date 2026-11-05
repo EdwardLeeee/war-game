@@ -30,7 +30,7 @@ export const ART_MEASURE_MS = 10 * 60_000;
 export const ART_MEASURE_SCENARIO = "perf360";
 
 /** Said above the buttons (ceo). */
-export const ART_MEASURE_NOTE = "每種要下載 60–160 MB，請用 Wi‑Fi。各量 10 分鐘（雙方 360 人），量測時不要操作。";
+export const ART_MEASURE_NOTE = "每種要下載 60–160 MB，請用 Wi‑Fi。各量 10 分鐘（雙方 360 人），量測時不要操作。量測中螢幕會保持亮著；如果還是暗了，先到設定把「自動鎖定」改成「永不」。";
 
 /** What the textures of a game take, for the result (bytes). */
 export interface ArtCost {
