@@ -98,8 +98,10 @@ permissions:
   contents: read
   actions: read
 
+# ai/train-b401 (never merged; core 2026-11-06): v4m with the batch #401 (ea1abc1) merged, for D-130's raidcamp
+# measurement on it (variants boff, bon); its own groups.
 concurrency:
-  group: ai-train-v4m-${{ inputs.mode || 'push' }}-${{ inputs.mode == 'fill' && inputs.tag || inputs.only || 'all' }}
+  group: ai-train-b401-${{ inputs.mode || 'push' }}-${{ inputs.mode == 'fill' && inputs.tag || inputs.only || 'all' }}
   cancel-in-progress: false
 
 jobs:

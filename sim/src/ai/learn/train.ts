@@ -124,6 +124,10 @@ const VARIANTS: Record<string, { force?: string; plan: Partial<HardPlan>; opp?: 
   crescue: { plan: { rescue: true }, opp: CAMP, oppForce: "5.1" },
   cboth: { plan: { farAvoid: true, rescue: true }, opp: CAMP, oppForce: "5.1" },
   cnohide: { plan: { hideFar: false }, opp: CAMP, oppForce: "5.1" },
+  // core 2026-11-06, the batch #401 (farAvoid on for hard by default): hard with it off and as it ships, against the
+  // raidcamp raider with it off as it was in run 42114168794.
+  boff: { plan: { farAvoid: false }, opp: { ...CAMP, farAvoid: false }, oppForce: "5.1" },
+  bon: { plan: {}, opp: { ...CAMP, farAvoid: false }, oppForce: "5.1" },
   raidcav: { force: "5.1", plan: { raidCavalry: true } },
   raid6: { force: "5.1", plan: { squadSize: 6 } },
   // ceo 2026-11-05, the user's 75830947: from minute 10, 10 at a time (cavalry first), farmers 20 cells or more from the enemy's main city.
