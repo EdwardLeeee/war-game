@@ -366,6 +366,8 @@ export class WorldRenderer {
   ghostStyle: "fill" | "outline" = "fill";
   /** Units drawn behind a wall this frame (test page). */
   ghostCount = 0;
+  /** Which (the test page). */
+  readonly ghostIds = new Set<number>();
   /** Units with their owner's colour under their feet this frame (寫實地面), for the test page. */
   footCount = 0;
   /** Our units drawn up on a castle's wall this frame (D-096, test page; the militia on theirs not counted). */
@@ -383,7 +385,11 @@ export class WorldRenderer {
     this.unitLayer.sortableChildren = true;
     this.artStructures = art !== null && ArtStructures.has(art, projection) ? new ArtStructures(art, view, { ground: this.groundArt, shadows: this.shadowLayer, upright: this.unitLayer }, cultureOf, projection) : null;
     // A unit's depth among the buildings' footprints (structure-art.ts), else its place on the screen.
-    const depth = (px: number, py: number): number => this.artStructures?.unitDepth(px, py) ?? py;
+    const depth = (px: number, py: number): number => {
+      const z = this.artStructures?.unitDepth(px, py) ?? py;
+      // In a gate's opening as a diamond: behind the gate's picture (castle-draw.ts gateDepth).
+      return this.castle?.gateDepth(px, py, z) ?? z;
+    };
     this.artUnits = art === null ? null : new ArtUnits(art, view, this.shadowLayer, this.unitLayer, cultureOf, projection, depth);
     if (this.artStructures !== null) {
       const structures = this.artStructures;
@@ -1475,6 +1481,7 @@ export class WorldRenderer {
     const sel = view.selection.units;
     this.ghostRings.clear();
     this.ghostCount = 0;
+    this.ghostIds.clear();
     this.footCount = 0;
     this.wallLifted = 0;
     // A layer with no one behind a wall this frame is hidden: its filter's pass is skipped.
@@ -1586,6 +1593,7 @@ export class WorldRenderer {
         this.artUnits?.ghost(i, behind ? this.ghostLayers[side] : null, this.ghostStyle === "outline");
         if (behind) {
           this.ghostCount++;
+          this.ghostIds.add(id);
           ghosts[side]++;
           if (selected) this.ghostRings.ellipse(at.x, at.y, ringX, ringY).stroke({ width: 2, color: 0xfff3b0 });
         }
