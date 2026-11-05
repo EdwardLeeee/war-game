@@ -333,7 +333,10 @@ test("量測（CI 的數字，不是 iPhone）：80 分鐘的局快轉要多久�
   });
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await header(page)).tick, { timeout: 60_000 }).toBeGreaterThan(96_200);
-  await pause(page);
+  // Paused from the test page: the game's own course may take a town just then (#358's run
+  // 41684354391: 「攻下小鎮！只能治理」 over the buttons), which this measure does not care about.
+  await page.evaluate(() => window.__proto?.game?.pause());
+  await expect.poll(async () => (await header(page)).paused).toBe(true);
   // Long tasks over 2 s, paused: without a save (CI's software drawing makes frames long by
   // themselves), then from the save on. The save's own share is buildMs and putMs.
   const longTasks = async (): Promise<number[]> => {

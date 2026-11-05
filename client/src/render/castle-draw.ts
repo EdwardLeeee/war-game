@@ -26,6 +26,7 @@ import { NEUTRAL_TINT, ownerTint } from "./atlas.ts";
 import { depthOf } from "./depth.ts";
 import { InsetFrames } from "./inset.ts";
 import type { ArtFrame, UnitArt } from "./unit-art.ts";
+import { fillOpening, type WallStand, wallStandAt } from "./wall-stand.ts";
 
 /** What is not in view now, drawn darker (as buildings remembered). */
 const OUT_OF_VIEW = 0x8a8a8a;
@@ -123,7 +124,7 @@ export class CastleDraw {
    * Each wall cell drawn from the pictures (map cell) where someone may stand (D-096): its piece's
    * depth, its walk's height (metres) and where they stand from the cell's middle (world px).
    */
-  private readonly wallStand = new Map<number, { z: number; walkM: number; dx: number; dy: number }>();
+  private readonly wallStand = new Map<number, WallStand>();
   /** Each gate piece's cells (map cell): its town and piece. */
   private readonly gateCells = new Map<number, { town: number; piece: number }>();
 
@@ -212,6 +213,7 @@ export class CastleDraw {
     const cellM = c.cell_m ?? 2;
     const openings = new Set(castle.gate.map(([x, y]) => (town.cellY + y) * n + town.cellX + x));
     const borrow: { cell: number; z: number }[] = [];
+    const gates: { cells: number[]; z: number; walkM: number | undefined }[] = [];
     fit.layout.walls.forEach((p, i) => {
       const color = new Sprite();
       const team = new Sprite();
@@ -250,6 +252,7 @@ export class CastleDraw {
       }
       const opening = cells.filter((cell) => openings.has(cell));
       if (opening.length > 0) for (const cell of cells) this.gateCells.set(cell, { town: town.id, piece: i });
+      if (opening.length > 0) gates.push({ cells: opening, z, walkM: info?.walk_m });
       d.pieces.push({ color, team, shadow, front: frontPart, gate: opening.length > 0 ? { cells: opening, look: "closed" } : null, box: { x0: 0, y0: 0, x1: 0, y1: 0 }, z, cells });
     });
     // What lives in the town (castle 2): standing with the units, by its front edge.
@@ -272,6 +275,8 @@ export class CastleDraw {
       const near = [cell - 1, cell + 1, cell - n, cell + n].map((c2) => this.wallStand.get(c2)).find((v) => v !== undefined);
       if (near !== undefined) this.wallStand.set(cell, { z, walkM: near.walkM, dx: 0, dy: 0 });
     }
+    // Over a gate (D-119: they walk the walls over it while it stands): between its piers, on its walk.
+    for (const g of gates) fillOpening(this.wallStand, g.cells, n, g.z, g.walkM);
     return d;
   }
 
@@ -451,14 +456,15 @@ export class CastleDraw {
   }
 
   /**
-   * Someone standing on the wall at map cell (cellX, cellY) (D-096, UnitFlag.OnWall): where on the
-   * ground they stand (world px from the cell's middle, towards the town by stand_in_m), how far up
-   * (the walk, points on the plane) and their depth (over the wall, under its front parts); null
-   * where the wall is drawn as blocks or its pictures have no walk (art-v5): drawn where they stand.
+   * Someone on the wall at world px (px, py) (D-096, UnitFlag.OnWall): where on the ground they
+   * stand (world px from where they are, towards the town by stand_in_m), how far up (the walk,
+   * points on the plane) and their depth (over the wall, under its front parts); walking along it
+   * (D-119) eased between the cells' points, over a gate on its walk. Null where the wall is drawn as
+   * blocks or its pictures have no walk (art-v5): drawn where they stand.
    */
-  onWall(cellX: number, cellY: number): { dx: number; dy: number; lift: number; z: number } | null {
-    const at = this.wallStand.get(cellY * this.view.map.size + cellX);
-    if (at === undefined) return null;
+  onWall(px: number, py: number): { dx: number; dy: number; lift: number; z: number } | null {
+    const at = wallStandAt(this.wallStand, this.view.map.size, TILE_PX, px, py);
+    if (at === null) return null;
     return { dx: at.dx, dy: at.dy, lift: at.walkM * this.projection.ptPerM * UP_PER_M, z: at.z + ON_WALL_Z };
   }
 
