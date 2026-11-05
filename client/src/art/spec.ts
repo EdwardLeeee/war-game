@@ -38,6 +38,14 @@ export interface AnimInfo {
   /** Effects seen from above (the cannon's warning): the radius in metres of the circle drawn. */
   top_down?: boolean;
   radius_m?: number;
+  /**
+   * art-v7.2's white warning pictures (`warn_*_t`, D-129; ui's design/b1/README.md 晶砲預警圈 B
+   * point 5): tinted with the caster's player colour, brightened to `tint_value` and mixed towards
+   * white by `tint_white` (render/atlas.ts effectTint).
+   */
+  tint?: "owner";
+  tint_value?: number;
+  tint_white?: number;
   /** Metres one walk cycle covers. */
   stride_m?: number;
   /**

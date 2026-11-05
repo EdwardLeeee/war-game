@@ -40,6 +40,7 @@ import { TILE_PX } from "../tuning.ts";
 import type { Placement } from "../ui/placement.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT, WARNING_TINT } from "./atlas.ts";
+import { effectTint } from "../art/effect-tint.ts";
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 import { ArtStructures } from "./structure-art.ts";
 import { autoTrainBuildings } from "../game/features.ts";
@@ -210,6 +211,12 @@ interface TownMark {
 // world px inside `ground`, which the projection lays out (as a diamond: turned 45° and flattened
 // 2:1). What stands up (units, buildings' and nodes' marks, towns' 鎮 and 城, bars, words, arrows in the air)
 // is drawn on the plane at the projected point, never flattened, the nearer in front.
+
+/**
+ * A mage's cannon on the ground (its warning, its calibration's arc) in its side's colour (the user
+ * 2026-11-05: 「法師法圈顏色跟該陣營一樣」); the shield keeps its own. Neutral: the old orange.
+ */
+const castTint = (owner: number, me: number): number => (owner === NEUTRAL || owner === NO_OWNER ? WARNING_TINT : ownerTint(owner, me));
 
 /** 進駐's rings (R13-01 B's gold frame) and how long one flashes when an arrow brings it on screen. */
 const ENTER_GOLD = 0xe8c45a;
@@ -1600,7 +1607,7 @@ export class WorldRenderer {
         this.fx
           .moveTo(px, py - r)
           .arc(px, py, r, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * Math.min(cast, 30)) / 30)
-          .stroke({ width: 3, color: WARNING_TINT, alpha: 0.95 });
+          .stroke({ width: 3, color: castTint(owner, view.me), alpha: 0.95 });
       }
     }
     this.artUnits?.drawCorpses(seconds);
@@ -1618,10 +1625,12 @@ export class WorldRenderer {
       const x = w[o + W.x] * FIXED_TO_PX;
       const y = w[o + W.y] * FIXED_TO_PX;
       const r = w[o + W.radius] * FIXED_TO_PX;
-      this.fx.circle(x, y, r).fill({ color: WARNING_TINT, alpha: 0.12 + 0.1 * pulse }).stroke({ width: 3, color: WARNING_TINT, alpha: 0.9 });
+      // The caster's colour (the user 2026-11-05: 「法師法圈顏色跟該陣營一樣」).
+      const tint = castTint(w[o + W.owner], this.view.me);
+      this.fx.circle(x, y, r).fill({ color: tint, alpha: 0.12 + 0.1 * pulse }).stroke({ width: 3, color: tint, alpha: 0.9 });
       // Countdown (core: ticksLeft 30 -> 0, then it fires): an inner disc that grows to the rim.
       const left = Math.min(Math.max(w[o + W.ticksLeft], 0), 30);
-      this.fx.circle(x, y, r * (1 - left / 30)).fill({ color: WARNING_TINT, alpha: 0.35 });
+      this.fx.circle(x, y, r * (1 - left / 30)).fill({ color: tint, alpha: 0.35 });
     }
   }
 
@@ -1640,12 +1649,16 @@ export class WorldRenderer {
     }
     const full = fx.effects.warn_sigil.radius_m ?? 3;
     const seconds = (this.view.curr?.snap.header[H.tick] ?? 0) / TICKS_PER_SECOND;
+    // art-v7.2 on (D-129): the white pictures, tinted with the caster's colour; the gold lines stay
+    // gold, half as strong at the end (else the whole ring is gold at the last moment, nobody's).
+    const tinted = fx.effects.warn_sigil_t !== undefined;
     let i = 0;
     for (let o = 0; o < w.length; o += WARNING_STRIDE, i++) {
       while (this.warnPool.length <= i) {
         const c = new Container();
         for (const name of WARN_LAYERS) {
-          const s = new Sprite(art.effectFrame(`${name}_00`)?.texture ?? Texture.EMPTY);
+          const own = tinted && fx.effects[`${name}_t`] !== undefined ? `${name}_t` : name;
+          const s = new Sprite(art.effectFrame(`${own}_00`)?.texture ?? Texture.EMPTY);
           s.anchor.set(0.5);
           s.label = name;
           c.addChild(s);
@@ -1655,6 +1668,11 @@ export class WorldRenderer {
       }
       const c = this.warnPool[i];
       c.visible = true;
+      const colour = castTint(w[o + W.owner], this.view.me);
+      for (const s of c.children as Sprite[]) {
+        const info = tinted ? fx.effects[`${s.label}_t`] : undefined;
+        s.tint = info?.tint === "owner" ? effectTint(colour, info.tint_value ?? 1, info.tint_white ?? 0) : 0xffffff;
+      }
       c.position.set(w[o + W.x] * FIXED_TO_PX, w[o + W.y] * FIXED_TO_PX);
       // The pictures' circle (radius_m) to the warning's radius, in world px.
       c.scale.set((w[o + W.radius] * FIXED_TO_PX) / (full * fx.px_per_m));
@@ -1668,7 +1686,7 @@ export class WorldRenderer {
         warn_sigil_glow: 0.6 * sigil,
         warn_rim: 1,
         warn_sigil: sigil,
-        warn_sigil_gold: sigil * 0.7 * k,
+        warn_sigil_gold: sigil * (tinted ? 0.35 : 0.7) * k,
       };
       const turn = ((20 * Math.PI) / 180) * seconds;
       for (const s of c.children as Sprite[]) {
