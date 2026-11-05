@@ -426,9 +426,18 @@ def extend_siege(u, kind):
                 for kk in (0, 1):
                     _adopt(O(f"band{s}{kk}{yy}"), O(f"post{s}{e}"))
                 _adopt(O(f"lash{s}{yy}"), O(f"post{s}{e}"))
+            # R8's pennants on the axle's ends (east_r8.dress_siege) fall with the post under them (art-v7.3: they stayed
+            # up in the air over the wreck)
+            _adopt(O(f"r8pennpole{s}"), O(f"post{s}a"))
+            _adopt(O(f"r8pennant{s}"), O(f"post{s}a"))
     else:
         for name in ("bar", "pad", "upband-1", "upband1"):
             _adopt(O(name), O("up-1"))
+        # R8's trebuchet (west_r8.dress_siege): the iron axle boxes and the ties fall with their upright (art-v7.3: the
+        # boxes stayed up in the air over the wreck)
+        for s in (-1, 1):
+            _adopt(O(f"axlebox{s}"), O(f"up{s}"))
+            _adopt(O(f"tie{s}"), O(f"up{s}"))
     arm_rest = arm.location.copy()
     wreck = motion.Wreck([])
     planks = _debris(u, kind, lib.MATS["wood5"]["mat"] if "wood5" in lib.MATS else None)

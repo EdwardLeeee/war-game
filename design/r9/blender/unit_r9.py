@@ -142,6 +142,40 @@ def _pleats(spacing=0.06, depth=0.022):
         print("R9UNIT pleats", ob.name, [m.type for m in ob.modifiers], flush=True)
 
 
+LINING = (0.46, 0.39, 0.27)          # linear: undyed silk, sRGB about (180, 168, 142) (0.62 glowed like a lamp shade)
+
+
+def _sleeve_lining():
+    """art-v7.3 (the review 2026-11-04: the East mage's cuffs read black in facings 5-7 when the arm reaches toward the
+    camera): the wide sleeves are one-sided shells, so the eye looks into the shadowed back of the far wall. Their inside
+    (the faces seen from behind) takes a pale lining instead of the robe's brown; the outside is unchanged."""
+    for ob in bpy.data.objects:
+        base = ob.name.split(".")[0]
+        if ob.type != "MESH" or not base.startswith(("mage_e_sleeve", "mage_e_cuff")) or not ob.data.materials:
+            continue
+        src = ob.data.materials[0]
+        if src is None or not src.use_nodes or _p(src) is None:
+            continue
+        m = bpy.data.materials.get(src.name + "_lined")
+        if m is None:
+            m = src.copy()
+            m.name = src.name + "_lined"
+            nt, p = m.node_tree, _p(m)
+            inp = p.inputs["Base Color"]
+            mix = nt.nodes.new("ShaderNodeMix")
+            mix.data_type = "RGBA"
+            geo = nt.nodes.new("ShaderNodeNewGeometry")
+            nt.links.new(geo.outputs["Backfacing"], mix.inputs["Factor"])
+            if inp.is_linked:
+                nt.links.new(inp.links[0].from_socket, mix.inputs[6])
+            else:
+                mix.inputs[6].default_value = inp.default_value
+            mix.inputs[7].default_value = (*LINING, 1.0)
+            nt.links.new(mix.outputs[2], inp)
+        ob.data.materials[0] = m
+        print("R9UNIT lining", base, m.name, flush=True)
+
+
 def apply(u=None, kind=None):
     print("R9UNIT apply", flush=True)
     cloth = ("team", "linen", "sack", "russet", "ochre", "darkcloth", "tunic", "robe", "cloth", "hessian")
@@ -192,6 +226,8 @@ def apply(u=None, kind=None):
                 ob.data.materials.clear()
                 ob.data.materials.append(lam)
     _pleats()
+    if kind == "mage_e":
+        _sleeve_lining()
     if os.environ.get("R9_DEBUG"):                   # which node feeds each cloth material's normal and colour
         for name, info in lib.MATS.items():
             m = info.get("mat")

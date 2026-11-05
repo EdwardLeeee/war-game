@@ -40,6 +40,8 @@ def main(d, scale):
     ppm = 20 * scale
     tile, _ = R.relief_tile(ppm=ppm, sun=R.SUN_D)
     R.save_tile(tile, d / "relief.png")
+    import hashlib                                   # art-v7.4: the same on every machine (ground_r9.QUANT); the log shows it
+    print(f"relief x{scale} sha256 {hashlib.sha256((d / 'relief.png').read_bytes()).hexdigest()}")
     size = tile.shape[0]
     gj = json.loads((d / "ground.json").read_text())
     gj["relief"] = {"file": "relief.png", "px": size, "tile_m": R.TILE_M, "channels": "R light / 2, G rills, B crowns",

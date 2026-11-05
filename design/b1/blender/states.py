@@ -327,13 +327,15 @@ def smoke(root, name, base, height=3.5, r0=0.3, r1=0.85, n=8, dark=0.18, drift=(
     return []
 
 
-def _flame_mat():
+def _flame_mat(core=9.0):
     """R8: fire that is not a solid cone: emission from a hot pale-yellow core through orange to a dull red at the
     tips, the tongues' edges ragged and see-through (a noise rising up each tongue), bright enough to light the roof
-    round it (Cycles lights from emitting surfaces)."""
-    if "flame_r8" in bpy.data.materials:
-        return bpy.data.materials["flame_r8"]
-    m = bpy.data.materials.new("flame_r8")
+    round it (Cycles lights from emitting surfaces). core: the emission at the tongues' feet (art-v7.3: a big fire's
+    dozen overlapping tongues added up to white at 9, so the R9 city's own fire is dimmer and deeper in colour)."""
+    name = "flame_r8" if core == 9.0 else f"flame_r8_{core:g}"
+    if name in bpy.data.materials:
+        return bpy.data.materials[name]
+    m = bpy.data.materials.new(name)
     m.use_nodes = True
     nt = m.node_tree
     for n_ in list(nt.nodes):
@@ -345,7 +347,7 @@ def _flame_mat():
     nt.links.new(tc.outputs["Generated"], sep.inputs["Vector"])           # z 0 at the tongue's foot, 1 at its tip
     ramp = nt.nodes.new("ShaderNodeValToRGB")
     cr = ramp.color_ramp
-    cr.elements[0].position, cr.elements[0].color = 0.0, (1.0, 0.86, 0.45, 1)
+    cr.elements[0].position, cr.elements[0].color = 0.0, (1.0, 0.86, 0.45, 1) if core == 9.0 else (1.0, 0.7, 0.28, 1)
     cr.elements[1].position, cr.elements[1].color = 1.0, (0.55, 0.08, 0.01, 1)
     e = cr.elements.new(0.4)
     e.color = (1.0, 0.45, 0.07, 1)
@@ -354,7 +356,7 @@ def _flame_mat():
     nt.links.new(ramp.outputs["Color"], em.inputs["Color"])
     st = nt.nodes.new("ShaderNodeMapRange")
     st.inputs["From Min"].default_value, st.inputs["From Max"].default_value = 0.0, 1.0
-    st.inputs["To Min"].default_value, st.inputs["To Max"].default_value = 9.0, 2.0
+    st.inputs["To Min"].default_value, st.inputs["To Max"].default_value = core, 2.0 if core == 9.0 else 0.6 * core
     nt.links.new(sep.outputs["Z"], st.inputs["Value"])
     nt.links.new(st.outputs["Result"], em.inputs["Strength"])
     mp = nt.nodes.new("ShaderNodeMapping")
@@ -389,11 +391,11 @@ def _flame_mat():
     return m
 
 
-def flames(root, P, name, base, size=1.0, n=5, seed=1):
+def flames(root, P, name, base, size=1.0, n=5, seed=1, core=9.0):
     rnd = random.Random(seed)
     if R8:                           # tongues of see-through fire, a cluster of tall and short, leaning a little
-        m = _flame_mat()
-        lib.MATS.setdefault("flame_r8", dict(mat=m, kind="emit", color=(1.0, 0.5, 0.1), emission=6.0))
+        m = _flame_mat(core)
+        lib.MATS.setdefault(m.name, dict(mat=m, kind="emit", color=(1.0, 0.5, 0.1), emission=6.0))
         for i in range(n + 4):
             h = size * rnd.uniform(0.6, 1.5)
             x, y = base[0] + rnd.uniform(-0.38, 0.38) * size, base[1] + rnd.uniform(-0.38, 0.38) * size

@@ -472,7 +472,9 @@ def dress_bow(u):
 
 def dress_siege(u):
     """霹靂車: more of the player's colour (the flag alone gave 0-10% of the machine, and none from some sides): a cloth
-    hung along each side of the cart, and a pennant on each end of the axle. Design choices; the machine is R5's."""
+    hung along each side of the cart, and a pennant on each end of the axle. Design choices; the machine is R5's.
+    art-v7.3 (the review 2026-11-04: no player colour seen from facings 2 and 6, which look along the cart): a cloth on
+    the front and the back cross beam too, and the right pennant turned across the cart, so one pennant faces each way."""
     kind = "siege_e"
     M = _materials()
     base = bpy.data.objects[f"{kind}_base"]
@@ -482,5 +484,9 @@ def dress_siege(u):
              loc=(0.575 * s, 0.0, 0.66), rot=(0, 0, 90))
         rod(f"{kind}_r8pennpole{s}", (0.45 * s, 0.0, 2.55), (0.45 * s, 0.0, 3.35), 0.015, M["wood"], parent=base)
         slab(f"{kind}_r8pennant{s}", [(0.0, 0.0), (0.0, -0.26), (0.4, -0.2), (0.3, -0.13), (0.4, -0.06)], 0.01,
-             M["team"], parent=base, loc=(0.45 * s, 0.0, 3.32), rot=(0, 0, 90))
+             M["team"], parent=base, loc=(0.45 * s, 0.0, 3.32), rot=(0, 0, 90 if s < 0 else 0))
+        # the end cloths: hung on the outer face of the front and back cross beams (siege_e_cross+-0.9), between the rails
+        slab(f"{kind}_r8enddrape{s}", [(-0.42, 0.0), (0.42, 0.0), (0.42, -0.3), (0.25, -0.35), (0.08, -0.3), (-0.08, -0.35),
+                                       (-0.25, -0.3), (-0.42, -0.35)], 0.012, M["team"], parent=base,
+             loc=(0.0, 0.97 * s, 0.66), rot=(0, 0, 0))
     return u
