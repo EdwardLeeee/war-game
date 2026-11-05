@@ -11,6 +11,9 @@
 // mages last: standing together (oneCluster), the simulation's re-forming in place with that
 // `face` (D-095 B); farther apart, a walk of one cell that way, so they gather into one formation
 // (ceo: 「整隊沒有排成一個」 is what the user minds). Not with an enemy near (enemyTooClose).
+// On the march (the user 2026-11-04, D-119: 「整隊的時候部隊還是要往我點的地方前進」, choosing 邊走邊排):
+// the formation with `ranks`, so the simulation has the ranged and the mages ahead of the spearmen
+// wait for them to pass, the march going on to where it was sent (reformMode).
 // Cells; pure, for the unit tests.
 
 export interface Spot {
@@ -95,6 +98,21 @@ export function oneCluster(spots: readonly Spot[]): boolean {
     });
   }
   return reached.size === spots.length;
+}
+
+/** How 整理隊形 is sent: `ranks` the formation while they march on (邊走邊排), `place` re-forming where they stand, `walk` a walk of one cell. */
+export type ReformMode = "ranks" | "place" | "walk";
+
+/**
+ * Some of them marching (a 移動 or an 攻擊移動 under way): `ranks`, never a walk of one cell, which
+ * would put the march's end where they stand (the user 2026-11-04). Some attacking a target: in
+ * place (the simulation changes their spacing only; a walk would end the attack, core 2026-11-04).
+ * Standing apart with a way to face: the walk of one cell that gathers them (D-103); else in place.
+ */
+export function reformMode(states: readonly ("march" | "attack" | "stand")[], together: boolean, faces: boolean): ReformMode {
+  if (states.includes("march")) return "ranks";
+  if (states.includes("attack") || together || !faces) return "place";
+  return "walk";
 }
 
 /** The cell a cell ahead of the centre that way: where the formation's front row forms up. */

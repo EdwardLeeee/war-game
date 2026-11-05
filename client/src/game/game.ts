@@ -21,7 +21,7 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
-import { enemyTooClose, type GroupOrder, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, type Spot } from "./reform.ts";
+import { enemyTooClose, type GroupOrder, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, reformMode, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf, SIEGE_ATLASES } from "../art/spec.ts";
 import { DEFAULT_CULTURE } from "../culture.ts";
@@ -187,6 +187,7 @@ const REFORM_TEXT: Record<string, string> = {
   city: "整理隊形：槍兵在前，面向敵方主城",
   centre: "整理隊形：槍兵在前，面向地圖中央",
   keep: "整理隊形：槍兵在前，方向不變",
+  march: "邊走邊排：前面的弓手和法師等槍兵走過去，照樣走到點的地方",
   near: `敵人在 ${REFORM_CLEAR_CELLS} 格內，不整理隊形：整理時不還手，先打完或先移動開`,
 };
 
@@ -3028,16 +3029,22 @@ export class Game implements GestureHost {
     const centre = { x: at.reduce((n, p) => n + p.x, 0) / at.length, y: at.reduce((n, p) => n + p.y, 0) / at.length };
     const n = view.map.size;
     const { dir, from } = reformFacing(centre, this.groupOrder(soldiers), this.enemyCity(view), { x: n / 2, y: n / 2 });
-    // The formation command re-forms them in place at the spacing most of them have (PROTOCOL.md 第三輪): the way they face now, or `face`.
+    // The formation command re-forms them at the spacing most of them have (PROTOCOL.md 第三輪): the way they face now, or `face`.
     const loose = soldiers.filter((id) => (u[view.unitRow(id) + UnitField.flags] & UnitFlag.Loose) !== 0).length * 2 > soldiers.length;
-    if (dir === null) this.command({ c: "formation", u: soldiers, loose });
-    else if (oneCluster(at)) this.command({ c: "formation", u: soldiers, loose, face: dir16(Math.round(dir.x * 1024), Math.round(dir.y * 1024)) });
-    else {
+    const states = soldiers.map((id) => {
+      const order = u[view.unitRow(id) + UnitField.order];
+      return order === Order.Move || order === Order.Retreat ? "march" : order === Order.Attack ? "attack" : "stand";
+    });
+    const mode = reformMode(states, oneCluster(at), dir !== null);
+    if (mode === "walk" && dir !== null) {
       // Spread out (spearmen gone after the enemy): a walk of one cell gathers them into one.
       const c = reformCell(centre, dir);
       this.command({ c: "retreat", u: soldiers, x: c.x, y: c.y });
+    } else {
+      const face = dir === null ? {} : { face: dir16(Math.round(dir.x * 1024), Math.round(dir.y * 1024)) };
+      this.command({ c: "formation", u: soldiers, loose, ...face, ...(mode === "ranks" ? { ranks: true } : {}) });
     }
-    this.toast(REFORM_TEXT[from]);
+    this.toast(mode === "ranks" ? REFORM_TEXT.march : REFORM_TEXT[from]);
   }
 
   /**
