@@ -91,9 +91,56 @@ export interface GroundJson {
      */
     town?: { soft_m: number; blur_m: number; edge_m: number; layers: Record<"E" | "W", { lane: string; trampled: string }> };
   };
-  /** The whole ground multiplied last: ui sets them against the units' contrast (R8: 找得到兵). */
+  /** The whole ground multiplied last: ui sets them against the units' contrast (R8: 找得到兵). R9 (`water.version` "r9"): not used. */
   grade: { brightness: number; saturation: number };
+  /**
+   * R9's relief (art-v7 on; ui's design/r9/common/ground_r9.py relief_tile): one tileable map `tile_m`
+   * square, RGB = light ÷ 2 (the sun on the worn ground, its shadows, the sky, the hollows), the rills,
+   * the crowns; sampled twice, the second turned and moved (`second.turn` × metres + `move_m`), mixed by
+   * a noise `mix_noise_m` across (smoothstep `mix`), so that it never repeats on screen (tsample).
+   */
+  relief?: { file: string; px?: number; tile_m: number; second: { turn: [[number, number], [number, number]]; move_m: [number, number]; mix_noise_m: number; mix: [number, number] } };
+  /** R9's ripples (ground_r9.py _ripple_tex): `tile_m` square, R the height, G and B its slopes a metre, each 0.5 + v ÷ (2 × scale). */
+  ripple?: { file: string; px?: number; tile_m: number; height_scale: number; slope_scale: number };
+  /** R9's ground and water (ground_r9.py R9 and compose()): `version` "r9"; the rest its numbers (linear colours). */
+  water?: R9Water;
 }
+
+/** ground_r9.py's R9 numbers, as ground.json carries them (art-v7 on). */
+export interface R9Water {
+  version: string;
+  /** How far a rill bares the soil (towards the dirt layer, darker); how far the crowns dry the grass; greener this close to the water (m). */
+  rill_soil: number;
+  crown_dry: number;
+  lush_m: number;
+  bank_m: number;
+  bank_h: number;
+  wet_m: number;
+  shore_m: [number, number];
+  edge_depth: number;
+  depth_k: number;
+  depth_max: number;
+  ford_depth: number;
+  absorb: [number, number, number];
+  scatter: [number, number, number];
+  bed: [number, number, number];
+  sky_lo: [number, number, number];
+  sky_hi: [number, number, number];
+  sky_k: number;
+  foam: number;
+  glint: number;
+  /** The whole picture times this, then the film curve (ACES, Narkowicz's fit). */
+  exposure: number;
+  /** Wind swaths: long soft patches of lighter and darker grass, this strong. */
+  swath: number;
+  /** Towards the sun and from the camera, in the ground's axes (x east, y south, z up): the diamond's (art-v7). */
+  sun: [number, number, number];
+  view: [number, number, number];
+  sun_rgb: [number, number, number];
+}
+
+/** R9's ground (art-v7 on): the relief and ground_r9.py's numbers; else art-v6's (R8). */
+export const groundR9 = (g: Pick<GroundJson, "relief" | "water">): boolean => g.relief !== undefined && g.water?.version === "r9";
 
 export function parseGround(v: unknown): GroundJson {
   const g = v as GroundJson;
@@ -520,6 +567,112 @@ export function groundWeights(ground: Uint8Array, n: number, nodes: readonly num
   for (const c of nodes) if (c >= 0 && c < n * n) nodeAt[c] = 1;
   near(2, (i) => nodeAt[i] === 1, rules.dirt.node_cells);
   return out;
+}
+
+/** A Gaussian blur, `sigma` texels, edges clamped, separable (ui's ground_r8.py blur): `a` side × side. */
+export function blurClamped(a: Float32Array, side: number, sigma: number): Float32Array {
+  if (sigma <= 0) return a;
+  const r = Math.floor(3 * sigma) + 1;
+  const k: number[] = [];
+  let sum = 0;
+  for (let i = -r; i <= r; i++) {
+    const v = Math.exp(-(i * i) / (2 * sigma * sigma));
+    k.push(v);
+    sum += v;
+  }
+  for (let i = 0; i < k.length; i++) k[i] /= sum;
+  const clamp = (v: number) => (v < 0 ? 0 : v >= side ? side - 1 : v);
+  const tmp = new Float32Array(side * side);
+  for (let y = 0; y < side; y++) {
+    for (let x = 0; x < side; x++) {
+      let v = 0;
+      for (let i = -r; i <= r; i++) v += k[i + r] * a[y * side + clamp(x + i)];
+      tmp[y * side + x] = v;
+    }
+  }
+  const out = new Float32Array(side * side);
+  for (let y = 0; y < side; y++) {
+    for (let x = 0; x < side; x++) {
+      let v = 0;
+      for (let i = -r; i <= r; i++) v += k[i + r] * tmp[clamp(y + i) * side + x];
+      out[y * side + x] = v;
+    }
+  }
+  return out;
+}
+
+const FORD = 4;
+const isBridge = (t: number) => t === 5 || t === 6;
+
+/**
+ * R9's water's helpers (ui's ground_r9.py compose: fordb, brb, flowmap), a texel each as the weight
+ * map's: R the fords' cells blurred 1.2 texels (a ford is shallow water), G the bridges' blurred 3
+ * (the shoreline keeps still by them, so a bridge lands on its banks), B and A the current's direction
+ * (0.5 + v ÷ 2; (1, 0) where there is none): along the channel, across the slope of the water's
+ * distance (the weights' A) blurred 1.5 cells. Made again whole when the wet, ford or bridge cells change.
+ */
+export class WaterAux {
+  readonly side: number;
+  readonly data: Uint8Array;
+  private readonly n: number;
+  private key = "";
+
+  constructor(n: number, rules: GroundJson["rules"]) {
+    this.n = n;
+    this.side = weightsSide(n, rules);
+    this.data = new Uint8Array(this.side * this.side * 4);
+  }
+
+  /** The cells' grounds and the weight map now (its A the water's distance); false when nothing changed. */
+  set(ground: Uint8Array, weights: Uint8Array): boolean {
+    const n = this.n;
+    let key = "";
+    for (let i = 0; i < n * n; i++) key += wet(ground[i]) ? String.fromCharCode(48 + ground[i]) : "0";
+    if (key === this.key) return false;
+    this.key = key;
+    const side = this.side;
+    const k = side / n;
+    const ford = new Float32Array(side * side);
+    const bridge = new Float32Array(side * side);
+    const dist = new Float32Array(side * side);
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) {
+        const t = ground[Math.floor(y / k) * n + Math.floor(x / k)];
+        const i = y * side + x;
+        ford[i] = t === FORD ? 1 : 0;
+        bridge[i] = isBridge(t) ? 1 : 0;
+        dist[i] = weights[i * 4 + 3] / 255;
+      }
+    }
+    const fordB = blurClamped(ford, side, 1.2);
+    const bridgeB = blurClamped(bridge, side, 3.0);
+    const smooth = blurClamped(dist, side, 1.5 * k);
+    const at = (x: number, y: number) => smooth[((y + side) % side) * side + ((x + side) % side)];
+    const byte = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255);
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) {
+        const i = y * side + x;
+        const gx = (at(x + 1, y) - at(x - 1, y)) / 2;
+        const gy = (at(x, y + 1) - at(x, y - 1)) / 2;
+        // Along the channel: across the slope; (1, 0) where it is flat (ui: below 1e-4).
+        let fx = -gy;
+        let fy = gx;
+        const len = Math.hypot(fx, fy);
+        if (len > 1e-4) {
+          fx /= len;
+          fy /= len;
+        } else {
+          fx = 1;
+          fy = 0;
+        }
+        this.data[i * 4] = byte(fordB[i]);
+        this.data[i * 4 + 1] = byte(bridgeB[i]);
+        this.data[i * 4 + 2] = byte(0.5 + fx / 2);
+        this.data[i * 4 + 3] = byte(0.5 + fy / 2);
+      }
+    }
+    return true;
+  }
 }
 
 /**

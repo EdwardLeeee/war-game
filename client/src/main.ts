@@ -584,8 +584,8 @@ let artChoiceUsed: string | null = null;
 function artWanted(variant: ArtVariant | null = null): { choice: ArtChoice | "test"; tex: TexChoice; tag: string | null; key: string } {
   const choice = params.art === "test" ? "test" : (variant?.scale ?? params.art ?? loadArtChoice());
   const tex = variant?.tex ?? params.tex ?? loadTexChoice();
-  // art-v7 量測 (D-128): art-lab.lock.json's Release (the test page's stand-ins with ?art=test).
-  const tag = variant !== null && choice !== "test" ? __ART_LAB_TAG__ : __ART_TAG__;
+  // art-v7 量測 (D-128), and a test page's ?artlab=1: art-lab.lock.json's Release (the test page's stand-ins with ?art=test).
+  const tag = (variant !== null || params.artLab) && choice !== "test" ? __ART_LAB_TAG__ : __ART_TAG__;
   return { choice, tex, tag, key: `${choice}|${tex}|${tag}` };
 }
 const artChanged = (): boolean => artWanted().key !== artChoiceUsed;

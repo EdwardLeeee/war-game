@@ -156,7 +156,7 @@ export interface Plan {
   rushBuildersOnly: boolean;
   /**
    * The midway fortress (D-081, after the user's game f1fd2a87): from FORT_FROM, once the enemy's
-   * main city is known, RUSH_BUILDERS farmers and FORT_GUARDS spearmen walk to FORT_DIST cells from
+   * main city is known, RUSH_BUILDERS farmers and `fortGuards` spearmen walk to FORT_DIST cells from
    * home on the straight way to the enemy's main city; the farmers build an outpost there, the
    * spearmen are posted at it, and the farmers put up FORT_TOWERS arrow towers beside it, one after
    * the other. The army plays the push meanwhile. Both maps.
@@ -168,6 +168,8 @@ export interface Plan {
    * as ever (0: no waiting, the army plays the push).
    */
   fortressHold: number;
+  /** Spearmen posted at the fortress; -1: as many as an outpost takes (Rules.outpost.slots); 0: none, the outpost a wall, as the user builds them. */
+  fortGuards: number;
   /**
    * "edge" only: the army that set out stops at the second waypoint (canonical (68, 62)) and goes
    * on once a sentry (as "sentry"'s, kept until then) sees the enemy's army coming on our half,
@@ -256,10 +258,9 @@ const RUSH_WAIT = 1800;
 const RUSH_BUILDERS = 4;
 /** The outpost is put down at most this many times; then the rush gives up (hard pulled it down at once, again and again). */
 const RUSH_TRIES = 3;
-/** The midway fortress (plan.fortress, D-081): from this tick, this far from home (cells), so many guards and towers. */
+/** The midway fortress (plan.fortress, D-081): from this tick, this far from home (cells), so many towers. */
 const FORT_FROM = 12 * 1200;
 const FORT_DIST = 37;
-const FORT_GUARDS = 6;
 const FORT_TOWERS = 5;
 /** Where to try the fortress, in order: cells from home along the way, cells to the side of it. */
 const FORT_TRIES: [number, number][] = [
@@ -491,6 +492,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     rushBuildersOnly: false,
     fortress: false,
     fortressHold: 0,
+    fortGuards: -1,
     homeTowers: 0,
     cavalryShare: 0,
     pushAhead: false,
@@ -1309,8 +1311,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           const spears = soldiers
             .filter((u) => u.type === UnitType.Spearman && !isGuard(u.id) && !raiders.includes(u) && u.id !== scout && u.id !== sentry && u.order !== Order.Post)
             .sort((a, b) => a.id - b.id);
-          if (spears.length >= FORT_GUARDS && gatherers.length >= RUSH_BUILDERS + 3) {
-            fortWalk = spears.slice(0, FORT_GUARDS).map((u) => u.id);
+          const fortGuards = plan.fortGuards >= 0 ? plan.fortGuards : (rules.outpost?.slots ?? 6);
+          if (spears.length >= fortGuards && gatherers.length >= RUSH_BUILDERS + 3) {
+            fortWalk = spears.slice(0, fortGuards).map((u) => u.id);
             fortCrew = gatherers.slice(0, RUSH_BUILDERS);
             gatherers.splice(0, fortCrew.length);
             // About FORT_DIST cells from home on the straight way to the enemy's main city (canonical
@@ -1796,7 +1799,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
 
       // --- the march on the enemy's main city (the AI's way: together, defenders first) -------------------
       if (mode === "base") {
-        const standing = soldiers.filter((u) => marched.has(u.id)).length;
+        // Those that set out and still march: not those since posted at the fortress or hiding in its towers (D-119: they do not die
+        // in there, so they would count as standing for ever, and it would never break off while new soldiers trickle in one by one).
+        const marching = soldiers.filter((u) => marched.has(u.id) && u.order !== Order.Post && u.order !== Order.Garrison && !hiding.has(u.id));
+        const standing = marching.length;
         const cityLow = enemyCityHp >= 0 && enemyCityHp * 100 <= rules.buildings[BuildingType.MainCity].hp * PRESS_ON_HP;
         if (!cityLow && standing * 5 < armyAtStart * 2) {
           out.push({ c: "retreat", u: armyIds, x: post.x, y: post.y });
@@ -1808,7 +1814,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           brokenOff++;
           return out;
         }
-        const front = soldiers.filter((u) => marched.has(u.id));
+        const front = marching;
         const fx = front.length === 0 ? cx : Math.trunc(front.reduce((a, u) => a + u.x, 0) / front.length);
         const fy = front.length === 0 ? cy : Math.trunc(front.reduce((a, u) => a + u.y, 0) / front.length);
         const there = dist2(fx, fy, enemyHome.cellX, enemyHome.cellY) <= 12 * 12;

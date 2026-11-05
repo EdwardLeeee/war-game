@@ -4049,3 +4049,23 @@ test("D-086 A5 (plan.holdTowns): enemy soldiers by a town it governs and the arm
   assert.equal(goes(true), true, "on: to the town");
   assert.equal(goes(false), false, "off: as before");
 });
+
+test("D-099: an enemy siege engine in sight counts in the enemy's strength (it summed to NaN, and hard never broke off for it)", switchedOff([KEEP, RULES.RICH, RULES.MARKET], () => {
+  // Keeps off, as the D-081 town-trip test (with keeps a town asks keepTownArmy); the siege rules on.
+  const backs = (engine: boolean) => {
+  const g = emptyGame();
+  const w = g.w;
+  for (let k = 0; k < 14; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, townArmy: 99 });
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 14), "off to a town");
+  for (let k = 0; k < 14; k++) put(g, 1, UnitType.Spearman, 44 + (k % 5), 54 + Math.trunc(k / 5));
+  // In sight of its spearmen (6 cells).
+  if (engine) put(g, 1, UnitType.Siege, 46, 57);
+  w.tick += 10;
+  g.fog.update(w);
+  return ai.think(buildView(g, 0)).some((c) => c.c === "retreat" && c.u.length === 14);
+  };
+  assert.equal(backs(false), false, "14 against 14: on");
+  assert.equal(backs(true), true, "14 and an engine against 14: stronger, back");
+}));

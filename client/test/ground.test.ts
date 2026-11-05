@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GROUND_CELL_M, type GroundJson, GroundWeights, groundWeights } from "../src/art/ground.ts";
+import { blurClamped, GROUND_CELL_M, type GroundJson, groundR9, GroundWeights, groundWeights, WaterAux } from "../src/art/ground.ts";
 
 const RULES: GroundJson["rules"] = {
   bank_cells: 1,
@@ -232,4 +232,48 @@ test("水的有號距離：只重算水變了的附近，和整張重算一樣�
   const off = new GroundWeights(n, rules, false);
   off.set(g2, []);
   assert.ok(off.data.every((v, i) => i % 4 !== 3 || v === 0));
+});
+
+test("R9 的地面（art-v7 起）：ground.json 有起伏圖（relief）而且 water.version 是 r9 才畫；art-v6 的照舊", () => {
+  const relief = { file: "relief.png", tile_m: 16, second: { turn: [[0.8, 0.6], [-0.6, 0.8]] as [[number, number], [number, number]], move_m: [23.7, 9.1] as [number, number], mix_noise_m: 40, mix: [0.25, 0.75] as [number, number] } };
+  const water = { version: "r9" } as GroundJson["water"];
+  assert.equal(groundR9({ relief, water }), true);
+  assert.equal(groundR9({ relief, water: undefined }), false, "art-v6 以前：沒有 R9 的參數");
+  assert.equal(groundR9({ relief: undefined, water }), false, "沒有起伏圖");
+  assert.equal(groundR9({ relief, water: { ...water, version: "r10" } as GroundJson["water"] }), false, "不認得的版本：照舊");
+});
+
+test("R9 的水的輔助圖（ui 的 fordb、brb、flowmap）：淺灘、橋的格子糊開；水流沿著河道；沒變就不重算", () => {
+  const n = 12;
+  const rules = { weights: { texels_per_cell: 4, soft_m: 1.6, blur_m: 1 } } as unknown as GroundJson["rules"];
+  const aux = new WaterAux(n, rules);
+  const side = aux.side;
+  // A river west to east (rows 5–6), a ford at x 3, a bridge at x 8; the weights' A: 1 in the water, 0 out.
+  const ground = new Uint8Array(n * n);
+  for (let x = 0; x < n; x++) for (const y of [5, 6]) ground[y * n + x] = x === 3 ? 4 : x === 8 ? 5 : 3;
+  const weights = new Uint8Array(side * side * 4);
+  for (let ty = 0; ty < side; ty++) for (let tx = 0; tx < side; tx++) weights[(ty * side + tx) * 4 + 3] = ty >= 20 && ty < 28 ? 255 : 0;
+  assert.equal(aux.set(ground, weights), true);
+  const at = (cx: number, cy: number, c: number) => aux.data[((cy * 4 + 2) * side + cx * 4 + 2) * 4 + c] / 255;
+  assert.ok(at(3, 5, 0) > 0.6, "淺灘的格子");
+  assert.ok(at(6, 5, 0) < 0.05, "淺灘以外");
+  assert.ok(at(8, 6, 1) > 0.3 && at(8, 3, 1) < 0.05, "橋的格子糊開 3 個點（一格寬的橋，中間約 0.4；shader 再乘 2）");
+  // Along the river (east or west), not across it, by its banks.
+  const fx = at(5, 5, 2) * 2 - 1;
+  const fy = at(5, 5, 3) * 2 - 1;
+  assert.ok(Math.abs(fx) > 0.95 && Math.abs(fy) < 0.2, `沿著河道：${fx}, ${fy}`);
+  assert.equal(aux.set(ground, weights), false, "水沒變：不重算");
+  ground[2 * n + 2] = 3;
+  assert.equal(aux.set(ground, weights), true, "多了水：重算");
+});
+
+test("糊開（ui 的 blur）：邊緣夾住、總量不變（中間）", () => {
+  const side = 9;
+  const a = new Float32Array(side * side);
+  a[4 * side + 4] = 1;
+  const b = blurClamped(a, side, 1);
+  const sum = b.reduce((s, v) => s + v, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-5);
+  assert.ok(b[4 * side + 4] < 1 && b[4 * side + 4] > b[4 * side + 5]);
+  assert.equal(blurClamped(a, side, 0), a);
 });
