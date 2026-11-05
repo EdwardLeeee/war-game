@@ -80,6 +80,9 @@ interface EvalResult {
   /** NN v4 (D-122): the AI counters and kills over all its games (GameOutcome's aiStats, killed). */
   aiStats?: Record<string, number>;
   killed?: { farmers: number; backByCavalry: number };
+  /** NN v4: the trained side's soldiers lost, per game, against hard and against push-crush. */
+  lostHard?: number;
+  lostCrush?: number;
 }
 const tally = (res: GameOutcome[]): Tally => {
   const won = res.filter((o) => o.won === 1).length;
@@ -102,6 +105,8 @@ function setJobs(net: NetWeights | null, opp: Opponent, n: number, seed0: number
 const VARIANTS: Record<string, { force: string; plan: Partial<HardPlan> }> = {
   raidcav: { force: "5.1", plan: { raidCavalry: true } },
   raid6: { force: "5.1", plan: { squadSize: 6 } },
+  // ceo 2026-11-05, the user's 75830947: from minute 10, 10 at a time (cavalry first), farmers 20 cells or more from the enemy's main city.
+  raiduser: { force: "5.1", plan: { squadSize: 10, raidFrom: 10 * 1200, raidFar: 20 } },
 };
 async function evaluate(name: string, net: NetWeights | null, n: number, m: number, seed0: number, switches: Switches, plan?: Partial<HardPlan>): Promise<EvalResult> {
   // NN v3: 120 minutes, as the training (D-115).
@@ -116,9 +121,12 @@ async function evaluate(name: string, net: NetWeights | null, n: number, m: numb
   const aiStats: Record<string, number> = {};
   const killed = { farmers: 0, backByCavalry: 0 };
   for (const o of [...hard, ...crush]) addStats(aiStats, killed, o);
+  const perGame = (os: GameOutcome[]) => (os.length === 0 ? 0 : os.reduce((a, o) => a + (o.soldiersLost ?? 0), 0) / os.length);
   return {
     aiStats,
     killed,
+    lostHard: perGame(hard),
+    lostCrush: perGame(crush),
     name,
     seed: seed0,
     hard: tally(hard),

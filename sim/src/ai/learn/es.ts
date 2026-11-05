@@ -138,7 +138,7 @@ export function squadText(st: Record<string, number>, killed: { farmers: number;
   const n = (k: string) => st[k] ?? 0;
   return (
     `分隊 偷襲 ${n("squadRaid")}／守家 ${n("squadHome")}／守城 ${n("squadTown")}／打小城 ${n("squadTake")}（找不到目標 ${n("squadNoTarget")}）；` +
-    `回來 ${n("squadDone")}、打不過退 ${n("squadWeak")}、少一半退 ${n("squadLost")}、走不到 ${n("squadTimeout")}；偷襲殺村民 ${n("raidFarmers")}；` +
+    `回來 ${n("squadDone")}、打不過退 ${n("squadWeak")}、少一半退 ${n("squadLost")}、走不到 ${n("squadTimeout")}；分隊死 ${n("squadDied")}；偷襲殺村民 ${n("raidFarmers")}；` +
     `騎兵衝 ${n("chargeSent")}（現在衝 ${n("chargeNow")}）；殺對方村民 ${killed.farmers}、騎兵殺遠程法師 ${killed.backByCavalry}`
   );
 }

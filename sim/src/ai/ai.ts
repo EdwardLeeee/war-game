@@ -2813,6 +2813,13 @@ export interface HardPlan {
   squadSize: number;
   raidCavalry: boolean;
   /**
+   * NN v4 (ceo 2026-11-05, the user's own win 75830947: from minute 10, 10 at a time, only the farmers 20 cells or more
+   * from the enemy's main city): raidFrom, no raid before this tick; raidFar, a raid's spot this far at least (cells)
+   * from where it believes the enemy's main city is (0: anywhere).
+   */
+  raidFrom: number;
+  raidFar: number;
+  /**
    * D-086 A4 (the user 2026-10-20: 「ai困難都不會用騎兵跟防禦建築」): cavalry beats mages x2 (D-061). Once ranged
    * units and mages are cavalryWhen percent or more of the enemy soldiers it knows of (CAVALRY_SEEN or more), it
    * puts up a stable and trains cavalry up to cavalryCounter percent of its soldiers (0: never, as before).
@@ -3043,6 +3050,8 @@ export const HARD: HardPlan = {
   squadShare: 25,
   squadSize: 0,
   raidCavalry: false,
+  raidFrom: 0,
+  raidFar: 0,
   netFarmers: 12,
   // D-097 (ceo 2026-10-22, docs/research/2026-10-ai-d096.md section 5): 20% cavalry on random maps, charging; spearmen
   // against 15% enemy cavalry; another lumber camp by the trees.
@@ -3456,7 +3465,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { squadRaid: 0, squadHome: 0, squadTown: 0, squadTake: 0, squadNoTarget: 0, squadDone: 0, squadLost: 0, squadWeak: 0, squadTimeout: 0, raidFarmers: 0, chargeNow: 0, netTowers: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { squadDied: 0, squadRaid: 0, squadHome: 0, squadTown: 0, squadTake: 0, squadNoTarget: 0, squadDone: 0, squadLost: 0, squadWeak: 0, squadTimeout: 0, raidFarmers: 0, chargeNow: 0, netTowers: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3668,7 +3677,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const byId = new Map<number, HardUnit>();
       for (const u of soldiers) byId.set(u.id, u);
       // NN v4 (HEAD_SQUAD): those in squads (none with the network off or as hard).
-      for (const q of squads) for (const id of q.ids) if (!byId.has(id)) q.ids.delete(id);
+      for (const q of squads)
+        for (const id of q.ids)
+          if (!byId.has(id)) {
+            q.ids.delete(id);
+            // NN v4: soldiers of squads lost while out.
+            counted.squadDied++;
+          }
       const inSquad = (id: number) => squads.some((q) => q.ids.has(id));
       const has = (t: number) => own.some((b) => b.type === t);
       const done = (t: number) => own.filter((b) => b.type === t && b.progress >= 1000);
@@ -3892,7 +3907,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const inFight = foes.some((f) => dist2(f.x, f.y, fc.x, fc.y) <= SQUAD_NEAR * SQUAD_NEAR);
           const squadOk = !inFight && squads.length < plan.squadMost && squadSizeFor(free, plan) >= SQUAD_MIN;
           // plan.raidCavalry: a raid with the cavalry alone.
-          const raidOk = plan.raidCavalry ? !inFight && squads.length < plan.squadMost && freeList.filter((u) => u.type === UnitType.Cavalry).length >= RAID_CAVALRY : squadOk;
+          const raidOk = tick >= plan.raidFrom && (plan.raidCavalry ? !inFight && squads.length < plan.squadMost && freeList.filter((u) => u.type === UnitType.Cavalry).length >= RAID_CAVALRY : squadOk);
           let townFree = false;
           let takeFree = false;
           for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
@@ -4806,6 +4821,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               let bestD = 0;
               for (const sp of spots) {
                 if (underArrows(sp) || resting(sp.x, sp.y)) continue;
+                // plan.raidFar: away from the enemy's main city (its guards, its towers, its army coming home).
+                if (plan.raidFar > 0 && dist2(sp.x, sp.y, enemyHome.cellX, enemyHome.cellY) < plan.raidFar * plan.raidFar) continue;
                 let seen = false;
                 for (const e of intel.values()) if (tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, sp.x, sp.y) <= 14 * 14) seen = true;
                 if (seen) continue;

@@ -2010,7 +2010,7 @@ test("NN v4s (update): any job draws the same games and pair p; the step is the 
   assert.deepEqual(a.games, b.games);
   assert.deepEqual(a.eps(5), b.eps(5), "pair 5 from any job");
   assert.notDeepEqual(a.eps(0), a.eps(1));
-  const game = (won: number) => ({ won, ticks: 0, margin: 0, governed20: 0, stuck: 0, ratio15: -1, ratio20: -1, farmerHits: 0, farmerBack: 0, reached: false, towers45: -1, governed45: -1, choices: [], combos: [], switches: { keep: true, siege: true, rich: true, market: true }, aiStats: {}, killed: { farmers: 0, backByCavalry: 0 } });
+  const game = (won: number) => ({ won, ticks: 0, margin: 0, governed20: 0, stuck: 0, ratio15: -1, ratio20: -1, farmerHits: 0, farmerBack: 0, reached: false, towers45: -1, governed45: -1, choices: [], combos: [], switches: { keep: true, siege: true, rich: true, market: true }, aiStats: {}, killed: { farmers: 0, backByCavalry: 0 }, soldiersLost: 0 });
   // Plus wins both games, minus loses both, in every pair.
   const pair = (p: number) => ({ pair: p, plus: [game(1), game(1)], minus: [game(0), game(0)] });
   const moved = (pairs: number[]) => {
@@ -2270,6 +2270,15 @@ function squadGame(pick: number, camp = false, opt: { spears?: number; cavalry?:
   const ai = hardAi(g, { dodge: false, peekFirst: 0, ...opt.plan, net: forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD, AS_HARD, pick, AS_HARD]) });
   return { g, w, ai, ids, cavalry, at };
 }
+
+test("NN v4 (ceo 2026-11-05, the user's 75830947): raidFrom holds raids till then; raidFar keeps them off spots by the enemy's main city", () => {
+  const moves = (r: ReturnType<typeof squadGame>) => r.ai.think(buildView(r.g, 0)).filter((c): c is Extract<CommandBody, { c: "move" }> => c.c === "move" && c.u.length === 10);
+  // squadGame's camp is halfway between the main cities, at minute 12.
+  assert.equal(moves(squadGame(SQUAD_RAID, true, { plan: { raidFrom: 13 * 1200 } })).length, 0, "before minute 13: none");
+  assert.equal(moves(squadGame(SQUAD_RAID, true, { plan: { raidFrom: 10 * 1200 } })).length, 1, "after minute 10: a raid");
+  assert.equal(moves(squadGame(SQUAD_RAID, true, { plan: { raidFar: 200 } })).length, 0, "the camp within 200 cells of the enemy: none");
+  assert.equal(moves(squadGame(SQUAD_RAID, true, { plan: { raidFar: 10 } })).length, 1, "10 cells: the camp is farther");
+});
 
 test("NN v4 (the user 2026-11-05: raids with cavalry or a small squad): raidCavalry sends the cavalry alone; squadSize 6 goes with 14 soldiers, a quarter does not", () => {
   const raids = (r: { ai: { think: (v: ReturnType<typeof buildView>) => CommandBody[] }; g: Game }) =>
