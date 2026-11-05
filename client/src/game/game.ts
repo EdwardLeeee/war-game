@@ -667,9 +667,9 @@ export class Game implements GestureHost {
   }
 
   /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
-  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null {
+  get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; ghostIds: number[]; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null {
     const r = this.renderer;
-    return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount };
+    return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount, ghostIds: [...r.ghostIds] };
   }
 
   /** 城內 B (castle 2): the towns' decor pieces, for the test hook. */

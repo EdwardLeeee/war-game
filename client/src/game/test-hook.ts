@@ -134,7 +134,8 @@ export interface GameHook {
   culture(): string;
   /** The castles as drawn (D-089): wall pieces and floor tiles shown, towns drawn as blocks, towns no layout fits, units drawn behind a wall. */
   /** `walkable`: the pictures say where those on a wall stand (art-v5.2); `gates`: the gates drawn from pictures, by look (D-096). */
-  castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null;
+  /** `ghostIds`: the units drawn behind a wall this frame. */
+  castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; ghostIds: number[]; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null;
   /** 城內 B (castle 2): the towns' decor pieces: town, map cells, where its anchor is on screen (CSS px), shown or left out. */
   decor(): { town: number; piece: string; cells: [number, number][]; sx: number; sy: number; shown: boolean; leftOut: boolean; burnt: boolean }[];
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */

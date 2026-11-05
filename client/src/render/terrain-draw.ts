@@ -12,7 +12,7 @@ import type { Projection } from "../camera/projection.ts";
 import { Fog, Terrain } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import type { GameView } from "../view/view.ts";
-import { depthOf } from "./depth.ts";
+import { pieceDepth, POST_LIFT } from "./depth.ts";
 import { InsetFrames } from "./inset.ts";
 import type { ArtFrame, UnitArt } from "./unit-art.ts";
 
@@ -120,7 +120,8 @@ export class TerrainDraw {
       this.flat[p.ground].addChild(color);
       return { color, shadow: null, cells };
     }
-    color.zIndex = depthOf(this.projection.toPlane(0, p.front * TILE_PX).y, Math.floor(p.x), 2_000_000 + i);
+    // As a diamond by its anchor (depth.ts), a post a little nearer: over the ends of the arms it joins.
+    color.zIndex = pieceDepth(this.projection, p.x, p.y, p.front, Math.floor(p.x), 2_000_000 + i, p.frame.startsWith("terrain_cliff_post") ? POST_LIFT : 0);
     this.upright.addChild(color);
     const frame = this.art?.terrainFrame("shadow", p.frame) ?? null;
     const shadow = frame === null ? null : this.sprite(frame, at.x, at.y);
