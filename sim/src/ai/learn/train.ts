@@ -107,6 +107,9 @@ const VARIANTS: Record<string, { force: string; plan: Partial<HardPlan> }> = {
   raid6: { force: "5.1", plan: { squadSize: 6 } },
   // ceo 2026-11-05, the user's 75830947: from minute 10, 10 at a time (cavalry first), farmers 20 cells or more from the enemy's main city.
   raiduser: { force: "5.1", plan: { squadSize: 10, raidFrom: 10 * 1200, raidFar: 20 } },
+  // The user's 75830947 replayed (23d43ee): the squad waited by far spots for the farmers hard sent there. raiduser,
+  // waiting 3 minutes with no farmer by it (30 s before), at most 6 at the spot (90 s).
+  raidcamp: { force: "5.1", plan: { squadSize: 10, raidFrom: 10 * 1200, raidFar: 20, raidQuiet: 3 * 1200, raidTime: 6 * 1200 } },
 };
 async function evaluate(name: string, net: NetWeights | null, n: number, m: number, seed0: number, switches: Switches, plan?: Partial<HardPlan>): Promise<EvalResult> {
   // NN v3: 120 minutes, as the training (D-115).

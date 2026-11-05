@@ -2797,6 +2797,13 @@ export interface HardPlan {
   /** D-086 B (learn/ only): at each think with the network on, its choices (net.ts heads). */
   netSeen?: (choice: number[]) => void;
   /**
+   * NN v4 (learn/ and measurements only, ceo 2026-11-05: each raid of a game, not the mean): a squad as it comes back:
+   * its task, when it set out, got there (-1: never) and came back, why, its size (cavalry of it) and what was left,
+   * where it went, the farmers it killed and the most in sight by it at once, and, broken off, whether under arrows and
+   * the enemy soldiers it saw by it in the last minute.
+   */
+  squadLog?: (e: { task: number; start: number; at: number; end: number; why: string; size: number; cavalry: number; left: number; x: number; y: number; kills: number; seenMost: number; arrows: boolean; foes: number }) => void;
+  /**
    * D-086 B, choices other than AS_HARD the network may not make (ceo 2026-10-19, the user's 「人工給它一些意见」):
    * no march on the enemy's main city with fewer than netMarch soldiers (hard's counterArmy) or before it knows
    * where it is, and no barracks and ranges first below netFarmers farmers (hard's range comes at 12).
@@ -2819,6 +2826,14 @@ export interface HardPlan {
    */
   raidFrom: number;
   raidFar: number;
+  /**
+   * NN v4 (the user's 75830947, replayed on 23d43ee: 22 of hard's farmers killed 26-51 cells from its main city in
+   * minutes 13-19.6, a squad waiting by a far spot for those sent there, while hard's farmers were mostly within 12 cells;
+   * hard's own raids left after 30 s with none in sight, 13 of 18 seeing none): raidQuiet, a raid comes back
+   * after this many ticks with no enemy farmer by it; raidTime, at most this long at the spot.
+   */
+  raidQuiet: number;
+  raidTime: number;
   /**
    * D-086 A4 (the user 2026-10-20: 「ai困難都不會用騎兵跟防禦建築」): cavalry beats mages x2 (D-061). Once ranged
    * units and mages are cavalryWhen percent or more of the enemy soldiers it knows of (CAVALRY_SEEN or more), it
@@ -3052,6 +3067,9 @@ export const HARD: HardPlan = {
   raidCavalry: false,
   raidFrom: 0,
   raidFar: 0,
+  // A raid back after 30 s with no enemy farmer by it, or after 90 s at the spot (as before NN v4's raidQuiet, raidTime).
+  raidQuiet: 30 * 20,
+  raidTime: 90 * 20,
   netFarmers: 12,
   // D-097 (ceo 2026-10-22, docs/research/2026-10-ai-d096.md section 5): 20% cavalry on random maps, charging; spearmen
   // against 15% enemy cavalry; another lumber camp by the trees.
@@ -3199,7 +3217,6 @@ const SQUAD_MIN = 5;
 const SQUAD_NEAR = 10;
 const SQUAD_WALK = 3 * TICKS_PER_MINUTE;
 const SQUAD_HOLD = 4 * TICKS_PER_MINUTE;
-const SQUAD_RAID_TIME = 90 * 20;
 /** NN v4 (plan.raidCavalry): a raid of the cavalry alone goes with this many at least. */
 const RAID_CAVALRY = 3;
 /** NN v4: a squad's size out of `n` soldiers: plan.squadSize once there are twice as many, else squadShare of them. */
@@ -3214,7 +3231,6 @@ function squadSizeFor(n: number, plan: { squadSize: number; squadShare: number }
  * (outmatched or half gone), no squad goes for SQUAD_REST.
  */
 const SQUAD_REST = 3 * TICKS_PER_MINUTE;
-const SQUAD_RAID_QUIET = 30 * 20;
 /** NN v4 (CHARGE_NOW): the charge goes with up to this many times its cavalry of enemy spearmen by the target (as hard: 1). */
 const CHARGE_NOW_SPEARS = 2;
 const NET_MODES: readonly string[] = ["home", "town", "base", "defend", "raze"];
@@ -3456,7 +3472,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** plan.charge: the cavalry charging, where the charge began and how many set out, its target, when last told; spots left alone until a tick. plan.towers: where the last wave came from. */
   const chargers = new Set<number>();
   /** NN v4 (HEAD_SQUAD): squads out: their soldiers, task (SQUAD_*), target (a town id for SQUAD_TOWN and SQUAD_TAKE, else -1), when they set out, how many, when last told, when there (-1: not yet), when they last saw enemy farmers. */
-  const squads: { ids: Set<number>; task: number; x: number; y: number; town: number; start: number; size: number; moveAt: number; at: number; quiet: number }[] = [];
+  const squads: { ids: Set<number>; task: number; x: number; y: number; town: number; start: number; size: number; moveAt: number; at: number; quiet: number; cavalry: number; kills: number; seenMost: number }[] = [];
   /** NN v4: enemy farmers seen by a raid squad (id: last tick seen, within SQUAD_NEAR of it). */
   const raidSeen = new Map<number, number>();
   /** NN v4: spots (8x8 cells) where a squad broke off, and the tick it may go there again. */
@@ -4740,11 +4756,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const near = enemyFarmers.filter((f) => dist2(f.x, f.y, sc.x, sc.y) <= SQUAD_NEAR * SQUAD_NEAR);
             for (const [id, t] of raidSeen) if (tick - t <= 40 && !enemyFarmers.some((f) => f.id === id)) {
               counted.raidFarmers++;
+              q.kills++;
               raidSeen.delete(id);
             }
             for (const f of near) raidSeen.set(f.id, tick);
             if (near.length > 0) q.quiet = tick;
-            if (q.at >= 0 && (tick - q.at >= SQUAD_RAID_TIME || tick - q.quiet >= SQUAD_RAID_QUIET)) why = "squadDone";
+            q.seenMost = Math.max(q.seenMost, near.length);
+            if (q.at >= 0 && (tick - q.at >= plan.raidTime || tick - q.quiet >= plan.raidQuiet)) why = "squadDone";
             else if (q.at >= 0 && near.length > 0 && tick - q.moveAt >= 100) {
               near.sort((a, b) => dist2(a.x, a.y, sc.x, sc.y) - dist2(b.x, b.y, sc.x, sc.y) || a.id - b.id);
               out.push({ c: "attack", u: ids, target: near[0].id });
@@ -4763,6 +4781,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             if (ids.length > 0) out.push({ c: why === "squadDone" || why === "squadTimeout" ? "move" : "retreat", u: ids, x: post.x, y: post.y });
             if (why === "squadDone" || why === "squadTimeout") rejoin.push(...ids);
             counted[why]++;
+            if (plan.squadLog !== undefined) {
+              let seen = 0;
+              for (const e of intel.values()) if (!e.post && tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, sc.x, sc.y) <= SQUAD_NEAR * SQUAD_NEAR) seen++;
+              plan.squadLog({ task: q.task, start: q.start, at: q.at, end: tick, why, size: q.size, cavalry: q.cavalry, left: ids.length, x: q.x, y: q.y, kills: q.kills, seenMost: q.seenMost, arrows: underArrows(sc), foes: seen });
+            }
             if ((why === "squadLost" || why === "squadWeak") && q.task !== SQUAD_HOME) squadRestAt.set(squadSpot(q.x, q.y), tick + SQUAD_REST);
             squads.splice(k, 1);
           } else if (ids.length > 0 && tick - q.moveAt >= 400 && (q.at < 0 || q.task !== SQUAD_RAID)) {
@@ -4844,7 +4867,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               .sort((a, b) => kind(a) - kind(b) || dist2(a.x, a.y, at.x, at.y) - dist2(b.x, b.y, at.x, at.y) || rank(a.fx, a.fy) - rank(b.fx, b.fy))
               .slice(0, size);
             const ids = pick.map((u) => u.id);
-            squads.push({ ids: new Set(ids), task, x: at.x, y: at.y, town: at.town, start: tick, size: ids.length, moveAt: tick, at: -1, quiet: tick });
+            squads.push({ ids: new Set(ids), task, x: at.x, y: at.y, town: at.town, start: tick, size: ids.length, moveAt: tick, at: -1, quiet: tick, cavalry: pick.filter((u) => u.type === UnitType.Cavalry).length, kills: 0, seenMost: 0 });
             out.push({ c: "move", u: ids, x: at.x, y: at.y });
             counted[task === SQUAD_RAID ? "squadRaid" : task === SQUAD_HOME ? "squadHome" : task === SQUAD_TOWN ? "squadTown" : "squadTake"]++;
             const keep = armyIds.filter((id) => !ids.includes(id));
