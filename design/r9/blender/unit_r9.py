@@ -182,7 +182,7 @@ def _displace(ob, tex, axis, depth, group=None):
     ob.modifiers.move(len(ob.modifiers) - 1, 0)
 
 
-def _barding_rows(depth=0.012):
+def _barding_rows(depth=0.008):
     """art-v7.4 (the review: the 具裝 not realistic enough): the lamellar barding's rows stepped in the mesh, each row's
     lower edge standing out over the row below it (as lamellae overlap downward), 24 rows to 2 m to match
     east_r8.lamellar's rows: the steps catch the light and shade the next row in any light, so the barding reads as
@@ -280,8 +280,10 @@ def apply(u=None, kind=None):
             p.inputs["Subsurface Weight"].default_value = 0.1
             p.inputs["Subsurface Radius"].default_value = (0.012, 0.005, 0.003)
         elif "lamellar_horse" in n:
-            # the 具裝's lacquer (judge r1: no plates, no lacquer sheen): deeper seams, glossier plates
-            _plates(m, seam=0.32, rough=(0.14, 0.42))
+            # the 具裝's lacquer (judge r1: no plates, no lacquer sheen): deeper seams, a satin sheen (r2: glossier
+            # plates on the rump's top blew out white in the sky's light: the reflection held down)
+            _plates(m, seam=0.32, rough=(0.3, 0.55))
+            p.inputs["Specular IOR Level"].default_value = 0.3
         elif "lamellar" in n:
             _plates(m)
         elif n.startswith("iron"):

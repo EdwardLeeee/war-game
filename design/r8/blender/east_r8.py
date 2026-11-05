@@ -167,11 +167,12 @@ def _materials():
         # art-v7.4 (the review 2026-11-04: the 具裝 not realistic enough, read as a striped blanket): plates counted along
         # the horse, a little larger (4 x 8.5 cm, real barding's lamellae read at phone size), the lacing a dark leather
         # brown, not orange
-        # (judge r1: the dark brown lacing merged the flanks into one dark mass, worse at phone size than the orange: the
-        # lacing a red-brown again, the plates 5.5 cm so a seam lands every 3 px, each plate light at its top and dark at
-        # its foot so a row reads by its own light)
-        horse_armour=lamellar("lamellar_horse_r8", (0.07, 0.062, 0.058), (0.21, 0.08, 0.04), along="body", row=2 / 24,
-                              width=0.055, light=(0.5, 0.65)),    # (2 / 24 m: unit_r9._barding_rows steps the rows, 24 to 2 m)
+        # (judge r1: the dark brown lacing merged the flanks into one dark mass, worse at phone size than the orange; r2:
+        # the rear half still dark: the lacing as before, the plates 5.5 cm so a seam lands every 3 px, each plate a little
+        # lighter at its top)
+        # (r3: each row's light-to-dark span still 37% less on the rear half: the lacing a little brighter than before)
+        horse_armour=lamellar("lamellar_horse_r8", (0.07, 0.062, 0.058), (0.34, 0.13, 0.06), along="body", row=2 / 24,
+                              width=0.055, light=(0.35, 0.75)),    # (2 / 24 m: unit_r9._barding_rows steps the rows, 24 to 2 m)
         lacquer=lib.mat("lacquer_e", (0.16, 0.05, 0.035), 0.32),             # red-black lacquer: lance, crown
         headcloth=lib.mat("sack_e", (0.3, 0.26, 0.2), 0.85),                # the farmer's head cloth
         robe=lib.mat("russet_e", (0.32, 0.16, 0.09), 0.8),                  # 木蘭: the Daoist's robe
