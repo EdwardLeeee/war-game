@@ -185,7 +185,9 @@ jobs:
             filling=0
             while IFS=$'\t' read -r id name title; do
               [ "$id" = "$GITHUB_RUN_ID" ] && continue
-              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" --paginate --jq '.jobs[].status' > jobs.txt || ok=0
+              # 50 a page: a pull request's Sim run (149 jobs) answers 100 a page with HTTP 502. One more try on an error.
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=50" --paginate --jq '.jobs[].status' > jobs.txt \
+                || { sleep 5; gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=50" --paginate --jq '.jobs[].status' > jobs.txt; } || ok=0
               r=$(grep -cx in_progress jobs.txt || true)
               q=$(grep -cxE 'queued|waiting|pending|requested' jobs.txt || true)
               busy=$((busy + r))
