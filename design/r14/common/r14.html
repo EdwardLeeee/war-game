@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R14 設計稿</title>
+<!--
+  R14 mock (design only, not the game): r14.html?theme=a&state=<id>, 814 x 380 pt. The R6 approved mock's looks and pieces
+  (design/r6/mock: themes.css, ui.css, app.js, states.js) with R13's pieces (design/r13/common: 進駐's tags, groups' 駐N／躲N,
+  the prompt strip up high) and R14's (r14-world.js, r14-states.js, r14-stats.js). The battlefields behind are
+  design/r14/build/*.png and where things are on them build/r14-layout.js (scene_r14.py).
+-->
+<link rel="stylesheet" href="../../r6/mock/themes.css">
+<link rel="stylesheet" href="../../r6/mock/ui.css">
+<link rel="stylesheet" href="../../r13/common/r13.css">
+<link rel="stylesheet" href="r14.css">
+</head>
+<body>
+<div id="screen"></div>
+<script src="../../r6/mock/app.js"></script>
+<script src="../../r6/mock/states.js"></script>
+<script src="../../r13/common/r13-states.js"></script>
+<script src="../../r13/common/r13-b2-scene.js"></script>
+<script src="../../r13/common/r13-tags.js"></script>
+<script src="../../r13/common/r13-b2.js"></script>
+<script src="r14-scene.js"></script>
+<script src="../build/r14-layout.js"></script>
+<script src="r14-world.js"></script>
+<script src="r14-states.js"></script>
+<script src="r14-stats.js"></script>
+</body>
+</html>
