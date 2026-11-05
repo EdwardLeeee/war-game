@@ -53,6 +53,8 @@ test("test=1 turns on the hook and allows a faster tick rate and the fake world"
   assert.equal(parseParams("?edge=1").edge, false);
   assert.equal(parseParams("?test=1&scenario=e2e").scenario, "e2e");
   assert.equal(parseParams("?test=1&scenario=perf360").scenario, "perf360", "量測 360 人 (D-083)");
+  assert.equal(parseParams("?test=1&scenario=wallshift").scenario, "wallshift", "牆上守軍換邊的錄影場景 (D-119)");
+  assert.equal(parseParams("?scenario=wallshift").scenario, null);
   assert.equal(parseParams("?test=1&art=test").art, "test", "the e2e tests' stand-in atlases (D-085)");
   assert.equal(parseParams("?art=x3").art, null, "test pages only");
   assert.equal(parseParams("?test=1&art=x9").art, null);
