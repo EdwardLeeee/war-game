@@ -381,6 +381,14 @@ def _horse_armour(u, M, hem=0.8):
             out.append([(rx * math.sin(math.radians(-78 + 156 * k / 10)),
                          y0 + d * math.cos(math.radians(-78 + 156 * k / 10)), z) for k in range(11)])
         units2._surface(f"{kind}_h_r8{name}", out, M["horse_armour"], hr, bones)
+        # art-v7.4 (the lance's pennant gone): the player's colour round the 盪胸's and 搭後's hems too, as on the side
+        # panels, so the front (facing 6) and the back show it
+        band = []
+        for z in (hem + 0.16, hem + 0.07, hem - 0.02):
+            band.append([((rx + 0.012) * math.sin(math.radians(-78 + 156 * k / 10)),
+                          y0 + (d + 0.012 * (1 if d > 0 else -1)) * math.cos(math.radians(-78 + 156 * k / 10)), z)
+                         for k in range(11)])
+        units2._surface(f"{kind}_h_r8{name}hem", band, M["team"], hr, bones)
     hr.pose()
 
 
@@ -402,10 +410,8 @@ def dress_cav(u):
     cyl(f"{kind}_r8socket", 0.022, 0.07, M["iron"], g, at=(0, 0, -2.3))
     lathe(f"{kind}_r8lancetip", [(0.0, 0.0), (0.03, 0.09), (0.034, 0.18), (0.012, 0.27)], M["steel"], g, segs=8,
           at=(0, 0, -2.6), scale=(1, 0.35, 1))
-    # ceo 2026-10-21: a small pennant of the player's colour on the lance (the rider's sleeves and 頓項 and the horse's
-    # hem gave 3-14% of the unit; the black lacquer stays)
-    slab(f"{kind}_r8pennant", [(0.0, 0.0), (0.0, -0.3), (0.32, -0.26), (0.22, -0.15), (0.32, -0.04)], 0.006,
-         M["team"], parent=g, loc=(0.02, 0, -2.0), rot=(0, 90, 0))
+    # (ceo 2026-10-21 hung a pennant of the player's colour on the lance; the user 2026-11-06, art-v7.4: 「它武器為啥掛一個
+    # 藍藍的東西？應該要拿掉吧，武器不就是長槍嗎」: gone; the colour is on the barding's hems instead, _horse_armour)
     import horse_r8
     _rows, hem, _old = horse_r8.refit(u, kind, M["horse_armour"], M["horse_armour"])
     _gone(kind, ["chamfron", "h_r8mane"])           # the 雞項 covers the mane; the 面簾 replaces R2's box
