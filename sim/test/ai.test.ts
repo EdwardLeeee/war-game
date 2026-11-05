@@ -2251,13 +2251,14 @@ test("NN v2: a candidate at the training's step size (asHardNet plus ES noise, s
 // --- NN v4 (D-122): squads and the charge -----------------------------------------------------------------------
 
 /** Hard at minute 12 with 40 spearmen at home and the network forced to `pick` on the squad head; an enemy lumber camp in sight of a farmer when `camp`. */
-function squadGame(pick: number, camp = false) {
+function squadGame(pick: number, camp = false, opt: { spears?: number; cavalry?: number; plan?: Partial<HardPlan> } = {}) {
   const g = emptyGame();
   const w = g.w;
   w.tick = 12 * 1200;
   const s0 = w.map.spawns[0];
   const s1 = w.map.spawns[1];
-  const ids = Array.from({ length: 40 }, (_, k) => put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 8), s0.cellY - 6 - Math.trunc(k / 8)));
+  const ids = Array.from({ length: opt.spears ?? 40 }, (_, k) => put(g, 0, UnitType.Spearman, s0.cellX + 6 + (k % 8), s0.cellY - 6 - Math.trunc(k / 8)));
+  const cavalry = Array.from({ length: opt.cavalry ?? 0 }, (_, k) => put(g, 0, UnitType.Cavalry, s0.cellX + 6 + k, s0.cellY - 12));
   let at: { x: number; y: number } | null = null;
   if (camp) {
     // Halfway, off the enemy's main city, in sight of a farmer of its own.
@@ -2266,9 +2267,22 @@ function squadGame(pick: number, camp = false) {
     put(g, 0, UnitType.Farmer, at.x - 3, at.y);
   }
   g.fog.update(w);
-  const ai = hardAi(g, { dodge: false, peekFirst: 0, net: forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD, AS_HARD, pick, AS_HARD]) });
-  return { g, w, ai, ids, at };
+  const ai = hardAi(g, { dodge: false, peekFirst: 0, ...opt.plan, net: forcedNet([AS_HARD, AS_HARD, AS_HARD, AS_HARD, AS_HARD, pick, AS_HARD]) });
+  return { g, w, ai, ids, cavalry, at };
 }
+
+test("NN v4 (the user 2026-11-05: raids with cavalry or a small squad): raidCavalry sends the cavalry alone; squadSize 6 goes with 14 soldiers, a quarter does not", () => {
+  const raids = (r: { ai: { think: (v: ReturnType<typeof buildView>) => CommandBody[] }; g: Game }) =>
+    r.ai.think(buildView(r.g, 0)).filter((c): c is Extract<CommandBody, { c: "move" }> => c.c === "move");
+  const cav = squadGame(SQUAD_RAID, true, { spears: 20, cavalry: 4, plan: { raidCavalry: true } });
+  const sent = raids(cav).find((c) => c.u.length === 4);
+  assert.ok(sent !== undefined && cav.cavalry.every((id) => sent.u.includes(id)), "the 4 cavalry, only they");
+  const few = squadGame(SQUAD_RAID, true, { spears: 14 });
+  assert.equal(few.ai.stats!().squadRaid + raids(few).filter((c) => c.u.length >= 5 && c.u.length < 14).length, 0, "a quarter of 14 is 3: none");
+  const six = squadGame(SQUAD_RAID, true, { spears: 14, plan: { squadSize: 6 } });
+  assert.ok(raids(six).some((c) => c.u.length === 6), "squadSize 6: a raid of 6");
+  assert.equal(six.ai.stats!().squadRaid, 1);
+});
 
 test("NN v4 (HEAD_SQUAD): the network's squad goes, squadShare of the army; at most squadMost out; as hard, none", () => {
   const home = squadGame(SQUAD_HOME);

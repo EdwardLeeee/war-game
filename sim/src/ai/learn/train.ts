@@ -23,6 +23,7 @@ import { cpus } from "node:os";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { asHardNet, HEAD_ARMY, HEAD_CHARGE, HEAD_DEFENSE, HEAD_SQUAD, HEAD_TOWN, NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
 import { addStats, ES_DEFAULTS, type EsConfig, type EsState, fromVector, generation, type GenerationReport, newState, type PairResult, playPairs, sameShape, squadText, update, widen, widenNet } from "./es.ts";
+import type { HardPlan } from "../ai.ts";
 import type { GameOutcome, Opponent, Switches } from "./play.ts";
 import { runAll, threads } from "./pool.ts";
 import type { Job } from "./worker.ts";
@@ -86,18 +87,27 @@ const tally = (res: GameOutcome[]): Tally => {
   return { games: res.length, won, draws, lost: res.length - won - draws };
 };
 /** The games of one set, `n` on each map; against hard both spawns in turn. */
-function setJobs(net: NetWeights | null, opp: Opponent, n: number, seed0: number, maxTicks: number, switches: Switches): Job[] {
+function setJobs(net: NetWeights | null, opp: Opponent, n: number, seed0: number, maxTicks: number, switches: Switches, plan?: Partial<HardPlan>): Job[] {
   const jobs: Job[] = [];
   for (const map of ["fixed", "random"] as const) {
-    for (let k = 0; k < n; k++) jobs.push({ kind: "play", spec: { seed: seed0 + (opp.kind === "hard" ? k >> 1 : k), map, swap: (k & 1) === 1, maxTicks, opp, rules: switches }, net });
+    for (let k = 0; k < n; k++) jobs.push({ kind: "play", spec: { seed: seed0 + (opp.kind === "hard" ? k >> 1 : k), map, swap: (k & 1) === 1, maxTicks, opp, rules: switches }, net, plan });
   }
   return jobs;
 }
-async function evaluate(name: string, net: NetWeights | null, n: number, m: number, seed0: number, switches: Switches): Promise<EvalResult> {
+/**
+ * NN v4 (the user 2026-11-05: 「可以試試看用騎兵或是小部隊偷襲」): eval --variant NAME: a forced choice with a plan over
+ * hard's, against the control's seeds. raidcav: always raid (where the mask allows it), with the cavalry alone;
+ * raid6: always raid, with 6 (cavalry first), out once the army has 12.
+ */
+const VARIANTS: Record<string, { force: string; plan: Partial<HardPlan> }> = {
+  raidcav: { force: "5.1", plan: { raidCavalry: true } },
+  raid6: { force: "5.1", plan: { squadSize: 6 } },
+};
+async function evaluate(name: string, net: NetWeights | null, n: number, m: number, seed0: number, switches: Switches, plan?: Partial<HardPlan>): Promise<EvalResult> {
   // NN v3: 120 minutes, as the training (D-115).
-  const hard = (await runAll(setJobs(net, { kind: "hard" }, n, seed0, 144000, switches))).map((r) => r.outcome);
+  const hard = (await runAll(setJobs(net, { kind: "hard" }, n, seed0, 144000, switches, plan))).map((r) => r.outcome);
   // push-crush as CI plays it: 90 minutes.
-  const crush = (await runAll(setJobs(net, { kind: "crush" }, m, seed0, 144000, switches))).map((r) => r.outcome);
+  const crush = (await runAll(setJobs(net, { kind: "crush" }, m, seed0, 144000, switches, plan))).map((r) => r.outcome);
   const at45 = crush.filter((o) => o.towers45 >= 0);
   const mean = (xs: number[]) => (xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length);
   const choices = NET_HEADS.map((k) => new Array(k).fill(0));
@@ -396,7 +406,10 @@ if (mode === "dryrun") {
   // NN v4 (D-122): a v3 network plays as it did, as hard on the new heads.
   let net = net0 === null || sameShape(net0) ? net0 : widenNet(net0, ES_DEFAULTS);
   // NN v4f (2026-11-05): --force <head>.<choice>: hard with that choice on that head wherever the mask allows it: what the choice itself is worth.
-  const force = arg("force", "");
+  const variant = arg("variant", "");
+  if (variant !== "" && VARIANTS[variant] === undefined) throw new Error(`--variant ${variant}: ${Object.keys(VARIANTS).join(", ")}`);
+  const force = variant !== "" ? VARIANTS[variant].force : arg("force", "");
+  const plan = variant !== "" ? VARIANTS[variant].plan : undefined;
   if (force !== "") {
     const [h, k] = force.split(".").map(Number);
     const plain = asHardNet();
@@ -407,8 +420,8 @@ if (mode === "dryrun") {
   const bad = names.filter((x) => x !== "keep" && x !== "siege" && x !== "rich" && x !== "market");
   if (bad.length > 0) throw new Error(`--rules ${bad.join(",")}: keep, siege, rich or market`);
   const switches: Switches = Object.fromEntries(names.map((x) => [x, true]));
-  const name = arg("name", force !== "" ? `強制 ${force}` : file === "" ? "control" : file);
-  const r = await evaluate(name, net, Number(arg("games", "100")), Number(arg("crush", "20")), Number(arg("seed", "2000001")), switches);
+  const name = arg("name", variant !== "" ? `強制 ${force}（${variant}）` : force !== "" ? `強制 ${force}` : file === "" ? "control" : file);
+  const r = await evaluate(name, net, Number(arg("games", "100")), Number(arg("crush", "20")), Number(arg("seed", "2000001")), switches, plan);
   writeFileSync(`${out}/eval.json`, JSON.stringify(r));
   const h = wl(r.hard);
   summary(

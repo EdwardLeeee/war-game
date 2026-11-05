@@ -263,7 +263,7 @@ jobs:
       # "Unable to download artifact(s)" broke v2's chain at run 41078447033).
       - name: The start (from_run), tried again on failure
         # NN v4f: a forced choice (f<head>.<choice>) is hard itself with that choice: no network to download.
-        if: needs.plan.outputs.from_run != '' && matrix.island != 'control' && !startsWith(matrix.island, 'f')
+        if: needs.plan.outputs.from_run != '' && matrix.island != 'control' && !startsWith(matrix.island, 'f') && !startsWith(matrix.island, 'v')
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
@@ -317,6 +317,9 @@ jobs:
             eval)
               if [ "$ISLAND" = "control" ]; then
                 node $T eval --name control --games "$GAMES" --out "$O" "$@"
+              elif [ "${ISLAND#v}" != "$ISLAND" ]; then
+                # NN v4 (the user 2026-11-05): "v<name>": a forced choice with a plan over hard's (train.ts VARIANTS).
+                node $T eval --variant "${ISLAND#v}" --games "$GAMES" --out "$O" "$@"
               elif [ "${ISLAND#f}" != "$ISLAND" ]; then
                 # NN v4f: "f<head>.<choice>": hard forced to that choice wherever the mask allows it, against the control's seeds.
                 node $T eval --force "${ISLAND#f}" --games "$GAMES" --out "$O" "$@"

@@ -2807,6 +2807,12 @@ export interface HardPlan {
   squadMost: number;
   squadShare: number;
   /**
+   * NN v4 (the user 2026-11-05: 「可以試試看用騎兵或是小部隊偷襲」): squadSize, a squad of this many (0: squadShare of
+   * the army), out once the army has twice as many; raidCavalry, a raid of the cavalry alone (RAID_CAVALRY or more).
+   */
+  squadSize: number;
+  raidCavalry: boolean;
+  /**
    * D-086 A4 (the user 2026-10-20: 「ai困難都不會用騎兵跟防禦建築」): cavalry beats mages x2 (D-061). Once ranged
    * units and mages are cavalryWhen percent or more of the enemy soldiers it knows of (CAVALRY_SEEN or more), it
    * puts up a stable and trains cavalry up to cavalryCounter percent of its soldiers (0: never, as before).
@@ -3035,6 +3041,8 @@ export const HARD: HardPlan = {
   netMarch: 14,
   squadMost: 2,
   squadShare: 25,
+  squadSize: 0,
+  raidCavalry: false,
   netFarmers: 12,
   // D-097 (ceo 2026-10-22, docs/research/2026-10-ai-d096.md section 5): 20% cavalry on random maps, charging; spearmen
   // against 15% enemy cavalry; another lumber camp by the trees.
@@ -3183,6 +3191,13 @@ const SQUAD_NEAR = 10;
 const SQUAD_WALK = 3 * TICKS_PER_MINUTE;
 const SQUAD_HOLD = 4 * TICKS_PER_MINUTE;
 const SQUAD_RAID_TIME = 90 * 20;
+/** NN v4 (plan.raidCavalry): a raid of the cavalry alone goes with this many at least. */
+const RAID_CAVALRY = 3;
+/** NN v4: a squad's size out of `n` soldiers: plan.squadSize once there are twice as many, else squadShare of them. */
+function squadSizeFor(n: number, plan: { squadSize: number; squadShare: number }): number {
+  if (plan.squadSize > 0) return n >= 2 * plan.squadSize ? plan.squadSize : 0;
+  return Math.trunc((n * plan.squadShare) / 100);
+}
 /**
  * NN v4 (run 41745422431, 256 games): 13223 of 14815 squads broke off outmatched, most as they formed by an army in a
  * fight (the enemy by it counted against the squad alone), and the network sent the next at once. A squad forms only
@@ -3875,7 +3890,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const freeList = soldiers.filter((u) => !guards.has(u.id));
           const fc = centre(freeList, home.cellX, home.cellY);
           const inFight = foes.some((f) => dist2(f.x, f.y, fc.x, fc.y) <= SQUAD_NEAR * SQUAD_NEAR);
-          const squadOk = !inFight && squads.length < plan.squadMost && Math.trunc((free * plan.squadShare) / 100) >= SQUAD_MIN;
+          const squadOk = !inFight && squads.length < plan.squadMost && squadSizeFor(free, plan) >= SQUAD_MIN;
+          // plan.raidCavalry: a raid with the cavalry alone.
+          const raidOk = plan.raidCavalry ? !inFight && squads.length < plan.squadMost && freeList.filter((u) => u.type === UnitType.Cavalry).length >= RAID_CAVALRY : squadOk;
           let townFree = false;
           let takeFree = false;
           for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
@@ -3903,7 +3920,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             ...[true, true, !fewFarmers],
             ...[true, true, true],
             ...[true, towersOk, towersOk],
-            ...[true, squadOk && raidFree, squadOk, squadOk && townFree, squadOk && takeFree],
+            ...[true, raidOk && raidFree, squadOk, squadOk && townFree, squadOk && takeFree],
             ...[true, chargeOk, chargeOk],
           ];
           // One flag per output: a mask short of the heads would leave the new ones as hard for ever (never learned).
@@ -4742,9 +4759,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const task = netChoice === null ? AS_HARD : netChoice[HEAD_SQUAD];
         if (task !== AS_HARD && squads.length < plan.squadMost) {
           const pool = army.filter((u) => !detached(u.id) && u.type !== UnitType.Siege);
-          const size = Math.trunc((pool.length * plan.squadShare) / 100);
+          // plan.raidCavalry: a raid takes all the cavalry, and only it (cavalry first below); plan.squadSize: so many.
+          const cavalryRaid = task === SQUAD_RAID && plan.raidCavalry;
+          const size = cavalryRaid ? pool.filter((u) => u.type === UnitType.Cavalry).length : squadSizeFor(pool.length, plan);
+          const least = cavalryRaid ? RAID_CAVALRY : SQUAD_MIN;
           let target: { x: number; y: number; town: number } | null = null;
-          if (size >= SQUAD_MIN) {
+          if (size >= least) {
             if (task === SQUAD_HOME) target = { x: post.x, y: post.y, town: -1 };
             else if (task === SQUAD_TOWN) {
               let best = -1;
@@ -4797,8 +4817,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               }
             }
           }
-          if (size >= SQUAD_MIN && target === null) counted.squadNoTarget++;
-          if (size >= SQUAD_MIN && target !== null) {
+          if (size >= least && target === null) counted.squadNoTarget++;
+          if (size >= least && target !== null) {
             const at = target;
             // A raid: cavalry first, then spearmen (fast, and nothing to cover); the others, those nearest the target.
             const kind = (u: HardUnit) => (task !== SQUAD_RAID ? 0 : u.type === UnitType.Cavalry ? 0 : u.type === UnitType.Spearman ? 1 : 2);
