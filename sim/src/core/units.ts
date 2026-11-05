@@ -3079,6 +3079,7 @@ export class UnitSystem {
         w.unitSlot[u.id[i]] = -1;
         // Its wall cell is free again (D-096).
         if (u.wall[i] >= 0 && w.wallAt[u.wall[i]] === u.id[i]) w.wallAt[u.wall[i]] = -1;
+        w.deathLog.push(w.tick, u.owner[i], u.type[i], u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, u.hitBy[i], u.hitCause[i], u.hitById[i]);
         // And the one it walked to (WALL_SHIFT).
         if (u.wallTo[i] >= 0 && w.wallAt[u.wallTo[i]] === u.id[i]) w.wallAt[u.wallTo[i]] = -1;
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
@@ -3097,7 +3098,10 @@ export class UnitSystem {
           // The killer's side picks up the bounty (none for the neutral side).
           const killer = u.hitBy[i];
           const bounty = killer >= 0 && killer < PLAYER_COUNT && killer !== u.owner[i] ? MAGE_BOUNTY : 0;
-          if (bounty > 0) w.res[killer * 4 + Resource.Crystal] += bounty;
+          if (bounty > 0) {
+            w.res[killer * 4 + Resource.Crystal] += bounty;
+            w.earnedExtra[killer * 4 + Resource.Crystal] += bounty;
+          }
           const ev: SimEvent = { k: "mage_killed", id: u.id[i], owner: u.owner[i], killer, crystal: bounty };
           emit(u.owner[i], ev);
           if (killer !== u.owner[i] && killer >= 0 && killer < PLAYER_COUNT) emit(killer, ev);
