@@ -1,0 +1,42 @@
+/* R14 on top of R6's themes.css and ui.css (theme A 銅木) and R13's r13.css. R14's new pieces only; all new text 12 pt or more. */
+
+/* 提議 (R14 proposes it; the client has nothing there today): a dashed yellow box, as R6's design notes */
+.sel .prop { outline: 2px dashed #ffe45c; outline-offset: 1px; border-radius: 4px; }
+.sel .pipline > .prop { display: inline-flex; padding: 0 4px; }
+.sel .line.shift { margin: 3px 0 0; padding: 1px 4px; color: #ffe08a; font-weight: 700; white-space: normal; }
+.sel .line.shift.warn { color: #ff9c86; }
+.sel .line.pend { color: #d8c49c; }
+
+/* the battlefield's marks (r14-world.js), under the interface */
+.r14w, .r14x { z-index: 0; }
+.screen > .r14glyph { width: 24px; height: 24px; font-size: 14px; }
+.screen > .r14label { font-size: 13px; }
+
+/* 市場 (D-101): 買 100 and 賣 100 for 糧, then for 木, the gold under each */
+.sel .mkt { display: flex; gap: 10px; margin-top: 6px; }
+.sel .mpair { display: flex; gap: 4px; flex: 1; }
+.sel .mkt .b.trade { flex: 1; flex-direction: column; gap: 0; min-height: 44px; padding: 2px 4px 3px; }
+.sel .mkt .b.trade .lb { font-size: 13px; line-height: 1.15; white-space: nowrap; }
+.sel .mkt .b.trade .sub { font-size: 12px; line-height: 1.15; white-space: nowrap; }
+
+/* the squads in a building (召回 each, D-125) */
+.sel .rowb.whose .line { margin-right: 0; }
+.sel .rowb.whose .b + .line { margin-left: 8px; }
+.pips .pip.come { background: none; color: #d8c49c; box-shadow: inset 0 0 0 1.5px #9cc2ff; outline: 1px dashed rgba(156, 194, 255, .8); outline-offset: -4px; }
+
+/* 一個攻城砲 (D-099): the help list's two extra lines */
+.sel .help .k { min-width: 26px; }
+
+/* the build page with 13 buildings and 返回 (砲坊、市場 since R6): 5 columns of 52 pt, clear of the selection info (提議) */
+.cmds:has(.b:nth-child(13)) { grid-template-columns: repeat(5, 52px); gap: 4px; outline: 2px dashed #ffe45c; outline-offset: 2px; border-radius: 6px; }
+.cmds:has(.b:nth-child(13)) .b { width: 52px; }
+.cmds:has(.b:nth-child(13)) .b:not(.wide) .sub { max-width: 50px; }
+
+/* 訓練攻城砲: its cost and its 剋／怕 under it (D-097); 13 characters do not fit two columns, so three (提議) */
+.cmds .wide.wide3 { grid-column: span 3; outline: 2px dashed #ffe45c; outline-offset: 2px; }
+.cmds .wide:has(.counter-sub) { grid-template-rows: auto auto auto; }
+.cmds .wide .ic { grid-row: 1 / -1; }
+.cmds .wide .counter-sub { grid-column: 2; line-height: 1.1; }
+
+/* the selected building's panel when no command area is shown: nothing to the right */
+.sel .queue .b.first::after { bottom: 4px; }
