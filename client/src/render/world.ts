@@ -40,6 +40,7 @@ import { TILE_PX } from "../tuning.ts";
 import type { Placement } from "../ui/placement.ts";
 import { FIXED_TO_PX, type GameView } from "../view/view.ts";
 import { type Atlas, ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint, SHIELD_TINT, WARNING_TINT } from "./atlas.ts";
+import { effectTint } from "../art/effect-tint.ts";
 import { ruleTower, type TowerCells, wallSpot } from "./town-wall.ts";
 import { ArtStructures } from "./structure-art.ts";
 import { autoTrainBuildings } from "../game/features.ts";
@@ -211,6 +212,16 @@ interface TownMark {
 // 2:1). What stands up (units, buildings' and nodes' marks, towns' 鎮 and 城, bars, words, arrows in the air)
 // is drawn on the plane at the projected point, never flattened, the nearer in front.
 
+/**
+ * A mage's cannon on the ground (its warning, its calibration's arc) in its side's colour (the user
+ * 2026-11-05: 「法師法圈顏色跟該陣營一樣」); the shield keeps its own. Neutral: the old orange.
+ */
+const castTint = (owner: number, me: number): number => (owner === NEUTRAL || owner === NO_OWNER ? WARNING_TINT : ownerTint(owner, me));
+
+/** 進駐's rings (R13-01 B's gold frame) and how long one flashes when an arrow brings it on screen. */
+const ENTER_GOLD = 0xe8c45a;
+const ENTER_FLASH_MS = 600;
+
 export class WorldRenderer {
   readonly root = new Container();
   /** 浮空大陸 (edge.ts): metres the realistic ground fades out over at the two lower edges (0: none). */
@@ -230,6 +241,10 @@ export class WorldRenderer {
   /** Units' shadows from their atlases (D-085): pictures, standing like the units, under them. */
   private readonly shadowLayer = new Container();
   private readonly ringLayer = new Container();
+  /** 進駐 (R13-01 B): the rings round the places it can go into (gold), and those it cannot (grey); world px. */
+  private readonly enterRings = new Graphics();
+  private enterList: { id: string; corners: { x: number; y: number }[]; off: boolean }[] = [];
+  private enterFlash: { id: string; at: number } | null = null;
   /** What stands up: units, buildings' and nodes' marks, sorted by their place on the plane. */
   private readonly unitLayer = new Container();
   /** Marks on the ground (orders, warnings, the cannon's calibration, a selected building). */
@@ -351,6 +366,8 @@ export class WorldRenderer {
   ghostStyle: "fill" | "outline" = "fill";
   /** Units drawn behind a wall this frame (test page). */
   ghostCount = 0;
+  /** Which (the test page). */
+  readonly ghostIds = new Set<number>();
   /** Units with their owner's colour under their feet this frame (寫實地面), for the test page. */
   footCount = 0;
   /** Our units drawn up on a castle's wall this frame (D-096, test page; the militia on theirs not counted). */
@@ -368,7 +385,11 @@ export class WorldRenderer {
     this.unitLayer.sortableChildren = true;
     this.artStructures = art !== null && ArtStructures.has(art, projection) ? new ArtStructures(art, view, { ground: this.groundArt, shadows: this.shadowLayer, upright: this.unitLayer }, cultureOf, projection) : null;
     // A unit's depth among the buildings' footprints (structure-art.ts), else its place on the screen.
-    const depth = (px: number, py: number): number => this.artStructures?.unitDepth(px, py) ?? py;
+    const depth = (px: number, py: number): number => {
+      const z = this.artStructures?.unitDepth(px, py) ?? py;
+      // In a gate's opening as a diamond: behind the gate's picture (castle-draw.ts gateDepth).
+      return this.castle?.gateDepth(px, py, z) ?? z;
+    };
     this.artUnits = art === null ? null : new ArtUnits(art, view, this.shadowLayer, this.unitLayer, cultureOf, projection, depth);
     if (this.artStructures !== null) {
       const structures = this.artStructures;
@@ -428,7 +449,7 @@ export class WorldRenderer {
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
-    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.ringLayer, this.fx, this.craterLayer, this.warnLayer, this.ghost, fog, this.wallGround);
+    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.enterRings, this.ringLayer, this.fx, this.craterLayer, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
     this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.overGround, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.airArt, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
@@ -445,6 +466,7 @@ export class WorldRenderer {
     this.drawBuildings();
     this.drawBrokenGates();
     this.drawTowns();
+    this.drawEnterRings(now);
     this.castle.update();
     this.terrain.update();
     this.updateGround();
@@ -509,6 +531,44 @@ export class WorldRenderer {
   }
 
   /** Spearmen drawn on the outposts' walks this frame (D-121), for the test page. */
+  /** The plane's y of a building's picture's top (進駐's tags go over it), null when drawn as a shape. */
+  buildingTop(id: number): number | null {
+    return this.artStructures?.topOf(id) ?? null;
+  }
+
+  /** 進駐's rings: drawn while it picks where to go in, none otherwise. */
+  setEnterRings(list: { id: string; corners: { x: number; y: number }[]; off: boolean }[]): void {
+    this.enterList = list;
+    if (list.length === 0) {
+      this.enterFlash = null;
+      this.enterRings.clear();
+    }
+  }
+
+  /** An arrow's building reached (R13-01-B2 rule 10): its ring flashes once. */
+  flashEnterRing(id: string, now: number): void {
+    this.enterFlash = { id, at: now };
+  }
+
+  private drawEnterRings(now: number): void {
+    const g = this.enterRings;
+    g.clear();
+    if (this.enterList.length === 0) return;
+    const flash = this.enterFlash;
+    const glow = flash === null ? 0 : Math.max(0, 1 - (now - flash.at) / ENTER_FLASH_MS);
+    if (glow === 0) this.enterFlash = null;
+    for (const r of this.enterList) {
+      if (r.corners.length === 0) continue;
+      g.poly(r.corners.flatMap((c) => [c.x, c.y]));
+      const lit = flash !== null && flash.id === r.id ? glow : 0;
+      if (r.off) g.stroke({ width: 3, color: 0x9a9384, alpha: 0.7 });
+      else {
+        g.fill({ color: ENTER_GOLD, alpha: 0.1 + 0.25 * lit });
+        g.stroke({ width: 4 + 4 * lit, color: ENTER_GOLD, alpha: 0.95 });
+      }
+    }
+  }
+
   get crewDrawn(): number {
     return this.artUnits?.crewDrawn ?? 0;
   }
@@ -1242,9 +1302,9 @@ export class WorldRenderer {
 
   /** The units' atlases (D-085): which, how many pages, and how many units drawn from them; null: the shapes. */
   /** `sling`: some unit's atlas has the militia's sling (D-096, art-v5.2). */
-  get artDrawn(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
+  get artDrawn(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
     const a = this.artUnits;
-    return a === null ? null : { label: a.art.label, pages: a.art.pages, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }), sling: [...a.art.atlases.values()].some((j) => j.anims.sling !== undefined) };
+    return a === null ? null : { label: a.art.label, pages: a.art.pages, astc: a.art.resident.astc, bytes: a.art.resident.bytes, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }), sling: [...a.art.atlases.values()].some((j) => j.anims.sling !== undefined) };
   }
 
   /**
@@ -1306,9 +1366,14 @@ export class WorldRenderer {
     return g === null ? null : { ...g.measure(renderer, w, h), mb: g.memoryMB };
   }
 
+  /** 寫實地面's textures on the GPU (MB), or 0 when it is not drawn (art-v7 量測, D-128). */
+  get groundMB(): number {
+    return this.groundDraw?.memoryMB ?? 0;
+  }
+
   /** What draws the ground now (the test page and the 量測 panel). */
-  get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean; town: boolean } {
-    return { real: this.groundShown, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true, town: this.groundDraw?.town === true };
+  get groundLook(): { real: boolean; quality: GroundQuality | null; water: boolean; town: boolean; r9: boolean; r9water: boolean } {
+    return { real: this.groundShown, quality: this.groundDraw?.currentQuality ?? null, water: this.groundDraw?.water === true, town: this.groundDraw?.town === true, r9: this.groundDraw?.r9 === true, r9water: this.groundDraw?.r9Water === true };
   }
 
   /** The ground's weights again when the known ground or the resource points changed. */
@@ -1416,6 +1481,7 @@ export class WorldRenderer {
     const sel = view.selection.units;
     this.ghostRings.clear();
     this.ghostCount = 0;
+    this.ghostIds.clear();
     this.footCount = 0;
     this.wallLifted = 0;
     // A layer with no one behind a wall this frame is hidden: its filter's pass is skipped.
@@ -1527,6 +1593,7 @@ export class WorldRenderer {
         this.artUnits?.ghost(i, behind ? this.ghostLayers[side] : null, this.ghostStyle === "outline");
         if (behind) {
           this.ghostCount++;
+          this.ghostIds.add(id);
           ghosts[side]++;
           if (selected) this.ghostRings.ellipse(at.x, at.y, ringX, ringY).stroke({ width: 2, color: 0xfff3b0 });
         }
@@ -1553,7 +1620,7 @@ export class WorldRenderer {
         this.fx
           .moveTo(px, py - r)
           .arc(px, py, r, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * Math.min(cast, 30)) / 30)
-          .stroke({ width: 3, color: WARNING_TINT, alpha: 0.95 });
+          .stroke({ width: 3, color: castTint(owner, view.me), alpha: 0.95 });
       }
     }
     this.artUnits?.drawCorpses(seconds);
@@ -1571,10 +1638,12 @@ export class WorldRenderer {
       const x = w[o + W.x] * FIXED_TO_PX;
       const y = w[o + W.y] * FIXED_TO_PX;
       const r = w[o + W.radius] * FIXED_TO_PX;
-      this.fx.circle(x, y, r).fill({ color: WARNING_TINT, alpha: 0.12 + 0.1 * pulse }).stroke({ width: 3, color: WARNING_TINT, alpha: 0.9 });
+      // The caster's colour (the user 2026-11-05: 「法師法圈顏色跟該陣營一樣」).
+      const tint = castTint(w[o + W.owner], this.view.me);
+      this.fx.circle(x, y, r).fill({ color: tint, alpha: 0.12 + 0.1 * pulse }).stroke({ width: 3, color: tint, alpha: 0.9 });
       // Countdown (core: ticksLeft 30 -> 0, then it fires): an inner disc that grows to the rim.
       const left = Math.min(Math.max(w[o + W.ticksLeft], 0), 30);
-      this.fx.circle(x, y, r * (1 - left / 30)).fill({ color: WARNING_TINT, alpha: 0.35 });
+      this.fx.circle(x, y, r * (1 - left / 30)).fill({ color: tint, alpha: 0.35 });
     }
   }
 
@@ -1593,12 +1662,16 @@ export class WorldRenderer {
     }
     const full = fx.effects.warn_sigil.radius_m ?? 3;
     const seconds = (this.view.curr?.snap.header[H.tick] ?? 0) / TICKS_PER_SECOND;
+    // art-v7.2 on (D-129): the white pictures, tinted with the caster's colour; the gold lines stay
+    // gold, half as strong at the end (else the whole ring is gold at the last moment, nobody's).
+    const tinted = fx.effects.warn_sigil_t !== undefined;
     let i = 0;
     for (let o = 0; o < w.length; o += WARNING_STRIDE, i++) {
       while (this.warnPool.length <= i) {
         const c = new Container();
         for (const name of WARN_LAYERS) {
-          const s = new Sprite(art.effectFrame(`${name}_00`)?.texture ?? Texture.EMPTY);
+          const own = tinted && fx.effects[`${name}_t`] !== undefined ? `${name}_t` : name;
+          const s = new Sprite(art.effectFrame(`${own}_00`)?.texture ?? Texture.EMPTY);
           s.anchor.set(0.5);
           s.label = name;
           c.addChild(s);
@@ -1608,6 +1681,11 @@ export class WorldRenderer {
       }
       const c = this.warnPool[i];
       c.visible = true;
+      const colour = castTint(w[o + W.owner], this.view.me);
+      for (const s of c.children as Sprite[]) {
+        const info = tinted ? fx.effects[`${s.label}_t`] : undefined;
+        s.tint = info?.tint === "owner" ? effectTint(colour, info.tint_value ?? 1, info.tint_white ?? 0) : 0xffffff;
+      }
       c.position.set(w[o + W.x] * FIXED_TO_PX, w[o + W.y] * FIXED_TO_PX);
       // The pictures' circle (radius_m) to the warning's radius, in world px.
       c.scale.set((w[o + W.radius] * FIXED_TO_PX) / (full * fx.px_per_m));
@@ -1621,7 +1699,7 @@ export class WorldRenderer {
         warn_sigil_glow: 0.6 * sigil,
         warn_rim: 1,
         warn_sigil: sigil,
-        warn_sigil_gold: sigil * 0.7 * k,
+        warn_sigil_gold: sigil * (tinted ? 0.35 : 0.7) * k,
       };
       const turn = ((20 * Math.PI) / 180) * seconds;
       for (const s of c.children as Sprite[]) {

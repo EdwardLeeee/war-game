@@ -3,7 +3,8 @@
 // out as a texture cut from its page with its anchor (docs/sprite-atlas.md sections 4–6, 12).
 // Which frame to show is art/spec.ts's and art/structures.ts's.
 
-import { ImageSource, Rectangle, Texture } from "pixi.js";
+import { CompressedSource, ImageSource, parseKTX, Rectangle, Texture } from "pixi.js";
+import { type Compressed, gpuBytes, ktxFor } from "../art/compressed.ts";
 import { ATLAS_NAMES, type AtlasJson, type EffectsJson, type FrameRect, parseAtlas, parseEffects } from "../art/spec.ts";
 import { type CastleJson, parseCastle } from "../art/castle.ts";
 import { parseTerrain, type TerrainJson } from "../art/terrain.ts";
@@ -42,8 +43,11 @@ export interface UnitArt {
   /** The ground's pictures (art-v5 on, R6-51: rock, cliffs, water, fords, bridges); null: flat colours. */
   terrain: TerrainJson | null;
   terrainFrame(layer: "color" | "shadow", name: string): ArtFrame | null;
-  /** Pages already on the GPU with their decoded pictures let go (loaded with `upload`), and their bytes there. */
-  resident: { pages: number; bytes: number };
+  /**
+   * Pages already on the GPU with their decoded pictures let go (loaded with `upload`), and their
+   * bytes there; `astc`: how many of them are ASTC 4×4 (D-128), the others PNG.
+   */
+  resident: { pages: number; bytes: number; astc: number };
   /**
    * More units' atlases, after the start (the siege engines', D-099, once the game has them: they
    * cost no memory otherwise). One that will not load is left out (its units drawn as shapes).
@@ -77,6 +81,39 @@ export async function json(url: string, times: LoadRecorder | null): Promise<unk
   return JSON.parse(text);
 }
 
+const ASTC_FORMATS = ["astc-4x4-unorm"] as const;
+
+/**
+ * A compressed page (KTX 1, ASTC 4×4): its blocks go to the GPU as they are, never decoded. ui's
+ * are premultiplied (astcenc -pp-premultiply, art-v7.1 on), as the browser makes the PNGs, and
+ * drawn so (PixiJS's own KTX loader would call them straight: dark fringes at the edges);
+ * `straight`: art-v7's and older ASTC sample, which is not.
+ */
+export async function ktxPage(url: string, times: LoadRecorder | null, straight = false): Promise<Texture> {
+  const start = performance.now();
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const buf = await res.arrayBuffer();
+  const downloaded = performance.now();
+  const ktx = parseKTX(buf, [...ASTC_FORMATS]);
+  const source = new CompressedSource({ ...ktx, alphaMode: straight ? "no-premultiply-alpha" : "premultiplied-alpha", label: url });
+  times?.file(url, start, downloaded, buf.byteLength, performance.now(), res.headers.get("x-war-game-sw"));
+  return new Texture({ source, label: url });
+}
+
+/** A sprite page: its ASTC version when `c` lists one (one that will not load: the PNG after all), else the PNG. */
+export async function spritePage(url: string, times: LoadRecorder | null, c: Compressed | null): Promise<Texture> {
+  const k = ktxFor(url, c);
+  if (k !== null) {
+    try {
+      return await ktxPage(k, times);
+    } catch (err) {
+      console.warn(`astc: ${err instanceof Error ? err.message : String(err)}; the PNG instead`);
+    }
+  }
+  return page(url, times);
+}
+
 /**
  * A page: downloaded on the page's own thread, so that the browser's record of it (D-091's load
  * times) and the service worker (public/sw.js) see it; decoded by the browser off that thread
@@ -106,6 +143,28 @@ export async function page(url: string, times: LoadRecorder | null, size?: numbe
 }
 
 /**
+ * A page sent to the GPU now (`upload`, the renderer's), and what it was made from let go: the
+ * decoded picture, or the compressed file's blocks (D-128: else the 160 MB of art-v7.1's 3 倍 stayed
+ * in the page's memory beside the GPU's copy, as Chromium's backing stores showed). Kept there:
+ * PixiJS lets a texture go when it has not been drawn for a while and sends it up again from
+ * what it was made from, which is no more (and a compressed page would come back empty: PixiJS
+ * keeps its options, the file's blocks in them, so those go too). Counted into `resident`.
+ */
+export function keepOnGpu(t: Texture, upload: (t: Texture) => void, resident: { pages: number; bytes: number; astc: number }): Texture {
+  t.source.autoGarbageCollect = false;
+  upload(t);
+  const astc = t.source instanceof CompressedSource;
+  if (astc) {
+    t.source.resource = [];
+    (t.source as unknown as { options: { resource?: unknown } }).options.resource = [];
+  } else (t.source.resource as ImageBitmap | null)?.close?.();
+  resident.pages++;
+  resident.bytes += gpuBytes(t.source);
+  if (astc) resident.astc++;
+  return t;
+}
+
+/**
  * The atlases under `base` (…/x3/ or …/x2/: units/<name>/, effects/), every page loaded up
  * front so that the game never waits for one in the middle of a fight. `times`: each file's
  * download and decoding, for the load times (D-091). `upload` (the renderer's): each page goes
@@ -114,7 +173,8 @@ export async function page(url: string, times: LoadRecorder | null, size?: numbe
  * pages were first drawn (126 MB at minute 5, 302 at minute 68 of the user's f331df3c): the
  * iPhone dropped the page in games of an hour and more (the user 2026-10-22: 「剛剛兩場對局都打到
  * 一半跳掉」). Without the pictures a page cannot go up again: a lost WebGL context is not
- * restored (main.ts asks for a reload; the game is saved).
+ * restored (main.ts asks for a reload; the game is saved). `compressed`: the pages it lists are
+ * loaded as ASTC 4×4 (D-128), a quarter of the PNG's bytes on the GPU.
  */
 export async function loadUnitArt(
   base: string,
@@ -122,25 +182,16 @@ export async function loadUnitArt(
   names: readonly string[] = ATLAS_NAMES,
   times: LoadRecorder | null = null,
   upload: ((t: Texture) => void) | null = null,
+  compressed: Compressed | null = null,
 ): Promise<UnitArt> {
   const atlases = new Map<string, AtlasJson>();
   const pages = new Map<string, Texture[]>();
   /** Every page, to let go of them all. */
   const all: Texture[] = [];
-  const resident = { pages: 0, bytes: 0 };
-  const settle = (t: Texture): Texture => {
-    if (upload === null) return t;
-    // Kept on the GPU: PixiJS lets an image's texture go when it has not been drawn for a while
-    // and sends it up again from its picture when it is, which is no more.
-    t.source.autoGarbageCollect = false;
-    upload(t);
-    (t.source.resource as ImageBitmap | null)?.close?.();
-    resident.pages++;
-    resident.bytes += t.source.pixelWidth * t.source.pixelHeight * 4;
-    return t;
-  };
+  const resident = { pages: 0, bytes: 0, astc: 0 };
+  const settle = (t: Texture): Texture => (upload === null ? t : keepOnGpu(t, upload, resident));
   const load = async (list: string[], recorder: LoadRecorder | null = times): Promise<Texture[]> => {
-    const got = await Promise.all(list.map(async (u) => settle(await page(u, recorder))));
+    const got = await Promise.all(list.map(async (u) => settle(await spritePage(u, recorder, compressed))));
     all.push(...got);
     return got;
   };
@@ -315,9 +366,10 @@ export async function loadUnitArt(
       cache.clear();
       // The pages, and their decoded pictures at once (Safari keeps them besides the GPU's copy).
       for (const t of all) {
-        const bitmap = t.source.resource as ImageBitmap | null;
+        // An ImageBitmap; a compressed page's blocks have no close.
+        const bitmap = t.source.resource as Partial<ImageBitmap> | null;
         t.destroy(true);
-        bitmap?.close();
+        bitmap?.close?.();
       }
     },
   };

@@ -4,18 +4,23 @@
 // inside the safe area, with its name above it (ceo 2026-10-18: on the phone the 量測 panel hid
 // one and the other was cut off). The interface (the 量測 panel, the buttons) steps aside while
 // it shows; a tap closes it.
-// On a GPU without ASTC it says so.
+// On a GPU without ASTC it says so. From art-v7.1 on (D-128) the game's own ASTC pages, 3×,
+// premultiplied, loaded as the game loads them (render/unit-art.ts ktxPage).
 
-import "pixi.js/ktx";
-import { type Application, Assets, Container, Graphics, Rectangle, Sprite, Text, Texture } from "pixi.js";
+import { type Application, Container, Graphics, Rectangle, Sprite, Text, Texture } from "pixi.js";
 import { parseAtlas } from "../art/spec.ts";
 import { OWN_TINT } from "../render/atlas.ts";
+import { ktxPage, page } from "../render/unit-art.ts";
 
-/** Where the sample's two halves are: the 2× atlas (its description and PNG pages) and the ASTC pages. */
+/**
+ * Where the sample's two halves are: the atlas (its description and PNG pages) and the ASTC pages;
+ * `straight`: those are not premultiplied (art-v7's astc-sample and older), else as art-v7.1's.
+ */
 export interface AstcSample {
   unit: string;
   png: string;
   astc: string;
+  straight: boolean;
 }
 
 /** The frame shown: the spearman standing, facing the camera. */
@@ -68,8 +73,9 @@ export async function showAstcSample(app: Application, s: AstcSample, closed: ()
       const foot = top + 26 + room.h;
       for (const [layerName, r, tint] of [["color", color, 0xffffff], ["team", team, OWN_TINT]] as const) {
         if (r === undefined) continue;
-        const page = await Assets.load<Texture>(`${base}${s.unit}_${layerName}_${r.page}.${ext}`);
-        const sprite = new Sprite(new Texture({ source: page.source, frame: new Rectangle(r.x, r.y, r.w, r.h) }));
+        const url = `${base}${s.unit}_${layerName}_${r.page}.${ext}`;
+        const got: Texture = ext === "png" ? await page(url, null) : await ktxPage(url, null, s.straight);
+        const sprite = new Sprite(new Texture({ source: got.source, frame: new Rectangle(r.x, r.y, r.w, r.h) }));
         sprite.tint = tint;
         // Both layers on the same foot point (their anchors), the colour layer's foot at the bottom of the column.
         sprite.anchor.set(r.ax / r.w, r.ay / r.h);

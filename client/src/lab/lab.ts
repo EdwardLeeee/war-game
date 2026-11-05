@@ -65,6 +65,8 @@ export interface MeasureResult {
 export class Lab {
   phase: LabPhase = "idle";
   private start = 0;
+  /** How long this measurement's window is (art-v7 量測: 10 minutes, D-128). */
+  windowMs = WINDOW_MS;
   private frames: number[] = [];
   private ticks: number[] = [];
   private batchMeans: number[] = [];
@@ -85,10 +87,11 @@ export class Lab {
     return null;
   }
 
-  startMeasure(now: number): boolean {
+  startMeasure(now: number, windowMs = WINDOW_MS): boolean {
     if (this.blockedMeasure() !== null) return false;
     this.phase = "warmup";
     this.start = now;
+    this.windowMs = windowMs;
     this.frames = [];
     this.ticks = [];
     this.batchMeans = [];
@@ -139,7 +142,7 @@ export class Lab {
     }
     if (ctx.draws !== undefined) this.draws.push(ctx.draws);
     this.frames.push(dtMs);
-    if (now - this.start < WINDOW_MS) return null;
+    if (now - this.start < this.windowMs) return null;
     this.phase = "idle";
     return this.result();
   }

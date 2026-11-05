@@ -47,3 +47,44 @@ export function artBase(choice: ArtChoice | "test", tag: string | null): string 
   if (choice === "off" || tag === null) return null;
   return `./art/${tag}/${choice}/`;
 }
+
+/**
+ * 貼圖 (D-128): the atlases' pages as PNG (decoded to 4 bytes a pixel on the GPU) or as ASTC 4×4
+ * (a quarter of that, never decoded) where the GPU takes it and the art has them (art-v7.1 on).
+ * Chosen in the 量測 panel (a page may ask with ?tex=), remembered on this device like 美術.
+ */
+export type TexChoice = "png" | "astc";
+
+export const TEX_KEY = "war-game.proto.tex";
+export const TEX_CHOICES: readonly TexChoice[] = ["png", "astc"];
+export const TEX_LABEL: Record<TexChoice, string> = { png: "PNG", astc: "ASTC" };
+/** Without a choice saved: PNG until the game switches to art-v7 (D-128: ASTC from then on). */
+export const TEX_DEFAULT: TexChoice = "png";
+
+export function loadTexChoice(store: Store | null = browserStore()): TexChoice {
+  try {
+    const v = store?.getItem(TEX_KEY);
+    const known = TEX_CHOICES.find((c) => c === v);
+    if (known !== undefined) return known;
+  } catch {
+    // Unreadable: as if never saved.
+  }
+  return TEX_DEFAULT;
+}
+
+export function saveTexChoice(c: TexChoice, store: Store | null = browserStore()): void {
+  try {
+    store?.setItem(TEX_KEY, c);
+  } catch {
+    // Not saved: the default again next time.
+  }
+}
+
+/**
+ * The scale drawn (D-128, the user 2026-11-05): 3 倍 with ASTC asked for, on a GPU without ASTC
+ * (or art without its compressed pages), takes 2 倍's PNGs instead: art-v7's 3 倍 as PNG is 773 MB
+ * on the GPU, 2 倍 351. Anything else as chosen.
+ */
+export function artScale(choice: ArtChoice | "test", tex: TexChoice, astc: boolean): ArtChoice | "test" {
+  return choice === "x3" && tex === "astc" && !astc ? "x2" : choice;
+}

@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { simBuild } from "./scripts/sim-build.ts";
@@ -23,12 +23,17 @@ const SIM_BUILD = (await simBuild(fileURLToPath(new URL("..", import.meta.url)))
  */
 const ART_TAG: string | null = process.env.ART_TAG ?? (JSON.parse(readFileSync(new URL("art.lock.json", import.meta.url), "utf8")) as { tag: string | null }).tag;
 
+/** art-v7 量測's Release (D-128): art-lab.lock.json's, beside the game's; null: none (the panel has no such buttons). */
+const LAB = new URL("art-lab.lock.json", import.meta.url);
+const ART_LAB_TAG: string | null = existsSync(LAB) ? (JSON.parse(readFileSync(LAB, "utf8")) as { tag: string | null }).tag : null;
+
 export default defineConfig({
   base: "./",
   define: {
     __COMMIT__: JSON.stringify(COMMIT),
     __SIM_BUILD__: JSON.stringify(SIM_BUILD),
     __ART_TAG__: JSON.stringify(ART_TAG),
+    __ART_LAB_TAG__: JSON.stringify(ART_LAB_TAG),
   },
   plugins: [
     {
