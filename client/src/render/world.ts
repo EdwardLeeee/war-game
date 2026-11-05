@@ -211,6 +211,12 @@ interface TownMark {
 // 2:1). What stands up (units, buildings' and nodes' marks, towns' 鎮 and 城, bars, words, arrows in the air)
 // is drawn on the plane at the projected point, never flattened, the nearer in front.
 
+/**
+ * A mage's cannon on the ground (its warning, its calibration's arc) in its side's colour (the user
+ * 2026-11-05: 「法師法圈顏色跟該陣營一樣」); the shield keeps its own. Neutral: the old orange.
+ */
+const castTint = (owner: number, me: number): number => (owner === NEUTRAL || owner === NO_OWNER ? WARNING_TINT : ownerTint(owner, me));
+
 export class WorldRenderer {
   readonly root = new Container();
   /** 浮空大陸 (edge.ts): metres the realistic ground fades out over at the two lower edges (0: none). */
@@ -1553,7 +1559,7 @@ export class WorldRenderer {
         this.fx
           .moveTo(px, py - r)
           .arc(px, py, r, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * Math.min(cast, 30)) / 30)
-          .stroke({ width: 3, color: WARNING_TINT, alpha: 0.95 });
+          .stroke({ width: 3, color: castTint(owner, view.me), alpha: 0.95 });
       }
     }
     this.artUnits?.drawCorpses(seconds);
@@ -1571,10 +1577,12 @@ export class WorldRenderer {
       const x = w[o + W.x] * FIXED_TO_PX;
       const y = w[o + W.y] * FIXED_TO_PX;
       const r = w[o + W.radius] * FIXED_TO_PX;
-      this.fx.circle(x, y, r).fill({ color: WARNING_TINT, alpha: 0.12 + 0.1 * pulse }).stroke({ width: 3, color: WARNING_TINT, alpha: 0.9 });
+      // The caster's colour (the user 2026-11-05: 「法師法圈顏色跟該陣營一樣」).
+      const tint = castTint(w[o + W.owner], this.view.me);
+      this.fx.circle(x, y, r).fill({ color: tint, alpha: 0.12 + 0.1 * pulse }).stroke({ width: 3, color: tint, alpha: 0.9 });
       // Countdown (core: ticksLeft 30 -> 0, then it fires): an inner disc that grows to the rim.
       const left = Math.min(Math.max(w[o + W.ticksLeft], 0), 30);
-      this.fx.circle(x, y, r * (1 - left / 30)).fill({ color: WARNING_TINT, alpha: 0.35 });
+      this.fx.circle(x, y, r * (1 - left / 30)).fill({ color: tint, alpha: 0.35 });
     }
   }
 
