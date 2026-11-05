@@ -509,17 +509,20 @@ export const SLOT_GIVE_UP = { on: true, ticks: 60, progress: 384 };
 /** A formation's ranks (GDD section 9): melee in front (0), then ranged (1), then mages (2). */
 export const rank = (t: number) => (t === UnitType.Ranged ? 1 : t === UnitType.Mage ? 2 : t === UnitType.Siege ? 3 : 0);
 /**
- * Ranks on the march (D-095; the user: 「常常跑一跑法師就跑到前排」): on a move, a ranged unit or
- * mage more than DIRECT_STEER from its place stands and lets the lower ranks of its group pass
- * (spearmen and cavalry; for a mage, ranged too) while it is not `margin` behind the middle of
- * those of them that walk, along its way to its place; at most `maxWait` ticks a command. Lower
- * ranks that stand do not count, so a front that stopped holds no one up, and once one of the
- * group fights nobody waits. A retreat is left as it is. The unit column it keeps (waited) is in
- * the hash only while it is on. Off for now (ceo 2026-10-21): with orders sent again on the way,
- * soldiers far behind in them, and all at the slowest one's speed, its marches came strung out
- * and lost (README); it is to be redesigned.
+ * Ranks on the march (D-095, D-119; the user 2026-11-04: 「整隊功能你沒做好，我按整隊的時候部隊還是要往我點的地方前進，
+ * 具體作法應該是說法師跟射手如果在前面就要停下來等槍兵走過來」): a group on its way (a move or a retreat) re-formed
+ * with `formation` `ranks` keeps its goal and order and gets its ranks right on the way. Its ranged
+ * units, mages and siege engines more than DIRECT_STEER from their places stand and let the lower
+ * ranks of the group pass (a ranged unit spearmen and cavalry; a mage ranged too; an engine mages
+ * too) while they are not `margin` behind the middle of those of them that walk within `near` of
+ * them, along their way to their places; at most `maxWait` ticks a command. Lower ranks that stand,
+ * or walk farther off, do not count; nobody waits while one of the group fights (a move) or was
+ * hit in the last RETARGET_EVERY ticks (a retreat). Any new command ends it (a new group). Moves
+ * without `ranks` walk as ever: D-095 had every move do it, and with orders sent again on the
+ * way and soldiers far behind in them its marches came strung out and lost (ceo 2026-10-21,
+ * README). The unit columns it keeps (waited, ranked) are in the hash only while it is on.
  */
-export const MARCH_ORDER = { on: false, margin: CELL >> 1, maxWait: 10 * S };
+export const MARCH_ORDER = { on: true, margin: CELL >> 1, maxWait: 10 * S, near: 8 * CELL };
 /** The crystal cannon's range (rule 3): `range` while on, CANNON's 8 cells off (CANNON.range reads it). */
 export const SHORT_CANNON = { on: true, range: 7 * CELL };
 /**

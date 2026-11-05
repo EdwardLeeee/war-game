@@ -888,9 +888,10 @@ export type CommandBody =
   | { c: "stance"; u: number[]; stance: Stance }
   /**
    * Loose (true) or close (false) formation for these units: sets or clears UnitFlag.Loose and
-   * re-forms them (PROTOCOL.md 3); `face` (0-15, as `facing`, D-095): the way they face then.
+   * re-forms them (PROTOCOL.md 3); `face` (0-15, as `facing`, D-095): the way they face then;
+   * `ranks` (D-119): a group on its way also gets its ranks right on the way (spearmen in front).
    */
-  | { c: "formation"; u: number[]; loose: boolean; face?: number }
+  | { c: "formation"; u: number[]; loose: boolean; face?: number; ranks?: boolean }
   | { c: "gather"; u: number[]; node: number }
   /** `u` may be empty: the simulation then sends the nearest free farmers (PROTOCOL.md 3.1). */
   | { c: "build"; u: number[]; type: BuildingType; x: number; y: number }

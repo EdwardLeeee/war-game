@@ -152,11 +152,14 @@ export class UnitSystem {
   /** Per enemy unit id, how many units had it as their target at the start of the tick. */
   private readonly attackers = new Map<number, number>();
   /**
-   * Per group, at the start of the tick (MARCH_ORDER): of its spearmen and cavalry, then of its
-   * ranged, that walk on the move, the sums of x and y and the number; then how many of the group
-   * fight.
+   * Per group with soldiers re-formed with `ranks` (MARCH_ORDER), at the start of the tick: the slots of
+   * those of it that walk (on its move or retreat, below siege engines' rank), and how many of it fight
+   * or were just hit.
    */
-  private readonly marching = new Map<number, number[]>();
+  private readonly marching = new Map<number, { walkers: number[]; fights: number }>();
+  private readonly rankedGroups = new Set<number>();
+  /** letPass: per rank below the unit's, the sums of x and y and the number of those walking near it. */
+  private readonly rankSums = new Array<number>(9).fill(0);
   /** The enemies seen near each town's walls this tick (WALL_SHIFT, wallFoes), by town and side. */
   private readonly foes = new Map<number, number[]>();
   private foesTick = -1;
@@ -365,52 +368,69 @@ export class UnitSystem {
   }
 
   /**
-   * Where each group's lower ranks walk at the start of the tick (MARCH_ORDER): last tick's walkers
-   * on the move with no target; and whether any of the group (on the move or there) fights.
+   * Who of each group re-formed with `ranks` walks at the start of the tick (MARCH_ORDER): last tick's
+   * walkers on its move or retreat with no target, below siege engines' rank; and whether any of the
+   * group fights (on a move) or was just hit (on a retreat).
    */
   private collectMarching(w: World): void {
     this.marching.clear();
+    this.rankedGroups.clear();
     if (!MARCH_ORDER.on) return;
     const u = w.units.col;
-    for (let j = 0; j < w.units.count; j++) {
-      if (u.group[j] < 0 || u.type[j] === UnitType.Farmer) continue;
-      const fights = this.startTarget[j] >= 0;
-      const r = rank(u.type[j]);
-      const walks = u.order[j] === Order.Move && !fights && r <= 1 && (u.vx[j] !== 0 || u.vy[j] !== 0);
+    const count = w.units.count;
+    for (let j = 0; j < count; j++) if (u.ranked[j] !== 0 && u.ranked[j] === u.group[j] + 1) this.rankedGroups.add(u.group[j]);
+    if (this.rankedGroups.size === 0) return;
+    for (let j = 0; j < count; j++) {
+      if (u.group[j] < 0 || !this.rankedGroups.has(u.group[j]) || u.type[j] === UnitType.Farmer) continue;
+      const order = u.order[j];
+      const fights = this.startTarget[j] >= 0 || (order === Order.Retreat && w.tick - u.lastHurt[j] <= RETARGET_EVERY);
+      const walks = (order === Order.Move || order === Order.Retreat) && !fights && rank(u.type[j]) <= 2 && (u.vx[j] !== 0 || u.vy[j] !== 0);
       if (!fights && !walks) continue;
       let m = this.marching.get(u.group[j]);
       if (m === undefined) {
-        m = [0, 0, 0, 0, 0, 0, 0];
+        m = { walkers: [], fights: 0 };
         this.marching.set(u.group[j], m);
       }
-      if (fights) {
-        m[6]++;
-        continue;
-      }
-      m[3 * r] += u.x[j];
-      m[3 * r + 1] += u.y[j];
-      m[3 * r + 2]++;
+      if (fights) m.fights++;
+      else m.walkers.push(j);
     }
   }
 
   /**
-   * MARCH_ORDER: unit i (on a move, (dx, dy) from its place, not fighting) stands this tick to let
-   * the lower ranks of its group pass; counts the tick.
+   * MARCH_ORDER: unit i (on its group's move or retreat, re-formed with `ranks`, (dx, dy) from its
+   * place, not fighting) stands this tick to let the lower ranks of its group within `near` pass;
+   * counts the tick.
    */
   private letPass(w: World, i: number, dx: number, dy: number): boolean {
     const u = w.units.col;
     const r = rank(u.type[i]);
-    if (r === 0 || u.waited[i] >= MARCH_ORDER.maxWait || dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) return false;
-    // A group in a fight fights as it stands.
+    if (r === 0 || u.ranked[i] !== u.group[i] + 1 || u.waited[i] >= MARCH_ORDER.maxWait || dx * dx + dy * dy <= DIRECT_STEER * DIRECT_STEER) return false;
+    // A group in a fight fights as it stands (a retreat hit runs on).
     const m = this.marching.get(u.group[i]);
-    if (m === undefined || m[6] > 0) return false;
-    const c = r === 1 ? m[2] : m[2] + m[5];
-    if (c === 0) return false;
-    const mx = idiv(r === 1 ? m[0] : m[0] + m[3], c);
-    const my = idiv(r === 1 ? m[1] : m[1] + m[4], c);
-    // How far ahead of their middle it is, along its way: behind by `margin` or more, it walks.
-    const ahead = (u.x[i] - mx) * dx + (u.y[i] - my) * dy;
-    if (ahead <= -MARCH_ORDER.margin * isqrt(dx * dx + dy * dy)) return false;
+    if (m === undefined || m.fights > 0) return false;
+    const near2 = MARCH_ORDER.near * MARCH_ORDER.near;
+    const sums = this.rankSums;
+    sums.fill(0);
+    for (const j of m.walkers) {
+      const k = rank(u.type[j]);
+      if (k >= r) continue;
+      const ox = u.x[j] - u.x[i];
+      const oy = u.y[j] - u.y[i];
+      if (ox * ox + oy * oy > near2) continue;
+      sums[3 * k] += u.x[j];
+      sums[3 * k + 1] += u.y[j];
+      sums[3 * k + 2]++;
+    }
+    // How far ahead of each lower rank's middle it is, along its way: behind every one by `margin` or more, it walks.
+    const behind = -MARCH_ORDER.margin * isqrt(dx * dx + dy * dy);
+    let waits = false;
+    for (let k = 0; k < r && !waits; k++) {
+      const c = sums[3 * k + 2];
+      if (c === 0) continue;
+      const ahead = (u.x[i] - idiv(sums[3 * k], c)) * dx + (u.y[i] - idiv(sums[3 * k + 1], c)) * dy;
+      if (ahead > behind) waits = true;
+    }
+    if (!waits) return false;
     u.waited[i]++;
     return true;
   }
@@ -2304,7 +2324,7 @@ export class UnitSystem {
         this.breakThrough(w, fields, i, here, u.orderX[i], u.orderY[i], order === Order.Move && !farmer);
         return;
       }
-      if (order === Order.Move && MARCH_ORDER.on && this.letPass(w, i, dx, dy)) {
+      if (MARCH_ORDER.on && u.ranked[i] !== 0 && this.letPass(w, i, dx, dy)) {
         u.action[i] = Action.Idle;
         return;
       }
