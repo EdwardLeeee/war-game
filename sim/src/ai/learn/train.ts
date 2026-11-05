@@ -83,6 +83,8 @@ interface EvalResult {
   /** NN v4: the trained side's soldiers lost, per game, against hard and against push-crush. */
   lostHard?: number;
   lostCrush?: number;
+  /** NN v4 (ceo 2026-11-05): each game's raids: set (hard, crush), map, seed, swap, result, raids, seconds by their spots, farmers killed, raids caught, squads' dead, soldiers lost. */
+  games?: { set: string; map: string; seed: number; swap: boolean; won: number; raids: number; held: number; kills: number; caught: number; died: number; lost: number }[];
 }
 const tally = (res: GameOutcome[]): Tally => {
   const won = res.filter((o) => o.won === 1).length;
@@ -113,9 +115,11 @@ const VARIANTS: Record<string, { force: string; plan: Partial<HardPlan> }> = {
 };
 async function evaluate(name: string, net: NetWeights | null, n: number, m: number, seed0: number, switches: Switches, plan?: Partial<HardPlan>): Promise<EvalResult> {
   // NN v3: 120 minutes, as the training (D-115).
-  const hard = (await runAll(setJobs(net, { kind: "hard" }, n, seed0, 144000, switches, plan))).map((r) => r.outcome);
+  const hardJobs = setJobs(net, { kind: "hard" }, n, seed0, 144000, switches, plan);
+  const hard = (await runAll(hardJobs)).map((r) => r.outcome);
   // push-crush as CI plays it: 90 minutes.
-  const crush = (await runAll(setJobs(net, { kind: "crush" }, m, seed0, 144000, switches, plan))).map((r) => r.outcome);
+  const crushJobs = setJobs(net, { kind: "crush" }, m, seed0, 144000, switches, plan);
+  const crush = (await runAll(crushJobs)).map((r) => r.outcome);
   const at45 = crush.filter((o) => o.towers45 >= 0);
   const mean = (xs: number[]) => (xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length);
   const choices = NET_HEADS.map((k) => new Array(k).fill(0));
@@ -124,12 +128,19 @@ async function evaluate(name: string, net: NetWeights | null, n: number, m: numb
   const aiStats: Record<string, number> = {};
   const killed = { farmers: 0, backByCavalry: 0 };
   for (const o of [...hard, ...crush]) addStats(aiStats, killed, o);
+  const each = (set: string, jobs: Job[], os: GameOutcome[]) =>
+    os.map((o, k) => {
+      const sp = (jobs[k] as Extract<Job, { kind: "play" }>).spec;
+      const st = o.aiStats ?? {};
+      return { set, map: sp.map, seed: sp.seed, swap: sp.swap, won: o.won, raids: st.squadRaid ?? 0, held: Math.round((st.raidHeld ?? 0) / 20), kills: st.raidFarmers ?? 0, caught: st.raidCaught ?? 0, died: st.squadDied ?? 0, lost: o.soldiersLost ?? 0 };
+    });
   const perGame = (os: GameOutcome[]) => (os.length === 0 ? 0 : os.reduce((a, o) => a + (o.soldiersLost ?? 0), 0) / os.length);
   return {
     aiStats,
     killed,
     lostHard: perGame(hard),
     lostCrush: perGame(crush),
+    games: [...each("hard", hardJobs, hard), ...each("crush", crushJobs, crush)],
     name,
     seed: seed0,
     hard: tally(hard),

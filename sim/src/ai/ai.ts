@@ -3481,7 +3481,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { squadDied: 0, squadRaid: 0, squadHome: 0, squadTown: 0, squadTake: 0, squadNoTarget: 0, squadDone: 0, squadLost: 0, squadWeak: 0, squadTimeout: 0, raidFarmers: 0, chargeNow: 0, netTowers: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { raidHeld: 0, raidCaught: 0, squadDied: 0, squadRaid: 0, squadHome: 0, squadTown: 0, squadTake: 0, squadNoTarget: 0, squadDone: 0, squadLost: 0, squadWeak: 0, squadTimeout: 0, raidFarmers: 0, chargeNow: 0, netTowers: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -4781,6 +4781,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             if (ids.length > 0) out.push({ c: why === "squadDone" || why === "squadTimeout" ? "move" : "retreat", u: ids, x: post.x, y: post.y });
             if (why === "squadDone" || why === "squadTimeout") rejoin.push(...ids);
             counted[why]++;
+            // NN v4 (ceo 2026-11-05): a raid's time by its spot (ticks), and raids caught (broken off or half gone, with dead).
+            if (q.task === SQUAD_RAID) {
+              if (q.at >= 0) counted.raidHeld += tick - q.at;
+              if ((why === "squadLost" || why === "squadWeak") && ids.length < q.size) counted.raidCaught++;
+            }
             if (plan.squadLog !== undefined) {
               let seen = 0;
               for (const e of intel.values()) if (!e.post && tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, sc.x, sc.y) <= SQUAD_NEAR * SQUAD_NEAR) seen++;
