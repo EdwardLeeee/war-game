@@ -63,10 +63,10 @@
       army: [[0, 0], [4, 4], [6, 12], [8.2, 24], [8.5, 15], [12, 38], [12.3, 33], [15, 55], [18.4, 71], [18.8, 19], [21, 30], [23, 26], [24.5, 14], [26.67, 6]],
     },
     moments: [
-      [8 * MIN + 20, "第一次進攻", "敵方 14 名打小鎮・東，擋下來（敵死 9、我死 3）"],
+      [8 * MIN + 20, "第一次進攻", "敵方 14 名到小鎮・東，擋下來（敵死 9、我死 3）"],
       [12 * MIN + 5, "主城第一次被打", "敵方騎兵 8 名繞到主城，村民躲進去（死 6）"],
       [18 * MIN + 30, "大仗", "大城・中外：58 名對 71 名，我死 27、敵死 52"],
-      [24 * MIN + 10, "攻進敵方主城", "我方 50 名打到敵方主城下"],
+      [24 * MIN + 10, "攻進敵方主城", "我方 50 名到敵方主城下"],
     ],
     losses: [[9, 22], [24, 31], [15, 27], [3, 5], [6, 14], [1, 3]],   // [我方死, 敵方死] by KINDS
     trained: [[52, 58], [38, 44], [26, 30], [6, 7], [10, 16], [2, 3]],
@@ -100,10 +100,10 @@
       army: [[0, 0], [4, 4], [6, 12], [7.2, 20], [7.4, 19], [10.4, 30], [10.8, 26], [14, 50], [16.2, 63], [16.6, 42], [19, 58], [21.6, 66], [23.25, 61]],
     },
     moments: [
-      [7 * MIN + 10, "第一次進攻", "我方 16 名打小鎮・西，被打退（我死 7）"],
+      [7 * MIN + 10, "第一次進攻", "我方 16 名到小鎮・西，被打退（我死 7）"],
       [10 * MIN + 30, "主城第一次被打", "敵方騎兵 6 名繞到主城（村民死 9）"],
       [16 * MIN + 20, "大仗", "主城外：44 名對 63 名，我死 32、敵死 21"],
-      [21 * MIN + 40, "敵方攻進主城", "敵方 66 名、攻城砲 3 門打到主城下"],
+      [21 * MIN + 40, "敵方攻進主城", "敵方 66 名、攻城砲 3 門到主城下"],
     ],
     losses: [[31, 6], [29, 22], [21, 14], [4, 2], [5, 9], [0, 1]],
     trained: [[44, 50], [34, 48], [24, 30], [5, 6], [7, 14], [0, 3]],
@@ -225,7 +225,7 @@
   const switcher = (on) => `<div class="seg" role="group" aria-label="資源">${Object.entries(RES).map(([k, n]) => B(n, { cls: `sec ${k === on ? "on" : ""}`, state: k === on ? "active" : "" })).join("")}</div>`;
   const resChart = (g, k, w, h) => lineChart({ w, h, dur: g.dur, moments: g.moments, series: [{ who: "me", name: "我方", pts: g.res[k].me }, { who: "foe", name: "敵方", pts: g.res[k].foe }] });
   const armyChart = (g, w, h) => lineChart({ w, h, dur: g.dur, moments: g.moments, peakLabel: true, unit: " 名", series: [{ who: "me", name: "我方", pts: g.army.me }, { who: "foe", name: "敵方", pts: g.army.foe }] });
-  const killHead = (g) => `<div class="bfhead"><span>${keyLine("me")}我方損失 <b>${sum(g.losses.map((r) => r[0]))}</b></span><span class="c">兵種</span><span>敵方損失（我方擊殺） <b>${sum(g.losses.map((r) => r[1]))}</b>${keyLine("foe")}</span></div>`;
+  const killHead = (g) => `<div class="bfhead"><span>${keyLine("me")}我方損失 <b>${sum(g.losses.map((r) => r[0]))}</b></span><span class="c">兵種</span><span>我方擊殺 <b>${sum(g.losses.map((r) => r[1]))}</b>${keyLine("foe")}</span></div>`;
   const mageTiles = (g) => {
     const row = (k, a, b) => `<div class="mr"><span class="mk">${k}</span><span class="mv">${a}</span><span class="mv">${b}</span></div>`;
     const m = g.mages;

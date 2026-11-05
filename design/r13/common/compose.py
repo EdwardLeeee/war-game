@@ -1,7 +1,7 @@
 """R13's boards from build/raw (shoot.mjs): one PNG an option (its label top left, a frame a state, each state named, what was measured
 under it: green passes, red fails, grey notes), the same option at the phone's real size (-1x: 1 px a pt), and the overview.
 
-python3 design/r13/common/compose.py [RAW_DIR]      -> design/r13/out/
+python3 design/r13/common/compose.py [RAW_DIR]      -> design/r13/build/out/
 """
 import json
 import sys
@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE.parent / "out"
+OUT = HERE.parent / "build" / "out"          # not in git
 BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 REG = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 TC = 3                                  # the Traditional Chinese face in the collection
@@ -19,6 +19,21 @@ M = 36
 
 R1 = "R13-01-進駐"
 R2 = "R13-02-局後統計"
+B2_RULES = """B 建築上標籤的補充規格（ceo 2026-11-05 派，D-125）：建築擠的時候和建築在畫面外的時候。演算法在 design/r13/common/r13-tags.js（placeTags、edgeArrows），這張圖就是它算出來的結果。戰場是 art-v7 菱形圖集，建築擺得比實際擠，鏡頭 0.42–1 倍。
+建築擠（標籤）：
+1. 金框固定在建築腳下。金框、標籤、小籤都能點，點了就是點那棟。手指的判定至少 44 pt；判定範圍重疊時算離手指最近的。
+2. 排的順序：離選的兵最近的先排，進不去的（灰）最後。
+3. 標籤先放屋頂上。碰到別的標籤、別棟金框的中心或介面（資源列、編隊、提示列、選取資訊、指令區），就往上、往左右找最近的空位；移開超過 14 pt 就拉一條金色引線回金框。
+4. 同一種建築、標籤內容一樣時，只有最近的那棟用完整標籤，其他縮成小籤「進 3」。
+5. 找不到空位（被鄰居擋最遠找 72 pt，被介面擋最遠找 150 pt）也縮成小籤，放在金框上；小籤也放不下就只留金框。進不去的灰標籤最先讓位，只留灰虛線框。
+6. 鏡頭停下來才重排；鏡頭移動時標籤跟著建築走、不重排，免得跳來跳去。
+建築在畫面外（箭頭）：
+7. 金框中心在畫面外、能進駐的建築，沿戰場可見範圍的邊放一個箭頭籤：箭頭指向建築，寫名字和進幾名，高 44 pt。進不去的不畫。
+8. 位置是「可見範圍中心到建築」的連線和邊的交點；碰到介面、標籤或金框就沿邊滑開。
+9. 同一種建築在邊上 70 pt 內合成一個（箭樓 ×2），人數寫最近那棟的。
+10. 點箭頭：鏡頭移到那棟（0.3 秒；減少動態時直接跳），金框閃一下，不下指令、還在選建築，再點建築才進駐。點合成的箭頭到最近那棟，其他的變成畫面上的標籤或新的箭頭。
+11. 自己拖鏡頭也可以，標籤和箭頭跟著更新（規則 6）。
+12. 畫面上、畫面外都沒有能進的：提示列改成「選的兵沒有地方可以進駐：槍兵只能進自己的城和哨所」（句型照選的兵種換），只有取消。"""
 BOARDS = {
     f"{R1}-0-現況": ("現況（main 586ec04，對照用）：選了兵，指令區有駐守、躲進去、駐軍三顆，各點一種建築；混編時要按好幾顆。", [
         ("R13-01-0-1", "選了混編 12 名", "指令區 3 排：駐守（哨所）、躲進去（主城、箭樓）、駐軍（自己的城）各一顆"),
@@ -49,6 +64,14 @@ BOARDS = {
         ("R13-01-B-7b", "7b 已進駐：哨所", "9 格位子 5 格有人；編隊 1：3［召回］；＋槍兵、全部離開、攻擊／堅守"),
         ("R13-01-B-7c", "7c 已進駐：大城", "牆上 3 格、城內 2 格；留守 − 5 ＋、歸隊、全部帶走"),
         ("R13-01-B-8", "8 軍團畫面：進駐中的編隊", "大城、箭樓、哨所各一排方塊；召回、出城歸隊、全部帶走；兵種 −／＋ 往下捲"),
+    ]),
+    f"{R1}-B2-防疊與畫面外": (B2_RULES, [
+        ("R13-01-B2-1", "1 擠：錯開、拉引線", "大城的標籤被主城的擋到，往左移開，拉引線回金框；兩座箭樓內容一樣，近的完整標籤、遠的小籤"),
+        ("R13-01-B2-2", "2 更擠：小籤", "六座箭樓連成一排：最近的完整標籤，其他五座「進 3」；主城、哨所內容不同，各有完整標籤"),
+        ("R13-01-B2-3", "3 被介面擋住", "哨所在選取資訊後面、箭樓在指令區後面：標籤夾回戰場，拉引線到金框（被蓋住的部分在介面底下）；主城的標籤避開閒置和全軍撤退"),
+        ("R13-01-B2-4", "4 畫面外：沿邊箭頭", "畫面上的箭樓照常有標籤；主城、大城、箭樓 ×2、哨所在畫面外，各一個箭頭。點箭頭：鏡頭移過去，不下指令"),
+        ("R13-01-B2-5", "5 點「主城」箭頭之後", "鏡頭移到主城、金框閃一下，還在選建築，再點才進駐。其他箭頭換方向；原本畫面上那座箭樓現在在畫面外，併成箭樓 ×3"),
+        ("R13-01-B2-6", "6 沒有地方可以進駐", "只選槍兵，畫面上只有主城、箭樓（灰虛線框、灰標籤），畫面外也沒有城和哨所：提示列直接說，只有取消"),
     ]),
     f"{R2}-0-現況": ("現況（main 586ec04，對照用）：一局結束跳出一張表，沒有圖、沒有時間軸。數字是和 A、B 同一局的假資料。", [
         ("R13-02-0-1", "現在的勝負畫面", "採集、訓練、損失、法師、攻城砲、城鎮；訓練和損失只算村民、槍兵、遠程兵、法師（沒有騎兵）"),
@@ -162,7 +185,7 @@ def board(name, sub, cells, raw, scale, cols, small_caps=False, suffix=""):
     W = 2 * M + cols * fw + (cols - 1) * gap
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     fs = font(22 if not small_caps else 16, False)
-    subl = wrap(probe, sub, fs, W - 2 * M)
+    subl = [ln for para in sub.split("\n") for ln in wrap(probe, para, fs, W - 2 * M)]
     title_h = (58 if not small_caps else 40) + len(subl) * int(fs.size * 1.45) + 18
     rows = [tiles[i:i + cols] for i in range(0, len(tiles), cols)]
     H = title_h + sum(max(t.height for t in r) + gap for r in rows) + M

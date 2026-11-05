@@ -106,7 +106,7 @@ async function shoot(page, id) {
     const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
     const keys = Object.keys(panels), overlaps = [];
     for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) if (hit(panels[keys[i]], panels[keys[j]])) overlaps.push(`${keys[i]}×${keys[j]}`);
-    const tags = [...screen.querySelectorAll(".r13tag")].map(box);
+    const tags = [...screen.querySelectorAll(".r13tag, .r13chip, .r13arrow")].map(box);
     const tagHits = [];
     for (let i = 0; i < tags.length; i++) for (let j = i + 1; j < tags.length; j++) if (hit(tags[i], tags[j])) tagHits.push(`${i}×${j}`);
     const extra = window.R13_MEASURE?.() ?? null;
