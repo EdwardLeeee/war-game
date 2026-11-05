@@ -290,6 +290,8 @@ def main():
     sources = {"units": {u: s for u, s in sorted(spec["units"].items())}, "effects": spec["effects"]}
     if "buildings" in spec:
         sources["buildings"] = spec["buildings"]
+    if "terrain_src" in spec:             # art-v7.3: terrain/ alone from another run, the rest as the buildings' run
+        sources["terrain"] = spec["terrain_src"]
     base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources,
             **({"view": spec["view"]} if spec.get("view") else {})}     # D-118: "diamond" from art-v7 on
     notes = [f"{a.tag}：{spec.get('note', '')}", "", f"commit {a.commit or '(local)'}", ""]
@@ -298,6 +300,7 @@ def main():
     eff_src = fetch(spec["effects"]["run"], spec["effects"]["artifact"], dl)
     unit_src = {u: fetch(s["run"], s["artifact"], dl) for u, s in sources["units"].items()}
     bld_src = fetch(spec["buildings"]["run"], spec["buildings"]["artifact"], dl) if "buildings" in spec else None
+    ter_src = fetch(spec["terrain_src"]["run"], spec["terrain_src"]["artifact"], dl) if "terrain_src" in spec else bld_src
     for scale in SCALES:
         files, rgba, astc_b = {}, 0, 0
         for u, src in unit_src.items():
@@ -309,7 +312,7 @@ def main():
         extra = ""
         if bld_src:
             for folder in ("buildings", "nodes") + tuple(k for k in ("castle", "terrain") if spec.get(k)):
-                fs = atlas_files(bld_src, folder, scale)
+                fs = atlas_files(ter_src if folder == "terrain" else bld_src, folder, scale)
                 files.update({f"{folder}/{n}": b for n, b in fs.items()})
                 m = json.loads(fs["memory.json"])
                 rgba += m["total_rgba8_bytes"]
