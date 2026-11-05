@@ -263,7 +263,8 @@ jobs:
       # NN v3 (ceo 2026-10-31): this island's checkpoint only, tried up to 6 times over about 10 minutes (GitHub's
       # "Unable to download artifact(s)" broke v2's chain at run 41078447033).
       - name: The start (from_run), tried again on failure
-        if: needs.plan.outputs.from_run != '' && matrix.island != 'control'
+        # NN v4f: a forced choice (f<head>.<choice>) is hard itself with that choice: no network to download.
+        if: needs.plan.outputs.from_run != '' && matrix.island != 'control' && !startsWith(matrix.island, 'f')
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
