@@ -3197,7 +3197,9 @@ export const HARD_POP: Partial<HardPlan> = {
   cityAgain: 120,
 };
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
-const WORTH = [0, 10, 10, 25, 6, 16];
+// D-099: a siege engine (index 6). With none, an army or an enemy with one in sight summed to NaN, and every
+// comparison of strength with it was false (hard never broke off from, nor weighed, the user's engines).
+const WORTH = [0, 10, 10, 25, 6, 16, 8];
 /** Enemy soldiers not seen for this long are forgotten. */
 const INTEL_TICKS = 4 * TICKS_PER_MINUTE;
 /** Enemy soldiers within this many cells of the main city make a wave (as the scripted player counts). */
