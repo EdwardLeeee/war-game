@@ -2283,6 +2283,116 @@ test("D-086 A3 (plan.peekFirst): no enemy soldier seen for a minute, one goes to
 /** D-096 (core 2026-10-22): gates, when the rules have them (GATE). */
 const GATES = (RULES as unknown as { GATE?: { on: boolean } }).GATE;
 
+// --- D-130: a far work spot where hard's farmers fell ---------------------------------------------------------------
+
+/**
+ * Hard's farmers at a spot 30 cells from its main city; at each minute in `falls` two of them fall there (the farmers stay
+ * where they are: the AI's orders are not played). The farmers it sent home, and when (minutes from the first fall) it released them.
+ */
+function farSpot(plan: Partial<HardPlan>, falls: number[], until: number, soldiers = 0): { hid: number; released: number[]; rescued: number } {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  const sx = s0.cellX + 24;
+  const sy = s0.cellY - 18;
+  const ids = Array.from({ length: 3 + 2 * falls.length }, (_, k) => put(g, 0, UnitType.Farmer, sx + (k % 5), sy + Math.trunc(k / 5)));
+  // Soldiers at home (for the rescue): when sent, they are put at the spot at once (orders are not played here).
+  for (let k = 0; k < soldiers; k++) put(g, 0, UnitType.Spearman, s0.cellX + 5 + (k % 4), s0.cellY - 4 - Math.trunc(k / 4));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, peekFirst: 0, ...plan });
+  // It sees its farmers there first.
+  ai.think(buildView(g, 0));
+  const start = w.tick + 10;
+  const released: number[] = [];
+  let hid = 0;
+  let next = 0;
+  let dead = 0;
+  let rescued = 0;
+  for (let t = start; t <= start + until * 1200; t += 10) {
+    if (next < falls.length && t >= start + falls[next] * 1200) {
+      kill(g, ids.slice(dead, dead + 2));
+      dead += 2;
+      next++;
+    }
+    w.tick = t;
+    g.fog.update(w);
+    for (const c of ai.think(buildView(g, 0))) {
+      if (c.c === "retreat" && w.units.col.type[slotOf(g, c.u[0])] === UnitType.Farmer) hid += c.u.length;
+      if (c.c === "release") released.push((t - start) / 1200);
+      if (c.c === "move" && c.u.length > 0 && w.units.col.type[slotOf(g, c.u[0])] === UnitType.Spearman && rescued === 0) {
+        rescued = c.u.length;
+        for (const id of c.u) {
+          const k = slotOf(g, id);
+          w.units.col.x[k] = (sx - 2) * CELL + (CELL >> 1);
+          w.units.col.y[k] = (sy + 2) * CELL + (CELL >> 1);
+        }
+      }
+    }
+  }
+  return { hid, released, rescued };
+}
+
+test("D-130 (plan.farAvoid): a far spot where farmers fall again is remembered: its farmers home, back only once it is forgotten; once, as hideFar (30 s)", () => {
+  const hide = farSpot({ hideFar: true, farAvoid: false }, [0], 4);
+  assert.ok(hide.hid >= 3, `hideFar: the others go home (${hide.hid})`);
+  assert.ok(hide.released.length > 0 && hide.released[0] < 1, `hideFar: back within a minute (${hide.released})`);
+  const once = farSpot({ hideFar: true, farAvoid: true }, [0], 4);
+  assert.ok(once.released.length > 0 && once.released[0] < 1, `farAvoid, falls once (a raid passing): as hideFar (${once.released})`);
+  const again = farSpot({ hideFar: true, farAvoid: true }, [0, 1], 6);
+  assert.ok(again.hid >= 3, `farAvoid: home (${again.hid})`);
+  const last = again.released[again.released.length - 1];
+  assert.ok(last >= 4 && last < 4.2, `farAvoid, falls again a minute on: remembered, back 3 minutes after that (${again.released})`);
+  const alone = farSpot({ hideFar: false, farAvoid: true }, [0, 1], 6);
+  assert.ok(alone.released.length > 0 && alone.released[alone.released.length - 1] >= 4 && alone.released[alone.released.length - 1] < 4.2, `farAvoid without hideFar: the same (${alone.released})`);
+});
+
+test("D-130 (plan.farAvoid with rescue): soldiers go for the remembered spot; there and clear for 30 s, it is forgotten and the farmers go back", () => {
+  // townArmy out of reach: its army stays at home (a rescue goes from home only).
+  const r = farSpot({ hideFar: true, farAvoid: true, rescue: true, townArmy: 999 }, [0, 1], 6, 12);
+  assert.ok(r.rescued >= 5, `a rescue went (${r.rescued})`);
+  const last = r.released[r.released.length - 1];
+  assert.ok(last < 3, `back well before the 3 minutes after the second fall: the spot was cleared (${r.released})`);
+});
+
+test("D-130 (plan.farAvoid): each new fall makes it longer, 9 minutes at most from when it was remembered", () => {
+  // Falls each minute 0-8: remembered at 1, 3 minutes past the last would be 11; held to 1 + 9.
+  const r = farSpot({ hideFar: true, farAvoid: true }, [0, 1, 2, 3, 4, 5, 6, 7, 8], 12);
+  assert.ok(r.released.length > 0, "back at last");
+  const last = r.released[r.released.length - 1];
+  assert.ok(last >= 10 && last < 10.2, `forgotten 9 minutes after it was remembered (${r.released})`);
+});
+
+test("D-130 (plan.farAvoid): two spots remembered at most; a third puts out the oldest, whose farmers go back", () => {
+  const g = emptyGame();
+  const w = g.w;
+  const s0 = w.map.spawns[0];
+  // Three far spots, 12 cells apart: A, B, C; two falls each, a minute apart, A first.
+  const at = [0, 1, 2].map((k) => ({ x: s0.cellX + 20 + 12 * k, y: s0.cellY - 20 }));
+  const ids = at.map((p) => Array.from({ length: 6 }, (_, k) => put(g, 0, UnitType.Farmer, p.x + (k % 3), p.y + Math.trunc(k / 3))));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, peekFirst: 0, hideFar: true, farAvoid: true });
+  ai.think(buildView(g, 0));
+  const start = w.tick + 10;
+  const falls = [[0, 0], [1, 0.1], [2, 0.2], [0, 1], [1, 1.1], [2, 1.2]];
+  const dead = [0, 0, 0];
+  const back = new Map<number, number>();
+  let next = 0;
+  for (let t = start; t <= start + 6 * 1200; t += 10) {
+    while (next < falls.length && t >= start + falls[next][1] * 1200) {
+      const k = falls[next][0];
+      kill(g, ids[k].slice(dead[k], dead[k] + 2));
+      dead[k] += 2;
+      next++;
+    }
+    w.tick = t;
+    g.fog.update(w);
+    for (const c of ai.think(buildView(g, 0))) if (c.c === "release") for (const id of c.u) back.set(id, (t - start) / 1200);
+  }
+  const lastBack = (k: number) => Math.max(...ids[k].filter((id) => back.has(id)).map((id) => back.get(id)!));
+  assert.ok(lastBack(0) < 2.5, `A, the oldest, put out when C was remembered: back soon (${lastBack(0)})`);
+  assert.ok(lastBack(1) >= 4.1 && lastBack(2) >= 4.2, `B and C held 3 minutes (${lastBack(1)}, ${lastBack(2)})`);
+});
+
 test(
   "D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home",
   // The bug was the AI's, not the map's: with gates hard plays seed 7 otherwise and never sends its farmers home
