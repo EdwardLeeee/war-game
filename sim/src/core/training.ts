@@ -13,6 +13,7 @@ export function mainCityCrystal(w: World): void {
   for (let s = 0; s < w.buildings.count; s++) {
     if (b.type[s] !== BuildingType.MainCity || b.hp[s] <= 0 || b.owner[s] >= PLAYER_COUNT) continue;
     w.res[b.owner[s] * 4 + Resource.Crystal] += MAIN_CRYSTAL.amount;
+    w.earnedExtra[b.owner[s] * 4 + Resource.Crystal] += MAIN_CRYSTAL.amount;
   }
 }
 

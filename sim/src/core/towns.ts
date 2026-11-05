@@ -134,6 +134,7 @@ export class TownSystem {
               for (let k = 0; k < 3; k++) {
                 const pay = Math.trunc(w.townAcc[o + k] / unit);
                 w.res[p * 4 + res[k]] += pay;
+                w.earnedExtra[p * 4 + res[k]] += pay;
                 w.townIncome[p] += pay;
                 w.townSpellIncome[t] += pay;
                 w.townAcc[o + k] -= pay * unit;
@@ -236,6 +237,9 @@ export class TownSystem {
     w.res[p * 4 + Resource.Food] += rule.plunder.food;
     w.res[p * 4 + Resource.Gold] += rule.plunder.gold;
     w.res[p * 4 + Resource.Crystal] += rule.plunder.crystal;
+    w.earnedExtra[p * 4 + Resource.Food] += rule.plunder.food;
+    w.earnedExtra[p * 4 + Resource.Gold] += rule.plunder.gold;
+    w.earnedExtra[p * 4 + Resource.Crystal] += rule.plunder.crystal;
     w.plundered[p]++;
     w.plunderIncome[p] += rule.plunder.food + rule.plunder.gold + rule.plunder.crystal;
     // Round 7 (D-061): once a game (TOWN_ONCE), and governed again it pays less at first (PLUNDER_RECOVERY).

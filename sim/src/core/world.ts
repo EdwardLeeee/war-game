@@ -340,6 +340,13 @@ export class World {
   farmerDeaths = new Int32Array(PLAYER_COUNT * 5);
   /** Where farmers died (D-070's measurement; not hashed): owner, cell x, cell y, HitCause, tick, five numbers each. */
   readonly farmerDeathLog: number[] = [];
+  /**
+   * The post-game timeline (D-124, timeline.ts), neither in the hash: every death as tick, owner, type, cell x, y, who last
+   * hit it, HitCause and the id of the unit that did (8 numbers each); and per player [p * 4 + Resource] what it earned
+   * besides what farmers gathered (`gathered`): towns' pay, plunder, main cities' crystal, mage bounties.
+   */
+  readonly deathLog: number[] = [];
+  readonly earnedExtra = new Int32Array(PLAYER_COUNT * 4);
   revolts = new Int32Array(PLAYER_COUNT);
   /**
    * Per owner (players, then neutral): the flow-field step order and whether to try the y

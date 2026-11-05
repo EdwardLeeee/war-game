@@ -15,6 +15,7 @@ import {
   PLAYER_COUNT,
   PROTOCOL_VERSION,
   type ScenarioName,
+  type GameTimeline,
 } from "./protocol.ts";
 import { buildView, mapInfo } from "./view/view.ts";
 
@@ -87,6 +88,16 @@ export class Runner {
     const micros = clock === undefined ? 0 : Math.round((clock() - t0) * 1000);
     if (g.shouldHash()) this.hashes.push({ tick: g.tick, hash: g.hash() });
     return micros;
+  }
+
+  /** The post-game timeline so far (D-124), with each computer's difficulty and style. */
+  timeline(): GameTimeline {
+    const t = this.game.timeline.result(this.game.w);
+    t.sides.forEach((side, p) => {
+      const a = this.ais[p];
+      side.ai = a === null ? null : { difficulty: this.difficulty[p], style: a.style };
+    });
+    return t;
   }
 
   /** The style each AI plays (null where there is no AI). */

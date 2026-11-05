@@ -35,6 +35,7 @@ import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, 
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
+import { Timeline } from "./timeline.ts";
 import { UnitSystem } from "./units.ts";
 import { UNIT_HASH_SKIP, UNIT_KINDS, World } from "./world.ts";
 
@@ -74,6 +75,8 @@ export class Game {
   readonly w: World;
   readonly fog: Fog;
   readonly fields = new FieldCache();
+  /** The post-game timeline (D-124): not in the hash. */
+  readonly timeline: Timeline;
   readonly econ: Economy;
   private readonly towns: TownSystem;
   private readonly units: UnitSystem;
@@ -98,6 +101,7 @@ export class Game {
     this.units = new UnitSystem(this.w.size);
     this.econ = new Economy(this.w, this.fog, (to, ev) => this.events.push({ to, ev }));
     this.towns = new TownSystem(this.fog, (to, ev) => this.events.push({ to, ev }));
+    this.timeline = new Timeline(this.w);
     this.ctx = { w: this.w, fog: this.fog, econ: this.econ, nextGroup: { value: 0 }, emit: (to, ev) => this.events.push({ to, ev }) };
     const perRow = Math.ceil(this.w.size / (1 << ATTACK_BLOCK));
     const blocks = perRow * perRow;
@@ -166,6 +170,7 @@ export class Game {
     }
 
     w.tick++;
+    this.timeline.step(w);
     // 9. Fog.
     if (w.tick % FOG_EVERY === 0) this.fog.update(w);
     // 10. Time limit, then the game-over event.
