@@ -1,0 +1,72 @@
+{
+ "tag": "art-v7.3",
+ "view": "diamond",
+ "note": "art-v7.2 換上轉 90 度的地形圖集（art-v7.3 第 7 件，ceo 2026-11-06：擋 art-v7 的切換，先單獨發）。art-v7 的菱形地形圖照 edge-format 的鏡頭算，和 client 的 projection.ts 差 90 度：懸崖斜線成了空心的拱、河岸碎成齒、橋順著河。打包時懸崖臂 E↔S、SE↔SW，水邊角落照轉 90 度換，橋面和欄杆的南北東西對調（design/b1/common/atlas_b1.py diamond_turn）。只有 terrain/ 換成 run 42079069847 的，其他圖和 art-v7.2 一樣（同樣的來源 run）；client 的規則和檔名不變。",
+ "units": {
+  "farmer_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-farmer_e"
+  },
+  "spear_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-spear_e"
+  },
+  "bow_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-bow_e"
+  },
+  "hcav_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-hcav_e"
+  },
+  "siege_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-siege_e"
+  },
+  "mage_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-mage_e"
+  },
+  "farmer_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-farmer_w"
+  },
+  "pike_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-pike_w"
+  },
+  "bow_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-bow_w"
+  },
+  "knight_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-knight_w"
+  },
+  "siege_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-siege_w"
+  },
+  "mage_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-mage_w"
+  }
+ },
+ "effects": {
+  "run": 42057471775,
+  "artifact": "production-effects-atlas"
+ },
+ "buildings": {
+  "run": 42021020457,
+  "artifact": "production-buildings"
+ },
+ "castle": true,
+ "terrain": true,
+ "ground": true,
+ "edge": true,
+ "astc": true,
+ "terrain_src": {
+  "run": 42079069847,
+  "artifact": "production-buildings"
+ }
+}
