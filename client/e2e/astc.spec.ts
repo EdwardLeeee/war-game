@@ -59,10 +59,17 @@ test("顯示卡沒有 ASTC：要 ASTC 也是從 PNG 載入，照樣畫（D-128�
   check();
 });
 
-test("D-128：3 倍要 ASTC，美術沒有壓縮圖（art.lock.json 的 art-v6.4）就畫 2 倍的 PNG", async ({ page, browserName }) => {
-  test.skip(browserName !== "chromium", "the Release's pages at 2 倍: one browser is enough (WebKit on CI draws in software)");
+test("D-128（art-v7.3）：沒選過就是 3 倍 ASTC；顯示卡沒有 ASTC 就畫 2 倍的 PNG", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "the Release's pages at 3 倍: one browser is enough (WebKit on CI draws in software)");
   const check = watchErrors(page);
-  await start(page, "art=x3&tex=astc&scenario=e2e");
+  await start(page, "art=x3&scenario=e2e");
+  await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 60_000 }).toBeGreaterThan(0);
+  const a = await art(page);
+  expect(a).toMatchObject({ label: "3 倍 ASTC" });
+  expect(a?.astc).toBe(a?.pages);
+  // Without ASTC: 2 倍's PNGs (art-v7's 3 倍 as PNG is more than the iPhone kept).
+  await noAstc(page);
+  await start(page, "art=x3&scenario=e2e");
   await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 60_000 }).toBeGreaterThan(0);
   expect(await art(page)).toMatchObject({ label: "2 倍", astc: 0 });
   check();
@@ -76,7 +83,7 @@ test("art-v7 量測：量測面板寫要用 Wi-Fi，三個鈕依序 x3 ASTC、x2
   const group = page.getByRole("group", { name: "art-v7 量測" });
   await expect(group).toContainText("每種要下載 60–160 MB，請用 Wi‑Fi");
   await expect(group.getByRole("button")).toHaveText(["量 x3 ASTC", "量 x2 PNG", "量 x3 PNG"]);
-  await expect(page.getByRole("radiogroup", { name: "貼圖" }).getByRole("radio", { name: "PNG" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("radiogroup", { name: "貼圖" }).getByRole("radio", { name: "ASTC" })).toHaveAttribute("aria-checked", "true");
   await shot(page, info, "astc-lab-panel");
   await group.getByRole("button", { name: "量 x3 ASTC" }).tap();
   // A page of its own, straight into the 360-unit game (no 開始), the address without ?measure=.

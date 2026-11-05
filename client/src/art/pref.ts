@@ -58,8 +58,11 @@ export type TexChoice = "png" | "astc";
 export const TEX_KEY = "war-game.proto.tex";
 export const TEX_CHOICES: readonly TexChoice[] = ["png", "astc"];
 export const TEX_LABEL: Record<TexChoice, string> = { png: "PNG", astc: "ASTC" };
-/** Without a choice saved: PNG until the game switches to art-v7 (D-128: ASTC from then on). */
-export const TEX_DEFAULT: TexChoice = "png";
+/**
+ * Without a choice saved: ASTC (D-128, the user 2026-11-05: 最高畫質、壓縮; art-v7.3 on). A GPU
+ * without it, or art without the compressed pages, draws 2 倍's PNGs instead (artScale).
+ */
+export const TEX_DEFAULT: TexChoice = "astc";
 
 export function loadTexChoice(store: Store | null = browserStore()): TexChoice {
   try {

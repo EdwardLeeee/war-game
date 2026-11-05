@@ -244,7 +244,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 
 ## 正式美術：量測（D-085，PR 1）
 
-- 兵種圖從 war-game-ui 的 Release 來（`art.lock.json` 鎖 tag 和 sha256，`scripts/fetch-art.ts` 下載、核對、解到 `public/art/<tag>/`，不進 repo；格式見 `docs/sprite-atlas.md` 第 2 節）。現在是 art-v2（兵種、建築、資源點、效果）。
+- 兵種圖從 war-game-ui 的 Release 來（`art.lock.json` 鎖 tag 和 sha256，`scripts/fetch-art.ts` 下載、核對、解到 `public/art/<tag>/`，不進 repo；格式見 `docs/sprite-atlas.md` 第 2 節）。現在是 art-v7.3（D-117、D-118 菱形斜看和浮空大陸的邊，R9 的地面和水，D-128 的 ASTC 壓縮圖：x3 ASTC，沒有 ASTC 的裝置用 x2 PNG）。
 - 量測面板（選單 → 量測與確定性檢查）多一列「美術：關／3 倍／2 倍」（PR 3 起預設 3 倍，見下一節）：
   - 記在這台裝置，下一局起用；按「量測 N 人」時，美術換過就開新的一局。從主畫面圖示打開也選得到（ceo 2026-10-18：沒有網址列，加不了 `?art=`）。
   - 開著時，兵從圖集畫（`render/unit-art.ts` 載入、`render/unit-art-draw.ts` 畫）：影子在地面層，顏色層、玩家色層（玩家色當 tint）、法師的防護罩；動作照快照的 action 和 sim 的時間播（`art/spec.ts`）；朝向對到圖片的 8 個方向（規格第 3 節的表）。
@@ -300,7 +300,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 
 - iPhone 的 Safari 用「加入主畫面」、或筆電的 Chrome 安裝之後，從圖示打開沒有網址列。名稱 `war-game` 和晶體圖示是暫時的（GDD 第 16 節）。
 - 不快取頁面，只快取圖（D-091 取代 D-042 的一部分）：常常部署，快取頁面會讓人一直開到舊版。
-  - `public/sw.js` 這個 service worker 只攔 `art/<tag>/` 的圖集，tag 是這次建置 `art.lock.json` 的；art-v7 量測的 `art-lab.lock.json`（D-128）不存。第一次載入時邊下載邊存進手機，之後都從手機拿。同一個 tag 的檔案不會變（`scripts/fetch-art.ts` 照 lock 的雜湊檢查），所以不會拿到舊的圖。
+  - `public/sw.js` 這個 service worker 只攔 `art/<tag>/` 的圖集，tag 是這次建置 `art.lock.json` 的（另有實驗用的 `art-lab.lock.json` 時不存它）。第一次載入時邊下載邊存進手機，之後都從手機拿。同一個 tag 的檔案不會變（`scripts/fetch-art.ts` 照 lock 的雜湊檢查），所以不會拿到舊的圖。
   - 頁面、程式、`version.json`、對局紀錄都不攔，照舊每次從網路拿。
   - 換 tag 的新版本一啟動，就刪掉舊 tag 的圖。
   - iPhone 從主畫面打開時，Safari「7 天沒用就清掉網站資料」的規則不適用，WebKit 說主畫面的 web app「We do not expect the first-party in such a web application to have its website data deleted」（webkit.org/blog/10218）。從 Safari 分頁打開就會被那條規則清掉，只是下次要重新下載。
