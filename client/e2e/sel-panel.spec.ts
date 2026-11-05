@@ -32,9 +32,12 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
     await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("enter");
     await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [OUR_TOWN.x + 0.5, OUR_TOWN.y + 0.5] as const);
-    await page.waitForTimeout(400);
-    const townAt = await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [OUR_TOWN.x + 0.5, OUR_TOWN.y + 0.5] as const);
-    await page.touchscreen.tap(townAt.x, townAt.y);
+    // Its tag laid out (once the camera rests), then a tap on it.
+    const townTag = async () => (await page.evaluate(() => window.__proto?.game?.enter()))?.tags.find((t) => t.id === `t${OUR_TOWN.id}` && t.mode === "full") ?? null;
+    await expect.poll(townTag, { timeout: 30_000 }).not.toBeNull();
+    const tag = await townTag();
+    if (tag === null) throw new Error("no tag on our town");
+    await page.touchscreen.tap(tag.x + tag.w / 2, tag.y + tag.h / 2);
     await expect.poll(async () => (await page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], OUR_TOWN.id)).length, { timeout: 30_000 }).toBeGreaterThan(0);
     const city = (await buildings(page)).find((b) => b.type === 0 && b.owner === me);
     if (city === undefined) throw new Error("no main city");
