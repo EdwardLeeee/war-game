@@ -64,5 +64,5 @@ test("圖集：哨所的站位和前層照這一局的大小讀；別的大小�
 test("開關：features.outpostHide 開著才畫牆頂、面板才寫躲了幾名", () => {
   assert.equal(outpostHide(null), false);
   assert.equal(outpostHide({ features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true } } as Pick<Rules, "features">), false);
-  assert.equal(outpostHide({ features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true, outpostHide: true } } as unknown as Pick<Rules, "features">), true);
+  assert.equal(outpostHide({ features: { plunderOnce: true, towers: true, garrison: true, cavalry: true, outpost: true, outpostHide: true } }), true);
 });

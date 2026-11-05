@@ -7,7 +7,7 @@
 //   node scripts/make-test-atlas.ts
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import { ATLAS_FORMAT, ATLAS_NAMES, EFFECTS_FORMAT } from "../src/art/spec.ts";
@@ -34,8 +34,11 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
   return out;
 }
 
+type Rgba = [number, number, number, number];
+type Px = (x: number, y: number) => Rgba;
+
 /** An RGBA PNG of w × h, coloured by `px(x, y)` → [r, g, b, a]. */
-export function png(w: number, h: number, px: (x: number, y: number) => [number, number, number, number]): Uint8Array {
+export function png(w: number, h: number, px: Px): Uint8Array {
   const raw = new Uint8Array(h * (w * 4 + 1));
   for (let y = 0; y < h; y++) {
     raw[y * (w * 4 + 1)] = 0;
@@ -54,6 +57,17 @@ export function png(w: number, h: number, px: (x: number, y: number) => [number,
     o += p.length;
   }
   return out;
+}
+
+/** The pages with an ASTC 4×4 stand-in beside them, relative to OUT: art-release-astc.json's list (D-128). */
+const KTX: string[] = [];
+
+/** A sprite page: its PNG and, as art-v7.1 has them (D-128), its ASTC 4×4 beside it, premultiplied. */
+function sprite(file: string, w: number, h: number, px: Px): void {
+  writeFileSync(file, png(w, h, px));
+  const k = file.replace(/\.png$/, ".astc.ktx");
+  writeFileSync(k, astcKtx(w, h, px, true));
+  KTX.push(relative(OUT, k));
 }
 
 const RENDERED = [0, 1, 2, 6, 7];
@@ -83,9 +97,9 @@ function unit(name: string, k: number): void {
     }
   }
   const shade = 120 + ((k * 37) % 120);
-  writeFileSync(join(dir, `${name}_color_0.png`), png(48, 64, (x, y) => (x > 10 && x < 38 && y > 4 ? [shade, shade, shade, 255] : [0, 0, 0, 0])));
-  writeFileSync(join(dir, `${name}_team_0.png`), png(48, 64, (x, y) => (x > 14 && x < 34 && y > 20 && y < 44 ? [255, 255, 255, 255] : [0, 0, 0, 0])));
-  writeFileSync(join(dir, `${name}_shadow_0.png`), png(24, 12, () => [0, 0, 0, 90]));
+  sprite(join(dir, `${name}_color_0.png`), 48, 64, (x, y) => (x > 10 && x < 38 && y > 4 ? [shade, shade, shade, 255] : [0, 0, 0, 0]));
+  sprite(join(dir, `${name}_team_0.png`), 48, 64, (x, y) => (x > 14 && x < 34 && y > 20 && y < 44 ? [255, 255, 255, 255] : [0, 0, 0, 0]));
+  sprite(join(dir, `${name}_shadow_0.png`), 24, 12, () => [0, 0, 0, 90]);
   const json = {
     format: ATLAS_FORMAT,
     unit: name,
@@ -102,17 +116,18 @@ function unit(name: string, k: number): void {
   };
   if (name.startsWith("mage")) {
     json.pages.shield = [`${name}_shield_0.png`];
-    writeFileSync(join(dir, `${name}_shield_0.png`), png(48, 64, (x, y) => ((x - 24) ** 2 + (y - 34) ** 2 < 22 ** 2 ? [90, 230, 240, 70] : [0, 0, 0, 0])));
+    sprite(join(dir, `${name}_shield_0.png`), 48, 64, (x, y) => ((x - 24) ** 2 + (y - 34) ** 2 < 22 ** 2 ? [90, 230, 240, 70] : [0, 0, 0, 0]));
     Object.assign(json, { shield: { anims: { on: { frames: 1, fps: 8, loop: true } }, frames: { [`${name}_shield_on_00`]: { page: 0, x: 0, y: 0, w: 48, h: 64, ax: 24, ay: 60 } } } });
   }
   writeFileSync(join(dir, `${name}.json`), JSON.stringify(json));
 }
 
 /**
- * A KTX 1 file of ASTC 4×4 blocks, each a constant colour (the void-extent block), w × h: what
- * the ASTC sample page loads (war-game-ui's is the real spearman).
+ * A KTX 1 file of ASTC 4×4 blocks, each a constant colour (the void-extent block), w × h. `colour`
+ * a function: each block the mean of its pixels, a stand-in for a page (not an encoder), as the
+ * test page's 貼圖 ASTC and ASTC 樣本 load it (D-128); `premultiply`: as ui's art-v7.1.
  */
-export function astcKtx(w: number, h: number, rgba: [number, number, number, number]): Uint8Array {
+export function astcKtx(w: number, h: number, colour: Rgba | Px, premultiply = false): Uint8Array {
   const blocks = Math.ceil(w / 4) * Math.ceil(h / 4);
   const head = 64;
   const out = new Uint8Array(head + 4 + blocks * 16);
@@ -121,27 +136,35 @@ export function astcKtx(w: number, h: number, rgba: [number, number, number, num
   const fields = [0x04030201, 0, 1, 0, 0x93b0, 0x1908, w, h, 0, 0, 1, 1, 0];
   fields.forEach((f, i) => v.setUint32(12 + i * 4, f, true));
   v.setUint32(head, blocks * 16, true);
+  const across = Math.ceil(w / 4);
+  const mean = (bx: number, by: number): Rgba => {
+    if (typeof colour !== "function") return colour;
+    const sum: Rgba = [0, 0, 0, 0];
+    let n = 0;
+    for (let y = by * 4; y < Math.min(h, by * 4 + 4); y++) {
+      for (let x = bx * 4; x < Math.min(w, bx * 4 + 4); x++) {
+        const c = colour(x, y);
+        for (let i = 0; i < 3; i++) sum[i] += premultiply ? (c[i] * c[3]) / 255 : c[i];
+        sum[3] += c[3];
+        n++;
+      }
+    }
+    return sum.map((c) => Math.round(c / n)) as Rgba;
+  };
   for (let b = 0; b < blocks; b++) {
     const o = head + 4 + b * 16;
     out.set([0xfc, 0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff], o);
-    rgba.forEach((c, i) => v.setUint16(o + 8 + i * 2, c * 257, true));
+    mean(b % across, Math.floor(b / across)).forEach((c, i) => v.setUint16(o + 8 + i * 2, c * 257, true));
   }
   return out;
-}
-
-function astcSample(): void {
-  const dir = join(OUT, "..", "astc-sample", "units", "spear_e");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "spear_e_color_0.astc.ktx"), astcKtx(48, 64, [150, 150, 150, 255]));
-  writeFileSync(join(dir, "spear_e_team_0.astc.ktx"), astcKtx(48, 64, [255, 255, 255, 120]));
 }
 
 function effects(): void {
   const dir = join(OUT, "effects");
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "effects_0.png"), png(32, 16, () => [200, 180, 150, 120]));
+  sprite(join(dir, "effects_0.png"), 32, 16, () => [200, 180, 150, 120]);
   // 真的箭 (art-v6's `arrow`, `sling_stone`): an arrow 0.8 m long pointing right, a stone of 4 frames.
-  writeFileSync(join(dir, "effects_1.png"), png(48, 16, (x, y) => (y < 6 ? [230, 220, 190, 255] : x < 32 && y >= 8 ? [110, 100, 90, 255] : [0, 0, 0, 0])));
+  sprite(join(dir, "effects_1.png"), 48, 16, (x, y) => (y < 6 ? [230, 220, 190, 255] : x < 32 && y >= 8 ? [110, 100, 90, 255] : [0, 0, 0, 0]));
   const frames: Record<string, object> = {};
   for (let i = 0; i < 2; i++) frames[`dust_0${i}`] = { page: 0, x: 0, y: 0, w: 32, h: 16, ax: 16, ay: 8 };
   frames.arrow_00 = { page: 1, x: 0, y: 0, w: 48, h: 6, ax: 24, ay: 3 };
@@ -210,7 +233,7 @@ function edge(): void {
   const dir = join(OUT, "edge");
   mkdirSync(dir, { recursive: true });
   const pxPerM = 6;
-  const flat = (name: string, w: number, h: number, c: [number, number, number, number]) => writeFileSync(join(dir, name), png(w, h, () => c));
+  const flat = (name: string, w: number, h: number, c: Rgba) => sprite(join(dir, name), w, h, () => c);
   flat("clouds_far.png", 64, 64, [176, 190, 206, 255]);
   flat("clouds_near.png", 64, 64, [232, 236, 242, 120]);
   flat("island_0.png", 40, 30, [120, 128, 110, 255]);
@@ -264,8 +287,9 @@ function edge(): void {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   ATLAS_NAMES.forEach((name, k) => unit(name, k));
   effects();
-  astcSample();
   ground();
   edge();
+  // As art-v7.1's (D-128): the list of the ASTC pages, apart from art-release.json.
+  writeFileSync(join(OUT, "art-release-astc.json"), JSON.stringify({ format: "war-game art release 1", tag: "test", files: Object.fromEntries(KTX.sort().map((k) => [k, {}])) }));
   console.log(`test atlases: ${ATLAS_NAMES.length} units and effects → public/art/test/x3/`);
 }

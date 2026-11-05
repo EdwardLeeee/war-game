@@ -80,7 +80,7 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   const panel = page.locator(".sel-info");
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection().units ?? [])).length).toBeGreaterThan(0);
   const sentIn = await page.evaluate(() => window.__proto?.game?.selection().units ?? []);
-  await page.locator(".cmds").getByRole("button", { name: /^駐軍/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [town.cx, town.cy] as const);
   await tap(page, await at(page, { x: town.cx + 0.5, y: town.cy + 0.5 }));
   // Those selected, still living (a soldier 自動訓練 trains for the group from now on may walk in

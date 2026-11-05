@@ -204,6 +204,28 @@ def terrain_table():
                                     when="(x-1, y+1) is 7, (x-1, y) and (x, y+1) are not", anchor="(x, y + 1)", front="y + 1.99")}))
 
 
+_TURN_ARM = {"E": "S", "S": "E", "SE": "SW", "SW": "SE"}
+_TURN_BIT = {1: 2, 2: 8, 8: 4, 4: 1}       # the corner tile's cells: NW 1 -> NE 2 -> SE 8 -> SW 4 -> NW
+
+
+def diamond_turn(name):
+    """art-v7.3 (item 7, the composites design/r11/common/boards_v7cliff.py): the diamond terrain pieces were rendered a
+    quarter turn from the client's projection (client/src/camera/projection.ts: the map's (n, n) corner at the bottom;
+    the render's camera has its (0, n) there, as edge-format.md's corners), so the arms, the water's corner tiles and the
+    bridges came out on the wrong axes: an S arm drawn where an E one goes, banks in teeth, bridges along the river.
+    The frame the client asks for is made from the piece rendered for the turned direction (posts, rocks and fords look
+    the same either way)."""
+    if name.startswith("terrain_cliff_arm_"):
+        d, v = name[len("terrain_cliff_arm_"):].rsplit("_", 1)
+        return f"terrain_cliff_arm_{_TURN_ARM[d]}_{v}"
+    if name.startswith("terrain_water_m"):
+        m = int(name[len("terrain_water_m"):])
+        return f"terrain_water_m{sum(_TURN_BIT[b] for b in (1, 2, 4, 8) if m & b)}"
+    swap = {"terrain_bridge_deck_ns": "terrain_bridge_deck_ew", "terrain_bridge_deck_ew": "terrain_bridge_deck_ns",
+            "terrain_bridge_rail_x": "terrain_bridge_rail_y", "terrain_bridge_rail_y": "terrain_bridge_rail_x"}
+    return swap.get(name, name)
+
+
 def terrain_prep(name, col, sh, anchor, s_anchor):
     """The water tiles cut to exactly their cell-sized square round the corner (shifted by the anchor's fraction of
     a pixel first, premultiplied, so neighbours meet edge to edge with no half-transparent seam; the render reaches
@@ -331,14 +353,15 @@ def _anchor(ax, ay, bb, f):
     return dict(ax=round((ax - bb[0]) * f, 2), ay=round((ay - bb[1]) * f, 2))
 
 
-def pack(frames, prefix, out, page, f, with_team=True, prep=None):
+def pack(frames, prefix, out, page, f, with_team=True, prep=None, source=None):
     """frames: list of names -> pages <prefix>_<layer>_<k>.png; returns (tables, pages, px, per-frame px).
     prep(name, colour, shadow, anchor, shadow anchor) -> (colour, anchor, keep the shadow, trim): a frame's own cut
-    (the terrain's water tiles, the bridge decks)."""
+    (the terrain's water tiles, the bridge decks). source(name): the rendered piece a frame is made from (default its
+    own name; the diamond terrain's quarter turn, diamond_turn)."""
     todo = {"color": [], "team": [], "shadow": []} if with_team else {"color": [], "shadow": []}
     per = {}
     for name in frames:
-        col, team, sh, (ax, ay), (sax, say) = layers(name)
+        col, team, sh, (ax, ay), (sax, say) = layers(source(name) if source else name)
         keep_shadow, trim = True, True
         if prep:
             col, (ax, ay), keep_shadow, trim = prep(name, col, sh, (ax, ay), (sax, say))
@@ -475,7 +498,8 @@ def run(scale=3.0, page=2048):
         raise SystemExit(f"missing renders: {missing}")
     view = view_of(tf)
     TILE_VIEW["view"] = view
-    tables, pages, px, per = pack(tf, "terrain", tdir, page, f, with_team=False, prep=terrain_prep)
+    tables, pages, px, per = pack(tf, "terrain", tdir, page, f, with_team=False, prep=terrain_prep,
+                                  source=diamond_turn if view == "diamond" else None)
     man = {"format": "war-game terrain 1", "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
            **({"view": view} if view else {}), "pages": pages, "rules": terrain_table(),
            "frames": tables["color"], "shadows": tables["shadow"]}

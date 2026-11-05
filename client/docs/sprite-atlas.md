@@ -444,13 +444,25 @@ ui 把 12 個兵種完整算過一次之後量到的數字（`design/production/
 
 ### 壓縮
 
-- 決定用 ASTC 時（D-017、D-021 在 iPhone 實測後才定）：
-  - 每一頁另出一個 `.astc.ktx`（KTX 第 1 版，ASTC 4×4）。
-  - 用 astcenc 的 `-cl`（一般 LDR，和現在的 `postprocess.py` 一樣），不要用 sRGB 版的 `-cs`，不然顏色會和 PNG 不同。astcenc 可以直接輸出 `.ktx`，ui 實作時確認。
-  - PixiJS 8.21 的 KTX 讀取器把它標成「一般（非預乘）透明度」（`parseKTX` 的 `alphaMode: "no-premultiply-alpha"`），會自動換成對應的混合方式。所以 ui 照 PNG 的顏色直接壓就好，不用先預乘。
-  - 不用 KTX2：PixiJS 8.21 的 KTX2 讀取器沒有設定這個，會把資料當成已預乘。
-  - 手機沒有 `WEBGL_compressed_texture_astc` 時，client 退回載入 PNG。
-  - 載入一頁樣本、在 iPhone 上確認顏色和邊緣正常之後，才開始量產壓縮版。
+- 使用者 2026-11-05 選了 x3 ASTC，沒有 ASTC 的裝置退回 x2 PNG（D-128）。ui 從 art-v7.1 起出壓縮版（`design/release/README.md`）：
+  - 除了 `ground/` 以外的每一頁，同一路徑多一個 `.astc.ktx`（KTX 第 1 版、ASTC 4×4、`glInternalFormat` 0x93B0、沒有 mipmap），打在 `art-vN-astc-x3`、`-x2` 兩個包，解在同一個 `x3/`、`x2/` 資料夾。
+  - 用 astcenc `-cl 4x4 -thorough -pp-premultiply`：**預乘 alpha**，和瀏覽器替 PNG 乘的一樣。
+  - 清單是 `art-release-astc.json`（列出每個 `.astc.ktx`），不叫 `art-release.json`，以免解開時蓋掉 PNG 包的那份。
+  - `ground/` 照舊只有 PNG：圖層的 A 是高度，relief、ripple 是資料。
+- client 的讀法（`src/render/unit-art.ts`、`src/art/compressed.ts`）：
+  - 貼圖選 ASTC（量測面板的「貼圖」，或 `?tex=astc`），而且顯示卡有 `WEBGL_compressed_texture_astc`、資料夾裡有 `art-release-astc.json` 時，清單列到的頁讀 `.astc.ktx`，其他頁和 `ground/` 讀 PNG。
+  - 自己讀檔、用 PixiJS 的 `parseKTX` 拆區塊、做 `CompressedSource`，`alphaMode` 設成 `premultiplied-alpha`。PixiJS 自己的 KTX 讀取器會標成非預乘，ui 的預乘頁就會有黑邊。
+  - 上傳到顯示卡之後放掉檔案那份：`source.resource` 和 PixiJS 留著的 `options.resource` 都清掉。不清的話，art-v7.1 x3 在 Chromium 量到 177 MB 的 ArrayBuffer 留在頁面記憶體；清掉後 4 MB。邊緣（`edge/`）的頁也一樣先上傳、放掉。
+  - 顯示卡上的大小照區塊算：每 4×4 一塊 16 bytes，邊長不是 4 的倍數時進位（PNG 是每像素 4 bytes）。
+  - 某一頁讀不到 `.astc.ktx` 就改讀那頁的 PNG。
+  - 3 倍要 ASTC，但顯示卡沒有 ASTC 或美術沒有壓縮圖時，改畫 2 倍的 PNG（D-128：art-v7 的 3 倍 PNG 要 773 MB）。
+  - 切到 art-v7 之前預設照舊 PNG；切換時預設改 ASTC。
+- art-v7 量測（D-128，`src/lab/art-measure.ts`）：
+  - 切換前，`art-lab.lock.json` 釘 art-v7.1 的 x3、x2、astc-x3，Pages 用 `fetch-art.ts --lab` 一起解到 `public/art/art-v7.1/`。service worker 不存這份。
+  - 量測面板的三個鈕依序是 x3 ASTC、x2 PNG、x3 PNG，最可能撐不住的放最後。每個鈕開一頁（`?measure=`），直接量 360 人 10 分鐘。
+  - 結果寫實際畫的是哪種、貼圖 MB（地面另列）、有沒有 ASTC、user agent。
+  - 量到一半頁面被重新載入時，開局畫面寫是哪一種，不會再自己量一次。
+  - 切到 art-v7 時拿掉 `art-lab.lock.json`。
 - 影子只有深淺，之後可以試更大的 ASTC 區塊（例如 8×8，每點 0.25 位元組）。
 
 ### iPhone 上要讀的數字
@@ -460,7 +472,7 @@ ui 把 12 個兵種完整算過一次之後量到的數字（`design/production/
   - `MAX_TEXTURE_IMAGE_UNITS`：一次繪製能用幾張圖；
   - 有沒有 `WEBGL_compressed_texture_astc`：能不能用 ASTC 壓縮。
 - 使用者照 #31 的步驟做一次效能量測、按「複製 log」，就會帶出來，不用多做事。
-- 是 3 倍還是 2 倍加 ASTC，要等貼圖記憶體的實測才定：在 iPhone 上實際載入一整套頁，看 fps，也看 Safari 會不會因為記憶體不足重新載入分頁。這是第三階段的工作，量測頁到時候再做。
+- 3 倍還是 2 倍加 ASTC，D-128 選了 x3 ASTC。使用者在 iPhone Safari 上用 art-v7 量測確認撐得住 10 分鐘之後才定案（上一節）。
 
 ## 9. 需要其他角色做的事
 

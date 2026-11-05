@@ -13,6 +13,9 @@ ground point, roll outward along the ground (the ring is twice as wide as it is 
 ground circle in this camera), rise a little, grow and fade. Fixed seed: the same pixels every run.
 
 warn_sigil, warn_sigil_gold, warn_sigil_glow, warn_fill, warn_rim, warn_core   the 晶砲 warning circle B 符文漸強
+warn_fill_t, warn_sigil_glow_t, warn_sigil_t, warn_rim_t, warn_core_t   the same in white, for the caster's player colour
+       (the user 2026-11-05: 「法師法圈顏色跟該陣營一樣」; tint "owner", tint_value and tint_white as in WARN_TINT; the gold
+       sigil stays gold)
        (D-041), as six still images the game puts together, turns and fades (design/b1/README.md, 「給 client：晶砲預警圈 B」;
        ceo and client 2026-10-18): drawn top-down and round by design/b1/common/warn.py, one frame each; the
        game squashes them to the ground (scale.y 0.5) and scales them by the sim's radius / `radius_m`.
@@ -405,6 +408,20 @@ def arrow_image(scale=3.0):
 
 
 CORE_RADIUS = 0.75                   # the core image is drawn at 75 % of the circle; the game grows it from 25 %
+WHITE = (255, 255, 255)
+# the tintable layers (the user 2026-11-05): white, so the client multiplies them by a colour made from the caster's player
+# colour P (ownerTint): P scaled so its largest channel is tint_value x 255 (hue and saturation kept: today's orange is a bright,
+# full colour and P at its own value went grey on the grass), then mixed toward white by tint_white
+WARN_TINT = {"warn_fill_t": (1.0, 0.0), "warn_sigil_glow_t": (1.0, 0.15), "warn_sigil_t": (1.0, 0.1), "warn_rim_t": (0.45, 0.0),
+             "warn_core_t": (1.0, 0.4)}
+
+
+def warn_tint(p, name):
+    """The colour (0..1) the client multiplies warn_<name>_t by, from the player colour p (0..255 each)."""
+    value, white = WARN_TINT[name]
+    top = max(p) or 1
+    c = [v / top * value for v in p]
+    return [v + (1 - v) * white for v in c]
 
 
 def warn_images(scale=3.0):
@@ -430,6 +447,22 @@ def warn_images(scale=3.0):
     r = R * CORE_RADIUS
     ImageDraw.Draw(img).ellipse([c - r, c - r, c + r, c + r], fill=(*warn.GOLD, 255))
     out["warn_core"] = (img.filter(ImageFilter.GaussianBlur(18)), warn.RADIUS_M * CORE_RADIUS)
+    # the tintable set: the same shapes and alphas in white (the rim's 160 kept)
+    img, c = warn._canvas()
+    warn._sigil(ImageDraw.Draw(img), c, R, 0.0, (*WHITE, 255), 9)
+    out["warn_sigil_t"] = (img, warn.RADIUS_M)
+    img, c = warn._canvas()
+    warn._sigil(ImageDraw.Draw(img), c, R, 0.0, (*WHITE, 255), 22)
+    out["warn_sigil_glow_t"] = (img.filter(ImageFilter.GaussianBlur(9)), warn.RADIUS_M)
+    img, c = warn._canvas()
+    ImageDraw.Draw(img).ellipse([c - R, c - R, c + R, c + R], fill=(*WHITE, 255))
+    out["warn_fill_t"] = (img.filter(ImageFilter.GaussianBlur(10)), warn.RADIUS_M)
+    img, c = warn._canvas()
+    warn._ring(ImageDraw.Draw(img), c, R + 4, 14, (*WHITE, 160))
+    out["warn_rim_t"] = (img, warn.RADIUS_M)
+    img, c = warn._canvas()
+    ImageDraw.Draw(img).ellipse([c - r, c - r, c + r, c + r], fill=(*WHITE, 255))
+    out["warn_core_t"] = (img.filter(ImageFilter.GaussianBlur(18)), warn.RADIUS_M * CORE_RADIUS)
     ppm = spec.PX_PER_M * scale / 3.0
     f = ppm / warn._TOP_PPM
     return {k: (im.resize((round(im.width * f), round(im.height * f)), Image.LANCZOS), rad) for k, (im, rad) in out.items()}
@@ -479,7 +512,9 @@ def write_atlas(scale=3.0, page=2048):
     for name, (im, rad) in warn_images(scale).items():
         bb = im.getchannel("A").point(lambda v: 255 if v > 4 else 0).getbbox()
         items.append((f"{name}_00", im.crop(bb), im.width / 2 - bb[0], im.height / 2 - bb[1]))
-        effects[name] = dict(frames=1, fps=1, loop=True, top_down=True, radius_m=rad)
+        effects[name] = dict(frames=1, fps=1, loop=True, top_down=True, radius_m=rad,
+                             **({"tint": "owner", "tint_value": WARN_TINT[name][0], "tint_white": WARN_TINT[name][1]}
+                                if name in WARN_TINT else {}))
     packer, frames = Packer(page), {}
     for name, c, ax, ay in sorted(items, key=lambda t: (-t[1].height, -t[1].width, t[0])):
         k, x, y = packer.add(c)

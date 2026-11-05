@@ -1463,3 +1463,196 @@ button.danger {
 .load-times[hidden] {
   display: none;
 }
+
+/* 進駐 (R13-01 B, D-125): over the battlefield, under the interface; the tags take no touches (the
+   map's tap finds the building), only the arrows to buildings off the screen are buttons. The colours
+   are the page's (the prototype's) and 正式介面's alike: the gold of --accent on the panel's dark. */
+.enter-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.enter-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.enter-lines line {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.enter-tag,
+.enter-chip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  white-space: nowrap;
+  background: var(--panel);
+  border: 1.5px solid var(--accent);
+  border-radius: 8px;
+  color: var(--fg);
+}
+
+.enter-tag {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 9px;
+  line-height: 17px;
+}
+
+.enter-tag b {
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.enter-tag small {
+  font-size: 12px;
+}
+
+.enter-tag.off {
+  border-color: rgba(242, 238, 228, 0.35);
+  color: rgba(242, 238, 228, 0.7);
+}
+
+.enter-tag.off b {
+  color: rgba(242, 238, 228, 0.75);
+  font-weight: 400;
+}
+
+.enter-chip {
+  padding: 1px 7px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.enter-tag.shown,
+.enter-chip.shown {
+  visibility: visible;
+}
+
+#hud .enter-arrow {
+  position: absolute;
+  width: 104px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 6px;
+  background: var(--panel);
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  color: var(--fg);
+}
+
+#hud .enter-arrow.right {
+  flex-direction: row-reverse;
+}
+
+.enter-arrow .dir {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: var(--accent);
+}
+
+.enter-arrow span {
+  display: flex;
+  flex-direction: column;
+  line-height: 17px;
+  text-align: center;
+}
+
+.enter-arrow b {
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.enter-arrow small {
+  font-size: 12px;
+}
+
+/* 進駐's squares (R13-01 B 7a–8): a place each, who is in it by kind in the player's colour, the empty ones hatched. */
+.seat-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* On the squares' line the count stays beside them (R13-01 B: 「遠 法 □ 2/3 編隊 1 的 2 名［召回］」). */
+.seat-row .garrison-count {
+  flex-basis: auto;
+  font-weight: 700;
+}
+
+.seats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.seat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: #3f7fe0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.seat.empty {
+  background: repeating-linear-gradient(135deg, rgba(242, 238, 228, 0.18) 0 3px, transparent 3px 6px);
+  border: 1px solid var(--line);
+}
+
+.seat-label {
+  font-size: 13px;
+}
+
+b.seat-label {
+  color: var(--accent);
+}
+
+.seat-groups,
+.seat-row .keep-groups {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.group-places {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.group-place-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.group-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

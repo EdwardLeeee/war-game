@@ -2760,6 +2760,14 @@ export interface HardPlan {
   /** D-086 A3: the farmers by such a spot go home, and back to work (release) once FAR_CLEAR ticks pass with no enemy seen by it (false: as before). */
   hideFar: boolean;
   /**
+   * D-130 (ceo 2026-11-05: a squad waiting by a far work spot killed 67 of hard's farmers in one game, 22 in the user's
+   * 75830947; hideFar sent them back 30 s after it no longer saw the enemy, and with its farmers gone it saw nothing):
+   * such a spot is remembered FAR_AVOID ticks, longer with each new fall or sight there, FAR_AVOID_MOST at most from the
+   * first; its farmers and any that come near it go home and back to work only once it is forgotten. With rescue, the
+   * squad goes for a remembered spot too, and one it got to and found clear (RESCUE_DONE) is forgotten (false: as before).
+   */
+  farAvoid: boolean;
+  /**
    * D-086 A3 (75830947: it forgot the user's army after INTEL_TICKS and marched into it): the enemy's worth it
    * believes in for marching is at least the most it knew of at once, less what it saw fall since, shrinking
    * foeDecay percent a minute (false: as before). With its population full it marches as before regardless.
@@ -3052,6 +3060,7 @@ export const HARD: HardPlan = {
   rescue: false,
   rescueRest: 3,
   hideFar: false,
+  farAvoid: false,
   foeMemory: false,
   foeDecay: 10,
   foeGrow: false,
@@ -3197,6 +3206,9 @@ const RESCUE_DONE = 600;
 const RESCUE_WALK = 2 * TICKS_PER_MINUTE;
 /** D-086 A3 (plan.hideFar): farmers sent home go back to work once this long passes with no enemy seen by the spot (30 s). */
 const FAR_CLEAR = 600;
+/** D-130 (plan.farAvoid): a far spot where farmers fell is remembered this long, longer with each new fall, this long at most from the first. */
+const FAR_AVOID = 3 * TICKS_PER_MINUTE;
+const FAR_AVOID_MOST = 9 * TICKS_PER_MINUTE;
 /** D-086 A3 (plan.peekFirst): how long the one sent to look may walk, and how long before another goes. */
 const PEEK_WALK = 3 * TICKS_PER_MINUTE;
 const PEEK_AGAIN = 2 * TICKS_PER_MINUTE;
@@ -3457,6 +3469,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let rescueDeclined = -1;
   /** plan.hideFar: farmers sent home from each spot, and when the enemy was last seen by it. */
   const farHide: { x: number; y: number; clear: number; ids: number[] }[] = [];
+  /** plan.farAvoid: far spots remembered (from when, until when); the farmers it holds at home, counted in farmer-ticks (counted.farmerIdle), since. */
+  let farAvoids: { x: number; y: number; from: number; until: number; last: number }[] = [];
+  let idleSince = -1;
   /** plan.foeMemory: the enemy's worth it believes in, and when it last shrank. */
   let foeMemo = 0;
   let foeMemoTick = 0;
@@ -3481,7 +3496,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { raidHeld: 0, raidCaught: 0, squadDied: 0, squadRaid: 0, squadHome: 0, squadTown: 0, squadTake: 0, squadNoTarget: 0, squadDone: 0, squadLost: 0, squadWeak: 0, squadTimeout: 0, raidFarmers: 0, chargeNow: 0, netTowers: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { avoidSpots: 0, farmerIdle: 0, raidHeld: 0, raidCaught: 0, squadDied: 0, squadRaid: 0, squadHome: 0, squadTown: 0, squadTake: 0, squadNoTarget: 0, squadDone: 0, squadLost: 0, squadWeak: 0, squadTimeout: 0, raidFarmers: 0, chargeNow: 0, netTowers: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -4885,7 +4900,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // --- D-086 A3: farmers attacked far from home (plan.rescue, plan.hideFar) -------------------------
       let farmerSpot: { x: number; y: number } | null = null;
       const cityHit = foesNear(home.cellX, home.cellY, 16).length > 0;
-      if (plan.rescue || plan.hideFar) {
+      if (plan.rescue || plan.hideFar || plan.farAvoid) {
         const far = (x: number, y: number) => dist2(x, y, home.cellX, home.cellY) >= FAR_FARMER * FAR_FARMER;
         const alive = new Set(farmers.map((f) => f.id));
         for (const [id, at] of farmerSeen) {
@@ -4898,6 +4913,27 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const spots: { x: number; y: number }[] = [];
         for (const d of farmerFell) if (farmerFell.filter((e) => dist2(e.x, e.y, d.x, d.y) <= FARMER_SPOT * FARMER_SPOT).length >= 2) spots.push(d);
         for (const f of farmers) if (far(f.x, f.y) && foes.some((e) => dist2(e.x, e.y, f.x, f.y) <= FARMER_SPOT * FARMER_SPOT)) spots.push({ x: f.x, y: f.y });
+        if (plan.farAvoid) {
+          // Remembered: each new fall or sight there makes it longer, FAR_AVOID_MOST at most from the first; forgotten after.
+          // Only a new fall or sight makes it longer (a fall stays in farmerFell a minute), from when it happened.
+          farAvoids = farAvoids.filter((a) => a.until > tick);
+          const events: { x: number; y: number; t: number }[] = [];
+          for (const d of farmerFell) if (farmerFell.filter((e) => dist2(e.x, e.y, d.x, d.y) <= FARMER_SPOT * FARMER_SPOT).length >= 2) events.push({ x: d.x, y: d.y, t: d.tick });
+          for (const f of farmers) if (far(f.x, f.y) && foes.some((e) => dist2(e.x, e.y, f.x, f.y) <= FARMER_SPOT * FARMER_SPOT)) events.push({ x: f.x, y: f.y, t: tick });
+          for (const p of events) {
+            if (underArrows(p)) continue;
+            const a = farAvoids.find((e) => dist2(e.x, e.y, p.x, p.y) <= FARMER_SPOT * FARMER_SPOT);
+            if (a === undefined) {
+              farAvoids.push({ x: p.x, y: p.y, from: p.t, until: p.t + FAR_AVOID, last: p.t });
+              counted.avoidSpots++;
+            } else if (p.t > a.last) {
+              a.until = Math.min(a.from + FAR_AVOID_MOST, Math.max(a.until, p.t + FAR_AVOID));
+              a.last = p.t;
+            }
+          }
+          // The rescue goes for a remembered spot too (its farmers gone, it may see nothing there).
+          for (const a of farAvoids) if (!underArrows(a)) spots.push({ x: a.x, y: a.y });
+        }
         // The one nearest home (ties in player 0's frame), not under an enemy fort's reach.
         let best = 0;
         for (const p of spots) {
@@ -4942,6 +4978,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (why !== "") {
             if (ids.length > 0) out.push({ c: why === "rescueDone" ? "move" : "retreat", u: ids, x: post.x, y: post.y });
             if (why === "rescueLost" || why === "rescueWeak") rescueRest.set(spotKey(at.x, at.y), tick + plan.rescueRest * TICKS_PER_MINUTE);
+            // plan.farAvoid: got there and found it clear: forgotten, its farmers back to work.
+            if (why === "rescueDone" && at.arrived && plan.farAvoid) {
+              for (const a of farAvoids) if (dist2(a.x, a.y, at.x, at.y) <= FARMER_SPOT * FARMER_SPOT) a.until = tick;
+              // The falls there are seen to: they do not make it remembered again.
+              for (let k = farmerFell.length - 1; k >= 0; k--) if (dist2(farmerFell[k].x, farmerFell[k].y, at.x, at.y) <= FARMER_SPOT * FARMER_SPOT) farmerFell.splice(k, 1);
+              if (farmerSpot !== null && dist2(farmerSpot.x, farmerSpot.y, at.x, at.y) <= FARMER_SPOT * FARMER_SPOT) farmerSpot = null;
+            }
             counted[why]++;
             rescueSquad.clear();
             rescueAt = null;
@@ -4989,19 +5032,24 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           }
         }
       }
-      if (plan.hideFar) {
-        // Those sent home go back to work once no enemy has been seen by their spot for a while (not while all hide in the main city).
+      if (plan.hideFar || plan.farAvoid) {
+        // Those sent home go back to work once no enemy has been seen by their spot for a while (not while all hide in the main city);
+        // plan.farAvoid: once the spot is forgotten.
+        const avoided = (x: number, y: number) => farAvoids.some((a) => a.until > tick && dist2(a.x, a.y, x, y) <= FARMER_SPOT * FARMER_SPOT);
         for (const h of farHide) if (recalled || foesNear(h.x, h.y, FARMER_SPOT).length > 0) h.clear = tick;
         for (let k = farHide.length - 1; k >= 0; k--) {
           const h = farHide[k];
-          if (tick - h.clear < FAR_CLEAR) continue;
+          if (plan.farAvoid ? avoided(h.x, h.y) || (plan.hideFar && tick - h.clear < FAR_CLEAR) : tick - h.clear < FAR_CLEAR) continue;
           const ids = h.ids.filter((id) => farmers.some((f) => f.id === id));
           if (ids.length > 0) out.push({ c: "release", u: ids });
           counted.farmersReleased += ids.length;
           farHide.splice(k, 1);
         }
-        if (farmerSpot !== null && !recalled) {
-          const spot = farmerSpot;
+        // The spots its farmers go home from: the one under attack (hideFar), and those remembered (farAvoid).
+        const hideAt: { x: number; y: number }[] = [];
+        if (plan.hideFar && farmerSpot !== null) hideAt.push(farmerSpot);
+        if (plan.farAvoid) for (const a of farAvoids) if (a.until > tick) hideAt.push({ x: a.x, y: a.y });
+        for (const spot of recalled ? [] : hideAt) {
           const sent = new Set(farHide.flatMap((h) => h.ids));
           // The farmers by the spot (not those pulling down a fort, D-080) go home.
           const go = farmers
@@ -5017,6 +5065,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             } else farHide.push({ x: spot.x, y: spot.y, clear: tick, ids: [...go] }); // its own copy: go is in the order sent
           }
         }
+        // D-130 (ceo 2026-11-05: what holding them costs): the farmers it holds at home, in farmer-ticks.
+        const alive = new Set(farmers.map((f) => f.id));
+        const held = farHide.reduce((a, h) => a + h.ids.filter((id) => alive.has(id)).length, 0);
+        if (idleSince >= 0) counted.farmerIdle += held * (tick - idleSince);
+        idleSince = tick;
       }
 
       const armyOrders = (): void => {

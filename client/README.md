@@ -300,7 +300,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 
 - iPhone 的 Safari 用「加入主畫面」、或筆電的 Chrome 安裝之後，從圖示打開沒有網址列。名稱 `war-game` 和晶體圖示是暫時的（GDD 第 16 節）。
 - 不快取頁面，只快取圖（D-091 取代 D-042 的一部分）：常常部署，快取頁面會讓人一直開到舊版。
-  - `public/sw.js` 這個 service worker 只攔 `art/<tag>/` 的圖集，tag 是這次建置 `art.lock.json` 的。第一次載入時邊下載邊存進手機，之後都從手機拿。同一個 tag 的檔案不會變（`scripts/fetch-art.ts` 照 lock 的雜湊檢查），所以不會拿到舊的圖。
+  - `public/sw.js` 這個 service worker 只攔 `art/<tag>/` 的圖集，tag 是這次建置 `art.lock.json` 的；art-v7 量測的 `art-lab.lock.json`（D-128）不存。第一次載入時邊下載邊存進手機，之後都從手機拿。同一個 tag 的檔案不會變（`scripts/fetch-art.ts` 照 lock 的雜湊檢查），所以不會拿到舊的圖。
   - 頁面、程式、`version.json`、對局紀錄都不攔，照舊每次從網路拿。
   - 換 tag 的新版本一啟動，就刪掉舊 tag 的圖。
   - iPhone 從主畫面打開時，Safari「7 天沒用就清掉網站資料」的規則不適用，WebKit 說主畫面的 web app「We do not expect the first-party in such a web application to have its website data deleted」（webkit.org/blog/10218）。從 Safari 分頁打開就會被那條規則清掉，只是下次要重新下載。

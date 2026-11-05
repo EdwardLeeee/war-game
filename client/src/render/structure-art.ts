@@ -148,6 +148,11 @@ export class ArtStructures {
     this.cellOwner = new Int32Array(view.map.size * view.map.size);
   }
 
+  /** The plane's y of building `id`'s picture's top this frame, or null (not drawn from a picture). */
+  topOf(id: number): number | null {
+    return this.drawn.find((d) => d.id === id)?.y0 ?? null;
+  }
+
   /** How many the outpost's picture has room for on its walk (D-121: its stand_m), ours; 0 without them. */
   get outpostStands(): number {
     return this.entry(BuildingType.Outpost, this.view.me)?.entry.stand_m?.length ?? 0;

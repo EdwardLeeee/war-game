@@ -105,6 +105,8 @@ export class Hud {
   private dialogTick: (() => void) | null = null;
   /** 收起 (D-054): the selection info shows its title line only, for this game. */
   private collapsed = false;
+  /** 進駐 (R13-01 B): how the selection info was before it folded for the pick. */
+  private foldBefore: { plain: boolean; group: boolean } | null = null;
   /** 軍團畫面's own 收起 (the user 2026-10-31): set by each tap on a group button, and the other's left alone. */
   private groupCollapsed = false;
   /** 自動訓練 stopped by a full population somewhere (D-054), as last seen: told once when it starts. */
@@ -248,8 +250,10 @@ export class Hud {
       townOut: (town: number, group: number | null | "all") => game.townOut(town, group),
       outpostGroups: (building: number) => game.outpostGroups(building),
       outpostOut: (building: number, group: number) => game.outpostOut(building, group),
-      groupStationed: (i: number) => game.groupStationed(i),
-      groupHidingLine: (i: number) => game.groupHidingLine(i),
+      buildingSeats: (building: number) => game.buildingSeats(building),
+      buildingRecall: (building: number, ids: readonly number[]) => game.buildingRecall(building, ids),
+      townSeats: (town: number) => game.townSeats(town),
+      groupPlaces: (i: number) => game.groupPlaces(i),
       groupOut: (i: number, all: boolean) => game.groupOut(i, all),
       groupRecall: (i: number) => game.groupRecall(i),
       garrisonMore: (town: number) => game.garrisonMore(town),
@@ -311,6 +315,18 @@ export class Hud {
   }
 
   /** Every frame: text at most 10 times a second; alert arrows follow the camera. */
+  /** 進駐 (R13-01 B): the selection info folds while picking where to go in, and is as it was after. */
+  foldForEnter(on: boolean): void {
+    if (on && this.foldBefore === null) {
+      this.foldBefore = { plain: this.collapsed, group: this.groupCollapsed };
+      this.collapsed = this.groupCollapsed = true;
+    } else if (!on && this.foldBefore !== null) {
+      this.collapsed = this.foldBefore.plain;
+      this.groupCollapsed = this.foldBefore.group;
+      this.foldBefore = null;
+    }
+  }
+
   frame(now: number): void {
     this.minimap.update(now);
     this.drawArrows(now);

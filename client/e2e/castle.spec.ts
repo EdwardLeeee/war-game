@@ -124,3 +124,40 @@ test("城鎮四種狀態的城牆（假世界，3 倍）：我方治理、中立
   }
   check();
 });
+
+test("菱形（art-v7，ui 2026-11-06）：牆後的兵（城裡靠東牆、靠南牆）被牆擋住、畫成影子，越東邊的牆不會畫得比牆後的兵早；城外前面的不是", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "chromium", "the Release's castle at 3 倍: one browser is enough (WebKit on CI draws in software)");
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  // art-v6.4's castle as a diamond's (its pictures are square on's; the order is what is tested: the
+  // pieces' boxes on the plane and their depths), until art-v7's is the one in CI.
+  await page.route("**/castle/castle_E.json", async (route) => {
+    const res = await route.fetch();
+    const json = (await res.json()) as Record<string, unknown>;
+    await route.fulfill({ response: res, json: { ...json, view: "diamond" } });
+  });
+  await start(page, "mock=1&tps=20&art=x3&view=diamond");
+  await expect.poll(async () => (await castle(page))?.pieces ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
+  const small = (await towns(page)).find((t) => t.size === SMALL && t.cx === 30 && t.cy === 66);
+  if (small === undefined) throw new Error("no small town at 30, 66");
+  const cells = await page.evaluate((id) => window.__proto?.game?.castleCells(id) ?? null, small.id);
+  if (cells === null) throw new Error("no castle");
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const spears = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === 1).map((u) => u.id);
+  const { y1, x1 } = cells.inside;
+  // Inside, by the east wall and by the south wall (the near ones as a diamond): behind them.
+  const behind = [{ x: x1, y: small.cy - 1 }, { x: x1, y: small.cy + 1 }, { x: small.cx - 1, y: y1 }, { x: small.cx + 1, y: y1 }];
+  const ours = spears.slice(0, 4);
+  const shadowed = async () => ((await castle(page))?.ghostIds ?? []).filter((id) => ours.includes(id)).sort((a, b) => a - b);
+  await page.evaluate(([ids, c]) => window.__proto?.game?.place(ids, c), [ours, behind] as const);
+  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.4), [small.cx + 2, small.cy + 2] as const);
+  await expect.poll(shadowed, { timeout: 10_000 }).toEqual([...ours].sort((a, b) => a - b));
+  await shot(page, info, "castle-diamond-behind");
+  // Outside, just in front of the east wall and its gate (the fake world's towns are close: nothing
+  // else in front of them there): over the wall, no shadow. (Whether one just in front of each wall
+  // piece is over it is test/depth.test.ts's: these square-on pictures' boxes are not a diamond's.)
+  const ahead = [{ x: x1 + 2, y: small.cy }, { x: x1 + 2, y: small.cy + 2 }];
+  await page.evaluate(([ids, c]) => window.__proto?.game?.place(ids, c), [ours.slice(0, 2), ahead] as const);
+  await expect.poll(async () => (await shadowed()).filter((id) => ours.slice(0, 2).includes(id)), { timeout: 10_000 }).toEqual([]);
+  check();
+});

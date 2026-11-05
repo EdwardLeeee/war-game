@@ -124,15 +124,18 @@ export interface GameHook {
   /** D-096: openings drawn as broken gates, and our units drawn up on a castle's wall in the last frame. */
   brokenGates(): number;
   wallLifted(): number;
+  /** 進駐 (R13-01 B): its tags (where on the screen, what they say), its arrows, its prompt; empty when not picking. */
+  enter(): { tags: { id: string; name: string; mode: string; head: string; sub: string | null; off: boolean; x: number; y: number; w: number; h: number; leader: boolean }[]; arrows: { id: string; name: string; n: number; short: string; x: number; y: number }[]; blockers: { x: number; y: number; w: number; h: number }[]; prompt: string };
   /** 哨所 3 × 3 (D-121): spearmen drawn on the outposts' walks this frame, pokes drawn so far, stand points in our outpost's picture. */
   crew(): { drawn: number; pokes: number; stands: number };
   /** The units' atlases (D-085): which, how many pages, units drawn from them; null: the shapes. */
-  art(): { label: string; pages: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null;
+  art(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null;
   /** 你的陸 this game was started with (the computer wears the other). */
   culture(): string;
   /** The castles as drawn (D-089): wall pieces and floor tiles shown, towns drawn as blocks, towns no layout fits, units drawn behind a wall. */
   /** `walkable`: the pictures say where those on a wall stand (art-v5.2); `gates`: the gates drawn from pictures, by look (D-096). */
-  castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null;
+  /** `ghostIds`: the units drawn behind a wall this frame. */
+  castle(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; ghostIds: number[]; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null;
   /** 城內 B (castle 2): the towns' decor pieces: town, map cells, where its anchor is on screen (CSS px), shown or left out. */
   decor(): { town: number; piece: string; cells: [number, number][]; sx: number; sy: number; shown: boolean; leftOut: boolean; burnt: boolean }[];
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
@@ -358,6 +361,7 @@ export function gameHook(game: Game): GameHook {
     brokenGates: () => game.brokenGatesForTest,
     wallLifted: () => game.wallLiftedForTest,
     crew: () => game.crewDrawnForTest,
+    enter: () => game.enterForTest(),
     townWalls: () => game.townWallsForTest,
     art: () => game.artForTest,
     culture: () => game.culture,

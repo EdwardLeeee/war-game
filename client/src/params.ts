@@ -3,6 +3,7 @@
 
 import type { Culture } from "./art/spec.ts";
 import { CULTURES } from "./culture.ts";
+import { type ArtVariantId, artVariant } from "./lab/art-measure.ts";
 import { MAP_MODES, type MapMode } from "./sim.ts";
 
 /**
@@ -26,8 +27,8 @@ export interface PageParams {
    * 箭樓, 躲進建築), which the simulation has behind switches the page cannot reach.
    */
   round7: boolean;
-  /** `?test=1&scenario=e2e|perf|perf200|perf360|standard`: start that scenario (sim/PROTOCOL.md section 8). */
-  scenario: "standard" | "e2e" | "perf" | "perf200" | "perf360" | null;
+  /** `?test=1&scenario=e2e|perf|perf200|perf360|standard|wallshift`: start that scenario (sim/PROTOCOL.md section 8; wallshift: D-119's recording). */
+  scenario: "standard" | "e2e" | "perf" | "perf200" | "perf360" | "wallshift" | null;
   /**
    * The opponent is played by the computer. `?test=1&ai=0` turns it off (its units stand still),
    * so the main-flow e2e does not race it for the small town; the AI is tested by core's games.
@@ -105,6 +106,15 @@ export interface PageParams {
   groundQuality: "high" | "low";
   /** `?test=1&edge=1`: 浮空大陸's edge (R11, render/edge.ts) with the diamond, before the art says so (art-release.json's view). */
   edge: boolean;
+  /** `?tex=png|astc`: 貼圖 (D-128) instead of the 量測 panel's choice; any page (only the picture). */
+  tex: "png" | "astc" | null;
+  /**
+   * `?measure=x3-astc|x2-png|x3-png`: art-v7 量測 (D-128, lab/art-measure.ts): the page opens
+   * straight into that measurement, as the 量測 panel's buttons open it; any page (the user's iPhone).
+   */
+  measure: ArtVariantId | null;
+  /** `?test=1&measures=N`: that measurement N seconds long instead of 10 minutes (the e2e tests). */
+  measureSeconds: number | null;
 }
 
 export function parseParams(search: string): PageParams {
@@ -116,7 +126,7 @@ export function parseParams(search: string): PageParams {
     tps = Math.min(Number(raw), MAX_TEST_TPS);
   }
   const sc = q.get("scenario");
-  const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf" || sc === "perf200" || sc === "perf360") ? sc : null;
+  const scenario = test && (sc === "standard" || sc === "e2e" || sc === "perf" || sc === "perf200" || sc === "perf360" || sc === "wallshift") ? sc : null;
   const logs = q.get("logs");
   const logsUrl = test && logs !== null && /^https?:\/\/[^\s]+$/.test(logs) ? logs : null;
   const m = q.get("map");
@@ -134,5 +144,10 @@ export function parseParams(search: string): PageParams {
   const ghost = test && q.get("ghost") === "outline" ? "outline" : null;
   const u = q.get("ui");
   const ui = test && (u === "r6" || u === "proto") ? u : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", outpostHide: test && q.get("mock") === "1" && q.get("outpost") === "1" && q.get("hide") === "1", walls: test && q.get("mock") === "1" && q.get("walls") === "1", siege: test && q.get("mock") === "1" && q.get("siege") === "1", keep: test && q.get("mock") === "1" && q.get("keep") === "1", market: test && q.get("mock") === "1" && q.get("market") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, ghost, loadTimes: test && q.get("loadtimes") === "1", ground: !test || q.get("ground") === "real" ? "real" : null, groundQuality: q.get("groundq") === "low" ? "low" : "high", edge: test && q.get("edge") === "1" };
+  const t = q.get("tex");
+  const tex = t === "png" || t === "astc" ? t : null;
+  const measure = artVariant(q.get("measure"))?.id ?? null;
+  const ms = q.get("measures");
+  const measureSeconds = test && ms !== null && /^[1-9][0-9]{0,3}$/.test(ms) ? Number(ms) : null;
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", outpostHide: test && q.get("mock") === "1" && q.get("outpost") === "1" && q.get("hide") === "1", walls: test && q.get("mock") === "1" && q.get("walls") === "1", siege: test && q.get("mock") === "1" && q.get("siege") === "1", keep: test && q.get("mock") === "1" && q.get("keep") === "1", market: test && q.get("mock") === "1" && q.get("market") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, ghost, loadTimes: test && q.get("loadtimes") === "1", ground: !test || q.get("ground") === "real" ? "real" : null, groundQuality: q.get("groundq") === "low" ? "low" : "high", edge: test && q.get("edge") === "1", tex, measure, measureSeconds };
 }

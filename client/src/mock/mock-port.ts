@@ -163,7 +163,7 @@ export const MOCK_RULES_OUTPOST: Rules = {
 export const MOCK_RULES_OUTPOST_HIDE: Rules = {
   ...MOCK_RULES_OUTPOST,
   buildings: MOCK_RULES_OUTPOST.buildings.map((b) => (b.type === BuildingType.Outpost ? { ...b, size: 3, hp: 1500 } : b)),
-  features: { ...(MOCK_RULES_OUTPOST.features as Features), outpostHide: true } as Features,
+  features: { ...(MOCK_RULES_OUTPOST.features as Features), outpostHide: true },
   outpost: { ...(MOCK_RULES_OUTPOST.outpost ?? { reach: 8, chase: 12 }), slots: 9 },
 };
 
@@ -1063,7 +1063,7 @@ export class MockPort implements SimPort {
         .sort((a, c) => a.id - c.id)[0];
       if (near === undefined) continue;
       const n = Math.min(crew, 3);
-      this.events.push({ k: "poke", building: b.id, target: near.id, ...(n > 1 ? { n } : {}) } as unknown as SimEvent);
+      this.events.push({ k: "poke", building: b.id, target: near.id, ...(n > 1 ? { n } : {}) });
     }
   }
 
