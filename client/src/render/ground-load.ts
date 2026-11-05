@@ -61,7 +61,16 @@ export async function loadGround(bases: readonly string[], times: LoadRecorder |
         console.warn(`ground: relief: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    return { json: g, layers, noise, macro, water, town, relief };
+    // R9's ripples (art-v7 on): data (height and slopes), straight; it will not load, R9's land with art-v6's water.
+    let ripple: GroundTextures["ripple"] = null;
+    if (relief !== null && g.ripple !== undefined) {
+      try {
+        ripple = tileTexture(await page(`${base}${g.ripple.file}`, times, undefined, true));
+      } catch (err) {
+        console.warn(`ground: ripple: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return { json: g, layers, noise, macro, water, town, relief, ripple };
   }
   return null;
 }

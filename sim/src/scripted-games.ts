@@ -91,6 +91,8 @@ plan.towerRush = Number(arg("tower-rush", "0"));
 plan.rushBuildersOnly = flag("tower-rush-farmers");
 // D-081: the midway fortress (--fortress).
 plan.fortress = flag("fortress");
+// D-119: the spearmen posted at the fortress (--fort-guards 0: none; absent: as many as an outpost takes).
+if (arg("fort-guards", "") !== "") plan.fortGuards = Number(arg("fort-guards", ""));
 // D-081: the army holds by the fortress until it is this many or minute 30 (--fortress-hold 60).
 plan.fortressHold = Number(arg("fortress-hold", "0"));
 if (plan.fortressHold > 0) plan.fortress = true;
@@ -946,7 +948,7 @@ const options = [
   mapMode === "twin-rivers" ? "雙河關（我只知道探到的，派一名槍兵偵察；電腦也要偵察）" : "",
   plan.towerRush > 0 ? `塔攻：${plan.towerRush} 名槍兵到電腦主城旁蓋哨所駐守，再蓋 2 座箭樓（D-080）` : "",
   plan.rushBuildersOnly ? "塔攻（只派村民）：4 名村民到電腦主城旁蓋哨所和 2 座箭樓，沒有護送、沒有駐守（D-080）" : "",
-  plan.fortress ? "半路要塞：第 12 分起，在往電腦主城的路上、離家 37 格，蓋哨所（6 名槍兵駐守）和 5 座箭樓（D-081）" : "",
+  plan.fortress ? `半路要塞：第 12 分起，在往電腦主城的路上、離家 37 格，蓋哨所（${plan.fortGuards < 0 ? "駐守滿" : plan.fortGuards === 0 ? "沒人駐守" : `${plan.fortGuards} 名槍兵駐守`}）和 5 座箭樓（D-081）` : "",
   plan.fortressHold > 0 ? `大軍守在要塞旁，湊到 ${plan.fortressHold} 名或第 30 分才出發（D-081）` : "",
   plan.harass > 0 ? `殺村民：第 10 分起 ${plan.harass} 名兵（遠程先）去殺電腦離主城 20 格以上的村民，看不到就繞電腦主城找；附近敵兵比自己多或剩一半就回家，1 分鐘後補滿再去（D-086 A3）` : "",
   plan.pushAhead && !plan.turtle ? `後期翻盤：24 名村民、遠程為主、家旁 ${plan.homeTowers} 座箭樓、騎兵佔 ${plan.cavalryShare}%、城鎮打下來就治理，兵到 ${plan.pushAt} 名而且比最近看到的電腦兵多才出門（D-086）` : "",
