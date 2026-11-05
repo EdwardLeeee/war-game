@@ -59,7 +59,7 @@ def _sock(n, ident):
     return next(s for s in n.inputs if s.identifier == ident)
 
 
-def lamellar(name, plate, lace, along="round", row=None, width=None):
+def lamellar(name, plate, lace, along="round", row=None, width=None, light=(0.25, 0.8)):
     """Rows of small plates laced together, from the part's rest coordinates ("rest", r7_prod.apply): each row's lower
     edge a dark band of lacing and shadow (the cue that survives at actual size: a row is 4-5 px at 3x), faint seams
     between the plates, each plate a little lighter or darker than the next. along: "round" counts the plates round
@@ -118,8 +118,8 @@ def lamellar(name, plate, lace, along="round", row=None, width=None):
     L(cell.outputs[0], wn.inputs["Vector"])
     var = op("MULTIPLY_ADD", wn.outputs["Value"], 0.3)
     var.node.inputs[2].default_value = 0.85
-    grad = op("MULTIPLY_ADD", f, 0.25)                      # a plate a little lighter toward its top
-    grad.node.inputs[2].default_value = 0.8
+    grad = op("MULTIPLY_ADD", f, light[0])                  # a plate a little lighter toward its top
+    grad.node.inputs[2].default_value = light[1]
     bright = op("MULTIPLY", op("MULTIPLY", var, seam), grad)
     pc = N("ShaderNodeRGB")
     pc.outputs[0].default_value = (*plate, 1)
@@ -167,8 +167,11 @@ def _materials():
         # art-v7.4 (the review 2026-11-04: the 具裝 not realistic enough, read as a striped blanket): plates counted along
         # the horse, a little larger (4 x 8.5 cm, real barding's lamellae read at phone size), the lacing a dark leather
         # brown, not orange
-        horse_armour=lamellar("lamellar_horse_r8", (0.07, 0.062, 0.058), (0.11, 0.05, 0.03), along="body", row=2 / 24,
-                              width=0.04),    # (2 / 24 m: unit_r9._barding_rows steps the rows in the mesh, 24 to 2 m)
+        # (judge r1: the dark brown lacing merged the flanks into one dark mass, worse at phone size than the orange: the
+        # lacing a red-brown again, the plates 5.5 cm so a seam lands every 3 px, each plate light at its top and dark at
+        # its foot so a row reads by its own light)
+        horse_armour=lamellar("lamellar_horse_r8", (0.07, 0.062, 0.058), (0.21, 0.08, 0.04), along="body", row=2 / 24,
+                              width=0.055, light=(0.5, 0.65)),    # (2 / 24 m: unit_r9._barding_rows steps the rows, 24 to 2 m)
         lacquer=lib.mat("lacquer_e", (0.16, 0.05, 0.035), 0.32),             # red-black lacquer: lance, crown
         headcloth=lib.mat("sack_e", (0.3, 0.26, 0.2), 0.85),                # the farmer's head cloth
         robe=lib.mat("russet_e", (0.32, 0.16, 0.09), 0.8),                  # 木蘭: the Daoist's robe

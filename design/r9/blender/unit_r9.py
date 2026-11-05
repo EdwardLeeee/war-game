@@ -68,7 +68,7 @@ def _bump(m, scale, strength, distance=0.002, stretch=None):
     nt.links.new(b.outputs["Normal"], p.inputs["Normal"])
 
 
-def _plates(m):
+def _plates(m, seam=0.55, rough=(0.25, 0.68)):
     """east_r8.lamellar's plates, read at phone size (R9 r3: rows of corrugation, no plates; a plate is 1.6 px at 3x):
     each plate's tone further from the next, its seam darker, each plate tilted a little its own way (the highlight
     breaks into flecks) and its own roughness (some polished, some dull)."""
@@ -88,7 +88,7 @@ def _plates(m):
             n.inputs[2].default_value = 0.72
         if n.operation == "MULTIPLY" and n.inputs[0].is_linked and n.inputs[0].links[0].from_node.bl_idname == "ShaderNodeMath" \
                 and n.inputs[0].links[0].from_node.operation == "LESS_THAN":
-            n.inputs[1].default_value = 0.55                  # the seams darker
+            n.inputs[1].default_value = seam                  # the seams darker
             g = n.inputs[0].links[0].from_node.inputs[0].links[0].from_socket
     bump.inputs["Strength"].default_value = 0.95
     if g is not None:                                         # the tilt: (random - 0.5) x (across the plate - 0.5)
@@ -104,8 +104,8 @@ def _plates(m):
         nt.links.new(h.outputs[0], bump.inputs["Height"])
     r = nt.nodes.new("ShaderNodeMapRange")                     # roughness plate by plate
     nt.links.new(wn.outputs["Value"], r.inputs["Value"])
-    r.inputs["To Min"].default_value = 0.25
-    r.inputs["To Max"].default_value = 0.68
+    r.inputs["To Min"].default_value = rough[0]
+    r.inputs["To Max"].default_value = rough[1]
     nt.links.new(r.outputs["Result"], p.inputs["Roughness"])
 
 
@@ -279,6 +279,9 @@ def apply(u=None, kind=None):
             # a little light through the skin, no more (R9 r3: more, with the green bounce, gave grey-green flecks)
             p.inputs["Subsurface Weight"].default_value = 0.1
             p.inputs["Subsurface Radius"].default_value = (0.012, 0.005, 0.003)
+        elif "lamellar_horse" in n:
+            # the 具裝's lacquer (judge r1: no plates, no lacquer sheen): deeper seams, glossier plates
+            _plates(m, seam=0.32, rough=(0.14, 0.42))
         elif "lamellar" in n:
             _plates(m)
         elif n.startswith("iron"):
