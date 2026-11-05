@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 
-SRC = Path("/home/oraclelee/Desktop/war-game-worktrees/ui/design/r11/build")
+SRC = Path(__file__).resolve().parents[2] / "r11" / "build"       # design/r11/build (not in git)
 OUT = Path(__file__).resolve().parents[1] / "build"
 B1 = SRC / "v7bout/V7B-01-東陸建築-phone.png"
 B3 = SRC / "v7bout/V7B-03-東陸城牆-phone.png"

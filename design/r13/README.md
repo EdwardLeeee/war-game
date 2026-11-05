@@ -69,7 +69,7 @@ R13-02 的 A 有勝的 7 頁＋敗的總覽、戰鬥；B 有勝的 5 個捲動�
 
 ```bash
 (cd client && npm ci)                       # Playwright
-python3 design/r13/common/field.py          # build/r13-*.png（讀 war-game-worktrees/ui/design/r11/build 的圖，只讀）
+python3 design/r13/common/field.py          # build/r13-*.png（讀 design/r11/build 的圖，只讀）
 python3 design/r13/common/field_b2.py       # build/r13-b2-*.png（讀 design/b1/build/v7atlas_dl、design/production/build/v8u_dl）
 node design/r13/common/shoot.mjs            # build/raw/（可加狀態前綴，例如 R13-02-A）
 python3 design/r13/common/compose.py        # build/out/
