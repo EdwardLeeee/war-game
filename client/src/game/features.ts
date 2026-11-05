@@ -50,8 +50,7 @@ export function outpostSlots(rules: Pick<Rules, "features" | "outpost"> | null |
  * its walk (BuildingField.soldiers, sent to all who see it). Off: they stand guard beside it (D-080).
  */
 export function outpostHide(rules: Pick<Rules, "features"> | null | undefined): boolean {
-  // TODO(core outpost-hide): Features.outpostHide once the simulation's protocol has it.
-  return (features(rules) as Features & { outpostHide?: boolean }).outpostHide === true;
+  return features(rules).outpostHide === true;
 }
 
 /**
