@@ -276,6 +276,10 @@ jobs:
           # art-v7 the floating continent's edge (design/r11/edge-format.md): the r8v7e pieces, the clouds, the waterfall
           if [ -f design/b1/build/b1/prod/cliff_sw_0_x3.json ]; then
             /usr/bin/python3 design/r11/common/edge_pack.py design/b1/build/b1/prod design/b1/build
+            # and the ground's additions for R9's look on the diamond camera (edge-format.md section 3)
+            for k in 3 2; do
+              /usr/bin/python3 design/r9/common/ground_v7.py "design/b1/build/atlas_x$k/ground" "$k"
+            done
           fi
 
       - name: Upload the building atlases
