@@ -396,30 +396,71 @@ export interface Fort {
   /** In sight now (not only remembered), and then whether someone hides in it (BuildingFlag.Occupied: the screen shows it too). */
   seen: boolean;
   occupied: boolean;
+  /**
+   * D-119 (rules.features.outpostHide): an outpost's spearmen hidden in it (the row's soldiers, given to all who see
+   * it), whether it holds (BuildingFlag.Hold: its spearmen stay in), and its hp (as last seen).
+   */
+  soldiers: number;
+  hold: boolean;
+  hp: number;
 }
 
+/**
+ * D-119 (ceo 2026-11-04, with core's #370): outposts spearmen hide in, weighed against the army that would go (FortValues,
+ * groupWorth). Off: as before #370's rules (measurements turn it off for the baseline; the game always has it on).
+ * `scale` (permille) on a group's Lanchester term when it has such an outpost: its spearmen cannot be hit until it
+ * falls, so their pokes do not thin out as a group of towers' arrows do while the towers fall one by one (D-081's
+ * calibration was on 5 towers); the measurements choose it.
+ */
+export const FORT_HIDE_AI = { on: true, scale: 1000, memory: true };
+
+/**
+ * D-119 (FORT_HIDE_AI.memory; op1, run 41770978767: the turtle mans 2 of its 6 outposts, and each empty one out of
+ * sight counted 9 with an 8-cell reach, so hard held off and 1 -> 10 random-map turtle games ran out the clock): what
+ * the AI last saw of each enemy outpost, finished, in sight: its spearmen and whether it held. A remembered row has
+ * neither (fog keeps a building's place and hp only). Hard only (op2, run 41808010405: random-map turtle 10 -> 2 out
+ * of time): normal keeps no count of the unseen, and with it a remembered outpost's reach of 1 cleared its way from
+ * home while the group it broke off from still turned it back on the march, again and again (fixed-map fortress games
+ * out of time 8 -> 31).
+ */
+export type OutpostMemory = Map<number, { soldiers: number; hold: boolean }>;
+
 /** The enemy outposts and arrow towers in the view (in sight or remembered). */
-export function enemyForts(view: PlayerView, player: number, rules: Rules): Fort[] {
+export function enemyForts(view: PlayerView, player: number, rules: Rules, memo?: OutpostMemory): Fort[] {
   const arrows = rules.arrows === undefined ? 7 : (rules.arrows.arrowTower.range + CELL - 1) >> CELL_SHIFT;
   const guards = rules.outpost?.reach ?? 8;
   const towers = (rules.towerReach?.outpost ?? 6) + arrows;
+  const hide = FORT_HIDE_AI.on && rules.features?.outpostHide === true;
   const out: Fort[] = [];
   for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
     const owner = view.buildings[r + BuildingField.owner];
     const type = view.buildings[r + BuildingField.type];
     if (owner === player || owner === NEUTRAL || (type !== BuildingType.Outpost && type !== BuildingType.ArrowTower)) continue;
     const outpost = type === BuildingType.Outpost;
+    const flags = view.buildings[r + BuildingField.flags];
+    const id = view.buildings[r + BuildingField.id];
+    const seenNow = (flags & BuildingFlag.Remembered) === 0;
+    const done = view.buildings[r + BuildingField.progress] >= 1000;
+    // FORT_HIDE_AI.memory: a remembered outpost as last seen finished (none: 9, and its guards' reach, as without it).
+    const was = hide && outpost && !seenNow && FORT_HIDE_AI.memory ? memo?.get(id) : undefined;
+    if (hide && outpost && seenNow && done && memo !== undefined) memo.set(id, { soldiers: view.buildings[r + BuildingField.soldiers], hold: (flags & BuildingFlag.Hold) !== 0 });
+    // D-119: a holding outpost's spearmen strike only what stands by it.
+    const hold = hide && outpost && (seenNow ? (flags & BuildingFlag.Hold) !== 0 : was?.hold === true);
     out.push({
       id: view.buildings[r + BuildingField.id],
       type,
       x: view.buildings[r + BuildingField.cellX],
       y: view.buildings[r + BuildingField.cellY],
       size: rules.buildings[type]?.size ?? 2,
-      hits: outpost ? guards : arrows,
+      hits: outpost ? (hold ? 1 : guards) : arrows,
       reach: outpost ? Math.max(guards, towers) : arrows,
       done: view.buildings[r + BuildingField.progress] >= 1000,
-      seen: (view.buildings[r + BuildingField.flags] & BuildingFlag.Remembered) === 0,
-      occupied: (view.buildings[r + BuildingField.flags] & BuildingFlag.Occupied) !== 0,
+      // A remembered outpost the AI saw finished counts as it saw it (FORT_HIDE_AI.memory).
+      seen: seenNow || was !== undefined,
+      occupied: (flags & BuildingFlag.Occupied) !== 0,
+      soldiers: hide && outpost ? (seenNow ? view.buildings[r + BuildingField.soldiers] : (was?.soldiers ?? 0)) : 0,
+      hold,
+      hp: view.buildings[r + BuildingField.hp],
     });
   }
   return out;
@@ -712,6 +753,23 @@ export interface FortValues {
   slots: number;
   /** An attacker against forts, by UnitType. */
   vs: number[];
+  /**
+   * D-119 (rules.features.outpostHide): outposts spearmen hide in. By UnitType: its damage per tick, the share of it an
+   * outpost takes (permille: ranged units and mages 1/5, others 1/3, siege engines as on any building), whether it fights
+   * next to its target (melee: the hidden spearmen reach it), and a hidden spearman's damage on it (permille, the
+   * multipliers). The spearmen's poke, an arrow tower's damage per tick and hp, and a spearman's damage x hp (the scale).
+   */
+  hide: boolean;
+  dps: number[];
+  outpostShare: number[];
+  melee: boolean[];
+  pokeOn: number[];
+  poke: number;
+  spearDps: number;
+  arrowDps: number;
+  towerHp: number;
+  outpostHp: number;
+  base: number;
 }
 
 export function fortValues(rules: Rules): FortValues {
@@ -725,7 +783,31 @@ export function fortValues(rules: Rules): FortValues {
     const u = rules.units[t];
     if (u !== undefined) vs[t] = worth(u.attack / u.cooldown, u.hp + u.shield);
   }
+  const share = (k?: [number, number]) => (k === undefined ? 1000 : Math.round((1000 * k[0]) / k[1]));
+  const dps: number[] = [];
+  const outpostShare: number[] = [];
+  const melee: boolean[] = [];
+  const pokeOn: number[] = [];
+  for (const [k, u] of Object.entries(rules.units)) {
+    const t = Number(k);
+    dps[t] = u.attack / u.cooldown;
+    melee[t] = u.range <= CELL;
+    outpostShare[t] = t === UnitType.Siege ? 1000 * (rules.siege?.vsBuildings ?? 1) : t === UnitType.Ranged || t === UnitType.Mage ? share(rules.outpost?.ranged) : share(rules.outpost?.melee);
+    const m = rules.multipliers?.find((x) => x.attacker === UnitType.Spearman && x.target === t);
+    pokeOn[t] = m === undefined ? 1000 : Math.round((1000 * m.num) / m.den);
+  }
   return {
+    hide: FORT_HIDE_AI.on && rules.features?.outpostHide === true,
+    dps,
+    outpostShare,
+    melee,
+    pokeOn,
+    poke: rules.outpost?.poke ?? 1,
+    spearDps: spear.attack / spear.cooldown,
+    arrowDps: arrow.damage / arrow.cooldown,
+    towerHp: rules.buildings[BuildingType.ArrowTower]?.hp ?? 500,
+    outpostHp: rules.buildings[BuildingType.Outpost]?.hp ?? 400,
+    base,
     tower: worth(arrow.damage / arrow.cooldown, rules.buildings[BuildingType.ArrowTower]?.hp ?? 500),
     // Its damage as a ranged unit's (it dies with the tower). Calibrated on scratch: twice this, hard
     // would not go with the 45 soldiers that took the scripted fortress (5 towers, 3 in each) in base runs.
@@ -743,7 +825,58 @@ export interface FortGroup {
   x: number;
   y: number;
   radius: number;
+  /** Against the army given to fortGroups (D-119: with outposts spearmen hide in, groupWorth weighs it against another). */
   worth: number;
+  /**
+   * D-119 (FortValues.hide): its finished arrow towers, what counts one by one (those hiding in towers, guards outside,
+   * an outpost's spearmen: they come out when it falls), and its outposts: hp, and the spearmen striking from them.
+   */
+  towers: number;
+  linear: number;
+  outposts: { hp: number; pokers: number }[];
+}
+
+/** The melee cells round an outpost's footprint (3 x 3: 16): at most so many strike it at once. */
+const OUTPOST_SIDES = (size: number) => 4 * size + 4;
+
+/**
+ * D-119 (ceo 2026-11-04, core's #370): a group with outposts spearmen hide in, against `list`: as the towers are
+ * weighed (Lanchester, damage per tick x hp), the group as one: the towers' arrows and the hidden spearmen's pokes
+ * (on its melee only: they strike what stands by the outpost, the multipliers counted, by the melee's share of it)
+ * against the towers' hp and the outposts' hp over the share of its damage they take (ranged units and mages 1/5,
+ * melee 1/3 and at most OUTPOST_SIDES of them, siege engines in full): the longer the outposts take to pull down,
+ * the longer the arrows and pokes go on. On top, one by one, those that count so (FortGroup.linear).
+ * Without outposts, or with D-119 off, its worth as before.
+ */
+export function groupWorth(g: FortGroup, list: readonly { type: number }[], v: FortValues): number {
+  if (!v.hide || g.outposts.length === 0 || list.length === 0) return g.worth;
+  let all = 0;
+  let onOutpost = 0;
+  let meleeN = 0;
+  let meleeVs = 0;
+  let vs = 0;
+  let pokeOn = 0;
+  for (const u of list) {
+    vs += v.vs[u.type] ?? 0;
+    if (v.melee[u.type]) {
+      meleeN++;
+      meleeVs += v.vs[u.type] ?? 0;
+      pokeOn += v.pokeOn[u.type] ?? 1000;
+    }
+  }
+  const sides = g.outposts.length * OUTPOST_SIDES(3);
+  const meleeCap = meleeN > sides ? sides / meleeN : 1;
+  for (const u of list) {
+    const d = v.dps[u.type] ?? 0;
+    all += d;
+    onOutpost += (d * (v.outpostShare[u.type] ?? 1000) * (v.melee[u.type] ? meleeCap : 1)) / 1000;
+  }
+  const share = all > 0 && onOutpost > 0 ? onOutpost / all : 1 / 3;
+  const pokers = g.outposts.reduce((a, o) => a + o.pokers, 0);
+  const pokes = meleeN === 0 || vs === 0 ? 0 : ((pokers * v.poke * v.spearDps * pokeOn) / (1000 * meleeN)) * (meleeVs / vs);
+  const d = g.towers * v.arrowDps + pokes;
+  const h = g.towers * v.towerHp + g.outposts.reduce((a, o) => a + o.hp, 0) / share;
+  return Math.round((10 * FORT_HIDE_AI.scale * Math.sqrt((d * h) / v.base)) / 1000) + g.linear;
 }
 
 /**
@@ -752,7 +885,7 @@ export interface FortGroup {
  * remembered (the AI cannot tell, so it assumes the worst; in f1fd2a87 every one of them was full); an
  * outpost with its guards in sight (`guardsAt`), or as many as it holds when only remembered.
  */
-export function fortGroups(forts: Fort[], guardsAt: (f: Fort) => number, v: FortValues): FortGroup[] {
+export function fortGroups(forts: Fort[], guardsAt: (f: Fort) => number, v: FortValues, against: readonly { type: number }[] = []): FortGroup[] {
   const list = forts.filter((f) => f.done).sort((a, b) => a.id - b.id);
   const root = list.map((_, k) => k);
   const find = (k: number): number => (root[k] === k ? k : (root[k] = find(root[k])));
@@ -776,12 +909,24 @@ export function fortGroups(forts: Fort[], guardsAt: (f: Fort) => number, v: Fort
     let x = 0;
     let y = 0;
     let worth = 0;
+    let towers = 0;
+    let linear = 0;
+    const outposts: { hp: number; pokers: number }[] = [];
     for (const f of members) {
       const c = fortCentre(f);
       x += c.x;
       y += c.y;
-      if (f.type === BuildingType.ArrowTower) worth += v.tower + v.hidden * (!f.seen || f.occupied ? v.holds : 0);
-      else worth += v.guard * (f.seen ? guardsAt(f) : v.slots);
+      if (f.type === BuildingType.ArrowTower) {
+        worth += v.tower + v.hidden * (!f.seen || f.occupied ? v.holds : 0);
+        towers++;
+        linear += v.hidden * (!f.seen || f.occupied ? v.holds : 0);
+      } else if (v.hide) {
+        // D-119: the spearmen hidden in it as its row shows them, as many as it holds when only remembered; those
+        // standing outside (attacking) as before; its hp as last seen.
+        const pokers = f.seen ? f.soldiers : v.slots;
+        outposts.push({ hp: f.hp > 0 ? f.hp : v.outpostHp, pokers });
+        linear += v.guard * ((f.seen ? guardsAt(f) : 0) + pokers);
+      } else worth += v.guard * (f.seen ? guardsAt(f) : v.slots);
     }
     x = Math.trunc(x / members.length);
     y = Math.trunc(y / members.length);
@@ -790,7 +935,9 @@ export function fortGroups(forts: Fort[], guardsAt: (f: Fort) => number, v: Fort
       const c = fortCentre(f);
       radius = Math.max(radius, Math.ceil(Math.sqrt((c.x - x) * (c.x - x) + (c.y - y) * (c.y - y))) + f.hits + 1);
     }
-    out.push({ ids: members.map((f) => f.id), x, y, radius, worth });
+    const g: FortGroup = { ids: members.map((f) => f.id), x, y, radius, worth, towers, linear, outposts };
+    if (v.hide && outposts.length > 0) g.worth = groupWorth({ ...g, worth: 0 }, against.length > 0 ? against : [{ type: UnitType.Spearman }], v);
+    out.push(g);
   }
   return out;
 }
@@ -817,9 +964,9 @@ export function groupsOnWay(groups: FortGroup[], a: { x: number; y: number }, b:
  * D-083 (D-081's leftover (a)): what the forts reaching a town of radius `radius` at (x, y) are worth together
  * (their groups, as D-081 counts them: towers, those hiding, an outpost's guards).
  */
-function fortsAtTown(groups: readonly FortGroup[], x: number, y: number, radius: number): number {
+function fortsAtTown(groups: readonly FortGroup[], x: number, y: number, radius: number, list: readonly { type: number }[] = [], v?: FortValues): number {
   let w = 0;
-  for (const g of groups) if ((g.x - x) * (g.x - x) + (g.y - y) * (g.y - y) <= (g.radius + radius) * (g.radius + radius)) w += g.worth;
+  for (const g of groups) if ((g.x - x) * (g.x - x) + (g.y - y) * (g.y - y) <= (g.radius + radius) * (g.radius + radius)) w += v === undefined ? g.worth : groupWorth(g, list, v);
   return w;
 }
 
@@ -2033,7 +2180,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (seen > 0 && (was === undefined || seen >= was.worth || tick - was.tick >= 2 * TICKS_PER_MINUTE)) plunderFoes.set(id, { worth: seen, tick });
         const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
         const w = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
-        return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5) * 10 + enemy * 13;
+        return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5, army, fv) * 10 + enemy * 13;
       };
       /**
        * D-096 (GATE_AI.walls): with enemy soldiers by town `id` it holds, its ranged units and mages there go up the walls
@@ -2126,7 +2273,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
       };
       // Fort groups (D-081), as hard; the enemy soldiers it counts are those in sight (normal keeps no count of the unseen).
       const guardsAt = (f: Fort) => foes.filter((e) => e.order === Order.Post && fortDist2(f, e.x, e.y) <= 9).length;
-      const groups = forts.length === 0 ? [] : fortGroups(forts, guardsAt, fv);
+      const groups = forts.length === 0 ? [] : fortGroups(forts, guardsAt, fv, army);
       const groupOf = (f: Fort) => groups.find((g) => g.ids.includes(f.id));
       const bySiege = (g: FortGroup) => dist2(g.x, g.y, enemyHome.cellX, enemyHome.cellY) <= FORT_SIEGE * FORT_SIEGE;
       const armyBy = (g: FortGroup) => {
@@ -2143,7 +2290,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         }
         // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
         // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
-        return w * 10 >= g.worth * 10 + armyBy(g) * 13 && w * 100 >= failed * fortFailed;
+        return w * 10 >= groupWorth(g, list, fv) * 10 + armyBy(g) * 13 && w * 100 >= failed * fortFailed;
       };
       const tooStrong = (list: { type: number }[]) => groups.filter((g) => !bySiege(g) && !beats(g, list));
       const routeFor = (from: { x: number; y: number }, to: { x: number; y: number }, list: { type: number }[]) => ({ go: groupsOnWay(tooStrong(list), from, to).length === 0 });
@@ -2179,7 +2326,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         const g = groupOf(f);
         const army = 10 * foes.filter((e) => e.order !== Order.Post && dist2(e.x, e.y, c.x, c.y) <= FORT_GUARDS * FORT_GUARDS).length;
         const w = vsForts(list);
-        return w * 10 >= (g === undefined ? 0 : g.worth) * 10 + army * 13 && w * 100 >= failedBy(f) * fortFailed;
+        return w * 10 >= (g === undefined ? 0 : groupWorth(g, list, fv)) * 10 + army * 13 && w * 100 >= failedBy(f) * fortFailed;
       };
       /** Fell back from town `id` because of forts, and they are still too strong for the army (with FORT_FAILED within FORT_FORGET). */
       const fortsBar = (id: number) => {
@@ -3223,6 +3370,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** What the army that set out was worth against forts (D-081: a break-off remembers that, not what is left). */
   let marchWorth = 0;
   const failedAt = new Map<number, Failed>();
+  /** D-119 (FORT_HIDE_AI.memory): the enemy outposts as last seen finished. */
+  const outpostMemo: OutpostMemory = new Map();
   /** D-086 A9 (plan.fortExit): forts it really fought and broke off from: how many times in a row, the last when. */
   const fortLost = new Map<number, { n: number; tick: number }>();
   /** Falling back round forts (aroundForts): the point first, and until when. */
@@ -4176,7 +4325,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       /** D-086 A4 (plan.ruinsAgain): last seen in ruins, out of sight now, and past the time read off them: maybe neutral again. */
       const staleRuin = (id: number, t: HardTown) => plan.ruinsAgain && t.state === TownState.Ruins && !t.visible && restoreAt.has(id) && tick >= restoreAt.get(id)!;
       // Enemy forts (D-080, D-081).
-      const forts = enemyForts(view, player, rules);
+      const forts = enemyForts(view, player, rules, outpostMemo);
       /** A town under the arrows or guards of an enemy fort (D-081). */
       const underArrows = (t: { x: number; y: number }) => forts.some((o) => o.done && fortDist2(o, t.x, t.y) <= (o.hits + 1) * (o.hits + 1));
       // Garrisons: the spearmen (else any soldier but a mage) nearest each held town, one more
@@ -4464,7 +4613,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           for (const e of intel.values()) if (!e.post && tick - e.tick <= TICKS_PER_MINUTE && dist2(e.x, e.y, x, y) <= RESCUE_NEAR * RESCUE_NEAR) enemy += WORTH[e.type];
           const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
           const w = list.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
-          return w * 10 >= fortsAtTown(gs, x, y, RESCUE_NEAR) * 10 + enemy * 13;
+          return w * 10 >= fortsAtTown(gs, x, y, RESCUE_NEAR, list, fv) * 10 + enemy * 13;
         };
         for (const id of rescueSquad) if (!byId.has(id)) rescueSquad.delete(id);
         if (rescueAt !== null) {
@@ -4661,7 +4810,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           for (const e of intel.values()) if (!e.post && tick - e.tick < 2 * TICKS_PER_MINUTE && dist2(e.x, e.y, t.x, t.y) <= r * r) enemy += WORTH[e.type];
           const gs = forts.length === 0 ? [] : fortGroups(forts, (o) => foes.filter((e) => e.order === Order.Post && fortDist2(o, e.x, e.y) <= 9).length, fv);
           const w = army.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
-          return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5) * 10 + enemy * 13;
+          return w * 10 >= fortsAtTown(gs, t.x, t.y, rules.towns?.[t.size]?.radius ?? 5, army, fv) * 10 + enemy * 13;
         };
         /**
          * D-096 (GATE_AI.walls): with enemy soldiers by town `id` it holds, its ranged units and mages there go up the walls
@@ -4715,7 +4864,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         };
         // Fort groups (D-081): forts that cover each other count together, with those hiding in them.
         const guardsAt = (f: Fort) => foes.filter((e) => e.order === Order.Post && fortDist2(f, e.x, e.y) <= 9).length;
-        const groups = forts.length === 0 ? [] : fortGroups(forts, guardsAt, fv);
+        const groups = forts.length === 0 ? [] : fortGroups(forts, guardsAt, fv, army);
         const groupOf = (f: Fort) => groups.find((g) => g.ids.includes(f.id));
         /** A group whose middle is by the enemy's main city (FORT_SIEGE) is the siege's: the city's defences count as before. */
         const bySiege = (g: FortGroup) => dist2(g.x, g.y, enemyHome.cellX, enemyHome.cellY) <= FORT_SIEGE * FORT_SIEGE;
@@ -4751,7 +4900,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           }
           // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
           // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
-          const need = g.worth * 10 + armyBy(g) * by;
+          const need = groupWorth(g, list, fv) * 10 + armyBy(g) * by;
           return w * 10 >= need && (w * 100 >= failed * again || memoryLifted(w, need, failed, g.ids));
         };
         /** The groups too strong for `list` (not the siege's). */
@@ -4797,7 +4946,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const g = groupOf(f);
           const army = worth(foesNear(c.x, c.y, FORT_GUARDS).filter((e) => e.order !== Order.Post));
           const w = vsForts(list);
-          const need = (g === undefined ? 0 : g.worth) * 10 + army * 13;
+          const need = (g === undefined ? 0 : groupWorth(g, list, fv)) * 10 + army * 13;
           const failed = failedBy(f);
           return w * 10 >= need && (w * 100 >= failed * fortFailed || memoryLifted(w, need, failed, [f.id]));
         };
