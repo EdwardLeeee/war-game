@@ -124,6 +124,8 @@ export interface GameHook {
   /** D-096: openings drawn as broken gates, and our units drawn up on a castle's wall in the last frame. */
   brokenGates(): number;
   wallLifted(): number;
+  /** 進駐 (R13-01 B): its tags (where on the screen, what they say), its arrows, its prompt; empty when not picking. */
+  enter(): { tags: { id: string; name: string; mode: string; head: string; sub: string | null; off: boolean; x: number; y: number; w: number; h: number; leader: boolean }[]; arrows: { id: string; name: string; n: number; short: string; x: number; y: number }[]; blockers: { x: number; y: number; w: number; h: number }[]; prompt: string };
   /** 哨所 3 × 3 (D-121): spearmen drawn on the outposts' walks this frame, pokes drawn so far, stand points in our outpost's picture. */
   crew(): { drawn: number; pokes: number; stands: number };
   /** The units' atlases (D-085): which, how many pages, units drawn from them; null: the shapes. */
@@ -358,6 +360,7 @@ export function gameHook(game: Game): GameHook {
     brokenGates: () => game.brokenGatesForTest,
     wallLifted: () => game.wallLiftedForTest,
     crew: () => game.crewDrawnForTest,
+    enter: () => game.enterForTest(),
     townWalls: () => game.townWallsForTest,
     art: () => game.artForTest,
     culture: () => game.culture,

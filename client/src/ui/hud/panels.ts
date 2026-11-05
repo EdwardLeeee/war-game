@@ -8,6 +8,7 @@ import { DEPOT_WORD } from "../../game/depot.ts";
 import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
 import { autoTrainBuildings, buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots } from "../../game/features.ts";
 import { MARKET_RESOURCES, marketOn, marketRules, buyPrice, sellGain, tradeBlock, tradeOne } from "../../game/market.ts";
+import { enterOn } from "../../game/enter.ts";
 import { POST_TYPE } from "../../game/outpost.ts";
 import type { PendingOrders } from "../../game/pending.ts";
 import { allIn, orderCounts, orderState, type OrderState } from "../../game/orders.ts";
@@ -556,7 +557,7 @@ export class SelectionInfo {
         call.setAttribute("aria-label", `叫 1 名${UNIT_NAME[t] ?? ""}躲進來`);
         calls.push(call);
       }
-      out = button(row, "全部出來", "", () => this.host.command({ c: "leave", building: id }), "chip secondary");
+      out = button(row, "全部離開", "", () => this.host.command({ c: "leave", building: id }), "chip secondary");
     }
     // 哨所 (D-080): how many spearmen stand guard, ＋槍兵, 全部離開; then 攻擊／堅守 and what the one on means.
     const outpost = own && type === BuildingType.Outpost && outpostSlots(view.rules) > 0 ? this.outpostRows(id) : null;
@@ -642,7 +643,7 @@ export class SelectionInfo {
         for (const g of groups) {
           const entry = el("span", whose, "keep-group");
           el("span", entry, "keep-group-name", `編隊 ${g.group + 1}：${g.n} 名`);
-          button(entry, "歸隊", "", () => this.host.outpostOut(id, g.group), "chip secondary").setAttribute("aria-label", `編隊 ${g.group + 1} 的駐守歸隊`);
+          button(entry, "召回", "", () => this.host.outpostOut(id, g.group), "chip secondary").setAttribute("aria-label", `編隊 ${g.group + 1} 的駐守召回`);
         }
       }
       const s = this.host.outpostState(id);
@@ -993,33 +994,13 @@ export class CommandArea {
       if (soldiers.length > 1) button(this.el, "整理隊形", "槍兵在前", () => this.host.reform(), "secondary");
       if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
       // No 晶砲 or 自動施放 (D-095: 「晶泡的按鈕可以拿掉了」): mages always fire on their own.
-      // 駐守 (D-080): spearmen go and stand guard at our outpost.
-      if (outpostSlots(view.rules) > 0 && sel.units.some((id) => view.unitType(id) === POST_TYPE)) {
-        const picking = mode === "post";
-        const post = picking
-          ? button(this.el, "取消", "駐守", () => this.host.setMode("normal"), "secondary")
-          : button(this.el, "駐守", "點哨所", () => this.host.setMode("post"), "secondary");
-        if (picking) post.classList.add("active");
-      }
-      // 躲進去 (round 7, D-061): ranged units and mages hide in our main city or an arrow tower.
-      const hiders = garrisonTypes(view.rules);
-      if (sel.units.some((id) => hiders.includes(view.unitType(id)))) {
-        const picking = mode === "garrison";
-        // 「取消躲進去」 broke into two lines in one column: 取消 over 躲進去.
-        const hide = picking
-          ? button(this.el, "取消", "躲進去", () => this.host.setMode("normal"), "secondary")
-          : button(this.el, "躲進去", "主城或箭樓", () => this.host.setMode("garrison"), "secondary");
-        if (picking) hide.classList.add("active");
-      }
-      // 駐軍 (2026-10-25, game/station.ts): the soldiers selected and the rest of their groups walk
-      // into a town we hold and stay as its 留守; the ranged and the mages go up on its walls by
-      // themselves (the user 2026-10-31: 「上城牆那個可以拿掉了」); only once we hold a town.
-      if (soldiers.length > 0 && this.host.holdsTown()) {
-        const picking = mode === "station";
-        const station = picking
-          ? button(this.el, "取消", "駐軍", () => this.host.setMode("normal"), "secondary")
-          : button(this.el, "駐軍", "點自己的城", () => this.host.setMode("station"), "secondary");
-        if (picking) station.classList.add("active");
+      // 進駐 (D-124, D-125): 駐軍, 躲進去 and 駐守 as one: then a tap on one of ours, which says who goes in (game/enter.ts).
+      if (soldiers.length > 0 && enterOn(view.rules)) {
+        const picking = mode === "enter";
+        const enter = picking
+          ? button(this.el, "取消", "進駐", () => this.host.setMode("normal"), "secondary")
+          : button(this.el, "進駐", "點建築", () => this.host.setMode("enter"), "secondary");
+        if (picking) enter.classList.add("active");
       }
       return;
     }

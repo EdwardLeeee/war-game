@@ -121,7 +121,7 @@ test("自己的哨所：寫駐守幾名、最多幾名；＋槍兵叫站著沒�
   await expect(off).toBeDisabled();
 });
 
-test("駐守：選了槍兵和遠程兵，按駐守只有槍兵去；點錯地方說明要點什麼；駐守的兵還算編隊的（駐2、駐守中：哨所）、不補人、不算全軍；點哨所按歸隊就走回編隊（D-080、ceo 2026-10-26）", async ({ page }, info) => {
+test("駐守：選了槍兵和遠程兵，按進駐、哨所的標籤寫進槍兵留遠程，點哨所只有槍兵去；點錯地方說明要點什麼；駐守的兵還算編隊的（駐2、駐守中：哨所）、不補人、不算全軍；點哨所按召回就走回編隊（D-080、ceo 2026-10-26、D-125）", async ({ page }, info) => {
   await start(page);
   const id = await ourOutpost(page);
   const spear = await ownIds(page, 1);
@@ -130,16 +130,18 @@ test("駐守：選了槍兵和遠程兵，按駐守只有槍兵去；點錯地�
   await saveGroup(page, GROUP_1);
   const before = Number(/(\d+)/.exec((await armyButton(page).textContent()) ?? "")?.[1] ?? -1);
   await selectForCommands(page, [...spear.slice(0, 2), ranged[0]]);
-  const post = page.locator(".cmds").getByRole("button", { name: /^駐守/ });
-  await expect(post).toContainText("點哨所");
-  await post.tap();
-  await expect.poll(() => mode(page)).toBe("post");
-  await expect(page.getByText("點自己的哨所：只有槍兵會去駐守")).toBeVisible();
-  await expect(page.locator(".cmds").getByRole("button", { name: /^取消\s*駐守/ })).toHaveClass(/active/);
+  // 進駐 (D-125): the outpost's tag says the two spearmen go, the ranged one stays.
+  const enter = page.locator(".cmds").getByRole("button", { name: /^進駐/ });
+  await expect(enter).toContainText("點建築");
+  await centre(page, OUTPOST.x + 1, OUTPOST.y + 1);
+  await enter.tap();
+  await expect.poll(() => mode(page)).toBe("enter");
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.enter()))?.tags.find((t) => t.id === `b${id}`)).toMatchObject({ head: "進 槍兵 2", sub: "留 遠程 1", off: false });
+  await expect(page.locator(".cmds").getByRole("button", { name: /^取消\s*進駐/ })).toHaveClass(/active/);
   await shot(page, info, "outpost-post-prompt");
-  await tap(page, await at(page, { x: 18, y: 67 }));
-  await expect(toast(page, "要點自己蓋好的哨所")).toBeVisible();
-  expect(await mode(page)).toBe("post");
+  await tap(page, await at(page, { x: OUTPOST.x - 3, y: OUTPOST.y - 3 }));
+  await expect(toast(page, "要點亮起來的建築：自己蓋好的城、主城、箭樓或哨所")).toBeVisible();
+  expect(await mode(page)).toBe("enter");
   await tapOutpost(page, OUTPOST);
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "post", u: spear.slice(0, 2), building: id });
   expect(await mode(page)).toBe("normal");
@@ -163,7 +165,7 @@ test("駐守：選了槍兵和遠程兵，按駐守只有槍兵去；點錯地�
   const panel = page.locator(".sel-info");
   await expect(panel).toContainText("編隊 1：2 名");
   await shot(page, info, "outpost-panel-groups");
-  await panel.getByRole("button", { name: "編隊 1 的駐守歸隊" }).tap();
+  await panel.getByRole("button", { name: "編隊 1 的駐守召回" }).tap();
   await expect(toast(page, "2 名離開哨所，走回編隊 1")).toBeVisible();
   const back = (await sent(page)).filter((c) => c.auto === true && c.c === "retreat").at(-1);
   expect(back).toMatchObject({ u: two, x: Math.floor(archer?.cx ?? -1), y: Math.floor(archer?.cy ?? -1) });
@@ -181,15 +183,19 @@ test("敵人的哨所：看得到時寫堅守中；沒開哨所的開關時，�
   await expect(page.locator(".sel-info .sel-status")).toContainText("堅守中");
   await shot(page, info, "outpost-enemy-hold");
   await start(page, false);
+  // No outposts: 進駐 lights no outpost.
   await selectForCommands(page, await ownIds(page, 1));
-  await expect(page.locator(".cmds").getByRole("button", { name: /^駐守/ })).toHaveCount(0);
+  await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.enter()))?.tags.length ?? 0).toBeGreaterThan(0);
+  expect((await page.evaluate(() => window.__proto?.game?.enter()))?.tags.some((t) => t.name === "哨所")).toBe(false);
+  await page.locator(".cmds").getByRole("button", { name: /^取消\s*進駐/ }).tap();
   await selectForCommands(page, []);
   await page.getByRole("button", { name: "建造" }).tap();
   await expect(page.getByRole("button", { name: /^箭樓/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^哨所/ })).toHaveCount(0);
 });
 
-test("版面：建造選單多了哨所、哨所面板、選了槍兵有駐守時，按鈕至少 44 pt、都在畫面裡（814×380）", async ({ page }) => {
+test("版面：建造選單多了哨所、哨所面板、選了槍兵有進駐時，按鈕至少 44 pt、都在畫面裡（814×380）", async ({ page }) => {
   await start(page);
   const fits = async (what: string) => {
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
@@ -208,6 +214,6 @@ test("版面：建造選單多了哨所、哨所面板、選了槍兵有駐守�
   await expect(page.locator(".outpost-note")).toBeVisible();
   await fits("outpost panel");
   await selectForCommands(page, [...(await ownIds(page, 1)), ...(await ownIds(page, 2)), ...(await ownIds(page, 3))]);
-  await expect(page.locator(".cmds").getByRole("button", { name: /^駐守/ })).toBeVisible();
-  await fits("army with 駐守");
+  await expect(page.locator(".cmds").getByRole("button", { name: /^進駐/ })).toBeVisible();
+  await fits("army with 進駐");
 });

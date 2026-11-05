@@ -79,7 +79,7 @@ async function build(page: Page, type: number, name: RegExp, near: { x: number; 
   return spot;
 }
 
-test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵躲進去 → 全部出來 → 蓋馬廄 → 訓練騎兵", async ({ page }, info) => {
+test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵進駐 → 全部離開 → 蓋馬廄 → 訓練騎兵", async ({ page }, info) => {
   test.setTimeout(420_000);
   const check = watchErrors(page);
   await page.goto("./?test=1&scenario=e2e&tps=100&ai=0");
@@ -102,14 +102,19 @@ test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵躲進
   const tower = (await ownBuilding(page, ARROW_TOWER)) as Building;
   await shot(page, info, "r7sim-1-tower");
 
-  // 2. 躲進去: the 4 ranged units of the squad; the tower holds 3, the fourth stays out.
+  // 2. 進駐 (D-125): the 4 ranged units of the squad; the tower holds 3: the 3 nearest go (its tag
+  // says so), the fourth stays out.
   const ranged = (await own(page, RANGED)).map((u) => u.id).sort((a, b) => a - b);
   expect(ranged.length).toBe(4);
   await selectForCommands(page, ranged);
-  await page.locator(".cmds").getByRole("button", { name: /^躲進去/ }).tap();
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("garrison");
+  await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("enter");
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.enter()))?.tags.find((t) => t.id === `b${tower.id}`)?.head).toBe("進 最近的 3 名");
   await tapBuilding(page, tower);
-  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "garrison", u: ranged, building: tower.id });
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "garrison", building: tower.id });
+  const went = (await lastOrder(page))?.u as number[];
+  expect(went.length).toBe(3);
+  expect(went.every((id) => ranged.includes(id))).toBe(true);
   await expect.poll(async () => (await buildings(page)).find((b) => b.id === tower.id)?.soldiers, TICKS).toBe(3);
   const hiding = (await units(page)).filter((u) => ranged.includes(u.id) && u.order === 9).map((u) => u.id);
   expect(hiding.length, "three on their way or inside, one left out").toBe(3);
@@ -118,8 +123,8 @@ test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵躲進
   await expect(panel.locator(".garrison-count")).toHaveText("躲了 3 名士兵（最多 3 名）");
   await shot(page, info, "r7sim-2-garrison");
 
-  // 3. 全部出來.
-  await panel.getByRole("button", { name: "全部出來" }).tap();
+  // 3. 全部離開.
+  await panel.getByRole("button", { name: "全部離開" }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "leave", building: tower.id });
   await expect.poll(async () => (await buildings(page)).find((b) => b.id === tower.id)?.soldiers, TICKS).toBe(0);
   await expect.poll(async () => (await units(page)).filter((u) => hiding.includes(u.id)).every((u) => u.order !== 9 && u.action !== 7), TICKS).toBe(true);
