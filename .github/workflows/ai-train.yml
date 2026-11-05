@@ -8,6 +8,8 @@
 # again (v2's chain broke on one failed download, run 41078447033); its own groups (ai-train-v3-*).
 # NN v4 (ai/train-v4, never merged; D-122, ceo 2026-11-04): squads and the charge, from v3's weights (train.ts widens
 # them); its own groups (ai-train-v4-*), so a trial runs beside v3's chain and the switch waits for a run's end.
+# NN v4m: no push trigger. A new branch's first push counts every file as changed, so v3's run.json started a run
+# from hard itself on ai/train-v4m (42022292274, with a fill-in run); runs start by workflow_dispatch only.
 # NN v4m (ai/train-v4m, never merged; D-120, ceo 2026-11-05): main 6ca70e3's rules (D-119's batch) with v4s and v4f; its own groups
 # (ai-train-v4m-*): a chain on the old rules' branch must not cancel a run waiting here, nor start fill-in runs on these rules.
 # NN v4f (ai/train-v4f, never merged; 2026-11-05): eval of pick f<head>.<choice>: what a choice is worth when always taken.
@@ -91,9 +93,6 @@ on:
       deadline:
         description: "fill: when the main chain's pairs are due (epoch seconds)"
         default: "0"
-  push:
-    branches: ["ai/train-*"]
-    paths: ["sim/src/ai/learn/run.json"]
 
 permissions:
   contents: read
