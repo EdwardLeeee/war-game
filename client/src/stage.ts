@@ -54,13 +54,19 @@ let limits: string | null = null;
  * The phone's texture limits, for the sprite atlas decisions (client/docs/sprite-atlas.md,
  * section 8): largest texture, textures per draw call, ASTC compression. Read once.
  */
+/** Whether the GPU takes ASTC 4×4 textures (D-128: the atlases' compressed pages). */
+export function hasAstc(app: Application): boolean {
+  const gl = "gl" in app.renderer ? (app.renderer.gl as WebGL2RenderingContext) : null;
+  return gl?.getExtension("WEBGL_compressed_texture_astc") != null;
+}
+
 export function gpuLimits(app: Application): string {
   if (limits === null) {
     const gl = "gl" in app.renderer ? (app.renderer.gl as WebGL2RenderingContext) : null;
     if (gl === null) {
       limits = "GPU：不是 WebGL";
     } else {
-      const astc = gl.getExtension("WEBGL_compressed_texture_astc") !== null;
+      const astc = hasAstc(app);
       limits = `最大貼圖 ${gl.getParameter(gl.MAX_TEXTURE_SIZE)}、一次繪製 ${gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)} 張、ASTC ${astc ? "有" : "沒有"}`;
     }
   }

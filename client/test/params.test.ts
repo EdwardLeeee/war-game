@@ -7,15 +7,15 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null });
 });
 
 test("tps, mock, r7, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false });
+  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high", edge: false });
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null });
   assert.equal(parseParams("?test=1&mock=1").mock, true);
   assert.equal(parseParams("?test=1&mock=1").round7, false);
   assert.equal(parseParams("?test=1&mock=1&r7=1").round7, true);
@@ -95,4 +95,15 @@ test("對局紀錄：test=1&logs= 改傳到那個網址（e2e 攔截用）；沒
   assert.equal(parseParams("?logs=https://game-logs.test/logs").logsUrl, null);
   assert.equal(parseParams("?test=1&logs=javascript:alert(1)").logsUrl, null);
   assert.equal(parseParams("?test=1").logsUrl, null);
+});
+
+test("貼圖與 art-v7 量測（D-128）：?tex=、?measure= 玩家的頁面也有（手機量測）；?measures= 只有測試頁", () => {
+  assert.equal(parseParams("?tex=astc").tex, "astc");
+  assert.equal(parseParams("?tex=png").tex, "png");
+  assert.equal(parseParams("?tex=etc").tex, null);
+  assert.equal(parseParams("?measure=x3-astc").measure, "x3-astc");
+  assert.equal(parseParams("?measure=x3").measure, null);
+  assert.equal(parseParams("?test=1&measures=5").measureSeconds, 5);
+  assert.equal(parseParams("?measures=5").measureSeconds, null);
+  assert.equal(parseParams("?test=1&measures=0").measureSeconds, null);
 });

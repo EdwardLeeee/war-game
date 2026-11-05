@@ -17,7 +17,8 @@ import { type Projection, PT_PER_M } from "../camera/projection.ts";
 import type { LoadRecorder } from "../lab/load-times.ts";
 import { TILE_PX } from "../tuning.ts";
 import { CELL_M, CORNER_LEGS_M, cliffFromBottom, cliffPieces, type EdgeJson, type EdgeSide, edgeFalls, edgeFiles, edgeLight, edgePoint, parseEdge } from "./edge-layout.ts";
-import { json, page } from "./unit-art.ts";
+import type { Compressed } from "../art/compressed.ts";
+import { json, keepOnGpu, spritePage } from "./unit-art.ts";
 
 /** The edge's pictures, as loaded. */
 export interface EdgeArt {
@@ -25,8 +26,12 @@ export interface EdgeArt {
   textures: Map<string, Texture>;
 }
 
-/** The edge under `base` (…/edge/), or null: no edge there (a 404, or not ui's format). */
-export async function loadEdge(base: string, times: LoadRecorder | null): Promise<EdgeArt | null> {
+/**
+ * The edge under `base` (…/edge/), or null: no edge there (a 404, or not ui's format). `compressed`:
+ * its pages as ASTC 4×4 where the list has them (D-128), as the atlases'; `upload` (the renderer's):
+ * each to the GPU at once and what it was made from let go, as the atlases' (unit-art.ts keepOnGpu).
+ */
+export async function loadEdge(base: string, times: LoadRecorder | null, compressed: Compressed | null = null, upload: ((t: Texture) => void) | null = null): Promise<EdgeArt | null> {
   let e: EdgeJson | null;
   try {
     e = parseEdge(await json(`${base}edge.json`, times));
@@ -35,9 +40,11 @@ export async function loadEdge(base: string, times: LoadRecorder | null): Promis
   }
   if (e === null) return null;
   const textures = new Map<string, Texture>();
+  const resident = { pages: 0, bytes: 0, astc: 0 };
   await Promise.all(
     edgeFiles(e).map(async (f) => {
-      textures.set(f, await page(`${base}${f}`, times));
+      const t = await spritePage(`${base}${f}`, times, compressed);
+      textures.set(f, upload === null ? t : keepOnGpu(t, upload, resident));
     }),
   );
   return { json: e, textures };

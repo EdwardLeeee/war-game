@@ -2,7 +2,8 @@
 // window, the engine-spike thresholds; D-083), 確定性檢查, the result box and the log. Opened from a corner
 // button for now; the HUD's menu takes it over.
 
-import { ART_CHOICES, ART_LABEL, type ArtChoice, loadArtChoice, saveArtChoice } from "../art/pref.ts";
+import { ART_CHOICES, ART_LABEL, type ArtChoice, loadArtChoice, loadTexChoice, saveArtChoice, saveTexChoice, TEX_CHOICES, TEX_LABEL, type TexChoice } from "../art/pref.ts";
+import { ART_MEASURE_NOTE, ART_VARIANTS, type ArtCost, type ArtVariant, artMeasureRows } from "./art-measure.ts";
 import { HeaderField as H, STEP_BATCH } from "../sim.ts";
 import type { CheckResult } from "./determinism.ts";
 import { type FrameContext, Lab, type MeasureResult, PASS, PERF_SCENARIOS, type PerfScenario, STALL_MS, WINDOW_MS } from "./lab.ts";
@@ -25,6 +26,16 @@ export interface LabHooks {
   artAvailable?: boolean;
   /** ASTC 樣本 (D-085), when the build has one. */
   astcSample?: () => void;
+  /**
+   * art-v7 量測 (D-128, lab/art-measure.ts), when the build has its Release: `open` each on a page
+   * of its own; what the textures cost, what was drawn, whether the GPU has ASTC, for its result.
+   */
+  artMeasure?: {
+    open(v: ArtVariant): void;
+    cost(): ArtCost;
+    drawn(): string;
+    gpuAstc(): boolean;
+  };
   /** Our population and its cap now (the perf scenarios are mirrored: both sides'), or null before the first snapshot. */
   population?: () => { population: number; cap: number } | null;
   /**
@@ -49,6 +60,15 @@ function session(): Storage | null {
     return window.sessionStorage;
   } catch {
     return null;
+  }
+}
+
+/** Kept as the measurement under way (what it is), for measureCutShort after a reload. */
+export function markMeasuring(what: string): void {
+  try {
+    session()?.setItem(MEASURING_KEY, what);
+  } catch {
+    // Not kept: a reload would go unnoticed.
   }
 }
 
@@ -80,11 +100,14 @@ export class LabPanel {
   private readonly live: HTMLElement;
   private readonly measureBtns: HTMLButtonElement[];
   private readonly artBtns: HTMLButtonElement[];
+  private readonly texBtns: HTMLButtonElement[];
   private groundBtns: HTMLButtonElement[] = [];
   private readonly checkBtn: HTMLButtonElement;
   private readonly status: HTMLElement;
   private readonly resultBox: HTMLElement;
   private readonly loadBox: HTMLElement;
+  /** art-v7 量測's variant, while one is measured (D-128). */
+  private variant: ArtVariant | null = null;
   /** The population when the measurement started (the rules decide the cap: D-083). */
   private startPopulation: { population: number; cap: number } | null = null;
   private readonly frameMs: number[] = [];
@@ -134,6 +157,37 @@ export class LabPanel {
       return b;
     });
     if (hooks.artAvailable !== true) make("span", arts, "lab-art-note", "這個版本沒有圖集");
+    // 貼圖 (D-128): the pages as PNG or ASTC 4×4, from the next game on.
+    const texes = make("div", this.panel, "lab-buttons lab-art lab-tex");
+    texes.setAttribute("role", "radiogroup");
+    texes.setAttribute("aria-label", "貼圖");
+    make("span", texes, "lab-art-label", "貼圖");
+    this.texBtns = TEX_CHOICES.map((c) => {
+      const b = make("button", texes, "", TEX_LABEL[c]);
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.disabled = hooks.artAvailable !== true;
+      b.addEventListener("click", () => {
+        saveTexChoice(c);
+        this.showArt();
+        this.log.add(`貼圖：${TEX_LABEL[c]}（下一局起；顯示卡沒有 ASTC、或美術沒有壓縮圖時用 PNG）`);
+      });
+      return b;
+    });
+    // art-v7 量測 (D-128): each opens a page of its own, straight into it.
+    const artMeasure = hooks.artMeasure;
+    if (artMeasure !== undefined) {
+      const box = make("div", this.panel, "lab-art-measure");
+      box.setAttribute("role", "group");
+      box.setAttribute("aria-label", "art-v7 量測");
+      make("p", box, "lab-note", `art-v7 量測：${ART_MEASURE_NOTE}`);
+      const row = make("div", box, "lab-buttons");
+      for (const v of ART_VARIANTS) {
+        const b = make("button", row, "", `量 ${v.label}`);
+        b.type = "button";
+        b.addEventListener("click", () => artMeasure.open(v));
+      }
+    }
     // 寫實地面 (D-093): 高、低 and 量地面, on test pages with it.
     const ground = hooks.ground;
     if (ground !== undefined) {
@@ -202,13 +256,19 @@ export class LabPanel {
     this.refreshButtons();
   }
 
-  /** Which 美術 is chosen. */
+  /** Which 美術 and 貼圖 are chosen. */
   private showArt(): void {
     const chosen: ArtChoice = loadArtChoice();
     ART_CHOICES.forEach((c, i) => {
       const on = c === chosen;
       this.artBtns[i].setAttribute("aria-checked", on ? "true" : "false");
       this.artBtns[i].classList.toggle("secondary", !on);
+    });
+    const tex: TexChoice = loadTexChoice();
+    TEX_CHOICES.forEach((c, i) => {
+      const on = c === tex;
+      this.texBtns[i].setAttribute("aria-checked", on ? "true" : "false");
+      this.texBtns[i].classList.toggle("secondary", !on);
     });
   }
 
@@ -249,17 +309,19 @@ export class LabPanel {
     return !this.panel.hidden;
   }
 
-  startMeasure(now: number): boolean {
-    if (!this.lab.startMeasure(now)) return false;
+  /** `windowMs`: the window (30 s, art-v7 量測's 10 minutes); `variant`: art-v7 量測's (D-128). */
+  startMeasure(now: number, windowMs?: number, variant?: ArtVariant): boolean {
+    if (!this.lab.startMeasure(now, windowMs)) return false;
+    this.variant = variant ?? null;
     this.startPopulation = this.hooks.population?.() ?? null;
     try {
       const env = this.hooks.env();
-      session()?.setItem(MEASURING_KEY, `美術 ${String(env.art ?? "關")}、場景 ${String(env.scenario ?? "?")}`);
+      markMeasuring(`${variant === undefined ? "" : `art-v7 ${variant.label}：`}美術 ${String(env.art ?? "關")}、場景 ${String(env.scenario ?? "?")}`);
     } catch {
       // Not kept: a reload would go unnoticed.
     }
     this.resultBox.hidden = true;
-    this.log.add("暖機 5 秒，接著量 30 秒");
+    this.log.add(`暖機 5 秒，接著量 ${this.windowText()}`);
     this.refreshButtons();
     return true;
   }
@@ -295,7 +357,7 @@ export class LabPanel {
   frame(now: number, dt: number, ctx: FrameContext): void {
     const wasWarmup = this.lab.phase === "warmup";
     const result = this.lab.frame(now, dt, ctx);
-    if (wasWarmup && this.lab.phase === "measuring") this.log.add("量測開始（30 秒）");
+    if (wasWarmup && this.lab.phase === "measuring") this.log.add(`量測開始（${this.windowText()}）`);
     if (result !== null) this.showResult(result);
     this.frameMs.push(dt);
     this.frameAt.push(now);
@@ -318,6 +380,12 @@ export class LabPanel {
         `tick ${round2(t.median)} ms（最大 ${round2(t.max)}）` +
         (this.hooks.fake() ? "（假資料）" : "");
     }
+  }
+
+  /** The window in words: 30 秒, 10 分鐘. */
+  private windowText(): string {
+    const s = Math.round(this.lab.windowMs / 1000);
+    return s >= 60 && s % 60 === 0 ? `${s / 60} 分鐘` : `${s} 秒`;
   }
 
   private refreshButtons(): void {
@@ -378,8 +446,19 @@ export class LabPanel {
       ["每張畫面的繪製次數", `中位數 ${r.drawsMedian}、最多 ${r.drawsMax}`, null],
       ["美術", `${String(env.art ?? "關")}`, null],
     ];
+    // art-v7 量測 (D-128): what the textures cost on this phone, which way they were drawn, and the
+    // phone, first: in the one screenshot with the fps under them.
+    const variant = this.variant;
+    const am = this.hooks.artMeasure;
+    if (variant !== null && am !== undefined) {
+      const [head, ...rest] = artMeasureRows(variant, am.drawn(), am.cost(), am.gpuAstc(), navigator.userAgent);
+      rows.unshift([head[0], head[1], null], ["量測時間", this.windowText(), null], ...rest.map(([k, v]): [string, string, null] => [k, v, null]));
+    }
+    this.variant = null;
     for (const [k, v, ok] of rows) make("p", box, "", `${ok === null ? "・" : ok ? "✓" : "✗"} ${k}：${v}`);
     make("p", box, "small", `樣本：${r.frames} 幀、${r.ticks} tick；${Object.values(env).join("；")}`);
     this.refreshButtons();
+    // In sight for the screenshot (art-v7 量測, D-128: the phone's panel scrolls, the result under the buttons).
+    box.scrollIntoView({ block: "start" });
   }
 }

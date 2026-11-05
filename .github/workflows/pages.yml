@@ -116,18 +116,19 @@ jobs:
           curl -sSLf -o "${GITHUB_WORKSPACE}/spike-site/licenses/godot-LICENSE.txt" "${base}/LICENSE.txt"
           curl -sSLf -o "${GITHUB_WORKSPACE}/spike-site/licenses/godot-COPYRIGHT.txt" "${base}/COPYRIGHT.txt"
 
-      # The units' atlases (D-085): the Release art.lock.json pins, checked against its SHA-256.
+      # The units' atlases (D-085): the Release art.lock.json pins, checked against its SHA-256; and
+      # art-lab.lock.json's for art-v7 量測 (D-128), beside them until the game switches to it.
       - name: Atlases from cache
         uses: actions/cache@v6
         with:
           path: client/.art-cache
-          key: art-${{ hashFiles('client/art.lock.json') }}
+          key: art-${{ hashFiles('client/art.lock.json', 'client/art-lab.lock.json') }}
       - name: Prototype
         working-directory: client
         run: |
           set -euo pipefail
           npm ci
-          node scripts/fetch-art.ts
+          node scripts/fetch-art.ts --lab
           # 寫實地面's development set (R7's CC0 photos, by ui's sha256; ?test=1&ground=real only) until
           # art-v6 ships ui's ground: a failed download is a warning, never a failed build.
           node scripts/fetch-ground-dev.ts
