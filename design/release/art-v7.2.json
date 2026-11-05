@@ -1,0 +1,68 @@
+{
+ "tag": "art-v7.2",
+ "view": "diamond",
+ "note": "art-v7.1 加可以染成施法那一方玩家色的晶砲預警圈（D-129，使用者 2026-11-05：「法師法圈顏色跟該陣營一樣」）。效果圖集多五張白色的 warn_fill_t、warn_sigil_glow_t、warn_rim_t、warn_sigil_t、warn_core_t，effects.json 寫 tint、tint_value、tint_white（算法在 design/b1/README.md「給 client：晶砲預警圈 B」第 5 點）；原本的六張照舊。其他圖和 art-v7.1 一樣；ASTC 照舊（x3 ASTC 為主，沒有 ASTC 的裝置退回 x2 PNG）。",
+ "units": {
+  "farmer_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-farmer_e"
+  },
+  "spear_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-spear_e"
+  },
+  "bow_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-bow_e"
+  },
+  "hcav_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-hcav_e"
+  },
+  "siege_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-siege_e"
+  },
+  "mage_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-mage_e"
+  },
+  "farmer_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-farmer_w"
+  },
+  "pike_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-pike_w"
+  },
+  "bow_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-bow_w"
+  },
+  "knight_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-knight_w"
+  },
+  "siege_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-siege_w"
+  },
+  "mage_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-mage_w"
+  }
+ },
+ "effects": {
+  "run": 42057471775,
+  "artifact": "production-effects-atlas"
+ },
+ "buildings": {
+  "run": 42021020457,
+  "artifact": "production-buildings"
+ },
+ "castle": true,
+ "terrain": true,
+ "ground": true,
+ "edge": true,
+ "astc": true
+}
