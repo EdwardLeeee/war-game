@@ -63,6 +63,13 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
       expect(x.y, "the ✕ on the screen").toBeGreaterThanOrEqual(0);
       expect(x.x + x.width).toBeLessThanOrEqual(size.width);
       expect(Math.min(x.width, x.height), "a finger across").toBeGreaterThanOrEqual(44);
+      // Nothing cut at the side, nothing to scroll sideways: the right column's ＋ whole in the body (ceo 2026-11-06).
+      const side = await panel.locator(".sel-body").evaluate((e) => {
+        const r = e.getBoundingClientRect();
+        return { scroll: e.scrollWidth, client: e.clientWidth, right: r.right, plus: Math.max(...[...e.querySelectorAll(".group-row button")].map((b) => b.getBoundingClientRect().right)) };
+      });
+      expect(side.scroll, `${size.width}×${size.height}: no sideways scroll`).toBeLessThanOrEqual(side.client);
+      expect(side.plus, "the right column's ＋ inside the body").toBeLessThanOrEqual(side.right);
     }
     // 814 × 300: it scrolls inside; the title line stays at the top, the last row comes into view.
     const body = panel.locator(".sel-body");

@@ -864,6 +864,11 @@ button.order-retreat {
 
 .sel-body {
   min-height: 0;
+  /* The width under the ✕ is the body's too (its padding): the rows that use it (margin-right: -46px)
+     are inside what scrolls, neither cut nor scrolled sideways (ceo 2026-11-06: the ＋ cut flat). */
+  margin-right: -46px;
+  padding-right: 46px;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   /* Scrolled by a finger (the HUD lets touches through to the map elsewhere). */
@@ -875,11 +880,16 @@ button.order-retreat {
   position: sticky;
   top: 0;
   z-index: 1;
+  /* Its background to the body's edge, under the ✕: nothing scrolled shows beside it. */
+  margin-right: -46px;
+  padding-right: 46px;
   background: var(--panel);
 }
 
 .sel-close {
   position: absolute;
+  /* Over the body, which reaches under it (and its title line, kept at the top). */
+  z-index: 2;
   top: 4px;
   right: 4px;
   width: 44px;
