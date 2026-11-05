@@ -816,6 +816,7 @@ function play(seed: number): GameRecord {
   aiFarmers.idle = Math.round((farmerIdle * 20 * 10) / 1200) / 10;
   aiFarmers.hiding = Math.round((farmerHiding * 20 * 10) / 1200) / 10;
   const aiRescue = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]?.stats?.() ?? null;
+  const aiGathered = [0, 1, 2, 3].reduce((a, k) => a + w.gathered[1 * 4 + k], 0);
   return {
     seed,
     style: r.styles[1] ?? "",
@@ -862,6 +863,7 @@ function play(seed: number): GameRecord {
     ...(plan.lateSiege ? { siege: siegeWatch.result(), lateAt } : {}),
     aiFarmers,
     aiRescue,
+    aiGathered,
     marches: st.marches,
     brokenOff: st.brokenOff,
     waves,
