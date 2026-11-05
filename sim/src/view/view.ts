@@ -105,6 +105,7 @@ const SCENARIO_ID: Record<string, number> = {
   perf: Scenario.Perf,
   perf200: Scenario.Perf200,
   perf360: Scenario.Perf360,
+  wallshift: Scenario.WallShift,
 };
 
 export function buildView(game: Game, player: number | null, info?: RunnerInfo): PlayerView {

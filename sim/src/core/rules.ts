@@ -201,6 +201,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
       plunderOnce: TOWN_ONCE.on, towers: TOWERS.on, garrison: GARRISON.on, cavalry: CAVALRY.on,
       ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
       ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}), ...(KEEP.on ? { keep: true } : {}), ...(MARKET.on ? { market: true } : {}),
+      ...(WALL_SHIFT.on && WALLS.on ? { wallShift: true } : {}),
     },
     arrows: {
       mainCity: MAIN_ARROW,
@@ -218,6 +219,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     // Sent as `outpost` is; `features` says whether they are on.
     gate: { rangedNum: GATE.rangedNum, rangedDen: GATE.rangedDen, rebuildTicks: GATE.rebuildTicks },
     walls: { range: WALLS.range, takenNum: WALLS.takenNum, takenDen: WALLS.takenDen, sling: WALLS.sling },
+    wallShift: { wait: WALL_SHIFT.wait, back: WALL_SHIFT.back, stay: WALL_SHIFT.stay, odds: WALL_SHIFT.odds },
     siege: { vsBuildings: SIEGE.vsBuildings, flightTicks: SIEGE.flightTicks },
     market: { lot: MARKET.lot, start: MARKET.start, step: MARKET.step, min: MARKET.min, max: MARKET.max, sellPermille: MARKET.sellPermille, recoverTicks: MARKET.recoverTicks, maxLots: MARKET.maxLots },
   };
@@ -366,6 +368,20 @@ export const GATE = { on: true, hp: [850, 2100], rangedNum: 1, rangedDen: 5, sie
  * walls, next to them. They count as inside the town (capturing, keeping it). Off: no `wall`.
  */
 export const WALLS = { on: true, range: CELL, takenNum: 3, takenDen: 4, sling: 4 * CELL, militia: 2 };
+/**
+ * Wall defenders shift along the walls (D-119; the user 2026-11-04: 「如果敵軍打一邊，另外一側牆上的兵都不會自動走過去打，
+ * 應該要走過去一起打的」): a player's ranged unit or mage on a wall (neutral militia do not) that has had no target for `wait` ticks
+ * while its owner sees an enemy its reach from some wall cell of the town walks along the walls to the
+ * free wall cell nearest it (by the walls) from which one is in its reach, one a cell, so they spread
+ * along the side attacked. The walls' way runs over the gates while they stand (it never stops on a
+ * gate), so it never comes down or goes out. It stays put while an enemy walking is within its reach
+ * plus `stay` of its cell (it is coming to it), and walking it stops on the first free wall cell from
+ * which one is in its reach (an army moves on). It does not set off while the enemies seen near the
+ * walls are more than `odds` times the town's soldiers on them (the user 2026-11-04 chose 「敵人不太多才過去」:
+ * against a big army they would only walk into it and die). With no such enemy for `back` ticks it walks
+ * back to where it stood (if free). Off: they never move (WALLS).
+ */
+export const WALL_SHIFT = { on: true, wait: 1 * S, back: 10 * S, stay: 2 * CELL, odds: 2 };
 /**
  * A governed town's gate towers shoot (D-096; the user: 城樓會射箭, more the more soldiers hold the
  * town, as AoE2's garrison arrows): each standing gate of a town its holder governs, at the

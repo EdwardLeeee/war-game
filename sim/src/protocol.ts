@@ -534,9 +534,9 @@ export const HEADER_LENGTH = 28;
  * - perf200, perf360 (D-083): perf with both sides at 200 / 360 population (the cap and ceiling
  *   held there), for measuring D-083's higher population on the iPhone.
  */
-export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4 } as const;
+export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4, WallShift: 5 } as const;
 export type Scenario = (typeof Scenario)[keyof typeof Scenario];
-export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360";
+export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360" | "wallshift";
 
 /**
  * Which map a game is played on (D-074). "fixed": the prototype's 96 x 96 map, the same every
@@ -766,6 +766,8 @@ export interface Features {
   keep?: boolean;
   /** A market can be built and food and wood traded for gold (D-101), `Rules.market`. Absent: off. */
   market?: boolean;
+  /** Soldiers on the walls shift along them to where the enemy is (D-119), `Rules.wallShift`. Absent: off. */
+  wallShift?: boolean;
 }
 
 export interface MapInfo {
@@ -855,6 +857,11 @@ export interface Rules {
    * the walls throw stones to `sling` (fixed point).
    */
   walls?: { range: number; takenNum: number; takenDen: number; sling: number };
+  /**
+   * D-119 (in play while `features.wallShift`): soldiers on the walls with nothing to shoot walk along them to cells in
+   * reach of an enemy after `wait` ticks, and back to where they stood after `back` ticks calm (PROTOCOL.md 3.7).
+   */
+  wallShift?: { wait: number; back: number; stay: number; odds: number };
   /**
    * The population ceiling (D-083): `base` plus `town[size]` (by TownSize) for each town the
    * player governs; HeaderField.populationCeiling has it now. Off: base 120, town [0, 0].
