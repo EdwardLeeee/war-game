@@ -177,15 +177,19 @@ jobs:
             ok=1
             : > runs.tsv
             for st in in_progress queued; do
-              gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=$st&per_page=100" --jq '.workflow_runs[] | "\(.id)\t\(.name)"' >> runs.tsv || ok=0
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=$st&per_page=100" --jq '.workflow_runs[] | "\(.id)\t\(.name)\t\(.display_title)"' >> runs.tsv || ok=0
             done
             sort -u -o runs.tsv runs.tsv
-            while IFS=$'\t' read -r id name; do
+            # ceo 2026-11-05 (the repository's jobs all waited from 13:28Z): fill-in jobs FILL_MOST at once in all, for a day.
+            FILL_MOST=6
+            filling=0
+            while IFS=$'\t' read -r id name title; do
               [ "$id" = "$GITHUB_RUN_ID" ] && continue
               gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" --paginate --jq '.jobs[].status' > jobs.txt || ok=0
               r=$(grep -cx in_progress jobs.txt || true)
               q=$(grep -cxE 'queued|waiting|pending|requested' jobs.txt || true)
               busy=$((busy + r))
+              case "$title" in "AI train fill "*) filling=$((filling + r)) ;; esac
               case "$name" in
                 "AI train"|"AI scratch") ;;
                 *) waiting=$((waiting + q)) ;;
@@ -193,12 +197,13 @@ jobs:
             done < runs.tsv
             # Each island's plan takes what is free when it runs (the others' jobs then running are in busy).
             fill=$((20 - busy - mine - 4))
+            if [ "$fill" -gt $((FILL_MOST - filling)) ]; then fill=$((FILL_MOST - filling)); fi
             if [ "$waiting" -gt 0 ] || [ "$ok" = 0 ] || [ "$fill" -lt 0 ]; then fill=0; fi
             if [ "$fill_max" != "auto" ] && [ "$fill" -gt "$fill_max" ]; then fill=$fill_max; fi
             # The main chain's jobs, then the fill-in jobs: slot k plays for island k % n, its slot k / n of that island's.
             base=$([ "$mode" = "fill" ] && echo false || echo true)
             play=$(echo "$list" | jq -c --argjson f "$fill" --argjson base "$base" '. as $is | ($is | length) as $n | (if $base then [$is[] | {kind: "base", island: ., slot: -1, slots: 0}] else [] end) + [range(0; $f) | {kind: "fill", island: $is[. % $n], slot: ((. / $n) | floor), slots: ((($f - 1 - (. % $n)) / $n | floor) + 1)}]')
-            echo "其他 run 正在跑的 job：${busy}，其他 workflow 在等的 job：${waiting}$([ "$ok" = 0 ] && echo "（API 出錯，不開補位）")；主鏈 ${mine}、保留 4，補位 ${fill}（上限 ${fill_max}）。" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "其他 run 正在跑的 job：${busy}，其他 workflow 在等的 job：${waiting}$([ "$ok" = 0 ] && echo "（API 出錯，不開補位）")；主鏈 ${mine}、保留 4，補位 ${fill}（上限 ${fill_max}；全部補位同時最多 ${FILL_MOST}，已在跑 ${filling:-0}）。" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           if [ "$mode" = "es" ] || [ "$mode" = "gen" ] || [ "$mode" = "fill" ]; then
             :
