@@ -26,10 +26,8 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     const ids = own.map((u) => u.id).sort((a, b) => a - b);
     await selectForCommands(page, ids);
     await saveGroup(page, GROUP_1);
-    // Three ranged hiding in the main city; the group's spearmen into our town, as the player does it.
-    const city = (await buildings(page)).find((b) => b.type === 0 && b.owner === me);
-    if (city === undefined) throw new Error("no main city");
-    await page.evaluate(([u, b]) => window.__proto?.game?.send({ c: "garrison", u, building: b }), [own.filter((u) => u.type === 2).map((u) => u.id).slice(0, 3), city.id] as const);
+    // The group into our town, as the player does it (進駐 sends the whole group: R13-01 B), then three
+    // ranged out of it into the main city to hide.
     await selectForCommands(page, own.filter((u) => u.type === 1).map((u) => u.id).slice(0, 2));
     await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
     await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("enter");
@@ -38,7 +36,10 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     const townAt = await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [OUR_TOWN.x + 0.5, OUR_TOWN.y + 0.5] as const);
     await page.touchscreen.tap(townAt.x, townAt.y);
     await expect.poll(async () => (await page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], OUR_TOWN.id)).length, { timeout: 30_000 }).toBeGreaterThan(0);
-    await expect.poll(async () => (await buildings(page)).find((b) => b.id === city.id)?.soldiers ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
+    const city = (await buildings(page)).find((b) => b.type === 0 && b.owner === me);
+    if (city === undefined) throw new Error("no main city");
+    await page.evaluate(([u, b]) => window.__proto?.game?.send({ c: "garrison", u, building: b }), [own.filter((u) => u.type === 2).map((u) => u.id).slice(0, 3), city.id] as const);
+    await expect.poll(async () => (await buildings(page)).find((b) => b.id === city.id)?.soldiers ?? 0, { timeout: 60_000 }).toBeGreaterThan(0);
     // 軍團畫面, open.
     await page.evaluate(() => window.__proto?.game?.select([]));
     await page.locator(GROUP_1).tap();

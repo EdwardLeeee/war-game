@@ -332,6 +332,8 @@ export class SelectionInfo {
 
   private build(view: GameView): void {
     const close = button(this.frame, "✕", "", () => this.host.clearSelection(), "sel-close secondary");
+    // First, as before the frame (the order buttons are read and tabbed in).
+    this.frame.insertBefore(close, this.el);
     close.setAttribute("aria-label", "取消選取");
     this.foldButton = null;
     this.content(view);
