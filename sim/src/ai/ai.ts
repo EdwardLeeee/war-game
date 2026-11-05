@@ -3031,7 +3031,10 @@ export const HARD: HardPlan = {
   rescue: false,
   rescueRest: 3,
   hideFar: false,
-  farAvoid: false,
+  // D-130 (ceo 2026-11-06; runs 42114122287, 42114168794): a far spot where farmers fall again is remembered (hideFar
+  // comes on with the population rules, HARD_POP). The six active groups and hard against normal as before; against a
+  // squad waiting by its far spots, the worst game's farmers lost 121 -> 63.
+  farAvoid: true,
   foeMemory: false,
   foeDecay: 10,
   foeGrow: false,
