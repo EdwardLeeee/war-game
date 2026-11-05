@@ -258,6 +258,30 @@ python3 common/compare_b1.py compare --approved <B1 算圖的 core3/、states/>
 3. **好處**：六張靜態圖，一張 380×380 左右，和揚塵放在同一頁；遠小於 30 格整圈的圖，半徑不同的預警圈也能共用。
 4. 核准的 GIF 是 `common/warn.py` 的 `frame_b` 畫的。照上面的組法和它並排比過四個時間點，幾乎一樣，只有外圈的深色線稍微偏橘。
    原因是核准稿直接把深色線畫成那個顏色，遊戲是一層層疊上去。
+5. **染成施法那一方的玩家色**（D-129，使用者 2026-11-05：「法師法圈顏色跟該陣營一樣」；art-v7.2 起）：
+   - 效果圖集多五張白色的圖：`warn_fill_t`、`warn_sigil_glow_t`、`warn_rim_t`、`warn_sigil_t`、`warn_core_t`。形狀、大小、透明度和原本的同名圖一樣，只是顏色是白的。
+   - 原本的六張照舊留著，舊程式照樣能用。`warn_sigil_gold` 沒有白色版，照舊是金色，當點綴。
+   - `effects.json` 裡這五張都寫了 `"tint": "owner"`、`tint_value`、`tint_white`。client 這樣算 sprite 的 tint：
+     1. P ＝ 施法者的玩家色（`ownerTint(快照裡預警的 owner, me)`：我方 #3f7fe0、敵方 #d9433a），每個通道 0–1。
+     2. 先放大到最亮：P × `tint_value` ÷ max(P 的三個通道)。色相和飽和度不變。
+        - 不能直接用 P：P 本身比原本的橘色暗，半透明疊在草地上會變灰。
+     3. 再往白色混 `tint_white`：c ＋ (1 − c) × `tint_white`。
+     4. 目前的值：
+
+        | 圖 | `tint_value` | `tint_white` |
+        |---|---|---|
+        | `warn_fill_t` | 1 | 0 |
+        | `warn_sigil_glow_t` | 1 | 0.15 |
+        | `warn_sigil_t` | 1 | 0.1 |
+        | `warn_rim_t` | 0.45 | 0（深色的外圈線） |
+        | `warn_core_t` | 1 | 0.4 |
+
+        以後要調顏色只改 `effects.json` 的數字，client 不用改程式。
+   - 疊的順序、轉動、透明度都照第 2 點，只換成 `_t` 的圖。只改一處：`warn_sigil_gold` 的透明度從「`warn_sigil` × 0.7k」改成「`warn_sigil` × 0.35k」。金色只留一點，不然最後一刻整圈會變金色，又看不出是誰的。
+   - 校準的弧（法師腳下那圈進度）：顏色從 `WARNING_TINT` 改成 P，直接用玩家色、不調亮，因為它是實線、不透明。
+   - 沒有圖集時畫的形狀版：同樣改用 P。
+   - 防護罩不動。
+   - 前後對照圖：`design/production/common/boards_warn_tint.py` 照上面的算法，畫藍紅兩方、四個時間點。
 
 ## 貼圖記憶體
 
