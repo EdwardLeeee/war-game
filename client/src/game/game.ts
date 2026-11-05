@@ -2872,7 +2872,14 @@ export class Game implements GestureHost {
   private enterTap(sx: number, sy: number): void {
     const view = this.view;
     if (view === null) return;
-    const id = this.enterLayer.tapAt(sx, sy);
+    let id = this.enterLayer.tapAt(sx, sy);
+    // Nothing there: what can be entered looked at again now (a town just taken, a building just
+    // finished: the tags are a quarter of a second behind), and the tap once more.
+    if (id === null && this.camera !== null) {
+      this.enterRefreshAt = 0;
+      this.enterFrame(performance.now(), this.camera);
+      id = this.enterLayer.tapAt(sx, sy);
+    }
     const c = this.enterNow.find((v) => v.id === id);
     if (c === undefined) {
       this.toast(ENTER_WRONG_TARGET);
