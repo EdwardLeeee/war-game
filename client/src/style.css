@@ -1580,3 +1580,79 @@ button.danger {
 .enter-arrow small {
   font-size: 12px;
 }
+
+/* 進駐's squares (R13-01 B 7a–8): a place each, who is in it by kind in the player's colour, the empty ones hatched. */
+.seat-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* On the squares' line the count stays beside them (R13-01 B: 「遠 法 □ 2/3 編隊 1 的 2 名［召回］」). */
+.seat-row .garrison-count {
+  flex-basis: auto;
+  font-weight: 700;
+}
+
+.seats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.seat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: #3f7fe0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.seat.empty {
+  background: repeating-linear-gradient(135deg, rgba(242, 238, 228, 0.18) 0 3px, transparent 3px 6px);
+  border: 1px solid var(--line);
+}
+
+.seat-label {
+  font-size: 13px;
+}
+
+b.seat-label {
+  color: var(--accent);
+}
+
+.seat-groups,
+.seat-row .keep-groups {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.group-places {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.group-place-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.group-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

@@ -193,6 +193,10 @@ const REFORM_TEXT: Record<string, string> = {
   near: `敵人在 ${REFORM_CLEAR_CELLS} 格內，不整理隊形：整理時不還手，先打完或先移動開`,
 };
 
+/** The squares' order (R13-01 B): spearmen, ranged, mages, cavalry, siege engines. */
+const SEAT_ORDER: readonly number[] = [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry, UnitType.Siege];
+const seatOrder = (kinds: readonly number[]): number[] => [...kinds].sort((a, b) => SEAT_ORDER.indexOf(a) - SEAT_ORDER.indexOf(b));
+
 /** 進駐: how often who can go where is looked at again. */
 const ENTER_REFRESH_MS = 250;
 /** An arrow tapped: the camera there in this long (R13-01-B2 rule 10). */
@@ -2090,21 +2094,6 @@ export class Game implements GestureHost {
     return view === null ? [] : this.army.awayOf(i).filter((id) => view.unitRow(id) >= 0 && isHiding(view.unitOrder(id)));
   }
 
-  /** 軍團畫面's 躲著 line: group i's soldiers hiding, building by kind (「主城 2 名、箭樓 1 名」), or "" with none. */
-  groupHidingLine(i: number): string {
-    const view = this.view;
-    const u = view?.curr?.snap.units;
-    const b = view?.curr?.snap.buildings;
-    if (view === null || u === undefined || b === undefined) return "";
-    const by = new Map<string, number>();
-    for (const id of this.groupHiding(i)) {
-      const o = view.buildingRow(u[view.unitRow(id) + UnitField.orderTarget]);
-      const name = o < 0 ? "建築" : (BUILDING_NAME[b[o + BuildingField.type]] ?? "建築");
-      by.set(name, (by.get(name) ?? 0) + 1);
-    }
-    return [...by].map(([name, n]) => `${name} ${n} 名`).join("、");
-  }
-
   /**
    * These spearmen of group i leave their outposts for it: a 移動 to where it stands (one order
    * takes a spearman off his post; 停止 does not), or, with nobody of it elsewhere, to where they are.
@@ -2124,6 +2113,86 @@ export class Game implements GestureHost {
       to = { x: at.reduce((n, p) => n + p.x, 0) / at.length, y: at.reduce((n, p) => n + p.y, 0) / at.length };
     }
     this.autoCommand({ c: "retreat", u: [...ids], x: Math.floor(to.x / CELL), y: Math.floor(to.y / CELL) });
+  }
+
+  // --- 進駐's places (R13-01 B 7a–8): who is in each, by kind, as squares ----------------------------
+
+  /**
+   * A main city, arrow tower or outpost of ours (7a, 7b): the kinds of those inside, how many are on
+   * their way, and those inside by group (null: in no group).
+   */
+  buildingSeats(building: number): { kinds: number[]; coming: number; groups: { group: number | null; ids: number[] }[] } {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const b = view?.curr?.snap.buildings;
+    const row = view?.buildingRow(building) ?? -1;
+    if (view === null || u === undefined || b === undefined || row < 0) return { kinds: [], coming: 0, groups: [] };
+    const outpost = b[row + BuildingField.type] === BuildingType.Outpost;
+    const kinds: number[] = [];
+    const by = new Map<number | null, number[]>();
+    let coming = 0;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] !== view.me || u[o + UnitField.orderTarget] !== building) continue;
+      const order = u[o + UnitField.order];
+      if (outpost ? !isPosted(order) : !isHiding(order)) continue;
+      if (u[o + UnitField.action] !== Action.Garrisoned) {
+        coming++;
+        continue;
+      }
+      const id = u[o + UnitField.id];
+      kinds.push(u[o + UnitField.type]);
+      const g = this.army.groupOf(id);
+      by.set(g, [...(by.get(g) ?? []), id]);
+    }
+    return { kinds: seatOrder(kinds), coming, groups: [...by].map(([group, ids]) => ({ group, ids })).sort((x, y) => (x.group ?? 9) - (y.group ?? 9)) };
+  }
+
+  /** 召回 on a building's panel (7a): these of a group come out, and walk back to it (army.ts). */
+  buildingRecall(building: number, ids: readonly number[]): void {
+    if (ids.length > 0) this.command({ c: "leave", building, u: [...ids] });
+  }
+
+  /** A town of ours (7c): its 留守 up on the walls and inside, by kind. */
+  townSeats(town: number): { wall: number[]; inside: number[] } {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return { wall: [], inside: [] };
+    const wall: number[] = [];
+    const inside: number[] = [];
+    for (const id of this.army.garrisonOf(town)) {
+      const o = view.unitRow(id);
+      if (o < 0) continue;
+      ((u[o + UnitField.flags] & UnitFlag.OnWall) !== 0 ? wall : inside).push(u[o + UnitField.type]);
+    }
+    return { wall: seatOrder(wall), inside: seatOrder(inside) };
+  }
+
+  /**
+   * 軍團畫面 (8): where group i's soldiers are in: each town it keeps (留守), each building they hide
+   * in, each outpost; the kinds of those in each, and how many in all.
+   */
+  groupPlaces(i: number): { places: { name: string; kinds: number[]; town: boolean }[]; n: number } {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const b = view?.curr?.snap.buildings;
+    if (view === null || u === undefined || b === undefined) return { places: [], n: 0 };
+    const places: { name: string; kinds: number[]; town: boolean }[] = [];
+    for (const e of this.army.stationedOf(i)) {
+      const kinds = e.ids.flatMap((id) => (view.unitRow(id) < 0 ? [] : [view.unitType(id)]));
+      if (kinds.length > 0) places.push({ name: view.knownTowns.get(e.town)?.size === TownSize.Large ? "大城" : "小鎮", kinds: seatOrder(kinds), town: true });
+    }
+    const by = new Map<number, number[]>();
+    for (const id of [...this.groupHiding(i), ...this.groupPosted(i)]) {
+      const o = view.unitRow(id);
+      if (o < 0) continue;
+      const at = u[o + UnitField.orderTarget];
+      by.set(at, [...(by.get(at) ?? []), view.unitType(id)]);
+    }
+    for (const [at, kinds] of by) {
+      const o = view.buildingRow(at);
+      places.push({ name: o < 0 ? "建築" : (BUILDING_NAME[b[o + BuildingField.type]] ?? "建築"), kinds: seatOrder(kinds), town: false });
+    }
+    return { places, n: places.reduce((n, p) => n + p.kinds.length, 0) };
   }
 
   /** 哨所's panel: its spearmen by group (null: in no group). */
@@ -2168,20 +2237,6 @@ export class Game implements GestureHost {
   garrisonGroups(town: number): { group: number | null; n: number }[] {
     const view = this.view;
     return this.army.garrisonByGroup(town).map((e) => ({ group: e.group, n: view === null ? e.ids.length : e.ids.filter((id) => view.unitRow(id) >= 0).length }));
-  }
-
-  /** 軍團畫面's 駐守中 line: group i's 留守, town by town, and at outposts (「小鎮 3 名、大城 2 名、哨所 2 名」), or "" with none. */
-  groupStationed(i: number): string {
-    const view = this.view;
-    if (view === null) return "";
-    const towns = this.army
-      .stationedOf(i)
-      .map((e) => ({ size: view.knownTowns.get(e.town)?.size, n: e.ids.filter((id) => view.unitRow(id) >= 0).length }))
-      .filter((e) => e.n > 0)
-      .map((e) => `${e.size === TownSize.Large ? "大城" : "小鎮"} ${e.n} 名`);
-    // 哨所 (D-080): all outposts together.
-    const posted = this.groupPosted(i).length;
-    return [...towns, ...(posted > 0 ? [`哨所 ${posted} 名`] : [])].join("、");
   }
 
   /** Group i's living members stationed in towns or at outposts (its button's 駐N). */
@@ -2872,7 +2927,14 @@ export class Game implements GestureHost {
   private enterTap(sx: number, sy: number): void {
     const view = this.view;
     if (view === null) return;
-    const id = this.enterLayer.tapAt(sx, sy);
+    let id = this.enterLayer.tapAt(sx, sy);
+    // Nothing there: what can be entered looked at again now (a town just taken, a building just
+    // finished: the tags are a quarter of a second behind), and the tap once more.
+    if (id === null && this.camera !== null) {
+      this.enterRefreshAt = 0;
+      this.enterFrame(performance.now(), this.camera);
+      id = this.enterLayer.tapAt(sx, sy);
+    }
     const c = this.enterNow.find((v) => v.id === id);
     if (c === undefined) {
       this.toast(ENTER_WRONG_TARGET);

@@ -120,6 +120,14 @@ export interface PanelHost {
   /** ＋遠程／＋法師 (D-080): our soldiers on their way to hide in this building, and calling one more of a type in. */
   hidingComing(building: number): number;
   callToHide(building: number, type: number): void;
+  /** 進駐's squares (R13-01 B 7a, 7b): who is inside a building of ours by kind, on their way, by group. */
+  buildingSeats(building: number): { kinds: number[]; coming: number; groups: { group: number | null; ids: number[] }[] };
+  /** 召回 on a building's panel: these come out and walk back to their group. */
+  buildingRecall(building: number, ids: readonly number[]): void;
+  /** A town of ours (7c): its 留守 on the walls and inside, by kind. */
+  townSeats(town: number): { wall: number[]; inside: number[] };
+  /** 軍團畫面 (8): where group i's soldiers are in, by place, and how many. */
+  groupPlaces(i: number): { places: { name: string; kinds: number[]; town: boolean }[]; n: number };
   /** 哨所 (D-080): its spearmen and mode, for its panel; null for another building. `inside`: those hiding in it (3 × 3, D-119), null while they stand guard beside it. */
   outpostState(building: number): { slots: number; posted: number; inside: number | null; hold: boolean; text: string } | null;
   /** 取消即堅守 (D-054): out of 進攻／撤退, the soldiers selected stop and hold. */
@@ -129,10 +137,7 @@ export interface PanelHost {
   toggleRefill(i: number): void;
   /** 軍團畫面 (D-054): the group shown in place of the selection info, or null. */
   groupView(): number | null;
-  /** Group i's 留守 in towns and at outposts, 「小鎮 3 名、哨所 2 名」 ("" with none), and 出城歸隊 (`all`: 全部帶走). */
-  groupStationed(i: number): string;
-  /** Group i's soldiers hiding in buildings, 「主城 2 名」 ("" with none). */
-  groupHidingLine(i: number): string;
+  /** 出城歸隊 (`all`: 全部帶走): group i's 留守 in towns and at outposts come back to it. */
   groupOut(i: number, all: boolean): void;
   /** 召回 (D-119): group i's soldiers hiding in buildings come out and walk back to it. */
   groupRecall(i: number): void;
@@ -223,6 +228,21 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, 
   if (text !== "") e.textContent = text;
   parent.appendChild(e);
   return e;
+}
+
+/** 進駐's squares (R13-01 B): one a place, the kind of who is in it, the empty ones hatched. */
+const SEAT_CHAR: Record<number, string> = { [UnitType.Spearman]: "槍", [UnitType.Ranged]: "遠", [UnitType.Mage]: "法", [UnitType.Cavalry]: "騎", [UnitType.Siege]: "砲", [UnitType.Farmer]: "民" };
+
+/** The squares in `e`: `kinds` in their order, then empty ones up to `cap`; redrawn only when they change. */
+function seats(e: HTMLElement, kinds: readonly number[], cap: number): void {
+  const key = `${kinds.join(",")}/${cap}`;
+  if (e.dataset.key === key) return;
+  e.dataset.key = key;
+  e.replaceChildren();
+  for (let k = 0; k < Math.max(cap, kinds.length); k++) {
+    const kind = kinds[k];
+    el("span", e, kind === undefined ? "seat empty" : "seat", kind === undefined ? "" : (SEAT_CHAR[kind] ?? "兵"));
+  }
 }
 
 function button(parent: HTMLElement, label: string, sub: string, onTap: () => void, cls = ""): HTMLButtonElement {
@@ -354,6 +374,7 @@ export class SelectionInfo {
     // 現有／目標 in the title line; no 「目前：」 line (the command area's buttons light up), so
     // that the panel stays clear of 全軍撤退 on a phone held sideways.
     const total = el("span", head, "sel-status");
+    const inTotal = el("span", head, "sel-status group-in");
     const types = GROUP_TYPES.filter((type) => (type !== UnitType.Cavalry || features(view.rules).cavalry) && (type !== UnitType.Siege || features(view.rules).siege === true));
     // Four kinds with 騎兵 (round 7): two to a line, the name over its − N +, or the panel
     // would reach 全軍撤退 on a phone held sideways. Three kinds keep a line each.
@@ -373,17 +394,15 @@ export class SelectionInfo {
       plus.setAttribute("aria-label", `多要 1 名${name}`);
       return { type, has, want };
     });
-    // 駐守中 (the user 2026-10-26): its soldiers stationed in towns, still its own; 出城歸隊 leaves
-    // each town the least it needs (自動留最少人數), 全部帶走 leaves nobody.
-    const station = el("div", this.el, "sel-chips group-station");
-    const where = el("span", station, "group-station-line");
-    button(station, "出城歸隊", "", () => this.host.groupOut(i, false), "chip secondary");
-    button(station, "全部帶走", "", () => this.host.groupOut(i, true), "chip secondary");
-    // 躲著 (the user 2026-10-26): still its own. 召回 (the user 2026-11-04, D-119) lets them out from
-    // here, wherever the player is (the building's 全部出來 too), and they walk back.
-    const hiding = el("div", this.el, "sel-chips group-hiding");
-    const hidingLine = el("span", hiding, "group-station-line");
-    button(hiding, "召回", "", () => this.host.groupRecall(i), "chip secondary");
+    // 進駐中 (R13-01 B 8): each town it keeps (留守) and each building its soldiers hide in, a row of
+    // squares each, still its own (the user 2026-10-26). 召回 (D-119) lets those hiding out, wherever
+    // the player is; 出城歸隊 leaves each town the least it needs (自動留最少人數), 全部帶走 nobody.
+    const placesBox = el("div", this.el, "group-places");
+    const lines = el("div", placesBox, "group-place-lines");
+    const placeButtons = el("div", placesBox, "sel-chips");
+    const recall = button(placeButtons, "召回", "", () => this.host.groupRecall(i), "chip secondary");
+    const out = button(placeButtons, "出城歸隊", "", () => this.host.groupOut(i, false), "chip secondary");
+    const outAll = button(placeButtons, "全部帶走", "", () => this.host.groupOut(i, true), "chip secondary");
     const actions = el("div", this.el, "sel-chips group-actions");
     const fromBefore = button(actions, "", "", () => this.host.saveBeforeIntoGroup(i), "chip secondary");
     button(actions, "清空", "", () => this.host.clearGroup(i), "chip secondary");
@@ -403,12 +422,23 @@ export class SelectionInfo {
         set(r.want, `${w}`);
       }
       set(total, has > 0 || want > 0 ? `${has}/${want}` : "還沒有兵");
-      const away = this.host.groupStationed(i);
-      station.hidden = away === "";
-      set(where, `駐守中：${away}`);
-      const hid = this.host.groupHidingLine(i);
-      hiding.hidden = hid === "";
-      set(hidingLine, `躲著：${hid}（按召回叫出來，走回編隊）`);
+      const at = this.host.groupPlaces(i);
+      placesBox.hidden = at.n === 0;
+      set(inTotal, at.n > 0 ? `進駐 ${at.n}` : "");
+      recall.hidden = !at.places.some((p) => !p.town);
+      out.hidden = outAll.hidden = !at.places.some((p) => p.town);
+      const key = at.places.map((p) => `${p.name}:${p.kinds.join(".")}`).join(",");
+      if (lines.dataset.key !== key) {
+        lines.dataset.key = key;
+        lines.replaceChildren();
+        for (const p of at.places) {
+          const line = el("span", lines, "group-place");
+          line.setAttribute("aria-label", `${p.name} ${p.kinds.length} 名${p.town ? "（留守）" : ""}`);
+          el("b", line, "seat-label", p.name);
+          seats(el("span", line, "seats"), p.kinds, p.kinds.length);
+          if (p.town) el("span", line, "seat-label", "留守");
+        }
+      }
       const n = this.host.beforeGroupCount();
       fromBefore.hidden = n === 0;
       set(fromBefore.querySelector(".label") as HTMLElement, `改成剛才選的 ${n} 名`);
@@ -547,11 +577,17 @@ export class SelectionInfo {
     // ＋遠程／＋法師 call one more in from here (D-080).
     const holds = own ? holdsOf(view.rules, type) : 0;
     let hidden: HTMLElement | null = null;
+    let hideSeats: HTMLElement | null = null;
+    let hideGroups: HTMLElement | null = null;
     let out: HTMLButtonElement | null = null;
     const calls: HTMLButtonElement[] = [];
     if (holds > 0) {
+      // R13-01 B 7a: a square a place, then how many of how many and whose, each group's 召回.
+      const top = el("div", this.el, "sel-garrison seat-row");
+      hideSeats = el("span", top, "seats");
+      hidden = el("span", top, "garrison-count");
+      hideGroups = el("span", top, "seat-groups");
       const row = el("div", this.el, "sel-garrison");
-      hidden = el("span", row, "garrison-count");
       for (const t of garrisonTypes(view.rules)) {
         const call = button(row, `＋${CALL_WORD[t] ?? UNIT_NAME[t] ?? ""}`, "", () => this.host.callToHide(id, t), "chip secondary");
         call.setAttribute("aria-label", `叫 1 名${UNIT_NAME[t] ?? ""}躲進來`);
@@ -597,11 +633,25 @@ export class SelectionInfo {
       // An enemy outpost in view: whether it holds (D-080); remembered ones carry no Hold, so say nothing.
       const enemyPost = !own && type === BuildingType.Outpost && (b[o + B.flags] & BuildingFlag.Remembered) === 0 ? ((b[o + B.flags] & BuildingFlag.Hold) !== 0 ? "　堅守中" : "　攻擊中") : "";
       const inside = b[o + B.garrisoned] > 0 ? `　躲了 ${b[o + B.garrisoned]} 名村民` : !own && (b[o + B.flags] & BuildingFlag.Occupied) !== 0 ? "　裡面有人" : enemyPost;
-      if (hidden !== null && out !== null) {
+      if (hidden !== null && out !== null && hideSeats !== null && hideGroups !== null) {
         const n = b[o + B.soldiers];
-        const coming = this.host.hidingComing(id);
-        const line = `躲了 ${n} 名士兵（最多 ${holds} 名）${coming > 0 ? `，${coming} 名正過來` : ""}`;
+        const inside = this.host.buildingSeats(id);
+        const coming = inside.coming;
+        const line = `${n}/${holds}${coming > 0 ? `，${coming} 名正過來` : ""}`;
         if (hidden.textContent !== line) hidden.textContent = line;
+        hidden.setAttribute("aria-label", `躲了 ${n} 名士兵（最多 ${holds} 名）`);
+        seats(hideSeats, inside.kinds, holds);
+        const groups = this.host.buildingSeats(id).groups;
+        const key = groups.map((g) => `${g.group}:${g.ids.join(".")}`).join(",");
+        if (hideGroups.dataset.key !== key) {
+          hideGroups.dataset.key = key;
+          hideGroups.replaceChildren();
+          for (const g of groups) {
+            const name = g.group === null ? `沒編隊的 ${g.ids.length} 名` : `編隊 ${g.group + 1} 的 ${g.ids.length} 名`;
+            el("span", hideGroups, "keep-group-name", name);
+            button(hideGroups, "召回", "", () => this.host.buildingRecall(id, g.ids), "chip secondary").setAttribute("aria-label", `${name}召回`);
+          }
+        }
         out.disabled = n === 0;
         for (const call of calls) call.disabled = n + coming >= holds;
       }
@@ -619,18 +669,21 @@ export class SelectionInfo {
 
   /** 哨所 (D-080): the rows of our outpost's panel. Returns the update. */
   private outpostRows(id: number): () => void {
+    // R13-01 B 7b: the squares (3 × 3, those hiding in it), how many of how many and whose; then
+    // ＋槍兵, 全部離開, 攻擊／堅守; what the one on means under them.
+    const top = el("div", this.el, "sel-garrison seat-row");
+    const places = el("span", top, "seats");
+    const count = el("span", top, "garrison-count outpost-count");
+    // Whose they are (ceo 2026-10-26): 「編隊 1：2 名［召回］」; those in no group leave with 全部離開.
+    const whose = el("span", top, "keep-groups");
     const row = el("div", this.el, "sel-garrison");
-    const count = el("span", row, "garrison-count outpost-count");
     const call = button(row, `＋${UNIT_NAME[POST_TYPE] ?? "槍兵"}`, "", () => this.host.callToHide(id, POST_TYPE), "chip secondary");
     call.setAttribute("aria-label", "叫 1 名槍兵來駐守");
     const off = button(row, "全部離開", "", () => this.host.command({ c: "unpost", building: id }), "chip secondary");
-    const modes = el("div", this.el, "sel-garrison outpost-modes");
     // 攻擊 in red as 進攻 (D-080); 堅守 as it is everywhere.
-    const attack = button(modes, "攻擊", "", () => this.host.command({ c: "outpost_mode", building: id, hold: false }), `chip ${ORDER_TONE.advance}`);
-    const hold = button(modes, "堅守", "", () => this.host.command({ c: "outpost_mode", building: id, hold: true }), "chip");
-    const note = el("span", modes, "garrison-count outpost-note");
-    // Whose they are (ceo 2026-10-26): 「編隊 1：2 名［歸隊］」; those in no group leave with 全部離開.
-    const whose = el("div", this.el, "sel-chips keep-groups");
+    const attack = button(row, "攻擊", "", () => this.host.command({ c: "outpost_mode", building: id, hold: false }), `chip ${ORDER_TONE.advance}`);
+    const hold = button(row, "堅守", "", () => this.host.command({ c: "outpost_mode", building: id, hold: true }), "chip");
+    const note = el("p", this.el, "garrison-count outpost-note");
     whose.setAttribute("role", "group");
     whose.setAttribute("aria-label", "駐守的編隊");
     return () => {
@@ -648,9 +701,12 @@ export class SelectionInfo {
       }
       const s = this.host.outpostState(id);
       if (s === null) return;
-      // 3 × 3 (D-119): 躲了 n/9, and those on their way.
-      const line = s.inside === null ? `駐守 ${s.posted} 名槍兵（最多 ${s.slots} 名）` : `躲了 ${s.inside}/${s.slots} 名槍兵${s.posted > s.inside ? `，${s.posted - s.inside} 名正過來` : ""}`;
+      // 3 × 3 (D-119): n/9 and its squares, and those on their way.
+      const line = s.inside === null ? `駐守 ${s.posted} 名槍兵（最多 ${s.slots} 名）` : `${s.inside}/${s.slots}${s.posted > s.inside ? `，${s.posted - s.inside} 名正過來` : ""}`;
       if (count.textContent !== line) count.textContent = line;
+      if (s.inside !== null) count.setAttribute("aria-label", `躲了 ${s.inside} 名槍兵（最多 ${s.slots} 名）`);
+      places.hidden = s.inside === null;
+      if (s.inside !== null) seats(places, this.host.buildingSeats(id).kinds, s.slots);
       call.disabled = s.posted >= s.slots;
       off.disabled = s.posted === 0;
       attack.classList.toggle("active", !s.hold);
@@ -810,6 +866,20 @@ export class SelectionInfo {
     }
     // 留守 − N + 名 (D-026), for a town we hold.
     if (o0 >= 0 && t0 !== undefined && t0[o0 + T.owner] === view.me && t0[o0 + T.state] !== TownState.Neutral && t0[o0 + T.state] !== TownState.Ruins) {
+      // R13-01 B 7c: its 留守 as squares, those up on the walls and those inside.
+      const places = el("div", this.el, "sel-garrison seat-row town-seats");
+      const wallName = el("span", places, "seat-label", "牆上");
+      const wall = el("span", places, "seats");
+      const insideName = el("span", places, "seat-label", "城內");
+      const inside = el("span", places, "seats");
+      this.updaters.push(() => {
+        const s = this.host.townSeats(id);
+        places.hidden = s.wall.length + s.inside.length === 0;
+        wallName.hidden = wall.hidden = s.wall.length === 0;
+        insideName.hidden = inside.hidden = s.inside.length === 0;
+        seats(wall, s.wall, s.wall.length);
+        seats(inside, s.inside, s.inside.length);
+      });
       const row = el("div", this.el, "sel-keep");
       row.setAttribute("role", "group");
       row.setAttribute("aria-label", "留守");

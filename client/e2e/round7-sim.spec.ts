@@ -120,7 +120,7 @@ test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵進駐
   expect(hiding.length, "three on their way or inside, one left out").toBe(3);
   await selectBuilding(page, tower);
   const panel = page.locator(".sel-info");
-  await expect(panel.locator(".garrison-count")).toHaveText("躲了 3 名士兵（最多 3 名）");
+  await expect(panel.locator(".garrison-count")).toHaveText("3/3");
   await shot(page, info, "r7sim-2-garrison");
 
   // 3. 全部離開.
@@ -128,7 +128,7 @@ test("第七輪（真的模擬，開關全開）：蓋箭樓 → 遠程兵進駐
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "leave", building: tower.id });
   await expect.poll(async () => (await buildings(page)).find((b) => b.id === tower.id)?.soldiers, TICKS).toBe(0);
   await expect.poll(async () => (await units(page)).filter((u) => hiding.includes(u.id)).every((u) => u.order !== 9 && u.action !== 7), TICKS).toBe(true);
-  await expect(panel.locator(".garrison-count")).toHaveText("躲了 0 名士兵（最多 3 名）");
+  await expect(panel.locator(".garrison-count")).toHaveText("0/3");
 
   // 4. 馬廄, then 5. 騎兵 from it.
   await build(page, STABLE, /^馬廄/, { x: home.x - 6, y: home.y + 2 });
