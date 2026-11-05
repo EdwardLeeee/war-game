@@ -160,7 +160,7 @@ def ground_files(src, scale):
     gj = json.loads((d / "ground.json").read_text())
     if gj.get("format") != "war-game ground 1" or gj.get("scale") != float(scale[1:]):
         die(f"{d / 'ground.json'}: format {gj.get('format')!r}, scale {gj.get('scale')!r}")
-    names = ["ground.json", "memory.json"] + [L["file"] for L in gj["layers"]]
+    names = ["ground.json", "memory.json"] + [L["file"] for L in gj["layers"]] + [gj[k]["file"] for k in ("relief", "ripple") if k in gj]   # art-v7
     extra = sorted({p.name for p in d.iterdir()} - set(names))
     if extra:
         die(f"{d} has files ground.json does not list: {extra}")
