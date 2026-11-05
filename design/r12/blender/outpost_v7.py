@@ -56,6 +56,9 @@ def v7_outpost(root, c="E", look="done", front=False):
         O.lib.empty(f"stand_at_{k}", parent=root, loc=at)
     if front:
         castle.front_only(root, [list(s) for s in spots], z)
+        for ob in O.kit.parts_under(root):           # the flag never in front (its pole was left out: it floated, r2)
+            if ob.name.startswith("a_flag"):
+                ob["back_holdout"] = True
 
 
 FOOTPRINT = {"v7_outpost": (3, 3)}

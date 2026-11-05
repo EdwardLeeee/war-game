@@ -53,7 +53,7 @@ import main_city_r9                  # noqa: E402
 sys.path.insert(5, os.path.join(HERE, "..", "..", "r11", "blender"))     # R11 the floating continent's edge
 import edge_r11                      # noqa: E402
 import edge_v7                       # noqa: E402  (art-v7 the edge: design/r11/edge-format.md)
-sys.path.insert(6, os.path.join(HERE, "..", "..", "r12", "blender"))     # R12 the 3 x 3 outpost (D-119)
+sys.path.insert(6, os.path.join(HERE, "..", "..", "r12", "blender"))     # R12 / art-v7 the 3 x 3 outpost (D-119)
 import outpost_v7                    # noqa: E402
 import terrain_r8                    # noqa: E402
 
@@ -240,7 +240,7 @@ for pc in job["pieces"]:
     builder(root, c, **pc.get("opts", {})) if pc.get("opts") else builder(root, c)
     st = pc.get("state", "done")
     if (kind in blds.BUILDERS or kind in arch_r8.BUILDERS or kind in arch2_r8.BUILDERS or kind in market_r8.BUILDERS
-            or kind in outpost_v7.BUILDERS or kind in main_city_r9.BUILDERS) and st != "done":   # (R12's outpost, R9's city)
+            or kind in outpost_v7.BUILDERS or kind in main_city_r9.BUILDERS) and st != "done":   # (art-v7: R12's outpost, R9's city)
         import states                # noqa: E402
         states.apply(root, kind, c, st, **pc.get("state_opts", {}))
     elif kind in HOUSES and st not in ("done", "intact"):

@@ -548,7 +548,11 @@ def sw_gate_x(root, c, variant=0, state="intact", front=False):
 
 def sw_gate_y(root, c, variant=0, state="intact", front=False):
     """The east and west gates along y: a pier tower on each side cell and the open gap between (seen from the camera
-    the side walls are edge-on, so a span over the passage would look like a wall). variant as sw_gate_x."""
+    the side walls are edge-on, so a span over the passage would look like a wall). variant as sw_gate_x.
+    On the diamond camera (D-118) the two axes face the camera alike: the north/south gate turned a quarter (the piers
+    and the open gap read as a gate with no gate tower there, PR2 r1)."""
+    if abs(lib.CAM_AZ + 45.0) < 1e-6:
+        return sw_gate_x(lib.empty("gy_turn", parent=root, rot=(0, 0, -90)), c, variant, state, front)
     P = kit.palette(c)
     ruin = state == "ruin"
     H = WALL_H[c] + 0.4

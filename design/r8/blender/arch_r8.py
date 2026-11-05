@@ -107,7 +107,9 @@ def platform_e(name, P, parent, w, d, h, cy=0.0, steps=1.8):
         n = max(2, int(round(h / 0.17)))
         for k in range(n):
             t = (k + 1) / n
-            box(f"{name}_step{k}", (steps, 0.3 * (n - k), h * t), P["stone"], parent,
+            # each a hair narrower than the one under it: equal widths left their side faces in one plane, fighting
+            # (black triangles on the diamond camera, which sees the flight's side, PR2 r1)
+            box(f"{name}_step{k}", (steps - 0.012 * k, 0.3 * (n - k), h * t), P["stone"], parent,
                 loc=(0, cy - d / 2 - 0.15 * (n - k) + 0.02, h * t / 2), bevel=0.01)
 
 
