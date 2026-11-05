@@ -217,6 +217,10 @@ interface TownMark {
  */
 const castTint = (owner: number, me: number): number => (owner === NEUTRAL || owner === NO_OWNER ? WARNING_TINT : ownerTint(owner, me));
 
+/** 進駐's rings (R13-01 B's gold frame) and how long one flashes when an arrow brings it on screen. */
+const ENTER_GOLD = 0xe8c45a;
+const ENTER_FLASH_MS = 600;
+
 export class WorldRenderer {
   readonly root = new Container();
   /** 浮空大陸 (edge.ts): metres the realistic ground fades out over at the two lower edges (0: none). */
@@ -236,6 +240,10 @@ export class WorldRenderer {
   /** Units' shadows from their atlases (D-085): pictures, standing like the units, under them. */
   private readonly shadowLayer = new Container();
   private readonly ringLayer = new Container();
+  /** 進駐 (R13-01 B): the rings round the places it can go into (gold), and those it cannot (grey); world px. */
+  private readonly enterRings = new Graphics();
+  private enterList: { id: string; corners: { x: number; y: number }[]; off: boolean }[] = [];
+  private enterFlash: { id: string; at: number } | null = null;
   /** What stands up: units, buildings' and nodes' marks, sorted by their place on the plane. */
   private readonly unitLayer = new Container();
   /** Marks on the ground (orders, warnings, the cannon's calibration, a selected building). */
@@ -434,7 +442,7 @@ export class WorldRenderer {
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
-    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.ringLayer, this.fx, this.craterLayer, this.warnLayer, this.ghost, fog, this.wallGround);
+    this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.enterRings, this.ringLayer, this.fx, this.craterLayer, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
     this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.overGround, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.airArt, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
@@ -451,6 +459,7 @@ export class WorldRenderer {
     this.drawBuildings();
     this.drawBrokenGates();
     this.drawTowns();
+    this.drawEnterRings(now);
     this.castle.update();
     this.terrain.update();
     this.updateGround();
@@ -515,6 +524,44 @@ export class WorldRenderer {
   }
 
   /** Spearmen drawn on the outposts' walks this frame (D-121), for the test page. */
+  /** The plane's y of a building's picture's top (進駐's tags go over it), null when drawn as a shape. */
+  buildingTop(id: number): number | null {
+    return this.artStructures?.topOf(id) ?? null;
+  }
+
+  /** 進駐's rings: drawn while it picks where to go in, none otherwise. */
+  setEnterRings(list: { id: string; corners: { x: number; y: number }[]; off: boolean }[]): void {
+    this.enterList = list;
+    if (list.length === 0) {
+      this.enterFlash = null;
+      this.enterRings.clear();
+    }
+  }
+
+  /** An arrow's building reached (R13-01-B2 rule 10): its ring flashes once. */
+  flashEnterRing(id: string, now: number): void {
+    this.enterFlash = { id, at: now };
+  }
+
+  private drawEnterRings(now: number): void {
+    const g = this.enterRings;
+    g.clear();
+    if (this.enterList.length === 0) return;
+    const flash = this.enterFlash;
+    const glow = flash === null ? 0 : Math.max(0, 1 - (now - flash.at) / ENTER_FLASH_MS);
+    if (glow === 0) this.enterFlash = null;
+    for (const r of this.enterList) {
+      if (r.corners.length === 0) continue;
+      g.poly(r.corners.flatMap((c) => [c.x, c.y]));
+      const lit = flash !== null && flash.id === r.id ? glow : 0;
+      if (r.off) g.stroke({ width: 3, color: 0x9a9384, alpha: 0.7 });
+      else {
+        g.fill({ color: ENTER_GOLD, alpha: 0.1 + 0.25 * lit });
+        g.stroke({ width: 4 + 4 * lit, color: ENTER_GOLD, alpha: 0.95 });
+      }
+    }
+  }
+
   get crewDrawn(): number {
     return this.artUnits?.crewDrawn ?? 0;
   }

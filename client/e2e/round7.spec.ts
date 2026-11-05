@@ -1,6 +1,6 @@
 // 第七輪 (D-061) on the fake world with its rules on (?test=1&mock=1&r7=1, src/mock/mock-port.ts):
 // a town plundered once offers only 治理, a governed town's income line, arrow towers only near
-// the main city or a governed town, 躲進去 and 全部出來, those hiding left out of their groups
+// the main city or a governed town, 進駐 and 全部離開 (D-125), those hiding left out of their groups
 // and of orders given to many (ceo 2026-10-07, D-083), the enemy tower's 裡面有人 and its arrows, and the stable training
 // cavalry. The last tests check that without the switches none of it shows. The simulation's
 // side is tested by core.
@@ -29,7 +29,7 @@ const GROUP_1 = ".groups > button:nth-child(1)";
  * far slower than 30 ticks a second (run 37544720334).
  */
 const TICKS = { timeout: 30_000 };
-const HIDE_ERROR = "躲著的兵要從建築的「全部出來」叫出來";
+const HIDE_ERROR = "躲著的兵要從建築的「全部離開」叫出來";
 
 let checkErrors: () => void;
 
@@ -187,37 +187,40 @@ test("箭樓：建造選單有箭樓；離主城或治理的城鎮太遠時預�
   await expect.poll(async () => (await buildings(page)).some((b) => b.type === 10 && b.cx === TOWER_ON.x && b.cy === TOWER_ON.y)).toBe(true);
 });
 
-test("躲進去：混選時提示只有遠程兵和法師會去，點錯地方說明要點什麼；點主城送出 garrison；主城寫躲了幾名、最多幾名；全部出來送 leave（D-061）", async ({ page }, info) => {
+test("進駐主城（D-061、D-125）：主城的標籤寫進遠程和法師、留槍兵；點錯地方說明要點什麼；點主城送出 garrison，進去的兵不再選著；主城寫躲了幾名、最多幾名；全部離開送 leave", async ({ page }, info) => {
   await start(page);
   const { hiders, spear } = await army(page);
   await selectForCommands(page, [...hiders, spear[0]]);
-  const hide = page.locator(".cmds").getByRole("button", { name: /^躲進去/ });
-  await expect(hide).toContainText("主城或箭樓");
-  await hide.tap();
-  await expect.poll(() => mode(page)).toBe("garrison");
-  await expect(page.getByText("點自己的主城或箭樓：只有遠程兵和法師會躲進去")).toBeVisible();
-  await expect(page.locator(".cmds").getByRole("button", { name: /^取消\s*躲進去/ })).toHaveClass(/active/);
-  await shot(page, info, "r7-garrison-prompt");
-  // Open ground, or the enemy's tower: told what to tap, still picking.
-  await tap(page, await at(page, { x: 18, y: 67 }));
-  await expect(toast(page, "要點自己蓋好的主城或箭樓")).toBeVisible();
-  expect(await mode(page)).toBe("garrison");
-  const mark = (await sent(page)).length;
+  const enter = page.locator(".cmds").getByRole("button", { name: /^進駐/ });
+  await expect(enter).toContainText("點建築");
   await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await enter.tap();
+  await expect.poll(() => mode(page)).toBe("enter");
+  await expect(page.getByText("點亮起來的建築：標籤寫誰進去、誰留下")).toBeVisible();
+  await expect(page.locator(".cmds").getByRole("button", { name: /^取消\s*進駐/ })).toHaveClass(/active/);
   const city = await mainCityId(page);
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.enter()))?.tags.find((t) => t.id === `b${city}`)).toMatchObject({ head: "進 遠程 4・法師 2", sub: "留 槍兵 1", off: false });
+  await shot(page, info, "r7-garrison-prompt");
+  // Open ground: told what to tap, still picking.
+  await tap(page, await at(page, { x: MAIN_CITY.x - 4, y: MAIN_CITY.y - 6 }));
+  await expect(toast(page, "要點亮起來的建築：自己蓋好的城、主城、箭樓或哨所")).toBeVisible();
+  expect(await mode(page)).toBe("enter");
+  const mark = (await sent(page)).length;
+  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
   await expect.poll(async () => (await sent(page)).slice(mark)).toMatchObject([{ c: "garrison", u: hiders, building: city }]);
   await expect(toast(page, `${hiders.length} 名躲進主城`)).toBeVisible();
   expect(await mode(page)).toBe("normal");
+  // Out of what is selected (a next order would take them out again); the spearman stays selected.
+  expect((await page.evaluate(() => window.__proto?.game?.selection()))?.units).toEqual([spear[0]]);
   // Beside the city they slip in and are no longer drawn.
   await place(page, hiders, [{ x: MAIN_CITY.x + 4, y: MAIN_CITY.y + 2 }]);
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(hiders.length);
   await expect.poll(async () => (await units(page)).filter((u) => hiders.includes(u.id)).every((u) => u.action === 7 && u.order === 9), TICKS).toBe(true);
-  // The city: how many hide inside, how many fit, and 全部出來.
+  // The city: how many hide inside, how many fit, and 全部離開.
   await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".garrison-count")).toHaveText(`躲了 ${hiders.length} 名士兵（最多 6 名）`);
-  const out = panel.getByRole("button", { name: "全部出來" });
+  const out = panel.getByRole("button", { name: "全部離開" });
   await expect(out).toBeEnabled();
   await shot(page, info, "r7-garrison-city");
   await out.tap();
@@ -266,14 +269,14 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "garrison", u: [ranged[0]], building: city });
   await expect(panel.locator(".garrison-count")).toHaveText("躲了 0 名士兵（最多 6 名），2 名正過來");
 
-  // Six inside: full, both greyed; 全部出來 still there.
+  // Six inside: full, both greyed; 全部離開 still there.
   await page.evaluate(([u, b]) => window.__proto?.game?.send({ c: "garrison", u, building: b }), [[ranged[2], ranged[3], ...mages], city] as [number[], number]);
   await place(page, [...ranged, ...mages], [{ x: MAIN_CITY.x + 4, y: MAIN_CITY.y + 2 }]);
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(6);
   await expect(panel.locator(".garrison-count")).toHaveText("躲了 6 名士兵（最多 6 名）");
   await expect(callRanged).toBeDisabled();
   await expect(callMage).toBeDisabled();
-  await expect(panel.getByRole("button", { name: "全部出來" })).toBeEnabled();
+  await expect(panel.getByRole("button", { name: "全部離開" })).toBeEnabled();
   await shot(page, info, "d080-call-city-full");
 });
 
@@ -516,19 +519,19 @@ for (const viewport of [null, FULL_SCREEN]) {
 }
 
 for (const viewport of [null, FULL_SCREEN]) {
-  test(`版面：選了全軍（有躲進去）、選了主城（有躲了幾名和全部出來）時，按鈕至少 44 pt、在安全區內、不重疊（${viewport === null ? "工具列展開" : "工具列收合"}）`, async ({ page }, info) => {
+  test(`版面：選了全軍（有進駐）、選了主城（有躲了幾名和全部離開）時，按鈕至少 44 pt、在安全區內、不重疊（${viewport === null ? "工具列展開" : "工具列收合"}）`, async ({ page }, info) => {
     await start(page);
     if (viewport !== null) await page.setViewportSize(viewport);
     await injectSafeArea(page);
     const { hiders, spear } = await army(page);
     await selectForCommands(page, [...spear, ...hiders].sort((a, b) => a - b));
-    await expect(page.locator(".cmds").getByRole("button", { name: /^躲進去/ })).toBeVisible();
+    await expect(page.locator(".cmds").getByRole("button", { name: /^進駐/ })).toBeVisible();
     await expect(page.locator(".sel-note")).toBeVisible();
     await checkLayout(page);
-    // 攻擊、移動、堅守、停止, then 整理隊形, 隊形 (two columns wide) and 躲進去 (D-095: no mage buttons),
-    // then 駐軍 (2026-10-25: we hold the big city here); checkLayout: nothing overlaps.
+    // 攻擊、移動、堅守、停止, then 隊形 (two columns wide), 整理隊形 and 進駐 (D-095: no mage buttons;
+    // D-125: 駐軍, 躲進去 and 駐守 one button, two rows as R13-01 B); checkLayout: nothing overlaps.
     const rows = new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y)));
-    expect(rows.size, "three rows of commands").toBe(3);
+    expect(rows.size, "two rows of commands").toBe(2);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     await shot(page, info, `r7-layout-army-${width}x${height}`);
     await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
@@ -544,12 +547,12 @@ for (const viewport of [null, FULL_SCREEN]) {
   });
 }
 
-test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、躲進去，建築不寫躲了幾名士兵、城鎮不寫收入，攻下城鎮照樣有搶，兵種相剋沒有騎兵（D-061）", async ({ page }) => {
+test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、進駐，建築不寫躲了幾名士兵、城鎮不寫收入，攻下城鎮照樣有搶，兵種相剋沒有騎兵（D-061）", async ({ page }) => {
   await start(page, false);
   const { hiders, spear } = await army(page);
   await selectForCommands(page, [...spear, ...hiders].sort((a, b) => a - b));
   await expect(page.locator(".cmds").getByRole("button", { name: /^隊形/ })).toBeVisible();
-  await expect(page.locator(".cmds").getByRole("button", { name: /^躲進去/ })).toHaveCount(0);
+  await expect(page.locator(".cmds").getByRole("button", { name: /^進駐/ })).toHaveCount(0);
   await selectForCommands(page, []);
   await page.getByRole("button", { name: "建造" }).tap();
   await expect(page.getByRole("button", { name: /^民居/ })).toBeVisible();

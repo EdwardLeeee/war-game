@@ -86,7 +86,7 @@ import { Hud, type HudLifecycle } from "../ui/hud/hud.ts";
 import { formalUi } from "../ui/formal.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText, type ToastKind } from "../ui/overlays.ts";
 import { Placement, placeReason, towerLandOk } from "../ui/placement.ts";
-import { GameView, type TownSpot } from "../view/view.ts";
+import { GameView } from "../view/view.ts";
 import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, movedText, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
@@ -95,16 +95,18 @@ import { autoTrainBuildings, features, garrisonTypes, holdsOf, outpostHide, outp
 import { stoneOf } from "./siege.ts";
 import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
-import { type Callable, callFullText, callNoneText, GARRISON_PROMPT, GARRISON_PROMPT_MIXED, GARRISON_WRONG_TARGET, garrisonTap, isHiding, pickToHide } from "./garrison.ts";
+import { type Callable, callFullText, callNoneText, isHiding, pickToHide } from "./garrison.ts";
+import { buildingPlan, ENTER_PROMPT, ENTER_WRONG_TARGET, enterNowhereText, type EnterPlan, type EnterSoldier, townPlan } from "./enter.ts";
+import { EnterLayer } from "../ui/enter-layer.ts";
 import { allIn, orderState } from "./orders.ts";
 import { heldTown, leaveWalls } from "./walls.ts";
-import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT, STATION_HERE, STATION_PROMPT, STATION_PROMPT_MIXED, STATION_WRONG_TARGET, stationTap } from "./station.ts";
+import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
 import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assaultOrders, GATE_FOCUS_TEXT, type Target, type WallTarget } from "./assault.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
-import { isPosted, outpostModeText, POST_PROMPT, POST_PROMPT_MIXED, POST_TYPE, POST_WRONG_TARGET, postTap } from "./outpost.ts";
+import { isPosted, outpostModeText, POST_TYPE } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
 import type { SimPort } from "./port.ts";
 
@@ -191,14 +193,20 @@ const REFORM_TEXT: Record<string, string> = {
   near: `敵人在 ${REFORM_CLEAR_CELLS} 格內，不整理隊形：整理時不還手，先打完或先移動開`,
 };
 
+/** 進駐: how often who can go where is looked at again. */
+const ENTER_REFRESH_MS = 250;
+/** An arrow tapped: the camera there in this long (R13-01-B2 rule 10). */
+const ENTER_PAN_MS = 300;
+
+/** One of the places 進駐 shows. */
+type EnterChoice = { id: string; name: string; corners: { x: number; y: number }[]; big: boolean; top: number | null; plan: EnterPlan } & ({ kind: "town"; town: number } | { kind: "hide" | "post"; building: number });
+
 const MODE_PROMPT: Record<Exclude<Mode, "normal">, string> = {
   // D-094: 攻擊 then a tap; 移動 the old 撤退.
   advance: "點地面或小地圖：攻擊移動，遇到敵人就打；點敵人集中打它",
   retreat: "點地面或小地圖：走過去，路上不還手；點主城回家",
   rally: "點地面設集結點",
-  garrison: GARRISON_PROMPT,
-  post: POST_PROMPT,
-  station: STATION_PROMPT,
+  enter: ENTER_PROMPT,
 };
 
 /** The sequence number after the log's last (繼續上一局, D-083): the game's commands go on numbered after it. */
@@ -232,6 +240,12 @@ export class Game implements GestureHost {
   readonly started = { init: Number.NaN, ready: Number.NaN };
   camera: Camera | null = null;
   mode: Mode = "normal";
+  /** 進駐 (D-125): its tags, the places now, its prompt, the camera on its way to an arrow's building. */
+  private readonly enterLayer: EnterLayer;
+  private enterNow: EnterChoice[] = [];
+  private enterPrompt = "";
+  private enterRefreshAt = 0;
+  private enterPan: { id: string; x: number; y: number; fromX: number; fromY: number; toX: number; toY: number; at: number; ms: number } | null = null;
   placement: Placement | null = null;
   /** Commands posted, newest last (the test hook reads them). `auto`: given by the interface, not by the player's hand. */
   readonly sent: (CommandBody & { seq: number; auto?: boolean })[] = [];
@@ -346,6 +360,7 @@ export class Game implements GestureHost {
       null,
     );
     this.hud = new Hud(hud, this, this.controls.bar, options.life);
+    this.enterLayer = new EnterLayer(hud, (id) => this.enterGoTo(id));
     this.recognizer = new GestureRecognizer(this);
     port.onmessage = (e) => this.receive(e.data);
     this.cleanups.push(
@@ -674,8 +689,8 @@ export class Game implements GestureHost {
     if (view === null) return;
     const wx = (cx + 0.5) * TILE_PX;
     const wy = (cy + 0.5) * TILE_PX;
-    if (this.mode === "garrison" || this.mode === "post" || this.mode === "station") {
-      this.toast(this.mode === "post" ? POST_WRONG_TARGET : this.mode === "station" ? STATION_WRONG_TARGET : GARRISON_WRONG_TARGET);
+    if (this.mode === "enter") {
+      this.toast(ENTER_WRONG_TARGET);
       return;
     }
     if (this.mode !== "normal") {
@@ -860,7 +875,7 @@ export class Game implements GestureHost {
       const view = this.view;
       const out = cmd.u.filter((id) => !isHiding(view.unitOrder(id)));
       if (out.length === 0 && cmd.u.length > 0) {
-        this.toast("躲著的兵要從建築的「全部出來」叫出來");
+        this.toast("躲著的兵要從建築的「全部離開」叫出來");
         return -1;
       }
       cmd = { ...cmd, u: out };
@@ -2605,6 +2620,7 @@ export class Game implements GestureHost {
     cam.update(dt);
     this.renderer.paused = this.paused;
     this.edge?.update(now, cam, view.ground, view.groundVersion, view.fog, view.fogVersion);
+    if (this.mode === "enter") this.enterFrame(now, cam);
     this.renderer.draw(now, cam, this.placement);
     this.hud.frame(now);
     this.frameTimes.add(dt, performance.now() - now);
@@ -2644,41 +2660,8 @@ export class Game implements GestureHost {
       this.showPlaceButtons();
       return;
     }
-    if (this.mode === "garrison") return this.garrisonAt(w.x, w.y);
-    if (this.mode === "post") return this.postAt(w.x, w.y);
-    if (this.mode === "station") return this.stationAt(w.x, w.y);
+    if (this.mode === "enter") return this.enterTap(x, y);
     this.apply(tapIntents(view, view.selection, this.mode, w.x, w.y, count, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
-  }
-
-  /** 躲進去 (round 7): the building tapped takes the ranged units and mages selected, or the player is told why not. */
-  private garrisonAt(wx: number, wy: number): void {
-    const view = this.view;
-    if (view === null) return;
-    const pick = view.buildingAt(wx, wy);
-    const b = view.curr?.snap.buildings;
-    const o = pick === null ? -1 : view.buildingRow(pick.id);
-    const target = pick === null || o < 0 || b === undefined ? null : { id: pick.id, owner: pick.owner, type: pick.type, done: b[o + BuildingField.progress] >= 1000 };
-    const hides = garrisonTypes(view.rules);
-    const r = garrisonTap(this.freeSelected(), target, view.me, (id) => hides.includes(view.unitType(id)), (type) => holdsOf(view.rules, type));
-    if ("error" in r) {
-      this.toast(r.error);
-      return;
-    }
-    this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
-    if (r.cmd.c === "garrison") this.toast(`${r.cmd.u.length} 名躲進${BUILDING_NAME[target?.type ?? -1] ?? "建築"}`);
-  }
-
-  /** The known town whose castle (walls and gates included) holds the cell at (wx, wy) world px, or null. */
-  private townAtCell(wx: number, wy: number): TownSpot | null {
-    const view = this.view;
-    if (view === null) return null;
-    const cx = Math.floor(wx / TILE_PX);
-    const cy = Math.floor(wy / TILE_PX);
-    for (const town of view.knownTowns.values()) {
-      const box = view.castleBox(town);
-      if (box !== null && cx >= box.x0 && cx <= box.x1 && cy >= box.y0 && cy <= box.y1) return town;
-    }
-    return null;
   }
 
   /**
@@ -2708,43 +2691,6 @@ export class Game implements GestureHost {
     return false;
   }
 
-  /**
-   * 駐軍 (station.ts): the town tapped keeps the soldiers selected and the rest of their groups as
-   * its 留守, still their groups': they guard it (`guard`; the simulation walks them in, and the
-   * ranged and the mages up on its walls). Those stationed in another town come too, that town keeping
-   * the least it needs (the user 2026-10-31); those in this one stay where they are. Or the player is told why not.
-   */
-  private stationAt(wx: number, wy: number): void {
-    const view = this.view;
-    if (view === null) return;
-    const spot = this.townAtCell(wx, wy);
-    const o = spot === null ? -1 : view.townRow(spot.id);
-    const t = view.curr?.snap.towns;
-    const town = spot === null ? null : { id: spot.id, held: o >= 0 && t !== undefined && heldTown(t[o + TownField.owner], t[o + TownField.state], view.me) };
-    const r = stationTap(this.army.withGroups(view.selection.units), town, (id) => view.unitRow(id) >= 0 && isSoldier(view.unitType(id)));
-    if ("error" in r || spot === null) {
-      if ("error" in r) this.toast(r.error);
-      return;
-    }
-    const units = this.soldiers();
-    const kept = this.army.townsOf(r.ids).flatMap((from) => {
-      const area = from === spot.id ? null : this.townArea(from);
-      return area === null ? [] : this.army.split(units, area, (id) => r.ids.includes(id), this.garrisonMin(from)).kept;
-    });
-    const here = this.army.garrisonOf(spot.id);
-    const go = r.ids.filter((id) => !kept.includes(id) && !here.includes(id));
-    view.selection = { ...view.selection, units: view.selection.units.filter((id) => !r.ids.includes(id)) };
-    this.apply([{ kind: "endMode" }]);
-    if (go.length === 0) {
-      this.toast(kept.length > 0 ? `城裡的 ${kept.length} 名都要留下守城` : STATION_HERE);
-      return;
-    }
-    this.command({ c: "guard", u: go, town: spot.id });
-    this.keepIn(spot.id, go);
-    const done = `${go.length} 名駐軍在${spot.size === TownSize.Large ? "大城" : "小鎮"}：敵人來了會反擊，不追出城`;
-    this.toast(kept.length > 0 ? `${done}，原本的城留 ${kept.length} 名守城` : done, "ok");
-  }
-
   /** These soldiers, told to guard it, are the town's 留守 from now, on their way in too. */
   private keepIn(town: number, ids: number[]): void {
     this.army.stationAll(town, ids).forEach((n, i) => {
@@ -2752,26 +2698,225 @@ export class Game implements GestureHost {
     });
   }
 
-  /** 駐守 (D-080): the outpost tapped takes the spearmen selected, or the player is told why not. */
-  private postAt(wx: number, wy: number): void {
+  // --- 進駐 (D-124, D-125; game/enter.ts, ui/enter-layer.ts) ------------------------------------
+
+  /** Those selected who can go in anywhere: alive, soldiers, not kept in a town's list. */
+  private enterSelected(): EnterSoldier[] {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return [];
+    return this.freeSelected().flatMap((id) => {
+      const o = view.unitRow(id);
+      return o < 0 || !isSoldier(view.unitType(id)) ? [] : [{ id, type: u[o + UnitField.type], x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL }];
+    });
+  }
+
+  /** Who goes into town `town`: the selected and the rest of their groups; those another town keeps as its least stay. */
+  private enterTownGoing(town: number): { go: EnterSoldier[]; kept: number[] } {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return { go: [], kept: [] };
+    const ids = this.army.withGroups(view.selection.units).filter((id) => view.unitRow(id) >= 0 && isSoldier(view.unitType(id)));
+    const units = this.soldiers();
+    const kept = this.army.townsOf(ids).flatMap((from) => {
+      const area = from === town ? null : this.townArea(from);
+      return area === null ? [] : this.army.split(units, area, (id) => ids.includes(id), this.garrisonMin(from)).kept;
+    });
+    const here = this.army.garrisonOf(town);
+    const go = ids.filter((id) => !kept.includes(id) && !here.includes(id));
+    return {
+      kept,
+      go: go.map((id) => {
+        const o = view.unitRow(id);
+        return { id, type: u[o + UnitField.type], x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL };
+      }),
+    };
+  }
+
+  /** The places of ours 進駐 can show now, with who goes in. */
+  private enterChoices(): EnterChoice[] {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    if (view === null || snap === undefined) return [];
+    const selected = this.enterSelected();
+    const out: EnterChoice[] = [];
+    const t = snap.towns;
+    for (let o = 0; o < t.length; o += TOWN_STRIDE) {
+      if (!heldTown(t[o + TownField.owner], t[o + TownField.state], view.me)) continue;
+      const id = t[o + TownField.id];
+      const spot = view.knownTowns.get(id);
+      const box = spot === undefined ? null : view.castleBox(spot);
+      if (spot === undefined || box === null) continue;
+      const { go, kept } = this.enterTownGoing(id);
+      const name = spot.size === TownSize.Large ? "大城" : "小鎮";
+      const corners = [
+        { x: box.x0 * TILE_PX, y: box.y0 * TILE_PX },
+        { x: (box.x1 + 1) * TILE_PX, y: box.y0 * TILE_PX },
+        { x: (box.x1 + 1) * TILE_PX, y: (box.y1 + 1) * TILE_PX },
+        { x: box.x0 * TILE_PX, y: (box.y1 + 1) * TILE_PX },
+      ];
+      out.push({ kind: "town", town: id, id: `t${id}`, name, corners, big: true, top: null, plan: townPlan(go, kept.length, view.rules.features?.walls === true) });
+    }
+    const b = snap.buildings;
+    const hides = garrisonTypes(view.rules);
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + BuildingField.owner] !== view.me || b[o + BuildingField.progress] < 1000) continue;
+      const type = b[o + BuildingField.type];
+      const id = b[o + BuildingField.id];
+      const outpost = type === BuildingType.Outpost && outpostSlots(view.rules) > 0;
+      const holds = holdsOf(view.rules, type);
+      if (!outpost && holds <= 0) continue;
+      const f = view.footprint(b, o);
+      const name = BUILDING_NAME[type] ?? "建築";
+      const cap = outpost ? outpostSlots(view.rules) : holds;
+      const taken = outpost ? b[o + BuildingField.posted] : b[o + BuildingField.soldiers] + this.hidingComing(id);
+      // Those in it or on their way to it already neither go nor stay.
+      const others = selected.filter((s) => {
+        const r = view.unitRow(s.id);
+        const order = snap.units[r + UnitField.order];
+        return !((order === Order.Garrison || order === Order.Post) && snap.units[r + UnitField.orderTarget] === id);
+      });
+      const plan = buildingPlan(others, { name, x: f.x + f.w / 2, y: f.y + f.h / 2, cap, room: cap - taken }, outpost ? [POST_TYPE] : hides);
+      const corners = [
+        { x: f.x * TILE_PX, y: f.y * TILE_PX },
+        { x: (f.x + f.w) * TILE_PX, y: f.y * TILE_PX },
+        { x: (f.x + f.w) * TILE_PX, y: (f.y + f.h) * TILE_PX },
+        { x: f.x * TILE_PX, y: (f.y + f.h) * TILE_PX },
+      ];
+      out.push({ kind: outpost ? "post" : "hide", building: id, id: `b${id}`, name, corners, big: false, top: this.renderer?.buildingTop(id) ?? null, plan });
+    }
+    return out;
+  }
+
+  /** The choices looked at again (a few times a second): the tags, the rings, the prompt. Off when nobody selected can go any more. */
+  private enterRefresh(): void {
     const view = this.view;
     if (view === null) return;
-    const pick = view.buildingAt(wx, wy);
-    const b = view.curr?.snap.buildings;
-    const o = pick === null ? -1 : view.buildingRow(pick.id);
-    const target = pick === null || o < 0 || b === undefined ? null : { id: pick.id, owner: pick.owner, type: pick.type, done: b[o + BuildingField.progress] >= 1000 };
-    const r = postTap(this.freeSelected(), target, view.me, (id) => view.unitType(id) === POST_TYPE);
-    if ("error" in r) {
-      this.toast(r.error);
+    const selected = this.enterSelected();
+    // Nobody left who could go anywhere (those kept in a town still can: into another, as 駐軍 did).
+    if (this.army.withGroups(view.selection.units).every((id) => view.unitRow(id) < 0 || !isSoldier(view.unitType(id)))) {
+      this.setMode("normal");
       return;
     }
-    this.apply([{ kind: "command", cmd: r.cmd }, { kind: "endMode" }]);
-    if (r.cmd.c !== "post") return;
-    // Out of what is selected, as for 上城牆: a 移動 of the rest before the snapshot shows them
-    // posted would take them off (they are still their groups', ceo 2026-10-26).
-    const went = r.cmd.u;
-    view.selection = { ...view.selection, units: view.selection.units.filter((id) => !went.includes(id)) };
-    this.toast(`${went.length} 名槍兵去駐守哨所`);
+    this.enterNow = this.enterChoices();
+    this.enterLayer.setPlaces(
+      this.enterNow.map((c) => ({ id: c.id, name: c.name, corners: c.corners, top: c.top, big: c.big, off: c.plan.off, head: c.plan.head, sub: c.plan.sub, chip: c.plan.chip, short: c.plan.short, say: `${c.name}${c.plan.head}${c.plan.sub ?? ""}` })),
+    );
+    this.renderer?.setEnterRings(this.enterNow.map((c) => ({ id: c.id, corners: c.corners, off: c.plan.off })));
+    // Rule 12: nowhere to go, here or off the screen: why, and only 取消.
+    const open = this.enterNow.some((c) => !c.plan.off);
+    const full = this.enterNow.some((c) => c.plan.off && c.plan.head.startsWith("滿了"));
+    const types = selected.length > 0 ? selected.map((s) => s.type) : this.enterTownGoing(-1).go.map((s) => s.type);
+    const text = open ? ENTER_PROMPT : enterNowhereText(types, full, view.rules);
+    if (text !== this.enterPrompt) {
+      this.enterPrompt = text;
+      this.overlays.showPrompt(text, [{ label: "取消", onTap: () => this.setMode("normal") }]);
+    }
+  }
+
+  /** Every frame while picking. */
+  private enterFrame(now: number, camera: Camera): void {
+    if (now >= this.enterRefreshAt) {
+      this.enterRefreshAt = now + ENTER_REFRESH_MS;
+      this.enterRefresh();
+      if (this.mode !== "enter") return;
+    }
+    const pan = this.enterPan;
+    if (pan !== null) {
+      const k = pan.ms <= 0 ? 1 : Math.min(1, (now - pan.at) / pan.ms);
+      const ease = k * k * (3 - 2 * k);
+      const here = camera.worldToScreen(pan.x, pan.y);
+      const wantX = pan.fromX + (pan.toX - pan.fromX) * ease;
+      const wantY = pan.fromY + (pan.toY - pan.fromY) * ease;
+      camera.panBy(wantX - here.x, wantY - here.y);
+      if (k >= 1) {
+        this.enterPan = null;
+        this.renderer?.flashEnterRing(pan.id, now);
+      }
+    }
+    // The squad's middle on the screen (rule 2: the nearest building first): all of theirs, those kept in a town too.
+    const view = this.view;
+    if (view === null) return;
+    let x = 0;
+    let y = 0;
+    let n = 0;
+    for (const id of this.army.withGroups(view.selection.units)) {
+      const o = view.unitRow(id);
+      if (o < 0 || !isSoldier(view.unitType(id))) continue;
+      const at = view.unitPos(o);
+      const p = camera.worldToScreen(at.x, at.y);
+      x += p.x;
+      y += p.y;
+      n++;
+    }
+    this.enterLayer.frame(now, camera, n === 0 ? [camera.width / 2, camera.height / 2] : [x / n, y / n]);
+  }
+
+  /** An arrow tapped (rule 10): the camera to that building, its ring flashes; still picking, no order. */
+  private enterGoTo(id: string): void {
+    const camera = this.camera;
+    const c = this.enterNow.find((v) => v.id === id);
+    if (camera === null || c === undefined) return;
+    camera.stop();
+    const x = c.corners.reduce((a, p) => a + p.x, 0) / c.corners.length;
+    const y = c.corners.reduce((a, p) => a + p.y, 0) / c.corners.length;
+    const from = camera.worldToScreen(x, y);
+    const to = this.enterLayer.freeMiddle();
+    const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.enterPan = { id, x, y, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, at: performance.now(), ms: still ? 0 : ENTER_PAN_MS };
+  }
+
+  /** A tap while picking: on a place (its ring, tag or small tag) they go in; a grey one says why; elsewhere, what to tap. */
+  private enterTap(sx: number, sy: number): void {
+    const view = this.view;
+    if (view === null) return;
+    let id = this.enterLayer.tapAt(sx, sy);
+    // Nothing there: what can be entered looked at again now (a town just taken, a building just
+    // finished: the tags are a quarter of a second behind), and the tap once more.
+    if (id === null && this.camera !== null) {
+      this.enterRefreshAt = 0;
+      this.enterFrame(performance.now(), this.camera);
+      id = this.enterLayer.tapAt(sx, sy);
+    }
+    const c = this.enterNow.find((v) => v.id === id);
+    if (c === undefined) {
+      this.toast(ENTER_WRONG_TARGET);
+      return;
+    }
+    if (c.plan.off) {
+      this.toast(c.plan.why ?? ENTER_WRONG_TARGET);
+      return;
+    }
+    const went = c.plan.go;
+    // Out of what is selected (the user's reports: a next order for those selected would take them out again).
+    const leave = (ids: readonly number[]) => {
+      view.selection = { ...view.selection, units: view.selection.units.filter((u) => !ids.includes(u)) };
+    };
+    if (c.kind === "town") {
+      const spot = view.knownTowns.get(c.town);
+      if (spot === undefined) return;
+      const { go, kept } = this.enterTownGoing(c.town);
+      const ids = go.map((s) => s.id);
+      // Every soldier of theirs out of what is selected: those going, those already in this town and
+      // those another town keeps back (as 駐軍 did): a next order would take them out of it.
+      leave(this.army.withGroups(view.selection.units).filter((u) => view.unitRow(u) >= 0 && isSoldier(view.unitType(u))));
+      this.apply([{ kind: "endMode" }]);
+      if (ids.length === 0) return;
+      this.command({ c: "guard", u: ids, town: c.town });
+      this.keepIn(c.town, ids);
+      const done = `${ids.length} 名駐軍在${spot.size === TownSize.Large ? "大城" : "小鎮"}：敵人來了會反擊，不追出城`;
+      this.toast(kept.length > 0 ? `${done}，原本的城留 ${kept.length} 名守城` : done, "ok");
+      return;
+    }
+    const cmd: CommandBody = c.kind === "post" ? { c: "post", u: went, building: c.building } : { c: "garrison", u: went, building: c.building };
+    this.apply([{ kind: "command", cmd }, { kind: "endMode" }]);
+    leave(went);
+    this.toast(c.kind === "post" ? `${went.length} 名槍兵${outpostHide(view.rules) ? "躲進" : "去駐守"}哨所` : `${went.length} 名躲進${c.name}`);
+  }
+
+  /** For the test page. */
+  enterForTest(): ReturnType<EnterLayer["forTest"]> & { prompt: string } {
+    return { ...this.enterLayer.forTest(), prompt: this.mode === "enter" ? this.enterPrompt : "" };
   }
 
   longPress(x: number, y: number): LongPressResult {
@@ -3193,6 +3338,13 @@ export class Game implements GestureHost {
   }
 
   setMode(mode: Mode): void {
+    if (this.mode === "enter" && mode !== "enter") {
+      this.enterNow = [];
+      this.enterPan = null;
+      this.enterLayer.close();
+      this.renderer?.setEnterRings([]);
+      this.hud.foldForEnter(false);
+    }
     this.mode = mode;
     if (mode === "normal") {
       this.overlays.hidePrompt();
@@ -3207,13 +3359,13 @@ export class Game implements GestureHost {
     // 取消 while picking where to attack or move to: they stop and hold (D-054).
     const holds = mode === "advance" || mode === "retreat";
     buttons.push({ label: "取消", onTap: () => (holds ? this.cancelToHold() : this.setMode("normal")) });
-    const view = this.view;
-    // 躲進去 with spearmen in the selection too: only those who can hide go.
-    const mixed = mode === "garrison" && view !== null && view.selection.units.some((id) => !garrisonTypes(view.rules).includes(view.unitType(id)));
-    // 駐守 with others than spearmen selected: only the spearmen go (D-080).
-    const mixedPost = mode === "post" && view !== null && view.selection.units.some((id) => view.unitType(id) !== POST_TYPE);
-    const mixedStation = mode === "station" && view !== null && view.selection.units.some((id) => !isSoldier(view.unitType(id)));
-    this.overlays.showPrompt(mixed ? GARRISON_PROMPT_MIXED : mixedPost ? POST_PROMPT_MIXED : mixedStation ? STATION_PROMPT_MIXED : MODE_PROMPT[mode], buttons);
+    if (mode === "enter") {
+      this.enterPrompt = ENTER_PROMPT;
+      this.enterRefreshAt = 0;
+      this.enterLayer.open();
+      this.hud.foldForEnter(true);
+    }
+    this.overlays.showPrompt(MODE_PROMPT[mode], buttons);
   }
 
   /**

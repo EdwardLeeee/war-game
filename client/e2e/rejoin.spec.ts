@@ -74,9 +74,10 @@ test("出城歸隊：整個編隊 1 駐軍後還是編隊 1 的（5/5、駐5、�
   await centre(page, 24, 66);
   await selectForCommands(page, ids);
   await saveGroup(page, GROUP_1);
-  // 駐軍 from 軍團畫面, the panel put away to see the town.
-  await page.locator(".cmds").getByRole("button", { name: /^駐軍/ }).tap();
-  await page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" }).tap();
+  // 進駐 from 軍團畫面 (D-125), the panel put away by itself to see the town.
+  await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
+  // The selection info folds by itself while picking (R13-01 B).
+  await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
   await expect.poll(said).toContain("5 名駐軍在小鎮");
   expect(await garrison(page)).toEqual(ids);
@@ -138,9 +139,9 @@ test("編隊按鈕選得到駐守的兵（收起）：點地板整隊出城，�
   await centre(page, 24, 66);
   await selectForCommands(page, ids);
   await saveGroup(page, GROUP_1);
-  // One of the group selected: 駐軍 takes all of it.
+  // One of the group selected: 進駐 into the town takes all of it.
   await selectForCommands(page, [spears[0]]);
-  await page.locator(".cmds").getByRole("button", { name: /^駐軍/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
   await expect.poll(said).toContain("5 名駐軍在小鎮");
   expect(await garrison(page)).toEqual(ids);
@@ -193,8 +194,9 @@ test("新兵補進全部駐守的編隊就走進那座城當留守；編隊再�
   await centre(page, 24, 66);
   await selectForCommands(page, spears);
   await saveGroup(page, GROUP_1);
-  await page.locator(".cmds").getByRole("button", { name: /^駐軍/ }).tap();
-  await page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
+  // The selection info folds by itself while picking (R13-01 B).
+  await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
   await expect.poll(said).toContain("4 名駐軍在小鎮");
   // One falls; the barracks' next spearman fills the group and walks in.
@@ -211,16 +213,19 @@ test("新兵補進全部駐守的編隊就走進那座城當留守；編隊再�
   expect(recruit).toHaveLength(1);
   expect((await sent(page)).filter((c) => c.auto === true && c.c === "guard").at(-1)).toMatchObject({ u: recruit, town: OUR_TOWN.id });
   expect((await group1(page)).recruits).toEqual([]);
-  // A second town of ours; 駐軍 there from the group's button: all but the 1 the first town keeps.
+  // A second town of ours; 進駐 there from the group's button: all but the 1 the first town keeps.
   await centre(page, NEUTRAL_TOWN.x + 0.5, NEUTRAL_TOWN.y + 0.5);
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
   await page.locator(".town-choice").getByRole("button", { name: /^治理/ }).tap();
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
-  await page.locator(".cmds").getByRole("button", { name: /^駐軍/ }).tap();
+  await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
   await tap(page, await at(page, { x: NEUTRAL_TOWN.x + 0.5, y: NEUTRAL_TOWN.y + 2.5 }));
   await expect.poll(said).toContain("3 名駐軍在小鎮：敵人來了會反擊，不追出城，原本的城留 1 名守城");
   expect(await garrison(page)).toHaveLength(1);
+  // None of the group selected any more, the one the first town keeps neither: a next order would take them out (ceo 2026-11-05).
+  const selected = (await page.evaluate(() => window.__proto?.game?.selection()))?.units ?? [];
+  expect(selected.filter((id) => all.includes(id) || spears.includes(id))).toEqual([]);
   await expect(page.locator(GROUP_1)).toContainText("駐4");
   await shot(page, info, "rejoin-7-other-town-keeps-one");
   check();

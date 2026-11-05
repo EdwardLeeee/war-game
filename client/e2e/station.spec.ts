@@ -55,23 +55,25 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   await selectForCommands(page, ids);
   await saveGroup(page, GROUP_1);
   const army = await armyButton(page).textContent();
-  // 軍團畫面 (a tap on the group button): its soldiers selected, 駐軍 beside it.
+  // 軍團畫面 (a tap on the group button): its soldiers selected, 進駐 beside it (D-125: 駐軍 in it).
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
   await expect(page.locator(".sel-info .sel-head")).toContainText(/^編隊 1/);
-  const button = page.locator(".cmds").getByRole("button", { name: /^駐軍/ });
-  await expect(button).toHaveText("駐軍點自己的城");
+  const button = page.locator(".cmds").getByRole("button", { name: /^進駐/ });
+  await expect(button).toHaveText("進駐點建築");
   await shot(page, info, "station-1-button-in-group-screen");
   await button.tap();
-  await expect(page.getByText("點自己持有的城鎮：選的兵連同整個編隊走進去留守")).toBeVisible();
+  await expect(page.getByText("點亮起來的建築：標籤寫誰進去、誰留下")).toBeVisible();
   await expect(page.locator(".cmds").getByRole("button", { name: /^取消/ })).toBeVisible();
   await shot(page, info, "station-2-pick-a-town");
   // 軍團畫面 folded by the tap on the group (the user 2026-10-31): the map under it is free.
   await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
-  await expect(page.getByText("點自己持有的城鎮：選的兵連同整個編隊走進去留守")).toBeVisible();
-  // Not ours: why.
+  await expect(page.getByText("點亮起來的建築：標籤寫誰進去、誰留下")).toBeVisible();
+  // Our town's tag: the whole group in (R13-01 B).
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.enter()))?.tags.find((t) => t.id === `t${OUR_TOWN.id}`)?.head).toBe("進 5 名全進城");
+  // Not ours: not lit, what to tap.
   await tap(page, await at(page, { x: NEUTRAL_TOWN.x + 0.5, y: NEUTRAL_TOWN.y + 2.5 }));
-  await expect(toast(page, "不是你攻下的城鎮")).toBeVisible();
+  await expect(toast(page, "要點亮起來的建築：自己蓋好的城、主城、箭樓或哨所")).toBeVisible();
   // Ours: in they go, its 留守.
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
   await expect.poll(said).toContain("5 名駐軍在小鎮：敵人來了會反擊，不追出城");
