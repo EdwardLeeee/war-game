@@ -80,15 +80,24 @@ export interface ShiftRow {
   home: boolean;
 }
 
-/** The snapshot's rows (WALL_SHIFT_STRIDE each) for one town and owner, the most soldiers first. */
+/**
+ * The snapshot's rows (WALL_SHIFT_STRIDE each) for one town and owner, as the lines say them: walks
+ * to fight to the same stretch the same way as one (their `from` is not written), every walk back
+ * as one; the most soldiers first.
+ */
 export function shiftRows(rows: Int32Array | undefined, town: number, owner: number): ShiftRow[] {
   if (rows === undefined) return [];
-  const out: ShiftRow[] = [];
+  const byLine = new Map<string, ShiftRow>();
   for (let o = 0; o + WS.home < rows.length; o += WALL_SHIFT_STRIDE) {
     if (rows[o + WS.town] !== town || rows[o + WS.owner] !== owner) continue;
-    out.push({ town, owner, n: rows[o + WS.n], from: rows[o + WS.from], to: rows[o + WS.to], via: rows[o + WS.via], foes: rows[o + WS.foes], home: rows[o + WS.home] === 1 });
+    const home = rows[o + WS.home] === 1;
+    const key = home ? "home" : `${rows[o + WS.to]}:${rows[o + WS.via]}`;
+    const had = byLine.get(key);
+    const n = rows[o + WS.n];
+    if (had !== undefined) had.n += n;
+    else byLine.set(key, { town, owner, n, from: rows[o + WS.from], to: rows[o + WS.to], via: rows[o + WS.via], foes: rows[o + WS.foes], home });
   }
-  return out.sort((a, b) => b.n - a.n || a.to - b.to);
+  return [...byLine.values()].sort((a, b) => b.n - a.n || a.to - b.to);
 }
 
 /**

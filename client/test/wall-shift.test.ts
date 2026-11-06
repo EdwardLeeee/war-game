@@ -52,6 +52,20 @@ test("快照的列：只要這座城、這一方的，人多的在前面", () =>
   assert.deepEqual(shiftRows(undefined, 0, 0), []);
 });
 
+test("同一段、同一條路的換邊合成一行（出發的段不寫）；走回原位的全部合成一行", () => {
+  // Seen on scenario wallshift: 2 from 北牆西段 and 2 from 北牆東段, both over 北門頂 to 東牆北段; three walking back.
+  const rows = Int32Array.from([0, 0, 2, 1, 4, 1, 0, 0, 0, 0, 2, 2, 4, 1, 0, 0, 0, 0, 1, 4, 1, 1, 0, 1, 0, 0, 2, 5, 7, 4, 0, 1]);
+  const got = shiftRows(rows, 0, 0);
+  assert.deepEqual(
+    got.map((r) => [r.n, r.to, r.home]),
+    [
+      [4, 4, false],
+      [3, 1, true],
+    ],
+  );
+  assert.equal(shiftLine(got[0], 2, 10, compass), "換邊：4 名走過北門頂，去打東牆北段（敵人 0 名，沒超過牆上的 2 倍）");
+});
+
 test("牆格屬於哪一段，和模擬一樣（wall-walk.ts wallStretch）：角落算北牆、南牆", () => {
   // Town centre (10, 10).
   assert.equal(cellStretch(13, 5, 10, 10, false), 2); // north, larger x
