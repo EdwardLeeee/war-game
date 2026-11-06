@@ -69,6 +69,7 @@ import {
   TownField,
   TownSize,
   TownState,
+  TICKS_PER_SECOND,
   type ToWorker,
   UNIT_STRIDE,
   UnitField,
@@ -77,6 +78,7 @@ import {
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
+import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, type WallView } from "../ui/hud/wall-shift.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
 import { loadGradeOn, saveGradeOn } from "../grade-pref.ts";
 import { loadGroundOn, saveGroundOn } from "../ground-pref.ts";
@@ -250,6 +252,9 @@ const PROJECTION_DEFAULT = PROJECTIONS[VIEW_DEFAULT];
 const EDGE_FADE_M = 0.75;
 /** Orders that end a soldier's attack on a town (攻城打到底, assault.ts); 攻擊 starts one again. */
 const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "guard", "post", "gather", "build", "repair", "release"]);
+
+/** How long 到了 stays after a walk to fight is over (R14-07 2). */
+const ARRIVED_MS = 4000;
 
 export class Game implements GestureHost {
   view: GameView | null = null;
@@ -2187,6 +2192,61 @@ export class Game implements GestureHost {
   }
 
   /** A town of ours (7c): its 留守 up on the walls and inside, by kind. */
+  /**
+   * 牆上換邊 (R14-07, ui/hud/wall-shift.ts): our town's lines under its 牆上／城內, at most two: the
+   * snapshot's walks (換邊, 走回原位), the most soldiers first, then for ARRIVED_MS after a walk to
+   * fight is over, how many of ours stand on that stretch (到了).
+   */
+  wallShiftLines(town: number): string[] {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    if (view === null || snap === undefined) return [];
+    // The screen's directions (D-132): the diamond's, or north up.
+    const names: WallView = view.projection.kind === "diamond" ? "diamond" : "square";
+    const rule = view.rules.wallShift;
+    const odds = rule?.odds ?? 2;
+    const back = Math.round((rule?.back ?? 10 * TICKS_PER_SECOND) / TICKS_PER_SECOND);
+    const rows = shiftRows(snap.wallShifts, town, view.me);
+    const now = performance.now();
+    const going = new Set(rows.filter((r) => !r.home).map((r) => r.to));
+    for (const r of this.shiftsSeen.get(town) ?? []) if (!r.home && !going.has(r.to)) this.arrived.set(`${town}:${r.to}`, now + ARRIVED_MS);
+    this.shiftsSeen.set(town, rows);
+    const lines = rows.map((r) => shiftLine(r, odds, back, names));
+    for (const [key, until] of this.arrived) {
+      const [t, to] = key.split(":").map(Number);
+      if (t !== town) continue;
+      if (now >= until) {
+        this.arrived.delete(key);
+        continue;
+      }
+      if (going.has(to)) continue;
+      const n = this.onStretch(town, to);
+      if (n > 0) lines.push(arrivedLine(to, n, names));
+    }
+    return lines.slice(0, 2);
+  }
+
+  /** The walks seen last time each town's lines were asked for, and when each 到了 goes (`town:stretch`). */
+  private readonly shiftsSeen = new Map<number, ShiftRow[]>();
+  private readonly arrived = new Map<string, number>();
+
+  /** Ours up on a town's wall on that stretch (as the simulation reckons a cell's: wall-walk.ts wallStretch). */
+  private onStretch(town: number, stretch: number): number {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const t = view?.knownTowns.get(town);
+    if (view === null || u === undefined || t === undefined) return 0;
+    let n = 0;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] !== view.me || (u[o + UnitField.flags] & UnitFlag.OnWall) === 0) continue;
+      if (u[o + UnitField.order] !== Order.Wall || u[o + UnitField.orderTarget] !== town) continue;
+      const x = Math.floor(u[o + UnitField.x] / CELL);
+      const y = Math.floor(u[o + UnitField.y] / CELL);
+      if (cellStretch(x, y, t.cellX, t.cellY, false) === stretch) n++;
+    }
+    return n;
+  }
+
   townSeats(town: number): { wall: number[]; inside: number[] } {
     const view = this.view;
     const u = view?.curr?.snap.units;
