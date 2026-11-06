@@ -77,7 +77,8 @@ test("攻城砲（D-099）：石頭從攻城砲飛到落點、看不到的攻城
   const works = page.locator(".cmds").getByRole("button", { name: /^砲坊/ });
   await expect(works).toBeVisible();
   await expect(works).toBeDisabled();
-  await expect(works).toContainText("要先蓋射場");
+  // 正式介面: 要先蓋 a line, the building another (ui 2026-11-07).
+  await expect(works).toContainText(/要先蓋\s*射場/);
   await page.locator(".cmds").getByRole("button", { name: "返回" }).tap();
   // Our 砲坊: 訓練攻城砲, and 自動訓練 as at the barracks (D-098).
   const own = (await buildings(page)).find((b) => b.owner === me && b.type === SIEGE_WORKS);

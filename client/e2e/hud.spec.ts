@@ -1259,7 +1259,7 @@ test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少
   // 自動補兵 off: he walks back as the group's own all the same (not as a replacement).
   const refill = page.locator(".sel-info").getByRole("button", { name: /^自動補兵：/ });
   await refill.tap();
-  await expect(refill).toHaveText("自動補兵：關");
+  await expect(refill).toHaveAccessibleName("自動補兵：關");
   await select(page, []);
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
   const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
@@ -1337,9 +1337,9 @@ test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現�
   await expect.poll(async () => (await selection(page))?.units).toEqual([...spear.slice(3), ...recruits]);
   await openPanel(page);
   const sw = page.locator(".sel-info").getByRole("button", { name: /^自動補兵：/ });
-  await expect(sw).toHaveText("自動補兵：開");
+  await expect(sw).toHaveAccessibleName("自動補兵：開");
   await sw.tap();
-  await expect(sw).toHaveText("自動補兵：關");
+  await expect(sw).toHaveAccessibleName("自動補兵：關");
   await expectSaid(page, "編隊 1 自動補兵：關");
   // Off: a fallen soldier is not replaced; the new spearman stays by the barracks.
   await remove(page, [spear[3]]);

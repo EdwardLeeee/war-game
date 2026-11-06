@@ -475,6 +475,11 @@
   line-height: 1.15;
 }
 
+/* 收起: only the title line, the pinned row too. */
+:root[data-ui="r6"] .sel-info.collapsed > .group-actions {
+  display: none;
+}
+
 :root[data-ui="r6"] .sel-info > .group-actions .chip.b > .sub {
   font-size: 10px;
   font-weight: 400;

@@ -99,6 +99,7 @@ test("正式介面的 3×3 哨所（R14-05）：方塊和幾名在同一列，�
   expect(Math.abs(count.y + count.height / 2 - (seat.y + seat.height / 2)), "the count beside the squares").toBeLessThan(8);
   const groups = panel(page).locator(".outpost-groups");
   await expect(groups).toContainText(/^編隊 1：\d+ 名召回$/);
-  const last = await panel(page).locator(".sel-body > *").last().getAttribute("class");
+  // The last row (the fade at the foot of what scrolls, .sel-more, is not one).
+  const last = await panel(page).locator(".sel-body > :not(.sel-more)").last().getAttribute("class");
   expect(last).toContain("outpost-groups");
 });
