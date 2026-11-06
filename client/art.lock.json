@@ -1,9 +1,9 @@
 {
   "repo": "EdwardLeeee/war-game",
-  "tag": "art-v7.4",
+  "tag": "art-v7.5",
   "assets": {
-    "art-v7.4-x3.tar.gz": "e45438d698e5b96bba475bd666585cf30089e1afff2f2a170127a333d323b5a8",
-    "art-v7.4-astc-x3.tar.gz": "f0777d0fe55294cb4c0fb34770d67979722f93b2f6a9d89f88d54332d00b01a4",
-    "art-v7.4-x2.tar.gz": "f68e634c6f63018d06f0dd0ca47726d97b58dca7a6163f741aed04888967e65b"
+    "art-v7.5-x3.tar.gz": "b085a44950916680e297527f7dc4742420d03db8d7fbbf4e47ae0f1fe8442073",
+    "art-v7.5-astc-x3.tar.gz": "e30f1a400cf1e06c52efde9c3db48db1b79205eb2616f9e896301bd41897cb42",
+    "art-v7.5-x2.tar.gz": "eb66f75a399921e5ecaf9719992648a4d11e2314305fea75ff065686cbfae371"
   }
 }

@@ -456,13 +456,13 @@ ui 把 12 個兵種完整算過一次之後量到的數字（`design/production/
   - 顯示卡上的大小照區塊算：每 4×4 一塊 16 bytes，邊長不是 4 的倍數時進位（PNG 是每像素 4 bytes）。
   - 某一頁讀不到 `.astc.ktx` 就改讀那頁的 PNG。
   - 3 倍要 ASTC，但顯示卡沒有 ASTC 或美術沒有壓縮圖時，改畫 2 倍的 PNG（D-128：art-v7 的 3 倍 PNG 要 773 MB）。
-  - 預設 ASTC（art-v7.4 起）；量測面板的「貼圖」可以改 PNG。
+  - 預設 ASTC（art-v7.5 起）；量測面板的「貼圖」可以改 PNG。
 - art-v7 量測（D-128，`src/lab/art-measure.ts`）：
   - 切換前，`art-lab.lock.json` 釘 art-v7.1 的 x3、x2、astc-x3，Pages 用 `fetch-art.ts --lab` 一起解到 `public/art/art-v7.1/`。service worker 不存這份。
   - 量測面板的三個鈕依序是 x3 ASTC、x2 PNG、x3 PNG，最可能撐不住的放最後。每個鈕開一頁（`?measure=`），直接量 360 人 10 分鐘。
   - 結果寫實際畫的是哪種、貼圖 MB（地面另列）、有沒有 ASTC、user agent。
   - 量到一半頁面被重新載入時，開局畫面寫是哪一種，不會再自己量一次。
-  - art-v7.4 切換時拿掉了 `art-lab.lock.json`；之後量測頁的三個鈕量 `art.lock.json` 的美術（地面、水一起算）。
+  - art-v7.5 切換時拿掉了 `art-lab.lock.json`；之後量測頁的三個鈕量 `art.lock.json` 的美術（地面、水一起算）。
 - 影子只有深淺，之後可以試更大的 ASTC 區塊（例如 8×8，每點 0.25 位元組）。
 
 ### iPhone 上要讀的數字

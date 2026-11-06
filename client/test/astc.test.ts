@@ -32,7 +32,7 @@ test("D-128：3 倍要 ASTC 但顯示卡沒有（或美術沒有壓縮圖）就�
   assert.equal(artScale("test", "astc", false), "test");
 });
 
-test("貼圖的選擇記在這台裝置；沒選過、讀不到或亂寫的都算 ASTC（D-128，art-v7.4 起）", () => {
+test("貼圖的選擇記在這台裝置；沒選過、讀不到或亂寫的都算 ASTC（D-128，art-v7.5 起）", () => {
   const kept = new Map<string, string>();
   const store = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) };
   assert.equal(loadTexChoice(store), "astc");
