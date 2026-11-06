@@ -1509,6 +1509,8 @@ export class UnitSystem {
     const id = u.id[i];
     const c = u.wall[i];
     if (u.wallHome[i] < 0) u.wallHome[i] = c;
+    // A new walk (not a new goal on the way): where it sets off from, for the screen.
+    if (u.wallTo[i] < 0 || u.wallTo[i] === c) u.wallFrom[i] = c;
     if (w.wallAt[c] === id) w.wallAt[c] = -1;
     const was = u.wallTo[i];
     if (was >= 0 && w.wallAt[was] === id) w.wallAt[was] = -1;
