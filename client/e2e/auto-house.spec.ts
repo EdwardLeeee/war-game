@@ -7,7 +7,7 @@
 // switch off.
 
 import { expect, type Page, test } from "@playwright/test";
-import { shot, watchErrors } from "./helpers.ts";
+import { expectSaid, shot, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const FARMER = 0;
@@ -27,6 +27,7 @@ test.afterEach(() => {
 });
 
 async function start(page: Page, query: string): Promise<void> {
+  await watchToasts(page);
   await page.goto(`./${query}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
@@ -38,7 +39,6 @@ const autoHouse = (page: Page) => page.evaluate(() => window.__proto?.game?.auto
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const buildings = (page: Page) => page.evaluate(() => window.__proto?.game?.buildings() ?? []);
 const me = (page: Page) => page.evaluate(() => window.__proto?.game?.me() ?? 0);
-const toast = (page: Page, text: string) => page.getByRole("status").filter({ hasText: text });
 const switchButton = (page: Page) => page.locator(".cmds").getByRole("button", { name: /^自動蓋民居/ });
 
 async function mainCity(page: Page): Promise<{ id: number; cx: number; cy: number; size: number }> {
@@ -98,7 +98,7 @@ test("假世界：開關關著不蓋、家裡有敵兵不蓋；之後派離主�
   await expect(button).toHaveText("自動蓋民居目前：開");
   await button.tap();
   await expect(button).toHaveText("自動蓋民居目前：關");
-  await expect(toast(page, "已關閉自動蓋民居")).toBeVisible();
+  await expectSaid(page, "已關閉自動蓋民居");
   expect(await autoHouse(page)).toEqual({ on: false, block: "off" });
   expect(await houseOrders(page)).toEqual([]);
   // Two places left of the cap (a house gives 5 here): wanted, but off.
@@ -124,7 +124,7 @@ test("假世界：開關關著不蓋、家裡有敵兵不蓋；之後派離主�
   expect(where.d).toBeGreaterThanOrEqual(4);
   expect(where.d).toBeLessThanOrEqual(10);
   expect(where.away, "away from the map's centre").toBeGreaterThan(0);
-  await expect(toast(page, "人口快滿，自動蓋一間民居")).toBeVisible();
+  await expectSaid(page, "人口快滿，自動蓋一間民居");
   // Its site shows: one at a time.
   await expect.poll(async () => (await autoHouse(page)).block, { timeout: 30_000 }).toBe("building");
   await page.waitForTimeout(1500);
@@ -142,7 +142,7 @@ test("假世界：開關關著不蓋、家裡有敵兵不蓋；之後派離主�
     g?.population({ room: 0, ceiling: 120 });
     g?.villagersPaused(false);
   });
-  await expect(toast(page, "人口快滿，木頭不夠蓋民居")).toBeVisible({ timeout: 30_000 });
+  await expectSaid(page, "人口快滿，木頭不夠蓋民居", {}, { timeout: 30_000 });
   expect((await houseOrders(page)).length).toBe(1);
 });
 

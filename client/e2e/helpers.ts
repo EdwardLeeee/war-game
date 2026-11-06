@@ -156,6 +156,56 @@ export interface Said {
   text: string;
   ok: boolean;
   info: boolean;
+  /** On the screen when shown: inside the viewport, not hidden or see-through, on top at its middle. */
+  seen: boolean;
+  /** The green check of an order taken (R6-31) showing. */
+  check: boolean;
+}
+
+/**
+ * In the page: note the strip's message each time it is shown, with its look and whether it is
+ * really seen then. Self-contained (it runs by page.evaluate and by page.addInitScript).
+ */
+function installToastRecorder(): void {
+  const w = window as unknown as { __said?: Said[]; __saidFrom?: number };
+  if (w.__said !== undefined) return;
+  const said: Said[] = [];
+  w.__said = said;
+  w.__saidFrom = 0;
+  const note = (box: HTMLElement) => {
+    if (box.hidden) return;
+    const r = box.getBoundingClientRect();
+    const cs = getComputedStyle(box);
+    // The strip lets taps through (#hud): hit-testable for this one look only (style is not watched).
+    const pe = box.style.pointerEvents;
+    box.style.pointerEvents = "auto";
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    box.style.pointerEvents = pe;
+    const inView = r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+    const onTop = hit !== null && (hit === box || box.contains(hit));
+    const mark = box.querySelector<HTMLElement>(".toast-check");
+    said.push({
+      text: box.textContent ?? "",
+      ok: box.classList.contains("toast-ok"),
+      info: box.classList.contains("toast-info"),
+      seen: inView && onTop && cs.visibility === "visible" && Number(cs.opacity) > 0.5,
+      check: mark !== null && getComputedStyle(mark).display !== "none",
+    });
+  };
+  const watch = (box: HTMLElement) =>
+    new MutationObserver(() => note(box)).observe(box, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden", "class"] });
+  const found = document.querySelector<HTMLElement>(".toast");
+  if (found !== null) {
+    watch(found);
+    return;
+  }
+  const look = new MutationObserver(() => {
+    const box = document.querySelector<HTMLElement>(".toast");
+    if (box === null) return;
+    look.disconnect();
+    watch(box);
+  });
+  look.observe(document, { childList: true, subtree: true });
 }
 
 /**
@@ -164,27 +214,46 @@ export interface Said {
  * it, sooner or later as the machine runs (paused-orders, assault): such checks read this record.
  */
 export async function recordToasts(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const w = window as unknown as { __said?: { text: string; ok: boolean; info: boolean }[] };
-    const box = document.querySelector<HTMLElement>(".toast");
-    if (w.__said !== undefined || box === null) return;
-    const said: { text: string; ok: boolean; info: boolean }[] = [];
-    w.__said = said;
-    new MutationObserver(() => {
-      if (box.hidden) return;
-      const now = { text: box.textContent ?? "", ok: box.classList.contains("toast-ok"), info: box.classList.contains("toast-info") };
-      const last = said.at(-1);
-      if (last === undefined || last.text !== now.text || last.ok !== now.ok || last.info !== now.info) said.push(now);
-    }).observe(box, { subtree: true, childList: true, characterData: true, attributes: true });
-  });
+  await page.evaluate(installToastRecorder);
 }
 
-/** The strip said this (exactly, or matching), with its look, since the record began. */
-export async function expectSaid(page: Page, text: string | RegExp, look: Partial<Said> = {}): Promise<void> {
+/** The same record from the start of every page this test opens (before the game says anything). */
+export async function watchToasts(page: Page): Promise<void> {
+  await page.addInitScript(installToastRecorder);
+}
+
+/** Where the record is now: what is said after this counts (expectNotSaid, expectSaid's `from`). */
+export async function saidMark(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { __said?: Said[] }).__said?.length ?? 0);
+}
+
+const saidMatches = (m: Said, text: string | RegExp) => (typeof text === "string" ? m.text.includes(text) : text.test(m.text));
+
+/**
+ * The strip said this (containing it, or matching), with its look: the first such after the one the
+ * last check found (or after `from`), so a sentence said twice is looked for twice.
+ */
+export async function expectSaid(page: Page, text: string | RegExp, look: Partial<Said> = {}, opts: { from?: number; timeout?: number } = {}): Promise<void> {
   const find = async () => {
-    const said = (await page.evaluate(() => (window as unknown as { __said?: Said[] }).__said ?? [])) as Said[];
-    return said.find((m) => (typeof text === "string" ? m.text === text : text.test(m.text))) ?? null;
+    const r = await page.evaluate(() => {
+      const w = window as unknown as { __said?: Said[]; __saidFrom?: number };
+      return { said: w.__said ?? [], from: w.__saidFrom ?? 0 };
+    });
+    const from = opts.from ?? r.from;
+    for (let i = from; i < r.said.length; i++) if (saidMatches(r.said[i], text)) return { i, m: r.said[i] };
+    return null;
   };
-  await expect.poll(find, { message: `the strip said ${String(text)}` }).not.toBeNull();
-  expect(await find()).toMatchObject(look);
+  await expect.poll(find, { message: `the strip said ${String(text)}`, timeout: opts.timeout }).not.toBeNull();
+  const got = await find();
+  if (got === null) throw new Error(`the strip said ${String(text)}`);
+  expect(got.m, `how the strip said ${String(text)}`).toMatchObject(look);
+  await page.evaluate((i) => {
+    (window as unknown as { __saidFrom?: number }).__saidFrom = i + 1;
+  }, got.i);
+}
+
+/** The strip has not said this since `from` (call it once what the action did is there to see). */
+export async function expectNotSaid(page: Page, text: string | RegExp, from = 0): Promise<void> {
+  const said = (await page.evaluate(() => (window as unknown as { __said?: Said[] }).__said ?? [])) as Said[];
+  expect(said.slice(from).map((m) => m.text).filter((t) => saidMatches({ text: t, ok: false, info: false, seen: false, check: false }, text)), `the strip did not say ${String(text)}`).toEqual([]);
 }
