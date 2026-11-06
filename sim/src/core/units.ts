@@ -3081,9 +3081,9 @@ export class UnitSystem {
         w.unitSlot[u.id[i]] = -1;
         // Its wall cell is free again (D-096).
         if (u.wall[i] >= 0 && w.wallAt[u.wall[i]] === u.id[i]) w.wallAt[u.wall[i]] = -1;
-        w.deathLog.push(w.tick, u.owner[i], u.type[i], u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, u.hitBy[i], u.hitCause[i], u.hitById[i]);
         // And the one it walked to (WALL_SHIFT).
         if (u.wallTo[i] >= 0 && w.wallAt[u.wallTo[i]] === u.id[i]) w.wallAt[u.wallTo[i]] = -1;
+        w.deathLog.push(w.tick, u.owner[i], u.type[i], u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, u.hitBy[i], u.hitCause[i], u.hitById[i]);
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
         // D-089's measurement: soldiers lost at the castles and at their gates.
         if (u.owner[i] < PLAYER_COUNT && u.type[i] !== UnitType.Farmer) {
