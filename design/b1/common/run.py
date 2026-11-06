@@ -694,6 +694,20 @@ TARGETS["r8d7i"] = ([dict(pc) for pc in TARGETS["r8v7c"]
 CAMERA["r8d7i"] = proj.DIAMOND
 LOOK["r8d7i"] = "r8"
 FOLDER["r8d7i"] = "r8d7i"
+# art-v7.6 (the user 2026-11-06: 「圖裡面的城門方向不太對」; common/castle.DIAMOND_TURN): what the quarter turn needs that
+# no run made: the front layers of the plain walls' other sides (the client's north and south walls are the east and west
+# renders now), and the rectangular decorative pieces turned a quarter (decor_r8.r8_decor turn), whole and burnt
+R8V76 = ([dict(kind=k, culture=c, opts=dict(state=s, front=True), name=f"castle_{k}_{c}_{s}_front",
+               footprint=list(_castle.PIECE_FOOT[k]), passes=["beauty", "mask"])
+          for c in CULTURES for k in _castle.DIAMOND_FRONTS if k not in _castle.FRONTS for s in ("intact", "ruin")]
+         + [dict(kind="r8_decor", culture=c, opts=dict(piece=k, turn=True, **({"ruined": True} if r else {})),
+                 name=f"decor_{k}_{c}_turned" + ("_ruin" if r else ""))
+            for c in CULTURES for k in _castle.DECOR_TURNED for r in (False, True)])
+for _i in range(0, len(R8V76), PROD_CHUNK):
+    TARGETS[f"r8v76_{_i // PROD_CHUNK}"] = R8V76[_i:_i + PROD_CHUNK]
+    CAMERA[f"r8v76_{_i // PROD_CHUNK}"] = proj.DIAMOND
+    LOOK[f"r8v76_{_i // PROD_CHUNK}"] = "r8"
+    FOLDER[f"r8v76_{_i // PROD_CHUNK}"] = "r8v76"
 
 
 

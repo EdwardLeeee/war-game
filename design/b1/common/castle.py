@@ -260,6 +260,24 @@ FRONTS = ("pal_s", "sw_n", "sw_s", "pal_corner", "sw_ctower", "sw_gate_x", "sw_g
 # ^ the pieces whose front layer (castle.front_only) may hold something; an empty one is left out when packing
 INWARD = {"n": (0, 1), "s": (0, -1), "w": (1, 0), "e": (-1, 0)}   # toward the town, in the sim's cells (+y south)
 
+# art-v7.6 (the user 2026-11-06: 「圖裡面的城門方向不太對」): the diamond renders' camera looks north-east (the map's
+# (0, n) corner at the bottom, edge-format.md), the client's projection north-west ((n, n) at the bottom,
+# client/src/camera/projection.ts), as the terrain of art-v7.3 (atlas_b1.diamond_turn). What the client draws for a piece
+# is the render of the piece a quarter turn from it: the x gates are the renders of the y ones and back, a north wall
+# the render of the east one (its outer face up and to the right on the screen, as the client's north), the east the
+# south, the south the west, the west the north. Every point of a render (stand_at, shoot_at) is turned with it
+# (atlas_b1.turn_point); the corners stay (square), their points turned.
+DIAMOND_TURN = {"pal_gate_x": "pal_gate_y", "pal_gate_y": "pal_gate_x", "sw_gate_x": "sw_gate_y", "sw_gate_y": "sw_gate_x",
+                "sw_gate_x3": "sw_gate_y3", "sw_gate_y3": "sw_gate_x3"}
+DIAMOND_TURN.update({f"{w}_{a}": f"{w}_{b}" for w in ("pal", "sw") for a, b in (("n", "e"), ("e", "s"), ("s", "w"), ("w", "n"))})
+# the renders with a front layer on the diamond camera: every plain side (its own empty one is left out when packing),
+# as FRONTS only the north and south ones were rendered (on the square camera the east and west walls are edge-on)
+DIAMOND_FRONTS = FRONTS + tuple(f"{w}_{d}" for w in ("pal", "sw") for d in SIDES if f"{w}_{d}" not in FRONTS)
+# the decorative pieces on the diamond camera: the huts are each other turned (decor_r8.hut); the others' turned renders
+# (decor_r8.r8_decor turn) are named decor_<k>_<c>_turned; the well is round
+DECOR_TURN = {"hut_a": "hut_b", "hut_b": "hut_a"}
+DECOR_TURNED = ("shed", "stack", "cart")
+
 
 def placements(L):
     """Every wall piece of layout L on its cells: [dict(piece, cells, anchor, front, footprint)]. Cells are (dx, dy)
