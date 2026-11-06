@@ -896,6 +896,9 @@ D-096 起城門會關、可以打破，持有的人可以上城牆，見 3.7（`
   - `cannon`：`shots` 發數、`hits` 打中人次、`kills` 打死幾名；`best` 一發打死最多的那發（同樣多取最早的）：`kills`、`tick`、`x`、`y`（其中一名陣亡的格）、`types`（索引是 `UnitType`）；一名都沒打死是 `null`。
   - `cityHits[]`：這方主城挨打的每一段 `[from, to, lowestHp]`，30 秒沒挨打算結束；主城倒了 `lowestHp` 是 0。第一次被打是 `cityHits[0][0]`；攻進對方主城是對方的 `cityHits[0][0]`。
   - `ai`：電腦的 `difficulty`、`style`（`plunder`、`govern`、`balanced`）；人是 `null`。
+- `places`（R13，給局後統計取地名，例如「小鎮・右上」）：全部城鎮和雙方主城的位置，和其他欄位一樣雙方都公開，包括沒去過的城鎮。選填：舊版模擬沒有這個欄位，畫面照舊寫「城鎮（沒去過）」。
+  - `towns[]`：照城鎮 id 排，每個是 `{ size, cellX, cellY }`。`size` 是 `TownSize`（0 小鎮、1 大城），`cellX`、`cellY` 是城鎮中心格，和地圖資訊、快照的城鎮列一樣。`towns.length` 就是城鎮總數，所以 `near[]` 的 `place` 小於它是城鎮，`towns.length + p` 是玩家 p 的主城。
+  - `cities`：`[玩家 0, 玩家 1]`，每個是 `{ cellX, cellY }`，主城的中心格（出生點；主城占地 4×4 就在這格周圍）。開局就有，主城倒了也照樣給。
 
 ## 7. 能不能蓋：`sim/src/placement.ts`
 

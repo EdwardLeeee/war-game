@@ -1215,6 +1215,18 @@ export interface GameTimeline {
   deaths: DeathRow[];
   /** Player 0, player 1. */
   sides: [TimelineSide, TimelineSide];
+  /**
+   * R13 (the post-game statistics' place names): every town by town id, and both main cities, both laid open like the rest.
+   * `towns.length` is the number of towns, so near[]'s `place` from it on is a main city. Absent from older simulations.
+   */
+  places?: TimelinePlaces;
+}
+
+export interface TimelinePlaces {
+  /** By town id: TownSize and centre cell, as in the map (MapInfo.towns, TownField). */
+  towns: { size: number; cellX: number; cellY: number }[];
+  /** Player 0's, player 1's: the main city's centre cell (World.homes; its 4 x 4 cells are round it), there from the start. */
+  cities: [{ cellX: number; cellY: number }, { cellX: number; cellY: number }];
 }
 
 export interface TimelineSample {

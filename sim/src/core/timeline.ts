@@ -2,7 +2,7 @@
 // main cities under attack, every death (World.deathLog). It only reads the world, and nothing of it is in the hash, so a
 // game plays the same with it. `continue` runs the game again from tick 0, so it comes back by itself.
 
-import { BuildingType, CELL_SHIFT, PLAYER_COUNT, Resource, type DeathRow, type GameTimeline, type TimelineSample, type TimelineSide, type TownLogRow, UnitType } from "../protocol.ts";
+import { BuildingType, CELL_SHIFT, PLAYER_COUNT, Resource, type DeathRow, type GameTimeline, type TimelinePlaces, type TimelineSample, type TimelineSide, type TownLogRow, UnitType } from "../protocol.ts";
 import { BUILDINGS, TIMELINE } from "./rules.ts";
 import { HitCause, UNIT_KINDS, type World } from "./world.ts";
 
@@ -115,7 +115,14 @@ export class Timeline {
       cityHits: this.cities[p].hits.map((h) => [h[0], h[1], h[2]]),
       ai: null,
     });
-    return { every: TIMELINE.every, samples, towns: this.towns.map((r) => [r[0], r[1], r[2], r[3]]), deaths, sides: [side(0), side(1)] };
+    const places: TimelinePlaces = {
+      towns: w.map.towns.map((t) => ({ size: t.size, cellX: t.cellX, cellY: t.cellY })),
+      cities: [
+        { cellX: w.homes[0].cellX, cellY: w.homes[0].cellY },
+        { cellX: w.homes[1].cellX, cellY: w.homes[1].cellY },
+      ],
+    };
+    return { every: TIMELINE.every, samples, towns: this.towns.map((r) => [r[0], r[1], r[2], r[3]]), deaths, sides: [side(0), side(1)], places };
   }
 }
 
