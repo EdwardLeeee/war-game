@@ -300,9 +300,14 @@ export class Game implements GestureHost {
   private readonly port: SimPort;
   private readonly overlays: Overlays;
   private readonly options: GameOptions;
-  /** 量測 (GameOptions.measure): no dialog of the game's own over the panel. */
+  /**
+   * 量測: a game that measures itself (GameOptions.measure), or the game on screen while the panel
+   * measures it (量測 N 人 in that perf scenario already, or the fake world): no dialog of the game's
+   * own over the panel.
+   */
   get measuring(): boolean {
-    return this.options.measure === true;
+    const phase = this.lab.lab.phase;
+    return this.options.measure === true || phase === "warmup" || phase === "measuring";
   }
   private readonly recognizer: GestureRecognizer;
   private renderer: WorldRenderer | null = null;
