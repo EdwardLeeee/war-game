@@ -111,6 +111,8 @@ import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_TYPE } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
+import { MAP_LABEL } from "../map-mode.ts";
+import type { StatsWorld } from "../ui/stats/model.ts";
 import type { SimPort } from "./port.ts";
 
 type InitMessage = Extract<ToWorker, { type: "init" }>;
@@ -3430,6 +3432,31 @@ export class Game implements GestureHost {
       out.push({ x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL });
     }
     return out;
+  }
+
+  /**
+   * 局後統計 (R13-02, b2 2026-11-07): what this side knew of the map for the page's names and places: the towns known
+   * (a random map's explored ones), how many there are when that is known (the fixed map), the main cities known.
+   * The timeline's `places` (core #425) lays them all open once the simulation sends it (ui/stats/model.ts withPlaces).
+   */
+  statsWorld(): StatsWorld | null {
+    const view = this.view;
+    if (view === null) return null;
+    const city = (p: number) => {
+      const s = view.map.spawns.find((x) => x.player === p);
+      if (s !== undefined) return { cellX: s.cellX, cellY: s.cellY };
+      const e = p === view.me ? null : this.enemyCity(view);
+      return e === null ? null : { cellX: Math.floor(e.x), cellY: Math.floor(e.y) };
+    };
+    return {
+      me: view.me,
+      towns: view.knownTowns,
+      townCount: (view.map.mode ?? "fixed") === "fixed" ? view.map.towns.length : null,
+      cities: [city(0), city(1)],
+      mapSize: view.map.size,
+      projection: view.projection,
+      mapLabel: MAP_LABEL[this.options.map] ?? "",
+    };
   }
 
   /** The enemy's main city if this side knows where it is (seen, remembered), else null. */

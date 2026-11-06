@@ -12,6 +12,7 @@
 // stable training cavalry.
 
 import type { SimPort } from "../game/port.ts";
+import type { GameTimeline } from "../sim.ts";
 import {
   Action,
   AUTO_TRAIN,
@@ -653,14 +654,16 @@ export class MockPort implements SimPort {
     }
   }
 
-  /** The game over: `winner` won for `reason` (surrender, or a test page's end: the fake world has no other way to win). */
-  endGame(winner: number, reason: number): void {
+  /** The game over: `winner` won for `reason` (surrender, or a test page's end: the fake world has no other way to win); a test may give the timeline (局後統計). */
+  endGame(winner: number, reason: number, timeline?: GameTimeline): void {
     this.over = true;
     const zero = { food: 0, wood: 0, gold: 0, crystal: 0 };
     const player = { gathered: { ...zero }, unitsTrained: [0, 0, 0, 0], unitsLost: [0, 0, 0, 0], magesTrained: 0, magesLost: 0, townsPlundered: 0, townsGoverned: 0 };
     this.events.push({ k: "game_over", winner, reason: reason as 0 | 1 | 2 });
     this.emit(this.snapshot(false));
-    this.emit({ type: "game_over", winner, reason: reason as 0 | 1 | 2, stats: { ticks: this.tick, winner, reason: reason as 0 | 1 | 2, perPlayer: [player, { ...player }] } });
+    // A test's timeline (局後統計): the game ends at its last sample.
+    const ticks = timeline?.samples.at(-1)?.tick ?? this.tick;
+    this.emit({ type: "game_over", winner, reason: reason as 0 | 1 | 2, stats: { ticks, winner, reason: reason as 0 | 1 | 2, perPlayer: [player, { ...player }], ...(timeline === undefined ? {} : { timeline }) } });
   }
 
   /** Tests: a building's hit points now (a gate damaged, D-096). */
