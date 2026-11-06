@@ -407,7 +407,8 @@ def dress_cav(u):
     g = r.j["grip_lance"]
     # the butt only 0.12 m behind the hand (it ran 0.7 m back through the rider's upper arm: clip_r8)
     rod(f"{kind}_r8lance", (0, 0, 0.12), (0, 0, -2.3), 0.022, M["lacquer"], parent=g, r2=0.018)
-    cyl(f"{kind}_r8socket", 0.022, 0.07, M["iron"], g, at=(0, 0, -2.3))
+    # (art-v7.5: the socket reaches over the head's butt at -2.33; from -2.3 it left 3 cm of air between the head and the shaft)
+    cyl(f"{kind}_r8socket", 0.022, 0.1, M["iron"], g, at=(0, 0, -2.34))
     lathe(f"{kind}_r8lancetip", [(0.0, 0.0), (0.03, 0.09), (0.034, 0.18), (0.012, 0.27)], M["steel"], g, segs=8,
           at=(0, 0, -2.6), scale=(1, 0.35, 1))
     # (ceo 2026-10-21 hung a pennant of the player's colour on the lance; the user 2026-11-06, art-v7.4: 「它武器為啥掛一個

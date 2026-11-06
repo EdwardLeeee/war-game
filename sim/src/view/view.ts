@@ -40,6 +40,8 @@ import {
   UnitField,
   UnitFlag,
   UnitType,
+  WALL_SHIFT_STRIDE,
+  WallShiftField,
   WARNING_STRIDE,
   WarningField,
 } from "../protocol.ts";
@@ -47,6 +49,7 @@ import { townInSight, writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
 import { onWall } from "../core/units.ts";
+import { wallStretch, wayFrame, wayGates } from "../core/wall-walk.ts";
 import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, MARKET, OUTPOST, OUTPOST_HIDE, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
@@ -58,6 +61,8 @@ export interface PlayerView {
   buildings: Int32Array;
   towns: Int32Array;
   warnings: Int32Array;
+  /** R14-07: the viewer's soldiers walking along town walls (WALL_SHIFT_STRIDE rows). */
+  wallShifts: Int32Array;
   /** Every node the player has seen (NODE_STRIDE rows). */
   nodes: Int32Array;
   /** size * size Fog values as of fogTick. */
@@ -107,6 +112,66 @@ const SCENARIO_ID: Record<string, number> = {
   perf360: Scenario.Perf360,
   wallshift: Scenario.WallShift,
 };
+
+/** R14-07: within this many cells (Chebyshev) of a wall stretch an enemy soldier counts as at it (WallShiftField.foes). */
+const STRETCH_NEAR = 8;
+
+/**
+ * The viewer's soldiers walking along town walls (WALL_SHIFT; a spectator's: everyone's), one row per town, owner, from,
+ * to, via and home (PROTOCOL.md 4.7). `sees`: what the viewer sees, for the enemies counted at the stretch walked to.
+ */
+function wallShiftRows(game: Game, player: number | null, sees: (cx: number, cy: number) => boolean): Int32Array {
+  const w = game.w;
+  const u = w.units.col;
+  const n = w.size;
+  const rows = new Map<string, number[]>();
+  for (let s = 0; s < w.units.count; s++) {
+    const to = u.wallTo[s];
+    if (to < 0 || u.wall[s] === to || !onWall(w, s) || u.owner[s] >= PLAYER_COUNT) continue;
+    if (player !== null && u.owner[s] !== player) continue;
+    const t = w.wallTown[to];
+    const from = u.wallFrom[s] >= 0 ? u.wallFrom[s] : u.wall[s];
+    const row = [t, u.owner[s], 0, wallStretch(w, from), wallStretch(w, to), wayGates(w, t, from, to, wayFrame(w, u.owner[s], t)), 0, to === u.wallHome[s] ? 1 : 0];
+    const key = row.join(",");
+    const had = rows.get(key);
+    if (had !== undefined) had[WallShiftField.n]++;
+    else {
+      row[WallShiftField.n] = 1;
+      rows.set(key, row);
+    }
+  }
+  const out = new Int32Array(rows.size * WALL_SHIFT_STRIDE);
+  let r = 0;
+  for (const row of rows.values()) {
+    // The enemies the viewer sees at the stretch walked to.
+    const t = row[WallShiftField.town];
+    const stretch = row[WallShiftField.to];
+    let x0 = n;
+    let y0 = n;
+    let x1 = -1;
+    let y1 = -1;
+    for (const c of w.walkCells[t]) {
+      if (wallStretch(w, c) !== stretch) continue;
+      x0 = Math.min(x0, c % n);
+      y0 = Math.min(y0, Math.trunc(c / n));
+      x1 = Math.max(x1, c % n);
+      y1 = Math.max(y1, Math.trunc(c / n));
+    }
+    let foes = 0;
+    for (let s = 0; s < w.units.count; s++) {
+      const o = u.owner[s];
+      if (o === row[WallShiftField.owner] || o >= PLAYER_COUNT || u.type[s] === UnitType.Farmer || u.action[s] === Action.Garrisoned) continue;
+      const cx = u.x[s] >> CELL_SHIFT;
+      const cy = u.y[s] >> CELL_SHIFT;
+      if (cx < x0 - STRETCH_NEAR || cx > x1 + STRETCH_NEAR || cy < y0 - STRETCH_NEAR || cy > y1 + STRETCH_NEAR) continue;
+      if (player !== null ? sees(cx, cy) : game.fog.visible[row[WallShiftField.owner]][cy * n + cx] === 1) foes++;
+    }
+    row[WallShiftField.foes] = foes;
+    out.set(row, r * WALL_SHIFT_STRIDE);
+    r++;
+  }
+  return out;
+}
 
 export function buildView(game: Game, player: number | null, info?: RunnerInfo): PlayerView {
   const w = game.w;
@@ -346,6 +411,8 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     warnings[o + WarningField.ticksLeft] = CANNON.calibrateTicks - u.castProgress[s];
   });
 
+  const wallShifts = wallShiftRows(game, player, seesCell);
+
   // Placement: rock, nodes as last seen, and every building the player knows block;
   // unexplored cells are marked; farm land comes from own finished main cities and granaries.
   const placement = new Uint8Array(n * n);
@@ -418,6 +485,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     buildings,
     towns,
     warnings,
+    wallShifts,
     nodes,
     fog: fogGrid,
     fogTick: fog.fogTick,
@@ -463,6 +531,7 @@ export class SnapshotEncoder {
       buildings: view.buildings,
       towns: view.towns,
       warnings: view.warnings,
+      wallShifts: view.wallShifts,
       nodes,
       fog: fogNew ? view.fog : null,
       placement: fogNew ? view.placement : null,

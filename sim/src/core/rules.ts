@@ -385,12 +385,12 @@ export const WALLS = { on: true, range: CELL, takenNum: 3, takenDen: 4, sling: 4
  * against a big army they would only walk into it and die). With no such enemy for `back` ticks it walks
  * back to where it stood (if free). Off: they never move (WALLS).
  */
+export const WALL_SHIFT = { on: true, wait: 1 * S, back: 10 * S, stay: 2 * CELL, odds: 2 };
 /**
  * The post-game timeline (D-124; timeline.ts): a sample every `every` ticks; soldiers within `nearTown` cells of a town's walls
  * and `nearCity` of a main city's footprint count as near it; a main city not hit for `calmTicks` is no longer under attack.
  */
 export const TIMELINE = { every: 10 * S, nearTown: 8, nearCity: 12, calmTicks: 30 * S };
-export const WALL_SHIFT = { on: true, wait: 1 * S, back: 10 * S, stay: 2 * CELL, odds: 2 };
 /**
  * A governed town's gate towers shoot (D-096; the user: 城樓會射箭, more the more soldiers hold the
  * town, as AoE2's garrison arrows): each standing gate of a town its holder governs, at the
