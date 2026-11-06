@@ -47,6 +47,11 @@ export interface LabHooks {
     setQuality(q: "high" | "low"): void;
     measure(): string | null;
   };
+  /**
+   * 戰場像素比 (?test=1&res=2, battlefield-res.ts): the device's pixel ratio, what the battlefield is
+   * drawn at now, and drawing it at 2 or at the device's (ceo 2026-11-06: measure it on the iPhone).
+   */
+  res?: { device: number; now(): number; set(two: boolean): void };
 }
 
 /**
@@ -102,6 +107,7 @@ export class LabPanel {
   private readonly artBtns: HTMLButtonElement[];
   private readonly texBtns: HTMLButtonElement[];
   private groundBtns: HTMLButtonElement[] = [];
+  private resBtns: HTMLButtonElement[] = [];
   private readonly checkBtn: HTMLButtonElement;
   private readonly status: HTMLElement;
   private readonly resultBox: HTMLElement;
@@ -213,6 +219,27 @@ export class LabPanel {
       });
       this.groundBtns = btns;
     }
+    // 戰場像素比 (test pages): the device's or 2, at once; the interface stays the device's.
+    const res = hooks.res;
+    if (res !== undefined) {
+      const row = make("div", this.panel, "lab-buttons lab-art lab-res");
+      row.setAttribute("role", "radiogroup");
+      row.setAttribute("aria-label", "戰場像素比");
+      make("span", row, "lab-art-label", "戰場像素比");
+      this.resBtns = [false, true].map((two) => {
+        const b = make("button", row, "", two ? "2" : `照裝置（${res.device}）`);
+        b.type = "button";
+        b.setAttribute("role", "radio");
+        // A phone of 2 or less has nothing to save.
+        b.disabled = two && res.device <= 2;
+        b.addEventListener("click", () => {
+          res.set(two);
+          this.showRes();
+          this.log.add(`戰場像素比：${res.now()}（裝置 ${res.device}；介面照裝置）`);
+        });
+        return b;
+      });
+    }
     const measures = make("div", this.panel, "lab-buttons");
     this.measureBtns = PERF_SCENARIOS.map((p) => {
       const b = make("button", measures, "", `量測 ${p.population} 人`);
@@ -278,6 +305,19 @@ export class LabPanel {
     this.panel.hidden = false;
     this.log.shown();
     this.showGround();
+    this.showRes();
+  }
+
+  /** 戰場像素比's buttons: the one in use lit. */
+  private showRes(): void {
+    const res = this.hooks.res;
+    if (res === undefined) return;
+    const two = res.now() < res.device;
+    this.resBtns.forEach((b, i) => {
+      const on = (i === 1) === two;
+      b.setAttribute("aria-checked", on ? "true" : "false");
+      b.classList.toggle("secondary", !on);
+    });
   }
 
   /** 寫實地面's quality buttons: the one in use lit; none while it is not drawn. */
@@ -467,6 +507,8 @@ export class LabPanel {
       // D-085: what the atlases cost the GPU.
       ["每張畫面的繪製次數", `中位數 ${r.drawsMedian}、最多 ${r.drawsMax}`, null],
       ["美術", `${String(env.art ?? "關")}`, null],
+      // 戰場像素比 (test pages): what this measurement was drawn at.
+      ...(this.hooks.res === undefined ? [] : [["戰場像素比", `${this.hooks.res.now()}（裝置 ${this.hooks.res.device}）`, null] as [string, string, null]]),
     ];
     // art-v7 量測 (D-128): what the textures cost on this phone, which way they were drawn, and the
     // phone, first: in the one screenshot with the fps under them.

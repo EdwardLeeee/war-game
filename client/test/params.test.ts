@@ -7,15 +7,15 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null });
 });
 
 test("tps, mock, r7, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false });
+  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false });
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null });
   assert.equal(parseParams("?test=1&mock=1").mock, true);
   assert.equal(parseParams("?test=1&mock=1").round7, false);
   assert.equal(parseParams("?test=1&mock=1&r7=1").round7, true);
@@ -111,4 +111,12 @@ test("貼圖與 art-v7 量測（D-128）：?tex=、?measure= 玩家的頁面也�
 test("?test=1&artlab=1：這一局用 art-lab.lock.json 的美術（art-v7 的 R9 地面、菱形）；玩家的頁面沒有", () => {
   assert.equal(parseParams("?test=1&artlab=1").artLab, true);
   assert.equal(parseParams("?artlab=1").artLab, false);
+});
+
+test("?test=1&res=2 draws the battlefield at 2 (ceo 2026-11-06, to measure on the iPhone); anything else, or without test=1, the device's", () => {
+  assert.equal(parseParams("?test=1&res=2").res, 2);
+  assert.equal(parseParams("?res=2").res, null);
+  assert.equal(parseParams("?test=1&res=1").res, null);
+  assert.equal(parseParams("?test=1&res=3").res, null);
+  assert.equal(parseParams("?test=1").res, null);
 });

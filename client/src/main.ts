@@ -34,6 +34,7 @@ import type { AstcSample } from "./lab/astc.ts";
 import { canGoOn, continueLabel, failureText, openSaveDb, progressText, type SavedGame, SaveStore, SCREEN_LOST_TEXT, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "./save/save.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, BUILDING_STRIDE, MAP_MODES, type MapMode, MAX_TICKS, PROTOCOL_VERSION, type ScenarioName, TICKS_PER_SECOND, UNIT_STRIDE } from "./sim.ts";
 import { createStage, gpu, gpuLimits, hasAstc } from "./stage.ts";
+import { battlefieldRes, setBattlefieldRes } from "./battlefield-res.ts";
 import { applyTheme, loadTheme } from "./theme.ts";
 import { tickRateText } from "./ui/controls.ts";
 import { applyFormalUi, FORMAL_UI_DEFAULT, formalUi } from "./ui/formal.ts";
@@ -136,7 +137,7 @@ let game: Game | null = null;
 /** The canvas, made the first time a game starts; its renders timed while a start is measured. */
 async function stage(): Promise<Application> {
   if (app !== null) return app;
-  const a = await createStage($("stage"));
+  const a = await createStage($("stage"), battlefieldRes(params.res === 2));
   const renderer = a.renderer as unknown as { render: (...args: unknown[]) => unknown };
   const render = renderer.render.bind(renderer);
   // The first render with the battlefield ends the measurement: its pictures go to the GPU then.
@@ -524,6 +525,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     artChanged,
     astcSample,
     artMeasure: artMeasureHook,
+    res: resHook,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,
@@ -546,6 +548,17 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     g.lab.startMeasure(performance.now(), windowMs, variant ?? undefined);
   }
 }
+
+/** 戰場像素比 for the 量測 panel (battlefield-res.ts): test pages only. */
+const resHook = params.test
+  ? {
+      device: window.devicePixelRatio,
+      now: () => app?.renderer.resolution ?? battlefieldRes(params.res === 2),
+      set: (two: boolean) => {
+        if (app !== null) setBattlefieldRes(app, two);
+      },
+    }
+  : undefined;
 
 /**
  * art-v7 量測 (D-128) for the 量測 panel: its buttons, with this build's art-lab.lock.json (or the
@@ -866,6 +879,7 @@ async function resumeGame(saved: SavedGame): Promise<void> {
     artChanged,
     astcSample,
     artMeasure: artMeasureHook,
+    res: resHook,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,
