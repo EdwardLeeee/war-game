@@ -2131,22 +2131,25 @@ export class Game implements GestureHost {
    * A main city, arrow tower or outpost of ours (7a, 7b): the kinds of those inside, how many are on
    * their way, and those inside by group (null: in no group).
    */
-  buildingSeats(building: number): { kinds: number[]; coming: number; groups: { group: number | null; ids: number[] }[] } {
+  buildingSeats(building: number): { kinds: number[]; coming: number; out: number; groups: { group: number | null; ids: number[] }[] } {
     const view = this.view;
     const u = view?.curr?.snap.units;
     const b = view?.curr?.snap.buildings;
     const row = view?.buildingRow(building) ?? -1;
-    if (view === null || u === undefined || b === undefined || row < 0) return { kinds: [], coming: 0, groups: [] };
+    if (view === null || u === undefined || b === undefined || row < 0) return { kinds: [], coming: 0, out: 0, groups: [] };
     const outpost = b[row + BuildingField.type] === BuildingType.Outpost;
     const kinds: number[] = [];
     const by = new Map<number | null, number[]>();
     let coming = 0;
+    // An outpost's posted out fighting (攻擊 mode, R14-05: 「5 名出去打」), apart from those on their way in.
+    let out = 0;
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       if (u[o + UnitField.owner] !== view.me || u[o + UnitField.orderTarget] !== building) continue;
       const order = u[o + UnitField.order];
       if (outpost ? !isPosted(order) : !isHiding(order)) continue;
       if (u[o + UnitField.action] !== Action.Garrisoned) {
-        coming++;
+        if (outpost && u[o + UnitField.action] === Action.Attack) out++;
+        else coming++;
         continue;
       }
       const id = u[o + UnitField.id];
@@ -2154,7 +2157,7 @@ export class Game implements GestureHost {
       const g = this.army.groupOf(id);
       by.set(g, [...(by.get(g) ?? []), id]);
     }
-    return { kinds: seatOrder(kinds), coming, groups: [...by].map(([group, ids]) => ({ group, ids })).sort((x, y) => (x.group ?? 9) - (y.group ?? 9)) };
+    return { kinds: seatOrder(kinds), coming, out, groups: [...by].map(([group, ids]) => ({ group, ids })).sort((x, y) => (x.group ?? 9) - (y.group ?? 9)) };
   }
 
   /** 召回 on a building's panel (7a): these of a group come out, and walk back to it (army.ts). */
@@ -3000,6 +3003,11 @@ export class Game implements GestureHost {
 
   pressCue(x: number, y: number, on: boolean): void {
     this.overlays.showCue(x, y, on);
+  }
+
+  /** A long press's wheel, closed: the finger was up before the hold was long (gestures.ts). */
+  closeWheel(): void {
+    this.overlays.closeWheel();
   }
 
   panStart(x: number, y: number): void {
