@@ -275,6 +275,14 @@ export class WorldRenderer {
   private readonly barLayer = new Container();
   private readonly townLayer = new Container();
   private readonly ghost = new Graphics();
+  /**
+   * The placement preview (and its ✗ fade): over the buildings and units, on the ground's own
+   * projection (as `groundOuter`/`groundInner`), so that a red preview on a building is seen
+   * (ceo 2026-11-06, R6-19 INV-115: under the main city it was hidden, and why ✓ was grey with it).
+   */
+  private readonly placeOuter = new Container();
+  private readonly placeInner = new Container();
+  private readonly placeGhost = new Graphics();
   private readonly terrainTexture: Texture;
   private readonly fogCanvas: HTMLCanvasElement;
   /** The fog by cell, and a scratch buffer for its round edge (round-fog.ts). */
@@ -449,9 +457,14 @@ export class WorldRenderer {
       this.groundInner.scale.set(PT_PER_CELL / TILE_PX);
       this.groundOuter.scale.set(1, 0.5);
     }
+    this.placeInner.rotation = this.groundInner.rotation;
+    this.placeInner.scale.copyFrom(this.groundInner.scale);
+    this.placeOuter.scale.copyFrom(this.groundOuter.scale);
+    this.placeInner.addChild(this.placeGhost);
+    this.placeOuter.addChild(this.placeInner);
     this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.enterRings, this.ringLayer, this.fx, this.craterLayer, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
-    this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.overGround, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.airFx, this.airArt, this.barLayer, this.townLayer);
+    this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.overGround, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.placeOuter, this.airFx, this.airArt, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
   }
 
@@ -1769,6 +1782,7 @@ export class WorldRenderer {
 
   private drawGhost(placement: Placement | null, now: number): void {
     this.ghost.clear();
+    this.placeGhost.clear();
     // Buildings placed and not on the map yet (pending.ts): their footprints dashed in the player's
     // colour. Paused, they wait for 繼續 (R6-31): the building see-through on it, 繼續後開工 under it.
     const sites = this.pending?.sites() ?? [];
@@ -1805,13 +1819,13 @@ export class WorldRenderer {
         const s = reducedMotion() ? 1 : 0.7 + 0.3 * k;
         const cx = d.x + d.w / 2;
         const cy = d.y + d.h / 2;
-        this.ghost.rect(cx - (d.w * s) / 2, cy - (d.h * s) / 2, d.w * s, d.h * s).fill({ color: d.color, alpha: 0.4 * k }).stroke({ width: 3, color: d.color, alpha: k });
+        this.placeGhost.rect(cx - (d.w * s) / 2, cy - (d.h * s) / 2, d.w * s, d.h * s).fill({ color: d.color, alpha: 0.4 * k }).stroke({ width: 3, color: d.color, alpha: k });
       }
     }
     if (placement === null) return;
     const r = placement.rect();
     const color = placement.valid ? PLACE_OK : PLACE_BAD;
-    this.ghost.rect(r.x, r.y, r.w, r.h).fill({ color, alpha: 0.4 }).stroke({ width: 3, color });
+    this.placeGhost.rect(r.x, r.y, r.w, r.h).fill({ color, alpha: 0.4 }).stroke({ width: 3, color });
   }
 
   private bar(back: Sprite, front: Sprite, cx: number, y: number, w: number, frac: number, tint: number): void {
