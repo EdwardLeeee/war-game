@@ -775,6 +775,69 @@
   line-height: 1.15;
 }
 
+/* --- 浮動元件 (R6-19) ------------------------------------------------------------------------ */
+
+/* 提示列 (INV-107 to INV-113): a panel 52 tall, the words then 取消 (wood), 回主城 (blue, the home);
+   放建築's warning a second line in red. */
+:root[data-ui="r6"] #hud .prompt.panel {
+  gap: 6px;
+  padding: 4px 6px 4px 14px;
+  border: 0;
+  font-size: 13px;
+}
+
+:root[data-ui="r6"] .prompt .prompt-buttons {
+  gap: 6px;
+}
+
+:root[data-ui="r6"] .prompt .b {
+  flex: none;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .prompt .b.primary {
+  min-width: 0;
+}
+
+:root[data-ui="r6"] .prompt .prompt-warn {
+  font-weight: 700;
+}
+
+/* ✓ ✗ (INV-114, INV-115): 52 × 52, ✓ green, ✗ red; ✓ grey where the house cannot go. */
+:root[data-ui="r6"] .place-confirm .b {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  padding: 0;
+  font-size: 24px;
+}
+
+/* 進駐's tags and arrows (R14-08): dark wood, a gold rim, the first line in gold. */
+:root[data-ui="r6"] .enter-tag,
+:root[data-ui="r6"] .enter-chip,
+:root[data-ui="r6"] #hud .enter-arrow {
+  border-color: var(--rim-hi, #f0cf8a);
+  color: var(--ink);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-ui="r6"] .enter-tag b,
+:root[data-ui="r6"] .enter-chip,
+:root[data-ui="r6"] .enter-arrow b {
+  color: var(--rim-hi, #f0cf8a);
+}
+
+:root[data-ui="r6"] .enter-arrow .dir {
+  fill: var(--rim-hi, #f0cf8a);
+}
+
+:root[data-ui="r6"] .enter-lines line {
+  stroke: var(--rim-hi, #f0cf8a);
+}
+
 /* =========================================================================== A 銅木 */
 
 :root[data-ui="r6"]:not([data-theme="b"]) {
@@ -905,6 +968,24 @@
     inset 0 0 0 1.5px var(--rim),
     inset 0 2px 0 rgba(255, 225, 170, 0.35),
     0 3px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ✓ green, ✗ red (R6-19); the prompt's warning; 進駐's tags on dark wood. */
+:root[data-ui="r6"]:not([data-theme="b"]) .place-confirm .place-ok.b:not(:disabled) {
+  background: linear-gradient(180deg, #5ad672, #2f9e4a);
+  color: #fff;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .place-confirm .place-cancel.b {
+  background: linear-gradient(180deg, #e8574b, #b8322a);
+  color: #fff;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .prompt .prompt-warn {
+  color: #ff9c86;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .enter-tag,
+:root[data-ui="r6"]:not([data-theme="b"]) .enter-chip,
+:root[data-ui="r6"]:not([data-theme="b"]) #hud .enter-arrow {
+  background: rgba(36, 24, 15, 0.94);
 }
 
 /* =========================================================================== B 墨漆金線 */
@@ -1086,6 +1167,29 @@
 }
 :root[data-ui="r6"][data-theme="b"] .wheel .wheel-item.b.blue::after {
   border-color: rgba(169, 200, 255, 0.85);
+}
+
+/* ✓ green, ✗ red (R6-19); the prompt's warning; 進駐's tags on the lacquer, a gold rim. */
+:root[data-ui="r6"][data-theme="b"] .place-confirm .place-ok.b:not(:disabled)::before {
+  background: linear-gradient(180deg, #4fbf65, #2a8a40);
+}
+:root[data-ui="r6"][data-theme="b"] .place-confirm .place-cancel.b::before {
+  background: linear-gradient(180deg, #d24a3f, #9c2a22);
+}
+:root[data-ui="r6"][data-theme="b"] .place-confirm .place-cancel.b::after {
+  border-image-source: var(--frame-red);
+}
+:root[data-ui="r6"][data-theme="b"] .place-confirm .b:not(:disabled) {
+  color: #fff;
+}
+:root[data-ui="r6"][data-theme="b"] .prompt .prompt-warn {
+  color: #ffab92;
+}
+:root[data-ui="r6"][data-theme="b"] .enter-tag,
+:root[data-ui="r6"][data-theme="b"] .enter-chip,
+:root[data-ui="r6"][data-theme="b"] #hud .enter-arrow {
+  --rim-hi: var(--gold);
+  background: rgb(16, 19, 27);
 }
 
 /* INV-16: no 原型介面 label in the formal interface. */
