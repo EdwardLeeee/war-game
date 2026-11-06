@@ -618,6 +618,19 @@
   margin-right: -46px;
 }
 
+/* 牆上換邊 (R14-07): under 牆上／城內, in the panel's light gold (the board's dashed box only marks it as new). */
+:root[data-ui="r6"] .sel-info .wall-shift {
+  margin: 3px 0 2px;
+  color: var(--rim-hi);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+:root[data-ui="r6"] .sel-info .wall-shift p {
+  margin: 0;
+}
+
 :root[data-ui="r6"] .sel-info .seat-row .garrison-count {
   font-weight: 400;
 }

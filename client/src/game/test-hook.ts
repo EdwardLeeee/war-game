@@ -111,6 +111,10 @@ export interface GameHook {
   damage(id: number, hp: number): void;
   /** Fake world only: the game over, `winner` winning for `reason` (GameOverReason; the result screen). */
   endGame(winner: number, reason: number): void;
+  /** Fake world only: the snapshot's 牆上換邊 rows from now on (R14-07; WALL_SHIFT_STRIDE numbers each, [] none). */
+  wallShifts(rows: number[]): void;
+  /** 牆上換邊's lines for a town as its panel writes them (R14-07). */
+  wallShiftLines(town: number): string[];
   /** Fake world only (真的箭): own units stand and attack `target`; −1, they stop. */
   strike(ids: number[], target: number): void;
   /** 真的箭: whether arrows fly as art-v6 draws them; bowmen's and buildings' arrows so far. */
@@ -360,6 +364,10 @@ export function gameHook(game: Game): GameHook {
     endGame: (winner, reason) => {
       if (game.portForTest instanceof MockPort) game.portForTest.endGame(winner, reason);
     },
+    wallShifts: (rows) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.setWallShifts(rows);
+    },
+    wallShiftLines: (town) => game.wallShiftLines(town),
     shots: () => game.shotsForTest,
     siege: () => game.siegeForTest,
     towerShots: () => game.towerShotsForTest,

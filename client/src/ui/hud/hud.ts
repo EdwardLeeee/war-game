@@ -254,6 +254,7 @@ export class Hud {
       buildingSeats: (building: number) => game.buildingSeats(building),
       buildingRecall: (building: number, ids: readonly number[]) => game.buildingRecall(building, ids),
       townSeats: (town: number) => game.townSeats(town),
+      wallShiftLines: (town: number) => game.wallShiftLines(town),
       groupPlaces: (i: number) => game.groupPlaces(i),
       groupOut: (i: number, all: boolean) => game.groupOut(i, all),
       groupRecall: (i: number) => game.groupRecall(i),
