@@ -474,6 +474,31 @@ export const WarningField = {
 } as const;
 export const WARNING_STRIDE = 6;
 
+/**
+ * Soldiers walking along a town's walls (WALL_SHIFT, R14-07; Snapshot.wallShifts, PROTOCOL.md 4.7): one row per town, owner,
+ * from, to, via and home, `n` of them. Wall stretches as `side * 3 + part` (WallSide; WallPart).
+ */
+export const WallShiftField = {
+  town: 0,
+  /** A player's; a player gets its own only (a spectator both). */
+  owner: 1,
+  n: 2,
+  /** The stretch this walk set off from, and the one it goes to. */
+  from: 3,
+  to: 4,
+  /** Bits of the gates whose tops the way crosses: 1 north, 2 east, 4 south, 8 west. */
+  via: 5,
+  /** Enemy soldiers the viewer sees within 8 cells of the `to` stretch (not those hiding). */
+  foes: 6,
+  /** 1: walking back to where they stood, the enemy gone; 0: walking to fight. */
+  home: 7,
+} as const;
+export const WALL_SHIFT_STRIDE = 8;
+/** A wall stretch's side, by map cells: north is smaller y, east larger x. Corners go with north and south. */
+export const WallSide = { North: 0, East: 1, South: 2, West: 3 } as const;
+/** A wall stretch's part: the gate's top, the half with smaller x (north, south) or y (east, west), the other half. */
+export const WallPart = { Gate: 0, First: 1, Second: 2 } as const;
+
 /** Snapshot header, one Int32Array. */
 export const HeaderField = {
   tick: 0,
@@ -1115,6 +1140,11 @@ export interface Snapshot {
   buildings: Int32Array;
   towns: Int32Array;
   warnings: Int32Array;
+  /**
+   * R14-07 (WALL_SHIFT_STRIDE rows): the viewer's soldiers walking along town walls now. Absent from older simulations and
+   * from hand-made snapshots: nobody walking.
+   */
+  wallShifts?: Int32Array;
   /** Rows that changed since the previous snapshot (new, amount changed, visibility changed). */
   nodes: Int32Array;
   /** size * size Fog values; present only in snapshots that carry a fog update. */
