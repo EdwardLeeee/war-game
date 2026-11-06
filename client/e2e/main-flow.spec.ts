@@ -468,7 +468,8 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "formation", u: troops, loose: true });
   await expect.poll(async () => (await units(page)).filter((u) => troops.includes(u.id)).every((u) => u.loose)).toBe(true);
   await expect(formation).toHaveText("隊形：散開按一下改成密集");
-  await expect(page.locator(".sel-info")).toContainText("散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
+  // 正式介面 sets 散開 apart as a tag, no 「：」 (panels.ts meaning).
+  await expect(page.locator(".sel-info")).toContainText(`散開${(await formalOn(page)) ? "" : "："}站位間隔 2 格，站好時一發晶砲只炸得到 1 名`);
   // March them together to open ground south of where the squad started; tap where nothing stands.
   // 12 cells south: with 自動訓練 the army is some 16 strong, 8 by 8 cells loose, and 4 cells
   // south its north edge met the rocks at (19–25, 33–39). Loose soldiers pressed there never

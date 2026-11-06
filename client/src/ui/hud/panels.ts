@@ -354,8 +354,29 @@ export class SelectionInfo {
     this.frame.setAttribute("aria-label", "選取資訊");
     this.frame.hidden = true;
     this.el = el("div", this.frame, "sel-body");
+    // 正式介面: more below, a fade at the foot (ui/r6.css .sel-more).
+    this.more = this.formal ? el("div", this.frame, "sel-more") : null;
+    this.more?.setAttribute("aria-hidden", "true");
     // Scrolled (正式介面): the title line kept at the top takes a ground of its own (ui/r6.css).
-    this.el.addEventListener("scroll", () => this.frame.classList.toggle("scrolled", this.el.scrollTop > 0), { passive: true });
+    this.el.addEventListener(
+      "scroll",
+      () => {
+        this.frame.classList.toggle("scrolled", this.el.scrollTop > 0);
+        this.showMore();
+      },
+      { passive: true },
+    );
+  }
+
+  /** The fade at the foot (正式介面), and none here. */
+  private readonly more: HTMLElement | null;
+
+  /** The fade while the body has more under its foot, scrolled to its end none (ceo 2026-11-07). */
+  private showMore(): void {
+    const more = this.more;
+    if (more === null) return;
+    const below = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight > 2;
+    if (more.hidden === below) more.hidden = !below;
   }
 
   update(): void {
@@ -375,6 +396,9 @@ export class SelectionInfo {
     }
     for (const u of this.updaters) u();
     if (this.foldButton !== null) this.fold(this.foldButton);
+    // Last in the frame (a new build put the ✕ before the body), over what scrolls.
+    if (this.more !== null && this.frame.lastChild !== this.more) this.frame.appendChild(this.more);
+    this.showMore();
   }
 
   private keyFor(view: GameView): string {

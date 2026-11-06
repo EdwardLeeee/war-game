@@ -680,11 +680,10 @@ test("指令區與選取資訊：選兵營 → 訓練槍兵 → 佇列顯示，�
   const queued = page.getByRole("button", { name: /取消訓練第 2 個/ });
   await expect(queued).toBeVisible();
   await shot(page, info, "train-queue");
-  // Where it is (a finger taps a point): the panel is drawn again as the queue moves on, and on
-  // WebKit a tap that waits for the button to hold still lost that race (PR 5, 正式介面).
-  const box = await queued.boundingBox();
-  if (box === null) throw new Error("no queued spearman");
-  await tap(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  // Paused (orders still go, 暫停中：仍可下指令): the queue holds still, so the panel is not drawn
+  // again under the tap (on WebKit, 正式介面, it was: PR 5).
+  await page.evaluate(() => window.__proto?.game?.pause());
+  await queued.tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "cancel_train", index: 1 });
 });
 

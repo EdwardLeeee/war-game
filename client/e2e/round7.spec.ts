@@ -366,8 +366,9 @@ test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主�
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(4);
   // Group 1's 軍團畫面: 躲著 with 召回, from out in the field (the main city nowhere near the screen).
   await tapOn(page, GROUP_1);
-  // Unfolded if it was folded (no short limit: WebKit took longer than 1.5 s, PR 5).
+  // Unfolded if it was folded, once the panel is drawn (no short limit: WebKit took longer than 1.5 s, PR 5).
   const unfold = page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" });
+  await expect(page.locator(".sel-info .sel-head")).toContainText("編隊 1");
   if (await unfold.isVisible()) await unfold.tap();
   await expect(page.locator(".sel-info .group-place", { hasText: "主城" })).toHaveAttribute("aria-label", "主城 2 名");
   await expect(page.locator(".sel-info .group-places").getByRole("button", { name: "召回" })).toBeVisible();
@@ -387,7 +388,8 @@ test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主�
   // Group 2 (all of it hiding: its button selects nobody, 軍團畫面 stays open): 召回 too.
   await page.evaluate(() => window.__proto?.game?.select([]));
   await tapOn(page, ".groups > button:nth-child(2)");
-  await page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" }).tap({ timeout: 1500 }).catch(() => undefined);
+  await expect(page.locator(".sel-info .sel-head")).toContainText("編隊 2");
+  if (await unfold.isVisible()) await unfold.tap();
   const mark2 = (await sent(page)).length;
   await page.locator(".sel-info").getByRole("button", { name: "召回" }).tap();
   await expect.poll(async () => (await sent(page)).slice(mark2).filter((c) => c.c === "leave")).toEqual([expect.objectContaining({ building: city, u: b })]);
