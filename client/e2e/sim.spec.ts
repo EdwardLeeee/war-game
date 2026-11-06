@@ -413,13 +413,23 @@ test("選單 → 投降 → 勝負畫面顯示失敗（投降）→ 重來開新
   expect((await header(page)).tick).toBeLessThan(200);
 });
 
+for (const [view, where] of [["", "右上方"], ["&view=diamond", "右邊"]] as const) {
+  test(`開局提示的方位照畫面寫（D-132，使用者 2026-11-07）：同一座小鎮，${view === "" ? "方形斜看" : "菱形"}寫「${where}」`, async ({ page }) => {
+    // The town is 75° from the main city on the map (north, a little east); 方形斜看 shows it at 62°
+    // (half as tall as wide), the diamond turns it to 16° (town-hint.ts screenDirection).
+    await start(page, `?test=1&hint=1${view}`);
+    const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+    await expect(hint).toContainText(`離你的主城最近的小鎮在主城的${where}，約 51 格。`);
+  });
+}
+
 test("開局提示：真的地圖上，提示指向離主城最近的小鎮，大城比較近也一樣（不管地圖上有幾座、編號是多少）；按知道了，模擬開始跑（D-044）", async ({ page }, info) => {
   await start(page, "?test=1&hint=1");
   const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
   await expect(hint).toBeVisible();
   const town = await hintTownOf(page);
   expect(town.size, "the real map has small towns").toBe(0);
-  await expect(hint).toContainText(/離你的主城最近的小鎮在主城的.{1,2}方，約 \d+ 格/);
+  await expect(hint).toContainText(/離你的主城最近的小鎮在主城的(右邊|右上方|上方|左上方|左邊|左下方|下方|右下方)，約 \d+ 格/);
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
   await shot(page, info, "town-hint-real-map");
   const tick = (await header(page)).tick;

@@ -3,6 +3,7 @@
 // The town is worked out from the map, so a small town core adds near each main city
 // becomes the one shown without any change here.
 
+import { type Projection, PROJECTIONS, VIEW_DEFAULT } from "../camera/projection.ts";
 import { TownSize, TownState } from "../sim.ts";
 
 export interface TownSpot {
@@ -48,27 +49,34 @@ export function hintTown<T extends TownNow>(towns: readonly T[], from: { cellX: 
   return town === null ? null : { town, passed: open !== null && open !== nearestSmall };
 }
 
-const DIRECTIONS = ["東", "東北", "北", "西北", "西", "西南", "南", "東南"] as const;
+const DIRECTIONS = ["右邊", "右上方", "上方", "左上方", "左邊", "左下方", "下方", "右下方"] as const;
 
-/** One of eight directions on the map as the player sees it (north is up, y grows downwards). */
-export function compass(dx: number, dy: number): string {
-  const turns = Math.atan2(-dy, dx) / (2 * Math.PI);
+/**
+ * One of eight directions as the player sees it on the battlefield (D-132, the user 2026-11-07: 照畫面寫,
+ * not the map's 東南西北): the map's offset (cells, y growing south) laid on the screen by the camera's
+ * projection. 方形 has 北 up (上方); the diamond turns the map, 北 up and to the right.
+ */
+export function screenDirection(dx: number, dy: number, projection: Projection): string {
+  const a = projection.toPlane(0, 0);
+  const b = projection.toPlane(dx, dy);
+  const turns = Math.atan2(-(b.y - a.y), b.x - a.x) / (2 * Math.PI);
   return DIRECTIONS[(Math.round(turns * 8) + 8) % 8];
 }
 
-/**
- * The hint's lines: where crystal comes from, what to do there, and where the town (`hintTown`)
- * is. `plunderOnce`: 城鎮只能搶一次 is on (round 7, D-061).
- */
 /** The last line on a random map before any town is explored (D-074). */
 export const RANDOM_MAP_TOWN_TEXT = "這是隨機地圖：城鎮要派兵去探，探到才會出現在地圖上。";
 
-export function townHintLines(town: TownSpot | null, from: { cellX: number; cellY: number }, passed = false, plunderOnce = false): string[] {
+/**
+ * The hint's lines: where crystal comes from, what to do there, and where the town (`hintTown`)
+ * is, in the screen's directions under `projection` (the camera's, D-132). `plunderOnce`: 城鎮只能搶一次
+ * is on (round 7, D-061).
+ */
+export function townHintLines(town: TownSpot | null, from: { cellX: number; cellY: number }, passed = false, plunderOnce = false, projection: Projection = PROJECTIONS[VIEW_DEFAULT]): string[] {
   let which = RANDOM_MAP_TOWN_TEXT;
   if (town !== null) {
     const dx = town.cellX - from.cellX;
     const dy = town.cellY - from.cellY;
-    const where = `在主城的${compass(dx, dy)}方，約 ${Math.round(Math.hypot(dx, dy))} 格`;
+    const where = `在主城的${screenDirection(dx, dy, projection)}，約 ${Math.round(Math.hypot(dx, dy))} 格`;
     // A large town only on a map without small ones (hintTown).
     which =
       town.size === TownSize.Large ? `離你的主城最近的是一座大城，${where}。小地圖上閃的圓圈就是它。` : passed ? `離你的主城最近、可以攻下的小鎮${where}。小地圖上閃的圓圈就是它。` : `離你的主城最近的小鎮${where}。小地圖上閃的圓圈就是它。`;

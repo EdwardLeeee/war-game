@@ -3,7 +3,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compass, hintTown, nearestTown, townHintLines } from "../src/game/town-hint.ts";
+import { DIAMOND, OBLIQUE, TOP } from "../src/camera/projection.ts";
+import { hintTown, nearestTown, screenDirection, townHintLines } from "../src/game/town-hint.ts";
 import { NEUTRAL, TownSize, TownState } from "../src/sim.ts";
 
 const ME = 0;
@@ -70,17 +71,25 @@ test("開局提示：對局中途，指最近的、還不是自己的小鎮（�
   assert.deepEqual(pick([middle, { ...near, owner: FOE }]), { town: { ...near, owner: FOE }, passed: false });
 });
 
-test("開局提示：方向用畫面上看到的八個方位（上面是北）", () => {
-  assert.equal(compass(10, 0), "東");
-  assert.equal(compass(10, -10), "東北");
-  assert.equal(compass(0, -10), "北");
-  assert.equal(compass(-10, -10), "西北");
-  assert.equal(compass(-10, 0), "西");
-  assert.equal(compass(-10, 10), "西南");
-  assert.equal(compass(0, 10), "南");
-  assert.equal(compass(10, 10), "東南");
-  // Mostly north with a little east is still north.
-  assert.equal(compass(3, -30), "北");
+test("開局提示：方向照畫面寫（D-132）——方形斜看、正上看是北在上；菱形把地圖轉了，北在右上", () => {
+  // 方形 (the oblique view, and the flat one): north up, as the minimap.
+  for (const p of [OBLIQUE, TOP]) {
+    assert.equal(screenDirection(10, 0, p), "右邊");
+    assert.equal(screenDirection(0, -10, p), "上方");
+    assert.equal(screenDirection(-10, 0, p), "左邊");
+    assert.equal(screenDirection(0, 10, p), "下方");
+    assert.equal(screenDirection(-10, 10, p), "左下方");
+    // Mostly north with a little east is still up.
+    assert.equal(screenDirection(3, -30, p), "上方");
+  }
+  assert.equal(screenDirection(10, -10, TOP), "右上方");
+  // The diamond (projection.ts DIAMOND: x right and down, y left and down): 東 lower right, 北 upper right.
+  assert.equal(screenDirection(10, 0, DIAMOND), "右下方");
+  assert.equal(screenDirection(0, -10, DIAMOND), "右上方");
+  assert.equal(screenDirection(10, -10, DIAMOND), "右邊");
+  assert.equal(screenDirection(-10, -10, DIAMOND), "上方");
+  assert.equal(screenDirection(10, 10, DIAMOND), "下方");
+  assert.equal(screenDirection(-10, 0, DIAMOND), "左上方");
 });
 
 test("開局提示：三行字寫魔晶從哪裡來、到了要做什麼、最近的小鎮在哪裡", () => {
@@ -88,13 +97,16 @@ test("開局提示：三行字寫魔晶從哪裡來、到了要做什麼、最�
   assert.equal(lines.length, 3);
   assert.match(lines[0], /魔晶主要從城鎮來/);
   assert.match(lines[1], /搶.*治理/);
-  assert.equal(lines[2], "離你的主城最近的小鎮在主城的北方，約 51 格。小地圖上閃的圓圈就是它。");
+  // On the default view (方形斜看, half as tall as wide): this town is at 62° on screen, up and to the right.
+  assert.equal(lines[2], "離你的主城最近的小鎮在主城的右上方，約 51 格。小地圖上閃的圓圈就是它。");
+  // The diamond turns it to the right (16°).
+  assert.equal(townHintLines(town(0, 29, 29), home, false, false, DIAMOND)[2], "離你的主城最近的小鎮在主城的右邊，約 51 格。小地圖上閃的圓圈就是它。");
   // After core's PR A, the small town near the main city.
-  assert.equal(townHintLines(town(2, 28, 64), home)[2], "離你的主城最近的小鎮在主城的東北方，約 18 格。小地圖上閃的圓圈就是它。");
+  assert.equal(townHintLines(town(2, 28, 64), home)[2], "離你的主城最近的小鎮在主城的右上方，約 18 格。小地圖上閃的圓圈就是它。");
   // A nearer small town is ours already (選單 → 魔晶怎麼拿 in the middle of a game).
-  assert.equal(townHintLines(town(0, 29, 29), home, true)[2], "離你的主城最近、可以攻下的小鎮在主城的北方，約 51 格。小地圖上閃的圓圈就是它。");
+  assert.equal(townHintLines(town(0, 29, 29), home, true)[2], "離你的主城最近、可以攻下的小鎮在主城的右上方，約 51 格。小地圖上閃的圓圈就是它。");
   // A map without small towns: the large one.
-  assert.equal(townHintLines(town(1, 48, 48, TownSize.Large), home)[2], "離你的主城最近的是一座大城，在主城的東北方，約 44 格。小地圖上閃的圓圈就是它。");
+  assert.equal(townHintLines(town(1, 48, 48, TownSize.Large), home)[2], "離你的主城最近的是一座大城，在主城的右上方，約 44 格。小地圖上閃的圓圈就是它。");
 });
 
 test("開局提示：城鎮只能搶一次開著時（第七輪，D-061），第二行加上每座城一局只能搶一次；關著時不提", () => {
