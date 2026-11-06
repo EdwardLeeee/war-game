@@ -40,6 +40,30 @@ const look = (page: Page) =>
   });
 
 const body = (page: Page) => page.locator(".sel-info .sel-body");
+
+/**
+ * Every button in sight in the panel is what a tap at its middle and 6 above its foot finds (b2
+ * 2026-11-07: the ⌄ over the row above took a + tapped low); points scrolled out of sight are skipped.
+ */
+const tapsTaken = (page: Page) =>
+  page.evaluate(() => {
+    const frame = document.querySelector(".sel-info")?.getBoundingClientRect();
+    const bodyBox = document.querySelector(".sel-info .sel-body")?.getBoundingClientRect();
+    if (frame === undefined || bodyBox === undefined) return ["no panel"];
+    const taken: string[] = [];
+    for (const b of document.querySelectorAll<HTMLElement>(".sel-info button")) {
+      const r = b.getBoundingClientRect();
+      if (r.width === 0 || b.closest("[hidden]") !== null) continue;
+      const clip = b.closest(".sel-body") === null ? frame : bodyBox;
+      const x = r.left + r.width / 2;
+      for (const y of [r.top + r.height / 2, r.bottom - 6]) {
+        if (y < clip.top || y > clip.bottom || x < clip.left || x > clip.right) continue;
+        const at = document.elementFromPoint(x, y);
+        if (at === null || !b.contains(at)) taken.push(`${b.textContent || b.getAttribute("aria-label")} at ${Math.round(y - r.top)}: ${at?.className || at?.tagName}`);
+      }
+    }
+    return taken;
+  });
 const fade = (page: Page) => page.locator(".sel-info .sel-more");
 
 for (const size of SIZES) {
@@ -54,6 +78,8 @@ for (const size of SIZES) {
     expect(l?.overRetreat, "not over 全軍撤退").toBe(false);
     expect(l?.overTop, "not over the top bar").toBe(false);
     expect(l?.small, "every button at least 44 pt").toEqual([]);
+    // Scrolled to its top: a tap on any button in sight is that button's, not the ⌄'s.
+    expect(await tapsTaken(page), "taps on the buttons in sight").toEqual([]);
     // 自動補兵 and its row: pinned under what scrolls, in sight without scrolling.
     const refill = panel.getByRole("button", { name: /^自動補兵/ });
     await expect(refill).toBeInViewport({ ratio: 1 });
@@ -64,11 +90,12 @@ for (const size of SIZES) {
     const before = await body(page).evaluate((e) => e.scrollTop);
     await panel.getByRole("button", { name: "往下捲" }).tap();
     await expect.poll(() => body(page).evaluate((e) => e.scrollTop), { message: "the ⌄ scrolls down" }).toBeGreaterThan(before + 20);
-    // At its end: the last kind in sight, no fade.
+    // At its end: the last kind in sight, no fade and no ⌄.
     await body(page).evaluate((e) => {
       e.scrollTop = e.scrollHeight;
     });
     await expect(fade(page)).toBeHidden();
+    await expect(panel.getByRole("button", { name: "往下捲" })).toBeHidden();
     const last = panel.locator(".group-grid > *").last();
     const [lb, bb] = await Promise.all([last.boundingBox(), body(page).boundingBox()]);
     expect((lb?.y ?? 0) + (lb?.height ?? 0), "the last kind in sight").toBeLessThanOrEqual((bb?.y ?? 0) + (bb?.height ?? 0) + 1);

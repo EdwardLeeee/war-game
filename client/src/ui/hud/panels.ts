@@ -356,15 +356,22 @@ export class SelectionInfo {
     this.frame.setAttribute("aria-label", "選取資訊");
     this.frame.hidden = true;
     this.el = el("div", this.frame, "sel-body");
-    // 正式介面: more below, a fade at the foot of what scrolls (ui/r6.css .sel-more) with a ⌄ that
-    // scrolls one row down (ui 2026-11-07).
+    // 正式介面: more below, a fade at the foot of what scrolls (ui/r6.css .sel-more: only to see, taps
+    // go through it) and a ⌄ that scrolls one row down (ui 2026-11-07). The ⌄ is out of what scrolls,
+    // so that it is over no button (b2 2026-11-07: over the row above, a + tapped low scrolled
+    // instead): at the end of the pinned row (軍團畫面), else on a foot row of its own while there is
+    // more below.
     this.more = this.formal ? el("div", this.el, "sel-more") : null;
-    if (this.more !== null) {
-      const down = el("button", this.more, "sel-more-btn");
-      down.type = "button";
-      down.setAttribute("aria-label", "往下捲");
-      down.appendChild(icon("unfold"));
-      down.addEventListener("click", () => {
+    this.more?.setAttribute("aria-hidden", "true");
+    this.foot = this.formal ? document.createElement("div") : null;
+    if (this.foot !== null) this.foot.className = "sel-foot";
+    this.down = this.formal ? document.createElement("button") : null;
+    if (this.down !== null) this.down.className = "sel-more-btn";
+    if (this.down !== null) {
+      this.down.type = "button";
+      this.down.setAttribute("aria-label", "往下捲");
+      this.down.appendChild(icon("unfold"));
+      this.down.addEventListener("click", () => {
         const row = this.el.querySelector<HTMLElement>(".group-grid > *, .order-meaning, .sel-chips");
         this.el.scrollBy({ top: (row?.getBoundingClientRect().height ?? 40) + 6, behavior: "smooth" });
       });
@@ -380,15 +387,32 @@ export class SelectionInfo {
     );
   }
 
-  /** The fade at the foot (正式介面), and none here. */
+  /** The fade at the foot of what scrolls, the ⌄, and the foot row it takes without a pinned row (正式介面). */
   private readonly more: HTMLElement | null;
+  private readonly foot: HTMLElement | null;
+  private readonly down: HTMLButtonElement | null;
 
-  /** The fade while the body has more under its foot, scrolled to its end none (ceo 2026-11-07). */
+  /** The fade and the ⌄ while the body has more under its foot, scrolled to its end none (ceo 2026-11-07). */
   private showMore(): void {
     const more = this.more;
     if (more === null) return;
     const below = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight > 2;
     if (more.hidden === below) more.hidden = !below;
+    if (this.down !== null && this.down.hidden === below) this.down.hidden = !below;
+    // The foot row only while its ⌄ shows (it takes no room otherwise).
+    if (this.foot !== null && this.foot.hidden === (below && this.down?.parentElement === this.foot)) this.foot.hidden = !(below && this.down?.parentElement === this.foot);
+  }
+
+  /** The ⌄ at the end of the pinned row when there is one (軍團畫面), else on the foot row under what scrolls. */
+  private placeDown(): void {
+    const down = this.down;
+    const foot = this.foot;
+    if (down === null || foot === null) return;
+    const pinned = this.frame.querySelector<HTMLElement>(":scope > .group-actions");
+    const home = pinned ?? foot;
+    if (down.parentElement !== home) home.appendChild(down);
+    if (pinned === null && foot.parentElement !== this.frame) this.frame.appendChild(foot);
+    if (pinned !== null && foot.parentElement !== null) foot.remove();
   }
 
   update(): void {
@@ -408,8 +432,9 @@ export class SelectionInfo {
     }
     for (const u of this.updaters) u();
     if (this.foldButton !== null) this.fold(this.foldButton);
-    // Last in what scrolls (a new build fills the body anew), held at its foot.
+    // Last in what scrolls (a new build fills the body anew), held at its foot; the ⌄ out of it.
     if (this.more !== null && this.el.lastChild !== this.more) this.el.appendChild(this.more);
+    this.placeDown();
     this.showMore();
   }
 

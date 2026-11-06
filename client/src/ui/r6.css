@@ -328,12 +328,23 @@
   position: sticky;
   bottom: 0;
   z-index: 2;
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
   height: 34px;
-  margin-top: -34px;
+  /* Over the body's whole width, under the ✕'s column too (b2 2026-11-07: it stopped short of it, a
+     straight edge on the wood), 10 in from either side of the panel as the rows. */
+  margin: -34px -46px 0 0;
   pointer-events: none;
+}
+
+/* Without a pinned row, the ⌄ on a row of its own under what scrolls, while there is more below. */
+:root[data-ui="r6"] .sel-info > .sel-foot {
+  display: flex;
+  flex: none;
+  justify-content: center;
+}
+
+/* With one (軍團畫面), at its end: over no button (b2 2026-11-07). */
+:root[data-ui="r6"] .sel-info > .group-actions > .sel-more-btn {
+  margin-left: auto;
 }
 
 :root[data-ui="r6"]:not([data-theme="b"]) .sel-info .sel-more {
