@@ -5,6 +5,7 @@
 import { tradeRejectText } from "../game/market.ts";
 import { type CommandBody, type CommandKind, Reject } from "../sim.ts";
 import { formalUi } from "./formal.ts";
+import { icon } from "./icons.ts";
 
 /**
  * 進攻紅、撤退藍 (D-080, user 2026-10-09: 「攻擊跟撤退可以做成紅色跟藍色的按鈕，不然有點搞不清楚」):
@@ -133,18 +134,20 @@ export class Overlays {
     this.wheelBackdrop = el("div", "wheel-backdrop", root);
     this.wheel = el("div", "wheel", root);
     this.wheel.setAttribute("role", "menu");
-    this.prompt = el("div", "prompt", root);
+    // 正式介面 (R6-19 INV-107 to INV-115): the prompt strip a panel, its buttons and ✓ ✗ the interface's.
+    const formal = formalUi();
+    this.prompt = el("div", formal ? "prompt panel" : "prompt", root);
     const body = el("span", "prompt-body", this.prompt);
     this.promptText = el("span", "prompt-text", body);
     this.promptWarn = el("span", "prompt-warn", body);
     this.promptWarn.hidden = true;
     this.promptButtons = el("span", "prompt-buttons", this.prompt);
     this.place = el("div", "place-confirm", root);
-    this.placeOk = el("button", "place-ok", this.place);
+    this.placeOk = el("button", formal ? "place-ok b" : "place-ok", this.place);
     this.placeOk.type = "button";
     this.placeOk.textContent = "✓";
     this.placeOk.setAttribute("aria-label", "確定蓋在這裡");
-    this.placeCancel = el("button", "place-cancel", this.place);
+    this.placeCancel = el("button", formal ? "place-cancel b" : "place-cancel", this.place);
     this.placeCancel.type = "button";
     this.placeCancel.textContent = "✗";
     this.placeCancel.setAttribute("aria-label", "取消放建築");
@@ -233,9 +236,12 @@ export class Overlays {
     this.promptWarning(null);
     this.promptButtons.replaceChildren();
     for (const b of buttons) {
-      const btn = el("button", `${b.primary === true ? "primary" : "secondary"}${b.tone === undefined ? "" : ` ${ORDER_TONE[b.tone]}`}`, this.promptButtons);
+      // 正式介面: 攻擊 red, 回主城 blue with the home (INV-108), 取消 wood.
+      const look = !formalUi() ? "" : ` b${b.tone === "advance" ? " red" : b.tone === "retreat" ? " blue" : b.primary === true ? " pri" : ""}`;
+      const btn = el("button", `${b.primary === true ? "primary" : "secondary"}${b.tone === undefined ? "" : ` ${ORDER_TONE[b.tone]}`}${look}`, this.promptButtons);
       btn.type = "button";
       btn.textContent = b.label;
+      if (look !== "" && b.tone === "retreat") btn.prepend(icon("home"));
       btn.addEventListener("click", b.onTap);
     }
     this.prompt.hidden = false;

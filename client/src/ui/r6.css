@@ -775,6 +775,332 @@
   line-height: 1.15;
 }
 
+/* --- 浮動元件 (R6-19) ------------------------------------------------------------------------ */
+
+/* 提示列 (INV-107 to INV-113): a panel 52 tall, the words then 取消 (wood), 回主城 (blue, the home);
+   放建築's warning a second line in red. */
+:root[data-ui="r6"] #hud .prompt.panel {
+  gap: 6px;
+  padding: 4px 6px 4px 14px;
+  border: 0;
+  font-size: 13px;
+}
+
+:root[data-ui="r6"] .prompt .prompt-buttons {
+  gap: 6px;
+}
+
+:root[data-ui="r6"] .prompt .b {
+  flex: none;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .prompt .b.primary {
+  min-width: 0;
+}
+
+:root[data-ui="r6"] .prompt .prompt-warn {
+  font-weight: 700;
+}
+
+/* ✓ ✗ (INV-114, INV-115): 52 × 52, ✓ green, ✗ red; ✓ grey where the house cannot go. */
+:root[data-ui="r6"] .place-confirm .b {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  padding: 0;
+  font-size: 24px;
+}
+
+/* 進駐's tags and arrows (R14-08): dark wood, a gold rim, the first line in gold. */
+:root[data-ui="r6"] .enter-tag,
+:root[data-ui="r6"] .enter-chip,
+:root[data-ui="r6"] #hud .enter-arrow {
+  border-color: var(--rim-hi, #f0cf8a);
+  color: var(--ink);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-ui="r6"] .enter-tag b,
+:root[data-ui="r6"] .enter-chip,
+:root[data-ui="r6"] .enter-arrow b {
+  color: var(--rim-hi, #f0cf8a);
+}
+
+:root[data-ui="r6"] .enter-arrow .dir {
+  fill: var(--rim-hi, #f0cf8a);
+}
+
+:root[data-ui="r6"] .enter-lines line {
+  stroke: var(--rim-hi, #f0cf8a);
+}
+
+/* --- 對話框 (R6-20, R6-21) ------------------------------------------------------------------- */
+
+/* A panel 460 wide over the battlefield darkened, its own buttons to close it; the title 18 pt. */
+:root[data-ui="r6"] .dialog {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+:root[data-ui="r6"] .dialog-card.panel {
+  /* B's lacquer and frame (::before, ::after) on the card, not the screen. */
+  position: relative;
+  padding: 12px 16px 14px;
+  border: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+:root[data-ui="r6"] .dialog-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+:root[data-ui="r6"] .dialog-card .small {
+  font-size: 12px;
+  opacity: 1;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] .dialog .b {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* The buttons at the end, at the right (關閉, 套用, 重來 the gold one). */
+:root[data-ui="r6"] .dialog .dialog-buttons {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+:root[data-ui="r6"] .dialog .dialog-buttons .b {
+  min-width: 88px;
+}
+
+/* The main button (gold) or 投降 (red) at the right end, as on every board (取消 then 投降, 回開局畫面 then 重來). */
+:root[data-ui="r6"] .dialog .dialog-buttons:not(.column) > .b.pri,
+:root[data-ui="r6"] .dialog .dialog-buttons:not(.column) > .b.red {
+  order: 1;
+}
+
+/* 選單 (INV-116): two columns of the same width. */
+:root[data-ui="r6"] .menu .dialog-buttons.column .b {
+  width: 100%;
+}
+
+/* 設定 (NEW-07): the two looks side by side, the one on lit. */
+:root[data-ui="r6"] .dialog .theme-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+:root[data-ui="r6"] .dialog .theme-choice > span {
+  grid-column: 1 / -1;
+  font-size: 13px;
+}
+
+:root[data-ui="r6"] .dialog .theme-card.b {
+  flex-direction: column;
+  gap: 4px;
+  min-height: 72px;
+}
+
+:root[data-ui="r6"] .dialog .theme-card .lb {
+  font-size: 14px;
+}
+
+/* 兵種相剋 (INV-118): thin lines between the rows. */
+:root[data-ui="r6"] .dialog .counter-row {
+  border-top-color: rgba(200, 170, 120, 0.3);
+  font-size: 12px;
+}
+
+/* 經濟分配, 預留 (INV-120, INV-121): − N + a row. */
+:root[data-ui="r6"] .dialog .ratio-row .b {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 18px;
+}
+
+/* 攻下城鎮 (INV-122 to INV-124): 搶 and 治理 two big buttons, the word large, what it does under it. */
+:root[data-ui="r6"] .dialog .choice-row .b {
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  min-height: 112px;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+:root[data-ui="r6"] .dialog .choice-row .b b {
+  font-size: 22px;
+}
+
+:root[data-ui="r6"] .dialog .keep-row .b {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 18px;
+}
+
+/* 勝負 (INV-129 to INV-131): the title in the middle (勝利 gold), the reason under it, the numbers' table. */
+:root[data-ui="r6"] .dialog.result h2 {
+  font-size: 24px;
+  text-align: center;
+}
+
+:root[data-ui="r6"] .dialog.result .dialog-card > p {
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] .dialog.result.won h2 {
+  color: #f0cf6a;
+}
+
+:root[data-ui="r6"] .dialog .stats {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+:root[data-ui="r6"] .dialog .stats th,
+:root[data-ui="r6"] .dialog .stats td {
+  padding: 4px 6px;
+  text-align: left;
+  border-top: 1px solid rgba(200, 170, 120, 0.3);
+}
+
+/* --- 開局 (R6-10) ---------------------------------------------------------------------------- */
+
+/* A panel 640 wide over the darkened battlefield: the title and 1 對 1 對電腦 across the top; 你的陸,
+   難度, 地圖 on the left, a label then the buttons; 開始 (or 繼續上一局) and the notes on the right. */
+:root[data-ui="r6"] #start {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+:root[data-ui="r6"] #start .card.panel {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 16px;
+  width: min(640px, 100%);
+  padding: 10px 18px 6px;
+  border: 0;
+  text-align: left;
+}
+
+:root[data-ui="r6"] #start .card h1,
+:root[data-ui="r6"] #start .card .mode,
+:root[data-ui="r6"] #start .card .small {
+  grid-column: 1 / -1;
+  text-align: center;
+}
+
+:root[data-ui="r6"] #start .card h1 {
+  font-size: 22px;
+  letter-spacing: 0.04em;
+}
+
+:root[data-ui="r6"] #start .card .mode {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+:root[data-ui="r6"] #start .start-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 你的陸 first (the user 2026-10-19), then 難度, 地圖 and its line. */
+:root[data-ui="r6"] #start .start-left .culture {
+  order: -1;
+}
+
+:root[data-ui="r6"] #start .difficulty {
+  justify-content: flex-start;
+  gap: 6px;
+  margin: 0;
+}
+
+:root[data-ui="r6"] #start .difficulty > span:first-child {
+  width: 3.4em;
+  font-size: 13px;
+}
+
+:root[data-ui="r6"] #start .difficulty .b {
+  min-width: 60px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+:root[data-ui="r6"] #start .computer-culture {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] #start .card .note.map-note {
+  margin: -2px 0 0 calc(3.4em + 6px);
+  font-size: 12px;
+}
+
+:root[data-ui="r6"] #start .start-right {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+:root[data-ui="r6"] #start .start-buttons {
+  /* First: what was changed (改了難度…) and the notes under the buttons (R6-10 INV-12). */
+  order: -1;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:root[data-ui="r6"] #start .start-buttons .b {
+  width: 100%;
+  min-height: 52px;
+  font-size: 17px;
+}
+
+:root[data-ui="r6"] #start .card .note {
+  margin: 0;
+  font-size: 12px;
+  opacity: 1;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] #start .card .note.continue-note {
+  color: #f0c27a;
+}
+
+:root[data-ui="r6"] #start .update {
+  margin: 0;
+}
+
+:root[data-ui="r6"] #start .card .small {
+  margin-top: 4px;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] #start .card .small a {
+  color: inherit;
+}
+
 /* =========================================================================== A 銅木 */
 
 :root[data-ui="r6"]:not([data-theme="b"]) {
@@ -905,6 +1231,40 @@
     inset 0 0 0 1.5px var(--rim),
     inset 0 2px 0 rgba(255, 225, 170, 0.35),
     0 3px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ✓ green, ✗ red (R6-19); the prompt's warning; 進駐's tags on dark wood. */
+:root[data-ui="r6"]:not([data-theme="b"]) .place-confirm .place-ok.b:not(:disabled) {
+  background: linear-gradient(180deg, #5ad672, #2f9e4a);
+  color: #fff;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .place-confirm .place-cancel.b {
+  background: linear-gradient(180deg, #e8574b, #b8322a);
+  color: #fff;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .prompt .prompt-warn {
+  color: #ff9c86;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .enter-tag,
+:root[data-ui="r6"]:not([data-theme="b"]) .enter-chip,
+:root[data-ui="r6"]:not([data-theme="b"]) #hud .enter-arrow {
+  background: rgba(36, 24, 15, 0.94);
+}
+
+/* 對話框: 搶 orange, 治理 blue (as in the selection info); 投降 red is .b.red. */
+:root[data-ui="r6"]:not([data-theme="b"]) .dialog .b.plunder {
+  background: linear-gradient(180deg, #d99a3d, #a86a1f);
+  color: #fff6e6;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .dialog .b.govern {
+  background: linear-gradient(180deg, #5b9fd6, #2f6aa3);
+  color: #f3f8ff;
+}
+
+/* 開局: the chosen and the main buttons gold, the rest wood. */
+:root[data-ui="r6"]:not([data-theme="b"]) #start .b:not(.secondary):not(:disabled) {
+  background: linear-gradient(180deg, var(--gold1), var(--gold2));
+  color: #fff6dc;
 }
 
 /* =========================================================================== B 墨漆金線 */
@@ -1086,6 +1446,52 @@
 }
 :root[data-ui="r6"][data-theme="b"] .wheel .wheel-item.b.blue::after {
   border-color: rgba(169, 200, 255, 0.85);
+}
+
+/* ✓ green, ✗ red (R6-19); the prompt's warning; 進駐's tags on the lacquer, a gold rim. */
+:root[data-ui="r6"][data-theme="b"] .place-confirm .place-ok.b:not(:disabled)::before {
+  background: linear-gradient(180deg, #4fbf65, #2a8a40);
+}
+:root[data-ui="r6"][data-theme="b"] .place-confirm .place-cancel.b::before {
+  background: linear-gradient(180deg, #d24a3f, #9c2a22);
+}
+:root[data-ui="r6"][data-theme="b"] .place-confirm .place-cancel.b::after {
+  border-image-source: var(--frame-red);
+}
+:root[data-ui="r6"][data-theme="b"] .place-confirm .b:not(:disabled) {
+  color: #fff;
+}
+:root[data-ui="r6"][data-theme="b"] .prompt .prompt-warn {
+  color: #ffab92;
+}
+:root[data-ui="r6"][data-theme="b"] .enter-tag,
+:root[data-ui="r6"][data-theme="b"] .enter-chip,
+:root[data-ui="r6"][data-theme="b"] #hud .enter-arrow {
+  --rim-hi: var(--gold);
+  background: rgb(16, 19, 27);
+}
+
+/* 對話框: 搶 orange, 治理 blue on the lacquer; 勝利 in the gold. */
+:root[data-ui="r6"][data-theme="b"] .dialog .b.plunder::before {
+  background: linear-gradient(180deg, #c98a33, #8e5a16);
+}
+:root[data-ui="r6"][data-theme="b"] .dialog .b.govern::before {
+  background: linear-gradient(180deg, #4f8fc8, #285a8a);
+}
+:root[data-ui="r6"][data-theme="b"] .dialog .b.plunder,
+:root[data-ui="r6"][data-theme="b"] .dialog .b.govern {
+  color: #fff6e6;
+}
+:root[data-ui="r6"][data-theme="b"] .dialog.result.won h2 {
+  color: var(--gold);
+}
+
+/* 開局: the chosen and the main buttons gold. */
+:root[data-ui="r6"][data-theme="b"] #start .b:not(.secondary):not(:disabled)::before {
+  background: linear-gradient(180deg, #e8c972, #b08933);
+}
+:root[data-ui="r6"][data-theme="b"] #start .b:not(.secondary):not(:disabled) {
+  color: #1d1608;
 }
 
 /* INV-16: no 原型介面 label in the formal interface. */

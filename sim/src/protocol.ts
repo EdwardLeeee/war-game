@@ -474,6 +474,31 @@ export const WarningField = {
 } as const;
 export const WARNING_STRIDE = 6;
 
+/**
+ * Soldiers walking along a town's walls (WALL_SHIFT, R14-07; Snapshot.wallShifts, PROTOCOL.md 4.7): one row per town, owner,
+ * from, to, via and home, `n` of them. Wall stretches as `side * 3 + part` (WallSide; WallPart).
+ */
+export const WallShiftField = {
+  town: 0,
+  /** A player's; a player gets its own only (a spectator both). */
+  owner: 1,
+  n: 2,
+  /** The stretch this walk set off from, and the one it goes to. */
+  from: 3,
+  to: 4,
+  /** Bits of the gates whose tops the way crosses: 1 north, 2 east, 4 south, 8 west. */
+  via: 5,
+  /** Enemy soldiers the viewer sees within 8 cells of the `to` stretch (not those hiding). */
+  foes: 6,
+  /** 1: walking back to where they stood, the enemy gone; 0: walking to fight. */
+  home: 7,
+} as const;
+export const WALL_SHIFT_STRIDE = 8;
+/** A wall stretch's side, by map cells: north is smaller y, east larger x. Corners go with north and south. */
+export const WallSide = { North: 0, East: 1, South: 2, West: 3 } as const;
+/** A wall stretch's part: the gate's top, the half with smaller x (north, south) or y (east, west), the other half. */
+export const WallPart = { Gate: 0, First: 1, Second: 2 } as const;
+
 /** Snapshot header, one Int32Array. */
 export const HeaderField = {
   tick: 0,
@@ -642,6 +667,11 @@ export interface BuildingInfo {
   holds?: number;
   /** Own finished buildings of these types needed before it can be built (round 7; always filled, as `holds`). */
   requires?: BuildingType[];
+  /**
+   * Who hides in it and how (D-125, 進駐; null: nobody): `types`, sent there with `command` (`garrison` for main cities
+   * and arrow towers, `post` for outposts), `slots` at most. Follows the switches (GARRISON, OUTPOST, OUTPOST_HIDE).
+   */
+  hides?: { types: UnitType[]; command: "garrison" | "post"; slots: number } | null;
 }
 
 export interface Multiplier {
@@ -1110,6 +1140,11 @@ export interface Snapshot {
   buildings: Int32Array;
   towns: Int32Array;
   warnings: Int32Array;
+  /**
+   * R14-07 (WALL_SHIFT_STRIDE rows): the viewer's soldiers walking along town walls now. Absent from older simulations and
+   * from hand-made snapshots: nobody walking.
+   */
+  wallShifts?: Int32Array;
   /** Rows that changed since the previous snapshot (new, amount changed, visibility changed). */
   nodes: Int32Array;
   /** size * size Fog values; present only in snapshots that carry a fog update. */
@@ -1127,10 +1162,66 @@ export interface Snapshot {
   events: SimEvent[];
 }
 
+/**
+ * The post-game timeline (D-124, D-125; PROTOCOL.md 6.1), in `game_over`'s stats: both sides laid open. Kept by the
+ * simulation outside the hash; `continue` runs the game again from tick 0, so it comes back by itself.
+ */
+export interface GameTimeline {
+  /** Ticks between samples (200: 10 seconds). */
+  every: number;
+  /** From tick 0, one every `every` ticks, and one at the end. */
+  samples: TimelineSample[];
+  /** A row whenever a town's state or holder changes (none for how they start). */
+  towns: TownLogRow[];
+  /** Every death, neutral militia too, in order. */
+  deaths: DeathRow[];
+  /** Player 0, player 1. */
+  sides: [TimelineSide, TimelineSide];
+}
+
+export interface TimelineSample {
+  tick: number;
+  /** Per player, all earned so far [food, wood, gold, crystal]: gathered, towns' pay, plunder, main cities' crystal, mage bounties; markets not. */
+  earned: [number[], number[]];
+  /** Per player, in stock now, in the same order. */
+  stock: [number[], number[]];
+  /** Per player, alive now, by UnitType (hiding too); soldiers are all but [UnitType.Farmer]. */
+  units: [number[], number[]];
+  /**
+   * Soldiers of player 0 and of player 1 near a place, places with someone only. `place`: a town's id; towns + p: player p's
+   * main city. Near: TIMELINE.nearTown cells out of a town's walls, TIMELINE.nearCity out of a main city's footprint. Passing by counts.
+   */
+  near: [place: number, n0: number, n1: number][];
+}
+
+/**
+ * The town's state (TownState) and holder (a player, NEUTRAL, NO_OWNER) from this tick. AwaitingChoice: taken by `owner`; Plundering,
+ * Repairing: `owner` chose; Governed: repairs done; Ruins: plundered (the row before says by whom). Neutral: after Ruins the ruins are over;
+ * after Repairing or Governed, a revolt.
+ */
+export type TownLogRow = [tick: number, town: number, state: number, owner: number];
+
+/** `by`: who last hit it (a player, NEUTRAL; -1 nobody); `cause`: with what (HitCause: 0 none, 1 militia, 2 unit, 3 cannon, 4 arrow); (x, y): its cell. */
+export type DeathRow = [tick: number, owner: number, type: number, x: number, y: number, by: number, cause: number];
+
+export interface TimelineSide {
+  /** So far, by UnitType. */
+  trained: number[];
+  lost: number[];
+  /** Crystal cannon shots, units hit, units killed; `best`: the shot that killed most (the first such), `types` by UnitType, (x, y) the cell of one it killed. */
+  cannon: { shots: number; hits: number; kills: number; best: { kills: number; tick: number; x: number; y: number; types: number[] } | null };
+  /** This player's main city under attack: each spell (no hit for TIMELINE.calmTicks ends it) from, to, its lowest hp. */
+  cityHits: [from: number, to: number, lowestHp: number][];
+  /** A computer's difficulty and style; null for a person (or a replay). */
+  ai: { difficulty: AiDifficulty; style: "plunder" | "govern" | "balanced" } | null;
+}
+
 export interface GameStats {
   ticks: number;
   winner: number;
   reason: GameOverReason;
+  /** D-124. Absent from older simulations. */
+  timeline?: GameTimeline;
   perPlayer: {
     gathered: Cost;
     unitsTrained: number[];

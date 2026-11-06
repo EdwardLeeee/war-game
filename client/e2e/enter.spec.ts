@@ -5,7 +5,7 @@
 // prototype's look and under 正式介面 (?ui=r6) alike.
 
 import { expect, type Page, test } from "@playwright/test";
-import { selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { expectSaid, selectForCommands, shot, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const TICKS = { timeout: 30_000 };
@@ -17,10 +17,10 @@ const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?
 const mode = (page: Page) => page.evaluate(() => window.__proto?.game?.mode());
 const centre = (page: Page, x: number, y: number, scale = 1) => page.evaluate(([a, b, s]) => window.__proto?.game?.centerOn(a, b, s), [x, y, scale] as const);
 const at = (page: Page, x: number, y: number) => page.evaluate(([a, b]) => window.__proto?.game?.cellToScreen(a, b) ?? { x: 0, y: 0 }, [x, y] as const);
-const toast = (page: Page, text: string) => page.getByRole("status").filter({ hasText: text });
 const overlap = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 async function start(page: Page, ui: string): Promise<void> {
+  await watchToasts(page);
   await page.goto(`./?test=1&mock=1&r7=1&outpost=1&hide=1&tps=20${ui}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
@@ -72,7 +72,7 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     // A grey one tapped: why; still picking, nothing sent.
     const before = (await sent(page)).length;
     await tap(page, await at(page, city.cx + city.size / 2, city.cy + city.size / 2));
-    await expect(toast(page, "槍兵進不去主城")).toBeVisible();
+    await expectSaid(page, "槍兵進不去主城");
     expect(await mode(page)).toBe("enter");
     expect((await sent(page)).slice(before).filter((c) => c.auto !== true)).toEqual([]);
     await page.locator(".cmds").getByRole("button", { name: /^取消\s*進駐/ }).tap();

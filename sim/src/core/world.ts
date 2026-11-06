@@ -51,6 +51,8 @@ export const UNIT_COLS = [
   // stood on before it first shifted (-1 none), the ticks it has had no target with an enemy near
   // the walls, and the ticks with none near. In the hash only while WALL_SHIFT is on.
   "wallTo", "wallHome", "wallWait", "wallCalm",
+  // Where its present walk along the walls set off from (R14-07, the screen's 換邊 line); -1 none. Not in the hash (UNIT_HASH_SKIP).
+  "wallFrom",
   // Ticks this unit stood to let lower ranks pass on its move (MARCH_ORDER, D-095); in the hash
   // only while MARCH_ORDER is on.
   "waited",
@@ -74,7 +76,7 @@ export type UnitCol = (typeof UNIT_COLS)[number];
  */
 export const UNIT_KINDS = 7;
 /** Unit columns that are statistics only, left out of the hash so a game plays and hashes as without them. */
-export const UNIT_HASH_SKIP: ReadonlySet<string> = new Set(["hitCause"]);
+export const UNIT_HASH_SKIP: ReadonlySet<string> = new Set(["hitCause", "wallFrom"]);
 /** What last hurt a unit (unit column hitCause; farmers' deaths are counted by it). */
 export const HitCause = { None: 0, Militia: 1, Unit: 2, Cannon: 3, Arrow: 4 } as const;
 export type HitCause = (typeof HitCause)[keyof typeof HitCause];
@@ -340,6 +342,13 @@ export class World {
   farmerDeaths = new Int32Array(PLAYER_COUNT * 5);
   /** Where farmers died (D-070's measurement; not hashed): owner, cell x, cell y, HitCause, tick, five numbers each. */
   readonly farmerDeathLog: number[] = [];
+  /**
+   * The post-game timeline (D-124, timeline.ts), neither in the hash: every death as tick, owner, type, cell x, y, who last
+   * hit it, HitCause and the id of the unit that did (8 numbers each); and per player [p * 4 + Resource] what it earned
+   * besides what farmers gathered (`gathered`): towns' pay, plunder, main cities' crystal, mage bounties.
+   */
+  readonly deathLog: number[] = [];
+  readonly earnedExtra = new Int32Array(PLAYER_COUNT * 4);
   revolts = new Int32Array(PLAYER_COUNT);
   /**
    * Per owner (players, then neutral): the flow-field step order and whether to try the y
@@ -576,6 +585,7 @@ export class World {
     c.wall[s] = -1;
     c.wallTo[s] = -1;
     c.wallHome[s] = -1;
+    c.wallFrom[s] = -1;
     c.flank[s] = -1;
     c.flankSide[s] = 0;
     c.flankX[s] = -1;
@@ -748,6 +758,7 @@ export class World {
     if (to >= 0 && this.wallAt[to] === u.id[i]) this.wallAt[to] = -1;
     u.wallTo[i] = -1;
     u.wallHome[i] = -1;
+    u.wallFrom[i] = -1;
     u.wallWait[i] = 0;
     u.wallCalm[i] = 0;
     // Up on it (standing, shooting or calibrating the cannon, or walking along it): down to the cell inside.

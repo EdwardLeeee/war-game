@@ -5,7 +5,7 @@
 // says 人口已到上限, not 蓋民居.
 
 import { expect, type Page, test } from "@playwright/test";
-import { watchErrors } from "./helpers.ts";
+import { expectSaid, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const FARMER = 0;
@@ -14,6 +14,7 @@ const MAIN_CITY = 0;
 let checkErrors: () => void;
 
 test.beforeEach(async ({ page }) => {
+  await watchToasts(page);
   checkErrors = watchErrors(page);
   await page.goto("./?test=1&mock=1&tps=60");
   await page.getByRole("button", { name: "開始" }).tap();
@@ -27,7 +28,6 @@ test.afterEach(() => {
 const me = (page: Page) => page.evaluate(() => window.__proto?.game?.me() ?? 0);
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
-const toast = (page: Page, text: string) => page.getByRole("status").filter({ hasText: text });
 
 async function mainCity(page: Page): Promise<{ id: number; cx: number; cy: number; size: number }> {
   const m = await me(page);
@@ -85,7 +85,7 @@ test("人口已到上限（含城鎮）：自動訓練停下來時訊息列和�
     g?.population({ room: 0, ceiling: n });
     g?.autoArmy(true);
   }, living);
-  await expect(toast(page, "人口已到上限")).toBeVisible({ timeout: 30_000 });
+  await expectSaid(page, "人口已到上限", {}, { timeout: 30_000 });
   const city = await mainCity(page);
   const c = { x: city.cx + city.size / 2, y: city.cy + city.size / 2 };
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [c.x, c.y] as const);

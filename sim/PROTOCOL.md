@@ -78,6 +78,7 @@
     - `features`：哪些第七輪的規則開著。`plunderOnce` 城鎮只能搶一次、`towers` 可以蓋箭樓、`garrison` 遠程兵和法師可以躲進建築、`cavalry` 可以蓋馬廄、訓練騎兵。D-080 加 `outpost`：可以蓋哨所、派槍兵駐守（3.4 節）；只在開著時出現（值是 true），沒有這個欄位就是關著。
     - `arrows`：建築自己射的箭。`mainCity` 主城、`townTower` 大城的箭樓、`arrowTower` 玩家的箭樓；各有 `damage`、`range`（定點，從占地邊緣算）、`cooldown`（tick）、`extraMax`（主城每躲 1 名村民多 1 箭，最多幾箭；其他是 0）。
     - `garrisonTypes`：能用 `garrison` 躲進建築的兵種（遠程兵、法師）。
+    - `buildings[type].hides`（D-125，進駐）：這棟收哪些兵，畫面只要讀這裡：`{ types, command, slots }`，`types` 是 `UnitType` 陣列，`command` 是 `garrison`（主城、箭樓）或 `post`（哨所，`features.outpostHide` 開著時），`slots` 最多幾名。其他建築和關著時是 `null`。城鎮不是建築，照舊用 `wall`、`guard`（3.7）。
     - `garrisonCannon`：躲在建築裡的法師放晶砲時，傷害是平常的 `permille`／1000、冷卻是 `cooldownTimes` 倍。
     - `towerReach`：箭樓可以蓋在哪裡（第 7 節）。`town`（D-089 起）：持有的城鎮城牆外幾格。D-080 加 `outpost`：自己蓋好的哨所占地幾格內。
     - `outpost`（D-080）：哨所的 `slots`（最多駐守幾名槍兵）、`reach`（攻擊模式去打幾格內的敵人）、`chase`（追到幾格就回來），都是格數（3.4 節）。D-119 加 `poke`：躲在哨所裡的槍兵戳人時攻擊的倍數；`ranged`、`melee`（`[分子, 分母]`）：遠程兵和法師、其他兵種的普通攻擊打哨所只算幾分之幾；`features.outpostHide`：槍兵躲進哨所（開著時才出現）。
@@ -784,6 +785,15 @@ D-096 起城門會關、可以打破，持有的人可以上城牆，見 3.7（`
 
 ### 4.7 其他欄位
 
+- **`wallShifts`**（R14-07，`WALL_SHIFT_STRIDE` = 8，`WallShiftField`）：正在沿著城牆換邊的兵（3.7「沿著牆換邊」），給守城中的城鎮面板寫「換邊：4 名走過東門頂，去打東牆南段」。選填：舊版模擬沒有這個欄位，畫面自己造的快照也可以不帶；沒有就當作沒有人在換邊。
+  - 玩家只收到自己的兵；觀戰（`human` 是 null）收到雙方的。只列正在走的兵，站定在牆上的不列。同一座城、同一方、同樣的 `from`、`to`、`via`、`home` 合成一列。
+  - `town`、`owner`、`n`（幾名）。
+  - `from`：這一趟從哪段牆出發；`to`：走去哪段。路上換了目標，`from` 照舊是這一趟的起點。
+  - 牆段代號是 `side * 3 + part`：`side` 照地圖格子（`WallSide`）：0 北（y 小）、1 東（x 大）、2 南、3 西，角落算北牆、南牆；`part`（`WallPart`）：0 門頂、1 前半段（北牆、南牆的西半；東牆、西牆的北半）、2 後半段。例如東門頂是 3、東牆南段是 5、北牆西段是 1。地圖方位怎麼寫成菱形鏡頭下的字，由畫面決定。
+  - `via`：路上經過哪幾個城門頂，位元 1 北、2 東、4 南、8 西（起點、終點是門頂也算）。
+  - `foes`：`to` 那段牆外 8 格內，看的人**看得到**的敵兵數（村民、躲在建築裡的不算；霧裡的不算）。觀戰時照兵的擁有者看得到的算。
+  - `home`：1 是敵人走了、正在走回原位；0 是去打。
+
 - **`fog`**：`size * size` 個 `Fog` 值。0 沒去過、1 去過但目前看不到、2 看得到。
   - 只在有迷霧更新的快照裡出現（每 5 tick），其他快照是 `null`。PR-2 起。
 - **`placement`**：`size * size` 個 `PlaceBit`，跟 `fog` 一起送，給建築預覽用（見第 7 節）。PR-3 起。
@@ -840,7 +850,7 @@ D-096 起城門會關、可以打破，持有的人可以上城牆，見 3.7（`
 | `ready` | 靜態資料（第 2 節），之後開始送快照 |
 | `snapshot` | 第 4 節 |
 | `hash` | 每 100 tick：`tick`、8 碼十六進位的 `hash` |
-| `game_over` | `winner`、`reason`、`stats`（採集量、訓練與損失、法師產量與陣亡、搶與治理次數）。`unitsTrained`、`unitsLost` 依 `UnitType` 排：村民、槍兵、遠程、法師。城鎮次數從 PR-4 |
+| `game_over` | `winner`、`reason`、`stats`（採集量、訓練與損失、法師產量與陣亡、搶與治理次數；D-124 起 `timeline`，見 6.1）。`unitsTrained`、`unitsLost` 依 `UnitType` 排：村民、槍兵、遠程、法師。城鎮次數從 PR-4 |
 | `determinism_progress`／`determinism_done` | 確定性檢查的進度與結果：總 tick、最終雜湊、耗時、每 tick 中位數與最大值 |
 | `log` | 指令紀錄 `jsonl`：第一行是 `LogHeader`（protocol、seed、scenario、ai，第二輪起加 `maxTicks`、每位玩家的 `difficulty`，第六輪起有人類玩家時加 `autoTrain`，D-074 起隨機地圖加 `map`，D-083 起 `init` 有帶時加 `build`），之後一行一道指令。D-083 起另外帶 `hashes`（從第 0 tick 起每 100 tick 一個，`{ tick, hash }`，8 碼十六進位）和 `tick`（匯出時跑到第幾 tick），`continue` 要用 |
 | `continue_progress` | `continue` 快轉中：`tick`、`toTick`。每 1200 tick（`CONTINUE_PROGRESS_EVERY`）一次 |
@@ -851,6 +861,25 @@ D-096 起城門會關、可以打破，持有的人可以上城牆，見 3.7（`
 - 暫停只是讓 Worker 不再跑下一個 tick，模擬的狀態完全不受影響。
 - 暫停時收到的指令，蓋上下一個還沒跑的 tick，恢復後在那個 tick 執行。
 - 速度只決定每秒跑幾個 tick。
+
+### 6.1 局後時間軸（`stats.timeline`，D-124、D-125）
+
+只在 `game_over` 送一次，雙方全部攤開，看的人是誰都一樣。模擬自己記（`core/timeline.ts`），不進雜湊，不影響對局。`continue` 是從頭重跑，所以接回來還在，畫面不用存。舊版模擬沒有這個欄位。
+
+- `every`：取樣間隔，200 tick（10 秒）。
+- `samples[]`：從 tick 0 起每 `every` 一筆，結束時再一筆。
+  - `tick`。
+  - `earned[p]`：累計收入 `[糧, 木, 金, 魔晶]`，只增不減：採集、城鎮收入、搶、主城的魔晶、殺法師的賞金。市場買賣和退款不算。
+  - `stock[p]`：當下存量，同順序。
+  - `units[p]`：當下活著的人數，索引是 `UnitType`（0 村民、1 槍兵、2 遠程、3 法師、4 民兵、5 騎兵、6 攻城砲），躲著的也算。士兵數＝加總扣掉 `[0]`。
+  - `near[]`：`[place, n0, n1]`，只列有人的地點。`place` 是城鎮 id；`towns.length + p` 是玩家 p 的主城。`n0`、`n1` 是雙方的士兵數（不含村民，含躲著、牆上的）。城鎮算牆外 8 格內，主城算占地外 12 格內。路過也算，所以是「附近有幾名」，不是「在打」。
+- `towns[]`：`[tick, town, state, owner]`，城鎮狀態或擁有者一變就一列，開局不列。`state` 是 `TownState`：`AwaitingChoice` 被 `owner` 攻下；`Plundering` 開始搶；`Repairing` 治理開始；`Governed` 治理完成；`Ruins` 搶完（`owner` 是 `NO_OWNER`，誰搶的看上一列）；`Neutral` 從 `Ruins` 來是廢墟結束，從 `Repairing`、`Governed` 來是叛離。
+- `deaths[]`：`[tick, owner, type, x, y, by, cause]`，所有陣亡，含中立民兵，照時間排。`x`、`y` 是格。`by` 是最後打到他的那方（玩家、`NEUTRAL`，-1 沒有）。`cause` 是 `HitCause`：0 無、1 民兵、2 單位、3 晶砲、4 箭。算擊殺請用 `by`：對方的 `lost` 包含被中立民兵打死的。
+- `sides[p]`：
+  - `trained`、`lost`：累計，索引是 `UnitType`。
+  - `cannon`：`shots` 發數、`hits` 打中人次、`kills` 打死幾名；`best` 一發打死最多的那發（同樣多取最早的）：`kills`、`tick`、`x`、`y`（其中一名陣亡的格）、`types`（索引是 `UnitType`）；一名都沒打死是 `null`。
+  - `cityHits[]`：這方主城挨打的每一段 `[from, to, lowestHp]`，30 秒沒挨打算結束；主城倒了 `lowestHp` 是 0。第一次被打是 `cityHits[0][0]`；攻進對方主城是對方的 `cityHits[0][0]`。
+  - `ai`：電腦的 `difficulty`、`style`（`plunder`、`govern`、`balanced`）；人是 `null`。
 
 ## 7. 能不能蓋：`sim/src/placement.ts`
 

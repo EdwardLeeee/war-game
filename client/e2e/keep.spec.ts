@@ -6,7 +6,7 @@
 // other page): a town's ground is 移動 as before.
 
 import { expect, type Page, test } from "@playwright/test";
-import { selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { expectNotSaid, expectSaid, saidMark, selectForCommands, shot, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const SPEARMAN = 1;
@@ -30,6 +30,7 @@ test.afterEach(() => {
 });
 
 async function start(page: Page, query: string): Promise<void> {
+  await watchToasts(page);
   await page.goto(`./?test=1&mock=1&tps=20${query}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
@@ -61,7 +62,8 @@ test("主堡開關關著（其他頁面都是）：選著兵點城鎮的地面�
   await tapCell(page, { x: 32, y: 64 });
   await expect.poll(async () => (await orders(page, "retreat")).length).toBe(1);
   expect(await orders(page, "move")).toEqual([]);
-  await expect(toast(page, "點城鎮＝攻擊這座城")).toHaveCount(0);
+  // Not said (the order is there to see: what the tap did is done).
+  await expectNotSaid(page, "點城鎮＝攻擊這座城");
 });
 
 test("點城鎮就是進攻（D-100）：兵攻擊移動到主堡，第一次有提示、之後不再跳；點主堡是攻擊；主堡倒了走到點的那格；自己的城照舊是移動", async ({ page }, info) => {
@@ -75,18 +77,18 @@ test("點城鎮就是進攻（D-100）：兵攻擊移動到主堡，第一次有
   await selectForCommands(page, ids);
   await tapCell(page, NEUTRAL_GROUND);
   await expect.poll(async () => (await orders(page, "move")).at(-1)).toMatchObject({ c: "move", u: ids, x: NEUTRAL_TOWN.x, y: NEUTRAL_TOWN.y });
-  await expect(toast(page, "點城鎮＝攻擊這座城")).toBeVisible();
+  await expectSaid(page, "點城鎮＝攻擊這座城");
   await shot(page, info, "keep-town-tap-hint");
   expect(await page.evaluate(() => localStorage.getItem("war-game.proto.keepHint"))).toBe("seen");
 
   // Again: the same order, no hint (it has gone from the message strip by then).
   await expect(toast(page, "點城鎮＝攻擊這座城")).toHaveCount(0, { timeout: 15_000 });
+  const again = await saidMark(page);
   await selectForCommands(page, ids);
   await tapCell(page, { x: NEUTRAL_GROUND.x - 8, y: NEUTRAL_GROUND.y + 8 });
   await expect.poll(async () => (await orders(page, "move")).length).toBe(2);
   expect((await orders(page, "move")).at(-1)).toMatchObject({ x: NEUTRAL_TOWN.x, y: NEUTRAL_TOWN.y });
-  await page.waitForTimeout(500);
-  await expect(toast(page, "點城鎮＝攻擊這座城")).toHaveCount(0);
+  await expectNotSaid(page, "點城鎮＝攻擊這座城", again);
 
   // The keep itself: an attack on it.
   await selectForCommands(page, ids);
@@ -115,7 +117,7 @@ test("主堡（D-100）：沒選兵時點它，選取資訊寫主堡、城鎮的
   // A small town's keep: 600 (the big city's 1000, buildings[Keep].hp).
   await expect(panel.locator(".sel-num")).toHaveText("生命 600/600");
   await expect(panel.locator(".sel-status")).toHaveText(/會射箭/);
-  await expect(toast(page, "中立主堡")).toBeVisible();
+  await expectSaid(page, "中立主堡");
   await shot(page, info, "keep-selected");
   await panel.getByRole("button", { name: "取消選取" }).tap();
   await tapCell(page, NEUTRAL_GROUND);

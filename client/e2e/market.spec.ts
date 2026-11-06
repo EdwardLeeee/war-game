@@ -7,7 +7,7 @@
 // (every other page): no market.
 
 import { expect, type Page, test } from "@playwright/test";
-import { selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { expectSaid, selectForCommands, shot, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const MARKET = 15;
@@ -25,6 +25,7 @@ test.afterEach(() => {
 });
 
 async function start(page: Page, query: string): Promise<void> {
+  await watchToasts(page);
   await page.goto(`./?test=1&mock=1&tps=20${query}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
@@ -36,7 +37,6 @@ const stock = (page: Page, c: { food: number; wood: number; gold: number; crysta
 const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
 const centre = (page: Page, x: number, y: number, scale = 1) => page.evaluate(([x, y, s]) => window.__proto?.game?.centerOn(x, y, s), [x, y, scale] as const);
 const at = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
-const toast = (page: Page, text: string) => page.getByRole("status").filter({ hasText: text });
 
 async function ours(page: Page, type: number): Promise<{ id: number; cx: number; cy: number }> {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -80,13 +80,13 @@ test("市場（D-101）：面板寫買 100、賣 100 的價錢；按一下就成
   await buyFood.tap();
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "trade").at(-1)).toMatchObject({ c: "trade", resource: 0, buy: true, lots: 1 });
   await expect.poll(async () => (await res(page)).food, { timeout: 30_000 }).toBe(400);
-  await expect(toast(page, "買進 100 糧，付 100 金")).toBeVisible();
+  await expectSaid(page, "買進 100 糧，付 100 金");
   await expect(buyFood).toContainText("付 105 金");
   await expect(panel.getByRole("button", { name: /^賣 100 糧/ })).toContainText("得 73 金");
   // Sell a lot of wood: 70 gold, its price down 5.
   await sellWood.tap();
   await expect.poll(async () => (await res(page)).wood, { timeout: 30_000 }).toBe(200);
-  await expect(toast(page, "賣出 100 木，得 70 金")).toBeVisible();
+  await expectSaid(page, "賣出 100 木，得 70 金");
   await expect(sellWood).toContainText("得 66 金");
   // Opened again: no note (this device has seen it).
   await page.locator(".sel-info").getByRole("button", { name: "取消選取" }).tap();
@@ -108,12 +108,12 @@ test("市場（D-101）：錢或貨不夠時按鈕變灰、寫原因；被拒時
   await shot(page, info, "market-cannot");
   // Two taps faster than the snapshot: the simulation refuses the second.
   await page.evaluate(() => window.__proto?.game?.send({ c: "trade", resource: 0, buy: true, lots: 1 }));
-  await expect(toast(page, "金不夠，買不了 100 糧")).toBeVisible();
+  await expectSaid(page, "金不夠，買不了 100 糧");
   // Our market falls as we tap.
   const m = await ours(page, MARKET);
   await page.evaluate((id) => window.__proto?.game?.remove([id]), m.id);
   await page.evaluate(() => window.__proto?.game?.send({ c: "trade", resource: 1, buy: false, lots: 1 }));
-  await expect(toast(page, "沒有蓋好的市場，不能買賣")).toBeVisible();
+  await expectSaid(page, "沒有蓋好的市場，不能買賣");
 });
 
 test("市場（D-101）：建造選單有市場（木 150），沒有糧倉時是灰的、寫要先蓋糧倉", async ({ page }) => {

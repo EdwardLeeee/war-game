@@ -2,7 +2,7 @@
 // while they stand, from wall cell to wall cell. Steps are counted by the way's cells, four a cell
 // (E, S, W, N; World.walkNext); ties go to the cell first in a frame's canonical order.
 
-import { BuildingType } from "../protocol.ts";
+import { BuildingType, WallPart, WallSide } from "../protocol.ts";
 import { type Frame, IDENTITY, toCanon } from "../frame.ts";
 import type { World } from "./world.ts";
 
@@ -88,6 +88,31 @@ export function wayPick(w: World, t: number, from: number, f: Frame, ok: (c: num
     bestD = k;
   }
   return best;
+}
+
+/** Wall cell c's stretch, `side * 3 + part` (protocol WallSide, WallPart), or -1 for a cell not on a town's way. */
+export function wallStretch(w: World, c: number): number {
+  const t = w.wallTown[c];
+  if (t < 0) return -1;
+  const n = w.size;
+  const dx = (c % n) - w.townX[t];
+  const dy = Math.trunc(c / n) - w.townY[t];
+  const ns = Math.abs(dy) >= Math.abs(dx);
+  const side = ns ? (dy < 0 ? WallSide.North : WallSide.South) : dx > 0 ? WallSide.East : WallSide.West;
+  const part = w.walkGate[c] === 1 ? WallPart.Gate : (ns ? dx : dy) < 0 ? WallPart.First : WallPart.Second;
+  return side * 3 + part;
+}
+
+/** The gates (bit 1 << side) whose tops the way from `from` to `to` crosses, `from` and `to` included. */
+export function wayGates(w: World, t: number, from: number, to: number, f: Frame): number {
+  let bits = 0;
+  let c = from;
+  for (let k = 0; k < w.walkCells[t].length && c >= 0; k++) {
+    if (w.walkGate[c] === 1) bits |= 1 << Math.trunc(wallStretch(w, c) / 3);
+    if (c === to) break;
+    c = wayNext(w, t, c, to, f);
+  }
+  return bits;
 }
 
 /** Steps from `from` to `to` along town t's way, -1 if the way between them is closed. */

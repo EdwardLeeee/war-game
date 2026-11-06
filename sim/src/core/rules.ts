@@ -75,7 +75,7 @@ export type SimBuildingInfo = Required<BuildingInfo>;
 export const BUILDINGS: SimBuildingInfo[] = [];
 const building = (b: Partial<BuildingInfo> & Pick<BuildingInfo, "type" | "hp" | "size">): SimBuildingInfo => ({
   walkable: false, cost: cost(), buildTicks: 0, sight: 5, populationCap: 0, accepts: [], trains: [], shelter: 0,
-  holds: 0, requires: [], ...b,
+  holds: 0, requires: [], hides: null, ...b,
 });
 // holds: soldiers that can hide inside (round 7, D-061; only while GARRISON is on).
 BUILDINGS[BuildingType.MainCity] = building({
@@ -387,6 +387,11 @@ export const WALLS = { on: true, range: CELL, takenNum: 3, takenDen: 4, sling: 4
  */
 export const WALL_SHIFT = { on: true, wait: 1 * S, back: 10 * S, stay: 2 * CELL, odds: 2 };
 /**
+ * The post-game timeline (D-124; timeline.ts): a sample every `every` ticks; soldiers within `nearTown` cells of a town's walls
+ * and `nearCity` of a main city's footprint count as near it; a main city not hit for `calmTicks` is no longer under attack.
+ */
+export const TIMELINE = { every: 10 * S, nearTown: 8, nearCity: 12, calmTicks: 30 * S };
+/**
  * A governed town's gate towers shoot (D-096; the user: 城樓會射箭, more the more soldiers hold the
  * town, as AoE2's garrison arrows): each standing gate of a town its holder governs, at the
  * nearest enemy unit its holder sees within `range` of the gate, `damage` every `cooldown`; one
@@ -583,6 +588,10 @@ switched(BUILDINGS[BuildingType.ArrowTower], "hp", TOWER_VALUE, () => TOWER_VALU
 switched(BUILDINGS[BuildingType.ArrowTower], "buildTicks", TOWER_VALUE, () => TOWER_VALUE.buildTicks);
 switched(ARROW_TOWER, "damage", TOWER_VALUE, () => TOWER_VALUE.damage);
 switched(ARROW_TOWER, "cooldown", TOWER_VALUE, () => TOWER_VALUE.cooldown);
+// D-125 (進駐): who hides in what, one place for the screen.
+switched(BUILDINGS[BuildingType.MainCity], "hides", GARRISON, () => ({ types: GARRISON_TYPES, command: "garrison", slots: BUILDINGS[BuildingType.MainCity].holds }));
+switched(BUILDINGS[BuildingType.ArrowTower], "hides", GARRISON, () => ({ types: GARRISON_TYPES, command: "garrison", slots: BUILDINGS[BuildingType.ArrowTower].holds }));
+switched(BUILDINGS[BuildingType.Outpost], "hides", OUTPOST_HIDE, () => (OUTPOST.on ? { types: [UnitType.Spearman], command: "post", slots: OUTPOST_HIDE.slots } : null));
 // D-119: the bigger outpost spearmen hide in.
 switched(BUILDINGS[BuildingType.Outpost], "size", OUTPOST_HIDE, () => OUTPOST_HIDE.size);
 switched(BUILDINGS[BuildingType.Outpost], "hp", OUTPOST_HIDE, () => OUTPOST_HIDE.hp);

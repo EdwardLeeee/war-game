@@ -26,6 +26,8 @@ const ICON = {
   formation: '<circle cx="7" cy="8" r="1.6"/><circle cx="12" cy="8" r="1.6"/><circle cx="17" cy="8" r="1.6"/><circle cx="7" cy="15" r="1.6"/><circle cx="12" cy="15" r="1.6"/><circle cx="17" cy="15" r="1.6"/>',
   build: '<path d="M4 20h16"/><path d="M6 20V10l6-5 6 5v10"/><path d="M10 20v-6h4v6"/>',
   rally: '<path d="M6 21V4"/><path d="M6 4h11l-3 4 3 4H6"/>',
+  enter: '<path d="M4 21V9h16v12"/><path d="M4 9V5h3v2h3V5h4v2h3V5h3v4"/><path d="M12 10v7M9 14l3 3 3-3"/>',
+  reform: '<path d="M5 4v16"/><path d="M9 7h10M9 12h8M9 17h11"/>',
   unfold: '<path d="M6 10l6 6 6-6"/>',
   army: '<path d="M4 18l4-10 4 6 4-6 4 10z"/>',
   map: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',

@@ -5,7 +5,7 @@
 // the flash and 「退」 clear of each other and of every other button.
 
 import { expect, type Page, test } from "@playwright/test";
-import { saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { expectSaid, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 
 const GROUP_1 = ".groups > button:nth-child(1)";
 const GROUP_2 = ".groups > button:nth-child(2)";
@@ -14,6 +14,7 @@ const TICKS = { timeout: 30_000 };
 let checkErrors: () => void;
 
 test.beforeEach(async ({ page }) => {
+  await watchToasts(page);
   checkErrors = watchErrors(page);
   await page.goto("./?test=1&mock=1&tps=20");
   await page.getByRole("button", { name: "開始" }).tap();
@@ -27,7 +28,6 @@ test.afterEach(() => {
 
 const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
 const lastOrder = async (page: Page) => (await sent(page)).filter((c) => c.auto !== true).at(-1);
-const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 const retreat = (page: Page, n: number) => page.getByRole("button", { name: `編隊 ${n} 撤回主城` });
 
 async function ownIds(page: Page, type: number): Promise<number[]> {
@@ -95,7 +95,7 @@ test("「退」：只有進攻中的軍團有，寫編號；只有 2 進攻、1 
   // A tap: group 1 back home (the cell in front of the main city), nothing selected still.
   await retreat(page, 1).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: g1, x: 12, y: 79 });
-  await expect(toast(page, "編隊 1 撤回主城")).toBeVisible();
+  await expectSaid(page, "編隊 1 撤回主城");
   expect((await page.evaluate(() => window.__proto?.game?.selection()))?.units).toEqual([]);
   await expect(retreat(page, 1)).toBeHidden(TICKS);
   await expect(retreat(page, 2)).toBeVisible();
@@ -114,7 +114,7 @@ test("閃紅提醒：軍團 1 剩不到進攻時的一半，按鈕變紅、寫�
   await page.evaluate((ids) => window.__proto?.game?.remove(ids), g1.slice(3, 4));
   await expect(page.locator(GROUP_1)).toHaveClass(/alarm/, TICKS);
   await expect(page.locator(GROUP_1)).toHaveText("1·剩 2/6");
-  await expect(toast(page, "編隊 1 快撐不住了（剩 2/6）")).toBeVisible();
+  await expectSaid(page, "編隊 1 快撐不住了（剩 2/6）");
   expect(await page.locator(GROUP_1).evaluate((e) => getComputedStyle(e).animationName)).toBe("group-alarm");
   await expect(retreat(page, 1)).toBeVisible();
   await clear(page, "alarm with 退1");
@@ -136,7 +136,7 @@ test("待命的軍團：自動補兵的新兵走過來時（前進中）不出�
   await page.touchscreen.tap(barracks.x, barracks.y);
   await expect(page.locator(".sel-info")).toContainText("兵營");
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
-  await expect(toast(page, /^新的槍兵補進編隊 1，正走過去$/)).toBeVisible(TICKS);
+  await expectSaid(page, /^新的槍兵補進編隊 1，正走過去$/, {}, TICKS);
   const recruit = (await ownIds(page, 1)).find((id) => !g1.includes(id));
   // On his way (an order of 自動補兵's, not the player's): the group is not attacking.
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.units() ?? [])).find((u) => u.id === recruit)?.order, TICKS).toBe(1);

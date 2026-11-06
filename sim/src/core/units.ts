@@ -1509,6 +1509,8 @@ export class UnitSystem {
     const id = u.id[i];
     const c = u.wall[i];
     if (u.wallHome[i] < 0) u.wallHome[i] = c;
+    // A new walk (not a new goal on the way): where it sets off from, for the screen.
+    if (u.wallTo[i] < 0 || u.wallTo[i] === c) u.wallFrom[i] = c;
     if (w.wallAt[c] === id) w.wallAt[c] = -1;
     const was = u.wallTo[i];
     if (was >= 0 && w.wallAt[was] === id) w.wallAt[was] = -1;
@@ -3081,6 +3083,7 @@ export class UnitSystem {
         if (u.wall[i] >= 0 && w.wallAt[u.wall[i]] === u.id[i]) w.wallAt[u.wall[i]] = -1;
         // And the one it walked to (WALL_SHIFT).
         if (u.wallTo[i] >= 0 && w.wallAt[u.wallTo[i]] === u.id[i]) w.wallAt[u.wallTo[i]] = -1;
+        w.deathLog.push(w.tick, u.owner[i], u.type[i], u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, u.hitBy[i], u.hitCause[i], u.hitById[i]);
         if (u.owner[i] < PLAYER_COUNT) w.lost[u.owner[i] * UNIT_KINDS + u.type[i]]++;
         // D-089's measurement: soldiers lost at the castles and at their gates.
         if (u.owner[i] < PLAYER_COUNT && u.type[i] !== UnitType.Farmer) {
@@ -3097,7 +3100,10 @@ export class UnitSystem {
           // The killer's side picks up the bounty (none for the neutral side).
           const killer = u.hitBy[i];
           const bounty = killer >= 0 && killer < PLAYER_COUNT && killer !== u.owner[i] ? MAGE_BOUNTY : 0;
-          if (bounty > 0) w.res[killer * 4 + Resource.Crystal] += bounty;
+          if (bounty > 0) {
+            w.res[killer * 4 + Resource.Crystal] += bounty;
+            w.earnedExtra[killer * 4 + Resource.Crystal] += bounty;
+          }
           const ev: SimEvent = { k: "mage_killed", id: u.id[i], owner: u.owner[i], killer, crystal: bounty };
           emit(u.owner[i], ev);
           if (killer !== u.owner[i] && killer >= 0 && killer < PLAYER_COUNT) emit(killer, ev);

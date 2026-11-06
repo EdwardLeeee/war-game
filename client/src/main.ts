@@ -36,7 +36,7 @@ import { AI_DIFFICULTIES, type AiDifficulty, BUILDING_STRIDE, MAP_MODES, type Ma
 import { createStage, gpu, gpuLimits, hasAstc } from "./stage.ts";
 import { applyTheme, loadTheme } from "./theme.ts";
 import { tickRateText } from "./ui/controls.ts";
-import { applyFormalUi, FORMAL_UI_DEFAULT } from "./ui/formal.ts";
+import { applyFormalUi, FORMAL_UI_DEFAULT, formalUi } from "./ui/formal.ts";
 import { watchPresses } from "./ui/press.ts";
 import { deployedCommit, isNewer, updateHref } from "./version.ts";
 
@@ -87,6 +87,14 @@ const params = parseParams(location.search);
 // 正式介面 (R6, ui/formal.ts): off unless a test page asks; with it, 介面風格 (R6-20) the device's
 // choice, before anything shows, and buttons that look pressed under a finger (R6-25-01).
 applyFormalUi(params.ui === "r6" || (params.ui === null && FORMAL_UI_DEFAULT));
+// 正式介面 (R6-10, INV-16): the start card is a panel, its title without 原型.
+if (formalUi()) {
+  document.querySelector("#start .card")?.classList.add("panel");
+  // Its buttons the interface's: the chosen one and the main one (no .secondary) gold, the rest wood.
+  for (const b of document.querySelectorAll<HTMLButtonElement>("#start button")) b.classList.add("b");
+  const title = document.getElementById("start-title");
+  if (title !== null) title.textContent = "war-game";
+}
 applyTheme(loadTheme());
 watchPresses();
 /**
@@ -223,12 +231,19 @@ showMapMode();
 /** 你的陸 on the start screen (the user 2026-10-19): 東陸 the first time, then the last choice on this device; the computer wears the other. */
 let culture: Culture = loadCulture();
 const cultureButtons = [...document.querySelectorAll<HTMLButtonElement>("#start [data-culture]")];
+/** 正式介面 (R6-10 NEW-09): who the computer plays, after the two buttons. */
+const computerCulture = formalUi() ? document.createElement("span") : null;
+if (computerCulture !== null) {
+  computerCulture.className = "computer-culture";
+  document.querySelector("#start .culture")?.appendChild(computerCulture);
+}
 function showCulture(): void {
   for (const b of cultureButtons) {
     const on = b.dataset.culture === culture;
     b.setAttribute("aria-checked", on ? "true" : "false");
     b.classList.toggle("secondary", !on);
   }
+  if (computerCulture !== null) computerCulture.textContent = `電腦：${culture === "e" ? "西陸" : "東陸"}`;
 }
 for (const b of cultureButtons) {
   b.addEventListener("click", () => {
