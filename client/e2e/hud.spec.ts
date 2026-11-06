@@ -3,7 +3,7 @@
 // and idle farmers, and every piece of the temporary interface (GDD §10 草稿).
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { armyButton, expectSaid, FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, openBox, openPanel, recordToasts, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { armyButton, expectNotSaid, expectSaid, FULL_SCREEN, hintTownOf, injectSafeArea, INTERACTIVE, IPHONE_SAFE, openBox, openPanel, recordToasts, saidMark, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 import { doubleTap, doubleTapOn, longPress, longPressOn, tap, tapOn } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -17,6 +17,7 @@ const GROUP_2 = ".groups > button:nth-child(2)";
 let checkErrors: () => void;
 
 test.beforeEach(async ({ page }) => {
+  await watchToasts(page);
   checkErrors = watchErrors(page);
   await page.goto("./?test=1&mock=1");
   await page.getByRole("button", { name: "開始" }).tap();
@@ -57,7 +58,6 @@ const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?
 const lastOrder = async (page: Page) => (await sent(page)).filter((c) => c.auto !== true).at(-1);
 const garrison = (page: Page, town: number) => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], town);
 const place = (page: Page, ids: number[], cells: { x: number; y: number }[]) => page.evaluate(([i, c]) => window.__proto?.game?.place(i, c), [ids, cells] as const);
-const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 /** Whether the message strip is drawn on top at its centre, not behind the selection info or a dialog. */
 const toastOnTop = (page: Page) =>
   page.evaluate(() => {
@@ -221,7 +221,7 @@ test("開局提示：按不再提示，記在這台裝置上，重來、重新�
   expect(await stored(), "nothing kept before 不再提示").toBeNull();
   await hint.getByRole("button", { name: "不再提示" }).tap();
   await expect(hint).toBeHidden();
-  await expect(toast(page, "之後開局不會再提示")).toBeVisible();
+  await expectSaid(page, "之後開局不會再提示");
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
   expect(await stored()).toBe("off");
   // 重來: a new game, and no hint (the Hud is new, so nothing points at a town).
@@ -251,7 +251,7 @@ test("開局提示：按不再提示，記在這台裝置上，重來、重新�
   await expect(hint.getByRole("button", { name: "不再提示" })).toHaveCount(0);
   await hint.getByRole("button", { name: "開局時要提示" }).tap();
   await expect(hint).toBeHidden();
-  await expect(toast(page, "之後每一局開局都會提示")).toBeVisible();
+  await expectSaid(page, "之後每一局開局都會提示");
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
   expect(await stored()).toBe("on");
   await page.getByRole("button", { name: "選單" }).tap();
@@ -446,7 +446,7 @@ test("全軍撤退：不用先選兵，所有士兵退回主城，選取不變�
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: soldiers, x: 12, y: 79 });
   // With 堅守 for those not holding already (D-061).
   await expect.poll(async () => (await units(page)).filter((u) => soldiers.includes(u.id)).every((u) => u.stance === 1)).toBe(true);
-  await expect(toast(page, `全軍 ${soldiers.length} 名退回主城`)).toBeVisible();
+  await expectSaid(page, `全軍 ${soldiers.length} 名退回主城`);
   expect(await selection(page)).toEqual({ units: [], building: null });
   // With farmers selected, they stay selected and stay home.
   const farmers = await ownIds(page, [0]);
@@ -734,7 +734,7 @@ test("等錢治理：錢不夠也能按治理，不送指令、兵照樣留守�
   const before = (await sent(page)).length;
   await dialog.getByRole("button", { name: /^治理/ }).tap();
   await expect(dialog).toBeHidden();
-  await expect(toast(page, "錢不夠：先留守，還差 金 30，夠了自動治理")).toBeVisible();
+  await expectSaid(page, "錢不夠：先留守，還差 金 30，夠了自動治理");
   await expect.poll(() => governWaits(page)).toEqual([0]);
   // No 治理 sent (it would be refused), and the soldiers stay (留守 1, as for a small town).
   expect((await sent(page)).slice(before).filter((c) => c.c === "town_choice")).toEqual([]);
@@ -752,7 +752,7 @@ test("等錢治理：錢不夠也能按治理，不送指令、兵照樣留守�
   // 取消: no more waiting; the soldiers still stay (the town still waits for a choice).
   await panel.getByRole("button", { name: /^取消\s*等錢治理/ }).tap();
   await expect.poll(() => governWaits(page)).toEqual([]);
-  await expect(toast(page, "已取消等錢治理，留守的兵照樣守著")).toBeVisible();
+  await expectSaid(page, "已取消等錢治理，留守的兵照樣守著");
   expect((await garrison(page, 0)).length).toBe(1);
   const govern = panel.getByRole("button", { name: /^治理/ });
   await expect(govern).toContainText("木80 金80");
@@ -805,7 +805,7 @@ test("等錢治理：自動訓練開著時預留暫時提高到大城的花費�
   // 自動訓練 and the income on again: gold climbs to 150 (自動訓練 now leaves it), 治理 goes by
   // itself, and the reserve is the player's own again.
   await economy(true);
-  await expect(toast(page, "開始治理大城")).toBeVisible({ timeout: 20_000 });
+  await expectSaid(page, "開始治理大城", {}, { timeout: 20_000 });
   expect((await townChoices(page)).at(-1)).toMatchObject({ town: 3, choice: 1, auto: true });
   await expect.poll(() => governWaits(page)).toEqual([]);
   await expect.poll(async () => (await reserves(page)).at(-1)).toMatchObject({ food: 0, wood: 150, gold: 100, crystal: 15 });
@@ -843,7 +843,7 @@ test("攻擊、移動、堅守：第一列是這三顆和停止，選取資訊�
   let mark = (await sent(page)).length;
   await hold.tap();
   await holdSent(spear, mark);
-  await expect(toast(page, "堅守：停在原地，敵人進到射程就打，不追出去")).toBeVisible();
+  await expectSaid(page, "堅守：停在原地，敵人進到射程就打，不追出去");
   await expect(now).toHaveText("目前：堅守 6");
   await expect(hold).toHaveClass(/active/);
 
@@ -870,7 +870,7 @@ test("攻擊、移動、堅守：第一列是這三顆和停止，選取資訊�
   await page.locator(".prompt").getByRole("button", { name: "取消" }).tap();
   await holdSent(army, mark);
   expect(await page.evaluate(() => window.__proto?.game?.mode())).toBe("normal");
-  await expect(toast(page, "已停下，改成堅守")).toBeVisible();
+  await expectSaid(page, "已停下，改成堅守");
 
   // 攻擊 again and a tap on open ground: everyone advances fighting (攻擊移動), the 堅守 ones go 積極.
   await advance.tap();
@@ -928,7 +928,7 @@ test("隊形：按鈕寫出現在是密集還是散開、按了會變成哪一�
   await expect(panel).toContainText("密集：站位間隔 1 格，火力集中");
   await formation.tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "formation", u: spear, loose: true });
-  await expect(toast(page, "已改成散開。散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名")).toBeVisible();
+  await expectSaid(page, "已改成散開。散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
   await expect(formation).toHaveText("隊形：散開按一下改成密集");
   await expect(panel).toContainText("散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
   await expect(panel).toContainText("行軍、追擊、交戰時也盡量保持 2 格；隊伍較寬，過窄路較慢");
@@ -976,7 +976,7 @@ test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；從
   // The fake world's enemy soldiers stand 4 cells from ours: nothing sent, and a line says why.
   const before = (await sent(page)).length;
   await reform.tap();
-  await expect(toast(page, "敵人在 8 格內，不整理隊形：整理時不還手，先打完或先移動開")).toBeVisible();
+  await expectSaid(page, "敵人在 8 格內，不整理隊形：整理時不還手，先打完或先移動開");
   expect((await sent(page)).slice(before).filter((c) => c.auto !== true)).toEqual([]);
   await shot(page, info, "reform-enemy-near");
 
@@ -992,7 +992,7 @@ test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；從
   // Never sent anywhere, the enemy's main city never seen: towards the middle of the map (48, 48:
   // north-east, a little east of it). Standing together: the simulation re-forms them in place facing
   // that way (D-095 B).
-  await expect(toast(page, "整理隊形：槍兵在前，面向地圖中央")).toBeVisible();
+  await expectSaid(page, "整理隊形：槍兵在前，面向地圖中央");
   const order = await lastOrder(page);
   expect(order).toMatchObject({ c: "formation", u: ids, loose: false, face: 15 });
 
@@ -1010,7 +1010,7 @@ test("整理隊形（D-095）：敵人在 8 格內不整理、說為什麼；從
   await expect.poll(async () => (await units(page)).filter((u) => ids.includes(u.id) && u.order === 2).length).toBe(ids.length);
   await reform.tap();
   // On the march (the user 2026-11-04, D-119 邊走邊排): the formation with ranks, the march going on.
-  await expect(toast(page, "邊走邊排：前面的弓手和法師等槍兵走過去，照樣走到點的地方")).toBeVisible();
+  await expectSaid(page, "邊走邊排：前面的弓手和法師等槍兵走過去，照樣走到點的地方");
   expect(await lastOrder(page)).toMatchObject({ c: "formation", u: ids, face: 8, ranks: true });
   // Spread out on the march too: no walk of one cell (it would put the march's end where they stand).
   await place(page, ids, spread);
@@ -1068,7 +1068,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   // Only four soldiers are inside the town.
   await more.tap();
   await expect(keepGovern).toHaveText("4");
-  await expect(toast(page, "城鎮範圍內只有 4 名兵可以留守")).toBeVisible();
+  await expectSaid(page, "城鎮範圍內只有 4 名兵可以留守");
   expect(await toastOnTop(page), "the message is not behind the dialog").toBe(true);
   await dialog.getByRole("button", { name: "少留守 1 名（治理）" }).tap();
   await expect(keepGovern).toHaveText("3");
@@ -1102,7 +1102,7 @@ test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；
   await expect(kept).toHaveText("4");
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "guard", u: [mage], town: 0, auto: true });
   await panel.getByRole("button", { name: "多留守 1 名" }).tap();
-  await expect(toast(page, "城鎮裡沒有其他的兵可以留守")).toBeVisible();
+  await expectSaid(page, "城鎮裡沒有其他的兵可以留守");
   await expect(kept).toHaveText("4");
   // One fewer: the last choice (the mage) goes back to 積極.
   await panel.getByRole("button", { name: "少留守 1 名" }).tap();
@@ -1201,12 +1201,12 @@ test("留守：搶也預設留最少駐軍數（小鎮 1 名，D-084）；所有
   expect((await garrison(page, 0)).slice().sort((x, y) => x - y)).toEqual(army);
   await expect(armyButton(page)).toHaveText("全軍 0");
   await armyButton(page).tap();
-  await expect(toast(page, "所有的兵都在留守")).toBeVisible();
+  await expectSaid(page, "所有的兵都在留守");
   await expect.poll(async () => (await selection(page))?.units).toEqual([]);
   // 全軍撤退 leaves the garrisons too: nobody to send, and it says so.
   const before = (await sent(page)).length;
   await page.getByRole("button", { name: "全軍撤退" }).tap();
-  await expect(toast(page, "沒有可以撤退的士兵")).toBeVisible();
+  await expectSaid(page, "沒有可以撤退的士兵");
   expect((await sent(page)).length, "no order").toBe(before);
 });
 
@@ -1279,7 +1279,7 @@ test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現�
   await train.tap();
   await train.tap();
   await train.tap();
-  await expect(toast(page, /^新的槍兵補進編隊 1，正走過去$/)).toBeVisible({ timeout: 15_000 });
+  await expectSaid(page, /^新的槍兵補進編隊 1，正走過去$/, {}, { timeout: 15_000 });
   await expect(g1).toHaveText("1·6/6", { timeout: 30_000 });
   const recruits = (await ownIds(page, [1])).filter((id) => !spear.includes(id));
   expect(recruits).toHaveLength(3);
@@ -1300,7 +1300,7 @@ test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現�
   await expect(sw).toHaveText("自動補兵：開");
   await sw.tap();
   await expect(sw).toHaveText("自動補兵：關");
-  await expect(toast(page, "編隊 1 自動補兵：關")).toBeVisible();
+  await expectSaid(page, "編隊 1 自動補兵：關");
   // Off: a fallen soldier is not replaced; the new spearman stays by the barracks.
   await remove(page, [spear[3]]);
   await expect(g1).toHaveText("1·5/6");
@@ -1340,13 +1340,13 @@ test("軍團畫面：點編隊按鈕就選取並打開；設定每種兵要幾�
   // the second then has someone to join (D-054; it stands beside the first already, so it has joined).
   const marches = async (id: number) => (await sent(page)).filter((c) => c.c === "move" && c.auto === true && Array.isArray(c.u) && (c.u as number[]).includes(id));
   await more("遠程兵").tap();
-  await expect(toast(page, /^1 名沒編隊的兵補進編隊 1，在原地待命$/)).toBeVisible();
+  await expectSaid(page, /^1 名沒編隊的兵補進編隊 1，在原地待命$/);
   await expect.poll(async () => (await groupInfo(page))[0].ids).toEqual(ranged.slice(0, 1));
   await more("遠程兵").tap();
   await expect(want("遠程兵")).toHaveText("2");
   await expect.poll(async () => (await groupInfo(page))[0].ids).toEqual(ranged.slice(0, 2));
   await expect(panel.locator(".group-row").nth(1)).toContainText("現有 2");
-  await expect(toast(page, /^1 名沒編隊的兵補進編隊 1，正走過去$/)).toBeVisible();
+  await expectSaid(page, /^1 名沒編隊的兵補進編隊 1，正走過去$/);
   await page.waitForTimeout(2_500);
   expect(await marches(ranged[0]), "the first one: no march to the rally point or the main city").toEqual([]);
   expect(await marches(ranged[1]), "the second stands beside the first: nothing to walk").toEqual([]);
@@ -1393,7 +1393,7 @@ test("軍團畫面：點編隊按鈕就選取並打開；設定每種兵要幾�
   await expect(panel.getByRole("button", { name: "改成剛才選的 3 名" })).toBeVisible();
   await shot(page, info, "group-panel-from-selection");
   await panel.getByRole("button", { name: "改成剛才選的 3 名" }).tap();
-  await expect(toast(page, "已存成編隊 1（3 個）")).toBeVisible();
+  await expectSaid(page, "已存成編隊 1（3 個）");
   expect((await groupInfo(page))[0]).toMatchObject({ ids: spear.slice(0, 3), want: { 1: 3 }, saved: 3 });
   // The group is selected and still shown; another selection closes the panel.
   await expect.poll(async () => (await selection(page))?.units).toEqual(spear.slice(0, 3));
@@ -1411,7 +1411,7 @@ test("新兵補不進任何編隊時，加入兵最多的編隊並走過去，�
   await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
   await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
-  await expect(toast(page, /^新的槍兵加入兵最多的編隊 1，正走過去$/)).toBeVisible({ timeout: 15_000 });
+  await expectSaid(page, /^新的槍兵加入兵最多的編隊 1，正走過去$/, {}, { timeout: 15_000 });
   const recruit = (await ownIds(page, [1])).find((id) => !spear.includes(id));
   expect((await groupInfo(page))[0]).toMatchObject({ want: { 1: 7 }, saved: 7 });
   expect((await groupInfo(page))[0].ids).toContain(recruit);
@@ -1515,6 +1515,7 @@ for (const short of [true, false]) {
     await tapOn(page, GROUP_1);
     await openPanel(page);
     const less = panel.getByRole("button", { name: "少要 1 名槍兵" });
+    const saidBefore = await saidMark(page);
     await less.tap();
     await less.tap();
     await expect(panel.getByRole("status", { name: "槍兵要幾名" })).toHaveText(`${spear.length - 2}`);
@@ -1524,7 +1525,7 @@ for (const short of [true, false]) {
     expect(kicked).toHaveLength(2);
     if (short) {
       // One a tap of −.
-      await expect(toast(page, "1 名槍兵改編入編隊 2")).toBeVisible();
+      await expectSaid(page, "1 名槍兵改編入編隊 2");
       expect((await groups())[1]).toEqual(expect.arrayContaining(kicked));
       await expect.poll(async () => (await sent(page)).filter((c) => c.auto === true && c.c === "move" && kicked.every((id) => (c.u as number[]).includes(id))).at(-1)).toMatchObject({ x: 31, y: 74 });
       // The stance of most of those with group 2: 堅守.
@@ -1533,7 +1534,7 @@ for (const short of [true, false]) {
     } else {
       await page.waitForTimeout(500);
       expect((await groups()).some((g) => g.some((id) => kicked.includes(id))), "in no group").toBe(false);
-      await expect(toast(page, "改編入")).toHaveCount(0);
+      await expectNotSaid(page, "改編入", saidBefore);
     }
   });
 }
@@ -1646,7 +1647,7 @@ test("自動訓練（D-098）：主城自動補村民到目標（預設 40，−
   await target.getByRole("button", { name: "村民目標少 5 名" }).tap();
   await expect(target.locator("output")).toHaveText("40");
   // Three more fill the population (20): the strip says it once, the main city's line too.
-  await expect(toast(page, "人口滿了，自動訓練停下來：蓋民居")).toBeVisible({ timeout: 30_000 });
+  await expectSaid(page, "人口滿了，自動訓練停下來：蓋民居", {}, { timeout: 30_000 });
   // The last one in the queue already takes the room: 7, then 8 once it is out (slow on a busy CI: run 39647183375).
   await expect(panel.locator(".auto-train-line")).toHaveText(/^村民 [78]／40，人口滿了：蓋民居$/);
   // 自動村民 paused.

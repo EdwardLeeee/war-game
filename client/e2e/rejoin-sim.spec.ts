@@ -8,7 +8,7 @@
 // (CI run 40222760397, WebKit).
 
 import { expect, type Page, test } from "@playwright/test";
-import { saveGroup, selectForCommands, watchErrors } from "./helpers.ts";
+import { expectSaid, saveGroup, selectForCommands, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const SMALL = 0;
@@ -37,17 +37,7 @@ const at = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) =
 
 test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊留 1 名，帶走其他的兵城不會叛離；全部帶走就開始倒數叛離", async ({ page }) => {
   test.setTimeout(600_000);
-  await page.addInitScript(() => {
-    const seen: string[] = [];
-    (window as unknown as { __toasts: string[] }).__toasts = seen;
-    new MutationObserver(() => {
-      for (const t of document.querySelectorAll(".toast")) {
-        const text = t.textContent ?? "";
-        if (text !== "" && seen.at(-1) !== text) seen.push(text);
-      }
-    }).observe(document, { subtree: true, childList: true, characterData: true });
-  });
-  const said = () => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts.join("｜"));
+  await watchToasts(page);
   await page.goto("./?test=1&scenario=e2e&ai=0&tps=60");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
@@ -81,8 +71,16 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection().units ?? [])).length).toBeGreaterThan(0);
   const sentIn = await page.evaluate(() => window.__proto?.game?.selection().units ?? []);
   await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("enter");
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [town.cx, town.cy] as const);
-  await tap(page, await at(page, { x: town.cx + 0.5, y: town.cy + 0.5 }));
+  // The tags placed for where the camera is now (two frames on), then a tap on the town's: a tap the
+  // moment the camera moved hit what the layer still had there, the main city (CI run 42175083428).
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const townTag = async () => (await page.evaluate(() => window.__proto?.game?.enter()))?.tags.find((t) => t.id === `t${town.id}` && t.mode === "full") ?? null;
+  await expect.poll(townTag, { timeout: 30_000 }).not.toBeNull();
+  const tag = await townTag();
+  if (tag === null) throw new Error("no tag on the town");
+  await tap(page, { x: tag.x + tag.w / 2, y: tag.y + tag.h / 2 });
   // Those selected, still living (a soldier 自動訓練 trains for the group from now on may walk in
   // behind them as one more 留守, CI run 40804899732).
   await expect.poll(async () => {
@@ -101,7 +99,7 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await panel.getByRole("button", { name: "展開選取資訊" }).tap();
   await panel.getByRole("button", { name: "出城歸隊" }).tap();
   // How many: 自動訓練 may have sent one more in by now.
-  await expect.poll(said).toMatch(/\d+ 名出城歸隊編隊 1，留 1 名守城/);
+  await expectSaid(page, /\d+ 名出城歸隊編隊 1，留 1 名守城/);
   const kept = await garrison();
   expect(kept).toHaveLength(1);
   // The others march off, far from the town: it keeps its 1 and does not count down. All of group 1
@@ -132,7 +130,7 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await tap(page, spot);
   await expect(panel).toContainText("編隊 1：1 名");
   await panel.getByRole("button", { name: "全部帶走" }).tap();
-  await expect.poll(said).toContain("1 名離開這座城。駐軍不足，這座城會叛離");
+  await expectSaid(page, "1 名離開這座城。駐軍不足，這座城會叛離");
   await page.evaluate(([u, x, y]) => window.__proto?.game?.send({ c: "move", u, x, y }), [kept, from.x, from.y] as const);
   await expect.poll(async () => (await towns(page)).find((t) => t.id === town.id)?.revoltTimer ?? 0, { timeout: 120_000 }).toBeGreaterThan(0);
 });

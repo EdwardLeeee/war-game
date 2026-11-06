@@ -6,7 +6,7 @@
 // side is tested by core.
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, FULL_SCREEN, INTERACTIVE, IPHONE_SAFE, injectSafeArea, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { armyButton, expectSaid, FULL_SCREEN, injectSafeArea, INTERACTIVE, IPHONE_SAFE, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 import { tap, tapOn } from "./touch.ts";
 
 // Fake-world layout with r7=1, in cells.
@@ -42,6 +42,7 @@ test.afterEach(() => {
 });
 
 async function start(page: Page, round7 = true): Promise<void> {
+  await watchToasts(page);
   await page.goto(round7 ? "./?test=1&mock=1&r7=1" : "./?test=1&mock=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
@@ -59,7 +60,6 @@ const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() 
 const buildings = (page: Page) => page.evaluate(() => window.__proto?.game?.buildings() ?? []);
 const mode = (page: Page) => page.evaluate(() => window.__proto?.game?.mode());
 const place = (page: Page, ids: number[], cells: { x: number; y: number }[]) => page.evaluate(([i, c]) => window.__proto?.game?.place(i, c), [ids, cells] as const);
-const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
 async function ownIds(page: Page, types: number[]): Promise<number[]> {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -142,7 +142,7 @@ test("城鎮只能搶一次：搶過的城鎮再攻下，只有治理，寫明�
   await expect(panel).toContainText("這座城這局已經被搶過，只能治理");
   // 搶 sent anyway (Reject.AlreadyPlundered): the reason, and the town still waits.
   await page.evaluate(() => window.__proto?.game?.send({ c: "town_choice", town: 0, choice: 0 }));
-  await expect(toast(page, "這座城這局已經被搶過，只能治理")).toBeVisible();
+  await expectSaid(page, "這座城這局已經被搶過，只能治理");
   await dialog.getByRole("button", { name: /^治理/ }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "town_choice", town: 0, choice: 1 });
 });
@@ -203,12 +203,12 @@ test("進駐主城（D-061、D-125）：主城的標籤寫進遠程和法師、�
   await shot(page, info, "r7-garrison-prompt");
   // Open ground: told what to tap, still picking.
   await tap(page, await at(page, { x: MAIN_CITY.x - 4, y: MAIN_CITY.y - 6 }));
-  await expect(toast(page, "要點亮起來的建築：自己蓋好的城、主城、箭樓或哨所")).toBeVisible();
+  await expectSaid(page, "要點亮起來的建築：自己蓋好的城、主城、箭樓或哨所");
   expect(await mode(page)).toBe("enter");
   const mark = (await sent(page)).length;
   await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
   await expect.poll(async () => (await sent(page)).slice(mark)).toMatchObject([{ c: "garrison", u: hiders, building: city }]);
-  await expect(toast(page, `${hiders.length} 名躲進主城`)).toBeVisible();
+  await expectSaid(page, `${hiders.length} 名躲進主城`);
   expect(await mode(page)).toBe("normal");
   // Out of what is selected (a next order would take them out again); the spearman stays selected.
   expect((await page.evaluate(() => window.__proto?.game?.selection()))?.units).toEqual([spear[0]]);
@@ -256,13 +256,13 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
   // The one standing goes first, though the walking one is nearer.
   await callRanged.tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "garrison", u: [ranged[1]], building: city });
-  await expect(toast(page, "叫 1 名遠程兵躲進主城")).toBeVisible();
+  await expectSaid(page, "叫 1 名遠程兵躲進主城");
   await expect(panel.locator(".garrison-count")).toHaveText("0/6，1 名正過來");
   await shot(page, info, "d080-call-city");
   // No mage within 30 cells: told so, no order.
   const mark = (await sent(page)).length;
   await callMage.tap();
-  await expect(toast(page, "30 格內沒有可以叫來的法師")).toBeVisible();
+  await expectSaid(page, "30 格內沒有可以叫來的法師");
   expect((await sent(page)).slice(mark).filter((c) => c.c === "garrison")).toEqual([]);
   // Then the walking one: not the one hiding already, not those far off.
   await callRanged.tap();
@@ -323,7 +323,7 @@ test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去
   await expect(page.locator(".sel-info .order-now")).toHaveText(`目前：躲在建築裡 ${hiding.length}`);
   await page.locator(".cmds").getByRole("button", { name: /^攻擊/ }).tap();
   await tap(page, await at(page, { x: 18, y: 67 }));
-  await expect(toast(page, HIDE_ERROR)).toBeVisible();
+  await expectSaid(page, HIDE_ERROR);
   expect((await sent(page)).slice(mark).filter((c) => c.c === "move" || c.c === "attack" || c.c === "retreat")).toEqual([]);
   // 全軍 (and 全軍撤退, from the same list): only those outside.
   const outside = [...spear, ...ranged.slice(2), ...mages].sort((a, b) => a - b);
@@ -374,7 +374,7 @@ test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主�
   await page.locator(".sel-info").getByRole("button", { name: "召回" }).tap();
   // One leave naming group 1's two only; group 2's stay inside.
   await expect.poll(async () => (await sent(page)).slice(mark).filter((c) => c.c === "leave")).toEqual([expect.objectContaining({ building: city, u: a })]);
-  await expect(toast(page, "2 名躲著的兵出來，走回編隊 1")).toBeVisible();
+  await expectSaid(page, "2 名躲著的兵出來，走回編隊 1");
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(2);
   // Out with no order, they walk back to group 1 where its spearmen stand (an order of the screen's).
   const back = async () => (await sent(page)).filter((c) => c.auto === true && c.c === "move" && a.every((id) => (c.u as number[]).includes(id))).at(-1);

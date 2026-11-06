@@ -56,7 +56,10 @@ test("方形斜看：開局看得到自己的主城，點村民的身體選得�
   await page.waitForFunction(() => window.__proto?.game?.header().paused === true);
   const list = await page.evaluate(() => window.__proto?.game?.units() ?? []);
   const room = (u: (typeof list)[number]) => Math.min(...list.filter((v) => v.id !== u.id).map((v) => Math.hypot(v.sx - u.sx, v.sy - u.sy)));
-  const farmer = list.filter((u) => u.owner === me && u.type === 0 && u.sx > 80 && u.sx < view.width - 80 && u.sy > 60 && u.sy < view.height - 60).sort((u, v) => room(v) - room(u))[0];
+  // Where the farmers walked to before the pause depends on how fast the page ran: one under 全軍撤退
+  // took the tap for the button (WebKit, an order and nothing selected). The battlefield there, not a button.
+  const onField = await page.evaluate((pts) => pts.map(([x, y]) => document.elementFromPoint(x, y)?.tagName === "CANVAS"), list.map((u) => [u.sx, u.sy - 8] as [number, number]));
+  const farmer = list.filter((u, i) => u.owner === me && u.type === 0 && onField[i] && u.sx > 80 && u.sx < view.width - 80 && u.sy > 60 && u.sy < view.height - 60).sort((u, v) => room(v) - room(u))[0];
   if (farmer === undefined) throw new Error("no farmer on screen");
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.touchscreen.tap(farmer.sx, farmer.sy - 8);

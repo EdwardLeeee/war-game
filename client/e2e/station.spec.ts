@@ -4,7 +4,7 @@
 // group's, the user 2026-10-26; 全軍 without them), the ranged up on its walls, the others in it. The pictures for the user.
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { armyButton, expectSaid, saveGroup, selectForCommands, shot, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const RANGED = 2;
@@ -20,7 +20,6 @@ const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() 
 const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
 const at = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
 const centre = (page: Page, x: number, y: number, scale = 1) => page.evaluate(([cx, cy, s]) => window.__proto?.game?.centerOn(cx, cy, s), [x, y, scale] as const);
-const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
 async function ownIds(page: Page, type: number, n: number): Promise<number[]> {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -32,17 +31,7 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   test.setTimeout(240_000);
   const check = watchErrors(page);
   // The strip's messages as they come: the group's 自動補兵 says its own right after 駐軍's.
-  await page.addInitScript(() => {
-    const seen: string[] = [];
-    (window as unknown as { __toasts: string[] }).__toasts = seen;
-    new MutationObserver(() => {
-      for (const t of document.querySelectorAll(".toast")) {
-        const text = t.textContent ?? "";
-        if (text !== "" && seen.at(-1) !== text) seen.push(text);
-      }
-    }).observe(document, { subtree: true, childList: true, characterData: true });
-  });
-  const said = () => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts.join("｜"));
+  await watchToasts(page);
   await page.goto("./?test=1&mock=1&walls=1&tps=20");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
@@ -73,10 +62,10 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.enter()))?.tags.find((t) => t.id === `t${OUR_TOWN.id}`)?.head).toBe("進 5 名全進城");
   // Not ours: not lit, what to tap.
   await tap(page, await at(page, { x: NEUTRAL_TOWN.x + 0.5, y: NEUTRAL_TOWN.y + 2.5 }));
-  await expect(toast(page, "要點亮起來的建築：自己蓋好的城、主城、箭樓或哨所")).toBeVisible();
+  await expectSaid(page, "要點亮起來的建築：自己蓋好的城、主城、箭樓或哨所");
   // Ours: in they go, its 留守.
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
-  await expect.poll(said).toContain("5 名駐軍在小鎮：敵人來了會反擊，不追出城");
+  await expectSaid(page, "5 名駐軍在小鎮：敵人來了會反擊，不追出城");
   const order = (await sent(page)).filter((c) => c.auto !== true && c.c === "guard").at(-1);
   expect(order).toMatchObject({ u: ids, town: OUR_TOWN.id });
   expect(await page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], OUR_TOWN.id)).toEqual(ids);

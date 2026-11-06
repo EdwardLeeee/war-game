@@ -6,7 +6,7 @@
 // The simulation's side is core's (#185).
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { armyButton, expectSaid, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const OUTPOST = { x: 12, y: 66 };
@@ -28,6 +28,7 @@ test.afterEach(() => {
 });
 
 async function start(page: Page, outpost = true): Promise<void> {
+  await watchToasts(page);
   await page.goto(outpost ? "./?test=1&mock=1&r7=1&outpost=1&tps=20" : "./?test=1&mock=1&r7=1&tps=20");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
@@ -41,7 +42,6 @@ const lastOrder = async (page: Page) => (await sent(page)).filter((c) => c.auto 
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const buildings = (page: Page) => page.evaluate(() => window.__proto?.game?.buildings() ?? []);
 const mode = (page: Page) => page.evaluate(() => window.__proto?.game?.mode());
-const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 const place = (page: Page, ids: number[], cells: { x: number; y: number }[]) => page.evaluate(([i, c]) => window.__proto?.game?.place(i, c), [ids, cells] as const);
 
 async function ownIds(page: Page, type: number): Promise<number[]> {
@@ -102,7 +102,7 @@ test("自己的哨所：寫駐守幾名、最多幾名；＋槍兵叫站著沒�
 
   await call.tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "post", u: [spear[5]], building: id });
-  await expect(toast(page, "叫 1 名槍兵來駐守")).toBeVisible();
+  await expectSaid(page, "叫 1 名槍兵來駐守");
   await expect.poll(() => posted(page, id), TICKS).toBe(1);
   await expect(panel.locator(".outpost-count")).toHaveText("駐守 1 名槍兵（最多 6 名）");
   await expect(off).toBeEnabled();
@@ -140,7 +140,7 @@ test("駐守：選了槍兵和遠程兵，按進駐、哨所的標籤寫進槍�
   await expect(page.locator(".cmds").getByRole("button", { name: /^取消\s*進駐/ })).toHaveClass(/active/);
   await shot(page, info, "outpost-post-prompt");
   await tap(page, await at(page, { x: OUTPOST.x - 3, y: OUTPOST.y - 3 }));
-  await expect(toast(page, "要點亮起來的建築：自己蓋好的城、主城、箭樓或哨所")).toBeVisible();
+  await expectSaid(page, "要點亮起來的建築：自己蓋好的城、主城、箭樓或哨所");
   expect(await mode(page)).toBe("enter");
   await tapOutpost(page, OUTPOST);
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "post", u: spear.slice(0, 2), building: id });
@@ -166,7 +166,7 @@ test("駐守：選了槍兵和遠程兵，按進駐、哨所的標籤寫進槍�
   await expect(panel).toContainText("編隊 1：2 名");
   await shot(page, info, "outpost-panel-groups");
   await panel.getByRole("button", { name: "編隊 1 的駐守召回" }).tap();
-  await expect(toast(page, "2 名離開哨所，走回編隊 1")).toBeVisible();
+  await expectSaid(page, "2 名離開哨所，走回編隊 1");
   const back = (await sent(page)).filter((c) => c.auto === true && c.c === "retreat").at(-1);
   expect(back).toMatchObject({ u: two, x: Math.floor(archer?.cx ?? -1), y: Math.floor(archer?.cy ?? -1) });
   await expect.poll(async () => (await units(page)).filter((u) => two.includes(u.id)).every((u) => u.order !== 10), TICKS).toBe(true);
