@@ -59,12 +59,16 @@ def _sock(n, ident):
     return next(s for s in n.inputs if s.identifier == ident)
 
 
-def lamellar(name, plate, lace):
+def lamellar(name, plate, lace, along="round", row=None, width=None, light=(0.25, 0.8)):
     """Rows of small plates laced together, from the part's rest coordinates ("rest", r7_prod.apply): each row's lower
     edge a dark band of lacing and shadow (the cue that survives at actual size: a row is 4-5 px at 3x), faint seams
-    between the plates, each plate a little lighter or darker than the next."""
+    between the plates, each plate a little lighter or darker than the next. along: "round" counts the plates round
+    the body's upright axis (a man's torso); "body" along the horse's length and across its chest and rump (x + y:
+    art-v7.4, on the horse's flanks the angle round the upright axis hardly changes, so the plates never divided and
+    the rows read as a striped blanket)."""
     if name in lib.MATS:
         return lib.MATS[name]["mat"]
+    row, width = row or ROW, width or PLATE
     m = lib.mat(name, plate, 0.42, 0.7)
     nt = m.node_tree
     p = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
@@ -89,8 +93,11 @@ def lamellar(name, plate, lace):
     at.attribute_name = "rest"
     xyz = N("ShaderNodeSeparateXYZ")
     L(at.outputs["Vector"], xyz.inputs[0])
-    u = op("MULTIPLY", op("ARCTAN2", xyz.outputs["Y"], xyz.outputs["X"]), 0.17 / PLATE)
-    zr = op("DIVIDE", xyz.outputs["Z"], ROW)
+    if along == "body":
+        u = op("DIVIDE", op("ADD", xyz.outputs["Y"], xyz.outputs["X"]), width)
+    else:
+        u = op("MULTIPLY", op("ARCTAN2", xyz.outputs["Y"], xyz.outputs["X"]), 0.17 / width)
+    zr = op("DIVIDE", xyz.outputs["Z"], row)
     f = op("FRACT", zr)
     idx = op("FLOOR", zr)
     col_u = op("ADD", u, op("MULTIPLY", idx, 0.5))           # each row's plates half a plate along
@@ -111,8 +118,8 @@ def lamellar(name, plate, lace):
     L(cell.outputs[0], wn.inputs["Vector"])
     var = op("MULTIPLY_ADD", wn.outputs["Value"], 0.3)
     var.node.inputs[2].default_value = 0.85
-    grad = op("MULTIPLY_ADD", f, 0.25)                      # a plate a little lighter toward its top
-    grad.node.inputs[2].default_value = 0.8
+    grad = op("MULTIPLY_ADD", f, light[0])                  # a plate a little lighter toward its top
+    grad.node.inputs[2].default_value = light[1]
     bright = op("MULTIPLY", op("MULTIPLY", var, seam), grad)
     pc = N("ShaderNodeRGB")
     pc.outputs[0].default_value = (*plate, 1)
@@ -157,7 +164,15 @@ def _materials():
         horn=lib.mat("cream_e", (0.74, 0.67, 0.52), 0.6),
         rope=lib.mat("rope5", (0.55, 0.46, 0.3), 0.9, noise=0.2, noise_scale=60),
         steel=P["steel"],
-        horse_armour=lamellar("lamellar_black_r8", (0.07, 0.062, 0.058), (0.26, 0.1, 0.05)),
+        # art-v7.4 (the review 2026-11-04: the 具裝 not realistic enough, read as a striped blanket): plates counted along
+        # the horse, a little larger (4 x 8.5 cm, real barding's lamellae read at phone size), the lacing a dark leather
+        # brown, not orange
+        # (judge r1: the dark brown lacing merged the flanks into one dark mass, worse at phone size than the orange; r2:
+        # the rear half still dark: the lacing as before, the plates 5.5 cm so a seam lands every 3 px, each plate a little
+        # lighter at its top)
+        # (r3: each row's light-to-dark span still 37% less on the rear half: the lacing a little brighter than before)
+        horse_armour=lamellar("lamellar_horse_r8", (0.07, 0.062, 0.058), (0.34, 0.13, 0.06), along="body", row=2 / 24,
+                              width=0.055, light=(0.35, 0.75)),    # (2 / 24 m: unit_r9._barding_rows steps the rows, 24 to 2 m)
         lacquer=lib.mat("lacquer_e", (0.16, 0.05, 0.035), 0.32),             # red-black lacquer: lance, crown
         headcloth=lib.mat("sack_e", (0.3, 0.26, 0.2), 0.85),                # the farmer's head cloth
         robe=lib.mat("russet_e", (0.32, 0.16, 0.09), 0.8),                  # 木蘭: the Daoist's robe
@@ -366,6 +381,14 @@ def _horse_armour(u, M, hem=0.8):
             out.append([(rx * math.sin(math.radians(-78 + 156 * k / 10)),
                          y0 + d * math.cos(math.radians(-78 + 156 * k / 10)), z) for k in range(11)])
         units2._surface(f"{kind}_h_r8{name}", out, M["horse_armour"], hr, bones)
+        # art-v7.4 (the lance's pennant gone): the player's colour round the 盪胸's and 搭後's hems too, as on the side
+        # panels, so the front (facing 6) and the back show it
+        band = []
+        for z in (hem + 0.16, hem + 0.07, hem - 0.02):
+            band.append([((rx + 0.012) * math.sin(math.radians(-78 + 156 * k / 10)),
+                          y0 + (d + 0.012 * (1 if d > 0 else -1)) * math.cos(math.radians(-78 + 156 * k / 10)), z)
+                         for k in range(11)])
+        units2._surface(f"{kind}_h_r8{name}hem", band, M["team"], hr, bones)
     hr.pose()
 
 
@@ -387,10 +410,8 @@ def dress_cav(u):
     cyl(f"{kind}_r8socket", 0.022, 0.07, M["iron"], g, at=(0, 0, -2.3))
     lathe(f"{kind}_r8lancetip", [(0.0, 0.0), (0.03, 0.09), (0.034, 0.18), (0.012, 0.27)], M["steel"], g, segs=8,
           at=(0, 0, -2.6), scale=(1, 0.35, 1))
-    # ceo 2026-10-21: a small pennant of the player's colour on the lance (the rider's sleeves and 頓項 and the horse's
-    # hem gave 3-14% of the unit; the black lacquer stays)
-    slab(f"{kind}_r8pennant", [(0.0, 0.0), (0.0, -0.3), (0.32, -0.26), (0.22, -0.15), (0.32, -0.04)], 0.006,
-         M["team"], parent=g, loc=(0.02, 0, -2.0), rot=(0, 90, 0))
+    # (ceo 2026-10-21 hung a pennant of the player's colour on the lance; the user 2026-11-06, art-v7.4: 「它武器為啥掛一個
+    # 藍藍的東西？應該要拿掉吧，武器不就是長槍嗎」: gone; the colour is on the barding's hems instead, _horse_armour)
     import horse_r8
     _rows, hem, _old = horse_r8.refit(u, kind, M["horse_armour"], M["horse_armour"])
     _gone(kind, ["chamfron", "h_r8mane"])           # the 雞項 covers the mane; the 面簾 replaces R2's box
@@ -472,7 +493,9 @@ def dress_bow(u):
 
 def dress_siege(u):
     """霹靂車: more of the player's colour (the flag alone gave 0-10% of the machine, and none from some sides): a cloth
-    hung along each side of the cart, and a pennant on each end of the axle. Design choices; the machine is R5's."""
+    hung along each side of the cart, and a pennant on each end of the axle. Design choices; the machine is R5's.
+    art-v7.3 (the review 2026-11-04: no player colour seen from facings 2 and 6, which look along the cart): a cloth on
+    the front and the back cross beam too, and the right pennant turned across the cart, so one pennant faces each way."""
     kind = "siege_e"
     M = _materials()
     base = bpy.data.objects[f"{kind}_base"]
@@ -482,5 +505,9 @@ def dress_siege(u):
              loc=(0.575 * s, 0.0, 0.66), rot=(0, 0, 90))
         rod(f"{kind}_r8pennpole{s}", (0.45 * s, 0.0, 2.55), (0.45 * s, 0.0, 3.35), 0.015, M["wood"], parent=base)
         slab(f"{kind}_r8pennant{s}", [(0.0, 0.0), (0.0, -0.26), (0.4, -0.2), (0.3, -0.13), (0.4, -0.06)], 0.01,
-             M["team"], parent=base, loc=(0.45 * s, 0.0, 3.32), rot=(0, 0, 90))
+             M["team"], parent=base, loc=(0.45 * s, 0.0, 3.32), rot=(0, 0, 90 if s < 0 else 0))
+        # the end cloths: hung on the outer face of the front and back cross beams (siege_e_cross+-0.9), between the rails
+        slab(f"{kind}_r8enddrape{s}", [(-0.42, 0.0), (0.42, 0.0), (0.42, -0.3), (0.25, -0.35), (0.08, -0.3), (-0.08, -0.35),
+                                       (-0.25, -0.3), (-0.42, -0.35)], 0.012, M["team"], parent=base,
+             loc=(0.0, 0.97 * s, 0.66), rot=(0, 0, 0))
     return u

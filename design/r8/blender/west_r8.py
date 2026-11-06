@@ -298,13 +298,12 @@ def dress_knight(u):
     for k in range(6):
         sphere(f"{kind}_r8breath{k}", 0.008, dark, head, at=(0.05 + 0.025 * (k % 3), 0.218, 0.06 - 0.03 * (k // 3)),
                outline=False)
-    # the lance: ash, the R2 steel head kept; a two-tailed pennon a little behind the head
+    # the lance: ash, the R2 steel head kept (its pennon gone: the user 2026-11-06, art-v7.4: 「武器不就是長槍嗎」;
+    # the caparison carries the player's colour)
     g = r.j["grip_lance"]
     # the butt only 0.3 m behind the hand (it ran 1 m back through the rider's upper arm: clip_r8); R2's steel head
     # at -2.6 kept, so the lance reaches it
     rod(f"{kind}_r8lance", (0, 0, 0.12), (0, 0, -2.6), 0.022, M["wood"], parent=g, r2=0.016)
-    slab(f"{kind}_r8pennon", [(0.0, 0.0), (0.0, -0.32), (0.34, -0.3), (0.22, -0.16), (0.34, -0.02)], 0.006, M["team"],
-         parent=g, loc=(0.02, 0, -2.1), rot=(0, 90, 0))
     # the sword: cross-hilted, about 95 cm, at the left hip
     root = lib.empty(f"{kind}_r8swordroot", parent=r.j["hips"], loc=(-0.22, 0.05, 0.04), rot=(-60, 0, -8))
     box(f"{kind}_r8scabbard", (0.05, 0.022, 0.8), M["bag"], root, at=(0, 0, -0.42), bevel=0.008)

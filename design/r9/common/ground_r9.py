@@ -50,8 +50,22 @@ SUN_RGB = np.array([1.0, 0.95, 0.88])       # R7's sun (look.lights)
 
 # ---------------------------------------------------------------- periodic tools
 
+# art-v7.4 (ceo 2026-11-06): the relief the same on every machine. The seeds were always fixed and the thread count
+# changes nothing (1 and 12 threads give the same bytes), but numpy's exp, pow, hypot and FFT take different code on
+# different CPUs (AVX-512 or not) and numpy versions, and the last bit of a result can differ; the particle erosion is
+# chaotic and grows that bit into a different pattern (two CI runs: mean 3, max 255 of 255). So the heights going into
+# the erosion are rounded to QUANT (a last-bit difference cannot cross a step of 2^-20), the erosion itself uses only
+# +, -, *, / and sqrt (IEEE 754 rounds those the same everywhere; np.hypot is not one of them), and its result is
+# rounded again before the light.
+QUANT = 2.0 ** -20
+
+
+def _q(a):
+    return np.round(a / QUANT) * QUANT
+
+
 def fbm(n, beta, seed):
-    """Periodic noise n x n with a 1/f^beta spectrum (zero mean, unit deviation)."""
+    """Periodic noise n x n with a 1/f^beta spectrum (zero mean, unit deviation), rounded to QUANT."""
     rng = np.random.default_rng(seed)
     F = np.fft.fft2(rng.standard_normal((n, n)))
     f = np.hypot(np.fft.fftfreq(n)[None, :], np.fft.fftfreq(n)[:, None])
@@ -59,7 +73,7 @@ def fbm(n, beta, seed):
     amp = f ** (-beta / 2.0)
     amp[0, 0] = 0.0
     h = np.real(np.fft.ifft2(F * amp))
-    return (h - h.mean()) / h.std()
+    return _q((h - h.mean()) / h.std())
 
 
 def blur(a, sigma):
@@ -128,7 +142,7 @@ def erode(h, drops=60_000, seed=3, steps=48, batch=600, inertia=0.08, capacity=3
             hh, gx, gy, idx = bilinear(h, px, py)
             dx = dx * inertia - gx * (1 - inertia)
             dy = dy * inertia - gy * (1 - inertia)
-            ln = np.hypot(dx, dy)
+            ln = np.sqrt(dx * dx + dy * dy)          # (not np.hypot: see QUANT)
             still = ln < 1e-9
             ln[still] = 1.0
             dx, dy = dx / ln, dy / ln
@@ -175,8 +189,9 @@ def relief_tile(ppm=60, seed=11, sim_per_m=8, relief_m=0.16, rill_m=0.05, sun=SU
     n = int(TILE_M * sim_per_m)
     # mounds and hummocks; eroded with a steep relief (so the water carves branching rills), then flattened back to
     # the ground's real relief_m for the light
-    h0 = (0.7 * fbm(n, 3.2, seed) + 0.3 * fbm(n, 2.4, seed + 1)) * 10.0
+    h0 = _q((0.7 * fbm(n, 3.2, seed) + 0.3 * fbm(n, 2.4, seed + 1)) * 10.0)
     h, _flow = erode(h0, seed=seed)
+    h = _q(h)
     h = blur(h, 1.2)                                                 # soft swales, not cracks (judge r1: 「鉛筆刮痕」)
     carve = blur(np.clip(h0 - h, 0, None), 1.0)
     carve = carve / np.percentile(carve, 99.0)
@@ -184,6 +199,7 @@ def relief_tile(ppm=60, seed=11, sim_per_m=8, relief_m=0.16, rill_m=0.05, sun=SU
     H = upsample((h - h.mean()) / h.std() * relief_m, size)          # metres
     H += rill_m * 0.08 * fbm(size, 2.2, seed + 2)                    # fine grain under the tufts
     H += tussocks(size, ppm, seed + 3)                                # grass clumps, 0.3-0.8 m, lit on the sun's side
+    H = _q(H)
     F = np.clip(upsample(carve, size), 0, None)
     dx = 1.0 / ppm
     hx = (np.roll(H, -1, 1) - np.roll(H, 1, 1)) / (2 * dx)

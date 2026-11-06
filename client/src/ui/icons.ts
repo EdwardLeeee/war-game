@@ -22,6 +22,8 @@ const ICON = {
   work: '<path d="M14 4l6 6-3 3-6-6z"/><path d="M11 7L3 15v6h6l8-8"/>',
   idle: '<circle cx="12" cy="7" r="3"/><path d="M7 21v-6a5 5 0 0 1 10 0v6"/><path d="M16 4.5l3-1.5M18 8h3"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  fold: '<path d="M6 14l6-6 6 6"/>',
+  unfold: '<path d="M6 10l6 6 6-6"/>',
   army: '<path d="M4 18l4-10 4 6 4-6 4 10z"/>',
   map: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
