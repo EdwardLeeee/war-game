@@ -126,6 +126,8 @@ export interface PanelHost {
   buildingRecall(building: number, ids: readonly number[]): void;
   /** A town of ours (7c): its 留守 on the walls and inside, by kind. */
   townSeats(town: number): { wall: number[]; inside: number[] };
+  /** 牆上換邊 (R14-07): our town's lines, at most two (game.ts wallShiftLines). */
+  wallShiftLines(town: number): string[];
   /** 軍團畫面 (8): where group i's soldiers are in, by place, and how many. */
   groupPlaces(i: number): { places: { name: string; kinds: number[]; town: boolean }[]; n: number };
   /** 哨所 (D-080): its spearmen and mode, for its panel; null for another building. `inside`: those hiding in it (3 × 3, D-119), null while they stand guard beside it. */
@@ -1036,6 +1038,23 @@ export class SelectionInfo {
         seats(wall, s.wall, s.wall.length);
         seats(inside, s.inside, s.inside.length);
       });
+      // 牆上換邊 (R14-07): who is walking along the wall, and where to; 正式介面 only.
+      if (this.formal) {
+        const shift = el("div", this.el, "wall-shift");
+        shift.setAttribute("role", "status");
+        shift.setAttribute("aria-label", "牆上換邊");
+        shift.hidden = true;
+        let was = "";
+        this.updaters.push(() => {
+          const lines = this.host.wallShiftLines(id);
+          const key = lines.join("\n");
+          if (key === was) return;
+          was = key;
+          shift.replaceChildren();
+          for (const line of lines) el("p", shift, "", line);
+          shift.hidden = lines.length === 0;
+        });
+      }
       const row = el("div", this.el, "sel-keep");
       row.setAttribute("role", "group");
       row.setAttribute("aria-label", "留守");

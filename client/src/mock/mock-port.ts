@@ -669,6 +669,12 @@ export class MockPort implements SimPort {
     if (b !== undefined) b.hp = hp;
   }
 
+  /** 牆上換邊 (R14-07): the snapshot's wallShifts rows from now on (WALL_SHIFT_STRIDE each; none: the field left out). */
+  private wallShiftRows: Int32Array | undefined;
+  setWallShifts(rows: number[]): void {
+    this.wallShiftRows = rows.length === 0 ? undefined : Int32Array.from(rows);
+  }
+
   postMessage(msg: ToWorker): void {
     switch (msg.type) {
       case "init":
@@ -1300,6 +1306,7 @@ export class MockPort implements SimPort {
       fog: withFog ? this.fog.slice() : null,
       placement: withFog ? this.placementGrid() : null,
       idleFarmers: Int32Array.from(this.units.filter((u) => u.owner === ME && (u.flags & UnitFlag.IdleFarmer) !== 0).map((u) => u.id)),
+      ...(this.wallShiftRows === undefined ? {} : { wallShifts: this.wallShiftRows.slice() }),
       events,
     };
   }
