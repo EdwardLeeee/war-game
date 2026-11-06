@@ -1,8 +1,10 @@
 // 正式介面's 選取資訊 and 軍團畫面 under 全軍撤退 (PR 5, ceo 2026-11-07): with five kinds (the real
 // simulation's rules: 槍兵、遠程兵、法師、騎兵、攻城砲) or a long explanation, at R6's 814 × 380 and at
 // 932 × 336 (Safari with its tab bar) with the iPhone's safe area, the panel reaches neither over
-// 全軍撤退 nor over the top bar; what does not fit scrolls inside it (#402), a fade at its foot until
-// its end; its ✕ and title line stay in reach; every button at least 44 pt.
+// 全軍撤退 nor over the top bar; what does not fit scrolls inside it (#402), a fade and a ⌄ at the foot
+// of what scrolls until its end (the ⌄ scrolls a row); the 軍團畫面's 改成剛才選的／清空／自動補兵 row
+// pinned under it, always in sight (ui 2026-11-07); its ✕ and title line stay in reach; every button
+// at least 44 pt.
 
 import { expect, type Page, test } from "@playwright/test";
 import { injectSafeArea, openPanel } from "./helpers.ts";
@@ -52,16 +54,24 @@ for (const size of SIZES) {
     expect(l?.overRetreat, "not over 全軍撤退").toBe(false);
     expect(l?.overTop, "not over the top bar").toBe(false);
     expect(l?.small, "every button at least 44 pt").toEqual([]);
-    // Too tall here: it scrolls, the fade says so; at its end, the last row in sight and no fade.
+    // 自動補兵 and its row: pinned under what scrolls, in sight without scrolling.
+    const refill = panel.getByRole("button", { name: /^自動補兵/ });
+    await expect(refill).toBeInViewport({ ratio: 1 });
+    expect(await refill.evaluate((b) => b.closest(".sel-body") === null), "out of what scrolls").toBe(true);
+    // Too tall here: it scrolls, the fade and its ⌄ say so; the ⌄ scrolls a row down.
     expect(await body(page).evaluate((e) => e.scrollHeight > e.clientHeight + 2), "scrolls inside").toBe(true);
     await expect(fade(page)).toBeVisible();
+    const before = await body(page).evaluate((e) => e.scrollTop);
+    await panel.getByRole("button", { name: "往下捲" }).tap();
+    await expect.poll(() => body(page).evaluate((e) => e.scrollTop), { message: "the ⌄ scrolls down" }).toBeGreaterThan(before + 20);
+    // At its end: the last kind in sight, no fade.
     await body(page).evaluate((e) => {
       e.scrollTop = e.scrollHeight;
     });
     await expect(fade(page)).toBeHidden();
-    const last = panel.getByRole("button", { name: /^自動補兵/ });
+    const last = panel.locator(".group-grid > *").last();
     const [lb, bb] = await Promise.all([last.boundingBox(), body(page).boundingBox()]);
-    expect((lb?.y ?? 0) + (lb?.height ?? 0), "the last row in sight").toBeLessThanOrEqual((bb?.y ?? 0) + (bb?.height ?? 0) + 1);
+    expect((lb?.y ?? 0) + (lb?.height ?? 0), "the last kind in sight").toBeLessThanOrEqual((bb?.y ?? 0) + (bb?.height ?? 0) + 1);
     // The title line and the ✕ still there (sticky), the ✕ closes it.
     await expect(panel.locator(".sel-head")).toBeInViewport();
     await panel.getByRole("button", { name: "取消選取" }).tap();

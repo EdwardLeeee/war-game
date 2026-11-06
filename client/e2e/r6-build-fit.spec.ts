@@ -1,11 +1,12 @@
 // 正式介面's 建造 page against 全軍 (PR 5, ceo 2026-11-06 modification 3 and 2026-11-07 option B): the
 // longest page, four columns (the fake world's twelve) and five (the real simulation's fourteen, R14-04),
 // at R6's 814 × 380 stays under 全軍; at 932 × 336 (Safari with its tab bar, the user's iPhone) it cannot,
-// so the right column (編隊 1–4, 全軍) is out of sight, in its place, while the page is open. Every
-// button at least 44 pt, no words cut.
+// so the right column (編隊 1–4, 全軍) is out of sight, in its place, while the page is open (faded in
+// 120 ms, ui 2026-11-07). With the iPhone's safe area; every button at least 44 pt, no words cut, a
+// cost a resource a line and 要先蓋 a line of its own (ui 2026-11-07), the page under the top bar.
 
 import { expect, type Page, test } from "@playwright/test";
-import { selectForCommands } from "./helpers.ts";
+import { injectSafeArea, selectForCommands } from "./helpers.ts";
 
 const SETUPS = [
   { name: "四欄", query: "mock=1&tps=20&r7=1&outpost=1", cols5: false },
@@ -17,6 +18,7 @@ async function buildPage(page: Page, query: string, size: { width: number; heigh
   await page.goto(`./?test=1&ui=r6&${query}`);
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 90_000 });
+  await injectSafeArea(page);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const farmers = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === 0).map((u) => u.id);
   await selectForCommands(page, farmers);
@@ -31,7 +33,10 @@ const measure = (page: Page) =>
     const cut = buttons.filter((b) => [b, ...b.querySelectorAll<HTMLElement>("*")].some((e) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1)).map((b) => b.textContent);
     const small = buttons.filter((b) => Math.min(b.getBoundingClientRect().width, b.getBoundingClientRect().height) < 44).map((b) => b.textContent);
     const army = document.querySelector(".army-btn")?.getBoundingClientRect();
-    return { cols5: document.querySelector(".cmds")?.classList.contains("cols5") ?? false, top: document.querySelector(".cmds")?.getBoundingClientRect().top ?? 0, armyBottom: army === undefined ? 0 : army.bottom, cut, small };
+    const topBar = Math.max(...[...document.querySelectorAll(".top-right button, .res-bar")].map((e) => e.getBoundingClientRect().bottom));
+    // A cost of two resources, or 要先蓋 and the building: on two lines.
+    const oneLine = [...document.querySelectorAll<HTMLElement>(".cmds .b .sub")].filter((s) => /[糧木金晶]\d+.*[糧木金晶]\d+|要先蓋/.test(s.textContent ?? "") && !(s.innerText.includes("\n"))).map((s) => s.textContent);
+    return { cols5: document.querySelector(".cmds")?.classList.contains("cols5") ?? false, top: document.querySelector(".cmds")?.getBoundingClientRect().top ?? 0, armyBottom: army === undefined ? 0 : army.bottom, topBar, cut, small, oneLine };
   });
 
 /** Where the other buttons are (the left column, the top right, 全軍撤退): hiding the right column moves none. */
@@ -46,6 +51,7 @@ for (const s of SETUPS) {
     expect(m.top, "the page under 全軍").toBeGreaterThanOrEqual(m.armyBottom);
     expect(m.small, "at least 44 pt").toEqual([]);
     expect(m.cut, "no words cut").toEqual([]);
+    expect(m.oneLine, "two resources, or 要先蓋 and the building, on two lines").toEqual([]);
     await expect(page.locator(".side-right")).toBeVisible();
     await expect(page.locator(".army-btn")).toBeVisible();
   });
@@ -56,6 +62,7 @@ for (const s of SETUPS) {
     await page.goto(`./?test=1&ui=r6&${s.query}`);
     await page.getByRole("button", { name: "開始" }).tap();
     await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 90_000 });
+    await injectSafeArea(page);
     const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
     const farmers = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === 0).map((u) => u.id);
     await selectForCommands(page, farmers);
@@ -67,6 +74,8 @@ for (const s of SETUPS) {
     expect(m.cols5).toBe(s.cols5);
     expect(m.small, "at least 44 pt").toEqual([]);
     expect(m.cut, "no words cut").toEqual([]);
+    expect(m.oneLine, "two resources, or 要先蓋 and the building, on two lines").toEqual([]);
+    expect(m.top, "the page under the top bar (速度、暫停、選單)").toBeGreaterThanOrEqual(m.topBar);
     await expect(page.locator(".side-right"), "編隊 1–4 and 全軍 out of sight").toBeHidden();
     await expect(page.locator(".army-btn")).toBeHidden();
     expect(await others(page), "the other buttons where they were").toEqual(before);

@@ -356,10 +356,19 @@ export class SelectionInfo {
     this.frame.setAttribute("aria-label", "選取資訊");
     this.frame.hidden = true;
     this.el = el("div", this.frame, "sel-body");
-    // 正式介面: more below, a fade at the foot (ui/r6.css .sel-more).
-    this.more = this.formal ? el("div", this.frame, "sel-more") : null;
-    this.more?.setAttribute("aria-hidden", "true");
-    this.more?.appendChild(icon("unfold"));
+    // 正式介面: more below, a fade at the foot of what scrolls (ui/r6.css .sel-more) with a ⌄ that
+    // scrolls one row down (ui 2026-11-07).
+    this.more = this.formal ? el("div", this.el, "sel-more") : null;
+    if (this.more !== null) {
+      const down = el("button", this.more, "sel-more-btn");
+      down.type = "button";
+      down.setAttribute("aria-label", "往下捲");
+      down.appendChild(icon("unfold"));
+      down.addEventListener("click", () => {
+        const row = this.el.querySelector<HTMLElement>(".group-grid > *, .order-meaning, .sel-chips");
+        this.el.scrollBy({ top: (row?.getBoundingClientRect().height ?? 40) + 6, behavior: "smooth" });
+      });
+    }
     // Scrolled (正式介面): the title line kept at the top takes a ground of its own (ui/r6.css).
     this.el.addEventListener(
       "scroll",
@@ -399,8 +408,8 @@ export class SelectionInfo {
     }
     for (const u of this.updaters) u();
     if (this.foldButton !== null) this.fold(this.foldButton);
-    // Last in the frame (a new build put the ✕ before the body), over what scrolls.
-    if (this.more !== null && this.frame.lastChild !== this.more) this.frame.appendChild(this.more);
+    // Last in what scrolls (a new build fills the body anew), held at its foot.
+    if (this.more !== null && this.el.lastChild !== this.more) this.el.appendChild(this.more);
     this.showMore();
   }
 
@@ -516,11 +525,13 @@ export class SelectionInfo {
     const recall = button(placeButtons, "召回", "", () => this.host.groupRecall(i), "chip secondary");
     const out = button(placeButtons, "出城歸隊", "", () => this.host.groupOut(i, false), "chip secondary");
     const outAll = button(placeButtons, "全部帶走", "", () => this.host.groupOut(i, true), "chip secondary");
-    const actions = el("div", this.el, "sel-chips group-actions");
-    // 正式介面 (R6-17): 改成剛才選的 N 名 the main button (gold), 自動補兵 lit while on, 清空 grey with nobody to clear.
-    const fromBefore = button(actions, "", "", () => this.host.saveBeforeIntoGroup(i), this.formal ? "chip pri" : "chip secondary");
+    // 正式介面 (R6-17): 改成剛才選的 N 名 the main button (gold), 自動補兵 lit while on, 清空 grey with nobody
+    // to clear; the row pinned at the panel's foot, out of what scrolls (ui 2026-11-07: 自動補兵 always in
+    // sight), its buttons of two lines as R6-18 INV-95's (改成剛才選的／N 名, 自動補兵／目前：開).
+    const actions = el("div", this.formal ? this.frame : this.el, "sel-chips group-actions");
+    const fromBefore = button(actions, "", this.formal ? " " : "", () => this.host.saveBeforeIntoGroup(i), this.formal ? "chip pri" : "chip secondary");
     const clear = button(actions, "清空", "", () => this.host.clearGroup(i), "chip secondary");
-    const refill = button(actions, "", "", () => this.host.toggleRefill(i), "chip refill-chip secondary");
+    const refill = button(actions, "", this.formal ? " " : "", () => this.host.toggleRefill(i), "chip refill-chip secondary");
     const set = (e: HTMLElement, text: string) => {
       if (e.textContent !== text) e.textContent = text;
     };
@@ -555,8 +566,18 @@ export class SelectionInfo {
       }
       const n = this.host.beforeGroupCount();
       fromBefore.hidden = n === 0;
-      set(fromBefore.querySelector(".label") as HTMLElement, `改成剛才選的 ${n} 名`);
-      set(refill.querySelector(".label") as HTMLElement, `自動補兵：${this.host.groupRefill(i) ? "開" : "關"}`);
+      const on = this.host.groupRefill(i) ? "開" : "關";
+      if (this.formal) {
+        set(fromBefore.querySelector(".label") as HTMLElement, "改成剛才選的");
+        set(fromBefore.querySelector(".sub") as HTMLElement, `${n} 名`);
+        fromBefore.setAttribute("aria-label", `改成剛才選的 ${n} 名`);
+        set(refill.querySelector(".label") as HTMLElement, "自動補兵");
+        set(refill.querySelector(".sub") as HTMLElement, `目前：${on}`);
+        refill.setAttribute("aria-label", `自動補兵：${on}`);
+      } else {
+        set(fromBefore.querySelector(".label") as HTMLElement, `改成剛才選的 ${n} 名`);
+        set(refill.querySelector(".label") as HTMLElement, `自動補兵：${on}`);
+      }
       if (this.formal) {
         refill.classList.toggle("active", this.host.groupRefill(i));
         clear.disabled = has === 0 && want === 0;
@@ -1380,7 +1401,8 @@ export class CommandArea {
       // Round 7's `requires`: greyed out, saying what to build first.
       const missing = missingFor(view.rules, type, owned);
       const b = this.look(
-        button(this.el, BUILDING_NAME[type] ?? "", missing.length > 0 ? `要先蓋${missing.map((t) => BUILDING_NAME[t] ?? "").join("、")}` : costText(info.cost), () => {
+        // 正式介面 (ui 2026-11-07, R6-18 INV-100): 要先蓋 a line, the building another; a cost a resource a line.
+        button(this.el, BUILDING_NAME[type] ?? "", missing.length > 0 ? `要先蓋${this.formal ? "\n" : ""}${missing.map((t) => BUILDING_NAME[t] ?? "").join("、")}` : this.formal ? costText(info.cost).split(" ").join("\n") : costText(info.cost), () => {
           this.page = "main";
           this.host.startPlacement(type);
         }),

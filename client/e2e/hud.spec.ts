@@ -1590,8 +1590,9 @@ for (const viewport of [null, FULL_SCREEN]) {
     await expect(panel.locator(".sel-head")).toContainText("編隊 2");
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     const mine = await visibleBoxes(page, ".sel-info button");
-    // 正式介面's ✕ is an icon: its name.
-    expect(mine.map((b) => b.label)).toEqual([(await formalOn(page)) ? "取消選取" : "✕", "收起", "−", "+", "−", "+", "−", "+", "改成剛才選的 12 名", "清空", "自動補兵：開"]);
+    // 正式介面: the ✕ an icon (its name); 改成剛才選的／12 名 and 自動補兵／目前：開 of two lines (ui 2026-11-07).
+    const formal = await formalOn(page);
+    expect(mine.map((b) => b.label)).toEqual([formal ? "取消選取" : "✕", "收起", "−", "+", "−", "+", "−", "+", formal ? "改成剛才選的12 名" : "改成剛才選的 12 名", "清空", formal ? "自動補兵目前：開" : "自動補兵：開"]);
     const others = await visibleBoxes(page, ".cmds button, .side-left button, .side-right button, .top-right button, .retreat-all-btn, .minimap, .res-bar");
     for (const b of mine) {
       expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
