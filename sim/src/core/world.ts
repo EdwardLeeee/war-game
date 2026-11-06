@@ -53,6 +53,10 @@ export const UNIT_COLS = [
   "wallTo", "wallHome", "wallWait", "wallCalm",
   // Where its present walk along the walls set off from (R14-07, the screen's 換邊 line); -1 none. Not in the hash (UNIT_HASH_SKIP).
   "wallFrom",
+  // Why it stays instead of shifting along the walls (R14-07, the screen's list's 3 and 5: WallHold, 0 not), the wall cell
+  // it would go to (-1 none), the tick it began to stay, and the enemies near the walls and its side's soldiers up on
+  // them it last weighed (WALL_SHIFT.odds). For the screen only, not in the hash (UNIT_HASH_SKIP).
+  "wallHold", "wallHoldTo", "wallHoldSince", "wallHoldFoes", "wallHoldMine",
   // Ticks this unit stood to let lower ranks pass on its move (MARCH_ORDER, D-095); in the hash
   // only while MARCH_ORDER is on.
   "waited",
@@ -76,7 +80,7 @@ export type UnitCol = (typeof UNIT_COLS)[number];
  */
 export const UNIT_KINDS = 7;
 /** Unit columns that are statistics only, left out of the hash so a game plays and hashes as without them. */
-export const UNIT_HASH_SKIP: ReadonlySet<string> = new Set(["hitCause", "wallFrom"]);
+export const UNIT_HASH_SKIP: ReadonlySet<string> = new Set(["hitCause", "wallFrom", "wallHold", "wallHoldTo", "wallHoldSince", "wallHoldFoes", "wallHoldMine"]);
 /** What last hurt a unit (unit column hitCause; farmers' deaths are counted by it). */
 export const HitCause = { None: 0, Militia: 1, Unit: 2, Cannon: 3, Arrow: 4 } as const;
 export type HitCause = (typeof HitCause)[keyof typeof HitCause];
@@ -586,6 +590,8 @@ export class World {
     c.wallTo[s] = -1;
     c.wallHome[s] = -1;
     c.wallFrom[s] = -1;
+    c.wallHold[s] = 0;
+    c.wallHoldTo[s] = -1;
     c.flank[s] = -1;
     c.flankSide[s] = 0;
     c.flankX[s] = -1;
@@ -759,6 +765,7 @@ export class World {
     u.wallTo[i] = -1;
     u.wallHome[i] = -1;
     u.wallFrom[i] = -1;
+    u.wallHold[i] = 0;
     u.wallWait[i] = 0;
     u.wallCalm[i] = 0;
     // Up on it (standing, shooting or calibrating the cannon, or walking along it): down to the cell inside.
