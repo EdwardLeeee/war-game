@@ -68,7 +68,7 @@ def _bump(m, scale, strength, distance=0.002, stretch=None):
     nt.links.new(b.outputs["Normal"], p.inputs["Normal"])
 
 
-def _plates(m):
+def _plates(m, seam=0.55, rough=(0.25, 0.68)):
     """east_r8.lamellar's plates, read at phone size (R9 r3: rows of corrugation, no plates; a plate is 1.6 px at 3x):
     each plate's tone further from the next, its seam darker, each plate tilted a little its own way (the highlight
     breaks into flecks) and its own roughness (some polished, some dull)."""
@@ -88,7 +88,7 @@ def _plates(m):
             n.inputs[2].default_value = 0.72
         if n.operation == "MULTIPLY" and n.inputs[0].is_linked and n.inputs[0].links[0].from_node.bl_idname == "ShaderNodeMath" \
                 and n.inputs[0].links[0].from_node.operation == "LESS_THAN":
-            n.inputs[1].default_value = 0.55                  # the seams darker
+            n.inputs[1].default_value = seam                  # the seams darker
             g = n.inputs[0].links[0].from_node.inputs[0].links[0].from_socket
     bump.inputs["Strength"].default_value = 0.95
     if g is not None:                                         # the tilt: (random - 0.5) x (across the plate - 0.5)
@@ -104,8 +104,8 @@ def _plates(m):
         nt.links.new(h.outputs[0], bump.inputs["Height"])
     r = nt.nodes.new("ShaderNodeMapRange")                     # roughness plate by plate
     nt.links.new(wn.outputs["Value"], r.inputs["Value"])
-    r.inputs["To Min"].default_value = 0.25
-    r.inputs["To Max"].default_value = 0.68
+    r.inputs["To Min"].default_value = rough[0]
+    r.inputs["To Max"].default_value = rough[1]
     nt.links.new(r.outputs["Result"], p.inputs["Roughness"])
 
 
@@ -142,6 +142,116 @@ def _pleats(spacing=0.06, depth=0.022):
         print("R9UNIT pleats", ob.name, [m.type for m in ob.modifiers], flush=True)
 
 
+def _wave_tex(name, cycles, fn):
+    """A 1-D texture across local x -1..1 m (image textures span -1..1 in object space): fn(phase 0..1) per cycle."""
+    n = 1024
+    img = bpy.data.images.new(name, n, 4, float_buffer=True)
+    px = []
+    for _ in range(4):
+        for i in range(n):
+            v = fn((i / n * cycles) % 1.0, i / n)
+            px += [v, v, v, 1.0]
+    img.pixels.foreach_set(px)
+    tex = bpy.data.textures.new(name, "IMAGE")
+    tex.image = img
+    tex.extension = "REPEAT"
+    return tex
+
+
+def _axis(name, rot_deg):
+    """An empty at the origin whose local x runs along the axis the texture should vary along."""
+    e = bpy.data.objects.new(name, None)
+    e.rotation_euler = tuple(math.radians(a) for a in rot_deg)
+    bpy.context.scene.collection.objects.link(e)
+    return e
+
+
+def _displace(ob, tex, axis, depth, group=None):
+    sub = ob.modifiers.new("r9_sub", "SUBSURF")
+    sub.subdivision_type = "SIMPLE"
+    sub.levels = sub.render_levels = 2
+    dis = ob.modifiers.new("r9_disp", "DISPLACE")
+    dis.texture = tex
+    dis.texture_coords = "OBJECT"
+    dis.texture_coords_object = axis
+    dis.strength = depth
+    dis.mid_level = 0.5
+    if group:
+        dis.vertex_group = group
+    ob.modifiers.move(len(ob.modifiers) - 1, 0)            # before the armature: the steps move with the horse
+    ob.modifiers.move(len(ob.modifiers) - 1, 0)
+
+
+def _barding_rows(depth=0.008):
+    """art-v7.4 (the review: the 具裝 not realistic enough): the lamellar barding's rows stepped in the mesh, each row's
+    lower edge standing out over the row below it (as lamellae overlap downward), 24 rows to 2 m to match
+    east_r8.lamellar's rows: the steps catch the light and shade the next row in any light, so the barding reads as
+    plates hung in rows, not a striped blanket."""
+    tex = _wave_tex("r9_barding", 24, lambda ph, t: 1.0 - ph)            # 1 at a row's bottom edge, 0 at its top
+    axis = _axis("r9_barding_axis", (0, -90, 0))                         # local x = world z
+    for ob in bpy.data.objects:
+        if ob.type == "MESH" and ob.data.materials and any(m and m.name.startswith("lamellar_horse") for m in ob.data.materials):
+            _displace(ob, tex, axis, depth)
+            print("R9UNIT barding rows", ob.name, flush=True)
+
+
+def _caparison_folds(spacing=0.11, depth=0.035):
+    """art-v7.4 (the review: the knight's caparison a stiff box): cloth folds hanging down the skirts and the neck
+    cover, spaced along the horse (local x = world y), deepening from nothing at the belly line to full at the hem."""
+    cycles = int(round(2.0 / spacing))
+    tex = _wave_tex("r9_capfolds", cycles,
+                    lambda ph, t: 0.5 + 0.5 * math.sin(2 * math.pi * ph + 1.1 * math.sin(2 * math.pi * 5 * t)))
+    axis = _axis("r9_capfold_axis", (0, 0, 90))
+    for ob in bpy.data.objects:
+        base = ob.name.split(".")[0]
+        if ob.type != "MESH" or not base.startswith("knight_w_h_") or not base.endswith(("capskirtR", "capskirtL", "neckcover")):
+            continue
+        if base.endswith("_r2") or ob.hide_render:
+            continue
+        zs = [(ob.matrix_world @ v.co).z for v in ob.data.vertices]
+        top, bot = max(zs), min(zs)
+        g = ob.vertex_groups.new(name="r9_fold")
+        for v, z in zip(ob.data.vertices, zs):
+            w = 1.0 if base.endswith("neckcover") else min(1.0, max(0.0, (top - z) / max(top - bot, 1e-6)))
+            g.add([v.index], 0.35 + 0.65 * w if base.endswith("neckcover") else w, "REPLACE")
+        _displace(ob, tex, axis, depth, group="r9_fold")
+        print("R9UNIT caparison folds", ob.name, round(top, 2), round(bot, 2), flush=True)
+
+
+LINING = (0.46, 0.39, 0.27)          # linear: undyed silk, sRGB about (180, 168, 142) (0.62 glowed like a lamp shade)
+
+
+def _sleeve_lining():
+    """art-v7.3 (the review 2026-11-04: the East mage's cuffs read black in facings 5-7 when the arm reaches toward the
+    camera): the wide sleeves are one-sided shells, so the eye looks into the shadowed back of the far wall. Their inside
+    (the faces seen from behind) takes a pale lining instead of the robe's brown; the outside is unchanged."""
+    for ob in bpy.data.objects:
+        base = ob.name.split(".")[0]
+        if ob.type != "MESH" or not base.startswith(("mage_e_sleeve", "mage_e_cuff")) or not ob.data.materials:
+            continue
+        src = ob.data.materials[0]
+        if src is None or not src.use_nodes or _p(src) is None:
+            continue
+        m = bpy.data.materials.get(src.name + "_lined")
+        if m is None:
+            m = src.copy()
+            m.name = src.name + "_lined"
+            nt, p = m.node_tree, _p(m)
+            inp = p.inputs["Base Color"]
+            mix = nt.nodes.new("ShaderNodeMix")
+            mix.data_type = "RGBA"
+            geo = nt.nodes.new("ShaderNodeNewGeometry")
+            nt.links.new(geo.outputs["Backfacing"], mix.inputs["Factor"])
+            if inp.is_linked:
+                nt.links.new(inp.links[0].from_socket, mix.inputs[6])
+            else:
+                mix.inputs[6].default_value = inp.default_value
+            mix.inputs[7].default_value = (*LINING, 1.0)
+            nt.links.new(mix.outputs[2], inp)
+        ob.data.materials[0] = m
+        print("R9UNIT lining", base, m.name, flush=True)
+
+
 def apply(u=None, kind=None):
     print("R9UNIT apply", flush=True)
     cloth = ("team", "linen", "sack", "russet", "ochre", "darkcloth", "tunic", "robe", "cloth", "hessian")
@@ -169,6 +279,11 @@ def apply(u=None, kind=None):
             # a little light through the skin, no more (R9 r3: more, with the green bounce, gave grey-green flecks)
             p.inputs["Subsurface Weight"].default_value = 0.1
             p.inputs["Subsurface Radius"].default_value = (0.012, 0.005, 0.003)
+        elif "lamellar_horse" in n:
+            # the 具裝's lacquer (judge r1: no plates, no lacquer sheen): deeper seams, a satin sheen (r2: glossier
+            # plates on the rump's top blew out white in the sky's light: the reflection held down)
+            _plates(m, seam=0.32, rough=(0.3, 0.55))
+            p.inputs["Specular IOR Level"].default_value = 0.3
         elif "lamellar" in n:
             _plates(m)
         elif n.startswith("iron"):
@@ -192,6 +307,12 @@ def apply(u=None, kind=None):
                 ob.data.materials.clear()
                 ob.data.materials.append(lam)
     _pleats()
+    if kind == "mage_e":
+        _sleeve_lining()
+    if kind == "hcav_e":
+        _barding_rows()
+    if kind == "knight_w":
+        _caparison_folds()
     if os.environ.get("R9_DEBUG"):                   # which node feeds each cloth material's normal and colour
         for name, info in lib.MATS.items():
             m = info.get("mat")

@@ -607,6 +607,11 @@ TARGETS["r8v7c"] = v7_choices() + [dict(kind="r9_main_city_v7", culture="E", opt
 CAMERA["r8v7c"] = proj.DIAMOND
 LOOK["r8v7c"] = "r8"
 FOLDER["r8v7c"] = "r8v7c"
+# art-v7.4 (the review 2026-11-04): the R9 city's damaged look again, its fire dimmer (main_city_r9: core 2, not 9)
+TARGETS["r8v74"] = [pc for pc in TARGETS["r8v7c"] if pc["name"] == "main_city_E_damaged"]
+CAMERA["r8v74"] = proj.DIAMOND
+LOOK["r8v74"] = "r8"
+FOLDER["r8v74"] = "r8v7c"
 
 
 # art-v7 (D-118, the user 2026-11-04: 菱形 45 度, mass production): every piece the atlases need (atlas_b1: the buildings,
