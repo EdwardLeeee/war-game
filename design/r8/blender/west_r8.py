@@ -278,7 +278,7 @@ def dress_knight(u):
     kind = "knight_w"
     r = u.rigs["body"]
     M = _west_materials()
-    _gone(kind, ["r_surcoat", "helm", "slit", "cross", "breath*", "lance", "capemb*", "chamfron"])
+    _gone(kind, ["r_surcoat", "helm", "slit", "cross", "breath*", "lance", "lancetip", "capemb*", "chamfron"])
     body2.zero_pose(r)
     tb, lg = units2._bones_torso(r), units2._bones_legs(r)
     sur = [(0.13, 1.5), (0.205, 1.44), (0.225, 1.3), (0.222, 1.12), (0.2, 1.0), (0.25, 0.8), (0.27, 0.6)]
@@ -298,12 +298,17 @@ def dress_knight(u):
     for k in range(6):
         sphere(f"{kind}_r8breath{k}", 0.008, dark, head, at=(0.05 + 0.025 * (k % 3), 0.218, 0.06 - 0.03 * (k // 3)),
                outline=False)
-    # the lance: ash, the R2 steel head kept (its pennon gone: the user 2026-11-06, art-v7.4: 「武器不就是長槍嗎」;
+    # the lance: ash, a flat steel leaf on an iron socket (its pennon gone: the user 2026-11-06, art-v7.4: 「武器不就是長槍嗎」;
     # the caparison carries the player's colour)
     g = r.j["grip_lance"]
-    # the butt only 0.3 m behind the hand (it ran 1 m back through the rider's upper arm: clip_r8); R2's steel head
-    # at -2.6 kept, so the lance reaches it
-    rod(f"{kind}_r8lance", (0, 0, 0.12), (0, 0, -2.6), 0.022, M["wood"], parent=g, r2=0.016)
+    # the butt only 0.3 m behind the hand (it ran 1 m back through the rider's upper arm: clip_r8). The shaft stops inside
+    # the socket; the head's point is at -2.6 (art-v7.5, the user 2026-11-06: 「西陸騎士的槍尖顏色怪怪的」: the shaft ran on to
+    # -2.6, wider than R2's narrowing point, so the last 13 cm of the lance were wood; and R2's round head, once the shaft
+    # stopped, was smaller and duller than the East's and the pike's flat ones: tips 150-163 of 255 against their 190-208)
+    rod(f"{kind}_r8lance", (0, 0, 0.12), (0, 0, -2.3), 0.022, M["wood"], parent=g, r2=0.016)
+    cyl(f"{kind}_r8socket", 0.022, 0.1, M["iron"], g, at=(0, 0, -2.34))
+    lathe(f"{kind}_r8lancetip", [(0.0, 0.0), (0.03, 0.09), (0.034, 0.18), (0.012, 0.27)], M["steel"], g, segs=8,
+          at=(0, 0, -2.6), scale=(1, 0.35, 1))
     # the sword: cross-hilted, about 95 cm, at the left hip
     root = lib.empty(f"{kind}_r8swordroot", parent=r.j["hips"], loc=(-0.22, 0.05, 0.04), rot=(-60, 0, -8))
     box(f"{kind}_r8scabbard", (0.05, 0.022, 0.8), M["bag"], root, at=(0, 0, -0.42), bevel=0.008)
