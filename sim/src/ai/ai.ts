@@ -3281,6 +3281,17 @@ export const HARD_POP: Partial<HardPlan> = {
   // against hard without it 41 to 47 (fixed) and 38 to 37 (random); the four active groups 0 of 160 as before.
   cityAgain: 120,
 };
+// SCRATCH ONLY (ai/scratch-*, never merged): candidate plans from the environment.
+const SCRATCH_ENV = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HARD_BASE: HardPlan = { ...HARD };
+Object.assign(HARD, JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"));
+{ const nt2 = JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"); if (nt2.normalBaseLess !== undefined) NORMAL_TUNE.baseLess = nt2.normalBaseLess; if (nt2.normalWalledTowns !== undefined) NORMAL_TUNE.walledTowns = nt2.normalWalledTowns; if (nt2.normalTownRest !== undefined) NORMAL_TUNE.townRest = nt2.normalTownRest; }
+{ const kk = JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"); if (kk.keepMop !== undefined) KEEP_AI.mop = kk.keepMop; if (kk.keepStrength !== undefined) KEEP_AI.strength = kk.keepStrength; }
+{ const ga = JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"); for (const k of ["focus", "calm", "walls", "arrows", "retreat"] as const) { const v = ga["gate" + k[0].toUpperCase() + k.slice(1)]; if (v !== undefined) (GATE_AI as Record<string, unknown>)[k] = v; } }
+{ const fh = JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"); if (fh.fortHide !== undefined) FORT_HIDE_AI.on = fh.fortHide; if (fh.fortHideScale !== undefined) FORT_HIDE_AI.scale = fh.fortHideScale; if (fh.fortHideMemory !== undefined) FORT_HIDE_AI.memory = fh.fortHideMemory; }
+{ const nf = JSON.parse(SCRATCH_ENV.HARD_PLAN || "{}"); if (nf.normalFortStage !== undefined) NORMAL_FORT.stage = nf.normalFortStage; if (nf.normalFortAgain !== undefined) NORMAL_FORT.again = nf.normalFortAgain; }
+const HARD_B: HardPlan = { ...HARD_BASE, ...JSON.parse(SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN || "{}") };
+
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
 // D-099: a siege engine (index 6). With none, an army or an enemy with one in sight summed to NaN, and every
 // comparison of strength with it was false (hard never broke off from, nor weighed, the user's engines).
@@ -3316,9 +3327,9 @@ interface HardTown extends Town {
 type HardMode = "home" | "town" | "base" | "defend" | "raze";
 
 function createHardAi(player: number, seed: number, know: AiKnowledge, slot: number): Ai {
-  const plan: HardPlan = { ...HARD, ...know.hard };
+  const plan: HardPlan = { ...(slot === 1 ? HARD_B : HARD), ...know.hard };
   // D-083 (c): with the population rules on, HARD_POP over HARD (what the caller gives still wins).
-  if ((know.rules.population?.town[TownSize.Small] ?? 0) > 0) Object.assign(plan, HARD_POP, know.hard);
+  if ((know.rules.population?.town[TownSize.Small] ?? 0) > 0) { const sp = JSON.parse((slot === 1 ? SCRATCH_ENV.HARD_PLAN_B || SCRATCH_ENV.HARD_PLAN : SCRATCH_ENV.HARD_PLAN) || "{}"); const own: Record<string, unknown> = {}; for (const k of Object.keys(sp)) if (k in HARD_POP) own[k] = sp[k]; Object.assign(plan, HARD_POP, own, know.hard); }
   // D-086 A7: measured with keeps on only; without them it plays as before, unless the caller asks for them.
   if (know.rules.features?.keep !== true) {
     if (know.hard?.governHold === undefined) plan.governHold = false;
