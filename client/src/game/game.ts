@@ -175,6 +175,11 @@ export interface GameOptions {
   astcSample?: AstcSample;
   /** art-v7 量測 (D-128, main.ts): its buttons and what the art costs, the ground apart (added here). */
   artMeasure?: { open(v: ArtVariant): void; cost(): Omit<ArtCost, "ground">; drawn(): string; gpuAstc(): boolean };
+  /**
+   * 戰場像素比 (?test=1&res=2, battlefield-res.ts): the device's pixel ratio, what the battlefield is
+   * drawn at now, and drawing it at 2 or at the device's; test pages only.
+   */
+  res?: { device: number; now(): number; set(two: boolean): void };
 }
 
 /** export_log's answer: the command log, the hash every HASH_EVERY ticks and the tick it got to (D-083). */
@@ -346,6 +351,7 @@ export class Game implements GestureHost {
               else options.life.perf(scenario);
             },
         artAvailable: options.artAvailable === true,
+        res: options.res,
         ground:
           (options.ground ?? null) === null
             ? undefined
