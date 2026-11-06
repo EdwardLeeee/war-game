@@ -102,13 +102,16 @@ export function shiftRows(rows: Int32Array | undefined, town: number, owner: num
 
 /**
  * A row's line: 「換邊：4 名走過東門頂，去打東牆南段（敵人 7 名，沒超過牆上的 2 倍）」, or
- * 「敵人走了 10 秒：走回原位」 (R14-07 1 and 4). `odds`, `backSeconds`: rules.wallShift's.
+ * 「敵人走了 10 秒：走回原位」 (R14-07 1 and 4). `odds`, `backSeconds`: rules.wallShift's. No enemy
+ * seen there now (they set off while one was, and it walked out of sight; core 2026-11-06): 「敵人已
+ * 離開視野」 (ceo), not 「敵人 0 名」.
  */
 export function shiftLine(row: ShiftRow, odds: number, backSeconds: number, names: WallNames): string {
   if (row.home) return `敵人走了 ${backSeconds} 秒：走回原位`;
   const gates = viaGates(row.via, names);
   const way = gates.length === 0 ? "" : `走過${gates.join("、")}，`;
-  return `換邊：${row.n} 名${way}去打${stretchName(row.to, names)}（敵人 ${row.foes} 名，沒超過牆上的 ${odds} 倍）`;
+  const foes = row.foes === 0 ? "敵人已離開視野" : `敵人 ${row.foes} 名，沒超過牆上的 ${odds} 倍`;
+  return `換邊：${row.n} 名${way}去打${stretchName(row.to, names)}（${foes}）`;
 }
 
 /** R14-07 2: a walk over, those of ours on that stretch now: 「東牆南段：6 名一起打」. */

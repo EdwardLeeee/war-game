@@ -63,7 +63,8 @@ test("同一段、同一條路的換邊合成一行（出發的段不寫）；�
       [3, 1, true],
     ],
   );
-  assert.equal(shiftLine(got[0], 2, 10, compass), "換邊：4 名走過北門頂，去打東牆北段（敵人 0 名，沒超過牆上的 2 倍）");
+  // No enemy seen there now (ceo 2026-11-06): not 「敵人 0 名」.
+  assert.equal(shiftLine(got[0], 2, 10, compass), "換邊：4 名走過北門頂，去打東牆北段（敵人已離開視野）");
 });
 
 test("牆格屬於哪一段，和模擬一樣（wall-walk.ts wallStretch）：角落算北牆、南牆", () => {
