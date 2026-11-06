@@ -59,7 +59,7 @@ test("顯示卡沒有 ASTC：要 ASTC 也是從 PNG 載入，照樣畫（D-128�
   check();
 });
 
-test("D-128（art-v7.3）：沒選過就是 3 倍 ASTC；顯示卡沒有 ASTC 就畫 2 倍的 PNG", async ({ page, browserName }) => {
+test("D-128（art-v7.4）：沒選過就是 3 倍 ASTC；顯示卡沒有 ASTC 就畫 2 倍的 PNG", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "the Release's pages at 3 倍: one browser is enough (WebKit on CI draws in software)");
   const check = watchErrors(page);
   await start(page, "art=x3&scenario=e2e");

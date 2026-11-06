@@ -129,7 +129,7 @@ test("菱形（art-v7，ui 2026-11-06）：牆後的兵（城裡靠東牆、靠�
   test.skip(browserName !== "chromium", "the Release's castle at 3 倍: one browser is enough (WebKit on CI draws in software)");
   test.setTimeout(120_000);
   const check = watchErrors(page);
-  // art-v7.3's castle (diamond, its own pictures).
+  // art-v7.4's castle (diamond, its own pictures).
   await start(page, "mock=1&tps=20&art=x3");
   await expect.poll(async () => (await castle(page))?.pieces ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
   const small = (await towns(page)).find((t) => t.size === SMALL && t.cx === 30 && t.cy === 66);

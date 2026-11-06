@@ -21,7 +21,7 @@ test("美術（測試圖）：兵從圖集畫，不再是幾何圖形；載入 1
   // Every unit on screen from its atlas: 10 units × colour, team, shadow (+ the mages' shields) and the effects' 2 (真的箭's arrow and stone on the second).
   await expect.poll(async () => (await art(page))?.units ?? 0).toBeGreaterThan(0);
   const a = await art(page);
-  // ASTC by default (D-128, art-v7.3 on): the stand-ins have their compressed pages too.
+  // ASTC by default (D-128, art-v7.4 on): the stand-ins have their compressed pages too.
   expect(a?.label).toBe("測試圖 ASTC");
   expect(a?.pages).toBe(10 * 3 + 2 + 2);
   // Drawn (the last frame) and in the snapshot (the latest), read together until a frame has caught

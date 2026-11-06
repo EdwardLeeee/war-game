@@ -244,7 +244,7 @@ npm run e2e         # Playwright：WebKit 與 Chromium，iPhone 14 Pro Max 橫�
 
 ## 正式美術：量測（D-085，PR 1）
 
-- 兵種圖從 war-game-ui 的 Release 來（`art.lock.json` 鎖 tag 和 sha256，`scripts/fetch-art.ts` 下載、核對、解到 `public/art/<tag>/`，不進 repo；格式見 `docs/sprite-atlas.md` 第 2 節）。現在是 art-v7.3（D-117、D-118 菱形斜看和浮空大陸的邊，R9 的地面和水，D-128 的 ASTC 壓縮圖：x3 ASTC，沒有 ASTC 的裝置用 x2 PNG）。
+- 兵種圖從 war-game-ui 的 Release 來（`art.lock.json` 鎖 tag 和 sha256，`scripts/fetch-art.ts` 下載、核對、解到 `public/art/<tag>/`，不進 repo；格式見 `docs/sprite-atlas.md` 第 2 節）。現在是 art-v7.4（D-117、D-118 菱形斜看和浮空大陸的邊，R9 的地面和水，D-128 的 ASTC 壓縮圖：x3 ASTC，沒有 ASTC 的裝置用 x2 PNG；7.4 比 7.3 多改了五種兵、主城受損圖和草地不畫土斑）。
 - 量測面板（選單 → 量測與確定性檢查）多一列「美術：關／3 倍／2 倍」（PR 3 起預設 3 倍，見下一節）：
   - 記在這台裝置，下一局起用；按「量測 N 人」時，美術換過就開新的一局。從主畫面圖示打開也選得到（ceo 2026-10-18：沒有網址列，加不了 `?art=`）。
   - 開著時，兵從圖集畫（`render/unit-art.ts` 載入、`render/unit-art-draw.ts` 畫）：影子在地面層，顏色層、玩家色層（玩家色當 tint）、法師的防護罩；動作照快照的 action 和 sim 的時間播（`art/spec.ts`）；朝向對到圖片的 8 個方向（規格第 3 節的表）。
